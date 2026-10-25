@@ -22,6 +22,7 @@ from io import BytesIO
 from json import dumps, loads
 from os import environ, makedirs, remove, replace
 from os.path import abspath, basename, exists, expanduser, getsize, isfile, join
+from re import fullmatch
 from shutil import rmtree
 from sys import argv, stderr
 from tempfile import mkdtemp
@@ -126,8 +127,23 @@ def resolve(snapshot: Snapshot, card: str, fields: dict) -> Card:
     else:
         key = CardAuthors.key(card)
         rel = snapshot.psds.get(key, "")
+    view = picture_of(snapshot, key) if not rel and fields.get("parts") else None
+    if view is not None:                        # a picture of a PSD with variant tags: the PSD, baked as that picture
+        rel, view = view
+        key = CardAuthors.key(card_name(rel))
     name = card_name(rel) if rel else " ".join(word[:1].upper() + word[1:] for word in key.split())
-    return Card(name, key, psd_fields(fields), rel, snapshot.sha(rel) if rel else "", creatures=bool(fields.get("creatures")))
+    return Card(name, key, psd_fields(fields), rel, snapshot.sha(rel) if rel else "", creatures=bool(fields.get("creatures")),
+                view=view)
+
+
+def picture_of(snapshot: Snapshot, key: str) -> Optional[tuple]:
+    """(PSD path, picture n) of a numbered PNG keyed so (A_Snack2.png -> A_Snack.psd, 2), else None."""
+    original = snapshot.duplicate_of(key)
+    for path in snapshot.tree if original else ():
+        number = fullmatch(r"(.+?)(\d+)", path[:len(path) - 4]) if path.lower().endswith(".png") else None
+        if number and CardAuthors.key(card_name(path)) == key and (number.group(1) + ".psd").lower() == original.lower():
+            return original, int(number.group(2))
+    return None
 
 
 # ========================
@@ -278,6 +294,10 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
         result["base"].update(repo=repository, commit=snapshot.head)
         one = resolve(snapshot, card, fields)
         png_rel = snapshot.png_for(one.rel)[0] if one.rel else ""
+        if one.view is not None:                # the picture's own PNG
+            png_rel = next((p for p in snapshot.png_for(one.rel)[1] if picture_of(snapshot, CardAuthors.key(card_name(p)))
+                            == (one.rel, one.view)), png_rel)
+            result["variant"] = one.view
         result.update(card=one.name, path=one.rel, png=png_rel)
         result["base"].update(psd_blob=one.psd_sha, png_blob=snapshot.sha(png_rel) if png_rel else "")
         fonts = card_bake._fonts_dir(snapshot)  # the bake's: PSD_TOOLS_FONT_DIRS, else the checkout's MDW/Fonts
@@ -307,8 +327,9 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
                                 for f, m in one.baked.parity.items()}
             result["region"] = _plain(one.baked.region)
         folder = join(work, one.name.replace("/", "_"))
-        rendered = join(folder, "new", basename(one.png)) if one.png else ""
-        official = join(folder, "old", basename(one.png)) if one.png else ""    # bake_card's fetch of the card's PNG
+        shown = png_rel if one.view is not None else one.png
+        rendered = join(folder, "new", basename(shown)) if shown else ""
+        official = join(folder, "old", basename(shown)) if shown else ""    # bake_card's fetch of the card's PNG
         if state == "baked":
             result.update(image="baked", **write_images(one.baked.png_path, out, official))
         elif state == "refused" and rendered and isfile(rendered):    # a gate after the save: what the render got

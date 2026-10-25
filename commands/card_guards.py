@@ -689,7 +689,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
     if job.case in ("stale", "beside"):
         old_png = png_export.open_png(source.blob(job.png_old))
         numbered = {path: png_export.open_png(source.blob(sha)) for path, sha in job.numbered.items()}
-        found = png_export.export(old if job.case == "stale" else None, new, old_png, numbered)
+        found = png_export.export(old if job.case == "stale" else None, new, old_png, numbered, job.png)
         # a burst: when the old PNG shows the anchor rather than the old PSD (not a PNG pushed before its PSD), the
         # anchored verdict, a refusal too (a small push-1 change hides under G5's bar, review 2026-10-24); else, checked,
         # a G5/G6 refusal retried, the anchored export kept unless it refuses
@@ -697,7 +697,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
             anchor = png_export.open_psd(source.blob(job.psd_anchor))
             matched = png_export.shows(old_png, anchor, old)
             if matched or (not found.unchecked and found.outcome == "refused" and found.gate in ("G5", "G6")):
-                anchored = png_export.export(anchor, new, old_png, numbered)
+                anchored = png_export.export(anchor, new, old_png, numbered, job.png)
                 if matched or anchored.outcome != "refused":   # the PNG matched the PSD before the burst
                     found = anchored
                     result.notes.append((f"checked against the PSD as of {basename(job.png)}'s last change "
@@ -720,14 +720,20 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
                                   "line": f"re-exported by the bot's render of the PSD ({found.changed_px:,} px changed)"
                                           + "".join(f"; {note}" for note in png_export.miss_notes(found))})
             _crops(out, job.png, old_png, found.image, found.box)
-            refused = []
             shown.update(numbered)
             shown[job.png] = found.image
+        if found.outcome == "re-exported" or found.numbered:    # a tagged PSD's pictures: whatever its first one did
+            refused = []
             for path, (data, why) in sorted(found.numbered.items()):
                 if data:
+                    tagged = path not in numbered or png_export.picture_number(path) in found.pictures
                     result.writes.append({"path": path, "file": _save(out, path, data), "sha": blob_sha(data), "kind": "png",
-                                          "line": "updated with the same change (delta transfer)"})
+                                          "line": "made by the bot's render of its picture (variant tags)" if tagged
+                                          else "updated with the same change (delta transfer)"})
                     shown[path] = png_export.open_png(data)
+                elif data is None:              # its picture unchanged
+                    if path in numbered:
+                        shown[path] = numbered[path]
                 else:
                     refused.append((why, path))
                     shown.pop(path, None)
@@ -797,12 +803,12 @@ def _rewrapped_pngs(out: str, result: Result, pushed, fixed, shown: dict) -> boo
     found = png_export.export(pushed, png_export.open_psd(fixed.data), shown[result.job.png], numbered)
     if found.outcome == "current":
         return True
-    if found.outcome != "re-exported" or any(not data for data, _ in found.numbered.values()):
-        why = found.why or next((why for data, why in found.numbered.values() if not data), "")
+    if found.outcome != "re-exported" or any(data == b"" for data, _ in found.numbered.values()):
+        why = found.why or next((why for data, why in found.numbered.values() if data == b""), "")
         result.composer_left += [(name, f"rewraps, not redrawn: {why}") for name in fixed.rewrapped]
         return False
     line = f"re-exported for the Single-line Composer's rewrap ({found.changed_px:,} px changed)"
-    for path, data in [(result.job.png, found.data)] + [(p, d) for p, (d, _) in sorted(found.numbered.items())]:
+    for path, data in [(result.job.png, found.data)] + [(p, d) for p, (d, _) in sorted(found.numbered.items()) if d]:
         write = next((w for w in result.writes if w["path"] == path and w["kind"] == "png"), None)
         result.writes = [w for w in result.writes if not (w["path"] == path and w["kind"] == "recompress")]
         if write is None:

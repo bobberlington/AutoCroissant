@@ -36,6 +36,7 @@ import zlib
 from dataclasses import dataclass, field
 from datetime import datetime
 from importlib import import_module
+from contextlib import nullcontext
 from io import BytesIO
 from re import search
 from struct import unpack
@@ -112,6 +113,7 @@ class Export:
     misses: dict = field(default_factory=dict)  # "baseline" / "cross" / a box: a measure past the bar, under the floor (told)
     numbered: dict = field(default_factory=dict)   # numbered PNG path -> (bytes, "") or (b"", refusal line)
     unchecked: bool = False                     # no stored composite (G2): the bake's own gates alone, nothing cross-checked
+    pictures: list = field(default_factory=list)   # the variant tags' pictures made as their own (render_picture)
 
 
 # ========================
@@ -616,7 +618,59 @@ def _composite_moved(old: PSDImage, new: PSDImage, before: Optional[Image.Image]
 # ========================
 # Public API Functions
 # ========================
-def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbered: Optional[dict] = None) -> Export:
+def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbered: Optional[dict] = None,
+           main: str = "") -> Export:
+    """
+    _export, and on a PSD with variant tags (PARTS_EDITOR.md §7) each tagged picture's own PNG made as the bake makes
+    it (render_picture: drawn as that picture, the bake's gates; the stored image shows the saved picture only), a
+    tagged picture without its PNG beside main (NameN.png) rendered whole (new_picture). Numbered PNGs of no tag keep
+    G8's delta transfer. Export.numbered: path -> (bytes, "") written, (None, "") unchanged, (b"", why) refused.
+    """
+    tags = set(psd_edit.variants_of(new))
+    tagged = {path: n for path in (numbered or {}) for n in [picture_number(path)] if n in tags and n != 1} \
+        if len(tags) > 1 else {}
+    found = _export(old, new, old_png, {p: i for p, i in (numbered or {}).items() if p not in tagged})
+    for path, n in sorted(tagged.items()):
+        found.numbered[path] = render_picture(old, new, numbered[path], n)
+    if main and len(tags) > 1:
+        stem = main[:len(main) - 4]
+        for n in sorted(tags - {1} - set(tagged.values())):
+            found.numbered[f"{stem}{n}.png"] = new_picture(new, n)
+    found.pictures = sorted(tags - {1}) if len(tags) > 1 else []
+    return found
+
+
+def picture_number(path: str) -> Optional[int]:
+    """The picture a numbered PNG is (A_Snack2.png -> 2), or None."""
+    found = search(r"(\d{1,2})\.png$", path.lower())
+    return int(found.group(1)) if found else None
+
+
+def render_picture(old: Optional[PSDImage], new: PSDImage, png: Image.Image, n: int) -> tuple:
+    """A tagged PSD's picture n onto its own PNG: _unchecked drawn as that picture (psd_edit.variant).
+
+    Returns:
+        (bytes, "") made, (None, "") unchanged, (b"", why) refused"""
+    with psd_edit.variant(new, n), (psd_edit.variant(old, n) if old is not None else nullcontext()):
+        found = _unchecked(old, new, png, None)
+    if found.outcome == "re-exported":
+        return found.data, ""
+    return (None, "") if found.outcome == "current" else (b"", found.why)
+
+
+def new_picture(new: PSDImage, n: int) -> tuple:
+    """A tagged picture with no PNG yet: the whole card drawn as picture n, every text drawn (export_new unchecked)."""
+    with psd_edit.variant(new, n):
+        out = _render(new, (0, 0, new.width, new.height), True, {})
+        result = Export("current", unchecked=True)
+        if out.mode == "RGBA" and int(np.asarray(out)[..., 3].min()) == 255:
+            out = out.convert("RGB")
+        if not _texts_drawn(result, new, out, True):
+            return b"", result.why
+    return encode(out, None), ""
+
+
+def _export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbered: Optional[dict] = None) -> Export:
     """
     Guard 1 on a PSD pushed without its PNG: the bake's render of the changed layers' box (R), merged into the old PNG.
 

@@ -10,7 +10,7 @@ data. A content problem never refuses (owner 2026-10-24): it bakes best-effort, 
 rendered, so the module loads under stock psd-tools.
 """
 from collections import Counter
-from contextlib import nullcontext
+from contextlib import ExitStack, contextmanager, nullcontext
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from difflib import SequenceMatcher
@@ -5988,7 +5988,24 @@ def save_png(image: Image.Image, path: str, like: Image.Image) -> None:
 # ========================
 def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict, parser: PSDParser, out_dir: str,
                fonts_dir: str, chart: Optional[dict] = None, update_preview: bool = True,
-               types_dir: Optional[str] = None, psd: Optional[PSDImage] = None) -> Baked:
+               types_dir: Optional[str] = None, psd: Optional[PSDImage] = None, view: Optional[int] = None) -> Baked:
+    """
+    _apply_jobs, as picture `view` of a card with variant tags shows it (variant(): its edits, renders, merge onto
+    that picture's PNG png_path and its content gates; parsed is that picture's parse), the saved PSD keeping its own
+    eye flags. view None: the card as saved.
+    """
+    hold = ExitStack()
+    try:
+        return _apply_jobs(psd_path, png_path, rel, jobs, parsed, parser, out_dir, fonts_dir, chart, update_preview,
+                           types_dir, psd, view, hold)
+    finally:
+        hold.close()
+
+
+def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict, parser: PSDParser, out_dir: str,
+                fonts_dir: str, chart: Optional[dict] = None, update_preview: bool = True,
+                types_dir: Optional[str] = None, psd: Optional[PSDImage] = None, view: Optional[int] = None,
+                hold: Optional[ExitStack] = None) -> Baked:
     """
     Apply a card's jobs, render the changed region, delta-merge the PNG, save and run every gate.
 
@@ -6016,6 +6033,9 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
     old = psd if psd is not None else PSDImage.open(psd_path)
     new, old_records = edit_copy(old), layer_records(old)      # a copy: one open (as fast as a second one)
     gate_pairs(old, new)
+    hold = ExitStack() if hold is None else hold
+    hold.enter_context(variant(old, view))      # picture `view`'s eye flags until the save
+    hold.enter_context(variant(new, view))
     png = Image.open(png_path)
     png.load()
     timings["open"] = perf_counter() - start
@@ -6129,12 +6149,14 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
 
     new_psd, new_png = join(out_dir, basename(psd_path)), join(out_dir, basename(png_path))
     start = perf_counter()
+    hold.close()                                # the saved card keeps its own eye flags
     save_psd(new, new_psd, update_preview, preview)
     timings["save"] = perf_counter() - start
     save_png(merged, new_png, png)
     gate_size(psd_path, new_psd)
     reopened = PSDImage.open(new_psd)          # the saved PSD's one open: every gate after reads it
     records, flag_bytes, block_bytes = gate_bytes(old_records, reopened, edits)
+    hold.enter_context(variant(reopened, view))     # the read-back and re-render as picture `view`
 
     start = perf_counter()
     stories = {story for edit in edits if edit.field in TEXT_FIELDS for story in [edit.story, *edit.stories]}
@@ -6230,6 +6252,32 @@ def variants_of(psd: PSDImage) -> list:
     if own is not None:
         return own(psd)
     return sorted({1} | {v for layer in psd.descendants() for v in (layer_tag(layer.name)[1] or ())})
+
+
+@contextmanager
+def variant(psd: PSDImage, n: Optional[int]):
+    """
+    The card as picture n shows it (§4.9), in memory: each tagged layer or group visible when n is among its tags,
+    hidden else (untagged ones keep their eye), restored on exit; n None: as saved.
+    """
+    saved = []
+    if n is not None:
+        for layer in psd.descendants():
+            tags = layer_tag(layer.name)[1]
+            if tags is not None and layer.visible != (n in tags):
+                saved.append((layer, layer.visible))
+                layer.visible = n in tags
+    try:
+        yield psd
+    finally:
+        for layer, was in reversed(saved):
+            layer.visible = was
+
+
+def saved_view(psd: PSDImage) -> Optional[int]:
+    """The picture the saved eye flags show (each tagged layer visible exactly in it), or None for none."""
+    tagged = [(layer.visible, tags) for layer in psd.descendants() for tags in [layer_tag(layer.name)[1]] if tags]
+    return next((n for n in variants_of(psd) if all(shown == (n in tags) for shown, tags in tagged)), None)
 
 
 def raw_sha(layer) -> str:

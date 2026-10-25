@@ -127,7 +127,8 @@ def test_run_drops_redundant_and_writes_verdicts(github):
     assert freezer["reason"] == "unsupported-card: stars: the '1 Stars' folder sets them (moving the card is ledger S9)"
     assert freezer["at"].endswith("Z")
     assert data["cards"]["Nobody"]["_psd"]["reason"] == "unsupported-card: no PSD in the card repo" and data["cards"]["Nobody"]["_psd"]["psd"] == ""
-    assert data["cards"]["A Snack"]["_psd"]["reason"] == "duplicate: numbered PNGs share the PSD: A_Snack2.png"
+    assert data["cards"]["A Snack"]["_psd"]["reason"] == ("duplicate: numbered PNGs share the PSD: A_Snack2.png (tag the "
+                                                          "variant layers: PARTS_EDITOR.md §9)")
     assert data["cards"]["A Snack2"]["_psd"]["reason"] == "duplicate: a numbered PNG exported from `Items/Heal/2 Stars/A_Snack.psd`"
     raw = github.files_at(github.head)[cb.EDITS_PATH].decode("utf-8")
     assert raw == cb.dump_edits(json.loads(raw))                                                 # canonical layout
@@ -853,3 +854,47 @@ def test_parts_bake_deletes_skips_and_keeps_photoshop_work(github, clone):
     assert sorted(pe.story_index(layer) for layer in new.descendants() if layer.kind == "type") == list(range(9))
     report = "\n".join(line for line in text.splitlines() if "Miracle Matter" in line)
     assert "flag bytes" in report
+
+
+@fork_text
+def test_a_tagged_psd_bakes_each_picture_it_shows_in(github, clone, tmp_path):
+    """§11 case 7 on A Snack tagged as §9 (the fixture script's tags, saved on a copy): the shared Ability writes all
+    three PNGs; a 'Name #2' edit writes only A_Snack2.png, the others byte for byte; the pictures' entries lose their
+    derived fields with the parts, and are never baked on their own."""
+    import sys
+    from psd_tools import PSDImage
+    sys.path.insert(0, str(Path(__file__).parent / "fixtures" / "parts"))
+    from make_fixtures import CARDS
+    rel, _, tags = CARDS["a_snack_tagged"]
+    if not (clone / pe.STATUS_CHART).exists():
+        pytest.skip("no status chart")
+    psd = PSDImage.open(str(clone / rel))
+    for layer in psd.descendants():
+        if layer.layer_id in tags:
+            layer.name = tags[layer.layer_id]
+    psd.save(str(tmp_path / "A_Snack.psd"))
+    pngs = [rel[:-4] + suffix + ".png" for suffix in ("", "2", "3")]
+    files = github.files_at(github.head)
+    files.update({rel: (tmp_path / "A_Snack.psd").read_bytes(), pe.STATUS_CHART: (clone / pe.STATUS_CHART).read_bytes(),
+                  **{png: (clone / png).read_bytes() for png in pngs}})
+    github.commit(files, "someone", "A Snack tagged")
+    fixture = json.loads((Path(__file__).parent / "fixtures" / "parts" / "card_edits.parts.json").read_text("utf-8"))["cards"]
+    ability = fixture["A Snack"]["parts"]["320"]
+    for edit, changed in (({"A Snack": {"ability": ability["text"], "parts": {"320": ability}},
+                            "A Snack2": {"ability": ability["text"]}, "A Snack3": {"ability": ability["text"]}}, pngs),
+                          ({"A Snack": {"parts": {"1023": fixture["A Snack"]["parts"]["1023"]}},
+                            "A Snack2": {"name": "Second Breakfast"}}, pngs[1:2])):
+        before = github.files_at(github.head)
+        before[cb.EDITS_PATH] = _edits({k: {**v, "_by": "web", "_at": AT} for k, v in edit.items()})
+        github.commit(before, "web", "Website edit: A Snack")
+        text, commits = cb.run()
+        assert len(commits) == 1, text
+        after = github.files_at(github.head)
+        assert sorted(p for p in after if after[p] != before.get(p)) == sorted([rel, cb.EDITS_PATH, *changed]), text
+        cards = _edits_at(github)["cards"]
+        assert "A Snack2" not in cards and "A Snack3" not in cards and set(cards.get("A Snack", {})) <= {"_psd"}, cards
+    saved = {layer.layer_id: layer for layer in PSDImage.open(str(tmp_path / "A_Snack.psd")).descendants()}
+    from io import BytesIO
+    new = {layer.layer_id: layer for layer in PSDImage.open(BytesIO(github.files_at(github.head)[rel])).descendants()}
+    assert new[1023].text.startswith("Second\rBreakfast") and new[1023].name == "Name #2"
+    assert {k: layer.visible for k, layer in new.items()} == {k: layer.visible for k, layer in saved.items()}
