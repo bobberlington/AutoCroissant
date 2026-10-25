@@ -628,6 +628,12 @@ def glow_halos() -> bool:
     return "box" in {field.name for field in fields(Picture)}
 
 
+def tab_stops() -> bool:
+    """Does the fork lay tabs out to Photoshop's tab stops (before, each a space: the columns collapsed)."""
+    from psd_tools.composite.text import constants
+    return hasattr(constants, "TAB_WIDTH")
+
+
 def glow_tokens(text: str) -> list:
     """The :glow and :darkglow tokens in a text (drawn with a halo: glow_halos)."""
     return [m.group(0) for m in TOKEN.finditer(text) if m.group(0)[1:-1].partition(":")[2].strip().lower() in GLOWS]
@@ -1410,8 +1416,9 @@ def _slide(old: str, a0: int, a1: int, floor: int) -> int:
 def keep_breaks(old: str, new: str, which: str) -> str:
     """
     The new text with the layer's own breaks back where the edit kept them: the website shows an ability's forced line
-    break (\\x03) as a newline and a name's breaks as spaces, so setting its text as given would turn a soft break
-    into a paragraph (Mini Doomer's "it. \\x03(BOT) Die.") or a two-line title into one line.
+    break (\\x03) as a newline, its tabs and a name's breaks as spaces, so setting its text as given would turn a soft
+    break into a paragraph (Mini Doomer's "it. \\x03(BOT) Die."), Michael's Blessing's tab columns into spaces or a
+    two-line title into one line.
 
     Args:
         old: The layer's text
@@ -1419,10 +1426,11 @@ def keep_breaks(old: str, new: str, which: str) -> str:
         which: "name" or "ability"
 
     Returns:
-        new, each \\r (ability) the diff pairs with an old \\x03 made that break, each lone space (name) it pairs with
-        an old run of blanks made that run (review 2026-10-24: "Pepperoni\\r\\rPizza" lost a break, "The  Spire" a
-        space); only between the old text's characters: its blank first and last paragraphs are keep_ends' (review
-        2026-10-24: "Old Foxy\\r" set a typed " [fire]" on a new line, its space paired with the trailing \\r)
+        new, each \\r (ability) the diff pairs with an old \\x03 made that break and each space with an old tab that
+        tab, each lone space (name) it pairs with an old run of blanks made that run (review 2026-10-24:
+        "Pepperoni\\r\\rPizza" lost a break, "The  Spire" a space); only between the old text's characters: its blank
+        first and last paragraphs are keep_ends' (review 2026-10-24: "Old Foxy\\r" set a typed " [fire]" on a new
+        line, its space paired with the trailing \\r)
     """
     blank = " \t\r\x03"
     lo, hi = len(old) - len(old.lstrip(blank)), len(old.rstrip(blank))
@@ -1444,13 +1452,13 @@ def keep_breaks(old: str, new: str, which: str) -> str:
                 if a + i in at and (j == 0 or new[j - 1] not in blank) and (j + 1 == len(new) or new[j + 1] not in blank):
                     out[j] = at[a + i]
         return "".join(out)
-    if "\x03" not in old:
+    if "\x03" not in old and "\t" not in old:
         return new
-    seen = old.replace("\x03", "\r")
+    seen = old.replace("\x03", "\r").replace("\t", " ")
     out = list(new)
     for a, b, size in SequenceMatcher(None, seen, new, autojunk=False).get_matching_blocks():
         for i in range(size):
-            if old[a + i] == "\x03" and lo <= a + i < hi:
+            if old[a + i] in "\x03\t" and lo <= a + i < hi:
                 out[b + i] = old[a + i]
     return "".join(out)
 
@@ -2921,9 +2929,10 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         a typed icon over the other glyphs or far from its letters' height: typed_icon_fit), font stand-ins, boxes
         and saved pixels in another font (drawn_in_font); an FX layer whose style can't follow its words is deleted,
         its words printing plain (styled words given the chart's layer by new_fx). Raises Refused for what it cannot
-        edit: unsupported-card (tab stops, FX layers that are no pixel layers, two FX layers one name, status word
+        edit: unsupported-card (FX layers that are no pixel layers, two FX layers one name, status word
         layers without a chart), styled-word (no glyph cutting in this psd-tools); ImportError when the fork
-        edits TySh alone (no story_sync: Photoshop would show the story's old text) or draws no glow halos (glow_halos)
+        edits TySh alone (no story_sync: Photoshop would show the story's old text), draws no glow halos (glow_halos)
+        or lays no tab stops (tab_stops)
 
     The text is set one changed part at a time (splice_text), a deletion cutting whole lines or words (deletion_start),
     so what the edit keeps keeps its runs; an Ability's new ink past its old text on the design below it is told in
@@ -2975,9 +2984,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     text = keep_ends(old_text, keep_breaks(old_text, text, which))
     if which == "ability":                      # "[dark]" on the website, "[dark:sticker]" on the card
         text = keep_tokens(layer, text, getattr(parser, "icons", None))
-    if "\t" in old_text + text:                  # the engine lays no tab stops: a whole redraw collapses the columns
-        raise Refused("unsupported-card", f"{which}: tab stops (the text engine does not lay them out as Photoshop "
-                                          f"does); edit in Photoshop")     # (Michael's Blessing's arrows, review 2026-10-24)
+    if "\t" in text and not tab_stops():         # a stale install: the runner's, retried (card_bake)
+        raise ImportError(f"{which}: tab stops: this psd-tools is older than the pin; reinstall it")
     start, end = changed_range(old_text, text)
     end = min(end, len(text))
     start = min(start, end)                     # identical text: the engine's range sits past the end
@@ -5779,6 +5787,7 @@ __all__ = [
     'story_index',
     'story_style_drift',
     'story_sync',
+    'tab_stops',
     'template_row',
     'template_rows',
     'type_row',

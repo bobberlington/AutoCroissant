@@ -3346,24 +3346,38 @@ def test_typed_icons_are_unstretched(clone, parser, chart):
 
 
 @text_edit
-def test_tab_stops_refuse(clone, parser, chart):
-    """Review 2026-10-24: the engine lays no tab stops, so Michael's Blessing's '->' columns (tabs) collapsed on any edit
-    to its Ability (the splice falls back to a whole redraw), every gate passing. A layer with a tab, or a typed one,
-    refuses before any change."""
-    fonts = str(clone / pe.FONTS_DIR)
+@pytest.mark.skipif(not (_text_engine() and pe.tab_stops()), reason="the fork lays no tab stops")
+def test_tab_stops_bake(clone, parser, chart):
+    """Owner 2026-10-24 ("tab stops should be supported"): the fork lays tabs to Photoshop's stops. The website shows
+    Michael's Blessing's tabs as spaces: they stay tabs, and an edited tabbed line keeps its '->' column (it collapsed,
+    review 2026-10-24)."""
+    rel = "N.M.E/Michael's_Blessing.psd"
+    psd_path = _card(clone, rel)[0]
+    psd = PSDImage.open(psd_path)
+    layer = pe.ability_layer(psd)
+    old, before = layer.text, _ink(layer, psd)
+    text = pe.normalize_ability(pe.parse_card(parser, psd_path, rel)["card"]["ability"])
+    assert "\t" in old and "\t" not in text
+    pe.set_text_layer(psd, "ability", text.replace("-> (1GCD)", "-> (2GCD)", 1), str(clone / pe.FONTS_DIR), chart,
+                      parser=parser)
+    assert layer.text == old.replace("(1GCD)", "(2GCD)", 1)
+    ys, xs = np.nonzero(_ink(layer, psd) != before)
+    assert len(xs) and xs.min() > 760 and 1150 < ys.min() <= ys.max() < 1250     # the OYT row's "2" only
+
+
+@text_edit
+def test_tab_stops_refuse_on_an_older_fork(clone, parser, chart, monkeypatch):
+    """A psd-tools older than the pin lays each tab as a space: a tabbed text stops before any change, the runner's
+    fault (ImportError: retried once the fork is reinstalled)."""
+    monkeypatch.setattr(pe, "tab_stops", lambda: False)
     rel = "N.M.E/Michael's_Blessing.psd"
     psd_path = _card(clone, rel)[0]
     psd = PSDImage.open(psd_path)
     old = pe.ability_layer(psd).text
-    assert "\t" in old
     text = pe.normalize_ability(pe.parse_card(parser, psd_path, rel)["card"]["ability"]).replace("5 Points", "6 Points")
-    with pytest.raises(pe.Refused, match=r"^unsupported-card: ability: tab stops"):
-        pe.set_text_layer(psd, "ability", text, fonts, chart, parser=parser)
+    with pytest.raises(ImportError, match=r"^ability: tab stops"):
+        pe.set_text_layer(psd, "ability", text, str(clone / pe.FONTS_DIR), chart, parser=parser)
     assert pe.ability_layer(psd).text == old
-    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
-    with pytest.raises(pe.Refused, match=r"^unsupported-card: ability: tab stops"):
-        pe.set_text_layer(psd, "ability", pe.normalize_ability(pe.ability_layer(psd).text) + "\tDie.", fonts, chart,
-                          parser=parser)
 
 
 @text_edit

@@ -835,7 +835,9 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   and "would be set in the icon font" refusals of such deletions 36 -> 0). An
   Ability's new line printed past the old text onto the design below (Deep Focus' flourish, Holy Card's torn border,
   Autopsy Report off its box) is told in the notes, not refused (`ink_beyond`; 18 of 503 cards given a line).
-  A text layer with tab stops refuses `unsupported-card` (the engine lays none: Michael's Blessing's arrows collapsed).
+  A text layer with tabs bakes (owner 2026-10-24): the fork lays them to Photoshop's 36 pt default stops (`tab_stops`;
+  before, Michael's Blessing's arrows collapsed) and `keep_breaks` makes the website's spaces the layer's tabs again;
+  a fork without them is an ImportError, card_bake's `Transient`.
   A typed glow on a fork without the halos is an ImportError and card_bake's `Transient`, so no lasting `font` verdict.
   Tests: `test_a_deletion_cuts_whole_lines_or_words`, `test_deleting_a_line_keeps_the_next_lines_own_style`,
   `test_a_new_line_on_the_design_below_is_told`, `test_tab_stops_refuse`, `test_glow_edit_on_an_older_fork_is_transient`.
@@ -865,7 +867,7 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   Txt2 story is synced (`txt2_repair.sync_stories`) and the stories allowed in `gate_stories`, told. Typed badges and
   tokens are unstretched (`unstretch`: HorizontalScale so the aspect factor is 1; Monster Meat's [fire] 2.13 -> 0.81,
   the designers' 0.81). Still refused: waits, impossible cases, the bake's integrity gates, and what it can't edit yet
-  (split/several titles, non-template rows, tab stops, stars/types layouts, FX layers that are no pixel layers, two FX
+  (split/several titles, non-template rows, stars/types layouts, FX layers that are no pixel layers, two FX
   layers one name). Census (`census.py`, 7 edits x 812 cards, `set_text_layer` in memory): passes 2,401 -> 5,069 of
   5,642; 573 still refused there (all `unsupported-card` layouts), none newly refused, no errors. The 2,668 former
   refusals that pass it, run through `apply_jobs` (every gate, dry, on copies; review 2026-10-24, after the pixel digest
