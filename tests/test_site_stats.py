@@ -62,7 +62,7 @@ function render(cards, A, q = "", { banned = new Map(), distPage = {} } = {}) {
   return { top: root.innerHTML, balance: A ? bal.statsHtml(A, { cards, byId }, p) : "", ratings: ins.ratingsHtml(ctx, p), history: ins.historyHtml(ctx, p) };
 }
 const hrefs = html => [...html.matchAll(/<a class="go" href="([^"]+)"/g)].map(m => m[1].replace(/&amp;/g, "&"));
-const params = href => Object.fromEntries(new URLSearchParams(href.split("?")[1]));
+const params = href => { const p = Object.fromEntries(new URLSearchParams(href.split("?")[1])); if (p.nodup !== "1") throw new Error(`no nodup: ${href}`); delete p.nodup; return p; };
 """
 
 
@@ -254,15 +254,19 @@ out({ creep: rows(chart(r.balance, "bal-creep")), item: render(cards, A, "kind=i
 
 def test_series_rows_list_their_subseries(tmp_path):
     """Creatures by series: Mario, then its subseries (creatures) and No subseries, each a sub row in the chart and the
-    table; a series without subseries has none."""
+    table; a series without subseries has none. The Subseries tile counts the chart's; kind=item: Items by series."""
     out = node(tmp_path, """
 const cards = fixture();
 cards[0].subseries = cards[1].subseries = "Paper Mario"; cards[2].subseries = "Super Mario 64"; cards[12].subseries = "Paper Mario";
 const html = chart(render(cards, null).top, "series");
-out({ table: rows(html), subs: [...html.matchAll(/<tr class="sub">/g)].length, bars: [...html.matchAll(/class="lbl( sub)?"[^>]*>([^<]*)</g)].map(m => [m[2], !!m[1]]) });
+const tile = h => (h.match(/subseries<\\/div><div class="value">(\\d+)/i) || [])[1];
+const items = render(cards, null, "kind=item").top;
+out({ table: rows(html), subs: [...html.matchAll(/<tr class="sub">/g)].length, bars: [...html.matchAll(/class="lbl( sub)?"[^>]*>([^<]*)</g)].map(m => [m[2], !!m[1]]),
+  tiles: [tile(render(cards, null).top), tile(items)], items: rows(chart(items, "series")), title: chart(items, "series").match(/<h3>([^<]*)/)[1] });
 """)
     assert out["table"] == [["Mario", "6"], ["↳ Paper Mario", "2"], ["↳ Super Mario 64", "1"], ["↳ No subseries", "3"], ["Kirby", "6"]]
-    assert out["subs"] == 3
+    assert out["subs"] == 3 and out["tiles"] == ["2", "1"]
+    assert out["title"] == "Items by series" and out["items"] == [["Mario", "1"], ["↳ Paper Mario", "1"]]
     assert out["bars"] == [["Mario", False], ["Paper Mario", True], ["Super Mario 64", True], ["No subseries", True], ["Kirby", False]]
 
 
@@ -278,7 +282,7 @@ const r = render(cards, A), m = render(cards, A, "series=Mario"), first = (html,
 out({ kinds: first(r.top, "kinds"), mario: first(m.top, "kinds"), series: first(r.top, "series").slice(0, 3),
   shapes: first(r.top, "shapes")[0], dist: first(r.top, "dist")[0], items: first(r.top, "itemtypes"), tiers: first(r.top, "tiers")[0],
   cd: first(r.top, "cooldowns")[0], tags: first(r.top, "tags"), authors: first(r.top, "authors"),
-  cohorts: first(m.balance, "bal-cohorts").slice(0, 4), buffs: first(r.balance, "bal-buffs"), months: first(r.balance, "bal-months"),
+  cohorts: first(m.balance, "bal-cohorts").slice(0, 4), creep: first(r.balance, "bal-creep")[0], buffs: first(r.balance, "bal-buffs"), months: first(r.balance, "bal-months"),
   created: first(r.history, "hist-created").filter(p => p.q).slice(0, 3), legend: first(r.history, "hist-created").filter(p => !p.q), fresh: first(r.history, "hist-fresh")[0],
   outliers: [chart(r.top, "outliers").includes('data-card="m1"') || chart(r.top, "outliers").includes("data-card="), hrefs(chart(r.top, "outliers")).length],
   noSub: chart(r.top, "series").includes("No subseries") });
@@ -290,10 +294,11 @@ out({ kinds: first(r.top, "kinds"), mario: first(m.top, "kinds"), series: first(
     minions = "creature,creatures,minion"
     assert out["shapes"] == {"kind": minions, "shape": "hp"} and out["dist"] == {"kind": minions, "hp": "2-2"}      # HP 0 and 1: no cards, no link
     assert out["items"] == [{"kind": "item", "sub": "heal"}, {"kind": "item", "sub": "heal", "stars": "1"}, {"kind": "item", "sub": "heal"}]
-    assert out["tiers"] == {"kind": minions, "stars": "2"} and out["cd"] == {"stars": "1", "cd": "3CD+"}       # Potion's (1/3CD)
+    assert out["tiers"] == {"kind": minions, "stars": "2", "hp": "0-99"} and out["cd"] == {"stars": "1", "cd": "3CD+"}       # Potion's (1/3CD)
     assert out["tags"] == [{"tag": "1CD"}, {"tag": "2GCD"}, {"tag": "1/3CD"}] and out["authors"] == [{"author": "Ann"}, {"author": "Bob"}]
     assert out["cohorts"] == [{"bal": "top", "series": "Mario"}, {"bal": "bottom", "series": "Mario"},      # the legend: in scope
-                              {"kind": "creature", "stars": "2"}, {"kind": "creature", "stars": "3"}]        # a row: the whole cohort
+                              {"cohort": "creature|2"}, {"cohort": "creature|3"}]                            # a row: the whole cohort
+    assert out["creep"] == {"cohort": "any", "q": "created==2020"}
     assert out["buffs"] == [{"change": "buff"}, {"change": "nerf"}, {"month": "2025-03", "change": "buff"}]      # no nerf that month: no link
     assert out["months"] == [{"change": "text"}, {"change": "stats"}, {"change": "other"}, {"month": "2025-03"},
                              {"month": "2025-03", "change": "text"}, {"month": "2025-03", "change": "stats"}]
@@ -323,3 +328,20 @@ out({ shapes, buff: cards.filter(c => bal.changedAs(A, c, "2025-03", "buff")).ma
     assert out["buff"] == ["m1"] and out["april"] == 0 and out["raised"] == ["m1"]
     assert out["text"] == ["k1"] and out["any"] == ["m1", "k1"] and out["top"] == ["k2"]          # k1's tags-only change: not counted
     assert out["cd"] == ["potion"] and out["tag"] == ["potion"] and out["fresh"] == int(out["freshBar"]) == 6
+
+
+def test_links_and_counts_agree(tmp_path):
+    """inCohort finds a cohort's n (|all: every card of the kind; any: every member), not a creature without stats;
+    a type listed twice on a card counts once; a segment under 1 unit tall isn't a link (the column is)."""
+    out = node(tmp_path, """
+const cards = fixture(), A = analytics(cards);
+cards.push({ ...cards[0], id: "virus", name: "Virus", hp: null, def: null, atk: null, spd: null });
+cards[0].types = ["panda", "panda"]; cards[1].types = ["panda"];
+const types = rows(chart(render(cards, A).top, "types"));
+const svg = st.stacked(["a", "b"], [{ key: "x", label: "X", color: "red" }, { key: "y", label: "Y", color: "blue" }], (c, k) => (k === "x" ? 1000 : c === "a" ? 1 : 0),
+  { href: (c, k) => `#/cards?c=${c}${k ? `&k=${k}` : ""}` });
+out({ n: ["creature|2", "creature|all", "any"].map(k => cards.filter(c => bal.inCohort(A, c, k)).length), types,
+  links: [...svg.matchAll(/href="([^"]+)"/g)].map(m => m[1].replace(/&amp;/g, "&")) });
+""")
+    assert out["n"] == [6, 12, 12] and out["types"] == [["panda", "2"]]
+    assert out["links"] == ["#/cards?c=a", "#/cards?c=a&k=x", "#/cards?c=b", "#/cards?c=b&k=x"]

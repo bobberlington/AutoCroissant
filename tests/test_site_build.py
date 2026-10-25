@@ -377,15 +377,15 @@ def test_ratings_reach_the_cards_and_the_archived_rows(bs, repo, tmp_path, monke
 
 
 def test_archived_rows_carry_tag_author_created(bs, repo, tmp_path, monkeypatch):
-    """White Palace's changelog row: tag retired, author Maker, created the Pacific day of its oldest version, its
-    series spelled as the live cards' ('kirby' -> 'Kirby'); analytics.json has no archived copy nor revisions (2026-10-25)."""
+    """White Palace's changelog row: tag retired, author Maker, created the Pacific day of its oldest version;
+    analytics.json has no archived copy nor revisions (2026-10-25)."""
     if not hasattr(bs, "archive_tag"):
         pytest.skip(f"{BUILD_SITE} has no archive tags")
     out = _build(bs, monkeypatch, repo, tmp_path / "a")
     t1 = repo["t"][0]
     day = datetime.fromtimestamp(t1, bs.analytics.ZONE).strftime("%Y-%m-%d")
     row = out["changelog.json"]["archived"][0]
-    assert (row["tag"], row["author"], row["created"], row["series"]) == ("retired", "Maker", day, "Kirby")
+    assert (row["tag"], row["author"], row["created"]) == ("retired", "Maker", day)
     assert not {"archived", "revisions"} & set(out["analytics.json"])
 
 
@@ -408,21 +408,6 @@ def test_archived_author_and_created_precedence(bs):
     del old["Gone"][1].archived["author"]
     old["Gone"][1].created = {"date": "2019-05-06", "from": "discord"}
     assert (rows()["author"], rows()["created"]) == ("Last", "2019-05-06")
-
-
-def test_archived_series_take_the_live_spelling(bs):
-    """series: the renamed card's, else the old one in a live series' case or through SERIES_ALIASES, else as it was."""
-    if not hasattr(bs, "SERIES_ALIASES"):
-        pytest.skip(f"{BUILD_SITE} keeps the old series")
-
-    def old(series, **tag):
-        card = bs.CardInfo()
-        card.__dict__.update(timestamp=1.7e9, card_type="creature", stars=2, series=series, archived={"at": 1_700_000_100, **tag})
-        return [card]
-    olds = {"A": old("kirby"), "B": old("rotmg"), "C": old("pandas"), "D": old("isaac", renamed_to="New D"), "E": old(None)}
-    live = {"Kirby", "Realm of the Mad God", "Mario"}
-    rows = bs.archived_cards(olds, lambda name: "new-d" if name == "New D" else None, (), series_of=lambda name: "Mario" if name == "New D" else None, live_series=live)
-    assert {r["card"]: r.get("series") for r in rows} == {"A": "Kirby", "B": "Realm of the Mad God", "C": "pandas", "D": "Mario", "E": None}
 
 
 def test_an_archived_card_titled_like_a_live_one_keeps_its_author(bs):

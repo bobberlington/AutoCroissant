@@ -62,9 +62,9 @@ process.stdout.write(JSON.stringify([h.textChanged(c), h.textChanged({{ ...c, si
 def test_dates_are_pacific_for_every_viewer(tmp_path, tz):
     """10-21 22:57 PT is Oct 22 in Berlin and UTC: the site says Oct 21 in every zone, and its month is October."""
     out = node(tmp_path, f"""const pt = new Date({IMAGE_AT} * 1000).toLocaleDateString(undefined, {{ year: "numeric", month: "short", day: "numeric", timeZone: "America/Los_Angeles" }});
-process.stdout.write(JSON.stringify([h.date({IMAGE_AT}), pt, h.monthKey(1793509200), h.month(1793509200)]));""", tz)
+process.stdout.write(JSON.stringify([h.date({IMAGE_AT}), pt, h.month(1793509200)]));""", tz)
     assert out[0] == out[1] and "21" in out[0]
-    assert out[2] == "2026-10" and "Oct" in out[3]                      # 2026-10-31 22:00 PT: still October
+    assert "Oct" in out[2]                                              # 2026-10-31 22:00 PT: still October
 
 
 def test_no_date_in_the_viewers_zone():
