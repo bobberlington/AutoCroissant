@@ -1,3 +1,4 @@
+from collections import Counter
 from copy import copy
 from dataclasses import dataclass
 from datetime import date, datetime, time as dt_time, timedelta
@@ -10,6 +11,7 @@ from requests import get
 from requests.exceptions import RequestException
 from typing import Optional
 from warnings import filterwarnings
+from numpy import array, flatnonzero, int32, maximum, minimum, where, zeros
 from pandas import DataFrame, Index, Series, concat, to_numeric
 from re import compile, escape, IGNORECASE
 from urllib.parse import quote
@@ -53,6 +55,45 @@ class QueryError(ValueError):
     """A /query_ability query that can't run; the message says why (an unknown field, a bad value)."""
 
 
+class _NameIndex:
+    """closest()'s view of one key list: stems, base names, and letter counts bounding every name's quick_ratio."""
+
+    def __init__(self, keys: list):
+        self.keys = list(keys)                              # a copy: the caller may change its list
+        self.stems: dict = {}
+        for k in keys:
+            self.stems.setdefault(k[:len(k) - 4] if k.endswith(".png") else k, k)
+        self.names = list(self.stems)
+        self.bases = [(s[s.rfind("/") + 1:], s) for s in self.names]
+        self.column = {c: i for i, c in enumerate(sorted({c for s in self.names for c in s}))}
+        self.counts = zeros((len(self.names), len(self.column)), dtype=int32)
+        for row, s in enumerate(self.names):
+            for c, n in Counter(s).items():
+                self.counts[row, self.column[c]] = n
+        self.lengths = array([len(s) for s in self.names], dtype=int32)
+
+    def closest(self, key: str, ratio: float) -> Optional[str]:
+        """CardRepository.closest over these keys."""
+        stem = key[:len(key) - 4] if key.endswith(".png") else key
+        if len(stem) >= 3:
+            hits = [(not base.startswith(stem), len(base), "/" in s, s) for base, s in self.bases
+                    if base.startswith(stem) or "_" + stem in base]
+            if hits:
+                return self.stems[min(hits)[3]]
+        wanted = zeros(len(self.column), dtype=int32)
+        for c in stem:
+            col = self.column.get(c)
+            if col is not None:                             # a letter no name has matches nothing
+                wanted[col] += 1
+        total = self.lengths + len(stem)
+        bound = where(total > 0, 2.0 * minimum(self.counts, wanted).sum(axis=1) / maximum(total, 1), 1.0)
+        names = self.names                                  # quick_ratio: get_close_matches drops the rest anyway
+        best = get_close_matches(stem, [names[i] for i in flatnonzero(bound >= ratio)], n=1, cutoff=ratio)
+        if best and SequenceMatcher(None, stem, best[0]).ratio() > ratio:
+            return self.stems[best[0]]
+        return None
+
+
 @dataclass
 class CardRepository:
     """Manages card repository state and operations."""
@@ -78,6 +119,7 @@ class CardRepository:
         self.rulebook_dff: DataFrame = DataFrame()
         self._lowered: tuple = (None, [])                # (cards_dff, [(label, length, matcher)]) for the fuzzy step
         self._fuzzy_lock = Lock()                        # the matchers are shared: one search at a time
+        self._indexes: tuple = ()                        # closest()'s _NameIndex for the last two key lists
         self._hay: tuple = (None, "", None)             # (cards_dff, Card Edits.json sha, haystack) for text terms
 
     @property
@@ -593,22 +635,12 @@ class CardRepository:
         shortest, a plain key before its folder-prefixed ones), else the most similar name above match_ratio, compared
         without ".png" (it raised every score).
         """
-        stems = {}
-        for k in keys:
-            stems.setdefault(k[:len(k) - 4] if k.endswith(".png") else k, k)
-        stem = key[:len(key) - 4] if key.endswith(".png") else key
-        if len(stem) >= 3:
-            hits = []
-            for s in stems:
-                base = s[s.rfind("/") + 1:]
-                if base.startswith(stem) or "_" + stem in base:
-                    hits.append((not base.startswith(stem), len(base), "/" in s, s))
-            if hits:
-                return stems[min(hits)[3]]
-        best = get_close_matches(stem, list(stems), n=1, cutoff=self.match_ratio)
-        if best and SequenceMatcher(None, stem, best[0]).ratio() > self.match_ratio:
-            return stems[best[0]]
-        return None
+        for index in self._indexes:                             # one per key list, kept while it is unchanged
+            if index.keys == keys:
+                return index.closest(key, self.match_ratio)
+        index = _NameIndex(keys)
+        self._indexes = (index,) + self._indexes[:1]
+        return index.closest(key, self.match_ratio)
 
     def get_card_url(self, filename: str) -> Optional[str]:
         """
