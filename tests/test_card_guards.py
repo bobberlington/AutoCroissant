@@ -1420,6 +1420,7 @@ def _workflow(clone) -> Path:
     return path
 
 
+SYNC = "workflow run card-sync.yml -f dry_run=false"   # Follow up's card sync start (it bakes, builds and saves)
 ENVIRONMENT = "card-guards-quiet"               # the post job's environment: its 30-minute wait timer is the quiet window
 
 
@@ -1942,7 +1943,7 @@ def test_workflow_tell_marks_a_comment_of_its_own(clone, tmp_path):
 
 
 def test_workflow_tells_a_site_build_that_did_not_start(clone, tmp_path):
-    """Follow up starts the site build and the TTS save after a bot commit; when one does not start, the comment says so,
+    """Follow up starts the site build and the card sync after a bot commit; when one does not start, the comment says so,
     the run fails, and the one post gets a line for it (the failure alert stays quiet once the post went out). A post
     with no room for the line goes out as settled."""
     yaml = pytest.importorskip("yaml")
@@ -1957,8 +1958,8 @@ def test_workflow_tells_a_site_build_that_did_not_start(clone, tmp_path):
     env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "OUT": str(out), "TOLD": told, "MODE": "on",
            "GITHUB_REPOSITORY": "o/cards", "WEBHOOK": "https://discord.invalid/hook", "FAKE_STATE": str(state),
            "FAKE_POSTS": str(posts), "SHA": "c" * 40, "COMMENT": "101", "TOLD_BEFORE": "", "LAND_RAN": "true"}
-    line = "The bot's commit did not start the site build and the TTS save"
-    for fail, refreshed in (("", True), ("workflow run tts-save.yml", False), ("workflow run site.yml", False)):
+    line = "The bot's commit did not start the site build and the card sync"
+    for fail, refreshed in (("", True), ("workflow run card-sync.yml", False), ("workflow run site.yml", False)):
         (out / "report-landed.md").write_text("## Card guards\n\nLanded.\n")
         state.write_text(json.dumps({"comments": {"101": "## Card guards\n\nAt check time.\n"}, "next": 101, "log": []}))
         follow, outputs = _shell(steps["Follow up"], {**env, "FAKE_FAIL": fail, "GITHUB_OUTPUT": str(out / "follow.output")})
@@ -1967,7 +1968,7 @@ def test_workflow_tells_a_site_build_that_did_not_start(clone, tmp_path):
         assert ("did not start after this commit" in db["comments"]["101"]) is not refreshed
         assert db["comments"]["101"].startswith("## Card guards\n\nLanded.")
         assert [c for c in db["log"] if c.startswith("workflow run")] == (
-            ["workflow run site.yml", "workflow run tts-save.yml"] if fail != "workflow run site.yml" else ["workflow run site.yml"])
+            ["workflow run site.yml", SYNC] if fail != "workflow run site.yml" else ["workflow run site.yml"])
     for content, extended in (("settled", True), ("x" * 1950, False)):
         posts.write_text("")
         (out / "discord-final.json").write_text(json.dumps({"content": content, "flags": 4}))
@@ -1988,7 +1989,7 @@ exit "${FAKE_LAND_STATUS:-0}"
 def test_workflow_land_and_a_rerun_after_a_landing(clone, tmp_path):
     """The post job (its Land) runs only with something to tell in report mode, as its writes are told, never made; on
     mode for a write too: the check job's plan says land=true. A re-run or a dispatch passes --rerun (an unread branch tells no write as not made), and the
-    step hands on the sha and the count already on the branch. Follow up starts the site build and the TTS save after a
+    step hands on the sha and the count already on the branch. Follow up starts the site build and the card sync after a
     commit, and again on a re-run that finds the writes landed (the first attempt's may not have started), not in report
     mode and not on a first attempt."""
     yaml = pytest.importorskip("yaml")
@@ -2034,7 +2035,7 @@ def test_workflow_land_and_a_rerun_after_a_landing(clone, tmp_path):
         done, outputs = _shell(steps["Follow up"], {**env, "MODE": mode, "GITHUB_RUN_ATTEMPT": attempt, "SHA": sha,
                                                     "ALREADY": already, "COMMENT": "", "TOLD_BEFORE": ""})
         log = [c for c in json.loads(state.read_text())["log"] if c.startswith("workflow run")]
-        assert done.returncode == 0 and log == (["workflow run site.yml", "workflow run tts-save.yml"] if started else []), \
+        assert done.returncode == 0 and log == (["workflow run site.yml", SYNC] if started else []), \
             (mode, attempt, sha, already, log)
 
 

@@ -320,6 +320,7 @@ def test_cli_reports_an_unreadable_psd(tmp_path, capsys):
 # ========================
 # /push carries the file
 # ========================
+@pytest.mark.usefixtures("pickle_path")
 def test_push_commits_the_details_file_with_the_pickles(monkeypatch):
     from git import GitCommandError
     added = []

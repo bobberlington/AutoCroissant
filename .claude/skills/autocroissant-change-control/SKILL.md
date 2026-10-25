@@ -222,14 +222,14 @@ Worked example to imitate: the `/update_stats` block at main.py:405-424 (2026-10
    the 11 modules listed in `INCLUDE_FILES` (setup.py:21-33); new files are uncompiled
    by default (`type_emojis`, `repo_history`, `github_api`, `tts_save`, `git_commit`, `font_check`, `card_check`, `psd_details`, the edit pipeline's `psd_edit`, `psd_regions`, `card_bake` and `card_runner`, the card data build's `card_data`, `card_history`, `card_db` and `changelog`, the cutover's `card_sync`, the Discord writers' `discord_edits`, the Discord archive's `discord_archive` and `discord_match`, the push guards' `card_guards`, `png_export`, `card_standards` and `psd_diff`, and `txt2_repair` (2026-10-22/23: the jetson runs the same pure Python as the Action; tests/test_card_data.py and test_card_guards.py check they stay out) are deliberately left out; the four
    modules split out of psd_analyzer on 2026-10-20 were added so the moved code keeps its compiled semantics). TTSCardMaker's Actions
-   sparse-check out bot modules by path (card-edits.yml, tts-save.yml, font-check.yml, card-check.yml: its list is
+   sparse-check out bot modules by path (font-check.yml, card-check.yml: its list is
    `card_check.SPARSE_FILES`; card-guards.yml: its list is `card_guards.SPARSE_FILES`, 17 files including `psd_edit`,
-   `card_bake`, `txt2_repair`, `png_export` and `psd_diff`; card-sync.yml, on TTSCardMaker main since 2026-10-22 (dispatch only until
-   its cutover), checks out `card_data.SPARSE_FILES`, whose test runs `--help` on the build, the bake and the save with
+   `card_bake`, `txt2_repair`, `png_export` and `psd_diff`; card-sync.yml, the live bake, build and save since the cutover
+   2026-10-24, checks out `card_data.SPARSE_FILES`, whose test runs `--help` on the build, the bake and the save with
    exactly that list), so renaming or moving one of those files, or adding an import to one, breaks an Action; five of the lists
    have a test that copies exactly it and runs `--help` (tests/test_card_bake.py, test_font_check.py, test_card_check.py,
    test_card_guards.py, which also checks card-guards.yml's list is `card_guards.SPARSE_FILES`, and test_card_data.py;
-   tts-save.yml's has none, tests/test_tts_save.py checks only the env overrides). If you add yours to INCLUDE_FILES, both bounds checks and wraparound
+   card-edits.yml and tts-save.yml, deleted at the cutover, had lists of their own). If you add yours to INCLUDE_FILES, both bounds checks and wraparound
    are on since 2026-10-23 (setup.py:38-39), but still write `x[len(x)-1]` there (rule 1); the Cython 3.3 rules still
    apply: it rejects re-annotating a variable that is already declared (declare it once; the management.py incident,
    autocroissant-failure-archaeology Entry 10.5), and type hints coerce (see "looks safe but isn't"). Compile-check rules: autocroissant-build-and-env §5. Do not add modules that use `execv`/dynamic

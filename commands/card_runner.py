@@ -1,7 +1,7 @@
 """
 The edit pipeline inside the bot (docs/EDIT_PIPELINE_DESIGN.md section 8, "Jetson"), the fallback by hand: /bake_cards
 runs card_bake.run under one Lock shared with update_stats (queued commands run concurrently) and posts its report where
-the command ran, a reminder's FakeInteraction included. The live runner is TTSCardMaker's card-edits.yml Action; nothing
+the command ran, a reminder's FakeInteraction included. The live runner is TTSCardMaker's card-sync.yml Action; nothing
 here queues a bake on its own. card_bake and the fork's psd-tools are imported inside the bake, so the bot starts without
 them and refuses with one line.
 """

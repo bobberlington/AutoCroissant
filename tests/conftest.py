@@ -243,6 +243,13 @@ def offline(monkeypatch, tmp_path):
         monkeypatch.setattr(sys.modules["commands.card_data"], "_CLEAN", {})     # /update_stats' no-op cleanup memo
 
 
+@pytest.fixture
+def pickle_path(monkeypatch):
+    """The bot before the cutover (CARD_SYNC off): tests of the pickle path."""
+    import global_config
+    monkeypatch.setattr(global_config, "CARD_SYNC", False)
+
+
 @pytest.fixture(scope="session")
 def real_stats():
     """The live stats.pkl, loaded read-only through StatsDatabase (never saved)."""

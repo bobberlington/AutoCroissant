@@ -439,7 +439,7 @@ async def slash_frankenstein(
 #   STAT COMMANDS  #
 ####################
 update_stats = to_thread(update_stats)
-@tree.command(name="update_stats", description="Loads the card data the Card sync Action built (it runs every 30 minutes)." if global_config.CARD_SYNC else
+@tree.command(name="update_stats", description="Loads the card data the Card sync Action built; starts a card sync when cards changed." if global_config.CARD_SYNC else
               "Updates the card database from GitHub (re-parses changed PSDs).")
 @app_commands.describe(
     output_problematic_cards='Should we output cards with consistency errors? Default = True.',

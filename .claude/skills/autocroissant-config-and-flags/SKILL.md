@@ -193,7 +193,7 @@ Actions can run `python -m commands.tts_save` and the build on their checkout wi
 | `FONT_DIRS_ENV` (2026-10-21) | `"PSD_TOOLS_FONT_DIRS"` | the name of the environment variable whose first entry overrides the fonts dir (card_bake, font_check) |
 | `CREATED_PATHS` / `CREATED_PATH` (2026-10-22, 6fe7a90) | `("site/Card Creation Dates.json",)` | when each card was made (written by `python -m commands.discord_edits created`); read on every /update_stats (`CardDates`) |
 | `RATINGS_PATHS` / `RATINGS_PATH` (2026-10-24) | `("site/Card Ratings.json",)` | dated 1-10 card ratings (`python -m commands.tts_ratings`; the website adds entries; `CardRatings`); never read by the bot, the card sync or the checks |
-| `CARD_SYNC` (2026-10-22) | `False` | the cutover switch (docs/Campaigns/DATA_BUILD_ACTION.md step 8): True takes the card data from the Card sync Action's data branch (commands/card_sync.py); flipped in one commit at the cutover |
+| `CARD_SYNC` (2026-10-22) | `True` (since the cutover commit, 2026-10-24) | the cutover switch (docs/Campaigns/DATA_BUILD_ACTION.md step 8): True takes the card data from the Card sync Action's data branch (commands/card_sync.py); False is the rollback (the pickle path; tests of it use the `pickle_path` fixture) |
 | `DATA_BRANCH`, `CARD_DATA_DIR` (2026-10-22) | `"data"`, `"card_data"` | the card repo's branch holding `db/` (written by Card sync only) and the bot's gitignored copy of it |
 | `EMOJI_JSON` (2026-10-20) | `"type_emojis.json"` | bot application id -> {type emoji name -> blob sha of the icon it was made from} (emojis belong to the bot identity), written by commands/type_emojis.py; gitignored, per machine. Missing, unreadable or no entry for this bot = its existing emojis count as current (no re-upload) |
 | `HISTORY_CLONE` (2026-10-20) | `"~/Documents/TTSCardMaker-history.git"`, env `AUTOCROISSANT_HISTORY_CLONE` | bare blobless clone of the card repo, fetched on startup and on every /update_stats; cloned on first use (the Action sets `~/TTSCardMaker-history.git` on its runner). No content diffs or renames run there (they would download blobs): repo_history runs rev-list/ls-tree/merge-base/fetch, and since 2026-10-22/23 `card_history.GitIndex.from_git` runs `git log --raw --no-abbrev --no-renames` with `GIT_NO_LAZY_FETCH=1` (the archive dates, the history recovery); `mailmap_args` fetches head's `.mailmap` blob, the one lazy fetch. It must be a full (non-shallow) clone, else the index raises ValueError and the dates wait for the next run |
@@ -203,7 +203,7 @@ Actions can run `python -m commands.tts_save` and the build on their checkout wi
 | `TYPES_DIR`, `STARS_DIR`, `RULEBOOK_DIR` (2026-10-20) | `"Types"`, `"Types/Stars"`, `"Rulebook"` | card-repo folders: type icons, star icons, and the rule pages (a substring test on card paths); used by psd_parser, card_data, query_card, type_emojis |
 | `ICON_MANIFEST_PATH`, `AUTHORS_PATHS` / `AUTHORS_PATH`, `EDITS_PATHS` / `EDITS_PATH`, `RULES_PATH` (2026-10-20) | `"MDW/Fonts/stoogedings-src/stoogedings.json"`, `("site/Card Authors.txt",)`, `("site/Card Edits.json",)`, `"TTS/decks.json"` | the hand-kept files in the card repo (font manifest, card authors, website edits, TTS deck rules). The website files moved from `MDW/` to `site/` on 2026-10-20 (TTSCardMaker 13ac680); every reader (card_data, query_card, tts_save) takes the first path present, so the tuples stay; `AUTHORS_PATH` / `EDITS_PATH` are the first element, for messages and the facade. The `MDW/` fallback was dropped the same day. Moved here from psd_analyzer and tts_save (psd_analyzer re-exports them) |
 | `MAILMAP_PATH` (2026-10-23) | `".mailmap"` | the card repo's git mailmap (one person's git names as one): `card_history.mailmap_args` passes head's blob to `git log` for `%aN`; the API path reads it from the tree once a run (`card_edits.Mailmap`) |
-| `TTS_SAVE_PATH` (2026-10-20) | `"TTS/Impossibility Simulator.json"` | the Tabletop Simulator save in the card repo that `/update_tts_save` updates and commits (the automatic path is TTSCardMaker's tts-save.yml Action, which passes the path on the command line); players download it from its raw link (commands/tts_save.py) |
+| `TTS_SAVE_PATH` (2026-10-20) | `"TTS/Impossibility Simulator.json"` | the Tabletop Simulator save in the card repo that `/update_tts_save` updates and commits (the automatic path is TTSCardMaker's card-sync.yml TTS save step since the cutover 2026-10-24, tts-save.yml before; it passes the path on the command line); players download it from its raw link (commands/tts_save.py) |
 | `TIMEZONE` | `ZoneInfo("America/Los_Angeles")` | reminder times are PST/PDT — `/set_reminder when:` is interpreted in this zone (ops details: autocroissant-run-and-operate) |
 
 Pickle schemas and commit discipline are owned by **impossibility-cards-reference** and
@@ -365,7 +365,7 @@ The commit path (token, `COMMIT_TRIES`, `API_TIMEOUT`, the SSH fallback and its 
 | `token()` | `github_api.GIT_TOKEN`, else env `GITHUB_TOKEN` | the Actions have no config.py; `github_api.token_from_env()` patches the fetch headers the same way |
 | `commit_files(..., ssh_on_limit=False)` | | a rate-limited 403 raises `Transient` (card_bake: the Action reports it) unless the caller asks for SSH for the run (tts_save: the bot's agent pushes; `limited`) |
 
-Removed 2026-10-20 with the post-/update_stats run (TTSCardMaker's tts-save.yml Action owns the automatic path):
+Removed 2026-10-20 with the post-/update_stats run (TTSCardMaker's Action owns the automatic path: tts-save.yml, card-sync.yml since 2026-10-24):
 `IMAGES`, `_retry`, `_watched`, `save_affected`, `update_after_stats`.
 
 ### commands/font_check.py (Configuration block, added 2026-10-21; not compiled)
@@ -458,11 +458,13 @@ autocroissant-run-and-operate §9.
 |---|---|---|
 | `ACTIONS_TOKEN` | getattr, default `""` (card_sync.py:34) | the config.py field above |
 | `WORKFLOW` | `"card-sync.yml"` | the card repo's Card sync Action that `force_update` / `cards:` dispatch |
-| `SCHEDULE` | `"every 30 minutes, at :04 and :34"` | its cron, as the replies word it (card-sync.yml) |
+| `SCHEDULE` | `"every 30 minutes, at :00 and :30"` | its cron, as the replies word it (card-sync.yml) |
 | `POLL_SECONDS` | `15` | between two looks at a dispatched run (the state is edited into the reply) |
 | `WAIT_MINUTES` | `30` | a dispatched run is followed this long |
 | `FIND_SECONDS` | `60` | a dispatched run must show up in the run list within this |
 | `EDIT_MINUTES` | `14` | progress edits stop here (Discord's interaction lasts 15 minutes) |
+| `GRACE_SECONDS` | `30 * 60` | /update_stats starts its own run (`start_run`) only once the card repo's last push (not Card sync's) is this old |
+| `AUTO_INPUTS` | `{"dry_run": "false", "bake": "pending"}` | that run's inputs: the schedule's (bakes only edits without a final verdict) |
 
 ### the push guards: commands/card_guards.py, card_standards.py, png_export.py (2026-10-22/23; not compiled; card-guards.yml only)
 
@@ -504,7 +506,7 @@ autocroissant-run-and-operate §9.
 
 The workflow needs **no secret and no variable**: `GITHUB_TOKEN` reads the card's blobs by sha in the preview job
 (`permissions: contents: read`, the workflow's) and pushes `previews` in the publish job (`contents: write`, that job
-only); its pip install is card-edits.yml's, fork pin and all. Nothing in config.py.
+only); its pip install is the other card workflows' (card-sync.yml's, card-edits.yml's until 2026-10-24), fork pin and all. Nothing in config.py.
 
 ### psd_edit parity and card_bake limits (the bake and the guards)
 
@@ -539,12 +541,12 @@ The fork's tag is in one place: AutoCroissant `requirements-cards.txt`, the card
 (`psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@<tag>`: read the tag there, no doc copies it;
 fonttools, requests, `pyoxipng==9.1.1` on Linux x86_64 at any CPython 3.9+, built from its sdist on 3.14, and elsewhere
 only where it has a wheel, CPython 3.9-3.13: skipped on the Mac's and the jetson's 3.14). `requirements.txt` (the bot)
-starts with `-r requirements-cards.txt`, `requirements-dev.txt` with `-r requirements.txt`. The six card workflows on
-Python 3.14, card-edits.yml, card-guards.yml (its check and post jobs), card-sync.yml (one venv for every stage),
+starts with `-r requirements-cards.txt`, `requirements-dev.txt` with `-r requirements.txt`. The five card workflows on
+Python 3.14 (six until card-edits.yml was deleted at the cutover, 2026-10-24), card-guards.yml (its check and post jobs), card-sync.yml (one venv for every stage),
 card-preview.yml (without pyoxipng: its PNG is never published), card-check.yml and font-check.yml (stock psd-tools until
 2026-10-24), check the file out of AutoCroissant and install it offline from wheels in the Actions cache (path
 `~/.cache/card-wheels`, key `cards-<hashFiles('bot/requirements-cards.txt')>-<OS>-<arch>-py<Python>`: one entry for all
-six; until 2026-10-24 card-edits, card-guards and card-preview on 3.12 and card-sync's own `-py<3.14.x>-py<3.12.x>`). The
+of them; until 2026-10-24 card-edits, card-guards and card-preview on 3.12 and card-sync's own `-py<3.14.x>-py<3.12.x>`). The
 first run after a change to the file or a new runner Python builds them (`pip wheel -r`: the fork's C extensions,
 pyoxipng's Rust) and saves them; later runs skip the git clone and the builds (a cold miss on the Mac: 16.4 s for the
 wheels, 19.5 s for pyoxipng's sdist, 10.7 s to install; a runner is slower, PUSH_GUARDS.md section 20). The

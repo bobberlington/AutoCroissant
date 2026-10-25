@@ -905,6 +905,7 @@ def test_card_data_imports_the_backfill_lazily():
 # ========================
 # /update_stats end to end (the fake GitHub)
 # ========================
+@pytest.mark.usefixtures("pickle_path")
 def test_update_stats_merges_once(github, psds, tmp_path, monkeypatch, capsys):
     import test_update_stats as tus
     tus._run()

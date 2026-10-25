@@ -217,6 +217,7 @@ def clone_authors(clone):
 # ========================
 # /update_metadata
 # ========================
+@pytest.mark.usefixtures("pickle_path")
 def test_update_metadata_makes_one_commit(repo):
     start = repo.github.head
     de.manual_metadata_entry(repo.who, "Mini Doomer", del_entry=True, author="Zomoroko", ability="Explodes.  [fire] then.",

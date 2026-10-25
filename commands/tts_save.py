@@ -1,7 +1,7 @@
 """
 Updater for the Tabletop Simulator save of the card table (TTS/Impossibility Simulator.json in the card repo).
 
-    python -m commands.tts_save <save.json> [--names db/stats.json]   (from the bot's root; tts-save.yml, card-sync.yml)
+    python -m commands.tts_save <save.json> [--names db/stats.json]   (from the bot's root; card-sync.yml)
     update_save(path) -> report text
     update_repo_save() -> (report text, commit sha or None)    (the bot: the save on the card repo's main)
 
@@ -917,7 +917,7 @@ def _update(save_path: str, rules: Optional[tuple] = None, extras: bool = True, 
     if report.changed and extras:
         with open(f"{stem}.report.md", "w", encoding="utf-8") as f:
             f.write(text)
-        with open(f"{stem}.message.txt", "w", encoding="utf-8") as f:     # tts-save.yml's commit subject
+        with open(f"{stem}.message.txt", "w", encoding="utf-8") as f:     # card-sync.yml's commit body
             f.write(_commit_message(report) + "\n")
     return text, report
 
@@ -1080,7 +1080,7 @@ def update_tts_save(interaction) -> None:
 
 
 def main(args: Optional[list] = None) -> int:
-    """The command line (tts-save.yml, card-sync.yml): update_save, the report on stdout."""
+    """The command line (card-sync.yml): update_save, the report on stdout."""
     parser = ArgumentParser(prog="python -m commands.tts_save", description="Update the TTS save of the card table in place.")
     parser.add_argument("save", help="the save's JSON file")
     parser.add_argument("--names", default="", help="a card data build's stats.json for the Nicknames (default: the "

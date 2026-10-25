@@ -4,8 +4,7 @@ against a fake GitHub (tree, blobs, refs, commits: the test_update_stats pattern
 sections 5 and 11: recent, duplicate, blob, classify, edit-changed, head-moved (409 and 422), one commit per run with a
 moved card left out, the schedule gate (pending), the SSH fallback for a token that can't write, --dry-run, --card. A
 real bake (a stat, and an ability with an FX layer) needs the fork's renderer; those tests skip under stock psd-tools.
-The Action-shaped import check copies exactly the files card-edits.yml checks out of this repo and runs --help there
-without config.py, with an allowlist of third-party imports. Fork as conftest.find_fork finds it; a Python without
+card-sync.yml's Pending edits line runs as written (card_bake.due). Fork as conftest.find_fork finds it; a Python without
 requests skips this file:
     AC_PSD_TOOLS_SRC=<fork>/src ~/Documents/Tools/psd-tools/.venv/bin/python -m pytest -q tests/test_psd_edit.py tests/test_card_bake.py
 """
@@ -44,7 +43,7 @@ OFF_CANVAS_MAGE = "45cf8746^"   # Green Mage before its bars moved onto the card
 PURE_VESSEL = "Creatures/Hollow Knight/5 Stars/Pure_Vessel.psd"     # its stat masks reach past the canvas
 LIVE_EDITS = CLONE / "site" / "Card Edits.json"
 EDIT_JS = CLONE / "site" / "assets" / "edit.js"
-WORKFLOW = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "card-edits.yml"
+WORKFLOW = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "card-sync.yml"
 AT = "2026-10-20T18:41:54Z"
 ABOUT = "Card data fixes from the website's Edit button."
 TOKEN = "test-token"
@@ -333,7 +332,7 @@ def test_run_drops_redundant_and_writes_verdicts(github):
     assert raw == cb.dump_edits(json.loads(raw))                                                 # canonical layout
     assert github.files_at(github.head)[DOOMER] == github.files_at(before)[DOOMER]              # no pixels touched
     assert "## Redundant (dropped from the file) (1)" in text and "## Refused (4)" in text
-    assert text.count(f"committed `{commits[0][:8]}`") == 5                                    # card-edits.yml greps "committed `"
+    assert text.count(f"committed `{commits[0][:8]}`") == 5                                    # the report line per committed card
     assert "**Nothing baked.**" in text and f"One commit: `{commits[0][:8]}` Card edits: 1 redundant, 4 refused." in text
     blobs = [route for method, route in github.calls if route.startswith("git/blobs/")]
     assert len(blobs) == 8      # the edits file + manifest, PSD + PNG of Mini Doomer and The Freezer, A Snack's PSD
@@ -498,7 +497,9 @@ def test_rerun_on_its_own_commit_retries_a_try_again_card(github):
     github.recent.add(DOOMER)
     text, commits = cb.run()
     assert len(commits) == 1 and "recent: PSD pushed in the last 30 min" in text and cb.pending() == ["Mini Doomer"]
+    assert cb.due() == []                                                   # Card sync's gate waits out the grace
     github.recent.clear()
+    assert cb.due() == ["Mini Doomer"]
     text, commits = cb.run()
     assert len(commits) == 1 and github.commits[commits[0]]["message"] == "Card edits: 1 redundant"
     assert cb.pending() == []
@@ -627,7 +628,7 @@ def test_commit_failure_is_reported_and_writes_nothing(github, tmp_path):
 
 
 def test_main_exits_1_when_the_commit_fails_or_a_card_errors(github, monkeypatch):
-    """A failure needs a person: main exits 1 (card-edits.yml then tells Discord); refusals alone exit 0."""
+    """A failure needs a person: main exits 1 (card-sync.yml then tells Discord); refusals alone exit 0."""
     err = StringIO()
     monkeypatch.setattr(cb, "stderr", err)
     github.conflicts = 3
@@ -1377,20 +1378,6 @@ def test_local_bake_lands_psd_png_and_file_in_b(github, local):
 # ========================
 # The Action's sparse copy
 # ========================
-def _bot_files_in_workflow() -> list:
-    """The AutoCroissant paths card-edits.yml checks out (its second checkout step)."""
-    if not WORKFLOW.exists():
-        pytest.skip(f"no {WORKFLOW}")
-    text = WORKFLOW.read_text(encoding="utf-8")
-    block = text.split("repository: bobberlington/AutoCroissant", 1)[1].split("sparse-checkout: |", 1)[1]
-    paths = []
-    for line in block.splitlines()[1:]:
-        if not line.startswith(" " * 12) or not line.strip():
-            break
-        paths.append(line.strip().lstrip("/"))
-    return paths
-
-
 CARD_PACKAGES = {"psd-tools": {"psd_tools", "attr", "attrs", "numpy", "PIL", "scipy", "aggdraw", "uharfbuzz", "freetype"},
                  "fonttools": {"fontTools"}, "requests": {"requests", "certifi", "charset_normalizer", "idna", "urllib3"},
                  "pyoxipng": {"oxipng"}}       # requirements-cards.txt's packages: what they import (dependencies included)
@@ -1407,34 +1394,12 @@ def third_party_imports(code: str, cwd) -> set:
     return set(ast.literal_eval(done.stdout.strip()))
 
 
-def test_action_shaped_copy_imports_and_prints_help(tmp_path):
-    """Exactly the yaml's files, no config.py: `python -m commands.card_bake --help` works (the import closure is complete)."""
-    paths = _bot_files_in_workflow()
-    assert "commands/card_bake.py" in paths and "commands/git_commit.py" in paths and "requirements-cards.txt" in paths
-    assert "commands/psd_analyzer.py" not in paths and "config.py" not in paths
-    bot = tmp_path / "bot"
-    for rel in paths:
-        assert (REPO / rel).is_file(), f"{rel} is checked out by the Action but missing here"
-        (bot / rel).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(REPO / rel, bot / rel)
-    done = run_process([executable, "-m", "commands.card_bake", "--help"], cwd=bot, capture_output=True, text=True, timeout=120)
-    assert done.returncode == 0, done.stderr
-    assert done.stdout.startswith("usage: python -m commands.card_bake") and "--dry-run" in done.stdout and "--card" in done.stdout
-    assert set(re.findall(r"--[a-z-]+", done.stdout)) == {"--repo", "--head", "--dry-run", "--card", "--pending", "--local",
-                                                          "--help"}   # no other flags
-    code = "import sys, commands.card_bake; print(sorted(m for m in ('config', 'discord', 'commands.psd_analyzer') if m in sys.modules))"
-    done = run_process([executable, "-c", code], cwd=bot, capture_output=True, text=True, timeout=120)
-    assert done.returncode == 0 and done.stdout.strip() == "[]", done.stderr      # the copy has no config.py, imports no discord
-    extra = third_party_imports("import commands.card_bake", bot) - ALLOWED_IMPORTS
-    assert not extra, f"card-edits.yml installs none of these: {sorted(extra)}"    # a stray pandas/discord fails here, not in the Action
-
-
-FORK_WORKFLOWS = ("card-edits.yml", "card-guards.yml", "card-sync.yml", "card-preview.yml", "card-check.yml",
+FORK_WORKFLOWS = ("card-guards.yml", "card-sync.yml", "card-preview.yml", "card-check.yml",
                   "font-check.yml")                                    # install requirements-cards.txt
 FORK_PYTHON = "3.14"                                                    # every Action (owner, 2026-10-24)
 FORK_WHEELS = "~/.cache/card-wheels"
 FORK_KEY = ("cards-${{ hashFiles('bot/requirements-cards.txt') }}-${{ runner.os }}-${{ runner.arch }}"
-            "-py${{ steps.python.outputs.python-version }}")             # one entry for the six
+            "-py${{ steps.python.outputs.python-version }}")             # one entry for the five
 BY_NAME = "sed 's/ @ [^;]*//' bot/requirements-cards.txt > \"$RUNNER_TEMP/cards.txt\""
 NO_OXIPNG = "sed -e 's/ @ [^;]*//' -e '/^pyoxipng/d' bot/requirements-cards.txt > \"$RUNNER_TEMP/cards.txt\""   # card-preview's
 
@@ -1451,9 +1416,9 @@ def card_pin() -> str:
 
 def fork_install(path) -> str:
     """
-    A workflow's install of requirements-cards.txt (the psd-tools fork's one pin), as the six share it, in every job that
+    A workflow's install of requirements-cards.txt (the psd-tools fork's one pin), as the five share it, in every job that
     installs (card-guards: its check and post jobs): the file checked out of AutoCroissant, no pin of the workflow's own;
-    Python 3.14; its wheels restored by the file's hash, runner and Python (one entry for all six), built only on a miss,
+    Python 3.14; its wheels restored by the file's hash, runner and Python (one entry for all five), built only on a miss,
     installed offline by name (pip builds a URL line from git again; card-preview without pyoxipng: it would recompress a
     PNG it never publishes), no other install; saved only after they installed. card-sync: one environment (a venv) for
     every stage, no second Python.
@@ -1515,7 +1480,7 @@ def fork_install(path) -> str:
 
 def test_every_action_runs_python_314():
     """Owner, 2026-10-24: every card repo Action on Python 3.14 (setup-python in each job that runs Python; none on the
-    runner's own python3), and the six card workflows install requirements-cards.txt with one cache entry."""
+    runner's own python3), and the five card workflows install requirements-cards.txt with one cache entry."""
     workflows = WORKFLOW.parent
     if not workflows.is_dir():
         pytest.skip(f"no {workflows}")
@@ -1533,59 +1498,12 @@ def test_every_action_runs_python_314():
     assert {fork_install(workflows / name) for name in present} <= {FORK_KEY}
 
 
-def test_workflow_shape():
-    """card-edits.yml: live every 30 minutes behind the pending gate, dispatch with dry_run on by default, never on the
-    pipeline's own commits, one scheduled bake at a time in its own group (a running bake is never cancelled; sharing
-    tts-save's group would let a tick replace a pending TTS save) and a group per dispatch (never replaced by a tick),
-    the schedule baking only pending cards, step timeouts, the report line it greps before running site.yml and
-    tts-save.yml, and one Discord message when a streak of failed scheduled runs starts (main exits 1)."""
+def test_workflow_pending_edits_line_calls_due(github, capsys, monkeypatch):
+    """card-sync.yml's Pending edits line, run as written: the due card names, one per line (recent ones wait)."""
     if not WORKFLOW.exists():
         pytest.skip(f"no {WORKFLOW}")
-    text = WORKFLOW.read_text(encoding="utf-8")
-    assert "python -m commands.card_bake" in text and '--repo "$GITHUB_REPOSITORY" --head "$GITHUB_SHA"' in text
-    assert "args+=(--dry-run)" in text and 'args+=(--card "$CARD")' in text and '[ "$EVENT" = schedule ] && args+=(--pending)' in text
-    assert "if: github.actor != 'AutoCroissant'" in text and "actions/checkout@v7" in text
-    assert fork_install(WORKFLOW) == FORK_KEY                                       # card-guards' test compares the four
-    grep = re.search(r"grep -q '([^']+)'", text).group(1)                          # the commit line the final step greps
-    report = cb.Report("o/r", "h" * 40, False, "w")
-    card = cb.Card("X", "x", {"hp": 1})
-    card.redundant, card.commit = ["hp"], "abcdef01" * 5
-    report.cards = [card]
-    assert grep in cb.render(report) and grep not in cb.render(cb.Report("o/r", "h" * 40, True, "w"))
-    yaml = pytest.importorskip("yaml")
-    doc = yaml.safe_load(text)
-    on = doc[True]                                                                  # PyYAML reads the `on` key as True
-    assert on["schedule"] == [{"cron": "*/30 * * * *"}] and "push" not in on
-    assert on["workflow_dispatch"]["inputs"]["dry_run"]["default"] is True
-    assert doc["jobs"]["bake"]["if"] == "github.actor != 'AutoCroissant'"
-    assert doc["concurrency"] == {"group": "${{ github.event_name == 'schedule' && 'card-edits' || format('card-edits-{0}', github.run_id) }}",
-                                  "cancel-in-progress": False}
-    assert doc["permissions"] == {"contents": "write", "actions": "write"}
-    steps = doc["jobs"]["bake"]["steps"]
-    gate = next(i for i, step in enumerate(steps) if step.get("id") == "gate")
-    assert "from commands.card_bake import pending" in steps[gate]["run"] and '[ "$EVENT" != schedule ]' in steps[gate]["run"]
-    alert = steps[len(steps) - 1]
-    assert all("steps.gate.outputs.go == 'true'" in step.get("if", "") for step in steps[gate + 1:len(steps) - 1])   # nothing pending: done
-    bake = next(step for step in steps if step.get("name") == "Bake")
-    assert bake["env"]["DRY_RUN"] == "${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}"   # the schedule is live
-    after = next(step for step in steps if "grep -q" in step.get("run", ""))
-    assert after["if"].startswith("${{ !cancelled() &&")                     # a card's error exits 1: a commit still runs them
-    assert alert["if"] == "(failure() || cancelled()) && github.event_name == 'schedule'"   # a job timeout is a cancel
-    assert alert["env"]["WEBHOOK"] == "${{ secrets.DISCORD_CHANGELOG_WEBHOOK }}" and "$RUN" in alert["run"]
-    assert "gh run list" in alert["run"] and '[ "$last" = failure ]' in alert["run"]       # once per streak
-    assert steps[gate]["timeout-minutes"] == 10 and bake["timeout-minutes"] == 50        # a step timeout fails the run
-    assert doc["jobs"]["bake"]["timeout-minutes"] == 60
-
-
-def test_workflow_gate_line_calls_pending(github, capsys, monkeypatch):
-    """The gate's python -c line, run as written: the pending card names, one per line."""
-    if not WORKFLOW.exists():
-        pytest.skip(f"no {WORKFLOW}")
-    code = re.search(r"python -c '([^']+)'", WORKFLOW.read_text(encoding="utf-8")).group(1)
-    monkeypatch.setattr("sys.argv", ["-c", cb.CARD_REPO, github.head])
+    code = re.search(r"python\" -c '([^']+)'", WORKFLOW.read_text(encoding="utf-8")).group(1)
+    github.recent.add(DOOMER)
+    monkeypatch.setattr("sys.argv", ["-c", cb.CARD_REPO, github.head, ""])
     exec(code, {})
-    assert capsys.readouterr().out.splitlines() == ["A Snack", "A Snack2", "Mini Doomer", "Nobody", "The Freezer"]
-    cb.run()
-    monkeypatch.setattr("sys.argv", ["-c", cb.CARD_REPO, github.head])
-    exec(code, {})
-    assert capsys.readouterr().out.strip() == ""
+    assert capsys.readouterr().out.splitlines() == ["A Snack", "A Snack2", "Nobody", "The Freezer"]

@@ -149,6 +149,7 @@ def test_unread_card_edits_keep_the_dup_of_cards(no_aliases, monkeypatch, failur
         assert (gone == []) is kept and ("Stubborn Queen" in tr.db.stats) is kept
 
 
+@pytest.mark.usefixtures("pickle_path")
 def test_duplicate_name_order(monkeypatch):
     """Hidden titles name the duplicates in number order; an /alias to the PNG wins (the build takes the aliases;
     RepositoryTraverser defaults to the bot's)."""

@@ -1,8 +1,8 @@
 """
-The card repo's workflows in the shadow (DATA_BUILD_ACTION.md step 7): site.yml reads the card sync's data only once its
-CARD_DATA switch is on and the branch exists, and keeps its 6-hour schedule; card-sync.yml, once scheduled, runs every
-30 minutes with the main commit and the posts off. At the cutover (step 8) these flip: update the asserts then. Loads
-the workflows from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without them or PyYAML.
+The card repo's workflows after the cutover (DATA_BUILD_ACTION.md step 8): site.yml reads the card sync's data (CARD_DATA
+on, when the branch exists) with a daily fallback build; card-sync.yml runs live with the main commit and the posts on,
+the cron a fallback. Loads the workflows from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without them or
+PyYAML.
 """
 from os import environ
 from os.path import expanduser
@@ -23,12 +23,12 @@ def _load(name: str) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def test_site_reads_the_data_only_when_switched_on():
+def test_site_reads_the_data_when_switched_on():
     doc = _load("site.yml")
     if "CARD_DATA" not in (doc.get("env") or {}):
         pytest.skip("site.yml before the card sync's data checkout (TTSCardMaker work/site-history)")
-    assert doc["env"]["CARD_DATA"] == "off"
-    assert doc[True]["schedule"] == [{"cron": "17 */6 * * *"}]                  # PyYAML reads `on` as True
+    assert doc["env"]["CARD_DATA"] == "on"
+    assert doc[True]["schedule"] == [{"cron": "0 12 * * *"}]                   # PyYAML reads `on` as True
     steps = doc["jobs"]["build"]["steps"]
     branch = next(s for s in steps if s.get("id") == "data")
     assert branch["if"] == "env.CARD_DATA == 'on'" and "refs/heads/data" in branch["run"]
@@ -39,14 +39,15 @@ def test_site_reads_the_data_only_when_switched_on():
     assert steps.index(branch) < steps.index(checkout) < steps.index(build)
 
 
-def test_card_sync_shadow_schedule_writes_only_data():
+def test_card_sync_runs_live():
     doc = _load("card-sync.yml")
     on = doc[True]
     if "schedule" not in on:
         pytest.skip("card-sync.yml has no schedule yet (dispatch only, step 6)")
-    assert on["schedule"] == [{"cron": "4,34 * * * *"}]
-    assert doc["env"]["MAIN_COMMIT"] == "off" and doc["env"]["POSTS"] == "off"
-    assert on["workflow_dispatch"]["inputs"]["dry_run"]["default"] is True
+    assert on["schedule"] == [{"cron": "0,30 * * * *"}]
+    assert doc["env"]["MAIN_COMMIT"] == "on" and doc["env"]["POSTS"] == "on"
+    assert on["workflow_dispatch"]["inputs"]["dry_run"]["default"] is False
+    assert not (WORKFLOWS / "card-edits.yml").exists() and not (WORKFLOWS / "tts-save.yml").exists()   # its two writers
 
 
 def test_site_builds_on_what_it_reads_and_deploys_only_a_change():

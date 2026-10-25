@@ -19,6 +19,7 @@ from global_config import CARD_BRANCH, RAW_BASE
 from test_update_stats import (DOOMER, FREEZER, OTHER, Reply, _golden, _run, _saved, _sha, _strip,  # noqa: F401
                                github, psds)
 
+pytestmark = pytest.mark.usefixtures("pickle_path")     # the bot before the cutover (CARD_SYNC off)
 COMMIT, TREE = "c" * 40, "t" * 40
 needs_ranges = pytest.mark.skipif(not ga.range_reads(), reason="psd-tools without lazy reads (the fork's feat/lazy-records)")
 

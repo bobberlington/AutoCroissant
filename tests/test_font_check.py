@@ -577,6 +577,7 @@ def test_load_cache_drops_faces_with_loose_names(tmp_path):
     assert fc._load_cache(str(cache)) == {"fonts": {"new": ["A", "B"], "bad": "no font"}, "psds": {"p": {"A": ["Name"]}}}
 
 
+@pytest.mark.usefixtures("pickle_path")
 def test_check_repo_fonts_replies(monkeypatch):
     import commands.query_card as qc
     import commands.utils as utils

@@ -218,10 +218,11 @@ It replaces `tts-save.yml` and `card-edits.yml`, which are deleted at the cutove
 ### 6.1 Triggers
 
 ```yaml
-run-name: "Card sync", or "Card sync (dry run)" for a dry dispatch   # the alert's streak check skips dry runs
+run-name: "Card sync", "Card sync (dry run)" for a dry dispatch, "Card sync (retry)" for its own retry
+          # the alert's streak check skips dry runs; the bot follows a retry by its name (card-guards' dispatch is plain)
 on:
   schedule:                  # added at step 7; as built (step 6) the workflow is dispatch only
-    - cron: "4,34 * * * *"   # every 30 minutes; "4 * * * *" for hourly (decision 5)
+    - cron: "0,30 * * * *"   # every 30 minutes; "0 * * * *" for hourly (decision 5; on the :00/:30 marks since 2026-10-24)
   workflow_dispatch:
     inputs:                  # all optional; all 10 of GitHub's 10
       force: boolean         # run every stage even when the gate finds nothing
@@ -770,7 +771,7 @@ github_api reads it inside a try/except and takes the token from the environment
     the blob's intro, and a `moved` version to the move commit (as the bot's changelog does).
   - **Triggers.** The push trigger stays as today (paths-ignore `TTS/**`), so website edits and new art publish at once on
     the last data. Card sync dispatches it after each commit, with the new data. The cron goes from every 6 hours to daily
-    (`17 12 * * *`), as a safety net.
+    (`0 12 * * *`), as a safety net.
   - **New outputs:** `data/changelog.json` (the last 180 days, names turned into card ids) and `data/analytics.json` (§12.3).
   - **The footer** reads "Card data built <time> from TTSCardMaker@<sha> (run)". When `manifest.card_commit` is more than 3
     hours behind the head on card paths, a staleness warning goes in the log and the footer.
@@ -1215,6 +1216,12 @@ Each step lands on main on its own, keeps the full suite green, and is recorded 
      - the bot cutover commit: `CARD_SYNC = True` in global_config.py (the reader, `/update_stats`, `/push`, `/pull`,
        `/fonts` and admin-only `force_update` are on main already, switched off: work/cutover-bot);
      - jetson deploy.
+   - *As built (2026-10-24, branches work/cutover in both repos; owner: switch without waiting for the shadow's end):*
+     `CARD_SYNC = True`, the pickle path's tests pinned off (`pickle_path`); the bot's `/update_stats` (the owner's 30-minute
+     reminder) dispatches a normal run (`bake=pending`) when main has card changes past the data's `card_commit` or
+     `card_bake.due` edits wait, once the last push is 30 minutes old, one run at a time; Card sync's gate also goes for
+     `card_bake.due` edits (a bake put off as `recent` or `capped` no longer waits for another card commit); card-guards.yml
+     dispatches Card sync instead of tts-save.yml. Runbook: `~/Documents/Tools/wt/scratch/cutover-check-1024/RUNBOOK.md`.
    - *Verify:*
      - the site footer reads "Card data built … from TTSCardMaker@…", with the same card count and no new warnings;
      - `/update_stats` says "already current";

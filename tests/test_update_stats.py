@@ -18,6 +18,7 @@ import commands.repo_traverser as rt
 import commands.utils as utils
 from golden_cards import VOCAB, golden_file
 
+pytestmark = pytest.mark.usefixtures("pickle_path")     # the bot before the cutover (CARD_SYNC off)
 DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
 FREEZER = "Field/1 Stars/The_Freezer.psd"
 OTHER = "Auxiliary/Minions/Anubisath_Guardian.psd"     # its bytes stand in for an edited Mini Doomer

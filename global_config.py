@@ -19,9 +19,9 @@ FONT_DIRS_ENV   = "PSD_TOOLS_FONT_DIRS"        # the fonts dir override (first e
 TTS_SAVE_PATH   = "TTS/Impossibility Simulator.json"   # the TTS save in the card repo, updated by /update_tts_save
 TIMEZONE        = ZoneInfo("America/Los_Angeles")
 
-# The cutover switch (docs/Campaigns/DATA_BUILD_ACTION.md step 8), flipped to True in one commit: the card data then comes
-# from the Card sync Action's data branch (commands/card_sync.py) and /update_stats syncs it; False builds the pickles here.
-CARD_SYNC       = False
+# The cutover switch (docs/Campaigns/DATA_BUILD_ACTION.md step 8, on since 2026-10-24): the card data comes from the Card
+# sync Action's data branch (commands/card_sync.py) and /update_stats syncs it; False builds the pickles here (rollback).
+CARD_SYNC       = True
 DATA_BRANCH     = "data"                       # the card repo's branch holding db/ (written by Card sync only)
 CARD_DATA_DIR   = "card_data"                  # the bot's copy of that db/ (gitignored)
 
