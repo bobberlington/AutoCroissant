@@ -6296,6 +6296,11 @@ def variant(psd: PSDImage, n: Optional[int]):
     The card as picture n shows it (§4.9), in memory: each tagged layer or group visible when n is among its tags,
     hidden else (untagged ones keep their eye), restored on exit; n None: as saved.
     """
+    own = _parser_fn("variant_view")            # Track A's, when psd_parser has it
+    if own is not None:
+        with own(psd, n):
+            yield psd
+        return
     saved = []
     if n is not None:
         for layer in psd.descendants():
@@ -6337,9 +6342,14 @@ def part_text(parser: Optional[PSDParser], layer) -> str:
 
 
 def lyid_index(psd: PSDImage) -> dict:
-    """Layer id -> layer; raises Refused("bytes") on a duplicate id (an integrity case, §4.2)."""
+    """Layer id -> layer (-1, no id stored, left out); raises Refused on a duplicate id (an integrity case, §4.2)."""
+    api = _parts_api()
+    if api is not None:
+        return api.lyid_index(psd)
     out = {}
     for layer in psd.descendants():
+        if layer.layer_id < 0:
+            continue
         if layer.layer_id in out:
             raise Refused("bytes", f"layer id {layer.layer_id} is on {out[layer.layer_id].name!r} and {layer.name!r}")
         out[layer.layer_id] = layer
