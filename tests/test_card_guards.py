@@ -1444,17 +1444,20 @@ def test_a_redrawn_psd_lands_plain_without_its_png(tmp_path, monkeypatch):
     switched, not redrawn, never beside an old-wrap PNG."""
     out = tmp_path / "plan"
     entry = _entry("A")
-    _write(out, entry, "X/A.psd", "psd", b"drawn", "Single-line Composer (Ability)")
+    _write(out, entry, "X/A.psd", "psd", b"drawn", "Single-line Composer (Ability); straight apostrophes (Name)")
     (out / "files" / "A.psd.plain").write_bytes(b"plain")
-    entry["writes"][0].update(shown="", silent=True, composer=True, plain={"file": "files/A.psd.plain", "sha": blob_sha(b"plain")})
+    entry["writes"][0].update(shown="", silent=True, composer=True, pixels=["apostrophes"],
+                              plain={"file": "files/A.psd.plain", "sha": blob_sha(b"plain"),
+                                     "line": "Single-line Composer (Ability)"})
     _write(out, entry, "X/A.png", "png", b"png2", "re-exported for the Single-line Composer's rewrap")
     entry["writes"][1].update(shown="", silent=True, composer=True)
     plan = _full_plan(tmp_path, [entry])
     sent = {}
     for png, files in (("p1", {"X/A.psd": b"drawn", "X/A.png": b"png2"}), ("author", {"X/A.psd": b"plain"})):
         FakeHub({"X/A.psd": ("100644", "s1"), "X/A.png": ("100644", png)}).install(monkeypatch)
-        monkeypatch.setattr(cg, "commit_files", lambda *a, **k: sent.clear() or sent.update(a[4]) or "c" * 40)
+        monkeypatch.setattr(cg, "commit_files", lambda *a, **k: sent.clear() or sent.update(a[4], text=a[5]) or "c" * 40)
         landed = cg.land(plan)
+        assert "apostrophe" in sent.pop("text") if png == "p1" else "apostrophe" not in sent.pop("text")   # plain: no pixel fix said
         assert sent == files, png
     assert landed["included"] == [["A", "X/A.psd"]] and sent == {"X/A.psd": b"plain"}
     assert landed["dropped"] == [["A", "superseded: X/A.png changed on the branch", "X/A.png"]]

@@ -783,7 +783,8 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
                      "line": "; ".join(fixed.applied + composer + silent), "shown": said, "silent": not said,
                      "composer": bool(fixed.composer), "pixels": sorted(result.redrawn)}
             if redrawn:                         # land swaps in plain when the redraw's PNGs do not land
-                write["plain"] = {"file": _save(out, job.psd + ".plain", fixed.plain), "sha": blob_sha(fixed.plain)}
+                write["plain"] = {"file": _save(out, job.psd + ".plain", fixed.plain), "sha": blob_sha(fixed.plain),
+                                  "line": "; ".join(fixed.applied + composer), "pixels": []}   # no redraw: no pixel fix
             result.writes.append(write)
 
 
@@ -1231,7 +1232,7 @@ def _drawn(entry: dict, here: Head, recent: Optional[set]) -> list:
     redraw = [w for w in writes if w["kind"] == "png" and w.get("composer")]
     if not any(_superseded(entry, w, here, recent) for w in redraw):
         return writes
-    return [{**w, **w["plain"], "plain": None} if w.get("plain") else w for w in writes if w not in redraw]
+    return [{**w, "pixels": [], **w["plain"], "plain": None} if w.get("plain") else w for w in writes if w not in redraw]
 
 
 def _superseded(entry: dict, write: dict, here: Head, recent: Optional[set]) -> str:
