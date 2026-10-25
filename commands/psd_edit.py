@@ -6454,8 +6454,8 @@ def card_parts(psd: PSDImage, rel: str, name: str, parser: Optional[PSDParser]) 
     commands.psd_parts.card_parts when Track A's module is there, else this stand-in by the same rules.
     """
     api = _parts_api()
-    if api is not None:
-        return api.card_parts(psd, rel, name, parser)
+    if api is not None:                         # its selection needs a parser: a bare one without the vocabulary
+        return api.card_parts(psd, rel, name, parser or PSDParser([], StatsDatabase(), IconVocabulary.build([], [], None)))
     variants = variants_of(psd)
     tagged = len(variants) > 1
     texts = [layer for layer in psd.descendants() if _is_text_layer(layer) and EFFECT_LAYER_TAG not in layer.name]
