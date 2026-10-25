@@ -308,7 +308,7 @@ async def slash_query_name(interaction: Interaction,
 @tree.command(name="website", description="Link to the card browser website.")
 async def slash_website(interaction: Interaction):
     await interaction.response.send_message(f"**Card browser:** {SITE_URL}/\nEvery card, the rulebook, a deck builder and stats. "
-                                            + "Editors fix card data there; the card sync applies it within about 30 minutes.")
+                                            + "Editors fix card data there; the card sync applies it within minutes (PSD edits are baked in about 30).")
 
 
 def _check_repo_fonts(interaction: Interaction):

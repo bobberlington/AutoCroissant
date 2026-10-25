@@ -42,6 +42,27 @@ backfill) and every pickle writer (`export-pickles` included); the build's `--se
 read-only pickle tools stay. TTSCardMaker's site.yml always reads `data` (no `CARD_DATA` switch) and build_site.py lost
 its pickle loader. The data branch is the only source; the rollback of the whole move (§13) is gone with them.
 
+**Status 2026-10-25, two lanes (owner, 03:20: "pushes to any branch other than main do not need to wait").** Branch
+work/split in both repos. card-sync.yml's run has a data lane and a main lane. Job `data` ("Card data", group
+`card-data`) runs at once on every push, cron and dispatch (not a retry): it re-reads main's head (`card_data`, no
+bake), posts the changelog, commits `data` and dispatches the site, so a card push reaches the bot and the website
+within minutes. Job `main` ("Bake and save", group `card-main`) keeps the fixed window: after a card push's 30-minute
+timer (as below; a push while one runs skips its own main lane, its run is no longer cancelled), at once on a dispatch or
+retry, and on the cron when a website edit is due or a card commit landed since the last run whose Bake and save
+succeeded. It bakes (`--pending`, the per-card RECENT guard), updates the save (names from the data head) and commits M
+to main fast-forward only (main moved: a retry of the main lane alone); then re-pins the baked PNGs' save links in a
+second commit on M (the save above saw main before M; this replaces `pending.repin` and the next run's save-only M). Job
+`after` (group `card-data`, no wait) re-reads M into `data` and dispatches the site, without the dispatch's inputs (full,
+cards, seed, restore, allow_archive are the `data` job's). Every data job passes `card_data --own` the main lane's
+`Card sync:` commits since the last build, so M's push posts as the card sync's whichever data job reads it first. Posts
+cannot repeat: the data writers run one at a time from the data head, the posted cursor rides in each data commit, and
+`after` never re-applies a restore or seed. The failure alert is once per failing streak of each lane (the lane's
+outcome in the newest other live run where its job ended; runs that skipped the lane, and dry runs, pass over), once a
+lane per run; the bot's /update_stats notes judge the lanes the same way, and a force_update/cards dispatch is followed
+by its Card data job (replaced before it started: dispatched again). Landing: only with no Card sync run unfinished (an
+old run would write `data` outside `card-data` after its window). `--baked` and `--rewrite` are unused by the workflow from then on (kept until it
+lands). §6.3 below describes the single `sync` job before this.
+
 **Status 2026-10-24, the clock in GitHub (owner, 23:15 and 23:27: "Move it into GitHub", a fixed window).** card-sync.yml
 has a `push` trigger on the card inputs. The first card push starts a 30-minute timer (job `Quiet window`, the environment
 `card-sync-quiet`'s wait timer); pushes while it runs start none (their runs end at once) and the run syncs main's head when

@@ -5,9 +5,9 @@ The Card sync Action in the card repo builds the card data and commits it to the
   database reloaded from it, then the card list, query tables, type emojis and image links refreshed;
 - on use: a card command or autocomplete queues that sync (quiet) when none ran for REFRESH_SECONDS; its reply uses
   the data loaded now, the next one the new data;
-- /update_stats: that sync and one reply; Card sync starts itself (a card push starts a 30-minute timer in
-  card-sync.yml); with force_update or cards (admins), a run dispatched (ACTIONS_TOKEN) and followed until it ends,
-  then the sync;
+- /update_stats: that sync and one reply; Card sync starts itself (a card push: the data at once, the bake and the
+  TTS save after a 30-minute timer in card-sync.yml); with force_update or cards (admins), a run dispatched
+  (ACTIONS_TOKEN) and its Card data job followed until it ends (not the bake), then the sync;
 - /fonts: from the data's psd_details.json, whose fonts the build marked supplied or not.
 Uncompiled (not in setup.py), like card_data.
 """
@@ -37,10 +37,13 @@ from commands.utils import queue_command, queue_edit, say
 ACTIONS_TOKEN: str = getattr(config, "ACTIONS_TOKEN", "")   # fine-grained, the card repo only, Actions read and write
 WORKFLOW = "card-sync.yml"                           # the card repo's Card sync Action
 RUN_NAME = "Card sync"                               # its live runs' name (a dry run is "Card sync (dry run)")
-RETRY_NAME = "Card sync (retry)"                     # its own retry's name (main moved during a run)
+RETRY_NAME = "Card sync (retry)"                     # its own retry's name (main moved during a bake: main's lane only)
+DATA_JOB = "Card data"                               # a run's data lane (after the bake: "Card data after the bake")
+MAIN_JOB = "Bake and save"                           # a run's main lane
 POLL_SECONDS = 15                                    # between two looks at a dispatched run
 WAIT_MINUTES = 30                                    # a dispatched run is followed this long
 FIND_SECONDS = 60                                    # a dispatched run shows up in the run list within this
+LANE_RUNS = 5                                        # notes: runs whose jobs are read for each lane's last outcome
 EDIT_MINUTES = 14                                    # progress edits stop here: Discord's interaction lasts 15 minutes
 WAITING = ("queued", "pending", "waiting", "requested")   # a run not started yet
 FAILED = ("failure", "timed_out", "startup_failure")
@@ -160,8 +163,35 @@ def _main_ahead(repository: str, base: Optional[str]) -> bool:
     return bool(data.get("ahead_by")) and any(card_input(f.get("filename", "")) for f in data.get("files") or [])
 
 
+def _lane(job: dict) -> Optional[str]:
+    """A job's lane: "data" (Card data, after the bake too), "main" (Bake and save), or None."""
+    name = job.get("name") or ""
+    return "main" if name == MAIN_JOB else "data" if name.startswith(DATA_JOB) else None
+
+
+def _lanes(repository: str, runs: list) -> dict:
+    """
+    Each lane's last outcome: {"data" or "main": (failed, run)} from the newest run where that lane's job ended (one
+    jobs request per run, up to LANE_RUNS; runs that skipped a lane pass over it). A run without the lanes' jobs (before
+    the split) counts for both by its conclusion.
+    """
+    found: dict = {}
+    for run in runs[:LANE_RUNS]:
+        jobs = _json(api_url(repository, f"actions/runs/{run.get('id')}/jobs"), HEADERS).get("jobs") or []
+        if not any(_lane(j) for j in jobs):
+            jobs = [{**run, "name": name} for name in (DATA_JOB, MAIN_JOB)]
+        ended = [j for j in jobs if j.get("status") == "completed" and j.get("conclusion") not in ("skipped", "cancelled", None)]
+        for lane in ("data", "main"):
+            done = [j for j in ended if _lane(j) == lane]
+            if done and lane not in found:
+                found[lane] = (any(j.get("conclusion") in FAILED for j in done), run)
+        if len(found) == 2:
+            break
+    return found
+
+
 def notes(manifest: dict, repository: str = CARD_REPO) -> list:
-    """The lines after the first: a re-parse going on, unreadable PSDs, card changes not built yet, a failed last run."""
+    """The lines after the first: a re-parse going on, unreadable PSDs, card changes not built yet, a lane that failed."""
     lines = []
     pending = manifest.get("pending") or {}
     stale = pending.get("stale") or []
@@ -184,10 +214,19 @@ def notes(manifest: dict, repository: str = CARD_REPO) -> list:
         going = next((r for r in runs if r.get("status") != "completed"), None)
         lines.append("The card repo has card changes not in the data yet: "
                      + (f"the card sync under way picks them up (<{going.get('html_url')}>)." if going else
-                        "the next card sync picks them up (30 minutes after the first card push of a burst)."))
-    last = next((r for r in runs if r.get("status") == "completed" and r.get("conclusion") not in ("cancelled", "skipped")), None)
-    if last is not None and last.get("conclusion") in FAILED:
-        lines.append(f"The last card sync failed: <{last.get('html_url')}>; the bot keeps the last good card data.")
+                        "the next card sync picks them up within minutes of the push (website edits are baked into the PSDs "
+                        "30 minutes after the first card push of a burst)."))
+    try:
+        lanes = _lanes(repository, runs)
+    except (RequestException, ValueError) as e:
+        print(f"Card sync jobs not read: {e}")
+        return lines
+    failed, run = lanes.get("data", (False, None))
+    if failed:
+        lines.append(f"The last card data build failed: <{run.get('html_url')}>; the bot keeps the last good card data.")
+    failed, run = lanes.get("main", (False, None))
+    if failed:
+        lines.append(f"The last bake and save failed: <{run.get('html_url')}>; website edits wait for the next one.")
     return lines
 
 
@@ -447,51 +486,59 @@ def dispatch(repository: str, inputs: dict) -> Optional[dict]:
     return None
 
 
-def _state(repository: str, run: dict) -> str:
-    """A run's state for the progress edit: waiting, or the step running now."""
-    if run.get("status") in WAITING:
+def _data_job(run: dict) -> Optional[dict]:
+    """The run's Card data job (its jobs list), or None: not listed yet, or a run without one."""
+    jobs = _json(api_url(CARD_REPO, f"actions/runs/{run.get('id')}/jobs"), _headers()).get("jobs") or []
+    return next((j for j in jobs if j.get("name") == DATA_JOB), None)
+
+
+def _state(followed: dict) -> str:
+    """The followed job's (or run's) state for the progress edit: waiting, or the step running now."""
+    if followed.get("status") in WAITING:
         return "waiting for its turn"
-    try:
-        jobs = _json(api_url(repository, f"actions/runs/{run.get('id')}/jobs"), _headers()).get("jobs") or []
-    except (RequestException, ValueError):
-        return "running"
-    steps = [s for job in jobs for s in job.get("steps") or []]
-    step = next((s for s in steps if s.get("status") == "in_progress"), None)
+    step = next((s for s in followed.get("steps") or [] if s.get("status") == "in_progress"), None)
     return f"running: {step.get('name')}" if step else "running"
 
 
 def follow(interaction, run: dict, started: float) -> Optional[dict]:
     """
-    Look at the run every POLL_SECONDS until it ends; its state edits the command's reply while Discord still takes
-    edits (EDIT_MINUTES), never a reminder's (it has no reply to edit: each would be a new message).
+    Look at the run's Card data job every POLL_SECONDS until it ends (the data lands then; the run's Bake and save is
+    not waited for); without that job, the run. Its state edits the command's reply while Discord still takes edits
+    (EDIT_MINUTES), never a reminder's (it has no reply to edit: each would be a new message).
 
     Returns:
-        The ended run ("ran": seen started), or None after WAIT_MINUTES
+        The run with the followed job's status and conclusion ("ran": seen started), or None after WAIT_MINUTES
     """
     shown, ran = None, False
     if interaction is not None and _by_reminder(interaction):
         interaction = None
-    while run.get("status") != "completed":
-        ran = ran or run.get("status") not in WAITING
+    while True:
+        job = None
+        try:
+            job = _data_job(run)
+            if job is None:
+                run = _json(api_url(CARD_REPO, f"actions/runs/{run.get('id')}"), _headers())
+        except (RequestException, ValueError) as e:  # looked at again next time
+            print(f"Card sync run not read: {e}")
+        followed = job or run
+        ran = ran or bool((job or {}).get("steps"))  # a job cancelled before it started has no steps
+        if followed.get("status") == "completed":
+            return {**run, "status": "completed", "conclusion": followed.get("conclusion"), "ran": ran}
+        ran = ran or followed.get("status") not in WAITING
         if monotonic() - started >= WAIT_MINUTES * 60:
             return None
-        state = _state(CARD_REPO, run)
+        state = _state(followed)
         if state != shown and interaction is not None and monotonic() - started < EDIT_MINUTES * 60:
             queue_edit(interaction, content=f"Card sync run <{run.get('html_url')}>: {state}")
             shown = state
         sleep(POLL_SECONDS)
-        try:
-            run = _json(api_url(CARD_REPO, f"actions/runs/{run.get('id')}"), _headers())
-        except (RequestException, ValueError) as e:  # looked at again next time
-            print(f"Card sync run not read: {e}")
-    return {**run, "ran": ran}
 
 
 def _again(run: dict) -> tuple:
     """
-    A cancelled run: the concurrency group keeps one run pending, so a newer one replaced it before it started. Run it
-    again when that cancels nothing but a scheduled run (ours does its work too), else say who replaced it. One seen
-    running, or with nothing newer, was cancelled by hand.
+    A cancelled Card data job: its concurrency group keeps one pending, so a newer run's (a push's, the schedule's)
+    replaced it before it started. Run it again unless a newer dispatch is pending (running again would cancel that
+    one's), then say so. One seen running, or with nothing newer, was cancelled by hand.
 
     Returns:
         (dispatch again, why not)
@@ -501,7 +548,8 @@ def _again(run: dict) -> tuple:
     newer = [r for r in _runs(CARD_REPO, _headers()) if (r.get("id") or 0) > (run.get("id") or 0)]
     if not newer:
         return (False, f"Card sync run <{run.get('html_url')}> was cancelled.")
-    pending = [r for r in newer if r.get("status") in WAITING and r.get("event") != "schedule"]
+    pending = [r for r in newer if r.get("status") != "completed" and r.get("event") == "workflow_dispatch"
+               and r.get("display_title") != RETRY_NAME]
     if pending:
         return (False, f"Card sync run <{run.get('html_url')}> was replaced by a newer request before it started "
                        f"(<{pending[0].get('html_url')}>), which does the usual sync but not this re-parse; ask again "
@@ -509,22 +557,13 @@ def _again(run: dict) -> tuple:
     return (True, "")
 
 
-def _retry_of(run: dict) -> Optional[dict]:
-    """Card sync's own retry of a run (main moved during it, so its data was dropped), by its name, or None."""
-    try:
-        runs = _runs(CARD_REPO, _headers())
-    except (RequestException, ValueError):
-        return None
-    return next((r for r in reversed(runs) if (r.get("id") or 0) > (run.get("id") or 0)
-                 and r.get("display_title") == RETRY_NAME), None)
-
-
 def request_run(interaction, full: bool, names: list) -> Optional[dict]:
     """
-    /update_stats force_update or cards: a Card sync run dispatched (full, or these cards) and followed until it ends
-    (WAIT_MINUTES at most). A run cancelled before it started (replaced by a newer pending one) is dispatched once
-    more, or said (_again); Card sync's own retry (main moved during the run) is followed too. Without ACTIONS_TOKEN,
-    the link and the gh command.
+    /update_stats force_update or cards: a Card sync run dispatched (full, or these cards) and its Card data job
+    followed until it ends (WAIT_MINUTES at most; the run's bake is not waited for). A data job cancelled before it
+    started (replaced by a newer pending one) is dispatched once more, or said (_again). Card sync's own retry (main
+    moved during the bake) redoes only the bake and the save: not followed. Without ACTIONS_TOKEN, the link and the gh
+    command.
 
     Returns:
         The last run, or None
@@ -572,22 +611,12 @@ def request_run(interaction, full: bool, names: list) -> Optional[dict]:
             if not again:
                 say(interaction, why)
                 return run
-            say(interaction, "The run was replaced by a scheduled card sync before it started; starting it again.")
-        retry = _retry_of(run) if run.get("conclusion") == "success" else None
-        if retry is not None:
-            say(interaction, f"The card repo changed during run <{run.get('html_url')}>, so Card sync dropped its data and "
-                             f"started again: <{retry.get('html_url')}>"
-                             + (" (without the full re-parse: ask again once it is done)." if full else "."))
-            run = follow(interaction, retry, started)
-            if run is None:
-                say(interaction, f"The Card sync run is still going after {WAIT_MINUTES} minutes; /update_stats "
-                                 "loads its data once it lands.")
-                return None
+            say(interaction, "The run's card data was replaced by a newer card sync's before it started; starting it again.")
         if run.get("conclusion") == "success":
-            say(interaction, f"Card sync run finished: <{run.get('html_url')}>")
+            say(interaction, f"Card sync run's card data finished: <{run.get('html_url')}>")
         else:
-            say(interaction, f"Card sync run ended ({run.get('conclusion')}): <{run.get('html_url')}>; the bot keeps "
-                             "the last good card data.")
+            say(interaction, f"Card sync run's card data ended ({run.get('conclusion')}): <{run.get('html_url')}>; the "
+                             "bot keeps the last good card data.")
         return run
     finally:
         _run_lock.release()

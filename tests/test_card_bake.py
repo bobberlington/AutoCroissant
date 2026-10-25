@@ -1432,7 +1432,7 @@ def fork_install(path) -> str:
     assert not re.search(r"pip install [^\n]*psd-tools", text), f"{path.name}: no stock psd-tools"
     yaml = pytest.importorskip("yaml")
     by_name = NO_OXIPNG if path.name == "card-preview.yml" else BY_NAME
-    installs = 0
+    installs, written = 0, set()                  # jobs that install; install steps as written (an alias repeats one)
     for job in yaml.safe_load(text)["jobs"].values():
         steps = job.get("steps", [])              # none in a call of a reusable workflow (caches.yml)
         restores = [i for i, s in enumerate(steps)
@@ -1451,6 +1451,7 @@ def fork_install(path) -> str:
         assert restore["id"] == "wheels" and restore["with"]["key"] == FORK_KEY
         install = next(i for i, s in enumerate(steps) if " wheel -q -w " in s.get("run", ""))
         run = steps[install]["run"]
+        written.add(id(steps[install]))
         assert by_name in run, f"{path.name}: the install's copy by name"
         assert steps.index(bot[0]) < steps.index(pythons[0]) < first < install and restore.get("if") == steps[install].get("if")
         assert steps[install]["env"]["HIT"] == "${{ steps.wheels.outputs.cache-hit }}" and '"$HIT"' in run
@@ -1472,7 +1473,7 @@ def fork_install(path) -> str:
             assert "builder/bin" not in text and "baker" not in text and "python3." not in text
             assert set(re.findall(r'"\$RUNNER_TEMP/(\w+)/bin/python"', text)) == {"venv"}
     assert installs, f"{path.name}: installs requirements-cards.txt"
-    assert len(re.findall(r'pip"? install [^\n]*', text)) == installs, f"{path.name}: no other install"
+    assert len(re.findall(r'pip"? install [^\n]*', text)) == len(written), f"{path.name}: no other install"
     with TemporaryDirectory() as tmp:          # the copy pip installs, made by the step's own sed
         (Path(tmp) / "bot").mkdir()
         shutil.copy(REPO / "requirements-cards.txt", Path(tmp) / "bot")

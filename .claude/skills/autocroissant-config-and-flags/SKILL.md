@@ -437,16 +437,20 @@ autocroissant-run-and-operate §9.
 |---|---|---|
 | `ACTIONS_TOKEN` | getattr, default `""` (card_sync.py:38) | the config.py field above |
 | `WORKFLOW` | `"card-sync.yml"` | the card repo's Card sync Action that `force_update` / `cards:` dispatch |
-| `POLL_SECONDS` | `15` | between two looks at a dispatched run (the state is edited into the reply) |
-| `WAIT_MINUTES` | `30` | a dispatched run is followed this long |
+| `POLL_SECONDS` | `15` | between two looks at a dispatched run's Card data job (the state is edited into the reply) |
+| `WAIT_MINUTES` | `30` | a dispatched run's Card data job is followed this long (not its Bake and save) |
+| `DATA_JOB`, `MAIN_JOB` (2026-10-25) | `"Card data"`, `"Bake and save"` | card-sync.yml's lane job names: the followed job, and the lanes the notes judge |
+| `LANE_RUNS` (2026-10-25) | `5` | notes: the runs whose jobs are read for each lane's last outcome (one request a run) |
 | `FIND_SECONDS` | `60` | a dispatched run must show up in the run list within this |
 | `EDIT_MINUTES` | `14` | progress edits stop here (Discord's interaction lasts 15 minutes) |
 | `REFRESH_SECONDS` (2026-10-25) | `120` | on use: a card command or autocomplete looks at the data branch at most this often (any sync counts) |
 | `READERS` (2026-10-25) | 12 slash command names | the commands that read card data, so look on use (autocomplete always does) |
 
-No clock in the bot since 2026-10-24: card-sync.yml starts itself 30 minutes after the first card push of a burst (its
-`push` trigger and the environment `card-sync-quiet`'s wait timer, a TTSCardMaker repo setting); /update_stats only syncs,
-and since 2026-10-25 card commands sync on use (run-and-operate section 12), so no reminder is needed.
+No clock in the bot since 2026-10-24: card-sync.yml starts itself on a card push (its `push` trigger). Since 2026-10-25
+(owner: only main's writes wait; branch work/split) its data lane (job `data`, the data branch, posts, site) runs at once
+and only its main lane (job `main`: the bake and the TTS save on main) waits 30 minutes after the first card push of a
+burst (the environment `card-sync-quiet`'s wait timer, a TTSCardMaker repo setting). /update_stats only syncs, and since
+2026-10-25 card commands sync on use (run-and-operate section 12), so no reminder is needed.
 
 ### the push guards: commands/card_guards.py, card_standards.py, png_export.py (2026-10-22/23; not compiled; card-guards.yml only)
 
@@ -511,7 +515,7 @@ only); its pip install is the other card workflows' (card-sync.yml's, card-edits
 | `DISCORD_CHANGELOG_WEBHOOK` | secret | the changelog channel (changelog, bake/sync failure alerts; never pings) |
 | `DISCORD_STANDARDS_WEBHOOK` | secret | the standards channel: card-check, the push guards (no ping) and font-check (pings the card makers' role) |
 | `card-guards-quiet` | environment (planned 2026-10-24, branch work/py314; the owner creates it after both branches land) | its 30-minute wait timer is the push guards' quiet window: card-guards.yml's post job waits in it on a push's first attempt (no runner held); without the timer, Land sleeps the window out. Command: docs/Campaigns/PUSH_GUARDS.md section 20 |
-| `card-sync-quiet` | environment (2026-10-24, branch work/clock; created by the session at landing: `wait_timer=30`, no branch policy) | its 30-minute wait timer is Card sync's push timer: card-sync.yml's `Quiet window` job waits in it on a push's first attempt (no runner held); a push while one waits ends at once. Without the timer, Quiet sleeps the window out |
+| `card-sync-quiet` | environment (2026-10-24, branch work/clock; created by the session at landing: `wait_timer=30`, no branch policy) | its 30-minute wait timer is Card sync's push timer for the main lane (bake and save; since 2026-10-25 the data lane does not wait): card-sync.yml's `Quiet window` job waits in it on a push's first attempt (no runner held); a push while one waits skips its own main lane (its data lane runs). Without the timer, Quiet sleeps the window out |
 
 `DISCORD_FONT_WEBHOOK` was deleted on 2026-10-23 (owner).
 
