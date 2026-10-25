@@ -2186,3 +2186,21 @@ def test_workflow_lints(clone):
         pytest.skip("no actionlint on PATH")
     done = subprocess.run([actionlint, "-shellcheck=", str(_workflow(clone))], capture_output=True, text=True, timeout=120)
     assert done.returncode == 0, done.stdout + done.stderr
+
+
+def test_a_composer_fix_is_said_only_in_the_commit(tmp_path, monkeypatch):
+    entry = _entry("A", composer=["Name"])
+    _write(tmp_path / "plan", entry, "X/A.psd", "psd", b"fixed", "Single-line Composer (Name)")
+    entry["writes"][0].update(shown="", silent=True, composer=True)
+    plan = _full_plan(tmp_path, [entry])
+    data = json.loads(Path(plan).read_text())
+    assert cg.summary(data, []) == {**cg.summary(data, []), "told": 0, "comment": 0, "writes": 1}
+    assert cg.discord_payload(data, "o/r") == {} and "omposer" not in cg.markdown(data, [], [], [])
+    assert cg.message([entry], "f" * 40).startswith(f"Card guards: Single-line Composer on 1 card (push {'f' * 8})")
+    FakeHub({"X/A.psd": ("100644", "s1"), "X/A.png": ("100644", "p1")}).install(monkeypatch)
+    landed = cg.land(plan)
+    assert landed["sha"] == "c" * 40 and landed["told"]["X/A.psd"] == []
+    after = cg.landed_markdown(data, landed)
+    assert "omposer" not in after and "Landed" not in after
+    FakeHub({"X/A.psd": ("100644", "moved"), "X/A.png": ("100644", "p1")}).install(monkeypatch)
+    assert cg.land(plan)["told"]["X/A.psd"] == []          # dropped: never told either

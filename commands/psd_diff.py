@@ -391,7 +391,7 @@ def _clip(text: str, size: int = SHORT) -> str:
     return text if len(text) <= size else text[:size - 3].rstrip() + "..."
 
 
-def _style_change(a: Facts, b: Facts, codepoints: Optional[dict] = None) -> str:
+def _style_change(a: Facts, b: Facts, codepoints: Optional[dict] = None, quiet=()) -> str:
     """
     The text's style and paragraph change in the words both versions share (an edited word's new glyphs, such as a tag
     turned badge, belong to the text change), with the words when only a few changed: "font Perpetua -> stoogedings on
@@ -407,7 +407,7 @@ def _style_change(a: Facts, b: Facts, codepoints: Optional[dict] = None) -> str:
                 (style_a, para_a), (style_b, para_b) = a.chars[x.start() + k], b.chars[y.start() + k]
                 for table, p, q in ((STYLE, style_a, style_b), (PARAGRAPH, para_a, para_b)):
                     for key in table:
-                        if p.get(key) != q.get(key):
+                        if key not in quiet and p.get(key) != q.get(key):
                             found.setdefault(table[key], set()).add((key, p.get(key), q.get(key)))
                             words[y.start()] = y.group()
     names = list(dict.fromkeys(found))
@@ -457,7 +457,7 @@ def _blend(name: str) -> str:
     return name.replace("_", " ").title()
 
 
-def _compare(a: Facts, b: Facts, codepoints: Optional[dict]) -> list:
+def _compare(a: Facts, b: Facts, codepoints: Optional[dict], quiet=()) -> list:
     """[(rank, template)] for one paired layer: the template's {} is the layer's label."""
     out = []
     if a.name != b.name:
@@ -473,7 +473,7 @@ def _compare(a: Facts, b: Facts, codepoints: Optional[dict]) -> list:
             out.append((TEXT, "{} text: " + change))
         elif a.text != b.text:
             out.append((TEXT, "{} " + _unseen(a.text, b.text)))
-        style = _style_change(a, b, codepoints)
+        style = _style_change(a, b, codepoints, quiet)
         if style:
             out.append((LOOK, "{} " + style))
         if a.box and b.box:
@@ -642,7 +642,7 @@ def _join(subjects: list) -> str:
     return named[0] if len(named) == 1 else ", ".join(named[:len(named) - 1]) + " and " + named[len(named) - 1]
 
 
-def changes(old: PSDImage, new: PSDImage, codepoints: Optional[dict] = None) -> list:
+def changes(old: PSDImage, new: PSDImage, codepoints: Optional[dict] = None, quiet=()) -> list:
     """
     What changed between two versions of a card PSD, Photoshop's re-save noise left out.
 
@@ -651,6 +651,7 @@ def changes(old: PSDImage, new: PSDImage, codepoints: Optional[dict] = None) -> 
         new: The PSD after
         codepoints: Private-use icon characters -> icon names (psd_parser.IconVocabulary.codepoints), to quote icons as
             [name] in text changes
+        quiet: Paragraph and style keys left out ("EveryLineComposer": the guards fix it unsaid)
 
     Returns:
         The phrases, the most telling first ([] when nothing but a re-save changed)
@@ -688,7 +689,7 @@ def changes(old: PSDImage, new: PSDImage, codepoints: Optional[dict] = None) -> 
             rows.append((ADDED, "added {}", labels[key] + _count(b, key, new_keys) + hidden))
     for key_a, key_b in pairs.items():
         rows += [(rank, template, before[key_a] if rank == RENAMED else labels[key_b])
-                 for rank, template in _compare(a[key_a], b[key_b], codepoints)]
+                 for rank, template in _compare(a[key_a], b[key_b], codepoints, quiet)]
     rows += [(rank, template, labels[key]) for rank, template, key in _order(a, b, pairs)]
     out += rows
     merged: dict = {}

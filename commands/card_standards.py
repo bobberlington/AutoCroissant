@@ -1,7 +1,8 @@
 """
 Guard 2 of the push guards (docs/Campaigns/PUSH_GUARDS.md section 6): a pushed card PSD against the card standards of
-docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md. Rules R1-R6, R8, R9 and R11 run over an open PSD (R10, the PNG against
-the PSD, is png_export.png_check; R7, the fonts, is font-check.yml's alone since 2026-10-24, owner). R3 and R4 keep only
+docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md. Rules R1-R6, R9 and R11 run over an open PSD (R10, the PNG against
+the PSD, is png_export.png_check; R7, the fonts, is font-check.yml's alone since 2026-10-24, owner). R8, the Single-line
+Composer (L10), is fixed and never told (owner, 2026-10-25): fix() sets it with the other fixes. R3 and R4 keep only
 the real issues (several visible Ability layers, or a hidden one with words the parser reads nowhere; a hidden or
 rasterized Name layer the title can't be read from): the template layout they also checked was dropped by the owner on
 2026-10-23.
@@ -9,17 +10,19 @@ R9 (Txt2 stories) is fixed by the fork with byte gates, the rest is reported. R1
 and gated but reported until the owner says yes (AUTO_FIX). Rule pages are never checked.
 
     check(psd, rel, context, old=None, added=False) -> [Issue]
-    fix(data, rel, issues, work, parser=None) -> Fixed            the 0-pixel fixes, gated (one PSD's new bytes)
+    fix(data, rel, issues, work, parser=None, fonts=None) -> Fixed   the 0-pixel fixes, gated (one PSD's new bytes)
+    composer_layers(psd) -> [layer]                               the card text layers set Every-line (R8)
     BADGE_TAGS, WAIVED                                            the badge vocabulary and the owner's class waivers
 
 No Discord, network or config.
 """
 from dataclasses import dataclass, field
+from io import BytesIO
 from os import makedirs
 from os.path import basename, getsize, join
 from shutil import rmtree
 from tempfile import mkdtemp
-from typing import Optional
+from typing import Callable, Optional
 
 from psd_tools import PSDImage
 from psd_tools.constants import Tag
@@ -29,7 +32,7 @@ from commands.card_edits import CardAuthors
 from commands.font_check import _get, _value
 from commands.psd_edit import BADGE_KEYS, BADGE_TAGS, PAREN, Refused, badge_tags
 from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, CardValidator, PSDParser
-from commands.psd_regions import overlay_words
+from commands.psd_regions import clip, overlay_words
 from global_config import RULEBOOK_DIR
 
 # ========================
@@ -42,6 +45,11 @@ FIXABLE = ("R9", "R11")                         # 0-pixel by construction, gated
 AUTO_FIX = ("R9",)                              # what the bot fixes: the owner's "easy fixes only (today only R9 Txt2
                                                 # sync)", 2026-10-22; R11 is told until the owner adds it
 SIZE_MAX = 0.01                                 # a fixed PSD stays within 1% of the pushed one
+COMPOSER_LAYERS = ("ability", "name", "health", "attack", "defense", "speed")   # R8: visible ones set Single-line
+TXT2_COMPOSER = "29"                            # Txt2's EveryLineComposer (Photoshop CC's numbered keys)
+LINE_IOU = 0.9                                  # R8 box text: each line's ink, the fork's Single-line layout vs the stored
+                                                # (matches 0.94-1.0; a word moved to the next line 0.04-0.34)
+LINE_PAD = 2                                    # px around a line's box
 NAME_BLOCK = bytes(Tag.UNICODE_LAYER_NAME)      # luni
 WAIVED = {                                      # the owner's class waivers (section 6.2): rule -> what and why
     "R2": {"cards": {"tainted lazarus"}, "why": "its header icon (2026-10-22)"},
@@ -89,6 +97,8 @@ class Fixed:
     data: bytes = b""                           # the fixed PSD ("" when nothing was fixed)
     applied: list = field(default_factory=list) # Issue lines fixed
     refused: list = field(default_factory=list) # (code, why) a gate refused
+    composer: list = field(default_factory=list)   # R8: layers set Single-line (never told)
+    composer_left: list = field(default_factory=list)   # R8: (layer, why) left Every-line (plan.json only)
 
 
 # ========================
@@ -145,6 +155,150 @@ def every_line(layer) -> bool:
     except (KeyError, TypeError, AttributeError):
         pass
     return False
+
+
+def _on(value) -> bool:
+    return bool(getattr(value, "value", value))
+
+
+def _story_props(psd: PSDImage, index: Optional[int]) -> list:
+    """The paragraph properties of Txt2 story index (Photoshop CC's numbered keys); [] without it."""
+    root = psd_edit._txt2(psd)
+    if root is None or index is None:
+        return []
+    _, _, items, model, _, spelling = psd_edit._story_list(root)
+    if spelling:
+        raise Refused("unsupported-card", "a Txt2 block with named keys")
+    if not 0 <= index < len(items):
+        return []
+    return [run["0"]["0"]["5"] for run in items[index][model]["5"]["0"]]
+
+
+def _composer_values(psd: PSDImage, records: set) -> dict:
+    """{(block, index, run): (properties, key)} of the type layers' composer values at these record indices: TySh by
+    record, Txt2 by story."""
+    out = {}
+    for layer in psd.descendants():
+        record = psd_edit._record_index(layer) if layer.kind == "type" else None
+        if record not in records:
+            continue
+        for run, data in enumerate(layer.engine_dict["ParagraphRun"]["RunArray"]):
+            props = data["ParagraphSheet"]["Properties"]
+            if "EveryLineComposer" in props:
+                out[("TySh", record, run)] = (props, "EveryLineComposer")
+        index = psd_edit.story_index(layer)
+        for run, props in enumerate(_story_props(psd, index)):
+            if TXT2_COMPOSER in props:
+                out[("Txt2", index, run)] = (props, TXT2_COMPOSER)
+    return out
+
+
+def composer_layers(psd: PSDImage) -> list:
+    """R8: the visible card text layers (COMPOSER_LAYERS) set with the Every-line Composer, in TySh or their Txt2 story."""
+    out = []
+    for layer in _visible_texts(psd):
+        if layer.name.strip().lower() not in COMPOSER_LAYERS:
+            continue
+        try:
+            story = _story_props(psd, psd_edit.story_index(layer))
+        except (Refused, KeyError, TypeError, AttributeError):
+            story = []
+        if every_line(layer) or any(_on(props.get(TXT2_COMPOSER, False)) for props in story):
+            out.append(layer)
+    return out
+
+
+def _point_text(layer) -> bool:
+    """No box: a line ends only at a return, whatever the composer."""
+    shapes = layer._engine_data["EngineDict"]["Rendered"]["Shapes"]["Children"]
+    return all(int(_on(shape["Cookie"]["Photoshop"]["ShapeType"])) == 0 for shape in shapes)
+
+
+def _ink(rgba, bbox, shape: tuple):
+    import numpy as np
+    out = np.zeros(shape, bool)
+    if rgba is None or bbox is None:
+        return out
+    x0, y0, x1, y1 = clip(bbox, shape[1], shape[0])
+    if x1 > x0 and y1 > y0:
+        out[y0:y1, x0:x1] = rgba[y0 - bbox[1]:y1 - bbox[1], x0 - bbox[0]:x1 - bbox[0], 3] > psd_edit.INK_ALPHA
+    return out
+
+
+def reflow(layer, shape: tuple, fonts_dir: Optional[str]) -> Optional[str]:
+    """
+    R8: why setting the layer Single-line could move a line, or None. Point text cannot; box text is laid out by the fork
+    (its composer is Single-line's, greedy) and each line's ink is held to the stored drawing's (LINE_IOU).
+    """
+    if _point_text(layer):
+        return None
+    if not fonts_dir:
+        return "box text, no fonts to lay it out"
+    from psd_tools.composite.text import MissingFontError, render, text_geometry
+    from psd_tools.composite.text.verify import stored_raster
+    fonts = psd_edit.font_map(fonts_dir)
+    try:
+        drawn, lines = render(layer, fonts=fonts), text_geometry(layer, fonts)["lines"]
+    except MissingFontError as error:
+        return f"font: {error}"
+    mine, saved = _ink(drawn.rgba, drawn.bbox, shape), _ink(*stored_raster(layer), shape)
+    for line in lines:
+        if not line["box"] or not line["text"].strip():
+            continue
+        x0, y0, x1, y1 = (int(round(v)) for v in line["box"])
+        x0, y0, x1, y1 = clip((x0 - LINE_PAD, y0 - LINE_PAD, x1 + LINE_PAD, y1 + LINE_PAD), shape[1], shape[0])
+        a, b = mine[y0:y1, x0:x1], saved[y0:y1, x0:x1]
+        union = int((a | b).sum())
+        alike = int((a & b).sum()) / union if union else 1.0
+        if alike < LINE_IOU:
+            return f"its line {line['text'].strip()[:30]!r} would move ({alike:.0%} alike)"
+    return None
+
+
+def single_line(path: str, out_path: str, fonts: Optional[Callable[[], Optional[str]]] = None) -> tuple:
+    """
+    R8: set composer_layers Single-line (TySh and the Txt2 story) where no line can move (reflow), and save without a new
+    preview; gated: set back, every layer record and document block is the old bytes.
+
+    Args:
+        fonts: Gives MDW/Fonts (box text only; called once, when needed)
+
+    Returns:
+        ([layer names set], [(layer name, why left)]); raises Refused("bytes")
+    """
+    psd = PSDImage.open(path)
+    found = composer_layers(psd)
+    if not found:
+        return [], []
+    shape, chosen, left, fonts_dir = (psd.height, psd.width), [], [], None
+    for layer in found:
+        if fonts_dir is None and not _point_text(layer):
+            fonts_dir = (fonts() if fonts else "") or ""
+        why = reflow(layer, shape, fonts_dir)
+        (left.append((layer.name.strip(), why)) if why else chosen.append(layer))
+    if not chosen:
+        return [], left
+    records = {psd_edit._record_index(layer) for layer in chosen}
+    flipped = [key for key, (props, name) in _composer_values(psd, records).items() if _on(props[name])]
+    for key, (props, name) in _composer_values(psd, records).items():
+        if key in flipped:
+            props[name].value = False
+    psd_edit.save_psd(psd, out_path, update_preview=False)
+    new = PSDImage.open(out_path)
+    if any(psd_edit._record_index(layer) in records for layer in composer_layers(new)):
+        raise Refused("bytes", "a layer is still Every-line")
+    values = _composer_values(new, records)
+    if set(flipped) - set(values):
+        raise Refused("bytes", "a composer value went missing")
+    for key in flipped:
+        props, name = values[key]
+        props[name].value = True
+    if psd_edit.layer_records(path) != psd_edit.layer_records(new):
+        raise Refused("bytes", "a layer record changed beyond its composer")
+    part = _same_document(PSDImage.open(path), new)
+    if part:
+        raise Refused("bytes", f"{part} changed beyond the composer")
+    return [layer.name.strip() for layer in chosen], left
 
 
 def _unique(items) -> tuple:
@@ -272,15 +426,6 @@ def rule_stars(psd: PSDImage) -> Optional[Issue]:
     return Issue("R6", "the stars are not in a group named Stars", ("no stars group",))
 
 
-def rule_composer(psd: PSDImage) -> Optional[Issue]:
-    """R8: the Single-line Composer on visible Ability and Name layers (L10)."""
-    layers = _unique(layer.name.strip() for layer in _visible_texts(psd)
-                     if layer.name.strip().lower() in ("ability", "name") and every_line(layer))
-    if not layers:
-        return None
-    return Issue("R8", f"{_list(layers)} use{'s' if len(layers) == 1 else ''} the Every-line Composer; set Single-line", layers)
-
-
 def rule_stories(psd: PSDImage, story_sync: bool) -> Optional[Issue]:
     """R9: every type layer's Txt2 story holds its text (Photoshop shows the story's)."""
     stale = psd_edit.stale_stories(psd)
@@ -367,7 +512,6 @@ def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = N
     run("R5", rule_overlays, psd, context.chart)
     if kind in STARS_KINDS:
         run("R6", rule_stars, psd)
-    run("R8", rule_composer, psd)
     run("R9", rule_stories, psd, context.story_sync)
     if kind in SCOPE:
         run("R11", rule_names, psd)
@@ -445,7 +589,15 @@ def rename(path: str, out_path: str) -> list:
     return [f"{a['name']!r} -> {b['name']!r}" for i, (a, b) in enumerate(zip(old_records, new_records)) if i in indices]
 
 
-def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[PSDParser], result: Fixed) -> None:
+def _every_line_in(data: bytes) -> bool:
+    try:
+        return bool(composer_layers(PSDImage.open(BytesIO(data))))
+    except Exception:                           # unreadable: nothing to set
+        return False
+
+
+def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[PSDParser], result: Fixed,
+            fonts: Optional[Callable[[], Optional[str]]] = None) -> None:
     """fix()'s work in its own temporary folder."""
     from commands.txt2_repair import repair
     base = join(folder, "pushed.psd")
@@ -468,6 +620,14 @@ def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[P
         current = out
         codes.append(issue.code)
         result.applied.append(issue.line())
+    out = join(folder, "R8.psd")
+    try:
+        result.composer, result.composer_left = single_line(current, out, fonts)
+    except (Refused, ImportError, ValueError, KeyError) as error:
+        result.composer_left = [("", f"{type(error).__name__}: {error}")]
+    if result.composer:
+        current = out
+        codes.append("R8")
     if current == base:
         return
     try:
@@ -480,14 +640,17 @@ def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[P
         with open(current, "rb") as fh:
             result.data = fh.read()
     except Refused as refused:
-        result.refused += [(code, str(refused)) for code in codes]
-        result.applied, result.data = [], b""
+        result.refused += [(code, str(refused)) for code in codes if code != "R8"]
+        result.composer_left += [(name, str(refused)) for name in result.composer]
+        result.applied, result.composer, result.data = [], [], b""
 
 
-def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDParser] = None) -> Fixed:
+def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDParser] = None,
+        fonts: Optional[Callable[[], Optional[str]]] = None) -> Fixed:
     """
-    The fixable issues of one PSD (R11 renames, then R9 story syncs), each gated; then the size and the reparse gates
-    over the result. A refusal leaves that fix out (and reports it); nothing is fixed on a rule page.
+    The fixable issues of one PSD (R11 renames, then R9 story syncs), each gated, then R8's Single-line Composer
+    (single_line: never told, a refusal left in composer_left); then the size and the reparse gates over the result. A
+    refusal leaves that fix out (and reports it); nothing is fixed on a rule page.
 
     Args:
         data: The pushed PSD
@@ -495,18 +658,19 @@ def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDPars
         issues: check()'s issues
         work: A folder for the temporary files
         parser: The offline parser for gate_reparse (skipped without)
+        fonts: Gives MDW/Fonts for R8's box text (single_line)
 
     Returns:
         Fixed
     """
     result = Fixed()
     wanted = [issue for issue in issues if issue.fix and not issue.waived]
-    if not wanted or kind_of(rel) == "rule":
+    if kind_of(rel) == "rule" or not (wanted or _every_line_in(data)):
         return result
     makedirs(work, exist_ok=True)
     folder = mkdtemp(prefix="fix-", dir=work)   # one per call: cards of one key in two folders never share a file
     try:
-        _fix_in(folder, data, rel, wanted, parser, result)
+        _fix_in(folder, data, rel, wanted, parser, result, fonts)
     finally:
         rmtree(folder, ignore_errors=True)
     return result
@@ -529,6 +693,7 @@ __all__ = [
     'badge_tags',
     'card_key',
     'check',
+    'composer_layers',
     'every_line',
     'fix',
     'inexact_names',
@@ -536,6 +701,8 @@ __all__ = [
     'mark_new',
     'rename',
     'reported',
+    'reflow',
     'run_fonts',
+    'single_line',
     'title_problem',
 ]
