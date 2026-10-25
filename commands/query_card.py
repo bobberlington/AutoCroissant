@@ -1,3 +1,4 @@
+from copy import copy
 from dataclasses import dataclass
 from datetime import date, datetime, time as dt_time, timedelta
 from difflib import get_close_matches, SequenceMatcher
@@ -44,6 +45,8 @@ EMOJI = compile(r"(<a?:\w+:\d+>)")                     # Discord emoji markup: n
 SNIPPET = 200                                            # /query_rulebook: a longer line is cut around the match
 AS_OF_EDITS_NOTE = ("Database edits (website, Discord) are versions of their own only since late October "
                     "2026: an older version shows those it had when it was replaced.")
+REGISTRY = ("git_files", "blobs", "ambiguous_names", "_spaced", "_edits", "_edit_names", "_renamed", "choices",
+            "site_ids", "_site_etag")                    # what populate_files builds aside and swaps in
 
 
 class QueryError(ValueError):
@@ -99,10 +102,8 @@ class CardRepository:
                       f"keeping the last good list ({len(self.git_files)} entries)")
                 return status
             self.repository, self._tree, self._tree_etag = repo, tree, etag or ""   # an ETag must match _tree
-        self.git_files.clear()
-        self.blobs.clear()
-        self.ambiguous_names.clear()
-        self._spaced.clear()
+        new = copy(self)                                        # built aside: lookups never see a half-built list
+        new.git_files, new.blobs, new.ambiguous_names, new._spaced = {}, {}, {}, {}
 
         # Process PNG files from repository
         for item in tree.get("tree", []):
@@ -110,14 +111,16 @@ class CardRepository:
             if not path.endswith(".png"):
                 continue
 
-            self.blobs[path] = item.get("sha", "")
-            self._add_file_to_registry(path)
+            new.blobs[path] = item.get("sha", "")
+            new._add_file_to_registry(path)
 
         # Add Card Edits.json's names and aliases to the registry
-        self._populate_edit_names()
-        self._populate_titles()
-        self._populate_renames()
-        self._populate_site_ids()
+        new._populate_edit_names()
+        new._populate_titles()
+        new._populate_renames()
+        new._populate_site_ids()
+        for name in REGISTRY:                                   # swapped in whole
+            setattr(self, name, getattr(new, name))
 
         return status
 
