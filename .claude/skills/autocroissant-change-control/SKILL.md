@@ -298,7 +298,7 @@ and update this file.
 | Help dict names and lines | `grep -n "_commands = {\|def print_help" commands/help.py` |
 | Offline suite before a push | `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (1346 collected on 2026-10-23; the release gates of 2026-10-22/23 read 882 passed / 61 skipped and 1161 passed / 2 failed before the TTSCardMaker push) |
 | The one-sitting rule | memory `jetson-server` |
-| No pickle constants or switch | `grep -n "PKL\|CARD_SYNC" global_config.py` (only REMIND_PKL) |
+| No pickle constants or switch | `grep -n "PKL\|CARD_SYNC" global_config.py` (no hit) |
 | diff_stats.py gate exists and documents its exit codes | `head -20 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py` |
 | Commit count / current head (date-stamp anchor) | `git rev-list --count HEAD` ; `git log --oneline -1` |
 | Atomic writes of the card data copy | `grep -n "^def write_text\|^def write_bytes" commands/card_db.py` |

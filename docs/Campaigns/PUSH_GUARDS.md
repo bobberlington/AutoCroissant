@@ -166,9 +166,9 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
 ## 3. Architecture
 
 ```
- git push (PSD/PNG paths) ──> card-guards.yml "Card guards" (three jobs since 2026-10-24; check is skipped unless
-                              vars.CARD_GUARDS is report/on, and the others with it)
- job check (timeout 100; ends at once, no runner waits for the window)
+ git push (PSD/PNG paths) ──> card-guards.yml "Card guards" (three jobs since 2026-10-24; check always runs: the card
+                              and font checks post at once; with CARD_GUARDS unset/off only the guards' steps skip)
+ job check (timeout 40, 150 for all; ends at once, no runner waits for the window)
    1 range    before..after: files, renames by blob sha, deletes, the last writer's login per file
    2 fetch    the pushed PSDs (and for stale-PNG cards the old PSD and old PNG) by blob sha, verified
    3 check    commands.card_guards check: guard 1 (png_export) + guard 2 (card_standards) on each card
@@ -180,9 +180,10 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
    5 land     sleep only what the timer left until 30 min after the push (all of it with no timer), drop writes a push
               since the push touched, then (on) one commit: re-exported PNGs + fixed PSDs, only where the blobs are still
               as pushed (git_commit); settle the post (after_window): discord-final.json, report-landed.md
-   6 follow   edit the comment ("landed in <sha>", "not landed"); gh workflow run site.yml (and tts-save.yml until Card sync)
+   6 follow   edit the comment ("landed in <sha>", "not landed"); gh workflow run card-sync.yml -f bake=pending (its data
+              commit starts the site build)
    7 tell     one Discord post (standards channel) when something remains
- job finish (needs both; always, unless check was skipped; timeout 10)
+ job finish (needs both; always, unless the mode is off; timeout 10)
    8 finish   a red run for card errors; a failed run (any job: needs.*.result): one alert per failure streak
 ```
 
@@ -522,10 +523,10 @@ not land.**
   failure alert, review 4; a re-run that fails in Check looks the mark up in the alert step itself, review 5). When the
   Comment step failed, Tell Discord puts up a comment of its own carrying the mark; when that fails too it warns that a
   re-run would post again (review 5).
-- **The site build and the TTS save:** a bot commit's run starts them (a `GITHUB_TOKEN` push triggers no workflow). When
-  one does not start, the comment says so, the run fails, and the post ends "The bot's commit did not start the site
-  build and the TTS save: the site catches up within 6 hours, the TTS save the next day." when it fits in 2,000
-  characters (review 5); with nothing else to tell, the failure alert goes out instead.
+- **The card sync:** a bot commit's run starts it with `bake=pending` (a `GITHUB_TOKEN` push triggers no workflow; the
+  card sync's data commit starts the site build). When it does not start, the comment says so, the run fails, and the
+  post says so when it fits in 2,000 characters (its :00/:30 cron catches up); with nothing else to tell, the failure
+  alert goes out instead.
 - **Not sent:** R10 and "current, but outside the bar" (comment only, `TELL_PNG_MISMATCH`);
   "X.png is left without its PSD" and "left at the PSD's old name" (neither a standard nor a PNG refusal; comment only,
   review 3).
@@ -595,7 +596,7 @@ not land.**
   - `all`: every card PSD of the tree; standards and R10 only, job summary only; about 813 downloads and 40 min.
 - **Repo variable `CARD_GUARDS`** (Settings, Variables; not a secret; any letter case: the job's `if` matches `On` too,
   so the Start step lowercases `MODE` for the shell and `--mode`, review 4):
-  - unset or `off`: push runs are skipped at the job's `if`;
+  - unset or `off`: the guards' steps skip (the card and font checks still run and post);
   - `report`: push runs check, comment and post (after the quiet window), and never commit;
   - `on`: report and land.
 - **Rollout:**
@@ -640,9 +641,9 @@ not land.**
 | The land step fails (API 5xx, a requests error such as a reset connection or a GET past its 3 tries, a bad file) | land never raises (review 3: any exception is the error), so landed.json, the comment's "Not landed: ..." and the settled post are written; the post tells each PNG not made and fix not made; red run, the plan in the artifact, nothing half-written (one commit or none) | re-run the job; the idempotent re-check writes only what is still due |
 | The Land step is killed (job timeout, a runner lost) | no settled post: Tell Discord fails and the run-failed message goes out (check's early post is never sent) | re-run the job (or the post job alone: Told before looks the mark up) |
 | The environment `card-guards-quiet` has no wait timer (not created yet, or deleted) | GitHub makes the environment on first use, with no rule: the post job starts at once and Land sleeps out the window (the behaviour before 2026-10-24). Deleting it fails every post job waiting in it | create it with section 20's command; delete it only with no push run waiting (section 20), else re-run their failed jobs |
-| A run cancelled by hand (the post job waiting out the window, say) | no message: the finish job's alert is quiet when no cancelled job ran to its timeout (the attempt's job list: check 100 minutes, post 75; GitHub reads a timeout as cancelled; without the list, under 95 minutes since the check's Start), and leaves no streak mark; the comment says "The bot could not finish this push" when Land had begun (review 6) | re-run it, or dispatch |
+| A run cancelled by hand (the post job waiting out the window, say) | no message: the finish job's alert is quiet when no cancelled job ran to its timeout (the attempt's job list: check 40 minutes, post 75; GitHub reads a timeout as cancelled; without the list, under 38 minutes since the check's Start), and leaves no streak mark; the comment says "The bot could not finish this push" when Land had begun (review 6) | re-run it, or dispatch |
 | The comment call fails | red run; Land, the post and the writes go on (Land waits on Check only); a failed POST: Tell Discord's own comment carries the told mark, or it warns that a re-run would post again; a failed edit: the id is already out, so the mark is still set; with nothing to tell, the alert says the push "was checked, but its run failed"; the lookup is tried 3 times, then on a re-run or a dispatch counts as told (never a second post; the step's error says the push may be untold) | re-run once GitHub answers |
-| The site build or the TTS save does not start after a bot commit | red run; the comment says so, and the post gets a line for it when it fits (with nothing else to tell, the alert goes out); site.yml catches up within 6 hours, the TTS save the next day | re-run the job (it finds the writes landed and starts both again; review 6), run them by hand, or wait |
+| The card sync does not start after a bot commit | red run; the comment says so, and the post gets a line for it when it fits (with nothing else to tell, the alert goes out); its :00/:30 cron catches up | re-run the job (it finds the writes landed and starts it again; review 6), run it by hand, or wait |
 | A re-run (or a landing dispatch) cannot read the branch head | an earlier run may have landed the writes, so none is told as "not made" (Land's `--rerun`): the post keeps the card's other lines, the comment says "Nothing was committed by this run; an earlier run may have landed it" (review 6; a first attempt that cannot read it tells "PNG not made" as before) | re-run once GitHub answers |
 | The author pushes the PNG first and the PSD a few minutes later | the PSD's push is a stale case whose PNG already shows the PSD: "PNG already shows the pushed PSD", nothing written (review 6) | none |
 | Webhook down or the secret missing | `::warning::`; the comment stands | none |
@@ -691,7 +692,7 @@ on:
       sha: {type: string, default: "", description: "Check this commit as if pushed (against its first parent); empty = main's head"}
       cards: {type: string, default: "", description: "Only these cards (comma separated)"}
       all: {type: boolean, default: false, description: "Every card PSD: standards and PNG-vs-PSD, summary only (~813 downloads)"}
-permissions: {contents: write, actions: write}     # commit and comment; gh workflow run site.yml
+permissions: {contents: write, actions: write}     # commit and comment; gh workflow run card-sync.yml
 concurrency:
   group: ${{ github.event_name == 'push' && format('card-guards-{0}', github.sha) || format('card-guards-{0}', github.run_id) }}
   cancel-in-progress: false
@@ -735,8 +736,8 @@ jobs:                    # three since 2026-10-24 (section 20): no runner sleeps
       # the bot checkout, setup-python 3.14 and the wheels, as in check
       - name: Land                                      # sleep to the quiet mark (nothing left after the timer), recent check, one commit,
                                                         # discord-final.json; --dry-run in report mode; --rerun on a re-run or a dispatch
-      - name: Follow up                                 # always(): a commit, or a re-run finding it landed: gh workflow run site.yml,
-                                                        # tts-save.yml (not started: said in the comment and the post, red); the
+      - name: Follow up                                 # always(): a commit, or a re-run finding it landed: gh workflow run card-sync.yml
+                                                        # -f bake=pending (not started: said in the comment and the post, red); the
                                                         # comment rewritten
       - name: Tell Discord                              # always(), not told before: discord-final.json only; URL never printed
         env: {WEBHOOK: "${{ secrets.DISCORD_STANDARDS_WEBHOOK }}"}
@@ -1517,11 +1518,11 @@ also checks the numbered PNGs, G8, on this path), `test_a_png_made_without_a_sto
   `bot_sha` (main may move during the wait: plan and land come from one bot version), the install, Land (still
   `--quiet-from`: it sleeps only what the timer did not cover, all of it without a timer), Follow up, Tell Discord, the
   artifact again (overwrite);
-- `finish` (needs both; always, unless check was skipped): Fail on card errors (the check's `card_errors`), Tell Discord
+- `finish` (needs both; always, unless the mode is off): Fail on card errors (the check's `card_errors`), Tell Discord
   the run failed (any job's failure: a step's `failure()` and `cancelled()` see only its own job, so the condition also
   reads `contains(needs.*.result, 'failure')` and `'cancelled'`; `test_failure_alert_reads_the_needed_jobs` evaluates it
   against the needed jobs' results. A cancel by hand is told apart from a timeout by the attempt's job list: a cancelled
-  job that ran to its timeout, check 100 or post 75 minutes, is a timeout), the streak artifact.
+  job that ran to its timeout, check 40 or post 75 minutes, is a timeout), the streak artifact.
 Every behaviour of the window stays (a refusal withdrawn when the author pushes the PNG, a card pushed again left to the
 later push, the writes that did not land told; a later push counted from the push, section 4.5, pinned by
 `test_a_push_during_the_check_still_supersedes`); `test_card_guards.py`'s step harness runs the three jobs' shell

@@ -453,7 +453,7 @@ burst (the environment `card-sync-quiet`'s wait timer, a TTSCardMaker repo setti
 
 | Constant | Value | Meaning |
 |---|---|---|
-| `card_guards.MODES` | `("dry", "report", "on")` | what the Action does; the repo variable `CARD_GUARDS` picks it (unset = the push runs are skipped) |
+| `card_guards.MODES` | `("dry", "report", "on")` | what the Action does; the repo variable `CARD_GUARDS` picks it (unset or off = the guards' steps skip; the card and font checks still run) |
 | `card_guards.LINE` | `"{login} pushed {card}{changes} with these issues: {issues}. [{short}]({url})"` | the standards-channel line (no ping); `{changes}` is the card's semantic PSD diff (psd_diff) |
 | `CHANGES_DISCORD`, `CHANGES_COMMENT` | `120`, `600` | characters of a card's changes on Discord and in the commit comment |
 | `QUIET_MARGIN` | 60 s | `land` waits card_bake's `RECENT` plus this after the push |
@@ -509,7 +509,6 @@ only); its pip install is the other card workflows' (card-sync.yml's, card-edits
 | Setting | Kind | Meaning |
 |---|---|---|
 | `CARD_GUARDS` | repository variable | the push guards' mode (`dry`, `report`, `on`); unset = off (2026-10-23) |
-| `MAIN_COMMIT`, `POSTS` | env in card-sync.yml | `off` during the shadow: Card sync writes only the data branch and posts nothing |
 | `DISCORD_CHANGELOG_WEBHOOK` | secret | the changelog channel (changelog, bake/sync failure alerts; never pings) |
 | `DISCORD_STANDARDS_WEBHOOK` | secret | the standards channel: card-check, the push guards (no ping) and font-check (pings the card makers' role) |
 | `card-guards-quiet` | environment (planned 2026-10-24, branch work/py314; the owner creates it after both branches land) | its 30-minute wait timer is the push guards' quiet window: card-guards.yml's post job waits in it on a push's first attempt (no runner held); without the timer, Land sleeps the window out. Command: docs/Campaigns/PUSH_GUARDS.md section 20 |

@@ -43,7 +43,7 @@ Census: `docs/Future/PROBLEM_CARDS_2026-10-25.csv`.
        BUGS D1), the never-overwrite-Photoshop check, and the 5 variant PSDs' ` #N` tags (one scripted commit, plan
        shown first). Status: designed, build next.
 2. [ ] **Test suite cut** (`docs/Future/TEST_SUITE_CUT.md`): xdist, 1,923 -> about 635 with the 15 site smoke tests;
-       `discord_archive` and `discord_match` retired with their tests. Status: planned.
+       `discord_archive` and `discord_match` retired with their tests (done 2026-10-25, work/clean). Status: planned.
 3. [ ] **Smaller PNG pushes** (`docs/Future/SMALLER_PNG_PUSHES.md`): oxipng CLI, XMP strip, opaque as RGB for every PNG
        the bot writes; no rewrite of existing PNGs. Status: designed.
 4. [ ] **Website small fixes** (`docs/Future/WEBSITE_SMALL_FIXES.md`): phone tooltips, exact name first, deck export

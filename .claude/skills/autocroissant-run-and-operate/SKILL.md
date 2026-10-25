@@ -478,7 +478,7 @@ within 8 levels (`png_export.BESIDE_CUT`, owner); with no stored image, up to 30
 (`png_export.KEPT`/`KEPT_PX`, default 2026-10-24, owner to confirm), past that redrawn.
 
 - **The switch: repo variable `CARD_GUARDS`** (TTSCardMaker Settings > Variables, not a secret; any letter case). Unset or
-  `off`: push runs are skipped. `report`: check, comment and post (after the window), never commit: the PNG the bot
+  `off`: the guards' own steps skip (the card and font checks in the same job still run and post at once). `report`: check, comment and post (after the window), never commit: the PNG the bot
   would make is told ("PNG not exported with the PSD: export it in Photoshop") and the comment says it "would be
   re-exported (CARD_GUARDS=on)". `on`: also land the PNGs and fixes. Rollout (owner, 2026-10-22): no variable, then dry dispatches, then `report` for about 3 days, then `on`
   (owner's call; the items to confirm first are at the top of PUSH_GUARDS.md section 15).
@@ -499,8 +499,8 @@ within 8 levels (`png_export.BESIDE_CUT`, owner); with no stored image, up to 30
   failure alert nor its post goes out, and its error says the push may be untold, so re-run again once GitHub answers).
   A re-run that fails in Check looks the mark up in the alert step, so a push already told gets no "was not guarded".
   The quiet window counts from the push, so a late re-run does not wait again. After a run that landed, the re-run finds
-  its blobs on the branch ("already on the branch"), writes nothing and starts the site build and the TTS save again
-  (the first attempt's may not have started). A re-run (or a dispatch) that cannot read the branch tells no write as
+  its blobs on the branch ("already on the branch"), writes nothing and starts the card sync again with `bake=pending`
+  (the first attempt's may not have started; the card sync's data commit starts the site build). A re-run (or a dispatch) that cannot read the branch tells no write as
   "not made" (an earlier run may have landed it); its comment says this run committed nothing.
 - **Failures:** a push run that fails without its post going out (not checked, the commit failed unposted, a step broke
   or timed out) sends one message to the standards channel with the run link: "was not guarded", or "was checked, but its
@@ -508,32 +508,12 @@ within 8 levels (`png_export.BESIDE_CUT`, owner); with no stored image, up to 30
   `card-guards-failure-told` artifact, and the next failing run is quiet only when the last finished push run left it
   and is not green. A red run that posted its own lines (a card error, a failed comment) leaves none, so the next
   failure is told. A card the guards could not finish is told in the post and turns the run red ("Fail on card
-  errors"); re-check it with a dispatch (`sha`, `cards`). When the site build or the TTS save does not start after the
-  bot's commit, the comment and the post say so and the run is red (site.yml catches up within 6 hours, the TTS save the
-  next day; a re-run starts them again). Cancelling a run by hand (before the job's 150-minute timeout; on work/py314: no cancelled job ran to its timeout, check 100 or post 75 minutes) sends no message.
-- **Loops:** GITHUB_TOKEN pushes start no run; the job skips the AutoCroissant and github-actions actors, and inside a range
-  the files only bot commits changed.
-
-### Discord archive and card matching (added 2026-10-22; CLI only, run by hand)
-
-commands/discord_archive.py (the miner) and commands/discord_match.py (the matcher) are both uncompiled and not in setup.py.
-Together they find the earliest Discord post of each card, plus its posters, the names people used for it and its revisions.
-
-- **Privacy rule:** the mined data is other people's words and images. It stays under `~/Documents/Tools/discord-archive/`
-  (the miner's `--out` must be that folder or one inside it, and the matcher refuses a root inside a git repo). Nothing mined goes into any repo, test
-  fixtures included (this repo is public), so tests use made-up guilds, ids, names and images only.
-- **Miner:** `python -m commands.discord_archive --guild <id> --all --config <path to config.py>` (`--list` for
-  channels only, `--channels <id>...` to go first, `--retry-downloads` for failed images). It sends GET requests only
-  through REST v10, never the gateway or a write, so it can run beside the bot on the same token. It is resumable
-  (cursors/) and stores images by sha256. The token is read from config.py with ast and is never printed. Long runs:
-  start it with `nohup` and log under the archive folder. Outputs: messages/, attachments/, attachments.jsonl,
-  channels.json, summary.json, runs.jsonl.
-- **Matcher:** `python -m commands.discord_match score` (perceptual hashes, file names, chat text and macOS Vision OCR
-  of card titles; `--no-ocr` without pyobjc; card caches in match/), then `build`. `build` writes matches.json,
-  REPORT.md, proposal/ and ambiguous.json/.html, whose entries A1, A2... wait for the owner's ruling. The owner rules
-  with `python3 -I apply_rulings.py "A12 = <card>, A13 = none"` in the archive folder, which also rebuilds.
-  `selftest` measures accuracy on degraded copies of the cards. The matcher never talks to Discord, and bot and
-  webhook posts never date a card.
+  errors"); re-check it with a dispatch (`sha`, `cards`). When the card sync does not start after the
+  bot's commit, the comment and the post say so and the run is red (its :00/:30 cron catches up; a re-run starts it
+  again). Cancelling a run by hand (before the check job's 40-minute timeout, 150 for `all`, or the post job's 75) sends
+  no message.
+- **Loops:** GITHUB_TOKEN pushes start no run (no actor filter since 2026-10-25); inside a range the guards skip the
+  files only bot commits changed.
 
 ## 8. Artifact conventions — where files land
 
