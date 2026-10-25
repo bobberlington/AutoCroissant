@@ -39,8 +39,8 @@ psd-tools fork at `cards` da3b0f6d (round 5b + fix/txt2-sync, not tagged yet) an
 3. *Missing fonts are reported by font-check only*: the guard drops R7.
 4. *A PSD saved without Maximize Compatibility (G2) is rendered anyway* under the bake's own gates; the post says "no
    stored image to cross-check" instead of refusing.
-5. *The quiet window is a GitHub Environment wait timer* (`card-guards-quiet`, 30 minutes) on a post job; the check job
-   ends at once.
+5. *The quiet window is a GitHub Environment wait timer* (`card-guards-quiet`, 25 minutes since P-1) on a post job; the check job
+   ends at once, and Land sleeps to 30 minutes after the push.
 
 **The owner's ruling (2026-10-23): R3 and R4's template layout dropped.** Where the Ability layer sits (inside the Text
 group or not) and which layer holds the title (`Text/Name`, one named after the card or, since title-own-text, after its
@@ -175,8 +175,8 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
               -> plan.json (writes, with the blobs they rest on), report.md, comment.md, discord.json, artifacts
    4 comment  the job summary; one commit comment on `after` (a re-run edits it); the plan for the post job (land=true
               when report has something to tell or on something to tell or write), the `card-guards` artifact
- job post (needs check, only with land=true; timeout 75): waits in the environment card-guards-quiet (30-minute wait
-          timer) on a push's first attempt; a dispatch and a re-run take no environment
+ job post (needs check, only with land=true; timeout 75): waits in the environment card-guards-quiet (its wait
+          timer, about 25 min) on a push's first attempt; a dispatch and a re-run take no environment
    5 land     sleep only what the timer left until 30 min after the push (all of it with no timer), drop writes a push
               since the push touched, then (on) one commit: re-exported PNGs + fixed PSDs, only where the blobs are still
               as pushed (git_commit); settle the post (after_window): discord-final.json, report-landed.md
@@ -264,11 +264,12 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
 
 **4.5 The quiet window.**
 - Since 2026-10-24 (decision 5, section 20) no runner sleeps for it: the check job ends after the comment, and the post job
-  (Land, Follow up, Tell Discord) waits in the environment `card-guards-quiet`, whose 30-minute wait timer the owner sets
+  (Land, Follow up, Tell Discord) waits in the environment `card-guards-quiet`, whose wait timer the owner sets
   (section 20's command). A push's first attempt takes the environment; a dispatch and a re-run take none. `land`
-  still gets `--quiet-from`: it sleeps out whatever is left of push + 31 minutes (nothing once the timer held the job; the
-  whole window if the environment has no timer, the old behaviour), then runs `card_bake.recent_paths` (2 API calls) over
-  the pushes since push + 1 minute, not the last 30 minutes before Land (the post job starts 30 minutes after the check
+  still gets `--quiet-from`, the push time (the event's `pushed_at`, every attempt; since P-1, 2026-10-25): it sleeps out
+  whatever is left of push + 31 minutes (up to the check's length under a 25-minute timer, at most a minute under a 30-minute one,
+  the whole window if the environment has no timer), then runs `card_bake.recent_paths` (2 API calls) over
+  the pushes since push + 1 minute, not the last 30 minutes before Land (the post job starts the timer's minutes after the check
   job ends; a push made while the check ran counts too; review of 2026-10-24). A write that a later push touched is
   dropped: that push's run owns it.
 - Every write also rests on its blobs (G9), looked up in any letter case: a teammate's `foo.png` pushed in the window for a
@@ -726,7 +727,7 @@ jobs:                    # three since 2026-10-24 (section 20): no runner sleeps
   post:
     needs: check
     if: "!cancelled() && needs.check.outputs.checked == 'success' && needs.check.outputs.land == 'true' && (mode report or on)"
-    environment: ${{ (github.event_name == 'push' && github.run_attempt == '1') && 'card-guards-quiet' || '' }}   # the 30-minute wait timer
+    environment: ${{ (github.event_name == 'push' && github.run_attempt == '1') && 'card-guards-quiet' || '' }}   # the wait timer (25 min since P-1)
     runs-on: ubuntu-latest
     timeout-minutes: 75
     steps:
@@ -1533,10 +1534,11 @@ the environment makes on each push run needs no `deployments` permission.
 **The environment (the owner runs this once, at landing; nothing here ran it):**
 ```
 gh api --method PUT repos/MichaelJSr/TTSCardMaker/environments/card-guards-quiet \
-  -F wait_timer=30 -F deployment_branch_policy=null
+  -F wait_timer=25 -F can_admins_bypass=true -F deployment_branch_policy=null
 gh api repos/MichaelJSr/TTSCardMaker/environments/card-guards-quiet --jq '[.name, (.protection_rules[] | {type, wait_timer})]'
 ```
-The second line should show `{"type": "wait_timer", "wait_timer": 30}`. No reviewers, any branch (push runs are main's
+The second line should show `{"type": "wait_timer", "wait_timer": 25}` (30 until P-1, 2026-10-25: the timer counts
+from the check's end, Land sleeps to 30 minutes after the push; either value is safe). No reviewers, any branch (push runs are main's
 only; the job takes the environment on pushes alone).
 
 Undo, only with no push run waiting: GitHub fails every job waiting on a deleted environment's rules ("Any jobs
