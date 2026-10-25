@@ -991,6 +991,10 @@ def test_side_file_lines_that_match_no_card_are_listed(github, psds, capsys):
     _run()
     assert ("Lines still keyed by an archived name (move them to its new name, or drop them): The Freezer "
             "(Card Edits.json)") in capsys.readouterr().out
+    github.files[pa.AUTHORS_PATH] = b"[people]\nbobgit = Bob\n[cards]\nmini_doomer = bobgit\nthe freezer = bobgit\n"
+    _run()
+    out = capsys.readouterr().out
+    assert "Card Authors.txt:" not in out and "Card Edits.json: 2 names match no card: gone card, the freezer" in out
 
 
 class _File:

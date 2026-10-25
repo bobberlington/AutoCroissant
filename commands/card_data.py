@@ -825,13 +825,16 @@ class CardBuild:
                   f"card before as a version: {', '.join(made[:10])}{', ...' if len(made) > 10 else ''}")
 
     def _unmatched(self, authors: Optional[CardAuthors], dates: Optional[CardDates]) -> None:
-        """The side files' names that match no card (an archived or renamed card's lines, a typo; the website logs the
-        same): one console line per file. Kept for report_archive (side_files)."""
+        """The side files' names that match no card (a typo; Card Edits.json lines of an archived card too: Card
+        Authors.txt and Card Creation Dates.json may credit and date archived cards): one console line per file. Kept
+        for report_archive (side_files)."""
         self.side_names = {path: set(found.cards) for path, found in
                            ((AUTHORS_PATH, authors), (EDITS_PATH, self.edits), (CREATED_PATH, dates)) if found is not None}
         listed = {CardAuthors.key(name) for name in self.db.stats}
+        archived = {CardAuthors.key(name) for name, versions in self.db.old_stats.items()
+                    if versions and getattr(versions[len(versions) - 1], "archived", None)}   # credits, dates of archived cards
         for path, keys in self.side_names.items():
-            names = sorted(keys - listed)
+            names = sorted(keys - listed - (set() if path == EDITS_PATH else archived))
             if names:
                 print(f"{basename(path)}: {len(names)} name{'' if len(names) == 1 else 's'} match no card: "
                       f"{', '.join(names[:20])}{', ...' if len(names) > 20 else ''}")

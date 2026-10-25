@@ -214,6 +214,13 @@ def test_an_archived_card_keeps_where_its_psd_went(bs, repo, tmp_path, monkeypat
         [("White Palace", "MDW/The Morgue/White_Palace.psd")]
 
 
+def test_an_unfinished_card_has_its_own_tag(bs):
+    """MDW/Unfinished is Unfinished (owner, 2026-10-24); The Morgue is Retired; renamed_to wins; nothing is Deleted."""
+    tags = [bs.archive_tag(t) for t in ({"moved_to": "MDW/Unfinished/6 Stars/Insanity_Wisp.psd"},
+                                        {"moved_to": "MDW/The Morgue/Ech.psd"}, {"renamed_to": "X", "moved_to": "MDW/Unfinished/X.psd"}, {})]
+    assert tags == ["unfinished", "retired", "renamed", "deleted"]
+
+
 def test_an_archived_event_keeps_moved_to(bs, repo, tmp_path, monkeypatch):
     """The card sync's archived event reaches the Changelog tab with moved_to (changes.js: "moved to MDW/The Morgue")."""
     out = _build(bs, monkeypatch, repo, tmp_path / "b", str(repo["db"]))
