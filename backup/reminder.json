@@ -1,0 +1,22 @@
+{
+  "schema": "autocroissant.reminder-store",
+  "schema_version": 2,
+  "time_semantics": "when: Pacific wall time with that instant's offset (America/Los_Angeles); repeats keep the wall time",
+  "guilds": {
+    "682405589648801939": [
+      {
+        "id": "134e3b24",
+        "channel_id": "1426761394862161973",
+        "msg": "<@&1283170845455552603> Another week has passed.",
+        "when": "2026-10-26T13:00:00-07:00",
+        "frequency": 604800,
+        "command": null,
+        "enabled": true,
+        "creator_id": null,
+        "creator_name": "",
+        "v": 3,
+        "problem": null
+      }
+    ]
+  }
+}
