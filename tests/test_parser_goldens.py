@@ -37,7 +37,7 @@ def test_certified_values():
     d = doomer["card"]
     assert (d["type"], d["stars"], d["types"]) == ("minion", 2, ["wind", "defensive_minion", "light"])
     assert (d["hp"], d["def"], d["atk"], d["spd"]) == (5, 2, 5, 5)
-    assert d["ability"].endswith("(BOT) Die.") and doomer["validator"] == []
+    assert d["ability"].endswith("(BOT) Destroy this creature.") and doomer["validator"] == []
     f = freezer["card"]
     assert (f["type"], f["stars"], f["types"]) == ("field", 1, ["field"])
     assert f["ability"] == ("For friendly creatures:\n[water] Turns into [ice]. [ice]: +1 DEF\n"

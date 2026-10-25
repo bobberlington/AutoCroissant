@@ -1,8 +1,8 @@
 {
  "alt_names": null,
- "blob": "764b6a064b14ec0a76aa73a70cb6a4f933c1b993",
+ "blob": "563305eb6b447292756cd81704836903bfd4a8d1",
  "card": {
-  "ability": "Has stats equal to the base stats -2 of the creature that summoned it. \n(BOT) Die.",
+  "ability": "Has stats equal to the base stats -2 of the creature that summoned it. \n(BOT) Destroy this creature.",
   "atk": 5,
   "def": 2,
   "hp": 5,
