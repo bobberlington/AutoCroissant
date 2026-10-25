@@ -766,7 +766,7 @@ class GitBuild(CardBuild):
         super().__init__(db, **kwargs)
         self.checkout, self.blobs, self.budget = checkout, blobs, budget
         self.head = _git(checkout, "rev-parse", head).strip()
-        self.at = float(_git(checkout, "show", "-s", "--format=%ct", self.head).strip())
+        self.at = float(_git(checkout, "log", "-1", "--format=%ct", self.head).strip())   # not show: a merge diffs (blobs)
         self.index = index if index is not None else GitIndex.from_git(checkout, self.head)
         self.pushed = self.head                  # a commit on GitHub with head's other PSDs: range reads there
         self.pushed_blobs = None                 # path -> blob at pushed when that is not head (a bake's parent)
@@ -1277,8 +1277,8 @@ def rewrite_commit(db_dir: str, checkout: str, old: str, new: str, message: str 
     from commands import changelog, psd_details
     from commands.card_db import read_db, write_db
     old, new = _git(checkout, "rev-parse", old).strip(), _git(checkout, "rev-parse", new).strip()
-    old_at = float(_git(checkout, "show", "-s", "--format=%ct", old).strip())
-    new_at = float(_git(checkout, "show", "-s", "--format=%ct", new).strip())
+    old_at = float(_git(checkout, "log", "-1", "--format=%ct", old).strip())
+    new_at = float(_git(checkout, "log", "-1", "--format=%ct", new).strip())
     stats, old_stats, details, manifest = read_db(db_dir)
 
     def fix(card) -> None:
