@@ -66,7 +66,7 @@ def gathered(monkeypatch):
 
 
 def test_the_build_opens_each_psd_once(cards, opens, gathered):
-    assert _build(cards, "--seed", str(cards.seed))[0] == cd.EXIT_OK
+    assert _build(cards, "--empty")[0] == cd.EXIT_OK
     assert sorted(gathered) == sorted([DOOMER, FREEZER])
     assert opens == Counter({_key(cards.psds[DOOMER]): 1, _key(cards.psds[FREEZER]): 1})
 

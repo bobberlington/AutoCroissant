@@ -1,8 +1,6 @@
-"""card_db: CardInfo records, db/'s JSON files and manifest, the historical pickles' allow-list unpickler."""
+"""card_db: CardInfo records, db/'s JSON files and manifest."""
 import hashlib
 import json
-import os
-import pickle
 from collections import defaultdict
 from dataclasses import fields
 
@@ -49,10 +47,9 @@ def test_round_trip_is_exact():
 
 
 def test_version_is_no_field():
-    """version is a class default, not a dataclass field: parsed cards pickle exactly as before it existed."""
+    """version is a class default, not a dataclass field (card_db's EXTRA_KEYS)."""
     assert "version" not in {f.name for f in fields(cm.CardInfo)} and cm.CardInfo.version is None
-    card = _card()
-    assert "version" not in card.__dict__ and b"\x8c\x07version" not in pickle.dumps(card)   # (parser_version is)
+    assert "version" not in _card().__dict__
 
 
 def test_missing_keys_default_and_unknown_keys_warn_once(capsys, monkeypatch):
@@ -64,8 +61,8 @@ def test_missing_keys_default_and_unknown_keys_warn_once(capsys, monkeypatch):
     assert out.count("'sparkle'") == 1 and out.count("'glow'") == 1
 
 
-def test_older_pickle_card_takes_the_defaults():
-    """A card unpickled from before a field existed (no attribute in its __dict__) records the field's default."""
+def test_a_missing_attribute_takes_the_default():
+    """A card without a field's attribute in its __dict__ records the field's default."""
     card = _card()
     for key in ("display_name", "subseries", "parser_version", "archived", "creatures", "types"):
         del card.__dict__[key]
@@ -133,18 +130,3 @@ def test_a_foreign_file_is_refused(tmp_path):
 # ========================
 # Pickles
 # ========================
-class Evil:
-    def __reduce__(self):
-        return (os.system, ("echo pwned",))
-
-
-def test_seed_unpickler_takes_the_card_classes_only(tmp_path):
-    old = defaultdict(list, {"A": [_card()]})
-    good = tmp_path / "old_stats.pkl"
-    good.write_bytes(pickle.dumps(old))
-    loaded = cdb.load_pickle(str(good))
-    assert isinstance(loaded, defaultdict) and loaded == old and type(loaded["A"][0]) is cm.CardInfo
-    bad = tmp_path / "bad.pkl"
-    bad.write_bytes(pickle.dumps({"x": Evil()}))
-    with pytest.raises(pickle.UnpicklingError, match="not allowed"):
-        cdb.load_pickle(str(bad))

@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""Diff two card databases (stats and their history): pickles or the data build's db/ JSON.
-RUN THIS BEFORE EVERY PICKLE PUSH, and for the shadow's daily check of the data branch.
+"""Diff two card databases (stats and their history): the data build's db/ JSON.
+Run it on Card sync data commits (the data gate) and for the shadow's daily check of the data branch.
 
-The single most damaging failure class in this project is committing a
-corrupted stats.pkl (see autocroissant-failure-archaeology). This tool turns
-"the pickle looks fine" into numbers.
+Committing corrupted card data is the most damaging failure class in this project (see
+autocroissant-failure-archaeology). This tool turns "the data looks fine" into numbers.
 
-Each side is any form the card data takes (commands.card_db.read_cards): a stats.pkl or stats.json (the old_stats
-file beside it is the history), a folder of pickles, a db/ folder (or a folder holding db/), or a data commit of
---git's repo (default: here), such as origin/data in a TTSCardMaker clone. No config.py is needed.
+Each side is any form the card data takes (commands.card_db.read_cards): a stats.json (the old_stats.json beside it
+is the history), a db/ folder (or a folder holding db/), or a data commit of --git's repo (default: here), such as
+origin/data in a TTSCardMaker clone. No config.py is needed.
 
 Usage (run from the repo root):
     # the data branch's last commit against the one before (what a Card sync run changed):
@@ -16,15 +15,9 @@ Usage (run from the repo root):
     python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py origin/data~1 origin/data \
         --git ~/Desktop/TTSCardMaker
 
-    # the last PICKLE (AutoCroissant's pickles, deleted 2026-10-25; in git history) against the data now:
-    mkdir -p ~/Documents/Tools/wt/scratch/pk && for f in stats old_stats; do \
-        git show "$(git rev-list -1 HEAD -- stats.pkl)^:$f.pkl" > ~/Documents/Tools/wt/scratch/pk/$f.pkl; done
-    python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py ~/Documents/Tools/wt/scratch/pk \
-        origin/data --git ~/Desktop/TTSCardMaker
-
     # any two (a db/ folder from a hand build, an Actions artifact...), history files named explicitly:
     python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py <old> <new> [--verbose] \
-        [--history <old old_stats.pkl|.json> <new old_stats.pkl|.json>]
+        [--history <old old_stats.json> <new old_stats.json>]
 
 Exit code 0 = no changes; 1 = changes found (added/removed/modified cards, or
 history: versions added or dropped, starts moved, archive tags, blobs); 2 =
@@ -43,25 +36,21 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT))
-from commands.card_db import load_pickle, parse_old_stats, read_cards  # noqa: E402
+from commands.card_db import parse_old_stats, read_cards  # noqa: E402
 from commands.card_history import data_of  # noqa: E402
 
 BOOKKEEPING = ("blob_sha", "parser_version")       # not in to_dict(); a version's start is read from `version`
 
 
 def norm(entry):
-    """Normalize a stats entry (CardInfo dataclass or legacy dict) to a dict."""
-    if hasattr(entry, "to_dict"):
-        return entry.to_dict()
-    return dict(entry)
+    """A stats entry (CardInfo) as a dict."""
+    return entry.to_dict()
 
 
 def load_history(path):
-    """An old_stats file named by --history: old_stats.pkl, or old_stats.json."""
-    if path.endswith(".json"):
-        with open(path, encoding="utf-8") as fh:
-            return parse_old_stats(fh.read(), path)
-    return load_pickle(path)
+    """An old_stats.json named by --history."""
+    with open(path, encoding="utf-8") as fh:
+        return parse_old_stats(fh.read(), path)
 
 
 def start(card):
@@ -69,7 +58,7 @@ def start(card):
     info = getattr(card, "version", None)
     if isinstance(info, dict) and info.get("from") is not None:
         return info["from"]
-    return getattr(card, "timestamp", None) if not isinstance(card, dict) else card.get("timestamp")
+    return getattr(card, "timestamp", None)
 
 
 def key(card):
@@ -80,9 +69,8 @@ def key(card):
 def pair(a, b):
     """
     Two lists of one name's stored versions matched up: one version when the same timestamp and blob; else the same
-    blob (re-dated from git); else, where one side has no blob (given its commit's blob: the data build's seed pass,
-    which /update_stats never does), the same timestamp, or the same data in today's forms (given a blob and
-    re-dated).
+    blob (re-dated from git); else, where one side has no blob (a legacy version), the same timestamp, or the same
+    data in today's forms.
 
     Returns:
         ([(a's version, b's version)], a's unmatched, b's unmatched)
@@ -106,7 +94,7 @@ def pair(a, b):
 
 def same_data(a, b):
     """Two versions hold the same data in today's forms (card_history.data_of: no timestamp, path or blob)."""
-    return not isinstance(a, dict) and not isinstance(b, dict) and data_of(a) == data_of(b)
+    return data_of(a) == data_of(b)
 
 
 def data(card):

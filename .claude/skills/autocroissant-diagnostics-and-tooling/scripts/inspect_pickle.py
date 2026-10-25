@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Inspect the card database read-only: the bot's card_data/ copy of the data build's db/ JSON, or with --db any form
-commands.card_db.read_cards reads (a db/ folder, a data commit, or a historical folder of pickles).
+commands.card_db.read_cards reads (a db/ folder, a stats.json or a data commit).
 
 Usage (run from anywhere; repo root derived from this file's location):
     python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py            # summary
@@ -11,7 +11,7 @@ Usage (run from anywhere; repo root derived from this file's location):
     python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py --db origin/data \
         --git ~/Desktop/TTSCardMaker "Card Name"
 
-No config.py needed (historical pickles load through card_db's allow-list unpickler). Never writes anything.
+No config.py needed. Never writes anything.
 """
 import sys
 from collections import Counter, defaultdict

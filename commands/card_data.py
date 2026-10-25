@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from json import loads as json_loads
 from os import environ, fdopen, listdir, remove, walk
-from os.path import abspath, basename, dirname, expanduser, isdir, isfile, join as path_join, splitext
+from os.path import abspath, basename, dirname, isdir, isfile, join as path_join, splitext
 from re import IGNORECASE, match as re_match
 from subprocess import CalledProcessError, run
 from sys import version_info
@@ -26,8 +26,8 @@ from typing import Callable, Optional
 from psd_tools import PSDImage
 from requests.exceptions import RequestException
 
-from global_config import (AUTHORS_PATH, AUTHORS_PATHS, BOT_CLONE, CARD_BRANCH, CREATED_PATH, CREATED_PATHS, EDITS_PATH,
-                           EDITS_PATHS, ICON_MANIFEST_PATH, RAW_BASE, RULEBOOK_DIR, RULES_PATH, STARS_DIR, TYPES_DIR)
+from global_config import (AUTHORS_PATH, AUTHORS_PATHS, CARD_BRANCH, CREATED_PATH, CREATED_PATHS, EDITS_PATH,
+                           EDITS_PATHS, ICON_MANIFEST_PATH, RULEBOOK_DIR, RULES_PATH, STARS_DIR, TYPES_DIR)
 from commands.card_edits import CardAuthors, CardDates, CardEdits
 from commands.card_models import CardInfo, StatsDatabase, card_name, duplicate_png
 from commands.github_api import RangeError, RemotePSD, blob_text, fetch_blob, range_reads
@@ -703,13 +703,6 @@ def can_prune(build: CardBuild) -> bool:
     return True
 
 
-def bot_pickles():
-    """The seed pass's recover input: the bot's PICKLE commits (card_history.bot_pickles) in its own clone (BOT_CLONE,
-    else this checkout); None without a full clone."""
-    from commands.card_history import BOT_CHECKOUT, bot_pickles as pickles
-    return pickles(expanduser(BOT_CLONE) if BOT_CLONE else BOT_CHECKOUT)
-
-
 # ========================
 # The build (python -m commands.card_data)
 # ========================
@@ -984,31 +977,6 @@ def _restore(db_dir: str, sha: str) -> tuple:
     return (parse_stats(text[STATS_JSON]), parse_old_stats(text[OLD_STATS_JSON]), details, manifest)
 
 
-def _bot_file(ref: str, name: str, folder: str, required: bool = True) -> str:
-    """AutoCroissant's file at a ref, downloaded into folder ("" when optional and missing)."""
-    from commands.github_api import get_with_retry
-    reply = get_with_retry(f"{RAW_BASE}{BOT_REPO}/{ref}/{name}", timeout=60)
-    if reply.status_code == 404 and not required:
-        return ""
-    reply.raise_for_status()
-    path = path_join(folder, name)
-    with open(path, "wb") as fh:
-        fh.write(reply.content)
-    return path
-
-
-def _seed_folder(seed: str) -> str:
-    """The seed's folder: a local one as is, else an AutoCroissant commit (one before step 10 deleted them) whose
-    pickles are downloaded to a temp one."""
-    if isdir(seed):
-        return seed
-    from tempfile import mkdtemp
-    folder = mkdtemp(prefix="card-seed-")
-    for name in ("stats.pkl", "old_stats.pkl", "psd_details.json"):
-        _bot_file(seed, name, folder)
-    return folder
-
-
 def _data_head(db_dir: str) -> str:
     """The commit of the repo db/ sits in ("" when it is no git work tree or has no commit)."""
     try:
@@ -1100,12 +1068,12 @@ def pushes(repository: str, checkout: str, commits: list) -> list:
     return out
 
 
-def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs: str = "", seed: str = "",
+def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs: str = "", empty: bool = False,
           full: bool = False, cards: str = "", allow_archive: bool = False, budget: int = BUDGET, run_url: str = "",
           dry_run: bool = False, restore: str = "", builder_ref: str = "",
           baked: bool = False, own: str = "") -> Outcome:
     """
-    One build (design section 7.1): db/ before (or the seed's pickles, refined once), the tree and index from git, the
+    One build (design section 7.1): db/ before, the tree and index from git, the
     changed PSDs (and last run's held ones), authors, edits, duplicates, the archive dated from git, the versions, the
     changelog events with their pushes, the gates, then db/ written with its manifest.
 
@@ -1115,8 +1083,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         db_dir: The db/ folder (read, then written)
         head: The card repo commit to build
         blobs: A clone whose objects hold the PSD blobs (the Mac's working clone); tried first
-        seed: A folder holding stats.pkl, old_stats.pkl and psd_details.json, or an AutoCroissant commit that has them,
-            to start from (no data yet)
+        empty: Start from an empty db/ (new card data; else an empty one is refused)
         full: Re-parse every card (also G4's and G5's approval, kept in pending.full until the re-parse is done)
         cards: Comma-separated names to re-parse
         allow_archive: Lift G2
@@ -1132,20 +1099,15 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         The Outcome (code 0 written or nothing to do, 2 a gate refused, 1 files not fetched)
     """
     from commands import changelog, psd_details
-    from commands.card_db import check_db, read_db, read_pickles, round_trip_problems, write_db
+    from commands.card_db import check_db, read_db, round_trip_problems, write_db
     from commands.card_history import (Refined, allows_high, close_archived, date_archive, kept_values, out_of_range,
-                                       record_versions, refine, unchecked, unknown_values)
+                                       record_versions, unchecked, unknown_values)
     out = Outcome()
     data_head = _data_head(db_dir)
     stats, old, details, manifest_before = read_db(db_dir)
-    seeding = bool(seed) or not stats
-    if seeding and not seed:
-        raise ValueError(f"{db_dir} holds no cards: give --seed, a folder with stats.pkl and old_stats.pkl")
-    if seeding:
-        folder = _seed_folder(seed)
-        stats, old = read_pickles(folder)
-        details = psd_details.load(path_join(folder, "psd_details.json"))
-    pending_before = (manifest_before.get("pending") or {}) if not seeding and not restore else {}
+    if not stats and not empty:
+        raise ValueError(f"{db_dir} holds no cards: give --empty to start new card data")
+    pending_before = (manifest_before.get("pending") or {}) if not restore else {}
     carried = pending_before.get("full") or None              # a budgeted full re-parse going on
     if carried and carried.get("parser_version") != PARSER_VERSION:
         carried = None                                        # a newer parser needs its own approval
@@ -1154,7 +1116,6 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     db.stats, db.old_stats = stats, old
     run_build = GitBuild(db, checkout, head, blobs=blobs, budget=budget)
     index = run_build.index
-    seeded = refine(db.stats, db.old_stats, index, bot_pickles()) if seeding else None
     restored_manifest: dict = {}
     if restore:
         db.stats, db.old_stats, details, restored_manifest = _restore(db_dir, restore)
@@ -1206,7 +1167,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     if restore:
         new_events = [{"kind": "restore", "card": "", "restored_from": restore}]
     elif new_events:
-        base = manifest_before.get("card_commit") if not seeding else None
+        base = manifest_before.get("card_commit")
         if base and run(["git", "-C", checkout, "cat-file", "-e", f"{base}^{{commit}}"], capture_output=True).returncode != 0:
             base = None
         commits = _commits(checkout, base, run_build.head)
@@ -1258,8 +1219,6 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         "card_repo": repository, "card_commit": run_build.head, "card_commit_at": run_build.at, "main_commit": None,
         "builder": {"repo": BOT_REPO, "ref": builder_ref or None, "commit": _builder_commit(), "parser_version": PARSER_VERSION,
                     "psd_tools": _version("psd-tools"), "python": ".".join(map(str, version_info[:2]))},
-        "seed": ((({"repo": BOT_REPO, "commit": seed} if not isdir(seed) else {"pickles": seed}) if seeding
-                  else manifest_before.get("seed"))),
         "inputs": {key: run_build.shas.get(path) for key, path in (("edits_blob", EDITS_PATH), ("authors_blob", AUTHORS_PATH),
                                                                    ("created_blob", CREATED_PATH),
                                                                    ("manifest_blob", ICON_MANIFEST_PATH), ("decks_blob", RULES_PATH),
@@ -1269,12 +1228,10 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         "problems": out.problems, "gates": {g: f"lifted by {why}" for g, why in out.lifted.items()},
         "restored_from": restore or None}
     if restored_manifest:                                 # its card commit and inputs: the next run re-reads what changed
-        for key in ("card_commit", "card_commit_at", "inputs", "seed"):
+        for key in ("card_commit", "card_commit_at", "inputs"):
             out.manifest[key] = restored_manifest.get(key, out.manifest[key])
         kept = restored_manifest.get("pending") or {}
         out.manifest["pending"] = {"stale": kept.get("stale") or [], "failed": kept.get("failed") or [], "full": None, "repin": []}
-    if seeded is not None:
-        out.lines = seeded.lines() + out.lines
     if impossible:
         out.lines.append(f"History values out of range set to unknown: {len(impossible)} "
                          f"({', '.join(sorted({n for n, _, _ in impossible}))})")
@@ -1293,7 +1250,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         out.code = EXIT_GATE
         return out
     from commands.card_db import old_stats_text, stats_text
-    unchanged = (not seeding and not restore and not numbered and manifest_before.get("card_commit") == run_build.head
+    unchanged = (not restore and not numbered and manifest_before.get("card_commit") == run_build.head
                  and manifest_before.get("pending") == out.manifest["pending"]
                  and stats_text(db.stats) == _text(db_dir, "stats.json") and old_stats_text(db.old_stats) == _text(db_dir, "old_stats.json")
                  and psd_details.text_of(details) == _text(db_dir, "psd_details.json"))
@@ -1440,8 +1397,7 @@ def main(argv: Optional[list] = None) -> int:
     parser.add_argument("--head", default="HEAD", help="the commit to build (default HEAD)")
     parser.add_argument("--blobs", default="", help="a clone holding the PSD blobs, tried first (the Mac's working clone)")
     parser.add_argument("--db", required=True, help="the db/ folder, read then written")
-    parser.add_argument("--seed", default="", help="start from these pickles: a folder holding stats.pkl, old_stats.pkl and "
-                                                    "psd_details.json, or an AutoCroissant commit that has them (before 2026-10-25)")
+    parser.add_argument("--empty", action="store_true", help="start from an empty db/ (new card data)")
     parser.add_argument("--full", action="store_true", help="re-parse every card (approves gates G4 and G5)")
     parser.add_argument("--cards", default="", help="comma-separated card names to re-parse")
     parser.add_argument("--allow-archive", action="store_true", help="lift gate G2 (more cards archived than usual)")
@@ -1466,7 +1422,7 @@ def main(argv: Optional[list] = None) -> int:
             print(f"db/ now names {manifest['main_commit'][:8]} for {args.rewrite[0][:8]}; "
                   f"{len(manifest['pending']['repin'])} PNGs to re-pin.")
             return EXIT_OK
-        out = build(args.repo, args.checkout, args.db, args.head, args.blobs, args.seed, args.full, args.cards,
+        out = build(args.repo, args.checkout, args.db, args.head, args.blobs, args.empty, args.full, args.cards,
                     args.allow_archive, args.budget, args.run, args.dry_run, args.restore, args.builder_ref,
                     args.baked, args.own)
     except (CalledProcessError, OSError, ValueError, RequestException) as e:

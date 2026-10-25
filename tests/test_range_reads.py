@@ -215,7 +215,7 @@ def test_fetches_run_at_most_AHEAD_before_the_parse(cards, monkeypatch):
     third = "Items/Anubisath_Guardian.psd"
     tcd.put(cards.repo, third, cards.psds[OTHER])
     tcd.commit(cards.repo, "alice", 1100)
-    assert tcd._build(cards, "--seed", str(cards.seed))[0] == cd.EXIT_OK
+    assert tcd._build(cards, "--empty")[0] == cd.EXIT_OK
     assert [p for kind, p in events if kind == "fetch"] == [DOOMER, FREEZER, third]
     assert events.index(("fetch", third)) > events.index(("parsed", DOOMER))
 
@@ -252,7 +252,7 @@ def test_the_build_reads_blobs_its_clone_lacks_by_ranges_at_head(cards, monkeypa
     served: list = []
     monkeypatch.setattr(ga, "get", _raw_from_git(cards.repo, served))
     monkeypatch.setattr(cd.CardBuild, "_download", lambda self, path, sha: pytest.fail(f"{path} downloaded whole"))
-    assert tcd._build(cards, "--seed", str(cards.seed))[0] == cd.EXIT_OK
+    assert tcd._build(cards, "--empty")[0] == cd.EXIT_OK
     stats = tcd._read(cards)[0]
     assert _strip(stats["Mini Doomer"].to_dict()) == _strip(_golden(DOOMER))
     assert _strip(stats["The Freezer"].to_dict()) == _strip(_golden(FREEZER))
@@ -262,7 +262,7 @@ def test_the_build_reads_blobs_its_clone_lacks_by_ranges_at_head(cards, monkeypa
 @needs_ranges
 def test_a_baked_build_reads_a_blob_new_at_its_path_whole(cards, monkeypatch):
     """B puts an existing blob at another path (git mv -f): the parent has other bytes there, so no range read."""
-    tcd._build(cards, "--seed", str(cards.seed))
+    tcd._build(cards, "--empty")
     tcd.put(cards.repo, FREEZER, cards.psds[DOOMER])
     baked = tcd.commit(cards.repo, "AutoCroissant", 2000)
     _hide(monkeypatch, {_sha(cards.psds[DOOMER])})
@@ -284,7 +284,7 @@ def test_a_baked_build_reads_a_blob_new_at_its_path_whole(cards, monkeypatch):
 
 @needs_ranges
 def test_a_baked_build_reads_ranges_at_the_bake_commits_parent(cards, monkeypatch):
-    tcd._build(cards, "--seed", str(cards.seed))
+    tcd._build(cards, "--empty")
     tcd.put(cards.repo, DOOMER, cards.psds[OTHER])
     baked = tcd.commit(cards.repo, "AutoCroissant", 2000)          # B: local, not on GitHub
     _hide(monkeypatch, {_sha(cards.psds[FREEZER])})

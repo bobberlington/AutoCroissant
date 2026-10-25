@@ -2,7 +2,6 @@
 grouped by push (the activity list and the fallback), one message per push within Discord's limits and at most 20 a
 run, and the posted cursor that moves only after each accepted message."""
 import json
-from collections import defaultdict
 from types import SimpleNamespace
 
 import pytest
@@ -71,17 +70,6 @@ def test_field_changes_skip_what_a_reading_could_not_know():
     assert cl.field_changes(_card(ability=None), _card(ability="")) == {}
     assert cl.field_changes(_card(types=["offense"]), _card(types=["negation"])) == {}
     assert cl.field_changes(_card(display_name="A"), _card()) == {}                 # a title equal to the name
-
-
-def test_version_changes():
-    v0 = _card(stats=cm.CardStats(5, 2, 3, 4))
-    v1 = _card(stats=cm.CardStats(6, 2, 3, 4))
-    v1.version = {"from": 100.0, "cause": "psd"}
-    current = _card(stats=cm.CardStats(6, 2, 3, 4), ability="(2CD) Hit.")
-    current.version = {"from": 200.0, "cause": "edit"}
-    steps = cl.version_changes([v0, v1], current)
-    assert [(s["from"], s["cause"], list(s["changes"]), s["verdict"]) for s in steps] == \
-        [(100.0, "psd", ["hp"], "buff"), (200.0, "edit", ["ability", "tags"], "nerf")]
 
 
 # ========================
@@ -346,14 +334,3 @@ def test_cursor_moves_only_after_each_message(tmp_path):
     cl.advance(db, 1, p1["after"])
     assert cl.read_posted(db) == {"seq": 2, "push": p2["after"]}                     # never backwards
 
-
-def test_history_cli(tmp_path, capsys):
-    import pickle
-    v0 = _card(stats=cm.CardStats(5, 2, 3, 4))
-    current = _card(stats=cm.CardStats(5, 2, 3, 2))
-    current.version = {"from": T, "cause": "psd"}
-    (tmp_path / "stats.pkl").write_bytes(pickle.dumps({"A": current}))
-    (tmp_path / "old_stats.pkl").write_bytes(pickle.dumps(defaultdict(list, {"A": [v0]})))
-    assert cl.main(["history", "--pickles", str(tmp_path), "A"]) == 0
-    assert capsys.readouterr().out.strip() == "2026-10-22 (psd): spd [nerf: SPD 4 -> 2]"
-    assert cl.main(["history", "--pickles", str(tmp_path), "Nobody"]) == 1

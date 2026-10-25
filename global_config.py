@@ -8,7 +8,6 @@ REMIND_PKL      = "reminder.pkl"                # the old reminder store: conver
 REMIND_JSON     = "reminder.json"               # reminders (commands/analytics.py; gitignored, per machine)
 HISTORY_JSON    = "repo_history.json"          # repo path -> commit that last changed it (derived, gitignored)
 HISTORY_CLONE   = environ.get("AUTOCROISSANT_HISTORY_CLONE", "~/Documents/TTSCardMaker-history.git")   # bare blobless clone of the card repo (env: the Action)
-BOT_CLONE       = environ.get("AUTOCROISSANT_BOT_CLONE", "")   # this bot's own full clone: its PICKLE commits, read by the build's seed ("": the checkout holding this file)
 EMOJI_JSON      = "type_emojis.json"           # bot application id -> {type emoji name: icon blob} (gitignored)
 FONTS_CACHE     = "fonts_cache"                # MDW/Fonts' font files, refreshed by tree sha, where there is no checkout (font_check; gitignored)
 FONT_DIRS_ENV   = "PSD_TOOLS_FONT_DIRS"        # the fonts dir override (first entry), pathsep-separated: card_bake, font_check
