@@ -36,6 +36,7 @@ import hashlib
 import zlib
 from dataclasses import dataclass, field
 from datetime import datetime
+from importlib import import_module
 from io import BytesIO
 from re import search
 from struct import unpack
@@ -526,12 +527,36 @@ def _box_mask(shape: tuple, box: Optional[tuple]) -> np.ndarray:
     return mask
 
 
-def _render(psd: PSDImage, box: tuple, icc: bool, numbers: dict, text: str = "preview") -> Image.Image:
-    """psd_edit.render_region (text: its TEXT_BLENDS key), its CPU seconds added to numbers["render_s"]."""
+def _render(psd: PSDImage, box: tuple, icc: bool, numbers: dict, text: str = "preview", edited: tuple = ()) -> Image.Image:
+    """psd_edit.render_region (text, edited: its), its CPU seconds added to numbers["render_s"]."""
     start = process_time()
-    image = psd_edit.render_region(psd, box, icc, text)
+    image = psd_edit.render_region(psd, box, icc, text, **({"edited": edited} if edited else {}))
     numbers["render_s"] = round(numbers.get("render_s", 0.0) + process_time() - start, 2)
     return image
+
+
+def _edited(old: PSDImage, new: PSDImage) -> tuple:
+    """Layer IDs of new's type layers whose record changed (Photoshop redraws them, in the text gamma)."""
+    records = _changed_ids(fingerprints(old), fingerprints(new))
+    return tuple(sorted(key for key in _type_layers(new) if key in records))
+
+
+def _render_like(psd: PSDImage, like: PSDImage, box: tuple, icc: bool, numbers: dict, edited: tuple) -> Image.Image:
+    """
+    psd (no stored image) drawn as the bake draws an edited PSD: like's stored image its text reference (each unchanged
+    type layer blended straight or in the gamma as like's is), the edited type layers pinned to the gamma. In the text
+    gamma throughout when like has no stored image to read (or the fork reads none).
+    """
+    fork = import_module("psd_tools.composite.composite")
+    kept, read = getattr(fork, "_TEXT_REFERENCES", None), getattr(fork, "_text_reference", None)
+    reference = read(like) if kept is not None and read is not None else None
+    if reference is None:
+        return _render(psd, box, icc, numbers, "gamma")
+    kept[psd] = (psd._record.image_data.data, reference)
+    try:
+        return _render(psd, box, icc, numbers, "preview", edited)
+    finally:
+        kept.pop(psd, None)
 
 
 def _icc_evidence(converted: Image.Image, raw: Image.Image, png: Image.Image) -> tuple:
@@ -831,8 +856,10 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
     its PSD is current (png_ahead): over F nearer the new render than the old, within the bar of the new render, or
     not past the floor of it with the old render past the bar (a change the fork draws a few levels off: Pandamonium's
     gradient, PoD06Rainbow_Bloon's 0.80% bad); a stale PNG is kept out by the mean (nearer the old render) and by the old
-    render within its bar. Both PSDs are drawn in the text gamma (TEXT_BLENDS "gamma"): the new has no stored image to
-    decide its texts' blends by, so the old's would draw unchanged text edges apart (Forsaken_City, review 2026-10-24).
+    render within its bar. The new PSD is drawn with the old one's stored image as its text reference, its edited type
+    layers in the gamma (_render_like, the bake's render): drawn all in the gamma, unchanged text edges the old image
+    blends straight moved F (Forsaken_City, review 2026-10-24); drawn so on both, the edited layers' blend change did not
+    (Withering).
     ICC mode: the old pair's vote; with no stored image to vote, a foreign profile is drawn both ways and voted against
     the old PNG as icc_vote votes, over the box, else the whole card (_render_voted: the 21 raw exports). A text
     reread() finds under the art (_covered) needs no change. Refused when the colour profile changed (G2_PROFILE: no
@@ -853,8 +880,8 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
     result.numbers.update(records=records, region=list(region) if region else None, reread=[what for what, *_ in changed])
     moved = np.zeros((new.height, new.width), bool)
     if region:                                  # no vote: the old PSD drawn both ways against the old PNG
-        icc, base = _render_voted(old, region, icc, result.vote, old_png.crop(region), result, old_png, "gamma")
-        render = _render(new, region, icc, result.numbers, "gamma")
+        icc, base = _render_voted(old, region, icc, result.vote, old_png.crop(region), result, old_png)
+        render = _render_like(new, old, region, icc, result.numbers, _edited(old, new))
         moved[region[1]:region[3], region[0]:region[2]] = _diff(render, base) > TOL
     result.icc = icc_mode(new, icc)
     result.changed_px, result.box = int(moved.sum()), _bbox(moved)
@@ -925,7 +952,7 @@ def shows(png: Image.Image, psd: PSDImage, other: PSDImage) -> bool:
     changed_layers(other, psd)'s box, as the PNG was exported; where the renders differ the PNG is nearer psd's (mean) and
     not past the floor against it (the fork draws some changes a few levels off, and some text without the preview's
     blends: Pandamonium's gradient, Dark_Ritual's 0.93% bad; review 2026-10-24). False when they draw the same. Both
-    are drawn in the text gamma unless both have a stored image (as _unchecked).
+    are drawn in the text gamma unless both have a stored image (the floor holds the PNG to them, not the blends).
     """
     region, _ = changed_layers(other, psd)
     if not region or region[2] <= region[0] or region[3] <= region[1]:

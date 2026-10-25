@@ -60,6 +60,8 @@ BLOON = ("e23643044d9800bde0f81e9018faeca60b782cea", "81bc14f93d36ddd1c11bc4a85e
          "cb295f801aa1f62436051c3f88a14dd76826295b", "3851d2f3955cd96847767974c140be0067f38c15")  # PoD06Rainbow_Bloon 38c55bd3
 CLOT_WHITE = ("09dbfff123941024fe7632dc0109d583f655de24", "497eda88775b84cc2ff53e88699a402f7a71b67c",
               "16c15a759a0a361dcbbe3849218b6f35662703d7", "044b16a8a185ee7c402eb864c33233df21157f41")   # d8163103
+WITHERING = ("593e02c85f1e8d53cdd169433be5b6d85232dc95", "0f3353c4fa24fed0d4c3d6ff02ba7312fa2dffa8",
+             "8ac85a3e811ac273da8f4bb82b405ed7236663bc", "5a44863baf78cf6f0af0a128f1f24e9d71ec619a")   # 5c8cb87b
 NEGATION = ("b768755bf1eb811611e6e711f145a2eb72a907a4", "416a0af1545f153bf48ddd9e4b7b50b21a546597",
             "6ba7a20059d18960f06125a8bfedc20a4c02d9e4", "9f187e7d3fcce1d2cdae3f9c12b04b2a888d650e")   # 100511d3: TySh only
 ABIGAIL = ("2b68e6a182b67d38e9b7720c035cbdc4f3ab42db", "f7fe63fa4cef78833d18c5e321d40644e7c22a35")    # 'Display' profile
@@ -746,9 +748,9 @@ def _blind(monkeypatch, real):
     """The fork's render (real) ignoring layer visibility: a text hidden draws the same (the bake's blank render case)."""
     whole = {}
 
-    def render(psd, box, icc, numbers, text="preview"):
+    def render(psd, box, icc, numbers, *rest):
         if id(psd) not in whole:
-            whole[id(psd)] = real(psd, (0, 0, psd.width, psd.height), icc, numbers, text)
+            whole[id(psd)] = real(psd, (0, 0, psd.width, psd.height), icc, numbers, *rest)
         return whole[id(psd)].crop(box)
     monkeypatch.setattr(pe, "_render", render)
 
@@ -761,7 +763,7 @@ def test_g2_refuses_a_text_drawn_blank_on_real_cards(clone, monkeypatch):
     old, new, old_png, _ = pair(clone, DIRTY_BED)
     new.has_preview = lambda: False
     real = pe._render
-    monkeypatch.setattr(pe, "_render", lambda psd, box, icc, numbers, text="preview": real(old if psd is new else psd, box, icc, numbers, text))
+    monkeypatch.setattr(pe, "_render", lambda psd, box, icc, numbers, *rest: real(old if psd is new else psd, box, icc, numbers, *rest))
     found = pe.export(old, new, old_png)                                  # the Ability drawn as it was
     assert (found.outcome, found.gate, found.why) == ("refused", "G2", pe.G2_BLANK.format(what="the Ability text"))
     _blind(monkeypatch, real)
@@ -958,11 +960,14 @@ def test_g2_a_text_under_the_art_is_no_blank_render(clone):
 
 
 @fork
-def test_g2_draws_both_psds_with_the_same_text_blends(clone):
+def test_g2_draws_the_new_psd_with_the_old_ones_text_blends(clone):
     """Forsaken_City 7fd2aa30, the author's PNG pushed first, then the PSD saved without its stored image (the old one
-    kept): the old PSD was drawn with its stored image's text blends, the new in the text gamma, so F took unchanged
+    kept): the old PSD was drawn with its stored image's text blends, the new all in the text gamma, so F took unchanged
     text edges and the author's export was overwritten (2,146 px past 8) with a false miss note (review of 2026-10-24).
-    Both are drawn in the gamma: current, nothing told. Pushed stale, the PNG made is within 2 levels of the author's."""
+    The new is drawn with the old's stored image as its text reference (the bake's render): current, nothing told.
+    Pushed stale, the PNG made is within 2 levels of the author's. Drawn all in the gamma on both, Withering 5c8cb87b
+    lost its edited Withering text's blend change (1,664 px past 24); the edited layers pinned to the gamma, it is the
+    checked PNG pixel for pixel."""
     old, new, stale, authors = pair(clone, FORSAKEN)
     new.has_preview = lambda: False
     first = pe.export(old, new, authors)
@@ -972,6 +977,12 @@ def test_g2_draws_both_psds_with_the_same_text_blends(clone):
     new.has_preview = lambda: False
     made = pe.export(old, new, stale)
     assert made.outcome == "re-exported" and int(pe._diff(made.image, authors).max()) <= pe.TOL
+    old, new, stale, authors = pair(clone, WITHERING)
+    checked = pe.export(old, new, stale)
+    new.has_preview = lambda: False
+    made = pe.export(old, new, stale)
+    assert made.outcome == "re-exported" and np.array_equal(np.asarray(made.image), np.asarray(checked.image))
+    assert int((pe._diff(made.image, authors) > 24).sum()) == 0
 
 
 @fork
