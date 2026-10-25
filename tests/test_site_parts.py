@@ -146,3 +146,44 @@ out({{ jobs: jobs.map(j => [j.id, j.role, j.text, j.box]), add: add.map(j => [j.
 """)
     assert out["jobs"] == [["1368", "ability", "Earth: 9", [124, 1969, 1035, 2024]], ["417", "ability", None, [125, 2031, 958, 2086]]]
     assert out["add"] == [["+ability", True, [1, 2, 3, 4]]]
+
+
+def test_pending_per_picture_and_no_boxes_for_numbered_pngs(bs):
+    """A part's field waits only on the pictures that show its layer; a numbered PNG of an untagged PSD (a duplicate)
+    gets no boxes (not its first picture's)."""
+    snack, edits = fixture("a_snack_tagged"), fixture("card_edits.parts")["cards"]
+    path = snack["path"]
+    found = {bs.card_key(k): ({f: v for f, v in e.items() if f in ("ability", "name")}, e) for k, e in edits.items()}
+    cards = [{"id": "a-snack", "key": "A Snack", "name": "A snack", "variant": 1, "_variantOf": "A Snack", "psd": path, "ability": "old"},
+             {"id": "a-snack2", "key": "A Snack2", "name": "Breakfast", "variant": 2, "_variantOf": "A Snack", "psd": path},
+             {"id": "a-snack3", "key": "A Snack3", "name": "Supper", "variant": 3, "_variantOf": "A Snack", "psd": path}]
+    for c in cards:
+        bs.apply_edits(c, found)
+    bs.link_variants(cards)
+    assert cards[0]["pending"] == ["ability", "name"]
+    out = bs.join_details(cards, {snack["blob"]: {"path": path, "parts": snack["parts"]}}, {path: snack["blob"]}, found)
+    assert cards[0]["pending"] == ["ability"] and cards[1]["pending"] == ["ability", "name"] and cards[2]["pending"] == ["ability"]
+    assert not any("_plain" in c for c in cards) and out["a-snack2"]["parts"]["title"][0]["id"] == 1023
+
+    doomer = fixture("mini_doomer")
+    dpath = "Creatures/x/Mini_Doomer.psd"
+    orig = {"id": "mini-doomer", "key": "Mini Doomer", "name": "Mini Doomer", "psd": dpath}
+    dup = {"id": "doomer-two", "key": "Mini Doomer2", "name": "Doomer Two", "psd": dpath, "dup": "mini-doomer"}
+    out = bs.join_details([orig, dup], {doomer["blob"]: {"path": dpath, "parts": doomer["parts"]}}, {dpath: doomer["blob"]}, {})
+    assert out["mini-doomer"]["parts"]["title"] and "parts" not in out["doomer-two"] and dup["details"]
+
+
+def test_reverting_the_boxes_takes_their_derived_fields_and_titles_keep_breaks(tmp_path):
+    """The batch bar's ↺ on Text boxes drops the name/ability derived from them (never a plain joined field left);
+    an inline one-line name over a two-line title keeps the break where the text around it is unchanged."""
+    out = node(tmp_path, """
+const op = { id: "m", key: "Mini Doomer", name: "Mini Doomer", set: { ability: "Has -3", stars: 4, parts: { "2068": { field: "ability", text: "Has -3" } } },
+  unset: ["part:9"], partsBase: { "2068": null } };
+const r = E.withoutItem(op, "parts", "Mini Doomer");
+const gone = E.withoutItem({ id: "m", key: "k", name: "k", set: {}, unset: ["ability", "part:417"] }, "parts", "k", ["ability"]);
+out({ r, gone, k: [P.keepBreaks("Miracle\\nMatter", "Miracle Matters"), P.keepBreaks("Miracle\\nMatter", "Miraculous Matter"),
+  P.keepBreaks("Druid of\\nthe Claw", "Druid of the Claws"), P.keepBreaks("One", "One Two")] });
+""")
+    assert out["r"]["set"] == {"stars": 4} and out["r"]["unset"] == [] and "partsBase" not in out["r"]
+    assert out["gone"]["unset"] == []
+    assert out["k"] == ["Miracle\nMatters", "Miraculous\nMatter", "Druid of\nthe Claws", "One Two"]
