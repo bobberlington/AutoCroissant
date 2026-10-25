@@ -18,10 +18,10 @@ import pytest
 # ========================
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
-from global_config import DATA_BRANCH, LOCAL_DIR_LOC, REMIND_JSON, REMIND_PKL  # noqa: E402
+from global_config import DATA_BRANCH, LOCAL_DIR_LOC, REMIND_JSON  # noqa: E402
 
 CLONE = Path(expanduser(LOCAL_DIR_LOC))                  # PSD tests skip without it; its origin/data holds the live card data
-LIVE = (REMIND_PKL, REMIND_JSON)                         # the checkout's reminder stores, never written by a test
+LIVE = (REMIND_JSON,)                                    # the checkout's reminder store, never written by a test
 
 
 # ========================

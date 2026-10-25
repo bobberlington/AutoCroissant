@@ -4,7 +4,6 @@ from zoneinfo import ZoneInfo
 
 LOCAL_DIR_LOC   = environ.get("AUTOCROISSANT_LOCAL_DIR", "~/Desktop/TTSCardMaker")   # the card repo checkout (env: TTSCardMaker's tts-save Action)
 SITE_URL        = "https://michaeljsr.github.io/TTSCardMaker"   # card browser website
-REMIND_PKL      = "reminder.pkl"                # the old reminder store: converted once to REMIND_JSON (backup reminder.pkl.bak)
 REMIND_JSON     = "reminder.json"               # reminders (commands/analytics.py; gitignored, per machine)
 HISTORY_JSON    = "repo_history.json"          # repo path -> commit that last changed it (derived, gitignored)
 HISTORY_CLONE   = environ.get("AUTOCROISSANT_HISTORY_CLONE", "~/Documents/TTSCardMaker-history.git")   # bare blobless clone of the card repo (env: the Action)

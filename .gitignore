@@ -36,7 +36,6 @@ dist/
 config.py
 .ssh/
 
-reminder.pkl
 # image link commits, rebuilt from the card repo's history (commands/repo_history.py)
 repo_history.json
 repo_history.json.tmp
@@ -87,7 +86,8 @@ ENV/
 Thumbs.db
 .DS_Store
 
-# reminders, per machine like reminder.pkl: the store, its temp file, the pickle the one-time conversion kept (2026-10-24)
+# reminders, per machine: the store, its temp file, the old pickle store (converted 2026-10-24; never committed)
 reminder.json
 reminder.json.tmp
+reminder.pkl
 reminder.pkl.bak
