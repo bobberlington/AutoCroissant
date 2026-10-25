@@ -801,3 +801,55 @@ def test_workflow_pending_edits_line_calls_due(github, capsys, monkeypatch):
     exec(code, {})
     assert capsys.readouterr().out.splitlines() == ["A Snack", "A Snack2", "Nobody", "The Freezer"]
 
+
+
+# ========================
+# Parts: one box per layer (docs/Future/PARTS_EDITOR.md §4, §11 cases 4 and 5)
+# ========================
+MIRACLE = "Creatures/Kirby/3 Stars/Miracle_Matter.psd"            # five Ability layers, padded ('\r    \r    Earth: ...')
+
+
+@fork_text
+def test_parts_bake_deletes_skips_and_keeps_photoshop_work(github, clone):
+    """Miracle Matter: 1368 edited (only its record, its indent kept), 417 deleted (its record and story gone, the later
+    TextIndex values one lower), 1366 changed in Photoshop since (wrong sha: skipped, kept in _psd.skipped), 1367 done in
+    Photoshop (redundant), a layer gone; the derived ability leaves with the last ability part."""
+    from psd_tools import PSDImage
+    if not (clone / pe.STATUS_CHART).exists():
+        pytest.skip("no status chart")
+    files = github.files_at(github.head)
+    files.update({MIRACLE: (clone / MIRACLE).read_bytes(), MIRACLE[:-4] + ".png": (clone / (MIRACLE[:-4] + ".png")).read_bytes(),
+                  pe.STATUS_CHART: (clone / pe.STATUS_CHART).read_bytes()})
+    old = PSDImage.open(str(clone / MIRACLE))
+    ids = {layer.layer_id: layer for layer in old.descendants()}
+    psd8 = _sha(files[MIRACLE])[:8]
+
+    def part(lyid, **kw):
+        return {"field": "ability", **kw, "was": "x", "sha": pe.raw_sha(ids[lyid]) if lyid in ids else "0123abcd",
+                "psd": psd8, "layer": "Text/Stat Txt/ability/Ability"}
+    parts = {"1368": part(1368, text="Earth: 5/8/6/5 and heal 3 HP"), "417": part(417, delete=True),
+             "1366": {**part(1366, text="Gains nothing."), "sha": "00000000"},
+             "1367": {**part(1367, text="(1GCD) You may choose one of the following forms:"), "sha": "00000000"},
+             "99999": part(99999, text="A layer remade in Photoshop.")}
+    files[cb.EDITS_PATH] = _edits({"Miracle Matter": {"ability": "joined", "parts": parts, "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: Miracle Matter")
+    text, commits = cb.run()
+    assert len(commits) == 1, text
+    message = github.commits[commits[0]]["message"]
+    assert "- Miracle Matter: ability (3rd layer) 'heal 2 HP' -> 'heal 3 HP', 4th ability layer deleted; " in message, message
+    entry = _edits_at(github)["cards"]["Miracle Matter"]
+    assert list(entry) == ["_psd"]                          # the parts and the derived ability are out; the flags stay
+    verdict = entry["_psd"]
+    assert verdict["parts"] == {"1366": "skipped", "1367": "redundant", "1368": "baked", "417": "deleted", "99999": "skipped"}
+    assert verdict["skipped"]["1366"] == {"text": "Gains nothing.", "why": pe.CHANGED,
+                                          "now": "This creature gains the type of whatever form it is in until the end of the turn."}
+    assert verdict["skipped"]["99999"]["why"] == pe.GONE and "2 layers skipped" in verdict["reason"]
+    from io import BytesIO
+    new = PSDImage.open(BytesIO(github.files_at(github.head)[MIRACLE]))
+    now = {layer.layer_id: layer for layer in new.descendants()}
+    assert 417 not in now and now[1368].text == "\r    \r    Earth: 5/8/6/5 and heal 3 HP\r   "
+    assert all(now[k].text == ids[k].text for k in (1366, 1367, 1369, 422))     # Photoshop's work stands
+    assert len(pe.stories(new)) == len(pe.stories(old)) - 1 and pe.stale_stories(new) == []
+    assert sorted(pe.story_index(layer) for layer in new.descendants() if layer.kind == "type") == list(range(9))
+    report = "\n".join(line for line in text.splitlines() if "Miracle Matter" in line)
+    assert "flag bytes" in report

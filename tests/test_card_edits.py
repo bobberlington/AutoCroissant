@@ -151,3 +151,28 @@ def test_psd_meta_rides_beside_by_and_at():
     assert e.apply("Foo Bar", card) is True
     assert card.stats.hp == 5 and card.parsed_values == {"hp": None, "problems": ["MISSPELT TYPE: tornado"]}
 
+
+
+# ========================
+# Parts (docs/Future/PARTS_EDITOR.md §3, §11 case 10)
+# ========================
+def test_parts_valid_and_merged_per_layer():
+    """`parts` as build_site.valid_parts takes it; the fixture's entries parse whole; merge and unset by layer id."""
+    from pathlib import Path
+    from commands.card_edits import dump_edits, merge_parts
+    fixture = json.loads((Path(__file__).parent / "fixtures" / "parts" / "card_edits.parts.json").read_text(encoding="utf-8"))
+    edits = CardEdits.parse(json.dumps(fixture))
+    for name, entry in fixture["cards"].items():
+        assert edits.cards[name.lower()].get("parts") == entry.get("parts"), name
+    part = {"field": "ability", "text": "x", "was": "y", "sha": "0123abcd", "psd": "89abcdef", "layer": "Text/Ability"}
+    bad = [{"1": {**part, "field": "note"}}, {"1": {**part, "delete": True}}, {"1": {k: v for k, v in part.items() if k != "text"}},
+           {"1": {**part, "sha": "XYZ"}}, {"x1": part}, {"1": {**part, "text": "é" * 2049}}, {}, {str(n): part for n in range(65)},
+           {"+ability": {**part, "field": "name"}}, {"+ability": {**part, "delete": True, "text": None}}]
+    assert all(not CardEdits.valid("parts", value) for value in bad)
+    gone = {k: v for k, v in part.items() if k != "text"} | {"delete": True}
+    assert CardEdits.valid("parts", {"1": part, "+ability": {**part, "sha": None, "psd": None}, "2": gone})
+    assert CardEdits.KIND["parts"] == "psd" and CardEdits().apply("X", _card()) is False      # never applied to a card
+    merged = merge_parts({"1": part, "2": part}, {"2": {**part, "text": "z"}, "3": part}, ["1"])
+    assert list(merged) == ["2", "3"] and merged["2"]["text"] == "z" and merge_parts({"1": part}, None, ["1"]) is None
+    text = dump_edits({"about": "a", "cards": {"C": {"ability": "x", "parts": merged, "note": "n", "_by": "w"}}})
+    assert '"ability":"x","parts":{"2":' in text and json.loads(text)["cards"]["C"]["parts"] == merged

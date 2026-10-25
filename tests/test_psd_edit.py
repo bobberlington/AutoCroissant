@@ -382,7 +382,8 @@ def test_non_template_rows_and_titles_refuse(clone):
 def test_title_layer_is_the_one_the_parser_reads(clone, parser):
     """name_layer takes the one layer PSDParser.title_layers reads, wherever the card keeps it (NEXT_IDEAS 5b A): a title
     named after the card under Text, a Name layer at the root. Two Name layers (an epithet) or a Name beside layers
-    printing the rest of the title refuse: a bake would write the whole title into one piece."""
+    printing the rest of the title refuse: a bake would write the whole title into one piece (a plain name edit there is
+    impossible: the website edits each box)."""
     bone = PSDImage.open(_card(clone, BONE)[0])
     with pytest.raises(pe.Refused, match="title layer named 'Wham Bam Bone', not Name or the card's name"):
         pe.name_layer(bone, own_text=False)                                     # without the card's name or its text
@@ -398,7 +399,8 @@ def test_title_layer_is_the_one_the_parser_reads(clone, parser):
             pe.name_layer(psd, card_name(rel))
         assert refused.value.code == "unsupported-card" and pe.read_name(psd, card_name(rel)) is None
         parsed = pe.parse_card(parser, _card(clone, rel)[0], rel)
-        assert [r.why for r in pe.classify(parsed, {"name": "Azamoth"}, psd).refusals] == [why]
+        why, = [r.why for r in pe.classify(parsed, {"name": "Azamoth"}, psd).refusals]   # a box per layer now (parts)
+        assert why.startswith("name: a joined edit on a card printed over ")
 
 
 def test_a_title_named_after_the_card_outside_text(clone, parser):
@@ -1861,27 +1863,38 @@ def test_ability_split_shares_an_edit_out():
     assert pe.unpadded("Fire: 5/5/8/7\n    \nEarth   \n") == "Fire: 5/5/8/7\nEarth"
 
 
+DRUID = "Creatures/World Of Warcraft/4 Stars/Warcraftian_Druid.psd"   # its title over 'Text/Name' and 'Text/Druid '
+PARTS = Path(__file__).resolve().parent / "fixtures" / "parts"
+
+
 @text_edit
-def test_an_ability_over_several_layers_bakes(clone, parser, chart, tmp_path):
-    """Miracle Matter: an edit across its Fire and Earth layers changes those two records and deletes the retired
-    'Ability FX: (1GCD)' (owner 2026-10-25), its other three layers byte for byte; on Lit Bob-omb a removed break joins its two layers in the first, the
-    second hidden, told."""
-    paths = _at(clone, tmp_path, BADGED, MIRACLE)
-    old = pe.parse_card(parser, paths[0], MIRACLE)["card"]["ability"]
-    new = old.replace("Fire: 5/5/8/7", "Fire: 5/5/9/7").replace("Earth: 5/8/6/5", "Earth: 5/9/6/5")
-    _, baked = _bake(clone, parser, MIRACLE, {"ability": new}, _dir(tmp_path, "mm"), chart, paths=paths)
-    texts = 3 if salt_font(clone) else 2        # the salt font redraws the first layer's (1GCD) as an outlined pill
-    assert [name for _, name, _ in baked.records] == ["Ability"] * texts + ["Ability FX: (1GCD)"]
-    assert all(set(fields) <= set(TEXT_RECORD) for _, _, fields in baked.records[:texts])
-    assert baked.records[texts][2] == ["removed"]
-    assert baked.reparse["card"]["ability"] == new
-    assert baked.fx_notes == ["Ability FX: (1GCD) deleted: badge FX layers are retired"]
-    saved = [layer.text for layer in pe.ability_layers(PSDImage.open(baked.psd_path)).layers]
-    assert saved[1:3] == ["\r    Fire: 5/5/9/7", "\r    \r    Earth: 5/9/6/5 and heal 2 HP\r   "]
-    _, baked = _bake(clone, parser, LIT_BOB, {"ability": "Costs 0 SP to use. Deal 7 DMG."}, _dir(tmp_path, "bob"), chart)
-    flagged(baked.fx_notes, r"^ability: the break between the first and second ability layers was removed: their "
-                            r"words are joined in the first and the second hidden")
-    assert sorted(fields == ["flags"] or set(fields) <= set(TEXT_RECORD) for _, _, fields in baked.records) == [True, True]
-    assert ["flags"] in [fields for _, _, fields in baked.records]
-    assert baked.reparse["card"]["ability"] == "Costs 0 SP to use. Deal 7 DMG."
+def test_parts_title_enter_and_legacy_edits(clone, parser, chart, tmp_path):
+    """PARTS_EDITOR.md §11 cases 6 and 9: an Enter in Warcraftian Druid's second title box makes its layer two lines
+    (one record, renamed as named after its text) and the name reads one line; a plain ability edit bakes on a card
+    printing it over one layer, and is refused as impossible on Miracle Matter's five."""
+    fixture = json.loads((PARTS / "card_edits.parts.json").read_text(encoding="utf-8"))["cards"]["Warcraftian Druid"]
+    psd_path, png = _card(clone, DRUID)
+    psd = PSDImage.open(psd_path)
+    if pe.raw_sha(next(l for l in psd.descendants() if l.layer_id == 1034)) != fixture["parts"]["1034"]["sha"]:
+        pytest.skip("Warcraftian Druid changed since the fixture")
+    parsed = pe.parse_card(parser, psd_path, DRUID, psd)
+    jobs = pe.classify(parsed, {"name": fixture["name"], "parts": fixture["parts"]}, psd, parser).jobs
+    assert jobs == {"parts": fixture["parts"]}              # the plain name is derived: never baked on its own
+    baked = pe.apply_jobs(psd_path, png, DRUID, jobs, parsed, parser, str(tmp_path), str(clone / pe.FONTS_DIR), chart,
+                          psd=psd)
+    assert [(name, fields) for _, name, fields in baked.records] == [("Druid ", TEXT_RECORD[:2] + ["name", "rect"])]
+    saved = {layer.layer_id: layer for layer in PSDImage.open(baked.psd_path).descendants()}
+    assert saved[1034].text == "Druid of\rthe Claw\r" and saved[1034].name == "Druid of the Claw"
+    assert pe.part_text(parser, saved[1034]) == "Druid of\nthe Claw"
+    assert " ".join(pe.title_text(saved[k].text) for k in (422, 1034)) == fixture["name"]
+    assert not [note for note in baked.fx_notes if "runs onto" in note]     # the typed break is no overflow
+    mm = PSDImage.open(_card(clone, MIRACLE)[0])
+    mm_parsed = pe.parse_card(parser, _card(clone, MIRACLE)[0], MIRACLE, mm)
+    joined = pe.classify(mm_parsed, {"ability": mm_parsed["card"]["ability"].replace("heal 2", "heal 3")}, mm, parser)
+    assert not joined.jobs and joined.refusals == [pe.Refusal("unsupported-card", "ability: a joined edit on a card "
+                                                              "printed over 5 layers: edit each box on the website")]
+    doomer = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+    single = pe.classify(pe.parse_card(parser, _card(clone, MINI_DOOMER)[0], MINI_DOOMER, doomer), {"ability": "Die."},
+                         doomer, parser)
+    assert single.jobs == {"ability": "Die."} and not single.refusals
 

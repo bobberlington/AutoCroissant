@@ -117,6 +117,8 @@ class Card:
     note: str = ""
     traceback: str = ""
     seconds: float = 0.0
+    parts: Optional[psd_edit.PartsPlan] = None  # its `parts` sorted (plan_parts): outcomes per layer, skipped ones
+    part_drop: list = field(default_factory=list)   # part keys the commit takes out of the entry
 
 
 @dataclass
@@ -341,7 +343,8 @@ def recent_paths(repository: str, head: str, now: datetime, local: str = "") -> 
 # ========================
 # Card Edits.json (the edit.js editsFile port: dump_edits is card_edits')
 # ========================
-def rewrite_entry(entry: dict, drop=(), psd: Optional[dict] = None, keep: bool = False) -> Optional[dict]:
+def rewrite_entry(entry: dict, drop=(), psd: Optional[dict] = None, keep: bool = False,
+                  part_drop=()) -> Optional[dict]:
     """
     One card's entry as the pipeline leaves it: the dropped fields gone, "_psd" replaced (None removes it), fields
     in ORDER, then the other keys in their order ("_psd" where it was, else last), "_by", "_at" (edit.js editsFile's
@@ -352,11 +355,19 @@ def rewrite_entry(entry: dict, drop=(), psd: Optional[dict] = None, keep: bool =
         drop: Fields to remove
         psd: The "_psd" verdict to write, None to remove it
         keep: When no field is left, keep the verdict alone (a bake's flags, shown on the card page)
+        part_drop: Keys of `parts` to remove (baked, redundant, skipped, deleted: PARTS_EDITOR.md §4.11); a derived
+            name or ability goes with the last part of its field, `parts` with its last key
 
     Returns:
         The entry, or None when no field is left and no kept verdict: the entry goes whole, its _-keys with it
         (section 5 step 10)
     """
+    entry, drop = dict(entry), list(drop)
+    if part_drop and isinstance(entry.get("parts"), dict):
+        fields_of = lambda parts: {p.get("field") for p in parts.values() if isinstance(p, dict)}
+        left = {k: v for k, v in entry["parts"].items() if k not in part_drop}
+        drop += sorted(fields_of(entry["parts"]) - fields_of(left)) + ([] if left else ["parts"])
+        entry["parts"] = left
     current = {k: v for k, v in entry.items() if k not in drop and k not in ("_by", "_at")}
     fields = [f for f in ORDER if f in current]
     if not fields:
@@ -376,7 +387,8 @@ def rewrite_entry(entry: dict, drop=(), psd: Optional[dict] = None, keep: bool =
     return out
 
 
-def rewrite_edits(text: str, name: str, drop=(), psd: Optional[dict] = None, keep: bool = False) -> Optional[str]:
+def rewrite_edits(text: str, name: str, drop=(), psd: Optional[dict] = None, keep: bool = False,
+                  part_drop=()) -> Optional[str]:
     """
     Card Edits.json with one card's entry rewritten (matched like edit.js: keys compared as CardAuthors.key).
 
@@ -386,6 +398,7 @@ def rewrite_edits(text: str, name: str, drop=(), psd: Optional[dict] = None, kee
         drop: Fields to remove
         psd: The "_psd" verdict to write, None to remove it
         keep: rewrite_entry's
+        part_drop: rewrite_entry's
 
     Returns:
         The new text (dump_edits), or None when the entry is absent or unchanged: a file is never reformatted alone
@@ -397,7 +410,7 @@ def rewrite_edits(text: str, name: str, drop=(), psd: Optional[dict] = None, kee
     key = next((k for k in cards if CardAuthors.key(k) == CardAuthors.key(name)), None)
     if key is None or not isinstance(cards[key], dict):
         return None
-    entry = rewrite_entry(cards[key], drop, psd, keep)
+    entry = rewrite_entry(cards[key], drop, psd, keep, part_drop)
     if entry == cards[key]:
         return None
     if entry is None:
@@ -613,7 +626,9 @@ def _describe(card: Card) -> str:
     parts = []
     for name, value in card.jobs.items():
         old = next((edit.old for edit in (card.baked.edits if card.baked else []) if edit.field == name), None)
-        if name == "ability":
+        if name == "parts":
+            parts += _describe_parts(card)
+        elif name == "ability":
             parts.append("ability")
         elif name == "types":
             parts.append(f"types {', '.join(old) if old else 'none'} -> {', '.join(value)}" if old is not None
@@ -623,6 +638,77 @@ def _describe(card: Card) -> str:
         else:
             parts.append(f"{name} {old} -> {value}" if old is not None else f"{name} -> {value}")
     return ", ".join(parts)
+
+
+def _parts_settled(card: Card) -> list:
+    """The part keys a run takes out of the entry without baking them: redundant (done in Photoshop) and skipped."""
+    plan = card.parts
+    return [key for key, how in (plan.outcome.items() if plan is not None else ()) if how in ("redundant", "skipped")]
+
+
+def _part_verdict(card: Card) -> None:
+    """
+    The `parts` side of a card's verdict (PARTS_EDITOR.md §3, §4.11): each part key's outcome (baked, deleted,
+    redundant, skipped) in `_psd.parts`, the skipped ones' texts in `_psd.skipped` (the site's Redo), and the keys the
+    commit takes out of the entry (Card.part_drop; an added ability that waits stays). A run that baked nothing but
+    settled parts writes a baked verdict on the PSD as it is, its reason the count skipped.
+    """
+    plan = card.parts
+    if plan is None:
+        return
+    baked = (card.jobs.get("parts") or {}) if card.baked is not None else {}
+    outcome = {key: "deleted" if job.get("delete") else "baked" for key, job in baked.items()}
+    outcome.update({key: how for key, how in plan.outcome.items() if how in ("redundant", "skipped")})
+    card.part_drop = sorted(outcome)
+    if not outcome:
+        return
+    skipped = {key: plan.skipped[key] for key, how in outcome.items() if how == "skipped" and key in plan.skipped}
+    told = f"{plural(len(skipped), 'layer')} skipped (changed in Photoshop)" if skipped else ""
+    if card.verdict is None:
+        card.verdict = {"state": "baked", "psd": card.psd_sha[:8],
+                        "reason": told or "already on the card", "at": _now()}
+    elif told:
+        card.verdict["reason"] = "; ".join(r for r in (card.verdict.get("reason"), told) if r)
+    card.verdict["parts"] = dict(sorted(outcome.items()))
+    if skipped:
+        card.verdict["skipped"] = skipped
+
+
+ORDINAL = ("1st", "2nd", "3rd")
+
+
+def _nth(k: int) -> str:
+    return ORDINAL[k - 1] if k <= len(ORDINAL) else f"{k}th"
+
+
+def _short_change(old: str, new: str) -> str:
+    """'heal 2 HP' -> 'heal 3 HP': the words an edit changed, a few around them (the commit line's)."""
+    a, b = old.split(), new.split()
+    lo = 0
+    while lo < min(len(a), len(b)) and a[lo] == b[lo]:
+        lo += 1
+    hi = 0
+    while hi < min(len(a), len(b)) - lo and a[len(a) - 1 - hi] == b[len(b) - 1 - hi]:
+        hi += 1
+    lo, hi = max(0, lo - 1), max(0, hi - 1)
+    cut = lambda words: " ".join(words[lo:len(words) - hi])[:40]
+    return f"{cut(a)!r} -> {cut(b)!r}"
+
+
+def _describe_parts(card: Card) -> list:
+    """"ability (3rd layer) 'heal 2 HP' -> 'heal 3 HP'", "4th ability layer deleted": a parts bake's lines."""
+    out, plan = [], card.parts
+    was = {key: text for edit in (card.baked.edits if card.baked else []) if isinstance(edit.old, dict)
+           for key, text in edit.old.items()}     # the PSD's text, not the editor's `was`
+    for key, job in (card.jobs.get("parts") or {}).items():
+        field_name, kind, k, n = plan.where.get(key, (job["field"], "", 0, 1)) if plan is not None else (job["field"], "", 0, 1)
+        what = "title" if field_name == "name" else "text block" if kind == "blocks" else "ability"
+        place = f" ({_nth(k)} layer)" if n > 1 and k else ""
+        if job.get("delete"):
+            out.append(f"{_nth(k) + ' ' if n > 1 and k else ''}{what} layer deleted")
+        else:
+            out.append(f"{what}{place} {_short_change(was.get(key, job.get('was') or ''), job['text'])}")
+    return out
 
 
 def editors(card: Card) -> list:
@@ -724,13 +810,18 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         psd = PSDImage.open(old_psd)            # one open for the parse, classify and apply_jobs (it edits a copy)
         parsed = psd_edit.parse_card(parser, old_psd, card.rel, psd)
         classified = psd_edit.classify(parsed, card.fields, psd, parser)
-        card.jobs, card.redundant = dict(classified.jobs), list(classified.redundant)
+        card.jobs, card.redundant = dict(classified.jobs), [f for f in classified.redundant if f != "parts"]
+        card.parts = classified.parts
         card.partial = [r for r in classified.refusals if r.field in psd_edit.ICON_FIELDS]
-        if len(card.partial) < len(classified.refusals) or (card.partial and not card.jobs and not card.redundant):
+        settled = _parts_settled(card)          # redundant or skipped boxes: out of the entry, baked or not
+        if len(card.partial) < len(classified.refusals) or (card.partial and not card.jobs and not card.redundant
+                                                            and not settled):
             first, *rest = classified.refusals      # per card all-or-nothing (section 10), but for stars and types
             card.partial = []
             raise Refused(first.code, "; ".join([first.why] + [f"{r.code}: {r.why}" for r in rest]))
-        if not card.jobs and not card.redundant:
+        if not card.jobs and not card.redundant and not settled:
+            if card.parts is not None and "waiting" in card.parts.outcome.values():
+                raise Refused("unsupported-card", f"ability: {psd_edit.ADDED_LATER}")
             return
 
         card.expect = {card.rel: card.psd_sha, card.png: card.png_sha}
@@ -782,11 +873,12 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                                 "validator": card.baked.reparse["validator"], "fx": card.baked.fx}, indent=1, ensure_ascii=False))
             card.verdict = {"state": "baked", "for": card.jobs, "psd": card.new_psd_sha[:8],
                             "reason": _describe(card) + _fx_notes(card), "at": _now()}
-        card.dropped = list(card.jobs) + card.redundant     # a baked or printed name goes too: the bot reads the title
+        card.dropped = [f for f in list(card.jobs) + card.redundant if f != "parts"]   # a baked or printed name goes too
         if card.partial:                        # what stays in the file: refused on the PSD this commit leaves; FX notes told
             card.verdict = {"state": "refused", "for": {r.field: card.fields[r.field] for r in card.partial},
                             "psd": (card.new_psd_sha or card.psd_sha)[:8], "rules": RULES,
                             "reason": "; ".join(f"{r.code}: {r.why}" for r in card.partial) + _fx_notes(card), "at": _now()}
+        _part_verdict(card)                     # per layer: the boxes leave the entry, skipped ones told
     except Refused as refused:
         card.refusal = refused.refusal
         if refused.code == "font":              # retried once MDW/Fonts changes (pending)
@@ -809,13 +901,14 @@ def share_of(card: Card) -> Optional[Share]:
     render); a refused card whose edit changed gets no verdict, and an unchanged verdict writes nothing.
     """
     if card.refusal is None:
-        if not card.dropped:
+        if not card.dropped and not card.part_drop:
             return None
 
         def drop(text: str) -> Optional[str]:
             if psd_fields(_entry_at(text, card.name) or {}) != card.fields:
                 raise Refused("edit-changed", f"the edit changed on {CARD_BRANCH} meanwhile: not touched")
-            return rewrite_edits(text, card.name, card.dropped, card.verdict, bool(_fx_notes(card)))   # flags kept
+            kept = bool(_fx_notes(card)) or bool((card.verdict or {}).get("skipped"))     # flags kept
+            return rewrite_edits(text, card.name, card.dropped, card.verdict, kept, card.part_drop)
         return Share(card, card.files, card.expect, drop)
     if card.refusal.code in TRANSIENT or card.transient:
         return None

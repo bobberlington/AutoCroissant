@@ -54,6 +54,7 @@ SPARSE_FILES = ("commands/card_preview.py", "commands/card_preview_branch.py", "
 MAX_EDIT = 16384                                # bytes of edit JSON (an ability is a few hundred)
 WEBP_WIDTH, WEBP_QUALITY = 720, 75              # the card view's width; WebP (the previews contract), the site's thumbs are AVIF
 RETRY = card_bake.TRANSIENT + ("blob",)         # try again: the bake's own, and a blob that failed its hash (a download's)
+RESULT_V = 2                                    # result.json's "v": 2 adds variant and parts (PARTS_EDITOR.md §5, I4)
 
 
 # ========================
@@ -170,6 +171,19 @@ def outcome(card: Card) -> tuple:
     return state, transient, reason, fields
 
 
+def changes_of(edits: list) -> list:
+    """result.json's changes: one per field, or per layer of a parts bake (its old and new {layer id: text}; a
+    deleted layer's new is "")."""
+    out = []
+    for e in edits:
+        if isinstance(e.old, dict) and isinstance(e.new, dict):
+            out += [{"field": e.field, "old": _plain(e.old.get(key)), "new": _plain(e.new.get(key) or "")}
+                    for key in e.old]
+        else:
+            out.append({"field": e.field, "old": _plain(e.old), "new": _plain(e.new)})
+    return out
+
+
 def notes_of(card: Card) -> list:
     """The bake's notes: pixel misses, FX layers, icon layouts, what the bot's validator would say of the new card, the
     stars or types edits refused beside it, the fields already on the card (when not all of them are)."""
@@ -182,6 +196,9 @@ def notes_of(card: Card) -> list:
         notes += [f"{f}: {how}" for f, how in getattr(card.baked, "icons", {}).items() if how]
         notes += [f"validator: {problem}" for problem in card.baked.reparse.get("validator") or []]
     notes += [f"{r.field} not baked: {r.code}: {r.why}" for r in card.partial]
+    plan = getattr(card, "parts", None)
+    if plan is not None:                        # per layer: skipped ones (changed in Photoshop), and what waits
+        notes += [f"layer {key} skipped: {skip['why']}" for key, skip in plan.skipped.items()] + list(plan.notes)
     if card.redundant and set(card.redundant) != set(card.fields):
         notes.append(f"already on the card: {', '.join(card.redundant)}")
     return notes
@@ -248,6 +265,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
         if exists(join(out, name)):
             remove(join(out, name))
     result = blank(request, card)
+    result.update(v=RESULT_V, variant=None, parts={})
     work = mkdtemp(prefix="card-preview_", dir=environ.get(card_bake.WORK_ENV) or None)
     try:
         if not REQUEST.fullmatch(request or ""):
@@ -282,8 +300,9 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
         result.update(state=state, transient=transient, reason=reason, fields=outcomes, notes=notes_of(one))
         if one.traceback:
             result["traceback"] = one.traceback.strip().splitlines()[-1]
+        result["parts"] = dict((one.verdict or {}).get("parts") or {})     # per layer: baked, deleted, skipped...
         if one.baked is not None:
-            result["changes"] = [{"field": e.field, "old": _plain(e.old), "new": _plain(e.new)} for e in one.baked.edits]
+            result["changes"] = changes_of(one.baked.edits)
             result["parity"] = {f: {k: round(float(v), 3) for k, v in m.items() if k in ("bad_pct", "mean", "max")}
                                 for f, m in one.baked.parity.items()}
             result["region"] = _plain(one.baked.region)
@@ -377,6 +396,8 @@ if __name__ == "__main__":
 # ========================
 __all__ = [
     'BadInput',
+    'RESULT_V',
+    'changes_of',
     'SPARSE_FILES',
     'check_card',
     'load_edit',
