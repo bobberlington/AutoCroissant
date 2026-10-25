@@ -19,10 +19,10 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 environ["AUTOCROISSANT_BOT_CLONE"] = str(REPO / "tests" / "no-bot-clone")   # never this checkout's PICKLE commits
-from global_config import ALIAS_PKL, DETAILS_JSON, LOCAL_DIR_LOC, OLD_STATS_PKL, REMIND_PKL, STATS_PKL  # noqa: E402
+from global_config import ALIAS_PKL, DETAILS_JSON, LOCAL_DIR_LOC, OLD_STATS_PKL, REMIND_JSON, REMIND_PKL, STATS_PKL  # noqa: E402
 
 CLONE = Path(expanduser(LOCAL_DIR_LOC))                  # PSD tests skip without it
-PICKLES = (STATS_PKL, OLD_STATS_PKL, ALIAS_PKL, REMIND_PKL, DETAILS_JSON)   # the details file counts as one
+PICKLES = (STATS_PKL, OLD_STATS_PKL, ALIAS_PKL, REMIND_PKL, REMIND_JSON, DETAILS_JSON)   # the details file counts as one
 
 
 # ========================

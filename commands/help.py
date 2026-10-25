@@ -34,10 +34,10 @@ text_commands = {
                                                                     "- offset: Delay added to the first run, e.g. 30m or 1d (default: none)\n"
                                                                     "- frequency: Repeat interval in s/m/h/d/w, combinable like 1d12h (default: never)\n"
                                                                     "- command: Bot command to run with your permissions, options as name:value, e.g. '/sync_emojis refresh:True'",
-    "/list_reminders [all] [hidden]:"           : "Lists reminders with their ID, next run, repeat, command and creator.\n"
-                                                  "- all: The whole server instead of this channel (default: False)\n"
-                                                  "- hidden: Show the list only to you (default: False)",
-    "/remove_reminder <reminder_id>:"           : "Removes a reminder by the 8-character ID from /list_reminders (admins, or the reminder's creator).",
+    "/reminders:"                               : "Opens a panel only you see, one reminder at a time (◀ ▶ or the list to move). Reschedule (time and repeat), "
+                                                  "Turn off/on (off never fires; on again skips missed runs), Delete, New (admins, this channel). "
+                                                  "Changing one needs an admin or its creator.",
+    "/remove_reminder <reminder_id>:"           : "Removes a reminder by the 8-character ID from /reminders (admins, or the reminder's creator).",
 }
 
 card_commands = {

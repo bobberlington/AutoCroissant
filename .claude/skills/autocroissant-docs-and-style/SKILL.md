@@ -48,7 +48,7 @@ entry whose text changes with the cutover needs its override there.
 | Dict | help.py line | Entries (2026-10-21) | /help category |
 |---|---|---|---|
 | `general_commands` | 7 | 13 (`/list_guild_channels`, `/get_channel_messages` added 2026-10-20) | `general` (also the fallback) |
-| `text_commands` | 30 | 3 (rewritten 2026-10-19 for the new reminder system) | `text` (reminders) |
+| `text_commands` | 30 | 3 (rewritten 2026-10-19 for the new reminder system; 2026-10-24 `/reminders` replaced `/list_reminders`) | `text` (reminders) |
 | `card_commands` | 43 | 10 keys = 9 commands (incl. `/sync_emojis` and `/website`) + 1 `"Query Syntax:"` pseudo-entry | `card` |
 | `stats_commands` | 86 | 10 (`/update_tts_save`, `/view_old_metadata` added 2026-10-20; `/fonts`, `/bake_cards` 2026-10-21) | `stats` |
 | `music_commands` | 121 | 17 | `music` |
