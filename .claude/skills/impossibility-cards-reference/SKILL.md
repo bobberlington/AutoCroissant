@@ -429,7 +429,7 @@ Problems come in two kinds, and only one kind is persisted — a common newcomer
 - **Validate-time problems** are computed by `CardValidator.validate` during `/update_stats`,
   REPORTED to Discord, and NOT written back to the card. Since 2026-10-21 the same `validate()` (after the card's
   `site/Card Edits.json` entry) also runs per pushed PSD in `commands/card_check.py`, the push guard's card check
-  (TTSCardMaker card-check.yml; autocroissant-run-and-operate §7); of its output only the parse-time problems above reach the website.
+  (a step of TTSCardMaker card-guards.yml's check job since 2026-10-25, card-check.yml before; autocroissant-run-and-operate §7); of its output only the parse-time problems above reach the website.
 
 So the `problem` field in stats.pkl only ever holds parse-time strings. As of 2026-07-11 exactly
 one card has one: rulebook page "20 Creature Types" with `MISSPELT TYPE: tornado`.
@@ -467,7 +467,8 @@ are allowed per card by `allow_high_stats` in Card Edits.json. Verbatim, psd_par
 (`card_db.record`: CardInfo's attribute names plus `version` and `created`; `stats.json` one card per line,
 `old_stats.json` one name's versions per line; `db/manifest.json` holds each file's sha256), read back with
 `card_db.read_db` / `read_cards` (no config.py needed). The historical pickles (until 2026-10-25, in git history) held
-the objects pickled as `commands.psd_analyzer.*`; `card_db.load_pickle` reads them through an allow-list. Pickles from
+the objects pickled as `commands.psd_analyzer.*`; `card_db.load_pickle` read them through an allow-list until it went with
+the rest of the pickle-era code on 2026-10-25. Pickles from
 before the 2025-10-20 "Big massive refactor" (366c8d9) were plain dicts.
 
 CardInfo fields → pickle/dataframe keys (`to_dict`, commands/card_models.py; the lossy `from_dict` was deleted 2026-10-20):
@@ -506,7 +507,7 @@ parser's per-creature rows but is baked nowhere). Whatever the kind, `apply()` s
 `parsed_values` so dropping the edit restores it — the PSD's value, the folder's, or `False`/`None` for the
 database-only ones (unless Discord's retired `/update_metadata` had set them). The pipeline's verdict rides beside `_by`/`_at` as `_psd`
 (`{"state": "baked" | "refused", "for": {field: value}, "psd": "<blob8>", "reason": ...}`; "pending" is never written, the
-website computes it from the values; `CardEdits.meta`, `psd_state()`/`set_psd_state()`); `parse()`
+website computes it from the values; `CardEdits.meta`); `parse()`
 keeps every `_`-key out of `cards`. `aliases` is read by `CardEdits.names()` for name lookups, never by `apply()`;
 `dup_of` makes a card PNG with no PSD (Stubborn_Queen.png, Gust_of_Trees.png) a duplicate of the named card in the bot
 too (`card_data.duplicate_pngs`, 2026-10-23, build_site's rule); on a card with its own PSD the bot ignores it. The website's edit sets the same field by hand;
@@ -565,7 +566,7 @@ that knew more absorbs the one that knew less, never the reverse, so a commit wi
 keeps the card before as a version. An applied database edit that changes a card's data (Card Edits.json at
 /update_stats, a Discord edit's in-memory refresh) keeps the card before as a version too (`record_edits`, cause `edit`,
 since 2026-10-23). The same cleanup (2026-10-23, `card_history.recover`, with the history clone and the bot's own full
-clone `BOT_CLONE`) puts back what the bot's PICKLE commits held and old_stats lost: a reading whose printed ability words
+clone `BOT_CLONE`; it ran once, in the data build's seed, and was removed with it on 2026-10-25) put back what the bot's PICKLE commits held and old_stats lost: a reading whose printed ability words
 (any case, icon tokens and punctuation aside), types, stars, stats or card type no neighbouring version prints becomes a
 legacy version (`version.restored_from` its PICKLE), one that prints the same only moves the next version's start
 earlier (the version knowing all it knew); readings are keyed by name, path and blob (the same bytes in another folder
@@ -603,7 +604,7 @@ when the PNG stayed; listed apart, never counted by G2) and back when it is foun
 still tagged and writes old_stats.pkl again: a copy of the listed card (same path and blob; no blob: equal but the tag)
 is dropped (a same-blob restore, a kill's leftover), anything else is untagged and stays as history (a restore that was
 re-parsed, a /pull mix). So a kill at any point leaves the card listed, archived or both, never unlisted and untagged;
-the next run cleans up. `add_history` keeps a tagged copy as is (the save untags it) and replaces a last version equal
+the next run cleans up. `add_history` (removed 2026-10-25) kept a tagged copy as is (the save untags it) and replaces a last version equal
 but for the path (a kill after an edit or a same-blob move) instead of appending. `/pull` puts back into old_stats.pkl a
 card its file-by-file merge dropped from both pickles (`rescue_dropped`, committed as PICKLE; a rescued listed card
 comes back tagged, so the next run restores it).
@@ -743,7 +744,7 @@ Line numbers drift — re-find facts with these before relying on cited lines:
 | CardInfo/CardStats mapping | `sed -n '/^class CardStats/,/^class StatsDatabase/p' commands/card_models.py` (approx; or grep `def to_dict`) |
 | DSL internals | `grep -n 'FIELD_PATTERN\|_FIELDS = \|SYNONYMS = \|ability_search_engine\|SequenceMatcher\|duplicated' commands/query_card.py` |
 | subseries is database-only | `grep -n subseries commands/card_models.py commands/card_edits.py commands/query_card.py commands/psd_analyzer.py commands/psd_parser.py` (psd_parser: only the preserve block in `parse()`, nothing reads a layer) |
-| Edit kinds psd/folder/database and the `_psd` meta (2026-10-20, S1 of docs/EDIT_PIPELINE_DESIGN.md; states baked/refused only, review fix the same day) | `grep -n "KIND = \|PSD_STATES\|def psd_state\|def set_psd_state" commands/card_edits.py` (19 fields: 8 psd, 3 folder, 8 database; `tests/test_card_edits.py::test_kind_table`) |
+| Edit kinds psd/folder/database and the `_psd` meta (2026-10-20, S1 of docs/EDIT_PIPELINE_DESIGN.md; states baked/refused only, review fix the same day) | `grep -n "KIND = " commands/card_edits.py` (19 fields: 8 psd, 3 folder, 8 database; `tests/test_card_edits.py::test_kind_table`) |
 | Defaults (repo, match ratio) | `grep -n "DEFAULT_REPOSITORY\|DEFAULT_MATCH_RATIO" commands/query_card.py` |
 | Clone location | `grep -n LOCAL_DIR_LOC global_config.py` |
 | Slash surface + update_stats defaults | `grep -n 'tree.command(name="query\|name="alias\|name="update_stats' main.py` and `sed -n '359,365p' main.py` |

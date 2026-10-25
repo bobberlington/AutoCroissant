@@ -10,6 +10,7 @@ have too many tests - stop bloating our test suite").
 - Run it with pytest-xdist; new work adds at most a few focused tests (memory `lean-tests-and-verification`).
 - Site tests (owner, 10-24): keep about 15 site smoke tests in AutoCroissant (PLAN §3.4's list, one per site piece);
   the other site files go.
+- (Done on work/clean, 2026-10-25: the deletions of step 3's list below, with the tests of removed code.)
 - `commands/discord_archive.py` and `commands/discord_match.py` are retired with their tests
   (`tests/test_discord_archive.py`, `tests/test_discord_match.py`). `commands/discord_edits.py created` reads the
   archive's files only and stays.

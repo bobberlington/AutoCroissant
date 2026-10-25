@@ -29,9 +29,8 @@ tag `cards-20261023` = ecc4b773, with `range_reader`, as on the jetson), or `~/.
 **The card data in any form (2026-10-23).** `diff_stats.py` and `inspect_pickle.py` read it through
 `commands.card_db.read_cards`: a `db/` folder (or a folder holding `db/`: `card_data/`, an Actions artifact), a
 `stats.json` (the old_stats file beside it is the history), a data commit of `--git`'s repo (`origin/data` in a
-TTSCardMaker clone), or a historical `stats.pkl` / folder of pickles (`git show <PICKLE commit>:stats.pkl`; the pickles
-left this repo on 2026-10-25). Neither needs `config.py`: pickles load through card_db's allow-list unpickler, which
-knows only the card classes.
+TTSCardMaker clone). Neither needs `config.py`. Historical pickles (`stats.pkl`, until 2026-10-25) are no longer read:
+their allow-list unpickler went with the rest of the pickle-era code on 2026-10-25 (owner).
 
 **Noise lines**: since 2026-10-20 the `Git token found, API limited to 5000 requests/hour.` line is
 printed only by main.py (`print_token_status`), so scripts print none; the `| grep -v "Git token"`
@@ -329,8 +328,8 @@ counts (mismatch)?
 
 ## 4. inspect_pickle.py — DB health and single-card lookup
 
-**Purpose**: read-only view of the card data — the bot's `card_data/` by default, or with `--db` any `db/` folder, data
-commit or historical pickles: a health summary, the list of cards with recorded problems, or one card in full detail
+**Purpose**: read-only view of the card data — the bot's `card_data/` by default, or with `--db` any `db/` folder,
+`stats.json` or data commit: a health summary, the list of cards with recorded problems, or one card in full detail
 with its archived history.
 
 **Invocations**:
@@ -435,24 +434,22 @@ change? Which cards are flagged? Did old_stats balloon?
 
 ---
 
-## 5. diff_stats.py — the numbers between two snapshots (pickles or the data build's JSON)
+## 5. diff_stats.py — the numbers between two snapshots (the data build's JSON)
 
-**Purpose**: diff two stats.pkl-format snapshots into added/removed/modified with per-field
+**Purpose**: diff two card data snapshots into added/removed/modified with per-field
 counts. The measure of a data commit (the data gate, autocroissant-change-control) — it turns "the data looks fine"
-into numbers.
-Handles both modern CardInfo pickles and legacy plain-dict pickles (pre-366c8d9), so it can diff
-across the Oct-2025 schema change. Since 2026-10-23 it also diffs history: `--history <old
-old_stats.pkl> <new old_stats.pkl>` (or an `old_stats.pkl` beside each stats.pkl) adds a `-- history --`
+into numbers. (Until 2026-10-25 it also read pickles, the legacy plain-dict ones too.) It also diffs history: `--history
+<old old_stats.json> <new old_stats.json>` (or an `old_stats.json` beside each stats.json) adds a `-- history --`
 section: names and versions on each side, versions added and dropped per name, starts moved (a
 `version` record's `from`, on stored versions and current cards), archive tags changed, kept versions
 whose data changed, and cards with another blob or parser version. Without history it prints a note.
 Measured 2026-10-23 on the post-deploy rehearsal (main's cleanup vs work/history-fixes): `0 modified`,
 `versions added: 1 ... dropped: 25`, `starts moved: 18`, `archive tags changed: 2`.
 
-Both sides take any form of the card data (2026-10-23, `card_db.read_cards`): pickles, a `stats.json`, a `db/`
-folder, or a data commit of `--git DIR`'s repo. The history matches one name's versions up before counting: the same
-timestamp and blob; else the same blob (re-dated from git); else, where one side has no blob (the seed pass gives a
-legacy version its commit's blob, and may re-date it to that blob's intro), the same timestamp, or the same data in
+Both sides take any form of the card data (`card_db.read_cards`): a `stats.json`, a `db/` folder, or a data commit of
+`--git DIR`'s repo. The history matches one name's versions up before counting: the same
+timestamp and blob; else the same blob (re-dated from git); else, where one side has no blob (a legacy version; the
+2026-10-24 seed pass gave some their commit's blob and re-dated them), the same timestamp, or the same data in
 today's forms (`card_history.data_of`). So the data build's bookkeeping shows as `starts moved` and `kept versions
 with other data`, not as versions added and dropped; a kept version's data is compared without its timestamp.
 
@@ -474,13 +471,9 @@ echo $?
 exit 0 — no data change between the two commits (a run that only moved the posted cursor).
 (Until 2026-10-25 Invocation A was the pre-push gate, HEAD's pickles vs the working copy.)
 
-**Invocation B — what changed between two runs/snapshots** (any two pickles; the 2026-07-11 example below is
-the two PICKLE commits newest then, 8753489 -> 284d13c; the newest on 2026-10-23 are a7c310e, 077337a and 3888392):
-
-```bash
-git show 8753489:stats.pkl > /tmp/stats_old.pkl && git show 284d13c:stats.pkl > /tmp/stats_new.pkl && \
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py /tmp/stats_old.pkl /tmp/stats_new.pkl
-```
+**Invocation B — what changed between two runs/snapshots** (any two data commits or db/ folders, e.g.
+`diff_stats.py origin/data~5 origin/data --git ~/Desktop/TTSCardMaker`; the annotated output below is the 2026-07-11
+run on the two PICKLE commits newest then, 8753489 -> 284d13c, kept for its annotations):
 
 Annotated real output (8753489 → 284d13c):
 
@@ -802,3 +795,5 @@ Gasoline, Miracle Matter, Dark Daroach and PoD02Black Bloon), its docstring name
 row and Workflow 1; the gate snapshots go to `~/Documents/Tools/wt/scratch/head/` like the script's docstring.
 
 2026-10-25 (step 10, work/pickles): the pickles left the repo: inspect_pickle.py reads `card_data/` by default, parse_one.py's `--with-db` loads it, diff_stats.py's examples are data commits (the last PICKLE by git show); Workflow 1 is the data commit's review, Workflow 4 is history; commits_ns, e2e_update_ns, etag_handoff_ns and race_ns deleted with the legacy /update_stats.
+
+2026-10-25 (clean, work/clean): diff_stats.py and inspect_pickle.py read db/ JSON only (the pickle sides and card_db's unpickler removed); the line-ref rewriters deleted; tests/test_diagnostics.py runs both scripts on db/ JSON.

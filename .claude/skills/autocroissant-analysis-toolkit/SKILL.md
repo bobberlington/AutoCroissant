@@ -335,8 +335,8 @@ autocroissant-run-and-operate.)
 2. **Read the loop and tag every network call** (`commands/card_data.py` since 2026-10-22, re-pointed 2026-10-23 at 2ada357):
    - `traverse_remote` — one tree GET (`self._fetch_tree`, :269), sent with If-None-Match
      unless `force_update` or `cards:` is set. A 304 ends the run (:270). The ETag
-     (`_tree_etags`) and the small-file cache (`_file_cache`) are module dicts in repo_traverser.py:31-32, in
-     memory only, so the first sweep after a restart always gets a 200.
+     (`_tree_etags`) and the small-file cache (`_file_cache`) were module dicts in repo_traverser.py (removed 2026-10-25), in
+     memory only, so the first sweep after a restart always got a 200.
    - Small files (icon manifest, authors, edits, Card Creation Dates.json; `_repo_text`, :154) — one git/blobs
      request each, only when its blob sha changed or the bot restarted: **up to 4**, plus `.mailmap` once a run
      when a new card needs an author (2026-10-23).
@@ -429,19 +429,10 @@ whether a snapshot is damaged — answered with standalone reads, never by runni
 commit>:stats.pkl`; the last one is the deletion commit's parent). `stats.pkl` values are `CardInfo` dataclass instances
 pickled as `commands.psd_analyzer.CardInfo` (the `__module__` pin was dropped with the pickle writers; card_db's
 allow-list maps both paths). The card data's JSON reads the same way through `commands.card_db.read_cards` (a `db/`
-folder or a data commit). Since 2026-10-22 the forensics pattern is `commands.card_db.load_pickle` (its `SeedUnpickler` allow-list, card_db.py:275-284):
-it loads stats.pkl / old_stats.pkl / aliases.pkl with neither config.py nor psd-tools, on the Mac's plain `python3`.
-The raw `pickle.load` path still imports the `commands.psd_analyzer` chain (discord, pandas, psd-tools, config.py) and
-the older one-liners below use it. Load pattern:
-
-```bash
-python3 -c "
-import sys; sys.path.insert(0, '.')
-from commands.card_db import load_pickle
-db = load_pickle('stats.pkl'); old = load_pickle('old_stats.pkl')
-print(len(db), len(old), sum(len(v) for v in old.values()))"
-# 818 354 446     (PICKLE a7c310e, 2026-10-23)
-```
+folder or a data commit). From 2026-10-22 to 2026-10-25 the forensics pattern was `commands.card_db.load_pickle` (its
+`SeedUnpickler` allow-list); it went with the rest of the pickle-era code on 2026-10-25 (owner), so a historical pickle now
+loads only through the raw `pickle.load` path, which imports the `commands.psd_analyzer` chain (discord, pandas, psd-tools,
+config.py), as the older one-liners below do. The data's own history is the data branch's commits (read_cards).
 
 Aggregate with one-liners (Counter over `c.path.split('/')[0]`, max over `c.timestamp`, filter on
 `c.problems` — e.g. on 2026-10-23 no card has a *stored/pickled* problem (0; on 2026-07-11 it was `('20 Creature
@@ -551,7 +542,7 @@ line numbers (HEAD 9fb3093), and again after that day's optimization pass; the w
 | Slash option `use_local_repo` (default True through 2026-10-19, which is why the remote-mode ops rule existed; False on 2026-10-20 because of local timestamps, docs/BUGS_AND_IMPROVEMENTS.md B6; removed the same day when local mode was archived) | `grep -rn 'use_local' main.py commands/` (only `RETIRED_OPTIONS` in analytics.py); `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived` |
 | old_stats byte trace incl. 637698b=12,039 never reverted | `git log --format='%h %ad %s' --date=short main -- old_stats.pkl` + `git cat-file -s $(git rev-parse <hash>:old_stats.pkl)` |
 | cca0aaf/eb9aa84 load + 39/13 counts | rerun the Recipe 6 extraction + one-liner |
-| Problem card list (2026-10-23: none stored; full validation 1, Computer Virus) | the `c.problems` one-liner in Recipe 6; `CardValidator.validate` over `load_pickle('stats.pkl')` with the fork venv |
+| Problem card list (2026-10-23: none stored; full validation 1, Computer Virus) | the `c.problems` one-liner in Recipe 6 over `card_db.read_cards('origin/data', <TTSCardMaker clone>)`; `CardValidator.validate` over those cards with the fork venv |
 
 Line numbers drift with every edit to the card modules (`psd_parser.py`, `card_data.py`, `repo_traverser.py`, `card_models.py`, `psd_analyzer.py`) and `main.py` — trust the greps
 above over the numbers in this file. If `PSDParser._extract_from_layers` changes shape, gap_trace's

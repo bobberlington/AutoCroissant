@@ -29,10 +29,12 @@ Census: `docs/Future/PROBLEM_CARDS_2026-10-25.csv`.
       the re-run lands as one commit.
 - [ ] **Data build step 10** (`work/pickles`: AC 8f433f4, 25d7e70, cc48201, 3a1adba; TC b0da3cce): delete the
       pickles, `psd_details.json`, `/push`, the legacy `/update_stats` path (B9 with it), `commands/history_backfill.py`
-      and its files and test (DATA_BUILD_ACTION §14). Status: building; owner said now and tells bobberlington.
+      and its files and test (DATA_BUILD_ACTION §14). Status: merged 2026-10-25 (0e6c7a0); the rest of the pickle
+      era (the seed, the unpickler, the recovery) went on work/clean.
 - [ ] **Guards' silent Composer fix** (`work/composer`, worktree `wt/ac-composer`, uncommitted): card text layers set
       to Every-line Composer become Single-line, the PNG re-exported if the text moved, committed with the other guard
-      fixes, never mentioned in posts or comments. Status: building.
+      fixes, never mentioned in posts or comments. Status: merged (0fbe028); since work/clean it always switches (no
+      0.9 bar): box text that rewraps is redrawn and its PNG re-exported through the guards' export.
 
 ## Queue (owner's order)
 

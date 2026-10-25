@@ -164,8 +164,8 @@ quantization, per-mode caveats) lives in autocroissant-ai-boundary** (branch `ar
 
 Whole file, 45 lines on 2026-10-23 (verify: `cat global_config.py`). Three constants read the environment first
 (`environ.get(name, default)`): `AUTOCROISSANT_LOCAL_DIR` and `AUTOCROISSANT_HISTORY_CLONE` (2026-10-20, so TTSCardMaker's
-Actions can run `python -m commands.tts_save` and the build on their checkout without a symlink) and
-`AUTOCROISSANT_BOT_CLONE` (2026-10-22, b80122c). Modules also read a few environment variables themselves:
+Actions can run `python -m commands.tts_save` and the build on their checkout without a symlink); `AUTOCROISSANT_BOT_CLONE`
+went with the pickle seed on 2026-10-25. Modules also read a few environment variables themselves:
 `PSD_TOOLS_FONT_DIRS` (`FONT_DIRS_ENV`: card_bake, font_check), `RUNNER_TEMP` (card_bake's work dir in the Action),
 `GITHUB_TOKEN` (the Actions' token when config.py gives none: github_api.token_from_env, git_commit.token), `BUILDER_SHA`
 (the card_data build's stamp), `DISCORD_ARCHIVE` / `DISCORD_MATCH_REPO` (the Discord archive CLIs) and `SSH_AUTH_SOCK`
@@ -178,20 +178,17 @@ Actions can run `python -m commands.tts_save` and the build on their checkout wi
 | `LOCAL_DIR_LOC` | `"~/Desktop/TTSCardMaker"`, env `AUTOCROISSANT_LOCAL_DIR` | the card repo checkout. `/update_stats` no longer reads it (local mode was archived 2026-10-20); commands/tts_save.py reads `TTS/decks.json` and `site/Card Edits.json` under it in standalone runs (the Action sets it to `$GITHUB_WORKSPACE`); the diagnostics scripts (parse_one.py, gap_trace.py) and the archived traversal on branch `archive/local-update-stats` expand it with `expanduser`. This path convention is load-bearing across the toolchain |
 | `SITE_URL` (2026-10-20) | `"https://michaeljsr.github.io/TTSCardMaker"` | the card browser: `/website`, `/query` Card page buttons, search links, the site's `data/cards.json` (main.py, query_card.py) |
 | `REMIND_JSON` (2026-10-24) | `"reminder.json"` | the reminder store (GITIGNORED, per machine; schema_version 2) |
-| `REMIND_PKL` | `"reminder.pkl"` | the old reminder store: converted once to `REMIND_JSON`, then kept as `reminder.pkl.bak` |
 | `HISTORY_JSON` (2026-10-20) | `"repo_history.json"` | repo path -> (blob, commit that last changed it), written by commands/repo_history.py; gitignored, rebuilt from the clone |
-| `FONTS_CACHE` (2026-10-21, 66cfe9e) | `"fonts_cache"` | MDW/Fonts' font files, refreshed by tree sha, where there is no card repo checkout (the jetson): the bake and psd_details read it (gitignored) |
 | `FONT_DIRS_ENV` (2026-10-21) | `"PSD_TOOLS_FONT_DIRS"` | the name of the environment variable whose first entry overrides the fonts dir (card_bake, font_check) |
-| `CREATED_PATHS` / `CREATED_PATH` (2026-10-22, 6fe7a90) | `("site/Card Creation Dates.json",)` | when each card was made (written by `python -m commands.discord_edits created`); read on every /update_stats (`CardDates`) |
-| `RATINGS_PATHS` / `RATINGS_PATH` (2026-10-24) | `("site/Card Ratings.json",)` | dated 1-10 card ratings (`python -m commands.tts_ratings`; the website adds entries; `CardRatings`); never read by the bot, the card sync or the checks |
+| `CREATED_PATH` (2026-10-22, 6fe7a90) | `"site/Card Creation Dates.json"` | when each card was made (written by `python -m commands.discord_edits created`); read on every /update_stats (`CardDates`) |
+| `RATINGS_PATH` (2026-10-24) | `"site/Card Ratings.json"` | dated 1-10 card ratings (`python -m commands.tts_ratings`; the website adds entries; `CardRatings`); never read by the bot, the card sync or the checks |
 | `DATA_BRANCH`, `CARD_DATA_DIR` (2026-10-22) | `"data"`, `"card_data"` | the card repo's branch holding `db/` (written by Card sync only) and the bot's gitignored copy of it |
 | `EMOJI_JSON` (2026-10-20) | `"type_emojis.json"` | bot application id -> {type emoji name -> blob sha of the icon it was made from} (emojis belong to the bot identity), written by commands/type_emojis.py; gitignored, per machine. Missing, unreadable or no entry for this bot = its existing emojis count as current (no re-upload) |
 | `HISTORY_CLONE` (2026-10-20) | `"~/Documents/TTSCardMaker-history.git"`, env `AUTOCROISSANT_HISTORY_CLONE` | bare blobless clone of the card repo, fetched on startup and on every /update_stats; cloned on first use (the Action sets `~/TTSCardMaker-history.git` on its runner). No content diffs or renames run there (they would download blobs): repo_history runs rev-list/ls-tree/merge-base/fetch, and since 2026-10-22/23 `card_history.GitIndex.from_git` runs `git log --raw --no-abbrev --no-renames` with `GIT_NO_LAZY_FETCH=1` (the archive dates, the history recovery); `mailmap_args` fetches head's `.mailmap` blob, the one lazy fetch. It must be a full (non-shallow) clone, else the index raises ValueError and the dates wait for the next run |
-| `BOT_CLONE` (2026-10-22, b80122c) | `""`, env `AUTOCROISSANT_BOT_CLONE` | a full AutoCroissant clone whose historical PICKLE commits the build's seed pass reads to recover lost history (`card_data.bot_pickles`, only with `--seed`); `""` = the checkout holding global_config.py. A shallow clone prints "History recovery: <clone> is no full clone ..." and the recovery is skipped |
 | `CARD_REPO`, `CARD_BRANCH` (2026-10-20) | `"MichaelJSr/TTSCardMaker"`, `"main"` | the card repo and its branch, moved here from query_card (`DEFAULT_REPOSITORY`, kept as an alias), repo_history (`REPOSITORY`, alias) and tts_save; /set_repo still overrides `card_repo.repository` at runtime |
 | `API_BASE`, `RAW_BASE` (2026-10-20) | `"https://api.github.com/repos/"`, `"https://raw.githubusercontent.com/"` | URL prefixes used by commands/github_api.py (API) and repo_history/tts_save (raw links) |
 | `TYPES_DIR`, `STARS_DIR`, `RULEBOOK_DIR` (2026-10-20) | `"Types"`, `"Types/Stars"`, `"Rulebook"` | card-repo folders: type icons, star icons, and the rule pages (a substring test on card paths); used by psd_parser, card_data, query_card, type_emojis |
-| `ICON_MANIFEST_PATH`, `AUTHORS_PATHS` / `AUTHORS_PATH`, `EDITS_PATHS` / `EDITS_PATH`, `RULES_PATH` (2026-10-20) | `"MDW/Fonts/stoogedings-src/stoogedings.json"`, `("site/Card Authors.txt",)`, `("site/Card Edits.json",)`, `"TTS/decks.json"` | the hand-kept files in the card repo (font manifest, card authors, website edits, TTS deck rules). The website files moved from `MDW/` to `site/` on 2026-10-20 (TTSCardMaker 13ac680); every reader (card_data, query_card, tts_save) takes the first path present, so the tuples stay; `AUTHORS_PATH` / `EDITS_PATH` are the first element, for messages and the facade. The `MDW/` fallback was dropped the same day. Moved here from psd_analyzer and tts_save (psd_analyzer re-exports them) |
+| `ICON_MANIFEST_PATH`, `AUTHORS_PATH`, `EDITS_PATH`, `RULES_PATH` (2026-10-20) | `"MDW/Fonts/stoogedings-src/stoogedings.json"`, `"site/Card Authors.txt"`, `"site/Card Edits.json"`, `"TTS/decks.json"` | the hand-kept files in the card repo (font manifest, card authors, website edits, TTS deck rules). The website files moved from `MDW/` to `site/` on 2026-10-20 (TTSCardMaker 13ac680); the one-path `*_PATHS` tuples were collapsed to these on 2026-10-25. Moved here from psd_analyzer and tts_save (psd_analyzer re-exports them) |
 | `MAILMAP_PATH` (2026-10-23) | `".mailmap"` | the card repo's git mailmap (one person's git names as one): `card_history.mailmap_args` passes head's blob to `git log` for `%aN` (the API path's `card_edits.Mailmap` until 2026-10-25) |
 | `TTS_SAVE_PATH` (2026-10-20) | `"TTS/Impossibility Simulator.json"` | the Tabletop Simulator save in the card repo, updated by TTSCardMaker's card-sync.yml TTS save step since the cutover 2026-10-24 (tts-save.yml before; /update_tts_save until 2026-10-25); it passes the path on the command line; players download it from its raw link (commands/tts_save.py) |
 | `TIMEZONE` | `ZoneInfo("America/Los_Angeles")` | reminder times are PST/PDT — `/set_reminder when:` is interpreted in this zone (ops details: autocroissant-run-and-operate) |
@@ -229,8 +226,8 @@ Action). repo_traverser.py (the legacy /update_stats, with `_tree_etags`/`_file_
 | `ICON_MANIFEST_PATH` (2026-10-19) | `"MDW/Fonts/stoogedings-src/stoogedings.json"` | repo-relative path of the font manifest (aliases + codepoints), read by `_repo_text`: fetched by blob sha through the GitHub API and cached in `_file_cache` (only the offline diagnostics helper `_icons_from_local` reads a local clone). Missing file = plain names only, no aliases or Glyphs-panel characters. A cross-repo contract with TTSCardMaker's build script (ttscardmaker-companion §1.3) |
 | `ICON_VARIANTS` (2026-10-19; glow and darkglow 2026-10-23) | `("", "tint", "sticker", "no", "glow", "darkglow")` (psd_parser.py:32) | the `:variant` suffixes the parser accepts (all but `no` read as the plain icon); any other suffix is an `UNKNOWN ICON TOKEN` problem |
 | `ICON_SCAN_PATTERN` (2026-10-19) | `\[[^\[\]\r\n\x03]{1,52}\]` or one character in U+E000–U+F8FF or ★ (U+2605) | what the parser treats as a candidate token: a bracketed run of 1-52 characters (the longest icon name with `:darkglow`) on one line, a Private Use Area character, or the star. Semantics: impossibility-cards-reference §4.1 |
-| `EDITS_PATHS` / `EDITS_PATH` (2026-10-20) | `("site/Card Edits.json",)` | website fixes; the first path in the card repo's tree is read (`site/` since 2026-10-20, `MDW/` before). Read on every `/update_stats` (`CardEdits`, `_apply_edits`; PSD values kept in `card.parsed_values`) and by `populate_files` for website names/aliases. Fields = the website's EDIT_FIELDS (`CardEdits.TYPES`; `subseries` since 2026-10-20, database-only like note/aliases/hidden: impossibility-cards-reference §6). Missing or bad JSON: warning, cards unchanged |
-| `AUTHORS_PATHS` / `AUTHORS_PATH` (2026-10-20) | `("site/Card Authors.txt",)` | card-repo paths of the authors file; the first one present is read. It is read on every `/update_stats` (`_repo_text`, cached by blob sha) and applied to every card (`CardAuthors`, `_apply_authors`). If missing or unreadable, a warning is printed and authors stay as they are. Semantics: impossibility-cards-reference (Author) |
+| `EDITS_PATH` (2026-10-20) | `"site/Card Edits.json"` | website fixes (`site/` since 2026-10-20, `MDW/` before). Read on every `/update_stats` (`CardEdits`, `_apply_edits`; PSD values kept in `card.parsed_values`) and by `populate_files` for website names/aliases. Fields = the website's EDIT_FIELDS (`CardEdits.TYPES`; `subseries` since 2026-10-20, database-only like note/aliases/hidden: impossibility-cards-reference §6). Missing or bad JSON: warning, cards unchanged |
+| `AUTHORS_PATH` (2026-10-20) | `"site/Card Authors.txt"` | card-repo path of the authors file. It is read on every `/update_stats` (`_repo_text`, cached by blob sha) and applied to every card (`CardAuthors`, `_apply_authors`). If missing or unreadable, a warning is printed and authors stay as they are. Semantics: impossibility-cards-reference (Author) |
 | `STAR_CORE_ALPHA` (2026-10-20) | `0.5` | opacity at or above which a star layer's pixels count as its core when overlapping layers are merged into one star (`_count_stars`) |
 | `EFFECT_LAYER_TAG` (2026-10-20) | `" FX: "` | marks an effect layer (`Ability FX: Blazing`, made by TTSCardMaker `MDW/Scripts/Effect Layers.jsx`). Such layers are skipped by the walk and checked afterwards. Semantics: impossibility-cards-reference §4.2 |
 | `EFFECT_COVERAGE_MIN` (2026-10-20) | `0.95` | minimum share of an effect layer's opaque pixels that must sit on its text layer's pixels; below it the card gets `EFFECT LAYER OUT OF DATE` (fresh layers score 1.0, a stale test scored 0.268) |
@@ -374,13 +371,14 @@ The Actions' token: `GITHUB_TOKEN` from the environment when config.py supplied 
 
 | Constant | Value | Meaning |
 |---|---|---|
-| `SPARSE_FILES` | `("commands/card_check.py", "commands/font_check.py", "commands/github_api.py", "commands/psd_parser.py", "commands/card_models.py", "commands/card_edits.py", "global_config.py")` | the import closure; TTSCardMaker's card-check.yml sparse-checks out exactly this list (`tests/test_card_check.py` asserts the closure equals it) |
 | `LINE` | `"{name} has pushed {card} with: {notes}."` | the Discord line per card (card = `card_name(path)`, notes joined by "; ") |
 | `CLOSING` | `"The bot's next /update_stats prints these too; the parser's own notes (no stars found, misspelt type, several creatures) also show on the website as Parser notes."` | the Discord message's last line (the validator's notes never reach the website) |
 | `UNREADABLE` | `"could not be read"` | the error line's wording for a PSD psd-tools can't open or an edits file that isn't JSON |
 
 Shared with font_check (imported): `DISCORD_LIMIT`, `NOBODY`, `API_TIMEOUT`, `EXCLUDE_FOLDERS`, `POOL_MIN`, `POOL_CHUNK`; the token
-through `github_api.token_from_env()`. Repo paths from global_config: `TYPES_DIR`, `STARS_DIR`, `ICON_MANIFEST_PATH`, `EDITS_PATHS`.
+through `github_api.token_from_env()`. Repo paths from global_config: `TYPES_DIR`, `STARS_DIR`, `ICON_MANIFEST_PATH`, `EDITS_PATH`.
+It runs from card-guards.yml's check job since 2026-10-25 (card-check.yml before; its `SPARSE_FILES` went: the guards'
+`card_guards.SPARSE_FILES` holds its closure).
 
 ### commands/psd_details.py (Configuration block, added 2026-10-21; not compiled)
 
@@ -391,9 +389,8 @@ through `github_api.token_from_env()`. Repo paths from global_config: `TYPES_DIR
 | `TREE_CHILDREN`, `TREE_DEPTH` | `80`, `8` | the compact layer tree's caps; past them one `MORE` entry (`["…", "more", true]`) |
 | `DRAWN` | `("pixel", "smartobject", "shape")` | digit-named layers of these kinds are drawn bar cells (stat encoding `pixel`); exposure-style adjustments are `template` / `two-row` |
 
-The CLI's `--fonts` defaults to the clone's `MDW/Fonts`; `--clone` and `--out` are required (no root details file
-since 2026-10-25, no `--refill`). The pool size and chunking are font_check's `POOL_MIN` / `POOL_CHUNK`. In the build the
-`supplied` flags come from `psd_details.font_index()` (the checkout's MDW/Fonts, else the fonts cache).
+No CLI since 2026-10-25 (the one-time backfill is done). In the build the `supplied` flags come from
+`psd_details.font_index()` (`PSD_TOOLS_FONT_DIRS`, else the checkout's MDW/Fonts).
 
 ### commands/card_runner.py (removed 2026-10-25)
 
@@ -402,13 +399,13 @@ parses no PSD.
 
 The bake (card-sync.yml) takes the Action's token: `card_bake.run` calls `github_api.token_from_env()`, and
 `git_commit.token()` prefers `GIT_TOKEN`, else `GITHUB_TOKEN`. The work dir is card_bake's (`RUNNER_TEMP` else a fresh `mkdtemp`). The fonts dir
-(`card_bake._fonts_dir`): `PSD_TOOLS_FONT_DIRS`' first entry, then the checkout's `MDW/Fonts`, then `fonts_cache/`
-brought to the tree's MDW/Fonts (66cfe9e, 2026-10-21) — so the jetson, which has no checkout, has fonts.
+(`card_bake._fonts_dir`): `PSD_TOOLS_FONT_DIRS`' first entry, else the checkout's `MDW/Fonts` (the `fonts_cache/` fallback
+for the jetson went on 2026-10-25: nothing there bakes).
 
 ### commands/analytics.py — reminders (lines 28-81, added 2026-10-19; adapter block 2026-10-24)
 
 The "Bot adapter" block at the top holds what differs from OJWikibot's copy of the module: `STORE_PATH`
-(`REMIND_JSON`), `LEGACY_PATH` (`REMIND_PKL`), `STORE_SCHEMA`, `TIME_SEMANTICS`, `ZONE_LABEL` ("Pacific time"),
+(`REMIND_JSON`), `STORE_SCHEMA`, `TIME_SEMANTICS`, `ZONE_LABEL` ("Pacific time"),
 `RUN_AS_CREATOR = True`, `LEGACY_RUNS_AS_BOT`, `ALLOW_POSITIONAL = True`, `ON_LOAD_ERROR = "off"` (an unreadable
 store turns reminders off; OJWikibot exits), `CHANNEL_RETRY`, `RETIRED_OPTIONS` and `is_admin`.
 
@@ -463,6 +460,7 @@ burst (the environment `card-sync-quiet`'s wait timer, a TTSCardMaker repo setti
 | `ANCHOR_WINDOW` | 2 h | in a burst, PSD commits this close to the push may stand in for its PNG's PSD |
 | `TELL_PNG_MISMATCH` | `False` | R10 and "current but outside the bar" stay off Discord |
 | `card_standards.AUTO_FIX` | `("R9",)` | what the bot fixes itself (the Txt2 story); everything else is told |
+| `card_standards.LINE_IOU` | `0.9` | R8 (the Single-line Composer, always set and never told since 2026-10-25): a box text line inked under this share of the stored one rewraps, so the layer is redrawn and the guards re-export its PNG; no longer a bar to the switch |
 | `png_export.TOL` | `2` | the difference a pixel may show and still be unchanged (ICC rounding) |
 | `png_export.BESIDE_CUT` | `8` | a new PSD pushed beside its PNG counts as current within this many levels (owner, 2026-10-23) |
 | `png_export.UNCHECKED` | "no stored image to cross-check the bot's PNG against: save the PSD with Maximize Compatibility on" | told for a PNG the guards made from a PSD with no stored composite (G2 rendered anyway, owner 2026-10-24, branch work/py314) |
@@ -530,8 +528,8 @@ fonttools, requests, `pyoxipng==9.1.1` on Linux x86_64 at any CPython 3.9+, buil
 only where it has a wheel, CPython 3.9-3.13: skipped on the Mac's and the jetson's 3.14). `requirements.txt` (the bot)
 starts with `-r requirements-cards.txt`, `requirements-dev.txt` with `-r requirements.txt`. The five card workflows on
 Python 3.14 (six until card-edits.yml was deleted at the cutover, 2026-10-24), card-guards.yml (its check and post jobs), card-sync.yml (one venv for every stage),
-card-preview.yml (without pyoxipng: its PNG is never published), card-check.yml and font-check.yml (stock psd-tools until
-2026-10-24), check the file out of AutoCroissant and install it offline from wheels in the Actions cache (path
+card-preview.yml (without pyoxipng: its PNG is never published), and until 2026-10-25 card-check.yml and font-check.yml
+(now card-guards.yml's check job), check the file out of AutoCroissant and install it offline from wheels in the Actions cache (path
 `~/.cache/card-wheels`, key `cards-<hashFiles('bot/requirements-cards.txt')>-<OS>-<arch>-py<Python>`: one entry for all
 of them; until 2026-10-24 card-edits, card-guards and card-preview on 3.12 and card-sync's own `-py<3.14.x>-py<3.12.x>`). The
 first run after a change to the file or a new runner Python builds them (`pip wheel -r`: the fork's C extensions,
@@ -691,7 +689,7 @@ table with its command before quoting it in the future.
 | card_check constants and its sparse list | `grep -n "^[A-Z_]* = " commands/card_check.py`; `grep -n -A1 "^SPARSE_FILES" commands/card_check.py` |
 | card_preview constants and its sparse list (2026-10-23) | `grep -n "^[A-Z_]* = \|^[A-Z_]*, [A-Z_]* = " commands/card_preview.py commands/card_preview_branch.py`; `grep -n "secrets\.\|vars\." <TTSCardMaker>/.github/workflows/card-preview.yml` (only `secrets.GITHUB_TOKEN`) |
 | No card_runner, repo_traverser or CARD_SYNC (2026-10-25) | `ls commands/card_runner.py commands/repo_traverser.py` (absent); `grep -rn "CARD_SYNC" global_config.py main.py commands/ \| grep -v changelog` (nothing) |
-| global_config env overrides (three: LOCAL_DIR_LOC, HISTORY_CLONE, BOT_CLONE) | `grep -n "environ.get" global_config.py` (5, 13, 14); `grep -rn "AUTOCROISSANT_" --include="*.py" commands/ global_config.py` (global_config.py, plus card_history's `--bot-git` CLI default) |
+| global_config env overrides (two: LOCAL_DIR_LOC, HISTORY_CLONE) | `grep -n "environ.get" global_config.py`; `grep -rn "AUTOCROISSANT_" --include="*.py" commands/ global_config.py` (global_config.py only) |
 | Module environment reads | `grep -rn "environ.get" --include="*.py" commands/` (FONT_DIRS_ENV, WORK_ENV = RUNNER_TEMP, GITHUB_TOKEN, BUILDER_SHA, DISCORD_ARCHIVE, DISCORD_MATCH_REPO, SSH_AUTH_SOCK) |
 | ACTIONS_TOKEN and the card_sync knobs | `sed -n '38,56p' commands/card_sync.py` |
 | Push-guard, parity and bake knobs | `grep -n "^MODES\|^LINE\|^CHANGES_\|^QUIET_MARGIN\|^ANCHOR_WINDOW\|^TELL_PNG" commands/card_guards.py`; `grep -n "^AUTO_FIX" commands/card_standards.py`; `grep -n "^TOL\|^BESIDE_CUT" commands/png_export.py`; `grep -n "^PARITY_" commands/psd_edit.py`; `grep -n "^MAX_BAKES\|^RECENT\|^BUDGET" commands/card_bake.py` |
@@ -761,3 +759,5 @@ marker), the `card-guards-quiet` environment among the repo settings, `png_expor
 2026-10-25 (retire): five Discord edit commands retired (branch archive/discord-edits); the lacks_admin table re-derived (16 gates); card_runner's REPORT_FILE and /bake_cards defaults gone; analytics gained `RETIRED_COMMANDS`; git_commit's `limited`/`ssh_on_limit` (the bot's TTS save only) removed.
 
 2026-10-25 (step 10, work/pickles): `ALIAS_PKL`, `STATS_PKL`, `OLD_STATS_PKL`, `DETAILS_JSON`, `CARD_SYNC`, card_data's `LOOKUP_WORKERS`/`COMMITS_PAGE`, font_check's `CACHE_JSON`/`BATCH` and the card_runner and repo_traverser tables removed; `BOT_CLONE` now serves the build's seed only; /push's gate row gone (15 gates); psd_details' CLI needs `--clone` and `--out`.
+
+2026-10-25 (clean, work/clean): BOT_CLONE, REMIND_PKL, FONTS_CACHE and card_check.SPARSE_FILES removed; the *_PATHS tuples collapsed to the single paths; the card and font checks run in card-guards.yml's check job.

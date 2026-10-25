@@ -50,7 +50,7 @@ Registered 46 slash commands for reminder system.      <- slash_registry populat
 Bot initialization complete                            <- the four loops started (main.py:139-142)
 Synced commands to guild: <name> (<id>)                <- one line per guild, async (main.py:110)
 Trying to open reminder.json.                          <- init_reminder (or "No reminder.json yet: an empty schedule.")
-Converted reminder.pkl to reminder.json (3 reminders; backup reminder.pkl.bak).   <- once, the first start after 2026-10-24; plus any "Rescheduled reminder <id> from <t1> to <t2>" lines
+                                                       <- plus any "Rescheduled reminder <id> from <t1> to <t2>" lines
 Card data loaded from card_data: 819 cards             <- init_psd: card_sync.startup's local copy (no network)
 Card data is already current: built 12 min ago from TTSCardMaker@1a2b3c4d (run: <...>).   <- its sync (one conditional request)
 Loaded 771 cards and 48 rulebook entries               <- prep_dataframes (query_card.py); counts vary
@@ -74,7 +74,7 @@ start draining — so the loops effectively start first, and nothing is sent to 
 
 | Init (queued in this order) | What it does | Failure/no-op behavior |
 |---|---|---|
-| `init_reminder` (analytics.py:1474) | Loads `reminder.json` (once, 2026-10-24: converts `reminder.pkl` to it, checked by reading it back, and renames the pickle `reminder.pkl.bak`), migrates old entries, rolls past-due REPEATING reminders that are on forward to their next future slot in one step, saves atomically | No file: an empty schedule. Unreadable file: "ERROR: reminder.json could not be read ... Reminders are OFF" (the file is left untouched; every reminder command replies "✗ Reminders are off"). A failed conversion: "ERROR: could not convert reminder.pkl ..." and the bot runs and saves from the pickle this session; the next start tries again. Only `reminder.pkl.bak` left: reminders off until you restore `reminder.json` or rename the backup back |
+| `init_reminder` (analytics.py:1474) | Loads `reminder.json` (the 2026-10-24 conversion from `reminder.pkl` was removed on 2026-10-25), migrates old entries, rolls past-due REPEATING reminders that are on forward to their next future slot in one step, saves atomically | No file: an empty schedule. Unreadable file: "ERROR: reminder.json could not be read ... Reminders are OFF" (the file is left untouched; every reminder command replies "✗ Reminders are off"). |
 | `init_psd` (psd_analyzer.py) | `card_sync.startup`: `card_data/` into `stats_db`, then one sync; builds the query DataFrames | No `card_data/` and GitHub unreachable: no cards until a sync works ("No card data yet" on /update_stats) |
 | `init_query` (query_card.py) | Fetches the TTSCardMaker GitHub file tree (1 API call; 3 tries 1 s and 2 s apart on a connection error, 429 or 5xx, `github_api.get_with_retry`) | A failed or non-tree reply keeps the last good list: "Card list: GitHub tree fetch for <repo> failed (...); keeping the last good list (N entries)" (0 entries right after a start, so /query finds nothing until the next /update_stats or restart) and "Warning: Failed to populate files from repository (status N)" |
 | `refresh_history` (repo_history.py:198) | Fetches the bare history clone (`~/Documents/TTSCardMaker-history.git`) and maps each card PNG to the commit that last changed it, for sha-pinned image links | Never raises; on failure the old map stays and links fall back to `main` |
@@ -111,8 +111,7 @@ interpreter on main.py. The process is REPLACED, so silence after "Restarting bo
 
 **Production (the jetson, 2026-10-20):** systemd `autocroissant.service`; no startup.sh, so /restart_bot
 re-execs main.py. Deploy (2026-10-25): the `jetson-deploy` skill (~/.claude/skills/jetson-deploy, outside the repo) sends its
-`deploy.sh` to the jetson over ssh. It refuses 05:00-05:40 Pacific (checked again before the
-restart), `git pull --ff-only`, reinstalls the psd-tools fork only when `requirements-cards.txt`'s URL and tag differ from
+`deploy.sh` to the jetson over ssh, at any time of day (its 05:00-05:40 window was dropped 2026-10-25): `git pull --ff-only`, reinstalls the psd-tools fork only when `requirements-cards.txt`'s URL and tag differ from
 the venv's (pip's `direct_url.json`), `~/venvs/autocroissant/bin/python setup.py build_ext --inplace` (incremental: only
 modules whose source changed, seconds when none did; a full rebuild was ~6 min 44 s), `sudo systemctl restart
 autocroissant`, then waits up to 90 s for `Registered N slash commands` (46) and `Bot initialization complete` in the
@@ -125,7 +124,7 @@ The rebuild is NOT optional since the 2026-10-20 split: stale `.so` next to new 
 
 - **Push main and deploy in one sitting**: a /pull or /update pulls the new `.py` files in next to stale `.so` files and
   the next restart fails at import. (The 05:00-05:40 rule was for the scheduled /update_stats and /push of the pickle era;
-  jetson-deploy's window still refuses it.)
+  dropped with them on 2026-10-25.)
 - **When the psd-tools fork tag moves** (its one pin: `requirements-cards.txt`, which `requirements.txt` includes),
   reinstall it in the venv after the pull (the jetson-deploy skill does this):
   `~/venvs/autocroissant/bin/pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"`
@@ -281,7 +280,7 @@ Description, GMNotes, Memo, Tags and scripts are the team's: never changed (role
   `site/Card Edits.json` come from the checkout at `LOCAL_DIR_LOC` (else raw main / nothing).
 - Save commits do not rebuild the card website (`paths-ignore: TTS/**` in TTSCardMaker's site.yml).
 
-### Font check (/fonts, added 2026-10-21; the automatic path is TTSCardMaker's font-check.yml Action, written the same day against the uncommitted tree)
+### Font check (/fonts, added 2026-10-21; the automatic path is a step of TTSCardMaker's card-guards.yml check job since 2026-10-25, font-check.yml before)
 
 commands/font_check.py (uncompiled; stock psd-tools + fontTools, no Discord or config imports; fontTools is in requirements.txt since
 2026-10-21 and main.py imports the module lazily inside /fonts, so the bot starts without it) lists the PostScript names
@@ -289,11 +288,10 @@ a card's visible type layers ask for and which of them `MDW/Fonts` in the card r
 ignored; a font counts as present only when a face has exactly its PostScript name (no aliases or loose matches since
 2026-10-23, owner). It reports and never rejects: a missing font is a message to a person, not a revert.
 
-- **Automatic: TTSCardMaker's `.github/workflows/font-check.yml`** (ttscardmaker-companion §3). On a push to main that
-  changes a PSD or `MDW/Fonts/`, it sparse-checks out the fonts folder (cached by its tree sha) and `commands/font_check.py`,
-  `commands/github_api.py`, `global_config.py`, `requirements-cards.txt` from `bobberlington/AutoCroissant` (since 2026-10-24,
-  branch work/py314: on Python 3.14 it installs requirements-cards.txt, the psd-tools fork's one pin, from the card workflows'
-  wheel cache instead of stock psd-tools), reads the push's PSDs by blob sha
+- **Automatic: the Font check step of TTSCardMaker's `card-guards.yml` check job** (font-check.yml until 2026-10-25;
+  ttscardmaker-companion §3). On a push to main that changes a PSD or `MDW/Fonts/`, whatever `CARD_GUARDS` says, it uses
+  the fonts folder (cached by its tree sha) and the guards' bot checkout (`card_guards.SPARSE_FILES`, the card packages from
+  the shared wheel cache), reads the push's PSDs by blob sha
   (`--repo --before --after`, each blob's sha1 verified), writes the markdown to the job summary and, when something is
   missing, posts to the standards channel's webhook in the repo secret `DISCORD_STANDARDS_WEBHOOK` (owner, 2026-10-22;
   `DISCORD_FONT_WEBHOOK` is deleted; the URL is in no file) and then comments on the commit. The post pings role
@@ -309,10 +307,10 @@ ignored; a font counts as present only when a face has exactly its PostScript na
 812 PSDs, 274 files / 282 faces, nothing missing, 7 s), `--psd <files>`, `--json <out>`,
   `--discord <payload out>`; `--help` lists the --repo options the Action uses.
 
-### Card check (added 2026-10-21; CLI only, no slash command; the automatic path is TTSCardMaker's card-check.yml Action, on TTSCardMaker main)
+### Card check (added 2026-10-21; CLI only, no slash command; the automatic path is a step of TTSCardMaker's card-guards.yml check job since 2026-10-25, card-check.yml before)
 
 commands/card_check.py (uncompiled; imports psd_parser, card_models, card_edits, font_check, github_api and global_config, nothing with
-Discord or config; `SPARSE_FILES` is that closure and the Action's sparse list) tells what the bot's parser and validator note about a card
+Discord or config; the guards' `card_guards.SPARSE_FILES` holds that closure) tells what the bot's parser and validator note about a card
 PSD: the lines /update_stats prints for it (`NO STARS FOUND`, `MISSPELT TYPE`, `SEVERAL CREATURES`, `HP/DEF/ATK/SPD NOT FOUND`, `STATS TOO
 HIGH`, `ABILITY TEXT NOT FOUND`, `UNKNOWN TYPE`; the parser's own, the first three and `NO ABILITY LAYER`, are also the website's Parser
 notes, the validator's are printed only), after the card's `site/Card Edits.json` entry (`problems_ok`, `allow_high_stats`, `creatures` ...)
@@ -320,17 +318,16 @@ and `ABILITY_EXCLUSIONS`. The second push-guard rule (docs/Campaigns/CARD_STANDA
 rejects: exit 0 always; an unreadable PSD, a PSD under `MDW/` or `Markers/` (no card) or a failed API call (a 5xx after the retries, no
 network, a truncated tree) is one error line.
 
-- **Automatic: TTSCardMaker's `.github/workflows/card-check.yml`.** On a push to main that changes a PSD, `Types/` or `site/Card Edits.json`
-  it sparse-checks out `SPARSE_FILES` from `bobberlington/AutoCroissant` (nothing of the card repo), installs AutoCroissant
-  `requirements-cards.txt` (the psd-tools fork's one pin, fonttools, requests, pyoxipng) on Python 3.14 from the card workflows'
-  wheel cache (since 2026-10-24, branch work/py314; stock psd-tools, fonttools and requests before), and reads the push's PSDs by blob sha (`--repo --before --after`, `font_check.pushed_files`); `Types/`, the icon manifest and
+- **Automatic: the Card check step of TTSCardMaker's `card-guards.yml` check job** (card-check.yml until 2026-10-25, which
+  also ran on `Types/` and `site/Card Edits.json` pushes and so checked nothing there). On a push to main that changes a PSD,
+  whatever `CARD_GUARDS` says, it runs from the guards' bot checkout and the shared wheel cache, and reads the push's PSDs by blob sha (`--repo --before --after`, `font_check.pushed_files`); `Types/`, the icon manifest and
   the edits file come from the tree at the pushed commit (`font_check.tree_blobs`). The markdown goes to the job summary; when a card has
   notes it posts to the standards channel's webhook in `DISCORD_STANDARDS_WEBHOOK` (owner, 2026-10-23; unset: a warning) and comments
   on the commit. The message pings nobody (`allowed_mentions` `{"parse": []}`): one line per card, "<login> has pushed <card name> with: <note>; <note>.", and last
   "The bot's next /update_stats prints these too; the parser's own notes (no stars found, misspelt type, several creatures) also show on the
   website as Parser notes." (under 2000 characters; "... and N more cards" when cut). A push that changes only `Types/` or the edits file
   lists no PSD, so it reports nothing.
-- **Dispatch:** Actions > Card check > Run workflow with `all` reads every card PSD of the tree (~813 blob downloads, 16 GB, 25-30 min) into
+- **Dispatch:** Actions > Card guards > Run workflow with `all` reads every card PSD of the tree (~813 blob downloads, 16 GB, 25-30 min) into
   the job summary only (no Discord message or comment on a dispatch); without `all`, the head commit's PSDs.
 - **By hand:** `python -m commands.card_check --psd <files>` (each file in the checkout of its nearest ancestor holding `Types/`: its path
   from there classifies it and that checkout's `Types/` and edits file apply; a file outside any checkout is `UNKNOWN TYPE`),
@@ -465,11 +462,11 @@ without its PNG gets the PNG the bake would make (owner's ruling 2026-10-22: the
 renders the changed layers in the card's ICC export mode and the old PNG takes the change; the PSD's stored composite is
 never written, only a cross-check that can refuse; a refusal is told as "PNG not made: ...; export it in Photoshop";
 nothing when the PNG already shows the PSD, pushed before it, a new card's too), the pushed PSDs are checked against the
-card standards (fonts, R7, until 2026-10-24: since then font-check.yml's alone, branch work/py314) (the owner's easy fixes, R9's Txt2 sync and, since 2026-10-25, R8's Single-line Composer, which is never told: no comment, no post, only the bot commit's message "Single-line Composer on N cards"; R11's exact-name rename is built but told
+card standards (fonts, R7, until 2026-10-24: since then the font check's alone, branch work/py314) (the owner's easy fixes, R9's Txt2 sync and, since 2026-10-25, R8's Single-line Composer, always set and never told: no comment, no post, only the bot commit's message "Single-line Composer on N cards"; box text that rewraps is redrawn and its PNG re-exported, as unsaid; R11's exact-name rename is built but told
 until the owner says yes, `card_standards.AUTO_FIX`; R3 and R4 keep only the real issues, several visible Ability layers, a hidden one
 with words the parser reads nowhere and a hidden or rasterized Name layer (kept unattended, for the owner to confirm): their
 template layout was dropped by the owner on 2026-10-23), one commit comment, one Discord post to the standards channel
-(`DISCORD_STANDARDS_WEBHOOK`, no ping; card-check.yml posts there too, no ping, and font-check.yml, with its role ping) and at most one bot commit,
+(`DISCORD_STANDARDS_WEBHOOK`, no ping; the card check posts there too at once, no ping, and the font check, with its role ping: both steps of the same check job since 2026-10-25) and at most one bot commit,
 both after a 30-minute quiet window (since 2026-10-24, branch work/py314: the post job waits in the TTSCardMaker
 environment `card-guards-quiet`'s 30-minute timer, created by the owner after both branches land; no runner sleeps; a PSD saved without
 Maximize Compatibility gets its PNG anyway, told "no stored image to cross-check"; docs/Campaigns/PUSH_GUARDS.md section 20). Since the owner's ruling of 2026-10-23 the bot's drawing refuses only past 25% bad;
@@ -546,7 +543,7 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 |---|---|---|---|
 | `reminder.json` | /set_reminder, /reminders, every firing (schema_version 2, `ReminderStore` in analytics.py) | repo root | NO (gitignored) — per-machine. Edit by hand only with the bot stopped |
 | `reminder.json.tmp` | every reminder save (written, fsynced, then renamed over reminder.json) | repo root, normally gone within milliseconds | NO (gitignored). If a hard kill leaves one behind, delete it |
-| `reminder.pkl.bak` | the one-time conversion (2026-10-24) | repo root | NO (gitignored). The old store; keep it a while, then delete |
+| `reminder.pkl.bak` | the one-time conversion (2026-10-24) | repo root | NO (gitignored). The old store, read by nothing since 2026-10-25: delete it |
 | `repo_history.json` | startup and every /update_stats (commands/repo_history.py; a failed refresh retries on the next one) | repo root; its bare clone at `~/Documents/TTSCardMaker-history.git` | NO (gitignored) — per-machine, rebuilt from the clone if deleted |
 | `stats.csv` / `stats.txt` | /export_cards (`as_csv` picks which) | repo root | NO (gitignored via `*.csv`/`*.txt`) |
 | `rules.txt` | /export_rulebook | repo root | NO (gitignored) |
@@ -555,7 +552,6 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 | Card bake work dir | card-sync.yml's Bake step (card_bake.run) | OS temp dir via `mkdtemp(prefix="card-bake_")` per run (`$RUNNER_TEMP/card-bake` on the Action), kept: edited PSD, merged PNG, before/after/diff crops, `report.md`, the rewritten edits file; the report is also posted in Discord as `card_bake_report.md` | n/a (commits go to the card repo) |
 | Type emojis | /sync_emojis, startup sync, /update_stats on a changed tree | Discord-side application emojis owned by the logged-in bot identity; `type_emojis.json` (repo root) records each one's icon blob, per bot identity | NO (gitignored) — per-machine; if deleted, startup adopts the existing emojis as current |
 | `card_data/` | startup, every /update_stats and card commands on use (commands/card_sync.py, `card_db.sync`) | repo root: the card repo's `data` branch's `db/` (`stats.json`, `old_stats.json`, `psd_details.json`, `manifest.json`) plus `sync.json` (the data commit held and its ETag); each file replaced atomically, the manifest and `sync.json` last | NO (gitignored) — the Card sync Action's output; delete it and the next sync fetches it again (about 3.5 MB) |
-| `fonts_cache/` | the bake and psd_details where there is no card repo checkout (`FONTS_CACHE`; font_check `refresh_cache`) | repo root: a copy of the card repo's MDW/Fonts, refreshed by tree sha | NO (gitignored) — per-machine; delete it and the next reader fetches it again |
 | `.ssh/` deploy key | operator-provisioned | repo root | NO (gitignored) — per-machine, SECRET |
 | Offline test suite | developers (`python -m pytest -q tests`, before a push) | `tests/` (goldens in `tests/goldens/`, re-pinned only by `tests/make_goldens.py`) | YES — code; never writes the reminder store |
 | 2026-10-20 optimization-pass audits, bench and regression scripts | the optimization pass (read-only audits; sandboxes in /tmp) | reports and `bench/` on (`docs/Finished/optimization-pass-2026-10-20/`: profile.md, network-robustness.md, network-speed-results.md, code-health.md, docs.md, refs_table.md); scripts in `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/` | YES — scripts on main (same commit as this row), reports on the archive branch only |
@@ -648,7 +644,7 @@ The first is stored as `/update_stats`. The second is a weekly full emoji sync, 
   with an older `v` is migrated on load: its command is rewritten to canonical form keeping what it actually did,
   and retired options (`RETIRED_OPTIONS`) are stripped, so `/update_stats use_local_repo:False` becomes
   `/update_stats`.
-- **The conversion (once, 2026-10-24)**: the first start finds no `reminder.json`, loads `reminder.pkl` as before,
+- **The conversion (once, 2026-10-24; its code removed 2026-10-25)**: the first start found no `reminder.json`, loaded `reminder.pkl` as before,
   writes `reminder.json`, reads it back and compares every field, and only then renames the pickle
   `reminder.pkl.bak`. Ids, creators, schedules and commands carry over (the cutover's `/remove_reminder` of
   d2664752 and 054b5933 still works). On any failure the half-made JSON is removed and the session keeps running
@@ -799,8 +795,8 @@ re-find volatile facts with these before trusting them:
 | Reminder files ignored | `git check-ignore -v reminder.json reminder.json.tmp reminder.pkl.bak` |
 | TTS save wiring (none in the bot since 2026-10-25) | `grep -c "tts_save" main.py` (0) |
 | Type emoji sync wiring | `grep -n "init_type_emojis\|sync_emojis" main.py`; `grep -n "^EMOJI_SIZE\|^MAX_NAME_LEN\|^NO_SUFFIX" commands/type_emojis.py` |
-| Font check wiring (/fonts from the card data; the Action is TTSCardMaker's font-check.yml) | `grep -n "fonts_text\|name=\"fonts\"" main.py`; `grep -n "^ROLE_ID\|^BITE" commands/font_check.py` |
-| Card check (CLI only; no main.py or help.py wiring; the Action is TTSCardMaker's card-check.yml) | `grep -c "card_check" main.py commands/help.py setup.py` (0, 0, 0); `grep -n "^SPARSE_FILES\|^LINE\|^CLOSING" commands/card_check.py` |
+| Font check wiring (/fonts from the card data; the Action is a step of TTSCardMaker's card-guards.yml) | `grep -n "fonts_text\|name=\"fonts\"" main.py`; `grep -n "^ROLE_ID\|^BITE" commands/font_check.py` |
+| Card check (CLI only; no main.py or help.py wiring; the Action is a step of TTSCardMaker's card-guards.yml) | `grep -c "card_check" main.py commands/help.py setup.py` (0, 0, 0); `grep -n "^LINE\|^CLOSING" commands/card_check.py` |
 | Card bake wiring (none in the bot since 2026-10-25) | `grep -c "bake_cards" main.py` (0); `ls commands/card_runner.py` (absent) |
 | Data branch, card_data/ / timezone | `cat global_config.py` |
 | Per-machine files | `cat .gitignore` |
@@ -878,3 +874,5 @@ rendered anyway; no cited line moved.
 2026-10-25 (split, work/split): section 12's clock row describes card-sync.yml's two lanes (data at once, bake and save after the window, the after job); the retry is no longer followed; no cited line moved.
 2026-10-25 (retire): /update_metadata, /mass_replace, /alias, /bake_cards and /update_tts_save retired (branch archive/discord-edits): 47 commands; the TTS save and Card bake subsections, the artifact rows, section 12's table and READERS list rewritten; manual runs are 'Run workflow' on Card sync.
 2026-10-25 (step 10, work/pickles): the pickles, psd_details.json, /push, the `CARD_SYNC` switch, the legacy /update_stats path (repo_traverser.py) and the legacy /fonts cache removed: the intro, section 1's startup lines and init table, sections 5, 6 and 7 rewritten, the PSD details and Font check subsections, the artifact rows, section 12's intro and rows; 46 commands.
+
+2026-10-25 (clean, work/clean): the card and font checks as steps of card-guards.yml's check job; R8 always set, rewraps redrawn; the reminder.pkl conversion, the fonts_cache row and the deploy window removed.
