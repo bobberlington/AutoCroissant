@@ -114,3 +114,34 @@ def test_site_image_budget_keeps_a_partial_cache():
     prefix = cache["with"]["restore-keys"]
     assert save["with"]["key"].startswith(prefix) and cache["with"]["key"].startswith(prefix) and "github.run_id" in save["with"]["key"]
     assert steps.index(build) < steps.index(save)
+
+
+CACHE_PRUNES = {"site.yml": ("build", "card-images-v2- deck-previews-v2-"), "card-sync.yml": ("sync", "cards- card-fonts-"),
+                "font-check.yml": ("check", "cards- card-fonts-"), "card-preview.yml": ("preview", "cards- card-fonts-"),
+                "card-check.yml": ("check", "cards-")}
+
+
+def test_cache_saves_prune_superseded_entries():
+    """A workflow that saves a cache whose key changes over time calls caches.yml after a save (its saving job's `saved`),
+    with its key prefixes and actions: write on that call alone; caches.yml keeps the newest two and any entry used in
+    the last hour, and never fails the caller."""
+    caches = _load("caches.yml")
+    prune = caches["jobs"]["prune"]
+    assert list(caches[True]) == ["workflow_call"] and caches["permissions"] == {} and prune["permissions"] == {"actions": "write"}
+    step = prune["steps"][0]
+    assert step["env"]["KEEP"] == "2" and step["env"]["IDLE"] == "3600" and step["run"].rstrip().endswith("exit 0")
+    assert '--ref "$GITHUB_REF"' in step["run"] and "gh cache delete" in step["run"]
+    for name, (job, prefixes) in CACHE_PRUNES.items():
+        doc = _load(name)
+        call = doc["jobs"]["caches"]
+        assert call["uses"] == "./.github/workflows/caches.yml" and call["with"] == {"prefixes": prefixes}, name
+        assert call["needs"] == job and call["permissions"] == {"actions": "write"}, name
+        assert call["if"] == f"${{{{ !cancelled() && needs.{job}.outputs.saved == 'true' }}}}", name
+        saves = [s for j in doc["jobs"].values() for s in j.get("steps", [])
+                 if s.get("uses", "").startswith(("actions/cache@", "actions/cache/save@"))]
+        keys = {"cards-" if s["with"]["path"] == "~/.cache/card-wheels" else s["with"]["key"].split("$")[0] for s in saves}
+        assert keys <= set(prefixes.split()), (name, keys)
+        assert "saved" in doc["jobs"][job]["outputs"], name
+    site = _load("site.yml")["jobs"]["build"]["steps"]
+    python = next(s for s in site if s.get("uses", "").startswith("actions/setup-python@"))
+    assert "cache" not in python["with"]                                     # uv, no pip cache entry per requirements change

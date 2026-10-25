@@ -476,10 +476,10 @@ def test_workflow_shape():
     assert "${{ inputs.request }}" in doc["run-name"]
     assert doc["permissions"] == {"contents": "read"}
     assert doc["concurrency"] == {"group": "card-preview-${{ inputs.request }}", "cancel-in-progress": False}
-    assert list(doc["jobs"]) == ["preview", "publish"]
+    assert list(doc["jobs"]) == ["preview", "publish", "caches"]
     preview, publish = doc["jobs"]["preview"], doc["jobs"]["publish"]
     assert "permissions" not in preview and publish["permissions"] == {"contents": "write"}
-    assert "if" not in preview and preview["outputs"] == {"ok": "${{ steps.validate.outputs.ok }}"}
+    assert "if" not in preview and preview["outputs"]["ok"] == "${{ steps.validate.outputs.ok }}"
     assert publish["needs"] == "preview" and publish["if"] == "${{ !cancelled() && needs.preview.outputs.ok == 'true' }}"
     assert preview["timeout-minutes"] + publish["timeout-minutes"] <= 15
     for step in preview["steps"] + publish["steps"]:

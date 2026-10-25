@@ -1429,7 +1429,7 @@ def _guard_steps(clone) -> tuple:
     yaml = pytest.importorskip("yaml")
     doc = yaml.safe_load(_workflow(clone).read_text(encoding="utf-8"))
     jobs = doc["jobs"].values()
-    return (doc, {s["name"]: s for job in jobs for s in job["steps"] if s.get("name")},
+    return (doc, {s["name"]: s for job in jobs for s in job.get("steps", []) if s.get("name")},
             {k: v for job in jobs for k, v in job.get("env", {}).items()})
 
 
