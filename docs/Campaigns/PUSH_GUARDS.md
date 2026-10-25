@@ -181,7 +181,7 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
               since the push touched, then (on) one commit: re-exported PNGs + fixed PSDs, only where the blobs are still
               as pushed (git_commit); settle the post (after_window): discord-final.json, report-landed.md
    6 follow   edit the comment ("landed in <sha>", "not landed"); gh workflow run card-sync.yml -f bake=pending (its data
-              commit starts the site build)
+              commit starts the site build); with fixes (check's "Fixes to land") always, landed or not, tried 3 times
    7 tell     one Discord post (standards channel) when something remains
  job finish (needs both; always, unless the mode is off; timeout 10)
    8 finish   a red run for card errors; a failed run (any job: needs.*.result): one alert per failure streak
@@ -525,7 +525,11 @@ not land.**
   Comment step failed, Tell Discord puts up a comment of its own carrying the mark; when that fails too it warns that a
   re-run would post again (review 5).
 - **The card sync:** a bot commit's run starts it with `bake=pending` (a `GITHUB_TOKEN` push triggers no workflow; the
-  card sync's data commit starts the site build). When it does not start, the comment says so, the run fails, and the
+  card sync's data commit starts the site build). **One main lane per guarded push (2026-10-25, plan P-2):** a push run
+  in `on` mode with writes marks its check job (step "Fixes to land", output `fixes`); that push's Card sync run skips
+  its main lane at its window's end (its "Guards' fixes" step), and Follow up starts Card sync once Land is done,
+  landed, landed nothing or broke (`always()`), tried 3 times, so one main commit pins the fixed PNG. Card sync's
+  schedule and chained runs skip their main lane while any guards run with fixes is unfinished. When it does not start, the comment says so, the run fails, and the
   post says so when it fits in 2,000 characters (its cron catches up); with nothing else to tell, the failure
   alert goes out instead.
 - **Not sent:** R10 and "current, but outside the bar" (comment only, `TELL_PNG_MISMATCH`);
@@ -737,7 +741,7 @@ jobs:                    # three since 2026-10-24 (section 20): no runner sleeps
       # the bot checkout, setup-python 3.14 and the wheels, as in check
       - name: Land                                      # sleep to the quiet mark (nothing left after the timer), recent check, one commit,
                                                         # discord-final.json; --dry-run in report mode; --rerun on a re-run or a dispatch
-      - name: Follow up                                 # always(): a commit, or a re-run finding it landed: gh workflow run card-sync.yml
+      - name: Follow up                                 # always(): a commit, fixes, or a re-run finding it landed: gh workflow run card-sync.yml
                                                         # -f bake=pending (not started: said in the comment and the post, red); the
                                                         # comment rewritten
       - name: Tell Discord                              # always(), not told before: discord-final.json only; URL never printed

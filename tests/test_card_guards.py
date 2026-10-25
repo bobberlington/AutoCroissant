@@ -986,7 +986,7 @@ def test_workflow_shape(clone):
                               "started": "${{ steps.start.outputs.started }}", "checked": "${{ steps.check.outcome }}",
                               "comment": "${{ steps.comment.outputs.id }}", "told": "${{ steps.comment.outputs.told }}",
                               "land": "${{ steps.plan.outputs.land }}", "card_errors": "${{ steps.plan.outputs.card_errors }}",
-                              "bot_sha": "${{ steps.bot.outputs.sha }}"}
+                              "bot_sha": "${{ steps.bot.outputs.sha }}", "fixes": "${{ steps.plan.outputs.fixes }}"}
     assert post["outputs"] == {"posted": "${{ steps.tell.outputs.posted }}"}
     assert post["env"]["QUIET_FROM"] == "${{ needs.check.outputs.quiet_from }}" and post["env"]["MODE"] == "${{ needs.check.outputs.mode }}"
     assert post["env"]["TOLD"] == job["env"]["TOLD"] == finish["env"]["TOLD"]
@@ -1057,7 +1057,8 @@ def test_workflow_shape(clone):
     assert not any("runner." in str(value) for one in (job, post, finish) for value in one["env"].values())
     assert 'OUT=$RUNNER_TEMP/guards' in job["steps"][0]["run"] and 'OUT=$RUNNER_TEMP/guards' in post["steps"][0]["run"]
     follow = steps["Follow up"]
-    assert "report-landed.md" in follow["run"] and follow["if"] == "always() && steps.land.outputs.ran == 'true'"
+    assert "report-landed.md" in follow["run"] \
+        and follow["if"] == "always() && (steps.land.outputs.ran == 'true' || needs.check.outputs.fixes == 'true')"
     assert follow["id"] == "follow" and tell["env"]["REFRESH"] == "${{ steps.follow.outputs.refresh }}"
     assert follow["env"]["TOLD_BEFORE"] == "${{ steps.told.outputs.told }}"
     # a re-run uploads again: the earlier attempt's artifact of the same name is replaced, not a 409
@@ -1263,7 +1264,8 @@ def test_workflow_land_and_a_rerun_after_a_landing(clone, tmp_path):
     mode for a write too: the check job's plan says land=true. A re-run or a dispatch passes --rerun (an unread branch tells no write as not made), and the
     step hands on the sha and the count already on the branch. Follow up starts the card sync after a
     commit, and again on a re-run that finds the writes landed (the first attempt's may not have started), not in report
-    mode and not on a first attempt."""
+    mode and not on a first attempt; with fixes (a push in on mode with writes: its Card sync main lane waits for them)
+    always, landed or not."""
     pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
@@ -1286,8 +1288,10 @@ def test_workflow_land_and_a_rerun_after_a_landing(clone, tmp_path):
                                                            ("on", 0, 0, "1", "push", False, False)):
         args.write_text("")
         (out / "summary.json").write_text(json.dumps({"told": told, "writes": writes}))
-        planned, plan_out = _shell(steps["Plan for the post job"], {**env, "MODE": mode})
+        planned, plan_out = _shell(steps["Plan for the post job"], {**env, "MODE": mode, "GITHUB_EVENT_NAME": event})
         assert planned.returncode == 0 and (plan_out.get("land") == "true") is ran, (mode, told, writes, plan_out)
+        fixes = mode == "on" and event == "push" and writes > 0       # Card sync's push run leaves its main lane to Follow up
+        assert (plan_out.get("fixes") == "true") is fixes, (mode, event, writes, plan_out)
         if ran:
             done, outputs = _shell(steps["Land"], {**env, "MODE": mode, "GITHUB_RUN_ATTEMPT": attempt, "EVENT": event,
                                                    "FAKE_LANDED": landed}, cwd=tmp_path / "bot")
@@ -1300,15 +1304,17 @@ def test_workflow_land_and_a_rerun_after_a_landing(clone, tmp_path):
         if ran:
             assert outputs["sha"] == "" and outputs["already"] == "1"
     (out / "report-landed.md").write_text("## Card guards\n\nNothing new to land.\n")
-    for mode, attempt, sha, already, started in (("on", "2", "", "1", True), ("on", "1", "", "1", False),
-                                                 ("report", "2", "", "1", False), ("on", "2", "", "0", False),
-                                                 ("on", "1", "c" * 40, "", True), ("on", "2", "", "", False)):
+    for mode, attempt, sha, already, fixes, started in (("on", "2", "", "1", "", True), ("on", "1", "", "1", "", False),
+                                                        ("report", "2", "", "1", "", False), ("on", "2", "", "0", "", False),
+                                                        ("on", "1", "c" * 40, "", "", True), ("on", "2", "", "", "", False),
+                                                        ("on", "1", "", "", "true", True)):   # fixes, nothing landed
         state.write_text(json.dumps({"comments": {}, "next": 101, "log": []}))
         done, outputs = _shell(steps["Follow up"], {**env, "MODE": mode, "GITHUB_RUN_ATTEMPT": attempt, "SHA": sha,
-                                                    "ALREADY": already, "COMMENT": "", "TOLD_BEFORE": ""})
+                                                    "ALREADY": already, "COMMENT": "", "TOLD_BEFORE": "", "FIXES": fixes,
+                                                    "LAND_RAN": "true"})
         log = [c for c in json.loads(state.read_text())["log"] if c.startswith("workflow run")]
         assert done.returncode == 0 and log == ([SYNC] if started else []), \
-            (mode, attempt, sha, already, log)
+            (mode, attempt, sha, already, fixes, log)
 
 
 def test_land_commits_only_an_on_plan(tmp_path, capsys):
