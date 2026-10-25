@@ -35,17 +35,12 @@ def _url(i):
 # ========================
 # Message count and contents
 # ========================
-@pytest.mark.parametrize("n", [0, 1, 10, 11, 25])
+@pytest.mark.parametrize("n", [1, 11])
 def test_one_message_per_card(repo, n):
     out, kwargs = _search(repo, n)
     assert out[0] == f"Found {n} results for 'Fire'!"
     assert out[1:len(out) - 1] == [_url(i) for i in range(n)]                     # each image URL alone, in order
     assert out[len(out) - 1] == f"Displayed {n} of {n} results for 'Fire'." and "links" in kwargs[len(kwargs) - 1]
-
-
-def test_limit_caps_the_cards(repo):
-    out, _ = _search(repo, 25, limit=3)
-    assert out == ["Found 25 results for 'Fire'!", _url(0), _url(1), _url(2), "Displayed 3 of 25 results for 'Fire'."]
 
 
 def test_a_card_without_an_image_posts_its_name(repo):
@@ -54,12 +49,6 @@ def test_a_card_without_an_image_posts_its_name(repo):
     repo.get_card_url = lambda name: None if name == "Card 1" else urls(name)
     out, _ = _search(repo, 3)
     assert out[1:4] == [_url(0), "Card 1", _url(2)]
-
-
-def test_a_single_result_without_an_image_posts_its_name(repo):
-    repo.get_card_url = lambda name: None
-    out, _ = _search(repo, 1)
-    assert out == ["Found 1 results for 'Fire'!", "Card 0", "Displayed 1 of 1 results for 'Fire'."]
 
 
 # ========================

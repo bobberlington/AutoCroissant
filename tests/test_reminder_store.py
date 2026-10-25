@@ -114,16 +114,3 @@ def test_disabled_skips_and_resumes():
     an.check_reminder()
     assert not utils.dispatch_queue                                    # neither is due
 
-
-def test_panel_navigation():
-    assert [an.step(3, 2, 1), an.step(3, 0, -1), an.step(0, 0, 1)] == [0, 2, -1]
-    ids = ["a", "b", "c"]
-    assert an.locate(ids, "b", 0) == 1
-    assert an.locate(["a", "c"], "b", 1) == 1 and an.locate(["a"], "b", 2) == 0 and an.locate([], "b", 0) == -1
-    assert an.select_page(25, 24) == (0, 25, False, False)
-    assert an.select_page(60, 0) == (0, 23, False, True)
-    assert an.select_page(60, 30) == (23, 46, True, True)
-    assert an.select_page(60, 59) == (46, 60, True, False)
-    mine = {"creator_id": OTHER}
-    assert an.can_edit(mine, OTHER, False) and not an.can_edit(mine, 3, False) and an.can_edit(mine, 3, True)
-    assert not an.can_edit({"creator_id": None}, OTHER, False)

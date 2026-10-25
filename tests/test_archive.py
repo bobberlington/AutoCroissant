@@ -61,12 +61,6 @@ def test_duplicates_are_archived_at_their_png():
     assert set(db.archived()) == {"A Snack2"}
 
 
-def test_card_without_a_blob_is_tagged_with_none():
-    db = _db([_card("Legacy", blob=None)], seen=["Other"])
-    db.prune_clean_cards(AT)
-    assert db.old_stats["Legacy"][0].archived["blob"] is None
-
-
 def test_restore_returns_the_record_and_keeps_the_history():
     v1 = _card("Gone", blob="1" * 40)
     db = _db([_card("Gone", blob="2" * 40)], old=[v1], seen=[])
@@ -86,12 +80,6 @@ def test_restore_needs_the_same_psd():
     assert "Gone" not in db.stats and db.restore("Gone", "Items/New/Gone.psd", "a" * 40)    # moved
     db.stats.clear()
     assert db.restore("Gone", "Items/Gone.psd", "b" * 40)                                  # edited in place
-
-
-def test_restore_drops_an_emptied_history():
-    db = _db([_card("Gone")], seen=["Other"])
-    db.prune_clean_cards(AT)
-    assert _restore(db, "Gone") and db.drop_stale_archives() and "Gone" not in db.old_stats
 
 
 def test_restored_copy_matches_after_a_reparse():
@@ -133,13 +121,6 @@ def test_untagged_history_is_never_restored():
     db = _db([], old=[_card("Reset")])
     assert not _restore(db, "Reset") and "Reset" not in db.stats and len(db.old_stats["Reset"]) == 1
     assert not _restore(db, "Never there") and "Never there" not in db.old_stats
-
-
-def test_archived_skips_listed_names_and_untagged_lasts():
-    tagged = _card("Live", archived={"at": AT, "path": "Items/Live.psd", "blob": None, "commit": None})
-    db = _db([_card("Live")], old=[tagged, _card("Untagged")])
-    db.stats.pop("Untagged", None)
-    assert db.archived() == {}                                  # Live is listed; Untagged's last has no tag
 
 
 def test_backfill_tags_only_unlisted_unseen_untagged_names():

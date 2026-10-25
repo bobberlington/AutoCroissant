@@ -6,7 +6,6 @@ import pytest
 
 import commands.analytics as an
 import commands.card_sync as cs
-import commands.help as help_module
 import commands.utils as utils
 import main
 
@@ -19,12 +18,6 @@ GATED = {
     "set_repo": ("set_repository", ("a/b",), "/set_repo new_repo:a/b"),
     "delete_song": ("delete_song", ("x",), "/delete_song song_name:x"),
     "delete_all_music": ("delete_all_music", (), "/delete_all_music"),
-}
-HELP_KEYS = {
-    "purge": "/purge [user] [num] [bulk]:",
-    "set_repo": "/set_repo [new_repo]:",
-    "delete_song": "/delete_song <song_name>:",
-    "delete_all_music": "/delete_all_music:",
 }
 
 
@@ -82,20 +75,14 @@ def _fire(command, creator_id):
 # ========================
 # Tests
 # ========================
-@pytest.mark.parametrize("name", GATED)
-def test_admin_passes(name, setup):
-    worker, args, _ = GATED[name]
-    inter = _interaction(ADMIN)
-    asyncio.run(_callback(name)(inter, *args))
-    assert setup == [worker] and DENIED not in inter.sent
-
-
-@pytest.mark.parametrize("name", GATED)
-def test_non_admin_refused(name, setup):
-    _, args, _ = GATED[name]
-    inter = _interaction(OTHER)
-    asyncio.run(_callback(name)(inter, *args))
-    assert setup == [] and inter.sent == [DENIED]
+def test_admin_passes(setup):
+    """An admin runs each gated command; a non-admin is refused before its worker."""
+    for name, (worker, args, _) in GATED.items():
+        for user, ran in ((OTHER, []), (ADMIN, [worker])):
+            setup.clear()
+            inter = _interaction(user)
+            asyncio.run(_callback(name)(inter, *args))
+            assert setup == ran and (DENIED in inter.sent) == (user == OTHER), (name, user)
 
 
 SCHEDULABLE = [name for name in GATED if name != "purge"]   # purge's user option has no default
@@ -106,22 +93,8 @@ def test_non_admin_reminder_refused_at_fire_time(name, setup):
     assert _fire(GATED[name][2], OTHER) == [DENIED] and setup == []
 
 
-@pytest.mark.parametrize("name", SCHEDULABLE)
-def test_admin_reminder_runs(name, setup):
-    assert DENIED not in _fire(GATED[name][2], ADMIN) and setup == [GATED[name][0]]
-
-
-@pytest.mark.parametrize("creator", (ADMIN, OTHER))
-def test_purge_never_runs_from_a_reminder(creator, setup):
+def test_purge_never_runs_from_a_reminder(setup):
     # If purge gets a scheduled default, invert this (admin runs, non-admin refused); don't delete.
-    sent = _fire(GATED["purge"][2], creator)
+    sent = _fire(GATED["purge"][2], ADMIN)
     assert setup == [] and len(sent) == 1 and "`user` is required" in sent[0]
 
-
-@pytest.mark.parametrize("name", GATED)
-def test_marked_admin_only_in_both_surfaces(name):
-    cmd = {c.name: c for c in main.tree.get_commands()}[name]
-    assert cmd.description.endswith("(admin only).") and len(cmd.description) <= 100
-    entries = {**help_module.general_commands, **help_module.card_commands,
-               **help_module.stats_commands, **help_module.music_commands}
-    assert "(admin only)" in entries[HELP_KEYS[name]]

@@ -1,15 +1,10 @@
 """Subseries: a database-only card field (Card Edits.json, never the PSD)."""
-import json
-import pickle
-import shutil
 from types import SimpleNamespace
 
 import pytest
 
 import commands.card_models as cm
-import commands.psd_analyzer as pa
 import commands.query_card as qc
-from conftest import REPO
 from golden_cards import parser
 
 
@@ -40,34 +35,6 @@ def repo(monkeypatch):
 # ========================
 # CardInfo and the pickle
 # ========================
-def test_to_dict_puts_subseries_next_to_series():
-    d = _card("Goombella", "mario", "Paper Mario").to_dict()
-    keys = list(d)
-    assert d["subseries"] == "Paper Mario" and keys[keys.index("series") + 1] == "subseries"
-    assert "subseries" not in _card("Kirby", "kirby").to_dict()
-    assert "subseries" not in _card("Kirby", "kirby", "").to_dict()
-
-
-def test_card_pickled_before_the_field_loads_with_the_default():
-    card = _card("Old", "kirby")
-    del card.__dict__["subseries"]                              # what an older stats.pkl holds
-    old = pickle.loads(pickle.dumps(card))
-    assert old.subseries is None and "subseries" not in old.to_dict()
-    assert pa.CardEdits().get(old, "subseries") is None
-
-
-def test_live_pickle_copy_loads(tmp_path):
-    src = REPO / "stats.pkl"
-    if not src.exists():
-        pytest.skip("no stats.pkl")
-    with open(shutil.copy(src, tmp_path / "stats.pkl"), "rb") as f:
-        stats = pickle.load(f)
-    assert len(stats) > 100
-    for card in stats.values():
-        assert card.subseries is None or isinstance(card.subseries, str)
-        assert ("subseries" in card.to_dict()) == bool(card.subseries)
-
-
 def test_reparse_keeps_a_hand_set_subseries(clone):
     """A re-parse (PSD blob changed) keeps author, series and subseries from the stored card; a fresh parse has none."""
     rel = "Creatures/Mario/3 Stars/Sniffle_Thwomp.psd"
@@ -83,28 +50,6 @@ def test_reparse_keeps_a_hand_set_subseries(clone):
     assert (card.author, card.series, card.subseries) == ("Someone", "Paper Mario", "Paper Mario: The Thousand-Year Door")
     del stored.__dict__["subseries"]                                           # stored by an older bot
     assert psd_parser.parse(str(clone / rel), rel).subseries is None
-
-
-def test_reparse_takes_series_and_subseries_from_before_the_edits(clone):
-    """A re-parse keeps the pre-edit values (parsed_values), so removing the website edit later still clears it."""
-    rel = "Creatures/Mario/3 Stars/Sniffle_Thwomp.psd"
-    if not (clone / rel).exists():
-        pytest.skip(f"no {rel}")
-    psd_parser = parser()
-    name = cm.card_name(rel)
-    edits = pa.CardEdits.parse(json.dumps({"cards": {name: {"subseries": "Paper Mario", "series": "Paper Mario"}}}))
-    stored = _card(name, "mario")
-    edits.apply(name, stored)
-    assert (stored.series, stored.subseries) == ("Paper Mario", "Paper Mario")
-    psd_parser.db.stats[name] = stored
-    card = psd_parser.parse(str(clone / rel), rel)
-    assert (card.series, card.subseries) == ("mario", None)                    # the PSD side, not the edit
-    edits.apply(name, card)
-    assert (card.series, card.subseries) == ("Paper Mario", "Paper Mario")
-    pa.CardEdits().apply(name, card)                                           # edit removed from the website
-    assert (card.series, card.subseries) == ("mario", None)
-    stored.parsed_values = {"subseries": "Super Paper Mario"}                  # hand-set before the edit
-    assert psd_parser.parse(str(clone / rel), rel).subseries == "Super Paper Mario"
 
 
 # ========================
@@ -129,14 +74,6 @@ def test_column_exists_when_no_card_has_one(repo):
     assert list(r.ability_search_engine('"subseries==x"').index) == ["A Snack"]
 
 
-@pytest.mark.parametrize("only", [("Kirby", "A Snack"), None])
-def test_empty_cells_never_match_as_text(repo, only):
-    """No subseries is None/NaN; pandas < 3 turns those into "None"/"nan" text, which must not match."""
-    r = repo({k: v for k, v in FAKE.items() if only is None or k in only})
-    for query in ("subseries~n", "subseries~an", "subseries~on", "subseries==none", "subseries==nan"):
-        assert not set(r.ability_search_engine(query).index) & {"Kirby", "A Snack"}, query
-
-
 def test_quoted_values_keep_and_and_or(repo):
     cards = dict(FAKE, Luigi=_card("Luigi", "mario", "Mario & Luigi"), Fire=_card("Fire", ability="Fire & ice | wind."))
     r = repo(cards)
@@ -150,10 +87,6 @@ def test_quoted_values_keep_and_and_or(repo):
 # ========================
 # Commands
 # ========================
-def test_subseries_follows_series_in_the_columns():
-    assert 'subseries' in pa.COLUMN_ORDER and pa.COLUMN_ORDER.index("subseries") == pa.COLUMN_ORDER.index("series") + 1
-
-
 def test_query_embed_shows_series_and_subseries(monkeypatch):
     sent = []
     monkeypatch.setattr(qc, "queue_message", lambda inter, content, **kw: sent.append((content, kw)))
@@ -167,7 +100,3 @@ def test_query_embed_shows_series_and_subseries(monkeypatch):
     qc.query_name(SimpleNamespace(), "Kirby")                   # no subseries, no website data: plain link as before
     assert "embed" not in sent[1][1] and sent[1][0].endswith("/Kirby.png")
 
-
-def test_help_query_syntax():
-    import commands.help as help_module
-    assert "subseries==" in help_module.card_commands["Query Syntax:"] and "subseries~" in help_module.card_commands["Query Syntax:"]

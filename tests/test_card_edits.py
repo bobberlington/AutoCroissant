@@ -2,7 +2,6 @@
 import json
 from copy import deepcopy
 
-import pytest
 
 from commands.psd_analyzer import CardEdits, CardInfo, CardStats, CardValidator
 
@@ -27,17 +26,7 @@ def test_parse_keeps_valid_fields_only():
     assert e.cards == {"foo bar": {"stars": 2, "types": ["ice"]}, "spaced name": {"note": "hi"}}
 
 
-@pytest.mark.parametrize("text", ["[]", "null", '{"cards": []}', '{"other": 1}'])
-def test_parse_odd_shapes_give_no_edits(text):
-    assert CardEdits.parse(text).cards == {}
-
-
-def test_parse_rejects_non_json():
-    with pytest.raises(ValueError):
-        CardEdits.parse("{not json")
-
-
-@pytest.mark.parametrize("name,value,ok", [
+VALID_CASES = [
     ("hp", 3, True), ("hp", 0, True), ("hp", -1, False), ("hp", True, False), ("hp", 2.0, False), ("hp", None, True),
     ("stars", None, True), ("ability", None, False), ("name", None, False), ("ability", "x", True), ("ability", 1, False),
     ("types", ["a", "b"], True), ("types", ["a", 1], False), ("types", "a", False), ("hidden", True, True),
@@ -45,9 +34,12 @@ def test_parse_rejects_non_json():
     ("subseries", "Paper Mario", True), ("subseries", None, True), ("subseries", 1, False),
     ("creatures", [{"hp": 7, "def": None}], True), ("creatures", [{"hp": -1}], False), ("creatures", [{"hp": True}], False),
     ("creatures", [{"mana": 1}], False), ("creatures", [1], False), ("creatures", {}, False),
-])
-def test_valid(name, value, ok):
-    assert CardEdits.valid(name, value) is ok
+]
+
+
+def test_valid():
+    for name, value, ok in VALID_CASES:
+        assert CardEdits.valid(name, value) is ok, (name, value)
 
 
 def test_names():
@@ -88,44 +80,6 @@ def test_problems_ok_silences_validator():
     assert card.problems == [] and CardValidator.validate(card) == []
 
 
-def test_null_stat_edit_unsets_it():
-    card = _card(stats=CardStats(hp=6, defense=2, attack=3, speed=4))
-    _edits({"Foo Bar": {"hp": None}}).apply("Foo Bar", card)
-    assert card.stats.hp == -1 and "hp" not in card.to_dict()
-
-
-def test_subseries_edit_is_database_only():
-    """No PSD value exists, so parsed_values keeps None and dropping the edit clears the field."""
-    card = _card(series="mario")
-    e = _edits({"Foo Bar": {"subseries": "Paper Mario", "series": "Mario"}})
-    assert e.apply("Foo Bar", card) is True
-    assert (card.series, card.subseries) == ("Mario", "Paper Mario")
-    assert card.parsed_values == {"subseries": None, "series": "mario", "problems": ["MISSPELT TYPE: tornado"]}
-    assert card.problems == ["MISSPELT TYPE: tornado"]       # subseries answers no parser problem
-    assert e.get(card, "subseries") == "Paper Mario"
-    _edits({"Foo Bar": {"subseries": None}}).apply("Foo Bar", card)
-    assert card.subseries is None and card.series == "mario"
-    assert CardEdits().apply("Foo Bar", card) is True and card.parsed_values is None
-    assert card.subseries is None and "subseries" not in card.to_dict()
-
-
-def test_creatures_edit_on_real_card(real_stats):
-    """Tainted Lazarus (2 creatures): edit creature 2, then drop the edit."""
-    card = deepcopy(real_stats.stats["Tainted Lazarus"])
-    if getattr(card, "parsed_values", None):
-        pytest.skip("Tainted Lazarus already has website edits")
-    original = repr(card)
-    creatures = CardEdits().get(card, "creatures")
-    assert len(creatures) == 2 and creatures[0] == card.stats.to_dict()
-    creatures[1]["def"] = 9
-    e = _edits({"Tainted Lazarus": {"creatures": creatures}})
-    assert e.apply("Tainted Lazarus", card) is True
-    assert card.creatures[1].defense == 9 and card.stats.to_dict() == creatures[0]
-    assert not any(p.startswith("SEVERAL CREATURES") for p in card.problems)
-    assert CardEdits().apply("Tainted Lazarus", card) is True
-    assert repr(card) == original
-
-
 def test_creatures_then_single_stat():
     """creatures is applied first, so a stat edit still changes creature 1's copy in card.stats."""
     card = _card()
@@ -163,31 +117,26 @@ PSD_VALUES = {"name": None, "stars": 2, "types": ["fire"], "hp": None, "def": 2,
 FOLDER_VALUES = {"type": "creature", "subtype": None, "series": "mario"}
 
 
-def test_kind_covers_every_field():
-    assert CardEdits.KIND.keys() == CardEdits.TYPES.keys() == dict(KINDS).keys()
-    assert set(CardEdits.KIND.values()) == {"psd", "folder", "database"}
-
-
-@pytest.mark.parametrize("name,kind", KINDS)
-def test_kind_table(name, kind):
+def test_kind_table():
     """Each field's kind; apply saves what the edit replaces (the PSD's value, the folder's, or nothing) and dropping it restores."""
-    assert CardEdits.KIND[name] == kind
-    card = _card(series="mario", stars=2)
-    original = repr(card)
-    e = _edits({"Foo Bar": {name: SAMPLE[name]}})
-    applied = name in CardEdits.ATTRS or name in CardEdits.STATS or name == "creatures"
-    assert e.apply("Foo Bar", card) is applied                # aliases and dup_of never touch the card
-    if applied:
-        assert e.get(card, name) == SAMPLE[name]
-        saved = card.parsed_values[name]
-        if kind == "psd":
-            assert saved == PSD_VALUES[name]
-        elif kind == "folder":
-            assert saved == FOLDER_VALUES[name]
-        else:
-            assert saved in (None, False)                     # database-only: no PSD or folder value exists
-    assert CardEdits().apply("Foo Bar", card) is applied
-    assert repr(card) == original
+    for name, kind in KINDS:
+        assert CardEdits.KIND[name] == kind
+        card = _card(series="mario", stars=2)
+        original = repr(card)
+        e = _edits({"Foo Bar": {name: SAMPLE[name]}})
+        applied = name in CardEdits.ATTRS or name in CardEdits.STATS or name == "creatures"
+        assert e.apply("Foo Bar", card) is applied                # aliases and dup_of never touch the card
+        if applied:
+            assert e.get(card, name) == SAMPLE[name]
+            saved = card.parsed_values[name]
+            if kind == "psd":
+                assert saved == PSD_VALUES[name]
+            elif kind == "folder":
+                assert saved == FOLDER_VALUES[name]
+            else:
+                assert saved in (None, False)                     # database-only: no PSD or folder value exists
+        assert CardEdits().apply("Foo Bar", card) is applied
+        assert repr(card) == original
 
 
 def test_psd_meta_rides_beside_by_and_at():

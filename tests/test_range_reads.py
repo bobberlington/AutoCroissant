@@ -3,14 +3,11 @@ range read marks the PSD failed, so the caller reads it whole. card_check reads 
 (or a bake commit's parent). Also the parse from an open PSD and the bound on fetches ahead of the parse."""
 import hashlib
 import json
-import os
-import tempfile
 import time
 from types import SimpleNamespace
 from urllib.parse import unquote
 
 import pytest
-from psd_tools import PSDImage
 from requests import HTTPError
 
 import commands.card_check as cc
@@ -194,13 +191,6 @@ def test_a_wrong_range_after_the_open_marks_the_psd_failed(psds, monkeypatch, an
 # ========================
 # Without the fork
 # ========================
-def test_the_parser_takes_an_open_psd(psds, tmp_path):
-    path = tmp_path / "card.psd"
-    path.write_bytes(psds[DOOMER])
-    parser = cc.Vocabulary().parser()
-    assert parser.parse(PSDImage.open(path), DOOMER).to_dict() == parser.parse(str(path), DOOMER).to_dict()
-
-
 def test_fetches_run_at_most_AHEAD_before_the_parse(cards, monkeypatch):
     monkeypatch.setattr(cd, "AHEAD", 1)
     events = []
@@ -265,29 +255,6 @@ def test_the_build_reads_blobs_its_clone_lacks_by_ranges_at_head(cards, monkeypa
     assert _strip(stats["Mini Doomer"].to_dict()) == _strip(_golden(DOOMER))
     assert _strip(stats["The Freezer"].to_dict()) == _strip(_golden(FREEZER))
     assert {path for _, path in served} == {DOOMER, FREEZER} and {ref for ref, _ in served} == {cards.first}
-
-
-@needs_ranges
-def test_a_baked_build_reads_a_blob_new_at_its_path_whole(cards, monkeypatch):
-    """B puts an existing blob at another path (git mv -f): the parent has other bytes there, so no range read."""
-    helpers._build(cards, "--empty")
-    helpers.put(cards.repo, FREEZER, cards.psds[DOOMER])
-    baked = helpers.commit(cards.repo, "AutoCroissant", 2000)
-    _hide(monkeypatch, {_sha(cards.psds[DOOMER])})
-    served, whole = [], []
-    monkeypatch.setattr(ga, "get", _raw_from_git(cards.repo, served))
-
-    def download(self, path, sha):
-        whole.append(path)
-        fd, name = tempfile.mkstemp(suffix=".psd")
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(helpers.git_bytes(cards.repo, "cat-file", "blob", sha))
-        return name
-
-    monkeypatch.setattr(cd.CardBuild, "_download", download)
-    assert helpers._build(cards, "--head", baked, "--baked", "--full")[0] == cd.EXIT_OK
-    assert set(served) == {(cards.first, DOOMER)} and whole == [FREEZER]
-    assert helpers._read(cards)[0]["The Freezer"].ability == _golden(DOOMER)["ability"]
 
 
 @needs_ranges

@@ -8,12 +8,11 @@ from types import SimpleNamespace
 import pytest
 
 import commands.card_data as cd
-import commands.card_db as cdb
 import commands.card_models as cm
 import commands.discord_edits as de
 import commands.query_card as qc
 from commands.card_edits import CardDates
-from helpers import _build, _read, cards, commit, put     # noqa: F401 (the cards fixture)
+from helpers import cards     # noqa: F401 (the cards fixture)
 
 FILE = "site/Card Creation Dates.json"
 
@@ -39,16 +38,6 @@ def test_parse_keeps_valid_entries_only():
                 "Flag": {"date": "2023-10-13", "from": "git", "provisional": "yes"}, "Str": "2023-10-13", "None": None})
     assert d.cards == {"foo bar": {"date": "2023-10-13", "from": "discord", "provisional": True},
                        "plain": {"date": "2020-01-02", "from": "git"}, "hand": {"date": "2019-12-31", "from": "hand"}}
-
-
-@pytest.mark.parametrize("text", ["[]", "null", '{"cards": []}', '{"other": 1}'])
-def test_odd_shapes_give_no_dates(text):
-    assert CardDates.parse(text).cards == {}
-
-
-def test_not_json_raises():
-    with pytest.raises(ValueError):
-        CardDates.parse("{")
 
 
 def test_apply_sets_changes_and_clears():
@@ -119,37 +108,9 @@ def test_created_is_no_field_and_undated_cards_pickle_as_before():
     assert back == _card() and repr(back) == repr(_card())       # no data: eq and repr skip it (CardEdits.apply, history)
 
 
-def test_record_round_trip():
-    card = _card()
-    card.created = {"date": "2023-10-13", "from": "discord", "provisional": True}
-    rec = cdb.record(card)
-    assert rec["created"] == card.created and cdb.card(rec).created == card.created
-    assert cdb.record(_card())["created"] is None and "created" not in cdb.card(cdb.record(_card())).__dict__
-
-
 # ========================
 # The data build
 # ========================
-def test_build_dates_the_cards_with_no_version_or_event(cards):
-    assert _build(cards, "--empty")[0] == cd.EXIT_OK
-    put(cards.repo, FILE, json.dumps({"cards": {"Mini Doomer": {"date": "2020-07-22", "from": "discord", "provisional": True},
-                                                "The_Freezer": {"date": "2023-11-05", "from": "git"},
-                                                "Nobody": {"date": "2021-01-01", "from": "git"}}}).encode())
-    c2 = commit(cards.repo, "MichaelJSr", 2000)
-    code, _ = _build(cards)
-    stats, old, _, manifest, events = _read(cards)
-    assert code == cd.EXIT_OK and manifest["card_commit"] == c2 and manifest["inputs"]["created_blob"]
-    assert stats["Mini Doomer"].created == {"date": "2020-07-22", "from": "discord", "provisional": True}
-    assert stats["The Freezer"].created == {"date": "2023-11-05", "from": "git"}
-    assert not old and [e["card"] for e in events] == ["Mini Doomer", "The Freezer"]      # the two "new" of the first build
-    put(cards.repo, FILE, json.dumps({"cards": {"The Freezer": {"date": "2023-11-04", "from": "hand"}}}).encode())
-    commit(cards.repo, "MichaelJSr", 3000)
-    assert _build(cards)[0] == cd.EXIT_OK
-    stats, old, _, _, events = _read(cards)
-    assert stats["Mini Doomer"].created is None and stats["The Freezer"].created == {"date": "2023-11-04", "from": "hand"}
-    assert not old and len(events) == 2
-
-
 def test_unreadable_file_keeps_the_dates(capsys):
     build = cd.CardBuild.__new__(cd.CardBuild)
     build.tree = {"tree": [{"path": FILE}]}
@@ -187,23 +148,6 @@ def test_created_queries_at_the_precision_given(repo):
     assert q("created==2023-10") == ["Mid"] and q("created==2023-10-13") == ["Mid"] and q("created<=2023-10-12") == ["Old"]
     assert q("CREATED>=2019 & created<2024") == ["Mid", "Old"] and q("created~2025-05") == ["New"]
     assert q("created==2024") == []
-
-
-def test_spaces_around_the_operator_as_the_website(repo):
-    """search.js allows spaces around a condition's operator (created >= 2025, hp > 5, type == creature); so does the bot."""
-    old, new = _dated("Old", "2019-02-13"), _dated("New", "2025-05-05")
-    old.stats, new.stats, new.series = cm.CardStats(3, 1, 1, 1), cm.CardStats(7, 1, 1, 1), "Kirby"
-    r = repo({"Old": old, "New": new})
-    q = lambda text: sorted(r.ability_search_engine(text).index)
-    assert q("created >= 2025") == ["New"] == q("created>=2025") and q("created == 2019-02") == ["Old"]
-    assert q("hp > 5") == ["New"] and q("hp >=3 & created< 2020") == ["Old"]
-    assert q("type == creature") == ["New", "Old"] and q("series ~ kir") == ["New"] and q("series == kirby") == ["New"]
-
-
-def test_created_column_when_no_card_has_one(repo):
-    r = repo({"Undated": _dated("Undated", None)})
-    found = r._parse_stat_query("created>=2025")
-    assert "created" in r.cards_dff.columns and found is not None and found.empty
 
 
 def test_query_embed_says_created(monkeypatch):

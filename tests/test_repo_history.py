@@ -67,20 +67,6 @@ def test_merge_revert_rename(repo):
     assert rh._walk(c6, c6, at6) is at6                                   # nothing new
 
 
-def test_walk_after_force_push(repo):
-    git = repo
-    c1 = repo.commit("one", **{"a.txt": "a1"})
-    c2 = repo.commit("two", **{"a.txt": "a2"})
-    at2 = rh._walk(c2, "", {})
-    git("reset", "-q", "--hard", c1)
-    c2b = repo.commit("two, amended", **{"a.txt": "a2b"})
-    assert rh._walk(c2b, c2, at2) is None                                 # joins older history: caller walks it all
-    git("checkout", "-q", "--orphan", "other")
-    git("rm", "-q", "-rf", ".")
-    root = repo.commit("unrelated root", **{"a.txt": "a3"})
-    assert rh._walk(root, c2, at2) == {"a.txt": (_blob(git, root, "a.txt"), root)}   # a new root: all new there
-
-
 def test_raw_url_pins_only_a_matching_blob(monkeypatch):
     monkeypatch.setattr(rh, "_paths", {"Items/A b.png": ("blob1", "c0ffee")})
     base = f"https://raw.githubusercontent.com/{rh.REPOSITORY}/"

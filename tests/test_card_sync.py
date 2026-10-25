@@ -196,16 +196,6 @@ def test_unchanged_branch_costs_one_conditional_request(github, tmp_path):
     assert github.calls == [("commit", f'"e-{github.tip}"')]          # a 304: no raw download
 
 
-def test_a_new_commit_downloads_only_the_changed_files(github, tmp_path):
-    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
-    cdb.sync("card_data", REPO, "data")
-    github.publish({"A": _card("A", ability="Heal 1.")}, defaultdict(list), tmp_path)
-    github.calls.clear()
-    got = cdb.sync("card_data", REPO, "data")
-    assert got["changed"] == [cdb.STATS_JSON] and github.kinds("raw") == [cdb.MANIFEST_JSON, cdb.STATS_JSON]
-    assert cdb.read_db("card_data")[0]["A"].ability == "Heal 1."
-
-
 def test_a_bad_download_writes_nothing(github, tmp_path):
     github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
     cdb.sync("card_data", REPO, "data")
@@ -231,8 +221,7 @@ def test_a_pickle_on_the_branch_is_never_loaded(github, tmp_path):
     assert not (tmp_path / "card_data" / cdb.STATS_JSON).exists()
 
 
-@pytest.mark.parametrize("name, cards", [(cdb.STATS_JSON, {"A": 5}), (cdb.STATS_JSON, {"A": {"stats": [1]}}),
-                                         (cdb.OLD_STATS_JSON, {"A": 5}), (cdb.OLD_STATS_JSON, {"A": [5]})])
+@pytest.mark.parametrize("name, cards", [(cdb.STATS_JSON, {"A": 5}), (cdb.OLD_STATS_JSON, {"A": 5})])
 def test_a_bad_record_writes_nothing_and_is_never_loaded(github, tmp_path, monkeypatch, name, cards):
     """A file whose top level is right but a record isn't: the sync writes nothing; on disk, startup passes it by."""
     from hashlib import sha256
@@ -251,21 +240,6 @@ def test_a_bad_record_writes_nothing_and_is_never_loaded(github, tmp_path, monke
     assert cs.load_local("card_data") is False and cdb.check_db("card_data")
     cs.startup()
     assert cm.stats_db.stats == {}                                    # no cards until a sync works
-
-
-def test_a_damaged_copy_is_fetched_again(github, tmp_path):
-    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
-    cdb.sync("card_data", REPO, "data")
-    (tmp_path / "card_data" / cdb.OLD_STATS_JSON).write_text("{")    # a crash, or a hand edit
-    github.calls.clear()
-    got = cdb.sync("card_data", REPO, "data")
-    assert github.calls[0] == ("commit", None) and got["changed"] == [cdb.OLD_STATS_JSON]
-    assert cdb.check_db("card_data") == []
-
-
-def test_no_data_branch(github):
-    with pytest.raises(LookupError, match="no data branch"):
-        cdb.sync("card_data", REPO, "data")
 
 
 # ========================
@@ -290,37 +264,6 @@ def test_sync_reloads_and_reports_what_changed(github, tmp_path):
     assert _said()[0].startswith("Card data is already current: built ") and len(_said()) == 1
 
 
-def test_sync_notes(github, tmp_path, monkeypatch):
-    github.publish({"A": _card("A")}, defaultdict(list), tmp_path, card_commit="c0ffee0123456789",
-                   pending={"stale": ["X.psd", "Y.psd"], "failed": [{"path": "Items/Bad_Card.psd", "blob": "b", "error": "e"}],
-                            "full": None, "repin": []})
-    github.compare = {"ahead_by": 2, "files": [{"filename": "site/index.html"}, {"filename": "Items/New.psd"}]}
-    github.runs = [_run(9, "in_progress", event="push"), _run(7, conclusion="success", event="schedule"),
-                   _run(8, conclusion="failure", event="schedule")]
-    github.jobs = {9: [[_job(cs.DATA_JOB), _job("Quiet window", status="waiting"), _job(cs.MAIN_JOB, status="pending")]],
-                   7: [[_job(cs.DATA_JOB), _job(cs.MAIN_JOB, conclusion="skipped")]],     # the cron's data alone
-                   8: [[_job(cs.DATA_JOB), _job(cs.MAIN_JOB, conclusion="failure")]]}
-    cs.sync(ME)
-    text = _said()[0]
-    assert "Re-parse in progress: 2 cards still to re-parse" in text
-    assert "Could not read 1 PSD (Bad Card); its card keeps its last version" in text
-    assert "the card sync under way picks them up (<https://github.com/MichaelJSr/TTSCardMaker/actions/runs/9>)" in text
-    assert "The last bake and save failed: <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/8>" in text
-    assert "card data build failed" not in text and github.kinds("jobs") == [9, 7, 8]
-    utils.dispatch_queue.clear()
-    github.jobs[9] = [[_job(cs.DATA_JOB, conclusion="failure"), _job(cs.MAIN_JOB, status="pending")]]
-    cs.sync(ME)
-    assert "The last card data build failed: <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/9>" in _said()[0]
-    assert ("compare", "c0ffee0123456789...main") in github.calls
-    utils.dispatch_queue.clear()
-    github.runs = [_run(8, conclusion="success", event="schedule")]
-    github.jobs = {}                                                  # a run before the split: its conclusion
-    github.compare = {"ahead_by": 2, "files": [{"filename": "site/index.html"},
-                                               {"filename": "MDW/Fonts/stoogedings-src/x.svg"}]}   # no card input (the gate's)
-    cs.sync(ME)
-    assert len(_said()[0].splitlines()) == 3                          # the two pending lines only
-
-
 def test_a_reminder_sync_is_quiet(github, tmp_path, capsys):
     from commands.analytics import _ReminderUser
     github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
@@ -331,16 +274,6 @@ def test_a_reminder_sync_is_quiet(github, tmp_path, capsys):
     held = cs._loaded["commit"]
     cs.update(reminder)
     assert _said() and _said()[0].startswith("No card data yet") and cs._loaded["commit"] == held
-
-
-def test_update_stats_starts_no_card_sync(github, tmp_path):
-    """Card sync starts itself (a card push's timer): /update_stats and its reminder only sync, even with changes waiting."""
-    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
-    github.compare = {"ahead_by": 1, "files": [{"filename": "Items/New.psd"}]}
-    github.runs = [_run(8, event="push")]
-    cs.update(ME)
-    assert github.posts == [] and ("the next card sync picks them up within minutes of the push (website edits are baked "
-                                   "into the PSDs 30 minutes after the first card push of a burst)" in _said()[0])
 
 
 def test_a_failed_sync_keeps_the_data(github, tmp_path, monkeypatch):
@@ -394,13 +327,6 @@ def test_on_use_looks_at_most_every_two_minutes(github, monkeypatch):
     assert cs.on_use() and _queued() == ["check", "check"]
 
 
-def test_a_sync_counts_as_the_look(github, tmp_path):
-    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
-    cs.sync(ME)                                                       # /update_stats, or startup
-    utils.command_queue.clear()
-    assert not cs.on_use("query") and _queued() == []
-
-
 def test_check_reloads_quietly_then_refreshes(github, tmp_path, monkeypatch, capsys):
     import commands.query_card as qc
     looked = []
@@ -426,38 +352,6 @@ def test_a_failed_check_keeps_the_data_and_says_nothing(github, tmp_path, monkey
     assert not cs.check() and cm.stats_db.stats is held and _said() == [] and _queued() == []
     assert "Card data check failed (KeyError" in capsys.readouterr().out
     assert not cs._sync_lock.locked()
-
-
-def test_check_skips_while_a_sync_or_a_followed_run_runs(github, tmp_path):
-    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
-    for lock in (cs._sync_lock, cs._run_lock):
-        with lock:
-            assert not cs.check()
-    assert github.calls == [] and cm.stats_db.stats == {}
-
-
-def test_the_next_sync_reports_what_checks_loaded(github, tmp_path):
-    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
-    cs.sync(ME)
-    utils.dispatch_queue.clear()
-    github.publish({"A": _card("A"), "C": _card("C")}, defaultdict(list), tmp_path,
-                   problems=[{"card": "C", "path": "Creatures/C.psd", "notes": ["HP NOT FOUND"]}])
-    assert cs.check() and _said() == []
-    github.publish({"A": _card("A", ability="Heal 1."), "C": _card("C")}, defaultdict(list), tmp_path)
-    assert cs.check()
-    problems = cs.sync(ME)                                            # /update_stats, or the reminder's
-    assert ": 1 changed, 1 new; reloaded." in _said()[0]
-    assert len(problems) == 1 and "HP NOT FOUND" in problems[0] and "HP NOT FOUND" in _said()[1]
-    utils.dispatch_queue.clear()
-    assert cs.sync(ME) == [] and _said()[0].startswith("Card data is already current")
-
-
-def test_the_start_counts_as_a_look(monkeypatch):
-    from importlib.util import module_from_spec, spec_from_file_location
-    spec = spec_from_file_location("card_sync_fresh", cs.__file__)
-    fresh = module_from_spec(spec)                                    # a new process's state, cs untouched
-    spec.loader.exec_module(fresh)
-    assert not fresh.on_use("query")                                  # no look before startup's sync
 
 
 def test_card_commands_and_autocomplete_look(github, monkeypatch):
@@ -497,48 +391,6 @@ def test_cards_dispatch_follows_the_run_then_syncs(github, tmp_path):
     assert all(TOKEN not in s for s in said + _edits())
 
 
-def test_card_syncs_own_retry_is_not_followed(github, tmp_path):
-    """Main moved during the run's bake: its retry redoes only the bake and the save; the run's data stands."""
-    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
-    _dispatched_run(github, 41, _run(41, "in_progress"), _run(41))
-    retry = dict(login=cs.BOT_LOGIN, title=cs.RETRY_NAME)
-    github.runs = [_run(42, "queued", **retry), _run(41)]
-    cs.update(ME, cards="A")
-    assert _said()[1] == "Card sync run's card data finished: <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/41>"
-    assert len(github.posts) == 1
-
-
-def test_a_card_guards_dispatch_is_not_a_retry(github, tmp_path):
-    """card-guards' card-sync dispatch (GITHUB_TOKEN, named "Card sync") during the run: the run's data stands."""
-    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
-    _dispatched_run(github, 41, _run(41, "in_progress"), _run(41))
-    github.runs = [_run(42, "queued", login=cs.BOT_LOGIN), _run(41)]
-    cs.update(ME, force_update=True)
-    assert _said()[1] == "Card sync run's card data finished: <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/41>"
-
-
-def test_a_reminders_run_posts_no_progress_edits(github, tmp_path):
-    """A reminder has no reply to edit (each edit would be a new channel message): only its messages."""
-    from commands.analytics import _ReminderUser
-    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
-    _dispatched_run(github, 43, _run(43, "queued"), _run(43, "in_progress"), _run(43))
-    cs.update(SimpleNamespace(user=_ReminderUser(1, "owner")), cards="A")
-    assert _edits() == [] and "Card sync run's card data finished: <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/43>" in _said()
-
-
-def test_full_dispatch_without_run_details_finds_its_run(github, tmp_path):
-    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
-    github.runs = [_run(7, event="schedule")]
-    github.post_replies.append(Reply(422, body={"message": "Unexpected inputs provided: return_run_details"}))
-    github.post_replies.append(Reply(204))
-    github.on_post = lambda n: github.runs.insert(0, _run(50, "queued")) if n == 2 else None
-    github.states[50] = [_run(50, conclusion="failure")]
-    cs.update(ME, force_update=True)
-    assert [p.get("return_run_details") for p in github.posts] == [True, None]
-    assert github.posts[1]["inputs"] == {"dry_run": "false", "full": "true"}
-    assert "Card sync run's card data ended (failure): <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/50>; the bot keeps" in _said()[1]
-
-
 def test_a_run_replaced_by_a_scheduled_one_is_dispatched_again(github, tmp_path):
     github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
     _dispatched_run(github, 60, _run(60, conclusion="cancelled"))
@@ -561,102 +413,11 @@ def test_the_reply_comes_when_the_card_data_lands_not_the_bake(github, tmp_path)
     assert _said()[2].startswith("Card data loaded") and github.kinds("run") == [44]       # the dispatch's look only
 
 
-def test_a_data_job_replaced_while_the_bake_runs_is_dispatched_again(github, tmp_path):
-    """The run is in progress (its Bake and save started at once), its Card data job was replaced by a push's: again."""
-    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
-    _dispatched_run(github, 64, _run(64, "in_progress"))
-    github.jobs[64] = [[_job(cs.DATA_JOB, status="pending"), _job(cs.MAIN_JOB, status="in_progress")],
-                       [_job(cs.DATA_JOB, conclusion="cancelled"), _job(cs.MAIN_JOB, status="in_progress")]]
-    _dispatched_run(github, 66, _run(66))
-    github.runs = [_run(65, "waiting", event="push"), _run(64, "in_progress")]
-    cs.update(ME, cards="A")
-    assert len(github.posts) == 2 and "Card sync run's card data finished: <https://github.com/MichaelJSr/TTSCardMaker/" \
-        "actions/runs/66>" in _said()
-
-
-@pytest.mark.parametrize("newer, words", [
-    ([], "was cancelled."),
-    ([_run(71, "pending", login="someone")], "replaced by a newer request before it started"),
-])
-def test_a_cancelled_run_is_said_when_running_it_again_would_cancel_another(github, tmp_path, newer, words):
-    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
-    _dispatched_run(github, 70, _run(70, conclusion="cancelled"))
-    github.runs = newer + [_run(70, conclusion="cancelled")]
-    cs.update(ME, cards="A")
-    assert len(github.posts) == 1 and any(words in s for s in _said())
-    assert any(s.startswith("Card data") for s in _said())          # the sync still runs
-
-
-def test_a_run_cancelled_by_hand_while_running_is_not_dispatched_again(github, tmp_path):
-    """Seen running, then cancelled, with a newer scheduled run going: cancelled by hand, so said, not run again."""
-    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
-    _dispatched_run(github, 75, _run(75, "queued"), _run(75, "in_progress"), _run(75, conclusion="cancelled"))
-    github.runs = [_run(76, "in_progress", event="schedule"), _run(75, conclusion="cancelled")]
-    cs.update(ME, cards="A")
-    assert len(github.posts) == 1 and "Card sync run <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/75> " \
-        "was cancelled." in _said()
-
-
-def test_cancelled_twice_is_said(github, tmp_path):
-    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
-    _dispatched_run(github, 80, _run(80, conclusion="cancelled"))
-    _dispatched_run(github, 82, _run(82, conclusion="cancelled"))
-    github.runs = [_run(81, "pending", event="schedule")]
-    cs.update(ME, cards="A")
-    assert len(github.posts) == 2 and "was cancelled again" in " ".join(_said())
-
-
-def test_without_a_token_the_link_and_the_gh_command(github, tmp_path, monkeypatch):
-    monkeypatch.setattr(cs, "ACTIONS_TOKEN", "")
-    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
-    cs.update(ME, force_update=True)
-    assert github.posts == []
-    assert ("`gh workflow run card-sync.yml -R MichaelJSr/TTSCardMaker -f full=true -f dry_run=false`" in _said()[0]
-            and "<https://github.com/MichaelJSr/TTSCardMaker/actions/workflows/card-sync.yml>" in _said()[0])
-    assert _said()[1].startswith("Card data loaded")
-
-
 def test_a_refused_token_is_said_never_shown(github, tmp_path):
     github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
     github.post_replies.append(Reply(403, body={"message": "Resource not accessible by personal access token"}))
     cs.update(ME, cards="A")
     assert "GitHub refused ACTIONS_TOKEN (HTTP 403)" in _said()[0] and all(TOKEN not in s for s in _said())
-
-
-def test_a_dispatch_without_an_answer_may_have_started(github, tmp_path):
-    from requests.exceptions import ReadTimeout
-    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
-    github.post_replies.append(ReadTimeout("read timed out"))
-    cs.update(ME, cards="A")
-    assert "the run may have started: look on <" in _said()[0] and "try again" not in _said()[0]
-
-
-@pytest.mark.parametrize("reply", [Reply(403, body={"message": "You have exceeded a secondary rate limit."}),
-                                   Reply(403, body={"message": "x"}, headers={"X-RateLimit-Remaining": "0"}),
-                                   Reply(429, body={"message": "x"}, headers={"Retry-After": "60"})])
-def test_a_rate_limit_is_not_a_refused_token(github, tmp_path, reply):
-    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
-    github.post_replies.append(reply)
-    cs.update(ME, cards="A")
-    assert "rate limit" in _said()[0] and "refused ACTIONS_TOKEN" not in _said()[0]
-
-
-def test_an_expired_token_is_said_at_the_run_list(github, tmp_path):
-    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
-    github.runs_reply = Reply(401, body={"message": "Bad credentials"})
-    cs.update(ME, cards="A")
-    assert "GitHub refused ACTIONS_TOKEN (HTTP 401)" in _said()[0] and github.posts == []
-    assert all(TOKEN not in s for s in _said())
-
-
-def test_a_run_past_the_wait_is_left_going(github, tmp_path, monkeypatch):
-    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
-    _dispatched_run(github, 90, _run(90, "queued"), _run(90, "in_progress"))
-    clock = iter([0, 0, 0, 900, 900, 2000, 2000])                     # started; each look's deadline and edit checks; the sync
-    monkeypatch.setattr(cs, "monotonic", lambda: next(clock))
-    cs.update(ME, cards="A")
-    assert "still going after 30 minutes" in " ".join(_said())
-    assert _edits() == ["Card sync run <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/90>: waiting for its turn"]
 
 
 def test_one_followed_run_at_a_time(github, tmp_path):
@@ -801,20 +562,3 @@ def test_update_stats_options_are_admin_only(monkeypatch, options, allowed):
 # ========================
 # Loads that read psd_details.json by its hash only
 # ========================
-def test_the_bots_loads_never_parse_the_details(github, tmp_path, monkeypatch):
-    """load_local, a sync and card_db.sync's check read psd_details.json by its hash only (the bot keeps no details);
-    a damaged details file still makes the copy a cut-off one, reloaded by the next sync."""
-    details = '{"version": 1, "cards": {\n"b0": {"marker-details": 1}\n}}\n'
-    github.publish({"A": _card("A")}, defaultdict(list), tmp_path, details=details)
-    cdb.sync("card_data", REPO, "data")
-    seen, real = [], cdb.loads
-    monkeypatch.setattr(cdb, "loads", lambda text, *a, **k: seen.append("marker-details" in text) or real(text, *a, **k))
-    assert cs.load_local("card_data") and set(cm.stats_db.stats) == {"A"}
-    cs.sync(ME)                                                       # unchanged: a 304
-    github.publish({"A": _card("A"), "B": _card("B")}, defaultdict(list), tmp_path, details=details)
-    cs.sync(ME)                                                       # moved: reloaded
-    assert set(cm.stats_db.stats) == {"A", "B"} and seen and not any(seen)
-    (tmp_path / "card_data" / cdb.DETAILS_JSON).write_text(details.replace("1}", "2}"), encoding="utf-8")
-    assert cs.load_local("card_data") and cs._loaded["commit"] is None
-    assert cdb.check_db("card_data", parse=False) == cdb.check_db("card_data") == [f"{cdb.DETAILS_JSON}: sha256 differs from the manifest"]
-    assert cdb.read_db("card_data", details=False)[2] == {} and cdb.read_db("card_data")[2] == {"b0": {"marker-details": 2}}

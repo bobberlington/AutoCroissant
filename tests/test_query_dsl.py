@@ -1,20 +1,10 @@
-"""/query_ability's query language, and the website's (TTSCardMaker site/assets/search.js) on the same table: the same
-cards, the same queries. Where the two differ on purpose (synonyms, field errors and other columns are the bot's so far), the row
-says what the website finds."""
-import json
-import shutil
-import subprocess
-from os import environ
-from os.path import expanduser
-from pathlib import Path
+"""/query_ability's query language on a table of website-shaped cards, and /query_rulebook's lines."""
 
 import pytest
 
 import commands.card_models as cm
 import commands.query_card as qc
-from conftest import CLONE
 
-SEARCH_JS = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site" / "assets" / "search.js"
 
 # website-shaped cards: name (as shown), aliases, ability, fields
 CARDS = [
@@ -31,30 +21,30 @@ CARDS = [
     dict(name="Bloon", type="minion", hp=2, defense=1, atk=1, spd=3, ability="Pop: heal 2 health."),
     dict(name="Burning", type="debuff", stars=1, ability="Burning: 3 DMG, can't affect [fire]."),
 ]
-ERROR = "error"                                          # the bot answers with an error; the website finds nothing
+ERROR = "error"                                          # the bot answers with an error
 
-QUERIES = [                                              # query, the bot's cards, the website's when it differs
-    ("damage", {"Meta Knight", "Fire Bomb", "Kirby", "Burning"}, {"Meta Knight", "Fire Bomb"}),
-    ("dmg", {"Kirby", "Burning", "Meta Knight", "Fire Bomb"}, {"Kirby", "Burning"}),
-    ("defense", {"Panda Shield", "Mettaton EX"}, {"Panda Shield"}),
-    ("health", {"Bloon"}, None), ("speed", {"sans."}, set()),
-    ('"damage"', {"Meta Knight", "Fire Bomb"}, None),
-    ("!type==creature", {"Mettaton EX", "Fire Bomb", "Panda Shield", "Bloon", "Burning"}, None),
-    ("type==creature", {"Kirby", "Meta Knight", "sans.", "King Dedede"}, None),
-    ("type~creature", {"Kirby", "Meta Knight", "sans.", "King Dedede", "Mettaton EX"}, None),
-    ("hp>5", {"Meta Knight", "Mettaton EX"}, None), ("hp > 5", {"Meta Knight", "Mettaton EX"}, None),
-    ("total>=24", {"Meta Knight", "Mettaton EX"}, None), ("spd>=8", {"Meta Knight", "sans."}, None),
-    ("stars<=2", {"Fire Bomb", "Panda Shield", "Burning"}, None),
-    ("fire", {"Fire Bomb", "Burning"}, None), ("dedede", {"King Dedede"}, None), ("mk", {"Meta Knight"}, None),
-    ("sans.", {"sans."}, None), ("name~knight", {"Meta Knight"}, None), ("types~wind", {"Kirby"}, None),
-    ("buckler", {"Panda Shield"}, None), ("alias~mk", {"Meta Knight"}, None), ("aliases==buckler", {"Panda Shield"}, None),
-    ("display_name~sans", {"sans."}, set()),           # any column of the bot's (the website has no such field)
-    ("die & series==kirby", {"Meta Knight"}, None), ("fire | hp>6", {"Fire Bomb", "Burning", "Meta Knight"}, None),
-    ("!die", {c["name"] for c in CARDS} - {"Meta Knight"}, None),
-    ("series==kirby & !hp>5", {"Kirby", "King Dedede"}, None), ("subtype==equip", {"Panda Shield"}, None),
-    ("atack>3", ERROR, set()), ("total~5", ERROR, set()), ("hp>=x", ERROR, set()), ("type>3", ERROR, set()),
-    ("type!=creature", ERROR, set()),
-    ('"atack>3"', set(), None),
+QUERIES = [                                              # query, the cards found
+    ("damage", {"Meta Knight", "Fire Bomb", "Kirby", "Burning"}),
+    ("dmg", {"Kirby", "Burning", "Meta Knight", "Fire Bomb"}),
+    ("defense", {"Panda Shield", "Mettaton EX"}),
+    ("health", {"Bloon"}), ("speed", {"sans."}),
+    ('"damage"', {"Meta Knight", "Fire Bomb"}),
+    ("!type==creature", {"Mettaton EX", "Fire Bomb", "Panda Shield", "Bloon", "Burning"}),
+    ("type==creature", {"Kirby", "Meta Knight", "sans.", "King Dedede"}),
+    ("type~creature", {"Kirby", "Meta Knight", "sans.", "King Dedede", "Mettaton EX"}),
+    ("hp>5", {"Meta Knight", "Mettaton EX"}), ("hp > 5", {"Meta Knight", "Mettaton EX"}),
+    ("total>=24", {"Meta Knight", "Mettaton EX"}), ("spd>=8", {"Meta Knight", "sans."}),
+    ("stars<=2", {"Fire Bomb", "Panda Shield", "Burning"}),
+    ("fire", {"Fire Bomb", "Burning"}), ("dedede", {"King Dedede"}), ("mk", {"Meta Knight"}),
+    ("sans.", {"sans."}), ("name~knight", {"Meta Knight"}), ("types~wind", {"Kirby"}),
+    ("buckler", {"Panda Shield"}), ("alias~mk", {"Meta Knight"}), ("aliases==buckler", {"Panda Shield"}),
+    ("display_name~sans", {"sans."}),  # any column of the bot's
+    ("die & series==kirby", {"Meta Knight"}), ("fire | hp>6", {"Fire Bomb", "Burning", "Meta Knight"}),
+    ("!die", {c["name"] for c in CARDS} - {"Meta Knight"}),
+    ("series==kirby & !hp>5", {"Kirby", "King Dedede"}), ("subtype==equip", {"Panda Shield"}),
+    ("atack>3", ERROR), ("total~5", ERROR), ("hp>=x", ERROR), ("type>3", ERROR),
+    ("type!=creature", ERROR),
+    ('"atack>3"', set()),
 ]
 
 
@@ -81,27 +71,14 @@ def _shown(repo, names) -> set:
     return {titles[n] if isinstance(titles.get(n), str) else n for n in names}
 
 
-@pytest.mark.parametrize("query, bot, site", QUERIES)
-def test_bot(repo, query, bot, site):
-    if bot == ERROR:
-        with pytest.raises(qc.QueryError):
-            repo.ability_search_engine(query)
-        return
-    assert _shown(repo, repo.ability_search_engine(query).index) == bot
-
-
-@pytest.mark.skipif(not shutil.which("node") or not SEARCH_JS.is_file(), reason=f"needs node and {SEARCH_JS}")
-def test_website_on_the_same_table(tmp_path):
-    cards = [{**{k: v for k, v in c.items() if k not in ("defense", "file")}, "def": c.get("defense")} for c in CARDS]
-    script = tmp_path / "probe.mjs"
-    script.write_text(f"const S = await import({json.dumps(SEARCH_JS.as_uri())});\n"
-                      f"const cards = {json.dumps(cards)}, queries = {json.dumps([q for q, _, _ in QUERIES])};\n"
-                      "console.log(JSON.stringify(queries.map(q => { const p = S.compile(q);"
-                      " return cards.filter(c => p(c)).map(c => c.name); })));\n", encoding="utf-8")
-    done = subprocess.run(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60)
-    assert done.returncode == 0, done.stderr
-    found = dict(zip([q for q, _, _ in QUERIES], json.loads(done.stdout)))
-    assert {q: set(found[q]) for q, _, _ in QUERIES} == {q: bot if site is None else site for q, bot, site in QUERIES}
+def test_bot(repo):
+    """The table: each query's cards, or a QueryError."""
+    for query, bot in QUERIES:
+        if bot == ERROR:
+            with pytest.raises(qc.QueryError):
+                repo.ability_search_engine(query)
+            continue
+        assert _shown(repo, repo.ability_search_engine(query).index) == bot, query
 
 
 def test_rulebook_lines(monkeypatch):

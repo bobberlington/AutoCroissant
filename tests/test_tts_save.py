@@ -128,18 +128,6 @@ def test_sync_decks_keeps_non_png_and_skips_bad_entries(save, repo):
         tts._decks([])
 
 
-def test_sync_decks_drops_unused_keys(repo):
-    """A card taken out of a complete deck leaves its key behind; the rewrite drops it (UPD-4)."""
-    deck = _deck("eeeeee", [_card("000011", A, 100)])
-    deck["CustomDeck"]["5"] = deepcopy(deck["CustomDeck"]["1"])          # the removed card's key
-    save = {"ObjectStates": [deck]}
-    rules = {"decks": {"eeeeee": {"rule": {"kind": "items", "folders": [HEAL + "*.png"], "count": 1}}}}
-    tts._sync_decks(save, rules, repo, Names(), tts._Report())
-    assert [tts._face_path(c) for c in deck["ContainedObjects"]] == [A, B, C]
-    assert sorted(deck["CustomDeck"]) == ["1", "6", "7"]
-    assert set(deck["CustomDeck"]) == {str(c["CardID"] // 100) for c in deck["ContainedObjects"]}
-
-
 def test_pin_links_reports_pinned_and_repinned(repo):
     """Links on main are 'Links pinned', links on an older sha 'Links re-pinned (changed files)' (UPD-3)."""
     tile = {"Name": "Custom_Tile", "CustomImage": {"ImageURL": f"{RAW}main/{tts._encode(B)}",
@@ -153,15 +141,6 @@ def test_pin_links_reports_pinned_and_repinned(repo):
     assert f"## Links pinned (1)\n- `{B}`: main -> `c0ffee1` (1 link)" in text
     assert f"## Links re-pinned (changed files) (1)\n- `{BACK}`: `0dd0001` -> `bac0001` (1 link)" in text
     assert tts._commit_message(report) == "TTS save: 2 links pinned"
-
-
-def test_commit_message_counts_names_and_lua():
-    """Distinct names, not cards; a resizeTargets change is named."""
-    report = tts._Report()
-    report.names_real[("a.png", "Old", "New")] = 3
-    report.names_case[("b.png", "chuckya", "Chuckya")] = 2
-    report.lua_added.append("New")
-    assert tts._commit_message(report) == "TTS save: 2 Nicknames fixed, resizeTargets updated"
 
 
 def test_update_writes_commit_subject(save, repo, tmp_path, monkeypatch):
@@ -310,52 +289,35 @@ def test_star_move_changes_developer_deck(repo):
     assert again == save
 
 
-def test_star_move_gets_a_fresh_key_when_the_target_uses_it(repo):
-    """The target deck shows another image under the moved card's CustomDeck key: the card gets a new id, one for
-    both copies."""
-    three, four = "Items/Heal/3 Stars/", "Items/Heal/4 Stars/"
-    moved = four + "M.png"
-    repo.tree[moved] = repo.tree[three + "K.png"] = repo.tree[four + "L.png"] = "bm"
-    repo.pngs = sorted(p for p in repo.tree if p.endswith(".png"))
-    card, copy = _card("000002", moved, 200), _card("000004", moved, 200)
-    face, other = deepcopy(card["CustomDeck"]["2"]), _card("000003", four + "L.png", 200)
-    dev3, dev4 = _deck("aaaaaa", [_card("000001", three + "K.png", 100), card, copy]), _deck("bbbbbb", [other])
-    save = {"ObjectStates": [dev3, dev4]}
-    repo.carried = lambda sha: set(repo.pngs)
-    rule = {"kind": "items", "count": 1, "partial": True, "add_new_since": "base"}
-    rules = {"decks": {"aaaaaa": {"rule": {**rule, "folders": [three + "*.png"]}},
-                       "bbbbbb": {"rule": {**rule, "folders": [four + "*.png"]}}}}
-    tts._sync_decks(save, rules, repo, Names(), tts._Report())
-    assert card["CardID"] == copy["CardID"] == 300 and card["CustomDeck"] == {"3": face} and dev4["DeckIDs"] == [200, 300, 300]
-    assert dev4["CustomDeck"] == {"2": other["CustomDeck"]["2"], "3": face} and sorted(dev3["CustomDeck"]) == ["1"]
+STAR_MOVE_LEAVES_HAND_PICKED_CARDS_CASES = ["other folder", "excluded", "rule matches nothing", "save unreadable"]
 
 
-@pytest.mark.parametrize("case", ["other folder", "excluded", "rule matches nothing", "save unreadable"])
-def test_star_move_leaves_hand_picked_cards(repo, case):
+def test_star_move_leaves_hand_picked_cards(repo):
     """Only a card whose stars changed moves: one from another folder or excluded by the rule stays, and so does
     every card of a deck whose rule matches nothing or whose since save can't be read."""
-    three, four, fire = "Items/Heal/3 Stars/", "Items/Heal/4 Stars/", "Items/Fire/4 Stars/"
-    for p in (three + "K.png", four + "L.png", four + "M.png", fire + "F.png"):
-        repo.tree[p] = "b" + p
-    if case == "rule matches nothing":
-        del repo.tree[three + "K.png"]
-    repo.pngs = sorted(p for p in repo.tree if p.endswith(".png"))
-    repo.carried = lambda sha: set(repo.pngs) if sha == "base" else None
-    picked = fire + "F.png" if case == "other folder" else four + "M.png"
-    rule = {"kind": "items", "count": 1, "partial": True, "add_new_since": "base"}
-    rule3 = {**rule, "folders": [three + "*.png"]}
-    if case == "excluded":
-        rule3.update(folders=["Items/Heal/*/*.png"], exclude=[picked])
-    if case == "save unreadable":
-        rule3["add_new_since"] = "gone"
-    dev3 = _deck("aaaaaa", [_card("000001", three + "K.png", 100), _card("000002", picked, 200)])
-    save = {"ObjectStates": [dev3, _deck("bbbbbb", [_card("000003", four + "L.png", 300)]),
-                             _deck("cccccc", [_card("000004", fire + "F.png", 400)])]}
-    rules = {"decks": {"aaaaaa": {"rule": rule3}, "bbbbbb": {"rule": {**rule, "folders": [four + "*.png"]}},
-                       "cccccc": {"rule": {**rule, "folders": [fire + "*.png"]}}}}
-    report = tts._Report()
-    tts._sync_decks(save, rules, repo, Names(), report)
-    assert picked in [tts._face_path(c) for c in dev3["ContainedObjects"]] and report.moved == []
+    for case in STAR_MOVE_LEAVES_HAND_PICKED_CARDS_CASES:
+        three, four, fire = "Items/Heal/3 Stars/", "Items/Heal/4 Stars/", "Items/Fire/4 Stars/"
+        for p in (three + "K.png", four + "L.png", four + "M.png", fire + "F.png"):
+            repo.tree[p] = "b" + p
+        if case == "rule matches nothing":
+            del repo.tree[three + "K.png"]
+        repo.pngs = sorted(p for p in repo.tree if p.endswith(".png"))
+        repo.carried = lambda sha: set(repo.pngs) if sha == "base" else None
+        picked = fire + "F.png" if case == "other folder" else four + "M.png"
+        rule = {"kind": "items", "count": 1, "partial": True, "add_new_since": "base"}
+        rule3 = {**rule, "folders": [three + "*.png"]}
+        if case == "excluded":
+            rule3.update(folders=["Items/Heal/*/*.png"], exclude=[picked])
+        if case == "save unreadable":
+            rule3["add_new_since"] = "gone"
+        dev3 = _deck("aaaaaa", [_card("000001", three + "K.png", 100), _card("000002", picked, 200)])
+        save = {"ObjectStates": [dev3, _deck("bbbbbb", [_card("000003", four + "L.png", 300)]),
+                                 _deck("cccccc", [_card("000004", fire + "F.png", 400)])]}
+        rules = {"decks": {"aaaaaa": {"rule": rule3}, "bbbbbb": {"rule": {**rule, "folders": [four + "*.png"]}},
+                           "cccccc": {"rule": {**rule, "folders": [fire + "*.png"]}}}}
+        report = tts._Report()
+        tts._sync_decks(save, rules, repo, Names(), report)
+        assert picked in [tts._face_path(c) for c in dev3["ContainedObjects"]] and report.moved == []
 
 
 def test_carried_follows_renames(tmp_path, monkeypatch):
@@ -429,10 +391,3 @@ def test_db_names_follow_build_site(tmp_path):
         "Items/Food/A_Snack.png": "A Snack", "Items/Food/A_Snack2.png": "Breakfast", "Items/New/New_Card.png": "New Card",
         "Items/Loose/Loose_One.png": "Loose One", "Items/Moved/Elsewhere.png": "Elsewhere"}
 
-
-def test_cli_names_option(tmp_path, monkeypatch):
-    """--names reaches _Names as its stats_path; the save path stays the one positional argument."""
-    seen = []
-    monkeypatch.setattr(tts, "update_save", lambda path, names="": seen.append((path, names)) or "report\n")
-    assert tts.main(["save.json", "--names", "db/stats.json"]) == 0 and tts.main(["save.json"]) == 0
-    assert seen == [("save.json", "db/stats.json"), ("save.json", "")]

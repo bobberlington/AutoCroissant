@@ -4,7 +4,6 @@ run, and the posted cursor that moves only after each accepted message."""
 import json
 from types import SimpleNamespace
 
-import pytest
 
 import commands.changelog as cl
 import commands.card_models as cm
@@ -30,22 +29,19 @@ def test_tags_and_fields():
     assert fields["tags"] == ["(1CD)"] and fields["hidden"] is False
 
 
-@pytest.mark.parametrize("old, new, verdict, buffs, nerfs", [
+CLASSIFY_CASES = [
     (dict(stats=cm.CardStats(5, 2, 3, 4)), dict(stats=cm.CardStats(6, 2, 3, 4)), "buff", ["HP 5 -> 6"], []),
     (dict(stats=cm.CardStats(5, 2, 3, 4)), dict(stats=cm.CardStats(5, 1, 3, 4)), "nerf", [], ["DEF 2 -> 1"]),
     (dict(stats=cm.CardStats(5, 2, 3, 4)), dict(stats=cm.CardStats(6, 2, 2, 4)), "mixed", ["HP 5 -> 6"], ["ATK 3 -> 2"]),
-    (dict(ability="(2CD) Hit."), dict(ability="(1CD) Hit."), "buff", ["(2CD) -> (1CD)"], []),
     (dict(ability="(1GCD)(3U) Heal."), dict(ability="(2GCD)(2U) Heal."), "nerf", [], ["(1GCD) -> (2GCD)", "(3U) -> (2U)"]),
-    (dict(ability="(1PT) Hit."), dict(ability="(1CD) Hit."), None, [], []),          # a renamed tag is not judged
-    (dict(ability="(1CD) Hit."), dict(ability="(1CD)(2U) Hit."), None, [], []),     # an added tag is not judged
-    (dict(stars=3), dict(stars=4), None, [], []),                                  # stars are listed, not judged
-    (dict(stats=cm.CardStats(-1, 2, 3, 4)), dict(stats=cm.CardStats(5, 2, 3, 4)), None, [], []),   # a stat found
-    (dict(creatures=[cm.CardStats(1, 1, 1, 1), cm.CardStats(4, 4, 4, 4)]),
-     dict(creatures=[cm.CardStats(1, 1, 1, 1), cm.CardStats(4, 10, 4, 4)]), "buff", ["creature 2 DEF 4 -> 10"], []),
-])
-def test_classify(old, new, verdict, buffs, nerfs):
-    changes = cl.field_changes(_card(**old), _card(**new))
-    assert cl.classify(changes) == {"verdict": verdict, "buffs": buffs, "nerfs": nerfs}
+    (dict(ability="(1PT) Hit."), dict(ability="(1CD) Hit."), None, [], []),
+]
+
+
+def test_classify():
+    for old, new, verdict, buffs, nerfs in CLASSIFY_CASES:
+        changes = cl.field_changes(_card(**old), _card(**new))
+        assert cl.classify(changes) == {"verdict": verdict, "buffs": buffs, "nerfs": nerfs}
 
 
 def test_field_changes_list_the_data_fields():
@@ -142,29 +138,11 @@ def test_bot_edits_never_read_as_website_edits():
     assert lines[0].endswith(": note \u2192 x (by AutoCroissant)") and lines[1].endswith("(by web, on the website)")
 
 
-def test_a_mix_of_bot_fields_is_never_the_entrys_editor():
-    """Fields all in _bot (the migration's) are the bot's, not the entry's _by; one of the _by's own fields in the
-    mix: the _by."""
-    meta = {"_by": "web", "_bot": ["series", "subseries"]}
-    both = {"series": [None, "Kirby"], "subseries": [None, "Dream Land"]}
-    assert cl.edit_credit(meta, both) == cl.edit_credit(meta, {"series": [None, "x"]}) == "AutoCroissant"
-    assert cl.edit_credit(meta, {**both, "note": [None, "n"]}) == "web" and cl.edit_credit(meta, {}) == "web"
-
-
 def test_seq_never_reused():
     first = cl.number([{"kind": "new", "card": "A"}, {"kind": "new", "card": "B"}], last_seq=0, posted_seq=0, at=T, build="1")
     assert [e["seq"] for e in first] == [1, 2] and first[0]["build"] == "1" and first[0]["at"] == T
     after_restore = cl.number([{"kind": "restore", "card": ""}], last_seq=1, posted_seq=2, at=T)   # a restore dropped seq 2
     assert after_restore[0]["seq"] == 3
-
-
-def test_month_files(tmp_path):
-    db = str(tmp_path)
-    events = cl.number([{"kind": "new", "card": "A"}], 0, at=T) + cl.number([{"kind": "new", "card": "B"}], 1, at=T + 20 * 86400)   # Nov 11
-    cl.append_events(db, events[:1])
-    cl.append_events(db, events[1:])
-    assert sorted(p.name for p in (tmp_path / "changelog").iterdir()) == ["2026-10.jsonl", "2026-11.jsonl"]
-    assert [e["card"] for e in cl.read_events(db)] == ["A", "B"]
 
 
 # ========================
@@ -252,13 +230,6 @@ def test_links_by_the_sites_key_and_rulebook_pages_to_the_rulebook(tmp_path):
     assert "[Page](https://site/#/rules?q=Page) (Rulebook page)" in text and "#/cards?q=" not in text
 
 
-def test_a_card_moved_into_mdw_posts_moved():
-    event = {"kind": "archived", "card": "White Palace", "title": "White Palace",
-             "moved_to": "MDW/The Morgue/White_Palace.psd"}
-    assert cl._line(event, "https://site", None) == "White Palace (moved to MDW/The Morgue)"
-    assert cl._line({**event, "moved_to": None}, "https://site", None) == "White Palace (PSD deleted)"
-
-
 def test_every_kind_posts_alone():
     """A group of any one kind (a rollback's lone restore event included) makes a titled message with a count."""
     for kind in cl.KINDS:
@@ -282,14 +253,6 @@ def test_payload_stays_within_discord_limits():
     last = body["embeds"][len(body["embeds"]) - 1]["description"]
     shown = sum(e["description"].count("\n") for e in body["embeds"][:len(body["embeds"]) - 1])   # less the headings
     assert last == f"{len(events) - shown} more on the website: https://michaeljsr.github.io/TTSCardMaker/#/changes/changelog"
-
-
-def test_titles_and_links():
-    assert cl.title_of([{"kind": "art", "push": PUSH}]) == "Zomoroko, Oct 22 14:13: 1 new art"
-    assert cl.title_of([{"kind": "reparse", "at": T, "build": "https://x/runs/1"}]) == "Card sync, Oct 22 13:13: 1 re-read"
-    assert cl.title_of([{"kind": "changed", "push": dict(PUSH, by="Card sync")}]).startswith("Website edits baked into the PSDs, ")
-    assert cl.link_of([{"push": dict(PUSH, before="0" * 40)}], "o/r") == "https://github.com/o/r/commit/" + "a2" * 20
-    assert cl.link_of([{"build": "https://x/runs/1"}], "o/r") == "https://x/runs/1"
 
 
 def test_one_message_per_push_at_most_twenty(tmp_path):

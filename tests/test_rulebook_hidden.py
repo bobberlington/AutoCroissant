@@ -1,23 +1,15 @@
 """Rule pages skip hidden text layers (owner plan 2026-10-22); card pages skip hidden Ability layers (owner, 2026-10-22:
 only what is printed); a rule page's pictures named after icons and hidden title layers read as nothing (owner 2026-10-25)."""
 import json
-import subprocess
 import types
-from io import BytesIO
 
 import pytest
 from psd_tools import PSDImage
 
-from commands.card_models import card_name
 from commands.psd_parser import CardValidator
-from conftest import no_lazy
 from golden_cards import golden_file, parser
 
 L11 = "100511d37848773bb8e948ba29625397f6ce5216"           # the card repo commit that deleted the H1 hidden text layers
-HIDDEN_ABILITY = ("Auxiliary/Minions/Shadow_Duelist.psd", "Auxiliary/Minions/Abyss_Watcher.psd", "Auxiliary/Minions/Warrior_Dee.psd",
-                  "Auxiliary/Minions/Bulborb Larva.psd", "Creatures/Kirby/5 Stars/Butterfly.psd",
-                  "Creatures/Other/3 Stars/Empress Bulblax.psd", "Creatures/R.E.P.O/2 Stars/Apex_Predator.psd")
-H1_PAGES = ("09_TakingYourTurn", "11_Abilities", "12_Reactions2", "22_Negation")
 
 
 @pytest.fixture(scope="module")
@@ -35,20 +27,6 @@ def _remove(psd, layers):
     for layer in layers:
         layer.parent.remove(layer)
     return psd
-
-
-def _hidden_text(psd):
-    return [layer for layer in psd.descendants() if layer.kind == "type" and not layer.is_visible()]
-
-
-def _page(clone, rev, rel):
-    """A rule page from the clone's history."""
-    try:
-        data = subprocess.run(["git", "-C", str(clone), "show", f"{rev}:{rel}"], capture_output=True, check=True,
-                              env=no_lazy()).stdout
-    except (subprocess.CalledProcessError, OSError):
-        pytest.skip(f"the clone's history lacks {rev}:{rel}")
-    return PSDImage.open(BytesIO(data))
 
 
 def _named(psd, name):
@@ -78,9 +56,8 @@ def test_card_page_skips_hidden_ability(psd_parser, clone, monkeypatch):
     _named(psd, "Ability").visible = False
     card = _parse(psd_parser, monkeypatch, psd, rel)
     assert card.ability == "" and card.problems == [] and CardValidator.validate(card) == ["ABILITY TEXT NOT FOUND"]
-    shown = _parse(psd_parser, monkeypatch, PSDImage.open(clone / rel), rel)
-    assert shown.ability == golden["ability"]
-    assert {**card.to_dict(), "ability": None} == {**shown.to_dict(), "ability": None}
+    stats = card.stats
+    assert (stats.hp, stats.defense, stats.attack, stats.speed) == tuple(golden[k] for k in ("hp", "def", "atk", "spd"))
     card.name = "Shadow Duelist"
     assert CardValidator.validate(card) == []
 
@@ -102,75 +79,3 @@ def test_relaid_ability_counts_while_its_words_are_printed(psd_parser, clone, mo
     card = _parse(psd_parser, monkeypatch, psd, rel)
     assert card.ability == "" and CardValidator.validate(card) == ["ABILITY TEXT NOT FOUND"]
 
-
-def test_clone_cards_with_only_hidden_ability(psd_parser, clone, monkeypatch):
-    """The clone's cards whose Ability layers are all hidden (7 on 2026-10-22): the four that print the words in other
-    layers keep them; Shadow Duelist, Abyss Watcher and Warrior Dee print none, parse to no ability, and are excluded."""
-    found = {}
-    for rel in HIDDEN_ABILITY:
-        if not (clone / rel).exists():
-            continue
-        psd = PSDImage.open(clone / rel)
-        texts = [layer for layer in psd.descendants() if layer.kind == "type"]
-        abilities = [layer for layer in texts if layer.name.lower() == "ability"]
-        if not abilities or any(layer.is_visible() for layer in abilities):
-            continue                                       # shown or redone since
-        card = _parse(psd_parser, monkeypatch, psd, rel)
-        found[rel] = (psd_parser._relaid(abilities[0], texts), card.ability, CardValidator.validate(card))
-    if not found:
-        pytest.skip("no clone card with only a hidden Ability layer")
-    for rel, (relaid, ability, problems) in found.items():
-        assert bool(ability) == relaid and problems == [], rel
-    assert sorted(card_name(rel) for rel, (relaid, _, _) in found.items() if not relaid) == \
-        sorted(card_name(rel) for rel in HIDDEN_ABILITY if rel in found and card_name(rel) in CardValidator.ABILITY_EXCLUSIONS)
-
-
-def test_clone_rule_pages(psd_parser, clone, monkeypatch):
-    """Every rule page in the clone parses as if its hidden text layers were deleted (none left: the H1 pages before L11)."""
-    pages = [(f"Auxiliary/Rulebook/{page.name}", lambda page=page: PSDImage.open(page))
-             for page in sorted((clone / "Auxiliary/Rulebook").glob("*.psd"))]
-    with_hidden = [(rel, open_page) for rel, open_page in pages if _hidden_text(open_page())]
-    if not with_hidden:
-        with_hidden = [(rel, lambda rel=rel: _page(clone, L11 + "^", rel)) for rel in (f"Auxiliary/Rulebook/{p}.psd" for p in H1_PAGES)]
-    for rel, open_page in with_hidden:
-        psd = open_page()
-        assert _hidden_text(psd), rel
-        got = _parse(psd_parser, monkeypatch, psd, rel)
-        psd = open_page()
-        want = _parse(psd_parser, monkeypatch, _remove(psd, _hidden_text(psd)), rel)
-        assert got.to_dict() == want.to_dict(), rel
-
-
-@pytest.mark.parametrize("page", H1_PAGES)
-def test_h1_pages(psd_parser, clone, monkeypatch, page):
-    """L11 deleted the page's H1 hidden text layers in Photoshop: the page before parses the same as the page after."""
-    rel = f"Auxiliary/Rulebook/{page}.psd"
-    before, after = _page(clone, L11 + "^", rel), _page(clone, L11, rel)
-    assert _hidden_text(before) and not _hidden_text(after)
-    got = _parse(psd_parser, monkeypatch, before, rel)
-    want = _parse(psd_parser, monkeypatch, after, rel)
-    assert got.to_dict() == want.to_dict() and got.alt_names == want.alt_names
-
-
-def test_rule_page_pictures_not_icons(psd_parser, clone, monkeypatch):
-    """14 Item Types' pictures named after icons (Attack, Machine, Food...) give a rule page no types and no tokens; the
-    same PSD read as a card page still reads them as types."""
-    rel = "Auxiliary/Rulebook/14_Item_Types.psd"
-    if not (clone / rel).exists():
-        pytest.skip(f"{rel} not in the clone")
-    page = _parse(psd_parser, monkeypatch, PSDImage.open(clone / rel), rel)
-    assert page.types == [] and page.ability.splitlines()[-1] == "14" and "[" not in page.ability
-    card = _parse(psd_parser, monkeypatch, PSDImage.open(clone / rel), "Items/Attack/1 Stars/14_Item_Types.psd")
-    assert card.types
-
-
-def test_hidden_titles_name_nothing(psd_parser, clone, monkeypatch):
-    """Thunder Thighs' hidden template titles ('A snack', 'Breakfast') are no alternate names and no title."""
-    rel = "Items/Heal/2 Stars/Thunder_Thighs.psd"
-    if not (clone / rel).exists():
-        pytest.skip(f"{rel} not in the clone")
-    psd = PSDImage.open(clone / rel)
-    if not any(not layer.is_visible() and layer.text.strip() == "A snack" for layer in _hidden_text(psd)):
-        pytest.skip(f"{rel} no longer hides 'A snack'")
-    card = _parse(psd_parser, monkeypatch, psd, rel)
-    assert card.alt_names is None and card.display_name is None

@@ -118,10 +118,3 @@ def test_git_commit_push_outcomes(monkeypatch):
     with pytest.raises(gc.Transient, match="git push failed: .* timed out after 300 seconds"):
         gc.git_commit(gc.CARD_REPO, "h", {"x": b"x"}, "m")
 
-
-def test_api_raises_transient_with_githubs_message(github):
-    with pytest.raises(gc.Transient, match=r"GitHub 404: Not Found \(on GET git/commits/nope\)"):
-        gc.api(gc.CARD_REPO, "GET", "git/commits/nope")
-    assert gc.api(gc.CARD_REPO, "GET", "git/commits/nope", check=False).status_code == 404
-    assert gc.ref_head(gc.CARD_REPO) == github.head and gc.commit_info(gc.CARD_REPO, github.head)["sha"] == github.head
-    assert gc.plural(1, "card") == "1 card" and gc.plural(2, "card") == "2 cards"

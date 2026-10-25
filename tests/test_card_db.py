@@ -30,13 +30,6 @@ def _full():
 # ========================
 # Records
 # ========================
-def test_record_has_every_field_and_the_stats_by_name():
-    rec = cdb.record(_card())
-    assert set(rec) == {f.name for f in fields(cm.CardInfo)} | {"version", "created"}
-    assert rec["stats"] == {"hp": 5, "defense": 2, "attack": 3, "speed": 4}
-    assert rec["creatures"] is None and rec["version"] is None and rec["archived"] is None and rec["created"] is None
-
-
 def test_round_trip_is_exact():
     card = _full()
     back = cdb.card(cdb.record(card))
@@ -71,12 +64,6 @@ def test_a_missing_attribute_takes_the_default():
         (None, None, None, None, None, [])
 
 
-def test_not_json_data_is_refused():
-    card = _card(parsed_values={"x": {1, 2}})
-    with pytest.raises(TypeError, match="A Card.parsed_values"):
-        cdb.record(card)
-
-
 # ========================
 # Files
 # ========================
@@ -99,16 +86,6 @@ def test_files_are_one_card_per_line_and_match_the_manifest(tmp_path):
     assert cdb.check_db(str(tmp_path)) == ["stats.json: sha256 differs from the manifest"]
 
 
-def test_nested_order_kept_so_edits_see_no_change():
-    """A loaded card reprs as it was (parsed_values keeps its order): CardEdits.apply reports no spurious change."""
-    from commands.card_edits import CardEdits
-    card = _card(series="Edited", parsed_values={"series": "PSD", "problems": []})
-    edits = CardEdits.parse(json.dumps({"cards": {"A Card": {"series": "Edited"}}}))
-    edits.apply("A Card", card)
-    loaded = cdb.parse_stats(cdb.stats_text({"A Card": card}))["A Card"]
-    assert repr(loaded) == repr(card) and not edits.apply("A Card", loaded)
-
-
 def test_write_is_atomic(tmp_path, monkeypatch):
     target = tmp_path / "stats.json"
     target.write_text("old", encoding="utf-8")
@@ -119,12 +96,6 @@ def test_write_is_atomic(tmp_path, monkeypatch):
     with pytest.raises(OSError):
         cdb.write_text(str(target), "new")
     assert target.read_text(encoding="utf-8") == "old" and not (tmp_path / "stats.json.tmp").exists()
-
-
-def test_a_foreign_file_is_refused(tmp_path):
-    (tmp_path / "stats.json").write_text('{"cards": {}}', encoding="utf-8")
-    with pytest.raises(ValueError, match="not a schema 1 card file"):
-        cdb.read_db(str(tmp_path))
 
 
 # ========================

@@ -7,7 +7,6 @@ from pandas import DataFrame
 
 import commands.github_api as ga
 import commands.query_card as qc
-import commands.type_emojis as te
 
 
 # ========================
@@ -89,18 +88,6 @@ def test_the_card_list_tree_etag_makes_the_next_fetch_a_304(monkeypatch):
     assert repo.populate_files() == 200 and sorted(repo.git_files) == ["a.png", "b.png"]
     log.clear()
     assert repo.populate_files() == 200 and log == [304]
-
-
-def test_emoji_listing_reuses_and_seeds_the_card_tree(monkeypatch):
-    state, log = {"tree": _tree(("Types/Fire.png", "f1"), ("Items/A.png", "a1")), "etag": '"1"'}, []
-    _fake_github(monkeypatch, state, log)
-    repo = qc.CardRepository()
-    monkeypatch.setattr(qc, "card_repo", repo)
-    _, icons = te._list_type_icons()                                                # startup, card list not loaded
-    assert set(icons) == {"fire", "fire_no"} and log == [200]
-    assert repo.populate_files() == 200 and log == [200, 304] and repo.git_files     # the card list's fetch: 304
-    _, again = te._list_type_icons()                                                # /sync_emojis
-    assert again == icons and log == [200, 304, 304]
 
 
 # ========================

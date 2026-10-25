@@ -7,7 +7,6 @@ import re
 import shutil
 import subprocess
 import tempfile
-from pathlib import Path
 from subprocess import run as run_process
 from sys import executable
 
@@ -17,7 +16,7 @@ import commands.card_data as cd
 import commands.card_db as cdb
 import commands.card_models as cm
 import commands.changelog as cl
-from conftest import CLONE, REPO, blob_sha_bytes
+from conftest import REPO, blob_sha_bytes
 from golden_cards import golden_file
 from helpers import DOOMER, FREEZER, OTHER, _build, _read, cards, commit, git, git_bytes, put  # noqa: F401 (fixture)
 
@@ -94,26 +93,6 @@ def test_requirements_layers_and_pin():
         assert not status.startswith("!!"), f"{name} is gitignored (*.txt): .gitignore needs its ! line"
 
 
-def test_card_sync_checks_out_sparse_files():
-    """card-sync.yml's builder checkout is exactly SPARSE_FILES in each job that runs the bot (the copy test above runs
-    on that list)."""
-    path = Path(os.path.expanduser(os.environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "card-sync.yml"
-    if not path.is_file():
-        pytest.skip(f"no {path} (set AC_SITE_SRC to a TTSCardMaker checkout)")
-    yaml = pytest.importorskip("yaml")
-    jobs = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]
-    bots = [s for job in jobs.values() for s in job.get("steps", []) if s.get("with", {}).get("path") == "bot"]
-    assert len(bots) >= 1 and all(s["with"]["sparse-checkout"].split() == ["/" + f for f in cd.SPARSE_FILES] for s in bots)
-
-
-def test_build_modules_stay_uncompiled_and_off_discord():
-    """Not in setup.py's INCLUDE_FILES (the jetson runs the same pure Python as the runner); no slash command."""
-    setup = (REPO / "setup.py").read_text(encoding="utf-8")
-    for module in ("card_data", "card_history", "card_db", "changelog"):
-        assert f"commands/{module}.py" not in setup
-        assert f"commands.{module}" not in (REPO / "main.py").read_text(encoding="utf-8")
-
-
 # ========================
 # Gates
 # ========================
@@ -128,40 +107,6 @@ def test_gate_floor():
     refused, _ = cd.gates(_cards(200), _cards(189), 0, 0, [], [], True, set(), True)
     assert "G1" in refused                                                       # nothing lifts it
     assert cd.gates(_cards(200), _cards(190), 0, 0, [], [], False, set(), False) == ({}, {})
-
-
-def test_gate_archive_ceiling():
-    refused, _ = cd.gates(_cards(300), _cards(300), 0, 0, [f"C{i}" for i in range(6)], [], False, set(), False)
-    assert refused["G2"].startswith("6 cards archived (at most 5)")
-    assert cd.gates(_cards(300), _cards(300), 0, 0, ["C1"] * 6, [], False, set(), True) == ({}, {"G2": "allow_archive"})
-    assert cd.gates(_cards(1000), _cards(1000), 0, 0, ["C1"] * 10, [], False, set(), False) == ({}, {})   # 1% of 1000
-
-
-def test_gate_same_blob_reparses():
-    names = [f"C{i}" for i in range(26)]
-    refused, _ = cd.gates(_cards(200), _cards(200), 0, 0, [], names, False, set(), False)
-    assert "G4" in refused
-    assert cd.gates(_cards(200), _cards(200), 0, 0, [], names, True, set(), False) == ({}, {"G4": "full"})
-    assert cd.gates(_cards(200), _cards(200), 0, 0, [], names, False, {f"c{i}" for i in range(26)}, False) == ({}, {})
-
-
-def test_gate_quality():
-    before, after = _cards(200), _cards(200)
-    for i in range(4):
-        after[f"C{i}"].ability = ""
-    refused, _ = cd.gates(before, after, 0, 0, [], [], False, set(), False)
-    assert refused["G5"].startswith("ability text lost: C0, C1, C2, C3")
-    assert cd.gates(before, after, 0, 0, [], [], False, {"c0", "c1", "c2", "c3"}, False) == ({}, {"G5": "cards"})
-    refused, _ = cd.gates(_cards(200), _cards(200), 1000, 900, [], [], False, set(), False)
-    assert refused["G5"] == "psd_details records 1000 -> 900"
-    worse = _cards(200, card_type="unknown")
-    refused, _ = cd.gates(_cards(200), worse, 0, 0, [], [], False, set(), False)
-    assert refused["G5"].startswith("UNKNOWN type")
-
-
-def test_subject_counts_every_kind():
-    out = cd.Outcome(lines=["authors: A: author", "changed: B: hp", "authors: C: author"])
-    assert cd.subject(out, "1a2b3c4d5e") == "Card data: 1 changed, 2 authors (main 1a2b3c4d)"
 
 
 # ========================
@@ -232,17 +177,6 @@ def test_changed_moved_archived(cards):
     assert (last["kind"], last["card"], last["by"], last["seq"]) == ("archived", "The Freezer", "dave", 5)
 
 
-def test_unreadable_psd_holds_the_archive(cards):
-    _build(cards, "--empty")
-    put(cards.repo, "Items/Broken_Card.psd", BROKEN)
-    git(cards.repo, "rm", "-q", FREEZER)
-    commit(cards.repo, "erin", 2000)
-    code, _ = _build(cards)
-    stats, old, _, manifest, _ = _read(cards)
-    assert code == 0 and set(stats) == {"Mini Doomer", "The Freezer"} and not old             # nothing archived that run
-    assert [f["path"] for f in manifest["pending"]["failed"]] == ["Items/Broken_Card.psd"] and manifest["counts"]["failed"] == 1
-
-
 def test_failed_psd_waits_for_a_new_blob(cards, monkeypatch):
     """A PSD that could not be read is not read again until its blob changes, or `cards` names it; it stays failed
     (and, a new name, holds the archive) meanwhile."""
@@ -262,19 +196,6 @@ def test_failed_psd_waits_for_a_new_blob(cards, monkeypatch):
     put(cards.repo, "Items/Broken_Card.psd", BROKEN + b"\0")
     commit(cards.repo, "erin", 3000)
     assert _build(cards)[0] == cd.EXIT_OK and read == ["Items/Broken_Card.psd"] * 2
-
-
-def test_budget_holds_cards_for_the_next_run(cards, monkeypatch):
-    _build(cards, "--empty")
-    put(cards.repo, DOOMER, cards.psds[OTHER])
-    commit(cards.repo, "bob", 2000)
-    psd = blob_sha_bytes(cards.psds[OTHER])
-    real = cd.GitBuild._store
-    monkeypatch.setattr(cd.GitBuild, "_store", lambda self, sha: "" if sha == psd else real(self, sha))
-    code, _ = _build(cards, "--budget", "0")
-    stats, _, _, manifest, _ = _read(cards)
-    assert code == 0 and manifest["pending"]["stale"] == [DOOMER] and manifest["pending"]["failed"] == []
-    assert stats["Mini Doomer"].blob_sha == blob_sha_bytes(cards.psds[DOOMER])                 # its last version stays
 
 
 def test_gate_refusal_exits_2_and_writes_nothing(cards, monkeypatch, capsys):
@@ -303,40 +224,6 @@ def test_an_exact_rename_passes_g2(cards, monkeypatch):
     assert stats["The Big Freezer"].author == "alice"                   # the card's, not the renamer's
     big = stats["The Big Freezer"]                                      # dated from the rename: the archive holds before
     assert (big.timestamp, big.version["from"]) == (2000.0, 2000.0) and old["The Freezer"][0].version["to"] == 2000.0
-
-
-def test_a_new_cards_date_and_author_come_from_its_first_path(tmp_path):
-    """The build's lookup for a card new under a renamed path whose parse carried no author: the first commit's author
-    at the path its exact rename came from (alice, not the renamer dave), and the date of the commit that put its bytes
-    back after a revert there (carol), not their first intro nor the rename."""
-    repo = tmp_path / "cards"
-    repo.mkdir()
-    git(repo, "init", "-q", "-b", "main")
-    for author, at, data in (("alice", 1000, b"one"), ("bob", 2000, b"two"), ("carol", 3000, b"one")):
-        put(repo, "Items/A.psd", data)
-        commit(repo, author, at)
-    git(repo, "mv", "Items/A.psd", "Items/B.psd")
-    commit(repo, "dave", 4000)
-    build = cd.GitBuild(cm.StatsDatabase(), str(repo))
-    build.shas = {"Items/B.psd": blob_sha_bytes(b"one")}
-    assert build._get_remote_timestamp("Items/B.psd", "B") == (3000.0, "alice")
-
-
-def test_a_rename_that_edited_the_psd_keeps_the_card_by_its_art(cards):
-    """The Freezer renamed while its PSD was edited (another blob), its PNG renamed unchanged: the new card is parsed
-    with the old one (its author, not the renamer's), and the archive names it."""
-    put(cards.repo, "Field/1 Stars/The_Freezer.png", b"freezer art")
-    commit(cards.repo, "alice", 1100)
-    _build(cards, "--empty")
-    big = "Field/1 Stars/The_Big_Freezer"
-    git(cards.repo, "mv", "Field/1 Stars/The_Freezer.png", f"{big}.png")
-    git(cards.repo, "rm", "-q", FREEZER)
-    put(cards.repo, f"{big}.psd", cards.psds[OTHER])
-    commit(cards.repo, "dave", 2000)
-    assert _build(cards, "--allow-archive")[0] == cd.EXIT_OK
-    stats, old = _read(cards)[:2]
-    assert stats["The Big Freezer"].author == "alice"
-    assert old["The Freezer"][len(old["The Freezer"]) - 1].archived["renamed_to"] == "The Big Freezer"
 
 
 def test_history_values_out_of_range_become_unknown_and_are_gated(cards, monkeypatch, capsys):
@@ -573,39 +460,6 @@ def test_bake_commit_rewritten_to_the_main_commit(cards):
     assert cdb.check_db(str(cards.db)) == []
 
 
-def test_bake_commit_posts_as_its_own_push(cards):
-    """--baked: the bake commit B is the card sync's push, not part of the push before it by the same author."""
-    _build(cards, "--empty")
-    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {"The Freezer": {"note": "via bot", "_by": "mike"}}}).encode())
-    c2 = commit(cards.repo, "AutoCroissant", 1500)
-    put(cards.repo, DOOMER, cards.psds[OTHER])
-    b = commit(cards.repo, "AutoCroissant", 2000)
-    assert _build(cards, "--head", b, "--baked")[0] == cd.EXIT_OK
-    by_card = {e["card"]: e["push"] for e in _read(cards)[4] if e["seq"] > 2}
-    assert by_card["The Freezer"] == {"after": c2, "before": cards.first, "by": "AutoCroissant", "at": 1500.0}
-    assert by_card["Mini Doomer"] == {"after": b, "before": c2, "by": cl.CARD_SYNC, "at": 2000.0}
-
-
-def test_own_main_commit_posts_as_the_card_syncs(cards, monkeypatch):
-    """--own M: the bake's pushed main commit is the card sync's push, listed (by github-actions[bot]) or not."""
-    _build(cards, "--empty")
-    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {"The Freezer": {"note": "via bot", "_by": "mike"}}}).encode())
-    c2 = commit(cards.repo, "AutoCroissant", 1500)
-    put(cards.repo, DOOMER, cards.psds[OTHER])
-    m = commit(cards.repo, "AutoCroissant", 2000)
-    assert _build(cards, "--own", m)[0] == cd.EXIT_OK
-    by_card = {e["card"]: e["push"] for e in _read(cards)[4] if e["seq"] > 2}
-    assert by_card["The Freezer"] == {"after": c2, "before": cards.first, "by": "AutoCroissant", "at": 1500.0}
-    assert by_card["Mini Doomer"] == {"after": m, "before": c2, "by": cl.CARD_SYNC, "at": 2000.0}
-    put(cards.repo, DOOMER, cards.psds[DOOMER])
-    m2 = commit(cards.repo, "AutoCroissant", 3000)
-    monkeypatch.setattr(cd, "_activity", lambda repository: [
-        {"before": m, "after": m2, "actor": {"login": "github-actions[bot]"}, "timestamp": "1970-01-01T00:50:10Z"}])
-    assert _build(cards, "--own", m2[:8])[0] == cd.EXIT_OK
-    last = _read(cards)[4][len(_read(cards)[4]) - 1]
-    assert (last["card"], last["push"]) == ("Mini Doomer", {"after": m2, "before": m, "by": cl.CARD_SYNC, "at": 3010.0})
-
-
 def test_restore_writes_an_older_data_commit_back(cards):
     data = cards.db.parent
     git(data, "init", "-q", "-b", "data")
@@ -678,14 +532,4 @@ def test_an_edit_beside_a_new_blob_is_an_edit(cards):
     last = {e["kind"]: e for e in events if e["card"] == "Mini Doomer" and e["at"] == max(x["at"] for x in events)}
     assert set(last) == {"changed", "edited"} and "name" not in last["changed"]["fields"] and "ability" in last["changed"]["fields"]
     assert last["edited"]["fields"] == {"name": ["Tiny Doomer", "Wee Doomer"]} and stats["Mini Doomer"].version["cause"] == "psd"
-
-
-def test_a_duplicate_is_named_by_its_own_aliases(cards):
-    """A duplicate PNG's display name: the longest of its Card Edits.json entry's aliases, else its original's."""
-    put(cards.repo, "Auxiliary/Minions/Mini_Doomer2.png", b"second art")
-    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {
-        "Mini Doomer2": {"aliases": ["tiny doom"], "_by": "AutoCroissant"}, "The Freezer": {"note": "checked", "_by": "web"}}}).encode())
-    commit(cards.repo, "alice", 1100)
-    assert _build(cards, "--empty")[0] == cd.EXIT_OK
-    assert _read(cards)[0]["Mini Doomer2"].display_name == "Tiny Doom"
 

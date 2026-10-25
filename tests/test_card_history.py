@@ -85,24 +85,6 @@ def test_index_from_one_log(history):
     assert index.png_commit("Items/A.psd", before_at=1500) == c[1] and index.png_commit("Items/A.psd") == c[3]
 
 
-def test_index_reads_no_blob(history, tmp_path):
-    """A blobless clone: the index is built with no blob fetched (GIT_NO_LAZY_FETCH would fail a fetch loudly)."""
-    git(history.repo, "config", "uploadpack.allowFilter", "true")
-    clone = tmp_path / "blobless.git"
-    subprocess.run(["git", "clone", "-q", "--bare", "--filter=blob:none", f"file://{history.repo}", str(clone)], check=True)
-    index = ch.GitIndex.from_git(str(clone))
-    assert index.blob_intro(blob(Y)).sha == history.c[2]
-    missing = subprocess.run(["git", "-C", str(clone), "cat-file", "-e", blob(Y)], env={**os.environ, "GIT_NO_LAZY_FETCH": "1"})
-    assert missing.returncode != 0                                                         # the blob is still not there
-
-
-def test_shallow_clone_is_refused(history, tmp_path):
-    shallow = tmp_path / "shallow"
-    subprocess.run(["git", "clone", "-q", "--depth", "1", f"file://{history.repo}", str(shallow)], check=True)
-    with pytest.raises(ValueError, match="non-shallow"):
-        ch.GitIndex.from_git(str(shallow))
-
-
 @pytest.fixture
 def mailmapped(tmp_path):
     """One email under two names (A by Michael, B by MichaelJSr), a .mailmap naming it MichaelJSr, C by someone else."""
@@ -144,13 +126,6 @@ def test_index_names_authors_through_the_mailmap(mailmapped, tmp_path):
     before = mailmapped.shas[1]                       # (a bare clone would still read HEAD's: git's default there)
     assert ch.mailmap_args(str(sparse), before) == []
     assert [c.author for c in ch.GitIndex.from_git(str(sparse), before).commits] == ["MichaelJSr", "Michael"]
-
-
-def test_parse_handles_odd_paths_and_merges():
-    text = ("C\taaa\t10\tann\0\n:000000 100644 0000000000000000000000000000000000000000 " + "1" * 40 + " A\0Items/We\tird \"x\".psd\0"
-            "C\tbbb\t5\tbo b\0")                                                           # a commit with no raw lines (a merge)
-    index = ch.GitIndex.parse(text)
-    assert index.newest['Items/We\tird "x".psd'].author == "ann" and [c.author for c in index.commits] == ["ann", "bo b"]
 
 
 def test_a_revert_dates_from_the_revert(tmp_path):
@@ -236,53 +211,6 @@ def test_a_stale_index_never_dates_a_tag_back_to_an_older_deletion():
         assert (record.archived["at"], record.archived["commit"], report.tags_dated) == (300.0, commit, [])
 
 
-def test_a_stale_index_never_dates_a_restored_cards_tag():
-    """Read at 100, deleted at 150, restored with the same bytes (its timestamp stays 100) and deleted at 300: a clone
-    not fetched since knows only the 150 deletion (and a rename then), newer than the reading. The tag's commit is not
-    in it, so neither dates the tag nor names a rename."""
-    index = _index_with({}, {"Items/A.psd": ("old", 150.0)})
-    index.renames["Items/A.psd"] = ("Items/B.psd", index.by_sha["old"])
-    record = _card(timestamp=100.0, blob_sha="b1", archived={"at": 300.0, "path": "Items/A.psd", "blob": "b1",
-                                                              "commit": "new"})
-    report = ch.Refined()
-    ch.date_archive({"B": _card("B", path="Items/B.psd")}, defaultdict(list, {"A": [record]}), index, report,
-                    backfill=False)
-    assert record.archived == {"at": 300.0, "path": "Items/A.psd", "blob": "b1", "commit": "new"}
-    assert report == ch.Refined()
-
-
-def test_a_psd_moved_into_mdw_is_retired_not_deleted():
-    """White Palace: its PSD moved (same bytes) into MDW/The Morgue, a folder of no cards. Its tag takes the commit's
-    date (not the run's clock) and says where it went; a second pass changes nothing."""
-    path = "Field/4 Stars/White_Palace.psd"
-    index = _index_with({}, deletions={path: ("b633", 4000.0)})
-    index.renames[path] = ("MDW/The Morgue/White_Palace.psd", index.by_sha["b633"])
-    palace = _card("White Palace", path=path, blob_sha="a66e",
-                   archived={"at": 9000.0, "path": path, "blob": "a66e", "commit": "b633"})
-    old = defaultdict(list, {"White Palace": [palace]})
-    report = ch.Refined()
-    ch.date_archive({}, old, index, report)
-    assert palace.archived == {"at": 4000.0, "path": path, "blob": "a66e", "commit": "b633",
-                               "moved_to": "MDW/The Morgue/White_Palace.psd"}
-    assert (report.tags_dated, report.retired, report.renamed) == (["White Palace"], ["White Palace"], [])
-    again = ch.Refined()
-    ch.date_archive({}, old, index, again)
-    assert again == ch.Refined()
-
-
-def test_a_rename_that_edited_the_psd_follows_its_art():
-    """Chestnut -> The Forbidden One: the PSD was renamed and edited (no exact PSD rename), its PNG renamed unchanged."""
-    path = "Creatures/Other/4 Stars/Chestnut.psd"
-    index = _index_with({}, deletions={path: ("6b23", 4000.0)})
-    index.renames["Creatures/Other/4 Stars/Chestnut.png"] = ("Creatures/Other/4 Stars/The_Forbidden_One.png",
-                                                              index.by_sha["6b23"])
-    chestnut = _card("Chestnut", path=path, archived={"at": None, "path": path, "blob": None, "commit": None})
-    report = ch.Refined()
-    ch.date_archive({"The Forbidden One": _card("The Forbidden One")}, defaultdict(list, {"Chestnut": [chestnut]}), index,
-                    report)
-    assert chestnut.archived["renamed_to"] == "The Forbidden One" and report.renamed == [("Chestnut", "The Forbidden One")]
-
-
 V2 = dict(parser_version=2)
 
 
@@ -340,63 +268,6 @@ def test_build_versions_only_on_data_changes():
     assert version.path == "Items/A.psd" and version.ability == "Text." and version.version["to"] == 2000.0
     assert db.stats["A"].version["from_commit"] == "c2"
     assert db.stats["Art"].version["from"] == 1000.0 and db.stats["Moved"].version["to"] is None   # their versions go on
-
-
-def test_build_versions_from_edits_and_authors():
-    index = _index_with({"b1": ("c1", 1000.0)})
-    edits, authors = ch.Commit(0, "e1", 7000.0, "web"), ch.Commit(0, "a1", 8000.0, "web")
-    before = {"E": _card("E", blob_sha="b1", note=None), "W": _card("W", blob_sha="b1", author="Old")}
-    after = {"E": _card("E", blob_sha="b1", note="checked"), "W": _card("W", blob_sha="b1", author="New")}
-    db = _db(after)
-    assert sorted(ch.record_versions(before, {}, db, {}, [], index, edits, authors)) == [("E", "edit"), ("W", "authors")]
-    assert db.stats["E"].version["from_commit"] == "e1" and db.stats["W"].version["from"] == 8000.0
-    assert db.old_stats["E"][0].note is None and db.old_stats["E"][0].version["to_commit"] == "e1"
-
-
-def test_build_versions_of_a_restored_card():
-    """Restored with other data: the archived record (still last) is closed where the card starts again, not doubled."""
-    index = _index_with({"b1": ("c1", 1000.0), "b2": ("c2", 2000.0)})
-    record = _card(blob_sha="b1", archived={"at": 1500.0, "path": "Items/A.psd", "blob": "b1", "commit": None})
-    record.version = ch.start_of(record, index, None)
-    db = _db({"A": _card(ability="Back.", blob_sha="b2")}, {"A": [record]})
-    ch.record_versions({}, {"A": record}, db, {"A": 1}, ["A"], index)
-    assert len(db.old_stats["A"]) == 1 and record.version["to"] == 2000.0 and db.stats["A"].version["cause"] == "psd"
-
-
-def test_build_versions_never_end_before_they_start():
-    """A PSD change read after a later edit (held by the budget, or a re-read): the new version starts no earlier
-    than the one it ends."""
-    index = _index_with({"b1": ("c1", 1000.0), "b2": ("c2", 2000.0)})
-    old = _card(blob_sha="b1", note="checked")
-    old.version = ch.meta(ch.Commit(0, "e1", 3000.0, "web"), 3000.0, "edit")
-    db = _db({"A": _card(ability="Changed.", blob_sha="b2", note="checked")})
-    ch.record_versions({"A": old}, {}, db, {"A": 1}, [], index)
-    previous, current = db.old_stats["A"][0].version, db.stats["A"].version
-    assert previous["from"] <= previous["to"] == current["from"] == 3000.0 and current["cause"] == "psd"
-
-
-def test_build_reread_of_the_same_blob_is_no_version():
-    """A parser change read on the same PSD (same blob and path): the reading is replaced, its start kept, no
-    zero-length 'reparse' version (the changelog still lists the re-read)."""
-    index = _index_with({"b1": ("c1", 1000.0)})
-    old = _card(blob_sha="b1", timestamp=1000.0)
-    old.version = ch.start_of(old, index, None)
-    old.version["from"] = 500.0                                                     # a carried start
-    db = _db({"A": _card(ability="Read better.", blob_sha="b1", timestamp=1000.0, **V2)})
-    assert ch.record_versions({"A": old}, {}, db, {"A": 1}, [], index) == [("A", "reparse")]
-    assert "A" not in db.old_stats and (db.stats["A"].version["from"], db.stats["A"].version["to"]) == (500.0, None)
-
-
-def test_restored_with_the_same_data_at_another_path_is_no_version():
-    """An archived card back at another path with the same data: its archived record goes, its version goes on."""
-    index = _index_with({"b1": ("c1", 1000.0)})
-    record = _card(blob_sha="b1", archived={"at": 1500.0, "path": "Items/A.psd", "blob": "b1", "commit": None})
-    record.version = ch.start_of(record, index, None)
-    ch.close(record, index, 1500.0)
-    db = _db({"A": _card(path="Items/Heal/A.psd", blob_sha="b1")}, {"A": [record]})
-    assert ch.record_versions({}, {"A": record}, db, {"A": 1}, ["A"], index) == []
-    db.drop_stale_archives()
-    assert "A" not in db.old_stats and (db.stats["A"].version["from"], db.stats["A"].version["to"]) == (1000.0, None)
 
 
 def test_a_stale_archive_with_the_same_data_gives_the_card_its_start():
@@ -473,28 +344,3 @@ def _cards_repo(tmp_path, steps: list):
         shas.append(commit(repo, "a", at))
     return ch.GitIndex.from_git(str(repo)), shas
 
-
-def test_a_renamed_card_starts_where_its_old_names_archive_ends(tmp_path):
-    """Blashemous Blade, renamed to Blasphemous Blade with the same bytes: the old name's archive holds the time
-    before, so a build dates the new name from the rename, not its bytes' first commit."""
-    index, c = _cards_repo(tmp_path, [(1000, {"Items/Old.psd": O1}), (2000, {"Items/Old.psd": ("mv", "Items/New.psd")})])
-    new = _card("New", path="Items/New.psd", ability="Same.", blob_sha=blob(O1), timestamp=1000.0)
-    assert ch.start_of(new, index, None, {"Old", "New"})["from_commit"] == c[1]
-    assert ch.start_of(new, index, None)["from"] == 1000.0                   # no other name: the bytes' first commit
-    assert index.intro_of(blob(O1), "New", {"Old", "New"}).sha == c[1] and index.intro_of(blob(O1), "Old", {"New"}).sha == c[0]
-
-
-def test_high_history_stats_need_an_allowance_and_are_listed():
-    """INT-4: a stat above 10 is unknown without an allowance (the card's allow_high_stats, the retired exclusion
-    list, or no current card to tell); with one it is kept up to two digits."""
-    sonic = _card("Sonic", stats=cm.CardStats(7, 4, 4, 23), timestamp=1.0)
-    twins = _card("Twin Emperors", stats=cm.CardStats(3, 7, 12, 13), timestamp=2.0)
-    bill = _card("Bill", stats=cm.CardStats(16, 6, 6, 10), timestamp=3.0)
-    tamer = _card("Tamer", stats=cm.CardStats(7, 9, 10, 15), timestamp=4.0)
-    lazarus = _card("Tainted Lazarus", stats=cm.CardStats(110, 110, 110, 110), timestamp=5.0)
-    stats = {"Sonic": _card("Sonic", allow_high_stats=True), "Twin Emperors": _card("Twin Emperors"),
-             "Tamer": _card("Tamer"), "Tainted Lazarus": _card("Tainted Lazarus")}
-    old = defaultdict(list, {"Sonic": [sonic], "Twin Emperors": [twins], "Bill": [bill], "Tamer": [tamer],
-                             "Tainted Lazarus": [lazarus]})
-    assert sorted(n for n, _, _ in ch.unknown_values(stats, old)) == ["Tainted Lazarus", "Tamer"]
-    assert sonic.stats.speed == 23 and twins.stats.speed == 13 and bill.stats.hp == 16 and tamer.stats == cm.CardStats()

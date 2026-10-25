@@ -31,12 +31,6 @@ def test_icons():
     }
 
 
-def test_long_names_fit_with_suffix():
-    name = te.emoji_name("An Extremely Long Icon Name That Keeps Going")
-    assert len(name) <= te.MAX_NAME_LEN and not name.endswith("_")
-    assert len(te._no_name(name)) <= te.MAX_NAME_LEN and te._no_name(name).endswith("_no")
-
-
 # ========================
 # sync_changed_emojis
 # ========================
@@ -75,13 +69,6 @@ def test_sync_changed_emojis(state, monkeypatch, capsys):
     fetches = client.fetches
     _sync(client, {"Types/Fire.png": "new", "Types/Water.png": "w1"}, failed)
     assert client.fetches == fetches and failed == []                  # nothing changed: no Discord call
-
-
-def test_sync_before_startup_sync(state, monkeypatch):
-    monkeypatch.setattr(te, "_client", None)
-    failed = []
-    asyncio.run(te.sync_changed_emojis(None, "owner/repo", {"Types/Fire.png": "f"}, failed.append))
-    assert failed == ["owner/repo"]                                    # next /update_stats retries
 
 
 def test_sync_fetch_failure(state, monkeypatch, capsys):

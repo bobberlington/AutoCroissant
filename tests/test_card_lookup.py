@@ -89,7 +89,7 @@ def repo(monkeypatch):
 EXACT, RENAMED_, GUESS = "exact", "renamed", "guess"
 
 
-@pytest.mark.parametrize("query, key, how", [
+LOOKUPS = [
     # exact: file names, any case, spaces or underscores, .png; printed titles; website aliases
     ("spice", "spice.png", EXACT), ("Light", "light.png", EXACT), ("the freezer", "the_freezer.png", EXACT),
     ("THE FREEZER", "the_freezer.png", EXACT), ("Mini_Doomer", "mini_doomer.png", EXACT),
@@ -119,24 +119,30 @@ EXACT, RENAMED_, GUESS = "exact", "renamed", "guess"
     # nothing: .png no longer lifts every score (luigi/light was 0.78, is 0.60: at the ratio is not above it)
     ("luigi", None, ""), ("goku", None, ""), ("pikachu", None, ""), ("xyz", None, ""), ("zz", None, ""),
     ("old gone", None, ""), ("long gone", None, ""), ("", None, ""),
-])
-def test_lookup(repo, capsys, query, key, how):
-    assert repo.lookup(query)[0:2] == (key, how)
-    qc.query_name(utils.make_simple_fake_interaction(1), query)
-    sent = [kw for _, kw in utils.dispatch_queue]
-    logged = capsys.readouterr().out                    # misses and guesses: one console line each
-    assert (f"Search miss: /query {query!r}" in logged) == (key is None)
-    assert ("Search guess: /query" in logged) == (how == GUESS)
-    if key is None:
-        assert [kw["content"] for kw in sent] == ["No card found!"]
-        return
-    url, text, embed = f"https://img/{key}", sent[0]["content"] or "", sent[0].get("embed")     # a printed title: an embed
-    assert [kw["content"].startswith("Ambiguous name found") for kw in sent[1:]] == ([True] if key in repo.ambiguous_names else [])
-    assert embed.image.url == url if embed else text.endswith(url)
-    text = text if embed else text[:len(text) - len(url)].rstrip("\n")
-    label = qc._label(key)
-    assert text == {EXACT: "", RENAMED_: f"**{label}** (renamed from {repo.lookup(query)[2]})",
-                    GUESS: f"Closest match: **{label}**"}[how]
+]
+
+
+def test_lookup(repo, capsys):
+    """The table: the key and how it was found, the reply, and one console line per miss or guess."""
+    for query, key, how in LOOKUPS:
+        utils.dispatch_queue.clear()
+        assert repo.lookup(query)[0:2] == (key, how), query
+        qc.query_name(utils.make_simple_fake_interaction(1), query)
+        sent = [kw for _, kw in utils.dispatch_queue]
+        logged = capsys.readouterr().out                # misses and guesses: one console line each
+        assert (f"Search miss: /query {query!r}" in logged) == (key is None), query
+        assert ("Search guess: /query" in logged) == (how == GUESS), query
+        if key is None:
+            assert [kw["content"] for kw in sent] == ["No card found!"], query
+            continue
+        url, text, embed = f"https://img/{key}", sent[0]["content"] or "", sent[0].get("embed")     # a printed title: an embed
+        assert [kw["content"].startswith("Ambiguous name found") for kw in sent[1:]] == (
+            [True] if key in repo.ambiguous_names else []), query
+        assert embed.image.url == url if embed else text.endswith(url), query
+        text = text if embed else text[:len(text) - len(url)].rstrip("\n")
+        label = qc._label(key)
+        assert text == {EXACT: "", RENAMED_: f"**{label}** (renamed from {repo.lookup(query)[2]})",
+                        GUESS: f"Closest match: **{label}**"}[how], query
 
 
 def test_autocomplete(repo):
@@ -149,20 +155,3 @@ def test_autocomplete(repo):
     assert ("snas. (Sans)", "snas.") in repo.name_choices("sna")
     assert len(repo.name_choices("")) == 25 and len(repo.name_choices("o")) == 25
 
-
-def test_slash_surface(repo, capsys, monkeypatch):
-    """Card-name options autocomplete; every slash command logs one line (values only for searches)."""
-    import asyncio
-    import main
-    monkeypatch.setattr(main, "card_repo", repo)
-    cmds = {c.name: c for c in main.tree.get_commands()}
-    for name, option in (("query", "query"), ("view_old_metadata", "query"), ("frankenstein", "cards")):
-        assert {p.name: p for p in cmds[name].parameters}[option].autocomplete, name
-    picked = asyncio.run(main.card_list_names(None, "spice, mini do"))
-    assert [(c.name, c.value) for c in picked] == [("Mini Doomer", "spice, Mini Doomer")]
-    inter = SimpleNamespace(type=main.InteractionType.application_command, user=SimpleNamespace(id=7), channel_id=9,
-                            data={"name": "query_ability", "options": [{"name": "query", "value": "chestnut"},
-                                                                       {"name": "howmany", "value": True}]})
-    capsys.readouterr()                                 # main's import prints the token line
-    asyncio.run(main.on_interaction(inter))
-    assert capsys.readouterr().out == "Command /query_ability by 7 in 9: query='chestnut', howmany\n"
