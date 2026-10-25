@@ -242,3 +242,37 @@ process.stdout.write(JSON.stringify([T.renamedPins(p, {{ key: "series", from: "m
     assert out[0] == [{"k": "series", "v": "Mario Bros"}, {"k": "subseries", "v": "Paper", "s": "Mario Bros"},
                       {"k": "subseries", "v": "Paper", "s": "Kirby"}, {"k": "author", "v": "Bob"}]     # merged: one box
     assert out[1][1] == {"k": "subseries", "v": "Paper Mario", "s": "Mario"} and out[1][3]["v"] == "Paper"
+
+
+@needs_node
+@needs_rename
+def test_an_author_rename_moves_the_people_lines(tmp_path):
+    """Every [people] line showing the author moves, "old = new" joins when the name has none, cards they carry need no
+    edit but preview the new name; a case fix works; Discard all drops only the drafted fields the ops cover."""
+    script = EDITOR.replace("EDIT_URI", json.dumps(EDIT_JS.as_uri())).replace(
+        'people: [], peopleMap: {}', 'people: ["Chestnut", "Pip"], peopleMap: { Chestnut: "Chestnut", JasonB: "Chestnut" }').replace(
+        "const all = [", 'const all = [card("a", { author: "Chestnut" }), card("b", { author: "Chestnut" }), card("p", { author: "Pip" }), ')
+    out = node(tmp_path, script + """
+globalThis.confirm = () => true;
+const fix = ed.renamePlan("author", "Chestnut", "chestnut");
+ed.drafts.put("a", { author: "x", ability: "half typed" });
+const p = ed.renameAll("author", "Chestnut", "Chestnut Bros"), q = ed.renameAll("author", "Pip", "Pippa");
+const stage = JSON.parse(localStorage.getItem("edit-stage")), shown = S.byId.get("a").author;
+ed.actions["edit-discard-all"]();
+process.stdout.write(JSON.stringify({ fix, p, q, people: stage.people, ops: Object.keys(stage.cards), shown, draft: ed.drafts.get("a")?.fields }));""")
+    assert out["fix"]["cards"] == 2 and out["fix"]["people"] == {"Chestnut": "chestnut", "JasonB": "chestnut"}
+    assert out["p"]["change"] == [] and out["p"]["cards"] == 2 and out["shown"] == "Chestnut Bros"
+    assert out["people"] == {"Chestnut": "Chestnut Bros", "JasonB": "Chestnut Bros", "Pip": "Pippa"} and out["ops"] == []
+    assert out["draft"] == {"author": "x", "ability": "half typed"}      # no op on a: its draft stays
+
+
+@needs_node
+@needs_rename
+def test_a_filter_follows_a_rename_in_its_series(tmp_path):
+    out = node(tmp_path, """
+const P = s => new URLSearchParams(s), d = { key: "subseries", from: "paper", to: "Paper Mario", series: "Mario" };
+process.stdout.write(JSON.stringify([E.renamedFilter(P("series=Kirby&subseries=Paper"), d), E.renamedFilter(P("series=Mario&subseries=Paper"), d),
+  E.renamedFilter(P("subseries=Paper"), d, true), E.renamedFilter(P("subseries=Paper"), d), E.renamedFilter(P("sub=heal,food"), { key: "subtype", from: "heal", to: "support" }),
+  [...E.peopleMoves({ Michael: "MichaelJSr", MichaelJSr: "MichaelJSr" }, { Michael: "Mike" })]]));""", E=EDIT_JS)
+    assert out[0] is None and out[1] == {"subseries": ["Paper Mario"]} and out[2] is None and out[3] == {"subseries": ["Paper Mario"]}
+    assert out[4] == {"sub": ["support", "food"]} and out[5] == []     # a line others still show: unseen until built
