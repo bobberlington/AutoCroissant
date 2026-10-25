@@ -227,7 +227,11 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       skipped, 0 failed. Review fixes 4 (EDIT_PIPELINE_DESIGN section 7): a deleted line or word cut whole (the next
       line kept the deleted one's colour; on main too), an Ability's new line on the design below told in the notes
       (`ink_beyond`), tab stops refused, a glow on a stale fork a runner error (no `font` verdict): 1766 passed, 13
-      skipped, 0 failed.
+      skipped, 0 failed. Review fixes 5 (glow disc on the stars, whole redraws measured): 1769 passed. Phase 6 (owner
+      ruling 2026-10-24 ~18:30, origin/main 4eafa0f merged; EDIT_PIPELINE_DESIGN section 7): content problems bake,
+      flagged in the notes, typed icons unstretched, stale Txt2 stories repaired; census ok 2,401 -> 5,069 of 5,642, no
+      new refusals: 1787 passed, 13 skipped, 1 known timing flake. Website still to show a baked verdict's notes
+      (ttscardmaker-companion section 2).
       Suite on the fork venv after round 3: 1544 passed, 12 skipped, 1 failed
       (`test_card_check.py::test_clone_readers_match_the_traversers`: a Finder `.DS_Store` in the clone's `Types/`;
       origin/main 7ca804e, merged in after, fixes it: `test_card_check.py` 24 passed). Land it after a clean review and deploy (psd_parser is a Cython module: pull, rebuild, restart; first reinstall
@@ -249,7 +253,7 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       status word ("2T Smoldering" -> "2T Burning" on Fire Staff). Website track (TTSCardMaker, not edited here): text.js
       `icon()` still previews "[fire:]" (a colon with an empty variant) as the fire icon, and `norm()` forgives "[Fire.]"
       or "[warp  star]"; the bake refuses them (`font`), so the editor should treat them as text like the font does.
-      **Open owner items (BUG 2):** a timing badge typed in a title (refuses; owner to rule). `:glow`/`:darkglow` bake
+      **Open owner items (BUG 2):** a timing badge typed in a title prints as plain words, flagged (phase 6). `:glow`/`:darkglow` bake
       since the pin `cards-20261024b` (EDIT_PIPELINE_DESIGN section 7, glow tokens). The 2026-10-24 rulings (title tokens in the icon font, a typed
       `:sticker`/`:tint` in its kind's colour, new badges at the commonest size) are implemented (37dd00e, 73ceff3). Not this branch's: inserted text takes the nearest coloured word's fill (Binge Eater's ", 1T"
       olive after "SPD"); `normalize_ability`'s quote and space-before-punctuation stripping can drop characters on any

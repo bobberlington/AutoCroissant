@@ -851,6 +851,26 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `test_a_glow_disc_beside_a_layer_composited_with_it_counts`, `test_a_text_redrawn_whole_is_measured`; Gasoline,
   Salt and Nightmare King Grimm in `test_deleting_a_line_keeps_the_next_lines_own_style` (it fails without
   `deletion_start` or the word-bound rule).
+  **Phase 6, content flags (owner ruling 2026-10-24 ~18:30, `scratch/bug2-p8/`):** "In general I do not want to
+  refuse bakes": the editor previewed the edit, so a content problem bakes best-effort and is told in `Edit.notes` as
+  `<code>: <field>: <why>` (bake report, commit line, baked verdict's reason, preview notes): overflow (off the canvas,
+  onto the stars or icons, more title lines or lower, under a layer above or over a bar, past the design below for a
+  title too: `ink_beyond`, past a texture clipped to it: `ink_past_clip`), typed badges and tokens (tints, letters,
+  image-icon cards, fit and height, see-through, unshaped, bare: `gate_fx` returns notes), font stand-ins
+  (`font_map`: FontMap policy "substitute"; a whole redraw in a stand-in still hits the 25% floor), saved pixels in
+  another font, new validator problems. An FX layer whose style can't follow (follow_fx's refusals, a phrase the ability
+  lacks, words now in a badge) is deleted, told, its words plain (styled status words get the chart's layer from
+  `new_fx`, which skips, told, a word it can't name); an overlay word layer the chart has no style for is hidden, told;
+  a typed copy in a phrase of several colours takes the first; a badge typed in a title prints as plain words. A stale
+  Txt2 story is synced (`txt2_repair.sync_stories`) and the stories allowed in `gate_stories`, told. Typed badges and
+  tokens are unstretched (`unstretch`: HorizontalScale so the aspect factor is 1; Monster Meat's [fire] 2.13 -> 0.81,
+  the designers' 0.81). Still refused: waits, impossible cases, the bake's integrity gates, and what it can't edit yet
+  (split/several titles, non-template rows, tab stops, stars/types layouts, FX layers that are no pixel layers, two FX
+  layers one name). Census (`census.py`, 7 edits x 812 cards, in memory): ok 2,401 -> 5,069 of 5,642; 2,668 former
+  refusals bake flagged, 573 still refused (all `unsupported-card` layouts), none newly refused, no errors; 10 full
+  dry bakes of former refusals checked by crop (`crops/`). 46 refusal tests turned into flag tests, 2 deleted, 1 new
+  (`test_typed_icons_are_unstretched`). Full suite: 1787 passed, 13 skipped, 1 known timing flake
+  (`test_a_stat_edit_bakes_the_bakes_pixels`, passes alone).
 
 ## 8. Runner
 
@@ -1004,6 +1024,9 @@ leaves without a badge FX layer (`(1cd): under the Ability's look (its Color Ove
 styled digit means the render missed the bar (since 2026-10-23: past the floor), no longer that the digit is styled, and `styled-word` means only that this
 psd-tools cannot cut glyph pixels or make or refill a pixel layer (the fork's text engine is missing), or that an FX layer's
 words have no pixels: a styled word gets its FX layer.
+Since 2026-10-24 (owner, phase 6 in section 7) the content codes no longer refuse what an edit's text, badges, styled
+words or fonts look like: `overflow`, `font` (but no stand-in at all), `styled-word` (but no glyph cutting) and the
+content `unsupported-card` reasons are notes on a baked card; `reparse` keeps only the read-back checks.
 Per card all-or-nothing, but for stars and types (2026-10-23): their refusal is the field's, the card's other fields
 bake and the commit line says `stars not baked: <why>`; nothing bakeable = exit 0 with a one-line
 report; any exception inside a card's steps refuses that card as `error` with the traceback in the report; a crash outside
