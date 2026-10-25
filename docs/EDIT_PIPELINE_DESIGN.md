@@ -1204,8 +1204,8 @@ clipped to `MAX_CARD` (200). The repo is public, so a preview is too: the dispat
 result on the branch; the site says so before an editor's first press.
 
 **Output** (`--out`; the publish job then publishes it): `result.json` always, `preview.png` (the PNG the bake would
-commit, losslessly recompressed by `png_export.recompress` where pyoxipng is installed; the workflow leaves
-requirements-cards.txt's pyoxipng out (~4 s a preview for nothing) and does not publish the PNG, `--png` publishes it)
+commit, losslessly recompressed by `png_export.recompress` where oxipng is installed; the workflow leaves
+the oxipng CLI out (~4 s a preview for nothing) and does not publish the PNG, `--png` publishes it)
 and `preview.webp` (720 px wide, WebP quality 75, method 4) when an image was rendered, with `before.webp`: the card's
 official PNG made the same way, for the site's Diff (one codec on both sides, so unchanged pixels match; the site's
 thumbs are AVIF since 2026-10-24).

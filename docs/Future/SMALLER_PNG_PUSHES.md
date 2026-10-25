@@ -1,6 +1,7 @@
 # Smaller PNG pushes
 
-**Status:** designed 2026-10-25 from the research below, rulings in; not built. Queue item 3. Research:
+**Status:** built 2026-10-25 (AutoCroissant and TTSCardMaker branches `work/png`, not landed; "Built" below). Queue
+item 3. Research:
 `~/Documents/Tools/wt/scratch/png-research/REPORT.md` (lossless options, A1-A10) and
 `~/Documents/Tools/wt/scratch/repo-size/workflow-result.json` (what grows the repo).
 
@@ -56,3 +57,31 @@ measured yet (Photoshop's exports shrink 69-71% under today's call). Existing fi
 
 The guards keep recompressing them after the push (owner, 10-23; confirmed 10-25 ~06:30): a second PNG in history
 (+0.82 MB per card) for a smaller current file.
+
+## Built (2026-10-25, branches `work/png`)
+
+- `png_export.optimize`: the CLI when `oxipng` is on PATH, else pyoxipng with the same options and one stderr note
+  (the Mac without `brew install oxipng`; `~/.venvs/ac-py314-fork` has a 9.1.1 build), else nothing; `png_export.tool()`
+  says which, and the tests' skip markers use it. Flags `-q --force -o 2 --nb --np --ng --timeout 120 --strip
+  iTXt,tEXt,zTXt,sRGB`; a result not RGB/RGBA (or the input's type) is redone with `--nc`.
+- **sRGB:** with any `--strip`, oxipng turns an iCCP holding the standard sRGB profile (every Photoshop card) into an
+  sRGB chunk unless sRGB is itself stripped; the bake copies `icc_profile` from the old PNG, so the profile would be
+  lost on the next bake. So `sRGB` is in the strip list when the file has no sRGB chunk (none of the 830 has one); a
+  file with one keeps it, and same_png refuses a converted profile.
+- `same_png`: size and bit depth, RGB/RGBA interchangeable, pixels as RGBA when the colour types differ, every chunk but
+  IHDR and the three text chunks.
+- The bake: `card_bake.bake_card` recompresses each baked PNG (`_smaller`, written back to the work file, so the dry
+  run's artifacts and card-preview's preview.png are what is committed); this covers the stars-folder move's redraw.
+  Moved but unbaked PNGs keep their bytes. `png_export.py` joins `card_data.SPARSE_FILES` and card-sync.yml's list.
+- Actions: `.github/actions/cards-python` downloads `oxipng-10.2.1-x86_64-unknown-linux-musl.tar.gz` and checks sha256
+  `1813750e…ad17` (GitHub's asset digest), input `oxipng` (default true). card-preview.yml sets it false (its PNG is
+  never published; it skipped pyoxipng for the same reason); the design listed it, the conservative choice kept it out.
+  pyoxipng left requirements-cards.txt; the wheel cache's restore-keys (kept only to reuse pyoxipng's build) went too.
+- Verification (`~/Documents/Tools/wt/scratch/png-lane/`; the research's 60-card sample folder was gone, so 60 current
+  card PNGs evenly spaced over the sorted list): the CLI and pyoxipng with step 1's flags gave identical bytes 60/60.
+  Steps 1-3 dry over all 830 PNGs under Auxiliary, Creatures, Field, Items and N.M.E (708 of them 1200 wide): every
+  result decodes to the same RGBA pixels and passes same_png; 250 opaque RGBA became RGB (-12.3% on them), iCCP kept on
+  all; 1,433.8 MB -> 1,364.2 MB (-4.86%; nothing written). On the 60 sample, steps 2-3 save 3.94% over step 1. A local
+  bake of Mini Doomer (hp 5 -> 8) from its PNG as committed (RGBA) and from its oxipng RGB: both baked, parity bad 0%,
+  the same RGBA pixels, committed as RGB 1,567,736 bytes (PIL's default deflate: 2,034,535).
+- Left: the live TTS check of an RGB card PNG (the owner's).

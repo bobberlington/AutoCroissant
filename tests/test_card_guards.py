@@ -13,7 +13,6 @@ import shutil
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from importlib.util import find_spec
 from sys import executable
 
 import pytest
@@ -771,7 +770,7 @@ def test_land_local_commits_in_the_clone(cards, tmp_path):
 # ========================
 # Lossless recompression (owner, 2026-10-23)
 # ========================
-@pytest.mark.skipif(find_spec("oxipng") is None, reason="needs pyoxipng, as card-guards.yml installs (none on 3.14)")
+@pytest.mark.skipif(pe.tool() is None, reason="needs the oxipng CLI (as card-guards.yml installs) or pyoxipng")
 def test_pushed_pngs_are_recompressed_in_the_bot_commit(cards, tmp_path):
     """A PNG the push brought (a pair's; a numbered one pushed alone) that a lossless recompression makes more than 10%
     smaller is rewritten in the one bot commit, the same image, never told on Discord; an already small one is left;
@@ -864,8 +863,8 @@ def test_replay_of_the_stale_png_push(clone, tmp_path):
     from importlib.util import find_spec
     if find_spec("scipy") is None:
         pytest.skip("God Tamer's gradient fills need psd-tools[composite] (scipy), as the Action installs")
-    if find_spec("oxipng") is None:
-        pytest.skip("the 16 recompressions need pyoxipng, as the Action installs")
+    if pe.tool() is None:
+        pytest.skip("the 16 recompressions need the oxipng CLI (as the Action installs) or pyoxipng")
     source = cg.Source(str(clone))
     if not (source.commit("38c55bd3") and source.commit("07589cc7")):
         pytest.skip("the clone lacks the push")
@@ -999,7 +998,6 @@ def test_workflow_shape(clone):
     others = [path.parent / name for name in FORK_WORKFLOWS if name != "card-guards.yml" and (path.parent / name).is_file()]
     keys = {p.name: fork_install(p) for p in [path, *others]}                  # one pin: requirements-cards.txt's
     assert set(keys.values()) == {FORK_KEY}                                    # one entry for the six, on 3.14
-    assert "pyoxipng==" in (REPO / "requirements-cards.txt").read_text(encoding="utf-8")   # png_export's recompression
     assert "--fonts" not in steps_by_name["Check"]["run"]                     # R7 is the font check's
     names = [s.get("name") for s in job["steps"]]
     assert names.index("Start") < names.index("No push run in its window") < names.index("Check") \

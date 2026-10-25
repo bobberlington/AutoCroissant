@@ -25,9 +25,11 @@ draw those.
     changed_layers(old, new) -> (box, n)                     the layer records that really changed
     photoshop_saved(old, new) -> bool                        a new xmpMM:InstanceID and a later xmp:MetadataDate
     recompress(data, minimum, floor) -> bytes or None        the PNG losslessly smaller (oxipng, checked), or None
-    same_png(a, b) -> bool                                   the same image: header, pixels and every other chunk
+    same_png(a, b) -> bool                                   the same image: size, RGBA pixels and every chunk but text
 
-Every PNG the guards write is recompressed losslessly (owner, 2026-10-23; Photoshop's exports measured 4.8x too big).
+Every PNG the guards and the bake write is recompressed losslessly (owner, 2026-10-23; Photoshop's exports measured 4.8x
+too big): text chunks (Photoshop's XMP) stripped, a fully opaque card saved as RGB (owner, 2026-10-24;
+docs/Future/SMALLER_PNG_PUSHES.md).
 
 No Discord, network or config.
 """
@@ -39,7 +41,11 @@ from importlib import import_module
 from contextlib import nullcontext
 from io import BytesIO
 from re import search
+from shutil import which
 from struct import unpack
+from subprocess import DEVNULL, SubprocessError, run as run_process
+from sys import stderr
+from tempfile import TemporaryDirectory
 from time import process_time
 from typing import Optional
 
@@ -94,6 +100,9 @@ RECOMPRESS_MIN = 0.10                           # a pushed PNG is recompressed w
 RECOMPRESS_BYTES = 65536                        # and at least this many bytes smaller: a tiny saving is not worth a commit
 OXIPNG_LEVEL = 2                                # oxipng's default preset (4.8x on Photoshop's exports; level 4 adds 1%)
 OXIPNG_TIMEOUT = 120                            # seconds per PNG: oxipng keeps its best so far
+OXIPNG = "oxipng"                               # the CLI (10.2.1 in the Actions: cards-python); pyoxipng where it is missing
+TEXT_CHUNKS = (b"iTXt", b"tEXt", b"zTXt")       # stripped: Photoshop's XMP (owner 2026-10-24); colour chunks kept
+OXIPNG_FLAGS = ("-q", "--force", "-o", str(OXIPNG_LEVEL), "--nb", "--np", "--ng", "--timeout", str(OXIPNG_TIMEOUT))
 SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
@@ -299,12 +308,68 @@ def encode(image: Image.Image, like: Optional[Image.Image]) -> bytes:
 # Lossless recompression (owner, 2026-10-23)
 # ========================
 def _oxipng():
-    """pyoxipng, or None (imported here: the bot and the bake never need it)."""
+    """pyoxipng, or None (imported here: only where the CLI is missing)."""
     try:
         import oxipng
     except ImportError:
         return None
     return oxipng
+
+
+_warned: list = []
+
+
+def _strip(data: bytes) -> list:
+    """The chunks stripped: TEXT_CHUNKS, and sRGB when the file has none (oxipng would turn an sRGB iCCP into one)."""
+    try:
+        has_srgb = any(kind == b"sRGB" for kind, _ in _chunks(data))
+    except ValueError:
+        has_srgb = True
+    return list(TEXT_CHUNKS) + ([] if has_srgb else [b"sRGB"])
+
+
+def _cli(data: bytes, keep_colour: bool) -> Optional[bytes]:
+    """The oxipng CLI's file (OXIPNG_FLAGS), None when it fails."""
+    with TemporaryDirectory(prefix="oxipng_") as tmp:
+        src, dst = f"{tmp}/in.png", f"{tmp}/out.png"
+        with open(src, "wb") as fh:
+            fh.write(data)
+        flags = OXIPNG_FLAGS + ("--strip", b",".join(_strip(data)).decode()) + (("--nc",) if keep_colour else ())
+        try:
+            done = run_process([OXIPNG, *flags, "--out", dst, src], stdin=DEVNULL, capture_output=True,
+                               timeout=OXIPNG_TIMEOUT + 60)
+            if done.returncode != 0:
+                return None
+            with open(dst, "rb") as fh:
+                return fh.read()
+        except (OSError, SubprocessError):
+            return None
+
+
+def _py(data: bytes, keep_colour: bool) -> Optional[bytes]:
+    """pyoxipng's file with the CLI's options (the Mac without the CLI), None when it fails or is missing."""
+    oxipng = _oxipng()
+    if oxipng is None:
+        return None
+    if not _warned:
+        _warned.append(1)
+        print("png_export: no oxipng CLI on PATH, pyoxipng used (brew install oxipng)", file=stderr)
+    try:
+        return oxipng.optimize_from_memory(data, level=OXIPNG_LEVEL, bit_depth_reduction=False,
+                                           color_type_reduction=not keep_colour, palette_reduction=False,
+                                           grayscale_reduction=False, strip=oxipng.StripChunks.strip(_strip(data)),
+                                           timeout=OXIPNG_TIMEOUT)
+    except Exception:                           # PngError, or anything else oxipng raises: no recompression
+        return None
+    except BaseException as error:              # a Rust panic: pyo3's PanicException is no Exception
+        if type(error).__name__ == "PanicException":
+            return None
+        raise
+
+
+def tool() -> Optional[str]:
+    """What optimize runs: "cli", "pyoxipng" or None."""
+    return "cli" if which(OXIPNG) else "pyoxipng" if _oxipng() is not None else None
 
 
 def _chunks(data: bytes) -> list:
@@ -342,48 +407,58 @@ def _meaning(kind: bytes, payload: bytes):
     return payload
 
 
-def _pixels(data: bytes) -> tuple:
+def _pixels(data: bytes, rgba: bool = False) -> tuple:
     image = Image.open(BytesIO(data))
     image.load()
-    return image.mode, image.size, np.asarray(image)
+    return image.mode, image.size, np.asarray(image.convert("RGBA") if rgba else image)
+
+
+def _header(data: bytes) -> tuple:
+    """IHDR's (width, height, bit depth, colour type); raises ValueError when it is not one."""
+    if len(data) < 33 or data[12:16] != b"IHDR":
+        raise ValueError("no IHDR")
+    return unpack(">IIBB", data[16:26])
 
 
 def same_png(a: bytes, b: bytes) -> bool:
     """
-    Whether two PNG files are the same image: the same header (size, bit depth, colour type, interlace), the same
-    pixels decoded in the file's own mode, and every other chunk (colour, text, Exif...) the same, in the same order
-    (iCCP, zTXt and compressed iTXt by their decompressed content, _meaning); only the image data's deflate may differ.
+    Whether two PNG files are the same image: the same size and bit depth, the same pixels read as RGBA (an opaque RGBA
+    and its RGB are the same: the bake and guard 1 read both), and every other chunk (colour, Exif...) the same, in the
+    same order (iCCP, zTXt and compressed iTXt by their decompressed content, _meaning); text chunks (TEXT_CHUNKS) and
+    the image data's deflate may differ.
     """
+    def chunks(data: bytes) -> list:
+        return [(k, _meaning(k, p)) for k, p in _chunks(data) if k != b"IHDR" and k not in TEXT_CHUNKS]
+
     try:
-        if [(k, _meaning(k, p)) for k, p in _chunks(a)] != [(k, _meaning(k, p)) for k, p in _chunks(b)]:
+        (w_a, h_a, depth_a, type_a), (w_b, h_b, depth_b, type_b) = _header(a), _header(b)
+        if (w_a, h_a, depth_a) != (w_b, h_b, depth_b) or (type_a != type_b and {type_a, type_b} != {2, 6}):
             return False
-        (mode_a, size_a, pixels_a), (mode_b, size_b, pixels_b) = _pixels(a), _pixels(b)
+        if chunks(a) != chunks(b):
+            return False
+        rgba = type_a != type_b
+        (_, size_a, pixels_a), (_, size_b, pixels_b) = _pixels(a, rgba), _pixels(b, rgba)
     except (ValueError, OSError, SyntaxError, zlib.error):     # not a PNG PIL or zlib can read
         return False
-    return mode_a == mode_b and size_a == size_b and np.array_equal(pixels_a, pixels_b)
+    return size_a == size_b and np.array_equal(pixels_a, pixels_b)
 
 
 def optimize(data: bytes) -> Optional[bytes]:
     """
-    oxipng's lossless recompression of an 8-bit PNG: the colour type and bit depth kept (the bake and guard 1 read RGB
-    and RGBA only), every chunk kept. Unchecked: recompress checks it.
+    oxipng's lossless recompression of an 8-bit PNG (the CLI, else pyoxipng): text chunks stripped, the bit depth kept,
+    an opaque RGBA made RGB (any other colour type change: the file with the colour type kept). Unchecked: recompress
+    checks it.
 
     Returns:
-        The new file (maybe not smaller); None without pyoxipng, for a PNG not 8-bit, or when oxipng fails in any way
+        The new file (maybe not smaller); None without oxipng, for a PNG not 8-bit, or when oxipng fails in any way
     """
-    oxipng = _oxipng()
-    if oxipng is None or not data.startswith(SIGNATURE) or data[12:16] != b"IHDR" or len(data) < 33 or data[24] != 8:
+    if not data.startswith(SIGNATURE) or data[12:16] != b"IHDR" or len(data) < 33 or data[24] != 8:
         return None                             # 16-bit: PIL reads 8 bits of it, so same_png could not tell (cards: 8)
-    try:
-        return oxipng.optimize_from_memory(data, level=OXIPNG_LEVEL, bit_depth_reduction=False, color_type_reduction=False,
-                                           palette_reduction=False, grayscale_reduction=False,
-                                           strip=oxipng.StripChunks.none(), timeout=OXIPNG_TIMEOUT)
-    except Exception:                           # PngError, or anything else oxipng raises: no recompression
-        return None
-    except BaseException as error:              # a Rust panic: pyo3's PanicException is no Exception
-        if type(error).__name__ == "PanicException":
-            return None
-        raise
+    run = _cli if which(OXIPNG) else _py
+    out = run(data, False)
+    if out is not None and len(out) >= 33 and out[24] == 8 and (out[25] in (2, 6) or out[25] == data[25]):
+        return out
+    return run(data, True)
 
 
 def worth(before: int, after: int, minimum: float = RECOMPRESS_MIN, floor: int = RECOMPRESS_BYTES) -> bool:

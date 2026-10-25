@@ -521,11 +521,10 @@ Discord. Its branch `previews` is data, not a setting: it is rewritten by the wo
 
 The fork's tag is in one place: AutoCroissant `requirements-cards.txt`, the card code's packages
 (`psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@<tag>`: read the tag there, no doc copies it;
-fonttools, requests, `pyoxipng==9.1.1` on Linux x86_64 at any CPython 3.9+, built from its sdist on 3.14, and elsewhere
-only where it has a wheel, CPython 3.9-3.13: skipped on the Mac's and the jetson's 3.14). `requirements.txt` (the bot)
+fonttools, requests; pyoxipng left it on 2026-10-25: the Actions run the oxipng CLI, 10.2.1 by sha256, from the shared setup). `requirements.txt` (the bot)
 starts with `-r requirements-cards.txt`, `requirements-dev.txt` with `-r requirements.txt`. The five card workflows on
 Python 3.14 (six until card-edits.yml was deleted at the cutover, 2026-10-24), card-guards.yml (its check and post jobs), card-sync.yml (one venv for every stage),
-card-preview.yml (without pyoxipng: its PNG is never published), and until 2026-10-25 card-check.yml and font-check.yml
+card-preview.yml (without the oxipng CLI: its PNG is never published), and until 2026-10-25 card-check.yml and font-check.yml
 (now card-guards.yml's check job), check the file out of AutoCroissant and install it offline from wheels in the Actions cache (path
 `~/.cache/card-wheels`, key `cards-<hashFiles('bot/requirements-cards.txt')>-<OS>-<arch>-py<Python>`: one entry for all
 of them; until 2026-10-24 card-edits, card-guards and card-preview on 3.12 and card-sync's own `-py<3.14.x>-py<3.12.x>`). The

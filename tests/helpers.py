@@ -215,8 +215,8 @@ def github(monkeypatch, tmp_path, files, clone):
     return fake
 
 CARD_PACKAGES = {"psd-tools": {"psd_tools", "attr", "attrs", "numpy", "PIL", "scipy", "aggdraw", "uharfbuzz", "freetype"},
-                 "fonttools": {"fontTools"}, "requests": {"requests", "certifi", "charset_normalizer", "idna", "urllib3"},
-                 "pyoxipng": {"oxipng"}}       # requirements-cards.txt's packages: what they import (dependencies included)
+                 "fonttools": {"fontTools"}, "requests": {"requests", "certifi", "charset_normalizer", "idna", "urllib3"}}
+# requirements-cards.txt's packages: what they import (dependencies included); oxipng is the CLI (cards-python)
 
 ALLOWED_IMPORTS = set().union(*CARD_PACKAGES.values())      # what the Actions install
 
@@ -238,6 +238,8 @@ FORK_ACTION = ".github/actions/cards-python/action.yml"                 # their 
 FORK_PYTHON = "3.14"                                                    # every Action (owner, 2026-10-24)
 
 FORK_WHEELS = "~/.cache/card-wheels"
+
+OXIPNG_VERSION = "10.2.1"                                               # the CLI the Actions download (SMALLER_PNG_PUSHES.md)
 
 FORK_KEY = ("cards-${{ steps.reqs.outputs.sha }}-${{ runner.os }}-${{ runner.arch }}"
             "-py${{ steps.python.outputs.python-version }}")             # one entry for all
@@ -270,12 +272,12 @@ def fork_action(workflows) -> str:
     """
     yaml = pytest.importorskip("yaml")
     steps = yaml.safe_load((workflows.parent.parent / FORK_ACTION).read_text(encoding="utf-8"))["runs"]["steps"]
-    python, reqs, restore, uv, install, save = steps
+    python, reqs, restore, uv, install, save, oxipng = steps
     assert reqs["id"] == "reqs" and "sha256sum" in reqs["run"]          # the key: requirement lines, comments stripped
     assert python["uses"].startswith("actions/setup-python@") and python["id"] == "python"
     assert python["with"] == {"python-version": FORK_PYTHON}                   # no pip cache
     assert restore["uses"].startswith("actions/cache/restore@") and restore["id"] == "wheels"
-    assert restore["with"] == {"path": FORK_WHEELS, "key": FORK_KEY, "restore-keys": "cards-"}   # a miss keeps pyoxipng
+    assert restore["with"] == {"path": FORK_WHEELS, "key": FORK_KEY}
     assert uv["uses"].startswith("astral-sh/setup-uv@") and uv["with"]["enable-cache"] is False
     run = install["run"]
     assert install["env"]["HIT"] == "${{ steps.wheels.outputs.cache-hit }}" and '"$HIT"' in run
@@ -283,6 +285,9 @@ def fork_action(workflows) -> str:
     assert run.index(BY_NAME) < run.index('uv pip install -q --no-index -f ~/.cache/card-wheels -r "$RUNNER_TEMP/cards.txt"')
     assert save["uses"].startswith("actions/cache/save@") and save["if"].startswith("steps.wheels.outputs.cache-hit != 'true'")
     assert save["with"] == {"path": FORK_WHEELS, "key": "${{ steps.wheels.outputs.cache-primary-key }}"}
+    assert oxipng["if"] == "inputs.oxipng == 'true'" and oxipng["env"]["VERSION"] == OXIPNG_VERSION    # the CLI, pinned
+    assert re.fullmatch(r"[0-9a-f]{64}", oxipng["env"]["SHA256"]) and "sha256sum -c" in oxipng["run"]
+    assert oxipng["run"].index("sha256sum -c") < oxipng["run"].index("tar ") < oxipng["run"].index("GITHUB_PATH")
     with TemporaryDirectory() as tmp:          # the copy pip installs, made by the step's own sed
         (Path(tmp) / "bot").mkdir()
         shutil.copy(REPO / "requirements-cards.txt", Path(tmp) / "bot")
@@ -296,7 +301,7 @@ def fork_install(path) -> str:
     """
     A workflow's install of requirements-cards.txt (the psd-tools fork's one pin): every job that installs uses the shared
     setup (fork_action) after a bot checkout bringing the file; no pin of the workflow's own, no other install
-    (card-preview skips pyoxipng: it would recompress a PNG it never publishes).
+    (card-preview skips the oxipng CLI: it would recompress a PNG it never publishes).
 
     Returns:
         The cache key.
@@ -316,7 +321,7 @@ def fork_install(path) -> str:
         bot = [i for i, s in enumerate(steps) if s.get("with", {}).get("repository") in ("bobberlington/AutoCroissant", "${{ env.BOT_REPO }}")
                and "/requirements-cards.txt" in s["with"]["sparse-checkout"].split()]
         assert len(bot) == 1 and bot[0] < setups[0], f"{path.name}: the bot checkout brings requirements-cards.txt first"
-        assert ("pyoxipng" in (steps[setups[0]].get("with") or {}).get("skip", "")) == (path.name == "card-preview.yml")
+        assert ((steps[setups[0]].get("with") or {}).get("oxipng") == "false") == (path.name == "card-preview.yml")
     assert installs, f"{path.name}: installs requirements-cards.txt"
     return fork_action(path.parent)
 
@@ -383,8 +388,9 @@ def _rows_off(monkeypatch, rows: int, start: int = 3, levels: int = 30) -> None:
     monkeypatch.setattr(pe, "render_region", off)
 
 
-def photoshop_png(image: Image.Image, icc: str = "sRGB") -> bytes:
-    """image as Photoshop exports it: no deflate (zlib level 0), with its colour and text chunks."""
+def photoshop_png(image: Image.Image, icc="sRGB") -> bytes:
+    """image as Photoshop exports it: no deflate (zlib level 0), with its colour and text chunks (icc: an LCMS profile's
+    name, or a profile's bytes)."""
     import io
     from struct import pack
     from PIL import ImageCms, PngImagePlugin
@@ -395,7 +401,7 @@ def photoshop_png(image: Image.Image, icc: str = "sRGB") -> bytes:
     info.add_text("Software", "Adobe Photoshop 24.0", zip=True)
     buf = io.BytesIO()
     image.save(buf, "PNG", compress_level=0, pnginfo=info, dpi=(300, 300),
-               icc_profile=ImageCms.ImageCmsProfile(ImageCms.createProfile(icc)).tobytes())
+               icc_profile=icc if isinstance(icc, bytes) else ImageCms.ImageCmsProfile(ImageCms.createProfile(icc)).tobytes())
     return buf.getvalue()
 
 

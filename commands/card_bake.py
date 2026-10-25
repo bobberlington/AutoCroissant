@@ -55,6 +55,7 @@ from psd_tools import PSDImage, __version__ as PSD_TOOLS_VERSION
 from requests import RequestException
 
 import commands.github_api as github_api
+import commands.png_export as png_export
 import commands.psd_edit as psd_edit
 from commands.card_edits import ORDER, CardAuthors, CardEdits, dump_edits
 from commands.card_models import card_name
@@ -921,6 +922,19 @@ def _printed_already(snapshot: Snapshot, card: Card, parser, folder: str) -> boo
     return True
 
 
+def _smaller(path: str) -> bytes:
+    """A baked PNG file's bytes, recompressed losslessly (png_export.recompress: XMP stripped, an opaque card as RGB;
+    docs/Future/SMALLER_PNG_PUSHES.md) and written back, so the artifacts show what is committed."""
+    with open(path, "rb") as fh:
+        data = fh.read()
+    smaller = png_export.recompress(data)
+    if smaller is None:
+        return data
+    with open(path, "wb") as fh:
+        fh.write(smaller)
+    return smaller
+
+
 def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Callable[[], Optional[dict]], work: str,
               recent: Callable[[], Optional[set]]) -> None:
     """
@@ -1052,15 +1066,12 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         if card.baked is not None:
             with open(card.baked.psd_path, "rb") as fh:
                 psd_bytes = fh.read()
-            with open(card.baked.png_path, "rb") as fh:
-                png_bytes = fh.read()
             card.new_psd_sha = blob_sha(psd_bytes)
-            card.files = {card.rel: psd_bytes, card.png: png_bytes}
+            card.files = {card.rel: psd_bytes, card.png: _smaller(card.baked.png_path)}
             if card.views:                      # each picture the edit shows in: its own PNG
                 card.files = {card.rel: psd_bytes}
                 for n, baked in card.views.items():
-                    with open(baked.png_path, "rb") as fh:
-                        card.files[card.pictures[n]] = fh.read()
+                    card.files[card.pictures[n]] = _smaller(baked.png_path)
                 old_png = join(folder, "old", basename(card.pictures[next(iter(card.views))]))
             crops = psd_edit.artifacts(Image.open(old_png), Image.open(card.baked.png_path), card.baked.region)
             for name, image in crops.items():

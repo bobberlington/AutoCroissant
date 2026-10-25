@@ -66,26 +66,14 @@ def _requirements(name: str) -> list:
 
 
 def test_requirements_layers_and_pin():
-    """requirements-cards.txt: the card stack (CARD_PACKAGES) with the fork's one pin; pyoxipng on Linux x86_64 at any
-    Python (the Actions' 3.14 builds it from the sdist, owner 2026-10-24) and elsewhere only where 9.1.1 has a wheel (the
-    jetson's and the Mac's 3.14 no: the bot never recompresses); requirements.txt and requirements-dev.txt layer on it;
-    none of the three gitignored (*.txt)."""
+    """requirements-cards.txt: the card stack (CARD_PACKAGES) with the fork's one pin (oxipng is a CLI: cards-python);
+    requirements.txt and requirements-dev.txt layer on it; none of the three gitignored (*.txt)."""
     from helpers import CARD_PACKAGES, card_pin
     requirement = pytest.importorskip("packaging.requirements").Requirement
     cards = [requirement(x) for x in _requirements("requirements-cards.txt")]
     assert [r.name for r in cards] == list(CARD_PACKAGES)
     assert cards[0].url == f"git+https://github.com/MichaelJSr/psd-tools@{card_pin()}" and cards[0].extras == {"composite", "text"}
-    assert [str(r) for r in cards[1:3]] == ["fonttools", "requests"]
-    oxipng = cards[3]
-    assert str(oxipng.specifier) == "==9.1.1"
-    linux = {"sys_platform": "linux", "platform_system": "Linux", "platform_python_implementation": "CPython"}
-    for machine, python, wheel in (("x86_64", "3.12", True), ("aarch64", "3.13", True), ("aarch64", "3.14", False),
-                                   ("x86_64", "3.14", True), ("x86_64", "3.15", True), ("armv7l", "3.12", False)):
-        assert oxipng.marker.evaluate({**linux, "platform_machine": machine, "python_version": python}) is wheel, (machine, python)
-    mac = {"sys_platform": "darwin", "platform_system": "Darwin", "platform_machine": "arm64"}
-    assert oxipng.marker.evaluate({**mac, "python_version": "3.13"}) and not oxipng.marker.evaluate({**mac, "python_version": "3.14"})
-    windows = {"sys_platform": "win32", "platform_system": "Windows", "platform_machine": "AMD64", "platform_python_implementation": "CPython"}
-    assert oxipng.marker.evaluate({**windows, "python_version": "3.13"}) and not oxipng.marker.evaluate({**windows, "python_version": "3.14"})
+    assert [str(r) for r in cards[1:]] == ["fonttools", "requests"]
     assert _requirements("requirements.txt")[0] == "-r requirements-cards.txt"
     assert _requirements("requirements-dev.txt")[0] == "-r requirements.txt"
     assert not (REPO / "requirements-card-data.txt").exists()

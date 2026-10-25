@@ -427,22 +427,33 @@ def test_png_check(tmp_path):
 # ========================
 # Lossless recompression (owner, 2026-10-23)
 # ========================
-oxipng = pytest.mark.skipif(find_spec("oxipng") is None, reason="needs pyoxipng, as card-guards.yml installs (none on 3.14)")
+oxipng = pytest.mark.skipif(pe.tool() is None, reason="needs the oxipng CLI (as the card Actions install) or pyoxipng")
 
 
 @oxipng
-@pytest.mark.parametrize("mode", ["RGBA"])
-def test_recompress_keeps_the_image_and_its_chunks(mode):
-    """A Photoshop-sized PNG gets several times smaller and stays the same file to every reader: the header (an opaque
-    RGBA stays RGBA: the bake and guard 1 read RGB and RGBA only), the pixels, the ICC profile, gAMA, pHYs and the text."""
-    data = photoshop_png(art(mode))
+@pytest.mark.parametrize("opaque, icc", [(True, "sRGB"), (False, "sRGB"), (True, "photoshop")])
+def test_recompress_keeps_the_image_and_its_colour_chunks(opaque, icc):
+    """A Photoshop-sized PNG gets several times smaller and stays the same image to every reader: the pixels, the ICC
+    profile (Photoshop's sRGB one too: oxipng would make it an sRGB chunk), gAMA and pHYs; the text (Photoshop's XMP)
+    goes, and a fully opaque card becomes RGB (SMALLER_PNG_PUSHES.md)."""
+    if icc == "photoshop":                      # a card's own: sRGB IEC61966-2.1
+        from conftest import CLONE
+        path = CLONE / "Auxiliary/Minions/Mini_Doomer.png"
+        if not path.is_file():
+            pytest.skip("Mini Doomer's PNG not in the clone")
+        icc = pe.open_png(path.read_bytes()).info["icc_profile"]
+    image = art()
+    if not opaque:
+        image.putpixel((0, 0), (1, 2, 3, 0))
+    data = photoshop_png(image, icc)
     out = pe.recompress(data, pe.RECOMPRESS_MIN, pe.RECOMPRESS_BYTES)
     assert out is not None and len(out) * 3 < len(data) and pe.same_png(data, out)
-    assert out[:33] == data[:33]                                            # signature and IHDR, byte for byte
     before, after = pe.open_png(data), pe.open_png(out)
-    assert after.mode == before.mode == mode and np.array_equal(np.asarray(after), np.asarray(before))
-    for key in ("icc_profile", "gamma", "dpi", "XML:com.adobe.xmp", "Comment", "Software"):
+    assert after.mode == ("RGB" if opaque else "RGBA") and after.size == before.size and out[24] == 8
+    assert np.array_equal(np.asarray(after.convert("RGBA")), np.asarray(before))
+    for key in ("icc_profile", "gamma", "dpi"):
         assert after.info[key] == before.info[key], key
+    assert not {"XML:com.adobe.xmp", "Comment", "Software", "srgb"} & set(after.info)
     assert pe.recompress(out, pe.RECOMPRESS_MIN) is None                  # done once: nothing more to save
 
 
@@ -451,15 +462,17 @@ def test_same_png_tells_a_changed_pixel_or_chunk():
     data = photoshop_png(art())
     out = pe.recompress(data)
     assert pe.same_png(data, out) and pe.same_png(data, data)
+    assert pe.same_png(data, photoshop_png(art("RGB")))                     # opaque RGBA and its RGB: one image
     image = art()
     image.putpixel((7, 7), (0, 0, 0, 255))
     assert not pe.same_png(data, photoshop_png(image))                      # one pixel
-    assert not pe.same_png(data, photoshop_png(art("RGB")))                 # the colour type
+    image.putpixel((7, 7), (250, 200, 40, 254))
+    assert not pe.same_png(photoshop_png(image), photoshop_png(art("RGB")))  # one alpha: not the RGB
     plain = art()
     import io
     buf = io.BytesIO()
     plain.save(buf, "PNG")
-    assert not pe.same_png(data, buf.getvalue())                            # the chunks dropped
+    assert not pe.same_png(data, buf.getvalue())                            # the colour chunks dropped
     assert not pe.same_png(data, photoshop_png(art(), icc="XYZ"))           # another ICC profile
     assert not pe.same_png(data, b"not a png")
 
@@ -470,6 +483,7 @@ def test_recompress_leaves_16_bit_and_runs_without_oxipng(monkeypatch):
     Image.fromarray(np.arange(64 * 64, dtype=np.uint16).reshape(64, 64) * 16).save(buf, "PNG", compress_level=0)
     assert buf.getvalue()[24] == 16 and pe.recompress(buf.getvalue()) is None    # same_png reads 8 bits: not tried
     monkeypatch.setattr(pe, "_oxipng", lambda: None)
+    monkeypatch.setattr(pe, "which", lambda name: None)                   # no CLI either
     data = photoshop_png(art())
     assert pe.recompress(data) is None
     image, like = art(), pe.open_png(data)

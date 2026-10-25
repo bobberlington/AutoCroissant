@@ -8,7 +8,7 @@ result on TTSCardMaker's orphan branch `previews` (card-preview.yml's second job
                                     [--request <id>] [--repo <owner/name>] [--head <sha>]
 
 It writes <out>/result.json always (a bad input, a refusal and a runner error too), and with an image preview.png (the
-PNG the bake would commit, recompressed losslessly where pyoxipng is installed), preview.webp (WEBP_WIDTH wide, the
+PNG the bake would commit, recompressed losslessly where oxipng is installed), preview.webp (WEBP_WIDTH wide, the
 card view's width) and before.webp (the card's official PNG made the same way: the site's Diff compares like with like).
 The edit is the card's Card Edits.json entry as it would be published (any of its fields; the PSD-kind ones are baked,
 `creatures` gates the stats as in the bake, `_`-keys are ignored); result.json's `edit` is it exactly as sent, without
