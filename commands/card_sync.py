@@ -60,7 +60,8 @@ READERS = frozenset({                                # the slash commands that r
 _loaded: dict = {"commit": None}                     # the data commit stats_db holds (None: the root pickles or nothing)
 _sync_lock = Lock()                                  # one sync at a time (a reminder beside a command)
 _run_lock = Lock()                                   # one dispatched run followed at a time
-_checked: dict = {"at": None}                        # monotonic() of the last look at the data branch (None: none yet)
+_checked: dict = {"at": monotonic()}                 # the last look at the data branch (the start counts: startup's)
+_unreported: dict = {}                               # checks' reloads for the next sync's reply: before, commit, problems
 _use_lock = Lock()                                   # on_use's claim of a look (never waited on)
 
 
@@ -258,7 +259,7 @@ def _follow_ups(interaction) -> None:
 def sync(interaction=None, output_problematic: bool = True, quiet: bool = False, follow_ups: bool = True) -> list:
     """
     card_data/ brought to the data branch, the database reloaded when the data moved, and one reply (quiet: the
-    console only, unless the sync failed); then the card list, query tables, type emojis and image links refreshed.
+    console only, unless the sync failed or there are problem cards), counting checks' reloads since the last; then the card list, query tables, type emojis and image links refreshed.
 
     Args:
         interaction: Where the reply goes (None: the console)
@@ -273,6 +274,8 @@ def sync(interaction=None, output_problematic: bool = True, quiet: bool = False,
         before, before_commit = stats_db.stats, _loaded["commit"]
         try:
             manifest, reloaded = _pull()
+            pending = dict(_unreported)              # checks' reloads since the last reply: this sync reports them
+            _unreported.clear()
         except LookupError as e:
             say(interaction, f"No card data yet: {e}. The Card sync Action creates it: <{actions_link()}>")
             return []
@@ -280,12 +283,15 @@ def sync(interaction=None, output_problematic: bool = True, quiet: bool = False,
             print(f"Card data sync failed:\n{format_exc()}")
             say(interaction, f"Card data sync failed ({type(e).__name__}: {e}); the bot keeps the card data it has.")
             return []
-    text = report(manifest, changes(before, stats_db.stats) if reloaded and before_commit is not None else None, reloaded)
+    if pending:
+        before, before_commit = pending["before"], pending["commit"]
+    text = report(manifest, changes(before, stats_db.stats) if (reloaded or pending) and before_commit is not None
+                  else None, reloaded or bool(pending))
     if quiet:
         print(text)
     else:
         say(interaction, "\n".join([text] + notes(manifest)))
-    problems = _problems(manifest) if reloaded and output_problematic else []
+    problems = (pending.get("problems", []) + (_problems(manifest) if reloaded else [])) if output_problematic else []
     if problems:
         say(interaction, "Problem cards in this build:\n" + "".join(problems))
     if follow_ups:
@@ -325,16 +331,22 @@ def check() -> bool:
     """
     on_use's look, in the command queue's thread: the sync, quiet (a reload's report to the console), then the
     refreshes when the data moved, else the website's card ids alone (a conditional request: a new card's page link
-    once the site has it). Skipped while a sync runs (it is this look); a failure is logged and the data kept.
+    once the site has it). A reload's counts and problem cards wait for the next sync's reply (_unreported). Skipped
+    while a sync runs (it is this look) or a dispatched run is followed (its sync loads it); a failure is logged and
+    the data kept.
 
     Returns:
         True when new data was loaded
     """
-    if not _sync_lock.acquire(blocking=False):
+    if _run_lock.locked() or not _sync_lock.acquire(blocking=False):
         return False
     try:
         before, before_commit = stats_db.stats, _loaded["commit"]
         manifest, reloaded = _pull()
+        if reloaded:
+            if not _unreported:
+                _unreported.update(before=before, commit=before_commit, problems=[])
+            _unreported["problems"] += _problems(manifest)
     except Exception as e:                           # noqa: BLE001 - a failed look never fails a command
         print(f"Card data check failed ({type(e).__name__}: {e}); keeping the loaded data")
         return False

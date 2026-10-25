@@ -128,6 +128,7 @@ def github(monkeypatch, tmp_path):
     monkeypatch.setattr(cm.stats_db, "old_stats", defaultdict(list))
     monkeypatch.setitem(cs._loaded, "commit", None)
     monkeypatch.setitem(cs._checked, "at", None)
+    monkeypatch.setattr(cs, "_unreported", {})
     queues = (utils.dispatch_queue, utils.edit_queue, utils.command_queue)
     for q in queues:
         q.clear()
@@ -405,11 +406,37 @@ def test_a_failed_check_keeps_the_data_and_says_nothing(github, tmp_path, monkey
     assert not cs._sync_lock.locked()
 
 
-def test_check_skips_while_a_sync_runs(github, tmp_path):
+def test_check_skips_while_a_sync_or_a_followed_run_runs(github, tmp_path):
     github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
-    with cs._sync_lock:
-        assert not cs.check()
+    for lock in (cs._sync_lock, cs._run_lock):
+        with lock:
+            assert not cs.check()
     assert github.calls == [] and cm.stats_db.stats == {}
+
+
+def test_the_next_sync_reports_what_checks_loaded(github, tmp_path):
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
+    cs.sync(ME)
+    utils.dispatch_queue.clear()
+    github.publish({"A": _card("A"), "C": _card("C")}, defaultdict(list), tmp_path,
+                   problems=[{"card": "C", "path": "Creatures/C.psd", "notes": ["HP NOT FOUND"]}])
+    assert cs.check() and _said() == []
+    github.publish({"A": _card("A", ability="Heal 1."), "C": _card("C")}, defaultdict(list), tmp_path)
+    assert cs.check()
+    problems = cs.sync(ME)                                            # /update_stats, or the reminder's
+    assert ": 1 changed, 1 new; reloaded." in _said()[0]
+    assert len(problems) == 1 and "HP NOT FOUND" in problems[0] and "HP NOT FOUND" in _said()[1]
+    utils.dispatch_queue.clear()
+    assert cs.sync(ME) == [] and _said()[0].startswith("Card data is already current")
+
+
+def test_the_start_counts_as_a_look(monkeypatch):
+    from importlib.util import module_from_spec, spec_from_file_location
+    spec = spec_from_file_location("card_sync_fresh", cs.__file__)
+    fresh = module_from_spec(spec)                                    # a new process's state, cs untouched
+    spec.loader.exec_module(fresh)
+    monkeypatch.setattr(global_config, "CARD_SYNC", True)
+    assert not fresh.on_use("query")                                  # no look before startup's sync
 
 
 def test_card_commands_and_autocomplete_look(github, monkeypatch):
