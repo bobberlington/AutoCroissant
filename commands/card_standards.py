@@ -205,7 +205,7 @@ def _words(layer) -> list:
 
 def rule_ability(psd: PSDImage) -> Optional[Issue]:
     """
-    R3: one visible Ability text layer, in any group (what psd_edit.ability_layer bakes). Several are told; none only
+    R3: one visible Ability text layer, in any group (the standard; a bake takes several too). Several are told; none only
     when a hidden Ability layer holds words the parser reads nowhere. An empty one (a card with no ability), one laid
     out again in visible pieces (PSDParser._relaid) or none at all (the ability named otherwise) is the developer's.
     """

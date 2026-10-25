@@ -713,12 +713,17 @@ class PSDParser:
         exactly them (Butterfly, Bulborb Larva, Empress Bulblax, Apex Predator lay their ability out again in pieces).
         Shadow Duelist prints none of its hidden text: not its ability.
         """
-        x0, y0, x1, y1 = hidden.bbox
-        pieces = sorted((layer for layer in text_layers if layer is not hidden and layer.is_visible()
-                         and layer.bbox[0] < x1 and x0 < layer.bbox[2] and layer.bbox[1] < y1 and y0 < layer.bbox[3]),
-                        key=lambda layer: (layer.bbox[1], layer.bbox[0]))
+        pieces = PSDParser._pieces(hidden, text_layers)
         words = " ".join((layer.text or "") for layer in pieces).replace("\x03", " ").replace("\ufeff", "").split()
         return bool(words) and words == (hidden.text or "").replace("\x03", " ").replace("\ufeff", "").split()
+
+    @staticmethod
+    def _pieces(hidden, text_layers: list) -> list:
+        """The visible text layers over a hidden one, in reading order (top, then left): _relaid's."""
+        x0, y0, x1, y1 = hidden.bbox
+        return sorted((layer for layer in text_layers if layer is not hidden and layer.is_visible()
+                       and layer.bbox[0] < x1 and x0 < layer.bbox[2] and layer.bbox[1] < y1 and y0 < layer.bbox[3]),
+                      key=lambda layer: (layer.bbox[1], layer.bbox[0]))
 
     @staticmethod
     def _icon_font_spans(layer, text: str) -> list[tuple[int, int]]:
