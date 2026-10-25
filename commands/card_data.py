@@ -29,7 +29,7 @@ from requests.exceptions import RequestException
 from global_config import (AUTHORS_PATH, CARD_BRANCH, CREATED_PATH, EDITS_PATH, ICON_MANIFEST_PATH, RULEBOOK_DIR, RULES_PATH,
                            STARS_DIR, TYPES_DIR)
 from commands.card_edits import CardAuthors, CardDates, CardEdits
-from commands.card_models import CardInfo, StatsDatabase, card_name, duplicate_png
+from commands.card_models import CardInfo, StatsDatabase, card_name, duplicate_png, straight, straighten_card
 from commands.github_api import RangeError, RemotePSD, blob_text, fetch_blob, range_reads
 from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser, variants_of
 
@@ -37,6 +37,7 @@ from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, P
 # Configuration
 # ========================
 UPDATE_RATE = 25
+STRAIGHT_KEYS = ("name", "ability", "note")                     # parsed_values' printed text
 DOWNLOAD_WORKERS = 4                                              # PSDs downloaded ahead of parsing
 AHEAD = 2 * DOWNLOAD_WORKERS                                      # PSDs fetched and not yet parsed, at most (memory, temp files)
 RANGE_REFUSALS = 3                                                # PSDs refused range reads (HTTP error, no connection): off
@@ -328,12 +329,20 @@ class CardBuild:
         return original.display_name or original.name
 
     def _apply_edits(self) -> int:
-        """Apply the website fixes to every card. Returns how many changed."""
-        if self.edits is None:
-            return 0
-        changed = sum(1 for name, card in self.db.stats.items() if self.edits.apply(name, card))
+        """Apply the website fixes to every card, then straight apostrophes on every record, re-parsed or not (owner,
+        2026-10-25). Returns how many changed."""
+        changed = 0
+        for name, card in self.db.stats.items():
+            before = repr(card)
+            if self.edits is not None:
+                self.edits.apply(name, card)
+            straighten_card(card)
+            values = getattr(card, "parsed_values", None)
+            if values:                                  # the PSD values the site puts back under an edit
+                card.parsed_values = {k: straight(v) if k in STRAIGHT_KEYS else v for k, v in values.items()}
+            changed += repr(card) != before
         if changed:
-            print(f"{changed} cards changed by {EDITS_PATH}.")
+            print(f"{changed} cards changed by {EDITS_PATH} or straight apostrophes.")
         return changed
 
     def _dates_from_response(self, response, repository: str) -> Optional[CardDates]:
@@ -511,8 +520,10 @@ class CardBuild:
                 card.blob_sha = sha
                 if author and not card.author:
                     card.author = author
-                if self.edits:
+                straighten_card(card)                           # straight apostrophes (owner, 2026-10-25): the
+                if self.edits:                                  # parse, then the edits' values
                     self.edits.apply(name, card)
+                    straighten_card(card)
                 self.db.stats[name] = card
 
                 if output_problematic:

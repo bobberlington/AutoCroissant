@@ -5,7 +5,8 @@ merged into the old PNG; Photoshop's stored composite only cross-checks, and a P
 bake's own gates, told "no stored image to cross-check"); guard 2 (card_standards) checks the pushed PSDs against the card
 standards (missing fonts are the font check's alone) and fixes only the 0-pixel classes; the Single-line Composer (R8) it
 always sets unsaid, box text that rewraps redrawn and its PNG re-exported: only the bot commit's message names it
-(owner, 2026-10-25). One report per push: the job
+(owner, 2026-10-25); so are the pixel fixes (card_standards.PIXEL_FIXES: straight apostrophes, old icon font glyphs),
+rule pages included, the PNG re-exported the same way. One report per push: the job
 summary and commit comment (report.md), one Discord post for the standards channel (discord.json: no mentions, no
 previews), and a plan of the writes (plan.json) that `land` commits once, after the 30-minute quiet window. Each card
 pushed over an older PSD carries what changed inside it (psd_diff: "added Ability FX: Blazing", "Name text: 'a' -> 'b'").
@@ -153,6 +154,8 @@ class Result:
     changes: list = field(default_factory=list) # what changed inside a modified PSD (psd_diff phrases)
     composer: list = field(default_factory=list)   # R8: layers set Single-line (the commit message alone says it)
     composer_left: list = field(default_factory=list)   # R8: (layer, why) not redrawn or not set (plan.json alone)
+    redrawn: dict = field(default_factory=dict)  # pixel fixes (card_standards.PIXEL_FIXES): kind -> layers (silent)
+    pixel_left: list = field(default_factory=list)  # (kind, why) a pixel fix not made (plan.json alone)
     error: str = ""
 
     @property
@@ -760,29 +763,35 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
             shown[job.png] = png
         if measured.get("ok") is None:
             result.notes.append((f"{basename(job.png)} could not be checked against the PSD ({measured.get('why')})", False))
-    if job.case == "png-only" or rule_page:
+    pixels = standards.pixel_kinds(new) if job.case != "png-only" else ()
+    if job.case == "png-only" or (rule_page and not pixels):
         return
-    # guard 2
-    issues = standards.check(new, job.psd, context, old=old, added=added(job))
+    # guard 2 (a rule page: the pixel fixes alone)
+    issues = [] if rule_page else standards.check(new, job.psd, context, old=old, added=added(job))
     told = {id(issue) for issue in standards.reported(issues)}
     result.issues = [{**issue.as_dict(), "line": issue.line(), "told": id(issue) in told, "discord": issue.discord}
                      for issue in issues]
-    if any(issue.fix and not issue.waived for issue in issues) or standards.composer_layers(new):
+    if any(issue.fix and not issue.waived for issue in issues) or standards.composer_layers(new) or pixels:
         fixed = standards.fix(new_bytes, job.psd, issues, join(out, "work"), parser, source.fonts_for)
         result.fixed, result.composer, result.composer_left = fixed.applied, fixed.composer, fixed.composer_left
+        result.pixel_left = list(fixed.pixel_left)
         lines = {issue.code: issue.line() for issue in issues if issue.fix}
         result.fix_refused = [(lines.get(code, code), why) for code, why in fixed.refused]
-        if fixed.data:
-            redrawn = bool(fixed.rewrapped) and _rewrapped_pngs(out, result, new, fixed, shown)
-            data = fixed.plain if fixed.rewrapped and not redrawn else fixed.data
+        redraws = bool(fixed.rewrapped or fixed.redrawn)
+        redrawn = bool(fixed.data) and redraws and _rewrapped_pngs(out, result, new, fixed, shown)
+        data = fixed.plain if redraws and not redrawn else fixed.data
+        if data and data != new_bytes:
             file = _save(out, job.psd, data)
             said = "; ".join(fixed.applied)     # what the comment and the post may say: never the composer
             composer = [f"Single-line Composer ({', '.join(fixed.composer)})"] if fixed.composer else []
+            result.redrawn = dict(fixed.redrawn) if redrawn else {}
+            silent = [f"{standards.PIXEL_LINES[kind]} ({', '.join(names)})" for kind, names in result.redrawn.items()]
             write = {"path": job.psd, "file": file, "sha": blob_sha(data), "kind": "psd",
-                     "line": "; ".join(fixed.applied + composer), "shown": said, "silent": not said,
-                     "composer": bool(fixed.composer)}
+                     "line": "; ".join(fixed.applied + composer + silent), "shown": said, "silent": not said,
+                     "composer": bool(fixed.composer), "pixels": sorted(result.redrawn)}
             if redrawn:                         # land swaps in plain when the redraw's PNGs do not land
-                write["plain"] = {"file": _save(out, job.psd + ".plain", fixed.plain), "sha": blob_sha(fixed.plain)}
+                write["plain"] = {"file": _save(out, job.psd + ".plain", fixed.plain), "sha": blob_sha(fixed.plain),
+                                  "line": "; ".join(fixed.applied + composer), "pixels": []}   # no redraw: no pixel fix
             result.writes.append(write)
 
 
@@ -792,23 +801,25 @@ def _rewrapped_pngs(out: str, result: Result, pushed, fixed, shown: dict) -> boo
     the PNGs that show the pushed PSD): silent writes, a guard 1 write taking the new pixels. Whether the redraw stands
     (else the PSD lands without it: fixed.plain).
     """
+    kinds = list(getattr(fixed, "redrawn", None) or {})    # the pixel fixes follow the same way, silent too
+
+    def left(why: str) -> bool:
+        result.composer_left += [(name, f"rewraps, not redrawn: {why}") for name in fixed.rewrapped]
+        result.pixel_left += [(kind, f"not redrawn: {why}") for kind in kinds]
+        return False
     if result.job.png not in shown:
-        result.composer_left += [(name, "rewraps, not redrawn: no PNG that shows the PSD") for name in fixed.rewrapped]
-        return False
-    left = sorted(p for p in (*result.job.numbered, *result.job.pushed) if p not in shown)
-    if left:                                    # a numbered PNG would keep the old wrap
-        result.composer_left += [(name, f"rewraps, not redrawn: {basename(left[0])} does not show the PSD")
-                                 for name in fixed.rewrapped]
-        return False
+        return left("no PNG that shows the PSD")
+    gone = sorted(p for p in (*result.job.numbered, *result.job.pushed) if p not in shown)
+    if gone:                                    # a numbered PNG would keep the old wrap
+        return left(f"{basename(gone[0])} does not show the PSD")
     numbered = {path: image for path, image in shown.items() if path != result.job.png}
     found = png_export.export(pushed, png_export.open_psd(fixed.data), shown[result.job.png], numbered)
     if found.outcome == "current":
         return True
     if found.outcome != "re-exported" or any(data == b"" for data, _ in found.numbered.values()):
-        why = found.why or next((why for data, why in found.numbered.values() if data == b""), "")
-        result.composer_left += [(name, f"rewraps, not redrawn: {why}") for name in fixed.rewrapped]
-        return False
-    line = f"re-exported for the Single-line Composer's rewrap ({found.changed_px:,} px changed)"
+        return left(found.why or next((why for data, why in found.numbered.values() if data == b""), ""))
+    what = (["the Single-line Composer's rewrap"] if fixed.rewrapped else []) + [standards.PIXEL_LINES[k] for k in kinds]
+    line = f"re-exported for {' and '.join(what)} ({found.changed_px:,} px changed)"
     for path, data in [(result.job.png, found.data)] + [(p, d) for p, (d, _) in sorted(found.numbered.items()) if d]:
         write = next((w for w in result.writes if w["path"] == path and w["kind"] == "png"), None)
         result.writes = [w for w in result.writes if not (w["path"] == path and w["kind"] == "recompress")]
@@ -865,7 +876,8 @@ def plan(results: list, repository: str, before: str, after: str, mode: str) -> 
                  "fixed": result.fixed, "fix_refused": result.fix_refused, "notes": [t for t, _ in result.notes],
                  "told": result.told(mode), "error": result.error, "writes": result.writes, "png": result.job.png,
                  "changes": result.changes, "expect": _expect(result.job), "pushed": sorted(result.job.pushed),
-                 "composer": result.composer, "composer_left": result.composer_left}
+                 "composer": result.composer, "composer_left": result.composer_left,
+                 "redrawn": result.redrawn, "pixel_left": result.pixel_left}
         cards.append(entry)
     return {"repo": repository, "before": before, "after": after, "mode": mode, "checked_at": _now().isoformat(),
             "cards": cards}
@@ -1169,9 +1181,13 @@ def message(landed: list, after: str) -> str:
     psds = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "psd" and not w.get("silent"))
     composer = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "psd" and w.get("composer"))
     smaller = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "recompress")
+    pixels = [kind for entry in landed for w in entry["writes"] if w["kind"] == "psd" for kind in w.get("pixels", ())]
+    silent = [f"{standards.PIXEL_LINES.get(kind, kind)} on {plural(pixels.count(kind), 'card')}"
+              for kind in dict.fromkeys(pixels)]          # the pixel fixes: said here alone, as the composer
     counts = ", ".join(part for part in (plural(pngs, "PNG") + " re-exported" if pngs else "",
                                          plural(psds, "PSD") + " fixed" if psds else "",
                                          "Single-line Composer on " + plural(composer, "card") if composer else "",
+                                         *silent,
                                          plural(smaller, "PNG") + " recompressed" if smaller else "") if part)
     lines = [f"{w['path']}: {w['line']} ({entry['login']}, {(entry['commit'] or after)[:8]})"
              for entry in landed for w in entry["writes"]]
@@ -1223,7 +1239,7 @@ def _drawn(entry: dict, here: Head, recent: Optional[set]) -> list:
     redraw = [w for w in writes if w["kind"] == "png" and w.get("composer")]
     if not any(_superseded(entry, w, here, recent) for w in redraw):
         return writes
-    return [{**w, **w["plain"], "plain": None} if w.get("plain") else w for w in writes if w not in redraw]
+    return [{**w, "pixels": [], **w["plain"], "plain": None} if w.get("plain") else w for w in writes if w not in redraw]
 
 
 def _superseded(entry: dict, write: dict, here: Head, recent: Optional[set]) -> str:

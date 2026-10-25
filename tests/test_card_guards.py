@@ -1389,6 +1389,29 @@ def test_a_composer_fix_is_said_only_in_the_commit(tmp_path, monkeypatch):
     assert cg.land(plan)["told"]["X/A.psd"] == []          # dropped: never told either
 
 
+def test_pixel_fixes_are_said_only_in_the_commit(tmp_path, monkeypatch):
+    """Straight apostrophes (owner 2026-10-25): the PNG follows through guard 1's export, both writes silent; the commit
+    message alone counts them."""
+    from types import SimpleNamespace
+    fixed = SimpleNamespace(data=b"straight", plain=b"pushed", rewrapped=[], redrawn={"apostrophes": ["Name"]})
+    found = pe.Export("re-exported", image=object(), data=b"png2", changed_px=35)
+    monkeypatch.setattr(cg.png_export, "open_psd", lambda data: data)
+    monkeypatch.setattr(cg.png_export, "export", lambda old, new, png, numbered: found)
+    result = cg.Result(cg.Job("X/A.psd", "pair", png="X/A.png"))
+    assert cg._rewrapped_pngs(str(tmp_path), result, b"pushed", fixed, {"X/A.png": "image"})
+    assert [(w["kind"], w["silent"], w["line"]) for w in result.writes] == [
+        ("png", True, "re-exported for straight apostrophes (35 px changed)")]
+    found.outcome, found.why = "refused", "PNG not made: G6"
+    assert not cg._rewrapped_pngs(str(tmp_path), result, b"pushed", fixed, {"X/A.png": "image"})
+    assert result.pixel_left == [("apostrophes", "not redrawn: PNG not made: G6")]
+    entry = _entry("A")
+    _write(tmp_path / "plan", entry, "X/A.psd", "psd", b"straight", "straight apostrophes (Name)")
+    entry["writes"][0].update(shown="", silent=True, composer=False, pixels=["apostrophes"])
+    data = json.loads(Path(_full_plan(tmp_path, [entry])).read_text())
+    assert cg.discord_payload(data, "o/r") == {} and "apostrophe" not in cg.markdown(data, [], [], [])
+    assert cg.message([entry], "f" * 40).startswith(f"Card guards: straight apostrophes on 1 card (push {'f' * 8})")
+
+
 def test_a_rewrap_redraw_follows_into_the_png_unsaid(tmp_path, monkeypatch):
     """R8 always switches; box text that rewraps is redrawn and its PNG re-exported through guard 1's export, unsaid (a
     guard 1 write takes the new pixels, the pushed PNG's recompression gives way); a refused export, or no PNG that shows
@@ -1421,17 +1444,20 @@ def test_a_redrawn_psd_lands_plain_without_its_png(tmp_path, monkeypatch):
     switched, not redrawn, never beside an old-wrap PNG."""
     out = tmp_path / "plan"
     entry = _entry("A")
-    _write(out, entry, "X/A.psd", "psd", b"drawn", "Single-line Composer (Ability)")
+    _write(out, entry, "X/A.psd", "psd", b"drawn", "Single-line Composer (Ability); straight apostrophes (Name)")
     (out / "files" / "A.psd.plain").write_bytes(b"plain")
-    entry["writes"][0].update(shown="", silent=True, composer=True, plain={"file": "files/A.psd.plain", "sha": blob_sha(b"plain")})
+    entry["writes"][0].update(shown="", silent=True, composer=True, pixels=["apostrophes"],
+                              plain={"file": "files/A.psd.plain", "sha": blob_sha(b"plain"),
+                                     "line": "Single-line Composer (Ability)"})
     _write(out, entry, "X/A.png", "png", b"png2", "re-exported for the Single-line Composer's rewrap")
     entry["writes"][1].update(shown="", silent=True, composer=True)
     plan = _full_plan(tmp_path, [entry])
     sent = {}
     for png, files in (("p1", {"X/A.psd": b"drawn", "X/A.png": b"png2"}), ("author", {"X/A.psd": b"plain"})):
         FakeHub({"X/A.psd": ("100644", "s1"), "X/A.png": ("100644", png)}).install(monkeypatch)
-        monkeypatch.setattr(cg, "commit_files", lambda *a, **k: sent.clear() or sent.update(a[4]) or "c" * 40)
+        monkeypatch.setattr(cg, "commit_files", lambda *a, **k: sent.clear() or sent.update(a[4], text=a[5]) or "c" * 40)
         landed = cg.land(plan)
+        assert "apostrophe" in sent.pop("text") if png == "p1" else "apostrophe" not in sent.pop("text")   # plain: no pixel fix said
         assert sent == files, png
     assert landed["included"] == [["A", "X/A.psd"]] and sent == {"X/A.psd": b"plain"}
     assert landed["dropped"] == [["A", "superseded: X/A.png changed on the branch", "X/A.png"]]

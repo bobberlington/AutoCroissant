@@ -261,6 +261,28 @@ def card_name(path: str) -> str:
     return splitext(basename(path))[0].replace("_", " ")
 
 
+APOSTROPHE = "\u2019"                         # always ' (U+0027), never this (owner, 2026-10-25)
+STRAIGHT_FIELDS = ("ability", "display_name", "note")   # a card's printed text in the data (names are file stems)
+
+
+def straight(text):
+    """text with straight apostrophes; anything else as it is."""
+    return text.replace(APOSTROPHE, "'") if isinstance(text, str) else text
+
+
+def straighten_card(card) -> bool:
+    """The card's text fields with straight apostrophes; whether one changed."""
+    changed = False
+    for key in STRAIGHT_FIELDS:
+        value = getattr(card, key, None)
+        if isinstance(value, str) and APOSTROPHE in value:
+            setattr(card, key, straight(value))
+            changed = True
+    if changed and getattr(card, "display_name", None) == card.name:
+        card.display_name = None                # the parser's rule: a title equal to the name is none
+    return changed
+
+
 def get_stats_as_dict() -> dict[str, dict]:
     """
     Get the stats database as a dictionary format.
@@ -290,4 +312,6 @@ __all__ = [
     'duplicate_png',
     'get_stats_as_dict',
     'stats_db',
+    'straight',
+    'straighten_card',
 ]

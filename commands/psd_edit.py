@@ -13,6 +13,7 @@ from collections import Counter
 from contextlib import ExitStack, contextmanager, nullcontext
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
+from functools import lru_cache
 from difflib import SequenceMatcher
 from hashlib import blake2b
 from inspect import signature
@@ -34,7 +35,7 @@ from psd_tools.constants import BlendMode, ColorMode, Resource, Tag
 from psd_tools.psd.base import ListElement
 
 from commands.card_edits import ADD_ABILITY, CardEdits
-from commands.card_models import CardInfo, StatsDatabase
+from commands.card_models import CardInfo, StatsDatabase, straight
 from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_PREFIX, ICON_SCAN_PATTERN,
                                  TITLE_REGION_RATIO, TYPE_REGION_RATIO, BoundingBox, CardValidator, IconVocabulary,
                                  MutableValue, PSDParser, layer_tag, name_key, named_after_text, stars_from_psd,
@@ -90,6 +91,11 @@ ICON_FONT = "stoogedings-Regular"                   # the icon font's PostScript
 INK_ALPHA = 0.5             # a pixel is ink past this alpha (a title grazing a badge's anti-aliased edge is not an overlap)
 ICON_OVERLAP = 16           # px a typed icon may ink over the layer's other glyphs (typed_icon_fit; 0 on 140 of 145 titles)
 ICON_HEIGHT = (0.6, 2.2)    # a typed icon at the text's own size: its height over its line's letters' (Holy Blade 0.2)
+BADGE_RATIO = 1.35          # a badge's pill over the text's capital height (the cards' median, 1.357 over 731 badges)
+BADGE_PILL = (-130, 820)    # the pill's bottom and top, icon font units of 1000 (build_stoogedings BADGE_BOTTOM, BADGE_TOP)
+BADGE_RESIZE = 0.10         # the guards resize a badge more than this off its computed size
+FIT_PX, FIT_PCT = 2.0, 3.0  # and shift a badge or icon whose middle is off by more than both: px, % of the text's em
+FIT_SKIP = ("glow", "no_over", "space")     # icon-font glyphs that are no icon's body (halos, the red sign, spacers)
 ASPECT_TOL = 0.02           # unstretch: a typed icon's x over y scale may be this far off 1 (designers': 678 of 682 at 1.0)
 FONT_IOU_MIN = 0.3          # a text layer redrawn whole against its saved pixels: their ink's IoU (Omori's swapped fonts
                             # 0.11-0.14; of 1,453 titles and Abilities the next is 0.40, Wendy's few px shift)
@@ -474,7 +480,7 @@ def normalize_ability(text: Optional[str]) -> str:
         breaks as \\n, tabs as spaces, no space before punctuation, quotes and blank ends stripped
     """
     text = (text or "").replace("\r\n", "\n").replace("\r", "\n").replace("\t", " ").replace("\x03", "\n")
-    text = text.replace("﻿", "").rstrip()
+    text = straight(text).replace("﻿", "").rstrip()    # apostrophes compare straight (owner, 2026-10-25)
     text = text.strip("'\"\n").rstrip(" '\"")
     if text:
         text = sub(r"\s+([:;,\.\?!])", r"\1", text)
@@ -1426,6 +1432,164 @@ def icon_style(layer, badge: bool, vocab: Optional[IconVocabulary]) -> Optional[
     return deepcopy(max(pool, key=lambda style: count[_canon(style)]))
 
 
+@lru_cache(maxsize=None)
+def cap_of(path: str, index: int = 0) -> tuple:
+    """(units per em, capital height, capital middle) of a face: its drawn H's ink (OS/2 sCapHeight lies on 7 fonts),
+    else sCapHeight, else 0.7 em."""
+    from fontTools.pens.boundsPen import BoundsPen
+    from fontTools.ttLib import TTFont
+    font = TTFont(path, fontNumber=index, lazy=True)
+    upem = font["head"].unitsPerEm
+    try:
+        cmap, glyphs = font.getBestCmap(), font.getGlyphSet()
+        pen = BoundsPen(glyphs)
+        glyphs[cmap[ord("H")]].draw(pen)
+        if pen.bounds and pen.bounds[3] > pen.bounds[1]:
+            low, high = pen.bounds[1], pen.bounds[3]
+            return upem, high - low, (high + low) / 2
+    except (KeyError, TypeError, AttributeError):
+        pass
+    os2 = font["OS/2"] if "OS/2" in font else None
+    cap = getattr(os2, "sCapHeight", 0) if os2 is not None and os2.version >= 2 else 0
+    cap = cap if cap > 0 else 0.7 * upem
+    return upem, cap, cap / 2
+
+
+@lru_cache(maxsize=None)
+def _glyph_boxes(path: str) -> dict:
+    """gid -> (glyph name, (xmin, ymin, xmax, ymax) or None) of the icon font."""
+    from fontTools.pens.boundsPen import BoundsPen
+    from fontTools.ttLib import TTFont
+    font = TTFont(path, lazy=True)
+    glyphs, out = font.getGlyphSet(), {}
+    for gid, name in enumerate(font.getGlyphOrder()):
+        pen = BoundsPen(glyphs)
+        glyphs[name].draw(pen)
+        out[gid] = (name, pen.bounds)
+    return out
+
+
+def _drop(style, model) -> float:
+    """pt a sub- (down) or superscript (up) run's baseline sits below the line's: Photoshop's 33.3% of the run size."""
+    return {1: -1.0, 2: 1.0}.get(style.baseline, 0.0) * model.sub_position * style.size * style.vertical_scale
+
+
+def _shrink(style, model) -> float:
+    """What sub- and superscript draw a run at: Photoshop's 58.3%."""
+    return model.sub_size if style.baseline in (1, 2) else 1.0
+
+
+def badge_fit(model, badge, text_style, cap: tuple, box: tuple = BADGE_PILL, resize: bool = True) -> tuple:
+    """
+    (FontSize, BaselineShift) that set a badge's pill (box: ymin, ymax in 1000 units) at BADGE_RATIO times the text's
+    capital height (resize) and its middle at the text's capital middle, both drawn as Photoshop draws them (sub- and
+    superscript included). cap: cap_of() of the text's face.
+    """
+    upem, height, middle = cap
+    em = text_style.size * _shrink(text_style, model) * text_style.vertical_scale
+    target = -_drop(text_style, model) + text_style.baseline_shift + middle / upem * em
+    size = badge.size
+    if resize:
+        size = BADGE_RATIO * height / upem * em / ((box[1] - box[0]) / 1000 * _shrink(badge, model) * badge.vertical_scale)
+    sized = replace(badge, size=size)
+    shift = target + _drop(sized, model) - (box[0] + box[1]) / 2000 * size * _shrink(badge, model) * badge.vertical_scale
+    return round(size, 2), round(shift, 2)
+
+
+def _neighbour(text: str, styles: list, icons: list, a: int, b: int, lines) -> Optional[int]:
+    """The nearest letter or digit of the text beside a badge: in its line, left then right, then its paragraph, then
+    the layer."""
+    lo, hi = 0, len(text)
+    for line in lines:
+        if line.start <= a < max(line.end, line.start + 1):
+            lo, hi = line.start, line.end
+            break
+
+    def ok(k):
+        return not icons[k] and styles[k] is not None and text[k].isalnum()
+
+    for k in [*range(a - 1, lo - 1, -1), *range(b, hi)]:
+        if ok(k):
+            return k
+    start, end = text.rfind("\r", 0, a) + 1, text.find("\r", b)
+    end = len(text) if end < 0 else end
+    for k in [*sorted(range(start, end), key=lambda k: abs(k - a)), *sorted(range(len(text)), key=lambda k: abs(k - a))]:
+        if ok(k):
+            return k
+    return None
+
+
+def badge_fits(layer, fonts, spans: Optional[list] = None) -> list:
+    """
+    Each badge and icon the icon font draws in a text layer, measured (owner 2026-10-25): its run's FontSize and
+    BaselineShift, the badge_fit values (icons and stars keep their size: only shifted), how far its middle sits from
+    the text's capital middle (px, % of the text's em) and its size from the computed one. spans: only those (start,
+    end). [] when the layer has none; raises MissingFontError.
+
+    Returns:
+        [{"start", "end", "token", "kind" (badge, icon), "size", "shift", "fit_size", "fit_shift", "off_px", "off_pct",
+          "size_off"}]
+    """
+    from psd_tools.composite.text.layout import baseline_shift, layout
+    from psd_tools.composite.text.model import TextModel
+    model = TextModel.from_layer(layer)
+    text = model.text
+    style_at, icons = [None] * len(text), [False] * len(text)
+    for run in model.runs:
+        for k in range(max(run.start, 0), min(run.end, len(text))):
+            style_at[k], icons[k] = run.style, run.style.font.lower().startswith(ICON_FONT_PREFIX)
+    found = [(a, b) for a, b in icon_text(text, None) if all(icons[k] for k in range(a, b))
+             and (spans is None or (a, b) in spans)]
+    if not found:
+        return []
+    placed = layout(model, fonts)
+    scale = hypot(model.transform[2], model.transform[3])
+    out = []
+    for a, b in found:
+        bottom = top = None
+        for glyph in placed.glyphs:
+            if not a <= glyph.cluster < b or not glyph.face.key[0].lower().endswith(".ttf"):
+                continue
+            name, bounds = _glyph_boxes(glyph.face.key[0]).get(glyph.gid, (None, None))
+            if not name or not bounds or not name.startswith(("badge_", "icon_")) or any(s in name for s in FIT_SKIP):
+                continue
+            bottom = bounds[1] if bottom is None else min(bottom, bounds[1])
+            top = bounds[3] if top is None else max(top, bounds[3])
+        if bottom is None:                      # drawn as letters: no badge or icon to fit
+            continue
+        badge = text[a] == "("
+        k = _neighbour(text, style_at, icons, a, b, placed.lines)
+        if k is None:
+            continue
+        here, beside = style_at[a], style_at[k]
+        hit = fonts.find(beside.font)
+        face = (hit[0], hit[1]) if hit else (fonts.resolve(beside.font).face.key if fonts.resolve(beside.font).face else None)
+        if face is None:
+            continue
+        cap = cap_of(*face)
+        box = BADGE_PILL if badge else (bottom, top)
+        size, shift = badge_fit(model, here, beside, cap, box, resize=badge)
+        em = beside.size * _shrink(beside, model) * beside.vertical_scale
+        now = -baseline_shift(here, model) + (box[0] + box[1]) / 2000 * here.size * _shrink(here, model) * here.vertical_scale
+        off = now - (-baseline_shift(beside, model) + cap[2] / cap[0] * em)
+        out.append({"start": a, "end": b, "token": text[a:b], "kind": "badge" if badge else "icon",
+                    "size": round(here.size, 3), "shift": round(here.baseline_shift, 3), "fit_size": size,
+                    "fit_shift": shift, "own_shift": badge_fit(model, here, beside, cap, box, resize=False)[1],
+                    "off_px": round(off * scale, 2), "off_pct": round(100 * off / em, 2) if em else 0.0,
+                    "size_off": round(here.size / size - 1, 4) if size else 0.0})
+    return out
+
+
+def badge_wants(fit: dict) -> dict:
+    """The style keys a measured badge or icon (badge_fits) needs: FontSize and BaselineShift for a badge past
+    BADGE_RESIZE, else BaselineShift at its own size past FIT_PX and FIT_PCT; {} when it fits."""
+    if fit["kind"] == "badge" and abs(fit["size_off"]) > BADGE_RESIZE:
+        return {"FontSize": fit["fit_size"], "BaselineShift": fit["fit_shift"]}
+    if abs(fit["off_px"]) > FIT_PX and abs(fit["off_pct"]) > FIT_PCT:
+        return {"BaselineShift": fit["own_shift"]}
+    return {}
+
+
 def variant_fills(layer, vocab: Optional[IconVocabulary]) -> list:
     """[(icon name, variant, fill)] of the layer's :sticker and :tint tokens set in the icon font, in text order."""
     if layer is None or vocab is None:
@@ -2010,7 +2174,7 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
                 else:
                     out.jobs[name] = value
         elif name == "name":                    # redundant when the bot already shows it (the parser reads the title)
-            if shown_name(parsed) == collapse(value):
+            if straight(shown_name(parsed)) == straight(collapse(value)):
                 out.redundant.append(name)
             elif psd is None:
                 out.refusals.append(Refusal("unsupported-card", "no PSD to find the title layer in"))
@@ -3433,6 +3597,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     from psd_tools.composite.text import MissingFontError
     if not story_sync():
         raise ImportError("this psd-tools fork's set_text leaves the Txt2 story stale (no TypeLayer.sync_story)")
+    text = straight(text)                       # the bake writes ' (owner, 2026-10-25): the layer's kept ones too
     if layer is None and which == "ability":
         try:
             layer = ability_layer(psd)
@@ -3610,6 +3775,14 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         if fill is not None:                    # a :sticker or :tint the colour of its kind on the card (owner 2026-10-24)
             layer.set_span_style(a, b, fill=fill)
     unstretch(layer, typed)
+    try:                # typed badges at the computed size and middle, typed icons shifted when off (owner 2026-10-25)
+        for fit in badge_fits(layer, fonts, typed) if typed else ():
+            keys = ({"FontSize": fit["fit_size"], "BaselineShift": fit["fit_shift"]} if fit["kind"] == "badge"
+                    else badge_wants(fit))
+            if keys:
+                layer.set_span_style(fit["start"], fit["end"], **keys)
+    except MissingFontError as error:
+        raise Refused("font", str(error))
     now = _char_styles(layer)[1]
     stray = [c for i, c in enumerate(text) if now[i] and i not in glyphs and c not in blank and i not in plain]
     if stray:           # letters the icon font draws plainly: typed in place of a badge, or "(1GCD)" made "(GCD)"
@@ -5572,7 +5745,7 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
     if any(p.startswith("EFFECT LAYER") for p in new["validator"]):
         raise Refused("reparse", "effect layer problems remain")
     title = read_name(psd, _card_name(parsed), _own_text(parsed)) if "name" in jobs else None
-    if "name" in jobs and title != collapse(jobs["name"]):
+    if "name" in jobs and straight(title) != straight(collapse(jobs["name"])):
         raise Refused("reparse", f"the title reads {title!r}")
     return new
 
@@ -6631,6 +6804,9 @@ def parts_jobs(jobs: dict) -> dict:
 # Module Exports
 # ========================
 __all__ = [
+    'BADGE_PILL',
+    'BADGE_RATIO',
+    'BADGE_RESIZE',
     'Baked',
     'CODES',
     'Classification',
@@ -6666,7 +6842,11 @@ __all__ = [
     'set_ability_layers',
     'several_layers',
     'unpadded',
+    'badge_fit',
+    'badge_fits',
     'badge_tags',
+    'badge_wants',
+    'cap_of',
     'bare_icons',
     'apply_jobs',
     'artifacts',

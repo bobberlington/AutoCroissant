@@ -52,7 +52,7 @@ def queue_file(interaction: Interaction, file: File, **kwargs):
 
 
 def queue_edit(interaction: Interaction, **kwargs):
-    """Queue an edit to an interaction’s original response."""
+    """Queue an edit to an interaction's original response."""
     edit_queue.append((interaction, kwargs))
 
 

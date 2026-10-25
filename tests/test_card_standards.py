@@ -266,3 +266,93 @@ def test_composer_set_single_line(clone, tmp_path, monkeypatch):
         monkeypatch.setattr(cs, "single_line", lambda *a: 1 / 0)
         fixed = cs.fix(data, rel, [], str(tmp_path / "work3"))
         assert fixed.composer == [] and fixed.composer_left[0][1].startswith("ZeroDivisionError") and not fixed.data
+
+
+# ========================
+# Pixel fixes: straight apostrophes, old icon font glyphs (silent, owner 2026-10-25)
+# ========================
+CURLY = "b67b8799"              # main with 42 cards' curly apostrophes (13 titles, 29 abilities and rule pages)
+
+
+def _fonts(clone):
+    fonts = clone / "MDW" / "Fonts"
+    if not fonts.is_dir():
+        pytest.skip("no MDW/Fonts in the clone")
+    return lambda names: str(fonts)
+
+
+@pytest.mark.skipif(not story_sync(), reason="needs the fork's Txt2 story sync (fix/txt2-sync)")
+def test_apostrophes_straightened(clone, tmp_path):
+    """A title and a rule page: every U+2019 set as ' in the layer and its story, the glyphs redrawn, the parse the same
+    but for the apostrophes; nothing else fixed on the rule page."""
+    fonts, parser = _fonts(clone), clone_vocabulary(str(clone)).parser()
+    rel = "Auxiliary/Items/Papa's_Cookie.psd"
+    data = at_rev(clone, CURLY, rel)
+    fixed = cs.fix(data, rel, [], str(tmp_path / "work"), parser, fonts)
+    assert fixed.redrawn == {"apostrophes": ["Name"]} and fixed.pixel_left == [] and fixed.plain
+    new = PSDImage.open(BytesIO(fixed.data))
+    name = next(layer for layer in new.descendants() if layer.name == "Name")
+    assert cs.curly_layers(new) == [] and name.text == "Papa's Cookie" and name.story_text == "Papa's Cookie\r"
+    assert psd_edit.read_name(new) == "Papa's Cookie"
+    rule = "Auxiliary/Rulebook/11_Abilities2.psd"
+    fixed = cs.fix(at_rev(clone, CURLY, rule), rule, [], str(tmp_path / "work"), parser, fonts)
+    assert list(fixed.redrawn) == ["apostrophes"] and fixed.applied == [] and fixed.composer == []
+    assert not list((tmp_path / "work").iterdir())
+    temple = "Auxiliary/Items/The_Temple_of_Ahn'Qiraj.psd"     # stored ink past the layout: the engine would redraw it whole
+    fixed = cs.fix(at_rev(clone, CURLY, temple), temple, [], str(tmp_path / "work"), parser, fonts)
+    assert fixed.redrawn == {} and "not redrawn by glyph" in fixed.pixel_left[0][1]
+
+
+@pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
+def test_old_icon_glyph_redrawn_alone(clone, tmp_path):
+    """A badge whose stored pixels are not the current font's (an older font's, painted here) is found and drawn again,
+    that glyph alone: the rest of the layer keeps Photoshop's pixels."""
+    import numpy as np
+    from psd_tools.composite.text import capture
+    from psd_tools.composite.text.splice import _glyph_box
+    fonts = _fonts(clone)
+    found = psd_edit.font_map(fonts([]))
+    psd = PSDImage.open(BytesIO(at_rev(clone, CURLY, MINI_DOOMER)))
+    layer = psd_edit.ability_layer(psd)
+    assert cs.old_glyphs(layer, found) == []
+    before = capture(layer, found)
+    index = next(i for i, g in enumerate(before.layout.glyphs) if g.face.ft.postscript_name.startswith(b"stoogedings"))
+    x0, y0, x1, y1 = _glyph_box(before.layout.glyphs[index], before.model.transform, 0)
+    rgba, (bx, by, _, _) = before.rgba.copy(), before.bbox
+    box = (slice(y0 - by + 3, y1 - by - 3), slice(x0 - bx + 3, x1 - bx - 3))
+    rgba[box] = (0.0, 0.6, 0.0, 1.0)                        # a flat green pill: no badge of the current font
+    layer._store_raster(rgba, before.bbox)
+    old = tmp_path / "old.psd"
+    psd_edit.save_psd(psd, str(old), update_preview=False)
+    assert cs.old_glyphs(psd_edit.ability_layer(PSDImage.open(str(old))), found) == [index]
+    assert cs.redraw_old_glyphs(str(old), str(tmp_path / "new.psd"), fonts) == ["Ability"]
+    after = capture(psd_edit.ability_layer(PSDImage.open(str(tmp_path / "new.psd"))), found)
+    assert cs.old_glyphs(psd_edit.ability_layer(PSDImage.open(str(tmp_path / "new.psd"))), found) == []
+    assert after.bbox == before.bbox
+    outside = np.ones(rgba.shape[:2], bool)
+    outside[y0 - by - 2:y1 - by + 2, x0 - bx - 2:x1 - bx + 2] = False
+    assert np.array_equal(after.rgba[outside], rgba[outside])
+
+
+WOLFGANG = "Creatures/DST/4 Stars/Wolfgang.psd"     # one (BOT) badge in Belisaplumillamanual, subscript like its text
+
+
+@pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
+def test_badges_fitted_to_their_text(clone, tmp_path):
+    """Owner 2026-10-25: a badge 20% small and 3 pt low is set back to the computed size (the pill 1.35 times the text's
+    capital height) and middle (the capitals' middle), its glyphs redrawn, never told; the check finds nothing left.
+    Rule pages keep theirs."""
+    fonts = _fonts(clone)
+    psd = PSDImage.open(clone / WOLFGANG)
+    layer = psd_edit.ability_layer(psd)
+    fit, = psd_edit.badge_fits(layer, psd_edit.font_map(fonts([])))
+    layer.set_span_style(fit["start"], fit["end"], FontSize=round(fit["fit_size"] * 0.8, 2), BaselineShift=fit["fit_shift"] - 3)
+    psd_edit.save_psd(psd, str(tmp_path / "off.psd"))
+    fixed = cs.fix((tmp_path / "off.psd").read_bytes(), WOLFGANG, [], str(tmp_path / "work"), None, fonts, only="badges")
+    assert fixed.redrawn == {"badges": ["Ability"]} and fixed.pixel_left == [] and fixed.plain
+    (tmp_path / "fit.psd").write_bytes(fixed.data)
+    assert cs.badges_left(str(tmp_path / "fit.psd"), fonts) == []
+    now, = psd_edit.badge_fits(psd_edit.ability_layer(PSDImage.open(tmp_path / "fit.psd")), psd_edit.font_map(fonts([])))
+    assert abs(now["off_px"]) < 0.1 and now["size"] == fit["fit_size"]
+    rule = "Auxiliary/Rulebook/11_Abilities5.psd"
+    assert not cs.fix((clone / rule).read_bytes(), rule, [], str(tmp_path / "work"), None, fonts, only="badges").data
