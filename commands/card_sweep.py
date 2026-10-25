@@ -9,9 +9,14 @@ a card whose PSD or PNG moved since (never over a newer PSD): `moved` lists them
 
     python -m commands.card_sweep run --kind apostrophes --clone ~/Desktop/TTSCardMaker --out <worktree>
                                       [--ref main] [--cards <names>] [--plan <file>] [--workers 4]
+    python -m commands.card_sweep run --kind apostrophes,badges --clone ~/Desktop/TTSCardMaker --out <folder>
     python -m commands.card_sweep moved --plan <file> --clone <clone> [--ref origin/main]
 
 A sparse worktree must hold the paths it writes (git sparse-checkout add), or git does not see them.
+
+Several kinds run as passes in the order given, one commit each: pass n writes into <out>/<kind> (repo paths) and its
+plan beside <out>, and reads the cards an earlier pass rewrote from that pass's files, so its base blobs are what the
+earlier commit lands (`moved` against main after that commit).
 """
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor
@@ -40,11 +45,19 @@ _worker: dict = {}
 # ========================
 # One card
 # ========================
-def _init(clone: str, tree: dict, kind: str, work: str) -> None:
+def _init(clone: str, tree: dict, kind: str, work: str, chained: Optional[dict] = None) -> None:
     source = Source(clone)
+    if chained:                                 # blobs an earlier pass wrote: {sha: file}
+        stored = source.blob
+        source.blob = lambda sha: _read(chained[sha]) if sha in chained else stored(sha)
     source.checked = tree
     context, vocab = build_context(source, tree)
     _worker.update(source=source, context=context, parser=vocab.parser(), kind=kind, work=work)
+
+
+def _read(path: str) -> bytes:
+    with open(path, "rb") as fh:
+        return fh.read()
 
 
 def _codes(issues: list) -> set:
@@ -105,40 +118,61 @@ def sweep_card(job) -> dict:
 # ========================
 # The sweep
 # ========================
+def kinds_of(text: str) -> list:
+    """The kinds named (comma-separated, - for space), in order; ValueError on an unknown one."""
+    kinds = list(dict.fromkeys(k.strip().replace("-", " ") for k in text.split(",") if k.strip()))
+    for kind in kinds:
+        if kind not in standards.PIXEL_FIXES:
+            raise ValueError(f"{kind!r}: not one of {', '.join(standards.PIXEL_FIXES)}")
+    if not kinds:
+        raise ValueError("no kind")
+    return kinds
+
+
 def run(clone: str, kind: str, out_dir: str, ref: str = "main", cards: str = "", plan_path: str = "",
-        workers: int = WORKERS) -> dict:
+        workers: int = WORKERS) -> list:
     """
-    Sweep the clone's ref: the fixed cards' files written into out_dir, the plan to plan_path (default: beside out_dir).
+    Sweep the clone's ref, one pass per kind: one kind's files written into out_dir, several kinds' into
+    out_dir/<kind>, each later pass on the earlier passes' files; each plan to plan_path (one kind) or beside out_dir.
 
     Returns:
-        The plan: {"kind", "ref", "commit", "fixed": [...], "refused": [...], "errors": [...], "skipped": n}
+        The plans: [{"kind", "ref", "commit", "fixed": [...], "refused": [...], "errors": [...], "skipped": n}]
     """
-    kind = kind.replace("-", " ")
-    if kind not in standards.PIXEL_FIXES:
-        raise ValueError(f"{kind!r}: not one of {', '.join(standards.PIXEL_FIXES)}")
+    kinds = kinds_of(kind)
     source = Source(clone)
     commit = source.commit(ref)
     if not commit:
         raise ValueError(f"{ref}: not in {clone}")
-    tree = source.tree(commit)
+    tree = dict(source.tree(commit))
     names = {CardAuthors.key(c) for c in cards.split(",") if c.strip()}
-    jobs = whole_tree_jobs(tree, "sweep", names or None)
-    work = mkdtemp(prefix="sweep-")
-    plan = {"kind": kind, "ref": ref, "commit": commit, "fixed": [], "refused": [], "errors": [], "skipped": 0}
-    try:
-        _sweep(plan, jobs, clone, tree, kind, work, out_dir, workers)
-    finally:
-        rmtree(work, ignore_errors=True)
-    plan_path = plan_path or join(dirname(abspath(out_dir)), f"card-sweep-{kind.replace(' ', '-')}.json")
-    with open(plan_path, "w", encoding="utf-8") as fh:
-        dump(plan, fh, indent=1)
-    plan["path"] = plan_path
-    return plan
+    chained: dict = {}                          # sha -> file, the earlier passes' writes
+    plans = []
+    for kind in kinds:
+        slug = kind.replace(" ", "-")
+        target = abspath(out_dir if len(kinds) == 1 else join(out_dir, slug))
+        jobs = whole_tree_jobs(tree, "sweep", names or None)
+        work = mkdtemp(prefix="sweep-")
+        plan = {"kind": kind, "ref": ref, "commit": commit, "fixed": [], "refused": [], "errors": [], "skipped": 0}
+        try:
+            _sweep(plan, jobs, clone, tree, kind, work, target, workers, chained)
+        finally:
+            rmtree(work, ignore_errors=True)
+        for entry in plan["fixed"]:             # the next pass reads these
+            for path, sha in entry["writes"].items():
+                tree[path] = (tree[path][0], sha)
+                chained[sha] = join(target, path)
+        path = (plan_path if len(kinds) == 1 else "") or join(dirname(abspath(out_dir)), f"card-sweep-{slug}.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            dump(plan, fh, indent=1)
+        plan["path"] = path
+        plans.append(plan)
+    return plans
 
 
-def _sweep(plan: dict, jobs: list, clone: str, tree: dict, kind: str, work: str, out_dir: str, workers: int) -> None:
+def _sweep(plan: dict, jobs: list, clone: str, tree: dict, kind: str, work: str, out_dir: str, workers: int,
+           chained: Optional[dict] = None) -> None:
     with ProcessPoolExecutor(max(1, min(workers, WORKERS, cpu_count() or 1)), initializer=_init,
-                             initargs=(clone, tree, kind, work)) as pool:
+                             initargs=(clone, tree, kind, work, chained)) as pool:
         for done in pool.map(sweep_card, jobs, chunksize=4):
             state = done.pop("state")
             if state == "skip":
@@ -179,8 +213,9 @@ def summary(plan: dict) -> str:
 def main(args: Optional[list] = None) -> int:
     parser = ArgumentParser(prog="python -m commands.card_sweep", description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    one = sub.add_parser("run", help="sweep one kind of fix into a worktree")
-    one.add_argument("--kind", required=True, help=", ".join(k.replace(" ", "-") for k in standards.PIXEL_FIXES))
+    one = sub.add_parser("run", help="sweep kinds of fix into a worktree, one pass each")
+    one.add_argument("--kind", required=True, help="comma-separated, run in order: " +
+                     ", ".join(k.replace(" ", "-") for k in standards.PIXEL_FIXES))
     one.add_argument("--clone", required=True)
     one.add_argument("--out", required=True, help="the worktree the files are written into")
     one.add_argument("--ref", default="main")
@@ -196,9 +231,9 @@ def main(args: Optional[list] = None) -> int:
         for path in moved(opts.plan, opts.clone, opts.ref):
             print(path)
         return 0
-    plan = run(opts.clone, opts.kind, opts.out, opts.ref, opts.cards, opts.plan, opts.workers)
-    print(summary(plan))
-    return 1 if plan["errors"] else 0
+    plans = run(opts.clone, opts.kind, opts.out, opts.ref, opts.cards, opts.plan, opts.workers)
+    print("\n".join(summary(plan) for plan in plans))
+    return 1 if any(plan["errors"] for plan in plans) else 0
 
 
 if __name__ == "__main__":
@@ -209,6 +244,7 @@ if __name__ == "__main__":
 # Module Exports
 # ========================
 __all__ = [
+    'kinds_of',
     'moved',
     'run',
     'summary',
