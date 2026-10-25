@@ -90,7 +90,7 @@ print_token_status()
 # Intents permissions
 intents = Intents.default()
 intents.message_content = True
-client = Client(intents=intents)
+client = Client(intents=intents, guild_ready_timeout=0.25)   # our guilds arrive within ~50 ms; the default waits 2 s
 tree = CommandTree(client)
 
 # Global State
