@@ -202,6 +202,18 @@ def test_normalize_ability_matches_the_parser():
     assert pe.collapse(" Shooting\rStar ") == "Shooting Star" and pe.collapse(None) == ""
 
 
+def test_apostrophes_read_and_bake_straight():
+    """Owner 2026-10-25: ' always. The data straightens a card's text (a title then equal to its name is none), an edit
+    differing only by curly apostrophes is redundant, and the bake writes straight ones."""
+    from commands.card_models import CardInfo, straighten_card
+    card = CardInfo("Papa's Cookie", "item", ability="It’s mine.", display_name="Papa’s Cookie", note="n")
+    assert straighten_card(card) and (card.ability, card.display_name, card.note) == ("It's mine.", None, "n")
+    assert not straighten_card(card)
+    parsed = {"card": {"ability": "It’s mine.", "display_name": "Papa’s Cookie"}}
+    assert pe.classify(parsed, {"ability": "It's mine.", "name": "Papa's Cookie"}).redundant == ["ability", "name"]
+    assert pe.normalize_ability("Don’t.") == "Don't."
+
+
 def test_keep_ends_puts_back_blank_first_and_last_paragraphs():
     """The website and Discord trim an ability's ends: the layer's blank first and last paragraphs come back (PoD10BFB)."""
     old = "\r(1GCD)(2U) Intercept.\r(2CD) Summon."

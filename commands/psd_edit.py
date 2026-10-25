@@ -34,7 +34,7 @@ from psd_tools.constants import BlendMode, ColorMode, Resource, Tag
 from psd_tools.psd.base import ListElement
 
 from commands.card_edits import CardEdits
-from commands.card_models import CardInfo, StatsDatabase
+from commands.card_models import CardInfo, StatsDatabase, straight
 from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_PREFIX, ICON_SCAN_PATTERN,
                                  TITLE_REGION_RATIO, TYPE_REGION_RATIO, BoundingBox, CardValidator, IconVocabulary,
                                  MutableValue, PSDParser, name_key,
@@ -456,7 +456,7 @@ def normalize_ability(text: Optional[str]) -> str:
         breaks as \\n, tabs as spaces, no space before punctuation, quotes and blank ends stripped
     """
     text = (text or "").replace("\r\n", "\n").replace("\r", "\n").replace("\t", " ").replace("\x03", "\n")
-    text = text.replace("﻿", "").rstrip()
+    text = straight(text).replace("﻿", "").rstrip()    # apostrophes compare straight (owner, 2026-10-25)
     text = text.strip("'\"\n").rstrip(" '\"")
     if text:
         text = sub(r"\s+([:;,\.\?!])", r"\1", text)
@@ -1977,7 +1977,7 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
             else:
                 out.jobs[name] = value
         elif name == "name":                    # redundant when the bot already shows it (the parser reads the title)
-            if shown_name(parsed) == collapse(value):
+            if straight(shown_name(parsed)) == straight(collapse(value)):
                 out.redundant.append(name)
             elif psd is None:
                 out.refusals.append(Refusal("unsupported-card", "no PSD to find the title layer in"))
@@ -3356,6 +3356,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     from psd_tools.composite.text import MissingFontError
     if not story_sync():
         raise ImportError("this psd-tools fork's set_text leaves the Txt2 story stale (no TypeLayer.sync_story)")
+    text = straight(text)                       # the bake writes ' (owner, 2026-10-25): the layer's kept ones too
     if layer is None and which == "ability":
         try:
             layer = ability_layer(psd)
@@ -5415,7 +5416,7 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
     if any(p.startswith("EFFECT LAYER") for p in new["validator"]):
         raise Refused("reparse", "effect layer problems remain")
     title = read_name(psd, _card_name(parsed), _own_text(parsed)) if "name" in jobs else None
-    if "name" in jobs and title != collapse(jobs["name"]):
+    if "name" in jobs and straight(title) != straight(collapse(jobs["name"])):
         raise Refused("reparse", f"the title reads {title!r}")
     return new
 
