@@ -1,5 +1,5 @@
 from discord import Interaction
-from os import execl, execv
+from os import execl
 from sys import argv, executable
 from commands.repo_history import batch_overrides
 
@@ -24,10 +24,7 @@ def _repo():
 
 
 def restart_bot():
-    try:
-        execv('./startup.sh', argv)
-    except FileNotFoundError:
-        execl(executable, executable, *argv)
+    execl(executable, executable, *argv)
 
 
 async def git_pull(interaction: Interaction):

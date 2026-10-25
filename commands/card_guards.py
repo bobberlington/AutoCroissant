@@ -27,10 +27,10 @@ requirements-cards.txt.
 """
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from functools import partial
-from json import dump, dumps, load, loads
+from json import dump, load
 from os import cpu_count, environ, getpid, listdir, makedirs, pathsep, replace
 from os.path import basename, dirname, isdir, join, splitext
 from re import fullmatch, sub

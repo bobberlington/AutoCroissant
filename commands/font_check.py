@@ -7,7 +7,7 @@ psd_details.json instead (card_sync.fonts_text, details_report here).
     python -m commands.font_check --fonts <dir> [--psd <path>...] [--all <checkout root>]
                                   [--repo <owner/name> --after <sha> [--before <sha>] [--author <login>] [--whole-tree]]
                                   [--json <out>] [--discord <payload out>]
-    FontIndex(dir) -> the faces of a fonts folder; psd_fonts(psd) -> {font: [layers]}; check_psd(psd, index) -> the missing ones
+    FontIndex(dir) -> the faces of a fonts folder; psd_fonts(psd) -> {font: [layers]}
     markdown(report), discord_payload(report) -> the job summary / commit comment and the webhook body
     find_fonts(repository) -> the fonts dir: PSD_TOOLS_FONT_DIRS, else the checkout's MDW/Fonts, else refresh_cache()
 
@@ -185,20 +185,6 @@ def psd_fonts(psd) -> dict:
             for name in layer_fonts(layer):
                 out.setdefault(name, []).append(layer.name)
     return out
-
-
-def check_psd(psd, index: FontIndex) -> dict:
-    """
-    The fonts one PSD asks for that the index lacks.
-
-    Args:
-        psd: A PSDImage, PSD bytes or a path
-        index: The fonts folder's faces
-
-    Returns:
-        {missing font: [layer names]}
-    """
-    return {font: layers for font, layers in psd_fonts(psd).items() if not index.supplies(font)}
 
 
 # ========================
@@ -822,7 +808,6 @@ __all__ = [
     'check_blobs',
     'check_checkout',
     'check_files',
-    'check_psd',
     'details_report',
     'dir_fonts',
     'discord_payload',

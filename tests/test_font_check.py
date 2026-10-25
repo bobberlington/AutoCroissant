@@ -198,11 +198,6 @@ def test_psd_fonts_visible_type_layers_only():
     assert fc.psd_fonts(doc) == {"BabaUI": ["6", "6"], "Domigorgon": ["Ability"]}
 
 
-def test_check_psd(index):
-    doc = psd(layer("Name", ["PsdToolsFixture-TT", "JavaneseText"], [(2, 0), (2, 1)], "abcd"), layer("Ability", ["BabaUI"], [(1, 0)], "x"))
-    assert fc.check_psd(doc, index) == {"JavaneseText": ["Name"], "BabaUI": ["Ability"]}
-
-
 # ========================
 # Reports
 # ========================
@@ -485,7 +480,7 @@ def test_real_card_psd(clone, tmp_path):
     index = fc.FontIndex(str(clone / "MDW" / "Fonts"))
     assert index.errors == [] and index.files >= 270 and index.supplies("Domigorgon")
     assert index.supplies("BabaUI")                             # Baba UI Regular.ttf, the owner's file (TTSCardMaker 92b5ae6b)
-    assert fc.check_psd(str(path), index) == {}
+    assert all(index.supplies(font) for font in fonts)
     assert index.supplies("Papyrus-Regular")                    # Papyrus.ttf (the Windows face), no alias since 2026-10-23
 
 

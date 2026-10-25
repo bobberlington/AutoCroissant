@@ -546,7 +546,7 @@ def test_fonts_are_left_to_font_check(cards, tmp_path, monkeypatch, capsys):
     fonts_dir) and tell none, in the post or the comment."""
     from inspect import signature
     root, base, alice, bot = cards
-    monkeypatch.setattr("commands.font_check.check_psd", lambda psd, index: {"ComicSansMS": ["Ability"]})
+    monkeypatch.setattr("commands.font_check.FontIndex.supplies", lambda index, font: False)
     assert "fonts_dir" not in signature(cg.check).parameters and "fonts_dir" not in signature(cg.build_context).parameters
     out = tmp_path / "out"
     data = cg.check(str(root), bot, base, "o/cards", mode="report", out=str(out), workers=1, cards={"bread"})

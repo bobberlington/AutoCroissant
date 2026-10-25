@@ -48,7 +48,6 @@ SOURCE = "TTS session"
 GROUP = "group"
 RAW = "~/Documents/Tools/wt/scratch/site-r3/ratings_raw.json"
 CARD_FOLDERS = ("Creatures/", "Items/", "Field/", "N.M.E/", "Auxiliary/")
-REVIEW_FIELDS = ("category", "save", "board", "x", "match", "match_note", "stars", "author", "png")
 
 
 # ========================
@@ -91,7 +90,8 @@ def placements(raw: dict) -> tuple:
         raw: ratings_raw.json ({"ratings": [...], "forbidden": [...], "skipped": {...}})
 
     Returns:
-        (entries [{card, date, scale, value, by, source} + REVIEW_FIELDS], report {counts, skip lists})
+        (entries [{card, date, scale, value, by, source} + the review fields (category, save, board, x, match,
+        match_note, stars, author, png)], report {counts, skip lists})
 
     Raises:
         ValueError: a value whose category isn't the one the save shows (the mapping is wrong)

@@ -125,7 +125,7 @@ def test_fonts_are_font_checks_alone(clone, context, monkeypatch):
     assert not hasattr(cs, "rule_fonts") and not hasattr(cs, "check_psd")
     assert "fonts" not in {f.name for f in fields(cs.Context)}
     rel = "Creatures/Other/5 Stars/Baba.psd"
-    monkeypatch.setattr("commands.font_check.check_psd", lambda psd, fonts: {"Wingdings-Regular": ["Hp"]})
+    monkeypatch.setattr("commands.font_check.FontIndex.supplies", lambda index, font: False)
     assert not [i for i in cs.check(_open(clone, rel), rel, context) if i.code == "R7" or "MDW/Fonts" in i.text]
 
 

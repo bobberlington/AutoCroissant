@@ -191,27 +191,13 @@ def test_kind_table(name, kind):
 
 
 def test_psd_meta_rides_beside_by_and_at():
-    """_psd (the pipeline's verdict) is kept like _by/_at: out of the edits, readable, writable, ignored by apply()."""
+    """_psd (the pipeline's verdict) is kept like _by/_at: out of the edits, ignored by apply()."""
     verdict = {"state": "refused", "for": {"hp": 5}, "psd": "e0b11bab", "reason": "stat>10: not yet", "at": "2026-10-20T00:00:00Z"}
     e = _edits({"Foo_Bar": {"hp": 5, "_by": "web", "_at": "2026-10-20T00:00:00Z", "_psd": verdict},
                 "Baz": {"note": "x", "_psd": {"state": "pending"}}, "Qux": {"note": "y"}})
     assert e.cards["foo bar"] == {"hp": 5}
     assert e.meta["foo bar"] == {"_by": "web", "_at": "2026-10-20T00:00:00Z", "_psd": verdict}
-    assert e.psd_state("Foo Bar") == verdict
-    assert e.psd_state("Baz") is None and e.psd_state("Qux") is None and e.psd_state("Nobody") is None
     card = _card()
     assert e.apply("Foo Bar", card) is True
     assert card.stats.hp == 5 and card.parsed_values == {"hp": None, "problems": ["MISSPELT TYPE: tornado"]}
-    e.set_psd_state("FOO BAR", {"state": "baked", "for": {"hp": 5}})
-    assert e.psd_state("Foo Bar")["state"] == "baked" and e.meta["foo bar"]["_by"] == "web"
-    e.set_psd_state("Foo Bar", None)
-    assert e.psd_state("Foo Bar") is None and e.meta["foo bar"] == {"_by": "web", "_at": "2026-10-20T00:00:00Z"}
-    with pytest.raises(ValueError):
-        e.set_psd_state("Foo Bar", {"state": "done"})
-    with pytest.raises(ValueError):
-        e.set_psd_state("Foo Bar", {"state": "pending"})       # pending is the website's computation, never written
-    e.set_psd_state("New Card", {"state": "baked"})            # a card with no edits yet
-    assert e.psd_state("New Card") == {"state": "baked"} and "new card" not in e.cards
-    e.set_psd_state("Nobody", None)
-    assert "nobody" not in e.meta                              # removing nothing leaves no empty meta behind
 

@@ -56,7 +56,7 @@ from requests import RequestException
 
 import commands.github_api as github_api
 import commands.psd_edit as psd_edit
-from commands.card_edits import ORDER, PUNCTUATION, CardAuthors, CardEdits, _collate, _json, dump_edits  # noqa: F401 (re-exported)
+from commands.card_edits import ORDER, CardAuthors, CardEdits, _collate, dump_edits  # noqa: F401 (_collate re-exported)
 from commands.card_models import card_name
 from commands.git_commit import (API_TIMEOUT, COMMIT_TRIES, GIT_TIMEOUT, NO_LAZY, Transient, api, checkout_head, commit_files,
                                  commit_info, git, local_commit, plural, ref_head)

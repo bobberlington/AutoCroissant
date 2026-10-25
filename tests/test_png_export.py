@@ -1113,7 +1113,7 @@ def test_g2_a_text_turned_to_opacity_0_is_reread(clone):
     layer = next(l for l in new.descendants() if l.kind == "type" and l.is_visible() and str(l.text or "").strip())
     layer.opacity = 0
     assert pe._type_layers(new)[layer.layer_id][2] is False
-    assert [what for what, _ in pe.reread(old, new)] == [f"the {layer.name.strip()} text"]
+    assert [what for what, *_ in pe._rereads(old, new)] == [f"the {layer.name.strip()} text"]
 
 
 def test_r10_flags_the_lost_gradient_maps(clone):

@@ -84,7 +84,6 @@ class CardBuild:
         self.refused: list = []                  # PSDs whose range read got a 4xx, 5xx or no connection (RANGE_REFUSALS)
         self.tree: Optional[dict] = None         # the tree
         self.details: dict = {}                  # blob sha -> psd_details record (db/psd_details.json)
-        self.details_changed = 0                 # records gathered this run
         self.font_index = None                   # psd_details.font_index(): faces for the records' "supplied" flags, or None
         self.restored: list = []                 # archived cards whose PSD is back
         self.returned: list = []                 # archived names back under another PSD (path and blob): new cards
@@ -582,7 +581,6 @@ class CardBuild:
             details = self._details(psd, path, name)
         if details is not None:
             self.details[sha] = details
-            self.details_changed += 1
         return card
 
     def _not_fetched(self, path: str, name: str) -> None:
@@ -906,7 +904,6 @@ class Outcome:
     lines: list = field(default_factory=list)         # one per card event
     errors: list = field(default_factory=list)        # why the build failed (files not fetched)
     problems: list = field(default_factory=list)      # {card, path, notes} of re-parsed cards
-    written: bool = False
     manifest: dict = field(default_factory=dict)
 
 
@@ -1263,7 +1260,6 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     if problems:
         out.refused["G3"] = "; ".join(problems)
         out.code = EXIT_GATE
-    out.written = True
     return out
 
 
