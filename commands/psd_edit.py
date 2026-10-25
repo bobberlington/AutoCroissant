@@ -6704,8 +6704,8 @@ def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Op
             layer_was = layer.text
             raw = _part_raw(layer_was, part["text"], text)
             copies = followers(layer.layer_id, "copy")
-            edit = set_text_layer(psd, which, raw, fonts_dir, chart, card, own_text, parser, original, layer=layer,
-                                  beside=copies)
+            edit = set_text_layer(psd, which, raw, fonts_dir, chart if kind == "ability" else None, card, own_text, parser,
+                                  original, layer=layer, beside=copies)   # a rule page's words keep their own colours
             edit.story = first_story(layer)
             typed = sum(raw.strip(PAD).count(c) for c in "\r\x03") - sum(layer_was.strip(PAD).count(c) for c in "\r\x03")
             edit.notes = [note for note in edit.notes if not _typed_lines(note, typed)]    # an Enter in the box is no overflow
@@ -6714,7 +6714,8 @@ def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Op
                 layer.name = edit.renamed = f"{layer.name} #{','.join(map(str, sorted(tag)))}"
             many = len(joined[kind]) > 1
             if many:
-                where = f"{'ability' if which == 'ability' else 'title'} {joined[kind].index(part) + 1}/{len(joined[kind])}"
+                label = "block" if kind == "blocks" else "ability" if which == "ability" else "title"
+                where = f"{label} {joined[kind].index(part) + 1}/{len(joined[kind])}"
                 edit.notes = [sub(rf"^((?:[\w-]+: )?){which}\b", rf"\1{which} ({where})", note, count=1)
                               for note in edit.notes]
             edits.append((layer, edit, False))
