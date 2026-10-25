@@ -396,7 +396,7 @@ LAYOUT_BARS = [
     ("Creatures/Kirby/3 Stars/Spinni.psd", "hp", 5, "had no digit 5"),             # A: no 5: its 4 moved and renamed
     ("Auxiliary/Minions/Bulborb Larva.psd", "hp", 2, None),                         # A: each digit a picture of the row
     ("Creatures/Isaac/3 Stars/Tainted_Isaac.psd", "hp", 7, None),                   # C: lit hearts masked to the value
-    ("Auxiliary/Minions/Dark_Esau.psd", "hp", 6, "redrawn"),                        # C: that mask too short once moved
+    ("Auxiliary/Minions/Dark_Esau.psd", "hp", 6, None),                             # C: that mask too short to move whole
     ("Creatures/Cuphead/5 Stars/Chef_Saltbaker.psd", "hp", 9, None),                # B: a dark exposure, a marker named
     ("Auxiliary/Minions/Clot_Black.psd", "atk", 3, None),                           # D: lit cells "0" and the value
     ("Items/Active/3 Stars/Blank_Card.psd", "hp", 7, None),                         # D: lit and dark pairs named 1-10
