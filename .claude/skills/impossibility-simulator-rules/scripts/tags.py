@@ -1,4 +1,4 @@
-"""Timing tag counts over the distinct cards. Usage: python3 -I tags.py <cards.json | loadpkl.py dump>"""
+"""Timing tag counts over the distinct cards. Usage: python3 -I tags.py <cards.json | db/stats.json>"""
 import collections, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # rows.py (-I drops the script's folder)
 import rows

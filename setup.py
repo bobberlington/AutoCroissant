@@ -5,19 +5,7 @@ import hashlib, json
 import shutil, sys
 import sysconfig, time
 
-# Files that should NOT be compiled (will cause issues)
-EXCLUDE_FILES = {
-    '__init__.py',
-    'setup.py',
-    'config.py',                        # Configuration file
-    'global_config.py',                 # Configuration file
-    'main.py',                          # Entry point - keep as Python
-    'commands/__init__.py',
-    'commands/update_bot.py',           # Uses execv/execl for restart
-    'commands/utils.py',                # Core utilities, decorators, dynamic behavior
-}
-
-# Files that CAN be compiled safely
+# Files that CAN be compiled safely (never main.py, the configs, update_bot.py's restart or utils.py's decorators)
 INCLUDE_FILES = [
     'commands/analytics.py',
     'commands/frankenstein.py',
@@ -53,14 +41,6 @@ def remove_file(path):
         print(f"  - Deleted: {path}")
     except Exception as e:
         print(f"  ! Could not delete {path}: {e}")
-
-
-def remove_dir(path):
-    try:
-        shutil.rmtree(path)
-        print(f"  - Deleted directory: {path}")
-    except Exception as e:
-        print(f"  ! Could not delete directory {path}: {e}")
 
 
 def clean_artifacts():
@@ -142,13 +122,23 @@ def built_path(file):
 
 
 def remove_orphans(files):
-    """Delete every compiled module that is not a current INCLUDE_FILES build (other ABI, dropped module)."""
-    keep = {built_path(f) for f in files}
-    for pattern in ('*.so', '*.pyd'):
-        for f in Path('.').rglob(pattern):
-            if f in keep or any(part.startswith('.') or part == 'build' for part in f.parts[:-1]):
-                continue
-            remove_file(f)
+    """Delete every compiled module that is not a current INCLUDE_FILES build (other ABI, dropped module), the C sources
+    and build/ objects of dropped modules, and their stamps."""
+    keep = {built_path(f) for f in files} | {Path(f[:-3] + '.c') for f in files}
+    found = [f for pattern in ('*.so', '*.pyd') for f in Path('.').rglob(pattern)]
+    found += [f for folder in {Path(f).parent for f in files} for f in folder.glob('*.c')]
+    for f in found:
+        if f in keep or any(part.startswith('.') or part == 'build' for part in f.parts[:-1]):
+            continue
+        remove_file(f)
+    modules = {Path(f[:-3]) for f in files}
+    for folder in [*Path('build').glob('lib.*'), *Path('build').glob('temp.*')]:
+        for f in folder.rglob('*'):
+            if f.is_file() and f.relative_to(folder).parent / f.name.split('.')[0] not in modules:
+                remove_file(f)
+    stamps = load_stamps()
+    if set(stamps) - set(files):
+        STAMPS.write_text(json.dumps({f: v for f, v in stamps.items() if f in files}, indent=1, sort_keys=True))
 
 
 def stale_files(files, stamps):

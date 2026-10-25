@@ -42,8 +42,10 @@ deployed e6a5c54; TC 44440a31/dad7aeae; first live main commit 59b97943). **Step
 "now"),** branches work/pickles in both repos: AutoCroissant deletes `stats.pkl`, `old_stats.pkl`, `aliases.pkl`,
 `psd_details.json`, `/push`, the `CARD_SYNC` switch, the legacy `/update_stats` path (repo_traverser.py,
 `card_data.update`, the commits-API lookups, the one-time history cleanup and backfill) and every pickle writer
-(`export-pickles` included); the build's `--seed` (card-sync.yml pins PICKLE 1282743) and the read-only pickle tools
-stay. TTSCardMaker's site.yml always reads `data` (no `CARD_DATA` switch) and build_site.py lost its pickle loader. The
+(`export-pickles` included); the build's `--seed` (card-sync.yml pinned PICKLE 1282743) and the read-only pickle tools
+stayed until work/clean (2026-10-25) removed them too, with the seed pass, the PICKLE recovery, `BOT_CLONE`, card-sync.yml's
+seed input, empty-branch bootstrap and `POSTS`/`MAIN_COMMIT` switches: a build refuses an empty db/ unless `--empty`
+(new card data), and §7.4's seed and recovery text below is history. TTSCardMaker's site.yml always reads `data` (no `CARD_DATA` switch) and build_site.py lost its pickle loader. The
 data branch is the only source; the rollback of the whole move (§13) is gone with them. Open: §16 item 7 (verdicts;
 design in `docs/Future/CARD_SYNC_VERDICTS.md`). The Discord card edits (`/update_metadata`,
 `/mass_replace`, `/alias`) that §2, §5 and §11 describe were retired 2026-10-25 (AC 6e8f8e3); the website is the one

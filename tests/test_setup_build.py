@@ -1,5 +1,5 @@
 """setup.py's incremental build: a module rebuilds when its source, its .pxd or setup.py changes (not on a bare touch),
-and a .so that is not a current INCLUDE_FILES build is deleted."""
+and a .so that is not a current INCLUDE_FILES build is deleted, with a dropped module's C source, objects and stamp."""
 import os
 
 import pytest
@@ -34,6 +34,12 @@ def test_stale_and_orphans(tmp_path, monkeypatch):
 
     old = tmp_path / "commands" / "a.cpython-310-x86_64-linux-gnu.so"
     dropped = tmp_path / "commands" / "b.so"
-    old.write_bytes(b""), dropped.write_bytes(b"")
+    built = [tmp_path / "build" / "temp.x" / "commands" / name for name in ("a.o", "b.o")]
+    for path in (old, dropped, tmp_path / "commands" / "a.c", tmp_path / "commands" / "b.c", *built):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"")
+    st.STAMPS.write_text('{"commands/a.py": "x", "commands/b.py": "y"}')
     st.remove_orphans(files)
     assert not old.exists() and not dropped.exists() and st.built_path(files[0]).exists()
+    assert (tmp_path / "commands" / "a.c").exists() and not (tmp_path / "commands" / "b.c").exists()
+    assert built[0].exists() and not built[1].exists() and st.load_stamps() == {"commands/a.py": "x"}

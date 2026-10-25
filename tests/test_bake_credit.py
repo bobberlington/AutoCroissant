@@ -65,7 +65,7 @@ def test_select_carries_the_entrys_by(github):
 def baking(github, monkeypatch):
     """Mini Doomer hp 5 -> 8 asked by "amy"; apply_jobs writes stand-in PSD/PNG bytes (the commit message is under test)."""
     edits = github.files_at(github.head)
-    edits[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"hp": 8, "_by": "amy", "_at": AT}})
+    edits[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 8, "_by": "amy", "_at": AT}})
     github.commit(edits, "web", "Website edit: Mini Doomer")
 
     def apply_jobs(old_psd, old_png, rel, jobs, parsed, parser, new_dir, *args, **kwargs):

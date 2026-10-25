@@ -8,11 +8,10 @@ preview, then checked (every story holds its layer's text and styles, only the r
 Txt2 and the other document blocks are the old bytes: psd_edit.gate_stories; every layer record, the image resources
 and the stored composite are the old bytes too).
 
-    python -m commands.txt2_repair <psd>... (--out DIR | --in-place | --check)
+    python -m commands.txt2_repair <psd>... --out DIR
     repair(path, out_path) -> Repair; verify(old_path, new_path, stories) -> the changed stories
 
---check writes nothing and exits 1 when a story is stale. Needs the psd-tools fork with sync_story (fix/txt2-sync);
-no Discord, network or config.
+Needs the psd-tools fork with sync_story (fix/txt2-sync); no Discord, network or config.
 """
 from argparse import ArgumentParser
 from dataclasses import dataclass, field
@@ -115,25 +114,18 @@ def repair(path: str, out_path: str) -> Repair:
 
 
 def main(args: Optional[list] = None) -> int:
-    """The command line: one line per PSD; exit 1 when --check finds a stale story, 2 when a PSD fails."""
+    """The command line: one line per PSD; exit 2 when a PSD fails."""
     parser = ArgumentParser(prog="python -m commands.txt2_repair",
                             description="Rewrite the Txt2 stories a bake left stale to their layers' text (Photoshop "
                                         "reads the story); nothing else changes.")
     parser.add_argument("psd", nargs="+", help="PSD files")
-    mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--out", metavar="DIR", help="write the repaired PSDs here (same file names)")
-    mode.add_argument("--in-place", action="store_true", help="overwrite each PSD (written only when it needs it)")
-    mode.add_argument("--check", action="store_true", help="report the stale stories, write nothing")
+    parser.add_argument("--out", metavar="DIR", required=True, help="write the repaired PSDs here (same file names)")
     options = parser.parse_args(args)
-    if options.out:
-        makedirs(options.out, exist_ok=True)
+    makedirs(options.out, exist_ok=True)
     status = 0
     for path in options.psd:
         try:
-            if options.check:
-                result = Repair(path, stale=psd_edit.stale_stories(PSDImage.open(path)))
-            else:
-                result = repair(path, path if options.in_place else join(options.out, basename(path)))
+            result = repair(path, join(options.out, basename(path)))
         except (Refused, ImportError, OSError, ValueError) as error:
             print(f"{path}: failed: {error}", file=stderr)
             status = 2
@@ -142,11 +134,7 @@ def main(args: Optional[list] = None) -> int:
             print(f"{path}: in sync")
             continue
         found = "; ".join(f"{name} {_show(story)} -> {_show(own)}" for name, story, own in result.stale)
-        if options.check:
-            print(f"{path}: stale: {found}")
-            status = max(status, 1)
-        else:
-            print(f"{path}: repaired {found} (stories {result.stories}) -> {result.out}")
+        print(f"{path}: repaired {found} (stories {result.stories}) -> {result.out}")
     return status
 
 

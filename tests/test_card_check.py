@@ -1,23 +1,20 @@
 """
 commands/card_check.py offline: the clone's ground-truth cards through check_files and the CLI, --all on a tmp checkout
 with the clone's Types/ names and a synthetic edits file, cards as plain CardInfo objects for the edits and --repo paths
-(a fake GitHub), the Discord payload, the Action's sparse copy (SPARSE_FILES, --help without config.py).
+(a fake GitHub), the Discord payload (the guards' checkout runs it: test_card_guards.py).
 """
 import json
 import re
 import shutil
-from os import environ
-from os.path import expanduser
 from pathlib import Path
 from subprocess import CalledProcessError, run as run_process
-from sys import executable
 
 import pytest
 
 import commands.card_check as cc
 import commands.github_api as ga
 from commands.card_models import CardInfo, CardStats, card_name
-from conftest import CLONE, REPO, Reply, blob_sha_bytes as _sha
+from conftest import REPO, Reply, blob_sha_bytes as _sha
 from test_font_check import FakeGitHub
 
 NO_STARS = 'NO STARS FOUND (put the star layers in a group named "Stars")'
@@ -462,55 +459,10 @@ def test_repo_mode_api_failure_is_one_line_and_exit_0(monkeypatch, tmp_path, cap
 
 
 # ========================
-# The Action's sparse copy
+# CLI only
 # ========================
-def test_action_shaped_copy_imports_and_prints_help(tmp_path):
-    """Exactly SPARSE_FILES (what card-check.yml checks out), no config.py: --help works, the closure is that list, no Discord."""
-    bot = tmp_path / "bot"
-    for rel in cc.SPARSE_FILES:
-        assert (REPO / rel).is_file(), f"{rel} is in SPARSE_FILES but missing here"
-        (bot / rel).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(REPO / rel, bot / rel)
-    done = run_process([executable, "-m", "commands.card_check", "--help"], cwd=bot, capture_output=True, text=True, timeout=120)
-    assert done.returncode == 0, done.stderr
-    assert done.stdout.startswith("usage: python -m commands.card_check")
-    assert set(re.findall(r"--[a-z-]+", done.stdout)) == {"--psd", "--all", "--repo", "--before", "--after", "--author", "--whole-tree",
-                                                          "--json", "--discord", "--help"}
-    code = ("import sys, commands.card_check; "
-            "print(sorted(m for m in ('config', 'discord', 'commands.psd_analyzer', 'commands.query_card', "
-            "'commands.utils', 'commands.psd_edit', 'commands.psd_regions', 'pandas') if m in sys.modules)); "
-            "print(sorted(m for m in sys.modules if m.startswith('commands.') or m == 'global_config'))")
-    done = run_process([executable, "-c", code], cwd=bot, capture_output=True, text=True, timeout=120)
-    assert done.returncode == 0, done.stderr
-    bad, closure = done.stdout.splitlines()
-    assert bad == "[]"
-    modules = {f for f in cc.SPARSE_FILES if f.endswith(".py")}
-    assert {m.replace(".", "/") + ".py" for m in json.loads(closure.replace("'", '"'))} == modules   # the yml copies this list
-    assert set(cc.SPARSE_FILES) - modules == {"requirements-cards.txt"}                              # and the card packages
-    from test_card_bake import ALLOWED_IMPORTS, third_party_imports
-    extra = third_party_imports("import commands.card_check", bot) - ALLOWED_IMPORTS
-    assert not extra, f"card-check.yml installs none of these: {sorted(extra)}"
-
-
-def test_workflow_posts_to_the_standards_channel():
-    """card-check.yml: the standards channel's secret, no ping (owner, 2026-10-23); the font channel's secret is deleted. Its
-    bot checkout is SPARSE_FILES, and it installs requirements-cards.txt as the other card workflows do (2026-10-24)."""
-    wf = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "card-check.yml"
-    if not wf.exists():
-        pytest.skip(f"no {wf}")
-    text = wf.read_text(encoding="utf-8")
-    assert "secrets.DISCORD_STANDARDS_WEBHOOK" in text and "DISCORD_FONT_WEBHOOK" not in text
-    assert "discord.com/api/webhooks" not in text and "<@&" not in text
-    yaml = pytest.importorskip("yaml")
-    steps = yaml.safe_load(text)["jobs"]["check"]["steps"]
-    bot = next(s for s in steps if s.get("with", {}).get("repository") == "bobberlington/AutoCroissant")
-    assert bot["with"]["sparse-checkout"].split() == ["/" + f for f in cc.SPARSE_FILES]
-    from test_card_bake import FORK_KEY, fork_install
-    assert fork_install(wf) == FORK_KEY
-
-
 def test_cli_only_and_uncompiled():
     """No slash command, no help entry, not in setup.py's INCLUDE_FILES; the module imports under the tests' stub config (above)."""
     for rel in ("main.py", "commands/help.py", "setup.py"):
         assert "card_check" not in (REPO / rel).read_text(encoding="utf-8"), f"{rel} names card_check"
-    assert callable(cc.main) and cc.SPARSE_FILES[0] == "commands/card_check.py"
+    assert callable(cc.main)

@@ -18,11 +18,10 @@ import pytest
 # ========================
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
-environ["AUTOCROISSANT_BOT_CLONE"] = str(REPO / "tests" / "no-bot-clone")   # never this checkout's PICKLE commits
-from global_config import DATA_BRANCH, LOCAL_DIR_LOC, REMIND_JSON, REMIND_PKL  # noqa: E402
+from global_config import DATA_BRANCH, LOCAL_DIR_LOC, REMIND_JSON  # noqa: E402
 
 CLONE = Path(expanduser(LOCAL_DIR_LOC))                  # PSD tests skip without it; its origin/data holds the live card data
-LIVE = (REMIND_PKL, REMIND_JSON)                         # the checkout's reminder stores, never written by a test
+LIVE = (REMIND_JSON,)                                    # the checkout's reminder store, never written by a test
 
 
 # ========================
@@ -86,12 +85,6 @@ def pytest_configure(config):
 def blob_sha_bytes(data: bytes) -> str:
     """git's blob sha of some bytes (independent of the code under test's own helper)."""
     return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
-
-
-def write_pickle(obj, path) -> None:
-    """A historical card pickle for a test (the bot wrote stats.pkl and old_stats.pkl until 2026-10-25)."""
-    import pickle
-    Path(path).write_bytes(pickle.dumps(obj))
 
 
 def blob_sha(path) -> str:
@@ -242,8 +235,7 @@ def live_files_untouched():
 @pytest.fixture(autouse=True)
 def offline(monkeypatch, tmp_path):
     """No network, cwd in a temp dir so cwd-relative saves (card_data/, json maps) land there, and no history clone (for
-    /query as_of's images) or bot clone (its PICKLE commits, for the build's seed) unless a test gives one (the
-    machine's own never count)."""
+    /query as_of's images) unless a test gives one (the machine's own never counts)."""
     def refuse(*args, **kwargs):
         raise RuntimeError("network access in an offline test")
     monkeypatch.setattr(socket.socket, "connect", refuse)
@@ -251,8 +243,6 @@ def offline(monkeypatch, tmp_path):
     monkeypatch.chdir(tmp_path)
     if "commands.repo_history" in sys.modules:                           # /query as_of's images
         monkeypatch.setattr(sys.modules["commands.repo_history"], "HISTORY_CLONE", str(tmp_path / "no-history-clone"))
-    if "commands.card_data" in sys.modules:
-        monkeypatch.setattr(sys.modules["commands.card_data"], "BOT_CLONE", str(tmp_path / "no-bot-clone"))
 
 
 @pytest.fixture(scope="session")

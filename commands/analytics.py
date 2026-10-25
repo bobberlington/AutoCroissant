@@ -6,7 +6,6 @@ from inspect import Parameter, isawaitable, signature
 from json import dumps, loads
 from os import O_RDONLY, close as os_close, fsync, open as os_open, remove, replace
 from os.path import dirname, exists
-from pickle import load, dump
 from re import compile as re_compile
 from shlex import quote as shlex_quote, split as shlex_split
 from threading import Lock, RLock
@@ -23,13 +22,12 @@ from commands.utils import (
     lacks_admin,
     queue_long_message,
 )
-from global_config import REMIND_JSON, REMIND_PKL, TIMEZONE
+from global_config import REMIND_JSON, TIMEZONE
 
 # ========================
 # Bot adapter (the only intended differences from OJWikibot's copy of this module)
 # ========================
-STORE_PATH = REMIND_JSON                    # reminder.json: gitignored, per machine (as reminder.pkl was)
-LEGACY_PATH = REMIND_PKL                    # converted once to STORE_PATH, then kept as reminder.pkl.bak
+STORE_PATH = REMIND_JSON                    # reminder.json: gitignored, per machine
 STORE_SCHEMA = "autocroissant.reminder-store"
 TIME_SEMANTICS = "when: Pacific wall time with that instant's offset (America/Los_Angeles); repeats keep the wall time"
 ZONE_LABEL = "Pacific time"
@@ -92,8 +90,6 @@ reminders = defaultdict(list)
 _client = None              # discord.Client, set by bind_reminder_client; used to spot deleted channels
 _loaded = False
 _load_error = None          # why reminders are off (the store can't be read): the file is left untouched
-_backend = "json"           # "pkl" while reminder.pkl could not be converted (this session saves to it)
-_conversion_error = None    # why the conversion failed (status())
 _lock = RLock()             # guards reminders and the file: commands and the panel run in threads next to check_reminder
 _check_lock = Lock()        # single-flight: a pass is queued every second, and two overlapping passes would double-fire
 
@@ -870,7 +866,7 @@ def _migrate(reminder):
         True if the reminder changed
     """
     renamed = "disabled" in reminder
-    if renamed:                                 # reminder.pkl's name for problem
+    if renamed:                                 # the old store's name for problem
         reminder["problem"] = reminder.pop("disabled") or None
     reminder.setdefault("problem", None)        # defaults alone are no change (no needless save)
     reminder.setdefault("enabled", True)
@@ -919,31 +915,12 @@ def _migrate(reminder):
     return renamed or reminder != before
 
 
-def _save_pickle():
-    """reminder.pkl, atomically: the fallback while it could not be converted."""
-    _atomic_write(LEGACY_PATH, _pickle_bytes(reminders))
-
-
-def _pickle_bytes(data):
-    from io import BytesIO
-    buffer = BytesIO()
-    dump(data, buffer)
-    return buffer.getvalue()
-
-
-def _store_name():
-    return LEGACY_PATH if _backend == "pkl" else STORE_PATH
-
-
 def save_reminders():
-    """Write reminders to disk atomically (reminder.json, or reminder.pkl while it could not be converted)."""
+    """Write reminders to disk atomically (reminder.json)."""
     with _lock:
         if _load_error:
             raise RuntimeError(_load_error)
-        if _backend == "pkl":
-            _save_pickle()
-        else:
-            _store.save(reminders)
+        _store.save(reminders)
 
 
 def _settle(data):
@@ -962,98 +939,20 @@ def _settle(data):
     return changed
 
 
-def _read_pickle():
-    """
-    reminder.pkl as {guild_id: [reminder]}; None when it can't be read (sets _load_error).
-
-    A missing or empty file is an empty schedule.
-    """
-    global _load_error
-    try:
-        with open(LEGACY_PATH, "rb") as f:
-            data = load(f)
-    except (EOFError, FileNotFoundError):
-        print(f"{LEGACY_PATH} is empty or missing.")
-        return defaultdict(list)
-    except Exception as e:
-        _load_error = f"{LEGACY_PATH} could not be read ({type(e).__name__}: {e})"
-    else:
-        if not isinstance(data, dict) or not _all_lists_of_dicts(data):
-            _load_error = f"{LEGACY_PATH} does not hold a reminder dictionary"
-    if _load_error:
-        _load_error = f"{_load_error}. The file was left untouched; move it aside and restart the bot for a fresh schedule"
-        return None
-    loaded = defaultdict(list)
-    for guild_id, reminder_list in data.items():
-        loaded[guild_id] = list(reminder_list)
-    return loaded
-
-
-def _comparable(data):
-    """Every stored field of every reminder, with the time's instant, wall time and offset (the conversion check)."""
-    out = {}
-    for guild_id, reminder_list in data.items():
-        if not reminder_list:
-            continue
-        rows = []
-        for r in reminder_list:
-            when = r.get("when")
-            rows.append((r.get("id"), r.get("channel_id"), r.get("msg") or "", when.timestamp(),
-                         when.replace(tzinfo=None), when.utcoffset(), r.get("frequency"), r.get("command") or None,
-                         bool(r.get("enabled", True)), r.get("creator_id"), r.get("creator_name") or "", r.get("v"),
-                         r.get("problem") or None))
-        out[guild_id] = rows
-    return out
-
-
-def _convert_locked():
-    """
-    reminder.pkl (already loaded into reminders) -> reminder.json, checked by reading it back, then the pickle becomes
-    reminder.pkl.bak. Any failure removes the half-made JSON and keeps the pickle (this session saves to it).
-    """
-    global reminders, _backend, _conversion_error
-    created = False
-    try:
-        _atomic_write(STORE_PATH, _store.serialize(reminders).encode("utf-8"))
-        created = True
-        again = _store.load()
-        if _comparable(again) != _comparable(reminders):
-            raise StoreError("the written file reads back different")
-        replace(LEGACY_PATH, f"{LEGACY_PATH}.bak")
-    except Exception as e:
-        if created:
-            try:
-                remove(STORE_PATH)
-            except OSError:
-                pass
-        _backend = "pkl"
-        _conversion_error = f"{type(e).__name__}: {e}"
-        print(f"ERROR: could not convert {LEGACY_PATH} to {STORE_PATH} ({_conversion_error}); "
-              f"reminders run from {LEGACY_PATH} this session and the next start tries again.")
-        return False
-    reminders = again
-    _backend = "json"
-    count = sum(len(v) for v in again.values())
-    print(f"Converted {LEGACY_PATH} to {STORE_PATH} ({count} reminders; backup {LEGACY_PATH}.bak).")
-    return True
-
-
 def _load_locked():
     """
-    Load the reminders once (call with _lock held): reminder.json, else reminder.pkl converted to it.
+    Load the reminders once (call with _lock held): reminder.json.
 
     Old entries are migrated and past-due repeating reminders roll forward. An unreadable store turns reminders
     off and leaves the file alone, so a later save can't overwrite reminders that are still recoverable.
     """
-    global reminders, _loaded, _load_error, _backend
+    global reminders, _loaded, _load_error
     if _loaded:
         return
     _loaded = True
 
     if exists(STORE_PATH):
         print(f"Trying to open {STORE_PATH}.")
-        if exists(LEGACY_PATH):
-            print(f"{LEGACY_PATH} is ignored: {STORE_PATH} exists (move {STORE_PATH} aside to convert the pickle again).")
         try:
             loaded = _store.load()
             changed = _settle(loaded)
@@ -1062,23 +961,10 @@ def _load_locked():
             _load_error = (f"{STORE_PATH} could not be read ({reason}). The file was left untouched; "
                            f"fix it, or move it aside and restart the bot for a fresh schedule")
         else:
-            _backend = "json"
             reminders = loaded
             if changed:
                 _save_after_load()
             return
-    elif exists(LEGACY_PATH):
-        print(f"Trying to open {LEGACY_PATH}.")
-        loaded = _read_pickle()
-        if loaded is not None:
-            reminders = loaded
-            changed = _settle(reminders)
-            if not _convert_locked() and changed:
-                _save_after_load()
-            return
-    elif exists(f"{LEGACY_PATH}.bak"):
-        _load_error = (f"{STORE_PATH} is missing; restore it, or rename {LEGACY_PATH}.bak to {LEGACY_PATH} "
-                       f"and restart the bot")
     else:
         print(f"No {STORE_PATH} yet: an empty schedule.")
         return
@@ -1093,18 +979,7 @@ def _save_after_load():
         save_reminders()
         print("Saved rescheduled reminders to disk.")
     except Exception:
-        print(f"ERROR: could not save {_store_name()}; the loaded schedule still runs:\n{format_exc()}")
-
-
-def _all_lists_of_dicts(data):
-    """True when every value of data is a list of dicts (the only shape _migrate can handle)."""
-    for reminder_list in data.values():
-        if not isinstance(reminder_list, list):
-            return False
-        for reminder in reminder_list:
-            if not isinstance(reminder, dict):
-                return False
-    return True
+        print(f"ERROR: could not save {STORE_PATH}; the loaded schedule still runs:\n{format_exc()}")
 
 
 def _ready_locked():
@@ -1115,13 +990,6 @@ def _ready_locked():
 
 def _off_message():
     return f"✗ Reminders are off: {_load_error}."
-
-
-def status():
-    """A line about the store when something needs the owner (the conversion failed), else None."""
-    if _conversion_error:
-        return f"Reminders run from {LEGACY_PATH}: conversion failed ({_conversion_error})"
-    return None
 
 
 # ========================
@@ -1233,7 +1101,7 @@ def _check_pass_locked():
         try:
             save_reminders()
         except Exception:
-            print(f"ERROR: could not save {_store_name()}:\n{format_exc()}")
+            print(f"ERROR: could not save {STORE_PATH}:\n{format_exc()}")
 
 
 def check_reminder():
@@ -1281,7 +1149,7 @@ def _commit_locked(undo):
         save_reminders()
     except Exception as e:
         undo()
-        raise ReminderError(f"Could not save {_store_name()} ({e}); nothing changed.") from None
+        raise ReminderError(f"Could not save {STORE_PATH} ({e}); nothing changed.") from None
 
 
 def _restore(reminder, before):
@@ -1469,8 +1337,6 @@ def set_reminder(interaction: Interaction,
         return queue_message(interaction, str(e))
     except ReminderError as e:
         return queue_message(interaction, f"✗ Reminder NOT set: {e}")
-    if status():
-        notes = notes + [f"⚠ {status()}."]
     queue_message(interaction, _set_reply(reminder, notes), allowed_mentions=AllowedMentions.none())
 
 
@@ -1502,7 +1368,7 @@ def bind_reminder_client(client) -> None:
 
 def init_reminder():
     """
-    Load reminders from disk (called from on_ready via queue_command), converting reminder.pkl once.
+    Load reminders from disk (called from on_ready via queue_command).
 
     Old entries are migrated in place and past-due repeating reminders roll forward to their next future slot;
     a one-shot reminder that came due while the bot was down fires right after startup.
@@ -1525,5 +1391,4 @@ __all__ = [
     'delete',
     'set_enabled',
     'reschedule',
-    'status',
 ]

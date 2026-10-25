@@ -94,7 +94,6 @@ class CardEdits:
             "type": "folder", "subtype": "folder", "series": "folder",
             "subseries": "database", "note": "database", "aliases": "database", "dup_of": "database", "hidden": "database",
             "problems_ok": "database", "allow_high_stats": "database", "creatures": "database"}
-    PSD_STATES = ("baked", "refused")               # "_psd" meta states written by the edit pipeline; "pending" is computed by the website
 
     @classmethod
     def valid(cls, name: str, value) -> bool:
@@ -125,38 +124,6 @@ class CardEdits:
                 edits.cards[key] = {k: v for k, v in fields.items() if not k.startswith("_") and cls.valid(k, v)}
                 edits.meta[key] = {k: v for k, v in fields.items() if k.startswith("_")}
         return edits
-
-    def psd_state(self, name: str) -> Optional[dict]:
-        """
-        A card's "_psd" meta from the edit pipeline.
-
-        Args:
-            name: Card name (matched like the authors file).
-
-        Returns:
-            {"state": "baked" | "refused", ...} or None when absent or malformed.
-        """
-        value = self.meta.get(CardAuthors.key(name), {}).get("_psd")
-        return value if isinstance(value, dict) and value.get("state") in self.PSD_STATES else None
-
-    def set_psd_state(self, name: str, value: Optional[dict]) -> None:
-        """
-        Write a card's "_psd" meta (None removes it); its edits, _by and _at stay as they are.
-
-        Args:
-            name: Card name (matched like the authors file).
-            value: The meta dict; its "state" must be one of PSD_STATES.
-
-        Raises:
-            ValueError: for a state outside PSD_STATES.
-        """
-        key = CardAuthors.key(name)
-        if value is None:
-            self.meta.get(key, {}).pop("_psd", None)
-        elif not isinstance(value, dict) or value.get("state") not in self.PSD_STATES:
-            raise ValueError(f"_psd state must be one of {self.PSD_STATES}")
-        else:
-            self.meta.setdefault(key, {})["_psd"] = dict(value)
 
     def get(self, card: "CardInfo", name: str):
         if name == "creatures":

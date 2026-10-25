@@ -42,7 +42,7 @@ Three layered files since 2026-10-23 (owner: "three layered files, one pin"):
 |---|---|---|
 | `requirements-cards.txt` | The card code's packages: `psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@<tag>` (the fork: THE one pin; the tag is only in the file), fonttools, requests, and `pyoxipng==9.1.1` behind a marker (2026-10-24): Linux x86_64 at any CPython 3.9+ (the Actions, on 3.14, build it from the sdist with the runners' Rust), elsewhere only where 9.1.1 has a wheel (CPython 3.9-3.13 on macOS x86_64/arm64, Linux aarch64 with glibc 2.28+ or musl, Windows x86/x64), so it is skipped on the Mac's and the jetson's 3.14 (the bot never recompresses) | `requirements.txt`; the six card Actions on Python 3.14 (card-edits, card-guards' two jobs, card-sync's one venv, card-preview without pyoxipng: its PNG is never published, card-check, font-check), offline from one wheel cache entry keyed on the file (the re-pin procedure: autocroissant-config-and-flags) |
 | `requirements.txt` | `-r requirements-cards.txt`, then the bot's own (the table below) | the jetson, a dev machine |
-| `requirements-dev.txt` | `-r requirements.txt`, then pytest, pyyaml (the workflow-shape tests' yaml half skips without it) and `pyobjc-framework-Vision ; sys_platform == "darwin"` (`commands/discord_match.py`'s Foundation, Vision and objc) | a dev machine |
+| `requirements-dev.txt` | `-r requirements.txt`, then pytest and pyyaml (the workflow-shape tests' yaml half skips without it); `pyobjc-framework-Vision` went with `commands/discord_match.py` on 2026-10-25 | a dev machine |
 
 uharfbuzz and freetype-py come with psd-tools' `[text]` extra, scipy and aggdraw with `[composite]`. `.gitignore`
 ignores `*.txt` and re-includes `requirements-dev.txt` and `requirements-cards.txt`; `requirements.txt` is tracked from
@@ -74,7 +74,7 @@ doctrine in **autocroissant-ai-boundary** there. The `discord.py>=2.5` floor is 
 | numpy | Image array plumbing in `commands/utils.py:7` and `commands/frankenstein.py:2`. |
 | opencv-python | Image encode/decode/resize, imported lazily inside the functions that need it (2026-10-20; only /frankenstein): `commands/utils.py:109, 117` (`url_to_cv2image`, `cv2discordfile`), `commands/frankenstein.py:65`. |
 | pandas | The card query engine's DataFrames: `commands/query_card.py:13`, `commands/psd_analyzer.py:13`. |
-| Pillow | Images: top level in `commands/type_emojis.py:12` (emoji images, loaded at startup), `png_export.py:32`, `card_bake.py:47`, `psd_edit.py:23`; lazily in `discord_match.py:374` and `psd_details.py:130` (ImageCms). Declared since 2026-10-20 (section 3). |
+| Pillow | Images: top level in `commands/type_emojis.py:12` (emoji images, loaded at startup), `png_export.py:32`, `card_bake.py:47`, `psd_edit.py:23`; lazily in `psd_details.py:130` (ImageCms). Declared since 2026-10-20 (section 3). |
 | psd-tools (cards) | The PSD parser (`commands/psd_parser.py:11`), the fork at the one pin: its text engine serves the bake, the push guards and range reads (section 4). Its version does not follow the tag (1.25.0 up to `cards-20261023d`, 1.26.0+cards since `cards-20261024`, also `cards-20261025` and `cards-20261025b`), and pip calls an install of the same version satisfied, so a re-pin needs `--force-reinstall` (section 4). |
 | pyoxipng (cards) | png_export's lossless PNG recompression, imported lazily (`png_export._oxipng`); everything runs without it. On the Actions' Linux x86_64 (built from the sdist on 3.14 since 2026-10-24), elsewhere only where it has a wheel (above): not on the Mac's or the jetson's 3.14. So a fresh Mac venv (3.14) has none: `commands/png_recompress.py`, the by-hand batch, cannot run, and the oxipng tests skip (test_png_recompress.py, test_png_export.py's `@oxipng`, test_card_guards' recompression test; `pytest -rs` lists them). For those, `pip install pyoxipng==9.1.1` builds it with cargo (`~/.venvs/ac-py314-fork` has such a build, 2026-10-23). |
 | PyGithub | Removed 2026-10-25 (step 10): its only importers, card_data's legacy `_committed_since_update` and `_repo`, went with the pickles. PyNaCl stays declared on its own. |
@@ -89,7 +89,7 @@ dependencies of other packages (pip metadata, 2026-07-11). Both are declared sin
 
 | Package | Used to arrive via | Who needs it |
 |---|---|---|
-| Pillow (PIL) | psd-tools (`pip show psd-tools` → Requires: attrs, numpy, **Pillow**, typing-extensions) | Top-level `from PIL import ...` in `commands/type_emojis.py:12` (emoji images; main.py and query_card import that module at load time, so the bot fails at import without Pillow), `png_export.py:32`, `card_bake.py:47`, `psd_edit.py:23`; lazily in `discord_match.py:374` and `psd_details.py:130` |
+| Pillow (PIL) | psd-tools (`pip show psd-tools` → Requires: attrs, numpy, **Pillow**, typing-extensions) | Top-level `from PIL import ...` in `commands/type_emojis.py:12` (emoji images; main.py and query_card import that module at load time, so the bot fails at import without Pillow), `png_export.py:32`, `card_bake.py:47`, `psd_edit.py:23`; lazily in `psd_details.py:130` |
 | PyNaCl | PyGithub (`pip show PyGithub` → Requires: pyjwt, **pynacl**, requests, typing-extensions, urllib3) | discord.py voice encryption (voice/music is silent-broken without it); discord.py itself only requires aiohttp (and audioop-lts on 3.13+) |
 
 **The rule**: keep Pillow and PyNaCl declared even if psd-tools goes (PyGithub went 2026-10-25). pip
@@ -127,7 +127,8 @@ Notes verified from `setup.py` (2026-07-11; the build is incremental since 2026-
   saved mid-build rebuilds next time. A bare `touch` does not rebuild; a content change does. Stale modules build 4 at a time (cythonize `nthreads=4`, build_ext `parallel=4`). Safety
   kept: a stale `.so` is deleted BEFORE its rebuild (a failed build leaves the new `.py` running, exit code 1, never an
   old `.so` next to a new `.py`), and every `.so`/`.pyd` that is not a current INCLUDE_FILES build (other Python ABI,
-  dropped module) is deleted. No stamps file (first run, after `clean`, after deleting `build/`) means a full rebuild.
+  dropped module) is deleted, and since 2026-10-25 a dropped module's `.c` source in `commands/`, its `build/lib.*` and
+  `build/temp.*` objects and its stamp too (`remove_orphans`). No stamps file (first run, after `clean`, after deleting `build/`) means a full rebuild.
   Mac timings 2026-10-24 (M-series, 24 cores, Cython 3.3.0, Python 3.14.8): old from-clean build 75-88 s; new full
   rebuild 16-23 s; nothing changed 0.2 s; one small module edited (help) 1.7 s; psd_parser 11-18 s. Jetson before:
   6 min 44 s every deploy. Only `setup.py clean` deletes `*.html` (rglob) now; the build no longer does.
@@ -139,14 +140,12 @@ Notes verified from `setup.py` (2026-07-11; the build is incremental since 2026-
 - **Not compiled because they are in neither list:** every module not in INCLUDE_FILES or EXCLUDE_FILES (25 of the
   38 on 2026-10-23). In order of arrival: `commands/type_emojis.py` (added 2026-10-19),
   `commands/repo_history.py`, `commands/tts_save.py` and `commands/github_api.py` (2026-10-20), `commands/psd_edit.py`, `psd_regions.py`,
-  `card_bake.py`, `font_check.py` and `git_commit.py` (2026-10-21: the Actions check them out alone, so their import closure stays plain Python), the card data build's `card_data.py`, `card_history.py`, `card_db.py` and `changelog.py` (2026-10-22: `card_data` holds the traverser's code, so /update_stats on the jetson runs the same pure Python as the Action; the compiled `repo_traverser` wrapper was deleted 2026-10-25), and since 2026-10-22/23 `card_sync`, `discord_edits`, `discord_archive`, `discord_match`, `card_check`, `card_guards`, `png_export`, `card_standards`, `psd_diff`, `txt2_repair` and `psd_details`.
+  `card_bake.py`, `font_check.py` and `git_commit.py` (2026-10-21: the Actions check them out alone, so their import closure stays plain Python), the card data build's `card_data.py`, `card_history.py`, `card_db.py` and `changelog.py` (2026-10-22: `card_data` holds the traverser's code, so /update_stats on the jetson runs the same pure Python as the Action; the compiled `repo_traverser` wrapper was deleted 2026-10-25), and since 2026-10-22/23 `card_sync`, `discord_edits`, `card_check`, `card_guards`, `png_export`, `card_standards`, `psd_diff`, `txt2_repair` and `psd_details`.
   New modules are uncompiled by default; all were deliberately left out. Note that compiled
   `query_card` imports it at module level, which is fine (compiled code can import plain modules).
-- Never compiled (`EXCLUDE_FILES`, setup.py:9-18), with the reasons stated in the
-  file's comments: `main.py` (entry point — keep as Python), `commands/update_bot.py`
-  (uses `execv`/`execl` for restart), `commands/utils.py` (core utilities, decorators,
-  dynamic behavior), `config.py`/`global_config.py` (configuration), `setup.py` itself,
-  and both `__init__.py` files.
+- Never compiled (the comment above `INCLUDE_FILES`; the `EXCLUDE_FILES` set that only listed them went on 2026-10-25):
+  `main.py` (entry point — keep as Python), `commands/update_bot.py` (`execl` for restart), `commands/utils.py` (core
+  utilities, decorators, dynamic behavior), `config.py`/`global_config.py` (configuration).
 
 ### Compiler directives and their consequences (setup.py:36-49)
 
@@ -213,7 +212,7 @@ git clone https://github.com/bobberlington/AutoCroissant.git
 cd AutoCroissant
 python3 -m venv .venv               # 3.14 is what both machines run (2026-10-20); code stays 3.10-compatible
 source .venv/bin/activate
-pip install -r requirements-dev.txt   # requirements.txt (and requirements-cards.txt) plus pytest, pyyaml, pyobjc on a Mac
+pip install -r requirements-dev.txt   # requirements.txt (and requirements-cards.txt) plus pytest, pyyaml
 ```
 
 Then:
@@ -302,13 +301,13 @@ Line numbers drift; re-verify volatile facts with:
 | Package lists (the card stack + 12 core, 2026-10-23) | `cat requirements-cards.txt requirements.txt requirements-dev.txt` |
 | Pillow and PyNaCl declared (they once arrived via psd-tools and PyGithub) | `grep -n "Pillow\|PyNaCl" requirements.txt` (8, 4) |
 | discord.py needs only aiohttp | `python3 -m pip show discord.py \| grep Requires` |
-| PIL imports | `grep -n "from PIL" commands/*.py` (top level: card_bake:47, png_export:32, psd_edit:23-24, type_emojis:12; lazy: discord_match:374, psd_details:130, psd_edit:1579) |
+| PIL imports | `grep -n "from PIL" commands/*.py` (top level: card_bake:47, png_export:32, psd_edit:23-24, type_emojis:12; lazy: psd_details, psd_edit) |
 | discord.py floor and why | `grep -n "discord" requirements.txt` (`discord.py>=2.5`); `grep -n "versionadded:: 2.5" $(python3 -c 'import discord,os;print(os.path.dirname(discord.__file__))')/client.py` |
 | Which interpreter has the bot's deps | `ls -l /usr/local/bin/python3; python3 -c "import psd_tools"` (fails on 2026-10-19; use ~/.venvs/ac-py314-psd125/bin/python on the Mac) |
 | Cython 3.3 compiles all 10 | in a scratch copy with setuptools available: `python3 setup.py build_ext --inplace` (never in the live checkout on a running host); quick single-file check: cythonize `commands/management.py` with setup.py's directives and expect no "redeclared" error |
 | Uncompiled by omission | `grep -c "type_emojis\|repo_history\|tts_save\|github_api\|card_data\|card_sync" setup.py` (0) |
 | davey optional (try/except in discord.py) | `grep -rn -A2 "import davey" $(python3 -c 'import discord,os;print(os.path.dirname(discord.__file__))')/gateway.py` |
-| Exclude list + reasons | `grep -n "EXCLUDE_FILES" -A12 setup.py` |
+| Never-compiled note | `grep -n "Files that CAN be compiled" setup.py` |
 | Include list (10 files of 41 command modules) | `grep -n "INCLUDE_FILES = " -A14 setup.py`; `ls commands/*.py \| grep -v __init__ \| wc -l` (41) |
 | Compiler directives (bounds checks and wraparound on) | `grep -n "COMPILER_DIRECTIVES" -A14 setup.py` (`'boundscheck': True`, `'wraparound': True` at :38-39) |
 | The fork in each venv | `~/.venvs/ac-py314-fork/bin/pip freeze \| grep psd` (`@1611fc6...` = `cards-20261023d` on 2026-10-24); on the jetson `~/venvs/autocroissant/bin/pip freeze \| grep psd` (`@ecc4b773...` = `cards-20261023` until it is moved to the pin) |
@@ -323,7 +322,7 @@ Line numbers drift; re-verify volatile facts with:
 | LOCAL_DIR_LOC card-repo path | `grep -n "LOCAL_DIR_LOC" global_config.py` |
 | client.run under __main__ guard | `tail -8 main.py` |
 | Python version | `python3 --version` (3.14.8 on the Mac venvs and the jetson, 2026-10-20) |
-| Dev requirements | `cat requirements-dev.txt` (`-r requirements.txt`, pytest, pyyaml: the workflow-shape tests' yaml half skips without it, pyobjc-framework-Vision on darwin); `.gitignore` re-includes it and requirements-cards.txt |
+| Dev requirements | `cat requirements-dev.txt` (`-r requirements.txt`, pytest, pyyaml: the workflow-shape tests' yaml half skips without it); `.gitignore` re-includes it and requirements-cards.txt |
 | The layering resolves | in a fresh venv: `pip install --dry-run -r requirements-dev.txt`; per target `uv pip compile --python-platform aarch64-unknown-linux-gnu --python-version 3.14 --only-binary :all: --no-binary psd-tools requirements.txt` |
 
 2026-10-21: main.py line numbers re-pointed (0.1 s queue tick, reminder loop); suite count refreshed. The 11 compiled modules still build with Cython 3.3.0 (0 errors).

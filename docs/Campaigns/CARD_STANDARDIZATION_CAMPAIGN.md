@@ -296,6 +296,8 @@ Each rule is one TTSCardMaker Action on push that runs a bot module on the pushe
 commit and posts in the standards channel on Discord (`DISCORD_STANDARDS_WEBHOOK`; only the font check pings the card makers' role,
 owner 2026-10-23; `DISCORD_FONT_WEBHOOK` is deleted), and never reverts or rejects.
 
+- **Rules 1 and 2 since 2026-10-25** run as steps of card-guards.yml's check job (font-check.yml and card-check.yml
+  folded in, each posting at once; the card check's `Types/` and `site/Card Edits.json` triggers dropped). Before:
 - **Rule 1, the font check** (LIVE since 2026-10-21: TTSCardMaker f5a0e50, AutoCroissant ae1d2c5, secret set):
   `.github/workflows/font-check.yml` runs `commands/font_check.py` on every push that touches a PSD or `MDW/Fonts/`: the fonts a card asks
   for that `MDW/Fonts` lacks, per author and font (none since BabaUI was added 2026-10-23, TTSCardMaker 92b5ae6b; L13).

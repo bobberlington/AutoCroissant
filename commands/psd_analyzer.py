@@ -3,8 +3,7 @@ The card database's commands, and its one import point.
 
 The code lives in commands.card_models (CardType, CardStats, CardInfo, StatsDatabase, stats_db), commands.card_edits
 (CardAuthors, CardEdits) and commands.psd_parser (PSDParser, CardClassifier, CardValidator, IconVocabulary). Everything is
-re-exported here: main.py, query_card and the diagnostics scripts import from this module, and the historical pickles name
-CardInfo and CardStats as commands.psd_analyzer.*.
+re-exported here: main.py, query_card and the diagnostics scripts import from this module.
 """
 from discord import Interaction, File
 from os.path import basename, splitext
@@ -12,7 +11,7 @@ from re import compile as re_compile
 from typing import Optional
 import pandas as pd
 
-from global_config import AUTHORS_PATH, AUTHORS_PATHS, EDITS_PATH, EDITS_PATHS, ICON_MANIFEST_PATH, RULEBOOK_DIR
+from global_config import AUTHORS_PATH, EDITS_PATH, ICON_MANIFEST_PATH, RULEBOOK_DIR
 from commands.card_edits import CardAuthors, CardEdits
 from commands.card_models import CardInfo, CardStats, CardType, StatsDatabase, card_name, get_stats_as_dict, stats_db
 from commands.github_api import GIT_TOKEN

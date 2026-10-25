@@ -29,10 +29,12 @@ Census: `docs/Future/PROBLEM_CARDS_2026-10-25.csv`.
       the re-run lands as one commit.
 - [ ] **Data build step 10** (`work/pickles`: AC 8f433f4, 25d7e70, cc48201, 3a1adba; TC b0da3cce): delete the
       pickles, `psd_details.json`, `/push`, the legacy `/update_stats` path (B9 with it), `commands/history_backfill.py`
-      and its files and test (DATA_BUILD_ACTION §14). Status: building; owner said now and tells bobberlington.
+      and its files and test (DATA_BUILD_ACTION §14). Status: merged 2026-10-25 (0e6c7a0); the rest of the pickle
+      era (the seed, the unpickler, the recovery) went on work/clean.
 - [ ] **Guards' silent Composer fix** (`work/composer`, worktree `wt/ac-composer`, uncommitted): card text layers set
       to Every-line Composer become Single-line, the PNG re-exported if the text moved, committed with the other guard
-      fixes, never mentioned in posts or comments. Status: building.
+      fixes, never mentioned in posts or comments. Status: merged (0fbe028); since work/clean it always switches (no
+      0.9 bar): box text that rewraps is redrawn and its PNG re-exported through the guards' export.
 
 ## Queue (owner's order)
 
@@ -41,7 +43,7 @@ Census: `docs/Future/PROBLEM_CARDS_2026-10-25.csv`.
        BUGS D1), the never-overwrite-Photoshop check, and the 5 variant PSDs' ` #N` tags (one scripted commit, plan
        shown first). Status: designed, build next.
 2. [ ] **Test suite cut** (`docs/Future/TEST_SUITE_CUT.md`): xdist, 1,923 -> about 635 with the 15 site smoke tests;
-       `discord_archive` and `discord_match` retired with their tests. Status: planned.
+       `discord_archive` and `discord_match` retired with their tests (done 2026-10-25, work/clean). Status: planned.
 3. [ ] **Smaller PNG pushes** (`docs/Future/SMALLER_PNG_PUSHES.md`): oxipng CLI, XMP strip, opaque as RGB for every PNG
        the bot writes; no rewrite of existing PNGs. Status: designed.
 4. [ ] **Website small fixes** (`docs/Future/WEBSITE_SMALL_FIXES.md`): phone tooltips, exact name first, deck export

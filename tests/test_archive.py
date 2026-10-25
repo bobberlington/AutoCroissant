@@ -1,6 +1,5 @@
 """Archived cards: a deleted PSD's record stays in old_stats, tagged CardInfo.archived (StatsDatabase.archived(),
 restore(), prune_clean_cards); the end-to-end runs are in test_card_data.py."""
-import pickle
 from copy import deepcopy
 
 import commands.card_models as cm
@@ -30,14 +29,6 @@ def _db(stats=(), old=(), seen=None):
 # ========================
 # The field
 # ========================
-def test_card_pickled_before_the_field_loads_unarchived():
-    card = _card("Old")
-    del card.__dict__["archived"]                               # what an older pickle holds
-    old = pickle.loads(pickle.dumps(card))
-    assert old.archived is None and getattr(old, "archived", None) is None
-    assert "archived" not in old.to_dict() and "archived" not in _card("New").to_dict()
-
-
 def test_tag_is_plain_data():
     db = _db([_card("Gone"), _card("Kept")], seen=["Kept"])
     db.prune_clean_cards(AT)
@@ -111,43 +102,6 @@ def test_restored_copy_matches_after_a_reparse():
     db.stats["Gone"] = _card("Gone", ability="Parsed again.")
     db.stats["Gone"].timestamp += 5
     assert db.drop_stale_archives() and "Gone" not in db.old_stats
-
-
-def test_history_keeps_the_archived_copy_until_untagged():
-    """add_history on a restored card: the tagged record stays, untagged by drop_stale_archives."""
-    db = _db([_card("Gone")], seen=["Other"])
-    db.prune_clean_cards(AT)
-    _restore(db, "Gone")
-    db.add_history("Gone", db.stats["Gone"])
-    assert len(db.old_stats["Gone"]) == 1 and db.old_stats["Gone"][0].archived
-    db.stats["Gone"] = _card("Gone", blob="b" * 40)                           # the re-parse
-    db.drop_stale_archives()
-    assert len(db.old_stats["Gone"]) == 1 and db.old_stats["Gone"][0].archived is None and not db.kept_archives
-
-
-def test_history_replaces_an_equal_last_even_moved():
-    """The version a kill left (before or after its path followed the card) is replaced, not doubled."""
-    card = _card("Kept")
-    moved = deepcopy(card)
-    moved.path = "Items/New/Kept.psd"
-    db = _db([card], old=[moved])
-    db.add_history("Kept", card)
-    assert db.old_stats["Kept"] == [card]
-    db.add_history("Kept", deepcopy(card))
-    assert len(db.old_stats["Kept"]) == 1
-    db.add_history("Kept", _card("Kept", blob="b" * 40))
-    assert [c.blob_sha for c in db.old_stats["Kept"]] == ["a" * 40, "b" * 40]
-
-
-def test_moved_restore_keeps_the_history():
-    """Restored at its old path, parsed at a new one: the record the paths moved to is history, not a copy."""
-    db = _db([_card("Gone")], seen=["Other"])
-    db.prune_clean_cards(AT)
-    _restore(db, "Gone")
-    db.add_history("Gone", db.stats["Gone"])
-    db.stats["Gone"] = _card("Gone")
-    db.stats["Gone"].path = db.old_stats["Gone"][0].path = "Items/New/Gone.psd"
-    assert db.drop_stale_archives() and len(db.old_stats["Gone"]) == 1 and db.old_stats["Gone"][0].archived is None
 
 
 def test_blobless_record_is_a_copy_only_when_equal():

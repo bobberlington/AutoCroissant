@@ -97,7 +97,7 @@ the card's Channel-A problems and returns it. The return value is **never stored
 card**: during a sweep it flows into `_format_problems` (card_data.py:609, called :529)
 and out to Discord/console (the archived local traversal on branch `archive/local-update-stats` has its
 own copy of this flow). Since 2026-10-21 the same `validate()` runs in a second place, `commands/card_check.py`
-(the push guard's card check, TTSCardMaker card-check.yml): per pushed PSD, after `CardEdits.apply` as in the sweep
+(the push guard's card check, a step of TTSCardMaker card-guards.yml's check job since 2026-10-25, card-check.yml before): per pushed PSD, after `CardEdits.apply` as in the sweep
 (card_data.py:506-510), into a report, a commit comment and a Discord line; `tests/test_card_check.py` pins the clone's
 cards to the sweep's output, so a validator change shows there first (autocroissant-run-and-operate §7).
 So a sweep's printed problem list = Channel A + Channel B; the pickle stores only Channel A.
@@ -453,7 +453,7 @@ re-verification below disagrees with this file, the repo wins; update this file
 
 | Volatile fact | Re-verify with (cwd = repo root) |
 |---|---|
-| `update_stats` signature & line (59 since 2026-10-22; force_update=False; cards=""; no local options since 2026-10-20) (2026-10-20) | `grep -n -A4 "def update_stats" commands/repo_traverser.py` |
+| `update_stats` signature (force_update=False; cards=""; no local options since 2026-10-20; repo_traverser.py gone 2026-10-25) | `grep -n -A4 "def update_stats" commands/card_sync.py main.py` |
 | Exclusion-list size (21; no stat list) | `~/.venvs/ac-py314-fork/bin/python -c "import sys; sys.path.insert(0,'.'); from commands.psd_analyzer import CardValidator as V; print(len(V.ABILITY_EXCLUSIONS), hasattr(V, 'EXCESSIVE_STAT_EXCLUSIONS'))"` (21 False) |
 | Exclusion-list definition & line (1056) (2026-10-23) | `grep -n "ABILITY_EXCLUSIONS: set" commands/psd_parser.py` |
 | `PARSER_VERSION` (2) and its stamp, re-parse and ETag bypass (psd_parser.py:22, :352; card_data.py:220, :247) (2026-10-21) | `grep -n "PARSER_VERSION" commands/psd_parser.py commands/card_data.py commands/card_models.py` |

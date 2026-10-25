@@ -119,8 +119,8 @@ def _edit_names(monkeypatch, fetched, *entries):
 
 
 def test_edit_names_read_from_site(monkeypatch):
-    """Card Edits.json is read from site/ (EDITS_PATHS), once per blob sha; no file, no download."""
-    (path,) = qc.EDITS_PATHS
+    """Card Edits.json is read from site/ (EDITS_PATH), once per blob sha; no file, no download."""
+    path = qc.EDITS_PATH
     assert path == "site/Card Edits.json"
     fetched = []
     repo = _edit_names(monkeypatch, fetched, (path, "e"))

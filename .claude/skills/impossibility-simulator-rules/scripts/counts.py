@@ -1,4 +1,4 @@
-"""Rows by kind and by folder. Usage: python3 -I counts.py <cards.json | loadpkl.py dump>"""
+"""Rows by kind and by folder. Usage: python3 -I counts.py <cards.json | db/stats.json>"""
 import collections, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # rows.py (-I drops the script's folder)
 import rows

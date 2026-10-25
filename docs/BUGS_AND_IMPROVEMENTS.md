@@ -120,14 +120,9 @@ Steps and milestones: `.claude/skills/autocroissant-research-frontier/SKILL.md`.
 ### 2.3 Operational hardening (small, high-value)
 
 Done 2026-10-20 (B4, B5, B7, C1-C3, C5, C6, C12: failure-archaeology 10.20-10.26); B10 2026-10-21 (10.29), B11 2026-10-21, B8 2026-10-22 (10.31). B9 moot since the cutover.
-- **Fonts on the jetson (done 2026-10-21; numbered B11 then, an id the fork bug reused).** Without `PSD_TOOLS_FONT_DIRS` or a checkout, the bake and the details gather's
-  `supplied` flags use `fonts_cache/` (gitignored; `font_check.refresh_cache`): MDW/Fonts' font files, brought to the tree
-  `/update_stats` or the bake already fetched (no extra request; a 304 update touches no fonts; then only the missing blobs,
-  sha-verified; first fill 276 requests, 226 MB; a bake with no card to bake fills nothing). `/fonts` judges the branch by
-  blob sha: it reads only blobs `font_names.json` lacks, from a local copy with that sha, else through the cache (never
-  under `bake_lock`). Each `/update_stats` whose tree changed refills every record's flags; by hand:
-  `python -m commands.psd_details --refill` from the bot's directory (the paths are cwd-relative), never beside an
-  `/update_stats` (the daily 5AM reminder too), `/bake_cards` or `/fonts`.
+- **Fonts on the jetson (done 2026-10-21; numbered B11 then, an id the fork bug reused; retired 2026-10-25).** The
+  `fonts_cache/` fallback (`font_check.refresh_cache`) served the jetson's bake and details gather; both moved to the
+  Actions (`PSD_TOOLS_FONT_DIRS`), so the cache was removed on 2026-10-25 (work/clean). `/fonts` reads the card data.
 
 ### 2.4 Planned next (docs/NEXT_SESSION_PLAN.md)
 
