@@ -25,8 +25,8 @@ Census: `docs/Future/PROBLEM_CARDS_2026-10-25.csv`.
 - [ ] **Overlay-safe badges** (`work/badgealt`: AC 1059664; TC b3249078, bff181b5): outlined pill and one-colour
       sticker `salt` alternates, chosen by the bake under any overlay; the badge FX-layer workaround removed.
       Status: the 31-card batch (b511a638, rebased as 1cb63d11) must be **re-run on the current PSDs**, not merged:
-      hdckighfkvhvgmk's push 86733bd2 changed PoD06, PoD10, PoD11 and PoD12. Then the owner's before/after sheet,
-      then one commit.
+      hdckighfkvhvgmk's push 86733bd2 changed PoD06, PoD10, PoD11 and PoD12. The owner approved the sheet (10-25 ~04:05);
+      the re-run lands as one commit.
 - [ ] **Data build step 10** (`work/pickles`: AC 8f433f4, 25d7e70, cc48201, 3a1adba; TC b0da3cce): delete the
       pickles, `psd_details.json`, `/push`, the legacy `/update_stats` path (B9 with it), `commands/history_backfill.py`
       and its files and test (DATA_BUILD_ACTION §14). Status: building; owner said now and tells bobberlington.
@@ -54,7 +54,6 @@ Census: `docs/Future/PROBLEM_CARDS_2026-10-25.csv`.
 
 ## Waiting on the owner
 
-- [ ] The before/after badge sheet (after the re-run above).
 - [ ] His Photoshop work: one Name and one Ability layer per card, the rulebook's Header and Page Number layers,
       retyping the picture titles, re-exporting the stale exports (Jevil, Credit_Card, Forget_Me_Now and the rest of
       the 18 class-H cards), and the 10 cards to open: `~/Documents/Tools/psd-research/std-batch2/b1_final/LANDED.md`
