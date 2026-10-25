@@ -235,7 +235,7 @@ FORK_PYTHON = "3.14"                                                    # every 
 
 FORK_WHEELS = "~/.cache/card-wheels"
 
-FORK_KEY = ("cards-${{ hashFiles('bot/requirements-cards.txt') }}-${{ runner.os }}-${{ runner.arch }}"
+FORK_KEY = ("cards-${{ steps.reqs.outputs.sha }}-${{ runner.os }}-${{ runner.arch }}"
             "-py${{ steps.python.outputs.python-version }}")             # one entry for all
 
 BY_NAME = "sed 's/ @ [^;]*//' bot/requirements-cards.txt > \"$RUNNER_TEMP/cards.txt\""
@@ -266,15 +266,16 @@ def fork_action(workflows) -> str:
     """
     yaml = pytest.importorskip("yaml")
     steps = yaml.safe_load((workflows.parent.parent / FORK_ACTION).read_text(encoding="utf-8"))["runs"]["steps"]
-    python, restore, uv, install, save = steps
+    python, reqs, restore, uv, install, save = steps
+    assert reqs["id"] == "reqs" and "sha256sum" in reqs["run"]          # the key: requirement lines, comments stripped
     assert python["uses"].startswith("actions/setup-python@") and python["id"] == "python"
     assert python["with"] == {"python-version": FORK_PYTHON}                   # no pip cache
     assert restore["uses"].startswith("actions/cache/restore@") and restore["id"] == "wheels"
-    assert restore["with"] == {"path": FORK_WHEELS, "key": FORK_KEY}
+    assert restore["with"] == {"path": FORK_WHEELS, "key": FORK_KEY, "restore-keys": "cards-"}   # a miss keeps pyoxipng
     assert uv["uses"].startswith("astral-sh/setup-uv@") and uv["with"]["enable-cache"] is False
     run = install["run"]
     assert install["env"]["HIT"] == "${{ steps.wheels.outputs.cache-hit }}" and '"$HIT"' in run
-    assert run.index("pip wheel -q -w ~/.cache/card-wheels -r bot/requirements-cards.txt") < run.index(BY_NAME)
+    assert run.index("pip wheel -q -f ~/.cache/card-wheels -w ~/.cache/card-wheels -r bot/requirements-cards.txt") < run.index(BY_NAME)
     assert run.index(BY_NAME) < run.index('uv pip install -q --no-index -f ~/.cache/card-wheels -r "$RUNNER_TEMP/cards.txt"')
     assert save["uses"].startswith("actions/cache/save@") and save["if"].startswith("steps.wheels.outputs.cache-hit != 'true'")
     assert save["with"] == {"path": FORK_WHEELS, "key": "${{ steps.wheels.outputs.cache-primary-key }}"}

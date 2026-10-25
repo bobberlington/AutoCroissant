@@ -795,7 +795,7 @@ def test_workflow_pending_edits_line_calls_due(github, capsys, monkeypatch):
     """card-sync.yml's Pending edits line, run as written: the due card names, one per line (recent ones wait)."""
     if not WORKFLOW.exists():
         pytest.skip(f"no {WORKFLOW}")
-    code = re.search(r"python\" -c '([^']+)'", WORKFLOW.read_text(encoding="utf-8")).group(1)
+    code = re.search(r"Pending edits.*?python\" -c '([^']+)'", WORKFLOW.read_text(encoding="utf-8"), re.S).group(1)
     github.recent.add(DOOMER)
     monkeypatch.setattr("sys.argv", ["-c", cb.CARD_REPO, github.head, ""])
     exec(code, {})
