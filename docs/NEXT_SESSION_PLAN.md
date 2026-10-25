@@ -275,7 +275,7 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       cause (Butterfly's Inner Glow). Full suite on the r12 venv: 1748 passed, 13 skipped, 0 failed (after the merge alone: 1744 passed, 13 skipped). Review fixes 3
       (EDIT_PIPELINE_DESIGN section 7): title tokens off root type icons and any layer below (`inks_over`), no extra title
       line, typed icons checked for overlap and height (`typed_icon_fit`), refusal wording, baseline cut from the whole
-      render: 1756 passed, 13 skipped, 0 failed. Glow tokens (pin `cards-20261024b`, venv `~/.venvs/ac-py314-24b`): typed
+      render: 1756 passed, 13 skipped, 0 failed. Glow tokens (pin `cards-20261024b`, venv `~/.venvs/ac-py314-fork`): typed
       `:glow`/`:darkglow` bake (EDIT_PIPELINE_DESIGN section 7): 1759 passed, 13 skipped, 0 failed. 02015ac: a title or
       Ability whose saved pixels are in another font than it names refuses `font` (`drawn_in_font`, IoU under
       FONT_IOU_MIN 0.3: the four Omori titles Dull Knife, Shiny Knife, Dark Tentacle, Snow Angel): 1761 passed, 13

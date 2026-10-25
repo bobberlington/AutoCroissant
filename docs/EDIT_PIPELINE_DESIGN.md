@@ -808,7 +808,7 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `test_gate_pairs_checks_each_pairings_filter_and_place`, `test_covered_ink_weighs_layers_over_the_old_ink_anywhere`,
   `test_a_bake_cuts_its_region_renders_from_the_whole_ones`, the untinted case in
   `test_a_see_through_icon_under_a_badge_layer_refuses`; each fails with its change taken out (`bug2-p5/mut.py`).
-  **Glow tokens (2026-10-24, pin `cards-20261024b`, venv `~/.venvs/ac-py314-24b`; `scratch/bug2-p6/`):** the fork draws
+  **Glow tokens (2026-10-24, pin `cards-20261024b`, venv `~/.venvs/ac-py314-fork`; `scratch/bug2-p6/`):** the fork draws
   a `:glow`/`:darkglow` halo as Photoshop does, so typed ones bake under the same gates (a fork without the halos,
   `glow_halos`, a stale install: an ImportError and card_bake's `Transient`, no verdict; it was a lasting `font` one). A stroked Text group strokes the halo into a black disc,
   Photoshop's look: Photoshop's own Nebulous Precipice with `[darkmatter:glow]` (`~/std-work-1022/glow/run`) against
