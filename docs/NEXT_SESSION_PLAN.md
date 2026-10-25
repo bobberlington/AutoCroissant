@@ -107,8 +107,23 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       many land. A kill between the run's two pickle writes (old_stats.pkl saved, stats.pkl not: old_stats.pkl newer, no
       run summary) leaves the merge marked done with the current cards' starts unsaved: restore both pickles (`git
       checkout HEAD -- stats.pkl old_stats.pkl` on the jetson, before any `/push`) and run `/update_stats` again.
-- [ ] **Dead code after its PICKLE is pushed:** delete `history_backfill.json`, `commands/history_backfill.py`, its call
-      in `card_data.update()`, `tests/test_history_backfill.py` and the skill lines that name them.
+- [x] Merged in production (PICKLE 23eecae, 2026-10-24 17:30).
+- [ ] **The text fix (branch `work/histfix`, owner-approved 2026-10-24):** the merge's added versions took ability, types
+      and title from the version they split (White Defender's 2024 version showed the 2025 "5 Peppy for 3 turns").
+      `history_backfill_text.json` (built on the Mac: `python -m commands.history_backfill text --git
+      ~/Documents/Tools/wt/tc-full.git --pickles <origin/main's pickles>`, the r12 venv) lists 57 versions on 50 cards
+      (ability 56, types 7) with their own blob's text; 25 fields are left and listed (a field today's parser can't
+      read on that blob, an icon there without a type's name, Stone Golem unreadable). `/update_stats` applies it once,
+      right after the merge, only where a version (name, start, blob) still holds the listed old text, and says so in
+      one `Backfill text:` line; marker `backfill_text` (old text in `backfill_text_was`). Stats, starts and counts
+      never change. Rehearsed on 6000b4a's pickles (`rehearse ... --text history_backfill_text.json`; scratch
+      `~/Documents/Tools/wt/scratch/histfix/`): diff_stats 0 cards modified, 704 names / 1258 versions both sides, 50
+      names "kept versions with other data"; second cleanup, merge and text fix: nothing. Land with a normal deploy
+      (outside 05:00-05:40); run the diff_stats gate before the next `/push`. Undo: revert that PICKLE.
+- [ ] **Dead code after the text fix's PICKLE is pushed:** `commands/history_backfill.py` can be deleted then, with
+      `history_backfill.json`, `history_backfill_text.json`, their calls in `card_data.update()` (and `_clean_key`),
+      `tests/test_history_backfill.py` and the skill lines that name them. Both are once-only (markers `backfill_id`
+      and `backfill_text`), so neither can re-add the borrowed text before then.
 
 ### 2. The owner's re-parses (Discord, after step 1; tell him when)
 - [ ] `/update_stats cards:Shadow Duelist` (only printed Ability text counts; it becomes "").
