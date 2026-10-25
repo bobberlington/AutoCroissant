@@ -149,7 +149,7 @@ class Result:
     fix_refused: list = field(default_factory=list)   # (code, why)
     r10: dict = field(default_factory=dict)     # png_check of a pushed PNG
     notes: list = field(default_factory=list)   # (text, told on Discord)
-    writes: list = field(default_factory=list)  # {"path", "file", "sha", "kind" (png, psd, recompress), "line"}
+    writes: list = field(default_factory=list)  # {"path", "file", "sha", "kind" (png, psd, recompress), "line"; a redraw: "plain"}
     changes: list = field(default_factory=list) # what changed inside a modified PSD (psd_diff phrases)
     composer: list = field(default_factory=list)   # R8: layers set Single-line (the commit message alone says it)
     composer_left: list = field(default_factory=list)   # R8: (layer, why) not redrawn or not set (plan.json alone)
@@ -481,7 +481,7 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
                     jobs.append(job)
             continue
         if png and png in pngs and pngs[png].status in "AM":
-            job.case, job.png, job.png_new = "pair", png, pngs[png].new
+            job.case, job.png, job.png_new, job.numbered = "pair", png, pngs[png].new, numbered(change.path)
         elif png and change.status == "M":
             job.case, job.png, job.png_old, job.numbered = "stale", png, tree[png][1], numbered(change.path)
             job.psd_anchor, job.anchor_commit = source.anchor(png, change.path, before, after, change.old)
@@ -537,8 +537,9 @@ def whole_tree_jobs(tree: dict, author: str, cards: Optional[set] = None) -> lis
     jobs = []
     for path in sorted(tree):
         if is_card_psd(path) and (not cards or CardAuthors.key(card_name(path)) in cards):
-            png = snapshot.png_for(path)[0]
-            jobs.append(Job(path, "whole", "", tree[path][1], png, "", tree[png][1] if png else "", login=author))
+            png, numbered = snapshot.png_for(path)
+            jobs.append(Job(path, "whole", "", tree[path][1], png, "", tree[png][1] if png else "", login=author,
+                            numbered={p: tree[p][1] for p in numbered if p in tree}))
     return jobs
 
 
@@ -694,10 +695,10 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
         # a G5/G6 refusal retried, the anchored export kept unless it refuses
         if job.psd_anchor and old is not None:
             anchor = png_export.open_psd(source.blob(job.psd_anchor))
-            shown = png_export.shows(old_png, anchor, old)
-            if shown or (not found.unchecked and found.outcome == "refused" and found.gate in ("G5", "G6")):
+            matched = png_export.shows(old_png, anchor, old)
+            if matched or (not found.unchecked and found.outcome == "refused" and found.gate in ("G5", "G6")):
                 anchored = png_export.export(anchor, new, old_png, numbered)
-                if shown or anchored.outcome != "refused":   # the PNG matched the PSD before the burst
+                if matched or anchored.outcome != "refused":   # the PNG matched the PSD before the burst
                     found = anchored
                     result.notes.append((f"checked against the PSD as of {basename(job.png)}'s last change "
                                          f"(`{job.anchor_commit[:8]}`): an earlier push changed the PSD without its PNG",
@@ -765,13 +766,17 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
         lines = {issue.code: issue.line() for issue in issues if issue.fix}
         result.fix_refused = [(lines.get(code, code), why) for code, why in fixed.refused]
         if fixed.data:
-            data = fixed.data if not fixed.rewrapped or _rewrapped_pngs(out, result, new, fixed, shown) else fixed.plain
+            redrawn = bool(fixed.rewrapped) and _rewrapped_pngs(out, result, new, fixed, shown)
+            data = fixed.plain if fixed.rewrapped and not redrawn else fixed.data
             file = _save(out, job.psd, data)
             said = "; ".join(fixed.applied)     # what the comment and the post may say: never the composer
             composer = [f"Single-line Composer ({', '.join(fixed.composer)})"] if fixed.composer else []
-            result.writes.append({"path": job.psd, "file": file, "sha": blob_sha(data), "kind": "psd",
-                                  "line": "; ".join(fixed.applied + composer), "shown": said, "silent": not said,
-                                  "composer": bool(fixed.composer)})
+            write = {"path": job.psd, "file": file, "sha": blob_sha(data), "kind": "psd",
+                     "line": "; ".join(fixed.applied + composer), "shown": said, "silent": not said,
+                     "composer": bool(fixed.composer)}
+            if redrawn:                         # land swaps in plain when the redraw's PNGs do not land
+                write["plain"] = {"file": _save(out, job.psd + ".plain", fixed.plain), "sha": blob_sha(fixed.plain)}
+            result.writes.append(write)
 
 
 def _rewrapped_pngs(out: str, result: Result, pushed, fixed, shown: dict) -> bool:
@@ -782,6 +787,11 @@ def _rewrapped_pngs(out: str, result: Result, pushed, fixed, shown: dict) -> boo
     """
     if result.job.png not in shown:
         result.composer_left += [(name, "rewraps, not redrawn: no PNG that shows the PSD") for name in fixed.rewrapped]
+        return False
+    left = sorted(p for p in (*result.job.numbered, *result.job.pushed) if p not in shown)
+    if left:                                    # a numbered PNG would keep the old wrap
+        result.composer_left += [(name, f"rewraps, not redrawn: {basename(left[0])} does not show the PSD")
+                                 for name in fixed.rewrapped]
         return False
     numbered = {path: image for path, image in shown.items() if path != result.job.png}
     found = png_export.export(pushed, png_export.open_psd(fixed.data), shown[result.job.png], numbered)
@@ -1164,8 +1174,9 @@ def message(landed: list, after: str) -> str:
 
 
 def _rests_on(entry: dict, write: dict) -> list:
-    """The paths a write rests on: a PSD fix (0 pixels) on its PSD alone, a recompressed PNG on itself, a PNG on the whole
-    card (PSD, PNG, numbered) but the numbered PNGs the push brought (only their recompressions rest on them)."""
+    """The paths a write rests on: a PSD fix (0 pixels, or an R8 redraw: see _drawn) on its PSD alone, a recompressed PNG
+    on itself, a PNG on the whole card (PSD, PNG, numbered) but the numbered PNGs the push brought (only their
+    recompressions rest on them)."""
     if write["kind"] == "psd":
         return [entry["psd"]]
     pushed = set(entry.get("pushed", ()))
@@ -1184,13 +1195,28 @@ class Head:
 
 
 def _ours(entry: dict) -> dict:
-    """{path: blob} of a card's planned writes."""
-    return {write["path"]: write["sha"] for write in entry.get("writes", [])}
+    """{path: {blob}} of a card's planned writes (a redraw's plain too)."""
+    ours: dict = {}
+    for write in entry.get("writes", []):
+        ours.setdefault(write["path"], set()).update(w["sha"] for w in (write, write.get("plain")) if w)
+    return ours
 
 
 def _holds(entry: dict, path: str, blob: str) -> bool:
     """The head still holds what a card's check rests on at path: the blob as checked, or the bot's own write of it."""
-    return blob == entry.get("expect", {}).get(path, "") or (bool(blob) and blob == _ours(entry).get(path))
+    return blob == entry.get("expect", {}).get(path, "") or (bool(blob) and blob in _ours(entry).get(path, ()))
+
+
+def _drawn(entry: dict, here: Head, recent: Optional[set]) -> list:
+    """A card's writes as they may land: when a PNG re-exported for R8's redraw cannot, the PSD lands switched but not
+    redrawn (its plain) and no other such PNG lands, so the PSD and its PNGs never disagree."""
+    writes = entry["writes"]
+    if not any(w.get("plain") for w in writes):
+        return writes
+    redraw = [w for w in writes if w["kind"] == "png" and w.get("composer")]
+    if not any(_superseded(entry, w, here, recent) for w in redraw):
+        return writes
+    return [{**w, **w["plain"], "plain": None} if w.get("plain") else w for w in writes if w not in redraw]
 
 
 def _superseded(entry: dict, write: dict, here: Head, recent: Optional[set]) -> str:
@@ -1281,13 +1307,16 @@ def after_window(data: dict, landed: dict, tip: Optional[Snapshot], bot_moved: f
 
 
 def _read_files(out_dir: str, entries: list) -> dict:
+    """{file: bytes} of every planned write (a redraw's plain too)."""
     files = {}
     for entry in entries:
         for write in entry["writes"]:
-            with open(join(out_dir, write["file"]), "rb") as fh:
-                files[write["path"]] = fh.read()
-            if blob_sha(files[write["path"]]) != write["sha"]:
-                raise Transient(f"{write['file']} does not hash to the planned {write['sha'][:8]}")
+            for one in (write, write.get("plain")):
+                if one:
+                    with open(join(out_dir, one["file"]), "rb") as fh:
+                        files[one["file"]] = fh.read()
+                    if blob_sha(files[one["file"]]) != one["sha"]:
+                        raise Transient(f"{one['file']} does not hash to the planned {one['sha'][:8]}")
     return files
 
 
@@ -1296,7 +1325,7 @@ def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bo
     """
     After the quiet window (quiet_from + RECENT), commit a plan's writes once (G9) and settle what the one Discord post
     says (after_window). A write is left out when its card no longer holds the blobs it rests on (a PSD fix rests on its
-    PSD alone, a PNG on the whole card; any letter case) or, after a push's window, a later push touched them; a write the
+    PSD alone, a PNG on the whole card; any letter case; an R8 redraw lands plain without its PNGs) or, after a push's window, a later push touched them; a write the
     branch already holds (a re-run after a landing) is not written again. The rest is one commit on the branch head
     (retried on a moved head, COMMIT_TRIES times); --local commits in that clone instead (nothing pushed). dry_run (report
     mode) commits nothing. Without quiet_from (a dispatch) nothing waits and the blob check alone decides: the pushes in the
@@ -1339,7 +1368,12 @@ def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bo
                       if repository and quiet_from else set())
             included, report["dropped"], report["already"] = [], [], []
             for entry in entries:
+                drawn = _drawn(entry, here, recent)
                 for write in entry["writes"]:
+                    if write not in drawn and write["kind"] == "png":
+                        why = _superseded(entry, write, here, recent) or "superseded: the PSD landed without the redraw"
+                        report["dropped"].append([entry["card"], why, write["path"]])
+                for write in drawn:
                     why = _superseded(entry, write, here, recent)
                     if why:
                         report["dropped"].append([entry["card"], why, write["path"]])
@@ -1351,7 +1385,7 @@ def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bo
             report["landed"], report["included"] = cards, [[entry["card"], write["path"]] for entry, write in included]
             if not included or dry_run:
                 break
-            payload = {write["path"]: files[write["path"]] for _, write in included}
+            payload = {write["path"]: files[write["file"]] for _, write in included}
             text = message([{**entry, "writes": [w for e, w in included if e is entry]} for entry in entries
                             if entry["card"] in cards], data["after"])
             if local:

@@ -362,6 +362,7 @@ def test_a_burst_of_psd_pushes_still_gets_its_png(cards, tmp_path, first, made):
         assert job.psd_anchor == source.tree(alice)[f"{FOLDER}/Bread.psd"][1] and job.anchor_commit == alice
     data = cg.check(str(root), two, one, mode="on", out=str(tmp_path / "out"), workers=1)
     (entry,) = data["cards"]
+    assert not entry["error"], entry["error"]
     if made:
         assert entry["export"]["outcome"] == "re-exported" and entry["writes"][0]["path"] == f"{FOLDER}/Bread.png"
         assert any("an earlier push changed the PSD without its PNG" in note for note in entry["notes"])
@@ -382,6 +383,7 @@ def test_a_burst_without_a_stored_image_is_made_against_the_anchor(cards, tmp_pa
     out = tmp_path / "out"
     data = cg.check(str(root), two, one, mode="on", out=str(out), workers=1)
     (entry,) = data["cards"]
+    assert not entry["error"], entry["error"]
     assert entry["export"]["outcome"] == "re-exported" and entry["export"]["unchecked"] == pe.UNCHECKED
     assert any("an earlier push changed the PSD without its PNG" in note for note in entry["notes"])
     (write,) = entry["writes"]
@@ -407,6 +409,7 @@ def test_a_g2_burst_keeps_the_anchors_refusal(cards, tmp_path, monkeypatch):
     two = _dated(root, work, "Bread", card(base=(30, 200, 30), colour=(0, 255, 0)), "2026-10-22T10:10:00Z")
     data = cg.check(str(root), two, one, mode="on", out=str(tmp_path / "out"), workers=1)
     (entry,) = data["cards"]
+    assert not entry["error"], entry["error"]
     assert (entry["export"]["outcome"], entry["export"]["gate"]) == ("refused", "G7"), entry["export"]
     assert not [w for w in entry["writes"] if w["kind"] == "png"] and pe.G7 in entry["told"]
 
@@ -424,6 +427,7 @@ def test_a_g2_burst_refusal_is_not_retried_when_the_png_shows_no_anchor(cards, t
     two = _dated(root, work, "Bread", card(base=(30, 200, 30), colour=(255, 255, 0)), "2026-10-22T10:10:00Z")
     data = cg.check(str(root), two, one, mode="on", out=str(tmp_path / "out"), workers=1)
     (entry,) = data["cards"]
+    assert not entry["error"], entry["error"]
     assert (entry["export"]["outcome"], entry["export"]["gate"]) == ("refused", "G6"), entry["export"]
     assert entry["export"]["why"].startswith("PNG not made: the bot cannot draw this part of the card")
     assert not any("an earlier push changed the PSD" in note for note in entry["notes"]), entry["notes"]
@@ -451,6 +455,7 @@ def test_a_checked_burst_whose_last_push_moved_nothing_keeps_the_first(cards, tm
     out = tmp_path / "out"
     data = cg.check(str(root), two, one, mode="on", out=str(out), workers=1)
     (entry,) = data["cards"]
+    assert not entry["error"], entry["error"]
     assert (entry["export"]["outcome"], entry["export"]["changed_px"]) == ("re-exported", 4), entry["export"]
     assert any("an earlier push changed the PSD without its PNG" in note for note in entry["notes"])
     (write,) = entry["writes"]
@@ -481,6 +486,7 @@ def test_a_png_pushed_before_its_psd_keeps_g2_off_the_anchor(cards, tmp_path, mo
     out = tmp_path / "out"
     data = cg.check(str(root), two, one, mode="on", out=str(out), workers=1)
     (entry,) = data["cards"]
+    assert not entry["error"], entry["error"]
     assert entry["export"]["outcome"] == "re-exported" and entry["export"]["changed_px"] == (4 if dot else 441)
     assert not any("an earlier push changed the PSD" in note for note in entry["notes"]), entry["notes"]
     assert not any(line.startswith("PNG not made") for line in entry["told"])
@@ -2234,8 +2240,33 @@ def test_a_rewrap_redraw_follows_into_the_png_unsaid(tmp_path, monkeypatch):
     found.outcome, found.why = "refused", "PNG not made: G6"
     assert not cg._rewrapped_pngs(str(tmp_path), result, b"pushed", fixed, {"X/A.png": "image"})
     assert not cg._rewrapped_pngs(str(tmp_path), result, b"pushed", fixed, {})
+    result.job.numbered = {"X/A 2.png": "n1"}                   # a numbered PNG that would keep the old wrap
+    assert not cg._rewrapped_pngs(str(tmp_path), result, b"pushed", fixed, {"X/A.png": "image"})
     assert [why for _, why in result.composer_left] == ["rewraps, not redrawn: PNG not made: G6",
-                                                        "rewraps, not redrawn: no PNG that shows the PSD"]
+                                                        "rewraps, not redrawn: no PNG that shows the PSD",
+                                                        "rewraps, not redrawn: A 2.png does not show the PSD"]
+
+
+def test_a_redrawn_psd_lands_plain_without_its_png(tmp_path, monkeypatch):
+    """The redraw's PSD and PNG land together: when the PNG cannot (the author's own export since), the PSD lands
+    switched, not redrawn, never beside an old-wrap PNG."""
+    out = tmp_path / "plan"
+    entry = _entry("A")
+    _write(out, entry, "X/A.psd", "psd", b"drawn", "Single-line Composer (Ability)")
+    (out / "files" / "A.psd.plain").write_bytes(b"plain")
+    entry["writes"][0].update(shown="", silent=True, composer=True, plain={"file": "files/A.psd.plain", "sha": blob_sha(b"plain")})
+    _write(out, entry, "X/A.png", "png", b"png2", "re-exported for the Single-line Composer's rewrap")
+    entry["writes"][1].update(shown="", silent=True, composer=True)
+    plan = _full_plan(tmp_path, [entry])
+    sent = {}
+    for png, files in (("p1", {"X/A.psd": b"drawn", "X/A.png": b"png2"}), ("author", {"X/A.psd": b"plain"})):
+        FakeHub({"X/A.psd": ("100644", "s1"), "X/A.png": ("100644", png)}).install(monkeypatch)
+        monkeypatch.setattr(cg, "commit_files", lambda *a, **k: sent.clear() or sent.update(a[4]) or "c" * 40)
+        landed = cg.land(plan)
+        assert sent == files, png
+    assert landed["included"] == [["A", "X/A.psd"]] and sent == {"X/A.psd": b"plain"}
+    assert landed["dropped"] == [["A", "superseded: X/A.png changed on the branch", "X/A.png"]]
+    assert landed["told"]["X/A.psd"] == []
 
 
 def test_the_checks_report_at_once(clone):
