@@ -426,12 +426,12 @@ def test_layout_bars_refuse_what_they_lack(clone, parser):
 
 @text_engine
 def test_layout_bar_bakes_and_the_guards_export_it(clone, parser, chart, tmp_path):
-    """Tainted Isaac's hp through apply_jobs and every gate (gate_bytes takes the mask move and rename), and the push
+    """Tainted Isaac's hp through apply_jobs and every gate (gate_bytes takes the redrawn mask and the rename), and the push
     guards' PNG check (png_export) draws the same PNG from the saved PSD: an exposure's change is where its mask is."""
     from commands import png_export
     rel = "Creatures/Isaac/3 Stars/Tainted_Isaac.psd"
     parsed, baked = _bake(clone, parser, rel, {"hp": 7}, tmp_path, chart, update_preview=True)
-    assert baked.reparse["card"]["hp"] == 7 and [fields for _, _, fields in baked.records] == [["blocks", "mask", "mask_box", "name"]]
+    assert baked.reparse["card"]["hp"] == 7 and [fields for _, _, fields in baked.records] == [["blocks", "channels", "mask", "mask_box", "name"]]
     found = png_export.export(PSDImage.open(_card(clone, rel)[0]), PSDImage.open(baked.psd_path), Image.open(_card(clone, rel)[1]))
     assert found.outcome == "re-exported"
     assert not (np.asarray(found.image.convert("RGB"), dtype=int) - np.asarray(Image.open(baked.png_path).convert("RGB"), dtype=int)).any()

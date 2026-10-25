@@ -3161,11 +3161,13 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
         moves += row_moves
         reach = max(reach, row_reach)
     if notes:                                   # a digit moved and renamed: every change declared per layer
-        touched = [layer for layer, snap in snaps.values() if _bar_spec(layer, snap) is not None]
-        region = union_box([box for box, layer in zip(boxes, [layer for layer, _ in snaps.values()]) if layer in touched]
-                           + [_where(layer) for layer in touched])
-        return Edit(stat, old, value, touched, [], _pad(region, reach, psd) if region else None, notes=notes,
-                    bar=[(_record_index(layer), _bar_spec(layer, snaps[id(layer)][1])) for layer in touched])
+        moved = {id(layer) for row in rows for name, layer in row.digits.items() if layer.name.strip() != snaps[id(layer)][1]["name"]}
+        specs = [(layer, _bar_spec(layer, snap, id(layer) in moved)) for layer, snap in snaps.values()]
+        touched = [(layer, spec) for layer, spec in specs if spec is not None]
+        region = union_box([box for box, (layer, _) in zip(boxes, snaps.values()) if any(layer is t for t, _ in touched)]
+                           + [_where(layer) for layer, _ in touched])
+        return Edit(stat, old, value, [layer for layer, _ in touched], [], _pad(region, reach, psd) if region else None,
+                    notes=notes, bar=[(_record_index(layer), spec) for layer, spec in touched])
     region = union_box([_where(layer) for layer in changed])
     return Edit(stat, old, value, changed, [_record_index(layer) for layer in changed],
                 _pad(region, reach, psd) if region else None,
@@ -3232,9 +3234,10 @@ def _missing_digit(row: TemplateRow, stat: str, target: int) -> str:
         x_target = x + (up - x) * (BAR_EDGES[target] - BAR_EDGES[low]) / (BAR_EDGES[min(higher)] - BAR_EDGES[low])
     else:
         x_target = x + BAR_EDGES[target] - BAR_EDGES[low]
-    layer.mask.offset = (layer.mask.left + round(x_target - x), layer.mask.top)
+    span = (min(one.mask.left for one in [layer, *row.digits.values()]),
+            max(one.mask.right for one in [layer, *row.digits.values()]))
+    _remask(layer, round(x_target - x), span)   # its far end stays at the bar's (_held)
     layer.name = str(target)
-    layer._psd.mark_updated()
     row.digits[str(target)] = layer
     return f"{stat}: {row.group.name!r} had no digit {target}: its {low} moved there and renamed {target}"
 
@@ -3263,7 +3266,7 @@ def set_bar(psd: PSDImage, parsed: dict, stat: str, value: int, why: Refused) ->
         raise Refused("stat>10", f"{stat} {value}: one bar row; a second row is standardization work (ledger L3)")
     plan = plan_bar(psd, rows[0][0], stat, old, value, why)
     layers = list(dict.fromkeys([*plan.show, *plan.hide, *(layer for layer, _ in plan.names),
-                                 *(layer for layer, _ in plan.masks), *(layer for layer, _ in plan.moves),
+                                 *(layer for layer, _ in plan.moves),
                                  *(layer for layer, _ in plan.styles), *(layer for layer, _, _ in plan.remasks)]))
     snaps = {id(layer): _snap(layer) for layer in layers}
     before = [_where(layer) for layer in layers]
@@ -3273,9 +3276,6 @@ def set_bar(psd: PSDImage, parsed: dict, stat: str, value: int, why: Refused) ->
         layer.visible = False
     for layer, name in plan.names:
         layer.name = name
-    for layer, dx in plan.masks:
-        layer.mask.offset = (layer.mask.left + dx, layer.mask.top)
-        layer._psd.mark_updated()
     for layer, dx in plan.moves:
         _shift(layer, dx, 0)
     for layer, source in plan.styles:
@@ -3326,7 +3326,6 @@ class BarPlan:
     show: list = field(default_factory=list)
     hide: list = field(default_factory=list)
     names: list = field(default_factory=list)    # (layer, new name): the layer named after the value
-    masks: list = field(default_factory=list)    # (layer, dx): its mask moved along the bar
     moves: list = field(default_factory=list)    # (layer, dx): moved along the bar with its pixels
     styles: list = field(default_factory=list)   # (cell, source cell): the source's effect blocks copied onto the cell
     remasks: list = field(default_factory=list)  # (layer, dx, bar): its mask redrawn, the value edge dx along (_remask)
@@ -3556,34 +3555,39 @@ def _roles(cells: list, old: int) -> dict:
     return out
 
 
-def _remasked(layer, dx: int, bar: tuple) -> tuple:
+def _held(layer, dx: int, bar: tuple) -> tuple:
     """
-    A mask's raster with its value edge moved dx along the bar and its other side held: stretched by the mask's own
-    column at the bar's far end (Dark Esau's lit hearts, whose mask would stop short of the bar's start once moved).
+    A mask's raster with its value edge moved dx along the bar (x0, x1) and nothing else: inside the bar each column
+    takes the one dx before it (from past the bar's start or end: the mask's column there, its far side held: Dark
+    Esau's lit hearts, whose mask would stop short of the bar's start once moved), outside the bar the mask stays (a
+    moved mask's far end would darken the art past the bar: Spinni's moved digit).
 
     Returns:
-        (raster, its left)
+        (raster over the mask and the bar, its left)
     """
     mask = layer.mask
     raster = np.asarray(mask.topil().convert("L"))
-    width = raster.shape[1]
-    at = bar[0] if dx > 0 else bar[1] - 1
-    fill = np.repeat(raster[:, min(max(at - mask.left, 0), width - 1)][:, None], abs(dx), axis=1)
-    if dx > 0:
-        return np.concatenate([fill, raster], axis=1), mask.left
-    return np.concatenate([raster, fill], axis=1), mask.left + dx
+    height, width = raster.shape
+    left = min(mask.left, bar[0])
+    xs = np.arange(left, max(mask.left + width, bar[1]))
+    inside = (xs >= bar[0]) & (xs < bar[1])
+    source = np.where(inside, np.clip(xs - dx, bar[0], bar[1] - 1), xs) - mask.left
+    out = np.full((height, len(xs)), mask.background_color, dtype=np.uint8)
+    there = (source >= 0) & (source < width)
+    out[:, there] = raster[:, source[there]]
+    return out, left
 
 
 def _remask(layer, dx: int, bar: tuple) -> None:
-    """Redraw the layer's mask as _remasked() makes it."""
-    raster, left = _remasked(layer, dx, bar)
+    """Redraw the layer's mask as _held() makes it."""
+    raster, left = _held(layer, dx, bar)
     layer.update_mask(Image.fromarray(np.ascontiguousarray(raster)), top=layer.mask.top, left=left)
 
 
-def _remasked_profile(layer, dx: int, bar: tuple, y: int, x0: int, x1: int) -> np.ndarray:
-    """_profile() of the mask _remasked() would make (the layer is not changed)."""
+def _held_profile(layer, dx: int, bar: tuple, y: int, x0: int, x1: int) -> np.ndarray:
+    """_profile() of the mask _held() would make (the layer is not changed)."""
     mask = layer.mask
-    raster, left = _remasked(layer, dx, bar)
+    raster, left = _held(layer, dx, bar)
     xs = np.arange(x0, x1)
     out = np.full(len(xs), mask.background_color >= 128)
     if mask.top <= y < mask.top + raster.shape[0]:
@@ -3678,14 +3682,16 @@ def plan_bar(psd: PSDImage, group, stat: str, old: int, value: int, why: Refused
         tol = EDGE_TOL * (edges[10] - edges[0]) / 10
         y = (box[1] + box[3]) // 2
         lo, hi, bar = int(edges[0] - 2 * tol), int(edges[10] + 2 * tol), (int(edges[0]), int(edges[10]))
-        for layer, use_mask in elements:
+        for layer, use_mask in elements:     # a mask is redrawn, the art past the bar kept (_held)
             before = _step(_profile(layer, use_mask, y, lo, hi), lo, edges[old], tol, bar)
             same = lambda moved: moved is not None and all(m is None or b is None or m == b for m, b in zip(moved, before))
-            if same(_step(_profile(layer, use_mask, y, lo, hi, dx), lo, edges[value], tol, bar)):
-                (plan.masks if use_mask else plan.moves).append((layer, dx))
-            elif use_mask and same(_step(_remasked_profile(layer, dx, bar, y, lo, hi), lo, edges[value], tol, bar)):
+            shifted = same(_step(_profile(layer, use_mask, y, lo, hi, dx), lo, edges[value], tol, bar))
+            if not use_mask and shifted:
+                plan.moves.append((layer, dx))
+            elif use_mask and same(_step(_held_profile(layer, dx, bar, y, lo, hi), lo, edges[value], tol, bar)):
                 plan.remasks.append((layer, dx, bar))
-                plan.notes.append(f"{stat}: the mask of {layer.name!r} redrawn {dx:+d} px, its far side held")
+                if not shifted:                 # moved alone it would stop short of the bar: told
+                    plan.notes.append(f"{stat}: the mask of {layer.name!r} redrawn {dx:+d} px, its far side held")
             else:
                 raise Refused("unsupported-card", f"{stat} {value}: {layer.name!r} moved {dx:+d} px would no longer cover "
                                                   f"the bar on both sides of the value")
@@ -6258,13 +6264,12 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
     landed = {(dst, key): blocks_of(old, old_of[src]).get(key) for src, dst, key in moves if dst is not None}
     if None in left.values():
         raise Refused("bytes", "a moved effect block was not on its digit")
-    went, came = {}, {}
-    for index in toggled:
-        before, after = blocks_of(old, old_of[index]), blocks_of(new, index)
-        went.update({(index, key): data for key, data in before.items() if after.get(key) != data})
-        came.update({(index, key): data for key, data in after.items() if before.get(key) != data})
-    if went != left or came != landed:
-        raise Refused("bytes", "effect blocks changed beyond the declared moves")
+    for index in toggled:                       # each digit's blocks as the moves leave them (a block may land equal to
+        before, after = blocks_of(old, old_of[index]), blocks_of(new, index)    # the one it replaced: Dark Mind's lrFX)
+        expected = {key: data for key, data in before.items() if (index, key) not in left}
+        expected.update({key: data for (dst, key), data in landed.items() if dst == index})
+        if after != expected:
+            raise Refused("bytes", "effect blocks changed beyond the declared moves")
     return changed, flag_bytes, block_bytes + sum(len(data) for data in landed.values())
 
 
