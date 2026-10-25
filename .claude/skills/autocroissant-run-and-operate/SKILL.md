@@ -115,9 +115,15 @@ the top of the wrapper. Full contract: autocroissant-architecture-contract.
 interpreter on main.py. The process is REPLACED, so silence after "Restarting bot!" is normal.
 
 **Production (the jetson, 2026-10-20):** systemd `autocroissant.service`; no startup.sh, so /restart_bot
-re-execs main.py. Deploy: `git pull --ff-only`, `~/venvs/autocroissant/bin/python setup.py build_ext --inplace` (compiled .so
-load before .py; ~6 min), `sudo systemctl restart autocroissant`, check `journalctl -u autocroissant`: expect
-`Registered 52 slash commands`, `Bot initialization complete`, `Repo history: ...` and `Type emojis: ... ready`.
+re-execs main.py. Deploy (2026-10-24): run `~/Documents/AutoCroissant/scripts/deploy.sh` ON the jetson (or
+`ssh jetson Documents/AutoCroissant/scripts/deploy.sh`). It refuses 05:00-05:40 Pacific (checked again before the
+restart), `git pull --ff-only`, reinstalls the psd-tools fork only when `requirements-cards.txt`'s URL and tag differ from
+the venv's (pip's `direct_url.json`), `~/venvs/autocroissant/bin/python setup.py build_ext --inplace` (incremental: only
+modules whose source changed, seconds when none did; a full rebuild was ~6 min 44 s), `sudo systemctl restart
+autocroissant`, then waits up to 90 s for `Registered N slash commands` (52) and `Bot initialization complete` in the
+journal and prints OK, else the last 30 journal lines and FAILED (exit 1; a failed pull or build stops before the
+restart). `--bot ojwikibot` does the same for ~/Documents/OJWikibot (no psd-tools step; its own setup.py still rebuilds
+everything). Later lines, not checked: `Repo history: ...` and `Type emojis: ... ready`.
 The rebuild is NOT optional since the 2026-10-20 split: stale `.so` next to new `.py` fails at import
 (`cannot import name perms_check` from analytics.so) and systemd restarts into the same error. Standing rules
 (2026-10-22/23 incidents; memory jetson-server):
@@ -127,7 +133,7 @@ The rebuild is NOT optional since the 2026-10-20 split: stale `.so` next to new 
 - **Push main and deploy in one sitting**: if origin/main has new code at 05:30 and the jetson does not, `/push` rebases
   the new `.py` files in next to stale `.so` files and the next restart fails at import.
 - **When the psd-tools fork tag moves** (its one pin: `requirements-cards.txt`, which `requirements.txt` includes),
-  reinstall it in the venv after the pull:
+  reinstall it in the venv after the pull (deploy.sh does this):
   `~/venvs/autocroissant/bin/pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"`
   (gcc compiles `_distance`), then `~/venvs/autocroissant/bin/pip check`. A plain `pip install -r requirements.txt`
   keeps the old commit while the fork's version is unchanged (1.25.0 at every tag up to `cards-20261023d`): pip calls
