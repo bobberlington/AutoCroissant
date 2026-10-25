@@ -1,7 +1,8 @@
 # Card sync verdicts on the data branch, bake and guard events in the changelog
 
 **Status:** answered by the owner 2026-10-23 ~18:30 (`docs/Campaigns/DATA_BUILD_ACTION.md` §16 item 7); designed
-2026-10-25 for the two-lane Card sync; not built. Queue item 6; best after step 10 (`work/pickles`) lands, since both touch `card_data`.
+2026-10-25 for the two-lane Card sync; not built. Queue item 6; best after step 10 (`work/pickles`) lands, since both
+touch `card_data`.
 
 **Goal.** `site/Card Edits.json` on main holds only people's edits; the bake's verdicts live on `data`, so a refusal
 makes no main commit. Bakes and guard fixes show on the Changes page.

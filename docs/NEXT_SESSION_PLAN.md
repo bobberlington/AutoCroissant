@@ -27,9 +27,9 @@ Census: `docs/Future/PROBLEM_CARDS_2026-10-25.csv`.
       Status: the 31-card batch (b511a638, rebased as 1cb63d11) must be **re-run on the current PSDs**, not merged:
       hdckighfkvhvgmk's push 86733bd2 changed PoD06, PoD10, PoD11 and PoD12. Then the owner's before/after sheet,
       then one commit.
-- [ ] **Data build step 10** (`work/pickles`: AC 8f433f4, 25d7e70; TC b0da3cce): delete the pickles,
-      `psd_details.json`, `/push`, the legacy `/update_stats` path (B9 with it), `commands/history_backfill.py` and its
-      files and test (DATA_BUILD_ACTION §14). Status: building; owner said now and tells bobberlington.
+- [ ] **Data build step 10** (`work/pickles`: AC 8f433f4, 25d7e70, cc48201, 3a1adba; TC b0da3cce): delete the
+      pickles, `psd_details.json`, `/push`, the legacy `/update_stats` path (B9 with it), `commands/history_backfill.py`
+      and its files and test (DATA_BUILD_ACTION §14). Status: building; owner said now and tells bobberlington.
 - [ ] **Guards' silent Composer fix** (`work/composer`, worktree `wt/ac-composer`, uncommitted): card text layers set
       to Every-line Composer become Single-line, the PNG re-exported if the text moved, committed with the other guard
       fixes, never mentioned in posts or comments. Status: building.
@@ -62,8 +62,7 @@ Census: `docs/Future/PROBLEM_CARDS_2026-10-25.csv`.
 - [ ] Delete the 30-minute `/update_stats` reminder be1b0bcd (refresh on use made it unneeded); tell bobberlington
       about step 10.
 - [ ] Questions from the designs: which template a two- or three-creature card uses (PARTS_EDITOR §14); keep
-      recompressing card makers' pushed PNGs after the push (+0.8 MB history each) or not (SMALLER_PNG_PUSHES);
-      `game.txt` built under `site/` or committed under `TTS/` (GAME_TXT).
+      recompressing card makers' pushed PNGs after the push (+0.8 MB history each) or not (SMALLER_PNG_PUSHES).
 - [ ] BUG 2 points: Clot Gold "2T1" -> "2T2"; a typed badge in a title (plain words, flagged); `:sticker` beside plain
       tokens (Palace of Shadow); words typed in place of a badge; Elmadan's leading space; Plague's icon size.
 - [ ] Push guards: §20.4 (KEPT up to 300 px; drop the render line from the post); §15: the fork render refusing 9 of 34
@@ -99,8 +98,8 @@ Census: `docs/Future/PROBLEM_CARDS_2026-10-25.csv`.
 - [ ] Skills: 2026-07-11 line numbers in impossibility-cards-reference and failure-archaeology. Status: open.
 - [ ] TTS/AUDIT.md's two owner points ("new" = not in the save at 318001ea; White Palace in no deck); Stubborn Queen
       not in `resizeTargets` (not re-checked). Status: open.
-- [ ] TTSCardMaker docs with stale lines: `site/README.md` (details from the pickles), `site/NOTES.md` §5,
-      `TTS/checks/README.md` (pickle push, `card_sync_steps.py`, `~/.venvs/tts-checks`). Status: after step 10.
+- [ ] TTSCardMaker docs with stale lines: `site/README.md` and `site/NOTES.md` are fixed in `work/pickles` (TC b0da3cce);
+      `TTS/checks/README.md` still names `~/.venvs/tts-checks`. Status: with step 10.
 - [ ] Jetson: move from OpenSSL 3.6.5 (installed 10-24) to the 3.5 LTS, if wanted. Status: optional.
 - [ ] Disk cleanup: `wt/scratch` (133 GB), `wt/tc-full.git` (22 GB; after step 10), ~40 dead `wt/*-scratch` dirs,
       `~/std-work-1022` (15 GB; keep `glow/held.json`), ~70 GB of pytest temp folders. In `wt/scratch` keep what the

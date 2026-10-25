@@ -665,7 +665,7 @@ Both designs agree except on NME Stock, where B's explicit tags win. Fit is the 
 3. B text.
 4. C build_site.
 5. C editor.
-6. B variants, then the owner tags the 5 PSDs.
+6. B variants, then the 5 PSDs tagged by script (one commit, plan shown to the owner first).
 7. B extras.
 8. The §8 deletion.
 
