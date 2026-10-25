@@ -37,9 +37,6 @@ config.py
 .ssh/
 
 reminder.pkl
-reminder.pkl.bak
-reminder.json
-reminder.json.tmp
 # pickles are saved by writing a temp file and renaming it; one can be left behind after a crash
 *.pkl.tmp
 # the PSD details file (commands/psd_details.py, committed) is written the same way
@@ -98,3 +95,8 @@ ENV/
 # ===================================
 Thumbs.db
 .DS_Store
+
+# reminders, per machine like reminder.pkl: the store, its temp file, the pickle the one-time conversion kept (2026-10-24)
+reminder.json
+reminder.json.tmp
+reminder.pkl.bak

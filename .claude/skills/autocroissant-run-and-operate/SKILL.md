@@ -1,6 +1,6 @@
 ---
 name: autocroissant-run-and-operate
-description: Day-to-day operations runbook for the AutoCroissant Discord bot. Load this when the task sounds like "run the bot", "start the bot", "stop", "restart", "deploy", "update the bot", "push/pull the pickles", "switch machines" / "handoff to the other machine", "sync commands" / "commands not showing up after deploy", "run update_stats", "local mode vs remote mode", "set a reminder" / "schedule a command" / "reminder didn't run", "sync emojis" / "/sync_emojis" / "type emojis not showing", "TTS save" / "Tabletop Simulator save" / "/update_tts_save" / "TTS/decks.json", "card guards" / "CARD_GUARDS" / "push guards" / "stale PNG" / "standards channel", or "where do files go" (exports, music downloads, temp files). Contains the start command and healthy startup output, on_ready init order, stop/restart (jetson systemd), the command-sync model, the ANATOMY of /push, /pull, /update (PICKLE commits, pickles-ours/code-theirs merge, force_reset, every failure message; live triage is autocroissant-debugging-playbook), the machine handoff runbook, the /update_stats operating rule (just run it), artifact locations, reminder, type-emoji and TTS-save operations, a guild-admin table, and (section 12) the bot after the data-build cutover: "cutover", "CARD_SYNC", "card sync", "card_data/", "ACTIONS_TOKEN" (/update_stats syncs the Card sync Action's data branch, force_update and cards dispatch a run, /push retired, /fonts from the data).
+description: Day-to-day operations runbook for the AutoCroissant Discord bot. Load this when the task sounds like "run the bot", "start the bot", "stop", "restart", "deploy", "update the bot", "push/pull the pickles", "switch machines" / "handoff to the other machine", "sync commands" / "commands not showing up after deploy", "run update_stats", "local mode vs remote mode", "set a reminder" / "schedule a command" / "reminder didn't run" / "/reminders panel" / "reminder.json", "sync emojis" / "/sync_emojis" / "type emojis not showing", "TTS save" / "Tabletop Simulator save" / "/update_tts_save" / "TTS/decks.json", "card guards" / "CARD_GUARDS" / "push guards" / "stale PNG" / "standards channel", or "where do files go" (exports, music downloads, temp files). Contains the start command and healthy startup output, on_ready init order, stop/restart (jetson systemd), the command-sync model, the ANATOMY of /push, /pull, /update (PICKLE commits, pickles-ours/code-theirs merge, force_reset, every failure message; live triage is autocroissant-debugging-playbook), the machine handoff runbook, the /update_stats operating rule (just run it), artifact locations, reminder, type-emoji and TTS-save operations, a guild-admin table, and (section 12) the bot after the data-build cutover: "cutover", "CARD_SYNC", "card sync", "card_data/", "ACTIONS_TOKEN" (/update_stats syncs the Card sync Action's data branch, force_update and cards dispatch a run, /push retired, /fonts from the data).
 ---
 
 # AutoCroissant: Run and Operate
@@ -50,8 +50,8 @@ Registered 52 slash commands for reminder system.      <- slash_registry populat
 Bot initialization complete                            <- the four loops started (main.py:141-144)
 Synced commands to guild: <name> (<id>)                <- one line per guild, async (main.py:110)
 Removed N stale temp PSDs (X MB) from <dir>            <- sweep_temp_psds (2026-10-22), only when it deletes something
-Trying to open reminder.pkl.                           <- init_reminder
-reminder.pkl is empty or missing.                      <- or "Existing dict found in reminder.pkl, updating entries..." plus "Rescheduled reminder <id> from <t1> to <t2>" and (2026-10-19, first start after the rewrite) "Reminder <id>: migrated command `...` -> `...`" lines
+Trying to open reminder.json.                          <- init_reminder (or "No reminder.json yet: an empty schedule.")
+Converted reminder.pkl to reminder.json (3 reminders; backup reminder.pkl.bak).   <- once, the first start after 2026-10-24; plus any "Rescheduled reminder <id> from <t1> to <t2>" lines
 Trying to open stats.pkl                               <- init_psd
 Loaded existing stats from stats.pkl
 Trying to open old_stats.pkl
@@ -79,7 +79,7 @@ start draining — so the loops effectively start first, and nothing is sent to 
 | Init (queued in this order) | What it does | Failure/no-op behavior |
 |---|---|---|
 | `sweep_temp_psds` (card_runner.py:103; 2026-10-22, c0fc117) | Deletes mkstemp `tmp*.psd` files (`TEMP_PSD`) older than 1 h (`TEMP_AGE`) in the temp dir, left by a cut-off run (the jetson had 56, 1.1 GB, on 2026-10-22), under `card_runner.bake_lock` | Prints `Removed N stale temp PSDs (X MB) from <dir>` only when it deleted something; never touches a file of a running update or bake |
-| `init_reminder` (analytics.py:940) | Loads `reminder.pkl`, migrates old entries in place, rolls past-due REPEATING reminders forward to their next future slot in one step, saves atomically | Missing/empty file: "reminder.pkl is empty or missing." — fine. Unreadable file: "ERROR: reminder.pkl could not be read ... Reminders are OFF and the file was left untouched" — every reminder command then replies "✗ Reminders are off"; move the file aside and restart |
+| `init_reminder` (analytics.py:1474) | Loads `reminder.json` (once, 2026-10-24: converts `reminder.pkl` to it, checked by reading it back, and renames the pickle `reminder.pkl.bak`), migrates old entries, rolls past-due REPEATING reminders that are on forward to their next future slot in one step, saves atomically | No file: an empty schedule. Unreadable file: "ERROR: reminder.json could not be read ... Reminders are OFF" (the file is left untouched; every reminder command replies "✗ Reminders are off"). A failed conversion: "ERROR: could not convert reminder.pkl ..." and the bot runs and saves from the pickle this session; the next start tries again. Only `reminder.pkl.bak` left: reminders off until you restore `reminder.json` or rename the backup back |
 | `init_psd` (psd_analyzer.py:326) | Loads `stats.pkl` + `old_stats.pkl` into `stats_db`, builds the query DataFrames | Missing pickles: rebuilds empty (dangerous if unexpected — see cwd warning) |
 | `init_query` (query_card.py:991) | Loads `aliases.pkl`, fetches the TTSCardMaker GitHub file tree (1 API call; 3 tries 1 s and 2 s apart on a connection error, 429 or 5xx, `github_api.get_with_retry`) | A failed or non-tree reply keeps the last good list: "Card list: GitHub tree fetch for <repo> failed (...); keeping the last good list (N entries)" (0 entries right after a start, so /query finds nothing until the next /update_stats or restart) and "Warning: Failed to populate files from repository (status N)" |
 | `refresh_history` (repo_history.py:198) | Fetches the bare history clone (`~/Documents/TTSCardMaker-history.git`) and maps each card PNG to the commit that last changed it, for sha-pinned image links | Never raises; on failure the old map stays and links fall back to `main` |
@@ -252,7 +252,7 @@ Treat it as a change-control decision, not an ops reflex: autocroissant-change-c
 ## 6. Multi-machine handoff runbook
 
 The pickles are the ONLY state that follows the bot. Per-machine and NOT synced (verified in
-.gitignore): `config.py`, `.ssh/`, `reminder.pkl`, `music/`, all `*.csv`/`*.txt` exports, compiled
+.gitignore): `config.py`, `.ssh/`, `reminder.json`, `music/`, all `*.csv`/`*.txt` exports, compiled
 `*.so`, venvs. Both machines need their own config.py and deploy key already in place.
 
 Moving hosting from machine A (currently running) to machine B:
@@ -274,9 +274,9 @@ Moving hosting from machine A (currently running) to machine B:
    older date means step 1 or 3 did not land.
 5. **Start on B**: `python3 main.py` from B's repo root; check the startup output against section 1
    (especially that no pickle prints "rebuilding..."/"starting fresh...").
-6. **Recreate reminders.** `reminder.pkl` is gitignored — reminders DO NOT follow the bot across
-   machines (direct implication of the topology). `/list_reminders all:True` on B and re-`/set_reminder`
-   anything the group relies on, e.g. a nightly stats update (section 9).
+6. **Recreate reminders.** `reminder.json` is gitignored — reminders DO NOT follow the bot across
+   machines (direct implication of the topology). Copy it from A with both bots stopped, or browse
+   `/reminders` on A and re-`/set_reminder` on B what the group relies on (section 9).
 7. **Type emojis follow the bot identity, not the machine.** If B logs in with a different token than A,
    B's first startup uploads its own 126 emojis (section 11). Same token on both = nothing to do.
 
@@ -714,8 +714,9 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 | Artifact | Produced by | Location | Committed? |
 |---|---|---|---|
 | `stats.pkl`, `old_stats.pkl`, `aliases.pkl` | /update_stats, /alias, metadata commands | repo root | YES — the database, synced via /push |
-| `reminder.pkl` | /set_reminder | repo root | NO (gitignored) — per-machine |
-| `reminder.pkl.tmp` | every reminder save (written, fsynced, then renamed over reminder.pkl) | repo root, normally gone within milliseconds | NO (gitignored since 2026-10-19, `.gitignore:41`). If a hard kill leaves one behind, delete it |
+| `reminder.json` | /set_reminder, /reminders, every firing (schema_version 2, `ReminderStore` in analytics.py) | repo root | NO (gitignored) — per-machine. Edit by hand only with the bot stopped |
+| `reminder.json.tmp` | every reminder save (written, fsynced, then renamed over reminder.json) | repo root, normally gone within milliseconds | NO (gitignored). If a hard kill leaves one behind, delete it |
+| `reminder.pkl.bak` | the one-time conversion (2026-10-24) | repo root | NO (gitignored). The old store; keep it a while, then delete |
 | `repo_history.json` | startup and every /update_stats (commands/repo_history.py; a failed refresh retries on the next one) | repo root; its bare clone at `~/Documents/TTSCardMaker-history.git` | NO (gitignored) — per-machine, rebuilt from the clone if deleted |
 | `stats.csv` / `stats.txt` | /export_cards (`as_csv` picks which) | repo root | NO (gitignored via `*.csv`/`*.txt`) |
 | `rules.txt` | /export_rulebook | repo root | NO (gitignored) |
@@ -734,13 +735,26 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 
 ## 9. Reminders operations
 
-Rewritten 2026-10-19 (commands/analytics.py, 961 lines on 2026-10-23). Times are
-Pacific — `TIMEZONE = ZoneInfo("America/Los_Angeles")` (global_config.py:19), so they follow daylight
-saving. `check_reminder` is queued once per second by its own loop, `process_reminders` (main.py:926-928). History of
-what the rewrite fixed: autocroissant-failure-archaeology Entries 10.1 and 10.6-10.8. Flow and
-invariants: autocroissant-architecture-contract.
+Rewritten 2026-10-19; panel, on/off and `reminder.json` 2026-10-24 (commands/analytics.py, the panel UI in
+commands/reminder_panel.py). Times are Pacific — `TIMEZONE = ZoneInfo("America/Los_Angeles")` (global_config.py:20), so
+they follow daylight saving. `check_reminder` is queued once per second by its own loop, `process_reminders`
+(main.py:920). History of what the rewrite fixed: autocroissant-failure-archaeology Entries 10.1 and 10.6-10.8. Flow
+and invariants: autocroissant-architecture-contract. OJWikibot has a near-copy of this module (same parser, panel and
+store shape; its own adapter block at the top of its analytics.py; no drift check).
 
-### /set_reminder (admin only, main.py:238; the gate at :252)
+### /reminders (the panel, anyone)
+
+An ephemeral panel (only the invoker sees and uses it) on the first reminder in this channel: an embed card (message,
+command, next run in Pacific time, repeat, channel, creator, On/Off/⚠ problem), `◀ ↻ ▶`, a jump list (over 25
+reminders: 23 per page plus earlier/later), and Reschedule (a form: when, repeat; `when` also takes a delay like
+`30m`), Turn off/on, Delete (with a confirm) and New (a form: message, command, when, offset, repeat; created in this
+channel as you). Reschedule, Turn off/on and Delete need an admin or the reminder's creator (no creator: admins only);
+New needs an admin. An off reminder keeps its schedule and never fires; on again, a repeating one skips the runs it
+missed and a one-shot whose time passed must be rescheduled first. Every click re-reads the list ("That reminder is
+gone." when it fired or was deleted elsewhere). It closes after 10 idle minutes; after a restart open panels fail
+("This interaction failed"): run `/reminders` again. A failed conversion shows in its footer.
+
+### /set_reminder (admin only, main.py:238; the gate at :252; the panel's New does the same)
 
 | Option | Accepts | Notes |
 |---|---|---|
@@ -754,7 +768,7 @@ At least one of `msg` / `command` is required. The reply looks like: "Reminder `
 **2026-10-25 03:00 PDT (in 5 days)**, repeats every 1w, runs `/sync_emojis` with your permissions.
 Output goes to this channel."
 
-**Retired options are dropped, not refused.** `RETIRED_OPTIONS` (analytics.py:41) lists options a command
+**Retired options are dropped, not refused.** `RETIRED_OPTIONS` (analytics.py:44) lists options a command
 no longer has: since 2026-10-20, /update_stats's `use_local_repo` and `use_local_timestamp` (local mode was
 archived, section 7). A new reminder that names one gets it removed, and the reply says so ("Dropped
 `use_local_repo:True`: /update_stats no longer has that option."). Stored reminders are cleaned on load (see
@@ -775,12 +789,12 @@ The first is stored as `/update_stats`. The second is a weekly full emoji sync, 
 ### Whose permissions a reminder uses
 
 - A reminder runs **as its creator**. It stores `creator_id`/`creator_name`, and the fake interaction it fires
-  with carries a stand-in user with that id (`_ReminderUser`, analytics.py:69). The slash wrapper's own
+  with carries a stand-in user with that id (`_ReminderUser`, analytics.py:95). The slash wrapper's own
   `lacks_admin` therefore runs again at fire time: if the creator has left `ADMINS`, an admin command replies
   "You do not have permission." in the channel instead of running.
 - **Legacy reminders** (saved before 2026-10-19, so no creator) still run as the bot: `LEGACY_RUNS_AS_BOT = True`
   (analytics.py:37). The bot's own id is in `ADMINS` on the dev Mac, so those pass every admin check.
-  `/list_reminders` labels them "by unknown (older reminder, runs as the bot)". To bring one under the new
+  `/reminders` labels them "unknown (runs as the bot)". To bring one under the new
   rule, re-create it and then remove the old one.
 
 ### When things go wrong
@@ -791,25 +805,28 @@ The first is stored as `/update_stats`. The second is a weekly full emoji sync, 
 | The stored command no longer resolves (command renamed, option removed) | The message (if any) still posts, then "⚠ Reminder `<id>` skipped its command: <reason>. Re-create it, then `/remove_reminder reminder_id:<id>`." The reminder still repeats or completes normally |
 | Channel deleted or no longer visible | Skipped, with a terminal log line. A repeating reminder moves to its next slot; a one-shot is retried every hour (`CHANNEL_RETRY`) until the channel is back or you remove it |
 | Bot was offline, or stalled, past one or more runs | A one-shot fires right after startup. A repeating reminder fires once, then jumps straight to its next future slot. Missed runs are not replayed |
-| A reminder crashes the scheduler itself | Only that reminder is disabled ("crashed the scheduler"); `/list_reminders` shows "⚠ DISABLED: <reason>". Remove it |
-| reminder.pkl unreadable at startup | Reminders are OFF for the session and the file is left untouched. Every reminder command replies "✗ Reminders are off: ...". Move the file aside and restart for a fresh schedule |
+| A reminder crashes the scheduler itself, or its stored data is unreadable | Only that reminder stops (its `problem`, e.g. "crashed the scheduler"); `/reminders` shows "⚠ <problem>". Reschedule it (clears the problem) or delete it |
+| reminder.json unreadable at startup | Reminders are OFF for the session and the file is left untouched. Every reminder command replies "✗ Reminders are off: ...". Fix it, or move it aside and restart for a fresh schedule |
 | Two scheduler passes overlap | The second is skipped (single-flight lock), so nothing double-fires |
 
-### /list_reminders, /remove_reminder, persistence
+### /remove_reminder, persistence
 
-- **/list_reminders** `[all] [hidden]` (not gated): one line per reminder with ID, message, next run (Pacific
-  time plus a Discord relative timestamp each reader sees in their own zone), repeat (`1d12h` style), command,
-  creator, channel (with `all:True`) and any DISABLED reason. Mentions do not ping. Long lists are split.
-- **/remove_reminder** `reminder_id`: admins, or the reminder's creator (anyone else gets "Only an admin or the
-  reminder's creator can remove it."). The ID is the 8-character code from /list_reminders; case and
-  backticks are ignored.
-- **Persistence**: `reminder.pkl` is rewritten atomically on every change (temp file, fsync, rename; section 8
-  for the `.tmp` file). The layout is unchanged (guild id → list of dicts), so HEAD-era code can still read a
-  migrated file — but that older code would again read `True` as False in commands. On the first start after
-  the rewrite, each old reminder is migrated in place: its command is rewritten to canonical form keeping what
-  it actually did (old booleans: only lowercase `true` was True). Since 2026-10-20 (`REMINDER_VERSION = 3`)
-  the same load also strips retired options (`RETIRED_OPTIONS`), so `/update_stats use_local_repo:False`
-  becomes `/update_stats`; old positional values are matched against the option order of their time first.
+- **/remove_reminder** `reminder_id`: the shortcut of the panel's Delete (admins, or the reminder's creator; anyone
+  else gets "✗ Only an admin or the reminder's creator can change it."). Case and backticks are ignored.
+- **Persistence**: `reminder.json` (`ReminderStore`, schema_version 2) is rewritten atomically on every change
+  (temp file, fsync, rename, fsync of the folder). Per guild a list of reminders in creation order: `id`,
+  `channel_id`, `msg`, `when` (ISO with that instant's Pacific offset; read back into Pacific, so a daily 05:00 stays
+  05:00 across daylight saving), `frequency` (seconds or null), `command`, `enabled`, `creator_id`, `creator_name`,
+  `v` (`REMINDER_VERSION`), `problem`; ids are text. A save is canonical (a no-op save changes nothing). An entry
+  with an older `v` is migrated on load: its command is rewritten to canonical form keeping what it actually did,
+  and retired options (`RETIRED_OPTIONS`) are stripped, so `/update_stats use_local_repo:False` becomes
+  `/update_stats`.
+- **The conversion (once, 2026-10-24)**: the first start finds no `reminder.json`, loads `reminder.pkl` as before,
+  writes `reminder.json`, reads it back and compares every field, and only then renames the pickle
+  `reminder.pkl.bak`. Ids, creators, schedules and commands carry over (the cutover's `/remove_reminder` of
+  d2664752 and 054b5933 still works). On any failure the half-made JSON is removed and the session keeps running
+  and saving from the pickle (the panel footer and /set_reminder replies say so). The pickle path goes once every
+  host has converted.
   The fire path drops them too, so a reminder never fails on them. Watch for "Reminder <id>: migrated command
   ... (dropped retired ...)" lines. Per-machine file: reminders DO NOT
   follow a machine handoff (section 6 step 6).
@@ -979,8 +996,8 @@ re-find volatile facts with these before trusting them:
 | old_stats archived only on blob change or move (legacy mode) | `grep -n -A3 "def _history" commands/card_data.py` |
 | Per-card cost (exclusions skipped, commit lookup only for re-parsed cards) | `grep -n "EXCLUDE_FOLDERS\|_get_remote_timestamp\|COMMITS_PAGE =" commands/card_data.py` |
 | Reminder formats, limits, defaults | `grep -n "^TIME_FORMATS\|^WEEKDAYS\|^MAX_INTERVAL\|^CHANNEL_RETRY\|^LEGACY_RUNS_AS_BOT\|^INTERVAL_UNITS" commands/analytics.py` |
-| Reminders run as creator; remove gated | `grep -n "_ReminderUser(\|Only an admin or the reminder" commands/analytics.py` |
-| reminder.pkl.tmp ignored | `git check-ignore -v reminder.pkl.tmp` (`.gitignore:41`) |
+| Reminders run as creator; changes gated | `grep -n "_ReminderUser(\|def can_edit\|Only an admin or the reminder" commands/analytics.py` |
+| Reminder files ignored | `git check-ignore -v reminder.json reminder.json.tmp reminder.pkl.bak` |
 | TTS save wiring (bot: /update_tts_save only; no tts_save import in repo_traverser since 2026-10-20) | `grep -n "update_tts_save" main.py`; `grep -c "tts_save" commands/repo_traverser.py commands/card_data.py` (0, 0); `grep -n "^TTS_SAVE_PATH\|environ.get" global_config.py` (the two Action env overrides) |
 | Type emoji sync wiring | `grep -n "init_type_emojis\|sync_emojis" main.py`; `grep -n "^EMOJI_SIZE\|^MAX_NAME_LEN\|^NO_SUFFIX" commands/type_emojis.py` |
 | Font check wiring (/fonts; the Action is TTSCardMaker's font-check.yml) | `grep -n "check_repo_fonts\|name=\"fonts\"" main.py`; `grep -n "^BATCH\|^CACHE_JSON\|^ROLE_ID\|^BITE" commands/font_check.py`; `git check-ignore -v font_names.json` |

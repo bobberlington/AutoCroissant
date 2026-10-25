@@ -81,6 +81,11 @@ Mechanics you must know:
   blocking work — the GitHub listing and every image download/resize — into threads with
   `asyncio.to_thread`. Its user-facing report still goes through `queue_message`. Copy that split if
   you write another async worker: await only cheap Discord calls on the loop, thread everything else.
+- **The /reminders panel answers directly** (2026-10-24, `commands/reminder_panel.py`, not compiled): a View, a
+  modal and `edit_message` need the live interaction, so its callbacks call `interaction.response.*` themselves
+  (3 s to answer) and run every read or change of the reminders in a thread (`to_thread(snapshot | set_enabled |
+  delete | reschedule | create)`: `_lock` may be held by a scheduler pass). Rights are checked in analytics.py under
+  the lock, not only by the disabled buttons. Views are built on the loop, never in a worker thread.
 
 ### WHY this design (the load-bearing reasons)
 
@@ -119,9 +124,9 @@ Mechanics you must know:
 | 4 | **Registration pattern:** `func = to_thread(func)` rebind FIRST, then the `@tree.command` async wrapper that awaits it (50 occurrences as of 2026-10-23; e.g. main.py:283, 405). `on_ready` stores `slash_registry[cmd.name] = cmd.callback` (main.py:130-131), which powers reminder command execution (analytics.py `_resolve_command`, `_fire`). | Forget the rebind line → the wrapper's `await func(...)` executes the sync function inline ON the event loop (bot frozen for its whole duration), then raises `TypeError` awaiting the plain return value. Since 2026-10-19 reminders bind their stored `/name option:value` text against the callback's real signature at creation AND at every firing, so: rename a command's `name=` → saved reminders post "⚠ Reminder `<id>` skipped its command: `/<name>` is not a bot command"; rename or remove a slash **parameter** → "`<option>` is not one of its options", UNLESS you list it in `RETIRED_OPTIONS` (analytics.py:41; with the command's old option order), which makes stored reminders drop it at load and at fire time — done for /update_stats's `use_local_repo`/`use_local_timestamp` on 2026-10-20; change a parameter's type → values that no longer convert are refused. The reminder itself keeps repeating; its creator must re-create it. The wrapper function's Python name, by contrast, is decorative — see weak point 1. |
 | 5 | **One bot per process; state is module-level singletons.** `stats_db` (card_models.py:409, re-exported by psd_analyzer), `card_repo` (query_card.py:990), `state`/`music_queue`/`prev_music`/`executor` (music_player.py:32-45), `reminders` + `_client` + `_lock`/`_check_lock` (analytics.py:61-66), `type_emojis` (type_emojis.py:31, token → emoji map filled by the sync), `slash_registry` + the three deques (utils.py:25-29). | A second client in-process, or importing a commands module under a second name, gives you split-brain state. Import order is load-bearing: the singletons are constructed at import time (cheap — heavy loading is deferred to the queued `init_*` functions), and (since 2026-10-20) none of them prints: the single git-token-presence line comes from `print_token_status()` in main.py. |
 | 6 | **Importing `commands.*` requires `config.py` to exist.** utils and music_player `import config` at module level and github_api reads it in a try/except (so `python -m commands.tts_save` runs without it); every card module reaches utils: psd_analyzer → repo_traverser → query_card → type_emojis → utils (since the 2026-10-20 split). | Any tool that unpickles `stats.pkl` must have this repo on `sys.path` AND a config.py present — `CardInfo`/`CardStats` are dataclasses defined in `commands.card_models` with `__module__` pinned to `commands.psd_analyzer` (the facade re-exports them), so unpickling imports the facade and the chain reaches `config`. This is why the diagnostics scripts run from the repo root; code outside this repo must stub the classes, as TTSCardMaker's website build does (`_Unpickler` in site/build/build_site.py). config.py is SECRET — never print or read its values. |
-| 7 | **`check_reminder` is re-queued every second — reminder-path work must stay cheap, and stay single-flight.** `process_reminders` (main.py:926-928, a 1 s `tasks.loop` started and stopped with the drains) does `queue_command(check_reminder)`; the command loop drains it within 0.1 s, so it runs ~once/second in a pool thread (analytics.py:819). Since 2026-10-19 it takes `_check_lock` with a non-blocking acquire (a pass that finds another still running just returns) and does all work under `_lock` (an RLock shared with set/list/remove, which run in their own threads). Commands of due reminders are queued onward (`queue_command(_run_reminder_command, ...)`), never run inline; reminder.pkl is saved only when something changed, atomically. | Anything slow in `check_reminder` costs a pool thread every second and holds `_lock`, stalling `/set_reminder`, `/list_reminders` and `/remove_reminder`. Remove the single-flight lock and two overlapping passes can fire the same reminder twice. Run a reminder's command inline and one slow command blocks every other reminder. |
+| 7 | **`check_reminder` is re-queued every second — reminder-path work must stay cheap, and stay single-flight.** `process_reminders` (main.py:926-928, a 1 s `tasks.loop` started and stopped with the drains) does `queue_command(check_reminder)`; the command loop drains it within 0.1 s, so it runs ~once/second in a pool thread (analytics.py:819). Since 2026-10-19 it takes `_check_lock` with a non-blocking acquire (a pass that finds another still running just returns) and does all work under `_lock` (an RLock shared with the slash shortcuts and the /reminders panel, which run in their own threads). Commands of due reminders are queued onward (`queue_command(_run_reminder_command, ...)`), never run inline; reminder.pkl is saved only when something changed, atomically. | Anything slow in `check_reminder` costs a pool thread every second and holds `_lock`, stalling `/set_reminder`, `/list_reminders` and `/remove_reminder`. Remove the single-flight lock and two overlapping passes can fire the same reminder twice. Run a reminder's command inline and one slow command blocks every other reminder. |
 | 8 | **`lacks_admin` (named `perms_check` until 2026-10-20) returns True when the user is NOT an admin:** `return interaction.user.id not in ADMINS` (utils.py). Callers write `if lacks_admin(i): deny-and-return` (e.g. main.py:180-182). | Flip the polarity and you either lock the admins out or open an admin command to everyone. When adding an admin-gated command, copy an existing gate verbatim. |
-| 9 | **Admin gates live in the registered slash callback, and reminders fire as their creator** (2026-10-19). A firing reminder's FakeInteraction carries `_ReminderUser(creator_id)` (analytics.py:69, set in `_reminder_interaction`), so the callback's own `lacks_admin` re-checks ADMINS at fire time. Legacy reminders without a creator keep the default FakeUser — the bot itself (`LEGACY_RUNS_AS_BOT`, analytics.py:37). | Put an admin check anywhere other than the callback stored in `slash_registry` (e.g. only in a worker, or in a pre-dispatch hook) and scheduled runs either skip it or check the wrong user. Make the FakeInteraction default to the bot again and every reminder passes admin checks (the bot's id is in ADMINS on the dev Mac — archaeology Entry 10.8). |
+| 9 | **Admin gates live in the registered slash callback, and reminders fire as their creator** (2026-10-19). A firing reminder's FakeInteraction carries `_ReminderUser(creator_id)` (analytics.py:95, set in `_reminder_interaction`), so the callback's own `lacks_admin` re-checks ADMINS at fire time. Legacy reminders without a creator keep the default FakeUser — the bot itself (`LEGACY_RUNS_AS_BOT`, analytics.py:37). | Put an admin check anywhere other than the callback stored in `slash_registry` (e.g. only in a worker, or in a pre-dispatch hook) and scheduled runs either skip it or check the wrong user. Make the FakeInteraction default to the bot again and every reminder passes admin checks (the bot's id is in ADMINS on the dev Mac — archaeology Entry 10.8). |
 | 10 | **`update_stats` and the card bake never overlap: both take `card_runner.bake_lock`** (2026-10-21; after the cutover /update_stats parses nothing and takes no lock). `update_stats` wraps its whole run in it (repo_traverser.py:79-82); `card_runner.bake_cards` takes it around `card_bake.run`. The bake imports card_bake and psd_edit inside the function and refuses with one line when the fork's text engine is missing. | Drop the lock and a bake (a PSD render and save, GBs of RAM: design section 8) runs beside a full re-parse on the jetson's 4 cores, and `/update_stats` can re-read a tree the bake is committing to mid-run. Import card_bake at module level and the bot fails to start wherever the fork's psd-tools is absent (the Mac's stock venv, the Actions that install stock psd-tools); the jetson has had the fork since 2026-10-22. |
 
 ## Data-flow diagrams
@@ -227,14 +232,14 @@ Nothing parses and nothing is written but `card_data/` (gitignored): no bake_loc
 ```
 process_reminders 1 s tick (main.py:874-876) -> queue_command(check_reminder)
       v  next command-drain tick (main.py:880)
-check_reminder() in a worker thread (analytics.py:819)
+check_reminder() in a worker thread (analytics.py:1210)
       |  _check_lock non-blocking acquire (overlapping pass -> return) ; then under _lock:
-      |  for each due, enabled reminder -> _process_due -> _fire (analytics.py:647):
+      |  for each due reminder that is on and has no problem -> _process_due -> _fire (analytics.py:1137):
       |- channel gone? (_channel_missing: bot ready AND get_channel is None) -> skip, log
       |- fake = make_fake_interaction(channel, guild); fake.user = _ReminderUser(creator_id)
       |         (legacy reminder without creator: fake.user stays the bot's FakeUser)
       |- msg?     queue_message(fake, chunk) per chunk
-      '- command? _resolve_command(stored text): shlex-split, slash_registry.get(name),
+      '- command? resolve_command(stored text): shlex-split, slash_registry.get(name),
                   drop RETIRED_OPTIONS (/update_stats use_local_repo/use_local_timestamp),
                   bind name:value options against the callback's signature and convert them
                   -> queue_command(_run_reminder_command, callback, fake, values, id, name)
@@ -246,7 +251,8 @@ check_reminder() in a worker thread (analytics.py:819)
                   in the channel ("⚠ Reminder <id>: /<name> failed ...").
       then: repeating -> when = _next_run(when, frequency, now) (one jump, no replay);
             one-shot delivered -> removed; one-shot whose channel is gone -> retry in 1 h;
-            any change -> save_reminders() (temp file + fsync + rename)
+            any change -> save_reminders() (reminder.json: temp file + fsync + rename)
+      an off reminder (`enabled: false`) or one with a `problem` is skipped: no fire, no reschedule
 ```
 
 **FakeInteraction (utils.py:124-191) — what and why.** Both send-queues store
@@ -389,8 +395,8 @@ optimization pass.
    shuffle is O(n²)-ish. Correct, and fine at hobby-scale queue lengths; would hurt at tens of
    thousands of entries. Not worth fixing until it is.
 3. **The dispatch fallback drops `ephemeral`** (main.py:872, in `_fallback_send`: `kwargs.pop("ephemeral", None)`
-   before `channel.send`). A reply the user expected to be private — e.g. `/list_reminders`
-   `hidden:True` — posts publicly to the channel if the send lands in the fallback path (token
+   before `channel.send`). A reply the user expected to be private — e.g. an ephemeral
+   reply — posts publicly to the channel if the send lands in the fallback path (token
    expired, or any FakeInteraction send). `channel.send` simply has no ephemeral concept.
 4. **(Fixed 2026-10-19) Remote traversal used to leak temp files.** Each downloaded temp file is now
    removed right after parsing (`_release`, card_data.py:733-738, called from the `finally` blocks at :644-645 and
@@ -442,7 +448,7 @@ optimization pass.
 11. **Pickle saves are atomic and locked, but not transactional across pickles.** Since 2026-10-21
    `StatsDatabase.save` (card_models.py:170) and `save_aliases` (query_card.py:435) go through
    `save_pickle` (card_models.py:22-37: temp file beside the target, flush + fsync, `os.replace`) under one
-   `threading.Lock` per pickle, like reminder.pkl; a kill mid-write leaves the old file whole. Still true:
+   `threading.Lock` per pickle, like the reminder store; a kill mid-write leaves the old file whole. Still true:
    the two pickles are saved one after the other (old_stats.pkl first since 2026-10-21, ae1d2c5, so a kill between them never
    leaves a card unlisted and untagged), and a `/push` during a save commits whichever complete file is there
    (archaeology 10.29).

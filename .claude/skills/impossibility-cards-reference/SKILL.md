@@ -548,7 +548,7 @@ survive reparses (`parse` copies them from the existing entry). `/update_metadat
 line in that file (commands/discord_edits.py, branch work/discord-writers), and `/mass_replace author` rewrites its
 right-hand sides where they stand (the group renamed, rulebook pages left in place) plus a `[people] old = new` line. `/list_orphans` lists author-less cards.
 
-Pickles (all in the repo root, committed to git except reminder.pkl — commit discipline lives in
+Pickles (all in the repo root, committed to git; the reminders live in the gitignored reminder.json — commit discipline lives in
 autocroissant-change-control):
 
 | File | Shape | Measured 2026-07-11 |
@@ -556,7 +556,7 @@ autocroissant-change-control):
 | `stats.pkl` | `dict[str name -> CardInfo]` | 813 entries |
 | `old_stats.pkl` | `defaultdict[str name -> list[CardInfo]]` | 218 names, 223 archived versions |
 | `aliases.pkl` | `dict[str alias -> str target png filename]` | 60 entries, e.g. `'red_bloon' -> 'pod01red_bloon.png'` |
-| `reminder.pkl` | reminders, gitignored — not this skill's domain | |
+| `reminder.json` (was `reminder.pkl`) | reminders, gitignored — not this skill's domain | |
 
 `old_stats.pkl` receives a snapshot when a re-parsed card's PSD blob changed or the card moved and its data changed
 (`_history` and `_record_history`, card_data.py; since 2026-10-20 a `cards:`/`force_update` re-parse of an unchanged PSD
