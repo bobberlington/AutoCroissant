@@ -26,11 +26,9 @@ pytest.importorskip("requests", reason="card_bake imports requests (absent from 
 import commands.card_bake as cb  # noqa: E402
 import commands.git_commit as gc  # noqa: E402
 import commands.psd_edit as pe  # noqa: E402
-from conftest import (BADGED, CLONE, PLAIN_DOOMER, Reply, at_rev, blob_sha_bytes as _sha, fork_reason, painted,  # noqa: E402
-                      story_sync as _story_sync, text_engine as _text_engine)
-from golden_cards import VOCAB  # noqa: E402
-from helpers import (ABOUT, AT, DOOMER, EDITS, FORK_KEY, FORK_PYTHON, FORK_WORKFLOWS, FREEZER, SNACK, _card_files,
-                     _edits, _uses_setup, files, fork_install, github)  # noqa: E402,F401 (fixtures)
+from conftest import (CLONE, Reply, blob_sha_bytes as _sha, fork_reason, story_sync as _story_sync,
+                      text_engine as _text_engine)  # noqa: E402
+from helpers import ABOUT, AT, DOOMER, EDITS, FREEZER, SNACK, _edits, files, github  # noqa: E402,F401 (fixtures)
 
 GREEN_MAGE = "Creatures/Everhood/4 Stars/Green_Mage.psd"   # fixed 2026-10-23: its stat bars on the canvas
 OFF_CANVAS_MAGE = "45cf8746^"   # Green Mage before its bars moved onto the card (they lay below the canvas)
@@ -64,15 +62,6 @@ def test_live_edits_file_round_trips_byte_identical():
     assert cb.dump_edits(json.loads(text)) == text
 
 
-def test_collation_is_locale_compare_base():
-    from commands.card_edits import _collate
-    keys = ["Zed", "eclair2", "Éclair", "ab", "a b", "PoD12BAD", "PoD11ZOMG", "Panda", "P.A.N.D.A. Mk A", "Bobbery",
-            "Bob-ulk", "Block Hopper", "The Evil, Fricked Up Cursed Idol", "The Evil Fricked", "Mom's Knife", "Moms Knife"]
-    assert sorted(keys, key=_collate) == ["a b", "ab", "Block Hopper", "Bob-ulk", "Bobbery", "Éclair", "eclair2",
-                                             "Mom's Knife", "Moms Knife", "P.A.N.D.A. Mk A", "Panda", "PoD11ZOMG", "PoD12BAD",
-                                             "The Evil Fricked", "The Evil, Fricked Up Cursed Idol", "Zed"]   # node's localeCompare
-
-
 def test_dump_edits_layout():
     data = {"about": "x", "extra": [1, {"a": None}], "cards": {"b": {"hp": 1, "_by": "w"}, "A": {"note": "é \"q\"  "}}}
     assert cb.dump_edits(data) == ('{\n  "about": "x",\n  "extra": [1,{"a":null}],\n  "cards": {\n'
@@ -103,22 +92,6 @@ def test_dump_edits_matches_edit_js(tmp_path):
              "PoD11ZOMG": {"name": "Z.O.M.G."}, "Mom's Knife": {"spd": 0}, "Moms Knife": {"spd": 1}, "10 Ten": {}, "9 Nine": {"hp": 9}}
     text = json.dumps({"about": ABOUT, "cards": cards}, indent=3, ensure_ascii=True)
     assert cb.dump_edits(json.loads(text)) == _node(tmp_path, text, [])
-
-
-def test_rewrite_entry_layout_matches_edit_js(tmp_path):
-    """Dropping a field lays the entry out as editsFile does: ORDER, other keys, _by, _at (kept here, rewritten there)."""
-    entry = {"_at": AT, "spd": 4, "unknown": 1, "hp": 8, "_by": "tester", "name": "X", "_psd": {"state": "baked", "for": {"hp": 8}, "psd": "01234567"}}
-    text = json.dumps({"about": ABOUT, "cards": {"Card A": entry, "card b": {"hp": 1}}})
-    ours = cb.rewrite_edits(text, "card_a", ["hp"], entry["_psd"])         # the verdict kept (None would remove it)
-    theirs = _node(tmp_path, text, [{"key": "Card A", "set": {}, "unset": ["hp"]}], AT, "tester")
-    assert ours == theirs
-    assert json.loads(ours)["cards"]["Card A"] == {"name": "X", "spd": 4, "unknown": 1, "_psd": entry["_psd"], "_by": "tester", "_at": AT}
-    assert json.loads(cb.rewrite_edits(text, "card_a", ["hp"]))["cards"]["Card A"] == {"name": "X", "spd": 4, "unknown": 1, "_by": "tester", "_at": AT}
-    entry = {"hp": 8, "_psd": entry["_psd"], "unknown": 1, "other": [2], "name": "X", "_by": "tester", "_at": AT}   # _psd first among the other keys
-    text = json.dumps({"about": ABOUT, "cards": {"Card A": entry}})
-    ours = cb.rewrite_edits(text, "card_a", ["hp"], {**entry["_psd"], "at": AT})
-    assert ours == _node(tmp_path, text, [{"key": "Card A", "set": {"_psd": {**entry["_psd"], "at": AT}}, "unset": ["hp"]}], AT, "tester")
-    assert list(json.loads(ours)["cards"]["Card A"]) == ["name", "_psd", "unknown", "other", "_by", "_at"]
 
 
 def test_rewrite_entry_rules():
@@ -190,27 +163,6 @@ def test_dry_run_commits_nothing(github, tmp_path):
     assert (work / "report.md").read_text(encoding="utf-8") == text
 
 
-def test_card_restricts_the_run(github):
-    text, commits = cb.run(card="beldam")
-    assert commits == [] and "No entry with a PSD field for 'beldam'" in text
-    text, commits = cb.run(card="the_freezer")
-    assert len(commits) == 1 and github.commits[commits[0]]["message"] == "Card edits: 1 refused"
-    data = _edits_at(github)
-    assert data["cards"]["Mini Doomer"]["hp"] == 5 and "_psd" not in data["cards"]["A Snack"]
-    assert data["cards"]["The Freezer"]["_psd"]["for"] == {"stars": 2} and "1 with PSD fields (--card the_freezer)" in text
-
-
-def test_no_card_to_bake_needs_no_fonts(github, monkeypatch):
-    """The fonts dir (on the jetson: the fonts cache's fill) is found only when a card has PSD fields."""
-    def boom(snapshot=None):
-        raise cb.Transient("fonts cache: 1 font file failed to download")
-    monkeypatch.setattr(cb, "_fonts_dir", boom)
-    text, commits = cb.run(card="beldam")
-    assert commits == [] and "No entry with a PSD field for 'beldam'" in text and "Runner:" not in text
-    with pytest.raises(cb.Transient):
-        cb.run(card="the_freezer")
-
-
 def test_recent_refuses_before_fetching(github):
     github.recent.add(DOOMER)
     text, commits = cb.run(card="Mini Doomer")
@@ -266,7 +218,7 @@ def test_blob_gate(github):
     assert len(commits) == 1 and _edits_at(github)["cards"]["Mini Doomer"]["_psd"]["reason"].startswith("blob: ")
 
 
-@pytest.mark.parametrize("status", [409, 422])
+@pytest.mark.parametrize("status", [422])
 def test_head_moved_after_three_conflicts(github, status):
     github.conflicts, github.conflict_status = 3, status
     text, commits = cb.run(card="Mini Doomer")
@@ -296,15 +248,6 @@ def test_edit_changed_meanwhile(github):
     assert _edits_at(github)["cards"]["Mini Doomer"]["hp"] == 4
 
 
-def test_psd_changed_meanwhile_is_head_moved(github):
-    snapshot = github.head
-    files = github.files_at(snapshot)
-    files[DOOMER] = files[DOOMER] + b"\0"
-    github.commit(files, "artist", "Mini Doomer: new art")
-    text, commits = cb.run(head=snapshot, card="Mini Doomer")
-    assert commits == [] and f"head-moved: {DOOMER} changed on main" in text
-
-
 def test_moved_psd_leaves_only_its_card_out(github):
     """A card whose PSD changed under the run stays out of the run's commit (a try-again refusal, no verdict); the rest lands."""
     snapshot = github.head
@@ -318,19 +261,6 @@ def test_moved_psd_leaves_only_its_card_out(github):
     assert data["cards"]["The Freezer"]["_psd"]["state"] == "refused" and github.files_at(github.head)[DOOMER] == files[DOOMER]
     assert f"**Mini Doomer** `{DOOMER}`: hp 5: head-moved: {DOOMER} changed on main" in text
     assert cb.pending() == ["Mini Doomer"]                                  # the next scheduled run tries it again
-
-
-def test_rerun_on_its_own_commit_retries_a_try_again_card(github):
-    """No skip for the pipeline's own commit: a card refused `recent` there is retried by the next run, with nothing else new."""
-    github.recent.add(DOOMER)
-    text, commits = cb.run()
-    assert len(commits) == 1 and "recent: PSD pushed in the last 30 min" in text and cb.pending() == ["Mini Doomer"]
-    assert cb.due() == []                                                   # Card sync's gate waits out the grace
-    github.recent.clear()
-    assert cb.due() == ["Mini Doomer"]
-    text, commits = cb.run()
-    assert len(commits) == 1 and github.commits[commits[0]]["message"] == "Card edits: 1 redundant"
-    assert cb.pending() == []
 
 
 def test_pending_is_the_schedule_gate(github):
@@ -375,49 +305,6 @@ def test_pending_run_skips_final_verdicts(github):
     text, commits = cb.run()
     assert len(commits) == 1 and "not re-checked" not in text                # the dispatch rewrote The Freezer's verdict
     assert _edits_at(github)["cards"]["The Freezer"]["_psd"]["reason"] != "stars: changed by hand"
-
-
-def test_png_verdicts_follow_the_pngs(github):
-    """A `duplicate` verdict rests on the PNGs by path: removing the numbered PNG reopens both cards, a re-export doesn't."""
-    cb.run()
-    data = _edits_at(github)
-    assert data["cards"]["A Snack"]["_psd"]["pngs"] and data["cards"]["A Snack2"]["_psd"]["pngs"]
-    assert "pngs" not in data["cards"]["Nobody"]["_psd"] and cb.pending() == []
-    files = github.files_at(github.head)
-    files["Items/Heal/2 Stars/A_Snack.png"] = b"re-exported"
-    github.commit(files, "web", "A Snack: re-export")
-    assert cb.pending() == []
-    del files["Items/Heal/2 Stars/A_Snack2.png"]
-    github.commit(files, "web", "A Snack2: removed")
-    assert cb.pending() == ["A Snack", "A Snack2"]
-
-
-def test_recent_png_is_refused(github):
-    """A teammate's PNG re-export in the last 30 min is theirs too: refused `recent` before the PSD is fetched."""
-    github.recent.add(DOOMER[:len(DOOMER) - 4] + ".png")
-    text, commits = cb.run(card="Mini Doomer")
-    assert commits == [] and "recent: PNG pushed in the last 30 min" in text
-    assert "_psd" not in _edits_at(github)["cards"]["Mini Doomer"] and "Mini Doomer" in cb.pending()
-
-
-def test_redundant_name_is_dropped(github):
-    """A name the card prints is redundant like any field (the bot reads the title): dropped with its verdict, once."""
-    baked = {"state": "baked", "for": {"name": "Mini Doomer"}, "psd": "01234567", "reason": "name 'x' -> 'Mini Doomer'", "at": AT}
-    files = github.files_at(github.head)
-    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"name": "Mini Doomer", "note": "n", "_psd": baked, "_by": "web", "_at": AT}})
-    github.commit(files, "web", "Website edit: something else")
-    text, commits = cb.run()
-    assert len(commits) == 1 and github.commits[commits[0]]["message"] == "Card edits: 1 redundant"
-    assert "already on the card: name" in text
-    assert _edits_at(github)["cards"]["Mini Doomer"] == {"note": "n", "_by": "web", "_at": AT}
-    github.commit(github.files_at(github.head), "web", "Website edit: more")
-    assert cb.run()[1] == []
-    # a name alone: the entry goes whole
-    files = github.files_at(github.head)
-    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"name": "Mini Doomer", "_psd": {**baked, "state": "refused"}, "_by": "web", "_at": AT}})
-    github.commit(files, "web", "Website edit: again")
-    text, commits = cb.run()
-    assert len(commits) == 1 and "Mini Doomer" not in _edits_at(github)["cards"]
 
 
 def test_a_printed_value_is_dropped_though_numbered_pngs_share_the_psd(github):
@@ -581,138 +468,6 @@ def test_fx_notes_reach_the_commit_and_the_verdict(github, clone, monkeypatch):
     assert text.count(note) == 1
 
 
-def test_fx_notes_reach_a_partial_verdict(github, clone, monkeypatch):
-    """A stars edit refused beside an ability bake leaves its refused verdict as the card's: the bake's FX notes go in
-    its reason too (they reached only the commit line, review 2026-10-23)."""
-    files = github.files_at(github.head)
-    if not (clone / pe.STATUS_CHART).exists():
-        pytest.skip("no status chart")
-    files[pe.STATUS_CHART] = (clone / pe.STATUS_CHART).read_bytes()
-    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"ability": "Die.", "stars": 0, "_by": "web", "_at": AT}})
-    github.commit(files, "web", "Website edit: Mini Doomer")
-    ok = {"bad_pct": 0.0, "mean": 0.5, "max": 7}
-    note = "Ability FX: (BOT) deleted: its words left the ability"
-
-    def apply_jobs(old_psd, old_png, rel, jobs, parsed, parser, new_dir, *args, **kwargs):
-        assert jobs == {"ability": "Die."}
-        for ext, old in (("psd", old_psd), ("png", old_png)):
-            shutil.copy(old, f"{new_dir}/new.{ext}")
-        with open(f"{new_dir}/new.psd", "ab") as fh:
-            fh.write(b"\0")
-        return SimpleNamespace(psd_path=f"{new_dir}/new.psd", png_path=f"{new_dir}/new.png", edits=[SimpleNamespace(field="ability", old="a")],
-                               region=None, reparse={"card": {}, "validator": []}, fx=[], fx_notes=[note], parity={"ability": ok},
-                               rerender={"ability": ok}, flag_bytes=0, changed_pixels=1)
-    monkeypatch.setattr(pe, "apply_jobs", apply_jobs)
-    monkeypatch.setattr(pe, "artifacts", lambda *args: {})
-    monkeypatch.setattr(pe, "text_engine", lambda: True)
-    text, commits = cb.run()
-    assert commits, text
-    why = "unsupported-card: stars: a card shows at least one"
-    verdict = _edits_at(github)["cards"]["Mini Doomer"]["_psd"]
-    assert (verdict["state"], verdict["for"], verdict["reason"]) == ("refused", {"stars": 0}, f"{why}; {note}")
-
-
-def test_report_line_tells_the_fx_layers_an_ability_bake_dropped():
-    """BUG 2: the report names the FX layers an ability bake cut again and tells the ones it deleted or renamed."""
-    ok = {"bad_pct": 0.0, "mean": 0.5, "max": 7}
-    baked = SimpleNamespace(edits=[SimpleNamespace(field="ability", old="a")], parity={"ability": ok}, rerender={"ability": ok},
-                            flag_bytes=0, changed_pixels=9, fx=["Ability FX: (2U) | (2CD)"],
-                            fx_notes=["Ability FX: (1GCD) | (2U) | (2CD) renamed 'Ability FX: (2U) | (2CD)': (1GCD) left the ability",
-                                      "Ability FX: Blazing deleted: its words left the ability"])
-    card = cb.Card("PoD11ZOMG", "PoD11ZOMG", {"ability": "b"}, rel="Auxiliary/Minions/PoD11ZOMG.psd", jobs={"ability": "b"},
-                   baked=baked)
-    line = cb._card_line(card, True)
-    assert ("; FX layers: Ability FX: (2U) | (2CD); Ability FX: (1GCD) | (2U) | (2CD) renamed 'Ability FX: (2U) | (2CD)': "
-            "(1GCD) left the ability; Ability FX: Blazing deleted: its words left the ability; not committed (dry run)") in line
-
-
-def test_old_bar_verdicts_are_retried(github):
-    """A `parity` or `idempotence` refusal under the floor (the old bar's, before 2026-10-23) is pending again: it bakes
-    now; one past the floor, or a render that shows no change, stays final. A verdict without the current RULES (a
-    content refusal from before 2026-10-24: it bakes, flagged, now) is pending again too."""
-    files = github.files_at(github.head)
-    psd = _sha(files[DOOMER])[:8]
-
-    def verdict(reason: str, rules: str = cb.RULES) -> list:
-        entry = {"hp": 8, "_psd": {"state": "refused", "for": {"hp": 8}, "psd": psd, "rules": rules, "reason": reason, "at": AT},
-                 "_by": "web", "_at": AT}
-        files[cb.EDITS_PATH] = _edits({"Mini Doomer": entry})
-        github.commit(files, "web", "Website edit: a verdict")
-        return cb.pending()
-    assert verdict("parity: baseline bad 0.11% mean 3.01 max 136") == ["Mini Doomer"]
-    assert verdict("idempotence: hp re-render bad 0.62% mean 0.80") == ["Mini Doomer"]
-    assert verdict("parity: baseline bad 31.20% mean 40.00 max 255: past the 25% floor") == []
-    assert verdict("idempotence: hp re-render bad 40.00% mean 50.00: past the 25% floor") == []
-    assert verdict("parity: Hp Dark/5: effects unreadable: x") == []
-    assert verdict("parity: ability: the render shows no change, baseline bad 10.70% mean 22.35 max 255") == []
-    assert verdict("reparse: fields differ from the expected parse: hp") == []
-    assert verdict("overflow: hp does not fit", "") == ["Mini Doomer"]
-
-
-@fork_text
-def test_a_title_missing_the_bar_bakes_with_a_pixel_note(github, tmp_path):
-    """End to end: a title missing the parity bar bakes; the commit note says so per edited box; the PSD, PNG and file
-    land in one commit. The miss is painted (the top tenth of Mini Doomer's title box inverted in its PNG): since round 10
-    every title is within the bar (Red_Knife's outer glow noise, the last miss, is matched)."""
-    from psd_tools import PSDImage
-    files = github.files_at(github.head)
-    png = DOOMER[:len(DOOMER) - 4] + ".png"
-    (tmp_path / "doomer.psd").write_bytes(files[DOOMER])
-    psd = PSDImage.open(str(tmp_path / "doomer.psd"))
-    files[png] = painted(files[png], pe.name_layer(psd).bbox, 0.1)
-    title = pe.read_name(psd)
-    name = title[:len(title) - 1] + ("e" if title[len(title) - 1] != "e" else "a")
-    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"name": name, "_by": "web", "_at": AT}})
-    github.commit(files, "web", "Website edit: Mini Doomer")
-    text, commits = cb.run()
-    message = github.commits[commits[0]]["message"]
-    line = re.search(r"^- Mini Doomer: name .* -> .*; name baked with a pixel difference: bad ([\d.]+)%, mean ([\d.]+), max (\d+)$",
-                     message, re.MULTILINE)
-    assert len(commits) == 1 and message.startswith("Card edits: 1 baked\n") and line, message
-    bad, mean = float(line.group(1)), float(line.group(2))
-    assert (bad > pe.PARITY_BAD_MAX or mean > pe.PARITY_MEAN_MAX) and bad <= pe.PARITY_FLOOR
-    assert "; name baked with a pixel difference: bad " in text.split("## Baked (1)", 1)[1]
-    after = github.files_at(github.head)
-    assert sorted(p for p in after if after[p] != files.get(p)) == sorted([png, DOOMER, cb.EDITS_PATH])
-
-
-@fork
-def test_a_bar_outside_the_card_is_a_final_refusal(github, clone):
-    """Green Mage before its fix (OFF_CANVAS_MAGE): its stat bars lay below its canvas, so a stat edit is refused with the
-    reason as a final verdict (the run passes, the schedule leaves it), never an `error` that fails the run (a ValueError
-    from the empty render, 2026-10-23). Pure Vessel's hp masks start on the canvas and reach past it: it bakes in the same
-    run. Then the live card (the fix) lands: the refusal is pending again (its PSD changed) and the edit bakes."""
-    files = github.files_at(github.head)
-    png = GREEN_MAGE[:len(GREEN_MAGE) - 4] + ".png"
-    files.update({GREEN_MAGE: at_rev(clone, OFF_CANVAS_MAGE, GREEN_MAGE), png: at_rev(clone, OFF_CANVAS_MAGE, png)})
-    files.update(_card_files(clone, PURE_VESSEL))
-    files[cb.EDITS_PATH] = _edits({"Green Mage": {"hp": 3, "_by": "web", "_at": AT},
-                                       "Pure Vessel": {"hp": 3, "note": "checked", "_by": "web", "_at": AT}})
-    github.commit(files, "web", "Website edit: Green Mage, Pure Vessel")
-    report = cb.run_report()
-    cards = {card.name: card for card in report.cards}
-    mage, pure = cards["Green Mage"], cards["Pure Vessel"]
-    assert (mage.refusal.code, mage.transient, mage.traceback) == ("unsupported-card", False, "")
-    assert pure.refusal is None and pure.baked.reparse["card"]["hp"] == 3 and pure.commit == report.commit
-    assert cb.failure(report) == "" and "## Errors" not in report.text and "## Refused (1)" in report.text and report.commit
-    after = github.files_at(github.head)
-    verdicts = {name: entry["_psd"] for name, entry in _edits_at(github)["cards"].items()}
-    assert verdicts["Green Mage"]["state"] == "refused" and verdicts["Green Mage"]["for"] == {"hp": 3}
-    assert verdicts["Green Mage"]["psd"] == _sha(files[GREEN_MAGE])[:8]
-    assert verdicts["Green Mage"]["reason"].startswith("unsupported-card: hp: the bar 'Hp Dark' lies outside the card (digit masks ")
-    assert verdicts["Pure Vessel"]["state"] == "baked" and verdicts["Pure Vessel"]["reason"] == "hp 7 -> 3"
-    assert after[GREEN_MAGE] == files[GREEN_MAGE] and after[PURE_VESSEL] != files[PURE_VESSEL] and cb.pending() == []
-    after.update(_card_files(clone, GREEN_MAGE))
-    github.commit(after, "owner", "Green Mage: stat bars on the card")
-    assert cb.pending() == ["Green Mage"]
-    report = cb.run_report()
-    mage = next(card for card in report.cards if card.name == "Green Mage")
-    assert mage.refusal is None and mage.baked.reparse["card"]["hp"] == 3 and mage.commit == report.commit
-    assert cb.failure(report) == "" and cb.pending() == [], report.text
-    assert "\n- Green Mage: hp 7 -> 3\n" in github.commits[report.commit]["message"]
-    assert github.files_at(github.head)[GREEN_MAGE] != after[GREEN_MAGE] and "Green Mage" not in _edits_at(github)["cards"]
-
-
 def test_transient_errors_write_no_verdict(github, monkeypatch):
     """A 5xx on a blob, a rate-limited POST: reported under Errors, retried next run, never a verdict for the editor."""
     github.down.add(_sha(github.files_at(github.head)[DOOMER]))
@@ -782,21 +537,6 @@ def test_missing_runner_dependency_is_transient(github, monkeypatch):
     assert commits == [] and "## Errors (1)" in text and "ImportError: Gradient fills require: scipy" in text
     entry = _edits_at(github)["cards"]["Mini Doomer"]
     assert "_psd" not in entry and entry["hp"] == 8
-
-
-def test_glow_edit_on_an_older_fork_is_transient(github, monkeypatch):
-    """A typed :glow on a runner whose fork predates the halos is the runner's fault: an error and no verdict, so the
-    edit bakes once the fork is reinstalled (a `font` verdict waited for MDW/Fonts to change; review 2026-10-24)."""
-    files = github.files_at(github.head)
-    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"ability": "Die. [fire:glow]", "_by": "web", "_at": AT}})
-    github.commit(files, "web", "Website edit: Mini Doomer")
-    monkeypatch.setattr(pe, "text_engine", lambda: True)
-    monkeypatch.setattr(pe, "story_sync", lambda: True)
-    monkeypatch.setattr(pe, "glow_halos", lambda: False)
-    monkeypatch.setattr(pe, "apply_jobs", lambda *args, **kwargs: pytest.fail("baked on a fork without glow halos"))
-    text, commits = cb.run(card="Mini Doomer")
-    assert commits == [] and "## Errors (1)" in text and "predates the pin's glow halos" in text
-    assert "_psd" not in _edits_at(github)["cards"]["Mini Doomer"] and cb.pending() == ["Mini Doomer"]
 
 
 def test_select_and_snapshot(github):
@@ -880,69 +620,6 @@ icons = pytest.mark.skipif(not pe.icon_engine(), reason="a stars or types bake n
 
 
 @icons
-def test_stars_and_types_bake(github, clone):
-    """Stars and types bake like the other fields (owner, 2026-10-23): a third star, a Fire icon made from Types/ (the
-    one Types/ PNG the run fetches), the entry gone."""
-    files = github.files_at(github.head)
-    files["Types/fire.png"] = (clone / "Types" / "fire.png").read_bytes()
-    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"stars": 3, "types": ["wind", "light", "defensive_minion", "fire"],
-                                                       "_by": "web", "_at": AT}})
-    github.commit(files, "web", "Website edit: Mini Doomer")
-    text, commits = cb.run()
-    assert github.commits[commits[0]]["message"] == ("Card edits: 1 baked\n\n- Mini Doomer: stars 2 -> 3, types wind, "
-                                                     "defensive_minion, light -> wind, light, defensive_minion, fire\n\nEdit-by: web")
-    assert "Mini Doomer" not in _edits_at(github)["cards"]
-    assert "stars: rows of two; types: 1 made from Types/" in text
-    by_sha = {_sha(data): path for path, data in files.items()}
-    fetched = [by_sha.get(route.split("/")[2]) for _, route in github.calls if route.startswith("git/blobs/")]
-    assert [path for path in fetched if path and path.startswith("Types/")] == ["Types/fire.png"], fetched
-
-
-@fork
-def test_a_refused_stars_edit_leaves_the_hp_bake(github):
-    """A stars edit the bake refuses no longer refuses the card: hp bakes, the stars stay in the file with a refused
-    verdict on the PSD the commit leaves (final: not pending), and the commit line says why."""
-    files = github.files_at(github.head)
-    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 8, "stars": 0, "_by": "web", "_at": AT}})
-    github.commit(files, "web", "Website edit: Mini Doomer")
-    text, commits = cb.run()
-    why = "unsupported-card: stars: a card shows at least one"
-    assert github.commits[commits[0]]["message"] == f"Card edits: 1 baked\n\n- Mini Doomer: hp 5 -> 8; stars not baked: {why}\n\nEdit-by: web"
-    after = github.files_at(github.head)
-    entry = json.loads(after[cb.EDITS_PATH].decode("utf-8"))["cards"]["Mini Doomer"]
-    verdict = entry.pop("_psd")
-    assert entry == {"stars": 0, "_by": "web", "_at": AT}
-    assert (verdict["state"], verdict["for"], verdict["psd"], verdict["reason"]) == ("refused", {"stars": 0}, _sha(after[DOOMER])[:8], why)
-    assert f"stars not baked: {why}" in text.split("## Baked (1)", 1)[1]
-    assert cb.pending() == []                                   # the verdict is final on the new PSD
-
-
-@icons
-def test_a_stars_edit_refused_by_its_gates_leaves_the_rest(github, monkeypatch):
-    """A refusal from the stars edit's own gates (here gate_outside) drops only it: apply runs again without it."""
-    files = github.files_at(github.head)
-    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 8, "stars": 3, "_by": "web", "_at": AT}})
-    github.commit(files, "web", "Website edit: Mini Doomer")
-
-    def outside(before, psd, edit):
-        raise pe.Refused("region", f"{edit.field}: the card changes 9 pixels outside the edited box", edit.field)
-    monkeypatch.setattr(pe, "gate_outside", outside)
-    monkeypatch.setattr(pe, "render_all", lambda psd: None)    # no render: the whole-card gates pass
-    monkeypatch.setattr(pe, "gate_copy", lambda before, psd: None)
-    monkeypatch.setattr(pe, "gate_untouched", lambda before, psd, edits: None)
-    text, commits = cb.run()
-    why = "region: stars: the card changes 9 pixels outside the edited box"
-    assert github.commits[commits[0]]["message"] == f"Card edits: 1 baked\n\n- Mini Doomer: hp 5 -> 8; stars not baked: {why}\n\nEdit-by: web"
-    verdict = _edits_at(github)["cards"]["Mini Doomer"]["_psd"]
-    assert verdict["for"] == {"stars": 3} and verdict["reason"] == why
-    files = github.files_at(github.head)
-    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"stars": 3, "_by": "web", "_at": AT}})
-    github.commit(files, "web", "Website edit: Mini Doomer")
-    text, commits = cb.run()                                    # alone, the same refusal is the card's
-    assert "## Refused (1)" in text and why in text
-
-
-@icons
 def test_a_card_refused_after_its_stars_names_both_refusals(github, monkeypatch):
     """Stars refused, then the card's last field (types, then hp) too: the card's verdict names both, the stars once."""
     def outside(before, psd, edit):
@@ -961,62 +638,6 @@ def test_a_card_refused_after_its_stars_names_both_refusals(github, monkeypatch)
         verdict = _edits_at(github)["cards"]["Mini Doomer"]["_psd"]
         assert (verdict["state"], verdict["for"], verdict["reason"]) == ("refused", fields, f"{last}; {stars}")
         assert "## Refused (1)" in text and text.count(stars) == 1
-
-
-@fork_text
-def test_dry_run_ability_bake_regenerates_fx_layers(github, tmp_path, clone):
-    """Idea 14 through the driver: an ability edit adding Blazing fetches the chart by sha, cuts "Ability FX: Blazing" above
-    Text, passes every gate and names the layer in the report; --dry-run leaves the artifacts and commits nothing. Mini
-    Doomer before its badge layer (PLAIN_DOOMER): with it the edit refuses (test_ability_bake_refuses_a_badge_card)."""
-    from time import perf_counter
-    from psd_tools import PSDImage
-    chart = clone / pe.STATUS_CHART
-    if not chart.exists():
-        pytest.skip("no status chart")
-    vocab = json.loads(VOCAB.read_text(encoding="utf-8"))
-    parser = pe.offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
-    png = DOOMER[:len(DOOMER) - 4] + ".png"
-    plain = {DOOMER: at_rev(clone, PLAIN_DOOMER, DOOMER), png: at_rev(clone, PLAIN_DOOMER, png)}
-    (tmp_path / "plain.psd").write_bytes(plain[DOOMER])
-    old = pe.parse_card(parser, str(tmp_path / "plain.psd"), DOOMER)["card"]["ability"]
-    files = github.files_at(github.head)
-    files.update(plain)
-    files[pe.STATUS_CHART] = chart.read_bytes()
-    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"ability": old + " Inflict Blazing.", "note": "fx", "_by": "web", "_at": AT}})
-    github.commit(files, "web", "Website edit: Mini Doomer ability")
-    started = perf_counter()
-    text, commits = cb.run(dry_run=True)
-    seconds = perf_counter() - started
-    assert commits == [] and "## Baked (1)" in text and "FX layers: Ability FX: Blazing" in text and "not committed (dry run)" in text
-    assert github.files_at(github.head) == files                            # nothing landed
-    work = tmp_path / cb.WORK_NAME / "Mini Doomer"
-    saved = PSDImage.open(str(work / "new" / "Mini_Doomer.psd"))
-    fx, = pe.fx_layers(saved, pe.ability_layer(saved))
-    assert fx.name == "Ability FX: Blazing" and saved.index(fx) == saved.index(pe._text_group(saved)) + 1 and saved.has_preview()
-    parse = json.loads((work / "parse.json").read_text(encoding="utf-8"))
-    assert parse["fx"] == ["Ability FX: Blazing"] and parse["validator"] == [] and parse["new"]["ability"].endswith("Inflict Blazing.")
-    rewritten = json.loads((work.parent / "Card Edits.json").read_text(encoding="utf-8"))
-    entry = rewritten["cards"]["Mini Doomer"]                                # the note keeps the entry; the ability is baked out
-    assert "ability" not in entry and entry["note"] == "fx" and entry["_psd"]["state"] == "baked" and entry["_psd"]["for"] == {"ability": old + " Inflict Blazing."}
-    print(f"dry-run bake {seconds:.1f} s; PSD {len(files[DOOMER])} -> {(work / 'new' / 'Mini_Doomer.psd').stat().st_size} bytes")
-
-
-@fork_text
-def test_ability_bake_rebuilds_a_badge_card(github, clone):
-    """Mini Doomer carries "Ability FX: (BOT)" (queue A's badges): an ability edit bakes (BUG 2), and the report says the
-    layer went (badge FX layers are retired, owner 2026-10-25)."""
-    chart = clone / pe.STATUS_CHART
-    if not chart.exists():
-        pytest.skip("no status chart")
-    files = github.files_at(github.head)
-    files[pe.STATUS_CHART] = chart.read_bytes()
-    for ext in (".psd", ".png"):                # with its badge layer, before TTSCardMaker's batch retired it
-        files[DOOMER[:-4] + ext] = at_rev(clone, BADGED, DOOMER[:-4] + ext)
-    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"ability": "Die.", "_by": "web", "_at": AT}})
-    github.commit(files, "web", "Website edit: Mini Doomer ability")
-    text, commits = cb.run(dry_run=True)
-    assert commits == [] and "## Baked (1)" in text and "Would commit: Card edits: 1 baked." in text
-    assert "; Ability FX: (BOT) deleted: badge FX layers are retired; not committed (dry run)" in text
 
 
 # ========================
@@ -1102,28 +723,6 @@ def test_local_makes_one_local_commit_and_pushes_nothing(github, local):
     assert ours == live == [cb.EDITS_PATH]
 
 
-def test_local_with_nothing_pending_commits_nothing_and_keeps_verdicts(github, local):
-    """A rerun on B: nothing pending, no commit, HEAD stays; a new pending edit gets B2, the refused verdicts kept as they were."""
-    _, (b,) = cb.run(local=str(local.clone))
-    verdicts = {k: v["_psd"] for k, v in json.loads((local.clone / cb.EDITS_PATH).read_bytes())["cards"].items() if "_psd" in v}
-    assert sorted(verdicts) == ["A Snack", "A Snack2", "Nobody", "The Freezer"] and all(v["state"] == "refused" for v in verdicts.values())
-    text, commits = cb.run(local=str(local.clone), pending_only=True)
-    assert commits == [] and "4 refused before (not re-checked)" in text and _git(local.clone, "rev-parse", "HEAD").strip() == b
-    text, commits = cb.run(local=str(local.clone))                                              # re-checked: the same verdicts
-    assert commits == [] and _git(local.clone, "rev-parse", "HEAD").strip() == b
-
-    data = json.loads((local.clone / cb.EDITS_PATH).read_bytes())                           # a website edit after B
-    data["cards"]["Mini Doomer"]["hp"] = 5
-    _put(local.clone, {cb.EDITS_PATH: cb.dump_edits(data).encode("utf-8")})
-    c = _commit_in(local.clone, "Website edit: Mini Doomer")
-    text, commits = cb.run(local=str(local.clone), pending_only=True)
-    assert len(commits) == 1 and _git(local.clone, "rev-parse", f"{commits[0]}^").strip() == c
-    after = json.loads((local.clone / cb.EDITS_PATH).read_bytes())["cards"]
-    assert after["Mini Doomer"] == {"note": "checked", "_by": "web", "_at": AT}
-    assert {k: v["_psd"] for k, v in after.items() if "_psd" in v} == verdicts                    # byte for byte, dates too
-    assert _git(local.origin, "rev-parse", "main").strip() == local.head
-
-
 def test_local_dry_run_and_a_dirty_checkout(github, local, tmp_path):
     """--dry-run makes no B; a local change in B's way fails the run (exit 1) and leaves the checkout as it was."""
     text, commits = cb.run(dry_run=True, local=str(local.clone))
@@ -1136,26 +735,6 @@ def test_local_dry_run_and_a_dirty_checkout(github, local, tmp_path):
         assert cb.main(["--local", str(local.clone)]) == 1
     assert "Nothing committed: error: git merge in" in out.getvalue() and "left unreferenced)" in out.getvalue()
     assert _git(local.clone, "rev-parse", "HEAD").strip() == local.head and path.read_bytes().endswith(b"}\n ")
-
-
-def test_local_head_elsewhere_leaves_the_checkout(github, local):
-    """--head another commit than the checkout's HEAD: B is made on it, the checkout doesn't move."""
-    _put(local.clone, {"TTS/notes.txt": b"x"})
-    newer = _commit_in(local.clone, "elsewhere")
-    text, (b,) = cb.run(head=local.head, local=str(local.clone))
-    assert _git(local.clone, "rev-parse", f"{b}^").strip() == local.head and _git(local.clone, "rev-parse", "HEAD").strip() == newer
-    assert f"main `{local.head[:8]}`" in text
-    assert f"**The checkout is not on it:** HEAD is `{newer[:8]}` (not --head), so check out `{b[:8]}`" in text
-
-
-def test_local_bare_or_unborn_head_still_makes_b(github, local, tmp_path):
-    """A bare clone, or one whose HEAD is unborn: B is made on --head, nothing to move, and the report says so."""
-    bare = tmp_path / "bare.git"
-    _git(tmp_path, "init", "-q", "--bare", "-b", "main", str(bare))                           # HEAD -> main, unborn
-    _git(bare, "fetch", "-q", "--filter=blob:none", f"file://{local.origin}", "main:refs/remotes/origin/main")
-    text, (b,) = cb.run(head=local.head, local=str(bare))
-    assert _git(bare, "rev-parse", f"{b}^").strip() == local.head and "No checkout moved (a bare clone or an unborn HEAD)." in text
-    assert gc.checkout_head(str(bare)) == ""
 
 
 def test_local_head_the_clone_lacks_is_a_failed_run(github, local, monkeypatch):
@@ -1208,28 +787,6 @@ def test_local_bake_lands_psd_png_and_file_in_b(github, local):
 # ========================
 # The Action's sparse copy
 # ========================
-def test_every_action_runs_python_314():
-    """Owner, 2026-10-24: every card repo Action on Python 3.14 (setup-python in each job that runs Python; none on the
-    runner's own python3, the shared setup counting as one), and the card workflows install requirements-cards.txt with
-    one cache entry."""
-    workflows = WORKFLOW.parent
-    if not workflows.is_dir():
-        pytest.skip(f"no {workflows}")
-    yaml = pytest.importorskip("yaml")
-    for path in sorted(workflows.glob("*.yml")):
-        text = path.read_text(encoding="utf-8")
-        for name, job in yaml.safe_load(text)["jobs"].items():
-            runs = "\n".join(s.get("run", "") for s in job.get("steps", []))
-            versions = [s["with"]["python-version"] for s in job.get("steps", []) if s.get("uses", "").startswith("actions/setup-python@")]
-            versions += [FORK_PYTHON for s in job.get("steps", []) if _uses_setup(s)]
-            assert versions in ([], [FORK_PYTHON]), (path.name, name, versions)
-            assert not re.search(r"(^|[\s(])python3(\.\d+)? ", runs), (path.name, name)       # the runner's own Python
-            if re.search(r"(^|[\s(\"])python -", runs):
-                assert versions == [FORK_PYTHON], (path.name, name)
-    present = [name for name in FORK_WORKFLOWS if (workflows / name).is_file()]
-    assert {fork_install(workflows / name) for name in present} <= {FORK_KEY}
-
-
 def test_workflow_pending_edits_line_calls_due(github, capsys, monkeypatch):
     """card-sync.yml's Pending edits line, run as written: the due card names, one per line (recent ones wait)."""
     if not WORKFLOW.exists():

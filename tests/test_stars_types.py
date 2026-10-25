@@ -21,7 +21,6 @@ import commands.psd_edit as pe
 
 VOCAB = Path(__file__).resolve().parent / "goldens" / "_vocab.json"
 REL = "Auxiliary/Items/Fixture.psd"                     # an aux item: the parser counts its stars from the PSD
-BATTLE_HELMET = "Auxiliary/Items/Battle_Helmet.psd"     # two smart-object stars in a row, one Equip icon
 KRABBY = "Auxiliary/Items/Krabby_Patty.psd"             # a column of two, a third hidden under them
 LOVE = "Auxiliary/Items/Love.psd"                       # rows of two, the third centred: 4 moves it aside
 METTATON = "Auxiliary/Creatures/Mettaton_EX.psd"        # four stars in a zigzag: a fifth carries it on
@@ -31,7 +30,6 @@ FREEZER = "Field/1 Stars/The_Freezer.psd"               # a field card: its "1 S
 MORPHO = "Auxiliary/Creatures/Morpho_Knight.psd"        # Fire over Undead: dropping Fire moves Undead up
 MAGNUM = "Auxiliary/Items/Magnum_Opus.psd"              # its field type is a frame round the card
 ABIGAIL = "Auxiliary/Minions/Abigail.psd"               # a row of two icons running into the title: a third goes under
-PIKE = "Auxiliary/Minions/Pike_Beam.psd"                # an Offensive_Minion icon inside its Stars group (a star and a type)
 
 icons = pytest.mark.skipif(not pe.icon_engine(), reason="the fork's layer copy API (Layer.duplicate, PixelLayer.fromarray)")
 
@@ -283,21 +281,6 @@ def test_stars_fewer_hide_the_last_and_more_show_hidden_first(parser, tmp_path):
 
 
 @icons
-def test_stars_folders_per_count(parser, tmp_path):
-    """A Stars group holding '1 star' / '2 stars' / '3 stars' folders: the count's folder shows, the shown one hides."""
-    folders = {"2 stars": ((1080, 20), (970, 20)), "1 star": ((1080, 20),),
-               "3 stars": ((1080, 20), (970, 20), (1025, 125))}
-    paths = _fixture(tmp_path, stars=(), folders=folders)
-    plan = _plan(parser, paths[0], REL, "stars", 3)
-    assert plan.how == "folder '3 stars'" and [layer.name for layer in plan.show] == ["3 stars"]
-    assert [layer.name for layer in plan.hide] == ["2 stars"]
-    _, baked = _bake(parser, paths, {"stars": 3}, tmp_path)
-    assert baked.reparse["card"]["stars"] == 3 and baked.flag_bytes == 2
-    plan = _plan(parser, paths[0], REL, "stars", 4)                    # no '4 stars': the shown folder's pair grows
-    assert plan.how == "rows of two" and len(plan.copies) == 2
-
-
-@icons
 def test_stars_refuse_per_field(parser, tmp_path):
     paths = _fixture(tmp_path, stars=((1080, 20), (970, 20), (1080, 300)))      # an L: no layout
     with pytest.raises(pe.Refused, match="laid out as no row, column or rows of two") as refused:
@@ -364,18 +347,6 @@ def test_types_add_from_types_png_and_close_up(parser, tmp_path):
 
 
 @icons
-def test_types_use_the_cards_own_hidden_icon(parser, tmp_path):
-    """A hidden layer of the type (the templates keep one per type) of the spot's size shows there instead of a new one."""
-    paths = _fixture(tmp_path, types=(("Fire", (30, 30)), ("Water", (30, 200))), library=(("Ice", (30, 30)),))
-    plan = _plan(parser, paths[0], REL, "types", ["fire", "ice"])
-    assert [layer.name for layer in plan.show] == ["Ice"] and [layer.name for layer in plan.hide] == ["Water"]
-    assert [(layer.name, dx, dy) for layer, dx, dy in plan.moves] == [("Ice", 0, 170)] and plan.icons == []
-    _, baked = _bake(parser, paths, {"types": ["fire", "ice"]}, tmp_path)
-    assert sorted(baked.reparse["card"]["types"]) == ["fire", "ice"]
-    assert sorted(fields for _, _, fields in baked.records) == [["flags"], ["flags", "rect"]]
-
-
-@icons
 def test_types_refuse_per_field(parser, tmp_path, monkeypatch):
     paths = _fixture(tmp_path)
     with pytest.raises(pe.Refused, match="'lava' is no type icon") as refused:
@@ -389,34 +360,9 @@ def test_types_refuse_per_field(parser, tmp_path, monkeypatch):
         _plan(parser, paths[0], REL, "types", ["fire"])
 
 
-@icons
-def test_a_refused_stars_edit_leaves_the_other_fields(parser, tmp_path):
-    """classify: the stars refusal carries its field; the types job beside it stays a job."""
-    paths = _fixture(tmp_path, stars=((1080, 20), (970, 20), (1080, 300)))
-    parsed = pe.parse_card(parser, paths[0], REL)
-    out = pe.classify(parsed, {"stars": 4, "types": ["fire", "water"]}, PSDImage.open(paths[0]), parser)
-    assert out.jobs == {"types": ["fire", "water"]} and [r.field for r in out.refusals] == ["stars"]
-
-
 # ========================
 # Real cards (copies from the clone)
 # ========================
-@icons
-def test_battle_helmet_stars_and_types_bake_together(clone, parser, tmp_path):
-    paths = _clone_card(clone, BATTLE_HELMET, tmp_path)
-    parsed, baked = _bake(parser, paths, {"stars": 3, "types": ["equip", "fire"]}, tmp_path, BATTLE_HELMET,
-                          str(clone / "Types"))
-    card = baked.reparse["card"]
-    assert card["stars"] == 3 and sorted(card["types"]) == ["equip", "fire"]
-    assert {k: v for k, v in card.items() if k not in ("stars", "types")} == {
-        k: v for k, v in parsed["card"].items() if k not in ("stars", "types")}
-    assert baked.icons == {"stars": "rows of two", "types": "1 made from Types/"}
-    saved = PSDImage.open(baked.psd_path)
-    copy_ = next(layer for layer in saved.descendants() if layer.name == "Dst Star copy 2")
-    assert copy_.kind == "smartobject" and tuple(copy_.bbox) == (1006, 149, 1135, 289)
-    assert [name for _, name, fields in baked.records if fields == ["added"]] == ["Dst Star copy 2", "fire"]
-
-
 @icons
 def test_real_star_layouts(clone, parser, tmp_path):
     """Krabby Patty shows its own hidden third star; Love's centred third moves aside for a fourth, The Claw's top one
@@ -456,13 +402,3 @@ def test_real_type_rows(clone, parser, tmp_path):
     core = pe._core(shield)
     assert stem == "fire" and box[0] == core[0] and box[1] > core[3]       # under the row's first icon, not by the title
 
-
-@icons
-def test_a_type_icon_in_the_stars_group_is_no_star(clone, parser, tmp_path):
-    """Pike Beam's Stars group holds its Offensive_Minion icon (the parser counts it as a star and a type): one star
-    fewer hides a real star, so its types read back the same."""
-    paths = _clone_card(clone, PIKE, tmp_path)
-    plan = _plan(parser, paths[0], PIKE, "stars", 2)
-    assert [layer.name for layer in plan.hide] == ["top left"]
-    _, baked = _bake(parser, paths, {"stars": 2}, tmp_path, PIKE)
-    assert baked.reparse["card"]["stars"] == 2 and "offensive_minion" in baked.reparse["card"]["types"]

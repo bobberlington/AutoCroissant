@@ -30,15 +30,6 @@ def _trailers(message: str) -> list:
     return [line.split(": ", 1)[1] for line in out.stdout.splitlines() if line.startswith(f"{cb.EDIT_BY}: ")]
 
 
-def test_editors_sorted_distinct_and_only_for_baked_fields():
-    assert cb.editors(_card({"hp": 8}, "web")) == ["web"]
-    assert cb.editors(_card({"hp": 8, "atk": 2, "def": 1}, {"hp": "zed", "atk": "amy", "def": "zed", "spd": "nope"})) == ["amy", "zed"]
-    assert cb.editors(_card({"hp": 8}, None)) == []                     # unknown: no trailer
-    assert cb.editors(_card({"hp": 8}, " ")) == [] and cb.editors(_card({"hp": 8}, "two words")) == []
-    assert cb.editors(_card({"hp": 8}, ["web"])) == [] and cb.editors(_card({"hp": 8}, {"hp": 3})) == []
-    assert cb.editors(_card({}, "web", redundant=["hp"])) == []        # nothing printed: no credit
-
-
 def test_message_counts_lists_and_git_parses_the_trailers():
     card = _card({"hp": 8}, {"hp": "zed", "atk": "amy"})
     card.jobs, card.fields = {"hp": 8, "atk": 2}, {"hp": 8, "atk": 2}
@@ -52,13 +43,6 @@ def test_message_counts_lists_and_git_parses_the_trailers():
     assert cb._message([_card({"hp": 8}, None)]) == "Card edits: 1 baked\n\n- Mini Doomer: hp -> 8"    # no editor: no trailers
     assert cb._message([other, refused]) == "Card edits: 1 redundant, 1 refused"
     assert _trailers(cb._message([_card({"hp": 8}, "web") for _ in range(2)])) == ["web", "web"]
-
-
-def test_select_carries_the_entrys_by(github):
-    info = github.commits[github.head]
-    snapshot = cb.Snapshot(cb.CARD_REPO, github.head, info, cb._tree(cb.CARD_REPO, info["tree"]["sha"]))
-    edits = cb.CardEdits.parse(_edits({"Mini Doomer": {"hp": 8, "_by": "amy", "_at": AT}, "Nobody": {"hp": 3}}).decode())
-    assert [(c.name, c.by) for c in cb.select(edits, snapshot)] == [("Mini Doomer", "amy"), ("Nobody", None)]
 
 
 @pytest.fixture

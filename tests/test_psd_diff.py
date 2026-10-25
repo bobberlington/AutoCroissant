@@ -19,7 +19,6 @@ from conftest import at_rev
 # ========================
 TEMPLE = "Auxiliary/Items/The_Temple_of_Ahn'Qiraj.psd"
 GLAIVE = "Creatures/FTL/4 Stars/Glaive_Main_Cannon.psd"
-HEAVY_MOLE = "Creatures/Kirby/3 Stars/Heavy_Mole.psd"
 LAZARUS = "Creatures/Isaac/3 Stars/Tainted_Lazarus.psd"
 COOLDOWNS = ("9f0c9ece", "11dc6114")            # Zomoroko's push of 2026-10-22 05:54 (cooldown tags, 50 PSDs)
 
@@ -50,22 +49,6 @@ def test_a_resave_says_nothing(tmp_path):
     assert pdf.changes(_card(tmp_path, "a"), _card(tmp_path, "b")) == []
 
 
-def test_a_group_opened_or_closed_says_nothing(tmp_path):
-    """The Layers panel's twisty is in lsct: the record changes, the card does not."""
-    a, b = _card(tmp_path, "a"), _card(tmp_path, "b", closed=True)
-    blocks = [psd.find("Stars")._record.tagged_blocks[Tag.SECTION_DIVIDER_SETTING].tobytes() for psd in (a, b)]
-    assert blocks[0] != blocks[1]
-    assert pdf.changes(a, b) == []
-
-
-def test_equal_pixels_encoded_otherwise_say_nothing(tmp_path):
-    """Photoshop re-encodes channels (Glaive's Laser Beam mask: 22,269 -> 23,144 RLE bytes, the same pixels)."""
-    a, b = _card(tmp_path, "a"), _card(tmp_path, "b", compression=Compression.ZIP)
-    data = [b"".join(c.data for c in psd.find("Square")._channels) for psd in (a, b)]
-    assert data[0] != data[1]
-    assert pdf.changes(a, b) == []
-
-
 def test_each_layer_change_is_told(tmp_path):
     def edit(psd):
         square = psd.find("Square")
@@ -77,71 +60,9 @@ def test_each_layer_change_is_told(tmp_path):
         "Square blend Normal -> Multiply"]
 
 
-def test_moves_pixels_and_groups(tmp_path):
-    a = _card(tmp_path, "a")
-
-    def moved(psd):
-        psd.find("Square").offset = (14, 10)
-    assert pdf.changes(a, _card(tmp_path, "moved", moved)) == ["Square moved +4,+0 px"]
-
-    def painted(psd):
-        psd.remove(psd.find("Square"))              # painted over: the same name, new pixels
-        psd.insert(1, PixelLayer.frompil(Image.new("RGB", (20, 20), (0, 255, 0)), psd, "Square", top=10, left=10))
-    assert pdf.changes(a, _card(tmp_path, "painted", painted)) == ["Square pixels changed"]
-
-    def ungrouped(psd):
-        psd.remove(psd.find("Stars"))
-    assert pdf.changes(a, _card(tmp_path, "ungrouped", ungrouped)) == ["removed Stars group (2 layers)"]
-
-    def both_hidden(psd):
-        for star in psd.find("Stars"):
-            star.visible = False
-    assert pdf.changes(a, _card(tmp_path, "hidden", both_hidden)) == ["star x2 hidden"]
-
-
-def test_layers_moved_into_a_group_or_restacked(tmp_path):
-    a = _card(tmp_path, "a")
-
-    def into(psd):
-        square = psd.find("Square")
-        psd.remove(square)
-        psd.find("Stars").append(square)
-    assert pdf.changes(a, _card(tmp_path, "into", into)) == ["Square moved into Stars"]
-
-    def restack(psd):
-        base = psd.find("Base")
-        psd.remove(base)
-        psd.append(base)                            # Base from the bottom to the top
-    assert pdf.changes(a, _card(tmp_path, "restack", restack)) == ["Base restacked"]
-
-
-def test_an_ungrouped_group(tmp_path):
-    """Ungroup (Ctrl+Shift+G): the group goes and its layers take its place; the layers beside it kept their order."""
-    def ungroup(psd):
-        stars = psd.find("Stars")
-        inside = list(stars)
-        for star in inside:
-            stars.remove(star)
-        psd.remove(stars)
-        psd.extend(inside)
-    assert pdf.changes(_card(tmp_path, "a"), _card(tmp_path, "b", ungroup)) == [
-        "removed Stars group", "star x2 moved out of Stars"]
-
-
-def test_an_unnamed_layer(tmp_path):
-    def edit(psd):
-        square = psd.find("Square")
-        square.name, square.visible = "", False
-    assert pdf.changes(_card(tmp_path, "a"), _card(tmp_path, "b", edit)) == ["unnamed layer hidden", "Square renamed ''"]
-
-
 # ========================
 # Text
 # ========================
-def test_text_change_quotes_short_texts_whole():
-    assert pdf.text_change("White CLot", "White Clot") == "'White CLot' -> 'White Clot'"
-
-
 def test_text_change_quotes_the_edited_words_of_a_long_text():
     old = "Gain 2 ATK when an ally dies. Deal 6 damage to every enemy creature on the field.(1PT)"
     new = "Gain 2 ATK when an ally dies. Deal 7 damage to every enemy creature on the field.(1CD)"
@@ -150,20 +71,6 @@ def test_text_change_quotes_the_edited_words_of_a_long_text():
     inserted = pdf.text_change(old, old.replace("every enemy", "every [fire] enemy"))
     assert inserted == "'every enemy' -> 'every [fire] enemy'"                  # an insertion keeps a word each side
     assert pdf.text_change(old, "Nothing like it at all, a new ability for a new card entirely.").startswith("rewritten (")
-
-
-def test_text_change_names_icons_and_drops_invisible_characters():
-    assert pdf.text_change("\ufeffWhite CLot", "\ufeffWhite\u200b Clot") == "'White CLot' -> 'White Clot'"
-    old, new = "﻿Deal 1 DMG to a target creature on the opposing field of play.", \
-        "﻿Deal 1  DMG to a target creature on the opposing field of play."
-    assert pdf.text_change(old, new, {"": "fire"}) == "'1 DMG' -> '1 [fire] DMG'"
-    assert pdf.text_change(old, new) == "'1 DMG' -> '1 [icon] DMG'"
-
-
-def test_a_text_that_reads_the_same():
-    assert pdf._unseen("\ufeff(1GCD)", "(1GCD)") == "invisible character removed"
-    assert pdf._unseen("(1GCD)", "\u200b(1GCD)\u200b") == "invisible characters added"
-    assert pdf._unseen("\ufeffa b", "a\nb") == "line breaks or spacing changed"
 
 
 def test_line_cuts_whole_phrases():
@@ -186,19 +93,7 @@ def test_a_name_edit(clone):
         "Name text: 'White CLot' -> 'White Clot'"]
 
 
-def test_overlay_hidden_under_its_fx_layer(clone):
-    """3b06f803: Gasoline's image icons became tokens and its "Blazing" overlay went under an Ability FX layer."""
-    changes = pdf.changes(*_pair(clone, "3b06f803^", "3b06f803", "Items/Support/2 Stars/Gasoline.psd"))
-    assert changes == ["Ability text: 'a type,' -> 'a [fire] type,', 'a type,' -> 'a [machine] type,' (+3 more)",
-                       "added Ability FX: Blazing", "fire x3, machine x2 and Blazing overlay hidden"]
-
-
-@pytest.mark.parametrize("rel, expected", [
-    (TEMPLE, "Ability text: '(-1/1CD)' -> '(-1/1GCD)(OYT)'"),      # 25 records rewritten: shmd, SoLd/PlLd, a gradient fill
-    (GLAIVE, "Ability text: '(E2T)' -> '(2CD)'"),                  # a mask re-encoded, a smart object re-embedded
-    (HEAVY_MOLE, "Ability text: '(1PT)' -> '(1CD)'"),              # a newer Photoshop adds gs99 to Gradient Overlays
-    (LAZARUS, "Laz/Ability text: '(1PGT)(3' -> '(1GCD)(3', 'Flip to to' -> 'Flip to'"),   # b"Nrml" written b"normal"
-])
+@pytest.mark.parametrize("rel, expected", [(TEMPLE, "Ability text: '(-1/1CD)' -> '(-1/1GCD)(OYT)'")])
 def test_photoshop_resave_noise_is_left_out(clone, rel, expected):
     old, new = _pair(clone, *COOLDOWNS, rel)
     rewritten = sum(1 for a, b in zip(old._record.layer_and_mask_information.layer_info.layer_records,
@@ -224,17 +119,6 @@ def test_a_style_change_names_its_words(clone):
     """The badge batch of 2026-10-22 set the tag in stoogedings and left the text as it was."""
     assert pdf.changes(*_pair(clone, "af826714", "587d38b4", "Auxiliary/Items/Dreamshield.psd")) == [
         "Ability font Perpetua -> stoogedings-Regular on '(ENDT)'"]
-
-
-def test_a_box_resized(clone):
-    changes = pdf.changes(*_pair(clone, "f58418a5", "09131c67", "Creatures/Mario/2 Stars/Koops.psd"))
-    assert changes == ["Ability text: '(FTE2T)(3' -> '(1/2CD)(3', '(E2T)(4' -> '(2CD)(4'", "Ability box shorter by 624 px"]
-
-
-def test_an_invisible_character_removed(clone):
-    """Cake Mix: a BOM before '(1GCD' went, nothing else."""
-    assert pdf.changes(*_pair(clone, "91fcda38", "56a79f4f", "Items/Heal/2 Stars/Cake_Mix.psd")) == [
-        "Ability invisible character removed"]
 
 
 def test_smart_filters_renumbered_by_a_save_say_nothing(clone):

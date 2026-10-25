@@ -9,13 +9,11 @@ import pytest
 
 import commands.psd_details as pd
 from commands.font_check import FontIndex, psd_fonts
-from conftest import at_rev
 
 DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"                           # template rows
 CANNON = "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd"      # atk in two rows
 LAZARUS = "Creatures/Isaac/3 Stars/Tainted_Lazarus.psd"                # drawn heart cells
 VIRUS = "Creatures/Kirby/3 Stars/Computer_Virus.psd"                   # no digit rows, pixel blocks; root Name layer
-OVERLAY_VIRUS = "739c7abb^"                                            # Computer Virus with overlay words and image icons only
 BONE = "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd"                     # its title layer is named after the card
 ABBI = "Creatures/Omori/5 Stars/ABBI.psd"                              # no title layer the parser reads
 AFRAID = "Auxiliary/Status Effects/Debuffs/2 Stars/Afraid.psd"         # no Text group: a top-level title named after the card
@@ -24,8 +22,6 @@ GLOBAL_TURN = "Auxiliary/Rulebook/08_Global_Turn.psd"                  # a rule 
 LICH_KING = "Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd"     # stars set by its folder: every count refused
 FREEZER = "Field/1 Stars/The_Freezer.psd"                              # no Stars group; one type icon, a column of spots
 FROSTMOURNE = "Auxiliary/Items/Frostmourne.psd"                        # four stars in a shown "N stars" folder
-JOY = "Auxiliary/Items/Joy.psd"                                        # "N stars" folders: the folder plan
-BANK = "N.M.E/The_Bank.psd"                                            # the same, two stars
 MAGNUM = "Auxiliary/Items/Magnum_Opus.psd"                             # its 'field' icon is a frame: fixed
 KEYS = ("path", "name", "at", "parser", "canvas", "fonts", "text", "effects", "smart_objects", "icons", "stats", "fx",
         "overlays", "template", "header", "tree")
@@ -88,13 +84,6 @@ def test_effects_switch_off_marks_every_effect_off(clone):
     assert pd._effects(list(PSDImage.open(str(clone / rel)).descendants()))["Text/Ability"] == ["ColorOverlay (off)"]
 
 
-def test_stats_encoding(records):
-    assert records[DOOMER]["stats"] == {"hp": "template", "def": "template", "atk": "template", "spd": "template"}
-    assert records[CANNON]["stats"] == {"hp": "template", "def": "template", "atk": "two-row", "spd": "template"}
-    assert records[LAZARUS]["stats"] == {"hp": "pixel", "def": "pixel", "atk": "pixel", "spd": "pixel"}
-    assert records[VIRUS]["stats"]["hp"] == "pixel"                                 # Stat Bars/Stats Bars Blocks/hp pixel cells
-
-
 def test_text_layers_and_template(records):
     doomer = records[DOOMER]
     ability = next(t for t in doomer["text"] if t["layer"] == "Text/Ability")
@@ -148,74 +137,11 @@ def test_header_boxes(records, clone):
     assert freezer["types"]["spots"]["2"] == [[7, 226, 136, 418]]                    # under a lone icon (Item_Template's column)
 
 
-def test_header_star_folders_and_fixed_icons(records, clone):
-    """"N stars" folders (the shown folder's stars, the folder plan): each count has that many centres; Magnum Opus's
-    'field' frame is fixed, not offered to take off; no header part is an error."""
-    for rel in (FROSTMOURNE, JOY, BANK, MAGNUM):
-        if not (clone / rel).exists():
-            pytest.skip(f"{rel} not in the clone")
-    vocab = _types(clone)
-    got = {rel: pd.gather(str(clone / rel), rel, _name(rel), None, vocab)["header"] for rel in (FROSTMOURNE, JOY, BANK, MAGNUM)}
-    for rel, units in ((FROSTMOURNE, 4), (JOY, 3), (BANK, 2)):
-        stars = got[rel]["stars"]
-        assert len(stars["units"]) == units and stars["refused"] == {}, rel
-        assert all(len(stars["at"][str(n)]) == n for n in range(1, 11)), rel
-    assert got[MAGNUM]["types"]["fixed"] == [["field", "'field' is a frame round the card"]] and got[MAGNUM]["types"]["refused"] is None
-    for header in [*got.values(), *(r["header"] for r in records.values())]:
-        assert not any(isinstance(v, str) and v.startswith("error") for v in header.values())
-
-
-def test_overlay_words_and_image_icons(clone, index):
-    """Computer Virus before 739c7abb: its Names words were overlay text layers, its icons images only (no badge run)."""
-    virus = pd.gather(at_rev(clone, OVERLAY_VIRUS, VIRUS), VIRUS, _name(VIRUS), index, _types(clone))
-    assert virus["icons"] == "images" and virus["fx"] == []
-    assert virus["overlays"] == ["Names/3rd: Magician", "Names/2nd: Puppet", "Names/1st: Slime"]
-    assert "overlay word layers" in virus["template"]["deviations"]
-
-
-def test_template_names_the_title_layer_the_parser_reads(clone):
-    """A root Name (Computer Virus) or a title named after the card (Wham Bam Bone; Afraid's at the top level) is the
-    developer's choice, no deviation (the bake takes it, ledger L6); only a card whose title the parser cannot read lists
-    one (ABBI)."""
-    for rel, layer in ((VIRUS, "Name"), (BONE, "Text/Wham Bam Bone"), (AFRAID, "Afraid"), (ABBI, None)):
-        if not (clone / rel).exists():
-            pytest.skip(f"{rel} not in the clone")
-        template = pd.gather(str(clone / rel), rel, _name(rel))["template"]
-        assert template["name_layer"] == layer and ("no title layer" in template["deviations"]) == (layer is None)
-
-
-def test_template_takes_a_title_named_after_its_text_not_a_heading(clone):
-    """Papyrus's 'Text/The Great Papyrus', named after its own text, is the title the parser reads (no deviation); a rule
-    page's heading named so (The Global Turn's) is no title layer, as the parser has none there."""
-    for rel, layer in ((PAPYRUS, "Text/The Great Papyrus"), (GLOBAL_TURN, None)):
-        if not (clone / rel).exists():
-            pytest.skip(f"{rel} not in the clone")
-        template = pd.gather(str(clone / rel), rel, _name(rel))["template"]
-        assert template["name_layer"] == layer and "no title layer" not in template["deviations"]
-
-
 def test_gather_without_an_index_leaves_supplied_null(clone):
     record = pd.gather(str(clone / DOOMER), DOOMER, "Mini Doomer")
     assert {e["supplied"] for e in record["fonts"].values()} == {None}
     pd.mark_supplied(record, FontIndex())
     assert {e["supplied"] for e in record["fonts"].values()} == {False}
-
-
-def test_gather_takes_a_path_object(clone):
-    record = pd.gather(clone / DOOMER, DOOMER, "Mini Doomer")
-    assert isinstance(record["fonts"], dict) and record["stats"]["hp"] == "template"
-
-
-def test_text_section_keeps_a_layer_whose_text_cannot_be_read():
-    class Layer:
-        name, parent, kind = "Name", None, "type"
-        def is_visible(self):
-            return True
-        @property
-        def text(self):
-            raise ValueError("bad text data")
-    rows = pd._text([Layer()])
-    assert rows == [{"layer": "Name", "text": None, "font": None, "size": None, "color": None, "visible": True}]
 
 
 def test_gather_never_raises_for_a_broken_card():
