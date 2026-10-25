@@ -290,7 +290,8 @@ def test_sync_notes(github, tmp_path, monkeypatch):
     assert ("compare", "c0ffee0123456789...main") in github.calls
     utils.dispatch_queue.clear()
     github.runs = [_run(8, conclusion="success", event="schedule")]
-    github.compare = {"ahead_by": 1, "files": [{"filename": "site/index.html"}]}   # no card input
+    github.compare = {"ahead_by": 2, "files": [{"filename": "site/index.html"},
+                                               {"filename": "MDW/Fonts/stoogedings-src/x.svg"}]}   # no card input (the gate's)
     cs.sync(ME)
     assert len(_said()[0].splitlines()) == 3                          # the two pending lines only
 

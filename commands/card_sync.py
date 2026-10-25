@@ -23,7 +23,7 @@ try:
 except ImportError:                                  # tests and scripts without config.py
     config = None
 from global_config import (AUTHORS_PATHS, CARD_BRANCH, CARD_DATA_DIR, CARD_REPO, CREATED_PATHS, DATA_BRANCH, EDITS_PATHS,
-                           ICON_MANIFEST_PATH, TYPES_DIR)
+                           ICON_MANIFEST_PATH, RULES_PATH, TYPES_DIR)
 from commands import card_db
 from commands.github_api import HEADERS, api_url, get_with_retry, session
 from commands.psd_analyzer import card_name, stats_db                # the facade's (architecture invariant: one stats_db)
@@ -45,8 +45,8 @@ EDIT_MINUTES = 14                                    # progress edits stop here:
 WAITING = ("queued", "pending", "waiting", "requested")   # a run not started yet
 FAILED = ("failure", "timed_out", "startup_failure")
 BOT_LOGIN = "github-actions[bot]"                    # Card sync's own retry dispatches
-CARD_PREFIXES = (f"{TYPES_DIR}/", "MDW/Fonts/")
-CARD_FILES = {ICON_MANIFEST_PATH, *AUTHORS_PATHS, *EDITS_PATHS, *CREATED_PATHS}
+FONTS_PREFIX = "MDW/Fonts/"                           # its top-level files only (the gate's MDW/Fonts/*)
+CARD_FILES = {ICON_MANIFEST_PATH, RULES_PATH, *AUTHORS_PATHS, *EDITS_PATHS, *CREATED_PATHS}
 
 # ========================
 # Global State
@@ -127,8 +127,9 @@ def report(manifest: dict, counts: Optional[dict], reloaded: bool, now: Optional
 
 
 def card_input(path: str) -> bool:
-    """A card repo path the card data is built from (Card sync's gate, without the TTS save's own files)."""
-    return path.lower().endswith((".psd", ".png")) or path.startswith(CARD_PREFIXES) or path in CARD_FILES
+    """A card repo path Card sync's gate goes for (the hand-edited save aside): a dispatch for any other would end there."""
+    return (path.lower().endswith((".psd", ".png")) or path.startswith(f"{TYPES_DIR}/") or path in CARD_FILES
+            or (path.startswith(FONTS_PREFIX) and "/" not in path[len(FONTS_PREFIX):]))
 
 
 def _json(url: str, headers: dict):
