@@ -1,4 +1,4 @@
-"""Kinds by stars, series folders, subtypes, types and copies. Usage: python3 -I agg.py <cards.json | loadpkl.py dump>"""
+"""Kinds by stars, series folders, subtypes, types and copies. Usage: python3 -I agg.py <cards.json | db/stats.json>"""
 import collections, os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # rows.py (-I drops the script's folder)
 import rows

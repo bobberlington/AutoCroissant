@@ -9,7 +9,8 @@ gone on reboot; recipes in SKILL.md Provenance). Also `site/dist/data/rules.json
 `MDW/Fonts/stoogedings-src/stoogedings.json` and `build_stoogedings.py`; `site/assets/deck.js`, `text.js`, `app.js`,
 `search.js`; `site/Constructed Ban List.txt`; `TTS/Impossibility Simulator.json` and `TTS/decks.json`, audited with a
 copy of `TTS/audit.py` that writes to /tmp. Extraction scripts: `.claude/skills/impossibility-simulator-rules/scripts/`
-(rows.py, counts.py, agg.py, loadpkl.py, tags.py, lines.py, mentions.py; each takes cards.json or a loadpkl.py dump).
+(rows.py, counts.py, agg.py, tags.py, lines.py, mentions.py; each takes cards.json or the card data's db/stats.json;
+a loadpkl.py dump of stats.pkl until 2026-10-25).
 Since then the clone's HEAD moved to `2291b5de` (a site-only commit) and origin/main to `902e01e3` (3 commits that do
 not include it); no PSD changed after `73904dbd` and the 48 page texts are identical, so the data below still holds.
 AutoCroissant PICKLE `3888392` (2026-10-22 00:23) pushed this parse with the new tags and printed titles: its `stats.pkl`

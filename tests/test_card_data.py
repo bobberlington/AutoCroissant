@@ -3,7 +3,6 @@ on a temporary git repo of golden PSDs (new, changed, moved, archived, an unread
 import json
 from collections import defaultdict
 import os
-import pickle
 import re
 import shutil
 import subprocess
@@ -39,7 +38,7 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
         assert (REPO / rel).is_file(), f"{rel} is in SPARSE_FILES but missing here"
         (bot / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(REPO / rel, bot / rel)
-    flags = {"card_data": {"--repo", "--checkout", "--head", "--blobs", "--db", "--seed", "--full", "--cards",
+    flags = {"card_data": {"--repo", "--checkout", "--head", "--blobs", "--db", "--empty", "--full", "--cards",
                            "--allow-archive", "--restore", "--budget", "--run", "--builder-ref", "--summary", "--message",
                            "--dry-run", "--baked", "--own", "--rewrite", "--help"},
              "card_bake": None, "tts_save": {"--names", "--help"}}
@@ -193,7 +192,7 @@ def put(repo, rel, data: bytes):
 
 @pytest.fixture
 def cards(tmp_path, clone, monkeypatch):
-    """A card repo: the golden vocabulary, the site files, Mini Doomer and The Freezer (alice, t=1000); an empty seed.
+    """A card repo: the golden vocabulary, the site files, Mini Doomer and The Freezer (alice, t=1000); an empty db/.
     G1's floor drops to 1 card and no share (a real build has hundreds)."""
     monkeypatch.setattr(cd, "MIN_CARDS", 1)
     monkeypatch.setattr(cd, "FLOOR_SHARE", 0)
@@ -218,12 +217,9 @@ def cards(tmp_path, clone, monkeypatch):
     put(repo, DOOMER, psds[DOOMER])
     put(repo, FREEZER, psds[FREEZER])
     first = commit(repo, "alice", 1000)
-    seed = tmp_path / "seed"
-    seed.mkdir()
-    (seed / "stats.pkl").write_bytes(pickle.dumps({}))
     db = tmp_path / "data" / "db"
     db.mkdir(parents=True)
-    return SimpleNamespace(repo=repo, psds=psds, seed=seed, db=db, first=first, tmp=tmp_path)
+    return SimpleNamespace(repo=repo, psds=psds, db=db, first=first, tmp=tmp_path)
 
 
 def _build(c, *extra):
@@ -246,7 +242,7 @@ def _read(c):
 
 
 def test_first_build_then_nothing_to_do(cards):
-    code, message = _build(cards, "--seed", str(cards.seed))
+    code, message = _build(cards, "--empty")
     assert code == cd.EXIT_OK and message.startswith(f"Card data: 2 new (main {cards.first[:8]})")
     stats, old, details, manifest, events = _read(cards)
     assert set(stats) == {"Mini Doomer", "The Freezer"} and not old
@@ -255,7 +251,7 @@ def test_first_build_then_nothing_to_do(cards):
     assert (stats["Mini Doomer"].author, stats["The Freezer"].author, stats["The Freezer"].note) == ("Bob", "alice", "checked")
     assert stats["Mini Doomer"].timestamp == 1000.0 and stats["Mini Doomer"].version["cause"] == "psd"
     assert [(e["seq"], e["kind"], e["card"]) for e in events] == [(1, "new", "Mini Doomer"), (2, "new", "The Freezer")]
-    assert manifest["card_commit"] == cards.first and manifest["counts"]["cards"] == 2 and manifest["seed"] == {"pickles": str(cards.seed)}
+    assert manifest["card_commit"] == cards.first and manifest["counts"]["cards"] == 2 and "seed" not in manifest
     assert set(details) == {blob_sha_bytes(cards.psds[DOOMER]), blob_sha_bytes(cards.psds[FREEZER])}
     assert cdb.check_db(str(cards.db)) == []
     times = {p.name: p.stat().st_mtime_ns for p in cards.db.iterdir() if p.is_file()}
@@ -264,7 +260,7 @@ def test_first_build_then_nothing_to_do(cards):
 
 
 def test_changed_moved_archived(cards):
-    _build(cards, "--seed", str(cards.seed))
+    _build(cards, "--empty")
     put(cards.repo, DOOMER, cards.psds[OTHER])
     c2 = commit(cards.repo, "bob", 2000)
     code, message = _build(cards)
@@ -303,7 +299,7 @@ def test_changed_moved_archived(cards):
 
 
 def test_unreadable_psd_holds_the_archive(cards):
-    _build(cards, "--seed", str(cards.seed))
+    _build(cards, "--empty")
     put(cards.repo, "Items/Broken_Card.psd", BROKEN)
     git(cards.repo, "rm", "-q", FREEZER)
     commit(cards.repo, "erin", 2000)
@@ -316,7 +312,7 @@ def test_unreadable_psd_holds_the_archive(cards):
 def test_failed_psd_waits_for_a_new_blob(cards, monkeypatch):
     """A PSD that could not be read is not read again until its blob changes, or `cards` names it; it stays failed
     (and, a new name, holds the archive) meanwhile."""
-    _build(cards, "--seed", str(cards.seed))
+    _build(cards, "--empty")
     put(cards.repo, "Items/Broken_Card.psd", BROKEN)
     git(cards.repo, "rm", "-q", FREEZER)
     commit(cards.repo, "erin", 2000)
@@ -335,7 +331,7 @@ def test_failed_psd_waits_for_a_new_blob(cards, monkeypatch):
 
 
 def test_budget_holds_cards_for_the_next_run(cards, monkeypatch):
-    _build(cards, "--seed", str(cards.seed))
+    _build(cards, "--empty")
     put(cards.repo, DOOMER, cards.psds[OTHER])
     commit(cards.repo, "bob", 2000)
     psd = blob_sha_bytes(cards.psds[OTHER])
@@ -348,7 +344,7 @@ def test_budget_holds_cards_for_the_next_run(cards, monkeypatch):
 
 
 def test_gate_refusal_exits_2_and_writes_nothing(cards, monkeypatch, capsys):
-    _build(cards, "--seed", str(cards.seed))
+    _build(cards, "--empty")
     before = {p.name: p.read_bytes() for p in cards.db.iterdir() if p.is_file()}
     git(cards.repo, "rm", "-q", FREEZER)
     commit(cards.repo, "dave", 2000)
@@ -362,7 +358,7 @@ def test_gate_refusal_exits_2_and_writes_nothing(cards, monkeypatch, capsys):
 def test_an_exact_rename_passes_g2(cards, monkeypatch):
     """A renamed PSD (the same bytes under another name) archives the old name with renamed_to: no card is lost, so G2
     lets it through at a ceiling of 0 (d64fc8d4 renamed 27 cards at once)."""
-    _build(cards, "--seed", str(cards.seed))
+    _build(cards, "--empty")
     git(cards.repo, "mv", FREEZER, "Field/1 Stars/The_Big_Freezer.psd")
     commit(cards.repo, "dave", 2000)
     monkeypatch.setattr(cd, "ARCHIVE_MIN", 0)
@@ -397,7 +393,7 @@ def test_a_rename_that_edited_the_psd_keeps_the_card_by_its_art(cards):
     with the old one (its author, not the renamer's), and the archive names it."""
     put(cards.repo, "Field/1 Stars/The_Freezer.png", b"freezer art")
     commit(cards.repo, "alice", 1100)
-    _build(cards, "--seed", str(cards.seed))
+    _build(cards, "--empty")
     big = "Field/1 Stars/The_Big_Freezer"
     git(cards.repo, "mv", "Field/1 Stars/The_Freezer.png", f"{big}.png")
     git(cards.repo, "rm", "-q", FREEZER)
@@ -410,33 +406,34 @@ def test_a_rename_that_edited_the_psd_keeps_the_card_by_its_art(cards):
 
 
 def test_history_values_out_of_range_become_unknown_and_are_gated(cards, monkeypatch, capsys):
-    """Tainted Lazarus' 110s: the seed pass sets them unknown and says so; a value out of range left in history (the
-    range check failing to run) refuses G3. A parser-2 reading's 12 (a problem when read) is kept and listed."""
+    """Tainted Lazarus' 110s: a build sets them unknown and says so; a value out of range left in history (the range
+    check failing to run) refuses G3. A parser-2 reading's 12 (a problem when read) is kept and listed."""
     old = defaultdict(list, {"Mini Doomer": [cm.CardInfo(name="Mini Doomer", card_type="minion", path=DOOMER, ability="Old.",
                                                           stats=cm.CardStats(110, 110, 110, 110), timestamp=500.0),
                                              cm.CardInfo(name="Mini Doomer", card_type="minion", path=DOOMER, ability="Mid.",
                                                           stats=cm.CardStats(12, 3, 3, 3), timestamp=600.0,
                                                           parser_version=2)]})
-    (cards.seed / "old_stats.pkl").write_bytes(pickle.dumps(old))
-    code, message = _build(cards, "--seed", str(cards.seed))
-    assert code == cd.EXIT_OK and "Impossible values set to unknown: 1 (Mini Doomer)" in message
+    cdb.write_db(str(cards.db), {}, old, '{"version": 1, "cards": {\n\n}}\n', {})
+    code, message = _build(cards, "--empty")
+    assert code == cd.EXIT_OK and "History values out of range set to unknown: 1 (Mini Doomer)" in message
     assert "History values out of range kept (an allow_high_stats entry allows them): Mini Doomer" in message
     assert [v.stats for v in _read(cards)[1]["Mini Doomer"]] == [cm.CardStats(), cm.CardStats(12, 3, 3, 3)]
     import commands.card_history as ch
     monkeypatch.setattr(ch, "unknown_values", lambda stats, old_stats: [])
     shutil.rmtree(cards.db)
     cards.db.mkdir()
+    cdb.write_db(str(cards.db), {}, old, '{"version": 1, "cards": {\n\n}}\n', {})
     capsys.readouterr()
-    assert _build(cards, "--seed", str(cards.seed))[0] == cd.EXIT_GATE
+    assert _build(cards, "--empty")[0] == cd.EXIT_GATE
     assert "history values out of range: Mini Doomer" in capsys.readouterr().out
 
 
 def test_dry_run_and_errors(cards, tmp_path):
-    assert _build(cards, "--seed", str(cards.seed), "--dry-run")[0] == cd.EXIT_OK and not any(cards.db.iterdir())
-    assert _build(cards)[0] == cd.EXIT_ERROR                                                   # empty db/ and no seed
+    assert _build(cards, "--empty", "--dry-run")[0] == cd.EXIT_OK and not any(cards.db.iterdir())
+    assert _build(cards)[0] == cd.EXIT_ERROR                                                   # empty db/ without --empty
     shallow = tmp_path / "shallow"
     subprocess.run(["git", "clone", "-q", "--depth", "1", f"file://{cards.repo}", str(shallow)], check=True)
-    assert cd.main(["--checkout", str(shallow), "--db", str(cards.db), "--seed", str(cards.seed)]) == cd.EXIT_ERROR
+    assert cd.main(["--checkout", str(shallow), "--db", str(cards.db), "--empty"]) == cd.EXIT_ERROR
 
 
 def test_data_tip_moved_refuses(cards, tmp_path):
@@ -446,7 +443,7 @@ def test_data_tip_moved_refuses(cards, tmp_path):
     data = cards.db.parent
     git(data, "init", "-q", "-b", "data")
     git(data, "remote", "add", "origin", str(origin))
-    _build(cards, "--seed", str(cards.seed))
+    _build(cards, "--empty")
     commit(data, "AutoCroissant", 1500)
     git(data, "push", "-q", "origin", "data")
     other = tmp_path / "other"
@@ -487,7 +484,7 @@ def git_bytes(repo, *args):
 def test_full_reparse_continues_past_the_budget(cards, monkeypatch):
     """--full over the budget: the held cards (same blob) are read by the next runs (pending.stale), the approval goes
     on in pending.full until none is left."""
-    _build(cards, "--seed", str(cards.seed))
+    _build(cards, "--empty")
     put(cards.repo, OTHER, cards.psds[OTHER])
     commit(cards.repo, "bob", 2000)
     _build(cards)
@@ -510,7 +507,7 @@ def test_full_reparse_continues_past_the_budget(cards, monkeypatch):
 def test_parser_bump_approval_carries_over(cards, monkeypatch):
     """A PARSER_VERSION bump: G4 refuses until `full`; the continuation runs keep that approval."""
     import commands.psd_parser as pp
-    _build(cards, "--seed", str(cards.seed))
+    _build(cards, "--empty")
     put(cards.repo, OTHER, cards.psds[OTHER])
     commit(cards.repo, "bob", 2000)
     _build(cards)
@@ -531,7 +528,7 @@ def test_parser_bump_approval_carries_over(cards, monkeypatch):
 def test_download_failure_fails_red_and_retries(cards, monkeypatch):
     """A REST download that fails: exit 1, db/ untouched (card_commit stays), so the next run tries it again."""
     from requests.exceptions import ConnectionError as Down
-    _build(cards, "--seed", str(cards.seed))
+    _build(cards, "--empty")
     before = {p.name: p.read_bytes() for p in cards.db.iterdir() if p.is_file()}
     put(cards.repo, DOOMER, cards.psds[OTHER])
     commit(cards.repo, "bob", 2000)
@@ -571,9 +568,9 @@ class _Reply:
 def test_events_carry_their_push(cards, monkeypatch):
     """Each event's push: the activity list's (the pusher's login, the compare range), else consecutive commits by one
     author; a re-read has none."""
-    _build(cards, "--seed", str(cards.seed))
+    _build(cards, "--empty")
     put(cards.repo, DOOMER, cards.psds[OTHER])
-    c2 = commit(cards.repo, "bob", 2000)
+    commit(cards.repo, "bob", 2000)
     put(cards.repo, "Items/Anubisath_Guardian.psd", cards.psds[OTHER])
     c3 = commit(cards.repo, "bob", 2100)
     git(cards.repo, "rm", "-q", FREEZER)
@@ -620,7 +617,7 @@ def test_git_authors_go_through_the_mailmap(tmp_path):
 def test_bake_commit_rewritten_to_the_main_commit(cards):
     """Stage 4: the build ran on the local bake commit B; after M (B plus the save) is pushed, --rewrite B M names M
     everywhere B was (dates too) and lists B's PNGs to re-pin."""
-    _build(cards, "--seed", str(cards.seed))
+    _build(cards, "--empty")
     put(cards.repo, DOOMER, cards.psds[OTHER])
     put(cards.repo, "Auxiliary/Minions/Mini_Doomer.png", b"baked png")
     b = commit(cards.repo, "AutoCroissant", 2000)
@@ -648,8 +645,8 @@ def test_bake_commit_rewritten_to_the_main_commit(cards):
 
 def test_bake_commit_posts_as_its_own_push(cards):
     """--baked: the bake commit B is the card sync's push, not part of the push before it by the same author."""
-    _build(cards, "--seed", str(cards.seed))
-    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {"The Freezer": {"note": "via bot", "_by": "discord:mike"}}}).encode())
+    _build(cards, "--empty")
+    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {"The Freezer": {"note": "via bot", "_by": "mike"}}}).encode())
     c2 = commit(cards.repo, "AutoCroissant", 1500)
     put(cards.repo, DOOMER, cards.psds[OTHER])
     b = commit(cards.repo, "AutoCroissant", 2000)
@@ -661,8 +658,8 @@ def test_bake_commit_posts_as_its_own_push(cards):
 
 def test_own_main_commit_posts_as_the_card_syncs(cards, monkeypatch):
     """--own M: the bake's pushed main commit is the card sync's push, listed (by github-actions[bot]) or not."""
-    _build(cards, "--seed", str(cards.seed))
-    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {"The Freezer": {"note": "via bot", "_by": "discord:mike"}}}).encode())
+    _build(cards, "--empty")
+    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {"The Freezer": {"note": "via bot", "_by": "mike"}}}).encode())
     c2 = commit(cards.repo, "AutoCroissant", 1500)
     put(cards.repo, DOOMER, cards.psds[OTHER])
     m = commit(cards.repo, "AutoCroissant", 2000)
@@ -682,7 +679,7 @@ def test_own_main_commit_posts_as_the_card_syncs(cards, monkeypatch):
 def test_restore_writes_an_older_data_commit_back(cards):
     data = cards.db.parent
     git(data, "init", "-q", "-b", "data")
-    _build(cards, "--seed", str(cards.seed))
+    _build(cards, "--empty")
     good = commit(data, "AutoCroissant", 1500)
     put(cards.repo, DOOMER, cards.psds[OTHER])
     commit(cards.repo, "bob", 2000)
@@ -709,7 +706,7 @@ def test_a_duplicate_keeps_its_originals_version(cards):
     it writes nothing."""
     put(cards.repo, "Auxiliary/Minions/Mini_Doomer2.png", b"second art")
     commit(cards.repo, "alice", 1100)
-    assert _build(cards, "--seed", str(cards.seed))[0] == cd.EXIT_OK
+    assert _build(cards, "--empty")[0] == cd.EXIT_OK
     stats = _read(cards)[0]
     assert stats["Mini Doomer2"].version == stats["Mini Doomer"].version and stats["Mini Doomer"].version["cause"] == "psd"
     first = (cards.db / "stats.json").read_text(encoding="utf-8")
@@ -728,7 +725,7 @@ def test_an_edit_beside_a_new_blob_is_an_edit(cards):
     """A Card Edits.json name lands in the same build as new art for its card (Metal General, 2026-10-22): the PSD's
     own data is unchanged (its parse against parsed_values), so it posts and is recorded as an edit beside the art;
     a real PSD change in the same build stays the PSD's."""
-    _build(cards, "--seed", str(cards.seed))
+    _build(cards, "--empty")
     put(cards.repo, DOOMER, cards.psds[DOOMER] + b"\0")                         # new art: another blob, the same layers
     commit(cards.repo, "bob", 2000)
     put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {"Mini Doomer": {"name": "Tiny Doomer", "_by": "web"},
@@ -759,5 +756,5 @@ def test_a_duplicate_is_named_by_its_own_aliases(cards):
     put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {
         "Mini Doomer2": {"aliases": ["tiny doom"], "_by": "AutoCroissant"}, "The Freezer": {"note": "checked", "_by": "web"}}}).encode())
     commit(cards.repo, "alice", 1100)
-    assert _build(cards, "--seed", str(cards.seed))[0] == cd.EXIT_OK
+    assert _build(cards, "--empty")[0] == cd.EXIT_OK
     assert _read(cards)[0]["Mini Doomer2"].display_name == "Tiny Doom"

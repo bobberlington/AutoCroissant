@@ -20,7 +20,6 @@ draw those.
     export(old_psd, new_psd, old_png, numbered) -> Export   a PSD pushed without its PNG (gates G2-G8); old None: a new
                                                              PSD beside an existing PNG
     shows(png, psd, other) -> bool                           the PNG shows psd rather than other (G2's burst anchor)
-    reread(old_psd, new_psd) -> [(what, box)]                the texts the parser reads differently, records changed
     export_new(new_psd) -> Export                            a new PSD with no PNG (5.5)
     png_check(psd, png) -> dict                              R10: a PNG against its PSD's composite
     changed_layers(old, new) -> (box, n)                     the layer records that really changed
@@ -770,7 +769,7 @@ def _type_layers(psd: PSDImage) -> dict:
     return out
 
 
-def reread(old: PSDImage, new: PSDImage) -> list:
+def _rereads(old: PSDImage, new: PSDImage) -> list:
     """
     What the parser reads differently in the pushed PSD that must draw a change (the bake's read-back, here for a push):
     each type layer whose drawn text changed (new, edited, shown or hidden) and whose record changed past the VOLATILE
@@ -778,13 +777,9 @@ def reread(old: PSDImage, new: PSDImage) -> list:
     out, their digits read from marker layers that draw nothing (The Thin Man's 'Atk Dark/8' hidden, review 2026-10-24).
 
     Returns:
-        [(what, box)] with the box padded as changed_layers pads, clipped to the canvas
+        [(what, box, psd, layer)], the box padded as changed_layers pads, clipped to the canvas: the layer drawn in new,
+        else in old (a text hidden), and its PSD
     """
-    return [(what, box) for what, box, _, _ in _rereads(old, new)]
-
-
-def _rereads(old: PSDImage, new: PSDImage) -> list:
-    """reread's [(what, box, psd, layer)]: the layer drawn in new, else in old (a text hidden), and its PSD."""
     out = []
     before, after = _type_layers(old), _type_layers(new)
     prints = fingerprints(old), fingerprints(new)
@@ -849,7 +844,7 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
     """
     G2 rendered anyway (owner, 2026-10-24): a PSD saved without Maximize Compatibility has no stored image, so nothing is
     compared with Photoshop's own; the bake's gates stand. With an old PSD: the changed layers' box rendered for both,
-    each text reread() finds drawn with a change (else G2_BLANK), the baseline (the old PSD drawn against the old PNG:
+    each text _rereads() finds drawn with a change (else G2_BLANK), the baseline (the old PSD drawn against the old PNG:
     past the floor G6, a miss told), the delta merge, the shape and region gates (G7). A new PSD beside its PNG:
     the whole card rendered; the PNG is current with no pixel past BESIDE_CUT, kept (told) up to KEPT_PX past it, else it
     takes the render past the cut, every text drawn (_texts_drawn; no baseline, so no pixel refusal). A PNG pushed before
@@ -862,7 +857,7 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
     (Withering).
     ICC mode: the old pair's vote; with no stored image to vote, a foreign profile is drawn both ways and voted against
     the old PNG as icc_vote votes, over the box, else the whole card (_render_voted: the 21 raw exports). A text
-    reread() finds under the art (_covered) needs no change. Refused when the colour profile changed (G2_PROFILE: no
+    _rereads() finds under the art (_covered) needs no change. Refused when the colour profile changed (G2_PROFILE: no
     layer record shows it). Nothing drawn moved but a type layer's TySh (a style edit, Dogma's case): the PNG kept, told
     (RESTYLED: Photoshop may have redrawn it, 22_Negation).
     """
@@ -1143,7 +1138,6 @@ __all__ = [
     'photoshop_saved',
     'png_check',
     'recompress',
-    'reread',
     'shows',
     'same_png',
     'worth',

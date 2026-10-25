@@ -203,7 +203,7 @@ def files(clone):
     out[SNACK[:len(SNACK) - 4] + ".png"] = b"not fetched"
     out["Items/Heal/2 Stars/A_Snack2.png"] = b"a duplicate"
     out["MDW/Templates/Creature_Template.psd"] = b"excluded folder"
-    out[cb.EDITS_PATHS[0]] = _edits(EDITS)
+    out[cb.EDITS_PATH] = _edits(EDITS)
     return out
 
 
@@ -223,7 +223,7 @@ def github(monkeypatch, tmp_path, files, clone):
 
 
 def _edits_at(github, sha=None) -> dict:
-    return json.loads(github.files_at(sha or github.head)[cb.EDITS_PATHS[0]].decode("utf-8"))
+    return json.loads(github.files_at(sha or github.head)[cb.EDITS_PATH].decode("utf-8"))
 
 
 # ========================
@@ -238,9 +238,10 @@ def test_live_edits_file_round_trips_byte_identical():
 
 
 def test_collation_is_locale_compare_base():
+    from commands.card_edits import _collate
     keys = ["Zed", "eclair2", "Éclair", "ab", "a b", "PoD12BAD", "PoD11ZOMG", "Panda", "P.A.N.D.A. Mk A", "Bobbery",
             "Bob-ulk", "Block Hopper", "The Evil, Fricked Up Cursed Idol", "The Evil Fricked", "Mom's Knife", "Moms Knife"]
-    assert sorted(keys, key=cb._collate) == ["a b", "ab", "Block Hopper", "Bob-ulk", "Bobbery", "Éclair", "eclair2",
+    assert sorted(keys, key=_collate) == ["a b", "ab", "Block Hopper", "Bob-ulk", "Bobbery", "Éclair", "eclair2",
                                              "Mom's Knife", "Moms Knife", "P.A.N.D.A. Mk A", "Panda", "PoD11ZOMG", "PoD12BAD",
                                              "The Evil Fricked", "The Evil, Fricked Up Cursed Idol", "Zed"]   # node's localeCompare
 
@@ -328,7 +329,7 @@ def test_run_drops_redundant_and_writes_verdicts(github):
     assert data["cards"]["Nobody"]["_psd"]["reason"] == "unsupported-card: no PSD in the card repo" and data["cards"]["Nobody"]["_psd"]["psd"] == ""
     assert data["cards"]["A Snack"]["_psd"]["reason"] == "duplicate: numbered PNGs share the PSD: A_Snack2.png"
     assert data["cards"]["A Snack2"]["_psd"]["reason"] == "duplicate: a numbered PNG exported from `Items/Heal/2 Stars/A_Snack.psd`"
-    raw = github.files_at(github.head)[cb.EDITS_PATHS[0]].decode("utf-8")
+    raw = github.files_at(github.head)[cb.EDITS_PATH].decode("utf-8")
     assert raw == cb.dump_edits(json.loads(raw))                                                 # canonical layout
     assert github.files_at(github.head)[DOOMER] == github.files_at(before)[DOOMER]              # no pixels touched
     assert "## Redundant (dropped from the file) (1)" in text and "## Refused (4)" in text
@@ -421,7 +422,7 @@ def test_recent_paths_by_push_time(monkeypatch):
 def test_stat_edit_with_creatures_is_refused(github):
     """CardEdits.apply sets the stats from creature 1: a baked hp would be undone, so the card is refused before any fetch."""
     files = github.files_at(github.head)
-    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"hp": 6, "creatures": [{"hp": 7, "def": 1, "atk": 1, "spd": 1}], "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 6, "creatures": [{"hp": 7, "def": 1, "atk": 1, "spd": 1}], "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
     text, commits = cb.run(card="Mini Doomer")
     entry = _edits_at(github)["cards"]["Mini Doomer"]
@@ -461,7 +462,7 @@ def test_refused_ref_update_is_an_error_not_a_race(github):
 def test_edit_changed_meanwhile(github):
     snapshot = github.head
     files = github.files_at(snapshot)
-    files[cb.EDITS_PATHS[0]] = _edits({**EDITS, "Mini Doomer": {"hp": 4, "note": "checked", "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATH] = _edits({**EDITS, "Mini Doomer": {"hp": 4, "note": "checked", "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
     text, commits = cb.run(head=snapshot, card="Mini Doomer")
     assert commits == [] and "edit-changed: the edit changed on main meanwhile" in text
@@ -511,22 +512,22 @@ def test_pending_is_the_schedule_gate(github):
     cb.run()
     assert cb.pending() == []
     files = github.files_at(github.head)
-    data = json.loads(files[cb.EDITS_PATHS[0]].decode("utf-8"))
+    data = json.loads(files[cb.EDITS_PATH].decode("utf-8"))
     data["cards"]["Beldam"]["series"] = "Paper Mario"                       # database-only: nothing to bake
-    files[cb.EDITS_PATHS[0]] = cb.dump_edits(data).encode("utf-8")
+    files[cb.EDITS_PATH] = cb.dump_edits(data).encode("utf-8")
     github.commit(files, "web", "Website edit: Beldam")
     assert cb.pending() == []
     data["cards"]["Nobody"]["hp"] = 4                                       # a refused value changed
     data["cards"]["Mini Doomer"]["atk"] = 2                                 # a new PSD field
-    files[cb.EDITS_PATHS[0]] = cb.dump_edits(data).encode("utf-8")
+    files[cb.EDITS_PATH] = cb.dump_edits(data).encode("utf-8")
     files[FREEZER] = files[FREEZER] + b"\0"                                 # a refused card's PSD changed
     github.commit(files, "web", "Website edit: Nobody, Mini Doomer; The Freezer's art")
     assert cb.pending() == ["Mini Doomer", "Nobody", "The Freezer"]
     data["cards"]["Mini Doomer"]["_psd"] = {"state": "baked", "for": {"atk": 2}, "psd": "01234567", "reason": "x", "at": AT}
-    files[cb.EDITS_PATHS[0]] = cb.dump_edits(data).encode("utf-8")
+    files[cb.EDITS_PATH] = cb.dump_edits(data).encode("utf-8")
     github.commit(files, "web", "Website edit: a baked verdict beside a field")
     assert "Mini Doomer" in cb.pending()                                    # only a refusal is final
-    files[cb.EDITS_PATHS[0]] = b"not json"
+    files[cb.EDITS_PATH] = b"not json"
     github.commit(files, "web", "Website edit: broken")
     with pytest.raises(ValueError):                                         # the gate step fails: Discord is told
         cb.pending()
@@ -536,14 +537,14 @@ def test_pending_run_skips_final_verdicts(github):
     """--pending (the schedule): a card whose refused verdict still holds is not looked at again; a dispatch re-checks it."""
     cb.run()
     files = github.files_at(github.head)
-    data = json.loads(files[cb.EDITS_PATHS[0]].decode("utf-8"))
+    data = json.loads(files[cb.EDITS_PATH].decode("utf-8"))
     data["cards"]["The Freezer"]["_psd"]["reason"] = "stars: changed by hand"   # a re-check would rewrite it
-    files[cb.EDITS_PATHS[0]] = cb.dump_edits(data).encode("utf-8")
+    files[cb.EDITS_PATH] = cb.dump_edits(data).encode("utf-8")
     github.commit(files, "web", "Website edit: a verdict")
     github.calls.clear()
     text, commits = cb.run(pending_only=True)
     assert commits == [] and "4 with PSD fields, 4 refused before (not re-checked)" in text
-    assert not [route for _, route in github.calls if route.startswith("git/blobs/") and route != "git/blobs/" + _sha(files[cb.EDITS_PATHS[0]])]
+    assert not [route for _, route in github.calls if route.startswith("git/blobs/") and route != "git/blobs/" + _sha(files[cb.EDITS_PATH])]
     text, commits = cb.run()
     assert len(commits) == 1 and "not re-checked" not in text                # the dispatch rewrote The Freezer's verdict
     assert _edits_at(github)["cards"]["The Freezer"]["_psd"]["reason"] != "stars: changed by hand"
@@ -576,7 +577,7 @@ def test_redundant_name_is_dropped(github):
     """A name the card prints is redundant like any field (the bot reads the title): dropped with its verdict, once."""
     baked = {"state": "baked", "for": {"name": "Mini Doomer"}, "psd": "01234567", "reason": "name 'x' -> 'Mini Doomer'", "at": AT}
     files = github.files_at(github.head)
-    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"name": "Mini Doomer", "note": "n", "_psd": baked, "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"name": "Mini Doomer", "note": "n", "_psd": baked, "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: something else")
     text, commits = cb.run()
     assert len(commits) == 1 and github.commits[commits[0]]["message"] == "Card edits: 1 redundant"
@@ -586,7 +587,7 @@ def test_redundant_name_is_dropped(github):
     assert cb.run()[1] == []
     # a name alone: the entry goes whole
     files = github.files_at(github.head)
-    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"name": "Mini Doomer", "_psd": {**baked, "state": "refused"}, "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"name": "Mini Doomer", "_psd": {**baked, "state": "refused"}, "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: again")
     text, commits = cb.run()
     assert len(commits) == 1 and "Mini Doomer" not in _edits_at(github)["cards"]
@@ -597,7 +598,7 @@ def test_a_printed_value_is_dropped_though_numbered_pngs_share_the_psd(github):
     before the duplicate gate, so the value is dropped (no bake, no PNG needed) instead of refused for good; a refusal
     written before the check (no "printed") is looked at again."""
     files = github.files_at(github.head)
-    files[cb.EDITS_PATHS[0]] = _edits({"A Snack": {"hp": 5, "note": "n", "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATH] = _edits({"A Snack": {"hp": 5, "note": "n", "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: A Snack")
     text, commits = cb.run()
     assert len(commits) == 1 and "already on the card: hp" in text
@@ -606,7 +607,7 @@ def test_a_printed_value_is_dropped_though_numbered_pngs_share_the_psd(github):
     old = {"state": "refused", "for": {"hp": 1}, "psd": _sha(files[SNACK])[:8], "reason": "duplicate: numbered PNGs "
            "share the PSD: A_Snack2.png", "at": AT}
     files = github.files_at(github.head)
-    files[cb.EDITS_PATHS[0]] = _edits({**data["cards"], "A Snack": {"hp": 1, "_psd": old, "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATH] = _edits({**data["cards"], "A Snack": {"hp": 1, "_psd": old, "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: old verdict")
     assert "A Snack" in cb.pending()                                            # no "printed": looked at again
     cb.run()
@@ -650,9 +651,9 @@ def test_cap_leaves_the_rest_for_the_next_run(github, monkeypatch):
     monkeypatch.setattr(cb, "BUDGET", timedelta(minutes=40))
 
     files = github.files_at(github.head)
-    data = json.loads(files[cb.EDITS_PATHS[0]].decode("utf-8"))
+    data = json.loads(files[cb.EDITS_PATH].decode("utf-8"))
     data["cards"]["Mini Doomer"]["hp"] = 8
-    files[cb.EDITS_PATHS[0]] = cb.dump_edits(data).encode("utf-8")
+    files[cb.EDITS_PATH] = cb.dump_edits(data).encode("utf-8")
     github.commit(files, "web", "Website edit: Mini Doomer")
 
     def apply_jobs(old_psd, old_png, rel, jobs, parsed, parser, new_dir, *args, **kwargs):
@@ -679,7 +680,7 @@ def test_font_verdict_is_retried_when_the_fonts_change(github, monkeypatch):
     files = github.files_at(github.head)
     files["MDW/Fonts/Some Face.ttf"] = b"face"
     files["MDW/Fonts/stoogedings-src/x.svg"] = b"not installed"
-    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"hp": 8, "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 8, "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
     monkeypatch.setattr(pe, "apply_jobs", lambda *args, **kwargs: (_ for _ in ()).throw(pe.Refused("font", "no Some Face")))
     monkeypatch.setattr(pe, "text_engine", lambda: True)
@@ -700,7 +701,7 @@ def test_font_verdict_is_retried_when_the_fonts_change(github, monkeypatch):
 def test_pixel_miss_bakes_with_a_note(github, monkeypatch):
     """A box past the parity bar, under the floor, bakes (owner, 2026-10-23): the commit note and the report say so."""
     files = github.files_at(github.head)
-    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"hp": 8, "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 8, "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
     miss = {"bad_pct": 1.9725, "mean": 1.5955, "max": 217}
 
@@ -729,7 +730,7 @@ def test_fx_notes_reach_the_commit_and_the_verdict(github, clone, monkeypatch):
     if not (clone / pe.STATUS_CHART).exists():
         pytest.skip("no status chart")
     files[pe.STATUS_CHART] = (clone / pe.STATUS_CHART).read_bytes()
-    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"ability": "Die.", "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"ability": "Die.", "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
     ok = {"bad_pct": 0.0, "mean": 0.5, "max": 7}
     note = "Ability FX: (BOT) deleted: its words left the ability"
@@ -760,7 +761,7 @@ def test_fx_notes_reach_a_partial_verdict(github, clone, monkeypatch):
     if not (clone / pe.STATUS_CHART).exists():
         pytest.skip("no status chart")
     files[pe.STATUS_CHART] = (clone / pe.STATUS_CHART).read_bytes()
-    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"ability": "Die.", "stars": 0, "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"ability": "Die.", "stars": 0, "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
     ok = {"bad_pct": 0.0, "mean": 0.5, "max": 7}
     note = "Ability FX: (BOT) deleted: its words left the ability"
@@ -808,7 +809,7 @@ def test_old_bar_verdicts_are_retried(github):
     def verdict(reason: str, rules: str = cb.RULES) -> list:
         entry = {"hp": 8, "_psd": {"state": "refused", "for": {"hp": 8}, "psd": psd, "rules": rules, "reason": reason, "at": AT},
                  "_by": "web", "_at": AT}
-        files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": entry})
+        files[cb.EDITS_PATH] = _edits({"Mini Doomer": entry})
         github.commit(files, "web", "Website edit: a verdict")
         return cb.pending()
     assert verdict("parity: baseline bad 0.11% mean 3.01 max 136") == ["Mini Doomer"]
@@ -834,7 +835,7 @@ def test_a_title_missing_the_bar_bakes_with_a_pixel_note(github, tmp_path):
     files[png] = painted(files[png], pe.name_layer(psd).bbox, 0.1)
     title = pe.read_name(psd)
     name = title[:len(title) - 1] + ("e" if title[len(title) - 1] != "e" else "a")
-    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"name": name, "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"name": name, "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
     text, commits = cb.run()
     message = github.commits[commits[0]]["message"]
@@ -845,7 +846,7 @@ def test_a_title_missing_the_bar_bakes_with_a_pixel_note(github, tmp_path):
     assert (bad > pe.PARITY_BAD_MAX or mean > pe.PARITY_MEAN_MAX) and bad <= pe.PARITY_FLOOR
     assert "; name baked with a pixel difference: bad " in text.split("## Baked (1)", 1)[1]
     after = github.files_at(github.head)
-    assert sorted(p for p in after if after[p] != files.get(p)) == sorted([png, DOOMER, cb.EDITS_PATHS[0]])
+    assert sorted(p for p in after if after[p] != files.get(p)) == sorted([png, DOOMER, cb.EDITS_PATH])
 
 
 @fork
@@ -858,7 +859,7 @@ def test_a_bar_outside_the_card_is_a_final_refusal(github, clone):
     png = GREEN_MAGE[:len(GREEN_MAGE) - 4] + ".png"
     files.update({GREEN_MAGE: at_rev(clone, OFF_CANVAS_MAGE, GREEN_MAGE), png: at_rev(clone, OFF_CANVAS_MAGE, png)})
     files.update(_card_files(clone, PURE_VESSEL))
-    files[cb.EDITS_PATHS[0]] = _edits({"Green Mage": {"hp": 3, "_by": "web", "_at": AT},
+    files[cb.EDITS_PATH] = _edits({"Green Mage": {"hp": 3, "_by": "web", "_at": AT},
                                        "Pure Vessel": {"hp": 3, "note": "checked", "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Green Mage, Pure Vessel")
     report = cb.run_report()
@@ -926,9 +927,9 @@ def test_verdict_skipped_when_edit_changed_before_the_commit(github, monkeypatch
 
     def land(repository, shares, message, dry_run, out_path="", local=None):
         current = github.files_at(github.head)                  # before the commit: The Freezer's edit changes
-        data = json.loads(current[cb.EDITS_PATHS[0]].decode("utf-8"))
+        data = json.loads(current[cb.EDITS_PATH].decode("utf-8"))
         data["cards"]["The Freezer"]["stars"] = 3
-        current[cb.EDITS_PATHS[0]] = cb.dump_edits(data).encode("utf-8")
+        current[cb.EDITS_PATH] = cb.dump_edits(data).encode("utf-8")
         github.commit(current, "web", "Website edit: The Freezer again")
         return real(repository, shares, message, dry_run, out_path, local)
     monkeypatch.setattr(cb, "land", land)
@@ -944,7 +945,7 @@ def test_verdict_skipped_when_edit_changed_before_the_commit(github, monkeypatch
 def test_missing_runner_dependency_is_transient(github, monkeypatch):
     """A runner without scipy or the text extra fails inside apply_jobs with an ImportError: an error, never a verdict."""
     files = github.files_at(github.head)
-    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"hp": 8, "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 8, "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
 
     def no_scipy(*args, **kwargs):
@@ -960,7 +961,7 @@ def test_glow_edit_on_an_older_fork_is_transient(github, monkeypatch):
     """A typed :glow on a runner whose fork predates the halos is the runner's fault: an error and no verdict, so the
     edit bakes once the fork is reinstalled (a `font` verdict waited for MDW/Fonts to change; review 2026-10-24)."""
     files = github.files_at(github.head)
-    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"ability": "Die. [fire:glow]", "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"ability": "Die. [fire:glow]", "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
     monkeypatch.setattr(pe, "text_engine", lambda: True)
     monkeypatch.setattr(pe, "story_sync", lambda: True)
@@ -978,7 +979,7 @@ def test_select_and_snapshot(github):
     assert snapshot.png_for(DOOMER) == (DOOMER[:len(DOOMER) - 4] + ".png", [])
     assert snapshot.png_for(SNACK) == (SNACK[:len(SNACK) - 4] + ".png", ["Items/Heal/2 Stars/A_Snack2.png"])
     assert snapshot.duplicate_of("a snack2") == SNACK and snapshot.duplicate_of("nobody") == ""
-    edits = cb.CardEdits.parse(github.files_at(github.head)[cb.EDITS_PATHS[0]].decode("utf-8"))
+    edits = cb.CardEdits.parse(github.files_at(github.head)[cb.EDITS_PATH].decode("utf-8"))
     cards = cb.select(edits, snapshot)
     assert [c.name for c in cards] == ["A Snack", "A Snack2", "Mini Doomer", "Nobody", "The Freezer"]    # the file's order
     assert cards[2].fields == {"hp": 5} and cards[3].rel == "" and cards[4].psd_sha == snapshot.sha(FREEZER)
@@ -990,14 +991,14 @@ def test_bake_hp_lands_psd_png_and_file(github, tmp_path):
     """One stat bake end to end: PSD + PNG + the file in one commit, the verdict beside the fields that stay."""
     from psd_tools import PSDImage
     files = github.files_at(github.head)
-    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"hp": 8, "note": "checked", "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 8, "note": "checked", "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
     text, commits = cb.run()
     assert len(commits) == 1 and github.commits[commits[0]]["message"] == "Card edits: 1 baked\n\n- Mini Doomer: hp 5 -> 8\n\nEdit-by: web"
     after = github.files_at(github.head)
     changed = sorted(p for p in after if after[p] != files.get(p))
-    assert changed == [DOOMER[:len(DOOMER) - 4] + ".png", DOOMER, cb.EDITS_PATHS[0]]
-    data = json.loads(after[cb.EDITS_PATHS[0]].decode("utf-8"))
+    assert changed == [DOOMER[:len(DOOMER) - 4] + ".png", DOOMER, cb.EDITS_PATH]
+    data = json.loads(after[cb.EDITS_PATH].decode("utf-8"))
     verdict = data["cards"]["Mini Doomer"].pop("_psd")
     assert data["cards"]["Mini Doomer"] == {"note": "checked", "_by": "web", "_at": AT}
     assert verdict["state"] == "baked" and verdict["for"] == {"hp": 8} and verdict["psd"] == _sha(after[DOOMER])[:8]
@@ -1027,7 +1028,7 @@ def test_a_bake_opens_each_psd_once(github, clone, monkeypatch):
     if not (clone / pe.STATUS_CHART).exists():
         pytest.skip("no status chart")
     files[pe.STATUS_CHART] = (clone / pe.STATUS_CHART).read_bytes()
-    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"hp": 8, "ability": "Die.", "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 8, "ability": "Die.", "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
     seen, inner = Counter(), PSDImage.open.__func__
 
@@ -1057,7 +1058,7 @@ def test_stars_and_types_bake(github, clone):
     one Types/ PNG the run fetches), the entry gone."""
     files = github.files_at(github.head)
     files["Types/fire.png"] = (clone / "Types" / "fire.png").read_bytes()
-    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"stars": 3, "types": ["wind", "light", "defensive_minion", "fire"],
+    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"stars": 3, "types": ["wind", "light", "defensive_minion", "fire"],
                                                        "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
     text, commits = cb.run()
@@ -1075,13 +1076,13 @@ def test_a_refused_stars_edit_leaves_the_hp_bake(github):
     """A stars edit the bake refuses no longer refuses the card: hp bakes, the stars stay in the file with a refused
     verdict on the PSD the commit leaves (final: not pending), and the commit line says why."""
     files = github.files_at(github.head)
-    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"hp": 8, "stars": 0, "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 8, "stars": 0, "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
     text, commits = cb.run()
     why = "unsupported-card: stars: a card shows at least one"
     assert github.commits[commits[0]]["message"] == f"Card edits: 1 baked\n\n- Mini Doomer: hp 5 -> 8; stars not baked: {why}\n\nEdit-by: web"
     after = github.files_at(github.head)
-    entry = json.loads(after[cb.EDITS_PATHS[0]].decode("utf-8"))["cards"]["Mini Doomer"]
+    entry = json.loads(after[cb.EDITS_PATH].decode("utf-8"))["cards"]["Mini Doomer"]
     verdict = entry.pop("_psd")
     assert entry == {"stars": 0, "_by": "web", "_at": AT}
     assert (verdict["state"], verdict["for"], verdict["psd"], verdict["reason"]) == ("refused", {"stars": 0}, _sha(after[DOOMER])[:8], why)
@@ -1093,7 +1094,7 @@ def test_a_refused_stars_edit_leaves_the_hp_bake(github):
 def test_a_stars_edit_refused_by_its_gates_leaves_the_rest(github, monkeypatch):
     """A refusal from the stars edit's own gates (here gate_outside) drops only it: apply runs again without it."""
     files = github.files_at(github.head)
-    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"hp": 8, "stars": 3, "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 8, "stars": 3, "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
 
     def outside(before, psd, edit):
@@ -1108,7 +1109,7 @@ def test_a_stars_edit_refused_by_its_gates_leaves_the_rest(github, monkeypatch):
     verdict = _edits_at(github)["cards"]["Mini Doomer"]["_psd"]
     assert verdict["for"] == {"stars": 3} and verdict["reason"] == why
     files = github.files_at(github.head)
-    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"stars": 3, "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"stars": 3, "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
     text, commits = cb.run()                                    # alone, the same refusal is the card's
     assert "## Refused (1)" in text and why in text
@@ -1127,7 +1128,7 @@ def test_a_card_refused_after_its_stars_names_both_refusals(github, monkeypatch)
     stars, types = (f"region: {f}: the card changes 9 pixels outside the edited box" for f in ("stars", "types"))
     for fields, last in (({"stars": 3, "types": ["wind", "light"]}, types), ({"stars": 3, "hp": 8}, "unsupported-card: hp: no stat row")):
         files = github.files_at(github.head)
-        files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {**fields, "_by": "web", "_at": AT}})
+        files[cb.EDITS_PATH] = _edits({"Mini Doomer": {**fields, "_by": "web", "_at": AT}})
         github.commit(files, "web", "Website edit: Mini Doomer")
         text, commits = cb.run()
         verdict = _edits_at(github)["cards"]["Mini Doomer"]["_psd"]
@@ -1154,7 +1155,7 @@ def test_dry_run_ability_bake_regenerates_fx_layers(github, tmp_path, clone):
     files = github.files_at(github.head)
     files.update(plain)
     files[pe.STATUS_CHART] = chart.read_bytes()
-    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"ability": old + " Inflict Blazing.", "note": "fx", "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"ability": old + " Inflict Blazing.", "note": "fx", "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer ability")
     started = perf_counter()
     text, commits = cb.run(dry_run=True)
@@ -1184,7 +1185,7 @@ def test_ability_bake_rebuilds_a_badge_card(github, clone):
     files[pe.STATUS_CHART] = chart.read_bytes()
     for ext in (".psd", ".png"):                # with its badge layer, before TTSCardMaker's batch retired it
         files[DOOMER[:-4] + ext] = at_rev(clone, BADGED, DOOMER[:-4] + ext)
-    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"ability": "Die.", "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"ability": "Die.", "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer ability")
     text, commits = cb.run(dry_run=True)
     assert commits == [] and "## Baked (1)" in text and "Would commit: Card edits: 1 baked." in text
@@ -1262,8 +1263,8 @@ def test_local_makes_one_local_commit_and_pushes_nothing(github, local):
     assert rest == sorted(f"git/blobs/{_sha(data)}" for data in cards.values())                # only what the clone lacks
     assert f"One local commit: `{b}` Card edits: 1 redundant, 4 refused (not pushed)." in text and f"- Local: `{local.clone}`" in text
     assert "The checkout is on it." in text
-    edits = (local.clone / cb.EDITS_PATHS[0]).read_bytes()
-    assert _sha(edits) == _files_in(local.clone, b)[cb.EDITS_PATHS[0]]                         # the checkout is on B
+    edits = (local.clone / cb.EDITS_PATH).read_bytes()
+    assert _sha(edits) == _files_in(local.clone, b)[cb.EDITS_PATH]                         # the checkout is on B
 
     before = github.head                                                                        # the live run, for comparison
     cb.run()
@@ -1271,26 +1272,26 @@ def test_local_makes_one_local_commit_and_pushes_nothing(github, local):
     assert strip(json.loads(edits)) == strip(_edits_at(github))
     live = sorted(p for p, data in github.files_at(github.head).items() if github.files_at(before).get(p) != data)
     ours = _git(local.clone, "diff-tree", "--no-commit-id", "-r", "--name-only", b).splitlines()
-    assert ours == live == [cb.EDITS_PATHS[0]]
+    assert ours == live == [cb.EDITS_PATH]
 
 
 def test_local_with_nothing_pending_commits_nothing_and_keeps_verdicts(github, local):
     """A rerun on B: nothing pending, no commit, HEAD stays; a new pending edit gets B2, the refused verdicts kept as they were."""
     _, (b,) = cb.run(local=str(local.clone))
-    verdicts = {k: v["_psd"] for k, v in json.loads((local.clone / cb.EDITS_PATHS[0]).read_bytes())["cards"].items() if "_psd" in v}
+    verdicts = {k: v["_psd"] for k, v in json.loads((local.clone / cb.EDITS_PATH).read_bytes())["cards"].items() if "_psd" in v}
     assert sorted(verdicts) == ["A Snack", "A Snack2", "Nobody", "The Freezer"] and all(v["state"] == "refused" for v in verdicts.values())
     text, commits = cb.run(local=str(local.clone), pending_only=True)
     assert commits == [] and "4 refused before (not re-checked)" in text and _git(local.clone, "rev-parse", "HEAD").strip() == b
     text, commits = cb.run(local=str(local.clone))                                              # re-checked: the same verdicts
     assert commits == [] and _git(local.clone, "rev-parse", "HEAD").strip() == b
 
-    data = json.loads((local.clone / cb.EDITS_PATHS[0]).read_bytes())                           # a website edit after B
+    data = json.loads((local.clone / cb.EDITS_PATH).read_bytes())                           # a website edit after B
     data["cards"]["Mini Doomer"]["hp"] = 5
-    _put(local.clone, {cb.EDITS_PATHS[0]: cb.dump_edits(data).encode("utf-8")})
+    _put(local.clone, {cb.EDITS_PATH: cb.dump_edits(data).encode("utf-8")})
     c = _commit_in(local.clone, "Website edit: Mini Doomer")
     text, commits = cb.run(local=str(local.clone), pending_only=True)
     assert len(commits) == 1 and _git(local.clone, "rev-parse", f"{commits[0]}^").strip() == c
-    after = json.loads((local.clone / cb.EDITS_PATHS[0]).read_bytes())["cards"]
+    after = json.loads((local.clone / cb.EDITS_PATH).read_bytes())["cards"]
     assert after["Mini Doomer"] == {"note": "checked", "_by": "web", "_at": AT}
     assert {k: v["_psd"] for k, v in after.items() if "_psd" in v} == verdicts                    # byte for byte, dates too
     assert _git(local.origin, "rev-parse", "main").strip() == local.head
@@ -1301,7 +1302,7 @@ def test_local_dry_run_and_a_dirty_checkout(github, local, tmp_path):
     text, commits = cb.run(dry_run=True, local=str(local.clone))
     assert commits == [] and "Would commit: Card edits: 1 redundant, 4 refused." in text
     assert _git(local.clone, "rev-parse", "HEAD").strip() == local.head and not _git(local.clone, "status", "--porcelain")
-    path = local.clone / cb.EDITS_PATHS[0]
+    path = local.clone / cb.EDITS_PATH
     path.write_bytes(path.read_bytes() + b" ")
     out = StringIO()
     with contextlib.redirect_stdout(out):
@@ -1363,15 +1364,15 @@ def test_local_recent_gate_reads_the_clone(local, monkeypatch):
 @fork
 def test_local_bake_lands_psd_png_and_file_in_b(github, local):
     """A real bake with --local: B holds the PSD, the PNG and the file; the verdict names B's PSD blob."""
-    data = json.loads((local.clone / cb.EDITS_PATHS[0]).read_bytes())
+    data = json.loads((local.clone / cb.EDITS_PATH).read_bytes())
     data["cards"] = {"Mini Doomer": {"hp": 8, "note": "checked", "_by": "web", "_at": AT}}
-    _put(local.clone, {cb.EDITS_PATHS[0]: cb.dump_edits(data).encode("utf-8")})
+    _put(local.clone, {cb.EDITS_PATH: cb.dump_edits(data).encode("utf-8")})
     _commit_in(local.clone, "Website edit: Mini Doomer")
     text, (b,) = cb.run(local=str(local.clone))
     assert _git(local.clone, "log", "-1", "--format=%B", b).strip() == "Card edits: 1 baked\n\n- Mini Doomer: hp 5 -> 8\n\nEdit-by: web"
     changed = _git(local.clone, "diff-tree", "--no-commit-id", "-r", "--name-only", b).splitlines()
-    assert changed == sorted([DOOMER[:len(DOOMER) - 4] + ".png", DOOMER, cb.EDITS_PATHS[0]])
-    verdict = json.loads((local.clone / cb.EDITS_PATHS[0]).read_bytes())["cards"]["Mini Doomer"]["_psd"]
+    assert changed == sorted([DOOMER[:len(DOOMER) - 4] + ".png", DOOMER, cb.EDITS_PATH])
+    verdict = json.loads((local.clone / cb.EDITS_PATH).read_bytes())["cards"]["Mini Doomer"]["_psd"]
     assert verdict["state"] == "baked" and verdict["psd"] == _files_in(local.clone, b)[DOOMER][:8]
     assert not (local.clone / DOOMER).exists()                                                  # sparse: not checked out
     assert not [m for m, _ in github.calls if m != "GET"]
@@ -1396,14 +1397,13 @@ def third_party_imports(code: str, cwd) -> set:
     return set(ast.literal_eval(done.stdout.strip()))
 
 
-FORK_WORKFLOWS = ("card-guards.yml", "card-sync.yml", "card-preview.yml", "card-check.yml",
-                  "font-check.yml")                                    # install requirements-cards.txt
+FORK_WORKFLOWS = ("card-guards.yml", "card-sync.yml", "card-preview.yml")   # install requirements-cards.txt
+FORK_ACTION = ".github/actions/cards-python/action.yml"                 # their one setup (2026-10-25)
 FORK_PYTHON = "3.14"                                                    # every Action (owner, 2026-10-24)
 FORK_WHEELS = "~/.cache/card-wheels"
 FORK_KEY = ("cards-${{ hashFiles('bot/requirements-cards.txt') }}-${{ runner.os }}-${{ runner.arch }}"
-            "-py${{ steps.python.outputs.python-version }}")             # one entry for the five
+            "-py${{ steps.python.outputs.python-version }}")             # one entry for all
 BY_NAME = "sed 's/ @ [^;]*//' bot/requirements-cards.txt > \"$RUNNER_TEMP/cards.txt\""
-NO_OXIPNG = "sed -e 's/ @ [^;]*//' -e '/^pyoxipng/d' bot/requirements-cards.txt > \"$RUNNER_TEMP/cards.txt\""   # card-preview's
 
 
 def card_pin() -> str:
@@ -1416,14 +1416,47 @@ def card_pin() -> str:
     return pins[0]
 
 
+def _uses_setup(step) -> bool:
+    return step.get("uses") == "./" + FORK_ACTION.rsplit("/", 1)[0]
+
+
+def fork_action(workflows) -> str:
+    """
+    The card workflows' one setup (.github/actions/cards-python): Python 3.14; requirements-cards.txt's wheels restored by
+    the file's hash, runner and Python (one entry for all), built only on a miss, installed offline by name with uv (pip
+    builds a URL line from git again), saved only after they installed.
+
+    Returns:
+        The cache key.
+    """
+    yaml = pytest.importorskip("yaml")
+    steps = yaml.safe_load((workflows.parent.parent / FORK_ACTION).read_text(encoding="utf-8"))["runs"]["steps"]
+    python, restore, uv, install, save = steps
+    assert python["uses"].startswith("actions/setup-python@") and python["id"] == "python"
+    assert python["with"] == {"python-version": FORK_PYTHON}                   # no pip cache
+    assert restore["uses"].startswith("actions/cache/restore@") and restore["id"] == "wheels"
+    assert restore["with"] == {"path": FORK_WHEELS, "key": FORK_KEY}
+    assert uv["uses"].startswith("astral-sh/setup-uv@") and uv["with"]["enable-cache"] is False
+    run = install["run"]
+    assert install["env"]["HIT"] == "${{ steps.wheels.outputs.cache-hit }}" and '"$HIT"' in run
+    assert run.index("pip wheel -q -w ~/.cache/card-wheels -r bot/requirements-cards.txt") < run.index(BY_NAME)
+    assert run.index(BY_NAME) < run.index('uv pip install -q --no-index -f ~/.cache/card-wheels -r "$RUNNER_TEMP/cards.txt"')
+    assert save["uses"].startswith("actions/cache/save@") and save["if"].startswith("steps.wheels.outputs.cache-hit != 'true'")
+    assert save["with"] == {"path": FORK_WHEELS, "key": "${{ steps.wheels.outputs.cache-primary-key }}"}
+    with TemporaryDirectory() as tmp:          # the copy pip installs, made by the step's own sed
+        (Path(tmp) / "bot").mkdir()
+        shutil.copy(REPO / "requirements-cards.txt", Path(tmp) / "bot")
+        run_process(["bash", "-c", BY_NAME], cwd=tmp, env={**environ, "RUNNER_TEMP": tmp}, check=True, timeout=30)
+        copy = [line for line in (Path(tmp) / "cards.txt").read_text(encoding="utf-8").splitlines() if line and line[0] != "#"]
+    assert copy[0] == "psd-tools[composite,text]" and " @ " not in "\n".join(copy)
+    return restore["with"]["key"]
+
+
 def fork_install(path) -> str:
     """
-    A workflow's install of requirements-cards.txt (the psd-tools fork's one pin), as the five share it, in every job that
-    installs (card-guards: its check and post jobs): the file checked out of AutoCroissant, no pin of the workflow's own;
-    Python 3.14; its wheels restored by the file's hash, runner and Python (one entry for all five), built only on a miss,
-    installed offline by name with uv (pip builds a URL line from git again; card-preview without pyoxipng: it would
-    recompress a PNG it never publishes), no other install; saved only after they installed. card-sync: one environment
-    (a venv) for every stage, no second Python.
+    A workflow's install of requirements-cards.txt (the psd-tools fork's one pin): every job that installs uses the shared
+    setup (fork_action) after a bot checkout bringing the file; no pin of the workflow's own, no other install
+    (card-preview skips pyoxipng: it would recompress a PNG it never publishes).
 
     Returns:
         The cache key.
@@ -1431,64 +1464,27 @@ def fork_install(path) -> str:
     text = path.read_text(encoding="utf-8")
     assert "PSD_TOOLS_REF" not in text and "MichaelJSr/psd-tools" not in text, f"{path.name}: the pin is requirements-cards.txt's"
     assert not re.search(r"cards-\d{8}", text), f"{path.name}: no fork tag of its own"
-    assert not re.search(r"pip install [^\n]*psd-tools", text), f"{path.name}: no stock psd-tools"
+    assert not re.search(r"pip install", text), f"{path.name}: no install of its own"
     yaml = pytest.importorskip("yaml")
-    by_name = NO_OXIPNG if path.name == "card-preview.yml" else BY_NAME
-    installs, written = 0, set()                  # jobs that install; install steps as written (an alias repeats one)
+    installs = 0
     for job in yaml.safe_load(text)["jobs"].values():
-        steps = job.get("steps", [])              # none in a call of a reusable workflow (caches.yml)
-        restores = [i for i, s in enumerate(steps)
-                    if s.get("uses", "").startswith("actions/cache/restore@") and s.get("with", {}).get("path") == FORK_WHEELS]
-        if not restores:
+        steps = job.get("steps", [])
+        setups = [i for i, s in enumerate(steps) if _uses_setup(s)]
+        if not setups:
             continue
-        (first,) = restores
         installs += 1
-        bot = [s for s in steps if s.get("with", {}).get("repository") in ("bobberlington/AutoCroissant", "${{ env.BOT_REPO }}")
+        bot = [i for i, s in enumerate(steps) if s.get("with", {}).get("repository") in ("bobberlington/AutoCroissant", "${{ env.BOT_REPO }}")
                and "/requirements-cards.txt" in s["with"]["sparse-checkout"].split()]
-        assert len(bot) == 1, f"{path.name}: the bot checkout brings requirements-cards.txt"
-        pythons = [s for s in steps if s.get("uses", "").startswith("actions/setup-python@")]
-        assert len(pythons) == 1 and pythons[0].get("id") == "python", f"{path.name}: one Python a job"
-        assert pythons[0]["with"] == {"python-version": FORK_PYTHON}, path.name          # no pip cache
-        restore = steps[first]
-        assert restore["id"] == "wheels" and restore["with"]["key"] == FORK_KEY
-        install = next(i for i, s in enumerate(steps) if " wheel -q -w " in s.get("run", ""))
-        run = steps[install]["run"]
-        written.add(id(steps[install]))
-        assert by_name in run, f"{path.name}: the install's copy by name"
-        assert steps.index(bot[0]) < steps.index(pythons[0]) < first < install and restore.get("if") == steps[install].get("if")
-        assert steps[install]["env"]["HIT"] == "${{ steps.wheels.outputs.cache-hit }}" and '"$HIT"' in run
-        wheel = re.findall(r'^.*pip wheel -q -w ~/\.cache/card-wheels -r bot/requirements-cards\.txt$', run, re.M)
-        assert len(wheel) == 1 and run.index(wheel[0]) < run.index(by_name)
-        pips = re.findall(r'pip"? install [^\n]*', run)
-        assert len(pips) == 1 and pips[0].endswith(' install -q --no-index -f ~/.cache/card-wheels -r "$RUNNER_TEMP/cards.txt"')
-        assert run.index(by_name) < run.index(pips[0]) and "uv pip install" in run
-        uv = [s for s in steps if s.get("uses", "").startswith("astral-sh/setup-uv@")]     # uv, without a cache of its own
-        assert len(uv) == 1 and first < steps.index(uv[0]) < install and uv[0].get("if") == restore.get("if")
-        assert uv[0]["with"]["enable-cache"] is False and re.fullmatch(r"\d+\.\d+\.\d+", uv[0]["with"]["version"])
-        target = "${{ runner.temp }}/venv/bin/python" if path.name == "card-sync.yml" else "${{ steps.python.outputs.python-path }}"
-        assert steps[install]["env"]["UV_PYTHON"] == target, path.name
-        save = next(i for i, s in enumerate(steps) if s.get("uses", "").startswith("actions/cache/save@"))
-        assert save > install and steps[save]["with"] == {"path": FORK_WHEELS, "key": "${{ steps.wheels.outputs.cache-primary-key }}"}
-        assert steps[save]["if"].startswith(("steps.wheels.outputs.cache-hit != 'true'", "steps.venv.outputs.wheels == 'built'"))
-        if path.name == "card-sync.yml":    # one environment: every stage's python is the venv's
-            assert 'python -m venv "$RUNNER_TEMP/venv"' in run and "commands.$module" in run
-            assert "builder/bin" not in text and "baker" not in text and "python3." not in text
-            assert set(re.findall(r'"\$RUNNER_TEMP/(\w+)/bin/python"', text)) == {"venv"}
+        assert len(bot) == 1 and bot[0] < setups[0], f"{path.name}: the bot checkout brings requirements-cards.txt first"
+        assert ("pyoxipng" in (steps[setups[0]].get("with") or {}).get("skip", "")) == (path.name == "card-preview.yml")
     assert installs, f"{path.name}: installs requirements-cards.txt"
-    assert len(re.findall(r'pip"? install [^\n]*', text)) == len(written), f"{path.name}: no other install"
-    with TemporaryDirectory() as tmp:          # the copy pip installs, made by the step's own sed
-        (Path(tmp) / "bot").mkdir()
-        shutil.copy(REPO / "requirements-cards.txt", Path(tmp) / "bot")
-        run_process(["bash", "-c", by_name], cwd=tmp, env={**environ, "RUNNER_TEMP": tmp}, check=True, timeout=30)
-        copy = [line for line in (Path(tmp) / "cards.txt").read_text(encoding="utf-8").splitlines() if line and line[0] != "#"]
-    assert copy[0] == "psd-tools[composite,text]" and " @ " not in "\n".join(copy)
-    assert any(line.startswith("pyoxipng==") for line in copy) == (by_name == BY_NAME), path.name
-    return FORK_KEY
+    return fork_action(path.parent)
 
 
 def test_every_action_runs_python_314():
     """Owner, 2026-10-24: every card repo Action on Python 3.14 (setup-python in each job that runs Python; none on the
-    runner's own python3), and the five card workflows install requirements-cards.txt with one cache entry."""
+    runner's own python3, the shared setup counting as one), and the card workflows install requirements-cards.txt with
+    one cache entry."""
     workflows = WORKFLOW.parent
     if not workflows.is_dir():
         pytest.skip(f"no {workflows}")
@@ -1498,6 +1494,7 @@ def test_every_action_runs_python_314():
         for name, job in yaml.safe_load(text)["jobs"].items():
             runs = "\n".join(s.get("run", "") for s in job.get("steps", []))
             versions = [s["with"]["python-version"] for s in job.get("steps", []) if s.get("uses", "").startswith("actions/setup-python@")]
+            versions += [FORK_PYTHON for s in job.get("steps", []) if _uses_setup(s)]
             assert versions in ([], [FORK_PYTHON]), (path.name, name, versions)
             assert not re.search(r"(^|[\s(])python3(\.\d+)? ", runs), (path.name, name)       # the runner's own Python
             if re.search(r"(^|[\s(\"])python -", runs):

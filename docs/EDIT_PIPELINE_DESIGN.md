@@ -1000,8 +1000,8 @@ clone with the unit's `SSH_AUTH_SOCK` when the token can't write); never `log --
 (git 2.25 downloads every blob; it grew to 4 GB once). Still to do, only if the fallback is ever needed (orchestrator): install the fork tag into
 `~/venvs/autocroissant` (aarch64 wheels resolve; `_rle` builds with gcc 10.5; stock psd-tools 1.25.0 there on 2026-10-21)
 once `tests/test_parser_goldens.py` passes under it; fonts on the jetson are done (B11, 2026-10-21: `card_bake._fonts_dir()`
-reads `PSD_TOOLS_FONT_DIRS`, else `LOCAL_DIR_LOC/MDW/Fonts`, else `fonts_cache/` brought to the snapshot's MDW/Fonts by blob
-sha, `font_check.refresh_cache`; a font that fails to download is a try-again, never a `font` verdict); the work dir
+reads `PSD_TOOLS_FONT_DIRS`, else `LOCAL_DIR_LOC/MDW/Fonts`, and until 2026-10-25 `fonts_cache/` brought to the snapshot's
+MDW/Fonts by blob sha, `font_check.refresh_cache`); the work dir
 is a fresh `mkdtemp(prefix="card-bake_")` per run there, `RUNNER_TEMP` on the Action); one live bake with Actions disabled; the
 CPU/RAM peak. Costs: 4 shared cores, 6.8 GB total (4.2 GB free on 2026-10-21; peak to confirm), 20-85 MB uploads, the
 reminder's cadence (daily `/update_stats` at 5AM).

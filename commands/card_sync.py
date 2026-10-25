@@ -24,7 +24,7 @@ try:
     import config
 except ImportError:                                  # tests and scripts without config.py
     config = None
-from global_config import (AUTHORS_PATHS, CARD_BRANCH, CARD_DATA_DIR, CARD_REPO, CREATED_PATHS, DATA_BRANCH, EDITS_PATHS,
+from global_config import (AUTHORS_PATH, CARD_BRANCH, CARD_DATA_DIR, CARD_REPO, CREATED_PATH, DATA_BRANCH, EDITS_PATH,
                            ICON_MANIFEST_PATH, RULES_PATH, TYPES_DIR)
 from commands import card_db
 from commands.github_api import HEADERS, api_url, get_with_retry, session
@@ -49,7 +49,7 @@ WAITING = ("queued", "pending", "waiting", "requested")   # a run not started ye
 FAILED = ("failure", "timed_out", "startup_failure")
 BOT_LOGIN = "github-actions[bot]"                    # GITHUB_TOKEN dispatches (Card sync's retry, card-guards)
 FONTS_PREFIX = "MDW/Fonts/"                           # its top-level files only (the gate's MDW/Fonts/*)
-CARD_FILES = {ICON_MANIFEST_PATH, RULES_PATH, *AUTHORS_PATHS, *EDITS_PATHS, *CREATED_PATHS}
+CARD_FILES = {ICON_MANIFEST_PATH, RULES_PATH, AUTHORS_PATH, EDITS_PATH, CREATED_PATH}
 REFRESH_SECONDS = 120                                # on use: the data branch looked at most this often
 READERS = frozenset({                                # the slash commands that read card data (on_use); autocomplete too
     "export_cards", "export_rulebook", "fonts", "frankenstein", "list_orphans", "query", "query_ability",

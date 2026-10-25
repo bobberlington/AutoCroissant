@@ -4,22 +4,19 @@ Dates.json (dates only; "from": "hand" entries kept). Re-run after rulings, revi
 
     python -m commands.discord_edits created [--archive ~/Documents/Tools/discord-archive] [--repo <card repo checkout>]
         [--out FILE]
-
-The Discord card edits (/update_metadata, /mass_replace, /alias) and the aliases.pkl migration are on branch
-archive/discord-edits: cards are edited on the website.
 """
 from argparse import ArgumentParser
 from json import loads
 from typing import Optional
 
 from commands.card_edits import CardAuthors, CardDates, dump_edits
-from global_config import CREATED_PATHS, LOCAL_DIR_LOC
+from global_config import CREATED_PATH, LOCAL_DIR_LOC
 
 # ========================
 # Configuration
 # ========================
 BODY_LINES = 40                                 # a report lists at most this many changed cards
-ARCHIVE = "~/Documents/Tools/discord-archive"   # the Discord archive (discord_archive.DEFAULT_OUT; never in a repo)
+ARCHIVE = "~/Documents/Tools/discord-archive"   # the Discord archive (mined once, 2026-10; never in a repo)
 SOURCES = {"discord": "discord", "git-first-upload": "git"}    # created_dates.json source -> the file's "from"
 DATES_ABOUT = ("When each card was made: the earlier of its first Discord post and its first upload to this repo (UTC "
                "day); provisional: an open ruling on the Discord archive may still move it. Written by AutoCroissant "
@@ -94,7 +91,7 @@ def _created(options) -> int:
         return 1
     with open(source, encoding="utf-8") as fh:
         created = loads(fh.read())
-    out = expanduser(options.out) if options.out else join(expanduser(options.repo), CREATED_PATHS[0])
+    out = expanduser(options.out) if options.out else join(expanduser(options.repo), CREATED_PATH)
     if not isdir(dirname(out) or "."):
         print(f"No {dirname(out)}: give --repo a card repo checkout, or --out a file.")
         return 1
@@ -125,11 +122,11 @@ def main(args: Optional[list] = None) -> int:
     """The command line: created (the creation dates); commits nothing."""
     parser = ArgumentParser(prog="python -m commands.discord_edits", description="The card repo's creation dates.")
     sub = parser.add_subparsers(dest="command", required=True)
-    dates = sub.add_parser("created", help=f"the Discord archive's creation dates into the card repo's {CREATED_PATHS[0]} "
+    dates = sub.add_parser("created", help=f"the Discord archive's creation dates into the card repo's {CREATED_PATH} "
                                            "(written in place, never committed)")
     dates.add_argument("--archive", default=ARCHIVE, help="the Discord archive holding created_dates.json (default %(default)s)")
     dates.add_argument("--repo", default=LOCAL_DIR_LOC, help="the card repo checkout to write (default %(default)s)")
-    dates.add_argument("--out", help=f"write this file instead of <repo>/{CREATED_PATHS[0]}")
+    dates.add_argument("--out", help=f"write this file instead of <repo>/{CREATED_PATH}")
     return _created(parser.parse_args(args))
 
 

@@ -27,8 +27,8 @@ content problem (text that won't fit, a typed badge or token, a styled word, a f
 bakes at most MAX_BAKES cards and starts none after BUDGET (the rest are refused `capped` and wait for the next run).
 The report goes to stdout, the artifacts (edited PSD, merged PNG, before/after/diff crops, the rewritten file) to the
 work dir. The runner supplies the token
-(GITHUB_TOKEN, or config.GIT_TOKEN on the bot), the fonts (PSD_TOOLS_FONT_DIRS; else the checkout's MDW/Fonts, else the
-fonts cache by sha, font_check.refresh_cache) and the work dir (RUNNER_TEMP).
+(GITHUB_TOKEN, or config.GIT_TOKEN on the bot), the fonts (PSD_TOOLS_FONT_DIRS; else the checkout's MDW/Fonts) and the
+work dir (RUNNER_TEMP).
 No Discord or config imports; never the pickles; --dry-run commits nothing. GitHub, git and runner failures (a 5xx,
 a rate limit, no text engine) are reported but never written as a verdict; such a card error, or a commit that failed,
 exits 1 (failure()). A face no file holds is drawn in the fork's stand-in, told (psd_edit.font_map); a `font` verdict
@@ -56,13 +56,13 @@ from requests import RequestException
 
 import commands.github_api as github_api
 import commands.psd_edit as psd_edit
-from commands.card_edits import ORDER, PUNCTUATION, CardAuthors, CardEdits, _collate, _json, dump_edits  # noqa: F401 (re-exported)
+from commands.card_edits import ORDER, CardAuthors, CardEdits, dump_edits
 from commands.card_models import card_name
 from commands.git_commit import (API_TIMEOUT, COMMIT_TRIES, GIT_TIMEOUT, NO_LAZY, Transient, api, checkout_head, commit_files,
                                  commit_info, git, local_commit, plural, ref_head)
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_edit import Refusal, Refused
-from global_config import (CARD_BRANCH, CARD_REPO, EDITS_PATHS, FONT_DIRS_ENV, ICON_MANIFEST_PATH, LOCAL_DIR_LOC,
+from global_config import (CARD_BRANCH, CARD_REPO, EDITS_PATH, FONT_DIRS_ENV, ICON_MANIFEST_PATH, LOCAL_DIR_LOC,
                            STARS_DIR, TYPES_DIR)
 
 # ========================
@@ -83,7 +83,6 @@ WORK_ENV = "RUNNER_TEMP"                        # the Action's temp dir; the wor
 WORK_NAME = "card-bake"
 FIELDS = frozenset(CardEdits.TYPES)            # ORDER (edit.js FIELDS) and PUNCTUATION live in card_edits
 KIND = CardEdits.KIND
-DISCORD = "discord:"                            # a Discord edit's _by (retired 2026-10-25): credited in no bake trailer
 
 
 # ========================
@@ -162,7 +161,7 @@ class Snapshot:
         for path in tree:
             if path.lower().endswith(".psd") and not any(folder in EXCLUDE_FOLDERS for folder in path.split("/")):
                 self.psds[CardAuthors.key(card_name(path))] = path
-        self.edits_path = next((p for p in EDITS_PATHS if p in tree), None)
+        self.edits_path = EDITS_PATH if EDITS_PATH in tree else None
 
     def sha(self, path: str) -> str:
         """The blob sha of a path in the tree."""
@@ -453,9 +452,9 @@ def land(repository: str, shares: list, message: Callable[[list], str], dry_run:
     for attempt in range(COMMIT_TRIES if local is None else 1):
         tip = local if local is not None else snapshot_at(repository, ref_head(repository))
         head, tree = tip.head, tip.tree
-        edits_path = next((p for p in EDITS_PATHS if p in tree), None)
+        edits_path = EDITS_PATH if EDITS_PATH in tree else None
         if edits_path is None:
-            raise Refused("head-moved", f"no {EDITS_PATHS[0]} on {CARD_BRANCH} `{head[:8]}`")
+            raise Refused("head-moved", f"no {EDITS_PATH} on {CARD_BRANCH} `{head[:8]}`")
         text = tip.fetch(tree[edits_path][1]).decode("utf-8")
         new_text, files = text, {}
         for share in shares:
@@ -508,23 +507,11 @@ def _work_dir() -> str:
 
 
 def _fonts_dir(snapshot: Optional[Snapshot] = None) -> str:
-    """
-    FONT_DIRS_ENV's first dir, else the checkout's MDW/Fonts, else the fonts cache brought to the snapshot's MDW/Fonts.
-
-    Raises Transient when a font file failed to download: a missing face would be refused as a `font` verdict.
-    """
+    """FONT_DIRS_ENV's first dir, else the checkout's MDW/Fonts."""
     dirs = environ.get(FONT_DIRS_ENV, "")
     if dirs:
         return dirs.split(pathsep)[0]
-    checkout = join(snapshot.local if snapshot is not None and snapshot.local else expanduser(LOCAL_DIR_LOC), psd_edit.FONTS_DIR)
-    if isdir(checkout) or snapshot is None:
-        return checkout
-    from commands.font_check import refresh_cache, tree_fonts      # lazy: not in the Action's files
-    fonts = refresh_cache(snapshot.repository, tree_fonts({path: sha for path, (_, sha) in snapshot.tree.items()}))
-    if fonts.failed:
-        name = min(fonts.failed)
-        raise Transient(f"fonts cache: {plural(len(fonts.failed), 'font file')} failed to download ({name}: {fonts.failed[name]})")
-    return fonts.directory
+    return join(snapshot.local if snapshot is not None and snapshot.local else expanduser(LOCAL_DIR_LOC), psd_edit.FONTS_DIR)
 
 
 def vocabulary(snapshot: Snapshot):
@@ -640,15 +627,13 @@ def _describe(card: Card) -> str:
 
 def editors(card: Card) -> list:
     """
-    The logins whose baked fields the commit prints: _by (one login, or {field: login}), sorted, deduplicated. A
-    Discord editor (DISCORD) is no GitHub login: build_site would give it a person page, so it gets no trailer.
+    The logins whose baked fields the commit prints: _by (one login, or {field: login}), sorted, deduplicated.
     """
     if not card.jobs:                           # nothing printed (redundant only): no credit
         return []
     by = card.by
     logins = [by.get(f) for f in card.jobs] if isinstance(by, dict) else [by]
-    return sorted({x.strip() for x in logins if isinstance(x, str) and len(x.split()) == 1   # a login: one word
-                   and not x.strip().lower().startswith(DISCORD)})
+    return sorted({x.strip() for x in logins if isinstance(x, str) and len(x.split()) == 1})   # a login: one word
 
 
 def _message(cards: list) -> str:
@@ -862,7 +847,7 @@ def land_cards(report: Report, dry_run: bool, local: Optional[Snapshot] = None) 
         return
     try:
         report.commit = land(report.repository, shares, lambda included: _message([s.card for s in included]), dry_run,
-                             join(report.work, basename(EDITS_PATHS[0])), local)
+                             join(report.work, basename(EDITS_PATH)), local)
     except Exception as error:                  # noqa: BLE001
         if isinstance(error, Refused):
             failure = error.refusal
@@ -1036,7 +1021,7 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
     if snapshot is None:
         pass
     elif snapshot.edits_path is None:
-        report.note = f"No {EDITS_PATHS[0]} at `{head[:8]}`."
+        report.note = f"No {EDITS_PATH} at `{head[:8]}`."
     else:
         text = snapshot.fetch(snapshot.sha(snapshot.edits_path)).decode("utf-8")
         try:
@@ -1056,7 +1041,7 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
             if card and not cards:
                 report.note = f"No entry with a PSD field for {card!r}."
             if cards:
-                fonts = _fonts_dir(snapshot)    # only now: no card to bake fills no fonts cache
+                fonts = _fonts_dir(snapshot)
                 engine = ("no text engine" if not psd_edit.text_engine()
                           else "text engine" if psd_edit.story_sync() else "text engine without Txt2 story sync")
                 report.lines.append(f"- Runner: psd-tools {PSD_TOOLS_VERSION} ({engine}); fonts `{fonts}`"

@@ -825,6 +825,22 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   always checks out `data` (no `CARD_DATA` switch) and build_site.py lost its pickle loader and `aliases.pkl`.
 - **Status**: built 2026-10-25 on work/pickles in both repos; 46 slash commands. The pickles stay in git history.
 
+### 10.33 The rest of the pickle era and finished tools removed (cleanup, 2026-10-25)
+
+- **Symptom**: after 10.32 the read-only pickle side (10.32's "Kept" list) and several finished one-time tools stayed.
+- **Root cause**: owner rulings 2026-10-25 ~06:00-07:00: delete deprecated and dead code, all pickle-era code included.
+- **Evidence**: branch work/clean. Removed: card_db's allow-list unpickler (`SeedUnpickler`, `load_pickle`,
+  `read_pickles`, `ALLOWED`) and `read_cards`' pickle forms; the build's `--seed` (`_seed_folder`, `_bot_file`,
+  `bot_pickles`, `BOT_CLONE`; `--empty` starts new card data instead) with card_history's PICKLE recovery, seed pass
+  (`refine`, `collapse`, `normalize`, `misreads`) and `refine` CLI; changelog's `history --pickles`; the diagnostics
+  scripts' pickle sides; the rules skill's loadpkl.py; the reminder.pkl conversion; the jetson's fonts cache
+  (`refresh_cache`, `FONTS_CACHE`); `discord_archive.py`, `discord_match.py`, `png_recompress.py`, psd_details' backfill
+  CLI and txt2_repair's `--check`/`--in-place`; the Discord edit credit (`changelog.CREDIT`, `card_bake.DISCORD`); the
+  one-path `*_PATHS` tuples. TTSCardMaker work/clean: card-sync.yml's seed, bootstrap and rollback switches; the card and
+  font checks folded into card-guards.yml's check job. Kept: the reminder shims (`RETIRED_COMMANDS` and the rest), the
+  read-only diagnostics on db/ JSON.
+- **Status**: built 2026-10-25 on work/clean in both repos.
+
 ## How to add an entry
 
 Use this template (the evidence bar — one mechanism must explain ALL observations including negatives, numbers predicted before measured — is owned by autocroissant-research-methodology; retired ideas from the idea lifecycle land here too):

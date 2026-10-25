@@ -147,7 +147,7 @@ def test_the_current_card_from_its_carried_start(db):
     cm.stats_db.old_stats["Tainted Bethany"].pop()
     assert _texts("Tainted Bethany", "2026-10-20")[0].startswith(
         f"**Tainted Bethany** as of 2026-10-20 {HEAD}the current card (version 4 of 4), from 2026-10-19.")
-    assert f"version 2 of 4, from 2026-02-07 (date approximate) until 2026-10-19." in _texts("Tainted Bethany", "2026-02-07")[0]
+    assert "version 2 of 4, from 2026-02-07 (date approximate) until 2026-10-19." in _texts("Tainted Bethany", "2026-02-07")[0]
 
 
 def test_before_the_oldest_version(db):

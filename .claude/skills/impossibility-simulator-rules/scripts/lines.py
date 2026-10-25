@@ -1,5 +1,5 @@
 """Cooldown and uses tags line by line: what shares their line, what comes before (nU), tags not at a line's start,
-(a/bCD) cards. Usage: python3 -I lines.py <cards.json | loadpkl.py dump>"""
+(a/bCD) cards. Usage: python3 -I lines.py <cards.json | db/stats.json>"""
 import collections, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # rows.py (-I drops the script's folder)
 import rows

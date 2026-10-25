@@ -251,11 +251,10 @@ def test_a_duplicate_with_its_own_text_has_its_own_history(bs, repo, tmp_path, m
 
 
 def test_a_recompression_is_no_new_image_version(bs, tmp_path, monkeypatch):
-    """The push guards' commit and the batch name the PNGs they only recompressed in Recompressed trailers (the same
-    image): no image version for those; the guards' re-export in the same commit is one, and a person's commit is
+    """The push guards' commit and the 2026-10-23 batch name the PNGs they only recompressed in Recompressed trailers
+    (the same image): no image version for those; the guards' re-export in the same commit is one, and a person's commit is
     always one, trailer or not."""
     import commands.card_guards as cg
-    import commands.png_recompress as batch
     from PIL import Image
     root = tmp_path / "cards"
     root.mkdir()
@@ -284,7 +283,7 @@ def test_a_recompression_is_no_new_image_version(bs, tmp_path, monkeypatch):
         {"path": bread, "kind": "png", "line": "re-exported by the bot's render of the PSD (12 px changed)"}]}], c2),
         "AutoCroissant")
     save(snack, 20, 9), save(bread, 30, 0)                  # the batch
-    c4 = commit(batch.message([{"path": p, "outcome": "recompressed", "before": 9, "after": 2} for p in (snack, bread)]),
+    c4 = commit(f"Card PNGs: 2 recompressed losslessly\n\n{cg.RECOMPRESSED}: {bread}\n{cg.RECOMPRESSED}: {snack}\n",
                 "AutoCroissant")
     save(snack, 40)
     c5 = commit(f"Snack again\n\n{cg.RECOMPRESSED}: {snack}")
@@ -446,12 +445,12 @@ def test_a_renamed_card_keeps_the_credit_of_the_card_it_became(bs):
 
 def test_card_revisions_leave_out_mass_passes(bs):
     """card_revisions (the person pages): a commit in more than MASS_PASS cards' versions is left out; a bot commit
-    credits its Edit-by logins (not a discord: name), one without trailers nobody; every id of the PNG but skip's gets
+    credits its Edit-by logins, one without trailers nobody; every id of the PNG but skip's gets
     the counts; no history: None."""
     if not hasattr(bs, "card_revisions"):
         pytest.skip(f"{BUILD_SITE} has no revisions")
     row = lambda sha, name, editors=(): (sha, 0, name, f"{name.lower()}@example.com", "s", [], list(editors))
-    commits = [row("mass", "Maker"), row("bot", bs.BOT_AUTHOR, ["alice", "discord:carl"]), row("bare", bs.BOT_AUTHOR), row("bob", "Bob"),
+    commits = [row("mass", "Maker"), row("bot", bs.BOT_AUTHOR, ["alice"]), row("bare", bs.BOT_AUTHOR), row("bob", "Bob"),
                row("up", "Maker")]
     v = lambda sha: ((sha, 0, "x", "s"), "p")
     found = {f"m{i}.png": [v("mass"), v("up")] for i in range(bs.MASS_PASS + 1)}

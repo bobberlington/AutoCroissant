@@ -16,7 +16,7 @@ from conftest import REPO
 FACADE_NAMES = ("CardInfo CardStats CardType StatsDatabase stats_db get_stats_as_dict card_name CardAuthors CardEdits "
                 "PSDParser CardClassifier CardValidator IconVocabulary MutableValue StatTrackers TYPE_REGION_RATIO PARSER_VERSION "
                 "GIT_TOKEN "
-                "ICON_MANIFEST_PATH AUTHORS_PATH AUTHORS_PATHS EDITS_PATH EDITS_PATHS card_repo init_psd list_orphans export_stats_to_file").split()
+                "ICON_MANIFEST_PATH AUTHORS_PATH EDITS_PATH card_repo init_psd list_orphans export_stats_to_file").split()
 
 
 def test_facade_reexports_the_same_objects():

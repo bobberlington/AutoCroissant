@@ -293,7 +293,7 @@ main.py  (registration + queue loops; imports every commands module)
                               GitPython LAZILY inside its functions  (no utils: bypasses queues on purpose, invariant 3)
 
 Outside the bot's import graph (CLIs and TTSCardMaker Actions only; no bot module imports them): card_check,
-card_guards, card_standards, png_export, psd_diff, txt2_repair, discord_archive, discord_match, tts_save and discord_edits
+card_guards, card_standards, png_export, psd_diff, txt2_repair, tts_save and discord_edits
 (since 2026-10-25 only `created`, the creation-dates CLI; /update_metadata, /mass_replace and /alias are on branch
 archive/discord-edits). card_db, card_history and changelog are in it, reached from card_data, card_sync and query_card.
 
