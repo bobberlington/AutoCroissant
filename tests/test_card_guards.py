@@ -1401,7 +1401,7 @@ def test_a_pool_worker_takes_the_token(monkeypatch):
     monkeypatch.setattr(api, "HEADERS", {})
     monkeypatch.setenv("GITHUB_TOKEN", "t0k")
     monkeypatch.setattr(cg, "_worker", {})
-    cg._init_worker("clone", "o/r", None, type("Vocab", (), {"parser": lambda self: None})())
+    cg._init_worker("clone", "o/r", None, type("Vocab", (), {"parser": lambda self: None})(), {}, "")
     assert api.HEADERS["Authorization"] == "token t0k"
 
 
@@ -2204,3 +2204,30 @@ def test_a_composer_fix_is_said_only_in_the_commit(tmp_path, monkeypatch):
     assert "omposer" not in after and "Landed" not in after
     FakeHub({"X/A.psd": ("100644", "moved"), "X/A.png": ("100644", "p1")}).install(monkeypatch)
     assert cg.land(plan)["told"]["X/A.psd"] == []          # dropped: never told either
+
+
+def test_box_text_fonts_fetched_alone(tmp_path, monkeypatch):
+    """R8's box text without a clone's MDW/Fonts: only the files its faces look to be in, a request each, capped; the
+    pool's workers get the checked tree (review 2026-10-25)."""
+    monkeypatch.delenv(cg.FONT_DIRS_ENV, raising=False)
+    names = ["Cambria.ttc", "cambriab.ttf", "Arial.ttf", "ANDYB.TTF", "3367-font.ttf"]
+    tree = {f"MDW/Fonts/{name}": ("100644", f"sha-{name}") for name in names}
+    assert cg.font_files("Cambria-Bold", cg.tree_fonts({p: sha for p, (_, sha) in tree.items()}))[0] == "cambriab.ttf"
+    fetched = []
+    faces = {"cambriab.ttf": ["Cambria-Bold"], "Cambria.ttc": ["Cambria", "CambriaMath"], "Arial.ttf": ["ArialMT"]}
+    monkeypatch.setattr(cg.Source, "blob", lambda self, sha: fetched.append(sha) or sha.encode())
+    monkeypatch.setattr(cg, "face_names", lambda data: faces.get(data.decode()[4:], []))
+    (tmp_path / "fonts").mkdir()
+    source = cg.Source(str(tmp_path / "clone"), "o/r", str(tmp_path / "fonts"))
+    assert source.fonts_for(["Cambria-Bold"]) == ""                 # no checked tree: nothing fetched
+    source.checked = tree
+    assert source.fonts_for(["Cambria-Bold"]) == str(tmp_path / "fonts") and fetched == ["sha-cambriab.ttf"]
+    assert source.fonts_for(["Cambria-Bold", "Wingdings"]) == "" and len(fetched) == 1     # no file looks like it
+    assert sorted(os.listdir(tmp_path / "fonts")) == ["cambriab.ttf"]
+    monkeypatch.setattr(cg, "FONT_FETCH_MAX", 1)
+    assert source.fonts_for(["ArialMT"]) == "" and len(fetched) == 1
+    monkeypatch.setattr(cg, "_worker", {})
+    monkeypatch.setattr(cg, "token_from_env", lambda: None)
+    vocab = type("V", (), {"parser": lambda self: None})()
+    cg._init_worker(str(tmp_path / "clone"), "o/r", None, vocab, tree, str(tmp_path / "fonts"))
+    assert cg._worker["source"].checked == tree and cg._worker["source"].fonts == str(tmp_path / "fonts")

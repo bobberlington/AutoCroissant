@@ -30,11 +30,12 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
 from functools import partial
 from json import dump, dumps, load, loads
-from os import cpu_count, environ, listdir, makedirs, pathsep
+from os import cpu_count, environ, getpid, listdir, makedirs, pathsep, replace
 from os.path import basename, dirname, isdir, join, splitext
 from re import fullmatch, sub
 from subprocess import CalledProcessError, TimeoutExpired
 from sys import stderr
+from tempfile import TemporaryDirectory
 from time import sleep as _sleep
 from traceback import format_exc
 from typing import Callable, Optional
@@ -46,7 +47,7 @@ import commands.psd_edit as psd_edit
 from commands.card_bake import RECENT, Snapshot, fetch_verified, local_snapshot, recent_paths, snapshot_at
 from commands.card_check import vocabulary
 from commands.card_edits import CardAuthors
-from commands.font_check import is_card_psd
+from commands.font_check import face_names, is_card_psd, tree_fonts
 from commands.git_commit import (AUTHOR, COMMIT_TRIES, NO_LAZY, Transient, api, commit_files, git, local_commit, plural,
                                  ref_head, token)
 from commands.github_api import blob_sha, token_from_env
@@ -80,6 +81,8 @@ NOREPLY = r"(?:\d+\+)?([A-Za-z0-9-]+)@users\.noreply\.github\.com"   # a GitHub 
 QUIET_MARGIN = timedelta(seconds=60)            # land waits RECENT plus this after the push
 ANCHOR_WINDOW = timedelta(hours=2)              # a burst: PSD commits this close to the push may stand in for its PNG's PSD
 POOL_MIN = 8                                    # --whole-tree checks this many cards or more in a process pool
+FONT_FILES_EACH = 4                             # R8: font files tried a face, likeliest name first (270 of 275 faces in 3, 10-25)
+FONT_FETCH_MAX = 12                             # R8: font files a run (a worker) fetches at most, a request each
 CARD_ROOTS = ("Auxiliary/", "Creatures/", "Field/", "Items/", "N.M.E/")   # where card PNGs live (Types/ icons are not cards)
 QUIET_KEYS = ("EveryLineComposer",)            # fixed unsaid (owner, 2026-10-25): never in the changes either
 TELL_PNG_MISMATCH = False                       # R10 and "current but outside the bar" on Discord too (beyond the owner's
@@ -223,32 +226,61 @@ def card_png(path: str) -> bool:
 # ========================
 # The card repo: a local clone, blobs by sha (local first, else the API)
 # ========================
+def font_files(name: str, files: dict) -> list:
+    """The font files (of {file name: sha}) a face's PostScript name looks to be in, likeliest first (FONT_FILES_EACH)."""
+    def norm(text: str) -> str:
+        return sub(r"[^a-z0-9]", "", text.lower())
+    full, family = norm(name), norm(name.split("-")[0])
+    stems = {file: norm(splitext(file)[0]) for file in files}
+    found = [file for file, stem in stems.items()
+             if len(stem) >= 3 and (stem.startswith(family) or family.startswith(stem) or full.startswith(stem))]
+    found.sort(key=lambda file: (stems[file].replace("regular", "") != full.replace("regular", ""),
+                                 abs(len(stems[file]) - len(full)), file))
+    return found[:FONT_FILES_EACH]
+
+
 class Source:
     """Trees and history from a local clone (never a lazy fetch), blobs from it or the API."""
 
-    def __init__(self, clone: str, repository: str = ""):
+    def __init__(self, clone: str, repository: str = "", fonts: str = ""):
         self.clone, self.repository = clone, repository
         self.logins: dict = {}
-        self.checked: dict = {}                 # the checked tree (fonts_dir)
-        self._fonts: Optional[str] = None
+        self.checked: dict = {}                 # the checked tree (fonts_for)
+        self.fonts = fonts                      # where fonts_for puts the font files it fetches ("" fetches none)
+        self._faces: set = set()
+        self._tried: set = set()
 
-    def fonts_dir(self) -> str:
-        """MDW/Fonts for R8's box text, once: FONT_DIRS_ENV's, the clone's, else the fonts cache brought to the checked
-        tree; "" when none (the layer stays Every-line)."""
-        if self._fonts is None:
-            self._fonts, checkout = "", join(self.clone, psd_edit.FONTS_DIR)
-            if environ.get(FONT_DIRS_ENV):
-                self._fonts = environ[FONT_DIRS_ENV].split(pathsep)[0]
-            elif isdir(checkout) and listdir(checkout):
-                self._fonts = checkout
-            elif self.checked and self.repository:
+    def fonts_for(self, names: list) -> str:
+        """MDW/Fonts for R8's box text in the faces names (PostScript): FONT_DIRS_ENV's, the clone's, else self.fonts
+        with only the files those names look to be in (font_files; FONT_FETCH_MAX a run), from the checked tree; "" when
+        a face can't be had (the layer stays Every-line)."""
+        checkout = join(self.clone, psd_edit.FONTS_DIR)
+        if environ.get(FONT_DIRS_ENV):
+            return environ[FONT_DIRS_ENV].split(pathsep)[0]
+        if isdir(checkout) and listdir(checkout):
+            return checkout
+        if not (self.fonts and self.checked):
+            return ""
+        files = tree_fonts({path: sha for path, (_, sha) in self.checked.items()})
+        for name in names:
+            for file in font_files(name, files):
+                if name in self._faces or len(self._tried) >= FONT_FETCH_MAX:
+                    break
+                if file in self._tried:
+                    continue
+                self._tried.add(file)
                 try:
-                    from commands.font_check import refresh_cache, tree_fonts
-                    cache = refresh_cache(self.repository, tree_fonts({path: sha for path, (_, sha) in self.checked.items()}))
-                    self._fonts = "" if cache.failed else cache.directory
-                except Exception:               # no fonts: the box text stays Every-line
+                    data = self.blob(files[file])
+                    faces = face_names(data)
+                    temp = join(self.fonts, f".{file}.{getpid()}.tmp")     # workers share the folder
+                    with open(temp, "wb") as fh:
+                        fh.write(data)
+                    replace(temp, join(self.fonts, file))
+                except Exception:               # that file left out
                     print(format_exc(), file=stderr)
-        return self._fonts
+                    continue
+                self._faces.update(faces)
+        return self.fonts if all(name in self._faces for name in names) else ""
 
     def git(self, *args: str) -> str:
         try:
@@ -716,7 +748,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
     result.issues = [{**issue.as_dict(), "line": issue.line(), "told": id(issue) in told, "discord": issue.discord}
                      for issue in issues]
     if any(issue.fix and not issue.waived for issue in issues) or standards.composer_layers(new):
-        fixed = standards.fix(new_bytes, job.psd, issues, join(out, "work"), parser, source.fonts_dir)
+        fixed = standards.fix(new_bytes, job.psd, issues, join(out, "work"), parser, source.fonts_for)
         result.fixed, result.composer, result.composer_left = fixed.applied, fixed.composer, fixed.composer_left
         lines = {issue.code: issue.line() for issue in issues if issue.fix}
         result.fix_refused = [(lines.get(code, code), why) for code, why in fixed.refused]
@@ -739,9 +771,11 @@ def changes(old, new, parser) -> list:
         return []
 
 
-def _init_worker(clone: str, repository: str, context, vocab) -> None:
+def _init_worker(clone: str, repository: str, context, vocab, tree: dict, fonts: str) -> None:
     token_from_env()        # a spawned worker (macOS; forkserver on 3.14) starts without main()'s header
-    _worker.update(source=Source(clone, repository), context=context, parser=vocab.parser())
+    source = Source(clone, repository, fonts)
+    source.checked = tree
+    _worker.update(source=source, context=context, parser=vocab.parser())
 
 
 def _pooled(item: tuple) -> Result:
@@ -1016,13 +1050,15 @@ def check(clone: str, after: str, before: str = "", repository: str = "", author
         notes += more
     source.checked = tree
     context, vocab = build_context(source, tree, errors) if jobs else (standards.Context(), None)
-    if len(jobs) >= POOL_MIN and workers != 1:
-        count = workers or max(1, min((cpu_count() or 2) // 2, len(jobs)))
-        with ProcessPoolExecutor(count, initializer=_init_worker, initargs=(clone, repository, context, vocab)) as pool:
-            results = list(pool.map(_pooled, [(job, out, mode) for job in jobs], chunksize=2))
-    else:
-        parser = vocab.parser() if vocab is not None else None
-        results = [run_job(source, job, context, parser, out, mode) for job in jobs]
+    with TemporaryDirectory(prefix="guard-fonts-") as fonts:          # R8's fetched font files
+        source.fonts = fonts
+        if len(jobs) >= POOL_MIN and workers != 1:
+            count = workers or max(1, min((cpu_count() or 2) // 2, len(jobs)))
+            with ProcessPoolExecutor(count, initializer=_init_worker, initargs=(clone, repository, context, vocab, tree, fonts)) as pool:
+                results = list(pool.map(_pooled, [(job, out, mode) for job in jobs], chunksize=2))
+        else:
+            parser = vocab.parser() if vocab is not None else None
+            results = [run_job(source, job, context, parser, out, mode) for job in jobs]
     data = plan(results, repository, base, head, mode)
     errors += [f"{r.job.psd}: {r.error}" for r in results if r.error]
     data["report"] = {"notes": notes, "skipped": sorted(skipped), "errors": errors}   # landed_markdown re-renders from these

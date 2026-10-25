@@ -29,7 +29,7 @@ from psd_tools.constants import Tag
 
 import commands.psd_edit as psd_edit
 from commands.card_edits import CardAuthors
-from commands.font_check import _get, _value
+from commands.font_check import _get, _value, layer_fonts
 from commands.psd_edit import BADGE_KEYS, BADGE_TAGS, PAREN, Refused, badge_tags
 from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, CardValidator, PSDParser
 from commands.psd_regions import clip, overlay_words
@@ -255,13 +255,14 @@ def reflow(layer, shape: tuple, fonts_dir: Optional[str]) -> Optional[str]:
     return None
 
 
-def single_line(path: str, out_path: str, fonts: Optional[Callable[[], Optional[str]]] = None) -> tuple:
+def single_line(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]] = None) -> tuple:
     """
     R8: set composer_layers Single-line (TySh and the Txt2 story) where no line can move (reflow), and save without a new
-    preview; gated: set back, every layer record and document block is the old bytes.
+    preview; gated: set back, every layer record and document block is the old bytes. Best effort: a layer reflow fails
+    on stays Every-line.
 
     Args:
-        fonts: Gives MDW/Fonts (box text only; called once, when needed)
+        fonts: Gives MDW/Fonts for a box text layer's faces (PostScript names); "" when they can't be had
 
     Returns:
         ([layer names set], [(layer name, why left)]); raises Refused("bytes")
@@ -270,11 +271,13 @@ def single_line(path: str, out_path: str, fonts: Optional[Callable[[], Optional[
     found = composer_layers(psd)
     if not found:
         return [], []
-    shape, chosen, left, fonts_dir = (psd.height, psd.width), [], [], None
+    shape, chosen, left = (psd.height, psd.width), [], []
     for layer in found:
-        if fonts_dir is None and not _point_text(layer):
-            fonts_dir = (fonts() if fonts else "") or ""
-        why = reflow(layer, shape, fonts_dir)
+        try:
+            fonts_dir = None if _point_text(layer) else ((fonts(layer_fonts(layer)) if fonts else "") or "")
+            why = reflow(layer, shape, fonts_dir)
+        except Exception as error:              # a render or font failure: left, never told
+            why = f"{type(error).__name__}: {error}"
         (left.append((layer.name.strip(), why)) if why else chosen.append(layer))
     if not chosen:
         return [], left
@@ -597,7 +600,7 @@ def _every_line_in(data: bytes) -> bool:
 
 
 def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[PSDParser], result: Fixed,
-            fonts: Optional[Callable[[], Optional[str]]] = None) -> None:
+            fonts: Optional[Callable[[list], Optional[str]]] = None) -> None:
     """fix()'s work in its own temporary folder."""
     from commands.txt2_repair import repair
     base = join(folder, "pushed.psd")
@@ -623,7 +626,7 @@ def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[P
     out = join(folder, "R8.psd")
     try:
         result.composer, result.composer_left = single_line(current, out, fonts)
-    except (Refused, ImportError, ValueError, KeyError) as error:
+    except Exception as error:                  # best effort: never told, the other fixes stand
         result.composer_left = [("", f"{type(error).__name__}: {error}")]
     if result.composer:
         current = out
@@ -646,7 +649,7 @@ def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[P
 
 
 def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDParser] = None,
-        fonts: Optional[Callable[[], Optional[str]]] = None) -> Fixed:
+        fonts: Optional[Callable[[list], Optional[str]]] = None) -> Fixed:
     """
     The fixable issues of one PSD (R11 renames, then R9 story syncs), each gated, then R8's Single-line Composer
     (single_line: never told, a refusal left in composer_left); then the size and the reparse gates over the result. A

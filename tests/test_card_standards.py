@@ -324,7 +324,24 @@ def test_composer_set_single_line(clone, tmp_path, monkeypatch):
         for props, key in cs._composer_values(new, records).values():
             props[key].value = True
         psd_edit.save_psd(new, str(tmp_path / "box.psd"), update_preview=False)
-        assert cs.single_line(str(tmp_path / "box.psd"), str(tmp_path / "out.psd"), lambda: str(fonts)) == (["Ability"], [])
+        assert cs.single_line(str(tmp_path / "box.psd"), str(tmp_path / "out.psd"), lambda names: str(fonts)) == (["Ability"], [])
         monkeypatch.setattr(cs, "LINE_IOU", 1.01)
-        names, left = cs.single_line(str(tmp_path / "box.psd"), str(tmp_path / "out2.psd"), lambda: str(fonts))
+        names, left = cs.single_line(str(tmp_path / "box.psd"), str(tmp_path / "out2.psd"), lambda names: str(fonts))
         assert names == [] and left[0][0] == "Ability" and "would move" in left[0][1]
+        # best effort: a render failure leaves that layer (never told), the Name and R9 still fixed
+        from psd_tools.composite.text.fonts import TextRenderError
+        monkeypatch.setattr(cs, "LINE_IOU", 0.9)
+        monkeypatch.setattr("psd_tools.composite.text.render", lambda *a, **k: (_ for _ in ()).throw(TextRenderError("glyph")))
+        both = new.descendants()
+        for layer in both:
+            if layer.name == "Name":
+                records.add(psd_edit._record_index(layer))
+        for props, key in cs._composer_values(new, records).values():
+            props[key].value = True
+        psd_edit.save_psd(new, str(tmp_path / "both.psd"), update_preview=False)
+        with open(tmp_path / "both.psd", "rb") as fh:
+            fixed = cs.fix(fh.read(), rel, [], str(tmp_path / "work2"), None, lambda names: str(fonts))
+        assert fixed.composer == ["Name"] and fixed.composer_left == [("Ability", "TextRenderError: glyph")] and fixed.data
+        monkeypatch.setattr(cs, "single_line", lambda *a: 1 / 0)
+        fixed = cs.fix(data, rel, [], str(tmp_path / "work3"))
+        assert fixed.composer == [] and fixed.composer_left[0][1].startswith("ZeroDivisionError") and not fixed.data
