@@ -4,6 +4,7 @@ vocabulary (IconVocabulary) and the validator (CardValidator). No Discord, netwo
 scripts and the tests can use it on its own.
 """
 from bisect import bisect_left
+from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
 from logging import getLogger, CRITICAL
@@ -20,7 +21,7 @@ getLogger("psd_tools").setLevel(CRITICAL)
 # ========================
 # Configuration
 # ========================
-PARSER_VERSION = 2                # bump when every stored card must be re-parsed (the build re-parses older stamps)
+PARSER_VERSION = 3                # bump when every stored card must be re-parsed (the build re-parses older stamps)
 TYPE_REGION_RATIO = 0.5
 MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']
 DRAWN_LAYER_KINDS = ("pixel", "smartobject", "group", "type", "shape")   # every other kind is an adjustment layer
@@ -36,11 +37,66 @@ EFFECT_COVERAGE_MIN = 0.95        # share of an effect layer's pixels that must 
 STAR_CORE_ALPHA = 0.5             # a star's core: its pixels at least this opaque (glows and flares fade out wide)
 # folders whose stars are counted on the card (elsewhere the folder says them); Auxiliary/Creatures print 2-5 too
 STARS_FROM_PSD = ("Auxiliary/Items", "Auxiliary/Minions", "Auxiliary/Creatures", "N.M.E")
+# a variant tag: a layer or group named "... #2" (" #2,3") shows only in those pictures (PARTS_EDITOR.md §9)
+TAG = re_compile(r"^(.*\S) #(\d{1,2}(?:,\d{1,2})*)$")
+LINE_PAD = re_compile(r"(?m)^[^\S\n]{3,}(?=\S)")             # a line's leading layout padding
 
 
 def stars_from_psd(relative_path: str) -> bool:
     """Whether a card's stars are counted from its PSD (STARS_FROM_PSD)."""
     return any(folder in relative_path for folder in STARS_FROM_PSD)
+
+
+def layer_tag(name: str) -> tuple:
+    """(base name, frozenset of variants) for a tagged name, else (name, None); FX layers are never tagged."""
+    m = None if EFFECT_LAYER_TAG in name else TAG.match(name)
+    return (m.group(1), frozenset(int(n) for n in m.group(2).split(","))) if m else (name, None)
+
+
+def base_name(layer) -> str:
+    """The layer's name without its variant tag: what every name rule compares."""
+    return layer_tag(layer.name)[0]
+
+
+def shown_in(layer, n: Optional[int]) -> bool:
+    """Whether the layer shows in variant n: a tagged node if n is a tag (its eye ignored), an untagged one by its eye,
+    and every ancestor too; n None: is_visible()."""
+    if n is None:
+        return layer.is_visible()
+    while layer is not None and getattr(layer, "kind", "psdimage") != "psdimage":
+        tags = layer_tag(layer.name)[1]
+        if not (n in tags if tags is not None else layer.visible):
+            return False
+        layer = layer.parent
+    return True
+
+
+def variants_of(psd) -> list:
+    """The PSD's pictures: [1] plus every tag."""
+    found = {1}
+    for layer in psd.descendants():
+        tags = layer_tag(layer.name)[1]
+        if tags:
+            found |= tags
+    return sorted(found)
+
+
+@contextmanager
+def variant_view(psd, n: Optional[int]):
+    """Within: every tagged node's eye says whether it shows in variant n (is_visible() is shown_in(., n)); restored
+    after. n None: nothing changes."""
+    changed = []
+    if n is not None:
+        for layer in psd.descendants():
+            tags = layer_tag(layer.name)[1]
+            if tags is not None and layer.visible != (n in tags):
+                changed.append((layer, layer.visible))
+                layer.visible = n in tags
+    try:
+        yield psd
+    finally:
+        for layer, eye in changed:
+            layer.visible = eye
 
 
 def name_key(text: str) -> str:
@@ -65,7 +121,7 @@ def title_text(text: Optional[str]) -> str:
 
 def named_after_text(layer) -> bool:
     """A type layer named after its own text (name_key alike), as Photoshop names a new one: 'snas.' printing 'snas.'."""
-    key = name_key(layer.name)
+    key = name_key(base_name(layer))
     return bool(key) and key == name_key(layer.text or "")
 
 
@@ -363,7 +419,8 @@ class PSDParser:
         self.icons = icons if icons is not None else IconVocabulary.build(all_types, [], None)
         self._gap_pattern = re_compile(r'\s{3,}')
 
-    def parse(self, file_path: Union[str, PSDImage], relative_path: str = "", existing: Optional[CardInfo] = None) -> CardInfo:
+    def parse(self, file_path: Union[str, PSDImage], relative_path: str = "", existing: Optional[CardInfo] = None,
+              variant: Optional[int] = None) -> CardInfo:
         """
         Parse a PSD file to extract card information.
 
@@ -372,6 +429,7 @@ class PSDParser:
             relative_path: Relative path in repository
             existing: The card whose author, series and subseries it keeps (default: its name's in the database; a
                 renamed PSD's old card)
+            variant: The picture to read (variant_view: tagged layers by their tags); None: the eyes as saved
 
         Returns:
             CardInfo object with extracted data
@@ -413,7 +471,8 @@ class PSDParser:
 
         # Parse PSD layers
         psd = PSDImage.open(file_path) if isinstance(file_path, (str, bytes, PathLike)) else file_path
-        self._extract_from_layers(psd, card, relative_path)
+        with variant_view(psd, variant):
+            self._extract_from_layers(psd, card, relative_path)
 
         return card
 
@@ -442,7 +501,7 @@ class PSDParser:
                 continue                        # hidden rule text isn't printed
             if layer.kind == "type":
                 text_layers.append(layer)
-                if not is_rulepage and layer.name.lower() == "ability" and not layer.is_visible():
+                if not is_rulepage and base_name(layer).lower() == "ability" and not layer.is_visible():
                     hidden_abilities.append(layer)      # read once every text layer is known (_relaid)
                     continue
             self._process_layer(
@@ -460,8 +519,11 @@ class PSDParser:
             card.ability = self._process_abilities(abilities, type_bboxes, card_mid_y)
         elif hidden_abilities:
             card.ability = ""                   # its Ability layer is hidden and its words printed nowhere
-        else:
-            card.problems.append("NO ABILITY LAYER")
+        elif is_rulepage:
+            card.problems.append("NO ABILITY LAYER")        # cards need no ability (owner 10-25); a page needs text
+        ids = [layer.layer_id for layer in psd.descendants()]
+        if len(set(ids)) < len(ids):
+            card.problems.append("DUPLICATE LAYER IDS")
         self._process_stats(card, stat_trackers)
 
         if get_stars_from_psd:
@@ -523,17 +585,17 @@ class PSDParser:
             The layers, in layer order
         """
         top = psd.height * TITLE_REGION_RATIO
-        text_group = next((layer for layer in psd if layer.is_group() and layer.name.strip() == "Text"), None)
+        text_group = PSDParser.text_group(psd)
         under_text = [layer for layer in text_group if layer.is_visible() and layer.kind == "type"] if text_group is not None else []
         key = name_key(name)
-        found = [layer for layer in under_text if layer.name.strip() == "Name"]
+        found = [layer for layer in under_text if base_name(layer).strip() == "Name"]
         if not found:
-            found = [layer for layer in text_layers if layer.name.strip() == "Name" and layer.is_visible() and layer.bbox[1] < top]
+            found = [layer for layer in text_layers if base_name(layer).strip() == "Name" and layer.is_visible() and layer.bbox[1] < top]
         if not found and key:
-            found = [layer for layer in under_text if name_key(layer.name) == key]
+            found = [layer for layer in under_text if name_key(base_name(layer)) == key]
         if not found and key:
             found = [layer for layer in text_layers if layer.kind == "type" and layer.is_visible() and layer.bbox[1] < top
-                     and name_key(layer.name) == key]
+                     and name_key(base_name(layer)) == key]
         if not found and own_text:
             own = [layer for layer in text_layers if layer.kind == "type" and layer.is_visible() and layer.bbox[1] < top
                    and named_after_text(layer)]
@@ -557,17 +619,29 @@ class PSDParser:
         joined, whole = "".join(title.lower().split()), "".join(name.lower().split())
         if joined == whole or joined not in whole:
             return False
+        return PSDParser._split_pieces(psd, found, joined, whole) is not None
+
+    @staticmethod
+    def _split_pieces(psd: PSDImage, found: list, joined: str, whole: str) -> Optional[list]:
+        """split_title's layers printing the rest of the name (longest first), or None when they don't cover it."""
         top = psd.height * TITLE_REGION_RATIO
-        text_group = next((layer for layer in psd if layer.is_group() and layer.name.strip() == "Text"), None)
+        text_group = PSDParser.text_group(psd)
         shown = [layer for layer in text_group if layer.is_visible()] if text_group is not None else []
         found_ids = {id(layer) for layer in found}
-        pieces = ["".join(title_text(layer.text if layer.kind == "type" else layer.name).lower().split())
+        pieces = [("".join(title_text(layer.text if layer.kind == "type" else base_name(layer)).lower().split()), layer)
                   for layer in shown if id(layer) not in found_ids and layer.bbox[1] < top]
         rest = whole.replace(joined, "", 1)
-        for piece in sorted(pieces, key=len, reverse=True):
+        used = []
+        for piece, layer in sorted(pieces, key=lambda p: len(p[0]), reverse=True):
             if piece and piece in rest:
                 rest = rest.replace(piece, "", 1)
-        return not rest
+                used.append(layer)
+        return used if not rest else None
+
+    @staticmethod
+    def text_group(psd: PSDImage):
+        """The top-level Text group, or None."""
+        return next((layer for layer in psd if layer.is_group() and base_name(layer).strip() == "Text"), None)
 
     def _check_effect_layer(self, layer, text_layers: list, card: CardInfo) -> None:
         """
@@ -580,8 +654,8 @@ class PSDParser:
         """
         if not layer.is_visible():
             return
-        base_name, _, words = layer.name.partition(EFFECT_LAYER_TAG)
-        bases = [text_layer for text_layer in text_layers if text_layer.name == base_name]
+        owner, _, words = layer.name.partition(EFFECT_LAYER_TAG)
+        bases = [text_layer for text_layer in text_layers if text_layer.name == owner or base_name(text_layer) == owner]
         if not bases:
             self._add_problem(card, f"EFFECT LAYER WITHOUT TEXT LAYER: {layer.name}")
             return
@@ -649,20 +723,20 @@ class PSDParser:
             self._process_stat_layer(layer, stat_trackers)
 
         # Type layers (a rule page's are pictures: its icons are typed as tokens)
-        elif (not is_rulepage and layer.name.lower() in self.all_types and layer.is_visible() and layer.has_pixels()):
+        elif (not is_rulepage and base_name(layer).lower() in self.all_types and layer.is_visible() and layer.has_pixels()):
             bbox = BoundingBox.from_tuple(layer.bbox[:2])
             if bbox.y < card_mid_y:
-                card.types.append(layer.name.lower())
+                card.types.append(base_name(layer).lower())
             else:
-                type_bboxes.append((layer.name.lower(), bbox))
+                type_bboxes.append((base_name(layer).lower(), bbox))
 
         # Star layers: counted per star by _count_stars once the walk is done
         elif get_stars_from_psd and self._is_star_layer(layer):
             pass
 
         # Problematic type layer
-        elif (layer.name.lower() in MISSPELT_CARD_TYPES and layer.is_visible() and layer.has_pixels()):
-            card.problems.append(f"MISSPELT TYPE: {layer.name.lower()}")
+        elif (base_name(layer).lower() in MISSPELT_CARD_TYPES and layer.is_visible() and layer.has_pixels()):
+            card.problems.append(f"MISSPELT TYPE: {base_name(layer).lower()}")
 
     def _process_text_layer(self, layer, card: CardInfo, num_stars: MutableValue, abilities: list,
                             is_rulepage: bool, get_stars_from_psd: bool, card_mid_y: int, relaid: bool = False,
@@ -677,7 +751,7 @@ class PSDParser:
         Layers without the font take the original path unchanged.
         """
         engine_text = layer.engine_dict["Editor"]["Text"]
-        is_ability = is_rulepage or (layer.name.lower() == "ability" and (relaid or layer.is_visible()))
+        is_ability = is_rulepage or (base_name(layer).lower() == "ability" and (relaid or layer.is_visible()))
         icon_spans = self._icon_font_spans(layer, engine_text.value)
         self._flag_misplaced_tokens(engine_text.value, icon_spans, card)
         if icon_spans:
@@ -721,6 +795,82 @@ class PSDParser:
         return sorted((layer for layer in text_layers if layer is not hidden and layer.is_visible()
                        and layer.bbox[0] < x1 and x0 < layer.bbox[2] and layer.bbox[1] < y1 and y0 < layer.bbox[3]),
                       key=lambda layer: (layer.bbox[1], layer.bbox[0]))
+
+    # ------------------------
+    # The parts: what the website edits, one box per layer (docs/Future/PARTS_EDITOR.md §2.2)
+    # ------------------------
+    def layer_text(self, layer, card: Optional[CardInfo] = None) -> str:
+        """
+        One text layer's reading: icon-font runs as canonical tokens, breaks as \\n, tabs as spaces, no byte-order mark,
+        blank ends and line-leading padding (3+ blanks) gone; image icons' tokens are not in it.
+        """
+        text = layer.engine_dict["Editor"]["Text"].value
+        spans = self._icon_font_spans(layer, text)
+        if spans:
+            text = self._read_icon_tokens(text, spans, card if card is not None else CardInfo(name="", card_type="unknown"))[0]
+        text = text.replace("\r", "\n").replace("\x03", "\n").replace("\t", " ").replace("\ufeff", "").strip(" \n")
+        return LINE_PAD.sub("", text)
+
+    @staticmethod
+    def reading(layers: list) -> list:
+        """Layers in reading order (_sort_by_position: top, 40 px rows, then left)."""
+        return [layer for layer, _ in PSDParser._sort_by_position([(layer, BoundingBox.from_tuple(layer.bbox[:2])) for layer in layers])]
+
+    @staticmethod
+    def words(text: Optional[str]) -> str:
+        """Words alike: whitespace runs as one space, case folded (a copy prints its layer's words)."""
+        return " ".join((text or "").replace("\x03", " ").replace("\ufeff", "").split()).casefold()
+
+    @staticmethod
+    def title_parts(psd: PSDImage, text_layers: list, name: str, own_text: bool = True) -> tuple:
+        """
+        (parts, copies): title_layers() plus the text layers split_title finds printing the rest of the name (Warcraftian
+        Druid's 'Druid '), in reading order; a layer printing an earlier part's words is a copy [(layer, part)].
+        """
+        found = PSDParser.title_layers(psd, text_layers, name, own_text)
+        title = " ".join(title_text(layer.text) for layer in PSDParser.reading(found))
+        joined, whole = "".join(title.lower().split()), "".join(name.lower().split())
+        pieces = []
+        if joined and joined != whole and joined in whole:
+            pieces = [layer for layer in PSDParser._split_pieces(psd, found, joined, whole) or [] if layer.kind == "type"]
+        parts, copies = [], []
+        for layer in PSDParser.reading(found + pieces):
+            twin = next((kept for kept in parts if PSDParser.words(kept.text) == PSDParser.words(layer.text)), None)
+            if twin is not None:
+                copies.append((layer, twin))
+            else:
+                parts.append(layer)
+        return (parts, copies)
+
+    @staticmethod
+    def ability_parts(text_layers: list) -> tuple:
+        """
+        (parts, hidden): the visible Ability text layers in reading order; with none, the visible layers laying a hidden
+        Ability out again (_pieces of the first _relaid one: Butterfly) and that hidden layer, else ([], None).
+        """
+        texts = [layer for layer in text_layers if layer.kind == "type" and EFFECT_LAYER_TAG not in layer.name]
+        shown = [layer for layer in texts if layer.is_visible() and base_name(layer).lower() == "ability"]
+        if shown:
+            return (PSDParser.reading(shown), None)
+        for layer in texts:
+            if not layer.is_visible() and base_name(layer).lower() == "ability" and PSDParser._relaid(layer, texts):
+                return (PSDParser._pieces(layer, texts), layer)
+        return ([], None)
+
+    def blocks(self, text_layers: list) -> list:
+        """A rule page's text blocks: [(layer, role)], every visible text layer in reading order; role "header" (named
+        Header), "page" (Page Number, else the lowest one holding only digits) or "block"."""
+        shown = self.reading([layer for layer in text_layers if layer.kind == "type" and EFFECT_LAYER_TAG not in layer.name
+                              and layer.is_visible()])
+        page = None
+        if not any(base_name(layer).strip() == "Page Number" for layer in shown):
+            digits = [layer for layer in shown if self.layer_text(layer).isdigit()]
+            page = max(digits, key=lambda layer: layer.bbox[1]) if digits else None
+        out = []
+        for layer in shown:
+            role = base_name(layer).strip()
+            out.append((layer, "header" if role == "Header" else "page" if role == "Page Number" or layer is page else "block"))
+        return out
 
     @staticmethod
     def _icon_font_spans(layer, text: str) -> list[tuple[int, int]]:
@@ -838,12 +988,13 @@ class PSDParser:
 
     def _process_stat_layer(self, layer, stat_trackers: StatTrackers) -> None:
         """Process stat layer."""
-        if not layer.name.isdigit():
+        digits = base_name(layer)
+        if not digits.isdigit():
             return
         # A digit-named group of digit layers is a bar row (multi-row bars name rows "1", "2", ...), not a value.
         # Sonic's two speed rows "2" and "1" were added as 3 more speed. An empty one draws nothing (Twin Emperors'
         # "shared health" has an empty "1" group, which made its 7 health 8).
-        if layer.is_group() and (len(layer) == 0 or any(child.name.isdigit() for child in layer)):
+        if layer.is_group() and (len(layer) == 0 or any(base_name(child).isdigit() for child in layer)):
             return
 
         parent_names = []
@@ -868,10 +1019,10 @@ class PSDParser:
                 tracker.found = True
                 parent = layer.parent
                 block = getattr(parent, "parent", None)
-                row = tracker.rows.setdefault(id(parent), BarRow(id(block), parent.name, getattr(block, "name", "") or "",
+                row = tracker.rows.setdefault(id(parent), BarRow(id(block), base_name(parent), getattr(block, "name", "") or "",
                                                                  id(getattr(block, "parent", None))))
                 if layer.is_visible():
-                    row.items.append((int(layer.name), layer.kind))
+                    row.items.append((int(digits), layer.kind))
                 break
 
     def _count_stars(self, psd: PSDImage) -> int:
@@ -1083,7 +1234,8 @@ class PSDParser:
 
 class CardValidator:
     """Validates card information for problems."""
-    ABILITY_EXCLUSIONS: set[str] = {
+    RULEBOOK = "rulebook"           # a rule page's card_type (its folder's name)
+    ABILITY_EXCLUSIONS: set[str] = {        # card_standards' R3 waiver (cards need no ability since 10-25)
         "Crystal Bits",
         "Bugzzy",
         "Electro Probe",
@@ -1126,11 +1278,9 @@ class CardValidator:
         if card.card_type == CardType.UNKNOWN.value:
             problems.append("UNKNOWN TYPE")
 
-        # Ability problems
-        if (card.card_type != CardType.UNKNOWN.value and
-            card.card_type != CardType.MDW.value and
-            not card.ability and
-            card.name not in CardValidator.ABILITY_EXCLUSIONS):
+        # Ability problems: a card needs no ability (owner 10-25); a rule page needs its text
+        rulepage = card.card_type == CardValidator.RULEBOOK
+        if rulepage and not card.ability:
             problems.append("ABILITY TEXT NOT FOUND")
 
         # Stat problems
@@ -1139,9 +1289,8 @@ class CardValidator:
 
         # Add any problems found during parsing
         if card.problems:
-            if ("NO ABILITY LAYER" in card.problems and
-                card.name in CardValidator.ABILITY_EXCLUSIONS):
-                card.problems.remove("NO ABILITY LAYER")
+            if "NO ABILITY LAYER" in card.problems and not rulepage:
+                card.problems.remove("NO ABILITY LAYER")     # older data's: no problem now
             problems.extend(card.problems)
 
         return problems
@@ -1189,8 +1338,14 @@ __all__ = [
     'PSDParser',
     'StatTracker',
     'StatTrackers',
+    'TAG',
+    'base_name',
+    'layer_tag',
     'named_after_text',
+    'shown_in',
     'stars_from_psd',
     'title_text',
     'token_variant',
+    'variant_view',
+    'variants_of',
 ]

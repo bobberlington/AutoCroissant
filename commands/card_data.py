@@ -31,7 +31,7 @@ from global_config import (AUTHORS_PATH, CARD_BRANCH, CREATED_PATH, EDITS_PATH, 
 from commands.card_edits import CardAuthors, CardDates, CardEdits
 from commands.card_models import CardInfo, StatsDatabase, card_name, duplicate_png
 from commands.github_api import RangeError, RemotePSD, blob_text, fetch_blob, range_reads
-from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser
+from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser, variants_of
 
 # ========================
 # Configuration
@@ -90,6 +90,8 @@ class CardBuild:
         self.renamed_from: dict = {}             # new name -> the listed name its PSD renames (parsed with that card)
         self.new_blobs: dict = {}                # blob sha -> name, for cards new or changed this run (a rename's new name)
         self.reparsed: dict = {}                 # name -> (its card before, path, blob) of each card parsed (the history)
+        self.variant_cards: dict = {}            # name -> its PSD's variants 2..N parsed this run (CardInfo each)
+        self.templates = None                    # psd_parts.Templates over this tree (the parts' template facts)
 
     # ------------------------
     # The source: GitHub's REST blobs
@@ -421,12 +423,14 @@ class CardBuild:
         names = {card_name(item.get("path", "")) for item in items}
         gone: dict = {}                                 # blob -> a listed name gone from the tree
         for listed, card in self.db.stats.items():
-            if listed not in names and getattr(card, "blob_sha", None) and not getattr(card, "duplicate_of", None):
+            if (listed not in names and getattr(card, "blob_sha", None) and not getattr(card, "duplicate_of", None)
+                    and not getattr(card, "variant_of", None)):
                 gone.setdefault(card.blob_sha, listed)
         for item in items:
             path = item.get("path", "")
             name = card_name(path)
             self.db.seen_cards.append(name)
+            self.db.seen_cards.extend(getattr(self.db.stats.get(name), "variants", None) or [])   # until a re-parse says
             if name not in self.db.stats and self.db.restore(name, path, item.get("sha")):  # same blob: no download
                 self.restored.append(name)
                 self.changed += 1
@@ -515,6 +519,7 @@ class CardBuild:
                     problems = CardValidator.validate(card)
                     if problems:
                         problematic_cards.append((path, card, problems))
+                self._store_variants(name, old, card, path, sha, timestamp, author, problematic_cards if output_problematic else None)
 
                 num_updated += 1
                 if num_updated % UPDATE_RATE == 0:
@@ -532,6 +537,63 @@ class CardBuild:
                   f"{sum(self.ranged) / 1e6:.1f} MB fetched.")
         self.report(f"{num_changed} cards changed or new, {num_old} unchanged, {num_moved} moved.")
         return (self._format_problems(problematic_cards), num_changed + num_moved)
+
+    def _store_variants(self, name: str, old: Optional[CardInfo], card: CardInfo, path: str, sha: str, timestamp: float,
+                        author: Optional[str], problematic: Optional[list]) -> None:
+        """A tagged PSD's variants 2..N as their own cards (variant_of the card); variants the PSD no longer has go."""
+        found = self.variant_cards.pop(name, [])
+        dropped = set(getattr(old, "variants", None) or []) - {v.name for v in found}
+        self.db.seen_cards[:] = [n for n in self.db.seen_cards if n not in dropped]    # archived like a deleted card
+        for variant in found:
+            before = self.db.stats.get(variant.name)
+            if before is None or getattr(before, "blob_sha", None) != sha:
+                self.new_blobs.setdefault(sha, variant.name)
+            self.reparsed[variant.name] = (before, path, sha)
+            variant.timestamp, variant.blob_sha = timestamp, sha
+            variant.author = variant.author or card.author or author
+            if self.edits:
+                self.edits.apply(variant.name, variant)
+            self.db.stats[variant.name] = variant
+            self.db.seen_cards.append(variant.name)
+            if problematic is not None:
+                problems = CardValidator.validate(variant)
+                if problems:
+                    problematic.append((path, variant, problems))
+
+    def _parse_psd(self, psd: PSDImage, path: str, name: str, existing: Optional[CardInfo]) -> CardInfo:
+        """
+        The card; a PSD with variant tags (PARTS_EDITOR.md §9) is parsed once per picture: variant 1 is the card,
+        variants 2..N wait in variant_cards (named after their PNG: "A Snack2"). A picture without its PNG in the tree is
+        a problem on its card.
+        """
+        pictures = variants_of(psd)
+        if len(pictures) < 2:
+            return self.parser.parse(psd, path, existing)
+        card = self.parser.parse(psd, path, existing, variant=1)
+        cards = [card]
+        for n in pictures[1:]:
+            own = f"{name}{n}"
+            variant = self.parser.parse(psd, path, self.db.stats.get(own) or existing, variant=n)
+            variant.name, variant.variant, variant.variant_of = own, n, name
+            cards.append(variant)
+        card.variant, card.variants = 1, [c.name for c in cards[1:]]
+        folder, stem = path[:path.rfind("/") + 1], splitext(basename(path))[0]
+        for n, each in zip(pictures, cards):
+            if self.shas and f"{folder}{stem}{'' if n == 1 else n}.png" not in self.shas:
+                each.problems.append(f"VARIANT {n} HAS NO PNG")
+        self.variant_cards[name] = cards[1:]
+        return card
+
+    def _file_bytes(self, path: str) -> Optional[bytes]:
+        """A repo file's bytes by its tree blob (the templates); None when not in the tree or not fetched."""
+        sha = self.shas.get(path)
+        if sha is None:
+            return None
+        try:
+            return self._blob(sha).content
+        except RequestException as e:
+            print(f"{path}: not fetched ({e})")
+            return None
 
     def _fetch_psd(self, path: str, sha: str):
         """
@@ -566,8 +628,8 @@ class CardBuild:
         existing = self.db.stats.get(self.renamed_from.get(name, ""))
         if isinstance(source, RemotePSD):
             try:
-                card = self.parser.parse(source.psd, path, existing)
-                details = self._details(source.psd, path, name)
+                card = self._parse_psd(source.psd, path, name, existing)
+                details = self._details(source.psd, path, name, card)
             except Exception as e:
                 print(f"{path}: range reads failed ({e}); downloading it whole")
                 return None
@@ -577,8 +639,8 @@ class CardBuild:
             self.ranged.append(source.fetched)
         else:
             psd = PSDImage.open(source)
-            card = self.parser.parse(psd, path, existing)
-            details = self._details(psd, path, name)
+            card = self._parse_psd(psd, path, name, existing)
+            details = self._details(psd, path, name, card)
         if details is not None:
             self.details[sha] = details
         return card
@@ -620,12 +682,15 @@ class CardBuild:
         self.lost.append(path)
         self.unlooked.append(path)
 
-    def _details(self, psd: PSDImage, path: str, name: str) -> Optional[dict]:
+    def _details(self, psd: PSDImage, path: str, name: str, card: Optional[CardInfo] = None) -> Optional[dict]:
         """The card's PSD facts for the website (psd_details.json); a failure is one console line (None), never a failed
         update."""
         try:
             from commands import psd_details                # lazy: fontTools (through font_check) loads with the first parse
-            return psd_details.gather(psd, path, name, self.font_index, self.db.all_types)
+            if self.templates is None:
+                from commands.psd_parts import Templates
+                self.templates = Templates.from_blobs(self._file_bytes)
+            return psd_details.gather(psd, path, name, self.font_index, self.db.all_types, self.parser, card, self.templates)
         except Exception as e:
             print(f"{path}: details not gathered ({e})")
             return None
@@ -666,7 +731,8 @@ def duplicate_pngs(paths: list, stats: dict, edits: Optional[CardEdits]) -> dict
     """
     The tree's alt-art duplicates: {name: (original, number or None, PNG file name lower-cased)}. A numbered PNG beside
     its original's PSD with no PSD of its own (A_Snack2.png), and a card PNG with no PSD whose Card Edits.json entry
-    names its original in dup_of (number None; build_site's rule). The original must be a listed card, no duplicate.
+    names its original in dup_of (number None; build_site's rule). The original must be a listed card, no duplicate. A
+    tagged PSD's picture (in its card's `variants`) is a card of its own, no duplicate.
     """
     lower = {p.lower() for p in paths}
     by_key = {CardAuthors.key(n): n for n, c in stats.items() if not getattr(c, "duplicate_of", None)}
@@ -678,6 +744,8 @@ def duplicate_pngs(paths: list, stats: dict, edits: Optional[CardEdits]) -> dict
         m = re_match(r"(.+?)(\d+)\.png$", path, IGNORECASE)
         if m and f"{m.group(1)}.psd".lower() in lower:
             original = basename(m.group(1)).replace("_", " ")
+            if original in stats and card_name(path) in (getattr(stats[original], "variants", None) or []):
+                continue                                # a tagged PSD's picture: its own card (variant_of)
             if original in stats and not stats[original].duplicate_of:
                 found[card_name(path)] = (original, int(m.group(2)), basename(path).lower())
             continue
@@ -709,7 +777,7 @@ def can_prune(build: CardBuild) -> bool:
 # (tests/test_card_data.py runs --help on the three CLIs with exactly this list)
 SPARSE_FILES = ("commands/card_data.py", "commands/card_history.py", "commands/card_db.py", "commands/changelog.py",
                 "commands/card_models.py", "commands/card_edits.py", "commands/psd_parser.py", "commands/psd_details.py",
-                "commands/psd_regions.py", "commands/font_check.py", "commands/github_api.py", "global_config.py",
+                "commands/psd_parts.py", "commands/psd_regions.py", "commands/font_check.py", "commands/github_api.py", "global_config.py",
                 "requirements-cards.txt",
                 "commands/card_bake.py", "commands/psd_edit.py", "commands/git_commit.py", "commands/repo_history.py",
                 "commands/tts_save.py")
@@ -798,6 +866,13 @@ class GitBuild(CardBuild):
             return None
         store = self._store(sha)
         return _git(store, "cat-file", "blob", sha) if store else super()._repo_text(path)
+
+    def _file_bytes(self, path: str) -> Optional[bytes]:
+        sha = self.shas.get(path)
+        store = self._store(sha) if sha else ""
+        if store:
+            return run(["git", "-C", store, "cat-file", "blob", sha], capture_output=True, env={**environ, **NO_LAZY}).stdout
+        return super()._file_bytes(path)
 
     def _todo(self, response, force_update: bool) -> tuple[list, int]:
         todo, num_old = super()._todo(response, force_update)

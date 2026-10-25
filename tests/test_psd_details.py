@@ -24,7 +24,7 @@ FREEZER = "Field/1 Stars/The_Freezer.psd"                              # no Star
 FROSTMOURNE = "Auxiliary/Items/Frostmourne.psd"                        # four stars in a shown "N stars" folder
 MAGNUM = "Auxiliary/Items/Magnum_Opus.psd"                             # its 'field' icon is a frame: fixed
 KEYS = ("path", "name", "at", "parser", "canvas", "fonts", "text", "effects", "smart_objects", "icons", "stats", "fx",
-        "overlays", "template", "header", "tree")
+        "overlays", "template", "header", "tree", "parts")
 
 
 # ========================
@@ -59,19 +59,19 @@ def records(clone, index):
 # ========================
 def test_record_shape_and_size(records, clone):
     for rel, record in records.items():
-        assert tuple(record) == KEYS and record["path"] == rel and record["name"] == _name(rel) and record["parser"] == 2
+        assert tuple(record) == KEYS and record["path"] == rel and record["name"] == _name(rel) and record["parser"] == 3
         assert not any(isinstance(v, str) and v.startswith("error") for v in record.values())
         assert record["canvas"] == {"w": 1200, "h": 2400, "mode": "RGB", "depth": 8, "icc": "Display"}
         assert record["fonts"] and all(e["supplied"] is True for e in record["fonts"].values())
         fonts = {font: [layer.rsplit("/", 1)[-1] for layer in e["layers"]] for font, e in record["fonts"].items()}
         assert fonts == psd_fonts(str(clone / rel))                                # the same rule as the font check
-        assert all(set(t) == {"layer", "text", "font", "size", "color", "visible"} for t in record["text"])
+        assert all(set(t) == {"layer", "id", "box", "text", "font", "size", "color", "visible"} for t in record["text"])
         assert all(len(t["text"]) <= pd.TEXT_CHARS and (t["color"] is None or len(t["color"]) == 7) for t in record["text"])
         assert all(isinstance(v, list) and v for v in record["effects"].values())
         assert record["icons"] == "mixed"                                           # image types, badge runs
         assert set(record["stats"]) == {"hp", "def", "atk", "spd"}
         assert all(len(e) == (4 if e[1] == "group" else 3) and isinstance(e[2], bool) for e in record["tree"])
-    assert _size(records[DOOMER]) < 8_000 and _size(records[CANNON]) < 8_000
+    assert _size(records[DOOMER]) < 10_000 and _size(records[CANNON]) < 10_000     # parts: ~1.5 KB more
     assert _size(records[LAZARUS]) < 20_000                                         # 234 layers, 93 with effects
 
 
@@ -192,11 +192,11 @@ def test_text_load_prune_round_trip(tmp_path):
     text = pd.text_of(cards)
     path.write_text(text, encoding="utf-8")
     lines = text.splitlines()
-    assert lines[0] == '{"version": 1, "cards": {' and lines[1].startswith('"' + "a" * 40 + '": {"path":"Items/A.psd"') and lines[2].endswith("}")
+    assert lines[0] == '{"version": 2, "cards": {' and lines[1].startswith('"' + "a" * 40 + '": {"path":"Items/A.psd"') and lines[2].endswith("}")
     assert lines[3] == "}}" and "é" in text and json.loads(text)["cards"] == cards
     assert pd.load(str(path)) == cards
     assert pd.prune(cards, {"a" * 40}) == 1 and set(cards) == {"a" * 40} and pd.prune(cards, {"a" * 40}) == 0
-    assert json.loads(pd.text_of({})) == {"version": 1, "cards": {}}
+    assert json.loads(pd.text_of({})) == {"version": 2, "cards": {}}
 
 
 def test_load_tolerates_a_missing_or_odd_file(tmp_path, capsys):

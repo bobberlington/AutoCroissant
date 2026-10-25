@@ -1,7 +1,8 @@
 """
 The PSD facts behind the website's card "Details" dropdown: fonts, text layers, effects, smart objects, canvas, type-icon
 style, stat-row encoding, status-word layers, template deviations, the header's star and type icon boxes (where the bake
-would put them: the website mock-up's, psd_edit's geometry) and a compact layer tree. One record per card PSD,
+would put them: the website mock-up's, psd_edit's geometry), a compact layer tree and the editor's parts (psd_parts,
+VERSION 2). One record per card PSD,
 keyed by its git blob sha, in the card data's db/psd_details.json (the Card sync Action's build).
 
 gather(psd, rel, name, index, vocab) -> the record: pure, never raises for a card (a failed section is a short
@@ -30,13 +31,14 @@ from commands.psd_edit import (
     _star_layouts, _star_units, _stars_total, _texts, offline_parser, plan_stars, type_row,
 )
 from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, PARSER_VERSION, PSDParser
+from commands.psd_parts import card_parts
 from commands.psd_regions import STATS, badge_layers, overlay_words, stat_rows
 from global_config import RULEBOOK_DIR
 
 # ========================
 # Configuration
 # ========================
-VERSION = 1                                 # the file's "version"
+VERSION = 2                                 # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3)
 TEXT_CHARS = 200                            # text kept per type layer
 TREE_CHILDREN = 80                          # children kept per group
 TREE_DEPTH = 8                              # groups nested deeper show one "more" entry
@@ -174,8 +176,8 @@ def _text(texts: list) -> list:
             font, size, colour = _style(layer)
         except Exception:                       # engine data psd-tools can't read
             font, size, colour = None, None, None
-        out.append({"layer": layer_path(layer), "text": text, "font": font, "size": size,
-                    "color": colour, "visible": layer.is_visible()})
+        out.append({"layer": layer_path(layer), "id": layer.layer_id, "box": _ints(layer.bbox), "text": text, "font": font,
+                    "size": size, "color": colour, "visible": layer.is_visible()})
     return out
 
 
@@ -412,7 +414,8 @@ def _tree(group, depth: int = 0) -> list:
 # ========================
 # Public API Functions
 # ========================
-def gather(psd, rel: str, name: str, index: Optional[FontIndex] = None, vocab=()) -> dict:
+def gather(psd, rel: str, name: str, index: Optional[FontIndex] = None, vocab=(), parser: Optional[PSDParser] = None,
+           card=None, templates=None) -> dict:
     """
     One card's record.
 
@@ -422,6 +425,8 @@ def gather(psd, rel: str, name: str, index: Optional[FontIndex] = None, vocab=()
         name: The card's name
         index: The fonts folder's faces (None: "supplied" stays null)
         vocab: Type icon names (Types/ stems) for the image-icon rule; the *types* group rule applies without them
+        parser: The build's PSDParser for the parts' text (its icon tokens); None: one from vocab
+        card: The parsed card (the parts' template rule); templates: psd_parts.Templates (None: no template)
 
     Returns:
         The record (module docstring); a section psd-tools can't read is an "error: ..." string
@@ -432,12 +437,13 @@ def gather(psd, rel: str, name: str, index: Optional[FontIndex] = None, vocab=()
         psd = PSDImage.open(psd)
     outer, _inks.cache = getattr(_inks, "cache", None), {}
     try:
-        return _gather(psd, rel, name, index, vocab)
+        return _gather(psd, rel, name, index, vocab, parser, card, templates)
     finally:
         _inks.cache = outer
 
 
-def _gather(psd: PSDImage, rel: str, name: str, index: Optional[FontIndex], vocab) -> dict:
+def _gather(psd: PSDImage, rel: str, name: str, index: Optional[FontIndex], vocab, parser=None, card=None,
+            templates=None) -> dict:
     record = {"path": rel, "name": name, "at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "parser": PARSER_VERSION}
     try:
         layers = list(psd.descendants())
@@ -447,7 +453,8 @@ def _gather(psd: PSDImage, rel: str, name: str, index: Optional[FontIndex], voca
     texts = [layer for layer in layers if layer.kind == "type"] if layers is not None else []
     record["canvas"] = _guard(_canvas, psd)
     if layers is None:
-        for key in ("fonts", "text", "effects", "smart_objects", "icons", "stats", "fx", "overlays", "template", "header", "tree"):
+        for key in ("fonts", "text", "effects", "smart_objects", "icons", "stats", "fx", "overlays", "template", "header", "tree",
+                    "parts"):
             record[key] = walk_error
         return record
     record["fonts"] = _guard(_fonts, texts, index)
@@ -462,6 +469,7 @@ def _gather(psd: PSDImage, rel: str, name: str, index: Optional[FontIndex], voca
                                 RULEBOOK_DIR in rel)
     record["header"] = _guard(_header, psd, rel, name, vocab)
     record["tree"] = _guard(_tree, psd)
+    record["parts"] = _guard(card_parts, psd, rel, name, parser or _icon_parser(vocab), None, card, templates)
     return record
 
 

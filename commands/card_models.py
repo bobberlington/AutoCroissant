@@ -82,6 +82,9 @@ class CardInfo:
     subseries: Optional[str] = None           # from Card Edits.json, never the PSD
     parser_version: Optional[int] = None      # psd_parser.PARSER_VERSION that parsed it; None in older records
     archived: Optional[dict] = None           # set when its PSD left the card repo (old_stats only)
+    variant: Optional[int] = None             # a tagged PSD's picture (1: Name.png, N: NameN.png); None: one picture
+    variant_of: Optional[str] = None          # variant N's: variant 1's card (same PSD, its own PNG)
+    variants: Optional[list] = None           # variant 1's: the other variants' cards
     version = None                            # card_history's {from, to, cause...}; no field (card_db.EXTRA_KEYS)
     created = None                            # CardDates: {date, from[, provisional]}; no field either
 
@@ -203,7 +206,7 @@ class StatsDatabase:
         for name in archived:
             card = self.stats.pop(name)
             card.archived = _archive_tag(card, at)
-            if getattr(card, "duplicate_of", None):           # a copy of its original's PSD: its own file is its PNG
+            if getattr(card, "duplicate_of", None) or getattr(card, "variant_of", None):    # its own file is its PNG
                 card.archived["path"], card.archived["blob"] = duplicate_png(card), None
             versions = self.old_stats.setdefault(name, [])
             if versions and _tagged_copy(versions[len(versions) - 1], card):    # archived already: never doubled
@@ -216,7 +219,7 @@ class StatsDatabase:
             if not versions or name in self.stats or name in seen:
                 continue
             last = versions[len(versions) - 1]
-            if not self.archive_tag(name) and not getattr(last, "duplicate_of", None):
+            if not self.archive_tag(name) and not getattr(last, "duplicate_of", None) and not getattr(last, "variant_of", None):
                 last.archived = _archive_tag(last, at)
                 last.archived["backfill"] = True
                 backfilled.append(name)
@@ -224,7 +227,7 @@ class StatsDatabase:
 
 
 def duplicate_png(card: CardInfo) -> str:
-    """An alt-art duplicate's own PNG path: its name's file beside its original's PSD (A_Snack2.png)."""
+    """An alt-art duplicate's or a variant's own PNG path: its name's file beside its original's PSD (A_Snack2.png)."""
     folder = card.path[:card.path.rfind("/") + 1] if "/" in (card.path or "") else ""
     return f"{folder}{card.name.replace(' ', '_')}.png"
 
