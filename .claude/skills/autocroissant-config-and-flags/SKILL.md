@@ -180,7 +180,7 @@ went with the pickle seed on 2026-10-25. Modules also read a few environment var
 | `REMIND_JSON` (2026-10-24) | `"reminder.json"` | the reminder store (GITIGNORED, per machine; schema_version 2) |
 | `HISTORY_JSON` (2026-10-20) | `"repo_history.json"` | repo path -> (blob, commit that last changed it), written by commands/repo_history.py; gitignored, rebuilt from the clone |
 | `FONT_DIRS_ENV` (2026-10-21) | `"PSD_TOOLS_FONT_DIRS"` | the name of the environment variable whose first entry overrides the fonts dir (card_bake, font_check) |
-| `CREATED_PATH` (2026-10-22, 6fe7a90) | `"site/Card Creation Dates.json"` | when each card was made (written by `python -m commands.discord_edits created`); read on every /update_stats (`CardDates`) |
+| `CREATED_PATH` (2026-10-22, 6fe7a90) | `"site/Card Creation Dates.json"` | when each card was made (written by `python -m commands.card_dates created`); read on every /update_stats (`CardDates`) |
 | `RATINGS_PATH` (2026-10-24) | `"site/Card Ratings.json"` | dated 1-10 card ratings (`python -m commands.tts_ratings`; the website adds entries; `CardRatings`); never read by the bot, the card sync or the checks |
 | `DATA_BRANCH`, `CARD_DATA_DIR` (2026-10-22) | `"data"`, `"card_data"` | the card repo's branch holding `db/` (written by Card sync only) and the bot's gitignored copy of it |
 | `EMOJI_JSON` (2026-10-20) | `"type_emojis.json"` | bot application id -> {type emoji name -> blob sha of the icon it was made from} (emojis belong to the bot identity), written by commands/type_emojis.py; gitignored, per machine. Missing, unreadable or no entry for this bot = its existing emojis count as current (no re-upload) |

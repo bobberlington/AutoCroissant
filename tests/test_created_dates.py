@@ -1,5 +1,5 @@
 """Creation dates: site/Card Creation Dates.json (CardDates), the cards' created, the data build, /query_ability's
-created>=2025 and `python -m commands.discord_edits created`."""
+created>=2025 and `python -m commands.card_dates created`."""
 import json
 import os
 import pickle
@@ -9,7 +9,7 @@ import pytest
 
 import commands.card_data as cd
 import commands.card_models as cm
-import commands.discord_edits as de
+import commands.card_dates as de
 import commands.query_card as qc
 from commands.card_edits import CardDates
 from helpers import cards, cards_template  # noqa: F401 (fixtures)
@@ -167,7 +167,7 @@ def test_query_embed_says_created(monkeypatch):
 
 
 # ========================
-# python -m commands.discord_edits created
+# python -m commands.card_dates created
 # ========================
 ARCHIVE = {
     "A Snack": {"date": "2023-10-13", "source": "discord", "confidence": "high", "provisional": True,

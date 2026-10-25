@@ -197,7 +197,7 @@ class CardDates:
     """
     TTSCardMaker's site/Card Creation Dates.json: when each card was made, the earlier of its first Discord post and
     its first upload (UTC day). {"cards": {"Card Name": {"date": "YYYY-MM-DD", "from": "discord", "provisional": true}}};
-    names match like the authors file. Written by `python -m commands.discord_edits created`, which keeps "from": "hand"
+    names match like the authors file. Written by `python -m commands.card_dates created`, which keeps "from": "hand"
     entries (the owner's). The website and /update_stats read it, each with its own first upload for the cards it
     misses (created()); it is no edit (never in Card Edits.json).
     """

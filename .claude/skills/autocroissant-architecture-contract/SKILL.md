@@ -293,7 +293,7 @@ main.py  (registration + queue loops; imports every commands module)
                               GitPython LAZILY inside its functions  (no utils: bypasses queues on purpose, invariant 3)
 
 Outside the bot's import graph (CLIs and TTSCardMaker Actions only; no bot module imports them): card_check,
-card_guards, card_standards, png_export, psd_diff, txt2_repair, tts_save and discord_edits
+card_guards, card_standards, png_export, psd_diff, txt2_repair, tts_save and card_dates
 (since 2026-10-25 only `created`, the creation-dates CLI; /update_metadata, /mass_replace and /alias are on branch
 archive/discord-edits). card_db, card_history and changelog are in it, reached from card_data, card_sync and query_card.
 
@@ -523,6 +523,6 @@ prompts; every main.py, card_models.py, query_card.py, card_data.py and update_b
 
 2026-10-23 (unbatch): invariant 10 says /query_ability sends one message per card again (the 10-per-message listing reverted); query_card.py citations re-pointed (-1, -9 after query_ability).
 
-2026-10-25 (retire): /update_metadata, /mass_replace, /alias, /bake_cards and /update_tts_save retired (branch archive/discord-edits); invariant 10, the module map (card_runner, tts_save, discord_edits now outside the bot) and data flow (b) updated.
+2026-10-25 (retire): /update_metadata, /mass_replace, /alias, /bake_cards and /update_tts_save retired (branch archive/discord-edits); invariant 10, the module map (card_runner, tts_save, card_dates (was discord_edits) now outside the bot) and data flow (b) updated.
 
 2026-10-25 (step 10, work/pickles): the pickles, /push, `CARD_SYNC`, repo_traverser.py (the legacy /update_stats) and card_runner.py (bake_lock, the startup sweep) removed: data flows (b) and (b2), invariants 6 and 10, on_ready's five inits, the module map, "Why the card data is JSON on a git branch" and weak points 4, 6 and 11 rewritten.

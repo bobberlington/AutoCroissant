@@ -2,7 +2,7 @@
 Creation dates: the Discord archive's created_dates.json (review_pages.py) as the card repo's site/Card Creation
 Dates.json (dates only; "from": "hand" entries kept). Re-run after rulings, review the diff, commit it:
 
-    python -m commands.discord_edits created [--archive ~/Documents/Tools/discord-archive] [--repo <card repo checkout>]
+    python -m commands.card_dates created [--archive ~/Documents/Tools/discord-archive] [--repo <card repo checkout>]
         [--out FILE]
 """
 from argparse import ArgumentParser
@@ -20,7 +20,7 @@ ARCHIVE = "~/Documents/Tools/discord-archive"   # the Discord archive (mined onc
 SOURCES = {"discord": "discord", "git-first-upload": "git"}    # created_dates.json source -> the file's "from"
 DATES_ABOUT = ("When each card was made: the earlier of its first Discord post and its first upload to this repo (UTC "
                "day); provisional: an open ruling on the Discord archive may still move it. Written by AutoCroissant "
-               "(python -m commands.discord_edits created); an entry with \"from\": \"hand\" is set by hand and kept. "
+               "(python -m commands.card_dates created); an entry with \"from\": \"hand\" is set by hand and kept. "
                "Read by the website (the created sort, card pages) and the bot (/update_stats).")
 
 
@@ -120,7 +120,7 @@ def _write(path: str, text: str) -> None:
 
 def main(args: Optional[list] = None) -> int:
     """The command line: created (the creation dates); commits nothing."""
-    parser = ArgumentParser(prog="python -m commands.discord_edits", description="The card repo's creation dates.")
+    parser = ArgumentParser(prog="python -m commands.card_dates", description="The card repo's creation dates.")
     sub = parser.add_subparsers(dest="command", required=True)
     dates = sub.add_parser("created", help=f"the Discord archive's creation dates into the card repo's {CREATED_PATH} "
                                            "(written in place, never committed)")

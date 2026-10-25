@@ -12,7 +12,7 @@ have too many tests - stop bloating our test suite").
   the other site files go.
 - (Done on work/clean, 2026-10-25: the deletions of step 3's list below, with the tests of removed code.)
 - `commands/discord_archive.py` and `commands/discord_match.py` are retired with their tests
-  (`tests/test_discord_archive.py`, `tests/test_discord_match.py`). `commands/discord_edits.py created` reads the
+  (`tests/test_discord_archive.py`, `tests/test_discord_match.py`). `commands/card_dates.py created` reads the
   archive's files only and stays.
 - Dead code is deleted, not archived (memory `fonts-and-dead-code`).
 

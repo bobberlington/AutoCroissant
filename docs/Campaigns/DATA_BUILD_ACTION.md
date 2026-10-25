@@ -469,7 +469,7 @@ github_api reads it inside a try/except and takes the token from the environment
    aliases. Until step 5 it reads aliases.pkl from AutoCroissant main, only while `Card Edits.json` has no
    `aliases_moved` (2026-10-23; read before the PSDs, so a missing file stops the build early), so deleting the file at
    step 10 breaks no build. Then every card's `created` from
-   `site/Card Creation Dates.json` (`CardDates`, 2026-10-23; written by `python -m commands.discord_edits created` from
+   `site/Card Creation Dates.json` (`CardDates`, 2026-10-23; written by `python -m commands.card_dates created` from
    the Discord archive), by the website's rule (build_site.py `apply_created`): the file's date, unless the card's first
    upload is earlier and the entry isn't a hand one; a card the file misses (one added since the last `created` run)
    gets its first upload. The bot's first upload is the earliest version the database holds (`_first_upload`; the
