@@ -29,7 +29,7 @@ from psd_tools.psd import engine_data
 import commands.psd_edit as pe
 from commands.card_models import card_name
 from commands.psd_regions import PAINT_ORDER, badge_layers, clip, fx_pad, regions, stat_rows
-from conftest import (PLAIN_DOOMER, at_rev, bevel_textures, colour_glyphs, fork_reason, painted, rounds_bytes,
+from conftest import (BADGED, PLAIN_DOOMER, at_rev, salt_font, bevel_textures, colour_glyphs, fork_reason, painted, rounds_bytes,
                       saves_preview, story_sync as _story_sync, text_engine as _text_engine)
 
 # ========================
@@ -637,7 +637,7 @@ def test_regions_and_rows_on_mini_doomer(clone, parser):
     with pytest.raises(ValueError):
         pe.set_stat(psd, parsed, "hp", -1)
     assert found["stat_hp"] == [(359, 1199, 1174, 1285)] and found["stat_spd"] == [(359, 1577, 1174, 1663)]
-    assert found["name"] == [(300, 23, 899, 114)] and found["ability"] == [(27, 1802, 1157, 2264)]   # 2258 before the (BOT) badge
+    assert found["name"] == [(300, 23, 899, 114)] and found["ability"] in ([(27, 1802, 1157, 2264)], [(27, 1802, 1157, 2263)])   # 2258 before the (BOT) badge, 2263 its layer retired
     assert found["frame"][0] == (0, 1708, 1200, 1748) and found["ability_bg"] == [(0, 1748, 1200, 2400)]
     assert len(found["types"]) == 3 and len(found["stars"]) == 2
     assert {k: [d for _, d, _ in rows] for k, rows in stat_rows(psd).items()} == {"hp": [[5]], "def": [[2]], "atk": [[5]], "spd": [[5]]}
@@ -1041,8 +1041,8 @@ def test_a_digit_outside_the_card_refuses(clone):
     assert row.visible == [5] and five.visible
 
 
-def test_layer_records_fingerprint(clone):
-    psd = _card(clone, MINI_DOOMER)[0]
+def test_layer_records_fingerprint(clone, tmp_path):
+    psd = _at(clone, tmp_path, BADGED, MINI_DOOMER)[0]
     records = pe.layer_records(psd)
     assert len(records) == 96 and records[93]["name"] == "Name" and records[71]["name"] == "5"
     assert records[95]["name"] == "Ability FX: (BOT)"
@@ -1552,9 +1552,10 @@ def test_a_typed_status_word_joining_its_layer_is_told(clone, chart):
 def test_own_style_fx_layers_are_made_again_in_their_style(clone, parser, chart, tmp_path):
     """Owner 2026-10-23: FX layers in no chart status's style are rebuilt in their own style, as the others (the 2026-10-21
     refusal went). Morpho Knight's Burning, +2/4/6 ATK and Smoldering strokes bake an appended sentence through every
-    gate: each record kept whole or cut again (rect and channels), its style bytes unchanged, no new layer. Without the
-    chart the card still refuses (its FX words can't be told apart)."""
-    psd_path = _card(clone, MORPHO)[0]
+    gate: each record kept whole or cut again (rect and channels), its style bytes unchanged, no new layer; its badge
+    layer goes (retired, owner 2026-10-25). Without the chart the card still refuses (its FX words can't be told apart)."""
+    paths = _at(clone, tmp_path, BADGED, MORPHO)
+    psd_path = paths[0]
     psd = PSDImage.open(psd_path)
     layer = pe.ability_layer(psd)
     text, fx = pe.normalize_ability(layer.text), [f.name for f in pe.fx_layers(psd, layer)]
@@ -1562,17 +1563,19 @@ def test_own_style_fx_layers_are_made_again_in_their_style(clone, parser, chart,
     with pytest.raises(pe.Refused, match="status word layers over the ability"):
         pe.set_text_layer(psd, "ability", text + " Die.", str(clone / pe.FONTS_DIR), None)
     old = pe.normalize_ability(pe.parse_card(parser, psd_path, MORPHO)["card"]["ability"])
-    parsed, baked = _bake(clone, parser, MORPHO, {"ability": old + " Die."}, tmp_path, chart)
+    parsed, baked = _bake(clone, parser, MORPHO, {"ability": old + " Die."}, _dir(tmp_path, "bake"), chart, paths=paths)
     edit, = baked.edits
-    assert edit.fx_names == fx and edit.fx == [] and edit.dropped == [] and baked.block_bytes == 0
-    for name in fx:
+    badge, words = fx[0], fx[1:]
+    assert edit.fx_names == words and edit.fx == [] and edit.dropped == [badge] and baked.block_bytes == 0
+    for name in words:
         assert _style(baked.psd_path, name) == _style(psd_path, name)
-    assert all(fields in (["channels", "rect"],) for _, name, fields in baked.records if name in fx)
+    assert all(fields in (["channels", "rect"], ["channels"]) for _, name, fields in baked.records if name in words)   # salt font: the box stays
+    assert (badge, ["removed"]) in [(name, fields) for _, name, fields in baked.records]
 
 
-def _noop(clone, parser, chart, rel, tmp_path):
+def _noop(clone, parser, chart, rel, tmp_path, paths=None):
     """apply_jobs with the ability layer's own text (classify would call it redundant): (psd path, png path, Baked)."""
-    psd_path, png_path = _card(clone, rel)
+    psd_path, png_path = paths or _card(clone, rel)
     text = pe.ability_layer(PSDImage.open(psd_path)).text.replace("\r", "\n")
     parsed = pe.parse_card(parser, psd_path, rel)
     return psd_path, png_path, pe.apply_jobs(psd_path, png_path, rel, {"ability": text}, parsed, parser, str(tmp_path),
@@ -1584,52 +1587,21 @@ def _same_png(a, b) -> bool:
 
 
 @text_edit
-def test_noop_ability_bake_keeps_the_badge_layer(clone, parser, chart, tmp_path):
-    """BUG 2 on Mini Doomer's gradient badge layer: a no-op ability bake passes every gate (gate_fx too) and keeps
-    'Ability FX: (BOT)' byte for byte, none of its words redrawn, the PNG pixel for pixel. Cut again by force from the
-    unchanged raster, it is the layer Effect Layers.jsx cut, byte for byte: the key takes the badge's colour glyph on
-    purpose (its phrase is a badge run)."""
-    psd_path, png_path, baked = _noop(clone, parser, chart, MINI_DOOMER, tmp_path)
+def test_noop_ability_bake_retires_the_badge_layer(clone, parser, chart, tmp_path):
+    """Owner 2026-10-25: badge FX layers are retired. A no-op ability bake on Mini Doomer (a Gradient Overlay on Text)
+    deletes 'Ability FX: (BOT)', told, and sets Stylistic Alternates on its "(BOT)", in the Txt2 story only (TySh has no
+    such key), every gate passing; the re-parse reads the same text."""
+    paths = _at(clone, tmp_path, BADGED, MINI_DOOMER)
+    psd_path, png_path, baked = _noop(clone, parser, chart, MINI_DOOMER, tmp_path, paths)
     edit, = baked.edits
-    assert edit.fx_names == ["Ability FX: (BOT)"] and (edit.rebuilt, edit.dropped, edit.fx, edit.notes) == ([], [], [], [])
-    assert "Ability FX: (BOT)" not in [name for _, name, _ in baked.records] and _same_png(png_path, baked.png_path)
-    from psd_tools.composite.text import FontMap
-    psd = PSDImage.open(psd_path)
-    layer = pe.ability_layer(psd)
-    old, = pe.fx_layers(psd, layer)
-    box, before = tuple(old.bbox), _raster(old, old.bbox)
-    plans = pe.plan_fx(layer, [old], chart)
-    fonts = FontMap(dirs=[str(clone / pe.FONTS_DIR)])
-    kept = pe.kept_chars(layer.text, layer.text)
-    assert pe._kept(plans[0], plans[0].ranges, None, kept) and not pe._kept(plans[0], plans[0].ranges, tuple(layer.bbox), kept)
-    rebuilt, dropped, covered, notes = pe._rebuild_fx(psd, layer, layer.text, plans, tuple(layer.bbox), kept, fonts,
-                                                      pe._fx_engine(), [pe.follow_fx(plans[0], layer.text, kept)])
-    assert rebuilt == [(old, "Ability FX: (BOT)")] and dropped == notes == []
-    assert covered == [(layer.text.index("(BOT)"), layer.text.index("(BOT)") + 5)]
-    assert tuple(old.bbox) == box and np.array_equal(_raster(old, box), before)
-
-
-@text_edit
-def test_ability_bake_moves_the_badge_layer_with_its_badge(clone, parser, chart, tmp_path):
-    """BUG 2: Mini Doomer's centred "(BOT) Die." made "(BOT) Then die at once." moves the badge left; its FX layer is cut
-    again in place from the new raster (rect and channels, its record otherwise whole) over the badge's new place, every
-    gate passing: the parse, the validator's coverage, gate_fx's glyph boxes and the Ability's own pixels."""
-    psd_path = _card(clone, MINI_DOOMER)[0]
-    old = PSDImage.open(psd_path)
-    before, = pe.fx_layers(old, pe.ability_layer(old))
-    text = pe.normalize_ability(pe.parse_card(parser, psd_path, MINI_DOOMER)["card"]["ability"]).replace("Die.", "Then die at once.")
-    parsed, baked = _bake(clone, parser, MINI_DOOMER, {"ability": text}, tmp_path, chart)
-    edit, = baked.edits
-    (_, ability, fields), (_, name, fx_fields) = baked.records
-    assert ability == "Ability" and {"blocks", "channels"} <= set(fields) <= set(TEXT_RECORD)
-    assert (name, fx_fields) == ("Ability FX: (BOT)", ["channels", "rect"])
-    assert baked.fx == edit.fx_names == ["Ability FX: (BOT)"] and edit.rebuilt[0][1:] == ("Ability FX: (BOT)", "Ability FX: (BOT)")
-    saved = PSDImage.open(baked.psd_path)
-    layer = pe.ability_layer(saved)
-    fx, = pe.fx_layers(saved, layer)
-    assert fx.bbox[0] < before.bbox[0] and fx.bbox[1] == before.bbox[1] and fx.layer_id == before.layer_id
-    assert saved.index(fx) == old.index(before) and pe.PSDParser._pixel_coverage(fx, layer) == 1.0
-    assert baked.reparse["validator"] == [] and baked.region[0] <= fx.bbox[0] and baked.region[2] >= before.bbox[2]
+    assert edit.fx_names == [] and edit.dropped == ["Ability FX: (BOT)"] and edit.rebuilt == [] and edit.fx == []
+    assert baked.fx_notes == ["Ability FX: (BOT) deleted: badge FX layers are retired"]
+    assert ("Ability FX: (BOT)", ["removed"]) in [(name, fields) for _, name, fields in baked.records]
+    layer = pe.ability_layer(PSDImage.open(baked.psd_path))
+    at = layer.text.index("(BOT)")
+    assert pe.one_colour(layer) and pe.stylistic_alternates(layer) == ((at, at + 5),)
+    assert not any("StylisticAlternates" in run["StyleSheet"]["StyleSheetData"] for run in layer.engine_dict["StyleRun"]["RunArray"])
+    assert pe.stale_stories(PSDImage.open(baked.psd_path)) == [] and baked.reparse["validator"] == []
 
 
 SNOW_BUNNY = "Items/Heal/2 Stars/Snow_Bunny.psd"   # L7: 'Ability FX: Frozen' keeps its old overlay's style, not the chart's
@@ -1737,13 +1709,13 @@ def test_numbered_status_fx_layers_stay_on_their_words(clone, parser, chart, tmp
 
 @text_edit
 def test_fx_gates_refuse_a_wrong_cut(clone, parser, chart, tmp_path):
-    """BUG 2 review: the gates on a rebuilt FX layer refuse a wrong one. Mini Doomer's "(BOT)" moved by an edit, then its
+    """BUG 2 review: the gates on a rebuilt FX layer refuse a wrong one. Snow Bunny's Frozen moved by an edit, then its
     FX layer shifted, cut short, or not the Ability's pixels: gate_fx refuses (reparse), and for a faint stripe away
     from its words too when the layer counts as kept (the own-pixels check skipped); its opacity or name changed on the
     saved card: gate_bytes refuses (bytes)."""
-    psd_path = _card(clone, MINI_DOOMER)[0]
-    text = pe.normalize_ability(pe.parse_card(parser, psd_path, MINI_DOOMER)["card"]["ability"]).replace("Die.", "Then die at once.")
-    parsed, baked = _bake(clone, parser, MINI_DOOMER, {"ability": text}, tmp_path, chart)
+    psd_path = _card(clone, SNOW_BUNNY)[0]
+    text = pe.normalize_ability(pe.parse_card(parser, psd_path, SNOW_BUNNY)["card"]["ability"]).replace("at least ", "")
+    parsed, baked = _bake(clone, parser, SNOW_BUNNY, {"ability": text}, tmp_path, chart)
     fonts, store = str(clone / pe.FONTS_DIR), pe._fx_engine()[6]
 
     def tampered(how):
@@ -1766,55 +1738,25 @@ def test_fx_gates_refuse_a_wrong_cut(clone, parser, chart, tmp_path):
         elif how == "opacity":
             fx.opacity = 200
         elif how == "renamed":
-            fx.name = "Ability FX: (TOP)"
+            fx.name = "Ability FX: Thawed"
         fx._invalidate_bbox()
         return psd
 
     pe.gate_fx(PSDImage.open(baked.psd_path), baked.edits, fonts)
     for how, why in (("shifted", "inks .* px outside its words' glyph boxes"), ("short", "covers .* of its words'"),
                      ("repainted", "is not the Ability's own pixels")):
-        with pytest.raises(pe.Refused, match=r"'Ability FX: \(BOT\)' " + why) as refused:
+        with pytest.raises(pe.Refused, match=r"'Ability FX: Frozen' " + why) as refused:
             pe.gate_fx(tampered(how), baked.edits, fonts)
         assert refused.value.code == "reparse"
-    with pytest.raises(pe.Refused, match=r"'Ability FX: \(BOT\)' inks \d+ px outside"):
+    with pytest.raises(pe.Refused, match=r"'Ability FX: Frozen' inks \d+ px outside"):
         pe.gate_fx(tampered("faint"), [replace(baked.edits[0], rebuilt=[])], fonts)
-    renamed = r"renamed 'Ability FX: \(TOP\)', not 'Ability FX: \(BOT\)'"     # gate_bytes' name check fires first
+    renamed = r"renamed 'Ability FX: Thawed', not 'Ability FX: Frozen'"     # gate_bytes' name check fires first
     for how, why in (("opacity", "changed .*blend"), ("renamed", renamed)):
         path = tmp_path / f"{how}.psd"
         tampered(how).save(str(path))
         with pytest.raises(pe.Refused, match=why) as refused:
             pe.gate_bytes(psd_path, str(path), baked.edits)
         assert refused.value.code == "bytes"
-
-
-@text_edit
-def test_ability_bake_drops_the_fx_layer_of_a_word_it_removes(clone, parser, chart, tmp_path):
-    """BUG 2: a badge that leaves the text leaves its FX layer's name (PoD11ZOMG's "(1GCD) | (2U) | (2CD)" becomes
-    "(2U) | (2CD)", told in the report); a layer whose words all left goes (Mini Doomer's "(BOT)"), told too. A badge
-    typed in the icon font joins the name (review: "(2U)" made "(3U)", whose pill the layer draws)."""
-    zomg = "Auxiliary/Minions/PoD11ZOMG.psd"
-    text = pe.normalize_ability(pe.parse_card(parser, _card(clone, zomg)[0], zomg)["card"]["ability"]).replace("(1GCD)", "", 1)
-    one = tmp_path / "one"
-    one.mkdir()
-    parsed, baked = _bake(clone, parser, zomg, {"ability": text}, one, chart)
-    assert [(name, fields) for _, name, fields in baked.records][1:] == [
-        ("Ability FX: (1GCD) | (2U) | (2CD)", ["blocks", "channels", "name", "rect"])]
-    assert baked.fx == ["Ability FX: (2U) | (2CD)"] and baked.fx_notes == [
-        "Ability FX: (1GCD) | (2U) | (2CD) renamed 'Ability FX: (2U) | (2CD)': (1GCD) left the ability"]
-    assert baked.reparse["validator"] == []
-    two = tmp_path / "two"
-    two.mkdir()
-    text = pe.normalize_ability(pe.parse_card(parser, _card(clone, MINI_DOOMER)[0], MINI_DOOMER)["card"]["ability"]).replace("(BOT) ", "")
-    parsed, baked = _bake(clone, parser, MINI_DOOMER, {"ability": text}, two, chart)
-    assert [(name, fields) for _, name, fields in baked.records][1:] == [("Ability FX: (BOT)", ["removed"])]
-    assert baked.fx == [] and baked.edits[0].dropped == ["Ability FX: (BOT)"] and baked.edits[0].fx_names == []
-    assert baked.fx_notes == ["Ability FX: (BOT) deleted: its words left the ability"]
-    three = tmp_path / "three"
-    three.mkdir()
-    text = pe.normalize_ability(pe.parse_card(parser, _card(clone, zomg)[0], zomg)["card"]["ability"]).replace("(2U)", "(3U)")
-    parsed, baked = _bake(clone, parser, zomg, {"ability": text}, three, chart)
-    assert baked.fx == ["Ability FX: (1GCD) | (2CD) | (3U)"] and baked.fx_notes == [
-        "Ability FX: (1GCD) | (2U) | (2CD) renamed 'Ability FX: (1GCD) | (2CD) | (3U)': (2U) left the ability; (3U) added"]
 
 
 @text_edit
@@ -1904,43 +1846,23 @@ def test_goofys_one_stays_on_its_one(clone, parser, chart, tmp_path):
 
 
 @text_edit
-def test_a_typed_badge_joins_the_badge_layer(clone, parser, chart, tmp_path):
+def test_a_typed_badge_takes_the_alternates_under_an_overlay(clone, parser, chart, tmp_path):
     """Owner 2026-10-23: a timing tag typed anywhere is set in the stoogedings badge font, at the card's own badge style
-    (Mini Doomer's 50 pt (BOT)); on a badge card it joins the badge layer as a real badge (review 2026-10-23 refused it:
-    typed as body text the JSX's cut would have lifted its letters out of the gradient, white). Every gate passes; the
+    (Mini Doomer's 50 pt (BOT)). Under the overlay (owner 2026-10-25) it and the kept "(BOT)" take Stylistic Alternates,
+    one-colour pills; the body text typed beside them does not, nor the retired badge layer stay. Every gate passes; the
     parser reads it back."""
-    psd_path = _card(clone, MINI_DOOMER)[0]
-    old = pe.normalize_ability(pe.parse_card(parser, psd_path, MINI_DOOMER)["card"]["ability"])
-    parsed, baked = _bake(clone, parser, MINI_DOOMER, {"ability": old + " Then (bot)."}, tmp_path, chart)
+    paths = _at(clone, tmp_path, BADGED, MINI_DOOMER)
+    old = pe.normalize_ability(pe.parse_card(parser, paths[0], MINI_DOOMER)["card"]["ability"])
+    parsed, baked = _bake(clone, parser, MINI_DOOMER, {"ability": old + " Then (bot) wins."}, tmp_path, chart, paths=paths)
     edit, = baked.edits
-    assert edit.fx_names == ["Ability FX: (BOT)"] and baked.fx == ["Ability FX: (BOT)"] and edit.fonts == []
-    assert baked.reparse["card"]["ability"].endswith("(BOT) Die. Then (bot).") and baked.reparse["validator"] == []
-    runs = _runs(pe.ability_layer(PSDImage.open(baked.psd_path)))
+    assert edit.fx_names == [] and edit.dropped == ["Ability FX: (BOT)"] and edit.fonts == []
+    assert baked.reparse["card"]["ability"].endswith("(BOT) Die. Then (bot) wins.") and baked.reparse["validator"] == []
+    layer = pe.ability_layer(PSDImage.open(baked.psd_path))
+    runs = _runs(layer)
     assert [run[:3] for run in runs if run[1] == pe.ICON_FONT] == [("(BOT)", pe.ICON_FONT, 50.0), ("(bot)", pe.ICON_FONT, 50.0)]
-
-
-@text_edit
-def test_rebuild_fx_leaves_a_badge_in_plain_letters_off(clone, chart):
-    """_rebuild_fx's safety net (set_text_layer sets every typed badge in the icon font): Mini Doomer's badge layer whose
-    phrase now also matches a "(BOT)" in the body font leaves it off, told, rather than cut its letters out of the
-    Ability's gradient, white."""
-    from psd_tools.composite.text import FontMap
-    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
-    layer = pe.ability_layer(psd)
-    old = layer.text
-    new = old.replace("Die.", "Die. Then (BOT).")
-    plans = pe.plan_fx(layer, pe.fx_layers(psd, layer), chart)
-    kept = pe.kept_chars(old, new)
-    targets = [pe.follow_fx(plan, new, kept) for plan in plans]
-    fonts = FontMap(dirs=[str(clone / pe.FONTS_DIR)])
-    layer.set_text(new, keep="runs")
-    layer.rasterize(fonts=fonts)
-    assert not pe._char_styles(layer)[1][new.rindex("(BOT)")]
-    at = new.rindex("(BOT)")
-    rebuilt, deleted, covered, notes = pe._rebuild_fx(psd, layer, new, plans, tuple(layer.bbox), kept, fonts,
-                                                      pe._fx_engine(), targets)
-    flagged(notes, r"^styled-word: ability: Ability FX: \(BOT\): '\(BOT\)' is not in the icon font")
-    assert (at, at + 5) not in covered
+    text = layer.text
+    assert [text[a:b] for a, b in pe.stylistic_alternates(layer)] == ["(BOT)", "(bot)"]
+    assert not any("Stylistic" in note for note in baked.fx_notes)
 
 
 @text_edit
@@ -1968,20 +1890,26 @@ def test_typed_icons_on_a_card_without_the_icon_font(clone, parser, chart, tmp_p
 
 @text_edit
 def test_typed_icons_that_print_wrong_are_flagged(clone, parser, chart):
-    """Baked and told (owner 2026-10-24): a badge typed under the Ability's colour or gradient overlay with no badge FX
-    layer to restore its colours (Cat), a [type] token on a card whose type icons are image layers in the ability's gaps
+    """Baked and told (owner 2026-10-24): a colour icon typed under the Ability's colour or gradient overlay (Cat; a badge
+    or sticker takes the one-colour alternates there, owner 2026-10-25), a [type] token on a card whose type icons are image layers in the ability's gaps
     (Nebulous Precipice's darkmatter: the website's text holds their tokens), and a badge replaced by letters the icon
     font draws plainly ("(abc)")."""
     fonts = str(clone / pe.FONTS_DIR)
     for rel, edit, why in (
-            ("Auxiliary/Minions/Cat.psd", lambda t: t + " (1CD) Die.", r"^unsupported-card: ability: \(1CD\): the Ability's "
-                                                                      r"look \(its Color Overlay\) changes the typed badge's "
-                                                                      r"colours and no badge FX layer restores them$"),
+            ("Auxiliary/Minions/Cat.psd", lambda t: t + " [fire] Die.", r"^unsupported-card: ability: \[fire\]: the Ability's "
+                                                                       r"look \(its Color Overlay\) changes the typed icon's "
+                                                                       r"colours$"),
             ("Field/3 Stars/Nebulous_Precipice.psd", lambda t: t + " Deal 1 [fire] damage.", r"\[type\] tokens on a card with image icons"),
             (MINI_DOOMER, lambda t: t.replace("(BOT)", "(abc)"), r"'\(abc\)' set in the icon font, which draws no badge")):
         psd = PSDImage.open(_card(clone, rel)[0])
         text = edit(pe.normalize_ability(pe.ability_layer(psd).text))
         flagged(pe.set_text_layer(psd, "ability", text, fonts, chart, parser=parser).notes, why)
+    psd = PSDImage.open(_card(clone, "Auxiliary/Minions/Cat.psd")[0])
+    text = pe.normalize_ability(pe.ability_layer(psd).text) + " (1CD) [fire:sticker] Die."
+    notes = pe.set_text_layer(psd, "ability", text, fonts, chart, parser=parser).notes
+    assert not any("look" in note for note in notes)
+    layer = pe.ability_layer(psd)
+    assert [layer.text[a:b] for a, b in pe.stylistic_alternates(layer)][-2:] == ["(1CD)", "[fire:sticker]"]
 
 
 TURTLE = "Auxiliary/Minions/Turtle.psd"               # '(1GCD)' under a Color Overlay, 'Ability FX: (1GCD)' over it
@@ -1990,12 +1918,12 @@ FLAMEBLADE = "Items/Equip/3 Stars/Flameblade.psd"        # 'Ability FX: Attacks 
 
 
 @text_edit
-def test_typed_icons_under_any_tint_without_a_badge_layer(clone, parser, chart):
+def test_typed_icons_under_any_tint(clone, parser, chart, tmp_path):
     """Review 2026-10-23: the tint counted only an opaque Normal overlay. Soul of Eden's Pin Light blend printed a typed
     (2CD) white on cyan, Ice Staff's two 69% gradients a pale blue one and Holy Mantle's Pin Light a washed [fire], The
     Patients' 78% opacity a dimmed one, Claw's and Miasma's Exposure 1 clipped to Text a pale one (reviews 2026-10-24):
-    _tinted names each, and with no badge FX layer to restore them the edit is flagged. Binge Eater, Pin Light with a
-    badge layer, takes one (the layer names it)."""
+    _tinted names each, and the edit is flagged. Binge Eater, Pin Light with a badge layer: the layer goes (retired,
+    owner 2026-10-25) and a typed badge is told as any (no overlay: no alternates)."""
     fonts = str(clone / pe.FONTS_DIR)
     for rel, why in (("Items/Equip/2 Stars/Soul_of_Eden.psd", "its Pin Light blending"),
                      ("Items/Equip/2 Stars/Ice_Staff.psd", "its Gradient Overlay"),
@@ -2005,48 +1933,87 @@ def test_typed_icons_under_any_tint_without_a_badge_layer(clone, parser, chart):
                      ("Auxiliary/Minions/Miasma.psd", "'Exposure 1', clipped to its group 'Text'")):
         layer = pe.ability_layer(PSDImage.open(_card(clone, rel)[0]))
         assert pe._tinted(layer) == why and not pe._overlaid(layer)
+        assert pe.one_colour(layer) == ("Overlay" in why)
     psd = PSDImage.open(_card(clone, "Items/Equip/4 Stars/Holy_Mantle.psd")[0])
     edit = pe.set_text_layer(psd, "ability", pe.normalize_ability(pe.ability_layer(psd).text) + " [fire]", fonts, chart,
                              parser=parser)
     flagged(edit.notes, r"^unsupported-card: ability: \[fire\]: the Ability's look \(its Pin Light blending\) changes the "
-                        r"typed icon's colours and no badge FX layer restores them$")
+                        r"typed icon's colours$")
     assert not pe._tinted(pe.ability_layer(PSDImage.open(_card(clone, "Auxiliary/Creatures/Mettaton_NEO.psd")[0])))
-    psd = PSDImage.open(_card(clone, "Items/Equip/4 Stars/Binge_Eater.psd")[0])
+    psd = PSDImage.open(_at(clone, tmp_path, BADGED, "Items/Equip/4 Stars/Binge_Eater.psd")[0])
     text = pe.normalize_ability(pe.ability_layer(psd).text) + " (2CD) Die."
-    assert pe.set_text_layer(psd, "ability", text, fonts, chart, parser=parser).fx_names == ["Ability FX: (1CD) | (2CD)"]
+    edit = pe.set_text_layer(psd, "ability", text, fonts, chart, parser=parser)
+    assert edit.fx_names == [] and edit.dropped == ["Ability FX: (1CD)"]
+    assert "Ability FX: (1CD) deleted: badge FX layers are retired; the Ability's look (its Pin Light blending) now " \
+           "changes its badges' colours" in edit.notes
+    flagged(edit.notes, r"^unsupported-card: ability: \(2CD\): the Ability's look \(its Pin Light blending\) changes the "
+                        r"typed badge's colours$")
 
 
 @text_edit
-def test_a_badge_edited_by_deleting_letters_keeps_its_badge_layer(clone, parser, chart, tmp_path):
-    """Review 2026-10-23: Turtle's "(1GCD)" made "(1CD)" keeps every character, so it did not count as typed: the badge
-    layer, its only phrase gone, was deleted ("its words left the ability") and the new badge printed as a blank pill
-    under the Ability's Color Overlay, every gate passing. Any icon-font badge no badge layer names joins it: renamed,
-    every gate passing."""
-    psd_path = _card(clone, TURTLE)[0]
-    old = pe.normalize_ability(pe.parse_card(parser, psd_path, TURTLE)["card"]["ability"])
-    parsed, baked = _bake(clone, parser, TURTLE, {"ability": old.replace("(1GCD)", "(1CD)")}, tmp_path, chart)
+def test_a_badge_edited_by_deleting_letters_takes_the_alternates(clone, parser, chart, tmp_path):
+    """Review 2026-10-23: Turtle's "(1GCD)" made "(1CD)" keeps every character, so it does not count as typed; under
+    the Ability's Color Overlay it takes Stylistic Alternates all the same (every badge does), and the badge layer goes
+    (retired, owner 2026-10-25), every gate passing, nothing told about colours."""
+    paths = _at(clone, tmp_path, BADGED, TURTLE)
+    old = pe.normalize_ability(pe.parse_card(parser, paths[0], TURTLE)["card"]["ability"])
+    parsed, baked = _bake(clone, parser, TURTLE, {"ability": old.replace("(1GCD)", "(1CD)")}, tmp_path, chart, paths=paths)
     edit, = baked.edits
-    assert edit.fx_names == ["Ability FX: (1CD)"] and edit.dropped == [] and baked.fx == ["Ability FX: (1CD)"]
-    assert baked.fx_notes == ["Ability FX: (1GCD) renamed 'Ability FX: (1CD)': (1GCD) left the ability; (1CD) added"]
+    assert edit.fx_names == [] and edit.dropped == ["Ability FX: (1GCD)"] and baked.fx == []
+    assert baked.fx_notes == ["Ability FX: (1GCD) deleted: badge FX layers are retired"]
+    layer = pe.ability_layer(PSDImage.open(baked.psd_path))
+    assert [layer.text[a:b] for a, b in pe.stylistic_alternates(layer)] == ["(1CD)"]
 
 
 @text_engine
-def test_gate_fx_tells_a_bare_badge_under_a_tinted_ability(clone):
-    """bare_icons, independent of the rebuild: Turtle's badge under its Color Overlay is covered by its badge FX layer;
-    with the layer gone (what the deleting-letters bug left) gate_fx tells it, even for an edit that cut no FX layer.
-    Blood Bomb's [machine] (Pin Light, no badge layer) was bare before the edit: it may stay so, not become so."""
+def test_alternates_go_on_badges_and_stickers_only(clone):
+    """set_alternates (owner 2026-10-25): Stylistic Alternates on the badges and stickers, off on a typed character that
+    took them from the badge before it; a kept one keeps its flag. alternate_spans picks badges and :stickers only."""
+    text = "(1CD) Burn [fire] and [fire:sticker]."
+    drawn = [(0, 5), (11, 17), (22, 36)]
+    assert pe.alternate_spans(text, drawn) == [(0, 5), (22, 36)]
+    psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])
+    layer = pe.ability_layer(psd)
+    at, end = layer.text.index("(BOT)"), len(layer.text)
+    layer.set_span_style(0, end, StylisticAlternates=True)
+    pe.set_alternates(layer, [(at, at + 5)], [(at + 5, end)])
+    assert pe.stylistic_alternates(layer) == ((0, at + 5),)
+    pe.set_alternates(layer, [(at, at + 5)], [(0, end)])
+    assert pe.stylistic_alternates(layer) == ((at, at + 5),)
+
+
+@text_engine
+def test_restyle_due_names_layers_an_edit_leaves(clone, tmp_path):
+    """A layer of a several-layer Ability the edit leaves alone is set all the same when a retired badge FX layer is over
+    it (Miracle Matter's first) or its badge under an overlay lacks Stylistic Alternates; the rest are left."""
+    psd = PSDImage.open(_at(clone, tmp_path, BADGED, MIRACLE)[0])
+    layers = pe.ability_layers(psd).layers
+    due = [pe._restyle_due(psd, layer, None) for layer in layers]
+    assert due[0] and not any(due[1:])
+    psd = PSDImage.open(_card(clone, "Creatures/Kirby/5 Stars/Butterfly.psd")[0])     # (OFS), (OD) in its body font
+    assert not any(pe._restyle_due(psd, layer, None) for layer in pe.ability_layers(psd).layers)
+
+
+@text_engine
+def test_gate_fx_tells_a_bare_badge_under_a_tinted_ability(clone, tmp_path):
+    """bare_icons, independent of the rebuild: Turtle's badge under its Color Overlay is in the overlay's colour until
+    it takes Stylistic Alternates (owner 2026-10-25: one colour on purpose); gate_fx tells a new one, even for an edit
+    that cut no FX layer. Blood Bomb's [machine] (Pin Light) was bare before the edit: it may stay so, not become so."""
     from psd_tools.composite.text import FontMap
     fonts_dir = str(clone / pe.FONTS_DIR)
     fonts = FontMap(dirs=[fonts_dir])
-    old = PSDImage.open(_card(clone, TURTLE)[0])
-    assert pe.bare_icons(old, fonts) == Counter()
-    psd = PSDImage.open(_card(clone, TURTLE)[0])
-    fx, = pe.fx_layers(psd, pe.ability_layer(psd))
-    fx.parent.remove(fx)
-    assert pe.bare_icons(psd, fonts) == Counter({"(1gcd)": 1})
+    turtle = _at(clone, tmp_path, BADGED, TURTLE)[0]
+    old = PSDImage.open(turtle)
+    assert pe.bare_icons(old, fonts) == Counter({"(1gcd)": 1})
+    psd = PSDImage.open(turtle)
+    layer = pe.ability_layer(psd)
+    at = layer.text.index("(1GCD)")
+    layer.set_span_style(at, at + 6, StylisticAlternates=True)
+    assert pe.bare_icons(psd, fonts) == Counter()
     edit = SimpleNamespace(field="ability", fx_names=[])
-    assert pe.gate_fx(psd, [edit], fonts_dir, None, old) == [
-        "unsupported-card: ability: (1gcd): under the Ability's look (its Color Overlay) with no badge FX layer over it"]
+    assert pe.gate_fx(psd, [edit], fonts_dir, None) == []
+    assert pe.gate_fx(old, [edit], fonts_dir, None) == [
+        "unsupported-card: ability: (1gcd): under the Ability's look (its Color Overlay), which changes their colours"]
     bomb = PSDImage.open(_card(clone, BLOOD_BOMB)[0])
     assert pe.bare_icons(bomb, fonts) == Counter({"[machine]": 1})
     assert pe.gate_fx(bomb, [edit], fonts_dir, None, PSDImage.open(_card(clone, BLOOD_BOMB)[0])) == []
@@ -2054,18 +2021,19 @@ def test_gate_fx_tells_a_bare_badge_under_a_tinted_ability(clone):
 
 
 @text_edit
-def test_letters_a_deletion_leaves_in_the_icon_font_are_flagged(clone, parser, chart):
+def test_letters_a_deletion_leaves_in_the_icon_font_are_flagged(clone, parser, chart, tmp_path):
     """"(1GCD)" made "(GCD)" (Turtle) left "(GCD)" in the icon font, drawn as plain letters: the check looked only at
-    typed characters. Any letter the icon font now draws plainly is told, unless it did before the edit. And a badge
-    layer whose badges all left while the icon font still draws something no badge layer names ("★" for the badge)
-    goes, told."""
-    psd = PSDImage.open(_card(clone, TURTLE)[0])
+    typed characters. Any letter the icon font now draws plainly is told, unless it did before the edit. A "★" typed
+    for the badge is told under the overlay (a colour icon; the badge layer goes, retired)."""
+    turtle = _at(clone, tmp_path, BADGED, TURTLE)[0]
+    psd = PSDImage.open(turtle)
     text = pe.normalize_ability(pe.ability_layer(psd).text)
     edit = pe.set_text_layer(psd, "ability", text.replace("(1GCD)", "(GCD)"), str(clone / pe.FONTS_DIR), chart, parser=parser)
     flagged(edit.notes, r"^unsupported-card: ability: '\(GCD\)' set in the icon font, which draws no badge or icon of it$")
-    psd = PSDImage.open(_card(clone, TURTLE)[0])
+    psd = PSDImage.open(turtle)
     edit = pe.set_text_layer(psd, "ability", text.replace("(1GCD)", "★"), str(clone / pe.FONTS_DIR), chart, parser=parser)
-    flagged(edit.notes, r"^Ability FX: \(1GCD\) deleted: .*its badges left the ability, the icon font still draws something")
+    flagged(edit.notes, r"^Ability FX: \(1GCD\) deleted: badge FX layers are retired$")
+    flagged(edit.notes, r"^unsupported-card: ability: ★: the Ability's look \(its Color Overlay\) changes the typed icon's")
 
 
 @text_edit
@@ -2085,134 +2053,6 @@ def test_a_typed_star_is_set_in_the_icon_font(clone, parser, chart):
     psd = PSDImage.open(_card(clone, STANDSTILL)[0])
     flagged(pe.set_text_layer(psd, "ability", text.replace("5★", "5☃"), fonts, chart, parser=parser).notes,
             "^font: ability: '☃' has no glyph in its font")
-
-
-@text_edit
-def test_a_typed_star_is_cut_into_the_badge_layer(clone, parser, chart):
-    """A badge layer takes every colour glyph whatever its name, so a "★" typed far from Scapular's (BOGT) (Pin Light)
-    cuts it again: kept whole (none of its glyphs redrawn), the star printed in the blend's colours and gate_fx's
-    bare_icons refused it (PoD11ZOMG, Palace of Shadow, Scapular in the review census)."""
-    from psd_tools.composite.text import FontMap
-    fonts = str(clone / pe.FONTS_DIR)
-    psd = PSDImage.open(_card(clone, "Items/Support/3 Stars/Scapular.psd")[0])
-    text = pe.normalize_ability(pe.ability_layer(psd).text) + " Costs 5★."
-    edit = pe.set_text_layer(psd, "ability", text, fonts, chart, parser=parser)
-    assert [name for _, _, name in edit.rebuilt] == ["Ability FX: (BOGT)"]
-    assert pe.bare_icons(psd, FontMap(dirs=[fonts])) == Counter()
-
-
-@text_edit
-def test_a_badge_layer_takes_its_icons_red_less_pixels(clone, parser, chart):
-    """Review 2026-10-24: a badge layer is cut with the JSX's red key, so a typed [undead]'s black eye sockets and jaw (no
-    red) stayed out of Turtle's and printed in its Color Overlay's colour, glowing eyes, every gate passing (gate_fx
-    and bare_icons let 1% of a glyph out). The layer takes its colour glyphs' silhouettes too: every opaque pixel of
-    the skull is under it, as on the official cuts. And both checks let none out: a hole poked in it is told."""
-    from psd_tools.composite.text import FontMap
-    from psd_tools.composite.text.geometry import text_geometry
-    fonts_dir = str(clone / pe.FONTS_DIR)
-    fonts = FontMap(dirs=[fonts_dir])
-    old, psd = PSDImage.open(_card(clone, TURTLE)[0]), PSDImage.open(_card(clone, TURTLE)[0])
-    text = pe.normalize_ability(pe.ability_layer(psd).text) + " Immune to [undead]."
-    edit = pe.set_text_layer(psd, "ability", text, fonts_dir, chart, parser=parser)
-    assert edit.fx_names == ["Ability FX: (1GCD) | [undead]"]
-    layer = pe.ability_layer(psd)
-    fx, = pe.fx_layers(psd, layer)
-    geometry = text_geometry(layer, fonts)
-    glyphs = [glyph for glyph in geometry["glyphs"] if glyph["ink"]]
-    skull, = [glyph for glyph in glyphs if geometry["text"][glyph["i"]:glyph["end"]] == "[undead]"]
-    shape = (psd.height, psd.width)
-    body = pe._boxes([glyph for glyph in glyphs if not glyph["font"].lower().startswith("stooge")], 1, shape)
-    want = (pe._on_canvas(layer, shape)[..., 3] > 127) & pe._boxes([skull], 0, shape) & ~body
-    cover = pe._on_canvas(fx, shape)[..., 3] > 127
-    assert want.sum() > 2000 and not (want & ~cover).any()
-    assert pe.gate_fx(psd, [edit], fonts_dir, chart, old) == []
-    ys, xs = (want & cover).nonzero()
-    x0, y0 = fx.bbox[:2]
-    rgba = np.concatenate([fx.numpy("color"), fx.numpy("shape")], axis=2).astype(np.float32)
-    rgba[ys[:6] - y0, xs[:6] - x0] = 0.0        # 6 of its 2,500 px: what the red key left out was 10
-    pe._fx_engine()[6](fx, rgba, tuple(fx.bbox))
-    fx._invalidate_bbox()
-    assert pe.bare_icons(psd, fonts) == Counter({"[undead]": 1})
-    flagged(pe.gate_fx(psd, [edit], fonts_dir, chart, old),
-            r"^unsupported-card: ability: 'Ability FX: \(1GCD\) \| \[undead\]' leaves 6 px of its badges and icons out$")
-    flagged(pe.gate_fx(psd, [SimpleNamespace(field="ability", fx_names=[])], fonts_dir, chart, old),
-            r"^unsupported-card: ability: \[undead\]: under the Ability's look \(its Color Overlay\)")
-
-def _colour_px(layer, fonts, shape) -> np.ndarray:
-    """The text's pixels (any alpha) in its icon font's own colours: renders with every run filled red, then blue, agree."""
-    from psd_tools.composite.text.layout import layout
-    from psd_tools.composite.text.model import TextModel
-    from psd_tools.composite.text.raster import GlyphCache, Options, rasterize
-    model, out = TextModel.from_layer(layer), []
-    for fill in ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0)):
-        key = replace(model, runs=tuple(replace(run, style=replace(run.style, fill=fill)) for run in model.runs))
-        rgba, (x0, y0, x1, y1) = rasterize(layout(key, fonts), key.transform, key.antialias, Options(color_glyphs=True),
-                                           GlyphCache())
-        canvas = np.zeros((*shape, 4), np.float32)
-        canvas[int(y0):int(y1), int(x0):int(x1)] = rgba
-        out.append(canvas)
-    return (np.abs(out[0] - out[1]).max(axis=2) < 1e-3) & (out[0][..., 3] > 0)
-
-
-@text_edit
-def test_a_badge_layer_takes_a_colour_icons_see_through_glow(clone, parser, chart):
-    """Reviews 2026-10-24: [support]'s ring has a soft, see-through, red-less glow past its glyf outline (the silhouette
-    stops at alpha 110): the badge layer left it out, and it printed in the overlay's colour (maroon on Mini Doomer, olive
-    on Turtle), every gate passing (they counted ink past alpha 0.5). The layer takes every pixel of its glyphs, the
-    gates every colour-glyph pixel past FAINT_INK: a hole in the glow is told. A typed "★", which no badge phrase names
-    (Turtle: 2 faint px of its glow left out, the gate told it), is the layer's too. A typed [support] is told all
-    the same (see_through_icons): the layer over its see-through glow shows the overlay through it (review 2026-10-24,
-    third round: Heavy Mole's olive-grey [support])."""
-    from psd_tools.composite.text import FontMap
-    from psd_tools.composite.text.geometry import text_geometry
-    fonts_dir = str(clone / pe.FONTS_DIR)
-    fonts = FontMap(dirs=[fonts_dir])
-    for rel, tail in ((MINI_DOOMER, " Gain [support]."), (TURTLE, " Gain 5★."), (TURTLE, " Immune to [support].")):
-        old, psd = PSDImage.open(_card(clone, rel)[0]), PSDImage.open(_card(clone, rel)[0])
-        edit = pe.set_text_layer(psd, "ability", pe.normalize_ability(pe.ability_layer(psd).text) + tail, fonts_dir, chart,
-                                 parser=parser)
-        layer = pe.ability_layer(psd)
-        fx, = [fx for fx in pe.fx_layers(psd, layer) if pe.BADGE_FX.fullmatch(pe.fx_label(layer, fx))]
-        assert fx.name.endswith(" | [support]" if "[" in tail else "(1GCD)") and pe._tinted(layer)
-        shape = (psd.height, psd.width)
-        alpha = pe._on_canvas(layer, shape)[..., 3]
-        colour = _colour_px(layer, fonts, shape) & (alpha > 0)
-        held = pe._on_canvas(fx, shape)[..., 3] > 0
-        assert (colour & (alpha <= 110)).sum() > (1000 if "[" in tail else 100) and not (colour & ~held).any()
-        notes = pe.gate_fx(psd, [edit], fonts_dir, chart, old, parser.icons)
-        if "[" in tail:             # yet a see-through glow under a badge layer prints in the overlay's colour (review 3)
-            flagged(notes, r"^unsupported-card: ability: \[support\]: see-through, under a badge FX layer")
-        else:
-            assert notes == []
-    geometry = text_geometry(layer, fonts)
-    ring, = [glyph for glyph in geometry["glyphs"] if geometry["text"][glyph["i"]:glyph["end"]] == "[support]"]
-    glow = pe._boxes([ring], 20, shape) & ~pe._boxes([ring], pe.FX_BOX_PAD, shape)
-    ys, xs = (colour & held & (alpha > 20) & (alpha < 120) & glow).nonzero()
-    x0, y0 = fx.bbox[:2]
-    rgba = np.concatenate([fx.numpy("color"), fx.numpy("shape")], axis=2).astype(np.float32)
-    rgba[ys[:6] - y0, xs[:6] - x0] = 0.0        # 6 faint px of Turtle's glow, past the ring's glyph box
-    pe._fx_engine()[6](fx, rgba, tuple(fx.bbox))
-    fx._invalidate_bbox()
-    assert pe.bare_icons(psd, fonts) == Counter({"[support]": 1})
-    flagged(pe.gate_fx(psd, [edit], fonts_dir, chart, old, parser.icons),
-            r"^unsupported-card: ability: 'Ability FX: \(1GCD\) \| \[support\]' leaves 6 px of its badges and icons out$")
-
-
-@text_edit
-def test_a_see_through_icon_under_a_badge_layer_is_flagged(clone, parser, chart, tmp_path):
-    """Review 2026-10-24 (third round): a badge FX layer is a copy of the Ability's pixels over it, so a pixel at alpha a
-    shows a*(1-a) of the tinted Ability below: [support]'s glow on Mini Doomer printed maroon, every gate passing. A
-    typed see-through icon bakes, told (see_through_icons); an opaque one ([fire], (2CD)) bakes untold, its rim like the
-    printed badges'."""
-    from psd_tools.composite.text import FontMap
-    fonts = FontMap(dirs=[str(clone / pe.FONTS_DIR)])
-    old = pe.normalize_ability(pe.parse_card(parser, _card(clone, MINI_DOOMER)[0], MINI_DOOMER)["card"]["ability"])
-    parsed, baked = _bake(clone, parser, MINI_DOOMER, {"ability": old + " Gain [warpstar]."}, tmp_path, chart)
-    flagged(baked.fx_notes, r"^unsupported-card: ability: \[warpstar\]: see-through, under a badge FX layer, which prints "
-                            r"its glow twice and in the Ability's overlay or blend colour$")
-    parsed, baked = _bake(clone, parser, MINI_DOOMER, {"ability": old + " Gain [fire]. (2CD) Die."}, tmp_path, chart)
-    saved = PSDImage.open(baked.psd_path)
-    assert pe.see_through_icons(saved, fonts) == Counter() == pe.see_through_icons(PSDImage.open(_card(clone, MINI_DOOMER)[0]), fonts)
 
 
 @text_edit
@@ -2492,7 +2332,8 @@ def test_an_edit_keeps_the_cards_own_token_spellings(clone, parser, chart, tmp_p
     assert pe.keep_tokens(layer, "[dark]", None) == "[dark]"
     parsed, baked = _bake(clone, parser, rel, {"ability": old + " Die."}, tmp_path, chart)
     text = pe.ability_layer(PSDImage.open(baked.psd_path)).text
-    assert text.startswith("[dark:sticker]: +2 DEF") and "[light:sticker] creature" in text and baked.fx == []
+    assert text.startswith("[dark:sticker]: +2 DEF") and "[light:sticker] creature" in text
+    assert baked.fx in ([], ["Ability FX: +2 DEF"])     # cut again when the salt stickers beside it are first drawn
     assert pe.normalize_ability(baked.reparse["card"]["ability"]) == old + " Die."
 
 
@@ -3550,7 +3391,9 @@ def test_a_typed_copy_of_an_own_style_phrase_takes_its_colour(clone, parser, cha
     blue = dict(_fills(pe.ability_layer(PSDImage.open(psd_path))))["+2 DEF"]
     old = pe.normalize_ability(pe.parse_card(parser, psd_path, PALACE)["card"]["ability"])
     parsed, baked = _bake(clone, parser, PALACE, {"ability": old + " Allies get +2 DEF."}, tmp_path, chart)
-    assert baked.fx_notes == [f"{PLUS_DEF} also covers the typed '+2 DEF', in its own style"]
+    retired = "Ability FX: [dark:sticker] | (OYT) | [light:sticker] deleted: badge FX layers are retired"
+    told = f"{PLUS_DEF} also covers the typed '+2 DEF', in its own style"
+    assert baked.fx_notes in ([retired, told], [told])      # no badge layer once TTSCardMaker's batch retired it
     assert [fill for words, fill in _fills(pe.ability_layer(PSDImage.open(baked.psd_path))) if "+2 DEF" in words] == [blue, blue]
     psd = PSDImage.open(_card(clone, MORPHO)[0])
     layer = pe.ability_layer(psd)
@@ -4345,14 +4188,19 @@ def test_ability_split_shares_an_edit_out():
 
 @text_edit
 def test_an_ability_over_several_layers_bakes(clone, parser, chart, tmp_path):
-    """Miracle Matter: an edit across its Fire and Earth layers changes those two records alone, its other three and
-    their 'Ability FX: (1GCD)' byte for byte; on Lit Bob-omb a removed break joins its two layers in the first, the
+    """Miracle Matter: an edit across its Fire and Earth layers changes those two records and deletes the retired
+    'Ability FX: (1GCD)' (owner 2026-10-25), its other three layers byte for byte; on Lit Bob-omb a removed break joins its two layers in the first, the
     second hidden, told."""
-    old = pe.parse_card(parser, _card(clone, MIRACLE)[0], MIRACLE)["card"]["ability"]
+    paths = _at(clone, tmp_path, BADGED, MIRACLE)
+    old = pe.parse_card(parser, paths[0], MIRACLE)["card"]["ability"]
     new = old.replace("Fire: 5/5/8/7", "Fire: 5/5/9/7").replace("Earth: 5/8/6/5", "Earth: 5/9/6/5")
-    _, baked = _bake(clone, parser, MIRACLE, {"ability": new}, _dir(tmp_path, "mm"), chart)
-    assert len(baked.records) == 2 and all(set(fields) <= set(TEXT_RECORD) for _, _, fields in baked.records)
-    assert baked.reparse["card"]["ability"] == new and baked.fx_notes == []
+    _, baked = _bake(clone, parser, MIRACLE, {"ability": new}, _dir(tmp_path, "mm"), chart, paths=paths)
+    texts = 3 if salt_font(clone) else 2        # the salt font redraws the first layer's (1GCD) as an outlined pill
+    assert [name for _, name, _ in baked.records] == ["Ability"] * texts + ["Ability FX: (1GCD)"]
+    assert all(set(fields) <= set(TEXT_RECORD) for _, _, fields in baked.records[:texts])
+    assert baked.records[texts][2] == ["removed"]
+    assert baked.reparse["card"]["ability"] == new
+    assert baked.fx_notes == ["Ability FX: (1GCD) deleted: badge FX layers are retired"]
     saved = [layer.text for layer in pe.ability_layers(PSDImage.open(baked.psd_path)).layers]
     assert saved[1:3] == ["\r    Fire: 5/5/9/7", "\r    \r    Earth: 5/9/6/5 and heal 2 HP\r   "]
     _, baked = _bake(clone, parser, LIT_BOB, {"ability": "Costs 0 SP to use. Deal 7 DMG."}, _dir(tmp_path, "bob"), chart)
@@ -4367,20 +4215,22 @@ def test_an_ability_over_several_layers_bakes(clone, parser, chart, tmp_path):
 def test_several_layers_hidden_part_and_blank_lines(clone, parser, chart, tmp_path):
     """Miracle Matter (review): its first part removed, its FX layer is hidden with it, not given to the last part and
     deleted; a blank line removed between parts is no change (classify), and beside a real change bakes it, told."""
-    old = pe.parse_card(parser, _card(clone, MIRACLE)[0], MIRACLE)["card"]["ability"]
+    paths = _at(clone, tmp_path, BADGED, MIRACLE)
+    old = pe.parse_card(parser, paths[0], MIRACLE)["card"]["ability"]
     new = old.replace("(1GCD) You may choose one of the following forms:\n", "").replace("whatever", "whichever")
-    _, baked = _bake(clone, parser, MIRACLE, {"ability": new}, _dir(tmp_path, "drop"), chart)
+    _, baked = _bake(clone, parser, MIRACLE, {"ability": new}, _dir(tmp_path, "drop"), chart, paths=paths)
     assert baked.reparse["card"]["ability"] == new
     assert baked.fx_notes == ["ability: the words of the first ability layer were removed, so it is hidden"]
     saved = PSDImage.open(baked.psd_path)
     assert [(fx.name, fx.is_visible()) for fx in saved.descendants() if " FX:" in fx.name] == [("Ability FX: (1GCD)", False)]
     tidy = old.replace("5/5/8/7\n    \nEarth", "5/5/8/7\nEarth")
-    psd, parsed = PSDImage.open(_card(clone, MIRACLE)[0]), pe.parse_card(parser, _card(clone, MIRACLE)[0], MIRACLE)
+    psd, parsed = PSDImage.open(paths[0]), pe.parse_card(parser, paths[0], MIRACLE)
     assert pe.classify(parsed, {"ability": tidy}, psd, parser).redundant == ["ability"]
     _, baked = _bake(clone, parser, MIRACLE, {"ability": tidy.replace("heal 2 HP", "heal 3 HP")}, _dir(tmp_path, "tidy"),
-                     chart)
+                     chart, paths=paths)
     assert baked.reparse["card"]["ability"] == old.replace("heal 2 HP", "heal 3 HP")
-    assert baked.fx_notes == ["ability: the blank lines between the ability layers stay as they were: they place the "
+    assert baked.fx_notes == ["Ability FX: (1GCD) deleted: badge FX layers are retired",
+                              "ability: the blank lines between the ability layers stay as they were: they place the "
                               "layers on the card"]
 
 

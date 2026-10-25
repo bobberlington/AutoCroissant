@@ -70,7 +70,7 @@ def test_badge_tags_are_the_fonts_glyphs(clone):
     font = clone / "MDW/Fonts/stoogedings.ttf"
     if not font.exists():
         pytest.skip("no stoogedings.ttf")
-    glyphs = [n for n in TTFont(str(font)).getGlyphOrder() if n.startswith("badge_")]
+    glyphs = [n for n in TTFont(str(font)).getGlyphOrder() if n.startswith("badge_") and "." not in n]   # not .salt
     tags = {("-" + n[7:] if n.startswith("badge_m") else n[6:]).replace("_", "/") for n in glyphs}
     assert tags == set(cs.BADGE_TAGS) and len(cs.BADGE_TAGS) == len(set(cs.BADGE_TAGS)) == 341
 

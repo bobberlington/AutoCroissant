@@ -432,6 +432,7 @@ def test_a_variant_the_font_lacks_is_text(tmp_path):
     out = node(tmp_path, """
 const icons = { fire: { file: "icons/fire.webp" } };
 out(m.tokenize("[fire:] [fire:glows] [Fire:Glow] [fire:NO]", icons).flat(2));""")
+    out = [{k: v for k, v in piece.items() if k != "sticker" or v} for piece in out]     # salt mock-up: sticker masks
     assert out == [{"text": "[fire:]"}, {"text": "[fire:glows]"}, {"icon": "icons/fire.webp", "name": "Fire", "no": False},
                    {"icon": "icons/fire.webp", "name": "fire", "no": True}]
 
