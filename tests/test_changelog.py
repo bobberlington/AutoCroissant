@@ -143,17 +143,12 @@ def test_bot_edits_never_read_as_website_edits():
 
 
 def test_a_mix_of_bot_fields_is_never_the_entrys_editor():
-    """Fields all in _bot with different credits (the migration's series, a Discord user's subseries) are the bot's,
-    not the entry's _by (none of them is web's); one of the _by's own fields in the mix: the _by."""
-    AT = "2026-10-22T00:00:00Z"
-    meta = {"_by": "web", "_bot": ["series", "subseries"], "_credit": {"subseries": {"_by": "discord:a", "_at": AT}}}
+    """Fields all in _bot (the migration's) are the bot's, not the entry's _by; one of the _by's own fields in the
+    mix: the _by."""
+    meta = {"_by": "web", "_bot": ["series", "subseries"]}
     both = {"series": [None, "Kirby"], "subseries": [None, "Dream Land"]}
-    assert cl.edit_credit(meta, both) == "AutoCroissant"
-    assert cl.edit_credit(meta, {"subseries": [None, "x"]}) == "discord:a"
-    assert cl.edit_credit(meta, {"series": [None, "x"]}) == "AutoCroissant"
+    assert cl.edit_credit(meta, both) == cl.edit_credit(meta, {"series": [None, "x"]}) == "AutoCroissant"
     assert cl.edit_credit(meta, {**both, "note": [None, "n"]}) == "web" and cl.edit_credit(meta, {}) == "web"
-    two = {**meta, "_credit": {"series": {"_by": "discord:b", "_at": AT}, "subseries": {"_by": "discord:a", "_at": AT}}}
-    assert cl.edit_credit(two, both) == "AutoCroissant"
 
 
 def test_seq_never_reused():
@@ -218,7 +213,7 @@ def test_payload_words_links_and_order():
          "verdict": "buff"},
         {"kind": "changed", "card": "Waddle Doo", "fields": {"atk": [1, 2]}},
         {"kind": "archived", "card": "Gone"}, {"kind": "renamed", "card": "ZOEY!!!!!", "renamed_to": "Z!!!!!"},
-        {"kind": "edited", "card": "Meta", "fields": {"subseries": [None, "Kirby"]}, "edit_by": "discord:mike"},
+        {"kind": "edited", "card": "Meta", "fields": {"subseries": [None, "Kirby"]}, "edit_by": "mike"},
         {"kind": "reparse", "card": "R"}, {"kind": "reparse", "card": "S"}], 0, at=T)]
     body = cl.payload(events, "https://site", {"Kirby": "kirby"}, "MichaelJSr/TTSCardMaker")
     assert body["allowed_mentions"] == {"parse": []} and "content" not in body
@@ -232,7 +227,7 @@ def test_payload_words_links_and_order():
     assert "(Auxiliary creature, 4★)" in text                                    # app.js's word, never "Other"
     assert "[Waddle Dee](https://site/#/cards?q=Waddle%20Dee): HP 5 → 6; ability changed (buff)" in text
     assert "ZOEY!!!!! is now [Z!!!!!](" in text and "Gone (PSD deleted)" in text
-    assert "[Meta](https://site/#/cards?q=Meta): subseries → Kirby (by mike, via Discord)" in text
+    assert "[Meta](https://site/#/cards?q=Meta): subseries → Kirby (by mike, on the website)" in text
     assert cl.payload([], "https://site") is None
 
 

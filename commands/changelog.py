@@ -57,7 +57,6 @@ CHANGELOG_DIR = "changelog"                              # db/changelog/YYYY-MM.
 POSTED_JSON = "posted.json"                              # db/changelog/posted.json: {"seq", "push"} of the last post
 BOT = "AutoCroissant"                                    # the bot's _by (build_site.BOT_AUTHOR): no website edit
 BOT_FIELDS = "_bot"                                      # an entry's fields that aren't its _by's (build_site.BOT_FIELDS)
-CREDIT = "_credit"                                       # {field: {"_by", "_at"}}: a _bot field's Discord editor (build_site.CREDIT)
 EDIT_FIELD = {"card_type": "type", "tags": "ability"}    # a changed field -> its Card Edits.json field
 UNKNOWN_FIELD = {"display_name": "name"}                 # card_history.unknown's field -> the changelog's
 
@@ -180,22 +179,16 @@ def is_bot(by) -> bool:
 
 def edit_credit(meta, fields) -> Optional[str]:
     """
-    Who an edited event's fields are credited to: its entry's _by; a field in its _bot, its _credit editor (a Discord
-    edit's), else the bot (the migration's). A mix: the _by when one field is its, else the bot (it wrote them all).
-    meta: the entry's _-keys, or its _by alone.
+    Who an edited event's fields are credited to: its entry's _by; a field in its _bot, the bot (the migration's).
+    A mix: the _by when one field is its, else the bot (it wrote them all). meta: the entry's _-keys, or its _by alone.
     """
     if not isinstance(meta, dict):
         return meta
     by = meta.get("_by")
     bot = meta.get(BOT_FIELDS) if isinstance(meta.get(BOT_FIELDS), list) else []
-    credit = meta.get(CREDIT) if isinstance(meta.get(CREDIT), dict) else {}
 
     def of(field: str):
-        name = EDIT_FIELD.get(field, field)
-        if name not in bot:
-            return by
-        found = credit.get(name)
-        return found.get("_by") if isinstance(found, dict) and isinstance(found.get("_by"), str) else BOT
+        return BOT if EDIT_FIELD.get(field, field) in bot else by
     credits = {of(f) for f in fields}
     if len(credits) == 1:
         return credits.pop()
@@ -461,8 +454,7 @@ def _line(event: dict, site: str, ids: Optional[dict]) -> str:
     if kind in ("changed", "edited", "authors"):
         verdict = f" ({event['verdict']})" if event.get("verdict") else ""
         by = event.get("edit_by") or ""
-        where = (f" (by {_md(by.split(':', 1)[1])}, via Discord)" if by.startswith("discord:")
-                 else f" (by {BOT})" if is_bot(by) else f" (by {_md(by)}, on the website)" if by else "")
+        where = f" (by {BOT})" if is_bot(by) else f" (by {_md(by)}, on the website)" if by else ""
         return f"{title}: {_changes(event.get('fields') or {})}{verdict}{where}"
     if kind == "renamed":
         return f"{_md(event['card'])} is now [{_md(event['renamed_to'])}]({card_link(event['renamed_to'], site, ids)})"

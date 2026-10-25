@@ -646,7 +646,7 @@ def test_bake_commit_rewritten_to_the_main_commit(cards):
 def test_bake_commit_posts_as_its_own_push(cards):
     """--baked: the bake commit B is the card sync's push, not part of the push before it by the same author."""
     _build(cards, "--empty")
-    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {"The Freezer": {"note": "via bot", "_by": "discord:mike"}}}).encode())
+    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {"The Freezer": {"note": "via bot", "_by": "mike"}}}).encode())
     c2 = commit(cards.repo, "AutoCroissant", 1500)
     put(cards.repo, DOOMER, cards.psds[OTHER])
     b = commit(cards.repo, "AutoCroissant", 2000)
@@ -659,7 +659,7 @@ def test_bake_commit_posts_as_its_own_push(cards):
 def test_own_main_commit_posts_as_the_card_syncs(cards, monkeypatch):
     """--own M: the bake's pushed main commit is the card sync's push, listed (by github-actions[bot]) or not."""
     _build(cards, "--empty")
-    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {"The Freezer": {"note": "via bot", "_by": "discord:mike"}}}).encode())
+    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {"The Freezer": {"note": "via bot", "_by": "mike"}}}).encode())
     c2 = commit(cards.repo, "AutoCroissant", 1500)
     put(cards.repo, DOOMER, cards.psds[OTHER])
     m = commit(cards.repo, "AutoCroissant", 2000)

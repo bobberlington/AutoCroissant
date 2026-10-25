@@ -83,7 +83,6 @@ WORK_ENV = "RUNNER_TEMP"                        # the Action's temp dir; the wor
 WORK_NAME = "card-bake"
 FIELDS = frozenset(CardEdits.TYPES)            # ORDER (edit.js FIELDS) and PUNCTUATION live in card_edits
 KIND = CardEdits.KIND
-DISCORD = "discord:"                            # a Discord edit's _by (retired 2026-10-25): credited in no bake trailer
 
 
 # ========================
@@ -640,15 +639,13 @@ def _describe(card: Card) -> str:
 
 def editors(card: Card) -> list:
     """
-    The logins whose baked fields the commit prints: _by (one login, or {field: login}), sorted, deduplicated. A
-    Discord editor (DISCORD) is no GitHub login: build_site would give it a person page, so it gets no trailer.
+    The logins whose baked fields the commit prints: _by (one login, or {field: login}), sorted, deduplicated.
     """
     if not card.jobs:                           # nothing printed (redundant only): no credit
         return []
     by = card.by
     logins = [by.get(f) for f in card.jobs] if isinstance(by, dict) else [by]
-    return sorted({x.strip() for x in logins if isinstance(x, str) and len(x.split()) == 1   # a login: one word
-                   and not x.strip().lower().startswith(DISCORD)})
+    return sorted({x.strip() for x in logins if isinstance(x, str) and len(x.split()) == 1})   # a login: one word
 
 
 def _message(cards: list) -> str:
