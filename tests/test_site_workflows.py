@@ -28,7 +28,7 @@ def test_site_reads_the_data_when_switched_on():
     if "CARD_DATA" not in (doc.get("env") or {}):
         pytest.skip("site.yml before the card sync's data checkout (TTSCardMaker work/site-history)")
     assert doc["env"]["CARD_DATA"] == "on"
-    assert doc[True]["schedule"] == [{"cron": "17 12 * * *"}]                   # PyYAML reads `on` as True
+    assert doc[True]["schedule"] == [{"cron": "0 12 * * *"}]                   # PyYAML reads `on` as True
     steps = doc["jobs"]["build"]["steps"]
     branch = next(s for s in steps if s.get("id") == "data")
     assert branch["if"] == "env.CARD_DATA == 'on'" and "refs/heads/data" in branch["run"]
@@ -44,7 +44,7 @@ def test_card_sync_runs_live():
     on = doc[True]
     if "schedule" not in on:
         pytest.skip("card-sync.yml has no schedule yet (dispatch only, step 6)")
-    assert on["schedule"] == [{"cron": "4,34 * * * *"}]
+    assert on["schedule"] == [{"cron": "0,30 * * * *"}]
     assert doc["env"]["MAIN_COMMIT"] == "on" and doc["env"]["POSTS"] == "on"
     assert on["workflow_dispatch"]["inputs"]["dry_run"]["default"] is False
     assert not (WORKFLOWS / "card-edits.yml").exists() and not (WORKFLOWS / "tts-save.yml").exists()   # its two writers

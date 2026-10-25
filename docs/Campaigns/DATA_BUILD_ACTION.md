@@ -222,7 +222,7 @@ run-name: "Card sync", "Card sync (dry run)" for a dry dispatch, "Card sync (ret
           # the alert's streak check skips dry runs; the bot follows a retry by its name (card-guards' dispatch is plain)
 on:
   schedule:                  # added at step 7; as built (step 6) the workflow is dispatch only
-    - cron: "4,34 * * * *"   # every 30 minutes; "4 * * * *" for hourly (decision 5)
+    - cron: "0,30 * * * *"   # every 30 minutes; "0 * * * *" for hourly (decision 5; on the :00/:30 marks since 2026-10-24)
   workflow_dispatch:
     inputs:                  # all optional; all 10 of GitHub's 10
       force: boolean         # run every stage even when the gate finds nothing
@@ -771,7 +771,7 @@ github_api reads it inside a try/except and takes the token from the environment
     the blob's intro, and a `moved` version to the move commit (as the bot's changelog does).
   - **Triggers.** The push trigger stays as today (paths-ignore `TTS/**`), so website edits and new art publish at once on
     the last data. Card sync dispatches it after each commit, with the new data. The cron goes from every 6 hours to daily
-    (`17 12 * * *`), as a safety net.
+    (`0 12 * * *`), as a safety net.
   - **New outputs:** `data/changelog.json` (the last 180 days, names turned into card ids) and `data/analytics.json` (§12.3).
   - **The footer** reads "Card data built <time> from TTSCardMaker@<sha> (run)". When `manifest.card_commit` is more than 3
     hours behind the head on card paths, a staleness warning goes in the log and the footer.

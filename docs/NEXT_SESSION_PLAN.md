@@ -164,7 +164,7 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       §14 step 8 "As built"), runbook `~/Documents/Tools/wt/scratch/cutover-check-1024/RUNBOOK.md`.
 - [ ] **Cutover sitting** (outside 05:00-05:40): reconcile the jetson (clean `git status`, its last `/push` on origin;
       else re-seed). The owner: `/remove_reminder reminder_id:054b5933` (05:30 /push), `/remove_reminder
-      reminder_id:d2664752` (05:00 /update_stats), then `/set_reminder when:<:12 or :42> frequency:30m command:/update_stats`
+      reminder_id:d2664752` (05:00 /update_stats), then `/set_reminder when:<:00 or :30> frequency:30m command:/update_stats`
       (keep 134e3b24). Then site.yml data checkout + `CARD_DATA_DIR` + daily cron; card-sync.yml `MAIN_COMMIT`/`POSTS` on,
       `dry_run` default false, `posted.json` at the last shadow event; delete tts-save.yml and card-edits.yml in the same
       TTSCardMaker commit; the bot commit `CARD_SYNC = True`; deploy; verify (site footer "Card data built ...",

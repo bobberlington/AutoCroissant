@@ -458,7 +458,7 @@ autocroissant-run-and-operate §9.
 |---|---|---|
 | `ACTIONS_TOKEN` | getattr, default `""` (card_sync.py:34) | the config.py field above |
 | `WORKFLOW` | `"card-sync.yml"` | the card repo's Card sync Action that `force_update` / `cards:` dispatch |
-| `SCHEDULE` | `"every 30 minutes, at :04 and :34"` | its cron, as the replies word it (card-sync.yml) |
+| `SCHEDULE` | `"every 30 minutes, at :00 and :30"` | its cron, as the replies word it (card-sync.yml) |
 | `POLL_SECONDS` | `15` | between two looks at a dispatched run (the state is edited into the reply) |
 | `WAIT_MINUTES` | `30` | a dispatched run is followed this long |
 | `FIND_SECONDS` | `60` | a dispatched run must show up in the run list within this |

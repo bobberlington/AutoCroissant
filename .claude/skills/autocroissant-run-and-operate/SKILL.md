@@ -983,8 +983,8 @@ origin):
 1. `ACTIONS_TOKEN` in the jetson's config.py (fine-grained, TTSCardMaker only, Actions read and write; never print it).
    **Done** 2026-10-22 ~12:25 (the owner).
 2. Discord, as the owner: `/remove_reminder reminder_id:054b5933` (05:30 /push) and `/remove_reminder reminder_id:d2664752`
-   (05:00 /update_stats); then `/set_reminder when:<a time at :12 or :42> frequency:30m command:/update_stats`, a few minutes
-   after each Card sync (cron `4,34 * * * *`). Keep 134e3b24.
+   (05:00 /update_stats); then `/set_reminder when:<a time at :00 or :30> frequency:30m command:/update_stats`, on the
+   same :00/:30 marks as Card sync's fallback cron (`0,30 * * * *`, since 2026-10-24). Keep 134e3b24.
 3. The cutover commit (`CARD_SYNC = True`), then the deploy: pull, `build_ext`, restart (memory `jetson-server`).
 4. Check: the log shows "Card data loaded ..." at startup; `/update_stats` says "Card data is already current: built … from
    TTSCardMaker@…"; `/query` the three goldens; `/fonts`.
