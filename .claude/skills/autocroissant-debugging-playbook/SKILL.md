@@ -156,7 +156,7 @@ prints, tracebacks, loop-crash lines) against what reached Discord.
 
 Sync model: `on_ready` copies global commands to each guild and syncs per guild
 (main.py:102-128; a reconnect syncs only guilds not synced yet) and prints `Synced commands to guild: <name> (<id>)` per guild plus
-`Registered N slash commands for reminder system.` (52 since 2026-10-21: /bake_cards and /fonts added; 50 on 2026-10-20 after /list_guild_members was removed; built from `tree.get_commands()` at main.py:130-132, including
+`Registered N slash commands for reminder system.` (47 since 2026-10-25: five Discord edit commands retired; 52 from 2026-10-21; built from `tree.get_commands()` at main.py:130-132, including
 `/sync_emojis` - a quick sanity number). There is NO `on_guild_join` handler. Full ops detail: **autocroissant-run-and-operate**.
 
 | Symptom | First check | Likely cause | Discriminating experiment | Fix / pointer |
@@ -424,3 +424,5 @@ rows for the one-time History recovery, "History cleanup skipped" and "History c
 scripts); section 8 has the /pull rescue rows and the "Nothing to push" reply; the recovery procedure uses
 `diff_stats.py --history`; ~812 PSDs and the followed Action run after the cutover; every main.py, update_bot.py,
 card_models.py and repo_traverser.py citation re-pointed at 2ada357.
+
+2026-10-25 (retire): 47 registered commands (/update_metadata, /mass_replace, /alias, /bake_cards, /update_tts_save retired: branch archive/discord-edits).

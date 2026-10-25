@@ -1,5 +1,4 @@
-"""Subseries: a database-only card field (Card Edits.json or /update_metadata, never the PSD)."""
-import inspect
+"""Subseries: a database-only card field (Card Edits.json, never the PSD)."""
 import json
 import pickle
 import shutil
@@ -151,35 +150,7 @@ def test_quoted_values_keep_and_and_or(repo):
 # ========================
 # Commands
 # ========================
-@pytest.mark.usefixtures("pickle_path")
-def test_update_metadata_and_mass_replace(monkeypatch):
-    """subseries goes into the card's Card Edits.json entry (the commit stood in for: test_metadata_edits has the real one)."""
-    import commands.discord_edits as de
-    import commands.utils as utils
-    sent, files = [], {"edits": '{"about": "x", "cards": {}}'}
-
-    def commit(subject, by, body, edits=None, authors=None):
-        files["edits"] = edits(files["edits"])
-        return "abc1234", {"edits": files["edits"]}
-    monkeypatch.setattr(de, "commit", commit)
-    monkeypatch.setattr(utils, "say", lambda inter, text, **kw: sent.append(text))
-    monkeypatch.setattr(cm.stats_db, "stats", {"Goombella": _card("Goombella", "mario")})
-    saves = []
-    monkeypatch.setattr(cm.stats_db, "save", lambda: saves.append(1))           # stats.pkl kept for a restart
-    monkeypatch.setattr(qc.card_repo, "git_files", {"goombella.png": "Creatures/Mario/2 Stars/Goombella.png"})
-    monkeypatch.setattr(qc.card_repo, "git_file_alias", {})
-    monkeypatch.setattr(qc.card_repo, "prep_dataframes", lambda: None)
-    inter = SimpleNamespace()
-    assert "subseries" in inspect.signature(de.manual_metadata_entry).parameters
-    de.manual_metadata_entry(inter, "Goombella", subseries="Paper Mario")
-    card = cm.stats_db.stats["Goombella"]
-    assert card.subseries == "Paper Mario" and "subseries: Paper Mario" in sent[len(sent) - 1]
-    assert json.loads(files["edits"])["cards"]["Goombella"]["subseries"] == "Paper Mario"
-    de.manual_metadata_entry(inter, "Goombella")
-    assert "series: mario\nsubseries: Paper Mario```" in sent[len(sent) - 1]
-    de.mass_replace_field(inter, "subseries", "paper mario", "Paper Mario 64")
-    assert card.subseries == "Paper Mario 64" and "Replaced subseries='paper mario'" in sent[len(sent) - 1]
-    assert json.loads(files["edits"])["cards"]["Goombella"]["subseries"] == "Paper Mario 64" and saves == [1, 1]
+def test_subseries_follows_series_in_the_columns():
     assert 'subseries' in pa.COLUMN_ORDER and pa.COLUMN_ORDER.index("subseries") == pa.COLUMN_ORDER.index("series") + 1
 
 
@@ -197,16 +168,6 @@ def test_query_embed_shows_series_and_subseries(monkeypatch):
     assert "embed" not in sent[1][1] and sent[1][0].endswith("/Kirby.png")
 
 
-def test_slash_surface_and_help():
-    import main
+def test_help_query_syntax():
     import commands.help as help_module
-    cmds = {c.name: c for c in main.tree.get_commands()}
-    params = {p.name: p.description for p in cmds["update_metadata"].parameters}
-    assert "subseries" in inspect.signature(cmds["update_metadata"].callback).parameters
-    assert "Database only" in params["subseries"] and all(len(d) <= 100 for d in params.values())
-    assert "subseries" in [c.value for c in cmds["mass_replace"].parameters[0].choices]
-    assert "subseries" in cmds["mass_replace"].parameters[0].description
-    stats = help_module.stats_commands
-    assert "[series] [subseries] [hp]" in next(k for k in stats if k.startswith("/update_metadata"))
-    assert "subseries" in stats["/mass_replace <field> <old_value> <new_value>:"]
     assert "subseries==" in help_module.card_commands["Query Syntax:"] and "subseries~" in help_module.card_commands["Query Syntax:"]

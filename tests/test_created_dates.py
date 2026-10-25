@@ -278,7 +278,8 @@ def test_created_command(tmp_path, capsys):
 
 
 def test_metadata_and_exports_show_created(monkeypatch, tmp_path):
-    """to_dict's created: /update_metadata's view lists it after timestamp, both exports carry it (CSV: a created column)."""
+    """to_dict's created: the metadata view (/query as_of, /view_old_metadata) lists it after timestamp, both exports
+    carry it (CSV: a created column)."""
     import csv
     import commands.psd_analyzer as pa
     goombella, kirby = _dated("Goombella", "2023-10-13", provisional=True), _dated("Kirby", None)

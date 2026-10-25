@@ -146,8 +146,6 @@ def test_autocomplete(repo):
     assert names("chestnut") == ["Chestnut (now The Forbidden One)", "Chestnutter (now Spawn of the Forbidden One)"]
     assert repo.name_choices("black") == [("Black Clot", "Black Clot"), ("Clot Black (Black Clot)", "Clot Black")]
     assert ("snas. (Sans)", "snas.") in repo.name_choices("sna")
-    assert repo.name_choices("black", cards=True) == [("Clot Black (Black Clot)", "Clot Black")]   # /bake_cards: card names
-    assert names("chestnut") and not repo.name_choices("chestnut", old=False)       # /alias: cards only
     assert len(repo.name_choices("")) == 25 and len(repo.name_choices("o")) == 25
 
 
@@ -157,14 +155,13 @@ def test_slash_surface(repo, capsys, monkeypatch):
     import main
     monkeypatch.setattr(main, "card_repo", repo)
     cmds = {c.name: c for c in main.tree.get_commands()}
-    for name, option in (("query", "query"), ("update_metadata", "query"), ("view_old_metadata", "query"),
-                         ("alias", "card"), ("bake_cards", "card"), ("frankenstein", "cards")):
+    for name, option in (("query", "query"), ("view_old_metadata", "query"), ("frankenstein", "cards")):
         assert {p.name: p for p in cmds[name].parameters}[option].autocomplete, name
     picked = asyncio.run(main.card_list_names(None, "spice, mini do"))
     assert [(c.name, c.value) for c in picked] == [("Mini Doomer", "spice, Mini Doomer")]
     inter = SimpleNamespace(type=main.InteractionType.application_command, user=SimpleNamespace(id=7), channel_id=9,
-                            data={"name": "update_metadata", "options": [{"name": "query", "value": "chestnut"},
-                                                                         {"name": "ability", "value": "secret text"}]})
+                            data={"name": "query_ability", "options": [{"name": "query", "value": "chestnut"},
+                                                                       {"name": "howmany", "value": True}]})
     capsys.readouterr()                                 # main's import prints the token line
     asyncio.run(main.on_interaction(inter))
-    assert capsys.readouterr().out == "Command /update_metadata by 7 in 9: query='chestnut', ability\n"
+    assert capsys.readouterr().out == "Command /query_ability by 7 in 9: query='chestnut', howmany\n"

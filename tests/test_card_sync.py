@@ -764,24 +764,6 @@ def test_pull_conflict_keeps_the_pickles_only_before_the_cutover(monkeypatch, sw
                        ("commit", "AUTO-RESOLVE: Merge conflict resolved (kept local pickles, accepted remote code)"), "rescue"]
 
 
-def test_discord_edits_save_the_pickles_only_before_the_cutover(monkeypatch):
-    import commands.discord_edits as de
-    import commands.query_card as qc
-    saves = []
-    monkeypatch.setattr(cm.stats_db, "stats", {"A": _card("A")})
-    monkeypatch.setattr(cm.stats_db, "save", lambda: saves.append(1))
-    monkeypatch.setattr(qc.card_repo, "prep_dataframes", lambda: None)
-    monkeypatch.setattr(qc.card_repo, "git_files", {})
-    for key in ("_edits", "_edit_names", "_moved_hint"):              # refresh keeps the parsed file there
-        monkeypatch.setattr(qc.card_repo, key, getattr(qc.card_repo, key))
-    edits = json.dumps({"cards": {"A": {"note": "n1"}}})
-    monkeypatch.setattr(global_config, "CARD_SYNC", False)
-    assert de.refresh(["A"], edits) == ["A"] and saves == [1]
-    monkeypatch.setattr(global_config, "CARD_SYNC", True)
-    assert de.refresh(["A"], json.dumps({"cards": {"A": {"note": "n2"}}})) == ["A"] and saves == [1]
-    assert cm.stats_db.stats["A"].note == "n2"
-
-
 def test_help_follows_the_switch(monkeypatch):
     import commands.help as help_module
     sent = []

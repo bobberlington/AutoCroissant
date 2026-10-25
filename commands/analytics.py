@@ -46,6 +46,12 @@ RETIRED_OPTIONS = {
     "update_stats": (("use_local_repo", "use_local_timestamp"),
                      ("output_problematic_cards", "use_local_repo", "use_local_timestamp", "force_update")),
 }
+# Commands the bot no longer has (2026-10-25, branch archive/discord-edits): a reminder running one says so
+RETIRED_COMMANDS = {
+    "update_metadata": "edit cards on the website", "mass_replace": "use the website's Rename everywhere",
+    "alias": "edit aliases on the website", "bake_cards": "Card sync bakes the website's edits",
+    "update_tts_save": "Card sync updates the TTS save",
+}
 
 
 def is_admin(interaction) -> bool:
@@ -489,6 +495,8 @@ def resolve_command(command, legacy=False):
     if name in NOT_SCHEDULABLE:
         raise ValueError(f"`/{name}` can't run from a reminder")
     func = slash_registry.get(name)
+    if func is None and name in RETIRED_COMMANDS:
+        raise ValueError(f"`/{name}` was retired ({RETIRED_COMMANDS[name]})")
     if func is None:
         raise ValueError(f"`/{name}` is not a bot command")
     args, kwargs, dropped = _drop_retired(name, args, kwargs, legacy)
