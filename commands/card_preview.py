@@ -8,8 +8,8 @@ result on TTSCardMaker's orphan branch `previews` (card-preview.yml's second job
                                     [--request <id>] [--repo <owner/name>] [--head <sha>]
 
 It writes <out>/result.json always (a bad input, a refusal and a runner error too), and with an image preview.png (the
-PNG the bake would commit, recompressed losslessly where pyoxipng is installed) and preview.webp (WEBP_WIDTH wide, as
-build_site makes the card view's).
+PNG the bake would commit, recompressed losslessly where pyoxipng is installed) and preview.webp (WEBP_WIDTH wide, the
+card view's width).
 The edit is the card's Card Edits.json entry as it would be published (any of its fields; the PSD-kind ones are baked,
 `creatures` gates the stats as in the bake, `_`-keys are ignored); result.json's `edit` is it exactly as sent, without
 the `_`-keys. Not the bake's: the `recent` gate (a preview races nobody: it commits nothing). Exit 0, 2 for a bad input,
@@ -52,7 +52,7 @@ SPARSE_FILES = ("commands/card_preview.py", "commands/card_preview_branch.py", "
                 "commands/card_edits.py", "commands/png_export.py", "commands/github_api.py", "commands/git_commit.py",
                 "commands/repo_history.py", "global_config.py", "requirements-cards.txt")
 MAX_EDIT = 16384                                # bytes of edit JSON (an ability is a few hundred)
-WEBP_WIDTH, WEBP_QUALITY = 720, 75              # build_site IMAGE_SIZES' 720: the card view's size and quality
+WEBP_WIDTH, WEBP_QUALITY = 720, 75              # the card view's width; WebP (the previews contract), the site's thumbs are AVIF
 RETRY = card_bake.TRANSIENT + ("blob",)         # try again: the bake's own, and a blob that failed its hash (a download's)
 
 
@@ -190,7 +190,7 @@ def notes_of(card: Card) -> list:
 def write_images(png_path: str, out: str) -> dict:
     """
     preview.png (losslessly recompressed when that is smaller: png_export.recompress, the same pixels and chunks) and
-    preview.webp (WEBP_WIDTH wide at WEBP_QUALITY, as build_site makes the card view's image).
+    preview.webp (WEBP_WIDTH wide at WEBP_QUALITY: the card view's width).
 
     Returns:
         result.json's files, size and webp_size

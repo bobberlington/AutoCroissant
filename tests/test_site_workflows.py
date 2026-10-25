@@ -49,10 +49,10 @@ def test_card_sync_shadow_schedule_writes_only_data():
     assert on["workflow_dispatch"]["inputs"]["dry_run"]["default"] is True
 
 
-def test_site_builds_on_what_it_reads_and_always_deploys():
+def test_site_builds_on_what_it_reads_and_deploys_only_a_change():
     """A push runs the build only when it touched what the build reads: everything the job checks out, the card files
-    and fonts (read through git), this workflow; never the TTS save. Every build deploys (skipping a build equal to
-    the live one is the owner's to decide: the Changes page's "Updated" line would stop moving)."""
+    and fonts (read through git), this workflow; never the TTS save. A build that made the live site again is not
+    deployed (build.txt, the site's digest; owner 2026-10-24: the Changes page's "Site updated" is the last change)."""
     doc = _load("site.yml")
     paths = doc[True]["push"].get("paths")
     if paths is None:
@@ -65,5 +65,27 @@ def test_site_builds_on_what_it_reads_and_always_deploys():
         assert pattern in paths
     assert paths[len(paths) - 1] == "!TTS/**"
     steps = doc["jobs"]["build"]["steps"]
+    changed = next(s for s in steps if s.get("id") == "changed")
     upload = next(s for s in steps if "upload-pages-artifact" in s.get("uses", ""))
-    assert "if" not in upload and "if" not in doc["jobs"]["deploy"]
+    assert "build.txt" in changed["run"] and 'deploy=true' in changed["run"] and upload["if"] == "steps.changed.outputs.deploy == 'true'"
+    assert steps.index(changed) < steps.index(upload)
+    assert doc["jobs"]["build"]["outputs"]["deploy"] == "${{ steps.changed.outputs.deploy }}"
+    assert doc["jobs"]["deploy"]["if"] == "needs.build.outputs.deploy == 'true'"
+
+
+def test_site_image_budget_keeps_a_partial_cache():
+    """A full AVIF re-encode may not fit one run: the build stops making images at IMAGE_BUDGET and fails, and the images
+    it made are saved under a key the next run's restore-keys find (actions/cache saves only after a passing job)."""
+    doc = _load("site.yml")
+    steps = doc["jobs"]["build"]["steps"]
+    build = next(s for s in steps if "build_site.py" in s.get("run", ""))
+    if "IMAGE_BUDGET" not in build.get("env", {}):
+        pytest.skip("site.yml before AVIF thumbnails (TTSCardMaker work/site-img)")
+    budget = int(build["env"]["IMAGE_BUDGET"])
+    assert build["id"] == "build" and 0 < budget <= (doc["jobs"]["build"]["timeout-minutes"] - 10) * 60
+    cache = next(s for s in steps if s.get("uses", "").startswith("actions/cache@"))
+    save = next(s for s in steps if s.get("uses", "").startswith("actions/cache/save@") and s["with"]["path"] == "site/.cache")
+    assert save["if"] == "failure() && steps.build.outputs.partial == 'true'"
+    prefix = cache["with"]["restore-keys"]
+    assert save["with"]["key"].startswith(prefix) and cache["with"]["key"].startswith(prefix) and "github.run_id" in save["with"]["key"]
+    assert steps.index(build) < steps.index(save)
