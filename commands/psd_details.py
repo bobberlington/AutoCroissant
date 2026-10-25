@@ -6,23 +6,25 @@ keyed by its git blob sha, in the card data's db/psd_details.json (the Card sync
 
 gather(psd, rel, name, index, vocab) -> the record: pure, never raises for a card (a failed section is a short
 "error: ..." string). load, text_of (the file's text), prune(cards, shas) to the tree. The build
-gathers every re-parsed card's record, its "supplied" flags from font_index() (font_check.local_fonts:
-PSD_TOOLS_FONT_DIRS, else the checkout's MDW/Fonts), then refills every record's flags from that index
+gathers every re-parsed card's record, its "supplied" flags from font_index() (the data job's font names file, else
+font_check.local_fonts: PSD_TOOLS_FONT_DIRS, else the checkout's MDW/Fonts), then refills every record's flags from that index
 (records gathered without one, or before MDW/Fonts changed). No Discord or config imports; stock psd-tools. Pillow's ImageCms
 names the ICC profile when it is built in.
 """
 from datetime import datetime, timezone
 from io import BytesIO
 from json import dumps, load as json_load
-from os import PathLike
+from os import PathLike, environ
 from os.path import isdir
 from re import IGNORECASE, fullmatch, search, sub
+from threading import local
 from typing import Optional
 
 from psd_tools import PSDImage
 from psd_tools.constants import Resource
 
-from commands.font_check import FontIndex, dir_fonts, layer_fonts, local_fonts, tree_fonts
+import commands.psd_edit as psd_edit
+from commands.font_check import NAMES_ENV, FontIndex, dir_fonts, layer_fonts, load_names, local_fonts, tree_fonts
 from commands.psd_edit import (
     STAR_FOLDER, Refused, _Unit, _core, _icon_reason, _icon_spots, _median_size, _moved_box, _reading, _star_count,
     _star_layouts, _star_units, _stars_total, _texts, offline_parser, plan_stars, type_row,
@@ -44,6 +46,27 @@ HEADER_STARS = 10                           # star counts the header section lay
 HEADER_ICONS = 8                            # type icons it keeps spots for
 _indexes: dict = {}                         # (fonts dir, its files) -> FontIndex: built once per MDW/Fonts change
 _parsers: dict = {}                         # vocab -> offline_parser: the header's type rule
+_inks = local()                             # .cache: {id(layer): (layer, ink)} during one gather in this thread, else None
+
+
+# ========================
+# psd_edit._ink, cached within one gather
+# ========================
+def _cached_ink(layer):
+    """psd_edit._ink, once per layer inside gather (its PSD is read only there); elsewhere the plain call (the bake
+    changes layers between calls)."""
+    cache = getattr(_inks, "cache", None)
+    if cache is None:
+        return _plain_ink(layer)
+    hit = cache.get(id(layer))
+    if hit is None:
+        hit = cache[id(layer)] = (layer, _plain_ink(layer))     # the layer held: its id stays its own
+    return hit[1]
+
+
+_plain_ink = getattr(psd_edit._ink, "__wrapped__", psd_edit._ink)
+_cached_ink.__wrapped__ = _plain_ink
+psd_edit._ink = _cached_ink
 
 
 # ========================
@@ -407,6 +430,14 @@ def gather(psd, rel: str, name: str, index: Optional[FontIndex] = None, vocab=()
         psd = PSDImage.open(BytesIO(psd))
     elif isinstance(psd, (str, PathLike)):
         psd = PSDImage.open(psd)
+    outer, _inks.cache = getattr(_inks, "cache", None), {}
+    try:
+        return _gather(psd, rel, name, index, vocab)
+    finally:
+        _inks.cache = outer
+
+
+def _gather(psd: PSDImage, rel: str, name: str, index: Optional[FontIndex], vocab) -> dict:
     record = {"path": rel, "name": name, "at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "parser": PARSER_VERSION}
     try:
         layers = list(psd.descendants())
@@ -454,8 +485,8 @@ def refill(cards: dict, index: FontIndex) -> int:
 
 def font_index(tree: Optional[dict] = None) -> Optional[FontIndex]:
     """
-    The faces the "supplied" flags are judged by: font_check.local_fonts (PSD_TOOLS_FONT_DIRS, else the checkout's
-    MDW/Fonts), counted only when its font files are the tree's, by blob sha.
+    The faces the "supplied" flags are judged by: NAMES_ENV's save_names() file, else font_check.local_fonts
+    (PSD_TOOLS_FONT_DIRS, else the checkout's MDW/Fonts), counted only when its font files are the tree's, by blob sha.
 
     Args:
         tree: The recursive tree the caller fetched; None or truncated: the folder as it is
@@ -466,6 +497,17 @@ def font_index(tree: Optional[dict] = None) -> Optional[FontIndex]:
     files = None
     if tree is not None and not tree.get("truncated"):
         files = tree_fonts({e.get("path", ""): e.get("sha", "") for e in tree.get("tree", []) if e.get("type") == "blob"})
+    names = environ.get(NAMES_ENV, "")
+    if names:                                   # the data job's: the names, not the fonts
+        try:
+            index, have = load_names(names)
+        except (OSError, ValueError, KeyError, TypeError) as e:
+            print(f"Fonts for the details: {names}: {e}; supplied stays null")
+            return None
+        if files and have != files:
+            print(f"Fonts for the details: {names} is not the branch's MDW/Fonts; supplied stays null")
+            return None
+        return index if index.files else None
     directory = local_fonts()[0]
     try:
         if not directory or not isdir(directory):

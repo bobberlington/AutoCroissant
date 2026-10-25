@@ -12,6 +12,7 @@ psd_details.json instead (card_sync.fonts_text, details_report here).
     FontIndex(dir) -> the faces of a fonts folder; psd_fonts(psd) -> {font: [layers]}
     markdown(report), discord_payload(report) -> the job summary / commit comment and the webhook body
     local_fonts() -> the fonts dir: PSD_TOOLS_FONT_DIRS, else the checkout's MDW/Fonts
+    save_names(dir, path), load_names(path) -> a fonts dir's index as a small JSON file (NAMES_ENV)
 
 A notification tool, never a gate: findings exit 0, nothing is reverted or rejected. --repo mode reads the PSDs the push
 changed (before..after through the compare API; --whole-tree: every card PSD of the tree at after) by blob sha, each
@@ -23,7 +24,7 @@ from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from io import BytesIO
-from json import dump
+from json import dump, load as json_load
 from os import cpu_count, environ, pathsep, walk
 from os.path import basename, expanduser, isdir, join, relpath, splitext
 from re import sub
@@ -53,6 +54,7 @@ FILES_PAGE = 300                            # the compare and commit APIs list a
 COMMITS_PAGE = 250                          # the compare API lists at most this many commits
 POOL_MIN = 8                                # --all parses this many PSDs or more in a process pool (half the cores)
 POOL_CHUNK = 4                              # PSDs per pool task
+NAMES_ENV = "CARD_FONT_NAMES"               # a save_names() file: the details' index without the fonts (card-sync's data job)
 
 
 # ========================
@@ -527,6 +529,24 @@ def dir_fonts(directory: str) -> dict:
     return out
 
 
+def save_names(directory: str, path: str) -> None:
+    """The fonts folder's FontIndex and dir_fonts() as JSON at path (load_names reads it)."""
+    index = FontIndex(directory)
+    data = {"files": dir_fonts(directory), "count": index.files, "faces": index.faces, "names": sorted(index.names),
+            "errors": index.errors}
+    with open(path, "w", encoding="utf-8") as fh:     # read all first: no half file
+        dump(data, fh)
+
+
+def load_names(path: str) -> tuple:
+    """(FontIndex, {file name: blob sha}) from a save_names() file; raises when it is unreadable."""
+    with open(path, encoding="utf-8") as fh:
+        data = json_load(fh)
+    index = FontIndex()
+    index.names, index.files, index.faces, index.errors = set(data["names"]), data["count"], data["faces"], list(data["errors"])
+    return index, dict(data["files"])
+
+
 def local_fonts() -> tuple:
     """(dir, "env") from PSD_TOOLS_FONT_DIRS, else (the checkout's MDW/Fonts, "checkout") when it exists, else ("", "")."""
     dirs = environ.get(FONT_DIRS_ENV, "")
@@ -601,6 +621,7 @@ __all__ = [
     'FONTS_DIR',
     'FONT_DIRS_ENV',
     'FontIndex',
+    'NAMES_ENV',
     'POOL_CHUNK',
     'POOL_MIN',
     'ROLE_ID',
@@ -615,12 +636,14 @@ __all__ = [
     'face_names',
     'is_card_psd',
     'layer_fonts',
+    'load_names',
     'local_fonts',
     'main',
     'markdown',
     'ps_name',
     'psd_fonts',
     'pushed_files',
+    'save_names',
     'tree_blobs',
     'tree_fonts',
 ]
