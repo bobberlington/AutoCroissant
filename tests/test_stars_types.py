@@ -24,7 +24,7 @@ REL = "Auxiliary/Items/Fixture.psd"                     # an aux item: the parse
 KRABBY = "Auxiliary/Items/Krabby_Patty.psd"             # a column of two, a third hidden under them
 LOVE = "Auxiliary/Items/Love.psd"                       # rows of two, the third centred: 4 moves it aside
 METTATON = "Auxiliary/Creatures/Mettaton_EX.psd"        # four stars in a zigzag: a fifth carries it on
-SPRINGTRAP = "Auxiliary/Minions/Springtrap.psd"         # two stars over three: no layout to copy at, hiding still works
+SPRINGTRAP = "Auxiliary/Minions/Springtrap.psd"         # two stars over three: a sixth lays them out again as rows of two
 CLAW = "N.M.E/The_Claw.psd"                             # one star over a pair: a fourth makes two rows of two
 FREEZER = "Field/1 Stars/The_Freezer.psd"               # a field card: its "1 Stars" folder sets the stars
 MORPHO = "Auxiliary/Creatures/Morpho_Knight.psd"        # Fire over Undead: dropping Fire moves Undead up
@@ -282,10 +282,9 @@ def test_stars_fewer_hide_the_last_and_more_show_hidden_first(parser, tmp_path):
 
 @icons
 def test_stars_refuse_per_field(parser, tmp_path):
-    paths = _fixture(tmp_path, stars=((1080, 20), (970, 20), (1080, 300)))      # an L: no layout
-    with pytest.raises(pe.Refused, match="laid out as no row, column or rows of two") as refused:
-        _plan(parser, paths[0], REL, "stars", 4)
-    assert refused.value.field == "stars"
+    paths = _fixture(tmp_path, stars=((1080, 20), (970, 20), (1080, 300)))      # an L: its short row grows (layout support)
+    plan = _plan(parser, paths[0], REL, "stars", 4)
+    assert plan.how == "its rows carried on" and [(dx, dy) for _, dx, dy, _ in plan.copies] == [(-110, 0)]
     assert _plan(parser, paths[0], REL, "stars", 2).hide                # fewer still bakes: hide the last
     with pytest.raises(pe.Refused, match="at least one"):
         _plan(parser, paths[0], REL, "stars", 0)
@@ -293,9 +292,8 @@ def test_stars_refuse_per_field(parser, tmp_path):
         _plan(parser, paths[0], "Items/Equip/1 Stars/Fixture.psd", "stars", 2)
     with pytest.raises(pe.Refused, match="the parser reads no stars on a buff card"):
         _plan(parser, paths[0], "Auxiliary/Status Effects/Buffs/Fixture.psd", "stars", 2)
-    edge = _fixture(tmp_path, stars=((1095, 20), (1095, 1650)), name="Edge")     # a column whose next star is off the card
-    with pytest.raises(pe.Refused, match="runs off the canvas"):
-        _plan(parser, edge[0], REL, "stars", 3)
+    edge = _fixture(tmp_path, stars=((1095, 20), (1095, 1650)), name="Edge")     # a column whose next star is off the card:
+    assert _plan(parser, edge[0], REL, "stars", 3).how == "its rows carried on"     # its last star takes one beside it
 
 
 @icons
@@ -366,8 +364,8 @@ def test_types_refuse_per_field(parser, tmp_path, monkeypatch):
 @icons
 def test_real_star_layouts(clone, parser, tmp_path):
     """Krabby Patty shows its own hidden third star; Love's centred third moves aside for a fourth, The Claw's top one
-    too; Mettaton's zigzag takes a fifth; Springtrap's two over three hides one but takes no sixth; a field card's
-    folder sets its stars."""
+    too; Mettaton's zigzag takes a fifth; Springtrap's two over three hides one and takes a sixth as rows of two; a field
+    card's folder sets its stars."""
     krabby = _plan(parser, _clone_card(clone, KRABBY, tmp_path)[0], KRABBY, "stars", 3)
     assert [layer.name for layer in krabby.show] == ["Patrick Star copy 2"] and not krabby.copies
     love = _plan(parser, _clone_card(clone, LOVE, tmp_path)[0], LOVE, "stars", 4)
@@ -380,10 +378,34 @@ def test_real_star_layouts(clone, parser, tmp_path):
     assert mettaton.how == "a zigzag" and [(dx, dy) for _, dx, dy, _ in mettaton.copies] == [(77, 90)]
     springtrap = _clone_card(clone, SPRINGTRAP, tmp_path)[0]
     assert len(_plan(parser, springtrap, SPRINGTRAP, "stars", 4).hide) == 1
-    with pytest.raises(pe.Refused, match="laid out as no row"):
-        _plan(parser, springtrap, SPRINGTRAP, "stars", 6)
+    six = _plan(parser, springtrap, SPRINGTRAP, "stars", 6)        # no room to grow its top row: laid out again, told
+    assert six.how == "rows of two, laid out again" and len(six.copies) == 1 and "does not go on to 6" in six.notes[0]
     with pytest.raises(pe.Refused, match="the '1 Stars' folder sets them"):
         _plan(parser, _clone_card(clone, FREEZER, tmp_path)[0], FREEZER, "stars", 2)
+
+
+LAYOUT_STARS = [   # LAYOUT_SUPPORT.md's star rules, one card each: (card, stars, how, notes)
+    ("Auxiliary/Minions/Lorian.psd", 6, "its rows carried on", 0),             # 2 over 3: the top row grows
+    ("Auxiliary/Minions/God_Tamer.psd", 6, "rows of two, laid out again", 1),  # a dice five: its six, told
+    ("Auxiliary/Minions/Cat.psd", 2, "1 hidden", 0),                           # a group drawing two beside a group of one
+    ("Auxiliary/Items/Nasty_Patty.psd", 4, "rows of two", 0),                  # no Stars group: Patrick Stars in a group
+    ("Auxiliary/Minions/Paint_Warrior.psd", 3, "rows of two", 0),              # two Stars groups, one star each
+]
+
+
+@icons
+@pytest.mark.parametrize("rel, value, how, notes", LAYOUT_STARS)
+def test_layout_star_rules(clone, parser, tmp_path, rel, value, how, notes):
+    plan = _plan(parser, _clone_card(clone, rel, tmp_path)[0], rel, "stars", value)
+    assert plan.how == how and len(plan.notes) == notes
+
+
+@icons
+def test_stacked_stars_refuse(clone, parser, tmp_path):
+    """Living Bread draws its two stars twice, stacked: the parser counts four, so no edit can show what it reads."""
+    rel = "Auxiliary/Minions/Living_Bread.psd"
+    with pytest.raises(pe.Refused, match="sits on another star"):
+        _plan(parser, _clone_card(clone, rel, tmp_path)[0], rel, "stars", 5)
 
 
 @icons

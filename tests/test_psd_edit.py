@@ -391,6 +391,52 @@ def test_non_template_rows_and_titles_refuse(clone):
     assert pe.read_name(twins) == "Twin Emperors"                               # its title is named after its text
 
 
+# the card makers' own bars (LAYOUT_SUPPORT.md): one card per family
+LAYOUT_BARS = [
+    ("Creatures/Kirby/3 Stars/Spinni.psd", "hp", 5, "had no digit 5"),             # A: no 5: its 4 moved and renamed
+    ("Auxiliary/Minions/Bulborb Larva.psd", "hp", 2, None),                         # A: each digit a picture of the row
+    ("Creatures/Isaac/3 Stars/Tainted_Isaac.psd", "hp", 7, None),                   # C: lit hearts masked to the value
+    ("Auxiliary/Minions/Dark_Esau.psd", "hp", 6, None),                             # C: that mask too short to move whole
+    ("Creatures/Cuphead/5 Stars/Chef_Saltbaker.psd", "hp", 9, None),                # B: a dark exposure, a marker named
+    ("Auxiliary/Minions/Clot_Black.psd", "atk", 3, None),                           # D: lit cells "0" and the value
+    ("Items/Active/3 Stars/Blank_Card.psd", "hp", 7, None),                         # D: lit and dark pairs named 1-10
+    ("Creatures/Everhood/3 Stars/Zigg.psd", "hp", 6, None),                         # E: cells lit and dark by their style
+]
+
+
+@pytest.mark.parametrize("rel, stat, value, note", LAYOUT_BARS)
+def test_layout_bars_follow_the_card(clone, parser, rel, stat, value, note):
+    """set_stat on each bar family: the row then reads the value as the parser does, every change declared per layer."""
+    psd = PSDImage.open(_card(clone, rel)[0])
+    parsed = pe.parse_card(parser, _card(clone, rel)[0], rel, psd)
+    edit = pe.set_stat(psd, parsed, stat, value)
+    assert pe._row_reads(stat_rows(psd)[stat][0][0]) == value and edit.region
+    assert bool(note) == bool(edit.notes) and (not note or note in edit.notes[0])
+    assert all(spec is not None for _, spec in edit.bar)
+
+
+def test_layout_bars_refuse_what_they_lack(clone, parser):
+    """A cell with no dark picture (Clot Black's hp 2 to 1) and bars painted into the art (Skeleton Mate) still refuse."""
+    for rel, stat, value, why in (("Auxiliary/Minions/Clot_Black.psd", "hp", 1, "cell 2 of 'hp' has no dark picture"),
+                                  ("Auxiliary/Minions/Skeleton_Mate.psd", "hp", 3, "painted")):
+        psd = PSDImage.open(_card(clone, rel)[0])
+        with pytest.raises(pe.Refused, match=why):
+            pe.set_stat(psd, pe.parse_card(parser, _card(clone, rel)[0], rel, psd), stat, value)
+
+
+@text_engine
+def test_layout_bar_bakes_and_the_guards_export_it(clone, parser, chart, tmp_path):
+    """Tainted Isaac's hp through apply_jobs and every gate (gate_bytes takes the redrawn mask and the rename), and the push
+    guards' PNG check (png_export) draws the same PNG from the saved PSD: an exposure's change is where its mask is."""
+    from commands import png_export
+    rel = "Creatures/Isaac/3 Stars/Tainted_Isaac.psd"
+    parsed, baked = _bake(clone, parser, rel, {"hp": 7}, tmp_path, chart, update_preview=True)
+    assert baked.reparse["card"]["hp"] == 7 and [fields for _, _, fields in baked.records] == [["blocks", "channels", "mask", "mask_box", "name"]]
+    found = png_export.export(PSDImage.open(_card(clone, rel)[0]), PSDImage.open(baked.psd_path), Image.open(_card(clone, rel)[1]))
+    assert found.outcome == "re-exported"
+    assert not (np.asarray(found.image.convert("RGB"), dtype=int) - np.asarray(Image.open(baked.png_path).convert("RGB"), dtype=int)).any()
+
+
 def test_title_layer_is_the_one_the_parser_reads(clone, parser):
     """name_layer takes the one layer PSDParser.title_layers reads, wherever the card keeps it (NEXT_IDEAS 5b A): a title
     named after the card under Text, a Name layer at the root. Two Name layers (an epithet) or a Name beside layers

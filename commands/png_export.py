@@ -543,6 +543,11 @@ def changed_layers(old: PSDImage, new: PSDImage) -> tuple:
     for key in ids:
         for layer in by_id.get(key, []):
             x0, y0, x1, y1 = layer.bbox
+            if not (x1 > x0 and y1 > y0) and not layer.is_group() and layer.kind not in psd_edit.DRAWN_LAYER_KINDS:
+                # an adjustment (a stat digit's exposure) acts where its mask lets it, else everywhere
+                masked = layer.has_mask() and layer.mask.width and layer.mask.height and not layer.mask.disabled \
+                    and layer.mask.background_color < 128
+                x0, y0, x1, y1 = tuple(layer.mask.bbox) if masked else (0, 0, new.width, new.height)
             if x1 > x0 and y1 > y0:
                 pad = fx_pad(layer) + FX_EXTRA
                 boxes.append((x0 - pad, y0 - pad, x1 + pad, y1 + pad))
