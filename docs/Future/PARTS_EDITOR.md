@@ -1,15 +1,32 @@
-# Website parts editor: one text box per PSD layer (final design)
+# Website parts editor: one text box per PSD layer
 
-**Status:** designed 2026-10-25, §14 answered by the owner (10-25 ~03:50, below); build next, three tracks (§13). Plan: `docs/NEXT_SESSION_PLAN.md`.
+**Status:** designed 2026-10-25, owner's answers in (§14); not built. Queue item 1 in `docs/NEXT_SESSION_PLAN.md`;
+three tracks (§13). Base: AutoCroissant main 52ed1fa, TTSCardMaker main fd5dc5db; the Discord card-edit commands it
+assumed retired went 10-25 (AC 6e8f8e3).
 
-This design was judged and merged from Design A (data-first) and Design B (editor-first). It is read-only: nothing in either repo was changed. It is based on AutoCroissant (AC) main 52ed1fa, TTSCardMaker (TC) main fd5dc5db and origin/data.
+**Goal.** Website edits of titles, abilities and rulebook text land exactly in the layer they came from, on any card
+layout, and never overwrite Photoshop work.
 
+**Rulings that bind it** (memory `owner-decisions-2026-10-24-night`):
+- One box per layer the parser reads as a title or ability part; an extra box can be deleted (deletes its layer). Enter
+  in a title box is a line break; the card's name stays one line. Rulebook pages: one box per existing text block.
+- Identical title copies and name watermarks follow the main title (no box, a note).
+- A layer changed in Photoshop since the edit is skipped and flagged ("redo it on the website if still wanted"); the
+  other boxes still bake.
+- Cards need neither types nor an ability. A first ability or type comes from the card kind's template (N.M.E. and Field:
+  `Item_Template`), flagged; no empty layers in PSDs.
+- A stars edit on a folder-starred card moves the PSD/PNG into the matching `N Stars` folder, creating it (flagged).
+- Variant pictures: a layer or group named `... #N` (`#2,3`) shows only in variant N; variant N = `NameN.png`; on the
+  site variants stay separate, linked cards. The 5 PSDs are tagged by script, one commit, plan shown to the owner first.
+- Content never refuses (flag it); only waits, impossible cases and integrity gates refuse.
+
+This design was judged and merged from Design A (data-first) and Design B (editor-first). 
 The judge ran its own checks (one-off scripts, not kept):
 
 - **Duplicate layer ids: none.** All 904 PSDs in the TC tree were checked.
-- **`keep_ends` drops a first-line indent.** It keeps a layer's leading blanks only up to the last break before the text (psd_edit.py:1799). So Miracle Matter's `'\r    \r    Earth…'` would lose its 4-space indent if the box text were simply put back between its ends.
-- **The parser strips line-leading layout padding** (psd_parser.py:976, `^[^\S\n]{3,}`).
-- **`tts_save._pin_links` follows a renamed file by blob only** (tts_save.py:~500, `repo.by_blob`).
+- **`keep_ends` drops a first-line indent.** It keeps a layer's leading blanks only up to the last break before the text (commands/psd_edit.py:1799). So Miracle Matter's `'\r    \r    Earth…'` would lose its 4-space indent if the box text were simply put back between its ends.
+- **The parser strips line-leading layout padding** (commands/psd_parser.py:976, `^[^\S\n]{3,}`).
+- **`tts_save._pin_links` follows a renamed file by blob only** (commands/tts_save.py:~500, `repo.by_blob`).
 - **What exists in `MDW/Templates`:** Creature, 2_Creature, 3_Creature, Item, ActiveItem, Status_Effect and Raid_Boss templates, plus Tile Bars. There is no Field template and no N.M.E. template.
 - **NME_Stock layers.** `stocks are up` (1881) and `stock are down` (1890) are both full-canvas smart objects, with "down" above "up".
 
@@ -31,8 +48,8 @@ The judge ran its own checks (one-off scripts, not kept):
 | 12 | Tag visibility rule | **Same in both; B's wording.** `shown_in(layer, N)`: a tagged node shows if N is in its tags (its eye is ignored); an untagged node uses its eye; every ancestor must show. | It reads more clearly. |
 | 13 | What build_site passes | **B.** Per-card `details/<id>.json` holds the parts already filtered to that variant, `shared`, and `partState`, all computed by build_site. | It keeps the editor thin, and build_site already joins Card Edits. |
 | 14 | The joined splice | **A.** Keep `project`, `_align` and `_opcodes`; delete the rest of the joined path. | B deletes `project`, but the per-part splice needs it (point 2), and it also updates the relaid hidden Ability. |
-| 15 | Emptying the last part | **Neither as written:** an owner question (Q2). Recommended: emptying the last Ability box deletes the layer, flagged; a Title must keep text. | A's "leave an empty layer" goes against "no empty layers in PSDs". B refused the case. |
-| 16 | Templates | **B's kind map** (the files are verified) **plus A's refusal when no template exists.** Field and N.M.E. are an owner question (Q3). | |
+| 15 | Emptying the last part | **Neither as written:** owner, §14 item 2: emptying the last Ability box deletes the layer, flagged; a title keeps text. | A's "leave an empty layer" goes against "no empty layers in PSDs". B refused the case. |
+| 16 | Templates | **B's kind map** (the files are verified); Field and N.M.E. use `Item_Template` (§14 item 3). | |
 | 17 | NME Stock tags | **B.** `stocks are up #1` and `NME Salesman #1`; `stock are down #2` and group `mad #2`. | A leaves `stocks are up` untagged. That only matches because "down" covers it fully. An explicit tag survives a transparent edit. |
 | 18 | The star move and TTS links | **A.** Add a TTS stem-follow. | Verified: `_pin_links` follows by blob only, and a move that also redraws the stars changes the blob. B's "re-pins" was assumed, not checked. |
 | 19 | Removing a layer's text story | **B's primary plan** (remove the story and renumber `TextIndex`). A's "leave it orphaned" is the fallback, used only if Photoshop accepts it. | Both need a test in Photoshop. |
@@ -50,8 +67,8 @@ The judge ran its own checks (one-off scripts, not kept):
 - **Rule pages:** 48 pages with 1 to 31 visible text layers each, typically 8 to 12.
 - **Tags:** no layer name ends in ` #N` today. FX names do use `#n` (`Frozen#2`, `Frozen In Time #1`), so FX layers are excluded from tags.
 - **Card Edits.json:** 633 entries, none with a pending `name`/`ability`/stat field, so the file needs no migration. Old open site tabs and localStorage drafts still have to be handled.
-- **Parser padding:** it strips line-leading padding (psd_parser.py:976).
-- **`keep_ends`** cannot restore a first-line indent (psd_edit.py:1799).
+- **Parser padding:** it strips line-leading padding (commands/psd_parser.py:976).
+- **`keep_ends`** cannot restore a first-line indent (commands/psd_edit.py:1799).
 - **Folder moves:** `git_commit.commit_files` can't delete paths, and `tts_save._pin_links` follows renames by blob only.
 - **Counts in `stats.json`:** 21 cards with no ability, 75 creatures with no type icon. Cards starred by folder: 297 creatures, 182 items, 49 fields.
 - **The five multi-picture PSDs** are saved showing variant 1. Every numbered PNG is reproduced by some visibility set (§9).
@@ -85,7 +102,7 @@ def lyid_index(psd) -> dict                                 # id -> layer; raise
 
 - **Every name rule** (Name, Ability, Header, Page Number, type icons, Stars, stat bars, `named_after_text`, R11) compares the tag-stripped base name.
 - **Variant membership.** A layer is in variant N when `shown_in(layer, N)`. Its `variants` is `null` when it is in every variant.
-- **Title parts.** These are the layers today's `title_layers` reads, plus the pieces `split_title` finds (Warcraftian Druid's `Druid `), minus identical copies, in reading order. `named: false` marks a layer whose base name isn't `Name` (see Q1).
+- **Title parts.** These are the layers today's `title_layers` reads, plus the pieces `split_title` finds (Warcraftian Druid's `Druid `), minus identical copies, in reading order. `named: false` marks a layer whose base name isn't `Name` (§14 item 1).
 - **Ability parts.** Visible text layers whose base name is `Ability` (no FX layers), in reading order. When none is visible and a hidden Ability layer is relaid (`_relaid`: Butterfly, Bulborb Larva, Empress Bulblax, Apex Predator), the visible pieces (`_pieces`) are the parts and the hidden layer is a `relaid` follower.
 - **Rule-page blocks.** Every visible text layer, in reading order. `role` is `header` (base name `Header`), `page` (`Page Number`, or as a fallback the bottom-most layer that is only digits) or `block`. Rule pages have no title or ability parts.
 - **Followers (no box).**
@@ -230,7 +247,7 @@ Examples. Texts are verbatim, and these become the fixtures:
 **Line breaks and deletion**
 
 - **`text`** uses `\n` for line breaks. In a title, `\n` is a line break on the card and a space in the name.
-- **`delete`** is offered only on a card field with more than one part. An extra box emptied on submit becomes a delete. The last part: see Q2.
+- **`delete`** is offered only on a card field with more than one part. An extra box emptied on submit becomes a delete. The last part: §14 item 2.
 
 **Derived fields**
 
@@ -336,17 +353,17 @@ set_text_layer(psd, field, raw', fonts_dir, chart, layer=L, beside=parts+followe
 
   | Kind | Template |
   |---|---|
-  | Creature, minion, aux creature | `Creature_Template` (or `2_`/`3_Creature_Template` when the card's canvas or stat layout matches; Track B decides the rule from the files) |
-  | Item, aux item | `Item_Template` |
+  | Creature, minion, aux creature | `Creature_Template` (or `2_`/`3_Creature_Template`: §14's open question) |
+  | Item, aux item, N.M.E., field card | `Item_Template` (owner, 10-25) |
   | Active item | `ActiveItem_Template` |
   | Status effect | `Status_Effect_Template` |
   | Raid boss | `Raid_Boss_Template` |
 
-  No template for the kind (Field, N.M.E., rule pages) is impossible (Q3).
+  Rulebook pages get no added ability (existing blocks only).
 - **Import.** Bring the template's visible Ability type layer in with fork `import_layer`: TySh with its box, font and size, the Txt2 story and the FontSet merge. Scale it when the canvas sizes differ.
 - **Placement.** Put it at the top of the card's `Text` group (the root when there is none), named `Ability`, with a fresh lyid.
 - **Variant tag.** Untagged, unless the card's other ability layers are tagged; then it is tagged with the editing variant.
-- **Text.** Then the normal `set_text_layer`. Flag: "ability layer created from Item_Template: check its place".
+- **Text.** Then the normal `set_text_layer`. Flag: "ability layer created from <template>: check its place".
 
 **4.8 Stars and types** (first, as today).
 
@@ -425,7 +442,7 @@ set_text_layer(psd, field, raw', fonts_dir, chart, layer=L, beside=parts+followe
 - **Delete.**
   - "Delete layer" appears on each box while the field has more than one part.
   - A deleted box collapses to "will be DELETED from the PSD, with 'Ability FX: …' [Undo]".
-- **No ability yet.** "+ Add an ability" opens a new box with the note "new layer 'Ability' from Item_Template (box, font, size); the bake flags it for a look [Remove]". It is hidden when `template.ability` is null, with the explanation "no template for this card kind: add it in Photoshop".
+- **No ability yet.** "+ Add an ability" opens a new box with the note "new layer 'Ability' from Item_Template (box, font, size); the bake flags it for a look [Remove]". Rulebook pages have no such button.
 - **Notes.**
   - "Also printed by Text/Name copy, Text/Name copy 2 (they follow)."
   - "The watermark images/Group 1/Name follows the title."
@@ -544,7 +561,7 @@ Both designs agree except on NME Stock, where B's explicit tags win. Fit is the 
 
 - All five share their Ability, so its box reads "changes every variant".
 - Every picture except the Medical Kit's has its own title box.
-- The renames are 0-pixel. Apply them with R11's gated rename (one commit per PSD, quiet tree, rehearsed on copies) or by hand (Q4).
+- The renames are 0-pixel. Apply them with R11's gated rename: one commit for all 5, quiet tree, rehearsed on copies, the plan shown to the owner first.
 - Parser tag awareness must be live before any rename.
 
 ## 10. Migration and rollout order
@@ -562,12 +579,12 @@ Both designs agree except on NME Stock, where B's explicit tags win. Fit is the 
 2. **Track B text part ships:** `parts` in `card_edits`, per-part classify and splice, sha skip, delete, `_psd.parts`/`skipped`, legacy translation, `card_preview` v2. This must be on AC main before any client writes `parts`.
 3. **Track C build_site ships:** details pass-through, `partState`, variant link keys. Deploy; no UI change.
 4. **Track C editor ships.** From here the site writes only `parts` for printed text.
-5. **Track B variants:** `variant()`, multi-PNG merge, per-variant guard 1. Then the 5 PSDs are tagged (Q4), Card sync shows them as linked variants, and the numbered-PNG duplicate scan is deleted.
+5. **Track B variants:** `variant()`, multi-PNG merge, per-variant guard 1. Then the 5 PSDs are tagged (§14 item 4), Card sync shows them as linked variants, and the numbered-PNG duplicate scan is deleted.
 6. **Track B extras:**
    - the folder move, after `git_commit` deletions and the TTS stem-follow, with people counts and history checked on the first live move;
    - the first type icon;
    - `+ability` last, after the fork's `import_layer` is proven in Photoshop.
-7. **Retire Discord's card-edit commands** (already ruled; their code goes to `archive/discord-edits`).
+7. ~~Retire Discord's card-edit commands~~: done 10-25 (AC 6e8f8e3, e7e7879; code on `archive/discord-edits`).
 8. **Wait one Card sync cycle** with zero legacy joined multi-part entries.
 9. **Delete the joined splice (§8).** One commit; cut the tests.
 10. **Ongoing.** As the owner standardizes, a card's boxes collapse to one per field. No data migration is needed.
@@ -654,23 +671,15 @@ Both designs agree except on NME Stock, where B's explicit tags win. Fit is the 
 
 B and C rebase on A's frozen fixtures and never edit each other's files. The only cross-repo edits are the fixture copies, owned by A.
 
-## 14. Open questions for the owner (real decisions only)
+## 14. Owner's answers (2026-10-25 ~03:50) and the one open question
 
-**Answered 2026-10-25 ~03:50:** 1 as recommended (a box for every layer the parser reads as the title, labelled; guards
-suggest the rename). 2 as recommended (emptying the last Ability box deletes the layer, flagged; a title box can't be
-emptied). 3 the alternative for N.M.E. (and Field) cards: `Item_Template` gives a first ability or type. 4 by script, one
-commit for all 5 PSDs, the plan shown first.
+1. **Title layers not named `Name`** get a box for exactly what the parser reads as the title, labelled "(not named
+   Name)"; guard 2 suggests the rename. Text the parser doesn't read stays Photoshop-only.
+2. **Emptying the last box:** the last Ability box deletes the layer, flagged (the card then has no ability, which is
+   allowed). A title box can't be emptied.
+3. **Cards without a template:** N.M.E. and Field cards take a first ability or type from `Item_Template`.
+4. **Variant tags:** by script, one commit for all 5 PSDs, the plan shown first.
 
-1. **Title layers not named `Name`.** Before standardizing, should these get a box? Examples: Warcraftian Druid's `Druid `, Twin Emperors' `Twin Emperors`, Sans's `snas.`, and any second-creature title outside the title region (Tainted Lazarus's upside-down "Dead Tainted Lazarus").
-   - **Recommended:** a box for exactly what the parser reads as the title, labelled "(not named Name)", while guard 2 suggests the rename. Text the parser doesn't read stays Photoshop-only.
-   - **The alternative:** boxes only for layers named Name, which leaves those words uneditable until you rename them.
-2. **Emptying the last box of a field.**
-   - **Recommended:** emptying the last Ability box deletes the layer, flagged. The card then has no ability, which is allowed, and adding one later uses the template. A Title box can't be emptied.
-   - **The alternative:** the last Ability box can't be emptied.
-3. **Templates for cards without one.** There is no Field or N.M.E. template in `MDW/Templates`.
-   - **Recommended:** "Add an ability" and "first type icon" are unavailable for those kinds, with the note "add it in Photoshop", until you add the templates.
-   - **The alternative:** borrow `Item_Template` for N.M.E. items and `Creature_Template` for fields.
-   - Also confirm when `2_`/`3_Creature_Template` apply.
-4. **How the 5 variant PSDs get their tags (§9).**
-   - **Recommended:** a scripted 0-pixel rename (R11-style, one commit per PSD, you review the plan first), including A Snack's `Snack` → `Name #1`.
-   - **The alternative:** you rename them in Photoshop.
+**Open:** which template a creature card with two or three creatures uses (`2_Creature_Template`,
+`3_Creature_Template`). Recommended: pick by the card's stat bar sets (2 sets = `2_`, 3 = `3_`), else
+`Creature_Template`.

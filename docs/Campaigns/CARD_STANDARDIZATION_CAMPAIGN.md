@@ -4,8 +4,8 @@
 batch, L13, L14 groups: TTSCardMaker 0c573ed0, 100511d3, dc37f4ad, 5a9e0fcf, 7fd2aa30). L2/L3/L5/L6 were turned down; the
 owner standardizes PSDs himself (one Name and one Ability layer) and the parts editor covers the rest. Left, in the plan:
 L1 as BUGS D6, L14 star moves as S9, L16's stale exports. Section 5 (the standards) stays live: the push guards check it.
-Was: Plan item 21 (`docs/NEXT_SESSION_PLAN.md`, "Ideas 5-23"). This file is the single ledger of every PSD
-change we intend (section 3); `docs/EDIT_PIPELINE_DESIGN.md`, the rulebook campaign and `docs/NEXT_SESSION_PLAN.md` (item 21) point here;
+This file was the single ledger of every PSD
+change we intended (section 3); `docs/EDIT_PIPELINE_DESIGN.md` and the rulebook campaign point here;
 so does the companion skill's push-guard paragraph (rules 1 and 2, 2026-10-21). Numbers measured 2026-10-20 over the 813 card PSDs of `~/Desktop/TTSCardMaker` (every PSD outside `MDW/`
 and `Auxiliary/Markers/`); 651 are creatures, minions, items, auxiliary items and N.M.E. items, the cards a template with stat bars or a
 `Name` layer applies to; the other 162 are 48 rulebook pages, 64 status effects, 50 field cards. Evidence in section 8 (`/tmp` scans vanish
@@ -13,13 +13,8 @@ on reboot: copy `/tmp/psdmap` and `/tmp/stdcamp` into `~/Documents/Tools/psd-res
 
 ## 1. The hold (ended 2026-10-22)
 
-- **Waits for the user's go:** every write to a PSD or PNG in TTSCardMaker: the pipeline's live runs (design S5, S8), the six title
-  reprints (L8), Sonic's conversion (L3), star folder moves (L14), the `Effect Layers - All Cards.jsx` batch (L7), the token migration
-  (L1), rulebook page fixes (L11), any layer rename or effect-block copy however small: 0 changed pixels is still a PSD write.
-- **Runs meanwhile:** code (`commands/psd_edit.py`, `commands/psd_regions.py`, `commands/card_bake.py` (new), `tests/`, the fork branches
-  and tag), fonts (`MDW/Fonts` additions, L13), JSON (`site/Card Edits.json` entries such as Thunderfury's, L8;
-  `MDW/Fonts/stoogedings-src/stoogedings.json` aliases), the guard script (section 5, report-only), and dry runs on PSDs copied to `/tmp`
-  (section 4). `~/Desktop/TTSCardMaker` is the live clone.
+PSD and PNG writes waited for the user's go until 2026-10-22; since then the batches landed and the owner
+standardizes PSDs himself.
 
 ## 2. Goal and non-goals
 

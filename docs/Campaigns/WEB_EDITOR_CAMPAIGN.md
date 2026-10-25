@@ -1,7 +1,8 @@
 # Web editor campaign: card as data (2026-10-20)
 
-**Status:** designed 2026-10-20, not scheduled; plan item 22 (`docs/NEXT_SESSION_PLAN.md`, "Ideas 5-23"). Grows out of item 20 (inline editing) and waited for Task 3 steps 4-7, the standardization batch (item 21) and the rendering parity rounds: all done by
-2026-10-25 (the hold ended 2026-10-22); the parts editor (`docs/PARTS_EDITOR_DESIGN.md`) is its next step. Numbers are 2026-10-20: `~/Desktop/TTSCardMaker/site/dist/data/cards.json` (801 rows), `site/Card
+**Status:** designed 2026-10-20, not scheduled (`docs/NEXT_SESSION_PLAN.md`, "Ideas parked"). Grows out of the website's inline editing; what it waited
+for (the edit pipeline, the standardization batches, the rendering parity rounds) was done by 2026-10-25; the parts
+editor (`docs/Future/PARTS_EDITOR.md`) is its next step. Numbers are 2026-10-20: `~/Desktop/TTSCardMaker/site/dist/data/cards.json` (801 rows), `site/Card
 Edits.json` (56 cards), `~/Documents/Tools/psd-research/RENDER_STATUS.md` (`cards_v1_icc`), the ledger
 `docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md`. Anything not checked on disk is marked "to confirm".
 

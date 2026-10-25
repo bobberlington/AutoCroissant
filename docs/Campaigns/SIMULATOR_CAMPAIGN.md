@@ -1,7 +1,7 @@
 # Simulator campaign (2026-10-20)
 
-**Status:** designed 2026-10-20, not scheduled; plan item 16 (`docs/NEXT_SESSION_PLAN.md`, "Ideas 5-23"). The user's idea
-"card game win and loss stats" (pasted 2026-10-20 as item 1 of a second list; item 17 is
+**Status:** designed 2026-10-20, not scheduled (`docs/NEXT_SESSION_PLAN.md`, "Ideas parked"). The user's idea
+"card game win and loss stats" (pasted 2026-10-20; its companion is
 `docs/Campaigns/GAME_REPORTS_CAMPAIGN.md`, the home of the shared game report schema); starts after the deck browser
 (public decks as repo files, private decks encrypted in the repo; sign-in top right; opt-in profiles
 `site/profiles/<login>.json`, not yet created; contributions and a leaderboard). 2026-10-21: both prerequisites landed (the deck

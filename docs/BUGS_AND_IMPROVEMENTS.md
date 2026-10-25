@@ -186,8 +186,8 @@ Left over from that pass, all done since (audits on `docs/Finished/optimization-
   (network-robustness.md items 8, 4, 5).
 - Done 2026-10-21: lazy GitPython in update_bot; a `requests.Session` per download thread (github_api `_local`).
 - Done 2026-10-22: `/purge`, `/update_metadata`, `/mass_replace`, `/alias`, `/set_repo`, `/delete_song` and
-  `/delete_all_music` are admin only (tests/test_admin_gates.py; docs.md §1.6). The three card commands are being
-  retired (`work/retire`).
+  `/delete_all_music` are admin only (tests/test_admin_gates.py; docs.md §1.6). The three card commands were
+  retired 2026-10-25 (6e8f8e3).
 
 Not done in pass 2 (2026-10-21; `docs/Finished/optimization-pass-2-2026-10-21/README.md` lists the rest):
 - Done since: `save(preview=)` brought a bake from 23 s to 1.8 s (2026-10-22); the fork venv has `requests` and

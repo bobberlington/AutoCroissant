@@ -39,9 +39,11 @@ exactly one writer. Grafted onto it:
 from PICKLE 1282743), the clock below live, the bot refreshes its copy on use (ac65a00), so its 30-minute reminder can
 go. Ruleset "Protect main and data" exists. The split below landed 10-25 (AC e9112e8/ab565f9,
 deployed e6a5c54; TC 44440a31/dad7aeae; first live main commit 59b97943). Open: step 10 (owner: now; `work/pickles`,
-in progress) and §16 item 7 (verdicts; design in `docs/Future/CARD_SYNC_VERDICTS.md`).
+in progress) and §16 item 7 (verdicts; design in `docs/Future/CARD_SYNC_VERDICTS.md`). The Discord card edits (`/update_metadata`,
+`/mass_replace`, `/alias`) that §2, §5 and §11 describe were retired 2026-10-25 (AC 6e8f8e3); the website is the one
+edit path, with Rename everywhere (TC 706f750a).
 
-**Status 2026-10-25, two lanes, landed (owner, 03:20: "pushes to any branch other than main do not need to wait").** 
+**Status 2026-10-25, two lanes, landed (owner, 03:20: "pushes to any branch other than main do not need to wait").**
 card-sync.yml's run has a data lane and a main lane. Job `data` ("Card data", group
 `card-data`) runs at once on every push, cron and dispatch (not a retry): it re-reads main's head (`card_data`, no
 bake), posts the changelog, commits `data` and dispatches the site, so a card push reaches the bot and the website

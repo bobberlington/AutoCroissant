@@ -37,13 +37,16 @@ and `owner-decisions-2026-10-24-night`. Commits since that plan: AutoCroissant 2
 - **Bot**: `/query`, `/query_ability`, `/query_rulebook` fixes (e46f0f0, d24e260, e1f83a3); `/reminders` panel and
   `reminder.json` (4d588d9); incremental Cython build, 4 jobs (083e37f, c76bf60); the deploy script moved into the
   `jetson-deploy` skill (0ca9f33).
+- **Upkeep**: the jetson's OpenSSL 3.6.0 -> 3.6.5 in place (10-24; 3.5 LTS later if wanted); the `data` changelog's
+  rewritten commit links remapped (data 4949abed, 10-24 20:38); commit attribution off in `~/.claude/settings.json` and
+  `~/.git-hooks/pre-push` refusing Claude trailers (10-24).
 - **Data and site, 10-23 night**: TTS ratings import (278094c), site round 3 stats and profiles, archive tags with
   Unfinished (TC 9b342437), 16 archived credits; TTS save 52 nicknames (TC 9a318fdd); rulebook page 19, status effects
   in phase 4 (TC d050875f).
 - **psd-tools**: round 12 the last (`cards-20261024` = 6a616ca6: 5,160 -> 3,037 bad px on the frozen corpus; B11
   fixed); round 11 dropped; corpora, round branches and the r9/r10/r12/24b venvs deleted; `~/.venvs/ac-py314-fork` is the
   one fork venv (f46c8dd).
-- **Census** (10-25 05:41 UTC, `docs/Future/PROBLEM_CARDS_2026-10-25.md`): 6,712 dry bakes over 764 cards; 124 cards
+- **Census** (10-25 05:41 UTC, `docs/Future/PROBLEM_CARDS_2026-10-25.csv`): 6,712 dry bakes over 764 cards; 124 cards
   with an edit that can't bake (folder-set stars not counted), 4 data problems, 308 with a note. The 10-23 list read
   573 of 845 whole cards bakeable.
 
@@ -67,6 +70,8 @@ and `owner-decisions-2026-10-24-night`. Commits since that plan: AutoCroissant 2
 - History: God Tamer's and Blank Card's values are misreads; credits Firebomb MichaelJSr, Maxim Tomato Chestnut, The Abyss
   Watchers hdckighfkvhvgmk. Repo size: smaller PNG pushes, never rewrite existing PNGs.
 - Push guards: a PNG pushed before its PSD stays current when it matches Photoshop's image.
+- The guards fix Every-line Composer on card text layers silently (Single-line; never in posts or comments). The
+  link preview fans the creators' cards. The badge batch is rebuilt on current PSDs, never over a newer push.
 
 ## Incidents and lessons
 
@@ -79,3 +84,13 @@ and `owner-decisions-2026-10-24-night`. Commits since that plan: AutoCroissant 2
   Caught after landing; the text fix ran once before the re-seed. Lesson: rehearse every field an added record carries.
 - **GitHub's scheduler** ran hours late, so the clock moved to push triggers with an environment timer.
 - Timings on the Mac swung ~2x: other projects' jobs kept the load at 60-100.
+
+## Landed after 04:00 (10-25 morning)
+
+- **Card sync split** (AC e9112e8, ab565f9, deployed e6a5c54; TC 44440a31, dad7aeae): a card push updates `data`, the
+  changelog and the site at once; only main writes wait. First live main commit 59b97943.
+- **Discord card-repo commands retired** (AC 6e8f8e3, e7e7879; code on `archive/discord-edits`) and the website's
+  Rename everywhere (TC 706f750a, 02eef4ea).
+- **Site**: the link preview fans the creators' cards (TC c8cf4643).
+- **Guards**: a live fix commit (b2561b66: 4 PNGs re-exported, 6 recompressed) after hdckighfkvhvgmk's push 86733bd2,
+  which also changed PoD06/PoD10/PoD11/PoD12 under the held badge batch (to re-run).
