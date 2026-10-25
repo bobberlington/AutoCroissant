@@ -431,7 +431,7 @@ def test_publish_keeps_the_card_on_one_line(remote, tmp_path):
 
 
 def test_the_publisher_needs_only_the_standard_library(remote, tmp_path):
-    """Exactly card_preview_branch.SPARSE_FILES, Python without site-packages (-S: like the runner's own python3, no
+    """Exactly card_preview_branch.SPARSE_FILES, Python without site-packages (-S, as the publish job runs it: no
     install): --help and a publish work; the commits' identity is git_commit's."""
     from commands.git_commit import GIT_IDENTITY
     assert br.IDENTITY == GIT_IDENTITY
@@ -465,7 +465,7 @@ def test_workflow_shape():
     """Dispatch only, three required inputs, the request in the run name and the concurrency group. Two jobs: the
     preview (the workflow's contents: read; its bot checkout card_preview.SPARSE_FILES; card-edits.yml's install of
     requirements-cards.txt, but not pyoxipng, and its cache entry) hands its out dir to the publish job (contents: write;
-    card_preview_branch.SPARSE_FILES; the runner's python3, no setup-python or pip; no --png), 15 minutes between them;
+    card_preview_branch.SPARSE_FILES; Python 3.14 without site-packages, no pip; no --png), 15 minutes between them;
     no secret but GITHUB_TOKEN (the Preview step's REST reads), no Discord, and no input expanded inside a shell script
     (only in env)."""
     text, doc = _workflow()
@@ -500,7 +500,8 @@ def test_workflow_shape():
     if edits.exists():
         assert re.findall(r"pip install [^\n]+", edits.read_text(encoding="utf-8")) == install       # the bake's install
         assert fork_install(edits) == key                                          # and its cache entry
-    assert not [s for s in publish["steps"] if "setup-python" in s.get("uses", "") or "pip " in s.get("run", "")]
+    assert not [s for s in publish["steps"] if "pip " in s.get("run", "")]
+    assert [s["with"] for s in publish["steps"] if "setup-python" in s.get("uses", "")] == [{"python-version": "3.14"}]
     assert set(re.findall(r"secrets\.(\w+)", text)) == {"GITHUB_TOKEN"} and "secrets" not in str(publish)
     assert "discord" not in text.lower().replace("no discord", "")
     names = [s.get("name") for s in preview["steps"]]
@@ -513,7 +514,7 @@ def test_workflow_shape():
     assert take["uses"].startswith("actions/download-artifact@") and take["continue-on-error"] is True
     assert take["with"] == {"name": hand["with"]["name"], "path": "${{ runner.temp }}/preview"}
     run = step(publish, "Publish")["run"]
-    assert run.startswith("python3 -m commands.card_preview_branch ") and "--png" not in run and '"$RUNNER_TEMP/preview"' in run
+    assert run.startswith("python -S -m commands.card_preview_branch ") and "--png" not in run and '"$RUNNER_TEMP/preview"' in run
     shown = step(preview, "Preview")
     assert shown["env"]["CARD"] == "${{ inputs.card }}" and '--card="$CARD"' in shown["run"] and '"$RUNNER_TEMP/preview"' in shown["run"]
     assert shown["env"]["PSD_TOOLS_FONT_DIRS"] == "${{ github.workspace }}/MDW/Fonts"
@@ -568,8 +569,8 @@ def _run_jobs(text: str, inputs: dict, workspaces: dict, bots: dict, tmp_path: P
     outputs). The preview job: Validate, then Preview (skipped, as after a failed install, when not installed), then the
     hand-over when its `if` holds (a copy of its listed files that exist, as upload-artifact with if-no-files-found:
     ignore). The publish
-    job when the preview job's `ok` output is "true": the take-over (the copy back; continue-on-error) and Publish, whose
-    python3 is this Python without site-packages. Returns {step: exit code, None when skipped}.
+    job when the preview job's `ok` output is "true": the take-over (the copy back; continue-on-error) and Publish (its
+    `python -S`: this Python without site-packages). Returns {step: exit code, None when skipped}.
     """
     yaml = pytest.importorskip("yaml")
     doc = yaml.safe_load(text)

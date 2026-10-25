@@ -17,7 +17,7 @@ gate: findings exit 0, an unreadable PSD or a failed API call is one error line.
 --psd files belong to the checkout of their nearest ancestor holding Types/ (its Types/ and edits file apply); --all
 parses a checkout in a process pool; --repo reads the pushed PSDs by blob sha (Types/, the manifest and the edits file
 from the tree at --after). No Discord or config imports (the token: config through github_api, else GITHUB_TOKEN);
-SPARSE_FILES is the import closure card-check.yml checks out.
+SPARSE_FILES is what card-check.yml checks out: the import closure and requirements-cards.txt.
 """
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor
@@ -41,7 +41,8 @@ from global_config import EDITS_PATHS, ICON_MANIFEST_PATH, STARS_DIR, TYPES_DIR
 # Configuration
 # ========================
 SPARSE_FILES = ("commands/card_check.py", "commands/font_check.py", "commands/github_api.py", "commands/psd_parser.py",
-                "commands/card_models.py", "commands/card_edits.py", "global_config.py")   # the import closure card-check.yml checks out
+                "commands/card_models.py", "commands/card_edits.py", "global_config.py",
+                "requirements-cards.txt")       # what card-check.yml checks out: the import closure and the card packages
 LINE = "{name} has pushed {card} with: {notes}."                                  # the Discord line per card
 CLOSING = ("The bot's next /update_stats prints these too; the parser's own notes (no stars found, misspelt type, several "
            "creatures) also show on the website as Parser notes.")                  # the Discord message's last line

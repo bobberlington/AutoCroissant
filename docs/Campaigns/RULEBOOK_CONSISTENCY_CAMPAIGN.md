@@ -44,7 +44,7 @@ M, H, X, T, G, V, S.
 | C1 | C | (21_Damage_Types) vs (07_Stats3), (10_Attacking) | NORMAL "DMG - (1/2*DEF)" vs "damage = ATK-DEF" (07) and "Attacks deal ATK - DEF" (10); an old-rules leftover (`MDW/Old Rules/17_Damage_Types`) |
 | C2 | C | (12_Reactions3) vs Hardened card, (12_Reactions) | "5 stacks of hardened, giving it 3 defense"; Hardened is +0.5 DEF per stack, so 6 (12_Reactions says 6) |
 | C3 | C | (07_Stats3) | text "-1 DEF BAR --> 1"; its picture shows 1.5 |
-| C4 | C | (19_Status_Effects) vs (09_TakingYourTurn) | status DMG/heal "procs at (ENDT)" vs phase 4 "Status Effects deal damage/heal, duration ticks down by 1", after phase 3's (ENDT) |
+| C4 | C | (19_Status_Effects) vs (09_TakingYourTurn) | status DMG/heal "procs at (ENDT)" vs phase 4 "Status Effects deal damage/heal, duration ticks down by 1", after phase 3's (ENDT). **Resolved 2026-10-24** (owner): phase 4; 19 now reads "procs in phase 4, after (ENDT) effects" (TTSCardMaker d050875f) |
 | C5 | C+H | (12_Reactions2) hidden vs (12_Reactions3) | hidden older draft resolves 4>2>1>3 ("Attacks also resolve forward"); the visible rule is 4>2>3>1 |
 | C6 | C+H | (22_Negation) hidden | older ITEMS block: "returns to the hand", "Equip and active items" (no Deploy), "are still expended" |
 | U1 | U | (02_Abbreviations), (11_Abilities2), (11_Abilities4), (22_Negation) | 2026-10-21: the tags defined nowhere (1GCD, 2CD, 1CD, 2U, 2GCD, 3U, 4U, (1/2CD)) are now the shipped system on the cards: the team's cooldown update (TTSCardMaker df02b3b "cooldowns (2)" .. 7cb4c86 "cooldowns (5)", 178 card PSDs + PNGs) moved every card to (nCD), (a/bCD), (nGCD), (a/bGCD), (nU) (218 PSDs; mapping and counts in the rules skill §3; badges in ttscardmaker-companion §1.2). **Open (2026-10-21):** rulebook pages 02_Abbreviations, 11_Abilities2, 11_Abilities4, 22_Negation still show the old tags: the team updates them. Old tags left there: 02 (XPT) (XPGT) (EXT) (FTEXT) (EXGT); 11_Abilities2 (XPT) (1PT) (XPGT) (2PGT); 11_Abilities4 (EXT) (FTEXT) (E2T) (FTE2T) (E2GT); 22 (E2T). Until then no page defines the new tags. Before the update (2026-10-20): 59 occurrences of the 7 tags on 44 distinct cards plus "(1/2CD)" on Chris & Jordi; (02_Abbreviations) defines 16 patterns, all then used on cards |
@@ -193,13 +193,14 @@ text a player can see.
    pages 02_Abbreviations, 11_Abilities2, 11_Abilities4, 22_Negation still show the old tags: the team updates them (U1).
 2. V1: delete the stray text box on (16_The_Field), or is it a deliberate joke the printed page keeps?
 3. M1: "Smouldering" or "Smoldering"? The card file name follows the choice (rename = card edit).
-4. C4: do status effects tick in phase 3 with (ENDT) effects or in phase 4? 09 and 19 need one answer.
+4. C4: do status effects tick in phase 3 with (ENDT) effects or in phase 4? 09 and 19 need one answer. Resolved: phase 4.
 5. Where does the checker live (TTSCardMaker `site/build/` or the rules skill's `scripts/`), and is a failing Action
    acceptable while the baseline still has rows?
 
 **Answered 2026-10-24 (the user):** 2 V1: a joke, the page keeps it (the checker stops flagging it). 3 M1: "Smoldering"
-(already the file name). 4 C4: status effects deal damage/heal and tick in phase 4 (page 09 is right; page 19 gets
-reworded). 5 the checker lives in the rules skill's scripts, run by hand, and reports only until its baseline is clean.
+(already the file name). 4 C4: status effects deal damage/heal and tick in phase 4 (page 09 is right; page 19
+reworded, TTSCardMaker d050875f). 5 the checker lives in the rules skill's scripts, run by hand, and reports only
+until its baseline is clean.
 
 ## 9. Provenance (2026-10-20, read-only)
 

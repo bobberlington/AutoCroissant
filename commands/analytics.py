@@ -3,7 +3,9 @@ from datetime import date, datetime, timedelta
 from discord import AllowedMentions, Interaction
 from discord.app_commands import Choice
 from inspect import Parameter, isawaitable, signature
-from os import fsync, remove, replace
+from json import dumps, loads
+from os import O_RDONLY, close as os_close, fsync, open as os_open, remove, replace
+from os.path import dirname, exists
 from pickle import load, dump
 from re import compile as re_compile
 from shlex import quote as shlex_quote, split as shlex_split
@@ -21,20 +23,21 @@ from commands.utils import (
     lacks_admin,
     queue_long_message,
 )
-from global_config import REMIND_PKL, TIMEZONE
+from global_config import REMIND_JSON, REMIND_PKL, TIMEZONE
 
 # ========================
-# Configuration
+# Bot adapter (the only intended differences from OJWikibot's copy of this module)
 # ========================
-# reminder.pkl keeps the original layout (defaultdict(list) of {guild_id: [reminder dict]}) so older code can still
-# read it. Keys of a reminder dict:
-#   id, channel_id, msg, when (aware datetime in TIMEZONE), frequency (timedelta or None),
-#   command (None or canonical "/name key:value ..."), creator_id (None = saved before creator tracking),
-#   creator_name, v (REMINDER_VERSION once migrated), disabled (only present when the scheduler must skip it: the reason)
-REMINDER_VERSION = 3                        # 3: retired options dropped from stored commands (RETIRED_OPTIONS)
-MAX_INTERVAL = timedelta(days=366)          # longer offsets/frequencies are typos, and huge ones overflow datetime
-CHANNEL_RETRY = timedelta(hours=1)          # a one-shot whose channel is gone waits this long and tries again
+STORE_PATH = REMIND_JSON                    # reminder.json: gitignored, per machine (as reminder.pkl was)
+LEGACY_PATH = REMIND_PKL                    # converted once to STORE_PATH, then kept as reminder.pkl.bak
+STORE_SCHEMA = "autocroissant.reminder-store"
+TIME_SEMANTICS = "when: Pacific wall time with that instant's offset (America/Los_Angeles); repeats keep the wall time"
+ZONE_LABEL = "Pacific time"
+RUN_AS_CREATOR = True                       # a reminder's command runs with its creator's permissions
 LEGACY_RUNS_AS_BOT = True                   # reminders saved before creator tracking keep running as the bot, as before
+ALLOW_POSITIONAL = True                     # commands may give values by position before name:value options
+ON_LOAD_ERROR = "off"                       # an unreadable store: reminders off, the bot keeps running ("raise": exit)
+CHANNEL_RETRY = timedelta(hours=1)          # a one-shot whose channel is gone waits this long and tries again
 # Options a command no longer has. A stored reminder that still sets one drops it instead of failing to run.
 # Each entry: (removed options, the command's option order before they were removed, because pre-v2 reminders
 # could give options by position).
@@ -43,6 +46,26 @@ RETIRED_OPTIONS = {
     "update_stats": (("use_local_repo", "use_local_timestamp"),
                      ("output_problematic_cards", "use_local_repo", "use_local_timestamp", "force_update")),
 }
+
+
+def is_admin(interaction) -> bool:
+    return not lacks_admin(interaction)
+
+
+# ========================
+# Configuration
+# ========================
+# A reminder dict in memory: id, channel_id (int), msg, when (aware datetime in TIMEZONE), frequency (timedelta or
+# None), command (None or canonical "/name key:value ..."), enabled (False: kept but never fires), creator_id (None =
+# saved before creator tracking), creator_name, v (REMINDER_VERSION once migrated), problem (why the scheduler skips
+# it, or None). reminder.json holds the same fields (SCHEMA_VERSION; ReminderStore).
+SCHEMA_VERSION = 2
+KEYS = ("id", "channel_id", "msg", "when", "frequency", "command", "enabled", "creator_id", "creator_name", "v", "problem")
+REMINDER_VERSION = 3                        # 3: retired options dropped from stored commands (RETIRED_OPTIONS)
+MAX_INTERVAL = timedelta(days=366)          # longer offsets/frequencies are typos, and huge ones overflow datetime
+NOT_SCHEDULABLE = {"reminders"}             # the panel needs a real user
+PANEL_TIMEOUT = 600                         # an idle /reminders panel closes (interaction tokens last 15 minutes)
+SELECT_SIZE = 25                            # options in a Discord select
 INTERVAL_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
 WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 TIME_FORMATS = ("%H:%M", "%I%p", "%I:%M%p")
@@ -54,6 +77,7 @@ WORD_PREFIX = re_compile(r"([a-z]+)\.?[\s,]*(.*)")
 INTERVAL_FULL = re_compile(r"(?:\s*\d+\s*[smhdw])+\s*")
 INTERVAL_PART = re_compile(r"(\d+)\s*([smhdw])")
 OPTION_NAME = re_compile(r"[A-Za-z_][A-Za-z0-9_]*")
+SNOWFLAKE = re_compile(r"[1-9][0-9]*")
 
 # ========================
 # Global State
@@ -61,8 +85,10 @@ OPTION_NAME = re_compile(r"[A-Za-z_][A-Za-z0-9_]*")
 reminders = defaultdict(list)
 _client = None              # discord.Client, set by bind_reminder_client; used to spot deleted channels
 _loaded = False
-_load_error = None          # set when reminder.pkl exists but can't be read: reminders stay off, file untouched
-_lock = RLock()             # guards reminders and the file: set/list/remove run in threads next to check_reminder
+_load_error = None          # why reminders are off (the store can't be read): the file is left untouched
+_backend = "json"           # "pkl" while reminder.pkl could not be converted (this session saves to it)
+_conversion_error = None    # why the conversion failed (status())
+_lock = RLock()             # guards reminders and the file: commands and the panel run in threads next to check_reminder
 _check_lock = Lock()        # single-flight: a pass is queued every second, and two overlapping passes would double-fire
 
 
@@ -78,6 +104,18 @@ class _ReminderUser:
 
     def __str__(self):
         return self.name
+
+
+class ReminderError(Exception):
+    """A refusal; its text is the reply."""
+
+
+class ReminderOff(ReminderError):
+    """Reminders are off this session (the store can't be read)."""
+
+
+class StoreError(Exception):
+    """reminder.json can't be read or written as a reminder store."""
 
 
 # ========================
@@ -104,7 +142,7 @@ def _weekday_index(word):
     return None
 
 
-def _parse_when(when_str, now):
+def parse_when(when_str, now):
     """
     Parse a reminder start time in TIMEZONE.
 
@@ -175,7 +213,7 @@ def parse_interval(time_str: Optional[str]) -> Optional[timedelta]:
         return None
 
 
-def _checked_interval(label, raw):
+def checked_interval(label, raw):
     """parse_interval that raises ValueError with a user-facing reason; blank -> None."""
     if not raw or not raw.strip():
         return None
@@ -189,7 +227,7 @@ def _checked_interval(label, raw):
     return interval
 
 
-def _format_interval(interval):
+def format_interval(interval):
     """timedelta -> '1w', '1d12h', '30m'."""
     seconds = int(interval.total_seconds())
     parts = []
@@ -200,20 +238,58 @@ def _format_interval(interval):
     return "".join(parts) or "0s"
 
 
-def _format_when(when):
+def format_when(when):
     """Pacific wall time plus a Discord relative timestamp that each reader sees in their own time zone."""
     return f"{when.strftime('%Y-%m-%d %H:%M %Z')} (<t:{int(when.timestamp())}:R>)"
 
 
-def _next_run(when, frequency, now):
+def next_run(when, frequency, now):
     """First when + n*frequency after now, in one step (a stalled bot must not replay every missed run)."""
     return when + frequency * ((now - when) // frequency + 1)
+
+
+def parse_schedule(when, offset, frequency, now):
+    """
+    The first run and repeat of a new or rescheduled reminder.
+
+    Args:
+        when: parse_when text; blank means now (only together with an offset)
+        offset: Delay added to the first run ("30m", "1d")
+        frequency: Repeat interval, blank = once
+        now: Current time in TIMEZONE
+
+    Returns:
+        (first run, interval or None, [notes]); raises ValueError with a user-facing reason
+    """
+    notes = []
+    offset_delta = checked_interval("offset", offset)
+    interval = checked_interval("frequency", frequency)
+    if when and when.strip():
+        remind_at, fixed_day = parse_when(when, now)
+        if remind_at is None:
+            raise ValueError(f"invalid time `{when}`. Try `13:00`, `1PM`, `sun 3AM`, `tomorrow 9AM` "
+                             f"or `2026-12-25 9AM` ({ZONE_LABEL})")
+    elif offset_delta:
+        remind_at, fixed_day = now.replace(microsecond=0), False
+    else:
+        raise ValueError("give a time with `when` (e.g. `13:00`, `1PM`, `sun 3AM`) or a delay with `offset`")
+    if offset_delta:
+        remind_at = remind_at + offset_delta
+    if remind_at - now > MAX_INTERVAL:
+        raise ValueError(f"{remind_at.strftime('%Y-%m-%d')} is more than {MAX_INTERVAL.days} days away")
+    if remind_at <= now:
+        if fixed_day:
+            raise ValueError(f"{remind_at.strftime('%Y-%m-%d %H:%M %Z')} is in the past")
+        if when and when.strip():
+            notes.append("That time already passed today, so it fires right away "
+                         "(use `tomorrow ...` or an offset of `1d` to start tomorrow).")
+    return remind_at, interval, notes
 
 
 # ========================
 # Command Parsing
 # ========================
-def _tokenize(command):
+def tokenize(command):
     """
     Split a stored command into its name, positional values and name:value options.
 
@@ -251,7 +327,7 @@ def _tokenize(command):
             kwargs[key] = value
         else:
             if kwargs:
-                raise ValueError(f"`{token}` has no `name:` but comes after a name:value option")
+                raise ValueError("a value with no `name:` comes after a name:value option")
             args.append(token)
         i += 1
     return name, args, kwargs
@@ -284,17 +360,17 @@ def _to_bool(raw, option, legacy):
         return True
     if word in FALSE_WORDS:
         return False
-    raise ValueError(f"`{option}` must be True or False, got `{raw}`")
+    raise ValueError(f"`{option}` must be True or False")
 
 
 def _convert(raw, annotation, option, legacy):
-    """Turn a text value into what the slash callback's annotation expects; ValueError if it can't."""
+    """Turn a text value into what the slash callback's annotation expects; ValueError (no values) if it can't."""
     if annotation is Parameter.empty or annotation is Any or annotation is str:
         return raw
     origin = get_origin(annotation)
     if origin is Union or origin is UnionType:
         choices = [arg for arg in get_args(annotation) if arg is not type(None)]
-        problem = f"`{option}` can't take `{raw}`"
+        problem = f"`{option}` can't take that value"
         for choice in choices:
             try:
                 return _convert(raw, choice, option, legacy)
@@ -316,12 +392,12 @@ def _convert(raw, annotation, option, legacy):
         try:
             return int(raw)
         except ValueError:
-            raise ValueError(f"`{option}` must be a whole number, got `{raw}`") from None
+            raise ValueError(f"`{option}` must be a whole number") from None
     if annotation is float:
         try:
             return float(raw)
         except ValueError:
-            raise ValueError(f"`{option}` must be a number, got `{raw}`") from None
+            raise ValueError(f"`{option}` must be a number") from None
     raise ValueError(f"`{option}` ({_type_name(annotation)}) can't be filled in by a reminder")
 
 
@@ -361,7 +437,7 @@ def _bind(func, args, kwargs, legacy=False):
     return values
 
 
-def _render(name, values):
+def render(name, values):
     """Canonical stored form: '/name option:value ...', quoted where needed."""
     parts = [f"/{name}"]
     for option, value in values.items():
@@ -401,20 +477,152 @@ def _drop_retired(name, args, kwargs, legacy):
     return args, kwargs, dropped
 
 
-def _resolve_command(command, legacy=False):
+def resolve_command(command, legacy=False):
     """
     Look up and bind a stored command.
 
     Returns:
         (callback, name, {option: value}, ["option:value" dropped as retired]); raises ValueError with a
-        user-facing reason
+        user-facing reason that names options but never their values (it is posted in the channel)
     """
-    name, args, kwargs = _tokenize(command)
+    name, args, kwargs = tokenize(command)
+    if name in NOT_SCHEDULABLE:
+        raise ValueError(f"`/{name}` can't run from a reminder")
     func = slash_registry.get(name)
     if func is None:
         raise ValueError(f"`/{name}` is not a bot command")
     args, kwargs, dropped = _drop_retired(name, args, kwargs, legacy)
+    if args and not ALLOW_POSITIONAL and not legacy:
+        raise ValueError("give every option as name:value")
     return func, name, _bind(func, args, kwargs, legacy), dropped
+
+
+def _store_command(command):
+    """A new command checked and in canonical form: (stored text or None, [notes]); ValueError if it can't run."""
+    if not command or not command.strip():
+        return None, []
+    if not slash_registry:                  # before on_ready: checked when it fires
+        return command.strip(), []
+    _, name, values, dropped = resolve_command(command.strip())
+    notes = []
+    if dropped:
+        notes.append(f"Dropped `{' '.join(dropped)}`: /{name} no longer has "
+                     f"{'that option' if len(dropped) == 1 else 'those options'}.")
+    return render(name, values), notes
+
+
+# ========================
+# Panel Helpers (plain functions; the View is commands/reminder_panel.py)
+# ========================
+def can_edit(reminder, user_id, admin) -> bool:
+    """Admins, or the reminder's creator (a reminder with no creator: admins only)."""
+    creator_id = reminder.get("creator_id")
+    return bool(admin) or (creator_id is not None and creator_id == user_id)
+
+
+def locate(ids, current_id, last_index) -> int:
+    """Index of current_id in ids, else last_index clamped (the neighbour of a reminder that is gone); -1 if empty."""
+    if not ids:
+        return -1
+    if current_id in ids:
+        return ids.index(current_id)
+    return min(max(last_index, 0), len(ids) - 1)
+
+
+def step(n, index, delta) -> int:
+    """index moved by delta, wrapping around n items; -1 if there are none."""
+    if n <= 0:
+        return -1
+    return (index + delta) % n
+
+
+def select_page(n, index, size=SELECT_SIZE):
+    """
+    The window of the jump select that holds index.
+
+    Returns:
+        (start, stop, has_prev, has_next): up to size reminders on one page, else size - 2 per page plus
+        'earlier'/'later' entries
+    """
+    if n <= size:
+        return 0, n, False, False
+    per_page = size - 2
+    index = min(max(index, 0), n - 1)
+    start = (index // per_page) * per_page
+    stop = min(n, start + per_page)
+    return start, stop, start > 0, stop < n
+
+
+def _clip(text, limit):
+    text = str(text)
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
+def _state(reminder):
+    if reminder.get("problem"):
+        return "problem"
+    return "on" if reminder.get("enabled", True) else "off"
+
+
+def card(reminder, now):
+    """
+    The texts of a reminder's panel card.
+
+    Returns:
+        {"title", "description", "fields": [(name, value)], "state": "on"/"off"/"problem"}
+    """
+    when = reminder.get("when")
+    frequency = reminder.get("frequency")
+    state = _state(reminder)
+    if isinstance(when, datetime):
+        next_text = format_when(when)
+        if state == "off":
+            next_text = f"Off (next due {next_text})"
+        elif when <= now:
+            next_text = f"Due now ({next_text})"
+    else:
+        next_text = "unreadable"
+    command = reminder.get("command")
+    if command:
+        fence = "``" if "`" in command else "`"
+        command_text = f"{fence}{_clip(command, 1000)}{fence}"
+    else:
+        command_text = "none"
+    creator_id = reminder.get("creator_id")
+    if creator_id is not None:
+        creator_text = f"<@{creator_id}>"
+    elif RUN_AS_CREATOR and not LEGACY_RUNS_AS_BOT:
+        creator_text = "unknown"
+    else:
+        creator_text = "unknown (runs as the bot)"
+    status = {"on": "On", "off": "Off", "problem": f"⚠ {_clip(reminder.get('problem'), 200)}"}[state]
+    return {
+        "title": f"Reminder {reminder.get('id')}",
+        "description": _clip(reminder["msg"], 4000) if reminder.get("msg") else "*No message*",
+        "fields": [
+            ("Command", command_text),
+            ("Next run", next_text),
+            ("Repeats", f"every {format_interval(frequency)}" if isinstance(frequency, timedelta) else "once"),
+            ("Channel", f"<#{reminder.get('channel_id')}>"),
+            ("Creator", creator_text),
+            ("Status", status),
+        ],
+        "state": state,
+    }
+
+
+def option_texts(reminder):
+    """(label, description) of a reminder in the jump select (each at most 100 characters)."""
+    command = reminder.get("command")
+    what = command.split(" ")[0] if command else _clip(reminder.get("msg") or "message", 60)
+    when = reminder.get("when")
+    parts = [when.strftime("%b %d %H:%M") if isinstance(when, datetime) else "unreadable time"]
+    frequency = reminder.get("frequency")
+    parts.append(f"every {format_interval(frequency)}" if isinstance(frequency, timedelta) else "once")
+    state = _state(reminder)
+    if state != "on":
+        parts.append(state)
+    return _clip(f"{reminder.get('id')} · {what}", 100), _clip(" · ".join(parts), 100)
 
 
 # ========================
@@ -427,6 +635,190 @@ def _new_id():
         reminder_id = uuid4().hex[:8]
         if reminder_id not in taken:
             return reminder_id
+
+
+def _snowflake_in(value, what):
+    if not isinstance(value, str) or not SNOWFLAKE.fullmatch(value):
+        raise StoreError(f"{what} must be a decimal string")
+    try:
+        return int(value)
+    except ValueError:
+        raise StoreError(f"{what} is too long") from None
+
+
+def _snowflake_out(value, what):
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise StoreError(f"{what} is not a Discord id")
+    return str(value)
+
+
+def _atomic_write(path, data):
+    """Write bytes to path: temp file, fsync, rename, fsync the folder (a crash leaves the old file or the new one)."""
+    temp_path = f"{path}.tmp"
+    try:
+        with open(temp_path, "wb") as f:
+            f.write(data)
+            f.flush()
+            fsync(f.fileno())
+        replace(temp_path, path)
+    except BaseException:
+        try:
+            remove(temp_path)
+        except OSError:
+            pass
+        raise
+    try:
+        folder = os_open(dirname(path) or ".", O_RDONLY)
+        try:
+            fsync(folder)
+        finally:
+            os_close(folder)
+    except OSError:
+        pass
+
+
+class ReminderStore:
+    """reminder.json (SCHEMA_VERSION): exact keys, canonical (a no-op save is a zero diff), written atomically."""
+
+    def __init__(self, path):
+        self.path = path
+
+    def serialize(self, data) -> str:
+        """{guild_id: [reminder]} -> the file's text; StoreError if a reminder can't be stored."""
+        guilds = {}
+        for guild_id in sorted(data, key=lambda g: (not isinstance(g, int), g if isinstance(g, int) else 0)):
+            if data[guild_id]:
+                guilds[_snowflake_out(guild_id, "a guild id")] = [self._entry_out(r) for r in data[guild_id]]
+        doc = {"schema": STORE_SCHEMA, "schema_version": SCHEMA_VERSION, "time_semantics": TIME_SEMANTICS,
+               "guilds": guilds}
+        return dumps(doc, indent=2, ensure_ascii=False) + "\n"
+
+    def parse(self, text):
+        """The file's text -> defaultdict(list) {guild_id: [reminder]}; StoreError on anything unexpected."""
+        try:
+            doc = loads(text)
+        except ValueError as e:
+            raise StoreError(f"not JSON ({e})") from None
+        if not isinstance(doc, dict) or doc.get("schema") != STORE_SCHEMA:
+            raise StoreError(f"not a {STORE_SCHEMA} file")
+        version = doc.get("schema_version")
+        if isinstance(version, bool) or not isinstance(version, int):
+            raise StoreError("schema_version is missing")
+        if version > SCHEMA_VERSION:
+            raise StoreError(f"written by newer code (schema_version {version}); update the bot")
+        if version != SCHEMA_VERSION:
+            raise StoreError(f"unknown schema_version {version}")
+        if set(doc) != {"schema", "schema_version", "time_semantics", "guilds"} or not isinstance(doc["guilds"], dict):
+            raise StoreError("unexpected top-level keys")
+        data = defaultdict(list)
+        seen = set()
+        for guild_key, entries in doc["guilds"].items():
+            guild_id = _snowflake_in(guild_key, "a guild id")
+            if not isinstance(entries, list):
+                raise StoreError(f"guild {guild_key} does not hold a list")
+            for entry in entries:
+                reminder = self._entry_in(entry)
+                if reminder["id"] in seen:
+                    raise StoreError(f"reminder {reminder['id']} appears twice")
+                seen.add(reminder["id"])
+                data[guild_id].append(reminder)
+        return data
+
+    def load(self):
+        with open(self.path, "r", encoding="utf-8") as f:
+            return self.parse(f.read())
+
+    def save(self, data):
+        _atomic_write(self.path, self.serialize(data).encode("utf-8"))
+
+    @staticmethod
+    def _entry_out(reminder):
+        rid = reminder.get("id")
+        if not isinstance(rid, str) or not rid:
+            raise StoreError("a reminder has no id")
+        when = reminder.get("when")
+        if not isinstance(when, datetime) or when.tzinfo is None:
+            raise StoreError(f"reminder {rid}: unreadable time")
+        frequency = reminder.get("frequency")
+        seconds = None
+        if frequency is not None:
+            if not isinstance(frequency, timedelta) or frequency <= timedelta(0) \
+                    or frequency != timedelta(seconds=int(frequency.total_seconds())):
+                raise StoreError(f"reminder {rid}: frequency is not a whole number of seconds")
+            seconds = int(frequency.total_seconds())
+        creator_id = reminder.get("creator_id")
+        version = reminder.get("v")
+        return {
+            "id": rid,
+            "channel_id": _snowflake_out(reminder.get("channel_id"), f"reminder {rid}: the channel"),
+            "msg": str(reminder.get("msg") or ""),
+            "when": when.astimezone(TIMEZONE).isoformat(),
+            "frequency": seconds,
+            "command": reminder.get("command") or None,
+            "enabled": bool(reminder.get("enabled", True)),
+            "creator_id": None if creator_id is None else _snowflake_out(creator_id, f"reminder {rid}: the creator"),
+            "creator_name": str(reminder.get("creator_name") or ""),
+            "v": version if isinstance(version, int) and not isinstance(version, bool) else None,
+            "problem": reminder.get("problem") or None,
+        }
+
+    @staticmethod
+    def _entry_in(entry):
+        if not isinstance(entry, dict) or set(entry) != set(KEYS):
+            raise StoreError(f"a reminder's keys must be {', '.join(KEYS)}")
+        rid = entry["id"]
+        if not isinstance(rid, str) or not rid:
+            raise StoreError("a reminder has no id")
+        try:
+            parsed = datetime.fromisoformat(entry["when"])
+        except (TypeError, ValueError):
+            raise StoreError(f"reminder {rid}: unreadable time") from None
+        if parsed.tzinfo is None:
+            raise StoreError(f"reminder {rid}: the time has no UTC offset")
+        # Keep the stored wall time (a spring-forward gap time stays as written); fold picks the offset.
+        when = None
+        for fold in (0, 1):
+            candidate = parsed.replace(tzinfo=TIMEZONE, fold=fold)
+            if candidate.utcoffset() == parsed.utcoffset():
+                when = candidate
+                break
+        if when is None:
+            raise StoreError(f"reminder {rid}: the time's offset is not {ZONE_LABEL}'s at that time")
+        frequency = entry["frequency"]
+        if frequency is not None and (isinstance(frequency, bool) or not isinstance(frequency, int) or frequency <= 0):
+            raise StoreError(f"reminder {rid}: frequency must be whole seconds or null")
+        try:
+            frequency = timedelta(seconds=frequency) if frequency else None
+        except OverflowError:
+            raise StoreError(f"reminder {rid}: frequency is too large") from None
+        for key in ("msg", "creator_name"):
+            if not isinstance(entry[key], str):
+                raise StoreError(f"reminder {rid}: {key} must be text")
+        for key in ("command", "problem"):
+            if entry[key] is not None and (not isinstance(entry[key], str) or not entry[key]):
+                raise StoreError(f"reminder {rid}: {key} must be text or null")
+        if not isinstance(entry["enabled"], bool):
+            raise StoreError(f"reminder {rid}: enabled must be true or false")
+        version = entry["v"]
+        if version is not None and (isinstance(version, bool) or not isinstance(version, int)):
+            raise StoreError(f"reminder {rid}: v must be a number or null")
+        creator_id = entry["creator_id"]
+        return {
+            "id": rid,
+            "channel_id": _snowflake_in(entry["channel_id"], f"reminder {rid}: channel_id"),
+            "msg": entry["msg"],
+            "when": when,
+            "frequency": frequency,
+            "command": entry["command"],
+            "enabled": entry["enabled"],
+            "creator_id": None if creator_id is None else _snowflake_in(creator_id, f"reminder {rid}: creator_id"),
+            "creator_name": entry["creator_name"],
+            "v": version,
+            "problem": entry["problem"],
+        }
+
+
+_store = ReminderStore(STORE_PATH)
 
 
 def _migrate_command(reminder):
@@ -443,11 +835,11 @@ def _migrate_command(reminder):
     if not slash_registry:
         return False
     try:
-        _, name, values, dropped = _resolve_command(command, legacy=reminder.get("v") is None)
+        _, name, values, dropped = resolve_command(command, legacy=reminder.get("v") is None)
     except ValueError as e:
         print(f"Reminder {reminder['id']}: stored command `{command}` can't run ({e}); it will report this when due.")
         return True
-    canonical = _render(name, values)
+    canonical = render(name, values)
     if canonical != command:
         reminder["command"] = canonical
         note = f" (dropped retired `{' '.join(dropped)}`)" if dropped else ""
@@ -464,18 +856,23 @@ def _outdated(reminder):
 def _migrate(reminder):
     """
     Bring one stored reminder up to REMINDER_VERSION in place. Never drops it: anything unreadable gets a
-    'disabled' reason so the scheduler skips it and /list_reminders shows it for removal.
+    'problem' so the scheduler skips it and /reminders shows it for removal.
 
     Returns:
         True if the reminder changed
     """
+    renamed = "disabled" in reminder
+    if renamed:                                 # reminder.pkl's name for problem
+        reminder["problem"] = reminder.pop("disabled") or None
+    reminder.setdefault("problem", None)        # defaults alone are no change (no needless save)
+    reminder.setdefault("enabled", True)
     before = dict(reminder)
     if not isinstance(reminder.get("id"), str) or not reminder.get("id"):
         reminder["id"] = _new_id()
     try:
         reminder["channel_id"] = int(reminder.get("channel_id"))
     except (TypeError, ValueError):
-        reminder["disabled"] = "unreadable channel"
+        reminder["problem"] = "unreadable channel"
 
     msg = reminder.get("msg")
     reminder["msg"] = msg if isinstance(msg, str) else ("" if msg is None else str(msg))
@@ -488,15 +885,15 @@ def _migrate(reminder):
             when = when.astimezone(TIMEZONE)
         reminder["when"] = when
     else:
-        reminder["disabled"] = "unreadable time"
+        reminder["problem"] = "unreadable time"
 
     frequency = reminder.get("frequency")
     if isinstance(frequency, (int, float)) and not isinstance(frequency, bool):
         frequency = timedelta(seconds=frequency) if frequency else None
     if frequency is not None and not isinstance(frequency, timedelta):
-        reminder["disabled"] = "unreadable frequency"
+        reminder["problem"] = "unreadable frequency"
     elif frequency is not None and frequency <= timedelta(0):
-        reminder["disabled"] = "frequency is not positive"
+        reminder["problem"] = "frequency is not positive"
     else:
         reminder["frequency"] = frequency or None
 
@@ -509,81 +906,186 @@ def _migrate(reminder):
 
     if _outdated(reminder) and _migrate_command(reminder):
         reminder["v"] = REMINDER_VERSION
-    if reminder.get("disabled") and before.get("disabled") != reminder["disabled"]:
-        print(f"WARNING: reminder {reminder['id']} is disabled ({reminder['disabled']}); remove it with /remove_reminder.")
-    return reminder != before
+    if reminder.get("problem") and before.get("problem") != reminder["problem"]:
+        print(f"WARNING: reminder {reminder['id']} can't run ({reminder['problem']}); delete it with /remove_reminder.")
+    return renamed or reminder != before
+
+
+def _save_pickle():
+    """reminder.pkl, atomically: the fallback while it could not be converted."""
+    _atomic_write(LEGACY_PATH, _pickle_bytes(reminders))
+
+
+def _pickle_bytes(data):
+    from io import BytesIO
+    buffer = BytesIO()
+    dump(data, buffer)
+    return buffer.getvalue()
+
+
+def _store_name():
+    return LEGACY_PATH if _backend == "pkl" else STORE_PATH
 
 
 def save_reminders():
-    """Write reminders to disk atomically (temp file + fsync + rename), so a crash can't leave a truncated file."""
+    """Write reminders to disk atomically (reminder.json, or reminder.pkl while it could not be converted)."""
     with _lock:
         if _load_error:
             raise RuntimeError(_load_error)
-        temp_path = f"{REMIND_PKL}.tmp"
-        try:
-            with open(temp_path, "wb") as f:
-                dump(reminders, f)
-                f.flush()
-                fsync(f.fileno())
-            replace(temp_path, REMIND_PKL)
-        except BaseException:
+        if _backend == "pkl":
+            _save_pickle()
+        else:
+            _store.save(reminders)
+
+
+def _settle(data):
+    """Migrate old entries and roll past-due repeating ones forward (off ones stay frozen). True if anything changed."""
+    changed = False
+    now = datetime.now(TIMEZONE)
+    for reminder_list in data.values():
+        for reminder in reminder_list:
+            changed = _migrate(reminder) or changed
+            if reminder.get("frequency") and reminder.get("enabled", True) and not reminder.get("problem") \
+                    and reminder["when"] <= now:
+                original_time = reminder["when"]
+                reminder["when"] = next_run(original_time, reminder["frequency"], now)
+                print(f"Rescheduled reminder {reminder['id']} from {original_time} to {reminder['when']}")
+                changed = True
+    return changed
+
+
+def _read_pickle():
+    """
+    reminder.pkl as {guild_id: [reminder]}; None when it can't be read (sets _load_error).
+
+    A missing or empty file is an empty schedule.
+    """
+    global _load_error
+    try:
+        with open(LEGACY_PATH, "rb") as f:
+            data = load(f)
+    except (EOFError, FileNotFoundError):
+        print(f"{LEGACY_PATH} is empty or missing.")
+        return defaultdict(list)
+    except Exception as e:
+        _load_error = f"{LEGACY_PATH} could not be read ({type(e).__name__}: {e})"
+    else:
+        if not isinstance(data, dict) or not _all_lists_of_dicts(data):
+            _load_error = f"{LEGACY_PATH} does not hold a reminder dictionary"
+    if _load_error:
+        _load_error = f"{_load_error}. The file was left untouched; move it aside and restart the bot for a fresh schedule"
+        return None
+    loaded = defaultdict(list)
+    for guild_id, reminder_list in data.items():
+        loaded[guild_id] = list(reminder_list)
+    return loaded
+
+
+def _comparable(data):
+    """Every stored field of every reminder, with the time's instant, wall time and offset (the conversion check)."""
+    out = {}
+    for guild_id, reminder_list in data.items():
+        if not reminder_list:
+            continue
+        rows = []
+        for r in reminder_list:
+            when = r.get("when")
+            rows.append((r.get("id"), r.get("channel_id"), r.get("msg") or "", when.timestamp(),
+                         when.replace(tzinfo=None), when.utcoffset(), r.get("frequency"), r.get("command") or None,
+                         bool(r.get("enabled", True)), r.get("creator_id"), r.get("creator_name") or "", r.get("v"),
+                         r.get("problem") or None))
+        out[guild_id] = rows
+    return out
+
+
+def _convert_locked():
+    """
+    reminder.pkl (already loaded into reminders) -> reminder.json, checked by reading it back, then the pickle becomes
+    reminder.pkl.bak. Any failure removes the half-made JSON and keeps the pickle (this session saves to it).
+    """
+    global reminders, _backend, _conversion_error
+    created = False
+    try:
+        _atomic_write(STORE_PATH, _store.serialize(reminders).encode("utf-8"))
+        created = True
+        again = _store.load()
+        if _comparable(again) != _comparable(reminders):
+            raise StoreError("the written file reads back different")
+        replace(LEGACY_PATH, f"{LEGACY_PATH}.bak")
+    except Exception as e:
+        if created:
             try:
-                remove(temp_path)
+                remove(STORE_PATH)
             except OSError:
                 pass
-            raise
+        _backend = "pkl"
+        _conversion_error = f"{type(e).__name__}: {e}"
+        print(f"ERROR: could not convert {LEGACY_PATH} to {STORE_PATH} ({_conversion_error}); "
+              f"reminders run from {LEGACY_PATH} this session and the next start tries again.")
+        return False
+    reminders = again
+    _backend = "json"
+    count = sum(len(v) for v in again.values())
+    print(f"Converted {LEGACY_PATH} to {STORE_PATH} ({count} reminders; backup {LEGACY_PATH}.bak).")
+    return True
 
 
 def _load_locked():
     """
-    Load reminder.pkl once (call with _lock held), migrate old entries and roll past-due repeating reminders forward.
+    Load the reminders once (call with _lock held): reminder.json, else reminder.pkl converted to it.
 
-    A missing or empty file is an empty schedule. Any other read error turns reminders off and leaves the file alone,
-    so a later save can't overwrite reminders that are still recoverable.
+    Old entries are migrated and past-due repeating reminders roll forward. An unreadable store turns reminders
+    off and leaves the file alone, so a later save can't overwrite reminders that are still recoverable.
     """
-    global reminders, _loaded, _load_error
+    global reminders, _loaded, _load_error, _backend
     if _loaded:
         return
     _loaded = True
 
-    print(f"Trying to open {REMIND_PKL}.")
-    try:
-        with open(REMIND_PKL, "rb") as f:
-            data = load(f)
-    except (EOFError, FileNotFoundError):
-        print(f"{REMIND_PKL} is empty or missing.")
-        return
-    except Exception as e:
-        _load_error = f"{REMIND_PKL} could not be read ({type(e).__name__}: {e})"
-    else:
-        if not isinstance(data, dict) or not _all_lists_of_dicts(data):
-            _load_error = f"{REMIND_PKL} does not hold a reminder dictionary"
-    if _load_error:
-        print(f"ERROR: {_load_error}. Reminders are OFF and the file was left untouched; "
-              f"move it aside and restart the bot to start a fresh schedule.")
-        return
-
-    print(f"Existing dict found in {REMIND_PKL}, updating entries...")
-    loaded = defaultdict(list)
-    changed = False
-    now = datetime.now(TIMEZONE)
-    for guild_id, reminder_list in data.items():
-        for reminder in reminder_list:
-            changed = _migrate(reminder) or changed
-            if reminder.get("frequency") and not reminder.get("disabled") and reminder["when"] <= now:
-                original_time = reminder["when"]
-                reminder["when"] = _next_run(original_time, reminder["frequency"], now)
-                print(f"Rescheduled reminder {reminder['id']} from {original_time} to {reminder['when']}")
-                changed = True
-            loaded[guild_id].append(reminder)
-    reminders = loaded
-
-    if changed:
+    if exists(STORE_PATH):
+        print(f"Trying to open {STORE_PATH}.")
+        if exists(LEGACY_PATH):
+            print(f"{LEGACY_PATH} is ignored: {STORE_PATH} exists (move {STORE_PATH} aside to convert the pickle again).")
         try:
-            save_reminders()
-            print("Saved rescheduled reminders to disk.")
-        except Exception:
-            print(f"ERROR: could not save {REMIND_PKL}; the loaded schedule still runs:\n{format_exc()}")
+            loaded = _store.load()
+            changed = _settle(loaded)
+        except Exception as e:
+            reason = e if isinstance(e, StoreError) else f"{type(e).__name__}: {e}"
+            _load_error = (f"{STORE_PATH} could not be read ({reason}). The file was left untouched; "
+                           f"fix it, or move it aside and restart the bot for a fresh schedule")
+        else:
+            _backend = "json"
+            reminders = loaded
+            if changed:
+                _save_after_load()
+            return
+    elif exists(LEGACY_PATH):
+        print(f"Trying to open {LEGACY_PATH}.")
+        loaded = _read_pickle()
+        if loaded is not None:
+            reminders = loaded
+            changed = _settle(reminders)
+            if not _convert_locked() and changed:
+                _save_after_load()
+            return
+    elif exists(f"{LEGACY_PATH}.bak"):
+        _load_error = (f"{STORE_PATH} is missing; restore it, or rename {LEGACY_PATH}.bak to {LEGACY_PATH} "
+                       f"and restart the bot")
+    else:
+        print(f"No {STORE_PATH} yet: an empty schedule.")
+        return
+
+    print(f"ERROR: {_load_error}. Reminders are OFF.")
+    if ON_LOAD_ERROR == "raise":
+        raise StoreError(_load_error)
+
+
+def _save_after_load():
+    try:
+        save_reminders()
+        print("Saved rescheduled reminders to disk.")
+    except Exception:
+        print(f"ERROR: could not save {_store_name()}; the loaded schedule still runs:\n{format_exc()}")
 
 
 def _all_lists_of_dicts(data):
@@ -604,8 +1106,14 @@ def _ready_locked():
 
 
 def _off_message():
-    return (f"✗ Reminders are off: {_load_error}. The file was left untouched; "
-            f"move it aside and restart the bot to start a fresh schedule.")
+    return f"✗ Reminders are off: {_load_error}."
+
+
+def status():
+    """A line about the store when something needs the owner (the conversion failed), else None."""
+    if _conversion_error:
+        return f"Reminders run from {LEGACY_PATH}: conversion failed ({_conversion_error})"
+    return None
 
 
 # ========================
@@ -625,11 +1133,12 @@ def _channel_missing(channel_id):
 def _reminder_interaction(reminder, guild_id):
     """FakeInteraction for a firing reminder, acting as the reminder's creator."""
     fake = make_fake_interaction(reminder["channel_id"], guild_id)
-    creator_id = reminder.get("creator_id")
-    if creator_id is not None:
-        fake.user = _ReminderUser(creator_id, reminder.get("creator_name") or str(creator_id))
-    elif not LEGACY_RUNS_AS_BOT:
-        fake.user = _ReminderUser(0, "unknown reminder creator")
+    if RUN_AS_CREATOR:
+        creator_id = reminder.get("creator_id")
+        if creator_id is not None:
+            fake.user = _ReminderUser(creator_id, reminder.get("creator_name") or str(creator_id))
+        elif not LEGACY_RUNS_AS_BOT:
+            fake.user = _ReminderUser(0, "unknown reminder creator")
     return fake
 
 
@@ -663,7 +1172,7 @@ def _fire(reminder, guild_id):
     command = reminder.get("command")
     if command:
         try:
-            func, name, values, _ = _resolve_command(command, legacy=reminder.get("v") is None)
+            func, name, values, _ = resolve_command(command, legacy=reminder.get("v") is None)
         except ValueError as e:
             queue_message(fake, f"⚠ Reminder `{reminder_id}` skipped its command: {e}. "
                                 f"Re-create it, then `/remove_reminder reminder_id:{reminder_id}`.")
@@ -674,11 +1183,11 @@ def _fire(reminder, guild_id):
 
 def _process_due(reminder_list, reminder, guild_id, now):
     """Fire a reminder if it is due, then reschedule or remove it. Returns True if anything changed."""
-    if reminder.get("disabled") or reminder["when"] > now:
+    if not reminder.get("enabled", True) or reminder.get("problem") or reminder["when"] > now:
         return False
     if _outdated(reminder):
         _migrate(reminder)
-        if reminder.get("disabled"):
+        if reminder.get("problem"):
             return True
     try:
         delivered = _fire(reminder, guild_id)
@@ -687,7 +1196,7 @@ def _process_due(reminder_list, reminder, guild_id, now):
         delivered = True    # a reminder that crashes must not re-fire every second
 
     if reminder.get("frequency"):
-        reminder["when"] = _next_run(reminder["when"], reminder["frequency"], now)
+        reminder["when"] = next_run(reminder["when"], reminder["frequency"], now)
     elif delivered:
         if reminder in reminder_list:
             reminder_list.remove(reminder)
@@ -704,8 +1213,8 @@ def _check_pass_locked():
             try:
                 changed = _process_due(reminder_list, reminder, guild_id, now) or changed
             except Exception:
-                print(f"ERROR: reminder {reminder.get('id')} is broken and was disabled:\n{format_exc()}")
-                reminder["disabled"] = "crashed the scheduler"
+                print(f"ERROR: reminder {reminder.get('id')} is broken and was stopped:\n{format_exc()}")
+                reminder["problem"] = "crashed the scheduler"
                 changed = True
         if not reminder_list:
             reminders.pop(guild_id, None)
@@ -714,106 +1223,7 @@ def _check_pass_locked():
         try:
             save_reminders()
         except Exception:
-            print(f"ERROR: could not save {REMIND_PKL}:\n{format_exc()}")
-
-
-# ========================
-# Public API Functions
-# ========================
-def set_reminder(interaction: Interaction,
-                 msg: str = "",
-                 when: str = "",
-                 offset: str = "",
-                 frequency: str = "",
-                 command: str = ""):
-    """
-    Create a reminder that posts a message and/or runs a bot command in this channel.
-
-    The command runs with the creator's permissions (re-checked by the command itself every time it fires).
-
-    Args:
-        interaction: Discord interaction
-        msg: Message to send when the reminder fires
-        when: Start time in Pacific time ("13:00", "1PM", "sun 3AM", "tomorrow 9AM", "2026-12-25 9AM");
-              blank means now (only together with an offset)
-        offset: Delay added to the first run (e.g. "5m", "2h", "1d")
-        frequency: How often to repeat (e.g. "1h", "1d", "1w", "1d12h")
-        command: Bot command with name:value options (e.g. "/sync_emojis refresh:True")
-    """
-    with _lock:
-        if _ready_locked():
-            return queue_message(interaction, _off_message())
-
-    now = datetime.now(TIMEZONE)
-    notes = []
-    try:
-        offset_delta = _checked_interval("offset", offset)
-        interval = _checked_interval("frequency", frequency)
-
-        if when and when.strip():
-            remind_at, fixed_day = _parse_when(when, now)
-            if remind_at is None:
-                raise ValueError(f"invalid time `{when}`. Try `13:00`, `1PM`, `sun 3AM`, `tomorrow 9AM` "
-                                 f"or `2026-12-25 9AM` (Pacific time)")
-        elif offset_delta:
-            remind_at, fixed_day = now, False
-        else:
-            raise ValueError("give a time with `when` (e.g. `13:00`, `1PM`, `sun 3AM`) or a delay with `offset`")
-        if offset_delta:
-            remind_at = remind_at + offset_delta
-        if remind_at <= now:
-            if fixed_day:
-                raise ValueError(f"{remind_at.strftime('%Y-%m-%d %H:%M %Z')} is in the past")
-            if when and when.strip():
-                notes.append("That time already passed today, so it fires right away "
-                             "(use `when:tomorrow ...` or `offset:1d` to start tomorrow).")
-
-        stored_command = None
-        if command and command.strip():
-            if slash_registry:
-                _, name, values, dropped = _resolve_command(command.strip())
-                if dropped:
-                    notes.append(f"Dropped `{' '.join(dropped)}`: /{name} no longer has "
-                                 f"{'that option' if len(dropped) == 1 else 'those options'}.")
-                stored_command = _render(name, values)
-            else:
-                stored_command = command.strip()
-        if not (msg or "").strip() and not stored_command:
-            raise ValueError("give a `msg` to post and/or a `command` to run")
-    except ValueError as e:
-        return queue_message(interaction, f"✗ Reminder NOT set: {e}")
-
-    guild_id = interaction.guild_id
-    with _lock:
-        reminder = {
-            "id": _new_id(),
-            "channel_id": interaction.channel_id,
-            "msg": msg or "",
-            "when": remind_at,
-            "frequency": interval,
-            "command": stored_command,
-            "creator_id": interaction.user.id,
-            "creator_name": str(getattr(interaction.user, "name", "") or ""),
-            "v": REMINDER_VERSION,
-        }
-        reminders[guild_id].append(reminder)
-        try:
-            save_reminders()
-        except Exception as e:
-            reminders[guild_id].remove(reminder)
-            if not reminders[guild_id]:
-                reminders.pop(guild_id, None)
-            return queue_message(interaction, f"✗ Reminder NOT set: could not save {REMIND_PKL} ({e}).")
-
-    desc = f"Reminder `{reminder['id']}` set for **{_format_when(remind_at)}**"
-    if interval:
-        desc += f", repeats every {_format_interval(interval)}"
-    if stored_command:
-        desc += f", runs `{stored_command}` with your permissions"
-    desc += ". Output goes to this channel."
-    for note in notes:
-        desc += f"\n{note}"
-    queue_message(interaction, desc, allowed_mentions=AllowedMentions.none())
+            print(f"ERROR: could not save {_store_name()}:\n{format_exc()}")
 
 
 def check_reminder():
@@ -834,58 +1244,224 @@ def check_reminder():
         _check_lock.release()
 
 
-def list_reminders(interaction: Interaction, all: bool = False, hidden: bool = False):
+# ========================
+# Changes (the panel and the slash shortcuts; each holds _lock, re-checks rights and rolls back a failed save)
+# ========================
+def _ready_or_raise():
+    if _ready_locked():
+        raise ReminderOff(_off_message())
+
+
+def _find_locked(guild_id, reminder_id):
+    wanted = (reminder_id or "").strip().strip("`").lower()
+    for reminder in reminders.get(guild_id, []):
+        if str(reminder.get("id", "")).lower() == wanted:
+            return reminder
+    raise ReminderError(f"No reminder found with ID `{wanted}`." if wanted else "Give a reminder ID.")
+
+
+def _check_edit(reminder, interaction):
+    if not can_edit(reminder, interaction.user.id, is_admin(interaction)):
+        raise ReminderError("Only an admin or the reminder's creator can change it.")
+
+
+def _commit_locked(undo):
+    """Save; on failure undo the change in memory and refuse."""
+    try:
+        save_reminders()
+    except Exception as e:
+        undo()
+        raise ReminderError(f"Could not save {_store_name()} ({e}); nothing changed.") from None
+
+
+def _restore(reminder, before):
+    reminder.clear()
+    reminder.update(before)
+
+
+def snapshot(guild_id):
+    """Copies of a server's reminders in creation order; ReminderOff when reminders are off."""
+    with _lock:
+        _ready_or_raise()
+        return [dict(r) for r in reminders.get(guild_id, [])]
+
+
+def create(interaction, msg="", when="", offset="", frequency="", command=""):
     """
-    List reminders for the current channel or entire server.
+    A new reminder in the interaction's channel, created by its user (admins only).
+
+    Returns:
+        (copy of the reminder, [notes]); ReminderError with the reason it was not set
+    """
+    guild_id = interaction.guild_id
+    if guild_id is None:
+        raise ReminderError("reminders work in servers only")
+    if not is_admin(interaction):
+        raise ReminderError("only admins can add reminders")
+    with _lock:
+        _ready_or_raise()
+    now = datetime.now(TIMEZONE)
+    try:
+        remind_at, interval, notes = parse_schedule(when, offset, frequency, now)
+        stored_command, command_notes = _store_command(command)
+        if not (msg or "").strip() and not stored_command:
+            raise ValueError("give a `msg` to post and/or a `command` to run")
+    except ValueError as e:
+        raise ReminderError(str(e)) from None
+
+    with _lock:
+        _ready_or_raise()
+        reminder = {
+            "id": _new_id(),
+            "channel_id": interaction.channel_id,
+            "msg": msg or "",
+            "when": remind_at,
+            "frequency": interval,
+            "command": stored_command,
+            "enabled": True,
+            "creator_id": interaction.user.id,
+            "creator_name": str(getattr(interaction.user, "name", "") or ""),
+            "v": REMINDER_VERSION,
+            "problem": None,
+        }
+        reminders[guild_id].append(reminder)
+
+        def undo():
+            reminders[guild_id].remove(reminder)
+            if not reminders[guild_id]:
+                reminders.pop(guild_id, None)
+        _commit_locked(undo)
+        return dict(reminder), command_notes + notes
+
+
+def delete(interaction, reminder_id):
+    """Delete a reminder (admins or its creator). Returns the deleted reminder."""
+    guild_id = interaction.guild_id
+    with _lock:
+        _ready_or_raise()
+        target = _find_locked(guild_id, reminder_id)
+        _check_edit(target, interaction)
+        reminder_list = reminders[guild_id]
+        position = reminder_list.index(target)
+        reminder_list.remove(target)
+        if not reminder_list:
+            reminders.pop(guild_id, None)
+        _commit_locked(lambda: reminders[guild_id].insert(position, target))
+        return dict(target)
+
+
+def set_enabled(interaction, reminder_id, enabled):
+    """
+    Turn a reminder on or off (admins or its creator). Off: kept, never fires. On again: a repeating one skips the
+    runs it missed; a one-shot whose time passed is refused.
+
+    Returns:
+        (copy of the reminder, note)
+    """
+    guild_id = interaction.guild_id
+    enabled = bool(enabled)
+    with _lock:
+        _ready_or_raise()
+        target = _find_locked(guild_id, reminder_id)
+        _check_edit(target, interaction)
+        if bool(target.get("enabled", True)) == enabled:
+            return dict(target), f"Already {'on' if enabled else 'off'}."
+        before = dict(target)
+        note = "Turned off."
+        if enabled:
+            if target.get("problem"):
+                raise ReminderError(f"It can't run ({target['problem']}). Reschedule or delete it.")
+            note = "Turned on."
+            now = datetime.now(TIMEZONE)
+            if target["when"] <= now:
+                if not target.get("frequency"):
+                    raise ReminderError("Its time passed while it was off. Reschedule it first.")
+                target["when"] = next_run(target["when"], target["frequency"], now)
+                note = "Turned on; missed runs skipped."
+        target["enabled"] = enabled
+        _commit_locked(lambda: _restore(target, before))
+        return dict(target), note
+
+
+def reschedule(interaction, reminder_id, when, frequency):
+    """
+    New first run and repeat for a reminder (admins or its creator); on/off stays as it is.
+
+    Args:
+        when: parse_when text, or a delay such as "30m"
+        frequency: Repeat interval, blank = once
+
+    Returns:
+        (copy of the reminder, [notes])
+    """
+    guild_id = interaction.guild_id
+    now = datetime.now(TIMEZONE)
+    try:
+        if when and parse_when(when, now)[0] is None and parse_interval(when) is not None:
+            remind_at, interval, notes = parse_schedule("", when, frequency, now)
+        else:
+            remind_at, interval, notes = parse_schedule(when, "", frequency, now)
+    except ValueError as e:
+        raise ReminderError(str(e)) from None
+    with _lock:
+        _ready_or_raise()
+        target = _find_locked(guild_id, reminder_id)
+        _check_edit(target, interaction)
+        before = dict(target)
+        target["when"] = remind_at
+        target["frequency"] = interval
+        if isinstance(target.get("channel_id"), int):
+            target["problem"] = None            # its time and repeat were what could be wrong
+        _commit_locked(lambda: _restore(target, before))
+        if not target.get("enabled", True):
+            notes.append("It is still off.")
+        return dict(target), notes
+
+
+# ========================
+# Slash Shortcuts
+# ========================
+def _set_reply(reminder, notes):
+    desc = f"Reminder `{reminder['id']}` set for **{format_when(reminder['when'])}**"
+    if reminder.get("frequency"):
+        desc += f", repeats every {format_interval(reminder['frequency'])}"
+    if reminder.get("command"):
+        desc += f", runs `{reminder['command']}` with your permissions"
+    desc += ". Output goes to this channel."
+    for note in notes:
+        desc += f"\n{note}"
+    return desc
+
+
+def set_reminder(interaction: Interaction,
+                 msg: str = "",
+                 when: str = "",
+                 offset: str = "",
+                 frequency: str = "",
+                 command: str = ""):
+    """
+    Create a reminder that posts a message and/or runs a bot command in this channel.
+
+    The command runs with the creator's permissions (re-checked by the command itself every time it fires).
 
     Args:
         interaction: Discord interaction
-        all: If True, show all reminders in the server; if False, only show current channel
-        hidden: If True, send as ephemeral message (only visible to user)
+        msg: Message to send when the reminder fires
+        when: Start time in Pacific time ("13:00", "1PM", "sun 3AM", "tomorrow 9AM", "2026-12-25 9AM");
+              blank means now (only together with an offset)
+        offset: Delay added to the first run (e.g. "5m", "2h", "1d")
+        frequency: How often to repeat (e.g. "1h", "1d", "1w", "1d12h")
+        command: Bot command with name:value options (e.g. "/sync_emojis refresh:True")
     """
-    guild_id = interaction.guild_id
-    channel_id = interaction.channel_id
-    with _lock:
-        if _ready_locked():
-            return queue_message(interaction, _off_message(), ephemeral=hidden)
-        server_reminders = [dict(r) for r in reminders.get(guild_id, [])]
-
-    if not server_reminders:
-        return queue_message(interaction, "No reminders set for this server.", ephemeral=hidden)
-
-    if all:
-        filtered = server_reminders
-        scope_text = "this server"
-    else:
-        filtered = [r for r in server_reminders if r.get("channel_id") == channel_id]
-        scope_text = f"this channel (<#{channel_id}>)"
-
-    if not filtered:
-        return queue_message(interaction, f"No reminders found for {scope_text}.", ephemeral=hidden)
-
-    lines = []
-    for r in filtered:
-        msg_str = f"**{r['msg']}**" if r.get("msg") else "*<no message>*"
-        line = f"`{r.get('id')}` — {msg_str}"
-        if isinstance(r.get("when"), datetime):
-            line += f" at {_format_when(r['when'])}"
-        if isinstance(r.get("frequency"), timedelta):
-            line += f", repeats every {_format_interval(r['frequency'])}"
-        if r.get("command"):
-            line += f", runs `{r['command']}`"
-        if r.get("creator_id") is not None:
-            line += f", by <@{r['creator_id']}>"
-        else:
-            line += ", by unknown (older reminder, runs as the bot)"
-        if all:
-            line += f" in <#{r.get('channel_id')}>"
-        if r.get("disabled"):
-            line += f" ⚠ DISABLED: {r['disabled']}"
-        lines.append(line)
-
-    output = "\n".join(lines)
-    queue_long_message(interaction, f"Reminders for {scope_text}:\n{output}", ephemeral=hidden,
-                       allowed_mentions=AllowedMentions.none())
+    try:
+        reminder, notes = create(interaction, msg, when, offset, frequency, command)
+    except ReminderOff as e:
+        return queue_message(interaction, str(e))
+    except ReminderError as e:
+        return queue_message(interaction, f"✗ Reminder NOT set: {e}")
+    if status():
+        notes = notes + [f"⚠ {status()}."]
+    queue_message(interaction, _set_reply(reminder, notes), allowed_mentions=AllowedMentions.none())
 
 
 def remove_reminder(interaction: Interaction, reminder_id: str = ""):
@@ -896,35 +1472,12 @@ def remove_reminder(interaction: Interaction, reminder_id: str = ""):
         interaction: Discord interaction
         reminder_id: The 8-character ID of the reminder to delete
     """
-    guild_id = interaction.guild_id
-    wanted = (reminder_id or "").strip().strip("`").lower()
-    with _lock:
-        if _ready_locked():
-            return queue_message(interaction, _off_message())
-        reminder_list = reminders.get(guild_id)
-        if not reminder_list:
-            return queue_message(interaction, "No reminders found for this server.")
-
-        target = None
-        for reminder in reminder_list:
-            if str(reminder.get("id", "")).lower() == wanted:
-                target = reminder
-                break
-        if target is None:
-            return queue_message(interaction, f"No reminder found with ID `{wanted}`.")
-        if lacks_admin(interaction) and target.get("creator_id") != interaction.user.id:
-            return queue_message(interaction, "Only an admin or the reminder's creator can remove it.")
-
-        position = reminder_list.index(target)
-        reminder_list.remove(target)
-        if not reminder_list:
-            reminders.pop(guild_id, None)
-        try:
-            save_reminders()
-        except Exception as e:
-            reminders[guild_id].insert(position, target)
-            return queue_message(interaction, f"✗ Reminder NOT removed: could not save {REMIND_PKL} ({e}).")
-
+    try:
+        target = delete(interaction, reminder_id)
+    except ReminderOff as e:
+        return queue_message(interaction, str(e))
+    except ReminderError as e:
+        return queue_message(interaction, f"✗ {e}")
     queue_message(interaction, f"Reminder `{target['id']}` has been removed.")
 
 
@@ -939,7 +1492,7 @@ def bind_reminder_client(client) -> None:
 
 def init_reminder():
     """
-    Load reminders from disk (called from on_ready via queue_command).
+    Load reminders from disk (called from on_ready via queue_command), converting reminder.pkl once.
 
     Old entries are migrated in place and past-due repeating reminders roll forward to their next future slot;
     a one-shot reminder that came due while the bot was down fires right after startup.
@@ -956,6 +1509,11 @@ __all__ = [
     'init_reminder',
     'set_reminder',
     'check_reminder',
-    'list_reminders',
     'remove_reminder',
+    'snapshot',
+    'create',
+    'delete',
+    'set_enabled',
+    'reschedule',
+    'status',
 ]

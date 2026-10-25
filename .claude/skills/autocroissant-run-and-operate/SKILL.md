@@ -1,6 +1,6 @@
 ---
 name: autocroissant-run-and-operate
-description: Day-to-day operations runbook for the AutoCroissant Discord bot. Load this when the task sounds like "run the bot", "start the bot", "stop", "restart", "deploy", "update the bot", "push/pull the pickles", "switch machines" / "handoff to the other machine", "sync commands" / "commands not showing up after deploy", "run update_stats", "local mode vs remote mode", "set a reminder" / "schedule a command" / "reminder didn't run", "sync emojis" / "/sync_emojis" / "type emojis not showing", "TTS save" / "Tabletop Simulator save" / "/update_tts_save" / "TTS/decks.json", "card guards" / "CARD_GUARDS" / "push guards" / "stale PNG" / "standards channel", or "where do files go" (exports, music downloads, temp files). Contains the start command and healthy startup output, on_ready init order, stop/restart (jetson systemd), the command-sync model, the ANATOMY of /push, /pull, /update (PICKLE commits, pickles-ours/code-theirs merge, force_reset, every failure message; live triage is autocroissant-debugging-playbook), the machine handoff runbook, the /update_stats operating rule (just run it), artifact locations, reminder, type-emoji and TTS-save operations, a guild-admin table, and (section 12) the bot after the data-build cutover: "cutover", "CARD_SYNC", "card sync", "card_data/", "ACTIONS_TOKEN" (/update_stats syncs the Card sync Action's data branch, force_update and cards dispatch a run, /push retired, /fonts from the data).
+description: Day-to-day operations runbook for the AutoCroissant Discord bot. Load this when the task sounds like "run the bot", "start the bot", "stop", "restart", "deploy", "update the bot", "push/pull the pickles", "switch machines" / "handoff to the other machine", "sync commands" / "commands not showing up after deploy", "run update_stats", "local mode vs remote mode", "set a reminder" / "schedule a command" / "reminder didn't run" / "/reminders panel" / "reminder.json", "sync emojis" / "/sync_emojis" / "type emojis not showing", "TTS save" / "Tabletop Simulator save" / "/update_tts_save" / "TTS/decks.json", "card guards" / "CARD_GUARDS" / "push guards" / "stale PNG" / "standards channel", or "where do files go" (exports, music downloads, temp files). Contains the start command and healthy startup output, on_ready init order, stop/restart (jetson systemd), the command-sync model, the ANATOMY of /push, /pull, /update (PICKLE commits, pickles-ours/code-theirs merge, force_reset, every failure message; live triage is autocroissant-debugging-playbook), the machine handoff runbook, the /update_stats operating rule (just run it), artifact locations, reminder, type-emoji and TTS-save operations, a guild-admin table, and (section 12) the bot after the data-build cutover: "cutover", "CARD_SYNC", "card sync", "card_data/", "ACTIONS_TOKEN" (/update_stats syncs the Card sync Action's data branch, force_update and cards dispatch a run, /push retired, /fonts from the data).
 ---
 
 # AutoCroissant: Run and Operate
@@ -50,8 +50,8 @@ Registered 52 slash commands for reminder system.      <- slash_registry populat
 Bot initialization complete                            <- the four loops started (main.py:141-144)
 Synced commands to guild: <name> (<id>)                <- one line per guild, async (main.py:110)
 Removed N stale temp PSDs (X MB) from <dir>            <- sweep_temp_psds (2026-10-22), only when it deletes something
-Trying to open reminder.pkl.                           <- init_reminder
-reminder.pkl is empty or missing.                      <- or "Existing dict found in reminder.pkl, updating entries..." plus "Rescheduled reminder <id> from <t1> to <t2>" and (2026-10-19, first start after the rewrite) "Reminder <id>: migrated command `...` -> `...`" lines
+Trying to open reminder.json.                          <- init_reminder (or "No reminder.json yet: an empty schedule.")
+Converted reminder.pkl to reminder.json (3 reminders; backup reminder.pkl.bak).   <- once, the first start after 2026-10-24; plus any "Rescheduled reminder <id> from <t1> to <t2>" lines
 Trying to open stats.pkl                               <- init_psd
 Loaded existing stats from stats.pkl
 Trying to open old_stats.pkl
@@ -79,7 +79,7 @@ start draining — so the loops effectively start first, and nothing is sent to 
 | Init (queued in this order) | What it does | Failure/no-op behavior |
 |---|---|---|
 | `sweep_temp_psds` (card_runner.py:103; 2026-10-22, c0fc117) | Deletes mkstemp `tmp*.psd` files (`TEMP_PSD`) older than 1 h (`TEMP_AGE`) in the temp dir, left by a cut-off run (the jetson had 56, 1.1 GB, on 2026-10-22), under `card_runner.bake_lock` | Prints `Removed N stale temp PSDs (X MB) from <dir>` only when it deleted something; never touches a file of a running update or bake |
-| `init_reminder` (analytics.py:940) | Loads `reminder.pkl`, migrates old entries in place, rolls past-due REPEATING reminders forward to their next future slot in one step, saves atomically | Missing/empty file: "reminder.pkl is empty or missing." — fine. Unreadable file: "ERROR: reminder.pkl could not be read ... Reminders are OFF and the file was left untouched" — every reminder command then replies "✗ Reminders are off"; move the file aside and restart |
+| `init_reminder` (analytics.py:1474) | Loads `reminder.json` (once, 2026-10-24: converts `reminder.pkl` to it, checked by reading it back, and renames the pickle `reminder.pkl.bak`), migrates old entries, rolls past-due REPEATING reminders that are on forward to their next future slot in one step, saves atomically | No file: an empty schedule. Unreadable file: "ERROR: reminder.json could not be read ... Reminders are OFF" (the file is left untouched; every reminder command replies "✗ Reminders are off"). A failed conversion: "ERROR: could not convert reminder.pkl ..." and the bot runs and saves from the pickle this session; the next start tries again. Only `reminder.pkl.bak` left: reminders off until you restore `reminder.json` or rename the backup back |
 | `init_psd` (psd_analyzer.py:326) | Loads `stats.pkl` + `old_stats.pkl` into `stats_db`, builds the query DataFrames | Missing pickles: rebuilds empty (dangerous if unexpected — see cwd warning) |
 | `init_query` (query_card.py:991) | Loads `aliases.pkl`, fetches the TTSCardMaker GitHub file tree (1 API call; 3 tries 1 s and 2 s apart on a connection error, 429 or 5xx, `github_api.get_with_retry`) | A failed or non-tree reply keeps the last good list: "Card list: GitHub tree fetch for <repo> failed (...); keeping the last good list (N entries)" (0 entries right after a start, so /query finds nothing until the next /update_stats or restart) and "Warning: Failed to populate files from repository (status N)" |
 | `refresh_history` (repo_history.py:198) | Fetches the bare history clone (`~/Documents/TTSCardMaker-history.git`) and maps each card PNG to the commit that last changed it, for sha-pinned image links | Never raises; on failure the old map stays and links fall back to `main` |
@@ -115,9 +115,15 @@ the top of the wrapper. Full contract: autocroissant-architecture-contract.
 interpreter on main.py. The process is REPLACED, so silence after "Restarting bot!" is normal.
 
 **Production (the jetson, 2026-10-20):** systemd `autocroissant.service`; no startup.sh, so /restart_bot
-re-execs main.py. Deploy: `git pull --ff-only`, `~/venvs/autocroissant/bin/python setup.py build_ext --inplace` (compiled .so
-load before .py; ~6 min), `sudo systemctl restart autocroissant`, check `journalctl -u autocroissant`: expect
-`Registered 52 slash commands`, `Bot initialization complete`, `Repo history: ...` and `Type emojis: ... ready`.
+re-execs main.py. Deploy (2026-10-24): run `~/Documents/AutoCroissant/scripts/deploy.sh` ON the jetson (or
+`ssh jetson Documents/AutoCroissant/scripts/deploy.sh`). It refuses 05:00-05:40 Pacific (checked again before the
+restart), `git pull --ff-only`, reinstalls the psd-tools fork only when `requirements-cards.txt`'s URL and tag differ from
+the venv's (pip's `direct_url.json`), `~/venvs/autocroissant/bin/python setup.py build_ext --inplace` (incremental: only
+modules whose source changed, seconds when none did; a full rebuild was ~6 min 44 s), `sudo systemctl restart
+autocroissant`, then waits up to 90 s for `Registered N slash commands` (52) and `Bot initialization complete` in the
+new process's journal (`_PID=` its MainPID; a Traceback from it, or a changed MainPID, fails early) and prints OK, else the last 30 journal lines and FAILED (exit 1; a failed pull or build stops before the
+restart). `--bot ojwikibot` does the same for ~/Documents/OJWikibot (no psd-tools step; its own setup.py still rebuilds
+everything). Later lines, not checked: `Repo history: ...` and `Type emojis: ... ready`.
 The rebuild is NOT optional since the 2026-10-20 split: stale `.so` next to new `.py` fails at import
 (`cannot import name perms_check` from analytics.so) and systemd restarts into the same error. Standing rules
 (2026-10-22/23 incidents; memory jetson-server):
@@ -127,7 +133,7 @@ The rebuild is NOT optional since the 2026-10-20 split: stale `.so` next to new 
 - **Push main and deploy in one sitting**: if origin/main has new code at 05:30 and the jetson does not, `/push` rebases
   the new `.py` files in next to stale `.so` files and the next restart fails at import.
 - **When the psd-tools fork tag moves** (its one pin: `requirements-cards.txt`, which `requirements.txt` includes),
-  reinstall it in the venv after the pull:
+  reinstall it in the venv after the pull (deploy.sh does this):
   `~/venvs/autocroissant/bin/pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"`
   (gcc compiles `_distance`), then `~/venvs/autocroissant/bin/pip check`. A plain `pip install -r requirements.txt`
   keeps the old commit while the fork's version is unchanged (1.25.0 at every tag up to `cards-20261023d`): pip calls
@@ -252,7 +258,7 @@ Treat it as a change-control decision, not an ops reflex: autocroissant-change-c
 ## 6. Multi-machine handoff runbook
 
 The pickles are the ONLY state that follows the bot. Per-machine and NOT synced (verified in
-.gitignore): `config.py`, `.ssh/`, `reminder.pkl`, `music/`, all `*.csv`/`*.txt` exports, compiled
+.gitignore): `config.py`, `.ssh/`, `reminder.json`, `music/`, all `*.csv`/`*.txt` exports, compiled
 `*.so`, venvs. Both machines need their own config.py and deploy key already in place.
 
 Moving hosting from machine A (currently running) to machine B:
@@ -274,9 +280,9 @@ Moving hosting from machine A (currently running) to machine B:
    older date means step 1 or 3 did not land.
 5. **Start on B**: `python3 main.py` from B's repo root; check the startup output against section 1
    (especially that no pickle prints "rebuilding..."/"starting fresh...").
-6. **Recreate reminders.** `reminder.pkl` is gitignored — reminders DO NOT follow the bot across
-   machines (direct implication of the topology). `/list_reminders all:True` on B and re-`/set_reminder`
-   anything the group relies on, e.g. a nightly stats update (section 9).
+6. **Recreate reminders.** `reminder.json` is gitignored — reminders DO NOT follow the bot across
+   machines (direct implication of the topology). Copy it from A with both bots stopped, or browse
+   `/reminders` on A and re-`/set_reminder` on B what the group relies on (section 9).
 7. **Type emojis follow the bot identity, not the machine.** If B logs in with a different token than A,
    B's first startup uploads its own 126 emojis (section 11). Same token on both = nothing to do.
 
@@ -488,7 +494,9 @@ ignored; a font counts as present only when a face has exactly its PostScript na
 
 - **Automatic: TTSCardMaker's `.github/workflows/font-check.yml`** (ttscardmaker-companion §3). On a push to main that
   changes a PSD or `MDW/Fonts/`, it sparse-checks out the fonts folder (cached by its tree sha) and `commands/font_check.py`,
-  `commands/github_api.py`, `global_config.py` from `bobberlington/AutoCroissant`, reads the push's PSDs by blob sha
+  `commands/github_api.py`, `global_config.py`, `requirements-cards.txt` from `bobberlington/AutoCroissant` (since 2026-10-24,
+  branch work/py314: on Python 3.14 it installs requirements-cards.txt, the psd-tools fork's one pin, from the card workflows'
+  wheel cache instead of stock psd-tools), reads the push's PSDs by blob sha
   (`--repo --before --after`, each blob's sha1 verified), writes the markdown to the job summary and, when something is
   missing, posts to the standards channel's webhook in the repo secret `DISCORD_STANDARDS_WEBHOOK` (owner, 2026-10-22;
   `DISCORD_FONT_WEBHOOK` is deleted; the URL is in no file) and then comments on the commit. The post pings role
@@ -521,8 +529,9 @@ rejects: exit 0 always; an unreadable PSD, a PSD under `MDW/` or `Markers/` (no 
 network, a truncated tree) is one error line.
 
 - **Automatic: TTSCardMaker's `.github/workflows/card-check.yml`.** On a push to main that changes a PSD, `Types/` or `site/Card Edits.json`
-  it sparse-checks out `SPARSE_FILES` from `bobberlington/AutoCroissant` (nothing of the card repo), installs psd-tools, fonttools and
-  requests, and reads the push's PSDs by blob sha (`--repo --before --after`, `font_check.pushed_files`); `Types/`, the icon manifest and
+  it sparse-checks out `SPARSE_FILES` from `bobberlington/AutoCroissant` (nothing of the card repo), installs AutoCroissant
+  `requirements-cards.txt` (the psd-tools fork's one pin, fonttools, requests, pyoxipng) on Python 3.14 from the card workflows'
+  wheel cache (since 2026-10-24, branch work/py314; stock psd-tools, fonttools and requests before), and reads the push's PSDs by blob sha (`--repo --before --after`, `font_check.pushed_files`); `Types/`, the icon manifest and
   the edits file come from the tree at the pushed commit (`font_check.tree_blobs`). The markdown goes to the job summary; when a card has
   notes it posts to the standards channel's webhook in `DISCORD_STANDARDS_WEBHOOK` (owner, 2026-10-23; unset: a warning) and comments
   on the commit. The message pings nobody (`allowed_mentions` `{"parse": []}`): one line per card, "<login> has pushed <card name> with: <note>; <note>.", and last
@@ -613,6 +622,54 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
   are re-set, so the rest keeps Photoshop's own ink. An edit takes the colour and style of what it replaces, part by part.
   A stat bar with a digit mask wholly off the canvas (Green Mage's four bars, the only ones) refuses `unsupported-card`
   as a final verdict; it was an `error` that failed the run until work/bake-verdicts (2026-10-23).
+- **Ability FX layers (BUG 2, branch work/fx-rebuild, not landed):** an ability bake makes the card's `Ability FX: ...`
+  layers again as Effect Layers.jsx's Update all does (the gradient cards' badge layers included): each cut in place over
+  its words' new places, its own style and place kept (q6); a status layer stays on its status's own words (a numbered
+  one renumbered, Standstill's `Frozen In Time#2` -> `#3`; "Frozen" made "Frozen In Time" drops the Frozen layer and
+  makes a Frozen In Time one in the chart's style). The report says when a layer is deleted (its words left the text,
+  or they are no longer its status: "'Frozen In Time' is no Frozen"), renamed (a phrase dropped or renumbered) or cut
+  again clean. Since 2026-10-23 (owner) an FX layer whose style is no chart status's (Fire Staff's Smoldering stroke,
+  Mr Krabs' `2T`) is rebuilt in its own style too, staying on its own words; a typed word joining such a layer is told
+  ("... also covers the typed 'Smoldering', in its own style"; "moved to" when its old words left) and takes the
+  phrase's colour (a stroke alone shows the fill). Where a layer can't follow its words (on Monkey D Goofy a whole-word
+  "1" anywhere in the ability, an own-style phrase edited, deleted and typed elsewhere or glued into a longer word,
+  a phrase the ability lacks) the layer is deleted, told, its words printing plain (owner 2026-10-24; they refused
+  before); a "1" typed before its "1" renames the layer `1#2`.
+  The commit line and the website's verdict reason carry the FX notes too.
+- **Typed badges and icons (owner 2026-10-23, same branch):** a timing tag ("(1CD)", any case) or a token the icon
+  font draws ("[fire]", "[fire:no]", "[Ice:Sticker]") typed anywhere in an ability is set in the stoogedings font at
+  the card's own badge or token style (on a card with none, at the text's style, the font added to the PSD); on a
+  gradient badge card it joins the badge layer, and so does a badge edited by deleting letters ("(1GCD)" made "(1CD)").
+  A typed "★" is set in the icon font (the gold star). A typed badge or token is unstretched (`unstretch`: its
+  HorizontalScale set so it prints as the font draws it under the layer's scales, as designers set theirs; Monster
+  Meat's [fire] printed 2.6x wide). Told, not refused (owner 2026-10-24): a badge under a tinted Ability (any colour,
+  gradient or pattern overlay, a Pin Light or other non-Normal blend) with no badge FX layer (Cat, Ice Staff, the Pin
+  Light Isaac items without one), a `[type]` token on a card whose type icons are image layers in the text (Nebulous
+  Precipice), letters left in the icon font it draws no badge of ("(abc)", "(GCD)"), a token the website shows as an
+  icon but the font prints as letters ("[fire:]"), a typed character its font has no glyph for, a see-through icon
+  under a badge layer, a timing badge typed in a title (printed as plain words, as the website shows it). An edit
+  keeps the card's own icon spellings ("[dark:sticker]" where
+  the website shows "[dark]"). Typed `:glow`/`:darkglow` tokens bake on the `cards-20261024b` pin (its halo as
+  Photoshop draws it; on a stale install of an older fork the edit is a runner error, no verdict, retried once the
+  fork is reinstalled). Also told: a title or Ability whose saved pixels are in another font than the layer names
+  (`drawn_in_font`: Dull Knife, Shiny Knife, Dark Tentacle and Snow Angel's Omori titles). Refused: a text layer with
+  tab stops (`unsupported-card`: Michael's Blessing; the engine lays no tabs). A
+  deleted line or word is cut whole, so the text after it keeps its own colours and badge size; an Ability's new line
+  printed past the old text onto the design below it bakes with a note ("... prints past the old text onto the design
+  below it (N px, 'layer'); check the card": `ink_beyond`, 18 of 503 cards given a line).
+- **Content flags (owner 2026-10-24 ~18:30, same branch):** "In general I do not want to refuse bakes": the editor
+  previewed the edit, so a content problem bakes best-effort and is told as `<code>: <field>: <why>` in the bake report,
+  the commit line and the baked verdict's reason (the preview's notes too): text that won't fit (`overflow`: off the
+  canvas, onto the stars or icons, more title lines, under a layer above or over a stat bar, past the design below or
+  a texture clipped to it: `ink_beyond`, `ink_past_clip`), typed badges and tokens, FX layers that can't follow
+  (deleted, told), overlay word layers the chart has no style for (hidden, told), font stand-ins (`font`: a face no
+  file holds is drawn in the fork's stand-in, `font_map`), new validator problems (`validator: new problems: ...`), and
+  a stale Txt2 story (synced by `txt2_repair.sync_stories`, told). Still refused: the waits (`recent`, `head-moved`,
+  `edit-changed`, `blob`, `capped`), impossible cases (no PSD, a numbered PNG copy, a creatures list setting the
+  stats, a stat above 20), the bake's own checks (`bytes`, `region`, `size`, `shape`, `reparse` but new problems,
+  `idempotence`, `parity` past the 25% floor) and what the bake can't edit yet (`unsupported-card`: split or several
+  titles, non-template stat rows, tab stops, folder-set stars and the other stars/types layouts, FX layers that are no
+  pixel layers, two FX layers one name; `stat>10` on one bar row).
 - **card-edits.yml** was paused from 2026-10-22 ~21:5x (split titles would have baked wrongly, and B2 was rewriting the
   same cards) and re-enabled on 2026-10-23 ~10:36, pinned to `cards-20261023` (dry run 39996528699 dispatched then).
 - **Previews (2026-10-23; TTSCardMaker's `card-preview.yml`, design section 16):** the website dispatches one card's edit
@@ -637,17 +694,20 @@ without its PNG gets the PNG the bake would make (owner's ruling 2026-10-22: the
 renders the changed layers in the card's ICC export mode and the old PNG takes the change; the PSD's stored composite is
 never written, only a cross-check that can refuse; a refusal is told as "PNG not made: ...; export it in Photoshop";
 nothing when the PNG already shows the PSD, pushed before it, a new card's too), the pushed PSDs are checked against the
-card standards, fonts (R7) included (the owner's one easy fix, R9's Txt2 sync; R11's exact-name rename is built but told
+card standards (fonts, R7, until 2026-10-24: since then font-check.yml's alone, branch work/py314) (the owner's one easy fix, R9's Txt2 sync; R11's exact-name rename is built but told
 until the owner says yes, `card_standards.AUTO_FIX`; R3 and R4 keep only the real issues, several visible Ability layers, a hidden one
 with words the parser reads nowhere and a hidden or rasterized Name layer (kept unattended, for the owner to confirm): their
 template layout was dropped by the owner on 2026-10-23), one commit comment, one Discord post to the standards channel
 (`DISCORD_STANDARDS_WEBHOOK`, no ping; card-check.yml posts there too, no ping, and font-check.yml, with its role ping) and at most one bot commit,
-both after a 30-minute quiet window. Since the owner's ruling of 2026-10-23 the bot's drawing refuses only past 25% bad;
+both after a 30-minute quiet window (since 2026-10-24, branch work/py314: the post job waits in the TTSCardMaker
+environment `card-guards-quiet`'s 30-minute timer, created by the owner after both branches land; no runner sleeps; a PSD saved without
+Maximize Compatibility gets its PNG anyway, told "no stored image to cross-check"; docs/Campaigns/PUSH_GUARDS.md section 20). Since the owner's ruling of 2026-10-23 the bot's drawing refuses only past 25% bad;
 a smaller miss is made and told in the comment and the bot commit ("made with a pixel difference ..."). On the 34
 replayed commits the PNG is made on 29 and refused on 5 (PUSH_GUARDS.md sections 17 and 18). The comment and the post
 carry each card's semantic PSD diff (`psd_diff`, 0a34292): "{login} pushed {card}{changes} with these issues: ...", the
 changes cut to 120 characters on Discord and 600 in the comment. A new PSD pushed beside its PNG counts as current only
-within 8 levels (`png_export.BESIDE_CUT`, owner).
+within 8 levels (`png_export.BESIDE_CUT`, owner); with no stored image, up to 300 px past it the PNG is kept and told
+(`png_export.KEPT`/`KEPT_PX`, default 2026-10-24, owner to confirm), past that redrawn.
 
 - **The switch: repo variable `CARD_GUARDS`** (TTSCardMaker Settings > Variables, not a secret; any letter case). Unset or
   `off`: push runs are skipped. `report`: check, comment and post (after the window), never commit: the PNG the bot
@@ -682,7 +742,7 @@ within 8 levels (`png_export.BESIDE_CUT`, owner).
   failure is told. A card the guards could not finish is told in the post and turns the run red ("Fail on card
   errors"); re-check it with a dispatch (`sha`, `cards`). When the site build or the TTS save does not start after the
   bot's commit, the comment and the post say so and the run is red (site.yml catches up within 6 hours, the TTS save the
-  next day; a re-run starts them again). Cancelling a run by hand (before the job's 150-minute timeout) sends no message.
+  next day; a re-run starts them again). Cancelling a run by hand (before the job's 150-minute timeout; on work/py314: no cancelled job ran to its timeout, check 100 or post 75 minutes) sends no message.
 - **Loops:** GITHUB_TOKEN pushes start no run; the job skips the AutoCroissant and github-actions actors, and inside a range
   the files only bot commits changed.
 
@@ -714,8 +774,9 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 | Artifact | Produced by | Location | Committed? |
 |---|---|---|---|
 | `stats.pkl`, `old_stats.pkl`, `aliases.pkl` | /update_stats, /alias, metadata commands | repo root | YES — the database, synced via /push |
-| `reminder.pkl` | /set_reminder | repo root | NO (gitignored) — per-machine |
-| `reminder.pkl.tmp` | every reminder save (written, fsynced, then renamed over reminder.pkl) | repo root, normally gone within milliseconds | NO (gitignored since 2026-10-19, `.gitignore:41`). If a hard kill leaves one behind, delete it |
+| `reminder.json` | /set_reminder, /reminders, every firing (schema_version 2, `ReminderStore` in analytics.py) | repo root | NO (gitignored) — per-machine. Edit by hand only with the bot stopped |
+| `reminder.json.tmp` | every reminder save (written, fsynced, then renamed over reminder.json) | repo root, normally gone within milliseconds | NO (gitignored). If a hard kill leaves one behind, delete it |
+| `reminder.pkl.bak` | the one-time conversion (2026-10-24) | repo root | NO (gitignored). The old store; keep it a while, then delete |
 | `repo_history.json` | startup and every /update_stats (commands/repo_history.py; a failed refresh retries on the next one) | repo root; its bare clone at `~/Documents/TTSCardMaker-history.git` | NO (gitignored) — per-machine, rebuilt from the clone if deleted |
 | `stats.csv` / `stats.txt` | /export_cards (`as_csv` picks which) | repo root | NO (gitignored via `*.csv`/`*.txt`) |
 | `rules.txt` | /export_rulebook | repo root | NO (gitignored) |
@@ -734,13 +795,26 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 
 ## 9. Reminders operations
 
-Rewritten 2026-10-19 (commands/analytics.py, 961 lines on 2026-10-23). Times are
-Pacific — `TIMEZONE = ZoneInfo("America/Los_Angeles")` (global_config.py:19), so they follow daylight
-saving. `check_reminder` is queued once per second by its own loop, `process_reminders` (main.py:926-928). History of
-what the rewrite fixed: autocroissant-failure-archaeology Entries 10.1 and 10.6-10.8. Flow and
-invariants: autocroissant-architecture-contract.
+Rewritten 2026-10-19; panel, on/off and `reminder.json` 2026-10-24 (commands/analytics.py, the panel UI in
+commands/reminder_panel.py). Times are Pacific — `TIMEZONE = ZoneInfo("America/Los_Angeles")` (global_config.py:20), so
+they follow daylight saving. `check_reminder` is queued once per second by its own loop, `process_reminders`
+(main.py:920). History of what the rewrite fixed: autocroissant-failure-archaeology Entries 10.1 and 10.6-10.8. Flow
+and invariants: autocroissant-architecture-contract. OJWikibot has a near-copy of this module (same parser, panel and
+store shape; its own adapter block at the top of its analytics.py; no drift check).
 
-### /set_reminder (admin only, main.py:238; the gate at :252)
+### /reminders (the panel, anyone)
+
+An ephemeral panel (only the invoker sees and uses it) on the first reminder in this channel: an embed card (message,
+command, next run in Pacific time, repeat, channel, creator, On/Off/⚠ problem), `◀ ↻ ▶`, a jump list (over 25
+reminders: 23 per page plus earlier/later), and Reschedule (a form: when, repeat; `when` also takes a delay like
+`30m`), Turn off/on, Delete (with a confirm) and New (a form: message, command, when, offset, repeat; created in this
+channel as you). Reschedule, Turn off/on and Delete need an admin or the reminder's creator (no creator: admins only);
+New needs an admin. An off reminder keeps its schedule and never fires; on again, a repeating one skips the runs it
+missed and a one-shot whose time passed must be rescheduled first. Every click re-reads the list ("That reminder is
+gone." when it fired or was deleted elsewhere). It closes after 10 idle minutes; after a restart open panels fail
+("This interaction failed"): run `/reminders` again. A failed conversion shows in its footer.
+
+### /set_reminder (admin only, main.py:238; the gate at :252; the panel's New does the same)
 
 | Option | Accepts | Notes |
 |---|---|---|
@@ -754,7 +828,7 @@ At least one of `msg` / `command` is required. The reply looks like: "Reminder `
 **2026-10-25 03:00 PDT (in 5 days)**, repeats every 1w, runs `/sync_emojis` with your permissions.
 Output goes to this channel."
 
-**Retired options are dropped, not refused.** `RETIRED_OPTIONS` (analytics.py:41) lists options a command
+**Retired options are dropped, not refused.** `RETIRED_OPTIONS` (analytics.py:44) lists options a command
 no longer has: since 2026-10-20, /update_stats's `use_local_repo` and `use_local_timestamp` (local mode was
 archived, section 7). A new reminder that names one gets it removed, and the reply says so ("Dropped
 `use_local_repo:True`: /update_stats no longer has that option."). Stored reminders are cleaned on load (see
@@ -775,12 +849,12 @@ The first is stored as `/update_stats`. The second is a weekly full emoji sync, 
 ### Whose permissions a reminder uses
 
 - A reminder runs **as its creator**. It stores `creator_id`/`creator_name`, and the fake interaction it fires
-  with carries a stand-in user with that id (`_ReminderUser`, analytics.py:69). The slash wrapper's own
+  with carries a stand-in user with that id (`_ReminderUser`, analytics.py:95). The slash wrapper's own
   `lacks_admin` therefore runs again at fire time: if the creator has left `ADMINS`, an admin command replies
   "You do not have permission." in the channel instead of running.
 - **Legacy reminders** (saved before 2026-10-19, so no creator) still run as the bot: `LEGACY_RUNS_AS_BOT = True`
   (analytics.py:37). The bot's own id is in `ADMINS` on the dev Mac, so those pass every admin check.
-  `/list_reminders` labels them "by unknown (older reminder, runs as the bot)". To bring one under the new
+  `/reminders` labels them "unknown (runs as the bot)". To bring one under the new
   rule, re-create it and then remove the old one.
 
 ### When things go wrong
@@ -791,25 +865,28 @@ The first is stored as `/update_stats`. The second is a weekly full emoji sync, 
 | The stored command no longer resolves (command renamed, option removed) | The message (if any) still posts, then "⚠ Reminder `<id>` skipped its command: <reason>. Re-create it, then `/remove_reminder reminder_id:<id>`." The reminder still repeats or completes normally |
 | Channel deleted or no longer visible | Skipped, with a terminal log line. A repeating reminder moves to its next slot; a one-shot is retried every hour (`CHANNEL_RETRY`) until the channel is back or you remove it |
 | Bot was offline, or stalled, past one or more runs | A one-shot fires right after startup. A repeating reminder fires once, then jumps straight to its next future slot. Missed runs are not replayed |
-| A reminder crashes the scheduler itself | Only that reminder is disabled ("crashed the scheduler"); `/list_reminders` shows "⚠ DISABLED: <reason>". Remove it |
-| reminder.pkl unreadable at startup | Reminders are OFF for the session and the file is left untouched. Every reminder command replies "✗ Reminders are off: ...". Move the file aside and restart for a fresh schedule |
+| A reminder crashes the scheduler itself, or its stored data is unreadable | Only that reminder stops (its `problem`, e.g. "crashed the scheduler"); `/reminders` shows "⚠ <problem>". Reschedule it (clears the problem) or delete it |
+| reminder.json unreadable at startup | Reminders are OFF for the session and the file is left untouched. Every reminder command replies "✗ Reminders are off: ...". Fix it, or move it aside and restart for a fresh schedule |
 | Two scheduler passes overlap | The second is skipped (single-flight lock), so nothing double-fires |
 
-### /list_reminders, /remove_reminder, persistence
+### /remove_reminder, persistence
 
-- **/list_reminders** `[all] [hidden]` (not gated): one line per reminder with ID, message, next run (Pacific
-  time plus a Discord relative timestamp each reader sees in their own zone), repeat (`1d12h` style), command,
-  creator, channel (with `all:True`) and any DISABLED reason. Mentions do not ping. Long lists are split.
-- **/remove_reminder** `reminder_id`: admins, or the reminder's creator (anyone else gets "Only an admin or the
-  reminder's creator can remove it."). The ID is the 8-character code from /list_reminders; case and
-  backticks are ignored.
-- **Persistence**: `reminder.pkl` is rewritten atomically on every change (temp file, fsync, rename; section 8
-  for the `.tmp` file). The layout is unchanged (guild id → list of dicts), so HEAD-era code can still read a
-  migrated file — but that older code would again read `True` as False in commands. On the first start after
-  the rewrite, each old reminder is migrated in place: its command is rewritten to canonical form keeping what
-  it actually did (old booleans: only lowercase `true` was True). Since 2026-10-20 (`REMINDER_VERSION = 3`)
-  the same load also strips retired options (`RETIRED_OPTIONS`), so `/update_stats use_local_repo:False`
-  becomes `/update_stats`; old positional values are matched against the option order of their time first.
+- **/remove_reminder** `reminder_id`: the shortcut of the panel's Delete (admins, or the reminder's creator; anyone
+  else gets "✗ Only an admin or the reminder's creator can change it."). Case and backticks are ignored.
+- **Persistence**: `reminder.json` (`ReminderStore`, schema_version 2) is rewritten atomically on every change
+  (temp file, fsync, rename, fsync of the folder). Per guild a list of reminders in creation order: `id`,
+  `channel_id`, `msg`, `when` (ISO with that instant's Pacific offset; read back into Pacific, so a daily 05:00 stays
+  05:00 across daylight saving), `frequency` (seconds or null), `command`, `enabled`, `creator_id`, `creator_name`,
+  `v` (`REMINDER_VERSION`), `problem`; ids are text. A save is canonical (a no-op save changes nothing). An entry
+  with an older `v` is migrated on load: its command is rewritten to canonical form keeping what it actually did,
+  and retired options (`RETIRED_OPTIONS`) are stripped, so `/update_stats use_local_repo:False` becomes
+  `/update_stats`.
+- **The conversion (once, 2026-10-24)**: the first start finds no `reminder.json`, loads `reminder.pkl` as before,
+  writes `reminder.json`, reads it back and compares every field, and only then renames the pickle
+  `reminder.pkl.bak`. Ids, creators, schedules and commands carry over (the cutover's `/remove_reminder` of
+  d2664752 and 054b5933 still works). On any failure the half-made JSON is removed and the session keeps running
+  and saving from the pickle (the panel footer and /set_reminder replies say so). The pickle path goes once every
+  host has converted.
   The fire path drops them too, so a reminder never fails on them. Watch for "Reminder <id>: migrated command
   ... (dropped retired ...)" lines. Per-machine file: reminders DO NOT
   follow a machine handoff (section 6 step 6).
@@ -979,8 +1056,8 @@ re-find volatile facts with these before trusting them:
 | old_stats archived only on blob change or move (legacy mode) | `grep -n -A3 "def _history" commands/card_data.py` |
 | Per-card cost (exclusions skipped, commit lookup only for re-parsed cards) | `grep -n "EXCLUDE_FOLDERS\|_get_remote_timestamp\|COMMITS_PAGE =" commands/card_data.py` |
 | Reminder formats, limits, defaults | `grep -n "^TIME_FORMATS\|^WEEKDAYS\|^MAX_INTERVAL\|^CHANNEL_RETRY\|^LEGACY_RUNS_AS_BOT\|^INTERVAL_UNITS" commands/analytics.py` |
-| Reminders run as creator; remove gated | `grep -n "_ReminderUser(\|Only an admin or the reminder" commands/analytics.py` |
-| reminder.pkl.tmp ignored | `git check-ignore -v reminder.pkl.tmp` (`.gitignore:41`) |
+| Reminders run as creator; changes gated | `grep -n "_ReminderUser(\|def can_edit\|Only an admin or the reminder" commands/analytics.py` |
+| Reminder files ignored | `git check-ignore -v reminder.json reminder.json.tmp reminder.pkl.bak` |
 | TTS save wiring (bot: /update_tts_save only; no tts_save import in repo_traverser since 2026-10-20) | `grep -n "update_tts_save" main.py`; `grep -c "tts_save" commands/repo_traverser.py commands/card_data.py` (0, 0); `grep -n "^TTS_SAVE_PATH\|environ.get" global_config.py` (the two Action env overrides) |
 | Type emoji sync wiring | `grep -n "init_type_emojis\|sync_emojis" main.py`; `grep -n "^EMOJI_SIZE\|^MAX_NAME_LEN\|^NO_SUFFIX" commands/type_emojis.py` |
 | Font check wiring (/fonts; the Action is TTSCardMaker's font-check.yml) | `grep -n "check_repo_fonts\|name=\"fonts\"" main.py`; `grep -n "^BATCH\|^CACHE_JSON\|^ROLE_ID\|^BITE" commands/font_check.py`; `git check-ignore -v font_names.json` |
@@ -1045,8 +1122,16 @@ the .mailmap authors bullet, today's problem baselines and the bake's current re
 splice; the jetson has the fork and fonts_cache); the card guards and card check headings say landed; section 8's temp-file,
 fonts_cache and bake rows; section 12's status, step 1 done and the seed precondition; every main.py, update_bot.py,
 card_data.py, psd_parser.py, query_card.py, psd_analyzer.py and analytics.py citation re-pointed at 2ada357.
+2026-10-23 (BUG 2, work/fx-rebuild): section 7's Card bake subsection gains the Ability FX layers bullet (the bake runs Effect Layers.jsx's Update all; unstyled word layers still refuse); no cited line moved.
+2026-10-23 (BUG 2 review, work/fx-rebuild): the Ability FX bullet names the two new refusals (a badge typed as text on a badge card; Goofy's whole-word "1") and the `1#2` rename.
+2026-10-23 (BUG 2 phase 2 review, work/fx-rebuild): the typed badges bullet gains the deleted-letter badge, the typed "★", the tint refusal (any overlay, non-Normal blend), missing glyphs and edits inside own-style FX phrases; no cited line moved.
+2026-10-24 (BUG 2 phase 2 review round 3, work/fx-rebuild): the typed badges bullet gains the "[fire:]" refusal; no cited line moved.
 
 2026-10-23 (previews; revised after review the same evening: two jobs, card_preview_branch, no PNG on the branch): section 7's Card bake subsection gains the Previews bullet (card-preview.yml, `commands/card_preview.py`,
 the `previews` branch; design section 16); no cited line moved.
 
 2026-10-23 (unbatch): query_card.py citations re-pointed (prep_dataframes, init_query) after /query_ability went back to one message per card.
+
+2026-10-24 (py314, branch work/py314): the card guards' quiet window as an environment, R7 left to font-check, G2
+rendered anyway; no cited line moved.
+2026-10-24 (BUG 2 phase 6, work/fx-rebuild): section 7's Card bake subsection gains the Content flags bullet (owner ruling: content problems bake, told); the FX and typed-badge bullets say told for refused; no cited line moved.

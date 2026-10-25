@@ -136,7 +136,8 @@ File names in the headings are new unless they already exist in `site/assets/`; 
   1. 21 Damage Types NORMAL "DMG - (1/2*DEF)" vs "ATK - DEF" (07 Stats3, 10 Attacking).
   2. 12 Reactions3 "5 stacks of hardened, giving it 3 defense" vs Hardened +0.5 per stack (6 stacks).
   3. 07 Stats3 text "-1 DEF BAR --> 1" vs its picture (1.5).
-  4. Status damage and ticks at (ENDT) (19 Status Effects) vs phase 4, after (ENDT) (09 TakingYourTurn).
+  4. Resolved 2026-10-24 (owner): status damage and ticks in phase 4, after (ENDT); 19 Status Effects now agrees with 09
+     TakingYourTurn (TTSCardMaker d050875f).
   5. Hidden drafts still in `rules.json`: 12 Reactions2 order 4>2>1>3 vs 4>2>3>1 (12 Reactions3); 22 Negation's
      older ITEMS block. Parser rule to add: skip hidden text layers on rulebook pages.
   6. Tags used on cards and defined nowhere: (XCD) 27 occurrences, (XGCD) 24, (XU) 8; by distinct cards (1GCD) 20,

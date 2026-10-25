@@ -1,6 +1,7 @@
 from asyncio import create_task
+from collections import deque
 from sys import exit
-from discord import ButtonStyle, Client, File, Intents, Interaction, Member, app_commands
+from discord import ButtonStyle, Client, File, Intents, Interaction, InteractionType, Member, app_commands
 from discord.ui import Button, View
 import global_config                                    # CARD_SYNC: the cutover switch (texts at import, the gate at call time)
 from global_config import SITE_URL
@@ -15,7 +16,6 @@ from commands.analytics import (
     bind_reminder_client,
     check_reminder,
     init_reminder,
-    list_reminders,
     remove_reminder,
     set_reminder,
 )
@@ -61,7 +61,9 @@ from commands.psd_analyzer import (
     view_old_metadata,
     update_stats,
 )
+from commands.reminder_panel import open_panel
 from commands.query_card import (
+    card_repo,
     init_query,
     query_ability,
     query_ability_num_occur,
@@ -142,6 +144,44 @@ async def on_ready():
         _start(loop)
     _started = True
     print("Bot initialization complete")
+
+
+LOGGED_VALUES = ("query", "search_text", "cards", "card", "alias", "as_of")   # options whose values the log shows
+
+
+@client.event
+async def on_interaction(interaction: Interaction):
+    """One console line per slash command: its name, who, where, its options (values only for searches)."""
+    if interaction.type != InteractionType.application_command:
+        return
+    data = interaction.data or {}
+    options = [f"{o.get('name')}={str(o.get('value'))[:100]!r}" if o.get("name") in LOGGED_VALUES else str(o.get("name"))
+               for o in data.get("options") or []]
+    print(f"Command /{data.get('name')} by {getattr(interaction.user, 'id', '?')} in {interaction.channel_id}"
+          f"{': ' + ', '.join(options) if options else ''}")
+
+
+async def card_names(interaction: Interaction, current: str) -> list:
+    """Autocomplete: card names, printed titles, aliases and renamed cards' old names."""
+    return [Choice(name=shown, value=value) for shown, value in card_repo.name_choices(current)]
+
+
+async def current_card_names(interaction: Interaction, current: str) -> list:
+    """Autocomplete without old names (options that need a card of today)."""
+    return [Choice(name=shown, value=value) for shown, value in card_repo.name_choices(current, old=False)]
+
+
+async def bake_card_names(interaction: Interaction, current: str) -> list:
+    """Autocomplete whose values are card names (titles shown beside them): /bake_cards matches card names only."""
+    return [Choice(name=shown, value=value) for shown, value in card_repo.name_choices(current, cards=True)]
+
+
+async def card_list_names(interaction: Interaction, current: str) -> list:
+    """Autocomplete for a comma-separated list: the last name typed."""
+    head, comma, last = current.rpartition(",")
+    head = f"{head}, " if comma else ""
+    return [Choice(name=shown, value=head + value) for shown, value in card_repo.name_choices(last)
+            if len(head + value) <= 100]
 
 
 # Slash Commands
@@ -255,22 +295,15 @@ async def slash_set_reminder(interaction: Interaction,
     await set_reminder(interaction, msg, when, offset, frequency, command)
 
 
-list_reminders = to_thread(list_reminders)
-@tree.command(name="list_reminders", description="List all reminders in this channel/server.")
-@app_commands.describe(
-    all="List all reminders in the server instead of just this channel. Default is false.",
-    hidden="Should the list only be sent to you? Default is false.",
-)
-async def slash_list_reminders(interaction: Interaction,
-                               all: Optional[bool] = False,
-                               hidden: Optional[bool] = False):
-    await list_reminders(interaction, all, hidden)
+@tree.command(name="reminders", description="Browse reminders: reschedule, turn off/on, delete or add one (only you see it).")
+async def slash_reminders(interaction: Interaction):
+    await open_panel(interaction)                       # answers directly: a View and modals need the live interaction
 
 
 remove_reminder = to_thread(remove_reminder)
 @tree.command(name="remove_reminder", description="Remove a reminder by its ID (admins, or the reminder's creator).")
 @app_commands.describe(
-    reminder_id="The 8-character ID shown by /list_reminders.",
+    reminder_id="The 8-character ID shown by /reminders.",
 )
 async def slash_remove_reminder(interaction: Interaction,
                                 reminder_id: str):
@@ -283,9 +316,10 @@ async def slash_remove_reminder(interaction: Interaction,
 query_name = to_thread(query_name)
 @tree.command(name="query", description="Query a card by name, now or as it was on a date.")
 @app_commands.describe(
-    query='The name of the card you want to search for',
+    query='Card name, printed title, alias, or a renamed card\'s old name (suggested as you type).',
     as_of='YYYY-MM-DD (Pacific time): the card as it was that day, archived cards too. Default = now.',
 )
+@app_commands.autocomplete(query=card_names)
 async def slash_query_name(interaction: Interaction,
                            query: str,
                            as_of: Optional[str] = None):
@@ -314,7 +348,7 @@ query_ability_num_occur = to_thread(query_ability_num_occur)
 query_ability = to_thread(query_ability)
 @tree.command(name="query_ability", description="Query a card by ability.")
 @app_commands.describe(
-    query='The ability text you want to search for.',
+    query='Text (names, aliases, ability) or conditions: hp>5, type==creature, !die. See /help card.',
     limit='The number of cards to output before stopping. Default = all.',
     howmany='Instead of returning the cards, return the number of matches. Default = False.',
 )
@@ -329,10 +363,10 @@ async def slash_query_ability(interaction: Interaction,
 
 
 query_rulebook = to_thread(query_rulebook)
-@tree.command(name="query_rulebook", description="Search the rulebook for specific text.")
+@tree.command(name="query_rulebook", description="Search the rulebook: the lines that match, with their page names.")
 @app_commands.describe(
-    search_text='Text to search for in the rulebook',
-    limit='Maximum number of results to show (default: all)',
+    search_text='A word or phrase: the reply quotes the rulebook lines holding it.',
+    limit='Maximum number of pages to show. Default = all.',
 )
 async def slash_query_rulebook(
     interaction: Interaction,
@@ -371,6 +405,7 @@ manage_alias = to_thread(manage_alias)
     alias='The alias name. Leave empty to view all aliases, or provide without card name to delete.',
     card='The card to alias (its image file name, or the end of it). Omit to delete the alias.',
 )
+@app_commands.autocomplete(card=current_card_names)
 async def slash_alias(interaction: Interaction,
                       alias: Optional[str] = None,
                       card: Optional[str] = None):
@@ -391,6 +426,7 @@ frankenstein = to_thread(frankenstein)
     Choice(name="slice", value="slice"),
     Choice(name="average", value="average"),
 ])
+@app_commands.autocomplete(cards=card_list_names)
 async def slash_frankenstein(
     interaction: Interaction,
     cards: str,
@@ -439,6 +475,7 @@ bake_cards = to_thread(bake_cards)
     card='Only this card, matched like Card Authors.txt. Default = every card with a pending PSD edit.',
     dry_run='Render and check the edits, commit nothing. Default = True.',
 )
+@app_commands.autocomplete(card=bake_card_names)
 async def slash_bake_cards(interaction: Interaction,
                            card: Optional[str] = None,
                            dry_run: Optional[bool] = True):
@@ -487,6 +524,7 @@ manual_metadata_entry = to_thread(manual_metadata_entry)
     card_type='Card type (e.g., creature, item, field).',
     types='Types/ icon names, comma-separated, printed on the card image by the next card bake.',
 )
+@app_commands.autocomplete(query=card_names)
 async def slash_update_metadata(
     interaction: Interaction,
     query: str,
@@ -532,6 +570,7 @@ view_old_metadata = to_thread(view_old_metadata)
     query='The card to view old metadata for.',
     version='Version index: -1 for oldest, 0 for most recent old version, 1+ for older versions. Default = 0.'
 )
+@app_commands.autocomplete(query=card_names)
 async def slash_view_old_metadata(
     interaction: Interaction,
     query: str,
@@ -941,13 +980,41 @@ async def process_command_queue():
             print(f"Command queue: dropped an item: {type(e).__name__}: {e}")
 
 
-# --- DISPATCH QUEUE (messages + files + embeds) ---
+# --- DISPATCH QUEUE (messages + files + embeds): one ordered lane per channel ---
+_lanes: dict = {}                                       # channel id -> deque of (interaction, send_kwargs)
+_lane_tasks: dict = {}                                  # channel id -> the task draining its lane
+_sending = [True]                                       # False once the loop is stopped (/restart_bot, /update)
+
+
 @tasks.loop(seconds=0.1)
 async def process_dispatch_queue():
+    """Hand each message to its channel's lane: a big search holds back only its own channel (discord.py keeps
+    Discord's rate limits, per route and global)."""
     while dispatch_queue:
-        interaction, send_kwargs = dispatch_queue.popleft()
-        try:                                            # one bad message must not stop the loop (B5)
-            if not _split_content(dispatch_queue, interaction, send_kwargs):
+        item = dispatch_queue.popleft()
+        _lanes.setdefault(getattr(item[0], "channel_id", None), deque()).append(item)
+    for channel, lane in _lanes.items():
+        task = _lane_tasks.get(channel)
+        if lane and (task is None or task.done()):
+            _lane_tasks[channel] = create_task(_drain_lane(lane))
+
+
+@process_dispatch_queue.before_loop
+async def _open_lanes():
+    _sending[0] = True
+
+
+@process_dispatch_queue.after_loop
+async def _close_lanes():
+    _sending[0] = False                                 # what is left stays unsent, as before the lanes
+
+
+async def _drain_lane(lane: deque) -> None:
+    """Send a channel's messages in order."""
+    while lane and _sending[0]:
+        interaction, send_kwargs = lane.popleft()
+        try:                                            # one bad message must not stop the lane (B5)
+            if not _split_content(lane, interaction, send_kwargs):
                 await _dispatch(interaction, send_kwargs)
         except Exception as e:
             _log_drop("Dispatch", interaction, e)

@@ -5,6 +5,7 @@ waivers, "(new)" against the old blob, R4's new-card and regression cases, and t
 rename (told until the owner adds it to AUTO_FIX; only the names change, byte for byte) and R9's Txt2 story sync (Clot White before main's Txt2 repair, from the clone's history). The badge vocabulary is pinned against the
 glyph names of MDW/Fonts/stoogedings.ttf.
 """
+from dataclasses import fields
 from io import BytesIO
 from pathlib import Path
 
@@ -37,7 +38,7 @@ CASES = (   # card, rules told to the author, rules waived (the 6e50c3ee whole-t
     ("Auxiliary/Items/Nasty_Patty.psd", {"R6"}, set()),
     ("Auxiliary/Status Effects/Debuffs/1 Stars/Blindness.psd", {"R2"}, set()),
     ("Items/Equip/2 Stars/Fire_Staff.psd", set(), {"R5"}),
-    ("Creatures/Other/5 Stars/Baba.psd", {"R1"}, {"R4"}),         # R7 (BabaUI) was waived until its file came (92b5ae6b)
+    ("Creatures/Other/5 Stars/Baba.psd", {"R1"}, {"R4"}),         # fonts are font-check.yml's (no R7 since 2026-10-24)
     ("Creatures/Isaac/3 Stars/Tainted_Lazarus.psd", set(), {"R2", "R3"}),
 )
 
@@ -47,10 +48,8 @@ CASES = (   # card, rules told to the author, rules waived (the 6e50c3ee whole-t
 # ========================
 @pytest.fixture(scope="module")
 def context(clone):
-    from commands.font_check import FontIndex
     chart = psd_edit.status_fills(PSDImage.open(str(clone / psd_edit.STATUS_CHART)))
-    return cs.Context(frozenset(clone_vocabulary(str(clone)).all_types), FontIndex(str(clone / "MDW/Fonts")), chart,
-                      psd_edit.story_sync())
+    return cs.Context(frozenset(clone_vocabulary(str(clone)).all_types), chart, psd_edit.story_sync())
 
 
 def _open(clone, rel):
@@ -120,31 +119,19 @@ def test_wording(clone, context):
         assert [i.line() for i in cs.check(_open(clone, rel), rel, context) if i.code == code] == [line], rel
 
 
-def test_r7_is_told_in_the_standards_post(clone, context, monkeypatch):
-    """Fonts are told in the standards channel too (owner, 2026-10-22), none waived: BabaUI's waiver went when the owner
-    added its file (TTSCardMaker 92b5ae6b)."""
-    from commands.font_check import FontIndex, _font_files, face_names
+def test_fonts_are_font_checks_alone(clone, context, monkeypatch):
+    """Owner, 2026-10-24: a missing font is reported by font-check.yml only; the standards have no R7 (no rule, no fonts
+    in the context), so a card asking for a font MDW/Fonts lacks gets no standards issue for it."""
+    assert not hasattr(cs, "rule_fonts") and not hasattr(cs, "check_psd")
+    assert "fonts" not in {f.name for f in fields(cs.Context)}
     rel = "Creatures/Other/5 Stars/Baba.psd"
-    assert [i for i in cs.check(_open(clone, rel), rel, context) if i.code == "R7"] == []   # BabaUI and Domigorgon resolve
-    without = FontIndex()                                   # MDW/Fonts less the files with a BabaUI face
-    for path in _font_files(str(clone / "MDW/Fonts")):
-        faces = face_names(Path(path).read_bytes())
-        if "BabaUI" not in faces:
-            without.add(faces)
-    assert without.files < context.fonts.files and not without.supplies("BabaUI")
-    lacking = cs.Context(context.types, without, context.chart, context.story_sync)
-    (font,) = [i for i in cs.check(_open(clone, rel), rel, lacking) if i.code == "R7"]
-    assert font.items == ("BabaUI",) and font.discord and not font.waived and cs.reported([font]) == [font]
-    assert font.line() == "font BabaUI not in MDW/Fonts"
-    monkeypatch.setattr(cs, "check_psd", lambda psd, fonts: {"Wingdings-Regular": ["Hp"], "Webdings": ["Ability"]})   # neither is in MDW/Fonts
-    (font,) = [i for i in cs.check(_open(clone, rel), rel, context) if i.code == "R7"]
-    assert font.discord and not font.waived and cs.reported([font]) == [font]
-    assert font.line() == "fonts Webdings and Wingdings-Regular not in MDW/Fonts"
+    monkeypatch.setattr("commands.font_check.check_psd", lambda psd, fonts: {"Wingdings-Regular": ["Hp"]})
+    assert not [i for i in cs.check(_open(clone, rel), rel, context) if i.code == "R7" or "MDW/Fonts" in i.text]
 
 
 def test_without_the_chart_every_overlay_is_told(clone, context):
     rel = "Items/Equip/2 Stars/Fire_Staff.psd"
-    bare = cs.Context(context.types, None, None)
+    bare = cs.Context(context.types, None)
     assert _codes(cs.check(_open(clone, rel), rel, bare), False) == {"R5"}
 
 

@@ -3,7 +3,7 @@
 Extracted 2026-10-20 from `TTSCardMaker/site/dist/data/rules.json` (built locally that day). Re-checked 2026-10-22: the
 rules.json (rebuilt 2026-10-22 00:43), AutoCroissant `stats.pkl` at PICKLE `3888392` and a fresh parse of TTSCardMaker
 `73904dbd` hold the same 48 page texts, and the cooldown update
-of 2026-10-21 touched no rulebook PSD, so the text below is unchanged; only notes and the summary were updated. Checks:
+of 2026-10-21 touched no rulebook PSD, so the text below is unchanged; only notes and the summary were updated. 19 Status Effects reworded 2026-10-24 (TTSCardMaker `d050875f`: status effects proc and count down in phase 4, after (ENDT) effects, as on 09); its text below is updated by hand. Checks:
 - rules.json has 48 entries, and `Auxiliary/Rulebook/` has 48 PSDs with 48 PNGs, one-to-one.
 - AutoCroissant `stats.pkl` holds the same 48 `rulebook` entries. Their `ability` strings are byte-identical to rules.json (compared that day).
 - Every page PNG was looked at. Every PSD was scanned with psd-tools for hidden text layers.
@@ -1474,12 +1474,12 @@ Notes: the COUNTER-PLAY bullets are repeated word for word under FIELD CARDS on 
 STATUS EFFECTS
 STATUS EFFECTS
 - A status effect, is either a buff or debuff that has a an of effect on a creature, represented by Mr. Krabs either suffering or thriving.
-- If a status effect deals DMG or Heals, then by default it procs at (ENDT). Otherwise, by the status effect take effect immediately.
-- The duration of any status effect counts down at (ENDT).
+- If a status effect deals DMG or Heals, then by default it procs in phase 4, after (ENDT) effects. Otherwise, by the status effect take effect immediately.
+- The duration of any status effect counts down in phase 4.
 This Panda was just inflcited with both 2 turns of Softened (-0.5 DEF), and 2 turns of Smouldering (2 DMG). Instantly, the DEF reduction takes effect. When Panda ends its next turn, it takes 2 damage from smouldering, and the duration for both of the debuffs goes from 2 to 1. 
 SPECIFICS
 - DMG dealing status effects count as one instance of damage per unique stack. (5 stacks of Poison is one instance of 5 damage.)
-- Per unique status effect at (ENDT), the owner of the creature chooses the order in which to resolve these effects. (May chose if Regeneration heals before Smouldering does damage first)
+- Per unique status effect in phase 4, the owner of the creature chooses the order in which to resolve these effects. (May chose if Regeneration heals before Smouldering does damage first)
 - If a status effect deals DMG it is piercing, and doesn’t count as an attack.
 - If a creature started the global turn with a status effect and the global turn ends without the creature having ended its turn, then the effect ticks at the end of the end of the global turn, even if the creature is in hand.
 19
@@ -1681,7 +1681,7 @@ By chapter (book numbering):
 16. The Field (2 pages): 6 slots, primary vs secondary field, protective minions pushing the parent back.
 17. Death: points on death, revives, multi-target creatures, "destroyed".
 18. Field Cards: obtained with BRICKS, played free on purchase or for star points from hand, one in play, negate for 1x stars in BRICKS or destroy for 3x.
-19. Status Effects (2 pages): buffs and debuffs, ticking at (ENDT), the `[X]T[Y]` syntax, standard vs stacking, duration refresh, upgrade chains.
+19. Status Effects (2 pages): buffs and debuffs, ticking in phase 4, the `[X]T[Y]` syntax, standard vs stacking, duration refresh, upgrade chains.
 20. Creature Types: 14 types and their immunities or perks.
 21. Damage Types: normal, piercing, counter, life steal, shockwave, true damage.
 22. Negation: negating attacks, creatures, items and field cards; 5+ star immunity; true negation and true negation immunity.
@@ -1703,7 +1703,6 @@ Contradictions between pages:
 - 21 Damage Types NORMAL "DMG - (1/2*DEF)" vs 07/10 "ATK - DEF". It is an old-rules leftover; it agrees with 07/10 only if its DEF means the DEF bars shown.
 - 12 Reactions3 says "5 stacks of hardened, giving it 3 defense". Hardened is +0.5 per stack, so 3 needs 6 stacks.
 - 07 Stats3 text "-1 DEF BAR --> 1" vs its picture, which shows 1.5.
-- 19 says damage and heal status effects proc at (ENDT). 09 puts "Status Effects deal damage/heal, duration ticks down by 1" in Phase 4, after Phase 3's (ENDT) effects.
 - Hidden PSD layers carry older drafts that disagree with the visible pages: 12 Reactions2 has resolve order 4>2>1>3 vs 4>2>3>1, and 22 Negation has a different ITEMS block. That text is still in rules.json, stats.pkl and /query_rulebook.
 
 Rules the book implies but never states:

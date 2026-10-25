@@ -139,7 +139,7 @@ messages with no reply linkage, no ephemeral support.
 | Progress "edits" arrive as a stream of new messages | Which interaction were they attached to? | Edit-queue fallback sends new messages (`_edit`, main.py:902-923). Progress user: update_stats "N cards updated." every 25 re-parsed cards (`_progress`, repo_traverser.py:51; UPDATE_RATE card_data.py:43) | Starts as edits, degrades to sends at the 15-min mark | Cosmetic; ignore |
 | Nothing sent AND stdout shows a Python traceback | Read the traceback (often logged late as "Task exception was never retrieved") | The worker crashed before queueing; `queue_*` never raise (they just append, utils.py:36-60), so anything queued BEFORE the crash still arrives | Partial output followed by silence = mid-worker crash | Fix the worker bug; file the story in **autocroissant-failure-archaeology** |
 | One message missing, the rest fine | stdout: `Dispatch: dropped a message for channel N: ...` or `Dropped a message: channel N not found` | That send failed twice (e.g. Forbidden: no Send Messages; deleted channel; bad kwargs). Before 2026-10-20 this killed the loop (B5, archaeology 10.22) | The log line names the channel and error | Fix permissions or the sender; nothing to restart |
-| Reminder fired but message missing | Reminder messages ALWAYS deliver via fallback path 3 (FakeInteraction -> plain Object -> AttributeError by design, utils.py:124-191) | Since 2026-10-19 the scheduler skips channels the bot can't see (`_channel_missing`), so a deleted channel no longer kills the loop through reminders; stdout shows "Reminder <id>: channel <id> not found (deleted or no access); skipped." | Check stdout for that line, or for a `Dispatch: dropped a message` line | Remove the stale reminder (`/list_reminders`, `/remove_reminder`) |
+| Reminder fired but message missing | Reminder messages ALWAYS deliver via fallback path 3 (FakeInteraction -> plain Object -> AttributeError by design, utils.py:124-191) | Since 2026-10-19 the scheduler skips channels the bot can't see (`_channel_missing`), so a deleted channel no longer kills the loop through reminders; stdout shows "Reminder <id>: channel <id> not found (deleted or no access); skipped." | Check stdout for that line, or for a `Dispatch: dropped a message` line | Remove the stale reminder (`/reminders`, `/remove_reminder`) |
 
 Silent-loss modes, summarized: (1) `queue_*` functions never raise to callers - a full deque with no
 drainer is indistinguishable from success at the call site; (2) the three loops are stopped by
@@ -258,23 +258,26 @@ commands/update_bot.py:
 
 ## 9. Reminder quirks (rewritten system, 2026-10-19)
 
-Reminders live in `reminder.pkl` (gitignored - NOT synced across machines by `/push`; they die with
+Reminders live in `reminder.json` (gitignored - NOT synced across machines by `/push`; they die with
 the machine, see **autocroissant-run-and-operate** §6 and §9). `check_reminder` is queued every
-second by `process_reminders` (main.py:926-928) and run by the command drain, so reminders only fire while the loops run. The scheduler
+second by `process_reminders` (main.py:920) and run by the command drain, so reminders only fire while the loops run. The scheduler
 logs to stdout; most reminder problems are visible there first.
 
 | Symptom | First check | Likely cause | Discriminating experiment | Fix / pointer |
 |---|---|---|---|---|
 | "✗ Reminder NOT set: ..." | The reason after the colon | `when`/`offset`/`frequency` unparseable or out of range (max 366 days), a date in the past, or the command failed its signature check (unknown option, bad value, required option missing) | The reason names the field | Fix that field; formats in **autocroissant-run-and-operate** §9 |
-| "⚠ Reminder `<id>` skipped its command: ..." at fire time | `/list_reminders` - the stored command | The command or one of its options was renamed or removed since the reminder was made (it is re-checked on every firing) | Compare with the current `/help` entry | Re-create the reminder, then `/remove_reminder reminder_id:<id>` |
+| "⚠ Reminder `<id>` skipped its command: ..." at fire time | `/reminders` - the stored command | The command or one of its options was renamed or removed since the reminder was made (it is re-checked on every firing) | Compare with the current `/help` entry | Re-create the reminder, then `/remove_reminder reminder_id:<id>` |
 | "⚠ Reminder `<id>`: `/<name>` failed (...)" | stdout traceback "ERROR: reminder <id> command /<name> raised" | The command itself crashed | Run the same command by hand | Fix the command; the reminder keeps repeating |
-| A scheduled admin command replies "You do not have permission." | `/list_reminders` - who is the creator? | Reminders run as their creator since 2026-10-19 and the creator is not (or no longer) in ADMINS | Creator shown as `<@id>`; check ADMINS on this host | An admin re-creates it. Legacy reminders without a creator still run as the bot |
-| Every reminder command replies "✗ Reminders are off: ..." | stdout at startup: "ERROR: reminder.pkl could not be read" | Unreadable reminder.pkl; the file was left untouched on purpose | - | Move reminder.pkl aside and restart (fresh schedule), or repair it offline |
-| A reminder shows "⚠ DISABLED: <reason>" | stdout "is broken and was disabled" / "is disabled" | It crashed the scheduler or its stored data is unreadable; only that reminder stopped | - | `/remove_reminder` it and re-create |
+| A scheduled admin command replies "You do not have permission." | `/reminders` - who is the creator? | Reminders run as their creator since 2026-10-19 and the creator is not (or no longer) in ADMINS | Creator shown as `<@id>`; check ADMINS on this host | An admin re-creates it. Legacy reminders without a creator still run as the bot |
+| Every reminder command replies "✗ Reminders are off: ..." | stdout at startup: "ERROR: reminder.json could not be read" (or "reminder.json is missing; restore it, or rename reminder.pkl.bak ...") | Unreadable reminder.json (hand edit? a newer schema_version?), left untouched on purpose; or the JSON was deleted after the conversion | `python -c "import json; json.load(open('reminder.json'))"` | Fix the file (stop the bot first), or move it aside and restart (fresh schedule); missing JSON: rename `reminder.pkl.bak` to `reminder.pkl` and restart (it converts again) |
+| Panel footer or /set_reminder reply: "Reminders run from reminder.pkl: conversion failed (...)" | stdout at startup: "ERROR: could not convert reminder.pkl to reminder.json (...)" | The one-time conversion failed (e.g. a reminder with an unreadable channel can't be written; the read-back differed); the half-made JSON was removed and this session saves to the pickle | The reason names the reminder | Delete or fix that reminder, then restart: the next start converts |
+| A reminder shows "⚠ <problem>" in `/reminders` | stdout "is broken and was stopped" / "can't run (...)" | It crashed the scheduler or its stored data is unreadable; only that reminder stopped | - | Reschedule it (clears the problem) or delete it |
+| A reminder never fires, no log line | `/reminders` - Status Off? | It was turned off (kept, frozen) | - | Turn it on: a repeating one skips its missed runs; a past one-shot needs Reschedule first |
+| A panel button says "This interaction failed" | Was the bot restarted since the panel opened, or was it idle 10 minutes? | Panels don't survive a restart and close after 10 idle minutes | - | Run `/reminders` again |
 | Repeating reminder "skipped" runs while bot was down | stdout at startup: `Rescheduled reminder <id> from ... to ...` | By design: it fires once (if due) and jumps to its next future slot; missed runs are not replayed. Past-due ONE-SHOT reminders fire right after startup | - | By design |
 | One-shot reminder never fires, keeps moving an hour later | stdout "channel ... not found (deleted or no access); skipped." | Its channel is gone or invisible; it retries hourly (`CHANNEL_RETRY`) | - | Remove it, or restore the bot's access to the channel |
 | Reminder fired at the wrong hour | What timezone did you assume? | Times are Pacific: `TIMEZONE = ZoneInfo("America/Los_Angeles")` (global_config.py), following daylight saving | The list shows a Discord relative timestamp next to the Pacific time | State times in Pacific time |
-| A stored `/update_stats use_local_repo:...` changed to plain `/update_stats` | stdout at start: "Reminder <id>: migrated command ... (dropped retired `use_local_repo:False`)" | By design since 2026-10-20: local mode was archived and `RETIRED_OPTIONS` (analytics.py:41) strips the removed options so the reminder keeps running (remote) | - | Nothing to do; operating rule in **autocroissant-run-and-operate** §7 |
+| A stored `/update_stats use_local_repo:...` changed to plain `/update_stats` | stdout at start: "Reminder <id>: migrated command ... (dropped retired `use_local_repo:False`)" | By design since 2026-10-20: local mode was archived and `RETIRED_OPTIONS` (analytics.py:44) strips the removed options so the reminder keeps running (remote) | - | Nothing to do; operating rule in **autocroissant-run-and-operate** §7 |
 | An old reminder behaves differently after the 2026-10-19 rewrite | stdout at first start: "Reminder <id>: migrated command `old` -> `new`" | Migration kept the OLD meaning (old parser read only lowercase `true` as True; pre-v2 positional values follow the old option order) | Compare old and new command strings in the log | Re-create the reminder with the options you actually want |
 
 ## 10. Type emojis (/sync_emojis, added 2026-10-19)
@@ -383,7 +386,7 @@ grep -n "skipped its command\|Reminders are off\|crashed the scheduler\|not foun
 grep -n "Rescheduled reminder\|migrated command" commands/analytics.py  # startup log lines
 grep -n "^RETIRED_OPTIONS\|^CHANNEL_RETRY\|^LEGACY_RUNS_AS_BOT" commands/analytics.py
 grep -n "queue_command(check_reminder)" main.py                          # fires only while loops run (928)
-grep -n "reminder.pkl" .gitignore                                        # not synced across machines
+grep -n "reminder" .gitignore                                            # not synced across machines
 
 # Section 10 - type emojis
 grep -n "Emoji sync failed\|No longer in Types" commands/type_emojis.py

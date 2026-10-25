@@ -299,6 +299,7 @@ def test_rewrite_entry_rules():
     entry = {"stars": 2, "note": "n", "_by": "w", "_at": AT}
     assert cb.rewrite_entry(entry, (), verdict) == {"stars": 2, "note": "n", "_psd": verdict, "_by": "w", "_at": AT}
     assert cb.rewrite_entry({"hp": 8, "_by": "w", "_at": AT, "_psd": verdict}, ["hp"]) is None       # the entry goes whole
+    assert cb.rewrite_entry({"hp": 8, "_by": "w"}, ["hp"], verdict, keep=True) == {"_psd": verdict}   # a flagged bake's verdict stays
     assert cb.rewrite_entry({"name": "X", "hp": 8, "_by": "w"}, ["hp"], None) == {"name": "X", "_by": "w"}   # name stays
     assert cb.rewrite_entry({"_psd": verdict, "hp": 8}, (), None) == {"hp": 8}                       # None removes _psd
     text = cb.dump_edits({"about": ABOUT, "cards": {"Mini_Doomer": {"hp": 8, "note": "n"}, "Other": {"hp": 1}}})
@@ -719,14 +720,93 @@ def test_pixel_miss_bakes_with_a_note(github, monkeypatch):
     assert "Mini Doomer" not in _edits_at(github)["cards"]                  # baked: the entry goes whole
 
 
-def test_old_bar_pixel_verdicts_are_retried(github):
+def test_fx_notes_reach_the_commit_and_the_verdict(github, clone, monkeypatch):
+    """Review 2026-10-23: the FX layers an ability bake deleted, renamed or cut again are told in the commit line and in
+    the website's verdict reason too, not only the run report; with no field left the verdict stays alone (review
+    2026-10-24: the card page shows the flags)."""
+    files = github.files_at(github.head)
+    if not (clone / pe.STATUS_CHART).exists():
+        pytest.skip("no status chart")
+    files[pe.STATUS_CHART] = (clone / pe.STATUS_CHART).read_bytes()
+    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"ability": "Die.", "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: Mini Doomer")
+    ok = {"bad_pct": 0.0, "mean": 0.5, "max": 7}
+    note = "Ability FX: (BOT) deleted: its words left the ability"
+
+    def apply_jobs(old_psd, old_png, rel, jobs, parsed, parser, new_dir, *args, **kwargs):
+        for ext, old in (("psd", old_psd), ("png", old_png)):
+            shutil.copy(old, f"{new_dir}/new.{ext}")
+        with open(f"{new_dir}/new.psd", "ab") as fh:
+            fh.write(b"\0")
+        return SimpleNamespace(psd_path=f"{new_dir}/new.psd", png_path=f"{new_dir}/new.png", edits=[SimpleNamespace(field="ability", old="a")],
+                               region=None, reparse={"card": {}, "validator": []}, fx=[], fx_notes=[note], parity={"ability": ok},
+                               rerender={"ability": ok}, flag_bytes=0, changed_pixels=1)
+    monkeypatch.setattr(pe, "apply_jobs", apply_jobs)
+    monkeypatch.setattr(pe, "artifacts", lambda *args: {})
+    monkeypatch.setattr(pe, "text_engine", lambda: True)
+    text, commits = cb.run()
+    assert commits, text
+    assert f"- Mini Doomer: ability; {note}\n" in github.commits[commits[0]]["message"] + "\n"
+    entry = _edits_at(github)["cards"]["Mini Doomer"]
+    assert list(entry) == ["_psd"] and entry["_psd"]["reason"] == f"ability; {note}"
+    assert text.count(note) == 1
+
+
+def test_fx_notes_reach_a_partial_verdict(github, clone, monkeypatch):
+    """A stars edit refused beside an ability bake leaves its refused verdict as the card's: the bake's FX notes go in
+    its reason too (they reached only the commit line, review 2026-10-23)."""
+    files = github.files_at(github.head)
+    if not (clone / pe.STATUS_CHART).exists():
+        pytest.skip("no status chart")
+    files[pe.STATUS_CHART] = (clone / pe.STATUS_CHART).read_bytes()
+    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"ability": "Die.", "stars": 0, "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: Mini Doomer")
+    ok = {"bad_pct": 0.0, "mean": 0.5, "max": 7}
+    note = "Ability FX: (BOT) deleted: its words left the ability"
+
+    def apply_jobs(old_psd, old_png, rel, jobs, parsed, parser, new_dir, *args, **kwargs):
+        assert jobs == {"ability": "Die."}
+        for ext, old in (("psd", old_psd), ("png", old_png)):
+            shutil.copy(old, f"{new_dir}/new.{ext}")
+        with open(f"{new_dir}/new.psd", "ab") as fh:
+            fh.write(b"\0")
+        return SimpleNamespace(psd_path=f"{new_dir}/new.psd", png_path=f"{new_dir}/new.png", edits=[SimpleNamespace(field="ability", old="a")],
+                               region=None, reparse={"card": {}, "validator": []}, fx=[], fx_notes=[note], parity={"ability": ok},
+                               rerender={"ability": ok}, flag_bytes=0, changed_pixels=1)
+    monkeypatch.setattr(pe, "apply_jobs", apply_jobs)
+    monkeypatch.setattr(pe, "artifacts", lambda *args: {})
+    monkeypatch.setattr(pe, "text_engine", lambda: True)
+    text, commits = cb.run()
+    assert commits, text
+    why = "unsupported-card: stars: a card shows at least one"
+    verdict = _edits_at(github)["cards"]["Mini Doomer"]["_psd"]
+    assert (verdict["state"], verdict["for"], verdict["reason"]) == ("refused", {"stars": 0}, f"{why}; {note}")
+
+
+def test_report_line_tells_the_fx_layers_an_ability_bake_dropped():
+    """BUG 2: the report names the FX layers an ability bake cut again and tells the ones it deleted or renamed."""
+    ok = {"bad_pct": 0.0, "mean": 0.5, "max": 7}
+    baked = SimpleNamespace(edits=[SimpleNamespace(field="ability", old="a")], parity={"ability": ok}, rerender={"ability": ok},
+                            flag_bytes=0, changed_pixels=9, fx=["Ability FX: (2U) | (2CD)"],
+                            fx_notes=["Ability FX: (1GCD) | (2U) | (2CD) renamed 'Ability FX: (2U) | (2CD)': (1GCD) left the ability",
+                                      "Ability FX: Blazing deleted: its words left the ability"])
+    card = cb.Card("PoD11ZOMG", "PoD11ZOMG", {"ability": "b"}, rel="Auxiliary/Minions/PoD11ZOMG.psd", jobs={"ability": "b"},
+                   baked=baked)
+    line = cb._card_line(card, True)
+    assert ("; FX layers: Ability FX: (2U) | (2CD); Ability FX: (1GCD) | (2U) | (2CD) renamed 'Ability FX: (2U) | (2CD)': "
+            "(1GCD) left the ability; Ability FX: Blazing deleted: its words left the ability; not committed (dry run)") in line
+
+
+def test_old_bar_verdicts_are_retried(github):
     """A `parity` or `idempotence` refusal under the floor (the old bar's, before 2026-10-23) is pending again: it bakes
-    now; one past the floor, or a render that shows no change, stays final."""
+    now; one past the floor, or a render that shows no change, stays final. A verdict without the current RULES (a
+    content refusal from before 2026-10-24: it bakes, flagged, now) is pending again too."""
     files = github.files_at(github.head)
     psd = _sha(files[DOOMER])[:8]
 
-    def verdict(reason: str) -> list:
-        entry = {"hp": 8, "_psd": {"state": "refused", "for": {"hp": 8}, "psd": psd, "reason": reason, "at": AT}, "_by": "web", "_at": AT}
+    def verdict(reason: str, rules: str = cb.RULES) -> list:
+        entry = {"hp": 8, "_psd": {"state": "refused", "for": {"hp": 8}, "psd": psd, "rules": rules, "reason": reason, "at": AT},
+                 "_by": "web", "_at": AT}
         files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": entry})
         github.commit(files, "web", "Website edit: a verdict")
         return cb.pending()
@@ -737,6 +817,7 @@ def test_old_bar_pixel_verdicts_are_retried(github):
     assert verdict("parity: Hp Dark/5: effects unreadable: x") == []
     assert verdict("parity: ability: the render shows no change, baseline bad 10.70% mean 22.35 max 255") == []
     assert verdict("reparse: fields differ from the expected parse: hp") == []
+    assert verdict("overflow: hp does not fit", "") == ["Mini Doomer"]
 
 
 @fork_text
@@ -874,6 +955,21 @@ def test_missing_runner_dependency_is_transient(github, monkeypatch):
     assert "_psd" not in entry and entry["hp"] == 8
 
 
+def test_glow_edit_on_an_older_fork_is_transient(github, monkeypatch):
+    """A typed :glow on a runner whose fork predates the halos is the runner's fault: an error and no verdict, so the
+    edit bakes once the fork is reinstalled (a `font` verdict waited for MDW/Fonts to change; review 2026-10-24)."""
+    files = github.files_at(github.head)
+    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"ability": "Die. [fire:glow]", "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: Mini Doomer")
+    monkeypatch.setattr(pe, "text_engine", lambda: True)
+    monkeypatch.setattr(pe, "story_sync", lambda: True)
+    monkeypatch.setattr(pe, "glow_halos", lambda: False)
+    monkeypatch.setattr(pe, "apply_jobs", lambda *args, **kwargs: pytest.fail("baked on a fork without glow halos"))
+    text, commits = cb.run(card="Mini Doomer")
+    assert commits == [] and "## Errors (1)" in text and "predates the pin's glow halos" in text
+    assert "_psd" not in _edits_at(github)["cards"]["Mini Doomer"] and cb.pending() == ["Mini Doomer"]
+
+
 def test_select_and_snapshot(github):
     info = github.commits[github.head]
     snapshot = cb.Snapshot(cb.CARD_REPO, github.head, info, cb._tree(cb.CARD_REPO, info["tree"]["sha"]))
@@ -915,6 +1011,40 @@ def test_bake_hp_lands_psd_png_and_file(github, tmp_path):
     github.commit(github.files_at(github.head), "web", "Website edit: something else")
     text, commits = cb.run()                                 # the field is gone: nothing to look at
     assert commits == [] and "0 with PSD fields" in text
+
+
+@fork_text
+def test_a_bake_opens_each_psd_once(github, clone, monkeypatch):
+    """One PSDImage.open per PSD per bake (tests/test_open_once.py's count): the old card's is shared by the parse,
+    classify and apply_jobs (which edits a copy), the saved card's by gate_bytes, the re-parse and the FX gates; the
+    status chart's once. A stat and an ability edit (its FX layer deleted, the parser's every gate run)."""
+    from collections import Counter
+    from hashlib import sha1
+    from os import PathLike
+    from psd_tools import PSDImage
+    files = github.files_at(github.head)
+    if not (clone / pe.STATUS_CHART).exists():
+        pytest.skip("no status chart")
+    files[pe.STATUS_CHART] = (clone / pe.STATUS_CHART).read_bytes()
+    files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"hp": 8, "ability": "Die.", "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: Mini Doomer")
+    seen, inner = Counter(), PSDImage.open.__func__
+
+    def counted(cls, fp, *args, **kwargs):
+        if isinstance(fp, (str, bytes, PathLike)):
+            with open(fp, "rb") as fh:
+                seen[sha1(fh.read()).hexdigest()] += 1
+        else:
+            seen[f"stream {id(fp)}"] += 1
+        return inner(cls, fp, *args, **kwargs)
+    monkeypatch.setattr(PSDImage, "open", classmethod(counted))
+    text, commits = cb.run(card="Mini Doomer")
+    assert len(commits) == 1, text
+    assert github.commits[commits[0]]["message"].startswith("Card edits: 1 baked\n"), text
+    after = github.files_at(github.head)
+    assert after[DOOMER] != files[DOOMER], text            # the saved PSD's open is counted, not a refusal's
+    assert seen == Counter({sha1(files[DOOMER]).hexdigest(): 1, sha1(after[DOOMER]).hexdigest(): 1,
+                            sha1(files[pe.STATUS_CHART]).hexdigest(): 1}), text
 
 
 icons = pytest.mark.skipif(not pe.icon_engine(), reason="a stars or types bake needs the fork's layer copy API")
@@ -968,7 +1098,9 @@ def test_a_stars_edit_refused_by_its_gates_leaves_the_rest(github, monkeypatch):
     def outside(before, psd, edit):
         raise pe.Refused("region", f"{edit.field}: the card changes 9 pixels outside the edited box", edit.field)
     monkeypatch.setattr(pe, "gate_outside", outside)
-    monkeypatch.setattr(pe, "render_all", lambda psd: None)
+    monkeypatch.setattr(pe, "render_all", lambda psd: None)    # no render: the whole-card gates pass
+    monkeypatch.setattr(pe, "gate_copy", lambda before, psd: None)
+    monkeypatch.setattr(pe, "gate_untouched", lambda before, psd, edits: None)
     text, commits = cb.run()
     why = "region: stars: the card changes 9 pixels outside the edited box"
     assert github.commits[commits[0]]["message"] == f"Card edits: 1 baked\n\n- Mini Doomer: hp 5 -> 8; stars not baked: {why}\n\nEdit-by: web"
@@ -987,7 +1119,9 @@ def test_a_card_refused_after_its_stars_names_both_refusals(github, monkeypatch)
     def outside(before, psd, edit):
         raise pe.Refused("region", f"{edit.field}: the card changes 9 pixels outside the edited box", edit.field)
     monkeypatch.setattr(pe, "gate_outside", outside)
-    monkeypatch.setattr(pe, "render_all", lambda psd: None)
+    monkeypatch.setattr(pe, "render_all", lambda psd: None)    # no render: the whole-card gates pass
+    monkeypatch.setattr(pe, "gate_copy", lambda before, psd: None)
+    monkeypatch.setattr(pe, "gate_untouched", lambda before, psd, edits: None)
     monkeypatch.setattr(pe, "set_stat", lambda *a: (_ for _ in ()).throw(pe.Refused("unsupported-card", "hp: no stat row")))
     stars, types = (f"region: {f}: the card changes 9 pixels outside the edited box" for f in ("stars", "types"))
     for fields, last in (({"stars": 3, "types": ["wind", "light"]}, types), ({"stars": 3, "hp": 8}, "unsupported-card: hp: no stat row")):
@@ -1039,9 +1173,9 @@ def test_dry_run_ability_bake_regenerates_fx_layers(github, tmp_path, clone):
 
 
 @fork_text
-def test_ability_bake_refuses_a_badge_card(github, clone):
-    """Mini Doomer carries "Ability FX: (BOT)" (queue A's badges): an ability edit would drop it, so the card is refused
-    with the reason in its verdict and nothing of it lands."""
+def test_ability_bake_rebuilds_a_badge_card(github, clone):
+    """Mini Doomer carries "Ability FX: (BOT)" (queue A's badges): an ability edit bakes (BUG 2), and the report says the
+    layer went with the badge the edit removed."""
     chart = clone / pe.STATUS_CHART
     if not chart.exists():
         pytest.skip("no status chart")
@@ -1050,8 +1184,8 @@ def test_ability_bake_refuses_a_badge_card(github, clone):
     files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"ability": "Die.", "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer ability")
     text, commits = cb.run(dry_run=True)
-    assert commits == [] and "## Refused (1)" in text
-    assert "unsupported-card: ability edit would drop the badge layer Ability FX: (BOT); edit in Photoshop" in text
+    assert commits == [] and "## Baked (1)" in text and "Would commit: Card edits: 1 baked." in text
+    assert "; Ability FX: (BOT) deleted: its words left the ability; not committed (dry run)" in text
 
 
 # ========================
@@ -1295,11 +1429,12 @@ def test_action_shaped_copy_imports_and_prints_help(tmp_path):
     assert not extra, f"card-edits.yml installs none of these: {sorted(extra)}"    # a stray pandas/discord fails here, not in the Action
 
 
-FORK_WORKFLOWS = ("card-edits.yml", "card-guards.yml", "card-sync.yml", "card-preview.yml")   # install requirements-cards.txt
+FORK_WORKFLOWS = ("card-edits.yml", "card-guards.yml", "card-sync.yml", "card-preview.yml", "card-check.yml",
+                  "font-check.yml")                                    # install requirements-cards.txt
+FORK_PYTHON = "3.14"                                                    # every Action (owner, 2026-10-24)
 FORK_WHEELS = "~/.cache/card-wheels"
 FORK_KEY = ("cards-${{ hashFiles('bot/requirements-cards.txt') }}-${{ runner.os }}-${{ runner.arch }}"
-            "-py${{ steps.python.outputs.python-version }}")
-SYNC_KEY = FORK_KEY.replace("-py${{", "-py${{ steps.builder-python.outputs.python-version }}-py${{")   # both its Pythons
+            "-py${{ steps.python.outputs.python-version }}")             # one entry for the six
 BY_NAME = "sed 's/ @ [^;]*//' bot/requirements-cards.txt > \"$RUNNER_TEMP/cards.txt\""
 NO_OXIPNG = "sed -e 's/ @ [^;]*//' -e '/^pyoxipng/d' bot/requirements-cards.txt > \"$RUNNER_TEMP/cards.txt\""   # card-preview's
 
@@ -1316,10 +1451,12 @@ def card_pin() -> str:
 
 def fork_install(path) -> str:
     """
-    A workflow's install of requirements-cards.txt (the psd-tools fork's one pin), as the four share it: the file checked
-    out of AutoCroissant, no pin of the workflow's own; its wheels restored by the file's hash, runner and Python (card-sync:
-    both its Pythons), built only on a miss, installed offline by name (pip builds a URL line from git again; card-preview
-    without pyoxipng: it would recompress a PNG it never publishes), no other install; saved only after they installed.
+    A workflow's install of requirements-cards.txt (the psd-tools fork's one pin), as the six share it, in every job that
+    installs (card-guards: its check and post jobs): the file checked out of AutoCroissant, no pin of the workflow's own;
+    Python 3.14; its wheels restored by the file's hash, runner and Python (one entry for all six), built only on a miss,
+    installed offline by name (pip builds a URL line from git again; card-preview without pyoxipng: it would recompress a
+    PNG it never publishes), no other install; saved only after they installed. card-sync: one environment (a venv) for
+    every stage, no second Python.
 
     Returns:
         The cache key.
@@ -1327,26 +1464,45 @@ def fork_install(path) -> str:
     text = path.read_text(encoding="utf-8")
     assert "PSD_TOOLS_REF" not in text and "MichaelJSr/psd-tools" not in text, f"{path.name}: the pin is requirements-cards.txt's"
     assert not re.search(r"cards-\d{8}", text), f"{path.name}: no fork tag of its own"
+    assert not re.search(r"pip install [^\n]*psd-tools", text), f"{path.name}: no stock psd-tools"
     yaml = pytest.importorskip("yaml")
-    steps = [step for job in yaml.safe_load(text)["jobs"].values() for step in job["steps"]]
-    bot = [s for s in steps if s.get("with", {}).get("repository") in ("bobberlington/AutoCroissant", "${{ env.BOT_REPO }}")
-           and "/requirements-cards.txt" in s["with"]["sparse-checkout"].split()]
-    assert len(bot) == 1, f"{path.name}: the bot checkout brings requirements-cards.txt"
-    python = next(s for s in steps if s.get("id") == "python")
-    assert python["uses"].startswith("actions/setup-python@") and python["with"] == {"python-version": "3.12"}  # no pip cache
-    sync = next((s for s in steps if s.get("id") == "builder-python"), None)
-    if sync:                                # card-sync: the builder's 3.14 before the baker's 3.12 (last on PATH)
-        assert sync["uses"] == python["uses"] and sync["with"] == {"python-version": "3.14"} and steps.index(sync) < steps.index(python)
-        venv = next(s for s in steps if s.get("id") == "venv")
-        assert "inputs.bake != 'none' && " in venv["env"]["BAKE"] and '[ "$BAKE" != none ]' in venv["run"]   # no baker then
-    first = next(i for i, s in enumerate(steps)
-                 if s.get("uses", "").startswith("actions/cache/restore@") and s["with"]["path"] == FORK_WHEELS)
-    restore = steps[first]
-    assert restore["id"] == "wheels" and restore["with"]["key"] == (SYNC_KEY if sync else FORK_KEY)
-    install = next(i for i, s in enumerate(steps) if " wheel -q -w " in s.get("run", ""))
-    run = steps[install]["run"]
     by_name = NO_OXIPNG if path.name == "card-preview.yml" else BY_NAME
-    assert by_name in run, f"{path.name}: the install's copy by name"
+    installs = 0
+    for job in yaml.safe_load(text)["jobs"].values():
+        steps = job["steps"]
+        restores = [i for i, s in enumerate(steps)
+                    if s.get("uses", "").startswith("actions/cache/restore@") and s.get("with", {}).get("path") == FORK_WHEELS]
+        if not restores:
+            continue
+        (first,) = restores
+        installs += 1
+        bot = [s for s in steps if s.get("with", {}).get("repository") in ("bobberlington/AutoCroissant", "${{ env.BOT_REPO }}")
+               and "/requirements-cards.txt" in s["with"]["sparse-checkout"].split()]
+        assert len(bot) == 1, f"{path.name}: the bot checkout brings requirements-cards.txt"
+        pythons = [s for s in steps if s.get("uses", "").startswith("actions/setup-python@")]
+        assert len(pythons) == 1 and pythons[0].get("id") == "python", f"{path.name}: one Python a job"
+        assert pythons[0]["with"] == {"python-version": FORK_PYTHON}, path.name          # no pip cache
+        restore = steps[first]
+        assert restore["id"] == "wheels" and restore["with"]["key"] == FORK_KEY
+        install = next(i for i, s in enumerate(steps) if " wheel -q -w " in s.get("run", ""))
+        run = steps[install]["run"]
+        assert by_name in run, f"{path.name}: the install's copy by name"
+        assert steps.index(bot[0]) < steps.index(pythons[0]) < first < install and restore.get("if") == steps[install].get("if")
+        assert steps[install]["env"]["HIT"] == "${{ steps.wheels.outputs.cache-hit }}" and '"$HIT"' in run
+        wheel = re.findall(r'^.*pip wheel -q -w ~/\.cache/card-wheels -r bot/requirements-cards\.txt$', run, re.M)
+        assert len(wheel) == 1 and run.index(wheel[0]) < run.index(by_name)
+        pips = re.findall(r'pip"? install [^\n]*', run)
+        assert len(pips) == 1 and pips[0].endswith(' install -q --no-index -f ~/.cache/card-wheels -r "$RUNNER_TEMP/cards.txt"')
+        assert run.index(by_name) < run.index(pips[0])
+        save = next(i for i, s in enumerate(steps) if s.get("uses", "").startswith("actions/cache/save@"))
+        assert save > install and steps[save]["with"] == {"path": FORK_WHEELS, "key": "${{ steps.wheels.outputs.cache-primary-key }}"}
+        assert steps[save]["if"].startswith(("steps.wheels.outputs.cache-hit != 'true'", "steps.venv.outputs.wheels == 'built'"))
+        if path.name == "card-sync.yml":    # one environment: every stage's python is the venv's
+            assert 'python -m venv "$RUNNER_TEMP/venv"' in run and "commands.$module" in run
+            assert "builder/bin" not in text and "baker" not in text and "python3." not in text
+            assert set(re.findall(r'"\$RUNNER_TEMP/(\w+)/bin/python"', text)) == {"venv"}
+    assert installs, f"{path.name}: installs requirements-cards.txt"
+    assert len(re.findall(r'pip"? install [^\n]*', text)) == installs, f"{path.name}: no other install"
     with TemporaryDirectory() as tmp:          # the copy pip installs, made by the step's own sed
         (Path(tmp) / "bot").mkdir()
         shutil.copy(REPO / "requirements-cards.txt", Path(tmp) / "bot")
@@ -1354,18 +1510,27 @@ def fork_install(path) -> str:
         copy = [line for line in (Path(tmp) / "cards.txt").read_text(encoding="utf-8").splitlines() if line and line[0] != "#"]
     assert copy[0] == "psd-tools[composite,text]" and " @ " not in "\n".join(copy)
     assert any(line.startswith("pyoxipng==") for line in copy) == (by_name == BY_NAME), path.name
-    assert steps.index(bot[0]) < steps.index(python) < first < install and restore.get("if") == steps[install].get("if")
-    assert steps[install]["env"]["HIT"] == "${{ steps.wheels.outputs.cache-hit }}" and '"$HIT"' in run
-    wheel = re.findall(r'^.*pip wheel -q -w ~/\.cache/card-wheels -r bot/requirements-cards\.txt(?:; done)?$', run, re.M)
-    assert len(wheel) == 1 and (not sync or 'for python in python3.14 python3.12; do "$python" -m pip wheel' in wheel[0])
-    assert run.index(wheel[0]) < run.index(by_name)
-    pips = re.findall(r'pip"? install [^\n]*', text)
-    assert pips and all(p.endswith(' install -q --no-index -f ~/.cache/card-wheels -r "$RUNNER_TEMP/cards.txt"') for p in pips)
-    assert all(run.index(by_name) < run.index(p) for p in pips) and len(pips) == (2 if sync else 1)
-    save = next(i for i, s in enumerate(steps) if s.get("uses", "").startswith("actions/cache/save@"))
-    assert save > install and steps[save]["with"] == {"path": FORK_WHEELS, "key": "${{ steps.wheels.outputs.cache-primary-key }}"}
-    assert steps[save]["if"].startswith(("steps.wheels.outputs.cache-hit != 'true'", "steps.venv.outputs.wheels == 'built'"))
-    return restore["with"]["key"]
+    return FORK_KEY
+
+
+def test_every_action_runs_python_314():
+    """Owner, 2026-10-24: every card repo Action on Python 3.14 (setup-python in each job that runs Python; none on the
+    runner's own python3), and the six card workflows install requirements-cards.txt with one cache entry."""
+    workflows = WORKFLOW.parent
+    if not workflows.is_dir():
+        pytest.skip(f"no {workflows}")
+    yaml = pytest.importorskip("yaml")
+    for path in sorted(workflows.glob("*.yml")):
+        text = path.read_text(encoding="utf-8")
+        for name, job in yaml.safe_load(text)["jobs"].items():
+            runs = "\n".join(s.get("run", "") for s in job["steps"])
+            versions = [s["with"]["python-version"] for s in job["steps"] if s.get("uses", "").startswith("actions/setup-python@")]
+            assert versions in ([], [FORK_PYTHON]), (path.name, name, versions)
+            assert not re.search(r"(^|[\s(])python3(\.\d+)? ", runs), (path.name, name)       # the runner's own Python
+            if re.search(r"(^|[\s(\"])python -", runs):
+                assert versions == [FORK_PYTHON], (path.name, name)
+    present = [name for name in FORK_WORKFLOWS if (workflows / name).is_file()]
+    assert {fork_install(workflows / name) for name in present} <= {FORK_KEY}
 
 
 def test_workflow_shape():

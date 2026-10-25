@@ -203,8 +203,10 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    (PSD or official PNG pushed < 30 min ago: don't race its author, and don't merge into a teammate's re-export unseen; by
    push time, not commit date: `activity` + one `compare` per run).
 2. **Classify** (section 3) against the open PSD and a fresh parse. Refuse: `duplicate` (5 PSDs with numbered PNGs),
-   `unsupported-card` (non-template rows, not one visible `Ability`, not one title layer the parser reads, overlay word or
-   ` FX: ` layers, `[type]` tokens on a card with image icons), `stat>10` (on the value alone; `allow_high_stats` is the website's business).
+   `unsupported-card` (non-template rows, not one visible `Ability`, not one title layer the parser reads, overlay word
+   layers the chart has no style for, `[type]` tokens on a card with image icons in the ability's gaps), `stat>10` (on
+   the value alone; `allow_high_stats` is the website's business). (` FX: ` layers the chart has no style for were
+   refused until 2026-10-23; they are rebuilt in their own style since.)
 3. **Baseline parity.** Open with the fork; region per edited field (section 6); `psd.composite(viewport=region,
    ignore_preview=True)` vs the official PNG crop. The bar: bad pixels (|diff| > 24, `score_cards.py THRESH`) <= 0.5%
    and mean abs <= 2.0 (Mini_Doomer row: mean 0.62, max 2; 1.0 until the user raised it on 2026-10-22, section 7 idea 12).
@@ -228,8 +230,11 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    badge layer (PoD06Rainbow_Bloon's ability). The fewest pixels one of those 117 replaced is 2,287, so the no-change
    rule refuses none of them. **What the floor lets through, told** (review, 2026-10-23): a stat row drawn 8 px off is
    8.5-9.7% bad (Mini_Doomer, Lich_King; 3 px: 12.8-17.5%), a title 3 px off 19.8-25.9% (The_Freezer, Mini_Doomer,
-   Lich_King; 8 px off and blank titles are refused, 28-54%; blank rows 72-84%). A wrong font or a missing inline badge
-   was not measured; they should come out at or under a blank box. Not caught: a blank ability whose edit also changes
+   Lich_King; 8 px off and blank titles are refused, 28-54%; blank rows 72-84%). A wrong font passes it, as the baseline
+   is Photoshop's saved pixels and no gate redraws them: set_text_layer refuses `font` first when a layer's whole redraw
+   overlaps its saved ink under FONT_IOU_MIN 0.3 (drawn_in_font; review 2026-10-24: Dull/Shiny Knife, Dark Tentacle and
+   Snow Angel's titles drawn in the other Omori font, 0.12-0.15; the next of 1,453 layers 0.40). A missing inline badge
+   was not measured; it should come out at or under a blank box. Not caught: a blank ability whose edit also changes
    overlay words or FX layers (the merge replaces their pixels), or a new render blank while the old one draws. Tighter
    options are the owner's: a mean ceiling (blank boxes: mean 17.7-32.5; the unbakeable list's misses: at most 7.39,
    Dark_Bramble's title) or the floor counted over inked pixels only.
@@ -246,22 +251,105 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    `error` that failed the run). A mask that starts on the canvas and reaches past it (Pure_Vessel) bakes.
    Ability/name: `set_text(keep="runs")`; for each chart status name in the new text,
    `set_span_style(start, end, fill=(r/255, g/255, b/255))` per occurrence (`fill` takes 0..1, `layers.py:3113-3128`; the chart
-   swatch is 8-bit; since 2026-10-21 every occurrence in the text, edited or not: the chart is the authority, question 6);
+   swatch is 8-bit; since 2026-10-21 every occurrence in the text, edited or not: the chart is the authority, question 6;
+   the fill only: an FX layer keeps its own style, q6 2026-10-23 below);
    `rasterize(fonts=FontMap(dirs=[MDW/Fonts]))`; on a fork with the line splice (`psd_edit.splices()`), `rasterize(keep=capture(...))`
-   redraws only the changed glyphs (`SPLICE_UNIT`) and keeps Photoshop's raster elsewhere (`Edit.band`). Then the FX layers (idea 14, 2026-10-21): every `<Ability> FX: ...` layer is
-   deleted and one is cut per styled status word in the new text (`Ability FX: Blazing`, `Ability FX: Frozen#2` for a repeat,
-   named as `Effect Layers.jsx` names them): the JSX's key copy (the word's runs white, the rest black) laid out and rasterized
-   again with the engine selects the word's pixels (`_word_mask`, red over black at threshold level 1; the key may pass a
-   spliced layer's bbox by `KEY_SLACK`), the ability's own raster gives the pixels (`numpy("color"/"shape")` after `rasterize`;
-   on a splice Photoshop's for a kept word: the JSX's own cut, IoU 1.0 on Gasoline and the Cannon against 0.953 / 0.994 from
-   the engine's pixels), `PixelLayer.fromarray` makes the layer with a unicode name
-   and a fresh layer id (the seed resource moves past it), the chart layer's `lfx2`/`lrFX` blocks are deep-copied onto it, and
-   it goes directly above the ability's top-level group (`Text`; the layer itself at the root), as Effect Layers.jsx puts it. A hand-made overlay word layer over the ability is hidden when it names a
-   styled chart status, else the card refuses `unsupported-card`. Only a styled chart status's FX layer is derived state: an FX
-   layer holding a badge or token run (`Ability FX: (BOT)`, `Ability FX: (1CD) | (2U)`: queue A's gradient cards, 2026-10-22)
-   or a word the chart has no style for (Morpho Knight's `Smoldering`) cannot be made again exactly, so the edit refuses
-   `unsupported-card` before anything changes ("ability edit would drop the badge layer Ability FX: (BOT); edit in Photoshop",
-   `psd_edit.kept_fx`). `styled-word` remains only for a psd-tools without the engine pieces (`psd_edit._fx_engine`).
+   redraws only the changed glyphs (`SPLICE_UNIT`) and keeps Photoshop's raster elsewhere (`Edit.band`). Then the FX layers
+   (idea 14, 2026-10-21; BUG 2, 2026-10-23): the bake does what `Effect Layers.jsx`'s Update all does. The model, from the
+   JSX: an FX layer is a pixel layer `<base> FX: <phrase>[ | <phrase>...]` ("#n" after a phrase: only its nth occurrence)
+   holding the base text layer's own raster under a key mask: a copy of the text with the phrases' runs white and every
+   other run black, red over black at level 1 (`phraseRanges`: any case, any blanks or forced breaks between words, whole
+   words when there are any, else every match: Monkey D Goofy's `1#1` is the "1" of "3T1"). The icon font's colour glyphs
+   keep their SVG colours in any key, so they are taken out (an all-black key's ink, TTSCardMaker 11faa634) unless the
+   phrases meet an icon-font run: a badge layer (`Ability FX: (1CD) | (2U)`, queue A's gradient cards, no style of its
+   own; it restores the badges' colours over the Ability's Gradient or Color Overlay) takes every colour glyph on purpose.
+   The red key leaves a colour glyph's red-less pixels out (a typed `[undead]`'s black eye sockets and jaw, a
+   `[feather]`'s green; the JSX's too), which then print in the overlay's colour, so since review 2026-10-24 a badge
+   layer's key also takes its colour glyphs' silhouettes where no other glyph inks (`_phrase_mask(badge=True)`: a key
+   drawn without colour glyphs, `Options(color_glyphs=False)`, each one its glyf outline, the icon's alpha past 110).
+   The style is the chart's (Add), the overlay's (Convert overlays, whose words take the overlay's colour: its first drawn
+   run, 8308103f) or the old layer's (Update all), opacity, fill, blending, visibility and place kept. Per old FX layer
+   (`psd_edit.plan_fx`, `fx_kind`): a badge layer (`"badge"`), a styled chart status's (`"status"`) or a layer carrying a
+   styled chart status's style on another phrase (`"styled"`: Goofy's `1#1`, Clot Gold's `1 Become Back Money`, the
+   enabled effects compared by `_style_key`, a disabled pattern fill apart) is made again, and since 2026-10-23 any
+   other too, in its own style (`"own"`: Smoldering's stroke, +2 DEF, Despair, Mr Krabs' style-less `2T`...; the
+   owner's ruling of ~17:40, the 2026-10-21 refusal "FX layers not in a chart status's style" gone). Only an FX layer
+   that is no pixel layer (`""`; none on any card; Photoshop would draw a type layer from its text) refuses
+   `unsupported-card` before anything changes. Where each layer's phrases land is worked out before the text is set
+   (`follow_fx`): `phrase_ranges` over the new text (a phrase that occurs more often is cut on every occurrence), but a
+   `"styled"` or `"own"` layer (`ANCHORED`), whose style and colour belong to its own words, stays on the characters it
+   covered (`kept_chars`;
+   review 2026-10-23): Goofy's `1#1` is the first "1" of a text with no whole-word "1", so a "1" typed before it renumbers
+   the layer (`1#2`, told), a whole-word "1" typed anywhere ("Draw 1 card.") would take the JSX's `1#1` off "3T1" and
+   refuses `unsupported-card` ("would leave its 1 for another"), a styled phrase matched inside other words that would
+   spread to a new one refuses too, and a numbered phrase whose occurrence the edit removed leaves (the layer deleted,
+   told). A `"status"` layer, its own style kept (q6), lands only on its status's own words (`status_spans` of the new
+   text; review 2026-10-23, round 3): never the "Frozen" of "Frozen In Time" or of "Unfrozen" (the JSX's literal rule
+   re-cut Snow Bunny's Frozen layer onto the first word of a typed "Frozen In Time", " In Time" left flat in the swatch
+   colour and no Frozen In Time layer, and onto part of "Unfrozen"): those it leaves ("'Frozen In Time' is no Frozen",
+   the layer deleted when nothing is left), an unnumbered one is renamed by number when a word of its own stays
+   (`Frozen` -> `Frozen#2` in "Frozen In Time or Frozen", the JSX's own form for some occurrences), and a numbered one
+   follows its own word, renumbered, as a styled one does: Standstill's `Frozen In Time#2` (line 2) stays there as
+   `#3` when "Frozen In Time, Frozen In Time." replaces line 1, `#1` follows the word it kept (`#2`), and the typed
+   one gets a new `#1` of the chart's style (the literal names moved `#2` to line 1 and gave line 2's word a new layer
+   of the chart's style, untold). Two layers renumbered onto one name refuse. `_rebuild_fx` cuts each in place from the new raster and keeps its record (id, name, flags,
+   opacity, blending, clipping, blocks, place): only rect and channels change, written by the fork's raster writer
+   (`TypeLayer._store_raster` on the pixel layer). The key is the engine's layout; on a splice the raster under it is
+   Photoshop's for kept glyphs, whose anti-aliasing reaches a pixel past the engine's on some faces (The Radiance's
+   Perpetua: 246 of 5,210 px), so the mask takes the raster's own ink one pixel around the key's that is no other glyph's
+   (the complement key's, grown a pixel; `_phrase_mask`): the Photoshop cut footprint exactly on The Radiance, Mini
+   Doomer, Goofy, Star Cannon and Gasoline. A layer none of whose glyphs was redrawn (the band misses its box) whose phrases
+   cover the same kept characters (`kept_chars`, `_kept`) keeps its record whole, unless it holds pixels its words' cut does
+   not (`_holds`: the B1 batch's leaked badge pills, std-batch2 FX.md), then it is cut again clean. A phrase gone from the
+   text leaves the name (the parser flags a name the text lacks; the report says why: "(1GCD) left the ability", "the
+   ability has 1 Frozen In Time now"); a layer with none left is deleted; a non-badge layer whose words now fall in a
+   badge refuses `unsupported-card` (the JSX would cut every badge). Since 2026-10-23 (owner, ~17:40) a typed badge is
+   always set in the icon font (below), so on a badge card it joins the badge layer as a real badge (Mini Doomer's
+   "Then (BOT)." bakes; the review's refusal of a badge typed as body text, whose letters the JSX's cut would have lifted
+   out of the Ability's overlay, white, only stays as a safety net for text the font draws no badge of). A badge the
+   edit typed in the icon font joins the badge layer's name (each badge layer names every badge of its card; the layer
+   draws every colour glyph): PoD11ZOMG's "(2U)" made "(3U)" renames `(1GCD) | (2U) | (2CD)` to `(1GCD) | (2CD) | (3U)`.
+   So does one edited by deleting letters (review 2026-10-23: Turtle's "(1GCD)" made "(1CD)" kept every character, did
+   not count as typed, and the layer, its phrase gone, was deleted: a blank pill under the Color Overlay, every gate
+   passing): any icon-font badge or token no badge layer names joins it, and a badge layer with no badge left while the
+   icon font still draws something refuses `unsupported-card`. Gate `gate_fx` checks it independently (`bare_icons`):
+   under a tinted Ability (`_tinted`: an enabled colour, gradient or pattern overlay at any opacity, or a blend other
+   than Normal, its own or a group's) every icon-font glyph is covered by a badge FX layer, every ink pixel of it
+   (99% let a skull's eyes glow; review 2026-10-24), unless it was bare before the edit too (Blood Bomb's Pin Light
+   `[machine]`, the one such card on main). An `"own"` or `"styled"` layer whose
+   occurrence the edit changed rather than removed (characters of it kept, its phrase gone: Flameblade's "Attacks
+   inflict 2T" made "3T", Palace of Shadow's "+2 DEF" made "+3 DEF", Mr Krabs' "2T1" made "3T1", Morpho Knight's
+   "+2/4/6 ATK") refuses `unsupported-card` (ruling B: they stay on the characters they covered, refused where that is
+   ambiguous; deleted, their style was lost and the report said "its words left the ability"), and so does Clot
+   Gold's "2T1" made "2T2" (its styled `1 Become Back Money` was deleted, told, and a chart-style one made); an FX
+   layer phrase the ability lacks before the edit ("Frozen In Time #1", a space before "#": no number to the JSX)
+   refuses too (none on main; it crashed `plan_fx`). So does an `"own"` or `"styled"` phrase the edit deletes and
+   types again elsewhere (Palace of Shadow's "+2 DEF" moved, or its whole line: the layer would leave every character
+   it covered for typed ones; review 2026-10-23, round 2) and one the edit glues letters onto where a word of it ended
+   (The Watcher's "Despair" made "Despairing": "ing" printed plain beside the styled half; Goofy's "3T1" made "3T10").
+   A typed word that joins an unnumbered layer whose style is no chart status's for it (an `"own"` or `"styled"` layer,
+   or an L7 `"status"` layer in its old overlay's style: `FxPlan.own_style`) is told: "Ability FX: Smoldering also
+   covers the typed 'Smoldering', in its own style", or "moved to the typed 'Blazing'" when none of the layer's old
+   words stayed (Doctor Zomboss's Blazing swapped with Frostbite). A
+   rebuilt layer keeps its own style, the chart's or not (q6: own style kept, unattended call 2026-10-23, owner to
+   confirm; the owner's standing ruling is to give the developers freedom and handle their choices generally): the 8
+   L7 cards whose layers kept their old overlay's style are no longer restyled to the chart (section 7, BUG 2), and only
+   a new layer takes the chart's (below). Text typed into a `"styled"` or `"own"` layer's own
+   words (a match holding characters it covered), or a typed copy that joins it, takes the phrase's colour, its first
+   drawn run (8308103f), but a status word among them keeps the chart's swatch (the owner's 2026-10-23 ruling). A
+   stroke or shadow alone draws over the words' own fill: a copy of Palace of Shadow's blue "+2 DEF" printed in the
+   body's grey and one of Morpho Knight's red "+2/4/6 ATK" in yellow, every gate passing (review 2026-10-23, round 2).
+   A copy joining a layer whose letters are in more than one colour refuses (none on main). Gate `gate_fx` checks it
+   independently (`gate_fx_colours`): each `"own"` or `"styled"` layer, matched by layer id, covers letters (status
+   words apart) of only the colours its words had before the edit. A styled status word no rebuilt layer holds whole (its status's layer on
+   exactly it, or a `"styled"` phrase around it: Clot Gold's `1 Become Back Money`; one a layer covers in part refuses,
+   where counting any overlap left " In Time" without a layer) gets a new one (`new_fx`: `Ability FX: Blazing` for every occurrence, `Blazing#2` when only some are uncovered; one a digit touches,
+   "2Blazing", beside a whole-word one has no JSX name and refuses `unsupported-card`), cut the same way, the
+   chart layer's `lfx2`/`lrFX` deep-copied, a fresh layer id (the seed resource moves past it), directly above the ability's
+   top-level group (`Text`; the layer itself at the root), where the JSX's Add puts it. A hand-made overlay word layer over
+   the ability is hidden when it names a styled chart status, else the card refuses `unsupported-card`. The report tells
+   every FX layer deleted, renamed or cut again for a leak (`Edit.notes`, `Baked.fx_notes`). `styled-word`
+   remains for a psd-tools without the engine pieces (`psd_edit._fx_engine`) and for FX words with no pixels.
 5. **Render + merge** (section 6). Gate `region`: pixels differing between old and new PNG lie inside the padded region and
    outside it the new PNG is byte-equal to the old. Gate `shape`: PNG size and mode unchanged.
 6. **Save.** Preview current (an honest flattened image in the committed PSD: Photoshop's preview with the merge's pixels via
@@ -270,10 +358,13 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    records old vs new (names, flags, channel lengths, EngineData), not raw offsets (a text edit shifts every later record): a
    toggle changes exactly the two flag bytes of `N_old`/`N_new` plus the effect blocks its Edit declares moved (the same bytes leave
    one record and land on the other, or leave only when cleared), a text edit one record + its channels; an ability edit's FX
-   layers: exactly the declared `<Ability> FX: ...` records gone and the regenerated ones come (pixel records, transparency
-   channel first, carrying the chart's `lfx2`/`lrFX` bytes), one flag byte per hidden overlay; records are paired in file order
-   once those are taken out (`gate_bytes`). Gate `size`: PSD within
+   layers: exactly the declared `<Ability> FX: ...` records gone and the new ones come (pixel records, transparency
+   channel first, carrying the chart's `lfx2`/`lrFX` bytes), a rebuilt one its rect and channels only, plus its unicode
+   name when a phrase left; never an effect block, its blending or opacity (`_fx_rebuilt`, q6), one flag byte per
+   hidden overlay; records are paired in file order once those are taken out (`gate_bytes`). Gate `size`: PSD within
    +-20% of the old blob. Reopen: layers unchanged but the toggled digits; one digit per edited row; `layer.text` == the edit.
+   Since 2026-10-23 a face an edit added (`Edit.fonts`: the icon font on a card without it) may join the end of Txt2's
+   FontSet, nothing else there.
    Txt2 (2026-10-22): Photoshop reads a type layer's text from its story in the document's `Txt2` block (the layer's
    `TextIndex` is the story's index) and rebuilds the layer's TySh from it on save, so the five titles baked that morning
    (TySh only) reverted when the card was opened (`B.F.B.` -> `B.F.B`). The fork's `set_text`/`set_span_style` now write the
@@ -284,7 +375,59 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    The gate also holds every type layer's `TextIndex` (a layer without one orphans its story) and the styles: per
    character, the story's font, size, colours and the other mirrored keys equal the layer's (`story_style_drift`; a card
    that already differs is refused `unsupported-card`). A forced line break (`\x03`, a newline on the website) stays
-   one where the edit kept it (`keep_breaks`; the fork ends a paragraph run there, as Photoshop does). An edit on a layer
+   one where the edit kept it (`keep_breaks`; the fork ends a paragraph run there, as Photoshop does). **Typed badges and
+   icons (owner 2026-10-23 ~17:40):** every timing tag and every token the stoogedings font draws that the edit types
+   (`icon_text`: a tag of `badge_tags()` in any letter case, "(1cd)"; a `[token]` the parser's vocabulary knows with a
+   variant the font has, "[Fire:Sticker]", "[warp star]", "[fire:no]"; an icon character the font maps, "★", which the
+   website writes as "5★": review 2026-10-23, it stayed in the body font, a missing-glyph box, every gate passing),
+   anywhere in the ability, is set in the icon font
+   at the card's own badge or token style (`icon_style`: its icon-font badges' or tokens' STYLE_KEYS, size, baseline
+   shift, tracking..., at their commonest size, ties to the body's size, then the first; of those the commonest style:
+   Pizza's 32 pt, not its odd 18.66 pt first badge, owner 2026-10-24); a card with none sets it in `ICON_FONT` (added to the layer's and Txt2's FontSets,
+   `Edit.fonts`) at the text's own style, the most common card style (measured on main: 358 of 659 icon-font runs share
+   every key with the text beside them, 442 its size; the templates have none). An old badge or token edited in place
+   (a digit changed inside it: the new one holding most of its kept characters) keeps its own style; one typed right
+   after a badge, which the engine gives that badge's style, takes the card's (owner 2026-10-24: Pizza's (2U) typed
+   after its 18.66 pt (1GCD) stayed 18.66 pt; 57 cards on main have badges in two sizes). A typed `:sticker` or
+   `:tint` (drawn in the text's colour) takes the colour of its kind on the card (`variant_fill`, owner 2026-10-24):
+   the same icon's first (Palace of Shadow's [dark:sticker] white on its white first line, its [light:sticker] the
+   body's grey), the edited text's before the other text's (the other read off the card before the bake: a title
+   edit after the Ability's sees none the Ability typed); none on the card: the surrounding text's, as before; its
+   kind in as many of one colour as of another (a [fire:sticker] on Palace) refuses `unsupported-card`. Text typed after a badge that the font
+   draws no badge of ("(2 points)") takes the body style; letters left in the icon font that it draws no badge of
+   (a badge replaced by "(abc)", or one cut down by deleting letters, "(1GCD)" made "(GCD)") refuse
+   `unsupported-card`, unless the font drew them plainly before the edit too; a typed character its font has no glyph
+   for (gid 0, `no_glyph`: a box in the engine and in Photoshop) refuses `font`. A `[token]` the website draws as an
+   icon that the font prints as letters (`unlettered_icons`: text.js takes the base before the first colon, `norm()`ed,
+   whatever the variant, the font ligates exact spellings only: "[fire:]", "[fire: no]", "[Fire.]", "[warp  star]")
+   refuses `font` before anything changes, typed or made by deleting letters (review 2026-10-24: "[fire:]" counted as
+   drawn, `ICON_VARIANTS`' "" being the plain "[fire]"'s, and baked as the letters, cut into Mini Doomer's badge layer
+   white over its gradient, while the editor showed the fire icon; `token_variant` now takes only the font's
+   spellings). The re-parse reads a typed "★" as
+   "[star]" on the edit's side only (`canonical_tokens(chars=False)` on the parse's): one left in the body font reads
+   back as "★" and refuses `reparse`. A typed badge or token under a tinted Ability (`_tinted`: an enabled Color,
+   Gradient or Pattern Overlay at any opacity, or a blend mode other than Normal, its own or a group's) with no badge
+   FX layer to restore its colours refuses `unsupported-card` (review 2026-10-23: only an opaque Normal overlay
+   counted, so the 18 Pin Light Isaac items without a badge layer, Soul of Eden's typed (2CD) white on cyan, and Ice
+   Staff's two 69% gradients printed washed badges; std-batch2's fix for Pin Light badges is a badge FX layer, which
+   all 4 Pin Light cards with badges carry). On main 71 Abilities are tinted: 29 carry a badge layer (every badge
+   layer sits on one), 41 have no icon, and Blood Bomb's `[machine]` is bare. `[type]` tokens refuse only on a card whose type icons are image
+   layers the parser reads into the ability's gaps (`image_icons`: the website's text holds their tokens; Nebulous
+   Precipice is the only one on main), no longer on every card without the icon font. The website's text spells each
+   icon as the parser reads it ("[dark]" for "[dark:sticker]", "[fire]" for "[Fire]" or "★"), so `keep_tokens` spells
+   an icon the edit kept as the layer does (review 2026-10-23: an ability bake on Palace of Shadow, Irithyll, Afraid,
+   Corruption, Error Room, Inkhole, Blindness, Elemental World or Dark Bramble redrew their `:sticker`/`:tint` icons
+   plain, every gate passing). **A token typed in the title (owner 2026-10-24)** is set in the icon font too, at the
+   title's own size and colour (`icon_style` of the title, else the run the engine gives it), under the same gates:
+   glows bake since the fork's `cards-20261024b` (they refused `font` before), `unlettered_icons` does not run (the
+   website shows a title's "[fire:]" as its letters, as the card does), a title under an overlay, blend, opacity or clipped layer (`_tinted`: 367 of 728 titles on main, mostly
+   gradient overlays; also a Satin, Inner Glow or Inner Shadow, and a group's overlays: The Radiance, Captain Spaceboy)
+   refuses `unsupported-card`, words typed after a title's token take the title's style (`title_styles`), and `gate_fx` runs `bare_icons`,
+   `see_through_icons`, `lettered_icons` and `unshaped_icons` on the title (`titles`, `_gate_icons`). A stroke, shadow,
+   glow or bevel draws round the icon as Photoshop does. A timing badge typed there refuses `unsupported-card` (the
+   ruling names tokens; the website shows a title as plain words): owner to rule. The parser reads a title's icons
+   as its name (`title_layers`), not as a header's types or stars: the re-parse read Bench's "[fire]" as a fire type
+   (no title on main uses the icon font, so nothing reads differently; psd_parser is a Cython module). An edit on a layer
    set in the stoogedings icon font sets typed `[tokens]` in that font; its glyphs are SVG colour glyphs. A fork that
    draws them in colour (round 6) bakes them; where the engine draws one in one colour (an older fork, or SVG it does not
    cover: warning `monochrome_emoji`) the bake refuses `font` unless an opaque overlay effect covers the layer (Mini
@@ -292,12 +435,29 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
 7. **Fonts.** Gate `font`: no `MissingFontError` under `policy="raise"` and no `font_loose` on the edited layer; gate
    `overflow`: `report.warnings` has no `overflow` ("ability does not fit").
 8. **Re-parse.** Gate `reparse`: offline parse of the new PSD; `to_dict()` == the old parse with exactly the edited fields
-   replaced (ability compared after the parser's own whitespace rule on both sides); `alt_names` unchanged;
+   replaced (ability compared after the parser's own whitespace rule on both sides, and since 2026-10-23 its tokens as
+   the parser reads them in the icon font on both sides, `canonical_tokens`: a typed "[Fire]" reads back "[fire]";
+   `classify` calls such an edit redundant; a colon with no variant, "[fire:]", which the font prints as letters and
+   the parser reads as [fire], stays as typed since review 2026-10-24, so the gate no longer shares that rule); `alt_names` unchanged;
    `CardValidator.validate` (`commands/psd_parser.py:948`, imported from there) is a subset of the old problems minus
    `FIXED_BY[field]`; no `EFFECT LAYER *` (the validator's coverage >= 0.95 is the FX layers' gate); `STATS TOO HIGH` only when
    every stat above 10 sits on Top + Bottom rows (idea 13; a raise from <= 10 adds it there and is not a new problem, fixed
-   2026-10-21 review). FX layers back as declared after the reopen: the names in order,
-   visible, styled, directly above the ability's top-level group, no overlay word layer showing.
+   2026-10-21 review). FX layers back as declared after the reopen: the names in order, the new ones
+   visible, styled, directly above the ability's top-level group, no overlay word layer showing. Gate `gate_fx` (BUG 2,
+   2026-10-23) measures them on the saved card with the fork's text geometry (`text_geometry`: each glyph's ink box in
+   the new layout): every FX layer inks only inside its phrases' glyph boxes (a badge layer also the icon font's) padded
+   by `FX_BOX_PAD` (3 px), covers `FX_COVER` (99%) of the Ability's ink in its words' boxes that no other glyph's box
+   reaches (a badge layer every ink pixel of its badges and icons there: review 2026-10-24), one the edit cut holds the
+   Ability's own pixels byte for byte, and a `"styled"` or `"own"` layer's name
+   still reaches the characters of it the edit kept (`Edit.held`, independent of `follow_fx`; a range counts as kept
+   only when every character of it is, `kept_spans`; `held_words` picks the layers by layer, not name, since a renamed
+   one may take a deleted one's name, review 2026-10-23); stray pixels count at any alpha (refused `reparse` naming the layer;
+   `test_fx_gates_refuse_a_wrong_cut` shifts, crops, repaints and fades a rebuilt layer, and `gate_bytes` refuses its
+   opacity or name changed). With the chart, `gate_status_words` (review round 3, independent of `follow_fx` and
+   `new_fx`): every styled status word of the saved Ability is held whole by an FX layer's `phrase_ranges` (its
+   status's layer on exactly it, or another phrase around it), and a status's layer lies on its status's own words only.
+   And `lettered_icons` (review 2026-10-24, independent of `icon_text`): the icon font draws no more letters than before
+   (an icon-font glyph the shaper made of one printable ASCII character, no ligature: "[fire:]" set in the font).
    Name: the title layer's read-back == the edit and the stem unchanged (the parser reads the new title into `display_name`; `gate_reparse` leaves that field out of the comparison).
 9. **Idempotence.** Gate `idempotence`: classify on the new PSD + new PNG + rewritten file finds nothing to bake and the
    region render matches the merged PNG within the parity bar (the delta merge keeps Photoshop's pixels). Since 2026-10-23
@@ -390,6 +550,333 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   the declared removed/added FX records; gate `reparse` checks the layers back, visible, styled, directly above `Text`, no overlay
   showing, no `EFFECT LAYER` problem. Tests: `tests/test_psd_edit.py` (the JSX comparison skips when the trial copies are gone),
   `tests/test_card_bake.py` dry run.
+  **BUG 2 (2026-10-23, `work/fx-rebuild`, not landed): Update all, not derived state.** The FX layers are no longer deleted
+  and regenerated: each is cut again in place (section 5 step 4), so badge layers, chart-style word layers and the L7
+  cards' converted overlays keep their records, styles and places, and a repeat is cut into the same layer (`Blazing`
+  over both, as the JSX's phraseRanges does), no longer `Blazing#1`/`#2`. Dry census with every gate (UNBAKEABLE_CARDS
+  BUG 2 block): 32 of the corpus's 34 FX cards and 58 of main's 68 bake an ability edit; an Update-all no-op leaves 47 of
+  55 cards byte for byte in their FX records and PNG, the other 8 the L7 cards restyled to the chart (q6, then). **q6: own
+  style kept, unattended call 2026-10-23, owner to confirm:** a rebuilt FX layer keeps its own style (`_rebuild_fx`
+  restyles nothing; `gate_bytes` lets no effect block change on a rebuilt record); only a new layer takes the chart's.
+  Re-run on the 8 L7 cards (copies of TTSCardMaker main, `~/Documents/Tools/wt/bf-fx-q6-scratch/`, `runs/{old,new}.json`):
+  the Update-all no-op now leaves all 8 PNGs pixel for pixel and every FX record whole (before: 8,871-65,014 px
+  changed, 0-31,725 past 24); the website no-op leaves 4 identical (Doctor Zomboss, Snow Bunny,
+  Freeze Spell, Pandora's Box) and the other 4 change only where an off-swatch status word takes the chart's fill (the
+  2026-10-21 rule; its FX layer cut again under its own style): Royal Eradicator Main Cannon 2,775 px past 24, Standstill
+  2,438, Zero 575, Oryx 44, all within the parity bar; a moved word bakes on all 8, their FX records changing only rect
+  and channels. Tests: `test_noop_ability_bake_keeps_an_l7_fx_layers_own_style` (Snow Bunny, PNG pixel-identical),
+  `test_rebuilt_fx_layer_keeps_its_own_style` (both fail on pre-q6 43a54f9 on its "restyled to the chart's" note);
+  `test_gate_bytes_keeps_a_rebuilt_fx_records_style` pins the rebuilt record's tuple and what may change (the pre-q6
+  gate refused an undeclared effect block or blend change too). Review
+  (2026-10-23): Update all's literal rule would move a chart-style layer named by count (`1#1`) or matched inside a word
+  to a new whole word, so those follow their kept characters (`follow_fx`) or refuse; a badge typed as body text onto a
+  badge layer refuses; census re-run with a phrase typed again and "Draw 1 card." in front (same results otherwise). Effect
+  Layers.jsx's Update all run in Photoshop on 8 baked copies rebuilt the same layers (same boxes, style and place, IoU
+  0.955-1.0, no differing pixel on the shared ink). Tests: `test_noop_ability_bake_keeps_the_badge_layer`,
+  `test_ability_bake_moves_the_badge_layer_with_its_badge`, `test_ability_bake_drops_the_fx_layer_of_a_word_it_removes`,
+  `test_ability_bake_cuts_a_leaky_fx_layer_again`, `test_goofys_styled_one_is_made_again`, `test_phrase_ranges_follow_the_jsx`;
+  after the review (2026-10-23): `test_goofys_one_stays_on_its_one`, `test_a_badge_typed_as_text_refuses_on_a_badge_card`,
+  `test_fx_gates_refuse_a_wrong_cut`, `test_new_fx_refuses_a_status_word_the_jsx_cannot_name`. Review round 3
+  (2026-10-23): a `"status"` layer follows its status's own words (above); `test_numbered_status_fx_follows_its_own_word`,
+  `test_status_fx_lands_only_on_its_status_words`, `test_new_fx_counts_a_word_covered_only_when_held_whole`,
+  `test_kept_spans_need_every_character_kept`, `test_status_fx_layer_leaves_a_longer_status_word` (Snow Bunny, with
+  `gate_status_words`), `test_numbered_status_fx_layers_stay_on_their_words` (Standstill; line 2's PNG is the no-op
+  bake's). Merged with origin/main (1bf6892, then cc3cd8c; later merges in the phase 2 paragraphs): its title-rename check in `gate_bytes` now knows each rebuilt FX layer's
+  declared name.
+  **Phase 2 (2026-10-23 evening, owner's answers of ~17:40, same branch):** (1) FX layers in no chart status's style are
+  rebuilt in their own style (`fx_kind` `"own"`, anchored as `"styled"` ones: they stay on the characters they covered
+  and refuse where Update all would move them); the 2026-10-21 refusal is gone. Census on copies of TTSCardMaker main's
+  8 such cards (Morpho Knight, The Watcher, Computer Virus, Mr Krabs, Palace of Shadow, Fire Staff, Ice Staff,
+  Flameblade), six edits each with every gate (scripts and JSON `~/Documents/Tools/wt/bf-fx-p2-scratch/`,
+  `census.py`, `runs/b.json`, crops `crops-b/`, fork `cards-20261023c`): 42 of 48 bake, 2 n/a; the website and
+  Update-all no-ops leave 7 of 8 PNGs pixel for pixel (Mr Krabs: 285 px past 24 at the edges of "Become Back Money",
+  its yellow recoloured to the chart's white under its gradient FX layer, the owner's chart rule); a word typed again
+  joins its layer on 5 cards, told; refused: Mr Krabs's whole-word "2T" typed (its `2T` sits in "2T1"), 3 overflows.
+  (2) Every typed timing tag and stoogedings token is set in the icon font at the card's own badge or token style
+  (section 5 step 6); census on 17 cards (badge-layer, icon-font, plain, overlaid and image-icon cards), five edits each
+  (a tag, a lowercase tag, a [type] token, a ":no" and a ":Sticker" variant, a badge and a token in front): 62 of 85
+  bake, each typed icon at its card's icon style (Scapular's 19.96 pt shifted -12.52, Cabbage's tracking 100), the face
+  added on the 3 plain cards that fit, badge layers renamed to name the typed badges (told) or already naming them;
+  refused: Cat (overlay, no badge layer, 5), Nebulous Precipice (image icons, 5), 13 overflows (`runs/c.json`,
+  `crops-c/`); regression on main's 68 FX cards x round 3's 4 edits: 234 of 258 bake, no former bake refused, 51
+  former refusals bake (`runs/regress.json`). (3) `keep_tokens` (found by the census): the website's canonical tokens no longer overwrite the card's
+  `:sticker`/`:tint` spellings (9 cards on main). (4) Review minor items: FX notes in the commit line and the website's
+  verdict reason, `held_words` by layer, the refusal paths tested, a typed word joining a layer of no chart style told,
+  `_numbered`'s `#0` read as every occurrence (as the JSX's `splitOccurrence`; the parser counts it as before). Tests:
+  `test_fx_kind_names_how_each_fx_layer_is_made_again`, `test_own_style_fx_layers_are_made_again_in_their_style`,
+  `test_own_style_fx_layer_takes_a_typed_word_in_its_style`, `test_an_own_style_status_word_keeps_the_charts_fill`,
+  `test_held_words_follow_the_layer_not_its_name`, `test_follow_fx_refuses_what_would_move_an_anchored_layer`,
+  `test_ambiguous_fx_layers_refuse`, `test_a_typed_status_word_joining_its_layer_is_told`,
+  `test_a_typed_badge_joins_the_badge_layer`, `test_typed_icons_on_a_card_without_the_icon_font`,
+  `test_typed_icons_refuse_where_they_would_print_wrong`, `test_icon_text_follows_the_fonts_spellings`,
+  `test_icon_style_is_the_cards_commonest`, `test_an_edit_keeps_the_cards_own_token_spellings`,
+  `test_parentheses_typed_after_a_badge_are_body_text`, `test_effect_layer_numbers_read_as_the_jsx`,
+  `test_fx_notes_reach_the_commit_and_the_verdict`. The parser's `#0` change was reverted in review round 2 (it counted
+  the same as `max(n, 1)` and made `psd_parser.py` a changed Cython module): no Cython rebuild.
+  **Phase 2 review (2026-10-23 night, same branch; origin/main 8983719, then 8cbb211, merged in):** four silent wrong bakes, each
+  refused or baked right now (section 5 step 4 and the typed-icons paragraph; UNBAKEABLE BUG 2 block for the census,
+  `~/Documents/Tools/wt/bf-fx-r5-scratch/`): a badge edited by deleting letters joins its badge layer (it was deleted:
+  a blank pill), with gate `gate_fx`'s `bare_icons` behind it; a typed badge under any tint (Pin Light, a 69% gradient)
+  without a badge layer refuses; a typed "★" is set in the icon font and recuts the badge layer, a missing glyph refuses
+  `font`; an edit inside an own-style or styled FX phrase refuses (ruling B). Also letters a deletion leaves in the icon
+  font, an FX phrase the ability lacks ("Frozen #2" crashed `plan_fx`). Tests:
+  `test_typed_icons_refuse_under_any_tint_without_a_badge_layer`, `test_a_badge_edited_by_deleting_letters_keeps_its_badge_layer`,
+  `test_gate_fx_refuses_a_bare_badge_under_a_tinted_ability`, `test_letters_a_deletion_leaves_in_the_icon_font_refuse`,
+  `test_a_typed_star_is_set_in_the_icon_font`, `test_a_typed_star_is_cut_into_the_badge_layer`,
+  `test_reparse_reads_a_star_outside_the_icon_font_as_typed`, `test_follow_fx_refuses_an_edit_inside_an_anchored_phrase`,
+  `test_an_edit_inside_an_own_style_phrase_refuses`, `test_an_fx_phrase_the_ability_lacks_refuses`.
+  **Phase 2 review, round 2 (2026-10-23 night, same branch; origin/main be280e6, then 73dfc3c, merged in):** a typed copy joining an `"own"` or `"styled"` layer kept
+  the body's fill, which its stroke or shadow alone draws over (Palace of Shadow's blue "+2 DEF" copied grey, Morpho
+  Knight's red "+2/4/6 ATK" yellow, every gate passing): it takes the phrase's colour, and gate `gate_fx_colours`
+  checks each such layer covers letters only of its words' old colours; a moved own-style phrase (deleted and typed
+  elsewhere: the layer jumped to the typed copy, against "stay on the characters it covered") and letters glued on
+  where a word of one ended ("Despair" made "Despairing", Clot Gold's "Money" made "Moneying", Goofy's "3T1" made
+  "3T10": half a word styled, untold) refuse; a status layer whose old words all
+  left is told "moved to the typed ..." (it said "also covers"); the FX notes reach a partial bake's refused verdict;
+  the bake's icon vocabulary keeps only the manifest's icons (a Types/ icon the font lacks would print its letters in
+  the icon font and read back as the token); the parser's `#0` change reverted (no Cython rebuild). Census on main's 18 cards with an own-style layer, 7 edits
+  each (UNBAKEABLE BUG 2 block, `~/Documents/Tools/wt/fxr3-scratch/`): the former edits' results and notes unchanged
+  (Palace's typed copy now blue); a moved phrase refuses on 4, glued letters on 9. Tests:
+  `test_a_typed_copy_of_an_own_style_phrase_takes_its_colour`, `test_a_typed_copy_of_a_phrase_in_several_colours_refuses`,
+  `test_a_moved_own_style_phrase_refuses`, `test_letters_glued_onto_an_own_style_phrase_refuse`,
+  `test_a_status_layer_moved_to_a_typed_word_is_told_so`, `test_gate_fx_refuses_an_own_style_layer_over_a_new_colour`,
+  `test_the_bakes_vocabulary_knows_only_the_fonts_icons`, `test_rebuild_fx_refuses_a_badge_in_plain_letters`,
+  `test_fx_notes_reach_a_partial_verdict`.
+  **Phase 2 review, round 3 (2026-10-24, same branch; origin/main 7ca804e merged in):** two silent wrong bakes fixed, and
+  the cheap minor findings (dry census with every gate on copies of TTSCardMaker 7dcc36fd, fork `cards-20261023c`,
+  `~/Documents/Tools/wt/bf-fx-r6-scratch/`: `census_bake.py`, `runs/{new,base,turtle,ice}.json`, the branch tip before
+  the fixes in `base/`). (1) A typed token's red-less pixels stayed out of the badge layer, cut with the JSX's red key
+  grown a pixel, and printed in the overlay's colour, every gate passing (`gate_fx` and `bare_icons` let 1% of a glyph
+  out): Heavy Mole's typed `[undead]` left 39 opaque px of the skull (glowing yellow eyes), Turtle's 10, `[feather]`
+  and `[nebula_star]` specks. A badge layer's key now also takes its colour glyphs' silhouettes where no other glyph
+  inks, and both checks let no ink pixel of a badge or icon out. Census on the 31 badge-layer cards: a typed `[undead]`
+  and `[feather]` bake on 26 of 31 each (21 and 18 before: the 13 `reparse` refusals were the 1% line), no opaque icon
+  pixel outside the badge layer (each of the 39 bakes before left 2-39); the no-op and a typed `[fire]` give the same results and
+  PNGs as before. Every manifest icon typed on Turtle: 85 of 91 bake (66 before), 6 refuse as before (`light`,
+  `lightshadow`, `6star`, `7star`, `8star`, `silksong_star`: faint flare pixels past their glyph boxes); `[ice]` glued
+  after the final "." bakes on Mini Doomer, Palace of Shadow, Scapular and PoD11ZOMG (refused before), and Mini
+  Doomer's "[ice:no] and [Fire:Sticker]" too. (2) "[fire:]" counted as drawn (`ICON_VARIANTS`' "" is the plain
+  "[fire]"'s): set in the icon font it printed the letters, was cut into a badge layer (white over Mini Doomer's
+  gradient) and read back as [fire] while the editor showed the icon. `token_variant` takes only the font's spellings
+  (`icon_text`, `canonical_tokens`, so `keep_tokens`); a token the website draws as an icon and the font as letters
+  refuses `font` before anything changes (`unlettered_icons`: "[fire:]", "[fire: no]", "[Fire.]", "[warp  star]", or
+  "[dark:sticker]" made "[dark:]"); census: " Deal 1 [fire:] damage." refuses on the 29 badge cards that get that far.
+  Gate `lettered_icons` (in `gate_fx`, measured on the shaped text) refuses icon-font letters an edit adds; none of
+  the 381 icon-font Abilities on main draws any. The parser now shares the rule (`psd_parser.token_variant`, round 3's
+  rest below). (3) Minor: an edit inside
+  a phrase whose letters are in several colours refuses (the fill would make them one, `gate_fx_colours` passing; none
+  on main); `status_spans` finds no status word inside a `[token]` ("Stuffed" in "[stuffed star]"; none on main);
+  `apply_jobs` edits the ability before the title (Fire Staff's name and ability together refused `bytes`: the title's
+  record index was read before an FX layer under it was deleted; the review found Morpho Knight, Computer Virus,
+  Undyne and Flameblade alike). Tests: `test_a_badge_layer_takes_its_icons_red_less_pixels`, `test_a_colon_with_no_variant_is_no_token`,
+  `test_a_token_the_font_draws_as_letters_refuses`, `test_reparse_reads_a_token_with_no_variant_as_typed`,
+  `test_gate_fx_refuses_letters_in_the_icon_font`, `test_an_edit_in_a_phrase_in_several_colours_refuses`,
+  `test_status_spans_skip_tokens`, `test_an_ability_edit_goes_before_a_title_edit`.
+  **Round 3's rest (2026-10-24 ~01:00, same branch; origin/main 2427a23 merged in):** the parser's `_read_icon_tokens`
+  and `_flag_misplaced_tokens` take a token's variant as the font ligates it (`psd_parser.token_variant`, which
+  `icon_text` and `canonical_tokens` import): "[fire:]" in the icon font reads as typed, an UNKNOWN ICON TOKEN, and
+  is no misplaced token in the body font (no card on main has one: psd_parser is a Cython module, so a deploy
+  rebuilds; no PARSER_VERSION bump, nothing reads differently). Gate `unshaped_icons` (in `gate_fx`, given the
+  vocabulary): each `icon_text` span of the new Ability shapes to one icon-font cluster spanning it, new against the
+  old card; independent of `icon_text`'s rule, which `gate_reparse` and the parser share (0 of the 381 icon-font
+  Abilities on main fail it). A whole ability deleted on an FX card refuses as on any card (`reparse`: ABILITY TEXT
+  NOT FOUND), its FX layers deleted with their words; `_rebuild_fx` refused `styled-word` ("no pixels to cut") before
+  looking at them. One open per PSD per bake: `parse_card(psd=)`, card_bake shares its open of the old PSD with the
+  parse, `classify` and `apply_jobs(psd=)`, which edits a `deepcopy` (as fast as a second open) and reads the old
+  records first; `gate_bytes`, `gate_reparse` and the FX gates read the one reopened saved PSD. Dry census, every
+  gate, copies of TTSCardMaker main, fork `cards-20261023c` (`~/Documents/Tools/wt/scratch/bug2-p3/`: `p2/`,
+  `h/runs/`, `rev3/`): phase 2's runs b 42 of 48, c 62 of 85, regress 234 of 258 (14 n/a), each result as before; the
+  68 cards' no-op and " Die." bakes pixel-identical to the tip before this (136 of 136). The review's cases (322 bakes):
+  Turtle's 91 icons 85 bake (66), `[undead]`/`[feather]` on 8 badge cards 16 of 16 (10), `[ice]` glued at the end 4
+  more, " Deal 1 [fire:] damage." 0 of 11 (11 baked as letters), Snow Bunny's blank ability `reparse` (was
+  `styled-word`); on the 173 tinted badge-layer bakes no opaque icon pixel is outside the badge layer (uncovered.py
+  counts 3 on Turtle's "[Fire:NO]." : the "."'s own edge inside the slash glyph's box), the 29 official cards 0. Tests:
+  `test_parser_reads_a_colon_with_no_variant_as_letters`, `test_reparse_reads_a_token_with_no_variant_as_typed`,
+  `test_gate_fx_refuses_a_token_not_shaped_as_one_icon`, `test_a_blank_ability_on_an_fx_card_refuses_as_blank`,
+  `test_a_bake_opens_each_psd_once`.
+  **Round 4 (2026-10-24, same branch; origin/main a8ece7f merged in):** a badge layer takes every icon-font character
+  and every pixel of its glyphs at any alpha (`_glyph_ink`: the layout's glyphs of those characters rasterized alone),
+  so no pixel of a colour icon's see-through, red-less glow ([support]) is left out of it (yet the glow still printed
+  in the overlay's colour: corrected in round 6); `gate_fx` and
+  `bare_icons` count every colour-glyph pixel past `FAINT_INK` (`_colour_ink`: two renders, every run red then blue,
+  agree), to the nearest icon glyph's, and a badge layer may ink over them past its glyph boxes. `_tinted` counts an
+  opacity or fill below full (The Patients). `status_spans` skips only what the icon font draws (a third argument:
+  `icon_text` of a text to set, `icon_spans` of a layer), so "[Blazing]" is styled as the JSX styles it. Tests:
+  `test_a_badge_layer_takes_a_colour_icons_see_through_glow`, `test_a_status_word_in_lettered_brackets_takes_its_fx_layer`,
+  `test_apply_jobs_checks_each_typed_icon_is_one_cluster`, The Patients in `test_typed_icons_refuse_under_any_tint_without_a_badge_layer`.
+  **Round 5 (2026-10-24, same branch):** `keep_tokens` diffs whole tokens, not characters (a token typed right after a
+  kept `[unknown:sticker]` took its `]` and the sticker went plain: Error Room, Corruption, Elemental World, Palace of
+  Shadow). A new FX layer goes above the Text group's clip chain (Claw's and Miasma's MagentaSmorg and Exposure 1 left
+  the title and text in the PSD, not the PNG), and `gate_untouched` renders the whole card around the text edits: any
+  pixel outside their regions refuses `region` (about 5 s a render). `_tinted` counts visible layers clipped to the
+  Ability or a group above it (an adjustment or fill; a drawn layer over its box: Pizza's Multiply `Layer 12`), so a
+  typed badge or token there refuses. `unshaped_icons` counts a layer without the icon font too, so the 10 plain cards
+  that print tags as body text (Papyrus' `(1CD)`) take typed badges and tokens again. Tests:
+  `test_keep_tokens_pairs_whole_tokens`, `test_new_fx_layer_goes_above_the_groups_clip_chain`, Claw and Miasma in
+  `test_typed_icons_refuse_under_any_tint_without_a_badge_layer`, `test_a_plain_cards_body_font_tags_do_not_refuse_a_typed_token`. Full suite after it
+  (79efb50): 1556 passed, 12 skipped, 0 failed; 60 sampled cards x 2 edits refuse no more than before (one fewer).
+  **Round 6 (2026-10-24, same branch; review round 3 of phase 2):** round 4's fix was incomplete: a badge layer is a
+  copy of the Ability's pixels over it, so a pixel at alpha a still shows a*(1-a) of the tinted Ability below (Heavy
+  Mole's [support] olive-grey, [light] yellow-haloed, every gate passing). `see_through_icons`: an icon glyph a badge
+  layer holds whose soft pixels (partial, not an edge) weigh past `SEE_THROUGH` (0.03) of its ink is see-through
+  ([support], [light], [guild_seal], [lightshadow], [elden_ring], [silksong_star], [6-8star] 0.11-0.38, [warpstar]
+  0.049; opaque ones 0.02 at most); `gate_fx` refuses a new one. `apply_jobs` edits `edit_copy(old)`: the fork pairs
+  smart filters by id() of the record, which a plain deepcopy kept from the source, so the copy rendered Lorian,
+  Dragon_Mount, Defcon_Panda and 71 more without them and the PNG took that inside the regions (stat bakes silently);
+  `gate_copy` renders the copy against the card (since the review fixes below: `gate_pairs` first, the render only on
+  a card with smart filters). `gate_untouched` leaves out every edit's region, the
+  stats' too (a stat with the name or ability always refused `region`), and runs on stat-only bakes. `covered_ink`:
+  new text under a visible Normal layer above it (Papyrus' spaghetti) or over a stat bar row the old text did not
+  reach (Paint Warrior's blank box) refuses `overflow`. Tests: `test_a_see_through_icon_under_a_badge_layer_refuses`,
+  `test_the_edit_copy_keeps_smart_filters`, `test_a_stat_and_the_ability_bake_together`, `test_a_bake_runs_gate_untouched`,
+  `test_new_text_under_a_layer_above_it_or_over_a_bar_refuses`; `test_a_bake_opens_each_psd_once` asserts the bake
+  landed; the plain-card test moved to Koro-Sensei (on Papyrus the token now runs under the spaghetti).
+  **Owner rulings 2026-10-24 (same branch; origin/main c249eba merged in: psd-tools `cards-20261024`, round 12):**
+  phase 3's sample and cases re-measured on the new fork first (`~/Documents/Tools/wt/scratch/bug2-p4/`, venv
+  `~/.venvs/ac-py314-r12`): 50 cards x 4 edits the same as on `cards-20261023d` result for result (105 baked, 50 n/a,
+  31 overflow, 14 unsupported-card), the 43 named cases as phase 3 reported, each bake's PNG 0 px past 24 against its
+  PSD's render. (1) A token typed in the title is set in the icon font at the title's size and colour under the
+  ability's gates (section 5 step 6); the parser reads a title's icons as its name, not a header's types or stars (813
+  of 813 cards parse the same). Census, 66 titles of every effect mix x 3 edits: 26 cards bake (51 bakes: strokes,
+  shadows, glows, bevels, off gradients), each typed token in the icon font at its title's size; 57 refuse under a
+  tinted title, 38 overflow, 3 `region` (Skeleton Mate, any title edit), 5 split titles. (2) A typed `:sticker` or
+  `:tint` takes its kind's colour on the card (`variant_fill`). Census, 12 cards x 5 edits: 54 bake, Palace of
+  Shadow's [dark:sticker] white (it was grey), its [light:sticker] and :tints grey, its [fire:sticker] refused (a
+  tie); 5 overflow. (3) A new badge or token takes the commonest size (`icon_style`; one edited in place keeps its
+  own). Census, 18 two-size cards x 3 edits (a (2U) after and before the odd badge, a [fire] after it): 49 bake, every
+  typed badge at the card's commonest badge size and token at its token size (16 of 16 typed right after the odd
+  badge took the odd size before); Pizza refuses (its clipped Multiply `Layer 12`), Clock overflows. Tests:
+  `test_icon_style_takes_the_commonest_size_first`, `test_a_typed_badge_takes_the_cards_usual_badge_size`,
+  `test_variant_fill_takes_its_kinds_colour`, `test_a_typed_sticker_takes_the_colour_of_its_kind`,
+  `test_a_token_typed_in_the_title_is_set_in_the_icon_font`, `test_gate_fx_checks_a_title_edits_icons`; each fails with
+  its fix taken out (`mut-*/`).
+  **Review fixes 2026-10-24 (same branch, r12 venv; `scratch/bug2-p4/fix5/`):** `_tinted` counts a group's Color,
+  Gradient or Pattern Overlay, Satin, Inner Glow or Inner Shadow (a [fire] in The Radiance's or Captain Spaceboy's title
+  baked as a one-colour silhouette; Butterfly's own Inner Glow now refuses too). A typed `:sticker`/`:tint` reads the
+  other text layer's colours off the card before the bake (`set_text_layer(original=)`: Salt's, Glitz Pit's and Basic
+  Shield's title stickers took the Ability's typed one's colour; now the title's). `keep_breaks` pairs only breaks
+  between the old text's characters ("Old Foxy\r" + " [fire]" set the token on a new line; 23 titles end in a break).
+  Words typed after a title's token take the title's run style (`title_styles`; "Bench [fire] II" refused). A title's
+  "[fire:]" stays letters in its own font. `covered_ink`: layers already over the old text are the design, and
+  together may cover as much of the new as of the old (Leshy "Leshys", DooPliss "Dooplisss" bake; "Lesh" refuses, 512
+  px more under the art; Papyrus still refuses). `apply_jobs` renders the card whole only once an edit is made, in one
+  fork `RenderCache`; the copy's smart-object pairings are checked without a render (`gate_pairs`), and `gate_copy`
+  renders a fresh copy, uncached, only on a card with smart filters (80 of 813), after the edits. Measured under load average
+  ~30: Pure Vessel hp 9.3 s -> 5.9 s (3 full renders -> 2), its refused long ability 5.7 s -> 0.6 s (no render), Mini
+  Doomer and Lorian (smart filters) about the same. `PSD_RCACHE_VERIFY=1` over the bake tests: no mismatch but the
+  deliberately unpaired copy (the cache keys leave pairings out, which is why `gate_pairs` runs first). Reviewer's
+  cases re-run (`fix5/rsb/logs`): every title sticker or tint typed beside an Ability one takes the title's colour;
+  nothing else changed. Tests: `test_a_token_under_a_groups_overlay_refuses`,
+  `test_a_title_sticker_takes_the_titles_colour_beside_a_typed_ability_one`,
+  `test_a_title_edit_keeps_its_blank_last_paragraph_off_the_new_words`,
+  `test_words_typed_after_a_title_token_take_the_titles_style`, `test_apply_jobs_runs_the_title_icon_checks`,
+  `test_apply_jobs_checks_its_copy`, `test_a_bake_renders_the_card_only_once_an_edit_is_made`, Leshy and DooPliss in
+  `test_new_text_under_a_layer_above_it_or_over_a_bar_refuses`; each fails with its fix taken out (`fix5/mut.py`).
+  **Review fixes 2 (2026-10-24, origin/main 3ca616e merged; `scratch/bug2-p4/fix6/`):** a typed `:sticker` or `:no`
+  (`LAYERED`: several overlapping glyphs in one cluster) is set at tracking 0: it took the card's tracking (Barry's
+  tokens 280, The Hive's title 240), which the fork adds between the cluster's glyphs, sliding the outline or no-circle
+  off the icon (32 baked silently in the reviewer's set C; no :sticker or :no on main is tracked); a plain token keeps
+  the card's. Every typed badge or token has Ligatures on (5 titles have them off; the engine applies the font's rlig
+  anyway, Photoshop may not). `keep_breaks` pairs a title's runs of blanks as runs (the website shows each as one
+  space: "Pepperoni\r\rPizza" lost a break and its second line moved up; 0 of 728 titles now change an unedited
+  character, with or without a typed " [fire]"). `type_row` leaves out the title layers (`title_layers`): a baked
+  "Po [fire]" refused every later types edit. `_tinted` returns its cause and both refusals name it ("the title's
+  look (its Inner Glow)" on Butterfly, not "overlay, blending, opacity or clipped layers"). Tests:
+  `test_typed_layered_tokens_are_untracked_and_ligated`, `test_a_title_edit_keeps_its_runs_of_blanks`,
+  `test_a_title_token_is_no_header_type_row`, `test_a_title_token_under_its_own_inner_glow_refuses`; each fails with
+  its fix taken out (`fix6/mut.sh`).
+  **Review fixes 3 (2026-10-24, r12 venv; `scratch/bug2-p5/`):** the title check's `badge_layers` takes the
+  vocabulary (Fool Eater's and The Krusty Krab's root type icons; also `plan_stars` and `plan_types`, which change no
+  plan on main's 172 star cards), and `inks_over` refuses `overflow` where the title's new ink covers a visible layer
+  below it that the old title's ink did not touch (Spice's star in 'images', Nosk's 'Hk star', Flame Trap's, Bag of
+  Evil's, Energy Ritual's, Bubble's banner). A title that would take more lines (Basic Shield's box, the Cursed Idol), or
+  a line below the old title, refuses `overflow`. `typed_icon_fit` checks each typed badge or token on the engine's
+  render: past `ICON_OVERLAP` (16) px over the layer's other glyphs it refuses `overflow` (Machine Gun, Bag of Good,
+  Niiue, Kel, Mettaton EX); one set at the text's own size (no badge or token on the card, or a title) whose smallest
+  glyph is outside `ICON_HEIGHT` (0.6 to 2.2) of the tallest letter on its line refuses `unsupported-card` (Holy Blade
+  0.20, the pixel font of Machine Gun, Quote, Springtrap... 2.28; the rest 0.86 to 2.15). Census of every card
+  (`census.py`, in memory): the typo title fix bakes on the same 715 as before; new refusals: 10 abilities (" Gain
+  [fire]."), 14 titles with " [fire]", 11 with "[fire] ", 17 with " [dark:sticker]", each looked at. Refusal wording: the tint refusal says "typed icon" or
+  "typed badge", for a title "the title's look (...) would recolour the typed icon"; the see-through refusal names an
+  overlay or blend colour only on a tinted layer. Renders: the baseline's "preview" render is cut from the bake's
+  whole render of the card (`crop_pair`; byte-identical PSD and PNG on Pure Vessel and Lorian), the merge's region render
+  and `gate_idempotence`'s run in the bake's RenderCache, the second resuming the first (its key holds the pins, so the
+  merge's stays a cold pass); Pure Vessel's hp bake 5.6 to 4.8 s. A pinned whole render (`gate_untouched`) misses the
+  cache (the pins are in its key) and cost more than it saved. Tests: `test_a_title_token_off_the_header_icons_and_stars`,
+  `test_star_and_type_plans_see_the_root_type_icons`, `test_a_typed_icon_far_from_its_letters_refuses`,
+  `test_a_title_token_that_wraps_refuses`, `test_icon_style_breaks_a_size_tie_by_the_body_size`,
+  `test_gate_pairs_checks_each_pairings_filter_and_place`, `test_covered_ink_weighs_layers_over_the_old_ink_anywhere`,
+  `test_a_bake_cuts_its_region_renders_from_the_whole_ones`, the untinted case in
+  `test_a_see_through_icon_under_a_badge_layer_refuses`; each fails with its change taken out (`bug2-p5/mut.py`).
+  **Glow tokens (2026-10-24, pin `cards-20261024b`, venv `~/.venvs/ac-py314-24b`; `scratch/bug2-p6/`):** the fork draws
+  a `:glow`/`:darkglow` halo as Photoshop does, so typed ones bake under the same gates (a fork without the halos,
+  `glow_halos`, a stale install: an ImportError and card_bake's `Transient`, no verdict; it was a lasting `font` one). A stroked Text group strokes the halo into a black disc,
+  Photoshop's look: Photoshop's own Nebulous Precipice with `[darkmatter:glow]` (`~/std-work-1022/glow/run`) against
+  the fork's re-render, 0.47% of the token window past 24 levels (max 75); moved by an edit, 0.52% of the disc. Two
+  gates changed for them: off the canvas counts ink past `INK_ALPHA` only (`_ink_off_canvas`; Red Knife's halo tail
+  at alpha 0.03, Salt's title at 0.16 refused), and for glow edits `inks_over` and the stat-bar check count the
+  changed ink of the layer's outermost group with effects (`_effect_ink`): Salt's title disc covers 'Layer 19'
+  (MISS), which the title's own ink missed. Under a badge FX layer a glow refuses `see_through_icons`, under a tint
+  as any typed icon. Census of every card (in memory): " Gain [fire:glow]." sets on 516 of 791 Abilities (" Gain
+  [fire]." 536: 20 more run off the canvas, the wider glyph wrapping onto another line), " [ice:darkglow]" on 120 of
+  812 titles (" [fire]" 200: 31 more reach the stars or type icons, 49 more cover a layer below, the disc); the other
+  edits unchanged on the new fork (two overlap counts moved by 1-8 px). Dry bakes of 58 typed glows (plain, own
+  stroke, stroked group, badge, tinted, titles): 27 bake, crops looked at. Tests:
+  `test_glow_tokens_bake_as_photoshop_draws_them`, `test_glow_tokens_refuse_on_an_older_fork`,
+  `test_a_faint_halo_past_the_canvas_is_no_overflow`, `test_a_glow_disc_over_a_layer_below_the_title_refuses`; each
+  fails on the code before.
+  **Review fixes 4 (2026-10-24, `scratch/bug2-p6/fix-2/`):** deleting a line whose next starts alike kept the deleted
+  line's runs on the kept characters (changed_range's prefix is greedy: Dragon Mount's "+25% SPD" printed "+2" red,
+  Chef Saltbaker's kept "(2 points)" blue, a kept badge split across two sizes and refused as letters), on main too:
+  a deletion now slides to whole lines, else words or badges (`deletion_start`, and each deletion part in
+  `edit_parts`), `splice_text` holds the engine's prefix to the part, and a deletion widens into a word only when it
+  cut one (Gasoline's kept "If"). In-memory census of every one-paragraph deletion (`delfill.py`): kept characters off
+  their own fill or size 224 -> 24, the 24 all status words given the chart's swatch (`delpar.py`: the `lettered_icons`
+  and "would be set in the icon font" refusals of such deletions 36 -> 0). An
+  Ability's new line printed past the old text onto the design below (Deep Focus' flourish, Holy Card's torn border,
+  Autopsy Report off its box) is told in the notes, not refused (`ink_beyond`; 18 of 503 cards given a line).
+  A text layer with tab stops refuses `unsupported-card` (the engine lays none: Michael's Blessing's arrows collapsed).
+  A typed glow on a fork without the halos is an ImportError and card_bake's `Transient`, so no lasting `font` verdict.
+  Tests: `test_a_deletion_cuts_whole_lines_or_words`, `test_deleting_a_line_keeps_the_next_lines_own_style`,
+  `test_a_new_line_on_the_design_below_is_told`, `test_tab_stops_refuse`, `test_glow_edit_on_an_older_fork_is_transient`.
+  **Review fixes 5 (2026-10-24, `scratch/bug2-p7/`):** a stroked title's glow disc ran under a star or type icon
+  above it, every gate passing (Confusion, Krabby Patty, Unbreakable Strength): the halo's changed ink now counts on
+  the stars and type icons and under the layers above (`covered_ink`); in the effect scope's group, where the composite
+  hides the halo under a layer, the halo's edge beside it and a badge's box count (`_scoped`, `_meets`); a clipped
+  icon counts only where its base inks (`_halo_meets`: Elemental World's ice texture past its icon). Census of the
+  review's 2,415 glow edits (`census_halo.py` on the fix): 3 bakes now refuse, the 3 found; no other verdict changed. Where the
+  splice falls back (about 2% of ability typos: Wendy, WX-78...), the engine redraws every line: the old text so
+  redrawn is measured against the PNG (`whole_redraw`; Wendy 15.5% bad), a miss told in the notes ("ability redrawn
+  whole, its lines laid out again: ..."), past the floor refused. Tests: `test_a_glow_disc_under_a_star_refuses`,
+  `test_a_glow_disc_beside_a_layer_composited_with_it_counts`, `test_a_text_redrawn_whole_is_measured`; Gasoline,
+  Salt and Nightmare King Grimm in `test_deleting_a_line_keeps_the_next_lines_own_style` (it fails without
+  `deletion_start` or the word-bound rule).
+  **Phase 6, content flags (owner ruling 2026-10-24 ~18:30, `scratch/bug2-p8/`):** "In general I do not want to
+  refuse bakes": the editor previewed the edit, so a content problem bakes best-effort and is told in `Edit.notes` as
+  `<code>: <field>: <why>` (bake report, commit line, baked verdict's reason, preview notes): overflow (off the canvas,
+  onto the stars or icons, more title lines or lower, under a layer above or over a bar, past the design below for a
+  title too: `ink_beyond`, past a texture clipped to it: `ink_past_clip`), typed badges and tokens (tints, letters,
+  image-icon cards, fit and height, see-through, unshaped, bare: `gate_fx` returns notes), font stand-ins
+  (`font_map`: FontMap policy "substitute"; a whole redraw in a stand-in still hits the 25% floor), saved pixels in
+  another font, new validator problems. An FX layer whose style can't follow (follow_fx's refusals, a phrase the ability
+  lacks, words now in a badge) is deleted, told, its words plain (styled status words get the chart's layer from
+  `new_fx`, which skips, told, a word it can't name); an overlay word layer the chart has no style for is hidden, told;
+  a typed copy in a phrase of several colours takes the first; a badge typed in a title prints as plain words. A stale
+  Txt2 story is synced (`txt2_repair.sync_stories`) and the stories allowed in `gate_stories`, told. Typed badges and
+  tokens are unstretched (`unstretch`: HorizontalScale so the aspect factor is 1; Monster Meat's [fire] 2.13 -> 0.81,
+  the designers' 0.81). Still refused: waits, impossible cases, the bake's integrity gates, and what it can't edit yet
+  (split/several titles, non-template rows, tab stops, stars/types layouts, FX layers that are no pixel layers, two FX
+  layers one name). Census (`census.py`, 7 edits x 812 cards, `set_text_layer` in memory): passes 2,401 -> 5,069 of
+  5,642; 573 still refused there (all `unsupported-card` layouts), none newly refused, no errors. The 2,668 former
+  refusals that pass it, run through `apply_jobs` (every gate, dry, on copies; review 2026-10-24, after the pixel digest
+  and nested-shadow fixes): 2,660 bake flagged, 8 refused by integrity gates: `parity` whole title redraws past the 25%
+  floor (Dull Knife x3, Dark Tentacle, Snow Angel, Shiny Knife) and `reparse` (Nebulous Precipice x2: the image-icon
+  card reads back an extra [darkmatter]); 10 crops spot-checked. 46 refusal tests turned into flag tests, 2 deleted, 1 new
+  (`test_typed_icons_are_unstretched`). Full suite: 1787 passed, 13 skipped, 1 known timing flake
+  (`test_a_stat_edit_bakes_the_bakes_pixels`, passes alone). Review 2026-10-24: `gate_bytes` hashes every channel's pixels (`layer_records`
+  "channels": id, length, digest; a same-length corruption of an untouched layer refused), `fx_pad` adds up nested
+  owners' reach (Skeleton Mate's group shadow over the Ability's), a flagged bake keeps its verdict, refused verdicts
+  carry `rules`: 1792 passed, 13 skipped.
 
 ## 8. Runner
 
@@ -410,7 +897,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7      # sparse, non-cone: /site/Card Edits.json, /TTS/ (and every tree, for the fonts' sha)
       - uses: actions/checkout@v7      # bobberlington/AutoCroissant -> bot/: commands/{card_bake,psd_edit,psd_regions,psd_parser,card_models,card_edits,github_api,git_commit,repo_history}.py global_config.py (never psd_analyzer: discord, pandas)
-      - uses: actions/setup-python@v7  # 3.12
+      - uses: actions/setup-python@v7  # 3.12 (3.14, like every Action, since 2026-10-24)
       - run: pip install requests "psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@cards-20261021"   # timeout 10 min
       - id: gate                       # schedule only: python -c 'from commands.card_bake import pending ...' -> go=true|false (timeout 10 min)
       - uses: actions/cache@v6         # MDW/Fonts by its tree sha (if go)
@@ -512,7 +999,9 @@ reminder's cadence (daily `/update_stats` at 5AM).
   `name`. Since 2026-10-21 (TTSCardMaker 98337b7) a name to bake shows "PSD pending"; refusals are not predicted (site NOTES §5). The site shows the bot's title instead of the file name (the stem stays a searchable alias). Pass `_psd` into meta beside `_by`/`_at` (:393) -> `psd` on the entry.
   `reparsePending = tree PSD blob sha != card.blob_sha` covers the gap between the bake commit and the next PICKLE push.
 - `_psd` lives in Card Edits.json, written only by the pipeline: `{"state": "baked" | "refused", "for": {field: value},
-  "psd": "<blob8>", "reason": "<code>: <why>", "at": ...}`. Both readers drop `_`-keys (`card_edits.py:112-113`, `build_site.py:387`),
+  "psd": "<blob8>", "reason": "<code>: <why>", "at": ...}`; a refused one carries `"rules": card_bake.RULES` too (one
+  without, from before 2026-10-24's ruling, is not final: `--pending` tries it again), and a flagged bake's verdict
+  stays alone (`{"_psd": ...}`) once no field is left (`rewrite_entry(keep=)`), for the card page. Both readers drop `_`-keys (`card_edits.py:112-113`, `build_site.py:387`),
   `editsFile` keeps them (`edit.js:40`): no new file. Rewritten every run; ignored when `for` or `psd` no longer match.
 - `app.js:347`: "PSD pending: SPD, Ability" beside "Edited" (tip: the card image is being regenerated); "Image update refused:
   ability does not fit"; "Re-parse pending"; `pending` in `FLAGS` (:25); the Edited panel (:588) lists them. `edit.js`:
@@ -527,12 +1016,25 @@ the editor; Discord on the jetson (summary, `.md`, commit link). Refusal codes a
 past the 25% floor (a broken render), or for `parity` a box that misses the bar and whose render shows no change; a miss of
 the bar is no refusal but a note in the commit body and the report (section 5
 step 3). Since 2026-10-21 `unsupported-card` also names a row whose several digits
-carry enabled effects (which one the row shows is ambiguous) and the overlay word layers the chart has no style for (Smoldering,
-+2 DEF, Despair...), since 2026-10-23 a bar or a digit mask wholly off the canvas (`hp: the bar 'Hp Dark' lies outside the card ...`,
-`hp: digit 5 of the bar 'Hp Dark' lies outside the card ...`),
+carry enabled effects (which one the row shows is ambiguous) and the overlay word layers the chart has no style for (FX
+layers in no chart style were refused too until 2026-10-23: rebuilt in their own style since; since BUG 2, 2026-10-23,
+also an FX layer whose words would fall in a badge, a styled or own-style FX layer whose JSX name would move to other
+words, two FX layers renumbered onto one name, a styled status word a digit touches beside a whole-word one, an FX
+layer that is no pixel layer; since the evening, a badge or token typed under the Ability's overlay with no badge FX
+layer, letters left in the icon font it draws no badge of; since the phase 2 review, a typed badge under any tint
+(overlay at any opacity, non-Normal blend) with no badge FX layer, letters a deletion leaves in the icon font, a badge
+layer whose badges all left while the icon font draws something, an edit inside an own-style or styled FX phrase, an FX
+layer phrase the ability lacks), since 2026-10-23 a bar or a digit mask wholly off the canvas (`hp: the bar 'Hp Dark' lies outside the card ...`,
+`hp: digit 5 of the bar 'Hp Dark' lies outside the card ...`), `font` also a typed character its font has no glyph
+for (`ability: '☃' has no glyph in its font (drawn as a box)`), `reparse` also an icon-font glyph a tinted Ability
+leaves without a badge FX layer (`(1cd): under the Ability's look (its Color Overlay) with no badge FX layer over it`; the look names the first overlay, inner glow/shadow, satin, blend, opacity or clipped layer it finds),
 `stat>10` says whether the value is above 20, needs a second row, or needs a Bottom `10` marker, `parity` on a
 styled digit means the render missed the bar (since 2026-10-23: past the floor), no longer that the digit is styled, and `styled-word` means only that this
-psd-tools cannot cut glyph pixels or make a pixel layer (the fork's text engine is missing): a styled word gets its FX layer.
+psd-tools cannot cut glyph pixels or make or refill a pixel layer (the fork's text engine is missing), or that an FX layer's
+words have no pixels: a styled word gets its FX layer.
+Since 2026-10-24 (owner, phase 6 in section 7) the content codes no longer refuse what an edit's text, badges, styled
+words or fonts look like: `overflow`, `font` (but no stand-in at all), `styled-word` (but no glyph cutting) and the
+content `unsupported-card` reasons are notes on a baked card; `reparse` keeps only the read-back checks.
 Per card all-or-nothing, but for stars and types (2026-10-23): their refusal is the field's, the card's other fields
 bake and the commit line says `stars not baked: <why>`; nothing bakeable = exit 0 with a one-line
 report; any exception inside a card's steps refuses that card as `error` with the traceback in the report; a crash outside
@@ -613,7 +1115,8 @@ runs; export the PNG and score it against the committed PNG with `~/Documents/To
    authors and the TTS save following) — after round 1 (step S9).
 5. **Commit the Mac-only font files to `MDW/Fonts`** (the user's call; licence risk noted), so every runner renders every card.
 6. **Restyle to the chart and hide the overlays**: an ability edit normalizes off-chart status words to the chart's colour
-   and effect and hides the hand-made overlay word layers it replaces (part of S6).
+   and hides the hand-made overlay word layers it replaces (part of S6); the effect is the chart's only on an FX layer it
+   makes (since q6, 2026-10-23, on work/fx-rebuild: an existing FX layer keeps its own style).
 7. **Reprint six titles** (Clot White's typo, the five PoD trailing dots); **Thunderfury keeps its brackets**: its entry is
    aligned to the print (redundant after 1). The push trigger can go live once that entry is fixed (S5). **Aligned 2026-10-21**
    ("[Thunderfury: Blessed Blade of the Windseeker]", written through `card_bake.dump_edits`). **Reprinted 2026-10-22** (run

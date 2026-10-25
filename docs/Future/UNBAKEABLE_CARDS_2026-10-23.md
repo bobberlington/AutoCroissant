@@ -42,6 +42,244 @@ card and field, whether a bake works, why not, and what would fix it.
   as RESUME_2026-10-22 step 4 planned): both copies hold the edited title with its trailing dot. `txt2_repair --check`
   over all 904 PSDs at `b2168617`: 0 stale stories, 0 style drift.
 
+**BUG 2: the Ability FX layers made again (`work/fx-rebuild`, 2026-10-23, not landed):** an ability bake runs
+Effect Layers.jsx's Update all on the new text (`psd_edit._rebuild_fx`, design section 5 step 4): every `Ability FX: ...`
+layer is cut again in place over its words' new places (its record, style and place kept), a phrase that left the text
+leaves the name, a layer with none left goes, and the report says so. A badge layer (queue A's gradient cards) and a
+layer carrying a chart status's style (Monkey D Goofy's `1#1`, Clot Gold's `1 Become Back Money`) are rebuilt; an FX
+layer whose style is no chart status's refused (owner 2026-10-21) until the evening's phase 2 (below), which rebuilds
+it in its own style. Measured dry with every gate (gate_fx too:
+each FX layer inside its words' glyph boxes, covering them, the Ability's own pixels) on copies of the frozen corpus
+(the 34 cards with FX layers) and of TTSCardMaker `b2168617` (68, the L7 cards included), five edits each: the
+website's own text (no-op), the layer's own text with the chart's recolouring left out (Update all alone), a word
+before an FX word deleted (moved), " Die." appended, the first FX word removed (scripts and JSON:
+`~/Documents/Tools/wt/bf-fx-scratch/`, `census.py`, `runs/{corpus3,clone3}.json`):
+
+| Cards | Bake an ability edit | Refused (why) |
+|---|---|---|
+| corpus, 34 FX cards | **32**: 17 of section 2.15's 18 badge cards, Monkey D Goofy and the 14 chart-word cards | Morpho Knight (its Burning, +2/4/6 ATK, Smoldering strokes), Miracle Matter (5 visible Ability layers, 2.19) |
+| TTSCardMaker main, 68 FX cards | **58** | 8 FX layers the chart has no style for (Morpho Knight, The Watcher, Computer Virus, Mr Krabs's `2T`, Palace of Shadow's `+2 DEF`, Fire Staff, Ice Staff, Flameblade; rebuilt in their own style since phase 2, below), Miracle Matter, Apex Predator (no visible Ability layer) |
+
+- **No-op:** on main 47 of 55 Update-all no-ops leave every FX record and the PNG byte for byte; the other 8 were the L7
+  cards whose FX layers kept their old overlay's style (Royal Eradicator Main Cannon, Zero, Doctor Zomboss, Oryx,
+  Snow Bunny, Freeze Spell, Pandora's Box, Standstill), restyled to the chart's style by any ability bake. **q6: own
+  style kept, unattended call 2026-10-23, owner to confirm** (the owner's standing ruling: give the developers freedom
+  and handle their choices generally): a rebuilt FX layer keeps its own style, only a new one takes the chart's, and
+  gate `bytes` lets no effect block change on a rebuilt record. Re-run on those 8 (copies of TTSCardMaker main, scripts
+  and JSON `~/Documents/Tools/wt/bf-fx-q6-scratch/`, `runs/{old,new}.json`, fork `cards-20261023b`):
+
+  | Edit | Before (restyled) | Own style kept |
+  |---|---|---|
+  | Update-all no-op | 8 of 8 PNGs changed: 8,871-65,014 px, 0-31,725 past 24 (Doctor Zomboss 28,069, Snow Bunny 21,447) | **8 of 8 pixel-identical**, every FX record whole |
+  | Website no-op | 8 of 8 changed, 48-32,509 px past 24 | 4 pixel-identical (Doctor Zomboss, Snow Bunny, Freeze Spell, Pandora's Box); 4 change only where an off-swatch status word takes the chart's fill (the 2026-10-21 rule), its FX layer cut again under its own style: Royal Eradicator Main Cannon 2,775 px past 24, Standstill 2,438, Zero 575, Oryx 44, all within the parity bar |
+  | A word before an FX word deleted | 8 bake, every FX record's effect blocks replaced | 8 bake, FX records change rect and channels at most (Snow Bunny's and Pandora's Box's kept whole) |
+
+  The website no-op adds 5 cards whose status words take the chart's swatch (Ancient Fuelweaver, Monkey D
+  Goofy's Become Back Money, Undyne, Pananda Peel, Flower Of Decay) and Warcraftian Hunter, whose website text lacks
+  its column spaces. On the corpus the 6 layers the B1 batch leaked badge pills into (std-batch2 FX.md: The Radiance,
+  Daroach, Metal General, Marx, Warcraftian Mage, Zero) are cut again clean, told too: the website no-op leaves 22 of
+  the corpus's 31 cards identical, the Update-all no-op 23 of 30 (Warcraftian Hunter's refuses `reparse`, its column
+  spaces); on main the website no-op leaves 42 of 56 (46 with q6: only these 8 cards were restyled).
+  PoD06Rainbow Bloon's and The Radiance's no-ops refused `parity` (a render that changes nothing on a box past the bar,
+  section 10) in the first census, on the older `ac-py314-fork` venv (`bf-fx-fix-scratch/runs/clone.json`); their real
+  edits bake. On `ac-py314-r9` (`cards-20261023b`) The Radiance's website no-op and Update-all no-op both bake, the PNG
+  pixel-identical (review 2026-10-23; PoD06Rainbow Bloon not re-checked).
+- **Real edits (main):** a moved word bakes on 46 cards (13 have no plain word before an FX word): 22 FX layers kept
+  whole, 28 cut again at their new place; " Die." bakes on 57 (Pandamonium overflows); removing the first FX word bakes
+  on 58: 48 layers deleted, 8 renamed (`(1GCD) | (2U) | (2CD)` -> `(2U) | (2CD)`). Parity notes only where the card's
+  baseline already misses the bar (PoD06Rainbow Bloon, The Radiance). A bake took 5-7 s (median; 16 s at most on a
+  loaded Mac).
+- **Review fixes (same branch, 2026-10-23; census re-run with two more edits, scripts and JSON
+  `~/Documents/Tools/wt/bf-fx-fix-scratch/`, `runs/{corpus,clone}.json`: the five edits above match the first census
+  but for the two lines below):**
+  - A layer carrying a chart status's style stays on its own words (`psd_edit.follow_fx`). Goofy's `1#1` is the first
+    "1" of a text with no whole-word "1" (the "1" of "3T1"): a whole-word "1" typed anywhere ("Draw 1 card." before or
+    after, "Draw 1 of the following", " Then 1.") would take the JSX's `1#1` to it and paint it gold, so the edit is
+    refused ("a whole-word '1' in the ability would move the layer Ability FX: 1#1 off the '1' of '3T1'"); a "1" typed
+    before it renames
+    the layer `1#2` (told; Effect Layers.jsx's Update all in Photoshop cuts `1#2` on the same "1", IoU 1.0); its "1"
+    removed deletes the layer, told (Goofy's "first FX word removed" now bakes). Clot Gold's `1 Become Back Money` (in
+    "2T1 Become Back Money", no whole word) refuses a whole-word "1 Become Back Money" typed again. gate_fx checks each
+    such layer still reaches the characters the edit kept (`Edit.held`).
+  - A badge typed outside the icon font (anywhere but right after another badge it stays body text) onto a badge
+    layer's phrase is refused ("'(1CD)' would show on it as plain letters (a typed badge is drawn as one only right
+    after a badge or in place of one)"): Update all
+    would lift those letters above the Text group, out of its overlay, white. A badge typed in the icon font joins the
+    badge layer's name (each badge layer names every badge of its card): PoD11ZOMG's "(2U)" made "(3U)" gives
+    `(1GCD) | (2CD) | (3U)` (Update all in Photoshop: IoU 1.0).
+  - The report says why a numbered layer went: "Frozen In Time#2 deleted: the ability has 1 Frozen In Time now"
+    (Standstill), not "its words left". An FX layer that is no pixel layer refuses (none on any card); a styled status
+    word a digit touches ("2Blazing") beside a whole-word one refuses (no JSX name reaches it; none on any card).
+    gate_fx counts stray pixels at any alpha.
+  - The first FX word typed again at the end (" Then <word>."): main 23 of 68 bake, 45 refused: 24 typed badges on
+    the badge cards, 9 overflow, 8 no chart style, Goofy and Clot Gold (above), Miracle Matter, Apex Predator; corpus
+    13 of 34. "Draw 1 card. " put in front: main 48 bake, 20 refused (9 overflow, 8 no chart style, Goofy, Miracle
+    Matter, Apex Predator); corpus 28 of 34.
+- **Review round 3 (same branch, 2026-10-23):** a status layer lands only on its status's own words, and a numbered
+  one follows its own word, renumbered (`psd_edit.follow_fx`; gate `gate_status_words`). Snow Bunny's "Frozen." made
+  "Frozen In Time." deletes its own-style Frozen layer ("'Frozen In Time' is no Frozen") and makes a Frozen In Time one
+  of the chart's style (before: the Frozen layer re-cut on "Frozen", " In Time" left flat, 28,250 px past 24 against
+  work/land-st); "Unfrozen." deletes it (before: a glow on part of the word). Standstill's "Inflict 2T Frozen In
+  Time." made "Frozen In Time, Frozen In Time." keeps `#2` on line 2 as `#3`, its PNG there the no-op bake's (before:
+  `#2` moved to line 1, line 2's word given the chart's style, untold). Census on main's 68 FX cards (website no-op, a
+  word before an FX word deleted, the first FX phrase typed again, " Die."; 272 dry bakes with every gate, copies of
+  TTSCardMaker main, `~/Documents/Tools/wt/bf-fx-r4-scratch/`, `runs/{old,new}.json`, fork `cards-20261023b`): the
+  same bakes (57, 46, 23, 57), notes, FX layers and PNGs as before the change; only the refusal wording differs.
+  Clot Gold's "2T1" made "2T2" deletes its styled `1 Become Back Money` (told) and makes a chart-style `Become Back
+  Money` directly above Text, where the JSX's Add puts it (the old one sat at the root top; nothing between overlaps,
+  so the pixels match); its hidden overlay type layer `1 Become Back Money` stays, hidden and not reported.
+- **Photoshop cross-check (copies under `~/std-work-1022/fx-1023/`):** Effect Layers.jsx's Update all run in Photoshop on 8
+  baked copies (badges moved and renamed, chart words moved, a restyle since dropped, q6) rebuilt the same layers: same boxes, style and
+  place, ink IoU 0.955-1.0 (ours 0-132 faint edge pixels more), no differing pixel on the shared ink. Photoshop renders
+  the rebuilt layers as the bake's PNG shows them (0% of FX ink past 24 on 6 cards; the PoD cards' Photoshop exports
+  differ from their official PNGs everywhere, 3.9-6.7%), and a moved layer as the original did at its old place (mean
+  1.1 or less, 0-1.6% past 24; Royal Eradicator's restyle apart).
+
+- **Phase 2 (same branch, 2026-10-23 evening, the owner's answers of ~17:40):** FX layers in no chart status's style
+  are rebuilt in their own style, anchored like the styled ones (they stay on the characters they covered; refused
+  where Update all would move them); every typed timing tag and stoogedings token is set in the icon font at the
+  card's own badge or token style. Dry census with every gate on copies of TTSCardMaker main (fork `cards-20261023c`;
+  scripts, JSON and crops `~/Documents/Tools/wt/bf-fx-p2-scratch/`: `census.py`, `runs/{b,c}.json`, `crops-{b,c}/`;
+  median bake 12-13 s on a loaded Mac):
+
+  | Census | Bake | Refused (why) |
+  |---|---|---|
+  | The 8 own-style cards x 6 edits (website no-op, Update-all no-op, a word before an FX word deleted, " Die." appended, the first own-style phrase removed, typed again) | **42 of 48** (2 n/a: no plain word before) | Mr Krabs's typed whole-word "2T" (its layer is the "2T" of "2T1": would move), 3 overflows (Fire Staff, Flameblade) |
+  | 17 cards x 5 typed edits ("(2CD)", "(1gcd)", "[fire]", "[fire:no]" + "[Ice:Sticker]", "(OYT) [undead]" in front) | **62 of 85** | Cat (5: its Gradient Overlay with no badge FX layer), Nebulous Precipice (5: image icons in its gaps), 13 overflows (Battle Helmet, Cabbage, Party!) |
+  | Regression: main's 68 FX cards x round 3's 4 edits (website no-op, a word deleted, the first FX phrase typed again, " Die.") | **234 of 258** (14 n/a) | 13 overflows, Miracle Matter and Apex Predator (4 each), a typed whole-word phrase that would move Goofy's, Clot Gold's and Mr Krabs's layers (3) |
+
+  - Own-style no-ops: 7 of 8 PNGs pixel for pixel on both no-ops; Mr Krabs changes 285 px past 24 at the edges of
+    "Become Back Money" (its off-chart yellow recoloured to the chart's white, the owner's rule, under its gradient
+    FX layer). A word typed again joins its layer on Morpho Knight, The Watcher, Computer Virus, Palace of Shadow and Ice
+    Staff, told ("Ability FX: Despair also covers the typed 'Despair', in its own style"); removing the phrase deletes
+    7 layers (told) and moves Morpho Knight's Smoldering to its other word.
+  - Typed icons: on the badge-layer cards (Mini Doomer, PoD11ZOMG, Morpho Knight, Party!, Scapular, Palace of Shadow)
+    the badge layer names each new badge or token, told ("(2CD) added"), or already names it (PoD11ZOMG's "(2CD)",
+    "(1gcd)" for its "(1GCD)"); on the 3 plain cards that fit (Mettaton NEO, Autopsy Report, Crystal Bits) the icon
+    font is added and the badge set at the text's size; elsewhere at the card's own icon style (Scapular's 19.96 pt
+    shifted -12.52, Cabbage's tracking 100, Pizza's 32 pt; typed in front of Pizza's odd 18.66 pt first badge, the
+    engine gives it that badge's style, kept). The parse reads every typed token back ("[Ice:Sticker]" -> "[ice]").
+  - Regression against round 3's census (`bf-fx-r4-scratch/runs/new.json`, fork `cards-20261023b`, `compare.py`): no
+    bake turned into a refusal; 51 refusals now bake (the 8 own-style cards, and "the first FX phrase typed again" on
+    24 badge cards, whose typed badge is now a real badge in the badge layer, and PoD06Rainbow Bloon's no-op, the
+    fork's); the L7 cards' typed status words are told; 5 bakes moved by a few bad px (the fork's round).
+  - Found on the way (silent before): the website shows and sends each icon as the parser reads it, so an ability
+    bake on the 9 cards printing a `:sticker` or `:tint` icon (Palace of Shadow, Irithyll, Afraid, Corruption, Error
+    Room, Inkhole, Blindness, Elemental World, Dark Bramble) would have redrawn it as the plain icon, every gate
+    passing; `keep_tokens` keeps the card's own spelling.
+  - **Phase 2 review (same branch, 2026-10-23 night; origin/main 8983719, then 8cbb211, merged in):** four silent wrong bakes fixed,
+    each refused or baked right now (dry census with every gate on copies of TTSCardMaker main, fork `cards-20261023c`;
+    scripts, JSON and crops `~/Documents/Tools/wt/bf-fx-r5-scratch/`: `census_bake.py`, `runs/{b,c,r1,r2,regress}.json`,
+    `census.json` for the Ability tints, `bare.py`):
+    - A badge edited by deleting letters ("(1GCD)" -> "(1CD)", "(ENDGT)" -> "(ENDT)", "(BOGT)" -> "(BOT)") kept every
+      character, so it did not count as typed: its badge layer was deleted ("its words left the ability", untrue) and
+      the badge printed as a blank pill under the overlay (Scapular: without its layer's stroke). Any icon-font badge
+      no badge layer names now joins the layer; a badge layer whose badges all left while the icon font still draws
+      something refuses. A new `gate_fx` check (`bare_icons`): under a tinted Ability every icon-font glyph lies under
+      a badge FX layer unless it was bare before the edit. Census: a letter deleted from the first badge on 15 badge
+      cards: **14 of 14 bake** (Morpho Knight n/a), each layer renamed and told ("Ability FX: (1GCD) renamed 'Ability
+      FX: (1CD)': (1GCD) left the ability; (1CD) added"); their no-ops 15 of 15 pixel for pixel. On main all 29 badge
+      layers cover their Abilities' icons (`bare_icons` empty); Blood Bomb's Pin Light `[machine]` is the only bare one.
+    - Typed badges under a tint other than an opaque Normal overlay: the 18 Pin Light Isaac items without a badge layer
+      and Ice Staff (two 69% gradients) printed them washed (white on cyan). Refused now under any enabled colour,
+      gradient or pattern overlay or a non-Normal blend with no badge layer (`_tinted`; 71 tinted Abilities on main: 29
+      with a badge layer, 41 without icons, Blood Bomb). Census on the 19: a badge typed in front and a `[fire]`
+      appended **refuse 38 of 38**; " Die." appended **bakes 19 of 19**.
+    - A typed "★" (the website writes "5★") stayed in the body font, a missing-glyph box, every gate passing; it is set
+      in the icon font as a token now (the gold star; the parse reads `[star]`), a badge layer is cut again when one is
+      typed (it takes every colour glyph), a "★" left in the body font refuses `reparse`, and a typed character its font
+      has no glyph for refuses `font`. Census " Costs 5★." on the 17 typed-icon cards: **11 bake** (the font added on
+      the 4 plain cards), Cat (overlay), Nebulous Precipice (image icons), Party! (overflow) refuse, and PoD11ZOMG,
+      Palace of Shadow and Scapular refused `reparse` (the badge layer kept whole, the star bare) until the recut
+      (4276768): they bake now (probes).
+    - An edit inside an own-style or styled FX phrase (Flameblade's "Attacks inflict 2T" made "3T", Palace of Shadow's
+      "+2 DEF" made "+3 DEF", Mr Krabs' "2T1" made "3T1", Morpho Knight's "+2/4/6 ATK", Computer Virus's "1st: Slime")
+      deleted the layer and its style, told "its words left the ability": refused now (ruling B), and so is Clot Gold's
+      "2T1" made "2T2" (it made a chart-style Become Back Money layer in place of its styled one). Census, the first
+      digit of an own-style phrase raised: **5 of 5 refused** (3 n/a); the phase 2 census's other 6 edits on the 8 cards
+      unchanged (42 of 48 bake, the same notes and PNGs). Removing the phrase whole still deletes the layer, told.
+    - Also: letters a deletion leaves in the icon font ("(1GCD)" -> "(GCD)") refuse; an FX layer phrase the ability
+      lacks ("Frozen In Time #1": a space before "#" is no number to the JSX; it crashed `plan_fx`) refuses. The typed
+      icons census (`runs/c.json`, 5 edits on 17 cards) is unchanged but one: Mini Doomer's "(OYT) [undead]" typed in
+      front now refuses `reparse` ("[undead]: under the Ability's overlay ... no badge FX layer over it"): the skull's
+      pure-black eye sockets (46 of its 4,263 px) carry no red, so the key (the JSX's too, red channel) leaves them out
+      of the badge layer and they print in the gradient's pink. Photoshop's Update all would do the same.
+    - Regression, main's 68 FX cards x round 3's 4 edits (`runs/regress.json` against phase 2's): **234 of 258 bake**,
+      the same bakes, refusals and notes; 5 PNGs differ by a few px (Pontiff Sulyvahn's PSD re-saved since, 8af07bcd;
+      Party!, Monkey D Goofy, Flower Of Decay, Freeze Spell: the code before these fixes, e4dde25, bakes them to the same
+      pixels as after, so not this change).
+    - Held for the owner: a typed plain token beside a card's `:sticker` icons (Palace of Shadow prints `[light]` plain
+      next to `[light:sticker]`); a website edit that only adds `:sticker`/`:tint` is redundant (the parser reads no
+      variant); the leading space of 15 Abilities (Elmadan's) is dropped by any ability edit (`keep_ends` keeps the blank
+      paragraphs, not the indent, by its test); one bake with the icon font added to a plain card's FontSet opened in
+      Photoshop before landing.
+  - **Phase 2 review, round 2 (same branch, 2026-10-23 night; origin/main be280e6, then 73dfc3c, merged in):** one silent wrong bake fixed and two refusals added
+    (dry census with every gate on copies of TTSCardMaker main's 18 cards with an own-style FX layer, fork
+    `cards-20261023c`; `~/Documents/Tools/wt/fxr3-scratch/`: `census_bake.py`, `runs/{own,glued}.json`, crops `crops/`):
+    - A typed copy of an own-style phrase joined its layer (Update all) but kept the body's fill, which a stroke or
+      shadow alone draws over: Palace of Shadow's "Allies get +2 DEF." printed its copy grey (the phrase is blue under
+      a Stroke), Morpho Knight's typed "+2/4/6 ATK" yellow (red under a Drop Shadow and Stroke), every gate passing. It
+      takes the phrase's colour now (refused when the layer's letters are in more than one colour: none on main), and
+      a new `gate_fx` check (`gate_fx_colours`) refuses an own-style layer over letters of a colour its words lacked.
+      Census, the first FX phrase typed again: the same 12 bakes and 6 refusals; Palace's copy now blue.
+    - An own-style phrase deleted and typed elsewhere (Palace's "+2 DEF" moved, or its "[dark]: +2 DEF" line moved to
+      the end) moved the layer onto the typed copy, grey, told "also covers": refused now (the layer stays on the
+      characters it covered). Census, the first FX phrase deleted and typed at the end: 12 bake (where difflib keeps
+      the moved word the layer follows it; the L7 status layers whose words left are told "moved to the typed ..."), 4
+      refuse as moved (The Watcher, Computer Virus, Mr Krabs, Palace of Shadow), 2 overflow.
+    - Letters glued on where a word of an own-style phrase ended ("Despair" made "Despairing": "ing" plain beside the
+      styled half, untold): refused. Census, "ing" glued onto the first FX phrase: 9 refuse (8 as half a word, among
+      them Clot Gold's "Moneying" and Goofy's "3T1ing"; Morpho Knight as a move), 9 bake (the 8 status layers drop
+      their word, told; Mr Krabs' "2T" of "2T1" ended no word).
+    - The other edits on the 18 cards (no-op, a plain word deleted, " Die." appended, the first FX phrase dropped)
+      give the same results and notes as before; PNGs as the branch head's (probes on Goofy and The Watcher).
+    - Also: the FX notes reach a partial bake's refused verdict; the bake's icon vocabulary keeps only the manifest's
+      icons (no change on main: every Types/ name is in it); the parser's `#0` change reverted (no Cython rebuild).
+    - Held: a moved line's `[dark:sticker]` prints `[dark]` (keep_tokens can't pair moved text; the sticker question);
+      words typed in place of a badge or icon refuse (edit_styles keeps the icon font: Pizza's "(1CD)" -> "Once:",
+      Gasoline's "[fire] type" -> "fire type", The Hive, Mini Doomer's "(BOT)" -> "Start:"); a variant-only token edit
+      is dropped as redundant (`:glow` too), the token picker offering it; a retyped token takes the card's commonest
+      icon style (ruling C).
+  - **Phase 2 review, round 3 (same branch, 2026-10-24; origin/main 7ca804e merged in):** two silent wrong bakes fixed
+    (dry census with every gate on copies of TTSCardMaker 7dcc36fd, fork `cards-20261023c`;
+    `~/Documents/Tools/wt/bf-fx-r6-scratch/`: `census_bake.py`, `runs/{new,base,turtle,ice,front}.json`, `base/` the
+    branch tip before the fixes):
+    - A typed token's red-less pixels (an `[undead]`'s black eye sockets and jaw, a `[feather]`'s green) stayed out of
+      the badge layer, cut with the red key, and printed in the overlay's colour: glowing yellow eyes on Heavy Mole (39
+      opaque px), a green bar in Turtle's skull, every gate passing (1% of a glyph was let through). The badge layer
+      takes its colour glyphs' silhouettes too, and `gate_fx`/`bare_icons` let no icon pixel out. On the 31 badge-layer
+      cards: a typed `[undead]` and `[feather]` **bake on 26 of 31 each** (21 and 18 before, every one of them with
+      2-39 such px; 5 n/a: 3 overflows, Miracle Matter, Apex Predator), with none left; the no-op and a typed `[fire]`
+      unchanged (same results and PNGs). Every manifest icon typed on Turtle: **85 of 91 bake** (66 before); `light`,
+      `lightshadow`, `6star`, `7star`, `8star` and `silksong_star` refuse as before (flare pixels past their glyph
+      boxes). `[ice]` glued after the final "." now bakes on Mini Doomer, Palace of Shadow, Scapular and PoD11ZOMG, Mini
+      Doomer's "[ice:no] and [Fire:Sticker]" and its "(OYT) [undead]" typed in front too (both refused before).
+    - "[fire:]" (a colon, no variant) counted as an icon: set in the icon font it printed the letters, cut white into
+      a badge layer, read back as [fire], the editor showing the icon. A token the website draws as an icon and the
+      font as letters ("[fire:]", "[fire: no]", "[Fire.]", "[warp  star]", "[dark:sticker]" made "[dark:]") refuses
+      `font` now: " Deal 1 [fire:] damage." **refuses on 29 of 29** badge cards that get that far. Gate
+      `lettered_icons` refuses icon-font letters an edit adds (none of main's 381 icon-font Abilities draws any).
+    - Also: an edit inside a phrase in several colours refuses (none on main); no status word inside a `[token]`; the
+      ability is edited before the title (Fire Staff's name + ability bakes, refused `bytes` before).
+  - **Phase 2 review, round 4 (same branch, 2026-10-24; origin/main a8ece7f merged in):** dry bakes with every gate
+    on copies of TTSCardMaker efcf17d2 (`~/Documents/Tools/wt/scratch/bug2-p3/fix/`: `run.py`, `runs/`, `census.py`):
+    - A typed `[support]` printed its see-through, red-less glow (Types/Support.png: 194k faint px) in the overlay's
+      colour, maroon on Mini Doomer, olive on Turtle, every gate passing: the silhouette stops at alpha 110 and the gates
+      counted ink past 0.5. A badge layer takes every pixel of its glyphs at any alpha and every icon-font character (a
+      typed "★" left 2 faint px out on Turtle); `gate_fx`/`bare_icons` count every colour-glyph pixel past `FAINT_INK`
+      (0.05), from two renders of the text filled red and blue, and let a badge layer ink over them past its glyph boxes.
+      Every manifest icon on Mini Doomer **91 of 91 bake** (85; `light`, `lightshadow`, `6star`-`8star`,
+      `silksong_star` refused their flares), the review's 23 groups of 4 icons on 9 tinted cards **207 of 207** (171),
+      612 badge, token and variant bakes on 9 cards 608 (4 overflows): 0 colour-glyph pixels outside a badge layer at
+      any alpha. Main's 68 FX cards, " Die." and "Firstly, ": 126 PNGs identical to the tip before, 10 refused alike.
+      Census of main (904 PSDs): no badge-layer card leaves a faint colour-glyph pixel out.
+    - An Ability's opacity or fill below full counts as tinted: The Patients (78%) printed a typed badge dimmed, every
+      gate passing; it refuses now (Chomp, the other one, refused already).
+    - A status word in brackets the font draws as letters ("Inflict [Blazing].") baked unstyled: only what the icon
+      font draws is skipped (`status_spans(text, chart, icons)`: `icon_text` for a text to set, `icon_spans` of a
+      layer); no card on main reads differently.
+    - A test bakes through apply_jobs and checks `gate_fx` gets the parser's vocabulary (`unshaped_icons`).
+
 **Stars and types (`work/stars-types-bake`, 2026-10-23):** the bake prints them (`psd_edit.plan_stars`,
 `plan_types`); a layout it can't follow is refused for that field alone, the card's other fields still bake. Measured
 dry with every gate on copies of the frozen corpus (`corpus-6e50c3ee`, 764 cards; fork `cards-20261023`; script and
@@ -121,8 +359,8 @@ Why, per field (today → after all pending changes; section 2 has the cards):
 | Several visible Ability layers |  | 5 → 5 |  |  |  |  | card maker |
 | The ability's words are printed twice |  | 0 → 1 |  |  |  |  | card maker |
 | The ability's icons are pictures |  | 8 → 15 |  |  |  |  | card maker (stoogedings tokens) |
-| A badge layer would be lost (BUG 2) |  | 18 → 18 |  |  |  |  | BUG 2 fix (approved, not started) |
-| A word layer the status chart has no style for |  | 8 → 8 |  |  |  |  | stays refused (owner, 10-21); Goofy: BUG 2 fix |
+| A badge layer would be lost (BUG 2) |  | 18 → 18 |  |  |  |  | BUG 2 fix (built, `work/fx-rebuild`): all 18 bake with phase 2 (Morpho Knight's own-style layers too) |
+| A word layer the status chart has no style for |  | 8 → 8 |  |  |  |  | FX layers: rebuilt in their own style (owner, 10-23 evening, phase 2); hand-made overlay word layers stay refused |
 | Colour icons would turn one colour |  | 213 → 0 |  |  |  |  | colour glyphs (built, not released) |
 | No template stat bar |  |  | 1 → 1 | 1 → 1 | 1 → 1 | 1 → 1 | card maker (template bars) |
 | The stat bar is not the template's |  |  | 30 → 30 | 30 → 30 | 27 → 27 | 27 → 27 | card maker (template bars) |
@@ -138,7 +376,8 @@ What stands out:
   are status effects whose title is a top-level layer named after the card, which refused-layers does not look at.
 - What is left after the pending changes is mostly card-maker work: stat bars the bot can't use (38 cards),
   pictures instead of icon-font tokens (15 abilities), numbered PNGs (5 cards), plus the 18 badge layers waiting for
-  the approved BUG 2 fix (19 gradient badge cards with Miracle Matter; 20 with Monkey D Goofy, the owner's count).
+  the approved BUG 2 fix (19 gradient badge cards with Miracle Matter; 20 with Monkey D Goofy, the owner's count; built
+  2026-10-23 on `work/fx-rebuild`: 17 of the 18 and Goofy bake, see the BUG 2 block).
 - **A bug in today's bot:** where the title is split over several layers or printed twice, it writes the whole edited
   title into the layer named Name and leaves the others. A dry run on Warcraftian Druid printed "Warcraftian Druidess"
   with the old "Druid" line still under it, and the read-back gate passed. Of the 20 cards with such a title, 9 bake
@@ -590,7 +829,7 @@ After the pending changes: **bakes (pixels not measured) (refused-layers)** (1):
 Today: **18 cards** (Ability 18). After the pending changes, **0** of them bake.
 
 - **Why:** An 'Ability FX: ...' layer paints the timing badges or icons over the ability with a gradient; a bake would delete it and the bot can't rebuild it yet.
-- **What would fix it:** Code fix approved, not started: rebuild the Ability FX layers from the new text's word boxes (NEXT_IDEAS section 5, idea 4; needs text geometry and colour glyphs). Until then, edit in Photoshop. There are 19 gradient badge cards: these 18 and Miracle Matter ('Ability FX: (1GCD)'; listed under several visible Ability layers, its first refusal). With Monkey D Goofy ('Ability FX: 1#1', listed under word layers) they are the owner's 20 BUG 2 cards.
+- **What would fix it:** Code fix approved and built 2026-10-23 (`work/fx-rebuild`, not landed; the BUG 2 block at the top): the bake rebuilds the Ability FX layers as Effect Layers.jsx's Update all does. All of these but Morpho Knight then bake (its Burning, +2/4/6 ATK and Smoldering layers carry strokes the chart has no style for, 2.17); with phase 2 (the same branch, the owner's ruling of 2026-10-23 evening) those are rebuilt in their own style and Morpho Knight bakes too. Until it lands, edit in Photoshop. There are 19 gradient badge cards: these 18 and Miracle Matter ('Ability FX: (1GCD)'; listed under several visible Ability layers, its first refusal). With Monkey D Goofy ('Ability FX: 1#1', listed under word layers) they are the owner's 20 BUG 2 cards.
 
 | Card | Folder | Detail | After the pending changes |
 |---|---|---|---|
@@ -648,7 +887,7 @@ Cards that meet this reason only once the pending changes land (7; another reaso
 Today: **8 cards** (Ability 8). After the pending changes, **0** of them bake.
 
 - **Why:** A hand-made word layer over the ability (an overlay or FX layer for a word such as Smoldering or +2 DEF) has no style on the status chart, so the bot can't recreate it after an edit.
-- **What would fix it:** Owner decision 2026-10-21: stays refused; edit in Photoshop or remove the overlay by hand. Except Monkey D Goofy: its 'Ability FX: 1#1' layer styles a '1' in the ability, and the owner counts the card with BUG 2, so the approved BUG 2 fix (rebuild the Ability FX layers) is meant to cover it.
+- **What would fix it:** Owner decision 2026-10-21: stays refused; edit in Photoshop or remove the overlay by hand. Superseded for FX layers by the owner's ruling of 2026-10-23 evening: `work/fx-rebuild` phase 2 rebuilds an FX layer in no chart style in its own style (all 8 cards' FX layers; the BUG 2 block's phase 2 census: 42 of 48 dry bakes), refusing only where a typed word would move it (Mr Krabs's whole-word "2T"); a hand-made overlay word layer (not an FX layer) the chart has no style for stays refused. Earlier: except Monkey D Goofy: its 'Ability FX: 1#1' layer styles a '1' in the ability, and the owner counts the card with BUG 2, so the approved BUG 2 fix (rebuild the Ability FX layers) is meant to cover it. The BUG 2 fix (`work/fx-rebuild`, 2026-10-23) rebuilds an FX layer that carries a styled chart status's style: Goofy's '1#1' and Clot Gold's '1 Become Back Money' (both Become Back Money's gradient) bake (not an edit that types a whole-word '1' or '1 Become Back Money', which would move the layer: refused); the others keep strokes or gradients of their own and stay refused, Mr Krabs for its unstyled '2T' (owner to confirm Clot Gold).
 
 | Card | Folder | Detail | After the pending changes |
 |---|---|---|---|

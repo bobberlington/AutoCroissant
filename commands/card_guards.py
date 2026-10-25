@@ -1,8 +1,9 @@
 """
 The push guards (docs/Campaigns/PUSH_GUARDS.md): TTSCardMaker's card-guards.yml runs this on every push to main. Guard 1
 (png_export) gives a card PSD pushed without its PNG the PNG the bake would make (the fork's render of the changed layers,
-merged into the old PNG; Photoshop's stored composite only cross-checks); guard 2 (card_standards) checks the pushed PSDs
-against the card standards (fonts included) and fixes only the 0-pixel classes. One report per push: the job
+merged into the old PNG; Photoshop's stored composite only cross-checks, and a PSD without one gets the PNG under the
+bake's own gates, told "no stored image to cross-check"); guard 2 (card_standards) checks the pushed PSDs against the card
+standards (missing fonts are font-check.yml's alone) and fixes only the 0-pixel classes. One report per push: the job
 summary and commit comment (report.md), one Discord post for the standards channel (discord.json: no mentions, no
 previews), and a plan of the writes (plan.json) that `land` commits once, after the 30-minute quiet window. Each card
 pushed over an older PSD carries what changed inside it (psd_diff: "added Ability FX: Blazing", "Name text: 'a' -> 'b'").
@@ -10,7 +11,7 @@ Every card PNG the push brought is recompressed losslessly in that commit (owner
 the same pixels) when that saves more than 10% and 64 KiB (our thresholds), and so is every PNG the bot writes.
 
     python -m commands.card_guards check --clone <dir> --after <sha> [--before <sha>] [--repo <owner/name>] [--author <login>]
-                                         [--cards <names>] [--whole-tree] [--mode dry|report|on] [--fonts <dir>] --out <dir>
+                                         [--cards <names>] [--whole-tree] [--mode dry|report|on] --out <dir>
     python -m commands.card_guards land --plan <out>/plan.json [--quiet-from <ISO time>] [--dry-run] [--local <clone>] [--rerun]
 
 check reads trees from a local clone (the Action's blobless checkout with its history; a full clone locally) and blobs
@@ -44,7 +45,7 @@ import commands.psd_edit as psd_edit
 from commands.card_bake import RECENT, Snapshot, fetch_verified, local_snapshot, recent_paths, snapshot_at
 from commands.card_check import vocabulary
 from commands.card_edits import CardAuthors
-from commands.font_check import FontIndex, is_card_psd
+from commands.font_check import is_card_psd
 from commands.git_commit import (AUTHOR, COMMIT_TRIES, NO_LAZY, Transient, api, commit_files, git, local_commit, plural,
                                  ref_head, token)
 from commands.github_api import blob_sha, token_from_env
@@ -156,6 +157,8 @@ class Result:
         out = []
         if self.export.get("outcome") == "refused":
             out.append(self.export["why"])
+        if self.export.get("unchecked"):        # G2 rendered anyway (owner, 2026-10-24): told instead of refused
+            out.append(self.export["unchecked"])
         out += [why for why, _ in self.export.get("numbered_refused", [])]
         if mode == "report":
             out += [would_make(self.job.case, self.job.png, w) for w in self.writes if w["kind"] == "png"]
@@ -483,9 +486,9 @@ def whole_tree_jobs(tree: dict, author: str, cards: Optional[set] = None) -> lis
 
 
 # ========================
-# Context: Types/, fonts, the status chart
+# Context: Types/, the status chart
 # ========================
-def build_context(source: Source, tree: dict, fonts_dir: str = "", errors: Optional[list] = None) -> tuple:
+def build_context(source: Source, tree: dict, errors: Optional[list] = None) -> tuple:
     """
     (card_standards.Context, Vocabulary) from the tree at after.
 
@@ -505,11 +508,7 @@ def build_context(source: Source, tree: dict, fonts_dir: str = "", errors: Optio
             chart = psd_edit.status_fills(png_export.open_psd(source.blob(tree[psd_edit.STATUS_CHART][1])))
         except Exception as error:              # R5 reports every overlay without the chart
             errors.append(f"{psd_edit.STATUS_CHART}: {error}")
-    fonts = None
-    if fonts_dir:
-        fonts = FontIndex(fonts_dir)
-        errors += [f"MDW/Fonts {e}" for e in fonts.errors]
-    context = standards.Context(frozenset(vocab.all_types), fonts, chart, psd_edit.story_sync())
+    context = standards.Context(frozenset(vocab.all_types), chart, psd_edit.story_sync())
     return context, vocab
 
 
@@ -555,10 +554,13 @@ def _recompress(out: str, result: Result, path: str, read: Callable[[], bytes]) 
 
 
 def _export_dict(found) -> dict:
+    """An Export as plan.json keeps it; "unchecked" is the line told for a PNG made with no stored image (G2), or for one
+    kept (KEPT beside such a PSD, RESTYLED over one)."""
     return {"outcome": found.outcome, "why": found.why, "gate": found.gate, "changed_px": found.changed_px,
             "box": list(found.box) if found.box else None, "icc": found.icc, "writer": found.writer,
             "vote": list(found.vote) if found.vote else None, "numbers": found.numbers,
-            "misses": png_export.miss_notes(found)}
+            "misses": png_export.miss_notes(found),
+            "unchecked": png_export.unchecked_line(found)}
 
 
 def _r10_line(job: Job, measured: dict) -> str:
@@ -629,12 +631,19 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
         old_png = png_export.open_png(source.blob(job.png_old))
         numbered = {path: png_export.open_png(source.blob(sha)) for path, sha in job.numbered.items()}
         found = png_export.export(old if job.case == "stale" else None, new, old_png, numbered)
-        if found.outcome == "refused" and found.gate in ("G5", "G6") and job.psd_anchor:
-            anchored = png_export.export(png_export.open_psd(source.blob(job.psd_anchor)), new, old_png, numbered)
-            if anchored.outcome != "refused":   # the PNG matched the PSD before the burst: its whole change is ours
-                found = anchored
-                result.notes.append((f"checked against the PSD as of {basename(job.png)}'s last change "
-                                     f"(`{job.anchor_commit[:8]}`): an earlier push changed the PSD without its PNG", False))
+        # a burst: when the old PNG shows the anchor rather than the old PSD (not a PNG pushed before its PSD), the
+        # anchored verdict, a refusal too (a small push-1 change hides under G5's bar, review 2026-10-24); else, checked,
+        # a G5/G6 refusal retried, the anchored export kept unless it refuses
+        if job.psd_anchor and old is not None:
+            anchor = png_export.open_psd(source.blob(job.psd_anchor))
+            shown = png_export.shows(old_png, anchor, old)
+            if shown or (not found.unchecked and found.outcome == "refused" and found.gate in ("G5", "G6")):
+                anchored = png_export.export(anchor, new, old_png, numbered)
+                if shown or anchored.outcome != "refused":   # the PNG matched the PSD before the burst
+                    found = anchored
+                    result.notes.append((f"checked against the PSD as of {basename(job.png)}'s last change "
+                                         f"(`{job.anchor_commit[:8]}`): an earlier push changed the PSD without its PNG",
+                                         False))
         result.export = _export_dict(found)
         stale = found.numbers.get("png_vs_psd", {})
         if found.outcome == "current" and stale.get("px") and not psd_edit._within_bar(stale):
@@ -754,6 +763,8 @@ def _guard1_line(entry: dict, mode: str = "on") -> str:
         return ""
     if outcome == "current" and "png_ahead" in found.get("numbers", {}):
         return "PNG already shows the pushed PSD (exported before the PSD was pushed): nothing to make"
+    if outcome == "current" and found.get("unchecked"):
+        return found["unchecked"]
     if outcome == "current":
         return "PNG still current (the push moved no pixel of the card)"
     if outcome == "refused":
@@ -766,11 +777,14 @@ def _guard1_line(entry: dict, mode: str = "on") -> str:
     parts = [f"{found['changed_px']:,} px changed{_box(numbers, found.get('box'))}", f"ICC {found.get('icc') or 'as stored'}"]
     if "baseline" in numbers:
         parts.append(f"the old PSD drawn against the old PNG: bad {numbers['baseline'].get('bad_pct', 0):.2f}%")
+    # png_vs_render (G2 beside) is plan.json's alone: it measures the author's change (default 2026-10-24, owner to confirm)
     if "cross" in numbers:
         parts.append(f"against the PSD's own image: bad {numbers['cross'].get('bad_pct', 0):.2f}%, "
                      f"mean {numbers['cross'].get('mean', 0):.2f}")
     if found.get("writer") in ("photoshop", "tool"):
         parts.append("saved by Photoshop" if found["writer"] == "photoshop" else "not saved by Photoshop")
+    if found.get("unchecked"):
+        parts.append("no stored image to cross-check (saved without Maximize Compatibility)")
     verb = "made" if entry["case"] == "new" else "re-exported"
     misses = "".join(f"; {note}" for note in found.get("misses", []))
     return f"PNG{would} {verb} by the bot's render of the PSD ({'; '.join(parts)}){switch}{misses}"
@@ -931,7 +945,7 @@ def discord_payload(data: dict, repository: str) -> dict:
 # check
 # ========================
 def check(clone: str, after: str, before: str = "", repository: str = "", author: str = NOBODY, cards: Optional[set] = None,
-          whole_tree: bool = False, mode: str = "dry", fonts_dir: str = "", out: str = "guards", workers: int = 0) -> dict:
+          whole_tree: bool = False, mode: str = "dry", out: str = "guards", workers: int = 0) -> dict:
     """
     Both guards on a push (or a whole tree); writes report.md, discord.json and plan.json (with the artifacts) to out.
 
@@ -951,7 +965,7 @@ def check(clone: str, after: str, before: str = "", repository: str = "", author
         base, head, notes = push_range(source, before, after)
         jobs, skipped, more, tree = plan_jobs(source, base, head, author, cards)
         notes += more
-    context, vocab = build_context(source, tree, fonts_dir, errors) if jobs else (standards.Context(), None)
+    context, vocab = build_context(source, tree, errors) if jobs else (standards.Context(), None)
     if len(jobs) >= POOL_MIN and workers != 1:
         count = workers or max(1, min((cpu_count() or 2) // 2, len(jobs)))
         with ProcessPoolExecutor(count, initializer=_init_worker, initargs=(clone, repository, context, vocab)) as pool:
@@ -978,15 +992,15 @@ def check(clone: str, after: str, before: str = "", repository: str = "", author
 
 def _for_comment(entry: dict) -> bool:
     """A card the commit comment has something on: told, written, an error, or comment-only lines (R10, a non-Discord
-    note, an R7 issue, a fix or a refused one)."""
+    note, a told issue, a fix or a refused one)."""
     return bool(entry["told"] or entry["writes"] or entry["error"] or entry["notes"] or entry["r10"].get("ok") is False
                 or entry["fixed"] or entry["fix_refused"] or any(issue["told"] for issue in entry["issues"]))
 
 
 def summary(data: dict, errors: list) -> dict:
     """summary.json, the workflow's switches: cards checked; cards with something told (Land, the post), for the comment
-    (the Comment step: a context error alone, a standing font-index one say, comments on no push) and with an error (a red
-    run); writes planned; errors (the cards' and the context's)."""
+    (the Comment step: a context error alone, a standing manifest or chart one say, comments on no push) and with an error
+    (a red run); writes planned; errors (the cards' and the context's)."""
     cards = data["cards"]
     return {"after": data["after"], "cards": len(cards), "told": sum(1 for c in cards if c["told"]),
             "comment": sum(1 for c in cards if _for_comment(c)), "writes": sum(len(c["writes"]) for c in cards),
@@ -1082,7 +1096,8 @@ def after_window(data: dict, landed: dict, tip: Optional[Snapshot], bot_moved: f
     PNG refusal, or in report mode a PNG the bot would make, whose PNG was pushed since; plus the writes that did not land
     and were not replaced by the author (the bot's commit failed, a later push touched the card). A write the branch
     already holds (a re-run) is not told, nor any write when a re-run could not read the branch (an earlier attempt may
-    have landed it). A numbered PNG's refusal (G8) is withdrawn as the main PNG's is.
+    have landed it). A numbered PNG's refusal (G8) is withdrawn as the main PNG's is, and so is the line of a PNG made with
+    no stored image (G2) whose PNG was pushed since or did not land.
 
     Args:
         bot_moved: The PSDs whose last change on the branch is a bot commit's
@@ -1126,6 +1141,10 @@ def after_window(data: dict, landed: dict, tip: Optional[Snapshot], bot_moved: f
                 lines.append(f"PNG not made: {why}; export it in Photoshop")
             else:
                 lines.append(f"{basename(write['path'])} not updated: {why}; re-export it in Photoshop")
+        unchecked = export.get("unchecked")
+        if unchecked in lines and png and (any(line.startswith("PNG not made: ") for line in lines)
+                                           or (here and not _holds(entry, png, here(png)))):
+            lines.remove(unchecked)             # no bot PNG stands: the author's, or none
         told[psd], after[psd] = list(dict.fromkeys(lines)), notes
     return told, after
 
@@ -1181,8 +1200,11 @@ def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bo
         for _ in range(COMMIT_TRIES if not local else 1):
             tip = local_snapshot(repository, local) if local else snapshot_at(repository, ref_head(repository))
             here = Head(tip)
-            # a clone alone has no push times; a dispatch's window would hold its own push
-            recent = recent_paths(repository, tip.head, now(), local) if repository and quiet_from else set()
+            # a clone alone has no push times; a dispatch's window would hold its own push. A first attempt's from the
+            # push, not now: the post job starts 30 minutes after the check job ends, and pushes made during the check
+            # count too. A re-run's from now, as before (from the push, a late one counts the whole day's pushes)
+            recent = (recent_paths(repository, tip.head, now() if rerun else min(now(), mark), local)
+                      if repository and quiet_from else set())
             included, report["dropped"], report["already"] = [], [], []
             for entry in entries:
                 for write in entry["writes"]:
@@ -1265,7 +1287,6 @@ def main(args: Optional[list] = None) -> int:
     one.add_argument("--whole-tree", action="store_true", help="every card PSD at --after: standards and PNG-vs-PSD")
     one.add_argument("--mode", default="dry", choices=MODES, type=str.lower,
                      help="dry, report or on (CARD_GUARDS, any case): the report's wording")
-    one.add_argument("--fonts", default="", metavar="DIR", help="MDW/Fonts (R7); skipped without")
     one.add_argument("--workers", type=int, default=0, metavar="N", help="processes for 8 cards or more (0: half the cores)")
     one.add_argument("--out", required=True, metavar="DIR", help="report.md, discord.json, plan.json and the artifacts")
     two = sub.add_parser("land", help="commit a plan's writes once, after the quiet window")
@@ -1287,7 +1308,7 @@ def main(args: Optional[list] = None) -> int:
         cards = {CardAuthors.key(n) for n in options.cards.split(",") if n.strip()} or None
         try:
             data = check(options.clone, options.after, options.before, options.repo, options.author, cards, options.whole_tree,
-                         options.mode, options.fonts, options.out, options.workers)
+                         options.mode, options.out, options.workers)
         except (Transient, Refused) as error:   # the clone or the API failed: one line; the run fails (card-guards.yml alerts)
             print(f"## Card guards\n\nNot checked: {error}\n")
             return 1

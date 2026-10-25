@@ -136,7 +136,8 @@ The 2026-10-22 seven are gated whole, view modes included (`/set_repo` and `/ali
 does not enable).
 
 Two more ADMINS uses outside main.py since 2026-10-19 (commands/analytics.py):
-- `/remove_reminder` lets admins remove any reminder and everyone else only their own.
+- `/remove_reminder` and the `/reminders` panel's Reschedule, Turn off/on and Delete: admins, or the reminder's
+  creator (`can_edit`; no creator: admins only). The panel's New is admin only, like `/set_reminder`.
 - A firing reminder runs as its creator, so every gate above is re-checked against the creator at fire time.
   Reminders saved before 2026-10-19 have no creator and still run as the bot (`LEGACY_RUNS_AS_BOT`); the bot's
   own id is in the dev Mac's ADMINS. Mechanism: autocroissant-architecture-contract invariant 9.
@@ -184,7 +185,8 @@ Actions can run `python -m commands.tts_save` and the build on their checkout wi
 | `STATS_PKL` | `"stats.pkl"` | the card stats database pickle (committed) |
 | `SITE_URL` (2026-10-20) | `"https://michaeljsr.github.io/TTSCardMaker"` | the card browser: `/website`, `/query` Card page buttons, search links, the site's `data/cards.json` (main.py, query_card.py) |
 | `OLD_STATS_PKL` | `"old_stats.pkl"` | archived old card versions (committed) |
-| `REMIND_PKL` | `"reminder.pkl"` | reminders pickle (GITIGNORED, unlike the other three) |
+| `REMIND_JSON` (2026-10-24) | `"reminder.json"` | the reminder store (GITIGNORED, per machine; schema_version 2) |
+| `REMIND_PKL` | `"reminder.pkl"` | the old reminder store: converted once to `REMIND_JSON`, then kept as `reminder.pkl.bak` |
 | `DETAILS_JSON` (2026-10-21) | `"psd_details.json"` | the website's per-card PSD facts by blob sha (commands/psd_details.py); committed and pushed with the pickles by /push, kept local on a /pull conflict; its `.tmp` gitignored |
 | `HISTORY_JSON` (2026-10-20) | `"repo_history.json"` | repo path -> (blob, commit that last changed it), written by commands/repo_history.py; gitignored, rebuilt from the clone |
 | `FONTS_CACHE` (2026-10-21, 66cfe9e) | `"fonts_cache"` | MDW/Fonts' font files, refreshed by tree sha, where there is no card repo checkout (the jetson): the bake, psd_details and `/fonts` read it (gitignored) |
@@ -425,10 +427,18 @@ needed inside the bot. The work dir is card_bake's (`RUNNER_TEMP` else a fresh `
 (`card_bake._fonts_dir`): `PSD_TOOLS_FONT_DIRS`' first entry, then the checkout's `MDW/Fonts`, then `fonts_cache/`
 brought to the tree's MDW/Fonts (66cfe9e, 2026-10-21) — so the jetson, which has no checkout, has fonts.
 
-### commands/analytics.py — reminders (lines 26-56, added 2026-10-19)
+### commands/analytics.py — reminders (lines 28-81, added 2026-10-19; adapter block 2026-10-24)
+
+The "Bot adapter" block at the top holds what differs from OJWikibot's copy of the module: `STORE_PATH`
+(`REMIND_JSON`), `LEGACY_PATH` (`REMIND_PKL`), `STORE_SCHEMA`, `TIME_SEMANTICS`, `ZONE_LABEL` ("Pacific time"),
+`RUN_AS_CREATOR = True`, `LEGACY_RUNS_AS_BOT`, `ALLOW_POSITIONAL = True`, `ON_LOAD_ERROR = "off"` (an unreadable
+store turns reminders off; OJWikibot exits), `CHANNEL_RETRY`, `RETIRED_OPTIONS` and `is_admin`.
 
 | Constant | Value | Meaning |
 |---|---|---|
+| `SCHEMA_VERSION`, `KEYS` (2026-10-24) | `2`; the 11 stored fields | reminder.json's format; a newer schema_version is refused |
+| `NOT_SCHEDULABLE` | `{"reminders"}` | commands a reminder can't run (the panel needs a real user) |
+| `PANEL_TIMEOUT`, `SELECT_SIZE` | `600` s; `25` | an idle panel closes; options per jump list (more: 23 per page plus earlier/later) |
 | `REMINDER_VERSION` | `3` (2 until 2026-10-20) | stored as `v` on each reminder once migrated; reminders without `v` are read with the old command semantics, and any reminder below the current version is migrated on load (3 = retired options stripped) |
 | `MAX_INTERVAL` | `timedelta(days=366)` | upper limit for `offset` and `frequency` (longer = typo, and huge values overflow datetime) |
 | `CHANNEL_RETRY` | `timedelta(hours=1)` | how long a one-shot reminder whose channel is gone waits before trying again |
@@ -467,6 +477,8 @@ autocroissant-run-and-operate §9.
 | `card_standards.AUTO_FIX` | `("R9",)` | what the bot fixes itself (the Txt2 story); everything else is told |
 | `png_export.TOL` | `2` | the difference a pixel may show and still be unchanged (ICC rounding) |
 | `png_export.BESIDE_CUT` | `8` | a new PSD pushed beside its PNG counts as current within this many levels (owner, 2026-10-23) |
+| `png_export.UNCHECKED` | "no stored image to cross-check the bot's PNG against: save the PSD with Maximize Compatibility on" | told for a PNG the guards made from a PSD with no stored composite (G2 rendered anyway, owner 2026-10-24, branch work/py314) |
+| `png_export.KEPT` | "PNG kept as it is: the PSD has no stored image, and the bot's drawing differs from the PNG in only {px:,} px, ..." | told for a PNG kept beside a new PSD with no stored composite, at most `png_export.KEPT_PX` (300) px past BESIDE_CUT of the render, else redrawn (default 2026-10-24, owner to confirm; branch work/py314) |
 
 ### commands/card_preview.py (2026-10-23; not compiled; TTSCardMaker's card-preview.yml only; design section 16)
 
@@ -514,24 +526,28 @@ only); its pip install is card-edits.yml's, fork pin and all. Nothing in config.
 | `MAIN_COMMIT`, `POSTS` | env in card-sync.yml | `off` during the shadow: Card sync writes only the data branch and posts nothing |
 | `DISCORD_CHANGELOG_WEBHOOK` | secret | the changelog channel (changelog, bake/sync failure alerts; never pings) |
 | `DISCORD_STANDARDS_WEBHOOK` | secret | the standards channel: card-check, the push guards (no ping) and font-check (pings the card makers' role) |
+| `card-guards-quiet` | environment (planned 2026-10-24, branch work/py314; the owner creates it after both branches land) | its 30-minute wait timer is the push guards' quiet window: card-guards.yml's post job waits in it on a push's first attempt (no runner held); without the timer, Land sleeps the window out. Command: docs/Campaigns/PUSH_GUARDS.md section 20 |
 
 `DISCORD_FONT_WEBHOOK` was deleted on 2026-10-23 (owner).
 
 `card-preview.yml` (2026-10-23, website previews) reads none of these: no secret beyond `GITHUB_TOKEN`, no variable, no
 Discord. Its branch `previews` is data, not a setting: it is rewritten by the workflow and never merged.
 
-### The psd-tools fork pin: `requirements-cards.txt` (2026-10-23)
+### The psd-tools fork pin: `requirements-cards.txt` (2026-10-23; every Action on 3.14 since 2026-10-24, branch work/py314)
 
 The fork's tag is in one place: AutoCroissant `requirements-cards.txt`, the card code's packages
 (`psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@<tag>`: read the tag there, no doc copies it;
-fonttools, requests, `pyoxipng==9.1.1` only where it has a wheel: CPython 3.9-3.13; skipped on the Mac's and the
-jetson's 3.14). `requirements.txt` (the bot) starts with `-r requirements-cards.txt`, `requirements-dev.txt` with
-`-r requirements.txt`. card-edits.yml, card-guards.yml, card-sync.yml (both its venvs) and card-preview.yml (without
-pyoxipng: its PNG is never published) check the file out of AutoCroissant and install it offline from wheels in the
-Actions cache (path `~/.cache/card-wheels`, key `cards-<hashFiles('bot/requirements-cards.txt')>-<OS>-<arch>-py<Python>`:
-one entry for card-edits, card-guards and card-preview on 3.12; card-sync's names both its Pythons,
-`-py<3.14.x>-py<3.12.x>`). The first run after a change to the file or a new runner Python builds them (`pip wheel -r`,
-the fork's C extensions) and saves them; later runs skip the git clone and the build (~25 s of the 29-35 s install). The
+fonttools, requests, `pyoxipng==9.1.1` on Linux x86_64 at any CPython 3.9+, built from its sdist on 3.14, and elsewhere
+only where it has a wheel, CPython 3.9-3.13: skipped on the Mac's and the jetson's 3.14). `requirements.txt` (the bot)
+starts with `-r requirements-cards.txt`, `requirements-dev.txt` with `-r requirements.txt`. The six card workflows on
+Python 3.14, card-edits.yml, card-guards.yml (its check and post jobs), card-sync.yml (one venv for every stage),
+card-preview.yml (without pyoxipng: its PNG is never published), card-check.yml and font-check.yml (stock psd-tools until
+2026-10-24), check the file out of AutoCroissant and install it offline from wheels in the Actions cache (path
+`~/.cache/card-wheels`, key `cards-<hashFiles('bot/requirements-cards.txt')>-<OS>-<arch>-py<Python>`: one entry for all
+six; until 2026-10-24 card-edits, card-guards and card-preview on 3.12 and card-sync's own `-py<3.14.x>-py<3.12.x>`). The
+first run after a change to the file or a new runner Python builds them (`pip wheel -r`: the fork's C extensions,
+pyoxipng's Rust) and saves them; later runs skip the git clone and the builds (a cold miss on the Mac: 16.4 s for the
+wheels, 19.5 s for pyoxipng's sdist, 10.7 s to install; a runner is slower, PUSH_GUARDS.md section 20). The
 install goes by name (a copy of the file without the URL, `sed 's/ @ [^;]*//'`): pip builds a URL line from git again,
 offline or not. The wheels freeze numpy, scipy, Pillow and the rest at that first build; any edit of the file refreshes
 them (for a bad dependency release, delete the entry: step 1's `gh cache delete`).
@@ -543,14 +559,15 @@ Re-pin:
    they check out main, and the new file is a new key (GitHub drops an entry unused for 7 days).
 3. Run the tests: `tests/test_card_data.py -k requirements` (one pin, a `cards-YYYYMMDD[letter]` tag, the layers) and,
    against a TTSCardMaker checkout, `CARD_GUARDS_YML=<checkout>/.github/workflows/card-guards.yml AC_SITE_SRC=<checkout>`
-   with `tests/test_card_guards.py tests/test_card_preview.py -k workflow` (`test_card_bake.fork_install` checks each
-   workflow's install: no pin of its own, the file's wheels).
+   with `tests/test_card_guards.py tests/test_card_preview.py -k workflow` and `tests/test_card_bake.py -k "fork or 314"`
+   (`test_card_bake.fork_install` checks each of the six workflows' install: no pin of its own, Python 3.14, the file's
+   wheels, one cache key; `test_every_action_runs_python_314` every workflow's Python).
 4. The jetson's venv and the dev Mac's: `pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"`
    (a plain `pip install -r` keeps the old commit while the fork's version is unchanged: 1.25.0 up to `cards-20261023d`,
-   1.26.0+cards since `cards-20261024`; autocroissant-run-and-operate, "When the psd-tools fork tag moves"; autocroissant-build-and-env).
+   1.26.0+cards since `cards-20261024`, also at `cards-20261024b`; autocroissant-run-and-operate, "When the psd-tools fork tag moves"; autocroissant-build-and-env).
 
 A card-sync run whose builder (`builder_ref`, `CARD_DATA_BUILDER_REF`) is an AutoCroissant commit from before
-2026-10-23's requirements-cards.txt fails at its "Python environments" step: that commit has no such file.
+2026-10-23's requirements-cards.txt fails at its "Python environment" step: that commit has no such file.
 
 ### setup.py (lines 8-49) — Cython build configuration
 
@@ -693,11 +710,11 @@ table with its command before quoting it in the future.
 | update_stats defaults (force_update False both places; use_local_repo / use_local_timestamp removed 2026-10-20) | `grep -n "force_update: \|use_local" main.py commands/repo_traverser.py commands/card_data.py` (no use_local hits; every force_update default is False) |
 | Icon-font constants | `grep -n "^ICON_" commands/psd_parser.py global_config.py` |
 | type_emojis constants | `sed -n '14,26p' commands/type_emojis.py` |
-| Reminder constants | `sed -n '26,56p' commands/analytics.py` |
+| Reminder constants | `sed -n '28,81p' commands/analytics.py` |
 | Bot identity (names only) | `grep -n "^#" config.py` shows which identity's TOKEN line is active (comments only — never print values) |
 | global_config constants | `cat global_config.py` (45 lines) |
 | setup.py build config | `sed -n '8,49p' setup.py` |
-| Gitignore coverage (config.py, reminder.pkl, music/, *.csv, *.txt) | `grep -n "config.py\|reminder.pkl\|music/\|csv\|txt" .gitignore` |
+| Gitignore coverage (config.py, reminder.json, music/, *.csv, *.txt) | `grep -n "config.py\|reminder\|music/\|csv\|txt" .gitignore` |
 
 When any command's output disagrees with this file, the repo wins: update the table, re-date the
 "as of" stamps, and note the change here.
@@ -746,3 +763,7 @@ guards, psd_edit parity and card_bake, and the TTSCardMaker repo settings; 21 la
 /update_stats gate); every main.py, query_card.py, card_data.py, psd_parser.py and psd_analyzer.py citation re-pointed.
 
 2026-10-23 (unbatch): query_card.py citations re-pointed (card_repo, set_match_ratio, set_repository) after /query_ability went back to one message per card.
+
+2026-10-24 (py314, branch work/py314): the fork pin section (six workflows on 3.14, one cache entry, the pyoxipng
+marker), the `card-guards-quiet` environment among the repo settings, `png_export.UNCHECKED`. The guards take no fonts
+(R7 dropped; no `--fonts`).
