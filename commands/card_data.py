@@ -29,7 +29,7 @@ from requests.exceptions import RequestException
 from global_config import (AUTHORS_PATH, CARD_BRANCH, CREATED_PATH, EDITS_PATH, ICON_MANIFEST_PATH, RULEBOOK_DIR, RULES_PATH,
                            STARS_DIR, TYPES_DIR)
 from commands.card_edits import CardAuthors, CardDates, CardEdits
-from commands.card_models import CardInfo, StatsDatabase, card_name, duplicate_png
+from commands.card_models import CardInfo, StatsDatabase, card_name, duplicate_png, straighten_card
 from commands.github_api import RangeError, RemotePSD, blob_text, fetch_blob, range_reads
 from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser
 
@@ -507,8 +507,10 @@ class CardBuild:
                 card.blob_sha = sha
                 if author and not card.author:
                     card.author = author
-                if self.edits:
+                straighten_card(card)                           # straight apostrophes (owner, 2026-10-25): the
+                if self.edits:                                  # parse, then the edits' values
                     self.edits.apply(name, card)
+                    straighten_card(card)
                 self.db.stats[name] = card
 
                 if output_problematic:

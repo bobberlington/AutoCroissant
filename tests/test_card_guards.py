@@ -1389,6 +1389,29 @@ def test_a_composer_fix_is_said_only_in_the_commit(tmp_path, monkeypatch):
     assert cg.land(plan)["told"]["X/A.psd"] == []          # dropped: never told either
 
 
+def test_pixel_fixes_are_said_only_in_the_commit(tmp_path, monkeypatch):
+    """Straight apostrophes (owner 2026-10-25): the PNG follows through guard 1's export, both writes silent; the commit
+    message alone counts them."""
+    from types import SimpleNamespace
+    fixed = SimpleNamespace(data=b"straight", plain=b"pushed", rewrapped=[], redrawn={"apostrophes": ["Name"]})
+    found = pe.Export("re-exported", image=object(), data=b"png2", changed_px=35)
+    monkeypatch.setattr(cg.png_export, "open_psd", lambda data: data)
+    monkeypatch.setattr(cg.png_export, "export", lambda old, new, png, numbered: found)
+    result = cg.Result(cg.Job("X/A.psd", "pair", png="X/A.png"))
+    assert cg._rewrapped_pngs(str(tmp_path), result, b"pushed", fixed, {"X/A.png": "image"})
+    assert [(w["kind"], w["silent"], w["line"]) for w in result.writes] == [
+        ("png", True, "re-exported for straight apostrophes (35 px changed)")]
+    found.outcome, found.why = "refused", "PNG not made: G6"
+    assert not cg._rewrapped_pngs(str(tmp_path), result, b"pushed", fixed, {"X/A.png": "image"})
+    assert result.pixel_left == [("apostrophes", "not redrawn: PNG not made: G6")]
+    entry = _entry("A")
+    _write(tmp_path / "plan", entry, "X/A.psd", "psd", b"straight", "straight apostrophes (Name)")
+    entry["writes"][0].update(shown="", silent=True, composer=False, pixels=["apostrophes"])
+    data = json.loads(Path(_full_plan(tmp_path, [entry])).read_text())
+    assert cg.discord_payload(data, "o/r") == {} and "apostrophe" not in cg.markdown(data, [], [], [])
+    assert cg.message([entry], "f" * 40).startswith(f"Card guards: straight apostrophes on 1 card (push {'f' * 8})")
+
+
 def test_a_rewrap_redraw_follows_into_the_png_unsaid(tmp_path, monkeypatch):
     """R8 always switches; box text that rewraps is redrawn and its PNG re-exported through guard 1's export, unsaid (a
     guard 1 write takes the new pixels, the pushed PNG's recompression gives way); a refused export, or no PNG that shows

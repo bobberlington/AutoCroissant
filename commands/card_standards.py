@@ -8,10 +8,12 @@ the real issues (several visible Ability layers, or a hidden one with words the 
 rasterized Name layer the title can't be read from): the template layout they also checked was dropped by the owner on
 2026-10-23.
 R9 (Txt2 stories) is fixed by the fork with byte gates, the rest is reported. R11's rename (exact layer names) is built
-and gated but reported until the owner says yes (AUTO_FIX). Rule pages are never checked.
+and gated but reported until the owner says yes (AUTO_FIX). Rule pages are never checked. The pixel fixes (PIXEL_FIXES,
+silent, owner 2026-10-25) run on every card and rule page: straight apostrophes, and icon font glyphs Photoshop drew with
+an older font drawn again; each redraws only the changed glyphs and the guards re-export the PNG.
 
     check(psd, rel, context, old=None, added=False) -> [Issue]
-    fix(data, rel, issues, work, parser=None, fonts=None) -> Fixed   the 0-pixel fixes, gated (one PSD's new bytes)
+    fix(data, rel, issues, work, parser=None, fonts=None, only=None) -> Fixed   the fixes, gated (one PSD's new bytes)
     composer_layers(psd) -> [layer]                               the card text layers set Every-line (R8)
     redraw(path, out_path, names, fonts) -> [name]                the rewrapped layers drawn again (R8)
     BADGE_TAGS, WAIVED                                            the badge vocabulary and the owner's class waivers
@@ -31,10 +33,11 @@ from psd_tools.constants import Tag
 
 import commands.psd_edit as psd_edit
 from commands.card_edits import CardAuthors
+from commands.card_models import APOSTROPHE, straight
 from commands.font_check import _get, _value, layer_fonts
 from commands.psd_edit import BADGE_KEYS, BADGE_TAGS, PAREN, Refused, badge_tags
 from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, CardValidator, PSDParser
-from commands.psd_regions import clip, fx_pad, overlay_words
+from commands.psd_regions import clip, fx_pad, overlay_words, union_box
 from global_config import RULEBOOK_DIR
 
 # ========================
@@ -103,6 +106,8 @@ class Fixed:
     composer_left: list = field(default_factory=list)   # R8: (layer, why) not redrawn or not set (plan.json only)
     rewrapped: list = field(default_factory=list)   # R8: box text layers redrawn in data (their lines moved)
     plain: bytes = b""                          # data without the redraw (when the PNG can't follow it)
+    redrawn: dict = field(default_factory=dict) # PIXEL_FIXES kind -> layers redrawn in data (silent; the PNG follows)
+    pixel_left: list = field(default_factory=list)  # (kind, why) a pixel fix not made (plan.json only)
 
 
 # ========================
@@ -654,7 +659,7 @@ def _every_line_in(data: bytes) -> bool:
 
 
 def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[PSDParser], result: Fixed,
-            fonts: Optional[Callable[[list], Optional[str]]] = None) -> None:
+            fonts: Optional[Callable[[list], Optional[str]]] = None, composer: bool = True, pixels: tuple = ()) -> None:
     """fix()'s work in its own temporary folder."""
     from commands.txt2_repair import repair
     base = join(folder, "pushed.psd")
@@ -678,40 +683,46 @@ def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[P
         codes.append(issue.code)
         result.applied.append(issue.line())
     out, moves = join(folder, "R8.psd"), []
-    try:
-        result.composer, moves, result.composer_left = single_line(current, out, fonts)
-    except Exception as error:                  # best effort: never told, the other fixes stand
-        result.composer_left = [("", f"{type(error).__name__}: {error}")]
+    if composer:
+        try:
+            result.composer, moves, result.composer_left = single_line(current, out, fonts)
+        except Exception as error:              # best effort: never told, the other fixes stand
+            result.composer_left = [("", f"{type(error).__name__}: {error}")]
     if result.composer:
         current = out
         codes.append("R8")
-    if current == base:
-        return
-    try:
-        result.data = _gated(base, current, rel, parser)
-    except Refused as refused:
-        result.refused += [(code, str(refused)) for code in codes if code != "R8"]
-        result.composer_left += [(name, str(refused)) for name in result.composer]
-        result.applied, result.composer, result.data = [], [], b""
-        return
-    if not moves:
-        return
-    drawn = join(folder, "R8-redrawn.psd")
-    try:                                        # the lines that rewrap drawn again: the guards re-export the PNG
-        names = redraw(current, drawn, [name for name, _ in moves], fonts)
-        data = _gated(base, drawn, rel, parser)
-    except Exception as error:                  # best effort: set, not redrawn
-        result.composer_left += [(name, f"rewraps ({why}), not redrawn: {error}") for name, why in moves]
-        return
-    result.plain, result.data, result.rewrapped = result.data, data, names
+    if current != base:
+        try:
+            result.data = _gated(base, current, rel, parser)
+        except Refused as refused:
+            result.refused += [(code, str(refused)) for code in codes if code != "R8"]
+            result.composer_left += [(name, str(refused)) for name in result.composer]
+            result.applied, result.composer, result.data = [], [], b""
+            current, moves = base, []           # the pixel fixes go on the pushed PSD
+    if moves:
+        drawn = join(folder, "R8-redrawn.psd")
+        try:                                    # the lines that rewrap drawn again: the guards re-export the PNG
+            names = redraw(current, drawn, [name for name, _ in moves], fonts)
+            data = _gated(base, drawn, rel, parser)
+        except Exception as error:              # best effort: set, not redrawn
+            result.composer_left += [(name, f"rewraps ({why}), not redrawn: {error}") for name, why in moves]
+        else:
+            result.plain, result.data, result.rewrapped = result.data, data, names
+            current = drawn
+    if pixels:
+        _pixel_fixes(folder, base, current, rel, parser, result, fonts, pixels)
 
 
-def _gated(base: str, path: str, rel: str, parser: Optional[PSDParser]) -> bytes:
-    """A fixed PSD's bytes through the size and the reparse gates; raises Refused."""
-    if abs(getsize(path) - getsize(base)) > SIZE_MAX * getsize(base):
+def _gated(base: str, path: str, rel: str, parser: Optional[PSDParser], reads: Optional[Callable] = None,
+           sized: bool = True) -> bytes:
+    """A fixed PSD's bytes through the size and the reparse gates (reads: what the fix makes of the old parse; sized
+    False: a pixel fix, its bytes proven by _only_pixels, the preview re-encoded); raises Refused."""
+    if sized and abs(getsize(path) - getsize(base)) > SIZE_MAX * getsize(base):
         raise Refused("size", f"PSD {getsize(base)} -> {getsize(path)} bytes")
     if parser is not None:
         before, after = psd_edit.parse_card(parser, base, rel), psd_edit.parse_card(parser, path, rel)
+        if reads is not None:
+            before = reads(before)
         if (before["card"], before["alt_names"], before["validator"]) != (after["card"], after["alt_names"], after["validator"]):
             raise Refused("reparse", "the bot reads the fixed PSD differently")
     with open(path, "rb") as fh:
@@ -719,12 +730,13 @@ def _gated(base: str, path: str, rel: str, parser: Optional[PSDParser]) -> bytes
 
 
 def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDParser] = None,
-        fonts: Optional[Callable[[list], Optional[str]]] = None) -> Fixed:
+        fonts: Optional[Callable[[list], Optional[str]]] = None, only: Optional[str] = None) -> Fixed:
     """
     The fixable issues of one PSD (R11 renames, then R9 story syncs), each gated, then R8's Single-line Composer
     (single_line: never told, a refusal left in composer_left); then the size and the reparse gates over the result. A
-    refusal leaves that fix out (and reports it); nothing is fixed on a rule page. Box text that rewraps is redrawn
-    (redraw, gated again: data, the result without it in plain).
+    refusal leaves that fix out (and reports it); a rule page takes the pixel fixes alone. Box text that rewraps is
+    redrawn (redraw, gated again: data, the result without it in plain), then the pixel fixes (PIXEL_FIXES, each gated;
+    redrawn, a refusal in pixel_left; plain without them).
 
     Args:
         data: The pushed PSD
@@ -732,22 +744,313 @@ def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDPars
         issues: check()'s issues
         work: A folder for the temporary files
         parser: The offline parser for gate_reparse (skipped without)
-        fonts: Gives MDW/Fonts for R8's box text (single_line)
+        fonts: Gives MDW/Fonts for R8's box text (single_line) and the pixel fixes
+        only: One PIXEL_FIXES kind alone (a sweep: card_sweep), no other fix
 
     Returns:
         Fixed
     """
     result = Fixed()
-    wanted = [issue for issue in issues if issue.fix and not issue.waived]
-    if kind_of(rel) == "rule" or not (wanted or _every_line_in(data)):
+    rule = kind_of(rel) == "rule"               # a rule page takes the pixel fixes alone
+    wanted = [] if rule or only else [issue for issue in issues if issue.fix and not issue.waived]
+    composer = not (rule or only) and _every_line_in(data)
+    pixels = pixel_kinds(data, (only,) if only else ())
+    if not (wanted or composer or pixels):
         return result
     makedirs(work, exist_ok=True)
     folder = mkdtemp(prefix="fix-", dir=work)   # one per call: cards of one key in two folders never share a file
     try:
-        _fix_in(folder, data, rel, wanted, parser, result, fonts)
+        _fix_in(folder, data, rel, wanted, parser, result, fonts, composer, pixels)
     finally:
         rmtree(folder, ignore_errors=True)
     return result
+
+
+# ========================
+# Pixel fixes (silent: the commit message alone says them, owner 2026-10-25)
+# ========================
+OLD_GLYPH_BAD = 0.40        # an icon font glyph is old past this share of its ink off the current font's render, shift-
+                            # tolerant (census 2026-10-25: Photoshop's current glyphs 0.26 at most, older fonts' 0.43 and up)
+OLD_GLYPH_LEVEL = 24 / 255  # a pixel is off past this in a premultiplied channel
+OLD_GLYPH_SHIFT = 2         # px the render may sit off Photoshop's glyph
+OLD_GLYPH_INK = 0.05        # alpha that counts as ink
+OLD_GLYPH_MIN_INK = 20      # px of ink: a smaller glyph is not judged
+STALE_FILL = (-1.0, -1.0, -1.0)   # marks a glyph changed for the splice (it redraws that glyph alone)
+
+
+def _straightened(value):
+    """value's strings with straight apostrophes."""
+    if isinstance(value, dict):
+        return {key: _straightened(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return type(value)(_straightened(item) for item in value)
+    return straight(value)
+
+
+def straight_parse(parsed: dict) -> dict:
+    """What straighten() makes the parser read: the parse straightened, a title now the card's name no display_name."""
+    out = {key: _straightened(parsed[key]) for key in ("card", "alt_names", "validator")}
+    title, name = out["card"].get("display_name"), getattr(parsed.get("info"), "name", None) or ""
+    if title is not None and (title == name or sorted(title.lower().split()) == sorted(name.lower().split())):
+        out["card"].pop("display_name")         # _printed_title's rules (the second for a title of several layers)
+    return out
+
+
+def curly_layers(psd: PSDImage) -> list:
+    """The type layers whose text holds a curly apostrophe (hidden ones too)."""
+    return [layer for layer in psd.descendants() if layer.kind == "type" and APOSTROPHE in (layer.text or "")]
+
+
+def _icon_runs(layer) -> bool:
+    """Whether a run of the layer is set in the icon font."""
+    try:
+        _, runs = run_fonts(layer)
+    except (KeyError, TypeError, AttributeError, IndexError):
+        return False
+    return any(end > start and font.lower().startswith(ICON_FONT_PREFIX) for start, end, font in runs)
+
+
+def icon_layers(psd: PSDImage) -> list:
+    """The visible type layers with icon font runs."""
+    return [layer for layer in _visible_texts(psd) if _icon_runs(layer)]
+
+
+def _fonts_of(layer, fonts: Optional[Callable[[list], Optional[str]]]):
+    folder = fonts(layer_fonts(layer)) if fonts else ""
+    if not folder:
+        raise ValueError(f"{layer.name.strip()}: no fonts to draw it")
+    return psd_edit.font_map(folder)
+
+
+def _premultiplied(rgba, bbox, window: tuple):
+    """Straight RGBA at bbox, premultiplied on the window (transparent elsewhere)."""
+    import numpy as np
+    x0, y0, x1, y1 = window
+    out = np.zeros((y1 - y0, x1 - x0, 4), np.float32)
+    if rgba is not None and bbox is not None and rgba.size:
+        bx0, by0, bx1, by1 = (int(v) for v in bbox)
+        cx0, cy0, cx1, cy1 = max(bx0, x0), max(by0, y0), min(bx1, x1), min(by1, y1)
+        if cx1 > cx0 and cy1 > cy0:
+            out[cy0 - y0:cy1 - y0, cx0 - x0:cx1 - x0] = rgba[cy0 - by0:cy1 - by0, cx0 - bx0:cx1 - bx0]
+    out[..., :3] *= out[..., 3:4]
+    return out
+
+
+def _off_share(stored, drawn, box: tuple) -> float:
+    """
+    The share of a glyph's ink (stored or drawn) off the render, the render shifted up to OLD_GLYPH_SHIFT px and each
+    pixel matched to the nearest of its 3x3 (the oldfont census' score); 0.0 for too little ink. box: in window pixels,
+    at least OLD_GLYPH_SHIFT + 1 inside it.
+    """
+    import numpy as np
+    x0, y0, x1, y1 = box
+    a = stored[y0:y1, x0:x1]
+    m = OLD_GLYPH_SHIFT + 1
+    big = drawn[y0 - m:y1 + m, x0 - m:x1 + m]
+    h, w = a.shape[:2]
+    best = None
+    for dy in range(-OLD_GLYPH_SHIFT, OLD_GLYPH_SHIFT + 1):
+        for dx in range(-OLD_GLYPH_SHIFT, OLD_GLYPH_SHIFT + 1):
+            near = None
+            for ny in (-1, 0, 1):
+                for nx in (-1, 0, 1):
+                    b = big[m + dy + ny:m + dy + ny + h, m + dx + nx:m + dx + nx + w]
+                    off = np.abs(a - b).max(axis=2)
+                    near = off if near is None else np.minimum(near, off)
+            bad = int((near > OLD_GLYPH_LEVEL).sum())
+            if best is None or bad < best[0]:
+                best = (bad, dy, dx)
+    _, dy, dx = best
+    b = big[m + dy:m + dy + h, m + dx:m + dx + w]
+    ink = int(((a[..., 3] > OLD_GLYPH_INK) | (b[..., 3] > OLD_GLYPH_INK)).sum())
+    return best[0] / ink if ink >= OLD_GLYPH_MIN_INK else 0.0
+
+
+def old_glyphs(layer, fonts) -> list:
+    """
+    The icon font glyphs Photoshop drew with an older version of the font: their stored pixels against the current
+    font's render (_off_share past OLD_GLYPH_BAD).
+
+    Args:
+        fonts: A FontMap (psd_edit.font_map)
+
+    Returns:
+        Indices into the layout's glyphs (capture(layer, fonts).layout)
+    """
+    from psd_tools.composite.text import capture, render
+    from psd_tools.composite.text.splice import _glyph_box
+    before = capture(layer, fonts)
+    if before.rgba is None or before.bbox is None:
+        return []
+    drawn = render(layer, fonts=fonts)
+    pad = OLD_GLYPH_SHIFT + 2
+    boxes = [b for b in (before.bbox, drawn.bbox) if b is not None]
+    window = (min(b[0] for b in boxes) - pad, min(b[1] for b in boxes) - pad,
+              max(b[2] for b in boxes) + pad, max(b[3] for b in boxes) + pad)
+    stored, mine = _premultiplied(before.rgba, before.bbox, window), _premultiplied(drawn.rgba, drawn.bbox, window)
+    out = []
+    for index, glyph in enumerate(before.layout.glyphs):
+        name = glyph.face.ft.postscript_name
+        name = name.decode("latin-1") if isinstance(name, bytes) else str(name or "")
+        if not name.lower().startswith(ICON_FONT_PREFIX):
+            continue
+        box = _glyph_box(glyph, before.model.transform, 1)
+        if box is None:
+            continue
+        x0, y0, x1, y1 = (box[0] - window[0], box[1] - window[1], box[2] - window[0], box[3] - window[1])
+        x0, y0 = max(x0, pad), max(y0, pad)
+        x1, y1 = min(x1, window[2] - window[0] - pad), min(y1, window[3] - window[1] - pad)
+        if x1 > x0 and y1 > y0 and _off_share(stored, mine, (x0, y0, x1, y1)) > OLD_GLYPH_BAD:
+            out.append(index)
+    return out
+
+
+def _save_patched(before: PSDImage, psd: PSDImage, boxes: list, out_path: str) -> None:
+    """psd saved with its stored preview patched where the boxes' render changed (redraw's way)."""
+    import numpy as np
+    preview = psd_edit.stored_preview(before)
+    if preview is None:
+        raise Refused("unsupported-card", "no stored preview to patch")
+    region = clip(union_box(boxes), psd.width, psd.height)
+    was, now = psd_edit.render_pair(before, region, False)[1], psd_edit.render_pair(psd, region, False)[1]
+    moved = np.asarray(was.convert("RGBA")) != np.asarray(now.convert("RGBA"))
+    psd_edit.save_psd(psd, out_path, preview=psd_edit.merge_preview(preview, [(moved.any(axis=2), now, region)]))
+
+
+def _only_pixels(path: str, out_path: str, records: set, stories: Optional[list] = None) -> None:
+    """Gate: only these records' pixels, rectangle and TySh changed, and (stories) only these Txt2 stories, else the
+    document is the old bytes but its preview; raises Refused("bytes")."""
+    old_records, new_records = psd_edit.layer_records(path), psd_edit.layer_records(out_path)
+    if len(old_records) != len(new_records):
+        raise Refused("bytes", "layer count changed")
+    for i, (a, b) in enumerate(zip(old_records, new_records)):
+        if i not in records:
+            if a != b:
+                raise Refused("bytes", "a layer record changed beyond the redrawn text")
+        elif {k for k in a if a[k] != b[k]} - {"channels", "rect", "blocks"} or \
+                [k for (k, x), (_, y) in zip(a["blocks"], b["blocks"]) if x != y and k != b"TySh"]:
+            raise Refused("bytes", f"{a['name']}: changed beyond its pixels")
+    before, new = PSDImage.open(path), PSDImage.open(out_path)
+    for part in ("header", "color_mode_data", "image_resources"):
+        if psd_edit._raw(getattr(before._record, part)) != psd_edit._raw(getattr(new._record, part)):
+            raise Refused("bytes", f"{part} changed")
+    if stories is None:
+        if psd_edit._document_blocks(before) != psd_edit._document_blocks(new):
+            raise Refused("bytes", "document blocks changed")
+    else:
+        psd_edit.gate_stories(before, new, stories)
+
+
+def _padded(layer, old: tuple) -> list:
+    pad = fx_pad(layer) + LINE_PAD
+    return [(x0 - pad, y0 - pad, x1 + pad, y1 + pad) for x0, y0, x1, y1 in (old, tuple(layer.bbox)) if x1 > x0 and y1 > y0]
+
+
+def straighten(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]]) -> list:
+    """
+    Apostrophes (owner, 2026-10-25): every U+2019 in the type layers set as ', one at a time (each keeps its own style), in
+    TySh and the Txt2 story; the changed glyphs redrawn (a glyph splice), the stored preview patched; gated
+    (_only_pixels, the stories by gate_stories).
+
+    Returns:
+        The layer names changed; raises Refused or the engine's errors
+    """
+    from psd_tools.composite.text import capture
+    before, psd = PSDImage.open(path), PSDImage.open(path)
+    layers = curly_layers(psd)
+    if not layers:
+        return []
+    boxes, stories = [], []
+    for layer in layers:
+        found = _fonts_of(layer, fonts)
+        old, keep = tuple(layer.bbox), capture(layer, found)
+        if psd_edit.story_index(layer) is not None:
+            stories.append(psd_edit.story_index(layer))
+        text = layer.text
+        for at in reversed([i for i, c in enumerate(text) if c == APOSTROPHE]):
+            text = text[:at] + "'" + text[at + 1:]
+            layer.set_text(text, keep="runs")
+        layer.rasterize(fonts=found, keep=keep, unit=psd_edit.SPLICE_UNIT)
+        boxes += _padded(layer, old)
+    _save_patched(before, psd, boxes or [(0, 0, 1, 1)], out_path)
+    _only_pixels(path, out_path, {psd_edit._record_index(layer) for layer in layers}, stories)
+    if curly_layers(PSDImage.open(out_path)):
+        raise Refused("bytes", "a curly apostrophe is left")
+    return [layer.name.strip() for layer in layers]
+
+
+def redraw_old_glyphs(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]]) -> list:
+    """
+    Icon font glyphs Photoshop drew with an older font (old_glyphs) drawn again with the current one, those glyphs alone
+    (a splice; refused when it would redraw the layer whole), the stored preview patched; gated (_only_pixels).
+
+    Returns:
+        The layer names redrawn; raises Refused or the engine's errors
+    """
+    from dataclasses import replace
+    from psd_tools.composite.text import capture
+    before, psd = PSDImage.open(path), PSDImage.open(path)
+    boxes, records, names = [], set(), []
+    for layer in icon_layers(psd):
+        found = _fonts_of(layer, fonts)
+        stale = old_glyphs(layer, found)
+        if not stale:
+            continue
+        keep, old = capture(layer, found), tuple(layer.bbox)
+        glyphs = tuple(replace(g, fill=STALE_FILL) if i in stale else g for i, g in enumerate(keep.layout.glyphs))
+        report = layer.rasterize(fonts=found, keep=replace(keep, layout=replace(keep.layout, glyphs=glyphs)), unit="glyph")
+        spliced = getattr(report, "splice", None)
+        if spliced is None or spliced.fallback:
+            raise Refused("unsupported-card", f"{layer.name.strip()}: not redrawn by glyph"
+                                              + (f" ({spliced.fallback})" if spliced is not None else ""))
+        boxes += _padded(layer, old)
+        records.add(psd_edit._record_index(layer))
+        names.append(layer.name.strip())
+    if not names:
+        return []
+    _save_patched(before, psd, boxes, out_path)
+    _only_pixels(path, out_path, records)
+    return names
+
+
+PIXEL_FIXES = {     # kind -> (finds(psd) -> [layer], fix(path, out_path, fonts) -> [layer name], the parse it makes or None)
+    "apostrophes": (curly_layers, straighten, straight_parse),
+    "old glyphs": (icon_layers, redraw_old_glyphs, None),
+}
+PIXEL_LINES = {"apostrophes": "straight apostrophes", "old glyphs": "old icon font glyphs redrawn"}
+
+
+def pixel_kinds(psd, kinds: tuple = ()) -> tuple:
+    """The pixel fix kinds (all by default) whose layers the PSD (open, or its bytes) has."""
+    try:
+        psd = PSDImage.open(BytesIO(psd)) if isinstance(psd, bytes) else psd
+        return tuple(kind for kind in kinds or tuple(PIXEL_FIXES) if PIXEL_FIXES[kind][0](psd))
+    except Exception:                           # unreadable: nothing to fix
+        return ()
+
+
+def _pixel_fixes(folder: str, base: str, current: str, rel: str, parser: Optional[PSDParser], result: Fixed,
+                 fonts: Optional[Callable[[list], Optional[str]]], kinds: tuple) -> None:
+    """fix()'s pixel fixes over current (the other fixes' result), each gated on its own; plain becomes the PSD without
+    them (the pushed one when they are all) unless R8 redrew."""
+    plain = result.data
+    for kind in kinds:
+        _, apply, reads = PIXEL_FIXES[kind]
+        out = join(folder, kind.replace(" ", "-") + ".psd")
+        try:
+            names = apply(current, out, fonts)
+            if not names:
+                continue
+            data = _gated(current, out, rel, parser, reads, sized=False)
+        except Exception as error:              # best effort, never told: plan.json says why
+            result.pixel_left.append((kind, f"{type(error).__name__}: {error}"))
+            continue
+        result.redrawn[kind], result.data, current = names, data, out
+    if result.redrawn and not result.rewrapped:
+        if not plain:
+            with open(base, "rb") as fh:
+                plain = fh.read()
+        result.plain = plain
 
 
 # ========================
@@ -768,16 +1071,24 @@ __all__ = [
     'card_key',
     'check',
     'composer_layers',
+    'curly_layers',
     'every_line',
     'fix',
+    'icon_layers',
     'inexact_names',
     'kind_of',
     'mark_new',
+    'old_glyphs',
+    'PIXEL_FIXES',
+    'PIXEL_LINES',
+    'pixel_kinds',
     'rename',
     'reported',
     'redraw',
+    'redraw_old_glyphs',
     'reflow',
     'run_fonts',
     'single_line',
+    'straighten',
     'title_problem',
 ]
