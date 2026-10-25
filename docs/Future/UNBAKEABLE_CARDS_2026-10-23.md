@@ -906,6 +906,7 @@ Today: **7 cards** (Ability 7). After the pending changes, **0** of them bake.
 
 - **Why:** No visible text layer is called Ability (it is hidden, named something else, or the ability is a picture), so there is nothing for the bot to retype.
 - **What would fix it:** Card maker: make the printed ability one visible text layer named Ability. No code change planned.
+- **2026-10-25 (work/abil):** a hidden Ability laid out again in visible pieces (Apex Predator, Bulborb Larva, Butterfly, Empress Bulblax) bakes: each piece takes its part of the edit, the hidden layer the whole (`psd_edit.set_ability_layers`). The other three print no ability.
 
 | Card | Folder | Detail | After the pending changes |
 |---|---|---|---|
@@ -923,6 +924,7 @@ Today: **5 cards** (Ability 5). After the pending changes, **0** of them bake.
 
 - **Why:** Two or more visible text layers are called Ability (one per creature or per paragraph), so the bot can't tell which one an edit belongs to.
 - **What would fix it:** Card maker: merge them into one Ability layer, or edit this card in Photoshop. No code change planned.
+- **2026-10-25 (work/abil):** all five bake (owner 2026-10-24: "is there a way we could support multiple ability layers?"): each changed part goes to its layer, the rest byte for byte; a line added, a part removed or two layers joined bake with a note (`psd_edit.set_ability_layers`).
 
 | Card | Folder | Detail | After the pending changes |
 |---|---|---|---|
@@ -938,6 +940,7 @@ Today: none (this reason shows only once refused-layers lands).
 
 - **Why:** Another visible text layer prints the same words as the Ability layer, so a bake would change one and leave the other.
 - **What would fix it:** Card maker: delete or hide the duplicate layer (or edit in Photoshop).
+- **2026-10-25 (work/abil):** the copies are edited the same way (SOMETHING's two offset ones bake).
 
 Cards that meet this reason only once the pending changes land (1; another reason stops them first today, or today's bot does not look this closely):
 
