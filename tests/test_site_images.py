@@ -7,6 +7,7 @@ the network. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the c
 import json
 import re
 import shutil
+from concurrent.futures import ThreadPoolExecutor
 from subprocess import run as run_process
 
 import pytest
@@ -39,23 +40,54 @@ def test_card_images_are_avif_made_once(bs, repo, tmp_path, monkeypatch):  # noq
 
 
 def test_a_build_over_the_image_budget_leaves_the_rest(bs, repo, tmp_path, monkeypatch):  # noqa: F811
-    """Over IMAGE_BUDGET only the images not cached yet wait: the build fails with partial=true for site.yml (which saves
-    the cache), and the next run makes just those."""
+    """Over IMAGE_BUDGET only the images not cached yet wait: the build fails (site.yml then saves the cache), and the
+    next run makes just those."""
     _build(bs, monkeypatch, repo, tmp_path / "s")
     cache = tmp_path / "s" / ".cache" / "img"
     made = {p.name for p in cache.iterdir()}
     _png(repo["root"] / f"{ALPHA}.png", 99)                    # one card's image changes
     _commit(repo["root"], "New art", 1_790_000_000)
-    out = tmp_path / "github_output"
-    monkeypatch.setenv("GITHUB_OUTPUT", str(out))
     monkeypatch.setattr(bs, "IMAGE_BUDGET", 1e-9)
     with pytest.raises(SystemExit, match=r"1 of \d+ card images not made within IMAGE_BUDGET"):
         _build(bs, monkeypatch, repo, tmp_path / "s")
-    assert out.read_text() == "partial=true\n" and {p.name for p in cache.iterdir()} == made
+    assert {p.name for p in cache.iterdir()} == made
     monkeypatch.setattr(bs, "IMAGE_BUDGET", 0)
     _build(bs, monkeypatch, repo, tmp_path / "s")
     new = {p.name for p in cache.iterdir()} - made
     assert len(new) == 4 and all(re.fullmatch(r"[0-9a-f]{16}-(240|360|720)\.avif|[0-9a-f]{16}-og\.jpg", n) for n in new)
+
+
+def test_thumbs_carry_no_colour_profile(bs, repo, tmp_path, monkeypatch):  # noqa: F811
+    """Pillow's AVIF writer copies the PNG's ICC profile (about 3 KB, +34% at 240 px); the thumbs drop it, as WebP did."""
+    from PIL import Image, ImageCms
+    srgb = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+    Image.new("RGB", (60, 84), (120, 40, 90)).save(repo["root"] / f"{ALPHA}.png", icc_profile=srgb)
+    _commit(repo["root"], "Tagged art", 1_790_000_000)
+    with Image.open(repo["root"] / f"{ALPHA}.png") as im:
+        assert im.info.get("icc_profile")
+    _build(bs, monkeypatch, repo, tmp_path / "s")
+    thumbs = sorted((tmp_path / "s" / "dist" / "thumbs").glob("*.avif"))
+    assert thumbs
+    for path in thumbs:
+        with Image.open(path) as im:
+            assert not im.info.get("icc_profile"), path.name
+
+
+def test_a_stopped_image_phase_keeps_what_it_made(bs, repo, tmp_path, monkeypatch):  # noqa: F811
+    """Whatever stops the image pool (here an interrupt), images.json is written for what was made, so the cache site.yml
+    saves after a failed build is a full head start."""
+    made, real = [], bs.make_images
+    def once(path, sha, known=None):
+        if made:
+            raise KeyboardInterrupt
+        made.append(sha)
+        return real(path, sha, known)
+    monkeypatch.setattr(bs, "make_images", once)
+    monkeypatch.setattr(bs, "ThreadPoolExecutor", lambda n: ThreadPoolExecutor(1))
+    with pytest.raises(KeyboardInterrupt):
+        _build(bs, monkeypatch, repo, tmp_path / "s")
+    meta = json.loads((tmp_path / "s" / ".cache" / bs.IMAGE_META).read_text(encoding="utf-8"))
+    assert list(meta["images"]) == made
 
 
 def test_the_worker_lists_the_pictures_in_use(bs, repo, tmp_path, monkeypatch):  # noqa: F811
