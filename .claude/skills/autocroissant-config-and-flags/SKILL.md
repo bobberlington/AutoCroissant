@@ -458,8 +458,10 @@ autocroissant-run-and-operate §9.
 |---|---|---|
 | `ACTIONS_TOKEN` | getattr, default `""` (card_sync.py:38) | the config.py field above |
 | `WORKFLOW` | `"card-sync.yml"` | the card repo's Card sync Action that `force_update` / `cards:` dispatch |
-| `POLL_SECONDS` | `15` | between two looks at a dispatched run (the state is edited into the reply) |
-| `WAIT_MINUTES` | `30` | a dispatched run is followed this long |
+| `POLL_SECONDS` | `15` | between two looks at a dispatched run's Card data job (the state is edited into the reply) |
+| `WAIT_MINUTES` | `30` | a dispatched run's Card data job is followed this long (not its Bake and save) |
+| `DATA_JOB`, `MAIN_JOB` (2026-10-25) | `"Card data"`, `"Bake and save"` | card-sync.yml's lane job names: the followed job, and the lanes the notes judge |
+| `LANE_RUNS` (2026-10-25) | `5` | notes: the runs whose jobs are read for each lane's last outcome (one request a run) |
 | `FIND_SECONDS` | `60` | a dispatched run must show up in the run list within this |
 | `EDIT_MINUTES` | `14` | progress edits stop here (Discord's interaction lasts 15 minutes) |
 | `REFRESH_SECONDS` (2026-10-25) | `120` | on use: a card command or autocomplete looks at the data branch at most this often (any sync counts) |

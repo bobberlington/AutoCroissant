@@ -45,9 +45,15 @@ retry, and on the cron when a website edit is due or a card commit landed since 
 succeeded. It bakes (`--pending`, the per-card RECENT guard), updates the save (names from the data head) and commits M
 to main fast-forward only (main moved: a retry of the main lane alone); then re-pins the baked PNGs' save links in a
 second commit on M (the save above saw main before M; this replaces `pending.repin` and the next run's save-only M). Job
-`after` (group `card-data`, no wait) re-reads M into `data` with `card_data --own M` (M's push posts as the card sync's)
-and dispatches the site. Posts cannot repeat: the data writers run one at a time from the data head, and the posted
-cursor rides in each data commit. `--baked` and `--rewrite` are unused by the workflow from then on (kept until it
+`after` (group `card-data`, no wait) re-reads M into `data` and dispatches the site, without the dispatch's inputs (full,
+cards, seed, restore, allow_archive are the `data` job's). Every data job passes `card_data --own` the main lane's
+`Card sync:` commits since the last build, so M's push posts as the card sync's whichever data job reads it first. Posts
+cannot repeat: the data writers run one at a time from the data head, the posted cursor rides in each data commit, and
+`after` never re-applies a restore or seed. The failure alert is once per failing streak of each lane (the lane's
+outcome in the newest other live run where its job ended; runs that skipped the lane, and dry runs, pass over), once a
+lane per run; the bot's /update_stats notes judge the lanes the same way, and a force_update/cards dispatch is followed
+by its Card data job (replaced before it started: dispatched again). Landing: only with no Card sync run unfinished (an
+old run would write `data` outside `card-data` after its window). `--baked` and `--rewrite` are unused by the workflow from then on (kept until it
 lands). §6.3 below describes the single `sync` job before this.
 
 **Status 2026-10-24, the clock in GitHub (owner, 23:15 and 23:27: "Move it into GitHub", a fixed window).** card-sync.yml
