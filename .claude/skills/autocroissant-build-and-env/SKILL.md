@@ -166,7 +166,7 @@ without their incident get ignored, so each one carries its story:
 ### Compilation is optional — and the stale-.so trap
 
 - The Mac's working tree has **no** `.so`/`.c` artifacts (2026-10-20) and runs plain Python.
-- Production (the jetson, no startup.sh) builds on every deploy: `scripts/deploy.sh` there (pull, psd-tools pin,
+- Production (the jetson, no startup.sh) builds on every deploy: the `jetson-deploy` skill (~/.claude/skills; pull, psd-tools pin,
   `~/venvs/autocroissant/bin/python setup.py build_ext --inplace`, restart; **autocroissant-run-and-operate**). It runs the 11 `.so` files, so the stale-.so trap below
   is live there: rebuild after every pull.
 - **The trap**: an import like `from commands import psd_analyzer` picks a compiled
