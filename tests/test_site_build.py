@@ -1,7 +1,7 @@
 """
-The website build (TTSCardMaker site/build/build_site.py) on a small card repo made here, offline: the same site from the
-bot's pickles and from the card sync's db/ (CARD_DATA_DIR, load_card_data: the shadow's comparison in small), the current
-text dated from its start (since), a duplicate's history, dates by committer time, an archived card's moved_to, tag,
+The website build (TTSCardMaker site/build/build_site.py) on a small card repo made here, offline, from the card sync's
+db/ (CARD_DATA_DIR, load_card_data; no CARD_DATA_DIR, or no readable stats.json, builds nothing): the current text dated
+from its start (since), a duplicate's history, dates by committer time, an archived card's moved_to, tag,
 author and created, image revisions (Stats), Pacific contribution months, the person stats. Loads
 build_site.py from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without it or before load_card_data.
 """
@@ -34,7 +34,6 @@ REBASED = 20 * DAY                            # committer time after author time
 ALPHA = "Creatures/Other/2 Stars/Alpha"
 MELON = "Items/Heal/2 Stars/Watermelon"
 PALACE = "Field/4 Stars/White_Palace.psd"
-BOT_DATA = ("stats.pkl", "old_stats.pkl", "psd_details.json")    # what db/ replaces
 
 
 @pytest.fixture(scope="module")
@@ -120,36 +119,26 @@ def repo(tmp_path):
     for card in list(stats.values()) + [v for vs in old.values() for v in vs]:
         card.parser_version = 2
     details = json.dumps({"version": 1, "cards": {}})
-    pickles = tmp_path / "pickles"
-    pickles.mkdir()
-    cdb.dump_pickle(stats, str(pickles / "stats.pkl"))
-    cdb.dump_pickle(old, str(pickles / "old_stats.pkl"))
-    cdb.dump_pickle({}, str(pickles / "aliases.pkl"))
-    (pickles / "psd_details.json").write_text(details)
     db = tmp_path / "db"
     cdb.write_db(str(db), stats, old, details, {"card_commit": c3})
     (db / "changelog").mkdir()
     event = {"seq": 1, "at": time.time(), "kind": "archived", "card": "White Palace", "title": "White Palace", "path": PALACE,
              "moved_to": "MDW/The Morgue/White_Palace.psd", "card_commit": c3}
     (db / "changelog" / "2026-10.jsonl").write_text(json.dumps(event) + "\n", encoding="utf-8")
-    return {"root": root, "pickles": pickles, "db": db, "t": (t1, t2, t3), "commits": (c1, c2, c3)}
+    return {"root": root, "db": db, "t": (t1, t2, t3), "commits": (c1, c2, c3)}
 
 
-def _build(bs, monkeypatch, repo, out, data_dir=""):
-    """build_site.main() offline into out/; {name: data/<name> as JSON}."""
+def _build(bs, monkeypatch, repo, out, data_dir=None):
+    """build_site.main() offline into out/ from repo's db/ (or data_dir); {name: data/<name> as JSON}."""
     monkeypatch.setattr(bs, "REPO", str(repo["root"]))
     monkeypatch.setattr(bs, "HISTORY_REPO", str(repo["root"]))
     for name, sub in (("DIST", "dist"), ("CACHE", ".cache"), ("OG_CACHE", ".og-cache")):
         monkeypatch.setattr(bs, name, str(out / sub))
-    monkeypatch.setattr(bs, "CARD_DATA_DIR", data_dir)
+    monkeypatch.setattr(bs, "CARD_DATA_DIR", str(repo["db"]) if data_dir is None else data_dir)
     monkeypatch.setattr(bs, "MIN_CARDS", 1)
-    monkeypatch.setattr(bs, "_bot_raw", "local://")
 
     def fetch(url, tries=3, accept=None):
-        name = url[len("local://"):]
-        if data_dir and name in BOT_DATA:               # with CARD_DATA_DIR only db/ can give them
-            raise OSError(f"{name} fetched with CARD_DATA_DIR set")
-        return (repo["pickles"] / name).read_bytes()
+        raise OSError(f"offline: {url}")
     monkeypatch.setattr(bs, "fetch", fetch)
     monkeypatch.setattr(sys, "argv", ["build_site.py"])
     bs.main()
@@ -159,23 +148,6 @@ def _build(bs, monkeypatch, repo, out, data_dir=""):
 
 def _by_name(cards: list) -> dict:
     return {c["name"]: c for c in cards}
-
-
-def test_pickles_and_db_build_the_same_site(bs, repo, tmp_path, monkeypatch):
-    """The shadow's check in small: every data file equal but the build time and the changelog's events (only db/
-    has them)."""
-    a = _build(bs, monkeypatch, repo, tmp_path / "a")
-    b = _build(bs, monkeypatch, repo, tmp_path / "b", str(repo["db"]))
-    assert set(a) == set(b)
-    for name in a:
-        if name == "cards.json":
-            a[name].pop("generated"), b[name].pop("generated")
-        if name == "changelog.json":
-            assert b[name]["archived"] == a[name]["archived"]
-            continue
-        if name == "decks.json":
-            a[name].pop("generated"), b[name].pop("generated")
-        assert a[name] == b[name], name
 
 
 def test_the_current_text_is_dated_from_its_start(bs, repo, tmp_path, monkeypatch):
@@ -223,7 +195,7 @@ def test_an_unfinished_card_has_its_own_tag(bs):
 
 def test_an_archived_event_keeps_moved_to(bs, repo, tmp_path, monkeypatch):
     """The card sync's archived event reaches the Changelog tab with moved_to (changes.js: "moved to MDW/The Morgue")."""
-    out = _build(bs, monkeypatch, repo, tmp_path / "b", str(repo["db"]))
+    out = _build(bs, monkeypatch, repo, tmp_path / "b")
     assert [(e["kind"], e["card"], e.get("moved_to")) for e in out["changelog.json"]["events"]] == \
         [("archived", "White Palace", "MDW/The Morgue/White_Palace.psd")]
 
@@ -243,14 +215,16 @@ def test_a_text_starts_with_the_versions_that_already_held_it(bs):
 
 
 def test_no_readable_stats_json_stops_the_build(bs, repo, tmp_path, monkeypatch):
-    """CARD_DATA_DIR without a readable stats.json: no site, never one from the pickles instead."""
+    """No CARD_DATA_DIR, or one without a readable stats.json: no site."""
+    with pytest.raises(SystemExit):
+        _build(bs, monkeypatch, repo, tmp_path / "a", "")
     stats = repo["db"] / "stats.json"
     for text in (None, "not json", '{"schema": 1, "cards": []}', '{"schema": 2, "cards": {}}'):
         stats.unlink(missing_ok=True)
         if text is not None:
             stats.write_text(text, encoding="utf-8")
         with pytest.raises(SystemExit, match=r"can't load the card data \("):
-            _build(bs, monkeypatch, repo, tmp_path / "b", str(repo["db"]))
+            _build(bs, monkeypatch, repo, tmp_path / "b")
 
 
 def test_contribution_months_are_pacific(bs):
@@ -623,9 +597,9 @@ def test_stamps_follow_the_content_not_the_clock(bs, repo, tmp_path, monkeypatch
         assert path.read_bytes() == (b / "assets" / path.name).read_bytes(), path.name
     assert _stamps(a)["data/cards.json"] == _stamps(a)["build"]
 
-    stats = cdb.load_pickle(str(repo["pickles"] / "stats.pkl"))
+    stats, old, _, manifest = cdb.read_db(str(repo["db"]))
     stats["Alpha"].ability = "Newer text."
-    cdb.dump_pickle(stats, str(repo["pickles"] / "stats.pkl"))
+    cdb.write_db(str(repo["db"]), stats, old, (repo["db"] / "psd_details.json").read_text(encoding="utf-8"), manifest)
     _build(bs, monkeypatch, repo, tmp_path / "c")
     c = tmp_path / "c" / "dist"
     before, after = _stamps(a), _stamps(c)

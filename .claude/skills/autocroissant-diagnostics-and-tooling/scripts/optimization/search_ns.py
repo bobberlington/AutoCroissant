@@ -7,14 +7,15 @@ from commands.psd_analyzer import stats_db, CardEdits, EDITS_PATH
 from commands.query_card import card_repo
 CLONE = expanduser("~/Desktop/TTSCardMaker")
 
-stats_db.load(); card_repo.prep_dataframes()
+from commands.card_db import read_db
+stats_db.stats, stats_db.old_stats, _, _ = read_db("card_data", details=False); card_repo.prep_dataframes()
 out = subprocess.run(["git", "-C", CLONE, "ls-files", "-s"], capture_output=True, text=True).stdout
 tree = {"tree": [{"path": l.split("\t", 1)[1], "sha": l.split()[1]} for l in out.splitlines()]}
 sha = next(i["sha"] for i in tree["tree"] if i["path"] == EDITS_PATH)
 card_repo._edit_names = (sha, CardEdits.parse(open(os.path.join(CLONE, EDITS_PATH), encoding="utf-8").read()).names())
 card_repo._populate_site_ids = lambda: None          # offline
-card_repo.load_aliases()
-card_repo.populate_files(tree)
+card_repo._fetch_tree = lambda repo: (tree, "", 200, "")
+card_repo.populate_files()
 
 rnd = random.Random(7)
 abil = [a for a in card_repo.cards_dff["ability"] if a and len(a.split()) > 4]
@@ -39,7 +40,7 @@ for i in range(200):
     elif i % 10 < 8:                                                 # one typo
         j = rnd.randrange(len(n)); nm.append(n[:j] + n[j + 1:])
     else: nm.append(n.split()[0])                                    # first word
-nm += list(card_repo.git_file_alias)[:30] + ["Items/" + names[0], "", "zzzz", "x" * 250]
+nm += ["Items/" + names[0], "", "zzzz", "x" * 250]
 
 def run(fn, qs, reps=3):
     res, ts = [], []

@@ -55,17 +55,17 @@ def main() -> int:
         TYPE_REGION_RATIO,
         MutableValue,
         PSDParser,
-        RepositoryTraverser,
         StatsDatabase,
         StatTrackers,
         CardClassifier,
         CardInfo,
         CardType,
     )
+    from commands.card_data import CardBuild
     from commands.psd_parser import EFFECT_LAYER_TAG, stars_from_psd
 
     db = StatsDatabase()
-    traverser = RepositoryTraverser(db)
+    traverser = CardBuild(db)
     traverser._populate_types_from_local(str(clone_root))
     parser = PSDParser(db.all_types, db, traverser._icons_from_local(str(clone_root)))   # stoogedings vocabulary
 

@@ -2,9 +2,8 @@
 Discord's card edits as card-repo commits (commands/discord_edits.py; docs/Campaigns/DATA_BUILD_ACTION.md section 11 and
 section 14 step 5): the editsFile and authorsFile ports against edit.js itself (node), then /update_metadata,
 /mass_replace and /alias on the test_card_bake fake GitHub: each one commit with the "Discord:" subject, an Edit-by
-trailer and _by/_at, again from the new head when main moved, applied in memory at once, never a pickle. Then the alias
-migration's mapping, aliases.pkl ignored once it ran (the bot's lookups, the duplicates' names), and on the live
-aliases.pkl every alias finding the same card image as before.
+trailer and _by/_at, again from the new head when main moved, applied in memory at once. Then the alias migration's
+mapping.
 """
 import json
 import pickle
@@ -17,7 +16,6 @@ import pytest
 
 pytest.importorskip("requests", reason="card_bake imports requests (absent from this Python)")
 import commands.card_bake as cb  # noqa: E402
-import commands.card_data as cd  # noqa: E402
 import commands.card_models as cm  # noqa: E402
 import commands.discord_edits as de  # noqa: E402
 import commands.git_commit as gc  # noqa: E402
@@ -25,7 +23,6 @@ import commands.github_api as ga  # noqa: E402
 import commands.query_card as qc  # noqa: E402
 import commands.utils as utils  # noqa: E402
 from commands.card_edits import ALIASES_MOVED, CardAuthors, CardEdits, dump_edits  # noqa: E402
-from conftest import CLONE, REPO  # noqa: E402
 from test_card_bake import ABOUT, EDIT_JS, FakeGitHub, _node  # noqa: E402
 
 EDITS_PATH, AUTHORS_PATH = cb.EDITS_PATHS[0], cb.AUTHORS_PATHS[0]
@@ -89,19 +86,15 @@ def repo(monkeypatch, tmp_path):
     db.stats = stats
     monkeypatch.setattr(cm.stats_db, "stats", stats)
     monkeypatch.setattr(cm.stats_db, "old_stats", {})
-    saves = []
-    monkeypatch.setattr(cm.stats_db, "save", lambda *a: saves.append(1))
     registry = qc.CardRepository()
-    registry.git_file_alias = {"breakfast": "a_snack2.png"}                      # aliases.pkl's: A Snack2's name
     registry.git_files = {p.rsplit("/", 1)[1].lower(): p for p in (SNACK, SNACK2, DOOMER, FREEZER, GOOMBELLA, FIX)}
     registry._edits = CardEdits.parse(files[EDITS_PATH].decode())
     monkeypatch.setattr(qc, "card_repo", registry)
     prepped = []
     monkeypatch.setattr(registry, "prep_dataframes", lambda: prepped.append(1))
-    monkeypatch.setattr(registry, "save_aliases", lambda: pytest.fail("a Discord edit saved aliases.pkl"))
     sent = []
     monkeypatch.setattr(utils, "say", lambda inter, text, **kw: sent.append(text))
-    return SimpleNamespace(github=fake, stats=stats, registry=registry, sent=sent, prepped=prepped, saves=saves,
+    return SimpleNamespace(github=fake, stats=stats, registry=registry, sent=sent, prepped=prepped,
                            who=SimpleNamespace(user=SimpleNamespace(name="someone", id=7)))
 
 
@@ -217,7 +210,6 @@ def clone_authors(clone):
 # ========================
 # /update_metadata
 # ========================
-@pytest.mark.usefixtures("pickle_path")
 def test_update_metadata_makes_one_commit(repo):
     start = repo.github.head
     de.manual_metadata_entry(repo.who, "Mini Doomer", del_entry=True, author="Zomoroko", ability="Explodes.  [fire] then.",
@@ -237,7 +229,7 @@ def test_update_metadata_makes_one_commit(repo):
     assert _at_head(repo.github, AUTHORS_PATH) == de.authors_file(AUTHORS, [{"key": "Mini Doomer", "author": "Zomoroko"}], {})
     card = repo.stats["Mini Doomer"]                                             # applied in memory at once
     assert (card.stats.hp, card.stats.defense, card.ability, card.hidden, card.subseries, card.author) == (6, 0, "Explodes.  [fire] then.", True, "Mini", "Zomoroko")
-    assert card.parsed_values["hp"] == 5 and repo.prepped and repo.saves == [1]         # stats.pkl kept for a restart
+    assert card.parsed_values["hp"] == 5 and repo.prepped
     (before,) = cm.stats_db.old_stats["Mini Doomer"]                             # the card before is a version now
     assert (before.stats.hp, before.ability != card.ability, card.version["cause"]) == (5, True, "edit")
     assert "A Snack2" not in cm.stats_db.old_stats
@@ -625,19 +617,6 @@ def test_edits_file_prunes_credit_as_edit_js():
     assert "_credit" not in json.loads(de.edits_file(bad, [{"key": "G", "set": {"hp": 7}, "unset": []}], "T1", "web"))["cards"]["G"]
 
 
-def test_alias_refuses_aliases_pkl_until_the_migration(repo, monkeypatch):
-    monkeypatch.setattr(repo.registry, "git_file_alias", {"breakfast": "a_snack2.png"})
-    head = repo.github.head
-    de.manage_alias(repo.who, "Breakfast", "goombella")
-    de.manage_alias(repo.who, "breakfast", None)
-    assert repo.github.head == head and all("alias migration" in s for s in repo.sent)
-    de.manage_alias(repo.who, None, None)
-    assert "aliases.pkl (until the alias migration):\nbreakfast" in repo.sent[2]
-    repo.registry._edits.aliases_moved = True                                    # migrated: the pickle no longer counts
-    de.manage_alias(repo.who, "breakfast", "goombella")
-    assert json.loads(_at_head(repo.github, EDITS_PATH))["cards"]["Goombella"]["aliases"] == ["breakfast"]
-
-
 # ========================
 # The alias migration
 # ========================
@@ -663,19 +642,6 @@ def test_migrate_aliases_mapping():
     assert again[1][0].startswith("7 aliases: 5 moved onto 4 cards, 1 already on their card")   # a same-card spelling
 
 
-def test_aliases_moved_kept_when_card_edits_fails_to_parse(monkeypatch):
-    """A Card Edits.json that names aliases_moved but doesn't parse still keeps aliases.pkl off."""
-    for text, moved in (('{"aliases_moved": "x", "cards": {,}}', True), ('{"cards": {,}}', False)):
-        monkeypatch.setattr(qc, "blob_text", lambda repo, sha, **kw: text)
-        registry = qc.CardRepository()
-        registry.git_file_alias = {"stale": "a_snack.png"}
-        registry._tree = {"tree": [{"path": EDITS_PATH, "sha": "bad"}]}
-        registry.git_files = {p.rsplit("/", 1)[1].lower(): p for p in TREE}
-        registry._populate_edit_names()
-        registry._populate_aliases()
-        assert registry.aliases_moved() is moved and ("stale.png" in registry.git_files) is not moved
-
-
 def test_failed_card_edits_read_keeps_the_last_names(monkeypatch):
     """A newer Card Edits.json that can't be downloaded: the last good aliases still find their cards."""
     good = dump_edits({"about": ABOUT, ALIASES_MOVED: "x", "cards": {"A Snack": {"aliases": ["Snack"], "_by": "web", "_at": AT}}})
@@ -690,31 +656,7 @@ def test_failed_card_edits_read_keeps_the_last_names(monkeypatch):
         registry.git_files = {p.rsplit("/", 1)[1].lower(): p for p in TREE}
         registry._tree = {"tree": [{"path": EDITS_PATH, "sha": sha}]}
         registry._populate_edit_names()
-        assert registry.git_files.get("snack.png") == SNACK and registry.aliases_moved()
-
-
-def test_aliases_moved_named_by_a_newer_unparsable_file(monkeypatch):
-    """An older parsed file without aliases_moved in memory, then a newer one naming it that doesn't parse: aliases.pkl off;
-    the next file that parses decides again."""
-    texts = {"old": dump_edits({"about": ABOUT, "cards": {}}), "bad": '{"aliases_moved": "x", "cards": {,}}',
-             "new": dump_edits({"about": ABOUT, "cards": {}})}
-    monkeypatch.setattr(qc, "blob_text", lambda repo, sha, **kw: texts[sha])
-    registry = qc.CardRepository()
-    for sha, moved in (("old", False), ("bad", True), ("new", False)):
-        registry._tree = {"tree": [{"path": EDITS_PATH, "sha": sha}]}
-        registry._populate_edit_names()
-        assert registry.aliases_moved() is moved
-
-
-def test_refresh_uses_aliases_pkl_when_card_edits_was_never_read(repo):
-    """No Card Edits.json parsed: a duplicate's name comes from aliases.pkl, as the build names it; the hint turns it off."""
-    repo.registry._edits = None
-    repo.stats["A Snack2"].display_name = None
-    de.refresh(None, None, AUTHORS.replace("A Snack = MichaelJSr", "A Snack = Zomoroko"))     # A Snack changes: copied again
-    assert (repo.stats["A Snack2"].author, repo.stats["A Snack2"].display_name) == ("Zomoroko", "Breakfast")
-    repo.registry._moved_hint = True                                             # an unparsed file that names aliases_moved
-    de.refresh(None, None, AUTHORS)
-    assert (repo.stats["A Snack2"].author, repo.stats["A Snack2"].display_name) == ("MichaelJSr", "A Snack")
+        assert registry.git_files.get("snack.png") == SNACK
 
 
 def test_refresh_copies_a_dup_of_card_again(repo):
@@ -729,7 +671,7 @@ def test_refresh_copies_a_dup_of_card_again(repo):
 
 
 def test_refresh_waits_for_a_running_update(repo):
-    """A Discord edit's refresh never saves stats.pkl inside /update_stats or a bake: it waits for bake_lock."""
+    """A Discord edit's refresh never runs inside a bake: it waits for bake_lock."""
     from threading import Thread
     from commands.card_runner import bake_lock
     done = []
@@ -740,29 +682,6 @@ def test_refresh_waits_for_a_running_update(repo):
         assert worker.is_alive() and not done and repo.stats["A Snack"].author == "MichaelJSr"
     worker.join(10)
     assert not worker.is_alive() and "A Snack" in done[0] and repo.stats["A Snack"].author == "Zomoroko"
-
-
-def test_aliases_pkl_ignored_once_moved(monkeypatch):
-    """The bot's registry and the duplicates' names read Card Edits.json alone once aliases_moved is set."""
-    monkeypatch.setattr(qc, "blob_text", lambda repo, sha, **kw: TEXTS[sha])
-    moved, _ = de.migrate_aliases({"breakfast": "a_snack2.png"}, dump_edits({"about": ABOUT, "cards": {}}), TREE, AT)
-    TEXTS = {"before": dump_edits({"about": ABOUT, "cards": {}}), "after": moved}
-    for sha, found in (("before", SNACK2), ("after", SNACK2)):
-        registry = qc.CardRepository()
-        registry.git_file_alias = {"breakfast": "a_snack2.png", "stale": "a_snack.png"}
-        registry._tree = {"tree": [{"path": EDITS_PATH, "sha": sha}] + [{"path": p, "sha": p} for p in TREE]}
-        registry.git_files = {p.rsplit("/", 1)[1].lower(): p for p in TREE}
-        registry._populate_edit_names()
-        registry._populate_aliases()
-        assert registry.git_files["breakfast.png"] == found
-        assert ("stale.png" in registry.git_files) == (sha == "before")         # aliases.pkl only before the migration
-    tree = SimpleNamespace(json=lambda: {"tree": [{"path": SNACK[:-4] + ".psd"}, {"path": SNACK2}]})
-    for edits, name in ((None, "Late Supper"), (dump_edits({"about": ABOUT, "cards": {}}), "Late Supper"), (moved, "Breakfast")):
-        db = cm.StatsDatabase()
-        db.stats = {"A Snack": _card("A Snack", SNACK[:-4] + ".psd")}
-        build = cd.CardBuild(db, aliases={"late supper": "a_snack2.png"})      # aliases.pkl's
-        build.edits = CardEdits.parse(edits) if edits else None
-        assert build._sync_duplicates(tree) == 1 and db.stats["A Snack2"].display_name == name
 
 
 OMORI = "Creatures/Omori/2 Stars/Omori_Kid.psd"
@@ -871,41 +790,3 @@ def test_migration_cli(tmp_path, capsys):
     assert capsys.readouterr().out.rstrip().endswith("git commit --author 'AutoCroissant <autocroissant@gmail.com>'")
     with pytest.raises(SystemExit):                                             # no alias-only migration
         de.main(["migrate-aliases", "--clone", str(clone), "--out", str(out / "x.json")])
-
-
-def test_live_aliases_find_the_same_card_image_after_the_migration(clone):
-    """Every alias of the live aliases.pkl finds the same PNG through Card Edits.json as through the pickle, and the
-    duplicates keep their names (read-only: the clone's HEAD tree, its Card Edits.json)."""
-    path = REPO / "aliases.pkl"
-    if not path.exists():
-        pytest.skip("no aliases.pkl")
-    with open(path, "rb") as fh:
-        legacy = pickle.load(fh)
-    listed = subprocess.run(["git", "-C", str(clone), "ls-tree", "-r", "-z", "--name-only", "HEAD"], capture_output=True, check=True)
-    pngs = [p for p in listed.stdout.decode("utf-8").split("\0") if p.endswith(".png")]
-    text = (clone / EDITS_PATH).read_text(encoding="utf-8")
-    if json.loads(text).get("aliases_moved"):
-        pytest.skip("the clone's Card Edits.json is already migrated")
-    moved, report = de.migrate_aliases(legacy, text, pngs, AT)
-
-    def registry(aliases, edits_text):
-        repo = qc.CardRepository()
-        for p in pngs:
-            repo._add_file_to_registry(p)
-        repo.git_file_alias = {k.lower(): v.lower() for k, v in aliases.items()}
-        repo._edits = CardEdits.parse(edits_text)
-        repo._edit_names = ("x", repo._edits.names())
-        repo._tree = {"tree": [{"path": EDITS_PATH, "sha": "x"}]}
-        repo._populate_edit_names()
-        repo._populate_aliases()
-        return repo.git_files
-    before, after = registry(legacy, text), registry(legacy, moved)
-    lines = {a: next(line for line in report if line.startswith(f"- {a} -> ")) for a in legacy}
-    kept = [a for a in legacy if "left out" not in lines[a]]
-    assert len(kept) >= len(legacy) - 3, report                                 # a PNG gone since (ZOEY!!!!!'s) at most
-    assert {a: after.get(f"{de.alias_key(a.replace('_', ' '))}.png") for a in kept} == {a: before[f"{a.lower()}.png"] for a in kept}
-    edits = CardEdits.parse(moved)
-    src = cm.CardInfo(name="x", card_type="item")
-    for target in {str(t).lower() for a, t in legacy.items() if a in kept}:     # the duplicates' names
-        own = edits.cards.get(CardAuthors.key(cm.card_name(target)), {}).get("aliases") or []
-        assert cd.CardBuild._duplicate_name(target, src, {}, own) == cd.CardBuild._duplicate_name(target, src, legacy)

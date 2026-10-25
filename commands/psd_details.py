@@ -2,20 +2,17 @@
 The PSD facts behind the website's card "Details" dropdown: fonts, text layers, effects, smart objects, canvas, type-icon
 style, stat-row encoding, status-word layers, template deviations, the header's star and type icon boxes (where the bake
 would put them: the website mock-up's, psd_edit's geometry) and a compact layer tree. One record per card PSD,
-keyed by its git blob sha, in psd_details.json beside the pickles (committed; /push carries it with them).
+keyed by its git blob sha, in the card data's db/psd_details.json (the Card sync Action's build).
 
-    python -m commands.psd_details --clone <dir> [--out psd_details.json] [--fonts <dir>]
-    python -m commands.psd_details --refill [--out psd_details.json] [--fonts <dir>]
+    python -m commands.psd_details --clone <dir> --out <file> [--fonts <dir>]
 
 gather(psd, rel, name, index, vocab) -> the record: pure, never raises for a card (a failed section is a short
-"error: ..." string). load/save (tmp + fsync + replace under one lock), prune(cards, shas) to the tree. The traverser
-gathers every re-parsed card's record in /update_stats, its "supplied" flags from font_index() (font_check.find_fonts:
-the checkout's MDW/Fonts, else the fonts cache brought to the update's tree), then refills every record's flags from
-that index (records gathered without one, or before MDW/Fonts changed). The CLI backfills a clone in a process pool (the
-open is the whole cost, like font_check --all), or --refill sets the flags by hand. Run --refill from the bot's
-directory (psd_details.json and fonts_cache/ are cwd-relative) while the bot runs no /update_stats (the daily 5AM
-reminder too), /bake_cards or /fonts: the details file's temp and the fonts cache are shared, and their locks are per
-process. No Discord or config imports; stock psd-tools. Pillow's ImageCms names the ICC profile when it is built in.
+"error: ..." string). load/save (tmp + fsync + replace under one lock), prune(cards, shas) to the tree. The build
+gathers every re-parsed card's record, its "supplied" flags from font_index() (font_check.find_fonts: the checkout's
+MDW/Fonts, else the fonts cache brought to the build's tree), then refills every record's flags from that index
+(records gathered without one, or before MDW/Fonts changed). The CLI gathers a whole clone into a file in a process pool
+(the open is the whole cost, like font_check --all). No Discord or config imports; stock psd-tools. Pillow's ImageCms
+names the ICC profile when it is built in.
 """
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor
@@ -37,14 +34,14 @@ from commands.card_models import card_name
 from commands.font_check import (
     EXCLUDE_FOLDERS, FONTS_DIR, POOL_CHUNK, POOL_MIN, FontIndex, dir_fonts, find_fonts, is_card_psd, layer_fonts, tree_fonts,
 )
-from commands.github_api import blob_sha, token_from_env
+from commands.github_api import blob_sha
 from commands.psd_edit import (
     STAR_FOLDER, Refused, _Unit, _core, _icon_reason, _icon_spots, _median_size, _moved_box, _reading, _star_count,
     _star_layouts, _star_units, _stars_total, _texts, offline_parser, plan_stars, type_row,
 )
 from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, PARSER_VERSION, PSDParser
 from commands.psd_regions import STATS, badge_layers, overlay_words, stat_rows
-from global_config import CARD_REPO, DETAILS_JSON, FONTS_CACHE, RULEBOOK_DIR, TYPES_DIR
+from global_config import CARD_REPO, FONTS_CACHE, RULEBOOK_DIR, TYPES_DIR
 
 # ========================
 # Configuration
@@ -515,7 +512,7 @@ def font_index(repository: str = CARD_REPO, cache: str = FONTS_CACHE, tree: Opti
     return index
 
 
-def load(path: str = DETAILS_JSON) -> dict:
+def load(path: str) -> dict:
     """
     The file's records.
 
@@ -546,8 +543,8 @@ def text_of(cards: dict) -> str:
     return '{"version": %d, "cards": {\n%s\n}}\n' % (VERSION, lines)
 
 
-def save(cards: dict, path: str = DETAILS_JSON) -> None:
-    """Write the file to <path>.tmp, fsync, then replace (card_models.save_pickle's way), under the module lock."""
+def save(cards: dict, path: str) -> None:
+    """Write the file to <path>.tmp, fsync, then replace, under the module lock."""
     text = text_of(cards)
     with _lock:
         temp_path = path + ".tmp"
@@ -650,21 +647,15 @@ def record_sizes(cards: dict) -> list:
 # Command line
 # ========================
 def main(args: Optional[list] = None) -> int:
-    """The backfill (every card PSD of a clone into the details file) or the refill (the supplied flags); one summary line."""
+    """Every card PSD of a clone into a details file; one summary line."""
     parser = ArgumentParser(prog="python -m commands.psd_details",
                             description="Gather every card PSD's details (fonts, text layers, effects, stats encoding, layer tree...) "
-                                        "from a local clone into psd_details.json, keyed by git blob sha; or, with --refill, set "
-                                        "every record's supplied flags from the fonts.")
-    parser.add_argument("--clone", default="", metavar="DIR", help="the card repo checkout")
-    parser.add_argument("--refill", action="store_true", help="set the supplied flags of the records already in --out (no PSD is read)")
-    parser.add_argument("--out", default=DETAILS_JSON, metavar="FILE", help=f"the details file (default: {DETAILS_JSON})")
+                                        "from a local clone into a details file, keyed by git blob sha.")
+    parser.add_argument("--clone", required=True, metavar="DIR", help="the card repo checkout")
+    parser.add_argument("--out", required=True, metavar="FILE", help="the details file")
     parser.add_argument("--fonts", default="", metavar="DIR", help="the fonts folder for the supplied flags (default: the clone's "
-                                                                   "MDW/Fonts when present; --refill: the checkout's, else the fonts cache)")
+                                                                   "MDW/Fonts when present)")
     options = parser.parse_args(args)
-    if options.refill == bool(options.clone):
-        parser.error("give --clone or --refill")
-    if options.refill:
-        return _refill_file(options.out, options.fonts)
     fonts_dir = options.fonts or (join(options.clone, FONTS_DIR) if isdir(join(options.clone, FONTS_DIR)) else "")
     index = FontIndex(fonts_dir) if fonts_dir else None
     started = perf_counter()
@@ -676,25 +667,6 @@ def main(args: Optional[list] = None) -> int:
     print(f"{len(cards)} cards into {options.out} in {perf_counter() - started:.1f} s ({len(errors)} errors); {stats}")
     for line in errors:
         print("  " + line)
-    return 0
-
-
-def _refill_file(path: str, fonts_dir: str) -> int:
-    """--refill: load, mark, save only when a flag changed (atomic, so the bot never reads half a file)."""
-    if fonts_dir:
-        index = FontIndex(fonts_dir)
-        index = index if index.files else None
-    else:
-        token_from_env()
-        index = font_index()
-    if index is None:
-        print(f"No fonts {'in ' + fonts_dir if fonts_dir else 'to judge by'}: {path} left as it is")
-        return 1
-    cards = load(path)
-    changed = refill(cards, index)
-    if changed:
-        save(cards, path)
-    print(f"{changed} of {len(cards)} records' supplied flags changed in {path} ({index.files} font files)")
     return 0
 
 

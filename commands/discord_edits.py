@@ -7,15 +7,14 @@ path /bake_cards and /update_tts_save commit by). Its subject starts "Discord:",
 entry it changes gets _by ("discord:<username>") and _at (one holding PSD fields keeps its stamps when the edit sets
 none: their editor keeps the bake credit, and the fields the edit sets go in its _bot with their own credit in _credit);
 a value the head already has is no change (no op, no restamp, no commit).
-Then the bot applies the change in memory (CardEdits.apply, CardAuthors.resolve, the duplicates' names, the alias registry) and saves stats.pkl, so /query shows it before the next /update_stats or card sync builds it.
+Then the bot applies the change in memory (CardEdits.apply, CardAuthors.resolve, the duplicates' names, the alias registry), so /query shows it before the next card sync builds it.
 
 Fields: author -> a [cards] line in Card Authors.txt; ability, stars, types, hp/def/atk/spd -> the "psd" kind (they
 persist and show "PSD pending" on the website; the next bake prints them, and a stars or types layout it can't follow is
 refused for that field alone; a types name no Types/ icon at the head has is refused before the commit); subtype, series, card_type -> subtype, series, type (the "folder" kind); subseries;
 del_entry -> hidden: true. /mass_replace author rewrites the right-hand sides in Card Authors.txt where
 they stand (old's group renamed) and adds a "[people] old = new" line; its other fields write one entry per card, in one
-commit. /alias writes `aliases` on the entry of the card its PNG belongs to. aliases.pkl keeps counting until the
-migration sets Card Edits.json's aliases_moved; before that its aliases can't be changed here.
+commit. /alias writes `aliases` on the entry of the card its PNG belongs to.
 
 The migration (section 14 step 5, after the parity re-parse): one commit, authored by the bot, of the files `migrate`
 writes, aliases.pkl's aliases and the Discord-only values (carried) together. An entry another editor stamped keeps
@@ -47,7 +46,6 @@ from typing import Callable, Optional
 from commands.card_edits import ALIASES_MOVED, ORDER, CardAuthors, CardDates, CardEdits, _collate, dump_edits
 from commands.card_models import CardType, card_name
 from commands.github_api import blob_sha
-import global_config                                    # CARD_SYNC, read at call time (the cutover switch)
 from global_config import AUTHORS_PATHS, CARD_REPO, CREATED_PATHS, EDITS_PATHS, LOCAL_DIR_LOC
 
 # ========================
@@ -431,8 +429,7 @@ def refresh(names, edits_text: Optional[str] = None, authors_text: Optional[str]
     The committed files applied in memory, as the next build applies them: the authors file and Card Edits.json on these
     cards (an edit that changed a card's data keeps its card before as a version: card_history.record_edits), then the
     duplicates copied again and renamed (card_data._sync_duplicates: an alias on a duplicate's PNG names
-    it), then the query tables rebuilt and stats.pkl saved (so a restart before the next /update_stats keeps the edit;
-    the next build writes the same values). After the cutover nothing is saved: the next card sync's data holds it.
+    it), then the query tables rebuilt. Nothing is saved: the next card sync's data holds it.
 
     Args:
         names: Card names (None: every card)
@@ -445,7 +442,7 @@ def refresh(names, edits_text: Optional[str] = None, authors_text: Optional[str]
     from commands.card_runner import bake_lock      # lazy: the CLI (migrate) needs no Discord
     if bake_lock.locked():
         print("Discord edit: its in-memory refresh waits for the running /update_stats or bake")
-    with bake_lock:                                 # never saves stats.pkl inside a build (repo_traverser holds it)
+    with bake_lock:                                 # never beside a bake
         return _refresh(names, edits_text, authors_text)
 
 
@@ -472,8 +469,6 @@ def _refresh(names, edits_text: Optional[str], authors_text: Optional[str]) -> l
             changed.append(name)
     record_edits(stats_db, {n: edited[n] for n in changed if n in edited}, datetime.now(timezone.utc).timestamp())
     current = edits if edits is not None else card_repo._edits
-    moved = edits.aliases_moved if edits is not None else card_repo.aliases_moved()   # no file read: aliases.pkl, as the build
-    legacy = {} if moved else card_repo.git_file_alias
     pngs = {card_name(p).lower(): p for p in card_repo.git_files.values()}
     dups: dict = {}
     for name, dup in stats.items():
@@ -489,8 +484,7 @@ def _refresh(names, edits_text: Optional[str], authors_text: Optional[str]) -> l
         copy = deepcopy(src)
         copy.name, copy.duplicate_of, copy.parsed_values, copy.problems, copy.alt_names = name, original, None, [], None
         own = (current.cards.get(CardAuthors.key(name), {}).get("aliases") or []) if current is not None else []
-        copy.display_name = (CardBuild._duplicate_name(png, src, legacy, own) if number is not None
-                             else CardBuild._duplicate_name(png, src, {}, own, own_name=True))
+        copy.display_name = CardBuild._duplicate_name(src, own, own_name=number is None)
         if current is not None:
             current.apply(name, copy)
         stats[name] = copy
@@ -506,11 +500,6 @@ def _refresh(names, edits_text: Optional[str], authors_text: Optional[str]) -> l
             card_repo.prep_dataframes()
         except Exception:                       # noqa: BLE001 - the tables catch up on the next /update_stats
             print(f"Query tables not rebuilt:\n{format_exc()}")
-        try:
-            if not global_config.CARD_SYNC:     # the cutover: the pickles are frozen (Card sync builds the data)
-                stats_db.save()
-        except Exception:                       # noqa: BLE001 - in memory still; the next /update_stats saves it
-            print(f"stats.pkl not saved:\n{format_exc()}")
     return changed
 
 
@@ -778,11 +767,6 @@ def alias_key(alias: str) -> str:
     return alias.strip().lower().replace(" ", "_")
 
 
-def _legacy(card_repo) -> dict:
-    """aliases.pkl's aliases while they still count (Card Edits.json without aliases_moved), keyed like alias_key."""
-    return {} if card_repo.aliases_moved() else {alias_key(a): t for a, t in card_repo.git_file_alias.items()}
-
-
 def _png_path(card_repo, key: str) -> Optional[str]:
     """A registry key's PNG path (key.png, else a folder-prefixed key ending so)."""
     target = f"{key}.png"
@@ -833,21 +817,13 @@ def manage_alias(interaction, key: Optional[str] = None, val: Optional[str] = No
     """
     from commands.query_card import card_repo
     from commands.utils import say
-    legacy = _legacy(card_repo)
     if not key or not key.strip():
         pairs = edit_aliases(card_repo)
         text = "\n".join(f"{a:20s} -> {c}" for a, c in pairs)
-        if legacy:
-            text += ("\n\n" if text else "") + "aliases.pkl (until the alias migration):\n" \
-                    + "\n".join(f"{a:20s} -> {t}" for a, t in sorted(legacy.items()))
         say(interaction, f"```\n{text}\n```" if text else "```No aliases defined.```")
         return
     alias = " ".join(key.split())
     norm = alias_key(alias)
-    if norm in legacy:
-        say(interaction, f"'{alias}' is in aliases.pkl (-> {legacy[norm]}): it moves to Card Edits.json with the alias "
-                         "migration; change it after that.")
-        return
     by, at = editor(interaction), now()
     if not val or not val.strip():
         holders = [c for a, c in edit_aliases(card_repo) if alias_key(a) == norm]

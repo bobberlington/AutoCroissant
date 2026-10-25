@@ -1,5 +1,5 @@
 """
-The bot after the cutover (global_config.CARD_SYNC; docs/Campaigns/DATA_BUILD_ACTION.md sections 11 and 14, step 8).
+The bot's card data (docs/Campaigns/DATA_BUILD_ACTION.md sections 11 and 14).
 The Card sync Action in the card repo builds the card data and commits it to the data branch; the bot only reads it:
 - sync: card_data/ brought to the data branch (card_db.sync: one conditional request, free when nothing moved), the
   database reloaded from it, then the card list, query tables, type emojis and image links refreshed;
@@ -20,7 +20,6 @@ from typing import Optional
 
 from requests.exceptions import RequestException
 
-import global_config                                 # CARD_SYNC, read at call time (the cutover switch)
 try:
     import config
 except ImportError:                                  # tests and scripts without config.py
@@ -37,7 +36,6 @@ from commands.utils import queue_command, queue_edit, say
 # ========================
 ACTIONS_TOKEN: str = getattr(config, "ACTIONS_TOKEN", "")   # fine-grained, the card repo only, Actions read and write
 WORKFLOW = "card-sync.yml"                           # the card repo's Card sync Action
-SITE_WORKFLOW = "site.yml"                           # the card repo's website build (it reads the bot's pickles)
 RUN_NAME = "Card sync"                               # its live runs' name (a dry run is "Card sync (dry run)")
 RETRY_NAME = "Card sync (retry)"                     # its own retry's name (main moved during a run)
 POLL_SECONDS = 15                                    # between two looks at a dispatched run
@@ -57,7 +55,7 @@ READERS = frozenset({                                # the slash commands that r
 # ========================
 # Global State
 # ========================
-_loaded: dict = {"commit": None}                     # the data commit stats_db holds (None: the root pickles or nothing)
+_loaded: dict = {"commit": None}                     # the data commit stats_db holds (None: nothing, or card_data/ unsynced)
 _sync_lock = Lock()                                  # one sync at a time (a reminder beside a command)
 _run_lock = Lock()                                   # one dispatched run followed at a time
 _checked: dict = {"at": monotonic()}                 # the last look at the data branch (the start counts: startup's)
@@ -129,7 +127,7 @@ def report(manifest: dict, counts: Optional[dict], reloaded: bool, now: Optional
     built = built_line(manifest, now)
     if not reloaded:
         return f"Card data is already current: {built}."
-    if counts is None:                               # no synced data held before (startup on the pickles)
+    if counts is None:                               # no synced data held before (startup)
         return f"Card data loaded: {built}."
     what = ", ".join(f"{counts[k]} {k}" for k in ("changed", "new", "archived") if counts[k]) or "no card changed"
     return f"Card data {built}: {what}; reloaded."
@@ -312,7 +310,7 @@ def on_use(command: Optional[str] = None) -> bool:
     Returns:
         True when a look was queued
     """
-    if not global_config.CARD_SYNC or (command is not None and command not in READERS):
+    if command is not None and command not in READERS:
         return False
     if not _use_lock.acquire(blocking=False):        # a reminder's thread claiming at this instant
         return False
@@ -375,14 +373,11 @@ def _refresh_cards(interaction) -> None:
 
 def startup() -> None:
     """
-    on_ready's database after the cutover: the local copy first (no network), then a sync (on_ready queues the
-    refreshes itself). With neither, the root pickles, frozen at the cutover (step 10 deletes them).
+    on_ready's database: the local copy first (no network), then a sync (on_ready queues the refreshes itself).
+    With neither (GitHub down at the first boot), no cards until a sync works.
     """
-    had = load_local()
+    load_local()
     sync(None, output_problematic=False, quiet=True, follow_ups=False)
-    if not had and _loaded["commit"] is None:
-        print("No card data synced; loading the root pickles (frozen at the cutover)")
-        stats_db.load()
 
 
 # ========================
@@ -406,26 +401,6 @@ def _refusal(reply) -> None:
 def _post_dispatch(repository: str, body: dict):
     return session().post(api_url(repository, f"actions/workflows/{WORKFLOW}/dispatches"), json=body,
                           headers=_headers(), timeout=30)
-
-
-def dispatch_site(repository: str = CARD_REPO) -> str:
-    """
-    A website build (site.yml) after a /push of the pickles it reads: GitHub runs its schedule hours late. Never retried
-    or raised; without ACTIONS_TOKEN the schedule stays.
-
-    Returns:
-        One console line
-    """
-    if not ACTIONS_TOKEN:
-        return "Website build: no ACTIONS_TOKEN, so the site picks the push up on its schedule."
-    try:
-        reply = session().post(api_url(repository, f"actions/workflows/{SITE_WORKFLOW}/dispatches"), json={"ref": CARD_BRANCH},
-                               headers=_headers(), timeout=30)
-    except Exception as e:                           # noqa: BLE001 - never fails the push
-        return f"Website build not started ({type(e).__name__}: {e}); the site picks the push up on its schedule."
-    if reply.status_code >= 400:
-        return f"Website build not started (HTTP {reply.status_code}); the site picks the push up on its schedule."
-    return "Website build started."
 
 
 def dispatch(repository: str, inputs: dict) -> Optional[dict]:
@@ -624,7 +599,7 @@ def request_run(interaction, full: bool, names: list) -> Optional[dict]:
 def update(interaction=None, output_problematic: bool = True, force_update: bool = False, verbose: bool = True,
            cards: str = "") -> list:
     """
-    /update_stats after the cutover: with force_update or cards, a Card sync run first (request_run); then the sync
+    /update_stats: with force_update or cards, a Card sync run first (request_run); then the sync
     (Card sync starts its other runs itself). A reminder's plain sync is quiet (the console), unless it fails.
 
     Returns:
@@ -639,7 +614,7 @@ def update(interaction=None, output_problematic: bool = True, force_update: bool
 
 
 def fonts_text(folder: str = CARD_DATA_DIR) -> str:
-    """/fonts after the cutover: the card data's psd_details.json (no PSD or font downloaded)."""
+    """/fonts: the card data's psd_details.json (no PSD or font downloaded)."""
     from commands import psd_details                 # lazy: fontTools
     from commands.font_check import details_report, discord_text
     if not isfile(join(folder, card_db.DETAILS_JSON)):

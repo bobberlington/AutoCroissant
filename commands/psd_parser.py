@@ -20,7 +20,7 @@ getLogger("psd_tools").setLevel(CRITICAL)
 # ========================
 # Configuration
 # ========================
-PARSER_VERSION = 2                # bump when every stored card must be re-parsed (repo_traverser re-parses older stamps)
+PARSER_VERSION = 2                # bump when every stored card must be re-parsed (the build re-parses older stamps)
 TYPE_REGION_RATIO = 0.5
 MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']
 DRAWN_LAYER_KINDS = ("pixel", "smartobject", "group", "type", "shape")   # every other kind is an adjustment layer

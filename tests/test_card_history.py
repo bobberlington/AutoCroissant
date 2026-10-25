@@ -12,6 +12,21 @@ import pytest
 import commands.card_db as cdb
 import commands.card_history as ch
 import commands.card_models as cm
+from conftest import write_pickle
+
+
+def _dedupe(stats: dict, old_stats: dict) -> list:
+    """card_history.collapse over every name, in place: (name, timestamp) of each version dropped."""
+    gone = []
+    for name in list(old_stats):
+        kept, dropped = ch.collapse(old_stats[name], stats.get(name))
+        gone += [(name, version.timestamp) for version in dropped]
+        if dropped:
+            if kept:
+                old_stats[name] = kept
+            else:
+                del old_stats[name]
+    return gone
 
 
 def git(repo, *args, env=None):
@@ -398,48 +413,6 @@ def test_a_tagged_record_ends_its_run():
     assert (kept, dropped) == ([a2], [a1, a3]) and ch.start(current) == (300.0, None)
 
 
-def test_dedupe_cleans_every_name_once():
-    stats = {"A": _card(timestamp=300.0), "B": _card("B", ability="B2.", timestamp=300.0)}
-    old = defaultdict(list, {"A": [_card(timestamp=100.0), _card(timestamp=200.0)],
-                             "B": [_card("B", ability="B1.", timestamp=100.0), _card("B", ability="B1.", timestamp=200.0)],
-                             "Gone": [_card("Gone", timestamp=50.0)]})
-    assert ch.dedupe(stats, old) == [("A", 100.0), ("A", 200.0), ("B", 200.0)]
-    assert "A" not in old and [v.timestamp for v in old["B"]] == [100.0] and len(old["Gone"]) == 1
-    assert ch.start(stats["A"]) == (100.0, None) and stats["B"].version is None
-    assert ch.dedupe(stats, old) == []
-
-
-def test_dedupe_keeps_a_name_record_cant_read(capsys):
-    """A value that isn't JSON data (record() raises) leaves its name's versions alone; the others are still cleaned."""
-    stats = {"A": _card(timestamp=300.0), "B": _card("B", timestamp=300.0)}
-    odd = _card("B", timestamp=200.0, parsed_values={"series": {"x"}})            # a set: not JSON data
-    old = defaultdict(list, {"A": [_card(timestamp=100.0)], "B": [_card("B", timestamp=100.0), odd]})
-    assert ch.dedupe(stats, old) == [("A", 100.0)]
-    assert old["B"][1] is odd and len(old["B"]) == 2 and stats["B"].version is None
-    assert "B compared as changed" in capsys.readouterr().out
-
-
-def test_the_seed_after_the_cleanup_is_the_seed_alone():
-    """The same history either way: the seed pass on pickles with duplicates, or /update_stats' cleanup first and then the
-    seed (its legacy record dated from git, the earlier start kept; only that start's commit is unknown)."""
-    index = _index_with({"b1": ("c1", 1000.0), "b2": ("c2", 2000.0), "b3": ("c3", 3000.0)})
-    def pickles():
-        old = defaultdict(list, {"A": [_card(timestamp=500.0), _card(timestamp=600.0),
-                                       _card(ability="New.", blob_sha="b2", timestamp=2000.0)]})
-        return {"A": _card(ability="New.", blob_sha="b3", timestamp=3000.0)}, old
-    alone, cleaned = pickles(), pickles()
-    ch.refine(*alone, index)
-    assert len(ch.dedupe(*cleaned)) == 2
-    assert cleaned[0]["A"].version["cause"] == "legacy" and cleaned[0]["A"].version["from"] == 2000.0
-    ch.refine(*cleaned, index)
-    for stats, old in (alone, cleaned):
-        assert [(ch.data_of(v), v.version["from"], v.version["to"]) for v in old["A"]] == [(ch.data_of(_card()), 500.0, 2000.0)]
-        assert (stats["A"].version["from"], stats["A"].version["cause"]) == (2000.0, "psd")
-    assert (alone[0]["A"].version["from_commit"], cleaned[0]["A"].version["from_commit"]) == ("c2", None)
-    cleaned[0]["A"].version["from_commit"] = "c2"
-    assert cdb.record(alone[0]["A"]) == cdb.record(cleaned[0]["A"])
-
-
 def test_duplicates_follow_their_original_and_get_no_version():
     index = _index_with({"b1": ("c1", 1000.0)})
     stats = {"A": _card(blob_sha="b1", timestamp=5.0), "A2": _card("A2", blob_sha="b1", timestamp=5.0, duplicate_of="A")}
@@ -520,7 +493,7 @@ def test_an_edit_older_than_the_card_it_changes_stays_a_version():
     old = _card(timestamp=1000.0, blob_sha="b1", **V2)
     db = _db({"A": _card(ability="Edited.", timestamp=1000.0, blob_sha="b1", **V2)})
     assert ch.record_edits(db, {"A": deepcopy(old)}, 900.0, "e1") == ["A"]
-    assert ch.start(db.stats["A"])[0] == 1000.0 and ch.dedupe(db.stats, db.old_stats) == []
+    assert ch.start(db.stats["A"])[0] == 1000.0 and _dedupe(db.stats, db.old_stats) == []
     assert [v.ability for v in db.old_stats["A"]] == ["Text."] and db.stats["A"].ability == "Edited."
     index = _index_with({"b1": ("c1", 1000.0)})
     old.version = ch.start_of(old, index, None)
@@ -529,7 +502,7 @@ def test_an_edit_older_than_the_card_it_changes_stays_a_version():
         db = _db({"A": after})
         assert ch.record_versions({"A": deepcopy(old)}, {}, db, {}, [], index, ch.Commit(0, "e1", 900.0, "web"),
                                   ch.Commit(0, "a1", 900.0, "web")) == [("A", cause)]
-        assert ch.start(after)[0] == 1000.0 and ch.dedupe(db.stats, db.old_stats) == [] and len(db.old_stats["A"]) == 1
+        assert ch.start(after)[0] == 1000.0 and _dedupe(db.stats, db.old_stats) == [] and len(db.old_stats["A"]) == 1
 
 
 def test_a_field_its_parse_failed_on_is_unknown():
@@ -578,28 +551,6 @@ def test_a_reading_that_knew_less_never_stands_for_one_that_knew_more():
     assert ch.collapse([early, read], y) == ([read], [early]) and ch.start(read) == (100.0, None)
 
 
-def test_legacy_history_keeps_the_card_a_broken_layer_replaced():
-    """Legacy /update_stats: X, then a commit without its ability layer (U), then Y: X stays a version, U goes into Y
-    (the reading that knew more), and the next cleanup changes nothing. History [X], card Y, then U: Y is kept."""
-    from commands.card_data import CardBuild
-    x = _card(ability="Old text X.", timestamp=1000.0, blob_sha="a" * 40, **V2)
-    u = _card(ability=None, timestamp=2000.0, blob_sha="b" * 40, problems=NO_LAYER, **V2)
-    y = _card(ability="New text Y.", timestamp=3000.0, blob_sha="c" * 40, **V2)
-    build = CardBuild.__new__(CardBuild)
-    build.db, build.legacy = _db({}), True
-    for old, new in ((x, u), (u, y)):
-        build.db.stats["A"], build.replaced = deepcopy(new), {"A": deepcopy(old)}
-        build._record_history()
-    assert [v.ability for v in build.db.old_stats["A"]] == ["Old text X."]
-    assert build.db.stats["A"].ability == "New text Y." and ch.start(build.db.stats["A"]) == (2000.0, None)
-    assert ch.dedupe(build.db.stats, build.db.old_stats) == []
-    build.db = _db({"A": deepcopy(u)}, {"A": [deepcopy(x)]})
-    build.replaced = {"A": deepcopy(y)}
-    build._record_history()
-    assert [v.ability for v in build.db.old_stats["A"]] == ["Old text X.", "New text Y."]
-    assert ch.dedupe(build.db.stats, build.db.old_stats) == [] and ch.start(build.db.stats["A"]) == (2000.0, None)
-
-
 def test_build_and_untag_keep_the_card_a_reading_that_knew_less_replaced():
     """The data build: a new blob, or the same blob read again, without its ability layer keeps the card before as a
     version. A stale archived record the listed card knew less than stays history (untagged)."""
@@ -610,7 +561,7 @@ def test_build_and_untag_keep_the_card_a_reading_that_knew_less_replaced():
         db = _db({"A": _card(ability=None, blob_sha=blob_sha, timestamp=2000.0, problems=NO_LAYER, **V2)})
         assert ch.record_versions({"A": old}, {}, db, {"A": 1}, [], index) == [("A", "psd" if blob_sha == "b2" else "reparse")]
         assert [v.ability for v in db.old_stats["A"]] == ["Text."]
-        assert ch.dedupe(db.stats, db.old_stats) == []
+        assert _dedupe(db.stats, db.old_stats) == []
     record = _card(blob_sha="b1", timestamp=100.0, archived={"at": 150.0, "path": "Items/A.psd", "blob": "b1"}, **V2)
     db = _db({"A": _card(ability=None, path="Items/Heal/A.psd", blob_sha="b2", timestamp=500.0, problems=NO_LAYER,
                          **V2)}, {"A": [record]})
@@ -637,7 +588,7 @@ def test_normalize_series_and_type_names():
     assert spray.series == "Pikmin 2" and metronome.types == ["negation"] and goomba.series is None
     assert (beldam.series, beldam.subseries) == ("Mario", "Paper Mario: The Thousand-Year Door")
     assert ch.normalize(stats, old) == []
-    assert sorted(ch.dedupe(stats, old)) == [("Metronome", 100.0), ("Spicy Spray", 100.0)]
+    assert sorted(_dedupe(stats, old)) == [("Metronome", 100.0), ("Spicy Spray", 100.0)]
     assert list(old) == ["Beldam", "Goomba"] and ch.start(stats["Spicy Spray"]) == (100.0, None)
 
 
@@ -680,10 +631,10 @@ def test_the_cleanup_on_a_post_deploy_chain():
                   blob_sha="b4", **V2)
     stats, old = {"Bob-ulk": current}, defaultdict(list, {"Bob-ulk": [v0, v1, v2, v3]})
     ch.normalize(stats, old)
-    assert ch.dedupe(stats, old) == [("Bob-ulk", 300.0), ("Bob-ulk", 300.0)]
+    assert _dedupe(stats, old) == [("Bob-ulk", 300.0), ("Bob-ulk", 300.0)]
     assert old["Bob-ulk"] == [v0, v1] and ch.start(current) == (300.0, None)
     assert (v0.series, v0.subseries) == ("Mario", ttyd)
-    assert ch.normalize(stats, old) == [] and ch.dedupe(stats, old) == []
+    assert ch.normalize(stats, old) == [] and _dedupe(stats, old) == []
 
 
 # ========================
@@ -782,44 +733,6 @@ def test_a_stale_archive_with_the_same_data_gives_the_card_its_start():
     assert ch.start(listed) == (100.0, None) and listed.version["cause"] == "legacy" and not listed.version["legacy"]
 
 
-
-def _stale_pair():
-    record = _card(blob_sha="b1", timestamp=100.0, archived={"at": 150.0, "path": "Items/A.psd", "blob": "b1"})
-    return _db({"A": _card(path="Items/Heal/A.psd", blob_sha="b2", timestamp=500.0)}, {"A": [record]})
-
-
-def _reloaded():
-    db = cm.StatsDatabase()
-    db.load()
-    return db
-
-
-def test_a_carried_start_reaches_stats_pkl():
-    """/update_stats saves (drop after stats.pkl): the carried start is on disk, the record gone, nothing stale."""
-    _stale_pair().save()
-    db = _reloaded()
-    assert ch.start(db.stats["A"]) == (100.0, None) and "A" not in db.old_stats and db.stale_archives() == []
-
-
-def test_a_kill_after_the_carried_start_keeps_the_record(monkeypatch):
-    """Killed before old_stats.pkl's second write: the record is still there, and the next save drops it again."""
-    real, calls = cm.save_pickle, []
-
-    def kill_fourth(obj, path, lock):
-        calls.append(path)
-        if len(calls) == 4:
-            raise KeyboardInterrupt
-        real(obj, path, lock)
-    monkeypatch.setattr(cm, "save_pickle", kill_fourth)
-    with pytest.raises(KeyboardInterrupt):
-        _stale_pair().save()
-    monkeypatch.setattr(cm, "save_pickle", real)
-    db = _reloaded()
-    assert ch.start(db.stats["A"]) == (100.0, None) and db.stale_archives() == ["A"]
-    db.save()
-    db = _reloaded()
-    assert ch.start(db.stats["A"]) == (100.0, None) and "A" not in db.old_stats
-
 # ========================
 # Recovery from the bot's PICKLE commits, misreads, impossible values
 # ========================
@@ -851,8 +764,8 @@ def lost(tmp_path):
     git(bot, "init", "-q", "-b", "main")
 
     def pickles(at, stats, message="PICKLE"):
-        cdb.dump_pickle(stats, str(bot / "stats.pkl"))
-        cdb.dump_pickle(defaultdict(list), str(bot / "old_stats.pkl"))
+        write_pickle(stats, str(bot / "stats.pkl"))
+        write_pickle(defaultdict(list), str(bot / "old_stats.pkl"))
         return commit(bot, "bot", at, message)
     pickles(1500, {"Items/A.psd": {"type": "item", "ability": "Old words.", "types": [], "name": "A", "timestamp": 1400.25}})
     pickles(2500, {"A": _card(ability="New words.", timestamp=2000.0)})
@@ -910,19 +823,15 @@ def test_recover_restores_lost_versions_starts_and_gone_cards(lost):
 
 def test_the_recovery_runs_once(lost):
     """A restored version removed later on purpose stays removed; so does the whole recovery when its PICKLE is
-    reverted (pickles only): the reverted commit still says it ran. The bot reads no PICKLE once it ran."""
-    from commands import card_data as cd
+    reverted (pickles only): the reverted commit still says it ran."""
     index = ch.GitIndex.from_git(str(lost.cards))
     stats, old = lost.stats, lost.old
     clean = deepcopy((stats, old))
     assert ch.recover(stats, old, index, ch.Pickles.of(ch.bot_snapshots(str(lost.bot)))).added
     del old["A"]                                                  # folded on purpose (a later rule)
     assert not ch.recover(stats, old, index, ch.Pickles.of(ch.bot_snapshots(str(lost.bot)))).changed() and "A" not in old
-    db = cm.StatsDatabase()
-    db.stats, db.old_stats = stats, old
-    assert cd.bot_pickles(db) is None                             # nothing read once it ran
-    cdb.dump_pickle(stats, str(lost.bot / "stats.pkl"))
-    cdb.dump_pickle(old, str(lost.bot / "old_stats.pkl"))
+    write_pickle(stats, str(lost.bot / "stats.pkl"))
+    write_pickle(old, str(lost.bot / "old_stats.pkl"))
     done = commit(lost.bot, "bot", 6000, "PICKLE")
     git(lost.bot, "revert", "--no-edit", done, env={"GIT_COMMITTER_DATE": "@6100 +0000", "GIT_AUTHOR_DATE": "@6100 +0000"})
     ch._PICKLES.clear()
@@ -935,16 +844,14 @@ def test_the_recovery_runs_once(lost):
 
 
 def test_seed_pass_recovers_from_the_bot_clone(lost, tmp_path, capsys):
-    folder, out = tmp_path / "pickles", tmp_path / "out"
+    folder = tmp_path / "pickles"
     folder.mkdir()
-    cdb.dump_pickle(lost.stats, str(folder / "stats.pkl"))
-    cdb.dump_pickle(lost.old, str(folder / "old_stats.pkl"))
-    assert ch.main(["refine", "--git", str(lost.cards), "--pickles", str(folder), "--out", str(out),
-                    "--bot-git", str(lost.bot)]) == 0
+    write_pickle(lost.stats, str(folder / "stats.pkl"))
+    write_pickle(lost.old, str(folder / "old_stats.pkl"))
+    assert ch.main(["refine", "--git", str(lost.cards), "--pickles", str(folder), "--bot-git", str(lost.bot)]) == 0
     text = capsys.readouterr().out
     assert "Versions recovered from the bot's PICKLE commits: 3 on 3 cards" in text
     assert "Cards gone before archiving, archived: 2 (Gone, Old)" in text or "archived: 2 (Old, Gone)" in text
-    assert pickle.loads((out / "old_stats.pkl").read_bytes())["A"][0].ability == "Old words."
 
 
 def _misread_repo(tmp_path, png_changes: bool):
@@ -1074,8 +981,8 @@ def _bot_repo(tmp_path, snapshots: list):
     git(bot, "init", "-q", "-b", "main")
     shas = []
     for at, stats in snapshots:
-        cdb.dump_pickle(stats, str(bot / "stats.pkl"))
-        cdb.dump_pickle(defaultdict(list), str(bot / "old_stats.pkl"))
+        write_pickle(stats, str(bot / "stats.pkl"))
+        write_pickle(defaultdict(list), str(bot / "old_stats.pkl"))
         shas.append(commit(bot, "bot", at, "PICKLE"))
     return bot, shas
 
@@ -1209,39 +1116,6 @@ def test_a_renamed_card_starts_where_its_old_names_archive_ends(tmp_path):
     assert index.intro_of(blob(O1), "New", {"Old", "New"}).sha == c[1] and index.intro_of(blob(O1), "Old", {"New"}).sha == c[0]
 
 
-def test_the_seed_after_the_bots_cleanup_reaches_the_same_starts(tmp_path):
-    """You are going DOWN you Sputnik!: a blob-less version the bot's cleanup folds into the card (its stored time, the
-    rename's commit) and the seed of the raw pickles (it dates that version by its bytes' first commit, under the old
-    name no card holds) give the card one start."""
-    from commands import card_data as cd
-    index, c = _cards_repo(tmp_path, [(1000, {"Items/Old.psd": b"b one"}), (2000, {"Items/Old.psd": ("mv", "Items/B.psd")}),
-                                      (3000, {"Items/B.psd": b"b two"})])
-
-    def raw():
-        v0 = _card("B", path="Items/B.psd", ability="Same.", timestamp=2000.0)
-        return {"B": _card("B", path="Items/B.psd", ability="Same.", blob_sha=blob(b"b two"), timestamp=3000.0)}, \
-            defaultdict(list, {"B": [v0]})
-    stats, old = raw()
-    ch.refine(stats, old, index)
-    db = cm.StatsDatabase()
-    db.stats, db.old_stats = raw()
-    cleaned = cd.clean_history(db, index)
-    assert ch.start(db.stats["B"]) == (2000.0, c[1]) and cleaned[6] == ["B"]     # carried, given its commit
-    ch.refine(db.stats, db.old_stats, index)
-    assert ch.start(db.stats["B"]) == ch.start(stats["B"]) == (1000.0, c[0])
-
-
-def test_carried_starts_get_their_commit_in_the_bot(tmp_path):
-    index, c = _cards_repo(tmp_path, [(1000, {"Items/A.psd": A1}), (2000, {"Items/A.psd": A2})])
-    card = _card(blob_sha=blob(A2), timestamp=2000.0)
-    card.version = ch.meta(None, 1000.0, "legacy")
-    elsewhere = _card(blob_sha=blob(A2), timestamp=2000.0)
-    elsewhere.version = ch.meta(None, 1500.0, "legacy")                         # no commit at that time: left alone
-    assert ch.commits_of({"A": card, "E": elsewhere}, defaultdict(list), index) == ["A"]
-    assert card.version["from_commit"] == c[0] and elsewhere.version["from_commit"] is None
-    assert ch.commits_of({"A": card}, defaultdict(list), index) == []
-
-
 def test_bot_pickles_reads_only_a_new_pickle_commit(lost, monkeypatch):
     """Each snapshot is unpickled, folded in and dropped before the next; a later PICKLE commit (a /push) is the only
     one read then, and the readings are those of reading all of them at once."""
@@ -1251,7 +1125,7 @@ def test_bot_pickles_reads_only_a_new_pickle_commit(lost, monkeypatch):
     monkeypatch.setattr(ch, "_snapshots", lambda clone, commits, peek=False: (
         read.append(("peek" if peek else "read", len(commits))), real(clone, commits, peek))[1])
     first = ch.bot_pickles(str(lost.bot))
-    cdb.dump_pickle({"A": _card(ability="Newest.", timestamp=3000.0)}, str(lost.bot / "stats.pkl"))
+    write_pickle({"A": _card(ability="Newest.", timestamp=3000.0)}, str(lost.bot / "stats.pkl"))
     commit(lost.bot, "bot", 4800, "PICKLE")
     second = ch.bot_pickles(str(lost.bot))
     assert read == [("read", 4), ("peek", 1), ("read", 1), ("peek", 0)] and second is first and len(second.shas) == 5
@@ -1283,21 +1157,16 @@ def test_high_history_stats_need_an_allowance_and_are_listed():
 # ========================
 # CLI
 # ========================
-def test_cli_refine_on_copies(history, tmp_path, capsys):
-    folder, out = tmp_path / "pickles", tmp_path / "out"
+def test_cli_refine_reads_only(history, tmp_path, capsys):
+    folder = tmp_path / "pickles"
     folder.mkdir()
     stats = {"C": _card("C", path="Items/Heal/C.psd", blob_sha=blob(Y), timestamp=9.0)}
     old = defaultdict(list, {"C": [_card("C", path="Items/Heal/C.psd", ability="Old.")], "B": [_card("B", path="Items/B.psd")]})
     (folder / "stats.pkl").write_bytes(pickle.dumps(stats))
     (folder / "old_stats.pkl").write_bytes(pickle.dumps(old))
     before = {p.name: p.read_bytes() for p in folder.iterdir()}
-    assert ch.main(["refine", "--git", str(history.repo), "--pickles", str(folder), "--out", str(out)]) == 0
+    assert ch.main(["refine", "--git", str(history.repo), "--pickles", str(folder)]) == 0
     text = capsys.readouterr().out
     assert "Cards re-dated: 1 of 1" in text and "Archive tags added: 1 (B)" in text and "Archive tags dated from git: 1 (B)" in text
     assert {p.name: p.read_bytes() for p in folder.iterdir()} == before                  # the input is never written
-    refined = pickle.loads((out / "stats.pkl").read_bytes())
-    assert refined["C"].timestamp == 2000.0 and refined["C"].version["cause"] == "psd"
-    assert pickle.loads((out / "old_stats.pkl").read_bytes())["B"][0].archived["commit"] == history.c[5]
-    assert ch.main(["refine", "--git", str(history.repo), "--pickles", str(folder), "--out", str(folder)]) == 1
-    assert {p.name: p.read_bytes() for p in folder.iterdir()} == before
 

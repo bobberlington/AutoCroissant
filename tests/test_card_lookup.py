@@ -74,7 +74,8 @@ def repo(monkeypatch):
     repo._edit_names = ("sha", ALIASES)
     tree = {"tree": [{"path": p, "sha": "s"} for p, _ in CARDS.values()] + [{"path": "Types/Panda.png", "sha": "s"},
                                                                              {"path": qc.EDITS_PATHS[0], "sha": "sha"}]}
-    repo.populate_files(tree=tree)
+    repo._fetch_tree = lambda name: (tree, "", 200, "")
+    repo.populate_files()
     repo.get_card_url = lambda key: f"https://img/{key}"
     monkeypatch.setattr(qc, "card_repo", repo)
     utils.dispatch_queue.clear()

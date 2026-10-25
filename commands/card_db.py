@@ -1,12 +1,12 @@
 """
 The card database as JSON (db/, the card data build's output): CardInfo <-> plain records, stats.json and
-old_stats.json one card per line written atomically, the manifest's sha256 per file, the one-time seed from the
-pickles through an allow-list unpickler, and export-pickles back. No Discord or psd-tools.
+old_stats.json one card per line written atomically, the manifest's sha256 per file, and the historical pickles
+(AutoCroissant's until 2026-10-25: the build's seed, the diagnostics) read through an allow-list unpickler. No Discord or
+psd-tools.
 
-The bot's sync() (after the cutover) is the one network use, imported lazily.
+The bot's sync() is the one network use, imported lazily.
 
-CLI: python -m commands.card_db from-pickles <pickle dir> <db dir> | export-pickles <db dir or data commit> <out dir>
-     [--git <data checkout>] | check <db dir>
+CLI: python -m commands.card_db check <db dir>
 """
 from argparse import ArgumentParser
 from collections import defaultdict
@@ -16,12 +16,10 @@ from json import dumps, loads
 from os import fsync, makedirs, remove, replace
 from os.path import dirname, exists, isdir, isfile, join
 from pickle import Unpickler, UnpicklingError
-from sys import modules as sys_modules
 from threading import Lock
-from types import ModuleType
 from typing import Optional
 
-from commands.card_models import CardInfo, CardStats, save_pickle
+from commands.card_models import CardInfo, CardStats
 
 # ========================
 # Configuration
@@ -34,11 +32,10 @@ MANIFEST_JSON = "manifest.json"
 DATA_FILES = (STATS_JSON, OLD_STATS_JSON, DETAILS_JSON)
 SYNC_JSON = "sync.json"                            # the bot's copy only: the data commit it holds and that request's ETag
 SHA_MEDIA = "application/vnd.github.sha"           # Accept: a commit's sha alone (the sync's conditional request)
-PICKLE_MODULE = CardInfo.__module__                # "commands.psd_analyzer": the class path the pickles store
 EXTRA_KEYS = ("version", "created")              # CardInfo attributes outside its dataclass fields
 CARD_FIELDS = {f.name: f for f in fields(CardInfo)}
 STAT_KEYS = tuple(f.name for f in fields(CardStats))
-# what the seed may unpickle: the two card classes under either module path, and old_stats' defaultdict(list)
+# what a historical pickle may hold: the two card classes under either module path, and old_stats' defaultdict(list)
 ALLOWED = {("commands.psd_analyzer", "CardInfo"): CardInfo, ("commands.psd_analyzer", "CardStats"): CardStats,
            ("commands.card_models", "CardInfo"): CardInfo, ("commands.card_models", "CardStats"): CardStats,
            ("collections", "defaultdict"): defaultdict, ("builtins", "list"): list}
@@ -174,7 +171,7 @@ def parse_old_stats(text: str, path: str = OLD_STATS_JSON) -> defaultdict:
 
 
 def write_text(path: str, text: str) -> None:
-    """Write to <path>.tmp, fsync, then replace (card_models.save_pickle's way)."""
+    """Write to <path>.tmp, fsync, then replace: a kill mid-write leaves the old file whole."""
     with _lock:
         temp_path = path + ".tmp"
         try:
@@ -280,7 +277,7 @@ def round_trip_problems(stats: dict, old_stats: dict) -> list:
 
 
 # ========================
-# Pickles (the seed and the way back)
+# Historical pickles (read only)
 # ========================
 class SeedUnpickler(Unpickler):
     """Unpickles only the card classes, defaultdict and list (ALLOWED); any other global is refused."""
@@ -303,24 +300,6 @@ def read_pickles(folder: str) -> tuple:
     old_path = join(folder, "old_stats.pkl")
     old = load_pickle(old_path) if exists(old_path) else defaultdict(list)
     return (stats, old if isinstance(old, defaultdict) else defaultdict(list, old))
-
-
-def dump_pickle(obj, path: str) -> None:
-    """
-    save_pickle without the bot: the pickles name the card classes commands.psd_analyzer.* (card_models pins that path),
-    and pickle imports it to check. When the facade (discord, pandas) is not loaded, a stand-in module holding the two
-    classes takes its place while dumping; the bytes are the same.
-    """
-    shim = None
-    if PICKLE_MODULE not in sys_modules:
-        shim = ModuleType(PICKLE_MODULE)
-        shim.CardInfo, shim.CardStats = CardInfo, CardStats
-        sys_modules[PICKLE_MODULE] = shim
-    try:
-        save_pickle(obj, path, Lock())
-    finally:
-        if shim is not None and sys_modules.get(PICKLE_MODULE) is shim:
-            del sys_modules[PICKLE_MODULE]
 
 
 def _at_commit(git_dir: str, sha: str, name: str) -> Optional[str]:
@@ -364,37 +343,6 @@ def read_cards(source: str, git_dir: str = ".") -> tuple:
         raise ValueError(f"{source}: no such file or folder, nor a commit of {git_dir} with db/{STATS_JSON}")
     old_t = _at_commit(git_dir, source, OLD_STATS_JSON)
     return (parse_stats(stats_t), parse_old_stats(old_t) if old_t is not None else None)
-
-
-def export_pickles(source: str, out_folder: str, git_dir: str = ".") -> None:
-    """
-    db/ back to stats.pkl, old_stats.pkl and psd_details.json in out_folder (the older tooling's input; aliases.pkl
-    is not in db/ and stays as it is).
-
-    Args:
-        source: A db/ folder, or a data commit (its db/ read from git_dir's history)
-        out_folder: Where the three files go
-        git_dir: A checkout of the data branch, for a commit
-    """
-    if isdir(source):
-        stats, old, _, _ = read_db(source, details=False)
-        details_path = join(source, DETAILS_JSON)
-        details = None
-        if isfile(details_path):
-            with open(details_path, encoding="utf-8") as fh:
-                details = fh.read()
-    else:
-        stats_t, old_t = _at_commit(git_dir, source, STATS_JSON), _at_commit(git_dir, source, OLD_STATS_JSON)
-        if stats_t is None:
-            raise ValueError(f"{source}: no db/{STATS_JSON} at that commit of {git_dir}")
-        stats = parse_stats(stats_t)
-        old = parse_old_stats(old_t) if old_t is not None else defaultdict(list)
-        details = _at_commit(git_dir, source, DETAILS_JSON)
-    makedirs(out_folder, exist_ok=True)
-    dump_pickle(old, join(out_folder, "old_stats.pkl"))
-    dump_pickle(stats, join(out_folder, "stats.pkl"))
-    if details is not None:
-        write_text(join(out_folder, DETAILS_JSON), details)
 
 
 # ========================
@@ -510,30 +458,9 @@ def sync(folder: str, repository: str, branch: str) -> dict:
 def main(argv: Optional[list] = None) -> int:
     parser = ArgumentParser(prog="python -m commands.card_db", description="The card database's JSON files (db/).")
     sub = parser.add_subparsers(dest="command", required=True)
-    seed = sub.add_parser("from-pickles", help="write db/ from a folder's stats.pkl, old_stats.pkl and psd_details.json")
-    seed.add_argument("pickles")
-    seed.add_argument("db")
-    back = sub.add_parser("export-pickles", help="write stats.pkl, old_stats.pkl and psd_details.json from db/ or a data commit")
-    back.add_argument("db", help="a db/ folder, or a data commit")
-    back.add_argument("out")
-    back.add_argument("--git", default=".", help="a checkout of the data branch, for a commit (default: here)")
     check = sub.add_parser("check", help="db/'s files against its manifest")
     check.add_argument("db")
     args = parser.parse_args(argv)
-    if args.command == "from-pickles":
-        stats, old = read_pickles(args.pickles)
-        details = join(args.pickles, DETAILS_JSON)
-        text = '{"version": 1, "cards": {\n\n}}\n'
-        if isfile(details):
-            with open(details, encoding="utf-8") as fh:
-                text = fh.read()
-        write_db(args.db, stats, old, text, {"seed": {"pickles": args.pickles}})
-        print(f"{len(stats)} cards, {sum(len(v) for v in old.values())} versions written to {args.db}.")
-        return 0
-    if args.command == "export-pickles":
-        export_pickles(args.db, args.out, args.git)
-        print(f"Pickles written to {args.out}.")
-        return 0
     problems = check_db(args.db)
     print("\n".join(problems) if problems else f"{args.db}: whole.")
     return 1 if problems else 0
@@ -553,8 +480,6 @@ __all__ = [
     'SeedUnpickler',
     'card',
     'check_db',
-    'dump_pickle',
-    'export_pickles',
     'file_sha256',
     'load_pickle',
     'main',

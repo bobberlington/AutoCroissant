@@ -6,7 +6,7 @@ from collections import defaultdict
 
 import commands.card_db as cdb
 import commands.card_models as cm
-from conftest import REPO
+from conftest import REPO, write_pickle
 
 SCRIPTS = REPO / ".claude" / "skills" / "autocroissant-diagnostics-and-tooling" / "scripts"
 
@@ -38,8 +38,8 @@ def test_diff_stats_reads_pickles_db_folders_and_data_commits(tmp_path):
     b["Kirby"].version = {"from": 1_600_000_000.0, "cause": "legacy"}
     old_a, old_b = defaultdict(list), defaultdict(list, {"Kirby": [_card("Kirby", ability="Before.", timestamp=1.0)]})
     (tmp_path / "pk").mkdir()
-    cdb.dump_pickle(a, str(tmp_path / "pk" / "stats.pkl"))
-    cdb.dump_pickle(old_a, str(tmp_path / "pk" / "old_stats.pkl"))
+    write_pickle(a, str(tmp_path / "pk" / "stats.pkl"))
+    write_pickle(old_a, str(tmp_path / "pk" / "old_stats.pkl"))
     data = tmp_path / "data"
     _git(tmp_path, "init", "-q", "-b", "data", str(data))
     _db(data / "db", b, old_b)
@@ -84,8 +84,8 @@ def test_diff_stats_matches_versions_the_seed_pass_dated(tmp_path):
                                          _card("Kirby", ability="B.", timestamp=1.5, blob_sha="b" * 40),
                                          _card("Kirby", ability="C.", timestamp=3.0, blob_sha="c" * 40, series="Kirby")]})
     (tmp_path / "pk").mkdir()
-    cdb.dump_pickle(stats, str(tmp_path / "pk" / "stats.pkl"))
-    cdb.dump_pickle(jetson, str(tmp_path / "pk" / "old_stats.pkl"))
+    write_pickle(stats, str(tmp_path / "pk" / "stats.pkl"))
+    write_pickle(jetson, str(tmp_path / "pk" / "old_stats.pkl"))
     _db(tmp_path / "db", stats, built)
     code, out = _run("diff_stats.py", tmp_path / "pk" / "stats.pkl", tmp_path / "db")
     assert code == 1, out
@@ -103,8 +103,8 @@ def test_diff_stats_matches_a_legacy_version_given_a_blob_and_re_dated(tmp_path)
     built = defaultdict(list, {"Kirby": [_card("Kirby", ability="A.", timestamp=1742636015.0, blob_sha="d" * 40,
                                                types=["negation"])]})
     (tmp_path / "pk").mkdir()
-    cdb.dump_pickle(stats, str(tmp_path / "pk" / "stats.pkl"))
-    cdb.dump_pickle(jetson, str(tmp_path / "pk" / "old_stats.pkl"))
+    write_pickle(stats, str(tmp_path / "pk" / "stats.pkl"))
+    write_pickle(jetson, str(tmp_path / "pk" / "old_stats.pkl"))
     _db(tmp_path / "db", stats, built)
     code, out = _run("diff_stats.py", tmp_path / "pk" / "stats.pkl", tmp_path / "db")
     assert code == 1, out

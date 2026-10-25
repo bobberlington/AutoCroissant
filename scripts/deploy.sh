@@ -2,7 +2,7 @@
 # Deploy on the jetson: pull, psd-tools pin, incremental Cython build, restart, check the journal.
 #   ~/Documents/AutoCroissant/scripts/deploy.sh [--bot autocroissant|ojwikibot]
 #   ssh jetson Documents/AutoCroissant/scripts/deploy.sh
-# Prints OK or FAILED (exit 0 / 1). Refuses 05:00-05:40 Pacific (the scheduled /update_stats and /push).
+# Prints OK or FAILED (exit 0 / 1). Refuses 05:00-05:40 Pacific (the scheduled /update_stats).
 set -euo pipefail
 
 in_window() {
@@ -39,7 +39,7 @@ main() {
         *) fail "unknown bot '$bot' (autocroissant or ojwikibot)" ;;
     esac
     PY=~/venvs/$bot/bin/python
-    in_window && fail "05:00-05:40 Pacific: the scheduled /update_stats and /push run then"
+    in_window && fail "05:00-05:40 Pacific: the scheduled /update_stats runs then"
     cd "$dir"
     export SSL_CERT_FILE=${SSL_CERT_FILE:-/etc/ssl/certs/ca-certificates.crt}
     if [ "$bot" = autocroissant ] && [ -z "${SSH_AUTH_SOCK:-}" ] && [ -S /run/autocroissant/ssh-agent.sock ]; then

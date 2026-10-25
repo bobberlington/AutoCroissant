@@ -151,7 +151,6 @@ def test_quoted_values_keep_and_and_or(repo):
 # ========================
 # Commands
 # ========================
-@pytest.mark.usefixtures("pickle_path")
 def test_update_metadata_and_mass_replace(monkeypatch):
     """subseries goes into the card's Card Edits.json entry (the commit stood in for: test_metadata_edits has the real one)."""
     import commands.discord_edits as de
@@ -164,10 +163,7 @@ def test_update_metadata_and_mass_replace(monkeypatch):
     monkeypatch.setattr(de, "commit", commit)
     monkeypatch.setattr(utils, "say", lambda inter, text, **kw: sent.append(text))
     monkeypatch.setattr(cm.stats_db, "stats", {"Goombella": _card("Goombella", "mario")})
-    saves = []
-    monkeypatch.setattr(cm.stats_db, "save", lambda: saves.append(1))           # stats.pkl kept for a restart
     monkeypatch.setattr(qc.card_repo, "git_files", {"goombella.png": "Creatures/Mario/2 Stars/Goombella.png"})
-    monkeypatch.setattr(qc.card_repo, "git_file_alias", {})
     monkeypatch.setattr(qc.card_repo, "prep_dataframes", lambda: None)
     inter = SimpleNamespace()
     assert "subseries" in inspect.signature(de.manual_metadata_entry).parameters
@@ -179,7 +175,7 @@ def test_update_metadata_and_mass_replace(monkeypatch):
     assert "series: mario\nsubseries: Paper Mario```" in sent[len(sent) - 1]
     de.mass_replace_field(inter, "subseries", "paper mario", "Paper Mario 64")
     assert card.subseries == "Paper Mario 64" and "Replaced subseries='paper mario'" in sent[len(sent) - 1]
-    assert json.loads(files["edits"])["cards"]["Goombella"]["subseries"] == "Paper Mario 64" and saves == [1, 1]
+    assert json.loads(files["edits"])["cards"]["Goombella"]["subseries"] == "Paper Mario 64"
     assert 'subseries' in pa.COLUMN_ORDER and pa.COLUMN_ORDER.index("subseries") == pa.COLUMN_ORDER.index("series") + 1
 
 

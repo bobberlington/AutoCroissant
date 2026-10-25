@@ -89,9 +89,6 @@ def test_first_upload_is_the_earliest_version_the_bot_holds():
     build = SimpleNamespace(db=SimpleNamespace(old_stats={"Foo Bar": old}))
     assert cd.CardBuild._first_upload(build, "Foo Bar", card) == "2024-12-31"
     assert cd.CardBuild._first_upload(build, "Other", card) == "2026-01-05"
-    build.replaced = {"Other": _card(timestamp=at(2025, 12, 1))}               # replaced this run, not in old_stats yet
-    assert cd.CardBuild._first_upload(build, "Other", card) == "2025-12-01"
-    build.replaced = {}
     assert cd.CardBuild._first_upload(build, "Other", _card(timestamp=datetime(1000, 1, 1).timestamp())) is None
     page = cm.CardInfo(name="00 Toc", card_type="rulebook", path="Auxiliary/Rulebook/00_Toc.psd", ability="x",
                        timestamp=at(2025, 1, 1))

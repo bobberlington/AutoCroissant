@@ -14,9 +14,10 @@ from golden_cards import CARDS, VOCAB, golden_file, parse, parser  # noqa: E402
 
 
 def freeze_vocab() -> None:
-    from commands.psd_analyzer import ICON_MANIFEST_PATH, RepositoryTraverser, StatsDatabase
+    from commands.card_data import CardBuild
+    from commands.psd_analyzer import ICON_MANIFEST_PATH, StatsDatabase
     db = StatsDatabase()
-    tr = RepositoryTraverser(db)
+    tr = CardBuild(db)
     tr._populate_types_from_local(str(CLONE))
     stars_dir = CLONE / "Types" / "Stars"
     stars = [tr._star_name(f.name) for f in sorted(stars_dir.iterdir()) if f.name.lower().endswith(".png")]

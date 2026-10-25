@@ -1,6 +1,6 @@
 """
-The card repo's workflows after the cutover (DATA_BUILD_ACTION.md step 8): site.yml reads the card sync's data (CARD_DATA
-on, when the branch exists) with a daily fallback build; card-sync.yml runs live with the main commit and the posts on,
+The card repo's workflows after the cutover (DATA_BUILD_ACTION.md step 8): site.yml reads the card sync's data (the
+branch data, its only source) with a daily fallback build; card-sync.yml runs live with the main commit and the posts on,
 started by a card push's 30-minute timer, the cron a fallback. Loads the workflows from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without them or
 PyYAML.
 """
@@ -23,20 +23,16 @@ def _load(name: str) -> dict:
     return yaml.safe_load(path.read_text(encoding="utf-8"))
 
 
-def test_site_reads_the_data_when_switched_on():
+def test_site_reads_the_data_branch():
     doc = _load("site.yml")
-    if "CARD_DATA" not in (doc.get("env") or {}):
-        pytest.skip("site.yml before the card sync's data checkout (TTSCardMaker work/site-history)")
-    assert doc["env"]["CARD_DATA"] == "on"
+    if "CARD_DATA" in (doc.get("env") or {}):
+        pytest.skip("site.yml with the pickle fallback (before TTSCardMaker work/pickles)")
     assert doc[True]["schedule"] == [{"cron": "0 12 * * *"}]                   # PyYAML reads `on` as True
     steps = doc["jobs"]["build"]["steps"]
-    branch = next(s for s in steps if s.get("id") == "data")
-    assert branch["if"] == "env.CARD_DATA == 'on'" and "refs/heads/data" in branch["run"]
     checkout = next(s for s in steps if s.get("with", {}).get("ref") == "data")
-    assert checkout["if"] == "steps.data.outputs.exists == 'true'" and checkout["with"]["path"] == "carddata"
+    assert "if" not in checkout and checkout["with"]["path"] == "carddata"
     build = next(s for s in steps if "build_site.py" in s.get("run", ""))
-    assert build["env"]["CARD_DATA_DIR"] == "${{ steps.data.outputs.exists == 'true' && 'carddata/db' || '' }}"
-    assert steps.index(branch) < steps.index(checkout) < steps.index(build)
+    assert build["env"]["CARD_DATA_DIR"] == "carddata/db" and steps.index(checkout) < steps.index(build)
 
 
 def test_card_sync_runs_live():

@@ -52,7 +52,6 @@ def db(monkeypatch):
                                             "fire.png": "Types/Fire.png"})
     monkeypatch.setattr(repo, "site_ids", {"tainted_bethany.png": ("tainted-bethany", "")})
     monkeypatch.setattr(repo, "ambiguous_names", {})
-    monkeypatch.setattr(repo, "git_file_alias", {})
     monkeypatch.setattr(repo, "match_ratio", 0.6)
     monkeypatch.setattr(repo, "get_card_url", lambda name: f"https://img/{name}")
     copy = _card("Bethany Copy", "Extra/Bethany_Copy", current.timestamp, "Current text.", blob="d" * 40,

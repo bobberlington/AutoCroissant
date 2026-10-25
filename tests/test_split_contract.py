@@ -1,5 +1,4 @@
-"""The psd_analyzer split: the facade's re-exports, the pickled class path, the shared helpers, the classifier guard."""
-import pickle
+"""The psd_analyzer split: the facade's re-exports, the shared helpers, the classifier guard."""
 from types import SimpleNamespace
 
 import pytest
@@ -10,35 +9,26 @@ import commands.github_api as ga
 import commands.psd_analyzer as pa
 import commands.psd_parser as pp
 import commands.repo_history as rh
-import commands.repo_traverser as rt
 import commands.utils as utils
 from conftest import REPO
 
 # what main.py, query_card, the diagnostics scripts, the tests and the archive branch import from the facade
 FACADE_NAMES = ("CardInfo CardStats CardType StatsDatabase stats_db get_stats_as_dict card_name CardAuthors CardEdits "
                 "PSDParser CardClassifier CardValidator IconVocabulary MutableValue StatTrackers TYPE_REGION_RATIO PARSER_VERSION "
-                "RepositoryTraverser update_stats UPDATE_RATE EXCLUDE_FOLDERS COMMITS_PAGE LOOKUP_WORKERS GIT_TOKEN "
+                "GIT_TOKEN "
                 "ICON_MANIFEST_PATH AUTHORS_PATH AUTHORS_PATHS EDITS_PATH EDITS_PATHS card_repo init_psd list_orphans export_stats_to_file").split()
 
 
 def test_facade_reexports_the_same_objects():
     assert [n for n in FACADE_NAMES if not hasattr(pa, n)] == []
-    assert pa.CardInfo is cm.CardInfo and pa.stats_db is cm.stats_db is rt.stats_db
-    assert pa.PSDParser is pp.PSDParser and pa.CardEdits is ce.CardEdits and pa.update_stats is rt.update_stats
-    assert "get_old_stats_as_dict" not in pa.__all__ and {"stats_db", "update_stats", "init_psd"} <= set(pa.__all__)
-    assert hasattr(pa.RepositoryTraverser, "_populate_types_from_local")            # parse_one.py, gap_trace.py
-
-
-def test_pickled_class_path_is_the_facade():
-    card = cm.CardInfo(name="A", card_type="item", stats=cm.CardStats(hp=1))
-    data = pickle.dumps({"A": card})
-    assert b"commands.psd_analyzer" in data and b"card_models" not in data
-    assert pickle.loads(data)["A"] == card
+    assert pa.CardInfo is cm.CardInfo and pa.stats_db is cm.stats_db
+    assert pa.PSDParser is pp.PSDParser and pa.CardEdits is ce.CardEdits
+    assert "get_old_stats_as_dict" not in pa.__all__ and {"stats_db", "init_psd"} <= set(pa.__all__)
 
 
 def test_split_modules_are_compiled_and_github_api_is_not():
     text = (REPO / "setup.py").read_text(encoding="utf-8")
-    assert all(f"'commands/{m}.py'" in text for m in ("psd_analyzer", "card_models", "card_edits", "psd_parser", "repo_traverser"))
+    assert all(f"'commands/{m}.py'" in text for m in ("psd_analyzer", "card_models", "card_edits", "psd_parser"))
     assert "github_api" not in text
 
 

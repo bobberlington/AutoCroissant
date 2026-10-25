@@ -1,4 +1,4 @@
-"""Network and speed pass: same results with fewer requests (search fast paths, commit pages, tree ETags, TTS caches)."""
+"""Network and speed pass: same results with fewer requests (search fast paths, tree ETags, TTS caches)."""
 import json
 import random
 from difflib import SequenceMatcher
@@ -7,10 +7,8 @@ from types import SimpleNamespace
 import pytest
 from pandas import DataFrame
 
-import commands.card_data as cd
 import commands.git_commit as gc
 import commands.github_api as ga
-import commands.psd_analyzer as pa
 import commands.query_card as qc
 import commands.tts_save as ts
 import commands.type_emojis as te
@@ -38,27 +36,6 @@ class Reply:
 
     def close(self):
         pass
-
-
-class Commit:
-    def __init__(self, n):
-        self.commit = SimpleNamespace(committer=SimpleNamespace(date=SimpleNamespace(timestamp=lambda: float(n))),
-                                      author=SimpleNamespace(name=f"author{n}", email=f"author{n}@x"))
-
-
-class Commits:
-    """Newest first, like GitHub: n commits, page size per_page."""
-    def __init__(self, n, per_page, calls):
-        self.items, self.per_page, self.calls = [Commit(i) for i in range(n, 0, -1)], per_page, calls
-
-    def get_page(self, page):
-        self.calls.append("page")
-        return self.items[page * self.per_page:(page + 1) * self.per_page]
-
-    @property
-    def reversed(self):
-        self.calls.append("reversed")
-        return list(reversed(self.items))
 
 
 def _tree(*paths):
@@ -95,45 +72,6 @@ def test_fuzzy_cache_follows_new_dataframes():
 
 
 # ========================
-# /update_stats commit lookups
-# ========================
-def test_commit_lookup_is_one_request(monkeypatch):
-    calls = []
-    repo = SimpleNamespace(get_commits=lambda path: Commits(8, pa.COMMITS_PAGE, calls))
-    tr = pa.RepositoryTraverser(pa.StatsDatabase())
-    monkeypatch.setattr(tr, "_repo", lambda: repo)
-    assert tr._get_remote_timestamp(repo, "Items/New.psd", "New") == (8.0, "author1")      # new: first commit's author
-    assert calls == ["page"]
-    tr.db.stats["Old"] = SimpleNamespace(author="Someone")
-    calls.clear()
-    assert tr._get_remote_timestamp(repo, "Items/Old.psd", "Old") == (8.0, None)
-    assert calls == ["page"]
-
-
-def test_commit_lookup_more_than_one_page(monkeypatch):
-    calls = []
-    monkeypatch.setattr(cd, "COMMITS_PAGE", 3)                                     # moved to card_data with the build
-    repo = SimpleNamespace(get_commits=lambda path: Commits(7, 3, calls))
-    tr = pa.RepositoryTraverser(pa.StatsDatabase())
-    monkeypatch.setattr(tr, "_repo", lambda: repo)
-    assert tr._get_remote_timestamp(repo, "Items/New.psd", "New") == (7.0, "author1")
-    assert calls == ["page", "reversed"]
-
-
-def test_commit_lookup_prefetched_and_empty(monkeypatch):
-    calls = []
-    repo = SimpleNamespace(get_commits=lambda path: Commits(0, pa.COMMITS_PAGE, calls))
-    tr = pa.RepositoryTraverser(pa.StatsDatabase())
-    monkeypatch.setattr(tr, "_repo", lambda: repo)
-    tr._lookups = {"Items/A.psd": SimpleNamespace(result=lambda: [Commit(5)])}
-    assert tr._get_remote_timestamp(repo, "Items/A.psd", "A") == (5.0, "author5") and calls == []
-    with pytest.raises(LookupError):                         # no commits: the card waits, no made-up date (year 1000
-        tr._get_remote_timestamp(repo, "Items/B.psd", "B")   # or the run's clock, kept for good) nor a missing author
-    with pytest.raises(LookupError):                         # no repository: the card waits
-        tr._get_remote_timestamp(None, "Items/B.psd", "B")
-
-
-# ========================
 # Tree ETags
 # ========================
 def _fake_github(monkeypatch, state, log):
@@ -147,20 +85,15 @@ def _fake_github(monkeypatch, state, log):
     monkeypatch.setattr(qc.CardRepository, "_populate_edit_names", lambda self: None)
 
 
-def test_update_stats_tree_etag_makes_the_next_fetch_a_304(monkeypatch):
+def test_the_card_list_tree_etag_makes_the_next_fetch_a_304(monkeypatch):
     state, log = {"tree": _tree(("Items/A.png", "a1")), "etag": '"1"'}, []
     _fake_github(monkeypatch, state, log)
     repo = qc.CardRepository()
     repo.populate_files()
     state.update(tree=_tree(("Items/A.png", "a2"), ("Items/B.png", "b1")), etag='"2"')
-    repo.populate_files(state["tree"], None, '"2"')                                 # what /update_stats queues
-    assert sorted(repo.git_files) == ["a.png", "b.png"]
+    assert repo.populate_files() == 200 and sorted(repo.git_files) == ["a.png", "b.png"]
     log.clear()
     assert repo.populate_files() == 200 and log == [304]
-    repo.populate_files(state["tree"])                                              # a tree without its ETag
-    log.clear()
-    repo.populate_files()
-    assert log == [200]                                                             # never a 304 for another tree
 
 
 def test_emoji_listing_reuses_and_seeds_the_card_tree(monkeypatch):
@@ -264,21 +197,3 @@ def test_tts_rate_limit_403_is_only_this_runs(monkeypatch, headers, message):
     api.clear()
     ts.update_repo_save()
     assert ("POST", "git/blobs") in api
-
-
-def test_commit_lookups_get_a_client_per_thread(monkeypatch):
-    import github
-    from concurrent.futures import ThreadPoolExecutor
-    made = []
-    class FakeGithub:
-        def __init__(self, **kw):
-            made.append(self)
-        def get_repo(self, name, lazy=False):
-            assert lazy                                                                 # no request
-            return SimpleNamespace(client=self)
-    monkeypatch.setattr(github, "Github", FakeGithub)
-    tr = pa.RepositoryTraverser(pa.StatsDatabase())
-    with ThreadPoolExecutor(pa.LOOKUP_WORKERS) as ex:
-        clients = set(ex.map(lambda _: tr._repo().client, range(20)))
-    assert len(clients) == len(made) <= pa.LOOKUP_WORKERS
-    assert tr._repo() is tr._repo() and tr._repo().client not in clients                # the parse thread's own
