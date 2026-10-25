@@ -194,7 +194,8 @@ Since 2026-10-19 a second vocabulary
 sits beside `all_types`: `IconVocabulary`, which adds `Types/Stars/` names and the font manifest's
 aliases for icon-font tokens (§4.1).
 
-A visible, pixel-bearing layer whose lowercased name is in `all_types` is a type icon
+A visible, pixel-bearing layer whose lowercased name is in `all_types` is a type icon, except on a rule page
+(2026-10-25: there it is a picture; a rule page's icons count only typed as tokens)
 (psd_parser.py:536-541). Position decides its meaning, using
 `card_mid_y = int(psd.height * TYPE_REGION_RATIO)` with `TYPE_REGION_RATIO = 0.5`
 (psd_parser.py:23, 375):

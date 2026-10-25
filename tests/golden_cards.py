@@ -41,7 +41,7 @@ CARDS = CERTIFIED + (
     "Auxiliary/Creatures/Militron_(No_Armor).psd",
     "Auxiliary/Status Effects/Debuffs/1 Stars/Poison.psd",
     "Auxiliary/Status Effects/Buffs/Enraged.psd",
-    "Auxiliary/Rulebook/20_Creature_Types.psd",                         # rule page types (MISSPELT TYPE: tornado until 2026-10-22)
+    "Auxiliary/Rulebook/20_Creature_Types.psd",                         # rule page: pictures named after icons read as nothing
     "Auxiliary/Rulebook/00_Table_of_Contents.psd",
     "Auxiliary/Rulebook/16_The_Field.psd",                              # row grouping
     "N.M.E/Jera.psd",

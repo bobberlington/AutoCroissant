@@ -651,8 +651,8 @@ class PSDParser:
         elif self._is_stat_layer(layer):
             self._process_stat_layer(layer, stat_trackers)
 
-        # Type layers
-        elif (layer.name.lower() in self.all_types and layer.is_visible() and layer.has_pixels()):
+        # Type layers (a rule page's are pictures: its icons are typed as tokens)
+        elif (not is_rulepage and layer.name.lower() in self.all_types and layer.is_visible() and layer.has_pixels()):
             bbox = BoundingBox.from_tuple(layer.bbox[:2])
             if bbox.y < card_mid_y:
                 card.types.append(layer.name.lower())

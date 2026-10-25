@@ -1,5 +1,5 @@
 """Rule pages skip hidden text layers (owner plan 2026-10-22); card pages skip hidden Ability layers (owner, 2026-10-22:
-only what is printed)."""
+only what is printed); a rule page's pictures named after icons read as nothing (owner 2026-10-25)."""
 import json
 import subprocess
 import types
@@ -148,3 +148,16 @@ def test_h1_pages(psd_parser, clone, monkeypatch, page):
     got = _parse(psd_parser, monkeypatch, before, rel)
     want = _parse(psd_parser, monkeypatch, after, rel)
     assert got.to_dict() == want.to_dict() and got.alt_names == want.alt_names
+
+
+def test_rule_page_pictures_not_icons(psd_parser, clone, monkeypatch):
+    """14 Item Types' pictures named after icons (Attack, Machine, Food...) give a rule page no types and no tokens; the
+    same PSD read as a card page still reads them as types."""
+    rel = "Auxiliary/Rulebook/14_Item_Types.psd"
+    if not (clone / rel).exists():
+        pytest.skip(f"{rel} not in the clone")
+    page = _parse(psd_parser, monkeypatch, PSDImage.open(clone / rel), rel)
+    assert page.types == [] and page.ability.splitlines()[-1] == "14" and "[" not in page.ability
+    card = _parse(psd_parser, monkeypatch, PSDImage.open(clone / rel), "Items/Attack/1 Stars/14_Item_Types.psd")
+    assert card.types
+
