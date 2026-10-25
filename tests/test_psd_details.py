@@ -1,16 +1,15 @@
 """
-commands/psd_details.py: the record on the goldens' PSDs (skipped without the clone), load/save/prune, the backfill CLI on
-two cards, a card psd-tools can't walk, /push carrying the file.
+commands/psd_details.py: the record on the goldens' PSDs (skipped without the clone), the file's text, load and prune,
+a card psd-tools can't walk.
 """
 import json
-import shutil
 from types import SimpleNamespace
 
 import pytest
 
 import commands.psd_details as pd
 from commands.font_check import FontIndex, psd_fonts
-from conftest import at_rev, blob_sha
+from conftest import at_rev
 
 DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"                           # template rows
 CANNON = "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd"      # atk in two rows
@@ -39,6 +38,11 @@ def _name(rel: str) -> str:
     return rel.rsplit("/", 1)[1][:-4].replace("_", " ")
 
 
+def _types(clone) -> list:
+    """The clone's Types/ icon names (file stems, lowercased)."""
+    return sorted(p.stem.lower() for p in (clone / "Types").iterdir() if not p.name.startswith(".") and p.suffix)
+
+
 def _size(record: dict) -> int:
     return len(json.dumps(record, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
 
@@ -50,7 +54,7 @@ def index(clone):
 
 @pytest.fixture(scope="module")
 def records(clone, index):
-    vocab = pd.clone_types(str(clone))
+    vocab = _types(clone)
     return {rel: pd.gather(str(clone / rel), rel, _name(rel), index, vocab) for rel in (DOOMER, CANNON, LAZARUS, VIRUS)}
 
 
@@ -132,7 +136,7 @@ def test_header_boxes(records, clone):
     assert [t["name"] for t in types["row"]] == ["light", "defensive_minion", "wind"] and types["tokens"] is False
     assert types["spots"]["4"] == [[414, 208, 556, 356]] and [len(types["row"]) + len(types["spots"][n]) for n in types["spots"]] == [4, 5, 6, 7, 8]
     assert types["spots"]["8"][0] == [81, 378, 241, 538] and types["fixed"] == [] and types["refused"] is None
-    vocab = pd.clone_types(str(clone))
+    vocab = _types(clone)
     for rel in (LICH_KING, FREEZER):
         if not (clone / rel).exists():
             pytest.skip(f"{rel} not in the clone")
@@ -150,7 +154,7 @@ def test_header_star_folders_and_fixed_icons(records, clone):
     for rel in (FROSTMOURNE, JOY, BANK, MAGNUM):
         if not (clone / rel).exists():
             pytest.skip(f"{rel} not in the clone")
-    vocab = pd.clone_types(str(clone))
+    vocab = _types(clone)
     got = {rel: pd.gather(str(clone / rel), rel, _name(rel), None, vocab)["header"] for rel in (FROSTMOURNE, JOY, BANK, MAGNUM)}
     for rel, units in ((FROSTMOURNE, 4), (JOY, 3), (BANK, 2)):
         stars = got[rel]["stars"]
@@ -163,7 +167,7 @@ def test_header_star_folders_and_fixed_icons(records, clone):
 
 def test_overlay_words_and_image_icons(clone, index):
     """Computer Virus before 739c7abb: its Names words were overlay text layers, its icons images only (no badge run)."""
-    virus = pd.gather(at_rev(clone, OVERLAY_VIRUS, VIRUS), VIRUS, _name(VIRUS), index, pd.clone_types(str(clone)))
+    virus = pd.gather(at_rev(clone, OVERLAY_VIRUS, VIRUS), VIRUS, _name(VIRUS), index, _types(clone))
     assert virus["icons"] == "images" and virus["fx"] == []
     assert virus["overlays"] == ["Names/3rd: Magician", "Names/2nd: Puppet", "Names/1st: Slime"]
     assert "overlay word layers" in virus["template"]["deviations"]
@@ -256,18 +260,17 @@ def test_tree_is_cut_at_the_caps():
 # ========================
 # The file
 # ========================
-def test_save_load_prune_round_trip(tmp_path):
-    path = str(tmp_path / "d.json")
+def test_text_load_prune_round_trip(tmp_path):
+    path = tmp_path / "d.json"
     cards = {"b" * 40: {"path": "Items/B.psd", "name": "B", "x": "é"}, "a" * 40: {"path": "Items/A.psd", "name": "A"}}
-    pd.save(cards, path)
-    text = (tmp_path / "d.json").read_text(encoding="utf-8")
+    text = pd.text_of(cards)
+    path.write_text(text, encoding="utf-8")
     lines = text.splitlines()
     assert lines[0] == '{"version": 1, "cards": {' and lines[1].startswith('"' + "a" * 40 + '": {"path":"Items/A.psd"') and lines[2].endswith("}")
     assert lines[3] == "}}" and "é" in text and json.loads(text)["cards"] == cards
-    assert pd.load(path) == cards and not (tmp_path / "d.json.tmp").exists()
+    assert pd.load(str(path)) == cards
     assert pd.prune(cards, {"a" * 40}) == 1 and set(cards) == {"a" * 40} and pd.prune(cards, {"a" * 40}) == 0
-    pd.save({}, path)
-    assert json.loads((tmp_path / "d.json").read_text(encoding="utf-8")) == {"version": 1, "cards": {}}
+    assert json.loads(pd.text_of({})) == {"version": 1, "cards": {}}
 
 
 def test_load_tolerates_a_missing_or_odd_file(tmp_path, capsys):
@@ -277,48 +280,3 @@ def test_load_tolerates_a_missing_or_odd_file(tmp_path, capsys):
     assert pd.load(str(tmp_path / "bad.json")) == {} and pd.load(str(tmp_path / "list.json")) == {}
     out = capsys.readouterr().out
     assert "bad.json: unreadable" in out and "list.json: not a details file" in out
-
-
-def test_save_failure_keeps_the_old_file(tmp_path, monkeypatch):
-    path = str(tmp_path / "d.json")
-    pd.save({"x" * 40: {"path": "p"}}, path)
-    monkeypatch.setattr(pd, "fsync", lambda fd: (_ for _ in ()).throw(OSError("disk")))
-    with pytest.raises(OSError):
-        pd.save({}, path)
-    assert pd.load(path) == {"x" * 40: {"path": "p"}} and not (tmp_path / "d.json.tmp").exists()
-
-
-# ========================
-# The backfill CLI
-# ========================
-def test_cli_backfills_a_clone(clone, tmp_path, capsys):
-    root = tmp_path / "clone"
-    for rel in (DOOMER, CANNON):
-        (root / rel).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(clone / rel, root / rel)
-    for rel in ("MDW/Templates/Creature_Template.psd", "Auxiliary/Markers/M.psd", ".git/x.psd"):
-        (root / rel).parent.mkdir(parents=True, exist_ok=True)
-        (root / rel).write_bytes(b"")
-    (root / "Types").mkdir()
-    (root / "Types" / "Fire.png").write_bytes(b"")
-    assert pd.card_psds(str(root)) == [(DOOMER, str(root / DOOMER)), (CANNON, str(root / CANNON))] and pd.clone_types(str(root)) == ["fire"]
-    out = tmp_path / "out.json"
-    assert pd.main(["--clone", str(root), "--out", str(out), "--fonts", str(clone / "MDW/Fonts")]) == 0
-    text = capsys.readouterr().out
-    assert text.startswith(f"2 cards into {out} in ") and "(0 errors); records " in text and "median" in text
-    cards = pd.load(str(out))
-    assert set(cards) == {blob_sha(clone / DOOMER), blob_sha(clone / CANNON)}
-    doomer = cards[blob_sha(clone / DOOMER)]
-    assert doomer["path"] == DOOMER and doomer["name"] == "Mini Doomer" and doomer["stats"]["hp"] == "template"
-    assert {e["supplied"] for c in cards.values() for e in c["fonts"].values()} == {True}
-    assert not (tmp_path / "out.json.tmp").exists()
-
-
-def test_cli_reports_an_unreadable_psd(tmp_path, capsys):
-    root = tmp_path / "clone"
-    (root / "Items").mkdir(parents=True)
-    (root / "Items" / "Bad.psd").write_bytes(b"not a psd")
-    assert pd.main(["--clone", str(root), "--out", str(tmp_path / "o.json")]) == 0
-    text = capsys.readouterr().out
-    assert text.startswith("0 cards into") and "(1 errors); no records" in text and "  Items/Bad.psd: " in text
-    assert pd.load(str(tmp_path / "o.json")) == {}

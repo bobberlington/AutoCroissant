@@ -4,9 +4,6 @@ Dates.json (dates only; "from": "hand" entries kept). Re-run after rulings, revi
 
     python -m commands.discord_edits created [--archive ~/Documents/Tools/discord-archive] [--repo <card repo checkout>]
         [--out FILE]
-
-The Discord card edits (/update_metadata, /mass_replace, /alias) and the aliases.pkl migration are on branch
-archive/discord-edits: cards are edited on the website.
 """
 from argparse import ArgumentParser
 from json import loads
@@ -19,7 +16,7 @@ from global_config import CREATED_PATHS, LOCAL_DIR_LOC
 # Configuration
 # ========================
 BODY_LINES = 40                                 # a report lists at most this many changed cards
-ARCHIVE = "~/Documents/Tools/discord-archive"   # the Discord archive (discord_archive.DEFAULT_OUT; never in a repo)
+ARCHIVE = "~/Documents/Tools/discord-archive"   # the Discord archive (mined once, 2026-10; never in a repo)
 SOURCES = {"discord": "discord", "git-first-upload": "git"}    # created_dates.json source -> the file's "from"
 DATES_ABOUT = ("When each card was made: the earlier of its first Discord post and its first upload to this repo (UTC "
                "day); provisional: an open ruling on the Discord archive may still move it. Written by AutoCroissant "

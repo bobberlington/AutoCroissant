@@ -4,44 +4,32 @@ style, stat-row encoding, status-word layers, template deviations, the header's 
 would put them: the website mock-up's, psd_edit's geometry) and a compact layer tree. One record per card PSD,
 keyed by its git blob sha, in the card data's db/psd_details.json (the Card sync Action's build).
 
-    python -m commands.psd_details --clone <dir> --out <file> [--fonts <dir>]
-
 gather(psd, rel, name, index, vocab) -> the record: pure, never raises for a card (a failed section is a short
-"error: ..." string). load/save (tmp + fsync + replace under one lock), prune(cards, shas) to the tree. The build
+"error: ..." string). load, text_of (the file's text), prune(cards, shas) to the tree. The build
 gathers every re-parsed card's record, its "supplied" flags from font_index() (font_check.find_fonts: the checkout's
 MDW/Fonts, else the fonts cache brought to the build's tree), then refills every record's flags from that index
-(records gathered without one, or before MDW/Fonts changed). The CLI gathers a whole clone into a file in a process pool
-(the open is the whole cost, like font_check --all). No Discord or config imports; stock psd-tools. Pillow's ImageCms
+(records gathered without one, or before MDW/Fonts changed). No Discord or config imports; stock psd-tools. Pillow's ImageCms
 names the ICC profile when it is built in.
 """
-from argparse import ArgumentParser
-from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime, timezone
 from io import BytesIO
 from json import dumps, load as json_load
-from os import PathLike, cpu_count, fsync, listdir, remove, replace, walk
-from os.path import isdir, join, relpath, splitext
+from os import PathLike
+from os.path import isdir
 from re import IGNORECASE, fullmatch, search, sub
-from statistics import median
-from threading import Lock
-from time import perf_counter
 from typing import Optional
 
 from psd_tools import PSDImage
 from psd_tools.constants import Resource
 
-from commands.card_models import card_name
-from commands.font_check import (
-    EXCLUDE_FOLDERS, FONTS_DIR, POOL_CHUNK, POOL_MIN, FontIndex, dir_fonts, find_fonts, is_card_psd, layer_fonts, tree_fonts,
-)
-from commands.github_api import blob_sha
+from commands.font_check import FONTS_DIR, FontIndex, dir_fonts, find_fonts, layer_fonts, tree_fonts
 from commands.psd_edit import (
     STAR_FOLDER, Refused, _Unit, _core, _icon_reason, _icon_spots, _median_size, _moved_box, _reading, _star_count,
     _star_layouts, _star_units, _stars_total, _texts, offline_parser, plan_stars, type_row,
 )
 from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, PARSER_VERSION, PSDParser
 from commands.psd_regions import STATS, badge_layers, overlay_words, stat_rows
-from global_config import CARD_REPO, FONTS_CACHE, RULEBOOK_DIR, TYPES_DIR
+from global_config import CARD_REPO, FONTS_CACHE, RULEBOOK_DIR
 
 # ========================
 # Configuration
@@ -54,7 +42,6 @@ MORE = ["…", "more", True]             # the tree's cut marker
 DRAWN = ("pixel", "smartobject", "shape")   # digit layers of these kinds are drawn bar cells
 HEADER_STARS = 10                           # star counts the header section lays out (1..10)
 HEADER_ICONS = 8                            # type icons it keeps spots for
-_lock = Lock()                              # one writer of the file
 _indexes: dict = {}                         # (cache dir, its files) -> FontIndex: built once per MDW/Fonts change
 _parsers: dict = {}                         # vocab -> offline_parser: the header's type rule
 
@@ -544,135 +531,12 @@ def text_of(cards: dict) -> str:
     return '{"version": %d, "cards": {\n%s\n}}\n' % (VERSION, lines)
 
 
-def save(cards: dict, path: str) -> None:
-    """Write the file to <path>.tmp, fsync, then replace, under the module lock."""
-    text = text_of(cards)
-    with _lock:
-        temp_path = path + ".tmp"
-        try:
-            with open(temp_path, "w", encoding="utf-8") as fh:
-                fh.write(text)
-                fh.flush()
-                fsync(fh.fileno())
-            replace(temp_path, path)
-        except BaseException:
-            try:
-                remove(temp_path)
-            except OSError:
-                pass
-            raise
-
-
 def prune(cards: dict, shas) -> int:
     """Drop the records whose blob is not in shas (the tree's). Returns how many went."""
     gone = [sha for sha in cards if sha not in shas]
     for sha in gone:
         del cards[sha]
     return len(gone)
-
-
-# ========================
-# A clone (the backfill)
-# ========================
-def card_psds(root: str) -> list:
-    """(repo path, file path) of every card PSD under a clone, in path order; MDW/ and Markers/ left out like the traverser."""
-    found = []
-    for folder, subdirs, files in walk(root):
-        subdirs[:] = sorted(d for d in subdirs if d not in EXCLUDE_FOLDERS and d != ".git")
-        for name in sorted(files):
-            rel = relpath(join(folder, name), root).replace("\\", "/")
-            if is_card_psd(rel):
-                found.append((rel, join(folder, name)))
-    return found
-
-
-def clone_types(root: str) -> list:
-    """The Types/ icon names of a clone (the traverser's all_types: file stems, lowercased)."""
-    folder = join(root, TYPES_DIR)
-    if not isdir(folder):
-        return []
-    return sorted(splitext(f)[0].lower() for f in listdir(folder) if not f.startswith(".") and "." in f)
-
-
-def _gather_one(item: tuple) -> tuple:
-    """(rel, file path, vocab) -> (blob sha, record, None) or ("", None, the error) in a pool worker."""
-    rel, path, vocab = item
-    try:
-        with open(path, "rb") as fh:
-            data = fh.read()
-        return blob_sha(data), gather(data, rel, card_name(rel), None, vocab), None
-    except Exception as e:                      # one unreadable PSD never stops the backfill
-        return "", None, f"{rel}: {e}"
-
-
-def gather_clone(root: str, index: Optional[FontIndex] = None) -> tuple:
-    """
-    Every card PSD of a clone, keyed by blob sha.
-
-    Args:
-        root: The clone
-        index: The fonts folder's faces, applied after the gathers (None: "supplied" stays null)
-
-    Returns:
-        ({blob sha: record}, [error lines]); from POOL_MIN PSDs the gathers run in a process pool of half the cores
-    """
-    found = card_psds(root)
-    vocab = tuple(clone_types(root))
-    items = [(rel, path, vocab) for rel, path in found]
-    cards, errors = {}, []
-
-    def collect(results) -> None:
-        for sha, record, error in results:
-            if error is not None:
-                errors.append(error)
-            else:
-                cards[sha] = record
-    if len(items) < POOL_MIN:
-        collect(map(_gather_one, items))
-    else:
-        workers = max(1, min((cpu_count() or 2) // 2, -(-len(items) // POOL_CHUNK)))
-        with ProcessPoolExecutor(workers) as pool:
-            collect(pool.map(_gather_one, items, chunksize=POOL_CHUNK))
-    if index is not None:
-        for record in cards.values():
-            mark_supplied(record, index)
-    return cards, errors
-
-
-def record_sizes(cards: dict) -> list:
-    """Each record's size in bytes as the file holds it, sorted."""
-    return sorted(len(dumps(record, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) for record in cards.values())
-
-
-# ========================
-# Command line
-# ========================
-def main(args: Optional[list] = None) -> int:
-    """Every card PSD of a clone into a details file; one summary line."""
-    parser = ArgumentParser(prog="python -m commands.psd_details",
-                            description="Gather every card PSD's details (fonts, text layers, effects, stats encoding, layer tree...) "
-                                        "from a local clone into a details file, keyed by git blob sha.")
-    parser.add_argument("--clone", required=True, metavar="DIR", help="the card repo checkout")
-    parser.add_argument("--out", required=True, metavar="FILE", help="the details file")
-    parser.add_argument("--fonts", default="", metavar="DIR", help="the fonts folder for the supplied flags (default: the clone's "
-                                                                   "MDW/Fonts when present)")
-    options = parser.parse_args(args)
-    fonts_dir = options.fonts or (join(options.clone, FONTS_DIR) if isdir(join(options.clone, FONTS_DIR)) else "")
-    index = FontIndex(fonts_dir) if fonts_dir else None
-    started = perf_counter()
-    cards, errors = gather_clone(options.clone, index)
-    save(cards, options.out)
-    sizes = record_sizes(cards)
-    stats = (f"records {sizes[0]}-{sizes[len(sizes) - 1]} B, median {int(median(sizes))} B, {sum(sizes) / 1e6:.1f} MB in all"
-             if sizes else "no records")
-    print(f"{len(cards)} cards into {options.out} in {perf_counter() - started:.1f} s ({len(errors)} errors); {stats}")
-    for line in errors:
-        print("  " + line)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
 
 
 # ========================
@@ -687,18 +551,12 @@ __all__ = [
     'TREE_CHILDREN',
     'TREE_DEPTH',
     'VERSION',
-    'card_psds',
-    'clone_types',
     'font_index',
     'gather',
-    'gather_clone',
     'layer_path',
     'load',
-    'main',
     'mark_supplied',
     'prune',
-    'record_sizes',
     'refill',
-    'save',
     'text_of',
 ]
