@@ -839,6 +839,18 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   A typed glow on a fork without the halos is an ImportError and card_bake's `Transient`, so no lasting `font` verdict.
   Tests: `test_a_deletion_cuts_whole_lines_or_words`, `test_deleting_a_line_keeps_the_next_lines_own_style`,
   `test_a_new_line_on_the_design_below_is_told`, `test_tab_stops_refuse`, `test_glow_edit_on_an_older_fork_is_transient`.
+  **Review fixes 5 (2026-10-24, `scratch/bug2-p7/`):** a stroked title's glow disc ran under a star or type icon
+  above it, every gate passing (Confusion, Krabby Patty, Unbreakable Strength): the halo's changed ink now counts on
+  the stars and type icons and under the layers above (`covered_ink`); in the effect scope's group, where the composite
+  hides the halo under a layer, the halo's edge beside it and a badge's box count (`_scoped`, `_meets`); a clipped
+  icon counts only where its base inks (`_halo_meets`: Elemental World's ice texture past its icon). Census of the
+  review's 2,415 glow edits (`census_halo.py` on the fix): 3 bakes now refuse, the 3 found; no other verdict changed. Where the
+  splice falls back (about 2% of ability typos: Wendy, WX-78...), the engine redraws every line: the old text so
+  redrawn is measured against the PNG (`whole_redraw`; Wendy 15.5% bad), a miss told in the notes ("ability redrawn
+  whole, its lines laid out again: ..."), past the floor refused. Tests: `test_a_glow_disc_under_a_star_refuses`,
+  `test_a_glow_disc_beside_a_layer_composited_with_it_counts`, `test_a_text_redrawn_whole_is_measured`; Gasoline,
+  Salt and Nightmare King Grimm in `test_deleting_a_line_keeps_the_next_lines_own_style` (it fails without
+  `deletion_start` or the word-bound rule).
 
 ## 8. Runner
 
