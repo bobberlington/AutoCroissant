@@ -108,6 +108,16 @@ def test_gate_floor():
     refused, _ = cd.gates(_cards(200), _cards(189), 0, 0, [], [], True, set(), True)
     assert "G1" in refused                                                       # nothing lifts it
     assert cd.gates(_cards(200), _cards(190), 0, 0, [], [], False, set(), False) == ({}, {})
+    after = _cards(200)                                                          # G5: quality
+    for i in range(4):
+        after[f"C{i}"].ability = ""
+    refused, _ = cd.gates(_cards(200), after, 0, 0, [], [], False, set(), False)
+    assert refused["G5"].startswith("ability text lost: C0, C1, C2, C3")
+    assert cd.gates(_cards(200), after, 0, 0, [], [], False, {"c0", "c1", "c2", "c3"}, False) == ({}, {"G5": "cards"})
+    refused, _ = cd.gates(_cards(200), _cards(200), 1000, 900, [], [], False, set(), False)
+    assert refused["G5"] == "psd_details records 1000 -> 900"
+    refused, _ = cd.gates(_cards(200), _cards(200, card_type="unknown"), 0, 0, [], [], False, set(), False)
+    assert refused["G5"].startswith("UNKNOWN type")
 
 
 # ========================
