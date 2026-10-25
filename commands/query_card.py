@@ -15,7 +15,7 @@ from re import compile, escape, IGNORECASE
 from urllib.parse import quote
 
 from global_config import ALIAS_PKL, CARD_REPO, EDITS_PATHS, RULEBOOK_DIR, SITE_URL, STATS_PKL, TIMEZONE
-from commands.card_edits import ALIASES_MOVED
+from commands.card_edits import ALIASES_MOVED, CardAuthors
 from commands.card_history import start as version_start
 from commands.card_models import save_pickle, stats_db
 from commands.github_api import blob_text, fetch_tree
@@ -59,6 +59,9 @@ class CardRepository:
         self._site_etag = ""
         self.ambiguous_names: dict[str, tuple[str, ...]] = {}
         self._spaced: dict[str, str] = {}                # underscore key -> the space-named file it stands for
+        self._renamed: dict[str, tuple] = {}             # an old name's key -> (today's key, old name, today's name)
+        self.choices: tuple = ()                         # autocomplete: (lowercase, shown, value, old), replaced whole
+        self.card_choices: tuple = ()                    # the same, values card names only (/bake_cards)
         self.cards_dff: DataFrame = DataFrame()
         self.rulebook_dff: DataFrame = DataFrame()
         self._lowered: tuple = (None, [])                # (cards_dff, [(label, lowered ability)]) for the fuzzy step
@@ -110,6 +113,7 @@ class CardRepository:
         self._populate_edit_names()
         self._populate_aliases()
         self._populate_titles()
+        self._populate_renames()
         self._populate_site_ids()
 
         return status
@@ -464,6 +468,7 @@ class CardRepository:
         for card, extra in self._edit_names[1].items():
             self._add_lookup(card, extra)
         self._populate_titles()
+        self._populate_renames()
 
     def _populate_titles(self) -> None:
         """Printed titles the parser read (display_name), so /query finds "Black Clot" as well as Clot_Black."""
@@ -478,11 +483,90 @@ class CardRepository:
 
     def _add_lookup(self, card: str, extra: list) -> None:
         """More names that find card's PNG (first come, first kept). Registry keys are lowercase."""
-        target = f"{card.replace(' ', '_')}.png".lower()
-        path = self.git_files.get(target) or next((v for k, v in self.git_files.items() if k.endswith("/" + target)), None)
-        if path:
+        key = self._key_of(card)
+        if key:
             for name in extra:
-                self.git_files.setdefault(f"{name.strip().lower().replace(' ', '_')}.png", path)
+                self.git_files.setdefault(f"{name.strip().lower().replace(' ', '_')}.png", self.git_files[key])
+
+    def _key_of(self, card: str) -> Optional[str]:
+        """The registry key of a card's PNG (its file name, else a folder-prefixed one), or None."""
+        target = f"{card.replace(' ', '_')}.png".lower()
+        if target in self.git_files:
+            return target
+        return next((k for k in self.git_files if k.endswith("/" + target)), None)
+
+    def _populate_renames(self) -> None:
+        """Old names of renamed cards (their archive's renamed_to, followed to a card of today) and the autocomplete list."""
+        try:
+            archived, cards = stats_db.archived(), dict(stats_db.stats)
+        except RuntimeError:                                     # /update_stats writing meanwhile: after it, again
+            return
+        renamed = {}
+        for name, record in archived.items():
+            target, seen = name, set()
+            while target not in cards and target in archived and target not in seen:
+                seen.add(target)
+                target = (getattr(archived[target], "archived", None) or {}).get("renamed_to") or ""
+            key = self._key_of(target) if target in cards else None
+            old = getattr(record, "display_name", None) or name
+            for spelling in (name, old):                         # Pizza (item) and its printed Pizza
+                old_key = self._normalize_card_name(spelling)
+                if key and old_key not in self.git_files:        # a name of today wins
+                    renamed.setdefault(old_key, (key, old, getattr(cards[target], "display_name", None) or target))
+        self._renamed = renamed
+        self._populate_choices(cards)
+
+    def _populate_choices(self, cards: dict) -> None:
+        """Autocomplete's names: cards (printed titles first), website names and aliases, renamed cards' old names."""
+        found, own, shown_as = {}, [], {}
+
+        def add(value: str, shown: str, old: bool = False) -> None:
+            value = value.strip()
+            if value and len(value) <= 100 and value.lower() not in found:
+                found[value.lower()] = (shown[:100], value, old)
+
+        for name, card in cards.items():
+            title = getattr(card, "display_name", None)
+            shown_as[CardAuthors.key(name)] = title or name      # Card Edits.json's keys, as players know the card
+            if getattr(card, "hidden", False) or getattr(card, "duplicate_of", None) or self._key_of(name) is None:
+                continue
+            add(title or name, title or name)
+            if title and title.lower() != name.lower():
+                add(name, f"{name} ({title})")
+            if len(name) <= 100:
+                own.append((name, f"{name} ({title})" if title and title.lower() != name.lower() else name))
+        for card, extra in self._edit_names[1].items():
+            shown = shown_as.get(card, card)
+            for alias in extra:
+                add(alias, alias if alias.lower() == shown.lower() else f"{alias} ({shown})")
+        for _, old, now in self._renamed.values():
+            add(old, f"{old} (now {now})", True)
+        self.choices = tuple(sorted((shown.lower(), shown, value, old) for shown, value, old in found.values()))
+        self.card_choices = tuple(sorted((shown[:100].lower(), shown[:100], name, False) for name, shown in own))
+
+    def name_choices(self, current: str, old: bool = True, cards: bool = False) -> list:
+        """
+        Autocomplete for a card-name option (on the event loop: reads the choices tuples only).
+
+        Args:
+            current: What is typed so far
+            old: Offer renamed cards' old names (options that take them: /query, /update_metadata)
+            cards: Values are card names only, titles shown beside them (/bake_cards matches card names)
+
+        Returns:
+            Up to 25 (shown, value): names starting with it, then with a word that does, then holding it
+        """
+        text = " ".join(current.lower().replace("_", " ").split())
+        choices = self.card_choices if cards else self.choices if old else tuple(c for c in self.choices if not c[3])
+        if not text:
+            return [(c[1], c[2]) for c in choices[:25]]
+        ranked = []
+        for low, shown, value, _ in choices:
+            at = low.find(text)
+            if at >= 0:
+                ranked.append((0 if at == 0 else 1 if low[at - 1] in " (-." else 2, len(low), low, shown, value))
+        ranked.sort()
+        return [(r[3], r[4]) for r in ranked[:25]]
 
     def _populate_site_ids(self) -> None:
         """Website card ids, for "Card page" links."""
@@ -533,6 +617,7 @@ class CardRepository:
             self.rulebook_dff["ability"] = self.rulebook_dff["ability"].str.lower()
 
             print(f"Loaded {len(self.cards_dff)} cards and {len(self.rulebook_dff)} rulebook entries")
+        self._populate_renames()                        # renamed cards and autocomplete follow the new stats
 
     def _normalize_card_name(self, query: str) -> str:
         """Normalize card name for searching."""
@@ -540,12 +625,50 @@ class CardRepository:
         return card if card.endswith(".png") else f"{card}.png"
 
     def _find_closest_match(self, query: str) -> Optional[str]:
-        """Find closest matching card filename."""
-        key = self._normalize_card_name(query)
-        if key in self.git_files and len(key) < 200:    # exact: the only 1.0 score (difflib's autojunk starts at 200)
-            return key
-        matches = get_close_matches(key, self.git_filenames, n=1, cutoff=self.match_ratio)
-        return matches[0] if matches else None
+        """Find closest matching card filename (lookup's key)."""
+        return self.lookup(query)[0]
+
+    def lookup(self, query: str) -> tuple:
+        """
+        A card name's registry key, and how it was found.
+
+        Args:
+            query: Card name, printed title, alias or a renamed card's old name
+
+        Returns:
+            (key, "exact" | "renamed" | "guess", the old name when renamed) or (None, "", "")
+        """
+        key = self._normalize_card_name(" ".join(query.split()))
+        if key in self.git_files:
+            return (key, "exact", "")
+        renamed = self._renamed.get(key)
+        if renamed:
+            return (renamed[0], "renamed", renamed[1])
+        found = self.closest(key, self.git_filenames)
+        return (found, "guess", "") if found else (None, "", "")
+
+    def closest(self, key: str, keys: list) -> Optional[str]:
+        """
+        The best guess for a key among keys: a name starting with it or with a word that does (3+ letters; the
+        shortest, a plain key before its folder-prefixed ones), else the most similar name above match_ratio, compared
+        without ".png" (it raised every score).
+        """
+        stems = {}
+        for k in keys:
+            stems.setdefault(k[:len(k) - 4] if k.endswith(".png") else k, k)
+        stem = key[:len(key) - 4] if key.endswith(".png") else key
+        if len(stem) >= 3:
+            hits = []
+            for s in stems:
+                base = s[s.rfind("/") + 1:]
+                if base.startswith(stem) or "_" + stem in base:
+                    hits.append((not base.startswith(stem), len(base), "/" in s, s))
+            if hits:
+                return stems[min(hits)[3]]
+        best = get_close_matches(stem, list(stems), n=1, cutoff=self.match_ratio)
+        if best and SequenceMatcher(None, stem, best[0]).ratio() > self.match_ratio:
+            return stems[best[0]]
+        return None
 
     def get_card_url(self, filename: str) -> Optional[str]:
         """
@@ -626,17 +749,31 @@ def query_name(interaction: Interaction, query: str, as_of: Optional[str] = None
         _query_as_of(interaction, query, as_of)
         return
 
-    closest = card_repo._find_closest_match(query)
-
+    closest, how, old = card_repo.lookup(query)
     if not closest:
+        print(f"Search miss: /query {query!r}")         # misses that could become aliases
         queue_message(interaction, "No card found!")
         return
-    _post_card(interaction, closest)
+    note = None
+    if how == "renamed":
+        note = f"**{_label(closest)}** (renamed from {old})"
+    elif how == "guess":
+        print(f"Search guess: /query {query!r} -> {_label(closest)}")
+        note = f"Closest match: **{_label(closest)}**"
+    _post_card(interaction, closest, note=note)
 
 
-def _post_card(interaction: Interaction, closest: str, url: Optional[str] = None) -> None:
+def _label(key: str) -> str:
+    """A registry key's card as players know it: its printed title, else its name."""
+    card = _stats_card(key)
+    if card is not None:
+        return getattr(card, "display_name", None) or card.name
+    return splitext(basename(card_repo.git_files.get(key, key)))[0].replace("_", " ")
+
+
+def _post_card(interaction: Interaction, closest: str, url: Optional[str] = None, note: Optional[str] = None) -> None:
     """The card's image (an embed when it has a website name, subseries, note or original) and any ambiguity; url: an
-    image other than today's (/query as_of)."""
+    image other than today's (/query as_of); note: a line above it (a guess, a rename)."""
     url, page = url or card_repo.get_card_url(closest), card_repo.site_url(closest)
     links = [("Card page", page)] if page else None
     card = _stats_card(closest)
@@ -653,9 +790,9 @@ def _post_card(interaction: Interaction, closest: str, url: Optional[str] = None
         embed = Embed(title=shown or card.name, url=page, description="\n".join(e for e in extra if e) or None,
                       color=int(found[1][1:], 16) if found and found[1] else None)
         embed.set_image(url=url)
-        queue_message(interaction, None, embed=embed, links=links)
+        queue_message(interaction, note, embed=embed, links=links)
     else:
-        queue_message(interaction, url, links=links)
+        queue_message(interaction, f"{note}\n{url}" if note else url, links=links)
 
     # Notify if name is ambiguous
     if closest in card_repo.ambiguous_names:
@@ -730,6 +867,12 @@ def archived_text(tag: dict) -> str:
 def history_match(query: str) -> Optional[tuple]:
     """(registry file name or None, card name) for query, archived cards included (their PNG may be gone; their own
     name before an alias or another card's PNG that claims it): /query as_of and /view_old_metadata."""
+    found = _history_lookup(query)
+    return found[:2] if found else None
+
+
+def _history_lookup(query: str) -> Optional[tuple]:
+    """history_match's (key, name), and whether it was a guess."""
     from commands.psd_analyzer import card_name, stats_db
     try:
         archived = {card_repo._normalize_card_name(name): name for name in stats_db.archived()}
@@ -738,15 +881,15 @@ def history_match(query: str) -> Optional[tuple]:
     key = card_repo._normalize_card_name(query)
     if key in archived and key in card_repo.git_files and \
             card_repo._normalize_card_name(card_name(card_repo.git_files[key])) != key:
-        return (None, archived[key])                     # an alias or another card's PNG claims the archived name
-    if len(key) >= 200 or (key not in card_repo.git_files and key not in archived):
-        found = get_close_matches(key, card_repo.git_filenames + list(archived), n=1, cutoff=card_repo.match_ratio)
-        if not found:
+        return (None, archived[key], False)              # an alias or another card's PNG claims the archived name
+    guess = key not in card_repo.git_files and key not in archived
+    if guess:
+        key = card_repo.closest(key, card_repo.git_filenames + list(archived))     # /query's guess
+        if not key:
             return None
-        key = found[0]
     if key in card_repo.git_files:
-        return (key, _stats_name(card_name(card_repo.git_files[key])))
-    return (None, archived[key])
+        return (key, _stats_name(card_name(card_repo.git_files[key])), guess)
+    return (None, archived[key], guess)
 
 
 def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
@@ -764,17 +907,21 @@ def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
     if why:
         queue_message(interaction, why)
         return
-    found = history_match(query)
+    found = _history_lookup(query)
     if found is None:
+        print(f"Search miss: /query {query!r} as_of")
         queue_message(interaction, "No card found!")
         return
-    key, name = found
+    key, name, guess = found
     label = f"**{name}**"
+    if guess:
+        print(f"Search guess: /query {query!r} as_of -> {name}")
     current = stats_db.stats.get(name)
     if current is not None and getattr(current, "duplicate_of", None):     # a copy: its original's history
         label = f"**{name}** (same card as {current.duplicate_of})"
         name = current.duplicate_of
         current = stats_db.stats.get(name)
+    label = f"Closest match: {label}" if guess else label
     versions = list(stats_db.old_stats.get(name) or [])
     if current is not None:
         versions.append(current)

@@ -627,15 +627,24 @@ both to the repo root (gitignored). Rulebook entries are excluded from card expo
 
 ### 7.1 Name lookup and ambiguous names (`/query`)
 
-`CardRepository` (`commands/query_card.py:42`, singleton `card_repo` at :990) maintains
+`CardRepository` (`commands/query_card.py:56`, singleton `card_repo` at :1192) maintains
 `git_files`: lowercase png filename → repo path, built from one GitHub trees API call
-(`populate_files` :72-115). It indexes EVERY `.png` in TTSCardMaker — including `Types/` icons,
+(`populate_files` :89). It indexes EVERY `.png` in TTSCardMaker — including `Types/` icons,
 `Auxiliary/Markers`, and MDW card backs; `EXCLUDE_FOLDERS` applies only to stats traversal, not
 here. So `/query panda` can legitimately return a type icon.
 
-Lookup normalizes to `name.replace(' ', '_').lower() + '.png'` and fuzzy-matches with difflib
-`get_close_matches`, cutoff `match_ratio` (default 0.6, `DEFAULT_MATCH_RATIO` query_card.py:32;
-runtime-settable via `/set_ratio`, resets on restart — see autocroissant-config-and-flags).
+Lookup (`lookup` :635, 2026-10-24) normalizes to `name.replace(' ', '_').lower() + '.png'`, then: an exact key
+(file names, printed titles, Card Edits.json names and aliases); else a renamed card's old name (`_renamed`, built by
+`_populate_renames` from the archive's `renamed_to`, followed along chains to a card of today; the reply says
+"(renamed from X)"); else a guess (`closest` :654), which the reply labels "Closest match: X" and the console logs
+(`Search guess:`; a miss logs `Search miss:`). `closest` compares names WITHOUT ".png" (it lifted every score:
+"luigi" used to find Light): first a name starting with the text, or with a word that does (3+ letters; the shortest;
+a plain key before its folder-prefixed twins), then difflib `get_close_matches` above `match_ratio` (default 0.6,
+`DEFAULT_MATCH_RATIO` query_card.py:32; runtime-settable via `/set_ratio`, resets on restart — see
+autocroissant-config-and-flags). `/query as_of` guesses the same way over current and archived names, and says so.
+Card-name options autocomplete from `name_choices` (:552): `choices` (cards, titles, aliases, old names),
+`old=False` drops old names (/alias), `cards=True` offers card names only (/bake_cards matches Card Edits.json keys).
+main.py's `on_interaction` logs one console line per slash command (option values only for searches).
 
 **Duplicate filenames**: when two repo paths share a basename, both also get prefixed keys
 `<top_folder>/<name>.png` (lowercased), and `ambiguous_names` records the options

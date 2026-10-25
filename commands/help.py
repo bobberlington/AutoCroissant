@@ -41,7 +41,9 @@ text_commands = {
 }
 
 card_commands = {
-    "/query <query> [as_of]:"                   : "Posts the requested card image from the repo by name. Uses fuzzy matching. "
+    "/query <query> [as_of]:"                   : "Posts the requested card image from the repo by name, printed title or alias (suggested as you type). "
+                                                  "A renamed card's old name finds the card it became (\"renamed from ...\"); "
+                                                  "a name that matches no card exactly posts the closest one, saying \"Closest match\". "
                                                   "The Card page button opens it on the website; the printed title, website names and notes show too.\n"
                                                   "- as_of: A date, YYYY-MM-DD in Pacific time: the card as it was at the end of that day, from its stored "
                                                   "versions (archived cards too). The reply says which version and its date; the current card posts its "

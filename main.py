@@ -1,6 +1,6 @@
 from asyncio import create_task
 from sys import exit
-from discord import ButtonStyle, Client, File, Intents, Interaction, Member, app_commands
+from discord import ButtonStyle, Client, File, Intents, Interaction, InteractionType, Member, app_commands
 from discord.ui import Button, View
 import global_config                                    # CARD_SYNC: the cutover switch (texts at import, the gate at call time)
 from global_config import SITE_URL
@@ -62,6 +62,7 @@ from commands.psd_analyzer import (
 )
 from commands.reminder_panel import open_panel
 from commands.query_card import (
+    card_repo,
     init_query,
     query_ability,
     query_ability_num_occur,
@@ -142,6 +143,44 @@ async def on_ready():
         _start(loop)
     _started = True
     print("Bot initialization complete")
+
+
+LOGGED_VALUES = ("query", "search_text", "cards", "card", "alias", "as_of")   # options whose values the log shows
+
+
+@client.event
+async def on_interaction(interaction: Interaction):
+    """One console line per slash command: its name, who, where, its options (values only for searches)."""
+    if interaction.type != InteractionType.application_command:
+        return
+    data = interaction.data or {}
+    options = [f"{o.get('name')}={str(o.get('value'))[:100]!r}" if o.get("name") in LOGGED_VALUES else str(o.get("name"))
+               for o in data.get("options") or []]
+    print(f"Command /{data.get('name')} by {getattr(interaction.user, 'id', '?')} in {interaction.channel_id}"
+          f"{': ' + ', '.join(options) if options else ''}")
+
+
+async def card_names(interaction: Interaction, current: str) -> list:
+    """Autocomplete: card names, printed titles, aliases and renamed cards' old names."""
+    return [Choice(name=shown, value=value) for shown, value in card_repo.name_choices(current)]
+
+
+async def current_card_names(interaction: Interaction, current: str) -> list:
+    """Autocomplete without old names (options that need a card of today)."""
+    return [Choice(name=shown, value=value) for shown, value in card_repo.name_choices(current, old=False)]
+
+
+async def bake_card_names(interaction: Interaction, current: str) -> list:
+    """Autocomplete whose values are card names (titles shown beside them): /bake_cards matches card names only."""
+    return [Choice(name=shown, value=value) for shown, value in card_repo.name_choices(current, cards=True)]
+
+
+async def card_list_names(interaction: Interaction, current: str) -> list:
+    """Autocomplete for a comma-separated list: the last name typed."""
+    head, comma, last = current.rpartition(",")
+    head = f"{head}, " if comma else ""
+    return [Choice(name=shown, value=head + value) for shown, value in card_repo.name_choices(last)
+            if len(head + value) <= 100]
 
 
 # Slash Commands
@@ -276,9 +315,10 @@ async def slash_remove_reminder(interaction: Interaction,
 query_name = to_thread(query_name)
 @tree.command(name="query", description="Query a card by name, now or as it was on a date.")
 @app_commands.describe(
-    query='The name of the card you want to search for',
+    query='Card name, printed title, alias, or a renamed card\'s old name (suggested as you type).',
     as_of='YYYY-MM-DD (Pacific time): the card as it was that day, archived cards too. Default = now.',
 )
+@app_commands.autocomplete(query=card_names)
 async def slash_query_name(interaction: Interaction,
                            query: str,
                            as_of: Optional[str] = None):
@@ -364,6 +404,7 @@ manage_alias = to_thread(manage_alias)
     alias='The alias name. Leave empty to view all aliases, or provide without card name to delete.',
     card='The card to alias (its image file name, or the end of it). Omit to delete the alias.',
 )
+@app_commands.autocomplete(card=current_card_names)
 async def slash_alias(interaction: Interaction,
                       alias: Optional[str] = None,
                       card: Optional[str] = None):
@@ -384,6 +425,7 @@ frankenstein = to_thread(frankenstein)
     Choice(name="slice", value="slice"),
     Choice(name="average", value="average"),
 ])
+@app_commands.autocomplete(cards=card_list_names)
 async def slash_frankenstein(
     interaction: Interaction,
     cards: str,
@@ -432,6 +474,7 @@ bake_cards = to_thread(bake_cards)
     card='Only this card, matched like Card Authors.txt. Default = every card with a pending PSD edit.',
     dry_run='Render and check the edits, commit nothing. Default = True.',
 )
+@app_commands.autocomplete(card=bake_card_names)
 async def slash_bake_cards(interaction: Interaction,
                            card: Optional[str] = None,
                            dry_run: Optional[bool] = True):
@@ -480,6 +523,7 @@ manual_metadata_entry = to_thread(manual_metadata_entry)
     card_type='Card type (e.g., creature, item, field).',
     types='Types/ icon names, comma-separated, printed on the card image by the next card bake.',
 )
+@app_commands.autocomplete(query=card_names)
 async def slash_update_metadata(
     interaction: Interaction,
     query: str,
@@ -525,6 +569,7 @@ view_old_metadata = to_thread(view_old_metadata)
     query='The card to view old metadata for.',
     version='Version index: -1 for oldest, 0 for most recent old version, 1+ for older versions. Default = 0.'
 )
+@app_commands.autocomplete(query=card_names)
 async def slash_view_old_metadata(
     interaction: Interaction,
     query: str,
