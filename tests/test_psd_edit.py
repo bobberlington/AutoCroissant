@@ -31,12 +31,12 @@ from commands.card_models import card_name
 from commands.psd_regions import PAINT_ORDER, badge_layers, clip, fx_pad, regions, stat_rows
 from conftest import (BADGED, PLAIN_DOOMER, at_rev, no_lazy, salt_font, bevel_textures, colour_glyphs, fork_reason, painted,
                       rounds_bytes, saves_preview, story_sync as _story_sync, text_engine as _text_engine)
+from helpers import MINI_DOOMER, _card, _typo_fix, stale_copy
 
 # ========================
 # Configuration
 # ========================
 VOCAB = Path(__file__).resolve().parent / "goldens" / "_vocab.json"
-MINI_DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"                 # template rows, no digit effects (certified golden)
 HIVE = "Field/4 Stars/The_Hive.psd"                                # stoogedings badges, no overlay over the ability
 MORPHO = "Auxiliary/Creatures/Morpho_Knight.psd"                  # badge runs, chart words and unstyled words on FX layers
 HP_ROW = (360, 1200, 1173, 1284)                                   # its hp row: the digits' mask union
@@ -88,11 +88,6 @@ STYLED = ["Become Back Money", "Blazing", "Condemned", "Contracted", "Corrupted 
 TEXT_RECORD = ["blocks", "channels", "rect"]                       # what a text edit may change on its layer record
 STAT_RECORD = ["blocks", "flags"]                                  # a toggled digit whose effect block moved
 GLOW = 18                                                          # the chart's OuterGlow reach (fx_pad) on 13 of the 15
-
-
-def _typo_fix(title: str) -> str:
-    """A rename of the same width: the last letter swapped (the live edits fix typos, they do not lengthen titles)."""
-    return title[:len(title) - 1] + ("e" if title[len(title) - 1] != "e" else "a")
 
 
 def _fills(layer) -> list:
@@ -176,13 +171,6 @@ def chart(clone):
     if not path.exists():
         pytest.skip("no status chart")
     return pe.status_fills(PSDImage.open(str(path)))
-
-
-def _card(clone, rel: str) -> tuple:
-    path = clone / rel
-    if not path.exists() or not Path(str(path)[:-4] + ".png").exists():
-        pytest.skip(f"{rel} not in the clone")
-    return str(path), str(path)[:-4] + ".png"
 
 
 PLAIN_POD = "71ddebec"      # PoD10BFB before the badges re-run's "Ability FX: (1GCD) | (2U) | (2CD)" layer
@@ -3855,20 +3843,6 @@ def test_baseline_falls_back_when_the_png_disagrees_with_the_preview(clone, tmp_
 # ========================
 # Txt2 stories (the copy of the text Photoshop reads)
 # ========================
-def stale_copy(clone, rel: str, title: str, tmp_path) -> tuple:
-    """A pre-fix bake's PSD: the title set in TySh alone (the fork's set_text, then the old story put back)."""
-    psd = PSDImage.open(_card(clone, rel)[0])
-    layer = pe.name_layer(psd)
-    index = pe.story_index(layer)
-    items = pe._story_list(pe._txt2(psd))[2]
-    old = deepcopy(items[index])
-    layer.set_text(title)
-    items[index] = old
-    path = tmp_path / Path(rel).name
-    pe.save_psd(psd, str(path), update_preview=False)
-    return str(path), index
-
-
 @text_edit
 @pytest.mark.parametrize("rel", NAMED)
 def test_story_reader_agrees_with_the_fork(clone, rel):
@@ -4254,3 +4228,4 @@ def test_relaid_and_copied_abilities_bake(clone, parser, chart, tmp_path):
     found = pe.ability_layers(saved)
     assert len(found.copies[0]) == 2 and {layer.text for layer in [*found.layers, *found.copies[0]]} == {
         new.replace("\n", "\r").replace("action.\r", "action. \r")}
+

@@ -376,7 +376,7 @@ def test_emoji_listing_falls_back_to_the_card_tree(github, monkeypatch, capsys):
 
 
 def test_failed_emoji_listing_still_publishes_existing_emojis(github, monkeypatch, tmp_path, capsys):
-    from test_type_emojis import Client
+    from helpers import Client
     monkeypatch.setattr(te, "EMOJI_JSON", str(tmp_path / "type_emojis.json"))
     monkeypatch.setattr(te, "_blobs", {})
     monkeypatch.setattr(te, "_blobs_loaded", True)

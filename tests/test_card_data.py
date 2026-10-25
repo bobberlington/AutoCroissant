@@ -10,7 +10,6 @@ import tempfile
 from pathlib import Path
 from subprocess import run as run_process
 from sys import executable
-from types import SimpleNamespace
 
 import pytest
 
@@ -19,11 +18,9 @@ import commands.card_db as cdb
 import commands.card_models as cm
 import commands.changelog as cl
 from conftest import CLONE, REPO, blob_sha_bytes
-from golden_cards import VOCAB, golden_file
+from golden_cards import golden_file
+from helpers import DOOMER, FREEZER, OTHER, _build, _read, cards, commit, git, git_bytes, put  # noqa: F401 (fixture)
 
-DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
-FREEZER = "Field/1 Stars/The_Freezer.psd"
-OTHER = "Auxiliary/Minions/Anubisath_Guardian.psd"
 BROKEN = b"8BPS" + b"\0" * 30
 
 
@@ -59,7 +56,7 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
     assert bad == "[]"
     modules = {m.replace(".", "/") + ".py" for m in json.loads(closure.replace("'", '"'))}
     assert modules == {f for f in cd.SPARSE_FILES if f.endswith(".py")}                   # card-sync.yml copies this list
-    from test_card_bake import ALLOWED_IMPORTS, third_party_imports
+    from helpers import ALLOWED_IMPORTS, third_party_imports
     extra = third_party_imports("import commands.card_data, commands.card_history, commands.changelog, commands.psd_details", bot)
     assert not extra - ALLOWED_IMPORTS, f"requirements-cards.txt installs none of these: {sorted(extra - ALLOWED_IMPORTS)}"
 
@@ -73,7 +70,7 @@ def test_requirements_layers_and_pin():
     Python (the Actions' 3.14 builds it from the sdist, owner 2026-10-24) and elsewhere only where 9.1.1 has a wheel (the
     jetson's and the Mac's 3.14 no: the bot never recompresses); requirements.txt and requirements-dev.txt layer on it;
     none of the three gitignored (*.txt)."""
-    from test_card_bake import CARD_PACKAGES, card_pin
+    from helpers import CARD_PACKAGES, card_pin
     requirement = pytest.importorskip("packaging.requirements").Requirement
     cards = [requirement(x) for x in _requirements("requirements-cards.txt")]
     assert [r.name for r in cards] == list(CARD_PACKAGES)
@@ -170,75 +167,12 @@ def test_subject_counts_every_kind():
 # ========================
 # Builds on a git repo of golden PSDs
 # ========================
-def git(repo, *args, env=None):
-    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=True,
-                          env={**os.environ, **(env or {})}).stdout
-
-
-def commit(repo, author, at):
-    stamp = f"@{at} +0000"
-    git(repo, "add", "-A")
-    git(repo, "commit", "-q", "-m", f"by {author}", env={"GIT_AUTHOR_NAME": author, "GIT_AUTHOR_EMAIL": f"{author}@x",
-                                                          "GIT_COMMITTER_NAME": author, "GIT_COMMITTER_EMAIL": f"{author}@x",
-                                                          "GIT_AUTHOR_DATE": stamp, "GIT_COMMITTER_DATE": stamp})
-    return git(repo, "rev-parse", "HEAD").strip()
-
-
-def put(repo, rel, data: bytes):
-    path = repo / rel
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(data)
-
-
-@pytest.fixture
-def cards(tmp_path, clone, monkeypatch):
-    """A card repo: the golden vocabulary, the site files, Mini Doomer and The Freezer (alice, t=1000); an empty db/.
-    G1's floor drops to 1 card and no share (a real build has hundreds)."""
-    monkeypatch.setattr(cd, "MIN_CARDS", 1)
-    monkeypatch.setattr(cd, "FLOOR_SHARE", 0)
-    monkeypatch.setattr(cd, "_activity", lambda repository: [])                  # offline: pushes told by author
-    psds = {}
-    for rel in (DOOMER, FREEZER, OTHER):
-        data = (clone / rel).read_bytes()
-        if blob_sha_bytes(data) != json.loads(golden_file(rel).read_text(encoding="utf-8"))["blob"]:
-            pytest.skip(f"{rel} changed upstream since the goldens were made")
-        psds[rel] = data
-    vocab = json.loads(VOCAB.read_text(encoding="utf-8"))
-    repo = tmp_path / "cards"
-    repo.mkdir()
-    git(repo, "init", "-q", "-b", "main")
-    for t in vocab["all_types"]:
-        put(repo, f"Types/{t}.png", t.encode())
-    for s in vocab["stars"]:
-        put(repo, f"Types/Stars/{s}.png", s.encode())
-    put(repo, "MDW/Fonts/stoogedings-src/stoogedings.json", json.dumps(vocab["manifest"]).encode())
-    put(repo, "site/Card Authors.txt", b"[people]\nbobgit = Bob\n[cards]\nmini_doomer = bobgit\n")
-    put(repo, "site/Card Edits.json", json.dumps({"cards": {"The Freezer": {"note": "checked", "_by": "web"}}}).encode())
-    put(repo, DOOMER, psds[DOOMER])
-    put(repo, FREEZER, psds[FREEZER])
-    first = commit(repo, "alice", 1000)
-    db = tmp_path / "data" / "db"
-    db.mkdir(parents=True)
-    return SimpleNamespace(repo=repo, psds=psds, db=db, first=first, tmp=tmp_path)
-
-
-def _build(c, *extra):
-    message = c.tmp / "message.txt"
-    code = cd.main(["--checkout", str(c.repo), "--db", str(c.db), "--message", str(message), *extra])
-    return code, (message.read_text(encoding="utf-8") if message.exists() else "")
-
-
 def _golden(rel):
     return json.loads(golden_file(rel).read_text(encoding="utf-8"))["card"]
 
 
 def _strip(d):
     return {k: v for k, v in d.items() if k not in ("timestamp", "author", "note")}
-
-
-def _read(c):
-    stats, old, details, manifest = cdb.read_db(str(c.db))
-    return stats, old, details, manifest, cl.read_events(str(c.db))
 
 
 def test_first_build_then_nothing_to_do(cards):
@@ -475,10 +409,6 @@ def _rest_psds(cards, monkeypatch, parsed=None):
             fh.write(git_bytes(cards.repo, "cat-file", "blob", sha))
         return name
     monkeypatch.setattr(cd.CardBuild, "_download", download)
-
-
-def git_bytes(repo, *args):
-    return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, check=True).stdout
 
 
 def test_full_reparse_continues_past_the_budget(cards, monkeypatch):
@@ -758,3 +688,4 @@ def test_a_duplicate_is_named_by_its_own_aliases(cards):
     commit(cards.repo, "alice", 1100)
     assert _build(cards, "--empty")[0] == cd.EXIT_OK
     assert _read(cards)[0]["Mini Doomer2"].display_name == "Tiny Doom"
+

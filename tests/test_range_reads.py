@@ -18,13 +18,8 @@ import commands.card_data as cd
 import commands.github_api as ga
 from global_config import RAW_BASE
 from golden_cards import golden_file
-import test_card_data as tcd
-
-cards = tcd.cards
-
-DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
-FREEZER = "Field/1 Stars/The_Freezer.psd"
-OTHER = "Auxiliary/Minions/Anubisath_Guardian.psd"     # its bytes stand in for an edited Mini Doomer
+import helpers
+from helpers import DOOMER, FREEZER, OTHER, cards  # noqa: F401 (the cards fixture)
 COMMIT = "c" * 40
 needs_ranges = pytest.mark.skipif(not ga.range_reads(), reason="psd-tools without lazy reads (the fork's feat/lazy-records)")
 
@@ -226,9 +221,9 @@ def test_fetches_run_at_most_AHEAD_before_the_parse(cards, monkeypatch):
     monkeypatch.setattr(cd.GitBuild, "_fetch_psd", fetching)
     monkeypatch.setattr(cd.CardBuild, "_parse", parsing)
     third = "Items/Anubisath_Guardian.psd"
-    tcd.put(cards.repo, third, cards.psds[OTHER])
-    tcd.commit(cards.repo, "alice", 1100)
-    assert tcd._build(cards, "--empty")[0] == cd.EXIT_OK
+    helpers.put(cards.repo, third, cards.psds[OTHER])
+    helpers.commit(cards.repo, "alice", 1100)
+    assert helpers._build(cards, "--empty")[0] == cd.EXIT_OK
     assert [p for kind, p in events if kind == "fetch"] == [DOOMER, FREEZER, third]
     assert events.index(("fetch", third)) > events.index(("parsed", DOOMER))
 
@@ -245,7 +240,7 @@ def _raw_from_git(repo, served: list):
         _, _, ref, quoted = url[len(RAW_BASE):].split("/", 3)
         path = unquote(quoted)
         served.append((ref, path))
-        data = tcd.git_bytes(repo, "show", f"{ref}:{path}")
+        data = helpers.git_bytes(repo, "show", f"{ref}:{path}")
         start, end = (int(x) for x in headers["Range"].removeprefix("bytes=").split("-"))
         end = min(end, len(data) - 1)
         reply = Reply(206, data[start:end + 1])
@@ -265,8 +260,8 @@ def test_the_build_reads_blobs_its_clone_lacks_by_ranges_at_head(cards, monkeypa
     served: list = []
     monkeypatch.setattr(ga, "get", _raw_from_git(cards.repo, served))
     monkeypatch.setattr(cd.CardBuild, "_download", lambda self, path, sha: pytest.fail(f"{path} downloaded whole"))
-    assert tcd._build(cards, "--empty")[0] == cd.EXIT_OK
-    stats = tcd._read(cards)[0]
+    assert helpers._build(cards, "--empty")[0] == cd.EXIT_OK
+    stats = helpers._read(cards)[0]
     assert _strip(stats["Mini Doomer"].to_dict()) == _strip(_golden(DOOMER))
     assert _strip(stats["The Freezer"].to_dict()) == _strip(_golden(FREEZER))
     assert {path for _, path in served} == {DOOMER, FREEZER} and {ref for ref, _ in served} == {cards.first}
@@ -275,9 +270,9 @@ def test_the_build_reads_blobs_its_clone_lacks_by_ranges_at_head(cards, monkeypa
 @needs_ranges
 def test_a_baked_build_reads_a_blob_new_at_its_path_whole(cards, monkeypatch):
     """B puts an existing blob at another path (git mv -f): the parent has other bytes there, so no range read."""
-    tcd._build(cards, "--empty")
-    tcd.put(cards.repo, FREEZER, cards.psds[DOOMER])
-    baked = tcd.commit(cards.repo, "AutoCroissant", 2000)
+    helpers._build(cards, "--empty")
+    helpers.put(cards.repo, FREEZER, cards.psds[DOOMER])
+    baked = helpers.commit(cards.repo, "AutoCroissant", 2000)
     _hide(monkeypatch, {_sha(cards.psds[DOOMER])})
     served, whole = [], []
     monkeypatch.setattr(ga, "get", _raw_from_git(cards.repo, served))
@@ -286,23 +281,23 @@ def test_a_baked_build_reads_a_blob_new_at_its_path_whole(cards, monkeypatch):
         whole.append(path)
         fd, name = tempfile.mkstemp(suffix=".psd")
         with os.fdopen(fd, "wb") as fh:
-            fh.write(tcd.git_bytes(cards.repo, "cat-file", "blob", sha))
+            fh.write(helpers.git_bytes(cards.repo, "cat-file", "blob", sha))
         return name
 
     monkeypatch.setattr(cd.CardBuild, "_download", download)
-    assert tcd._build(cards, "--head", baked, "--baked", "--full")[0] == cd.EXIT_OK
+    assert helpers._build(cards, "--head", baked, "--baked", "--full")[0] == cd.EXIT_OK
     assert set(served) == {(cards.first, DOOMER)} and whole == [FREEZER]
-    assert tcd._read(cards)[0]["The Freezer"].ability == _golden(DOOMER)["ability"]
+    assert helpers._read(cards)[0]["The Freezer"].ability == _golden(DOOMER)["ability"]
 
 
 @needs_ranges
 def test_a_baked_build_reads_ranges_at_the_bake_commits_parent(cards, monkeypatch):
-    tcd._build(cards, "--empty")
-    tcd.put(cards.repo, DOOMER, cards.psds[OTHER])
-    baked = tcd.commit(cards.repo, "AutoCroissant", 2000)          # B: local, not on GitHub
+    helpers._build(cards, "--empty")
+    helpers.put(cards.repo, DOOMER, cards.psds[OTHER])
+    baked = helpers.commit(cards.repo, "AutoCroissant", 2000)          # B: local, not on GitHub
     _hide(monkeypatch, {_sha(cards.psds[FREEZER])})
     served: list = []
     monkeypatch.setattr(ga, "get", _raw_from_git(cards.repo, served))
-    assert tcd._build(cards, "--head", baked, "--baked", "--full")[0] == cd.EXIT_OK
+    assert helpers._build(cards, "--head", baked, "--baked", "--full")[0] == cd.EXIT_OK
     assert served and set(served) == {(cards.first, FREEZER)}      # B's own PSD came from the clone
-    assert _strip(tcd._read(cards)[0]["The Freezer"].to_dict()) == _strip(_golden(FREEZER))
+    assert _strip(helpers._read(cards)[0]["The Freezer"].to_dict()) == _strip(_golden(FREEZER))

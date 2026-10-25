@@ -14,7 +14,7 @@ from psd_tools import PSDImage
 import commands.psd_edit as pe
 import commands.txt2_repair as tr
 from conftest import at_rev, fork_reason, story_sync, text_engine
-from test_psd_edit import MINI_DOOMER, _card, _typo_fix, stale_copy
+from helpers import MINI_DOOMER, _card, _typo_fix, stale_copy
 
 # ========================
 # Configuration

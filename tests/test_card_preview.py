@@ -32,7 +32,7 @@ import commands.github_api as github_api  # noqa: E402
 import commands.psd_edit as pe  # noqa: E402
 from conftest import CLONE, REPO, blob_sha_bytes as _sha, fork_reason, text_engine as _text_engine  # noqa: E402
 from golden_cards import VOCAB  # noqa: E402
-from test_card_bake import ALLOWED_IMPORTS, fork_install, third_party_imports  # noqa: E402
+from helpers import ALLOWED_IMPORTS, fork_install, third_party_imports  # noqa: E402
 
 DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
 DOOMER_PNG = "Auxiliary/Minions/Mini_Doomer.png"

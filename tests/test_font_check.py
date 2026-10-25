@@ -18,6 +18,7 @@ from conftest import REPO, Reply, at_rev, blob_sha_bytes as _sha
 
 fontBuilder = pytest.importorskip("fontTools.fontBuilder")
 from fontTools.ttLib import TTCollection, TTFont  # noqa: E402
+from helpers import ChecksGitHub as FakeGitHub  # noqa: E402,F401
 
 BABA = "Creatures/Other/5 Stars/Baba.psd"                  # BabaUI on four visible digit layers and the hidden Name
 BABA_REV = "3a268cad"                                       # Baba as this test was written, from the clone's history
@@ -318,34 +319,6 @@ def test_token_from_env(monkeypatch):
 # ========================
 # --repo mode and the bot's cache against a fake GitHub
 # ========================
-class FakeGitHub:
-    """blobs: sha -> bytes; compare: the compare API's body; commits: sha -> the commit API's body; tree: a trees body."""
-    def __init__(self, blobs: dict, compare: dict, commits: dict, tree: dict = None):
-        self.blobs, self.compare, self.commits, self.tree = blobs, compare, commits, tree
-        self.broken: set = set()                 # blobs served with other bytes
-        self.calls: list = []
-
-    def get(self, url, headers=None, timeout=None, stream=False):
-        self.calls.append(url)
-        path = url.split("/repos/", 1)[1].split("/", 2)[2]
-        if path.startswith("compare/"):
-            return Reply(body=self.compare) if self.compare is not None else Reply(404)   # None: the old head is gone
-        if path.startswith("commits/"):
-            sha = path.split("/")[1]
-            return Reply(body=self.commits[sha]) if sha in self.commits else Reply(404)
-        if path.startswith("git/trees/"):
-            return Reply(body=self.tree)
-        if path.startswith("git/blobs/"):
-            sha = path.rsplit("/", 1)[1]
-            if sha in self.broken:
-                return Reply(data=b"garbage")
-            return Reply(data=self.blobs[sha]) if sha in self.blobs else Reply(404)
-        return Reply(404)
-
-    def blob_calls(self) -> int:
-        return sum("/git/blobs/" in u for u in self.calls)
-
-
 def test_repo_mode_push(fonts_dir, fake_psds, monkeypatch, tmp_path, capsys):
     a, b, c, font = b"psd-a", b"psd-b", b"psd-c", (fonts_dir / "PsdToolsFixture-TT.ttf").read_bytes()
     fake_psds[a], fake_psds[b], fake_psds[c] = {"JavaneseText": ["Name"]}, {"PsdToolsFixture-TT": ["Ability"]}, {"BabaUI": ["6"]}
@@ -492,4 +465,5 @@ def test_check_checkout_pool_matches_sequential(clone, tmp_path, monkeypatch):
     monkeypatch.setattr(fc, "POOL_MIN", n + 1)
     sequential = fc.check_checkout(str(root), index)
     assert pooled.as_dict() == sequential.as_dict() and pooled.checked + len(pooled.errors) - len(index.errors) == n
+
 

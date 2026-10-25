@@ -9,7 +9,7 @@ import pytest
 import commands.git_commit as gc
 import commands.github_api as ga
 from conftest import blob_sha_bytes as _sha
-from test_card_bake import FakeGitHub
+from helpers import FakeGitHub
 
 
 @pytest.fixture

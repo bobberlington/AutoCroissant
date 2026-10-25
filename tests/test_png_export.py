@@ -20,6 +20,7 @@ from psd_tools.api.layers import PixelLayer
 import commands.png_export as pe
 import commands.psd_edit as psd_edit
 from conftest import at_rev, fork_reason, text_engine
+from helpers import _rows_off, art, card, fixture_psd, photoshop_png
 
 # ========================
 # Configuration
@@ -96,23 +97,6 @@ def pair(clone, shas) -> tuple:
     old, new, old_png = pe.open_psd(blob(clone, shas[0])), pe.open_psd(blob(clone, shas[1])), pe.open_png(blob(clone, shas[2]))
     truth = pe.open_png(blob(clone, shas[3])) if len(shas) > 3 else None
     return old, new, old_png, truth
-
-
-def card(size=(60, 90), box=(10, 10, 30, 30), colour=(0, 0, 255), base=(200, 30, 30)) -> Image.Image:
-    image = Image.new("RGB", size, base)
-    ImageDraw.Draw(image).rectangle(box, fill=colour)
-    return image
-
-
-def fixture_psd(tmp_path, image: Image.Image, name: str, square=(10, 10, 31, 31)) -> PSDImage:
-    """A PSD with a Base layer (the image's corner colour) and a Square layer (the image's crop at square), saved by
-    psd-tools (its composite is the image) and reopened: a change of the square changes one layer record."""
-    psd = PSDImage.new("RGB", image.size)
-    psd.append(PixelLayer.frompil(Image.new("RGB", image.size, image.getpixel((0, image.height - 1))), psd, "Base"))
-    psd.append(PixelLayer.frompil(image.crop(square), psd, "Square", top=square[1], left=square[0]))
-    path = tmp_path / f"{name}.psd"
-    psd.save(str(path))
-    return PSDImage.open(str(path))
 
 
 # ========================
@@ -394,17 +378,6 @@ def test_a_new_psd_beside_an_older_png_takes_the_render_where_photoshops_image_m
     assert refused.why.startswith("PNG not made: the bot's drawing of your change")
 
 
-def _rows_off(monkeypatch, rows: int, start: int = 3, levels: int = 30) -> None:
-    """The fork draws rows of every box 30 levels off from its row start (a drawing miss, the same on the old and new PSD)."""
-    draw = psd_edit.render_region
-
-    def off(psd, box, icc=True, text="preview"):
-        image = np.array(draw(psd, box, icc, text).convert("RGB")).astype(int)
-        image[start:start + rows] += levels
-        return Image.fromarray(np.clip(image, 0, 255).astype(np.uint8))
-    monkeypatch.setattr(psd_edit, "render_region", off)
-
-
 def test_a_drawing_miss_under_the_floor_is_written_and_told(tmp_path, monkeypatch):
     """Owner (2026-10-23): the bot's drawing missing the bar (one row of the 21x21 box 30 levels off: 4.8% bad) no
     longer refuses: the PNG is made and the miss is told per measure; past the floor (10 rows: 48%) it refuses as before."""
@@ -579,31 +552,6 @@ def test_png_check(tmp_path):
 # Lossless recompression (owner, 2026-10-23)
 # ========================
 oxipng = pytest.mark.skipif(find_spec("oxipng") is None, reason="needs pyoxipng, as card-guards.yml installs (none on 3.14)")
-
-
-def photoshop_png(image: Image.Image, icc: str = "sRGB") -> bytes:
-    """image as Photoshop exports it: no deflate (zlib level 0), with its colour and text chunks."""
-    import io
-    from struct import pack
-    from PIL import ImageCms, PngImagePlugin
-    info = PngImagePlugin.PngInfo()
-    info.add(b"gAMA", pack(">I", 45455))
-    info.add_itxt("XML:com.adobe.xmp", "<x:xmpmeta xmlns:x='adobe:ns:meta/'>" + "photoshop " * 400 + "</x:xmpmeta>")
-    info.add_itxt("Comment", "squeezed " * 50, zip=True)
-    info.add_text("Software", "Adobe Photoshop 24.0", zip=True)
-    buf = io.BytesIO()
-    image.save(buf, "PNG", compress_level=0, pnginfo=info, dpi=(300, 300),
-               icc_profile=ImageCms.ImageCmsProfile(ImageCms.createProfile(icc)).tobytes())
-    return buf.getvalue()
-
-
-def art(mode="RGBA", size=(400, 600)) -> Image.Image:
-    """A card-like picture: gradients and shapes (opaque, so oxipng could drop the alpha if allowed)."""
-    x, y = np.meshgrid(np.arange(size[0]), np.arange(size[1]))
-    rgb = np.stack([x * 255 // size[0], y * 255 // size[1], (x + y) % 256], axis=2).astype(np.uint8)
-    image = Image.fromarray(rgb).convert(mode)
-    ImageDraw.Draw(image).ellipse((50, 80, 300, 400), fill=(250, 200, 40) + (() if mode == "RGB" else (255,)))
-    return image
 
 
 @oxipng
@@ -1122,3 +1070,4 @@ def test_r10_flags_the_lost_gradient_maps(clone):
         psd, png = at_rev(clone, "6e50c3ee", rel + ".psd"), at_rev(clone, "6e50c3ee", rel + ".png")
         found = pe.png_check(pe.open_psd(psd), pe.open_png(png))
         assert found["ok"] is ok, (rel, found)
+

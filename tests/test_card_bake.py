@@ -8,9 +8,7 @@ card-sync.yml's Pending edits line runs as written (card_bake.due). Fork as conf
 requests skips this file:
     AC_PSD_TOOLS_SRC=<fork>/src ~/Documents/Tools/psd-tools/.venv/bin/python -m pytest -q tests/test_psd_edit.py tests/test_card_bake.py
 """
-import ast
 import contextlib
-import hashlib
 import json
 import re
 import shutil
@@ -20,8 +18,6 @@ from os import environ
 from os.path import expanduser
 from pathlib import Path
 from subprocess import run as run_process
-from sys import executable
-from tempfile import TemporaryDirectory
 from types import SimpleNamespace
 
 import pytest
@@ -29,26 +25,19 @@ import pytest
 pytest.importorskip("requests", reason="card_bake imports requests (absent from this Python)")
 import commands.card_bake as cb  # noqa: E402
 import commands.git_commit as gc  # noqa: E402
-import commands.github_api as ga  # noqa: E402
 import commands.psd_edit as pe  # noqa: E402
-from conftest import (BADGED, CLONE, PLAIN_DOOMER, REPO, Reply, at_rev, blob_sha_bytes as _sha, fork_reason, painted,  # noqa: E402
+from conftest import (BADGED, CLONE, PLAIN_DOOMER, Reply, at_rev, blob_sha_bytes as _sha, fork_reason, painted,  # noqa: E402
                       story_sync as _story_sync, text_engine as _text_engine)
 from golden_cards import VOCAB  # noqa: E402
+from helpers import (ABOUT, AT, DOOMER, EDITS, FORK_KEY, FORK_PYTHON, FORK_WORKFLOWS, FREEZER, SNACK, _card_files,
+                     _edits, _uses_setup, files, fork_install, github)  # noqa: E402,F401 (fixtures)
 
-DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
-FREEZER = "Field/1 Stars/The_Freezer.psd"
-SNACK = "Items/Heal/2 Stars/A_Snack.psd"
 GREEN_MAGE = "Creatures/Everhood/4 Stars/Green_Mage.psd"   # fixed 2026-10-23: its stat bars on the canvas
 OFF_CANVAS_MAGE = "45cf8746^"   # Green Mage before its bars moved onto the card (they lay below the canvas)
 PURE_VESSEL = "Creatures/Hollow Knight/5 Stars/Pure_Vessel.psd"     # its stat masks reach past the canvas
 LIVE_EDITS = CLONE / "site" / "Card Edits.json"
 EDIT_JS = CLONE / "site" / "assets" / "edit.js"
 WORKFLOW = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "card-sync.yml"
-AT = "2026-10-20T18:41:54Z"
-ABOUT = "Card data fixes from the website's Edit button."
-TOKEN = "test-token"
-
-
 fork = pytest.mark.skipif(not _text_engine(), reason="a bake needs the fork's renderer: " + fork_reason())
 fork_text = pytest.mark.skipif(not (_text_engine() and _story_sync()),
                                reason="a text bake needs the fork's Txt2 story sync: " + fork_reason())
@@ -57,171 +46,9 @@ fork_text = pytest.mark.skipif(not (_text_engine() and _story_sync()),
 # ========================
 # Fake GitHub
 # ========================
-class FakeGitHub:
-    """A repo with git objects: blobs, trees, commits and one branch. recent / conflicts / broken simulate the races."""
-
-    def __init__(self, repo: str, files: dict, author="web", message="Website edit: test"):
-        self.repo = repo
-        self.blobs: dict = {}
-        self.trees: dict = {}
-        self.commits: dict = {}
-        self.recent: set = set()            # paths pushed "in the last 30 minutes"
-        self.conflicts = 0                  # PATCH ref answers conflict_status this many times, someone else's push landing first
-        self.stuck = False                  # PATCH ref answers 422 with the branch unmoved (a ruleset)
-        self.conflict_status = 422          # ... 409 or 422 (both mean "not a fast forward")
-        self.conflict_on = ""               # ... only for commits whose message starts so ("" = any)
-        self.broken: dict = {}              # blob sha -> the bytes served instead
-        self.down: set = set()              # blob shas answering 503
-        self.rate_limited = False           # POST git/blobs answers a rate-limit 403
-        self.forbidden = False              # POST git/blobs answers 403 without rate-limit headers: the token can't write
-        self.calls: list = []
-        self.head = self.commit(files, author, message)
-
-    def commit(self, files: dict, author: str, message: str, parents=None) -> str:
-        """A commit of {path: bytes} on the branch (parents default to the head), returning its sha."""
-        tree = {}
-        for path, data in files.items():
-            self.blobs[_sha(data)] = data
-            tree[path] = ("100644", _sha(data))
-        tree_sha = self._tree(tree)
-        parents = [self.head] if parents is None and self.commits else list(parents or [])
-        sha = hashlib.sha1(json.dumps([tree_sha, parents, message, author]).encode()).hexdigest()
-        self.commits[sha] = {"sha": sha, "tree": {"sha": tree_sha}, "parents": [{"sha": p} for p in parents],
-                             "message": message, "author": {"name": author, "email": f"{author}@x"}}
-        self.head = sha
-        return sha
-
-    def files_at(self, sha: str) -> dict:
-        """{path: bytes} at a commit."""
-        return {path: self.blobs[blob] for path, (_, blob) in self.trees[self.commits[sha]["tree"]["sha"]].items()}
-
-    def _tree(self, tree: dict) -> str:
-        sha = hashlib.sha1(json.dumps(sorted(tree.items())).encode()).hexdigest()
-        self.trees[sha] = dict(tree)
-        return sha
-
-    def get(self, url, **kwargs):
-        return self.request("GET", url, **kwargs)
-
-    def request(self, method, url, headers=None, timeout=None, json=None, params=None, stream=False):
-        route, _, query = url.split(f"/repos/{self.repo}/", 1)[1].partition("?")
-        self.calls.append((method, route))
-        if method == "GET" and route == "git/ref/heads/main":
-            return Reply(body={"object": {"sha": self.head}})
-        if method == "GET" and route.startswith("git/commits/"):
-            sha = route.rsplit("/", 1)[1]
-            return Reply(body=self.commits[sha]) if sha in self.commits else Reply(404, body={"message": "Not Found"})
-        if method == "GET" and route.startswith("git/trees/"):
-            sha = route.rsplit("/", 1)[1]
-            if sha not in self.trees:
-                return Reply(404, body={"message": "Not Found"})
-            return Reply(body={"sha": sha, "truncated": False, "tree": [
-                {"path": p, "mode": mode, "type": "blob", "sha": blob} for p, (mode, blob) in sorted(self.trees[sha].items())]})
-        if method == "GET" and route.startswith("git/blobs/"):
-            sha = route.rsplit("/", 1)[1]
-            if sha not in self.blobs:
-                return Reply(404, body={"message": "Not Found"})
-            if sha in self.down:
-                return Reply(503, body={"message": "Service Unavailable"})
-            return Reply(data=self.broken.get(sha, self.blobs[sha]))
-        if method == "GET" and route == "activity":
-            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            return Reply(body=[{"before": "b" * 40, "after": self.head, "timestamp": now}] if self.recent else [])
-        if method == "GET" and route.startswith("compare/"):
-            return Reply(body={"files": [{"filename": path} for path in sorted(self.recent)]})
-        if method == "POST" and route == "git/blobs":
-            from base64 import b64decode
-            if self.rate_limited:
-                return Reply(403, body={"message": "API rate limit exceeded"}, headers={"x-ratelimit-remaining": "0"})
-            if self.forbidden:
-                return Reply(403, body={"message": "Resource not accessible by integration"})
-            data = b64decode(json["content"])
-            self.blobs[_sha(data)] = data
-            return Reply(201, body={"sha": _sha(data)})
-        if method == "POST" and route == "git/trees":
-            tree = dict(self.trees[json["base_tree"]])
-            for entry in json["tree"]:
-                tree[entry["path"]] = (entry["mode"], entry["sha"])
-            return Reply(201, body={"sha": self._tree(tree)})
-        if method == "POST" and route == "git/commits":
-            sha = hashlib.sha1(json_dumps(json).encode()).hexdigest()
-            self.commits[sha] = {"sha": sha, "tree": {"sha": json["tree"]}, "parents": [{"sha": p} for p in json["parents"]],
-                                 "message": json["message"], "author": dict(json.get("author") or {"name": "token"})}
-            return Reply(201, body={"sha": sha})
-        if method == "PATCH" and route == "git/refs/heads/main":
-            commit = self.commits.get(json["sha"])
-            if self.stuck:
-                return Reply(422, body={"message": "Repository rule violations found"})
-            if self.conflicts and (commit or {}).get("message", "").startswith(self.conflict_on):
-                self.conflicts -= 1
-                self.commit({**self.files_at(self.head), "elsewhere.txt": b"%d" % self.conflicts}, "web", "Website edit: elsewhere")
-                return Reply(self.conflict_status, body={"message": "Update is not a fast forward"})
-            if not commit or [p["sha"] for p in commit["parents"]] != [self.head]:
-                return Reply(422, body={"message": "Update is not a fast forward"})
-            self.head = json["sha"]
-            return Reply(body={"object": {"sha": self.head}})
-        return Reply(404, body={"message": f"no route for {method} {route}"})
-
-
-def json_dumps(value) -> str:
-    return json.dumps(value, sort_keys=True)
-
-
 # ========================
 # Fixtures
 # ========================
-def _card_files(clone, rel: str) -> dict:
-    png = rel[:len(rel) - 4] + ".png"
-    if not (clone / rel).exists() or not (clone / png).exists():
-        pytest.skip(f"{rel} not in the clone")
-    return {rel: (clone / rel).read_bytes(), png: (clone / png).read_bytes()}
-
-
-def _edits(cards: dict) -> bytes:
-    return cb.dump_edits({"about": ABOUT, "cards": cards}).encode("utf-8")
-
-
-EDITS = {
-    "Beldam": {"series": "Mario", "_by": "web", "_at": AT},                 # no PSD field: not looked at
-    "Mini Doomer": {"hp": 5, "note": "checked", "_by": "web", "_at": AT},   # hp 5 is on the card: redundant, dropped
-    "Nobody": {"hp": 3, "_by": "web", "_at": AT},                           # no PSD
-    "The Freezer": {"stars": 2, "_by": "web", "_at": AT},                   # a field card: its "1 Stars" folder sets them
-    "A Snack": {"hp": 1, "_by": "web", "_at": AT},                          # numbered PNGs share its PSD
-    "A Snack2": {"ability": "Breakfast.", "_by": "web", "_at": AT},         # a numbered PNG itself
-}
-
-
-@pytest.fixture
-def files(clone):
-    vocab = json.loads(VOCAB.read_text(encoding="utf-8"))
-    out = {f"Types/{t}.png": t.encode() for t in vocab["all_types"]}
-    out.update({f"Types/Stars/{s}.png": s.encode() for s in vocab["stars"]})
-    out[cb.ICON_MANIFEST_PATH] = json.dumps(vocab["manifest"]).encode()
-    out.update(_card_files(clone, DOOMER))
-    out.update(_card_files(clone, FREEZER))
-    out[SNACK] = out[DOOMER]                    # read by the redundancy check before the duplicate gate (hp 5, not 1)
-    out[SNACK[:len(SNACK) - 4] + ".png"] = b"not fetched"
-    out["Items/Heal/2 Stars/A_Snack2.png"] = b"a duplicate"
-    out["MDW/Templates/Creature_Template.psd"] = b"excluded folder"
-    out[cb.EDITS_PATH] = _edits(EDITS)
-    return out
-
-
-@pytest.fixture
-def github(monkeypatch, tmp_path, files, clone):
-    fake = FakeGitHub(cb.CARD_REPO, files)
-    monkeypatch.setattr(ga, "get", fake.get)
-    monkeypatch.setattr(ga, "GIT_TOKEN", "")
-    monkeypatch.setattr(ga, "HEADERS", {})
-    monkeypatch.setattr(gc, "request", fake.request)
-    monkeypatch.setattr(gc, "refresh", lambda: True)
-    monkeypatch.setenv("GITHUB_TOKEN", TOKEN)
-    monkeypatch.setenv(cb.WORK_ENV, str(tmp_path))
-    monkeypatch.setenv(cb.FONT_DIRS_ENV, str(clone / pe.FONTS_DIR))
-    monkeypatch.setattr(gc, "cant_write", False)
-    return fake
-
-
 def _edits_at(github, sha=None) -> dict:
     return json.loads(github.files_at(sha or github.head)[cb.EDITS_PATH].decode("utf-8"))
 
@@ -1381,106 +1208,6 @@ def test_local_bake_lands_psd_png_and_file_in_b(github, local):
 # ========================
 # The Action's sparse copy
 # ========================
-CARD_PACKAGES = {"psd-tools": {"psd_tools", "attr", "attrs", "numpy", "PIL", "scipy", "aggdraw", "uharfbuzz", "freetype"},
-                 "fonttools": {"fontTools"}, "requests": {"requests", "certifi", "charset_normalizer", "idna", "urllib3"},
-                 "pyoxipng": {"oxipng"}}       # requirements-cards.txt's packages: what they import (dependencies included)
-ALLOWED_IMPORTS = set().union(*CARD_PACKAGES.values())      # what the Actions install
-SKIP_IMPORTS = {"commands", "global_config", "sitecustomize", "usercustomize", "cython_runtime"}
-
-
-def third_party_imports(code: str, cwd) -> set:
-    """The non-stdlib top-level modules an import leaves in sys.modules (a copy of the repo at cwd, no config.py)."""
-    probe = (f"import sys; {code}; tops = {{m.split('.')[0] for m in sys.modules}}; "
-             f"print(sorted(tops - set(sys.stdlib_module_names) - {SKIP_IMPORTS!r} - {{m for m in tops if m.startswith('_')}}))")
-    done = run_process([executable, "-c", probe], cwd=cwd, capture_output=True, text=True, timeout=120)
-    assert done.returncode == 0, done.stderr
-    return set(ast.literal_eval(done.stdout.strip()))
-
-
-FORK_WORKFLOWS = ("card-guards.yml", "card-sync.yml", "card-preview.yml")   # install requirements-cards.txt
-FORK_ACTION = ".github/actions/cards-python/action.yml"                 # their one setup (2026-10-25)
-FORK_PYTHON = "3.14"                                                    # every Action (owner, 2026-10-24)
-FORK_WHEELS = "~/.cache/card-wheels"
-FORK_KEY = ("cards-${{ hashFiles('bot/requirements-cards.txt') }}-${{ runner.os }}-${{ runner.arch }}"
-            "-py${{ steps.python.outputs.python-version }}")             # one entry for all
-BY_NAME = "sed 's/ @ [^;]*//' bot/requirements-cards.txt > \"$RUNNER_TEMP/cards.txt\""
-
-
-def card_pin() -> str:
-    """The psd-tools fork's tag: requirements-cards.txt's one fork URL, the only pin (no other requirements file has one)."""
-    pins = re.findall(r"^psd-tools\[composite,text\] @ git\+https://github\.com/MichaelJSr/psd-tools@(\S+)$",
-                      (REPO / "requirements-cards.txt").read_text(encoding="utf-8"), re.M)
-    assert len(pins) == 1 and re.fullmatch(r"cards-\d{8}[a-z]*", pins[0]), "one fork pin, a tag (never a branch)"
-    for other in REPO.glob("requirements*.txt"):
-        assert other.name == "requirements-cards.txt" or "psd-tools" not in other.read_text(encoding="utf-8").lower(), other.name
-    return pins[0]
-
-
-def _uses_setup(step) -> bool:
-    return step.get("uses") == "./" + FORK_ACTION.rsplit("/", 1)[0]
-
-
-def fork_action(workflows) -> str:
-    """
-    The card workflows' one setup (.github/actions/cards-python): Python 3.14; requirements-cards.txt's wheels restored by
-    the file's hash, runner and Python (one entry for all), built only on a miss, installed offline by name with uv (pip
-    builds a URL line from git again), saved only after they installed.
-
-    Returns:
-        The cache key.
-    """
-    yaml = pytest.importorskip("yaml")
-    steps = yaml.safe_load((workflows.parent.parent / FORK_ACTION).read_text(encoding="utf-8"))["runs"]["steps"]
-    python, restore, uv, install, save = steps
-    assert python["uses"].startswith("actions/setup-python@") and python["id"] == "python"
-    assert python["with"] == {"python-version": FORK_PYTHON}                   # no pip cache
-    assert restore["uses"].startswith("actions/cache/restore@") and restore["id"] == "wheels"
-    assert restore["with"] == {"path": FORK_WHEELS, "key": FORK_KEY}
-    assert uv["uses"].startswith("astral-sh/setup-uv@") and uv["with"]["enable-cache"] is False
-    run = install["run"]
-    assert install["env"]["HIT"] == "${{ steps.wheels.outputs.cache-hit }}" and '"$HIT"' in run
-    assert run.index("pip wheel -q -w ~/.cache/card-wheels -r bot/requirements-cards.txt") < run.index(BY_NAME)
-    assert run.index(BY_NAME) < run.index('uv pip install -q --no-index -f ~/.cache/card-wheels -r "$RUNNER_TEMP/cards.txt"')
-    assert save["uses"].startswith("actions/cache/save@") and save["if"].startswith("steps.wheels.outputs.cache-hit != 'true'")
-    assert save["with"] == {"path": FORK_WHEELS, "key": "${{ steps.wheels.outputs.cache-primary-key }}"}
-    with TemporaryDirectory() as tmp:          # the copy pip installs, made by the step's own sed
-        (Path(tmp) / "bot").mkdir()
-        shutil.copy(REPO / "requirements-cards.txt", Path(tmp) / "bot")
-        run_process(["bash", "-c", BY_NAME], cwd=tmp, env={**environ, "RUNNER_TEMP": tmp}, check=True, timeout=30)
-        copy = [line for line in (Path(tmp) / "cards.txt").read_text(encoding="utf-8").splitlines() if line and line[0] != "#"]
-    assert copy[0] == "psd-tools[composite,text]" and " @ " not in "\n".join(copy)
-    return restore["with"]["key"]
-
-
-def fork_install(path) -> str:
-    """
-    A workflow's install of requirements-cards.txt (the psd-tools fork's one pin): every job that installs uses the shared
-    setup (fork_action) after a bot checkout bringing the file; no pin of the workflow's own, no other install
-    (card-preview skips pyoxipng: it would recompress a PNG it never publishes).
-
-    Returns:
-        The cache key.
-    """
-    text = path.read_text(encoding="utf-8")
-    assert "PSD_TOOLS_REF" not in text and "MichaelJSr/psd-tools" not in text, f"{path.name}: the pin is requirements-cards.txt's"
-    assert not re.search(r"cards-\d{8}", text), f"{path.name}: no fork tag of its own"
-    assert not re.search(r"pip install", text), f"{path.name}: no install of its own"
-    yaml = pytest.importorskip("yaml")
-    installs = 0
-    for job in yaml.safe_load(text)["jobs"].values():
-        steps = job.get("steps", [])
-        setups = [i for i, s in enumerate(steps) if _uses_setup(s)]
-        if not setups:
-            continue
-        installs += 1
-        bot = [i for i, s in enumerate(steps) if s.get("with", {}).get("repository") in ("bobberlington/AutoCroissant", "${{ env.BOT_REPO }}")
-               and "/requirements-cards.txt" in s["with"]["sparse-checkout"].split()]
-        assert len(bot) == 1 and bot[0] < setups[0], f"{path.name}: the bot checkout brings requirements-cards.txt first"
-        assert ("pyoxipng" in (steps[setups[0]].get("with") or {}).get("skip", "")) == (path.name == "card-preview.yml")
-    assert installs, f"{path.name}: installs requirements-cards.txt"
-    return fork_action(path.parent)
-
-
 def test_every_action_runs_python_314():
     """Owner, 2026-10-24: every card repo Action on Python 3.14 (setup-python in each job that runs Python; none on the
     runner's own python3, the shared setup counting as one), and the card workflows install requirements-cards.txt with
@@ -1512,3 +1239,4 @@ def test_workflow_pending_edits_line_calls_due(github, capsys, monkeypatch):
     monkeypatch.setattr("sys.argv", ["-c", cb.CARD_REPO, github.head, ""])
     exec(code, {})
     assert capsys.readouterr().out.splitlines() == ["A Snack", "A Snack2", "Nobody", "The Freezer"]
+

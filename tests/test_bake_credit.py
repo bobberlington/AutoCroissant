@@ -14,7 +14,7 @@ pytest.importorskip("requests", reason="card_bake imports requests (absent from 
 import commands.card_bake as cb  # noqa: E402
 import commands.git_commit as gc  # noqa: E402
 import commands.psd_edit as pe  # noqa: E402
-from test_card_bake import AT, DOOMER, _edits, files, github  # noqa: E402,F401  (fixtures)
+from helpers import AT, DOOMER, _edits, files, github  # noqa: E402,F401  (fixtures)
 
 SUBJECT = "Card edits: 1 baked"
 BODY = "- Mini Doomer: hp 5 -> 8"

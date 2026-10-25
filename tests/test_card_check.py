@@ -15,7 +15,7 @@ import commands.card_check as cc
 import commands.github_api as ga
 from commands.card_models import CardInfo, CardStats, card_name
 from conftest import REPO, Reply, blob_sha_bytes as _sha, no_lazy
-from test_font_check import FakeGitHub
+from helpers import ChecksGitHub as FakeGitHub
 
 NO_STARS = 'NO STARS FOUND (put the star layers in a group named "Stars")'
 SEVERAL = "SEVERAL CREATURES: check each one's stats on the website"

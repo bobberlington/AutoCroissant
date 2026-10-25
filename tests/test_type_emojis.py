@@ -6,45 +6,13 @@ import pytest
 from PIL import Image
 
 import commands.type_emojis as te
+from helpers import Client
 
 
 def _png(color=(200, 30, 30, 255)) -> bytes:
     out = BytesIO()
     Image.new("RGBA", (16, 16), color).save(out, "PNG")
     return out.getvalue()
-
-
-class Emoji:
-    def __init__(self, client, name):
-        self.client, self.name, self.id = client, name, len(client.created) + 100
-
-    async def delete(self):
-        self.client.deleted.append(self.name)
-        self.client.emojis.remove(self)
-
-    def __str__(self):
-        return f"<:{self.name}:{self.id}>"
-
-
-class Client:
-    def __init__(self, names=(), fail_fetch=False):
-        self.created, self.deleted, self.fetches, self.fail_fetch = [], [], 0, fail_fetch
-        self.emojis = []
-        for n in names:
-            self.emojis.append(Emoji(self, n))
-
-    async def fetch_application_emojis(self):
-        self.fetches += 1
-        if self.fail_fetch:
-            raise RuntimeError("503 Service Unavailable")
-        return list(self.emojis)
-
-    async def create_application_emoji(self, name, image):
-        assert Image.open(BytesIO(image)).size == (te.EMOJI_SIZE, te.EMOJI_SIZE)
-        emoji = Emoji(self, name)
-        self.created.append(name)
-        self.emojis.append(emoji)
-        return emoji
 
 
 # ========================
@@ -129,3 +97,4 @@ def test_render_type_tokens(monkeypatch):
     monkeypatch.setattr(te, "type_emojis", {"fire": "<:fire:1>", "fragile_equip": "<:fragile_equip:2>"})
     out = te.render_type_tokens("[fire] [Fragile Equip] [fire:no] [X] [Status] *b*", escape=True)
     assert out == "<:fire:1> <:fragile_equip:2> 🚫<:fire:1> [X] [Status] \\*b\\*"
+

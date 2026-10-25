@@ -13,7 +13,7 @@ import commands.card_models as cm
 import commands.discord_edits as de
 import commands.query_card as qc
 from commands.card_edits import CardDates
-from test_card_data import _build, _read, cards, commit, put     # noqa: F401 (the cards fixture)
+from helpers import _build, _read, cards, commit, put     # noqa: F401 (the cards fixture)
 
 FILE = "site/Card Creation Dates.json"
 

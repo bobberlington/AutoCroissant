@@ -23,7 +23,7 @@ import commands.card_guards as cg
 import commands.git_commit as gc
 import commands.png_export as pe
 from commands.github_api import blob_sha
-from test_png_export import _rows_off, art, card, fixture_psd, photoshop_png
+from helpers import _rows_off, art, card, fixture_psd, photoshop_png
 
 # ========================
 # Configuration
@@ -1396,7 +1396,7 @@ def test_action_shaped_copy(tmp_path):
     modules = {m.replace(".", "/") + ".py" for m in json.loads(closure.replace("'", '"'))}
     assert modules == {f for f in cg.SPARSE_FILES if f.endswith(".py")}
     assert "requirements-cards.txt" in cg.SPARSE_FILES                         # what the Action installs
-    from test_card_bake import ALLOWED_IMPORTS, third_party_imports
+    from helpers import ALLOWED_IMPORTS, third_party_imports
     extra = third_party_imports("import commands.card_guards, commands.txt2_repair", bot) - ALLOWED_IMPORTS
     assert not extra, f"card-guards.yml installs none of these: {sorted(extra)}"
     for module in ("card_check", "font_check"):
@@ -1500,7 +1500,7 @@ def test_workflow_shape(clone):
     assert [s["with"]["sparse-checkout"].split() for s in post["steps"] + finish["steps"]
             if s.get("uses", "").startswith("actions/checkout") and "repository" not in s.get("with", {})] == [["/.github/actions/"]]   # the shared setup only
     assert post["env"]["GH_REPO"] == "${{ github.repository }}"               # gh workflow run without the card repo
-    from test_card_bake import FORK_KEY, FORK_WORKFLOWS, fork_install
+    from helpers import FORK_KEY, FORK_WORKFLOWS, fork_install
     others = [path.parent / name for name in FORK_WORKFLOWS if name != "card-guards.yml" and (path.parent / name).is_file()]
     keys = {p.name: fork_install(p) for p in [path, *others]}                  # one pin: requirements-cards.txt's
     assert set(keys.values()) == {FORK_KEY}                                    # one entry for the six, on 3.14

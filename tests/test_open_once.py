@@ -17,8 +17,8 @@ import commands.psd_details as pd
 from commands.card_models import card_name
 from commands.psd_parser import CardValidator
 from golden_cards import parser as golden_parser
-from test_card_data import _build, cards  # noqa: F401
-from test_range_reads import DOOMER, FREEZER
+from helpers import _build, cards  # noqa: F401
+from helpers import DOOMER, FREEZER
 
 SAME = (DOOMER,                                                             # the identity cards: golden oddities
         "Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd",           # font tokens
