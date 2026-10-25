@@ -14,7 +14,7 @@ the checkout's MDW/Fonts, else the fonts cache brought to the update's tree), th
 that index (records gathered without one, or before MDW/Fonts changed). The CLI backfills a clone in a process pool (the
 open is the whole cost, like font_check --all), or --refill sets the flags by hand. Run --refill from the bot's
 directory (psd_details.json and fonts_cache/ are cwd-relative) while the bot runs no /update_stats (the daily 5AM
-reminder too), /bake_cards or /fonts: the details file's temp and the fonts cache are shared, and their locks are per
+reminder too) or /fonts: the details file's temp and the fonts cache are shared, and their locks are per
 process. No Discord or config imports; stock psd-tools. Pillow's ImageCms names the ICC profile when it is built in.
 """
 from argparse import ArgumentParser

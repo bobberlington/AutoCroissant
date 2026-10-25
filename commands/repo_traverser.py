@@ -34,7 +34,7 @@ _file_cache: dict = {}                                            # repo path ->
 
 
 class RepositoryTraverser(CardBuild):
-    """CardBuild as the bot runs it (psd_analyzer, the diagnostics): the /alias names unless given."""
+    """CardBuild as the bot runs it (psd_analyzer, the diagnostics): aliases.pkl's names unless given."""
     def __init__(self, db, *args, aliases: Optional[dict] = None, **kwargs):
         super().__init__(db, *args, aliases=card_repo.git_file_alias if aliases is None else aliases, **kwargs)
 
@@ -82,8 +82,8 @@ def update_stats(interaction: Optional[Interaction] = None,
         from commands.card_sync import update
         return update(interaction, output_problematic, force_update, verbose, cards)
     if verbose and bake_lock.locked():
-        say(interaction, "Waiting for the running card update, bake or font check to finish...")
-    with bake_lock:                                 # never beside a card bake (card_runner)
+        say(interaction, "Waiting for the running card update or font check to finish...")
+    with bake_lock:                                 # never beside a fonts refresh (card_runner)
         return _update_stats(interaction, output_problematic, force_update, verbose, cards)
 
 

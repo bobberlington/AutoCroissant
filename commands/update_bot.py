@@ -10,7 +10,7 @@ from global_config import ALIAS_PKL, CARD_REPO, DETAILS_JSON, STATS_PKL, OLD_STA
 
 NET_TIMEOUT = 120                       # seconds per git network call (fetch, pull, push)
 SITE_FILES = {ALIAS_PKL, STATS_PKL, OLD_STATS_PKL, DETAILS_JSON}   # what the website's build reads from this repo
-PUSH_RETIRED = ("Nothing to push: the card data is built by the Card sync Action in the card repo 30 minutes after a card push "
+PUSH_RETIRED = ("Nothing to push: the card data is built by the Card sync Action in the card repo within minutes of a card push "
                 f"(<https://github.com/{CARD_REPO}/actions/workflows/card-sync.yml>), and /update_stats loads it. "
                 "The pickles here are frozen since the cutover.")
 

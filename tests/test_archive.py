@@ -359,31 +359,8 @@ def test_backfill_on_the_live_pickles(live_copy):
 
 
 # ========================
-# /update_metadata, /pull
+# /pull
 # ========================
-def test_update_metadata_never_stubs_an_archived_card(monkeypatch):
-    """Its PNG may still be in the tree: show the archived record, refuse edits, make no stats entry."""
-    import commands.discord_edits as de
-    import commands.psd_analyzer as pa
-    import commands.query_card as qc
-    import commands.utils as utils
-    from types import SimpleNamespace
-    sent = []
-    db = _db([_card("The Morgue")], seen=["Other"])
-    db.prune_clean_cards(AT)
-    monkeypatch.setattr(pa, "stats_db", db)
-    monkeypatch.setattr(utils, "say", lambda inter, text, **kw: sent.append(text))
-    monkeypatch.setattr(de, "commit", lambda *a, **kw: sent.append("committed"))
-    monkeypatch.setattr(db, "save", lambda: sent.append("saved"))
-    monkeypatch.setattr(qc.card_repo, "git_files", {"the morgue.png": "MDW/The Morgue/The_Morgue.png"})
-    monkeypatch.setattr(qc.card_repo, "git_file_alias", {})
-    de.manual_metadata_entry(SimpleNamespace(), "The Morgue")
-    assert "is archived" in sent[0] and "Does a thing." in sent[0]
-    de.manual_metadata_entry(SimpleNamespace(), "The Morgue", hp=3)
-    assert "can't be edited" in sent[1] and len(sent) == 2 and db.stats == {}
-    assert db.old_stats["The Morgue"][0].archived and db.old_stats["The Morgue"][0].stats.hp != 3
-
-
 def _git(*args):
     import subprocess
     subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], check=True, capture_output=True)

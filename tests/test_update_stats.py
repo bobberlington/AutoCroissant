@@ -1212,13 +1212,12 @@ def test_a_failing_history_cleanup_saves_none_of_it(github, psds, monkeypatch, c
 
 def test_archived_cards_reach_no_reader(github, monkeypatch, capsys):
     """Every stats.pkl reader skips an archived card: the query dataframes and DSL, /query's card lookup, titles,
-    /list_orphans, /mass_replace, the exports and the problem reports. aliases.pkl keeps its aliases."""
+    /list_orphans, the exports and the problem reports. aliases.pkl keeps its aliases."""
     import commands.query_card as qc
     with open("aliases.pkl", "wb") as f:
         pickle.dump({"freezy": "the_freezer.png"}, f)
     aliases = open("aliases.pkl", "rb").read()
     _run()
-    freezer = _saved()[0]["The Freezer"]
     del github.files[FREEZER]
     problems, _ = _run(cards="the freezer, mini doomer")                    # a name lookup asked for too
     assert all("Freezer" not in p for p in problems) and set(pa.stats_db.archived()) == {"The Freezer"}
@@ -1241,10 +1240,6 @@ def test_archived_cards_reach_no_reader(github, monkeypatch, capsys):
     who = utils.make_simple_fake_interaction(1)
     utils.dispatch_queue.clear()
     pa.list_orphans(who)
-    import commands.discord_edits as de
-    monkeypatch.setattr(de, "commit", lambda subject, by, body, edits=None, authors=None: ("abc1234", {"authors": authors(None)}))
-    de.mass_replace_field(who, "author", freezer.author, "Somebody")
-    assert pa.stats_db.old_stats["The Freezer"][0].author == freezer.author
     for csv in (True, False):
         pa.export_stats_to_file(who, as_csv=csv)
     assert "Freezer" not in open("stats.csv").read() and "Freezer" not in open("stats.txt").read()
@@ -1264,7 +1259,7 @@ def test_set_repo_update_queues_no_emoji_sync(github, monkeypatch):
 
 
 def test_bake_lock_serialises_update_stats(github, capsys):
-    """update_stats waits for a running bake (card_runner.bake_lock, shared with /bake_cards) and says so."""
+    """update_stats waits while card_runner.bake_lock is held (a fonts refresh) and says so."""
     cr.bake_lock.acquire()
     try:
         worker = Thread(target=_run)
@@ -1275,7 +1270,7 @@ def test_bake_lock_serialises_update_stats(github, capsys):
         cr.bake_lock.release()
     worker.join(120)
     assert not worker.is_alive() and os.path.exists("stats.pkl")
-    assert "Waiting for the running card update, bake or font check to finish" in capsys.readouterr().out
+    assert "Waiting for the running card update or font check to finish" in capsys.readouterr().out
 
 
 def _details():

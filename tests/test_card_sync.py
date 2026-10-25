@@ -32,12 +32,14 @@ class FakeGitHub:
         self.calls: list = []
         self.runs: list = []                    # Card sync's runs, newest first
         self.states: dict = {}                  # run id -> the run dicts GET returns, one per look (the last repeats)
+        self.looks: defaultdict = defaultdict(int)  # (run or jobs, run id) -> looks so far (each kind walks the states)
         self.posts: list = []
         self.post_replies: list = []            # Reply per POST, in order
         self.on_post = None                     # called after each POST (a run appears)
         self.compare = {"ahead_by": 0, "files": []}
         self.runs_reply = None                  # a Reply for the run list instead of self.runs
-        self.jobs = {"jobs": [{"steps": [{"name": "Gate", "status": "completed"}, {"name": "Build", "status": "in_progress"}]}]}
+        self.jobs: dict = {}                    # run id -> the jobs lists GET returns, one per look (the last repeats);
+                                                # else a dispatched run's Card data job follows its states
 
     def get(self, url, headers=None, timeout=None, stream=False, **kw):
         headers = headers or {}
@@ -60,16 +62,27 @@ class FakeGitHub:
             self.calls.append(("runs", None))
             return self.runs_reply or Reply(200, body={"workflow_runs": self.runs})
         if url.endswith("/jobs"):
-            return Reply(200, body=self.jobs)
+            run_id = int(url.rsplit("/", 2)[1])
+            self.calls.append(("jobs", run_id))
+            if run_id in self.jobs:
+                return Reply(200, body={"jobs": self.look("jobs", run_id, self.jobs[run_id])})
+            if run_id in self.states:
+                return Reply(200, body={"jobs": [_job(cs.DATA_JOB, self.look("jobs", run_id, self.states[run_id]))]})
+            return Reply(200, body={"jobs": []})
         if "/actions/runs/" in url:
             run_id = int(url.rsplit("/", 1)[1])
             self.calls.append(("run", run_id))
-            states = self.states[run_id]
-            return Reply(200, body=states.pop(0) if len(states) > 1 else states[0])
+            return Reply(200, body=self.look("run", run_id, self.states[run_id]))
         if "/compare/" in url:
             self.calls.append(("compare", url.rsplit("/compare/", 1)[1]))
             return Reply(200, body=self.compare)
         raise AssertionError(f"unexpected GET {url}")
+
+    def look(self, kind: str, run_id: int, answers: list):
+        """The next of answers for this kind of look at the run (the last repeats)."""
+        n = self.looks[(kind, run_id)]
+        self.looks[(kind, run_id)] += 1
+        return answers[min(n, len(answers) - 1)]
 
     def post(self, url, json=None, headers=None, timeout=None):
         assert url.endswith("/actions/workflows/card-sync.yml/dispatches")
@@ -111,6 +124,15 @@ def _run(run_id, status="completed", conclusion="success", event="workflow_dispa
     return {"id": run_id, "status": status, "conclusion": conclusion if status == "completed" else None, "event": event,
             "display_title": title, "html_url": f"https://github.com/{REPO}/actions/runs/{run_id}",
             "actor": {"login": login}}
+
+
+def _job(name, state=None, status="completed", conclusion="success"):
+    """A run's job; from a run state (its status and conclusion), steps as GitHub lists them (none before it starts)."""
+    if state is not None:
+        status, conclusion = state["status"], state["conclusion"]
+    steps = [] if status in cs.WAITING or conclusion == "cancelled" else [
+        {"name": "Gate", "status": "completed"}, {"name": "Build", "status": "in_progress" if status == "in_progress" else "completed"}]
+    return {"name": name, "status": status, "conclusion": conclusion if status == "completed" else None, "steps": steps}
 
 
 @pytest.fixture
@@ -276,16 +298,26 @@ def test_sync_notes(github, tmp_path, monkeypatch):
                    pending={"stale": ["X.psd", "Y.psd"], "failed": [{"path": "Items/Bad_Card.psd", "blob": "b", "error": "e"}],
                             "full": None, "repin": []})
     github.compare = {"ahead_by": 2, "files": [{"filename": "site/index.html"}, {"filename": "Items/New.psd"}]}
-    github.runs = [_run(9, "in_progress"), _run(8, conclusion="failure", event="schedule")]
+    github.runs = [_run(9, "in_progress", event="push"), _run(7, conclusion="success", event="schedule"),
+                   _run(8, conclusion="failure", event="schedule")]
+    github.jobs = {9: [[_job(cs.DATA_JOB), _job("Quiet window", status="waiting"), _job(cs.MAIN_JOB, status="pending")]],
+                   7: [[_job(cs.DATA_JOB), _job(cs.MAIN_JOB, conclusion="skipped")]],     # the cron's data alone
+                   8: [[_job(cs.DATA_JOB), _job(cs.MAIN_JOB, conclusion="failure")]]}
     cs.sync(ME)
     text = _said()[0]
     assert "Re-parse in progress: 2 cards still to re-parse" in text
     assert "Could not read 1 PSD (Bad Card); its card keeps its last version" in text
     assert "the card sync under way picks them up (<https://github.com/MichaelJSr/TTSCardMaker/actions/runs/9>)" in text
-    assert "The last card sync failed: <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/8>" in text
+    assert "The last bake and save failed: <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/8>" in text
+    assert "card data build failed" not in text and github.kinds("jobs") == [9, 7, 8]
+    utils.dispatch_queue.clear()
+    github.jobs[9] = [[_job(cs.DATA_JOB, conclusion="failure"), _job(cs.MAIN_JOB, status="pending")]]
+    cs.sync(ME)
+    assert "The last card data build failed: <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/9>" in _said()[0]
     assert ("compare", "c0ffee0123456789...main") in github.calls
     utils.dispatch_queue.clear()
     github.runs = [_run(8, conclusion="success", event="schedule")]
+    github.jobs = {}                                                  # a run before the split: its conclusion
     github.compare = {"ahead_by": 2, "files": [{"filename": "site/index.html"},
                                                {"filename": "MDW/Fonts/stoogedings-src/x.svg"}]}   # no card input (the gate's)
     cs.sync(ME)
@@ -310,8 +342,8 @@ def test_update_stats_starts_no_card_sync(github, tmp_path):
     github.compare = {"ahead_by": 1, "files": [{"filename": "Items/New.psd"}]}
     github.runs = [_run(8, event="push")]
     cs.update(ME)
-    assert github.posts == [] and ("the next card sync picks them up (30 minutes after the first card push of a burst)"
-                                   in _said()[0])
+    assert github.posts == [] and ("the next card sync picks them up within minutes of the push (website edits are baked "
+                                   "into the PSDs 30 minutes after the first card push of a burst)" in _said()[0])
 
 
 def test_a_failed_sync_keeps_the_data(github, tmp_path, monkeypatch):
@@ -472,23 +504,19 @@ def test_cards_dispatch_follows_the_run_then_syncs(github, tmp_path):
     assert _edits() == [f"Card sync run <{run_url}>: waiting for its turn", f"Card sync run <{run_url}>: running: Build"]
     said = _said()
     assert said[0] == f"Card sync run started (re-parsing Shadow Duelist, 00 Table of Contents): <{run_url}>"
-    assert said[1] == f"Card sync run finished: <{run_url}>" and said[2].startswith("Card data loaded")
+    assert said[1] == f"Card sync run's card data finished: <{run_url}>" and said[2].startswith("Card data loaded")
     assert all(TOKEN not in s for s in said + _edits())
 
 
-@pytest.mark.parametrize("full", [False, True])
-def test_card_syncs_own_retry_is_followed(github, tmp_path, full):
-    """Main moved during the run: it ends green with its data dropped and dispatches its retry, which is followed."""
+def test_card_syncs_own_retry_is_not_followed(github, tmp_path):
+    """Main moved during the run's bake: its retry redoes only the bake and the save; the run's data stands."""
     github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
     _dispatched_run(github, 41, _run(41, "in_progress"), _run(41))
     retry = dict(login=cs.BOT_LOGIN, title=cs.RETRY_NAME)
     github.runs = [_run(42, "queued", **retry), _run(41)]
-    github.states[42] = [_run(42, "in_progress", **retry), _run(42, **retry)]
-    cs.update(ME, force_update=full, cards="" if full else "A")
-    said, url = _said(), "https://github.com/MichaelJSr/TTSCardMaker/actions/runs/"
-    assert said[1] == (f"The card repo changed during run <{url}41>, so Card sync dropped its data and started again: "
-                       f"<{url}42>" + (" (without the full re-parse: ask again once it is done)." if full else "."))
-    assert said[2] == f"Card sync run finished: <{url}42>" and len(github.posts) == 1
+    cs.update(ME, cards="A")
+    assert _said()[1] == "Card sync run's card data finished: <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/41>"
+    assert len(github.posts) == 1
 
 
 def test_a_card_guards_dispatch_is_not_a_retry(github, tmp_path):
@@ -497,7 +525,7 @@ def test_a_card_guards_dispatch_is_not_a_retry(github, tmp_path):
     _dispatched_run(github, 41, _run(41, "in_progress"), _run(41))
     github.runs = [_run(42, "queued", login=cs.BOT_LOGIN), _run(41)]
     cs.update(ME, force_update=True)
-    assert _said()[1] == "Card sync run finished: <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/41>"
+    assert _said()[1] == "Card sync run's card data finished: <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/41>"
 
 
 def test_a_reminders_run_posts_no_progress_edits(github, tmp_path):
@@ -506,7 +534,7 @@ def test_a_reminders_run_posts_no_progress_edits(github, tmp_path):
     github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
     _dispatched_run(github, 43, _run(43, "queued"), _run(43, "in_progress"), _run(43))
     cs.update(SimpleNamespace(user=_ReminderUser(1, "owner")), cards="A")
-    assert _edits() == [] and "Card sync run finished: <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/43>" in _said()
+    assert _edits() == [] and "Card sync run's card data finished: <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/43>" in _said()
 
 
 def test_full_dispatch_without_run_details_finds_its_run(github, tmp_path):
@@ -519,7 +547,7 @@ def test_full_dispatch_without_run_details_finds_its_run(github, tmp_path):
     cs.update(ME, force_update=True)
     assert [p.get("return_run_details") for p in github.posts] == [True, None]
     assert github.posts[1]["inputs"] == {"dry_run": "false", "full": "true"}
-    assert "Card sync run ended (failure): <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/50>; the bot keeps" in _said()[1]
+    assert "Card sync run's card data ended (failure): <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/50>; the bot keeps" in _said()[1]
 
 
 def test_a_run_replaced_by_a_scheduled_one_is_dispatched_again(github, tmp_path):
@@ -529,8 +557,32 @@ def test_a_run_replaced_by_a_scheduled_one_is_dispatched_again(github, tmp_path)
     github.runs = [_run(61, "pending", event="schedule"), _run(60, conclusion="cancelled")]
     cs.update(ME, cards="A")
     assert len(github.posts) == 2
-    assert "replaced by a scheduled card sync before it started; starting it again." in " ".join(_said())
-    assert "Card sync run finished: <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/62>" in _said()
+    assert "replaced by a newer card sync's before it started; starting it again." in " ".join(_said())
+    assert "Card sync run's card data finished: <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/62>" in _said()
+
+
+def test_the_reply_comes_when_the_card_data_lands_not_the_bake(github, tmp_path):
+    """The run's Card data job ended; its Bake and save still runs: the reply and the sync come now."""
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
+    _dispatched_run(github, 44, _run(44, "in_progress"))
+    github.jobs[44] = [[_job(cs.DATA_JOB, status="in_progress"), _job(cs.MAIN_JOB, status="in_progress")],
+                       [_job(cs.DATA_JOB), _job(cs.MAIN_JOB, status="in_progress")]]
+    cs.update(ME, cards="A")
+    assert _said()[1] == "Card sync run's card data finished: <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/44>"
+    assert _said()[2].startswith("Card data loaded") and github.kinds("run") == [44]       # the dispatch's look only
+
+
+def test_a_data_job_replaced_while_the_bake_runs_is_dispatched_again(github, tmp_path):
+    """The run is in progress (its Bake and save started at once), its Card data job was replaced by a push's: again."""
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
+    _dispatched_run(github, 64, _run(64, "in_progress"))
+    github.jobs[64] = [[_job(cs.DATA_JOB, status="pending"), _job(cs.MAIN_JOB, status="in_progress")],
+                       [_job(cs.DATA_JOB, conclusion="cancelled"), _job(cs.MAIN_JOB, status="in_progress")]]
+    _dispatched_run(github, 66, _run(66))
+    github.runs = [_run(65, "waiting", event="push"), _run(64, "in_progress")]
+    cs.update(ME, cards="A")
+    assert len(github.posts) == 2 and "Card sync run's card data finished: <https://github.com/MichaelJSr/TTSCardMaker/" \
+        "actions/runs/66>" in _said()
 
 
 @pytest.mark.parametrize("newer, words", [
@@ -762,24 +814,6 @@ def test_pull_conflict_keeps_the_pickles_only_before_the_cutover(monkeypatch, sw
     else:
         assert log == [("--ours", "stats.pkl"), ("--theirs", "main.py"),
                        ("commit", "AUTO-RESOLVE: Merge conflict resolved (kept local pickles, accepted remote code)"), "rescue"]
-
-
-def test_discord_edits_save_the_pickles_only_before_the_cutover(monkeypatch):
-    import commands.discord_edits as de
-    import commands.query_card as qc
-    saves = []
-    monkeypatch.setattr(cm.stats_db, "stats", {"A": _card("A")})
-    monkeypatch.setattr(cm.stats_db, "save", lambda: saves.append(1))
-    monkeypatch.setattr(qc.card_repo, "prep_dataframes", lambda: None)
-    monkeypatch.setattr(qc.card_repo, "git_files", {})
-    for key in ("_edits", "_edit_names", "_moved_hint"):              # refresh keeps the parsed file there
-        monkeypatch.setattr(qc.card_repo, key, getattr(qc.card_repo, key))
-    edits = json.dumps({"cards": {"A": {"note": "n1"}}})
-    monkeypatch.setattr(global_config, "CARD_SYNC", False)
-    assert de.refresh(["A"], edits) == ["A"] and saves == [1]
-    monkeypatch.setattr(global_config, "CARD_SYNC", True)
-    assert de.refresh(["A"], json.dumps({"cards": {"A": {"note": "n2"}}})) == ["A"] and saves == [1]
-    assert cm.stats_db.stats["A"].note == "n2"
 
 
 def test_help_follows_the_switch(monkeypatch):

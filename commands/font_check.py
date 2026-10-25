@@ -19,8 +19,8 @@ font_names.json lacks. A refresh lists the subtree (git/trees/<branch>:MDW/Fonts
 nothing changed), or takes the caller's tree, and downloads only the blobs whose sha it doesn't hold (sha1-verified); a
 renamed file is copied, a gone one deleted. A failed listing keeps the cache; it counts as complete only if the refresh
 that wrote it finished, for the same repo (the manifest is marked incomplete before the first file is rewritten, so a
-crash mid-refresh never leaves a complete one). On the bot, bake_lock keeps /fonts from refreshing it under a bake (see
-repo_fonts).
+crash mid-refresh never leaves a complete one). On the bot, bake_lock keeps /fonts from refreshing it under
+/update_stats (see repo_fonts).
 
 A notification tool, never a gate: findings exit 0, nothing is reverted or rejected. --repo mode reads the PSDs the push
 changed (before..after through the compare API; --whole-tree: every card PSD of the tree at after) by blob sha, each
@@ -906,7 +906,7 @@ def repo_fonts(repository: str = CARD_REPO, cache_path: str = CACHE_JSON, batch:
         batch: PSD downloads per call
         details_path: The details file whose fonts seed the cache
         fonts_cache: The fonts cache ("": FONTS_CACHE beside cache_path)
-        fonts_lock: Held (never waited for) around a fonts cache refresh; the bot's bake_lock, so a bake's fonts stay put
+        fonts_lock: Held (never waited for) around a fonts cache refresh; the bot's bake_lock (never beside /update_stats)
 
     Returns:
         Report, with remaining = the PSDs not read yet

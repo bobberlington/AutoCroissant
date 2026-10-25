@@ -16,19 +16,12 @@ DENIED = "You do not have permission."
 # command -> (main.py worker name, callback args, reminder command text)
 GATED = {
     "purge": ("purge", (None,), "/purge num:5"),
-    "update_metadata": ("manual_metadata_entry", ("Mini Doomer",), "/update_metadata query:Mini_Doomer"),
-    "mass_replace": ("mass_replace_field", (SimpleNamespace(value="author"), "a", "b"),
-                     "/mass_replace field:author old_value:a new_value:b"),
-    "alias": ("manage_alias", (), "/alias"),
     "set_repo": ("set_repository", ("a/b",), "/set_repo new_repo:a/b"),
     "delete_song": ("delete_song", ("x",), "/delete_song song_name:x"),
     "delete_all_music": ("delete_all_music", (), "/delete_all_music"),
 }
 HELP_KEYS = {
     "purge": "/purge [user] [num] [bulk]:",
-    "update_metadata": next(k for k in help_module.stats_commands if k.startswith("/update_metadata ")),
-    "mass_replace": "/mass_replace <field> <old_value> <new_value>:",
-    "alias": "/alias [alias] [card]:",
     "set_repo": "/set_repo [new_repo]:",
     "delete_song": "/delete_song <song_name>:",
     "delete_all_music": "/delete_all_music:",
