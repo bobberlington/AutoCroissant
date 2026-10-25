@@ -15,7 +15,6 @@ from commands.analytics import (
     bind_reminder_client,
     check_reminder,
     init_reminder,
-    list_reminders,
     remove_reminder,
     set_reminder,
 )
@@ -61,6 +60,7 @@ from commands.psd_analyzer import (
     view_old_metadata,
     update_stats,
 )
+from commands.reminder_panel import open_panel
 from commands.query_card import (
     init_query,
     query_ability,
@@ -255,22 +255,15 @@ async def slash_set_reminder(interaction: Interaction,
     await set_reminder(interaction, msg, when, offset, frequency, command)
 
 
-list_reminders = to_thread(list_reminders)
-@tree.command(name="list_reminders", description="List all reminders in this channel/server.")
-@app_commands.describe(
-    all="List all reminders in the server instead of just this channel. Default is false.",
-    hidden="Should the list only be sent to you? Default is false.",
-)
-async def slash_list_reminders(interaction: Interaction,
-                               all: Optional[bool] = False,
-                               hidden: Optional[bool] = False):
-    await list_reminders(interaction, all, hidden)
+@tree.command(name="reminders", description="Browse reminders: reschedule, turn off/on, delete or add one (only you see it).")
+async def slash_reminders(interaction: Interaction):
+    await open_panel(interaction)                       # answers directly: a View and modals need the live interaction
 
 
 remove_reminder = to_thread(remove_reminder)
 @tree.command(name="remove_reminder", description="Remove a reminder by its ID (admins, or the reminder's creator).")
 @app_commands.describe(
-    reminder_id="The 8-character ID shown by /list_reminders.",
+    reminder_id="The 8-character ID shown by /reminders.",
 )
 async def slash_remove_reminder(interaction: Interaction,
                                 reminder_id: str):
