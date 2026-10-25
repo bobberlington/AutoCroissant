@@ -76,7 +76,8 @@ def test_site_builds_on_what_it_reads_and_deploys_only_a_change():
 def test_site_image_budget_keeps_a_partial_cache():
     """A full AVIF re-encode may not fit one run: the build stops making images at IMAGE_BUDGET and fails, and the images
     it made are saved under a key the next run's restore-keys find (actions/cache saves only after a passing job), after
-    any failure once the build ran (a budget stop, failed downloads, an error, the step's timeout, a later step)."""
+    any failure once the build ran (a budget stop, failed downloads, an error, the step's timeout, a later step), when the
+    cache's files changed (a build that stopped before the images saves no copy)."""
     doc = _load("site.yml")
     steps = doc["jobs"]["build"]["steps"]
     build = next(s for s in steps if "build_site.py" in s.get("run", ""))
@@ -86,8 +87,13 @@ def test_site_image_budget_keeps_a_partial_cache():
     assert build["id"] == "build" and 0 < budget <= (doc["jobs"]["build"]["timeout-minutes"] - 10) * 60
     cache = next(s for s in steps if s.get("uses", "").startswith("actions/cache@"))
     save = next(s for s in steps if s.get("uses", "").startswith("actions/cache/save@") and s["with"]["path"] == "site/.cache")
-    assert save["if"] == "failure() && (steps.build.outcome == 'failure' || steps.build.outcome == 'success')"
-    assert steps[-1] is save                                   # last: a later step's failure is saved too
+    before = next(s for s in steps if s.get("id") == "cache-before")
+    after = next(s for s in steps if s.get("id") == "cache-after")
+    assert after["if"] == "failure() && (steps.build.outcome == 'failure' || steps.build.outcome == 'success')"
+    assert "steps.cache-after.outputs.names != steps.cache-before.outputs.names" in save["if"]   # no copy of an untouched cache
+    assert before["run"] == after["run"] and "site/.cache" in after["run"]
+    assert steps.index(cache) < steps.index(before) < steps.index(build) < steps.index(after)
+    assert steps[-2:] == [after, save]                         # last: a later step's failure is saved too
     assert budget < build["timeout-minutes"] * 60 < doc["jobs"]["build"]["timeout-minutes"] * 60   # the step stops first: the save runs
     prefix = cache["with"]["restore-keys"]
     assert save["with"]["key"].startswith(prefix) and cache["with"]["key"].startswith(prefix) and "github.run_id" in save["with"]["key"]

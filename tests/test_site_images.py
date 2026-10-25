@@ -42,6 +42,28 @@ def test_card_images_are_avif_made_once(bs, repo, tmp_path, monkeypatch):  # noq
     assert {p.name: p.stat().st_mtime_ns for p in cache.iterdir()} == before
 
 
+def test_a_downloaded_png_must_be_its_blob(bs, tmp_path, monkeypatch):  # noqa: F811
+    """A PNG not in the checkout is read at the build's commit (raw main is a CDN copy minutes old), then main, and
+    must hash to the blob the thumbs are named by: never another version's picture under its name."""
+    import hashlib
+    old, new = b"old picture", b"new picture"
+    blob = hashlib.sha1(b"blob %d\0" % len(new) + new).hexdigest()
+    assert bs.blob_sha(new) == blob
+    monkeypatch.setattr(bs, "REPO", str(tmp_path))
+    monkeypatch.setattr(bs, "_card_raw", "https://raw.test/abc/")
+    got = []
+    def fetch(url, **_):
+        got.append(url)
+        return served["main" if url.startswith(bs.RAW) else "abc"]
+    monkeypatch.setattr(bs, "fetch", fetch)
+    served = {"abc": new, "main": old}
+    assert bs.image_bytes("A/B c.png", blob) == new and got == ["https://raw.test/abc/A/B%20c.png"]
+    served = {"abc": old, "main": old}
+    with pytest.raises(ValueError, match="is not blob"):
+        bs.image_bytes("A/B c.png", blob)
+    assert got[1:] == ["https://raw.test/abc/A/B%20c.png", bs.RAW + "A/B%20c.png"]
+
+
 def test_a_build_over_the_image_budget_leaves_the_rest(bs, repo, tmp_path, monkeypatch):  # noqa: F811
     """Over IMAGE_BUDGET only the images not cached yet wait: the build fails (site.yml then saves the cache), and the
     next run makes just those."""
@@ -247,6 +269,10 @@ store.set("pictures-0", new Map([["old", 1]])); store.set("other-app", new Map()
 store.set("pictures-1", new Map([[T + "ffffffffffffffff-240-a1a1a1.avif", { body: "stale" }], [T + "aaaaaaaaaaaaaaaa-240-a1a1a1.avif", { body: "kept" }],
   [T + "aaaaaaaaaaaaaaaa-240-d4d4d4.avif", { body: "old settings" }]]));
 on.install(event({}));
+globalThis.URLPattern ??= class { constructor(init) { this.pathname = init.pathname; } };
+self.URLPattern = URLPattern;
+const routed = []; on.install(event({ addRoutes: async r => { routed.push(r); } }));
+out.routes = JSON.parse(JSON.stringify(routed, (k, v) => (v instanceof URLPattern ? v.pathname : v)));
 const a = event({}); on.activate(a); await Promise.all(a.waits);
 out.activated = { caches: [...store.keys()].sort(), entries: [...store.get("pictures-1").keys()], skipped: !!self.skipped, claimed: !!self.claimed };
 out.first = await get(T + "bbbbbbbbbbbbbbbb-720-c3c3c3.avif");
@@ -277,7 +303,8 @@ def test_the_worker_keeps_versioned_pictures_and_nothing_else(tmp_path):
     """Cache first for thumbs/<blob>-<w>-<tag>.avif (the build's tags) and icons/<name>.<stamp>[.<variant>].webp the site
     uses; pages, data, scripts, sw.js, unstamped, query-string or foreign URLs, other settings tags, POST and Range
     requests never reach it. Activation deletes older picture caches and pictures no longer used (never another cache);
-    seen pictures are put in; no storage means the network."""
+    seen pictures are put in; no storage means the network. Where the browser routes statically, everything outside
+    thumbs/ and icons/ goes to the network without starting the worker."""
     if not shutil.which("node"):
         pytest.skip("no node")
     in_use = ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb", "eeeeeeeeeeeeeeee", "dddddddddddddddd", "0123456789"]
@@ -296,6 +323,8 @@ def test_the_worker_keeps_versioned_pictures_and_nothing_else(tmp_path):
     assert t + "eeeeeeeeeeeeeeee-240-a1a1a1.avif" in out["seen"]["cached"] and t + "cccccccccccccccc-240-a1a1a1.avif" not in out["seen"]["cached"]
     assert t + "eeeeeeeeeeeeeeee-360-d4d4d4.avif" not in out["seen"]["cached"]
     assert out["noStorage"] == f"net:{t}eeeeeeeeeeeeeeee-360-b2b2b2.avif"
+    pictures = [{"urlPattern": f"/site/{d}/*"} for d in ("thumbs", "icons")]   # the rest skips the worker
+    assert out["routes"] == [{"condition": {"not": {"or": pictures}}, "source": "network"}]
 
 
 def test_the_site_asks_for_avif_and_starts_the_worker():
