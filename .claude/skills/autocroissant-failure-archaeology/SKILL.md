@@ -889,7 +889,7 @@ Written 2026-07-11 against HEAD = 284d13c ("PICKLE", 2026-06-20). Extended 2026-
 | Cython include/exclude + directives | `sed -n '9,45p' setup.py`; straggler check: `grep -rn '\[-1\]' commands/*.py` (expect empty) |
 | Line numbers cited (drift-prone) | since the 2026-10-20 split: `grep -n 'def update_stats' commands/repo_traverser.py` → 59 (since 2026-10-22); `grep -n '_gap_pattern = \|MISSPELT_CARD_TYPES = \|ABILITY_EXCLUSIONS: ' commands/psd_parser.py` → 318 / 23 / 894 (1827 / 686 / 50 / 1262 in psd_analyzer.py before the split) (`relpath(full_path` and `expanduser(LOCAL_DIR_LOC)` left with local mode; the 2026-07-11 values quoted in Entries 1-8 were relpath-line 1002 / 1173 / expanduser 1207 / 348 / 42 / 649) |
 | Commit dates quoted | `git log --format='%h %ad %s' --date=format:'%Y-%m-%d %H:%M' --no-walk <hash>...` |
-| Entries 10.29-10.30 present | `grep -n "^def save_pickle\|^_stats_lock\|^_old_stats_lock" commands/card_models.py` (20, 16, 17); `grep -n "^_alias_lock" commands/query_card.py` (33; `RESULTS_PER_MESSAGE` gone since 2026-10-23); `grep -n "tasks.loop" main.py` (926 at 1 s; 932, 945, 957 at 0.1 s) |
+| Entries 10.29-10.30 present | `grep -n "^def save_pickle\|^_stats_lock\|^_old_stats_lock" commands/card_models.py` (20, 16, 17); `grep -n "^_alias_lock" commands/query_card.py` (33; `RESULTS_PER_MESSAGE` gone since 2026-10-23); `grep -n "tasks.loop" main.py` (806 at 1 s; 823, 847, 884 at seconds=0, paced by the wake-up wait) |
 
 2026-10-20 (later): the optimization-pass reports moved from `~/Documents/ac-optimization/` to `docs/Finished/optimization-pass-2026-10-20/`
 (`docs/Finished/optimization-pass-2026-10-20/`); its scripts to `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/`.
