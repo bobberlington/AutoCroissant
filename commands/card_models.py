@@ -15,7 +15,7 @@ from typing import Optional
 
 from global_config import STATS_PKL, OLD_STATS_PKL
 
-_stats_lock = Lock()                                     # one writer per pickle: /update_stats, /mass_replace...
+_stats_lock = Lock()                                     # one writer per pickle
 _old_stats_lock = Lock()
 
 
@@ -106,7 +106,7 @@ class CardInfo:
     duplicate_of: Optional[str] = None        # original card (same PSD, another PNG)
     alt_names: Optional[list] = None          # unused since 2026-10-25 (hidden layers name nothing); older data has it
     blob_sha: Optional[str] = None            # git blob of the PSD it was parsed from
-    subseries: Optional[str] = None           # from Card Edits.json or /update_metadata, never the PSD
+    subseries: Optional[str] = None           # from Card Edits.json, never the PSD
     parser_version: Optional[int] = None      # psd_parser.PARSER_VERSION that parsed it; None in older pickles
     archived: Optional[dict] = None           # set when its PSD left the card repo (old_stats only)
     version = None                            # card_history's {from, to, cause...}; no field: parsed cards pickle as before

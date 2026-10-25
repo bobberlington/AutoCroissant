@@ -4,7 +4,6 @@ from json import dumps, loads
 from os import environ
 from subprocess import run
 from sys import executable
-from types import SimpleNamespace
 
 import pytest
 
@@ -170,8 +169,8 @@ def test_update_writes_commit_subject(save, repo, tmp_path, monkeypatch):
     names = Names()
     names.source, names.site = "test", {}
     monkeypatch.setattr(tts, "_Repo", lambda errors: repo)
-    monkeypatch.setattr(tts, "_Names", lambda repo, errors, edits=None, stats_path="": names)
-    monkeypatch.setattr(tts, "_load_rules", lambda repo, errors, given=None: (RULES, "test"))
+    monkeypatch.setattr(tts, "_Names", lambda repo, errors, stats_path="": names)
+    monkeypatch.setattr(tts, "_load_rules", lambda repo, errors: (RULES, "test"))
     path = tmp_path / "save.json"
     path.write_text(tts._dump(save), encoding="utf-8")
     text, report = tts._update(str(path))
@@ -234,25 +233,6 @@ def test_names_read_card_edits_from_site(repo, tmp_path):
     assert names.known(A) == "Alpha on the site" and names.of(B) == "B"
     repo.checkout = str(tmp_path / "empty")
     assert tts._Names(repo, []).known(A) is None
-
-
-def test_files_at_lists_the_edits_path(monkeypatch):
-    """update_repo_save asks main's tree for every EDITS_PATHS entry and reads the first one found (none without site/)."""
-    blob = lambda name, sha: {"path": name, "type": "blob", "mode": "100644", "sha": sha}
-    sub = lambda name, sha: {"path": name, "type": "tree", "mode": "040000", "sha": sha}
-    trees = {"r1": [sub("TTS", "t1"), sub("site", "s1")], "r2": [sub("TTS", "t1")],
-             "t1": [blob("decks.json", "d"), blob("Impossibility Simulator.json", "v")],
-             "s1": [blob("Card Edits.json", "e"), blob("index.html", "h")]}
-    monkeypatch.setattr(tts, "_api", lambda method, path, **kw: SimpleNamespace(json=lambda: {"tree": trees[path.rsplit("/", 1)[1]]}))
-    monkeypatch.setattr(tts, "_objects", {})
-    monkeypatch.setattr(tts, "_used", set())
-    wanted = (tts.TTS_SAVE_PATH, tts.RULES_PATH) + tts.EDITS_PATHS
-    files = tts._files_at("r1", wanted)
-    assert {p: s for p, (_, s) in files.items()} == {tts.TTS_SAVE_PATH: "v", tts.RULES_PATH: "d", "site/Card Edits.json": "e"}
-    assert next(p for p in tts.EDITS_PATHS if p in files) == "site/Card Edits.json"
-    files = tts._files_at("r2", wanted)
-    assert {p: s for p, (_, s) in files.items()} == {tts.TTS_SAVE_PATH: "v", tts.RULES_PATH: "d"}
-    assert next((p for p in tts.EDITS_PATHS if p in files), None) is None
 
 
 # ========================
@@ -411,11 +391,11 @@ def test_update_leaves_team_fields(save, repo, tmp_path, monkeypatch):
     names = Names()
     names.source, names.site = "test", {}
     monkeypatch.setattr(tts, "_Repo", lambda errors: repo)
-    monkeypatch.setattr(tts, "_Names", lambda repo, errors, edits=None, stats_path="": names)
-    monkeypatch.setattr(tts, "_load_rules", lambda repo, errors, given=None: (RULES, "test"))
+    monkeypatch.setattr(tts, "_Names", lambda repo, errors, stats_path="": names)
+    monkeypatch.setattr(tts, "_load_rules", lambda repo, errors: (RULES, "test"))
     path = tmp_path / "save.json"
     path.write_text(tts._dump(save), encoding="utf-8")
-    text, report = tts._update(str(path), extras=False)
+    text, report = tts._update(str(path))
     after = loads(path.read_text(encoding="utf-8"))["ObjectStates"][0]["ContainedObjects"][0]
     assert report.changed and {k: after.get(k) for k in tts.TEAM_FIELDS} == kept
     assert "role tags" not in text

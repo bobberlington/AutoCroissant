@@ -62,7 +62,7 @@ from commands.git_commit import (API_TIMEOUT, COMMIT_TRIES, GIT_TIMEOUT, NO_LAZY
                                  commit_info, git, local_commit, plural, ref_head)
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_edit import Refusal, Refused
-from global_config import (AUTHORS_PATHS, CARD_BRANCH, CARD_REPO, EDITS_PATHS, FONT_DIRS_ENV, ICON_MANIFEST_PATH, LOCAL_DIR_LOC,
+from global_config import (CARD_BRANCH, CARD_REPO, EDITS_PATHS, FONT_DIRS_ENV, ICON_MANIFEST_PATH, LOCAL_DIR_LOC,
                            STARS_DIR, TYPES_DIR)
 
 # ========================
@@ -83,7 +83,7 @@ WORK_ENV = "RUNNER_TEMP"                        # the Action's temp dir; the wor
 WORK_NAME = "card-bake"
 FIELDS = frozenset(CardEdits.TYPES)            # ORDER (edit.js FIELDS) and PUNCTUATION live in card_edits
 KIND = CardEdits.KIND
-DISCORD = "discord:"                            # a Discord edit's _by (discord_edits): credited in no bake trailer
+DISCORD = "discord:"                            # a Discord edit's _by (retired 2026-10-25): credited in no bake trailer
 
 
 # ========================
@@ -150,7 +150,6 @@ class Share:
     rewrite: Callable[[str], Optional[str]]     # edits file text -> new text, None when unchanged; raises Refused to stay out
     out: Optional[Refusal] = None               # why the last attempt left it out
     included: bool = False                      # in the last attempt's commit
-    authors: Optional[Callable] = None          # Card Authors.txt text (None when absent) -> new text, None when unchanged (a Discord edit)
 
 
 class Snapshot:
@@ -436,9 +435,8 @@ def land(repository: str, shares: list, message: Callable[[list], str], dry_run:
     """
     Step 10 for the whole run: one commit on the branch head H' with every share that still holds there. Re-read H'
     and its tree; a share whose paths no longer hold the blobs it read stays out (head-moved), as does one whose rewrite
-    raises (edit-changed); the others' rewrites apply in turn to the edits file at H', and their `authors` rewrites
-    to the authors file at H' (read only when a share has one). On 409/422 or a rejected push, all again from the new
-    H', up to COMMIT_TRIES times.
+    raises (edit-changed); the others' rewrites apply in turn to the edits file at H'. On 409/422 or a rejected push,
+    all again from the new H', up to COMMIT_TRIES times.
 
     Args:
         shares: [Share]; each attempt sets its `out` and `included`
@@ -460,10 +458,6 @@ def land(repository: str, shares: list, message: Callable[[list], str], dry_run:
             raise Refused("head-moved", f"no {EDITS_PATHS[0]} on {CARD_BRANCH} `{head[:8]}`")
         text = tip.fetch(tree[edits_path][1]).decode("utf-8")
         new_text, files = text, {}
-        authors_path = next((p for p in AUTHORS_PATHS if p in tree), AUTHORS_PATHS[0])
-        authors = new_authors = None
-        if any(share.authors is not None for share in shares) and authors_path in tree:
-            authors = new_authors = tip.fetch(tree[authors_path][1]).decode("utf-8")
         for share in shares:
             share.out, share.included = None, False
             moved = [path for path, sha in share.expect.items() if tree.get(path, ("", ""))[1] != sha]
@@ -472,14 +466,12 @@ def land(repository: str, shares: list, message: Callable[[list], str], dry_run:
                 continue
             try:
                 rewritten = share.rewrite(new_text)
-                authored = share.authors(new_authors) if share.authors is not None else None
             except Refused as refused:
                 share.out = refused.refusal
                 continue
-            if rewritten is None and authored is None and not share.files:
+            if rewritten is None and not share.files:
                 continue                        # nothing of its own to write (an unchanged verdict)
             new_text = new_text if rewritten is None else rewritten
-            new_authors = new_authors if authored is None else authored
             files.update(share.files)
             share.included = True
         included = [share for share in shares if share.included]
@@ -491,8 +483,7 @@ def land(repository: str, shares: list, message: Callable[[list], str], dry_run:
                 fh.write(new_text)
         if dry_run:
             return None
-        payload = {**files, **({edits_path: new_text.encode("utf-8")} if new_text != text else {}),
-                   **({authors_path: new_authors.encode("utf-8")} if new_authors is not None and new_authors != authors else {})}
+        payload = {**files, **({edits_path: new_text.encode("utf-8")} if new_text != text else {})}
         if not payload:
             return None                         # the rewrites gave back the files as they are
         if local is not None:

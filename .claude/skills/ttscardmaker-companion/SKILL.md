@@ -598,7 +598,7 @@ commits the save in its one main commit M ("Card sync: … TTS save updated"); c
 What follows is how tts-save.yml ran until then: the team fields, deck rules, the save's Lua and the checks still hold.
 
 Keeps `TTS/Impossibility Simulator.json` current with AutoCroissant's updater `commands/tts_save.py` (what it
-changes, and the bot's manual `/update_tts_save`: autocroissant-run-and-operate §7 "TTS save"). Until 2026-10-20 the
+changes: autocroissant-run-and-operate §7 "TTS save"; the bot's manual `/update_tts_save` was retired 2026-10-25). Until 2026-10-20 the
 bot ran the updater itself after `/update_stats`; this Action replaced that.
 
 - **Team fields:** a card's Description, GMNotes, Memo, Tags and scripts (LuaScript, LuaScriptState, XmlUI) are
@@ -1127,3 +1127,5 @@ quiet window an environment (AutoCroissant docs/Campaigns/PUSH_GUARDS.md section
 2026-10-24 (BUG 2 phase 6, AutoCroissant work/fx-rebuild): §1.8's bake bullet and §2's Website edits bullet say content problems bake, told; what the site lacks to show a baked verdict's notes.
 
 2026-10-24 (pictures): §2.4 Card images (AVIF, IMAGE_BUDGET, no service worker), §2.1 cache-busting (deploy gate back, icon stamps) and the link-preview row, against TTSCardMaker branch work/site-img.
+
+2026-10-25 (retire): /update_tts_save retired (branch archive/discord-edits).

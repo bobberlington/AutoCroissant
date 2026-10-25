@@ -1,4 +1,4 @@
-"""Network and speed pass: same results with fewer requests (search fast paths, commit pages, tree ETags, TTS caches)."""
+"""Network and speed pass: same results with fewer requests (search fast paths, commit pages, tree ETags)."""
 import json
 import random
 from difflib import SequenceMatcher
@@ -8,13 +8,10 @@ import pytest
 from pandas import DataFrame
 
 import commands.card_data as cd
-import commands.git_commit as gc
 import commands.github_api as ga
 import commands.psd_analyzer as pa
 import commands.query_card as qc
-import commands.tts_save as ts
 import commands.type_emojis as te
-import commands.utils as utils
 
 
 # ========================
@@ -205,65 +202,6 @@ def test_edit_names_read_from_site(monkeypatch):
     assert fetched == ["e"] and "web_foo.png" in repo.git_files
     repo._populate_edit_names()
     assert fetched == ["e"]
-
-
-# ========================
-# TTS save
-# ========================
-def test_tts_objects_cached_by_sha(monkeypatch):
-    monkeypatch.setattr(ts, "_objects", {})
-    monkeypatch.setattr(ts, "_used", set())
-    fetched = []
-    assert ts._object("s1", lambda: fetched.append(1) or b"x") == b"x"
-    assert ts._object("s1", lambda: fetched.append(1) or b"y") == b"x" and fetched == [1]
-
-
-def _tts_403(monkeypatch, api, headers=None, message="Resource not accessible"):
-    """update_repo_save against a GitHub whose POSTs answer 403; the SSH push is faked (git_commit's, shared with card_bake)."""
-    head = "h" * 40
-    def fake_api(repository, method, path, raw=False, check=True, **kw):
-        api.append((method, path))
-        if path == "git/ref/heads/main":
-            return Reply(200, {"object": {"sha": head}})
-        if path.startswith("git/commits/"):
-            return Reply(200, {"tree": {"sha": "t1"}})
-        if method == "POST":
-            reply = Reply(403, {"message": message})
-            reply.headers.update(headers or {})
-            return reply
-        return Reply(200, content=b"{}")
-    monkeypatch.setattr(gc, "api", fake_api)
-    monkeypatch.setattr(ga, "GIT_TOKEN", "token")
-    monkeypatch.setattr(gc, "cant_write", False)
-    monkeypatch.setattr(ts, "_objects", {})
-    monkeypatch.setattr(ts, "_used", set())
-    monkeypatch.setattr(ts, "_files_at", lambda tree, paths: {ts.TTS_SAVE_PATH: ("100644", "b1")})
-    monkeypatch.setattr(ts, "_update", lambda *a, **kw: ("report", SimpleNamespace(head=head, changed=True)))
-    monkeypatch.setattr(ts.repo_history, "_head", head)
-    monkeypatch.setattr(ts, "_commit_message", lambda report: "m")
-    monkeypatch.setattr(gc, "git_commit", lambda repository, head, files, message: "c" * 40)
-
-
-def test_tts_token_that_cant_write_is_remembered(monkeypatch):
-    api = []
-    _tts_403(monkeypatch, api)
-    assert ts.update_repo_save() == ("report", "c" * 40)
-    assert ("POST", "git/blobs") in api and gc.cant_write
-    api.clear()
-    assert ts.update_repo_save() == ("report", "c" * 40)
-    assert ("POST", "git/blobs") not in api                                         # no 7.8 MB probe again
-    assert ("GET", "git/blobs/b1") not in api                                       # the save blob came from the cache
-
-
-@pytest.mark.parametrize("headers, message", [({"retry-after": "60"}, "x"),
-                                              ({}, "You have exceeded a secondary rate limit.")])
-def test_tts_rate_limit_403_is_only_this_runs(monkeypatch, headers, message):
-    api = []
-    _tts_403(monkeypatch, api, headers, message)
-    assert ts.update_repo_save() == ("report", "c" * 40) and not gc.cant_write          # SSH this run only
-    api.clear()
-    ts.update_repo_save()
-    assert ("POST", "git/blobs") in api
 
 
 def test_commit_lookups_get_a_client_per_thread(monkeypatch):

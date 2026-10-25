@@ -1,5 +1,5 @@
 """
-One commit on the card repo's branch, shared by the edit pipeline (card_bake) and the TTS save updater (tts_save):
+One commit on the card repo's branch, shared by the edit pipeline (card_bake) and the push guards (card_guards):
 blobs, tree and commit through the Git Data API with a non-force ref update; when the token can't write (NO_WRITE on
 POST git/blobs, or no token) the same objects are written into the blobless history clone and pushed over SSH.
 
@@ -7,7 +7,7 @@ POST git/blobs, or no token) the same objects are written into the blobless hist
     local_commit(clone, head, {path: bytes}, message) -> sha: the same objects in a local clone, nothing pushed
     checkout_head(clone) -> the commit its HEAD is at ("" when unborn)
 
-A rate-limited 403 is this run's, not the token's: it raises Transient (ssh_on_limit: SSH for the rest of the run). No Discord or
+A rate-limited 403 is this run's, not the token's: it raises Transient. No Discord or
 config imports (the token: config through github_api, else GITHUB_TOKEN); never the pickles.
 """
 from base64 import b64encode
@@ -40,7 +40,6 @@ API_TIMEOUT = 300                               # a PSD blob is up to 85 MB (113
 # Global State
 # ========================
 cant_write = False                              # POST git/blobs got a NO_WRITE status: commit over SSH until a restart
-limited = False                                 # rate-limited with ssh_on_limit: SSH for the rest of the run (the caller resets it)
 
 
 # ========================
@@ -103,27 +102,20 @@ def commit_info(repository: str, sha: str) -> dict:
     return api(repository, "GET", f"git/commits/{sha}").json()
 
 
-def upload_blob(repository: str, data: bytes, ssh_on_limit: bool = False) -> Optional[str]:
+def upload_blob(repository: str, data: bytes) -> Optional[str]:
     """
     POST git/blobs.
 
-    Args:
-        ssh_on_limit: A rate-limited 403 answers None and sets `limited` (SSH now, cant_write untouched) instead of raising
-
     Returns:
         The blob's sha, or None when the token can't write (NO_WRITE: the SSH path takes over until a restart);
-        raises Transient on a rate limit (unless ssh_on_limit) or any other failure
+        raises Transient on a rate limit or any other failure
     """
-    global cant_write, limited
+    global cant_write
     reply = api(repository, "POST", "git/blobs", check=False,
                 json={"content": b64encode(data).decode("ascii"), "encoding": "base64"})
     if reply.status_code in NO_WRITE:
-        limited = (reply.headers.get("retry-after") or reply.headers.get("x-ratelimit-remaining") == "0"
-                   or "rate limit" in reply.text.lower())     # a secondary limit may send no header
-        if limited:                             # this run's: not the token's rights
-            if ssh_on_limit:
-                limited = True
-                return None
+        if (reply.headers.get("retry-after") or reply.headers.get("x-ratelimit-remaining") == "0"
+                or "rate limit" in reply.text.lower()):   # this run's, not the token's rights (a secondary limit may send no header)
             raise Transient(f"{status(reply)}: rate limited (on POST git/blobs)")
         cant_write = True
         return None
@@ -300,7 +292,7 @@ def checkout_head(clone: str, env: Optional[dict] = None) -> str:
 # Public API Functions
 # ========================
 def commit_files(repository: str, head: str, base_tree: str, modes: dict, files: dict, message: str,
-                 uploaded: Optional[set] = None, ssh_on_limit: bool = False) -> Optional[str]:
+                 uploaded: Optional[set] = None) -> Optional[str]:
     """
     One commit of files on head: the API when the token can write, else git objects pushed over SSH.
 
@@ -310,19 +302,17 @@ def commit_files(repository: str, head: str, base_tree: str, modes: dict, files:
         files: {repo path: bytes}
         message: Commit message (subject, then any trailers): both paths keep it whole
         uploaded: Blob shas already uploaded this run (filled here): a retry re-uploads only what changed
-        ssh_on_limit: A rate-limited API falls to SSH (the bot's choice) instead of raising (the Action's); `limited` then
-            keeps the run on SSH until the caller resets it
 
     Returns:
         The commit's sha, or None when the branch moved (409/422, or the push was rejected): try again from the
         new head; raises Transient on any other failure
     """
-    if token() and not cant_write and not (ssh_on_limit and limited):
+    if token() and not cant_write:
         uploaded = set() if uploaded is None else uploaded
         for data in files.values():
             sha = blob_sha(data)
             if sha not in uploaded:
-                if upload_blob(repository, data, ssh_on_limit) is None:
+                if upload_blob(repository, data) is None:
                     break
                 uploaded.add(sha)
         else:
@@ -356,7 +346,6 @@ __all__ = [
     'git_commit',
     'git_env',
     'git_tree',
-    'limited',
     'local_commit',
     'plural',
     'ref_head',

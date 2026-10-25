@@ -19,9 +19,8 @@ from commands.analytics import (
     remove_reminder,
     set_reminder,
 )
-from commands.card_runner import bake_cards, sweep_temp_psds
+from commands.card_runner import sweep_temp_psds
 from commands.card_sync import on_use as card_data_used
-from commands.discord_edits import manage_alias, manual_metadata_entry, mass_replace_field
 from commands.frankenstein import frankenstein
 from commands.github_api import print_token_status
 from commands.help import print_help
@@ -74,7 +73,6 @@ from commands.query_card import (
     set_repository,
 )
 from commands.repo_history import refresh as refresh_history
-from commands.tts_save import update_tts_save
 from commands.type_emojis import init_type_emojis, sync_type_emojis
 from commands.update_bot import git_pull, git_push, restart_bot, update_bot
 from commands.utils import (
@@ -147,7 +145,7 @@ async def on_ready():
     print("Bot initialization complete")
 
 
-LOGGED_VALUES = ("query", "search_text", "cards", "card", "alias", "as_of")   # options whose values the log shows
+LOGGED_VALUES = ("query", "search_text", "cards", "as_of")   # options whose values the log shows
 
 
 @client.event
@@ -172,16 +170,6 @@ async def on_interaction(interaction: Interaction):
 async def card_names(interaction: Interaction, current: str) -> list:
     """Autocomplete: card names, printed titles, aliases and renamed cards' old names."""
     return [Choice(name=shown, value=value) for shown, value in card_repo.name_choices(current)]
-
-
-async def current_card_names(interaction: Interaction, current: str) -> list:
-    """Autocomplete without old names (options that need a card of today)."""
-    return [Choice(name=shown, value=value) for shown, value in card_repo.name_choices(current, old=False)]
-
-
-async def bake_card_names(interaction: Interaction, current: str) -> list:
-    """Autocomplete whose values are card names (titles shown beside them): /bake_cards matches card names only."""
-    return [Choice(name=shown, value=value) for shown, value in card_repo.name_choices(current, cards=True)]
 
 
 async def card_list_names(interaction: Interaction, current: str) -> list:
@@ -407,23 +395,6 @@ async def slash_set_repo(interaction: Interaction,
     await set_repository(interaction, new_repo)
 
 
-manage_alias = to_thread(manage_alias)
-@tree.command(name="alias", description="View, create, or delete card aliases: commits to the card repo's Card Edits.json (admin only).")
-@app_commands.describe(
-    alias='The alias name. Leave empty to view all aliases, or provide without card name to delete.',
-    card='The card to alias (its image file name, or the end of it). Omit to delete the alias.',
-)
-@app_commands.autocomplete(card=current_card_names)
-async def slash_alias(interaction: Interaction,
-                      alias: Optional[str] = None,
-                      card: Optional[str] = None):
-    if lacks_admin(interaction):
-        await interaction.response.send_message("You do not have permission.")
-        return
-    await interaction.response.defer()
-    await manage_alias(interaction, alias, card)
-
-
 frankenstein = to_thread(frankenstein)
 @tree.command(name="frankenstein", description="Tie a bunch of cards together.")
 @app_commands.describe(
@@ -467,33 +438,6 @@ async def slash_update_stats(interaction: Interaction,
     await update_stats(interaction, output_problematic_cards, force_update, cards=cards)
 
 
-update_tts_save = to_thread(update_tts_save)
-@tree.command(name="update_tts_save", description="Updates the Tabletop Simulator save on the card repo and posts its download link (admin only).")
-async def slash_update_tts_save(interaction: Interaction):
-    if lacks_admin(interaction):
-        await interaction.response.send_message("You do not have permission.")
-        return
-    await interaction.response.defer()
-    await update_tts_save(interaction)
-
-
-bake_cards = to_thread(bake_cards)
-@tree.command(name="bake_cards", description="Bakes the website's pending card edits into the card PSDs and PNGs; posts the report (admin only).")
-@app_commands.describe(
-    card='Only this card, matched like Card Authors.txt. Default = every card with a pending PSD edit.',
-    dry_run='Render and check the edits, commit nothing. Default = True.',
-)
-@app_commands.autocomplete(card=bake_card_names)
-async def slash_bake_cards(interaction: Interaction,
-                           card: Optional[str] = None,
-                           dry_run: Optional[bool] = True):
-    if lacks_admin(interaction):
-        await interaction.response.send_message("You do not have permission.")
-        return
-    await interaction.response.defer()
-    await bake_cards(interaction, card, dry_run)
-
-
 export_stats_to_file = to_thread(export_stats_to_file)
 @tree.command(name="export_cards", description="Exports all cards as a csv/txt.")
 @app_commands.describe(
@@ -514,64 +458,6 @@ async def slash_export_rulebook(interaction: Interaction):
     await export_rulebook_to_file(interaction)
 
 
-manual_metadata_entry = to_thread(manual_metadata_entry)
-@tree.command(name="update_metadata", description="Edit a card's data: one commit to the card repo's Card Edits.json (admin only).")
-@app_commands.describe(
-    query='The card to edit the metadata for.',
-    del_entry='Hide this card on the website and in queries (hidden in Card Edits.json). Default = False.',
-    author='The creator of the card (a line in the card repo\'s Card Authors.txt).',
-    ability='Card ability text (printed on the card image by the next card bake).',
-    stars='Star count, printed by the next card bake (minions, aux cards, N.M.E.; elsewhere its folder).',
-    subtype='Card subtype.',
-    series='Card series.',
-    subseries='A series within the series (e.g. Paper Mario in Mario). Database only, never in the PSD.',
-    hp='HP stat value.',
-    defense='Defense stat value.',
-    attack='Attack stat value.',
-    speed='Speed stat value.',
-    card_type='Card type (e.g., creature, item, field).',
-    types='Types/ icon names, comma-separated, printed on the card image by the next card bake.',
-)
-@app_commands.autocomplete(query=card_names)
-async def slash_update_metadata(
-    interaction: Interaction,
-    query: str,
-    del_entry: Optional[bool] = False,
-    author: Optional[str] = None,
-    ability: Optional[str] = None,
-    stars: Optional[int] = None,
-    subtype: Optional[str] = None,
-    series: Optional[str] = None,
-    subseries: Optional[str] = None,
-    hp: Optional[int] = None,
-    defense: Optional[int] = None,
-    attack: Optional[int] = None,
-    speed: Optional[int] = None,
-    card_type: Optional[str] = None,
-    types: Optional[str] = None):
-    if lacks_admin(interaction):
-        await interaction.response.send_message("You do not have permission.")
-        return
-    await interaction.response.defer()
-    await manual_metadata_entry(
-        interaction,
-        query,
-        del_entry,
-        author,
-        ability,
-        stars,
-        subtype,
-        series,
-        subseries,
-        hp,
-        defense,
-        attack,
-        speed,
-        card_type,
-        types,
-    )
-
-
 view_old_metadata = to_thread(view_old_metadata)
 @tree.command(name="view_old_metadata", description="View old metadata versions for a card.")
 @app_commands.describe(
@@ -585,31 +471,6 @@ async def slash_view_old_metadata(
     version: int = 0):
     await interaction.response.defer()
     await view_old_metadata(interaction, query, version)
-
-
-mass_replace_field = to_thread(mass_replace_field)
-@tree.command(name="mass_replace", description="Replace one field value with another on every card: one card repo commit (admin only).")
-@app_commands.describe(
-    field='The field to modify (author, series, subseries, subtype, or card_type).',
-    old_value='The value being replaced.',
-    new_value='The new value to set.',
-)
-@app_commands.choices(field=[
-    Choice(name="author", value="author"),
-    Choice(name="series", value="series"),
-    Choice(name="subseries", value="subseries"),
-    Choice(name="subtype", value="subtype"),
-    Choice(name="card_type", value="card_type"),
-])
-async def slash_replace_field(interaction: Interaction,
-                              field: Choice[str],
-                              old_value: str,
-                              new_value: str):
-    if lacks_admin(interaction):
-        await interaction.response.send_message("You do not have permission.")
-        return
-    await interaction.response.defer()
-    await mass_replace_field(interaction, field.value, old_value, new_value)
 
 
 list_orphans = to_thread(list_orphans)
