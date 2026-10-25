@@ -54,8 +54,9 @@ card_commands = {
                                                    "ability text, as the website does.\n"
                                                    "- limit: Max number of cards to display (default: all)\n"
                                                    "- howmany: If True, only returns the count instead of the cards (default: False)",
-    "/query_rulebook <search_text> [limit]:"    : "Searches the rulebook entries for text matching <search_text>. "
-                                                  "Optional limit for max results (default: all).",
+    "/query_rulebook <search_text> [limit]:"    : "Searches the rulebook and posts the lines holding <search_text> (any case) under their "
+                                                  "page names, the pages with the most matches first; the button opens the rulebook on the website.\n"
+                                                  "- limit: Max number of pages to show (default: all)",
     "Query Syntax:"                             : "Flexible query syntax for /query_ability:\n"
                                                   "- Exact text match: Surround with quotes \"like this\"\n"
                                                   "- Exclude matches: Prefix any term with ! to get cards that don't match, e.g. !die, !type==creature\n"

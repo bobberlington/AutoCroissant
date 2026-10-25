@@ -712,8 +712,10 @@ gotcha-4 unknown-field error; `series==mario & subseries~door` is the website's 
    near-whole-text matches; short queries effectively rely on the substring pass.
 8. `"quoted"` builds `(?:^|\s|$|\b)<escaped>(?:^|\s|$|\b)` (:358) — approximately word-bounded,
    punctuation-tolerant.
-9. Rulebook pages are NEVER returned by `/query_ability`; use `/query_rulebook` (plain
-   case-insensitive substring over `rulebook_dff`, no DSL — query_card.py:391-415). 48 pages today.
+9. Rulebook pages are NEVER returned by `/query_ability`; use `/query_rulebook` (case-insensitive words with any
+   spacing over `rulebook_dff`, no DSL — query_card.py:410). It posts the matching LINES under their page names
+   (`rulebook_lines` :1112; long lines cut to SNIPPET around the match, the match in bold outside emoji markup), the
+   pages with the most lines first, whole pages per message. 48 pages today.
 10. Each result posts its image URL alone, one message per card (a preview, via `get_card_url`; its name when the PNG
     is not in the tree). From 2026-10-21 to 2026-10-23 they were listed as `<name> — <url>` lines, 10 per message;
     `howmany:True` returns just the count; `limit` caps output (main.py:313-328).

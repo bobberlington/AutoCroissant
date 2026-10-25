@@ -363,10 +363,10 @@ async def slash_query_ability(interaction: Interaction,
 
 
 query_rulebook = to_thread(query_rulebook)
-@tree.command(name="query_rulebook", description="Search the rulebook for specific text.")
+@tree.command(name="query_rulebook", description="Search the rulebook: the lines that match, with their page names.")
 @app_commands.describe(
-    search_text='Text to search for in the rulebook',
-    limit='Maximum number of results to show (default: all)',
+    search_text='A word or phrase: the reply quotes the rulebook lines holding it.',
+    limit='Maximum number of pages to show. Default = all.',
 )
 async def slash_query_rulebook(
     interaction: Interaction,

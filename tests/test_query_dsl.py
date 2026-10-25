@@ -102,3 +102,31 @@ def test_website_on_the_same_table(tmp_path):
     assert done.returncode == 0, done.stderr
     found = dict(zip([q for q, _, _ in QUERIES], json.loads(done.stdout)))
     assert {q: set(found[q]) for q, _, _ in QUERIES} == {q: bot if site is None else site for q, bot, site in QUERIES}
+
+
+def test_rulebook_lines(monkeypatch):
+    """/query_rulebook: the matching lines under their page names (most matches first), whole pages per message."""
+    import commands.utils as utils
+    from pandas import DataFrame
+    pages = {"08 Global Turn": "THE GLOBAL TURN\nEach slot takes its turn.\nThen the next turn.",
+             "02 Abbreviations": "(OYT) = On your turn.\n- (BOT) = Beginning of turn.\n(CD) = Cooldown.",
+             "30 Long": "x " * 300 + "turn " + "y " * 300, "40 None": "Nothing here.", "50 Bricks": "1 per global\nturn."}
+    repo = qc.CardRepository()
+    repo.rulebook_dff = DataFrame({"ability": list(pages.values())}, index=list(pages))
+    monkeypatch.setattr(qc, "card_repo", repo)
+    monkeypatch.setattr(qc, "render_type_tokens", lambda text, escape=False: text)
+    found = qc.rulebook_lines(repo.rulebook_search_engine("Turn"), "Turn")
+    assert [(n, len(lines)) for n, lines in found] == [("08 Global Turn", 3), ("02 Abbreviations", 2), ("30 Long", 1),
+                                                       ("50 Bricks", 1)]
+    assert found[1][1] == ["(OYT) = On your turn.", "(BOT) = Beginning of turn."]          # its own bullet dropped
+    assert len(found[2][1][0]) <= qc.SNIPPET + 2 and "turn" in found[2][1][0] and found[2][1][0].startswith("…")
+    assert qc._bold("A <:defensive_minion:12> minion, <a:x_1:12> 1", "minion") == "A <:defensive_minion:12> **minion**, <a:x_1:12> 1"
+    assert qc._bold("<:x_1:12> 1", "1") == "<:x_1:12> **1**"                                   # emoji markup kept whole
+    assert qc.rulebook_lines(repo.rulebook_search_engine("global  turn"), "global turn") == [
+        ("08 Global Turn", ["THE GLOBAL TURN"]), ("50 Bricks", ["1 per global turn."])]          # over a line break
+    utils.dispatch_queue.clear()
+    qc.query_rulebook(utils.make_simple_fake_interaction(1), "turn")
+    sent = [kw for _, kw in utils.dispatch_queue]
+    utils.dispatch_queue.clear()
+    assert len(sent) == 1 and "links" in sent[0]
+    assert sent[0]["content"].startswith("'turn' is on 7 lines of 4 rulebook pages:\n\n**08 Global Turn**\n- THE GLOBAL **TURN**")

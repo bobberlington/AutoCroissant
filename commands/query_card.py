@@ -21,7 +21,7 @@ from commands.card_models import save_pickle, stats_db
 from commands.github_api import blob_text, fetch_tree
 from commands.repo_history import commit_before, raw_url, raw_url_at
 from commands.type_emojis import render_type_tokens
-from commands.utils import queue_message, split_long_message
+from commands.utils import BREAK_LEN, queue_message
 
 filterwarnings('ignore')
 
@@ -41,6 +41,9 @@ FIELD_HINTS = {"attack": "atk", "defense": "def", "health": "hp", "speed": "spd"
 SYNONYMS = {"damage": "dmg", "dmg": "damage", "defense": "def", "def": "defense", "speed": "spd", "spd": "speed",
             "health": "hp", "hp": "health"}                       # a text term finds both words (the card's own terms)
 SYNONYM_WORDS = compile(r"\b(" + "|".join(SYNONYMS) + r")\b")
+BULLET = compile(r"^[-•*]\s+")                           # a rulebook line's own bullet: the reply adds one
+EMOJI = compile(r"(<a?:\w+:\d+>)")                     # Discord emoji markup: never bolded inside
+SNIPPET = 200                                            # /query_rulebook: a longer line is cut around the match
 AS_OF_EDITS_NOTE = ("Database edits (website, /update_metadata) are versions of their own only since late October "
                     "2026: an older version shows those it had when it was replaced.")
 
@@ -414,21 +417,11 @@ class CardRepository:
         Returns:
             DataFrame of matching rulebook entries
         """
-        search_text = search_text.strip().lower()
-
-        if not search_text:
+        words = search_text.split()
+        if not words:
             return self.rulebook_dff
-
-        # Search in ability text
-        matches = self.rulebook_dff[
-            self.rulebook_dff["ability"].str.contains(
-                escape(search_text),
-                na=False,
-                case=False
-            )
-        ]
-
-        return matches
+        pattern = r"\s+".join(escape(w) for w in words)           # any spaces or line breaks between the words
+        return self.rulebook_dff[self.rulebook_dff["ability"].str.contains(pattern, na=False, case=False)]
 
     def load_aliases(self) -> None:
         """Load card aliases from pickle file."""
@@ -624,9 +617,8 @@ class CardRepository:
             self.cards_dff = cards_df[has_ability & ~is_rulebook].copy()
             self.cards_dff["ability"] = self.cards_dff["ability"].str.lower()
 
-            # Rulebook DataFrame (only rulebook entries)
+            # Rulebook DataFrame (only rulebook entries; as printed: /query_rulebook quotes its lines)
             self.rulebook_dff = cards_df[has_ability & is_rulebook].copy()
-            self.rulebook_dff["ability"] = self.rulebook_dff["ability"].str.lower()
 
             print(f"Loaded {len(self.cards_dff)} cards and {len(self.rulebook_dff)} rulebook entries")
         self._populate_renames()                        # renamed cards and autocomplete follow the new stats
@@ -1080,41 +1072,76 @@ def query_rulebook(interaction: Interaction,
                    search_text: str,
                    limit: int = -1) -> None:
     """
-    Search rulebook entries for matching text.
+    Search the rulebook: the matching lines under their page names, pages with the most matches first.
 
     Args:
         interaction: Discord interaction
         search_text: Text to search for in rulebook
-        limit: Maximum number of results to display (-1 for all)
+        limit: Maximum number of pages to show (-1 for all)
     """
     if card_repo.rulebook_dff.empty:
         queue_message(interaction, f"{STATS_PKL} is empty or has no rulebook entries. Run `/update_stats` first.")
         return
-
-    results = card_repo.rulebook_search_engine(search_text.strip())
-
-    # Sort alphabetically by index (card name)
-    results = results.sort_index(key=lambda x: x.str.lower())
-
-    total_results = len(results)
-    results_to_show = total_results if limit < 0 else min(limit, total_results)
-
-    queue_message(interaction, f"Found {total_results} rulebook entries matching '{search_text}'!")
-
-    if total_results == 0:
+    text = " ".join(search_text.split())
+    if not text:
+        queue_message(interaction, "Give a word or phrase to search the rulebook for.")
         return
 
-    # Send results
-    for idx, (name, row) in enumerate(results.iterrows()):
-        if idx >= results_to_show:
-            break
+    pages = rulebook_lines(card_repo.rulebook_search_engine(text), text)
+    links = [("Rulebook on the website", f"{SITE_URL}/#/rules?q={quote(text)}")]
+    if not pages:
+        print(f"Search miss: /query_rulebook {text!r}")
+        queue_message(interaction, f"No rulebook lines match '{text}'.", links=links)
+        return
+    shown = pages if limit < 0 else pages[:limit]
+    count = sum(len(lines) for _, lines in pages)
+    head = f"'{text}' is on {count} line{'s' if count != 1 else ''} of {len(pages)} rulebook page{'s' if len(pages) != 1 else ''}"
+    head += f" (showing {len(shown)} pages):" if len(shown) < len(pages) else ":"
+    blocks = [head] + [f"**{name}**\n" + "\n".join(f"- {_bold(render_type_tokens(line, escape=True), text)}" for line in lines)
+                       for name, lines in shown]
+    messages = [blocks[0]]
+    for block in blocks[1:]:                         # whole pages per message while they fit
+        if len(messages[len(messages) - 1]) + len(block) + 2 <= BREAK_LEN:
+            messages[len(messages) - 1] += "\n\n" + block
+        else:
+            messages.append(block)                   # a page longer than a message: the dispatch splits it
+    for i, message in enumerate(messages):
+        queue_message(interaction, message, links=links if i == len(messages) - 1 else None)
 
-        ability = row.get("ability", "No text available")
-        for chunk in split_long_message(render_type_tokens(ability, escape=True)):
-            queue_message(interaction, f"**{name}**\n{chunk}")
 
-    queue_message(interaction, f"Displayed {results_to_show} of {total_results} results." if results_to_show < total_results else "Done.",
-                  links=[("Rulebook on the website", f"{SITE_URL}/#/rules?q={quote(search_text.strip())}")])
+def rulebook_lines(pages: DataFrame, text: str) -> list:
+    """
+    The lines of each page holding text (any case), cut to SNIPPET around it.
+
+    Returns:
+        [(page name, [lines])], the most lines first, then by name; a match across a line break: that passage
+    """
+    found, low = [], text.lower()
+    for name, ability in pages["ability"].items():
+        lines = [BULLET.sub("", " ".join(line.split())) for line in str(ability).split("\n")]
+        lines = [line for line in lines if low in line.lower()]
+        if not lines:                                # the text runs over a line break
+            lines = [" ".join(str(ability).split())]
+        found.append((name, [_cut(line, low) for line in lines]))
+    found.sort(key=lambda page: (-len(page[1]), str(page[0]).lower()))
+    return found
+
+
+def _cut(line: str, low: str) -> str:
+    """line, or SNIPPET characters of it around the first match."""
+    if len(line) <= SNIPPET:
+        return line
+    at = max(line.lower().find(low), 0)
+    start = max(0, min(at - SNIPPET // 3, len(line) - SNIPPET))
+    return ("…" if start else "") + line[start:start + SNIPPET].strip() + ("…" if start + SNIPPET < len(line) else "")
+
+
+def _bold(line: str, text: str) -> str:
+    """The searched text in bold where it stands as written (escaped markdown or an emoji can hide it), never inside
+    an emoji's <:name:id> (minion in <:defensive_minion:id>)."""
+    found = compile(escape(text), IGNORECASE)
+    parts = EMOJI.split(line)
+    return "".join(p if i % 2 else found.sub(lambda m: f"**{m.group(0)}**", p) for i, p in enumerate(parts))
 
 
 async def set_match_ratio(interaction: Interaction, value: Optional[float] = None) -> None:
