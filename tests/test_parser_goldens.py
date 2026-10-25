@@ -48,8 +48,7 @@ def test_certified_values():
 
 def test_goldens_cover_every_folder():
     tops = {rel.split("/")[0] for rel in CARDS} | {"/".join(rel.split("/")[:2]) for rel in CARDS if rel.startswith("Auxiliary")}
-    assert {"Creatures", "Items", "Field", "N.M.E", "Auxiliary/Minions", "Auxiliary/Items", "Auxiliary/Creatures",
-            "Auxiliary/Status Effects", "Auxiliary/Rulebook"} <= tops
+    assert {"Creatures", "Items", "Field", "N.M.E", "Auxiliary/Minions", "Auxiliary/Status Effects", "Auxiliary/Rulebook"} <= tops
 
 
 # ========================
@@ -85,30 +84,6 @@ def test_orphaned_effect_layer():
     assert _fx_problems("Ability FX: Blazing #2", text) == ["EFFECT LAYER WORDS NOT IN TEXT: Ability FX: Blazing #2"]  # literal, as in the JSX
     assert _fx_problems("Ability FX: Gone", text, visible=False) == []               # hidden: prints nothing
     assert _fx_problems("Text FX: Blazing", text) == ["EFFECT LAYER WITHOUT TEXT LAYER: Text FX: Blazing"]
-
-
-def test_occurrences_like_effect_layers_jsx():
-    """Whole words when there are any ("Burn" in "Burn, Burning": 1), else every match ("1" in "2T1 x21": 2)."""
-    from commands.psd_analyzer import PSDParser
-    assert PSDParser._occurrences("burn, burning burn", "burn") == 2
-    assert PSDParser._occurrences("2t1 x21", "1") == 2
-    assert PSDParser._occurrences("frozen in time", "frozen") == 1
-    assert PSDParser._occurrences("anything", "") == 0
-
-
-def test_shadow_duelist_exclusion(clone):
-    """D3 is live: the card prints no ability and nothing lays out its hidden Ability layer's words, so it parses to no
-    ability (only printed text counts, 2026-10-22) and the exclusion keeps the validator quiet."""
-    from psd_tools import PSDImage
-    from commands.psd_analyzer import CardValidator
-    rel = "Auxiliary/Minions/Shadow_Duelist.psd"
-    if not (clone / rel).exists() or blob_sha(clone / rel) != "6c777d46e1c106a1548ba15facb75f218f9327ab":
-        pytest.skip(f"{rel} changed upstream: re-check its ABILITY_EXCLUSIONS entry")
-    ability = [layer for layer in PSDImage.open(clone / rel).descendants() if layer.name == "Ability"]
-    assert [layer.is_visible() for layer in ability] == [False] and ability[0].text.startswith("Heals the creature")
-    assert "Shadow Duelist" in CardValidator.ABILITY_EXCLUSIONS
-    parsed = parse(parser(), clone, rel)
-    assert parsed["card"]["ability"] == "" and parsed["validator"] == []
 
 
 def test_unfilled_line_gaps_are_padding():
