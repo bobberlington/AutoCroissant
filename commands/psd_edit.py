@@ -14,7 +14,9 @@ from contextlib import nullcontext
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from difflib import SequenceMatcher
+from hashlib import blake2b
 from inspect import signature
+from itertools import zip_longest
 from io import BytesIO
 from math import hypot
 from os.path import basename, getsize, join
@@ -4604,25 +4606,36 @@ def gate_size(old_path: str, new_path: str) -> None:
 
 def layer_records(path) -> list:
     """
-    Each layer record's identity-free fingerprint: name, flags, rect, channels, mask, blend and tagged blocks by key;
+    Each layer record's identity-free fingerprint: name, flags, rect, channels (id, length, pixel digest), mask, blend
+    and tagged blocks by key;
     path a file, an open PSD (read as opened: no edit on it) or its layer_records() already.
     """
     if isinstance(path, list):
         return path
     psd = path if isinstance(path, PSDImage) else PSDImage.open(path)
     out = []
-    for record in psd._record.layer_and_mask_information.layer_info.layer_records:
+    info = psd._record.layer_and_mask_information.layer_info
+    records = info.layer_records or []
+    for record, data in zip(records, [*(info.channel_image_data or []), *[[]] * len(records)]):
         blocks = record.tagged_blocks or {}
         mask = record.mask_data
         out.append({"name": blocks.get_data(Tag.UNICODE_LAYER_NAME, record.name) if blocks else record.name,
                     "flags": record.flags.tobytes(),
                     "rect": (record.top, record.left, record.bottom, record.right),
-                    "channels": tuple((int(info.id), info.length) for info in record.channel_info),
+                    "channels": tuple((int(channel.id), channel.length, _digest(part))
+                                      for channel, part in zip_longest(record.channel_info, data)),
                     "mask": mask.tobytes() if mask is not None else b"",
                     "blend": (record.blend_mode, record.opacity, record.clipping),
                     "blocks": tuple((bytes(key), block.tobytes()) for key, block in (record.tagged_blocks or {}).items()),
                     **(_mask_parts(mask) if mask is not None else {})})
     return out
+
+
+def _digest(channel) -> bytes:
+    """A channel's compression and data, hashed: a same-length change to a layer's pixels shows."""
+    if channel is None:
+        return b""
+    return blake2b(pack(">H", channel.compression.value) + channel.data, digest_size=16).digest()
 
 
 MASK_RECT = ("top", "left", "bottom", "right", "real_top", "real_left", "real_bottom", "real_right")
@@ -4680,7 +4693,7 @@ def _record_moved(a: dict, b: dict, dx: int, dy: int, keys: set, flags: bool = F
 
 def _pixel_record(record: dict) -> bool:
     """A plain pixel record: a transparency channel then the color channels in order."""
-    ids = [channel for channel, _ in record["channels"]]
+    ids = [channel[0] for channel in record["channels"]]
     return bool(ids) and ids[0] == -1 and ids[1:] == list(range(len(ids) - 1))
 
 
