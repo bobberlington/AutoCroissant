@@ -1417,8 +1417,8 @@ def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bo
             tip = local_snapshot(repository, local) if local else snapshot_at(repository, ref_head(repository))
             here = Head(tip)
             # a clone alone has no push times; a dispatch's window would hold its own push. A first attempt's from the
-            # push, not now: the post job starts 30 minutes after the check job ends, and pushes made during the check
-            # count too. A re-run's from now, as before (from the push, a late one counts the whole day's pushes)
+            # push, not now: the post job may start after the window, and pushes made during the check count too. A
+            # re-run's from now, as before (from the push, a late one counts the whole day's pushes)
             recent = (recent_paths(repository, tip.head, now() if rerun else min(now(), mark), local)
                       if repository and quiet_from else set())
             included, report["dropped"], report["already"], told = [], [], [], []

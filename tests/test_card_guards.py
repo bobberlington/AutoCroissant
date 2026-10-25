@@ -1358,16 +1358,24 @@ def test_workflow_refuses_a_landing_dispatch_while_a_push_run_waits(clone, tmp_p
 
 def test_workflow_lowercases_card_guards(clone, tmp_path):
     """The job's `if` matches CARD_GUARDS in any case ("On"), the shell does not: Start lowercases MODE for every later
-    step (Land's --dry-run test is exact; `land` would also refuse a report plan without it)."""
+    step (Land's --dry-run test is exact; `land` would also refuse a report plan without it). The quiet window counts
+    from the push on every attempt (P-1: the environment's timer may be shorter than 30 minutes), else from now."""
     pytest.importorskip("yaml")
+    if not shutil.which("jq"):
+        pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
     step = steps["Start"]
-    for typed, mode in (("On", "on"), ("REPORT", "report"), ("dry", "dry")):
+    for typed, mode, pushed, quiet in (("On", "on", "1761400000", "2025-10-25T13:46:40Z"),
+                                       ("REPORT", "report", "2026-10-25T12:00:00Z", "2026-10-25T12:00:00Z"),
+                                       ("dry", "dry", "", None)):
         github_env = tmp_path / f"env-{typed}"
         github_env.write_text("")
-        done, _ = _shell(step, {"PATH": os.environ["PATH"], "MODE": typed, "RUNNER_TEMP": str(tmp_path),
-                                "GITHUB_ENV": str(github_env), "GITHUB_OUTPUT": str(tmp_path / "start.output")})
+        done, out = _shell(step, {"PATH": os.environ["PATH"], "MODE": typed, "RUNNER_TEMP": str(tmp_path), "PUSHED_AT": pushed,
+                                  "GITHUB_RUN_ATTEMPT": "1", "GITHUB_EVENT_NAME": "push",
+                                  "GITHUB_ENV": str(github_env), "GITHUB_OUTPUT": str(tmp_path / "start.output")})
         assert done.returncode == 0 and f"MODE={mode}" in github_env.read_text().splitlines(), done.stderr
+        assert out["quiet_from"] == (quiet or out["quiet_from"]) and f"QUIET_FROM={out['quiet_from']}" in github_env.read_text()
+        assert ("no push time" in done.stdout) is (quiet is None)
     land = steps["Land"]
     assert '[ "$MODE" = report ] && args+=(--dry-run)' in land["run"]
 
