@@ -634,6 +634,15 @@ def test_stamps_follow_the_content_not_the_clock(bs, repo, tmp_path, monkeypatch
     assert {k: v for k, v in after.items() if k.startswith("assets/")} == {k: v for k, v in before.items() if k.startswith("assets/")}
     assert not digest or (c / "build.txt").read_text() != (a / "build.txt").read_text()
 
+    cards = lambda d: json.loads((d / "data" / "cards.json").read_text(encoding="utf-8"))
+    if "source" in cards(a):                      # the built commit's date (edit.js: a publish is live)
+        (repo["root"] / "README.md").write_text("code only")
+        _, t = _commit(repo["root"], "Docs", int(time.time()))
+        _build(bs, monkeypatch, repo, tmp_path / "d")
+        d = tmp_path / "d" / "dist"
+        assert datetime.fromisoformat(cards(d)["source"]).timestamp() == t > datetime.fromisoformat(cards(a)["source"]).timestamp()
+        assert _stamps(d) == _stamps(c) and (d / "build.txt").read_text() == (c / "build.txt").read_text()   # no redeploy
+
 
 def test_an_asset_stamp_covers_its_imports(bs):
     """A module's stamp changes with its own text and its imports' (their stamps are in it), not with a module it
