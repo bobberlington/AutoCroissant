@@ -2,11 +2,14 @@
 The website build (TTSCardMaker site/build/build_site.py) on a small card repo made here, offline, from the card sync's
 db/ (CARD_DATA_DIR, load_card_data; no CARD_DATA_DIR, or no readable stats.json, builds nothing): the current text dated
 from its start (since), a duplicate's history, dates by committer time, an archived card's moved_to, tag,
-author and created, image revisions (the person pages), Pacific contribution months, the person stats. Loads
+author and created, image revisions (the person pages), Pacific contribution months, the person stats, index.html's
+pre-written first screen (checked against grid.js in node). Loads
 build_site.py from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without it or before load_card_data.
 """
 import importlib.util
 import json
+import re
+import shutil
 import subprocess
 import sys
 import time
@@ -189,3 +192,18 @@ def test_contributions_json_has_person_stats(bs, repo, tmp_path, monkeypatch):
     assert not {"path", "commit", "ratings"} & set(maker["archived"][0])
     assert maker["power"]["n"] >= 1 and "z" in out["contributions.json"]["site"]
 
+
+
+def test_index_carries_the_first_screen(bs, repo, tmp_path, monkeypatch):
+    """index.html's pre-written grid: the cards in Name order as links to their pages, checked against grid.js in node;
+    a difference fails the build."""
+    if not hasattr(bs, "first_screen") or not shutil.which("node"):
+        pytest.skip(f"no node, or {BUILD_SITE} writes no first screen")
+    out = _build(bs, monkeypatch, repo, tmp_path / "a")
+    page = (tmp_path / "a" / "dist" / "index.html").read_text(encoding="utf-8")
+    ids = [c["id"] for c in sorted(out["cards.json"]["cards"], key=lambda c: c["name"].lower())]
+    assert re.findall(r'<a class="tile" href="c/([^/"]+)/"', page) == ids
+    assert page.count('fetchpriority="high"') == min(len(ids), bs.FIRST_EAGER)
+    monkeypatch.setattr(bs, "tile_html", lambda c, eager, icons: f'<a class="tile" href="c/{c["id"]}/">')
+    with pytest.raises(SystemExit, match="differs from grid.js"):
+        _build(bs, monkeypatch, repo, tmp_path / "b")
