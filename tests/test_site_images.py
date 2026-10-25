@@ -1,8 +1,8 @@
 """
 The website's pictures (TTSCardMaker site/build/build_site.py, site/sw.js, owner 2026-10-24): card images are AVIF only
-(4:4:4, by PNG blob, encoded once), a build out of IMAGE_BUDGET leaves the rest to the next run, icon URLs carry a
-stamp, and the service worker keeps only those versioned pictures (cache first) and lets pages, data and scripts reach
-the network. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips before AVIF thumbnails.
+(4:4:4, by PNG blob and encode settings, encoded once), a build out of IMAGE_BUDGET leaves the rest to the next run, icon
+file names carry a stamp, build.txt digests the site's files only, and the service worker keeps only those versioned
+pictures (cache first) and lets pages, data and scripts reach the network. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips before AVIF thumbnails.
 """
 import json
 import re
@@ -20,16 +20,19 @@ pytestmark = pytest.mark.skipif(not SW.is_file(), reason=f"no {SW} (TTSCardMaker
 
 
 def test_card_images_are_avif_made_once(bs, repo, tmp_path, monkeypatch):  # noqa: F811
-    """Three AVIF widths and the link-preview JPEG per PNG blob, no WebP; a second build makes nothing again."""
+    """Three AVIF widths (named <blob16>-<w>-<settings tag>, the tags in cards.json) and the link-preview JPEG per PNG
+    blob, no WebP; a second build makes nothing again."""
     from PIL import Image
     assert bs.AVIF["subsampling"] == "4:4:4" and set(bs.IMAGE_SIZES) == {240, 360, 720}
     data = _build(bs, monkeypatch, repo, tmp_path / "s")
     thumbs = tmp_path / "s" / "dist" / "thumbs"
     imgs = {c["img"] for c in data["cards.json"]["cards"] if c.get("img")}
+    tags = data["cards.json"]["thumbs"]
+    assert tags == {str(w): bs.thumb_tag(w) for w in (240, 360, 720)} and len(set(tags.values())) == 3
     assert imgs and not list(thumbs.glob("*.webp"))
     for img in imgs:
         for w in (240, 360, 720):
-            with Image.open(thumbs / f"{img}-{w}.avif") as im:
+            with Image.open(thumbs / f"{img}-{w}-{tags[str(w)]}.avif") as im:
                 assert im.format == "AVIF" and im.width == min(w, 60)      # the fixture's PNGs are 60 px wide
         assert (thumbs / f"{img}-og.jpg").is_file()
     cache = tmp_path / "s" / ".cache" / "img"
@@ -54,7 +57,7 @@ def test_a_build_over_the_image_budget_leaves_the_rest(bs, repo, tmp_path, monke
     monkeypatch.setattr(bs, "IMAGE_BUDGET", 0)
     _build(bs, monkeypatch, repo, tmp_path / "s")
     new = {p.name for p in cache.iterdir()} - made
-    assert len(new) == 4 and all(re.fullmatch(r"[0-9a-f]{16}-(240|360|720)\.avif|[0-9a-f]{16}-og\.jpg", n) for n in new)
+    assert len(new) == 4 and all(re.fullmatch(r"[0-9a-f]{16}-(240|360|720)-[0-9a-f]{6}\.avif|[0-9a-f]{16}-og\.jpg", n) for n in new)
 
 
 def test_thumbs_carry_no_colour_profile(bs, repo, tmp_path, monkeypatch):  # noqa: F811
@@ -71,6 +74,64 @@ def test_thumbs_carry_no_colour_profile(bs, repo, tmp_path, monkeypatch):  # noq
     for path in thumbs:
         with Image.open(path) as im:
             assert not im.info.get("icc_profile"), path.name
+
+
+def test_new_encode_settings_make_new_files(bs, repo, tmp_path, monkeypatch):  # noqa: F811
+    """A width's quality is in its tag (file name): changing it re-encodes that width only, under new names (so neither
+    the cache nor the worker keeps the old bytes), and prunes the old ones; the accent colour comes from the PNG, so the
+    codec doesn't move it."""
+    data = _build(bs, monkeypatch, repo, tmp_path / "s")
+    cache = tmp_path / "s" / ".cache" / "img"
+    before = {p.name: p.stat().st_mtime_ns for p in cache.iterdir()}
+    monkeypatch.setitem(bs.IMAGE_SIZES, 240, bs.IMAGE_SIZES[240] + 7)
+    monkeypatch.setattr(bs, "IMAGE_META_VERSION", bs.IMAGE_META_VERSION + "x")   # the colours are computed again too
+    again = _build(bs, monkeypatch, repo, tmp_path / "s")
+    after = {p.name: p.stat().st_mtime_ns for p in cache.iterdir()}
+    old, new = data["cards.json"]["thumbs"], again["cards.json"]["thumbs"]
+    assert old["240"] != new["240"] and old["360"] == new["360"] and old["720"] == new["720"]
+    assert not any(f"-240-{old['240']}." in n for n in after) and sum(f"-240-{new['240']}." in n for n in after) == sum(f"-240-{old['240']}." in n for n in before)
+    assert {n: t for n, t in after.items() if "-240-" not in n} == {n: t for n, t in before.items() if "-240-" not in n}   # not made again
+    colour = lambda d: {c["id"]: c.get("color") for c in d["cards.json"]["cards"]}
+    assert colour(again) == colour(data)
+
+
+def test_the_webp_builds_colours_are_kept(bs, repo, tmp_path, monkeypatch):  # noqa: F811
+    """images.json rows from the WebP builds (IMAGE_META_WEBP) keep each blob's accent colour (theme-color, embed bars)
+    while its AVIF files are made; rows of any other version are dropped."""
+    data = _build(bs, monkeypatch, repo, tmp_path / "s")
+    shutil.rmtree(tmp_path / "s" / ".cache" / "img")
+    path = tmp_path / "s" / ".cache" / bs.IMAGE_META
+    meta = json.loads(path.read_text(encoding="utf-8"))
+    rows = {sha: [w, h, "#123456"] for sha, (w, h, _) in meta["images"].items()}
+    for version, want in ((bs.IMAGE_META_WEBP, "#123456"), ("0:360:80", None)):
+        (tmp_path / "s" / ".cache" / "img").mkdir(exist_ok=True)
+        path.write_text(json.dumps({"version": version, "images": rows}), encoding="utf-8")
+        again = _build(bs, monkeypatch, repo, tmp_path / "s")
+        colours = {c["id"]: c.get("color") for c in again["cards.json"]["cards"] if c.get("img")}
+        assert colours and all(v == (want or {c["id"]: c.get("color") for c in data["cards.json"]["cards"]}[k]) for k, v in colours.items()), version
+        assert json.loads(path.read_text(encoding="utf-8"))["version"] == bs.IMAGE_META_VERSION
+        shutil.rmtree(tmp_path / "s" / ".cache" / "img")
+
+
+def test_build_txt_digests_the_site_not_the_script(bs, tmp_path, monkeypatch):  # noqa: F811
+    """build.txt (site.yml's deploy gate) changes with any file's bytes, a thumb's too (same name and size), never with
+    build_site.py's own text."""
+    import importlib.util
+    dist = tmp_path / "dist"
+    (dist / "thumbs").mkdir(parents=True)
+    (dist / "thumbs" / "a-240-aaaaaa.avif").write_bytes(b"one")
+    (dist / "index.html").write_text("<p>hi</p>")
+    monkeypatch.setattr(bs, "DIST", str(dist))
+    first = bs.dist_digest({})
+    edited = tmp_path / "build_site.py"
+    edited.write_text(open(bs.__file__, encoding="utf-8").read() + "\n# a comment\n", encoding="utf-8")
+    spec = importlib.util.spec_from_file_location("site_build_edited", edited)
+    other = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(other)
+    other.DIST = str(dist)
+    assert other.dist_digest({}) == first
+    (dist / "thumbs" / "a-240-aaaaaa.avif").write_bytes(b"two")
+    assert bs.dist_digest({}) != first
 
 
 def test_a_stopped_image_phase_keeps_what_it_made(bs, repo, tmp_path, monkeypatch):  # noqa: F811
@@ -92,22 +153,24 @@ def test_a_stopped_image_phase_keeps_what_it_made(bs, repo, tmp_path, monkeypatc
 
 def test_the_worker_lists_the_pictures_in_use(bs, repo, tmp_path, monkeypatch):  # noqa: F811
     """dist/sw.js: site/sw.js with every card and rulebook image's blob (its first 10 digits) and icon stamp, as one
-    string; the pages preload AVIF only."""
+    string, and the thumbs' settings tags; the pages preload AVIF only."""
     data = _build(bs, monkeypatch, repo, tmp_path / "s")
     dist = tmp_path / "s" / "dist"
     text = (dist / "sw.js").read_text(encoding="utf-8")
     joined = json.loads(re.search(r'const IN_USE = new Set\(("[0-9a-f]*")\.match', text).group(1))
     listed = [joined[i:i + 10] for i in range(0, len(joined), 10)]
-    icons = {i["file"].split("?v=")[1] for i in data["cards.json"]["icons"].values()}
+    icons = {re.fullmatch(r"icons/[a-z0-9-]+\.([0-9a-f]{10})\.webp", i["file"]).group(1) for i in data["cards.json"]["icons"].values()}
     assert set(listed) == {c["img"][:10] for c in data["cards.json"]["cards"] if c.get("img")} | icons and listed == sorted(set(listed))
-    assert "/*PICTURES*/" not in text
+    tags = json.loads(re.search(r'const TAGS = new Set\(("[0-9a-f]*")\.match', text).group(1))
+    assert tags == "".join(data["cards.json"]["thumbs"][w] for w in ("240", "360", "720"))
+    assert "/*PICTURES*/" not in text and "/*TAGS*/" not in text
     for page in [dist / "index.html", *dist.glob("c/*/index.html")]:
         assert ".webp" not in page.read_text(encoding="utf-8"), page
 
 
 def test_icon_urls_carry_their_pictures_stamp(tmp_path, monkeypatch):
-    """icons/<name>.webp?v=<stamp>: the stamp follows the icon's blob (and its variants' drawing), so the worker can keep
-    the URL for good; the files keep their names."""
+    """icons/<name>.<stamp>.webp: the stamp follows the icon's blob (and its variants' drawing) and is in the file's name,
+    so an old page's URL gets that picture or a 404, never another deploy's, and the worker can keep the URL for good."""
     import importlib.util
     import test_token_picker as tp
     for name in ("numpy", "cv2", "fontTools", "PIL"):
@@ -117,12 +180,14 @@ def test_icon_urls_carry_their_pictures_stamp(tmp_path, monkeypatch):
     spec.loader.exec_module(module)
     root, tree = _icon_repo(tp, tmp_path)
     icons, _ = tp._icons(module, monkeypatch, root, tree, tmp_path / "a")
-    stamp = re.fullmatch(r"icons/fire\.webp\?v=([0-9a-f]{10})", icons["fire"]["file"]).group(1)
-    assert (tmp_path / "a" / "dist" / "icons" / "fire.webp").is_file()
+    stamp = re.fullmatch(r"icons/fire\.([0-9a-f]{10})\.webp", icons["fire"]["file"]).group(1)
+    assert (tmp_path / "a" / "dist" / icons["fire"]["file"]).is_file() and not (tmp_path / "a" / "dist" / "icons" / "fire.webp").exists()
+    assert {p.name for p in (tmp_path / "a" / "dist" / "icons").glob(f"fire.{stamp}.*.webp")} == {f"fire.{stamp}.{v}.webp" for v in tp.ALL}
     again, _ = tp._icons(module, monkeypatch, root, tree, tmp_path / "a")
     assert again["fire"]["file"] == icons["fire"]["file"]
     moved, _ = tp._icons(module, monkeypatch, root, {**tree, "Types/Fire.png": "d" * 40}, tmp_path / "b")
     assert moved["fire"]["file"] != icons["fire"]["file"] and stamp not in moved["fire"]["file"]
+    assert not list((tmp_path / "b" / "dist" / "icons").glob(f"*{stamp}*"))                  # the old stamp's URL: a 404
     assert moved["new"]["file"] == icons["new"]["file"]
 
 
@@ -150,11 +215,13 @@ def node(tmp_path, body: str):
     return json.loads(done.stdout)
 
 
-MISSING = "https://x.test/site/icons/missing.webp?v=0123456789"
+MISSING = "https://x.test/site/icons/missing.0123456789.webp"
+TAGS = ["a1a1a1", "b2b2b2", "c3c3c3"]
 SW_HARNESS = r"""
 import fs from "node:fs";
 const IN_USE = __IN_USE__;
-const src = fs.readFileSync(__SW__, "utf8").replace('/*PICTURES*/""', JSON.stringify(IN_USE.map(n => n.slice(0, 10)).join("")));
+const src = fs.readFileSync(__SW__, "utf8").replace('/*PICTURES*/""', JSON.stringify(IN_USE.map(n => n.slice(0, 10)).join("")))
+  .replace('/*TAGS*/""', JSON.stringify(__TAGS__.join("")));
 const store = new Map(), fetched = [];
 let broken = false;
 const cacheOf = m => ({ match: async u => m.get(u), put: async (u, r) => { m.set(u, r); }, keys: async () => [...m.keys()].map(url => ({ url })),
@@ -177,51 +244,58 @@ async function get(url, method = "GET", headers = {}) {
 }
 const T = "https://x.test/site/thumbs/", out = {};
 store.set("pictures-0", new Map([["old", 1]])); store.set("other-app", new Map());
-store.set("pictures-1", new Map([[T + "ffffffffffffffff-240.avif", { body: "stale" }], [T + "aaaaaaaaaaaaaaaa-240.avif", { body: "kept" }]]));
+store.set("pictures-1", new Map([[T + "ffffffffffffffff-240-a1a1a1.avif", { body: "stale" }], [T + "aaaaaaaaaaaaaaaa-240-a1a1a1.avif", { body: "kept" }],
+  [T + "aaaaaaaaaaaaaaaa-240-d4d4d4.avif", { body: "old settings" }]]));
 on.install(event({}));
 const a = event({}); on.activate(a); await Promise.all(a.waits);
 out.activated = { caches: [...store.keys()].sort(), entries: [...store.get("pictures-1").keys()], skipped: !!self.skipped, claimed: !!self.claimed };
-out.first = await get(T + "bbbbbbbbbbbbbbbb-720.avif");
-out.second = await get(T + "bbbbbbbbbbbbbbbb-720.avif");
-out.kept = await get(T + "aaaaaaaaaaaaaaaa-240.avif");
-out.unused = [await get(T + "cccccccccccccccc-360.avif"), await get(T + "cccccccccccccccc-360.avif")];
-out.icon = [await get("https://x.test/site/icons/fire.glow.webp?v=0123456789"), await get("https://x.test/site/icons/fire.glow.webp?v=0123456789")];
-out.missing = [await get(T + "dddddddddddddddd-missing.avif"), await get("https://x.test/site/icons/missing.webp?v=0123456789")];
+out.first = await get(T + "bbbbbbbbbbbbbbbb-720-c3c3c3.avif");
+out.second = await get(T + "bbbbbbbbbbbbbbbb-720-c3c3c3.avif");
+out.kept = await get(T + "aaaaaaaaaaaaaaaa-240-a1a1a1.avif");
+out.unused = [await get(T + "cccccccccccccccc-360-b2b2b2.avif"), await get(T + "cccccccccccccccc-360-b2b2b2.avif")];
+const ICON = "https://x.test/site/icons/fire.0123456789.glow.webp";
+out.icon = [await get(ICON), await get(ICON)];
+out.missing = [await get(T + "dddddddddddddddd-missing.avif"), await get(__MISSING__)];
 out.passed = await Promise.all(["https://x.test/site/", "https://x.test/site/index.html", "https://x.test/site/data/cards.json?v=abc",
   "https://x.test/site/assets/app.js?v=abc", "https://x.test/site/sw.js", "https://x.test/site/c/hornet/", "https://x.test/site/icons/fire.webp",
-  T + "bbbbbbbbbbbbbbbb-720.webp", T + "bbbbbbbbbbbbbbbb-720.avif?x=1", T + "bbbbbbbbbbbbbbbb-og.jpg", "https://y.test/site/thumbs/bbbbbbbbbbbbbbbb-720.avif",
-  "https://x.test/other/thumbs/bbbbbbbbbbbbbbbb-720.avif"].map(u => get(u)));
-out.post = await get(T + "eeeeeeeeeeeeeeee-720.avif", "POST");
-out.range = await get(T + "eeeeeeeeeeeeeeee-720.avif", "GET", { range: "bytes=0-9" });
-const m = event({ data: { seen: [T + "eeeeeeeeeeeeeeee-240.avif", T + "bbbbbbbbbbbbbbbb-720.avif", T + "cccccccccccccccc-240.avif", "https://x.test/site/data/cards.json", "not a url"] } });
+  "https://x.test/site/icons/fire.glow.webp?v=0123456789", ICON + "?v=0123456789", T + "bbbbbbbbbbbbbbbb-720.avif",
+  T + "bbbbbbbbbbbbbbbb-720-d4d4d4.avif", T + "bbbbbbbbbbbbbbbb-720-c3c3c3.webp", T + "bbbbbbbbbbbbbbbb-720-c3c3c3.avif?x=1", T + "bbbbbbbbbbbbbbbb-og.jpg",
+  "https://y.test/site/thumbs/bbbbbbbbbbbbbbbb-720-c3c3c3.avif", "https://x.test/other/thumbs/bbbbbbbbbbbbbbbb-720-c3c3c3.avif"].map(u => get(u)));
+out.post = await get(T + "eeeeeeeeeeeeeeee-720-c3c3c3.avif", "POST");
+out.range = await get(T + "eeeeeeeeeeeeeeee-720-c3c3c3.avif", "GET", { range: "bytes=0-9" });
+const m = event({ data: { seen: [T + "eeeeeeeeeeeeeeee-240-a1a1a1.avif", T + "bbbbbbbbbbbbbbbb-720-c3c3c3.avif", T + "cccccccccccccccc-240-a1a1a1.avif",
+  T + "eeeeeeeeeeeeeeee-360-d4d4d4.avif", "https://x.test/site/data/cards.json", "not a url"] } });
 fetched.length = 0; on.message(m); await Promise.all(m.waits);
 out.seen = { fetched: [...fetched], cached: [...store.get("pictures-1").keys()].sort() };
 broken = true;
-out.noStorage = await get(T + "eeeeeeeeeeeeeeee-360.avif");
+out.noStorage = await get(T + "eeeeeeeeeeeeeeee-360-b2b2b2.avif");
 process.stdout.write(JSON.stringify(out));
 """
 
 
 def test_the_worker_keeps_versioned_pictures_and_nothing_else(tmp_path):
-    """Cache first for thumbs/<blob>-<w>.avif and icons/<name>.webp?v=<stamp> the site uses; pages, data, scripts, sw.js,
-    unstamped or foreign URLs, POST and Range requests never reach it. Activation deletes older picture caches and
-    pictures no longer used (never another cache); seen pictures are put in; no storage means the network."""
+    """Cache first for thumbs/<blob>-<w>-<tag>.avif (the build's tags) and icons/<name>.<stamp>[.<variant>].webp the site
+    uses; pages, data, scripts, sw.js, unstamped, query-string or foreign URLs, other settings tags, POST and Range
+    requests never reach it. Activation deletes older picture caches and pictures no longer used (never another cache);
+    seen pictures are put in; no storage means the network."""
     if not shutil.which("node"):
         pytest.skip("no node")
     in_use = ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb", "eeeeeeeeeeeeeeee", "dddddddddddddddd", "0123456789"]
-    out = node(tmp_path, SW_HARNESS.replace("__IN_USE__", json.dumps(in_use)).replace("__SW__", json.dumps(str(SW))))
+    out = node(tmp_path, SW_HARNESS.replace("__IN_USE__", json.dumps(in_use)).replace("__SW__", json.dumps(str(SW)))
+               .replace("__TAGS__", json.dumps(TAGS)).replace("__MISSING__", json.dumps(MISSING)))
     t = "https://x.test/site/thumbs/"
-    assert out["activated"] == {"caches": ["other-app", "pictures-1"], "entries": [t + "aaaaaaaaaaaaaaaa-240.avif"], "skipped": True, "claimed": True}
-    assert out["first"] == f"net:{t}bbbbbbbbbbbbbbbb-720.avif" and out["second"] == f"copy:{t}bbbbbbbbbbbbbbbb-720.avif"
+    assert out["activated"] == {"caches": ["other-app", "pictures-1"], "entries": [t + "aaaaaaaaaaaaaaaa-240-a1a1a1.avif"], "skipped": True, "claimed": True}
+    assert out["first"] == f"net:{t}bbbbbbbbbbbbbbbb-720-c3c3c3.avif" and out["second"] == f"copy:{t}bbbbbbbbbbbbbbbb-720-c3c3c3.avif"
     assert out["kept"] == "kept"
-    assert out["unused"] == [f"net:{t}cccccccccccccccc-360.avif"] * 2                       # served, not kept: not in use
-    icon = "https://x.test/site/icons/fire.glow.webp?v=0123456789"
+    assert out["unused"] == [f"net:{t}cccccccccccccccc-360-b2b2b2.avif"] * 2                # served, not kept: not in use
+    icon = "https://x.test/site/icons/fire.0123456789.glow.webp"
     assert out["icon"] == [f"net:{icon}", f"copy:{icon}"]
     assert out["missing"] == ["network", f"net:{MISSING}"] and MISSING not in out["seen"]["cached"]   # a 404 is never kept
-    assert out["passed"] == ["network"] * 12 and out["post"] == "network" and out["range"] == "network"
-    assert out["seen"]["fetched"] == [t + "eeeeeeeeeeeeeeee-240.avif"]                         # in use, not cached yet
-    assert t + "eeeeeeeeeeeeeeee-240.avif" in out["seen"]["cached"] and t + "cccccccccccccccc-240.avif" not in out["seen"]["cached"]
-    assert out["noStorage"] == f"net:{t}eeeeeeeeeeeeeeee-360.avif"
+    assert out["passed"] == ["network"] * 16 and out["post"] == "network" and out["range"] == "network"
+    assert out["seen"]["fetched"] == [t + "eeeeeeeeeeeeeeee-240-a1a1a1.avif"]                  # in use, not cached yet
+    assert t + "eeeeeeeeeeeeeeee-240-a1a1a1.avif" in out["seen"]["cached"] and t + "cccccccccccccccc-240-a1a1a1.avif" not in out["seen"]["cached"]
+    assert t + "eeeeeeeeeeeeeeee-360-d4d4d4.avif" not in out["seen"]["cached"]
+    assert out["noStorage"] == f"net:{t}eeeeeeeeeeeeeeee-360-b2b2b2.avif"
 
 
 def test_the_site_asks_for_avif_and_starts_the_worker():
@@ -236,7 +310,7 @@ def test_the_site_asks_for_avif_and_starts_the_worker():
     if not shutil.which("node"):
         return
     script = f"""const T = await import({json.dumps((ASSETS / 'text.js').as_uri())});
-process.stdout.write(JSON.stringify([T.variantFile({{ file: "icons/fire.webp?v=0a1b2c3d4e" }}, "glow"), T.variantFile({{ file: "icons/fire.webp" }}, "tint")]));"""
+process.stdout.write(JSON.stringify([T.variantFile({{ file: "icons/fire.0a1b2c3d4e.webp" }}, "glow"), T.variantFile({{ file: "icons/fire.webp" }}, "tint")]));"""
     done = run_process(["node", "--input-type=module", "-e", script], capture_output=True, text=True, timeout=60)
     assert done.returncode == 0, done.stderr
-    assert json.loads(done.stdout) == ["icons/fire.glow.webp?v=0a1b2c3d4e", "icons/fire.tint.webp"]
+    assert json.loads(done.stdout) == ["icons/fire.0a1b2c3d4e.glow.webp", "icons/fire.tint.webp"]

@@ -282,21 +282,19 @@ process.stdout.write(JSON.stringify({ html, bare, pane: live.paneHtml(false), op
 
 
 def test_the_live_preview_viewer(tmp_path):
-    """The card image's viewer above the body, outside what paintPreview rewrites; its picture is the 720 px AVIF made
-    from app.imageOf's 360 px one (edit.js viewerImage)."""
+    """The card image's viewer above the body, outside what paintPreview rewrites; its picture is app.imageOf's 720 px
+    AVIF."""
     if "iv-pane" not in (ASSETS / "live.js").read_text(encoding="utf-8"):
         pytest.skip("no image viewer in live.js")
     out = node(tmp_path, """
-const edit = await import(%s);
-process.stdout.write(JSON.stringify({ pane: live.paneHtml(false), viewer: live.paneHtml(false, { viewer: edit.viewerImage("thumbs/g-360.avif"), ar: "360/720" }),
-  other: [edit.viewerImage("thumbs/g-240.avif"), edit.viewerImage("")] }));
-""" % json.dumps((ASSETS / "edit.js").as_uri()))
+process.stdout.write(JSON.stringify({ pane: live.paneHtml(false), viewer: live.paneHtml(false, { viewer: "thumbs/g-720-aaaaaa.avif", ar: "360/720" }) }));
+""")
     viewer = out["viewer"]
     assert 'class="iv iv-pane"' in viewer and "iv-pane" not in out["pane"]
-    assert viewer.index('class="iv iv-pane"') < viewer.index('id="lp-body"') and 'src="thumbs/g-720.avif"' in viewer and "aspect-ratio:360/720" in viewer
-    assert out["other"] == ["thumbs/g-240.avif", ""]                # edit.js viewerImage: only app.imageOf's 360 px name
+    assert viewer.index('class="iv iv-pane"') < viewer.index('id="lp-body"') and 'src="thumbs/g-720-aaaaaa.avif"' in viewer and "aspect-ratio:360/720" in viewer
+    assert "viewer: app.imageOf(c, 720)" in (ASSETS / "edit.js").read_text(encoding="utf-8")
     app = (ASSETS / "app.js").read_text(encoding="utf-8")         # what app.imageOf gives it
-    assert "thumbs/${c.img}-${w}.avif" in app and "const thumbUrl = c => img(c, 360);" in app and "imageOf: c => thumbUrl(c)" in app
+    assert "thumbs/${c.img}-${w}-${S.data.thumbs[w]}.avif" in app and "imageOf: (c, w = 360) => img(c, w)" in app
 
 
 # ---- stars.js
