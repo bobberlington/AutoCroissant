@@ -95,10 +95,10 @@ def batch_env(where: str = "", **extra: str) -> dict:
 # ========================
 # Helper Functions
 # ========================
-def _git(*args: str, **extra: str) -> str:
-    """Run git in the history clone (blobless: only rev-list, ls-tree, merge-base, fetch here, never diff/log)."""
+def _git(*args: str, stdin: Optional[str] = None, **extra: str) -> str:
+    """Run git in the history clone (blobless: rev-list, ls-tree, diff-tree of trees, merge-base, fetch; no blob read)."""
     clone = expanduser(HISTORY_CLONE)
-    return run(["git", "-C", clone, *args], capture_output=True, encoding="utf-8",
+    return run(["git", "-C", clone, *args], input=stdin, capture_output=True, encoding="utf-8",
                check=True, timeout=GIT_TIMEOUT, env=batch_env(clone, **extra)).stdout
 
 
@@ -120,6 +120,27 @@ def _is_ancestor(commit: str, head: str) -> bool:
         return True
     except CalledProcessError:
         return False
+
+
+def _diffs(rows: list) -> dict:
+    """commit -> {path: blob, None when gone} against its first parent (a root: all its files); one diff-tree."""
+    lines = "".join(f"{commit} {parents[0]}\n" if parents else f"{commit}\n" for commit, *parents in rows)
+    out = _git("diff-tree", "--stdin", "--always", "--root", "-r", "--no-renames", "-z", stdin=lines,
+               GIT_NO_LAZY_FETCH="1").split("\0")
+    diffs: dict = {}
+    current: dict = {}
+    i = 0
+    while i < len(out):
+        token = out[i]
+        if token.startswith(":"):               # ":old_mode new_mode old_blob new_blob status", then the path
+            meta = token.split(" ")
+            current[out[i + 1]] = None if meta[1] in ("000000", "160000") else meta[3]    # gone, or a submodule
+            i += 2
+            continue
+        if token:                               # a header: the commit
+            current = diffs[token] = {}
+        i += 1
+    return diffs
 
 
 def _walk(head: str, last: str, known: dict) -> Optional[dict]:
@@ -151,10 +172,14 @@ def _walk(head: str, last: str, known: dict) -> Optional[dict]:
                                 for path, blob in _tree(parent).items()}
             children[parent] = children.get(parent, 0) + 1
 
+    diffs = _diffs(rows)
     for commit, *parents in rows:               # parents come first
         olds = [maps[p] for p in parents]
-        current = {}
-        for path, blob in _tree(commit).items():
+        current = dict(olds[0]) if olds else {}  # same as the first parent: its entry
+        for path, blob in diffs[commit].items():
+            if blob is None:
+                current.pop(path, None)
+                continue
             # unchanged when it matches any parent (first match, like git log); else changed here
             current[path] = next(((blob, old[path][1]) for old in olds if path in old and old[path][0] == blob),
                                  (blob, commit))
