@@ -35,6 +35,13 @@ exactly one writer. Grafted onto it:
 
 §3 lists every graft.
 
+**Status 2026-10-25, step 10 built (owner ruling ~04:00: "now").** Branches work/pickles in both repos: AutoCroissant
+deletes `stats.pkl`, `old_stats.pkl`, `aliases.pkl`, `psd_details.json`, `/push`, the `CARD_SYNC` switch, the legacy
+`/update_stats` path (repo_traverser.py, `card_data.update`, the commits-API lookups, the one-time history cleanup and
+backfill) and every pickle writer (`export-pickles` included); the build's `--seed` from an AutoCroissant commit and the
+read-only pickle tools stay. TTSCardMaker's site.yml always reads `data` (no `CARD_DATA` switch) and build_site.py lost
+its pickle loader. The data branch is the only source; the rollback of the whole move (§13) is gone with them.
+
 **Status 2026-10-24, the clock in GitHub (owner, 23:15 and 23:27: "Move it into GitHub", a fixed window).** card-sync.yml
 has a `push` trigger on the card inputs. The first card push starts a 30-minute timer (job `Quiet window`, the environment
 `card-sync-quiet`'s wait timer); pushes while it runs start none (their runs end at once) and the run syncs main's head when
@@ -1085,7 +1092,8 @@ git clone -q --bare --filter=blob:none https://github.com/MichaelJSr/TTSCardMake
 - Publishing: a plain `git push` of `/tmp/carddata` to `data`, with the owner's own credentials. The next scheduled run sees
   G6 only if it was running at that moment.
 
-**Rollback of the whole move (until step 10):**
+**Rollback of the whole move (until step 10; gone since 2026-10-25, when step 10 removed the pickles, `export-pickles`
+and `CARD_SYNC`):**
 1. Revert the site.yml cutover commit. The site reads AutoCroissant again.
 2. On the Mac, run `python -m commands.card_db export-pickles <data tip> . --git <a checkout of data>`, commit the three
    files it writes (`stats.pkl`, `old_stats.pkl`, `psd_details.json`; `aliases.pkl` is not in db/ and stays) as `PICKLE` to
@@ -1254,6 +1262,8 @@ Each step lands on main on its own, keeps the full suite green, and is recorded 
       - memories `jetson-server`, `ttscardmaker-integration` and `next-session-plan`.
     - *Verify:* the suite is green; `/help` lists no /push; a full site build is green.
     - *Undo:* revert. The files come back from history.
+    - *Status 2026-10-25:* built on work/pickles in both repos (owner ruling ~04:00; the owner tells bobberlington).
+      `conftest.real_stats` reads `db/stats.json` from `AUTOCROISSANT_LOCAL_DIR`'s `origin/data`.
 
 ## 15. Runner and API cost
 
@@ -1302,7 +1312,7 @@ except 6, which is one day, not 14:
    gate-only runs (free on a public repo) and no more commits, because commits follow changes, not runs. Hourly halves the gate
    runs and makes a full re-parse take two hours instead of one. The bot's sync reminder follows the same interval.
 6. **Within a day of clean runs (owner; 14 days was the proposal), delete the pickles, `psd_details.json` and `/push` from AutoCroissant main** (bobberlington's repo:
-   tell him first). Answered: yes.
+   tell him first). Answered: yes. Done 2026-10-25 (step 10, owner ruling ~04:00).
 
 7. **More on `data` (2026-10-23 ~18:30).** Answered: yes to both.
    - **Bake verdicts** move out of `site/Card Edits.json` (the `_psd` blocks: baked, refused, redundant, the reason, the

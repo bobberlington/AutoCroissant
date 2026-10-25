@@ -1,6 +1,6 @@
 ---
 name: impossibility-cards-reference
-description: Domain reference for the Impossibility Simulator card game AS ENCODED in AutoCroissant and the TTSCardMaker repo. Load whenever a task mentions cards, PSDs, PSD layers, ability text, type injection or [type] tokens, stats extraction (hp/def/atk/spd), stars/Warpstars, folder structure or card classification, CardInfo/CardStats, the stats.pkl / old_stats.pkl / aliases.pkl schemas, query syntax or the query DSL (/query, /query_ability, /query_rulebook; the | & ! "exact" hp>5 type==creature type~x operators), rulebook pages, aliases or ambiguous card names, validation problems (UNKNOWN TYPE, ABILITY TEXT NOT FOUND, STATS TOO HIGH, MISSPELT TYPE), the exclusion lists, or the creatures-vs-creature anomaly. Contains the folder-to-classification table, PSD layer semantics with an annotated real layer dump, the precise type-injection algorithm with constants and a worked trace, validation rules with the ability exclusion list spelled out (the stat list is gone since 2026-10-21; `allow_high_stats` in Card Edits.json replaces it), pickle schemas with measured counts, and the full query DSL with gotchas. This is the "what the data means" pack — not an operating runbook (run-and-operate), not a bug-fixing campaign (psd-extraction-campaign), not script usage docs (diagnostics-and-tooling).
+description: Domain reference for the Impossibility Simulator card game AS ENCODED in AutoCroissant and the TTSCardMaker repo. Load whenever a task mentions cards, PSDs, PSD layers, ability text, type injection or [type] tokens, stats extraction (hp/def/atk/spd), stars/Warpstars, folder structure or card classification, CardInfo/CardStats, the card data schemas (db/ stats.json / old_stats.json; the stats.pkl / old_stats.pkl / aliases.pkl pickles until 2026-10-25), query syntax or the query DSL (/query, /query_ability, /query_rulebook; the | & ! "exact" hp>5 type==creature type~x operators), rulebook pages, aliases or ambiguous card names, validation problems (UNKNOWN TYPE, ABILITY TEXT NOT FOUND, STATS TOO HIGH, MISSPELT TYPE), the exclusion lists, or the creatures-vs-creature anomaly. Contains the folder-to-classification table, PSD layer semantics with an annotated real layer dump, the precise type-injection algorithm with constants and a worked trace, validation rules with the ability exclusion list spelled out (the stat list is gone since 2026-10-21; `allow_high_stats` in Card Edits.json replaces it), pickle schemas with measured counts, and the full query DSL with gotchas. This is the "what the data means" pack — not an operating runbook (run-and-operate), not a bug-fixing campaign (psd-extraction-campaign), not script usage docs (diagnostics-and-tooling).
 ---
 
 # Impossibility Simulator: the card data model, as encoded here
@@ -25,10 +25,10 @@ https://github.com/JasonBechdolt and maintained by friends since middle school."
 Photoshop file (`.psd`, the editable source of truth) with a rendered `.png` sibling (the image the
 bot posts in Discord, served from `raw.githubusercontent.com`). TTSCardMaker is cloned at
 `~/Desktop/TTSCardMaker` — that path is the documented convention, set as `LOCAL_DIR_LOC` in
-`global_config.py:5`. This bot (AutoCroissant) READS TTSCardMaker over the GitHub API (reading the
-local clone, "local mode", was archived on 2026-10-20; the clone still serves the offline diagnostics
-scripts), parses the PSDs into a stats database (`stats.pkl`), and answers queries against it.
-The bot never writes to TTSCardMaker.
+`global_config.py:5`. AutoCroissant's builder (`commands/card_data.py`, run by TTSCardMaker's Card sync Action)
+parses the PSDs into the card data (`db/` JSON on TTSCardMaker's `data` branch: `stats.json`, `old_stats.json`; this
+repo's `stats.pkl` / `old_stats.pkl` until 2026-10-25), and the bot syncs that data and answers queries against it (the
+clone still serves the offline diagnostics scripts).
 
 Scale, measured 2026-07-11: 904 PSDs and 1003 PNGs in the clone; 813 entries in `stats.pkl`.
 The books balance exactly: 904 − 90 (`MDW/`, excluded) − 1 (`Auxiliary/Markers/`, excluded) = 813
@@ -461,14 +461,14 @@ are allowed per card by `allow_high_stats` in Card Edits.json. Verbatim, psd_par
   Duelist, Abyss Watcher and Warrior Dee (all excluded) parse to "". `tests/test_parser_goldens.py::test_shadow_duelist_exclusion`
   pins the PSD (skips when it changes upstream); `tests/test_rulebook_hidden.py` the rule.
 
-## 6. Data schemas: CardInfo and the pickles
+## 6. Data schemas: CardInfo and the card data
 
-`CardInfo` and `CardStats` are `@dataclass`es in `commands/card_models.py` (:81-151, :52-79), pickled as
-`commands.psd_analyzer.*` (`__module__` pinned since the 2026-10-20 split).
-Consequence: **unpickling stats.pkl/old_stats.pkl requires this repo on sys.path with a config.py
-present** (module import chain). Pickles from before the
-2025-10-20 "Big massive refactor" (366c8d9) were plain dicts. Loading pattern the diagnostics
-scripts use: run from the repo root with `sys.path.insert(0, '.')`.
+`CardInfo` and `CardStats` are `@dataclass`es in `commands/card_models.py`. The card data stores them as JSON records
+(`card_db.record`: CardInfo's attribute names plus `version` and `created`; `stats.json` one card per line,
+`old_stats.json` one name's versions per line; `db/manifest.json` holds each file's sha256), read back with
+`card_db.read_db` / `read_cards` (no config.py needed). The historical pickles (until 2026-10-25, in git history) held
+the objects pickled as `commands.psd_analyzer.*`; `card_db.load_pickle` reads them through an allow-list. Pickles from
+before the 2025-10-20 "Big massive refactor" (366c8d9) were plain dicts.
 
 CardInfo fields → pickle/dataframe keys (`to_dict`, commands/card_models.py; the lossy `from_dict` was deleted 2026-10-20):
 
@@ -548,15 +548,15 @@ first commits are MichaelJSr's bulk "init" or folder-rename commits, which is wh
 survive reparses (`parse` copies them from the existing entry). The website's edit writes the card's `[cards]` line in that file
 (Discord's `/update_metadata author:` and `/mass_replace author` did until 2026-10-25, branch `archive/discord-edits`). `/list_orphans` lists author-less cards.
 
-Pickles (all in the repo root, committed to git; the reminders live in the gitignored reminder.json — commit discipline lives in
-autocroissant-change-control):
+The card data (db/ on TTSCardMaker's `data` branch; the bot's copy in `card_data/`; written by Card sync only — the
+data gate lives in autocroissant-change-control). The pickle-era files it replaced are in this repo's history:
 
-| File | Shape | Measured 2026-07-11 |
+| File | Shape | Measured |
 |---|---|---|
-| `stats.pkl` | `dict[str name -> CardInfo]` | 813 entries |
-| `old_stats.pkl` | `defaultdict[str name -> list[CardInfo]]` | 218 names, 223 archived versions |
-| `aliases.pkl` | `dict[str alias -> str target png filename]` | 60 entries, e.g. `'red_bloon' -> 'pod01red_bloon.png'` |
-| `reminder.json` (was `reminder.pkl`) | reminders, gitignored — not this skill's domain | |
+| `stats.json` (was `stats.pkl`) | `{"schema": 1, "cards": {name: record}}` → `dict[str name -> CardInfo]` | 813 entries on 2026-07-11 (pickle) |
+| `old_stats.json` (was `old_stats.pkl`) | `{"schema": 1, "cards": {name: [record]}}` → `defaultdict[str name -> list[CardInfo]]` | 218 names, 223 archived versions on 2026-07-11 (pickle) |
+| aliases (was `aliases.pkl`, 60 entries) | each card's `aliases` in TTSCardMaker `site/Card Edits.json` (moved 2026-10-22) | |
+| `reminder.json` (was `reminder.pkl`) | reminders, gitignored, in this repo — not this skill's domain | |
 
 `old_stats.pkl` receives a snapshot when a re-parsed card's PSD blob changed or the card moved and its data changed
 (`_history` and `_record_history`, card_data.py; since 2026-10-20 a `cards:`/`force_update` re-parse of an unchanged PSD
@@ -797,3 +797,5 @@ change, sections 4-5 are stale until rewritten.
 2026-10-23 (unbatch): §7.2 gotcha 10: /query_ability posts one message per card again; §7's citations and §6's force_update defaults re-pointed.
 
 2026-10-25 (retire): /update_metadata, /mass_replace, /alias and the alias migration CLI retired (branch archive/discord-edits); name_choices lost old=/cards=.
+
+2026-10-25 (step 10, work/pickles): the intro and §6 describe the card data (db/ JSON records, card_db) and list the pickles as history.

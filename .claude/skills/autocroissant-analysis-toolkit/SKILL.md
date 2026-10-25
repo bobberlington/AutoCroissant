@@ -16,7 +16,8 @@ BEFORE you run the measurement.** Every recipe below follows that bar and ends w
 that was actually executed against this repo on 2026-07-11 — the outputs shown are real, not
 illustrative.
 
-Why this matters here specifically: this repo has NO CI and only an offline pytest suite (`tests/`), the pickles ARE the database,
+Why this matters here specifically: this repo has NO CI and only an offline pytest suite (`tests/`), the card data is a
+build output on TTSCardMaker's `data` branch (this repo's committed pickles until 2026-10-25, still in its history),
 and history contains commits whose messages are jokes ("am forehead") and commits whose messages
 look routine but ballooned the database ("PICKLE"). Pattern-matching on names, messages, or vibes
 has burned this project repeatedly; the recipes below are the antidote.
@@ -24,8 +25,8 @@ has burned this project repeatedly; the recipes below are the antidote.
 ## Ground rules for every recipe
 
 - The repo is treated READ-ONLY for analysis: read-only git only (`log`/`show`/`diff` — never
-  add/commit/checkout/reset), never run the bot (`python3 main.py`), never call `update_stats()`,
-  never write any pickle in the repo. Snapshots you extract go to `/tmp` or a scratch dir.
+  add/commit/checkout/reset), never run the bot (`python3 main.py`), never dispatch Card sync or publish card data.
+  Snapshots you extract go to a scratch dir (`~/Documents/Tools/wt/scratch/`).
 - `config.py` (repo root) is SECRET (tokens). Import chains read it; never print its values.
 - Since 2026-10-20 only main.py prints the token-presence line; importing the card modules prints
   nothing, so the `2>&1 | grep -v "Git token"` filters below are harmless leftovers.
@@ -39,8 +40,9 @@ Jargon used below, once: a **PSD** is a layered Photoshop file, one per card, in
 `MichaelJSr/TTSCardMaker` repo cloned at `~/Desktop/TTSCardMaker`. A **gap** is a run of 3+ spaces
 in a card's ability text where a type icon visually sits. The **midline** is `height *
 TYPE_REGION_RATIO` (0.5); icons above it are the card's own types, icons below it are candidates
-for inline injection into the ability text. A **sweep** is one `/update_stats` traversal of all
-cards through the GitHub API (**remote mode**). **Local mode** (walking the clone) was the other path
+for inline injection into the ability text. A **sweep** was one `/update_stats` traversal of all
+cards through the GitHub API (**remote mode**; since 2026-10-25 the card data build, `commands/card_data.py`, run by the
+Card sync Action, reads a git clone instead). **Local mode** (walking the clone) was the other path
 until it was archived on 2026-10-20 (now on branch `archive/local-update-stats`, not in main); the recipes below still mention it
 because it explains old data and history.
 
@@ -51,8 +53,8 @@ because it explains old data and history.
   don't cover the symptom and you must build the explanation yourself.
 - **Running the extraction-improvement campaign** (baselines, gates, ranked solution menu): use
   **autocroissant-psd-extraction-campaign**. It sequences these recipes; this file teaches them.
-- **Accepting a parser change / pushing pickles** (golden cards, sandbox sweep, problem-count
-  gate): use **autocroissant-validation-and-qa**.
+- **Accepting a parser change** (golden cards, scratch full build, problem-count gate): use
+  **autocroissant-validation-and-qa**.
 - **Script flag reference and full golden-output catalog**: **autocroissant-diagnostics-and-tooling**.
 - **The incident stories themselves** (what happened, when, status): **autocroissant-failure-archaeology**
   owns the timeline; this skill only borrows incidents as worked examples of method.
@@ -309,7 +311,10 @@ LAST one is usually the real fix and the first one the attempt — check both.
 
 ---
 
-## Recipe 4 — Measure an API budget before running (remote /update_stats)
+## Recipe 4 — Measure an API budget before running (the legacy remote /update_stats; history since 2026-10-25)
+
+The worked example is the bot's own `/update_stats` parse, removed at step 10 (2026-10-25); the method stands. Today's
+build budgets its REST downloads itself (`--budget`, 400 a run; `RATE_FLOOR`) and reads dates from git: DATA_BUILD_ACTION.md §15.
 
 **When to reach for it:** BEFORE any run that talks to the GitHub API in a loop — remote-mode
 `update_stats`, or the archived local traversal with `use_local_timestamp=False`. Predict the request count first;
@@ -415,14 +420,16 @@ main.py:831-979.
 
 ---
 
-## Recipe 6 — Pickle forensics without the bot
+## Recipe 6 — Pickle forensics without the bot (the pickles in git history; the card data's JSON alike)
 
 **When to reach for it:** any question about what's IN a pickle, how it changed across history, or
 whether a snapshot is damaged — answered with standalone reads, never by running the bot.
 
-**Mechanics.** `stats.pkl` values are `CardInfo` dataclass instances pickled as
-`commands.psd_analyzer.CardInfo` (defined in `commands/card_models.py` since 2026-10-20, `__module__` pinned). Since
-2026-10-22 the forensics pattern is `commands.card_db.load_pickle` (its `SeedUnpickler` allow-list, card_db.py:275-284):
+**Mechanics.** The pickles left the working tree on 2026-10-25: take them from history (`git show <PICKLE
+commit>:stats.pkl`; the last one is the deletion commit's parent). `stats.pkl` values are `CardInfo` dataclass instances
+pickled as `commands.psd_analyzer.CardInfo` (the `__module__` pin was dropped with the pickle writers; card_db's
+allow-list maps both paths). The card data's JSON reads the same way through `commands.card_db.read_cards` (a `db/`
+folder or a data commit). Since 2026-10-22 the forensics pattern is `commands.card_db.load_pickle` (its `SeedUnpickler` allow-list, card_db.py:275-284):
 it loads stats.pkl / old_stats.pkl / aliases.pkl with neither config.py nor psd-tools, on the Mac's plain `python3`.
 The raw `pickle.load` path still imports the `commands.psd_analyzer` chain (discord, pandas, psd-tools, config.py) and
 the older one-liners below use it. Load pattern:
@@ -443,11 +450,11 @@ Computer Virus, `HP/DEF/ATK/SPD NOT FOUND` (5 on 2026-07-11, before the three Wo
 e4e0a58 and tornado became wind) — surface distinction in autocroissant-validation-and-qa §2). For the packaged summary use `inspect_pickle.py`; for two-snapshot diffs use
 `diff_stats.py` (both documented with golden outputs in autocroissant-diagnostics-and-tooling).
 
-**Compare snapshots across git history** — pickles are committed, so `git show <hash>:<file>` is a
-free time machine:
+**Compare snapshots across git history** — the pickles were committed (and the data branch's commits are the card
+data's history now), so `git show <hash>:<file>` is a free time machine:
 
 ```bash
-git show HEAD:stats.pkl > /tmp/stats_head.pkl
+git show 284d13c:stats.pkl > /tmp/stats_head.pkl     # a PICKLE commit; the working pickle of 2026-07-11 below
 python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py /tmp/stats_head.pkl stats.pkl
 # old: 813 cards   new: 813 cards
 # added: 0   removed: 0   modified: 0     (exit 0 — verified 2026-07-11)
@@ -575,3 +582,5 @@ github_api.py lines re-pointed; Recipe 5's main.py lines; Recipe 6 loads through
 baselines 0 stored / 1 full (Computer Virus), old_stats 193,937 B at a7c310e, and points to the history rules.
 
 2026-10-23 (unbatch): Recipe 5 says /query_ability posts one message per card again.
+
+2026-10-25 (step 10, work/pickles): the pickles left the working tree: the why-paragraph, ground rules and jargon say so; Recipe 4 is marked history (the build budgets itself); Recipe 6 reads the pickles from git history and the JSON alike.

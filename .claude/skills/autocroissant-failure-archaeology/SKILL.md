@@ -5,7 +5,7 @@ description: "The chronicle of every major AutoCroissant investigation, dead end
 
 # AutoCroissant Failure Archaeology
 
-Date of record: **2026-07-11**, extended **2026-10-19** (Entry 1 closed, Entry 10 added), **2026-10-20** (Entries 10.10-10.28) and **2026-10-21** (10.29-10.30). Repo: `/Users/michaelsrouji/Desktop/AutoCroissant`, branch `main` (193 commits at a7a4bb3 when Entry 10 was written) plus archive branches `archive/ai-generation` and `archive/local-update-stats`, no CI (an offline pytest suite in `tests/` since 2026-10-20). Every claim below was verified against `git show` diffs, not commit messages — **messages here are sometimes jokes** (see "am forehead", Entry 8.4). When you extend this file, do the same.
+Date of record: **2026-07-11**, extended **2026-10-19** (Entry 1 closed, Entry 10 added), **2026-10-20** (Entries 10.10-10.28), **2026-10-21** (10.29-10.30) and **2026-10-25** (10.32: the pickles retired; the entries before it describe the pickle era). Repo: `/Users/michaelsrouji/Desktop/AutoCroissant`, branch `main` (193 commits at a7a4bb3 when Entry 10 was written) plus archive branches `archive/ai-generation` and `archive/local-update-stats`, no CI (an offline pytest suite in `tests/` since 2026-10-20). Every claim below was verified against `git show` diffs, not commit messages — **messages here are sometimes jokes** (see "am forehead", Entry 8.4). When you extend this file, do the same.
 
 Entry format, always:
 
@@ -804,6 +804,27 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   branch work/archived-field (the site build knows the `archived` field; was 1acc2862) lands first, before the first
   pickle push: every re-parsed card carries `archived = None`, so each build would warn of an unknown field.
 
+### 10.32 The pickles, /push and the legacy /update_stats retired (data build step 10, 2026-10-25)
+
+- **Symptom**: after the cutover (2026-10-24 23:02) the bot read the Card sync Action's `data` branch, but the repo
+  still carried the frozen `stats.pkl`, `old_stats.pkl`, `aliases.pkl` and `psd_details.json`, the `CARD_SYNC` switch
+  (its False branch the rollback), `/push` (a reply saying it was retired), the legacy `/update_stats` parse
+  (repo_traverser.py, `card_data.update` with its commits-API lookups and the one-time history cleanup/backfill), the
+  legacy `/fonts` cache and every pickle writer.
+- **Root cause**: decision 6 of docs/Campaigns/DATA_BUILD_ACTION.md (step 10, "within a day of clean runs"); owner
+  ruling 2026-10-25 ~04:00: do it now.
+- **Evidence**: branch work/pickles. Deleted: the four root files, commands/repo_traverser.py, commands/card_runner.py
+  (bake_lock, the startup temp-PSD sweep), commands/history_backfill.py with its two JSON files (their once-only fixes are
+  in the data), `card_db.export_pickles`/`dump_pickle`/`from-pickles`, `card_models.save_pickle`/`StatsDatabase.save`/
+  `load`/`rescue_dropped`, query_card's aliases.pkl registry, update_bot's push and /pull rescue, font_check's
+  `repo_fonts` cache, card_data's legacy flag, `CardBuild`'s commits API and aliases.pkl reads, `card_edits.ALIASES_MOVED`,
+  `card_history.record_edits`/`dedupe`/`commits_of`, the `CardInfo.__module__` pin. Kept (read-only, historical):
+  card_db's allow-list unpickler (`load_pickle`, `read_pickles`, `read_cards`), the build's `--seed` from an
+  AutoCroissant commit (with the PICKLE-commit recovery, `card_history.bot_pickles`), `card_history refine` (now
+  read-only), changelog's `history --pickles`, inspect_pickle.py and diff_stats.py. TTSCardMaker work/pickles: site.yml
+  always checks out `data` (no `CARD_DATA` switch) and build_site.py lost its pickle loader and `aliases.pkl`.
+- **Status**: built 2026-10-25 on work/pickles in both repos; 46 slash commands. The pickles stay in git history.
+
 ## How to add an entry
 
 Use this template (the evidence bar — one mechanism must explain ALL observations including negatives, numbers predicted before measured — is owned by autocroissant-research-methodology; retired ideas from the idea lifecycle land here too):
@@ -871,3 +892,5 @@ Written 2026-07-11 against HEAD = 284d13c ("PICKLE", 2026-06-20). Extended 2026-
 2026-10-22 (data build): the traverser's code moved to the uncompiled commands/card_data.py; the Entry 10 fix citations and the re-verification greps re-pointed (history is kept as it was).
 
 2026-10-23 (unbatch): entry 10.30's /query_ability listing reverted to one message per card; the 10.29-10.30 re-verification row re-pointed.
+
+2026-10-25 (step 10, work/pickles): Entry 10.32 (the pickles, /push, `CARD_SYNC`, the legacy /update_stats and their writers retired); the entries before it stay as history.

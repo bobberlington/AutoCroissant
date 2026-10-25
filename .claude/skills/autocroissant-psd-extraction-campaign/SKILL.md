@@ -1,6 +1,6 @@
 ---
 name: autocroissant-psd-extraction-campaign
-description: Load this skill to RUN the improvement campaign for AutoCroissant's hardest live problem - PSD ability/type/stat extraction. Trigger phrases and symptoms include "improve extraction", "perfect extraction", "parser campaign", "type injection wrong" / "[type] landed in the wrong place", "gaps vs types", "exclusion list" (ABILITY_EXCLUSIONS / EXCESSIVE_STAT_EXCLUSIONS / burn-down), "problem cards", "ABILITY TEXT NOT FOUND" / "STATS TOO HIGH" / "MISSPELT TYPE", "fix update_stats local mode" / removeprefix / relative-path bug (fixed 2026-10-19; Phase 0 done), "migrate cards to stoogedings tokens", and any plan to change parsing heuristics in commands/psd_analyzer.py. It contains the owner's measurable goal (100 percent correct extraction, zero per-card exclusion lists), a decision-gated numbered campaign (Phase 0 removeprefix foundation -> Phase 1 baseline scoreboard -> Phase 2 gap_trace instrumentation -> Phase 3 ranked solution menu with predicted numbers -> Phase 4 validation and promotion), exact commands with verified expected outputs (2026-07-11 golden numbers), live suspect lists, fenced-off known wrong paths with their incident commits, and scoreboard re-measurement one-liners. Read-only phases are safe against the live repo; anything that writes pickles runs only in a sandbox copy.
+description: Load this skill to RUN the improvement campaign for AutoCroissant's hardest live problem - PSD ability/type/stat extraction. Trigger phrases and symptoms include "improve extraction", "perfect extraction", "parser campaign", "type injection wrong" / "[type] landed in the wrong place", "gaps vs types", "exclusion list" (ABILITY_EXCLUSIONS / EXCESSIVE_STAT_EXCLUSIONS / burn-down), "problem cards", "ABILITY TEXT NOT FOUND" / "STATS TOO HIGH" / "MISSPELT TYPE", "fix update_stats local mode" / removeprefix / relative-path bug (fixed 2026-10-19; Phase 0 done), "migrate cards to stoogedings tokens", and any plan to change parsing heuristics in commands/psd_analyzer.py. It contains the owner's measurable goal (100 percent correct extraction, zero per-card exclusion lists), a decision-gated numbered campaign (Phase 0 removeprefix foundation -> Phase 1 baseline scoreboard -> Phase 2 gap_trace instrumentation -> Phase 3 ranked solution menu with predicted numbers -> Phase 4 validation and promotion), exact commands with verified expected outputs (2026-07-11 golden numbers), live suspect lists, fenced-off known wrong paths with their incident commits, and scoreboard re-measurement one-liners. Read-only phases are safe against the live repo; anything that writes card data runs only in a sandbox copy.
 ---
 
 # The PSD Extraction Campaign
@@ -541,8 +541,8 @@ those gates, as of 2026-07-11:
    ready.
 4. **Problem-count non-increase:** re-validation census (Gate 1e) after the sandbox sweep must not
    contain any NEW name. New names = regression, regardless of how good the diff looks.
-5. Then and only then: change-control for the code; PICKLE commit convention + diff-before-push for
-   any data snapshot. Never /push pickles produced inside a sandbox.
+5. Then and only then: change-control for the code; the data follows through Card sync (a `PARSER_VERSION` bump or a
+   `cards`/`full` dispatch) and its data commit gets the data gate. Never publish a sandbox build.
 
 ---
 
@@ -602,8 +602,8 @@ documented in autocroissant-failure-archaeology).
   `git show f7c915c -- commands/psd_analyzer.py | grep -B3 -A3 removeprefix`
 - Local mode archived 2026-10-20 (no `use_local_*` options; slash force_update=False at main.py:383):
   `grep -rn "use_local" main.py commands/` (only `RETIRED_OPTIONS` in analytics.py); `grep -n "force_update: Optional" main.py`
-- Python-side `update_stats` force_update=False default since 2026-10-19 (repo_traverser.py:473 on 2026-10-20):
-  `grep -n "force_update: bool = " commands/repo_traverser.py commands/card_data.py`
+- Python-side `update_stats` force_update=False default since 2026-10-19 (card_sync.update since 2026-10-25):
+  `grep -n "force_update: bool = " commands/card_sync.py`
 - `_populate_types_from_local` (repo_traverser.py:202 on 2026-10-20, card_data.py:294 since 2026-10-22, skips dotfiles since 2026-10-19; kept for the diagnostics scripts):
   `grep -n -A9 "def _populate_types_from_local" commands/card_data.py`
 - Pipeline line numbers (psd_parser.py, 2026-10-20) — gap regex :318, TYPE_REGION_RATIO :22, card_mid_y :375, prune :831,
@@ -653,3 +653,5 @@ images 470 / none 68); the Phase 2 worked example and Option 3's numbers moved t
 is a token card since TTSCardMaker 1c24dd48); psd_parser.py glossary lines re-pointed.
 
 2026-10-25 (retire): /update_metadata retired (branch archive/discord-edits); the manual-entry row and paragraph point at the website.
+
+2026-10-25 (step 10): the promotion step and the force_update citation follow the card data build (no pickles, no repo_traverser).

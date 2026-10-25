@@ -70,7 +70,7 @@ doctrine in **autocroissant-ai-boundary** there. The `discord.py>=2.5` floor is 
 | davey | Optional Discord "DAVE" voice end-to-end-encryption lib (0.1.6 as of 2026-07-11). discord.py imports it inside `try/except ImportError` (verified in installed discord 2.7.1, `gateway.py`), so the bot runs without it — the Mac's current env does not even have it installed. |
 | discord.py (`>=2.5` since 2026-10-19) | The Discord API library (2.7.1 on the Mac). Its only hard dependency is aiohttp. The floor exists because `commands/type_emojis.py` uses `Client.fetch_application_emojis` / `create_application_emoji`, both `versionadded:: 2.5`; on an older install the emoji sync fails with "Emoji sync failed: ... has no attribute ..." while everything else works. Upgrade with `pip install -U "discord.py>=2.5"` |
 | fonttools (cards) | Font files: `commands/font_check.py:43` (`/fonts`, the missing-fonts audit), reached by `psd_details` and the bake; imported lazily (main.py imports font_check inside `/fonts`, card_data imports psd_details inside its functions), so startup never loads it (2026-10-21). |
-| GitPython | The bot's self-update commands (`/push`, `/pull`, `/update`), imported lazily inside update_bot's functions (update_bot.py:19, 27; startup never loads GitPython). |
+| GitPython | The bot's self-update commands (`/pull`, `/update`; `/push` until 2026-10-25), imported lazily inside update_bot's functions (update_bot.py:19, 27; startup never loads GitPython). |
 | numpy | Image array plumbing in `commands/utils.py:7` and `commands/frankenstein.py:2`. |
 | opencv-python | Image encode/decode/resize, imported lazily inside the functions that need it (2026-10-20; only /frankenstein): `commands/utils.py:109, 117` (`url_to_cv2image`, `cv2discordfile`), `commands/frankenstein.py:65`. |
 | pandas | The card query engine's DataFrames: `commands/query_card.py:13`, `commands/psd_analyzer.py:13`. |
@@ -97,8 +97,8 @@ would not warn when the accident of the dependency graph stopped covering them.
 
 ## 4. Mac vs production (the jetson)
 
-Same code, same pickles (synced via `/push` and the update flow — see
-**autocroissant-run-and-operate**). What differs:
+Same code; the card data comes from TTSCardMaker's `data` branch on both (each syncs its own `card_data/`; the pickles
+synced by `/push` until 2026-10-25 — see **autocroissant-run-and-operate**). What differs:
 
 | Axis | Mac (dev) | Jetson (production) |
 |---|---|---|
@@ -132,10 +132,10 @@ Notes verified from `setup.py` (2026-07-11; the build is incremental since 2026-
   rebuild 16-23 s; nothing changed 0.2 s; one small module edited (help) 1.7 s; psd_parser 11-18 s. Jetson before:
   6 min 44 s every deploy. Only `setup.py clean` deletes `*.html` (rglob) now; the build no longer does.
 - `setup.py` without `--inplace` refuses (the stamps describe the in-place `.so` files).
-- Compiled modules (`INCLUDE_FILES`, setup.py:21-33) — 11 of the 38 `commands/` modules
-  (2026-10-23; the list is unchanged since 2026-10-20): analytics, frankenstein, help, psd_analyzer and the four modules its code was split into that day
-  (card_models, card_edits, psd_parser, repo_traverser: same directives, so the moved code keeps its compiled
-  semantics), query_card, management, music_player.
+- Compiled modules (`INCLUDE_FILES`, setup.py) — 10 `commands/` modules since 2026-10-25 (repo_traverser.py was
+  deleted; `build_ext` removes its `.so` as an orphan): analytics, frankenstein, help, psd_analyzer and the three modules its
+  code was split into on 2026-10-20 (card_models, card_edits, psd_parser: same directives, so the moved code keeps its
+  compiled semantics), query_card, management, music_player.
 - **Not compiled because they are in neither list:** every module not in INCLUDE_FILES or EXCLUDE_FILES (25 of the
   38 on 2026-10-23). In order of arrival: `commands/type_emojis.py` (added 2026-10-19),
   `commands/repo_history.py`, `commands/tts_save.py` and `commands/github_api.py` (2026-10-20), `commands/psd_edit.py`, `psd_regions.py`,
@@ -243,8 +243,8 @@ Then:
    there has no history (ttscardmaker-companion). Local checkouts also give every PSD a fresh
    mtime, which is why local-timestamp updates misfired and local mode was archived
    (autocroissant-run-and-operate §7).
-5. Deploy key: place the bot's SSH key pair in `.ssh/` if this machine will run
-   `/push` (see **autocroissant-run-and-operate** for the self-update flow).
+5. Deploy key: place the bot's SSH key pair in `.ssh/` if this machine will push by hand (the bot itself pushes
+   nothing since 2026-10-25; see **autocroissant-run-and-operate** for the self-update flow).
 6. Cython build: `python3 setup.py build_ext --inplace` (section 5). Optional, but production
    (the jetson) compiles with `~/venvs/autocroissant/bin/python` and runs under systemd `autocroissant.service`.
 7. Smoke test (section c).
@@ -362,3 +362,5 @@ down (pyoxipng row); the evidence row's venv commit re-pointed (1611fc6).
 2026-10-24 (py314, branch work/py314): every card Action on 3.14 with one wheel cache entry (card-sync one venv,
 card-check and font-check on the fork); pyoxipng's marker takes Linux x86_64 at any Python (built from its sdist on the
 Actions); the Mac's cold-install numbers.
+
+2026-10-25 (step 10, work/pickles): no pickles to sync between machines, no /push; 10 compiled modules (repo_traverser.py deleted).
