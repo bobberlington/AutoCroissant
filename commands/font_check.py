@@ -60,7 +60,7 @@ COMMITS_PAGE = 250                          # the compare API lists at most this
 POOL_MIN = 8                                # --all parses this many PSDs or more in a process pool (half the cores)
 POOL_CHUNK = 4                              # PSDs per pool task
 MANIFEST = ".manifest.json"                 # in FONTS_CACHE: {"repo", "tree", "etag", "complete", "files": {name: blob sha}}
-_cache_lock = Lock()                        # one cache refresh at a time (the bot: bake_lock keeps readers safe)
+_cache_lock = Lock()                        # one cache refresh at a time
 
 
 # ========================

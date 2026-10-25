@@ -52,7 +52,7 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
     code = ("import sys, commands.card_data, commands.card_history, commands.card_db, commands.changelog, commands.psd_details, "
             "commands.card_bake, commands.tts_save; "
             "print(sorted(m for m in ('config', 'discord', 'pandas', 'github', 'commands.psd_analyzer', "
-            "'commands.query_card', 'commands.utils', 'commands.type_emojis', 'commands.card_runner') if m in sys.modules)); "
+            "'commands.query_card', 'commands.utils', 'commands.type_emojis') if m in sys.modules)); "
             "print(sorted(m for m in sys.modules if m.startswith('commands.') or m == 'global_config'))")
     done = run_process([executable, "-c", code], cwd=bot, capture_output=True, text=True, timeout=120)
     assert done.returncode == 0, done.stderr

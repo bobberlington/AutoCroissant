@@ -18,7 +18,6 @@ from commands.analytics import (
     remove_reminder,
     set_reminder,
 )
-from commands.card_runner import sweep_temp_psds
 from commands.card_sync import fonts_text, on_use as card_data_used, update as update_stats
 from commands.frankenstein import frankenstein
 from commands.github_api import print_token_status
@@ -131,7 +130,6 @@ async def on_ready():
         slash_registry[cmd.name] = cmd.callback
     print(f"Registered {len(slash_registry)} slash commands for reminder system.")
 
-    queue_command(sweep_temp_psds)                      # a cut-off run's temp PSDs
     queue_command(init_reminder)
     queue_command(init_psd)
     queue_command(init_query)
