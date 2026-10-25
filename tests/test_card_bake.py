@@ -169,6 +169,10 @@ def test_recent_refuses_before_fetching(github):
     assert commits == [] and "recent: PSD pushed in the last 30 min" in text
     assert not [route for _, route in github.calls if route.startswith("git/blobs/") and route.endswith(_sha(github.blobs[_sha(github.files_at(github.head)[DOOMER])]))]
     assert "_psd" not in _edits_at(github)["cards"]["Mini Doomer"]                 # transient: no verdict
+    github.recent = {DOOMER[:len(DOOMER) - 4] + ".png"}                          # a teammate's PNG re-export
+    text, commits = cb.run(card="Mini Doomer")
+    assert commits == [] and "recent: PNG pushed in the last 30 min" in text
+    assert "_psd" not in _edits_at(github)["cards"]["Mini Doomer"] and "Mini Doomer" in cb.pending()
     github.recent = {f"Other/{i}.psd" for i in range(cb.COMPARE_FILES)}
     text, commits = cb.run(card="Mini Doomer")
     assert commits == [] and "recent: too many pushes in the last 30 min to tell" in text
