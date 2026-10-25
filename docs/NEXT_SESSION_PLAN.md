@@ -60,8 +60,6 @@ Census: `docs/Future/PROBLEM_CARDS_2026-10-25.csv`.
       and `~/Documents/Tools/psd-research/std-batch2/LANDED_B2.md`.
 - [ ] Delete the 30-minute `/update_stats` reminder be1b0bcd (refresh on use made it unneeded); tell bobberlington
       about step 10.
-- [ ] Questions from the designs: which template a two- or three-creature card uses (PARTS_EDITOR §14); keep
-      recompressing card makers' pushed PNGs after the push (+0.8 MB history each) or not (SMALLER_PNG_PUSHES).
 - [ ] BUG 2 points: Clot Gold "2T1" -> "2T2"; a typed badge in a title (plain words, flagged); `:sticker` beside plain
       tokens (Palace of Shadow); words typed in place of a badge; Elmadan's leading space; Plague's icon size.
 - [ ] Push guards: §20.4 (KEPT up to 300 px; drop the render line from the post); §15: the fork render refusing 9 of 34

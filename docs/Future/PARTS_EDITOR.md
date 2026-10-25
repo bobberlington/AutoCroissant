@@ -353,7 +353,7 @@ set_text_layer(psd, field, raw', fonts_dir, chart, layer=L, beside=parts+followe
 
   | Kind | Template |
   |---|---|
-  | Creature, minion, aux creature | `Creature_Template` (or `2_`/`3_Creature_Template`: §14's open question) |
+  | Creature, minion, aux creature | `Creature_Template` (all creature cards, owner 10-25) |
   | Item, aux item, N.M.E., field card | `Item_Template` (owner, 10-25) |
   | Active item | `ActiveItem_Template` |
   | Status effect | `Status_Effect_Template` |
@@ -680,6 +680,5 @@ B and C rebase on A's frozen fixtures and never edit each other's files. The onl
 3. **Cards without a template:** N.M.E. and Field cards take a first ability or type from `Item_Template`.
 4. **Variant tags:** by script, one commit for all 5 PSDs, the plan shown first.
 
-**Open:** which template a creature card with two or three creatures uses (`2_Creature_Template`,
-`3_Creature_Template`). Recommended: pick by the card's stat bar sets (2 sets = `2_`, 3 = `3_`), else
-`Creature_Template`.
+5. **Creature template (10-25 ~06:30):** every creature card, two- and three-creature cards included, takes a first
+   ability or type from `Creature_Template` (flagged).

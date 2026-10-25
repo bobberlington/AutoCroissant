@@ -52,8 +52,7 @@ measured yet (Photoshop's exports shrink 69-71% under today's call). Existing fi
 - One live bake of an opaque card; TTS shows the RGB PNG (the next live TTS check).
 - Tests: change the existing recompression tests, add none.
 
-## Open question (real)
+## Card makers' pushed PNGs
 
-Card makers' pushed PNGs: the guards recompress them after the push (owner, 10-23), which stores a second PNG in
-history (+0.82 MB per card) to make the current file smaller. Keep that, or stop recompressing pushed PNGs so the
-repo grows less (the current files then stay Photoshop-sized unless the card maker saves with "Smallest file size")?
+The guards keep recompressing them after the push (owner, 10-23; confirmed 10-25 ~06:30): a second PNG in history
+(+0.82 MB per card) for a smaller current file.
