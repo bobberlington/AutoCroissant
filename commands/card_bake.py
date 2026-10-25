@@ -5,7 +5,7 @@ TTSCardMaker's site/Card Edits.json into the card PSDs and PNGs, one commit per 
     python -m commands.card_bake --repo MichaelJSr/TTSCardMaker --head <sha> [--dry-run] [--card <Name>] [--pending]
                                  [--local <clone>]
     run(repository, head, dry_run, card, pending_only, local) -> (markdown report, commit shas: one at most)
-    pending(repository, head) -> the cards a live run has work for (card-edits.yml's schedule gate)
+    pending(repository, head) -> the cards a live run has work for; due() those past the 30-minute grace
 
 Input: one tree snapshot at head and blobs by sha (the card folders are never checked out). Per card named in the
 file with a PSD-kind field: refuse `recent` (PSD or PNG pushed in the last 30 min), fetch its PSD and official PNG (gate
@@ -1085,24 +1085,46 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
     return report
 
 
-def pending(repository: str = CARD_REPO, head: str = "") -> list:
+def _pending(repository: str, head: str, local: str) -> tuple:
+    """(snapshot, pending's Cards) at head."""
+    token_from_env()
+    snapshot = local_snapshot(repository, local, head) if local else snapshot_at(repository, head or ref_head(repository))
+    if snapshot.edits_path is None:
+        return snapshot, []
+    edits = CardEdits.parse(snapshot.fetch(snapshot.sha(snapshot.edits_path)).decode("utf-8"))
+    return snapshot, [card for card in select(edits, snapshot) if not final(edits, snapshot, card)]
+
+
+def pending(repository: str = CARD_REPO, head: str = "", local: str = "") -> list:
     """
-    The schedule's change gate (card-edits.yml): the cards a live run has work for at head, i.e. a PSD-kind edit
+    The schedule's change gate: the cards a live run has work for at head, i.e. a PSD-kind edit
     without a final verdict (final(); build_site.apply_edits shows a refusal by the same rule); a baked field leaves the
     file. So new, changed and redundant edits, try-again refusals (recent, head-moved, edit-changed, capped, runner
     errors), refused cards whose PSD changed since, `font` refusals whose MDW/Fonts changed and `duplicate` or no-PNG
     refusals whose PNGs changed are pending, and after a complete live run nothing is.
 
+    Args:
+        local: A clone of the card repo to read the tree from (local_snapshot), else the API
+
     Returns:
         Card names in the file's order ([] when nothing is pending or the file is missing); raises ValueError when the
         file isn't JSON (the gate step fails and Discord is told)
     """
-    token_from_env()
-    snapshot = snapshot_at(repository, head or ref_head(repository))
-    if snapshot.edits_path is None:
+    return [card.name for card in _pending(repository, head, local)[1]]
+
+
+def due(repository: str = CARD_REPO, head: str = "", local: str = "") -> list:
+    """
+    pending()'s cards a run can bake now: PSD and PNG not pushed within RECENT (Card sync's gate, the bot's
+    /update_stats). [] while the pushes can't be told (the bake would refuse them all `recent`).
+    """
+    snapshot, cards = _pending(repository, head, local)
+    if not cards:
         return []
-    edits = CardEdits.parse(snapshot.fetch(snapshot.sha(snapshot.edits_path)).decode("utf-8"))
-    return [card.name for card in select(edits, snapshot) if not final(edits, snapshot, card)]
+    pushed = recent_paths(repository, snapshot.head, datetime.now(timezone.utc), snapshot.local)
+    if pushed is None:
+        return []
+    return [card.name for card in cards if not card.rel or not {card.rel, snapshot.png_for(card.rel)[0]} & pushed]
 
 
 def main(args: Optional[list] = None) -> int:
@@ -1142,6 +1164,7 @@ __all__ = [
     'Snapshot',
     'Transient',
     'bake_card',
+    'due',
     'dump_edits',
     'editors',
     'failure',

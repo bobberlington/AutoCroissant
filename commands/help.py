@@ -149,9 +149,10 @@ card_sync_commands = {
                                                   "and the pickles here are frozen. Replies with the Action's link (admin only).",
     "/update [force_reset]:"                    : "Pulls the latest code, then restarts (admin only).\n"
                                                   "- force_reset: Skip the pull; hard reset to origin/main instead, discarding local changes (dangerous! default: False)",
-    "/update_stats [output_problematic_cards] [force_update] [cards]:" : "Loads the card data the Card sync Action built in the card repo (every 30 minutes, at :04 and :34: it re-parses "
-                                                               "changed PSDs, archives deleted cards and restores returned ones). Says when it was built, what changed, "
-                                                               "and whether newer card changes wait for the next card sync. Then refreshes the card list and type emojis.\n"
+    "/update_stats [output_problematic_cards] [force_update] [cards]:" : "Loads the card data the Card sync Action built in the card repo (it re-parses "
+                                                               "changed PSDs, bakes website edits, archives deleted cards and restores returned ones). Says when it was built and what changed. "
+                                                               "When the card repo has card changes the data lacks, or website edits wait to bake, it starts a card sync once "
+                                                               "the repo has had no push for 30 minutes (one run at a time). Then refreshes the card list and type emojis.\n"
                                                                "- output_problematic_cards: Show the new build's cards with errors (default: True).\n"
                                                                "- force_update: Admin only. Start a Card sync run re-parsing every card (it continues over the next runs), wait for it, then load it (default: False).\n"
                                                                "- cards: Admin only. Start a Card sync run re-parsing these cards, comma separated (e.g. after a parser fix), wait for it, then load it.",

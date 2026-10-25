@@ -3,8 +3,9 @@ The bot after the cutover (global_config.CARD_SYNC; docs/Campaigns/DATA_BUILD_AC
 The Card sync Action in the card repo builds the card data and commits it to the data branch; the bot only reads it:
 - sync: card_data/ brought to the data branch (card_db.sync: one conditional request, free when nothing moved), the
   database reloaded from it, then the card list, query tables, type emojis and image links refreshed;
-- /update_stats: that sync and one reply; with force_update or cards (admins), a Card sync run dispatched with
-  ACTIONS_TOKEN and followed until it ends, then the sync;
+- /update_stats: that sync and one reply; a normal Card sync run dispatched (ACTIONS_TOKEN) when the card repo has card
+  changes the data lacks or website edits wait to bake, once its last push is 30 minutes old (the owner's reminder runs
+  it every 30 minutes); with force_update or cards (admins), a run dispatched and followed until it ends, then the sync;
 - /fonts: from the data's psd_details.json, whose fonts the build marked supplied or not.
 Uncompiled (not in setup.py), like card_data.
 """
@@ -35,6 +36,8 @@ ACTIONS_TOKEN: str = getattr(config, "ACTIONS_TOKEN", "")   # fine-grained, the 
 WORKFLOW = "card-sync.yml"                           # the card repo's Card sync Action
 RUN_NAME = "Card sync"                               # its live runs' name (a dry run is "Card sync (dry run)")
 SCHEDULE = "every 30 minutes, at :04 and :34"        # its cron (card-sync.yml)
+GRACE_SECONDS = 30 * 60                              # card_bake.RECENT: no run starts until the last push is this old
+AUTO_INPUTS = {"dry_run": "false", "bake": "pending"}   # /update_stats' own run: the schedule's (bakes only pending edits)
 POLL_SECONDS = 15                                    # between two looks at a dispatched run
 WAIT_MINUTES = 30                                    # a dispatched run is followed this long
 FIND_SECONDS = 60                                    # a dispatched run shows up in the run list within this
@@ -149,8 +152,64 @@ def _main_ahead(repository: str, base: Optional[str]) -> bool:
     return bool(data.get("ahead_by")) and any(card_input(f.get("filename", "")) for f in data.get("files") or [])
 
 
-def notes(manifest: dict, repository: str = CARD_REPO) -> list:
-    """The lines after the first: a re-parse going on, unreadable PSDs, card changes not built yet, a failed last run."""
+def _last_push(repository: str) -> Optional[float]:
+    """When someone other than Card sync last pushed to the card branch (None: not today); one request."""
+    pushes = _json(api_url(repository, f"activity?ref={CARD_BRANCH}&time_period=day&per_page=30"), HEADERS)
+    for push in pushes or []:
+        if (push.get("actor") or {}).get("login") != BOT_LOGIN and push.get("timestamp"):
+            return datetime.strptime(push["timestamp"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()
+    return None
+
+
+def _due_edits(repository: str) -> list:
+    """The website edits a run can bake now (card_bake.due)."""
+    from commands.card_bake import due               # lazy: the edit pipeline's modules
+    return due(repository)
+
+
+def start_run(runs: list, ahead: bool, repository: str = CARD_REPO) -> Optional[str]:
+    """
+    /update_stats' own Card sync run: dispatched when the card repo has card changes the data lacks (ahead) or website
+    edits wait to bake, once the last push is GRACE_SECONDS old; never while a run is queued or running.
+
+    Returns:
+        A line for the reply, or None (nothing started or waiting)
+    """
+    if not ACTIONS_TOKEN or any(r.get("status") != "completed" for r in runs):
+        return None
+    try:
+        edits = [] if ahead else _due_edits(repository)
+    except Exception as e:                           # advice only: the sync itself worked
+        print(f"Pending website edits not read: {type(e).__name__}: {e}")
+        edits = []
+    if not ahead and not edits:
+        return None
+    what = ("the card changes since" if ahead else
+            f"{len(edits)} website edit{'' if len(edits) == 1 else 's'} waiting to bake ({', '.join(edits[:5])}"
+            + (", ..." if len(edits) > 5 else "") + ")")
+    try:
+        last = _last_push(repository)
+        if last is not None and time() - last < GRACE_SECONDS:
+            return (f"A card sync starts for {what} once the card repo has had no push for {GRACE_SECONDS // 60} minutes "
+                    f"(the last was {int((time() - last) // 60)} min ago).")
+        if not _run_lock.acquire(blocking=False):    # a forced run is being followed
+            return None
+        try:
+            run = dispatch(repository, AUTO_INPUTS)
+        finally:
+            _run_lock.release()
+    except (TokenRefused, NoAnswer, RequestException, ValueError) as e:
+        return f"Could not start a card sync for {what} ({type(e).__name__}: {e}); see <{actions_link()}>."
+    if run is None:
+        return f"Card sync was started for {what}; its run did not show up within a minute: <{actions_link()}>"
+    return f"Card sync run started for {what}: <{run.get('html_url')}>"
+
+
+def notes(manifest: dict, repository: str = CARD_REPO, start: bool = False) -> list:
+    """
+    The lines after the first: a re-parse going on, unreadable PSDs, card changes not built yet (start: a run started
+    for them or for waiting website edits, start_run), a failed last run.
+    """
     lines = []
     pending = manifest.get("pending") or {}
     stale = pending.get("stale") or []
@@ -164,12 +223,16 @@ def notes(manifest: dict, repository: str = CARD_REPO) -> list:
                      + "); " + ("its card keeps its" if len(failed) == 1 else "their cards keep their")
                      + " last version until the PSD is fixed.")
     try:
-        runs = [r for r in _runs(repository) if r.get("display_title") == RUN_NAME]
+        every = _runs(repository)
+        runs = [r for r in every if r.get("display_title") == RUN_NAME]
         ahead = _main_ahead(repository, manifest.get("card_commit"))
     except (RequestException, ValueError) as e:      # advice only: the sync itself worked
         print(f"Card sync status not read: {e}")
         return lines
-    if ahead:
+    started = start_run(every, ahead, repository) if start else None
+    if started:
+        lines.append(started)
+    elif ahead:
         going = next((r for r in runs if r.get("status") != "completed"), None)
         lines.append("The card repo has card changes since: " + (f"the card sync running now picks them up (<{going.get('html_url')}>)."
                                                                  if going else f"the next card sync ({SCHEDULE}) picks them up."))
@@ -219,7 +282,8 @@ def load_local(folder: str = CARD_DATA_DIR) -> bool:
     return True
 
 
-def sync(interaction=None, output_problematic: bool = True, quiet: bool = False, follow_ups: bool = True) -> list:
+def sync(interaction=None, output_problematic: bool = True, quiet: bool = False, follow_ups: bool = True,
+         start: bool = False) -> list:
     """
     card_data/ brought to the data branch, the database reloaded when the data moved, and one reply (quiet: the
     console only, unless the sync failed); then the card list, query tables, type emojis and image links refreshed.
@@ -229,6 +293,7 @@ def sync(interaction=None, output_problematic: bool = True, quiet: bool = False,
         output_problematic: Show the new build's problem cards
         quiet: No reply when it worked (a reminder's sync)
         follow_ups: Queue the refreshes (startup runs its own)
+        start: Start a Card sync run when one is due (start_run; a quiet sync prints its line)
 
     Returns:
         The problem card messages of newly loaded data
@@ -251,9 +316,9 @@ def sync(interaction=None, output_problematic: bool = True, quiet: bool = False,
     manifest = got["manifest"]
     text = report(manifest, changes(before, stats_db.stats) if reloaded and before_commit is not None else None, reloaded)
     if quiet:
-        print(text)
+        print("\n".join([text] + (notes(manifest, start=True) if start else [])))
     else:
-        say(interaction, "\n".join([text] + notes(manifest)))
+        say(interaction, "\n".join([text] + notes(manifest, start=start)))
     problems = _problems(manifest) if reloaded and output_problematic else []
     if problems:
         say(interaction, "Problem cards in this build:\n" + "".join(problems))
@@ -507,18 +572,20 @@ def request_run(interaction, full: bool, names: list) -> Optional[dict]:
 def update(interaction=None, output_problematic: bool = True, force_update: bool = False, verbose: bool = True,
            cards: str = "") -> list:
     """
-    /update_stats after the cutover: with force_update or cards, a Card sync run first (request_run); then the sync.
-    A reminder's plain sync is quiet (the console), unless it fails.
+    /update_stats after the cutover: with force_update or cards, a Card sync run first (request_run); then the sync,
+    which otherwise starts a run when one is due (start_run). A reminder's plain sync is quiet (the console), unless it
+    fails.
 
     Returns:
         The problem card messages of newly loaded data
     """
     names = [c.strip() for c in (cards or "").split(",") if c.strip()]
     quiet = not verbose or _by_reminder(interaction)
-    if force_update or names:
+    forced = bool(force_update or names)
+    if forced:
         request_run(interaction, force_update, names)
         quiet = not verbose
-    return sync(interaction, output_problematic, quiet)
+    return sync(interaction, output_problematic, quiet, start=not forced)
 
 
 def fonts_text(folder: str = CARD_DATA_DIR) -> str:
@@ -549,6 +616,7 @@ __all__ = [
     'notes',
     'report',
     'request_run',
+    'start_run',
     'startup',
     'sync',
     'update',

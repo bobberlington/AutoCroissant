@@ -36,6 +36,8 @@ class FakeGitHub:
         self.post_replies: list = []            # Reply per POST, in order
         self.on_post = None                     # called after each POST (a run appears)
         self.compare = {"ahead_by": 0, "files": []}
+        self.pushes: list = []                  # the card branch's activity, newest first
+        self.due: list = []                     # card_bake.due's website edits
         self.runs_reply = None                  # a Reply for the run list instead of self.runs
         self.jobs = {"jobs": [{"steps": [{"name": "Gate", "status": "completed"}, {"name": "Build", "status": "in_progress"}]}]}
 
@@ -66,6 +68,9 @@ class FakeGitHub:
             self.calls.append(("run", run_id))
             states = self.states[run_id]
             return Reply(200, body=states.pop(0) if len(states) > 1 else states[0])
+        if "/activity?" in url:
+            self.calls.append(("activity", None))
+            return Reply(200, body=self.pushes)
         if "/compare/" in url:
             self.calls.append(("compare", url.rsplit("/compare/", 1)[1]))
             return Reply(200, body=self.compare)
@@ -124,6 +129,7 @@ def github(monkeypatch, tmp_path):
     monkeypatch.setattr(cs, "session", lambda: SimpleNamespace(post=fake.post))
     monkeypatch.setattr(cs, "sleep", lambda s: None)
     monkeypatch.setattr(cs, "ACTIONS_TOKEN", TOKEN)
+    monkeypatch.setattr(cs, "_due_edits", lambda repository: fake.due)
     monkeypatch.setattr(cm.stats_db, "stats", {})
     monkeypatch.setattr(cm.stats_db, "old_stats", defaultdict(list))
     monkeypatch.setitem(cs._loaded, "commit", None)
@@ -294,12 +300,36 @@ def test_a_reminder_sync_is_quiet(github, tmp_path, capsys):
     github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
     reminder = SimpleNamespace(user=_ReminderUser(1, "owner"))
     cs.update(reminder)
-    assert _said() == [] and "Card data loaded" in capsys.readouterr().out
-    assert github.kinds("runs") == [] and github.kinds("compare") == []   # no status requests either
+    assert _said() == [] and "Card data loaded" in capsys.readouterr().out and github.posts == []
     github.tip = None                                                 # a failure still speaks
     held = cs._loaded["commit"]
     cs.update(reminder)
     assert _said() and _said()[0].startswith("No card data yet") and cs._loaded["commit"] == held
+
+
+@pytest.mark.parametrize("ahead, due, what", [
+    (True, [], "the card changes since"),
+    (False, ["Mini Doomer"], "1 website edit waiting to bake (Mini Doomer)"),
+])
+def test_update_stats_starts_a_card_sync_after_the_grace(github, tmp_path, ahead, due, what):
+    """/update_stats' own run: after 30 minutes without a push (Card sync's own pushes aside), one at a time."""
+    from time import gmtime, strftime, time
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
+    github.compare = {"ahead_by": 1, "files": [{"filename": "Items/New.psd"}]} if ahead else github.compare
+    github.due = due
+    ago = lambda minutes: strftime("%Y-%m-%dT%H:%M:%SZ", gmtime(time() - minutes * 60))
+    github.pushes = [{"timestamp": ago(1), "actor": {"login": cs.BOT_LOGIN}}, {"timestamp": ago(10), "actor": {"login": "artist"}}]
+    cs.update(ME)
+    assert github.posts == [] and f"A card sync starts for {what} once the card repo has had no push for 30 minutes" in _said()[0]
+    utils.dispatch_queue.clear()
+    github.pushes[1]["timestamp"] = ago(40)
+    _dispatched_run(github, 42, _run(42, "queued"))
+    cs.update(ME)
+    assert github.posts == [{"ref": "main", "inputs": cs.AUTO_INPUTS, "return_run_details": True}]
+    assert f"Card sync run started for {what}: <https://github.com/{REPO}/actions/runs/42>" in _said()[0]
+    github.runs = [_run(42, "queued")]
+    cs.update(ME)
+    assert len(github.posts) == 1                                     # none while one is queued or running
 
 
 def test_a_failed_sync_keeps_the_data(github, tmp_path, monkeypatch):

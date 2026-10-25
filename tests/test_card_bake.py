@@ -497,7 +497,9 @@ def test_rerun_on_its_own_commit_retries_a_try_again_card(github):
     github.recent.add(DOOMER)
     text, commits = cb.run()
     assert len(commits) == 1 and "recent: PSD pushed in the last 30 min" in text and cb.pending() == ["Mini Doomer"]
+    assert cb.due() == []                                                   # Card sync's gate waits out the grace
     github.recent.clear()
+    assert cb.due() == ["Mini Doomer"]
     text, commits = cb.run()
     assert len(commits) == 1 and github.commits[commits[0]]["message"] == "Card edits: 1 redundant"
     assert cb.pending() == []
