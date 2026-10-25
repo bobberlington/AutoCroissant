@@ -10,7 +10,9 @@ rasterized Name layer the title can't be read from): the template layout they al
 R9 (Txt2 stories) is fixed by the fork with byte gates, the rest is reported. R11's rename (exact layer names) is built
 and gated but reported until the owner says yes (AUTO_FIX). Rule pages are never checked. The pixel fixes (PIXEL_FIXES,
 silent, owner 2026-10-25) run on every card and rule page: straight apostrophes, and icon font glyphs Photoshop drew with
-an older font drawn again; each redraws only the changed glyphs and the guards re-export the PNG.
+an older font drawn again; on cards only, badges and icons fitted to their text (fit_badges: a badge's pill 1.35 times
+the text's capital height, its middle on the capitals' middle); each redraws only the changed glyphs and the guards
+re-export the PNG.
 
     check(psd, rel, context, old=None, added=False) -> [Issue]
     fix(data, rel, issues, work, parser=None, fonts=None, only=None) -> Fixed   the fixes, gated (one PSD's new bytes)
@@ -754,7 +756,7 @@ def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDPars
     rule = kind_of(rel) == "rule"               # a rule page takes the pixel fixes alone
     wanted = [] if rule or only else [issue for issue in issues if issue.fix and not issue.waived]
     composer = not (rule or only) and _every_line_in(data)
-    pixels = pixel_kinds(data, (only,) if only else ())
+    pixels = tuple(kind for kind in pixel_kinds(data, (only,) if only else ()) if not (rule and kind in CARD_PIXELS))
     if not (wanted or composer or pixels):
         return result
     makedirs(work, exist_ok=True)
@@ -776,6 +778,7 @@ OLD_GLYPH_SHIFT = 2         # px the render may sit off Photoshop's glyph
 OLD_GLYPH_INK = 0.05        # alpha that counts as ink
 OLD_GLYPH_MIN_INK = 20      # px of ink: a smaller glyph is not judged
 STALE_FILL = (-1.0, -1.0, -1.0)   # marks a glyph changed for the splice (it redraws that glyph alone)
+FIT_CHECK = 1.0             # px a fitted badge or icon may sit off its place after fit_badges (the check)
 
 
 def _straightened(value):
@@ -1013,11 +1016,119 @@ def redraw_old_glyphs(path: str, out_path: str, fonts: Optional[Callable[[list],
     return names
 
 
+def badge_plan(psd: PSDImage, fonts: Optional[Callable[[list], Optional[str]]]) -> list:
+    """
+    The badges and icons of the visible text layers that sit off their text (owner 2026-10-25): a badge more than
+    BADGE_RESIZE off its computed size resized, a badge or icon whose middle is past FIT_PX and FIT_PCT shifted
+    (psd_edit.badge_wants). A layer whose faces can't be had is not measured.
+
+    Returns:
+        [(layer, [(psd_edit.badge_fits entry, style keys)])]; raises MissingFontError
+    """
+    out = []
+    for layer in icon_layers(psd):
+        folder = fonts(layer_fonts(layer)) if fonts else ""
+        if not folder:
+            continue
+        fits = psd_edit.badge_fits(layer, psd_edit.font_map(folder))
+        wants = [(fit, keys) for fit in fits for keys in [psd_edit.badge_wants(fit)] if keys]
+        if wants:
+            out.append((layer, wants))
+    return out
+
+
+def _lines(layer, fonts, words: bool = False) -> list:
+    """The layout's lines (start, end, baseline); words: and every glyph outside the icon font where it sits."""
+    from psd_tools.composite.text.layout import layout
+    from psd_tools.composite.text.model import TextModel
+    placed = layout(TextModel.from_layer(layer), fonts)
+    out = [(line.start, line.end, round(line.y, 2)) for line in placed.lines]
+    if words:
+        out += [(glyph.cluster, round(glyph.x, 2), round(glyph.y, 2)) for glyph in placed.glyphs
+                if not glyph.face.key[0].lower().endswith(".ttf") or ICON_FONT_PREFIX not in glyph.face.key[0].lower()]
+    return out
+
+
+def _set(layer, wants: list) -> None:
+    for fit, keys in wants:
+        layer.set_span_style(fit["start"], fit["end"], **keys)
+
+
+def _settle(path: str, record: int, wants: list, faces) -> tuple:
+    """
+    The style keys a layer takes, tried on a fresh copy: all of them, else (a resize would move its lines, or its words
+    under an FX layer cut from them) the shifts alone, else none. Returns (wants, why some were left out or "").
+    """
+    def moves(option: list) -> bool:
+        psd = PSDImage.open(path)
+        layer = next(layer for layer in psd.descendants() if layer.kind == "type" and psd_edit._record_index(layer) == record)
+        words = bool(psd_edit.fx_layers(psd, layer))    # an FX layer holds its words' pixels where they are
+        lines = _lines(layer, faces, words)
+        _set(layer, option)
+        return _lines(layer, faces, words) != lines
+
+    if not moves(wants):
+        return wants, ""
+    shifts = [(fit, {"BaselineShift": fit["own_shift"]}) for fit, keys in wants
+              if abs(fit["off_px"]) > psd_edit.FIT_PX and abs(fit["off_pct"]) > psd_edit.FIT_PCT]
+    if any("FontSize" in keys for _, keys in wants) and not (shifts and moves(shifts)):
+        return shifts, "resizing its badges would move its lines or words" + (": shifted only" if shifts else "")
+    return [], "fitting its badges would move its lines or words"
+
+
+def fit_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]],
+               left: Optional[list] = None) -> list:
+    """
+    Badges (owner 2026-10-25), the PIXEL_FIXES kind: badge_plan's badges and icons set (FontSize, BaselineShift; TySh
+    and the Txt2 story), their layers' changed glyphs redrawn (a splice), the stored preview patched. A resize that
+    would move the layer's lines falls back to the shift alone (left gets why). Gated (_only_pixels, the stories by
+    gate_stories), then checked: each fitted one within FIT_CHECK px of its place and at its computed size.
+
+    Returns:
+        The layer names fitted; raises Refused or the engine's errors
+    """
+    from psd_tools.composite.text import capture
+    before, psd = PSDImage.open(path), PSDImage.open(path)
+    boxes, done = [], []                        # (record, layer name, story, faces, spans)
+    for layer, wants in badge_plan(psd, fonts):
+        name, faces = layer.name.strip(), psd_edit.font_map(fonts(layer_fonts(layer)))
+        wants, why = _settle(path, psd_edit._record_index(layer), wants, faces)
+        if why and left is not None:
+            left.append((name, why))
+        if not wants:
+            continue
+        old, keep = tuple(layer.bbox), capture(layer, faces)
+        _set(layer, wants)
+        layer.rasterize(fonts=faces, keep=keep, unit=psd_edit.SPLICE_UNIT)
+        boxes += _padded(layer, old)
+        done.append((psd_edit._record_index(layer), name, psd_edit.story_index(layer), faces,
+                     {(fit["start"], fit["end"]): "FontSize" in keys for fit, keys in wants}))
+    if not done:
+        return []
+    _save_patched(before, psd, boxes, out_path)
+    _only_pixels(path, out_path, {record for record, *_ in done}, [story for _, _, story, *_ in done if story is not None])
+    layers = {psd_edit._record_index(layer): layer for layer in PSDImage.open(out_path).descendants() if layer.kind == "type"}
+    for record, name, _, faces, spans in done:
+        for fit in psd_edit.badge_fits(layers[record], faces, list(spans)):
+            if abs(fit["off_px"]) > FIT_CHECK or (spans[(fit["start"], fit["end"])] and abs(fit["size_off"]) > 0.001):
+                raise Refused("bytes", f"{name} {fit['token']}: {fit['off_px']:+.1f} px off after the fit")
+    return [name for _, name, *_ in done]
+
+
+def badges_left(path: str, fonts: Optional[Callable[[list], Optional[str]]]) -> list:
+    """What is still off after fit_badges: [(layer name, token, px off, size off)] (badge_plan)."""
+    return [(layer.name.strip(), fit["token"], fit["off_px"], fit["size_off"])
+            for layer, wants in badge_plan(PSDImage.open(path), fonts) for fit, _ in wants]
+
+
 PIXEL_FIXES = {     # kind -> (finds(psd) -> [layer], fix(path, out_path, fonts) -> [layer name], the parse it makes or None)
     "apostrophes": (curly_layers, straighten, straight_parse),
     "old glyphs": (icon_layers, redraw_old_glyphs, None),
+    "badges": (icon_layers, fit_badges, None),
 }
-PIXEL_LINES = {"apostrophes": "straight apostrophes", "old glyphs": "old icon font glyphs redrawn"}
+PIXEL_LINES = {"apostrophes": "straight apostrophes", "old glyphs": "old icon font glyphs redrawn",
+               "badges": "badges and icons fitted to their text"}
+CARD_PIXELS = ("badges",)   # not on rule pages: their badges are laid out by hand (legends, tables)
 
 
 def pixel_kinds(psd, kinds: tuple = ()) -> tuple:
@@ -1070,9 +1181,12 @@ __all__ = [
     'badge_tags',
     'card_key',
     'check',
+    'badge_plan',
+    'badges_left',
     'composer_layers',
     'curly_layers',
     'every_line',
+    'fit_badges',
     'fix',
     'icon_layers',
     'inexact_names',

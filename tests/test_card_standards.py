@@ -329,3 +329,27 @@ def test_old_icon_glyph_redrawn_alone(clone, tmp_path):
     outside = np.ones(rgba.shape[:2], bool)
     outside[y0 - by - 2:y1 - by + 2, x0 - bx - 2:x1 - bx + 2] = False
     assert np.array_equal(after.rgba[outside], rgba[outside])
+
+
+WOLFGANG = "Creatures/DST/4 Stars/Wolfgang.psd"     # one (BOT) badge in Belisaplumillamanual, subscript like its text
+
+
+@pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
+def test_badges_fitted_to_their_text(clone, tmp_path):
+    """Owner 2026-10-25: a badge 20% small and 3 pt low is set back to the computed size (the pill 1.35 times the text's
+    capital height) and middle (the capitals' middle), its glyphs redrawn, never told; the check finds nothing left.
+    Rule pages keep theirs."""
+    fonts = _fonts(clone)
+    psd = PSDImage.open(clone / WOLFGANG)
+    layer = psd_edit.ability_layer(psd)
+    fit, = psd_edit.badge_fits(layer, psd_edit.font_map(fonts([])))
+    layer.set_span_style(fit["start"], fit["end"], FontSize=round(fit["fit_size"] * 0.8, 2), BaselineShift=fit["fit_shift"] - 3)
+    psd_edit.save_psd(psd, str(tmp_path / "off.psd"))
+    fixed = cs.fix((tmp_path / "off.psd").read_bytes(), WOLFGANG, [], str(tmp_path / "work"), None, fonts, only="badges")
+    assert fixed.redrawn == {"badges": ["Ability"]} and fixed.pixel_left == [] and fixed.plain
+    (tmp_path / "fit.psd").write_bytes(fixed.data)
+    assert cs.badges_left(str(tmp_path / "fit.psd"), fonts) == []
+    now, = psd_edit.badge_fits(psd_edit.ability_layer(PSDImage.open(tmp_path / "fit.psd")), psd_edit.font_map(fonts([])))
+    assert abs(now["off_px"]) < 0.1 and now["size"] == fit["fit_size"]
+    rule = "Auxiliary/Rulebook/11_Abilities5.psd"
+    assert not cs.fix((clone / rule).read_bytes(), rule, [], str(tmp_path / "work"), None, fonts, only="badges").data
