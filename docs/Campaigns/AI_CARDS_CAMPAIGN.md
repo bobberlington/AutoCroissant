@@ -1,6 +1,6 @@
 # AI-generated cards campaign (2026-10-20)
 
-**Status:** designed 2026-10-20, not scheduled; plan item 18 (`docs/NEXT_SESSION_PLAN.md`, "Ideas 5-23"). Rule citations are rulebook pages as
+**Status:** designed 2026-10-20, not scheduled, parked (owner, 10-24; `docs/NEXT_SESSION_PLAN.md`, "Ideas parked"). Rule citations are rulebook pages as
 `.claude/skills/impossibility-simulator-rules/SKILL.md` names them; card numbers are `~/Desktop/TTSCardMaker/site/dist/data/cards.json`
 of 2026-10-20 (801 rows; dup rows dropped). Anything not checked on disk or in git is marked "to confirm". Playtest hooks are the
 Play tab (`docs/Campaigns/SIMULATOR_CAMPAIGN.md`) and `docs/Campaigns/GAME_REPORTS_CAMPAIGN.md`; both unscheduled.
@@ -14,7 +14,7 @@ until then, read the phases' `ai/cards` and `ai-drafts` branches as that sandbox
 | D1 | Generated cards are completely separate from real cards: never in card statistics, never in the real card folders, always visibly labelled GENERATED (image watermark, embed title, website badge, TTS Nickname if one is ever spawned by hand as a custom object; the save `TTS/Impossibility Simulator.json` never carries one). **2026-10-21 revision:** separate by repo: generated cards live in a SEPARATE AI sandbox repo with its own website and bot, never in TTSCardMaker (no folder, no branch) and never in the real card statistics. |
 | D2 | Code on a fresh AutoCroissant branch `ai/cards`; main stays AI-free. The retired diffusion feature stays on `archive/ai-generation` (ed21cd2 = faebfc7 plus a two-line header comment in `commands/diffusion.py`; main dropped it in 05c643e): `/ai`, `/ai_queue`, `/set_model|lora|scheduler|device`, `commands/diffusion.py` (SD 1.5 / SDXL / Flux, LoRA from `models/loras/`), `requirements2.txt` (torch stack); `commands/convert_nf4_flux.py` only in history (1efe116 -> deleted f40152e). **2026-10-21 revision:** no `ai/cards` branch: the code lives in the AI sandbox repo beside its own bot; AutoCroissant main stays AI-free and the archive line above stands. Text and stats come from one of two toggleable venues: Claude Opus via the API, or a custom trained model. |
 | D3 | Generated PSDs/PNGs go to a TTSCardMaker branch `ai-drafts` (does not exist yet; only `main` does). Promotion to main is a human act into a dedicated folder/series, name open (Q1). **2026-10-21 revision:** no `ai-drafts` branch and no promotion into TTSCardMaker: drafts and kept cards stay in the AI sandbox repo and show on its own website. |
-| D4 | Image generation runs on the Mac (Apple M2 Ultra, 24 cores, 192 GB), never on the jetson (4 cores, 6 GB, `docs/NEXT_SESSION_PLAN.md` Task 0). |
+| D4 | Image generation runs on the Mac (Apple M2 Ultra, 24 cores, 192 GB), never on the jetson (4 cores, 6 GB; memory `jetson-server`). |
 | D5 | A generated card is an edit of a blank template: Task 3's edit pipeline fills the template, so every generated PSD must round-trip through the bot's parser with zero problems. |
 | D6 | 2026-10-21: the first target is 3★ Kirby creatures (Q2 answered). |
 

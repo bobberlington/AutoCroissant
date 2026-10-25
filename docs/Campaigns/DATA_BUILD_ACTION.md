@@ -35,15 +35,22 @@ exactly one writer. Grafted onto it:
 
 §3 lists every graft.
 
-**Status 2026-10-25, step 10 built (owner ruling ~04:00: "now").** Branches work/pickles in both repos: AutoCroissant
-deletes `stats.pkl`, `old_stats.pkl`, `aliases.pkl`, `psd_details.json`, `/push`, the `CARD_SYNC` switch, the legacy
-`/update_stats` path (repo_traverser.py, `card_data.update`, the commits-API lookups, the one-time history cleanup and
-backfill) and every pickle writer (`export-pickles` included); the build's `--seed` from an AutoCroissant commit and the
-read-only pickle tools stay. TTSCardMaker's site.yml always reads `data` (no `CARD_DATA` switch) and build_site.py lost
-its pickle loader. The data branch is the only source; the rollback of the whole move (§13) is gone with them.
+**Status 2026-10-25.** Steps 1-9 done: cut over 2026-10-24 23:02 (AC 89813ce, TC 8d884af4; re-seed run 40166422140
+from PICKLE 1282743), the clock below live, the bot refreshes its copy on use (ac65a00), so its 30-minute reminder can
+go. Ruleset "Protect main and data" exists. The split below landed 10-25 (AC e9112e8/ab565f9,
+deployed e6a5c54; TC 44440a31/dad7aeae; first live main commit 59b97943). **Step 10 built (owner ruling ~04:00:
+"now"),** branches work/pickles in both repos: AutoCroissant deletes `stats.pkl`, `old_stats.pkl`, `aliases.pkl`,
+`psd_details.json`, `/push`, the `CARD_SYNC` switch, the legacy `/update_stats` path (repo_traverser.py,
+`card_data.update`, the commits-API lookups, the one-time history cleanup and backfill) and every pickle writer
+(`export-pickles` included); the build's `--seed` (card-sync.yml pins PICKLE 1282743) and the read-only pickle tools
+stay. TTSCardMaker's site.yml always reads `data` (no `CARD_DATA` switch) and build_site.py lost its pickle loader. The
+data branch is the only source; the rollback of the whole move (§13) is gone with them. Open: §16 item 7 (verdicts;
+design in `docs/Future/CARD_SYNC_VERDICTS.md`). The Discord card edits (`/update_metadata`,
+`/mass_replace`, `/alias`) that §2, §5 and §11 describe were retired 2026-10-25 (AC 6e8f8e3); the website is the one
+edit path, with Rename everywhere (TC 706f750a).
 
-**Status 2026-10-25, two lanes (owner, 03:20: "pushes to any branch other than main do not need to wait").** Branch
-work/split in both repos. card-sync.yml's run has a data lane and a main lane. Job `data` ("Card data", group
+**Status 2026-10-25, two lanes, landed (owner, 03:20: "pushes to any branch other than main do not need to wait").**
+card-sync.yml's run has a data lane and a main lane. Job `data` ("Card data", group
 `card-data`) runs at once on every push, cron and dispatch (not a retry): it re-reads main's head (`card_data`, no
 bake), posts the changelog, commits `data` and dispatches the site, so a card push reaches the bot and the website
 within minutes. Job `main` ("Bake and save", group `card-main`) keeps the fixed window: after a card push's 30-minute
@@ -59,9 +66,7 @@ cannot repeat: the data writers run one at a time from the data head, the posted
 `after` never re-applies a restore or seed. The failure alert is once per failing streak of each lane (the lane's
 outcome in the newest other live run where its job ended; runs that skipped the lane, and dry runs, pass over), once a
 lane per run; the bot's /update_stats notes judge the lanes the same way, and a force_update/cards dispatch is followed
-by its Card data job (replaced before it started: dispatched again). Landing: only with no Card sync run unfinished (an
-old run would write `data` outside `card-data` after its window). `--baked` and `--rewrite` are unused by the workflow from then on (kept until it
-lands). §6.3 below describes the single `sync` job before this.
+by its Card data job (replaced before it started: dispatched again). `--baked` and `--rewrite` are unused by the workflow. §6.3 below describes the single `sync` job before this.
 
 **Status 2026-10-24, the clock in GitHub (owner, 23:15 and 23:27: "Move it into GitHub", a fixed window).** card-sync.yml
 has a `push` trigger on the card inputs. The first card push starts a 30-minute timer (job `Quiet window`, the environment
@@ -71,7 +76,7 @@ edits, a re-parse in progress, unposted events) and also ends while a timer runs
 reminder only sync the bot's copy; only the admins' `force_update`/`cards:` dispatch a run. §6.1 and §6.2 below predate
 this.
 
-**Status 2026-10-23.** Steps 1-6 and 9 are on main and deployed: the data build, the Discord writers and the alias
+**Status 2026-10-23 (superseded by the notes above).** Steps 1-6 and 9 are on main and deployed: the data build, the Discord writers and the alias
 migration landed with AutoCroissant main 8861696 (2026-10-22 20:50) and TTSCardMaker c0b6f2d7; the bot's cutover side
 (work/cutover-bot, step 8's code with `CARD_SYNC = False`) merged as 7b99438 and deployed with main 2ada357 on 2026-10-23
 10:36. **Step 7 started:** TTSCardMaker main a7d1fe56 turned on card-sync.yml's schedule (cron `4,34 * * * *`, `MAIN_COMMIT`
@@ -1349,7 +1354,7 @@ except 6, which is one day, not 14:
 
 ## 17. To confirm (settled by a test, not by the owner)
 
-- Whether a ruleset on a personal public repo can let only GitHub Actions update `data` (§5).
+- Settled 2026-10-24: the ruleset "Protect main and data" exists (§5).
 - That setup-python 3.14 with the fork pin installs on ubuntu-latest. 2026-10-23: requirements-cards.txt resolves for Linux
   x86_64 3.14 with wheels for every package but the fork (`uv pip compile --only-binary :all: --no-binary psd-tools`); the
   fork builds from source there as on the jetson. Since 2026-10-24 pyoxipng is in too there, built from its sdist (Rust:

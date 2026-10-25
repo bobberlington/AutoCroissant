@@ -2,8 +2,9 @@
 
 **Status:** designed and BUILT 2026-10-22 (section 16), the owner's three rulings of 2026-10-22 ~23:00 built (section 17),
 the pixel-miss ruling of 2026-10-23 built (section 18, AutoCroissant `work/soft-parity-guards` on `work/push-guards`),
-the owner's five decisions of 2026-10-24 built (section 20, `work/py314` in both repos, not landed),
-not landed: AutoCroissant `work/push-guards`, TTSCardMaker `work/push-guards`. Two guards in one TTSCardMaker Action, `card-guards.yml` ("Card guards"), run by three new bot modules. Dry run first: a dispatch defaults to `dry_run: true`, and the repo variable `CARD_GUARDS` (unset = off)
+the owner's five decisions of 2026-10-24 built (section 20). **Live:** landed 2026-10-23, `CARD_GUARDS=on` since
+2026-10-23 17:34, Python 3.14 and the environment `card-guards-quiet` since 2026-10-24. card-edits.yml and tts-save.yml,
+named below, were retired at the 2026-10-24 cutover (Card sync does both). Open owner points: §15, §20.4. Two guards in one TTSCardMaker Action, `card-guards.yml` ("Card guards"), run by three new bot modules. Dry run first: a dispatch defaults to `dry_run: true`, and the repo variable `CARD_GUARDS` (unset = off)
 switches the push trigger on. Measured read-only on 2026-10-22 at TTSCardMaker origin/main 6e50c3ee (812 card PSDs) with the
 psd-tools fork at `cards` da3b0f6d (round 5b + fix/txt2-sync, not tagged yet) and AutoCroissant work/integ-1022.
 
@@ -812,7 +813,7 @@ jobs:                    # three since 2026-10-24 (section 20): no runner sleeps
   1. **Decided 2026-10-24 (decision 3):** the guard leaves R7 to font-check (section 20).
   2. The fork render refuses 9 of the 34 replayed commits (25 made), where the composite made all 34: accept, or start fork
      fixes for the drop shadow's edge, the outer glow and the gradient overlay first?
-  3. Photoshop's image is used beyond refusals in one place: a PNG pushed before its PSD counts as "current" when it
+  3. **Decided 2026-10-24: keep.** Photoshop's image is used beyond refusals in one place: a PNG pushed before its PSD counts as "current" when it
      matches Photoshop's image where the fork draws the change otherwise (4 of 34; else "PNG not made" would be told for a
      PNG already exported). Keep?
   4. **Decided 2026-10-24 (decision 4):** render it with the bake's gates alone and tell "no stored image to

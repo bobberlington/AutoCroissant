@@ -1,0 +1,723 @@
+card,folder,kind,reason
+A Snack,Items/Heal/2 Stars,"can't bake title, ability, stars (add and remove), types (add and remove)","Several card pictures (numbered PNGs such as A_Snack2.png) come from this one PSD. Fix: tag each variant's own layers and groups with ' #N' at the end of the name (e.g. 'Breakfast #2', 'Supper #3', 'Snack #1'; ' #2,3' for several; untagged layers are in every variant; variant 1 = Name.png, variant N = NameN.png). Then the bot renders, bakes and checks every picture from the one PSD (being built; suggested tags per card coming). Who: Card maker in Photoshop (tags), then bot code"
+ABBI,Creatures/Omori/5 Stars,can't bake title,No title layer the bot recognises. Who: Card maker in Photoshop
+Abyss Watcher,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Abyss Watcher,Auxiliary/Minions,bakes with flag,title would print over a layer just below it
+Air Totem,Auxiliary/Items,bakes with flag,title runs past an effect layer clipped to it
+Alex YIIK,Creatures/Other/5 Stars,can't bake title,"The title layer has another name (not Name, the card's name or its words) (layer 'this card fucking sucks'). Who: Card maker in Photoshop"
+All Purpose Medical Kit,Items/Heal/2 Stars,"can't bake title, ability, stars (add and remove), types (add and remove)","Several card pictures (numbered PNGs such as A_Snack2.png) come from this one PSD. Fix: tag each variant's own layers and groups with ' #N' at the end of the name (e.g. 'Breakfast #2', 'Supper #3', 'Snack #1'; ' #2,3' for several; untagged layers are in every variant; variant 1 = Name.png, variant N = NameN.png). Then the bot renders, bakes and checks every picture from the one PSD (being built; suggested tags per card coming). Who: Card maker in Photoshop (tags), then bot code"
+Ancient Fuelweaver,Creatures/DST/5 Stars,bakes with flag,title reaches the stars or type icons
+Ancient Fuelweaver,Creatures/DST/5 Stars,bakes with flag,title would print over a layer just below it
+Anubisath Guardian,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Anubisath Guardian,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Anubisath Guardian,Auxiliary/Minions,can't bake HP,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Apex Predator,Creatures/R.E.P.O/2 Stars,can't bake ability,No visible ability layer. Who: Card maker in Photoshop
+Arachnophobia,Creatures/Omori/4 Stars,bakes with flag,title reaches the stars or type icons
+Arachnophobia,Creatures/Omori/4 Stars,bakes with flag,title would print over a layer just below it
+Assault Panda,Creatures/Pandas/2 Stars,bakes with flag,title reaches the stars or type icons
+Assault Panda,Creatures/Pandas/2 Stars,bakes with flag,title would print over a layer just below it
+Asteroid Field,Field/2 Stars,bakes with flag,title reaches the stars or type icons
+Asteroid Field,Field/2 Stars,bakes with flag,title would print over a layer just below it
+Auto Croissant,Creatures/Other/2 Stars,bakes with flag,title reaches the stars or type icons
+Auto Croissant,Creatures/Other/2 Stars,bakes with flag,title would print over a layer just below it
+Auto Croissant,Creatures/Other/2 Stars,can't bake adding a type,"A new type icon would touch the title, stars or art (touches 'autocroissant'). Who: Nothing (edit in Photoshop)"
+Autopsy Report,Auxiliary/Items,can't bake title,The title's words are printed twice (another layer repeats them). Who: Card maker in Photoshop
+Azamoth the Forgotten King,Creatures/ROTMG/5 Stars,can't bake title,The title is printed by more than one layer. Who: Card maker in Photoshop
+Azamoth the Possessed Vessel,Auxiliary/Creatures,can't bake title,The title is printed by more than one layer. Who: Card maker in Photoshop
+Baba,Creatures/Other/5 Stars,can't bake title,No title layer the bot recognises. Who: Card maker in Photoshop
+Bag of Evil,Items/Infliction/2 Stars,bakes with flag,title would print over a layer just below it
+Bag of Good,Items/Support/2 Stars,bakes with flag,title prints past its old text onto the picture below
+Barry The Barrel,Creatures/Other/2 Stars,bakes with flag,title reaches the stars or type icons
+Barry The Barrel,Creatures/Other/2 Stars,bakes with flag,title would print over a layer just below it
+Basic Shield,Items/Equip/2 Stars,bakes with flag,title needs more lines than its box has
+Battle Spear,Auxiliary/Items,bakes with flag,title reaches the stars or type icons
+Battle Spear,Auxiliary/Items,bakes with flag,title would print over a layer just below it
+Become Back Money,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,title reaches the stars or type icons
+Become Back Money,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,title would print over a layer just below it
+BergenTRUCK,Creatures/Undertale/3 Stars,bakes with flag,title reaches the stars or type icons
+BergenTRUCK,Creatures/Undertale/3 Stars,bakes with flag,title would print over a layer just below it
+Binge Eater,Items/Equip/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Binge Eater,Items/Equip/4 Stars,bakes with flag,title reaches the stars or type icons
+Blank Card,Items/Active/3 Stars,can't bake HP/DEF,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Blindness,Auxiliary/Status Effects/Debuffs/1 Stars,bakes with flag,title prints past its old text onto the picture below
+Blood Bomb,Items/Attack/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Blood Bomb,Items/Attack/3 Stars,bakes with flag,title reaches the stars or type icons
+Bobberlington,Creatures/Other/5 Stars,bakes with flag,title prints past its old text onto the picture below
+Bobberlington,Creatures/Other/5 Stars,bakes with flag,title reaches the stars or type icons
+Bobbery,Creatures/Mario/3 Stars,bakes with flag,title reaches the stars or type icons
+Bobbery,Creatures/Mario/3 Stars,bakes with flag,title would print over a layer just below it
+Boggly Woods,Field/2 Stars,bakes with flag,title reaches the stars or type icons
+Boggly Woods,Field/2 Stars,bakes with flag,title would print over a layer just below it
+Bolts and Screws,Items/Heal/1 Stars,bakes with flag,title reaches the stars or type icons
+Bolts and Screws,Items/Heal/1 Stars,bakes with flag,title would print over a layer just below it
+Bone's Loans,Items/Equip/1 Stars,bakes with flag,"ability redrawn whole, small pixel difference (no need to look)"
+Brad Armstrong,Creatures/Lisa/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Brad Armstrong,Creatures/Lisa/4 Stars,bakes with flag,title reaches the stars or type icons
+Bubble,N.M.E,bakes with flag,title prints past its old text onto the picture below
+Bucket Of Lard,Items/Heal/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Bucket Of Lard,Items/Heal/3 Stars,bakes with flag,title reaches the stars or type icons
+Bugzzy,Auxiliary/Minions,can't bake adding a star,A new star would touch the title or icons. Who: Nothing (edit in Photoshop)
+Bulborb Larva,Auxiliary/Minions,can't bake ability,No visible ability layer. Who: Card maker in Photoshop
+Bulborb Larva,Auxiliary/Minions,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Burdened,Auxiliary/Status Effects/Debuffs/1 Stars,bakes with flag,title prints past its old text onto the picture below
+Butterfly,Creatures/Kirby/5 Stars,bakes with flag,title prints past its old text onto the picture below
+Butterfly,Creatures/Kirby/5 Stars,bakes with flag,title reaches the stars or type icons
+Butterfly,Creatures/Kirby/5 Stars,can't bake ability,No visible ability layer. Who: Card maker in Photoshop
+Cabbage,Auxiliary/Items,bakes with flag,title prints past its old text onto the picture below
+Cabbage,Auxiliary/Items,bakes with flag,title reaches the stars or type icons
+Cake Mix,Items/Heal/2 Stars,bakes with flag,title prints past its old text onto the picture below
+Cake Mix,Items/Heal/2 Stars,bakes with flag,title runs past an effect layer clipped to it
+Captain Spaceboy,Creatures/Omori/3 Stars,bakes with flag,title reaches the stars or type icons
+Captain Spaceboy,Creatures/Omori/3 Stars,bakes with flag,title would print over a layer just below it
+Cat,Auxiliary/Minions,can't bake stars (add and remove),One layer draws several stars. Who: Card maker in Photoshop
+Cave Of The Past,Field/4 Stars,bakes with flag,title reaches the stars or type icons
+Cave Of The Past,Field/4 Stars,bakes with flag,title would print over a layer just below it
+Chained,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,title reaches the stars or type icons
+Chained,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,a layer above the title would cover part of the new title
+Charm Of The Vampire,Items/Equip/3 Stars,bakes with flag,title reaches the stars or type icons
+Charm Of The Vampire,Items/Equip/3 Stars,bakes with flag,title would print over a layer just below it
+Cheap,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Chef Saltbaker,Creatures/Cuphead/5 Stars,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Chilled,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,ability runs off the card
+Chris & Jordi,Creatures/Everhood/5 Stars,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Chris & Jordi,Creatures/Everhood/5 Stars,can't bake title,"The title layer has another name (not Name, the card's name or its words) (layer 'Knight'). Who: Card maker in Photoshop"
+Claw,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Claw,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Claw,Auxiliary/Minions,bakes with flag,title runs past an effect layer clipped to it
+Claw,Auxiliary/Minions,bakes with flag,ability prints over the picture or an effect layer
+Clot Black,Auxiliary/Minions,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Clot Blood,Auxiliary/Minions,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Clot Bone,Auxiliary/Minions,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Clot Gold,Auxiliary/Minions,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Clot White,Auxiliary/Minions,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Cloud Soiree,Field/1 Stars,can't bake adding a type,"A new type icon would touch the title, stars or art (touches 'Color Fill 1 copy'). Who: Nothing (edit in Photoshop)"
+Colosseum Of Fools,Field/3 Stars,bakes with flag,"ability redrawn whole, small pixel difference (no need to look)"
+Computer Virus,Creatures/Kirby/3 Stars,bakes with flag,title needs more lines than its box has
+Computer Virus,Creatures/Kirby/3 Stars,data problem,"No stats: no template stat bars, so the data has no HP/DEF/ATK/SPD"
+Condemned,Auxiliary/Status Effects/Debuffs/4 Stars,bakes with flag,title reaches the stars or type icons
+Condemned,Auxiliary/Status Effects/Debuffs/4 Stars,bakes with flag,a layer above the title would cover part of the new title
+Corrupted Blood,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,title reaches the stars or type icons
+Corrupted Blood,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,title would print over a layer just below it
+Cortez,Creatures/Mario/4 Stars,bakes with flag,title reaches the stars or type icons
+Cortez,Creatures/Mario/4 Stars,bakes with flag,title would print over a layer just below it
+Crimson Flag,Items/Infliction/4 Stars,bakes with flag,title reaches the stars or type icons
+Crimson Flag,Items/Infliction/4 Stars,bakes with flag,title would print over a layer just below it
+Croissant,Creatures/Other/5 Stars,bakes with flag,title prints past its old text onto the picture below
+Croissant,Creatures/Other/5 Stars,bakes with flag,title reaches the stars or type icons
+Crowned Magolor,Creatures/Kirby/5 Stars,can't bake adding a type,"A new type icon would touch the title, stars or art (touches 'Dimensional_rift_C_Bsn_8VwAIzPgw.jpg_large_transparent copy 2'). Who: Nothing (edit in Photoshop)"
+Crowned Magolor,Creatures/Kirby/5 Stars,can't bake title,The title is split over several layers. Who: Card maker in Photoshop
+Crystal Guardian,Creatures/Hollow Knight/2 Stars,bakes with flag,title reaches the stars or type icons
+Crystal Guardian,Creatures/Hollow Knight/2 Stars,bakes with flag,title would print over a layer just below it
+Crystal Guardian,Creatures/Hollow Knight/2 Stars,can't bake adding a type,A type icon would end up off the card. Who: Nothing (edit in Photoshop)
+Crystal King,Creatures/Mario/4 Stars,bakes with flag,title reaches the stars or type icons
+Crystal King,Creatures/Mario/4 Stars,bakes with flag,title would print over a layer just below it
+Crystal Spikes,Items/Counter/3 Stars,bakes with flag,title reaches the stars or type icons
+Crystal Spikes,Items/Counter/3 Stars,bakes with flag,title would print over a layer just below it
+Cursed Inferno,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,title reaches the stars or type icons
+Cursed Inferno,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,a layer above the title would cover part of the new title
+Dark Bramble,Field/4 Stars,bakes with flag,title reaches the stars or type icons
+Dark Bramble,Field/4 Stars,bakes with flag,title would print over a layer just below it
+Dark Esau,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Dark Esau,Auxiliary/Minions,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Dark Matter Swordsman,Creatures/Kirby/3 Stars,can't bake title,Two layers in the title area look like the title. Who: Card maker in Photoshop
+Dark Mind,Creatures/Kirby/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Dark Mind,Creatures/Kirby/4 Stars,bakes with flag,title reaches the stars or type icons
+Dark Mind,Creatures/Kirby/4 Stars,can't bake DEF,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Dark Nebula,Creatures/Kirby/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Dark Nebula,Creatures/Kirby/4 Stars,bakes with flag,title reaches the stars or type icons
+Dark Ritual,Items/Equip/4 Stars,bakes with flag,title reaches the stars or type icons
+Dark Ritual,Items/Equip/4 Stars,bakes with flag,title would print over a layer just below it
+Dark Sword,Items/Equip/3 Stars,bakes with flag,title reaches the stars or type icons
+Dark Sword,Items/Equip/3 Stars,bakes with flag,title would print over a layer just below it
+Dark Tentacle,Auxiliary/Minions,can't bake title,The bot's drawing of the new title is more than 25% off the card picture. Who: Bot code (renderer); until then edit in Photoshop
+Daroach,Creatures/Kirby/3 Stars,bakes with flag,title reaches the stars or type icons
+Daroach,Creatures/Kirby/3 Stars,bakes with flag,title would print over a layer just below it
+Deepnest,Field/3 Stars,bakes with flag,title reaches the stars or type icons
+Deepnest,Field/3 Stars,bakes with flag,title would print over a layer just below it
+Defcon Panda,Creatures/Pandas/3 Stars,can't bake adding a type,A type icon would end up off the card. Who: Nothing (edit in Photoshop)
+Delicate Flower,Auxiliary/Items,bakes with flag,title prints past its old text onto the picture below
+Delicate Flower,Auxiliary/Items,bakes with flag,title reaches the stars or type icons
+Delta,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Delta,Auxiliary/Minions,bakes with flag,title would print over a layer just below it
+Diligent Watch,Auxiliary/Status Effects/Buffs,bakes with flag,title reaches the stars or type icons
+Diligent Watch,Auxiliary/Status Effects/Buffs,bakes with flag,a layer above the title would cover part of the new title
+Dirty Bed,Items/Active/2 Stars,can't bake HP/DEF,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Disgusted,Auxiliary/Status Effects/Debuffs/1 Stars,bakes with flag,title prints past its old text onto the picture below
+Doc,Creatures/Kirby/3 Stars,bakes with flag,title reaches the stars or type icons
+Doc,Creatures/Kirby/3 Stars,bakes with flag,title would print over a layer just below it
+Dogma,Creatures/Isaac/4 Stars,bakes with flag,title reaches the stars or type icons
+Dogma,Creatures/Isaac/4 Stars,bakes with flag,title runs past an effect layer clipped to it
+DooPliss,Creatures/Mario/4 Stars,bakes with flag,title reaches the stars or type icons
+DooPliss,Creatures/Mario/4 Stars,bakes with flag,title would print over a layer just below it
+Door Shield,Items/Equip/2 Stars,bakes with flag,title prints past its old text onto the picture below
+Door Shield,Items/Equip/2 Stars,bakes with flag,title reaches the stars or type icons
+Drawcia,Creatures/Kirby/3 Stars,bakes with flag,title reaches the stars or type icons
+Drawcia,Creatures/Kirby/3 Stars,bakes with flag,title would print over a layer just below it
+Drawcia Soul,Creatures/Kirby/4 Stars,bakes with flag,title reaches the stars or type icons
+Drawcia Soul,Creatures/Kirby/4 Stars,bakes with flag,title would print over a layer just below it
+Dryya,Creatures/Hollow Knight/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Dryya,Creatures/Hollow Knight/4 Stars,bakes with flag,title reaches the stars or type icons
+Dull Knife,Auxiliary/Items,can't bake title,The bot's drawing of the new title is more than 25% off the card picture. Who: Bot code (renderer); until then edit in Photoshop
+Dumplings,Items/Heal/3 Stars,bakes with flag,title reaches the stars or type icons
+Dumplings,Items/Heal/3 Stars,bakes with flag,title would print over a layer just below it
+Dumplings,Items/Heal/3 Stars,bakes with flag,ability runs off the card
+Dung Defender,Creatures/Hollow Knight/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Dyna Blade,Creatures/Kirby/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Dyna Blade,Creatures/Kirby/4 Stars,bakes with flag,title reaches the stars or type icons
+Dynamite,Items/Attack/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Dynamite,Items/Attack/4 Stars,bakes with flag,title reaches the stars or type icons
+E. Gadd's Garage,Field/2 Stars,can't bake title,The title layer is hidden. Who: Card maker in Photoshop
+Earth Totem,Auxiliary/Items,bakes with flag,title prints past its old text onto the picture below
+Earth Totem,Auxiliary/Items,bakes with flag,title runs past an effect layer clipped to it
+Empress Bulblax,Creatures/Other/3 Stars,bakes with flag,title reaches the stars or type icons
+Empress Bulblax,Creatures/Other/3 Stars,bakes with flag,title would print over a layer just below it
+Empress Bulblax,Creatures/Other/3 Stars,can't bake ability,No visible ability layer. Who: Card maker in Photoshop
+Empress Bulblax,Creatures/Other/3 Stars,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Energy Ritual,Items/Support/3 Stars,bakes with flag,title would print over a layer just below it
+Enraged,Auxiliary/Status Effects/Buffs,bakes with flag,title prints past its old text onto the picture below
+Excess Express,Field/3 Stars,bakes with flag,title reaches the stars or type icons
+Excess Express,Field/3 Stars,bakes with flag,title would print over a layer just below it
+Exposed,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,title prints past its old text onto the picture below
+Fahr Outpost,Field/2 Stars,bakes with flag,"ability redrawn whole, small pixel difference (no need to look)"
+False Knight,Creatures/Hollow Knight/2 Stars,bakes with flag,title prints past its old text onto the picture below
+False Knight,Creatures/Hollow Knight/2 Stars,bakes with flag,title reaches the stars or type icons
+False Knight,Creatures/Hollow Knight/2 Stars,can't bake all four stats,Several bars for one stat. Who: Nothing (edit in Photoshop)
+Fawful,Creatures/Mario/4 Stars,bakes with flag,title runs off the card
+Feast,Items/Heal/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Feast,Items/Heal/3 Stars,bakes with flag,title reaches the stars or type icons
+Fire Staff,Items/Equip/2 Stars,bakes with flag,title prints past its old text onto the picture below
+Fire Staff,Items/Equip/2 Stars,bakes with flag,title reaches the stars or type icons
+Fire Totem,Auxiliary/Items,bakes with flag,title runs past an effect layer clipped to it
+Firebomb,Items/Attack/2 Stars,bakes with flag,title prints past its old text onto the picture below
+Flame Trap,Items/Counter/3 Stars,bakes with flag,title would print over a layer just below it
+Flameblade,Items/Equip/3 Stars,bakes with flag,a styled word in the ability loses its style
+Flower Of Decay,Items/Infliction/3 Stars,bakes with flag,title reaches the stars or type icons
+Flower Of Decay,Items/Infliction/3 Stars,bakes with flag,title would print over a layer just below it
+Flurrie,Creatures/Mario/3 Stars,bakes with flag,title reaches the stars or type icons
+Flurrie,Creatures/Mario/3 Stars,bakes with flag,title would print over a layer just below it
+Fog Canyon,Field/2 Stars,bakes with flag,title prints past its old text onto the picture below
+Fog Canyon,Field/2 Stars,bakes with flag,"ability redrawn whole, small pixel difference (no need to look)"
+Fool Eater,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Fool Eater,Auxiliary/Minions,bakes with flag,title would print over a layer just below it
+Fragile Heart,Items/Equip/3 Stars,bakes with flag,title reaches the stars or type icons
+Fragile Heart,Items/Equip/3 Stars,bakes with flag,title would print over a layer just below it
+Freeze Spell,Items/Infliction/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Frog,Creatures/Everhood/5 Stars,bakes with flag,title prints past its old text onto the picture below
+Frozen In Time,Auxiliary/Status Effects/Debuffs/4 Stars,bakes with flag,title reaches the stars or type icons
+Frozen In Time,Auxiliary/Status Effects/Debuffs/4 Stars,bakes with flag,a layer above the title would cover part of the new title
+Funky D Luffy,Creatures/Monkey D Folder/4 Stars,bakes with flag,title reaches the stars or type icons
+Funky D Luffy,Creatures/Monkey D Folder/4 Stars,bakes with flag,title would print over a layer just below it
+Galacta Warrior,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Galacta Warrior,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Gandhi,Creatures/Other/5 Stars,bakes with flag,title prints past its old text onto the picture below
+Glaive Main Cannon,Creatures/FTL/4 Stars,bakes with flag,title reaches the stars or type icons
+Glaive Main Cannon,Creatures/FTL/4 Stars,bakes with flag,title would print over a layer just below it
+God Tamer,Auxiliary/Minions,can't bake adding a star,"The stars are laid out in a shape the bot can't follow (not a row, column or rows of two). Who: Card maker in Photoshop"
+Godskin Apostle,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Godskin Apostle,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Godskin Noble,Creatures/Souls/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Godskin Noble,Creatures/Souls/4 Stars,bakes with flag,title reaches the stars or type icons
+Gold Fuzzy,Creatures/Mario/2 Stars,bakes with flag,title prints past its old text onto the picture below
+Gold Fuzzy,Creatures/Mario/2 Stars,bakes with flag,title reaches the stars or type icons
+Golden Freddy,Creatures/Fnaf/5 Stars,bakes with flag,title prints past its old text onto the picture below
+Golden Freddy,Creatures/Fnaf/5 Stars,bakes with flag,title reaches the stars or type icons
+Golden Metronome,Items/Negation/4 Stars,bakes with flag,"ability redrawn whole, small pixel difference (no need to look)"
+grand doomer,Creatures/Kirby/4 Stars,bakes with flag,title reaches the stars or type icons
+grand doomer,Creatures/Kirby/4 Stars,bakes with flag,title would print over a layer just below it
+Green Mage,Creatures/Everhood/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Green Mage,Creatures/Everhood/4 Stars,bakes with flag,title reaches the stars or type icons
+Greenpath,Field/2 Stars,bakes with flag,title prints past its old text onto the picture below
+Greenpath,Field/2 Stars,bakes with flag,title reaches the stars or type icons
+Grey Prince Zote,Creatures/Hollow Knight/4 Stars,can't bake title,No title layer the bot recognises. Who: Card maker in Photoshop
+Grimmchild,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Grimmchild,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Grimora,Creatures/Other/3 Stars,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Groda,Creatures/Pandas/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Groda,Creatures/Pandas/4 Stars,bakes with flag,title reaches the stars or type icons
+Gust of Trees,Items/Support/2 Stars,data problem,"Picture without its own PSD, stuck under Not parsed yet"
+Heavy Lobster,Creatures/Kirby/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Heavy Lobster,Creatures/Kirby/3 Stars,bakes with flag,title reaches the stars or type icons
+Heavy Mole,Creatures/Kirby/3 Stars,bakes with flag,title reaches the stars or type icons
+Heavy Mole,Creatures/Kirby/3 Stars,bakes with flag,title would print over a layer just below it
+Helpful Mannequin,Creatures/In Sound Mind/2 Stars,bakes with flag,title prints past its old text onto the picture below
+Helpful Mannequin,Creatures/In Sound Mind/2 Stars,bakes with flag,title reaches the stars or type icons
+Helpful Mannequin,Creatures/In Sound Mind/2 Stars,bakes with flag,title runs off the card
+Holo Defense API,Creatures/Kirby/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Holo Defense API,Creatures/Kirby/3 Stars,bakes with flag,title reaches the stars or type icons
+Holy Blade,Items/Equip/4 Stars,bakes with flag,title reaches the stars or type icons
+Holy Blade,Items/Equip/4 Stars,bakes with flag,title would print over a layer just below it
+Holy Blade,Items/Equip/4 Stars,bakes with flag,ability runs off the card
+Holy Card,Items/Equip/2 Stars,can't bake title,No title layer the bot recognises. Who: Card maker in Photoshop
+Hooktail,Creatures/Mario/2 Stars,bakes with flag,title prints past its old text onto the picture below
+Hooktail Castle,Field/2 Stars,bakes with flag,title prints past its old text onto the picture below
+Hooktail Castle,Field/2 Stars,bakes with flag,title reaches the stars or type icons
+Hornet,Creatures/Hollow Knight/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Hornet,Creatures/Hollow Knight/4 Stars,bakes with flag,title reaches the stars or type icons
+HR-D3,Creatures/Kirby/5 Stars,bakes with flag,title reaches the stars or type icons
+HR-D3,Creatures/Kirby/5 Stars,bakes with flag,title would print over a layer just below it
+hr-h,Creatures/Kirby/4 Stars,bakes with flag,title reaches the stars or type icons
+hr-h,Creatures/Kirby/4 Stars,bakes with flag,title would print over a layer just below it
+Humphrey,Creatures/Omori/5 Stars,bakes with flag,title reaches the stars or type icons
+Humphrey,Creatures/Omori/5 Stars,bakes with flag,title would print over a layer just below it
+Ice Dragon,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Ice Dragon,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Ice Staff,Items/Equip/2 Stars,bakes with flag,title prints past its old text onto the picture below
+Ice Staff,Items/Equip/2 Stars,bakes with flag,title reaches the stars or type icons
+Ice Storm,Items/Infliction/3 Stars,bakes with flag,ability runs off the card
+Igor Roballtowski,Auxiliary/Creatures,bakes with flag,title prints past its old text onto the picture below
+Igor Roballtowski,Auxiliary/Creatures,bakes with flag,type icons baked with a small pixel difference (no need to look)
+Igor Robotowski,Creatures/Other/2 Stars,bakes with flag,title prints past its old text onto the picture below
+Igor Robotowski,Creatures/Other/2 Stars,bakes with flag,type icons baked with a small pixel difference (no need to look)
+Imp,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Indoctrination,Auxiliary/Items,bakes with flag,title runs off the card
+Infected Crossroads,Field/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Infected Crossroads,Field/3 Stars,bakes with flag,title reaches the stars or type icons
+Ingredient Icy Sugar Cubes,Items/Heal/2 Stars,bakes with flag,title reaches the stars or type icons
+Ingredient Icy Sugar Cubes,Items/Heal/2 Stars,bakes with flag,title would print over a layer just below it
+Inkhole,Auxiliary/Items,bakes with flag,title prints past its old text onto the picture below
+Ipsilon,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Ipsilon,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Irithyll,Field/2 Stars,bakes with flag,title reaches the stars or type icons
+Irithyll,Field/2 Stars,bakes with flag,title would print over a layer just below it
+Iron Spikes,Items/Counter/3 Stars,bakes with flag,ability prints over the picture or an effect layer
+Jack-In-The-Box Zombie,Auxiliary/Minions,can't bake adding a star,"The stars are laid out in a shape the bot can't follow (not a row, column or rows of two). Who: Card maker in Photoshop"
+Jetpack,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Jetpack,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Jevil,Creatures/Undertale/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Jevil,Creatures/Undertale/4 Stars,bakes with flag,title reaches the stars or type icons
+Joel Miller,Creatures/Lisa/3 Stars,bakes with flag,title reaches the stars or type icons
+Joel Miller,Creatures/Lisa/3 Stars,bakes with flag,title would print over a layer just below it
+John Ward,Creatures/Other/3 Stars,bakes with flag,title prints past its old text onto the picture below
+John Ward,Creatures/Other/3 Stars,bakes with flag,title reaches the stars or type icons
+Katarina,Creatures/Other/4 Stars,bakes with flag,title prints past its old text onto the picture below
+King Dedede,Creatures/Kirby/4 Stars,bakes with flag,title reaches the stars or type icons
+King Dedede,Creatures/Kirby/4 Stars,bakes with flag,title would print over a layer just below it
+King Dedede,Creatures/Kirby/4 Stars,bakes with flag,title runs off the card
+Knight Lost A Lot,Creatures/Everhood/2 Stars,can't bake title,Two layers in the title area look like the title. Who: Card maker in Photoshop
+Koops,Creatures/Mario/2 Stars,bakes with flag,title prints past its old text onto the picture below
+Koro-Sensei,Creatures/Other/5 Stars,bakes with flag,title prints past its old text onto the picture below
+Koro-Sensei,Creatures/Other/5 Stars,bakes with flag,title reaches the stars or type icons
+Krabby Patty,Auxiliary/Items,bakes with flag,ability runs off the card
+Kyle,Creatures/Other/5 Stars,bakes with flag,title runs off the card
+Kyle,Creatures/Other/5 Stars,can't bake adding a type,"A new type icon would touch the title, stars or art (touches 'Color Fill 1'). Who: Nothing (edit in Photoshop)"
+Landia,Creatures/Kirby/5 Stars,bakes with flag,title reaches the stars or type icons
+Landia,Creatures/Kirby/5 Stars,bakes with flag,title would print over a layer just below it
+Leeroy Jenkins,Creatures/World Of Warcraft/3 Stars,bakes with flag,a layer above the title would cover part of the new title
+Leshy,Creatures/Other/5 Stars,bakes with flag,title reaches the stars or type icons
+Leshy,Creatures/Other/5 Stars,bakes with flag,title would print over a layer just below it
+Leshy,Creatures/Other/5 Stars,bakes with flag,a layer above the title would cover part of the new title
+Lit Bob-omb,Auxiliary/Items,bakes with flag,title prints past its old text onto the picture below
+Lit Bob-omb,Auxiliary/Items,can't bake ability,Several visible ability layers. Who: Card maker in Photoshop
+Little Guy,Creatures/Other/2 Stars,bakes with flag,title reaches the stars or type icons
+Little Guy,Creatures/Other/2 Stars,bakes with flag,title would print over a layer just below it
+Living Bread,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Living Bread,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Living Bread,Auxiliary/Minions,can't bake stars (add and remove),One layer draws several stars. Who: Card maker in Photoshop
+Lor Starcutter,Creatures/Kirby/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Lord Crump,Creatures/Mario/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Lord Crump,Creatures/Mario/3 Stars,bakes with flag,title reaches the stars or type icons
+Lorian,Auxiliary/Minions,can't bake HP,Safety check: the stat number's layer style would not move cleanly to the new number. Who: Bot code
+Lorian,Auxiliary/Minions,can't bake adding a star,"The stars are laid out in a shape the bot can't follow (not a row, column or rows of two). Who: Card maker in Photoshop"
+Lorian,Auxiliary/Minions,can't bake title,"The title layer has another name (not Name, the card's name or its words) (layer 'Twin Princes'). Who: Card maker in Photoshop"
+Lothric,Creatures/Souls/5 Stars,can't bake title,"The title layer has another name (not Name, the card's name or its words) (layer 'Twin Princes'). Who: Card maker in Photoshop"
+Love,Auxiliary/Items,bakes with flag,ability runs off the card
+Macho Grubba,Creatures/Mario/4 Stars,bakes with flag,title reaches the stars or type icons
+Macho Grubba,Creatures/Mario/4 Stars,bakes with flag,title would print over a layer just below it
+Magic Shield,Items/Equip/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Magic Shield,Items/Equip/4 Stars,bakes with flag,title reaches the stars or type icons
+Magnet-shroom,N.M.E,can't bake adding a star,"A star layer has smart filters, so it can't be moved. Who: Card maker in Photoshop"
+Magnum Opus,Auxiliary/Items,can't bake adding a star,"The stars are laid out in a shape the bot can't follow (not a row, column or rows of two). Who: Card maker in Photoshop"
+Magnum Opus,Auxiliary/Items,can't bake removing a type,"The type to remove is drawn as a frame round the card, not an icon. Who: Nothing (edit in Photoshop)"
+Man Serpent Shield,Items/Equip/2 Stars,can't bake title,The title layer is hidden. Who: Card maker in Photoshop
+Mantis Lords,Creatures/Hollow Knight/3 Stars,bakes with flag,title reaches the stars or type icons
+Mantis Lords,Creatures/Hollow Knight/3 Stars,bakes with flag,title would print over a layer just below it
+Mari,Creatures/Omori/4 Stars,bakes with flag,title reaches the stars or type icons
+Mari,Creatures/Omori/4 Stars,bakes with flag,title would print over a layer just below it
+Marilyn,Creatures/Mario/3 Stars,bakes with flag,title reaches the stars or type icons
+Marilyn,Creatures/Mario/3 Stars,bakes with flag,title would print over a layer just below it
+Marx,Creatures/Kirby/5 Stars,bakes with flag,title prints past its old text onto the picture below
+Masher,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Masher,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Masher,Auxiliary/Minions,can't bake types (add and remove),A type icon would end up off the card. Who: Nothing (edit in Photoshop)
+Masked Dedede,Creatures/Kirby/5 Stars,can't bake adding a type,"A new type icon would touch the title, stars or art (touches 'Warpstar'). Who: Nothing (edit in Photoshop)"
+Massive Moss Charger,Auxiliary/Minions,can't bake title,The title is printed by more than one layer. Who: Card maker in Photoshop
+Master Hand,Creatures/Kirby/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Master Hand,Creatures/Kirby/3 Stars,bakes with flag,title reaches the stars or type icons
+Matterling,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Matterling,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Maxim Tomato,Items/Heal/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Maxim Tomato,Items/Heal/3 Stars,bakes with flag,title reaches the stars or type icons
+Meta Knight,Creatures/Kirby/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Meta Knight,Creatures/Kirby/4 Stars,bakes with flag,title reaches the stars or type icons
+Metal General,Creatures/Kirby/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Metal Shield,Items/Equip/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Metal Shield,Items/Equip/3 Stars,bakes with flag,title reaches the stars or type icons
+Metronome Lite,N.M.E,bakes with flag,title reaches the stars or type icons
+Metronome Lite,N.M.E,bakes with flag,title would print over a layer just below it
+Mettaton,Creatures/Undertale/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Mettaton,Creatures/Undertale/4 Stars,bakes with flag,title reaches the stars or type icons
+Mettaton EX,Auxiliary/Creatures,bakes with flag,title prints past its old text onto the picture below
+Mettaton EX,Auxiliary/Creatures,bakes with flag,title reaches the stars or type icons
+Mettaton EX,Auxiliary/Creatures,can't bake DEF,Safety check: the stat number's layer style would not move cleanly to the new number. Who: Bot code
+Mettaton NEO,Auxiliary/Creatures,bakes with flag,title prints past its old text onto the picture below
+Mettaton NEO,Auxiliary/Creatures,bakes with flag,title reaches the stars or type icons
+Mettaton NEO,Auxiliary/Creatures,can't bake adding a star,"The stars are laid out in a shape the bot can't follow (not a row, column or rows of two). Who: Card maker in Photoshop"
+Miasma,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Miasma,Auxiliary/Minions,bakes with flag,title runs past an effect layer clipped to it
+Miasma,Auxiliary/Minions,bakes with flag,title would print over a layer just below it
+Miasma,Auxiliary/Minions,bakes with flag,ability prints over the picture or an effect layer
+Michael,Creatures/Other/5 Stars,bakes with flag,title reaches the stars or type icons
+Michael,Creatures/Other/5 Stars,bakes with flag,title would print over a layer just below it
+Michael's Blessing,N.M.E,can't bake adding a star,"The stars are laid out in a shape the bot can't follow (not a row, column or rows of two). Who: Card maker in Photoshop"
+Militron,Creatures/Other/4 Stars,bakes with flag,title reaches the stars or type icons
+Militron,Creatures/Other/4 Stars,bakes with flag,title would print over a layer just below it
+Minecraft Panda,Creatures/Pandas/2 Stars,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Minecraft Panda,Creatures/Pandas/2 Stars,can't bake title,No title layer the bot recognises. Who: Card maker in Photoshop
+Mini Auto Croissant,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Mini Auto Croissant,Auxiliary/Minions,bakes with flag,title would print over a layer just below it
+Mini Bee,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Mini Bee,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Mini Drill,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Mini Drill,Auxiliary/Minions,bakes with flag,title would print over a layer just below it
+Miracle Matter,Creatures/Kirby/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Miracle Matter,Creatures/Kirby/3 Stars,can't bake ability,Several visible ability layers. Who: Card maker in Photoshop
+Monkey D Goofy,Creatures/Monkey D Folder/4 Stars,bakes with flag,title reaches the stars or type icons
+Monkey D Goofy,Creatures/Monkey D Folder/4 Stars,bakes with flag,title would print over a layer just below it
+Monkey D Letion,Creatures/Monkey D Folder/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Monkey D Letion,Creatures/Monkey D Folder/3 Stars,bakes with flag,title reaches the stars or type icons
+Monkey D Pression,Creatures/Monkey D Folder/2 Stars,bakes with flag,title reaches the stars or type icons
+Monkey D Pression,Creatures/Monkey D Folder/2 Stars,bakes with flag,title would print over a layer just below it
+Monkey D Vour,Creatures/Monkey D Folder/4 Stars,bakes with flag,title reaches the stars or type icons
+Monkey D Vour,Creatures/Monkey D Folder/4 Stars,bakes with flag,title would print over a layer just below it
+Moose Goose,Creatures/DST/3 Stars,can't bake title,The title's words are printed twice (another layer repeats them). Who: Card maker in Photoshop
+Morpho Knight,Auxiliary/Creatures,can't bake adding a star,"The stars are laid out in a shape the bot can't follow (not a row, column or rows of two). Who: Card maker in Photoshop"
+Morshu,Creatures/Other/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Morshu,Creatures/Other/4 Stars,bakes with flag,title reaches the stars or type icons
+Mosling,Auxiliary/Minions,can't bake title,The title's words are printed twice (another layer repeats them). Who: Card maker in Photoshop
+Moss Charger,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Moss Charger,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Moss Charger,Auxiliary/Minions,bakes with flag,a layer above the title would cover part of the new title
+Mr Jawsum,Creatures/Omori/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Mr Jawsum,Creatures/Omori/3 Stars,bakes with flag,a layer above the title would cover part of the new title
+Mr Krabs,Creatures/Other/4 Stars,bakes with flag,title reaches the stars or type icons
+Mr Krabs,Creatures/Other/4 Stars,bakes with flag,title would print over a layer just below it
+Mr Softener,Items/Infliction/2 Stars,bakes with flag,title reaches the stars or type icons
+Mr Softener,Items/Infliction/2 Stars,bakes with flag,title would print over a layer just below it
+Mushroom,Items/Heal/2 Stars,bakes with flag,title reaches the stars or type icons
+Mushroom,Items/Heal/2 Stars,bakes with flag,title would print over a layer just below it
+Nasty Patty,Auxiliary/Items,can't bake stars (add and remove),No single group named Stars draws them. Who: Card maker in Photoshop
+Nebulous Precipice,Field/3 Stars,can't bake ability,"The ability's icons are pictures in gaps of the text, so the edited ability doesn't read back as typed. Who: Card maker in Photoshop"
+Necrodeus,Creatures/Kirby/5 Stars,bakes with flag,title reaches the stars or type icons
+Necrodeus,Creatures/Kirby/5 Stars,bakes with flag,title would print over a layer just below it
+Nefarious Chip,Creatures/Omori/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Nefarious Chip,Creatures/Omori/3 Stars,bakes with flag,title reaches the stars or type icons
+Nightmare,Creatures/Kirby/5 Stars,bakes with flag,title prints past its old text onto the picture below
+Nightmare,Creatures/Kirby/5 Stars,bakes with flag,title reaches the stars or type icons
+Niiue,Creatures/Other/5 Stars,bakes with flag,title reaches the stars or type icons
+Niiue,Creatures/Other/5 Stars,bakes with flag,title would print over a layer just below it
+Niko,Creatures/Other/3 Stars,bakes with flag,title prints past its old text onto the picture below
+NME Salesman,Creatures/Kirby/4 Stars,bakes with flag,title reaches the stars or type icons
+NME Salesman,Creatures/Kirby/4 Stars,bakes with flag,title would print over a layer just below it
+NME Stock,Items/Support/2 Stars,"can't bake title, ability, stars (add and remove), types (add and remove)","Several card pictures (numbered PNGs such as A_Snack2.png) come from this one PSD. Fix: tag each variant's own layers and groups with ' #N' at the end of the name (e.g. 'Breakfast #2', 'Supper #3', 'Snack #1'; ' #2,3' for several; untagged layers are in every variant; variant 1 = Name.png, variant N = NameN.png). Then the bot renders, bakes and checks every picture from the one PSD (being built; suggested tags per card coming). Who: Card maker in Photoshop (tags), then bot code"
+Nosk,Creatures/Hollow Knight/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Ominous Red Circle,Items/Deploy/2 Stars,bakes with flag,title prints past its old text onto the picture below
+Ominous Red Circle,Items/Deploy/2 Stars,bakes with flag,title reaches the stars or type icons
+Ominous Red Circle,Items/Deploy/2 Stars,bakes with flag,"ability redrawn whole, small pixel difference (no need to look)"
+Oryx the Exalted God,Creatures/ROTMG/4 Stars,can't bake title,The title is printed by more than one layer. Who: Card maker in Photoshop
+Overseer,Creatures/Other/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Overseer,Creatures/Other/3 Stars,bakes with flag,title reaches the stars or type icons
+P.A.N.D.A. Mk A,Creatures/Pandas/3 Stars,bakes with flag,title reaches the stars or type icons
+P.A.N.D.A. Mk A,Creatures/Pandas/3 Stars,bakes with flag,title would print over a layer just below it
+P.A.N.D.A. Mk T,Creatures/Pandas/3 Stars,bakes with flag,title reaches the stars or type icons
+P.A.N.D.A. Mk T,Creatures/Pandas/3 Stars,bakes with flag,title would print over a layer just below it
+Paint Bomb,Auxiliary/Items,bakes with flag,title prints past its old text onto the picture below
+Paint Bomb,Auxiliary/Items,bakes with flag,title reaches the stars or type icons
+Paint Bomb,Auxiliary/Items,bakes with flag,title runs past an effect layer clipped to it
+Paint Warrior,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Paint Warrior,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Paint Warrior,Auxiliary/Minions,can't bake stars (add and remove),No single group named Stars draws them. Who: Card maker in Photoshop
+Paintbrush,N.M.E,can't bake adding a star,"The stars are laid out in a shape the bot can't follow (not a row, column or rows of two). Who: Card maker in Photoshop"
+Pan D Luffy,Creatures/Monkey D Folder/3 Stars,bakes with flag,title reaches the stars or type icons
+Pan D Luffy,Creatures/Monkey D Folder/3 Stars,bakes with flag,title would print over a layer just below it
+Pandabal,Creatures/Pandas/3 Stars,bakes with flag,title reaches the stars or type icons
+Pandabal,Creatures/Pandas/3 Stars,bakes with flag,title would print over a layer just below it
+Pandamonium,Items/Active/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Pandamonium,Items/Active/4 Stars,bakes with flag,title reaches the stars or type icons
+Pandanoko,Creatures/Pandas/2 Stars,can't bake title,No title layer the bot recognises. Who: Card maker in Photoshop
+Papa Chip,Creatures/Omori/3 Stars,bakes with flag,title reaches the stars or type icons
+Papa Chip,Creatures/Omori/3 Stars,bakes with flag,title would print over a layer just below it
+Party!,Auxiliary/Items,bakes with flag,title prints past its old text onto the picture below
+Peppy,Auxiliary/Status Effects/Buffs,bakes with flag,title prints past its old text onto the picture below
+Pike Beam,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Pike Beam,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Pile Of Swords,Items/Support/4 Stars,bakes with flag,ability runs off the card
+Pix,Creatures/Kirby/3 Stars,can't bake all four stats,Several bars for one stat. Who: Nothing (edit in Photoshop)
+Pix,Creatures/Kirby/3 Stars,data problem (ruled acceptable),One card holds several creatures; an editor confirmed each one's stats on the website.
+Pizza,Creatures/Other/3 Stars,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+PoD01Red Bloon,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+PoD04Zebra Bloon,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+PoD04Zebra Bloon,Auxiliary/Minions,bakes with flag,title would print over a layer just below it
+PoD04Zebra Bloon,Auxiliary/Minions,can't bake adding a star,"The stars are laid out in a shape the bot can't follow (not a row, column or rows of two). Who: Card maker in Photoshop"
+PoD05Lead Bloon,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+PoD05Lead Bloon,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+PoD06Rainbow Bloon,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+PoD06Rainbow Bloon,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+PoD08MOAB,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+PoD09DDT,Auxiliary/Minions,can't bake adding a star,"The stars are laid out in a shape the bot can't follow (not a row, column or rows of two). Who: Card maker in Photoshop"
+PoD11ZOMG,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Poison Circle,Items/Deploy/1 Stars,bakes with flag,"ability redrawn whole, small pixel difference (no need to look)"
+Polevaulter Zombie,Auxiliary/Minions,can't bake adding a star,"The stars are laid out in a shape the bot can't follow (not a row, column or rows of two). Who: Card maker in Photoshop"
+Poorly Drawn Cabbage,Auxiliary/Items,can't bake adding a type,"A new type icon would touch the title, stars or art (touches 'Name'). Who: Nothing (edit in Photoshop)"
+Pot Full of Spiders!,Creatures/Crypt/2 Stars,bakes with flag,title needs more lines than its box has
+Project P.A.N.D.A,Creatures/Pandas/3 Stars,bakes with flag,title reaches the stars or type icons
+Project P.A.N.D.A,Creatures/Pandas/3 Stars,bakes with flag,title would print over a layer just below it
+Pure Vessel,Creatures/Hollow Knight/5 Stars,bakes with flag,title prints past its old text onto the picture below
+Pure Vessel,Creatures/Hollow Knight/5 Stars,bakes with flag,title reaches the stars or type icons
+Puzzled Cat,Creatures/Other/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Puzzled Cat,Creatures/Other/3 Stars,bakes with flag,title reaches the stars or type icons
+Qiraji Soldier,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Qiraji Soldier,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Quick Slash,Items/Equip/3 Stars,bakes with flag,"ability redrawn whole, small pixel difference (no need to look)"
+Quote,Creatures/Other/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Quote,Creatures/Other/4 Stars,bakes with flag,title reaches the stars or type icons
+Rapier,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Rapier,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Rasta Beast,Creatures/Everhood/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Rasta Beast,Creatures/Everhood/4 Stars,bakes with flag,title reaches the stars or type icons
+Red Knife,Auxiliary/Items,bakes with flag,title prints past its old text onto the picture below
+Reflection,Items/Support/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Regen,Auxiliary/Status Effects/Buffs,bakes with flag,title prints past its old text onto the picture below
+Regeneration Potion,Items/Heal/2 Stars,"can't bake title, stars (add and remove), types (add and remove)","Several card pictures (numbered PNGs such as A_Snack2.png) come from this one PSD. Fix: tag each variant's own layers and groups with ' #N' at the end of the name (e.g. 'Breakfast #2', 'Supper #3', 'Snack #1'; ' #2,3' for several; untagged layers are in every variant; variant 1 = Name.png, variant N = NameN.png). Then the bot renders, bakes and checks every picture from the one PSD (being built; suggested tags per card coming). Who: Card maker in Photoshop (tags), then bot code"
+Regret,Auxiliary/Items,bakes with flag,title prints past its old text onto the picture below
+Reinforced,Auxiliary/Status Effects/Buffs,bakes with flag,title prints past its old text onto the picture below
+Remote Detonator,N.M.E,bakes with flag,title prints past its old text onto the picture below
+Remote Detonator,N.M.E,bakes with flag,title reaches the stars or type icons
+Remote Detonator,N.M.E,bakes with flag,ability prints over the picture or an effect layer
+Resentful Glare,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,title reaches the stars or type icons
+Resentful Glare,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,a layer above the title would cover part of the new title
+Retro Kirby,Creatures/Kirby/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Retro Kirby,Creatures/Kirby/3 Stars,bakes with flag,title reaches the stars or type icons
+Return To Sender,Items/Counter/4 Stars,can't bake adding a type,"A new type icon would touch the title, stars or art (touches 'Aberson Linchdolt 101 Cardinal Dr. Macon IL 62544'). Who: Nothing (edit in Photoshop)"
+Rope,N.M.E,bakes with flag,title prints past its old text onto the picture below
+Royal Eradicator Main Cannon,Creatures/FTL/5 Stars,can't bake title,The title is split over several layers. Who: Card maker in Photoshop
+Royal Eradicator Main Cannon,Creatures/FTL/5 Stars,data problem (ruled acceptable),ATK 12 (10 + 2 on two bar rows); allowed on purpose.
+Rusty Knife,Auxiliary/Items,bakes with flag,title prints past its old text onto the picture below
+Sabre,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Sabre,Auxiliary/Minions,bakes with flag,title would print over a layer just below it
+Sacred Heart,Items/Equip/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Sacred Heart,Items/Equip/4 Stars,bakes with flag,title reaches the stars or type icons
+Sandwich of Rejects,Items/Heal/2 Stars,bakes with flag,title prints past its old text onto the picture below
+Sans,Creatures/Undertale/5 Stars,bakes with flag,title would print over a layer just below it
+Second Wind,Items/Support/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Second Wind,Items/Support/3 Stars,bakes with flag,title reaches the stars or type icons
+Shadow Queen,Auxiliary/Creatures,can't bake stars (add and remove),One layer draws several stars. Who: Card maker in Photoshop
+Shell Shield,Auxiliary/Items,can't bake stars (add and remove),No single group named Stars draws them. Who: Card maker in Photoshop
+Shield of the Guilty,Items/Equip/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Shield of the Guilty,Items/Equip/3 Stars,bakes with flag,title reaches the stars or type icons
+Shiny Knife,Items/Equip/3 Stars,can't bake title,The bot's drawing of the new title is more than 25% off the card picture. Who: Bot code (renderer); until then edit in Photoshop
+Silithid,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Silithid,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Skeleton Mate,Auxiliary/Minions,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Skullord,Creatures/Kirby/3 Stars,bakes with flag,title reaches the stars or type icons
+Skullord,Creatures/Kirby/3 Stars,bakes with flag,title would print over a layer just below it
+Slugcat,Creatures/Other/2 Stars,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Smeckeldorfed,Auxiliary/Status Effects/Debuffs/1 Stars,bakes with flag,title reaches the stars or type icons
+Smeckeldorfed,Auxiliary/Status Effects/Debuffs/1 Stars,bakes with flag,a layer above the title would cover part of the new title
+Smorg,Creatures/Mario/4 Stars,bakes with flag,title reaches the stars or type icons
+Smorg,Creatures/Mario/4 Stars,bakes with flag,title would print over a layer just below it
+Snake,Auxiliary/Items,bakes with flag,title reaches the stars or type icons
+Snake,Auxiliary/Items,bakes with flag,title would print over a layer just below it
+Snow Angel,Creatures/Omori/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Snow Angel,Creatures/Omori/3 Stars,bakes with flag,title reaches the stars or type icons
+Snow Angel,Creatures/Omori/3 Stars,bakes with flag,title's saved pixels don't match its named font (no need to look)
+Snow Angel,Creatures/Omori/3 Stars,bakes with flag,"title redrawn whole, small pixel difference (no need to look)"
+Snow Angel,Creatures/Omori/3 Stars,can't bake title (typo fix only),The bot's drawing of the new title is more than 25% off the card picture. Who: Bot code (renderer); until then edit in Photoshop
+SOMETHING,Creatures/Omori/3 Stars,bakes with flag,title prints past its old text onto the picture below
+SOMETHING,Creatures/Omori/3 Stars,bakes with flag,title reaches the stars or type icons
+SOMETHING,Creatures/Omori/3 Stars,can't bake ability,The ability's words are printed twice. Who: Card maker in Photoshop
+Sonic,Creatures/Other/4 Stars,"can't bake ability, all four stats, types (add and remove)",Sonic's SPD 20 is printed on a one-row bar. Who: Card maker in Photoshop (standardisation)
+Sonic,Creatures/Other/4 Stars,can't bake title,The title layer is hidden. Who: Card maker in Photoshop
+Sonic,Creatures/Other/4 Stars,data problem (ruled acceptable),SPD 20; allowed on purpose.
+Soul Master,Creatures/Hollow Knight/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Soul Master,Creatures/Hollow Knight/4 Stars,bakes with flag,title reaches the stars or type icons
+Soul Master,Creatures/Hollow Knight/4 Stars,bakes with flag,"ability redrawn whole, small pixel difference (no need to look)"
+Soul Sanctum,Field/2 Stars,bakes with flag,title reaches the stars or type icons
+Soul Sanctum,Field/2 Stars,bakes with flag,title would print over a layer just below it
+Soul Sanctum,Field/2 Stars,bakes with flag,"ability redrawn whole, small pixel difference (no need to look)"
+Spaghetti,Auxiliary/Items,bakes with flag,title prints past its old text onto the picture below
+Spaghetti,Auxiliary/Items,bakes with flag,title reaches the stars or type icons
+Spawn of the Forbidden One,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Spawn of the Forbidden One,Auxiliary/Minions,bakes with flag,title would print over a layer just below it
+Spice,Items/Support/2 Stars,bakes with flag,title prints past its old text onto the picture below
+Spicy Spray,Items/Support/2 Stars,bakes with flag,title reaches the stars or type icons
+Spicy Spray,Items/Support/2 Stars,bakes with flag,title would print over a layer just below it
+Spinni,Creatures/Kirby/3 Stars,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+SpiralHorn Shield,Items/Equip/2 Stars,bakes with flag,title reaches the stars or type icons
+SpiralHorn Shield,Items/Equip/2 Stars,bakes with flag,title would print over a layer just below it
+Spirit Flame,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,title reaches the stars or type icons
+Spirit Flame,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,a layer above the title would cover part of the new title
+Springtrap,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Springtrap,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Springtrap,Auxiliary/Minions,can't bake adding a star,"The stars are laid out in a shape the bot can't follow (not a row, column or rows of two). Who: Card maker in Photoshop"
+Spur,Auxiliary/Items,bakes with flag,title prints past its old text onto the picture below
+Spur,Auxiliary/Items,bakes with flag,title reaches the stars or type icons
+Staff of Purity,N.M.E,bakes with flag,title reaches the stars or type icons
+Staff of Purity,N.M.E,bakes with flag,title would print over a layer just below it
+Stalwart Shell,Items/Equip/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Stalwart Shell,Items/Equip/3 Stars,bakes with flag,title reaches the stars or type icons
+Star Dream,Creatures/Kirby/5 Stars,bakes with flag,title prints past its old text onto the picture below
+Stay,Creatures/Other/3 Stars,bakes with flag,title runs off the card
+Stranger,Creatures/Omori/4 Stars,bakes with flag,title reaches the stars or type icons
+Stranger,Creatures/Omori/4 Stars,bakes with flag,title would print over a layer just below it
+Stubborn Queen,Creatures/Other/2 Stars,data problem,"Picture without its own PSD, stuck under Not parsed yet"
+Sumo Panda,Creatures/Pandas/3 Stars,bakes with flag,title reaches the stars or type icons
+Sumo Panda,Creatures/Pandas/3 Stars,bakes with flag,title would print over a layer just below it
+Super Shroom,Items/Heal/3 Stars,bakes with flag,title reaches the stars or type icons
+Super Shroom,Items/Heal/3 Stars,bakes with flag,title would print over a layer just below it
+Supreme Jeh'Oul,Creatures/Other/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Supreme Jeh'Oul,Creatures/Other/3 Stars,bakes with flag,title reaches the stars or type icons
+Sword,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Sword,Auxiliary/Minions,bakes with flag,title would print over a layer just below it
+Sword,Auxiliary/Minions,can't bake removing a type,A type icon would end up off the card. Who: Nothing (edit in Photoshop)
+Sword Knight,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Sword Knight,Auxiliary/Minions,bakes with flag,title would print over a layer just below it
+Sword of Aeons,Items/Equip/4 Stars,bakes with flag,title reaches the stars or type icons
+Sword of Aeons,Items/Equip/4 Stars,bakes with flag,title would print over a layer just below it
+Tai Lung,Creatures/Other/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Tainted Bethany,Creatures/Isaac/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Tainted Bethany,Creatures/Isaac/4 Stars,bakes with flag,title reaches the stars or type icons
+Tainted Bethany,Creatures/Isaac/4 Stars,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Tainted Eden,Creatures/Isaac/2 Stars,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Tainted Eden,Creatures/Isaac/2 Stars,can't bake title,The title's words are printed twice (another layer repeats them). Who: Card maker in Photoshop
+Tainted Eve,Creatures/Isaac/4 Stars,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Tainted Isaac,Creatures/Isaac/3 Stars,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Tainted Jacob,Creatures/Isaac/3 Stars,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Tainted Keeper,Creatures/Isaac/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Tainted Keeper,Creatures/Isaac/4 Stars,bakes with flag,title reaches the stars or type icons
+Tainted Keeper,Creatures/Isaac/4 Stars,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Tainted Lazarus,Creatures/Isaac/3 Stars,can't bake ability,Several visible ability layers. Who: Card maker in Photoshop
+Tainted Lazarus,Creatures/Isaac/3 Stars,can't bake all four stats,Several bars for one stat. Who: Nothing (edit in Photoshop)
+Tainted Lazarus,Creatures/Isaac/3 Stars,data problem (ruled acceptable),One card holds several creatures; an editor confirmed each one's stats on the website.
+Tainted Lost,Creatures/Isaac/2 Stars,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Tainted Magdalene,Creatures/Isaac/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Tainted Magdalene,Creatures/Isaac/3 Stars,bakes with flag,title reaches the stars or type icons
+Tainted Magdalene,Creatures/Isaac/3 Stars,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Tanjerin,Creatures/Bug Fables/5 Stars,bakes with flag,title prints past its old text onto the picture below
+Taranza,Creatures/Kirby/3 Stars,bakes with flag,title reaches the stars or type icons
+Taranza,Creatures/Kirby/3 Stars,bakes with flag,title would print over a layer just below it
+Termination Shock,N.M.E,bakes with flag,title prints past its old text onto the picture below
+Termination Shock,N.M.E,bakes with flag,title reaches the stars or type icons
+Termination Shock,N.M.E,bakes with flag,title would print over a layer just below it
+Termination Shock,N.M.E,can't bake adding a star,"The stars are laid out in a shape the bot can't follow (not a row, column or rows of two). Who: Card maker in Photoshop"
+Thalassophobia,Creatures/Omori/4 Stars,bakes with flag,title prints past its old text onto the picture below
+The Bagel,N.M.E,can't bake title,The title is printed by more than one layer. Who: Card maker in Photoshop
+The Bank,N.M.E,bakes with flag,title prints past its old text onto the picture below
+The Bank,N.M.E,bakes with flag,title reaches the stars or type icons
+The Big Yellow Cat,Creatures/Omori/5 Stars,bakes with flag,type icons baked with a small pixel difference (no need to look)
+The Big Yellow Cat,Creatures/Omori/5 Stars,can't bake title,The title is printed by more than one layer. Who: Card maker in Photoshop
+The Bull,Creatures/In Sound Mind/4 Stars,bakes with flag,title reaches the stars or type icons
+The Bull,Creatures/In Sound Mind/4 Stars,bakes with flag,title would print over a layer just below it
+The Collector,Creatures/Hollow Knight/3 Stars,bakes with flag,title reaches the stars or type icons
+The Collector,Creatures/Hollow Knight/3 Stars,bakes with flag,title would print over a layer just below it
+The Core,Field/2 Stars,bakes with flag,title reaches the stars or type icons
+The Core,Field/2 Stars,bakes with flag,title would print over a layer just below it
+"The Evil, Fricked Up Cursed Idol",N.M.E,bakes with flag,"ability redrawn whole, small pixel difference (no need to look)"
+The Farlands,Field/2 Stars,bakes with flag,title prints past its old text onto the picture below
+The Farlands,Field/2 Stars,bakes with flag,title reaches the stars or type icons
+The Farlands,Field/2 Stars,bakes with flag,a layer above the title would cover part of the new title
+The Flash,Creatures/In Sound Mind/4 Stars,bakes with flag,title prints past its old text onto the picture below
+The Flash,Creatures/In Sound Mind/4 Stars,bakes with flag,title reaches the stars or type icons
+The Freezer,Field/1 Stars,bakes with flag,title reaches the stars or type icons
+The Freezer,Field/1 Stars,bakes with flag,a layer above the title would cover part of the new title
+The Gates of Ahn'Qiraj,Field/4 Stars,can't bake title,The title is printed by more than one layer. Who: Card maker in Photoshop
+The Krusty Krab,Field/3 Stars,bakes with flag,title reaches the stars or type icons
+The Krusty Krab,Field/3 Stars,bakes with flag,title would print over a layer just below it
+The Last Cabbage Merchant,Creatures/Other/3 Stars,can't bake title,No title layer the bot recognises. Who: Card maker in Photoshop
+The Master,Creatures/Mario/5 Stars,bakes with flag,title prints past its old text onto the picture below
+The Master,Creatures/Mario/5 Stars,bakes with flag,title reaches the stars or type icons
+The Plaguelands,Field/3 Stars,bakes with flag,title reaches the stars or type icons
+The Plaguelands,Field/3 Stars,bakes with flag,title would print over a layer just below it
+The Puppet,Creatures/Fnaf/5 Stars,bakes with flag,title prints past its old text onto the picture below
+The Puppet,Creatures/Fnaf/5 Stars,bakes with flag,title reaches the stars or type icons
+The Queen,Creatures/Other/5 Stars,bakes with flag,title prints past its old text onto the picture below
+The Queen,Creatures/Other/5 Stars,bakes with flag,title reaches the stars or type icons
+The Ringed City,Field/1 Stars,bakes with flag,title prints past its old text onto the picture below
+The Ringed City,Field/1 Stars,bakes with flag,title reaches the stars or type icons
+The Shade,Creatures/In Sound Mind/3 Stars,bakes with flag,title reaches the stars or type icons
+The Shade,Creatures/In Sound Mind/3 Stars,bakes with flag,title would print over a layer just below it
+The Structure,Field/4 Stars,bakes with flag,title prints past its old text onto the picture below
+The Structure,Field/4 Stars,bakes with flag,title reaches the stars or type icons
+The Structure,Field/4 Stars,bakes with flag,a layer above the title would cover part of the new title
+The Temple of Ahn'Qiraj,Auxiliary/Items,can't bake title,The title is printed by more than one layer. Who: Card maker in Photoshop
+Thunder Thighs,Items/Heal/2 Stars,can't bake title,"The title layer has another name (not Name, the card's name or its words) (layer 'Snack'). Who: Card maker in Photoshop"
+Thunderfury Blessed Blade of the Windseeker,Items/Equip/4 Stars,bakes with flag,title would print over a layer just below it
+Tomorrow I'll,Items/Equip/2 Stars,bakes with flag,title reaches the stars or type icons
+Tomorrow I'll,Items/Equip/2 Stars,bakes with flag,title would print over a layer just below it
+Toriel,Creatures/Undertale/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Toriel,Creatures/Undertale/4 Stars,bakes with flag,title reaches the stars or type icons
+Traitor Lord,Creatures/Hollow Knight/4 Stars,bakes with flag,"ability redrawn whole, small pixel difference (no need to look)"
+Trick Room,Field/2 Stars,bakes with flag,title prints past its old text onto the picture below
+Tutankoopa,Creatures/Mario/3 Stars,bakes with flag,title reaches the stars or type icons
+Tutankoopa,Creatures/Mario/3 Stars,bakes with flag,title would print over a layer just below it
+Tutankoopa,Creatures/Mario/3 Stars,can't bake HP,Safety check: the stat number's layer style would not move cleanly to the new number. Who: Bot code
+Twin Emperors,Creatures/World Of Warcraft/4 Stars,can't bake ability,Several visible ability layers. Who: Card maker in Photoshop
+Twin Emperors,Creatures/World Of Warcraft/4 Stars,can't bake all four stats,The stats come from the card's creatures list on the website. Who: Nothing (website creatures list)
+Twin Emperors,Creatures/World Of Warcraft/4 Stars,data problem,"Vek'lor's DEF is 10 on the website, 4 on the card"
+Twin Emperors,Creatures/World Of Warcraft/4 Stars,data problem (ruled acceptable),One card holds several creatures; an editor confirmed each one's stats on the website.
+Tyler,Creatures/Other/5 Stars,can't bake title,No title layer the bot recognises. Who: Card maker in Photoshop
+Unbread Twins,Creatures/Omori/4 Stars,bakes with flag,title reaches the stars or type icons
+Unbread Twins,Creatures/Omori/4 Stars,bakes with flag,title would print over a layer just below it
+Uumuu,Creatures/Hollow Knight/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Uumuu,Creatures/Hollow Knight/3 Stars,bakes with flag,title reaches the stars or type icons
+Uumuu,Creatures/Hollow Knight/3 Stars,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Vivian,Creatures/Mario/3 Stars,can't bake HP,Safety check: the stat number's layer style would not move cleanly to the new number. Who: Bot code
+Warcraftian Druid,Creatures/World Of Warcraft/4 Stars,can't bake ability,Several visible ability layers. Who: Card maker in Photoshop
+Warcraftian Druid,Creatures/World Of Warcraft/4 Stars,can't bake title,The title is split over several layers. Who: Card maker in Photoshop
+Warcraftian Hunter,Creatures/World Of Warcraft/4 Stars,can't bake title,The title is split over several layers. Who: Card maker in Photoshop
+Warcraftian Mage,Creatures/World Of Warcraft/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Warcraftian Paladin,Creatures/World Of Warcraft/4 Stars,can't bake title,The title is split over several layers. Who: Card maker in Photoshop
+Warcraftian Priest,Creatures/World Of Warcraft/4 Stars,can't bake title,The title is split over several layers. Who: Card maker in Photoshop
+Warcraftian Rogue,Creatures/World Of Warcraft/4 Stars,can't bake title,The title is split over several layers. Who: Card maker in Photoshop
+Warcraftian Shaman,Creatures/World Of Warcraft/4 Stars,can't bake title,The title is printed by more than one layer. Who: Card maker in Photoshop
+Warrior Dee,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Warrior Dee,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
+Water Totem,Auxiliary/Items,bakes with flag,title prints past its old text onto the picture below
+Water Totem,Auxiliary/Items,bakes with flag,title runs past an effect layer clipped to it
+Watermelon,Items/Heal/2 Stars,"can't bake title, ability, stars (add and remove), types (add and remove)","Several card pictures (numbered PNGs such as A_Snack2.png) come from this one PSD. Fix: tag each variant's own layers and groups with ' #N' at the end of the name (e.g. 'Breakfast #2', 'Supper #3', 'Snack #1'; ' #2,3' for several; untagged layers are in every variant; variant 1 = Name.png, variant N = NameN.png). Then the bot renders, bakes and checks every picture from the one PSD (being built; suggested tags per card coming). Who: Card maker in Photoshop (tags), then bot code"
+Waxwell,Creatures/DST/3 Stars,bakes with flag,title prints past its old text onto the picture below
+Waxwell,Creatures/DST/3 Stars,bakes with flag,title reaches the stars or type icons
+Wendy,Creatures/DST/3 Stars,bakes with flag,"ability redrawn whole, small pixel difference (no need to look)"
+Whacka Bump,N.M.E,bakes with flag,title prints past its old text onto the picture below
+Whelp,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
+Whippy D Cream,Creatures/Monkey D Folder/2 Stars,bakes with flag,title reaches the stars or type icons
+Whippy D Cream,Creatures/Monkey D Folder/2 Stars,bakes with flag,title would print over a layer just below it
+Whispy Woods,Creatures/Kirby/2 Stars,bakes with flag,title prints past its old text onto the picture below
+Whispy Woods,Creatures/Kirby/2 Stars,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+White Space,Field/3 Stars,bakes with flag,title reaches the stars or type icons
+White Space,Field/3 Stars,bakes with flag,title would print over a layer just below it
+Wickerbottom,Creatures/DST/3 Stars,can't bake title,The title's words are printed twice (another layer repeats them). Who: Card maker in Photoshop
+Wigfrid,Creatures/DST/3 Stars,can't bake title,The title layer is hidden. Who: Card maker in Photoshop
+Wilson,Creatures/DST/2 Stars,bakes with flag,title reaches the stars or type icons
+Wilson,Creatures/DST/2 Stars,bakes with flag,title would print over a layer just below it
+Wokey D pronouns,Creatures/Monkey D Folder/3 Stars,bakes with flag,title reaches the stars or type icons
+Wokey D pronouns,Creatures/Monkey D Folder/3 Stars,bakes with flag,title would print over a layer just below it
+Wokey D pronouns,Creatures/Monkey D Folder/3 Stars,bakes with flag,title runs off the card
+Wolfgang,Creatures/DST/4 Stars,can't bake title,No title layer the bot recognises. Who: Card maker in Photoshop
+WX-78,Creatures/DST/3 Stars,bakes with flag,"ability redrawn whole, small pixel difference (no need to look)"
+WX-78,Creatures/DST/3 Stars,can't bake title,The title is split over several layers. Who: Card maker in Photoshop
+X Fists,Auxiliary/Minions,can't bake adding a type,A type icon would end up off the card. Who: Nothing (edit in Photoshop)
+Yin Yarn,Creatures/Kirby/5 Stars,bakes with flag,title runs past an effect layer clipped to it
+Z!!!!!,Creatures/Other/5 Stars,bakes with flag,title prints past its old text onto the picture below
+Z!!!!!,Creatures/Other/5 Stars,bakes with flag,title reaches the stars or type icons
+Ze'mer,Creatures/Hollow Knight/5 Stars,can't bake all four stats,Several bars for one stat. Who: Nothing (edit in Photoshop)
+Zero,Creatures/Kirby/4 Stars,bakes with flag,title prints past its old text onto the picture below
+Zero,Creatures/Kirby/4 Stars,bakes with flag,title reaches the stars or type icons
+Zero Override,Creatures/Kirby/5 Stars,bakes with flag,title prints past its old text onto the picture below
+Zero Override,Creatures/Kirby/5 Stars,bakes with flag,title reaches the stars or type icons
+Zero Two,Creatures/Kirby/5 Stars,bakes with flag,title reaches the stars or type icons
+Zero Two,Creatures/Kirby/5 Stars,bakes with flag,title would print over a layer just below it
+Zigg,Creatures/Everhood/3 Stars,can't bake all four stats,The stat bar is not the card template's bar. Who: Card maker in Photoshop
+Zoltan,Creatures/FTL/2 Stars,bakes with flag,title prints past its old text onto the picture below
+Zompanda,Creatures/Pandas/2 Stars,bakes with flag,title prints past its old text onto the picture below
+Zompanda,Creatures/Pandas/2 Stars,bakes with flag,title reaches the stars or type icons
+Zompanda,Creatures/Pandas/2 Stars,bakes with flag,ability prints over the picture or an effect layer

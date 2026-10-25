@@ -1,6 +1,6 @@
 # Rulebook consistency campaign (2026-10-20)
 
-**Status:** designed 2026-10-20, not scheduled; plan item 19 (`docs/NEXT_SESSION_PLAN.md`, "Ideas 5-23"). User request of
+**Status:** designed 2026-10-20, not scheduled (`docs/NEXT_SESSION_PLAN.md`, "Ideas parked"). User request of
 2026-10-20: "one last campaign to find rulebook inconsistencies".
 The user is the rules owner and makes every ruling; this campaign finds, classifies, logs and guards, it never decides.
 Page citations are the PSD stems of `~/Desktop/TTSCardMaker/Auxiliary/Rulebook/` (48 PSD + PNG pairs) as
@@ -29,7 +29,7 @@ rules.json, stats.pkl or the pickles (the pipeline republishes them). `MDW/Old R
 | `scripts/tags.py <cards.json>` | tag occurrences per card kind, other parenthesised words | P1 seed |
 | `scripts/mentions.py <cards.json>` | how many other cards name each status effect | unused status effects |
 | `scripts/layers.py <dir> <page.psd>...`, `alllayers.py <psd>` (psd-tools venv `~/.venvs/ac-py314-psd125`) | hidden and off-canvas text layers | H class |
-| Plan section "Rulebook data issues" | `docs/NEXT_SESSION_PLAN.md` (Queued) | the first list of issues |
+| Plan section "Rulebook data issues" | `docs/Finished/session-2026-10-22/PLAN_AS_OF_2026-10-22.md` | the first list of issues |
 | Badge tag list the website renders | TTSCardMaker `MDW/Fonts/stoogedings-src/build_stoogedings.py` `badge_tags()`/`BADGE_GROUPS`; `site/assets/text.js` `tagInfo()` | tags the site knows (16 patterns, same as 02_Abbreviations) |
 
 ## 3. Seed inventory (measured 2026-10-20; the first rows of the decision log)
@@ -113,7 +113,7 @@ page; S rows may stay open (the simulator leaves them "by hand", `docs/Campaigns
   rules.json from that pickle (`build_site.py` `load_bot_pickle("stats.pkl")`; its checkout has no Auxiliary/Rulebook,
   so a page push alone changes nothing on the site); rebuild `reference/rulebook.md` with
   `python scripts/build_rulebook.py` (no `-I`, it imports `notes.py`) and re-check Known gaps.
-- **Pages, later:** a text-first rulebook (the user's idea; `docs/NEXT_SESSION_PLAN.md` item 15) or Task 3's
+- **Pages, later:** a text-first rulebook (the user's idea 15, never started; `docs/Finished/session-2026-10-22/PLAN_AS_OF_2026-10-22.md`) or Task 3's
   psd-tools text edits make a page fix a text edit; the checker is unchanged.
 - **Cards:** U1 needs no card edit any more: on 2026-10-21 the team moved every card to the new tags, and the badges
   follow in `badge_tags()`/`tagInfo()`. What is left is pages: the team updates 02_Abbreviations, 11_Abilities2,
