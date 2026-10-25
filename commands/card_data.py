@@ -1096,7 +1096,7 @@ def _cards_digest(db: StatsDatabase) -> str:
 def _clean_key(db: StatsDatabase) -> Optional[tuple]:
     """
     What update's one-time cleanup and backfill read: the cards and their history, the history clone's head and its
-    .mailmap blob (present or not), the bot's head before the recovery (its PICKLE commits), the backfill file. A run on
+    .mailmap blob (present or not), the bot's head before the recovery (its PICKLE commits), the backfill files. A run on
     the key of one where neither changed anything skips them (a 304's run, a scheduled one); None (they run) when one
     can't be read.
     """
@@ -1107,9 +1107,13 @@ def _clean_key(db: StatsDatabase) -> Optional[tuple]:
     except Exception:                               # noqa: BLE001 - no key: the cleanup runs
         return None
     try:
-        from commands.history_backfill import FILE
-        with open(FILE, "rb") as fh:
-            backfill = sha256(fh.read()).hexdigest()
+        from commands.history_backfill import FILE, TEXT_FILE
+        digest = sha256()
+        for path in (FILE, TEXT_FILE):
+            if path == FILE or isfile(path):
+                with open(path, "rb") as fh:
+                    digest.update(fh.read())
+        backfill = digest.hexdigest()
     except (ImportError, FileNotFoundError):        # the backfill module or its file deleted
         backfill = None
     except Exception:                               # noqa: BLE001 - no key: the cleanup runs
@@ -1214,6 +1218,12 @@ def update(build: CardBuild, repository: str, output_problematic: bool = True, f
             backfill, merged = backfill_merged(db, index)
         except Exception as e:                      # noqa: BLE001 - never stops an update
             backfill, failed = f"Backfill skipped ({type(e).__name__}: {e}).", True
+        try:                                        # once, after the merge: its added versions' own text
+            from commands.history_backfill import texts as backfill_texts
+            wording, fixed = backfill_texts(db)
+        except Exception as e:                      # noqa: BLE001 - never stops an update
+            wording, fixed, failed = f"Backfill text skipped ({type(e).__name__}: {e}).", False, True
+        backfill, merged = " ".join(x for x in (backfill, wording) if x) or None, merged or fixed
         _CLEAN.clear()
         if not (moved or line or merged or failed):
             _CLEAN.update(key=key, backfill=backfill)
