@@ -571,12 +571,7 @@ At least one of `msg` / `command` is required. The reply looks like: "Reminder `
 **2026-10-25 03:00 PDT (in 5 days)**, repeats every 1w, runs `/sync_emojis` with your permissions.
 Output goes to this channel."
 
-**Retired options are dropped, not refused.** `RETIRED_OPTIONS` (analytics.py:44) lists options a command
-no longer has: since 2026-10-20, /update_stats's `use_local_repo` and `use_local_timestamp` (local mode was
-archived, section 7). A new reminder that names one gets it removed, and the reply says so ("Dropped
-`use_local_repo:True`: /update_stats no longer has that option."). Stored reminders are cleaned on load (see
-Persistence below). From 2026-10-19 until then, `SCHEDULED_DEFAULTS` added `use_local_repo:False` to every
-scheduled /update_stats; that mechanism was removed along with the option.
+**Removed options and commands are refused, not dropped** (the `RETIRED_OPTIONS`/`RETIRED_COMMANDS` shims were removed 2026-10-25). A reminder naming an option its command no longer has (e.g. /update_stats `use_local_repo`) fails binding like any unknown option; one naming a removed command posts "`/x` is not a bot command" when due. The only live reminder has no command.
 
 Copy-paste examples:
 
@@ -622,16 +617,14 @@ The first is stored as `/update_stats`. The second is a weekly full emoji sync, 
   05:00 across daylight saving), `frequency` (seconds or null), `command`, `enabled`, `creator_id`, `creator_name`,
   `v` (`REMINDER_VERSION`), `problem`; ids are text. A save is canonical (a no-op save changes nothing). An entry
   with an older `v` is migrated on load: its command is rewritten to canonical form keeping what it actually did,
-  and retired options (`RETIRED_OPTIONS`) are stripped, so `/update_stats use_local_repo:False` becomes
-  `/update_stats`.
+  (retired options were stripped here until 2026-10-25; now none are).
 - **The conversion (once, 2026-10-24; its code removed 2026-10-25)**: the first start found no `reminder.json`, loaded `reminder.pkl` as before,
   writes `reminder.json`, reads it back and compares every field, and only then renames the pickle
   `reminder.pkl.bak`. Ids, creators, schedules and commands carry over (the cutover's `/remove_reminder` of
   d2664752 and 054b5933 still works). On any failure the half-made JSON is removed and the session keeps running
   and saving from the pickle (the panel footer and /set_reminder replies say so). The pickle path goes once every
   host has converted.
-  The fire path drops them too, so a reminder never fails on them. Watch for "Reminder <id>: migrated command
-  ... (dropped retired ...)" lines. Per-machine file: reminders DO NOT
+  Per-machine file: reminders DO NOT
   follow a machine handoff (section 6 step 6).
 - **Not yet observed live** as of 2026-10-19 (docs/BUGS_AND_IMPROVEMENTS.md V2): watch the first startup's migration
   lines and the first firing.
@@ -697,7 +690,7 @@ Built 2026-10-22 (design docs/Campaigns/DATA_BUILD_ACTION.md §11 and §14 steps
 (2026-10-24 23:02, the `CARD_SYNC` constant, then `True`) and the only path since 2026-10-25 (step 10: the constant, the
 pickle fallback and `/push` removed; the jetson's root pickles are deleted by the pull). The owner's reminders: 05:30 /push
 (054b5933) and 05:00 /update_stats (d2664752) were to go at the cutover; a /push reminder left now posts that the command
-was retired (analytics `RETIRED_COMMANDS`): `/remove_reminder reminder_id:054b5933`. The 30-minute `/update_stats` reminder (be1b0bcd) is not needed for
+now posts "is not a bot command": `/remove_reminder reminder_id:054b5933`. The 30-minute `/update_stats` reminder (be1b0bcd) is not needed for
 fresh data (card commands refresh on use, below); it still posts new builds' problem cards to its channel.
 
 **What each command does** (commands/card_sync.py, uncompiled):
@@ -716,7 +709,7 @@ fresh data (card commands refresh on use, below); it still posts new builds' pro
 | `/update` | pull, then restart (section 5) |
 | `/pull` | a conflict takes the remote's file for every path ("AUTO-RESOLVE: Merge conflict resolved (accepted remote)"). Normally a fast-forward: the bot commits nothing |
 | `/fonts` | from `card_data/psd_details.json`: each current card PSD's fonts with `supplied: false` (the build judged them against MDW/Fonts); a PSD without a record, or with fonts not judged, is an error line. First line "From the card data (built …): N card PSDs." |
-| `/update_metadata`, `/mass_replace`, `/alias`, `/bake_cards`, `/update_tts_save` | retired 2026-10-25 (branch `archive/discord-edits`): cards are edited on the website (its Rename everywhere replaces /mass_replace); Card sync bakes and updates the TTS save. A reminder running one posts "`/<name>` was retired (…)" (analytics `RETIRED_COMMANDS`) |
+| `/update_metadata`, `/mass_replace`, `/alias`, `/bake_cards`, `/update_tts_save` | retired 2026-10-25 (branch `archive/discord-edits`): cards are edited on the website (its Rename everywhere replaces /mass_replace); Card sync bakes and updates the TTS save. A reminder running one posts "`/<name>` is not a bot command" (the "was retired" shim was removed 2026-10-25) |
 | `/website` | "… the card sync applies it within minutes (PSD edits are baked in about 30)." |
 
 **API cost:** one conditional request per sync (free when nothing moved), so at most one per 2 minutes of card commands
@@ -766,9 +759,9 @@ re-find volatile facts with these before trusting them:
 | execv/execl fallback | `grep -n -A4 "def restart_bot" commands/update_bot.py` |
 | /pull merge strategy (theirs on a conflict) | `grep -n "\-\-rebase\|--theirs\|AUTO-RESOLVE" commands/update_bot.py` |
 | Push remote is ssh | `git remote -v` |
-| update_stats options are output_problematic_cards, force_update, cards (local mode archived 2026-10-20) | `grep -n -A4 "def slash_update_stats" main.py`; `grep -n -A4 "^def update" commands/card_sync.py`; `grep -rn "use_local" main.py commands/` (only analytics.py `RETIRED_OPTIONS`) |
+| update_stats options are output_problematic_cards, force_update, cards (local mode archived 2026-10-20) | `grep -n -A4 "def slash_update_stats" main.py`; `grep -n -A4 "^def update" commands/card_sync.py`; `grep -rn "use_local" main.py commands/` (finds nothing since 2026-10-25) |
 | Local traversal archived on its own branch, not in main | `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived`; `ls archive 2>/dev/null` (nothing: main has no archive folder) |
-| Retired reminder options dropped | `grep -n -A6 "^RETIRED_OPTIONS" commands/analytics.py`; `grep -n "^REMINDER_VERSION" commands/analytics.py` (3) |
+| No reminder retirement shims (removed 2026-10-25) | `grep -n "RETIRED_\|_drop_retired" commands/analytics.py` (nothing); `grep -n "^REMINDER_VERSION" commands/analytics.py` (3) |
 | The legacy /update_stats path is gone (2026-10-25) | `grep -c "def update(\|legacy\|_commit_page" commands/card_data.py` (0, 0, 0); `ls commands/repo_traverser.py` (absent) |
 | Reminder formats, limits, defaults | `grep -n "^TIME_FORMATS\|^WEEKDAYS\|^MAX_INTERVAL\|^CHANNEL_RETRY\|^LEGACY_RUNS_AS_BOT\|^INTERVAL_UNITS" commands/analytics.py` |
 | Reminders run as creator; changes gated | `grep -n "_ReminderUser(\|def can_edit\|Only an admin or the reminder" commands/analytics.py` |
@@ -786,7 +779,7 @@ re-find volatile facts with these before trusting them:
 
 Maintenance: update the date stamps and counts above whenever the card data moves a lot or commands
 are added. If local mode is ever revived from branch `archive/local-update-stats`, it must first stop comparing
-mtimes with commit dates (B6); then revisit section 7's operating rule and the `RETIRED_OPTIONS` note in
+mtimes with commit dates (B6); then revisit section 7's operating rule and the removed-options note in
 section 9, keeping the pointer to autocroissant-failure-archaeology for the history.
 
 2026-10-20 (later): the optimization-pass pointers above moved from `~/Documents/ac-optimization/` to

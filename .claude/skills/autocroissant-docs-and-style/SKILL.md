@@ -52,7 +52,7 @@ the five dicts' own now.
 | `stats_commands` | 86 | 6 (`/update_metadata`, `/mass_replace`, `/update_tts_save`, `/bake_cards` retired 2026-10-25) | `stats` |
 | `music_commands` | 121 | 17 | `music` |
 
-Total: 48 keys, 47 real commands documented (all of them, 2026-10-25: the five Discord commands that pushed to the card repo, `/alias` among them, retired to branch `archive/discord-edits`; `tests/test_retired_commands.py`). The `"Query Syntax:"` key
+Total: 48 keys, 47 real commands documented (all of them, 2026-10-25: the five Discord commands that pushed to the card repo, `/alias` among them, retired to branch `archive/discord-edits`). The `"Query Syntax:"` key
 (help.py:52) is a sanctioned pseudo-entry — a non-command key used to document
 the `/query_ability` DSL. Pseudo-entries are allowed; they just must end with a
 colon like real keys so they render uniformly.

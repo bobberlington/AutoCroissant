@@ -312,7 +312,7 @@ numbers drift; each volatile fact below carries its re-verification one-liner (r
 | Fact | Re-verify with |
 |---|---|
 | removeprefix line (was :1002) replaced by relpath on 2026-10-19 (:1226), archived with local mode on 2026-10-20 | `git grep -n -e 'relpath(full_path' -e 'removeprefix(' archive/local-update-stats -- archive/local_update_stats.py` (one relpath hit at :115, no removeprefix call) |
-| Slash default `use_local_repo=True` (O4, a 2026-07-11 observation; False on 2026-10-20, then the option was removed the same day) | `grep -rn 'use_local' main.py commands/` (only `RETIRED_OPTIONS` in analytics.py) |
+| Slash default `use_local_repo=True` (O4, a 2026-07-11 observation; False on 2026-10-20, then the option was removed the same day) | `grep -rn 'use_local' main.py commands/` (finds nothing since 2026-10-25) |
 | f7c915c introduced BOTH the dirname-classify and removeprefix bugs (2025-12-02) | `git show f7c915c -- commands/psd_analyzer.py` — read the hunks touching `dirname` and `removeprefix` |
 | dirname bug fixed by fb47b5d; save gate added there as `num_updated > 0` | `git show fb47b5d -- commands/psd_analyzer.py` — the `split('/')` hunk and the final gate hunk |
 | Gate fixed to `num_new` 20 min later by 4e03190 "am forehead" (17:23:37 → 17:43:29) | `git show -s --format='%h %ci %s' fb47b5d 4e03190` |

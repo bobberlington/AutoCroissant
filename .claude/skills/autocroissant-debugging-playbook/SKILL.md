@@ -219,7 +219,7 @@ logs to stdout; most reminder problems are visible there first.
 | Repeating reminder "skipped" runs while bot was down | stdout at startup: `Rescheduled reminder <id> from ... to ...` | By design: it fires once (if due) and jumps to its next future slot; missed runs are not replayed. Past-due ONE-SHOT reminders fire right after startup | - | By design |
 | One-shot reminder never fires, keeps moving an hour later | stdout "channel ... not found (deleted or no access); skipped." | Its channel is gone or invisible; it retries hourly (`CHANNEL_RETRY`) | - | Remove it, or restore the bot's access to the channel |
 | Reminder fired at the wrong hour | What timezone did you assume? | Times are Pacific: `TIMEZONE = ZoneInfo("America/Los_Angeles")` (global_config.py), following daylight saving | The list shows a Discord relative timestamp next to the Pacific time | State times in Pacific time |
-| A stored `/update_stats use_local_repo:...` changed to plain `/update_stats` | stdout at start: "Reminder <id>: migrated command ... (dropped retired `use_local_repo:False`)" | By design since 2026-10-20: local mode was archived and `RETIRED_OPTIONS` (analytics.py:44) strips the removed options so the reminder keeps running (remote) | - | Nothing to do; operating rule in **autocroissant-run-and-operate** §7 |
+| A stored `/update_stats use_local_repo:...` changed to plain `/update_stats` | stdout at start: "Reminder <id>: migrated command ... (dropped retired `use_local_repo:False`)" | Historical: until 2026-10-25 `RETIRED_OPTIONS` stripped the removed options (local mode archived 2026-10-20); removed 2026-10-25, so such a reminder now posts "`use_local_repo` is not one of its options" when due | - | Nothing to do; operating rule in **autocroissant-run-and-operate** §7 |
 | An old reminder behaves differently after the 2026-10-19 rewrite | stdout at first start: "Reminder <id>: migrated command `old` -> `new`" | Migration kept the OLD meaning (old parser read only lowercase `true` as True; pre-v2 positional values follow the old option order) | Compare old and new command strings in the log | Re-create the reminder with the options you actually want |
 
 ## 10. Type emojis (/sync_emojis, added 2026-10-19)
@@ -318,7 +318,7 @@ grep -n "'--rebase'" commands/update_bot.py                              # /pull
 # Section 9 - reminders (2026-10-19 rewrite)
 grep -n "skipped its command\|Reminders are off\|crashed the scheduler\|not found (deleted or no access)" commands/analytics.py   # user-visible messages
 grep -n "Rescheduled reminder\|migrated command" commands/analytics.py  # startup log lines
-grep -n "^RETIRED_OPTIONS\|^CHANNEL_RETRY\|^LEGACY_RUNS_AS_BOT" commands/analytics.py
+grep -n "^CHANNEL_RETRY\|^LEGACY_RUNS_AS_BOT" commands/analytics.py
 grep -n "queue_command(check_reminder)" main.py                          # fires only while loops run (928)
 grep -n "reminder" .gitignore                                            # not synced across machines
 

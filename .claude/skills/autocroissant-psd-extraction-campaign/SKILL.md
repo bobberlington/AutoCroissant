@@ -607,7 +607,7 @@ documented in autocroissant-failure-archaeology).
 - Bug introduction in f7c915c (history):
   `git show f7c915c -- commands/psd_analyzer.py | grep -B3 -A3 removeprefix`
 - Local mode archived 2026-10-20 (no `use_local_*` options; slash force_update=False at main.py:383):
-  `grep -rn "use_local" main.py commands/` (only `RETIRED_OPTIONS` in analytics.py); `grep -n "force_update: Optional" main.py`
+  `grep -rn "use_local" main.py commands/` (finds nothing since 2026-10-25); `grep -n "force_update: Optional" main.py`
 - Python-side `update_stats` force_update=False default since 2026-10-19 (card_sync.update since 2026-10-25):
   `grep -n "force_update: bool = " commands/card_sync.py`
 - `_populate_types_from_local` (repo_traverser.py:202 on 2026-10-20, card_data.py:294 since 2026-10-22, skips dotfiles since 2026-10-19; kept for the diagnostics scripts):

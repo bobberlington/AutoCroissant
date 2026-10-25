@@ -1,6 +1,6 @@
 ---
 name: autocroissant-config-and-flags
-description: Catalog of EVERY configuration axis in the AutoCroissant Discord bot. Load for any question containing "config", "flag", "setting", "default", "where is X configured", "how do I change/set X", or "why did my setting reset" — and for any mention of TOKEN, ADMINS, GIT_TOKEN, ACTIONS_TOKEN, CARD_SYNC (removed 2026-10-25), CARD_GUARDS, card-preview.yml and the previews branch (KEEP, DAYS: no secret needed), browser_cookies, KEEPVIDEO, POSTPROCESS, SITE_URL, match ratio, /set_ratio, /set_repo, admin-only commands, rate limits, BREAK_LEN, UPDATE_RATE, DOWNLOAD_WORKERS, TYPE_REGION_RATIO, EXCLUDE_FOLDERS, MUSIC_BASE_DIR, LOCAL_DIR_LOC, HISTORY_CLONE, TTS_SAVE_PATH, AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE, TIMEZONE/PST, the pickle filenames (removed 2026-10-25), ICON_FONT_PREFIX, ICON_MANIFEST_PATH, ICON_VARIANTS, ICON_SCAN_PATTERN, EFFECT_LAYER_TAG, EFFECT_COVERAGE_MIN, AUTHORS_PATH(S), EDITS_PATH(S), STAR_CORE_ALPHA, the type_emojis constants (EMOJI_SIZE, MAX_NAME_LEN, ICON_FOLDERS, NO_SUFFIX, NO_RED, TOKEN_PATTERN), the reminder constants (REMINDER_VERSION, MAX_INTERVAL, CHANNEL_RETRY, LEGACY_RUNS_AS_BOT, RETIRED_OPTIONS, RETIRED_COMMANDS, TIME_FORMATS, WEEKDAYS), or the AI fields and setters that live only on branch archive/ai-generation (HF_TOKEN, model, lora, device_no, scheduler_name, vram_usage, /set_scheduler, /set_model, /set_lora, /set_device). Contains the config.py field table (names only), global_config.py and per-module constants (incl. card_sync, the push guards, psd_edit parity, card_bake), the TTSCardMaker repo settings (names only), prod-vs-experimental status, runtime-settable vs restart-required (/set_* do NOT persist), update_stats defaults, an add-a-config-field checklist and re-verification greps.
+description: Catalog of EVERY configuration axis in the AutoCroissant Discord bot. Load for any question containing "config", "flag", "setting", "default", "where is X configured", "how do I change/set X", or "why did my setting reset" — and for any mention of TOKEN, ADMINS, GIT_TOKEN, ACTIONS_TOKEN, CARD_SYNC (removed 2026-10-25), CARD_GUARDS, card-preview.yml and the previews branch (KEEP, DAYS: no secret needed), browser_cookies, KEEPVIDEO, POSTPROCESS, SITE_URL, match ratio, /set_ratio, /set_repo, admin-only commands, rate limits, BREAK_LEN, UPDATE_RATE, DOWNLOAD_WORKERS, TYPE_REGION_RATIO, EXCLUDE_FOLDERS, MUSIC_BASE_DIR, LOCAL_DIR_LOC, HISTORY_CLONE, TTS_SAVE_PATH, AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE, TIMEZONE/PST, the pickle filenames (removed 2026-10-25), ICON_FONT_PREFIX, ICON_MANIFEST_PATH, ICON_VARIANTS, ICON_SCAN_PATTERN, EFFECT_LAYER_TAG, EFFECT_COVERAGE_MIN, AUTHORS_PATH(S), EDITS_PATH(S), STAR_CORE_ALPHA, the type_emojis constants (EMOJI_SIZE, MAX_NAME_LEN, ICON_FOLDERS, NO_SUFFIX, NO_RED, TOKEN_PATTERN), the reminder constants (REMINDER_VERSION, MAX_INTERVAL, CHANNEL_RETRY, LEGACY_RUNS_AS_BOT, TIME_FORMATS, WEEKDAYS), or the AI fields and setters that live only on branch archive/ai-generation (HF_TOKEN, model, lora, device_no, scheduler_name, vram_usage, /set_scheduler, /set_model, /set_lora, /set_device). Contains the config.py field table (names only), global_config.py and per-module constants (incl. card_sync, the push guards, psd_edit parity, card_bake), the TTSCardMaker repo settings (names only), prod-vs-experimental status, runtime-settable vs restart-required (/set_* do NOT persist), update_stats defaults, an add-a-config-field checklist and re-verification greps.
 ---
 
 # AutoCroissant: Configuration and Flags
@@ -407,7 +407,7 @@ for the jetson went on 2026-10-25: nothing there bakes).
 The "Bot adapter" block at the top holds what differs from OJWikibot's copy of the module: `STORE_PATH`
 (`REMIND_JSON`), `STORE_SCHEMA`, `TIME_SEMANTICS`, `ZONE_LABEL` ("Pacific time"),
 `RUN_AS_CREATOR = True`, `LEGACY_RUNS_AS_BOT`, `ALLOW_POSITIONAL = True`, `ON_LOAD_ERROR = "off"` (an unreadable
-store turns reminders off; OJWikibot exits), `CHANNEL_RETRY`, `RETIRED_OPTIONS` and `is_admin`.
+store turns reminders off; OJWikibot exits), `CHANNEL_RETRY` and `is_admin`.
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -418,8 +418,6 @@ store turns reminders off; OJWikibot exits), `CHANNEL_RETRY`, `RETIRED_OPTIONS` 
 | `MAX_INTERVAL` | `timedelta(days=366)` | upper limit for `offset` and `frequency` (longer = typo, and huge values overflow datetime) |
 | `CHANNEL_RETRY` | `timedelta(hours=1)` | how long a one-shot reminder whose channel is gone waits before trying again |
 | `LEGACY_RUNS_AS_BOT` | `True` | reminders saved before creator tracking keep running as the bot. Set False to run them as an unknown non-admin user instead (their admin commands would then be refused) |
-| `RETIRED_OPTIONS` (2026-10-20) | `{"update_stats": (("use_local_repo", "use_local_timestamp"), <old option order>)}` | options a command no longer has. A reminder that names one drops it instead of failing: at creation (the reply says "Dropped ..."), at load migration and at fire time. The old option order maps pre-v2 positional values. Replaced `SCHEDULED_DEFAULTS` (2026-10-19 → 2026-10-20, `{"update_stats": {"use_local_repo": False}}`), which became pointless when local mode was archived |
-| `RETIRED_COMMANDS` (2026-10-25) | `{name: what replaced it}` for /update_metadata, /mass_replace, /alias, /bake_cards, /update_tts_save and /push | a reminder (or a new one) running one is refused with "`/<name>` was retired (…)" instead of "is not a bot command" |
 | `INTERVAL_UNITS` | s/m/h/d/w in seconds | the units `offset`/`frequency` accept; combinations like `1d12h` are allowed |
 | `WEEKDAYS`, `TIME_FORMATS` | Monday-first names; `("%H:%M", "%I%p", "%I:%M%p")` | what `when` accepts (weekday prefixes need 3+ letters) |
 | `TRUE_WORDS`, `FALSE_WORDS` | true/yes/y/on/1 and false/no/n/off/0 | how boolean command options are read (any case) |
@@ -611,7 +609,7 @@ Since 2026-10-20 `/set_repo` switches only once the new tree loads; a failed fet
    which made local mode compare file mtimes with stored GitHub commit dates and re-archive every card
    (docs/BUGS_AND_IMPROVEMENTS.md B6). On 2026-10-20 local mode was archived: both options are gone from the
    slash command and from `update_stats()`, the traversal lives on branch `archive/local-update-stats`
-   (not in main, not compiled), and stored reminders drop the options (`RETIRED_OPTIONS` above).
+   (not in main, not compiled), and stored reminders naming them fail binding (the dropping shim was removed 2026-10-25).
    (`force_update` now dispatches a full Card sync re-parse: an admin's decision, not a config probe.)
 3. **Same field, two meanings:** on main `vram_usage` is only the browser_cookies fallback
    (music_player.py:37, default `""`); on branch `archive/ai-generation` it is the diffusion memory

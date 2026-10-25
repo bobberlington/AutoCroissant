@@ -379,7 +379,7 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
 - **Verified**: code read 2026-10-19. Still worth keeping after Entry 1's fix, because local mode with local
   timestamps re-archives everything (docs/BUGS_AND_IMPROVEMENTS.md B6).
 - **Superseded 2026-10-20** (Entry 10.12): with local mode archived the option no longer exists, so
-  `SCHEDULED_DEFAULTS` was removed. `RETIRED_OPTIONS` now strips `use_local_repo`/`use_local_timestamp` from
+  `SCHEDULED_DEFAULTS` was removed. `RETIRED_OPTIONS` stripped (removed 2026-10-25) `use_local_repo`/`use_local_timestamp` from
   stored reminders instead.
 
 ### 10.2 Remote-mode temp PSD downloads leaked (was C7)
@@ -547,7 +547,7 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   compiled and source modules import offline (update_bot and music_player need GitPython and yt-dlp, which the
   scratch venv lacked). grep finds no remaining references.
 - **Kept on purpose** (reachable, or used by tooling): gap/type injection (fallback for cards not in the icon font),
-  `RETIRED_OPTIONS` and the reminder migration, `_populate_types_from_local`/`_icons_from_local` (diagnostics
+  `RETIRED_OPTIONS` and the reminder migration (removed 2026-10-25), `_populate_types_from_local`/`_icons_from_local` (diagnostics
   scripts), `global_config.LOCAL_DIR_LOC` (diagnostics scripts), every slash command and the AI and music features (AI later moved off main, 10.16).
   `analytics.parse_time_str` (a one-line public wrapper of `_parse_when`, written in the rewrite and uncalled) was
   left in place as a candidate, and deleted in the 2026-10-20 code-health pass.
@@ -837,8 +837,7 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   (`refresh_cache`, `FONTS_CACHE`); `discord_archive.py`, `discord_match.py`, `png_recompress.py`, psd_details' backfill
   CLI and txt2_repair's `--check`/`--in-place`; the Discord edit credit (`changelog.CREDIT`, `card_bake.DISCORD`); the
   one-path `*_PATHS` tuples. TTSCardMaker work/clean: card-sync.yml's seed, bootstrap and rollback switches; the card and
-  font checks folded into card-guards.yml's check job. Kept: the reminder shims (`RETIRED_COMMANDS` and the rest), the
-  read-only diagnostics on db/ JSON.
+  font checks folded into card-guards.yml's check job. Kept: the read-only diagnostics on db/ JSON.
 - **Status**: built 2026-10-25 on work/clean in both repos.
 
 ## How to add an entry
@@ -873,10 +872,10 @@ Written 2026-07-11 against HEAD = 284d13c ("PICKLE", 2026-06-20). Extended 2026-
 | New history since this file | `git log --oneline -5` (anything above 167f30a, or the commits of the 2026-10-20 optimization pass, → review entries) |
 | Entry 1 fixed | `git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py` (:115 on the archive branch; was psd_analyzer.py:1226 before the archive) and `grep -rn removeprefix commands/` (expect empty); `git log -S removeprefix --oneline -- commands/psd_analyzer.py` shows the fix 53db8ee above f7c915c |
 | Entry 1 origin diff | `git show f7c915c -- commands/psd_analyzer.py \| grep -B5 -A5 removeprefix`; old code: `git show 366c8d9:commands/psd_analyzer.py \| grep -n 'relative_path ='` |
-| Local mode archived (Entry 10.12) | `grep -rn 'use_local' main.py commands/` (only `RETIRED_OPTIONS`, analytics.py:44-47); `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived`; `grep -n '^REMINDER_VERSION' commands/analytics.py` (3) |
+| Local mode archived (Entry 10.12) | `grep -rn 'use_local' main.py commands/` (finds nothing since 2026-10-25); `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived`; `grep -n '^REMINDER_VERSION' commands/analytics.py` (3) |
 | Dead helpers deleted (Entry 10.13) | `git branch --list 'archive/*'` (two branches: archive/ai-generation, archive/local-update-stats); `grep -rn 'convert_value\|parse_named_args\|url_to_pilimage\|cv2_to_pil\|pil_to_cv2\|_exact_match_pattern' main.py commands/` (expect empty) |
 | Exact token spellings (Entry 10.11) | `grep -n -A8 "def spellings" commands/psd_parser.py` |
-| Entry 10 fixes present | `grep -n "remove(local_file)\|startswith('.')\|force_update: bool = False" commands/card_data.py commands/repo_traverser.py` (card_data.py 478/488, 301, 234/658; repo_traverser.py 61); `grep -n '^RETIRED_OPTIONS\|^LEGACY_RUNS_AS_BOT\|^def next_run' commands/analytics.py` (44, 37, 246); `grep -n 'target_message: Optional\[Message\]' commands/management.py` (one hit, before the `try`) |
+| Entry 10 fixes present | `grep -n "remove(local_file)\|startswith('.')\|force_update: bool = False" commands/card_data.py commands/repo_traverser.py` (card_data.py 478/488, 301, 234/658; repo_traverser.py 61); `grep -n '^LEGACY_RUNS_AS_BOT\|^def next_run' commands/analytics.py`; `grep -n 'target_message: Optional\[Message\]' commands/management.py` (one hit, before the `try`) |
 | B6 hazard (only relevant if local mode is revived from the archive) | unpickle stats.pkl with stub classes and compare each `card.timestamp` with `os.path.getmtime(~/Desktop/TTSCardMaker/<card.path>)`: 813/813 newer on 2026-10-19 |
 | Data still healthy / counts | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py` (813 cards, 218/223 old, newest 2026-06-18 — all drift with TTSCardMaker) |
 | old_stats byte trace | `for c in 793abf1 e380cee cca0aaf eb9aa84 637698b 76baa15 e5f5393 532b34f d31b948 8753489 284d13c; do echo "$c $(git cat-file -s $c:old_stats.pkl)"; done` |
