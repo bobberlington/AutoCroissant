@@ -254,7 +254,7 @@ Standard for all interpolation (`f"{cmd}\n{desc}\n\n"` help.py:151;
 
 Worker functions are **sync** and never await Discord directly; they call
 `queue_message` / `queue_file` / `queue_edit` / `queue_command`
-(commands/utils.py:36-60) and main.py's 0.1 s loops do the actual sends.
+(commands/utils.py:36-60) and main.py's queue loops do the actual sends.
 `print_help` (help.py:136-154) is the minimal canonical example: sync def,
 takes `Interaction`, ends in `queue_long_message`. The whole execution model and
 why violating it deadlocks or drops messages: `autocroissant-architecture-contract`.

@@ -776,7 +776,9 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
 - **Status**: done 2026-10-21 (uncommitted when written). The listing was reverted 2026-10-23 (owner: "discord has a
   limit on the number of images it shows per message", so a 10-link message previewed only a few cards): one message
   per card again, its image URL alone, its name when the PNG is not in the tree; `RESULTS_PER_MESSAGE` deleted. The
-  0.1 s tick stays. Do not re-batch image links; a big result set is capped by `limit` and the website link.
+  0.1 s tick stayed until 2026-10-25, when the drains began waking on enqueue (B-1, branch work/instant; reply hop
+  50 ms → about 1 ms, 1 s fallback poll; autocroissant-architecture-contract). Do not re-batch image links; a big
+  result set is capped by `limit` and the website link.
 
 ### 10.31 Deleted PSDs archived, not deleted (was B8, 2026-10-22)
 
