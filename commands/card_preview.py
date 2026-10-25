@@ -8,8 +8,8 @@ result on TTSCardMaker's orphan branch `previews` (card-preview.yml's second job
                                     [--request <id>] [--repo <owner/name>] [--head <sha>]
 
 It writes <out>/result.json always (a bad input, a refusal and a runner error too), and with an image preview.png (the
-PNG the bake would commit, recompressed losslessly where pyoxipng is installed) and preview.webp (WEBP_WIDTH wide, as
-build_site makes the card view's).
+PNG the bake would commit, recompressed losslessly where pyoxipng is installed), preview.webp (WEBP_WIDTH wide, the
+card view's width) and before.webp (the card's official PNG made the same way: the site's Diff compares like with like).
 The edit is the card's Card Edits.json entry as it would be published (any of its fields; the PSD-kind ones are baked,
 `creatures` gates the stats as in the bake, `_`-keys are ignored); result.json's `edit` is it exactly as sent, without
 the `_`-keys. Not the bake's: the `recent` gate (a preview races nobody: it commits nothing). Exit 0, 2 for a bad input,
@@ -39,7 +39,7 @@ import commands.psd_edit as psd_edit
 from commands.card_bake import Card, Snapshot, Transient, local_snapshot, psd_fields, snapshot_at, vocabulary
 from commands.card_edits import CardAuthors, CardEdits
 from commands.card_models import card_name
-from commands.card_preview_branch import MAX_CARD, PNG, REQUEST, RESULT, WEBP, blank, clean, stamp
+from commands.card_preview_branch import BEFORE, MAX_CARD, PNG, REQUEST, RESULT, WEBP, blank, clean, stamp
 from commands.git_commit import ref_head
 from commands.github_api import token_from_env
 from global_config import CARD_REPO
@@ -52,7 +52,7 @@ SPARSE_FILES = ("commands/card_preview.py", "commands/card_preview_branch.py", "
                 "commands/card_edits.py", "commands/png_export.py", "commands/github_api.py", "commands/git_commit.py",
                 "commands/repo_history.py", "global_config.py", "requirements-cards.txt")
 MAX_EDIT = 16384                                # bytes of edit JSON (an ability is a few hundred)
-WEBP_WIDTH, WEBP_QUALITY = 720, 75              # build_site IMAGE_SIZES' 720: the card view's size and quality
+WEBP_WIDTH, WEBP_QUALITY = 720, 75              # the card view's width; WebP (the previews contract), the site's thumbs are AVIF
 RETRY = card_bake.TRANSIENT + ("blob",)         # try again: the bake's own, and a blob that failed its hash (a download's)
 
 
@@ -187,10 +187,21 @@ def notes_of(card: Card) -> list:
     return notes
 
 
-def write_images(png_path: str, out: str) -> dict:
+def _small(data: bytes, path: str) -> list:
+    """A PNG's bytes as a WEBP_WIDTH wide WebP at WEBP_QUALITY; returns its size."""
+    image = Image.open(BytesIO(data))
+    image.load()
+    small = image.convert("RGBA" if image.mode in ("RGBA", "LA", "P") else "RGB")
+    small.thumbnail((WEBP_WIDTH, WEBP_WIDTH * 3), Image.LANCZOS)
+    small.save(path, "WEBP", quality=WEBP_QUALITY, method=4)
+    return list(small.size)
+
+
+def write_images(png_path: str, out: str, before: str = "") -> dict:
     """
-    preview.png (losslessly recompressed when that is smaller: png_export.recompress, the same pixels and chunks) and
-    preview.webp (WEBP_WIDTH wide at WEBP_QUALITY, as build_site makes the card view's image).
+    preview.png (losslessly recompressed when that is smaller: png_export.recompress, the same pixels and chunks),
+    preview.webp (WEBP_WIDTH wide at WEBP_QUALITY: the card view's width) and, from the official PNG `before`,
+    before.webp made the same way (the site's Diff: one codec on both sides, so unchanged pixels match).
 
     Returns:
         result.json's files, size and webp_size
@@ -200,13 +211,16 @@ def write_images(png_path: str, out: str) -> dict:
     smaller = png_export.recompress(data)
     with open(join(out, PNG), "wb") as fh:
         fh.write(smaller or data)
-    image = Image.open(BytesIO(data))
-    image.load()
-    small = image.convert("RGBA" if image.mode in ("RGBA", "LA", "P") else "RGB")
-    small.thumbnail((WEBP_WIDTH, WEBP_WIDTH * 3), Image.LANCZOS)
-    small.save(join(out, WEBP), "WEBP", quality=WEBP_QUALITY, method=4)
-    return {"files": {"png": PNG, "webp": WEBP}, "size": list(image.size), "webp_size": list(small.size),
-            "bytes": {"png": len(smaller or data), "webp": getsize(join(out, WEBP))}, "recompressed": smaller is not None}
+    with Image.open(BytesIO(data)) as image:
+        size = list(image.size)
+    files, sizes = {"png": PNG, "webp": WEBP}, {"png": len(smaller or data)}
+    webp_size = _small(data, join(out, WEBP))
+    sizes["webp"] = getsize(join(out, WEBP))
+    if before and isfile(before):
+        with open(before, "rb") as fh:
+            _small(fh.read(), join(out, BEFORE))
+        files["before"], sizes["before"] = BEFORE, getsize(join(out, BEFORE))
+    return {"files": files, "size": size, "webp_size": webp_size, "bytes": sizes, "recompressed": smaller is not None}
 
 
 def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_REPO, clone: str = "", request: str = "",
@@ -230,7 +244,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
     started = perf_counter()
     out, clone = expanduser(out), abspath(expanduser(clone)) if clone else ""
     makedirs(out, exist_ok=True)
-    for name in (RESULT, PNG, WEBP):
+    for name in (RESULT, PNG, WEBP, BEFORE):
         if exists(join(out, name)):
             remove(join(out, name))
     result = blank(request, card)
@@ -273,11 +287,13 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
             result["parity"] = {f: {k: round(float(v), 3) for k, v in m.items() if k in ("bad_pct", "mean", "max")}
                                 for f, m in one.baked.parity.items()}
             result["region"] = _plain(one.baked.region)
-        rendered = join(work, one.name.replace("/", "_"), "new", basename(one.png)) if one.png else ""
+        folder = join(work, one.name.replace("/", "_"))
+        rendered = join(folder, "new", basename(one.png)) if one.png else ""
+        official = join(folder, "old", basename(one.png)) if one.png else ""    # bake_card's fetch of the card's PNG
         if state == "baked":
-            result.update(image="baked", **write_images(one.baked.png_path, out))
+            result.update(image="baked", **write_images(one.baked.png_path, out, official))
         elif state == "refused" and rendered and isfile(rendered):    # a gate after the save: what the render got
-            result.update(image="refused", **write_images(rendered, out))
+            result.update(image="refused", **write_images(rendered, out, official))
     except BadInput as error:
         result.update(state="error", transient=False, reason=f"input: {error}")
     except Transient as error:
@@ -316,7 +332,8 @@ def render(result: dict) -> str:
     lines += [f"- {clean(note)}" for note in result.get("notes", [])]
     if result.get("image"):
         sizes = result.get("size") or ["?", "?"]
-        lines.append(f"- Image ({result['image']}): `{PNG}` {sizes[0]}x{sizes[1]}, `{WEBP}` {WEBP_WIDTH} px wide")
+        lines.append(f"- Image ({result['image']}): `{PNG}` {sizes[0]}x{sizes[1]}, `{WEBP}` {WEBP_WIDTH} px wide"
+                     + (f", `{BEFORE}`" if (result.get("files") or {}).get("before") else ""))
     lines += ["", f"Took {result.get('took_s', 0):.0f} s."]
     return "\n".join(lines) + "\n"
 
@@ -329,7 +346,7 @@ def main(args: Optional[list] = None) -> int:
     args = list(argv[1:] if args is None else args)
     parser = ArgumentParser(prog="python -m commands.card_preview",
                             description="Bake one card's website edit as the bake would, on a temp copy, and write "
-                                        f"{RESULT}, {PNG} and {WEBP} (docs/EDIT_PIPELINE_DESIGN.md section 16).")
+                                        f"{RESULT}, {PNG}, {WEBP} and {BEFORE} (docs/EDIT_PIPELINE_DESIGN.md section 16).")
     parser.add_argument("--card", required=True, help="the card's key (Card Edits.json's: the file name) or its PSD path")
     parser.add_argument("--edit", required=True, help="a file with the edit's JSON (Card Edits.json fields)")
     parser.add_argument("--out", required=True, help="where the result and images go")

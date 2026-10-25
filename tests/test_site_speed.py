@@ -109,10 +109,11 @@ def test_grid_preload_picks_the_first_tiles(bs):  # noqa: F811
     assert bs.grid_preload([{"id": "x", "name": "X"}]) == ""
     app = (ASSETS / "app.js").read_text(encoding="utf-8")
     # the hints and the tiles must ask for the same files, or the browser downloads both
-    assert 'const img = (c, w) => (c.img ? `thumbs/${c.img}-${w}.webp` : "");' in app
+    assert 'const img = (c, w) => (c.img ? `thumbs/${c.img}-${w}-${S.data.thumbs[w]}.avif` : "");' in app
     assert 'srcset="${img(c, 240)} 240w, ${img(c, 360)} 360w${big ?' in app and 'sizes="${css}px"' in app
     assert "css: { s: 160, m: 200, l: 270 }[size] || 200" in app
-    assert "`thumbs/${id}-240.webp 240w, thumbs/${id}-360.webp 360w`" in html and "{ s: 160, l: 270 }" in html
+    t240, t360 = bs.thumb_tag(240), bs.thumb_tag(360)                # cards.json "thumbs", which img() reads
+    assert f"`thumbs/${{id}}-240-{t240}.avif 240w, thumbs/${{id}}-360-{t360}.avif 360w`" in html and "{ s: 160, l: 270 }" in html
 
 
 def test_the_build_writes_the_preload_hints(bs, repo, tmp_path, monkeypatch):  # noqa: F811
@@ -127,8 +128,9 @@ def test_the_build_writes_the_preload_hints(bs, repo, tmp_path, monkeypatch):  #
         assert "imageSrcset" not in (dist / page).read_text(encoding="utf-8"), page
     for c in cards:
         page = (dist / "c" / c["id"] / "index.html").read_text(encoding="utf-8")
-        assert f'<link rel="preload" as="image" href="thumbs/{c["img"]}-720.webp" fetchpriority="high">' in page
-        assert (dist / "thumbs" / f"{c['img']}-720.webp").is_file()
+        name = f'{c["img"]}-720-{data["cards.json"]["thumbs"]["720"]}.avif'
+        assert f'<link rel="preload" as="image" href="thumbs/{name}" fetchpriority="high">' in page
+        assert (dist / "thumbs" / name).is_file()
 
 
 def test_stats_numbers_and_pacific_days_are_unchanged(tmp_path):

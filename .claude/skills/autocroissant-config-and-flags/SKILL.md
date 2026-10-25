@@ -488,7 +488,7 @@ No clock in the bot since 2026-10-24: card-sync.yml starts itself 30 minutes aft
 |---|---|---|
 | `SPARSE_FILES` | 13 paths | the import closure card-preview.yml's preview job checks out of this repo (a test compares the two) |
 | `MAX_EDIT` | 16384 bytes | the edit's JSON; past it: an input error |
-| `WEBP_WIDTH`, `WEBP_QUALITY` | 720, 75 | preview.webp: build_site's `IMAGE_SIZES[720]` (the card view's size and quality) |
+| `WEBP_WIDTH`, `WEBP_QUALITY` | 720, 75 | preview.webp: the card view's width (the site's own thumbs are AVIF since 2026-10-24) |
 | `RETRY` | card_bake's `TRANSIENT` + `blob` | refusal codes reported as `error`, `transient` (try again) |
 
 ### commands/card_preview_branch.py (2026-10-23; not compiled; standard library only; the publish job of card-preview.yml)

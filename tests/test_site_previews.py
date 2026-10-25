@@ -90,12 +90,13 @@ def test_result_json_is_read_defensively(tmp_path):
     a file name with a path, a run link off GitHub and over-long notes are dropped or cut."""
     result = {"v": 1, "state": "baked", "transient": False, "reason": "hp 5 -> 8", "fields": {"hp": "baked", "stars": "refused", "evil": "x"},
               "changes": [{"field": "hp", "old": 5, "new": 8}], "notes": ["n"] * 30 + ["x" * 900], "base": {"psd_blob": "a" * 40, "png_blob": "b" * 40, "n": 3},
-              "image": "baked", "files": {"webp": "preview.webp", "png": "../x.png"}, "run": "https://evil.example/run"}
+              "image": "baked", "files": {"webp": "preview.webp", "before": "before.webp", "png": "../x.png", "x": "x.webp"},
+              "run": "https://evil.example/run"}
     out = node(tmp_path, f"""out([p.readResult({json.dumps(json.dumps(result))}), p.readResult("not json"), p.readResult({{ state: "done" }}),
   p.readResult({{ state: "error", transient: true, reason: "error: timeout", run: "https://github.com/o/r/actions/runs/1" }})]);""")
     ok = out[0]
     assert ok["state"] == "baked" and ok["fields"] == {"hp": "baked", "stars": "refused"} and ok["changes"] == [{"field": "hp", "old": 5, "new": 8}]
-    assert ok["files"] == {"webp": "preview.webp"} and ok["run"] == "" and ok["image"] == "baked"
+    assert ok["files"] == {"webp": "preview.webp", "before": "before.webp"} and ok["run"] == "" and ok["image"] == "baked"
     assert ok["base"] == {"psd_blob": "a" * 40, "png_blob": "b" * 40} and len(ok["notes"]) == 20
     assert out[1]["state"] == out[2]["state"] == "error" and out[1]["transient"] and "JSON" in out[1]["reason"]
     assert out[3]["transient"] and out[3]["run"] == "https://github.com/o/r/actions/runs/1"
@@ -150,7 +151,7 @@ def test_old_previews_expire(tmp_path):
 const day = 86400000, e = (state, at, req) => ({ card: "x", request: req, at, hash: "h", state, edit: { hp: 8 }, result: { fields: { hp: "baked" }, notes: [], base: {}, files: { webp: "preview.webp" } } });
 const s = { x: [e("baked", 39 * day, "req-x-0003"), e("baked", 31 * day, "req-x-0002")], y: [e("baked", 0, "req-y-0001")], z: [e("timeout", 32 * day, "req-z-0001")] };
 const t = p.expire(s, 40 * day);
-const v = { card: { name: "The Freezer", ts: 1, img: "ab" }, n: 1, hash: "h", now: 40 * day, scopes: "repo", images: ["https://r/p.webp"], current: "thumbs/ab-720.webp", diff: false };
+const v = { card: { name: "The Freezer", ts: 1, img: "ab" }, n: 1, hash: "h", now: 40 * day, scopes: "repo", images: ["https://r/p.webp"], current: "thumbs/ab-720.avif", diff: false };
 out([t.x.map(e => [e.request, e.state, !!e.seen]), "y" in t, p.hasNews(t, "x"), p.hasNews(t, "z"), t.z[0].state, p.renderedHtml(t.x[1], v), p.ago(8 * day), p.ago(3 * 3600000)]);""")
     assert out[0] == [["req-x-0003", "baked", False], ["req-x-0002", "expired", True]] and out[1] is False   # 40 days old: gone
     assert out[2] is True and out[3] is False and out[4] == "expired"
@@ -221,7 +222,7 @@ def test_the_panel_for_each_state(tmp_path):
     again; running: how long; no edit: the button disabled. Baked with no image file: said so, not an error; an error
     for an edit since changed: out of date, Preview again instead of Try again."""
     out = node(tmp_path, """
-const v = { card: { name: "Mini <Doomer>", ts: 1, img: "ab" }, n: 1, hash: "h", now: 3 * 60000, scopes: "repo", images: ["https://r/p.webp", "https://r/p.png"], current: "thumbs/ab-720.webp", diff: false };
+const v = { card: { name: "Mini <Doomer>", ts: 1, img: "ab" }, n: 1, hash: "h", now: 3 * 60000, scopes: "repo", images: ["https://r/p.webp", "https://r/p.png"], current: "thumbs/ab-720.avif", diff: false };
 const e = state => ({ request: "req-00001", at: 0, hash: "h", base: { ts: 1, img: "ab" }, edit: { hp: 8 }, state });
 const res = (state, extra = {}) => ({ ...e(state), result: { fields: { hp: state }, notes: ["<script>x</script>"], base: {}, files: {}, ...extra } });
 out([p.renderedHtml(res("baked"), v), p.renderedHtml(res("refused", { reason: "stat>10: hp 25", image: "refused" }), v),
@@ -245,7 +246,7 @@ def test_the_panel_says_previews_are_public_and_takes_a_webp_alone(tmp_path):
     """Before the first press: a previewed edit is public (the run's inputs and the previews branch; the server's
     contract since TTSCardMaker a1274af7). A result listing only the WebP (no full-size PNG published): no Full size."""
     out = node(tmp_path, """
-const v = { card: { name: "Mini Doomer", ts: 1, img: "ab" }, n: 1, hash: "h", now: 0, scopes: "repo", images: ["https://r/p.webp"], current: "thumbs/ab-720.webp", diff: false };
+const v = { card: { name: "Mini Doomer", ts: 1, img: "ab" }, n: 1, hash: "h", now: 0, scopes: "repo", images: ["https://r/p.webp"], current: "thumbs/ab-720.avif", diff: false };
 const res = { request: "req-00001", at: 0, hash: "h", base: { ts: 1, img: "ab" }, edit: { hp: 8 }, state: "baked", result: { fields: { hp: "baked" }, notes: [], base: {}, files: { webp: "preview.webp" } } };
 out([p.renderedHtml(null, v), p.renderedHtml(null, { ...v, n: 0 }), p.renderedHtml(res, v)]);""")
     first, nothing, webp = out
@@ -278,14 +279,14 @@ def test_rendered_parts_split_stage_and_caption(tmp_path):
     head, outcomes, notes and Diff. With Diff on the canvas shows instead of the preview. A state with no image puts its
     words over the dimmed original. renderedHtml is the two together."""
     out = node(tmp_path, """
-const v = { card: { name: "Mini Doomer", ts: 1, img: "ab" }, n: 1, hash: "h", now: 0, scopes: "repo", images: ["https://r/p.webp", "https://r/p.png"], current: "thumbs/ab-720.webp", diff: false };
+const v = { card: { name: "Mini Doomer", ts: 1, img: "ab" }, n: 1, hash: "h", now: 0, scopes: "repo", images: ["https://r/p.webp", "https://r/p.png"], current: "thumbs/ab-720.avif", diff: false };
 const e = (state, extra = {}) => ({ request: "req-00001", at: 0, hash: "h", base: { ts: 1, img: "ab" }, edit: { hp: 8 }, state, result: { fields: { hp: state }, notes: ["n1"], base: {}, files: {}, ...extra } });
 const parts = [p.renderedParts(e("baked"), v), p.renderedParts(e("baked"), { ...v, diff: true }), p.renderedParts({ ...e("running"), result: undefined }, v),
   p.renderedParts(null, v), p.renderedParts(e("refused", { reason: "no" }), v), p.renderedParts(e("expired"), v)];
 out([parts, p.renderedHtml(e("baked"), v) === parts[0].stage + parts[0].caption]);""")
     (baked, diff, running, none, refused, expired), joined = out
     assert baked["dim"] is False and 'data-pv-img="preview"' in baked["stage"] and 'href="https://r/p.png"' in baked["stage"]
-    assert '<img src="thumbs/ab-720.webp" alt="" crossorigin="anonymous" data-pv-img="current" hidden>' in baked["stage"]
+    assert '<img src="thumbs/ab-720.avif" alt="" crossorigin="anonymous" data-pv-img="current" hidden>' in baked["stage"]
     assert "<canvas data-pv-diff" in baked["stage"] and "hidden></canvas>" in baked["stage"] and "pv-state" not in baked["stage"]
     assert all(s in baked["caption"] for s in ("pv-state", "HP baked", "<li>n1</li>", 'data-pv="diff"')) and "data-pv-img" not in baked["caption"]
     assert 'title="Full size" hidden>' in diff["stage"] and "hidden></canvas>" not in diff["stage"] and "data-pv-changed" in diff["caption"]
@@ -302,6 +303,61 @@ def test_the_diff_marks_changed_pixels(tmp_path):
 const a = new Uint8ClampedArray([100, 100, 100, 255, 10, 10, 10, 255]), b = new Uint8ClampedArray([100, 104, 100, 255, 200, 10, 10, 255]);
 const d = p.diffPixels(a, b); out([[...d.data], d.changed]);""")
     assert out == [[30, 30, 30, 255, 255, 40, 40, 255], 0.5]
+
+
+@viewer
+def test_an_older_result_diffs_against_the_site_image_with_a_note(tmp_path):
+    """Diff compares with the result's before.webp (v.current); a result from before it was published diffs against the
+    site's AVIF thumb (v.mixed) and says that codec noise shows too."""
+    out = node(tmp_path, """
+const v = { card: { name: "A", ts: 1, img: "ab" }, n: 1, hash: "h", now: 0, scopes: "repo", images: ["https://r/p.webp"], diff: true };
+const e = { request: "req-00001", at: 0, hash: "h", base: { ts: 1, img: "ab" }, edit: { hp: 8 }, state: "baked", result: { fields: { hp: "baked" }, notes: [], base: {}, files: {} } };
+out([p.renderedParts(e, { ...v, current: "https://r/before.webp", mixed: false }), p.renderedParts(e, { ...v, current: "thumbs/ab-720.avif", mixed: true })]);""")
+    same, mixed = out
+    assert 'src="https://r/before.webp"' in same["stage"] and "another format" not in same["caption"]
+    assert 'src="thumbs/ab-720.avif"' in mixed["stage"] and "another format" in mixed["caption"]
+    js = PREVIEW_JS.read_text(encoding="utf-8")
+    assert "current: beforeOf(e) || current(c), mixed: !!e && !beforeOf(e)" in js
+
+
+@needs_js
+def test_an_unchanged_card_diffs_to_nothing(tmp_path):
+    """card_preview's before.webp and preview.webp of one PNG are the same encode, so preview.js's diffPixels marks no
+    pixel of an unchanged card (the site's AVIF thumb against the WebP preview marked 1-5%); a stat-sized change shows
+    about its own size."""
+    pytest.importorskip("psd_tools")
+    from PIL import Image, ImageDraw
+    import commands.card_preview as cp
+    cards = sorted((SITE / "Creatures").rglob("*.png"))[:1] if (SITE / "Creatures").is_dir() else []
+    if cards:
+        card = Image.open(cards[0]).convert("RGBA")
+    else:                                   # no card PNGs in the checkout: a busy stand-in
+        card = Image.effect_noise((750, 1050), 60).convert("RGBA")
+        ImageDraw.Draw(card).multiline_text((40, 600), "Deals 3 damage\nto every enemy.\n" * 4, fill=(250, 20, 20, 255))
+    old, new = tmp_path / "old.png", tmp_path / "new.png"
+    card.save(old)
+    edited = card.copy()
+    w, h = edited.size
+    ImageDraw.Draw(edited).rectangle((w * 0.1, h * 0.85, w * 0.18, h * 0.9), fill=(255, 255, 255, 255))   # a stat digit's box
+    edited.save(new)
+    raws = {}
+    for name, png in (("same", old), ("edit", new)):
+        out = tmp_path / name
+        out.mkdir()
+        result = cp.write_images(str(png), str(out), str(old))
+        assert result["files"] == {"png": cp.PNG, "webp": cp.WEBP, "before": cp.BEFORE}
+        for f in (cp.WEBP, cp.BEFORE):
+            with Image.open(out / f) as im:
+                assert im.format == "WEBP" and im.width == cp.WEBP_WIDTH
+                raws[name, f] = im.convert("RGBA")
+                (tmp_path / f"{name}-{f}.raw").write_bytes(raws[name, f].tobytes())
+    share = (w * 0.08) * (h * 0.05) / (w * h)
+    got = node(tmp_path, f"""
+const fs = await import("node:fs");
+const read = n => new Uint8ClampedArray(fs.readFileSync({json.dumps(str(tmp_path))} + "/" + n));
+out(["same", "edit"].map(k => p.diffPixels(read(`${{k}}-{cp.BEFORE}.raw`), read(`${{k}}-{cp.WEBP}.raw`)).changed));""")
+    assert got[0] == 0
+    assert share * 0.5 < got[1] < share * 3
 
 
 # ---- the quick mock-up (mockup.js)

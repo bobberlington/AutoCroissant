@@ -388,10 +388,11 @@ def test_build_site_makes_variant_images(bs, icon_repo, tmp_path, monkeypatch):
     assert icons["fire"]["v"] == icons["goldstar"]["v"] == icons["gold"]["v"] == ALL
     assert "v" not in icons["new"]
     dist = tmp_path / "one" / "dist" / "icons"
-    opened = {v: Image.open(dist / f"fire.{v}.webp").convert("RGBA") for v in ALL}
-    plain = Image.open(dist / "fire.webp")
+    fire, gold = (icons[n]["file"].removeprefix("icons/").removesuffix(".webp") for n in ("fire", "goldstar"))   # <name>.<stamp>
+    opened = {v: Image.open(dist / f"{fire}.{v}.webp").convert("RGBA") for v in ALL}
+    plain = Image.open(dist / f"{fire}.webp")
     side = lambda v: 96 + 2 * round(reach[v] * 96)
-    assert opened["tint"].size == plain.size and Image.open(dist / "gold-star.tint.webp").size == Image.open(dist / "gold-star.webp").size
+    assert opened["tint"].size == plain.size and Image.open(dist / f"{gold}.tint.webp").size == Image.open(dist / f"{gold}.webp").size
     assert {v: opened[v].size for v in ("sticker", "glow", "darkglow")} == {v: (side(v), side(v)) for v in ("sticker", "glow", "darkglow")}
     tint = opened["tint"]
     assert tint.getpixel((48, 10))[:3] == (255, 255, 255) and tint.getpixel((48, 10))[3] > 200      # the disc, a mask
@@ -413,4 +414,5 @@ def test_build_site_makes_variant_images(bs, icon_repo, tmp_path, monkeypatch):
     monkeypatch.setattr(bs, "font_builder", lambda: None)                                        # no cv2 / numpy / fontTools
     bare, no_reach = _icons(bs, monkeypatch, root, tree, tmp_path / "bare")
     assert no_reach == {} and not any("v" in e for e in bare.values())
-    assert sorted(p.name for p in (tmp_path / "bare" / "dist" / "icons").iterdir()) == ["fire.webp", "gold-star.webp", "new.webp"]
+    assert sorted(p.name for p in (tmp_path / "bare" / "dist" / "icons").iterdir()) == sorted(e["file"][6:] for e in {e["file"]: e for e in bare.values()}.values())
+    assert [re.sub(r"\.[0-9a-f]{10}\.", ".", p.name) for p in sorted((tmp_path / "bare" / "dist" / "icons").iterdir())] == ["fire.webp", "gold-star.webp", "new.webp"]

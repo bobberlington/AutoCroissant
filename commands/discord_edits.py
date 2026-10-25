@@ -64,7 +64,7 @@ GROUP = re_compile(r"# --- credited to (.+) \((\d+)\) ---")     # authorsFile's 
 RULEBOOK_GROUP = "# --- rulebook pages ---"
 NEW_AUTHORS = "[people]\n\n[cards]\n"           # authorsFile's file when there is none
 ABOUT = ("Card data fixes from the website's Edit button. Keyed by card file name; each field overrides the PSD. Read by "
-         "the website and the card sync.")                              # edit.js ABOUT, for a new file
+         "the website and the card sync.")                             # edit.js ABOUT, for a new file
 MOVED_NOTE = "AutoCroissant's aliases.pkl moved into the cards' aliases on {at}: a bot or build that knows this key reads aliases only here"
 # /update_metadata's options -> Card Edits.json fields, in the command's order
 METADATA = (("ability", "ability"), ("stars", "stars"), ("subtype", "subtype"), ("series", "series"),

@@ -264,7 +264,7 @@ process.stdout.write(JSON.stringify({ p, q: { hp: q.hp, spd: q.spd, creatures: q
 def test_the_live_preview_markup(tmp_path):
     out = node(tmp_path, """
 const ctx = { render: (t, n) => `R(${t}|${n})`, statBars: c => `<div class="statbars">${c.hp}</div>`, iconFor: n => (n === "fire" ? { file: "icons/fire.webp" } : null),
-  kindLabel: { creature: "Creature" }, image: c => `thumbs/${c.id}-360.webp` };
+  kindLabel: { creature: "Creature" }, image: c => `thumbs/${c.id}-360.avif` };
 const p = { id: "g", name: "<Goom>", type: "creature", stars: 3, types: ["fire", "odd_one"], hp: 7, ability: "Burns.", note: "", pending: ["name", "hp"], author: "Chestnut" };
 const html = live.previewHtml(p, new Set(["name", "stats"]), ctx);
 const bare = live.previewHtml({ id: "x", name: "X", type: "creature" }, new Set(["ability"]), { ...ctx, image: () => "" });
@@ -275,22 +275,26 @@ process.stdout.write(JSON.stringify({ html, bare, pane: live.paneHtml(false), op
     assert 'class="lp-name lp-changed"' in html and 'class="lp-stats lp-changed"' in html
     assert "R(Burns.|<Goom>)" in html                       # the renderer (text.js, escaping) gets the raw text and name
     assert "PSD pending: Name, HP" in html and "3-star" in html and "by Chestnut" in html
-    assert 'src="icons/fire.webp"' in html and ">odd_one<" in html and 'src="thumbs/g-360.webp"' in html
+    assert 'src="icons/fire.webp"' in html and ">odd_one<" in html and 'src="thumbs/g-360.avif"' in html
     assert "No ability text." in out["bare"] and "lp-changed" in out["bare"] and "lp-img" not in out["bare"]
     assert 'aria-expanded="false"' in out["pane"] and 'aria-controls="lp-body"' in out["pane"] and 'class="lp-pane open"' in out["open"]
     assert out["blocks"] == ["h2", ".lp-stats", ".lp-stats", ".facts", None]
 
 
 def test_the_live_preview_viewer(tmp_path):
-    """The card image's viewer above the body, outside what paintPreview rewrites."""
+    """The card image's viewer above the body, outside what paintPreview rewrites; its picture is app.imageOf's 720 px
+    AVIF."""
     if "iv-pane" not in (ASSETS / "live.js").read_text(encoding="utf-8"):
         pytest.skip("no image viewer in live.js")
     out = node(tmp_path, """
-process.stdout.write(JSON.stringify({ pane: live.paneHtml(false), viewer: live.paneHtml(false, { viewer: "thumbs/g-720.webp", ar: "360/720" }) }));
+process.stdout.write(JSON.stringify({ pane: live.paneHtml(false), viewer: live.paneHtml(false, { viewer: "thumbs/g-720-aaaaaa.avif", ar: "360/720" }) }));
 """)
     viewer = out["viewer"]
     assert 'class="iv iv-pane"' in viewer and "iv-pane" not in out["pane"]
-    assert viewer.index('class="iv iv-pane"') < viewer.index('id="lp-body"') and 'src="thumbs/g-720.webp"' in viewer and "aspect-ratio:360/720" in viewer
+    assert viewer.index('class="iv iv-pane"') < viewer.index('id="lp-body"') and 'src="thumbs/g-720-aaaaaa.avif"' in viewer and "aspect-ratio:360/720" in viewer
+    assert "viewer: app.imageOf(c, 720)" in (ASSETS / "edit.js").read_text(encoding="utf-8")
+    app = (ASSETS / "app.js").read_text(encoding="utf-8")         # what app.imageOf gives it
+    assert "thumbs/${c.img}-${w}-${S.data.thumbs[w]}.avif" in app and "imageOf: (c, w = 360) => img(c, w)" in app
 
 
 # ---- stars.js

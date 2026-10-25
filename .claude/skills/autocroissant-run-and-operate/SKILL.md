@@ -681,7 +681,7 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
   `card_bake.bake_card` on that card alone, with the bake's gates, fonts, chart, vocabulary and fork pin, never committing
   to main. Its second job, the only one that writes, runs `python3 -m commands.card_preview_branch` (standard library, no
   install) to put `result.json` (state baked / redundant / refused / error, the bake's reason, notes, base blob shas, the
-  edit as sent) and `preview.webp` (720 px) under `previews/<request>/` on the orphan branch `previews`, one commit per run,
+  edit as sent), `preview.webp` (720 px) and `before.webp` (the card before, for the Diff) under `previews/<request>/` on the orphan branch `previews`, one commit per run,
   rewritten as one fresh commit past 200 previews or 7 days. No Discord, no secret beyond GITHUB_TOKEN, nothing for the bot
   to do; previews are public like the repo. A red run is a bad request (nothing published), a bad edit (published as an
   input error) or a runner error, a failed install too (published as "try again"). By hand on the Mac, read-only on the
