@@ -131,7 +131,7 @@ def test_record_round_trip():
 # The data build
 # ========================
 def test_build_dates_the_cards_with_no_version_or_event(cards):
-    assert _build(cards, "--seed", str(cards.seed))[0] == cd.EXIT_OK
+    assert _build(cards, "--empty")[0] == cd.EXIT_OK
     put(cards.repo, FILE, json.dumps({"cards": {"Mini Doomer": {"date": "2020-07-22", "from": "discord", "provisional": True},
                                                 "The_Freezer": {"date": "2023-11-05", "from": "git"},
                                                 "Nobody": {"date": "2021-01-01", "from": "git"}}}).encode())
@@ -141,7 +141,7 @@ def test_build_dates_the_cards_with_no_version_or_event(cards):
     assert code == cd.EXIT_OK and manifest["card_commit"] == c2 and manifest["inputs"]["created_blob"]
     assert stats["Mini Doomer"].created == {"date": "2020-07-22", "from": "discord", "provisional": True}
     assert stats["The Freezer"].created == {"date": "2023-11-05", "from": "git"}
-    assert not old and [e["card"] for e in events] == ["Mini Doomer", "The Freezer"]      # the two "new" of the seed build
+    assert not old and [e["card"] for e in events] == ["Mini Doomer", "The Freezer"]      # the two "new" of the first build
     put(cards.repo, FILE, json.dumps({"cards": {"The Freezer": {"date": "2023-11-04", "from": "hand"}}}).encode())
     commit(cards.repo, "MichaelJSr", 3000)
     assert _build(cards)[0] == cd.EXIT_OK

@@ -1,8 +1,9 @@
 """
 Guard 2 of the push guards (docs/Campaigns/PUSH_GUARDS.md section 6): a pushed card PSD against the card standards of
 docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md. Rules R1-R6, R9 and R11 run over an open PSD (R10, the PNG against
-the PSD, is png_export.png_check; R7, the fonts, is font-check.yml's alone since 2026-10-24, owner). R8, the Single-line
-Composer (L10), is fixed and never told (owner, 2026-10-25): fix() sets it with the other fixes. R3 and R4 keep only
+the PSD, is png_export.png_check; R7, the fonts, is the font check's alone since 2026-10-24, owner). R8, the Single-line
+Composer (L10), is always set and never told (owner, 2026-10-25): fix() sets it with the other fixes; box text that
+rewraps is redrawn (the guards re-export its PNG). R3 and R4 keep only
 the real issues (several visible Ability layers, or a hidden one with words the parser reads nowhere; a hidden or
 rasterized Name layer the title can't be read from): the template layout they also checked was dropped by the owner on
 2026-10-23.
@@ -12,6 +13,7 @@ and gated but reported until the owner says yes (AUTO_FIX). Rule pages are never
     check(psd, rel, context, old=None, added=False) -> [Issue]
     fix(data, rel, issues, work, parser=None, fonts=None) -> Fixed   the 0-pixel fixes, gated (one PSD's new bytes)
     composer_layers(psd) -> [layer]                               the card text layers set Every-line (R8)
+    redraw(path, out_path, names, fonts) -> [name]                the rewrapped layers drawn again (R8)
     BADGE_TAGS, WAIVED                                            the badge vocabulary and the owner's class waivers
 
 No Discord, network or config.
@@ -32,7 +34,7 @@ from commands.card_edits import CardAuthors
 from commands.font_check import _get, _value, layer_fonts
 from commands.psd_edit import BADGE_KEYS, BADGE_TAGS, PAREN, Refused, badge_tags
 from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, CardValidator, PSDParser
-from commands.psd_regions import clip, overlay_words
+from commands.psd_regions import clip, fx_pad, overlay_words
 from global_config import RULEBOOK_DIR
 
 # ========================
@@ -47,8 +49,8 @@ AUTO_FIX = ("R9",)                              # what the bot fixes: the owner'
 SIZE_MAX = 0.01                                 # a fixed PSD stays within 1% of the pushed one
 COMPOSER_LAYERS = ("ability", "name", "health", "attack", "defense", "speed")   # R8: visible ones set Single-line
 TXT2_COMPOSER = "29"                            # Txt2's EveryLineComposer (Photoshop CC's numbered keys)
-LINE_IOU = 0.9                                  # R8 box text: each line's ink, the fork's Single-line layout vs the stored
-                                                # (matches 0.94-1.0; a word moved to the next line 0.04-0.34)
+LINE_IOU = 0.9                                  # R8 box text: a line rewraps under it (each line's ink, the fork's
+                                                # Single-line layout vs the stored; matches 0.94-1.0, a moved word 0.04-0.34)
 LINE_PAD = 2                                    # px around a line's box
 NAME_BLOCK = bytes(Tag.UNICODE_LAYER_NAME)      # luni
 WAIVED = {                                      # the owner's class waivers (section 6.2): rule -> what and why
@@ -98,7 +100,9 @@ class Fixed:
     applied: list = field(default_factory=list) # Issue lines fixed
     refused: list = field(default_factory=list) # (code, why) a gate refused
     composer: list = field(default_factory=list)   # R8: layers set Single-line (never told)
-    composer_left: list = field(default_factory=list)   # R8: (layer, why) left Every-line (plan.json only)
+    composer_left: list = field(default_factory=list)   # R8: (layer, why) not redrawn or not set (plan.json only)
+    rewrapped: list = field(default_factory=list)   # R8: box text layers redrawn in data (their lines moved)
+    plain: bytes = b""                          # data without the redraw (when the PNG can't follow it)
 
 
 # ========================
@@ -227,20 +231,18 @@ def _ink(rgba, bbox, shape: tuple):
 
 def reflow(layer, shape: tuple, fonts_dir: Optional[str]) -> Optional[str]:
     """
-    R8: why setting the layer Single-line could move a line, or None. Point text cannot; box text is laid out by the fork
-    (its composer is Single-line's, greedy) and each line's ink is held to the stored drawing's (LINE_IOU).
+    R8: which line moves when the layer is set Single-line, or None. Point text cannot; box text is laid out by the fork
+    (its composer is Single-line's, greedy) and each line's ink is held to the stored drawing's (LINE_IOU). Raises
+    ValueError when it can't be told (no fonts).
     """
     if _point_text(layer):
         return None
     if not fonts_dir:
-        return "box text, no fonts to lay it out"
-    from psd_tools.composite.text import MissingFontError, render, text_geometry
+        raise ValueError("box text, no fonts to lay it out")
+    from psd_tools.composite.text import render, text_geometry
     from psd_tools.composite.text.verify import stored_raster
     fonts = psd_edit.font_map(fonts_dir)
-    try:
-        drawn, lines = render(layer, fonts=fonts), text_geometry(layer, fonts)["lines"]
-    except MissingFontError as error:
-        return f"font: {error}"
+    drawn, lines = render(layer, fonts=fonts), text_geometry(layer, fonts)["lines"]
     mine, saved = _ink(drawn.rgba, drawn.bbox, shape), _ink(*stored_raster(layer), shape)
     for line in lines:
         if not line["box"] or not line["text"].strip():
@@ -257,30 +259,31 @@ def reflow(layer, shape: tuple, fonts_dir: Optional[str]) -> Optional[str]:
 
 def single_line(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]] = None) -> tuple:
     """
-    R8: set composer_layers Single-line (TySh and the Txt2 story) where no line can move (reflow), and save without a new
-    preview; gated: set back, every layer record and document block is the old bytes. Best effort: a layer reflow fails
-    on stays Every-line.
+    R8: set every composer_layers Single-line (TySh and the Txt2 story) and save without a new preview; gated: set back,
+    every layer record and document block is the old bytes. Each box text layer's lines are measured (reflow) for
+    redraw().
 
     Args:
         fonts: Gives MDW/Fonts for a box text layer's faces (PostScript names); "" when they can't be had
 
     Returns:
-        ([layer names set], [(layer name, why left)]); raises Refused("bytes")
+        ([layer names set], [(layer name, the line that moves)], [(layer name, why not measured)]); raises
+        Refused("bytes")
     """
     psd = PSDImage.open(path)
-    found = composer_layers(psd)
-    if not found:
-        return [], []
-    shape, chosen, left = (psd.height, psd.width), [], []
-    for layer in found:
+    chosen = composer_layers(psd)
+    if not chosen:
+        return [], [], []
+    shape, moves, left = (psd.height, psd.width), [], []
+    for layer in chosen:
         try:
             fonts_dir = None if _point_text(layer) else ((fonts(layer_fonts(layer)) if fonts else "") or "")
             why = reflow(layer, shape, fonts_dir)
-        except Exception as error:              # a render or font failure: left, never told
-            why = f"{type(error).__name__}: {error}"
-        (left.append((layer.name.strip(), why)) if why else chosen.append(layer))
-    if not chosen:
-        return [], left
+        except Exception as error:              # a render or font failure: set, not redrawn, never told
+            left.append((layer.name.strip(), f"{type(error).__name__}: {error}"))
+            continue
+        if why:
+            moves.append((layer.name.strip(), why))
     records = {psd_edit._record_index(layer) for layer in chosen}
     flipped = [key for key, (props, name) in _composer_values(psd, records).items() if _on(props[name])]
     for key, (props, name) in _composer_values(psd, records).items():
@@ -301,7 +304,58 @@ def single_line(path: str, out_path: str, fonts: Optional[Callable[[list], Optio
     part = _same_document(PSDImage.open(path), new)
     if part:
         raise Refused("bytes", f"{part} changed beyond the composer")
-    return [layer.name.strip() for layer in chosen], left
+    return [layer.name.strip() for layer in chosen], moves, left
+
+
+def redraw(path: str, out_path: str, names: list, fonts: Callable[[list], Optional[str]]) -> list:
+    """
+    R8: the named text layers (lines that rewrap Single-line) drawn again whole by the fork, and the stored preview
+    patched over them (merge_preview), so the guards' export can follow (png_export.export); gated: only those records'
+    pixels, rectangle and TySh and the preview change.
+
+    Args:
+        fonts: single_line()'s
+
+    Returns:
+        The layer names redrawn; raises Refused("bytes") or ("unsupported-card": no preview to patch)
+    """
+    import numpy as np
+    before, psd = PSDImage.open(path), PSDImage.open(path)
+    preview = psd_edit.stored_preview(before)
+    if preview is None:
+        raise Refused("unsupported-card", "no stored preview to patch")
+    layers = [layer for layer in _visible_texts(psd) if layer.name.strip() in names]
+    if not layers:
+        return []
+    boxes = []
+    for layer in layers:
+        old = layer.bbox
+        layer.rasterize(fonts=psd_edit.font_map(fonts(layer_fonts(layer))))
+        pad = fx_pad(layer) + LINE_PAD
+        boxes += [(x0 - pad, y0 - pad, x1 + pad, y1 + pad) for x0, y0, x1, y1 in (old, layer.bbox) if x1 > x0 and y1 > y0]
+    region = clip((min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes),
+                   max(b[3] for b in boxes)), psd.width, psd.height)
+    was, now = psd_edit.render_pair(before, region, False)[1], psd_edit.render_pair(psd, region, False)[1]
+    moved = np.asarray(was.convert("RGBA")) != np.asarray(now.convert("RGBA"))
+    psd_edit.save_psd(psd, out_path, preview=psd_edit.merge_preview(preview, [(moved.any(axis=2), now, region)]))
+    records = {psd_edit._record_index(layer) for layer in layers}
+    old_records, new_records = psd_edit.layer_records(path), psd_edit.layer_records(out_path)
+    if len(old_records) != len(new_records):
+        raise Refused("bytes", "layer count changed")
+    for i, (a, b) in enumerate(zip(old_records, new_records)):
+        if i not in records:
+            if a != b:
+                raise Refused("bytes", "a layer record changed beyond the redrawn text")
+        elif {k for k in a if a[k] != b[k]} - {"channels", "rect", "blocks"} or \
+                [k for (k, x), (_, y) in zip(a["blocks"], b["blocks"]) if x != y and k != b"TySh"]:
+            raise Refused("bytes", f"{a['name']}: changed beyond its pixels")
+    new = PSDImage.open(out_path)
+    for part in ("header", "color_mode_data", "image_resources"):
+        if psd_edit._raw(getattr(before._record, part)) != psd_edit._raw(getattr(new._record, part)):
+            raise Refused("bytes", f"{part} changed")
+    if psd_edit._document_blocks(before) != psd_edit._document_blocks(new):
+        raise Refused("bytes", "document blocks changed")
+    return [layer.name.strip() for layer in layers]
 
 
 def _unique(items) -> tuple:
@@ -623,9 +677,9 @@ def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[P
         current = out
         codes.append(issue.code)
         result.applied.append(issue.line())
-    out = join(folder, "R8.psd")
+    out, moves = join(folder, "R8.psd"), []
     try:
-        result.composer, result.composer_left = single_line(current, out, fonts)
+        result.composer, moves, result.composer_left = single_line(current, out, fonts)
     except Exception as error:                  # best effort: never told, the other fixes stand
         result.composer_left = [("", f"{type(error).__name__}: {error}")]
     if result.composer:
@@ -634,18 +688,34 @@ def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[P
     if current == base:
         return
     try:
-        if abs(getsize(current) - getsize(base)) > SIZE_MAX * getsize(base):
-            raise Refused("size", f"PSD {getsize(base)} -> {getsize(current)} bytes")
-        if parser is not None:
-            before, after = psd_edit.parse_card(parser, base, rel), psd_edit.parse_card(parser, current, rel)
-            if (before["card"], before["alt_names"], before["validator"]) != (after["card"], after["alt_names"], after["validator"]):
-                raise Refused("reparse", "the bot reads the fixed PSD differently")
-        with open(current, "rb") as fh:
-            result.data = fh.read()
+        result.data = _gated(base, current, rel, parser)
     except Refused as refused:
         result.refused += [(code, str(refused)) for code in codes if code != "R8"]
         result.composer_left += [(name, str(refused)) for name in result.composer]
         result.applied, result.composer, result.data = [], [], b""
+        return
+    if not moves:
+        return
+    drawn = join(folder, "R8-redrawn.psd")
+    try:                                        # the lines that rewrap drawn again: the guards re-export the PNG
+        names = redraw(current, drawn, [name for name, _ in moves], fonts)
+        data = _gated(base, drawn, rel, parser)
+    except Exception as error:                  # best effort: set, not redrawn
+        result.composer_left += [(name, f"rewraps ({why}), not redrawn: {error}") for name, why in moves]
+        return
+    result.plain, result.data, result.rewrapped = result.data, data, names
+
+
+def _gated(base: str, path: str, rel: str, parser: Optional[PSDParser]) -> bytes:
+    """A fixed PSD's bytes through the size and the reparse gates; raises Refused."""
+    if abs(getsize(path) - getsize(base)) > SIZE_MAX * getsize(base):
+        raise Refused("size", f"PSD {getsize(base)} -> {getsize(path)} bytes")
+    if parser is not None:
+        before, after = psd_edit.parse_card(parser, base, rel), psd_edit.parse_card(parser, path, rel)
+        if (before["card"], before["alt_names"], before["validator"]) != (after["card"], after["alt_names"], after["validator"]):
+            raise Refused("reparse", "the bot reads the fixed PSD differently")
+    with open(path, "rb") as fh:
+        return fh.read()
 
 
 def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDParser] = None,
@@ -653,7 +723,8 @@ def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDPars
     """
     The fixable issues of one PSD (R11 renames, then R9 story syncs), each gated, then R8's Single-line Composer
     (single_line: never told, a refusal left in composer_left); then the size and the reparse gates over the result. A
-    refusal leaves that fix out (and reports it); nothing is fixed on a rule page.
+    refusal leaves that fix out (and reports it); nothing is fixed on a rule page. Box text that rewraps is redrawn
+    (redraw, gated again: data, the result without it in plain).
 
     Args:
         data: The pushed PSD
@@ -704,6 +775,7 @@ __all__ = [
     'mark_new',
     'rename',
     'reported',
+    'redraw',
     'reflow',
     'run_fonts',
     'single_line',

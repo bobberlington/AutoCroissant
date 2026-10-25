@@ -100,7 +100,6 @@ and 2026-10-23 (the font and card-data lines shifted the rest again):
 | `reminder.pkl`, `reminder.pkl.bak`, `reminder.json`, `reminder.json.tmp` | 39; 100-102 (2026-10-24) | Volatile per-host scheduling state (see above); the `.bak` is the pickle the one-time conversion kept |
 | `repo_history.json`, `.tmp` | 45-46 (added 2026-10-20) | Per-machine map of repo path -> commit that last changed it, rebuilt from the history clone by commands/repo_history.py |
 | `type_emojis.json`, `.tmp` | 48-49 (added 2026-10-20) | Per-machine map of bot application id -> {type emoji name -> icon blob it was made from} (commands/type_emojis.py); if deleted, startup adopts the existing emojis as current (an icon edited meanwhile then needs `/sync_emojis refresh:True`) |
-| `fonts_cache/` | (2026-10-21) | A copy of the card repo's MDW/Fonts, refreshed by tree sha, where there is no checkout: the bake and psd_details read it |
 | `card_data/` | (2026-10-22) | The bot's copy of the Card sync data (the data branch's `db/`; commands/card_sync.py) |
 | `.claude/settings.local.json` | 63 (added 2026-10-19) | Personal Claude Code settings; the shared `.claude/skills/` library IS committed |
 | `music/` | 59 | yt-dlp downloads; bulky, regenerable (dir kept by the tracked `music/.gitignore` stub — no `.gitkeep` exists despite the `!music/.gitkeep` exception) |
@@ -157,21 +156,20 @@ Worked example to imitate: the `/update_stats` block in main.py (its options are
    `print_help` dispatches on the category word.
 5. **Decide Cython placement** if you created a NEW module: `setup.py` compiles only
    the 10 modules listed in `INCLUDE_FILES` (setup.py:21-33); new files are uncompiled
-   by default (`type_emojis`, `repo_history`, `github_api`, `tts_save`, `git_commit`, `font_check`, `card_check`, `psd_details`, the edit pipeline's `psd_edit`, `psd_regions` and `card_bake`, the card data build's `card_data`, `card_history`, `card_db` and `changelog`, the cutover's `card_sync`, the Discord writers' `discord_edits`, the Discord archive's `discord_archive` and `discord_match`, the push guards' `card_guards`, `png_export`, `card_standards` and `psd_diff`, and `txt2_repair` (2026-10-22/23: the jetson runs the same pure Python as the Action; tests/test_card_data.py and test_card_guards.py check they stay out) are deliberately left out; the four
+   by default (`type_emojis`, `repo_history`, `github_api`, `tts_save`, `git_commit`, `font_check`, `card_check`, `psd_details`, the edit pipeline's `psd_edit`, `psd_regions` and `card_bake`, the card data build's `card_data`, `card_history`, `card_db` and `changelog`, the cutover's `card_sync`, the creation dates' `discord_edits`, the push guards' `card_guards`, `png_export`, `card_standards` and `psd_diff`, and `txt2_repair` (2026-10-22/23: the jetson runs the same pure Python as the Action; tests/test_card_data.py and test_card_guards.py check they stay out) are deliberately left out; the four
    modules split out of psd_analyzer on 2026-10-20 were added so the moved code keeps its compiled semantics). TTSCardMaker's Actions
-   sparse-check out bot modules by path (font-check.yml, card-check.yml: its list is
-   `card_check.SPARSE_FILES`; card-guards.yml: its list is `card_guards.SPARSE_FILES`, 17 files including `psd_edit`,
-   `card_bake`, `txt2_repair`, `png_export` and `psd_diff`; card-sync.yml, the live bake, build and save since the cutover
+   sparse-check out bot modules by path (card-guards.yml: its list is `card_guards.SPARSE_FILES`, 18 files including `psd_edit`,
+   `card_bake`, `txt2_repair`, `png_export`, `psd_diff` and the card and font checks it runs since 2026-10-25; card-sync.yml, the live bake, build and save since the cutover
    2026-10-24, checks out `card_data.SPARSE_FILES`, whose test runs `--help` on the build, the bake and the save with
-   exactly that list), so renaming or moving one of those files, or adding an import to one, breaks an Action; five of the lists
-   have a test that copies exactly it and runs `--help` (tests/test_card_bake.py, test_font_check.py, test_card_check.py,
-   test_card_guards.py, which also checks card-guards.yml's list is `card_guards.SPARSE_FILES`, and test_card_data.py;
-   card-edits.yml and tts-save.yml, deleted at the cutover, had lists of their own). If you add yours to INCLUDE_FILES, both bounds checks and wraparound
+   exactly that list), so renaming or moving one of those files, or adding an import to one, breaks an Action; the lists
+   have a test that copies exactly it and runs `--help` (tests/test_card_bake.py, test_card_guards.py, which also runs the
+   two checks' `--help` from it and checks card-guards.yml's list is `card_guards.SPARSE_FILES`, and test_card_data.py;
+   card-edits.yml and tts-save.yml, deleted at the cutover, and card-check.yml and font-check.yml, folded into the guards on
+   2026-10-25, had lists of their own). If you add yours to INCLUDE_FILES, both bounds checks and wraparound
    are on since 2026-10-23 (setup.py:38-39), but still write `x[len(x)-1]` there (rule 1); the Cython 3.3 rules still
    apply: it rejects re-annotating a variable that is already declared (declare it once; the management.py incident,
    autocroissant-failure-archaeology Entry 10.5), and type hints coerce (see "looks safe but isn't"). Compile-check rules: autocroissant-build-and-env §5. Do not add modules that use `execv`/dynamic
-   registration (that is why update_bot.py and utils.py sit in EXCLUDE_FILES,
-   setup.py:9-18).
+   registration (that is why update_bot.py and utils.py are never compiled: the comment above INCLUDE_FILES).
 6. **Ship and sync.** Push from the dev machine, then deploy on the Jetson as in class (a)
    (`/update` or `/pull` + `/restart_bot` only if no compiled module changed). Commands register with Discord at startup:
    `on_ready` (main.py:115-144) records every command in `slash_registry` (which is
@@ -290,7 +288,7 @@ and update this file.
 | Gitignore coverage (config.py, .ssh, reminder.pkl, music, txt/csv/log) | `git check-ignore -v config.py reminder.pkl music/x a.txt a.csv a.log` |
 | Grandfathered requirements.txt | `git ls-files '*.txt'` |
 | Incident hashes and their diffs | `git show --stat cca0aaf eb9aa84 366c8d9 f7c915c` ; `git show dd800bc` ; `git show 3bbaa2b 4bcee6b` |
-| Cython include/exclude lists; boundscheck and wraparound on (2026-10-23) | `grep -n "wraparound\|boundscheck\|INCLUDE_FILES\|EXCLUDE_FILES" setup.py` (9, 21, 38-39) |
+| Cython include list; boundscheck and wraparound on (2026-10-23) | `grep -n "wraparound\|boundscheck\|INCLUDE_FILES" setup.py` |
 | to_thread passes coroutines through; queue_* helpers | `grep -n "def to_thread\|def queue_" commands/utils.py` |
 | /update_stats is remote-only; local mode archived (since 2026-10-20) | `grep -rn "use_local" main.py commands/` (only `RETIRED_OPTIONS` in analytics.py); `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived` |
 | Rule 6 history: local-path fix lives on in the archive branch | `git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py` (:115); `git grep -c "removeprefix(" archive/local-update-stats -- archive/local_update_stats.py` (no output: the word only appears in the header's history note) |
@@ -300,7 +298,7 @@ and update this file.
 | Help dict names and lines | `grep -n "_commands = {\|def print_help" commands/help.py` |
 | Offline suite before a push | `~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests` (1346 collected on 2026-10-23; the release gates of 2026-10-22/23 read 882 passed / 61 skipped and 1161 passed / 2 failed before the TTSCardMaker push) |
 | The one-sitting rule | memory `jetson-server` |
-| No pickle constants or switch | `grep -n "PKL\|CARD_SYNC" global_config.py` (only REMIND_PKL) |
+| No pickle constants or switch | `grep -n "PKL\|CARD_SYNC" global_config.py` (no hit) |
 | diff_stats.py gate exists and documents its exit codes | `head -20 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py` |
 | Commit count / current head (date-stamp anchor) | `git rev-list --count HEAD` ; `git log --oneline -1` |
 | Atomic writes of the card data copy | `grep -n "^def write_text\|^def write_bytes" commands/card_db.py` |

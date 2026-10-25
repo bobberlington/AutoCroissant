@@ -90,9 +90,6 @@ class ReminderPanel(View):
             footer = f"{self.index + 1} of {len(snap)} · {rem.ZONE_LABEL}"
             self._nav(snap)
             self._actions()
-        line = rem.status()
-        if line:
-            footer += f" · {line}"
         embed.set_footer(text=footer[:2048])
         self.embed = embed
         return {"content": notice or None, "embed": embed, "view": self, "allowed_mentions": AllowedMentions.none()}

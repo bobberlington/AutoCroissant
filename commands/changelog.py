@@ -5,7 +5,7 @@ and after (new, changed, art, reparse, moved, renamed, archived, restored, edite
 the push that brought each (the activity list, else consecutive commits by one author), their numbering, and one
 Discord message per push within Discord's limits. Design: docs/Campaigns/DATA_BUILD_ACTION.md section 12.1.
 
-CLI: python -m commands.changelog history --pickles <dir> <card>  |  post --db <db dir> --site <url> --out <file>
+CLI: python -m commands.changelog post --db <db dir> --site <url> --out <file>
      |  advance --db <db dir> --seq <n> --push <sha>  (after Discord accepted that message)
 """
 from argparse import ArgumentParser
@@ -57,7 +57,6 @@ CHANGELOG_DIR = "changelog"                              # db/changelog/YYYY-MM.
 POSTED_JSON = "posted.json"                              # db/changelog/posted.json: {"seq", "push"} of the last post
 BOT = "AutoCroissant"                                    # the bot's _by (build_site.BOT_AUTHOR): no website edit
 BOT_FIELDS = "_bot"                                      # an entry's fields that aren't its _by's (build_site.BOT_FIELDS)
-CREDIT = "_credit"                                       # {field: {"_by", "_at"}}: a _bot field's Discord editor (build_site.CREDIT)
 EDIT_FIELD = {"card_type": "type", "tags": "ability"}    # a changed field -> its Card Edits.json field
 UNKNOWN_FIELD = {"display_name": "name"}                 # card_history.unknown's field -> the changelog's
 
@@ -163,23 +162,6 @@ def classify(changes: dict) -> dict:
     return {"verdict": verdict, "buffs": buffs, "nerfs": nerfs}
 
 
-def version_changes(versions: list, current: Optional[CardInfo]) -> list:
-    """
-    A card's history as steps: each version to the next (the last to the current card).
-
-    Returns:
-        [{"from": the newer version's start, "cause": its cause, "changes": {...}, "verdict": ..., "buffs", "nerfs"}],
-        oldest first
-    """
-    chain = list(versions) + ([current] if current is not None else [])
-    steps = []
-    for old, new in zip(chain, chain[1:]):
-        info = getattr(new, "version", None) or {}
-        changes = field_changes(old, new)
-        steps.append({"from": info.get("from", new.timestamp), "cause": info.get("cause"), "changes": changes, **classify(changes)})
-    return steps
-
-
 # ========================
 # Events
 # ========================
@@ -197,22 +179,16 @@ def is_bot(by) -> bool:
 
 def edit_credit(meta, fields) -> Optional[str]:
     """
-    Who an edited event's fields are credited to: its entry's _by; a field in its _bot, its _credit editor (a Discord
-    edit's), else the bot (the migration's). A mix: the _by when one field is its, else the bot (it wrote them all).
-    meta: the entry's _-keys, or its _by alone.
+    Who an edited event's fields are credited to: its entry's _by; a field in its _bot, the bot (the migration's).
+    A mix: the _by when one field is its, else the bot (it wrote them all). meta: the entry's _-keys, or its _by alone.
     """
     if not isinstance(meta, dict):
         return meta
     by = meta.get("_by")
     bot = meta.get(BOT_FIELDS) if isinstance(meta.get(BOT_FIELDS), list) else []
-    credit = meta.get(CREDIT) if isinstance(meta.get(CREDIT), dict) else {}
 
     def of(field: str):
-        name = EDIT_FIELD.get(field, field)
-        if name not in bot:
-            return by
-        found = credit.get(name)
-        return found.get("_by") if isinstance(found, dict) and isinstance(found.get("_by"), str) else BOT
+        return BOT if EDIT_FIELD.get(field, field) in bot else by
     credits = {of(f) for f in fields}
     if len(credits) == 1:
         return credits.pop()
@@ -478,8 +454,7 @@ def _line(event: dict, site: str, ids: Optional[dict]) -> str:
     if kind in ("changed", "edited", "authors"):
         verdict = f" ({event['verdict']})" if event.get("verdict") else ""
         by = event.get("edit_by") or ""
-        where = (f" (by {_md(by.split(':', 1)[1])}, via Discord)" if by.startswith("discord:")
-                 else f" (by {BOT})" if is_bot(by) else f" (by {_md(by)}, on the website)" if by else "")
+        where = f" (by {BOT})" if is_bot(by) else f" (by {_md(by)}, on the website)" if by else ""
         return f"{title}: {_changes(event.get('fields') or {})}{verdict}{where}"
     if kind == "renamed":
         return f"{_md(event['card'])} is now [{_md(event['renamed_to'])}]({card_link(event['renamed_to'], site, ids)})"
@@ -597,9 +572,6 @@ def size(body: dict) -> int:
 def main(argv: Optional[list] = None) -> int:
     parser = ArgumentParser(prog="python -m commands.changelog", description="The card changelog.")
     sub = parser.add_subparsers(dest="command", required=True)
-    hist = sub.add_parser("history", help="a card's versions as field changes with a buff/nerf verdict")
-    hist.add_argument("--pickles", required=True, help="a folder holding stats.pkl and old_stats.pkl")
-    hist.add_argument("card")
     post = sub.add_parser("post", help="the Discord messages (one per push) of the events past the posted cursor")
     post.add_argument("--db", required=True)
     post.add_argument("--site", default=SITE_URL)
@@ -611,18 +583,6 @@ def main(argv: Optional[list] = None) -> int:
     move.add_argument("--seq", type=int, required=True)
     move.add_argument("--push", default="", help="that message's push (its after sha)")
     args = parser.parse_args(argv)
-    if args.command == "history":
-        from commands.card_db import read_pickles
-        stats, old = read_pickles(args.pickles)
-        versions, current = old.get(args.card) or [], stats.get(args.card)
-        if not versions and current is None:
-            print(f"No card named {args.card}.")
-            return 1
-        for step in version_changes(versions, current):
-            when = datetime.fromtimestamp(step["from"], TIMEZONE).strftime("%Y-%m-%d") if step["from"] else "?"
-            print(f"{when} ({step['cause'] or 'unknown'}): " + (", ".join(step["changes"]) or "no data change")
-                  + (f" [{step['verdict']}: {'; '.join(step['buffs'] + step['nerfs'])}]" if step["verdict"] else ""))
-        return 0
     if args.command == "post":
         posted = read_posted(args.db)
         pending = [e for e in read_events(args.db) if e.get("seq", 0) > posted.get("seq", 0)]
@@ -677,7 +637,6 @@ __all__ = [
     'size',
     'split_changes',
     'tags_of',
-    'version_changes',
 ]
 
 

@@ -24,7 +24,8 @@ stars, types, abilities).
      team's confirmed rulings once they exist (the rulings draft, ideas sweep item 9; unconfirmed rows never);
   4. one block per card, grouped by kind then series, sorted by name:
      `<name> | <kind> | <stars>★ | <types> | HP <hp> DEF <def> ATK <atk> SPD <spd> | <series>` then the ability on the
-     next lines; hidden and archived cards left out; variants as their own cards.
+     next lines; every field kept, `-` when empty, and a one-line legend in the header; hidden and archived cards left
+     out; variants as their own cards.
 - Stats as the data holds them (bars, as printed). The sweep's game units (HP x2, DEF x0.5) are left out, so the file
   never restates a rule; the rulebook pages in it explain the bars.
 

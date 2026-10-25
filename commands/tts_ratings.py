@@ -25,7 +25,7 @@ from statistics import mean, median
 from typing import Optional
 
 from commands.card_edits import CardAuthors, CardRatings, dump_ratings
-from global_config import AUTHORS_PATHS, LOCAL_DIR_LOC, RATINGS_PATHS
+from global_config import AUTHORS_PATH, LOCAL_DIR_LOC, RATINGS_PATH
 
 # ========================
 # Configuration
@@ -48,7 +48,6 @@ SOURCE = "TTS session"
 GROUP = "group"
 RAW = "~/Documents/Tools/wt/scratch/site-r3/ratings_raw.json"
 CARD_FOLDERS = ("Creatures/", "Items/", "Field/", "N.M.E/", "Auxiliary/")
-REVIEW_FIELDS = ("category", "save", "board", "x", "match", "match_note", "stars", "author", "png")
 
 
 # ========================
@@ -91,7 +90,8 @@ def placements(raw: dict) -> tuple:
         raw: ratings_raw.json ({"ratings": [...], "forbidden": [...], "skipped": {...}})
 
     Returns:
-        (entries [{card, date, scale, value, by, source} + REVIEW_FIELDS], report {counts, skip lists})
+        (entries [{card, date, scale, value, by, source} + the review fields (category, save, board, x, match,
+        match_note, stars, author, png)], report {counts, skip lists})
 
     Raises:
         ValueError: a value whose category isn't the one the save shows (the mapping is wrong)
@@ -324,7 +324,7 @@ def main(args: Optional[list] = None) -> int:
     parser = ArgumentParser(prog="python -m commands.tts_ratings", description="The TTS sessions' card ratings into the card repo.")
     parser.add_argument("--raw", default=RAW, help="the saves' parse (default %(default)s)")
     parser.add_argument("--repo", default=LOCAL_DIR_LOC, help="the card repo checkout (default %(default)s)")
-    parser.add_argument("--out", help=f"write this file instead of <repo>/{RATINGS_PATHS[0]}")
+    parser.add_argument("--out", help=f"write this file instead of <repo>/{RATINGS_PATH}")
     parser.add_argument("--review", help="the review's path without .csv/.md (default: ratings-review next to --raw)")
     parser.add_argument("--dry-run", action="store_true", help="print the counts and write only the review")
     options = parser.parse_args(args)
@@ -338,7 +338,7 @@ def main(args: Optional[list] = None) -> int:
     except ValueError as e:
         print(f"Stopped: {e}")
         return 1
-    authors_text = next((t for t in (_read(join(repo, p)) for p in AUTHORS_PATHS) if t is not None), None)
+    authors_text = _read(join(repo, AUTHORS_PATH))
     csv_text, md_text = review(entries, report, CardAuthors.parse(authors_text) if authors_text else None,
                                kinds_of(repo) if isdir(repo) else None)
     prefix = expanduser(options.review) if options.review else join(dirname(raw_path), "ratings-review")
@@ -349,7 +349,7 @@ def main(args: Optional[list] = None) -> int:
     print(f"Review: {prefix}.csv, {prefix}.md")
     if options.dry_run:
         return 0
-    out = expanduser(options.out) if options.out else join(repo, RATINGS_PATHS[0])
+    out = expanduser(options.out) if options.out else join(repo, RATINGS_PATH)
     if not isdir(dirname(out) or "."):
         print(f"No {dirname(out)}: give --repo a card repo checkout, or --out a file.")
         return 1

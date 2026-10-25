@@ -1,8 +1,6 @@
 """
 The card database as JSON (db/, the card data build's output): CardInfo <-> plain records, stats.json and
-old_stats.json one card per line written atomically, the manifest's sha256 per file, and the historical pickles
-(AutoCroissant's until 2026-10-25: the build's seed, the diagnostics) read through an allow-list unpickler. No Discord or
-psd-tools.
+old_stats.json one card per line written atomically, the manifest's sha256 per file. No Discord or psd-tools.
 
 The bot's sync() is the one network use, imported lazily.
 
@@ -14,8 +12,7 @@ from dataclasses import MISSING, fields
 from hashlib import sha256
 from json import dumps, loads
 from os import fsync, makedirs, remove, replace
-from os.path import dirname, exists, isdir, isfile, join
-from pickle import Unpickler, UnpicklingError
+from os.path import dirname, isdir, isfile, join
 from threading import Lock
 from typing import Optional
 
@@ -35,10 +32,6 @@ SHA_MEDIA = "application/vnd.github.sha"           # Accept: a commit's sha alon
 EXTRA_KEYS = ("version", "created")              # CardInfo attributes outside its dataclass fields
 CARD_FIELDS = {f.name: f for f in fields(CardInfo)}
 STAT_KEYS = tuple(f.name for f in fields(CardStats))
-# what a historical pickle may hold: the two card classes under either module path, and old_stats' defaultdict(list)
-ALLOWED = {("commands.psd_analyzer", "CardInfo"): CardInfo, ("commands.psd_analyzer", "CardStats"): CardStats,
-           ("commands.card_models", "CardInfo"): CardInfo, ("commands.card_models", "CardStats"): CardStats,
-           ("collections", "defaultdict"): defaultdict, ("builtins", "list"): list}
 
 # ========================
 # Global State
@@ -76,7 +69,7 @@ def _plain(value, where: str):
 
 def record(card: CardInfo) -> dict:
     """
-    A card as plain data: every CardInfo field (an older pickle's missing one takes its default) plus `version`;
+    A card as plain data: every CardInfo field (a missing one takes its default) plus `version`;
     stats and creatures as CardStats' attribute names.
 
     Raises:
@@ -276,32 +269,6 @@ def round_trip_problems(stats: dict, old_stats: dict) -> list:
     return bad
 
 
-# ========================
-# Historical pickles (read only)
-# ========================
-class SeedUnpickler(Unpickler):
-    """Unpickles only the card classes, defaultdict and list (ALLOWED); any other global is refused."""
-    def find_class(self, module, name):
-        found = ALLOWED.get((module, name))
-        if found is None:
-            raise UnpicklingError(f"global {module}.{name} is not allowed in a card pickle")
-        return found
-
-
-def load_pickle(path: str):
-    """A card pickle through SeedUnpickler (stats.pkl, old_stats.pkl or aliases.pkl)."""
-    with open(path, "rb") as fh:
-        return SeedUnpickler(fh).load()
-
-
-def read_pickles(folder: str) -> tuple:
-    """(stats, old_stats) of a folder holding stats.pkl and old_stats.pkl (old_stats empty when it has none)."""
-    stats = load_pickle(join(folder, "stats.pkl"))
-    old_path = join(folder, "old_stats.pkl")
-    old = load_pickle(old_path) if exists(old_path) else defaultdict(list)
-    return (stats, old if isinstance(old, defaultdict) else defaultdict(list, old))
-
-
 def _at_commit(git_dir: str, sha: str, name: str) -> Optional[str]:
     """db/<name> at a data commit (git show), or None when it has none."""
     from subprocess import run
@@ -312,8 +279,8 @@ def _at_commit(git_dir: str, sha: str, name: str) -> Optional[str]:
 def read_cards(source: str, git_dir: str = ".") -> tuple:
     """
     (stats, old_stats) of the card data in any of its forms, for the diagnostics: a db/ folder (or a folder holding
-    db/), a folder of pickles, a stats.json or stats.pkl (the old_stats file beside it), or a data commit (db/ at that
-    commit of git_dir: origin/data in a TTSCardMaker clone). old_stats is None when there is none to read.
+    db/), a stats.json (the old_stats.json beside it), or a data commit (db/ at that commit of git_dir: origin/data in
+    a TTSCardMaker clone). old_stats is None when there is none to read.
 
     Raises:
         ValueError: no card data there
@@ -322,22 +289,16 @@ def read_cards(source: str, git_dir: str = ".") -> tuple:
         for folder in (source, join(source, "db")):
             if isfile(join(folder, STATS_JSON)):
                 return read_cards(join(folder, STATS_JSON))
-        if isfile(join(source, "stats.pkl")):
-            return read_cards(join(source, "stats.pkl"))
-        raise ValueError(f"{source}: no {STATS_JSON}, db/{STATS_JSON} or stats.pkl")
+        raise ValueError(f"{source}: no {STATS_JSON} or db/{STATS_JSON}")
     if isfile(source):
-        is_json = source.endswith(".json")
-        beside = join(dirname(source), OLD_STATS_JSON if is_json else "old_stats.pkl")
-        if is_json:
-            with open(source, encoding="utf-8") as fh:
-                stats = parse_stats(fh.read(), source)
-            old = None
-            if isfile(beside):
-                with open(beside, encoding="utf-8") as fh:
-                    old = parse_old_stats(fh.read(), beside)
-            return (stats, old)
-        old = load_pickle(beside) if isfile(beside) else None
-        return (load_pickle(source), old if old is None or isinstance(old, defaultdict) else defaultdict(list, old))
+        beside = join(dirname(source), OLD_STATS_JSON)
+        with open(source, encoding="utf-8") as fh:
+            stats = parse_stats(fh.read(), source)
+        old = None
+        if isfile(beside):
+            with open(beside, encoding="utf-8") as fh:
+                old = parse_old_stats(fh.read(), beside)
+        return (stats, old)
     stats_t = _at_commit(git_dir, source, STATS_JSON)
     if stats_t is None:
         raise ValueError(f"{source}: no such file or folder, nor a commit of {git_dir} with db/{STATS_JSON}")
@@ -470,18 +431,15 @@ def main(argv: Optional[list] = None) -> int:
 # Module Exports
 # ========================
 __all__ = [
-    'ALLOWED',
     'DATA_FILES',
     'MANIFEST_JSON',
     'OLD_STATS_JSON',
     'SCHEMA',
     'STATS_JSON',
     'SYNC_JSON',
-    'SeedUnpickler',
     'card',
     'check_db',
     'file_sha256',
-    'load_pickle',
     'main',
     'old_stats_text',
     'parse_old_stats',
@@ -489,7 +447,6 @@ __all__ = [
     'read_cards',
     'read_db',
     'read_json',
-    'read_pickles',
     'record',
     'round_trip_problems',
     'stats_text',

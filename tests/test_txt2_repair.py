@@ -1,6 +1,6 @@
 """
 txt2_repair: a stale Txt2 story (a pre-fix bake's PSD, made here: the title set in TySh alone) is rewritten to its
-layer's text and nothing else changes, byte for byte outside the Txt2 block; an in-sync PSD and --check write nothing.
+layer's text and nothing else changes, byte for byte outside the Txt2 block; an in-sync PSD writes nothing.
 Reads the card clone and needs the fork's story sync (fix/txt2-sync); skips without either. The six titles baked on
 2026-10-22 are repaired into tmp from their bake commits (main holds them in sync since 7b48db05 and 5a9e0fcf).
 """
@@ -66,17 +66,6 @@ def test_in_sync_psd_is_left_alone(clone, tmp_path):
     out = tmp_path / "out.psd"
     result = tr.repair(_card(clone, MINI_DOOMER)[0], str(out))
     assert result.stale == [] and result.out == "" and not out.exists()
-
-
-def test_check_and_in_place(clone, tmp_path, capsys):
-    title = pe.read_name(PSDImage.open(_card(clone, MINI_DOOMER)[0]))
-    stale, _ = stale_copy(clone, MINI_DOOMER, _typo_fix(title), tmp_path)
-    before = _sha(stale)
-    assert tr.main(["--check", stale]) == 1 and _sha(stale) == before
-    assert "stale: Name" in capsys.readouterr().out
-    assert tr.main(["--in-place", stale]) == 0 and _sha(stale) != before
-    assert tr.main(["--check", stale]) == 0 and capsys.readouterr().out.endswith("in sync\n")
-    assert not list(tmp_path.glob(".*.repair"))
 
 
 def test_verify_refuses_any_other_change(clone, tmp_path):

@@ -362,6 +362,7 @@ def test_a_burst_of_psd_pushes_still_gets_its_png(cards, tmp_path, first, made):
         assert job.psd_anchor == source.tree(alice)[f"{FOLDER}/Bread.psd"][1] and job.anchor_commit == alice
     data = cg.check(str(root), two, one, mode="on", out=str(tmp_path / "out"), workers=1)
     (entry,) = data["cards"]
+    assert not entry["error"], entry["error"]
     if made:
         assert entry["export"]["outcome"] == "re-exported" and entry["writes"][0]["path"] == f"{FOLDER}/Bread.png"
         assert any("an earlier push changed the PSD without its PNG" in note for note in entry["notes"])
@@ -382,6 +383,7 @@ def test_a_burst_without_a_stored_image_is_made_against_the_anchor(cards, tmp_pa
     out = tmp_path / "out"
     data = cg.check(str(root), two, one, mode="on", out=str(out), workers=1)
     (entry,) = data["cards"]
+    assert not entry["error"], entry["error"]
     assert entry["export"]["outcome"] == "re-exported" and entry["export"]["unchecked"] == pe.UNCHECKED
     assert any("an earlier push changed the PSD without its PNG" in note for note in entry["notes"])
     (write,) = entry["writes"]
@@ -407,6 +409,7 @@ def test_a_g2_burst_keeps_the_anchors_refusal(cards, tmp_path, monkeypatch):
     two = _dated(root, work, "Bread", card(base=(30, 200, 30), colour=(0, 255, 0)), "2026-10-22T10:10:00Z")
     data = cg.check(str(root), two, one, mode="on", out=str(tmp_path / "out"), workers=1)
     (entry,) = data["cards"]
+    assert not entry["error"], entry["error"]
     assert (entry["export"]["outcome"], entry["export"]["gate"]) == ("refused", "G7"), entry["export"]
     assert not [w for w in entry["writes"] if w["kind"] == "png"] and pe.G7 in entry["told"]
 
@@ -424,6 +427,7 @@ def test_a_g2_burst_refusal_is_not_retried_when_the_png_shows_no_anchor(cards, t
     two = _dated(root, work, "Bread", card(base=(30, 200, 30), colour=(255, 255, 0)), "2026-10-22T10:10:00Z")
     data = cg.check(str(root), two, one, mode="on", out=str(tmp_path / "out"), workers=1)
     (entry,) = data["cards"]
+    assert not entry["error"], entry["error"]
     assert (entry["export"]["outcome"], entry["export"]["gate"]) == ("refused", "G6"), entry["export"]
     assert entry["export"]["why"].startswith("PNG not made: the bot cannot draw this part of the card")
     assert not any("an earlier push changed the PSD" in note for note in entry["notes"]), entry["notes"]
@@ -451,6 +455,7 @@ def test_a_checked_burst_whose_last_push_moved_nothing_keeps_the_first(cards, tm
     out = tmp_path / "out"
     data = cg.check(str(root), two, one, mode="on", out=str(out), workers=1)
     (entry,) = data["cards"]
+    assert not entry["error"], entry["error"]
     assert (entry["export"]["outcome"], entry["export"]["changed_px"]) == ("re-exported", 4), entry["export"]
     assert any("an earlier push changed the PSD without its PNG" in note for note in entry["notes"])
     (write,) = entry["writes"]
@@ -481,6 +486,7 @@ def test_a_png_pushed_before_its_psd_keeps_g2_off_the_anchor(cards, tmp_path, mo
     out = tmp_path / "out"
     data = cg.check(str(root), two, one, mode="on", out=str(out), workers=1)
     (entry,) = data["cards"]
+    assert not entry["error"], entry["error"]
     assert entry["export"]["outcome"] == "re-exported" and entry["export"]["changed_px"] == (4 if dot else 441)
     assert not any("an earlier push changed the PSD" in note for note in entry["notes"]), entry["notes"]
     assert not any(line.startswith("PNG not made") for line in entry["told"])
@@ -546,7 +552,7 @@ def test_fonts_are_left_to_font_check(cards, tmp_path, monkeypatch, capsys):
     fonts_dir) and tell none, in the post or the comment."""
     from inspect import signature
     root, base, alice, bot = cards
-    monkeypatch.setattr("commands.font_check.check_psd", lambda psd, index: {"ComicSansMS": ["Ability"]})
+    monkeypatch.setattr("commands.font_check.FontIndex.supplies", lambda index, font: False)
     assert "fonts_dir" not in signature(cg.check).parameters and "fonts_dir" not in signature(cg.build_context).parameters
     out = tmp_path / "out"
     data = cg.check(str(root), bot, base, "o/cards", mode="report", out=str(out), workers=1, cards={"bread"})
@@ -1265,7 +1271,7 @@ def test_a_psd_fix_lands_beside_its_pushed_png(cards, tmp_path):
     "superseded" when the plan expected no PNG)."""
     root, base, alice, bot = cards
     out = tmp_path / "out"
-    data = cg.check(str(root), bot, base, mode="on", out=str(out), workers=1)
+    cg.check(str(root), bot, base, mode="on", out=str(out), workers=1)
     plan = json.loads((out / "plan.json").read_text())
     (bread,) = [c for c in plan["cards"] if c["case"] == "pair"]
     tree = cg.Source(str(root)).tree(bot)
@@ -1369,7 +1375,8 @@ def test_replay_of_the_stale_png_push(clone, tmp_path):
 # The Action
 # ========================
 def test_action_shaped_copy(tmp_path):
-    """Exactly SPARSE_FILES (card-guards.yml's list), no config.py: --help works and the closure is that list."""
+    """Exactly SPARSE_FILES (card-guards.yml's list), no config.py: --help works and the closure is that list; the card and
+    font checks (its check job's since 2026-10-25) run from it too, without Discord."""
     bot = tmp_path / "bot"
     for rel in cg.SPARSE_FILES:
         assert (REPO / rel).is_file(), f"{rel} is in SPARSE_FILES but missing here"
@@ -1392,6 +1399,13 @@ def test_action_shaped_copy(tmp_path):
     from test_card_bake import ALLOWED_IMPORTS, third_party_imports
     extra = third_party_imports("import commands.card_guards, commands.txt2_repair", bot) - ALLOWED_IMPORTS
     assert not extra, f"card-guards.yml installs none of these: {sorted(extra)}"
+    for module in ("card_check", "font_check"):
+        done = subprocess.run([executable, "-m", f"commands.{module}", "--help"], cwd=bot, capture_output=True, text=True,
+                              timeout=120)
+        assert done.returncode == 0 and done.stdout.startswith(f"usage: python -m commands.{module}"), done.stderr
+        code = f"import sys, commands.{module}; print(sorted(m for m in ('config', 'discord') if m in sys.modules))"
+        done = subprocess.run([executable, "-c", code], cwd=bot, capture_output=True, text=True, timeout=120)
+        assert done.returncode == 0 and done.stdout.strip() == "[]", done.stderr
 
 
 def test_a_pool_worker_takes_the_token(monkeypatch):
@@ -1420,7 +1434,7 @@ def _workflow(clone) -> Path:
     return path
 
 
-SYNC = "workflow run card-sync.yml -f dry_run=false"   # Follow up's card sync start (it bakes, builds and saves)
+SYNC = "workflow run card-sync.yml -f dry_run=false -f bake=pending"   # Follow up's card sync (its data commit builds the site)
 ENVIRONMENT = "card-guards-quiet"               # the post job's environment: its 30-minute wait timer is the quiet window
 
 
@@ -1434,24 +1448,24 @@ def _guard_steps(clone) -> tuple:
 
 
 def test_workflow_shape(clone):
-    """card-guards.yml: push on PSDs and PNGs behind CARD_GUARDS, dry dispatches by default, a run per push, the bot's
-    commits skipped, the sparse list = SPARSE_FILES, requirements-cards.txt's install (the fork's one pin) in both jobs that
-    run the guards, as the other card workflows have it (one cache entry), secrets by name only, no ping, no fonts (R7 is
-    font-check.yml's). Three jobs (2026-10-24): check (ends after the comment), post (the quiet window: a push's first
-    attempt waits in the environment's timer; only with something to land or tell), finish (card errors, the alert)."""
+    """card-guards.yml: push on PSDs, PNGs and fonts, the guards behind CARD_GUARDS (the card and font checks always,
+    2026-10-25), dry dispatches by default, a run per push, the sparse list = SPARSE_FILES, requirements-cards.txt's
+    install (the fork's one pin) in both jobs that run the guards, as the other card workflows have it (one cache entry),
+    secrets by name only, no ping, no fonts for the guards' own check (R7 is the font check's). Three jobs (2026-10-24):
+    check (ends after the comment), post (the quiet window: a push's first attempt waits in the environment's timer; only
+    with something to land or tell), finish (card errors, the alert)."""
     path = _workflow(clone)
     text = path.read_text(encoding="utf-8")
     doc, steps_by_name, env = _guard_steps(clone)
     on = doc[True]
-    assert on["push"] == {"branches": ["main"], "paths": ["**/*.psd", "**/*.PSD", "**/*.png", "**/*.PNG"]}
+    assert on["push"] == {"branches": ["main"], "paths": ["**/*.psd", "**/*.PSD", "**/*.png", "**/*.PNG", "MDW/Fonts/*"]}
     inputs = on["workflow_dispatch"]["inputs"]
     assert inputs["dry_run"]["default"] is True and inputs["all"]["default"] is False and set(inputs) == {"dry_run", "sha", "cards", "all"}
     assert doc["concurrency"]["group"] == ("${{ github.event_name == 'push' && format('card-guards-{0}', github.sha) || "
                                            "format('card-guards-{0}', github.run_id) }}") and doc["concurrency"]["cancel-in-progress"] is False
-    assert list(doc["jobs"]) == ["check", "post", "finish"]
+    assert list(doc["jobs"]) == ["check", "post", "finish", "caches"]          # caches: prunes old wheel and font entries
     job, post, finish = doc["jobs"]["check"], doc["jobs"]["post"], doc["jobs"]["finish"]
-    assert "github.actor != 'AutoCroissant'" in job["if"] and "github.actor != 'github-actions[bot]'" in job["if"]
-    assert "vars.CARD_GUARDS == 'report' || vars.CARD_GUARDS == 'on'" in job["if"]
+    assert "if" not in job and steps_by_name["Check"]["if"] == "env.MODE != 'off'"     # the checks run whatever MODE says
     assert job["env"]["MODE"] == ("${{ github.event_name == 'push' && (vars.CARD_GUARDS || 'off') || "
                                   "((inputs.dry_run || inputs.all) && 'dry' || 'on') }}")
     # the quiet window: no runner sleeps for it. A push's first attempt waits in the environment; a dispatch (lands at
@@ -1461,10 +1475,10 @@ def test_workflow_shape(clone):
                                    + "' || '' }}")
     assert post["if"] == ("!cancelled() && needs.check.outputs.checked == 'success' && needs.check.outputs.land == 'true' && "
                           "(needs.check.outputs.mode == 'report' || needs.check.outputs.mode == 'on')")
-    assert finish["if"] == "always() && needs.check.result != 'skipped'"          # nothing when the guards are off
-    assert job["timeout-minutes"] == 100 and post["timeout-minutes"] == 75
+    assert finish["if"] == "always() && needs.check.outputs.mode != 'off'"       # nothing when the guards are off
+    assert job["timeout-minutes"] == "${{ inputs.all && 150 || 40 }}" and post["timeout-minutes"] == 75
     assert "environment" not in job and "environment" not in finish
-    assert job["outputs"] == {"mode": "${{ steps.start.outputs.mode }}", "quiet_from": "${{ steps.start.outputs.quiet_from }}",
+    assert {k: v for k, v in job["outputs"].items() if k != "saved"} == {"mode": "${{ steps.start.outputs.mode }}", "quiet_from": "${{ steps.start.outputs.quiet_from }}",
                               "started": "${{ steps.start.outputs.started }}", "checked": "${{ steps.check.outcome }}",
                               "comment": "${{ steps.comment.outputs.id }}", "told": "${{ steps.comment.outputs.told }}",
                               "land": "${{ steps.plan.outputs.land }}", "card_errors": "${{ steps.plan.outputs.card_errors }}",
@@ -1483,21 +1497,22 @@ def test_workflow_shape(clone):
         assert len(named) == len(set(named)), named
     cards = next(s for s in job["steps"] if s.get("uses", "").startswith("actions/checkout") and "repository" not in s.get("with", {}))
     assert cards["with"]["filter"] == "blob:none" and cards["with"]["fetch-depth"] == 0
-    assert not [s for s in post["steps"] + finish["steps"] if s.get("uses", "").startswith("actions/checkout") and "repository" not in s.get("with", {})]
+    assert [s["with"]["sparse-checkout"].split() for s in post["steps"] + finish["steps"]
+            if s.get("uses", "").startswith("actions/checkout") and "repository" not in s.get("with", {})] == [["/.github/actions/"]]   # the shared setup only
     assert post["env"]["GH_REPO"] == "${{ github.repository }}"               # gh workflow run without the card repo
     from test_card_bake import FORK_KEY, FORK_WORKFLOWS, fork_install
     others = [path.parent / name for name in FORK_WORKFLOWS if name != "card-guards.yml" and (path.parent / name).is_file()]
     keys = {p.name: fork_install(p) for p in [path, *others]}                  # one pin: requirements-cards.txt's
     assert set(keys.values()) == {FORK_KEY}                                    # one entry for the six, on 3.14
     assert "pyoxipng==" in (REPO / "requirements-cards.txt").read_text(encoding="utf-8")   # png_export's recompression
-    assert "MDW/Fonts" not in text and "card-fonts-" not in text and "--fonts" not in text   # R7 is font-check.yml's
+    assert "--fonts" not in steps_by_name["Check"]["run"]                     # R7 is the font check's
     names = [s.get("name") for s in job["steps"]]
     assert names.index("Start") < names.index("No push run in its window") < names.index("Check") \
         < names.index("Comment on the commit") < names.index("Plan for the post job")
     plan = job["steps"][names.index("Plan for the post job")]
     assert plan["id"] == "plan" and plan["if"] == "always() && steps.check.outcome == 'success'"
     hand = job["steps"][names.index("Plan for the post job") + 1]
-    assert hand["uses"].startswith("actions/upload-artifact") and hand["with"]["name"] == "card-guards" and hand["if"] == "always()"
+    assert hand["uses"].startswith("actions/upload-artifact") and hand["with"]["name"] == "card-guards" and hand["if"] == "always() && env.MODE != 'off'"
     post_names = [s.get("name") for s in post["steps"]]
     take = post["steps"][1]
     assert take["uses"].startswith("actions/download-artifact@") and take["with"] == {"name": "card-guards", "path": "${{ runner.temp }}/guards"}
@@ -1522,7 +1537,7 @@ def test_workflow_shape(clone):
                            "github.event_name == 'push' && needs.post.outputs.posted != 'true' && needs.check.outputs.told != 'true'")
     assert alert["env"]["WEBHOOK"] == "${{ secrets.DISCORD_STANDARDS_WEBHOOK }}" and "allowed_mentions: {parse: []}" in alert["run"]
     assert alert["env"]["RESULTS"] == "${{ needs.check.result }} ${{ needs.post.result }}"
-    assert '{"check": %d, "post": %d}' % (job["timeout-minutes"], post["timeout-minutes"]) in alert["run"]
+    assert '{"check": 40, "post": %d}' % post["timeout-minutes"] in alert["run"]       # a push's check job (the `all` dispatch: 150)
     # the streak's mark: an artifact left only when the alert told (or stayed quiet in a told streak)
     streak = finish["steps"][-1]
     assert streak["uses"].startswith("actions/upload-artifact") and streak["if"] == "always() && steps.alert.outputs.streak == 'true'"
@@ -1677,7 +1692,7 @@ def test_workflow_posts_once_and_a_rerun_edits_its_comment(clone, tmp_path):
     posts the settled post (discord-final.json) and marks the comment; a re-run edits that comment, keeps the mark and
     does not post again, and so does a re-run of the post job alone (its Told before looks the mark up itself: the
     check job's outputs are its first attempt's)."""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
@@ -1719,7 +1734,7 @@ def test_workflow_failure_streak_counts_told_runs_only(clone, tmp_path):
     Discord it failed (or stayed quiet in a told streak); a red run that posted its own lines (a card error, a failed
     comment) leaves no mark, so the next failure is told. A re-run is quiet after an attempt that told. The wording
     says whether the push was checked; a failed webhook call leaves no mark."""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
@@ -1762,7 +1777,7 @@ def test_a_rerun_that_fails_in_check_finds_the_told_mark(clone, tmp_path):
     streak mark (the push was told, not a failure). This is the review's case: the last push run green, no artifact. It
     is quiet too when the comments stay unreadable (as the Comment step counts them). With no mark it tells as before;
     a first attempt does not look."""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
@@ -1801,7 +1816,7 @@ def test_workflow_tells_only_the_settled_post(clone, tmp_path):
     with something to tell) -> the step fails (the run-failed message goes out instead), nothing posted. The Comment step
     goes up for comment-only findings (R10 alone: told 0, comment 1), and the plan holds the post job back (nothing to
     land or tell). Fail on card errors fails on the check job's card_errors only."""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
@@ -1861,7 +1876,7 @@ def test_workflow_comment_lookup_never_posts_twice(clone, tmp_path):
     have told), counts as told: no new comment, the step fails, and Tell Discord and the failure alert stay quiet (their
     `if`). Only a push run's first attempt comments anyway (no earlier comment of its own can exist). The id is out before
     the edit, so a failed edit still leaves the comment to Follow up and the mark."""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
@@ -1912,7 +1927,7 @@ def test_workflow_tell_marks_a_comment_of_its_own(clone, tmp_path):
     """The Comment step failed (no id): Tell Discord still posts, then puts up a comment of its own (the settled body)
     carrying the TOLD mark, which a re-run's lookup finds, so the re-run does not post again. When that comment cannot
     be made either, it warns that a re-run would post again."""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
@@ -1943,10 +1958,10 @@ def test_workflow_tell_marks_a_comment_of_its_own(clone, tmp_path):
 
 
 def test_workflow_tells_a_site_build_that_did_not_start(clone, tmp_path):
-    """Follow up starts the site build and the card sync after a bot commit; when one does not start, the comment says so,
-    the run fails, and the one post gets a line for it (the failure alert stays quiet once the post went out). A post
-    with no room for the line goes out as settled."""
-    yaml = pytest.importorskip("yaml")
+    """Follow up starts the card sync after a bot commit (its data commit builds the site; 2026-10-25); when it does not
+    start, the comment says so, the run fails, and the one post gets a line for it (the failure alert stays quiet once the
+    post went out). A post with no room for the line goes out as settled."""
+    pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
@@ -1958,8 +1973,8 @@ def test_workflow_tells_a_site_build_that_did_not_start(clone, tmp_path):
     env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "OUT": str(out), "TOLD": told, "MODE": "on",
            "GITHUB_REPOSITORY": "o/cards", "WEBHOOK": "https://discord.invalid/hook", "FAKE_STATE": str(state),
            "FAKE_POSTS": str(posts), "SHA": "c" * 40, "COMMENT": "101", "TOLD_BEFORE": "", "LAND_RAN": "true"}
-    line = "The bot's commit did not start the site build and the card sync"
-    for fail, refreshed in (("", True), ("workflow run card-sync.yml", False), ("workflow run site.yml", False)):
+    line = "The bot's commit did not start the card sync"
+    for fail, refreshed in (("", True), ("workflow run card-sync.yml", False)):
         (out / "report-landed.md").write_text("## Card guards\n\nLanded.\n")
         state.write_text(json.dumps({"comments": {"101": "## Card guards\n\nAt check time.\n"}, "next": 101, "log": []}))
         follow, outputs = _shell(steps["Follow up"], {**env, "FAKE_FAIL": fail, "GITHUB_OUTPUT": str(out / "follow.output")})
@@ -1967,8 +1982,7 @@ def test_workflow_tells_a_site_build_that_did_not_start(clone, tmp_path):
         assert follow.returncode == (0 if refreshed else 1) and outputs == ({} if refreshed else {"refresh": "failed"}), fail
         assert ("did not start after this commit" in db["comments"]["101"]) is not refreshed
         assert db["comments"]["101"].startswith("## Card guards\n\nLanded.")
-        assert [c for c in db["log"] if c.startswith("workflow run")] == (
-            ["workflow run site.yml", SYNC] if fail != "workflow run site.yml" else ["workflow run site.yml"])
+        assert [c for c in db["log"] if c.startswith("workflow run")] == [SYNC]
     for content, extended in (("settled", True), ("x" * 1950, False)):
         posts.write_text("")
         (out / "discord-final.json").write_text(json.dumps({"content": content, "flags": 4}))
@@ -1989,10 +2003,10 @@ exit "${FAKE_LAND_STATUS:-0}"
 def test_workflow_land_and_a_rerun_after_a_landing(clone, tmp_path):
     """The post job (its Land) runs only with something to tell in report mode, as its writes are told, never made; on
     mode for a write too: the check job's plan says land=true. A re-run or a dispatch passes --rerun (an unread branch tells no write as not made), and the
-    step hands on the sha and the count already on the branch. Follow up starts the site build and the card sync after a
+    step hands on the sha and the count already on the branch. Follow up starts the card sync after a
     commit, and again on a re-run that finds the writes landed (the first attempt's may not have started), not in report
     mode and not on a first attempt."""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
@@ -2035,17 +2049,17 @@ def test_workflow_land_and_a_rerun_after_a_landing(clone, tmp_path):
         done, outputs = _shell(steps["Follow up"], {**env, "MODE": mode, "GITHUB_RUN_ATTEMPT": attempt, "SHA": sha,
                                                     "ALREADY": already, "COMMENT": "", "TOLD_BEFORE": ""})
         log = [c for c in json.loads(state.read_text())["log"] if c.startswith("workflow run")]
-        assert done.returncode == 0 and log == (["workflow run site.yml", SYNC] if started else []), \
+        assert done.returncode == 0 and log == ([SYNC] if started else []), \
             (mode, attempt, sha, already, log)
 
 
 def test_workflow_a_cancel_by_hand_sends_no_alert(clone, tmp_path):
     """Cancelling a run by hand (the post job waiting out the window, say) is no failure to tell the channel: the alert
-    is quiet and leaves no streak mark. A job cancelled at its timeout (check 100 minutes, post 75; GitHub reads a
+    is quiet and leaves no streak mark. A job cancelled at its timeout (check 40 minutes, post 75; GitHub reads a
     timeout as cancelled) still tells, as a failure does: the attempt's job list says how long the cancelled job ran
     (never started, cancelled while waiting: by hand). Without the list, the old rule: 95 minutes from the check's
     Start."""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
@@ -2086,7 +2100,7 @@ def test_workflow_a_rerun_counts_the_window_from_the_push(clone, tmp_path):
     """Start: a first attempt's quiet window starts now; a re-run's at the push (the event's pushed_at: Unix seconds in a
     push event, an ISO time taken too), so a re-run hours later does not wait another 31 minutes. Anything else: now.
     (Land passes --quiet-from on a push only.)"""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
@@ -2128,7 +2142,7 @@ def test_workflow_refuses_a_landing_dispatch_while_a_push_run_waits(clone, tmp_p
     """A dispatch with dry_run off on a commit whose push run is unfinished (its head is the commit or after it) would
     post and land first: refused. A push run of an earlier commit, or none, lets it through; an unknown head (pushed
     since the checkout) refuses."""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
     doc, steps, jenv = _guard_steps(clone)
     step = steps["No push run in its window"]
     repo = tmp_path / "repo"
@@ -2158,7 +2172,7 @@ def test_workflow_refuses_a_landing_dispatch_while_a_push_run_waits(clone, tmp_p
 def test_workflow_lowercases_card_guards(clone, tmp_path):
     """The job's `if` matches CARD_GUARDS in any case ("On"), the shell does not: Start lowercases MODE for every later
     step (Land's --dry-run test is exact; `land` would also refuse a report plan without it)."""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
     doc, steps, jenv = _guard_steps(clone)
     step = steps["Start"]
     for typed, mode in (("On", "on"), ("REPORT", "report"), ("dry", "dry")):
@@ -2204,6 +2218,71 @@ def test_a_composer_fix_is_said_only_in_the_commit(tmp_path, monkeypatch):
     assert "omposer" not in after and "Landed" not in after
     FakeHub({"X/A.psd": ("100644", "moved"), "X/A.png": ("100644", "p1")}).install(monkeypatch)
     assert cg.land(plan)["told"]["X/A.psd"] == []          # dropped: never told either
+
+
+def test_a_rewrap_redraw_follows_into_the_png_unsaid(tmp_path, monkeypatch):
+    """R8 always switches; box text that rewraps is redrawn and its PNG re-exported through guard 1's export, unsaid (a
+    guard 1 write takes the new pixels, the pushed PNG's recompression gives way); a refused export, or no PNG that shows
+    the PSD, lands the PSD without the redraw."""
+    from types import SimpleNamespace
+    fixed = SimpleNamespace(data=b"drawn", plain=b"plain", rewrapped=["Ability"])
+    found = pe.Export("re-exported", image=object(), data=b"png2", changed_px=12)
+    monkeypatch.setattr(cg.png_export, "open_psd", lambda data: data)
+    monkeypatch.setattr(cg.png_export, "export", lambda old, new, png, numbered: found)
+    result = cg.Result(cg.Job("X/A.psd", "pair", png="X/A.png"))
+    result.writes.append({"path": "X/A.png", "kind": "recompress", "line": "recompressed", "file": "f", "sha": "s"})
+    assert cg._rewrapped_pngs(str(tmp_path), result, b"pushed", fixed, {"X/A.png": "image"})
+    assert [(w["path"], w["kind"], w["silent"], w["composer"]) for w in result.writes] == [("X/A.png", "png", True, True)]
+    assert "Single-line Composer" in result.writes[0]["line"] and result.composer_left == []
+    result.writes = [{"path": "X/A.png", "kind": "png", "line": "re-exported by the bot's render", "file": "f", "sha": "s"}]
+    assert cg._rewrapped_pngs(str(tmp_path), result, b"pushed", fixed, {"X/A.png": "image"})
+    assert len(result.writes) == 1 and not result.writes[0].get("silent") and result.writes[0]["sha"] == blob_sha(b"png2")
+    found.outcome, found.why = "refused", "PNG not made: G6"
+    assert not cg._rewrapped_pngs(str(tmp_path), result, b"pushed", fixed, {"X/A.png": "image"})
+    assert not cg._rewrapped_pngs(str(tmp_path), result, b"pushed", fixed, {})
+    result.job.numbered = {"X/A 2.png": "n1"}                   # a numbered PNG that would keep the old wrap
+    assert not cg._rewrapped_pngs(str(tmp_path), result, b"pushed", fixed, {"X/A.png": "image"})
+    assert [why for _, why in result.composer_left] == ["rewraps, not redrawn: PNG not made: G6",
+                                                        "rewraps, not redrawn: no PNG that shows the PSD",
+                                                        "rewraps, not redrawn: A 2.png does not show the PSD"]
+
+
+def test_a_redrawn_psd_lands_plain_without_its_png(tmp_path, monkeypatch):
+    """The redraw's PSD and PNG land together: when the PNG cannot (the author's own export since), the PSD lands
+    switched, not redrawn, never beside an old-wrap PNG."""
+    out = tmp_path / "plan"
+    entry = _entry("A")
+    _write(out, entry, "X/A.psd", "psd", b"drawn", "Single-line Composer (Ability)")
+    (out / "files" / "A.psd.plain").write_bytes(b"plain")
+    entry["writes"][0].update(shown="", silent=True, composer=True, plain={"file": "files/A.psd.plain", "sha": blob_sha(b"plain")})
+    _write(out, entry, "X/A.png", "png", b"png2", "re-exported for the Single-line Composer's rewrap")
+    entry["writes"][1].update(shown="", silent=True, composer=True)
+    plan = _full_plan(tmp_path, [entry])
+    sent = {}
+    for png, files in (("p1", {"X/A.psd": b"drawn", "X/A.png": b"png2"}), ("author", {"X/A.psd": b"plain"})):
+        FakeHub({"X/A.psd": ("100644", "s1"), "X/A.png": ("100644", png)}).install(monkeypatch)
+        monkeypatch.setattr(cg, "commit_files", lambda *a, **k: sent.clear() or sent.update(a[4]) or "c" * 40)
+        landed = cg.land(plan)
+        assert sent == files, png
+    assert landed["included"] == [["A", "X/A.psd"]] and sent == {"X/A.psd": b"plain"}
+    assert landed["dropped"] == [["A", "superseded: X/A.png changed on the branch", "X/A.png"]]
+    assert landed["told"]["X/A.psd"] == []
+
+
+def test_the_checks_report_at_once(clone):
+    """The card and the font check (card-check.yml and font-check.yml until 2026-10-25) run in the check job before the
+    guards' Check, whatever CARD_GUARDS says, never failing it, and each tells Discord and comments at once: only the
+    guards' fixes and post wait the quiet window. A font added starts them too."""
+    doc, steps, _ = _guard_steps(clone)
+    names = [s.get("name") for s in doc["jobs"]["check"]["steps"]]
+    for check in ("Card check", "Font check"):
+        assert steps[check]["continue-on-error"] is True and "MODE" not in steps[check].get("if", "")
+        assert names.index(check) < names.index("Tell the checks") < names.index("Check")
+    tell = steps["Tell the checks"]
+    assert "card-check font-check" in tell["run"] and tell["env"]["WEBHOOK"] == "${{ secrets.DISCORD_STANDARDS_WEBHOOK }}"
+    assert "MODE" not in tell["if"] and "MODE" not in doc["jobs"]["check"].get("if", "")
+    assert "Tell the checks" not in [s.get("name") for s in doc["jobs"]["post"]["steps"]]
+    assert "MDW/Fonts/*" in doc[True]["push"]["paths"]
 
 
 def test_box_text_fonts_fetched_alone(tmp_path, monkeypatch):

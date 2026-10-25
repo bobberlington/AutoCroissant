@@ -2,7 +2,6 @@
 grouped by push (the activity list and the fallback), one message per push within Discord's limits and at most 20 a
 run, and the posted cursor that moves only after each accepted message."""
 import json
-from collections import defaultdict
 from types import SimpleNamespace
 
 import pytest
@@ -71,17 +70,6 @@ def test_field_changes_skip_what_a_reading_could_not_know():
     assert cl.field_changes(_card(ability=None), _card(ability="")) == {}
     assert cl.field_changes(_card(types=["offense"]), _card(types=["negation"])) == {}
     assert cl.field_changes(_card(display_name="A"), _card()) == {}                 # a title equal to the name
-
-
-def test_version_changes():
-    v0 = _card(stats=cm.CardStats(5, 2, 3, 4))
-    v1 = _card(stats=cm.CardStats(6, 2, 3, 4))
-    v1.version = {"from": 100.0, "cause": "psd"}
-    current = _card(stats=cm.CardStats(6, 2, 3, 4), ability="(2CD) Hit.")
-    current.version = {"from": 200.0, "cause": "edit"}
-    steps = cl.version_changes([v0, v1], current)
-    assert [(s["from"], s["cause"], list(s["changes"]), s["verdict"]) for s in steps] == \
-        [(100.0, "psd", ["hp"], "buff"), (200.0, "edit", ["ability", "tags"], "nerf")]
 
 
 # ========================
@@ -155,17 +143,12 @@ def test_bot_edits_never_read_as_website_edits():
 
 
 def test_a_mix_of_bot_fields_is_never_the_entrys_editor():
-    """Fields all in _bot with different credits (the migration's series, a Discord user's subseries) are the bot's,
-    not the entry's _by (none of them is web's); one of the _by's own fields in the mix: the _by."""
-    AT = "2026-10-22T00:00:00Z"
-    meta = {"_by": "web", "_bot": ["series", "subseries"], "_credit": {"subseries": {"_by": "discord:a", "_at": AT}}}
+    """Fields all in _bot (the migration's) are the bot's, not the entry's _by; one of the _by's own fields in the
+    mix: the _by."""
+    meta = {"_by": "web", "_bot": ["series", "subseries"]}
     both = {"series": [None, "Kirby"], "subseries": [None, "Dream Land"]}
-    assert cl.edit_credit(meta, both) == "AutoCroissant"
-    assert cl.edit_credit(meta, {"subseries": [None, "x"]}) == "discord:a"
-    assert cl.edit_credit(meta, {"series": [None, "x"]}) == "AutoCroissant"
+    assert cl.edit_credit(meta, both) == cl.edit_credit(meta, {"series": [None, "x"]}) == "AutoCroissant"
     assert cl.edit_credit(meta, {**both, "note": [None, "n"]}) == "web" and cl.edit_credit(meta, {}) == "web"
-    two = {**meta, "_credit": {"series": {"_by": "discord:b", "_at": AT}, "subseries": {"_by": "discord:a", "_at": AT}}}
-    assert cl.edit_credit(two, both) == "AutoCroissant"
 
 
 def test_seq_never_reused():
@@ -230,7 +213,7 @@ def test_payload_words_links_and_order():
          "verdict": "buff"},
         {"kind": "changed", "card": "Waddle Doo", "fields": {"atk": [1, 2]}},
         {"kind": "archived", "card": "Gone"}, {"kind": "renamed", "card": "ZOEY!!!!!", "renamed_to": "Z!!!!!"},
-        {"kind": "edited", "card": "Meta", "fields": {"subseries": [None, "Kirby"]}, "edit_by": "discord:mike"},
+        {"kind": "edited", "card": "Meta", "fields": {"subseries": [None, "Kirby"]}, "edit_by": "mike"},
         {"kind": "reparse", "card": "R"}, {"kind": "reparse", "card": "S"}], 0, at=T)]
     body = cl.payload(events, "https://site", {"Kirby": "kirby"}, "MichaelJSr/TTSCardMaker")
     assert body["allowed_mentions"] == {"parse": []} and "content" not in body
@@ -244,7 +227,7 @@ def test_payload_words_links_and_order():
     assert "(Auxiliary creature, 4★)" in text                                    # app.js's word, never "Other"
     assert "[Waddle Dee](https://site/#/cards?q=Waddle%20Dee): HP 5 → 6; ability changed (buff)" in text
     assert "ZOEY!!!!! is now [Z!!!!!](" in text and "Gone (PSD deleted)" in text
-    assert "[Meta](https://site/#/cards?q=Meta): subseries → Kirby (by mike, via Discord)" in text
+    assert "[Meta](https://site/#/cards?q=Meta): subseries → Kirby (by mike, on the website)" in text
     assert cl.payload([], "https://site") is None
 
 
@@ -346,14 +329,3 @@ def test_cursor_moves_only_after_each_message(tmp_path):
     cl.advance(db, 1, p1["after"])
     assert cl.read_posted(db) == {"seq": 2, "push": p2["after"]}                     # never backwards
 
-
-def test_history_cli(tmp_path, capsys):
-    import pickle
-    v0 = _card(stats=cm.CardStats(5, 2, 3, 4))
-    current = _card(stats=cm.CardStats(5, 2, 3, 2))
-    current.version = {"from": T, "cause": "psd"}
-    (tmp_path / "stats.pkl").write_bytes(pickle.dumps({"A": current}))
-    (tmp_path / "old_stats.pkl").write_bytes(pickle.dumps(defaultdict(list, {"A": [v0]})))
-    assert cl.main(["history", "--pickles", str(tmp_path), "A"]) == 0
-    assert capsys.readouterr().out.strip() == "2026-10-22 (psd): spd [nerf: SPD 4 -> 2]"
-    assert cl.main(["history", "--pickles", str(tmp_path), "Nobody"]) == 1
