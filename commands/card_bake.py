@@ -21,7 +21,9 @@ whose PSD, PNG or edit changed meanwhile is left out of the commit as a try-agai
 checkout at head moves to B, and the report says where HEAD is. A --head the clone lacks is a failed run (a report,
 exit 1, no B). The recent gate diffs the clone's trees when it has the pushes' base (head may be a previous B).
 Refusals are data: one bad card never blocks another, and a refused stars or types edit never blocks its card's other
-fields (they bake; the refused field stays in the file with a refused verdict on the PSD the commit leaves). A run
+fields (they bake; the refused field stays in the file with a refused verdict on the PSD the commit leaves). A
+content problem (text that won't fit, a typed badge or token, a styled word, a font stand-in) never refuses (owner
+2026-10-24): it bakes, told in the commit line, the report and the baked verdict's reason (psd_edit's notes). A run
 bakes at most MAX_BAKES cards and starts none after BUDGET (the rest are refused `capped` and wait for the next run).
 The report goes to stdout, the artifacts (edited PSD, merged PNG, before/after/diff crops, the rewritten file) to the
 work dir. The runner supplies the token
@@ -29,8 +31,8 @@ work dir. The runner supplies the token
 fonts cache by sha, font_check.refresh_cache) and the work dir (RUNNER_TEMP).
 No Discord or config imports; never the pickles; --dry-run commits nothing. GitHub, git and runner failures (a 5xx,
 a rate limit, no text engine) are reported but never written as a verdict; such a card error, or a commit that failed,
-exits 1 (failure()). The `font` gate refuses only where a face resolves to nothing: on a Mac the platform fonts stand
-in for a missing or empty fonts dir (psd_edit.OK_FONTS); a `font` verdict holds until MDW/Fonts changes.
+exits 1 (failure()). A face no file holds is drawn in the fork's stand-in, told (psd_edit.font_map); a `font` verdict
+(the stand-in itself missing) holds until MDW/Fonts changes.
 """
 from argparse import ArgumentParser
 from collections import Counter
