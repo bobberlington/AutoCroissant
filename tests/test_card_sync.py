@@ -112,9 +112,9 @@ def _card(name, ability="Deal 2 damage.", path=None, **kw):
     return card
 
 
-def _run(run_id, status="completed", conclusion="success", event="workflow_dispatch", login="MichaelJSr"):
+def _run(run_id, status="completed", conclusion="success", event="workflow_dispatch", login="MichaelJSr", title=cs.RUN_NAME):
     return {"id": run_id, "status": status, "conclusion": conclusion if status == "completed" else None, "event": event,
-            "display_title": cs.RUN_NAME, "html_url": f"https://github.com/{REPO}/actions/runs/{run_id}",
+            "display_title": title, "html_url": f"https://github.com/{REPO}/actions/runs/{run_id}",
             "actor": {"login": login}}
 
 
@@ -309,7 +309,7 @@ def test_a_reminder_sync_is_quiet(github, tmp_path, capsys):
 
 
 @pytest.mark.parametrize("ahead, due, what", [
-    (True, [], "the card changes since"),
+    (True, [], "the card changes not in the data yet"),
     (False, ["Mini Doomer"], "1 website edit waiting to bake (Mini Doomer)"),
 ])
 def test_update_stats_starts_a_card_sync_after_the_grace(github, tmp_path, ahead, due, what):
@@ -403,13 +403,23 @@ def test_card_syncs_own_retry_is_followed(github, tmp_path, full):
     """Main moved during the run: it ends green with its data dropped and dispatches its retry, which is followed."""
     github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
     _dispatched_run(github, 41, _run(41, "in_progress"), _run(41))
-    github.runs = [_run(42, "queued", login=cs.BOT_LOGIN), _run(41)]
-    github.states[42] = [_run(42, "in_progress", login=cs.BOT_LOGIN), _run(42, login=cs.BOT_LOGIN)]
+    retry = dict(login=cs.BOT_LOGIN, title=cs.RETRY_NAME)
+    github.runs = [_run(42, "queued", **retry), _run(41)]
+    github.states[42] = [_run(42, "in_progress", **retry), _run(42, **retry)]
     cs.update(ME, force_update=full, cards="" if full else "A")
     said, url = _said(), "https://github.com/MichaelJSr/TTSCardMaker/actions/runs/"
     assert said[1] == (f"The card repo changed during run <{url}41>, so Card sync dropped its data and started again: "
                        f"<{url}42>" + (" (without the full re-parse: ask again once it is done)." if full else "."))
     assert said[2] == f"Card sync run finished: <{url}42>" and len(github.posts) == 1
+
+
+def test_a_card_guards_dispatch_is_not_a_retry(github, tmp_path):
+    """card-guards' card-sync dispatch (GITHUB_TOKEN, named "Card sync") during the run: the run's data stands."""
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
+    _dispatched_run(github, 41, _run(41, "in_progress"), _run(41))
+    github.runs = [_run(42, "queued", login=cs.BOT_LOGIN), _run(41)]
+    cs.update(ME, force_update=True)
+    assert _said()[1] == "Card sync run finished: <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/41>"
 
 
 def test_a_reminders_run_posts_no_progress_edits(github, tmp_path):

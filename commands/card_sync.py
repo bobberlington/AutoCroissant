@@ -36,6 +36,7 @@ ACTIONS_TOKEN: str = getattr(config, "ACTIONS_TOKEN", "")   # fine-grained, the 
 WORKFLOW = "card-sync.yml"                           # the card repo's Card sync Action
 SITE_WORKFLOW = "site.yml"                           # the card repo's website build (it reads the bot's pickles)
 RUN_NAME = "Card sync"                               # its live runs' name (a dry run is "Card sync (dry run)")
+RETRY_NAME = "Card sync (retry)"                     # its own retry's name (main moved during a run)
 SCHEDULE = "every 30 minutes, at :04 and :34"        # its cron (card-sync.yml)
 GRACE_SECONDS = 30 * 60                              # card_bake.RECENT: no run starts until the last push is this old
 AUTO_INPUTS = {"dry_run": "false", "bake": "pending"}   # /update_stats' own run: the schedule's (bakes only pending edits)
@@ -45,7 +46,7 @@ FIND_SECONDS = 60                                    # a dispatched run shows up
 EDIT_MINUTES = 14                                    # progress edits stop here: Discord's interaction lasts 15 minutes
 WAITING = ("queued", "pending", "waiting", "requested")   # a run not started yet
 FAILED = ("failure", "timed_out", "startup_failure")
-BOT_LOGIN = "github-actions[bot]"                    # Card sync's own retry dispatches
+BOT_LOGIN = "github-actions[bot]"                    # GITHUB_TOKEN dispatches (Card sync's retry, card-guards)
 FONTS_PREFIX = "MDW/Fonts/"                           # its top-level files only (the gate's MDW/Fonts/*)
 CARD_FILES = {ICON_MANIFEST_PATH, RULES_PATH, *AUTHORS_PATHS, *EDITS_PATHS, *CREATED_PATHS}
 
@@ -186,7 +187,7 @@ def start_run(runs: list, ahead: bool, repository: str = CARD_REPO) -> Optional[
         edits = []
     if not ahead and not edits:
         return None
-    what = ("the card changes since" if ahead else
+    what = ("the card changes not in the data yet" if ahead else
             f"{len(edits)} website edit{'' if len(edits) == 1 else 's'} waiting to bake ({', '.join(edits[:5])}"
             + (", ..." if len(edits) > 5 else "") + ")")
     try:
@@ -226,7 +227,7 @@ def notes(manifest: dict, repository: str = CARD_REPO, start: bool = False) -> l
                      + " last version until the PSD is fixed.")
     try:
         every = _runs(repository)
-        runs = [r for r in every if r.get("display_title") == RUN_NAME]
+        runs = [r for r in every if r.get("display_title") in (RUN_NAME, RETRY_NAME)]
         ahead = _main_ahead(repository, manifest.get("card_commit"))
     except (RequestException, ValueError) as e:      # advice only: the sync itself worked
         print(f"Card sync status not read: {e}")
@@ -236,7 +237,7 @@ def notes(manifest: dict, repository: str = CARD_REPO, start: bool = False) -> l
         lines.append(started)
     elif ahead:
         going = next((r for r in runs if r.get("status") != "completed"), None)
-        lines.append("The card repo has card changes since: " + (f"the card sync running now picks them up (<{going.get('html_url')}>)."
+        lines.append("The card repo has card changes not in the data yet: " + (f"the card sync running now picks them up (<{going.get('html_url')}>)."
                                                                  if going else f"the next card sync ({SCHEDULE}) picks them up."))
     last = next((r for r in runs if r.get("status") == "completed" and r.get("conclusion") not in ("cancelled", "skipped")), None)
     if last is not None and last.get("conclusion") in FAILED:
@@ -505,13 +506,13 @@ def _again(run: dict) -> tuple:
 
 
 def _retry_of(run: dict) -> Optional[dict]:
-    """Card sync's own retry of a run (main moved during it, so its data was dropped), or None."""
+    """Card sync's own retry of a run (main moved during it, so its data was dropped), by its name, or None."""
     try:
         runs = _runs(CARD_REPO, _headers())
     except (RequestException, ValueError):
         return None
     return next((r for r in reversed(runs) if (r.get("id") or 0) > (run.get("id") or 0)
-                 and r.get("event") == "workflow_dispatch" and (r.get("actor") or {}).get("login") == BOT_LOGIN), None)
+                 and r.get("display_title") == RETRY_NAME), None)
 
 
 def request_run(interaction, full: bool, names: list) -> Optional[dict]:
