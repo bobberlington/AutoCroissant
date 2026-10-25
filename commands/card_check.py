@@ -5,8 +5,8 @@ card-guards.yml runs it in its check job on every push to main that touches a PS
 summary, commit comment and a Discord message in the standards channel at once, no ping.
 
     python -m commands.card_check [--psd <path>...] [--all <checkout root>]
-                                  [--repo <owner/name> --after <sha> [--before <sha>] [--author <login>] [--whole-tree]]
-                                  [--json <out>] [--discord <payload out>]
+                                  [--repo <owner/name> --after <sha> [--before <sha>] [--author <login>] [--whole-tree]
+                                   [--clone <dir>]] [--json <out>] [--discord <payload out>]
     card_notes(parser, edits, psd, rel) -> one card's notes; check_files / check_checkout / check_blobs -> Report
     markdown(report), discord_payload(report) -> the job summary / commit comment and the webhook body
 
@@ -16,8 +16,9 @@ the card's website edits (problems_ok, allow_high_stats, creatures ...) and ABIL
 gate: findings exit 0, an unreadable PSD or a failed API call is one error line. The repo path classifies a card, so
 --psd files belong to the checkout of their nearest ancestor holding Types/ (its Types/ and edits file apply); --all
 parses a checkout in a process pool; --repo reads the pushed PSDs by blob sha (Types/, the manifest and the edits file
-from the tree at --after). No Discord or config imports (the token: config through github_api, else GITHUB_TOKEN); the
-guards' checkout (card_guards.SPARSE_FILES) holds its import closure.
+from the tree at --after; --clone: the guards' clone first, so each PSD is fetched once for the three checks). No Discord
+or config imports (the token: config through github_api, else GITHUB_TOKEN); the guards' checkout
+(card_guards.SPARSE_FILES) holds its import closure.
 """
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor
@@ -334,11 +335,13 @@ def check_checkout(root: str) -> Report:
     return report
 
 
-def check_blobs(repository: str, psds: dict, parser: PSDParser, edits: Optional[CardEdits], ref: str = "") -> Report:
+def check_blobs(repository: str, psds: dict, parser: PSDParser, edits: Optional[CardEdits], ref: str = "",
+                clone: str = "") -> Report:
     """
     PSDs read by blob sha through the API, in path order (each blob goes to a temp file for the parser). With ref (the
     pushed commit) and a psd-tools that reads lazily, a PSD is read by range requests at ref instead: only what the
-    parser reads is fetched; one that fails that way is read whole.
+    parser reads is fetched; one that fails that way is read whole. With clone: whole blobs, its object store first and
+    kept filled (the guards' clone: they read each pushed PSD whole anyway).
 
     Args:
         repository: owner/name
@@ -346,12 +349,13 @@ def check_blobs(repository: str, psds: dict, parser: PSDParser, edits: Optional[
         parser: PSDParser with the tree's vocabulary
         edits: The tree's edits file, or None
         ref: The commit the PSDs are at ("": whole blobs)
+        clone: A clone read first and kept filled (github_api.fetch_verified)
 
     Returns:
         Report
     """
     report = Report()
-    ranges = bool(ref) and range_reads()
+    ranges = bool(ref) and not clone and range_reads()
     for path in sorted(psds):
         sha, author = psds[path]
         if ranges:
@@ -360,7 +364,7 @@ def check_blobs(repository: str, psds: dict, parser: PSDParser, edits: Optional[
                 _record(report, path, author, notes)
                 continue
         try:
-            data = fetch_verified(repository, sha, timeout=API_TIMEOUT)
+            data = fetch_verified(repository, sha, timeout=API_TIMEOUT, clone=clone)
         except Exception as e:                  # a failed download is an error line
             report.errors.append(f"{path}: {e}")
             continue
@@ -404,6 +408,7 @@ def main(args: Optional[list] = None) -> int:
     cli.add_argument("--after", default="", metavar="SHA", help="the push's head (github.sha)")
     cli.add_argument("--author", default=NOBODY, metavar="LOGIN", help="who to name when a commit's author has no login (github.actor)")
     cli.add_argument("--whole-tree", action="store_true", help="with --repo: every card PSD of the tree at --after (~813 blob downloads, 16 GB)")
+    cli.add_argument("--clone", default="", metavar="DIR", help="with --repo: a clone whose blobs are read first (no range reads); fetched ones are kept in it")
     cli.add_argument("--json", default="", metavar="OUT", help="write the report as JSON here")
     cli.add_argument("--discord", default="", metavar="OUT", help="write the Discord webhook payload here ({} when nothing to report)")
     options = cli.parse_args(args)
@@ -417,7 +422,7 @@ def main(args: Optional[list] = None) -> int:
                 psds, notes = {p: (s, options.author) for p, s in blobs.items() if is_card_psd(p)}, []
             else:
                 psds, _, notes = pushed_files(options.repo, options.before, options.after, options.author)
-            report = check_blobs(options.repo, psds, parser, edits, options.after)
+            report = check_blobs(options.repo, psds, parser, edits, options.after, options.clone)
         except Exception as e:                  # the API failed (a 5xx after the retries, no network, a truncated tree): one line
             report, notes = Report(), [f"GitHub API: {e}"]
         report.errors = errors + report.errors + notes

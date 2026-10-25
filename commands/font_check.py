@@ -6,7 +6,8 @@ channel pinging the card makers' role, at once; the bot's /fonts reads the card 
 psd_details.json instead (card_sync.fonts_text, details_report here).
 
     python -m commands.font_check --fonts <dir> [--psd <path>...] [--all <checkout root>]
-                                  [--repo <owner/name> --after <sha> [--before <sha>] [--author <login>] [--whole-tree]]
+                                  [--repo <owner/name> --after <sha> [--before <sha>] [--author <login>] [--whole-tree]
+                                   [--clone <dir>]]
                                   [--json <out>] [--discord <payload out>]
     FontIndex(dir) -> the faces of a fonts folder; psd_fonts(psd) -> {font: [layers]}
     markdown(report), discord_payload(report) -> the job summary / commit comment and the webhook body
@@ -478,7 +479,7 @@ def tree_blobs(repository: str, ref: str = "") -> dict:
     return {e["path"]: e["sha"] for e in data.get("tree", []) if e.get("type") == "blob"}
 
 
-def check_blobs(repository: str, psds: dict, index: FontIndex) -> Report:
+def check_blobs(repository: str, psds: dict, index: FontIndex, clone: str = "") -> Report:
     """
     PSDs read by blob sha through the API, in path order.
 
@@ -486,6 +487,7 @@ def check_blobs(repository: str, psds: dict, index: FontIndex) -> Report:
         repository: owner/name
         psds: {path: (blob sha, author)}
         index: The fonts folder's faces
+        clone: A clone read first and kept filled (github_api.fetch_verified)
 
     Returns:
         Report
@@ -494,7 +496,7 @@ def check_blobs(repository: str, psds: dict, index: FontIndex) -> Report:
     for path in sorted(psds):
         sha, author = psds[path]
         try:
-            data = fetch_verified(repository, sha, timeout=API_TIMEOUT)
+            data = fetch_verified(repository, sha, timeout=API_TIMEOUT, clone=clone)
         except Exception as e:
             report.errors.append(f"{path}: {e}")
             continue
@@ -550,6 +552,7 @@ def main(args: Optional[list] = None) -> int:
     parser.add_argument("--after", default="", metavar="SHA", help="the push's head (github.sha)")
     parser.add_argument("--author", default=NOBODY, metavar="LOGIN", help="who to name when a commit's author has no login (github.actor)")
     parser.add_argument("--whole-tree", action="store_true", help="with --repo: every card PSD of the tree at --after (~813 blob downloads, 16 GB)")
+    parser.add_argument("--clone", default="", metavar="DIR", help="with --repo: a clone whose blobs are read first; fetched ones are kept in it")
     parser.add_argument("--json", default="", metavar="OUT", help="write the report as JSON here")
     parser.add_argument("--discord", default="", metavar="OUT", help="write the Discord webhook payload here ({} when nothing is missing)")
     options = parser.parse_args(args)
@@ -562,7 +565,7 @@ def main(args: Optional[list] = None) -> int:
                 fonts_added, notes = [], []
             else:
                 psds, fonts_added, notes = pushed_files(options.repo, options.before, options.after, options.author)
-            report = check_blobs(options.repo, psds, index)
+            report = check_blobs(options.repo, psds, index, options.clone)
         except Exception as e:                  # the API failed (a 5xx after the retries, no network, a truncated tree): one line
             report, fonts_added, notes = Report(), [], [f"GitHub API: {e}"]
         report.fonts_added, report.errors = fonts_added, report.errors + notes

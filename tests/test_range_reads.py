@@ -133,6 +133,19 @@ def test_card_check_reads_ranges_at_the_push(github):
     assert _blobs(github) == [FREEZER]
 
 
+def test_a_clone_is_read_first_and_kept_filled(github, tmp_path):
+    """--clone (the guards' check job): whole blobs, no ranges; each fetched once into the clone, then read from it."""
+    import subprocess
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    pushed = {DOOMER: (_sha(github.files[DOOMER]), "bob")}
+    parser = cc.Vocabulary().parser()
+    first = cc.check_blobs("o/r", pushed, parser, None, ref=COMMIT, clone=str(tmp_path))
+    assert _blobs(github) == [DOOMER] and not _ranges(github)
+    github.calls.clear()
+    assert cc.check_blobs("o/r", pushed, parser, None, ref=COMMIT, clone=str(tmp_path)).as_dict() == first.as_dict()
+    assert ga.fetch_verified("o/r", pushed[DOOMER][0], clone=str(tmp_path)) == github.files[DOOMER] and not github.calls
+
+
 # ========================
 # RemotePSD
 # ========================

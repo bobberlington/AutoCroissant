@@ -6,6 +6,7 @@ from os import environ
 from re import compile as re_compile
 from requests import Session
 from requests.exceptions import RequestException
+from subprocess import TimeoutExpired, run
 from threading import local
 from time import sleep
 from urllib.parse import quote
@@ -133,11 +134,27 @@ def blob_sha(data: bytes) -> str:
     return sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
 
-def fetch_verified(repository: str, sha: str, timeout: int = 30) -> bytes:
-    """A blob's bytes by sha, checked against it; raises ValueError when they don't hash to sha."""
+def _git_blob(clone: str, *args: str, data: bytes = None):
+    """git cat-file / hash-object in a clone (never a lazy fetch); None when it fails."""
+    try:
+        done = run(["git", "-C", clone, *args], input=data, capture_output=True, timeout=300,
+                   env={**environ, "GIT_NO_LAZY_FETCH": "1"})
+    except (OSError, TimeoutExpired):
+        return None
+    return done.stdout if done.returncode == 0 else None
+
+
+def fetch_verified(repository: str, sha: str, timeout: int = 30, clone: str = "") -> bytes:
+    """A blob's bytes by sha, checked against it; raises ValueError when they don't hash to sha. With clone: its object
+    store first, and a fetched blob is kept there (the next reader of that clone does not download it again)."""
+    data = _git_blob(clone, "cat-file", "blob", sha) if clone else None
+    if data is not None and blob_sha(data) == sha:
+        return data
     data = fetch_blob(repository, sha, timeout=timeout).content
     if blob_sha(data) != sha:
         raise ValueError(f"blob {sha[:8]} hashes to {blob_sha(data)[:8]}")
+    if clone:
+        _git_blob(clone, "hash-object", "-w", "--stdin", data=data)
     return data
 
 
