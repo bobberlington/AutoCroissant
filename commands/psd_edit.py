@@ -38,11 +38,11 @@ from commands.card_edits import ADD_ABILITY, CardEdits
 from commands.card_models import CardInfo, StatsDatabase, straight
 from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_PREFIX, ICON_SCAN_PATTERN,
                                  TITLE_REGION_RATIO, TYPE_REGION_RATIO, BoundingBox, CardValidator, IconVocabulary,
-                                 MutableValue, PSDParser, layer_tag, name_key, named_after_text, stars_from_psd,
-                                 title_text, token_variant, variant_view, variants_of)
+                                 MutableValue, PSDParser, StatTracker, base_name, layer_tag, name_key, named_after_text,
+                                 stars_from_psd, title_text, token_variant, variant_view, variants_of)
 from commands import psd_parts
 from commands.psd_parts import lyid_index, raw_sha
-from commands.psd_regions import _ancestors, badge_layers, clip, fx_pad, overlay_words, stat_rows, union_box
+from commands.psd_regions import STATS as STAT_PATTERNS, _ancestors, badge_layers, clip, fx_pad, overlay_words, stat_rows, union_box
 from global_config import RULEBOOK_DIR
 
 # ========================
@@ -237,6 +237,7 @@ class IconPlan:
     icons: list = field(default_factory=list)    # (Types/ stem, canvas box, reference layer): a type icon made in the box
     done: list = field(default_factory=list)     # set_icons(): ("copy", source, copy, dx, dy) and ("made", layer, blocks)
     first: str = ""                              # plan_types(): the template whose spot a card's first type icon takes
+    notes: list = field(default_factory=list)    # told with the bake: the card's layout changed (stars laid out again)
 
 
 @dataclass
@@ -274,6 +275,7 @@ class Edit:
     removed: list = field(default_factory=list)  # old record indices of the layers a part edit deleted (gate_bytes)
     removed_stories: list = field(default_factory=list)  # their Txt2 stories' old TextIndex (gate_stories)
     renumbered: list = field(default_factory=list)  # record indices of type layers whose TextIndex moved down (gate_bytes)
+    bar: list = field(default_factory=list)     # a stat on the card maker's own bar: (record index, _bar_spec()) per layer
 
 
 @dataclass
@@ -2889,13 +2891,35 @@ def _regenerate_fx(psd: PSDImage, layer, text: str, fresh: list, fonts, engine: 
 # ========================
 # Apply (section 5 step 4)
 # ========================
+def _digit(layer) -> Optional[str]:
+    """A bar layer's digit, "0" to "10" (its name without a variant tag), else None."""
+    name = base_name(layer).strip()
+    return name if name.isdigit() and int(name) <= STAT_MAX and str(int(name)) == name else None
+
+
 def _row(group, stat: str, two: bool) -> TemplateRow:
-    """One row group as a TemplateRow (the "10" marker split off on a two-row card); else Refused("unsupported-card")."""
-    layers = {child.name.strip(): child for child in group if not child.is_group()}
+    """
+    One row group as a TemplateRow (the "10" marker split off on a two-row card); else Refused("unsupported-card").
+    The card maker's own rows count too (layout support): other layers beside the digits (left alone: Anubisath
+    Guardian's empty text, Dark Mind's "5 copy", Bulborb Larva's gauge), digits 1-10 or a missing one (Whispy Woods,
+    Spinni: set_stat copies a neighbour), or each digit a picture of the whole row (Bulborb Larva, Empress Bulblax).
+    """
+    layers, extras = {}, []
+    for child in group:
+        digit = None if child.is_group() else _digit(child)
+        if digit is None or digit in layers:
+            if child.is_group() or digit is not None:
+                raise Refused("unsupported-card", f"{stat}: non-template row {group.name!r}")
+            extras.append(child)
+        else:
+            layers[digit] = child
     marker = layers.pop(MARKER, None) if two else None
-    shaped = (set(layers) == set(DIGITS) and len(group) == len(layers) + (marker is not None)
-              and all(layer.kind not in DRAWN_LAYER_KINDS and layer.has_mask() for layer in layers.values()))
-    if not shaped:
+    masked = all(layer.kind not in DRAWN_LAYER_KINDS and layer.has_mask() for layer in layers.values())
+    boxes = [tuple(layer.bbox) for layer in layers.values()]
+    whole = union_box(boxes)
+    pictures = (whole is not None and all(layer.kind in DRAWN_LAYER_KINDS and not layer.is_group() for layer in layers.values())
+                and all(box[2] - box[0] >= (whole[2] - whole[0]) / 2 for box in boxes))
+    if len(layers) < 5 or not (masked or pictures) or (two and len(layers) != len(DIGITS)):
         raise Refused("unsupported-card", f"{stat}: non-template row {group.name!r}")
     if marker is not None and not (marker.is_visible() and marker.opacity == 0 and marker.kind not in DRAWN_LAYER_KINDS):
         raise Refused("unsupported-card", f"{stat}: the 10 marker of {group.name!r} must be visible at opacity 0")
@@ -2964,8 +2988,8 @@ def stat_value(rows: list) -> int:
 def _targets(rows: list, stat: str, value: int) -> list:
     """The digit each row shows for a value (None: no digit): one row 0-10; Top the value and Bottom 0 up to 10, then
     Top none and Bottom value - 10 (20: none, when Bottom has its own 10 marker for the parser)."""
-    if len(rows) == 1:
-        return [value if value < STAT_MAX else None]
+    if len(rows) == 1:          # a row with its own "10" digit shows it (Whispy Woods, Bulborb Larva)
+        return [value if value < STAT_MAX or str(STAT_MAX) in rows[0].digits else None]
     if value <= STAT_MAX:
         return [value if value < STAT_MAX else None, 0]
     if value == 2 * STAT_MAX and rows[1].marker is None:
@@ -3101,9 +3125,12 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
         canvas and ambiguous effects (unsupported-card), values the rows cannot show (stat>10) and unreadable effect
         stacks (parity)
     """
-    rows = template_rows(psd, stat)
+    try:
+        rows = template_rows(psd, stat)
+    except Refused as refused:                  # the card maker's own bar (layout support)
+        return set_bar(psd, parsed, stat, value, refused)
     for row in rows:                            # Green_Mage: masks below the canvas, the cells drawn as pixels
-        boxes = {name: tuple(layer.mask.bbox) for name, layer in row.digits.items()}
+        boxes = {name: _where(layer) for name, layer in row.digits.items()}
         off = sorted(name for name, box in boxes.items() if _off_canvas(box, psd))
         if off:                                 # a toggle there changes nothing (and its region would be empty)
             what = (f"the bar {row.group.name!r} lies" if len(off) == len(boxes) else
@@ -3120,16 +3147,577 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
     if value > STAT_MAX * len(rows):
         why = "above 20" if len(rows) > 1 else "one bar row; a second row is standardization work (ledger L3)"
         raise Refused("stat>10", f"{stat} {value}: {why}")
+    targets = _targets(rows, stat, value)
+    snaps = {id(layer): (layer, _snap(layer)) for row in rows for layer in row.digits.values()}
+    boxes = [_where(layer) for _, (layer, _) in snaps.items()]
+    notes = [_missing_digit(row, stat, target) for row, target in zip(rows, targets)
+             if target is not None and str(target) not in row.digits]
     changed, moves, reach = [], [], 0
-    for row, target in zip(rows, _targets(rows, stat, value)):
+    for row, target in zip(rows, targets):
         row_changed, row_moves, row_reach = _toggle_row(row, target, stat)
         changed += row_changed
         moves += row_moves
         reach = max(reach, row_reach)
-    region = union_box([tuple(layer.mask.bbox) for layer in changed])
+    if notes:                                   # a digit moved and renamed: every change declared per layer
+        touched = [layer for layer, snap in snaps.values() if _bar_spec(layer, snap) is not None]
+        region = union_box([box for box, layer in zip(boxes, [layer for layer, _ in snaps.values()]) if layer in touched]
+                           + [_where(layer) for layer in touched])
+        return Edit(stat, old, value, touched, [], _pad(region, reach, psd) if region else None, notes=notes,
+                    bar=[(_record_index(layer), _bar_spec(layer, snaps[id(layer)][1])) for layer in touched])
+    region = union_box([_where(layer) for layer in changed])
     return Edit(stat, old, value, changed, [_record_index(layer) for layer in changed],
                 _pad(region, reach, psd) if region else None,
                 [(_record_index(a), None if b is None else _record_index(b), bytes(key)) for a, b, key in moves])
+
+
+# ========================
+# Layout support: the card makers' own stat bars (docs/Future/LAYOUT_SUPPORT.md)
+# ========================
+BAR_EDGES = (360, 435, 518, 605, 686, 764, 847, 928, 1009, 1086, 1173)   # Creature_Template's digit masks: where cell
+#   k starts; its bar's end
+EDGE_TOL = 0.4              # a layer's edge sits on the value's cell edge within this share of a cell
+CELL_SHARE = 0.25           # a bar layer narrower than this share of its bar draws one cell
+COVER_SHARE = 0.8           # a layer under the cells covers a cell across this share of its width
+
+
+def _where(layer) -> tuple:
+    """Where a bar layer acts: an adjustment's mask, else its pixels."""
+    if layer.kind not in DRAWN_LAYER_KINDS and layer.has_mask():
+        return tuple(layer.mask.bbox)
+    return tuple(layer.bbox)
+
+
+def _snap(layer) -> dict:
+    """What a stat edit may change on a layer: name, eye, place, mask place, effect blocks."""
+    return {"name": layer.name, "visible": layer.visible, "pos": (layer.left, layer.top),
+            "mask": (layer.mask.left, layer.mask.top) if layer.has_mask() else None,
+            "blocks": {bytes(key): layer.tagged_blocks[key].tobytes() for key in EFFECT_BLOCKS if key in layer.tagged_blocks}}
+
+
+def _bar_spec(layer, snap: dict, remask: bool = False) -> Optional[dict]:
+    """The change a stat edit made to a layer since _snap() (gate_bytes checks it record by record); None: none.
+    remask: its mask was redrawn (_remask)."""
+    now = _snap(layer)
+    move = ((now["pos"][0] - snap["pos"][0], now["pos"][1] - snap["pos"][1]) if layer.width and layer.height else (0, 0))
+    mask = ((now["mask"][0] - snap["mask"][0], now["mask"][1] - snap["mask"][1]) if now["mask"] and snap["mask"]
+            and layer.mask.width and layer.mask.height else (0, 0))
+    blocks = {key: now["blocks"].get(key) for key in set(snap["blocks"]) | set(now["blocks"])
+              if snap["blocks"].get(key) != now["blocks"].get(key)}
+    spec = {"flags": now["visible"] != snap["visible"], "name": now["name"] if now["name"] != snap["name"] else None,
+            "move": move, "mask": mask, "blocks": blocks, "remask": remask}
+    return spec if spec["flags"] or spec["name"] is not None or any(move) or any(mask) or blocks or remask else None
+
+
+def _missing_digit(row: TemplateRow, stat: str, target: int) -> str:
+    """
+    A row without the digit `target` (Spinni has no 5, Whispy Woods no 0): the nearest lower digit's mask moves to where
+    `target` darkens the bar and the layer takes its name (the bar keeps its own layers; told). A row of pictures, or
+    one with no lower digit (a moved higher one would stop short of the bar's end), refuses.
+
+    Returns:
+        The note
+    """
+    lower = [int(name) for name in row.digits if int(name) < target]
+    if not lower or any(layer.kind in DRAWN_LAYER_KINDS for layer in row.digits.values()):
+        raise Refused("unsupported-card", f"{stat} {target}: {row.group.name!r} has no digit {target}"
+                      + ("" if lower else " and none below it to move"))
+    low = max(lower)
+    layer = row.digits.pop(str(low))
+    higher = [int(name) for name in row.digits if int(name) > target]
+    x = layer.mask.left
+    if higher:                                  # between two of the row's own digits, at the template's proportion
+        up = row.digits[str(min(higher))].mask.left
+        x_target = x + (up - x) * (BAR_EDGES[target] - BAR_EDGES[low]) / (BAR_EDGES[min(higher)] - BAR_EDGES[low])
+    else:
+        x_target = x + BAR_EDGES[target] - BAR_EDGES[low]
+    layer.mask.offset = (layer.mask.left + round(x_target - x), layer.mask.top)
+    layer.name = str(target)
+    layer._psd.mark_updated()
+    row.digits[str(target)] = layer
+    return f"{stat}: {row.group.name!r} had no digit {target}: its {low} moved there and renamed {target}"
+
+
+def set_bar(psd: PSDImage, parsed: dict, stat: str, value: int, why: Refused) -> Edit:
+    """
+    A stat on a bar the card maker drew their own way (plan_bar), the edit following their layout.
+
+    Args:
+        psd: The open card (edited in place)
+        parsed: parse_card() of the card before the edit
+        stat: hp, def, atk or spd
+        value: 0-10
+        why: template_rows()'s refusal, raised again when the bar is none plan_bar knows
+
+    Returns:
+        Edit, its changes declared per layer (Edit.bar); raises Refused
+    """
+    rows = stat_rows(psd)[stat]
+    old = parsed["card"].get(stat)
+    if len(rows) != 1 or not isinstance(old, int):
+        raise why
+    if value < 0:
+        raise ValueError(f"{stat} {value}: not a stat")
+    if value > STAT_MAX:
+        raise Refused("stat>10", f"{stat} {value}: one bar row; a second row is standardization work (ledger L3)")
+    plan = plan_bar(psd, rows[0][0], stat, old, value, why)
+    layers = list(dict.fromkeys([*plan.show, *plan.hide, *(layer for layer, _ in plan.names),
+                                 *(layer for layer, _ in plan.masks), *(layer for layer, _ in plan.moves),
+                                 *(layer for layer, _ in plan.styles), *(layer for layer, _, _ in plan.remasks)]))
+    snaps = {id(layer): _snap(layer) for layer in layers}
+    before = [_where(layer) for layer in layers]
+    for layer in plan.show:
+        layer.visible = True
+    for layer in plan.hide:
+        layer.visible = False
+    for layer, name in plan.names:
+        layer.name = name
+    for layer, dx in plan.masks:
+        layer.mask.offset = (layer.mask.left + dx, layer.mask.top)
+        layer._psd.mark_updated()
+    for layer, dx in plan.moves:
+        _shift(layer, dx, 0)
+    for layer, source in plan.styles:
+        _copy_blocks(source, layer)
+    for layer, dx, bar in plan.remasks:
+        _remask(layer, dx, bar)
+    bases = [base for layer in layers for base in [_clip_base(layer)] if base is not None]
+    reach = max([fx_pad(layer) for layer in layers + bases] + [0])
+    # where a layer acts: its own box, inside what it clips to (an exposure clipped to a bar) and the bar's rows
+    within = lambda layer: union_box([plan.box] + [tuple(base.bbox) for base in [_clip_base(layer)] if base is not None])
+    boxes = [clip_to(box, within(layer)) for layer, box in zip(layers + layers, before + [_where(layer) for layer in layers])]
+    region = union_box([box for box in boxes if box])
+    remasked = {id(layer) for layer, _, _ in plan.remasks}
+    specs = [(layer, _bar_spec(layer, snaps[id(layer)], id(layer) in remasked)) for layer in layers]
+    touched = [(layer, spec) for layer, spec in specs if spec is not None]
+    return Edit(stat, old, value, [layer for layer, _ in touched], [], _pad(region, reach, psd) if region else None,
+                notes=plan.notes, bar=[(_record_index(layer), spec) for layer, spec in touched])
+
+
+def clip_to(box: tuple, bounds: tuple) -> Optional[tuple]:
+    """box inside bounds (x0, y0, x1, y1); None when they do not meet."""
+    out = (max(box[0], bounds[0]), max(box[1], bounds[1]), min(box[2], bounds[2]), min(box[3], bounds[3]))
+    return out if out[2] > out[0] and out[3] > out[1] else None
+
+
+def _copy_blocks(source, target) -> None:
+    """The source's effect blocks onto the target (replaced in place, added after the target's last, removed when the
+    source has none): a cell taking its lit or dark neighbour's style."""
+    have = {bytes(key) for key in source.tagged_blocks if key in EFFECT_BLOCKS}
+    items = list(target.tagged_blocks.items())
+    target.tagged_blocks.clear()
+    for key, block in items:
+        if key not in EFFECT_BLOCKS:
+            target.tagged_blocks[key] = block
+        elif bytes(key) in have:
+            target.tagged_blocks[key] = deepcopy(source.tagged_blocks[key])
+    for key in EFFECT_BLOCKS:
+        if key in source.tagged_blocks and key not in target.tagged_blocks:
+            target.tagged_blocks[key] = deepcopy(source.tagged_blocks[key])
+    target._psd.mark_updated()
+
+
+@dataclass
+class BarPlan:
+    """plan_bar(): what a stat edit changes on the card maker's own bar."""
+    how: str                                     # "cells shown and hidden", "cell styles", "the value's edge moved"...
+    box: tuple                                   # the bar (x0, y0, x1, y1): the edit's region stays in it
+    show: list = field(default_factory=list)
+    hide: list = field(default_factory=list)
+    names: list = field(default_factory=list)    # (layer, new name): the layer named after the value
+    masks: list = field(default_factory=list)    # (layer, dx): its mask moved along the bar
+    moves: list = field(default_factory=list)    # (layer, dx): moved along the bar with its pixels
+    styles: list = field(default_factory=list)   # (cell, source cell): the source's effect blocks copied onto the cell
+    remasks: list = field(default_factory=list)  # (layer, dx, bar): its mask redrawn, the value edge dx along (_remask)
+    notes: list = field(default_factory=list)
+
+
+def _bar_layer(psd: PSDImage, group, stat: str):
+    """
+    The layer drawing the stat's bar: a wide drawn layer in the row (Isaac's hearts), else one named after the stat or
+    in a group so named, inside a bar or stat group (Uumuu's "Bars" > "hp" > "hp", Chef Saltbaker's "Bars" > "ATK");
+    None when there is none.
+    """
+    pattern = STAT_PATTERNS[stat]
+    wide = lambda layer: (not layer.is_group() and layer.kind in DRAWN_LAYER_KINDS and layer.kind != "type"
+                          and layer.is_visible() and layer.bbox[2] - layer.bbox[0] >= psd.width / 3 and layer.bbox[3] - layer.bbox[1] < psd.height / 8)
+    own = [layer for layer in group if wide(layer)]
+    if own:
+        return max(own, key=lambda layer: layer.bbox[2] - layer.bbox[0])
+    named = lambda layer: layer is not None and not isinstance(layer, PSDImage) \
+        and fullmatch(rf"\s*({pattern})\s*(bars?)?\s*", layer.name, IGNORECASE) is not None
+    found = []
+    for layer in psd.descendants():
+        if wide(layer) and any(search(r"bar|stat", owner.name, IGNORECASE) for owner in _ancestors(layer)):
+            if named(layer.parent):
+                found.append((0, layer))
+            elif named(layer):
+                found.append((1, layer))
+    return min(found, key=lambda item: item[0])[1] if found else None
+
+
+def _bar_box(psd: PSDImage, group, stat: str, layer=None) -> Optional[tuple]:
+    """The bar a row draws (x0, y0, x1, y1): _bar_layer's, else its cells' (Clots), else where psd_regions finds it
+    (the template's row by its label)."""
+    if layer is not None:
+        return clip(tuple(layer.bbox), psd.width, psd.height)
+    cells = union_box([tuple(leaf.bbox) for leaf in group if not leaf.is_group() and leaf.kind in DRAWN_LAYER_KINDS
+                       and leaf.kind != "type" and leaf.bbox[2] > leaf.bbox[0]])
+    if cells and cells[2] - cells[0] >= psd.width / 3:
+        return cells
+    from commands.psd_regions import regions
+    found = regions(psd).get("stat_" + stat) or []
+    return found[0] if found else None
+
+
+def _islands(layer) -> Optional[list]:
+    """The (start, end) x of the ten shapes a layer draws along its middle row (Isaac's hearts), else None."""
+    alpha = _alpha(layer)
+    if alpha is None or not alpha.size:
+        return None
+    band = alpha[alpha.shape[0] // 4:3 * alpha.shape[0] // 4].max(axis=0) > INK_ALPHA
+    runs, start = [], None
+    for x, on in enumerate(list(band) + [False]):
+        if on and start is None:
+            start = x
+        elif not on and start is not None:
+            runs.append((layer.bbox[0] + start, layer.bbox[0] + x))
+            start = None
+    return runs if len(runs) == 10 else None
+
+
+def _edges(box: tuple, cells: Optional[list] = None, islands: Optional[list] = None) -> list:
+    """Where the bar's cells start, 0-10 (10: the bar's end): from the card's own cells or the ten shapes its bar draws,
+    else the template's spaced over the bar."""
+    if islands:
+        return [islands[0][0]] + [(islands[k - 1][1] + islands[k][0]) / 2 for k in range(1, 10)] + [islands[9][1]]
+    if cells:
+        starts = [min(layer.bbox[0] for layer in cell) for cell in cells]
+        ends = [max(layer.bbox[2] for layer in cell) for cell in cells]
+        return [starts[0]] + [(ends[k - 1] + starts[k]) / 2 for k in range(1, 10)] + [ends[9]]
+    x0, x1 = box[0], box[2]
+    scale = (x1 - x0) / (BAR_EDGES[10] - BAR_EDGES[0])
+    return [x0 + (edge - BAR_EDGES[0]) * scale for edge in BAR_EDGES]
+
+
+def _cells(group, box: tuple) -> Optional[list]:
+    """The row's one-cell layers (drawn; not clipped onto a cell: Chris & Jordi's art), ten cells by position:
+    [[layer, ...] per cell], else None."""
+    width = box[2] - box[0]
+    narrow = lambda layer: 0 < layer.bbox[2] - layer.bbox[0] < CELL_SHARE * width
+    small = [layer for layer in group if not layer.is_group() and layer.kind in DRAWN_LAYER_KINDS and layer.kind != "type"
+             and narrow(layer) and not (layer.clipping and _clip_base(layer) is not None and narrow(_clip_base(layer)))]
+    if len(small) < 10:
+        return None
+    widths = sorted(layer.bbox[2] - layer.bbox[0] for layer in small)
+    median = widths[len(widths) // 2]
+    small = [layer for layer in small if abs(layer.bbox[2] - layer.bbox[0] - median) <= median / 4]  # art over a cell
+    if len(small) < 10:
+        return None
+    small.sort(key=lambda layer: (layer.bbox[0] + layer.bbox[2]) / 2)
+    pitch = width / 10
+    cells: list = [[small[0]]]
+    for layer in small[1:]:
+        centre = (layer.bbox[0] + layer.bbox[2]) / 2
+        last = cells[len(cells) - 1]
+        if centre - (last[0].bbox[0] + last[0].bbox[2]) / 2 < pitch / 2:
+            last.append(layer)
+        else:
+            cells.append([layer])
+    return cells if len(cells) == 10 else None
+
+
+def _row_reads(group, names: Optional[dict] = None, shown: Optional[dict] = None) -> Optional[int]:
+    """What the parser reads for a row (StatTracker._row_value) once layers are renamed or shown or hidden."""
+    names, shown = names or {}, shown or {}
+    items = []
+    for layer in group:
+        name = names.get(id(layer), base_name(layer)).strip()
+        if name.isdigit() and shown.get(id(layer), layer.visible) and not layer.is_group():
+            items.append((int(name), layer.kind))
+    return StatTracker._row_value(items)[0] if items else None
+
+
+def _profile(layer, use_mask: bool, y: int, x0: int, x1: int, dx: int = 0) -> Optional[np.ndarray]:
+    """
+    A layer along the bar's middle row over x0..x1, as on/off: its mask (outside it the mask's background) moved by dx,
+    or its pixels' alpha moved by dx (nothing outside them); None when it has none to read.
+    """
+    xs = np.arange(x0, x1) - dx
+    if use_mask:
+        mask = layer.mask
+        if mask.disabled:
+            return None
+        try:
+            image = mask.topil()
+        except Exception:
+            image = None
+        out = np.full(len(xs), mask.background_color >= 128)
+        if image is not None and mask.width and mask.height and mask.top <= y < mask.bottom:
+            row = np.asarray(image)[y - mask.top] >= 128
+            inside = (xs >= mask.left) & (xs < mask.left + len(row))
+            out[inside] = row[xs[inside] - mask.left]
+        return out
+    alpha = _alpha(layer)
+    if alpha is None or not alpha.size:
+        return None
+    left, top = layer.bbox[0], layer.bbox[1]
+    out = np.zeros(len(xs), dtype=bool)
+    if top <= y < top + alpha.shape[0]:
+        row = alpha[y - top] > INK_ALPHA
+        inside = (xs >= left) & (xs < left + len(row))
+        out[inside] = row[xs[inside] - left]
+    return out
+
+
+def _step(profile: np.ndarray, x0: int, at: float, tol: float, bar: tuple) -> Optional[tuple]:
+    """
+    (left side, right side) of an on/off profile from x0 that is constant on each side of `at` (outside +-tol) and
+    changes across it; None otherwise. The sides are read over the bar (x0, x1); a side the bar does not have (`at` on
+    its start or end) just past it.
+    """
+    lo, hi = (bar[0], int(at - tol)) if at - tol > bar[0] else (int(at - 2 * tol), int(at - tol))
+    lo2, hi2 = (int(at + tol), bar[1]) if at + tol < bar[1] else (int(at + tol), int(at + 2 * tol))
+    left = profile[max(lo - x0, 0):max(hi - x0, 0)]
+    right = profile[max(lo2 - x0, 0):max(hi2 - x0, 0)]
+    sides = []
+    for part in (left, right):
+        if part.size and not (part.all() or not part.any()):
+            return None
+        sides.append(bool(part[0]) if part.size else None)
+    if sides[0] is not None and sides[1] is not None and sides[0] == sides[1]:
+        return None
+    return sides[0], sides[1]
+
+
+def _edge_elements(psd: PSDImage, stat: str, box: tuple, edges: list, old: int) -> list:
+    """
+    The layers drawing the bar's value edge: a mask or pixels that switch on or off at the old value's cell edge and
+    stay so across the rest of the bar (Isaac's lit hearts' mask, Chef Saltbaker's dark exposures, Pizza's dark
+    overlays), each inside the stat's own row.
+
+    Returns:
+        [(layer, use_mask)]
+    """
+    y0, y1 = box[1], box[3]
+    y = (y0 + y1) // 2
+    tol = EDGE_TOL * (edges[10] - edges[0]) / 10
+    lo, hi = int(edges[0] - 2 * tol), int(edges[10] + 2 * tol)
+    others = [found for key in STAT_FIELDS if key != stat for found in stat_rows(psd)[key]]
+    other_bands = [b for _, _, b in others if b]
+    out = []
+    for layer in psd.descendants():
+        if layer.is_group() or layer.kind == "type" or not layer.is_visible():
+            continue
+        for use_mask in (True, False):
+            if use_mask and not (layer.has_mask() and layer.mask.width and layer.mask.height):
+                continue
+            if not use_mask and (layer.kind not in DRAWN_LAYER_KINDS or layer.bbox[2] <= layer.bbox[0]):
+                continue
+            extent = tuple(layer.mask.bbox) if use_mask else tuple(layer.bbox)
+            if layer.kind in DRAWN_LAYER_KINDS and layer.bbox[2] > layer.bbox[0]:
+                extent = (extent[0], max(extent[1], layer.bbox[1]), extent[2], min(extent[3], layer.bbox[3]))
+            if not (extent[1] < y < extent[3]) or extent[3] - extent[1] > 2.5 * (y1 - y0):
+                continue
+            if any(min(extent[3], b[3]) - max(extent[1], b[1]) > (b[3] - b[1]) / 4 for b in other_bands):
+                continue
+            profile = _profile(layer, use_mask, y, lo, hi)
+            if profile is not None and _step(profile, lo, edges[old], tol, (int(edges[0]), int(edges[10]))):
+                out.append((layer, use_mask))
+                break
+    return out
+
+
+def _roles(cells: list, old: int) -> dict:
+    """
+    id(layer) -> "lit", "dark" or "base" for a row of cells shown and hidden: per layer series (the n-th layer of each
+    cell, bottom to top) when every cell has as many: shown up to the value (lit), past it (dark) or always (base: the
+    Clots' dark hearts under the lit ones); else per layer, by whether it shows on its side of the value.
+    """
+    out = {}
+    sizes = {len(cell) for cell in cells}
+    if len(sizes) == 1 and sizes.pop() > 1:
+        ordered = [sorted(cell, key=lambda layer: layer.parent.index(layer)) for cell in cells]
+        for n in range(len(ordered[0])):         # a cell or two off the pattern (Clot White's dark 7 under its lit 7)
+            shown = [cell[n].visible for cell in ordered]
+            lit = sum(on == (k <= old) for k, on in enumerate(shown, 1))
+            dark = sum(on == (k > old) for k, on in enumerate(shown, 1))
+            role = "lit" if lit >= 8 and lit > dark else "dark" if dark >= 8 and dark > lit else "base" if all(shown) else None
+            if role is None:
+                break
+            out.update({id(cell[n]): role for cell in ordered})
+        else:
+            return out
+        out = {}
+    for k, cell in enumerate(cells, 1):
+        for layer in cell:
+            out[id(layer)] = "lit" if layer.visible == (k <= old) else "dark"
+    return out
+
+
+def _remasked(layer, dx: int, bar: tuple) -> tuple:
+    """
+    A mask's raster with its value edge moved dx along the bar and its other side held: stretched by the mask's own
+    column at the bar's far end (Dark Esau's lit hearts, whose mask would stop short of the bar's start once moved).
+
+    Returns:
+        (raster, its left)
+    """
+    mask = layer.mask
+    raster = np.asarray(mask.topil().convert("L"))
+    width = raster.shape[1]
+    at = bar[0] if dx > 0 else bar[1] - 1
+    fill = np.repeat(raster[:, min(max(at - mask.left, 0), width - 1)][:, None], abs(dx), axis=1)
+    if dx > 0:
+        return np.concatenate([fill, raster], axis=1), mask.left
+    return np.concatenate([raster, fill], axis=1), mask.left + dx
+
+
+def _remask(layer, dx: int, bar: tuple) -> None:
+    """Redraw the layer's mask as _remasked() makes it."""
+    raster, left = _remasked(layer, dx, bar)
+    layer.update_mask(Image.fromarray(np.ascontiguousarray(raster)), top=layer.mask.top, left=left)
+
+
+def _remasked_profile(layer, dx: int, bar: tuple, y: int, x0: int, x1: int) -> np.ndarray:
+    """_profile() of the mask _remasked() would make (the layer is not changed)."""
+    mask = layer.mask
+    raster, left = _remasked(layer, dx, bar)
+    xs = np.arange(x0, x1)
+    out = np.full(len(xs), mask.background_color >= 128)
+    if mask.top <= y < mask.top + raster.shape[0]:
+        row = raster[y - mask.top] >= 128
+        inside = (xs >= left) & (xs < left + len(row))
+        out[inside] = row[xs[inside] - left]
+    return out
+
+
+def plan_bar(psd: PSDImage, group, stat: str, old: int, value: int, why: Refused) -> BarPlan:
+    """
+    How a stat changes on a bar the card maker drew their own way, following their layout (owner 10-24: support, not
+    refusals; 10-25: no art swap). The row (the stat's one digit row, stat_rows) may draw its value with:
+
+    - cells: one layer per cell, lit ones and dark ones shown or hidden (Blank Card's pairs, the Clots' and Minecraft
+      Panda's lit cells over dark ones or a dark strip): each cell shows its lit or dark layer (_roles); a cell with
+      neither refuses;
+    - cell styles: every cell shown, lit and dark by their effects (Zigg, Chris & Jordi, Uumuu): a cell crossing over
+      takes the effect blocks of the last lit or first dark cell;
+    - an edge: a mask or a layer switching at the value's cell edge (Isaac's hearts, Chef Saltbaker's and Slugcat's
+      exposures, Pizza's dark overlays, Uumuu's): moved by the cells between the two values; a mask that would stop
+      short of the bar is redrawn with its far side held (_remask); a layer, refused;
+
+    and the parser reads it from the layers' names: a layer named after the value is renamed (cells shown and hidden: the
+    lit cell at the new value takes the name, the old one "0"); the result must read `value` (StatTracker's rules).
+
+    Returns:
+        BarPlan; raises Refused("unsupported-card") naming what the bar lacks, or `why` when nothing draws the value
+    """
+    bar_layer = _bar_layer(psd, group, stat)
+    box = _bar_box(psd, group, stat, bar_layer)
+    if box is None:
+        raise why
+    if _row_reads(group) != old:
+        raise Refused("unsupported-card", f"{stat}: the parser reads {old}, the row {group.name!r} reads {_row_reads(group)}")
+    cells = _cells(group, box)
+    if cells is None and bar_layer is not None and bar_layer.parent is not group and not isinstance(bar_layer.parent, PSDImage):
+        cells = _cells(bar_layer.parent, box)   # Uumuu: the digit in "Darks", the cells beside the bar
+    drawn = [layer for layer in group if not layer.is_group() and layer.kind in DRAWN_LAYER_KINDS and layer.kind != "type"
+             and layer.bbox[2] - layer.bbox[0] >= psd.width / 3] + ([bar_layer] if bar_layer is not None else [])
+    shapes = None if cells else next((found for layer in sorted(drawn, key=lambda layer: layer.bbox[2] - layer.bbox[0])
+                                      for found in [_islands(layer)] if found), None)
+    edges = _edges(box, cells, shapes)
+    plan = BarPlan("", box)
+    names, shown, hows = {}, {}, []
+    toggled = cells is not None and any(not layer.visible for cell in cells for layer in cell)
+    if toggled:
+        hows.append("cells shown and hidden")
+        roles = _roles(cells, old)
+        under = [layer for container in (group, group.parent) if container is not None and not isinstance(container, PSDImage)
+                 for layer in container if not layer.is_group() and layer.is_visible() and layer.kind in DRAWN_LAYER_KINDS
+                 and all(layer is not one for cell in cells for one in cell)
+                 and (container is group or container.index(layer) < container.index(group))]
+        for k, cell in enumerate(cells, 1):
+            if not min(old, value) < k <= max(old, value):
+                continue                        # cells that keep their side keep their layers as they are
+            lit = [layer for layer in cell if roles[id(layer)] == "lit"]
+            dark = [layer for layer in cell if roles[id(layer)] == "dark"]
+            base = [layer for layer in cell if roles[id(layer)] == "base"]
+            if k <= value:
+                if not lit:
+                    raise Refused("unsupported-card", f"{stat} {value}: cell {k} of {group.name!r} has no lit picture")
+                plan.show += [layer for layer in lit if not layer.visible]
+                plan.hide += [layer for layer in dark if layer.visible]
+            else:
+                x0, x1 = min(l.bbox[0] for l in cell), max(l.bbox[2] for l in cell)
+                covered = base or any(min(x1, u.bbox[2]) - max(x0, u.bbox[0]) >= COVER_SHARE * (x1 - x0)
+                                      and u.bbox[1] < box[3] and u.bbox[3] > box[1] for u in under)
+                if not dark and not covered:
+                    raise Refused("unsupported-card", f"{stat} {value}: cell {k} of {group.name!r} has no dark picture")
+                plan.show += [layer for layer in dark if not layer.visible]
+                plan.hide += [layer for layer in lit if layer.visible]
+        shown = {id(layer): True for layer in plan.show} | {id(layer): False for layer in plan.hide}
+    elif cells:
+        bases = [[layer for layer in cell if layer.visible] for cell in cells]
+        sig = lambda layer: tuple(sorted((bytes(key), layer.tagged_blocks[key].tobytes()) for key in EFFECT_BLOCKS
+                                         if key in layer.tagged_blocks))
+        lit_ex = bases[old - 1][0] if old >= 1 and bases[old - 1] else None
+        dark_ex = bases[old][0] if old < STAT_MAX and bases[old] else None
+        if lit_ex is not None and dark_ex is not None and sig(lit_ex) != sig(dark_ex):
+            hows.append("cell styles")
+        elif (lit_ex is None) != (dark_ex is None):     # 0 or 10: the other side's style is on another row of the card
+            pass
+        if hows:
+            for k in range(min(old, value) + 1, max(old, value) + 1):
+                source = lit_ex if k <= value else dark_ex
+                plan.styles += [(layer, source) for layer in bases[k - 1] if sig(layer) != sig(source)]
+    elements = _edge_elements(psd, stat, box, edges, old)
+    if elements:
+        hows.append("the value's edge moved")
+        dx = round(edges[value] - edges[old])
+        tol = EDGE_TOL * (edges[10] - edges[0]) / 10
+        y = (box[1] + box[3]) // 2
+        lo, hi, bar = int(edges[0] - 2 * tol), int(edges[10] + 2 * tol), (int(edges[0]), int(edges[10]))
+        for layer, use_mask in elements:
+            before = _step(_profile(layer, use_mask, y, lo, hi), lo, edges[old], tol, bar)
+            same = lambda moved: moved is not None and all(m is None or b is None or m == b for m, b in zip(moved, before))
+            if same(_step(_profile(layer, use_mask, y, lo, hi, dx), lo, edges[value], tol, bar)):
+                (plan.masks if use_mask else plan.moves).append((layer, dx))
+            elif use_mask and same(_step(_remasked_profile(layer, dx, bar, y, lo, hi), lo, edges[value], tol, bar)):
+                plan.remasks.append((layer, dx, bar))
+                plan.notes.append(f"{stat}: the mask of {layer.name!r} redrawn {dx:+d} px, its far side held")
+            else:
+                raise Refused("unsupported-card", f"{stat} {value}: {layer.name!r} moved {dx:+d} px would no longer cover "
+                                                  f"the bar on both sides of the value")
+    if not hows:
+        if all(not layer.is_group() and _digit(layer) is not None and layer.bbox[2] <= layer.bbox[0] for layer in group):
+            raise Refused("unsupported-card", f"{stat}: {group.name!r} only names the value; no layer draws it (the bar's "
+                                              "light and dark cells are painted): edit it in Photoshop")
+        if box is not None and _row_reads(group) is not None:
+            raise Refused("unsupported-card", f"{stat}: no layer of the bar shows or hides a cell, or switches at {old}, "
+                                              f"the value {group.name!r} names: edit it in Photoshop")
+        raise why
+    if _row_reads(group, names, shown) != value:    # the parser's reading: the layer named after the value takes the new one
+        named = [layer for layer in group if not layer.is_group() and _digit(layer) == str(old) and layer.visible]
+        if toggled and any(layer is one for cell in cells for one in cell for layer in named):     # a lit cell named
+            for layer in named:
+                names[id(layer)] = "0"
+            if value:
+                lit = [layer for layer in cells[value - 1] if shown.get(id(layer), layer.visible)]
+                if lit:
+                    names[id(max(lit, key=lambda layer: layer.parent.index(layer)))] = str(value)
+        elif len(named) == 1:
+            names[id(named[0])] = str(value)
+        elif len(named) > 1:                    # Keeper's "0" dark and "0" lit: the one with the edge
+            edged = [layer for layer in named if any(layer is element for element, _ in elements)]
+            if len(edged) == 1:
+                names[id(edged[0])] = str(value)
+    every = [layer for layer in group] + [layer for cell in cells or [] for layer in cell]
+    plan.names = list({id(layer): (layer, names[id(layer)]) for layer in every
+                       if id(layer) in names and layer.name.strip() != names[id(layer)]}.values())
+    if _row_reads(group, names, shown) != value:
+        raise Refused("unsupported-card", f"{stat} {value}: the parser would read {_row_reads(group, names, shown)} "
+                                          f"off {group.name!r}")
+    plan.how = ", ".join(hows)
+    return plan
 
 
 def no_glyph(layer, text: str, changed: list, fonts) -> list:
@@ -4274,6 +4862,119 @@ def _stars_blocked(psd: PSDImage, moves: list, clear: list) -> Optional[str]:
     return None
 
 
+RELAID = ("rows of two, laid out again",)     # _more_layouts' layouts that change the card's own (told)
+OVERLAP = 0.15              # a new star's core may cover this share of another's (the cards' own shapes overlap a little)
+
+
+def _named_star(layer) -> bool:
+    """A layer the parser counts as a star with no Stars group: named with the word star (PSDParser._count_stars)."""
+    return not layer.is_group() and layer.has_pixels() and "star" in sub(r"[^a-z]+", " ", layer.name.lower()).split()
+
+
+def _named_total(psd: PSDImage, show=None, boxes=None) -> int:
+    """What the parser counts on a card with no Stars group: its visible layers named star, clustered; with show
+    (id(layer) -> visible) and boxes (id(group) -> extra core boxes: copies) as _star_count takes them."""
+    show, cores = show or {}, [box for found in (boxes or {}).values() for box in found]
+    for layer in psd.descendants():
+        if _named_star(layer) and show.get(id(layer), layer.visible) and all(p.visible for p in _ancestors(layer)):
+            cores.append(PSDParser._core_box(layer))
+    return len(_clusters(cores))
+
+
+def _loose_units(psd: PSDImage, groups: list, named: bool, types) -> tuple:
+    """(shown, hidden) stars of a card whose stars are no one group's: several Stars groups (Paint Warrior), or layers
+    named star in any group (Nasty Patty, Shell Shield)."""
+    if not named:
+        shown, hidden = [], []
+        for group in groups:
+            one, other = _star_units(group, types)
+            shown, hidden = shown + one, hidden + other
+        return shown, hidden
+    out: dict = {True: [], False: []}
+    by_parent: dict = {}
+    for layer in psd.descendants():
+        if _named_star(layer) and all(p.visible for p in _ancestors(layer)):
+            by_parent.setdefault(id(layer.parent), []).append(layer)
+    for layers in by_parent.values():
+        for on in (True, False):
+            some = [layer for layer in layers if layer.visible == on]
+            boxes = [PSDParser._core_box(layer) for layer in some]
+            out[on] += [_Unit([some[i] for i in members], union_box([boxes[i] for i in members]))
+                        for members in _clusters(boxes)]
+    return out[True], out[False]
+
+
+def _flat_units(shown: list, hidden: list, types) -> tuple:
+    """Stars inside a shown group drawing several (Cat's "Group 1" of two) as their own units, its hidden ones too."""
+    while any(unit.count > 1 and unit.layers[0].is_group() for unit in shown):
+        unit = next(unit for unit in shown if unit.count > 1 and unit.layers[0].is_group())
+        inner, spare = _star_units(unit.layers[0], types)
+        shown = [one for one in shown if one is not unit] + inner
+        hidden = hidden + spare
+    return shown, hidden
+
+
+def _same_spot(a: _Unit, b: _Unit) -> bool:
+    """Two stars drawn on one spot (a stacked copy): their cores nearly the same box."""
+    tol = 0.15 * max(a.size + b.size)
+    return all(abs(x - y) <= tol for x, y in zip(a.core, b.core))
+
+
+def _covers(a: tuple, b: tuple) -> float:
+    """The share of box b that box a covers."""
+    w = min(a[2], b[2]) - max(a[0], b[0])
+    h = min(a[3], b[3]) - max(a[1], b[1])
+    return w * h / max(1, (b[2] - b[0]) * (b[3] - b[1])) if w > 0 and h > 0 else 0.0
+
+
+def _more_layouts(order: list, size: tuple, count: int, psd: PSDImage) -> list:
+    """
+    More layouts for stars in a shape _star_layouts does not carry on (LAYOUT_SUPPORT.md): its shortest row grows at
+    the end that keeps the shape centred (Lorian's 2 over 3, Springtrap's, the zombies' 2 over 1), each new star clear
+    of the others and on the card; else, or when the stars overlap (a dice face), every star laid out again as rows of
+    two from the shape's top-right star (God Tamer's and Michael's Blessing's dice: their six; Morpho Knight's 2-1-2;
+    told).
+    """
+    out = []
+    if count <= len(order):
+        return out
+    w, h = size
+    rows = _rows(order, h, False)
+    pitches = sorted(row[i + 1].centre[0] - row[i].centre[0] for row in rows for i in range(len(row) - 1))
+    pitch = max(pitches[len(pitches) // 2] if pitches else 0, w * 1.05)
+    state = [[unit.centre for unit in row] for row in rows]
+    cores = [unit.core for unit in order]
+    middle = sum(unit.centre[0] for unit in order) / len(order)
+    slack = _tol(max(size))
+    on_card = lambda box: box[0] >= -slack and box[1] >= -slack and box[2] <= psd.width + slack and box[3] <= psd.height + slack
+    packed = any(sum(_covers(a.core, b.core) > OVERLAP / 3 for b in order if b is not a) >= 3 for a in order)  # a dice's middle
+    new = [] if not packed else None
+    for _ in range(count - len(order) if not packed else 0):
+        target = min(range(len(state)), key=lambda i: (len(state[i]), -i))
+        row = state[target]
+        y = sum(c[1] for c in row) / len(row)
+        xs = [c[0] for c in row]
+        choices = sorted([min(xs) - pitch, max(xs) + pitch], key=lambda x: abs((sum(xs) + x) / (len(xs) + 1) - middle))
+        for x in choices:
+            core = (x - w / 2, y - h / 2, x + w / 2, y + h / 2)
+            if on_card(core) and all(_covers(core, other) <= OVERLAP and _covers(other, core) <= OVERLAP for other in cores):
+                row.append((x, y))
+                cores.append(core)
+                new.append((x, y))
+                break
+        else:
+            new = None
+            break
+    if new:
+        out.append(("its rows carried on", [unit.centre for unit in order] + new))
+    tops = sorted(order, key=lambda unit: (unit.centre[1], -unit.centre[0]))
+    right, top = max(unit.centre[0] for unit in order), tops[0].centre[1]
+    ys = sorted({round(sum(u.centre[1] for u in row) / len(row)) for row in rows})
+    steps = [b - a for a, b in zip(ys, ys[1:]) if b - a >= h * 0.9]
+    out.append((RELAID[0], _pyramid_spots((right, right - pitch, top, min(steps) if steps else h * 1.05, False), count)))
+    return out
+
+
 def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDParser] = None, moving: bool = False) -> IconPlan:
     """
     How to show `value` stars on a card whose stars the parser counts from its PSD (minions, aux items and creatures,
@@ -4310,13 +5011,20 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
     if value < 1:
         refuse("a card shows at least one")
     groups = [group for group in PSDParser._star_groups(psd) if _star_count(group, {}, {}, {})]
-    if len(groups) != 1:
-        refuse(f"{len(groups)} Stars groups draw them" if groups else 'no group named "Stars" draws them')
-    total = _stars_total(psd)
+    types = parser.all_types if parser is not None else ()
+    named = not groups and not PSDParser._star_groups(psd)     # the parser's fallback: layers named "... Star ..."
+    total = _named_total(psd) if named else _stars_total(psd)
     if total != old:
         refuse(f"the parser counts {old}, the Stars group draws {total} (stars in the header text)")
-    plan, container = IconPlan("stars", old, value), groups[0]
-    while True:
+    plan = IconPlan("stars", old, value)
+    if named or len(groups) > 1:                # Nasty Patty's Patrick Stars, Paint Warrior's two Stars groups
+        shown, hidden = _loose_units(psd, groups, named, types)
+        if not shown:
+            refuse('no group named "Stars" draws them')
+        container = shown[len(shown) - 1].layers[0].parent
+    else:
+        container = groups[0] if groups else None
+    while container is not None and not named and len(groups) == 1:
         folders: dict = {}
         for child in container:
             found = fullmatch(STAR_FOLDER, child.name, IGNORECASE) if child.is_group() else None
@@ -4339,16 +5047,23 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
                 refuse(f"no folder for {value} in {container.name!r}")
             container = shown[0]                # the shown folder's stars, one by one (a '3 stars' drawing 4)
             continue
-        shown, hidden = _star_units(container, parser.all_types if parser is not None else ())
+        shown, hidden = _star_units(container, types)
         if len(shown) == 1 and shown[0].count > 1 and not hidden:
             container = shown[0].layers[0]
             continue
         break
+    if container is None:
+        refuse('no group named "Stars" draws them')
     if not shown:
         refuse(f"no star shows in {container.name!r}")
-    many = next((unit for unit in shown if unit.count != 1), None)
-    if many is not None:
+    shown, hidden = _flat_units(shown, hidden, types)       # Cat's group of two beside its group of one
+    if any(unit.count != 1 for unit in shown):
+        many = next(unit for unit in shown if unit.count != 1)
         refuse(f"{many.layers[0].name!r} draws {many.count} in one group")
+    stacked = next((u.layers[0].name for i, u in enumerate(shown) for v in shown[:i] if _same_spot(u, v)), None)
+    if stacked:                                 # Living Bread: two copies of its stars stacked, each counted
+        refuse(f"{stacked!r} sits on another star: the parser counts both, the card shows one")
+    several = len({id(unit.layers[0].parent) for unit in shown + hidden}) > 1
     count = len(shown) + value - total
     if count < 1:
         refuse(f"{container.name!r} draws {len(shown)}: the other {total - len(shown)} are elsewhere")
@@ -4369,24 +5084,33 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         if moves and _stars_blocked(psd, moves, clear) is None:
             plan.moves, plan.how = moves, "rows of two"
     else:                                   # more: the card's own hidden stars, then the layout's spacing
+        total_of = (lambda show_: _named_total(psd, show_)) if named else (lambda show_: _stars_total(psd, show_))
+        spots = [spot for _, layout in _star_layouts(_reading(shown, size[1], True), size, count) + 
+                 _more_layouts(_reading(shown, size[1], True), size, count, psd) for spot in layout]
         for unit in _reading(hidden, size[1], True):
             if len(shown) == count:
                 break
+            if several and not any(abs(unit.centre[0] - x) <= _tol(max(size)) and abs(unit.centre[1] - y) <= _tol(max(size))
+                                   for x, y in spots):
+                continue                        # Shadow Queen's spare art: shown only where the layout puts a star
             trial = {**show, **{id(layer): True for layer in unit.layers}}
-            if _stars_total(psd, trial) == _stars_total(psd, show) + 1 and _stars_blocked(psd, [(unit, 0, 0)], clear) is None:
+            if total_of(trial) == total_of(show) + 1 and _stars_blocked(psd, [(unit, 0, 0)], clear) is None:
                 show, shown = trial, shown + [unit]
                 plan.show += unit.layers
         plan.how = "hidden stars shown" if plan.show else ""
         if len(shown) < count:
             order = _reading(shown, size[1], True)
-            source = max(order, key=lambda unit: max(container.index(layer) for layer in unit.layers))   # the last star layer
+            source = max((unit for unit in order if unit.layers[0].parent is container), default=order[len(order) - 1],
+                         key=lambda unit: max(container.index(layer) for layer in unit.layers))   # the last star layer
             first = None
-            for how, spots in _star_layouts(order, size, count):
+            for how, spots in _star_layouts(order, size, count) + _more_layouts(order, size, count, psd):
                 moves, free = _place(order, spots, size)
                 copies = [(source, round(spot[0] - source.centre[0]), round(spot[1] - source.centre[1]), "") for spot in free]
                 why = _stars_blocked(psd, moves + [(unit, dx, dy) for unit, dx, dy, _ in copies], clear)
                 if why is None:
                     plan.moves, plan.copies, plan.how = moves, copies, how
+                    if how in RELAID:
+                        plan.notes.append(f"stars: {how} (the card's own layout does not go on to {count})")
                     break
                 first = first or why
             else:
@@ -4397,18 +5121,20 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         if unit.layers[0].is_group():
             continue
         show.update({id(layer): False for layer in unit.layers})
-        boxes.setdefault(id(container), []).extend(_moved_box(PSDParser._core_box(layer), dx, dy) for layer in unit.layers)
+        boxes.setdefault(id(unit.layers[0].parent), []).extend(_moved_box(PSDParser._core_box(layer), dx, dy)
+                                                              for layer in unit.layers)
     for unit, dx, dy, _ in plan.copies:
         if unit.layers[0].is_group():
-            counts[id(container)] = counts.get(id(container), 0) + 1
+            counts[id(unit.layers[0].parent)] = counts.get(id(unit.layers[0].parent), 0) + 1
         else:
-            boxes.setdefault(id(container), []).extend(_moved_box(PSDParser._core_box(layer), dx, dy) for layer in unit.layers)
-    drawn = _stars_total(psd, show, boxes, counts)
+            boxes.setdefault(id(unit.layers[0].parent), []).extend(_moved_box(PSDParser._core_box(layer), dx, dy)
+                                                                  for layer in unit.layers)
+    drawn = _named_total(psd, show, boxes) if named else _stars_total(psd, show, boxes, counts)
     if drawn != value:
         refuse(f"the new layout would count {drawn}")
     plan.moves = [(layer, dx, dy) for unit, dx, dy in plan.moves for layer in _with_chains(unit.layers)]
     taken: set = set()
-    plan.copies = [(unit, dx, dy, _copy_name(unit, container, taken)) for unit, dx, dy, _ in plan.copies]
+    plan.copies = [(unit, dx, dy, _copy_name(unit, unit.layers[0].parent, taken)) for unit, dx, dy, _ in plan.copies]
     return plan
 
 
@@ -4774,7 +5500,7 @@ def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None) ->
     region = union_box([_pad(box, _reach(layer), psd) for box, layer in boxes if box[2] > box[0] and box[3] > box[1]])
     layers = plan.hide + plan.show + [layer for layer, _, _ in plan.moves] + [done[2] if done[0] == "copy" else done[1]
                                                                              for done in plan.done]
-    notes = [f"types: the first type icon is placed at {plan.first}'s spot: check it"] if plan.first else []
+    notes = list(plan.notes) + ([f"types: the first type icon is placed at {plan.first}'s spot: check it"] if plan.first else [])
     return Edit(plan.field, plan.old, plan.new, layers, [], region, icons=plan, notes=notes)
 
 
@@ -5433,6 +6159,7 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
     inserted.update({index: ("made", blocks) for edit in edits for index, blocks in edit.made})
     owner = {index: edit.field for edit in edits
              for index in [*edit.toggled, *(record[0] for record in edit.shifted + edit.copied + edit.made)]}
+    bar = {index: spec for edit in edits for index, spec in edit.bar}                # a stat on the card maker's own bar
     removed = {index for edit in edits for index in getattr(edit, "removed", ())}       # a part edit's deleted layers
     renumbered = {index for edit in edits for index in getattr(edit, "renumbered", ())}  # their stories' later layers
     changed, flag_bytes, block_bytes, old_of = [], 0, 0, {}
@@ -5477,7 +6204,15 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
             raise Refused("bytes", f"layer count {len(old)} -> {len(new)}")
         old_of[j] = i
         fields = sorted(key for key in a if a.get(key) != b.get(key))
-        if j in moved:                          # a star or type icon moved: its rect, mask, transform and anchor
+        if j in bar:                            # a bar layer: exactly its declared eye, name, place, mask and style
+            why = _bar_record(a, b, bar.pop(j))
+            if why:
+                raise Refused("bytes", f"bar layer {j} {a['name']!r}: {why}")
+            flag_bytes += sum(1 for x, y in zip(a["flags"], b["flags"]) if x != y)
+            if not fields:
+                raise Refused("bytes", f"bar layer {j} {a['name']!r} did not change")
+            changed.append((j, a["name"], fields))
+        elif j in moved:                        # a star or type icon moved: its rect, mask, transform and anchor
             source, dx, dy = moved[j]
             why = f"paired with old layer {i}" if source != i else _record_moved(a, b, dx, dy, MOVE_BLOCKS, j in toggles)
             if why:
@@ -5508,7 +6243,7 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
             changed.append((j, a["name"], fields))
         i += 1
         j += 1
-    if any(dropped.values()) or added or inserted or removed:
+    if any(dropped.values()) or added or inserted or removed or bar:
         raise Refused("bytes", "an FX layer, star copy, type icon or deleted layer declared removed or added is not")
     hidden = {index for edit in edits for index in edit.hidden}
     toggled = {index for edit in edits if edit.field in STAT_FIELDS for index in edit.records}
@@ -5529,6 +6264,37 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
     if went != left or came != landed:
         raise Refused("bytes", "effect blocks changed beyond the declared moves")
     return changed, flag_bytes, block_bytes + sum(len(data) for data in landed.values())
+
+
+def _bar_record(a: dict, b: dict, spec: dict) -> Optional[str]:
+    """Why record b is not record a changed as a stat edit declared (_bar_spec): eye, name, place, mask place and
+    effect blocks, nothing else; None when it is."""
+    dx, dy = spec["move"]
+    if b["rect"] != _moved_rect(a["rect"], dx, dy):
+        return f"rect {a['rect']} -> {b['rect']}"
+    user_mask = -2                              # ChannelID.USER_LAYER_MASK: a redrawn mask's raster
+    channels = (lambda record: tuple(c for c in record["channels"] if c[0] != user_mask)) if spec.get("remask") \
+        else (lambda record: record["channels"])
+    if channels(a) != channels(b) or a["blend"] != b["blend"]:
+        return "channels or blending"
+    if b["name"] != (a["name"] if spec["name"] is None else spec["name"]):
+        return f"named {b['name']!r}"
+    if spec.get("remask"):                      # its raster and width new, its rows and settings the same
+        box_a, box_b = a.get("mask_box") or (), b.get("mask_box") or ()
+        if a.get("mask_norm") != b.get("mask_norm") or box_a[0:1] + box_a[2:3] != box_b[0:1] + box_b[2:3]:
+            return "mask"
+    elif a.get("mask_norm") != b.get("mask_norm") or _moved_mask(a.get("mask_box"), *spec["mask"]) != b.get("mask_box"):
+        return "mask"
+    if sum(1 for x, y in zip(a["flags"], b["flags"]) if x != y) != (1 if spec["flags"] else 0):
+        return "flags"
+    before, after = dict(a["blocks"]), dict(b["blocks"])
+    if any(after.get(key) != data for key, data in spec["blocks"].items()):
+        return "effect blocks not the declared ones"
+    free = set(spec["blocks"]) | ({bytes(Tag.UNICODE_LAYER_NAME)} if spec["name"] is not None else set()) \
+        | (MOVE_BLOCKS if dx or dy else set())
+    changed = sorted(key.decode("latin-1") for key in set(before) | set(after)
+                     if before.get(key) != after.get(key) and key not in free)
+    return f"blocks {', '.join(changed)}" if changed else None
 
 
 def _text_index_only(a: dict, b: dict) -> Optional[str]:
@@ -5680,7 +6446,10 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
     """
     for stat in jobs:
         if stat in STAT_FIELDS:
-            rows = template_rows(psd, stat)
+            try:
+                rows = template_rows(psd, stat)
+            except Refused:                     # the card maker's own bar: the parse reads it back below
+                continue
             for row, target in zip(rows, _targets(rows, stat, jobs[stat])):
                 if row.visible != ([target] if target is not None else []):
                     raise Refused("reparse", f"{stat}: row {row.group.name!r} shows {row.visible}")
