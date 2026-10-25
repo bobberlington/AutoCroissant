@@ -3,7 +3,7 @@ The website's card image previews in edit mode (TTSCardMaker site/assets/preview
 data/fonts.json from site/build/build_site.py): the rendered preview's request, store, polling states, staleness and
 messages against card-preview.yml's contract (commands/card_preview.py's result.json), and the quick mock-up's layout,
 erase, wrapping and stat cells on drawn pixel arrays; the build reads font names as font_check does (fontTools) and maps
-the PSD fonts to MDW/Fonts files. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without
+the PSD fonts to MDW/Fonts files, with WOFF2 copies (web_woff2). Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without
 it, node, or a site before preview.js.
 """
 import importlib.util
@@ -96,3 +96,47 @@ def bs():
         pytest.skip(f"{BUILD_SITE} makes no data/fonts.json: land TTSCardMaker work/site2-previews")
     return module
 
+
+
+def test_woff2_copies(bs, tmp_path, monkeypatch):
+    """web_woff2: one copy per used font, named by blob and encoder, cached across builds (unused ones pruned), none for the
+    icon font or a font that fails; a real encode keeps every glyph (with brotli); mockup.js loads it, raw as the fallback."""
+    if not hasattr(bs, "web_woff2"):
+        pytest.skip(f"{BUILD_SITE} makes no WOFF2 fonts: land TTSCardMaker work/woff2")
+    from fontTools.fontBuilder import FontBuilder
+    from fontTools.pens.ttGlyphPen import TTGlyphPen
+    from fontTools.ttLib import TTFont
+    pen = TTGlyphPen(None)
+    pen.moveTo((0, 0)); pen.lineTo((0, 500)); pen.lineTo((400, 0)); pen.closePath()
+    fb = FontBuilder(1000, isTTF=True)
+    fb.setupGlyphOrder([".notdef", "A"]); fb.setupCharacterMap({65: "A"})
+    fb.setupGlyf({".notdef": TTGlyphPen(None).glyph(), "A": pen.glyph()}); fb.setupHorizontalMetrics({".notdef": (500, 0), "A": (450, 0)})
+    fb.setupHorizontalHeader(ascent=800, descent=-200); fb.setupNameTable({"familyName": "Tiny", "styleName": "Regular"})
+    fb.setupOS2(); fb.setupPost()
+    (tmp_path / "MDW" / "Fonts").mkdir(parents=True)
+    fb.save(str(tmp_path / "MDW" / "Fonts" / "Tiny.ttf"))
+    for name in ("Bad.ttf", "stoogedings.ttf"):
+        (tmp_path / "MDW" / "Fonts" / name).write_bytes(b"x")
+    tree = {f"MDW/Fonts/{n}": bs.blob_sha((tmp_path / "MDW" / "Fonts" / n).read_bytes()) for n in ("Tiny.ttf", "Bad.ttf", "stoogedings.ttf")}
+    for k, v in {"REPO": tmp_path, "CACHE": tmp_path / "cache", "DIST": tmp_path / "dist"}.items():
+        monkeypatch.setattr(bs, k, str(v))
+    fonts = lambda: {"Tiny-Regular": {"file": "MDW/Fonts/Tiny.ttf", "bytes": 1}, "Bad": {"file": "MDW/Fonts/Bad.ttf", "bytes": 1},
+                     "stoogedings-Regular": {"file": "MDW/Fonts/stoogedings.ttf", "bytes": 1}}
+    real = importlib.util.find_spec("brotli") is not None
+    if not real:                                   # no brotli here: the build's logic with a stand-in encoder
+        monkeypatch.setattr(bs, "woff2_tag", lambda: "abc123")
+        monkeypatch.setattr(bs, "woff2_bytes", lambda data: b"wOF2" + data if data != b"x" else 1 / 0)
+    (tmp_path / "cache" / "woff2").mkdir(parents=True)
+    (tmp_path / "cache" / "woff2" / "old.woff2").write_bytes(b"")
+    first = fonts()
+    assert bs.web_woff2(first, tree) == 1 and bs.web_woff2(fonts(), tree) == 0      # the second build reuses the copy
+    name = f"{tree['MDW/Fonts/Tiny.ttf'][:16]}-{bs.woff2_tag()}.woff2"
+    assert first["Tiny-Regular"]["woff2"] == f"fonts/{name}" and "woff2" not in first["Bad"] and "woff2" not in first["stoogedings-Regular"]
+    assert sorted(p.name for p in (tmp_path / "cache" / "woff2").iterdir()) == [name] and (tmp_path / "dist" / "fonts" / name).is_file()
+    if real:
+        back = TTFont(str(tmp_path / "dist" / "fonts" / name))
+        assert back.flavor == "woff2" and back.getGlyphOrder() == [".notdef", "A"] and back.getBestCmap() == {65: "A"}
+        assert back["glyf"]["A"].coordinates == TTFont(str(tmp_path / "MDW" / "Fonts" / "Tiny.ttf"))["glyf"]["A"].coordinates
+    if shutil.which("node") and has(MOCKUP_JS, "fontSrc"):
+        out = node(tmp_path, 'out([m.fontSrc({file: "MDW/Fonts/A B.ttf", woff2: "fonts/x.woff2"}, "https://raw/", "https://site/c/"), m.fontSrc({file: "MDW/Fonts/A.ttf"}, "https://raw/", "https://site/")]);')
+        assert out == ['url("https://site/c/fonts/x.woff2") format("woff2"), url("https://raw/MDW/Fonts/A%20B.ttf")', 'url("https://raw/MDW/Fonts/A.ttf")']
