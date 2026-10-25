@@ -2,9 +2,9 @@
 The card database's commands, and its one import point.
 
 The code lives in commands.card_models (CardType, CardStats, CardInfo, StatsDatabase, stats_db), commands.card_edits
-(CardAuthors, CardEdits), commands.psd_parser (PSDParser, CardClassifier, CardValidator, IconVocabulary) and
-commands.repo_traverser (RepositoryTraverser, update_stats). Everything is re-exported here: main.py, query_card, the
-diagnostics scripts and the pickles (CardInfo and CardStats pickle as commands.psd_analyzer.*) import from this module.
+(CardAuthors, CardEdits) and commands.psd_parser (PSDParser, CardClassifier, CardValidator, IconVocabulary). Everything is
+re-exported here: main.py, query_card and the diagnostics scripts import from this module, and the historical pickles name
+CardInfo and CardStats as commands.psd_analyzer.*.
 """
 from discord import Interaction, File
 from os.path import basename, splitext
@@ -12,7 +12,6 @@ from re import compile as re_compile
 from typing import Optional
 import pandas as pd
 
-import global_config                                     # CARD_SYNC, read at call time (the cutover switch)
 from global_config import AUTHORS_PATH, AUTHORS_PATHS, EDITS_PATH, EDITS_PATHS, ICON_MANIFEST_PATH, RULEBOOK_DIR
 from commands.card_edits import CardAuthors, CardEdits
 from commands.card_models import CardInfo, CardStats, CardType, StatsDatabase, card_name, get_stats_as_dict, stats_db
@@ -39,15 +38,6 @@ from commands.psd_parser import (
     StatTracker,
     StatTrackers,
     title_text,
-)
-from commands.repo_traverser import (
-    COMMITS_PAGE,
-    DOWNLOAD_WORKERS,
-    EXCLUDE_FOLDERS,
-    LOOKUP_WORKERS,
-    UPDATE_RATE,
-    RepositoryTraverser,
-    update_stats,
 )
 from commands.query_card import archived_text, card_repo, history_match
 from commands.utils import queue_message, queue_file, queue_long_message
@@ -81,12 +71,6 @@ def get_card_aliases(name: Optional[str] = None) -> dict[str, list[str]] | list[
         If card_name is None: dict mapping card names to lists of aliases
     """
     card_to_aliases = {}
-
-    # aliases.pkl's, until they moved into Card Edits.json: the card each one finds
-    for alias in ([] if card_repo.aliases_moved() else list(card_repo.git_file_alias.keys())):
-        path = card_repo.get_card_path(alias)
-        if path:
-            card_to_aliases.setdefault(basename(path).replace('_', ' '), []).append(alias)
 
     # Card Edits.json's, on the card whose PNG the entry names (as query_card._add_lookup registers them)
     edits = card_repo._edits
@@ -324,12 +308,9 @@ def export_rulebook_to_file(interaction: Interaction) -> None:
 # Initialization
 # ========================
 def init_psd() -> None:
-    """Initialize the stats database: the root pickles, or after the cutover the synced card data (card_sync)."""
-    if global_config.CARD_SYNC:
-        from commands.card_sync import startup
-        startup()
-    else:
-        stats_db.load()
+    """Initialize the stats database from the synced card data (card_sync)."""
+    from commands.card_sync import startup
+    startup()
     card_repo.prep_dataframes()
     print("Stats database initialized.")
 
@@ -340,7 +321,6 @@ def init_psd() -> None:
 __all__ = [
     'stats_db',
     'get_stats_as_dict',
-    'update_stats',
     'list_orphans',
     'view_old_metadata',
     'export_stats_to_file',

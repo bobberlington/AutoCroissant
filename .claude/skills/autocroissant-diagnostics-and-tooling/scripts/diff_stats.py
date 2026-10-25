@@ -11,15 +11,16 @@ file beside it is the history), a folder of pickles, a db/ folder (or a folder h
 --git's repo (default: here), such as origin/data in a TTSCardMaker clone. No config.py is needed.
 
 Usage (run from the repo root):
-    # compare the last committed pickles against the working ones:
-    mkdir -p ~/Documents/Tools/wt/scratch/head && git show HEAD:stats.pkl > ~/Documents/Tools/wt/scratch/head/stats.pkl \
-        && git show HEAD:old_stats.pkl > ~/Documents/Tools/wt/scratch/head/old_stats.pkl
-    python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py ~/Documents/Tools/wt/scratch/head/stats.pkl stats.pkl
-
-    # the data branch's tip against the jetson's last PICKLE (the shadow's daily check):
-    git -C ~/Desktop/TTSCardMaker fetch -q --depth 1 origin +data:refs/remotes/origin/data
-    python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py stats.pkl origin/data \
+    # the data branch's last commit against the one before (what a Card sync run changed):
+    git -C ~/Desktop/TTSCardMaker fetch -q --depth 2 origin +data:refs/remotes/origin/data
+    python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py origin/data~1 origin/data \
         --git ~/Desktop/TTSCardMaker
+
+    # the last PICKLE (AutoCroissant's pickles, deleted 2026-10-25; in git history) against the data now:
+    mkdir -p ~/Documents/Tools/wt/scratch/pk && for f in stats old_stats; do \
+        git show "$(git rev-list -1 HEAD -- stats.pkl)^:$f.pkl" > ~/Documents/Tools/wt/scratch/pk/$f.pkl; done
+    python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py ~/Documents/Tools/wt/scratch/pk \
+        origin/data --git ~/Desktop/TTSCardMaker
 
     # any two (a db/ folder from a hand build, an Actions artifact...), history files named explicitly:
     python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py <old> <new> [--verbose] \

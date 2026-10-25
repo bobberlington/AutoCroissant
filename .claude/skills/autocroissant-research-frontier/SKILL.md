@@ -268,7 +268,10 @@ two diff numbers as evidence.
 
 ---
 
-## Item 4 — Cross-machine state without git-pickle friction (CANDIDATE — "do nothing" currently wins)
+## Item 4 — Cross-machine state without git-pickle friction (DONE another way, 2026-10-24/25: the card data build)
+
+Settled by docs/Campaigns/DATA_BUILD_ACTION.md: the card data is JSON on TTSCardMaker's `data` branch, built by the
+Card sync Action; the pickles and `/push` were removed on 2026-10-25. The analysis below is the 2026-07-11 view.
 
 Small item; the hobby constraint bites hardest here.
 
@@ -380,3 +383,5 @@ changing old questions invalidates every historical score.
 2026-10-21 (S6/S7 gate): main.py, repo_traverser.py and help.py line numbers re-pointed after the /bake_cards block, the bake_lock in update_stats and the /bake_cards help entry; nothing else in this skill changed.
 
 2026-10-23 (unbatch): the rulebook and ability search citations, the export functions and their commands re-pointed.
+
+2026-10-25 (step 10): Item 4 marked done (the card data build replaced the pickles-in-git state).

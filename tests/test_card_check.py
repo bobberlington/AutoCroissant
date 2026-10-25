@@ -140,10 +140,10 @@ def test_clone_has_the_live_vocabulary(clone):
 
 def test_clone_readers_match_the_traversers(clone, monkeypatch):
     """The bot's own readers (/update_stats) over the clone as a tree: the same types, icons and edits as clone_vocabulary/clone_edits."""
-    import commands.repo_traverser as rt
+    import commands.card_data as cd
     tracked = run_process(["git", "-C", str(clone), "ls-files", "-z"], capture_output=True, check=True).stdout
     paths = sorted(p for p in tracked.decode().split("\0") if p and (clone / p).is_file())   # no ignored .DS_Store
-    traverser = rt.RepositoryTraverser(cc.StatsDatabase())
+    traverser = cd.CardBuild(cc.StatsDatabase())
     traverser.tree = {"tree": [{"path": p, "type": "blob", "sha": p} for p in paths]}
     traverser.shas = {p: p for p in paths}
     monkeypatch.setattr(traverser, "_repo_text", lambda path: (clone / path).read_text(encoding="utf-8"))
@@ -477,7 +477,7 @@ def test_action_shaped_copy_imports_and_prints_help(tmp_path):
     assert set(re.findall(r"--[a-z-]+", done.stdout)) == {"--psd", "--all", "--repo", "--before", "--after", "--author", "--whole-tree",
                                                           "--json", "--discord", "--help"}
     code = ("import sys, commands.card_check; "
-            "print(sorted(m for m in ('config', 'discord', 'commands.psd_analyzer', 'commands.repo_traverser', 'commands.query_card', "
+            "print(sorted(m for m in ('config', 'discord', 'commands.psd_analyzer', 'commands.query_card', "
             "'commands.utils', 'commands.psd_edit', 'commands.psd_regions', 'pandas') if m in sys.modules)); "
             "print(sorted(m for m in sys.modules if m.startswith('commands.') or m == 'global_config'))")
     done = run_process([executable, "-c", code], cwd=bot, capture_output=True, text=True, timeout=120)

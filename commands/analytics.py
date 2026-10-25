@@ -50,7 +50,7 @@ RETIRED_OPTIONS = {
 RETIRED_COMMANDS = {
     "update_metadata": "edit cards on the website", "mass_replace": "use the website's Rename everywhere",
     "alias": "edit aliases on the website", "bake_cards": "Card sync bakes the website's edits",
-    "update_tts_save": "Card sync updates the TTS save",
+    "update_tts_save": "Card sync updates the TTS save", "push": "Card sync builds the card data",
 }
 
 

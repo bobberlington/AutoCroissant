@@ -1,6 +1,5 @@
 from discord import Interaction
 
-import global_config                                    # CARD_SYNC, read at call time (the cutover switch)
 from commands.utils import queue_long_message
 
 
@@ -8,10 +7,9 @@ general_commands = {
     "/help <text/card/music/stats/general>:"    : "Prints the help message pertaining to the specified command category.",
     "/restart_bot:"                             : "Restarts the bot.",
     "/stop_bot:"                                : "Stops the bot (admin only).",
-    "/pull:"                                    : "Fetches and merges the latest code, keeping the local pickles and psd_details.json on a conflict, and reports status (admin only).",
-    "/push:"                                    : "Commits the card pickles and psd_details.json (the website's PSD details), rebases onto new code, pushes and reports status (admin only).",
-    "/update [force_reset]:"                    : "Pushes the pickles and psd_details.json, pulls, then restarts (admin only).\n"
-                                                  "- force_reset: Skip the push and pull; hard reset to origin/main instead, discarding local pickles (dangerous! default: False)",
+    "/pull:"                                    : "Fetches and merges the latest code and reports status (admin only).",
+    "/update [force_reset]:"                    : "Pulls the latest code, then restarts (admin only).\n"
+                                                  "- force_reset: Skip the pull; hard reset to origin/main instead, discarding local changes (dangerous! default: False)",
     "/purge [user] [num] [bulk]:"               : "Deletes one user's messages among the most recent ones in this channel (admin only).\n"
                                                   "- user: Whose messages (default: the bot's own)\n"
                                                   "- num: How many recent messages to search (default 100, -1 = all)\n"
@@ -48,7 +46,7 @@ card_commands = {
                                                   "- as_of: A date, YYYY-MM-DD in Pacific time: the card as it was at the end of that day, from its stored "
                                                   "versions (archived cards too). The reply says which version and its date; the current card posts its "
                                                   "image of that day, an older version its data and an Image button (default: the current card)",
-    "/website:"                                 : "Link to the card browser website (cards, rulebook, deck builder, stats, editing).",
+    "/website:"                                 : "Link to the card browser website (cards, rulebook, deck builder, stats, editing; the next card sync applies edits).",
     "/query_ability <query> [limit] [howmany]:" : "Searches for all cards with the requested text/conditions and posts their images, "
                                                    "one message per card. Text searches card names, printed titles and aliases as well as "
                                                    "ability text, as the website does.\n"
@@ -85,12 +83,17 @@ card_commands = {
 }
 
 stats_commands = {
-    "/update_stats [output_problematic_cards] [force_update] [cards]:" : "Updates the card database from GitHub: re-parses only PSDs that changed, and uploads new or edited type emojis (deleting removed ones). A card whose PSD was deleted is archived with its history, and restored if the PSD comes back.\n"
-                                                               "- output_problematic_cards: Show cards with errors (default: True).\n"
-                                                               "- force_update: Re-parse every card, even unchanged ones (downloads every PSD; default: False).\n"
-                                                               "- cards: Card names to re-parse anyway, comma separated (e.g. after a parser fix).",
+    "/update_stats [output_problematic_cards] [force_update] [cards]:" : "Loads the card data the Card sync Action built in the card repo (it re-parses "
+                                                               "changed PSDs, bakes website edits, archives deleted cards and restores returned ones). Says when it was built and what changed. "
+                                                               "Card sync starts itself on a card push: the data within minutes, website edits baked into the PSDs 30 minutes after the first push of a burst. "
+                                                               "Then refreshes the card list and type emojis. "
+                                                               "Card commands load new data by themselves (the bot looks at most every 2 minutes when one is used; the reply after it has the new data), "
+                                                               "so this is for seeing it at once or for the options below.\n"
+                                                               "- output_problematic_cards: Show the new build's cards with errors (default: True).\n"
+                                                               "- force_update: Admin only. Start a Card sync run re-parsing every card (it continues over the next runs), wait for it, then load it (default: False).\n"
+                                                               "- cards: Admin only. Start a Card sync run re-parsing these cards, comma separated (e.g. after a parser fix), wait for it, then load it.",
     "/fonts:"                                   : "Lists the fonts card PSDs ask for that MDW/Fonts in the card repo does not supply, with the cards and layers, "
-                                                  "and the fonts folder's count. Reads every card PSD once (cached by blob; a first run warms the cache over several calls).",
+                                                  "from the card data (the Card sync Action reads every PSD's fonts).",
     "/export_cards [only_ability] [as_csv]:"    : "Exports all card data/metadata to a file (excludes rulebook), its creation date (created) included.\n"
                                                    "- only_ability: Text export only: just names, aliases and ability text (default: False)\n"
                                                    "- as_csv: Export as CSV instead of text; cards with no ability field are left out (default: True)",
@@ -124,35 +127,6 @@ music_commands = {
     "/delete_all_music:"                        : "Deletes all music files under the music directory (admin only).",
 }
 
-# After the cutover (global_config.CARD_SYNC): the entries that change, by key; the rest stay as above
-card_sync_commands = {
-    "/pull:"                                    : "Fetches and merges the latest code and reports status (admin only).",
-    "/push:"                                    : "Retired: the card data is built by the Card sync Action in the card repo within minutes of a card push, "
-                                                  "and the pickles here are frozen. Replies with the Action's link (admin only).",
-    "/update [force_reset]:"                    : "Pulls the latest code, then restarts (admin only).\n"
-                                                  "- force_reset: Skip the pull; hard reset to origin/main instead, discarding local changes (dangerous! default: False)",
-    "/update_stats [output_problematic_cards] [force_update] [cards]:" : "Loads the card data the Card sync Action built in the card repo (it re-parses "
-                                                               "changed PSDs, bakes website edits, archives deleted cards and restores returned ones). Says when it was built and what changed. "
-                                                               "Card sync starts itself on a card push: the data within minutes, website edits baked into the PSDs 30 minutes after the first push of a burst. "
-                                                               "Then refreshes the card list and type emojis. "
-                                                               "Card commands load new data by themselves (the bot looks at most every 2 minutes when one is used; the reply after it has the new data), "
-                                                               "so this is for seeing it at once or for the options below.\n"
-                                                               "- output_problematic_cards: Show the new build's cards with errors (default: True).\n"
-                                                               "- force_update: Admin only. Start a Card sync run re-parsing every card (it continues over the next runs), wait for it, then load it (default: False).\n"
-                                                               "- cards: Admin only. Start a Card sync run re-parsing these cards, comma separated (e.g. after a parser fix), wait for it, then load it.",
-    "/fonts:"                                   : "Lists the fonts card PSDs ask for that MDW/Fonts in the card repo does not supply, with the cards and layers, "
-                                                  "from the card data (the Card sync Action reads every PSD's fonts).",
-    "/website:"                                 : "Link to the card browser website (cards, rulebook, deck builder, stats, editing; the next card sync applies edits).",
-}
-
-
-def _with_card_sync(commands: dict) -> dict:
-    """commands with the cutover's entries when global_config.CARD_SYNC is on."""
-    if not global_config.CARD_SYNC:
-        return commands
-    return {key: card_sync_commands.get(key, text) for key, text in commands.items()}
-
-
 def print_help(interaction: Interaction, help_wanted: str):
     """Print help information for the specified command category."""
     if help_wanted == "text":
@@ -165,7 +139,6 @@ def print_help(interaction: Interaction, help_wanted: str):
         wanted_commands = stats_commands
     else:
         wanted_commands = general_commands
-    wanted_commands = _with_card_sync(wanted_commands)
 
     help_msg = "```Available commands:\n\n"
     for cmd, desc in wanted_commands.items():

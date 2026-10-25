@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Inspect the card database read-only: the repo root's pickles (stats.pkl / old_stats.pkl), or with --db the data
-build's db/ JSON (or any form commands.card_db.read_cards reads).
+"""Inspect the card database read-only: the bot's card_data/ copy of the data build's db/ JSON, or with --db any form
+commands.card_db.read_cards reads (a db/ folder, a data commit, or a historical folder of pickles).
 
 Usage (run from anywhere; repo root derived from this file's location):
     python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py            # summary
@@ -11,7 +11,7 @@ Usage (run from anywhere; repo root derived from this file's location):
     python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py --db origin/data \
         --git ~/Desktop/TTSCardMaker "Card Name"
 
-No config.py needed (the pickles load through card_db's allow-list unpickler). Never writes anything.
+No config.py needed (historical pickles load through card_db's allow-list unpickler). Never writes anything.
 """
 import sys
 from collections import Counter, defaultdict
@@ -96,8 +96,8 @@ def problems() -> int:
 
 
 def load(args: list) -> list:
-    """Fill stats_db from --db (default: the repo root's pickles) and --git; returns the other arguments."""
-    source, git = str(REPO_ROOT), "."
+    """Fill stats_db from --db (default: the bot's card_data/) and --git; returns the other arguments."""
+    source, git = str(REPO_ROOT / "card_data"), "."
     for flag in ("--db", "--git"):
         if flag in args:
             i = args.index(flag)

@@ -5,21 +5,21 @@ path) and exact renames. On that index: the version rules (a version only when a
 and a cause from git; versions without a blob marked legacy), the seed pass over old_stats, and the archive tags'
 dates. Design: docs/Campaigns/DATA_BUILD_ACTION.md section 7.4.
 
-CLI (copies only): python -m commands.card_history refine --git <full clone> --pickles <dir> --out <dir> [--bot-git <dir>]
+CLI (read only): python -m commands.card_history refine --git <full clone> --pickles <dir> [--bot-git <dir>]
 """
 from argparse import ArgumentParser
 from bisect import bisect_right
 from copy import deepcopy
 from dataclasses import dataclass, field
 from io import BytesIO
-from os import environ, makedirs
-from os.path import abspath, dirname, isdir, join, samefile, splitext
+from os import environ
+from os.path import abspath, dirname, isdir, join, splitext
 from re import findall, sub
 from subprocess import PIPE, Popen, run
 from typing import Optional
 
 from global_config import MAILMAP_PATH
-from commands.card_db import SeedUnpickler, card, dump_pickle, read_pickles, record
+from commands.card_db import SeedUnpickler, card, read_pickles, record
 from commands.card_edits import as_parsed
 from commands.card_models import CardInfo, CardStats, CardType, card_name
 
@@ -535,31 +535,6 @@ def normalize(stats: dict, old_stats: dict) -> list:
     return changed
 
 
-def dedupe(stats: dict, old_stats: dict) -> list:
-    """
-    collapse() over every name, in place: the one-time cleanup of the duplicates /update_stats archived before
-    2026-10-22 (it runs at each /update_stats; with none left it changes nothing).
-
-    Args:
-        stats: {name: CardInfo}
-        old_stats: {name: [CardInfo]}, oldest first
-
-    Returns:
-        (name, timestamp) of each version dropped
-    """
-    gone = []
-    for name in list(old_stats):
-        kept, dropped = collapse(old_stats[name], stats.get(name))
-        if not dropped:
-            continue
-        gone += [(name, version.timestamp) for version in dropped]
-        if kept:
-            old_stats[name] = kept
-        else:
-            del old_stats[name]
-    return gone
-
-
 def meta(start: Optional[Commit], start_at: float, cause: str, legacy: bool = False) -> dict:
     """A version's `version` record, open-ended until close() sets its end."""
     return {"from": start.at if start else start_at, "from_commit": start.sha if start else None, "to": None,
@@ -749,27 +724,6 @@ def _misread(name: str, versions: list, holder: Optional[CardInfo], index: GitIn
         merged.append((name, start(a)[0], list(getattr(a, "types", None) or []), list(getattr(b, "types", None) or [])))
         carry(a, b)
         del versions[next(i for i, v in enumerate(versions) if v is a)]
-
-
-def commits_of(stats: dict, old_stats: dict, index: GitIndex) -> list:
-    """
-    Starts without their commit (carried from a version /update_stats stored without one) given the one commit at the
-    version's path with that time (blob_at), in place, as the seed pass does (_dated). Part of the one-time cleanup.
-
-    Returns:
-        The names of the versions and cards given one
-    """
-    found = []
-    every = [(name, v) for name, versions in old_stats.items() for v in versions] + list(stats.items())
-    for name, card in every:
-        info = getattr(card, "version", None)
-        if getattr(card, "duplicate_of", None) or not info or info.get("from") is None or info.get("from_commit"):
-            continue
-        hit = index.blob_at(card.path, info["from"])
-        if hit is not None:
-            info["from_commit"] = hit[0].sha
-            found.append(name)
-    return found
 
 
 # ========================
@@ -1619,35 +1573,6 @@ def record_versions(before: dict, archived_before: dict, db, reparsed: dict, res
     return made
 
 
-def record_edits(db, before: dict, at: float, commit: Optional[str] = None) -> list:
-    """
-    Legacy (/update_stats): an applied database edit that changed a card's data
-    (its card before knew something it doesn't: knows) keeps the card before as a version; the card's version starts
-    at the edit (its commit's time, never before the version it ends; cause edit). Duplicates get none.
-
-    Args:
-        db: The StatsDatabase after the edits (changed in place)
-        before: {name: its card before the edits (a copy)}
-        at: When the edit was made (the edits file's commit time, else now)
-        commit: That commit's sha, if known
-
-    Returns:
-        The names given a version
-    """
-    made = []
-    for name, old in before.items():
-        card = db.stats.get(name)
-        if card is None or getattr(card, "duplicate_of", None) or knows(card, old):
-            continue
-        prior = start(old)[0]
-        when = at if prior is None or at >= prior else prior
-        db.add_history(name, old)
-        card.version = meta(None, when, "edit")
-        card.version["from_commit"] = commit
-        made.append(name)
-    return made
-
-
 def close_archived(old_stats: dict, names: list, index: GitIndex) -> None:
     """The last version of each card archived this build ends at its deleting commit (the tag's at and commit), its
     PNG pinned to that moment."""
@@ -1668,11 +1593,10 @@ def close_archived(old_stats: dict, names: list, index: GitIndex) -> None:
 def main(argv: Optional[list] = None) -> int:
     parser = ArgumentParser(prog="python -m commands.card_history", description="Card history from the card repo's git log.")
     sub = parser.add_subparsers(dest="command", required=True)
-    cmd = sub.add_parser("refine", help="the seed pass on copies of the pickles: prints what changes, writes the copies to --out")
+    cmd = sub.add_parser("refine", help="the seed pass on historical pickles, in memory: prints what it changes")
     cmd.add_argument("--git", required=True, help="a full clone of the card repo (blobless is enough)")
     cmd.add_argument("--head", default="HEAD", help="the commit whose history counts (default HEAD)")
     cmd.add_argument("--pickles", required=True, help="a folder holding stats.pkl and old_stats.pkl (read only)")
-    cmd.add_argument("--out", help="a folder for the refined stats.pkl and old_stats.pkl (never --pickles)")
     cmd.add_argument("--bot-git", default=environ.get("AUTOCROISSANT_BOT_CLONE") or BOT_CHECKOUT,
                      help="a full clone of AutoCroissant, whose PICKLE commits recover lost history (default: this checkout)")
     args = parser.parse_args(argv)
@@ -1681,14 +1605,6 @@ def main(argv: Optional[list] = None) -> int:
     report = refine(stats, old, GitIndex.from_git(args.git, args.head), bot_pickles(args.bot_git))
     print(f"{len(stats)} cards, {before} versions before, {sum(len(v) for v in old.values())} after.")
     print("\n".join(report.lines()))
-    if args.out:
-        makedirs(args.out, exist_ok=True)
-        if samefile(abspath(args.out), abspath(args.pickles)):
-            print("--out must not be the --pickles folder.")
-            return 1
-        dump_pickle(old, join(args.out, "old_stats.pkl"))
-        dump_pickle(stats, join(args.out, "stats.pkl"))
-        print(f"Refined copies written to {args.out}.")
     return 0
 
 
@@ -1718,12 +1634,10 @@ __all__ = [
     'close',
     'close_archived',
     'collapse',
-    'commits_of',
     'data_of',
     'date_archive',
     'date_cards',
     'date_versions',
-    'dedupe',
     'high_values',
     'kept_values',
     'knows',
@@ -1734,7 +1648,6 @@ __all__ = [
     'normalize',
     'out_of_range',
     'psd_changed',
-    'record_edits',
     'record_versions',
     'recover',
     'recovered_before',

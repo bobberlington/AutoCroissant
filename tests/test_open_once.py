@@ -1,5 +1,5 @@
-"""One PSDImage.open per card PSD: the parse and psd_details share it in /update_stats, the data build and the card
-check (two opens were most of a re-parse's CPU), and the shared open reads as two separate opens do."""
+"""One PSDImage.open per card PSD: the parse and psd_details share it in the data build and the card check (two opens
+were most of a re-parse's CPU), and the shared open reads as two separate opens do."""
 import json
 import pickle
 from collections import Counter
@@ -18,8 +18,7 @@ from commands.card_models import card_name
 from commands.psd_parser import CardValidator
 from golden_cards import parser as golden_parser
 from test_card_data import _build, cards  # noqa: F401
-from test_range_reads import needs_ranges, ranged  # noqa: F401
-from test_update_stats import DOOMER, FREEZER, _run, github, psds  # noqa: F401
+from test_range_reads import DOOMER, FREEZER
 
 SAME = (DOOMER,                                                             # the identity cards: golden oddities
         "Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd",           # font tokens
@@ -66,21 +65,6 @@ def gathered(monkeypatch):
     return paths
 
 
-@pytest.mark.usefixtures("pickle_path")
-def test_update_stats_opens_each_psd_once(github, psds, opens, gathered):
-    problems, _ = _run(force_update=True)
-    assert problems == [] and sorted(gathered) == sorted([DOOMER, FREEZER])
-    assert opens == Counter({_key(psds[DOOMER]): 1, _key(psds[FREEZER]): 1})
-
-
-@pytest.mark.usefixtures("pickle_path")
-@needs_ranges
-def test_range_reads_open_each_psd_once(ranged, github, opens, gathered):
-    problems, _ = _run()
-    assert problems == [] and sorted(gathered) == sorted([DOOMER, FREEZER])
-    assert sorted(opens.values()) == [1, 1] and all(key.startswith("stream") for key in opens)    # a RangeReader each
-
-
 def test_the_build_opens_each_psd_once(cards, opens, gathered):
     assert _build(cards, "--seed", str(cards.seed))[0] == cd.EXIT_OK
     assert sorted(gathered) == sorted([DOOMER, FREEZER])
@@ -102,7 +86,7 @@ def test_one_open_reads_as_two(clone, monkeypatch):
     """The build's shared open gives the card (pickle, db/ line, notes) and details record that two opens of the file give."""
     monkeypatch.setattr(pd, "datetime", _Frozen)
     psd_parser = golden_parser()
-    build = cd.CardBuild(psd_parser.db, report=lambda text: None, progress=lambda count: None, legacy=False)
+    build = cd.CardBuild(psd_parser.db, report=lambda text: None, progress=lambda count: None)
     build.parser = psd_parser
     for rel in SAME:
         path, name = str(clone / rel), card_name(rel)

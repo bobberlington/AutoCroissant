@@ -37,19 +37,12 @@ config.py
 .ssh/
 
 reminder.pkl
-# pickles are saved by writing a temp file and renaming it; one can be left behind after a crash
-*.pkl.tmp
-# the PSD details file (commands/psd_details.py, committed) is written the same way
-psd_details.json.tmp
 # image link commits, rebuilt from the card repo's history (commands/repo_history.py)
 repo_history.json
 repo_history.json.tmp
 # per bot: type emoji name -> icon blob it was made from (commands/type_emojis.py)
 type_emojis.json
 type_emojis.json.tmp
-# the /fonts cache: blob sha -> the fonts a card PSD asks for or a font file supplies (commands/font_check.py)
-font_names.json
-font_names.json.tmp
 # the fonts cache: MDW/Fonts' font files where there is no card repo checkout (commands/font_check.py refresh_cache)
 fonts_cache/
 # the bot's copy of the card data (the data branch's db/) after the cutover (commands/card_sync.py)

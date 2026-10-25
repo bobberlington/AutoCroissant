@@ -1,26 +1,22 @@
 """
 Font check for the card PSDs: the PostScript names a card's visible type layers ask for, and which of them MDW/Fonts in
 the card repo does not supply. TTSCardMaker's font-check.yml Action runs it on every push to main (job summary, commit
-comment, a Discord message in the standards channel pinging the card makers' role); the bot's /fonts runs it over the whole repo.
+comment, a Discord message in the standards channel pinging the card makers' role); the bot's /fonts reads the card data's
+psd_details.json instead (card_sync.fonts_text, details_report here).
 
     python -m commands.font_check --fonts <dir> [--psd <path>...] [--all <checkout root>]
                                   [--repo <owner/name> --after <sha> [--before <sha>] [--author <login>] [--whole-tree]]
                                   [--json <out>] [--discord <payload out>]
     FontIndex(dir) -> the faces of a fonts folder; psd_fonts(psd) -> {font: [layers]}; check_psd(psd, index) -> the missing ones
     markdown(report), discord_payload(report) -> the job summary / commit comment and the webhook body
-    check_repo_fonts(interaction) -> the bot's /fonts (cache font_names.json: blob sha -> the names a blob asks for or supplies,
-                                     or why it can't be read)
     find_fonts(repository) -> the fonts dir: PSD_TOOLS_FONT_DIRS, else the checkout's MDW/Fonts, else refresh_cache()
 
-The fonts cache (FONTS_CACHE beside the pickles, gitignored) holds the font files at the top of MDW/Fonts, for the hosts
-without a checkout (the jetson): card_bake's bake and psd_details' "supplied" flags read it; /fonts judges the branch's
-MDW/Fonts by blob sha, so it reads a local copy only when its sha matches and refreshes the cache only for blobs
-font_names.json lacks. A refresh lists the subtree (git/trees/<branch>:MDW/Fonts, conditional on its ETag: a 304 when
+The fonts cache (FONTS_CACHE, gitignored) holds the font files at the top of MDW/Fonts, for the hosts without a checkout
+(the jetson): card_bake's bake and psd_details' "supplied" flags read it. A refresh lists the subtree (git/trees/<branch>:MDW/Fonts, conditional on its ETag: a 304 when
 nothing changed), or takes the caller's tree, and downloads only the blobs whose sha it doesn't hold (sha1-verified); a
 renamed file is copied, a gone one deleted. A failed listing keeps the cache; it counts as complete only if the refresh
 that wrote it finished, for the same repo (the manifest is marked incomplete before the first file is rewritten, so a
-crash mid-refresh never leaves a complete one). On the bot, bake_lock keeps /fonts from refreshing it under
-/update_stats (see repo_fonts).
+crash mid-refresh never leaves a complete one).
 
 A notification tool, never a gate: findings exit 0, nothing is reverted or rejected. --repo mode reads the PSDs the push
 changed (before..after through the compare API; --whole-tree: every card PSD of the tree at after) by blob sha, each
@@ -37,29 +33,25 @@ from os import cpu_count, environ, fsync, getpid, kill, listdir, makedirs, paths
 from os.path import abspath, basename, dirname, exists, expanduser, isdir, isfile, join, relpath, samefile, splitext
 from re import sub
 from threading import Lock
-from traceback import format_exc
 from typing import Optional
 
 from fontTools.ttLib import TTCollection, TTFont
 from psd_tools import PSDImage
 
 import commands.github_api as github_api
-import global_config                            # CARD_SYNC, read at call time (the cutover switch)
 from commands.github_api import api_url, blob_sha, fetch_tree, fetch_verified, get_with_retry, token_from_env
-from global_config import CARD_BRANCH, CARD_REPO, DETAILS_JSON, FONT_DIRS_ENV, FONTS_CACHE, LOCAL_DIR_LOC
+from global_config import CARD_BRANCH, CARD_REPO, FONT_DIRS_ENV, FONTS_CACHE, LOCAL_DIR_LOC
 
 # ========================
 # Configuration
 # ========================
 FONTS_DIR = "MDW/Fonts"                     # the card repo's fonts folder; top level only (stoogedings-src/ is the icon font's source)
 FONT_EXTENSIONS = (".ttf", ".otf", ".ttc", ".otc")
-EXCLUDE_FOLDERS = ("MDW", "Markers")        # repo_traverser.EXCLUDE_FOLDERS: PSDs there are not cards
+EXCLUDE_FOLDERS = ("MDW", "Markers")        # card_data.EXCLUDE_FOLDERS: PSDs there are not cards
 ROLE_ID = "546427268751294475"              # the card makers' role the Discord message pings
 BITE = "{name} has pushed a card without adding the {font} font to MDW/Fonts, bite this user."   # the user's wording
 DISCORD_LIMIT = 2000                        # characters per Discord message
 NOBODY = "Someone"                          # the author when no login is known
-CACHE_JSON = "font_names.json"              # the bot's cache: blob sha -> what the blob asks for (PSD) or supplies (font); gitignored
-BATCH = 200                                 # PSDs the bot downloads per /fonts (a 15 MB blob took 1.4 s on 2026-10-21: ~6 min a batch)
 ERRORS_SHOWN = 10                           # error lines in the /fonts reply; the console gets them all
 INVISIBLE = "\ufeff\u200b\u200c\u200d\u2060"            # characters Photoshop keeps in a run but never draws
 API_TIMEOUT = 60
@@ -68,8 +60,7 @@ COMMITS_PAGE = 250                          # the compare API lists at most this
 POOL_MIN = 8                                # --all parses this many PSDs or more in a process pool (half the cores)
 POOL_CHUNK = 4                              # PSDs per pool task
 MANIFEST = ".manifest.json"                 # in FONTS_CACHE: {"repo", "tree", "etag", "complete", "files": {name: blob sha}}
-_lock = Lock()                              # one /fonts at a time
-_cache_lock = Lock()                        # one cache refresh at a time (the bot: bake_lock keeps readers safe)
+_cache_lock = Lock()                        # one cache refresh at a time
 
 
 # ========================
@@ -230,8 +221,6 @@ class Report:
     fonts_files: int = 0
     fonts_faces: int = 0
     errors: list = field(default_factory=list)  # "path: why" (a bad blob, an unreadable PSD or font)
-    remaining: int = 0                          # PSDs not read yet (the bot's batches)
-    fonts_unread: int = 0                       # MDW/Fonts files that failed to download: cards is left empty
 
     def by_font(self) -> dict:
         """{font: {path: [layers]}}, fonts sorted."""
@@ -243,14 +232,14 @@ class Report:
 
     def as_dict(self) -> dict:
         """The --json report."""
-        return {"checked": self.checked, "remaining": self.remaining, "fonts": {"files": self.fonts_files, "faces": self.fonts_faces},
+        return {"checked": self.checked, "fonts": {"files": self.fonts_files, "faces": self.fonts_faces},
                 "fonts_added": self.fonts_added, "missing": self.by_font(),
                 "cards": [{"path": c.path, "author": c.author, "missing": c.missing} for c in self.cards], "errors": self.errors}
 
 
 def _card_name(path: str) -> str:
     """The card's name from its PSD path (stem, underscores as spaces): card_models.card_name, copied so the font-check
-    Action's closure stays free of pickle and StatsDatabase."""
+    Action's closure stays free of StatsDatabase."""
     return splitext(basename(path))[0].replace("_", " ")
 
 
@@ -258,8 +247,6 @@ def markdown(report: Report) -> str:
     """The job summary and commit comment: per PSD its missing fonts and layers, the fonts the push added, errors."""
     out = ["## Font check", "",
            f"{report.checked} card PSD{'s' if report.checked != 1 else ''} read; MDW/Fonts: {report.fonts_files} files, {report.fonts_faces} faces."]
-    if report.remaining:
-        out.append(f"{report.remaining} not read yet.")
     if report.fonts_added:
         out += ["", "**Fonts added to MDW/Fonts:** " + ", ".join(f"`{f}`" for f in report.fonts_added)]
     out.append("")
@@ -298,16 +285,10 @@ def discord_payload(report: Report) -> dict:
 
 
 def discord_text(report: Report, head: Optional[str] = None) -> str:
-    """The bot's /fonts reply: missing fonts -> cards (layers), the fonts folder count (or head), the cache state."""
+    """The bot's /fonts reply: missing fonts -> cards (layers), after the fonts folder count (or head)."""
     out = [head or f"MDW/Fonts: {report.fonts_files} files, {report.fonts_faces} faces. {report.checked} card PSDs read."]
-    if report.remaining:
-        out.append(f"Warming the cache: {report.remaining} card PSDs are not read yet (at most {BATCH} downloads per run); "
-                   "run /fonts again for the rest. Partial results:")
     missing = report.by_font()
-    if report.fonts_unread:
-        out.append(f"{report.fonts_unread} MDW/Fonts file{'s' if report.fonts_unread != 1 else ''} could not be read, so no "
-                   "card is reported missing a font this time; run /fonts again.")
-    elif missing:
+    if missing:
         for font, cards in missing.items():
             out.append(f"**{font}**: " + "; ".join(f"{_card_name(p)} ({', '.join(layers)})" for p, layers in cards.items()))
     else:
@@ -320,7 +301,7 @@ def discord_text(report: Report, head: Optional[str] = None) -> str:
 
 def details_report(details: dict, cards: dict) -> Report:
     """
-    /fonts after the cutover: each current card PSD's psd_details record, whose fonts the card data build marked
+    /fonts: each current card PSD's psd_details record, whose fonts the card data build marked
     supplied or not against MDW/Fonts (psd_details.mark_supplied, the check _record makes). Nothing is downloaded.
 
     Args:
@@ -520,7 +501,7 @@ def tree_blobs(repository: str, ref: str = "") -> dict:
     return {e["path"]: e["sha"] for e in data.get("tree", []) if e.get("type") == "blob"}
 
 
-def check_blobs(repository: str, psds: dict, index: FontIndex, cache: Optional[dict] = None, batch: int = 0) -> Report:
+def check_blobs(repository: str, psds: dict, index: FontIndex) -> Report:
     """
     PSDs read by blob sha through the API, in path order.
 
@@ -528,38 +509,24 @@ def check_blobs(repository: str, psds: dict, index: FontIndex, cache: Optional[d
         repository: owner/name
         psds: {path: (blob sha, author)}
         index: The fonts folder's faces
-        cache: {sha: {font: [layers]}, or the error text of a blob psd-tools can't read}: known blobs are not downloaded,
-            new ones are added; a failed download is not (None: no cache)
-        batch: Cap on the downloads (0: none); the rest count as remaining
 
     Returns:
         Report
     """
     report = Report(fonts_files=index.files, fonts_faces=index.faces, errors=list(index.errors))
-    downloads = 0
     for path in sorted(psds):
         sha, author = psds[path]
-        fonts = cache.get(sha) if cache is not None else None
-        if fonts is None:
-            if batch and downloads >= batch:
-                report.remaining += 1
-                continue
-            downloads += 1
-            try:
-                data = fetch_verified(repository, sha, timeout=API_TIMEOUT)
-            except Exception as e:              # tried again next run
-                report.errors.append(f"{path}: {e}")
-                continue
-            try:
-                fonts = psd_fonts(data)
-            except Exception as e:              # the same bytes fail the same way: cached
-                fonts = str(e)
-            if cache is not None:
-                cache[sha] = fonts
-        if isinstance(fonts, str):
-            report.errors.append(f"{path}: {fonts}")
-        else:
-            _record(report, index, path, author, fonts)
+        try:
+            data = fetch_verified(repository, sha, timeout=API_TIMEOUT)
+        except Exception as e:
+            report.errors.append(f"{path}: {e}")
+            continue
+        try:
+            fonts = psd_fonts(data)
+        except Exception as e:
+            report.errors.append(f"{path}: {e}")
+            continue
+        _record(report, index, path, author, fonts)
     return report
 
 
@@ -783,192 +750,6 @@ def find_fonts(repository: str = CARD_REPO, files: Optional[dict] = None, direct
 
 
 # ========================
-# The bot: /fonts
-# ========================
-def _load_cache(path: str) -> dict:
-    if exists(path):
-        try:
-            with open(path, encoding="utf-8") as fh:
-                data = load(fh)
-            if isinstance(data, dict) and isinstance(data.get("fonts"), dict) and isinstance(data.get("psds"), dict):
-                data["fonts"] = {sha: faces for sha, faces in data["fonts"].items()   # [name, loose names] faces (until
-                                 if isinstance(faces, str) or all(isinstance(f, str) for f in faces)}   # 2026-10-23): read again
-                return data
-        except (OSError, ValueError):
-            pass                                # a corrupt cache is rebuilt
-    return {"fonts": {}, "psds": {}}
-
-
-def _save_cache(path: str, cache: dict) -> None:
-    """card_models.save_pickle's write (tmp, fsync, replace), copied: the Action's closure has no card_models."""
-    temp_path = path + ".tmp"
-    try:
-        with open(temp_path, "w", encoding="utf-8") as fh:
-            dump(cache, fh)
-            fh.flush()
-            fsync(fh.fileno())
-        replace(temp_path, path)
-    except BaseException:
-        try:
-            remove(temp_path)
-        except OSError:
-            pass
-        raise
-
-
-def _details_fonts(path: str) -> dict:
-    """{blob sha: {font: [layer names]}} from the details file /update_stats gathers (its layers are paths); {} without it."""
-    from commands.psd_details import load as load_details          # lazy: psd_details imports this module
-    out: dict = {}
-    for sha, record in load_details(path).items():
-        fonts = record.get("fonts") if isinstance(record, dict) else None
-        if isinstance(fonts, dict) and all(isinstance(entry, dict) for entry in fonts.values()):
-            out[sha] = {font: [basename(layer) for layer in entry.get("layers", [])] for font, entry in fonts.items()}
-    return out
-
-
-def _new_faces(repository: str, files: dict, need: dict, cache_dir: str, fonts_lock) -> tuple:
-    """
-    The faces of the font files in need: the local fonts dir's copy when its sha matches, else its blob (a local dir
-    exists) or the fonts cache's.
-
-    Returns:
-        ({name: faces, or why fontTools can't read it}, {name: why it was not read})
-    """
-    out: dict = {}
-    unread: dict = {}
-    local, _ = local_fonts()
-    rest = {}
-    for name, sha in need.items():
-        path = join(local, name) if local else ""
-        try:
-            with open(path, "rb") as fh:
-                data = fh.read()
-        except OSError:
-            data = b""
-        if data and blob_sha(data) == sha:
-            out[name] = _faces(data)
-        else:
-            rest[name] = sha
-    if not rest:
-        return out, unread
-    if local and isdir(local):                  # a lagging local copy: only its stale files, no cache fill
-        for name, sha in rest.items():
-            try:
-                out[name] = _faces(fetch_verified(repository, sha, timeout=API_TIMEOUT))
-            except Exception as e:              # read again next run
-                unread[name] = str(e)
-        return out, unread
-    if fonts_lock is not None and not fonts_lock.acquire(blocking=False):
-        return out, {name: "a card update or bake holds the fonts cache" for name in rest}   # never refreshed under a bake
-    try:
-        held = refresh_cache(repository, files, cache_dir)
-        for name in rest:
-            if held.files.get(name) != rest[name]:
-                unread[name] = held.failed.get(name) or held.error or "not in the fonts cache"
-                continue
-            try:
-                with open(join(held.directory, name), "rb") as fh:
-                    out[name] = _faces(fh.read())
-            except OSError as e:                # not cached: read again next run
-                unread[name] = str(e)
-    finally:
-        if fonts_lock is not None:
-            fonts_lock.release()
-    return out, unread
-
-
-def _faces(data: bytes):
-    """face_names, or why fontTools can't read the bytes (cached, like a PSD's)."""
-    try:
-        return face_names(data)
-    except Exception as e:
-        return str(e)
-
-
-def repo_fonts(repository: str = CARD_REPO, cache_path: str = CACHE_JSON, batch: int = BATCH, details_path: str = DETAILS_JSON,
-               fonts_cache: str = "", fonts_lock=None) -> Report:
-    """
-    Every card PSD on the card repo's branch against its MDW/Fonts, through the API with a per-blob cache.
-
-    A font file is read once per blob sha (font_names.json): from the local fonts dir (PSD_TOOLS_FONT_DIRS or the
-    checkout's MDW/Fonts) when its copy has that sha, else that blob alone; without a local dir, from the fonts cache
-    brought to the branch's MDW/Fonts (the first fill downloads 276 files, 226 MB; later only the blobs it lacks). A
-    warm font_names.json costs no font request. The first run reads up to batch PSDs (the whole repo is ~813 PSDs,
-    15.6 GB: about 25 min of downloads at the 11 MB/s measured on 2026-10-21); later runs download only new blobs. Blobs
-    the details file already describes (psd_details.json, gathered by /update_stats) are not downloaded either. Blobs no
-    longer in the tree leave the cache. When a font file can't be had, any card could be asking for one of its faces:
-    the PSDs are still read and cached, but no card is reported (fonts_unread).
-
-    Args:
-        repository: owner/name
-        cache_path: The cache file (CACHE_JSON), written whatever happens
-        batch: PSD downloads per call
-        details_path: The details file whose fonts seed the cache
-        fonts_cache: The fonts cache ("": FONTS_CACHE beside cache_path)
-        fonts_lock: Held (never waited for) around a fonts cache refresh; the bot's bake_lock (never beside /update_stats)
-
-    Returns:
-        Report, with remaining = the PSDs not read yet
-    """
-    cache = _load_cache(cache_path)
-    for sha, fonts in _details_fonts(details_path).items():
-        cache["psds"].setdefault(sha, fonts)
-    try:
-        blobs = tree_blobs(repository)
-        files = tree_fonts(blobs)
-        need = {name: sha for name, sha in files.items() if sha not in cache["fonts"]}
-        unread: dict = {}
-        if need:
-            faces, unread = _new_faces(repository, files, need, fonts_cache or join(dirname(cache_path), FONTS_CACHE), fonts_lock)
-            cache["fonts"].update({files[name]: f for name, f in faces.items()})
-        index = FontIndex()
-        for name in sorted(files):
-            faces = cache["fonts"].get(files[name])
-            if faces is None:
-                index.errors.append(f"{name}: {unread.get(name, 'not read')}")
-            elif isinstance(faces, str):
-                index.errors.append(f"{name}: {faces}")
-            else:
-                index.add(faces)
-        psds = {p: (s, NOBODY) for p, s in blobs.items() if is_card_psd(p)}
-        report = check_blobs(repository, psds, index, cache["psds"], batch)
-        if unread:
-            report.fonts_unread, report.cards = len(unread), []
-        keep = set(files.values()) | {s for s, _ in psds.values()}
-        cache["fonts"] = {s: v for s, v in cache["fonts"].items() if s in keep}
-        cache["psds"] = {s: v for s, v in cache["psds"].items() if s in keep}
-    finally:
-        _save_cache(cache_path, cache)          # what was downloaded stays, whatever happened after
-    return report
-
-
-def check_repo_fonts(interaction) -> None:
-    """/fonts: the card repo's missing fonts -> cards (layers), BATCH new PSDs per call."""
-    from commands.card_runner import bake_lock                # lazy: standalone use needs no Discord
-    from commands.query_card import card_repo
-    from commands.utils import queue_long_message
-    if global_config.CARD_SYNC:                 # the cutover: the card data's psd_details.json has every PSD's fonts
-        from commands.card_sync import fonts_text
-        queue_long_message(interaction, fonts_text())
-        return
-    if not _lock.acquire(blocking=False):
-        queue_long_message(interaction, "A font check is already running; wait for its reply.")
-        return
-    try:
-        report = repo_fonts(card_repo.repository, fonts_lock=bake_lock)
-        if len(report.errors) > ERRORS_SHOWN:
-            print("Font check errors:\n" + "\n".join(report.errors))
-        text = discord_text(report)
-    except Exception as e:                      # the cause goes to the console, the one line to Discord
-        print(format_exc())
-        text = f"Font check failed: {e}"
-    finally:
-        _lock.release()
-    queue_long_message(interaction, text)
-
-
-# ========================
 # Command line
 # ========================
 def main(args: Optional[list] = None) -> int:
@@ -1023,9 +804,7 @@ if __name__ == "__main__":
 # ========================
 __all__ = [
     'API_TIMEOUT',
-    'BATCH',
     'BITE',
-    'CACHE_JSON',
     'COMMITS_PAGE',
     'Card',
     'ERRORS_SHOWN',
@@ -1044,7 +823,6 @@ __all__ = [
     'check_checkout',
     'check_files',
     'check_psd',
-    'check_repo_fonts',
     'details_report',
     'dir_fonts',
     'discord_payload',
@@ -1060,7 +838,6 @@ __all__ = [
     'psd_fonts',
     'pushed_files',
     'refresh_cache',
-    'repo_fonts',
     'tree_blobs',
     'tree_fonts',
 ]

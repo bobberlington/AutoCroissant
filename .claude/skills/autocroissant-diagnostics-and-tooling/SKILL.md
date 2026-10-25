@@ -1,22 +1,23 @@
 ---
 name: autocroissant-diagnostics-and-tooling
-description: "Load this skill whenever you need to MEASURE something in AutoCroissant instead of eyeballing it — trigger phrases include \"diagnose\", \"inspect pickle\", \"dump layers\", \"trace injection\", \"diff stats\", \"is the database healthy\", \"measure why ONE specific card parsed the way it did\", \"what changed between two runs\", \"run the pre-push pickle diff (diff_stats)\", \"measure\", \"verify the parse\", or any symptom like wrong [type] placement in ability text, missing stats, a card with the wrong type, or a suspicious stats.pkl before a commit. It documents the five read-only diagnostic scripts in .claude/skills/autocroissant-diagnostics-and-tooling/scripts/ (dump_psd_layers.py, parse_one.py, gap_trace.py, inspect_pickle.py, diff_stats.py; the last two read db/ JSON too): exact invocations, annotated golden outputs, failure modes, the pre-pickle-push diff gate and the shadow's daily check, the single-card investigation pipeline, the DB health-check cadence, and the conventions for adding a new diagnostic script."
+description: "Load this skill whenever you need to MEASURE something in AutoCroissant instead of eyeballing it — trigger phrases include \"diagnose\", \"inspect pickle\", \"dump layers\", \"trace injection\", \"diff stats\", \"is the database healthy\", \"measure why ONE specific card parsed the way it did\", \"what changed between two runs\", \"run the data commit diff (diff_stats)\", \"measure\", \"verify the parse\", or any symptom like wrong [type] placement in ability text, missing stats, a card with the wrong type, or a suspicious stats.pkl before a commit. It documents the five read-only diagnostic scripts in .claude/skills/autocroissant-diagnostics-and-tooling/scripts/ (dump_psd_layers.py, parse_one.py, gap_trace.py, inspect_pickle.py, diff_stats.py; the last two read db/ JSON too): exact invocations, annotated golden outputs, failure modes, the data gate (diff of Card sync data commits; until 2026-10-25 the pre-pickle-push gate) and the shadow's daily check, the single-card investigation pipeline, the DB health-check cadence, and the conventions for adding a new diagnostic script."
 ---
 
 # AutoCroissant diagnostics and tooling
 
-Measure, don't eyeball. This repo has no CI and only an offline pytest suite (`tests/`); the pickles ARE the database and the
-costliest historical failures were corrupted pickle commits and silent parse regressions. The five
-scripts in `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/` turn "it looks fine"
-into numbers you can compare, diff, and re-run. All five are read-only: they never write a pickle,
-never touch the network, never run the bot.
+Measure, don't eyeball. This repo has no CI and only an offline pytest suite (`tests/`); the card data is the Card sync
+Action's `db/` JSON on TTSCardMaker's `data` branch (the bot's copy in `card_data/`; this repo's pickles until
+2026-10-25, in git history), and the costliest historical failures were corrupted pickle commits and silent parse
+regressions. The five scripts in `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/` turn "it looks fine"
+into numbers you can compare, diff, and re-run. All five are read-only: they never write card data, never touch the
+network, never run the bot.
 
 All commands below assume cwd = repo root `/Users/michaelsrouji/Desktop/AutoCroissant`.
 Two of the five (`parse_one.py`, `gap_trace.py`) also work from anywhere —
 they derive the repo root from their own location and `chdir` there at import. `inspect_pickle.py`
-reads the repo root's pickles from anywhere without a chdir (2026-10-23). `diff_stats.py`
-does NOT chdir: relative arguments resolve against your SHELL's cwd, so run the push gate
-from the repo root (or pass absolute pickle paths). `dump_psd_layers.py` has no repo-root logic
+reads the repo root's `card_data/` from anywhere without a chdir (2026-10-25). `diff_stats.py`
+does NOT chdir: relative arguments resolve against your SHELL's cwd (pass data commits with `--git`, or absolute
+paths). `dump_psd_layers.py` has no repo-root logic
 at all and runs from anywhere — it needs only psd-tools and an absolute/`~` PSD path.
 
 **Which Python (2026-10-23).** `diff_stats.py` and `inspect_pickle.py` run on the Mac's plain `python3` (Homebrew
@@ -25,14 +26,14 @@ at all and runs from anywhere — it needs only psd-tools and an absolute/`~` PS
 tag `cards-20261023` = ecc4b773, with `range_reader`, as on the jetson), or `~/.venvs/ac-py314-psd125` (stock psd-tools
 1.25.0). Below, `$P` means `~/.venvs/ac-py314-fork/bin/python` for those three.
 
-**The data build's JSON (2026-10-23).** `diff_stats.py` and `inspect_pickle.py` read the card data in any of its
-forms through `commands.card_db.read_cards`: a `stats.pkl` or `stats.json` (the old_stats file beside it is the
-history), a folder of pickles, a `db/` folder (or a folder holding `db/`, such as an Actions artifact), or a data
-commit of `--git`'s repo (`origin/data` in a TTSCardMaker clone). Neither needs `config.py` any more: pickles load
-through card_db's allow-list unpickler, which knows only the card classes.
+**The card data in any form (2026-10-23).** `diff_stats.py` and `inspect_pickle.py` read it through
+`commands.card_db.read_cards`: a `db/` folder (or a folder holding `db/`: `card_data/`, an Actions artifact), a
+`stats.json` (the old_stats file beside it is the history), a data commit of `--git`'s repo (`origin/data` in a
+TTSCardMaker clone), or a historical `stats.pkl` / folder of pickles (`git show <PICKLE commit>:stats.pkl`; the pickles
+left this repo on 2026-10-25). Neither needs `config.py`: pickles load through card_db's allow-list unpickler, which
+knows only the card classes.
 
-**Noise lines**: scripts that load the DB print `Trying to open stats.pkl` / `Loaded existing stats...`
-progress lines. Since 2026-10-20 the `Git token found, API limited to 5000 requests/hour.` line is
+**Noise lines**: since 2026-10-20 the `Git token found, API limited to 5000 requests/hour.` line is
 printed only by main.py (`print_token_status`), so scripts print none; the `| grep -v "Git token"`
 filters below are harmless leftovers. `dump_psd_layers.py` imports no
 bot code and prints no noise. WARNING: do not pipe `diff_stats.py` through grep when you need
@@ -46,18 +47,17 @@ before assuming a regression.
 
 | Question | Tool | Invocation shape |
 |---|---|---|
-| Is the DB healthy right now? | `inspect_pickle.py` summary | no args |
+| Is the DB healthy right now? | `inspect_pickle.py` summary (the bot's `card_data/`) | no args |
 | Which cards have recorded parse problems? | `inspect_pickle.py --problems` | one flag |
 | What is stored for card X, and its history? | `inspect_pickle.py "Card Name"` | name (case-insensitive) |
 | Why did THIS card parse wrong? | `dump_psd_layers.py` → `gap_trace.py` → `parse_one.py`, in that order | see the pipeline workflow |
 | What does the parser physically see in this PSD? | `dump_psd_layers.py` (`--text` for raw text) | psd path |
 | Why is a `[type]` injected in the wrong place / missing? | `gap_trace.py` | psd path |
-| What would /update_stats extract for one card? | `parse_one.py` (add `--with-db` to match a real run) | psd path |
-| Is this pickle safe to push? | `diff_stats.py` HEAD vs working (the push gate) | two pkl paths |
-| What changed between two runs / two snapshots? | `diff_stats.py` old vs new | two pickles, db/ folders or data commits |
-| Does the data branch match the jetson's pickles? (the shadow's daily check) | `diff_stats.py stats.pkl origin/data --git ~/Desktop/TTSCardMaker` | Workflow 4 |
+| What would the card data build extract for one card? | `parse_one.py` (add `--with-db` to match a real run) | psd path |
+| What did a Card sync run change? (the data gate) | `diff_stats.py origin/data~1 origin/data --git ~/Desktop/TTSCardMaker` | Workflow 1 |
+| What changed between two runs / two snapshots? | `diff_stats.py` old vs new | two db/ folders, data commits or historical pickles |
 | What does the data build hold for card X? | `inspect_pickle.py --db <db/ or data commit> [--git DIR] "Card Name"` | as above |
-| Did old_stats.pkl balloon? | `inspect_pickle.py` summary (archived-versions count) + `git diff --stat HEAD -- old_stats.pkl` | — |
+| Did old_stats balloon? | `diff_stats.py --history` between two data commits (`versions added`) | — |
 
 What these tools do NOT answer: whether a measured value is *acceptable*
 (autocroissant-validation-and-qa), what a card-domain value *means*
@@ -69,11 +69,10 @@ What these tools do NOT answer: whether a measured value is *acceptable*
 - Scripts live in `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/`. Repo-root
   handling differs per script (re-verified 2026-10-23): `parse_one.py` and `gap_trace.py` compute
   `REPO_ROOT = Path(__file__).resolve().parents[4]`, insert it on `sys.path`, and `os.chdir(REPO_ROOT)`
-  at import (pickle paths in `global_config.py` are repo-relative). `inspect_pickle.py` and `diff_stats.py`
+  at import (`card_data/` is repo-relative). `inspect_pickle.py` and `diff_stats.py`
   only put REPO_ROOT on `sys.path` and import `commands.card_db` (and card_models / card_history); neither chdirs.
-  inspect_pickle reads the repo root's pickles by default; diff_stats's relative arguments resolve against the
-  shell's cwd (from a non-repo cwd the documented push-gate invocation exits 2 with `ERROR loading the card data:
-  stats.pkl: no such file or folder, nor a commit of . with db/stats.json`).
+  inspect_pickle reads the repo root's `card_data/` by default; diff_stats's relative arguments resolve against the
+  shell's cwd.
   `dump_psd_layers.py` imports only `sys` + psd-tools: no repo-root logic, no `config.py` needed.
 - `parse_one.py` and `gap_trace.py` need `config.py` present in the repo root (secret;
   the bot module import chain reads it). Without it the import chain fails. `diff_stats.py` and
@@ -158,10 +157,10 @@ of the midline is it on? What does the raw text (and its gap spacing) actually c
 
 ---
 
-## 2. parse_one.py — what /update_stats would extract for one card
+## 2. parse_one.py — what the card data build would extract for one card
 
 **Purpose**: run ONE PSD through the real bot parser (`PSDParser.parse` + `CardValidator.validate`)
-without Discord, without the network, and without touching any pickle. Fastest way to see the
+without Discord, without the network, and without writing anything. Fastest way to see the
 full extracted `CardInfo` and validator problems for a single card.
 
 **Invocation** (from repo root; absolute or `~/` path — relative paths resolve against the repo
@@ -210,7 +209,7 @@ validator problems: NONE
   `traverser._icons_from_local(clone_root)` to `PSDParser`, so the stoogedings vocabulary (Types/ and
   Types/Stars/ names, manifest aliases and codepoints) matches what `/update_stats` builds from the
   GitHub tree (`_icons_from_response`), and cards typed in the font parse as in production. These two
-  `*_from_local` helpers stayed in psd_analyzer.py when local mode was archived (RepositoryTraverser in repo_traverser.py since the split, re-exported; its body is card_data.CardBuild since 2026-10-22, and it still gets the bot's /alias names by default), for these scripts. gap_trace.py calls `_process_layer`, whose signature did
+  `*_from_local` helpers stayed when local mode was archived, for these scripts; they live on `card_data.CardBuild` (the traverser's body since 2026-10-22; repo_traverser.py was deleted 2026-10-25). gap_trace.py calls `_process_layer`, whose signature did
   not change with the icon-font work.
 - Field lines — `CardInfo.to_dict()` output. Empty fields are OMITTED (to_dict drops
   ability/stars/subtype/series/types/author/problems when empty and stats when invalid), so a
@@ -227,7 +226,8 @@ validator problems: NONE
 "Preserve author and series" block in `parse()` — grep below). Default (fresh) parses against an
 empty DB: no preservation, so Mini Doomer fresh shows neither field, while
 `--with-db` adds `series: Kirby` and `author: Chestnut` and prints
-`(loaded stats.pkl: 818 cards -- author/series preservation active)` (813 on 2026-07-11).
+`(loaded card_data/: 819 cards -- author/series preservation active)` (it read stats.pkl until 2026-10-25; 813 on
+2026-07-11).
 Rule of thumb: use **fresh** to test pure extraction; use **`--with-db`** when comparing
 field-for-field against the stored entry (otherwise author/series will look like regressions).
 
@@ -329,8 +329,9 @@ counts (mismatch)?
 
 ## 4. inspect_pickle.py — DB health and single-card lookup
 
-**Purpose**: read-only view of `stats.pkl` / `old_stats.pkl` (or, with `--db`, the data build's `db/` JSON): a
-health summary, the list of cards with recorded problems, or one card in full detail with its archived history.
+**Purpose**: read-only view of the card data — the bot's `card_data/` by default, or with `--db` any `db/` folder, data
+commit or historical pickles: a health summary, the list of cards with recorded problems, or one card in full detail
+with its archived history.
 
 **Invocations**:
 
@@ -348,7 +349,8 @@ versions total` since 2026-10-23 (the file names left the labels). A card lookup
 (start, cause, legacy) when it has one. Measured 2026-10-23 on a Mac rebuild from seed 077337a9 at TTSCardMaker
 7b48db05: 818 cards, 355 names with 453 versions, 2 archived (1 backfilled).
 
-**Today's baseline** (PICKLE a7c310e, the 2026-10-23 05:00 run; `python3` from the repo root):
+**The last baseline on the pickles** (PICKLE a7c310e, the 2026-10-23 05:00 run; `python3` from the repo root; the data
+branch's counts are in Workflow 4):
 
 ```
 stats     : 818 cards
@@ -424,7 +426,7 @@ Two caveats: (a) a legitimately NEW top-level folder in TTSCardMaker would false
 update the tuple in the script if the card repo grows one; (b) 0 here does not prove every path
 is *correct*, only that top folders look sane.
 
-**Failure modes**: loads the committed pickles from the repo root (always present in a checkout) unless `--db`
+**Failure modes**: loads the repo root's `card_data/` (present once the bot synced; else pass `--db`) unless `--db`
 names other data; data it can't read (no such folder, file or commit) → `ERROR loading the card data: ...`, exit 2.
 Missing card name → `not found` + suggestions, exit 1.
 
@@ -436,7 +438,8 @@ change? Which cards are flagged? Did old_stats balloon?
 ## 5. diff_stats.py — the numbers between two snapshots (pickles or the data build's JSON)
 
 **Purpose**: diff two stats.pkl-format snapshots into added/removed/modified with per-field
-counts. THE gate before every pickle push — it turns "the pickle looks fine" into numbers.
+counts. The measure of a data commit (the data gate, autocroissant-change-control) — it turns "the data looks fine"
+into numbers.
 Handles both modern CardInfo pickles and legacy plain-dict pickles (pre-366c8d9), so it can diff
 across the Oct-2025 schema change. Since 2026-10-23 it also diffs history: `--history <old
 old_stats.pkl> <new old_stats.pkl>` (or an `old_stats.pkl` beside each stats.pkl) adds a `-- history --`
@@ -456,34 +459,26 @@ with other data`, not as versions added and dropped; a kept version's data is co
 **Exit codes** (all verified 2026-07-11): `0` = no changes; `1` = changes found; `2` = usage or
 load error. Do not pipe through grep/head when you consume the exit code.
 
-**Run it from the repo root (or pass absolute paths).** diff_stats.py does not chdir — a relative argument like
-`stats.pkl` resolves against your shell's cwd, and from anywhere else the gate exits 2 with
-`ERROR loading the card data: stats.pkl: no such file or folder, nor a commit of . with db/stats.json`
-(re-measured from /tmp on 2026-10-23).
+**Relative paths resolve against your shell's cwd** (diff_stats.py does not chdir); a missing file or unknown commit
+exits 2 with `ERROR loading the card data: <arg>: no such file or folder, nor a commit of <git dir> with db/stats.json`.
 
-**Invocation A — the pre-push gate** (HEAD vs working copy):
+**Invocation A — the data gate** (a Card sync data commit vs the one before):
 
 ```bash
-H=~/Documents/Tools/wt/scratch/head; mkdir -p $H     # persistent (reboots wipe /tmp), as diff_stats.py's docstring
-git show HEAD:stats.pkl > $H/stats.pkl && git show HEAD:old_stats.pkl > $H/old_stats.pkl && \
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py $H/stats.pkl stats.pkl \
-    --history $H/old_stats.pkl old_stats.pkl
+git -C ~/Desktop/TTSCardMaker fetch -q --depth 2 origin +data:refs/remotes/origin/data
+python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py origin/data~1 origin/data \
+    --git ~/Desktop/TTSCardMaker
 echo $?
 ```
 
-Golden output on a clean tree (818 cards on 2026-10-23; 813 on 2026-07-11, before the history section):
-
-```
-old: 818 cards   new: 818 cards
-added: 0   removed: 0   modified: 0
-```
-exit 0 — the working pickle is identical to HEAD; there is no data change to push.
+exit 0 — no data change between the two commits (a run that only moved the posted cursor).
+(Until 2026-10-25 Invocation A was the pre-push gate, HEAD's pickles vs the working copy.)
 
 **Invocation B — what changed between two runs/snapshots** (any two pickles; the 2026-07-11 example below is
 the two PICKLE commits newest then, 8753489 -> 284d13c; the newest on 2026-10-23 are a7c310e, 077337a and 3888392):
 
 ```bash
-git show 8753489:stats.pkl > /tmp/stats_old.pkl && git show HEAD:stats.pkl > /tmp/stats_new.pkl && \
+git show 8753489:stats.pkl > /tmp/stats_old.pkl && git show 284d13c:stats.pkl > /tmp/stats_new.pkl && \
 python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py /tmp/stats_old.pkl /tmp/stats_new.pkl
 ```
 
@@ -526,44 +521,36 @@ exit 1 (changes found). Add `--verbose` to print `old -> new` values per field p
 data (a pickle holding anything but the card classes, a folder without card data, an unknown commit) →
 `ERROR loading the card data: ...`, exit 2.
 
-**Questions it answers**: Is this pickle safe to push? What exactly did the last update change?
+**Questions it answers**: What exactly did the last Card sync run change? How did two snapshots differ?
 Did a parser change touch cards it shouldn't have?
 
 ---
 
 ## Standard workflows
 
-### Workflow 1 — pre-pickle-push gate (run EVERY time before pushing pickles, from the repo root)
+### Workflow 1 — reviewing a Card sync data commit (the data gate)
 
 ```bash
-H=~/Documents/Tools/wt/scratch/head; mkdir -p $H
-git show HEAD:stats.pkl > $H/stats.pkl && git show HEAD:old_stats.pkl > $H/old_stats.pkl && \
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py $H/stats.pkl stats.pkl \
-    --history $H/old_stats.pkl old_stats.pkl
+git -C ~/Desktop/TTSCardMaker fetch -q --depth 2 origin +data:refs/remotes/origin/data
+python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py origin/data~1 origin/data \
+    --git ~/Desktop/TTSCardMaker
 echo $?
 ```
 
-1. exit 0 → no data change; nothing pickle-related to push.
-2. exit 1 → review each bucket:
+1. exit 0 → no card data change in that commit.
+2. exit 1 → review each bucket against the data commit's per-card lines and the run's job summary:
    - `added`: only cards you know are new in TTSCardMaker.
-   - `removed`: pair each with a possible `added` rename; a true unexpected removal = traversal
-     problem, do not push.
-   - `modified`: read `field change counts` first. Mass `path` or mass `type` = red flag, stop.
-     Legit updates look like a handful of `ability`/`timestamp`/`types` changes on cards you
-     know changed. Use `--verbose` on anything surprising.
-3. Check old_stats separately: `git diff --stat HEAD -- old_stats.pkl` plus the archived-versions
-   count in `inspect_pickle.py` summary (446 at a7c310e, 2026-10-23; 223 on 2026-07-11). The one expected jump is
-   the first run after the 2026-10-23 deploy: its `History: 698 versions recovered ...` line explains about +700
-   versions (to about 1,155); compare against the red-flag row's rehearsal numbers instead of stopping.
-4. exit 2 → the gate did not run; fix the load error before doing anything else.
-5. The commit/push itself (PICKLE convention, who may push) is owned by
-   autocroissant-change-control — this gate is a precondition, not a substitute.
+   - `removed`: pair each with a possible `added` rename (an archive tag with `renamed_to`); a true unexpected removal =
+     a build problem: pin the builder ref, dispatch `restore=<good data commit>` (DATA_BUILD_ACTION.md §13).
+   - `modified`: read `field change counts` first. Mass `path` or mass `type` = red flag. Legit updates look like a
+     handful of `ability`/`timestamp`/`types` changes on cards you know changed. Use `--verbose` on anything surprising.
+   - `-- history --`: versions added should match the run's changed/edited events; mass `versions added` = a
+     duplicate-archiving regression.
+3. exit 2 → the gate did not run; fix the load error (an unfetched commit) first.
+4. Gate refusals (G1-G6) never reach the branch: the run is red and its artifact holds the would-be db/ (diff it with
+   `diff_stats.py origin/data <artifact>/db`).
 
-Extra rule (2026-07-11, updated 2026-10-20): pickles produced by the LOCAL traversal never get pushed
-without this gate. Since 2026-10-20 that traversal exists only on branch `archive/local-update-stats` (not in main), for
-sandbox sweeps (local mode is gone from `/update_stats`). The original reason, the removeprefix path bug,
-was fixed on 2026-10-19; the lasting reason is the local-timestamp re-archiving above (operating rule in
-autocroissant-run-and-operate §7).
+Until 2026-10-25 this workflow was the pre-pickle-push gate (HEAD's pickles vs the working copy, before every /push).
 
 ### Workflow 2 — single-card investigation pipeline ("why did THIS card parse wrong?")
 
@@ -593,10 +580,10 @@ step 0 and the update mode used.
 
 ### Workflow 3 — DB health check cadence
 
-Run `inspect_pickle.py` (summary) then `inspect_pickle.py --problems`:
-- after every `/update_stats`,
-- after `/pull` on a machine handoff (the pickles are the only synced state),
-- before nominating pickles for a push (alongside Workflow 1),
+Run `inspect_pickle.py` (summary) then `inspect_pickle.py --problems` (the bot's `card_data/`, or `--db origin/data
+--git ~/Desktop/TTSCardMaker`):
+- after a Card sync run that changed many cards (a full re-parse),
+- alongside Workflow 1 when a data commit looks odd,
 - whenever a query result looks wrong.
 
 Compare against the 2026-10-23 baseline (a7c310e): 818 cards, 354 names / 446 versions in old_stats, 2 archived
@@ -604,8 +591,10 @@ cards, 0 problem cards, 0 orphans, 0 suspicious paths, newest = Clot White @ 202
 cards, 218/223, 1 problem card, newest Anubisath Guardian @ 2026-06-18). Card counts legitimately grow as cards are
 added, and old_stats grows once with the history recovery (above); problems/orphans/suspicious-paths should not.
 
-### Workflow 4 — the shadow's daily check (data branch vs the jetson's pickles, 2026-10-23)
+### Workflow 4 — (history) the shadow's daily check (data branch vs the jetson's pickles, 2026-10-23)
 
+Done: the shadow ended at the cutover (2026-10-24) and the pickles left main at step 10 (2026-10-25); to repeat it, take
+`stats.pkl` from the last PICKLE commit (diff_stats.py's docstring shows how). Kept for its expected-numbers reading.
 During the shadow (DATA_BUILD_ACTION.md §14 step 7), once a day after the jetson's /push:
 
 ```bash
@@ -662,11 +651,11 @@ Conventions (match the existing five — read one before writing):
    ```python
    REPO_ROOT = Path(__file__).resolve().parents[4]   # scripts/ is 4 levels below repo root
    sys.path.insert(0, str(REPO_ROOT))
-   os.chdir(REPO_ROOT)  # pickle paths in global_config are repo-relative
+   os.chdir(REPO_ROOT)  # card_data/ and the clone paths in global_config are repo-relative
    ```
    (no token line: `print_token_status` runs only in main.py since 2026-10-20).
-3. READ-ONLY, always: never call `save()`, `update_stats()`, anything network-mutating, and never
-   write a pickle. If a script needs scratch output, write to `~/Documents/Tools/wt/scratch/` (reboots wipe /tmp) or a
+3. READ-ONLY, always: never call `update_stats()`, anything network-mutating, and never
+   write card data. If a script needs scratch output, write to `~/Documents/Tools/wt/scratch/` (reboots wipe /tmp) or a
    scratchpad, never the repo.
 4. Prefer re-driving REAL parser methods over copying their logic; where orchestration must be
    mirrored, add a MAINTENANCE NOTE naming the mirrored function (see gap_trace.py's docstring).
@@ -683,14 +672,14 @@ Not part of the five, and not read-only in the same sense (most need a sandbox c
 |---|---|---|
 | Offline test suite | `tests/` (`~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests`) | Behaviour contracts, parser goldens; owner: autocroissant-validation-and-qa row 1c |
 | Whole-corpus parser gate | `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/parse_all_ns.py <out.json> <sandbox root>` + `compare.py a.json b.json` (table below; venv interpreter) | Every field of all 813 card PSDs, old vs new code (validation-and-qa §4.1 method A) |
-| Profiling and benches | `docs/Finished/optimization-pass-2026-10-20/bench/` (expects the `/tmp/acprof/sb` sandbox: `git archive HEAD` plus copies of config.py and the pickles) and `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/*_ns.py` (sandbox root as first argument) | Queue hops, search timings, import time and RSS, /update_stats requests; results in `docs/Finished/optimization-pass-2026-10-20/profile.md` and `network-speed-results.md` on that branch |
+| Profiling and benches | `docs/Finished/optimization-pass-2026-10-20/bench/` (expects the `/tmp/acprof/sb` sandbox: `git archive HEAD` plus copies of config.py and, then, the pickles) and `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/*_ns.py` (sandbox root as first argument) | Queue hops, search timings, import time and RSS; results in `docs/Finished/optimization-pass-2026-10-20/profile.md` and `network-speed-results.md` on that branch |
 | Skill line-ref refresh | `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/refs6.py` + `apply6.py`; `grepcheck.py` runs every quoted grep | Stale `file:line` references after code moves (follows code across files) |
 
 ### Optimization-pass scripts
 
 `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/` (moved byte-identical from `~/Documents/ac-optimization/`
 on 2026-10-20); the invocations below are relative to that folder. ROOT is a sandbox copy of the repo (`git archive HEAD` plus
-config.py and the pickles, under /tmp); "live" means read-only GitHub GETs with the real token. parse_all_ns.py, the `_ns`
+config.py and a `card_data/` copy, under /tmp); "live" means read-only GitHub GETs with the real token. parse_all_ns.py, the `_ns`
 scripts and search_ab.py import the bot (psd_tools, discord): run them with `~/.venvs/ac-py314-psd125/bin/python`, not the
 system `python3`; compare.py and the line-ref tools are stdlib.
 
@@ -698,14 +687,10 @@ system `python3`; compare.py and the line-ref tools are stdlib.
 |---|---|---|
 | parse_all_ns.py | `parse_all_ns.py <out.json> [ROOT]` (ROOT defaults to `/tmp/psdreg/ac`) | Parses every card PSD of the `~/Desktop/TTSCardMaker` clone with ROOT's parser (16 processes); dumps every field plus the validator's list, `timestamp`/`author` dropped |
 | compare.py | `compare.py a.json b.json` | Field-by-field differences between two parse_all_ns dumps; expect `813 cards, 0 differences` |
-| commits_ns.py | `commits_ns.py ROOT OUT.json [page]` | Live: requests and ms per `_get_remote_timestamp` lookup on 5 cards (existing and new-card paths); `page` sets `COMMITS_PAGE` |
-| e2e_update_ns.py | `e2e_update_ns.py ROOT OUT.json` | Live: `/update_stats cards:<6 cards>` on a throwaway copy `ROOT_e2e` (2 cards deleted first so they take the new-card path); only the copy's pickles change |
-| etag_handoff_ns.py | `etag_handoff_ns.py ROOT` | Offline, fake GitHub: after a changed /update_stats, does card_repo's next tree fetch get a 304? Throwaway copy `ROOT_etag` |
 | import_ns.py | `import_ns.py ROOT [N]` | `import main` wall time, RSS and heavy modules loaded, best of N fresh processes (default 5) |
 | startup_ns.py | `startup_ns.py ROOT` | Live: tree requests at startup (init_query and the type-emoji listing in parallel), then one /sync_emojis listing |
-| search_ns.py | `search_ns.py ROOT OUT.json` | Search timings and every result on ROOT (reads the `~/Desktop/TTSCardMaker` clone); diff two OUTs for identity |
+| search_ns.py | `search_ns.py ROOT OUT.json` | Search timings and every result on ROOT (its `card_data/` and the `~/Desktop/TTSCardMaker` clone); diff two OUTs for identity |
 | search_ab.py | `search_ab.py ROOT` | Interleaved A/B in one process: old fuzzy step / name lookup vs the new ones, same queries, results asserted equal; `exec`s search_ns.py beside it |
-| race_ns.py | `race_ns.py N SWITCH [shared]` | Commit lookups across threads on the real `_repo()` against a local echo server; `shared` = one client for all threads (the bug). Imports the LIVE repo (`sys.path` hardcoded to `~/Desktop/AutoCroissant`), no sandbox |
 | refs5.py, final.py, table.py, to_md.py / apply.py | no arguments, in that order (each reads the previous JSON) | Skill `file:line` audit against HEAD: anchor each ref to the commit where its symbol sat on that line (refs5.json), decide with overrides.json (final.json), list the edits (table.json), render them as markdown or apply them to the skills |
 | refs6.py, apply6.py `[--dry]` | no arguments | Refresh against the WORKING TREE, following code moved across files (the psd_analyzer split): final.json → refs6.json, applied with overrides6.json; refs5_lib.py holds the shared regexes. Only the hand-written overrides*.json are kept; refs5/final/table/refs6.json are regenerated by the run |
 | grepcheck.py | no arguments | Runs every read-only grep quoted in the skills; lists the ones that now print nothing |
@@ -819,3 +804,5 @@ effect-layer skip, `RULEBOOK_DIR` and `stars_from_psd()` (outputs unchanged on N
 Gasoline, Miracle Matter, Dark Daroach and PoD02Black Bloon), its docstring names `_process_abilities`; a dated
 2026-10-23 baseline (818 / 354 / 446 / 2 archived / 0 problems / Clot White); the one-time recovery growth in the red-flag
 row and Workflow 1; the gate snapshots go to `~/Documents/Tools/wt/scratch/head/` like the script's docstring.
+
+2026-10-25 (step 10, work/pickles): the pickles left the repo: inspect_pickle.py reads `card_data/` by default, parse_one.py's `--with-db` loads it, diff_stats.py's examples are data commits (the last PICKLE by git show); Workflow 1 is the data commit's review, Workflow 4 is history; commits_ns, e2e_update_ns, etag_handoff_ns and race_ns deleted with the legacy /update_stats.

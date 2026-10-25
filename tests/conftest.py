@@ -1,4 +1,4 @@
-# Run: ~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests   (offline; never writes the pickles)
+# Run: ~/.venvs/ac-py314-psd125/bin/python -m pytest -q tests   (offline; never writes the reminder store)
 # The text-engine tests (psd_edit, card_bake) need the psd-tools fork and psd-tools[text]; see find_fork:
 #   AC_PSD_TOOLS_SRC=<fork>/src ~/Documents/Tools/psd-tools/.venv/bin/python -m pytest -q tests/test_psd_edit.py tests/test_card_bake.py
 import hashlib
@@ -19,10 +19,10 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 environ["AUTOCROISSANT_BOT_CLONE"] = str(REPO / "tests" / "no-bot-clone")   # never this checkout's PICKLE commits
-from global_config import ALIAS_PKL, DETAILS_JSON, LOCAL_DIR_LOC, OLD_STATS_PKL, REMIND_JSON, REMIND_PKL, STATS_PKL  # noqa: E402
+from global_config import DATA_BRANCH, LOCAL_DIR_LOC, REMIND_JSON, REMIND_PKL  # noqa: E402
 
-CLONE = Path(expanduser(LOCAL_DIR_LOC))                  # PSD tests skip without it
-PICKLES = (STATS_PKL, OLD_STATS_PKL, ALIAS_PKL, REMIND_PKL, REMIND_JSON, DETAILS_JSON)   # the details file counts as one
+CLONE = Path(expanduser(LOCAL_DIR_LOC))                  # PSD tests skip without it; its origin/data holds the live card data
+LIVE = (REMIND_PKL, REMIND_JSON)                         # the checkout's reminder stores, never written by a test
 
 
 # ========================
@@ -86,6 +86,12 @@ def pytest_configure(config):
 def blob_sha_bytes(data: bytes) -> str:
     """git's blob sha of some bytes (independent of the code under test's own helper)."""
     return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+
+
+def write_pickle(obj, path) -> None:
+    """A historical card pickle for a test (the bot wrote stats.pkl and old_stats.pkl until 2026-10-25)."""
+    import pickle
+    Path(path).write_bytes(pickle.dumps(obj))
 
 
 def blob_sha(path) -> str:
@@ -211,57 +217,47 @@ class Reply:
 
 
 def _digests() -> dict:
-    return {p: hashlib.sha1((REPO / p).read_bytes()).hexdigest() for p in PICKLES if (REPO / p).exists()}
+    return {p: hashlib.sha1((REPO / p).read_bytes()).hexdigest() for p in LIVE if (REPO / p).exists()}
 
 
 # ========================
 # Fixtures
 # ========================
 @pytest.fixture(scope="session", autouse=True)
-def pickles_untouched():
-    """Fails the run if any test changed a live pickle."""
+def live_files_untouched():
+    """Fails the run if any test changed the checkout's reminder store."""
     before = _digests()
     yield
-    assert _digests() == before, "a test wrote a live pickle"
+    assert _digests() == before, "a test wrote a live reminder store"
 
 
 @pytest.fixture(autouse=True)
 def offline(monkeypatch, tmp_path):
-    """No network, cwd in a temp dir so cwd-relative saves (pickles, json maps) land there, and no history clone (for
-    /update_stats' cleanup or /query as_of's images) or bot clone (its PICKLE commits, for the cleanup and the seed)
-    unless a test gives one (the machine's own never count)."""
+    """No network, cwd in a temp dir so cwd-relative saves (card_data/, json maps) land there, and no history clone (for
+    /query as_of's images) or bot clone (its PICKLE commits, for the build's seed) unless a test gives one (the
+    machine's own never count)."""
     def refuse(*args, **kwargs):
         raise RuntimeError("network access in an offline test")
     monkeypatch.setattr(socket.socket, "connect", refuse)
     monkeypatch.setattr(socket, "getaddrinfo", refuse)
     monkeypatch.chdir(tmp_path)
-    for module in ("commands.card_data", "commands.repo_history"):        # /query as_of's images too
-        if module in sys.modules:
-            monkeypatch.setattr(sys.modules[module], "HISTORY_CLONE", str(tmp_path / "no-history-clone"))
+    if "commands.repo_history" in sys.modules:                           # /query as_of's images
+        monkeypatch.setattr(sys.modules["commands.repo_history"], "HISTORY_CLONE", str(tmp_path / "no-history-clone"))
     if "commands.card_data" in sys.modules:
         monkeypatch.setattr(sys.modules["commands.card_data"], "BOT_CLONE", str(tmp_path / "no-bot-clone"))
-        monkeypatch.setattr(sys.modules["commands.card_data"], "_CLEAN", {})     # /update_stats' no-op cleanup memo
-
-
-@pytest.fixture
-def pickle_path(monkeypatch):
-    """The bot before the cutover (CARD_SYNC off): tests of the pickle path."""
-    import global_config
-    monkeypatch.setattr(global_config, "CARD_SYNC", False)
 
 
 @pytest.fixture(scope="session")
 def real_stats():
-    """The live stats.pkl, loaded read-only through StatsDatabase (never saved)."""
-    path = REPO / STATS_PKL
-    if not path.exists():
-        pytest.skip("no stats.pkl")
+    """The live card data: db/stats.json on the card repo clone's origin/data (fetch it to refresh), in a StatsDatabase."""
+    import subprocess
+    done = subprocess.run(["git", "-C", str(CLONE), "show", f"origin/{DATA_BRANCH}:db/stats.json"], capture_output=True)
+    if done.returncode != 0:
+        pytest.skip(f"no origin/{DATA_BRANCH}:db/stats.json in {CLONE}")
+    import commands.card_db as cdb
     import commands.card_models as cm
     db = cm.StatsDatabase()
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(cm, "STATS_PKL", str(path))
-        db._load_stats()
-    db.save = None                                       # read-only: a save would raise
+    db.stats = cdb.parse_stats(done.stdout.decode("utf-8"))
     return db
 
 

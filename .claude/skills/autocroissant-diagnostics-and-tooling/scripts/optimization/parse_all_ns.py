@@ -12,9 +12,10 @@ _parser = None
 
 def _init():
     global _parser
-    from commands.psd_analyzer import PSDParser, RepositoryTraverser, StatsDatabase
+    from commands.card_data import CardBuild
+    from commands.psd_analyzer import PSDParser, StatsDatabase
     db = StatsDatabase()
-    tr = RepositoryTraverser(db)
+    tr = CardBuild(db)
     tr._populate_types_from_local(str(CLONE))
     _parser = PSDParser(db.all_types, db, tr._icons_from_local(str(CLONE)))
 

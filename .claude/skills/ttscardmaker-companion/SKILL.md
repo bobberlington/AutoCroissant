@@ -43,7 +43,7 @@ by **impossibility-cards-reference §4.1**. This skill only summarizes it.
 | Card preview workflow | `.github/workflows/card-preview.yml` (2026-10-23, landed in TTSCardMaker 2150d0ed and AutoCroissant 8983719: dispatch only, inputs `card`, `edit`, `request`): one card's website edit baked as the bake would (AutoCroissant `commands/card_preview.py`, `card_bake.bake_card`, in a read-only job), nothing written to main; a second job (`commands/card_preview_branch.py`, standard library, the only one that writes) puts the result on the orphan branch `previews` (`previews/<request>/result.json`, `preview.webp`, `before.webp`, `index.json`), rewritten past 200 previews or 7 days; no secret beyond GITHUB_TOKEN, no Discord; public like the repo; the website's contract is §2.7 | Source |
 | Installed copy of the font on the dev Mac | `~/Library/Fonts/stoogedings.ttf` (identical to the repo build on 2026-10-19) | Install |
 | Bot code that depends on the font | AutoCroissant `commands/psd_parser.py` (`ICON_FONT_PREFIX`, `IconVocabulary`), `global_config.py` (`ICON_MANIFEST_PATH`), `commands/type_emojis.py` | See §1.7 |
-| Card authors file | `site/Card Authors.txt` (in `MDW/` until 2026-10-20, like `Card Edits.json`, `Website Admins.txt` and `Constructed Ban List.txt`; moved by 13ac680, read from `site/` by the build and the bot): `[people]` git name = display name, `[cards]` Card = person; one person's several git names are merged first by the root `.mailmap` (2026-10-23: Michael -> MichaelJSr, its old `[people]` line gone; build_site reads `%aN`/`%aE`, the bot `%aN` with head's .mailmap blob, its API path `card_edits.Mailmap`). The bot (every `/update_stats`) and the website build both apply it; it wins over the database. Seeded 2026-10-20 from stats.pkl | Source, committed (3ef3776) |
+| Card authors file | `site/Card Authors.txt` (in `MDW/` until 2026-10-20, like `Card Edits.json`, `Website Admins.txt` and `Constructed Ban List.txt`; moved by 13ac680, read from `site/` by the build and the bot): `[people]` git name = display name, `[cards]` Card = person; one person's several git names are merged first by the root `.mailmap` (2026-10-23: Michael -> MichaelJSr, its old `[people]` line gone; build_site reads `%aN`/`%aE`, the bot `%aN` with head's .mailmap blob). The bot (every `/update_stats`) and the website build both apply it; it wins over the database. Seeded 2026-10-20 from stats.pkl | Source, committed (3ef3776) |
 | Effect-layer scripts | `MDW/Scripts/Effect Layers.jsx` (one card: Add / Update all / Convert overlays), `MDW/Scripts/Effect Layers - All Cards.jsx` (every card) | Source, committed (54278c1, last changed c3e9f66) (§6) |
 | Status styling sources | **Authority:** `MDW/Croissant's Special Folder/Satus Effect Colors.psd` (66 statuses, 15 styled; the scripts read colors and copy styles from it). Fallbacks: `MDW/Debuff And Attributes Layer Effects.asl` (13 styles: 10 status, 3 attribute glows), `MDW/Status Effects.aco` (66 status text colors), `MDW/Croissant's Special Folder/Satus Effect Colors.psd` (chart of all 66, incl. 5 styles missing from the .asl) | Source art |
 | Scratch work: audit outputs, Photoshop test JSX, migration prototype | `/private/tmp/fontexplore/` (**volatile: macOS wipes /tmp on reboot; nothing there is committed**) | Scratch |
@@ -403,11 +403,9 @@ tests/test_badge_parity.py):
 
 | Input | Source | Code |
 |---|---|---|
-| Card text, stats, authors, timestamps, problems | `stats.pkl` from `https://raw.githubusercontent.com/bobberlington/AutoCroissant/main/` (`BOT_REPO` env) | `load_bot_pickle` |
-| Text history | `old_stats.pkl` (optional) | `main` |
-| **The card sync's data** (2026-10-23) | With `CARD_DATA_DIR` (a checkout of branch `data`'s `db/`; site.yml's `CARD_DATA` switch, off until the cutover, and only when the branch exists): `stats.json`, `old_stats.json`, `psd_details.json` instead of the three files above, read into the same stand-ins. Unset = the pickles (the rollback). AutoCroissant `tests/test_site_build.py` checks both give the same site | `load_card_data`, `card_of` |
-| Aliases | `aliases.pkl` (alias → PNG file name) | `main` |
-| **PSD details** (2026-10-21) | `psd_details.json` from the same bot repo URL (`{"version": 1, "cards": {blob sha: record}}`, written by `commands/psd_details.py` on `/update_stats` and the backfill CLI, pushed with the pickles). Joined to a card by its PSD's blob at HEAD, else the blob the bot parsed, else the newest record for the path; `details: true` on the card and one `data/details/<id>.json` per card (the record plus the card's id and name). A missing or odd file logs "no PSD details" and the build goes on without the dropdown. A record's `header` (2026-10-24: the header's star and type icon boxes and where the bake would put them) feeds the mock-up's stars and types; records gathered before have none | `load_bot_json`, `psd_records`, `join_details` |
+| Card text, stats, authors, timestamps, problems; text history | The card sync's data: `CARD_DATA_DIR` (site.yml checks out branch `data` into carddata/ and sets `carddata/db`; a local build needs one: `git worktree add /tmp/carddata origin/data`): `stats.json`, `old_stats.json`, read into stand-ins of the bot's classes. The only source since 2026-10-25 (AutoCroissant's pickles `stats.pkl`, `old_stats.pkl`, `aliases.pkl` and site.yml's `CARD_DATA` switch are gone); no CARD_DATA_DIR or no readable stats.json stops the build | `load_card_data`, `card_of` |
+| Aliases | `site/Card Edits.json` entries' `aliases` (`aliases.pkl` moved in on 2026-10-22) | `main`, `edit_aliases` |
+| **PSD details** (2026-10-21) | `db/psd_details.json` in the same folder (`{"version": 1, "cards": {blob sha: record}}`, written by the card sync's build). Joined to a card by its PSD's blob at HEAD, else the blob the bot parsed, else the newest record for the path; `details: true` on the card and one `data/details/<id>.json` per card (the record plus the card's id and name). A missing or odd file logs "no PSD details" and the build goes on without the dropdown. A record's `header` (2026-10-24: the header's star and type icon boxes and where the bake would put them) feeds the mock-up's stars and types; records gathered before have none | `load_card_data`, `psd_records`, `join_details` |
 | **Authors** | `site/Card Authors.txt`. `[people]` git name = shown name; `[cards]` Card Name = person. Card names match case-insensitively, `_` = space, whitespace collapsed; `[people]` lookups are case-insensitive. Listed card: `people.get(cards[name], cards[name])`; else `people.get(bot_author, bot_author)`. Same rule as AutoCroissant. Git names reach it through `.mailmap` (`%aN`). A missing file or malformed line only warns | `parse_authors`, `card_key`, `person` |
 | File list + blob hashes | `git ls-tree -r -z HEAD` (works in a sparse, blobless checkout) | `repo_tree` |
 | **Card images** | Each card PNG becomes 3 AVIF files named `<blob16>-<w>-<tag>.avif` (w 240/360/720 at quality 60/55/50, 4:4:4, speed 6; `thumb_tag(w)` hashes a width's settings, so changing them re-encodes that width under new names; the tags are cards.json `thumbs`; AVIF only since 2026-10-24, no WebP fallback). 240 and 360 are the grid at 1x/2x, 720 is the card view. Cached in `site/.cache/img` by git blob hash, unused files pruned; settings in `IMAGE_SIZES` and `AVIF`; `IMAGE_BUDGET` (site.yml 1800 s) splits a full re-encode over runs (partial cache saved when its files changed, the build fails until done). No service worker (owner 2026-10-24: a trial one cost ~8 ms desktop, ~24 ms 4x phone of first paint on each return visit for bytes only; site/NOTES.md §28); the HTTP cache reuses an unchanged thumb, a changed card gets a new name. PNG bytes come from the local file, else `raw.githubusercontent.com/MichaelJSr/TTSCardMaker/<commit>/` in Actions (`main/` elsewhere or when that fails), checked against the blob sha (`image_bytes`: raw main is a CDN copy up to 5 minutes old) | `make_images` |
@@ -415,18 +413,17 @@ tests/test_badge_parity.py):
 | **Web fonts** (2026-10-23) | The fonts the PSD details' text layers name, mapped to their `MDW/Fonts` file as font_check decides them (exactly that PostScript name; no aliases or loose matches since 89039eb, on branch work/site-round-2 too) → `data/fonts.json` `{"fonts": {name: {file, bytes}}}`, .ttf/.otf up to 8 MB only. Name tables read without fontTools (`font_faces`, equal to `font_check.face_names` on every file), cached by blob in `site/.cache/fonts.json`; a file not checked out is downloaded once from raw (8 at a time). For the edit mock-up only; never fails the build | `web_fonts`, `font_faces`, `record_fonts` |
 | **Image versions** | One `git log --raw --no-renames` pass over all history, commit metadata only, no blobs, dated by committer time (`%ct`, as the bot dates versions; since 2026-10-23) (0.05 s for 520 commits). For each card PNG it lists the commits that changed its content (not a bot commit's lossless recompressions, named in its `Recompressed: <path>` trailers: the push guards, the PNG batch; 2026-10-23). Exact renames (same blob deleted and added in one commit, i.e. folder moves such as the `Auxillary/` typo fix) are followed; a rename that also edits the image starts a new history. Inexact rename detection (`-M`) is deliberately not used: in a blobless clone it would download blobs. A shallow clone gets none and warns | `image_versions` |
 | Ban list | `site/Constructed Ban List.txt`, matched on letters and digits (`alnum`) incl. aliases | `parse_banlist` |
-| **Duplicates** | A numbered PNG with no PSD of its own next to a card's PSD (`A_Snack.psd` → `A_Snack2.png`, `A_Snack3.png`). The team's rule: duplicates always share the original's PSD. Each becomes its own card with the original's data, `dup` = original id (the original gets `dups`). Its name is the alias pointing at that PNG (longest, capitalised: "breakfast" → Breakfast), else the original's name. Its author, text history and `since` are the original's. Duplicates don't count as mentioning cards and are left out of the Stats page. The other names are hidden title layers in the PSD (Breakfast, Supper; Grape Juice; Inconspicuous Watermelon), but which PNG gets which name is only recorded by `/alias` | `main`, `dupsOf` (app.js) |
+| **Duplicates** | A numbered PNG with no PSD of its own next to a card's PSD (`A_Snack.psd` → `A_Snack2.png`, `A_Snack3.png`). The team's rule: duplicates always share the original's PSD. Each becomes its own card with the original's data, `dup` = original id (the original gets `dups`). Its name is its Card Edits entry's alias (longest, capitalised: "breakfast" → Breakfast), else the original's name. Its author, text history and `since` are the original's. Duplicates don't count as mentioning cards and are left out of the Stats page. The other names are hidden title layers in the PSD (Breakfast, Supper; Grape Juice; Inconspicuous Watermelon), but which PNG gets which name is only recorded by the aliases | `main`, `dupsOf` (app.js) |
 | Unused status effects | Debuffs/buffs that no card's text names get `_unused` (Unused flag, filter, and a list on the Stats page) | app.js `init` |
 | **Website admins** | `site/Website Admins.txt` (GitHub logins; the repo owner is always one). A personal repo gives collaborators only write, so admin is a site rule: ban list, hidden cards, people, this list | `parse_admins`; edit.js `isAdmin` |
-| **Creatures** | stats.pkl `creatures` (bot split) or the `creatures` edit → `entry.creatures` [{hp, def, atk, spd}]; card stats = creature 1 | `main`, `apply_edits` |
-| Unparsed cards | PSDs/PNGs under Creatures/, Items/, Field/, N.M.E/ and Auxiliary/ that aren't in stats.pkl: image only, classified by folder | `main`, `classify` |
+| **Creatures** | stats.json `creatures` (bot split) or the `creatures` edit → `entry.creatures` [{hp, def, atk, spd}]; card stats = creature 1 | `main`, `apply_edits` |
+| Unparsed cards | PSDs/PNGs under Creatures/, Items/, Field/, N.M.E/ and Auxiliary/ that aren't in stats.json: image only, classified by folder | `main`, `classify` |
 | **Decks** (2026-10-21) | `site/decks/<owner>/<slug>.json`, hands published from the website's deck builder with the edit batch (format: `site/decks/README.md`). Public: resolved against visible cards (unknown ids dropped with a warning, counted) → `data/decks.json` + a `decks/<owner>/<slug>/` share page; private: PBKDF2 → AES-GCM made in the browser, shapes checked, passed through as they are, no page. Bad files skipped with a warning, never a failed build; `decks: {public, private}` and `files.decks` in cards.json | `read_decks`, `clean_deck`, `deck_text` |
 | **Balance analytics** (2026-10-22) | `site/build/analytics.py` (no PSDs, no network), called by `main` after the image-version pass and before the history moves to history.json: `analytics.build(cards, stats, old_stats, history=commits is not None, psd_commits=psd_commits)`. `psd_commits` is `{(commit unix time, PSD file name in lower case)}` from the same `git_history()` pass (non-delete `.psd` entries; `None` in a shallow clone): an old_stats version without a `blob_sha` counts as exactly dated (`exact`) when a commit touched a PSD of its file name at that second, else its change row is marked `approx`. Cohorts are creatures and minions by star level (under 5 cards fold into `<kind>\|all`), per-card pct/z/flags, change rows (`page_chain`, re-reads folded by when since 7a87d91a) and the monthly series (full history only). Writes `data/analytics.json` and `balance: true` on each card with an entry; an exception is a `warn()` and an empty file, never a failed build; no tz database also warns (UTC instead of Pacific). build_site puts its own folder on `sys.path` before `import analytics`, so file-path loads (TTS/checks/tts_save_gate.py) still work | `analytics.build`, `analytics.summary`; `site/assets/balance.js` |
 
-The pickles are loaded **without AutoCroissant code** (`_Unpickler` stubs every `commands.*` class). Renaming
-`CardInfo` is harmless; renaming attributes (`card_type`, `ability`, `stats.hp`, `timestamp`) silently blanks those
-fields. Unpickling still trusts non-`commands` globals: anyone who can push to AutoCroissant main can run code in the
-TTSCardMaker Actions runner (same trusted circle today).
+The records are read **without AutoCroissant code** (plain JSON into stand-ins). Renaming `CardInfo` is harmless;
+renaming attributes (`card_type`, `ability`, `stats.hp`, `timestamp`) silently blanks those fields (a warning names
+them). Until 2026-10-25 the build unpickled AutoCroissant's pickles through an allow-list (`_Unpickler`, gone).
 
 **Output (`site/dist/`):**
 - **Data files:**
@@ -456,8 +453,8 @@ TTSCardMaker Actions runner (same trusted circle today).
 - **Size:** about 117 MB in total, mostly 2,463 card images.
 
 **Build behaviour:**
-- **Fails** (exit 1, nothing deployed) when `stats.pkl` can't be fetched, when it has fewer than `MIN_CARDS` (100)
-  entries, or when more than max(5, 2%) of card images fail.
+- **Fails** (exit 1, nothing deployed) without `CARD_DATA_DIR` or a readable `stats.json`, when it has fewer than
+  `MIN_CARDS` (100) entries, or when more than max(5, 2%) of card images fail.
 - **Degrades** (logs and continues) for missing history, aliases, manifest, authors file or a few images.
 - **Timing:** the CI cold run (2026-10-20) made 2,463 images in about 100 s. Warm runs take 2–3 s.
 
@@ -552,19 +549,20 @@ python -m http.server -d site/dist 8000            # open http://localhost:8000
 
 ### 2.5 What this means for AutoCroissant operations
 
-**Every pickle push from the bot updates the public website.** The site shows exactly what is on AutoCroissant `main`.
-- **Timing:** a pushed `stats.pkl` reaches the site at the next 6-hourly run, or sooner on any TTSCardMaker push or
-  manual run (raw.githubusercontent adds up to 5 min of CDN cache).
-- **Consequence:** a bad PICKLE push becomes public, and the site is only as fresh as the last `/update_stats` + `/push`.
-- **Card edits:** pushed card content changes images immediately, but text and stats only after the bot re-parses
-  and pushes.
+**Every Card sync data commit updates the public website.** The site shows the `data` branch's `db/` (Card sync
+dispatches site.yml after each data commit; its daily cron is the fallback). Until 2026-10-25 it showed AutoCroissant
+main's pickles, so every `/push` reached it.
+- **Consequence:** bad data that passes the build's gates becomes public at the next site build: the data gate
+  (autocroissant-change-control) and a `restore` dispatch (AutoCroissant DATA_BUILD_ACTION.md §13) are the remedy.
+- **Card edits:** pushed card content changes images immediately, text and stats once Card sync re-parses (its data
+  lane, then the site build).
 - **Authors:** both sides read `site/Card Authors.txt` with the same rule, so authors agree whatever the bot recorded.
-- **Duplicates:** `/update_stats` records `<Name>N.png` (no PSD of its own) as a copy of `<Name>`'s card with
-  `duplicate_of`; name = edit > `/alias` > the original's (hidden title layers name nothing since 2026-10-25). Search skips them.
+- **Duplicates:** the card data build records `<Name>N.png` (no PSD of its own) as a copy of `<Name>`'s card with
+  `duplicate_of`; name = its Card Edits aliases > the original's (hidden title layers name nothing since 2026-10-25). Search skips them.
 - **Bot ↔ site:** `/query` replies have a Card page button (ids from the site's cards.json) and show website
   names, notes and series/subseries; searches link to the site; `/website`. `SITE_URL` is in global_config.py.
 - **Website edits:** `site/Card Edits.json` (card file name → fields). The site applies it on every build (a publish
-  triggers one); the bot on `/update_stats`, keeping PSD values in `parsed_values`. Field list is in three places:
+  triggers one); the card data build too, keeping PSD values in `parsed_values`. Field list is in three places:
   `EDIT_FIELDS` (build_site.py), `FIELDS` (edit.js), `CardEdits.TYPES` (card_edits.py); so is each field's kind
   (printed on the card image / from the folder / database-only): `PSD_FIELDS`, `FROM`, `CardEdits.KIND` (2026-10-20,
   docs/EDIT_PIPELINE_DESIGN.md §3 and §9). cards.json carries `pending` (image fields still to be baked by the edit
@@ -587,7 +585,7 @@ python -m http.server -d site/dist 8000            # open http://localhost:8000
   855) knows nothing of the floor, so the window is the next Card sync run after the change lands (card-edits' 30-minute tick until the cutover,
   2026-10-24; a dispatch closes it at once).
 
-The diff-gate before pushes is owned by **autocroissant-change-control**; /update_stats and /push by
+The data gate is owned by **autocroissant-change-control**; /update_stats (the bot's sync) by
 **autocroissant-run-and-operate**.
 
 ### 2.6 TTS save workflow (.github/workflows/tts-save.yml, 2026-10-20; daily gate 2026-10-21, bot data 2026-10-22; deleted 2026-10-24)
@@ -615,7 +613,7 @@ bot ran the updater itself after `/update_stats`; this Action replaced that.
 - **Daily gate** (the owner's, 075e6c43, 2026-10-22; `actions: read`): step "Card browser names" downloads the live
   `cards.json` (also the updater's `site/dist` fallback) and hashes its png -> name map; `actions/cache/restore`
   (`lookup-only`) looks for `tts-save-names-<hash>`, saved after each run that ran with new names. Step "Changes since
-  the last run" runs when forced, when that cache entry is missing (the bot's pickle push renamed cards: PICKLE 3888392
+  the last run" runs when forced, when that cache entry is missing (a data commit renamed cards; the bot's PICKLE 3888392
   did, once site.yml rebuilt the site), when there is no earlier successful run on this branch (`gh run list --branch`;
   a failed lookup also runs), or when a commit not made by the Action itself (`AutoCroissant|TTS save:`) touched
   `*.png`, `TTS/decks.json`, `site/Card Edits.json` or the save (`git log last..HEAD`; full history, `filter:
@@ -652,7 +650,7 @@ bot ran the updater itself after `/update_stats`; this Action replaced that.
   report and commit subject, and the daily gate against real history (names hashed from the bot's stats.pkl at
   3888392 and 39da9ed). Drift fails on any change to an existing card's Description, GMNotes, Memo, Tags or scripts and
   on the global Lua outside resizeTargets. Any Python with `requests` and `Pillow`; the
-  Lua checks need `lupa`. The names checks follow the live website, so between a pickle push and the next run they fail
+  Lua checks need `lupa`. The names checks follow the live website, so between a data commit and the next run they fail
   (`contents_names`, `final_spot`, `updater_idempotent`; 24 of 24 after the 2026-10-22 update).
   `AUTOCROISSANT` defaults to `~/Desktop/AutoCroissant`; `updater_report_decks.py` needs that checkout to have the
   updater as on main since 2026-10-22 (pull first, or point `AUTOCROISSANT` at a clone that has it).
@@ -1040,8 +1038,8 @@ Changed cards are saved, and their PNG is re-exported. Cards with a non-sRGB pro
 |---|---|
 | How the parser reads font tokens, canonical forms, the four ICON problems, gap injection | impossibility-cards-reference (§4.1, §4) |
 | Values and defaults of `ICON_FONT_PREFIX`, `ICON_MANIFEST_PATH`, `ICON_VARIANTS`, and the type_emojis constants | autocroissant-config-and-flags |
-| Running `/update_stats`, `/push`, `/sync_emojis`, reminders | autocroissant-run-and-operate |
-| Gating a pickle push (now also a website publish) | autocroissant-change-control |
+| Running `/update_stats`, `/sync_emojis`, reminders | autocroissant-run-and-operate |
+| Gating a card data commit (also a website publish) | autocroissant-change-control |
 | Proving a parser change is neutral (old-vs-new parser over all PSDs, sandboxed sweep) | autocroissant-validation-and-qa |
 | Discord-side symptoms (emojis not rendering, command missing) | autocroissant-debugging-playbook |
 
@@ -1129,3 +1127,5 @@ quiet window an environment (AutoCroissant docs/Campaigns/PUSH_GUARDS.md section
 2026-10-24 (pictures): §2.4 Card images (AVIF, IMAGE_BUDGET, no service worker), §2.1 cache-busting (deploy gate back, icon stamps) and the link-preview row, against TTSCardMaker branch work/site-img.
 
 2026-10-25 (retire): /update_tts_save retired (branch archive/discord-edits).
+
+2026-10-25 (step 10, AutoCroissant and TTSCardMaker work/pickles): §2.1's inputs are the data branch only (no pickles, `aliases.pkl`, `load_bot_*` or `CARD_DATA` switch), the build's failure rule and §2.5 (the data commit reaches the site, not a /push) rewritten.

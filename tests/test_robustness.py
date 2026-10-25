@@ -15,6 +15,7 @@ from discord import File, Forbidden, HTTPException, Object
 from requests.exceptions import ChunkedEncodingError, ConnectionError as RequestsConnectionError
 
 import main
+import commands.card_data as cd
 import commands.github_api as ga
 import commands.help as help_module
 import commands.music_player as mp
@@ -353,7 +354,7 @@ def test_set_repo_switches_only_after_the_new_tree_loads(github, monkeypatch):
         seen.append((repo.repository, kw["headers"].get("If-None-Match")))
         return Reply(200, {"tree": [{"path": "Items/Other.png", "sha": "o1"}]}, etag='"e2"')
     monkeypatch.setattr(ga, "get", get)
-    assert repo.populate_files(None, "someone/Other") == 200
+    assert repo.populate_files("someone/Other") == 200
     assert seen == [(qc.DEFAULT_REPOSITORY, None)]                       # old repo while fetching, no stale ETag
     assert repo.repository == "someone/Other" and repo.git_files == {"other.png": "Items/Other.png"}
 
@@ -390,7 +391,7 @@ def test_failed_emoji_listing_still_publishes_existing_emojis(github, monkeypatc
 # ========================
 def test_partial_download_is_removed(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-    traverser = pa.RepositoryTraverser(pa.StatsDatabase())
+    traverser = cd.CardBuild(pa.StatsDatabase())
 
     class Stream:
         def __enter__(self):
@@ -446,27 +447,6 @@ def test_git_fetch_times_out(monkeypatch, tmp_path):
     assert sent[0] == "Fetching from remote..." and "did not complete in 1 secs" in sent[1]
 
 
-@pytest.mark.usefixtures("pickle_path")
-def test_push_reports_the_pull_error_not_the_abort(monkeypatch):
-    from git import GitCommandError
-    class FakeGit:
-        def add(self, *a):
-            pass
-        def commit(self, *a):
-            raise GitCommandError("commit", 1, b"nothing to commit")
-        def pull(self, *a, **kw):
-            raise GitCommandError("pull", -9, b"did not complete in 120 secs")
-        def rebase(self, *a):
-            raise GitCommandError("rebase", 128, b"No rebase in progress?")
-    monkeypatch.setattr(ub, "_git", FakeGit)
-    sent = []
-    async def send(content):
-        sent.append(content)
-    with pytest.raises(GitCommandError):
-        asyncio.run(ub.git_push(SimpleNamespace(followup=SimpleNamespace(send=send))))
-    assert "did not complete" in sent[0] and "rebase" not in sent[0]
-
-
 # ========================
 # on_ready again after a failed RESUME
 # ========================
@@ -507,7 +487,7 @@ def test_on_ready_twice_runs_the_inits_once(monkeypatch, capsys):
         await main.on_ready()                                           # the repeat: no RuntimeError
         await asyncio.sleep(0)
     asyncio.run(ready_twice())
-    assert queued == ["sweep_temp_psds", "init_reminder", "init_psd", "init_query", "refresh", "init_type_emojis"]
+    assert queued == ["init_reminder", "init_psd", "init_query", "refresh", "init_type_emojis"]
     assert [loop.starts for loop in loops] == [1, 2, 1, 1]
     assert synced == [1, 2] and main.slash_registry
     assert "Reconnected: inits skipped, revived commands" in capsys.readouterr().out
@@ -586,7 +566,7 @@ def test_help_covers_every_command():
     documented = {re.match(r"/(\w+)", key).group(1) for d in (help_module.general_commands, help_module.text_commands,
                   help_module.card_commands, help_module.stats_commands, help_module.music_commands)
                   for key in d if key.startswith("/")}
-    assert documented == set(_registered()) and len(documented) == 47
+    assert documented == set(_registered()) and len(documented) == 46
     assert "list_guild_members" not in documented and not hasattr(main, "list_guild_members")
 
 

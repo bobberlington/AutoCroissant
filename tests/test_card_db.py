@@ -1,10 +1,8 @@
-"""card_db: CardInfo records, db/'s JSON files and manifest, the seed's allow-list unpickler, export-pickles."""
+"""card_db: CardInfo records, db/'s JSON files and manifest, the historical pickles' allow-list unpickler."""
 import hashlib
 import json
 import os
 import pickle
-import subprocess
-import sys
 from collections import defaultdict
 from dataclasses import fields
 
@@ -12,7 +10,6 @@ import pytest
 
 import commands.card_db as cdb
 import commands.card_models as cm
-from conftest import REPO
 
 
 def _card(name="A Card", **kw):
@@ -151,69 +148,3 @@ def test_seed_unpickler_takes_the_card_classes_only(tmp_path):
     bad.write_bytes(pickle.dumps({"x": Evil()}))
     with pytest.raises(pickle.UnpicklingError, match="not allowed"):
         cdb.load_pickle(str(bad))
-
-
-def test_export_pickles_round_trip(tmp_path):
-    stats, old = {"A": _full()}, defaultdict(list, {"A": [_card("A", ability="Old.")]})
-    cdb.write_db(str(tmp_path / "db"), stats, old, '{"version": 1, "cards": {\n\n}}\n', {})
-    cdb.export_pickles(str(tmp_path / "db"), str(tmp_path / "out"))
-    data = (tmp_path / "out" / "stats.pkl").read_bytes()
-    assert b"commands.psd_analyzer" in data and pickle.loads(data) == stats
-    assert pickle.loads((tmp_path / "out" / "old_stats.pkl").read_bytes()) == old
-    assert (tmp_path / "out" / "psd_details.json").read_text(encoding="utf-8").startswith('{"version": 1')
-
-
-def test_export_needs_no_bot(tmp_path):
-    """Without config.py, discord or the facade loaded, the pickles still name commands.psd_analyzer (a stand-in)."""
-    cdb.write_db(str(tmp_path / "db"), {"A": _card()}, defaultdict(list), '{"version": 1, "cards": {\n\n}}\n', {})
-    code = ("import sys; sys.path.insert(0, sys.argv[1]); import commands.card_db as c; c.export_pickles(sys.argv[2], sys.argv[3]); "
-            "print('commands.psd_analyzer' in sys.modules, 'discord' in sys.modules)")
-    done = subprocess.run([sys.executable, "-c", code, str(REPO), str(tmp_path / "db"), str(tmp_path / "out")], cwd=tmp_path,
-                          capture_output=True, text=True, timeout=60)
-    assert done.returncode == 0, done.stderr
-    assert done.stdout.split() == ["False", "False"]
-    assert b"commands.psd_analyzer\x94\x8c\x08CardInfo" in (tmp_path / "out" / "stats.pkl").read_bytes()
-
-
-def test_cli_from_pickles_and_back(tmp_path):
-    folder = tmp_path / "p"
-    folder.mkdir()
-    stats = {"A": _card()}
-    (folder / "stats.pkl").write_bytes(pickle.dumps(stats))
-    assert cdb.main(["from-pickles", str(folder), str(tmp_path / "db")]) == 0
-    assert cdb.main(["check", str(tmp_path / "db")]) == 0
-    assert cdb.main(["export-pickles", str(tmp_path / "db"), str(tmp_path / "out")]) == 0
-    assert pickle.loads((tmp_path / "out" / "stats.pkl").read_bytes()) == stats
-
-
-def test_export_pickles_from_a_data_commit(tmp_path):
-    """Rollback step 2: export-pickles <data commit> <out> --git <data checkout> reads db/ at that commit."""
-    data = tmp_path / "data"
-    cdb.write_db(str(data / "db"), {"A": _card(ability="Good.")}, defaultdict(list), '{"version": 1, "cards": {\n\n}}\n', {})
-    env = {**__import__("os").environ, "GIT_AUTHOR_NAME": "a", "GIT_AUTHOR_EMAIL": "a@x", "GIT_COMMITTER_NAME": "a",
-           "GIT_COMMITTER_EMAIL": "a@x"}
-    for args in (("init", "-q", "-b", "data"), ("add", "-A"), ("commit", "-q", "-m", "good")):
-        subprocess.run(["git", "-C", str(data), *args], check=True, env=env, capture_output=True)
-    good = subprocess.run(["git", "-C", str(data), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-    cdb.write_db(str(data / "db"), {"A": _card(ability="Bad.")}, defaultdict(list), '{"version": 1, "cards": {\n\n}}\n', {})
-    assert cdb.main(["export-pickles", good, str(tmp_path / "out"), "--git", str(data)]) == 0
-    assert pickle.loads((tmp_path / "out" / "stats.pkl").read_bytes())["A"].ability == "Good."
-    assert sorted(p.name for p in (tmp_path / "out").iterdir()) == ["old_stats.pkl", "psd_details.json", "stats.pkl"]
-    with pytest.raises(ValueError):
-        cdb.export_pickles("f" * 40, str(tmp_path / "out2"), str(data))
-
-
-# ========================
-# The live pickles (read only)
-# ========================
-def test_live_round_trip():
-    """Every card and version of the committed pickles survives record -> CardInfo -> record, field for field."""
-    if not (REPO / "stats.pkl").exists() or not (REPO / "old_stats.pkl").exists():
-        pytest.skip("no pickles")
-    stats, old = cdb.read_pickles(str(REPO))
-    assert len(stats) > 100 and cdb.round_trip_problems(stats, old) == []
-    for card in list(stats.values()) + [v for versions in old.values() for v in versions]:
-        back = cdb.card(cdb.record(card))
-        assert all(getattr(back, f.name) == (getattr(card, f.name) if hasattr(card, f.name) else back.__dict__[f.name])
-                   for f in fields(cm.CardInfo)), card.name
-    assert all(repr(cdb.card(cdb.record(c))) == repr(c) for c in stats.values())

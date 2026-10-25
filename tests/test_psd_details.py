@@ -2,7 +2,6 @@
 commands/psd_details.py: the record on the goldens' PSDs (skipped without the clone), load/save/prune, the backfill CLI on
 two cards, a card psd-tools can't walk, /push carrying the file.
 """
-import asyncio
 import json
 import shutil
 from types import SimpleNamespace
@@ -10,10 +9,8 @@ from types import SimpleNamespace
 import pytest
 
 import commands.psd_details as pd
-import commands.update_bot as ub
 from commands.font_check import FontIndex, psd_fonts
 from conftest import at_rev, blob_sha
-from global_config import DETAILS_JSON
 
 DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"                           # template rows
 CANNON = "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd"      # atk in two rows
@@ -315,35 +312,3 @@ def test_cli_reports_an_unreadable_psd(tmp_path, capsys):
     text = capsys.readouterr().out
     assert text.startswith("0 cards into") and "(1 errors); no records" in text and "  Items/Bad.psd: " in text
     assert pd.load(str(tmp_path / "o.json")) == {}
-
-
-# ========================
-# /push carries the file
-# ========================
-@pytest.mark.usefixtures("pickle_path")
-def test_push_commits_the_details_file_with_the_pickles(monkeypatch):
-    from git import GitCommandError
-    added = []
-
-    class FakeGit:
-        def add(self, path):
-            added.append(path)
-        def commit(self, *a):
-            raise GitCommandError("commit", 1, b"nothing to commit")
-        def pull(self, *a, **kw):
-            pass
-        def rev_list(self, *a):
-            return "0\n"
-    monkeypatch.setattr(ub, "_git", FakeGit)
-    monkeypatch.setattr(ub, "isfile", lambda path: path == DETAILS_JSON)
-    sent = []
-    async def send(content):
-        sent.append(content)
-    asyncio.run(ub.git_push(SimpleNamespace(followup=SimpleNamespace(send=send))))
-    assert added == ["aliases.pkl", "stats.pkl", "old_stats.pkl", DETAILS_JSON] and sent == ["Pickles are already up to date."]
-    assert DETAILS_JSON == "psd_details.json"
-    # a checkout without the file (before the backfill commit): the pickles still go, no "pathspec did not match"
-    added.clear()
-    monkeypatch.setattr(ub, "isfile", lambda path: False)
-    asyncio.run(ub.git_push(SimpleNamespace(followup=SimpleNamespace(send=send))))
-    assert added == ["aliases.pkl", "stats.pkl", "old_stats.pkl"]

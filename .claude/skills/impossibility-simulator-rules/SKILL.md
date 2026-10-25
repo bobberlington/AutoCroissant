@@ -497,7 +497,7 @@ Assembled from the rulebook's own examples; the joins are this skill's.
    name, lowercased, icons as emojis; `search_text` is required by the slash command (main.py), so only a whitespace-only
    search reaches the engine's all-pages path. `/export_rulebook`: all pages as a text file.
    `/query_ability` searches card text (`type==debuff & stars==3`, `(1gcd)`; DSL in impossibility-cards-reference §7).
-   It searches the bot's `stats.pkl`, which carries the new tags since PICKLE `3888392` (header).
+   It searches the bot's card data (`stats.pkl` until 2026-10-25), which carries the new tags since PICKLE `3888392` (header).
 5. **Text players never see** is in rules.json/stats.pkl/`/query_rulebook`: hidden duplicates (09), a hidden PASSIVES
    block (11_Abilities), an off-canvas "ABILITIES 7" header (11_Abilities6), an older reactions draft with order 4>2>1>3
    (12_Reactions2; the rule is 4>2>3>1), an older ITEMS block (22_Negation), overflow text (12_Reactions "of 5.",
@@ -543,7 +543,7 @@ are defined only on cards (the book names ~22 of 64).
 |---|---|
 | How card DATA is encoded: folders, PSD layers, stats extraction, type injection, pickle schemas, the /query DSL | impossibility-cards-reference |
 | The icon font, [type] tokens, timing-tag badges, the card website or deck builder, anything in ~/Desktop/TTSCardMaker | ttscardmaker-companion |
-| Running the bot, /update_stats, pushing pickles (which also republishes rules.json) | autocroissant-run-and-operate |
+| Running the bot, /update_stats (the card data, which also republishes rules.json through the site build) | autocroissant-run-and-operate |
 | A card whose ability text or type parsed wrong | autocroissant-psd-extraction-campaign, autocroissant-diagnostics-and-tooling |
 | Help text, describe strings, skill-writing conventions | autocroissant-docs-and-style |
 | An AI that answers rules questions (RAG, /ask) as a future feature | autocroissant-research-frontier |
@@ -554,7 +554,7 @@ are defined only on cards (the book names ~22 of 64).
 |---|---|
 | 48 pages, PSD per PNG | `ls ~/Desktop/TTSCardMaker/Auxiliary/Rulebook/*.psd \| wc -l` (and `*.png`) |
 | rules.json count and any page's text | `python3 -I -c "import json;r=json.load(open('$HOME/Desktop/TTSCardMaker/site/dist/data/rules.json'))['rules'];print(len(r));print(r[0])"` |
-| stats.pkl == rules.json | `python3 -I .claude/skills/impossibility-simulator-rules/scripts/loadpkl.py ~/Desktop/AutoCroissant/stats.pkl /tmp/s.json` (stub loader, no psd_tools needed) then compare `ability` per name |
+| stats.pkl == rules.json | `git -C ~/Desktop/AutoCroissant show 3888392:stats.pkl > /tmp/s.pkl; python3 -I .claude/skills/impossibility-simulator-rules/scripts/loadpkl.py /tmp/s.pkl /tmp/s.json` (the pickles are in git history since 2026-10-25; stub loader, no psd_tools needed) then compare `ability` per name |
 | Hidden / off-canvas layers | `python .claude/skills/impossibility-simulator-rules/scripts/alllayers.py <page.psd>` from a venv with psd-tools (the system `python3` lacks it; autocroissant-build-and-env §1) |
 | Tag counts (§3, 2026-10-22) | `python3 -I .claude/skills/impossibility-simulator-rules/scripts/tags.py <cards.json or loadpkl.py dump>` (matches (1/2CD) and (-1/1GCD); prints a total line). `site/dist/data/cards.json` is rebuilt only by a PICKLE push: before trusting it, check that tags.py shows no (1PT)/(1PGT)/(E2T). Between `/update_stats` and the push, run it on the loadpkl.py dump of the bot's `stats.pkl` (same tag counts; the dump lacks only the two PNG-only cards, which have no text) |
 | Card evidence (§3 "What the cards show") | `python3 -I .claude/skills/impossibility-simulator-rules/scripts/lines.py <cards.json or dump>`: lines per family with (OYT)/(AAT), the tag before each (nU), line starts, cooldown tags after other text, (a/bCD) cards |

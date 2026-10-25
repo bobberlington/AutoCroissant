@@ -39,7 +39,7 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
         assert (REPO / rel).is_file(), f"{rel} is in SPARSE_FILES but missing here"
         (bot / rel).parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(REPO / rel, bot / rel)
-    flags = {"card_data": {"--repo", "--checkout", "--head", "--blobs", "--db", "--seed", "--aliases", "--full", "--cards",
+    flags = {"card_data": {"--repo", "--checkout", "--head", "--blobs", "--db", "--seed", "--full", "--cards",
                            "--allow-archive", "--restore", "--budget", "--run", "--builder-ref", "--summary", "--message",
                            "--dry-run", "--baked", "--own", "--rewrite", "--help"},
              "card_bake": None, "tts_save": {"--names", "--help"}}
@@ -51,8 +51,8 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
             assert set(re.findall(r"--[a-z-]+", done.stdout)) == expected
     code = ("import sys, commands.card_data, commands.card_history, commands.card_db, commands.changelog, commands.psd_details, "
             "commands.card_bake, commands.tts_save; "
-            "print(sorted(m for m in ('config', 'discord', 'pandas', 'github', 'commands.psd_analyzer', 'commands.repo_traverser', "
-            "'commands.query_card', 'commands.utils', 'commands.type_emojis', 'commands.card_runner') if m in sys.modules)); "
+            "print(sorted(m for m in ('config', 'discord', 'pandas', 'github', 'commands.psd_analyzer', "
+            "'commands.query_card', 'commands.utils', 'commands.type_emojis') if m in sys.modules)); "
             "print(sorted(m for m in sys.modules if m.startswith('commands.') or m == 'global_config'))")
     done = run_process([executable, "-c", code], cwd=bot, capture_output=True, text=True, timeout=120)
     assert done.returncode == 0, done.stderr
@@ -198,9 +198,6 @@ def cards(tmp_path, clone, monkeypatch):
     monkeypatch.setattr(cd, "MIN_CARDS", 1)
     monkeypatch.setattr(cd, "FLOOR_SHARE", 0)
     monkeypatch.setattr(cd, "_activity", lambda repository: [])                  # offline: pushes told by author
-    aliases = tmp_path / "main-aliases.pkl"                                      # offline: AutoCroissant main's aliases.pkl
-    aliases.write_bytes(pickle.dumps({}))
-    monkeypatch.setattr(cd, "ALIASES_REF", str(aliases))
     psds = {}
     for rel in (DOOMER, FREEZER, OTHER):
         data = (clone / rel).read_bytes()
@@ -226,7 +223,7 @@ def cards(tmp_path, clone, monkeypatch):
     (seed / "stats.pkl").write_bytes(pickle.dumps({}))
     db = tmp_path / "data" / "db"
     db.mkdir(parents=True)
-    return SimpleNamespace(repo=repo, psds=psds, seed=seed, db=db, first=first, tmp=tmp_path, aliases=aliases)
+    return SimpleNamespace(repo=repo, psds=psds, seed=seed, db=db, first=first, tmp=tmp_path)
 
 
 def _build(c, *extra):
@@ -392,7 +389,7 @@ def test_a_new_cards_date_and_author_come_from_its_first_path(tmp_path):
     commit(repo, "dave", 4000)
     build = cd.GitBuild(cm.StatsDatabase(), str(repo))
     build.shas = {"Items/B.psd": blob_sha_bytes(b"one")}
-    assert build._get_remote_timestamp(None, "Items/B.psd", "B") == (3000.0, "alice")
+    assert build._get_remote_timestamp("Items/B.psd", "B") == (3000.0, "alice")
 
 
 def test_a_rename_that_edited_the_psd_keeps_the_card_by_its_art(cards):
@@ -620,41 +617,6 @@ def test_git_authors_go_through_the_mailmap(tmp_path):
     assert build.index.first["Items/A.psd"].author == "MichaelJSr"
 
 
-class _ApiCommit:
-    """A PyGithub commit: .commit.author (name, email) and .commit.committer.date."""
-    def __init__(self, name, email, at):
-        from datetime import datetime, timezone
-        self.commit = SimpleNamespace(author=SimpleNamespace(name=name, email=email),
-                                      committer=SimpleNamespace(date=datetime.fromtimestamp(at, timezone.utc)))
-
-
-def test_api_first_author_goes_through_the_mailmap(monkeypatch):
-    """The API ignores .mailmap: the tree's, read once a run (only for a new card's author), maps by the commit's email;
-    a failed read raises (the card waits) and is tried again."""
-    from requests.exceptions import ConnectionError as Down
-    build = cd.CardBuild(cm.StatsDatabase())
-    monkeypatch.setattr(build, "_commit_page", lambda path: [_ApiCommit("Bob", "bob@x", 3000), _ApiCommit("Michael", "ME@x", 1000)])
-    reads = []
-
-    def blob_text(repository, sha, timeout=None):
-        reads.append(sha)
-        if sha == "down":
-            raise Down("503")
-        return "# one person\nMichaelJSr <me@x>\n"
-    monkeypatch.setattr(cd, "blob_text", blob_text)
-    build.shas = {}                                                          # no .mailmap in the tree: git names as they are
-    assert build._get_remote_timestamp(object(), "Items/A.psd", "A") == (3000.0, "Michael") and reads == []
-    build.mailmap, build.shas = None, {".mailmap": "down"}
-    with pytest.raises(Down):
-        build._get_remote_timestamp(object(), "Items/A.psd", "A")
-    assert build.mailmap is None
-    build.shas = {".mailmap": "m1"}
-    assert build._get_remote_timestamp(object(), "Items/A.psd", "A") == (3000.0, "MichaelJSr")
-    assert build._get_remote_timestamp(object(), "Items/B.psd", "B") == (3000.0, "MichaelJSr") and reads == ["down", "m1"]
-    build.db.stats["A"] = cm.CardInfo(name="A", card_type="item", path="Items/A.psd", author="Someone")
-    assert build._get_remote_timestamp(object(), "Items/A.psd", "A") == (3000.0, None)
-
-
 def test_bake_commit_rewritten_to_the_main_commit(cards):
     """Stage 4: the build ran on the local bake commit B; after M (B plus the save) is pushed, --rewrite B M names M
     everywhere B was (dates too) and lists B's PNGs to re-pin."""
@@ -741,23 +703,6 @@ def test_restore_writes_an_older_data_commit_back(cards):
     assert sent[len(sent) - 1]["body"]["embeds"][0]["title"].endswith(": 1 data rollback")
 
 
-def test_duplicates_named_by_the_seed_aliases(cards, tmp_path):
-    """The seed's aliases.pkl (or --aliases) names a duplicate PNG, as /update_stats does with the bot's aliases."""
-    put(cards.repo, "Auxiliary/Minions/Mini_Doomer2.png", b"second art")
-    commit(cards.repo, "alice", 1100)
-    (cards.seed / "aliases.pkl").write_bytes(pickle.dumps({"tiny doom": "mini_doomer2.png"}))
-    assert _build(cards, "--seed", str(cards.seed))[0] == cd.EXIT_OK
-    stats = _read(cards)[0]
-    assert (stats["Mini Doomer2"].display_name, stats["Mini Doomer2"].duplicate_of) == ("Tiny Doom", "Mini Doomer")
-    aliases = tmp_path / "aliases.pkl"
-    aliases.write_bytes(pickle.dumps({"late doom": "mini_doomer2.png"}))
-    assert _build(cards, "--aliases", str(aliases))[0] == cd.EXIT_OK
-    assert _read(cards)[0]["Mini Doomer2"].display_name == "Late Doom"
-    cards.aliases.write_bytes(pickle.dumps({"tiny doom": "mini_doomer2.png"}))
-    assert _build(cards)[0] == cd.EXIT_OK                                        # no --aliases: AutoCroissant main's
-    assert _read(cards)[0]["Mini Doomer2"].display_name == "Tiny Doom"
-
-
 def test_a_duplicate_keeps_its_originals_version(cards):
     """A duplicate's `version` is its original's even when the original was re-parsed this run (it was copied before
     the original got it back): a full re-parse writes the stats.json an incremental build does, and the run after
@@ -808,45 +753,11 @@ def test_an_edit_beside_a_new_blob_is_an_edit(cards):
     assert last["edited"]["fields"] == {"name": ["Tiny Doomer", "Wee Doomer"]} and stats["Mini Doomer"].version["cause"] == "psd"
 
 
-def test_no_aliases_pkl_once_the_aliases_moved(cards, monkeypatch):
-    """Card Edits.json with aliases_moved: aliases.pkl is never read, so a build runs on after AutoCroissant deletes it
-    (step 10: its raw URL answers 404); a duplicate's name comes from its own entry."""
-    from requests.exceptions import HTTPError
-
-    def gone(ref, name, folder, required=True):
-        raise HTTPError(f"404 Client Error: Not Found for url: {ref}/{name}")
-    monkeypatch.setattr(cd, "_bot_file", gone)
-    monkeypatch.setattr(cd, "ALIASES_REF", "main")
+def test_a_duplicate_is_named_by_its_own_aliases(cards):
+    """A duplicate PNG's display name: the longest of its Card Edits.json entry's aliases, else its original's."""
     put(cards.repo, "Auxiliary/Minions/Mini_Doomer2.png", b"second art")
-    put(cards.repo, "site/Card Edits.json", json.dumps({"aliases_moved": True, "cards": {
+    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {
         "Mini Doomer2": {"aliases": ["tiny doom"], "_by": "AutoCroissant"}, "The Freezer": {"note": "checked", "_by": "web"}}}).encode())
     commit(cards.repo, "alice", 1100)
     assert _build(cards, "--seed", str(cards.seed))[0] == cd.EXIT_OK
-    assert _build(cards, "--full")[0] == cd.EXIT_OK                                 # no seed: once AutoCroissant main's
     assert _read(cards)[0]["Mini Doomer2"].display_name == "Tiny Doom"
-
-
-def test_aliases_pkl_missing_before_the_aliases_moved_stops_before_the_psds(cards, monkeypatch):
-    """No aliases_moved yet and aliases.pkl answers 404: the build stops once Card Edits.json is read, before any PSD."""
-    from requests.exceptions import HTTPError
-
-    def gone(ref, name, folder, required=True):
-        raise HTTPError(f"404 Client Error: Not Found for url: {ref}/{name}")
-    read = []
-    process = cd.CardBuild._process_files_from_response
-    monkeypatch.setattr(cd.CardBuild, "_process_files_from_response", lambda self, *a: read.append(1) or process(self, *a))
-    monkeypatch.setattr(cd, "_bot_file", gone)
-    monkeypatch.setattr(cd, "ALIASES_REF", "main")
-    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {"The Freezer": {"note": "checked"}}}).encode())
-    commit(cards.repo, "alice", 1100)
-    assert _build(cards, "--seed", str(cards.seed))[0] == cd.EXIT_ERROR
-    assert not read and not cards.db.joinpath("stats.json").exists()
-
-
-def test_live_card_edits_has_aliases_moved(clone):
-    """The real Card Edits.json has aliases_moved: a real build never reads aliases.pkl, so step 10 can delete it."""
-    from commands.card_edits import CardEdits
-    path = clone / cd.EDITS_PATH
-    if not path.is_file():
-        pytest.skip(f"no {cd.EDITS_PATH}")
-    assert CardEdits.parse(path.read_text(encoding="utf-8")).aliases_moved

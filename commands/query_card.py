@@ -3,7 +3,6 @@ from datetime import date, datetime, time as dt_time, timedelta
 from difflib import get_close_matches, SequenceMatcher
 from discord import Embed, Interaction
 from os.path import basename, splitext
-from pickle import load
 from asyncio import to_thread
 from threading import Lock
 from requests import get
@@ -14,10 +13,10 @@ from pandas import DataFrame, Index, Series, concat, to_numeric
 from re import compile, escape, IGNORECASE
 from urllib.parse import quote
 
-from global_config import ALIAS_PKL, CARD_REPO, EDITS_PATHS, RULEBOOK_DIR, SITE_URL, STATS_PKL, TIMEZONE
-from commands.card_edits import ALIASES_MOVED, CardAuthors
+from global_config import CARD_REPO, EDITS_PATHS, RULEBOOK_DIR, SITE_URL, TIMEZONE
+from commands.card_edits import CardAuthors
 from commands.card_history import start as version_start
-from commands.card_models import save_pickle, stats_db
+from commands.card_models import stats_db
 from commands.github_api import blob_text, fetch_tree
 from commands.repo_history import commit_before, raw_url, raw_url_at
 from commands.type_emojis import render_type_tokens
@@ -30,7 +29,6 @@ filterwarnings('ignore')
 # ========================
 DEFAULT_REPOSITORY = CARD_REPO
 DEFAULT_MATCH_RATIO = 0.6
-_alias_lock = Lock()                                     # one writer for aliases.pkl
 AS_OF_PATTERN = compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$")   # /query as_of: YYYY-MM-DD
 UNKNOWN_BEFORE = 946684800.0                             # 2000-01-01 UTC; older stamps: no commit found (year 1000)
 DATE_PATTERN = compile(r"^(created)\s*(<=|>=|==|<|>)\s*(\d{4}(?:-\d{2}){0,2})$")   # created>=2025, created == 2023-10
@@ -60,7 +58,6 @@ class CardRepository:
     match_ratio: float = DEFAULT_MATCH_RATIO
 
     def __post_init__(self):
-        self.git_file_alias: dict[str, str] = {}
         self.git_files: dict[str, str] = {}
         self.blobs: dict[str, str] = {}                  # png path -> blob sha, for commit-pinned links
         self.site_ids: dict[str, tuple[str, str]] = {}   # png file name -> (website card id, embed color)
@@ -69,7 +66,6 @@ class CardRepository:
         self._tree_lock = Lock()                         # held while _tree/_tree_etag change; type emojis wait on it
         self._edit_names: tuple = ("", {})               # (Card Edits.json blob sha, names)
         self._edits = None                               # that file, parsed (CardEdits)
-        self._moved_hint = False                         # the latest Card Edits.json didn't parse but named ALIASES_MOVED
         self._site_etag = ""
         self.ambiguous_names: dict[str, tuple[str, ...]] = {}
         self._spaced: dict[str, str] = {}                # underscore key -> the space-named file it stands for
@@ -85,28 +81,23 @@ class CardRepository:
         """Get list of all git filenames."""
         return list(self.git_files.keys())
 
-    def populate_files(self, tree: Optional[dict] = None, repository: Optional[str] = None,
-                       etag: Optional[str] = None) -> int:
+    def populate_files(self, repository: Optional[str] = None) -> int:
         """
         Fetch and populate file listings from GitHub repository.
 
         Args:
-            tree: A tree /update_stats just fetched (saves a request)
             repository: Switch to this repository, only if its tree loads (/set_repo)
-            etag: That tree's ETag, so the next fetch can be a 304
 
         Returns:
             HTTP status code (200 for success)
         """
-        status = 200
         repo = repository or self.repository
         with self._tree_lock:                                   # _tree and _tree_etag change together
-            if tree is None:
-                tree, etag, status, why = self._fetch_tree(repo)
-                if tree is None:                                # keep the last good tree (B7)
-                    print(f"Card list: GitHub tree fetch for {repo} failed ({why}); "
-                          f"keeping the last good list ({len(self.git_files)} entries)")
-                    return status
+            tree, etag, status, why = self._fetch_tree(repo)
+            if tree is None:                                    # keep the last good tree (B7)
+                print(f"Card list: GitHub tree fetch for {repo} failed ({why}); "
+                      f"keeping the last good list ({len(self.git_files)} entries)")
+                return status
             self.repository, self._tree, self._tree_etag = repo, tree, etag or ""   # an ETag must match _tree
         self.git_files.clear()
         self.blobs.clear()
@@ -122,9 +113,8 @@ class CardRepository:
             self.blobs[path] = item.get("sha", "")
             self._add_file_to_registry(path)
 
-        # Add aliases to registry: Card Edits.json's, then aliases.pkl's until they moved there (they win, as before)
+        # Add Card Edits.json's names and aliases to the registry
         self._populate_edit_names()
-        self._populate_aliases()
         self._populate_titles()
         self._populate_renames()
         self._populate_site_ids()
@@ -204,28 +194,6 @@ class CardRepository:
         """Get filename prefixed with top-level folder."""
         folder = path[:path.index('/')]
         return f"{folder}/{filename}".lower()
-
-    def aliases_moved(self) -> bool:
-        """Card Edits.json says aliases.pkl moved into it (ALIASES_MOVED): the pickle's aliases no longer count."""
-        return self._moved_hint or (self._edits is not None and self._edits.aliases_moved)
-
-    def _populate_aliases(self) -> None:
-        """Populate aliases.pkl's aliases into the file registry, until they moved into Card Edits.json."""
-        if self.aliases_moved():
-            return
-        for alias, target in self.git_file_alias.items():
-            alias_key = f"{alias.lower()}.png"
-            target = target.lower()
-
-            if target in self.git_files:
-                self.git_files[alias_key] = self.git_files[target]
-            else:
-                matches = [
-                    v for k, v in self.git_files.items()
-                    if k.lower().endswith(target)
-                ]
-                if matches:
-                    self.git_files[alias_key] = matches[0]
 
     def _parse_stat_query(self, ability: str) -> Optional[DataFrame]:
         """
@@ -422,28 +390,6 @@ class CardRepository:
         pattern = r"\s+".join(escape(w) for w in words)           # any spaces or line breaks between the words
         return self.rulebook_dff[self.rulebook_dff["ability"].str.contains(pattern, na=False, case=False)]
 
-    def load_aliases(self) -> None:
-        """Load card aliases from pickle file."""
-        print(f"Loading aliases from {ALIAS_PKL}")
-        try:
-            with open(ALIAS_PKL, 'rb') as f:
-                raw_aliases = load(f)
-
-            # Normalize aliases to lowercase
-            self.git_file_alias = {
-                k.lower(): v.lower()
-                for k, v in raw_aliases.items()
-            }
-
-        except (EOFError, FileNotFoundError):
-            print(f"{ALIAS_PKL} doesn't exist, creating empty file...")
-            self.git_file_alias = {}
-            self.save_aliases()
-
-    def save_aliases(self) -> None:
-        """Save card aliases to pickle file (atomically, under the alias lock)."""
-        save_pickle(self.git_file_alias, ALIAS_PKL, _alias_lock)
-
     def _populate_edit_names(self) -> None:
         """Website aliases and names from the card repo's Card Edits.json (the first of EDITS_PATHS in the tree)."""
         from commands.psd_analyzer import CardEdits
@@ -453,17 +399,13 @@ class CardRepository:
             return
         sha = shas[path]
         if self._edit_names[0] != sha:                           # download only when the file changed
-            text = None
             try:
-                text = blob_text(self.repository, sha)
-                edits = CardEdits.parse(text)
+                edits = CardEdits.parse(blob_text(self.repository, sha))
             except Exception as e:
                 print(f"Could not read {path}: {e}")
-                if text is not None:                     # unparsed, but migrated: aliases.pkl stays off
-                    self._moved_hint = f'"{ALIASES_MOVED}"' in text
             else:
-                self._edits, self._edit_names, self._moved_hint = edits, (sha, edits.names()), False
-        # a failed read keeps the last good names: aliases live only here once moved
+                self._edits, self._edit_names = edits, (sha, edits.names())
+        # a failed read keeps the last good names
         for card, extra in self._edit_names[1].items():
             self._add_lookup(card, extra)
 
@@ -582,7 +524,7 @@ class CardRepository:
         return f"{SITE_URL}/c/{found[0]}/" if found else None
 
     def prep_dataframes(self) -> None:
-        """Load card statistics from pickle file."""
+        """The query tables from the card database."""
         from commands.psd_analyzer import get_stats_as_dict
 
         cards_df = DataFrame.from_dict(get_stats_as_dict()).transpose()
@@ -1005,7 +947,7 @@ def query_ability(interaction: Interaction,
         This function does not search rulebook entries.
     """
     if card_repo.cards_dff.empty:
-        queue_message(interaction, f"{STATS_PKL} is empty. Run `/update_stats` first.")
+        queue_message(interaction, "No card data yet. Run `/update_stats` first.")
         return
 
     results = _search(interaction, ability)
@@ -1034,7 +976,7 @@ def query_ability_num_occur(interaction: Interaction, ability: str) -> None:
         ability: Ability search query
     """
     if card_repo.cards_dff.empty:
-        queue_message(interaction, f"{STATS_PKL} is empty. Run `/update_stats` first.")
+        queue_message(interaction, "No card data yet. Run `/update_stats` first.")
         return
 
     results = _search(interaction, ability)
@@ -1067,7 +1009,7 @@ def query_rulebook(interaction: Interaction,
         limit: Maximum number of pages to show (-1 for all)
     """
     if card_repo.rulebook_dff.empty:
-        queue_message(interaction, f"{STATS_PKL} is empty or has no rulebook entries. Run `/update_stats` first.")
+        queue_message(interaction, "No card data yet, or no rulebook entries. Run `/update_stats` first.")
         return
     text = " ".join(search_text.split())
     if not text:
@@ -1165,7 +1107,7 @@ async def set_repository(interaction: Interaction, new_repo: Optional[str] = Non
 
     await interaction.response.defer()
     old_repo = card_repo.repository                     # switched only once new_repo's tree loads
-    status = await to_thread(card_repo.populate_files, None, new_repo)  # off the event loop (retries can take seconds)
+    status = await to_thread(card_repo.populate_files, new_repo)  # off the event loop (retries can take seconds)
 
     if status != 200:
         await interaction.followup.send(f"Error {status or 'no response'} when connecting to {new_repo}; still using {old_repo}.")
@@ -1178,8 +1120,7 @@ async def set_repository(interaction: Interaction, new_repo: Optional[str] = Non
 # ========================
 card_repo = CardRepository()
 def init_query() -> None:
-    """Initialize the card repository with saved data."""
-    card_repo.load_aliases()
+    """Initialize the card repository: its files and Card Edits.json's names."""
     status = card_repo.populate_files()
     if status != 200:
         print(f"Warning: Failed to populate files from repository (status {status})")

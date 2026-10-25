@@ -1,5 +1,5 @@
-"""The bot after the cutover (global_config.CARD_SYNC): card_db.sync, card_sync's /update_stats (sync, report, Card sync
-runs through ACTIONS_TOKEN), /fonts from the card data, and the switch: off is today's bot, on is the cutover's."""
+"""The bot's card data: card_db.sync, card_sync's /update_stats (sync, report, Card sync runs through ACTIONS_TOKEN),
+/fonts from the card data, and /update, /pull, /help and the slash texts without the pickles."""
 import asyncio
 import json
 from collections import defaultdict
@@ -137,9 +137,8 @@ def _job(name, state=None, status="completed", conclusion="success"):
 
 @pytest.fixture
 def github(monkeypatch, tmp_path):
-    """CARD_SYNC on, cwd a temp folder (card_data/ there), GitHub faked, stats_db and the queues emptied."""
+    """cwd a temp folder (card_data/ there), GitHub faked, stats_db and the queues emptied."""
     fake = FakeGitHub()
-    monkeypatch.setattr(global_config, "CARD_SYNC", True)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(ga, "get", fake.get)
     monkeypatch.setattr(ga, "sleep", lambda s: None)
@@ -250,10 +249,8 @@ def test_a_bad_record_writes_nothing_and_is_never_loaded(github, tmp_path, monke
     for file, data in files.items():                                  # on disk anyway (an older bot, a hand copy)
         (tmp_path / "card_data" / file).write_bytes(data)
     assert cs.load_local("card_data") is False and cdb.check_db("card_data")
-    loads = []
-    monkeypatch.setattr(cm.stats_db, "load", lambda: loads.append(1))
     cs.startup()
-    assert loads == [1]                                               # the pickles, as with no card data
+    assert cm.stats_db.stats == {}                                    # no cards until a sync works
 
 
 def test_a_damaged_copy_is_fetched_again(github, tmp_path):
@@ -361,10 +358,8 @@ def test_startup_loads_the_local_copy_then_syncs(github, tmp_path, monkeypatch):
     github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
     cdb.sync("card_data", REPO, "data")
     github.tip = None                                                 # GitHub unreachable at startup: the copy serves
-    loads = []
-    monkeypatch.setattr(cm.stats_db, "load", lambda: loads.append(1))
     cs.startup()
-    assert set(cm.stats_db.stats) == {"A"} and loads == [] and _queued() == []
+    assert set(cm.stats_db.stats) == {"A"} and _queued() == []
 
 
 def test_a_cut_off_sync_is_reloaded_whole_by_the_next(github, tmp_path, monkeypatch):
@@ -381,11 +376,9 @@ def test_a_cut_off_sync_is_reloaded_whole_by_the_next(github, tmp_path, monkeypa
     assert cm.stats_db.stats["A"].ability == "Old." and cs._loaded["commit"] == first and cdb.check_db("card_data") == []
 
 
-def test_startup_without_data_falls_back_to_the_pickles(github, monkeypatch):
-    loads = []
-    monkeypatch.setattr(cm.stats_db, "load", lambda: loads.append(1))
+def test_startup_without_data_holds_no_cards(github):
     cs.startup()
-    assert loads == [1]
+    assert cm.stats_db.stats == {} and cs._loaded["commit"] is None
 
 
 # ========================
@@ -399,9 +392,6 @@ def test_on_use_looks_at_most_every_two_minutes(github, monkeypatch):
     assert not cs.on_use() and not cs.on_use("query_ability")        # within the 2 minutes (autocomplete too)
     clock[0] += cs.REFRESH_SECONDS
     assert cs.on_use() and _queued() == ["check", "check"]
-    clock[0] += cs.REFRESH_SECONDS
-    monkeypatch.setattr(global_config, "CARD_SYNC", False)
-    assert not cs.on_use("query")
 
 
 def test_a_sync_counts_as_the_look(github, tmp_path):
@@ -467,7 +457,6 @@ def test_the_start_counts_as_a_look(monkeypatch):
     spec = spec_from_file_location("card_sync_fresh", cs.__file__)
     fresh = module_from_spec(spec)                                    # a new process's state, cs untouched
     spec.loader.exec_module(fresh)
-    monkeypatch.setattr(global_config, "CARD_SYNC", True)
     assert not fresh.on_use("query")                                  # no look before startup's sync
 
 
@@ -683,8 +672,7 @@ def test_one_followed_run_at_a_time(github, tmp_path):
 # ========================
 # /fonts from the card data
 # ========================
-def test_fonts_from_the_card_data(github, tmp_path, monkeypatch):
-    import commands.font_check as fc
+def test_fonts_from_the_card_data(github, tmp_path):
     details = {"cards": {
         "b-A": {"fonts": {"Arial": {"layers": ["Text/Name"], "supplied": True},
                           "Comic-Bold": {"layers": ["Text/Ability", "Text/Ability 2"], "supplied": False}}},
@@ -693,43 +681,15 @@ def test_fonts_from_the_card_data(github, tmp_path, monkeypatch):
              "C": _card("C"), "M": _card("M", path="MDW/Template.psd")}
     github.publish(cards, defaultdict(list), tmp_path, details=json.dumps(details))
     cs.sync(ME)
-    sent = []
-    monkeypatch.setattr(utils, "queue_long_message", lambda interaction, text, **kw: sent.append(text))
-    monkeypatch.setattr(fc, "repo_fonts", lambda *a, **k: pytest.fail("no PSD or font is downloaded after the cutover"))
-    fc.check_repo_fonts("interaction")
-    lines = sent[0].splitlines()
+    lines = cs.fonts_text().splitlines()
     assert lines[0].startswith("From the card data (built ") and lines[0].endswith("): 2 card PSDs.")
     assert lines[1] == "**Comic-Bold**: A (Ability, Ability 2)"
     assert "Creatures/B.psd: fonts not judged" in lines[2] and "Creatures/C.psd: no PSD details" in lines[2]
 
 
 # ========================
-# The switch
+# /update, /pull, /help, the slash texts
 # ========================
-def test_update_stats_follows_the_switch(monkeypatch):
-    import commands.repo_traverser as rt
-    calls = []
-    monkeypatch.setattr(cs, "update", lambda *a, **k: calls.append(a) or ["p"])
-    monkeypatch.setattr(rt, "_update_stats", lambda *a: ["legacy"])
-    monkeypatch.setattr(global_config, "CARD_SYNC", False)
-    assert rt.update_stats(None) == ["legacy"] and calls == []
-    monkeypatch.setattr(global_config, "CARD_SYNC", True)
-    assert rt.update_stats(None, True, False, True, "A") == ["p"] and calls == [(None, True, False, True, "A")]
-
-
-def test_startup_follows_the_switch(monkeypatch):
-    import commands.psd_analyzer as pa
-    calls = []
-    monkeypatch.setattr(cm.stats_db, "load", lambda: calls.append("pickles"))
-    monkeypatch.setattr(cs, "startup", lambda: calls.append("card data"))
-    monkeypatch.setattr(pa.card_repo, "prep_dataframes", lambda: None)
-    monkeypatch.setattr(global_config, "CARD_SYNC", False)
-    pa.init_psd()
-    monkeypatch.setattr(global_config, "CARD_SYNC", True)
-    pa.init_psd()
-    assert calls == ["pickles", "card data"]
-
-
 def _send_log():
     sent = []
 
@@ -738,38 +698,21 @@ def _send_log():
     return sent, SimpleNamespace(followup=SimpleNamespace(send=send))
 
 
-def test_push_after_the_cutover_says_what_replaced_it(monkeypatch):
-    import commands.update_bot as ub
-    monkeypatch.setattr(ub, "_git", lambda: pytest.fail("no git after the cutover"))
-    monkeypatch.setattr(global_config, "CARD_SYNC", True)
-    sent, interaction = _send_log()
-    asyncio.run(ub.git_push(interaction))
-    assert sent == [ub.PUSH_RETIRED] and "Card sync Action" in sent[0] and "card-sync.yml" in sent[0]
-
-
-@pytest.mark.parametrize("switched", [False, True])
-def test_update_pushes_only_before_the_cutover(monkeypatch, switched):
+def test_update_pulls_then_restarts(monkeypatch):
     import commands.update_bot as ub
     done = []
 
-    async def push(interaction):
-        done.append("push")
-
     async def pull(interaction):
         done.append("pull")
-    monkeypatch.setattr(ub, "git_push", push)
     monkeypatch.setattr(ub, "git_pull", pull)
     monkeypatch.setattr(ub, "restart_bot", lambda: done.append("restart"))
-    monkeypatch.setattr(global_config, "CARD_SYNC", switched)
     sent, interaction = _send_log()
     asyncio.run(ub.update_bot(interaction))
-    assert done == (["pull", "restart"] if switched else ["push", "pull", "restart"])
-    assert any(s.startswith("Pushing ") for s in sent) is not switched
+    assert done == ["pull", "restart"] and not any("push" in s.lower() for s in sent)
 
 
-@pytest.mark.parametrize("switched", [False, True])
-def test_pull_conflict_keeps_the_pickles_only_before_the_cutover(monkeypatch, switched):
-    """A conflicted merge: before the cutover ours for the pickles and the rescue; after, theirs for every file."""
+def test_pull_conflict_takes_theirs(monkeypatch):
+    """A conflicted merge: theirs for every file."""
     import commands.update_bot as ub
     from git import GitCommandError
     log = []
@@ -800,74 +743,37 @@ def test_pull_conflict_keeps_the_pickles_only_before_the_cutover(monkeypatch, sw
         def merge_base(self, a, b):
             return [SimpleNamespace(hexsha="base")]
 
-    async def rescue(interaction):
-        log.append("rescue")
     monkeypatch.setattr(ub, "_git", FakeGit)
     monkeypatch.setattr(ub, "_repo", FakeRepo)
-    monkeypatch.setattr(ub, "_rescue_after_merge", rescue)
-    monkeypatch.setattr(global_config, "CARD_SYNC", switched)
     sent, interaction = _send_log()
     asyncio.run(ub.git_pull(interaction))
-    if switched:
-        assert log == [("--theirs", "stats.pkl"), ("--theirs", "main.py"),
-                       ("commit", "AUTO-RESOLVE: Merge conflict resolved (accepted remote)")]
-    else:
-        assert log == [("--ours", "stats.pkl"), ("--theirs", "main.py"),
-                       ("commit", "AUTO-RESOLVE: Merge conflict resolved (kept local pickles, accepted remote code)"), "rescue"]
+    assert log == [("--theirs", "stats.pkl"), ("--theirs", "main.py"),
+                   ("commit", "AUTO-RESOLVE: Merge conflict resolved (accepted remote)")]
 
 
-def test_help_follows_the_switch(monkeypatch):
+def test_help_says_the_card_sync(monkeypatch):
     import commands.help as help_module
     sent = []
     monkeypatch.setattr(help_module, "queue_long_message", lambda interaction, text: sent.append(text))
-    monkeypatch.setattr(global_config, "CARD_SYNC", False)
-    help_module.print_help(None, "stats")
-    today = "```Available commands:\n\n" + "".join(f"{k}\n{v}\n\n" for k, v in help_module.stats_commands.items()) + "```"
-    assert sent[0] == today
-    monkeypatch.setattr(global_config, "CARD_SYNC", True)
     for kind in ("general", "card", "stats"):
         help_module.print_help(None, kind)
-    after = "".join(sent[1:])
-    assert "Loads the card data the Card sync Action built" in after and "Retired:" in after
-    assert "from the card data" in after and "keeping the local pickles" not in after
-    assert "- force_update: Admin only." in after and "- cards: Admin only." in after
+    text = "".join(sent)
+    assert "Loads the card data the Card sync Action built" in text and "/push" not in text and "pickle" not in text
+    assert "from the card data" in text and "- force_update: Admin only." in text and "- cards: Admin only." in text
 
 
-def test_slash_texts_in_both_states():
-    """main.py's command and option descriptions with the switch either way: within Discord's 100 characters, and
-    on today's texts while it is off (imported fresh in a subprocess)."""
-    import subprocess
-    import sys
-    from pathlib import Path
-    root = Path(__file__).resolve().parents[1]
-    script = (
-        "import json, sys, types\n"
-        "fake = types.ModuleType('config'); fake.TOKEN = fake.GIT_TOKEN = ''; fake.ADMINS = []; fake.browser_cookies = False\n"
-        "sys.modules.setdefault('config', fake)\n"
-        "import global_config; global_config.CARD_SYNC = sys.argv[1] == 'on'\n"
-        "import main\n"
-        "out = {c.name: [c.description] + [p.description for p in c.parameters] for c in main.tree.get_commands()}\n"
-        "print(json.dumps(out))\n")
-    texts = {}
-    for state in ("off", "on"):
-        done = subprocess.run([sys.executable, "-c", script, state], cwd=root, capture_output=True, text=True, check=True)
-        texts[state] = json.loads(done.stdout.strip().splitlines()[-1])
-    for state, commands in texts.items():
-        for name, descriptions in commands.items():
-            assert all(len(d) <= 100 for d in descriptions), (state, name)
-    changed = sorted(n for n in texts["off"] if texts["off"][n] != texts["on"][n])
-    assert changed == ["pull", "push", "update", "update_stats"]
-    assert texts["off"]["update_stats"][0] == "Updates the card database from GitHub (re-parses changed PSDs)."
-    assert texts["off"]["push"][0].startswith("Commits the pickles")
+def test_slash_texts_fit():
+    """main.py's command and option descriptions: within Discord's 100 characters; no /push."""
+    import main
+    commands = {c.name: [c.description] + [p.description for p in c.parameters] for c in main.tree.get_commands()}
+    assert "push" not in commands
+    for name, descriptions in commands.items():
+        assert all(len(d) <= 100 for d in descriptions), name
+    assert commands["update_stats"][0] == "Loads the card data the Card sync Action built."
 
 
-@pytest.mark.parametrize("switched, options, allowed", [
-    (False, {"force_update": True}, True),                            # today: anyone
-    (True, {}, True),
-    (True, {"force_update": True}, False),
-    (True, {"cards": "A"}, False),
-])
-def test_update_stats_options_are_admin_only_after_the_cutover(monkeypatch, switched, options, allowed):
+@pytest.mark.parametrize("options, allowed", [({}, True), ({"force_update": True}, False), ({"cards": "A"}, False)])
+def test_update_stats_options_are_admin_only(monkeypatch, options, allowed):
     import main
     ran = []
 
@@ -875,7 +781,6 @@ def test_update_stats_options_are_admin_only_after_the_cutover(monkeypatch, swit
         ran.append(a)
     monkeypatch.setattr(main, "update_stats", record)
     monkeypatch.setattr(utils, "ADMINS", [1])
-    monkeypatch.setattr(global_config, "CARD_SYNC", switched)
     sent = []
 
     async def send_message(content=None, **kwargs):
@@ -887,14 +792,14 @@ def test_update_stats_options_are_admin_only_after_the_cutover(monkeypatch, swit
     callback = {c.name: c for c in main.tree.get_commands()}["update_stats"].callback
     asyncio.run(callback(other, **options))
     assert bool(ran) is allowed and (sent == [] if allowed else sent == ["You do not have permission."])
-    if switched and not allowed:                                      # an admin may
+    if not allowed:                                                   # an admin may
         admin = SimpleNamespace(user=SimpleNamespace(id=1), response=SimpleNamespace(send_message=send_message, defer=defer))
         asyncio.run(callback(admin, **options))
         assert ran
 
 
 # ========================
-# Loads that read psd_details.json by its hash only; the website build after a /push
+# Loads that read psd_details.json by its hash only
 # ========================
 def test_the_bots_loads_never_parse_the_details(github, tmp_path, monkeypatch):
     """load_local, a sync and card_db.sync's check read psd_details.json by its hash only (the bot keeps no details);
@@ -913,54 +818,3 @@ def test_the_bots_loads_never_parse_the_details(github, tmp_path, monkeypatch):
     assert cs.load_local("card_data") and cs._loaded["commit"] is None
     assert cdb.check_db("card_data", parse=False) == cdb.check_db("card_data") == [f"{cdb.DETAILS_JSON}: sha256 differs from the manifest"]
     assert cdb.read_db("card_data", details=False)[2] == {} and cdb.read_db("card_data")[2] == {"b0": {"marker-details": 2}}
-
-
-def test_dispatch_site(monkeypatch):
-    """The website build (site.yml) on the card repo's main with ACTIONS_TOKEN; a refusal or no answer is one line,
-    never raised; no token, no request."""
-    posts, replies = [], []
-
-    def post(url, json=None, headers=None, timeout=None):
-        posts.append((url, json, headers["Authorization"]))
-        reply = replies.pop(0)
-        if isinstance(reply, Exception):
-            raise reply
-        return reply
-    monkeypatch.setattr(cs, "session", lambda: SimpleNamespace(post=post))
-    monkeypatch.setattr(cs, "ACTIONS_TOKEN", TOKEN)
-    replies[:] = [Reply(204), Reply(403), OSError("down")]
-    assert cs.dispatch_site() == "Website build started."
-    assert posts == [(f"https://api.github.com/repos/{REPO}/actions/workflows/site.yml/dispatches", {"ref": "main"}, f"Bearer {TOKEN}")]
-    assert "HTTP 403" in cs.dispatch_site() and TOKEN not in cs.dispatch_site()
-    monkeypatch.setattr(cs, "ACTIONS_TOKEN", "")
-    posts.clear()
-    assert "no ACTIONS_TOKEN" in cs.dispatch_site() and posts == []
-
-
-class _PushGit:
-    """update_bot's _git() for git_push: the pickles committed, the push's changed files."""
-    def __init__(self, changed):
-        self.changed, self.pushed = changed, False
-
-    def add(self, *a): pass
-    def commit(self, *a): pass
-    def pull(self, *a, **k): pass
-    def rev_list(self, *a): return "1"
-    def diff(self, *a): return "\n".join(self.changed)
-    def push(self, *a, **k): self.pushed = True
-
-
-@pytest.mark.parametrize("changed, built", [(["stats.pkl", "psd_details.json"], True), (["commands/help.py"], False)])
-def test_a_pickle_push_starts_the_website_build(monkeypatch, changed, built):
-    """/push dispatches site.yml after pushing a file the website reads, after "Successfully pushed!"; a code-only push
-    starts nothing."""
-    import commands.update_bot as ub
-    monkeypatch.setattr(global_config, "CARD_SYNC", False)
-    git, sent, started = _PushGit(changed), [], []
-    monkeypatch.setattr(ub, "_git", lambda: git)
-    monkeypatch.setattr(cs, "dispatch_site", lambda: started.append(len(sent)) or "Website build started.")
-
-    async def send(text, **kw):
-        sent.append(text)
-    asyncio.run(ub.git_push(SimpleNamespace(followup=SimpleNamespace(send=send))))
-    assert git.pushed and sent == ["Successfully pushed!"] and started == ([1] if built else [])

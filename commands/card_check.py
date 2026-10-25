@@ -68,7 +68,7 @@ class Vocabulary:
 
 
 def vocabulary(paths, manifest: Optional[bytes] = None) -> Vocabulary:
-    """repo_traverser's reading of a tree: Types/ entries with a dot outside Stars, Types/Stars/ PNGs, the manifest's bytes."""
+    """card_data's reading of a tree: Types/ entries with a dot outside Stars, Types/Stars/ PNGs, the manifest's bytes."""
     vocab = Vocabulary(manifest=loads(manifest.decode("utf-8")) if manifest else None)
     for path in paths:
         if path.startswith(TYPES_DIR) and "Stars" not in path and "." in path:

@@ -78,7 +78,7 @@ RULES = "2026-10-24"        # a refused verdict's rules: one written under older
 MAX_BAKES = 40                                  # PSD edits per run; the rest wait for the next run (a title took ~30 s)
 BUDGET = timedelta(minutes=40)                  # no card starts later: the commit lands within the job's 60 min
 TRANSIENT = ("recent", "head-moved", "edit-changed", "capped")   # try-again refusals: not a verdict for the editor
-EXCLUDE_FOLDERS = ("Markers", "MDW")            # not cards (repo_traverser.EXCLUDE_FOLDERS)
+EXCLUDE_FOLDERS = ("Markers", "MDW")            # not cards (card_data.EXCLUDE_FOLDERS)
 WORK_ENV = "RUNNER_TEMP"                        # the Action's temp dir; the work dir is card-bake/ in it
 WORK_NAME = "card-bake"
 FIELDS = frozenset(CardEdits.TYPES)            # ORDER (edit.js FIELDS) and PUNCTUATION live in card_edits
@@ -528,7 +528,7 @@ def _fonts_dir(snapshot: Optional[Snapshot] = None) -> str:
 
 
 def vocabulary(snapshot: Snapshot):
-    """The icon vocabulary from the tree (Types/, Types/Stars/, the stoogedings manifest), as repo_traverser builds it."""
+    """The icon vocabulary from the tree (Types/, Types/Stars/, the stoogedings manifest), as card_data builds it."""
     all_types = [splitext(basename(p))[0].lower() for p in snapshot.tree
                  if p.startswith(TYPES_DIR) and "Stars" not in p and "." in p]
     stars = [splitext(basename(p))[0].lower().replace(" ", "_") for p in snapshot.tree

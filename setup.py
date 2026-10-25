@@ -22,11 +22,10 @@ INCLUDE_FILES = [
     'commands/analytics.py',
     'commands/frankenstein.py',
     'commands/help.py',
-    'commands/psd_analyzer.py',         # facade; the four below hold its code (same directives, same semantics)
+    'commands/psd_analyzer.py',         # facade; the three below hold its code (same directives, same semantics)
     'commands/card_models.py',
     'commands/card_edits.py',
     'commands/psd_parser.py',
-    'commands/repo_traverser.py',
     'commands/query_card.py',
     'commands/management.py',           # Complex async operations with discord.py
     'commands/music_player.py',         # ThreadPoolExecutor with Process/Queue-like issues

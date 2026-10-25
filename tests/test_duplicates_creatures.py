@@ -4,6 +4,7 @@ from copy import deepcopy
 
 import pytest
 
+import commands.card_data as cd
 import commands.psd_analyzer as pa
 from conftest import blob_sha
 from golden_cards import parser
@@ -18,15 +19,10 @@ class Tree:
         return {"tree": [{"path": p, "sha": "0" * 40} for p in self.paths]}
 
 
-@pytest.fixture
-def no_aliases(monkeypatch):
-    monkeypatch.setattr(pa.card_repo, "git_file_alias", {})
-
-
-def _traverser(cards: dict) -> pa.RepositoryTraverser:
+def _traverser(cards: dict) -> cd.CardBuild:
     db = pa.StatsDatabase()
     db.stats = cards
-    return pa.RepositoryTraverser(db)
+    return cd.CardBuild(db)
 
 
 @pytest.fixture(scope="module")
@@ -38,10 +34,10 @@ def repo_blobs(clone):
 
 
 def _drift(stats: dict, blobs: dict) -> list:
-    """PSDs the clone and stats.pkl disagree on: added, removed or edited since the last /update_stats."""
+    """PSDs the clone and the card data disagree on: added, removed or edited since the last card sync."""
     stored = {c.path: c.blob_sha for c in stats.values() if not c.duplicate_of}
     psds = {p: b for p, b in blobs.items()
-            if p.lower().endswith(".psd") and not any(f in pa.EXCLUDE_FOLDERS for f in p.split("/"))}
+            if p.lower().endswith(".psd") and not any(f in cd.EXCLUDE_FOLDERS for f in p.split("/"))}
     return sorted(p for p in stored.keys() | psds.keys() if stored.get(p) != psds.get(p))
 
 
@@ -55,13 +51,13 @@ def _committed_edits(clone):
     return CardEdits.parse(out.stdout) if out.returncode == 0 else None
 
 
-def test_real_duplicates(real_stats, repo_blobs, no_aliases, clone):
+def test_real_duplicates(real_stats, repo_blobs, clone):
     drift = _drift(real_stats.stats, repo_blobs)
     if drift:
-        pytest.skip(f"clone and stats.pkl out of step ({len(drift)} PSDs, e.g. {drift[0]})")
+        pytest.skip(f"clone and card data out of step ({len(drift)} PSDs, e.g. {drift[0]})")
     repo_paths = list(repo_blobs)
     expected = {n: (c.duplicate_of, c.display_name) for n, c in real_stats.stats.items() if c.duplicate_of}
-    assert len(expected) >= 5, "the pickle should hold the A Snack / Watermelon / ... duplicates"
+    assert len(expected) >= 5, "the card data should hold the A Snack / Watermelon / ... duplicates"
     tr = _traverser({n: deepcopy(c) for n, c in real_stats.stats.items() if not c.duplicate_of})
     tr.edits = _committed_edits(clone)
     assert tr._sync_duplicates(Tree(repo_paths)) == len(expected)
@@ -82,7 +78,7 @@ def test_real_duplicates(real_stats, repo_blobs, no_aliases, clone):
         assert tr.db.stats["A Snack2"].display_name == "A Snack"  # 2 hidden titles, 1 PNG: order unknown
 
 
-def test_duplicate_rules(no_aliases):
+def test_duplicate_rules():
     cards = {n: pa.CardInfo(name=n, card_type="item", path=p) for n, p in (
         ("X", "Items/Heal/2 Stars/X.psd"), ("X2", "Items/Heal/2 Stars/X2.psd"), ("R", "Auxiliary/Rulebook/R.psd"),
         ("Z", "MDW/Z.psd"), ("Q", "Items/Q.psd"))}
@@ -97,7 +93,7 @@ def test_duplicate_rules(no_aliases):
     assert tr.db.stats["X3"].duplicate_of == "X" and tr.db.stats["X3"].display_name == "X"
 
 
-def test_a_png_only_card_with_dup_of_is_a_duplicate(no_aliases):
+def test_a_png_only_card_with_dup_of_is_a_duplicate():
     """Stubborn_Queen.png has no PSD; its Card Edits.json entry names Stubborn King: a copy of it under its own name
     (build_site's rule). Without the entry, or naming no card, it stays an image only."""
     from commands.card_edits import CardEdits
@@ -119,7 +115,7 @@ def test_a_png_only_card_with_dup_of_is_a_duplicate(no_aliases):
 
 
 @pytest.mark.parametrize("failure", ["5xx", "bad json"])
-def test_unread_card_edits_keep_the_dup_of_cards(no_aliases, monkeypatch, failure):
+def test_unread_card_edits_keep_the_dup_of_cards(monkeypatch, failure):
     """Card Edits.json in the tree but not read (a 5xx: lost; malformed JSON): its dup_of entries can't be read, so
     Stubborn Queen (PNG and original still there) stays a card, never archived; gone PNG: archived as before."""
     from requests.exceptions import RequestException
@@ -149,25 +145,13 @@ def test_unread_card_edits_keep_the_dup_of_cards(no_aliases, monkeypatch, failur
         assert (gone == []) is kept and ("Stubborn Queen" in tr.db.stats) is kept
 
 
-@pytest.mark.usefixtures("pickle_path")
-def test_duplicate_name_order(monkeypatch):
-    """An /alias to the PNG names a duplicate, else its original's name: hidden title layers name nothing (owner
-    2026-10-25; the build takes the aliases; RepositoryTraverser defaults to the bot's)."""
+def test_duplicate_name_order():
+    """A duplicate's own Card Edits.json aliases name it (the longest), else its original's name: hidden title layers
+    name nothing (owner 2026-10-25); a dup_of card with none is titled by its own name (None)."""
     src = pa.CardInfo(name="A Snack", card_type="item", alt_names=["Breakfast", "Supper"])     # older data
-    assert pa.RepositoryTraverser._duplicate_name("a_snack3.png", src) == "A Snack"
-    aliases = {"late_supper": "a_snack3.png", "ls": "a_snack3.png"}
-    assert pa.RepositoryTraverser._duplicate_name("a_snack3.png", src, aliases) == "Late Supper"
-    monkeypatch.setattr(pa.card_repo, "git_file_alias", aliases)                 # /update_stats passes the bot's
-    tr = _traverser({"A Snack": src})
-    assert tr.aliases is pa.card_repo.git_file_alias                              # the diagnostics get the bot's too
-    assert pa.RepositoryTraverser(pa.StatsDatabase(), aliases={}).aliases == {}
-    import commands.repo_traverser as rt
-    seen = []
-    monkeypatch.setattr(rt, "update", lambda build, *a: seen.append(build.aliases) or [])
-    monkeypatch.setattr(pa.stats_db, "load", lambda: None)
-    monkeypatch.setattr(rt, "queue_command", lambda *a, **kw: None)
-    pa.update_stats(None, verbose=False)
-    assert seen == [aliases] and seen[0] is pa.card_repo.git_file_alias
+    assert cd.CardBuild._duplicate_name(src) == "A Snack"
+    assert cd.CardBuild._duplicate_name(src, ["late_supper", "ls"]) == "Late Supper"
+    assert cd.CardBuild._duplicate_name(src, [], own_name=True) is None
 
 
 # ========================
@@ -180,7 +164,7 @@ def test_real_creature_split(real_stats, clone):
     for name, stored in sorted(multi.items()):
         psd = clone / stored.path
         if not psd.exists() or not stored.blob_sha or blob_sha(psd) != stored.blob_sha:
-            stale.append(name)                                    # PSD edited since the last /update_stats
+            stale.append(name)                                    # PSD edited since the last card sync
             continue
         card = p.parse(str(psd), stored.path)
         from_psd = (getattr(stored, "parsed_values", None) or {}).get("creatures")   # the PSD's values under a website edit
@@ -189,7 +173,7 @@ def test_real_creature_split(real_stats, clone):
         assert any(x.startswith("SEVERAL CREATURES") for x in card.problems)
         assert pa.CardValidator.validate(card) == card.problems   # creature 1 stays within 10: no STATS TOO HIGH
     if stale:
-        pytest.skip(f"clone and stats.pkl out of step: {', '.join(stale)}")
+        pytest.skip(f"clone and card data out of step: {', '.join(stale)}")
 
 
 AUX_CREATURES = {"Azamoth_the_Possessed_Vessel": 5, "Igor_Roballtowski": 2, "Mettaton_EX": 4, "Mettaton_NEO": 4,
