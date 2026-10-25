@@ -1,24 +1,28 @@
 """
 reminder.json backed up to this repo on change (owner 2026-10-25). The live file stays untracked (deploys never clash);
-a copy is committed to backup/<file> on main through the Git Data API, BACKUP_DELAY seconds after the last save. Only the
-production service backs up (systemd sets INVOCATION_ID), so a dev run never overwrites it.
+a copy is committed to backup/<file> on main BACKUP_DELAY seconds after the last save, from a separate shallow clone
+pushed over SSH (the service's ssh-agent; the GitHub tokens can't write this repo). Only the production service backs
+up (systemd sets INVOCATION_ID), so a dev run never overwrites it.
 
     changed(path)   after a save: schedule the commit (saves in a row make one)
 """
-from os import environ
-from os.path import exists
+from os import environ, makedirs
+from os.path import abspath, dirname, exists, expanduser, join
+from shutil import copyfile
+from subprocess import run
 from threading import Lock, Timer
 from traceback import format_exc
-
-from commands.github_api import blob_sha
 
 # ========================
 # Configuration
 # ========================
-BOT_REPO = "bobberlington/AutoCroissant"
+BACKUP_CLONE = expanduser("~/Documents/AutoCroissant-backup")   # used only for backup commits
 BACKUP_DIR = "backup"                   # backup/reminder.json
 BACKUP_DELAY = 10                       # seconds after the last save
-COMMIT_TRIES = 3
+BRANCH = "main"
+TRIES = 3                               # a push refused because main moved: fetch and commit again
+GIT_TIMEOUT = 120
+IDENTITY = ("-c", "user.name=AutoCroissant", "-c", "user.email=autocroissant@gmail.com")
 
 # ========================
 # Global State
@@ -40,26 +44,35 @@ def changed(path: str) -> None:
         timer.start()
 
 
-def _commit(path: str) -> None:
-    """Commit path's bytes to BACKUP_DIR/path unless the backup already holds them; failures are printed, never raised."""
+def _git(where: str, *args: str, check: bool = True):
+    return run(["git", "-C", where, *args], capture_output=True, timeout=GIT_TIMEOUT, check=check,
+               env={**environ, "GIT_SSH_COMMAND": "ssh -o BatchMode=yes"})
+
+
+def _commit(path: str, clone: str = "") -> None:
+    """Commit path's bytes to backup/<path> unless main already holds them; failures are printed, never raised."""
+    clone = clone or BACKUP_CLONE
     with _lock:
         _timers.pop(path, None)
     try:
-        import commands.git_commit as gc
         if not exists(path):
             return
-        with open(path, "rb") as fh:
-            data = fh.read()
-        target = f"{BACKUP_DIR}/{path}"
-        for _ in range(COMMIT_TRIES):
-            head = gc.ref_head(BOT_REPO)
-            tree = gc.commit_info(BOT_REPO, head)["tree"]["sha"]
-            reply = gc.api(BOT_REPO, "GET", f"contents/{target}?ref={head}", check=False)
-            if reply.ok and reply.json().get("sha") == blob_sha(data):
+        if not exists(join(clone, ".git")):
+            url = _git(dirname(abspath(path)), "remote", "get-url", "origin").stdout.decode().strip()
+            run(["git", "clone", "-q", "--depth", "1", "--branch", BRANCH, url, clone], capture_output=True,
+                timeout=GIT_TIMEOUT, check=True, env={**environ, "GIT_SSH_COMMAND": "ssh -o BatchMode=yes"})
+        target = join(BACKUP_DIR, path)
+        for _ in range(TRIES):
+            _git(clone, "fetch", "-q", "--depth", "1", "origin", BRANCH)
+            _git(clone, "reset", "-q", "--hard", "FETCH_HEAD")
+            makedirs(join(clone, BACKUP_DIR), exist_ok=True)
+            copyfile(path, join(clone, target))
+            _git(clone, "add", target)
+            if _git(clone, "diff", "--cached", "--quiet", check=False).returncode == 0:
                 return
-            blob = gc.api(BOT_REPO, "POST", "git/blobs", json={"content": data.decode("utf-8"), "encoding": "utf-8"}).json()["sha"]
-            if gc.api_commit(BOT_REPO, head, tree, {}, {target: blob}, f"Backup: {path}"):
-                print(f"Backup: {path} committed to {BOT_REPO}.")
+            _git(clone, *IDENTITY, "commit", "-q", "-m", f"Backup: {path}")
+            if _git(clone, "push", "-q", "origin", f"HEAD:{BRANCH}", check=False).returncode == 0:
+                print(f"Backup: {path} committed.")
                 return
         print(f"Backup: {path} not committed: main kept moving.")
     except Exception:

@@ -116,36 +116,23 @@ def test_disabled_skips_and_resumes():
 
 
 
+
 def test_backup_commits_once_after_saves(monkeypatch, tmp_path):
-    """Saves in a row make one backup commit, only under systemd; an unchanged backup commits nothing."""
+    """Saves in a row make one backup commit (only under systemd), pushed to origin; unchanged bytes commit nothing."""
+    import subprocess
     import commands.backup as backup
-    import commands.git_commit as gc
-    from commands.github_api import blob_sha
-    monkeypatch.chdir(tmp_path)
+
+    def git(*args, cwd=tmp_path):
+        return subprocess.run(["git", *args], cwd=cwd, check=True, capture_output=True, text=True).stdout.strip()
+
+    git("init", "-q", "--bare", "-b", "main", "origin.git")
+    git("clone", "-q", "origin.git", "live")
+    live = tmp_path / "live"
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "start", cwd=live)
+    git("push", "-q", "origin", "HEAD:main", cwd=live)
+    monkeypatch.chdir(live)
     Path("reminder.json").write_text("{}")
-    commits, held = [], {}
-
-    class Reply:
-        def __init__(self, data, ok=True):
-            self.data, self.ok = data, ok
-
-        def json(self):
-            return self.data
-
-    def api(repo, method, path, check=True, **kw):
-        if method == "GET":
-            return Reply({"sha": held.get("sha")}, ok="sha" in held)
-        return Reply({"sha": blob_sha(kw["json"]["content"].encode())})
-
-    def api_commit(repo, head, tree, modes, blobs, message):
-        commits.append((repo, blobs, message))
-        held["sha"] = next(iter(blobs.values()))
-        return "c"
-
-    monkeypatch.setattr(gc, "ref_head", lambda repo: "h")
-    monkeypatch.setattr(gc, "commit_info", lambda repo, sha: {"tree": {"sha": "t"}})
-    monkeypatch.setattr(gc, "api", api)
-    monkeypatch.setattr(gc, "api_commit", api_commit)
+    monkeypatch.setattr(backup, "BACKUP_CLONE", str(tmp_path / "backup-clone"))
     monkeypatch.setattr(backup, "BACKUP_DELAY", 0.2)
     monkeypatch.delenv("INVOCATION_ID", raising=False)
     backup.changed("reminder.json")
@@ -153,7 +140,9 @@ def test_backup_commits_once_after_saves(monkeypatch, tmp_path):
     monkeypatch.setenv("INVOCATION_ID", "x")
     for _ in range(3):
         backup.changed("reminder.json")
-    backup._timers["reminder.json"].join(2)
-    assert commits == [("bobberlington/AutoCroissant", {"backup/reminder.json": blob_sha(b"{}")}, "Backup: reminder.json")]
-    backup._commit("reminder.json")                 # the backup holds these bytes: no commit
-    assert len(commits) == 1
+    backup._timers["reminder.json"].join(10)
+    origin = tmp_path / "origin.git"
+    assert git("log", "--format=%s", "main", cwd=origin).splitlines() == ["Backup: reminder.json", "start"]
+    assert git("show", "main:backup/reminder.json", cwd=origin) == "{}"
+    backup._commit("reminder.json")                 # main holds these bytes: no commit
+    assert git("rev-list", "--count", "main", cwd=origin) == "2"
