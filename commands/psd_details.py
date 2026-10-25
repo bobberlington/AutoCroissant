@@ -17,11 +17,13 @@ from json import dumps, load as json_load
 from os import PathLike
 from os.path import isdir
 from re import IGNORECASE, fullmatch, search, sub
+from threading import local
 from typing import Optional
 
 from psd_tools import PSDImage
 from psd_tools.constants import Resource
 
+import commands.psd_edit as psd_edit
 from commands.font_check import FontIndex, dir_fonts, layer_fonts, local_fonts, tree_fonts
 from commands.psd_edit import (
     STAR_FOLDER, Refused, _Unit, _core, _icon_reason, _icon_spots, _median_size, _moved_box, _reading, _star_count,
@@ -44,6 +46,27 @@ HEADER_STARS = 10                           # star counts the header section lay
 HEADER_ICONS = 8                            # type icons it keeps spots for
 _indexes: dict = {}                         # (fonts dir, its files) -> FontIndex: built once per MDW/Fonts change
 _parsers: dict = {}                         # vocab -> offline_parser: the header's type rule
+_inks = local()                             # .cache: {id(layer): (layer, ink)} during one gather in this thread, else None
+
+
+# ========================
+# psd_edit._ink, cached within one gather
+# ========================
+def _cached_ink(layer):
+    """psd_edit._ink, once per layer inside gather (its PSD is read only there); elsewhere the plain call (the bake
+    changes layers between calls)."""
+    cache = getattr(_inks, "cache", None)
+    if cache is None:
+        return _plain_ink(layer)
+    hit = cache.get(id(layer))
+    if hit is None:
+        hit = cache[id(layer)] = (layer, _plain_ink(layer))     # the layer held: its id stays its own
+    return hit[1]
+
+
+_plain_ink = getattr(psd_edit._ink, "__wrapped__", psd_edit._ink)
+_cached_ink.__wrapped__ = _plain_ink
+psd_edit._ink = _cached_ink
 
 
 # ========================
@@ -407,6 +430,14 @@ def gather(psd, rel: str, name: str, index: Optional[FontIndex] = None, vocab=()
         psd = PSDImage.open(BytesIO(psd))
     elif isinstance(psd, (str, PathLike)):
         psd = PSDImage.open(psd)
+    outer, _inks.cache = getattr(_inks, "cache", None), {}
+    try:
+        return _gather(psd, rel, name, index, vocab)
+    finally:
+        _inks.cache = outer
+
+
+def _gather(psd: PSDImage, rel: str, name: str, index: Optional[FontIndex], vocab) -> dict:
     record = {"path": rel, "name": name, "at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "parser": PARSER_VERSION}
     try:
         layers = list(psd.descendants())
