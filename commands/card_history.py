@@ -1575,7 +1575,7 @@ def record_versions(before: dict, archived_before: dict, db, reparsed: dict, res
 
 def record_edits(db, before: dict, at: float, commit: Optional[str] = None) -> list:
     """
-    Legacy (/update_stats, a Discord edit's in-memory refresh): an applied database edit that changed a card's data
+    Legacy (/update_stats): an applied database edit that changed a card's data
     (its card before knew something it doesn't: knows) keeps the card before as a version; the card's version starts
     at the edit (its commit's time, never before the version it ends; cause edit). Duplicates get none.
 

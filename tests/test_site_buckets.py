@@ -1,7 +1,8 @@
 """
 The website's editing helpers of round 3 (TTSCardMaker site/assets, in node and by text): the item type list (edit.js
 ITEM_TYPES = the Items/ folders), drops on a filter-bar value or a pinned box (inline.js targetOf/dropOn, dragenter),
-the click-away rule for the "+" editors, the name autofill (tokens.js suggestNames) and the pinned tray (tray.js).
+the click-away rule for the "+" editors, the name autofill (tokens.js suggestNames), the pinned tray (tray.js) and
+Rename everywhere (edit.js renameAll: the ops it queues).
 Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without node or a site before them.
 """
 import json
@@ -182,3 +183,96 @@ def test_the_tray_is_wired():
     assert app.index('if ($("#edit-form")) return;') < key < app.index('/^[1-6]$/.test(e.key)')
     assert "drop: (ids, t) => inline.dropOn(ids, t)" in app
     assert "A.editor.stageMany(" not in TRAY_JS.read_text(encoding="utf-8")
+
+
+# ---- Rename everywhere (edit.js renamePlan/renameAll, tray.js renamedPins; replaces /mass_replace)
+needs_rename = pytest.mark.skipif("renameAll" not in EDIT_JS.read_text(encoding="utf-8"), reason=f"no Rename everywhere in {EDIT_JS}")
+EDITOR = """
+const store = () => { const m = new Map(); return { getItem: k => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), removeItem: k => m.delete(k) }; };
+const el = () => ({ setAttribute() {}, append() {}, remove() {} });
+Object.assign(globalThis, { localStorage: store(), sessionStorage: store(), window: { addEventListener() {} },
+  document: { addEventListener() {}, querySelector: () => null, getElementById: () => null, createElement: el, body: el(), visibilityState: "visible" } });
+const E = await import(EDIT_URI);       // after the stand-ins: fresh.js reads document on import
+const card = (id, o) => ({ id, key: id, name: id, type: "creature", author: "Maker", ...o });
+const all = [card("goomba", { series: "Mario" }), card("koopa", { series: "mario " }), card("boo", { series: "Mario", hidden: true }),
+  card("dee", { series: "Kirby" }), card("shroom", { type: "item", subtype: "heal", series: "Kirby" }),
+  card("toad", { series: "Mario Bros", edited: ["series"], orig: { series: "Mario" } }), card("goomba2", { series: "Mario", dup: "goomba" })];
+const S = { all, byId: new Map(all.map(c => [c.id, c])), rules: null, icons: {}, data: { repo: "o/r", admins: [], people: [], peopleMap: {}, banlist: { groups: [] } } };
+const ed = E.createEditor({ S, KIND_LABEL: {}, PSD_TIP: "", derive() {}, rerender() {}, toast() {} });
+const ops = () => JSON.parse(localStorage.getItem("edit-stage")).cards;
+"""
+
+
+@needs_node
+@needs_rename
+def test_a_rename_queues_one_edit_per_card(tmp_path):
+    """Every card with the value (any case or spacing, hidden too) gets its own op, the same as editing each card; a
+    card whose published value is the PSD's gets an unset; a name that exists merges in its spelling; a duplicate's
+    author follows its original; an item type is an Items/ folder; the ops make the Card Edits.json entries."""
+    out = node(tmp_path, EDITOR.replace("EDIT_URI", json.dumps(EDIT_JS.as_uri())) + """
+const r1 = ed.renameAll("series", "Mario", "Mario Bros"), o1 = ops();
+const r2 = ed.renameAll("series", "Mario Bros", "Mario"), o2 = ops();
+const merge = ed.renamePlan("series", "Kirby", "mario");
+const author = ed.renameAll("author", "Maker", "Bob"), o3 = ops();
+const item = [ed.renamePlan("subtype", "heal", "Teleport"), ed.renameAll("subtype", "heal", " Support ")];
+const file = JSON.parse(E.editsFile(null, Object.values(ops()), "2026-10-25T00:00:00Z", "tester")).cards;
+process.stdout.write(JSON.stringify({ r1, o1, r2, o2, merge, author, o3: Object.fromEntries(Object.entries(o3).map(([k, v]) => [k, v.author])), item, file }));""")
+    assert sorted(out["r1"]["change"]) == ["boo", "goomba", "goomba2", "koopa"] and out["r1"]["others"] == 1
+    assert out["o1"]["koopa"] == {"id": "koopa", "key": "koopa", "name": "koopa", "set": {"series": "Mario Bros"}, "unset": []}
+    assert "toad" not in out["o1"] and sorted(out["o1"]) == ["boo", "goomba", "goomba2", "koopa"]
+    assert out["o2"]["toad"]["unset"] == ["series"] and out["o2"]["toad"]["set"] == {}     # back to the PSD's: unset
+    assert sorted(out["o2"]) == ["koopa", "toad"] and out["o2"]["koopa"]["set"] == {"series": "Mario"}   # the rest: as published
+    assert (out["merge"]["name"], out["merge"]["others"], sorted(out["merge"]["change"])) == ("Mario", 5, ["dee", "shroom"])
+    assert out["author"]["dups"] == 1 and "goomba2" not in out["author"]["change"]
+    assert out["o3"]["goomba"] == "Bob" and "goomba2" not in out["o3"]
+    assert "Items folders" in out["item"][0]["error"] and out["item"][1]["name"] == "support"
+    assert out["file"]["shroom"]["subtype"] == "support" and out["file"]["koopa"]["series"] == "Mario"
+    assert "goomba" not in out["file"]      # an author goes to Card Authors.txt
+
+
+@needs_node
+@needs_rename
+def test_pinned_boxes_follow_a_rename(tmp_path):
+    pins = [{"k": "series", "v": "Mario"}, {"k": "subseries", "v": "Paper", "s": "Mario"}, {"k": "series", "v": "Mario Bros"},
+            {"k": "subseries", "v": "Paper", "s": "Kirby"}, {"k": "author", "v": "Bob"}]
+    out = node(tmp_path, f"""
+const p = {json.dumps(pins)};
+process.stdout.write(JSON.stringify([T.renamedPins(p, {{ key: "series", from: "mario", to: "Mario Bros" }}),
+  T.renamedPins(p, {{ key: "subseries", from: "paper", to: "Paper Mario", series: "Mario" }})]));""", T=TRAY_JS)
+    assert out[0] == [{"k": "series", "v": "Mario Bros"}, {"k": "subseries", "v": "Paper", "s": "Mario Bros"},
+                      {"k": "subseries", "v": "Paper", "s": "Kirby"}, {"k": "author", "v": "Bob"}]     # merged: one box
+    assert out[1][1] == {"k": "subseries", "v": "Paper Mario", "s": "Mario"} and out[1][3]["v"] == "Paper"
+
+
+@needs_node
+@needs_rename
+def test_an_author_rename_moves_the_people_lines(tmp_path):
+    """Every [people] line showing the author moves, "old = new" joins when the name has none, cards they carry need no
+    edit but preview the new name; a case fix works; Discard all drops only the drafted fields the ops cover."""
+    script = EDITOR.replace("EDIT_URI", json.dumps(EDIT_JS.as_uri())).replace(
+        'people: [], peopleMap: {}', 'people: ["Chestnut", "Pip"], peopleMap: { Chestnut: "Chestnut", JasonB: "Chestnut" }').replace(
+        "const all = [", 'const all = [card("a", { author: "Chestnut" }), card("b", { author: "Chestnut" }), card("p", { author: "Pip" }), ')
+    out = node(tmp_path, script + """
+globalThis.confirm = () => true;
+const fix = ed.renamePlan("author", "Chestnut", "chestnut");
+ed.drafts.put("a", { author: "x", ability: "half typed" });
+const p = ed.renameAll("author", "Chestnut", "Chestnut Bros"), q = ed.renameAll("author", "Pip", "Pippa");
+const stage = JSON.parse(localStorage.getItem("edit-stage")), shown = S.byId.get("a").author;
+ed.actions["edit-discard-all"]();
+process.stdout.write(JSON.stringify({ fix, p, q, people: stage.people, ops: Object.keys(stage.cards), shown, draft: ed.drafts.get("a")?.fields }));""")
+    assert out["fix"]["cards"] == 2 and out["fix"]["people"] == {"Chestnut": "chestnut", "JasonB": "chestnut"}
+    assert out["p"]["change"] == [] and out["p"]["cards"] == 2 and out["shown"] == "Chestnut Bros"
+    assert out["people"] == {"Chestnut": "Chestnut Bros", "JasonB": "Chestnut Bros", "Pip": "Pippa"} and out["ops"] == []
+    assert out["draft"] == {"author": "x", "ability": "half typed"}      # no op on a: its draft stays
+
+
+@needs_node
+@needs_rename
+def test_a_filter_follows_a_rename_in_its_series(tmp_path):
+    out = node(tmp_path, """
+const P = s => new URLSearchParams(s), d = { key: "subseries", from: "paper", to: "Paper Mario", series: "Mario" };
+process.stdout.write(JSON.stringify([E.renamedFilter(P("series=Kirby&subseries=Paper"), d), E.renamedFilter(P("series=Mario&subseries=Paper"), d),
+  E.renamedFilter(P("subseries=Paper"), d, true), E.renamedFilter(P("subseries=Paper"), d), E.renamedFilter(P("sub=heal,food"), { key: "subtype", from: "heal", to: "support" }),
+  [...E.peopleMoves({ Michael: "MichaelJSr", MichaelJSr: "MichaelJSr" }, { Michael: "Mike" })]]));""", E=EDIT_JS)
+    assert out[0] is None and out[1] == {"subseries": ["Paper Mario"]} and out[2] is None and out[3] == {"subseries": ["Paper Mario"]}
+    assert out[4] == {"sub": ["support", "food"]} and out[5] == []     # a line others still show: unseen until built

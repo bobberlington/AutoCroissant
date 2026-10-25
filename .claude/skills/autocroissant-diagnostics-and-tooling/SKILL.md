@@ -703,7 +703,6 @@ system `python3`; compare.py and the line-ref tools are stdlib.
 | etag_handoff_ns.py | `etag_handoff_ns.py ROOT` | Offline, fake GitHub: after a changed /update_stats, does card_repo's next tree fetch get a 304? Throwaway copy `ROOT_etag` |
 | import_ns.py | `import_ns.py ROOT [N]` | `import main` wall time, RSS and heavy modules loaded, best of N fresh processes (default 5) |
 | startup_ns.py | `startup_ns.py ROOT` | Live: tree requests at startup (init_query and the type-emoji listing in parallel), then one /sync_emojis listing |
-| tts_ns.py | `tts_ns.py ROOT` | Live: GitHub reads of two back-to-back no-change /update_tts_save runs plus the website's cards.json |
 | search_ns.py | `search_ns.py ROOT OUT.json` | Search timings and every result on ROOT (reads the `~/Desktop/TTSCardMaker` clone); diff two OUTs for identity |
 | search_ab.py | `search_ab.py ROOT` | Interleaved A/B in one process: old fuzzy step / name lookup vs the new ones, same queries, results asserted equal; `exec`s search_ns.py beside it |
 | race_ns.py | `race_ns.py N SWITCH [shared]` | Commit lookups across threads on the real `_repo()` against a local echo server; `shared` = one client for all threads (the bug). Imports the LIVE repo (`sys.path` hardcoded to `~/Desktop/AutoCroissant`), no sandbox |

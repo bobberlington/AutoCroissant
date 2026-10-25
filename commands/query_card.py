@@ -42,7 +42,7 @@ SYNONYM_WORDS = compile(r"\b(" + "|".join(SYNONYMS) + r")\b")
 BULLET = compile(r"^[-•*]\s+")                           # a rulebook line's own bullet: the reply adds one
 EMOJI = compile(r"(<a?:\w+:\d+>)")                     # Discord emoji markup: never bolded inside
 SNIPPET = 200                                            # /query_rulebook: a longer line is cut around the match
-AS_OF_EDITS_NOTE = ("Database edits (website, /update_metadata) are versions of their own only since late October "
+AS_OF_EDITS_NOTE = ("Database edits (website, Discord) are versions of their own only since late October "
                     "2026: an older version shows those it had when it was replaced.")
 
 
@@ -65,13 +65,12 @@ class CardRepository:
         self._tree_etag = ""
         self._tree_lock = Lock()                         # held while _tree/_tree_etag change; type emojis wait on it
         self._edit_names: tuple = ("", {})               # (Card Edits.json blob sha, names)
-        self._edits = None                               # that file, parsed (CardEdits): /alias reads its aliases
+        self._edits = None                               # that file, parsed (CardEdits)
         self._site_etag = ""
         self.ambiguous_names: dict[str, tuple[str, ...]] = {}
         self._spaced: dict[str, str] = {}                # underscore key -> the space-named file it stands for
         self._renamed: dict[str, tuple] = {}             # an old name's key -> (today's key, old name, today's name)
-        self.choices: tuple = ()                         # autocomplete: (lowercase, shown, value, old), replaced whole
-        self.card_choices: tuple = ()                    # the same, values card names only (/bake_cards)
+        self.choices: tuple = ()                         # autocomplete: (lowercase, shown, value), replaced whole
         self.cards_dff: DataFrame = DataFrame()
         self.rulebook_dff: DataFrame = DataFrame()
         self._lowered: tuple = (None, [])                # (cards_dff, [(label, lowered ability)]) for the fuzzy step
@@ -162,7 +161,7 @@ class CardRepository:
 
     def _add_file_to_registry(self, path: str) -> None:
         """Add a file path to the registry, handling duplicates; a name with spaces also under underscores (aliases,
-        titles, /alias and the Card Edits.json lookups build underscore keys)."""
+        titles and the Card Edits.json lookups build underscore keys)."""
         png_filename = path[path.rindex("/") + 1:].lower()
         if png_filename in self._spaced and self._spaced[png_filename] == self.git_files.get(png_filename):
             del self.git_files[png_filename]            # a file of that name: no longer a space-named one's lookup
@@ -410,13 +409,6 @@ class CardRepository:
         for card, extra in self._edit_names[1].items():
             self._add_lookup(card, extra)
 
-    def relink(self) -> None:
-        """Card Edits.json's names and aliases, then the printed titles, onto keys the registry lacks (after /alias delete)."""
-        for card, extra in self._edit_names[1].items():
-            self._add_lookup(card, extra)
-        self._populate_titles()
-        self._populate_renames()
-
     def _populate_titles(self) -> None:
         """Printed titles the parser read (display_name), so /query finds "Black Clot" as well as Clot_Black."""
         try:
@@ -465,12 +457,12 @@ class CardRepository:
 
     def _populate_choices(self, cards: dict) -> None:
         """Autocomplete's names: cards (printed titles first), website names and aliases, renamed cards' old names."""
-        found, own, shown_as = {}, [], {}
+        found, shown_as = {}, {}
 
-        def add(value: str, shown: str, old: bool = False) -> None:
+        def add(value: str, shown: str) -> None:
             value = value.strip()
             if value and len(value) <= 100 and value.lower() not in found:
-                found[value.lower()] = (shown[:100], value, old)
+                found[value.lower()] = (shown[:100], value)
 
         for name, card in cards.items():
             title = getattr(card, "display_name", None)
@@ -480,35 +472,30 @@ class CardRepository:
             add(title or name, title or name)
             if title and title.lower() != name.lower():
                 add(name, f"{name} ({title})")
-            if len(name) <= 100:
-                own.append((name, f"{name} ({title})" if title and title.lower() != name.lower() else name))
         for card, extra in self._edit_names[1].items():
             shown = shown_as.get(card, card)
             for alias in extra:
                 add(alias, alias if alias.lower() == shown.lower() else f"{alias} ({shown})")
         for _, old, now in self._renamed.values():
-            add(old, f"{old} (now {now})", True)
-        self.choices = tuple(sorted((shown.lower(), shown, value, old) for shown, value, old in found.values()))
-        self.card_choices = tuple(sorted((shown[:100].lower(), shown[:100], name, False) for name, shown in own))
+            add(old, f"{old} (now {now})")
+        self.choices = tuple(sorted((shown.lower(), shown, value) for shown, value in found.values()))
 
-    def name_choices(self, current: str, old: bool = True, cards: bool = False) -> list:
+    def name_choices(self, current: str) -> list:
         """
         Autocomplete for a card-name option (on the event loop: reads the choices tuples only).
 
         Args:
             current: What is typed so far
-            old: Offer renamed cards' old names (options that take them: /query, /update_metadata)
-            cards: Values are card names only, titles shown beside them (/bake_cards matches card names)
 
         Returns:
             Up to 25 (shown, value): names starting with it, then with a word that does, then holding it
         """
         text = " ".join(current.lower().replace("_", " ").split())
-        choices = self.card_choices if cards else self.choices if old else tuple(c for c in self.choices if not c[3])
+        choices = self.choices                                   # one read: a rebuild swaps it whole
         if not text:
             return [(c[1], c[2]) for c in choices[:25]]
         ranked = []
-        for low, shown, value, _ in choices:
+        for low, shown, value in choices:
             at = low.find(text)
             if at >= 0:
                 ranked.append((0 if at == 0 else 1 if low[at - 1] in " (-." else 2, len(low), low, shown, value))

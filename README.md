@@ -19,7 +19,7 @@ then `python setup.py build_ext --inplace` (10 Cython modules; rebuild after eve
 
 ## Deploy
 
-Production is the jetson (`ssh jetson`, systemd unit `autocroissant`): `scripts/deploy.sh` on the jetson (pull, psd-tools
+Production is the jetson (`ssh jetson`, systemd unit `autocroissant`): the `jetson-deploy` skill (~/.claude/skills, outside the repo) on the jetson (pull, psd-tools
 pin, build, restart, journal check; prints OK or FAILED; `--bot ojwikibot` for the other bot; refuses 05:00-05:40 Pacific).
 Runbook: `.claude/skills/autocroissant-run-and-operate/SKILL.md`.
 

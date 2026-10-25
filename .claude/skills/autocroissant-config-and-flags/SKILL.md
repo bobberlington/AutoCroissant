@@ -1,6 +1,6 @@
 ---
 name: autocroissant-config-and-flags
-description: Catalog of EVERY configuration axis in the AutoCroissant Discord bot. Load for any question containing "config", "flag", "setting", "default", "where is X configured", "how do I change/set X", or "why did my setting reset" — and for any mention of TOKEN, ADMINS, GIT_TOKEN, ACTIONS_TOKEN, CARD_SYNC, CARD_GUARDS, card-preview.yml and the previews branch (KEEP, DAYS: no secret needed), browser_cookies, KEEPVIDEO, POSTPROCESS, SITE_URL, match ratio, /set_ratio, /set_repo, admin-only commands, rate limits, BREAK_LEN, UPDATE_RATE, DOWNLOAD_WORKERS, TYPE_REGION_RATIO, EXCLUDE_FOLDERS, MUSIC_BASE_DIR, LOCAL_DIR_LOC, HISTORY_CLONE, TTS_SAVE_PATH, AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE, TIMEZONE/PST, pickle filenames, ICON_FONT_PREFIX, ICON_MANIFEST_PATH, ICON_VARIANTS, ICON_SCAN_PATTERN, EFFECT_LAYER_TAG, EFFECT_COVERAGE_MIN, AUTHORS_PATH(S), EDITS_PATH(S), STAR_CORE_ALPHA, the type_emojis constants (EMOJI_SIZE, MAX_NAME_LEN, ICON_FOLDERS, NO_SUFFIX, NO_RED, TOKEN_PATTERN), the reminder constants (REMINDER_VERSION, MAX_INTERVAL, CHANNEL_RETRY, LEGACY_RUNS_AS_BOT, RETIRED_OPTIONS, TIME_FORMATS, WEEKDAYS), or the AI fields and setters that live only on branch archive/ai-generation (HF_TOKEN, model, lora, device_no, scheduler_name, vram_usage, /set_scheduler, /set_model, /set_lora, /set_device). Contains the config.py field table (names only), global_config.py and per-module constants (incl. card_sync, the push guards, psd_edit parity, card_bake), the TTSCardMaker repo settings (names only), prod-vs-experimental status, runtime-settable vs restart-required (/set_* do NOT persist), update_stats defaults, an add-a-config-field checklist and re-verification greps.
+description: Catalog of EVERY configuration axis in the AutoCroissant Discord bot. Load for any question containing "config", "flag", "setting", "default", "where is X configured", "how do I change/set X", or "why did my setting reset" — and for any mention of TOKEN, ADMINS, GIT_TOKEN, ACTIONS_TOKEN, CARD_SYNC, CARD_GUARDS, card-preview.yml and the previews branch (KEEP, DAYS: no secret needed), browser_cookies, KEEPVIDEO, POSTPROCESS, SITE_URL, match ratio, /set_ratio, /set_repo, admin-only commands, rate limits, BREAK_LEN, UPDATE_RATE, DOWNLOAD_WORKERS, TYPE_REGION_RATIO, EXCLUDE_FOLDERS, MUSIC_BASE_DIR, LOCAL_DIR_LOC, HISTORY_CLONE, TTS_SAVE_PATH, AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE, TIMEZONE/PST, pickle filenames, ICON_FONT_PREFIX, ICON_MANIFEST_PATH, ICON_VARIANTS, ICON_SCAN_PATTERN, EFFECT_LAYER_TAG, EFFECT_COVERAGE_MIN, AUTHORS_PATH(S), EDITS_PATH(S), STAR_CORE_ALPHA, the type_emojis constants (EMOJI_SIZE, MAX_NAME_LEN, ICON_FOLDERS, NO_SUFFIX, NO_RED, TOKEN_PATTERN), the reminder constants (REMINDER_VERSION, MAX_INTERVAL, CHANNEL_RETRY, LEGACY_RUNS_AS_BOT, RETIRED_OPTIONS, RETIRED_COMMANDS, TIME_FORMATS, WEEKDAYS), or the AI fields and setters that live only on branch archive/ai-generation (HF_TOKEN, model, lora, device_no, scheduler_name, vram_usage, /set_scheduler, /set_model, /set_lora, /set_device). Contains the config.py field table (names only), global_config.py and per-module constants (incl. card_sync, the push guards, psd_edit parity, card_bake), the TTSCardMaker repo settings (names only), prod-vs-experimental status, runtime-settable vs restart-required (/set_* do NOT persist), update_stats defaults, an add-a-config-field checklist and re-verification greps.
 ---
 
 # AutoCroissant: Configuration and Flags
@@ -61,7 +61,7 @@ Ground rules:
 |---|---|---|---|---|---|
 | `TOKEN` | YES — bot won't boot without it | none — the ONLY hard import: `from config import TOKEN` (main.py:13); used by `client.run(TOKEN)` (main.py:987) | main.py | prod | Discord bot token. It decides the bot IDENTITY, and since 2026-10-19 that matters beyond login: application emojis belong to the identity (autocroissant-run-and-operate §11). On the dev Mac (2026-10-19) the active line is the "Waxwell" identity and the AutoCroissant token line is commented out |
 | `ADMINS` | no | `[]` (commands/utils.py:19) | utils.py | prod | list of Discord user IDs (ints) allowed past `lacks_admin` — see gate table below |
-| `GIT_TOKEN` | no (strongly recommended) | `""` (commands/github_api.py — the one read since 2026-10-20; query_card, card_data (the traverser's code since 2026-10-22) and type_emojis import it from there; git_commit.token() reads it, else the Actions' GITHUB_TOKEN, for tts_save and card_bake since 2026-10-21) | github_api | prod | GitHub API auth: raises the rate limit 60 → 5000 req/hr. Used for the Authorization headers, the PyGithub client for commit timestamps, and the emoji sync's tree listing (1 call per startup or /sync_emojis). Since 2026-10-20 it also WRITES: `/update_tts_save` commits the TTS save to the card repo with it, so it needs write access there (when the token can't write — 401/403/404 on the blob upload, or no token — it commits through the history clone and pushes over SSH with the service's agent instead) |
+| `GIT_TOKEN` | no (strongly recommended) | `""` (commands/github_api.py — the one read since 2026-10-20; query_card, card_data (the traverser's code since 2026-10-22) and type_emojis import it from there; git_commit.token() reads it, else the Actions' GITHUB_TOKEN, for card_bake and card_guards) | github_api | prod | GitHub API auth: raises the rate limit 60 → 5000 req/hr. Used for the Authorization headers, the PyGithub client for commit timestamps, and the emoji sync's tree listing (1 call per startup or /sync_emojis). Since 2026-10-20 it also WRITES: `/update_tts_save` commits the TTS save to the card repo with it, so it needs write access there (when the token can't write — 401/403/404 on the blob upload, or no token — it commits through the history clone and pushes over SSH with the service's agent instead) |
 | `ACTIONS_TOKEN` (2026-10-22) | no (only with `CARD_SYNC` on) | `""` (commands/card_sync.py:38) | card_sync | prod, used after the cutover | A fine-grained token for TTSCardMaker only, Actions read and write. After the cutover `/update_stats force_update` or `cards:` dispatches card-sync.yml with it and follows the run. Before it, `/push` dispatches the website build (site.yml) with it after a push of the pickles (card_sync.dispatch_site). In the jetson's config.py since 2026-10-22 ~12:25 |
 | `browser_cookies` (2026-10-20) | no | absent → falls back to `vram_usage == "mps"` (music_player.py:37) | music_player | prod | True = yt-dlp uses Safari cookies — see the browser_cookies section below |
 | `vram_usage` | no | `""` in the fallback (music_player.py:37) | music_player | legacy fallback | on main it matters ONLY when `browser_cookies` is absent (old configs). Its AI meaning is branch-only, below |
@@ -102,34 +102,30 @@ user is NOT an admin** (`interaction.user.id not in ADMINS`). Every call site re
 `if lacks_admin(...): send "You do not have permission"; return`. The invariant is owned by
 **autocroissant-architecture-contract**.
 
-Commands gated by `lacks_admin` in main.py (all 21 call sites, verified 2026-10-23 at 2ada357; line numbers
+Commands gated by `lacks_admin` in main.py (all 16 call sites, verified 2026-10-25; line numbers
 drift — re-derive with `grep -n "lacks_admin" main.py`):
 
 | Slash command | main.py line |
 |---|---|
-| `/stop_bot` | 180 |
-| `/pull` | 196 |
-| `/push` | 207 |
-| `/update` | 222 |
-| `/set_reminder` | 252 |
-| `/set_repo` (added 2026-10-22) | 362 |
-| `/alias` (added 2026-10-22) | 377 |
-| `/update_stats`, only with `CARD_SYNC` on and `force_update` or `cards` given (2026-10-22: a Card sync run costs API budget; a reminder's run is checked as its creator) | 419 |
-| `/update_tts_save` (added 2026-10-20) | 429 |
-| `/bake_cards` (added 2026-10-21) | 445 |
-| `/update_metadata` (added 2026-10-22) | 506 |
-| `/mass_replace` (added 2026-10-22) | 561 |
-| `/delete_song` (added 2026-10-22) | 696 |
-| `/delete_all_music` (added 2026-10-22) | 705 |
-| `/purge` (added 2026-10-22) | 725 |
-| `/list_guilds` | 735 |
-| `/leave_guild` | 750 |
-| `/sync_global` | 759 |
-| `/sync_emojis` (added 2026-10-19) | 774 |
-| `/list_guild_channels` | 790 |
-| `/get_channel_messages` | 810 |
+| `/stop_bot` | 216 |
+| `/pull` | 232 |
+| `/push` | 243 |
+| `/update` | 258 |
+| `/set_reminder` | 288 |
+| `/set_repo` (added 2026-10-22) | 392 |
+| `/update_stats`, only with `CARD_SYNC` on and `force_update` or `cards` given (2026-10-22: a Card sync run costs API budget; a reminder's run is checked as its creator) | 434 |
+| `/delete_song` (added 2026-10-22) | 604 |
+| `/delete_all_music` (added 2026-10-22) | 613 |
+| `/purge` (added 2026-10-22) | 633 |
+| `/list_guilds` | 643 |
+| `/leave_guild` | 658 |
+| `/sync_global` | 667 |
+| `/sync_emojis` (added 2026-10-19) | 682 |
+| `/list_guild_channels` | 698 |
+| `/get_channel_messages` | 718 |
 
-The 2026-10-22 seven are gated whole, view modes included (`/set_repo` and `/alias` with no arguments).
+The 2026-10-22 gates are whole, view modes included (`/set_repo` with no arguments). `/update_metadata`, `/mass_replace`,
+`/alias`, `/bake_cards` and `/update_tts_save` (all admin only) were retired 2026-10-25 (branch `archive/discord-edits`).
 `/purge` cannot be scheduled by a reminder: its `user` option has no default. Tests: `tests/test_admin_gates.py`.
 
 `/list_guild_members` was removed 2026-10-20 (C6: it needed the privileged members intent, which the bot
@@ -203,7 +199,7 @@ Actions can run `python -m commands.tts_save` and the build on their checkout wi
 | `TYPES_DIR`, `STARS_DIR`, `RULEBOOK_DIR` (2026-10-20) | `"Types"`, `"Types/Stars"`, `"Rulebook"` | card-repo folders: type icons, star icons, and the rule pages (a substring test on card paths); used by psd_parser, card_data, query_card, type_emojis |
 | `ICON_MANIFEST_PATH`, `AUTHORS_PATHS` / `AUTHORS_PATH`, `EDITS_PATHS` / `EDITS_PATH`, `RULES_PATH` (2026-10-20) | `"MDW/Fonts/stoogedings-src/stoogedings.json"`, `("site/Card Authors.txt",)`, `("site/Card Edits.json",)`, `"TTS/decks.json"` | the hand-kept files in the card repo (font manifest, card authors, website edits, TTS deck rules). The website files moved from `MDW/` to `site/` on 2026-10-20 (TTSCardMaker 13ac680); every reader (card_data, query_card, tts_save) takes the first path present, so the tuples stay; `AUTHORS_PATH` / `EDITS_PATH` are the first element, for messages and the facade. The `MDW/` fallback was dropped the same day. Moved here from psd_analyzer and tts_save (psd_analyzer re-exports them) |
 | `MAILMAP_PATH` (2026-10-23) | `".mailmap"` | the card repo's git mailmap (one person's git names as one): `card_history.mailmap_args` passes head's blob to `git log` for `%aN`; the API path reads it from the tree once a run (`card_edits.Mailmap`) |
-| `TTS_SAVE_PATH` (2026-10-20) | `"TTS/Impossibility Simulator.json"` | the Tabletop Simulator save in the card repo that `/update_tts_save` updates and commits (the automatic path is TTSCardMaker's card-sync.yml TTS save step since the cutover 2026-10-24, tts-save.yml before; it passes the path on the command line); players download it from its raw link (commands/tts_save.py) |
+| `TTS_SAVE_PATH` (2026-10-20) | `"TTS/Impossibility Simulator.json"` | the Tabletop Simulator save in the card repo, updated by TTSCardMaker's card-sync.yml TTS save step since the cutover 2026-10-24 (tts-save.yml before; /update_tts_save until 2026-10-25); it passes the path on the command line; players download it from its raw link (commands/tts_save.py) |
 | `TIMEZONE` | `ZoneInfo("America/Los_Angeles")` | reminder times are PST/PDT — `/set_reminder when:` is interpreted in this zone (ops details: autocroissant-run-and-operate) |
 
 Pickle schemas and commit discipline are owned by **impossibility-cards-reference** and
@@ -343,15 +339,13 @@ ttscardmaker-companion §1.6.
 
 | Constant | Value | Meaning |
 |---|---|---|
-| `RULES_PATH` | `"TTS/decks.json"` (global_config.py since 2026-10-20) | deck rules (which repo PNGs each complete deck holds). The bot reads main's copy; standalone runs read the checkout's, else raw main |
-| `LAG_PAUSE` | `10` s | wait before redoing a run whose history clone lagged main |
+| `RULES_PATH` | `"TTS/decks.json"` (global_config.py since 2026-10-20) | deck rules (which repo PNGs each complete deck holds): the checkout's, else raw main |
 | `HTTP_TIMEOUT` | `30` s | the website's cards.json and raw rules reads |
-| `REPORT_FILE` | `"tts_save_report.md"` | name of the report attached in Discord |
 
-The commit path (token, `COMMIT_TRIES`, `API_TIMEOUT`, the SSH fallback and its `_cant_write` memory) moved to commands/git_commit.py on
-2026-10-21 (below); `update_repo_save` passes `ssh_on_limit=True` (a rate-limited API falls to SSH for that run, as before).
+The bot's own run (`update_repo_save`, /update_tts_save, committing through git_commit) was retired 2026-10-25; tts_save is
+the card-sync.yml CLI only.
 
-### commands/git_commit.py (Configuration block, added 2026-10-21; not compiled; shared by tts_save and card_bake)
+### commands/git_commit.py (Configuration block, added 2026-10-21; not compiled; shared by card_bake and card_guards)
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -361,9 +355,8 @@ The commit path (token, `COMMIT_TRIES`, `API_TIMEOUT`, the SSH fallback and its 
 | `NO_WRITE` | `(401, 403, 404)` | POST git/blobs refused: the token can't write (classic PATs get 404); `cant_write` remembers it until a restart |
 | `GIT_TIMEOUT`, `API_TIMEOUT` | `300` s each | per git call in the history clone / per API call (a PSD blob is up to 85 MB, 113 MB as base64) |
 | `cant_write` | in-memory, starts `False` | set on a NO_WRITE reply that is not a rate limit; every later commit goes over SSH |
-| `limited` | in-memory, starts `False` | set on a rate-limited 403 with `ssh_on_limit`; the run stays on SSH until the caller resets it (tts_save does at each run's start) |
 | `token()` | `github_api.GIT_TOKEN`, else env `GITHUB_TOKEN` | the Actions have no config.py; `github_api.token_from_env()` patches the fetch headers the same way |
-| `commit_files(..., ssh_on_limit=False)` | | a rate-limited 403 raises `Transient` (card_bake: the Action reports it) unless the caller asks for SSH for the run (tts_save: the bot's agent pushes; `limited`) |
+| `commit_files(...)` | | a rate-limited 403 raises `Transient` (the Action reports it; `ssh_on_limit` and `limited`, the bot's TTS save's, removed 2026-10-25) |
 
 Removed 2026-10-20 with the post-/update_stats run (TTSCardMaker's Action owns the automatic path: tts-save.yml, card-sync.yml since 2026-10-24):
 `IMAGES`, `_retry`, `_watched`, `save_affected`, `update_after_stats`.
@@ -411,19 +404,16 @@ through `github_api.token_from_env()`. Repo paths from global_config: `TYPES_DIR
 The CLI's `--fonts` defaults to the clone's `MDW/Fonts`; `--out` to `DETAILS_JSON`. The pool size and chunking are font_check's `POOL_MIN` / `POOL_CHUNK`.
 In `/update_stats` the `supplied` flags come from `font_check.cached_index(CACHE_JSON)` (the /fonts cache), None without it.
 
-### commands/card_runner.py (added 2026-10-21; not compiled; the bake inside the bot by hand, design section 8 "Jetson"; the live runner is the Action)
+### commands/card_runner.py (added 2026-10-21; not compiled; since 2026-10-25 only the Lock and the startup sweep: the bot no longer bakes)
 
 | Name | Value | Meaning |
 |---|---|---|
-| `REPORT_FILE` | `"card_bake_report.md"` | the full bake report attached in Discord (the summary is the message) |
 | `TEMP_PSD` (2026-10-22, c0fc117) | `tmp[a-z0-9_]{8}\.psd` | mkstemp's PSD names (card_data, card_check): what the startup `sweep_temp_psds` may delete |
 | `TEMP_AGE` (2026-10-22) | `3600` s | a temp PSD older than this is a cut-off run's (deleted at startup, under `bake_lock`) |
-| `bake_lock` | `threading.Lock()`, module level | held by `update_stats` for its whole run, by the bake around `card_bake.run` and by the startup sweep: they never overlap (queued commands run concurrently) |
-| `/bake_cards` defaults | `card=None`, `dry_run=True` (main.py:442-444) | one card or all; render and check only unless `dry_run:False` |
+| `bake_lock` | `threading.Lock()`, module level | held by `update_stats` for its whole run, the fonts cache refresh and the startup sweep: they never overlap (queued commands run concurrently) |
 
-The bake takes the token the bot already has: `card_bake.run` calls `github_api.token_from_env()`, which only patches the
-headers when config.py supplied no `GIT_TOKEN`, and `git_commit.token()` prefers `GIT_TOKEN`; no environment variable is
-needed inside the bot. The work dir is card_bake's (`RUNNER_TEMP` else a fresh `mkdtemp`). The fonts dir
+The bake (card-sync.yml) takes the Action's token: `card_bake.run` calls `github_api.token_from_env()`, and
+`git_commit.token()` prefers `GIT_TOKEN`, else `GITHUB_TOKEN`. The work dir is card_bake's (`RUNNER_TEMP` else a fresh `mkdtemp`). The fonts dir
 (`card_bake._fonts_dir`): `PSD_TOOLS_FONT_DIRS`' first entry, then the checkout's `MDW/Fonts`, then `fonts_cache/`
 brought to the tree's MDW/Fonts (66cfe9e, 2026-10-21) — so the jetson, which has no checkout, has fonts.
 
@@ -444,6 +434,7 @@ store turns reminders off; OJWikibot exits), `CHANNEL_RETRY`, `RETIRED_OPTIONS` 
 | `CHANNEL_RETRY` | `timedelta(hours=1)` | how long a one-shot reminder whose channel is gone waits before trying again |
 | `LEGACY_RUNS_AS_BOT` | `True` | reminders saved before creator tracking keep running as the bot. Set False to run them as an unknown non-admin user instead (their admin commands would then be refused) |
 | `RETIRED_OPTIONS` (2026-10-20) | `{"update_stats": (("use_local_repo", "use_local_timestamp"), <old option order>)}` | options a command no longer has. A reminder that names one drops it instead of failing: at creation (the reply says "Dropped ..."), at load migration and at fire time. The old option order maps pre-v2 positional values. Replaced `SCHEDULED_DEFAULTS` (2026-10-19 → 2026-10-20, `{"update_stats": {"use_local_repo": False}}`), which became pointless when local mode was archived |
+| `RETIRED_COMMANDS` (2026-10-25) | `{name: what replaced it}` for /update_metadata, /mass_replace, /alias, /bake_cards, /update_tts_save | a reminder (or a new one) running one is refused with "`/<name>` was retired (…)" instead of "is not a bot command" |
 | `INTERVAL_UNITS` | s/m/h/d/w in seconds | the units `offset`/`frequency` accept; combinations like `1d12h` are allowed |
 | `WEEKDAYS`, `TIME_FORMATS` | Monday-first names; `("%H:%M", "%I%p", "%I:%M%p")` | what `when` accepts (weekday prefixes need 3+ letters) |
 | `TRUE_WORDS`, `FALSE_WORDS` | true/yes/y/on/1 and false/no/n/off/0 | how boolean command options are read (any case) |
@@ -703,7 +694,7 @@ table with its command before quoting it in the future.
 | Branch only: vram modes, model='' disables init, HF_TOKEN Flux-only, setters → lazy re-init | `git grep -n "device_map\|float32\|if not MODEL\|HF_TOKEN\|_clear_pipelines\|if not txt2img_pipe" archive/ai-generation -- commands/diffusion.py` |
 | GIT_TOKEN consumers/rate-limit prints | `grep -rn "GIT_TOKEN" commands/ main.py` (defined once in github_api.py) |
 | tts_save constants | `grep -n "^[A-Z_]* = " commands/tts_save.py` |
-| git_commit constants and the two callers | `grep -n "^[A-Z_]* = \|^cant_write\|^limited" commands/git_commit.py`; `grep -n "commit_files(" commands/tts_save.py commands/card_bake.py` |
+| git_commit constants and the two callers | `grep -n "^[A-Z_]* = \|^cant_write" commands/git_commit.py`; `grep -n "commit_files(" commands/card_bake.py commands/card_guards.py` |
 | font_check constants (no alias table since 2026-10-23) | `grep -n "^[A-Z_]* = " commands/font_check.py`; `grep -rn "FONT_ALIASES" --include="*.py" .` (no output) |
 | card_check constants and its sparse list | `grep -n "^[A-Z_]* = " commands/card_check.py`; `grep -n -A1 "^SPARSE_FILES" commands/card_check.py` |
 | card_preview constants and its sparse list (2026-10-23) | `grep -n "^[A-Z_]* = \|^[A-Z_]*, [A-Z_]* = " commands/card_preview.py commands/card_preview_branch.py`; `grep -n "secrets\.\|vars\." <TTSCardMaker>/.github/workflows/card-preview.yml` (only `secrets.GITHUB_TOKEN`) |
@@ -774,3 +765,5 @@ guards, psd_edit parity and card_bake, and the TTSCardMaker repo settings; 21 la
 marker), the `card-guards-quiet` environment among the repo settings, `png_export.UNCHECKED`. The guards take no fonts
 (R7 dropped; no `--fonts`).
 2026-10-25 (refresh on use, work/refresh): card_sync's REFRESH_SECONDS and READERS; card_sync.py citations re-pointed (ACTIONS_TOKEN at :38).
+
+2026-10-25 (retire): five Discord edit commands retired (branch archive/discord-edits); the lacks_admin table re-derived (16 gates); card_runner's REPORT_FILE and /bake_cards defaults gone; analytics gained `RETIRED_COMMANDS`; git_commit's `limited`/`ssh_on_limit` (the bot's TTS save only) removed.

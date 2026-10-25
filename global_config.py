@@ -12,7 +12,7 @@ BOT_CLONE       = environ.get("AUTOCROISSANT_BOT_CLONE", "")   # this bot's own 
 EMOJI_JSON      = "type_emojis.json"           # bot application id -> {type emoji name: icon blob} (gitignored)
 FONTS_CACHE     = "fonts_cache"                # MDW/Fonts' font files, refreshed by tree sha, where there is no checkout (font_check; gitignored)
 FONT_DIRS_ENV   = "PSD_TOOLS_FONT_DIRS"        # the fonts dir override (first entry), pathsep-separated: card_bake, font_check
-TTS_SAVE_PATH   = "TTS/Impossibility Simulator.json"   # the TTS save in the card repo, updated by /update_tts_save
+TTS_SAVE_PATH   = "TTS/Impossibility Simulator.json"   # the TTS save in the card repo, updated by Card sync
 TIMEZONE        = ZoneInfo("America/Los_Angeles")
 
 # The card data: the Card sync Action's data branch (commands/card_sync.py; the only source since 2026-10-25)

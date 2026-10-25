@@ -49,8 +49,8 @@ FONTS_PREFIX = "MDW/Fonts/"                           # its top-level files only
 CARD_FILES = {ICON_MANIFEST_PATH, RULES_PATH, *AUTHORS_PATHS, *EDITS_PATHS, *CREATED_PATHS}
 REFRESH_SECONDS = 120                                # on use: the data branch looked at most this often
 READERS = frozenset({                                # the slash commands that read card data (on_use); autocomplete too
-    "alias", "export_cards", "export_rulebook", "fonts", "frankenstein", "list_orphans", "mass_replace", "query",
-    "query_ability", "query_rulebook", "update_metadata", "view_old_metadata"})
+    "export_cards", "export_rulebook", "fonts", "frankenstein", "list_orphans", "query", "query_ability",
+    "query_rulebook", "view_old_metadata"})
 
 # ========================
 # Global State

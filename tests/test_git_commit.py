@@ -1,5 +1,5 @@
 """
-git_commit, the commit path card_bake and tts_save share: upload_blob's NO_WRITE / rate-limit split, commit_files'
+git_commit, the commit path card_bake and card_guards share: upload_blob's NO_WRITE / rate-limit split, commit_files'
 API-then-SSH order against the card_bake fake GitHub, and git_commit's push outcomes with git faked (no clone, no network).
 """
 from subprocess import CalledProcessError, CompletedProcess, TimeoutExpired
@@ -19,7 +19,6 @@ def github(monkeypatch):
     monkeypatch.setattr(ga, "GIT_TOKEN", "")
     monkeypatch.setattr(gc, "request", fake.request)
     monkeypatch.setattr(gc, "cant_write", False)
-    monkeypatch.setattr(gc, "limited", False)
     monkeypatch.setenv("GITHUB_TOKEN", "t")
     return fake
 
@@ -55,9 +54,6 @@ def test_upload_blob_no_write_and_rate_limit(github):
     assert gc.upload_blob(gc.CARD_REPO, b"x") is None and gc.cant_write is True
     github.forbidden = False
     assert gc.upload_blob(gc.CARD_REPO, b"x") == _sha(b"x")
-    rights = gc.cant_write                      # the bot's choice: a rate limit falls to SSH for the run, not the token's rights
-    github.rate_limited = True
-    assert gc.upload_blob(gc.CARD_REPO, b"x", ssh_on_limit=True) is None and gc.cant_write is rights and gc.limited
 
 
 def test_commit_files_falls_to_ssh(github, monkeypatch):
@@ -72,17 +68,6 @@ def test_commit_files_falls_to_ssh(github, monkeypatch):
     monkeypatch.delenv("GITHUB_TOKEN")
     assert gc.commit_files(gc.CARD_REPO, "h", "t", {}, {"a.txt": b"x"}, "m3") == "c0ffee"    # no token: SSH straight away
     assert _posts(github) == ["git/blobs"] and len(seen) == 3
-
-
-def test_rate_limit_keeps_the_run_on_ssh(github, monkeypatch):
-    github.rate_limited = True
-    monkeypatch.setattr(gc, "git_commit", lambda repository, head, files, message: None)    # push rejected: the caller retries
-    assert gc.commit_files(gc.CARD_REPO, "h", "t", {}, {"a.txt": b"x"}, "m", ssh_on_limit=True) is None and gc.limited
-    assert gc.commit_files(gc.CARD_REPO, "h2", "t", {}, {"a.txt": b"y"}, "m", ssh_on_limit=True) is None
-    assert _posts(github) == ["git/blobs"] and not gc.cant_write    # the 7 MB blob is not posted again this run
-    gc.limited = False
-    with pytest.raises(gc.Transient):                               # the Action's choice: no SSH
-        gc.commit_files(gc.CARD_REPO, "h", "t", {}, {"a.txt": b"x"}, "m")
 
 
 def test_git_commit_push_outcomes(monkeypatch):

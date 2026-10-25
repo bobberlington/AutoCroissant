@@ -3,7 +3,6 @@ Updater for the Tabletop Simulator save of the card table (TTS/Impossibility Sim
 
     python -m commands.tts_save <save.json> [--names db/stats.json]   (from the bot's root; card-sync.yml)
     update_save(path) -> report text
-    update_repo_save() -> (report text, commit sha or None)    (the bot: the save on the card repo's main)
 
 Pins every repo image link to the commit that last changed the file, follows renames, syncs complete decks with
 their rules (TTS/decks.json: missing repo cards added, an empty deck filled, cards outside the rule removed; a rule
@@ -14,31 +13,24 @@ from a card data build's stats.json), regenerates the Lua resizeTargets table.
 An existing card's Description, GMNotes, Memo, Tags and scripts are left to the team, never changed; new cards start
 with them empty. When something changed it writes <stem>.<time>.bak.json, <stem>.report.md and <stem>.message.txt
 (the commit subject) next to the save. The shas in the links are the only state.
-The bot updates a temp copy of main's save and commits it with git_commit (the GitHub API; when the token can't write:
-git objects in the history clone, pushed over SSH); it never writes a checkout.
 """
 from argparse import ArgumentParser
 from copy import deepcopy
 from datetime import datetime
 from json import dumps, load, loads
 from os import remove, replace
-from os.path import basename, dirname, exists, expanduser, join, splitext
+from os.path import basename, exists, expanduser, join, splitext
 from re import DOTALL, MULTILINE, compile as regex, escape, sub
 from secrets import token_hex
 from subprocess import CalledProcessError
-from tempfile import TemporaryDirectory
-from threading import Lock
-from time import sleep
-from typing import Callable, Optional
+from typing import Optional
 from urllib.parse import quote, unquote
 
 from requests import get
 
-import commands.git_commit as git_commit
-import commands.repo_history as repo_history
 from commands.card_edits import CardAuthors
 from commands.card_models import card_name as _stem
-from commands.git_commit import COMMIT_TRIES, commit_files, commit_info, git as _git, plural as _plural, ref_head
+from commands.git_commit import git as _git, plural as _plural
 from commands.repo_history import pinned_ref, refresh
 from global_config import (CARD_BRANCH, CARD_REPO, EDITS_PATHS, HISTORY_CLONE, LOCAL_DIR_LOC, RAW_BASE, RULES_PATH,
                            SITE_URL, TTS_SAVE_PATH)
@@ -66,15 +58,10 @@ TEAM_FIELDS = ("Description", "GMNotes", "Memo", "Tags", "LuaScript", "LuaScript
 KIND_LABEL = {"creatures": "creatures", "items": "items", "fields": "fields", "nme": "N.M.E", "minions": "minions",
               "auxiliary_items": "auxiliary items", "status_effects": "status effects", "morgue": "The Morgue"}
 HTTP_TIMEOUT = 30
-LAG_PAUSE = 10                                      # s before retrying a history clone behind main
-REPORT_FILE = "tts_save_report.md"
 
 # ========================
 # Global State
 # ========================
-_lock = Lock()                                      # one run at a time
-_objects: dict = {}                                 # git object sha -> tree entries / blob bytes (immutable)
-_used: set = set()                                  # shas read this run; older ones are dropped
 _site: tuple = ("", None)                           # (ETag, cards) of the website's cards.json
 
 
@@ -370,11 +357,10 @@ class _Names:
     """Website names for card images: Card Edits.json > the card browser's cards.json (or a build's stats.json) > PSD
     stem > PNG stem."""
 
-    def __init__(self, repo: _Repo, errors: list, edits: Optional[tuple] = None, stats_path: str = ""):
-        """edits: (main's Card Edits.json text or None,) for bot runs: the checkout is then not read. stats_path: a card
-        data build's stats.json, read instead of the website's cards.json (Card sync: the run's own data)."""
-        local = edits is None
-        edits = edits[0] if edits else None
+    def __init__(self, repo: _Repo, errors: list, stats_path: str = ""):
+        """stats_path: a card data build's stats.json, read instead of the website's cards.json (Card sync: the run's
+        own data)."""
+        edits = None
         self.repo = repo
         self.site: dict = {}
         self.edits: dict = {}
@@ -385,19 +371,18 @@ class _Names:
             except (OSError, ValueError, TypeError) as e:
                 errors.append(f"Card data not read ({e}): Nicknames left as they are, new cards named by file stem.")
         else:
-            self.site = self._website(repo, errors, local)
+            self.site = self._website(repo, errors)
         try:
-            if local:
-                path = next((p for p in EDITS_PATHS if exists(join(repo.checkout, p))), None)
-                if path is not None:
-                    with open(join(repo.checkout, path), encoding="utf-8") as f:
-                        edits = f.read()
+            path = next((p for p in EDITS_PATHS if exists(join(repo.checkout, p))), None)
+            if path is not None:
+                with open(join(repo.checkout, path), encoding="utf-8") as f:
+                    edits = f.read()
             if edits is not None:
                 self.edits = {CardAuthors.key(k): v for k, v in (loads(edits).get("cards") or {}).items() if isinstance(v, dict)}
         except (OSError, ValueError, AttributeError):
             pass
 
-    def _website(self, repo: _Repo, errors: list, local: bool) -> dict:
+    def _website(self, repo: _Repo, errors: list) -> dict:
         """png -> name from the card browser's cards.json (an ETag 304 reuses the last), else the local site build."""
         global _site
         try:
@@ -414,9 +399,8 @@ class _Names:
         except Exception as e:
             cards = []
             try:
-                if local:
-                    with open(join(repo.checkout, SITE_CARDS), encoding="utf-8") as f:
-                        cards, self.source = load(f)["cards"], "the local site build"
+                with open(join(repo.checkout, SITE_CARDS), encoding="utf-8") as f:
+                    cards, self.source = load(f)["cards"], "the local site build"
             except (OSError, ValueError, KeyError):
                 pass
             errors.append(f"Card browser data not fetched ({e}): names from {self.source}"
@@ -461,7 +445,6 @@ class _Report:
         self.left: list = []
         self.errors: list = []
         self.changed = False
-        self.head = ""                  # main's commit the repo data came from
 
 
 # ========================
@@ -795,15 +778,10 @@ def _decks(rules):
     return rules
 
 
-def _load_rules(repo: _Repo, errors: list, given: Optional[tuple] = None):
-    """TTS/decks.json: given as (text or None, source) by the bot, else from the checkout, else GitHub (raw, main)."""
+def _load_rules(repo: _Repo, errors: list):
+    """TTS/decks.json from the checkout, else GitHub (raw, main)."""
     local = join(repo.checkout, RULES_PATH)
     try:
-        if given is not None:
-            text, source = given
-            if text is None:
-                raise FileNotFoundError(f"not in {source}")
-            return _decks(loads(text)), source
         if exists(local):
             with open(local, encoding="utf-8") as f:
                 return _decks(load(f)), "the checkout"
@@ -872,18 +850,15 @@ def _commit_message(report: _Report) -> str:
     return "TTS save: " + (", ".join(p for p in parts if p) or "updated")
 
 
-def _update(save_path: str, rules: Optional[tuple] = None, extras: bool = True, edits: Optional[tuple] = None,
-            names_from: str = "") -> tuple:
-    """update_save, also returning the _Report. rules: see _load_rules; extras: write the backup and report files;
-    edits, names_from: see _Names (its stats_path)."""
+def _update(save_path: str, names_from: str = "") -> tuple:
+    """update_save, also returning the _Report. names_from: see _Names (its stats_path)."""
     with open(save_path, "rb") as f:
         raw = f.read()
     save = loads(raw.decode("utf-8"))
     report = _Report()
     repo = _Repo(report.errors)
-    report.head = repo.head
-    rules, rules_from = _load_rules(repo, report.errors, rules) if repo.tree and repo.history else (None, "nowhere")
-    names = _Names(repo, report.errors, edits, names_from)
+    rules, rules_from = _load_rules(repo, report.errors) if repo.tree and repo.history else (None, "nowhere")
+    names = _Names(repo, report.errors, names_from)
     _pin_links(save, repo, report)
     if repo.tree:
         _fix_keys(save, report)
@@ -897,9 +872,8 @@ def _update(save_path: str, rules: Optional[tuple] = None, extras: bool = True, 
     backup = f"{stem}.{datetime.now().strftime('%Y%m%d-%H%M%S')}.bak.json"
     report.changed = out != raw
     if report.changed:
-        if extras:
-            with open(backup, "wb") as f:
-                f.write(raw)
+        with open(backup, "wb") as f:
+            f.write(raw)
         try:
             with open(f"{save_path}.tmp", "wb") as f:
                 f.write(out)
@@ -907,96 +881,18 @@ def _update(save_path: str, rules: Optional[tuple] = None, extras: bool = True, 
         finally:
             if exists(f"{save_path}.tmp"):
                 remove(f"{save_path}.tmp")
-    kept = f"; backup `{basename(backup)}`" if extras else ""
     head = [f"- Save: `{basename(save_path)}` ({len(raw):,} bytes): "
-            + (f"updated ({len(out):,} bytes{kept})" if report.changed else "unchanged"),
+            + (f"updated ({len(out):,} bytes; backup `{basename(backup)}`)" if report.changed else "unchanged"),
             f"- Repo: main `{repo.head[:8]}` from {repo.source or 'nowhere'} ({len(repo.tree)} files, {len(repo.pngs)} PNGs)",
             f"- Rules: `{RULES_PATH}` from {rules_from} ({len((rules or {}).get('decks', {}))} decks)",
             f"- Names: from {names.source} ({len(names.site)} cards)"]
     text = _render(report, head)
-    if report.changed and extras:
+    if report.changed:
         with open(f"{stem}.report.md", "w", encoding="utf-8") as f:
             f.write(text)
         with open(f"{stem}.message.txt", "w", encoding="utf-8") as f:     # card-sync.yml's commit body
             f.write(_commit_message(report) + "\n")
     return text, report
-
-
-# ========================
-# Bot Flow
-# ========================
-def _api(method: str, path: str, **kwargs):
-    """git_commit.api on the card repo (raw: a blob's bytes; check: raise on an error status)."""
-    return git_commit.api(CARD_REPO, method, path, **kwargs)
-
-
-def _object(sha: str, fetch: Callable[[], object]):
-    """A git object by sha, fetched once (a sha's content never changes); kept while runs keep reading it."""
-    if sha not in _objects:
-        _objects[sha] = fetch()
-    _used.add(sha)
-    return _objects[sha]
-
-
-def _files_at(tree: str, paths: tuple) -> dict:
-    """{path: (mode, blob sha)} of the given paths in a git tree (one small request per folder level)."""
-    listed: dict = {}                                   # folder -> {name: entry}
-    trees: dict = {}                                    # tree sha -> {name: entry}
-    found = {}
-    for path in paths:
-        folder = dirname(path)
-        if folder not in listed:
-            sha, entries = tree, {}
-            for part in [""] + (folder.split("/") if folder else []):
-                if part:
-                    entry = entries.get(part)
-                    sha = entry["sha"] if entry and entry.get("type") == "tree" else None
-                if sha is None:
-                    entries = {}
-                    break
-                if sha not in trees:
-                    trees[sha] = _object(sha, lambda: {e["path"]: e for e in _api("GET", f"git/trees/{sha}").json().get("tree", [])})
-                entries = trees[sha]
-            listed[folder] = entries
-        entry = listed[folder].get(basename(path))
-        if entry and entry.get("type") == "blob":
-            found[path] = (entry["mode"], entry["sha"])
-    return found
-
-
-def _say(interaction, text: str) -> None:
-    """A message to the interaction, or the terminal without one."""
-    from commands.utils import say  # lazy: standalone use needs no Discord
-    say(interaction, text)
-
-
-def _summary(text: str) -> str:
-    """The report's header lines plus its section titles (with their counts)."""
-    lines = text.splitlines()
-    first = next((i for i, line in enumerate(lines) if line.startswith("## ")), len(lines))
-    head = [line for line in lines[:first] if line.strip()]
-    if head and head[0].startswith("# "):
-        head[0] = f"**{head[0][2:]}**"
-    return "\n".join(head + [f"- **{line[3:]}**" for line in lines[first:] if line.startswith("## ")])
-
-
-def _post(interaction, text: str, sha: Optional[str]) -> None:
-    """Short summary with the full report attached, then the players' download link."""
-    from io import BytesIO
-    from discord import File
-    from commands.utils import queue_file, queue_message, split_long_message  # lazy: standalone use needs no Discord
-    link = f"{RAW}{sha or CARD_BRANCH}/{_encode(TTS_SAVE_PATH)}"
-    if interaction is None:
-        print(text)
-        print(link)
-        return
-    chunks = split_long_message(_summary(text))
-    for chunk in chunks[:len(chunks) - 1]:
-        queue_message(interaction, chunk)
-    queue_file(interaction, File(BytesIO(text.encode("utf-8")), filename=REPORT_FILE), content=chunks[len(chunks) - 1])
-    # the save itself (5.5 MB) is never attached: players download it from the link
-    queue_message(interaction, f"Updated save, committed as `{sha[:8]}`: {link}" if sha
-                  else f"No changes: the save on main is current: {link}")
 
 
 # ========================
@@ -1014,69 +910,6 @@ def update_save(save_path: str, names_from: str = "") -> str:
         The markdown change report (also written to <stem>.report.md when the save changed)
     """
     return _update(save_path, names_from=names_from)[0]
-
-
-def _blob(sha: str) -> bytes:
-    """A blob's bytes from the card repo, by sha."""
-    return _object(sha, lambda: _api("GET", f"git/blobs/{sha}", raw=True).content)
-
-
-def update_repo_save() -> tuple:
-    """
-    Update the save on the card repo's main and commit it with git_commit.commit_files (blocking; one run at a time):
-    the GitHub API, or when the token can't write (401/403/404, or no token) git objects in the history clone pushed over SSH.
-    Rules and Card Edits.json come from main too. Only a temp dir is written. When main moves meanwhile (or the
-    history clone lags it), the update is redone on the new save, up to COMMIT_TRIES times.
-
-    Returns:
-        (markdown report, sha of the new commit, or None when nothing changed)
-    """
-    with _lock, TemporaryDirectory(prefix="tts_save_") as tmp:
-        for sha in set(_objects) - _used:               # only the last run's objects stay cached
-            del _objects[sha]
-        _used.clear()
-        save_path = join(tmp, basename(TTS_SAVE_PATH))
-        git_commit.limited = False                      # a rate limit is one run's
-        why = "main kept moving"
-        for attempt in range(COMMIT_TRIES):
-            head = ref_head(CARD_REPO)
-            base = commit_info(CARD_REPO, head)["tree"]["sha"]
-            files = _files_at(base, (TTS_SAVE_PATH, RULES_PATH) + EDITS_PATHS)
-            if TTS_SAVE_PATH not in files:
-                raise FileNotFoundError(f"{TTS_SAVE_PATH} is not on main")
-            mode, old_blob = files[TTS_SAVE_PATH]
-            with open(save_path, "wb") as f:
-                f.write(_blob(old_blob))
-            edits_path = next((p for p in EDITS_PATHS if p in files), None)
-            rules = _blob(files[RULES_PATH][1]).decode("utf-8") if RULES_PATH in files else None
-            edits = _blob(files[edits_path][1]).decode("utf-8") if edits_path is not None else None
-            text, report = _update(save_path, (rules, f"main `{head[:8]}`"), extras=False, edits=(edits,))
-            if head != report.head or head != repo_history._head:   # pins from main's head, even for "no changes"
-                why = (f"the history clone is at `{report.head[:8] or 'nothing'}` (links map at "
-                       f"`{repo_history._head[:8] or 'nothing'}`), main at `{head[:8]}`")
-                if attempt < COMMIT_TRIES - 1:
-                    sleep(LAG_PAUSE)
-                continue
-            if not report.changed:
-                return text, None
-            with open(save_path, "rb") as f:
-                data = f.read()
-            commit = commit_files(CARD_REPO, head, base, {TTS_SAVE_PATH: mode}, {TTS_SAVE_PATH: data}, _commit_message(report),
-                                  ssh_on_limit=True)    # a throttled API is this run's: the bot's SSH agent pushes now
-            if commit:
-                return text, commit
-            why = "main kept moving (the commit was not a fast forward)"
-        raise RuntimeError(f"{why}: the save was not committed after {COMMIT_TRIES} tries")
-
-
-def update_tts_save(interaction) -> None:
-    """/update_tts_save: update the save on main, post the summary, the report file and the download link."""
-    try:
-        text, sha = update_repo_save()
-    except Exception as e:
-        _say(interaction, f"TTS save update failed: {e}")
-        return
-    _post(interaction, text, sha)
 
 
 def main(args: Optional[list] = None) -> int:
@@ -1099,7 +932,5 @@ if __name__ == "__main__":
 # ========================
 __all__ = [
     'update_save',
-    'update_repo_save',
-    'update_tts_save',
     'main',
 ]

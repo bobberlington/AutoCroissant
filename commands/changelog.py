@@ -55,9 +55,9 @@ MESSAGE_MAX = 6000                                       # characters per messag
 TAIL_MAX = 300                                           # kept for the closing line
 CHANGELOG_DIR = "changelog"                              # db/changelog/YYYY-MM.jsonl
 POSTED_JSON = "posted.json"                              # db/changelog/posted.json: {"seq", "push"} of the last post
-BOT = "AutoCroissant"                                    # the bot's _by (discord_edits.BOT): no website edit
-BOT_FIELDS = "_bot"                                      # an entry's fields that aren't its _by's (discord_edits.BOT_FIELDS)
-CREDIT = "_credit"                                       # {field: {"_by", "_at"}}: a _bot field's Discord editor (discord_edits.CREDIT)
+BOT = "AutoCroissant"                                    # the bot's _by (build_site.BOT_AUTHOR): no website edit
+BOT_FIELDS = "_bot"                                      # an entry's fields that aren't its _by's (build_site.BOT_FIELDS)
+CREDIT = "_credit"                                       # {field: {"_by", "_at"}}: a _bot field's Discord editor (build_site.CREDIT)
 EDIT_FIELD = {"card_type": "type", "tags": "ability"}    # a changed field -> its Card Edits.json field
 UNKNOWN_FIELD = {"display_name": "name"}                 # card_history.unknown's field -> the changelog's
 

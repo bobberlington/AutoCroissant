@@ -1,6 +1,6 @@
 ---
 name: autocroissant-docs-and-style
-description: Load this skill whenever the task touches AutoCroissant's documentation or code conventions — trigger phrases include "help text", "/help", "update the docs", "describe strings", "app_commands.describe", "docstring", "style", "conventions", "house style", "new module", "module layout", "add a file to commands/", "section banners", "__all__", "import style", "writing a skill", "new skill", "update a skill", "provenance", or "the docs are wrong / out of date". The docs of record here are (1) the command dictionaries in commands/help.py (user-facing /help; five categories plus the cutover's overrides), (2) the @app_commands.describe strings in main.py (Discord UI hints), and (3) this .claude/skills/ library itself; this skill owns their formats, the keep-them-in-sync checklist, the doc-vs-code drift audit (help.py documents all 52 registered commands as of 2026-10-21; the /pull hard-reset claim was fixed), the house code style (module skeleton with `# ====` banners, from-imports, x[len(x)-1] in cythonized files, queue_* discipline, Args/Returns docstrings), ready-to-copy templates for a help.py entry, a new module, and a SKILL.md, and the rules for maintaining skill frontmatter, provenance sections, and the one-home-per-fact ownership map (17 skills on main, including ttscardmaker-companion for the TTSCardMaker side and impossibility-simulator-rules for the game rules; the AI skill is on branch archive/ai-generation).
+description: Load this skill whenever the task touches AutoCroissant's documentation or code conventions — trigger phrases include "help text", "/help", "update the docs", "describe strings", "app_commands.describe", "docstring", "style", "conventions", "house style", "new module", "module layout", "add a file to commands/", "section banners", "__all__", "import style", "writing a skill", "new skill", "update a skill", "provenance", or "the docs are wrong / out of date". The docs of record here are (1) the command dictionaries in commands/help.py (user-facing /help; five categories plus the cutover's overrides), (2) the @app_commands.describe strings in main.py (Discord UI hints), and (3) this .claude/skills/ library itself; this skill owns their formats, the keep-them-in-sync checklist, the doc-vs-code drift audit (help.py documents all 47 registered commands as of 2026-10-25; the /pull hard-reset claim was fixed), the house code style (module skeleton with `# ====` banners, from-imports, x[len(x)-1] in cythonized files, queue_* discipline, Args/Returns docstrings), ready-to-copy templates for a help.py entry, a new module, and a SKILL.md, and the rules for maintaining skill frontmatter, provenance sections, and the one-home-per-fact ownership map (17 skills on main, including ttscardmaker-companion for the TTSCardMaker side and impossibility-simulator-rules for the game rules; the AI skill is on branch archive/ai-generation).
 ---
 
 # AutoCroissant docs and style
@@ -49,11 +49,11 @@ entry whose text changes with the cutover needs its override there.
 |---|---|---|---|
 | `general_commands` | 7 | 13 (`/list_guild_channels`, `/get_channel_messages` added 2026-10-20) | `general` (also the fallback) |
 | `text_commands` | 30 | 3 (rewritten 2026-10-19 for the new reminder system; 2026-10-24 `/reminders` replaced `/list_reminders`) | `text` (reminders) |
-| `card_commands` | 43 | 10 keys = 9 commands (incl. `/sync_emojis` and `/website`) + 1 `"Query Syntax:"` pseudo-entry | `card` |
-| `stats_commands` | 86 | 10 (`/update_tts_save`, `/view_old_metadata` added 2026-10-20; `/fonts`, `/bake_cards` 2026-10-21) | `stats` |
+| `card_commands` | 43 | 9 keys = 8 commands (incl. `/sync_emojis` and `/website`) + 1 `"Query Syntax:"` pseudo-entry | `card` |
+| `stats_commands` | 86 | 6 (`/update_metadata`, `/mass_replace`, `/update_tts_save`, `/bake_cards` retired 2026-10-25) | `stats` |
 | `music_commands` | 121 | 17 | `music` |
 
-Total: 53 keys, 52 real commands documented (all of them, 2026-10-21). The `"Query Syntax:"` key
+Total: 48 keys, 47 real commands documented (all of them, 2026-10-25: the five Discord commands that pushed to the card repo, `/alias` among them, retired to branch `archive/discord-edits`; `tests/test_retired_commands.py`). The `"Query Syntax:"` key
 (help.py:52) is a sanctioned pseudo-entry — a non-command key used to document
 the `/query_ability` DSL. Pseudo-entries are allowed; they just must end with a
 colon like real keys so they render uniformly.
@@ -116,7 +116,7 @@ add-a-slash-command procedure (sync, registration pattern, gates) is owned by
 
 ## 3. Known drift (audited 2026-07-11, re-audited and fixed 2026-10-20)
 
-### 3.1 Coverage drift: none (0 of 52 missing, 2026-10-21)
+### 3.1 Coverage drift: none (0 of 47 missing, 2026-10-25)
 
 The four missing entries (`/view_old_metadata`, `/list_guild_channels`, `/get_channel_messages`, and
 `/list_guild_members`, which was removed instead: C6) were fixed 2026-10-20; `tests/test_robustness.py`
@@ -144,9 +144,8 @@ not history (history belongs to `autocroissant-failure-archaeology`).
 
 ## 4. Command description conventions (main.py describe strings)
 
-Derived from the live registrations (52 on 2026-10-21); follow these when writing new ones.
-Re-find line numbers by quoting the example text. The cleanest recent end-to-end examples are
-`/bake_cards` (main.py:399-412 + its help.py entry, 2026-10-21; tests/test_card_runner.py checks the two surfaces agree) and
+Derived from the live registrations (47 on 2026-10-25); follow these when writing new ones.
+Re-find line numbers by quoting the example text. The cleanest recent end-to-end example is
 `/sync_emojis` (main.py:714-726 + its help.py entry): admin marker in both surfaces, defaults
 stated in every describe string. Discord caps a command description and each describe string at 100 characters.
 
@@ -154,8 +153,8 @@ stated in every describe string. Discord caps a command description and each des
 |---|---|
 | State the default, in the string | `'How to blend: slice, or average. Default = slice.'` (main.py:379); `'How many recent messages to search (-1 = all). Default = 100.'` (main.py:703) |
 | State units and scale | `'The multiplier of the volume. 0.5 = half as loud, 1 = default, 2 = twice as loud, etc.'` (main.py:625) |
-| Mark admin gating in the command description | `description="Lists all guilds the bot is currently a member of (admin only)."` (all 20 `lacks_admin`-gated commands carry it, 2026-10-22; `tests/test_admin_gates.py` checks both surfaces for the seven added that day) |
-| Enums use `@app_commands.choices` with a `Choice` list, not free text | `help_type` (main.py:140-146), `blend_mode` (main.py:359-362), `field` for /mass_replace (main.py:510-516; `subseries` added 2026-10-20) |
+| Mark admin gating in the command description | `description="Lists all guilds the bot is currently a member of (admin only)."` (every `lacks_admin`-gated command carries it; the list is autocroissant-config-and-flags' gate table; `tests/test_admin_gates.py` checks both surfaces) |
+| Enums use `@app_commands.choices` with a `Choice` list, not free text | `help_type` (main.py:140-146), `blend_mode` (main.py:359-362) |
 | Optional params carry their default in the Python signature | `num: Optional[int] = 100`, `force_update: Optional[bool] = False`, `play_next: Optional[bool] = False` |
 | "Leave blank to view" pattern for getter/setter commands | `'If empty, posts the current tolerance. Otherwise sets it to this.'` (/set_ratio, main.py:324; same shape for /set_repo, main.py:334) |
 | Big ints from Discord come in as `str` | `guild_id: str` / `channel_id: str` (main.py:694, 734, 752-753): `.isdigit()` check in main.py, `int()` in management.py (e.g. management.py:66). Snowflake IDs overflow Discord's integer options. Copy this pattern, don't fight it |
@@ -397,7 +396,7 @@ neighboring fact, check this map and link instead.
 | impossibility-cards-reference | Card domain: folder classification, PSD layer semantics, type injection, parser side of stoogedings icon tokens (§4.1), validation, pickle schemas, query DSL |
 | autocroissant-config-and-flags | Every config axis: config.py field names, constants, runtime-settable vs restart-required |
 | autocroissant-build-and-env | Env setup, requirements.txt, Cython build/clean, negative-indexing ban rationale, stale-.so trap |
-| autocroissant-run-and-operate | Start/stop/deploy, command sync, self-update flow ops, multi-machine handoff, /update_stats operating rule, reminders and type-emoji operations, artifact locations, TTS-save operations (/update_tts_save; card-sync.yml's TTS save step as the automatic path, tts-save.yml until 2026-10-24) |
+| autocroissant-run-and-operate | Start/stop/deploy, command sync, self-update flow ops, multi-machine handoff, /update_stats operating rule, reminders and type-emoji operations, artifact locations, TTS-save operations (card-sync.yml's TTS save step; tts-save.yml until 2026-10-24, /update_tts_save until 2026-10-25) |
 | autocroissant-diagnostics-and-tooling | The 5 read-only scripts + golden outputs |
 | autocroissant-validation-and-qa | Evidence standards, golden-card inventory, parser-change acceptance procedure, pickle-push gate |
 | autocroissant-ai-boundary (archived: only on branch `archive/ai-generation`, not on main) | Toggleable-AI doctrine, lazy imports, requirements2 enablement, VRAM modes |
@@ -458,9 +457,9 @@ grep -n -A1 'help_wanted == "stats"' commands/help.py        # 144-145 → stats
 # Slash choices for /help include stats (Choice noise is exactly why extraction is anchored)
 grep -n 'Choice(name="stats"' main.py                        # 144
 
-# Registered-vs-documented drift audit (expect 52 vs 52; 0 missing, §3.1)
-grep -oE '@tree\.command\(name="[^"]+"' main.py | wc -l      # 52
-grep -oE '^    "/[a-z_]+' commands/help.py | sort -u | wc -l # 52
+# Registered-vs-documented drift audit (expect 47 vs 47; 0 missing, §3.1)
+grep -oE '@tree\.command\(name="[^"]+"' main.py | wc -l      # 47
+grep -oE '^    "/[a-z_]+' commands/help.py | sort -u | wc -l # 47
 # full diff procedure: §3.1 comm commands
 
 # D1 fixed: only /update force_reset mentions a hard reset
@@ -500,7 +499,7 @@ ls .claude/skills/ | wc -l                                    # 17
 
 Maintenance rules for this file: when a §3 drift instance is fixed, delete its
 row and re-run the audit; when a command is added, re-run the §3.1 diff and
-update the counts (52/52) and dict-entry table; when an 18th skill appears, add
+update the counts (47/47) and dict-entry table; when an 18th skill appears, add
 its ownership row in §7.3. Refresh the date stamps whenever you touch this file.
 
 2026-10-21: help.py's /query_ability entry describes the grouped output (155 lines; 157 with the /fonts entry); help.py and main.py line numbers re-pointed (review: admin-gate examples, guild_id/channel_id, pickle import).
@@ -516,3 +515,5 @@ its ownership row in §7.3. Refresh the date stamps whenever you touch this file
 2026-10-23 (docs drift): help.py's dict lines re-pointed and the sixth dict `card_sync_commands` (the cutover's overrides) named; §5.4 says `wraparound=False` was the build until 2026-10-23 (both bounds checks and wraparound on since 9919a14).
 
 2026-10-23 (unbatch): help.py is 207 lines; query_card.py citations re-pointed (`init_query`, the pickle import, `populate_files`' docstring); its main.py citations not re-pointed (several are stale).
+
+2026-10-25 (retire): /update_metadata, /mass_replace, /alias, /bake_cards and /update_tts_save retired (branch archive/discord-edits): 47 commands, help.py 182 lines; cards are edited on the website.

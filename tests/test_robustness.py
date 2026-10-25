@@ -566,7 +566,7 @@ def test_help_covers_every_command():
     documented = {re.match(r"/(\w+)", key).group(1) for d in (help_module.general_commands, help_module.text_commands,
                   help_module.card_commands, help_module.stats_commands, help_module.music_commands)
                   for key in d if key.startswith("/")}
-    assert documented == set(_registered()) and len(documented) == 51
+    assert documented == set(_registered()) and len(documented) == 46
     assert "list_guild_members" not in documented and not hasattr(main, "list_guild_members")
 
 
@@ -583,14 +583,13 @@ def test_help_and_describe_match_the_code():
 
 
 def test_a_space_named_png_takes_the_underscore_lookups():
-    """N.M.E/Black Hole.png (13 card files use spaces): Card Edits.json aliases, printed titles and /alias build
-    underscore keys, which find it too."""
-    from commands.discord_edits import _png_path
+    """N.M.E/Black Hole.png (13 card files use spaces): Card Edits.json aliases and printed titles build underscore
+    keys, which find it too."""
     repo = qc.CardRepository()
     repo._add_file_to_registry("N.M.E/Black Hole.png")
     repo._add_lookup("Black Hole", ["Void Thing"])
     assert repo.git_files["void_thing.png"] == repo.git_files["black hole.png"] == "N.M.E/Black Hole.png"
-    assert _png_path(repo, "black_hole") == "N.M.E/Black Hole.png" and repo._find_closest_match("Black Hole") == "black_hole.png"
+    assert repo._find_closest_match("Black Hole") == "black_hole.png"
 
 
 def test_a_real_underscore_file_takes_back_its_name_from_a_space_named_one():

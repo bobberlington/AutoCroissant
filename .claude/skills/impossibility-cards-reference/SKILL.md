@@ -59,7 +59,7 @@ live folder tree.
 | `Auxiliary/<AnythingElse>/x.psd` (fall-through) | literal leaf folder, lowercased | — | none |
 | anything else | `unknown` | — | none |
 
-`subseries` (2026-10-20) never comes from the folder or the PSD: only Card Edits.json or `/update_metadata` set it, and a
+`subseries` (2026-10-20) never comes from the folder or the PSD: only Card Edits.json sets it (the website; `/update_metadata` until 2026-10-25), and a
 re-parse keeps it like `author` and `series` (§6).
 
 Observed live subtrees (2026-07-11): `Items/` subtypes = Active, Attack, Counter, Deploy, Equip,
@@ -504,12 +504,12 @@ website shows "PSD pending" until then (`name` only when it differs from the pri
 `dup_of`, `hidden`, `problems_ok`, `allow_high_stats`, `creatures` live in the file alone (`creatures` overrides the
 parser's per-creature rows but is baked nowhere). Whatever the kind, `apply()` saves the pre-edit value in
 `parsed_values` so dropping the edit restores it — the PSD's value, the folder's, or `False`/`None` for the
-database-only ones (unless `/update_metadata` had set them). The pipeline's verdict rides beside `_by`/`_at` as `_psd`
+database-only ones (unless Discord's retired `/update_metadata` had set them). The pipeline's verdict rides beside `_by`/`_at` as `_psd`
 (`{"state": "baked" | "refused", "for": {field: value}, "psd": "<blob8>", "reason": ...}`; "pending" is never written, the
 website computes it from the values; `CardEdits.meta`, `psd_state()`/`set_psd_state()`); `parse()`
 keeps every `_`-key out of `cards`. `aliases` is read by `CardEdits.names()` for name lookups, never by `apply()`;
 `dup_of` makes a card PNG with no PSD (Stubborn_Queen.png, Gust_of_Trees.png) a duplicate of the named card in the bot
-too (`card_data.duplicate_pngs`, 2026-10-23, build_site's rule); on a card with its own PSD the bot ignores it. `/update_metadata subseries:` sets the same field by hand;
+too (`card_data.duplicate_pngs`, 2026-10-23, build_site's rule); on a card with its own PSD the bot ignores it. The website's edit sets the same field by hand;
 a PSD re-parse keeps it with author and series (psd_parser.py:355-361) and a Card Edits.json value wins again at the
 next `/update_stats`.
 
@@ -545,9 +545,8 @@ team's record of who made each card.
 Without a file entry, a new card's author is the *author* (not the committer, changed 2026-10-20), as `.mailmap`
 names it, of the first commit touching its path (the last entry of the per_page=100 commit page, or `.reversed[0]` for a file with 100+ commits). It is fetched only when the card has no author yet. Many
 first commits are MichaelJSr's bulk "init" or folder-rename commits, which is why the file exists. Author and series
-survive reparses (`parse` copies them from the existing entry). `/update_metadata author:` writes the card's `[cards]`
-line in that file (commands/discord_edits.py, branch work/discord-writers), and `/mass_replace author` rewrites its
-right-hand sides where they stand (the group renamed, rulebook pages left in place) plus a `[people] old = new` line. `/list_orphans` lists author-less cards.
+survive reparses (`parse` copies them from the existing entry). The website's edit writes the card's `[cards]` line in that file
+(Discord's `/update_metadata author:` and `/mass_replace author` did until 2026-10-25, branch `archive/discord-edits`). `/list_orphans` lists author-less cards.
 
 Pickles (all in the repo root, committed to git; the reminders live in the gitignored reminder.json — commit discipline lives in
 autocroissant-change-control):
@@ -614,8 +613,7 @@ still tagged and writes old_stats.pkl again: a copy of the listed card (same pat
 is dropped (a same-blob restore, a kill's leftover), anything else is untagged and stays as history (a restore that was
 re-parsed, a /pull mix). So a kill at any point leaves the card listed, archived or both, never unlisted and untagged;
 the next run cleans up. `add_history` keeps a tagged copy as is (the save untags it) and replaces a last version equal
-but for the path (a kill after an edit or a same-blob move) instead of appending. `/update_metadata` never makes a stats
-entry for an archived name (it shows the archived record and refuses edits), and `/pull` puts back into old_stats.pkl a
+but for the path (a kill after an edit or a same-blob move) instead of appending. `/pull` puts back into old_stats.pkl a
 card its file-by-file merge dropped from both pickles (`rescue_dropped`, committed as PICKLE; a rescued listed card
 comes back tagged, so the next run restores it).
 Each history version keeps the path it was parsed at (`_update_old_stats_paths`, which rewrote them all to the card's
@@ -643,8 +641,7 @@ Lookup (`lookup` :635, 2026-10-24) normalizes to `name.replace(' ', '_').lower()
 a plain key before its folder-prefixed twins), then difflib `get_close_matches` above `match_ratio` (default 0.6,
 `DEFAULT_MATCH_RATIO` query_card.py:32; runtime-settable via `/set_ratio`, resets on restart — see
 autocroissant-config-and-flags). `/query as_of` guesses the same way over current and archived names, and says so.
-Card-name options autocomplete from `name_choices` (:552): `choices` (cards, titles, aliases, old names),
-`old=False` drops old names (/alias), `cards=True` offers card names only (/bake_cards matches Card Edits.json keys).
+Card-name options autocomplete from `name_choices`: `choices` (cards, titles, aliases, old names).
 main.py's `on_interaction` logs one console line per slash command (option values only for searches).
 
 **Duplicate filenames**: when two repo paths share a basename, both also get prefixed keys
@@ -656,12 +653,11 @@ icon collisions).
 
 **Aliases** (`aliases.pkl`, 60 today): At `populate_files` time each alias key is inserted into `git_files` as
 `<alias>.png` pointing at the target's path, so aliases work everywhere names do. Everything is lowercased on load.
-Examples: `abyss_watchers -> the_abyss_watchers.png`, `red_bloon -> pod01red_bloon.png`. Since branch
-work/discord-writers (2026-10-22) `/alias` (commands/discord_edits.py) writes `aliases` on the Card Edits.json entry of
-the card the PNG belongs to (one commit; target: an existing png, suffix match allowed), key alone deletes, no args
-lists. `python -m commands.discord_edits migrate` writes the 60 into Card Edits.json, with the Discord-only series values the
-parity re-parse found (596) and the top-level `aliases_moved` key, for one commit; from then on aliases.pkl counts nowhere (query_card `_populate_aliases`, card_data's duplicate
-names), and before that `/alias` refuses to change an aliases.pkl alias.
+Examples: `abyss_watchers -> the_abyss_watchers.png`, `red_bloon -> pod01red_bloon.png`. The migration
+(2026-10-22) wrote the 60 into Card Edits.json's `aliases`, with the Discord-only series values the parity re-parse found
+(596) and the top-level `aliases_moved` key; since then aliases.pkl counts nowhere (query_card `_populate_aliases`,
+card_data's duplicate names) and aliases are edited on the website (`/alias` and the migration CLI were retired
+2026-10-25, branch `archive/discord-edits`).
 
 ### 7.2 The ability-search DSL (`/query_ability` → `ability_search_engine`, query_card.py:336)
 
@@ -684,7 +680,7 @@ excluded entirely. Refreshed at startup and queued after every `/update_stats`.
 
 Spaces around an operator are fine (`hp > 5`, `type == creature`, `created >= 2025`; 2026-10-23, as the website's
 search). `created` is the card's `site/Card Creation Dates.json` date, or its first upload when the file misses it or
-is later (`CardDates.created`, the website's rule); it is in `/export_cards` and `/update_metadata`'s view too.
+is later (`CardDates.created`, the website's rule); it is in `/export_cards` and the metadata view too.
 `site/Card Ratings.json`: card ratings (`python -m commands.tts_ratings`); never read by the bot.
 
 Fields (`NUMBER_FIELDS`, `TEXT_FIELDS`): numbers hp, def, atk, spd, stars, total (the four stats added; missing ones
@@ -799,3 +795,5 @@ change, sections 4-5 are stale until rewritten.
 2026-10-23 (docs drift): §4's worked injection example moved to Nebulous Precipice; The Lich King noted as a font-token card since TTSCardMaker 1c24dd48.
 
 2026-10-23 (unbatch): §7.2 gotcha 10: /query_ability posts one message per card again; §7's citations and §6's force_update defaults re-pointed.
+
+2026-10-25 (retire): /update_metadata, /mass_replace, /alias and the alias migration CLI retired (branch archive/discord-edits); name_choices lost old=/cards=.
