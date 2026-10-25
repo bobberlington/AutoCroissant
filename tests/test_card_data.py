@@ -544,3 +544,18 @@ def test_an_edit_beside_a_new_blob_is_an_edit(cards):
     assert set(last) == {"changed", "edited"} and "name" not in last["changed"]["fields"] and "ability" in last["changed"]["fields"]
     assert last["edited"]["fields"] == {"name": ["Tiny Doomer", "Wee Doomer"]} and stats["Mini Doomer"].version["cause"] == "psd"
 
+
+
+def test_every_record_straightened(cards):
+    """Straight apostrophes reach records whose PSD is not re-parsed: a stored ability and a Card Edits.json note."""
+    _build(cards, "--empty")
+    path = cards.db / "stats.json"
+    stored = json.loads(path.read_text(encoding="utf-8"))
+    freezer = stored["cards"]["The Freezer"]
+    freezer["ability"] = "It’s cold. " + (freezer.get("ability") or "")
+    path.write_text(json.dumps(stored), encoding="utf-8")
+    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {"Mini Doomer": {"note": "It’s small", "_by": "web"}}}).encode())
+    commit(cards.repo, "web", 2100)
+    assert _build(cards)[0] == cd.EXIT_OK
+    stats = _read(cards)[0]
+    assert stats["The Freezer"].ability.startswith("It's cold. ") and stats["Mini Doomer"].note == "It's small"
