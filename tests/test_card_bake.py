@@ -13,6 +13,7 @@ import contextlib
 import json
 import re
 import shutil
+import textwrap
 from datetime import datetime, timedelta, timezone
 from io import StringIO
 from os import environ
@@ -839,14 +840,21 @@ def test_local_bake_lands_psd_png_and_file_in_b(github, local):
 # The Action's sparse copy
 # ========================
 def test_workflow_pending_edits_line_calls_due(github, capsys, monkeypatch):
-    """card-sync.yml's Pending edits line, run as written: the due card names, one per line (recent ones wait)."""
+    """card-sync.yml's Pending edits line, run as written: the due card names, one per line (recent ones wait); its
+    Leftover edits script (the chain's counts): due, then held by a recent push."""
     if not WORKFLOW.exists():
         pytest.skip(f"no {WORKFLOW}")
-    code = re.search(r"Pending edits.*?python\" -c '([^']+)'", WORKFLOW.read_text(encoding="utf-8"), re.S).group(1)
+    text = WORKFLOW.read_text(encoding="utf-8")
+    code = re.search(r"Pending edits.*?python\" -c '([^']+)'", text, re.S).group(1)
     github.recent.add(DOOMER)
     monkeypatch.setattr("sys.argv", ["-c", cb.CARD_REPO, github.head, "", str(DB[0] / "verdicts.json")])
     exec(code, {})
     assert capsys.readouterr().out.splitlines() == ["A Snack", "A Snack2", "Nobody", "The Freezer"]
+    left = re.search(r"name: Leftover edits.*?<<'PY'\n(.*?)\n *PY\n", text, re.S)
+    if left:                                    # TTSCardMaker work/chain
+        monkeypatch.setattr("sys.argv", ["-", cb.CARD_REPO, github.head, "", str(DB[0]), str(DB[0] / "none.json")])
+        exec(textwrap.dedent(left.group(1)), {})
+        assert capsys.readouterr().out.split() == ["4", "1"]
 
 
 
