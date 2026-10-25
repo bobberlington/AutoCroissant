@@ -151,3 +151,11 @@ def test_cache_saves_prune_superseded_entries():
     site = _load("site.yml")["jobs"]["build"]["steps"]
     python = next(s for s in site if s.get("uses", "").startswith("actions/setup-python@"))
     assert "cache" not in python["with"]                                     # uv, no pip cache entry per requirements change
+
+
+def test_root_checkout_first():
+    """actions/checkout into the workspace root empties it first: a job's root checkout comes before its bot/ ones."""
+    for path in sorted(WORKFLOWS.glob("*.yml")):
+        for name, job in (_load(path.name).get("jobs") or {}).items():
+            outs = [s.get("with", {}).get("path") for s in job.get("steps", []) if s.get("uses", "").startswith("actions/checkout@")]
+            assert None not in outs or outs.index(None) == 0, (path.name, name)
