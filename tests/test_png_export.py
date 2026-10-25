@@ -54,6 +54,19 @@ CREDIT_CARD = ("1a8fad1238acc6a27aff13f4d063a2f5a7476247", "f28d8f754971f1c04b81
                "ab309e65d9ab5856bf3771d62c615ef7381871c3", "d65db67b7cca128aa100695dfac003ad873565eb")  # 5a9e0fcf
 TAINTED_JACOB = ("c211fca23ed832ed3dee34ccf9fad32d44aa504e", "16a49559c70775d6adbeabe440e0ad7e2602a55a",
                  "b3e0dab8f5f8f001527c9ddf60a2c7d2cef81eef", "6b78b2b4540e06944043b4ef30a6f1c399e03e1f")  # 6c67b1fa
+FORSAKEN = ("52ef33f8c0ae8550ae2624f0211516dc1367bac4", "05f2a47b4259fcb15c6cae6de3bba61bb07bd83d",
+            "6967c88a1dc5e35908f757ed85e27bbbc825e879", "5ab76110bad1848e14063f06def7d5303c928328")   # 7fd2aa30
+BLOON = ("e23643044d9800bde0f81e9018faeca60b782cea", "81bc14f93d36ddd1c11bc4a85ed0610e408702c4",
+         "cb295f801aa1f62436051c3f88a14dd76826295b", "3851d2f3955cd96847767974c140be0067f38c15")  # PoD06Rainbow_Bloon 38c55bd3
+CLOT_WHITE = ("09dbfff123941024fe7632dc0109d583f655de24", "497eda88775b84cc2ff53e88699a402f7a71b67c",
+              "16c15a759a0a361dcbbe3849218b6f35662703d7", "044b16a8a185ee7c402eb864c33233df21157f41")   # d8163103
+NEGATION = ("b768755bf1eb811611e6e711f145a2eb72a907a4", "416a0af1545f153bf48ddd9e4b7b50b21a546597",
+            "6ba7a20059d18960f06125a8bfedc20a4c02d9e4", "9f187e7d3fcce1d2cdae3f9c12b04b2a888d650e")   # 100511d3: TySh only
+ABIGAIL = ("2b68e6a182b67d38e9b7720c035cbdc4f3ab42db", "f7fe63fa4cef78833d18c5e321d40644e7c22a35")    # 'Display' profile
+BESIDE_ICC = (("0f422f8af6d609b5d11c6b41900c14d015dad27c", "269472effe95cb6f5cef38878198d7065d69ee53",
+               "50f933aca10cc21b12e58686469cdbb72eda3223"),                                       # Stranger 5a9e0fcf
+              ("d51961ebbe3bcc2d462bc7ec0fe69fd8fe32800d", "f1000e1188fd3a417a285ba8289e9bca01c98855",
+               "f8f5d7a9a0a702e7a49166af05ba27ffdb8b9af1"))                                       # The_Forbidden_One 6d59c949
 COVERED = (("3f8e622fe59e7158234b85b8bbf3f9826a65d57a", "638584800e46ebd9dafc67f665b2a8d97ef18920"),  # Wolfgang (5a9e0fcf)
            ("703fad1daade38cf3d388783624a064be94a28e2", "9f50d035fd2cd1f3e1f2d78f7713de0c46b46c40"))  # Doctor Zomboss
 MINI_DOOMER = "Auxiliary/Minions/Mini_Doomer"
@@ -172,6 +185,16 @@ def test_g2_renders_anyway_with_the_bakes_own_gates(tmp_path):
     assert found.numbered["X/A3.png"] == (b"", "A3.png not updated: re-export it in Photoshop")
 
 
+def test_g2_a_stale_png_within_the_bar_of_both_renders_is_not_ahead(tmp_path):
+    """A 3-level recolour over a PNG a level off the old square: within the bar of both renders, so only the mean (nearer
+    the old) keeps the stale PNG from being called current."""
+    old = fixture_psd(tmp_path, card(colour=(0, 0, 200)), "old")
+    new = fixture_psd(tmp_path, card(colour=(0, 0, 203)), "new")
+    new.has_preview = lambda: False
+    found = pe.export(old, new, card(colour=(0, 0, 201)))
+    assert (found.outcome, found.changed_px) == ("re-exported", 21 * 21) and "png_ahead" not in found.numbers
+
+
 def test_g2_refuses_a_change_the_render_does_not_show(tmp_path, monkeypatch):
     """With no stored image the parser's re-read stands in for the cross-check (the bake's blank render): a text or stat
     row it reads differently must be drawn with a change, else no PNG (G2_BLANK); past the floor the baseline refuses."""
@@ -258,7 +281,7 @@ def test_the_png_is_the_forks_render_merged_into_the_old_png(tmp_path, monkeypat
     new = fixture_psd(tmp_path, card(colour=(0, 255, 0)), "new")
     drawn = []
     draw = psd_edit.render_region
-    monkeypatch.setattr(psd_edit, "render_region", lambda psd, box, icc=True: drawn.append(box) or draw(psd, box, icc))
+    monkeypatch.setattr(psd_edit, "render_region", lambda psd, box, icc=True, text="preview": drawn.append(box) or draw(psd, box, icc, text))
     found = pe.export(old, new, card())
     assert found.outcome == "re-exported" and found.writer == "tool" and found.gate == ""
     assert drawn == [(10, 10, 31, 31)] * 2                              # the Square's record box, old then new
@@ -353,8 +376,8 @@ def test_a_new_psd_beside_an_older_png_takes_the_render_where_photoshops_image_m
     new = fixture_psd(tmp_path, card(colour=(0, 255, 0)), "new")
     draw = psd_edit.render_region
 
-    def off(psd, box, icc=True):                     # the fork draws the base 9 levels off, the square right
-        image = np.array(draw(psd, box, icc).convert("RGB"))
+    def off(psd, box, icc=True, text="preview"):     # the fork draws the base 9 levels off, the square right
+        image = np.array(draw(psd, box, icc, text).convert("RGB"))
         image[60:, :] = (209, 39, 39)
         return Image.fromarray(image)
 
@@ -363,7 +386,7 @@ def test_a_new_psd_beside_an_older_png_takes_the_render_where_photoshops_image_m
     assert found.outcome == "re-exported" and found.changed_px == 21 * 21 and found.box == (10, 10, 31, 31)
     assert found.numbers["cross"]["max"] == 0
     assert np.asarray(pe.open_png(found.data)).tolist() == np.asarray(card(colour=(0, 255, 0))).tolist()
-    monkeypatch.setattr(psd_edit, "render_region", lambda psd, box, icc=True: card(colour=(0, 200, 0)))
+    monkeypatch.setattr(psd_edit, "render_region", lambda psd, box, icc=True, text="preview": card(colour=(0, 200, 0)))
     refused = pe.export(None, new, card())
     assert (refused.outcome, refused.gate, refused.data) == ("refused", "G6", b"")
     assert refused.why.startswith("PNG not made: the bot's drawing of your change")
@@ -373,8 +396,8 @@ def _rows_off(monkeypatch, rows: int, start: int = 3, levels: int = 30) -> None:
     """The fork draws rows of every box 30 levels off from its row start (a drawing miss, the same on the old and new PSD)."""
     draw = psd_edit.render_region
 
-    def off(psd, box, icc=True):
-        image = np.array(draw(psd, box, icc).convert("RGB")).astype(int)
+    def off(psd, box, icc=True, text="preview"):
+        image = np.array(draw(psd, box, icc, text).convert("RGB")).astype(int)
         image[start:start + rows] += levels
         return Image.fromarray(np.clip(image, 0, 255).astype(np.uint8))
     monkeypatch.setattr(psd_edit, "render_region", off)
@@ -411,11 +434,11 @@ def _hidden(monkeypatch, name: str) -> None:
     """The fork drawing nothing for the layer or group so named (the bake's blank-render simulation): every render hides it."""
     draw = psd_edit.render_region
 
-    def blank(psd, box, icc=True):
+    def blank(psd, box, icc=True, text="preview"):
         layer = next(layer for layer in psd.descendants() if layer.name.strip() == name)
         was, layer.visible = layer.visible, False
         try:
-            return draw(psd, box, icc)
+            return draw(psd, box, icc, text)
         finally:
             layer.visible = was
     monkeypatch.setattr(psd_edit, "render_region", blank)
@@ -723,9 +746,9 @@ def _blind(monkeypatch, real):
     """The fork's render (real) ignoring layer visibility: a text hidden draws the same (the bake's blank render case)."""
     whole = {}
 
-    def render(psd, box, icc, numbers):
+    def render(psd, box, icc, numbers, text="preview"):
         if id(psd) not in whole:
-            whole[id(psd)] = real(psd, (0, 0, psd.width, psd.height), icc, numbers)
+            whole[id(psd)] = real(psd, (0, 0, psd.width, psd.height), icc, numbers, text)
         return whole[id(psd)].crop(box)
     monkeypatch.setattr(pe, "_render", render)
 
@@ -738,7 +761,7 @@ def test_g2_refuses_a_text_drawn_blank_on_real_cards(clone, monkeypatch):
     old, new, old_png, _ = pair(clone, DIRTY_BED)
     new.has_preview = lambda: False
     real = pe._render
-    monkeypatch.setattr(pe, "_render", lambda psd, box, icc, numbers: real(old if psd is new else psd, box, icc, numbers))
+    monkeypatch.setattr(pe, "_render", lambda psd, box, icc, numbers, text="preview": real(old if psd is new else psd, box, icc, numbers, text))
     found = pe.export(old, new, old_png)                                  # the Ability drawn as it was
     assert (found.outcome, found.gate, found.why) == ("refused", "G2", pe.G2_BLANK.format(what="the Ability text"))
     _blind(monkeypatch, real)
@@ -932,6 +955,154 @@ def test_g2_a_text_under_the_art_is_no_blank_render(clone):
         ImageDraw.Draw(stale).rectangle((600, 300, 619, 319), fill=(0, 0, 0))     # 400 px: past KEPT_PX
         beside = pe.export(None, new, stale)
         assert beside.outcome == "re-exported", (psd, beside.why)
+
+
+@fork
+def test_g2_draws_both_psds_with_the_same_text_blends(clone):
+    """Forsaken_City 7fd2aa30, the author's PNG pushed first, then the PSD saved without its stored image (the old one
+    kept): the old PSD was drawn with its stored image's text blends, the new in the text gamma, so F took unchanged
+    text edges and the author's export was overwritten (2,146 px past 8) with a false miss note (review of 2026-10-24).
+    Both are drawn in the gamma: current, nothing told. Pushed stale, the PNG made is within 2 levels of the author's."""
+    old, new, stale, authors = pair(clone, FORSAKEN)
+    new.has_preview = lambda: False
+    first = pe.export(old, new, authors)
+    assert (first.outcome, first.data, first.misses, pe.unchecked_line(first)) == ("current", b"", {}, "")
+    assert "png_ahead" in first.numbers
+    old, new, _, _ = pair(clone, FORSAKEN)
+    new.has_preview = lambda: False
+    made = pe.export(old, new, stale)
+    assert made.outcome == "re-exported" and int(pe._diff(made.image, authors).max()) <= pe.TOL
+
+
+@fork
+@pytest.mark.parametrize("old_stored", [True, False])
+def test_g2_a_png_pushed_first_and_drawn_a_little_off_is_current(clone, old_stored):
+    """PoD06Rainbow_Bloon 38c55bd3 and Clot_White d8163103 with the author's PNG pushed first and no stored image: the
+    fork draws the change a little off (Bloon's 0.80% bad, past PARITY_BAD_MAX), the old render far, so the PNG is
+    current; it was overwritten with a false miss note (review of 2026-10-24)."""
+    for shas in (BLOON, CLOT_WHITE):
+        old, new, _, authors = pair(clone, shas)
+        new.has_preview = lambda: False
+        if not old_stored:
+            old.has_preview = lambda: False
+        found = pe.export(old, new, authors)
+        assert (found.outcome, found.data, found.misses) == ("current", b"", {}), (shas[1], found.numbers)
+        ahead = found.numbers["png_ahead"]
+        assert not psd_edit._past_floor(ahead["new"]) and not pe._within(ahead["old"]), ahead
+        if shas is BLOON:
+            assert ahead["new"]["bad_pct"] > psd_edit.PARITY_BAD_MAX, ahead
+
+
+@fork
+def test_g2_a_style_edit_keeps_the_png_and_tells(clone):
+    """22_Negation 100511d3: ten type layers changed only their TySh (new style runs), Photoshop's image moved over
+    4,723 px, the render over none. The checked path refuses (G6_UNSEEN); with no stored image the PNG was called
+    current, nothing told (review of 2026-10-24). Kept, told (RESTYLED). Dogma's case edit (TySh only) is told too;
+    The Thin Man's markers changed no TySh: current, nothing told."""
+    old, new, old_png, _ = pair(clone, NEGATION)
+    new.has_preview = lambda: False
+    found = pe.export(old, new, old_png)
+    assert (found.outcome, found.data, found.changed_px) == ("current", b"", 0)
+    assert len(found.numbers["restyled"]) == 10 and pe.unchecked_line(found).startswith("PNG kept as it is: ")
+    assert pe.unchecked_line(found).endswith(pe.EXPORT) and " and 9 more, " in pe.unchecked_line(found)
+    old, new, _, _ = pair(clone, NEGATION)
+    for psd in (old, new):                              # a hidden text's style draws nothing either way
+        for layer in psd.descendants():
+            if layer.kind == "type":
+                layer.visible = False
+    assert pe._restyled(old, new) == []
+    for shas, told in ((DOGMA, True), (THIN_MAN, False)):
+        old, new, old_png, _ = pair(clone, shas)
+        new.has_preview = lambda: False
+        found = pe.export(old, new, old_png)
+        assert found.outcome == "current" and bool(pe.unchecked_line(found)) is told, shas
+
+
+@fork
+@pytest.mark.parametrize("hide", [False, True])
+def test_g2_refuses_a_changed_colour_profile(clone, tmp_path, hide):
+    """Abigail with its 'Display' profile removed (and its Ability hidden): no layer record shows it, so G2 called the
+    PNG current, or merged a patch drawn without the profile into a PNG exported with it (review of 2026-10-24). The
+    checked path refuses G6_UNSEEN; G2 refuses G2_PROFILE."""
+    from psd_tools.constants import Resource
+    data, png = blob(clone, ABIGAIL[0]), pe.open_png(blob(clone, ABIGAIL[1]))
+    psd = pe.open_psd(data)
+    del psd.image_resources[Resource.ICC_PROFILE]
+    if hide:
+        next(l for l in psd.descendants() if l.kind == "type" and l.name.strip() == "Ability").visible = False
+    psd.save(str(tmp_path / "new.psd"))
+    new = pe.open_psd((tmp_path / "new.psd").read_bytes())
+    new.has_preview = lambda: False
+    found = pe.export(pe.open_psd(data), new, png)
+    assert (found.outcome, found.gate, found.why, found.data) == ("refused", "G6", pe.G2_PROFILE, b"")
+
+
+@fork
+def test_g2_votes_over_the_box_when_the_canvas_grew(clone, tmp_path):
+    """Abigail's canvas grown 40 px, its Name hidden, the PNG of the grown card pushed first: with too little evidence
+    in the box the old card (1200x2400) was voted against the new PNG (1200x2440) and raised (review of 2026-10-24).
+    The box's evidence alone: current."""
+    data = blob(clone, ABIGAIL[0])
+    psd = pe.open_psd(data)
+    psd._record.header.height += 40
+    next(l for l in psd.descendants() if l.kind == "type" and l.is_visible() and l.name.strip() == "Name").visible = False
+    psd.save(str(tmp_path / "grown.psd"))
+    grown = pe.open_psd((tmp_path / "grown.psd").read_bytes())
+    png = pe.like_mode(psd_edit.render_region(grown, (0, 0, grown.width, grown.height)), "RGBA")
+    for old_stored in (True, False):
+        old, new = pe.open_psd(data), pe.open_psd((tmp_path / "grown.psd").read_bytes())
+        new.has_preview = lambda: False
+        if not old_stored:
+            old.has_preview = lambda: False
+        found = pe.export(old, new, png)
+        assert found.outcome == "current" and "icc_vote_card" not in found.numbers, (old_stored, found.numbers)
+
+
+@fork
+def test_g2_beside_votes_by_the_pixels_one_mode_shows(clone):
+    """Stranger 5a9e0fcf and The_Forbidden_One 6d59c949 beside the PNG before the edit, no stored image: counting the
+    pixels neither mode shows (the author's change) drew them raw, 893 and 1,004 px past 24 levels from the author's
+    export (review of 2026-10-24, round 7). Converted, none past 24."""
+    for psd, before, authors in BESIDE_ICC:
+        new = pe.open_psd(blob(clone, psd))
+        new.has_preview = lambda: False
+        found = pe.export(None, new, pe.open_png(blob(clone, before)))
+        assert (found.outcome, found.icc) == ("re-exported", "converted"), (psd, found.numbers.get("icc_vote"))
+        assert int((pe._diff(found.image, pe.open_png(blob(clone, authors))) > 24).sum()) == 0, psd
+
+
+def test_icc_evidence_counts_the_pixels_one_mode_shows():
+    """_icc_evidence over the pixels the modes draw ICC_MOVED apart where one is within ICC_MOVED of the PNG; _raw wants
+    ICC_MIN_PX of them."""
+    converted, raw = Image.new("RGB", (40, 10), (100, 100, 100)), Image.new("RGB", (40, 10), (140, 140, 140))
+    png = np.full((10, 40, 3), 140, np.uint8)                       # 20 columns raw, 10 converted, 10 neither (250)
+    png[:, 20:30] = 100
+    png[:, 30:] = 250
+    share, px = pe._icc_evidence(converted, raw, Image.fromarray(png))
+    assert (share, px) == (round(200 / 300, 3), 300)
+    assert not pe._raw((1.0, psd_edit.ICC_MIN_PX - 1)) and pe._raw((psd_edit.ICC_RAW_VOTE, psd_edit.ICC_MIN_PX))
+
+
+def test_shows_a_small_recolour_by_the_mean(tmp_path):
+    """Push A the PNG of v2 (the square 15 levels greener), B the PSD v2: the PNG shows v2, not the anchor v1, though it
+    is within the floor of both: the mean tells them apart."""
+    v1, v2 = fixture_psd(tmp_path, card(), "v1"), fixture_psd(tmp_path, card(colour=(0, 15, 255)), "v2")
+    assert not pe.shows(card(colour=(0, 15, 255)), v1, v2) and pe.shows(card(), v1, v2)
+
+
+def test_shows_no_anchor_in_a_png_showing_neither(tmp_path):
+    """The PNG's square is neither PSD's (a stale export): nearer the anchor's by mean, but past the floor of it."""
+    v1, v2 = fixture_psd(tmp_path, card(), "v1"), fixture_psd(tmp_path, card(colour=(0, 255, 0)), "v2")
+    assert not pe.shows(card(colour=(0, 60, 200)), v1, v2)
+
+
+def test_g2_a_text_turned_to_opacity_0_is_reread(clone):
+    """A type layer at opacity 0 draws nothing: its text is reread as hidden (a change to draw), not as unchanged."""
+    old, new = pe.open_psd(blob(clone, DIRTY_BED[1])), pe.open_psd(blob(clone, DIRTY_BED[1]))
+    layer = next(l for l in new.descendants() if l.kind == "type" and l.is_visible() and str(l.text or "").strip())
+    layer.opacity = 0
+    assert pe._type_layers(new)[layer.layer_id][2] is False
+    assert [what for what, _ in pe.reread(old, new)] == [f"the {layer.name.strip()} text"]
 
 
 def test_r10_flags_the_lost_gradient_maps(clone):

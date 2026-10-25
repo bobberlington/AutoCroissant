@@ -66,6 +66,9 @@ EXPORT = "export it in Photoshop"               # every refusal ends so (owner, 
 UNCHECKED = "no stored image to cross-check the bot's PNG against: save the PSD with Maximize Compatibility on"   # told
 KEPT = ("PNG kept as it is: the PSD has no stored image, and the bot's drawing differs from the PNG in only {px:,} px, "
         "which may be its own drawing noise; if the PNG is out of date, " + EXPORT)   # told
+RESTYLED = ("PNG kept as it is: the PSD has no stored image, and the bot draws no change for {what}, which the push "
+            "changed; if the PNG is out of date, " + EXPORT)   # told
+G2_PROFILE = "PNG not made: the PSD's colour profile changed, and it has no stored image to check the bot's drawing; " + EXPORT
 G2_BLANK = "PNG not made: the bot draws nothing for {what} (and the PSD has no stored image to check it against); " + EXPORT
 G2_MODE = "PNG not made: the PSD is not 8-bit RGB, so the bot cannot check its drawing; " + EXPORT
 G5 = "PNG not made: the PSD and its old PNG already disagreed outside your change ({bad:.1f}% of pixels); " + EXPORT
@@ -523,10 +526,10 @@ def _box_mask(shape: tuple, box: Optional[tuple]) -> np.ndarray:
     return mask
 
 
-def _render(psd: PSDImage, box: tuple, icc: bool, numbers: dict) -> Image.Image:
-    """psd_edit.render_region, its CPU seconds added to numbers["render_s"]."""
+def _render(psd: PSDImage, box: tuple, icc: bool, numbers: dict, text: str = "preview") -> Image.Image:
+    """psd_edit.render_region (text: its TEXT_BLENDS key), its CPU seconds added to numbers["render_s"]."""
     start = process_time()
-    image = psd_edit.render_region(psd, box, icc)
+    image = psd_edit.render_region(psd, box, icc, text)
     numbers["render_s"] = round(numbers.get("render_s", 0.0) + process_time() - start, 2)
     return image
 
@@ -548,27 +551,29 @@ def _raw(evidence: tuple) -> bool:
 
 
 def _render_voted(psd: PSDImage, box: tuple, icc: bool, vote: Optional[tuple], png: Image.Image,
-                  result: "Export", card: Optional[Image.Image] = None) -> tuple:
+                  result: "Export", card: Optional[Image.Image] = None, text: str = "preview") -> tuple:
     """
     (icc, render) of box: with no vote (no stored image) on a card with a foreign profile, drawn both ways and voted as
     icc_vote votes (_icc_evidence, raw by export_icc's rule: Block_Hopper), else converted (a near tie of means drew
-    Tainted_Jacob raw, review 2026-10-24); with too little evidence in box, the whole card against card first. Else
-    icc's alone.
+    Tainted_Jacob raw, review 2026-10-24); with too little evidence in box, the whole card against card first (a card of
+    the PSD's size only). Else icc's alone.
 
     Args:
         png: The PNG over box (the old PNG, or its crop)
         card: The whole PNG (the old PNG), for a box without evidence
+        text: _render's
     """
-    render = _render(psd, box, icc, result.numbers)
+    render = _render(psd, box, icc, result.numbers, text)
     if vote is not None or psd_edit.foreign_profile(psd) is None:
         return icc, render
-    other = _render(psd, box, not icc, result.numbers)          # no vote: icc is True (export_icc)
+    other = _render(psd, box, not icc, result.numbers, text)    # no vote: icc is True (export_icc)
     converted, raw = (render, other) if icc else (other, render)
     evidence = _icc_evidence(converted, raw, png)
     result.numbers["icc_vote"] = {"raw": evidence[0], "px": evidence[1]}
     whole = (0, 0, psd.width, psd.height)
-    if evidence[1] < psd_edit.ICC_MIN_PX and card is not None and tuple(box) != whole:
-        evidence = _icc_evidence(_render(psd, whole, True, result.numbers), _render(psd, whole, False, result.numbers), card)
+    if evidence[1] < psd_edit.ICC_MIN_PX and card is not None and card.size == whole[2:] and tuple(box) != whole:
+        evidence = _icc_evidence(_render(psd, whole, True, result.numbers, text),
+                                 _render(psd, whole, False, result.numbers, text), card)
         result.numbers["icc_vote_card"] = {"raw": evidence[0], "px": evidence[1]}
     return (False, raw) if _raw(evidence) else (True, converted)
 
@@ -779,11 +784,8 @@ def _covered(psd: PSDImage, layer, box: tuple, icc: bool, numbers: dict) -> bool
     A text under the art (Wolfgang's Name under a smart object; Photoshop draws none of it either): with every visible
     layer drawn above it hidden (not its groups), hiding it moves the render of box. Visibility is restored.
     """
-    order, groups, parent = list(psd.descendants()), set(), layer.parent
-    while parent is not None and parent is not psd:
-        groups.add(id(parent))
-        parent = parent.parent
-    above = [other for other in order[order.index(layer) + 1:] if id(other) not in groups and other.visible]
+    order = list(psd.descendants())             # its groups come before it
+    above = [other for other in order[order.index(layer) + 1:] if other.visible]
     was = layer.visible
     try:
         for other in above:
@@ -826,15 +828,22 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
     past the floor G6, a miss told), the delta merge, the shape and region gates (G7). A new PSD beside its PNG:
     the whole card rendered; the PNG is current with no pixel past BESIDE_CUT, kept (told) up to KEPT_PX past it, else it
     takes the render past the cut, every text drawn (_texts_drawn; no baseline, so no pixel refusal). A PNG pushed before
-    its PSD is current (png_ahead): over F nearer the new render than the old, within the bar of the new render or with
-    its bad pixels under PARITY_BAD_MAX and the old render past the bar (a change the fork draws a few levels off:
-    Pandamonium's gradient). ICC mode: the old pair's vote; with no stored image to vote, a foreign profile is drawn
-    both ways and voted against the old PNG as icc_vote votes, over the box, else the whole card (_render_voted: the 21
-    raw exports). A text reread() finds under the art (_covered) needs no change.
+    its PSD is current (png_ahead): over F nearer the new render than the old, within the bar of the new render, or
+    not past the floor of it with the old render past the bar (a change the fork draws a few levels off: Pandamonium's
+    gradient, PoD06Rainbow_Bloon's 0.80% bad); a stale PNG is kept out by the mean (nearer the old render) and by the old
+    render within its bar. Both PSDs are drawn in the text gamma (TEXT_BLENDS "gamma"): the new has no stored image to
+    decide its texts' blends by, so the old's would draw unchanged text edges apart (Forsaken_City, review 2026-10-24).
+    ICC mode: the old pair's vote; with no stored image to vote, a foreign profile is drawn both ways and voted against
+    the old PNG as icc_vote votes, over the box, else the whole card (_render_voted: the 21 raw exports). A text
+    reread() finds under the art (_covered) needs no change. Refused when the colour profile changed (G2_PROFILE: no
+    layer record shows it). Nothing drawn moved but a type layer's TySh (a style edit, Dogma's case): the PNG kept, told
+    (RESTYLED: Photoshop may have redrawn it, 22_Negation).
     """
     result = Export("current", unchecked=True)
     if old is None:
         return _beside_unchecked(new, old_png, result, numbered)
+    if psd_edit.foreign_profile(old) != psd_edit.foreign_profile(new):
+        return _refuse(result, G2_PROFILE, "G6")
     result.vote = psd_edit.icc_vote(old, old_png)
     icc = psd_edit.export_icc(old, old_png)
     result.writer = "photoshop" if photoshop_saved(old, new) else "tool"
@@ -844,8 +853,8 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
     result.numbers.update(records=records, region=list(region) if region else None, reread=[what for what, *_ in changed])
     moved = np.zeros((new.height, new.width), bool)
     if region:                                  # no vote: the old PSD drawn both ways against the old PNG
-        icc, base = _render_voted(old, region, icc, result.vote, old_png.crop(region), result, old_png)
-        render = _render(new, region, icc, result.numbers)
+        icc, base = _render_voted(old, region, icc, result.vote, old_png.crop(region), result, old_png, "gamma")
+        render = _render(new, region, icc, result.numbers, "gamma")
         moved[region[1]:region[3], region[0]:region[2]] = _diff(render, base) > TOL
     result.icc = icc_mode(new, icc)
     result.changed_px, result.box = int(moved.sum()), _bbox(moved)
@@ -853,13 +862,16 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
         if not moved[y0:y1, x0:x1].any() and not _covered(psd, layer, (x0, y0, x1, y1), icc, result.numbers):
             return _refuse(result, G2_BLANK.format(what=what), "G2")
     if not moved.any():
+        restyled = _restyled(old, new)
+        if restyled:
+            result.numbers["restyled"] = restyled
         return result
     crop = old_png.crop(region)
     # the PNG already shows the pushed PSD (pushed before it): over F nearer the new render than the old, within the bar
-    # of it, or its bad pixels under the bar with the old render past it (a stale PNG is within the bar of the old)
+    # of it, or not past the floor of it with the old render past the bar
     changed_box = moved[region[1]:region[3], region[0]:region[2]]
     to_new, to_old = _stats(_diff(render, crop)[changed_box]), _stats(_diff(base, crop)[changed_box])
-    shown = _within(to_new) or (to_new["bad_pct"] <= psd_edit.PARITY_BAD_MAX and not _within(to_old))
+    shown = _within(to_new) or (not psd_edit._past_floor(to_new) and not _within(to_old))
     if shown and to_new["mean"] < to_old["mean"]:
         result.numbers["png_ahead"] = {"new": to_new, "old": to_old}
         return result
@@ -878,20 +890,51 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
     return result
 
 
+def _restyled(old: PSDImage, new: PSDImage) -> list:
+    """The names of the type layers drawn in either PSD whose TySh changed (fingerprints leaves it out as VOLATILE)."""
+    def tysh(psd):
+        return {layer.layer_id: (layer.name.strip() or "untitled", layer.is_visible() and bool(layer.opacity),
+                                 next((block.tobytes() for key, block in (layer._record.tagged_blocks or {}).items()
+                                       if bytes(key) == b"TySh"), None))
+                for layer in psd.descendants() if layer.kind == "type"}
+    before, after = tysh(old), tysh(new)
+    return [f"the {after[key][0]} text" for key in sorted(set(before) & set(after))
+            if (before[key][1] or after[key][1]) and before[key][2] != after[key][2]]
+
+
+def unchecked_line(found: Export) -> str:
+    """The line told for a G2 export (no stored image): UNCHECKED for a PNG made, KEPT or RESTYLED for one kept."""
+    if not found.unchecked:
+        return ""
+    if found.outcome == "re-exported":
+        return UNCHECKED
+    if found.outcome != "current":
+        return ""
+    if "kept" in found.numbers:
+        return KEPT.format(px=found.numbers["kept"])
+    restyled = found.numbers.get("restyled")
+    if restyled:
+        what = restyled[0] + (f" and {len(restyled) - 1} more" if len(restyled) > 1 else "")
+        return RESTYLED.format(what=what)
+    return ""
+
+
 def shows(png: Image.Image, psd: PSDImage, other: PSDImage) -> bool:
     """
     Whether the PNG shows psd rather than other (G2's burst anchor against the PSD before the push): both drawn over
     changed_layers(other, psd)'s box, as the PNG was exported; where the renders differ the PNG is nearer psd's (mean) and
     not past the floor against it (the fork draws some changes a few levels off, and some text without the preview's
-    blends: Pandamonium's gradient, Dark_Ritual's 0.93% bad; review 2026-10-24). False when they draw the same.
+    blends: Pandamonium's gradient, Dark_Ritual's 0.93% bad; review 2026-10-24). False when they draw the same. Both
+    are drawn in the text gamma unless both have a stored image (as _unchecked).
     """
     region, _ = changed_layers(other, psd)
     if not region or region[2] <= region[0] or region[3] <= region[1]:
         return False
     scratch, crop = Export("current"), png.crop(region)
+    text = "preview" if psd.has_preview() and other.has_preview() else "gamma"
     icc, mine = _render_voted(psd, region, psd_edit.export_icc(psd, png), psd_edit.icc_vote(psd, png), crop, scratch,
-                               png)
-    theirs = _render(other, region, icc, scratch.numbers)
+                               png, text)
+    theirs = _render(other, region, icc, scratch.numbers, text)
     moved = _diff(mine, theirs) > TOL
     if not moved.any():
         return False

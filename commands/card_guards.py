@@ -555,14 +555,12 @@ def _recompress(out: str, result: Result, path: str, read: Callable[[], bytes]) 
 
 def _export_dict(found) -> dict:
     """An Export as plan.json keeps it; "unchecked" is the line told for a PNG made with no stored image (G2), or for one
-    kept beside such a PSD (KEPT)."""
-    kept = found.numbers.get("kept") if found.unchecked and found.outcome == "current" else None
+    kept (KEPT beside such a PSD, RESTYLED over one)."""
     return {"outcome": found.outcome, "why": found.why, "gate": found.gate, "changed_px": found.changed_px,
             "box": list(found.box) if found.box else None, "icc": found.icc, "writer": found.writer,
             "vote": list(found.vote) if found.vote else None, "numbers": found.numbers,
             "misses": png_export.miss_notes(found),
-            "unchecked": png_export.UNCHECKED if found.unchecked and found.outcome == "re-exported" else
-                         png_export.KEPT.format(px=kept) if kept is not None else ""}
+            "unchecked": png_export.unchecked_line(found)}
 
 
 def _r10_line(job: Job, measured: dict) -> str:

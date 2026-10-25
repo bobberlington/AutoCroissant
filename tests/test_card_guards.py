@@ -411,6 +411,24 @@ def test_a_g2_burst_keeps_the_anchors_refusal(cards, tmp_path, monkeypatch):
     assert not [w for w in entry["writes"] if w["kind"] == "png"] and pe.G7 in entry["told"]
 
 
+def test_a_g2_burst_refusal_is_not_retried_when_the_png_shows_no_anchor(cards, tmp_path, monkeypatch):
+    """A G2 refusal is no checked G5/G6 (Photoshop's image never vouched for it): with the PNG not showing the anchor it
+    stands, never retried against the anchor. Push 1 the Base, push 2 the square, the PNG showing neither (shows
+    False): over push 1's PSD the baseline is past the floor (G6)."""
+    root, base, alice, bot = cards
+    monkeypatch.setattr(cg.png_export, "composite", lambda psd: None)
+    monkeypatch.setattr(cg.png_export, "shows", lambda png, psd, other: False)
+    work = tmp_path / "burst"
+    work.mkdir()
+    one = _dated(root, work, "Bread", card(base=(30, 200, 30)), "2026-10-22T10:00:00Z")
+    two = _dated(root, work, "Bread", card(base=(30, 200, 30), colour=(255, 255, 0)), "2026-10-22T10:10:00Z")
+    data = cg.check(str(root), two, one, mode="on", out=str(tmp_path / "out"), workers=1)
+    (entry,) = data["cards"]
+    assert (entry["export"]["outcome"], entry["export"]["gate"]) == ("refused", "G6"), entry["export"]
+    assert entry["export"]["why"].startswith("PNG not made: the bot cannot draw this part of the card")
+    assert not any("an earlier push changed the PSD" in note for note in entry["notes"]), entry["notes"]
+
+
 def test_a_checked_burst_whose_last_push_moved_nothing_keeps_the_first(cards, tmp_path):
     """Push 1 a 4-px dot, push 2 a layer record that draws nothing (the square grown by a column of the base colour),
     stored images kept: over push 1's PSD the PNG was "current" (G5's bar hides 4 px), push 1's dot lost, nothing told
@@ -1019,6 +1037,9 @@ def test_a_png_made_without_a_stored_image_is_told_not_refused(tmp_path, monkeyp
     exported = cg._export_dict(found)
     assert exported["unchecked"] == pe.UNCHECKED and "no stored image to cross-check" in pe.UNCHECKED
     assert cg._export_dict(pe.Export("current", unchecked=True))["unchecked"] == ""
+    restyled = cg._export_dict(pe.Export("current", unchecked=True, numbers={"restyled": ["the Header text"]}))
+    assert restyled["unchecked"] == pe.RESTYLED.format(what="the Header text")
+    assert cg._guard1_line({"export": restyled, "case": "stale"}) == restyled["unchecked"]
     job = cg.Job("X/Snack.psd", "stale", png="X/Snack.png")
     result = cg.Result(job, export=exported, writes=[{"path": "X/Snack.png", "kind": "png"}])
     assert result.told("on") == [pe.UNCHECKED]
