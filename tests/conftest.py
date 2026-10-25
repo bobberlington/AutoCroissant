@@ -7,7 +7,7 @@ import socket
 import sys
 import types
 from importlib.util import find_spec
-from os import environ
+from os import cpu_count, environ
 from os.path import expanduser
 from pathlib import Path
 
@@ -264,3 +264,8 @@ def clone():
     if not (CLONE / "Types").is_dir():
         pytest.skip(f"no card repo clone at {CLONE}")
     return CLONE
+
+
+def pytest_xdist_auto_num_workers(config):
+    """-n auto runs at most 6 workers: every worker spawns git on the 16 GB card clone (10-25: 400+ git processes ran the Mac out of memory)."""
+    return min(6, cpu_count() or 1)
