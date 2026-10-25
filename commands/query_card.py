@@ -10,7 +10,7 @@ from requests import get
 from requests.exceptions import RequestException
 from typing import Optional
 from warnings import filterwarnings
-from pandas import DataFrame, Index, concat, merge
+from pandas import DataFrame, Index, Series, concat, to_numeric
 from re import compile, escape, IGNORECASE
 from urllib.parse import quote
 
@@ -34,8 +34,19 @@ _alias_lock = Lock()                                     # one writer for aliase
 AS_OF_PATTERN = compile(r"^(\d{4})-(\d{1,2})-(\d{1,2})$")   # /query as_of: YYYY-MM-DD
 UNKNOWN_BEFORE = 946684800.0                             # 2000-01-01 UTC; older stamps: no commit found (year 1000)
 DATE_PATTERN = compile(r"^(created)\s*(<=|>=|==|<|>)\s*(\d{4}(?:-\d{2}){0,2})$")   # created>=2025, created == 2023-10
+FIELD_PATTERN = compile(r"^(\w+)\s*(<=|>=|==|!=|<|>|~)\s*(.*)$")   # a condition: field, operator, value
+NUMBER_FIELDS = ("hp", "def", "atk", "spd", "stars", "total")
+TEXT_FIELDS = ("type", "subtype", "series", "subseries", "author", "types", "name", "alias", "ability", "path", "created")
+FIELD_HINTS = {"attack": "atk", "defense": "def", "health": "hp", "speed": "spd", "star": "stars", "aliases": "alias"}
+SYNONYMS = {"damage": "dmg", "dmg": "damage", "defense": "def", "def": "defense", "speed": "spd", "spd": "speed",
+            "health": "hp", "hp": "health"}                       # a text term finds both words (the card's own terms)
+SYNONYM_WORDS = compile(r"\b(" + "|".join(SYNONYMS) + r")\b")
 AS_OF_EDITS_NOTE = ("Database edits (website, /update_metadata) are versions of their own only since late October "
                     "2026: an older version shows those it had when it was replaced.")
+
+
+class QueryError(ValueError):
+    """A /query_ability query that can't run; the message says why (an unknown field, a bad value)."""
 
 
 @dataclass
@@ -65,7 +76,7 @@ class CardRepository:
         self.cards_dff: DataFrame = DataFrame()
         self.rulebook_dff: DataFrame = DataFrame()
         self._lowered: tuple = (None, [])                # (cards_dff, [(label, lowered ability)]) for the fuzzy step
-        self._stat_pattern = compile(r"^(\w+)\s*(<|<=|==|>=|>)\s*(\d+)$", IGNORECASE)   # spaces as the website's search
+        self._hay: tuple = (None, "", None)             # (cards_dff, Card Edits.json sha, haystack) for text terms
 
     @property
     def git_filenames(self) -> list[str]:
@@ -216,84 +227,95 @@ class CardRepository:
 
     def _parse_stat_query(self, ability: str) -> Optional[DataFrame]:
         """
-        Parse and execute column-based queries (e.g., 'hp>10', 'type==creature', 'stars<=5').
-
-        Supports:
-        - Numeric comparisons: hp>5, def<=10, atk>=3, spd==7, stars<6
-        - String exact matches: type==creature, subtype==attack, series==kirby
-        - String contains: type~creature (contains 'creature'), subseries~door
+        Run a condition on a card field (hp>10, type==creature, series~kirby, created>=2025, total>=25).
 
         Args:
-            ability: Query string
+            ability: Query term (lowercase)
 
         Returns:
-            DataFrame of matching cards or None
+            DataFrame of matching cards, or None when the term is not a condition
+
+        Raises:
+            QueryError: An unknown field, or a value the field can't compare
         """
-        # Dates at the precision given (created>=2025: 2025 or later; created==2023-10: in October 2023)
-        date_match = DATE_PATTERN.match(ability.strip().lower())
-        if date_match:
-            column, operator, value = date_match.groups()
-            if column not in self.cards_dff.columns:
-                return None
-            col = self.cards_dff[column]
-            day = col.where(col.notna(), "").astype(str).str[:len(value)]
-            kept = {"<": day < value, "<=": day <= value, "==": day == value, ">=": day >= value, ">": day > value}[operator]
-            return self.cards_dff[col.notna() & kept]
+        found = FIELD_PATTERN.match(ability.strip().lower())
+        if not found:
+            return None
+        column, operator, value = found.groups()
+        value = value.strip()
+        column = "alias" if column == "aliases" else column     # the website takes both
+        if operator == "!=":
+            raise QueryError(f"For 'not', put ! before the condition: !{column}=={value}.")
+        extra = column not in NUMBER_FIELDS and column not in TEXT_FIELDS and column in self.cards_dff.columns
+        if column not in NUMBER_FIELDS and column not in TEXT_FIELDS and not extra:
+            hint = FIELD_HINTS.get(column) or next(iter(get_close_matches(column, NUMBER_FIELDS + TEXT_FIELDS, 1, 0.6)), "")
+            raise QueryError(f"Unknown field '{column}'{f' (did you mean {hint}?)' if hint else ''}. Fields: "
+                             f"{', '.join(NUMBER_FIELDS)} (numbers); {', '.join(TEXT_FIELDS)} (== or ~). "
+                             f"To search the text itself, put it in quotes.")
+        col = self._field(column)
+        kept = None
+        if column in NUMBER_FIELDS or (extra and operator != "~" and value.lstrip("-").isdigit()):   # any column too
+            if operator == "~" or not value.lstrip("-").isdigit():
+                raise QueryError(f"{column} takes a number: {column}>5, {column}==3.")
+            if col is not None:
+                col = to_numeric(col, errors="coerce")
+                number = int(value)
+                kept = {"<": col < number, "<=": col <= number, "==": col == number, ">=": col >= number, ">": col > number}[operator]
+        elif column == "created" and DATE_PATTERN.match(f"created{operator}{value}"):
+            if col is not None:                          # at the precision given: created>=2025, created==2023-10
+                day = col.where(col.notna(), "").astype(str).str[:len(value)]
+                kept = col.notna() & {"<": day < value, "<=": day <= value, "==": day == value, ">=": day >= value,
+                                      ">": day > value}[operator]
+        elif operator in ("==", "~"):
+            value = value.strip('"')
+            if col is not None:
+                text = col.where(col.notna(), "").astype(str).str.lower()
+                kept = col.notna() & ((text == value) if operator == "==" else text.str.contains(value, regex=False))
+        else:
+            raise QueryError(f"{column} takes == or ~" + (" or a date: created>=2025, created<2021-06." if column == "created" else "."))
+        return self.cards_dff[kept] if kept is not None else self.cards_dff.iloc[0:0]
 
-        # Try numeric comparison pattern (e.g., hp>5, stars<=3)
-        numeric_match = self._stat_pattern.match(ability.lower())
-        if numeric_match:
-            column, operator, value = numeric_match.groups()
-            value = int(value)
+    def _field(self, column: str) -> Optional[Series]:
+        """A field over cards_dff: a column, the stat total, or the name players see (printed title, else name)."""
+        df = self.cards_dff
+        if column == "total":                            # as the website: missing stats count 0, no stats at all: none
+            stats = [c for c in ("hp", "def", "atk", "spd") if c in df]
+            return df[stats].apply(to_numeric, errors="coerce").sum(axis=1, min_count=1) if stats else None
+        if column == "name":
+            names = Series(df.index, index=df.index)
+            return df["display_name"].where(df["display_name"].notna(), names) if "display_name" in df else names
+        if column == "alias":                            # website names and aliases (Card Edits.json)
+            names = self._edit_names[1]
+            return Series([" ".join(names.get(CardAuthors.key(str(label)), [])) for label in df.index], index=df.index,
+                          dtype=object)
+        return df[column] if column in df else None
 
-            # Check if column exists in dataframe
-            if column not in self.cards_dff.columns:
-                return None
+    def _haystack(self) -> Series:
+        """What a text term searches, lowercased (as the website): name, printed title, website names and aliases, ability."""
+        df, sha = self.cards_dff, self._edit_names[0]
+        if self._hay[0] is not df or self._hay[1] != sha:
+            names = self._edit_names[1]
+            titles = df["display_name"] if "display_name" in df else Series(None, index=df.index, dtype=object)
+            rows = []
+            for label, title, ability in zip(df.index, titles, df["ability"]):
+                parts = [str(label)] + ([title] if isinstance(title, str) else []) + list(names.get(CardAuthors.key(str(label)), []))
+                rows.append("\n".join(parts + [ability if isinstance(ability, str) else ""]).lower())
+            self._hay = (df, sha, Series(rows, index=df.index, dtype=object))
+        return self._hay[2]
 
-            # Apply operator
-            operators = {
-                '<': lambda df, col, val: df[df[col] < val],
-                '<=': lambda df, col, val: df[df[col] <= val],
-                '==': lambda df, col, val: df[df[col] == val],
-                '>=': lambda df, col, val: df[df[col] >= val],
-                '>': lambda df, col, val: df[df[col] > val],
-            }
-
-            return operators.get(operator, lambda df, col, val: DataFrame())(self.cards_dff, column, value)
-
-        # Try string exact match pattern (e.g., type==creature, subtype==attack)
-        string_exact_pattern = compile(r"^(\w+)\s*==(.+)$", IGNORECASE)
-        string_match = string_exact_pattern.match(ability)
-        if string_match:
-            column, value = string_match.groups()
-            column = column.lower()
-            value = value.strip().strip('"').lower()
-
-            # Check if column exists
-            if column not in self.cards_dff.columns:
-                return None
-
-            # Filter by exact match (case-insensitive); an empty cell never matches ("None"/"nan" as text)
-            col = self.cards_dff[column]
-            return self.cards_dff[col.notna() & (col.astype(str).str.lower() == value)]
-
-        # Try string contains pattern (e.g., type~creature)
-        string_contains_pattern = compile(r"^(\w+)\s*~(.+)$", IGNORECASE)
-        contains_match = string_contains_pattern.match(ability)
-        if contains_match:
-            column, value = contains_match.groups()
-            column = column.lower()
-            value = value.strip().strip('"').lower()
-
-            # Check if column exists
-            if column not in self.cards_dff.columns:
-                return None
-
-            # Filter by contains (case-insensitive); an empty cell never matches
-            col = self.cards_dff[column]
-            return self.cards_dff[col.notna() & col.astype(str).str.lower().str.contains(value, na=False, regex=False)]
-
-        return None
+    @staticmethod
+    def _text_pattern(text: str) -> str:
+        """A regex for a text term: the text, with damage also finding DMG, DEF defense, SPD speed, HP health and back."""
+        parts = SYNONYM_WORDS.split(text)
+        out = []
+        for i, part in enumerate(parts):
+            if i % 2 == 0:
+                out.append(escape(part))
+                continue
+            other = SYNONYMS[part]
+            other = r"\b" + other + r"\b" if len(other) < len(part) else other      # dmg as a word, not in "admg"
+            out.append("(?:" + part + "|" + other + ")")
+        return "".join(out)
 
     @staticmethod
     def _split_unquoted(text: str, sep: str) -> list[str]:
@@ -335,46 +357,36 @@ class CardRepository:
         if len(queries) > 1:
             results = [self.ability_search_engine(q.strip()) for q in queries]
             combined = concat(results)
-            # Drop duplicates by index (card name) and ability column
             return combined[~combined.index.duplicated(keep='first')]
 
         # Handle AND queries
         queries = self._split_unquoted(ability, "&")
         if len(queries) > 1:
-            results = [self.ability_search_engine(q.strip()) for q in queries]
-            result = results[0]
-            for r in results[1:]:
-                result = merge(result, r, left_index=True, right_index=True, how="inner")
+            result = self.ability_search_engine(queries[0].strip())
+            for q in queries[1:]:
+                result = result[result.index.isin(self.ability_search_engine(q.strip()).index)]
             return result
 
-        # Handle stat queries
+        # NOT: any term, conditions too (!type==creature)
+        if ability.startswith("!"):
+            inner = self.ability_search_engine(ability[1:].strip())
+            return self.cards_dff[~self.cards_dff.index.isin(inner.index)]
+
+        # Conditions on fields
         stat_result = self._parse_stat_query(ability)
         if stat_result is not None:
             return stat_result
 
-        # Handle NOT queries
-        opposite = ability.startswith("!")
-        if opposite:
-            ability = ability[1:].strip()
-
-        # Handle exact matches
-        if ability.startswith('"') and ability.endswith('"'):
+        # Text: names, aliases and ability (as the website); "quoted" as whole words
+        hay = self._haystack()
+        if len(ability) > 1 and ability.startswith('"') and ability.endswith('"'):
             pattern = r"(?:^|\s|$|\b)" + escape(ability.strip('"')) + r"(?:^|\s|$|\b)"
-            if opposite:
-                return self.cards_dff[~self.cards_dff["ability"].str.contains(pattern, na=False)]
-            return self.cards_dff[self.cards_dff["ability"].str.contains(pattern, na=False)]
+            return self.cards_dff[hay.str.contains(pattern, na=False).values]
+        exact_matches = self.cards_dff[hay.str.contains(self._text_pattern(ability), na=False).values]
 
-        # Handle substring matches with fuzzy matching
-        if opposite:
-            return self.cards_dff[~self.cards_dff["ability"].str.contains(escape(ability), na=False)]
-
-        # Exact substring matches
-        exact_matches = self.cards_dff[self.cards_dff["ability"].str.contains(escape(ability), na=False)]
-
-        # Fuzzy matches
+        # Fuzzy matches: near-whole ability texts
         fuzzy_matches = self.cards_dff.loc[self._fuzzy_labels(ability)]
 
-        # Combine and remove duplicates by index
         combined = concat([exact_matches, fuzzy_matches])
         return combined[~combined.index.duplicated(keep='first')]
 
@@ -1017,7 +1029,9 @@ def query_ability(interaction: Interaction,
         queue_message(interaction, f"{STATS_PKL} is empty. Run `/update_stats` first.")
         return
 
-    results = card_repo.ability_search_engine(ability.strip().lower())
+    results = _search(interaction, ability)
+    if results is None:
+        return
 
     total_results = len(results)
     results_to_show = total_results if limit < 0 else min(limit, total_results)
@@ -1044,8 +1058,22 @@ def query_ability_num_occur(interaction: Interaction, ability: str) -> None:
         queue_message(interaction, f"{STATS_PKL} is empty. Run `/update_stats` first.")
         return
 
-    results = card_repo.ability_search_engine(ability.strip().lower())
-    queue_message(interaction, f"Found {len(results)} cards matching '{ability}'.")
+    results = _search(interaction, ability)
+    if results is not None:
+        queue_message(interaction, f"Found {len(results)} cards matching '{ability}'.")
+
+
+def _search(interaction: Interaction, ability: str) -> Optional[DataFrame]:
+    """/query_ability's search; a query it can't run is answered here (None). Misses are logged, for aliases."""
+    try:
+        results = card_repo.ability_search_engine(ability.strip().lower())
+    except QueryError as e:
+        print(f"Search error: /query_ability {ability!r}")
+        queue_message(interaction, str(e))
+        return None
+    if results.empty:
+        print(f"Search miss: /query_ability {ability!r}")
+    return results
 
 
 def query_rulebook(interaction: Interaction,
@@ -1147,6 +1175,7 @@ def init_query() -> None:
 # Module Exports
 # ========================
 __all__ = [
+    'QueryError',
     'archived_text',
     'card_repo',
     'history_match',

@@ -1,4 +1,5 @@
 from asyncio import create_task
+from collections import deque
 from sys import exit
 from discord import ButtonStyle, Client, File, Intents, Interaction, InteractionType, Member, app_commands
 from discord.ui import Button, View
@@ -347,7 +348,7 @@ query_ability_num_occur = to_thread(query_ability_num_occur)
 query_ability = to_thread(query_ability)
 @tree.command(name="query_ability", description="Query a card by ability.")
 @app_commands.describe(
-    query='The ability text you want to search for.',
+    query='Text (names, aliases, ability) or conditions: hp>5, type==creature, !die. See /help card.',
     limit='The number of cards to output before stopping. Default = all.',
     howmany='Instead of returning the cards, return the number of matches. Default = False.',
 )
@@ -979,13 +980,41 @@ async def process_command_queue():
             print(f"Command queue: dropped an item: {type(e).__name__}: {e}")
 
 
-# --- DISPATCH QUEUE (messages + files + embeds) ---
+# --- DISPATCH QUEUE (messages + files + embeds): one ordered lane per channel ---
+_lanes: dict = {}                                       # channel id -> deque of (interaction, send_kwargs)
+_lane_tasks: dict = {}                                  # channel id -> the task draining its lane
+_sending = [True]                                       # False once the loop is stopped (/restart_bot, /update)
+
+
 @tasks.loop(seconds=0.1)
 async def process_dispatch_queue():
+    """Hand each message to its channel's lane: a big search holds back only its own channel (discord.py keeps
+    Discord's rate limits, per route and global)."""
     while dispatch_queue:
-        interaction, send_kwargs = dispatch_queue.popleft()
-        try:                                            # one bad message must not stop the loop (B5)
-            if not _split_content(dispatch_queue, interaction, send_kwargs):
+        item = dispatch_queue.popleft()
+        _lanes.setdefault(getattr(item[0], "channel_id", None), deque()).append(item)
+    for channel, lane in _lanes.items():
+        task = _lane_tasks.get(channel)
+        if lane and (task is None or task.done()):
+            _lane_tasks[channel] = create_task(_drain_lane(lane))
+
+
+@process_dispatch_queue.before_loop
+async def _open_lanes():
+    _sending[0] = True
+
+
+@process_dispatch_queue.after_loop
+async def _close_lanes():
+    _sending[0] = False                                 # what is left stays unsent, as before the lanes
+
+
+async def _drain_lane(lane: deque) -> None:
+    """Send a channel's messages in order."""
+    while lane and _sending[0]:
+        interaction, send_kwargs = lane.popleft()
+        try:                                            # one bad message must not stop the lane (B5)
+            if not _split_content(lane, interaction, send_kwargs):
                 await _dispatch(interaction, send_kwargs)
         except Exception as e:
             _log_drop("Dispatch", interaction, e)

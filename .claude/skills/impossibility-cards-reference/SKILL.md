@@ -662,21 +662,21 @@ lists. `python -m commands.discord_edits migrate` writes the 60 into Card Edits.
 parity re-parse found (596) and the top-level `aliases_moved` key, for one commit; from then on aliases.pkl counts nowhere (query_card `_populate_aliases`, card_data's duplicate
 names), and before that `/alias` refuses to change an aliases.pkl alias.
 
-### 7.2 The ability-search DSL (`/query_ability` → `ability_search_engine`, query_card.py:307-375)
+### 7.2 The ability-search DSL (`/query_ability` → `ability_search_engine`, query_card.py:336)
 
 Search runs over `cards_dff`, a pandas DataFrame built from stats.pkl (`prep_dataframes`
-:508-535): index = card names, columns = the dict keys of section 6, **ability column lowercased**,
+:597): index = card names, columns = the dict keys of section 6, **ability column lowercased**,
 rulebook pages split into a separate `rulebook_dff`, and rows with no ability text (MDW-style)
 excluded entirely. Refreshed at startup and queued after every `/update_stats`.
 
 | Syntax | Meaning | Example |
 |---|---|---|
-| bare text | substring match on ability + fuzzy fallback | `frostmourne` |
-| `"quoted text"` | word-boundary-ish regex match on ability | `"draw 2"` |
-| `!expr` | NOT — negated ability-text match only | `!die` |
+| bare text | substring of name, printed title, website names/aliases, ability (as the website), synonyms, fuzzy fallback | `frostmourne` |
+| `"quoted text"` | word-boundary-ish regex match on the same text | `"draw 2"` |
+| `!expr` | NOT — any term, conditions too | `!die`, `!type==creature` |
 | `a & b` | AND (index intersection) | `type==creature & hp>7` |
 | `a \| b` | OR (index union, deduplicated) | `hp>9 \| spd>9` |
-| `col<n` `<=` `==` `>=` `>` | numeric column compare (int only) | `stars<=3`, `def==10` |
+| `col<n` `<=` `==` `>=` `>` | numeric column compare (int only) | `stars<=3`, `def==10`, `total>=25` |
 | `col==value` | string equality, case-insensitive | `series==kirby` |
 | `col~value` | string contains, case-insensitive | `type~creature`, `subseries~door` |
 | `created<op>date` | creation date at the precision given (YYYY, YYYY-MM or YYYY-MM-DD); undated cards never match | `created>=2025`, `created==2023-10` |
@@ -686,21 +686,25 @@ search). `created` is the card's `site/Card Creation Dates.json` date, or its fi
 is later (`CardDates.created`, the website's rule); it is in `/export_cards` and `/update_metadata`'s view too.
 `site/Card Ratings.json`: card ratings (`python -m commands.tts_ratings`); never read by the bot.
 
-Numeric-queryable columns: hp, def, atk, spd, stars. String-queryable: type, subtype, series,
-subseries, author, path, ability, types (the list is stringified, so `types~undead` works). `prep_dataframes`
+Fields (`NUMBER_FIELDS`, `TEXT_FIELDS`): numbers hp, def, atk, spd, stars, total (the four stats added; missing ones
+count 0, no stats at all: no total). Text: type, subtype, series, subseries, author, types (stringified list, so
+`types~undead` works), name (printed title, else the name), alias (alias/aliases: Card Edits.json names and aliases,
+joined), ability, path, created. Any other cards_dff column still works (`display_name~clot`, `timestamp>5`).
+Synonyms (`SYNONYMS`): damage/DMG, defense/DEF, speed/SPD, health/HP find each other in text terms. `prep_dataframes`
 adds the `subseries` column even when no card has one, so `subseries==x` is a real (empty) filter, not the
-gotcha-4 text fall-through; `series==mario & subseries~door` is the website's own example.
+gotcha-4 unknown-field error; `series==mario & subseries~door` is the website's own example.
 
-**Evaluation order and gotchas** (all verified in code, 2026-07-11):
+**Evaluation order and gotchas** (verified in code 2026-07-11; 2, 4 and 9 rewritten 2026-10-24):
 
 1. Precedence: `|` splits BEFORE `&`, so `a & b | c` = `(a AND b) OR c`. No parentheses exist.
-2. Stat/column queries are recognized AFTER splitting but BEFORE `!` — so `!type==creature` is NOT
-   a negated filter; it becomes a negated TEXT search for the literal string "type==creature"
-   (matches nearly everything). `!` only composes with text terms.
+2. `!` is read BEFORE the condition (since 2026-10-24): `!type==creature` is every card that isn't type==creature.
+   Until then it was a negated text search for "type==creature" and returned all 764 cards. `type!=creature`
+   answers with an error naming the `!` form.
 3. `/query_ability` lowercases the whole query, and abilities are pre-lowercased in the dataframe:
    text search is case-insensitive; so are `==`/`~` values.
-4. A column query on a nonexistent column (`hp2>3`, typo'd `serie==kirby`) silently falls through
-   to TEXT search of that literal string — expect 0 or nonsense hits, not an error.
+4. A condition on an unknown field (`atack>3`, `serie==kirby`) answers with an error naming the valid fields (and a
+   did-you-mean); so does a value the field can't compare (`hp>=x`, `total~5`). To search such text, quote it.
+   Until 2026-10-24 these fell through to a text search and found 0 cards.
 5. `type==creature` misses the 7 plural-"creatures" cards (section 2); use `type~creature`.
 6. Numeric compares drop NaN rows, i.e. only cards that HAVE the stat participate.
 7. Bare-text search also runs a fuzzy pass: `SequenceMatcher(None, query, whole_ability).ratio() >
@@ -747,7 +751,7 @@ Line numbers drift — re-find facts with these before relying on cited lines:
 | Stat summing + hidden→10 default | `grep -n "tracker.value\|else 10" commands/psd_parser.py` |
 | Stars-from-PSD folder list | `grep -n "Auxiliary/Items" commands/psd_parser.py` |
 | CardInfo/CardStats mapping | `sed -n '/^class CardStats/,/^class StatsDatabase/p' commands/card_models.py` (approx; or grep `def to_dict`) |
-| DSL internals | `grep -n '_stat_pattern\|ability_search_engine\|SequenceMatcher\|duplicated' commands/query_card.py` |
+| DSL internals | `grep -n 'FIELD_PATTERN\|_FIELDS = \|SYNONYMS = \|ability_search_engine\|SequenceMatcher\|duplicated' commands/query_card.py` |
 | subseries is database-only | `grep -n subseries commands/card_models.py commands/card_edits.py commands/query_card.py commands/psd_analyzer.py commands/psd_parser.py` (psd_parser: only the preserve block in `parse()`, nothing reads a layer) |
 | Edit kinds psd/folder/database and the `_psd` meta (2026-10-20, S1 of docs/EDIT_PIPELINE_DESIGN.md; states baked/refused only, review fix the same day) | `grep -n "KIND = \|PSD_STATES\|def psd_state\|def set_psd_state" commands/card_edits.py` (19 fields: 8 psd, 3 folder, 8 database; `tests/test_card_edits.py::test_kind_table`) |
 | Defaults (repo, match ratio) | `grep -n "DEFAULT_REPOSITORY\|DEFAULT_MATCH_RATIO" commands/query_card.py` |
