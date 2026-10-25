@@ -722,7 +722,9 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   kept `[unknown:sticker]` took its `]` and the sticker went plain: Error Room, Corruption, Elemental World, Palace of
   Shadow). A new FX layer goes above the Text group's clip chain (Claw's and Miasma's MagentaSmorg and Exposure 1 left
   the title and text in the PSD, not the PNG), and `gate_untouched` renders the whole card around the text edits: any
-  pixel outside their regions refuses `region` (about 5 s a render). `_tinted` counts visible layers clipped to the
+  pixel outside their regions refuses `region` (about 5 s a render; since 2026-10-25, K-1, without a stars or types
+  edit `gate_dirty` renders only `dirty_box(old, new)` and the regions, the whole canvas on a reorder or a document-level
+  change; `PSD_DIRTY_VERIFY=1`, on in the tests, renders whole too and raises on any difference). `_tinted` counts visible layers clipped to the
   Ability or a group above it (an adjustment or fill; a drawn layer over its box: Pizza's Multiply `Layer 12`), so a
   typed badge or token there refuses. `unshaped_icons` counts a layer without the icon font too, so the 10 plain cards
   that print tags as body text (Papyrus' `(1CD)`) take typed badges and tokens again. Tests:
@@ -742,7 +744,7 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   stats' too (a stat with the name or ability always refused `region`), and runs on stat-only bakes. `covered_ink`:
   new text under a visible Normal layer above it (Papyrus' spaghetti) or over a stat bar row the old text did not
   reach (Paint Warrior's blank box) refuses `overflow`. Tests: `test_a_see_through_icon_under_a_badge_layer_refuses`,
-  `test_the_edit_copy_keeps_smart_filters`, `test_a_stat_and_the_ability_bake_together`, `test_a_bake_runs_gate_untouched`,
+  `test_the_edit_copy_keeps_smart_filters`, `test_a_stat_and_the_ability_bake_together`, `test_a_bake_runs_the_untouched_gate`,
   `test_new_text_under_a_layer_above_it_or_over_a_bar_refuses`; `test_a_bake_opens_each_psd_once` asserts the bake
   landed; the plain-card test moved to Koro-Sensei (on Papyrus the token now runs under the spaghetti).
   **Owner rulings 2026-10-24 (same branch; origin/main c249eba merged in: psd-tools `cards-20261024`, round 12):**

@@ -36,6 +36,7 @@ def _git_config():
 
 
 _git_config()
+environ["PSD_DIRTY_VERIFY"] = "1"                         # gate_dirty renders whole too: raises on any difference
 
 
 # ========================

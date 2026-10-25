@@ -20,6 +20,7 @@ from inspect import signature
 from itertools import zip_longest
 from io import BytesIO
 from math import hypot
+from os import environ
 from os.path import basename, getsize, join
 from re import IGNORECASE, compile as re_compile, escape, finditer as re_finditer, fullmatch, search, sub
 from struct import pack
@@ -5656,6 +5657,195 @@ def gate_untouched(before: np.ndarray, psd: PSDImage, edits: list) -> None:
 
 
 # ========================
+# Dirty box: the untouched gate renders only where old and new can differ (K-1, owner 2026-10-25)
+# ========================
+DIRTY_VERIFY = "PSD_DIRTY_VERIFY"   # env: "1" renders whole too and raises on any difference (on in tests/conftest.py)
+DIRTY_SLACK = 4                     # px past a group effect's reach
+FULL = "full"                       # a change no box bounds: the whole canvas
+
+
+def _record_bytes(layer) -> bytes:
+    out = BytesIO()
+    layer._record.write(out, version=layer._psd.version)
+    return out.getvalue()
+
+
+def _join(box, other):
+    """Union of two boxes, None or an empty box adding nothing (the fork's union_bbox)."""
+    empty = lambda b: b is None or b[0] >= b[2] or b[1] >= b[3]
+    return other if empty(box) else box if empty(other) else union_box([box, other])
+
+
+def _effect_margin(layer) -> tuple:
+    """(px a group's effects reach past what they draw on, whether one reads the group's bbox)."""
+    effects = getattr(layer, "effects", None)
+    if not effects or not effects.enabled:
+        return 0, False
+    from psd_tools.api.effects import BevelEmboss, GradientOverlay, PatternOverlay, Stroke
+    margin, reads = 0, False
+    for effect in effects:
+        if not effect.enabled:
+            continue
+        reach = float(getattr(effect, "size", 0) or 0) + float(getattr(effect, "distance", 0) or 0)
+        margin = max(margin, int(2 * reach) + DIRTY_SLACK)
+        reads = reads or isinstance(effect, (GradientOverlay, PatternOverlay, BevelEmboss)) \
+            or (isinstance(effect, Stroke) and "SolidColor" not in str(effect.fill_type))
+    return margin, reads
+
+
+class _DirtyDoc:
+    """One side's fork pass state: layer keys (rcache) and change boxes (composite._PassCache)."""
+    def __init__(self):
+        from importlib import import_module
+        from psd_tools.composite import rcache
+        self.composite, self.rcache = import_module("psd_tools.composite.composite"), rcache   # the module, not the function
+        self.cache, self.keys = self.composite._PassCache(), {}
+
+    def key(self, layer) -> bytes:
+        return self.rcache.layer_key(layer, self.keys)
+
+    def change(self, layer) -> tuple:
+        return self.composite._change_bbox(layer, self.cache)
+
+
+def _children_box(do: _DirtyDoc, dn: _DirtyDoc, old, new):
+    """Box old's and new's children (one group, or the documents) differ in; None if nowhere, FULL if unbounded."""
+    oc, nc = list(old), list(new)
+    if [do.key(layer) for layer in oc] == [dn.key(layer) for layer in nc]:
+        return None
+    oi, ni = {l.layer_id: i for i, l in enumerate(oc)}, {l.layer_id: i for i, l in enumerate(nc)}
+    if len(oi) != len(oc) or len(ni) != len(nc):
+        return FULL                     # repeated ids: no matching
+    if [i for i in oi if i in ni] != [i for i in ni if i in oi]:
+        return FULL                     # reordered
+    box, touched = None, ([], [])
+    for lid in oi.keys() | ni.keys():
+        o = oc[oi[lid]] if lid in oi else None
+        n = nc[ni[lid]] if lid in ni else None
+        if o is not None and n is not None and do.key(o) == dn.key(n):
+            continue
+        if o is not None:
+            touched[0].append(oi[lid])
+        if n is not None:
+            touched[1].append(ni[lid])
+        if o is not None and n is not None and o.is_group() and n.is_group() and _record_bytes(o) == _record_bytes(n):
+            inner = _group_box(do, dn, o, n)
+            if inner == FULL:
+                return FULL
+            box = _join(box, inner)
+        else:
+            box = _join(_join(box, o is not None and do.change(o) or None), n is not None and dn.change(n) or None)
+    for seq, indices, doc in ((oc, touched[0], do), (nc, touched[1], dn)):
+        for i in indices:               # the clip layers above a changed one
+            for layer in seq[i + 1:]:
+                if not layer.clipping:
+                    break
+                box = _join(box, doc.change(layer))
+    return box
+
+
+def _group_box(do: _DirtyDoc, dn: _DirtyDoc, old, new):
+    """Box group old / new (same own record) differ in as their parent sees them."""
+    C = do.composite
+    if not C._box_safe(old, do.cache) or not C._box_safe(new, dn.cache):
+        return _join(do.change(old), dn.change(new))       # a knockout reads its backdrop
+    inner = _children_box(do, dn, old, new)
+    if inner in (None, FULL):
+        return inner
+    margin, reads = _effect_margin(new)
+    if reads and (old.bbox != new.bbox or C._content_bbox(old, do.cache.content_bboxes)
+                  != C._content_bbox(new, dn.cache.content_bboxes)):
+        return _join(do.change(old), dn.change(new))       # its effect follows the moved bbox
+    if margin and inner[2] > inner[0] and inner[3] > inner[1]:
+        inner = (max(inner[0] - margin, 0), max(inner[1] - margin, 0),
+                 min(inner[2] + margin, new._psd.width), min(inner[3] + margin, new._psd.height))
+    return inner
+
+
+def dirty_box(old: PSDImage, new: PSDImage) -> Optional[tuple]:
+    """
+    Every pixel where new (an edited copy of old) can render unlike old, from the layer records: layers matched by id
+    per group, an unchanged subtree skipped, a changed one's fork change box (_change_bbox) plus its clip layers', a
+    group's effect reach. The whole canvas on a reorder, a document-level change, an external link, or when the walk
+    fails (an older fork; raised under PSD_DIRTY_VERIFY).
+
+    Returns:
+        The bbox on the canvas, None when nothing differs
+    """
+    w, h = new.width, new.height
+    try:
+        from psd_tools.composite import rcache
+        key = rcache.doc_key(old)
+        if key is None or key != rcache.doc_key(new) or (old.width, old.height) != (w, h):
+            return (0, 0, w, h)
+        box = _children_box(_DirtyDoc(), _DirtyDoc(), old, new)
+    except Exception:
+        if environ.get(DIRTY_VERIFY) == "1":
+            raise
+        return (0, 0, w, h)             # an older fork, or a layout the walk trips on: the gate as before
+    if box == FULL:
+        return (0, 0, w, h)
+    return box and clip_to(box, (0, 0, w, h))
+
+
+def gate_dirty(old: PSDImage, new: PSDImage, edits: list) -> np.ndarray:
+    """
+    gate_untouched over the edits' regions and dirty_box(old, new) only: the card rendered there before and after
+    (in the bake's RenderCache), not whole twice. With PSD_DIRTY_VERIFY=1 both are rendered whole too and any
+    difference (a pixel changed outside the box, a box render unlike the whole one's) raises RuntimeError.
+
+    Returns:
+        A canvas-sized render_all(old) valid inside the box only (baseline's crop_pair reads the regions, inside it);
+        raises Refused("region") as gate_untouched does
+    """
+    w, h = new.width, new.height
+    box = union_box([clip_to(edit.region, (0, 0, w, h)) for edit in edits if edit.region] + [dirty_box(old, new)])
+    shown = np.zeros((h, w, 4), np.uint8)
+    diff = after = None
+    if box is not None:
+        x0, y0, x1, y1 = box
+        flags = dict(viewport=box, ignore_preview=True, apply_icc=False)
+        shown[y0:y1, x0:x1] = before = np.asarray(old.composite(**flags).convert("RGBA"))
+        after = np.asarray(new.composite(**flags).convert("RGBA"))
+        diff = np.zeros((h, w), bool)
+        diff[y0:y1, x0:x1] = (before != after).any(axis=2)
+    if environ.get(DIRTY_VERIFY) == "1":
+        _verify_dirty(old, new, box, shown, after)
+    if diff is not None:
+        for edit in edits:
+            if edit.region:
+                x0, y0, x1, y1 = edit.region
+                diff[max(y0, 0):max(y1, 0), max(x0, 0):max(x1, 0)] = False
+        outside = int(diff.sum())
+        if outside:
+            raise Refused("region", "%s: the card changes %d pixels outside the edited boxes"
+                          % (", ".join(edit.field for edit in edits), outside))
+    return shown
+
+
+def _verify_dirty(old: PSDImage, new: PSDImage, box: Optional[tuple], shown: np.ndarray,
+                  after: Optional[np.ndarray]) -> None:
+    """PSD_DIRTY_VERIFY: the whole renders (no cache) equal gate_dirty's inside the box and each other outside it."""
+    try:
+        from psd_tools.composite.rcache import RenderCache
+        uncached = RenderCache(max_bytes=0)     # stores nothing: every pass rendered again
+    except ImportError:
+        uncached = nullcontext()
+    with uncached:
+        before, whole = render_all(old), render_all(new)
+    x0, y0, x1, y1 = box or (0, 0, 0, 0)
+    outside = (before != whole).any(axis=2)
+    outside[y0:y1, x0:x1] = False
+    if outside.any():
+        if _filtered(old):
+            gate_copy(before, edit_copy(old))   # a copy that lost its smart filters: apply_jobs' own refusal first
+        raise RuntimeError(f"dirty box {box}: {int(outside.sum())} pixels changed outside it")
+    if box and not (np.array_equal(before[y0:y1, x0:x1], shown[y0:y1, x0:x1])
+                    and np.array_equal(whole[y0:y1, x0:x1], after)):
+        raise RuntimeError(f"dirty box {box}: its render differs from the whole card's")
+
+
+# ========================
 # Render and merge (section 6)
 # ========================
 def changed_region(edits: list, psd: PSDImage) -> tuple:
@@ -7041,7 +7231,8 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     # stars and types first (a title edit then clears the new stars), text next, the ability first: its FX records shift
     # the record indices of the digits and of a Name above them (Fire Staff's); the icon edits' indices are read once
     # all are in (index_icons). The card is rendered whole only once an edit is made (a refused one costs none), in one
-    # RenderCache; the copy's own render (gate_copy) only on a card with smart filters, after the edits
+    # RenderCache, and without a stars or types edit only inside the dirty box (gate_dirty); the copy's own render
+    # (gate_copy) only on a card with smart filters, after the edits
     cache, first = render_cache(), None
     before, edits = record_map(new), []
     for name, value in sorted(jobs.items(),
@@ -7077,13 +7268,15 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
             raise Refused("unsupported-card", f"{name}: not yet")
     others = [edit for edit in edits if edit.field not in ICON_FIELDS and (edit.layers or edit.removed)]
     start = perf_counter()
-    if others:
+    dirty = bool(others) and not any(edit.field in ICON_FIELDS for edit in edits)   # renders the dirty box only
+    if dirty:
         with cache:
-            if first is None:
-                first = shown = render_all(old)
+            first = gate_dirty(old, new, others)   # valid inside the regions only (baseline's crop_pair)
+    elif others:
+        with cache:
             gate_untouched(shown, new, others)
     if _filtered(old):
-        gate_copy(render_all(old) if first is None else first, edit_copy(old))   # deepcopy is deterministic
+        gate_copy(render_all(old) if first is None or dirty else first, edit_copy(old))   # deepcopy is deterministic
     timings["outside"] = timings.get("outside", 0.0) + perf_counter() - start
     after = record_map(new)
     for edit in edits:
@@ -7648,12 +7841,14 @@ __all__ = [
     'fx_phrases',
     'gate_bytes',
     'gate_copy',
+    'gate_dirty',
     'gate_pairs',
     'gate_fx',
     'gate_fx_colours',
     'gate_idempotence',
     'gate_outside',
     'gate_untouched',
+    'dirty_box',
     'gate_region',
     'gate_reparse',
     'gate_shape',

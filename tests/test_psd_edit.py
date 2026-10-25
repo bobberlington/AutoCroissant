@@ -12,6 +12,7 @@ from collections import Counter
 from copy import deepcopy
 from dataclasses import replace
 from importlib.util import find_spec
+from os import environ
 from pathlib import Path
 from re import search
 from subprocess import CalledProcessError, run
@@ -415,6 +416,22 @@ def test_layout_bars_follow_the_card(clone, parser, rel, stat, value, note):
     assert pe._row_reads(stat_rows(psd)[stat][0][0]) == value and edit.region
     assert bool(note) == bool(edit.notes) and (not note or note in edit.notes[0])
     assert all(spec is not None for _, spec in edit.bar)
+
+
+def test_dirty_box_bounds_the_untouched_gate(clone, parser):
+    """K-1: gate_dirty renders only dirty_box(old, new) and the regions (none on an untouched copy, inside the canvas on
+    a stat edit, checked whole by PSD_DIRTY_VERIFY), the whole canvas on a reorder."""
+    path = _card(clone, MINI_DOOMER)[0]
+    old = PSDImage.open(path)
+    new = pe.edit_copy(old)
+    assert pe.dirty_box(old, new) is None
+    edit = pe.set_stat(new, pe.parse_card(parser, path, MINI_DOOMER, old), "hp", 8)
+    box, whole = pe.dirty_box(old, new), (0, 0, old.width, old.height)
+    assert box and box != whole and environ["PSD_DIRTY_VERIFY"] == "1"
+    pe.gate_dirty(old, new, [edit])
+    new = pe.edit_copy(old)
+    new[0].move_to(new, index=1)
+    assert pe.dirty_box(old, new) == whole
 
 
 def test_layout_bars_refuse_what_they_lack(clone, parser):
@@ -887,8 +904,8 @@ def test_name_edit_on_a_title_named_after_its_text(clone, parser, chart, rel, tm
 
 
 @text_edit
-def test_a_bake_runs_gate_untouched(clone, parser, chart, tmp_path, monkeypatch):
-    """apply_jobs runs gate_untouched: Claw's new FX layer put directly above its Text group, as before round 5, takes
+def test_a_bake_runs_the_untouched_gate(clone, parser, chart, tmp_path, monkeypatch):
+    """apply_jobs runs the untouched gate (gate_dirty): Claw's new FX layer put directly above its Text group, as before round 5, takes
     MagentaSmorg and Exposure 1 off the title; the bake refuses region (review 2026-10-24)."""
     rel = "Auxiliary/Minions/Claw.psd"
     psd_path = _card(clone, rel)[0]
