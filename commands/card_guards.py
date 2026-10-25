@@ -721,7 +721,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
         if found.outcome == "re-exported":
             file = _save(out, job.png, found.data)
             result.writes.append({"path": job.png, "file": file, "sha": blob_sha(found.data), "kind": "png",
-                                  "line": f"re-exported by the bot's render of the PSD ({found.changed_px:,} px changed)"
+                                  "line": f"re-exported by the bot's render of {_drawn_as(found)} ({found.changed_px:,} px changed)"
                                           + "".join(f"; {note}" for note in png_export.miss_notes(found))})
             _crops(out, job.png, old_png, found.image, found.box)
             shown.update(numbered)
@@ -795,6 +795,12 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
             result.writes.append(write)
 
 
+def _drawn_as(found) -> str:
+    """What guard 1's main PNG is a render of: a tagged PSD saved showing another picture is drawn as picture 1."""
+    picture = found.numbers.get("picture")
+    return f"its picture 1 ({png_export.unchecked_line(found)})" if picture else "the PSD"
+
+
 def _rewrapped_pngs(out: str, result: Result, pushed, fixed, shown: dict) -> bool:
     """
     R8's redrawn box text (fixed.rewrapped) into the card's PNGs through guard 1's export (pushed PSD -> fixed one, over
@@ -819,7 +825,8 @@ def _rewrapped_pngs(out: str, result: Result, pushed, fixed, shown: dict) -> boo
     if found.outcome != "re-exported" or any(data == b"" for data, _ in found.numbered.values()):
         return left(found.why or next((why for data, why in found.numbered.values() if data == b""), ""))
     what = (["the Single-line Composer's rewrap"] if fixed.rewrapped else []) + [standards.PIXEL_LINES[k] for k in kinds]
-    line = f"re-exported for {' and '.join(what)} ({found.changed_px:,} px changed)"
+    line = (f"re-exported for {' and '.join(what)} ({found.changed_px:,} px changed"
+            + (", drawn as picture 1" if found.numbers.get("picture") else "") + ")")
     for path, data in [(result.job.png, found.data)] + [(p, d) for p, (d, _) in sorted(found.numbered.items()) if d]:
         write = next((w for w in result.writes if w["path"] == path and w["kind"] == "png"), None)
         result.writes = [w for w in result.writes if not (w["path"] == path and w["kind"] == "recompress")]

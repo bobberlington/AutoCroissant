@@ -65,6 +65,10 @@ FX_EXTRA = 2                                    # px beyond fx_pad around a chan
 OUTCOMES = ("re-exported", "current", "refused", "error")
 EXPORT = "export it in Photoshop"               # every refusal ends so (owner, 2026-10-22)
 UNCHECKED = "no stored image to cross-check the bot's PNG against: save the PSD with Maximize Compatibility on"   # told
+NO_IMAGE = "the PSD has no stored image"
+PICTURE = ("drawn as picture {drawn}, the PSD being saved showing {saved}, so not cross-checked against its own "
+           "image")   # told: a tagged PSD's Name.png (§7)
+PICTURE_KEPT = "the PSD was saved showing {saved}, so the bot drew picture {drawn} unchecked"
 KEPT = ("PNG kept as it is: the PSD has no stored image, and the bot's drawing differs from the PNG in only {px:,} px, "
         "which may be its own drawing noise; if the PNG is out of date, " + EXPORT)   # told
 RESTYLED = ("PNG kept as it is: the PSD has no stored image, and the bot draws no change for {what}, which the push "
@@ -629,7 +633,11 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
     tags = set(psd_edit.variants_of(new))
     tagged = {path: n for path in (numbered or {}) for n in [picture_number(path)] if n in tags and n != 1} \
         if len(tags) > 1 else {}
-    found = _export(old, new, old_png, {p: i for p, i in (numbered or {}).items() if p not in tagged})
+    rest = {p: i for p, i in (numbered or {}).items() if p not in tagged}
+    if len(tags) > 1 and not _saved_as_one(old, new):   # Name.png is picture 1, whatever the PSD was saved showing
+        found = _as_picture(old, new, old_png, rest, 1)
+    else:
+        found = _export(old, new, old_png, rest)
     for path, n in sorted(tagged.items()):
         found.numbered[path] = render_picture(old, new, numbered[path], n)
     if main and len(tags) > 1:
@@ -651,11 +659,30 @@ def render_picture(old: Optional[PSDImage], new: PSDImage, png: Image.Image, n: 
 
     Returns:
         (bytes, "") made, (None, "") unchanged, (b"", why) refused"""
-    with psd_edit.variant(new, n), (psd_edit.variant(old, n) if old is not None else nullcontext()):
-        found = _unchecked(old, new, png, None)
+    found = _as_picture(old, new, png, None, n)
     if found.outcome == "re-exported":
         return found.data, ""
     return (None, "") if found.outcome == "current" else (b"", found.why)
+
+
+def _saved_as_one(old: Optional[PSDImage], new: PSDImage) -> bool:
+    """Both PSDs saved showing picture 1: the stored composite is Name.png's, so _export's cross-check holds."""
+    return psd_edit.saved_view(new) == 1 and (old is None or psd_edit.saved_view(old) == 1)
+
+
+def _as_picture(old: Optional[PSDImage], new: PSDImage, png: Image.Image, numbered: Optional[dict], n: int) -> Export:
+    """_unchecked drawn as picture n (psd_edit.variant): the stored image shows the saved picture, so nothing is
+    cross-checked. numbers["picture"]: n and the picture the PSD was saved showing."""
+    if png.size != (new.width, new.height) or png.mode not in ("RGB", "RGBA"):
+        return Export("refused", G7, "G7")
+    refused = _no_composite(new)
+    if refused is not None:
+        return refused
+    saved = psd_edit.saved_view(new)
+    with psd_edit.variant(new, n), (psd_edit.variant(old, n) if old is not None else nullcontext()):
+        found = _unchecked(old, new, png, numbered)
+    found.numbers["picture"] = {"drawn": n, "saved": saved}
+    return found
 
 
 def new_picture(new: PSDImage, n: int) -> tuple:
@@ -982,17 +1009,24 @@ def unchecked_line(found: Export) -> str:
     """The line told for a G2 export (no stored image): UNCHECKED for a PNG made, KEPT or RESTYLED for one kept."""
     if not found.unchecked:
         return ""
+    picture = found.numbers.get("picture")
     if found.outcome == "re-exported":
-        return UNCHECKED
+        return PICTURE.format(**_picture_words(picture)) if picture else UNCHECKED
     if found.outcome != "current":
         return ""
+    line = ""
     if "kept" in found.numbers:
-        return KEPT.format(px=found.numbers["kept"])
+        line = KEPT.format(px=found.numbers["kept"])
     restyled = found.numbers.get("restyled")
-    if restyled:
+    if restyled and not line:
         what = restyled[0] + (f" and {len(restyled) - 1} more" if len(restyled) > 1 else "")
-        return RESTYLED.format(what=what)
-    return ""
+        line = RESTYLED.format(what=what)
+    return line.replace(NO_IMAGE, PICTURE_KEPT.format(**_picture_words(picture))) if line and picture else line
+
+
+def _picture_words(picture: dict) -> dict:
+    saved = picture.get("saved")
+    return {"drawn": picture["drawn"], "saved": f"picture {saved}" if saved else "no single picture"}
 
 
 def shows(png: Image.Image, psd: PSDImage, other: PSDImage) -> bool:
@@ -1003,6 +1037,11 @@ def shows(png: Image.Image, psd: PSDImage, other: PSDImage) -> bool:
     blends: Pandamonium's gradient, Dark_Ritual's 0.93% bad; review 2026-10-24). False when they draw the same. Both
     are drawn in the text gamma unless both have a stored image (the floor holds the PNG to them, not the blends).
     """
+    with psd_edit.variant(psd, 1), psd_edit.variant(other, 1):     # the PNG is picture 1 (untagged: no change)
+        return _shows(png, psd, other)
+
+
+def _shows(png: Image.Image, psd: PSDImage, other: PSDImage) -> bool:
     region, _ = changed_layers(other, psd)
     if not region or region[2] <= region[0] or region[3] <= region[1]:
         return False
