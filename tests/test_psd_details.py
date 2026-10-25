@@ -75,6 +75,15 @@ def test_record_shape_and_size(records, clone):
     assert _size(records[LAZARUS]) < 20_000                                         # 234 layers, 93 with effects
 
 
+def test_effects_switch_off_marks_every_effect_off(clone):
+    """Springtrap's Ability has a Color Overlay under its Effects switch, off: the mock-up must not draw salt pills."""
+    from psd_tools import PSDImage
+    rel = "Auxiliary/Minions/Springtrap.psd"
+    if not (clone / rel).exists():
+        pytest.skip(f"{rel} not in the clone")
+    assert pd._effects(list(PSDImage.open(str(clone / rel)).descendants()))["Text/Ability"] == ["ColorOverlay (off)"]
+
+
 def test_stats_encoding(records):
     assert records[DOOMER]["stats"] == {"hp": "template", "def": "template", "atk": "template", "spd": "template"}
     assert records[CANNON]["stats"] == {"hp": "template", "def": "template", "atk": "two-row", "spd": "template"}
@@ -89,7 +98,8 @@ def test_text_layers_and_template(records):
     assert ability["visible"] and ability["text"].startswith("Has stats equal to")
     assert doomer["template"] == {"name_layer": "Text/Name", "ability_layers": ["Text/Ability"], "deviations": ["icons as images"]}
     assert doomer["smart_objects"][:2] == ["images/Background (1)", "Stars/Warpstar"] and doomer["overlays"] == []
-    assert doomer["fx"] == ["Ability FX: (BOT)"] and ["Ability FX: (BOT)", "pixel", True] in doomer["tree"]   # the badge's gradient
+    badge = ["Ability FX: (BOT)"] if doomer["fx"] else []      # the badge's gradient; retired by the 2026-10-25 batch
+    assert doomer["fx"] == badge and (["Ability FX: (BOT)", "pixel", True] in doomer["tree"]) == bool(badge)
     assert doomer["fonts"]["stoogedings-Regular"]["layers"] == ["Text/Ability"]                        # the (BOT) badge run
     assert doomer["effects"]["Creature Types"] == ["Stroke (off)"] and doomer["effects"]["Creature Types/Light"] == ["DropShadow", "OuterGlow"]
     cannon = records[CANNON]

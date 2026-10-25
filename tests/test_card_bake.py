@@ -31,7 +31,7 @@ import commands.card_bake as cb  # noqa: E402
 import commands.git_commit as gc  # noqa: E402
 import commands.github_api as ga  # noqa: E402
 import commands.psd_edit as pe  # noqa: E402
-from conftest import (CLONE, PLAIN_DOOMER, REPO, Reply, at_rev, blob_sha_bytes as _sha, fork_reason, painted,  # noqa: E402
+from conftest import (BADGED, CLONE, PLAIN_DOOMER, REPO, Reply, at_rev, blob_sha_bytes as _sha, fork_reason, painted,  # noqa: E402
                       story_sync as _story_sync, text_engine as _text_engine)
 from golden_cards import VOCAB  # noqa: E402
 
@@ -1176,17 +1176,19 @@ def test_dry_run_ability_bake_regenerates_fx_layers(github, tmp_path, clone):
 @fork_text
 def test_ability_bake_rebuilds_a_badge_card(github, clone):
     """Mini Doomer carries "Ability FX: (BOT)" (queue A's badges): an ability edit bakes (BUG 2), and the report says the
-    layer went with the badge the edit removed."""
+    layer went (badge FX layers are retired, owner 2026-10-25)."""
     chart = clone / pe.STATUS_CHART
     if not chart.exists():
         pytest.skip("no status chart")
     files = github.files_at(github.head)
     files[pe.STATUS_CHART] = chart.read_bytes()
+    for ext in (".psd", ".png"):                # with its badge layer, before TTSCardMaker's batch retired it
+        files[DOOMER[:-4] + ext] = at_rev(clone, BADGED, DOOMER[:-4] + ext)
     files[cb.EDITS_PATHS[0]] = _edits({"Mini Doomer": {"ability": "Die.", "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer ability")
     text, commits = cb.run(dry_run=True)
     assert commits == [] and "## Baked (1)" in text and "Would commit: Card edits: 1 baked." in text
-    assert "; Ability FX: (BOT) deleted: its words left the ability; not committed (dry run)" in text
+    assert "; Ability FX: (BOT) deleted: badge FX layers are retired; not committed (dry run)" in text
 
 
 # ========================

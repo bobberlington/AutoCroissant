@@ -25,7 +25,7 @@ by **impossibility-cards-reference §4.1**. This skill only summarizes it.
 
 | Thing | Path (TTSCardMaker unless noted) | Generated or source |
 |---|---|---|
-| The font | `MDW/Fonts/stoogedings.ttf` (5,721,356 bytes since 8ec1b92, 2026-10-21; 5,136,060 before; 5,736,204 with any-case badges; 6,966,396 with `:glow` (0.3 em halos) on branch work/glow-tokens, §1.8. PostScript name `stoogedings-Regular`, family `stoogedings`) | Generated, but committed |
+| The font | `MDW/Fonts/stoogedings.ttf` (5,721,356 bytes since 8ec1b92, 2026-10-21; 5,136,060 before; 5,736,204 with any-case badges; 6,966,396 with `:glow` (0.3 em halos) on branch work/glow-tokens, §1.8; 7,269,696 with the `salt` shapes, §1.9. PostScript name `stoogedings-Regular`, family `stoogedings`) | Generated, but committed |
 | Build script | `MDW/Fonts/stoogedings-src/build_stoogedings.py` | Source |
 | Manifest | `MDW/Fonts/stoogedings-src/stoogedings.json` (icon names, aliases, codepoints, tint modes) | Rewritten by every build. Hand edits survive |
 | Build deps | `MDW/Fonts/stoogedings-src/requirements.txt` (fonttools, opencv-python-headless, numpy, pillow) | Source |
@@ -64,6 +64,7 @@ Set the text in the **stoogedings** font in Photoshop. These ASCII sequences tur
 | `★` (U+2605) | The gold `star` icon | `[star]` |
 | A PUA character (U+E000–U+E05A) inserted from the Glyphs panel | That icon | `[name]` |
 | `(1GCD)`, `(1/2CD)`, `(OYT)`, `(Action)` and the other tags (341, §1.2), in any letter case | A colored pill badge, the tag's own one (`(1gcd)` draws (1GCD)). The text is still what was typed | The text, unchanged (`(1gcd)` stays `(1gcd)`) |
+| A badge or `[fire:sticker]` with **Stylistic Alternates** on (Character panel, OpenType; §1.9) | One colour, in the text color: a pill outline with solid letters; a thin outline round the `:tint` icon | Unchanged |
 
 Matching rules inside the font (build_stoogedings.py `spellings()` and the MARK lookup):
 - Matching is **case-insensitive only inside brackets**. After `[`, every character maps to a lowercase `.tk` copy, so
@@ -275,6 +276,7 @@ contextual lookups:
 | CASE | Chaining contextual | `(` + a tag in any case + `)`: each letter through FOLD_UP/FOLD_LOW into the tag's own case; 341 Format-3 subtables |
 | BADGES | Ligature | `(` tag `)` → badge |
 | GLOW_TOKENS, GLOW_LAYERS (§1.8) | Ligature, Multiple (Extension type 7) | TOKENS and LAYERS for `:glow` / `:darkglow`. Last, so the eight above keep their bytes |
+| SALT_BADGES, SALT_STICKERS (§1.9) | Single, Ligature | Under `salt` only: badge → `badge_*.salt`; a `:sticker`'s [outline][icon][spacer] → `icon_*.sticker.salt` |
 
 Every icon also gets a plain TrueType outline in `glyf` as a fallback for renderers without SVG support. The SVG table
 holds 523 documents (91 icons + 91 no-signs + 341 badges; 522 with 340 before 2026-10-22, 252 with 70 before 2026-10-21;
@@ -388,10 +390,43 @@ tests/test_badge_parity.py):
   `ICON_SCAN_PATTERN`, `psd_edit.TOKEN`, `type_emojis.TOKEN_PATTERN` and the site's `text.js` read 1-52 since
   2026-10-23 (48 before; `test_token_limit_fits_every_icon` keeps them in step with the manifest).
 - **Bakes set glow tokens** since the fork's `cards-20261024b` (2026-10-24; before, it drew the halo as a solid block and
-  the bake refused). A stroked Text group strokes the halo into a black disc, as Photoshop does. Under a badge FX layer
-  or a tint a glow is told as any see-through icon, and a halo onto the stars or a layer is told too (owner
+  the bake refused). A stroked Text group strokes the halo into a black disc, as Photoshop does. Under a tint a glow
+  is told as any recoloured icon, and a halo onto the stars or a layer is told too (owner
   2026-10-24: content problems bake, told); on a fork without the halos (`psd_edit.glow_halos`) it is a runner error
   (no verdict; retried once the fork is reinstalled).
+
+### 1.9 One-colour badges and stickers under overlays (owner 2026-10-25; branches `work/badgealt`, not landed)
+
+A Color, Gradient or Pattern Overlay repaints every pixel of the layer, so a colour badge or `:sticker` printed as a
+blob. The font now has a one-colour shape for each, picked by OpenType **Stylistic Alternates** (`salt`; Photoshop:
+Character panel menu > OpenType > Stylistic Alternates). The text stays as typed, so parsers and searches see no change.
+- Badge (341): `badge_*.salt`, a pill outline (`BADGE_LINE` 50 units) with solid letters, same advance. The owner picked
+  this look (B) over a cut-out pill (A); the trial `ss01`/`ss02` are gone.
+- `:sticker` (91): `icon_*.sticker.salt`, one plain glyph: an outline (`STICKER_LINE` 40 units, the outer edge of the
+  sticker's outline) and the `:tint` icon inside, with a gap between. Same advance as the sticker.
+- Both take the text color, so the overlay colors them like the letters. The timing colors are lost there (accepted).
+- Default glyphs, SVG documents, cmap and default shaping are byte-identical; the 432 new glyphs and the two lookups come
+  last. `stoogedings.ttf` 7,269,696 bytes.
+- Photoshop keeps the flag only in the document's Txt2 story (feature key `28`, or `/StylisticAlternates`), never in
+  the layer's TySh. The fork (branch `badgealt`) reads it there, shapes those runs with `salt`, and its
+  `set_span_style(..., StylisticAlternates=True)` writes the story alone.
+- The bake (AutoCroissant `psd_edit.one_colour`, `set_alternates`): an Ability whose layer or group has an enabled
+  overlay (the layer's Effects switch on too) gets the flag on every badge and `:sticker` set in the icon font, typed
+  or kept, and a typed character next to one loses it. A badge typed in a body font (Butterfly's (OD)) is left alone.
+- The badge FX layers (`Ability FX: (1CD)`, 31 cards, std-batch2 and queue A) are retired: an ability edit deletes
+  one and says so. Word FX layers (`Ability FX: Burning`) stay as they were. TTSCardMaker `work/badgealt` drops the 31
+  (one no-op ability bake each with the new font, on copies; 27 have an overlay and take the alternates). Binge Eater,
+  Scapular, Black Hole and How To Jump have a blend and no overlay: without the layer the blend recolours their colour
+  badges (Binge Eater's blue (1CD) pale cyan, the red (BOGT)/(ENDGT) pink); the bake's note says so; owner to accept. Their parses are unchanged;
+  the goldens of Mini Doomer, Wham Bam Bone and Black Light Bulb need a blob re-pin (`tests/make_goldens.py`).
+- The website's mock-up draws the same shapes when the details record shows such an overlay (`mockup.js oneColour`;
+  `psd_details` marks every effect " (off)" when the layer's Effects switch is off: Springtrap, The Puppet).
+- `MDW/Scripts/Effect Layers.jsx`: Add and Update all refuse a phrase that takes in a badge or icon (no new badge
+  layers; Update all lists an old one as failed).
+- Landing order: (1) fork: fast-forward `main` to `badgealt` (c17e0734), tag `cards-20261025b`, push both; (2)
+  AutoCroissant: `requirements-cards.txt` pins `cards-20261025b` (an older fork raises ImportError in every bake that
+  meets a badge under an overlay); merge, push, deploy the jetson with the re-pin; (3) TTSCardMaker `work/badgealt`.
+- Developers must reinstall the font and restart Photoshop, or Photoshop shows the old glyphs.
 
 ## 2. The card-browser website
 
@@ -957,7 +992,7 @@ Survey: 53 overlays on 40 cards (impossibility-cards-reference §4.2).
    - If the mask has more pixels than the key layer itself, it throws instead of building a wrong layer.
 3. **Pixels:** **Layer via Copy** (on-canvas pixels only) from an untouched rasterized duplicate gives a pixel layer named `<text layer> FX: <words>`. Its pixels are the card's own.
 4. **Placement:** the layer goes above the text's top group, outside the group's stroke and shadow. The words keep the card's font, size and color.
-   - **The edit pipeline makes the same layers (AutoCroissant `commands/psd_edit.py` `set_text_layer`, design §5 step 4 and §7 idea 14):** since BUG 2 (2026-10-23, branch `work/fx-rebuild`, not landed) an ability edit runs this script's **Update all** on the new text: every `<layer> FX: …` layer is cut again in place (same key copy, phrase matching and badge rule; its record, style and place kept), a phrase gone from the text leaves the name, a layer with none left goes, every layer keeps its own style (q6, unattended call 2026-10-23, owner to confirm: the chart's style only on a new layer), and a styled status word no layer covers gets one above `Text` (the **Add** naming). Badge layers (queue A's gradient cards), layers carrying a chart status's style (Monkey D Goofy's `1#1`) and, since 2026-10-23 (owner), layers in any other style (Fire Staff's Smoldering stroke) are rebuilt, each in its own style. A layer in a style of its own stays on its own words (review: a "1" typed before Goofy's renames it `1#2`, which this script's Update all cuts on the same "1"; a whole-word "1" anywhere refuses, since `1#1` would move to it). A typed badge or icon token is set in stoogedings at the card's own badge style (owner 2026-10-23), so on a badge card it joins the badge layer as this script's Update all would cut it. Checked against this script's Update all run in Photoshop on 8 baked copies: same boxes, style and place, IoU 0.955-1.0, no differing pixel on the shared ink (2026-10-21: Convert overlays, IoU 0.966 Gasoline / 0.937 Royal Eradicator Main Cannon).
+   - **The edit pipeline makes the same layers (AutoCroissant `commands/psd_edit.py` `set_text_layer`, design §5 step 4 and §7 idea 14):** since BUG 2 (2026-10-23, branch `work/fx-rebuild`, not landed) an ability edit runs this script's **Update all** on the new text: every `<layer> FX: …` layer is cut again in place (same key copy, phrase matching and badge rule; its record, style and place kept), a phrase gone from the text leaves the name, a layer with none left goes, every layer keeps its own style (q6, unattended call 2026-10-23, owner to confirm: the chart's style only on a new layer), and a styled status word no layer covers gets one above `Text` (the **Add** naming). Layers carrying a chart status's style (Monkey D Goofy's `1#1`) and, since 2026-10-23 (owner), layers in any other style (Fire Staff's Smoldering stroke) are rebuilt, each in its own style. A layer in a style of its own stays on its own words (review: a "1" typed before Goofy's renames it `1#2`, which this script's Update all cuts on the same "1"; a whole-word "1" anywhere refuses, since `1#1` would move to it). A typed badge or icon token is set in stoogedings at the card's own badge style (owner 2026-10-23). Badge layers (queue A's gradient cards) are retired since 2026-10-25: the edit deletes one, and this script's Add and Update all refuse a phrase that takes in a badge or icon (§1.9). Checked against this script's Update all run in Photoshop on 8 baked copies: same boxes, style and place, IoU 0.955-1.0, no differing pixel on the shared ink (2026-10-21: Convert overlays, IoU 0.966 Gasoline / 0.937 Royal Eradicator Main Cannon).
 5. **Swatch colors:** `readAco` parses `MDW/Status Effects.aco` and `MDW/Attributes.aco` (101 RGB swatches) in ExtendScript.
    - **Add** (checkbox, on by default) and the batch's `AUTO_STYLES` color the words with the swatch of the same name first (`colorWords`). Two-tone statuses use "<name> 1"; their `.asl` gradient draws the rest.
    - **Convert overlays** keeps the overlay's own color, and notes when it differs from the swatch.

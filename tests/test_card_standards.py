@@ -70,7 +70,7 @@ def test_badge_tags_are_the_fonts_glyphs(clone):
     font = clone / "MDW/Fonts/stoogedings.ttf"
     if not font.exists():
         pytest.skip("no stoogedings.ttf")
-    glyphs = [n for n in TTFont(str(font)).getGlyphOrder() if n.startswith("badge_")]
+    glyphs = [n for n in TTFont(str(font)).getGlyphOrder() if n.startswith("badge_") and "." not in n]   # not .salt
     tags = {("-" + n[7:] if n.startswith("badge_m") else n[6:]).replace("_", "/") for n in glyphs}
     assert tags == set(cs.BADGE_TAGS) and len(cs.BADGE_TAGS) == len(set(cs.BADGE_TAGS)) == 341
 
@@ -294,3 +294,54 @@ def test_nothing_fixed_on_rule_pages_or_waived(clone):
     issue = cs.Issue("R9", "x", ("Name",), fix=True)
     assert cs.fix(b"", "Auxiliary/Rulebook/02_A.psd", [issue], "unused").data == b""
     assert cs.fix(b"", "Items/X.psd", [cs.Issue("R9", "x", fix=True, waived="w")], "unused").data == b""
+
+
+# ========================
+# R8: the Single-line Composer, set unsaid
+# ========================
+EVERY_LINE = "86733bd2"         # PoD08MOAB's Name pushed Every-line (point text)
+
+
+def test_composer_set_single_line(clone, tmp_path, monkeypatch):
+    rel = "Auxiliary/Minions/PoD08MOAB.psd"
+    data = at_rev(clone, EVERY_LINE, rel)
+    assert not any(issue.code == "R8" for issue in cs.check(PSDImage.open(BytesIO(data)), rel, cs.Context()))
+    fixed = cs.fix(data, rel, [], str(tmp_path / "work"))
+    assert fixed.composer == ["Name"] and fixed.applied == [] and len(fixed.data) == len(data)
+    old, new = PSDImage.open(BytesIO(data)), PSDImage.open(BytesIO(fixed.data))
+    assert cs.composer_layers(new) == [] and psd_edit.read_name(new) == psd_edit.read_name(old)
+    name = [next(layer for layer in psd.descendants() if layer.name == "Name") for psd in (old, new)]
+    assert cs.every_line(name[0]) and not cs.every_line(name[1])
+    assert name[0].topil().tobytes() == name[1].topil().tobytes() and old.composite().tobytes() == new.composite().tobytes()
+    fonts = clone / "MDW" / "Fonts"
+    if fonts.is_dir():                          # the fork lays it out alike (it reads no composer)
+        from psd_tools.composite.text import render
+        drawn = [render(layer, fonts=psd_edit.font_map(str(fonts))) for layer in name]
+        assert drawn[0].bbox == drawn[1].bbox and drawn[0].rgba.tobytes() == drawn[1].rgba.tobytes()
+        # box text: an Ability set Every-line is set back when its lines lay out as stored, left when one would move
+        ability = next(layer for layer in new.descendants() if layer.name == "Ability")
+        records = {psd_edit._record_index(ability)}
+        for props, key in cs._composer_values(new, records).values():
+            props[key].value = True
+        psd_edit.save_psd(new, str(tmp_path / "box.psd"), update_preview=False)
+        assert cs.single_line(str(tmp_path / "box.psd"), str(tmp_path / "out.psd"), lambda names: str(fonts)) == (["Ability"], [])
+        monkeypatch.setattr(cs, "LINE_IOU", 1.01)
+        names, left = cs.single_line(str(tmp_path / "box.psd"), str(tmp_path / "out2.psd"), lambda names: str(fonts))
+        assert names == [] and left[0][0] == "Ability" and "would move" in left[0][1]
+        # best effort: a render failure leaves that layer (never told), the Name and R9 still fixed
+        from psd_tools.composite.text.fonts import TextRenderError
+        monkeypatch.setattr(cs, "LINE_IOU", 0.9)
+        monkeypatch.setattr("psd_tools.composite.text.render", lambda *a, **k: (_ for _ in ()).throw(TextRenderError("glyph")))
+        both = new.descendants()
+        for layer in both:
+            if layer.name == "Name":
+                records.add(psd_edit._record_index(layer))
+        for props, key in cs._composer_values(new, records).values():
+            props[key].value = True
+        psd_edit.save_psd(new, str(tmp_path / "both.psd"), update_preview=False)
+        with open(tmp_path / "both.psd", "rb") as fh:
+            fixed = cs.fix(fh.read(), rel, [], str(tmp_path / "work2"), None, lambda names: str(fonts))
+        assert fixed.composer == ["Name"] and fixed.composer_left == [("Ability", "TextRenderError: glyph")] and fixed.data
+        monkeypatch.setattr(cs, "single_line", lambda *a: 1 / 0)
+        fixed = cs.fix(data, rel, [], str(tmp_path / "work3"))
+        assert fixed.composer == [] and fixed.composer_left[0][1].startswith("ZeroDivisionError") and not fixed.data

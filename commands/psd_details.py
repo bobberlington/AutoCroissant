@@ -173,7 +173,8 @@ def _effects(layers: list) -> dict:
     out: dict = {}
     for layer in layers:
         try:
-            names = [type(e).__name__ + ("" if e.enabled else " (off)") for e in layer.effects]
+            on = layer.effects.enabled              # the layer's Effects switch off: every effect off (Springtrap's)
+            names = [type(e).__name__ + ("" if on and e.enabled else " (off)") for e in layer.effects]
         except Exception:                       # an effects block psd-tools can't read
             names = ["unreadable"]
         if names:

@@ -319,7 +319,17 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    under a tinted Ability (`_tinted`: an enabled colour, gradient or pattern overlay at any opacity, or a blend other
    than Normal, its own or a group's) every icon-font glyph is covered by a badge FX layer, every ink pixel of it
    (99% let a skull's eyes glow; review 2026-10-24), unless it was bare before the edit too (Blood Bomb's Pin Light
-   `[machine]`, the one such card on main). An `"own"` or `"styled"` layer whose
+   `[machine]`, the one such card on main). **Superseded 2026-10-25 (owner):** badge FX layers are retired. Under an
+   enabled Color, Gradient or Pattern Overlay on the Ability or its group (`one_colour`) every badge and `:sticker`,
+   typed or kept, set in the icon font (a badge in a body font, Butterfly's (OD), stays as it is) takes the icon font's
+   Stylistic Alternates (`set_alternates`: an outlined pill, an outlined icon, in the text colour; written to the Txt2
+   story only, as Photoshop does; the fork's `cards-20261025b` reads and writes it), so the overlay colours them like
+   the letters; an edit deletes a badge FX layer, told ("deleted: badge FX layers are retired", and under a blend with
+   no overlay "; the Ability's look (its Pin Light blending) now changes its badges' colours": Binge Eater, Scapular,
+   Black Hole, How To Jump), and `bare_icons` counts only the icon-font glyphs not drawn so (`see_through_icons`, the
+   badge-layer cut, its renames and refusals are gone; this paragraph's badge-layer rules above are history). Word FX
+   layers are unchanged; `Effect Layers.jsx` refuses a phrase that takes in a badge or icon.
+   TTSCardMaker `work/badgealt` drops the 31 cards' badge layers. An `"own"` or `"styled"` layer whose
    occurrence the edit changed rather than removed (characters of it kept, its phrase gone: Flameblade's "Attacks
    inflict 2T" made "3T", Palace of Shadow's "+2 DEF" made "+3 DEF", Mr Krabs' "2T1" made "3T1", Morpho Knight's
    "+2/4/6 ATK") refuses `unsupported-card` (ruling B: they stay on the characters they covered, refused where that is
@@ -409,8 +419,9 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    spellings). The re-parse reads a typed "★" as
    "[star]" on the edit's side only (`canonical_tokens(chars=False)` on the parse's): one left in the body font reads
    back as "★" and refuses `reparse`. A typed badge or token under a tinted Ability (`_tinted`: an enabled Color,
-   Gradient or Pattern Overlay at any opacity, or a blend mode other than Normal, its own or a group's) with no badge
-   FX layer to restore its colours refuses `unsupported-card` (review 2026-10-23: only an opaque Normal overlay
+   Gradient or Pattern Overlay at any opacity, or a blend mode other than Normal, its own or a group's) refuses
+   `unsupported-card` unless an overlay gives it the font's one-colour shape (since 2026-10-25, owner: `one_colour`,
+   Stylistic Alternates; badge FX layers are retired) (review 2026-10-23: only an opaque Normal overlay
    counted, so the 18 Pin Light Isaac items without a badge layer, Soul of Eden's typed (2CD) white on cyan, and Ice
    Staff's two 69% gradients printed washed badges; std-batch2's fix for Pin Light badges is a badge FX layer, which
    all 4 Pin Light cards with badges carry). On main 71 Abilities are tinted: 29 carry a badge layer (every badge
@@ -426,7 +437,7 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    website shows a title's "[fire:]" as its letters, as the card does), a title under an overlay, blend, opacity or clipped layer (`_tinted`: 367 of 728 titles on main, mostly
    gradient overlays; also a Satin, Inner Glow or Inner Shadow, and a group's overlays: The Radiance, Captain Spaceboy)
    refuses `unsupported-card`, words typed after a title's token take the title's style (`title_styles`), and `gate_fx` runs `bare_icons`,
-   `see_through_icons`, `lettered_icons` and `unshaped_icons` on the title (`titles`, `_gate_icons`). A stroke, shadow,
+   `lettered_icons` and `unshaped_icons` on the title (`see_through_icons` went with the badge layers, 2026-10-25) (`titles`, `_gate_icons`). A stroke, shadow,
    glow or bevel draws round the icon as Photoshop does. A timing badge typed there refuses `unsupported-card` (the
    ruling names tokens; the website shows a title as plain words): owner to rule. The parser reads a title's icons
    as its name (`title_layers`), not as a header's types or stars: the re-parse read Bench's "[fire]" as a fire type
@@ -448,9 +459,9 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    2026-10-21 review). FX layers back as declared after the reopen: the names in order, the new ones
    visible, styled, directly above the ability's top-level group, no overlay word layer showing. Gate `gate_fx` (BUG 2,
    2026-10-23) measures them on the saved card with the fork's text geometry (`text_geometry`: each glyph's ink box in
-   the new layout): every FX layer inks only inside its phrases' glyph boxes (a badge layer also the icon font's) padded
+   the new layout): every FX layer inks only inside its phrases' glyph boxes padded
    by `FX_BOX_PAD` (3 px), covers `FX_COVER` (99%) of the Ability's ink in its words' boxes that no other glyph's box
-   reaches (a badge layer every ink pixel of its badges and icons there: review 2026-10-24), one the edit cut holds the
+   reaches (badge layers had their own rules until 2026-10-25, when they were retired), one the edit cut holds the
    Ability's own pixels byte for byte, and a `"styled"` or `"own"` layer's name
    still reaches the characters of it the edit kept (`Edit.held`, independent of `follow_fx`; a range counts as kept
    only when every character of it is, `kept_spans`; `held_words` picks the layers by layer, not name, since a renamed
@@ -1025,14 +1036,14 @@ carry enabled effects (which one the row shows is ambiguous) and the overlay wor
 layers in no chart style were refused too until 2026-10-23: rebuilt in their own style since; since BUG 2, 2026-10-23,
 also an FX layer whose words would fall in a badge, a styled or own-style FX layer whose JSX name would move to other
 words, two FX layers renumbered onto one name, a styled status word a digit touches beside a whole-word one, an FX
-layer that is no pixel layer; since the evening, a badge or token typed under the Ability's overlay with no badge FX
-layer, letters left in the icon font it draws no badge of; since the phase 2 review, a typed badge under any tint
-(overlay at any opacity, non-Normal blend) with no badge FX layer, letters a deletion leaves in the icon font, a badge
-layer whose badges all left while the icon font draws something, an edit inside an own-style or styled FX phrase, an FX
-layer phrase the ability lacks), since 2026-10-23 a bar or a digit mask wholly off the canvas (`hp: the bar 'Hp Dark' lies outside the card ...`,
+layer that is no pixel layer; letters left in the icon font it draws no badge of; since the phase 2 review, a typed
+badge or token under a tint that is no overlay (a non-Normal blend, opacity, a clipped layer; under an overlay it takes
+the one-colour shape since 2026-10-25: `the Ability's look (its Pin Light blending) changes the typed badge's
+colours`), letters a deletion leaves in the icon font, an edit inside an own-style or styled FX phrase, an FX
+layer phrase the ability lacks; the badge-layer notes went with the badge layers, 2026-10-25), since 2026-10-23 a bar or a digit mask wholly off the canvas (`hp: the bar 'Hp Dark' lies outside the card ...`,
 `hp: digit 5 of the bar 'Hp Dark' lies outside the card ...`), `font` also a typed character its font has no glyph
-for (`ability: '☃' has no glyph in its font (drawn as a box)`), `reparse` also an icon-font glyph a tinted Ability
-leaves without a badge FX layer (`(1cd): under the Ability's look (its Color Overlay) with no badge FX layer over it`; the look names the first overlay, inner glow/shadow, satin, blend, opacity or clipped layer it finds),
+for (`ability: '☃' has no glyph in its font (drawn as a box)`), `unsupported-card` also an icon-font glyph whose colours a tinted Ability
+now changes, not drawn in one colour on purpose (`ability: (1cd): under the ability's look (its Pin Light blending), which changes their colours`; the look names the first overlay, inner glow/shadow, satin, blend, opacity or clipped layer it finds),
 `stat>10` says whether the value is above 20, needs a second row, or needs a Bottom `10` marker, `parity` on a
 styled digit means the render missed the bar (since 2026-10-23: past the floor), no longer that the digit is styled, and `styled-word` means only that this
 psd-tools cannot cut glyph pixels or make or refill a pixel layer (the fork's text engine is missing), or that an FX layer's

@@ -395,7 +395,7 @@ The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes 
   A stat bar with a digit mask wholly off the canvas (Green Mage's four bars, the only ones) refuses `unsupported-card`
   as a final verdict; it was an `error` that failed the run until work/bake-verdicts (2026-10-23).
 - **Ability FX layers (BUG 2, branch work/fx-rebuild, not landed):** an ability bake makes the card's `Ability FX: ...`
-  layers again as Effect Layers.jsx's Update all does (the gradient cards' badge layers included): each cut in place over
+  layers again as Effect Layers.jsx's Update all does (badge layers apart: retired 2026-10-25, deleted, told): each cut in place over
   its words' new places, its own style and place kept (q6); a status layer stays on its status's own words (a numbered
   one renumbered, Standstill's `Frozen In Time#2` -> `#3`; "Frozen" made "Frozen In Time" drops the Frozen layer and
   makes a Frozen In Time one in the chart's style). The report says when a layer is deleted (its words left the text,
@@ -410,16 +410,15 @@ The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes 
   The commit line and the website's verdict reason carry the FX notes too.
 - **Typed badges and icons (owner 2026-10-23, same branch):** a timing tag ("(1CD)", any case) or a token the icon
   font draws ("[fire]", "[fire:no]", "[Ice:Sticker]") typed anywhere in an ability is set in the stoogedings font at
-  the card's own badge or token style (on a card with none, at the text's style, the font added to the PSD); on a
-  gradient badge card it joins the badge layer, and so does a badge edited by deleting letters ("(1GCD)" made "(1CD)").
+  the card's own badge or token style (on a card with none, at the text's style, the font added to the PSD). Under an
+  enabled Color, Gradient or Pattern Overlay on the Ability or its group every badge and `:sticker`, typed or kept, gets
+  Stylistic Alternates: the icon font's one-colour shapes (owner 2026-10-25; ttscardmaker-companion §1.9).
   A typed "★" is set in the icon font (the gold star). A typed badge or token is unstretched (`unstretch`: its
   HorizontalScale set so it prints as the font draws it under the layer's scales, as designers set theirs; Monster
-  Meat's [fire] printed 2.6x wide). Told, not refused (owner 2026-10-24): a badge under a tinted Ability (any colour,
-  gradient or pattern overlay, a Pin Light or other non-Normal blend) with no badge FX layer (Cat, Ice Staff, the Pin
-  Light Isaac items without one), a `[type]` token on a card whose type icons are image layers in the text (Nebulous
+  Meat's [fire] printed 2.6x wide). Told, not refused (owner 2026-10-24): another badge or icon under a tinted Ability
+  (an overlay for a colour icon, a Pin Light or other non-Normal blend for any: the Pin Light Isaac items), a `[type]` token on a card whose type icons are image layers in the text (Nebulous
   Precipice), letters left in the icon font it draws no badge of ("(abc)", "(GCD)"), a token the website shows as an
-  icon but the font prints as letters ("[fire:]"), a typed character its font has no glyph for, a see-through icon
-  under a badge layer, a timing badge typed in a title (printed as plain words, as the website shows it). An edit
+  icon but the font prints as letters ("[fire:]"), a typed character its font has no glyph for, a timing badge typed in a title (printed as plain words, as the website shows it). An edit
   keeps the card's own icon spellings ("[dark:sticker]" where
   the website shows "[dark]"). Typed `:glow`/`:darkglow` tokens bake on the `cards-20261024b` pin (its halo as
   Photoshop draws it; on a stale install of an older fork the edit is a runner error, no verdict, retried once the
@@ -466,7 +465,7 @@ without its PNG gets the PNG the bake would make (owner's ruling 2026-10-22: the
 renders the changed layers in the card's ICC export mode and the old PNG takes the change; the PSD's stored composite is
 never written, only a cross-check that can refuse; a refusal is told as "PNG not made: ...; export it in Photoshop";
 nothing when the PNG already shows the PSD, pushed before it, a new card's too), the pushed PSDs are checked against the
-card standards (fonts, R7, until 2026-10-24: since then font-check.yml's alone, branch work/py314) (the owner's one easy fix, R9's Txt2 sync; R11's exact-name rename is built but told
+card standards (fonts, R7, until 2026-10-24: since then font-check.yml's alone, branch work/py314) (the owner's easy fixes, R9's Txt2 sync and, since 2026-10-25, R8's Single-line Composer, which is never told: no comment, no post, only the bot commit's message "Single-line Composer on N cards"; R11's exact-name rename is built but told
 until the owner says yes, `card_standards.AUTO_FIX`; R3 and R4 keep only the real issues, several visible Ability layers, a hidden one
 with words the parser reads nowhere and a hidden or rasterized Name layer (kept unattended, for the owner to confirm): their
 template layout was dropped by the owner on 2026-10-23), one commit comment, one Discord post to the standards channel

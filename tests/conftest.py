@@ -100,6 +100,14 @@ def blob_sha(path) -> str:
 
 
 PLAIN_DOOMER = "38c55bd361b60b99b9521c43cf9577213845a4ce^"   # Mini Doomer before queue A's "Ability FX: (BOT)" badge layer
+BADGED = "e51649baa4143fde379f9fa9d860a0003bfb4380"          # main before the 31 badge FX layers were retired (2026-10-25)
+
+
+def salt_font(clone) -> bool:
+    """Whether the clone's stoogedings has the one-colour Stylistic Alternates (TTSCardMaker work/badgealt)."""
+    from fontTools.ttLib import TTFont
+    font = clone / "MDW/Fonts/stoogedings.ttf"
+    return font.exists() and "salt" in {r.FeatureTag for r in TTFont(str(font), lazy=True)["GSUB"].table.FeatureList.FeatureRecord}
 
 
 def at_rev(clone, rev: str, rel: str) -> bytes:
