@@ -227,6 +227,7 @@ class IconPlan:
     copies: list = field(default_factory=list)   # (source, dx, dy, name): a star copied above itself, then moved
     icons: list = field(default_factory=list)    # (Types/ stem, canvas box, reference layer): a type icon made in the box
     done: list = field(default_factory=list)     # set_icons(): ("copy", source, copy, dx, dy) and ("made", layer, blocks)
+    first: str = ""                              # plan_types(): the template whose spot a card's first type icon takes
 
 
 @dataclass
@@ -4456,6 +4457,7 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
                                            f"{moved} moved" if moved else "",
                                            f"{len(plan.icons)} made from Types/" if plan.icons else "",
                                            f"the first at {first}'s spot: check it" if first else "") if part)
+    plan.first = first or ""
     return plan
 
 
@@ -4498,7 +4500,7 @@ def _make_icon(psd: PSDImage, types_dir: str, stem: str, box: tuple, reference):
     _issue_id(psd, layer)
     if getattr(reference, "_psd", psd) is not psd:  # a template's icon: the card's types group, else the top
         parent = _types_group(psd)
-        layer.move_to(parent, index=len(parent))
+        layer.move_to(parent, index=len(parent) - (1 if layer.parent is parent else 0))   # the top of it
         return layer
     chain = _clip_chain(reference)
     parent = reference.parent
@@ -4596,7 +4598,8 @@ def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None) ->
     region = union_box([_pad(box, _reach(layer), psd) for box, layer in boxes if box[2] > box[0] and box[3] > box[1]])
     layers = plan.hide + plan.show + [layer for layer, _, _ in plan.moves] + [done[2] if done[0] == "copy" else done[1]
                                                                              for done in plan.done]
-    return Edit(plan.field, plan.old, plan.new, layers, [], region, icons=plan)
+    notes = [f"types: the first type icon is placed at {plan.first}'s spot: check it"] if plan.first else []
+    return Edit(plan.field, plan.old, plan.new, layers, [], region, icons=plan, notes=notes)
 
 
 def index_icons(edit: Edit, before: dict, after: dict) -> None:
