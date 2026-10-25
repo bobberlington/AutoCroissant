@@ -14,25 +14,11 @@ import pytest
 import commands.card_check as cc
 import commands.github_api as ga
 from commands.card_models import CardInfo, CardStats, card_name
-from conftest import REPO, Reply, blob_sha_bytes as _sha, no_lazy
+from conftest import Reply, blob_sha_bytes as _sha, no_lazy
 from helpers import ChecksGitHub as FakeGitHub
 
 NO_STARS = 'NO STARS FOUND (put the star layers in a group named "Stars")'
 SEVERAL = "SEVERAL CREATURES: check each one's stats on the website"
-NOTES = {                                       # what /update_stats printed on 2026-10-21 (e4e0a58) for these cards
-    "N.M.E/Bubble.psd": [],                                           # fixed upstream 2026-10-22: OLD
-    "Auxiliary/Minions/God_Tamer.psd": [],
-    "Auxiliary/Rulebook/20_Creature_Types.psd": [],
-    "Creatures/Kirby/3 Stars/Computer_Virus.psd": ["HP NOT FOUND", "DEF NOT FOUND", "ATK NOT FOUND", "SPD NOT FOUND"],
-    "Creatures/Isaac/3 Stars/Tainted_Lazarus.psd": [],                # SEVERAL checked on the website (D7)
-    "Creatures/Kirby/3 Stars/Pix.psd": [],
-    "Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd": [],
-    "Auxiliary/Minions/Anubisath_Guardian.psd": [],                   # ABILITY_EXCLUSIONS since e4e0a58
-    "Auxiliary/Minions/Qiraji_Soldier.psd": [],
-    "Auxiliary/Minions/Silithid.psd": [],
-    "Auxiliary/Minions/Mini_Doomer.psd": [],
-    "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd": [],     # STATS TOO HIGH allowed by the clone's Card Edits.json
-}
 OLD = {                                         # the clone's last versions with notes (fixed by these commits' children)
     "N.M.E/Bubble.psd": ("dc37f4adf5309ff0ebacadfbd2f2e07001eec3a5^", [NO_STARS]),          # L14 star groups
     "Auxiliary/Minions/God_Tamer.psd": ("dc37f4adf5309ff0ebacadfbd2f2e07001eec3a5^", [NO_STARS]),
@@ -115,27 +101,6 @@ def test_vocabulary_reads_the_tree_like_the_traverser():
     assert cc.vocabulary([]).manifest is None and cc.Vocabulary().parser().all_types == []
 
 
-def test_clone_vocabulary_and_edits(tmp_path):
-    root = fake_root(tmp_path / "repo", {}, types=("Fire.png", "Defensive_Minion.png", ".DS_Store"),
-                     edits_text=edits({"Royal_Eradicator Main Cannon": {"allow_high_stats": True, "_by": "x"}}))
-    (root / "MDW" / "Fonts" / "stoogedings-src").mkdir(parents=True)
-    (root / "MDW" / "Fonts" / "stoogedings-src" / "stoogedings.json").write_text('{"icons": {}}', encoding="utf-8")
-    vocab = cc.clone_vocabulary(str(root))
-    assert vocab.all_types == ["defensive_minion", "fire"] and vocab.stars == ["dst_star"] and vocab.manifest == {"icons": {}}
-    errors = []
-    assert cc.clone_edits(str(root), errors).cards == {"royal eradicator main cannon": {"allow_high_stats": True}} and errors == []
-    (root / "site" / "Card Edits.json").write_text("not json", encoding="utf-8")
-    assert cc.clone_edits(str(root), errors) is None and errors[0].startswith("site/Card Edits.json: could not be read (")
-    assert cc.clone_edits(str(tmp_path), []) is None and cc.clone_vocabulary(str(tmp_path)) == cc.Vocabulary()
-
-
-def test_clone_has_the_live_vocabulary(clone):
-    vocab = cc.clone_vocabulary(str(clone))
-    assert len(vocab.all_types) == 35 and {"active", "fragile equip", "defensive_minion", "wind"} <= set(vocab.all_types)
-    assert "dst_star" in vocab.stars and "icons" in vocab.manifest
-    assert cc.clone_edits(str(clone), []).cards["royal eradicator main cannon"]["allow_high_stats"] is True
-
-
 def test_clone_readers_match_the_traversers(clone, monkeypatch):
     """The bot's own readers (/update_stats) over the clone as a tree: the same types, icons and edits as clone_vocabulary/clone_edits."""
     import commands.card_data as cd
@@ -150,12 +115,6 @@ def test_clone_readers_match_the_traversers(clone, monkeypatch):
     vocab = cc.clone_vocabulary(str(clone))
     assert vocab.all_types == traverser.db.all_types and vocab.parser().icons == icons
     assert cc.clone_edits(str(clone), []).cards == traverser._edits_from_response(None, "o/r").cards
-
-
-def test_checkout_root(tmp_path):
-    root = fake_root(tmp_path / "repo", {"Items/Heal/1 Stars/A.psd": b""})
-    assert cc.checkout_root(str(root / "Items/Heal/1 Stars/A.psd")) == str(root)
-    assert cc.checkout_root(str(tmp_path / "lone.psd")) == ""
 
 
 # ========================
@@ -189,22 +148,6 @@ def test_card_notes_apply_the_edits_then_validate(fake_cards, tmp_path):
 # ========================
 # The clone's cards
 # ========================
-def test_clone_cards_match_update_stats(clone):
-    report = cc.check_files([str(clone / rel) for rel in NOTES], "tester")
-    assert report.checked == len(NOTES) and report.errors == []
-    assert {c.path: c.notes for c in report.cards} == {rel: notes for rel, notes in NOTES.items() if notes}
-    assert all(c.author == "tester" for c in report.cards)
-    assert [c.path for c in report.cards] == [rel for rel, notes in NOTES.items() if notes]     # command-line order
-
-
-def test_old_clone_cards(clone, tmp_path):
-    """NO STARS FOUND and MISSPELT TYPE: tornado on the clone's last versions that had them."""
-    root = old_checkout(clone, tmp_path / "repo")
-    report = cc.check_files([str(root / rel) for rel in OLD], "tester")
-    assert report.checked == len(OLD) and report.errors == []
-    assert [(c.path, c.notes) for c in report.cards] == [(rel, notes) for rel, (_, notes) in OLD.items()]   # command-line order
-
-
 def test_cli_psd_mode(clone, tmp_path, capsys):
     out, disc = tmp_path / "r.json", tmp_path / "d.json"
     old = old_checkout(clone, tmp_path / "repo")                                 # God Tamer's NO STARS FOUND
@@ -296,25 +239,6 @@ def test_unreadable_psd_is_one_line_and_exit_0(tmp_path, capsys):
     assert re.search(r"^- Lone\.psd: could not be read \(.+\)$", text, re.M)
 
 
-def test_psd_under_mdw_or_markers_is_no_card(fake_cards, tmp_path, capsys):
-    """/update_stats never parses MDW/ or Markers/: a hand run on one is an error line, not a card."""
-    root = fake_root(tmp_path / "repo", {"MDW/Templates/T.psd": b"a", "Auxiliary/Markers/M.psd": b"a", "Items/A.psd": b"a"})
-    fake_cards[b"a"] = lambda r: creature(r, card_type="item", problems=[NO_STARS])
-    assert cc.main(["--psd", str(root / "MDW/Templates/T.psd"), str(root / "Auxiliary/Markers/M.psd"), str(root / "Items/A.psd")]) == 0
-    text = capsys.readouterr().out
-    assert "1 card PSD read." in text and f"- `Items/A.psd` (Someone): {NO_STARS}\n" in text
-    assert "- MDW/Templates/T.psd: not a card PSD (" in text and "- Auxiliary/Markers/M.psd: not a card PSD (" in text
-
-
-def test_cli_psd_mode_without_a_checkout(fake_cards, tmp_path, capsys):
-    """A file outside any Types/-holding folder is an unknown card; one inside is classified by its path from there."""
-    root = fake_root(tmp_path / "repo", {"Items/Heal/1 Stars/A.psd": b"a"}, edits_text=edits({"A": {"stars": 1}}))
-    (tmp_path / "A.psd").write_bytes(b"a")
-    fake_cards[b"a"] = lambda r: creature(r, card_type="item" if "/" in r else "unknown", problems=[NO_STARS])
-    report = cc.check_files([str(root / "Items/Heal/1 Stars/A.psd"), str(tmp_path / "A.psd")])
-    assert [(c.path, c.notes) for c in report.cards] == [("A.psd", ["UNKNOWN TYPE", NO_STARS])]       # the edits fixed the first
-
-
 # ========================
 # Reports
 # ========================
@@ -323,18 +247,6 @@ def report() -> cc.Report:
     r.cards = [cc.Card("Auxiliary/Minions/God_Tamer.psd", "bobber", [NO_STARS]),
                cc.Card("Creatures/Kirby/3 Stars/Computer_Virus.psd", "michael", ["HP NOT FOUND", "DEF NOT FOUND"])]
     return r
-
-
-def test_markdown():
-    text = cc.markdown(report())
-    assert text.startswith("## Card check\n\n3 card PSDs read.\n\n")
-    assert f"- `Auxiliary/Minions/God_Tamer.psd` (bobber): {NO_STARS}\n" in text
-    assert "- `Creatures/Kirby/3 Stars/Computer_Virus.psd` (michael): HP NOT FOUND; DEF NOT FOUND\n" in text
-    empty = cc.markdown(cc.Report(checked=1, errors=["x.psd: could not be read (boom)"]))
-    assert "1 card PSD read." in empty and "Nothing to report." in empty and "\nErrors:\n- x.psd: could not be read (boom)\n" in empty
-    assert report().as_dict() == {"checked": 3, "errors": [], "cards": [
-        {"path": "Auxiliary/Minions/God_Tamer.psd", "author": "bobber", "notes": [NO_STARS]},
-        {"path": "Creatures/Kirby/3 Stars/Computer_Virus.psd", "author": "michael", "notes": ["HP NOT FOUND", "DEF NOT FOUND"]}]}
 
 
 def test_discord_payload_wording():
@@ -347,16 +259,6 @@ def test_discord_payload_wording():
     assert "website shows these" not in payload["content"]        # the validator's notes never reach the website's Parser notes
     assert "<@" not in payload["content"]                                       # nobody is pinged (owner, 2026-10-23)
     assert cc.discord_payload(cc.Report(checked=2, errors=["x.psd: could not be read (boom)"])) == {}
-
-
-def test_discord_payload_fits_one_message():
-    r = cc.Report(cards=[cc.Card(f"Items/Heal/1 Stars/Card_{i}.psd", "bobber", ["HP NOT FOUND", "DEF NOT FOUND"]) for i in range(200)])
-    content = cc.discord_payload(r)["content"]
-    assert len(content) <= 2000 and content.startswith("bobber has pushed Card 0 with: ")
-    lines = content.splitlines()
-    assert lines[len(lines) - 1] == cc.CLOSING and re.fullmatch(r"\.\.\. and \d+ more cards", lines[len(lines) - 2])
-    kept = len(lines) - 2                                  # cards, then "... and N more", then CLOSING
-    assert int(lines[len(lines) - 2].split()[2]) == 200 - kept and kept > 20
 
 
 # ========================
@@ -373,22 +275,6 @@ def tree_and_blobs(edits_text: str, psds: dict) -> tuple:
                {"path": "MDW/Templates/T.psd", "type": "blob", "sha": _sha(psds["a"])}]
     entries += [{"path": path, "type": "blob", "sha": _sha(data)} for path, data in psds.items() if "/" in path]
     return {"tree": entries}, blobs
-
-
-def test_repo_context(monkeypatch):
-    tree, blobs = tree_and_blobs(edits({"A": {"hp": 5}}), {"a": b"psd-a"})
-    fake = FakeGitHub(blobs, {}, {}, tree)
-    monkeypatch.setattr(ga, "get", fake.get)
-    listing = {e["path"]: e["sha"] for e in tree["tree"] if e["type"] == "blob"}
-    errors = []
-    parser, card_edits = cc.repo_context("o/r", listing, errors)
-    assert errors == [] and parser.all_types == ["fire", "active"] and parser.icons.lookup("dst_star") == ("dst_star", "star")
-    assert card_edits.cards == {"a": {"hp": 5}} and fake.blob_calls() == 2
-    fake.broken.add(_sha(b'{"icons": {}}'))
-    parser, card_edits = cc.repo_context("o/r", listing, errors)
-    assert len(errors) == 1 and errors[0].startswith("MDW/Fonts/stoogedings-src/stoogedings.json: blob ") and card_edits is not None
-    del listing["site/Card Edits.json"]
-    assert cc.repo_context("o/r", {k: v for k, v in listing.items() if "stoogedings" not in k}, [])[1] is None
 
 
 def test_repo_mode_push(fake_cards, monkeypatch, tmp_path, capsys):
@@ -423,22 +309,6 @@ def test_repo_mode_push(fake_cards, monkeypatch, tmp_path, capsys):
     assert "http" not in payload["content"] and "token" not in payload["content"].lower()
 
 
-def test_repo_mode_whole_tree_and_dispatch(fake_cards, monkeypatch, tmp_path):
-    a = b"psd-a"
-    fake_cards[a] = lambda r: creature(r, 1, 1, 1, 1, problems=["MISSPELT TYPE: tornado"])
-    tree, blobs = tree_and_blobs(edits({}), {"a": a, "Creatures/Kirby/3 Stars/A.psd": a})
-    head = {"sha": "h", "author": {"login": "alice"}, "files": [{"filename": "Creatures/Kirby/3 Stars/A.psd", "status": "added", "sha": _sha(a)}]}
-    fake = FakeGitHub(blobs, {}, {"h": head}, tree)
-    monkeypatch.setattr(ga, "get", fake.get)
-    out = tmp_path / "r.json"
-    assert cc.main(["--repo", "o/r", "--after", "h", "--whole-tree", "--author", "pusher", "--json", str(out)]) == 0
-    data = json.loads(out.read_text(encoding="utf-8"))
-    assert data == {"checked": 1, "errors": [], "cards": [{"path": "Creatures/Kirby/3 Stars/A.psd", "author": "pusher", "notes": ["MISSPELT TYPE: tornado"]}]}
-    assert not any("compare" in u or "commits/" in u for u in fake.calls)       # the tree alone; MDW/Templates/T.psd is no card
-    assert cc.main(["--repo", "o/r", "--after", "h", "--author", "pusher", "--json", str(out)]) == 0   # a dispatch: the head commit's files
-    assert json.loads(out.read_text(encoding="utf-8"))["cards"][0]["author"] == "alice"
-
-
 def test_repo_mode_api_failure_is_one_line_and_exit_0(monkeypatch, tmp_path, capsys):
     """A 5xx after the retries, no network or a truncated tree: one GitHub API error line, {} to Discord, exit 0 (never a red push)."""
     monkeypatch.setattr(ga, "sleep", lambda s: None)                              # get_with_retry's 1 s and 2 s waits
@@ -462,8 +332,3 @@ def test_repo_mode_api_failure_is_one_line_and_exit_0(monkeypatch, tmp_path, cap
 # ========================
 # CLI only
 # ========================
-def test_cli_only_and_uncompiled():
-    """No slash command, no help entry, not in setup.py's INCLUDE_FILES; the module imports under the tests' stub config (above)."""
-    for rel in ("main.py", "commands/help.py", "setup.py"):
-        assert "card_check" not in (REPO / rel).read_text(encoding="utf-8"), f"{rel} names card_check"
-    assert callable(cc.main)

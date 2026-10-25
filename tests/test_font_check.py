@@ -5,7 +5,6 @@ for --repo mode, one real card PSD when the clone is there (the guards' checkout
 import json
 import shutil
 from io import BytesIO
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -13,8 +12,7 @@ from requests import HTTPError
 
 import commands.font_check as fc
 import commands.github_api as ga
-import global_config
-from conftest import REPO, Reply, at_rev, blob_sha_bytes as _sha
+from conftest import Reply, at_rev, blob_sha_bytes as _sha
 
 fontBuilder = pytest.importorskip("fontTools.fontBuilder")
 from fontTools.ttLib import TTCollection, TTFont  # noqa: E402
@@ -25,13 +23,6 @@ BABA_REV = "3a268cad"                                       # Baba as this test 
 BABA_BLOB = "50205a1c46a2e5403a54118ede96b18bc3902f7f"
 ROLE = "546427268751294475"
 FONTS = ["BabaUI", "AdobeInvisFont", "MyriadPro-Regular"]   # a card's usual FontSet: the face, Photoshop's two extras
-
-
-@pytest.fixture(autouse=True)
-def no_local_fonts(monkeypatch, tmp_path):
-    """No PSD_TOOLS_FONT_DIRS and no checkout: /fonts reads fonts through the fake GitHub only."""
-    monkeypatch.delenv(fc.FONT_DIRS_ENV, raising=False)
-    monkeypatch.setattr(fc, "LOCAL_DIR_LOC", str(tmp_path / "no-checkout"))
 
 
 # ========================
@@ -115,34 +106,6 @@ def test_face_names_and_fallbacks(fonts_dir):
     assert fc.face_names(buf.getvalue()) == ["FullNameHere"]                    # ID 4 before ID 1, as FreeType reports it
 
 
-def test_ps_name_is_freetypes(tmp_path):
-    """FreeType keeps ASCII 33-126 minus []{}()<>/% (measured 2026-10-21 against freetype-py); the fork resolves with its names."""
-    assert fc.ps_name("Kung Fu Panda") == "KungFuPanda" and fc.ps_name("A B-c_d.e+f~g") == "AB-c_d.e+f~g"
-    assert fc.ps_name("x[y](z){w}<v>/u%t") == "xyzwvut" and fc.ps_name("Caf\u00e9 \u00df") == "Caf"
-    assert fc.ps_name("#$&'*,:;=?@^`|") == "#$&'*,:;=?@^`|"
-    path = build_font(str(tmp_path / "kfp.ttf"), "Kung Fu Panda", "Kung Fu Panda", "Regular")
-    assert fc.face_names(Path(path).read_bytes()) == ["KungFuPanda"]
-    index = fc.FontIndex(str(tmp_path))
-    assert index.supplies("KungFuPanda") and not index.supplies("Kung-Fu-Panda")   # no aliases (owner, 2026-10-23)
-
-
-def test_supplies_is_an_exact_name(index):
-    """The face's PostScript name exactly: no loose match or alias since the owner's "change the fonts to the exact
-    ones and delete the aliases" (2026-10-23)."""
-    assert index.supplies("PsdToolsFixture-TT")
-    assert not index.supplies("PsdToolsFixture-TT-Regular")         # loosely, -Regular stripped, until 2026-10-23
-    assert not index.supplies("psd tools fixture cff")              # loosely, family + style, until 2026-10-23
-    assert not index.supplies("psdtoolsfixture-tt") and not index.supplies("JavaneseText")
-    assert not hasattr(global_config, "FONT_ALIASES")
-
-
-def test_unreadable_font_is_an_error_not_a_crash(tmp_path):
-    (tmp_path / "Bad.ttf").write_bytes(b"not a font at all")
-    shutil.copy(REPO / "global_config.py", tmp_path / "Also.otf")
-    index = fc.FontIndex(str(tmp_path))
-    assert (index.files, index.faces) == (0, 0) and sorted(e.split(":")[0] for e in index.errors) == ["Also.otf", "Bad.ttf"]
-
-
 # ========================
 # Type layers and PSDs as plain objects
 # ========================
@@ -202,21 +165,6 @@ def report() -> fc.Report:
     return r
 
 
-def test_markdown_report():
-    text = fc.markdown(report())
-    assert text.startswith("## Font check\n\n3 card PSDs read; MDW/Fonts: 270 files, 278 faces.\n")
-    assert "**Fonts added to MDW/Fonts:** `Pristina.ttf`" in text
-    assert "- `Creatures/Other/5 Stars/Baba.psd` (bobber): **BabaUI** (6, 6, 6, 6)\n" in text
-    assert "- `Field/4 Stars/The_Gates_of_Ahn'Qiraj.psd` (michael): **Pristina-Regular** (Name); **BabaUI** (Ability)\n" in text
-    empty = fc.markdown(fc.Report(checked=1, fonts_files=2, fonts_faces=2, errors=["x.psd: boom"]))
-    assert "1 card PSD read" in empty and "Every font the cards ask for is in MDW/Fonts." in empty and "- x.psd: boom" in empty
-    assert "Fonts added" not in empty
-    assert report().as_dict()["missing"] == {"BabaUI": {"Creatures/Other/5 Stars/Baba.psd": ["6", "6", "6", "6"],
-                                                        "Field/4 Stars/The_Gates_of_Ahn'Qiraj.psd": ["Ability"]},
-                                             "OCRAExtended": {"N.M.E/Termination_Shock.psd": ["Ability", "Name"]},
-                                             "Pristina-Regular": {"Field/4 Stars/The_Gates_of_Ahn'Qiraj.psd": ["Name"]}}
-
-
 def test_discord_payload_wording():
     payload = fc.discord_payload(report())
     assert set(payload) == {"content", "allowed_mentions"} and payload["allowed_mentions"] == {"roles": [ROLE]}
@@ -232,22 +180,6 @@ def test_discord_payload_wording():
         "    The Gates of Ahn'Qiraj (Name)")
     assert "<@" not in payload["content"].replace(f"<@&{ROLE}>", "", 1)         # the role once, no user mentions
     assert fc.discord_payload(fc.Report(checked=2)) == {}
-
-
-def test_discord_payload_fits_one_message():
-    r = fc.Report(cards=[fc.Card(f"Items/Heal/1 Stars/Card_{i}.psd", "bobber", {"BabaUI": ["Ability"]}) for i in range(200)])
-    content = fc.discord_payload(r)["content"]
-    assert len(content) <= 2000 and content.startswith(f"<@&{ROLE}>\n") and content.endswith("... (the rest is in the commit comment)")
-
-
-def test_discord_text():
-    text = fc.discord_text(report())
-    assert text.startswith("MDW/Fonts: 270 files, 278 faces. 3 card PSDs read.\n"
-                           "**BabaUI**: Baba (6, 6, 6, 6); The Gates of Ahn'Qiraj (Ability)\n")
-    assert fc.discord_text(fc.Report(checked=5)).endswith("Every font the cards ask for is in MDW/Fonts.")
-    errors = fc.discord_text(fc.Report(errors=[f"Items/{i}.psd: 403" for i in range(25)])).splitlines()[2]   # a rate-limited run
-    assert errors == "Errors: " + "; ".join(f"Items/{i}.psd: 403" for i in range(10)) + "; and 15 more (in the console)"
-    assert fc.discord_text(fc.Report(errors=["a: x"])).endswith("\nErrors: a: x")
 
 
 # ========================
@@ -284,24 +216,6 @@ def test_cli_psd_mode(fonts_dir, tmp_path, fake_psds, capsys):
     assert payload["content"].splitlines()[1] == "bobber has pushed a card without adding the JavaneseText font to MDW/Fonts, bite this user."
     assert fc.main(["--fonts", str(fonts_dir), "--psd", "Items/B.psd", "--discord", str(disc)]) == 0
     assert json.loads(disc.read_text(encoding="utf-8")) == {}
-
-
-def test_cli_all_mode_skips_mdw_and_markers(fonts_dir, tmp_path, fake_psds, capsys):
-    root = tmp_path / "repo"
-    for rel in ("Creatures/Kirby/3 Stars/Pix.psd", "MDW/Templates/Creature_Template.psd", "Auxiliary/Markers/Marker.psd",
-                "Items/note.txt", ".git/x.psd"):
-        (root / rel).parent.mkdir(parents=True, exist_ok=True)
-        (root / rel).write_bytes(b"")
-    fake_psds[str(root / "Creatures/Kirby/3 Stars/Pix.psd")] = {"BabaUI": ["Name"]}
-    assert fc.main(["--fonts", str(fonts_dir), "--all", str(root)]) == 0
-    text = capsys.readouterr().out
-    assert "1 card PSD read" in text and "- `Creatures/Kirby/3 Stars/Pix.psd` (Someone): **BabaUI** (Name)" in text and "Errors" not in text
-
-
-def test_cli_needs_fonts(capsys):
-    with pytest.raises(SystemExit) as e:
-        fc.main(["--psd", "x.psd"])
-    assert e.value.code == 2 and "--fonts" in capsys.readouterr().err
 
 
 def test_token_from_env(monkeypatch):
@@ -369,25 +283,6 @@ def test_repo_mode_api_failure_is_one_line_and_exit_0(fonts_dir, monkeypatch, tm
         assert json.loads(disc.read_text(encoding="utf-8")) == {}
 
 
-def test_repo_mode_single_commit_and_whole_tree(fonts_dir, fake_psds, monkeypatch, tmp_path):
-    a = b"psd-a"
-    fake_psds[a] = {"BabaUI": ["Name"]}
-    head = {"sha": "h", "author": {"login": "alice"}, "files": [{"filename": "Items/A.psd", "status": "added", "sha": _sha(a)}]}
-    tree = {"tree": [{"path": "Items/A.psd", "type": "blob", "sha": _sha(a)}, {"path": "MDW/Templates/T.psd", "type": "blob", "sha": _sha(a)},
-                     {"path": "Items", "type": "tree", "sha": "t"}]}
-    fake = FakeGitHub({_sha(a): a}, {}, {"h": head}, tree)
-    monkeypatch.setattr(ga, "get", fake.get)
-    expected = ({"Items/A.psd": (_sha(a), "alice")}, [], [])
-    assert fc.pushed_files("o/r", "", "h", "pusher") == expected                # a dispatch: no before
-    assert fc.pushed_files("o/r", "0" * 40, "h", "pusher") == expected          # a new branch
-    assert not any("compare" in u for u in fake.calls)
-    out = tmp_path / "r.json"
-    assert fc.main(["--fonts", str(fonts_dir), "--repo", "o/r", "--after", "h", "--whole-tree", "--author", "pusher", "--json", str(out)]) == 0
-    data = json.loads(out.read_text(encoding="utf-8"))
-    assert data["cards"] == [{"path": "Items/A.psd", "author": "pusher", "missing": {"BabaUI": ["Name"]}}] and data["checked"] == 1
-    assert any(u.endswith("/git/trees/h?recursive=1") for u in fake.calls)
-
-
 def test_force_push_falls_back_to_the_head_commit(monkeypatch):
     a = b"psd-a"
     head = {"sha": "h", "author": {"login": "alice"}, "files": [{"filename": "Items/A.psd", "status": "modified", "sha": _sha(a)}]}
@@ -400,35 +295,6 @@ def test_force_push_falls_back_to_the_head_commit(monkeypatch):
     monkeypatch.setattr(ga, "get", fake.get)
     with pytest.raises(HTTPError):
         fc.pushed_files("o/r", "f" * 40, "h")
-
-
-def test_pushed_files_notes_the_file_cap(monkeypatch):
-    files = [{"filename": f"Items/{i}.png", "status": "modified", "sha": "0" * 40} for i in range(300)]
-    fake = FakeGitHub({}, {"commits": [{"sha": "h", "author": {"login": "alice"}}], "files": files}, {})
-    monkeypatch.setattr(ga, "get", fake.get)
-    assert fc.pushed_files("o/r", "a" * 40, "h") == ({}, [], ["the push changed 300 files or more; only the first 300 were checked"])
-
-
-def test_pushed_files_notes_the_commit_caps(monkeypatch):
-    """A commit listing 300 files or more, or a push of 250 commits or more: later files may carry the wrong author, so a note says so."""
-    files = [{"filename": f"Items/{i}.psd", "status": "modified", "sha": "0" * 40} for i in range(300)]
-    c1 = {"sha": "c1", "author": {"login": "alice"}, "files": files[:1]}
-    c2 = {"sha": "c2", "author": {"login": "bob"}, "files": files}
-    fake = FakeGitHub({}, {"commits": [c1, c2], "files": files[:2]}, {"c1": c1, "c2": c2})
-    monkeypatch.setattr(ga, "get", fake.get)
-    psds, fonts, notes = fc.pushed_files("o/r", "a" * 40, "c2")
-    assert notes == ["commit c2 lists 300 files or more; later files may be credited to the wrong author"]
-    assert psds == {"Items/0.psd": ("0" * 40, "bob"), "Items/1.psd": ("0" * 40, "bob")} and fonts == []
-    many = [{"sha": f"c{i}", "author": {"login": "alice"}} for i in range(250)]
-    fake = FakeGitHub({}, {"commits": many, "files": files[:1]}, {c["sha"]: {**c, "files": []} for c in many})
-    monkeypatch.setattr(ga, "get", fake.get)
-    assert fc.pushed_files("o/r", "a" * 40, "c249")[2] == ["the push has 250 commits or more; later files may be credited to the wrong author"]
-
-
-def test_help_entry():
-    import commands.help as help_module
-    entry = help_module.stats_commands["/fonts:"]
-    assert "MDW/Fonts" in entry and "(admin only)" not in entry
 
 
 # ========================

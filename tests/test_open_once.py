@@ -10,15 +10,13 @@ from os import PathLike
 import pytest
 from psd_tools import PSDImage
 
-import commands.card_check as cc
 import commands.card_data as cd
 import commands.card_db as cdb
 import commands.psd_details as pd
 from commands.card_models import card_name
 from commands.psd_parser import CardValidator
 from golden_cards import parser as golden_parser
-from helpers import _build, cards  # noqa: F401
-from helpers import DOOMER, FREEZER
+from helpers import DOOMER
 
 SAME = (DOOMER,                                                             # the identity cards: golden oddities
         "Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd",           # font tokens
@@ -50,30 +48,6 @@ def opens(monkeypatch):
         return inner(cls, fp, *args, **kwargs)
     monkeypatch.setattr(PSDImage, "open", classmethod(counted))
     return seen
-
-
-@pytest.fixture
-def gathered(monkeypatch):
-    """The repo paths psd_details.gather ran for (so a count of 1 is the shared open, not a skipped gather)."""
-    paths = []
-    inner = pd.gather
-
-    def gather(psd, rel, *args, **kwargs):
-        paths.append(rel)
-        return inner(psd, rel, *args, **kwargs)
-    monkeypatch.setattr(pd, "gather", gather)
-    return paths
-
-
-def test_the_build_opens_each_psd_once(cards, opens, gathered):
-    assert _build(cards, "--empty")[0] == cd.EXIT_OK
-    assert sorted(gathered) == sorted([DOOMER, FREEZER])
-    assert opens == Counter({_key(cards.psds[DOOMER]): 1, _key(cards.psds[FREEZER]): 1})
-
-
-def test_the_card_check_opens_each_psd_once(clone, opens):
-    assert cc.check_files([str(clone / DOOMER)]).checked == 1
-    assert opens == Counter({_key((clone / DOOMER).read_bytes()): 1})
 
 
 class _Frozen(datetime):

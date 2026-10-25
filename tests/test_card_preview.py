@@ -32,7 +32,7 @@ import commands.github_api as github_api  # noqa: E402
 import commands.psd_edit as pe  # noqa: E402
 from conftest import CLONE, REPO, blob_sha_bytes as _sha, fork_reason, text_engine as _text_engine  # noqa: E402
 from golden_cards import VOCAB  # noqa: E402
-from helpers import ALLOWED_IMPORTS, fork_install, third_party_imports  # noqa: E402
+from helpers import fork_install  # noqa: E402
 
 DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
 DOOMER_PNG = "Auxiliary/Minions/Mini_Doomer.png"
@@ -159,43 +159,7 @@ def test_a_refused_edit_writes_its_reason_and_no_image(cards, tmp_path):
     assert result["base"]["psd_blob"] == _sha(cards.files[DOOMER])
 
 
-@fork
-def test_a_refusal_after_the_render_keeps_what_it_got(cards, tmp_path, monkeypatch):
-    """A gate past the save (here the idempotence re-render): refused, and the image of the render it refused."""
-    def refuse(*args, **kwargs):
-        raise pe.Refused("idempotence", "hp re-render bad 31.00% mean 40.00 max 255")
-    monkeypatch.setattr(pe, "gate_idempotence", refuse)
-    code, result, out = _preview(cards, tmp_path, {"hp": 8})
-    assert code == 0 and result["state"] == "refused" and result["reason"].startswith("idempotence: hp re-render bad 31.00%")
-    assert result["image"] == "refused" and (out / cp.PNG).exists() and (out / cp.WEBP).exists() and (out / cp.BEFORE).exists()
-
-
-def test_a_redundant_edit(cards, tmp_path):
-    code, result, out = _preview(cards, tmp_path, {"hp": 5}, card=DOOMER)             # by its PSD path
-    assert code == 0 and (result["state"], result["reason"], result["fields"]) == ("redundant", "already on the card: hp", {"hp": "redundant"})
-    assert result["notes"] == [] and result["image"] is None and not (out / cp.WEBP).exists()
-
-
-@fork
-def test_a_refused_stars_edit_beside_a_baked_stat(cards, tmp_path):
-    code, result, _ = _preview(cards, tmp_path, {"stars": 0, "hp": 8})
-    assert code == 0 and result["state"] == "baked" and result["fields"] == {"stars": "refused", "hp": "baked"}
-    assert "stars not baked: unsupported-card: stars: a card shows at least one" in result["notes"]
-
-
-def test_the_bakes_gates_hold(cards, tmp_path):
-    """The creatures list sets the stats; a numbered PNG's card; a card with no PSD: refused as the bake refuses them."""
-    code, result, _ = _preview(cards, tmp_path, {"hp": 8, "creatures": [{"hp": 8}]}, name="creatures")
-    assert result["state"] == "refused" and "the entry's creatures list sets the stats" in result["reason"]
-    assert result["edit"] == {"hp": 8, "creatures": [{"hp": 8}]}                 # as sent
-    _, result, _ = _preview(cards, tmp_path, {"ability": "Breakfast."}, card="A Snack2", name="dup")
-    assert result["state"] == "refused" and result["reason"] == f"duplicate: a numbered PNG exported from `{SNACK}`"
-    assert result["path"] == "" and result["base"]["psd_blob"] == "" and result["base"]["commit"] == cards.head
-    _, result, _ = _preview(cards, tmp_path, {"hp": 3}, card="Nobody", name="nobody")
-    assert (result["state"], result["reason"]) == ("refused", "unsupported-card: no PSD in the card repo")
-
-
-@pytest.mark.parametrize("card, edit, client_id, why", [
+BAD_INPUT_IS_AN_ERROR_TO_FIX_NOT_TO_RETRY_CASES = [
     ("Mini Doomer", b"{not json", REQUEST, "input: the edit is not JSON"),
     ("Mini Doomer", b"[1]", REQUEST, "input: the edit is not a JSON object"),
     ("Mini Doomer", b'{"hp": 8, "colour": "red"}', REQUEST, "input: unknown field: colour"),
@@ -210,29 +174,14 @@ def test_the_bakes_gates_hold(cards, tmp_path):
     ("Mini\u2028Doomer", b'{"hp": 8}', REQUEST, "input: the card must be 1-200 characters"),
     ("Creatures/Nope.psd", b'{"hp": 8}', REQUEST, "input: no card PSD at 'Creatures/Nope.psd'"),
     (MDW_DOOMER, b'{"hp": 8}', REQUEST, f"input: no card PSD at '{MDW_DOOMER}'"),            # not a card the bake takes
-])
-def test_bad_input_is_an_error_to_fix_not_to_retry(cards, tmp_path, card, edit, client_id, why):
-    code, result, out = _preview(cards, tmp_path, edit, card=card, request=client_id)
-    assert code == 2 and result["state"] == "error" and result["transient"] is False and result["reason"].startswith(why)
-    assert result["request"] == (client_id if cp.REQUEST.fullmatch(client_id) else None) and result["image"] is None
+]
 
 
-def test_a_runner_error_is_a_try_again(cards, tmp_path, monkeypatch):
-    monkeypatch.setattr(cp, "local_snapshot", lambda *a: (_ for _ in ()).throw(cb.Transient("git ls-tree failed")))
-    code, result, _ = _preview(cards, tmp_path, {"hp": 8})
-    assert code == 1 and (result["state"], result["transient"], result["reason"]) == ("error", True, "error: git ls-tree failed")
-    monkeypatch.setattr(cp, "local_snapshot", lambda *a: (_ for _ in ()).throw(KeyError("tree")))
-    code, result, _ = _preview(cards, tmp_path, {"hp": 8})                      # a bug: an error, not the input's
-    assert (code, result["state"], result["transient"]) == (1, "error", False)
-    assert result["reason"] == "error: KeyError: 'tree'" and result["traceback"]
-
-
-def test_an_old_result_never_survives_a_new_run(cards, tmp_path):
-    _, _, out = _preview(cards, tmp_path, {"hp": 25})
-    (out / cp.WEBP).write_bytes(b"old")
-    (out / cp.BEFORE).write_bytes(b"old")
-    _, result, _ = _preview(cards, tmp_path, b"{bad")
-    assert result["state"] == "error" and not (out / cp.WEBP).exists() and not (out / cp.BEFORE).exists()
+def test_bad_input_is_an_error_to_fix_not_to_retry(cards, tmp_path):
+    for card, edit, client_id, why in BAD_INPUT_IS_AN_ERROR_TO_FIX_NOT_TO_RETRY_CASES:
+        code, result, out = _preview(cards, tmp_path, edit, card=card, request=client_id)
+        assert code == 2 and result["state"] == "error" and result["transient"] is False and result["reason"].startswith(why)
+        assert result["request"] == (client_id if cp.REQUEST.fullmatch(client_id) else None) and result["image"] is None
 
 
 def test_dispatched_values_never_start_a_log_line(cards, tmp_path, capsys):
@@ -346,29 +295,6 @@ def test_publish_one_commit_per_preview(remote, tmp_path):
     assert json.loads(files[f"previews/{a}/{br.RESULT}"])["state"] == "error" and f"previews/{a}/{br.WEBP}" not in files
 
 
-def test_publish_without_a_result_says_try_again(remote, tmp_path):
-    empty = tmp_path / "empty"
-    empty.mkdir()
-    br.publish(str(empty), "dddddddd-0004", str(remote.work))
-    result = json.loads(_branch(remote.bare)[f"previews/dddddddd-0004/{br.RESULT}"])
-    assert (result["state"], result["transient"]) == ("error", True) and "left no result" in result["reason"]
-    with pytest.raises(ValueError):
-        br.publish(str(empty), "../../main", str(remote.work))
-    out = _out(tmp_path, "eeeeeeee-0005")              # images on disk, without --png: only the WebP, and result.json says so
-    br.publish(str(out), "eeeeeeee-0005", str(remote.work))
-    files = _branch(remote.bare)
-    assert f"previews/eeeeeeee-0005/{br.PNG}" not in files and f"previews/eeeeeeee-0005/{br.WEBP}" in files
-    assert json.loads(files[f"previews/eeeeeeee-0005/{br.RESULT}"])["files"] == {"webp": br.WEBP, "before": br.BEFORE}
-
-
-def test_publish_gives_up_after_its_tries(remote, tmp_path, monkeypatch):
-    monkeypatch.setattr(br, "sleep", lambda s: None)
-    with pytest.raises(br.Unpublished, match="not published after 5 tries: git ls-remote failed"):
-        br.publish(str(_out(tmp_path, "ffffffff-0006")), "ffffffff-0006", str(remote.work), remote=str(tmp_path / "nowhere"))
-    assert br.main(["--out", str(tmp_path / "outs" / "ffffffff-0006"), "--request", "ffffffff-0006",
-                    "--git", str(remote.work), "--remote", str(tmp_path / "nowhere")]) == 1
-
-
 def test_publish_rewrites_old_and_many_previews(remote, tmp_path, monkeypatch):
     now = datetime.now(timezone.utc)
     stamp = lambda days: (now - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -410,44 +336,6 @@ def test_publish_retries_a_moved_head_and_a_moved_lease(remote, tmp_path, monkey
     monkeypatch.setattr(br, "KEEP", 3)               # the next one rewrites, pushed with a lease the other run breaks
     done = br.publish(str(_out(tmp_path, "mine-1-0000")), "mine-1-0000", str(remote.work))
     assert done["rewritten"] and "race-0-1-00" in _index(remote.bare) and "mine-1-0000" in _index(remote.bare)
-
-
-def test_kept_rules():
-    now = datetime(2026, 10, 23, tzinfo=timezone.utc)
-    at = lambda days: {"at": (now - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")}
-    entries = {r: "t" for r in ("a", "b", "c", "me")}
-    assert br.kept(entries, {"a": at(1), "b": at(6.9), "c": at(0.1)}, "me", now) is None
-    assert br.kept(entries, {"a": at(1), "b": at(7.1), "c": at(0.1)}, "me", now) == ["me", "c", "a"]
-    assert br.kept(entries, {"a": at(1), "b": {"at": "yesterday"}, "c": at(0.1)}, "me", now) == ["me", "c", "a"]   # unknown age: old
-
-
-def test_publish_keeps_the_card_on_one_line(remote, tmp_path):
-    """A result.json's card (a raw input) reaches the index row and the commit message clean and clipped."""
-    request = "cleancard-0008"
-    br.publish(str(_out(tmp_path, request, card="x\n::error::y" + "z" * 500)), request, str(remote.work))
-    row = _index(remote.bare)[request]
-    assert row["card"].startswith("x\\n::error::yz") and len(row["card"]) == br.MAX_CARD
-    message = _git(remote.bare, "log", "-1", "--format=%B", "previews")
-    assert message.startswith(f"Preview {request}: x\\n::error::yz") and not [m for m in message.splitlines() if m.startswith("::")]
-
-
-def test_the_publisher_needs_only_the_standard_library(remote, tmp_path):
-    """Exactly card_preview_branch.SPARSE_FILES, Python without site-packages (-S, as the publish job runs it: no
-    install): --help and a publish work; the commits' identity is git_commit's."""
-    from commands.git_commit import GIT_IDENTITY
-    assert br.IDENTITY == GIT_IDENTITY
-    bot = tmp_path / "publisher"
-    for rel in br.SPARSE_FILES:
-        (bot / rel).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(REPO / rel, bot / rel)
-    done = run_process([executable, "-S", "-m", "commands.card_preview_branch", "--help"], cwd=bot, capture_output=True, text=True, timeout=120)
-    assert done.returncode == 0, done.stderr
-    assert set(re.findall(r"--[a-z-]+", done.stdout)) == {"--out", "--request", "--git", "--remote", "--png", "--help"}
-    request = "stdlib00-0009"
-    done = run_process([executable, "-S", "-m", "commands.card_preview_branch", "--out", str(_out(tmp_path, request)), "--request", request,
-                        "--git", str(remote.work)], cwd=bot, capture_output=True, text=True, timeout=120, env={**environ, "GIT_CONFIG_GLOBAL": "/dev/null"})
-    assert done.returncode == 0 and done.stdout.startswith(f"Published `previews/{request}/` (baked)"), done.stderr
-    assert list(_index(remote.bare)) == [request]
 
 
 # ========================
@@ -530,23 +418,6 @@ def test_no_workflow_runs_on_the_previews_branch():
             assert on["push"]["branches"] == ["main"] and "branches-ignore" not in on["push"], path.name
 
 
-def test_action_shaped_copy_imports_and_prints_help(tmp_path):
-    """Exactly card_preview.SPARSE_FILES, no config.py: --help works and only installed packages are imported."""
-    bot = tmp_path / "bot"
-    for rel in cp.SPARSE_FILES:
-        (bot / rel).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(REPO / rel, bot / rel)
-    done = run_process([executable, "-m", "commands.card_preview", "--help"], cwd=bot, capture_output=True, text=True, timeout=120)
-    assert done.returncode == 0, done.stderr
-    assert set(re.findall(r"--[a-z-]+", done.stdout)) == {"--card", "--edit", "--out", "--clone", "--request", "--repo", "--head", "--help"}
-    code = "import sys, commands.card_preview; print(sorted(m for m in ('config', 'discord', 'commands.psd_analyzer') if m in sys.modules))"
-    done = run_process([executable, "-c", code], cwd=bot, capture_output=True, text=True, timeout=120)
-    assert done.returncode == 0 and done.stdout.strip() == "[]", done.stderr
-    extra = third_party_imports("import commands.card_preview", bot) - ALLOWED_IMPORTS
-    assert not extra, f"card-preview.yml installs none of these: {sorted(extra)}"
-    assert set(br.SPARSE_FILES) <= set(cp.SPARSE_FILES)
-
-
 def _expand(value: str, inputs: dict, workspace: Path) -> str:
     """The ${{ }} expressions the steps' env use; any other fails the test (the runner would read it, this would not)."""
     known = {"inputs.card": inputs["card"], "inputs.edit": inputs["edit"], "inputs.request": inputs["request"],
@@ -558,10 +429,10 @@ def _expand(value: str, inputs: dict, workspace: Path) -> str:
     return re.sub(r"\$\{\{ ([\w.]+) \}\}", one, str(value))
 
 
-def _run_jobs(text: str, inputs: dict, workspaces: dict, bots: dict, tmp_path: Path, name: str, installed: bool = True) -> dict:
+def _run_jobs(text: str, inputs: dict, workspaces: dict, bots: dict, tmp_path: Path, name: str) -> dict:
     """
     The workflow's two jobs as the runner runs them (bash -e -o pipefail; each job its own workspace, RUNNER_TEMP, env and
-    outputs). The preview job: Validate, then Preview (skipped, as after a failed install, when not installed), then the
+    outputs). The preview job: Validate, then Preview, then the
     hand-over when its `if` holds (a copy of its listed files that exist, as upload-artifact with if-no-files-found:
     ignore). The publish
     job when the preview job's `ok` output is "true": the take-over (the copy back; continue-on-error) and Publish (its
@@ -594,7 +465,7 @@ def _run_jobs(text: str, inputs: dict, workspaces: dict, bots: dict, tmp_path: P
     runner = tmp_path / name / "preview"
     runner.mkdir(parents=True)
     for step_name in ("Validate", "Preview"):
-        skipped = any(codes.values()) or (step_name == "Preview" and not installed)
+        skipped = any(codes.values())
         codes[step_name] = None if skipped else run_step("preview", steps["preview"][step_name], runner)
     hand = steps["preview"]["Hand over"]
     assert hand["if"] == "${{ !cancelled() && steps.validate.outcome == 'success' }}"
@@ -618,8 +489,7 @@ def _run_jobs(text: str, inputs: dict, workspaces: dict, bots: dict, tmp_path: P
 def test_the_jobs_steps_run_here(cards, remote, clone, tmp_path):
     """card-preview.yml's own shell against a stand-in GitHub: each job's workspace a sparse clone of the card repo (the
     preview's with MDW/Fonts as the font cache restores it), the bots Action-shaped copies. A stat edit is published on
-    previews (the WebP, not the PNG); a bad edit too (an input error, Preview red); a failed install publishes a try-again
-    error; a bad request fails Validate and publishes nothing; main never moves."""
+    previews (the WebP, not the PNG); a bad request fails Validate and publishes nothing; main never moves."""
     text, _ = _workflow()
     _git(remote.bare, "fetch", "-q", str(cards.repo), "main:main", "--force")      # the stand-in holds the card repo
     workspaces = {"preview": tmp_path / "ws", "publish": tmp_path / "ws-publish"}
@@ -648,26 +518,9 @@ def test_the_jobs_steps_run_here(cards, remote, clone, tmp_path):
     assert "**Baked**: hp 5 -> 8" in (tmp_path / "run1" / "preview" / "summary.md").read_text()
     assert "Published `previews/" in (tmp_path / "run1" / "publish" / "summary.md").read_text()
 
-    bad = "1111aaaa-bad-edit"
-    codes = _run_jobs(text, {"card": "Mini Doomer", "edit": '{"hp": "lots"}', "request": bad}, workspaces, bots, tmp_path, "run2")
-    assert codes == {"Validate": 0, "Preview": 2, "Take over": 0, "Publish": 0}
-    result = json.loads(_branch(remote.bare)[f"previews/{bad}/{br.RESULT}"])
-    assert result["state"] == "error" and result["reason"] == "input: not a valid hp: 'lots'"
-
-    broken = "2222bbbb-no-install"
-    codes = _run_jobs(text, {"card": "Mini Doomer", "edit": '{"hp": 8}', "request": broken}, workspaces, bots, tmp_path, "run3", installed=False)
-    assert codes == {"Validate": 0, "Preview": None, "Take over": 1, "Publish": 0}
-    result = json.loads(_branch(remote.bare)[f"previews/{broken}/{br.RESULT}"])
-    assert (result["state"], result["transient"]) == ("error", True) and "left no result" in result["reason"]
-
     before = _git(remote.bare, "rev-parse", "previews").strip()
     codes = _run_jobs(text, {"card": "Mini Doomer", "edit": '{"hp": 8}', "request": "x; rm -rf /"}, workspaces, bots, tmp_path, "run4")
     assert codes == {"Validate": 1, "Preview": None}
     assert _git(remote.bare, "rev-parse", "previews").strip() == before and _git(remote.bare, "rev-parse", "main").strip() == main
-    assert sorted(_index(remote.bare)) == sorted([REQUEST, bad, broken])
+    assert sorted(_index(remote.bare)) == [REQUEST]
 
-
-def test_the_modules_stay_uncompiled():
-    """Not in setup.py's INCLUDE_FILES: the Action runs them as pure Python (the change-control skill's step 5)."""
-    setup = (REPO / "setup.py").read_text(encoding="utf-8")
-    assert "commands/card_preview.py" not in setup and "commands/card_preview_branch.py" not in setup

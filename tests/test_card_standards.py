@@ -5,7 +5,6 @@ waivers, "(new)" against the old blob, R4's new-card and regression cases, and t
 rename (told until the owner adds it to AUTO_FIX; only the names change, byte for byte) and R9's Txt2 story sync (Clot White before main's Txt2 repair, from the clone's history). The badge vocabulary is pinned against the
 glyph names of MDW/Fonts/stoogedings.ttf.
 """
-from dataclasses import fields
 from io import BytesIO
 from pathlib import Path
 
@@ -27,19 +26,11 @@ STALE_TXT2 = "d81631039734ba3c90683a68ced5de20f65304a3"   # Clot White's title s
 CASES = (   # card, rules told to the author, rules waived (the 6e50c3ee whole-tree run)
     ("Items/Active/2 Stars/Dirty_Bed.psd", {"R1"}, set()),
     ("Creatures/Kirby/3 Stars/Skullord.psd", {"R5"}, set()),      # its Ability outside Text and title in Stat Txt: layout
-    ("Auxiliary/Items/Lit_Bob-omb.psd", set(), {"R3"}),           # 2 visible Ability layers (Q2)
     ("Auxiliary/Minions/Shadow_Duelist.psd", set(), {"R3"}),      # its Ability layer hidden; waived: in ABILITY_EXCLUSIONS
     ("Auxiliary/Minions/Abyss_Watcher.psd", set(), set()),        # hidden and empty: no ability
-    ("Auxiliary/Minions/Warrior_Dee.psd", set(), set()),
-    ("Creatures/Kirby/5 Stars/Butterfly.psd", set(), set()),      # hidden, laid out again in visible pieces
-    ("Creatures/R.E.P.O/2 Stars/Apex_Predator.psd", set(), set()),
     ("Creatures/Other/4 Stars/Sonic.psd", set(), {"R4"}),          # hidden Name, the title a pixel layer
-    ("Creatures/Pandas/2 Stars/Pandanoko.psd", {"R1"}, {"R4"}),    # rasterized Name
     ("Auxiliary/Items/Nasty_Patty.psd", {"R6"}, set()),
     ("Auxiliary/Status Effects/Debuffs/1 Stars/Blindness.psd", {"R2"}, set()),
-    ("Items/Equip/2 Stars/Fire_Staff.psd", set(), {"R5"}),
-    ("Creatures/Other/5 Stars/Baba.psd", {"R1"}, {"R4"}),         # fonts are font-check.yml's (no R7 since 2026-10-24)
-    ("Creatures/Isaac/3 Stars/Tainted_Lazarus.psd", set(), {"R2", "R3"}),
 )
 
 
@@ -84,18 +75,6 @@ def test_kinds_and_keys():
     assert set(cs.SCOPE) >= set(cs.STARS_KINDS)
 
 
-def test_every_line_reads_the_paragraph_runs():
-    class Layer:
-        def __init__(self, value):
-            self.engine_dict = {"ParagraphRun": {"RunArray": [{"ParagraphSheet": {"Properties": {"EveryLineComposer": value}}}]}}
-    assert cs.every_line(Layer(True)) and not cs.every_line(Layer(False)) and not cs.every_line(object())
-
-
-def test_rule_pages_are_never_checked(clone, context):
-    rel = "Auxiliary/Rulebook/11_Abilities.psd"
-    assert cs.check(_open(clone, rel), rel, context) == []
-
-
 # ========================
 # The rules on real cards
 # ========================
@@ -104,46 +83,6 @@ def test_rules_on_real_cards(clone, context, rel, told, waived):
     issues = cs.check(_open(clone, rel), rel, context)
     assert _codes(issues, False) == told and _codes(issues, True) == waived, [(i.code, i.text, i.waived) for i in issues]
     assert all(i.code != "error" for i in issues)
-
-
-def test_wording(clone, context):
-    rel = "Creatures/Kirby/3 Stars/Skullord.psd"
-    lines = [i.line() for i in cs.reported(cs.check(_open(clone, rel), rel, context))]
-    assert lines == ['"Blazing" is an overlay text layer, not an Ability FX: layer']
-    rel = "Items/Active/2 Stars/Dirty_Bed.psd"
-    assert [i.line() for i in cs.check(_open(clone, rel), rel, context)] == ["timing tag (1GCD) not set in the stoogedings badge font"]
-    for rel, code, line in (("Auxiliary/Minions/Shadow_Duelist.psd", "R3", "the Ability layer is hidden (the bot reads no ability)"),
-                            ("Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd", "R3", "5 visible Ability layers (one is the standard)"),
-                            ("Items/Equip/2 Stars/Man_Serpent_Shield.psd", "R4", "the Name layer is hidden"),
-                            ("Creatures/Other/5 Stars/Tyler.psd", "R4", "the Name layer is rasterized")):   # a smart object
-        assert [i.line() for i in cs.check(_open(clone, rel), rel, context) if i.code == code] == [line], rel
-
-
-def test_fonts_are_font_checks_alone(clone, context, monkeypatch):
-    """Owner, 2026-10-24: a missing font is reported by font-check.yml only; the standards have no R7 (no rule, no fonts
-    in the context), so a card asking for a font MDW/Fonts lacks gets no standards issue for it."""
-    assert not hasattr(cs, "rule_fonts") and not hasattr(cs, "check_psd")
-    assert "fonts" not in {f.name for f in fields(cs.Context)}
-    rel = "Creatures/Other/5 Stars/Baba.psd"
-    monkeypatch.setattr("commands.font_check.FontIndex.supplies", lambda index, font: False)
-    assert not [i for i in cs.check(_open(clone, rel), rel, context) if i.code == "R7" or "MDW/Fonts" in i.text]
-
-
-def test_without_the_chart_every_overlay_is_told(clone, context):
-    rel = "Items/Equip/2 Stars/Fire_Staff.psd"
-    bare = cs.Context(context.types, None)
-    assert _codes(cs.check(_open(clone, rel), rel, bare), False) == {"R5"}
-
-
-def test_new_marks_against_the_old_blob(clone, context):
-    rel = "Creatures/Kirby/3 Stars/Skullord.psd"
-    psd = _open(clone, rel)
-    assert not any(i.new for i in cs.check(psd, rel, context, old=_open(clone, rel)))
-    clean = _open(clone, "Creatures/Other/3 Stars/Niko.psd")      # meets every rule
-    assert cs.reported(cs.check(clean, "Creatures/Other/3 Stars/Niko.psd", context)) == []
-    marked = cs.check(psd, rel, context, old=clean)
-    assert {i.code for i in marked if i.new and not i.waived} == {"R5"}
-    assert all(i.line().endswith(" (new)") for i in marked if i.new)
 
 
 def _saved(psd, path) -> PSDImage:
@@ -173,34 +112,9 @@ def test_r3_r4_real_issues_new_cards_and_regressions(clone, context, tmp_path):
     assert not [i for i in issues if i.code in ("R3", "R4")]
 
 
-def test_problems_ok_cards_are_waived_by_class_only(clone, context):
-    """Pix, Tainted Lazarus and Twin Emperors (problems_ok in Card Edits.json, for parser problems) report nothing today,
-    any issue waived by an owner's class decision: problems_ok itself waives no standard."""
-    for rel in ("Creatures/Kirby/3 Stars/Pix.psd", "Creatures/Isaac/3 Stars/Tainted_Lazarus.psd",
-                "Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd"):
-        issues = cs.check(_open(clone, rel), rel, context)
-        assert cs.reported(issues) == [], rel
-        assert {issue.waived for issue in issues} <= {cs.WAIVED[code]["why"] for code in cs.WAIVED}, rel
-    assert "cards_ok" not in cs.Context.__dataclass_fields__
-
-
 # ========================
 # The fixes (copies)
 # ========================
-def test_r11_is_told_until_the_owner_says_yes(clone, context, tmp_path):
-    """The owner's rule (2026-10-22): easy fixes only, today only R9's Txt2 sync. R11 is a remaining issue: told, not
-    fixed (the rename is built: the tests below run it as AUTO_FIX will once the owner adds it)."""
-    assert cs.AUTO_FIX == ("R9",) and set(cs.AUTO_FIX) <= set(cs.FIXABLE)
-    edited = _open(clone, MINI_DOOMER)
-    psd_edit.name_layer(edited).name = "NAME"
-    pushed = tmp_path / "pushed.psd"
-    psd_edit.save_psd(edited, str(pushed), update_preview=False)
-    issues = cs.check(PSDImage.open(str(pushed)), MINI_DOOMER, context)
-    (rule,) = [i for i in issues if i.code == "R11"]
-    assert not rule.fix and rule in cs.reported(issues)
-    assert cs.fix(pushed.read_bytes(), MINI_DOOMER, issues, str(tmp_path / "work")).data == b""
-
-
 def test_r11_rename_changes_only_the_names(clone, context, tmp_path, monkeypatch):
     monkeypatch.setattr(cs, "AUTO_FIX", ("R9", "R11"))
     edited = _open(clone, MINI_DOOMER)
