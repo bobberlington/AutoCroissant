@@ -1,7 +1,7 @@
 # Layout support: non-template stat bars and unusual star layouts
 
-**Status:** approved by the owner (10-24 ~18:30, "get support built rather than refusals"); designed 2026-10-25; not
-built. Queue item 5 (after the website fixes). Cards: `docs/Future/PROBLEM_CARDS_2026-10-25.csv` (31 stat-bar rows,
+**Status:** approved by the owner (10-24 ~18:30, "get support built rather than refusals"); designed 2026-10-25; built
+2026-10-25 on branch work/layout ("Built" at the end: what the bake does, per family, and what still refuses). Queue item 5 (after the website fixes). Cards: `docs/Future/PROBLEM_CARDS_2026-10-25.csv` (31 stat-bar rows,
 21 star rows). Families below come from a read-only layer scan of those PSDs on 10-25 (TTSCardMaker 577ea1e3).
 
 **Goal.** A website stat or stars edit bakes on these 52 cards, flagged where the bake changed the layout, instead of

@@ -436,8 +436,9 @@ The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes 
   `edit-changed`, `blob`, `capped`), impossible cases (no PSD, a numbered PNG copy, a creatures list setting the
   stats, a stat above 20), the bake's own checks (`bytes`, `region`, `size`, `shape`, `reparse` but new problems,
   `idempotence`, `parity` past the 25% floor) and what the bake can't edit yet (`unsupported-card`: split or several
-  titles, non-template stat rows, folder-set stars and the other stars/types layouts, FX layers that are no
-  pixel layers, two FX layers one name; `stat>10` on one bar row).
+  titles, stat bars painted into the art or a cell with no lit or dark picture, stars the layouts can't place clear
+  of the title (layout support, docs/Future/LAYOUT_SUPPORT.md "Built", 2026-10-25), FX layers that are no pixel
+  layers, two FX layers one name; `stat>10` on one bar row).
 - **card-edits.yml** (deleted at the cutover 2026-10-24) was paused from 2026-10-22 ~21:5x (split titles would have baked wrongly, and B2 was rewriting the
   same cards) and re-enabled on 2026-10-23 ~10:36, pinned to `cards-20261023` (dry run 39996528699 dispatched then).
 - **Previews (2026-10-23; TTSCardMaker's `card-preview.yml`, design section 16):** the website dispatches one card's edit

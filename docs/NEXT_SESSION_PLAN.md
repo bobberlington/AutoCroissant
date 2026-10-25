@@ -49,7 +49,7 @@ Census: `docs/Future/PROBLEM_CARDS_2026-10-25.csv`.
 4. [ ] **Website small fixes** (`docs/Future/WEBSITE_SMALL_FIXES.md`): phone tooltips, exact name first, deck export
        with pinned links, rulebook page links. Status: designed.
 5. [ ] **Layout support** (`docs/Future/LAYOUT_SUPPORT.md`): 31 non-template stat bars, 21 unusual star layouts.
-       Status: designed.
+       Status: built on branch work/layout (2026-10-25), not landed; per-card results in the doc's "Built".
 6. [ ] **Card sync verdicts** (`docs/Future/CARD_SYNC_VERDICTS.md`): `db/verdicts.json`, bake and guard events in the
        changelog. Status: designed.
 7. [ ] **`game.txt`** (`docs/Future/GAME_TXT.md`). Status: designed, later.

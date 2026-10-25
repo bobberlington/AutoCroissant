@@ -42,7 +42,8 @@ from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_
                                  stars_from_psd, title_text, token_variant, variant_view, variants_of)
 from commands import psd_parts
 from commands.psd_parts import lyid_index, raw_sha
-from commands.psd_regions import STATS as STAT_PATTERNS, _ancestors, badge_layers, clip, fx_pad, overlay_words, stat_rows, union_box
+from commands.psd_regions import (STATS as STAT_PATTERNS, _ancestors, badge_layers, clip, fx_pad, overlay_words, stat_rows,
+                                  union_box)
 from global_config import RULEBOOK_DIR
 
 # ========================
@@ -2902,7 +2903,8 @@ def _row(group, stat: str, two: bool) -> TemplateRow:
     One row group as a TemplateRow (the "10" marker split off on a two-row card); else Refused("unsupported-card").
     The card maker's own rows count too (layout support): other layers beside the digits (left alone: Anubisath
     Guardian's empty text, Dark Mind's "5 copy", Bulborb Larva's gauge), digits 1-10 or a missing one (Whispy Woods,
-    Spinni: set_stat copies a neighbour), or each digit a picture of the whole row (Bulborb Larva, Empress Bulblax).
+    Spinni: set_stat moves the digit below it there), or each digit a picture of the whole row (Bulborb Larva, Empress
+    Bulblax).
     """
     layers, extras = {}, []
     for child in group:
@@ -3385,7 +3387,7 @@ def _islands(layer) -> Optional[list]:
     return runs if len(runs) == 10 else None
 
 
-def _edges(box: tuple, cells: Optional[list] = None, islands: Optional[list] = None) -> list:
+def _cell_edges(box: tuple, cells: Optional[list] = None, islands: Optional[list] = None) -> list:
     """Where the bar's cells start, 0-10 (10: the bar's end): from the card's own cells or the ten shapes its bar draws,
     else the template's spaced over the bar."""
     if islands:
@@ -3624,7 +3626,7 @@ def plan_bar(psd: PSDImage, group, stat: str, old: int, value: int, why: Refused
              and layer.bbox[2] - layer.bbox[0] >= psd.width / 3] + ([bar_layer] if bar_layer is not None else [])
     shapes = None if cells else next((found for layer in sorted(drawn, key=lambda layer: layer.bbox[2] - layer.bbox[0])
                                       for found in [_islands(layer)] if found), None)
-    edges = _edges(box, cells, shapes)
+    edges = _cell_edges(box, cells, shapes)
     plan = BarPlan("", box)
     names, shown, hows = {}, {}, []
     toggled = cells is not None and any(not layer.visible for cell in cells for layer in cell)
