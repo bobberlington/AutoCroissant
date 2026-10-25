@@ -3,6 +3,7 @@ import hashlib
 import json
 import os
 import pickle
+import sys
 from datetime import datetime, timezone
 from threading import Thread
 from types import SimpleNamespace
@@ -1171,6 +1172,16 @@ def test_a_failing_history_cleanup_skips_with_one_line(github, monkeypatch, caps
     _run()
     out = capsys.readouterr().out
     assert "History cleanup skipped (RuntimeError: boom)." in out and "Card statistics update complete!" in out
+    assert set(_saved()[0]) >= {"Mini Doomer", "The Freezer"}
+
+
+def test_a_deleted_backfill_module_skips_with_one_line(github, monkeypatch, capsys):
+    """history_backfill.py deleted (its docstring's plan): the backfill is one line, never a failed run."""
+    monkeypatch.setitem(sys.modules, "commands.history_backfill", None)
+    for _ in range(2):
+        _run()
+        out = capsys.readouterr().out
+        assert "Card statistics update complete!" in out
     assert set(_saved()[0]) >= {"Mini Doomer", "The Freezer"}
 
 

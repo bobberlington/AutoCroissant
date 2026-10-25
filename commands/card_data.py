@@ -1099,12 +1099,15 @@ def _clean_key(db: StatsDatabase) -> Optional[tuple]:
     """
     from hashlib import sha256
     from commands.card_history import BOT_CHECKOUT, recovered_before
-    from commands.history_backfill import FILE
     try:
         cards = _cards_digest(db)
+    except Exception:                               # noqa: BLE001 - no key: the cleanup runs
+        return None
+    try:
+        from commands.history_backfill import FILE
         with open(FILE, "rb") as fh:
             backfill = sha256(fh.read()).hexdigest()
-    except FileNotFoundError:
+    except (ImportError, FileNotFoundError):        # the backfill module or its file deleted
         backfill = None
     except Exception:                               # noqa: BLE001 - no key: the cleanup runs
         return None

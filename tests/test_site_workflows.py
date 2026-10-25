@@ -49,10 +49,10 @@ def test_card_sync_shadow_schedule_writes_only_data():
     assert on["workflow_dispatch"]["inputs"]["dry_run"]["default"] is True
 
 
-def test_site_builds_on_what_it_reads_and_deploys_only_a_change():
+def test_site_builds_on_what_it_reads_and_always_deploys():
     """A push runs the build only when it touched what the build reads: everything the job checks out, the card files
-    and fonts (read through git), this workflow; never the TTS save. A build that made the live site again is not
-    deployed (build.txt, the site's digest)."""
+    and fonts (read through git), this workflow; never the TTS save. Every build deploys (skipping a build equal to
+    the live one is the owner's to decide: the Changes page's "Updated" line would stop moving)."""
     doc = _load("site.yml")
     paths = doc[True]["push"].get("paths")
     if paths is None:
@@ -65,9 +65,5 @@ def test_site_builds_on_what_it_reads_and_deploys_only_a_change():
         assert pattern in paths
     assert paths[len(paths) - 1] == "!TTS/**"
     steps = doc["jobs"]["build"]["steps"]
-    changed = next(s for s in steps if s.get("id") == "changed")
     upload = next(s for s in steps if "upload-pages-artifact" in s.get("uses", ""))
-    assert "build.txt" in changed["run"] and upload["if"] == "steps.changed.outputs.deploy == 'true'"
-    assert steps.index(changed) < steps.index(upload)
-    assert doc["jobs"]["build"]["outputs"]["deploy"] == "${{ steps.changed.outputs.deploy }}"
-    assert doc["jobs"]["deploy"]["if"] == "needs.build.outputs.deploy == 'true'"
+    assert "if" not in upload and "if" not in doc["jobs"]["deploy"]

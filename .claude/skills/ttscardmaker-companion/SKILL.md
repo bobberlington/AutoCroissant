@@ -450,7 +450,7 @@ TTSCardMaker Actions runner (same trusted circle today).
 - **Cache-busting:** every script/style/data URL carries `?v=`: an asset's from its content and its imports' stamps,
   the data's from its content without the build time (since 2026-10-24). `index.html`'s preload hints and modules'
   `from "./x.js"` imports are stamped too, so a deploy never mixes old scripts with new data, and one that changed
-  nothing keeps every URL. `build.txt` digests the site; site.yml skips the deploy when it equals the live one.
+  nothing keeps every URL. `build.txt` digests the site; every build deploys (a gate on it is the owner's to decide).
 - **Size:** about 117 MB in total, mostly 2,463 card images.
 
 **Build behaviour:**
@@ -533,7 +533,7 @@ python -m http.server -d site/dist 8000            # open http://localhost:8000
 | **Edit button** (sign-in with a GitHub token, edit form, batch tray, one-commit publish via the Git Data API, Card Authors / ban list line edits, rulebook pages, per-creature stats, admins list) | `site/assets/edit.js` |
 | **Sharing**: address bar shows `c/<id>/` (cards) and `d/#/deck/…` (hands) via `syncUrl` (base pinned at load); `c` copies the card link (no card Share dialog, Full image or PSD on GitHub link since 2026-10-23); deck and person pages keep their Share; a hand's Discord message links cards as `[name](<url>)` | `site/assets/app.js` |
 | **Link previews**: per-card `c/<id>/index.html` with og tags, `og:image` = 480 px JPEG `thumbs/<blob16>-og.jpg` (from the 720 webp), `theme-color` = card accent color; `og.jpg` banner; `d/` page | `site/build/build_site.py` (`og_tags`, `share_text`, `accent_color`, `site_banner`) |
-| **Speed pass** (2026-10-24): one `route()` per navigation (a card closes without a redraw unless `viewSig()` changed or the view under it is still `.loading`), cached date formatters (`dateFmt`), the grid reuses its tile nodes (`gridTiles`) and draws the window's tiles first, Table rows in chunks (a collapsed `tbody.sizer` of the rest's widest rows, measured on a canvas, holds the column widths), Back/Forward draws at once (`history.state.drawn`), a card opened from a link draws no grid behind it, lazy type icons, preload hints (the grid's first pictures on index.html: `grid_preload`; the 720 px picture on `c/<id>/`); build: `?v=` stamps by content, site.yml `paths`, the `build.txt` deploy gate. The rules code must keep: TTSCardMaker `site/NOTES.md` §27; tests `tests/test_site_speed.py` | `site/assets/app.js`, `text.js`, `stats.js`, `site/build/build_site.py` |
+| **Speed pass** (2026-10-24): one `route()` per navigation (a card closes without a redraw unless `viewSig()` changed or the view under it is still `.loading`), cached date formatters (`dateFmt`), the grid reuses its tile nodes (`gridTiles`) and draws the window's tiles first, Table rows in chunks (a collapsed `tbody.sizer` of the rest's widest rows, measured on a canvas, holds the column widths), Back/Forward draws at once (`history.state.drawn`), a card opened from a link draws no grid behind it, lazy type icons, preload hints (the grid's first pictures on index.html: `grid_preload`; the 720 px picture on `c/<id>/`); build: `?v=` stamps by content, site.yml `paths`, `build.txt` (no deploy gate: owner's call). The rules code must keep: TTSCardMaker `site/NOTES.md` §27; tests `tests/test_site_speed.py` | `site/assets/app.js`, `text.js`, `stats.js`, `site/build/build_site.py` |
 
 **Vocabulary** (the user's rule, 2026-10-20): use the game's own terms, per the rulebook, never invented ones.
 - **Card groups:** creatures, minions ("for most purposes considered creatures"), items, **field cards** (the field is
@@ -1100,4 +1100,4 @@ Maintenance rules:
 
 2026-10-24 (round 3): §2.1 output data files (analytics.json ~130 KB with revisions and archived; contributions.json and changelog.json keys) and §2.4 rows (search without has:details, Balance without the cooldown update, Ratings, Stats round 3, Archive tab, person stats, pinned tray), against TTSCardMaker branch work/r3-integ.
 
-2026-10-24 (speed pass): §2.4's Speed pass row, against TTSCardMaker branch work/site-perf (front end, stamps by content, site.yml `paths`, `build.txt` deploy gate); §2.1 cache-busting.
+2026-10-24 (speed pass): §2.4's Speed pass row, against TTSCardMaker branch work/site-perf (front end, stamps by content, site.yml `paths`, `build.txt`); §2.1 cache-busting.
