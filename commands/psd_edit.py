@@ -249,6 +249,7 @@ class Edit:
     fonts: list = field(default_factory=list)   # faces it added to the document's FontSets (ICON_FONT on a plain card)
     band: Optional[tuple] = None  # canvas bbox of the text pixels redrawn (a splice: its changed glyphs); None: none
     renamed: Optional[str] = None  # a title layer named after its text: its new name, the new title (as Photoshop does)
+    whole: bool = False     # the engine redrew every glyph (no splice, or it fell back): the lines it left laid out again
     icons: Optional["IconPlan"] = None  # a stars or types edit's plan (index_icons() fills the four lists below)
     toggled: list = field(default_factory=list)  # record indices of the layers it showed or hid: one flag byte each
     shifted: list = field(default_factory=list)  # (record index, old record index, dx, dy): a layer it moved
@@ -276,6 +277,7 @@ class Baked:
     icc: bool = True        # export_icc(): rendered converted by the embedded profile (False: the PNG was exported raw)
     rerender: dict = field(default_factory=dict)    # field -> gate_idempotence()'s measurement of its region
     icons: dict = field(default_factory=dict)       # stars / types -> the layout their edit followed (IconPlan.how)
+    whole: dict = field(default_factory=dict)       # field -> whole_redraw()'s measurement (Edit.whole)
 
 
 # ========================
@@ -325,6 +327,45 @@ def _touches(a, b) -> bool:
     solid_a = True if ink_a is None else ink_a[y0 - ay0:y1 - ay0, x0 - ax0:x1 - ax0] > INK_ALPHA
     solid_b = True if ink_b is None else ink_b[y0 - by0:y1 - by0, x0 - bx0:x1 - bx0] > INK_ALPHA
     return bool(np.any(solid_a & solid_b))
+
+
+def _meets(mask: np.ndarray, layer, whole: bool = False) -> bool:
+    """Whether a canvas mask overlaps the layer's solid ink (past INK_ALPHA), or its bbox (whole, or no pixels)."""
+    x0, y0, x1, y1 = clip(tuple(layer.bbox), mask.shape[1], mask.shape[0])
+    if x1 <= x0 or y1 <= y0 or not mask[y0:y1, x0:x1].any():
+        return False
+    ink = None if whole else _alpha(layer)
+    if ink is None:
+        return True
+    bx0, by0 = layer.bbox[0], layer.bbox[1]
+    return bool(np.any(mask[y0:y1, x0:x1] & (ink[y0 - by0:y1 - by0, x0 - bx0:x1 - bx0] > INK_ALPHA)))
+
+
+def _clip_base(layer):
+    """The layer a clipped one clips to (the nearest one below it in its group that is not clipped), else None."""
+    if not layer.clipping or layer.parent is None:
+        return None
+    base = None
+    for other in layer.parent:
+        if other._record is layer._record:
+            return base
+        if not other.clipping:
+            base = other
+    return None
+
+
+def _halo_meets(glow: np.ndarray, badge, shared: set) -> bool:
+    """Whether a halo's changed ink (a canvas mask) meets a star or type icon: _meets, by its box when composited with
+    the text (shared: _scoped), a clipped one only where its base inks too (Elemental World's ice texture past its
+    icon)."""
+    whole = id(badge._record) in shared
+    if not _meets(glow, badge, whole):
+        return False
+    base = None if whole else _clip_base(badge)
+    if base is None:
+        return True
+    seen = glow & (_on_canvas(badge, glow.shape)[..., 3] > INK_ALPHA * 255)
+    return _meets(seen, base, id(base._record) in shared)
 
 
 def _flat(image: Image.Image) -> np.ndarray:
@@ -2471,8 +2512,8 @@ def covered_ink(psd: PSDImage, layer, before: np.ndarray, skip: list, halos: Opt
         layer: The edited text layer
         before: _on_canvas() of it before the edit
         skip: Layers that go with it
-        halos: _effect_ink() after and before the edit, for typed glow tokens: their effects' changed ink counts on the
-            stat bars
+        halos: _effect_ink() after and before the edit, for typed glow tokens: their effects' changed ink counts as
+            the text's (a stroked title's halo disc under a star: Confusion's [ice:darkglow], review 2026-10-24)
 
     Returns:
         Why, or None
@@ -2482,18 +2523,19 @@ def covered_ink(psd: PSDImage, layer, before: np.ndarray, skip: list, halos: Opt
     now = after[..., 3] > INK_ALPHA * 255
     ink = now & (after != before).any(axis=2)
     was = before[..., 3] > INK_ALPHA * 255
-    bars = ink if halos is None else ink | _changed_ink(*halos)
-    if not bars.any():
+    grown, shared = None, set()
+    if halos is not None:
+        glow = _changed_ink(*halos)
+        ink, grown, shared = ink | glow, _dilate(glow), _scoped(layer)
+    if not ink.any():
         return None
     for stat, rows in stat_rows(psd).items():
         for group, _, box in rows:
             if box is None or not group.is_visible():
                 continue
             x0, y0, x1, y1 = clip(box, psd.width, psd.height)
-            if x1 > x0 and y1 > y0 and not was[y0:y1, x0:x1].any() and bars[y0:y1, x0:x1].any():
-                return f"the new text runs over the {stat} bar ({int(bars[y0:y1, x0:x1].sum())} px)"
-    if not ink.any():
-        return None
+            if x1 > x0 and y1 > y0 and not was[y0:y1, x0:x1].any() and ink[y0:y1, x0:x1].any():
+                return f"the new text runs over the {stat} bar ({int(ink[y0:y1, x0:x1].sum())} px)"
     ys, xs = (ink | was).nonzero()
     box = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
     order = list(psd.descendants())
@@ -2512,14 +2554,17 @@ def covered_ink(psd: PSDImage, layer, before: np.ndarray, skip: list, halos: Opt
         if alone is None:
             continue
         drawn = np.asarray(alone.convert("RGBA"))[..., 3] > INK_ALPHA * 255
-        hidden = int((ink[y0:y1, x0:x1] & drawn).sum())
+        mine = ink[y0:y1, x0:x1]
+        if id(other._record) in shared:         # it hides the halo in the composite: the halo's edge beside it counts
+            mine = mine | grown[y0:y1, x0:x1]
+        hidden = int((mine & drawn).sum())
         if not hidden:
             continue
         if not (was[y0:y1, x0:x1] & drawn).any():
             return f"{other.name!r} above it would cover {hidden} px of the new text"
         design[y0:y1, x0:x1] |= drawn
         names.append(repr(other.name))
-    more = int((now & design).sum()) - int((was & design).sum())
+    more = int(((now | ink) & design).sum()) - int((was & design).sum())
     if more > 0:
         return f"{', '.join(names)} above it, over the old text too, would cover {more} px more of the new text"
     return None
@@ -2637,6 +2682,17 @@ def _effect_ink(psd: PSDImage, layer) -> Optional[np.ndarray]:
     layers in it too) on the canvas, RGBA uint8; None when neither has any. A :glow halo's faint pixels under a
     stroke are a disc, as Photoshop draws them (the owner's finding, 2026-10-24): the gates count that ink.
     """
+    scope = _effect_scope(layer)
+    if scope is None:
+        return None
+    image = scope.composite(viewport=(0, 0, psd.width, psd.height), apply_icc=False)
+    if image is None:
+        return np.zeros((psd.height, psd.width, 4), np.uint8)
+    return np.asarray(image.convert("RGBA"))
+
+
+def _effect_scope(layer):
+    """The outermost of the layer and its groups with an enabled effect (what _effect_ink composites), or None."""
     scope = None
     for owner in (layer, *_ancestors(layer)):
         try:
@@ -2644,12 +2700,14 @@ def _effect_ink(psd: PSDImage, layer) -> Optional[np.ndarray]:
                 scope = owner
         except AttributeError:
             continue
-    if scope is None:
-        return None
-    image = scope.composite(viewport=(0, 0, psd.width, psd.height), apply_icc=False)
-    if image is None:
-        return np.zeros((psd.height, psd.width, 4), np.uint8)
-    return np.asarray(image.convert("RGBA"))
+    return scope
+
+
+def _scoped(layer) -> set:
+    """Record ids of the layers composited with it in _effect_ink (its effect scope's group): over its halo there, the
+    composite shows them, not the halo; none when the scope is no group."""
+    scope = _effect_scope(layer)
+    return {id(other._record) for other in scope.descendants()} if scope is not None and scope.is_group() else set()
 
 
 def _changed_ink(after: np.ndarray, before: np.ndarray) -> np.ndarray:
@@ -3014,6 +3072,10 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         over = inks_over(psd, layer, canvas, halos)
         if over:
             raise Refused("overflow", f"name: {over}; edit in Photoshop")
+        if halos is not None and badges:        # a stroked title's halo disc (review 2026-10-24: Confusion's star)
+            glow, shared = _changed_ink(*halos), _scoped(layer)
+            if any(_halo_meets(glow, badge, shared) for badge in badges):
+                raise Refused("overflow", "name: a glow token's halo reaches the stars or type icons; edit in Photoshop")
     misfit = typed_icon_fit(layer, typed, sized, fonts) if typed else None
     if misfit:
         raise Refused(misfit[0], f"{which}: {misfit[1]}; edit in Photoshop")
@@ -3046,7 +3108,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                     for fx in made],
                 dropped=dropped, rebuilt=[(_record_index(fx), old, fx.name) for fx, old in rebuilt],
                 fx_names=fx_names, notes=notes, held=held, fonts=faces,
-                renamed=layer.name if own else None)
+                renamed=layer.name if own else None, whole=spliced is None or bool(spliced.fallback))
 
 
 # ========================
@@ -4268,10 +4330,29 @@ def baseline(psd: PSDImage, png: Image.Image, region: tuple, icc: bool = True,
     return render, measured
 
 
+def whole_redraw(old: PSDImage, edit: Edit, png: Image.Image, fonts_dir: str, icc: bool = True,
+                 text: str = "preview") -> dict:
+    """
+    The edited layer's old text redrawn whole by the engine on a copy of the card, against the official PNG over the
+    edit's region: what an edit the engine redrew whole (Edit.whole) prints on the lines it left. The parity bar sees
+    only the stored raster and gate_idempotence the engine's own render (review 2026-10-24: Wendy's 2CD badge moved
+    6 px, '(3 points)' 8 px, the box 15.7% bad, no note).
+    """
+    from psd_tools.composite.text import FontMap
+    copy = edit_copy(old)
+    ids = [layer.layer_id for layer in edit.layers]
+    for layer in copy.descendants():
+        if layer.layer_id in ids:
+            layer.rasterize(fonts=FontMap(dirs=[fonts_dir]))
+    return _measure(render_region(copy, edit.region, icc, text, tuple(ids)), png.crop(edit.region))
+
+
 def miss_notes(baked) -> list:
     """
     The note per edited box that missed the parity bar under the floor (owner, 2026-10-23): "name baked with a pixel
-    difference: bad 1.97%, mean 1.60, max 217"; the re-render's numbers when only it missed.
+    difference: bad 1.97%, mean 1.60, max 217"; the re-render's numbers when only it missed; and per text the engine
+    redrew whole whose old text so drawn misses it (whole_redraw): "ability redrawn whole, its lines laid out again:
+    bad 15.73%, mean 28.28, max 255".
     """
     out = []
     for name, measured in baked.parity.items():
@@ -4280,6 +4361,10 @@ def miss_notes(baked) -> list:
         if miss:
             out.append("%s baked with a pixel difference%s: bad %.2f%%, mean %.2f, max %d" % (
                 name, "" if miss is measured else " (re-render)", miss["bad_pct"], miss["mean"], miss["max"]))
+    for name, measured in getattr(baked, "whole", {}).items():
+        if not _within_bar(measured):
+            out.append("%s redrawn whole, its lines laid out again: bad %.2f%%, mean %.2f, max %d" % (
+                name, measured["bad_pct"], measured["mean"], measured["max"]))
     return out
 
 
@@ -5358,7 +5443,7 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
     region = changed_region(edits, new)
 
     # region per edited field (section 5 step 3): the parity bar is measured over the pixels that edit can reach
-    merged, parity, changed_pixels, patches = png, {}, 0, []
+    merged, parity, changed_pixels, patches, whole = png, {}, 0, [], {}
     preview = stored_preview(old) if update_preview else None
     icc = export_icc(old, png)
     edited = edited_ids(edits)
@@ -5371,6 +5456,11 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
             refused.field = edit.field if edit.field in ICON_FIELDS else None
             raise
         text = parity[edit.field]["text"]
+        if edit.whole:                          # every line laid out again: told, refused past the floor
+            whole[edit.field] = measured = whole_redraw(old, edit, png, fonts_dir, icc, text)
+            if _past_floor(measured):
+                raise Refused("parity", "%s redrawn whole bad %.2f%% mean %.2f max %d: past the %g%% floor"
+                              % (edit.field, measured["bad_pct"], measured["mean"], measured["max"], PARITY_FLOOR))
         timings["baseline"] += perf_counter() - start
         start = perf_counter()
         with cache:     # a region's first pinned pass (its key: the region and the pins): gate_idempotence's resumes it
@@ -5419,7 +5509,7 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
                  block_bytes, [name for edit in edits for name in edit.fx_names
                                if name in {n for n, _ in edit.fx} | {n for _, _, n in edit.rebuilt}],
                  [note for edit in edits for note in edit.notes], icc, rerender,
-                 {edit.field: edit.icons.how for edit in edits if edit.icons is not None})
+                 {edit.field: edit.icons.how for edit in edits if edit.icons is not None}, whole)
 
 
 # ========================
@@ -5522,6 +5612,7 @@ __all__ = [
     'merge_png',
     'merge_preview',
     'miss_notes',
+    'whole_redraw',
     'name_layer',
     'normalize_ability',
     'offline_parser',

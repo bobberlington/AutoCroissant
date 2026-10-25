@@ -241,6 +241,9 @@ def test_miss_notes():
     assert pe.miss_notes(SimpleNamespace(parity={"hp": ok, "spd": ok}, rerender={"spd": miss})) == [
         "spd baked with a pixel difference (re-render): bad 1.97%, mean 1.60, max 217"]
     assert pe.miss_notes(SimpleNamespace(parity={"hp": miss, "spd": ok})) == [f"hp {note}"]     # a Baked without rerender
+    assert pe.miss_notes(SimpleNamespace(parity={"ability": ok}, whole={"ability": miss})) == [
+        "ability redrawn whole, its lines laid out again: bad 1.97%, mean 1.60, max 217"]
+    assert pe.miss_notes(SimpleNamespace(parity={"ability": ok}, whole={"ability": ok})) == []
 
 
 def test_own_pixels():
@@ -3018,6 +3021,101 @@ def test_a_glow_disc_on_a_stat_bar_refuses(clone, parser, chart, monkeypatch):
                 pe.set_text_layer(psd, "ability", old + " Gain [fire:glow].", fonts, chart, parser=parser)
         else:
             pe.set_text_layer(psd, "ability", old + " Gain [fire:glow].", fonts, chart, parser=parser)
+
+
+CONFUSION = "Auxiliary/Status Effects/Debuffs/2 Stars/Confusion.psd"     # a stroked title, its stars above it
+
+
+@text_edit
+@pytest.mark.skipif(not pe.glow_halos(), reason="the fork draws no glow halos")
+def test_a_glow_disc_under_a_star_refuses(clone, parser, chart):
+    """Review 2026-10-24: a stroked title's typed glow prints a black disc, which ran 1,364 px under Confusion's 'star
+    copy 2' (and Krabby Patty's 'Food' icon) every gate passing: only the title's own ink was checked. Its changed
+    effect ink counts on the stars and type icons (a clipped one where its base inks too) and under the layers above
+    (covered_ink); a token clear of them sets."""
+    fonts = str(clone / pe.FONTS_DIR)
+    for rel, typed in ((CONFUSION, "{} [ice:darkglow]"), ("Auxiliary/Items/Krabby_Patty.psd", "[fire:glow] {}")):
+        path = _card(clone, rel)[0]
+        parsed = pe.parse_card(parser, path, rel)
+        name, card, own = pe.shown_name(parsed), pe._card_name(parsed), pe._own_text(parsed)
+        with pytest.raises(pe.Refused, match="^overflow: name: a glow token's halo reaches the stars or type icons"):
+            pe.set_text_layer(PSDImage.open(path), "name", typed.format(name), fonts, chart, card, own, parser,
+                              PSDImage.open(path))
+    path = _card(clone, CONFUSION)[0]
+    parsed = pe.parse_card(parser, path, CONFUSION)
+    name, card, own = pe.shown_name(parsed), pe._card_name(parsed), pe._own_text(parsed)
+    psd = PSDImage.open(path)
+    layer = pe.name_layer(psd, card, own)
+    star = next(other for other in psd.descendants() if other.name == "star copy 2")
+    x0, y0 = star.bbox[:2]
+    ys, xs = (pe._alpha(star) > 0.9).nonzero()
+    canvas = pe._on_canvas(layer, (psd.height, psd.width))
+    after, before = np.zeros_like(canvas), np.zeros_like(canvas)
+    after[y0 + ys[0], x0 + xs[0]] = 255
+    assert pe.covered_ink(psd, layer, canvas, []) is None and pe.covered_ink(psd, layer, canvas, [], (before, before)) is None
+    assert pe.covered_ink(psd, layer, canvas, [], (after, before)) == "'star copy 2' above it would cover 1 px of the new text"
+    pe.set_text_layer(psd, "name", name + " [fire]", fonts, chart, card, own, parser, PSDImage.open(path))
+    rel = "Field/3 Stars/Elemental_World.psd"   # its disc under the part of a clipped ice texture its icon hides
+    path = _card(clone, rel)[0]
+    parsed = pe.parse_card(parser, path, rel)
+    pe.set_text_layer(PSDImage.open(path), "name", pe.shown_name(parsed) + " [ice:darkglow]", fonts, chart,
+                      pe._card_name(parsed), pe._own_text(parsed), parser, PSDImage.open(path))
+
+
+@text_edit
+def test_a_glow_disc_beside_a_layer_composited_with_it_counts(clone, parser, monkeypatch):
+    """In its effect scope's group (Crock Pot's stroked Text) a layer above the text hides the halo in the composite
+    _effect_ink draws, so the halo's changed ink beside its ink counts (covered_ink), and a star or type icon there
+    counts by its box (_meets)."""
+    path = _card(clone, "N.M.E/Crock_Pot.psd")[0]
+    psd = PSDImage.open(path)
+    parsed = pe.parse_card(parser, path, "N.M.E/Crock_Pot.psd")
+    title, layer = pe.name_layer(psd, pe._card_name(parsed), pe._own_text(parsed)), pe.ability_layer(psd)
+    badge = next(other for other in psd.descendants() if other.name == "NME")
+    shared = pe._scoped(layer)
+    assert {id(title._record), id(badge._record)} <= shared
+    mask = np.zeros((psd.height, psd.width), bool)
+    ys, xs = (pe._alpha(badge) <= pe.INK_ALPHA).nonzero()
+    mask[badge.bbox[1] + ys[0], badge.bbox[0] + xs[0]] = True
+    assert not pe._meets(mask, badge) and pe._meets(mask, badge, whole=True)
+    x0, y0, x1, y1 = title.bbox
+    drawn = np.asarray(title.composite(viewport=(x0, y0, x1, y1), apply_icc=False).convert("RGBA"))[..., 3] > pe.INK_ALPHA * 255
+    edge = drawn & ~np.roll(drawn, 1, axis=1)               # its ink with no ink left of it: the pixel there is beside it
+    ys, xs = edge[:, 1:].nonzero()
+    canvas = pe._on_canvas(layer, (psd.height, psd.width))
+    after, before = np.zeros_like(canvas), np.zeros_like(canvas)
+    after[y0 + ys[0], x0 + xs[0]] = 255
+    assert search(rf"^'{title.name}' above it would cover \d+ px of the new text$",
+                  pe.covered_ink(psd, layer, canvas, [], (after, before)) or "")
+    monkeypatch.setattr(pe, "_scoped", lambda layer: set())    # outside the group: only ink on its ink counts
+    assert pe.covered_ink(psd, layer, canvas, [], (after, before)) is None
+
+
+WENDY = "Creatures/DST/3 Stars/Wendy.psd"     # its stored ink outside the engine's layout: a splice falls back
+
+
+@text_edit
+def test_a_text_redrawn_whole_is_measured(clone, parser, chart, tmp_path, monkeypatch):
+    """Review 2026-10-24: where the fork's splice falls back (stored ink outside its layout), the engine redraws every
+    line: a typo in Wendy's ability moved its kept 2CD badge 6 px and '(3 points)' 8 px, every gate passing (the bar
+    sees the stored raster, gate_idempotence the engine's own render). The old text so redrawn is measured against the
+    PNG (whole_redraw): a miss of the bar is told, past the floor refused; an edit it splices is not measured."""
+    old = pe.normalize_ability(pe.parse_card(parser, _card(clone, WENDY)[0], WENDY)["card"]["ability"])
+    jobs = {"ability": old.replace("Resummon", "Resummen", 1)}
+    (tmp_path / "a").mkdir()
+    _, baked = _bake(clone, parser, WENDY, jobs, tmp_path / "a", chart)
+    assert pe._within_bar(baked.parity["ability"]) and baked.edits[0].whole
+    assert baked.whole["ability"]["bad_pct"] > 10 and baked.reparse["validator"] == []
+    assert any(note.startswith("ability redrawn whole, its lines laid out again: bad ") for note in pe.miss_notes(baked))
+    monkeypatch.setattr(pe, "PARITY_FLOOR", 10.0)
+    (tmp_path / "b").mkdir()
+    with pytest.raises(pe.Refused, match=r"^parity: ability redrawn whole bad [\d.]+% mean [\d.]+ max \d+: past the 10% floor"):
+        _bake(clone, parser, WENDY, jobs, tmp_path / "b", chart)
+    monkeypatch.undo()
+    (tmp_path / "c").mkdir()
+    _, baked = _bake(clone, parser, HIVE, {"ability": pe.normalize_ability(pe.parse_card(parser, _card(clone, HIVE)[0], HIVE)[
+        "card"]["ability"]) + " Deal 1 damage."}, tmp_path / "c", chart)
+    assert not baked.edits[0].whole and baked.whole == {}
 
 
 @text_edit
