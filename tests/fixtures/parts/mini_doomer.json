@@ -1,0 +1,43 @@
+{
+ "blob": "764b6a064b14ec0a76aa73a70cb6a4f933c1b993",
+ "path": "Auxiliary/Minions/Mini_Doomer.psd",
+ "name": "Mini Doomer",
+ "parts": {
+  "title": [
+   {
+    "id": 422,
+    "layer": "Text/Name",
+    "named": true,
+    "text": "Mini Doomer",
+    "sha": "97e2eb03",
+    "box": [
+     313,
+     36,
+     886,
+     101
+    ],
+    "variants": null
+   }
+  ],
+  "ability": [
+   {
+    "id": 2068,
+    "layer": "Text/Ability",
+    "named": true,
+    "text": "Has stats equal to the base stats -2 of the creature that summoned it. \n(BOT) Die.",
+    "sha": "e1f4c753",
+    "box": [
+     40,
+     1815,
+     1144,
+     2250
+    ],
+    "variants": null
+   }
+  ],
+  "blocks": [],
+  "follow": [],
+  "variants": null,
+  "template": null
+ }
+}

@@ -1,0 +1,128 @@
+{
+ "blob": "ba3ca7cec1a8c5ff646a7978b22e3be47084951d",
+ "path": "Items/Heal/2 Stars/A_Snack.psd",
+ "name": "A Snack",
+ "parts": {
+  "title": [
+   {
+    "id": 327,
+    "layer": "Text/Name #1",
+    "named": true,
+    "text": "A snack",
+    "sha": "0def9122",
+    "box": [
+     368,
+     58,
+     838,
+     134
+    ],
+    "variants": [
+     1
+    ]
+   },
+   {
+    "id": 1023,
+    "layer": "Text/Name #2",
+    "named": true,
+    "text": "Breakfast",
+    "sha": "364653cd",
+    "box": [
+     275,
+     54,
+     930,
+     136
+    ],
+    "variants": [
+     2
+    ]
+   },
+   {
+    "id": 1025,
+    "layer": "Text/Name #3",
+    "named": true,
+    "text": "Supper",
+    "sha": "166d7a8a",
+    "box": [
+     397,
+     56,
+     809,
+     136
+    ],
+    "variants": [
+     3
+    ]
+   }
+  ],
+  "ability": [
+   {
+    "id": 320,
+    "layer": "Text/Ability",
+    "named": true,
+    "text": "Heal 3 HP.\nInflict 2T2 Regen and 2T1 Stuffed.",
+    "sha": "e64944f4",
+    "box": [
+     176,
+     1215,
+     1023,
+     1466
+    ],
+    "variants": null
+   }
+  ],
+  "blocks": [],
+  "follow": [],
+  "variants": {
+   "count": 3,
+   "pngs": {
+    "1": "A_Snack.png",
+    "2": "A_Snack2.png",
+    "3": "A_Snack3.png"
+   },
+   "tagged": [
+    {
+     "id": 1015,
+     "layer": "images/A Snack #1",
+     "in": [
+      1
+     ]
+    },
+    {
+     "id": 1022,
+     "layer": "images/Breakfast #2",
+     "in": [
+      2
+     ]
+    },
+    {
+     "id": 1024,
+     "layer": "images/Supper #3",
+     "in": [
+      3
+     ]
+    },
+    {
+     "id": 327,
+     "layer": "Text/Name #1",
+     "in": [
+      1
+     ]
+    },
+    {
+     "id": 1023,
+     "layer": "Text/Name #2",
+     "in": [
+      2
+     ]
+    },
+    {
+     "id": 1025,
+     "layer": "Text/Name #3",
+     "in": [
+      3
+     ]
+    }
+   ]
+  },
+  "template": null
+ }
+}

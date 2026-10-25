@@ -1,0 +1,128 @@
+{
+ "blob": "1026375883ce5dab1a832d575bf75cba2f955bc8",
+ "path": "Auxiliary/Rulebook/01_Getting_Started.psd",
+ "name": "01 Getting Started",
+ "parts": {
+  "title": [],
+  "ability": [],
+  "blocks": [
+   {
+    "id": 3,
+    "layer": "Text/Header",
+    "role": "header",
+    "named": true,
+    "text": "GETTING STARTED",
+    "sha": "ea74752c",
+    "box": [
+     101,
+     72,
+     976,
+     141
+    ],
+    "variants": null
+   },
+   {
+    "id": 10,
+    "layer": "Text/Welcome",
+    "role": "block",
+    "text": "WELCOME TO IMPOSSIBILITY SIM!\nThank you so much for playing! We’re very happy to have you with us today. \nThis handy little book will run through the rules to get you started with our little card game. We hope you have fun!",
+    "sha": "d1aeb11c",
+    "box": [
+     483,
+     286,
+     1032,
+     572
+    ],
+    "variants": null
+   },
+   {
+    "id": 15,
+    "layer": "Text/TO WIN:",
+    "role": "block",
+    "text": "TO WIN:",
+    "sha": "2954c2b6",
+    "box": [
+     94,
+     724,
+     296,
+     760
+    ],
+    "variants": null
+   },
+   {
+    "id": 16,
+    "layer": "Text/Win Condition",
+    "role": "block",
+    "text": "Defeat all of your opponent’s creatures, while making sure they don’t defeat all of yours!\nPlayers accomplish this by using their own CREATURES and ITEMS to attack and protect.",
+    "sha": "db1e0144",
+    "box": [
+     51,
+     787,
+     1037,
+     936
+    ],
+    "variants": null
+   },
+   {
+    "id": 28,
+    "layer": "Text/Creatures",
+    "role": "block",
+    "text": "CREATURES:\nThis game lives and breathes by them. Defeat your opponent’s while protecting your own.",
+    "sha": "5b7fc7bc",
+    "box": [
+     811,
+     984,
+     1038,
+     1197
+    ],
+    "variants": null
+   },
+   {
+    "id": 63,
+    "layer": "Text/Creatures copy 2",
+    "role": "block",
+    "text": "Above all else, make sure to follow the “Don’t be stupid” rule!",
+    "sha": "cffc8075",
+    "box": [
+     822,
+     1301,
+     1038,
+     1443
+    ],
+    "variants": null
+   },
+   {
+    "id": 14,
+    "layer": "Text/Note",
+    "role": "block",
+    "text": "While reading is helpful, this card game can often seem like it gets complicated, fast. Rather than trying to memorize all of the mechanics and concepts before your first game, it is both encouraged and expected to jump straight into a test match against an experienced player. Make sure to ask questions about mechanics and interactions that are unclear. This game is still in beta and is always being tested, so your feedback is highly appreciated!",
+    "sha": "58ae2619",
+    "box": [
+     46,
+     1490,
+     1032,
+     1836
+    ],
+    "variants": null
+   },
+   {
+    "id": 76,
+    "layer": "Text/1",
+    "role": "page",
+    "named": false,
+    "text": "1",
+    "sha": "356a192b",
+    "box": [
+     27,
+     1874,
+     44,
+     1897
+    ],
+    "variants": null
+   }
+  ],
+  "follow": [],
+  "variants": null,
+  "template": null
+ }
+}

@@ -1,0 +1,99 @@
+{
+ "blob": "233e29c4eb8a5df4971aa0b50c2881bc05f6abc9",
+ "path": "Creatures/Kirby/3 Stars/Miracle_Matter.psd",
+ "name": "Miracle Matter",
+ "parts": {
+  "title": [
+   {
+    "id": 422,
+    "layer": "Text/Name",
+    "named": true,
+    "text": "Miracle\nMatter",
+    "sha": "9b6f3069",
+    "box": [
+     381,
+     12,
+     821,
+     221
+    ],
+    "variants": null
+   }
+  ],
+  "ability": [
+   {
+    "id": 1367,
+    "layer": "Text/Stat Txt/ability/Ability",
+    "named": true,
+    "text": "(1GCD) You may choose one of the following forms:",
+    "sha": "855a83b2",
+    "box": [
+     18,
+     1762,
+     1074,
+     1891
+    ],
+    "variants": null
+   },
+   {
+    "id": 1369,
+    "layer": "Text/Stat Txt/ability/Ability",
+    "named": true,
+    "text": "Fire: 5/5/8/7",
+    "sha": "32ee7ac6",
+    "box": [
+     121,
+     1901,
+     493,
+     1956
+    ],
+    "variants": null
+   },
+   {
+    "id": 1368,
+    "layer": "Text/Stat Txt/ability/Ability",
+    "named": true,
+    "text": "Earth: 5/8/6/5 and heal 2 HP",
+    "sha": "bdc91d46",
+    "box": [
+     124,
+     1969,
+     1035,
+     2024
+    ],
+    "variants": null
+   },
+   {
+    "id": 417,
+    "layer": "Text/Stat Txt/ability/Ability",
+    "named": true,
+    "text": "Ice: 5/6/7/6 and heal 1 HP",
+    "sha": "e8e12acf",
+    "box": [
+     125,
+     2031,
+     958,
+     2086
+    ],
+    "variants": null
+   },
+   {
+    "id": 1366,
+    "layer": "Text/Stat Txt/ability/Ability",
+    "named": true,
+    "text": "This creature gains the type of whatever form it is in until the end of the turn.",
+    "sha": "80ae66fc",
+    "box": [
+     19,
+     2122,
+     1134,
+     2303
+    ],
+    "variants": null
+   }
+  ],
+  "blocks": [],
+  "follow": [],
+  "variants": null,
+  "template": null
+ }
+}

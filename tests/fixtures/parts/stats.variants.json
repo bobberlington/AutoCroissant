@@ -1,0 +1,109 @@
+{
+ "schema": 1,
+ "cards": {
+  "A Snack": {
+   "ability": "Heal 3 HP.\nInflict 2T2 Regen and 2T1 Stuffed.",
+   "blob_sha": "ba3ca7cec1a8c5ff646a7978b22e3be47084951d",
+   "card_type": "item",
+   "display_name": "A snack",
+   "duplicate_of": null,
+   "name": "A Snack",
+   "parser_version": 3,
+   "path": "Items/Heal/2 Stars/A_Snack.psd",
+   "problems": [],
+   "series": "The Binding of Isaac",
+   "stars": 2,
+   "stats": {
+    "hp": -1,
+    "defense": -1,
+    "attack": -1,
+    "speed": -1
+   },
+   "subtype": "heal",
+   "types": [
+    "food"
+   ],
+   "variant": 1,
+   "variants": [
+    "A Snack2",
+    "A Snack3"
+   ]
+  },
+  "A Snack2": {
+   "ability": "Heal 3 HP.\nInflict 2T2 Regen and 2T1 Stuffed.",
+   "blob_sha": "ba3ca7cec1a8c5ff646a7978b22e3be47084951d",
+   "card_type": "item",
+   "display_name": "Breakfast",
+   "duplicate_of": null,
+   "name": "A Snack2",
+   "parser_version": 3,
+   "path": "Items/Heal/2 Stars/A_Snack.psd",
+   "problems": [],
+   "series": "The Binding of Isaac",
+   "stars": 2,
+   "stats": {
+    "hp": -1,
+    "defense": -1,
+    "attack": -1,
+    "speed": -1
+   },
+   "subtype": "heal",
+   "types": [
+    "food"
+   ],
+   "variant": 2,
+   "variant_of": "A Snack"
+  },
+  "A Snack3": {
+   "ability": "Heal 3 HP.\nInflict 2T2 Regen and 2T1 Stuffed.",
+   "blob_sha": "ba3ca7cec1a8c5ff646a7978b22e3be47084951d",
+   "card_type": "item",
+   "display_name": "Supper",
+   "duplicate_of": null,
+   "name": "A Snack3",
+   "parser_version": 3,
+   "path": "Items/Heal/2 Stars/A_Snack.psd",
+   "problems": [],
+   "series": "The Binding of Isaac",
+   "stars": 2,
+   "stats": {
+    "hp": -1,
+    "defense": -1,
+    "attack": -1,
+    "speed": -1
+   },
+   "subtype": "heal",
+   "types": [
+    "food"
+   ],
+   "variant": 3,
+   "variant_of": "A Snack"
+  },
+  "Mini Doomer": {
+   "ability": "Has stats equal to the base stats -2 of the creature that summoned it. \n(BOT) Die.",
+   "blob_sha": "764b6a064b14ec0a76aa73a70cb6a4f933c1b993",
+   "card_type": "minion",
+   "display_name": null,
+   "duplicate_of": null,
+   "name": "Mini Doomer",
+   "parser_version": 3,
+   "path": "Auxiliary/Minions/Mini_Doomer.psd",
+   "problems": [],
+   "series": "Kirby",
+   "stars": 2,
+   "stats": {
+    "hp": 5,
+    "defense": 2,
+    "attack": 5,
+    "speed": 5
+   },
+   "subtype": null,
+   "types": [
+    "wind",
+    "defensive_minion",
+    "light"
+   ],
+   "variant": null
+  }
+ }
+}

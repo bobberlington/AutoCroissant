@@ -1,0 +1,74 @@
+{
+ "v": 2,
+ "request": "michaeljsr-mh7k2c3d-0a1b",
+ "card": "A Snack2",
+ "variant": 2,
+ "path": "Items/Heal/2 Stars/A_Snack.psd",
+ "png": "Items/Heal/2 Stars/A_Snack2.png",
+ "base": {
+  "repo": "MichaelJSr/TTSCardMaker",
+  "commit": "c8556d541f6aff67b4f3b2f6462ff91980f79fec",
+  "psd_blob": "ba3ca7cec1a8c5ff646a7978b22e3be47084951d",
+  "png_blob": "d25bf9243f525e042e16218ff5479995415eb8bc"
+ },
+ "edit": {
+  "ability": "Heal 4 HP.\nInflict 2T2 Regen and 2T1 Stuffed.",
+  "name": "Second Breakfast",
+  "parts": {
+   "320": {
+    "field": "ability",
+    "text": "Heal 4 HP.\nInflict 2T2 Regen and 2T1 Stuffed.",
+    "was": "Heal 3 HP.\nInflict 2T2 Regen and 2T1 Stuffed.",
+    "sha": "e64944f4",
+    "psd": "ba3ca7ce",
+    "layer": "Text/Ability"
+   },
+   "1023": {
+    "field": "name",
+    "text": "Second\nBreakfast",
+    "was": "Breakfast",
+    "sha": "364653cd",
+    "psd": "ba3ca7ce",
+    "layer": "Text/Name #2"
+   }
+  }
+ },
+ "state": "baked",
+ "transient": false,
+ "fields": {
+  "name": "baked",
+  "ability": "baked"
+ },
+ "reason": "",
+ "parts": {
+  "320": "baked",
+  "1023": "baked"
+ },
+ "changes": [
+  {
+   "field": "ability",
+   "old": "Heal 3 HP.\nInflict 2T2 Regen and 2T1 Stuffed.",
+   "new": "Heal 4 HP.\nInflict 2T2 Regen and 2T1 Stuffed."
+  },
+  {
+   "field": "name",
+   "old": "Breakfast",
+   "new": "Second Breakfast"
+  }
+ ],
+ "notes": [
+  "the ability layer is shared: changes every variant (A snack, Breakfast, Supper)"
+ ],
+ "parity": {},
+ "region": null,
+ "image": "baked",
+ "files": {
+  "webp": "preview.webp",
+  "png": "preview.png",
+  "before": "before.webp"
+ },
+ "runner": {},
+ "run": "",
+ "took_s": 0.0,
+ "at": "2026-10-26T01:05:00Z"
+}

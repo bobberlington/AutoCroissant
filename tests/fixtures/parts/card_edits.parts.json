@@ -1,0 +1,128 @@
+{
+ "about": "The parts editor's Card Edits.json entries (docs/Future/PARTS_EDITOR.md §3): a fixture.",
+ "cards": {
+  "01 Getting Started": {
+   "ability": "GETTING STARTED\nWELCOME TO IMPOSSIBILITY SIM!\nThank you so much for playing! We’re very happy to have you with us today. \nThis handy little book will run through the rules to get you started with our little card game. We hope you have fun!\nHOW TO WIN:\nDefeat all of your opponent’s creatures, while making sure they don’t defeat all of yours!\nPlayers accomplish this by using their own CREATURES and ITEMS to attack and protect.\nCREATURES:\nThis game lives and breathes by them. Defeat your opponent’s while protecting your own.\nAbove all else, make sure to follow the “Don’t be stupid” rule!\nWhile reading is helpful, this card game can often seem like it gets complicated, fast. Rather than trying to memorize all of the mechanics and concepts before your first game, it is both encouraged and expected to jump straight into a test match against an experienced player. Make sure to ask questions about mechanics and interactions that are unclear. This game is still in beta and is always being tested, so your feedback is highly appreciated!\n1",
+   "parts": {
+    "15": {
+     "field": "ability",
+     "text": "HOW TO WIN:",
+     "was": "TO WIN:",
+     "sha": "2954c2b6",
+     "psd": "10263758",
+     "layer": "Text/TO WIN:"
+    }
+   },
+   "_by": "MichaelJSr",
+   "_at": "2026-10-26T01:00:00Z"
+  },
+  "A Snack": {
+   "ability": "Heal 4 HP.\nInflict 2T2 Regen and 2T1 Stuffed.",
+   "parts": {
+    "320": {
+     "field": "ability",
+     "text": "Heal 4 HP.\nInflict 2T2 Regen and 2T1 Stuffed.",
+     "was": "Heal 3 HP.\nInflict 2T2 Regen and 2T1 Stuffed.",
+     "sha": "e64944f4",
+     "psd": "ba3ca7ce",
+     "layer": "Text/Ability"
+    },
+    "1023": {
+     "field": "name",
+     "text": "Second\nBreakfast",
+     "was": "Breakfast",
+     "sha": "364653cd",
+     "psd": "ba3ca7ce",
+     "layer": "Text/Name #2"
+    }
+   },
+   "_by": "MichaelJSr",
+   "_at": "2026-10-26T01:00:00Z"
+  },
+  "A Snack2": {
+   "name": "Second Breakfast",
+   "ability": "Heal 4 HP.\nInflict 2T2 Regen and 2T1 Stuffed.",
+   "_by": "MichaelJSr",
+   "_at": "2026-10-26T01:00:00Z"
+  },
+  "A Snack3": {
+   "ability": "Heal 4 HP.\nInflict 2T2 Regen and 2T1 Stuffed.",
+   "_by": "MichaelJSr",
+   "_at": "2026-10-26T01:00:00Z"
+  },
+  "Miracle Matter": {
+   "stars": 4,
+   "ability": "(1GCD) You may choose one of the following forms:\nFire: 5/5/8/7\nEarth: 5/8/6/5 and heal 3 HP\nThis creature gains the type of whatever form it is in until the end of the turn.",
+   "parts": {
+    "1368": {
+     "field": "ability",
+     "text": "Earth: 5/8/6/5 and heal 3 HP",
+     "was": "Earth: 5/8/6/5 and heal 2 HP",
+     "sha": "bdc91d46",
+     "psd": "233e29c4",
+     "layer": "Text/Stat Txt/ability/Ability"
+    },
+    "417": {
+     "field": "ability",
+     "delete": true,
+     "was": "Ice: 5/6/7/6 and heal 1 HP",
+     "sha": "e8e12acf",
+     "psd": "233e29c4",
+     "layer": "Text/Stat Txt/ability/Ability"
+    }
+   },
+   "_by": "MichaelJSr",
+   "_at": "2026-10-26T01:00:00Z"
+  },
+  "Mini Doomer": {
+   "note": "a database-only edit: no parts",
+   "_by": "MichaelJSr",
+   "_at": "2026-10-26T01:00:00Z",
+   "_psd": {
+    "state": "baked",
+    "psd": "764b6a06",
+    "at": "2026-10-26T01:40:00Z",
+    "reason": "1 layer skipped (changed in Photoshop)",
+    "parts": {
+     "2068": "skipped"
+    },
+    "skipped": {
+     "2068": {
+      "text": "Has stats equal to the base stats -1 of the creature that summoned it. \n(BOT) Die.",
+      "now": "Has stats equal to the base stats -2 of the creature that summoned it. \n(BOT) Die.",
+      "why": "changed in Photoshop since this edit: redo it on the website if still wanted"
+     }
+    }
+   }
+  },
+  "Panda": {
+   "ability": "(1CD) Eat bamboo: heal 2 HP.",
+   "parts": {
+    "+ability": {
+     "field": "ability",
+     "text": "(1CD) Eat bamboo: heal 2 HP.",
+     "was": null,
+     "sha": null,
+     "psd": "0123abcd"
+    }
+   },
+   "_by": "MichaelJSr",
+   "_at": "2026-10-26T01:00:00Z"
+  },
+  "Warcraftian Druid": {
+   "name": "Warcraftian Druid of the Claw",
+   "parts": {
+    "1034": {
+     "field": "name",
+     "text": "Druid of\nthe Claw",
+     "was": "Druid",
+     "sha": "6d194ea1",
+     "psd": "1643ac4d",
+     "layer": "Text/Druid "
+    }
+   },
+   "_by": "MichaelJSr",
+   "_at": "2026-10-26T01:00:00Z"
+  }
+ }
+}

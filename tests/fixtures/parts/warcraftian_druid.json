@@ -1,0 +1,83 @@
+{
+ "blob": "1643ac4d376bbc860746e9fd6c0a0a68c4691246",
+ "path": "Creatures/World Of Warcraft/4 Stars/Warcraftian_Druid.psd",
+ "name": "Warcraftian Druid",
+ "parts": {
+  "title": [
+   {
+    "id": 422,
+    "layer": "Text/Name",
+    "named": true,
+    "text": "Warcraftian",
+    "sha": "be58e62b",
+    "box": [
+     8,
+     19,
+     506,
+     104
+    ],
+    "variants": null
+   },
+   {
+    "id": 1034,
+    "layer": "Text/Druid ",
+    "named": false,
+    "text": "Druid",
+    "sha": "6d194ea1",
+    "box": [
+     9,
+     138,
+     226,
+     218
+    ],
+    "variants": null
+   }
+  ],
+  "ability": [
+   {
+    "id": 1247,
+    "layer": "Text/Ability",
+    "named": true,
+    "text": "(1GCD)(2U) Change forms. Forms carry over between turns.\nSwitching into a form more than once does not refresh abilities.",
+    "sha": "14622298",
+    "box": [
+     80,
+     1782,
+     1118,
+     1881
+    ],
+    "variants": null
+   },
+   {
+    "id": 417,
+    "layer": "Text/Ability",
+    "named": true,
+    "text": "Bear: +1 DEF, (1GCD) Intercept an attack or infliction.\nCat: +2 SPD, may attack twice per action.\nMoonkin: +2 ATK, (1GCD) Gain 1 SP.\nTree: +0.5 DEF, (1CD) Heal a friendly creature by 4 HP.",
+    "sha": "8b836fde",
+    "box": [
+     129,
+     1917,
+     1142,
+     2318
+    ],
+    "variants": null
+   }
+  ],
+  "blocks": [],
+  "follow": [],
+  "variants": null,
+  "template": {
+   "kind": "creature",
+   "file": "MDW/Templates/Creature_Template.psd",
+   "ability": null,
+   "types": {
+    "spot": [
+     59,
+     42,
+     193,
+     190
+    ]
+   }
+  }
+ }
+}
