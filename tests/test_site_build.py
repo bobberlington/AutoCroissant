@@ -289,8 +289,9 @@ def test_a_recompression_is_no_new_image_version(bs, tmp_path, monkeypatch):
     save(snack, 40)
     c5 = commit(f"Snack again\n\n{cg.RECOMPRESSED}: {snack}")
     monkeypatch.setattr(bs, "HISTORY_REPO", str(root))
-    history = bs.git_history()
+    history = bs.git_history(last := {})
     found = bs.image_versions([snack, bread], history)
+    assert {p: last[p][0] for p in (snack, bread)} == {snack: c5, bread: c4}       # deck pins: recompressions count
     assert {path: [commit[0] for commit, _ in rows] for path, rows in found.items()} == {snack: [c5, c2, c1], bread: [c3, c1]}
     assert {sha: entries for sha, _, _, _, _, entries, _ in history}[c4] == []     # the batch changed no image
 
