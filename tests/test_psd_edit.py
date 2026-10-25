@@ -1078,10 +1078,11 @@ def test_fx_gates_refuse_a_wrong_cut(clone, parser, chart, tmp_path):
 
 @text_edit
 def test_a_typed_badge_takes_the_alternates_under_an_overlay(clone, parser, chart, tmp_path):
-    """Owner 2026-10-23: a timing tag typed anywhere is set in the stoogedings badge font, at the card's own badge style
-    (Mini Doomer's 50 pt (BOT)). Under the overlay (owner 2026-10-25) it and the kept "(BOT)" take Stylistic Alternates,
-    one-colour pills; the body text typed beside them does not, nor the retired badge layer stay. Every gate passes; the
-    parser reads it back."""
+    """Owner 2026-10-23: a timing tag typed anywhere is set in the stoogedings badge font, at the card's own badge style,
+    sized and shifted to its text (owner 2026-10-25: the pill 1.35 times the capital height, its middle on theirs; Mini
+    Doomer's 50 pt (BOT) is 51.02). Under the overlay (owner 2026-10-25) it and the kept "(BOT)" take Stylistic
+    Alternates, one-colour pills; the body text typed beside them does not, nor the retired badge layer stay. Every gate
+    passes; the parser reads it back."""
     paths = _at(clone, tmp_path, BADGED, MINI_DOOMER)
     old = pe.normalize_ability(pe.parse_card(parser, paths[0], MINI_DOOMER)["card"]["ability"])
     parsed, baked = _bake(clone, parser, MINI_DOOMER, {"ability": old + " Then (bot) wins."}, tmp_path, chart, paths=paths)
@@ -1090,7 +1091,9 @@ def test_a_typed_badge_takes_the_alternates_under_an_overlay(clone, parser, char
     assert baked.reparse["card"]["ability"].endswith("(BOT) Die. Then (bot) wins.") and baked.reparse["validator"] == []
     layer = pe.ability_layer(PSDImage.open(baked.psd_path))
     runs = _runs(layer)
-    assert [run[:3] for run in runs if run[1] == pe.ICON_FONT] == [("(BOT)", pe.ICON_FONT, 50.0), ("(bot)", pe.ICON_FONT, 50.0)]
+    assert [run[:3] for run in runs if run[1] == pe.ICON_FONT] == [("(BOT)", pe.ICON_FONT, 50.0), ("(bot)", pe.ICON_FONT, 51.02)]
+    typed, = [fit for fit in pe.badge_fits(layer, pe.font_map(str(clone / pe.FONTS_DIR))) if fit["token"] == "(bot)"]
+    assert abs(typed["off_px"]) < 0.1 and abs(typed["size_off"]) < 0.001
     text = layer.text
     assert [text[a:b] for a, b in pe.stylistic_alternates(layer)] == ["(BOT)", "(bot)"]
     assert not any("Stylistic" in note for note in baked.fx_notes)
@@ -1511,7 +1514,7 @@ def test_tab_stops_bake(clone, parser, chart):
                       parser=parser)
     assert layer.text == old.replace("(1GCD)", "(2GCD)", 1)
     ys, xs = np.nonzero(_ink(layer, psd) != before)
-    assert len(xs) and xs.min() > 760 and 1150 < ys.min() <= ys.max() < 1250     # the OYT row's "2" only
+    assert len(xs) and xs.min() > 760 and 1140 < ys.min() <= ys.max() < 1250     # the OYT row's badge only (fitted)
 
 
 @text_edit
