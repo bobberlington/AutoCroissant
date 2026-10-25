@@ -27,8 +27,8 @@ content problem (text that won't fit, a typed badge or token, a styled word, a f
 bakes at most MAX_BAKES cards and starts none after BUDGET (the rest are refused `capped` and wait for the next run).
 The report goes to stdout, the artifacts (edited PSD, merged PNG, before/after/diff crops, the rewritten file) to the
 work dir. The runner supplies the token
-(GITHUB_TOKEN, or config.GIT_TOKEN on the bot), the fonts (PSD_TOOLS_FONT_DIRS; else the checkout's MDW/Fonts, else the
-fonts cache by sha, font_check.refresh_cache) and the work dir (RUNNER_TEMP).
+(GITHUB_TOKEN, or config.GIT_TOKEN on the bot), the fonts (PSD_TOOLS_FONT_DIRS; else the checkout's MDW/Fonts) and the
+work dir (RUNNER_TEMP).
 No Discord or config imports; never the pickles; --dry-run commits nothing. GitHub, git and runner failures (a 5xx,
 a rate limit, no text engine) are reported but never written as a verdict; such a card error, or a commit that failed,
 exits 1 (failure()). A face no file holds is drawn in the fork's stand-in, told (psd_edit.font_map); a `font` verdict
@@ -56,7 +56,7 @@ from requests import RequestException
 
 import commands.github_api as github_api
 import commands.psd_edit as psd_edit
-from commands.card_edits import ORDER, CardAuthors, CardEdits, _collate, dump_edits  # noqa: F401 (_collate re-exported)
+from commands.card_edits import ORDER, CardAuthors, CardEdits, dump_edits
 from commands.card_models import card_name
 from commands.git_commit import (API_TIMEOUT, COMMIT_TRIES, GIT_TIMEOUT, NO_LAZY, Transient, api, checkout_head, commit_files,
                                  commit_info, git, local_commit, plural, ref_head)
@@ -507,23 +507,11 @@ def _work_dir() -> str:
 
 
 def _fonts_dir(snapshot: Optional[Snapshot] = None) -> str:
-    """
-    FONT_DIRS_ENV's first dir, else the checkout's MDW/Fonts, else the fonts cache brought to the snapshot's MDW/Fonts.
-
-    Raises Transient when a font file failed to download: a missing face would be refused as a `font` verdict.
-    """
+    """FONT_DIRS_ENV's first dir, else the checkout's MDW/Fonts."""
     dirs = environ.get(FONT_DIRS_ENV, "")
     if dirs:
         return dirs.split(pathsep)[0]
-    checkout = join(snapshot.local if snapshot is not None and snapshot.local else expanduser(LOCAL_DIR_LOC), psd_edit.FONTS_DIR)
-    if isdir(checkout) or snapshot is None:
-        return checkout
-    from commands.font_check import refresh_cache, tree_fonts      # lazy: not in the Action's files
-    fonts = refresh_cache(snapshot.repository, tree_fonts({path: sha for path, (_, sha) in snapshot.tree.items()}))
-    if fonts.failed:
-        name = min(fonts.failed)
-        raise Transient(f"fonts cache: {plural(len(fonts.failed), 'font file')} failed to download ({name}: {fonts.failed[name]})")
-    return fonts.directory
+    return join(snapshot.local if snapshot is not None and snapshot.local else expanduser(LOCAL_DIR_LOC), psd_edit.FONTS_DIR)
 
 
 def vocabulary(snapshot: Snapshot):
@@ -1053,7 +1041,7 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
             if card and not cards:
                 report.note = f"No entry with a PSD field for {card!r}."
             if cards:
-                fonts = _fonts_dir(snapshot)    # only now: no card to bake fills no fonts cache
+                fonts = _fonts_dir(snapshot)
                 engine = ("no text engine" if not psd_edit.text_engine()
                           else "text engine" if psd_edit.story_sync() else "text engine without Txt2 story sync")
                 report.lines.append(f"- Runner: psd-tools {PSD_TOOLS_VERSION} ({engine}); fonts `{fonts}`"

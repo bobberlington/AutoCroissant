@@ -164,7 +164,7 @@ class CardBuild:
         self.shas = {item.get("path", ""): item.get("sha") for item in self.tree.get("tree", [])}
         self.sizes = {item.get("path", ""): item.get("size") for item in self.tree.get("tree", []) if item.get("type") == "blob"}
         from commands import psd_details                # lazy: fontTools loads here
-        self.font_index = psd_details.font_index(repository, tree=self.tree)   # this repo's MDW/Fonts
+        self.font_index = psd_details.font_index(self.tree)     # this repo's MDW/Fonts
 
         self._populate_types_from_response(resp)
         self.parser = PSDParser(self.db.all_types, self.db, self._icons_from_response(resp, repository))

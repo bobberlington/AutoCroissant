@@ -262,7 +262,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
         png_rel = snapshot.png_for(one.rel)[0] if one.rel else ""
         result.update(card=one.name, path=one.rel, png=png_rel)
         result["base"].update(psd_blob=one.psd_sha, png_blob=snapshot.sha(png_rel) if png_rel else "")
-        fonts = card_bake._fonts_dir(snapshot)  # the bake's: PSD_TOOLS_FONT_DIRS, the checkout's MDW/Fonts, the cache
+        fonts = card_bake._fonts_dir(snapshot)  # the bake's: PSD_TOOLS_FONT_DIRS, else the checkout's MDW/Fonts
         result["runner"] = {"psd_tools": card_bake.PSD_TOOLS_VERSION, "text_engine": psd_edit.text_engine(),
                             "story_sync": psd_edit.story_sync(), "fonts": exists(fonts)}
         parser = vocabulary(snapshot)

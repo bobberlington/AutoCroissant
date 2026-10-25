@@ -43,8 +43,6 @@ repo_history.json.tmp
 # per bot: type emoji name -> icon blob it was made from (commands/type_emojis.py)
 type_emojis.json
 type_emojis.json.tmp
-# the fonts cache: MDW/Fonts' font files where there is no card repo checkout (commands/font_check.py refresh_cache)
-fonts_cache/
 # the bot's copy of the card data (the data branch's db/) after the cutover (commands/card_sync.py)
 card_data/
 

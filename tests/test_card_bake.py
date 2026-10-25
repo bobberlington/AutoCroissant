@@ -238,9 +238,10 @@ def test_live_edits_file_round_trips_byte_identical():
 
 
 def test_collation_is_locale_compare_base():
+    from commands.card_edits import _collate
     keys = ["Zed", "eclair2", "Éclair", "ab", "a b", "PoD12BAD", "PoD11ZOMG", "Panda", "P.A.N.D.A. Mk A", "Bobbery",
             "Bob-ulk", "Block Hopper", "The Evil, Fricked Up Cursed Idol", "The Evil Fricked", "Mom's Knife", "Moms Knife"]
-    assert sorted(keys, key=cb._collate) == ["a b", "ab", "Block Hopper", "Bob-ulk", "Bobbery", "Éclair", "eclair2",
+    assert sorted(keys, key=_collate) == ["a b", "ab", "Block Hopper", "Bob-ulk", "Bobbery", "Éclair", "eclair2",
                                              "Mom's Knife", "Moms Knife", "P.A.N.D.A. Mk A", "Panda", "PoD11ZOMG", "PoD12BAD",
                                              "The Evil Fricked", "The Evil, Fricked Up Cursed Idol", "Zed"]   # node's localeCompare
 
