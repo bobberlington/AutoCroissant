@@ -62,6 +62,7 @@ from commands.git_commit import (API_TIMEOUT, COMMIT_TRIES, GIT_TIMEOUT, NO_LAZY
                                  commit_info, git, local_commit, plural, ref_head)
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_edit import Refusal, Refused
+from commands.psd_parser import shown_in
 from global_config import (CARD_BRANCH, CARD_REPO, EDITS_PATH, FONT_DIRS_ENV, ICON_MANIFEST_PATH, LOCAL_DIR_LOC,
                            STARS_DIR, TYPES_DIR)
 
@@ -720,7 +721,19 @@ def bake_pictures(card: Card, psd, parsed: dict, parser, folder: str, fonts_dir:
         elif psd_edit.layer_records(baked.psd_path) != psd_edit.layer_records(first.psd_path):
             raise Refused("bytes", f"picture {n}'s bake made other layers than picture {views[0]}'s")
         card.views[n] = baked
+    first.fx_notes = _view_notes(card.views)
     return first
+
+
+def _view_notes(views: dict) -> list:
+    """Every picture run's notes, an edit's only from a picture that shows its layer (§4.9: Name #2's gates as picture
+    2, never picture 1's layers under it)."""
+    out = []
+    for n, baked in views.items():
+        own = {note for edit in baked.edits for note in edit.notes}
+        out += [note for edit in baked.edits if not edit.layers or shown_in(edit.layers[0], n) for note in edit.notes]
+        out += [note for note in baked.fx_notes if note not in own]
+    return list(dict.fromkeys(out))
 
 
 def final(edits: CardEdits, snapshot: Snapshot, card: Card) -> bool:

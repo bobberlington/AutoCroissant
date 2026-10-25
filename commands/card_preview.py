@@ -49,7 +49,7 @@ from global_config import CARD_REPO
 # Configuration
 # ========================
 SPARSE_FILES = ("commands/card_preview.py", "commands/card_preview_branch.py", "commands/card_bake.py",
-                "commands/psd_edit.py", "commands/psd_regions.py", "commands/psd_parser.py", "commands/card_models.py",
+                "commands/psd_edit.py", "commands/psd_regions.py", "commands/psd_parser.py", "commands/psd_parts.py", "commands/card_models.py",
                 "commands/card_edits.py", "commands/png_export.py", "commands/github_api.py", "commands/git_commit.py",
                 "commands/repo_history.py", "global_config.py", "requirements-cards.txt")
 MAX_EDIT = 16384                                # bytes of edit JSON (an ability is a few hundred)
@@ -298,7 +298,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
             png_rel = next((p for p in snapshot.png_for(one.rel)[1] if picture_of(snapshot, CardAuthors.key(card_name(p)))
                             == (one.rel, one.view)), png_rel)
             result["variant"] = one.view
-        result.update(card=one.name, path=one.rel, png=png_rel)
+        result.update(card=card_name(png_rel) if one.view is not None and png_rel else one.name, path=one.rel, png=png_rel)
         result["base"].update(psd_blob=one.psd_sha, png_blob=snapshot.sha(png_rel) if png_rel else "")
         fonts = card_bake._fonts_dir(snapshot)  # the bake's: PSD_TOOLS_FONT_DIRS, else the checkout's MDW/Fonts
         result["runner"] = {"psd_tools": card_bake.PSD_TOOLS_VERSION, "text_engine": psd_edit.text_engine(),

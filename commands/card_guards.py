@@ -60,7 +60,7 @@ from global_config import CARD_REPO, FONT_DIRS_ENV, ICON_MANIFEST_PATH
 # ========================
 SPARSE_FILES = ("commands/card_guards.py", "commands/png_export.py", "commands/card_standards.py", "commands/txt2_repair.py",
                 "commands/psd_diff.py", "commands/card_bake.py", "commands/card_check.py", "commands/psd_edit.py", "commands/psd_regions.py",
-                "commands/psd_parser.py", "commands/card_models.py", "commands/card_edits.py", "commands/font_check.py",
+                "commands/psd_parser.py", "commands/psd_parts.py", "commands/card_models.py", "commands/card_edits.py", "commands/font_check.py",
                 "commands/github_api.py", "commands/git_commit.py", "commands/repo_history.py", "global_config.py",
                 "requirements-cards.txt")
 SUBJECT = "Card guards"                         # the bot commit: "Card guards: 2 PNGs re-exported, 1 PSD fixed (push 7cb4c867)"
@@ -566,7 +566,8 @@ def build_context(source: Source, tree: dict, errors: Optional[list] = None) -> 
             chart = psd_edit.status_fills(png_export.open_psd(source.blob(tree[psd_edit.STATUS_CHART][1])))
         except Exception as error:              # R5 reports every overlay without the chart
             errors.append(f"{psd_edit.STATUS_CHART}: {error}")
-    context = standards.Context(frozenset(vocab.all_types), chart, psd_edit.story_sync())
+    context = standards.Context(frozenset(vocab.all_types), chart, psd_edit.story_sync(),
+                                frozenset(path.lower() for path in tree if path.lower().endswith(".png")))   # R12's pictures
     return context, vocab
 
 

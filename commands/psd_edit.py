@@ -14,7 +14,7 @@ from contextlib import ExitStack, contextmanager, nullcontext
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from difflib import SequenceMatcher
-from hashlib import blake2b, sha1
+from hashlib import blake2b
 from inspect import signature
 from itertools import zip_longest
 from io import BytesIO
@@ -37,8 +37,10 @@ from commands.card_edits import ADD_ABILITY, CardEdits
 from commands.card_models import CardInfo, StatsDatabase
 from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_PREFIX, ICON_SCAN_PATTERN,
                                  TITLE_REGION_RATIO, TYPE_REGION_RATIO, BoundingBox, CardValidator, IconVocabulary,
-                                 MutableValue, PSDParser, name_key,
-                                 named_after_text, stars_from_psd, title_text, token_variant)
+                                 MutableValue, PSDParser, layer_tag, name_key, named_after_text, stars_from_psd,
+                                 title_text, token_variant, variant_view, variants_of)
+from commands import psd_parts
+from commands.psd_parts import lyid_index, raw_sha
 from commands.psd_regions import _ancestors, badge_layers, clip, fx_pad, overlay_words, stat_rows, union_box
 from global_config import RULEBOOK_DIR
 
@@ -48,7 +50,8 @@ from global_config import RULEBOOK_DIR
 STATUS_CHART = "MDW/Croissant's Special Folder/Satus Effect Colors.psd"   # one text layer per status; its fill is the color
 FONTS_DIR = "MDW/Fonts"
 CODES = ("duplicate", "unsupported-card", "stat>10", "recent", "blob", "parity", "styled-word", "font", "overflow",
-         "bytes", "size", "region", "shape", "reparse", "idempotence", "edit-changed", "head-moved", "capped", "error")
+         "bytes", "size", "region", "shape", "reparse", "idempotence", "edit-changed", "head-moved", "capped", "error",
+         "integrity")
 STAT_FIELDS = ("hp", "def", "atk", "spd")
 TEXT_FIELDS = ("name", "ability")
 ICON_FIELDS = ("stars", "types")                # printed as icons; refused per field, never for the card (owner, 2026-10-23)
@@ -6221,7 +6224,6 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
 # ========================
 # Parts: one text box per PSD layer (docs/Future/PARTS_EDITOR.md §2-4)
 # ========================
-PART_TAG = re_compile(r"^(.*\S) #(\d{1,2}(?:,\d{1,2})*)$")   # "Name #2", "Layer 6 #2,3": only in those variants (§9)
 GONE = "the layer is gone from the PSD (deleted or remade in Photoshop since this edit): redo it on the website if still wanted"
 CHANGED = "changed in Photoshop since this edit: redo it on the website if still wanted"
 ADDED_LATER = "an added Ability layer (from the template) is not built yet: it waits"
@@ -6240,79 +6242,16 @@ class PartsPlan:
     where: dict = field(default_factory=dict)       # key -> (field, kind, 1-based place among its kind's parts, count)
 
 
-def _parts_api():
-    """Track A's commands.psd_parts (contract I1), or None: this section's stand-ins until it lands."""
-    try:
-        from commands import psd_parts
-    except ImportError:
-        return None
-    return psd_parts
-
-
-def _parser_fn(name: str):
-    import commands.psd_parser as psd_parser
-    return getattr(psd_parser, name, None)
-
-
-def layer_tag(name: str) -> tuple:
-    """(base name, frozenset of variants | None): "Name #2,3" -> ("Name", {2, 3}); FX layers are never tagged."""
-    own = _parser_fn("layer_tag")
-    if own is not None:
-        return own(name)
-    found = None if EFFECT_LAYER_TAG in name else PART_TAG.match(name)
-    return (found.group(1), frozenset(int(n) for n in found.group(2).split(","))) if found else (name, None)
-
-
-def _base(layer) -> str:
-    return layer_tag(layer.name)[0].strip()
-
-
-def shown_in(layer, n: Optional[int]) -> bool:
-    """A tagged node shows in its variants (its eye ignored), an untagged one by its eye; every ancestor must show."""
-    own = _parser_fn("shown_in")
-    if own is not None:
-        return own(layer, n)
-    if n is None:
-        return layer.is_visible()
-    while layer is not None and getattr(layer, "kind", "psdimage") != "psdimage":
-        tags = layer_tag(layer.name)[1]
-        if not (n in tags if tags is not None else layer.visible):
-            return False
-        layer = layer.parent
-    return True
-
-
-def variants_of(psd: PSDImage) -> list:
-    """The card's pictures: [1] untagged, else 1 and every tag."""
-    own = _parser_fn("variants_of")
-    if own is not None:
-        return own(psd)
-    return sorted({1} | {v for layer in psd.descendants() for v in (layer_tag(layer.name)[1] or ())})
+def _bare_parser() -> PSDParser:
+    """A parser without the icon vocabulary, for callers that have none (tests, one-off checks)."""
+    return PSDParser([], StatsDatabase(), IconVocabulary.build([], [], None))
 
 
 @contextmanager
 def variant(psd: PSDImage, n: Optional[int]):
-    """
-    The card as picture n shows it (§4.9), in memory: each tagged layer or group visible when n is among its tags,
-    hidden else (untagged ones keep their eye), restored on exit; n None: as saved.
-    """
-    own = _parser_fn("variant_view")            # Track A's, when psd_parser has it
-    if own is not None:
-        with own(psd, n):
-            yield psd
-        return
-    saved = []
-    if n is not None:
-        for layer in psd.descendants():
-            tags = layer_tag(layer.name)[1]
-            if tags is not None and layer.visible != (n in tags):
-                saved.append((layer, layer.visible))
-                layer.visible = n in tags
-    try:
+    """The card as picture n shows it (§4.9), in memory, restored on exit (psd_parser.variant_view); n None: as saved."""
+    with variant_view(psd, n):
         yield psd
-    finally:
-        for layer, was in reversed(saved):
-            layer.visible = was
 
 
 def saved_view(psd: PSDImage) -> Optional[int]:
@@ -6321,167 +6260,14 @@ def saved_view(psd: PSDImage) -> Optional[int]:
     return next((n for n in variants_of(psd) if all(shown == (n in tags) for shown, tags in tagged)), None)
 
 
-def raw_sha(layer) -> str:
-    """sha1 of the layer's raw text, 8 hex: a part edit's Photoshop check (§2.1)."""
-    api = _parts_api()
-    return api.raw_sha(layer) if api is not None else sha1((layer.text or "").encode("utf-8")).hexdigest()[:8]
-
-
 def part_text(parser: Optional[PSDParser], layer) -> str:
-    """One layer's reading (PSDParser.layer_text): icon-font runs as tokens, breaks as \\n, blank ends and line-leading
-    padding gone."""
-    own = getattr(parser, "layer_text", None)
-    if own is not None:
-        return own(layer)
-    text = str(layer.engine_dict["Editor"]["Text"].value)
-    spans = PSDParser._icon_font_spans(layer, text) if parser is not None else []
-    if spans:
-        text = parser._read_icon_tokens(text, spans, CardInfo(name="part", card_type="unknown"))[0]
-    text = text.replace("\r", "\n").replace("\x03", "\n").replace("\t", " ").replace("﻿", "").strip()
-    return sub(r"(?m)^[^\S\n]{3,}(?=\S)", "", text)
-
-
-def lyid_index(psd: PSDImage) -> dict:
-    """Layer id -> layer (-1, no id stored, left out); raises Refused on a duplicate id (an integrity case, §4.2)."""
-    api = _parts_api()
-    if api is not None:
-        return api.lyid_index(psd)
-    out = {}
-    for layer in psd.descendants():
-        if layer.layer_id < 0:
-            continue
-        if layer.layer_id in out:
-            raise Refused("bytes", f"layer id {layer.layer_id} is on {out[layer.layer_id].name!r} and {layer.name!r}")
-        out[layer.layer_id] = layer
-    return out
-
-
-def layer_path(layer) -> str:
-    names = []
-    while layer is not None and getattr(layer, "kind", "psdimage") != "psdimage":
-        names.append(layer.name)
-        layer = layer.parent
-    return "/".join(reversed(names))
-
-
-def _in_reading_order(layers: list) -> list:
-    """Layers in the parser's reading order (_sort_by_position)."""
-    return [layer for layer, _ in PSDParser._sort_by_position([(layer, BoundingBox.from_tuple(layer.bbox[:2]))
-                                                               for layer in layers])]
-
-
-def _words(text: Optional[str]) -> str:
-    return " ".join((text or "").replace("\x03", " ").replace("﻿", "").split()).casefold()
-
-
-def _stub_titles(psd: PSDImage, texts: list, name: str, n: Optional[int], own_text: bool) -> list:
-    """PSDParser.title_layers with shown_in and tag-free names, plus split_title's pieces (Warcraftian Druid's 'Druid ')."""
-    top = psd.height * TITLE_REGION_RATIO
-    group = next((layer for layer in psd if layer.is_group() and _base(layer) == "Text"), None)
-    under = [layer for layer in group if shown_in(layer, n) and _is_text_layer(layer)] if group is not None else []
-    key, shown = name_key(name), [layer for layer in texts if shown_in(layer, n)]
-    found = [layer for layer in under if _base(layer) == "Name"] \
-        or [layer for layer in shown if _base(layer) == "Name" and layer.bbox[1] < top] \
-        or (key and [layer for layer in under if name_key(_base(layer)) == key]) \
-        or (key and [layer for layer in shown if layer.bbox[1] < top and name_key(_base(layer)) == key]) or []
-    if not found and own_text:
-        own = [layer for layer in shown if layer.bbox[1] < top and name_key(_base(layer))
-               and name_key(_base(layer)) == name_key(layer.text or "")]
-        found = own if len(own) == 1 else []
-    if len(found) > 1:
-        found = [layer for layer in found if layer.bbox[1] < top]
-    title = " ".join(title_text(layer.text) for layer in _in_reading_order(found))
-    joined, whole = "".join(title.lower().split()), "".join(name.lower().split())
-    if not joined or joined == whole or joined not in whole:
-        return found
-    rest, pieces = whole.replace(joined, "", 1), []
-    beside = [layer for layer in (group if group is not None else []) if shown_in(layer, n) and layer not in found
-              and layer.bbox[1] < top]
-    for layer in sorted(beside, key=lambda l: -len("".join(title_text(l.text if _is_text_layer(l) else l.name).split()))):
-        piece = "".join(title_text(layer.text if _is_text_layer(layer) else layer.name).lower().split())
-        if piece and piece in rest:
-            rest = rest.replace(piece, "", 1)
-            pieces.append(layer)
-    return found + [layer for layer in pieces if _is_text_layer(layer)] if not rest else found
-
-
-def _stub_select(psd: PSDImage, rel: str, name: str, texts: list, n: Optional[int]) -> tuple:
-    """(title layers, ability layers, rule-page blocks, followers [(layer, [of], how)]) of variant n."""
-    if RULEBOOK_DIR in rel:
-        return [], [], _in_reading_order([layer for layer in texts if shown_in(layer, n)]), []
-    titles, kept, follow = _in_reading_order(_stub_titles(psd, texts, name, n, True)), [], []
-    for layer in titles:                        # identical copies follow (no box)
-        twin = next((k for k in kept if _words(k.text) == _words(layer.text)), None)
-        (follow.append((layer, [twin], "copy")) if twin is not None else kept.append(layer))
-    abilities = _in_reading_order([layer for layer in texts if _base(layer).lower() == "ability" and shown_in(layer, n)])
-    if not abilities:                           # a hidden Ability laid out again (Butterfly): the pieces are the parts
-        hidden = next((layer for layer in texts if _base(layer).lower() == "ability" and not shown_in(layer, n)
-                       and PSDParser._relaid(layer, texts)), None)
-        if hidden is not None:
-            abilities = PSDParser._pieces(hidden, texts)
-            follow.append((hidden, abilities, "relaid"))
-    parts = kept + abilities
-    for layer in texts:
-        if layer in parts or any(f[0] is layer for f in follow) or not shown_in(layer, n):
-            continue
-        twin = next((p for p in parts if _words(p.text) == _words(layer.text)), None)
-        if twin is not None:
-            follow.append((layer, [twin], "copy"))
-        elif _base(layer) == "Name" and kept and \
-                name_key(layer.text) == name_key(" ".join(title_text(k.text) for k in kept)):
-            follow.append((layer, kept, "watermark"))
-    return kept, abilities, [], follow
-
-
-def _stub_part(parser, layer, kind: str, layers: list) -> dict:
-    out = {"id": layer.layer_id, "layer": layer_path(layer)}
-    if kind == "blocks":
-        digits = [l for l in layers if part_text(parser, l).isdigit()]
-        page = max(digits, key=lambda l: l.bbox[1]) if digits and not any(_base(l) == "Page Number" for l in layers) else None
-        out["role"] = "header" if _base(layer) == "Header" else "page" if _base(layer) == "Page Number" or layer is page \
-            else "block"
-        if out["role"] != "block":
-            out["named"] = _base(layer) in ("Header", "Page Number")
-    else:
-        out["named"] = _base(layer) == ("Name" if kind == "title" else "Ability")
-    out.update(text=part_text(parser, layer), sha=raw_sha(layer), box=list(layer.bbox), variants=None)
-    return out
+    """One layer's reading as its box shows it (PSDParser.layer_text)."""
+    return (parser or _bare_parser()).layer_text(layer)
 
 
 def card_parts(psd: PSDImage, rel: str, name: str, parser: Optional[PSDParser]) -> dict:
-    """
-    The details record's `parts` (§2.3) over every variant (each part's `variants`: None when in all):
-    commands.psd_parts.card_parts when Track A's module is there, else this stand-in by the same rules.
-    """
-    api = _parts_api()
-    if api is not None:                         # its selection needs a parser: a bare one without the vocabulary
-        return api.card_parts(psd, rel, name, parser or PSDParser([], StatsDatabase(), IconVocabulary.build([], [], None)))
-    variants = variants_of(psd)
-    tagged = len(variants) > 1
-    texts = [layer for layer in psd.descendants() if _is_text_layer(layer) and EFFECT_LAYER_TAG not in layer.name]
-    out = {"title": [], "ability": [], "blocks": [], "follow": [], "variants": None, "template": None}
-    seen, where = {}, {}
-    for n in (variants if tagged else [None]):
-        titles, abilities, blocks, follow = _stub_select(psd, rel, name, texts, n)
-        for kind, layers in (("title", titles), ("ability", abilities), ("blocks", blocks)):
-            for layer in layers:
-                if layer.layer_id not in seen:
-                    seen[layer.layer_id] = _stub_part(parser, layer, kind, layers)
-                    out[kind].append(seen[layer.layer_id])
-                where.setdefault(layer.layer_id, set()).add(n)
-        for layer, of, how in follow:
-            if not any(f["id"] == layer.layer_id for f in out["follow"]):
-                out["follow"].append({"id": layer.layer_id, "layer": layer_path(layer), "of": [o.layer_id for o in of],
-                                      "how": how, "variants": None})
-    for lyid, part in seen.items():
-        shown = sorted(where[lyid])
-        part["variants"] = None if not tagged or shown == variants else shown
-    if tagged:
-        stem = rel.rsplit("/", 1)[-1][:-4]
-        out["variants"] = {"count": len(variants), "pngs": {str(n): f"{stem}{'' if n == 1 else n}.png" for n in variants},
-                           "tagged": [{"id": layer.layer_id, "layer": layer_path(layer), "in": sorted(layer_tag(layer.name)[1])}
-                                      for layer in psd.descendants() if layer_tag(layer.name)[1] is not None]}
-    return out
+    """The details record's `parts` (§2.3) over every variant: psd_parts.card_parts, a bare parser when none."""
+    return psd_parts.card_parts(psd, rel, name, parser or _bare_parser())
 
 
 def record_parts(record: dict) -> dict:
@@ -6781,8 +6567,10 @@ def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Op
 
 
 def _typed_lines(note: str, typed: int) -> bool:
-    """A title's "runs onto N lines (it has M)" note the box's own line breaks account for."""
+    """A title's "runs onto N lines (it has M)" or "a line of it moves below" note the box's own line breaks account for."""
     found = search(r"runs onto (\d+) lines \(it has (\d+)\)", note)
+    if typed > 0 and note.endswith("a line of it moves below the title"):
+        return True
     return bool(found) and typed > 0 and int(found.group(1)) <= int(found.group(2)) + typed
 
 

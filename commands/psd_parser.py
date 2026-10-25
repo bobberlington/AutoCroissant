@@ -564,6 +564,9 @@ class PSDParser:
             return None                                 # the pieces' order is a guess
         if self.split_title(psd, found, title, name):
             return None                                 # the other layers print the rest of the name
+        longer = self._longer_piece(psd, found, "".join(title.lower().split()), "".join(name.lower().split()))
+        if longer is not None:                          # a piece edited longer than the name: the whole title
+            return " ".join(title_text(layer.text) for layer in self.reading(found + [longer]))
         return title
 
     @staticmethod
@@ -637,6 +640,21 @@ class PSDParser:
                 rest = rest.replace(piece, "", 1)
                 used.append(layer)
         return used if not rest else None
+
+    @staticmethod
+    def _longer_piece(psd: PSDImage, found: list, joined: str, whole: str):
+        """A split title's last piece edited longer than the name (Warcraftian Druid's 'Druid ' now 'Druid of the
+        Claw'): the one visible text layer under Text in the title region, beside the title layers, starting with the
+        rest of the name; None else."""
+        if not joined or joined == whole or not whole.startswith(joined):
+            return None
+        rest, top = whole[len(joined):], psd.height * TITLE_REGION_RATIO
+        text_group = PSDParser.text_group(psd)
+        found_ids = {id(layer) for layer in found}
+        hits = [layer for layer in (text_group if text_group is not None else []) if layer.kind == "type"
+                and layer.is_visible() and id(layer) not in found_ids and layer.bbox[1] < top
+                and "".join(title_text(layer.text).lower().split()).startswith(rest)]
+        return hits[0] if len(hits) == 1 else None
 
     @staticmethod
     def text_group(psd: PSDImage):
@@ -832,7 +850,9 @@ class PSDParser:
         joined, whole = "".join(title.lower().split()), "".join(name.lower().split())
         pieces = []
         if joined and joined != whole and joined in whole:
-            pieces = [layer for layer in PSDParser._split_pieces(psd, found, joined, whole) or [] if layer.kind == "type"]
+            pieces = PSDParser._split_pieces(psd, found, joined, whole)
+            longer = PSDParser._longer_piece(psd, found, joined, whole) if pieces is None else None
+            pieces = [layer for layer in (pieces or []) + ([longer] if longer is not None else []) if layer.kind == "type"]
         parts, copies = [], []
         for layer in PSDParser.reading(found + pieces):
             twin = next((kept for kept in parts if PSDParser.words(kept.text) == PSDParser.words(layer.text)), None)

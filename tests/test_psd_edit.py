@@ -190,7 +190,7 @@ def test_own_pixels():
 def test_codes_are_the_closed_list():
     assert pe.CODES == ("duplicate", "unsupported-card", "stat>10", "recent", "blob", "parity", "styled-word", "font",
                         "overflow", "bytes", "size", "region", "shape", "reparse", "idempotence", "edit-changed",
-                        "head-moved", "capped", "error")
+                        "head-moved", "capped", "error", "integrity")
     assert PAINT_ORDER[-1] == "ability_fx" and clip((-5, -5, 2000, 10), 1200, 2400) == (0, 0, 1200, 10)
 
 
@@ -1887,6 +1887,7 @@ def test_parts_title_enter_and_legacy_edits(clone, parser, chart, tmp_path):
     assert pe.part_text(parser, saved[1034]) == "Druid of\nthe Claw"
     assert " ".join(pe.title_text(saved[k].text) for k in (422, 1034)) == fixture["name"]
     assert not [note for note in baked.fx_notes if "runs onto" in note]     # the typed break is no overflow
+    assert baked.reparse["card"]["display_name"] == fixture["name"]       # the longer piece stays in the title
     mm = PSDImage.open(_card(clone, MIRACLE)[0])
     mm_parsed = pe.parse_card(parser, _card(clone, MIRACLE)[0], MIRACLE, mm)
     joined = pe.classify(mm_parsed, {"ability": mm_parsed["card"]["ability"].replace("heal 2", "heal 3")}, mm, parser)
