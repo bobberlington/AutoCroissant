@@ -389,8 +389,9 @@ tests/test_badge_parity.py):
   2026-10-23 (48 before; `test_token_limit_fits_every_icon` keeps them in step with the manifest).
 - **Bakes set glow tokens** since the fork's `cards-20261024b` (2026-10-24; before, it drew the halo as a solid block and
   the bake refused). A stroked Text group strokes the halo into a black disc, as Photoshop does. Under a badge FX layer
-  or a tint a glow refuses as any see-through icon; on a fork without the halos (`psd_edit.glow_halos`) it is a
-  runner error (no verdict; retried once the fork is reinstalled).
+  or a tint a glow is told as any see-through icon, and a halo onto the stars or a layer is told too (owner
+  2026-10-24: content problems bake, told); on a fork without the halos (`psd_edit.glow_halos`) it is a runner error
+  (no verdict; retried once the fork is reinstalled).
 
 ## 2. The card-browser website
 
@@ -574,7 +575,12 @@ python -m http.server -d site/dist 8000            # open http://localhost:8000
   like any wrong-typed field; a refusal shows only while its `for` values and `psd` blob prefix still match (review fix 2026-10-20).
   A pixel miss is no refusal since 2026-10-23 (owner): the edit is baked and the bake commit's line says "name baked
   with a pixel difference: bad 1.97%, mean 1.60, max 217"; only a broken render (more than 25% of the box's pixels off,
-  or none of the edit drawn) or a read-back that is not the edit is refused. Pixel refusals written under the old bar
+  or none of the edit drawn) or a read-back that is not the edit is refused. Since 2026-10-24 (owner; AutoCroissant
+  work/fx-rebuild) no content problem refuses either: text that won't fit, typed badges and tokens, styled words and
+  font stand-ins bake, each told in the commit line and the baked `_psd` verdict's `reason` ("name 'A' -> 'B'; overflow:
+  name: it runs onto 2 lines (it has 1)") and in the preview's `notes`. The site shows only refused verdicts: a baked
+  verdict's notes are not on the card page yet (cards.json would need them, e.g. a `baked` note while `psd` matches the
+  tree's blob), and an entry whose every field baked leaves the file with its verdict (card_bake.rewrite_entry). Pixel refusals written under the old bar
   (Masked Dedede, PoD11ZOMG, Zero Override) show as refused until the next run bakes them: `build_site.py` (about line
   855) knows nothing of the floor, so the window is the first 30-minute card-edits tick after the change lands (a
   dispatch closes it at once).
@@ -1104,3 +1110,5 @@ Maintenance rules:
 2026-10-24 (round 3): §2.1 output data files (analytics.json ~130 KB with revisions and archived; contributions.json and changelog.json keys) and §2.4 rows (search without has:details, Balance without the cooldown update, Ratings, Stats round 3, Archive tab, person stats, pinned tray), against TTSCardMaker branch work/r3-integ.
 
 2026-10-24 (speed pass): §2.4's Speed pass row, against TTSCardMaker branch work/site-perf (front end, stamps by content, site.yml `paths`, `build.txt`); §2.1 cache-busting.
+
+2026-10-24 (BUG 2 phase 6, AutoCroissant work/fx-rebuild): §1.8's bake bullet and §2's Website edits bullet say content problems bake, told; what the site lacks to show a baked verdict's notes.

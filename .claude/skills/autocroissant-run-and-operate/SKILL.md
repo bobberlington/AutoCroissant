@@ -622,31 +622,45 @@ inside the bot on the jetson, by hand only; design section 8 "Jetson".
   again clean. Since 2026-10-23 (owner) an FX layer whose style is no chart status's (Fire Staff's Smoldering stroke,
   Mr Krabs' `2T`) is rebuilt in its own style too, staying on its own words; a typed word joining such a layer is told
   ("... also covers the typed 'Smoldering', in its own style"; "moved to" when its old words left) and takes the
-  phrase's colour (a stroke alone shows the fill). Refused (review, 2026-10-23): where a layer would move to other
-  words, e.g. on Monkey D Goofy a whole-word "1" anywhere in the ability ("a whole-word '1' in the ability would move
-  the layer Ability FX: 1#1 off the '1' of '3T1'"), an own-style phrase deleted and typed elsewhere (Palace of Shadow's
-  "+2 DEF" moved) or glued into a longer word ("Despair" made "Despairing"); a "1" typed before its "1" renames the
-  layer `1#2`.
+  phrase's colour (a stroke alone shows the fill). Where a layer can't follow its words (on Monkey D Goofy a whole-word
+  "1" anywhere in the ability, an own-style phrase edited, deleted and typed elsewhere or glued into a longer word,
+  a phrase the ability lacks) the layer is deleted, told, its words printing plain (owner 2026-10-24; they refused
+  before); a "1" typed before its "1" renames the layer `1#2`.
   The commit line and the website's verdict reason carry the FX notes too.
 - **Typed badges and icons (owner 2026-10-23, same branch):** a timing tag ("(1CD)", any case) or a token the icon
   font draws ("[fire]", "[fire:no]", "[Ice:Sticker]") typed anywhere in an ability is set in the stoogedings font at
   the card's own badge or token style (on a card with none, at the text's style, the font added to the PSD); on a
   gradient badge card it joins the badge layer, and so does a badge edited by deleting letters ("(1GCD)" made "(1CD)").
-  A typed "★" is set in the icon font (the gold star). Refused: a badge under a tinted Ability (any colour, gradient or
-  pattern overlay, or a Pin Light or other non-Normal blend) with no badge FX layer (Cat, Ice Staff, the 18 Pin Light
-  Isaac items without one), a `[type]` token on a card whose type icons are image layers in the text (Nebulous
-  Precipice), letters left in the icon font it draws no badge of
-  ("(abc)", "(GCD)"), a token the website shows as an icon but the font prints as letters ("[fire:]", "[Fire.]"), a
-  typed character its font has no glyph for, and an edit inside an own-style FX phrase ("+2 DEF" made "+3 DEF": the
-  layer would lose its style). An edit keeps the card's own icon spellings ("[dark:sticker]" where
+  A typed "★" is set in the icon font (the gold star). A typed badge or token is unstretched (`unstretch`: its
+  HorizontalScale set so it prints as the font draws it under the layer's scales, as designers set theirs; Monster
+  Meat's [fire] printed 2.6x wide). Told, not refused (owner 2026-10-24): a badge under a tinted Ability (any colour,
+  gradient or pattern overlay, a Pin Light or other non-Normal blend) with no badge FX layer (Cat, Ice Staff, the Pin
+  Light Isaac items without one), a `[type]` token on a card whose type icons are image layers in the text (Nebulous
+  Precipice), letters left in the icon font it draws no badge of ("(abc)", "(GCD)"), a token the website shows as an
+  icon but the font prints as letters ("[fire:]"), a typed character its font has no glyph for, a see-through icon
+  under a badge layer, a timing badge typed in a title (printed as plain words, as the website shows it). An edit
+  keeps the card's own icon spellings ("[dark:sticker]" where
   the website shows "[dark]"). Typed `:glow`/`:darkglow` tokens bake on the `cards-20261024b` pin (its halo as
   Photoshop draws it; on a stale install of an older fork the edit is a runner error, no verdict, retried once the
-  fork is reinstalled). Also refused: a title or Ability whose saved pixels are in another font than the layer names
-  (`font`, `drawn_in_font`: Dull Knife, Shiny Knife, Dark Tentacle and Snow Angel's Omori titles; re-save in
-  Photoshop) and a text layer with tab stops (`unsupported-card`: Michael's Blessing; the engine lays no tabs). A
+  fork is reinstalled). Also told: a title or Ability whose saved pixels are in another font than the layer names
+  (`drawn_in_font`: Dull Knife, Shiny Knife, Dark Tentacle and Snow Angel's Omori titles). Refused: a text layer with
+  tab stops (`unsupported-card`: Michael's Blessing; the engine lays no tabs). A
   deleted line or word is cut whole, so the text after it keeps its own colours and badge size; an Ability's new line
   printed past the old text onto the design below it bakes with a note ("... prints past the old text onto the design
   below it (N px, 'layer'); check the card": `ink_beyond`, 18 of 503 cards given a line).
+- **Content flags (owner 2026-10-24 ~18:30, same branch):** "In general I do not want to refuse bakes": the editor
+  previewed the edit, so a content problem bakes best-effort and is told as `<code>: <field>: <why>` in the bake report,
+  the commit line and the baked verdict's reason (the preview's notes too): text that won't fit (`overflow`: off the
+  canvas, onto the stars or icons, more title lines, under a layer above or over a stat bar, past the design below or
+  a texture clipped to it: `ink_beyond`, `ink_past_clip`), typed badges and tokens, FX layers that can't follow
+  (deleted, told), overlay word layers the chart has no style for (hidden, told), font stand-ins (`font`: a face no
+  file holds is drawn in the fork's stand-in, `font_map`), new validator problems (`validator: new problems: ...`), and
+  a stale Txt2 story (synced by `txt2_repair.sync_stories`, told). Still refused: the waits (`recent`, `head-moved`,
+  `edit-changed`, `blob`, `capped`), impossible cases (no PSD, a numbered PNG copy, a creatures list setting the
+  stats, a stat above 20), the bake's own checks (`bytes`, `region`, `size`, `shape`, `reparse` but new problems,
+  `idempotence`, `parity` past the 25% floor) and what the bake can't edit yet (`unsupported-card`: split or several
+  titles, non-template stat rows, tab stops, folder-set stars and the other stars/types layouts, FX layers that are no
+  pixel layers, two FX layers one name; `stat>10` on one bar row).
 - **card-edits.yml** was paused from 2026-10-22 ~21:5x (split titles would have baked wrongly, and B2 was rewriting the
   same cards) and re-enabled on 2026-10-23 ~10:36, pinned to `cards-20261023` (dry run 39996528699 dispatched then).
 - **Previews (2026-10-23; TTSCardMaker's `card-preview.yml`, design section 16):** the website dispatches one card's edit
@@ -1088,3 +1102,5 @@ card_data.py, psd_parser.py, query_card.py, psd_analyzer.py and analytics.py cit
 the `previews` branch; design section 16); no cited line moved.
 
 2026-10-23 (unbatch): query_card.py citations re-pointed (prep_dataframes, init_query) after /query_ability went back to one message per card.
+
+2026-10-24 (BUG 2 phase 6, work/fx-rebuild): section 7's Card bake subsection gains the Content flags bullet (owner ruling: content problems bake, told); the FX and typed-badge bullets say told for refused; no cited line moved.
