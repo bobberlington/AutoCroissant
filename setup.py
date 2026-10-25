@@ -1,9 +1,9 @@
 from setuptools import setup, Extension                 # before distutils: 3.12+ only has setuptools' copy
 from distutils.command.clean import clean as CleanCommand
-from Cython.Build import cythonize
-from pathlib import Path
-import shutil
-import sys
+from pathlib import Path                                # Cython is imported in build(): clean runs without it
+import hashlib, json
+import shutil, sys
+import sysconfig, time
 
 # Files that should NOT be compiled (will cause issues)
 EXCLUDE_FILES = {
@@ -113,19 +113,86 @@ def clean_artifacts():
     print("-" * 60 + "\n")
 
 
-def get_python_files():
-    """Find all .py files that should be compiled."""
-    files = []
+STAMPS = Path('build/ext-stamps.json')      # module -> fingerprint of the source its .so was built from
+JOBS = 4                                    # parallel cythonize and C compiles
 
-    # Add specific include files that exist
-    for file_path in INCLUDE_FILES:
-        if Path(file_path).exists():
-            files.append(file_path)
-            print(f"  ✓ Including: {file_path}")
-        else:
-            print(f"  ⚠ Skipping (not found): {file_path}")
 
-    return files
+def module_name(file):
+    return file.replace('/', '.').replace('\\', '.')[:-3]
+
+
+def fingerprint(file):
+    """What a module's .so depends on: its source, the directives, the flags, Cython and Python."""
+    import Cython
+    h = hashlib.sha256(Path(file).read_bytes())
+    h.update(repr((sorted(COMPILER_DIRECTIVES.items()), compile_args(), Cython.__version__, sys.version,
+                   sysconfig.get_config_var('EXT_SUFFIX'))).encode())
+    return h.hexdigest()
+
+
+def compile_args():
+    return ['-O3'] if sys.platform != 'win32' else ['/O2']
+
+
+def built_path(file):
+    return Path(file[:-3] + sysconfig.get_config_var('EXT_SUFFIX'))
+
+
+def remove_orphans(files):
+    """Delete every compiled module that is not a current INCLUDE_FILES build (other ABI, dropped module)."""
+    keep = {built_path(f) for f in files}
+    for pattern in ('*.so', '*.pyd'):
+        for f in Path('.').rglob(pattern):
+            if f in keep or any(part.startswith('.') or part == 'build' for part in f.parts[:-1]):
+                continue
+            remove_file(f)
+
+
+def stale_files(files, stamps):
+    """The modules whose .so is missing or was built from other source (or settings)."""
+    return [f for f in files if not built_path(f).exists() or stamps.get(f) != fingerprint(f)]
+
+
+def load_stamps():
+    try:
+        return json.loads(STAMPS.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def build(files):
+    """Rebuild only the stale modules, JOBS at a time. A stale .so is deleted first, so a failed
+    build leaves the .py to run, never an old .so next to a new .py."""
+    if '--inplace' not in sys.argv and '-i' not in sys.argv:
+        sys.exit("Use: python setup.py build_ext --inplace")
+    remove_orphans(files)
+    stamps = load_stamps()
+    stale = stale_files(files, stamps)
+    print(f"\n{len(files) - len(stale)} of {len(files)} compiled module(s) up to date.")
+    if not stale:
+        return
+    print(f"Rebuilding {len(stale)}:")
+    for f in stale:
+        print(f"  • {f}")
+        stamps.pop(f, None)
+        if built_path(f).exists():
+            remove_file(built_path(f))
+    print()
+
+    from Cython.Build import cythonize
+    extensions = [Extension(module_name(f), [f], extra_compile_args=compile_args()) for f in stale]
+    ext_modules = cythonize(extensions, compiler_directives=COMPILER_DIRECTIVES, nthreads=JOBS, force=True)
+    setup(name='AutoCroissant', version='1.0', packages=[], ext_modules=ext_modules, cmdclass={'clean': CleanAll},
+          options={'build_ext': {'parallel': JOBS, 'force': True}})
+
+    for f in stale:
+        if built_path(f).exists():
+            stamps[f] = fingerprint(f)
+    STAMPS.parent.mkdir(exist_ok=True)
+    STAMPS.write_text(json.dumps(stamps, indent=1, sort_keys=True))
+    missing = [f for f in stale if f not in stamps]
+    if missing:
+        sys.exit(f"Not built: {', '.join(missing)}")
 
 
 class CleanAll(CleanCommand):
@@ -139,46 +206,15 @@ if __name__ == "__main__":
     from multiprocessing import freeze_support
     freeze_support()  # needed for Windows/macOS spawn method
 
-    clean_artifacts()
+    files = [f for f in INCLUDE_FILES if Path(f).exists()]
+    for f in sorted(set(INCLUDE_FILES) - set(files)):
+        print(f"  ⚠ Skipping (not found): {f}")
+    if not files:
+        sys.exit("No files to compile! Check INCLUDE_FILES paths.")
 
-    py_files = get_python_files()
-
-    print("=" * 60)
-    print("Cython Compilation Setup - Discord Bot")
-    print("=" * 60)
-    print(f"\nCompiling {len(py_files)} file(s):\n")
-
-    for f in py_files:
-        print(f"  • {f}")
-
-    print("\n" + "=" * 60 + "\n")
-
-    if not py_files:
-        print("No files to compile! Check INCLUDE_FILES paths.")
-        sys.exit(1)
-
-    extensions = [
-        Extension(
-            file.replace('/', '.').replace('\\', '.').replace('.py', ''),
-            [file],
-            extra_compile_args=['-O3'] if sys.platform != 'win32' else ['/O2'],
-        )
-        for file in py_files
-    ]
-
-    ext_modules = cythonize(
-        extensions,
-        compiler_directives=COMPILER_DIRECTIVES,
-        nthreads=4,
-    )
-
-    setup(
-        name='AutoCroissant',
-        version='1.0',
-        ext_modules=ext_modules,
-        cmdclass={'clean': CleanAll},
-    )
-
-    print("\n" + "=" * 60)
-    print("✓ Compilation complete!")
-    print("=" * 60)
+    start = time.monotonic()
+    if 'build_ext' in sys.argv:
+        build(files)
+    else:
+        setup(name='AutoCroissant', version='1.0', packages=[], cmdclass={'clean': CleanAll})
+    print(f"\n✓ Done in {time.monotonic() - start:.1f} s")
