@@ -1309,13 +1309,16 @@ PSDs too; none on main today; `test_workflow_shape` in test_font_check).
   merge, `gate_shape` and `gate_region` (G7); the numbered PNGs as before. G5 and G6 (b) are skipped: they compare with
   Photoshop's image;
 - a PNG pushed before its PSD (old PSD): current when, over the pixels the render moved, the PNG is nearer the new render
-  than the old and either within the bar of the new render, or with no more bad pixels than the bar allows against it
-  while the old render is past the bar (the render-only half of `png_ahead`; review of 2026-10-24: it was re-exported over
+  than the old and either within the bar of the new render, or not past the floor against it while the old render is
+  past the bar (the render-only half of `png_ahead`; review of 2026-10-24: it was re-exported over
   the author's export, or refused G6). The second half is Pandamonium 38c55bd3 with the author's export 85f8030a pushed
   first: the fork draws its gradient Ability up to 9 levels off (section 16), mean 3.15 over F with no bad pixel, the
   old render 82.4% bad, so `_within` alone missed it (re-exported 115,620 px over the author's export, 1,589 px of it
   past 8 levels, with a false "made with a pixel difference (the old PSD drawn against the old PNG): bad 15.58%" note);
-  a stale PNG is within the bar of the old render, so it never takes this half. On the 34 replayed commits (scratch
+  a stale PNG is nearer the old render by mean (the stale-PNG guard of both halves) and within its bar. Round 8: the
+  half asked at most `PARITY_BAD_MAX` bad, so PoD06Rainbow_Bloon 38c55bd3 (0.80% bad, mean 7.41; the old render 35.6%)
+  and Clot_White d8163103 (1.81%, 2.16 against 3.28%, 9.69) had their author's exports overwritten with a false miss
+  note; now not past the floor, as `shows` holds the anchor (below, round 8). On the 34 replayed commits (scratch
   `py314/fix-r4/replay34_g2.jsonl`) all 34 PNG-first cases are now current, as on the checked path (33 before). Test:
   `test_a_png_pushed_before_its_psd_with_no_stored_image_is_current`;
 - a new PSD beside its PNG: the whole card rendered (`png_vs_render`, the render against the PNG); current when no pixel
@@ -1437,6 +1440,54 @@ PSDs too; none on main today; `test_workflow_shape` in test_font_check).
   both re-exported (`covered_beside.log`); Wolfgang's covered Name retitled: current, as checked (`wolfgang_stale.log`).
   The blank render on real cards still refuses (`test_g2_refuses_a_text_drawn_blank_on_real_cards`). Tests:
   `test_g2_a_text_under_the_art_is_no_blank_render`, the covered case of `test_g2_refuses_a_change_the_render_does_not_show`;
+- round 8 (2026-10-24, scratch `py314/rr-g2-real-2/`, `rr-g2-synthetic-2/`; fixed and re-measured in `py314/fix-r8/`):
+  (a) **the new PSD drawn as the bake draws an edited one.** The old PSD was drawn with its stored image's text blends
+  (the fork reads straight or gamma per type layer off it), the new, with none, all in the gamma, so F took unchanged
+  text edges: every card's first G2 push (all 813 PSDs have stored images). Forsaken_City 7fd2aa30 with the author's
+  PNG first was overwritten (2,146 px past 8, max 40) with a false "made with a pixel difference" note; pushed stale,
+  831 px past 24 from the author's export outside the change. `_render_like` now draws the new PSD with the old one's
+  stored image as its text reference and its edited type layers (record changed, `_edited`) pinned to the gamma
+  (`text_kwargs(..., edited=)`), as the bake renders an edited PSD that still carries its old preview; the fork takes no
+  reference argument, so the old image is put in its reference cache (`_TEXT_REFERENCES`) for that render (all in the
+  gamma when the old has none, or the fork lacks it). The reviewer's simpler shape (both PSDs in the gamma) was built
+  first and replayed: it fixes Forsaken_City but loses the edited layers' own blend change, Withering 5c8cb87b 0 -> 1,664
+  px past 24 and Dark_Ritual 0 -> 16 (`fix-r8/replay.jsonl`, `written_cmp.py`), so it was dropped. Over the 704 stale
+  pushes (`replay_g2_B.jsonl`, `cmp_shapes.log`) the written PNGs move from the built ones only on Forsaken_City (831 ->
+  0 px past 24) and Little_Guy (5a9e0fcf 211 -> 1,646, 09131c67 1,669 -> 3,315): there Photoshop re-blended the
+  unchanged stat labels (SPEED, ATTACK, DEFENSE, HEALTH) in the gamma though their records did not change, so the
+  author's export differs from the old PNG's kept pixels by up to 41 levels (`littleguy.log`); no file records that, and
+  the delta merge keeps an unchanged layer's pixels, as the bake does. Softened 8af07bcd is now "already shows" as on the
+  checked path; Shell_Shock 8af07bcd's parent PNG (G5 on the checked path, current with G2b already) is called current
+  (it differs from the author's export by text edges only, max 40). `shows` draws both in the gamma unless both have a
+  stored image (it holds the PNG to the floor, not to the blends): over all 711 the verdicts are those of round 7
+  (`shows_all.summary`). (b) the render-only `png_ahead` half not past
+  the floor (above). (c) **a style edit is told:** with nothing drawn moved but a drawn type layer's TySh (left out of
+  `fingerprints` as VOLATILE), the PNG is kept and `png_export.RESTYLED` told ("PNG kept as it is: the PSD has no stored
+  image, and the bot draws no change for {what}, which the push changed; if the PNG is out of date, export it in
+  Photoshop"; `numbers["restyled"]`): 22_Negation 100511d3 restyled ten texts, Photoshop's image moved over 4,723 px, the
+  checked path refuses G6_UNSEEN, G2 said "PNG still current", nothing told. Dogma-style case edits (TySh only) get the
+  line too (**default 2026-10-24, owner to decide**), as do saves whose TySh bytes changed with no visible change
+  (counts below). (d) **a changed colour profile refuses** (`G2_PROFILE`, gate G6): `changed_layers` cannot see an image
+  resource, so Abigail with its 'Display' profile removed was current, or with a text hidden merged an unconverted patch
+  into a converted PNG (19,033 px past 8 outside R); the checked path refuses G6_UNSEEN. No such flip in the 711-push
+  history. (e) `_render_voted` votes the whole card only for a PNG of the PSD's size (a grown canvas raised ValueError,
+  a card error). (f) `_covered`'s "not its groups" filter was dead (`descendants()` yields a group before its layers) and
+  is gone. Tests (png_export): `test_g2_draws_the_new_psd_with_the_old_ones_text_blends` (Forsaken_City both ways, Withering),
+  `test_g2_a_png_pushed_first_and_drawn_a_little_off_is_current`, `test_g2_a_style_edit_keeps_the_png_and_tells`,
+  `test_g2_refuses_a_changed_colour_profile`, `test_g2_votes_over_the_box_when_the_canvas_grew`,
+  `test_g2_beside_votes_by_the_pixels_one_mode_shows` (Stranger, The_Forbidden_One: round 7's `_icc_evidence` filter),
+  `test_icc_evidence_counts_the_pixels_one_mode_shows` (the filter and `ICC_MIN_PX`), `test_shows_a_small_recolour_by_the_mean`,
+  `test_shows_no_anchor_in_a_png_showing_neither` (`shows`' two rules), `test_g2_a_stale_png_within_the_bar_of_both_renders_is_not_ahead`
+  (`png_ahead`'s mean), `test_g2_a_text_turned_to_opacity_0_is_reread`; (card_guards)
+  `test_a_g2_burst_refusal_is_not_retried_when_the_png_shows_no_anchor`. Each of the 17 mutants of these rules fails a
+  test (`fix-r8/mutate.py`, `mut_*.log`). PNG-first over all history (`pngfirst.summary` for G2b, `cmp_shapes.log` for
+  G2): no write over the author's export in either (3 of 687 and 2 of 686 as built: Forsaken_City, PoD06Rainbow_Bloon,
+  Clot_White). RESTYLED is told on 5 of the 17 stale pushes G2 calls current (`g2B_counts.log`): 22_Negation, the case
+  edits of Tainted_Lost and Dogma, and Empowered and 12_Reactions2, whose TySh Photoshop rewrote with no visible change
+  (the checked path current): a told line, no write.
+  The 251 real pairs as bursts (`burst_B.summary`; the g2m variant `burst_g2m.summary`, on the gamma shape): every
+  verdict count as in round 7; one more PNG past the bar over the change, Little_Guy S2 (1,646 px past 24, the stat
+  labels above). Full suite: 1,602 passed, 97 skipped; test_token_picker 11 passed (`full-suite-B.log`).
 The Export is `unchecked`; `card_guards` keeps `png_export.UNCHECKED` in the plan and tells it on Discord and in the comment
 (report mode beside the PNG it would make): "no stored image to cross-check the bot's PNG against: save the PSD with
 Maximize Compatibility on". `after_window` withdraws it, as a refusal, when the author pushed the PNG in the window or the
