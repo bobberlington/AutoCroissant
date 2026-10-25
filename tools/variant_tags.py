@@ -91,22 +91,42 @@ def _ancestors(layer) -> list:
     return out
 
 
+def _box(layer) -> tuple:
+    """The layer's box; a group's is its leaves' (a hidden group's own box is empty)."""
+    if not layer.is_group():
+        return tuple(layer.bbox)
+    boxes = [tuple(leaf.bbox) for leaf in layer.descendants() if not leaf.is_group() and leaf.bbox[2] > leaf.bbox[0]]
+    if not boxes:
+        return (0, 0, 0, 0)
+    return (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
+
+
+def _overlap(a: tuple, b: tuple) -> bool:
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
 def _moves(psd, box) -> list:
-    """Candidate flips: [(label, {layer ids})], each node over the box (adjustment layers anywhere), a hidden one with
-    its hidden groups."""
-    x0, y0, x1, y1 = box
+    """
+    Candidate flips: [(layer, {layer ids})], each node over the box (adjustment layers anywhere), a hidden one with its
+    hidden groups; and a swap: a hidden node shown with the shown siblings it covers hidden (one title for another).
+    """
     out = []
     for layer in psd.descendants():
         if EFFECT_LAYER_TAG in layer.name:
             continue
-        bx0, by0, bx1, by1 = layer.bbox
-        empty = bx1 <= bx0 or by1 <= by0
+        own = _box(layer)
+        empty = own[2] <= own[0] or own[3] <= own[1]
         if empty and (layer.is_group() or layer.kind in ("pixel", "smartobject", "type", "shape")):
             continue
-        if not empty and not (bx0 < x1 and x0 < bx1 and by0 < y1 and y0 < by1):
+        if not empty and not _overlap(own, box):
             continue
         ids = {layer.layer_id} | ({a.layer_id for a in _ancestors(layer) if not a.visible} if not layer.visible else set())
         out.append((layer, frozenset(ids)))
+        if not layer.visible and not empty:
+            covered = {other.layer_id for other in layer.parent if other is not layer and other.visible
+                       and other.kind == layer.kind and _overlap(_box(other), own)}
+            if covered:
+                out.append((layer, frozenset(ids | covered)))
     return out
 
 

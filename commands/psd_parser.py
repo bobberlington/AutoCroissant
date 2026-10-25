@@ -521,7 +521,7 @@ class PSDParser:
             card.ability = ""                   # its Ability layer is hidden and its words printed nowhere
         elif is_rulepage:
             card.problems.append("NO ABILITY LAYER")        # cards need no ability (owner 10-25); a page needs text
-        ids = [layer.layer_id for layer in psd.descendants()]
+        ids = [layer.layer_id for layer in psd.descendants() if layer.layer_id >= 0]     # -1: none stored
         if len(set(ids)) < len(ids):
             card.problems.append("DUPLICATE LAYER IDS")
         self._process_stats(card, stat_trackers)

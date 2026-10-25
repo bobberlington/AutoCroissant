@@ -47,9 +47,11 @@ def layer_path(layer) -> str:
 
 
 def lyid_index(psd) -> dict:
-    """{layer id: layer}; raises psd_edit.Refused("integrity") when two layers share an id."""
+    """{layer id: layer}; raises psd_edit.Refused("integrity") when two layers share an id (-1, none stored, is left out)."""
     out = {}
     for layer in psd.descendants():
+        if layer.layer_id < 0:
+            continue
         if layer.layer_id in out:
             from commands.psd_edit import Refused
             raise Refused("integrity", f"two layers have the id {layer.layer_id}: {layer_path(out[layer.layer_id])!r} "

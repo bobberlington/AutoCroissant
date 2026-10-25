@@ -571,6 +571,8 @@ def rule_layer_ids(psd: PSDImage) -> Optional[Issue]:
     """R13: every layer has its own id (the website's boxes are keyed by it)."""
     seen, twice = set(), []
     for layer in psd.descendants():
+        if layer.layer_id < 0:
+            continue                            # no id stored (a PSD made by psd-tools): nothing to key
         if layer.layer_id in seen:
             twice.append(layer.layer_id)
         seen.add(layer.layer_id)
