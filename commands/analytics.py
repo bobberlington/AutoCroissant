@@ -1177,6 +1177,8 @@ def _fire(reminder, guild_id):
             queue_message(fake, f"⚠ Reminder `{reminder_id}` skipped its command: {e}. "
                                 f"Re-create it, then `/remove_reminder reminder_id:{reminder_id}`.")
             return True
+        from commands.card_sync import on_use      # lazy: card_sync imports the card modules
+        on_use(name)                                # a card command: new card data looked for, as when typed
         queue_command(_run_reminder_command, func, fake, values, reminder_id, name)
     return True
 

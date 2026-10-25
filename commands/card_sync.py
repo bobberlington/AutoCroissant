@@ -3,9 +3,11 @@ The bot after the cutover (global_config.CARD_SYNC; docs/Campaigns/DATA_BUILD_AC
 The Card sync Action in the card repo builds the card data and commits it to the data branch; the bot only reads it:
 - sync: card_data/ brought to the data branch (card_db.sync: one conditional request, free when nothing moved), the
   database reloaded from it, then the card list, query tables, type emojis and image links refreshed;
-- /update_stats: that sync and one reply; a normal Card sync run dispatched (ACTIONS_TOKEN) when the card repo has card
-  changes the data lacks or website edits wait to bake, once its last push is 30 minutes old (the owner's reminder runs
-  it every 30 minutes); with force_update or cards (admins), a run dispatched and followed until it ends, then the sync;
+- on use: a card command or autocomplete queues that sync (quiet) when none ran for REFRESH_SECONDS; its reply uses
+  the data loaded now, the next one the new data;
+- /update_stats: that sync and one reply; Card sync starts itself (a card push starts a 30-minute timer in
+  card-sync.yml); with force_update or cards (admins), a run dispatched (ACTIONS_TOKEN) and followed until it ends,
+  then the sync;
 - /fonts: from the data's psd_details.json, whose fonts the build marked supplied or not.
 Uncompiled (not in setup.py), like card_data.
 """
@@ -18,6 +20,7 @@ from typing import Optional
 
 from requests.exceptions import RequestException
 
+import global_config                                 # CARD_SYNC, read at call time (the cutover switch)
 try:
     import config
 except ImportError:                                  # tests and scripts without config.py
@@ -37,9 +40,6 @@ WORKFLOW = "card-sync.yml"                           # the card repo's Card sync
 SITE_WORKFLOW = "site.yml"                           # the card repo's website build (it reads the bot's pickles)
 RUN_NAME = "Card sync"                               # its live runs' name (a dry run is "Card sync (dry run)")
 RETRY_NAME = "Card sync (retry)"                     # its own retry's name (main moved during a run)
-SCHEDULE = "every 30 minutes, at :00 and :30"        # its cron (card-sync.yml)
-GRACE_SECONDS = 30 * 60                              # card_bake.RECENT: no run starts until the last push is this old
-AUTO_INPUTS = {"dry_run": "false", "bake": "pending"}   # /update_stats' own run: the schedule's (bakes only pending edits)
 POLL_SECONDS = 15                                    # between two looks at a dispatched run
 WAIT_MINUTES = 30                                    # a dispatched run is followed this long
 FIND_SECONDS = 60                                    # a dispatched run shows up in the run list within this
@@ -49,6 +49,10 @@ FAILED = ("failure", "timed_out", "startup_failure")
 BOT_LOGIN = "github-actions[bot]"                    # GITHUB_TOKEN dispatches (Card sync's retry, card-guards)
 FONTS_PREFIX = "MDW/Fonts/"                           # its top-level files only (the gate's MDW/Fonts/*)
 CARD_FILES = {ICON_MANIFEST_PATH, RULES_PATH, *AUTHORS_PATHS, *EDITS_PATHS, *CREATED_PATHS}
+REFRESH_SECONDS = 120                                # on use: the data branch looked at most this often
+READERS = frozenset({                                # the slash commands that read card data (on_use); autocomplete too
+    "alias", "export_cards", "export_rulebook", "fonts", "frankenstein", "list_orphans", "mass_replace", "query",
+    "query_ability", "query_rulebook", "update_metadata", "view_old_metadata"})
 
 # ========================
 # Global State
@@ -56,6 +60,9 @@ CARD_FILES = {ICON_MANIFEST_PATH, RULES_PATH, *AUTHORS_PATHS, *EDITS_PATHS, *CRE
 _loaded: dict = {"commit": None}                     # the data commit stats_db holds (None: the root pickles or nothing)
 _sync_lock = Lock()                                  # one sync at a time (a reminder beside a command)
 _run_lock = Lock()                                   # one dispatched run followed at a time
+_checked: dict = {"at": monotonic()}                 # the last look at the data branch (the start counts: startup's)
+_unreported: dict = {}                               # checks' reloads for the next sync's reply: before, commit, problems
+_use_lock = Lock()                                   # on_use's claim of a look (never waited on)
 
 
 class TokenRefused(Exception):
@@ -129,7 +136,7 @@ def report(manifest: dict, counts: Optional[dict], reloaded: bool, now: Optional
 
 
 def card_input(path: str) -> bool:
-    """A card repo path Card sync's gate goes for (the hand-edited save aside): a dispatch for any other would end there."""
+    """A card repo path Card sync's gate goes for (the hand-edited save aside): card-sync.yml's push paths."""
     return (path.lower().endswith((".psd", ".png")) or path.startswith(f"{TYPES_DIR}/") or path in CARD_FILES
             or (path.startswith(FONTS_PREFIX) and "/" not in path[len(FONTS_PREFIX):]))
 
@@ -155,64 +162,8 @@ def _main_ahead(repository: str, base: Optional[str]) -> bool:
     return bool(data.get("ahead_by")) and any(card_input(f.get("filename", "")) for f in data.get("files") or [])
 
 
-def _last_push(repository: str) -> Optional[float]:
-    """When someone other than Card sync last pushed to the card branch (None: not today); one request."""
-    pushes = _json(api_url(repository, f"activity?ref={CARD_BRANCH}&time_period=day&per_page=30"), HEADERS)
-    for push in pushes or []:
-        if (push.get("actor") or {}).get("login") != BOT_LOGIN and push.get("timestamp"):
-            return datetime.strptime(push["timestamp"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp()
-    return None
-
-
-def _due_edits(repository: str) -> list:
-    """The website edits a run can bake now (card_bake.due)."""
-    from commands.card_bake import due               # lazy: the edit pipeline's modules
-    return due(repository)
-
-
-def start_run(runs: list, ahead: bool, repository: str = CARD_REPO) -> Optional[str]:
-    """
-    /update_stats' own Card sync run: dispatched when the card repo has card changes the data lacks (ahead) or website
-    edits wait to bake, once the last push is GRACE_SECONDS old; never while a run is queued or running.
-
-    Returns:
-        A line for the reply, or None (nothing started or waiting)
-    """
-    if not ACTIONS_TOKEN or any(r.get("status") != "completed" for r in runs):
-        return None
-    try:
-        edits = [] if ahead else _due_edits(repository)
-    except Exception as e:                           # advice only: the sync itself worked
-        print(f"Pending website edits not read: {type(e).__name__}: {e}")
-        edits = []
-    if not ahead and not edits:
-        return None
-    what = ("the card changes not in the data yet" if ahead else
-            f"{len(edits)} website edit{'' if len(edits) == 1 else 's'} waiting to bake ({', '.join(edits[:5])}"
-            + (", ..." if len(edits) > 5 else "") + ")")
-    try:
-        last = _last_push(repository)
-        if last is not None and time() - last < GRACE_SECONDS:
-            return (f"A card sync starts for {what} once the card repo has had no push for {GRACE_SECONDS // 60} minutes "
-                    f"(the last was {int((time() - last) // 60)} min ago).")
-        if not _run_lock.acquire(blocking=False):    # a forced run is being followed
-            return None
-        try:
-            run = dispatch(repository, AUTO_INPUTS)
-        finally:
-            _run_lock.release()
-    except (TokenRefused, NoAnswer, RequestException, ValueError) as e:
-        return f"Could not start a card sync for {what} ({type(e).__name__}: {e}); see <{actions_link()}>."
-    if run is None:
-        return f"Card sync was started for {what}; its run did not show up within a minute: <{actions_link()}>"
-    return f"Card sync run started for {what}: <{run.get('html_url')}>"
-
-
-def notes(manifest: dict, repository: str = CARD_REPO, start: bool = False) -> list:
-    """
-    The lines after the first: a re-parse going on, unreadable PSDs, card changes not built yet (start: a run started
-    for them or for waiting website edits, start_run), a failed last run.
-    """
+def notes(manifest: dict, repository: str = CARD_REPO) -> list:
+    """The lines after the first: a re-parse going on, unreadable PSDs, card changes not built yet, a failed last run."""
     lines = []
     pending = manifest.get("pending") or {}
     stale = pending.get("stale") or []
@@ -226,19 +177,16 @@ def notes(manifest: dict, repository: str = CARD_REPO, start: bool = False) -> l
                      + "); " + ("its card keeps its" if len(failed) == 1 else "their cards keep their")
                      + " last version until the PSD is fixed.")
     try:
-        every = _runs(repository)
-        runs = [r for r in every if r.get("display_title") in (RUN_NAME, RETRY_NAME)]
+        runs = [r for r in _runs(repository) if r.get("display_title") in (RUN_NAME, RETRY_NAME)]
         ahead = _main_ahead(repository, manifest.get("card_commit"))
     except (RequestException, ValueError) as e:      # advice only: the sync itself worked
         print(f"Card sync status not read: {e}")
         return lines
-    started = start_run(every, ahead, repository) if start else None
-    if started:
-        lines.append(started)
-    elif ahead:
+    if ahead:
         going = next((r for r in runs if r.get("status") != "completed"), None)
-        lines.append("The card repo has card changes not in the data yet: " + (f"the card sync running now picks them up (<{going.get('html_url')}>)."
-                                                                 if going else f"the next card sync ({SCHEDULE}) picks them up."))
+        lines.append("The card repo has card changes not in the data yet: "
+                     + (f"the card sync under way picks them up (<{going.get('html_url')}>)." if going else
+                        "the next card sync picks them up (30 minutes after the first card push of a burst)."))
     last = next((r for r in runs if r.get("status") == "completed" and r.get("conclusion") not in ("cancelled", "skipped")), None)
     if last is not None and last.get("conclusion") in FAILED:
         lines.append(f"The last card sync failed: <{last.get('html_url')}>; the bot keeps the last good card data.")
@@ -285,18 +233,39 @@ def load_local(folder: str = CARD_DATA_DIR) -> bool:
     return True
 
 
-def sync(interaction=None, output_problematic: bool = True, quiet: bool = False, follow_ups: bool = True,
-         start: bool = False) -> list:
+def _pull() -> tuple:
+    """
+    One look at the data branch (card_db.sync), the database swapped when it moved. Hold _sync_lock.
+
+    Returns:
+        (the manifest, reloaded)
+    """
+    _checked["at"] = monotonic()
+    got = card_db.sync(CARD_DATA_DIR, CARD_REPO, DATA_BRANCH)
+    reloaded = got["commit"] != _loaded["commit"]
+    if reloaded:
+        stats, old, _, _ = card_db.read_db(CARD_DATA_DIR, details=False)
+        _swap(stats, old, got["commit"])
+    return (got["manifest"], reloaded)
+
+
+def _follow_ups(interaction) -> None:
+    """After a sync: image links re-pinned, then the card list, query tables and type emojis (_refresh_cards)."""
+    from commands.repo_history import refresh as refresh_history
+    queue_command(refresh_history)                   # re-pin image links; a git fetch when nothing changed
+    queue_command(_refresh_cards, interaction)
+
+
+def sync(interaction=None, output_problematic: bool = True, quiet: bool = False, follow_ups: bool = True) -> list:
     """
     card_data/ brought to the data branch, the database reloaded when the data moved, and one reply (quiet: the
-    console only, unless the sync failed); then the card list, query tables, type emojis and image links refreshed.
+    console only, unless the sync failed or there are problem cards), counting checks' reloads since the last; then the card list, query tables, type emojis and image links refreshed.
 
     Args:
         interaction: Where the reply goes (None: the console)
         output_problematic: Show the new build's problem cards
         quiet: No reply when it worked (a reminder's sync)
         follow_ups: Queue the refreshes (startup runs its own)
-        start: Start a Card sync run when one is due (start_run; a quiet sync prints its line)
 
     Returns:
         The problem card messages of newly loaded data
@@ -304,11 +273,9 @@ def sync(interaction=None, output_problematic: bool = True, quiet: bool = False,
     with _sync_lock:
         before, before_commit = stats_db.stats, _loaded["commit"]
         try:
-            got = card_db.sync(CARD_DATA_DIR, CARD_REPO, DATA_BRANCH)
-            reloaded = got["commit"] != before_commit
-            if reloaded:
-                stats, old, _, _ = card_db.read_db(CARD_DATA_DIR, details=False)
-                _swap(stats, old, got["commit"])
+            manifest, reloaded = _pull()
+            pending = dict(_unreported)              # checks' reloads since the last reply: this sync reports them
+            _unreported.clear()
         except LookupError as e:
             say(interaction, f"No card data yet: {e}. The Card sync Action creates it: <{actions_link()}>")
             return []
@@ -316,20 +283,82 @@ def sync(interaction=None, output_problematic: bool = True, quiet: bool = False,
             print(f"Card data sync failed:\n{format_exc()}")
             say(interaction, f"Card data sync failed ({type(e).__name__}: {e}); the bot keeps the card data it has.")
             return []
-    manifest = got["manifest"]
-    text = report(manifest, changes(before, stats_db.stats) if reloaded and before_commit is not None else None, reloaded)
+    if pending:
+        before, before_commit = pending["before"], pending["commit"]
+    text = report(manifest, changes(before, stats_db.stats) if (reloaded or pending) and before_commit is not None
+                  else None, reloaded or bool(pending))
     if quiet:
-        print("\n".join([text] + (notes(manifest, start=True) if start else [])))
+        print(text)
     else:
-        say(interaction, "\n".join([text] + notes(manifest, start=start)))
-    problems = _problems(manifest) if reloaded and output_problematic else []
+        say(interaction, "\n".join([text] + notes(manifest)))
+    problems = (pending.get("problems", []) + (_problems(manifest) if reloaded else [])) if output_problematic else []
     if problems:
         say(interaction, "Problem cards in this build:\n" + "".join(problems))
     if follow_ups:
-        from commands.repo_history import refresh as refresh_history
-        queue_command(refresh_history)               # re-pin image links; a git fetch when nothing changed
-        queue_command(_refresh_cards, None if quiet else interaction)
+        _follow_ups(None if quiet else interaction)
     return problems
+
+
+def on_use(command: Optional[str] = None) -> bool:
+    """
+    A card command (or an autocomplete: command None) is running: a look at the data branch is queued when none ran
+    for REFRESH_SECONDS. On the event loop: a clock read and a queue append, never a wait. The reply uses the data
+    loaded now; new data serves the next one (/query and autocomplete answer within Discord's 3 seconds, and a reload's
+    card list and query tables are rebuilt after it).
+
+    Args:
+        command: The slash command's name; one not in READERS is ignored
+
+    Returns:
+        True when a look was queued
+    """
+    if not global_config.CARD_SYNC or (command is not None and command not in READERS):
+        return False
+    if not _use_lock.acquire(blocking=False):        # a reminder's thread claiming at this instant
+        return False
+    try:
+        now, last = monotonic(), _checked["at"]
+        if last is not None and now - last < REFRESH_SECONDS:
+            return False
+        _checked["at"] = now
+    finally:
+        _use_lock.release()
+    queue_command(check)
+    return True
+
+
+def check() -> bool:
+    """
+    on_use's look, in the command queue's thread: the sync, quiet (a reload's report to the console), then the
+    refreshes when the data moved, else the website's card ids alone (a conditional request: a new card's page link
+    once the site has it). A reload's counts and problem cards wait for the next sync's reply (_unreported). Skipped
+    while a sync runs (it is this look) or a dispatched run is followed (its sync loads it); a failure is logged and
+    the data kept.
+
+    Returns:
+        True when new data was loaded
+    """
+    if _run_lock.locked() or not _sync_lock.acquire(blocking=False):
+        return False
+    try:
+        before, before_commit = stats_db.stats, _loaded["commit"]
+        manifest, reloaded = _pull()
+        if reloaded:
+            if not _unreported:
+                _unreported.update(before=before, commit=before_commit, problems=[])
+            _unreported["problems"] += _problems(manifest)
+    except Exception as e:                           # noqa: BLE001 - a failed look never fails a command
+        print(f"Card data check failed ({type(e).__name__}: {e}); keeping the loaded data")
+        return False
+    finally:
+        _sync_lock.release()
+    if not reloaded:
+        from commands.query_card import card_repo
+        card_repo._populate_site_ids()
+        return False
+    print(report(manifest, changes(before, stats_db.stats) if before_commit is not None else None, True))
+    _follow_ups(None)
+    return True
 
 
 def _refresh_cards(interaction) -> None:
@@ -595,20 +624,18 @@ def request_run(interaction, full: bool, names: list) -> Optional[dict]:
 def update(interaction=None, output_problematic: bool = True, force_update: bool = False, verbose: bool = True,
            cards: str = "") -> list:
     """
-    /update_stats after the cutover: with force_update or cards, a Card sync run first (request_run); then the sync,
-    which otherwise starts a run when one is due (start_run). A reminder's plain sync is quiet (the console), unless it
-    fails.
+    /update_stats after the cutover: with force_update or cards, a Card sync run first (request_run); then the sync
+    (Card sync starts its other runs itself). A reminder's plain sync is quiet (the console), unless it fails.
 
     Returns:
         The problem card messages of newly loaded data
     """
     names = [c.strip() for c in (cards or "").split(",") if c.strip()]
     quiet = not verbose or _by_reminder(interaction)
-    forced = bool(force_update or names)
-    if forced:
+    if force_update or names:
         request_run(interaction, force_update, names)
         quiet = not verbose
-    return sync(interaction, output_problematic, quiet, start=not forced)
+    return sync(interaction, output_problematic, quiet)
 
 
 def fonts_text(folder: str = CARD_DATA_DIR) -> str:
@@ -627,19 +654,22 @@ def fonts_text(folder: str = CARD_DATA_DIR) -> str:
 # ========================
 __all__ = [
     'ACTIONS_TOKEN',
+    'READERS',
+    'REFRESH_SECONDS',
     'WORKFLOW',
     'actions_link',
     'built_line',
     'changes',
+    'check',
     'dispatch',
     'fonts_text',
     'follow',
     'gh_command',
     'load_local',
     'notes',
+    'on_use',
     'report',
     'request_run',
-    'start_run',
     'startup',
     'sync',
     'update',

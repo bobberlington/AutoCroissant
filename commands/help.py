@@ -151,14 +151,15 @@ music_commands = {
 # After the cutover (global_config.CARD_SYNC): the entries that change, by key; the rest stay as above
 card_sync_commands = {
     "/pull:"                                    : "Fetches and merges the latest code and reports status (admin only).",
-    "/push:"                                    : "Retired: the card data is built by the Card sync Action in the card repo every 30 minutes, "
+    "/push:"                                    : "Retired: the card data is built by the Card sync Action in the card repo 30 minutes after a card push, "
                                                   "and the pickles here are frozen. Replies with the Action's link (admin only).",
     "/update [force_reset]:"                    : "Pulls the latest code, then restarts (admin only).\n"
                                                   "- force_reset: Skip the pull; hard reset to origin/main instead, discarding local changes (dangerous! default: False)",
     "/update_stats [output_problematic_cards] [force_update] [cards]:" : "Loads the card data the Card sync Action built in the card repo (it re-parses "
                                                                "changed PSDs, bakes website edits, archives deleted cards and restores returned ones). Says when it was built and what changed. "
-                                                               "When the card repo has card changes the data lacks, or website edits wait to bake, it starts a card sync once "
-                                                               "the repo has had no push for 30 minutes (one run at a time). Then refreshes the card list and type emojis.\n"
+                                                               "Card sync starts itself 30 minutes after the first card push of a burst. Then refreshes the card list and type emojis. "
+                                                               "Card commands load new data by themselves (the bot looks at most every 2 minutes when one is used; the reply after it has the new data), "
+                                                               "so this is for seeing it at once or for the options below.\n"
                                                                "- output_problematic_cards: Show the new build's cards with errors (default: True).\n"
                                                                "- force_update: Admin only. Start a Card sync run re-parsing every card (it continues over the next runs), wait for it, then load it (default: False).\n"
                                                                "- cards: Admin only. Start a Card sync run re-parsing these cards, comma separated (e.g. after a parser fix), wait for it, then load it.",
@@ -166,12 +167,12 @@ card_sync_commands = {
                                                   "from the card data (the Card sync Action reads every PSD's fonts).",
     "/website:"                                 : "Link to the card browser website (cards, rulebook, deck builder, stats, editing; the next card sync applies edits).",
     "/update_tts_save:"                         : "Updates the Tabletop Simulator save on the card repo (TTS/Impossibility Simulator.json) and commits it (admin only): "
-                                                  "the fallback by hand, since the Card sync Action updates the save every 30 minutes. "
+                                                  "the fallback by hand, since the Card sync Action updates the save 30 minutes after a card push. "
                                                   "Pins card image links, adds new cards to complete decks (rules in TTS/decks.json), fixes card names. "
                                                   "Posts a summary, the full report as a file, and the save's download link.",
     "/bake_cards [card] [dry_run]:"             : "Bakes the website's pending card edits (site/Card Edits.json: stats, name, ability text) into the card PSDs and PNGs, "
                                                   "in one commit, and posts the report (admin only). The fallback by hand: the Card sync Action bakes them "
-                                                  "every 30 minutes.\n"
+                                                  "30 minutes after a card push.\n"
                                                   "- card: Only this card, matched like Card Authors.txt (default: every card with a pending PSD edit)\n"
                                                   "- dry_run: Render and check the edits, commit nothing (default: True)",
 }

@@ -2,18 +2,10 @@
  "alt_names": null,
  "blob": "cf4f4394cb06986c3ba4150ffbe9cca3a5f2ced0",
  "card": {
-  "ability": "CREATURE TYPES\nEvery type has a unique function, typically an immunity to a debuff.\nCannot have food items be used on them\nImmune to Sickness, Plague, Poison\nMACHINE\nCan swap out/in for 1 less point\nWIND\n+1 Brick when mining for Bricks\nROCK\n Immune to Stuffed, Engorged\nPANDA\nImmune to Smoldering, Burning, Blazing\nFIRE\nImmune to Chilled, Frostbite, Frozen\nICE\nImmune to Suffocation\nWATER\nImmune to Paralyzed\nELECTRIC\nImmune to Sickness, Plague\nUNDEAD\nImmune to Afraid\nDARK\nImmune to Blindness\nLIGHT\nImmune to Corruption\nDARK MATTER\nOnce per game on your turn may permanently change this type into other creature type.\nUNKNOWN\nGain 1 additional point (OD)\n\nThis may only be an innate type in special cases, but may still be added to creatures through effects.\nGIRL\n20 [water] [electric] [undead] [light] [unknown] [girl]",
+  "ability": "CREATURE TYPES\nEvery type has a unique function, typically an immunity to a debuff. \nCannot have food items be used on them\nImmune to Sickness, Plague, Poison\nMACHINE\nCan swap out/in for 1 less point\nWIND\n+1 Brick when mining for Bricks\nROCK\n Immune to Stuffed, Engorged\nPANDA\nImmune to Smoldering, Burning, Blazing\nFIRE\nImmune to Chilled, Frostbite, Frozen\nICE\nImmune to Suffocation\nWATER\nImmune to Paralyzed\nELECTRIC\nImmune to Sickness, Plague\nUNDEAD\nImmune to Afraid\nDARK\nImmune to Blindness\nLIGHT\nImmune to Corruption\nDARK MATTER\nOnce per game on your turn may permanently change this type into other creature type.\nUNKNOWN\nGain 1 additional point (OD)\n\nThis may only be an innate type in special cases, but may still be added to creatures through effects.\nGIRL\n20",
   "path": "Auxiliary/Rulebook/20_Creature_Types.psd",
   "timestamp": 0.0,
-  "type": "rulebook",
-  "types": [
-   "ice",
-   "fire",
-   "panda",
-   "rock",
-   "wind",
-   "machine"
-  ]
+  "type": "rulebook"
  },
  "path": "Auxiliary/Rulebook/20_Creature_Types.psd",
  "validator": []

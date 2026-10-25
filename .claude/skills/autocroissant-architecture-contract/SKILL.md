@@ -317,7 +317,7 @@ main.py  (registration + queue loops; imports every commands module)
  |                            checks out card_data.SPARSE_FILES alone]
  |- commands.card_sync     -> card_db, github_api, psd_analyzer (stats_db, the facade's), utils, global_config, config (optional);
  |                            query_card, type_emojis, repo_history, analytics, psd_details, font_check LAZILY: the bot after the
- |                            cutover (sync, /update_stats, Card sync dispatches, /fonts from the data). Imported LAZILY by
+ |                            cutover (sync, /update_stats, admins' Card sync runs, /fonts from data). Imported LAZILY by
  |                            repo_traverser, psd_analyzer and font_check, only when global_config.CARD_SYNC is on
  |                            [2026-10-22; NOT compiled]
  |- commands.repo_traverser -> card_data, card_edits, card_models, card_runner (bake_lock), utils, query_card, repo_history,

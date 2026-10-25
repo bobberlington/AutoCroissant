@@ -170,6 +170,11 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       TTSCardMaker commit; the bot commit `CARD_SYNC = True`; deploy; verify (site footer "Card data built ...",
       `/update_stats` "already current", `/query` the goldens, the next push on the site/save/Discord within one interval).
       `ACTIONS_TOKEN` is already in the jetson's config.py.
+- [ ] **Card sync's clock in GitHub** (owner 2026-10-24 23:15/23:27: "Move it into GitHub", a fixed window; branches
+      `work/clock`, both repos): card-sync.yml's `push` trigger, the first card push starts a 30-minute timer (environment
+      `card-sync-quiet`), pushes during it end at once, the cron stays as the fallback; `/update_stats` (and its reminder)
+      only syncs, admins' `force_update`/`cards:` still dispatch. Land: create the environment, TTSCardMaker first, then
+      AutoCroissant and the jetson deploy in the same sitting. Watch the first push run wait and a second one end at once.
 - [ ] **Step 9:** the Changes page's Changelog and Database edits tabs fed by `data/changelog.json`.
 - [ ] **Owner, 2026-10-23 ~18:30 (DATA_BUILD_ACTION §16 item 7):** bake verdicts move from Card Edits.json to
       `db/verdicts.json` on `data`, and bake/guard events (`baked`, `bake-refused`, `guard-png`, `guard-fix`) join the
@@ -270,7 +275,7 @@ has only the card's own `author`, so the website reads the tag's, else the recor
       cause (Butterfly's Inner Glow). Full suite on the r12 venv: 1748 passed, 13 skipped, 0 failed (after the merge alone: 1744 passed, 13 skipped). Review fixes 3
       (EDIT_PIPELINE_DESIGN section 7): title tokens off root type icons and any layer below (`inks_over`), no extra title
       line, typed icons checked for overlap and height (`typed_icon_fit`), refusal wording, baseline cut from the whole
-      render: 1756 passed, 13 skipped, 0 failed. Glow tokens (pin `cards-20261024b`, venv `~/.venvs/ac-py314-24b`): typed
+      render: 1756 passed, 13 skipped, 0 failed. Glow tokens (pin `cards-20261024b`, venv `~/.venvs/ac-py314-fork`): typed
       `:glow`/`:darkglow` bake (EDIT_PIPELINE_DESIGN section 7): 1759 passed, 13 skipped, 0 failed. 02015ac: a title or
       Ability whose saved pixels are in another font than it names refuses `font` (`drawn_in_font`, IoU under
       FONT_IOU_MIN 0.3: the four Omori titles Dull Knife, Shiny Knife, Dark Tentacle, Snow Angel): 1761 passed, 13

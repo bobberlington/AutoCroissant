@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 import commands.analytics as an
+import commands.card_sync as cs
 import commands.help as help_module
 import commands.utils as utils
 import main
@@ -42,6 +43,7 @@ def setup(monkeypatch):
     """ADMINS = [ADMIN], every worker recorded, slash_registry filled as on_ready does, queues empty."""
     monkeypatch.setattr(utils, "ADMINS", [ADMIN])
     monkeypatch.setattr(main, "client", SimpleNamespace(user=SimpleNamespace(id=99)))
+    monkeypatch.setattr(cs, "on_use", lambda command=None: False)   # no look for new card data
     ran = []
     for worker, _, _ in GATED.values():
         async def record(*args, _name=worker, **kwargs):

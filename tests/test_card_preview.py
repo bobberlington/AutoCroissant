@@ -94,9 +94,10 @@ def cards(tmp_path, clone, monkeypatch):
 
 
 def _state(repo) -> tuple:
-    """What a preview must leave as it was: HEAD, every ref, the index and worktree status, the object count."""
-    return (_git(repo, "rev-parse", "HEAD"), _git(repo, "for-each-ref"), _git(repo, "status", "--porcelain", "--ignored"),
-            _git(repo, "count-objects", "-v"))
+    """What a preview must leave as it was: HEAD, every ref, the index and worktree status, the object counts (not sizes:
+    they move under load)."""
+    counts = [l for l in _git(repo, "count-objects", "-v").splitlines() if l.startswith(("count:", "in-pack:"))]
+    return (_git(repo, "rev-parse", "HEAD"), _git(repo, "for-each-ref"), _git(repo, "status", "--porcelain", "--ignored"), counts)
 
 
 def _preview(cards, tmp_path, edit, card="Mini Doomer", request=REQUEST, name="out", clone=None) -> tuple:
@@ -476,10 +477,10 @@ def test_workflow_shape():
     assert "${{ inputs.request }}" in doc["run-name"]
     assert doc["permissions"] == {"contents": "read"}
     assert doc["concurrency"] == {"group": "card-preview-${{ inputs.request }}", "cancel-in-progress": False}
-    assert list(doc["jobs"]) == ["preview", "publish"]
+    assert list(doc["jobs"]) == ["preview", "publish", "caches"]
     preview, publish = doc["jobs"]["preview"], doc["jobs"]["publish"]
     assert "permissions" not in preview and publish["permissions"] == {"contents": "write"}
-    assert "if" not in preview and preview["outputs"] == {"ok": "${{ steps.validate.outputs.ok }}"}
+    assert "if" not in preview and preview["outputs"]["ok"] == "${{ steps.validate.outputs.ok }}"
     assert publish["needs"] == "preview" and publish["if"] == "${{ !cancelled() && needs.preview.outputs.ok == 'true' }}"
     assert preview["timeout-minutes"] + publish["timeout-minutes"] <= 15
     for step in preview["steps"] + publish["steps"]:

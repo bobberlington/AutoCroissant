@@ -1419,9 +1419,9 @@ def fork_install(path) -> str:
     A workflow's install of requirements-cards.txt (the psd-tools fork's one pin), as the five share it, in every job that
     installs (card-guards: its check and post jobs): the file checked out of AutoCroissant, no pin of the workflow's own;
     Python 3.14; its wheels restored by the file's hash, runner and Python (one entry for all five), built only on a miss,
-    installed offline by name (pip builds a URL line from git again; card-preview without pyoxipng: it would recompress a
-    PNG it never publishes), no other install; saved only after they installed. card-sync: one environment (a venv) for
-    every stage, no second Python.
+    installed offline by name with uv (pip builds a URL line from git again; card-preview without pyoxipng: it would
+    recompress a PNG it never publishes), no other install; saved only after they installed. card-sync: one environment
+    (a venv) for every stage, no second Python.
 
     Returns:
         The cache key.
@@ -1434,7 +1434,7 @@ def fork_install(path) -> str:
     by_name = NO_OXIPNG if path.name == "card-preview.yml" else BY_NAME
     installs = 0
     for job in yaml.safe_load(text)["jobs"].values():
-        steps = job["steps"]
+        steps = job.get("steps", [])              # none in a call of a reusable workflow (caches.yml)
         restores = [i for i, s in enumerate(steps)
                     if s.get("uses", "").startswith("actions/cache/restore@") and s.get("with", {}).get("path") == FORK_WHEELS]
         if not restores:
@@ -1458,7 +1458,12 @@ def fork_install(path) -> str:
         assert len(wheel) == 1 and run.index(wheel[0]) < run.index(by_name)
         pips = re.findall(r'pip"? install [^\n]*', run)
         assert len(pips) == 1 and pips[0].endswith(' install -q --no-index -f ~/.cache/card-wheels -r "$RUNNER_TEMP/cards.txt"')
-        assert run.index(by_name) < run.index(pips[0])
+        assert run.index(by_name) < run.index(pips[0]) and "uv pip install" in run
+        uv = [s for s in steps if s.get("uses", "").startswith("astral-sh/setup-uv@")]     # uv, without a cache of its own
+        assert len(uv) == 1 and first < steps.index(uv[0]) < install and uv[0].get("if") == restore.get("if")
+        assert uv[0]["with"]["enable-cache"] is False and re.fullmatch(r"\d+\.\d+\.\d+", uv[0]["with"]["version"])
+        target = "${{ runner.temp }}/venv/bin/python" if path.name == "card-sync.yml" else "${{ steps.python.outputs.python-path }}"
+        assert steps[install]["env"]["UV_PYTHON"] == target, path.name
         save = next(i for i, s in enumerate(steps) if s.get("uses", "").startswith("actions/cache/save@"))
         assert save > install and steps[save]["with"] == {"path": FORK_WHEELS, "key": "${{ steps.wheels.outputs.cache-primary-key }}"}
         assert steps[save]["if"].startswith(("steps.wheels.outputs.cache-hit != 'true'", "steps.venv.outputs.wheels == 'built'"))
@@ -1488,8 +1493,8 @@ def test_every_action_runs_python_314():
     for path in sorted(workflows.glob("*.yml")):
         text = path.read_text(encoding="utf-8")
         for name, job in yaml.safe_load(text)["jobs"].items():
-            runs = "\n".join(s.get("run", "") for s in job["steps"])
-            versions = [s["with"]["python-version"] for s in job["steps"] if s.get("uses", "").startswith("actions/setup-python@")]
+            runs = "\n".join(s.get("run", "") for s in job.get("steps", []))
+            versions = [s["with"]["python-version"] for s in job.get("steps", []) if s.get("uses", "").startswith("actions/setup-python@")]
             assert versions in ([], [FORK_PYTHON]), (path.name, name, versions)
             assert not re.search(r"(^|[\s(])python3(\.\d+)? ", runs), (path.name, name)       # the runner's own Python
             if re.search(r"(^|[\s(\"])python -", runs):

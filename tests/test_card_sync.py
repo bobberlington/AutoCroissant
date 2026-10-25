@@ -36,8 +36,6 @@ class FakeGitHub:
         self.post_replies: list = []            # Reply per POST, in order
         self.on_post = None                     # called after each POST (a run appears)
         self.compare = {"ahead_by": 0, "files": []}
-        self.pushes: list = []                  # the card branch's activity, newest first
-        self.due: list = []                     # card_bake.due's website edits
         self.runs_reply = None                  # a Reply for the run list instead of self.runs
         self.jobs = {"jobs": [{"steps": [{"name": "Gate", "status": "completed"}, {"name": "Build", "status": "in_progress"}]}]}
 
@@ -68,9 +66,6 @@ class FakeGitHub:
             self.calls.append(("run", run_id))
             states = self.states[run_id]
             return Reply(200, body=states.pop(0) if len(states) > 1 else states[0])
-        if "/activity?" in url:
-            self.calls.append(("activity", None))
-            return Reply(200, body=self.pushes)
         if "/compare/" in url:
             self.calls.append(("compare", url.rsplit("/compare/", 1)[1]))
             return Reply(200, body=self.compare)
@@ -129,10 +124,11 @@ def github(monkeypatch, tmp_path):
     monkeypatch.setattr(cs, "session", lambda: SimpleNamespace(post=fake.post))
     monkeypatch.setattr(cs, "sleep", lambda s: None)
     monkeypatch.setattr(cs, "ACTIONS_TOKEN", TOKEN)
-    monkeypatch.setattr(cs, "_due_edits", lambda repository: fake.due)
     monkeypatch.setattr(cm.stats_db, "stats", {})
     monkeypatch.setattr(cm.stats_db, "old_stats", defaultdict(list))
     monkeypatch.setitem(cs._loaded, "commit", None)
+    monkeypatch.setitem(cs._checked, "at", None)
+    monkeypatch.setattr(cs, "_unreported", {})
     queues = (utils.dispatch_queue, utils.edit_queue, utils.command_queue)
     for q in queues:
         q.clear()
@@ -285,7 +281,7 @@ def test_sync_notes(github, tmp_path, monkeypatch):
     text = _said()[0]
     assert "Re-parse in progress: 2 cards still to re-parse" in text
     assert "Could not read 1 PSD (Bad Card); its card keeps its last version" in text
-    assert "the card sync running now picks them up (<https://github.com/MichaelJSr/TTSCardMaker/actions/runs/9>)" in text
+    assert "the card sync under way picks them up (<https://github.com/MichaelJSr/TTSCardMaker/actions/runs/9>)" in text
     assert "The last card sync failed: <https://github.com/MichaelJSr/TTSCardMaker/actions/runs/8>" in text
     assert ("compare", "c0ffee0123456789...main") in github.calls
     utils.dispatch_queue.clear()
@@ -308,29 +304,14 @@ def test_a_reminder_sync_is_quiet(github, tmp_path, capsys):
     assert _said() and _said()[0].startswith("No card data yet") and cs._loaded["commit"] == held
 
 
-@pytest.mark.parametrize("ahead, due, what", [
-    (True, [], "the card changes not in the data yet"),
-    (False, ["Mini Doomer"], "1 website edit waiting to bake (Mini Doomer)"),
-])
-def test_update_stats_starts_a_card_sync_after_the_grace(github, tmp_path, ahead, due, what):
-    """/update_stats' own run: after 30 minutes without a push (Card sync's own pushes aside), one at a time."""
-    from time import gmtime, strftime, time
+def test_update_stats_starts_no_card_sync(github, tmp_path):
+    """Card sync starts itself (a card push's timer): /update_stats and its reminder only sync, even with changes waiting."""
     github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
-    github.compare = {"ahead_by": 1, "files": [{"filename": "Items/New.psd"}]} if ahead else github.compare
-    github.due = due
-    ago = lambda minutes: strftime("%Y-%m-%dT%H:%M:%SZ", gmtime(time() - minutes * 60))
-    github.pushes = [{"timestamp": ago(1), "actor": {"login": cs.BOT_LOGIN}}, {"timestamp": ago(10), "actor": {"login": "artist"}}]
+    github.compare = {"ahead_by": 1, "files": [{"filename": "Items/New.psd"}]}
+    github.runs = [_run(8, event="push")]
     cs.update(ME)
-    assert github.posts == [] and f"A card sync starts for {what} once the card repo has had no push for 30 minutes" in _said()[0]
-    utils.dispatch_queue.clear()
-    github.pushes[1]["timestamp"] = ago(40)
-    _dispatched_run(github, 42, _run(42, "queued"))
-    cs.update(ME)
-    assert github.posts == [{"ref": "main", "inputs": cs.AUTO_INPUTS, "return_run_details": True}]
-    assert f"Card sync run started for {what}: <https://github.com/{REPO}/actions/runs/42>" in _said()[0]
-    github.runs = [_run(42, "queued")]
-    cs.update(ME)
-    assert len(github.posts) == 1                                     # none while one is queued or running
+    assert github.posts == [] and ("the next card sync picks them up (30 minutes after the first card push of a burst)"
+                                   in _said()[0])
 
 
 def test_a_failed_sync_keeps_the_data(github, tmp_path, monkeypatch):
@@ -373,6 +354,103 @@ def test_startup_without_data_falls_back_to_the_pickles(github, monkeypatch):
     monkeypatch.setattr(cm.stats_db, "load", lambda: loads.append(1))
     cs.startup()
     assert loads == [1]
+
+
+# ========================
+# On use: card commands look for new data
+# ========================
+def test_on_use_looks_at_most_every_two_minutes(github, monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(cs, "monotonic", lambda: clock[0])
+    assert not cs.on_use("play") and _queued() == []                 # not a card command
+    assert cs.on_use("query") and _queued() == ["check"]
+    assert not cs.on_use() and not cs.on_use("query_ability")        # within the 2 minutes (autocomplete too)
+    clock[0] += cs.REFRESH_SECONDS
+    assert cs.on_use() and _queued() == ["check", "check"]
+    clock[0] += cs.REFRESH_SECONDS
+    monkeypatch.setattr(global_config, "CARD_SYNC", False)
+    assert not cs.on_use("query")
+
+
+def test_a_sync_counts_as_the_look(github, tmp_path):
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
+    cs.sync(ME)                                                       # /update_stats, or startup
+    utils.command_queue.clear()
+    assert not cs.on_use("query") and _queued() == []
+
+
+def test_check_reloads_quietly_then_refreshes(github, tmp_path, monkeypatch, capsys):
+    import commands.query_card as qc
+    looked = []
+    monkeypatch.setattr(qc.card_repo, "_populate_site_ids", lambda: looked.append(1))
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
+    assert cs.check() and set(cm.stats_db.stats) == {"A"} and cs._loaded["commit"] == github.tip
+    assert _said() == [] and "Card data loaded: built " in capsys.readouterr().out
+    assert _queued() == ["refresh", "_refresh_cards"] and looked == []
+    utils.command_queue.clear()
+    calls = len(github.calls)
+    assert not cs.check() and _queued() == [] and looked == [1]       # unchanged: one 304, the site's ids
+    assert github.calls[calls:] == [("commit", f'"e-{github.tip}"')]
+    github.publish({"A": _card("A", ability="Heal 1."), "B": _card("B")}, defaultdict(list), tmp_path)
+    assert cs.check() and "1 changed, 1 new; reloaded." in capsys.readouterr().out and _said() == []
+
+
+def test_a_failed_check_keeps_the_data_and_says_nothing(github, tmp_path, monkeypatch, capsys):
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
+    cs.check()
+    held = cm.stats_db.stats
+    utils.command_queue.clear()
+    monkeypatch.setattr(cdb, "sync", lambda *a: (_ for _ in ()).throw(KeyError("boom")))
+    assert not cs.check() and cm.stats_db.stats is held and _said() == [] and _queued() == []
+    assert "Card data check failed (KeyError" in capsys.readouterr().out
+    assert not cs._sync_lock.locked()
+
+
+def test_check_skips_while_a_sync_or_a_followed_run_runs(github, tmp_path):
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
+    for lock in (cs._sync_lock, cs._run_lock):
+        with lock:
+            assert not cs.check()
+    assert github.calls == [] and cm.stats_db.stats == {}
+
+
+def test_the_next_sync_reports_what_checks_loaded(github, tmp_path):
+    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
+    cs.sync(ME)
+    utils.dispatch_queue.clear()
+    github.publish({"A": _card("A"), "C": _card("C")}, defaultdict(list), tmp_path,
+                   problems=[{"card": "C", "path": "Creatures/C.psd", "notes": ["HP NOT FOUND"]}])
+    assert cs.check() and _said() == []
+    github.publish({"A": _card("A", ability="Heal 1."), "C": _card("C")}, defaultdict(list), tmp_path)
+    assert cs.check()
+    problems = cs.sync(ME)                                            # /update_stats, or the reminder's
+    assert ": 1 changed, 1 new; reloaded." in _said()[0]
+    assert len(problems) == 1 and "HP NOT FOUND" in problems[0] and "HP NOT FOUND" in _said()[1]
+    utils.dispatch_queue.clear()
+    assert cs.sync(ME) == [] and _said()[0].startswith("Card data is already current")
+
+
+def test_the_start_counts_as_a_look(monkeypatch):
+    from importlib.util import module_from_spec, spec_from_file_location
+    spec = spec_from_file_location("card_sync_fresh", cs.__file__)
+    fresh = module_from_spec(spec)                                    # a new process's state, cs untouched
+    spec.loader.exec_module(fresh)
+    monkeypatch.setattr(global_config, "CARD_SYNC", True)
+    assert not fresh.on_use("query")                                  # no look before startup's sync
+
+
+def test_card_commands_and_autocomplete_look(github, monkeypatch):
+    import main
+    from discord import InteractionType
+    names = {cmd.name for cmd in main.tree.get_commands()}
+    assert cs.READERS <= names                                        # no stale or misspelt name
+    used = []
+    monkeypatch.setattr(main, "card_data_used", lambda command=None: used.append(command))
+    for kind, data in ((InteractionType.autocomplete, {"name": "query"}),
+                       (InteractionType.application_command, {"name": "query", "options": []}),
+                       (InteractionType.component, {})):
+        asyncio.run(main.on_interaction(SimpleNamespace(type=kind, data=data, user=None, channel_id=1)))
+    assert used == [None, "query"]
 
 
 # ========================
@@ -533,7 +611,7 @@ def test_an_expired_token_is_said_at_the_run_list(github, tmp_path):
 def test_a_run_past_the_wait_is_left_going(github, tmp_path, monkeypatch):
     github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
     _dispatched_run(github, 90, _run(90, "queued"), _run(90, "in_progress"))
-    clock = iter([0, 0, 0, 900, 900, 2000])                           # started; then each look's deadline and edit checks
+    clock = iter([0, 0, 0, 900, 900, 2000, 2000])                     # started; each look's deadline and edit checks; the sync
     monkeypatch.setattr(cs, "monotonic", lambda: next(clock))
     cs.update(ME, cards="A")
     assert "still going after 30 minutes" in " ".join(_said())

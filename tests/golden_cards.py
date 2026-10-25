@@ -22,7 +22,7 @@ CARDS = CERTIFIED + (
     "Creatures/Other/2 Stars/Little_Guy.psd",
     "Creatures/Pandas/3 Stars/P.A.N.D.A._Mk_A.psd",
     "Creatures/Hollow Knight/5 Stars/The_Radiance.psd",
-    "Items/Heal/2 Stars/A_Snack.psd",                                   # hidden titles of 2 duplicates
+    "Items/Heal/2 Stars/A_Snack.psd",                                   # hidden titles of 2 duplicates: no alt_names
     "Items/Heal/2 Stars/Regeneration_Potion.psd",
     "Items/Heal/2 Stars/Watermelon.psd",
     "Items/Active/3 Stars/Black_Light_Bulb.psd",
@@ -41,7 +41,7 @@ CARDS = CERTIFIED + (
     "Auxiliary/Creatures/Militron_(No_Armor).psd",
     "Auxiliary/Status Effects/Debuffs/1 Stars/Poison.psd",
     "Auxiliary/Status Effects/Buffs/Enraged.psd",
-    "Auxiliary/Rulebook/20_Creature_Types.psd",                         # rule page types (MISSPELT TYPE: tornado until 2026-10-22)
+    "Auxiliary/Rulebook/20_Creature_Types.psd",                         # rule page: pictures named after icons read as nothing
     "Auxiliary/Rulebook/00_Table_of_Contents.psd",
     "Auxiliary/Rulebook/16_The_Field.psd",                              # row grouping
     "N.M.E/Jera.psd",
