@@ -5020,7 +5020,10 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         refuse("a card shows at least one")
     groups = [group for group in PSDParser._star_groups(psd) if _star_count(group, {}, {}, {})]
     types = parser.all_types if parser is not None else ()
-    named = not groups and not PSDParser._star_groups(psd)     # the parser's fallback: layers named "... Star ..."
+    named = not groups and not PSDParser._star_groups(psd) and stars_from_psd(rel)   # the parser's fallback: layers
+    #   named "... Star ..." (only where it counts them: a folder card's are its art, not redrawn)
+    if not groups and not named:
+        refuse('no group named "Stars" draws them')
     total = _named_total(psd) if named else _stars_total(psd)
     if total != old:
         refuse(f"the parser counts {old}, the Stars group draws {total} (stars in the header text)")
