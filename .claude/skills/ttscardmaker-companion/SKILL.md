@@ -644,7 +644,7 @@ bot ran the updater itself after `/update_stats`; this Action replaced that.
   Version" decks have `add_new_since: 318001ea` (the save's first commit): each gains every creature of its
   stars the save then lacked (renames followed by blob; a card moved to other stars moves deck with it, nothing else
   moves; no record is
-  kept, so a card taken out by hand comes back unless the rule excludes it). `TTS/audit.py` keeps `add_new_since` and
+  kept, so a card taken out by hand comes back unless the rule excludes it). `TTS/audit.py` (removed 2026-10-25, last at `843a4a99`) kept `add_new_since` and
   every complete counted rule when it rewrites the file.
 - **Triggers:** cron `41 11 * * *` and `workflow_dispatch` (input `force`, default true). No push trigger since 2911a8c.
 - **Daily gate** (the owner's, 075e6c43, 2026-10-22; `actions: read`): step "Card browser names" downloads the live

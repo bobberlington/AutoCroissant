@@ -8,7 +8,7 @@ build_site.py's own card loop (the shape of `site/dist/data/cards.json`). Before
 gone on reboot; recipes in SKILL.md Provenance). Also `site/dist/data/rules.json` (rebuilt 2026-10-22 00:43, same 48 page texts);
 `MDW/Fonts/stoogedings-src/stoogedings.json` and `build_stoogedings.py`; `site/assets/deck.js`, `text.js`, `app.js`,
 `search.js`; `site/Constructed Ban List.txt`; `TTS/Impossibility Simulator.json` and `TTS/decks.json`, audited with a
-copy of `TTS/audit.py` that writes to /tmp. Extraction scripts: `.claude/skills/impossibility-simulator-rules/scripts/`
+copy of `TTS/audit.py` (removed 2026-10-25; `git show 843a4a99:TTS/audit.py`) that writes to /tmp. Extraction scripts: `.claude/skills/impossibility-simulator-rules/scripts/`
 (rows.py, counts.py, agg.py, tags.py, lines.py, mentions.py; each takes cards.json or the card data's db/stats.json;
 a loadpkl.py dump of stats.pkl until 2026-10-25).
 Since then the clone's HEAD moved to `2291b5de` (a site-only commit) and origin/main to `902e01e3` (3 commits that do
@@ -500,7 +500,7 @@ Negation. Sleepy Kirby on a page marks more technical rules. Win condition ("01 
 opponent's creatures while they don't defeat all of yours. Old versions: `MDW/Old Rules/` (44 files, 22 PSD+PNG pairs,
 e.g. 01_Start_of_the_Game, 02_Setting_Up, 03_The_Field, 04_Creatures, 05_Stats): history only, no text extraction.
 
-## 7. What sits on the TTS table (`TTS/decks.json`, `TTS/Impossibility Simulator.json`, `TTS/audit.py`)
+## 7. What sits on the TTS table (`TTS/decks.json`, `TTS/Impossibility Simulator.json`; `TTS/audit.py` until 2026-10-25)
 
 Rulebook "04 Table".."04 Table5" names these: main deck = CREATURE DECKS (5★ leftmost, then 4, 3, 2), ITEM DECKS (4★
 leftmost, then 3, 2, 1), FIELD CARDS for the field card shop (4★..1★), N.M.E. items for the N.M.E. shop; DEVELOPER DECK
@@ -514,8 +514,8 @@ downs. One of these represents the actual value of a stat, not the bar. (1 DEF m
 HP)"); Active item holder; the simple version (decks without complex cards, no field cards or N.M.E. items); a copy of
 the deck; a bag of specific sorted item decks; a bag of tokens for each creature type.
 
-Save totals (a copy of `TTS/audit.py` writing to /tmp, run 2026-10-22 against HEAD `73904dbd`; the committed
-`TTS/AUDIT.md` is the 2026-10-20 run against `9fbe683`, before `dceef8eb` added 23 cards): 228 top-level objects; 57
+Save totals (a copy of `TTS/audit.py` writing to /tmp, run 2026-10-22 against HEAD `73904dbd`; the removed
+`TTS/AUDIT.md` (at `843a4a99`) is the 2026-10-20 run against `9fbe683`, before `dceef8eb` added 23 cards): 228 top-level objects; 57
 decks (49 on the table + 8 in the bag "Specific Item Decks", 7 of them empty); 2417 card objects (CardCustom 2411 + 6
 "Card"); by place: marker 8, deck 2362, rulebook 46, loose 1. 876 distinct repo images. Repo cards missing from the
 complete decks: none. Nicknames match the website names (773 pairs, 0 mismatches). After the updater run of 2026-10-22
