@@ -4,7 +4,6 @@
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
 .Python
 
 # ===================================
@@ -47,7 +46,6 @@ card_data/
 
 # Music downloads
 music/
-!music/.gitkeep
 
 # Claude Code: personal settings stay local (the shared .claude/skills/ library is committed)
 .claude/settings.local.json
@@ -60,7 +58,6 @@ music/
 *.swp
 *.swo
 *~
-.DS_Store
 
 # ===================================
 # Logs

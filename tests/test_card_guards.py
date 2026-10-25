@@ -1265,7 +1265,7 @@ def test_a_psd_fix_lands_beside_its_pushed_png(cards, tmp_path):
     "superseded" when the plan expected no PNG)."""
     root, base, alice, bot = cards
     out = tmp_path / "out"
-    data = cg.check(str(root), bot, base, mode="on", out=str(out), workers=1)
+    cg.check(str(root), bot, base, mode="on", out=str(out), workers=1)
     plan = json.loads((out / "plan.json").read_text())
     (bread,) = [c for c in plan["cards"] if c["case"] == "pair"]
     tree = cg.Source(str(root)).tree(bot)
@@ -1685,7 +1685,7 @@ def test_workflow_posts_once_and_a_rerun_edits_its_comment(clone, tmp_path):
     posts the settled post (discord-final.json) and marks the comment; a re-run edits that comment, keeps the mark and
     does not post again, and so does a re-run of the post job alone (its Told before looks the mark up itself: the
     check job's outputs are its first attempt's)."""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
@@ -1727,7 +1727,7 @@ def test_workflow_failure_streak_counts_told_runs_only(clone, tmp_path):
     Discord it failed (or stayed quiet in a told streak); a red run that posted its own lines (a card error, a failed
     comment) leaves no mark, so the next failure is told. A re-run is quiet after an attempt that told. The wording
     says whether the push was checked; a failed webhook call leaves no mark."""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
@@ -1770,7 +1770,7 @@ def test_a_rerun_that_fails_in_check_finds_the_told_mark(clone, tmp_path):
     streak mark (the push was told, not a failure). This is the review's case: the last push run green, no artifact. It
     is quiet too when the comments stay unreadable (as the Comment step counts them). With no mark it tells as before;
     a first attempt does not look."""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
@@ -1809,7 +1809,7 @@ def test_workflow_tells_only_the_settled_post(clone, tmp_path):
     with something to tell) -> the step fails (the run-failed message goes out instead), nothing posted. The Comment step
     goes up for comment-only findings (R10 alone: told 0, comment 1), and the plan holds the post job back (nothing to
     land or tell). Fail on card errors fails on the check job's card_errors only."""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
@@ -1869,7 +1869,7 @@ def test_workflow_comment_lookup_never_posts_twice(clone, tmp_path):
     have told), counts as told: no new comment, the step fails, and Tell Discord and the failure alert stay quiet (their
     `if`). Only a push run's first attempt comments anyway (no earlier comment of its own can exist). The id is out before
     the edit, so a failed edit still leaves the comment to Follow up and the mark."""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
@@ -1920,7 +1920,7 @@ def test_workflow_tell_marks_a_comment_of_its_own(clone, tmp_path):
     """The Comment step failed (no id): Tell Discord still posts, then puts up a comment of its own (the settled body)
     carrying the TOLD mark, which a re-run's lookup finds, so the re-run does not post again. When that comment cannot
     be made either, it warns that a re-run would post again."""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
@@ -1954,7 +1954,7 @@ def test_workflow_tells_a_site_build_that_did_not_start(clone, tmp_path):
     """Follow up starts the site build and the card sync after a bot commit; when one does not start, the comment says so,
     the run fails, and the one post gets a line for it (the failure alert stays quiet once the post went out). A post
     with no room for the line goes out as settled."""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
@@ -2000,7 +2000,7 @@ def test_workflow_land_and_a_rerun_after_a_landing(clone, tmp_path):
     step hands on the sha and the count already on the branch. Follow up starts the site build and the card sync after a
     commit, and again on a re-run that finds the writes landed (the first attempt's may not have started), not in report
     mode and not on a first attempt."""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
@@ -2053,7 +2053,7 @@ def test_workflow_a_cancel_by_hand_sends_no_alert(clone, tmp_path):
     timeout as cancelled) still tells, as a failure does: the attempt's job list says how long the cancelled job ran
     (never started, cancelled while waiting: by hand). Without the list, the old rule: 95 minutes from the check's
     Start."""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
@@ -2094,7 +2094,7 @@ def test_workflow_a_rerun_counts_the_window_from_the_push(clone, tmp_path):
     """Start: a first attempt's quiet window starts now; a re-run's at the push (the event's pushed_at: Unix seconds in a
     push event, an ISO time taken too), so a re-run hours later does not wait another 31 minutes. Anything else: now.
     (Land passes --quiet-from on a push only.)"""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
@@ -2136,7 +2136,7 @@ def test_workflow_refuses_a_landing_dispatch_while_a_push_run_waits(clone, tmp_p
     """A dispatch with dry_run off on a commit whose push run is unfinished (its head is the commit or after it) would
     post and land first: refused. A push run of an earlier commit, or none, lets it through; an unknown head (pushed
     since the checkout) refuses."""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
     doc, steps, jenv = _guard_steps(clone)
     step = steps["No push run in its window"]
     repo = tmp_path / "repo"
@@ -2166,7 +2166,7 @@ def test_workflow_refuses_a_landing_dispatch_while_a_push_run_waits(clone, tmp_p
 def test_workflow_lowercases_card_guards(clone, tmp_path):
     """The job's `if` matches CARD_GUARDS in any case ("On"), the shell does not: Start lowercases MODE for every later
     step (Land's --dry-run test is exact; `land` would also refuse a report plan without it)."""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
     doc, steps, jenv = _guard_steps(clone)
     step = steps["Start"]
     for typed, mode in (("On", "on"), ("REPORT", "report"), ("dry", "dry")):

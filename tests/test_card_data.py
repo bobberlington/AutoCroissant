@@ -570,7 +570,7 @@ def test_events_carry_their_push(cards, monkeypatch):
     author; a re-read has none."""
     _build(cards, "--empty")
     put(cards.repo, DOOMER, cards.psds[OTHER])
-    c2 = commit(cards.repo, "bob", 2000)
+    commit(cards.repo, "bob", 2000)
     put(cards.repo, "Items/Anubisath_Guardian.psd", cards.psds[OTHER])
     c3 = commit(cards.repo, "bob", 2100)
     git(cards.repo, "rm", "-q", FREEZER)
