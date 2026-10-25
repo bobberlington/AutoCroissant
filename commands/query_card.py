@@ -76,7 +76,8 @@ class CardRepository:
         self.choices: tuple = ()                         # autocomplete: (lowercase, shown, value), replaced whole
         self.cards_dff: DataFrame = DataFrame()
         self.rulebook_dff: DataFrame = DataFrame()
-        self._lowered: tuple = (None, [])                # (cards_dff, [(label, lowered ability)]) for the fuzzy step
+        self._lowered: tuple = (None, [])                # (cards_dff, [(label, length, matcher)]) for the fuzzy step
+        self._fuzzy_lock = Lock()                        # the matchers are shared: one search at a time
         self._hay: tuple = (None, "", None)             # (cards_dff, Card Edits.json sha, haystack) for text terms
 
     @property
@@ -365,17 +366,20 @@ class CardRepository:
 
     def _fuzzy_labels(self, ability: str) -> Index:
         """Cards whose SequenceMatcher ratio with the query beats match_ratio, in frame order."""
-        if self._lowered[0] is not self.cards_dff:            # built once per prep_dataframes
-            self._lowered = (self.cards_dff, [(label, text.lower()) for label, text in self.cards_dff["ability"].items()])
+        frame = self.cards_dff
         la, cut = len(ability), self.match_ratio
         keep = []
-        for label, text in self._lowered[1]:
-            lb = len(text)
-            if la + lb and 2.0 * min(la, lb) / (la + lb) <= cut:   # ratio()'s upper bound: can't match
-                continue
-            if SequenceMatcher(None, ability, text).ratio() > cut:
-                keep.append(label)
-        return Index(keep, dtype=self.cards_dff.index.dtype)
+        with self._fuzzy_lock:
+            if self._lowered[0] is not frame:                   # one matcher per card (its ability as b), per frame
+                self._lowered = (frame, [(label, len(text), SequenceMatcher(None, "", text))
+                                         for label, text in ((k, v.lower()) for k, v in frame["ability"].items())])
+            for label, lb, matcher in self._lowered[1]:
+                if la + lb and 2.0 * min(la, lb) / (la + lb) <= cut:   # ratio()'s upper bound: can't match
+                    continue
+                matcher.set_seq1(ability)
+                if matcher.quick_ratio() > cut and matcher.ratio() > cut:   # quick_ratio bounds ratio
+                    keep.append(label)
+        return Index(keep, dtype=frame.index.dtype)
 
     def rulebook_search_engine(self, search_text: str) -> DataFrame:
         """
