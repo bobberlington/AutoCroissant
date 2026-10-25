@@ -486,6 +486,7 @@ def test_land_commits_what_still_holds(tmp_path, monkeypatch):
     assert report["after"]["X/B.psd"] == ["the PSD changed again on the branch: that push's own check tells"]
     assert len(hub.commits) == 1 and hub.commits[0][:2] == ("h2", ["X/A.png"])            # retried on the new head
     assert hub.commits[0][2].startswith("Card guards: 1 PNG re-exported (push ffffffff)")
+    assert report["events"] == [{"kind": "guard-png", "card": "A", "path": "X/A.png", "line": "made"}]
 
 
 def test_a_push_during_the_check_still_supersedes(tmp_path, monkeypatch):
@@ -798,6 +799,8 @@ def test_pushed_pngs_are_recompressed_in_the_bot_commit(cards, tmp_path):
     assert "- Snack2.png recompressed losslessly" in report
     landed = cg.land(str(out / "plan.json"), local=str(root))
     assert landed["sha"] and sorted(landed["landed"]) == ["Fat", "Snack"]
+    assert sorted((e["kind"], e["card"], e["line"]) for e in landed["events"]) == [
+        ("guard-png", "Fat", "recompressed losslessly"), ("guard-png", "Snack", "recompressed losslessly")]
     assert _git(root, "log", "-1", "--format=%an %s", landed["sha"]) == f"AutoCroissant Card guards: 2 PNGs recompressed (push {push[:8]})"
     committed = subprocess.run(["git", "-C", str(root), "show", f"{landed['sha']}:{FOLDER}/Fat.png"], capture_output=True,
                                check=True).stdout
@@ -829,6 +832,9 @@ def test_a_recompression_rests_on_its_png_and_is_never_told(tmp_path, monkeypatc
     hub.install(monkeypatch)
     report = cg.land(plan, quiet_from="2026-10-22T17:00:00Z", now=lambda: now)
     assert report["landed"] == ["Fat"] and hub.commits[0][2].startswith("Card guards: 1 PNG recompressed (push ffffffff)")
+    cg.finish(plan, report)                                 # the landed commit's changelog events, for Card sync
+    assert json.loads((Path(plan).parent / cg.GUARD_EVENTS).read_text()) == {"schema": 1, "commit": "c" * 40, "push": "f" * 40,
+        "events": [{"kind": "guard-png", "card": "Fat", "path": "X/Fat.png", "line": "recompressed losslessly"}]}
     FakeHub({"X/Fat.psd": ("100644", "s1"), "X/Fat.png": ("100644", "theirs")}).install(monkeypatch)
     report = cg.land(plan)
     assert report["dropped"] == [["Fat", "superseded: X/Fat.png changed on the branch", "X/Fat.png"]]
@@ -846,7 +852,8 @@ def test_a_psd_fix_lands_beside_its_pushed_png(cards, tmp_path):
     tree = cg.Source(str(root)).tree(bot)
     fixed = b"the fixed PSD"                                                # land only moves bytes
     (out / "fixed.psd").write_bytes(fixed)
-    bread["writes"] = [{"path": bread["psd"], "file": "fixed.psd", "sha": blob_sha(fixed), "kind": "psd", "line": "R11 fixed"}]
+    bread["writes"] = [{"path": bread["psd"], "file": "fixed.psd", "sha": blob_sha(fixed), "kind": "psd",
+                        "line": "R11 fixed; Single-line Composer (Ability)", "shown": "R11 fixed", "composer": True, "pixels": ["apostrophes"]}]
     bread["expect"] = cg._expect(cg.Job(bread["psd"], "pair", "", tree[bread["psd"]][1], f"{FOLDER}/Bread.png",
                                         png_new=tree[f"{FOLDER}/Bread.png"][1]))
     assert bread["expect"][f"{FOLDER}/Bread.png"] == tree[f"{FOLDER}/Bread.png"][1]
@@ -855,6 +862,8 @@ def test_a_psd_fix_lands_beside_its_pushed_png(cards, tmp_path):
     report = cg.land(str(out / "plan.json"), local=str(root))
     assert report["landed"] == ["Bread"] and report["dropped"] == [] and report["sha"]
     assert _git(root, "show", "--name-only", "--format=", report["sha"]).splitlines() == [f"{FOLDER}/Bread.psd"]
+    assert report["events"] == [{"kind": "guard-fix", "card": "Bread", "path": f"{FOLDER}/Bread.psd",    # never the composer
+                                 "line": "R11 fixed; straight apostrophes"}]
 
 
 # ========================
@@ -1054,7 +1063,9 @@ def test_workflow_shape(clone):
     assert follow["env"]["TOLD_BEFORE"] == "${{ steps.told.outputs.told }}"
     # a re-run uploads again: the earlier attempt's artifact of the same name is replaced, not a 409
     uploads = [s for s in job["steps"] + post["steps"] + finish["steps"] if s.get("uses", "").startswith("actions/upload-artifact")]
-    assert len(uploads) == 3 and all(s["with"]["overwrite"] is True for s in uploads)
+    assert len(uploads) == 4 and all(s["with"]["overwrite"] is True for s in uploads)
+    events = next(s for s in post["steps"] if s.get("with", {}).get("name") == "guard-events")      # Card sync reads it
+    assert post["steps"].index(events) < post["steps"].index(follow) and events["if"] == "always() && steps.land.outputs.sha != ''"
 
 
 FAKE_GH = r"""#!/usr/bin/env python3

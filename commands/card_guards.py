@@ -17,6 +17,10 @@ the same pixels) when that saves more than 10% and 64 KiB (our thresholds), and 
                                          [--cards <names>] [--whole-tree] [--mode dry|report|on] --out <dir>
     python -m commands.card_guards land --plan <out>/plan.json [--quiet-from <ISO time>] [--dry-run] [--local <clone>] [--rerun]
 
+A landed commit's changelog events (guard-png: a PNG re-made or recompressed; guard-fix: a fix the guards landed; the
+Single-line Composer none) go to guard-events.json beside the plan, which card-guards.yml uploads and Card sync's data
+job reads (card_data --guard-events): the Changes page shows them, never Discord (docs/Future/CARD_SYNC_VERDICTS.md).
+
 check reads trees from a local clone (the Action's blobless checkout with its history; a full clone locally) and blobs
 from it or, when it lacks them, by sha through the API (verified). It writes nothing to the card repo, ever: a dry run
 and a replay are the same command. land re-reads the branch head, drops a card whose PSD or PNG moved or that a later
@@ -86,6 +90,8 @@ POOL_MIN = 8                                    # --whole-tree checks this many 
 FONT_FILES_EACH = 4                             # R8: font files tried a face, likeliest name first (270 of 275 faces in 3, 10-25)
 FONT_FETCH_MAX = 12                             # R8: font files a run (a worker) fetches at most, a request each
 CARD_ROOTS = ("Auxiliary/", "Creatures/", "Field/", "Items/", "N.M.E/")   # where card PNGs live (Types/ icons are not cards)
+GUARD_EVENTS = "guard-events.json"              # beside the plan: the landed commit's changelog events
+REDRAW = "; re-exported for "                   # _rewrapped_pngs' line on a guard 1 PNG (the composer's rewrap): not told
 QUIET_KEYS = ("EveryLineComposer",)            # fixed unsaid (owner, 2026-10-25): never in the changes either
 TELL_PNG_MISMATCH = False                       # R10 and "current but outside the bar" on Discord too (beyond the owner's
                                                 # two rules: the commit comment only until the owner asks)
@@ -1350,6 +1356,25 @@ def _read_files(out_dir: str, entries: list) -> dict:
     return files
 
 
+def events_of(entry: dict, write: dict, drawn: list) -> list:
+    """
+    A landed write's changelog events: guard-png for a PNG made, re-exported or recompressed, guard-fix for a PSD fix the
+    comment may say or a pixel fix (card_standards.PIXEL_LINES); the Single-line Composer and its rewrap alone, none
+    (owner, 2026-10-25). drawn: the card's writes as they landed (_drawn: a redraw's plain has no pixel fix).
+    """
+    base = {"card": entry["card"], "path": write["path"]}
+    if write["kind"] == "recompress":
+        return [{"kind": "guard-png", **base, "line": "recompressed losslessly"}]
+    psd = next((w for w in drawn if w["kind"] == "psd"), {})
+    pixels = [standards.PIXEL_LINES.get(kind, kind) for kind in psd.get("pixels", ())]
+    if write["kind"] == "png":
+        if write.get("silent"):                 # a redraw's PNG: told only for the pixel fixes it carries
+            return [{"kind": "guard-png", **base, "line": "re-exported for " + " and ".join(pixels)}] if pixels else []
+        return [{"kind": "guard-png", **base, "line": write["line"].split(REDRAW, 1)[0]}]
+    said = [part for part in (write.get("shown") or "").split("; ") if part] + pixels
+    return [{"kind": "guard-fix", **base, "line": "; ".join(said)}] if said else []
+
+
 def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bool = False, local: str = "",
          rerun: bool = False, sleep: Callable[[float], None] = _sleep, now: Callable[[], datetime] = _now) -> dict:
     """
@@ -1365,7 +1390,7 @@ def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bo
 
     Returns:
         {"sha": the commit or "", "landed": [card], "included": [[card, path]] committed, "dropped": [[card, why, path]],
-         "already": [[card, path]],
+         "already": [[card, path]], "events": the included writes' changelog events (events_of),
          "error": why nothing was committed, "told": {psd: [Discord lines]}, "after": {psd: [comment notes]}, "dry": dry_run,
          "unread": a rerun that could not read the branch}
     """
@@ -1375,7 +1400,7 @@ def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bo
     repository = repository or data.get("repo") or ("" if local else CARD_REPO)
     entries = [entry for entry in data["cards"] if entry.get("writes")]
     report = {"sha": "", "landed": [], "included": [], "dropped": [], "already": [], "error": "", "told": {}, "after": {},
-              "dry": dry_run, "unread": False}
+              "dry": dry_run, "unread": False, "events": []}
     if not entries and not any(entry.get("told") for entry in data["cards"]):
         return report
     if quiet_from:
@@ -1396,7 +1421,7 @@ def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bo
             # count too. A re-run's from now, as before (from the push, a late one counts the whole day's pushes)
             recent = (recent_paths(repository, tip.head, now() if rerun else min(now(), mark), local)
                       if repository and quiet_from else set())
-            included, report["dropped"], report["already"] = [], [], []
+            included, report["dropped"], report["already"], told = [], [], [], []
             for entry in entries:
                 drawn = _drawn(entry, here, recent)
                 for write in entry["writes"]:
@@ -1411,8 +1436,10 @@ def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bo
                         report["already"].append([entry["card"], write["path"]])
                     else:
                         included.append((entry, write))
+                        told += events_of(entry, write, drawn)
             cards = list(dict.fromkeys(entry["card"] for entry, _ in included))
             report["landed"], report["included"] = cards, [[entry["card"], write["path"]] for entry, write in included]
+            report["events"] = told
             if not included or dry_run:
                 break
             payload = {write["path"]: files[write["file"]] for _, write in included}
@@ -1432,7 +1459,7 @@ def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bo
         if not isinstance(error, (Transient, Refused)):
             print(format_exc(), file=stderr)
         why = str(error) if isinstance(error, (Transient, Refused)) else f"{type(error).__name__}: {error}"
-        report.update(sha="", landed=[], included=[], error=why or type(error).__name__, unread=rerun and tip is None)
+        report.update(sha="", landed=[], included=[], events=[], error=why or type(error).__name__, unread=rerun and tip is None)
     if tip is not None:
         here = Head(tip)
         bot_moved = frozenset(entry["psd"] for entry in data["cards"]
@@ -1444,13 +1471,17 @@ def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bo
 
 
 def finish(plan_path: str, landed: dict) -> dict:
-    """land's files beside the plan: landed.json, report-landed.md (the comment's new body) and discord-final.json (the
-    one post, as after_window settled it). Returns the post."""
+    """land's files beside the plan: landed.json, report-landed.md (the comment's new body), discord-final.json (the
+    one post, as after_window settled it) and, for a landed commit, guard-events.json ({"schema", "commit", "push",
+    "events"}). Returns the post."""
     out_dir = dirname(plan_path)
     with open(plan_path, encoding="utf-8") as fh:
         data = load(fh)
     with open(join(out_dir, "landed.json"), "w", encoding="utf-8") as fh:
         dump(landed, fh)
+    if landed.get("sha"):
+        with open(join(out_dir, GUARD_EVENTS), "w", encoding="utf-8") as fh:
+            dump({"schema": 1, "commit": landed["sha"], "push": data.get("after"), "events": landed.get("events", [])}, fh)
     with open(join(out_dir, "report-landed.md"), "w", encoding="utf-8") as fh:
         fh.write(landed_markdown(data, landed))
     told = landed.get("told", {})
@@ -1549,6 +1580,7 @@ __all__ = [
     'check',
     'discord_payload',
     'after_window',
+    'events_of',
     'finish',
     'land',
     'landed_markdown',
