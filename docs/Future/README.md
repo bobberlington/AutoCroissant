@@ -4,7 +4,6 @@ Work lists that are still live. The open checklist is `docs/NEXT_SESSION_PLAN.md
 
 | File | What it is |
 |---|---|
-| `UNBAKEABLE_CARDS_2026-10-23.md` / `.csv` | Which cards the bake can and cannot edit (Name, Ability, stats), why, and what would fix each class; verified by dry runs. Refresh it when a bake class is fixed (BUG 2, stars/types bakes). |
+| `PROBLEM_CARDS_2026-10-25.md` / `.csv` | The 10-25 census: website edits that can't bake (124 of 764 cards), open data problems (4), bakes with a note (308); by reason, with who acts. Dry bakes at AutoCroissant 429adb6, TTSCardMaker cacabfca. Refresh it when the parts editor lands. |
 
-`RESUME_2026-10-22.md` (the list after the 2026-10-22 power cuts) is finished and archived in
-`docs/Finished/session-2026-10-23/`.
+The 10-23 unbakeable list it replaces is in `docs/Finished/session-2026-10-24/`.

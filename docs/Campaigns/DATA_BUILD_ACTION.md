@@ -35,6 +35,11 @@ exactly one writer. Grafted onto it:
 
 §3 lists every graft.
 
+**Status 2026-10-25.** Steps 1-9 done: cut over 2026-10-24 23:02 (AC 89813ce, TC 8d884af4; re-seed run 40166422140
+from PICKLE 1282743), the clock below live, the bot refreshes its copy on use (ac65a00), so its 30-minute reminder can
+go. Ruleset "Protect main and data" exists. Open: step 10 (owner: now; `work/pickles`), §16 item 7 (verdicts), and the
+split (`work/split`, in progress): data branch, changelog and site at once on a card push, only main writes wait.
+
 **Status 2026-10-24, the clock in GitHub (owner, 23:15 and 23:27: "Move it into GitHub", a fixed window).** card-sync.yml
 has a `push` trigger on the card inputs. The first card push starts a 30-minute timer (job `Quiet window`, the environment
 `card-sync-quiet`'s wait timer); pushes while it runs start none (their runs end at once) and the run syncs main's head when
@@ -43,7 +48,7 @@ edits, a re-parse in progress, unposted events) and also ends while a timer runs
 reminder only sync the bot's copy; only the admins' `force_update`/`cards:` dispatch a run. §6.1 and §6.2 below predate
 this.
 
-**Status 2026-10-23.** Steps 1-6 and 9 are on main and deployed: the data build, the Discord writers and the alias
+**Status 2026-10-23 (superseded by the notes above).** Steps 1-6 and 9 are on main and deployed: the data build, the Discord writers and the alias
 migration landed with AutoCroissant main 8861696 (2026-10-22 20:50) and TTSCardMaker c0b6f2d7; the bot's cutover side
 (work/cutover-bot, step 8's code with `CARD_SYNC = False`) merged as 7b99438 and deployed with main 2ada357 on 2026-10-23
 10:36. **Step 7 started:** TTSCardMaker main a7d1fe56 turned on card-sync.yml's schedule (cron `4,34 * * * *`, `MAIN_COMMIT`
@@ -1318,7 +1323,7 @@ except 6, which is one day, not 14:
 
 ## 17. To confirm (settled by a test, not by the owner)
 
-- Whether a ruleset on a personal public repo can let only GitHub Actions update `data` (§5).
+- Settled 2026-10-24: the ruleset "Protect main and data" exists (§5).
 - That setup-python 3.14 with the fork pin installs on ubuntu-latest. 2026-10-23: requirements-cards.txt resolves for Linux
   x86_64 3.14 with wheels for every package but the fork (`uv pip compile --only-binary :all: --no-binary psd-tools`); the
   fork builds from source there as on the jetson. Since 2026-10-24 pyoxipng is in too there, built from its sdist (Rust:

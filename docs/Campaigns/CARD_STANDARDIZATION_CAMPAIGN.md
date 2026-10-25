@@ -1,14 +1,17 @@
 # Card PSD edits and standardization campaign (2026-10-20)
 
-**Status:** on hold until the user lifts it (2026-10-20): other developers are editing the PSDs, so nothing writes a PSD or PNG in
-TTSCardMaker until the user says so. Plan item 21 (`docs/NEXT_SESSION_PLAN.md`, "Ideas 5-23"). This file is the single ledger of every PSD
+**Status 2026-10-25:** the ledger is closed. The hold ended 2026-10-22; the batches landed 10-22/23 (L7, L8, the L11
+batch, L13, L14 groups: TTSCardMaker 0c573ed0, 100511d3, dc37f4ad, 5a9e0fcf, 7fd2aa30). L2/L3/L5/L6 were turned down; the
+owner standardizes PSDs himself (one Name and one Ability layer) and the parts editor covers the rest. Left, in the plan:
+L1 as BUGS D6, L14 star moves as S9, L16's stale exports. Section 5 (the standards) stays live: the push guards check it.
+Was: Plan item 21 (`docs/NEXT_SESSION_PLAN.md`, "Ideas 5-23"). This file is the single ledger of every PSD
 change we intend (section 3); `docs/EDIT_PIPELINE_DESIGN.md`, the rulebook campaign and `docs/NEXT_SESSION_PLAN.md` (item 21) point here;
 so does the companion skill's push-guard paragraph (rules 1 and 2, 2026-10-21). Numbers measured 2026-10-20 over the 813 card PSDs of `~/Desktop/TTSCardMaker` (every PSD outside `MDW/`
 and `Auxiliary/Markers/`); 651 are creatures, minions, items, auxiliary items and N.M.E. items, the cards a template with stat bars or a
 `Name` layer applies to; the other 162 are 48 rulebook pages, 64 status effects, 50 field cards. Evidence in section 8 (`/tmp` scans vanish
 on reboot: copy `/tmp/psdmap` and `/tmp/stdcamp` into `~/Documents/Tools/psd-research/` first).
 
-## 1. The hold
+## 1. The hold (ended 2026-10-22)
 
 - **Waits for the user's go:** every write to a PSD or PNG in TTSCardMaker: the pipeline's live runs (design S5, S8), the six title
   reprints (L8), Sonic's conversion (L3), star folder moves (L14), the `Effect Layers - All Cards.jsx` batch (L7), the token migration
@@ -278,7 +281,7 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
    `/tmp/rehearsal/`, run each tool there in the day's order, then the three gates on the copies (parse of all 813 vs the pre-batch parse,
    harness regions vs `score/results/cards_v1_icc.json`, goldens) and write the expected per-card diff list.
    **2026-10-21: rehearsed** on copies of the manifest's 425 PSDs at 9f0c9ec: gates green or explained, 26-row diff list, timings and
-   the day's needs in `STANDARDIZATION_REHEARSAL.md` (redo for the 115 cards a teammate re-pushed during it).
+   the day's needs in `docs/Finished/session-2026-10-24/STANDARDIZATION_REHEARSAL.md` (redo for the 115 cards a teammate re-pushed during it).
 2. **The day.** Confirm no PSD commit in the last 30 min (the `recent` rule: never race an author), pull main. Photoshop batches first,
    since they re-export PNGs and reflow text: L7 (`Effect Layers - All Cards.jsx`), L1 migration, L11 pages, L5 blank content, the
    pixel-changing cases of L5/L6/L9. Then the fork scripts for 0-pixel structure: L2 rows and renames, L3 clean-ups, L5/L6 renames, L4 effect
