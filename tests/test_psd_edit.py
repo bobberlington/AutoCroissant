@@ -9,7 +9,6 @@ conftest.find_fork picks the fork ($AC_PSD_TOOLS_SRC, else an installed fork, el
 """
 import json
 from collections import Counter
-from copy import deepcopy
 from dataclasses import replace
 from importlib.util import find_spec
 from os import environ
@@ -422,14 +421,14 @@ def test_dirty_box_bounds_the_untouched_gate(clone, parser):
     """K-1: gate_dirty renders only dirty_box(old, new) and the regions (none on an untouched copy, inside the canvas on
     a stat edit, checked whole by PSD_DIRTY_VERIFY), the whole canvas on a reorder."""
     path = _card(clone, MINI_DOOMER)[0]
-    old = PSDImage.open(path)
-    new = pe.edit_copy(old)
+    old, raw = PSDImage.open(path), Path(path).read_bytes()
+    new = pe.edit_copy(old, raw)
     assert pe.dirty_box(old, new) is None
     edit = pe.set_stat(new, pe.parse_card(parser, path, MINI_DOOMER, old), "hp", 8)
     box, whole = pe.dirty_box(old, new), (0, 0, old.width, old.height)
     assert box and box != whole and environ["PSD_DIRTY_VERIFY"] == "1"
     pe.gate_dirty(old, new, [edit])
-    new = pe.edit_copy(old)
+    new = pe.edit_copy(old, raw)
     new[0].move_to(new, index=1)
     assert pe.dirty_box(old, new) == whole
 
@@ -1457,20 +1456,6 @@ LESHY = "Creatures/Other/5 Stars/Leshy.psd"                     # its title unde
 DOOPLISS = "Creatures/Mario/4 Stars/DooPliss.psd"               # its title under its art ('p')
 
 
-def test_gate_pairs_checks_each_pairings_filter_and_place(clone):
-    """Review 2026-10-24: a copy whose smart object keeps its record but not its filter position, or its left/top,
-    renders unlike the card: gate_pairs refuses it as it refuses a lost pairing."""
-    old = PSDImage.open(_card(clone, LORIAN)[0])
-    pe.gate_pairs(old, pe.edit_copy(old))
-    for k in (1, 2, 3):
-        new = pe.edit_copy(old)
-        key, entry = next((key, entry) for key, entry in new._opened_records.items() if entry[1] is not None)
-        new._opened_records[key] = tuple(value + 1 if i == k else value for i, value in enumerate(entry))
-        with pytest.raises(pe.Refused, match=r"lost 1 smart object pairings") as refused:
-            pe.gate_pairs(old, new)
-        assert refused.value.code == "error"
-
-
 @text_edit
 def test_a_glow_disc_on_a_stat_bar_is_flagged(clone, parser, chart, monkeypatch):
     """A typed glow's group effects (a stroked group's disc, Photoshop's look) count on the stat bars: covered_ink takes
@@ -1500,20 +1485,22 @@ def test_a_glow_disc_on_a_stat_bar_is_flagged(clone, parser, chart, monkeypatch)
         assert (f"overflow: ability: the new text runs over the {stat} bar (1 px)" in notes) == disc
 
 
-@text_edit
-def test_apply_jobs_checks_its_copy(clone, parser, chart, monkeypatch, tmp_path):
-    """Review 2026-10-24: apply_jobs edits a copy, which a plain deepcopy makes without Lorian's smart filters. Its
-    pairings are checked first (gate_pairs); a copy that renders unlike the card after them refuses too (gate_copy, on a
-    card with smart filters)."""
-    hp = pe.parse_card(parser, _card(clone, LORIAN)[0], LORIAN)["card"]["hp"]
-    monkeypatch.setattr(pe, "edit_copy", deepcopy)
-    with pytest.raises(pe.Refused, match="smart object pairings") as refused:
-        _bake(clone, parser, LORIAN, {"hp": hp - 1}, tmp_path, chart)
-    assert refused.value.code == "error"
-    monkeypatch.setattr(pe, "gate_pairs", lambda psd, copy: None)
-    with pytest.raises(pe.Refused, match="renders .* unlike the card itself") as refused:
-        _bake(clone, parser, LORIAN, {"hp": hp - 1}, tmp_path, chart)
-    assert refused.value.code == "error"
+def test_the_edit_copy_renders_as_the_card(clone):
+    """K-3/K-5: apply_jobs edits the card opened again from its bytes (a deepcopy lost Lorian's smart filters, review
+    2026-10-24), with the card's eye flags, sharing its one stored-preview read (icc_vote, stored_preview, renders)."""
+    from psd_tools.composite.composite import _TEXT_REFERENCES
+    path = _card(clone, LORIAN)[0]
+    old, raw = PSDImage.open(path), Path(path).read_bytes()
+    layer = next(layer for layer in old.descendants() if layer.kind == "smartobject" and layer.visible)
+    layer.visible = False
+    copy = pe.edit_copy(old, raw)
+    assert [entry[1:] for entry in copy._opened_records.values()] == [entry[1:] for entry in old._opened_records.values()]
+    assert np.array_equal(pe.render_all(copy), pe.render_all(old))
+    assert _TEXT_REFERENCES[copy][1] is _TEXT_REFERENCES[old][1]
+    assert np.array_equal(np.asarray(pe.preview_image(copy)), np.asarray(old.topil(apply_icc=False)))
+    copy[0].move_to(copy, index=1)
+    with pytest.raises(pe.Refused, match="other layers"):
+        pe.edit_copy(copy, raw)
 
 
 def _runs(layer) -> list:

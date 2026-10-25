@@ -696,9 +696,10 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   Abilities on main fail it). A whole ability deleted on an FX card refuses as on any card (`reparse`: ABILITY TEXT
   NOT FOUND), its FX layers deleted with their words; `_rebuild_fx` refused `styled-word` ("no pixels to cut") before
   looking at them. One open per PSD per bake: `parse_card(psd=)`, card_bake shares its open of the old PSD with the
-  parse, `classify` and `apply_jobs(psd=)`, which edits a `deepcopy` (as fast as a second open) and reads the old
-  records first; `gate_bytes`, `gate_reparse` and the FX gates read the one reopened saved PSD. Dry census, every
-  gate, copies of TTSCardMaker main, fork `cards-20261023c` (`~/Documents/Tools/wt/scratch/bug2-p3/`: `p2/`,
+  parse, `classify` and `apply_jobs(psd=)`, which edits a copy (a `deepcopy` until 2026-10-25; since K-3 the old PSD's
+  bytes opened again, `edit_copy(old, raw)`: 69 -> 20 ms on the filtered cards) and reads the old records first;
+  `gate_bytes`, `gate_reparse` and the FX gates read the one reopened saved PSD. Dry census, every gate,
+  copies of TTSCardMaker main, fork `cards-20261023c` (`~/Documents/Tools/wt/scratch/bug2-p3/`: `p2/`,
   `h/runs/`, `rev3/`): phase 2's runs b 42 of 48, c 62 of 85, regress 234 of 258 (14 n/a), each result as before; the
   68 cards' no-op and " Die." bakes pixel-identical to the tip before this (136 of 136). The review's cases (322 bakes):
   Turtle's 91 icons 85 bake (66), `[undead]`/`[feather]` on 8 badge cards 16 of 16 (10), `[ice]` glued at the end 4
@@ -740,7 +741,13 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   smart filters by id() of the record, which a plain deepcopy kept from the source, so the copy rendered Lorian,
   Dragon_Mount, Defcon_Panda and 71 more without them and the PNG took that inside the regions (stat bakes silently);
   `gate_copy` renders the copy against the card (since the review fixes below: `gate_pairs` first, the render only on
-  a card with smart filters). `gate_untouched` leaves out every edit's region, the
+  a card with smart filters). Since 2026-10-25 (K-3) the copy is the card's bytes opened again, which pairs its own
+  smart filters and takes the card's eye flags: `gate_pairs` and `gate_copy` are gone (the 89 filtered PSDs of 904
+  render as the card; `PSD_DIRTY_VERIFY`'s whole renders still compare the copy with the card in the tests), and the
+  copy shares the card's one stored-preview read (K-5: `preview_image`, the fork's text reference, for `icc_vote`,
+  `stored_preview` and the renders: 5 decodes a bake -> 2, the old card's and the saved one's). Over the 317 K-1 bakes
+  (`scratch/bakecopy/`, load average ~75): PNG, PSD bytes and refusals identical; CPU saved per bake, median, plain
+  cards 0.15-0.28 s, filtered ones 2.1-3.0 s (stat 4.57 -> 1.91 s). `gate_untouched` leaves out every edit's region, the
   stats' too (a stat with the name or ability always refused `region`), and runs on stat-only bakes. `covered_ink`:
   new text under a visible Normal layer above it (Papyrus' spaghetti) or over a stat bar row the old text did not
   reach (Paint Warrior's blank box) refuses `overflow`. Tests: `test_a_see_through_icon_under_a_badge_layer_refuses`,
@@ -821,7 +828,8 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   cache (the pins are in its key) and cost more than it saved. Tests: `test_a_title_token_off_the_header_icons_and_stars`,
   `test_star_and_type_plans_see_the_root_type_icons`, `test_a_typed_icon_far_from_its_letters_refuses`,
   `test_a_title_token_that_wraps_refuses`, `test_icon_style_breaks_a_size_tie_by_the_body_size`,
-  `test_gate_pairs_checks_each_pairings_filter_and_place`, `test_covered_ink_weighs_layers_over_the_old_ink_anywhere`,
+  `test_gate_pairs_checks_each_pairings_filter_and_place` (removed with K-3),
+  `test_covered_ink_weighs_layers_over_the_old_ink_anywhere`,
   `test_a_bake_cuts_its_region_renders_from_the_whole_ones`, the untinted case in
   `test_a_see_through_icon_under_a_badge_layer_refuses`; each fails with its change taken out (`bug2-p5/mut.py`).
   **Glow tokens (2026-10-24, pin `cards-20261024b`, venv `~/.venvs/ac-py314-fork`; `scratch/bug2-p6/`):** the fork draws
