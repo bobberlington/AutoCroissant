@@ -151,6 +151,7 @@ def test_quoted_values_keep_and_and_or(repo):
 # ========================
 # Commands
 # ========================
+@pytest.mark.usefixtures("pickle_path")
 def test_update_metadata_and_mass_replace(monkeypatch):
     """subseries goes into the card's Card Edits.json entry (the commit stood in for: test_metadata_edits has the real one)."""
     import commands.discord_edits as de

@@ -422,6 +422,7 @@ def test_git_fetch_times_out(monkeypatch, tmp_path):
     assert sent[0] == "Fetching from remote..." and "did not complete in 1 secs" in sent[1]
 
 
+@pytest.mark.usefixtures("pickle_path")
 def test_push_reports_the_pull_error_not_the_abort(monkeypatch):
     from git import GitCommandError
     class FakeGit:

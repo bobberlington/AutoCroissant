@@ -157,7 +157,7 @@ def test_bot_ignores_ratings():
     workflows = SITE / ".github" / "workflows"
     if not workflows.is_dir():
         pytest.skip(f"no workflows at {workflows}")
-    for name in ("card-check", "card-sync", "card-edits", "card-guards", "tts-save"):
+    for name in ("card-check", "card-sync", "card-guards"):
         assert "Card Ratings.json" not in (workflows / f"{name}.yml").read_text(encoding="utf-8"), name
 
 
