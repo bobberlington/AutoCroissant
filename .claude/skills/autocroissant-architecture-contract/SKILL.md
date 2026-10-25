@@ -61,7 +61,7 @@ Mechanics you must know:
   (1 s, utils.py:32) and clears the event before the next drain, so an item queued during a drain wakes the next wait.
   A missed wake-up is only slower (the 1 s poll), never lost. Code that appends to a deque directly must call its
   wake too (`_edit` queues its extra chunks with `queue_any`). `_stop_loops()` (main.py:895) stops the four loops and
-  sets the three wakes, so a waiting drain ends at once and sends nothing more. The `Wake` binds to the loop of its
+  sets the three wakes, so a waiting drain ends at once (as with the old tick, a drain already between iterations runs once more). The `Wake` binds to the loop of its
   first `wait()` (a new loop, as in each test's `asyncio.run`, gets a new Event); before that, `set()` does nothing.
   Order within a queue and rate-limit handling are unchanged. Tests drain by calling `_drain_*` directly.
 - **`to_thread(func)`** (utils.py:116-125) wraps a sync function so awaiting it runs it in a thread via

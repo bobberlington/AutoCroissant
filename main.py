@@ -893,7 +893,7 @@ def _loops() -> tuple:
 
 
 def _stop_loops() -> None:
-    """Stop the four loops; the wake ends a drain's wait at once, so nothing is sent after this."""
+    """Stop the four loops; waking the drains ends their waits at once."""
     for loop in _loops():
         loop.stop()
     for wake in (command_wake, dispatch_wake, edit_wake):
