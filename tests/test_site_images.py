@@ -1,8 +1,8 @@
 """
-The website's pictures (TTSCardMaker site/build/build_site.py, site/sw.js, owner 2026-10-24): card images are AVIF only
-(4:4:4, by PNG blob and encode settings, encoded once), a build out of IMAGE_BUDGET leaves the rest to the next run, icon
-file names carry a stamp, build.txt digests the site's files only, and the service worker keeps only those versioned
-pictures (cache first) and lets pages, data and scripts reach the network. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips before AVIF thumbnails.
+The website's pictures (TTSCardMaker site/build/build_site.py, owner 2026-10-24): card images are AVIF only (4:4:4, by
+PNG blob and encode settings, encoded once), a build out of IMAGE_BUDGET leaves the rest to the next run, icon file names
+carry a stamp, build.txt digests the site's files only, and there is no service worker. Loads the site from $AC_SITE_SRC
+(a TTSCardMaker checkout) or the clone; skips before AVIF thumbnails.
 """
 import json
 import re
@@ -15,8 +15,9 @@ import pytest
 from test_site_build import ALPHA, _build, _commit, _png, bs, repo  # noqa: F401  (fixtures)
 from test_site_speed import ASSETS, SITE
 
-SW = SITE / "sw.js"
-pytestmark = pytest.mark.skipif(not SW.is_file(), reason=f"no {SW} (TTSCardMaker before work/site-img)")
+BUILD = SITE / "build" / "build_site.py"
+pytestmark = pytest.mark.skipif(not BUILD.is_file() or "def thumb_tag(" not in BUILD.read_text(encoding="utf-8"),
+                                reason=f"no AVIF thumbs in {BUILD} (TTSCardMaker before work/site-img)")
 
 
 def test_card_images_are_avif_made_once(bs, repo, tmp_path, monkeypatch):  # noqa: F811
@@ -99,8 +100,8 @@ def test_thumbs_carry_no_colour_profile(bs, repo, tmp_path, monkeypatch):  # noq
 
 
 def test_new_encode_settings_make_new_files(bs, repo, tmp_path, monkeypatch):  # noqa: F811
-    """A width's quality is in its tag (file name): changing it re-encodes that width only, under new names (so neither
-    the cache nor the worker keeps the old bytes), and prunes the old ones; the accent colour comes from the PNG, so the
+    """A width's quality is in its tag (file name): changing it re-encodes that width only, under new names (so no cache
+    keeps the old bytes), and prunes the old ones; the accent colour comes from the PNG, so the
     codec doesn't move it."""
     data = _build(bs, monkeypatch, repo, tmp_path / "s")
     cache = tmp_path / "s" / ".cache" / "img"
@@ -173,26 +174,18 @@ def test_a_stopped_image_phase_keeps_what_it_made(bs, repo, tmp_path, monkeypatc
     assert list(meta["images"]) == made
 
 
-def test_the_worker_lists_the_pictures_in_use(bs, repo, tmp_path, monkeypatch):  # noqa: F811
-    """dist/sw.js: site/sw.js with every card and rulebook image's blob (its first 10 digits) and icon stamp, as one
-    string, and the thumbs' settings tags; the pages preload AVIF only."""
-    data = _build(bs, monkeypatch, repo, tmp_path / "s")
+def test_the_pages_preload_avif_and_no_worker(bs, repo, tmp_path, monkeypatch):  # noqa: F811
+    """The pages preload AVIF only, and the build writes no service worker (owner 2026-10-24: it cost first paint)."""
+    _build(bs, monkeypatch, repo, tmp_path / "s")
     dist = tmp_path / "s" / "dist"
-    text = (dist / "sw.js").read_text(encoding="utf-8")
-    joined = json.loads(re.search(r'const IN_USE = new Set\(("[0-9a-f]*")\.match', text).group(1))
-    listed = [joined[i:i + 10] for i in range(0, len(joined), 10)]
-    icons = {re.fullmatch(r"icons/[a-z0-9-]+\.([0-9a-f]{10})\.webp", i["file"]).group(1) for i in data["cards.json"]["icons"].values()}
-    assert set(listed) == {c["img"][:10] for c in data["cards.json"]["cards"] if c.get("img")} | icons and listed == sorted(set(listed))
-    tags = json.loads(re.search(r'const TAGS = new Set\(("[0-9a-f]*")\.match', text).group(1))
-    assert tags == "".join(data["cards.json"]["thumbs"][w] for w in ("240", "360", "720"))
-    assert "/*PICTURES*/" not in text and "/*TAGS*/" not in text
+    assert not (dist / "sw.js").exists() and not (SITE / "sw.js").exists()
     for page in [dist / "index.html", *dist.glob("c/*/index.html")]:
         assert ".webp" not in page.read_text(encoding="utf-8"), page
 
 
 def test_icon_urls_carry_their_pictures_stamp(tmp_path, monkeypatch):
     """icons/<name>.<stamp>.webp: the stamp follows the icon's blob (and its variants' drawing) and is in the file's name,
-    so an old page's URL gets that picture or a 404, never another deploy's, and the worker can keep the URL for good."""
+    so an old page's URL gets that picture or a 404, never another deploy's."""
     import importlib.util
     import test_token_picker as tp
     for name in ("numpy", "cv2", "fontTools", "PIL"):
@@ -229,112 +222,14 @@ def _icon_repo(tp, tmp_path):
     return root, {"Types/Fire.png": "a" * 40, "Types/Stars/Gold Star.png": "b" * 40, "Types/New.png": "c" * 40}
 
 
-def node(tmp_path, body: str):
-    script = tmp_path / "probe.mjs"
-    script.write_text(body, encoding="utf-8")
-    done = run_process(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60)
-    assert done.returncode == 0, done.stderr
-    return json.loads(done.stdout)
-
-
-MISSING = "https://x.test/site/icons/missing.0123456789.webp"
-TAGS = ["a1a1a1", "b2b2b2", "c3c3c3"]
-SW_HARNESS = r"""
-import fs from "node:fs";
-const IN_USE = __IN_USE__;
-const src = fs.readFileSync(__SW__, "utf8").replace('/*PICTURES*/""', JSON.stringify(IN_USE.map(n => n.slice(0, 10)).join("")))
-  .replace('/*TAGS*/""', JSON.stringify(__TAGS__.join("")));
-const store = new Map(), fetched = [];
-let broken = false;
-const cacheOf = m => ({ match: async u => m.get(u), put: async (u, r) => { m.set(u, r); }, keys: async () => [...m.keys()].map(url => ({ url })),
-  delete: async r => m.delete(r.url ?? r) });
-const caches = { open: async n => { if (broken) throw new Error("no storage"); if (!store.has(n)) store.set(n, new Map()); return cacheOf(store.get(n)); },
-  keys: async () => [...store.keys()], delete: async n => store.delete(n) };
-const fetch = async r => { const url = typeof r === "string" ? r : r.url; fetched.push(url);
-  return { status: url.includes("missing") ? 404 : 200, type: "basic", url, body: `net:${url}`, clone() { return { ...this, body: `copy:${url}` }; } }; };
-const on = {};
-const self = { registration: { scope: "https://x.test/site/" }, location: new URL("https://x.test/site/sw.js"), addEventListener: (t, f) => { on[t] = f; },
-  skipWaiting: () => { self.skipped = true; }, clients: { claim: async () => { self.claimed = true; } } };
-new Function("self", "caches", "fetch", src)(self, caches, fetch);
-const event = extra => { const waits = []; return { waits, waitUntil: p => waits.push(p), ...extra }; };
-async function get(url, method = "GET", headers = {}) {
-  const e = event({ request: { url, method, headers: new Map(Object.entries(headers)) } });
-  let res = null; e.respondWith = p => { res = p; };
-  on.fetch(e);
-  if (!res) return "network";
-  const r = await res; await Promise.all(e.waits); return r.body;
-}
-const T = "https://x.test/site/thumbs/", out = {};
-store.set("pictures-0", new Map([["old", 1]])); store.set("other-app", new Map());
-store.set("pictures-1", new Map([[T + "ffffffffffffffff-240-a1a1a1.avif", { body: "stale" }], [T + "aaaaaaaaaaaaaaaa-240-a1a1a1.avif", { body: "kept" }],
-  [T + "aaaaaaaaaaaaaaaa-240-d4d4d4.avif", { body: "old settings" }]]));
-on.install(event({}));
-globalThis.URLPattern ??= class { constructor(init) { this.pathname = init.pathname; } };
-self.URLPattern = URLPattern;
-const routed = []; on.install(event({ addRoutes: async r => { routed.push(r); } }));
-out.routes = JSON.parse(JSON.stringify(routed, (k, v) => (v instanceof URLPattern ? v.pathname : v)));
-const a = event({}); on.activate(a); await Promise.all(a.waits);
-out.activated = { caches: [...store.keys()].sort(), entries: [...store.get("pictures-1").keys()], skipped: !!self.skipped, claimed: !!self.claimed };
-out.first = await get(T + "bbbbbbbbbbbbbbbb-720-c3c3c3.avif");
-out.second = await get(T + "bbbbbbbbbbbbbbbb-720-c3c3c3.avif");
-out.kept = await get(T + "aaaaaaaaaaaaaaaa-240-a1a1a1.avif");
-out.unused = [await get(T + "cccccccccccccccc-360-b2b2b2.avif"), await get(T + "cccccccccccccccc-360-b2b2b2.avif")];
-const ICON = "https://x.test/site/icons/fire.0123456789.glow.webp";
-out.icon = [await get(ICON), await get(ICON)];
-out.missing = [await get(T + "dddddddddddddddd-missing.avif"), await get(__MISSING__)];
-out.passed = await Promise.all(["https://x.test/site/", "https://x.test/site/index.html", "https://x.test/site/data/cards.json?v=abc",
-  "https://x.test/site/assets/app.js?v=abc", "https://x.test/site/sw.js", "https://x.test/site/c/hornet/", "https://x.test/site/icons/fire.webp",
-  "https://x.test/site/icons/fire.glow.webp?v=0123456789", ICON + "?v=0123456789", T + "bbbbbbbbbbbbbbbb-720.avif",
-  T + "bbbbbbbbbbbbbbbb-720-d4d4d4.avif", T + "bbbbbbbbbbbbbbbb-720-c3c3c3.webp", T + "bbbbbbbbbbbbbbbb-720-c3c3c3.avif?x=1", T + "bbbbbbbbbbbbbbbb-og.jpg",
-  "https://y.test/site/thumbs/bbbbbbbbbbbbbbbb-720-c3c3c3.avif", "https://x.test/other/thumbs/bbbbbbbbbbbbbbbb-720-c3c3c3.avif"].map(u => get(u)));
-out.post = await get(T + "eeeeeeeeeeeeeeee-720-c3c3c3.avif", "POST");
-out.range = await get(T + "eeeeeeeeeeeeeeee-720-c3c3c3.avif", "GET", { range: "bytes=0-9" });
-const m = event({ data: { seen: [T + "eeeeeeeeeeeeeeee-240-a1a1a1.avif", T + "bbbbbbbbbbbbbbbb-720-c3c3c3.avif", T + "cccccccccccccccc-240-a1a1a1.avif",
-  T + "eeeeeeeeeeeeeeee-360-d4d4d4.avif", "https://x.test/site/data/cards.json", "not a url"] } });
-fetched.length = 0; on.message(m); await Promise.all(m.waits);
-out.seen = { fetched: [...fetched], cached: [...store.get("pictures-1").keys()].sort() };
-broken = true;
-out.noStorage = await get(T + "eeeeeeeeeeeeeeee-360-b2b2b2.avif");
-process.stdout.write(JSON.stringify(out));
-"""
-
-
-def test_the_worker_keeps_versioned_pictures_and_nothing_else(tmp_path):
-    """Cache first for thumbs/<blob>-<w>-<tag>.avif (the build's tags) and icons/<name>.<stamp>[.<variant>].webp the site
-    uses; pages, data, scripts, sw.js, unstamped, query-string or foreign URLs, other settings tags, POST and Range
-    requests never reach it. Activation deletes older picture caches and pictures no longer used (never another cache);
-    seen pictures are put in; no storage means the network. Where the browser routes statically, everything outside
-    thumbs/ and icons/ goes to the network without starting the worker."""
-    if not shutil.which("node"):
-        pytest.skip("no node")
-    in_use = ["aaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbb", "eeeeeeeeeeeeeeee", "dddddddddddddddd", "0123456789"]
-    out = node(tmp_path, SW_HARNESS.replace("__IN_USE__", json.dumps(in_use)).replace("__SW__", json.dumps(str(SW)))
-               .replace("__TAGS__", json.dumps(TAGS)).replace("__MISSING__", json.dumps(MISSING)))
-    t = "https://x.test/site/thumbs/"
-    assert out["activated"] == {"caches": ["other-app", "pictures-1"], "entries": [t + "aaaaaaaaaaaaaaaa-240-a1a1a1.avif"], "skipped": True, "claimed": True}
-    assert out["first"] == f"net:{t}bbbbbbbbbbbbbbbb-720-c3c3c3.avif" and out["second"] == f"copy:{t}bbbbbbbbbbbbbbbb-720-c3c3c3.avif"
-    assert out["kept"] == "kept"
-    assert out["unused"] == [f"net:{t}cccccccccccccccc-360-b2b2b2.avif"] * 2                # served, not kept: not in use
-    icon = "https://x.test/site/icons/fire.0123456789.glow.webp"
-    assert out["icon"] == [f"net:{icon}", f"copy:{icon}"]
-    assert out["missing"] == ["network", f"net:{MISSING}"] and MISSING not in out["seen"]["cached"]   # a 404 is never kept
-    assert out["passed"] == ["network"] * 16 and out["post"] == "network" and out["range"] == "network"
-    assert out["seen"]["fetched"] == [t + "eeeeeeeeeeeeeeee-240-a1a1a1.avif"]                  # in use, not cached yet
-    assert t + "eeeeeeeeeeeeeeee-240-a1a1a1.avif" in out["seen"]["cached"] and t + "cccccccccccccccc-240-a1a1a1.avif" not in out["seen"]["cached"]
-    assert t + "eeeeeeeeeeeeeeee-360-d4d4d4.avif" not in out["seen"]["cached"]
-    assert out["noStorage"] == f"net:{t}eeeeeeeeeeeeeeee-360-b2b2b2.avif"
-    pictures = [{"urlPattern": f"/site/{d}/*"} for d in ("thumbs", "icons")]   # the rest skips the worker
-    assert out["routes"] == [{"condition": {"not": {"or": pictures}}, "source": "network"}]
-
-
-def test_the_site_asks_for_avif_and_starts_the_worker():
+def test_the_site_asks_for_avif():
     """No thumbnail is named .webp anywhere in the front end; the variant pictures keep the icon's stamp; app.js registers
-    sw.js at the site root (share pages included: their <base> climbs to it); the Changes line says what its time is."""
+    no service worker; the Changes line says what its time is."""
     for js in ASSETS.glob("*.js"):
         text = js.read_text(encoding="utf-8")
         assert not re.search(r"thumbs/[^\"'`]*\.webp|-(240|360|720)\\?\.webp", text), js.name
     app = (ASSETS / "app.js").read_text(encoding="utf-8")
-    assert 'navigator.serviceWorker.register(new URL("sw.js", ROOT).href)' in app and "startWorker();" in app
+    assert "serviceWorker" not in app and "sw.js" not in app
     assert "Site updated ${" in app and "the last build that changed it" in app
     if not shutil.which("node"):
         return
