@@ -575,7 +575,11 @@ Both designs agree except on NME Stock, where B's explicit tags win. Fit is the 
    Track A also lands the API with a stub `card_parts` (current `title_layers` + `ability_layers`, no variants).
 1. **Track A ships:** parser 3, `psd_parts`, details v2, variant records, validator and standards notes.
    - Run the census: old-vs-new parse on every PSD; the only deltas allowed are §2.2's.
-   - Dispatch a full Card sync.
+   - Dispatch a full Card sync (`full=true`) right after AC main and TC bbe22593 land. Parser 3 re-parses all ~812
+     cards with unchanged blobs, so G4 (`REPARSE_MAX` 25) refuses every run until `full` approves it. No earlier
+     approval carries, because `pending.full` is stamped with the parser version. Until that run lands, the :00/:30
+     runs commit nothing (the bake's after-reads too), and the site gets no `parts` records.
+   - Check the data commit: `db/manifest.json` `builder.parser_version` is 3 and `db/psd_details.json` `"version"` is 2.
 2. **Track B text part ships:** `parts` in `card_edits`, per-part classify and splice, sha skip, delete, `_psd.parts`/`skipped`, legacy translation, `card_preview` v2. This must be on AC main before any client writes `parts`.
 3. **Track C build_site ships:** details pass-through, `partState`, variant link keys. Deploy; no UI change.
 4. **Track C editor ships.** From here the site writes only `parts` for printed text.
