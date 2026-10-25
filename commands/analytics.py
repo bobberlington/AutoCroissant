@@ -36,20 +36,6 @@ LEGACY_RUNS_AS_BOT = True                   # reminders saved before creator tra
 ALLOW_POSITIONAL = True                     # commands may give values by position before name:value options
 ON_LOAD_ERROR = "off"                       # an unreadable store: reminders off, the bot keeps running ("raise": exit)
 CHANNEL_RETRY = timedelta(hours=1)          # a one-shot whose channel is gone waits this long and tries again
-# Options a command no longer has. A stored reminder that still sets one drops it instead of failing to run.
-# Each entry: (removed options, the command's option order before they were removed, because pre-v2 reminders
-# could give options by position).
-RETIRED_OPTIONS = {
-    # local mode was archived on 2026-10-20 (branch archive/local-update-stats); /update_stats always reads GitHub
-    "update_stats": (("use_local_repo", "use_local_timestamp"),
-                     ("output_problematic_cards", "use_local_repo", "use_local_timestamp", "force_update")),
-}
-# Commands the bot no longer has (2026-10-25, branch archive/discord-edits): a reminder running one says so
-RETIRED_COMMANDS = {
-    "update_metadata": "edit cards on the website", "mass_replace": "use the website's Rename everywhere",
-    "alias": "edit aliases on the website", "bake_cards": "Card sync bakes the website's edits",
-    "update_tts_save": "Card sync updates the TTS save", "push": "Card sync builds the card data",
-}
 
 
 def is_admin(interaction) -> bool:
@@ -65,7 +51,7 @@ def is_admin(interaction) -> bool:
 # it, or None). reminder.json holds the same fields (SCHEMA_VERSION; ReminderStore).
 SCHEMA_VERSION = 2
 KEYS = ("id", "channel_id", "msg", "when", "frequency", "command", "enabled", "creator_id", "creator_name", "v", "problem")
-REMINDER_VERSION = 3                        # 3: retired options dropped from stored commands (RETIRED_OPTIONS)
+REMINDER_VERSION = 3                        # stored commands are canonical at this version
 MAX_INTERVAL = timedelta(days=366)          # longer offsets/frequencies are typos, and huge ones overflow datetime
 NOT_SCHEDULABLE = {"reminders"}             # the panel needs a real user
 PANEL_TIMEOUT = 600                         # an idle /reminders panel closes (interaction tokens last 15 minutes)
@@ -449,70 +435,33 @@ def render(name, values):
     return " ".join(parts)
 
 
-def _drop_retired(name, args, kwargs, legacy):
-    """
-    Remove options the command no longer has (RETIRED_OPTIONS), so an old reminder keeps running.
-
-    Args:
-        legacy: Pre-v2 reminder, whose positional values follow the command's option order of that time
-
-    Returns:
-        (args, kwargs, ["option:value" that were dropped]); raises ValueError if an option is given twice
-    """
-    retired = RETIRED_OPTIONS.get(name)
-    if not retired:
-        return args, kwargs, []
-    removed, old_order = retired
-    if legacy and args and len(args) <= len(old_order):
-        named = {}
-        for i in range(len(args)):
-            named[old_order[i]] = args[i]
-        for key, value in kwargs.items():
-            if key in named:
-                raise ValueError(f"`{key}` is given twice")
-            named[key] = value
-        args, kwargs = [], named
-    dropped = []
-    for option in removed:
-        if option in kwargs:
-            dropped.append(f"{option}:{kwargs.pop(option)}")
-    return args, kwargs, dropped
-
-
 def resolve_command(command, legacy=False):
     """
     Look up and bind a stored command.
 
     Returns:
-        (callback, name, {option: value}, ["option:value" dropped as retired]); raises ValueError with a
+        (callback, name, {option: value}); raises ValueError with a
         user-facing reason that names options but never their values (it is posted in the channel)
     """
     name, args, kwargs = tokenize(command)
     if name in NOT_SCHEDULABLE:
         raise ValueError(f"`/{name}` can't run from a reminder")
     func = slash_registry.get(name)
-    if func is None and name in RETIRED_COMMANDS:
-        raise ValueError(f"`/{name}` was retired ({RETIRED_COMMANDS[name]})")
     if func is None:
         raise ValueError(f"`/{name}` is not a bot command")
-    args, kwargs, dropped = _drop_retired(name, args, kwargs, legacy)
     if args and not ALLOW_POSITIONAL and not legacy:
         raise ValueError("give every option as name:value")
-    return func, name, _bind(func, args, kwargs, legacy), dropped
+    return func, name, _bind(func, args, kwargs, legacy)
 
 
 def _store_command(command):
-    """A new command checked and in canonical form: (stored text or None, [notes]); ValueError if it can't run."""
+    """A new command checked and in canonical form (stored text or None); ValueError if it can't run."""
     if not command or not command.strip():
-        return None, []
+        return None
     if not slash_registry:                  # before on_ready: checked when it fires
-        return command.strip(), []
-    _, name, values, dropped = resolve_command(command.strip())
-    notes = []
-    if dropped:
-        notes.append(f"Dropped `{' '.join(dropped)}`: /{name} no longer has "
-                     f"{'that option' if len(dropped) == 1 else 'those options'}.")
-    return render(name, values), notes
+        return command.strip()
+    _, name, values = resolve_command(command.strip())
+    return render(name, values)
 
 
 # ========================
@@ -829,8 +778,7 @@ def _migrate_command(reminder):
     """
     Rewrite a stored command into canonical form, keeping what it actually did.
 
-    Pre-v2 booleans are read the way the old parser read them, and options the command no longer has are dropped
-    (RETIRED_OPTIONS: /update_stats use_local_repo and use_local_timestamp since local mode was archived).
+    Pre-v2 booleans are read the way the old parser read them.
     Returns False (leave the reminder unmigrated, retry later) while slash_registry is still empty.
     """
     command = reminder.get("command")
@@ -839,15 +787,14 @@ def _migrate_command(reminder):
     if not slash_registry:
         return False
     try:
-        _, name, values, dropped = resolve_command(command, legacy=reminder.get("v") is None)
+        _, name, values = resolve_command(command, legacy=reminder.get("v") is None)
     except ValueError as e:
         print(f"Reminder {reminder['id']}: stored command `{command}` can't run ({e}); it will report this when due.")
         return True
     canonical = render(name, values)
     if canonical != command:
         reminder["command"] = canonical
-        note = f" (dropped retired `{' '.join(dropped)}`)" if dropped else ""
-        print(f"Reminder {reminder['id']}: migrated command `{command}` -> `{canonical}`{note}")
+        print(f"Reminder {reminder['id']}: migrated command `{command}` -> `{canonical}`")
     return True
 
 
@@ -1048,7 +995,7 @@ def _fire(reminder, guild_id):
     command = reminder.get("command")
     if command:
         try:
-            func, name, values, _ = resolve_command(command, legacy=reminder.get("v") is None)
+            func, name, values = resolve_command(command, legacy=reminder.get("v") is None)
         except ValueError as e:
             queue_message(fake, f"⚠ Reminder `{reminder_id}` skipped its command: {e}. "
                                 f"Re-create it, then `/remove_reminder reminder_id:{reminder_id}`.")
@@ -1181,7 +1128,7 @@ def create(interaction, msg="", when="", offset="", frequency="", command=""):
     now = datetime.now(TIMEZONE)
     try:
         remind_at, interval, notes = parse_schedule(when, offset, frequency, now)
-        stored_command, command_notes = _store_command(command)
+        stored_command = _store_command(command)
         if not (msg or "").strip() and not stored_command:
             raise ValueError("give a `msg` to post and/or a `command` to run")
     except ValueError as e:
@@ -1209,7 +1156,7 @@ def create(interaction, msg="", when="", offset="", frequency="", command=""):
             if not reminders[guild_id]:
                 reminders.pop(guild_id, None)
         _commit_locked(undo)
-        return dict(reminder), command_notes + notes
+        return dict(reminder), notes
 
 
 def delete(interaction, reminder_id):
