@@ -253,7 +253,7 @@ def reflow(layer, shape: tuple, fonts_dir: Optional[str]) -> Optional[str]:
         raise ValueError("box text, no fonts to lay it out")
     from psd_tools.composite.text import render, text_geometry
     from psd_tools.composite.text.verify import stored_raster
-    fonts = psd_edit.font_map(fonts_dir)
+    fonts = psd_edit.font_map(fonts_dir, layer)         # in the faces its pixels show (R3)
     drawn, lines = render(layer, fonts=fonts), text_geometry(layer, fonts)["lines"]
     mine, saved = _ink(drawn.rgba, drawn.bbox, shape), _ink(*stored_raster(layer), shape)
     for line in lines:
@@ -342,7 +342,7 @@ def redraw(path: str, out_path: str, names: list, fonts: Callable[[list], Option
     boxes = []
     for layer in layers:
         old = layer.bbox
-        layer.rasterize(fonts=psd_edit.font_map(fonts(layer_fonts(layer))))
+        layer.rasterize(fonts=psd_edit.font_map(fonts(layer_fonts(layer)), layer))
         pad = fx_pad(layer) + LINE_PAD
         boxes += [(x0 - pad, y0 - pad, x1 + pad, y1 + pad) for x0, y0, x1, y1 in (old, layer.bbox) if x1 > x0 and y1 > y0]
     region = clip((min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes),
@@ -917,7 +917,7 @@ def _fonts_of(layer, fonts: Optional[Callable[[list], Optional[str]]]):
     folder = fonts(layer_fonts(layer)) if fonts else ""
     if not folder:
         raise ValueError(f"{layer.name.strip()}: no fonts to draw it")
-    return psd_edit.font_map(folder)
+    return psd_edit.font_map(folder, layer)
 
 
 def _premultiplied(rgba, bbox, window: tuple):
@@ -1131,7 +1131,7 @@ def badge_plan(psd: PSDImage, fonts: Optional[Callable[[list], Optional[str]]]) 
         folder = fonts(layer_fonts(layer)) if fonts else ""
         if not folder:
             continue
-        fits = psd_edit.badge_fits(layer, psd_edit.font_map(folder))
+        fits = psd_edit.badge_fits(layer, psd_edit.font_map(folder, layer))
         wants = [(fit, keys) for fit in fits for keys in [psd_edit.badge_wants(fit)] if keys]
         if wants:
             out.append((layer, wants))
@@ -1229,7 +1229,7 @@ def fit_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Option
     before, psd = PSDImage.open(path), PSDImage.open(path)
     boxes, done, cuts = [], [], set()           # done: (record, layer name, story, faces, spans)
     for layer, wants in badge_plan(psd, fonts):
-        name, faces = layer.name.strip(), psd_edit.font_map(fonts(layer_fonts(layer)))
+        name, faces = layer.name.strip(), psd_edit.font_map(fonts(layer_fonts(layer)), layer)
         psd_edit.follow_kerning(psd, layer)
         whole_ok = whole and _ink_off(layer, faces) <= WHOLE_OFF
         lines = _lines(layer, faces) if whole_ok else None

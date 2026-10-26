@@ -305,13 +305,13 @@ def test_classify_table():
                                "creatures": [{"hp": 1}], "hidden": True})
     assert out.jobs == {"hp": 8}
     assert out.redundant == ["def", "ability"]
-    assert [(r.code, r.why.split(":")[0]) for r in out.refusals] == [("stat>10", "atk 11"), ("unsupported-card", "stars"),
-                                                                     ("unsupported-card", "types"), ("unsupported-card", "no PSD to find the title layer in")]
+    assert [(r.code, r.why.split(":")[0]) for r in out.refusals] == [("unsupported-card", "stars"), ("unsupported-card", "types"),
+                                                                     ("unsupported-card", "no PSD to find the title layer in")]
     assert out.other == ["spd", "note", "series", "creatures", "hidden"]
-    assert out.refusals[0].why == "atk 11: one bar row; a second row is standardization work (ledger L3)"
+    assert out.site == {"atk": "atk 11: the bar's one row prints up to 10"}     # past what the rows print: website only
     two_rows = {"card": {"type": "creature", "atk": 12}}                      # a parse above 10 means Top + Bottom rows (idea 13)
     assert pe.classify(two_rows, {"atk": 15}).jobs == {"atk": 15} and pe.classify(two_rows, {"atk": 12}).redundant == ["atk"]
-    assert [(r.code, r.why) for r in pe.classify(two_rows, {"atk": 21}).refusals] == [("stat>10", "atk 21: above 20")]
+    assert pe.classify(two_rows, {"atk": 21}).site == {"atk": "atk 21: the bar's rows print up to 20"}
     assert pe.classify(parsed, {"ability": "Die.\n(BOT) Die."}).jobs == {"ability": "Die.\n(BOT) Die."}
     assert pe.shown_name(parsed) == "" and pe.shown_name({"card": {"display_name": "Y"}}) == "Y"
     with pytest.raises(ValueError):                                 # not a stat: the card's "error", not stat>10
@@ -386,8 +386,8 @@ def test_non_template_rows_and_titles_refuse(clone):
     with pytest.raises(pe.Refused, match="two bar rows") as refused:           # the single-row reader; template_rows takes both
         pe.template_row(cannon, "atk")
     assert refused.value.code == "unsupported-card" and len(pe.template_rows(cannon, "atk")) == 2
-    with pytest.raises(pe.Refused, match="spd: 3 bar rows"):                   # Sonic's 20 is a renamed 9 beside two hidden rows
-        pe.template_rows(PSDImage.open(_card(clone, "Creatures/Other/4 Stars/Sonic.psd")[0]), "spd")
+    split = pe.split_rows(PSDImage.open(_card(clone, "Creatures/Other/4 Stars/Sonic.psd")[0]), "spd")
+    assert (split.marker.name, split.top.group.name, split.bottom.group.name) == ("20", "1", "2")   # a renamed 9 under two half rows
     twins = PSDImage.open(_card(clone, "Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd")[0])
     for read in (lambda psd: pe.name_layer(psd, own_text=False), pe.ability_layer):   # no Name, no card name given
         with pytest.raises(pe.Refused) as refused:
@@ -443,6 +443,122 @@ def test_layout_bars_refuse_what_they_lack(clone, parser):
         psd = PSDImage.open(_card(clone, rel)[0])
         with pytest.raises(pe.Refused, match=why):
             pe.set_stat(psd, pe.parse_card(parser, _card(clone, rel)[0], rel, psd), stat, value)
+
+
+# Lane 2 (owner 2026-10-26): a stat's several rows, split cells, numbered layers, moved edges, two half rows
+LANE2_BARS = [
+    ("Creatures/Kirby/3 Stars/Pix.psd", "def", 7),                          # creature 1's row "1" (R3)
+    ("Creatures/Kirby/3 Stars/Pix.psd", "hp", 3),                           # its one HP mask over three creatures' rows (R1)
+    ("Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd", "hp", 5),     # the shared health row (R1)
+    ("Creatures/Hollow Knight/2 Stars/False_Knight.psd", "atk", 2),         # lit "Filled" over dark "Empty" cells (R2)
+    ("Creatures/Isaac/3 Stars/Tainted_Lazarus.psd", "spd", 9),              # Light and Spd Dark named 1-10 (numbered layers)
+    ("Items/Active/2 Stars/Dirty_Bed.psd", "def", 3),                       # lit by look, cell 1 copied from its HP row (R6)
+    ("Creatures/Other/2 Stars/Slugcat.psd", "hp", 10),                      # an edge moved to the bar's end (R4)
+    ("Creatures/Other/4 Stars/Sonic.psd", "spd", 9),                        # two half rows: the top shows it, the second empty
+]
+
+
+def test_lane2_bars_read_back(clone, parser, tmp_path):
+    """Each edit saved and re-parsed reads the value (creature 1's on a card of several), its layer changes as declared
+    (gate_bytes, a copied cell included); Ze'mer's flowers stay refused, saying what would make them editable."""
+    for rel, stat, value in LANE2_BARS:
+        path = _card(clone, rel)[0]
+        psd = PSDImage.open(path)
+        parsed, before = pe.parse_card(parser, path, rel, psd), pe.record_map(psd)
+        edit = pe.set_stat(psd, parsed, stat, value)
+        if edit.icons is not None:
+            pe.index_icons(edit, before, pe.record_map(psd))
+        saved = str(tmp_path / Path(rel).name)
+        pe.save_psd(psd, saved, update_preview=False)
+        pe.gate_bytes(path, saved, [edit])
+        assert pe.parse_card(parser, saved, rel)["card"][stat] == value, rel
+    zemer = "Creatures/Hollow Knight/5 Stars/Ze'mer.psd"
+    psd = PSDImage.open(_card(clone, zemer)[0])
+    with pytest.raises(pe.Refused, match="until the card maker adds full-width flower layers"):
+        pe.set_stat(psd, pe.parse_card(parser, _card(clone, zemer)[0], zemer, psd), "hp", 6)
+
+
+def _edit_saved(parser, path, rel, stat, value, out):
+    """set_stat on the PSD at path, saved to out and re-parsed: (the Edit, the saved PSD reopened, its parse)."""
+    psd = PSDImage.open(path)
+    edit = pe.set_stat(psd, pe.parse_card(parser, path, rel, psd), stat, value)
+    pe.save_psd(psd, out, update_preview=False)
+    return edit, PSDImage.open(out), pe.parse_card(parser, out, rel)
+
+
+LANE2_CHAINS = [
+    ("Creatures/Kirby/3 Stars/Pix.psd", "hp", (3, 10, 6)),                          # the moved tall mask found again
+    ("Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd", "hp", (5, 10, 2)),    # an edge moved to the bar's end and back
+    ("Creatures/Other/2 Stars/Slugcat.psd", "def", (0, 5)),                         # from 0
+    ("Creatures/Other/4 Stars/Sonic.psd", "spd", (10, 5, 20)),                      # the half rows after their own edits
+    ("Items/Active/2 Stars/Dirty_Bed.psd", "def", (3, 0)),                          # one dark picture per cell again
+]
+
+
+def test_lane2_bars_edit_again(clone, parser, tmp_path):
+    """A Lane 2 bar edited again from its own output (review 2026-10-26: Pix, Twin Emperors and Slugcat refused every next
+    value; Sonic's half rows went unseen and its covered row changed instead): each step reads back, the bar's art stays
+    where it is, Sonic's top row shows the value, Dirty Bed's cell 1 shows one dark picture."""
+    art = lambda psd: sorted(tuple(layer.bbox) for layer in psd.descendants() if layer.kind == "pixel"
+                             and layer.bbox[2] - layer.bbox[0] > psd.width / 3)
+    for rel, stat, values in LANE2_CHAINS:
+        path = _card(clone, rel)[0]
+        drawn = art(PSDImage.open(path))
+        for k, value in enumerate(values):
+            out = str(tmp_path / f"{Path(rel).stem}{k}.psd")
+            _, psd, parsed = _edit_saved(parser, path, rel, stat, value, out)
+            assert parsed["card"][stat] == value, (rel, value)
+            path = out
+        assert art(psd) == drawn, rel           # the bar's art stays (at 10 Pix's and Twin Emperors' moved off the bar)
+        if stat == "spd":
+            split = pe.split_rows(PSDImage.open(str(tmp_path / "Sonic1.psd")), "spd")
+            assert split.top.visible == [5] and split.bottom.visible == [0] and not split.marker.is_visible()
+    cell1 = [layer for layer in stat_rows(psd)["def"][0][0] if layer.is_visible() and layer.kind == "smartobject"
+             and layer.bbox[0] < 440]
+    assert len(cell1) == 1
+
+
+def test_numbered_layers_go_down_too(clone, parser, tmp_path):
+    """Numbered layers 1-10 with no dark picture (owner 2026-10-26): Tainted Lazarus with its Dead Laz and dark rows
+    taken out, its 'Light' layers in their group or straight in the stat's: a decrease hides the layers past the value."""
+    rel = "Creatures/Isaac/3 Stars/Tainted_Lazarus.psd"
+    for variant in ("group", "flat"):
+        psd = PSDImage.open(_card(clone, rel)[0])
+        psd.remove(next(layer for layer in psd if layer.name == "Dead Laz"))
+        bars = next(layer for layer in next(layer for layer in psd if layer.name == "Laz") if layer.name == "Heart Bars")
+        for row in bars:
+            row.remove(next(layer for layer in row if layer.name.lower().endswith("dark")))
+            if variant == "flat":
+                light = next(layer for layer in row if layer.name == "Light")
+                kids, at = list(light), row.index(light)
+                for kid in kids:
+                    light.remove(kid)
+                row.remove(light)
+                for n, kid in enumerate(kids):
+                    row.insert(at + n, kid)
+        path = str(tmp_path / f"{variant}.psd")
+        psd.save(path)
+        _, saved, parsed = _edit_saved(parser, path, rel, "hp", 3, str(tmp_path / f"{variant}3.psd"))
+        assert parsed["card"]["hp"] == 3
+        _, _, parsed = _edit_saved(parser, str(tmp_path / f"{variant}3.psd"), rel, "hp", 9, str(tmp_path / f"{variant}9.psd"))
+        assert parsed["card"]["hp"] == 9
+
+
+def test_split_cells_borrow_the_dark_look(clone, parser, tmp_path):
+    """False Knight's DEF at 10 has no dark cell showing: from 10 its newly dark cells take the look of another row's
+    (review 2026-10-26: they showed navy), and back at 10 its dark row is hidden again, as the card had it."""
+    rel = "Creatures/Hollow Knight/2 Stars/False_Knight.psd"
+    sig = lambda layer: sorted((bytes(key), layer.tagged_blocks[key].tobytes()) for key in pe.EFFECT_BLOCKS
+                               if key in layer.tagged_blocks)
+    _, psd, parsed = _edit_saved(parser, _card(clone, rel)[0], rel, "def", 4, str(tmp_path / "fk4.psd"))
+    rows = {group.name: group for group, _, _ in stat_rows(psd)["def"]}
+    last = lambda stat: max((layer for group, _, _ in stat_rows(psd)[stat] if group.name == "Empty" for layer in group),
+                            key=lambda layer: layer.bbox[0])          # a dark cell past the row's value (HP 3, ATK 6)
+    dark = sorted(rows["Empty"], key=lambda layer: layer.bbox[0])
+    assert parsed["card"]["def"] == 4 and rows["Empty"].visible
+    assert sig(dark[4]) in (sig(last("hp")), sig(last("atk"))) and all(sig(layer) == sig(dark[4]) for layer in dark[5:])
+    _, psd, parsed = _edit_saved(parser, str(tmp_path / "fk4.psd"), rel, "def", 10, str(tmp_path / "fk10.psd"))
+    assert parsed["card"]["def"] == 10 and not {g.name: g for g, _, _ in stat_rows(psd)["def"]}["Empty"].visible
 
 
 @text_engine
@@ -717,8 +833,8 @@ def test_royal_eradicator_two_row_atk(clone, parser, tmp_path):
     assert pe.stat_value([top, bottom]) == 12 and sorted(top.digits) == sorted(bottom.digits) == sorted(pe.DIGITS)
     assert pe.classify(parsed, {"atk": 15}, psd).jobs == pe.classify(parsed, {"atk": 15}).jobs == {"atk": 15}
     assert pe.classify(parsed, {"atk": 12}, psd).redundant == ["atk"] and pe.classify(parsed, {"atk": 7}).jobs == {"atk": 7}
-    assert [(r.code, r.why) for r in pe.classify(parsed, {"atk": 21, "hp": 11}, psd).refusals] == [
-        ("stat>10", "atk 21: above 20"), ("stat>10", "hp 11: one bar row; a second row is standardization work (ledger L3)")]
+    assert pe.classify(parsed, {"atk": 21, "hp": 11}, psd).site == {"atk": "atk 21: the bar's rows print up to 20",
+                                                                   "hp": "hp 11: the bar's one row prints up to 10"}
     for value, shows, names in ((7, ([7], [0]), ["7", "0", "2"]), (15, ([], [5]), ["5", "2"]), (10, ([], [0]), ["0", "2"])):
         psd = PSDImage.open(path)
         edit = pe.set_stat(psd, parsed, "atk", value)
@@ -962,12 +1078,16 @@ def test_a_bake_runs_the_untouched_gate(clone, parser, chart, tmp_path, monkeypa
 
 @text_edit
 def test_long_title_is_flagged(clone, chart):
-    """Point text has no box: a title that runs off the canvas or onto a star badge bakes, flagged overflow (owner
-    2026-10-24: the editor previewed it)."""
+    """Point text has no box: a title that runs off the canvas (moved back on when it fits) or onto a star badge bakes,
+    flagged overflow (owner 2026-10-24: the editor previewed it)."""
     fonts = str(clone / pe.FONTS_DIR)
     psd = PSDImage.open(_card(clone, ANUBISATH)[0])
     title = pe.read_name(psd)
-    flagged(pe.set_text_layer(psd, "name", title + " Of The Temple", fonts, chart).notes, "^overflow: name runs off the canvas$")
+    flagged(pe.set_text_layer(psd, "name", title + " Of The Temple", fonts, chart).notes,
+            r"^overflow: name: moved -\d+ px to stay on the card$")        # R4 (owner 2026-10-26); wider than the card: told
+    psd = PSDImage.open(_card(clone, ANUBISATH)[0])
+    flagged(pe.set_text_layer(psd, "name", title + " Of The Temple Of The Ancient Ones", fonts, chart).notes,
+            "^overflow: name runs off the canvas$")
     psd = PSDImage.open(_card(clone, ANUBISATH)[0])                            # 'Anubisath Guardian II' runs into the first star
     flagged(pe.set_text_layer(psd, "name", title + " II", fonts, chart).notes, "^overflow: name reaches the stars")
     psd = PSDImage.open(_card(clone, MINI_DOOMER)[0])                          # centred: 'Mini Doomer II' ends 3 px short of the star
@@ -1931,19 +2051,55 @@ SWAPPED_FONTS = {"Items/Equip/3 Stars/Shiny_Knife.psd": "OMORI_GAME2",    # its 
 
 
 @text_edit
-def test_a_title_drawn_in_another_font_is_flagged(clone, parser, chart):
-    """Shiny Knife's title names OMORI_GAME2, Dark Tentacle's OMORI_GAME, but Photoshop drew each in the other: an edit
-    reprints every letter in the other typeface (review 2026-10-24). drawn_in_font tells it; another Omori title sets
-    untold."""
+def test_picture_titles_and_titles_off_the_card(clone, parser, chart):
+    """A title that is part of the picture (no title layer, no text in the title region) takes a new name on the website
+    only (classify's site; owner 2026-10-26), a title layer with another name bakes (rule P finds it); a new title
+    running off the card's side moves back on, its outline too (R4), and back where it was through its title box too."""
+    for rel, site in (("Items/Equip/2 Stars/Holy_Card.psd", True), ("Field/2 Stars/E._Gadd's_Garage.psd", True),
+                      ("Creatures/Other/5 Stars/Alex_YIIK.psd", False)):
+        psd = PSDImage.open(_card(clone, rel)[0])
+        out = pe.classify(pe.parse_card(parser, _card(clone, rel)[0], rel, psd), {"name": "X II"}, psd, parser)
+        assert (out.site == {"name": pe.PICTURE_TITLE}) == site and bool(out.jobs) != site and not out.refusals
+    psd = PSDImage.open(_card(clone, "Creatures/Other/3 Stars/Stay.psd")[0])
+    layer = pe.name_layer(psd, "Stay")
+    edit = pe.set_text_layer(psd, "name", "Stay II", str(clone / pe.FONTS_DIR), chart, "Stay", parser=parser)
+    flagged(edit.notes, r"^overflow: name: moved \+\d+ px to stay on the card$")
+    assert not pe._ink_off_canvas(layer, psd.width, psd.height) and layer.bbox[0] >= 0
+    moved = int(search(r"moved \+(\d+) px", " ".join(edit.notes)).group(1))
+    tx = layer._data.transform[4]                # renamed back: where the card maker put it, not where the move left it
+    edit = pe.set_text_layer(psd, "name", "Stay", str(clone / pe.FONTS_DIR), chart, "Stay", parser=parser, anchor=moved)
+    assert layer._data.transform[4] == tx - moved and "name: back where the card maker put it (-%d px)" % moved in edit.notes
+    pe.set_text_layer(psd, "name", "Stay II", str(clone / pe.FONTS_DIR), chart, "Stay", parser=parser)   # its title box too
+    record = pe.card_parts(psd, "Creatures/Other/3 Stars/Stay.psd", "Stay", parser)
+    pe.set_parts(psd, {str(record["title"][0]["id"]): {"field": "name", "text": "Stay"}}, record, str(clone / pe.FONTS_DIR),
+                 chart, "Stay", parser=parser, anchor=moved)
+    assert layer._data.transform[4] == tx - moved
+
+
+@text_edit
+def test_a_title_drawn_in_another_font_is_set_in_that_face(clone, parser, chart, tmp_path):
+    """Shiny Knife's title names OMORI_GAME2, Dark Tentacle's OMORI_GAME, but Photoshop drew each in the other (review
+    2026-10-24): an edit sets the title in the face its pixels show and the PSD names it from then on (R3, owner
+    2026-10-26); the whole redraw draws it there too (font_map's alias), so Dull Knife's rename bakes through every gate
+    (refused past the floor before). Another Omori title sets untold."""
+    from psd_tools.composite.text.model import TextModel
     fonts = str(clone / pe.FONTS_DIR)
     for rel, font in SWAPPED_FONTS.items():
         psd = PSDImage.open(_card(clone, rel)[0])
         card = Path(rel).stem.replace("_", " ")
-        edit = pe.set_text_layer(psd, "name", pe.name_layer(psd, card).text + "s", fonts, chart, card, parser=parser)
-        flagged(edit.notes, rf"^font: name: its saved pixels are not drawn in the font it names \({font}; \d+% alike\)$")
+        other = "OMORI_GAME" if font == "OMORI_GAME2" else "OMORI_GAME2"
+        layer = pe.name_layer(psd, card)
+        assert pe.shown_faces(layer, fonts) == {font: other} and pe.font_map(fonts, layer).aliases == {font: other}
+        edit = pe.set_text_layer(psd, "name", layer.text + "s", fonts, chart, card, parser=parser)
+        flagged(edit.notes, rf"^font: name: set in {other}, the face its pixels show \(the PSD named {font}\)$")
+        assert {run.style.font for run in TextModel.from_layer(layer).runs} == {other} and pe.shown_faces(layer, fonts) == {}
     psd = PSDImage.open(_card(clone, RED_KNIFE)[0])     # OMORI_GAME2, drawn in it
     assert not [n for n in pe.set_text_layer(psd, "name", "Red Knifes", fonts, chart, "Red Knife", parser=parser).notes
                 if n.startswith("font:")]
+    parsed, baked = _bake(clone, parser, "Auxiliary/Items/Dull_Knife.psd", {"name": "Dull Knife II"}, tmp_path, chart)
+    assert baked.reparse["card"]["display_name"] == "Dull Knife II" and pe._within_bar(baked.parity["name"])
+    title = pe.name_layer(PSDImage.open(baked.psd_path), "Dull Knife")
+    assert {run.style.font for run in TextModel.from_layer(title).runs} == {"OMORI_GAME"}
 
 
 @text_edit

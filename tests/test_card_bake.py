@@ -268,16 +268,36 @@ def test_recent_paths_by_push_time(monkeypatch):
     assert cb.recent_paths(cb.CARD_REPO, "c3", now) is None                              # a force push: no compare
 
 
-def test_stat_edit_with_creatures_is_refused(github):
-    """CardEdits.apply sets the stats from creature 1: a baked hp would be undone, so the card is refused before any fetch."""
+def test_creature_one_bakes_and_website_only_fields(github):
+    """The card's stats are creature 1's (owner 2026-10-26): its hp bakes and the entry's creatures list takes it for
+    creature 1 (else the list's old value would show again), the others' stay; a stat past the bar's one row is website
+    only: it stays in the entry, added to `_site`, no verdict."""
     files = github.files_at(github.head)
-    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 6, "creatures": [{"hp": 7, "def": 1, "atk": 1, "spd": 1}], "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 6, "atk": 12, "creatures": [{"hp": 7, "def": 1, "atk": 1, "spd": 1},
+                                                                                    {"hp": 2, "def": 2, "atk": 2, "spd": 2}],
+                                                   "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
     text, commits = cb.run(card="Mini Doomer")
     entry = _edits_at(github)["cards"]["Mini Doomer"]
-    assert commits == [] and entry["hp"] == 6 and entry["creatures"][0]["hp"] == 7          # a refusal: no main commit
-    assert _verdict("Mini Doomer")["reason"] == "unsupported-card: hp: the entry's creatures list sets the stats"
-    assert not [route for _, route in github.calls if route == f"git/blobs/{_sha(files[DOOMER])}"]
+    assert len(commits) == 1 and "hp" not in entry and entry["atk"] == 12 and entry["_site"] == ["atk"]
+    assert [c["hp"] for c in entry["creatures"]] == [6, 2] and "website only: atk 12" in text
+
+
+def test_shared_bars_and_moved_titles_are_remembered():
+    """A creature 1 bake that changed a bar it shares (Pix's HP) updates those creatures in the list too; a title an
+    earlier bake moved on (R4) is moved back first while its PSD is the one that bake left (review 2026-10-26)."""
+    before = [{"hp": 6, "def": 4}, {"hp": 6, "def": 8}, {"hp": 6, "def": 2}]
+    after = [{"hp": 3, "def": 4}, {"hp": 3, "def": 8}, {"hp": 3, "def": 2}]
+    shared = cb.shared_creatures(before, after, {"hp": 3})
+    assert shared == {2: {"hp": 3}, 3: {"hp": 3}} and cb.shared_creatures(before, before, {"def": 5}) == {}
+    assert cb.shared_creatures(before, after, {"hp": 3}, [{}, {"hp": 9}]) == {3: {"hp": 3}}    # the editor's 9 stays
+    entry = {"hp": 3, "creatures": [dict(c) for c in before], "_by": "web"}
+    out = cb.rewrite_entry(entry, ["hp"], creature=[{"hp": 3}, *shared.values()])
+    assert [c["hp"] for c in out["creatures"]] == [3, 3, 3] and [c["def"] for c in out["creatures"]] == [4, 8, 2]
+    assert cb.rewrite_entry(entry, ["hp"], creature={"hp": 3})["creatures"][1]["hp"] == 6       # creature 1's alone
+    baked = {"state": "baked", "psd": "abcdef12", "reason": "name 'Stay' -> 'Stay II'; overflow: name: moved +32 px to stay on the card"}
+    assert cb.title_anchor(baked, "abcdef1234") == 32
+    assert cb.title_anchor(baked, "99999999aa") == 0 and cb.title_anchor({**baked, "state": "refused"}, "abcdef1234") == 0
 
 
 def test_blob_gate(github):

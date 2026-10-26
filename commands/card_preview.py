@@ -180,6 +180,8 @@ def outcome(card: Card) -> tuple:
         state, reason = "refused", "; ".join(f"{r.code}: {r.why}" for r in card.partial)
     elif card.redundant:
         state, reason = "redundant", "already on the card: " + ", ".join(card.redundant)
+    elif getattr(card, "site", None):       # the card image can't print it: website only (owner 2026-10-26)
+        state, reason = "refused", "website only: " + "; ".join(card.site.values())
     else:
         state, reason = "error", "error: the bake did nothing with the edit"
     other = "error" if state == "error" else "refused"
