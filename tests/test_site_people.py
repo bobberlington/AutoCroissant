@@ -74,3 +74,17 @@ def rate(value, by="group", day="2025-04-28", scale="favorability", source="TTS 
     return {"date": day, "scale": scale, "value": value, "by": by, "source": source}
 
 
+
+
+def test_star_mix_within_kind(tmp_path):
+    """mixOf with a kind: star shares within that kind on both sides; kinds rows unchanged; starKinds in KINDS order."""
+    out = node(tmp_path, """
+const c = (id, author, type, stars, x = {}) => ({ id, author, type, stars, ...x });
+const all = [c('a1', 'A', 'creature', 2), c('a2', 'A', 'creature', 3), c('a3', 'A', 'minion', 1), c('a4', 'A', 'item'),
+  c('b1', 'B', 'creature', 2), c('b2', 'B', 'minion', 1), c('b3', 'B', 'minion', 2), c('h', 'B', 'minion', 5, { hidden: true })];
+const own = pf.cardsOf('A', all), kinds = [['creature'], ['item'], ['field'], ['minion']];
+out({ all: pf.mixOf(own, all).stars, minion: pf.mixOf(own, all, undefined, 'minion'), order: pf.starKinds(own, undefined, kinds) });""")
+    assert out["all"] == [[1, 1 / 3, 2 / 6], [2, 1 / 3, 3 / 6], [3, 1 / 3, 1 / 6]]
+    assert out["minion"]["stars"] == [[1, 1, 2 / 3]]
+    assert out["minion"]["kinds"][0][0] == "creature"
+    assert out["order"] == ["creature", "minion"]
