@@ -85,6 +85,28 @@ def test_rules_on_real_cards(clone, context, rel, told, waived):
     assert all(i.code != "error" for i in issues)
 
 
+def test_r1_reads_every_ability_layer(clone, monkeypatch):
+    """R1 checks the layers the parser reads as the ability (ability_parts): Empress Bulblax lays its hidden Ability out
+    again in "text 1".."text 5", its (3CD) in "text 4" (B2, 2026-10-26)."""
+    path = clone / "Creatures/Other/3 Stars/Empress Bulblax.psd"
+    if not path.exists():
+        pytest.skip(f"{path} not in the clone")
+    psd = PSDImage.open(str(path))
+    assert [layer.name for layer in cs.ability_layers(psd)] == [f"text {n}" for n in range(1, 6)]
+    real = cs.run_fonts
+
+    def text_4_in(font):                                    # "text 4" set in one font (the pin's own may be either)
+        def runs(layer):
+            text, found = real(layer)
+            return (text, [(a, b, font) for a, b, _ in found]) if layer.name == "text 4" else (text, found)
+        return runs
+    monkeypatch.setattr(cs, "run_fonts", text_4_in("stoogedings-Regular"))
+    assert cs.rule_tags(psd) is None
+    monkeypatch.setattr(cs, "run_fonts", text_4_in("SeuratPro-B"))
+    issue = cs.rule_tags(psd)
+    assert issue.code == "R1" and issue.items == ("(3CD)",)
+
+
 def _saved(psd, path) -> PSDImage:
     psd_edit.save_psd(psd, str(path), update_preview=False)
     return PSDImage.open(str(path))

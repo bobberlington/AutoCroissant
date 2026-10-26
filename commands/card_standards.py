@@ -42,7 +42,7 @@ from commands.card_models import APOSTROPHE, straight
 from commands.font_check import _get, _value, layer_fonts
 from commands.psd_edit import BADGE_KEYS, BADGE_TAGS, PAREN, Refused, badge_tags
 from commands.psd_parser import (EFFECT_LAYER_TAG, ICON_FONT_PREFIX, TAG, CardValidator, PSDParser, base_name, layer_tag,
-                                 variants_of)
+                                 variant_view, variants_of)
 from commands.psd_regions import clip, fx_pad, overlay_words, union_box
 from global_config import RULEBOOK_DIR
 
@@ -382,12 +382,23 @@ def _list(items, quote: bool = False) -> str:
 # ========================
 # The rules
 # ========================
+def ability_layers(psd: PSDImage) -> list:
+    """The layers the parser reads as the card's ability, in every picture: psd_parts' selection (ability_parts: the
+    visible Ability layers, else the pieces laying a hidden one out again, Empress Bulblax's "text 4")."""
+    texts = [layer for layer in psd.descendants() if psd_edit._is_text_layer(layer)]
+    pictures = variants_of(psd)
+    out: dict = {}
+    for n in (pictures if len(pictures) > 1 else [None]):
+        with variant_view(psd, n):
+            for layer in PSDParser.ability_parts(texts)[0]:
+                out.setdefault(id(layer), layer)
+    return list(out.values())
+
+
 def rule_tags(psd: PSDImage) -> Optional[Issue]:
-    """R1: timing tags in a visible Ability layer set in the stoogedings badge font (L1)."""
+    """R1: timing tags in the ability's layers (ability_layers) set in the stoogedings badge font (L1)."""
     bad = []
-    for layer in _visible_texts(psd):
-        if layer.name.strip().lower() != "ability":
-            continue
+    for layer in ability_layers(psd):
         try:
             text, runs = run_fonts(layer)
         except (KeyError, IndexError, TypeError, ValueError, AttributeError):
