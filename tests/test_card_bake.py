@@ -398,23 +398,25 @@ def test_pending_run_skips_final_verdicts(github):
 def test_a_printed_value_is_dropped_though_numbered_pngs_share_the_psd(github):
     """NME Stock: its name edit is what the PSD prints, but NME_Stock2.png shares the PSD. The redundancy check runs
     before the duplicate gate, so the value is dropped (no bake, no PNG needed) instead of refused for good; a refusal
-    written before the check (no "printed") is looked at again."""
+    written before RULES is looked at again."""
     files = github.files_at(github.head)
     files[cb.EDITS_PATH] = _edits({"A Snack": {"hp": 5, "note": "n", "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: A Snack")
     text, commits = cb.run()
     assert len(commits) == 1 and "already on the card: hp" in text
     assert _edits_at(github)["cards"]["A Snack"] == {"note": "n", "_by": "web", "_at": AT}
+    from commands.card_db import merge_verdicts
     data = _edits_at(github)
     old = {"state": "refused", "for": {"hp": 1}, "psd": _sha(files[SNACK])[:8], "reason": "duplicate: numbered PNGs "
            "share the PSD: A_Snack2.png", "at": AT}
+    merge_verdicts(str(DB[0]), {"a snack": old})
     files = github.files_at(github.head)
-    files[cb.EDITS_PATH] = _edits({**data["cards"], "A Snack": {"hp": 1, "_psd": old, "_by": "web", "_at": AT}})
-    github.commit(files, "web", "Website edit: old verdict")                   # the migration's cycle: the entry's _psd read
-    assert "A Snack" in cb.pending()                                            # no "printed": looked at again
+    files[cb.EDITS_PATH] = _edits({**data["cards"], "A Snack": {"hp": 1, "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: A Snack")
+    assert "A Snack" in cb.pending()                                            # no rules: looked at again
     cb.run()
     verdict = _verdict("A Snack")
-    assert verdict["printed"] is False and verdict["reason"].startswith("duplicate:") and "A Snack" not in cb.pending()
+    assert verdict["rules"] == cb.RULES and verdict["reason"].startswith("duplicate:") and "A Snack" not in cb.pending()
 
 
 def test_commit_failure_is_reported_and_writes_nothing(github, tmp_path):

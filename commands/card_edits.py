@@ -86,7 +86,7 @@ class CardEdits:
     `_rename: true` (beside a name): the bake also renames the card's files (renames()).
     """
     cards: dict = field(default_factory=dict)       # normalized card name -> {field: value}
-    meta: dict = field(default_factory=dict)        # normalized card name -> its _-keys (_by, _at, _psd, _site cleaned), never applied
+    meta: dict = field(default_factory=dict)        # normalized card name -> its _-keys (_by, _at, _site cleaned), never applied
 
     TYPES = {"name": str, "type": str, "subtype": str, "series": str, "subseries": str, "stars": int, "types": list,
              "hp": int, "def": int, "atk": int, "spd": int, "ability": str, "note": str, "art": str, "ability_art": str,

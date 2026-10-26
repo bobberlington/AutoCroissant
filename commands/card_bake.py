@@ -20,7 +20,7 @@ is left out of the commit as a try-again refusal; the others still land. The ver
 (db/verdicts.json, docs/Future/CARD_SYNC_VERDICTS.md): the run writes them, with its bake events, to the work dir's
 verdicts.json and bake-events.json (records()), split into what needs no main commit (a refusal: never one) and what
 holds only once the commit lands; Card sync merges them into the data (card_data --verdicts, --events). A verdict is
-read from --verdicts, else (one Card sync cycle, the migration) from the entry's old `_psd`.
+read from --verdicts.
 --local (card-sync.yml's stage 1, docs/Campaigns/DATA_BUILD_ACTION.md 6.3): the tree and blobs come from a local clone
 (blobless is enough; a blob it lacks by REST) and the run's commit B is made there on head, pushed by no one here; a
 checkout at head moves to B, and the report says where HEAD is. A --head the clone lacks is a failed run (a report,
@@ -49,7 +49,7 @@ from hashlib import sha1
 from json import dumps, loads
 from os import environ, makedirs, pathsep, remove
 from os.path import abspath, basename, dirname, exists, expanduser, isdir, join, splitext
-from re import IGNORECASE, escape, findall, fullmatch, search
+from re import IGNORECASE, escape, findall, fullmatch
 from subprocess import CalledProcessError, TimeoutExpired, run as run_process
 from sys import stderr
 from tempfile import mkdtemp
@@ -774,7 +774,7 @@ def rename_edits(text: str, card: Card) -> Optional[str]:
         there = _keyed(cards, CardAuthors.key(new))
         if there is not None:                   # an entry under the new name already: the card's fields win
             entry = {**cards.pop(there), **entry}
-        entry = rewrite_entry(entry, psd=entry.get("_psd"))
+        entry = rewrite_entry(entry)
         if entry is not None:
             cards[new] = entry
     out = dump_edits(data)
@@ -995,11 +995,9 @@ def load_verdicts(path: str) -> dict:
     return cards
 
 
-def verdict_of(edits: CardEdits, verdicts: Optional[dict], key: str) -> Optional[dict]:
-    """A card's verdict: the data's, else (the migration's one cycle, CARD_SYNC_VERDICTS.md step 6) its entry's `_psd`."""
-    if verdicts and key in verdicts:
-        return verdicts[key]
-    return edits.meta.get(key, {}).get("_psd")
+def verdict_of(verdicts: Optional[dict], key: str) -> Optional[dict]:
+    """A card's verdict on the data branch (db/verdicts.json), or None."""
+    return verdicts.get(key) if verdicts else None
 
 
 MOVED = r"name: moved ([+-]\d+) px to stay on the card"
@@ -1014,26 +1012,21 @@ def title_anchor(verdict: Optional[dict], psd_sha: str) -> int:
     return int(found[len(found) - 1]) if found else 0
 
 
-def final(edits: CardEdits, snapshot: Snapshot, card: Card, verdicts: Optional[dict] = None) -> bool:
+def final(snapshot: Snapshot, card: Card, verdicts: Optional[dict] = None) -> bool:
     """
     Whether the card's verdict is final (pending's rule): refused for exactly its PSD-kind values on the PSD blob the
-    tree holds; a `font` verdict only while MDW/Fonts holds, a `duplicate` or no-PNG one only while its PNGs do; a pixel
-    refusal under psd_edit.PARITY_FLOOR (the old bar's, before 2026-10-23) or one written before RULES (content
-    problems were refused) never: it bakes now. verdicts: the data's (verdict_of).
+    tree holds; a `font` verdict only while MDW/Fonts holds, a `duplicate` or no-PNG one only while its PNGs do; one
+    written before RULES never: it bakes now. verdicts: the data's (verdict_of).
     """
-    verdict = verdict_of(edits, verdicts, card.key)
+    verdict = verdict_of(verdicts, card.key)
     if not (isinstance(verdict, dict) and verdict.get("state") == "refused" and verdict.get("for") == card.fields
             and verdict.get("psd") == card.psd_sha[:8] and str(verdict.get("rules", "")) >= RULES):
         return False
     reason = str(verdict.get("reason", ""))
     if reason.startswith("font:") and verdict.get("fonts") != snapshot.fonts_key():
         return False
-    if (reason.startswith("duplicate:") or reason == f"unsupported-card: {NO_PNG}") \
-            and (verdict.get("pngs") != snapshot.pngs_key(card.rel, card.key)
-                 or (card.rel and verdict.get("printed") is not False)):     # written before the redundancy check ran
-        return False
-    bad = search(r"^(?:parity: baseline|idempotence: \w+ re-render) bad ([\d.]+)%", reason)
-    return not (bad and float(bad.group(1)) <= psd_edit.PARITY_FLOOR)
+    return not ((reason.startswith("duplicate:") or reason == f"unsupported-card: {NO_PNG}")
+                and verdict.get("pngs") != snapshot.pngs_key(card.rel, card.key))
 
 
 def _misses(card: Card) -> str:
@@ -1450,8 +1443,8 @@ def _kept(card: Card) -> bool:
 
 def share_of(card: Card) -> Optional[Share]:
     """
-    A card's part of the run's commit: a baked card's PSD, PNG and dropped fields, a redundant card's dropped fields,
-    an old `_psd` taken out of its entry (the verdicts live on the data branch). None for any refusal (a refusal makes
+    A card's part of the run's commit: a baked card's PSD, PNG and dropped fields, a redundant card's dropped fields
+    (the verdicts live on the data branch). None for any refusal (a refusal makes
     no main commit: its verdict is records()') or a card with nothing to write. At H' a baked or redundant card whose
     edit changed stays out (edit-changed: never remove a value you did not render).
     """
@@ -1503,7 +1496,6 @@ def refusal_verdict(card: Card) -> dict:
     return {"state": "refused", "for": card.fields, "psd": card.psd_sha[:8], "rules": RULES,
             **({"fonts": card.fonts} if card.fonts else {}),
             **({"pngs": card.pngs} if card.pngs else {}),
-            **({"printed": False} if card.pngs and card.rel else {}),    # the redundancy check ran first
             "reason": f"{card.refusal.code}: {card.refusal.why}", "at": _now()}
 
 
@@ -1521,7 +1513,7 @@ def records(report: Report, edits: CardEdits, verdicts: Optional[dict]) -> tuple
     """
     cards, landed, events, baked = {}, {}, [], []
     for card in report.cards:
-        before = verdict_of(edits, verdicts, card.key)
+        before = verdict_of(verdicts, card.key)
         if card.refusal is not None:
             if card.refusal.code in TRANSIENT or card.transient:
                 continue
@@ -1714,7 +1706,7 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
             cost no time from BUDGET); a dispatch re-checks them
         local: A clone of the card repo (blobless is enough): the tree and blobs from it, head "" = its HEAD, and the
             commit B made there on head, not pushed (a checkout at head moves to it)
-        verdicts: The data's db/verdicts.json ("" or missing: none yet, the entries' old `_psd` only)
+        verdicts: The data's db/verdicts.json ("" or missing: none yet)
 
     Returns:
         The Report, its text rendered and written to the work dir's report.md; the verdicts and bake events beside it
@@ -1754,10 +1746,10 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
             known = load_verdicts(verdicts)
             cards = select(edits, snapshot, card)
             for one in cards:
-                one.title_anchor = title_anchor(verdict_of(edits, known, one.key), one.psd_sha)
+                one.title_anchor = title_anchor(verdict_of(known, one.key), one.psd_sha)
             named = len(cards)
             if pending_only:
-                cards = [c for c in cards if not final(edits, snapshot, c, known)]
+                cards = [c for c in cards if not final(snapshot, c, known)]
             report.lines.append(f"- Edits: `{snapshot.edits_path}` `{snapshot.sha(snapshot.edits_path)[:8]}`: "
                                 f"{plural(len(edits.cards), 'card')}, {named} with PSD fields"
                                 + (f" (--card {card})" if card else "")
@@ -1819,7 +1811,7 @@ def _pending(repository: str, head: str, local: str, verdicts: str = "") -> tupl
         return snapshot, []
     edits = CardEdits.parse(snapshot.fetch(snapshot.sha(snapshot.edits_path)).decode("utf-8"))
     known = load_verdicts(verdicts)
-    return snapshot, [card for card in select(edits, snapshot) if not final(edits, snapshot, card, known)]
+    return snapshot, [card for card in select(edits, snapshot) if not final(snapshot, card, known)]
 
 
 def pending(repository: str = CARD_REPO, head: str = "", local: str = "", verdicts: str = "") -> list:
