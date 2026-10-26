@@ -232,7 +232,7 @@ Action). repo_traverser.py (the legacy /update_stats, with `_tree_etags`/`_file_
 | `STAR_CORE_ALPHA` (2026-10-20) | `0.5` | opacity at or above which a star layer's pixels count as its core when overlapping layers are merged into one star (`_count_stars`) |
 | `EFFECT_LAYER_TAG` (2026-10-20) | `" FX: "` | marks an effect layer (`Ability FX: Blazing`, made by TTSCardMaker `MDW/Scripts/Effect Layers.jsx`). Such layers are skipped by the walk and checked afterwards. Semantics: impossibility-cards-reference §4.2 |
 | `EFFECT_COVERAGE_MIN` (2026-10-20) | `0.95` | minimum share of an effect layer's opaque pixels that must sit on its text layer's pixels; below it the card gets `EFFECT LAYER OUT OF DATE` (fresh layers score 1.0, a stale test scored 0.268) |
-| `PARSER_VERSION` (2026-10-21) | `2` (psd_parser.py:23) | stamped on every parsed card (`CardInfo.parser_version`); `/update_stats` re-parses a card whose stamp differs, once, and skips the tree ETag while any is stale (card_data.py:240, :267). Bump it when a parser change must reach the stored cards: the next run reads every PSD (~812) |
+| `PARSER_VERSION` (2026-10-21) | `4` (psd_parser.py:24; 3 and 4 on 2026-10-25: a PSD's pictures, then the census fixes) | stamped on every parsed card (`CardInfo.parser_version`); the Card sync build re-parses a card whose stamp differs, once (card_data.py:144), and retries a PSD that failed under another version (:909). Bump it when a parser change must reach the stored cards: the next run reads every PSD (~812) |
 | `CardValidator.ABILITY_EXCLUSIONS` | 21 card names (psd_parser.py:1056-1078) | cards allowed to have no ability layer |
 
 ### the card data build: commands/card_data.py (2026-10-22; docs/Campaigns/DATA_BUILD_ACTION.md)
@@ -773,3 +773,4 @@ marker), the `card-guards-quiet` environment among the repo settings, `png_expor
 
 2026-10-25 (grid): commands/card_grid.py's constants.
 2026-10-25 (cardlist, work/cardlist): `CARD_TREE_JSON`.
+2026-10-25 (wrap-up): `PARSER_VERSION` is 4 (3: a PSD's pictures, d6d2f5e; 4: the census fixes, 1b17aba); card_data.py citations re-pointed.
