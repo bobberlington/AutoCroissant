@@ -71,7 +71,8 @@ def _fixture(tmp_path, stars=((1080, 20), (970, 20)), hidden=(), folders=None, t
              library=(), name="Fixture") -> tuple:
     """
     A 1200x1800 card: a gradient art layer, a Stars group (stars at the given top-lefts, hidden ones, or folders
-    {"N stars": [top-lefts]} with the first shown), a Types group of icons ((name, top-left)) and hidden library icons.
+    {"N stars": [top-lefts]} with the first shown), a Types group of icons ((name, top-left[, size])) and hidden
+    library icons.
 
     Returns:
         (PSD path, PNG path): the PNG is the PSD's own render (the official export)
@@ -96,8 +97,9 @@ def _fixture(tmp_path, stars=((1080, 20), (970, 20)), hidden=(), folders=None, t
         group.append(layer)
         layer.visible = False
     row = psd.create_group(name="Types")
-    for icon, (x, y) in types:
-        row.append(PixelLayer.fromarray(np.asarray(_icon((200, 40 + 30 * len(icon), 60))), psd, name=icon, top=y, left=x))
+    for icon, (x, y), *size in types:
+        row.append(PixelLayer.fromarray(np.asarray(_icon((200, 40 + 30 * len(icon), 60), *size)), psd, name=icon, top=y,
+                                        left=x))
     for icon, (x, y) in library:
         layer = PixelLayer.fromarray(np.asarray(_icon((40, 200, 200))), psd, name=icon, top=y, left=x)
         row.append(layer)
@@ -619,8 +621,8 @@ def _touching(plan) -> list:
 def test_type_rows_carried_on_and_pulled_back(clone, parser, tmp_path):
     """Masher's 2 over 1 takes a fourth icon as a grid (owner 10-26): 'dark' under the shell, the new one under the
     gears; without Types/ to check the made icon, or where the grid touches (Mosling's Wind, Electric Dart's new icon),
-    beside the third at the top row's pitch (S2). Removing Sword's first icon pulls the next back onto the card (S3); a
-    made icon over a kept one is refused (Nasus)."""
+    beside the third at the top row's pitch (S2). Removing Sword's first icon pulls the next back onto the card; a
+    made icon over a pulled-back one is refused (Nasus)."""
     types = str(clone / "Types")
     masher = "Auxiliary/Minions/Masher.psd"
     value = ["machine", "dark", "defensive_minion", "fire"]
@@ -641,11 +643,11 @@ def test_type_rows_carried_on_and_pulled_back(clone, parser, tmp_path):
     sword = "Auxiliary/Minions/Sword.psd"
     plan = _plan(parser, _clone_card(clone, sword, tmp_path)[0], sword, "types", ["undead"])
     (layer, dx, dy), = plan.moves
-    assert layer.name == "Undead" and layer.left + dx == 0 and plan.hide
+    assert layer.name == "Undead" and layer.left + dx == 0 and plan.hide and plan.pulled == [layer]
     nasus = "Creatures/Other/4 Stars/Nasus.psd"
     psd, parsed = _open(parser, clone, nasus, tmp_path)
     plan = pe.plan_types(psd, parsed, ["undead", "water"], parser)
-    with pytest.raises(pe.Refused, match="the 'water' icon would cover 'Undead'"):
+    with pytest.raises(pe.Refused, match="'Undead' runs off the canvas; pulled back onto it, would cover the 'water'"):
         pe.set_icons(psd, plan, types)
 
 
@@ -659,6 +661,7 @@ def test_a_closed_row_makes_room(clone, parser, tmp_path):
     plan = _plan(parser, path, nasus, "types", ["undead", "light"])
     moved = {layer.name: (dx, dy) for layer, dx, dy in plan.moves}
     assert moved["Undead"][0] < -200 and moved["Light"][0] > 0 and not _touching(plan)
+    assert [layer.name for layer in plan.pulled] == ["Undead"]
     plan = _plan(parser, path, nasus, "types", ["fire", "undead"])
     assert [layer.name for layer in plan.hide] == ["Light"] and not _touching(plan)
     assert -144 < plan.moves[0][1] < 0                                       # not centred on Light's spot (over Fire)
@@ -677,3 +680,19 @@ def test_a_made_icon_over_a_kept_one_is_refused(parser, tmp_path):
     assert [layer.name for layer in plan.hide] == ["Fire"] and not plan.moves
     with pytest.raises(pe.Refused, match="the 'ice' icon would cover 'Water'"):
         pe.set_icons(psd, plan, _types_dir(tmp_path))
+
+
+@icons
+def test_a_closed_row_slides_only_to_make_room(parser, tmp_path):
+    """Wide Ice fills Fire's hole over Water, and a star stops Water sliding clear: refused at plan time. Narrow Ice
+    clear of Water, which grazed a star already: Water stays."""
+    covered = _fixture(tmp_path, stars=((262, 40), (1080, 20)), name="Covered",
+                       types=(("fire", (30, 30), (110, 140)), ("water", (140, 30)), ("ice", (500, 30), (200, 140))))[0]
+    with pytest.raises(pe.Refused, match=r"'ice' at \(-11, 34, 182, 167\) would cover 'water'"):
+        _plan(parser, covered, REL, "types", ["water", "ice"])
+    grazed = _fixture(tmp_path, stars=((342, 62), (1080, 20)), name="Grazed",
+                      types=(("fire", (30, 30), (200, 140)), ("water", (232, 30)), ("ice", (600, 30), (100, 140))))[0]
+    layers = {layer.name: layer for layer in reversed(list(PSDImage.open(grazed).descendants()))}
+    assert pe._inks_touch(pe._ink(layers["water"]), pe._ink(layers["Star"]))         # the graze it had
+    plan = _plan(parser, grazed, REL, "types", ["water", "ice"])
+    assert [(layer.name, dx, dy) for layer, dx, dy in plan.moves] == [("ice", -520, 0)] and not _touching(plan)
