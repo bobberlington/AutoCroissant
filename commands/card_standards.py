@@ -753,7 +753,8 @@ def _every_line_in(data: bytes) -> bool:
 
 
 def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[PSDParser], result: Fixed,
-            fonts: Optional[Callable[[list], Optional[str]]] = None, composer: bool = True, pixels: tuple = ()) -> None:
+            fonts: Optional[Callable[[list], Optional[str]]] = None, composer: bool = True, pixels: tuple = (),
+            whole: bool = False) -> None:
     """fix()'s work in its own temporary folder."""
     from commands.txt2_repair import repair
     base = join(folder, "pushed.psd")
@@ -804,7 +805,7 @@ def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[P
             result.plain, result.data, result.rewrapped = result.data, data, names
             current = drawn
     if pixels:
-        _pixel_fixes(folder, base, current, rel, parser, result, fonts, pixels)
+        _pixel_fixes(folder, base, current, rel, parser, result, fonts, pixels, whole)
 
 
 def _gated(base: str, path: str, rel: str, parser: Optional[PSDParser], reads: Optional[Callable] = None,
@@ -824,7 +825,7 @@ def _gated(base: str, path: str, rel: str, parser: Optional[PSDParser], reads: O
 
 
 def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDParser] = None,
-        fonts: Optional[Callable[[list], Optional[str]]] = None, only: Optional[str] = None) -> Fixed:
+        fonts: Optional[Callable[[list], Optional[str]]] = None, only: Optional[str] = None, whole: bool = False) -> Fixed:
     """
     The fixable issues of one PSD (R11 renames, then R9 story syncs), each gated, then R8's Single-line Composer
     (single_line: never told, a refusal left in composer_left); then the size and the reparse gates over the result. A
@@ -840,6 +841,7 @@ def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDPars
         parser: The offline parser for gate_reparse (skipped without)
         fonts: Gives MDW/Fonts for R8's box text (single_line) and the pixel fixes
         only: One PIXEL_FIXES kind alone (a sweep: card_sweep), no other fix
+        whole: fit_badges may redraw a layer whole (a sweep's --whole)
 
     Returns:
         Fixed
@@ -854,7 +856,7 @@ def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDPars
     makedirs(work, exist_ok=True)
     folder = mkdtemp(prefix="fix-", dir=work)   # one per call: cards of one key in two folders never share a file
     try:
-        _fix_in(folder, data, rel, wanted, parser, result, fonts, composer, pixels)
+        _fix_in(folder, data, rel, wanted, parser, result, fonts, composer, pixels, whole)
     finally:
         rmtree(folder, ignore_errors=True)
     return result
@@ -871,6 +873,7 @@ OLD_GLYPH_INK = 0.05        # alpha that counts as ink
 OLD_GLYPH_MIN_INK = 20      # px of ink: a smaller glyph is not judged
 STALE_FILL = (-1.0, -1.0, -1.0)   # marks a glyph changed for the splice (it redraws that glyph alone)
 FIT_CHECK = 1.0             # px a fitted badge or icon may sit off its place after fit_badges (the check)
+WHOLE_OFF = 0.01            # fit_badges(whole): the share of a layer's ink the fork's render may have off its stored pixels
 
 
 def _straightened(value):
@@ -1041,10 +1044,10 @@ def _padded(layer, old: tuple) -> list:
     return [(x0 - pad, y0 - pad, x1 + pad, y1 + pad) for x0, y0, x1, y1 in (old, tuple(layer.bbox)) if x1 > x0 and y1 > y0]
 
 
-def _by_glyph(layer, report) -> None:
-    """Refuses a redraw the engine did not splice by glyph (its whole-layer fallback)."""
+def _by_glyph(layer, report, whole: bool = False) -> None:
+    """Refuses a redraw the engine did not splice by glyph (its whole-layer fallback), unless whole allows it."""
     spliced = getattr(report, "splice", None)
-    if spliced is None or spliced.fallback:
+    if not whole and (spliced is None or spliced.fallback):
         raise Refused("unsupported-card", f"{layer.name.strip()}: not redrawn by glyph"
                                           + (f" ({spliced.fallback})" if spliced is not None else ""))
 
@@ -1099,6 +1102,7 @@ def redraw_old_glyphs(path: str, out_path: str, fonts: Optional[Callable[[list],
         stale = old_glyphs(layer, found)
         if not stale:
             continue
+        psd_edit.follow_kerning(psd, layer)     # B12: drawn as Photoshop kerns it (the story)
         keep, old = capture(layer, found), tuple(layer.bbox)
         glyphs = tuple(replace(g, fill=STALE_FILL) if i in stale else g for i, g in enumerate(keep.layout.glyphs))
         _by_glyph(layer, layer.rasterize(fonts=found, keep=replace(keep, layout=replace(keep.layout, glyphs=glyphs)),
@@ -1184,14 +1188,39 @@ def _recut_fx(psd: PSDImage, layer, moved: set, faces) -> list:
     return out
 
 
-def fit_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]]) -> list:
+def _ink_off(layer, faces) -> float:
+    """The share of the layer's ink (stored or drawn) off the fork's render of it as it stands, unshifted: how far the
+    fork's layout is from Photoshop's (1.0 when either has none)."""
+    import numpy as np
+    from psd_tools.composite.text import capture, render
+    stored, drawn = capture(layer, faces), render(layer, fonts=faces)
+    if stored.rgba is None or stored.bbox is None or drawn.rgba is None or drawn.bbox is None:
+        return 1.0
+    boxes = (stored.bbox, drawn.bbox)
+    window = (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
+    a, b = _premultiplied(stored.rgba, stored.bbox, window), _premultiplied(drawn.rgba, drawn.bbox, window)
+    ink = (a[..., 3] > OLD_GLYPH_INK) | (b[..., 3] > OLD_GLYPH_INK)
+    off = (np.abs(a - b).max(axis=2) > OLD_GLYPH_LEVEL) & ink
+    return float(off.sum()) / int(ink.sum()) if ink.any() else 1.0
+
+
+def _lines(layer, faces) -> list:
+    """The layout's lines: [(start, end, drawn)] into the engine's text."""
+    from psd_tools.composite.text.layout import layout
+    from psd_tools.composite.text.model import TextModel
+    return [(line.start, line.end, line.drawn) for line in layout(TextModel.from_layer(layer), faces).lines]
+
+
+def fit_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]], whole: bool = False) -> list:
     """
     Badges (owner 2026-10-25), the PIXEL_FIXES kind: badge_plan's badges and icons set (FontSize, BaselineShift; TySh
     and the Txt2 story), their layers' changed glyphs redrawn (a splice), the stored preview patched. A resize is made
     even when it rewraps the text or moves other words (owner 2026-10-25, the 58 shifted only that night): the moved
     glyphs are redrawn and an FX layer on moved words is cut again (_recut_fx). Refused when a line no longer fits the
     box or ink runs off the canvas. Gated (_only_pixels, the stories by gate_stories), then checked: each fitted one
-    within FIT_CHECK px of its place and at its computed size.
+    within FIT_CHECK px of its place and at its computed size. whole (a sweep's --whole, never the guards): a layer the
+    splice can't take is redrawn whole when the fork draws it as stored (_ink_off within WHOLE_OFF) and the fit keeps
+    its lines.
 
     Returns:
         The layer names fitted; raises Refused or the engine's errors
@@ -1201,12 +1230,15 @@ def fit_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Option
     boxes, done, cuts = [], [], set()           # done: (record, layer name, story, faces, spans)
     for layer, wants in badge_plan(psd, fonts):
         name, faces = layer.name.strip(), psd_edit.font_map(fonts(layer_fonts(layer)))
+        psd_edit.follow_kerning(psd, layer)
+        whole_ok = whole and _ink_off(layer, faces) <= WHOLE_OFF
+        lines = _lines(layer, faces) if whole_ok else None
         old, keep, placed = tuple(layer.bbox), capture(layer, faces), _placed(layer, faces)
         off = psd_edit._ink_off_canvas(layer, psd.width, psd.height)
         _set(layer, wants)
         now = _placed(layer, faces)
         report = layer.rasterize(fonts=faces, keep=keep, unit=psd_edit.SPLICE_UNIT)
-        _by_glyph(layer, report)
+        _by_glyph(layer, report, whole_ok and _lines(layer, faces) == lines)
         if "overflow" in report.warnings or (not off and psd_edit._ink_off_canvas(layer, psd.width, psd.height)):
             raise Refused("overflow", f"{name}: resizing its badges pushes text out of its box")
         boxes += _padded(layer, old)
@@ -1254,7 +1286,7 @@ def pixel_kinds(psd, kinds: tuple = ()) -> tuple:
 
 
 def _pixel_fixes(folder: str, base: str, current: str, rel: str, parser: Optional[PSDParser], result: Fixed,
-                 fonts: Optional[Callable[[list], Optional[str]]], kinds: tuple) -> None:
+                 fonts: Optional[Callable[[list], Optional[str]]], kinds: tuple, whole: bool = False) -> None:
     """fix()'s pixel fixes over current (the other fixes' result), each gated on its own; plain becomes the PSD without
     them (the pushed one when they are all) unless R8 redrew."""
     plain = result.data
@@ -1262,7 +1294,7 @@ def _pixel_fixes(folder: str, base: str, current: str, rel: str, parser: Optiona
         _, apply, reads = PIXEL_FIXES[kind]
         out = join(folder, kind.replace(" ", "-") + ".psd")
         try:
-            names = apply(current, out, fonts)
+            names = apply(current, out, fonts, whole=True) if whole and apply is fit_badges else apply(current, out, fonts)
             if not names:
                 continue
             data = _gated(current, out, rel, parser, reads, sized=False)

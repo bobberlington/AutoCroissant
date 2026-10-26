@@ -376,3 +376,80 @@ def test_badges_fitted_to_their_text(clone, tmp_path, monkeypatch):
         x0, y0, x1, y1 = layer.bbox
         mask[y0:y1, x0:x1] = layer.numpy("shape")[..., 0] > level
     assert cut.any() and not (cut & ~ink).any()     # the FX layer sits on the words where they are now
+
+
+RESAVE = "8a913cc4"             # main with the cards the 10-25 sweeps left to a Photoshop re-save
+
+
+@pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
+def test_badges_drawn_kerned_as_the_story(clone, tmp_path, monkeypatch):
+    """B12: Soul Sanctum's story turns kerning off where its TySh has it on; followed, the splice takes it (unfollowed,
+    Photoshop's ink sits off the fork's layout and it refused)."""
+    fonts, rel = _fonts(clone), "Field/2 Stars/Soul_Sanctum.psd"
+    data = at_rev(clone, RESAVE, rel)
+    fixed = cs.fix(data, rel, [], str(tmp_path / "work"), None, fonts, only="badges")
+    assert fixed.redrawn == {"badges": ["Ability"]} and fixed.pixel_left == []
+    (tmp_path / "fit.psd").write_bytes(fixed.data)
+    assert cs.badges_left(str(tmp_path / "fit.psd"), fonts) == []
+    monkeypatch.setattr(psd_edit, "follow_kerning", lambda psd, layer: False)
+    fixed = cs.fix(data, rel, [], str(tmp_path / "work"), None, fonts, only="badges")
+    assert not fixed.redrawn and "not redrawn by glyph" in fixed.pixel_left[0][1]
+
+
+@pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
+def test_old_glyph_redrawn_kerned_as_the_story(clone, tmp_path, monkeypatch):
+    """B12 in the guards' old-glyph fix: Soul Sanctum (story kerning off, TySh on) with an old badge painted in is
+    spliced, that glyph alone, its story and document blocks kept; unfollowed it refused."""
+    from psd_tools.composite.text import capture
+    from psd_tools.composite.text.splice import _glyph_box
+    fonts, rel = _fonts(clone), "Field/2 Stars/Soul_Sanctum.psd"
+    found = psd_edit.font_map(fonts([]))
+    psd = PSDImage.open(BytesIO(at_rev(clone, RESAVE, rel)))
+    layer = psd_edit.ability_layer(psd)
+    assert psd_edit.follow_kerning(PSDImage.open(BytesIO(at_rev(clone, RESAVE, rel))),
+                                   psd_edit.ability_layer(PSDImage.open(BytesIO(at_rev(clone, RESAVE, rel)))))
+    before = capture(layer, found)
+    index = next(i for i, g in enumerate(before.layout.glyphs) if g.face.ft.postscript_name.startswith(b"stoogedings"))
+    x0, y0, x1, y1 = _glyph_box(before.layout.glyphs[index], before.model.transform, 0)
+    rgba, (bx, by, _, _) = before.rgba.copy(), before.bbox
+    rgba[y0 - by + 3:y1 - by - 3, x0 - bx + 3:x1 - bx - 3] = (0.0, 0.6, 0.0, 1.0)     # an older font's pill
+    layer._store_raster(rgba, before.bbox)
+    old = tmp_path / "old.psd"
+    psd_edit.save_psd(psd, str(old), update_preview=False)
+    fixed = cs.fix(old.read_bytes(), rel, [], str(tmp_path / "work"), None, fonts, only="old glyphs")
+    assert fixed.redrawn == {"old glyphs": ["Ability"]} and fixed.pixel_left == []
+    new = PSDImage.open(BytesIO(fixed.data))
+    assert cs.old_glyphs(psd_edit.ability_layer(new), found) == []
+    assert psd_edit.gate_stories(PSDImage.open(str(old)), new, []) == []
+    monkeypatch.setattr(psd_edit, "follow_kerning", lambda psd, layer: False)
+    fixed = cs.fix(old.read_bytes(), rel, [], str(tmp_path / "work"), None, fonts, only="old glyphs")
+    assert not fixed.redrawn and "not redrawn by glyph" in fixed.pixel_left[0][1]
+
+
+@pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
+def test_badges_whole_only_where_drawn_as_stored(clone, tmp_path):
+    """A sweep's whole: Restrained (the splice misses its pill's 1 px edge) is redrawn whole, its lines kept; Wendy, which
+    the fork lays out off Photoshop's pixels, still refuses. The guards never redraw whole."""
+    fonts, faces = _fonts(clone), psd_edit.font_map(_fonts(clone)([]))
+    rel = "Auxiliary/Status Effects/Debuffs/2 Stars/Restrained.psd"
+    data = at_rev(clone, RESAVE, rel)
+    fixed = cs.fix(data, rel, [], str(tmp_path / "work"), None, fonts, only="badges")
+    assert not fixed.redrawn and "not redrawn by glyph" in fixed.pixel_left[0][1]
+    fixed = cs.fix(data, rel, [], str(tmp_path / "work"), None, fonts, only="badges", whole=True)
+    assert fixed.redrawn == {"badges": ["Ability"]} and fixed.pixel_left == []
+    (tmp_path / "fit.psd").write_bytes(fixed.data)
+    assert cs.badges_left(str(tmp_path / "fit.psd"), fonts) == []
+    lines = [cs._lines(psd_edit.ability_layer(PSDImage.open(BytesIO(d))), faces) for d in (data, fixed.data)]
+    assert lines[0] == lines[1]
+    wendy = "Creatures/DST/3 Stars/Wendy.psd"
+    fixed = cs.fix(at_rev(clone, RESAVE, wendy), wendy, [], str(tmp_path / "work"), None, fonts, only="badges", whole=True)
+    assert not fixed.redrawn and "not redrawn by glyph" in fixed.pixel_left[0][1]
+
+
+def test_text_with_both_quotes_parses_without_backslash(clone, tmp_path):
+    """str() of an engine string is its repr, which escapes ' as \\' when the text also holds a ": the parse unescapes it
+    (03 Setting Up's "they're")."""
+    rel = "Auxiliary/Rulebook/03_Setting_Up.psd"
+    (tmp_path / "card.psd").write_bytes(at_rev(clone, RESAVE, rel))
+    ability = psd_edit.parse_card(clone_vocabulary(str(clone)).parser(), str(tmp_path / "card.psd"), rel)["card"]["ability"]
+    assert "they're" in ability and "\\'" not in ability and '"' in ability
