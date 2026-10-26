@@ -338,10 +338,11 @@ WOLFGANG = "Creatures/DST/4 Stars/Wolfgang.psd"     # one (BOT) badge in Belisap
 
 
 @pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
-def test_badges_fitted_to_their_text(clone, tmp_path):
+def test_badges_fitted_to_their_text(clone, tmp_path, monkeypatch):
     """Owner 2026-10-25: a badge 20% small and 3 pt low is set back to the computed size (the pill 1.35 times the text's
     capital height) and middle (the capitals' middle), its glyphs redrawn, never told; the check finds nothing left.
-    Rule pages keep theirs."""
+    Rule pages keep theirs. A resize that moves the text is made anyway, its FX layers cut again on the moved words."""
+    import numpy as np
     fonts = _fonts(clone)
     psd = PSDImage.open(clone / WOLFGANG)
     layer = psd_edit.ability_layer(psd)
@@ -354,5 +355,24 @@ def test_badges_fitted_to_their_text(clone, tmp_path):
     assert cs.badges_left(str(tmp_path / "fit.psd"), fonts) == []
     now, = psd_edit.badge_fits(psd_edit.ability_layer(PSDImage.open(tmp_path / "fit.psd")), psd_edit.font_map(fonts([])))
     assert abs(now["off_px"]) < 0.1 and now["size"] == fit["fit_size"]
+    from dataclasses import replace
+    from psd_tools.api.layers import TypeLayer
+    draw = TypeLayer.rasterize                          # a line pushed out of its box refuses
+    monkeypatch.setattr(TypeLayer, "rasterize", lambda *a, **k: replace(draw(*a, **k), warnings=("overflow",)))
+    fixed = cs.fix((tmp_path / "off.psd").read_bytes(), WOLFGANG, [], str(tmp_path / "work"), None, fonts, only="badges")
+    assert not fixed.redrawn and fixed.pixel_left[0][1].startswith("Refused: overflow")
+    monkeypatch.undo()
     rule = "Auxiliary/Rulebook/11_Abilities5.psd"
     assert not cs.fix((clone / rule).read_bytes(), rule, [], str(tmp_path / "work"), None, fonts, only="badges").data
+    radiance = "Creatures/Hollow Knight/5 Stars/The_Radiance.psd"   # resized anyway: its lines move, Infected's FX follows
+    fixed = cs.fix(at_rev(clone, "1f07349c", radiance), radiance, [], str(tmp_path / "work"), None, fonts, only="badges")
+    assert fixed.redrawn == {"badges": ["Ability"]} and fixed.pixel_left == []
+    (tmp_path / "rad.psd").write_bytes(fixed.data)
+    assert cs.badges_left(str(tmp_path / "rad.psd"), fonts) == []
+    psd = PSDImage.open(tmp_path / "rad.psd")
+    text, (fx,) = psd_edit.ability_layer(psd), psd_edit.fx_layers(psd, psd_edit.ability_layer(psd))
+    ink, cut = (np.zeros((psd.height, psd.width), bool) for _ in "ab")
+    for mask, layer, level in ((ink, text, 0), (cut, fx, 0.5)):
+        x0, y0, x1, y1 = layer.bbox
+        mask[y0:y1, x0:x1] = layer.numpy("shape")[..., 0] > level
+    assert cut.any() and not (cut & ~ink).any()     # the FX layer sits on the words where they are now

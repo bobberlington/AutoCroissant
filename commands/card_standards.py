@@ -14,8 +14,8 @@ R9 (Txt2 stories) is fixed by the fork with byte gates, the rest is reported. R1
 and gated but reported until the owner says yes (AUTO_FIX). Rule pages are never checked. The pixel fixes (PIXEL_FIXES,
 silent, owner 2026-10-25) run on every card and rule page: straight apostrophes, and icon font glyphs Photoshop drew with
 an older font drawn again; on cards only, badges and icons fitted to their text (fit_badges: a badge's pill 1.35 times
-the text's capital height, its middle on the capitals' middle); each redraws only the changed glyphs and the guards
-re-export the PNG.
+the text's capital height, its middle on the capitals' middle, even when that rewraps the text; an FX layer on words
+that moved is cut again); each redraws only the changed glyphs and the guards re-export the PNG.
 
     check(psd, rel, context, old=None, added=False) -> [Issue]
     fix(data, rel, issues, work, parser=None, fonts=None, only=None) -> Fixed   the fixes, gated (one PSD's new bytes)
@@ -1134,16 +1134,12 @@ def badge_plan(psd: PSDImage, fonts: Optional[Callable[[list], Optional[str]]]) 
     return out
 
 
-def _lines(layer, fonts, words: bool = False) -> list:
-    """The layout's lines (start, end, baseline); words: and every glyph outside the icon font where it sits."""
+def _placed(layer, fonts) -> dict:
+    """Where the layout puts each character outside the icon font: {index into the engine's text: (x, y)}."""
     from psd_tools.composite.text.layout import layout
     from psd_tools.composite.text.model import TextModel
-    placed = layout(TextModel.from_layer(layer), fonts)
-    out = [(line.start, line.end, round(line.y, 2)) for line in placed.lines]
-    if words:
-        out += [(glyph.cluster, round(glyph.x, 2), round(glyph.y, 2)) for glyph in placed.glyphs
-                if not glyph.face.key[0].lower().endswith(".ttf") or ICON_FONT_PREFIX not in glyph.face.key[0].lower()]
-    return out
+    return {glyph.cluster: (round(glyph.x, 2), round(glyph.y, 2)) for glyph in layout(TextModel.from_layer(layer), fonts).glyphs
+            if not glyph.face.key[0].lower().endswith(".ttf") or ICON_FONT_PREFIX not in glyph.face.key[0].lower()}
 
 
 def _set(layer, wants: list) -> None:
@@ -1151,59 +1147,79 @@ def _set(layer, wants: list) -> None:
         layer.set_span_style(fit["start"], fit["end"], **keys)
 
 
-def _settle(path: str, record: int, wants: list, faces) -> tuple:
+def _recut_fx(psd: PSDImage, layer, moved: set, faces) -> list:
     """
-    The style keys a layer takes, tried on a fresh copy: all of them, else (a resize would move its lines, or its words
-    under an FX layer cut from them) the shifts alone, else none. Returns (wants, why some were left out or "").
+    The layer's FX layers whose words moved (moved: _placed indices), cut again from its new raster where the words are
+    now, as the bake's Update all cuts them (psd_edit._phrase_mask, _cut): only their pixels change.
+
+    Returns:
+        [(FX layer, its old bbox)]; raises Refused for a phrase on a badge or icon, or one with no pixels
     """
-    def moves(option: list) -> bool:
-        psd = PSDImage.open(path)
-        layer = next(layer for layer in psd.descendants() if layer.kind == "type" and psd_edit._record_index(layer) == record)
-        words = bool(psd_edit.fx_layers(psd, layer))    # an FX layer holds its words' pixels where they are
-        lines = _lines(layer, faces, words)
-        _set(layer, option)
-        return _lines(layer, faces, words) != lines
+    fxs = psd_edit.fx_layers(psd, layer)
+    if not fxs or not moved:
+        return []
+    engine = psd_edit._fx_engine()
+    model, text = engine[0].from_layer(layer), layer.text
+    offset = model.text.find(text)
+    if offset < 0:
+        raise Refused("unsupported-card", f"{layer.name.strip()}: the engine's text differs from the layer's")
+    icons, glyphs, out = psd_edit._char_styles(layer)[1], None, []
+    color, shape = layer.numpy("color"), layer.numpy("shape")
+    for fx in fxs:
+        ranges = psd_edit.phrase_ranges(text, psd_edit.fx_phrases(layer, fx))
+        if not any(i + offset in moved for a, b in ranges for i in range(a, b)):
+            continue
+        if any(icons[i] for a, b in ranges for i in range(a, b)):
+            raise Refused("unsupported-card", f"{fx.name.strip()}: its words fall in a badge or token")
+        if any(icons) and glyphs is None:       # the colour glyphs' ink out of the key (as _rebuild_fx)
+            glyphs = psd_edit._key_ink(model, lambda run: [(run.start, run.end, psd_edit.KEY_BLACK)], layer, faces, engine)
+        mask = psd_edit._phrase_mask(layer, model, [(a + offset, b + offset) for a, b in ranges], glyphs, faces, engine)
+        cut = psd_edit._cut(layer, mask, color, shape)
+        if cut is None:
+            raise Refused("unsupported-card", f"{fx.name.strip()}: its words have no pixels")
+        old = tuple(fx.bbox)
+        engine[6](fx, cut[0], cut[1])
+        fx._invalidate_bbox()
+        out.append((fx, old))
+    return out
 
-    if not moves(wants):
-        return wants, ""
-    shifts = [(fit, {"BaselineShift": fit["own_shift"]}) for fit, keys in wants
-              if abs(fit["off_px"]) > psd_edit.FIT_PX and abs(fit["off_pct"]) > psd_edit.FIT_PCT]
-    if any("FontSize" in keys for _, keys in wants) and not (shifts and moves(shifts)):
-        return shifts, "resizing its badges would move its lines or words" + (": shifted only" if shifts else "")
-    return [], "fitting its badges would move its lines or words"
 
-
-def fit_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]],
-               left: Optional[list] = None) -> list:
+def fit_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]]) -> list:
     """
     Badges (owner 2026-10-25), the PIXEL_FIXES kind: badge_plan's badges and icons set (FontSize, BaselineShift; TySh
-    and the Txt2 story), their layers' changed glyphs redrawn (a splice), the stored preview patched. A resize that
-    would move the layer's lines falls back to the shift alone (left gets why). Gated (_only_pixels, the stories by
-    gate_stories), then checked: each fitted one within FIT_CHECK px of its place and at its computed size.
+    and the Txt2 story), their layers' changed glyphs redrawn (a splice), the stored preview patched. A resize is made
+    even when it rewraps the text or moves other words (owner 2026-10-25, the 58 shifted only that night): the moved
+    glyphs are redrawn and an FX layer on moved words is cut again (_recut_fx). Refused when a line no longer fits the
+    box or ink runs off the canvas. Gated (_only_pixels, the stories by gate_stories), then checked: each fitted one
+    within FIT_CHECK px of its place and at its computed size.
 
     Returns:
         The layer names fitted; raises Refused or the engine's errors
     """
     from psd_tools.composite.text import capture
     before, psd = PSDImage.open(path), PSDImage.open(path)
-    boxes, done = [], []                        # (record, layer name, story, faces, spans)
+    boxes, done, cuts = [], [], set()           # done: (record, layer name, story, faces, spans)
     for layer, wants in badge_plan(psd, fonts):
         name, faces = layer.name.strip(), psd_edit.font_map(fonts(layer_fonts(layer)))
-        wants, why = _settle(path, psd_edit._record_index(layer), wants, faces)
-        if why and left is not None:
-            left.append((name, why))
-        if not wants:
-            continue
-        old, keep = tuple(layer.bbox), capture(layer, faces)
+        old, keep, placed = tuple(layer.bbox), capture(layer, faces), _placed(layer, faces)
+        off = psd_edit._ink_off_canvas(layer, psd.width, psd.height)
         _set(layer, wants)
-        _by_glyph(layer, layer.rasterize(fonts=faces, keep=keep, unit=psd_edit.SPLICE_UNIT))
+        now = _placed(layer, faces)
+        report = layer.rasterize(fonts=faces, keep=keep, unit=psd_edit.SPLICE_UNIT)
+        _by_glyph(layer, report)
+        if "overflow" in report.warnings or (not off and psd_edit._ink_off_canvas(layer, psd.width, psd.height)):
+            raise Refused("overflow", f"{name}: resizing its badges pushes text out of its box")
         boxes += _padded(layer, old)
+        for fx, was in _recut_fx(psd, layer, {i for i in placed if now.get(i) != placed[i]}, faces):
+            boxes += _padded(fx, was)
+            cuts.add(psd_edit._record_index(fx))
         done.append((psd_edit._record_index(layer), name, psd_edit.story_index(layer), faces,
                      {(fit["start"], fit["end"]): "FontSize" in keys for fit, keys in wants}))
     if not done:
         return []
     _save_patched(before, psd, boxes, out_path)
-    _only_pixels(path, out_path, {record for record, *_ in done}, [story for _, _, story, *_ in done if story is not None])
+    _only_pixels(path, out_path, {record for record, *_ in done} | cuts,
+                 [story for _, _, story, *_ in done if story is not None])
     layers = {psd_edit._record_index(layer): layer for layer in PSDImage.open(out_path).descendants() if layer.kind == "type"}
     for record, name, _, faces, spans in done:
         for fit in psd_edit.badge_fits(layers[record], faces, list(spans)):
