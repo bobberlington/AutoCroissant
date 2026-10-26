@@ -3,7 +3,7 @@ The website build (TTSCardMaker site/build/build_site.py) on a small card repo m
 db/ (CARD_DATA_DIR, load_card_data; no CARD_DATA_DIR, or no readable stats.json, builds nothing): the current text dated
 from its start (since), a duplicate's history, dates by committer time, an archived card's moved_to, tag,
 author and created, image revisions (the person pages), Pacific contribution months, the person stats, index.html's
-pre-written first screen (checked against grid.js in node). Loads
+pre-written first screen (checked against grid.js in node), the Font filter's data (cardfonts.json). Loads
 build_site.py from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without it or before load_card_data.
 """
 import copy
@@ -372,3 +372,22 @@ def test_website_only_fields(bs, tmp_path, monkeypatch):
     card = {"key": "Mini_Doomer", "name": "Mini Doomer", "hp": 5, "spd": 5, "problems": []}
     bs.apply_edits(card, {"mini doomer": (fields, {**meta, "_psd": refused})}, psd_sha="abcd1234ff", shown="Mini Doomer")
     assert "refused" not in card and card["siteOnly"] == ["name", "hp"]
+
+
+def test_font_filter_data_is_the_details_fonts(bs):
+    """data/cardfonts.json (owner 10-25, the grid's Font filter): a card's fonts are its Details record's, a variant picture
+    its PSD's, a PNG-only duplicate (no record) and an unreadable fonts section none; names by use, then name."""
+    if not hasattr(bs, "card_fonts"):
+        pytest.skip("build_site has no Font filter yet")
+    rec = lambda path, fonts: {"path": path, "at": "2026-10-25", "fonts": fonts}
+    records = {"b1": rec("A.psd", {"Perpetua": {"layers": ["Text/Name"], "supplied": True}, "stoogedings-Regular": {"layers": ["Text/Ability"], "supplied": True}}),
+               "b2": rec("B.psd", {"stoogedings-Regular": {"layers": ["Text/Ability"], "supplied": True}}),
+               "b3": rec("C.psd", "unreadable")}
+    cards = [{"id": "a", "key": "A", "name": "A", "psd": "A.psd"}, {"id": "a2", "key": "A2", "name": "A2", "psd": "A.psd", "dup": "a", "variantOf": "a"},
+             {"id": "b", "key": "B", "name": "B", "psd": "B.psd"}, {"id": "b2", "key": "B2", "name": "B2", "dup": "b"},
+             {"id": "c", "key": "C", "name": "C", "psd": "C.psd"}]
+    files = bs.join_details(cards, records, {"A.psd": "b1", "B.psd": "b2", "C.psd": "b3"})
+    got = bs.card_fonts(cards, files)
+    assert got == {"fonts": ["stoogedings-Regular", "Perpetua"], "cards": {"a": [1, 0], "a2": [1, 0], "b": [0]}}
+    for cid, ix in got["cards"].items():                  # the Details panel's list, in its order
+        assert [got["fonts"][i] for i in ix] == list(files[cid]["fonts"])
