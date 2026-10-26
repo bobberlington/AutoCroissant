@@ -201,6 +201,8 @@ def test_normalize_ability_matches_the_parser():
     site = "Has stats -2.\n(BOT) Die."
     assert pe.normalize_ability(layer) == pe.normalize_ability(site) == "Has stats -2.\n(BOT) Die."
     assert pe.normalize_ability("﻿\"Gain\t1 \nhp .\"\n") == "Gain 1 \nhp." and pe.normalize_ability("") == ""
+    assert not pe._part_same("+100% Lifesteal .", "+100% Lifesteal.", None)     # a part's own characters count
+    assert not pe._part_same('"Hi"', "Hi", None) and pe._part_same("a\r\tb ", "a\n b", None)
     assert pe.collapse(" Shooting\rStar ") == "Shooting Star" and pe.collapse(None) == ""
 
 
@@ -1510,6 +1512,35 @@ def _at(clone, tmp_path, rev: str, rel: str) -> tuple:
 
 
 @text_edit
+def test_typed_text_keeps_the_layers_characters_and_takes_the_body_colour(clone, parser, chart):
+    """Bake bugs (owner 2026-10-25): text typed at a line's end in a line of several colours takes the body fill, not
+    the coloured word beside it (Binge Eater's ", 1T" after its olive "SPD"), typed inside a run that run's; a whole
+    ability edit keeps what the parser's reading leaves out (Deepnest's "reroll :3": normalize_ability dropped it)."""
+    fonts = str(clone / pe.FONTS_DIR)
+    psd = PSDImage.open(_card(clone, "Items/Equip/4 Stars/Binge_Eater.psd")[0])
+    layer = pe.ability_layer(psd)
+    body, olive = pe.body_fill(layer, chart), pe._char_styles(layer)[0][layer.text.index("SPD")]
+    old = pe.normalize_ability(layer.text)
+    pe.set_text_layer(psd, "ability", old.replace("-1 SPD", "-1 big SPD, 1T", 1), fonts, chart, parser=parser)
+    fills, text = pe._char_styles(layer)[0], layer.text
+    assert body != olive and fills[text.index(", 1T") + 3] == body and fills[text.index("big")] == olive
+    psd = PSDImage.open(_card(clone, "Field/3 Stars/Deepnest.psd")[0])
+    pe.set_text_layer(psd, "ability", "Does nothing at all, reroll:3", fonts, chart, parser=parser)
+    assert pe.ability_layer(psd).text == "Does nothing at all, reroll :3"
+
+
+def test_story_style_drift_compares_kerning(clone):
+    """B12: Pandamonium's Health is kerned off in its Txt2 story (Photoshop's), on in TySh (the engine's); the drift says
+    so, the bake's own check leaves it (kerning=False: an edited layer follows the story, the others keep their pixels)
+    and follow_kerning makes TySh the story's."""
+    psd = PSDImage.open(_card(clone, "Items/Active/4 Stars/Pandamonium.psd")[0])
+    assert pe.story_style_drift(psd) == [("Health", "AutoKerning at 1: layer True, story False")]
+    assert pe.story_style_drift(psd, kerning=False) == []
+    health = next(layer for layer in psd.descendants() if layer.name == "Health")
+    assert pe.follow_kerning(psd, health) and pe.story_style_drift(psd) == [] and not pe.follow_kerning(psd, health)
+
+
+@text_edit
 def test_a_two_site_edit_bakes_its_runs_into_the_story(clone, parser, chart, tmp_path):
     """Through apply_jobs and every gate: the saved PSD's TySh and Txt2 story agree run by run (story_style_drift) and
     keep the badge between the edits."""
@@ -1528,16 +1559,21 @@ def test_a_two_site_edit_bakes_its_runs_into_the_story(clone, parser, chart, tmp
 def test_new_text_past_its_design_is_told(clone, parser, chart):
     """Review 2026-10-24: an Ability's added line printed over what lies below its old text (Deep Focus' flourish, Holy
     Card's torn panel border, Autopsy Report off its box) with no note; inks_over passed them, the old ink touching
-    those layers elsewhere. It bakes with a note; a line added on the plain panel has none. A title's too."""
+    those layers elsewhere. It bakes set smaller until it stays off them and no lower than the old text (fit_below, the
+    website preview's fit), else as it is with a note (six more sentences on Deep Focus); a line added on the plain
+    panel has none. A title's too."""
     fonts = str(clone / pe.FONTS_DIR)
-    for rel, told in (("Items/Equip/3 Stars/Deep_Focus.psd", True), ("Items/Equip/2 Stars/Holy_Card.psd", True),
-                      ("Auxiliary/Items/Autopsy_Report.psd", True), ("Auxiliary/Creatures/Mettaton_EX.psd", False)):
+    focus, gain = "Items/Equip/3 Stars/Deep_Focus.psd", " Gain 1 HP. Die."
+    for rel, more, want in ((focus, gain, "fit"), ("Items/Equip/2 Stars/Holy_Card.psd", gain, "fit"),
+                            ("Auxiliary/Items/Autopsy_Report.psd", gain, "fit"), (focus, " Gain 1 HP and draw a card." * 6, "told"),
+                            ("Auxiliary/Creatures/Mettaton_EX.psd", gain, None)):
         psd_path = _card(clone, rel)[0]
         psd = PSDImage.open(psd_path)
         old = pe.normalize_ability(pe.parse_card(parser, psd_path, rel)["card"]["ability"])
-        edit = pe.set_text_layer(psd, "ability", old + " Gain 1 HP. Die.", fonts, chart, parser=parser)
+        edit = pe.set_text_layer(psd, "ability", old + more, fonts, chart, parser=parser)
         notes = [note for note in edit.notes if note.startswith("ability: ")]
-        assert bool(notes) == told, (rel, notes)
+        fit = [note for note in edit.notes if search(r"^overflow: ability: set at [4-9]\d% of its size to stay on", note)]
+        assert (bool(notes), bool(fit)) == (want == "told", want == "fit"), (rel, edit.notes)
         assert all(note.endswith("; check the card") for note in notes)
     # a longer title past the banner it sits on (Bubble's parchment) or the texture clipped to it (Fire Totem's 'firefx':
     # the new letters print in the plain fill), review 2026-10-24
