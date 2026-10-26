@@ -115,7 +115,7 @@ Mechanics you must know:
    150 ms for two hops).
 4. **Deferred init without blocking login.** `on_ready` queues four commands instead of running them:
    `init_reminder`, `init_psd` (the card data: `card_data/`, the card list from `card_tree.json`, a sync, then
-   `init_query`'s tree fetch, a 304 on the saved ETag), `refresh_history`, `init_type_emojis(client)`. (Until 2026-10-25 a `sweep_temp_psds` of the parse's temp PSDs ran first.) The card data
+   `init_query`'s tree fetch even if those raise, a 304 on the saved ETag), `refresh_history`, `init_type_emojis(client)`. (Until 2026-10-25 a `sweep_temp_psds` of the parse's temp PSDs ran first.) The card data
    load and the GitHub tree fetch happen in worker threads after the bot is already up. `init_type_emojis` is async: it runs on the loop and threads
    its own downloads. The inits run **once** (the `_started` flag, 778c2ce, 2026-10-21): discord.py calls `on_ready`
    again after a failed RESUME, and that repeat only syncs any guild not synced yet, restarts the loops whose task

@@ -288,16 +288,18 @@ def init_psd() -> None:
     """Initialize the stats database from the synced card data (card_sync): the local copy and the saved card list,
     then a sync and GitHub's tree (init_query)."""
     from commands.card_sync import load_local, sync
-    ready = load_local()
-    card_repo.load_saved()                          # the card list from the last tree on disk: no network
-    if ready:
-        card_repo.prep_dataframes()                 # queries work before the sync's network round trip
-    loaded = stats_db.stats
-    sync(None, output_problematic=False, quiet=True, follow_ups=False)
-    if not ready or stats_db.stats is not loaded:   # the sync brought new data
-        card_repo.prep_dataframes()
-    print("Stats database initialized.")
-    init_query()                                    # after the sync: titles and renames of the data it loaded
+    try:
+        ready = load_local()
+        card_repo.load_saved()                      # the card list from the last tree on disk: no network
+        if ready:
+            card_repo.prep_dataframes()             # queries work before the sync's network round trip
+        loaded = stats_db.stats
+        sync(None, output_problematic=False, quiet=True, follow_ups=False)
+        if not ready or stats_db.stats is not loaded:   # the sync brought new data
+            card_repo.prep_dataframes()
+        print("Stats database initialized.")
+    finally:
+        init_query()                                # after the sync (titles, renames); runs even if it failed
 
 
 # ========================
