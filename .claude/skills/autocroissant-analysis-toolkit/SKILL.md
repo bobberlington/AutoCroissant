@@ -442,7 +442,7 @@ config.py), as the older one-liners below do. The data's own history is the data
 Aggregate with one-liners (Counter over `c.path.split('/')[0]`, max over `c.timestamp`, filter on
 `c.problems` — e.g. on 2026-10-23 no card has a *stored/pickled* problem (0; on 2026-07-11 it was `('20 Creature
 Types', ['MISSPELT TYPE: tornado'])`), and full validation (`CardValidator.validate` over stats.pkl) computes 1:
-Computer Virus, `HP/DEF/ATK/SPD NOT FOUND` (5 on 2026-07-11, before the three WoW minions joined ABILITY_EXCLUSIONS in
+Computer Virus, `HP/DEF/ATK/SPD NOT FOUND` (one parse-time `NO STATS FOUND` since 2026-10-26, stored at its next re-parse; 5 on 2026-07-11, before the three WoW minions joined ABILITY_EXCLUSIONS in
 e4e0a58 and tornado became wind) — surface distinction in autocroissant-validation-and-qa §2). For the packaged summary use `inspect_pickle.py`; for two-snapshot diffs use
 `diff_stats.py` (both documented with golden outputs in autocroissant-diagnostics-and-tooling).
 

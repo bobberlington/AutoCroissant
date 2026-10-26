@@ -3,11 +3,13 @@
 **Status:** built and landed 2026-10-25 (TTSCardMaker a4d137bf, AutoCroissant be39f86; steps 1-5, see "As built"). Step 6 done 2026-10-26: the migration (data 0680843, main fec70c94), and the `_psd` fallback dropped after its green cycle (work/deadcode).
 
 **Goal.** `site/Card Edits.json` on main holds only people's edits; the bake's verdicts live on `data`, so a refusal
-makes no main commit. Bakes and guard fixes show on the Changes page.
+makes no main commit of its own (since 97b1e73 a refused card's website-only fields move to `_site` in the run's main
+commit, Card Edits.json only for that card). Bakes and guard fixes show on the Changes page.
 
 **Rulings that bind it**
 - Verdicts to `db/verdicts.json` on `data`: `{"schema": 1, "cards": {key: verdict}}`, one card per line. A refusal makes
-  no main commit; a bake commits to main only the PSD, the PNG and the edit fields it drops as printed (§16.7).
+  no main commit of its own (its website-only fields move to `_site` in the run's commit, Card Edits.json only, 97b1e73); a bake commits to
+  main only the PSD, the PNG and the edit fields it drops as printed (§16.7).
 - Events `baked` (fields, PNG changed), `bake-refused` (reason), `guard-png` (a PNG the guards re-made or recompressed),
   `guard-fix` (a fix the guards landed). The Discord post stays one post per push (owner, 10-22).
 - The guards' Single-line Composer fix is silent: no event, post or comment (owner, 10-25 ~04:10).

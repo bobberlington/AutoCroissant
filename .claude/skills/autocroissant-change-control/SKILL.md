@@ -250,6 +250,9 @@ ignored — read the story before you decide the rule doesn't apply to you.
   than 25% of the box's pixels past 24; a card the guards draw whole, new or beside its PNG, per text and stat box, not
   over the card), a missed box whose render shows no change (a blank render) or a read-back that is not the edit
   refuses. A miss is fixed in the psd-tools fork, not by refusing the card; a new pixel refusal needs the owner.
+- **"Simplifying" /update's diverged-checkout handling** (commands/update_bot.py `git_pull`: the merge-base check, the
+  merge pull taking theirs on a conflict, the `--rebase` fallback). The owner kept it on purpose on 2026-10-26 (don't
+  re-ask); OJWikibot's commands/update_bot.py keeps the same handling.
 - **Changing `ICON_MANIFEST_PATH` (global_config.py) / `ICON_FONT_PREFIX` (psd_parser.py) or `emoji_name` rules
   in type_emojis.py** without the matching TTSCardMaker change. These are cross-repo contracts
   (values: autocroissant-config-and-flags).

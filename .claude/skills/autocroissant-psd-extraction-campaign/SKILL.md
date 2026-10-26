@@ -75,8 +75,9 @@ Metric definitions (verified 2026-07-11; counts updated 2026-10-23):
   `wind` layer since TTSCardMaker 100511d3); on 2026-07-11 exactly 1, `20 Creature Types` (`MISSPELT TYPE: tornado`),
   a content flag in the source PSD, not a parser bug.
 - **Re-validation problems**: cards that fail `CardValidator.validate` when run over today's stored
-  data. Today 1 (Computer Virus, all four stats NOT FOUND; the owner leaves it); 5 on 2026-07-11 — the stored count undercounts because the pickle stores only parse-time problems
-  (`NO ABILITY LAYER`, `MISSPELT TYPE`); validator-computed problems (`ABILITY TEXT NOT FOUND`,
+  data. Today 1 (Computer Virus: all four stats NOT FOUND, since 2026-10-26 one parse-time `NO STATS FOUND` stored at its next
+  re-parse; the owner adds its stat bars); 5 on 2026-07-11 — the stored count undercounts because the pickle stores only parse-time problems
+  (`NO ABILITY LAYER`, `MISSPELT TYPE`, `NO STATS FOUND` since 2026-10-26); validator-computed problems (`ABILITY TEXT NOT FOUND`,
   `HP/DEF/ATK/SPD NOT FOUND`, `STATS TOO HIGH`) are reported to Discord during a sweep but never
   stored. The 2026-07-11 five: `20 Creature Types`, `Computer Virus` (all four stats NOT FOUND),
   `Anubisath Guardian`, `Qiraji Soldier`, `Silithid` (ABILITY TEXT NOT FOUND — blank minions then not in
@@ -510,7 +511,7 @@ cannot currently say "blank on purpose" without a hardcoded name.
 | Shadow Duelist | In ABILITY_EXCLUSIONS with text from its hidden Ability layer (`Heals the creature this is summoned on by 2 HP...`); the PNG prints no ability | Done 2026-10-22: only printed text counts (hidden Ability layers only when relaid, `_relaid`), so it parses to "" and the entry stays (live). Method A: 812 PSDs, 1 difference (this card) |
 | Crystal Bits, Panda + 15 more empty-ability exclusions | Blank `Ability` layer (`'\r'`, bbox (0,0,0,0)); Panda additionally has full stats 6/2/7/3 | Genuinely blank. Re-certify individually, or take the structural candidate below |
 | Anubisath Guardian, Qiraji Soldier, Silithid | Same blank pattern (verified on Silithid); NOT in the list until 2026-10-21, so they fired `ABILITY TEXT NOT FOUND` in every force-sweep report | Added to ABILITY_EXCLUSIONS in e4e0a58 (2026-10-21): the exclusion treadmill live, 3 names of registered debt (18 → 21). The structural candidate below removes them with the rest |
-| Computer Virus | Creature with ability but hp/def/atk/spd all -1 → fires 4 NOT FOUND problems per force sweep | Unclassified — run the recipe (step 3 on its `Darks`/`Bars` groups) before theorizing |
+| Computer Virus | Creature with ability but hp/def/atk/spd all -1 → fired 4 NOT FOUND problems per force sweep; since 2026-10-26 one parse-time `NO STATS FOUND` (all four stats or a `creatures` edit answer it) | The owner adds its stat bars (ruling 2026-10-26) |
 | The 5 EXCESSIVE_STAT_EXCLUSIONS (DONE 2026-10-21) | Cards whose summed stat digits exceed 10 | The list is gone: a stat above 10 is STATS TOO HIGH unless the card's Card Edits.json entry sets `allow_high_stats` (Sonic spd 20, Royal Eradicator Main Cannon atk 12: data, not code); the canonical encoding above 10 is a top row 10 plus a bottom row N-10 |
 
 **Structural CANDIDATE (the single highest-leverage exclusion killer):** the validator conflates

@@ -91,6 +91,8 @@ kinds are appended to it (line numbers as of 2026-10-19):
   (psd_parser.py:656-688; meanings in impossibility-cards-reference §4.1). On 2026-10-19 no card
   PSD uses the font, and none fires on the corpus (method A in section 4.1), so the baseline below is
   unchanged. Expect them to appear as cards migrate; each firing is a real authoring mistake.
+- Since 2026-10-26, `NO STATS FOUND: no HP, DEF, ATK or SPD bars read on this creature` (or minion; `STAT_KINDS`, which
+  holds the 7 Auxiliary/Creatures cards too): Channel B then skips its four `... NOT FOUND` lines.
 
 The build writes each CardInfo's `problems` into `db/stats.json` (`card_db.record`; the pickles held the objects
 themselves until 2026-10-25), so these problems persist and surface as the `"problem"` key in `to_dict()`.
@@ -139,7 +141,8 @@ Certified baselines (re-measured 2026-10-23 at PICKLE a7c310e; 2026-07-11 values
   for n, p in sorted(bad.items()): print(' ', n, p)
   "
   ```
-  Output on 2026-10-23: `Computer Virus` (HP/DEF/ATK/SPD NOT FOUND; the owner leaves it). On 2026-07-11 it also
+  Output on 2026-10-23: `Computer Virus` (HP/DEF/ATK/SPD NOT FOUND). Since 2026-10-26 the parser stores one `NO STATS FOUND` for it
+  instead (at its next re-parse; all four stats or a `creatures` edit answer it) and the owner adds its stat bars. On 2026-07-11 it also
   listed `20 Creature Types` (MISSPELT TYPE: tornado) and `Anubisath Guardian`, `Qiraji Soldier`, `Silithid`
   (ABILITY TEXT NOT FOUND — 2026-06 World of Warcraft additions whose pickled `ability` is the empty string); those
   three joined ABILITY_EXCLUSIONS in e4e0a58 (2026-10-21), registered debt rather than a fix.
