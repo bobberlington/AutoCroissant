@@ -386,8 +386,8 @@ The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes 
   baked and written in the bake report and the commit note. The bake also takes the layers it used to refuse
   (refused-layers): a printed-title layer named after the card (no `Name` layer, or outside the Text group) or, failing
   those, after its own text (title-own-text: Papyrus, Sans; a bake renames it after the new title), and a single
-  visible Ability layer under another name; since 2026-10-25 (work/abil) an ability over several layers too, each part
-  in its own layer, and its copies (`psd_edit.set_ability_layers`). Text bakes are line-spliced (fork feat/line-splice): only the edited lines
+  visible Ability layer under another name; since 2026-10-25 an ability over several layers is edited box by box
+  (`parts`, `psd_edit.set_parts`, copies following; a plain joined edit there refuses as impossible). Text bakes are line-spliced (fork feat/line-splice): only the edited lines
   are re-set, so the rest keeps Photoshop's own ink. An edit takes the colour and style of what it replaces, part by part.
   A stat bar with a digit mask wholly off the canvas (Green Mage's four bars, the only ones) refuses `unsupported-card`
   as a final verdict; it was an `error` that failed the run until work/bake-verdicts (2026-10-23).

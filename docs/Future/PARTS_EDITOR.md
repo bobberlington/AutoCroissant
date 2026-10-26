@@ -522,6 +522,8 @@ set_text_layer(psd, field, raw', fonts_dir, chart, layer=L, beside=parts+followe
 
 ## 8. Tonight's joined-text splice (Discord card edits retired)
 
+**Done 2026-10-25 (work/partsfollow):** deleted with 0 legacy joined entries in Card Edits.json (none of any plain name or ability). Kept: `name_layer`'s refusals (the legacy name path and its read-back gates still use it) and `Edit.several` (now the mark of a `set_parts` Edit). A plain ability on one part with copies or a relaid layer goes through `set_parts`.
+
 **Delete** (one commit, after rollout step 9):
 
 - In `psd_edit`:
