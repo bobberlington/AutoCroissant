@@ -811,3 +811,5 @@ change, sections 4-5 are stale until rewritten.
 2026-10-25 (docs lane): every psd_parser.py, card_data.py, query_card.py and psd_analyzer.py citation re-pointed at 6a87179; §3.2/§5: cards need no ability (rule pages do), ABILITY_EXCLUSIONS is R3's waiver; §4 step 5 names the line-padding strip.
 
 2026-10-25 (wrap-up): §2 star counting skips type-icon layers (PARSER_VERSION 4); §6: variant pictures are duplicates (`duplicate_of`), `art` / `ability_art` rows, `variant` fields named.
+
+2026-10-26 (lane 1): §2 star counting is `PSDParser.stars_drawn` (pieces judged together, masks read, layers outside the group named after a star icon), shared with the bake; the `display_name` row gains title rule P. PARSER_VERSION 5.
