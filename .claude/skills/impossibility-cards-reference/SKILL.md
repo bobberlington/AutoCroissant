@@ -93,10 +93,13 @@ since 2026-10-20.
   a lone one 0.5-2 times a star's size is a star; the rest is art (Toy Chica's LINE, Auto Croissant's cat).
   Overlapping stars stay apart (Zoltan, the dice faces of Nightmare and The Lich King). Layers named after a
   `Types/Stars` icon outside the groups count too, when star-sized and above the midline (Massive Moss Charger's two
-  'Hk star': 4, not 2). Stars below the midline (Tainted Lazarus's dead form) are not counted; the bake refuses a
-  stars edit on such a card, and one with stars outside the group, for now (Massive Moss Charger: every count until
-  Lane 3; main baked its 3 from a wrong count of 2). The midline test is the box's centre, not its top as for type
-  icons, so a new star whose centre falls below it is refused too (The Evil Idol's column at 6-8).
+  'Hk star': 4, not 2). Stars below the midline (Tainted Lazarus's dead form) are not counted. The bake (Lane 3,
+  2026-10-26, `psd_edit.plan_stars`) lays stars outside the group out with it (Nosk, Massive Moss Charger), takes a
+  star drawn twice on one spot as one (Tainted Eden, Living Bread), splits one layer drawing several into masked
+  copies (`split_stars`: Grimora, Dimension D), keeps a row centred on the card centred (Grimora, Lor Starcutter), and
+  gives a second creature's upside-down set the same count, turned half round (Tainted Lazarus), or redraws neither.
+  The midline test is the box's centre, not its top as for type icons, so a new star whose centre falls below it is
+  refused (The Evil Idol's column at 6-8).
 - **Fallback:** with no such group, visible layers whose name has the word "star" ("Patrick Star", "Emerald_Star",
   not "starfish") are counted the same way.
 - **Zero stars** gives the persisted problem `NO STARS FOUND (put the star layers in a group named "Stars")`. On
