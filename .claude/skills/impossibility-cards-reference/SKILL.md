@@ -99,7 +99,9 @@ since 2026-10-20.
   copies (`split_stars`: Grimora, Dimension D), keeps a row centred on the card centred (Grimora, Lor Starcutter), and
   gives a second creature's upside-down set the same count, turned half round (Tainted Lazarus), or redraws neither.
   The midline test is the box's centre, not its top as for type icons, so a new star whose centre falls below it is
-  refused (The Evil Idol's column at 6-8).
+  refused (The Evil Idol's column at 6-8). A new or moved star may not sit under art drawn over it (`_covered`: more
+  than 5% more of its ink hidden than now): Massive Moss Charger's fifth, under the moss, is refused; Acrophobia's
+  fifth goes beside the second row, not onto the cliff.
 - **Fallback:** with no such group, visible layers whose name has the word "star" ("Patrick Star", "Emerald_Star",
   not "starfish") are counted the same way.
 - **Zero stars** gives the persisted problem `NO STARS FOUND (put the star layers in a group named "Stars")`. On
