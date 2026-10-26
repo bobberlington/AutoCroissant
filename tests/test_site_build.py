@@ -162,7 +162,8 @@ def test_the_current_text_is_dated_from_its_start(bs, repo, tmp_path, monkeypatc
 
 def test_a_renamed_card_goes_on_and_its_old_page_redirects(bs, repo, tmp_path, monkeypatch):
     """The bake renames and redraws Alpha as New Alpha in one commit (its Renamed trailers): the card's image versions
-    and text history go on as one card, and c/alpha/ sends its links on to c/new-alpha/."""
+    and text history go on as one card, and c/alpha/ sends its links on to c/new-alpha/; a profile's pick, a published
+    hand and the app's old id (cards.json "moved") follow it."""
     if not hasattr(bs, "redirects"):
         pytest.skip(f"{BUILD_SITE} has no renames")
     root, t3 = repo["root"], repo["t"][2]
@@ -170,6 +171,10 @@ def test_a_renamed_card_goes_on_and_its_old_page_redirects(bs, repo, tmp_path, m
     (root / f"{ALPHA}.psd").rename(root / f"{new}.psd")
     (root / f"{ALPHA}.png").unlink()
     _png(root / f"{new}.png", 40)                 # redrawn: no exact rename
+    for path, doc in (("site/profiles/Someone.json", {"login": "Someone", "favourite": "alpha"}),
+                      ("site/decks/Someone/hand.json", {"v": 1, "owner": "Someone", "name": "Hand", "cards": ["alpha"]})):
+        (root / path).parent.mkdir(parents=True, exist_ok=True)
+        (root / path).write_text(json.dumps(doc), encoding="utf-8")
     git = lambda *a: subprocess.run(["git", "-C", str(root), *a], capture_output=True, text=True, check=True,
                                     env={**environ, "GIT_AUTHOR_NAME": "AutoCroissant", "GIT_AUTHOR_EMAIL": "a@x",
                                          "GIT_COMMITTER_NAME": "AutoCroissant", "GIT_COMMITTER_EMAIL": "a@x"}).stdout
@@ -192,6 +197,8 @@ def test_a_renamed_card_goes_on_and_its_old_page_redirects(bs, repo, tmp_path, m
     alpha = _by_name(out["cards.json"]["cards"])["New Alpha"]
     assert out["history.json"][alpha["id"]] == [{"ts": repo["t"][0], "ability": "Old text."}]
     assert len(out["versions.json"]["cards"][alpha["id"]]) == 4                      # c1, c2, c3 and the rename
+    assert out["cards.json"]["moved"] == {"alpha": alpha["id"]} == {"alpha": "new-alpha"}
+    assert out["users.json"]["users"][0]["favourite"] == out["decks.json"]["decks"][0]["cards"][0] == "new-alpha"
 
 
 def test_archived_author_and_created_precedence(bs):
