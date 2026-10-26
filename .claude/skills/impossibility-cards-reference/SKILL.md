@@ -484,7 +484,7 @@ CardInfo fields → pickle/dataframe keys (`to_dict`, commands/card_models.py; t
 | `ability` | `ability` | omitted when None (MDW, ability-less cards) |
 | `stars` | `stars` | omitted when None |
 | `subtype` / `series` | same | omitted when falsy |
-| `subseries` | `subseries` | a series within the series (Goombella: series Mario, subseries Paper Mario: The Thousand-Year Door); database-only — from Card Edits.json or `/update_metadata`, never the PSD or folder, kept on re-parse like `author`; omitted when falsy (2026-10-20) |
+| `subseries` | `subseries` | a group of cards (Goombella: series Mario, subseries Paper Mario: The Thousand-Year Door); since 2026-10-25 one name across series (the same name under Kirby and Mario is one subseries; a card may have one without a series); database-only — from Card Edits.json or `/update_metadata`, never the PSD or folder, kept on re-parse like `author`; omitted when falsy (2026-10-20) |
 | `types` | `types` | list[str] of upper-half icons; omitted when empty |
 | `stats.hp/defense/attack/speed` | `hp` / `def` / `atk` / `spd` | SHORT keys; each omitted unless >= 0 |
 | `problems` | `problem` | list[str], singular key, omitted when empty |
