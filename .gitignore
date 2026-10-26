@@ -45,6 +45,9 @@ type_emojis.json.tmp
 card_data/
 # card pictures for /query_ability's grids, by PNG blob (commands/card_grid.py)
 card_images/
+# the card repo's last tree and its ETag: the card list at startup (commands/query_card.py)
+card_tree.json
+card_tree.json.tmp
 
 # Music downloads
 music/

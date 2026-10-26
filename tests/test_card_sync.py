@@ -314,6 +314,18 @@ def test_startup_without_data_holds_no_cards(github):
     assert cm.stats_db.stats == {} and cs._loaded["commit"] is None
 
 
+def test_a_failed_startup_sync_still_fetches_the_card_list(monkeypatch):
+    import commands.psd_analyzer as pa
+    fetched = []
+    monkeypatch.setattr(cs, "load_local", lambda: False)
+    monkeypatch.setattr(pa.card_repo, "load_saved", lambda: 0)
+    monkeypatch.setattr(cs, "sync", lambda *a, **kw: 1 / 0)
+    monkeypatch.setattr(pa, "init_query", lambda: fetched.append(1))
+    with pytest.raises(ZeroDivisionError):
+        pa.init_psd()
+    assert fetched == [1]
+
+
 # ========================
 # On use: card commands look for new data
 # ========================

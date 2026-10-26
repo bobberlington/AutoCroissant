@@ -61,7 +61,6 @@ from commands.psd_analyzer import (
 from commands.reminder_panel import open_panel
 from commands.query_card import (
     card_repo,
-    init_query,
     query_ability,
     query_ability_num_occur,
     query_name,
@@ -135,8 +134,7 @@ async def on_ready():
     print(f"Registered {len(slash_registry)} slash commands for reminder system.")
 
     queue_command(init_reminder)
-    queue_command(init_psd)
-    queue_command(init_query)
+    queue_command(init_psd)                             # the card data, then the card list (init_query)
     queue_command(refresh_history)                      # commit-pinned card image links
     queue_command(init_type_emojis, client)
 

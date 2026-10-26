@@ -16,7 +16,7 @@ from global_config import AUTHORS_PATH, EDITS_PATH, ICON_MANIFEST_PATH, RULEBOOK
 from commands.card_edits import CardAuthors, CardEdits
 from commands.card_models import CardInfo, CardStats, CardType, StatsDatabase, card_name, get_stats_as_dict, stats_db
 from commands.github_api import GIT_TOKEN
-from commands.query_card import archived_text, card_repo, history_match
+from commands.query_card import archived_text, card_repo, history_match, init_query
 from commands.utils import queue_message, queue_file, queue_long_message
 
 # ========================
@@ -285,16 +285,21 @@ def export_rulebook_to_file(interaction: Interaction) -> None:
 # Initialization
 # ========================
 def init_psd() -> None:
-    """Initialize the stats database from the synced card data (card_sync): the local copy, then a sync."""
+    """Initialize the stats database from the synced card data (card_sync): the local copy and the saved card list,
+    then a sync and GitHub's tree (init_query)."""
     from commands.card_sync import load_local, sync
-    ready = load_local()
-    if ready:
-        card_repo.prep_dataframes()                 # queries work before the sync's network round trip
-    loaded = stats_db.stats
-    sync(None, output_problematic=False, quiet=True, follow_ups=False)
-    if not ready or stats_db.stats is not loaded:   # the sync brought new data
-        card_repo.prep_dataframes()
-    print("Stats database initialized.")
+    try:
+        ready = load_local()
+        card_repo.load_saved()                      # the card list from the last tree on disk: no network
+        if ready:
+            card_repo.prep_dataframes()             # queries work before the sync's network round trip
+        loaded = stats_db.stats
+        sync(None, output_problematic=False, quiet=True, follow_ups=False)
+        if not ready or stats_db.stats is not loaded:   # the sync brought new data
+            card_repo.prep_dataframes()
+        print("Stats database initialized.")
+    finally:
+        init_query()                                # after the sync (titles, renames); runs even if it failed
 
 
 # ========================
