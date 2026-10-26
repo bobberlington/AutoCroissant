@@ -107,6 +107,16 @@ def test_r1_reads_every_ability_layer(clone, monkeypatch):
     assert issue.code == "R1" and issue.items == ("(3CD)",)
 
 
+def test_r1_tolerates_spaces_in_the_ability_name(clone):
+    """A visible "Ability " or " Ability" layer is checked too, though the parser reads only "Ability"."""
+    psd = _open(clone, "Items/Active/2 Stars/Dirty_Bed.psd")
+    issue = cs.rule_tags(psd)
+    layer = next(layer for layer in psd.descendants() if layer.name == "Ability")
+    for name in ("Ability ", " Ability"):
+        layer.name = name
+        assert cs.ability_layers(psd) == [] and cs.rule_tags(psd).items == issue.items, name
+
+
 def _saved(psd, path) -> PSDImage:
     psd_edit.save_psd(psd, str(path), update_preview=False)
     return PSDImage.open(str(path))

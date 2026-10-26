@@ -396,9 +396,14 @@ def ability_layers(psd: PSDImage) -> list:
 
 
 def rule_tags(psd: PSDImage) -> Optional[Issue]:
-    """R1: timing tags in the ability's layers (ability_layers) set in the stoogedings badge font (L1)."""
+    """R1: timing tags in the ability's layers (ability_layers) set in the stoogedings badge font (L1); a visible
+    "Ability " or " Ability" layer too (the parser reads only "Ability")."""
     bad = []
-    for layer in ability_layers(psd):
+    layers = {id(layer): layer for layer in ability_layers(psd)}
+    for layer in _visible_texts(psd):
+        if base_name(layer).strip().lower() == "ability":
+            layers.setdefault(id(layer), layer)
+    for layer in layers.values():
         try:
             text, runs = run_fonts(layer)
         except (KeyError, IndexError, TypeError, ValueError, AttributeError):
