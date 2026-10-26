@@ -143,7 +143,7 @@ LAYOUT_TOL = 0.12           # a star or icon sits on a layout's spot within this
 LAYOUT_TOL_MIN = 6          # px, at least
 ICON_FRAME = 0.1            # a type layer over more of the canvas is a frame (Magnum Opus's field), not an icon
 ICON_GAP = 22               # px between an icon and the one under it on a 1200-wide card (Item_Template: Attack, NME)
-ICON_TOUCH = 0.05           # a type icon pulled back onto the card (S3) may ink over this share of another's (the cards'
+ICON_TOUCH = 0.05           # a moved, shown or made type icon may ink over this share of another's (the cards'
 #   own rows: 158 of 161 rows of two or more touch nowhere, Pandora's pandas 5.5%; 2026-10-26)
 CARD_WIDTH = 1200
 PLACED = (Tag.SMART_OBJECT_LAYER_DATA1, Tag.SMART_OBJECT_LAYER_DATA2, Tag.PLACED_LAYER1, Tag.PLACED_LAYER2)
@@ -250,7 +250,8 @@ class IconPlan:
     first: str = ""                              # plan_types(): the template whose spot a card's first type icon takes
     centres: list = field(default_factory=list)  # plan_stars(): the header stars' centres once applied, reading order
     notes: list = field(default_factory=list)    # told with the bake: the card's layout changed (stars laid out again)
-    pulled: list = field(default_factory=list)   # plan_types(): icons pulled back onto the card (S3), clear of made ones
+    pulled: list = field(default_factory=list)   # plan_types(): icons pulled back onto the card (_close_row, S3)
+    row: list = field(default_factory=list)      # plan_types(): the row's icons that show, kept or shown (clear of made ones)
 
 
 @dataclass
@@ -6458,6 +6459,106 @@ def _fits(core: tuple, spot: tuple) -> bool:
     return abs(mine - theirs) <= 2 * LAYOUT_TOL * theirs
 
 
+def _close_row(psd: PSDImage, slots: list, holders: list, height: float, others: list) -> tuple:
+    """
+    The kept icons' moves once the row closes (owner 10-26): holders[i] (None: a new icon's) takes slots[i]'s spot,
+    centred on it as before (pulled back onto the card at the row's inset), else after the icon before it in its row
+    at the card's gap there, else just clear of it: the first clear of the text, the stars and the icons placed. An
+    icon in its own spot stays when nothing moved before it in its row or no icon placed touches it there.
+
+    Returns:
+        (moves, the layers pulled back onto the card)
+    """
+    row_of = {id(unit): r for r, row in enumerate(_rows(slots, height, False)) for unit in row}
+    inset = max(0, min(unit.core[0] for unit in slots))
+    moves, pulled, placed, inks = [], [], [], []
+    for j, unit in enumerate(holders):
+        slot = slots[j]
+        same = j > 0 and row_of[id(slot)] == row_of[id(slots[j - 1])]
+        own = _moved_inks(unit, 0, 0) if unit is slot else []
+        if unit is None or (unit is slot and (not same or tuple(placed[j - 1][::2]) == tuple(slots[j - 1].core[::2])
+                                              or not any(_inks_touch(a, b) for a in own for b in inks))):
+            placed.append(tuple(slot.core))
+            inks += own
+            continue
+        w, h = unit.size
+        sx, sy = _centre(slot.core)
+        xs = [sx - w / 2]
+        if same:
+            right = placed[j - 1][2]
+            xs += [right + slot.core[0] - slots[j - 1].core[2], right]
+        pull = lambda x: inset if x < -_tol(max(w, h)) else x
+        for x in xs:
+            dx, dy = round(pull(x) - unit.core[0]), round(sy - h / 2 - unit.core[1])
+            mine = _moved_inks(unit, dx, dy)
+            if _blocked(psd, mine, _moved_box(unit.core, dx, dy), others) is None and \
+                    not any(_inks_touch(a, b) for a in mine for b in inks):
+                break
+        else:                                   # none clear: centred (refused later if it touches)
+            x = xs[0]
+            dx, dy = round(pull(x) - unit.core[0]), round(sy - h / 2 - unit.core[1])
+            mine = _moved_inks(unit, dx, dy)
+        placed.append(_moved_box(unit.core, dx, dy))
+        inks += mine
+        if dx or dy:
+            moves.append((unit.layers[0], dx, dy))
+            if pull(x) != x:
+                pulled.append(unit.layers[0])
+    return moves, pulled
+
+
+def _grid(slots: list, height: float, extra: int) -> Optional[tuple]:
+    """
+    A header of two rows as a grid (owner 10-26, Masher's mock-up): the short last row lines up under the top row's
+    columns, from the row's start and on the card, the new icons under the next columns at their icons' size.
+
+    Returns:
+        ([(unit, dx)], new spots), or None
+    """
+    rows = _rows(slots, height, False)
+    if len(rows) < 2 or len(rows[len(rows) - 1]) + extra > len(rows[0]):
+        return None
+    top, last = rows[0], rows[len(rows) - 1]
+    inset = max(0, min(unit.core[0] for unit in slots))
+    moves, right = [], inset
+    for k, unit in enumerate(last):
+        x0 = max(inset, right, round(top[k].centre[0] - unit.size[0] / 2))
+        if x0 != unit.core[0]:
+            moves.append((unit, x0 - unit.core[0]))
+        right = x0 + unit.size[0]
+    y = sum(unit.centre[1] for unit in last) / len(last)
+    spots = [(round(cx - w / 2), round(y - h / 2), round(cx + w / 2), round(y + h / 2))
+             for (w, h), cx in [(unit.size, unit.centre[0]) for unit in top[len(last):len(last) + extra]]]
+    return moves, spots
+
+
+def _grid_clear(psd: PSDImage, plan: IconPlan, kept: list, others: list, types_dir: Optional[str]) -> bool:
+    """Whether the grid's moved and new icons can move, sit on the card, and touch no text, star or other icon (a made
+    one's ink from its Types/ PNG: not without types_dir)."""
+    if any(_shiftable(layer) for layer, _, _ in plan.moves):
+        return False
+    shifts = {id(layer): (dx, dy) for layer, dx, dy in plan.moves}
+    units = kept + [_Unit([layer], _core(layer) or tuple(layer.bbox)) for layer in plan.show]
+    icons = [(id(unit.layers[0]) in shifts, _moved_inks(unit, *shifts.get(id(unit.layers[0]), (0, 0))),
+              _moved_box(unit.core, *shifts.get(id(unit.layers[0]), (0, 0)))) for unit in units]
+    for stem, box, _ in plan.icons:
+        if types_dir is None:
+            return False
+        try:
+            image, left, top = _icon_image(_icon_png(types_dir, stem), box)
+        except Refused:
+            return False
+        ink = ((left, top, left + image.width, top + image.height), np.asarray(image)[..., 3] / 255 > INK_ALPHA)
+        icons.append((True, [ink], ink[0]))
+    for k, (new, inks, core) in enumerate(icons):
+        if new and _blocked(psd, inks, core, others):
+            return False
+        if any((new or theirs_new) and _inks_touch(a, b) for theirs_new, theirs, _ in icons[k + 1:]
+               for a in inks for b in theirs):
+            return False
+    return True
+
+
 def _in_stars(layer) -> bool:
     return any("stars" in owner.name.lower() for owner in [layer, *layer_parents(layer)])
 
@@ -6472,17 +6573,18 @@ def layer_parents(layer) -> list:
 
 
 def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDParser],
-               template: Optional[tuple] = None) -> IconPlan:
+               template: Optional[tuple] = None, types_dir: Optional[str] = None) -> IconPlan:
     """
     How to show the type icons `value` in the card's header row (Types/ icons as image layers, the parser's rule):
     the icons the edit keeps stay where they are, a removed one hides, and the row closes up: a kept icon past the new
-    end moves into the first free spot, centre on centre; a new icon takes the next free spot, from the card's own
-    hidden layer of that type (the templates keep one per type) or made from its Types/ PNG, fitted to the spot and
-    styled like the icon it replaces (else the row's last). Spots past the last icon carry the row on at its spacing,
-    or go under a lone icon (Item_Template's column), or wrap clear of the title (_icon_spots). Refused per field: a
-    token row ([fire] in header text), a removed type drawn as a frame or group, no icon to line a new one up with, a
-    type with no Types/ icon, a layer that cannot move, or an icon that would run off the canvas or onto the text or
-    stars.
+    end moves into the first free spot, centre on centre, and the icons after it slide just clear of it (_close_row);
+    a new icon takes the next free spot, from the card's own hidden layer of that type (the templates keep one per
+    type) or made from its Types/ PNG, fitted to the spot and styled like the icon it replaces (else the row's last).
+    Spots past the last icon carry the row on at its spacing, or go under a lone icon (Item_Template's column), or wrap
+    clear of the title (_icon_spots); a header of two rows takes them as a grid when nothing touches (_grid). Refused per
+    field: a token row ([fire] in header text), a removed type drawn as a frame or group, no icon to line a new one up
+    with, a type with no Types/ icon, a layer that cannot move, or an icon that would run off the canvas, onto the text
+    or stars, or over another icon.
 
     Args:
         psd: The open card (not changed)
@@ -6491,6 +6593,7 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
         parser: offline_parser() (its Types/ names and vocabulary)
         template: template_icon(): a card with no type icon takes its first at the template's spot, styled as the
             template's icon (owner 10-25; flagged), the rest carried on from it
+        types_dir: The Types/ PNGs, for _grid's check of a made icon's ink (none: no grid with a made icon)
 
     Returns:
         IconPlan (icons: Types/ stems to make at a box, styled after a reference layer)
@@ -6551,28 +6654,43 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
         plan.moves.append((unit.layers[0], round(sx - cx), round(sy - cy)))
         holder[i] = unit
     plan.hide = [layer for unit in removed for layer in unit.layers]
-    stars = badge_layers(psd, parser.all_types)[0]
+    row_ids = {id(layer) for _, layer in images}       # the row's own icons are no stars (Pike Beam)
+    stars = [layer for layer in badge_layers(psd, parser.all_types)[0] if id(layer) not in row_ids]
     texts = _texts(psd)
+    if plan.moves:                              # the icons after a moved one make room (owner 10-26)
+        plan.moves, plan.pulled = _close_row(psd, slots, [holder.get(i) for i in range(count)], size[1], texts + stars)
     library = [layer for layer in psd.descendants() if not layer.is_group() and not layer.visible
                and layer.kind in ("pixel", "smartobject") and layer.name.lower() in parser.all_types and layer.has_pixels()
                and all(parent.visible for parent in layer_parents(layer)) and not _in_stars(layer)]
-    for name, i in zip(added, free):
-        spot = spots[i]
-        replaced = slots[i] if i < len(slots) and slots[i] in removed else None
-        reference = (replaced or (kept[len(kept) - 1] if kept else slots[len(slots) - 1])).layers[0]
-        own = next((layer for layer in library if canonical_type(parser, layer.name) == name and not _shiftable(layer)
-                    and _fits(_core(layer) or tuple(layer.bbox), spot)), None)
-        if own is not None:
-            library.remove(own)
-            core = _core(own) or tuple(own.bbox)
-            (cx, cy), (sx, sy) = _centre(core), _centre(spot)
-            plan.show.append(own)
-            plan.moves.append((own, round(sx - cx), round(sy - cy)))
-            continue
-        stem = next((t for t in parser.all_types if canonical_type(parser, t) == name), None)
-        if stem is None:
-            refuse(f"no Types/ icon for {name!r}")
-        plan.icons.append((stem, spot, reference))
+
+    def add(spots: list) -> None:               # the new icons into the free spots
+        shelf = list(library)
+        for name, i in zip(added, free):
+            spot = spots[i]
+            replaced = slots[i] if i < len(slots) and slots[i] in removed else None
+            reference = (replaced or (kept[len(kept) - 1] if kept else slots[len(slots) - 1])).layers[0]
+            own = next((layer for layer in shelf if canonical_type(parser, layer.name) == name and not _shiftable(layer)
+                        and _fits(_core(layer) or tuple(layer.bbox), spot)), None)
+            if own is not None:
+                shelf.remove(own)
+                core = _core(own) or tuple(own.bbox)
+                (cx, cy), (sx, sy) = _centre(core), _centre(spot)
+                plan.show.append(own)
+                plan.moves.append((own, round(sx - cx), round(sy - cy)))
+                continue
+            stem = next((t for t in parser.all_types if canonical_type(parser, t) == name), None)
+            if stem is None:
+                refuse(f"no Types/ icon for {name!r}")
+            plan.icons.append((stem, spot, reference))
+    grid = _grid(slots, size[1], len(added)) if added and not removed and not first else None
+    if grid:                                    # else (or touching) today's spots
+        plan.moves = [(unit.layers[0], dx, 0) for unit, dx in grid[0]]
+        add(spots[:len(slots)] + grid[1])
+        if not _grid_clear(psd, plan, kept, texts + stars, types_dir):
+            plan.moves, plan.show, plan.icons = [], [], []
+            grid = None
+    if not grid:
+        add(spots)
     inset = (max(0, min(u.core[0] for u in slots)), max(0, min(u.core[1] for u in slots)),
              max(0, min(psd.width - u.core[2] for u in slots))) if slots else (0, 0, 0)
     for k, (layer, dx, dy) in enumerate(list(plan.moves)):
@@ -6588,20 +6706,24 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
             dy += max(0, inset[1] - box[1])
             plan.moves[k] = (layer, dx, dy)
             blocked = _blocked(psd, _moved_inks(unit, dx, dy), _moved_box(unit.core, dx, dy), others)
-            shifts = {id(one): (mx, my) for one, mx, my in plan.moves}
-            for icon in [u.layers[0] for u in slots if u.layers[0] is not layer and not any(u is r for r in removed)] + \
-                    [one for one in plan.show if one is not layer]:     # and the library icons shown and moved
-                ink = _ink(icon)
-                if blocked is None and ink is not None and ink[1].any():
-                    ink = (_moved_box(ink[0], *shifts.get(id(icon), (0, 0))), ink[1])
-                    over = sum(_ink_overlap(mine, ink) for mine in _moved_inks(unit, dx, dy))
-                    if over > ICON_TOUCH * min(ink[1].sum(), sum(m[1].sum() for m in _moved_inks(unit, dx, dy))):
-                        blocked = f"runs off the canvas; pulled back onto it, would cover {icon.name!r}"
-            plan.pulled.append(layer)           # set_icons: clear of the icons made from Types/ too
+            plan.pulled.append(layer)
         if blocked and first and blocked.startswith("would touch"):     # the template's spot: baked, told (rulings)
             plan.notes.append(f"types: {layer.name!r} at {first}'s spot {blocked.replace('would touch', 'touches')}: check it")
         elif blocked:
             refuse(f"{layer.name!r} at {tuple(int(v) for v in _moved_box(unit.core, dx, dy))} {blocked}")
+    plan.row = [unit.layers[0] for unit in kept] + list(plan.show)
+    shifts = {id(layer): (dx, dy) for layer, dx, dy in plan.moves}
+    finals = [(layer, _ink(layer)) for layer in plan.row] if shifts else []
+    finals = [(layer, (_moved_box(ink[0], *shifts.get(id(layer), (0, 0))), ink[1])) for layer, ink in finals
+              if ink is not None and ink[1].any()]
+    for k, (layer, mine) in enumerate(finals):  # every moved or shown icon clear of the others
+        for other, theirs in finals[k + 1:]:
+            if (id(layer) in shifts or id(other) in shifts) and \
+                    _ink_overlap(mine, theirs) > ICON_TOUCH * min(mine[1].sum(), theirs[1].sum()):
+                one, two = (layer, other) if id(layer) in shifts else (other, layer)
+                box = tuple(int(v) for v in _moved_box(_core(one) or tuple(one.bbox), *shifts[id(one)]))
+                pulled = "runs off the canvas; pulled back onto it, " if any(one is x for x in plan.pulled) else ""
+                refuse(f"{one.name!r} at {box} {pulled}would cover {two.name!r}")
     for _, spot, _ in plan.icons:
         slack = _tol(max(spot[2] - spot[0], spot[3] - spot[1]))
         if spot[0] < -slack or spot[1] < -slack or spot[2] > psd.width + slack or spot[3] > psd.height + slack:
@@ -6631,13 +6753,8 @@ def _icon_png(types_dir: str, stem: str) -> str:
     raise Refused("unsupported-card", f"types: no {stem}.png in Types/", "types")
 
 
-def _make_icon(psd: PSDImage, types_dir: str, stem: str, box: tuple, reference):
-    """
-    A pixel layer of the Types/ icon fitted into the box (its opaque part, aspect kept, centred), the reference's
-    effects, blending and opacity copied, directly above the reference.
-    """
-    from psd_tools.api.layers import PixelLayer
-    path = _icon_png(types_dir, stem)
+def _icon_image(path: str, box: tuple) -> tuple:
+    """A Types/ PNG fitted into the box (its opaque part, aspect kept, centred): (RGBA image, left, top)."""
     image = Image.open(path).convert("RGBA")
     solid = image.getchannel("A").point(lambda a: 255 if a >= 128 else 0).getbbox()
     if solid is None:
@@ -6647,8 +6764,19 @@ def _make_icon(psd: PSDImage, types_dir: str, stem: str, box: tuple, reference):
     width, height = max(1, round(image.width * scale)), max(1, round(image.height * scale))
     image = image.convert("RGBa").resize((width, height), Image.LANCZOS).convert("RGBA")
     cx, cy = _centre(box)
+    return image, round(cx - width / 2), round(cy - height / 2)
+
+
+def _make_icon(psd: PSDImage, types_dir: str, stem: str, box: tuple, reference):
+    """
+    A pixel layer of the Types/ icon fitted into the box (_icon_image), the reference's effects, blending and opacity
+    copied, directly above the reference.
+    """
+    from psd_tools.api.layers import PixelLayer
+    path = _icon_png(types_dir, stem)
+    image, left, top = _icon_image(path, box)
     name = basename(path)[:len(basename(path)) - 4]
-    layer = PixelLayer.fromarray(np.asarray(image), psd, name=name, top=round(cy - height / 2), left=round(cx - width / 2))
+    layer = PixelLayer.fromarray(np.asarray(image), psd, name=name, top=top, left=left)
     layer.name = name
     layer.copy_effects_from(reference)
     layer.blend_mode, layer.opacity = reference.blend_mode, reference.opacity
@@ -6774,7 +6902,7 @@ def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None) ->
         _shift(layer, dx, dy, True)
         boxes.append((_extent(layer), layer))
     stars, texts = badge_layers(psd)[0], _texts(psd)
-    touching = []
+    touching, made = [], []
     for stem, box, reference in plan.icons:
         if types_dir is None:
             raise Refused("unsupported-card", "types: no Types/ icons to make one from", "types")
@@ -6787,12 +6915,15 @@ def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None) ->
         elif blocked:
             raise Refused("unsupported-card", f"types: the {layer.name!r} icon {blocked}", "types")
         mine = _ink(layer)
-        for pulled in plan.pulled:              # S3: a pulled-back icon over a made one
-            theirs = _ink(pulled)
+        for other in plan.row + made:           # clear of the row's other icons
+            theirs = _ink(other)
             if mine is not None and theirs is not None and \
                     _ink_overlap(mine, theirs) > ICON_TOUCH * min(mine[1].sum(), theirs[1].sum()):
-                raise Refused("unsupported-card", f"types: {pulled.name!r} runs off the canvas; pulled back onto it, "
-                              f"would cover the {layer.name!r} icon", "types")
+                if any(other is one for one in plan.pulled):
+                    raise Refused("unsupported-card", f"types: {other.name!r} runs off the canvas; pulled back onto it, "
+                                  f"would cover the {layer.name!r} icon", "types")
+                raise Refused("unsupported-card", f"types: the {layer.name!r} icon would cover {other.name!r}", "types")
+        made.append(layer)
         blocks = {bytes(key): layer.tagged_blocks[key].tobytes() for key in EFFECT_BLOCKS if key in layer.tagged_blocks}
         plan.done.append(("made", layer, blocks))
         boxes.append((tuple(layer.bbox), layer))
@@ -8663,7 +8794,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
         if name in ICON_FIELDS:
             try:
                 plan = plan_stars(new, parsed, value, parser, moving=True, split=True) if name == "stars" \
-                    else plan_types(new, parsed, value, parser, template)
+                    else plan_types(new, parsed, value, parser, template, types_dir)
                 start = perf_counter()
                 if first is None:
                     with cache:

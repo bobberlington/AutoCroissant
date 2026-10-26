@@ -142,13 +142,17 @@ star is a pair's right one), a row or column carried on, a zigzag carried on (th
 star's column. Fewer hide the first in reading order instead when only that leaves a layout (The Claw's top one). A
 layer in the Stars group named after a type icon (Pike Beam's) is no star to hide or copy. Types, in the header row
 the parser reads (image layers named after a `Types/` icon, above the midline): kept icons stay, a removed one hides and
-the row closes up (a kept icon past the new end moves to the first free spot, centre on centre), a new one takes the
+the row closes up (a kept icon past the new end moves to the first free spot, centre on centre, and the icons after it
+slide just clear of it: Nasus, Masher; owner 10-26), a new one takes the
 next spot: the card's own hidden layer of that type when it is the spot's size (the templates keep one per type), else
 a pixel layer made from `Types/<name>.png` fitted into the spot and styled like the icon it replaces (its effects,
 blending and the layers clipped to it, a Curves say). Spots past the last icon carry the row on at its spacing, or go
 under a lone icon (Item_Template's column); when those would touch the text or stars, a row starts a second row under
-its first icon (Abigail) and a lone icon takes its right. A star or icon must stay on the card, off the text and type icons (stars) or the text and
-stars (icons), and the parser must count exactly the edit. Gates on top of the usual ones: `gate_outside` renders the
+its first icon (Abigail) and a lone icon takes its right. A header of two rows takes new icons as a grid (its short
+last row under the top row's columns, the new ones under the next: Masher's mock-up, owner 10-26), else as above when
+that would touch anything. A star or icon must stay on the card, off the text and type icons (stars) or the text and
+stars (icons; the row's own icons in a Stars group are no stars), no moved, shown or made icon may ink over 5% of
+another's (`ICON_TOUCH`), and the parser must count exactly the edit. Gates on top of the usual ones: `gate_outside` renders the
 whole card before and after each stars or types edit (no ICC, no preview) and refuses a pixel changed outside the
 edit's region (a star's clipped Curves left on another layer is how it showed up on Mini Doomer); `gate_bytes` takes a
 copy only as its source's record moved (new id and name), a moved layer only with its rect and mask moved and its
