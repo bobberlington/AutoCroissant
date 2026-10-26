@@ -83,12 +83,18 @@ see `autocroissant-build-and-env`; do not "clean it up".)
 these three, matched as substrings of the relative path), stars are COUNTED from the PSD: `PSDParser._count_stars`,
 since 2026-10-20.
 - **Search area:** every outermost visible group with "stars" in its name (`_star_groups`).
-- **Counting** (`_stars_in`): child groups count recursively. Visible pixel layers that overlap count as one star
-  (`_count_clusters`). Overlap means one layer's *core* center lies inside the other's core, where the core is the
-  box of pixels at least 50% opaque (`STAR_CORE_ALPHA`, `_core_box`). Glows, frames and the pieces of one star
-  merge; separate stars don't, even when, like Termination Shock's lens flares, their full boxes overlap. A layer
-  named after a type icon (a `Types/` name) is a type, never a star (`PSDParser.type_icon`; Toy Freddy's Machine in its
-  Stars group: 3; since 2026-10-25, PARSER_VERSION 4).
+- **Counting** (`PSDParser.stars_drawn`, since 2026-10-26, PARSER_VERSION 5; the bake's plans call the same code):
+  the visible layers that can draw (`star_leaf`: pixel, smart object, shape or text; not clipped, so Kyle's Color Fills
+  are not stars; no fill or adjustment layer; no type icon, Toy Freddy's Machine) give pieces: each layer's *core*, the
+  box of pixels at least 50% opaque times its pixel mask (`STAR_CORE_ALPHA`, `_core_box`), or one box per separate
+  shape when one layer draws several alike (`star_pieces`: Grimora's row). Pieces whose centre is above the midline
+  are judged together (`star_sets`): the commonest size is the stars'; a piece on a star's spot is that star drawn
+  twice (Living Bread's copies: 2, not 4); one overlapping a star by 20% of the smaller box is part of it (glows, moss);
+  a lone one 0.5-2 times a star's size is a star; the rest is art (Toy Chica's LINE, Auto Croissant's cat).
+  Overlapping stars stay apart (Zoltan, the dice faces of Nightmare and The Lich King). Layers named after a
+  `Types/Stars` icon outside the groups count too, when star-sized and above the midline (Massive Moss Charger's two
+  'Hk star': 4, not 2). Stars below the midline (Tainted Lazarus's dead form) are not counted; the bake refuses a
+  stars edit on such a card, and one with stars outside the group, for now.
 - **Fallback:** with no such group, visible layers whose name has the word "star" ("Patrick Star", "Emerald_Star",
   not "starfish") are counted the same way.
 - **Zero stars** gives the persisted problem `NO STARS FOUND (put the star layers in a group named "Stars")`. On

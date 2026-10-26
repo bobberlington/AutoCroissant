@@ -299,7 +299,7 @@ def _star_container(group, types):
             group = shown[0]
             continue
         shown, hidden = _star_units(group, types)
-        if len(shown) == 1 and shown[0].count > 1 and not hidden:
+        if len(shown) == 1 and shown[0].count > 1 and not hidden and shown[0].layers[0].is_group():
             group = shown[0].layers[0]
             continue
         return group
