@@ -20,8 +20,7 @@ SITE = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site"
 ASSETS = SITE / "assets"
 EDIT_JS = ASSETS / "edit.js"
 INLINE_JS = ASSETS / "inline.js"
-pytestmark = pytest.mark.skipif(not EDIT_JS.is_file() or "ITEM_TYPES" not in EDIT_JS.read_text(encoding="utf-8"),
-                                reason=f"no ITEM_TYPES in {EDIT_JS} (land TTSCardMaker work/r3-editing)")
+pytestmark = pytest.mark.skipif(not EDIT_JS.is_file(), reason=f"no {EDIT_JS}")
 needs_node = pytest.mark.skipif(not shutil.which("node"), reason="needs node")
 
 

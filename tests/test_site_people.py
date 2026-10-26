@@ -30,15 +30,13 @@ def bs():
     spec = importlib.util.spec_from_file_location("site_build_site_people", BUILD_SITE)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    if not hasattr(module, "person_extras"):
-        pytest.skip(f"{BUILD_SITE} has no person stats")
     return module
 
 
 def node(tmp_path, body: str):
     """Run body after importing profile.js as pf; its stdout as JSON."""
-    if not (PROFILE_JS.is_file() and shutil.which("node") and "styleOf" in PROFILE_JS.read_text(encoding="utf-8")):
-        pytest.skip(f"no profile.js with styleOf at {PROFILE_JS}, or no node")
+    if not (PROFILE_JS.is_file() and shutil.which("node")):
+        pytest.skip(f"no profile.js at {PROFILE_JS}, or no node")
     script = tmp_path / "probe.mjs"
     script.write_text(f"const pf = await import({json.dumps(PROFILE_JS.as_uri())});\n"
                       "const out = x => process.stdout.write(JSON.stringify(x));\n"

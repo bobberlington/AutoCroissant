@@ -32,8 +32,6 @@ def bs():
     spec = importlib.util.spec_from_file_location("site_build_logins", BUILD)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    if not hasattr(module, "read_logins"):
-        pytest.skip(f"{BUILD} has no password files: land TTSCardMaker work/site-password")
     return module
 
 

@@ -44,8 +44,6 @@ def bs():
     spec = importlib.util.spec_from_file_location("site_build_site", BUILD_SITE)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    if not hasattr(module, "load_card_data"):
-        pytest.skip(f"{BUILD_SITE} reads only the pickles: land TTSCardMaker work/site-history")
     return module
 
 
@@ -190,8 +188,6 @@ def test_each_version_links_the_commit_that_made_its_psd(bs, repo, tmp_path, mon
     """A text's or change's commit is the one that gave its PSD the bytes it was read from (blob_sha): history.json
     texts carry c (an index into _shas), the newest older one n (the current text's), analytics.json change rows c (into
     commits). An edit version gets none (no card commit made it)."""
-    if not hasattr(bs, "text_commits"):
-        pytest.skip(f"{BUILD_SITE} has no version commits")
     (c1, c2, c3), (t1, t2, t3) = repo["commits"], repo["t"]
     blob = lambda c, p: subprocess.run(["git", "-C", str(repo["root"]), "rev-parse", f"{c}:{p}"], capture_output=True, text=True, check=True).stdout.strip()
     stats, old, details, _ = cdb.read_db(str(repo["db"]))
@@ -213,8 +209,6 @@ def test_a_version_commit_follows_renames_and_refuses_doubt(bs):
     """version_commit on parse_history rows: the commit that made the bytes the PSD held at the version's start, pure
     renames followed back (also a later one: a record's path is its newest); none for an edit, the previous version's
     bytes (a move only for a folder change), bytes from after a blobless previous version's start, or another path's."""
-    if not hasattr(bs, "text_commits"):
-        pytest.skip(f"{BUILD_SITE} has no version commits")
     a = bs.analytics
     c = lambda n: n * 40
     commits = [(c("6"), 60, "", "", "", [("M", "y", "z", "New/C.psd")], []),            # newer bytes: a later reading
@@ -240,8 +234,6 @@ def test_a_renamed_card_goes_on_and_its_old_page_redirects(bs, repo, tmp_path, m
     """The bake renames and redraws Alpha as New Alpha in one commit (its Renamed trailers): the card's image versions
     and text history go on as one card, and c/alpha/ sends its links on to c/new-alpha/; a profile's pick, a published
     hand and the app's old id (cards.json "moved") follow it."""
-    if not hasattr(bs, "redirects"):
-        pytest.skip(f"{BUILD_SITE} has no renames")
     root, t3 = repo["root"], repo["t"][2]
     new = "Creatures/Other/2 Stars/New_Alpha"
     (root / f"{ALPHA}.psd").rename(root / f"{new}.psd")
@@ -280,8 +272,6 @@ def test_a_renamed_card_goes_on_and_its_old_page_redirects(bs, repo, tmp_path, m
 def test_archived_author_and_created_precedence(bs):
     """author: Card Authors.txt's credit > the tag's (backfill) > the last version's, shown through [people]; created:
     the last version's created date, else the Pacific day of its oldest version (its version record's start)."""
-    if not hasattr(bs, "archive_tag"):
-        pytest.skip(f"{BUILD_SITE} has no archive tags")
 
     def v(ts, **kw):
         card = bs.CardInfo()
@@ -319,8 +309,6 @@ def test_a_profile_subseries_is_checked_like_its_series(bs):
 def test_contributions_json_has_person_stats(bs, repo, tmp_path, monkeypatch):
     """Maker's row: Alpha's PNG changed in c2 and c3 (self 2), White Palace archived (Retired, without path or commit),
     Alpha's strength."""
-    if not hasattr(bs, "person_extras"):
-        pytest.skip(f"{BUILD_SITE} has no person stats")
     out = _build(bs, monkeypatch, repo, tmp_path / "a")
     maker = {r["key"]: r for r in out["contributions.json"]["people"]}["Maker"]
     assert (maker["revisions"]["self"], maker["revisions"]["others"]) == (2, 0)
@@ -332,8 +320,8 @@ def test_contributions_json_has_person_stats(bs, repo, tmp_path, monkeypatch):
 def test_index_carries_the_first_screen(bs, repo, tmp_path, monkeypatch):
     """index.html's pre-written grid: the cards in Name order as links to their pages, checked against grid.js in node;
     a difference fails the build."""
-    if not hasattr(bs, "first_screen") or not shutil.which("node"):
-        pytest.skip(f"no node, or {BUILD_SITE} writes no first screen")
+    if not shutil.which("node"):
+        pytest.skip("no node")
     out = _build(bs, monkeypatch, repo, tmp_path / "a")
     page = (tmp_path / "a" / "dist" / "index.html").read_text(encoding="utf-8")
     ids = [c["id"] for c in sorted(out["cards.json"]["cards"], key=lambda c: c["name"].lower())]
@@ -349,8 +337,6 @@ def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypat
     esbuild as stamped modules no page preloads; with it as chunks of their own, each with its stamped source map, none of
     their code in what a first visit loads (app.js and the chunks it imports), and the meta chunks list naming
     each one's files (app.js early())."""
-    if not hasattr(bs, "chunk_tags"):
-        pytest.skip(f"{BUILD_SITE} bundles into one script")
     exe = bs.esbuild()
     monkeypatch.setattr(bs, "esbuild", lambda: None)
     _build(bs, monkeypatch, repo, tmp_path / "a")
@@ -420,8 +406,6 @@ def test_website_only_fields(bs, tmp_path, monkeypatch):
 def test_font_filter_data_is_the_details_fonts(bs):
     """data/cardfonts.json (owner 10-25, the grid's Font filter): a card's fonts are its Details record's, a variant picture
     its PSD's, a PNG-only duplicate (no record) and an unreadable fonts section none; names by use, then name."""
-    if not hasattr(bs, "card_fonts"):
-        pytest.skip("build_site has no Font filter yet")
     rec = lambda path, fonts: {"path": path, "at": "2026-10-25", "fonts": fonts}
     records = {"b1": rec("A.psd", {"Perpetua": {"layers": ["Text/Name"], "supplied": True}, "stoogedings-Regular": {"layers": ["Text/Ability"], "supplied": True}}),
                "b2": rec("B.psd", {"stoogedings-Regular": {"layers": ["Text/Ability"], "supplied": True}}),

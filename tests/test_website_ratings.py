@@ -46,16 +46,12 @@ def bs():
     spec = importlib.util.spec_from_file_location("site_build_site_ratings", BUILD_SITE)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    if not hasattr(module, "parse_ratings"):
-        pytest.skip(f"{BUILD_SITE} has no ratings: land TTSCardMaker work/r3-ratings")
     return module
 
 
 def _node(tmp_path, body: str, src: Path = EDIT_JS):
     if not src.is_file() or shutil.which("node") is None:
         pytest.skip(f"{src.name} or node missing")
-    if "ratings" not in src.read_text(encoding="utf-8"):
-        pytest.skip(f"{src} has no ratings")
     script = tmp_path / "run.mjs"
     script.write_text(f"const m = await import({json.dumps(src.as_uri())});\n{body}\n", encoding="utf-8")
     done = subprocess.run(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60)

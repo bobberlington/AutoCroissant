@@ -2,8 +2,8 @@
 The website's token picker and token variants (TTSCardMaker site/, in node and Python): typing "[" in card text
 suggests the icons, "name:" an icon's variants, "(" and a tag's start the timing tags (assets/tokens.js); text.js draws
 [x:tint], [x:sticker], [x:glow] and [x:darkglow] with build_site's variant images, which build_icons makes with the
-font build's own icon_art. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without it,
-without node, or when the clone is behind (no tokens.js: land TTSCardMaker work/token-picker).
+font build's own icon_art. Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without it
+or without node.
 """
 import importlib.util
 import json
@@ -25,11 +25,8 @@ INLINE_JS = SITE / "assets" / "inline.js"
 EDIT_JS = SITE / "assets" / "edit.js"
 BUILD_SITE = SITE / "build" / "build_site.py"
 pytestmark = pytest.mark.skipif(not TOKENS_JS.is_file(),
-                                reason=f"clone behind: no {TOKENS_JS} (land TTSCardMaker work/token-picker)")
+                                reason=f"no {TOKENS_JS}")
 needs_node = pytest.mark.skipif(not shutil.which("node"), reason="needs node")
-LETTERS = TEXT_JS.is_file() and "splitToken" in TEXT_JS.read_text(encoding="utf-8")   # variants the font lacks are letters
-names = pytest.mark.skipif(not (TOKENS_JS.is_file() and "suggestNames" in TOKENS_JS.read_text(encoding="utf-8")),
-                           reason="clone behind: no name lists in tokens.js")
 
 ALL = ["tint", "sticker", "glow", "darkglow"]
 
@@ -81,8 +78,7 @@ process.stdout.write(JSON.stringify([choose("Heal [fi now", 8, "[fire]"), choose
                         ["Immune to [fire]and ice", 16], ["Heal 2 (1CD)HP", 12], ["Deal 3 [field]fire damage", 14],
                         ["[fragile equip] x", 15], ["[fire:glow]", 11], ["[field:glow]", 12], ["[fire:darkglow] x", 15],
                         ["[fire:tint]", 11], ["x (-1/2GCD) y", 11], ["[darkmatter:Glow] x", 17]]
-    if LETTERS:
-        assert out[19:] == [["[fire] x", 6], ["[fire]", 6]]                # never "[fire:]": letters in the font
+    assert out[19:] == [["[fire] x", 6], ["[fire]", 6]]                    # never "[fire:]": letters in the font
 
 
 @pytest.fixture(scope="module")

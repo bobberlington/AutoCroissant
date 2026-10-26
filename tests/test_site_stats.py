@@ -20,9 +20,7 @@ from conftest import CLONE
 SITE = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site"
 ASSETS = SITE / "assets"
 STATS_JS = ASSETS / "stats.js"
-pytestmark = pytest.mark.skipif(not (STATS_JS.is_file() and shutil.which("node") and (ASSETS / "insights.js").is_file()
-                                     and "cardsHref" in STATS_JS.read_text(encoding="utf-8")),
-                                reason=f"no stats.js with cardsHref at {STATS_JS}, or no node")
+pytestmark = pytest.mark.skipif(not (STATS_JS.is_file() and shutil.which("node")), reason=f"no {STATS_JS}, or no node")
 
 # twelve creatures in two series and two years; 2★ median 10, 3★ median 14 (strength = total - median):
 # Mario +2 -1 +2 -1 0 +1 (mean 0.5), Kirby -2 -2 +1 +3 -4 0 (mean -0.7); 2020: 0.0, 2021: -0.2

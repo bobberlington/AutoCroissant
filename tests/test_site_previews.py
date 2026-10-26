@@ -92,8 +92,6 @@ def bs():
     spec = importlib.util.spec_from_file_location("site_build_site_previews", BUILD_SITE)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    if not hasattr(module, "web_fonts"):
-        pytest.skip(f"{BUILD_SITE} makes no data/fonts.json: land TTSCardMaker work/site2-previews")
     return module
 
 
@@ -101,8 +99,6 @@ def bs():
 def test_woff2_copies(bs, tmp_path, monkeypatch):
     """web_woff2: one copy per used font, named by blob and encoder, cached across builds (unused ones pruned), none for the
     icon font or a font that fails; a real encode keeps every glyph (with brotli); mockup.js loads it, raw as the fallback."""
-    if not hasattr(bs, "web_woff2"):
-        pytest.skip(f"{BUILD_SITE} makes no WOFF2 fonts: land TTSCardMaker work/woff2")
     from fontTools.fontBuilder import FontBuilder
     from fontTools.pens.ttGlyphPen import TTGlyphPen
     from fontTools.ttLib import TTFont

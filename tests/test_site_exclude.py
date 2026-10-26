@@ -16,8 +16,7 @@ import pytest
 from conftest import CLONE
 
 GRID_JS = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site" / "assets" / "grid.js"
-pytestmark = pytest.mark.skipif(not (GRID_JS.is_file() and shutil.which("node") and "dropExcluded" in GRID_JS.read_text(encoding="utf-8")),
-                                reason=f"no grid.js with dropExcluded at {GRID_JS}, or no node")
+pytestmark = pytest.mark.skipif(not (GRID_JS.is_file() and shutil.which("node")), reason=f"no {GRID_JS}, or no node")
 
 
 def test_exclusions_and_clicks(tmp_path):
