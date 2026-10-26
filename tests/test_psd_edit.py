@@ -577,8 +577,8 @@ def test_layout_bar_bakes_and_the_guards_export_it(clone, parser, chart, tmp_pat
 def test_title_layer_is_the_one_the_parser_reads(clone, parser):
     """name_layer takes the one layer PSDParser.title_layers reads, wherever the card keeps it (NEXT_IDEAS 5b A): a title
     named after the card under Text, a Name layer at the root. Two Name layers (an epithet) or a Name beside layers
-    printing the rest of the title refuse: a bake would write the whole title into one piece (a plain name edit there is
-    impossible: the website edits each box)."""
+    printing the rest of the title refuse: a bake would write the whole title into one piece (the website edits each
+    box)."""
     bone = PSDImage.open(_card(clone, BONE)[0])
     with pytest.raises(pe.Refused, match="title layer named 'Wham Bam Bone', not Name or the card's name"):
         pe.name_layer(bone, own_text=False)                                     # without the card's name or its text
@@ -594,8 +594,7 @@ def test_title_layer_is_the_one_the_parser_reads(clone, parser):
             pe.name_layer(psd, card_name(rel))
         assert refused.value.code == "unsupported-card" and pe.read_name(psd, card_name(rel)) is None
         parsed = pe.parse_card(parser, _card(clone, rel)[0], rel)
-        why, = [r.why for r in pe.classify(parsed, {"name": "Azamoth"}, psd).refusals]   # a box per layer now (parts)
-        assert why.startswith("name: a joined edit on a card printed over ")
+        assert [r.why for r in pe.classify(parsed, {"name": "Azamoth"}, psd).refusals] == [why]
 
 
 def test_a_title_named_after_the_card_outside_text(clone, parser):
@@ -700,8 +699,7 @@ def test_a_title_named_after_its_own_text(clone, parser):
     parsed = pe.parse_card(parser, psd_path, KNIGHT)
     assert parsed["card"].get("display_name") is None and pe.shown_name(parsed) == "Knight Lost A Lot"
     assert [r.why for r in pe.classify(parsed, {"name": "Knight Lost A Lot"}, PSDImage.open(psd_path)).refusals] == []
-    assert [r.why for r in pe.classify(parsed, {"name": "Knight Lost"}, PSDImage.open(psd_path)).refusals] == [
-        "name: a joined edit on a card printed over 4 layers: edit each box on the website"]
+    assert [r.why for r in pe.classify(parsed, {"name": "Knight Lost"}, PSDImage.open(psd_path)).refusals] == ["4 title layers"]
     psd_path = str(clone / GLOBAL_TURN)
     if not Path(psd_path).exists():
         pytest.skip(f"{GLOBAL_TURN} not in the clone")
@@ -2259,11 +2257,13 @@ def test_parts_title_enter_and_legacy_edits(clone, parser, chart, tmp_path):
     assert " ".join(pe.title_text(saved[k].text) for k in (422, 1034)) == fixture["name"]
     assert not [note for note in baked.fx_notes if "runs onto" in note]     # the typed break is no overflow
     assert baked.reparse["card"]["display_name"] == fixture["name"]       # the longer piece stays in the title
-    mm = PSDImage.open(_card(clone, MIRACLE)[0])
-    mm_parsed = pe.parse_card(parser, _card(clone, MIRACLE)[0], MIRACLE, mm)
-    joined = pe.classify(mm_parsed, {"ability": mm_parsed["card"]["ability"].replace("heal 2", "heal 3")}, mm, parser)
-    assert not joined.jobs and joined.refusals == [pe.Refusal("unsupported-card", "ability: a joined edit on a card "
-                                                              "printed over 5 layers: edit each box on the website")]
+    mm_path, mm_png = _card(clone, MIRACLE)
+    mm = PSDImage.open(mm_path)
+    mm_parsed = pe.parse_card(parser, mm_path, MIRACLE, mm)
+    jobs = pe.classify(mm_parsed, {"ability": mm_parsed["card"]["ability"].replace("heal 2", "heal 3")}, mm, parser).jobs
+    with pytest.raises(pe.Refused, match="5 ability layers: edit each box on the website"):
+        pe.apply_jobs(mm_path, mm_png, MIRACLE, jobs, mm_parsed, parser, str(_dir(tmp_path, "mm")), str(clone / pe.FONTS_DIR),
+                      chart, psd=mm)
     doomer = PSDImage.open(_card(clone, MINI_DOOMER)[0])
     single = pe.classify(pe.parse_card(parser, _card(clone, MINI_DOOMER)[0], MINI_DOOMER, doomer), {"ability": "Die."},
                          doomer, parser)

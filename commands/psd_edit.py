@@ -2042,11 +2042,7 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
             if was == now:
                 out.redundant.append(name)
             else:
-                joined = _joined_edit(parsed, psd, parser, name)
-                if joined:
-                    out.refusals.append(joined)
-                else:
-                    out.jobs[name] = value
+                out.jobs[name] = value
         elif name == "name":                    # redundant when the bot already shows it (the parser reads the title)
             if straight(shown_name(parsed)) == straight(collapse(value)):
                 out.redundant.append(name)
@@ -2056,9 +2052,6 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
                 out.site[name] = PICTURE_TITLE
             else:
                 try:
-                    joined = _joined_edit(parsed, psd, parser, name)
-                    if joined:
-                        raise Refused(joined.code, joined.why)
                     name_layer(psd, _card_name(parsed), _own_text(parsed))
                     out.jobs[name] = value
                 except Refused as refused:
@@ -2090,21 +2083,6 @@ def _classify_parts(out: Classification, parsed: dict, edits: dict, psd: Optiona
     elif not plan.refusals and any(how == "redundant" for how in plan.outcome.values()):
         out.redundant.append("parts")
     return derived
-
-
-def _joined_edit(parsed: dict, psd: Optional[PSDImage], parser: Optional[PSDParser], which: str) -> Optional[Refusal]:
-    """A plain name or ability edit (no parts) on a card printing that field over several layers: impossible (§3's
-    backward compatibility); None when it prints it over one (baked as before) or the PSD isn't open."""
-    if psd is None:
-        return None
-    info = parsed.get("info")
-    record = card_parts(psd, (info.path if info is not None else parsed["card"].get("path")) or "", _card_name(parsed),
-                        parser)
-    count = len(record.get("title") or []) if which == "name" else len(record.get("ability") or []) + len(record.get("blocks") or [])
-    if count > 1:
-        return Refusal("unsupported-card", f"{which}: a joined edit on a card printed over {count} layers: edit each "
-                                           f"box on the website")
-    return None
 
 
 # ========================
