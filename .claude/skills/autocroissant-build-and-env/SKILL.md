@@ -104,7 +104,7 @@ synced by `/push` until 2026-10-25 — see **autocroissant-run-and-operate**). W
 |---|---|---|
 | Python / run | venv (section 1), plain `python3 main.py` | Python 3.14 venv `~/venvs/autocroissant`, systemd `autocroissant.service` (ExecStart = the venv's python), compiled `.so` (section 5) |
 | yt-dlp cookies | `browser_cookies = True` in config.py → `cookiesfrombrowser = ('safari', ...)` (`music_player.py:37`, used at :55). Old configs fall back to `vram_usage == "mps"`. | Unset → no browser cookies |
-| psd-tools | `~/.venvs/ac-py314-psd125`: stock 1.25.0 (older tests); `~/.venvs/ac-py314-fork`: the fork (`cards-20261025` = 9edbc1fa, tab stops; move it to the pin `cards-20261025b` with the command at the right; with pyoxipng, pytest-xdist and setuptools: the full suite, card_guards, bakes; the one fork venv since 2026-10-25) | The fork at the pin (`cards-20261025b` = c17e0734, 2026-10-25: Stylistic Alternates, the one-colour badges; `cards-20261025` = 9edbc1fa before it, tab stops; `cards-20261024b` = a651cd08 before it, glow halos; check `pip freeze`: `psd-tools @ git+...@c17e0734...`). Move it to the pin with `~/venvs/autocroissant/bin/pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"` (gcc compiles `_distance`; a plain `pip install -r` keeps the old commit), then `pip check`. The Actions (card-edits, card-guards, card-sync, card-preview) install the same file |
+| psd-tools | `~/.venvs/ac-py314-psd125`: stock 1.25.0 (older tests); `~/.venvs/ac-py314-fork`: the fork at the pin (`cards-20261025b` = c17e0734 since 2026-10-25, per `pip freeze`; with pyoxipng, pytest-xdist and setuptools: the full suite, card_guards, bakes; the one fork venv since 2026-10-25) | The fork at the pin (`cards-20261025b` = c17e0734, 2026-10-25: Stylistic Alternates, the one-colour badges; `cards-20261025` = 9edbc1fa before it, tab stops; `cards-20261024b` = a651cd08 before it, glow halos; check `pip freeze`: `psd-tools @ git+...@c17e0734...`). Move it to the pin with `~/venvs/autocroissant/bin/pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"` (gcc compiles `_distance`; a plain `pip install -r` keeps the old commit), then `pip check`. The Actions (card-edits, card-guards, card-sync, card-preview) install the same file |
 
 The torch/CUDA/MPS differences went with the AI to branch `archive/ai-generation`.
 Config field semantics: **autocroissant-config-and-flags**.
@@ -221,7 +221,7 @@ Then:
    `TOKEN` (the Discord bot token). Field names and what each does:
    **autocroissant-config-and-flags**. Never commit this file.
 2. Smoke test (section c). Music playback also needs ffmpeg (section 1).
-3. Offline suite: `~/.venvs/ac-py314-fork/bin/python -m pytest -q -n auto tests` (pytest-xdist from requirements-dev.txt; 553 tests on 2026-10-25, about a
+3. Offline suite: `~/.venvs/ac-py314-fork/bin/python -m pytest -q -n auto tests` (pytest-xdist from requirements-dev.txt; 618 tests on 2026-10-25, about a
    minute; needs no config.py, network or Discord; PSD tests skip without `~/Desktop/TTSCardMaker`; the bake tests
    need the fork venv).
    Owner: **autocroissant-validation-and-qa** §1 row 1c.

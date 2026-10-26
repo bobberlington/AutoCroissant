@@ -86,7 +86,9 @@ since 2026-10-20.
 - **Counting** (`_stars_in`): child groups count recursively. Visible pixel layers that overlap count as one star
   (`_count_clusters`). Overlap means one layer's *core* center lies inside the other's core, where the core is the
   box of pixels at least 50% opaque (`STAR_CORE_ALPHA`, `_core_box`). Glows, frames and the pieces of one star
-  merge; separate stars don't, even when, like Termination Shock's lens flares, their full boxes overlap.
+  merge; separate stars don't, even when, like Termination Shock's lens flares, their full boxes overlap. A layer
+  named after a type icon (a `Types/` name) is a type, never a star (`PSDParser.type_icon`; Toy Freddy's Machine in its
+  Stars group: 3; since 2026-10-25, PARSER_VERSION 4).
 - **Fallback:** with no such group, visible layers whose name has the word "star" ("Patrick Star", "Emerald_Star",
   not "starfish") are counted the same way.
 - **Zero stars** gives the persisted problem `NO STARS FOUND (put the star layers in a group named "Stars")`. On
@@ -491,11 +493,13 @@ CardInfo fields → pickle/dataframe keys (`to_dict`, commands/card_models.py; t
 | `author` | `author` | omitted when falsy |
 | `display_name` | same | the printed title when it differs from the file name (since 2026-10-21, PARSER_VERSION 2: the visible `Text/Name` text layer, several in the title region joined in reading order; else the visible `Name` text layers in the top `TITLE_REGION_RATIO` of the card; else a visible layer under `Text` named after the card, else one named after it elsewhere in the title region (2026-10-23: the status effects' top-level titles; letters and digits alike, so Mr Jawsum and Ms Mowz show 'Mr. Jawsum' and 'Ms. Mowz'); else the one visible text layer in the title region named after its own text, as Photoshop names a new layer (2026-10-23: Papyrus 'The Great Papyrus', Sans 'snas.'; several such, Knight Lost A Lot's stacked words, read as nothing; never on a rule page, whose headings are named so; `psd_parser.named_after_text`); byte-order mark, control characters and whitespace runs collapsed, `psd_parser.title_text`; a `Name` layer holding part of the file name beside layers holding the rest, Royal Eradicator Main Cannon's "Main Cannon", or WX-78's "wx-" beside an image layer named "78", reads as the file name; hidden or rasterized titles read as nothing; 157 of 813 cards, 94 of them differing only in letter case or spacing, shown as printed (the user's call, 2026-10-21); `/query` finds a card by its printed title). A Card Edits.json `name` overrides it (the title is kept in `parsed_values`); duplicates get theirs from `_duplicate_name`; omitted when None |
 | `note` / `hidden` | same | from Card Edits.json; omitted when falsy |
-| `duplicate_of` | same | the original card, for another PNG of the same PSD; omitted when falsy |
+| `duplicate_of` | same | the original card, for another PNG of the same PSD; since 2026-10-25 also every variant picture 2+ (picture 1, or the card its Card Edits.json `dup_of` names; owner: one category, counted once, `card_data.variant_duplicates`), which keeps its own parse, name, art, author and ratings; omitted when falsy |
+| `art` / `ability_art` | same | artwork sources, database-only, from Card Edits.json (each entry its own, duplicates too; 2026-10-25); `/query` shows them as masked links; omitted when falsy |
 | `creatures` | `creatures` | list of short-key stat dicts, one per creature (multi-creature cards); omitted when falsy |
 
-`problems_ok`, `allow_high_stats`, `parsed_values`, `alt_names`, `blob_sha`, `parser_version` (the `PARSER_VERSION`
-that parsed the card, 2026-10-21; None in older pickles, which makes `/update_stats` re-parse them once) and `archived`
+`problems_ok`, `allow_high_stats`, `parsed_values`, `alt_names`, `blob_sha`, `variant` / `variant_of` / `variants` (a tagged
+PSD's pictures, 2026-10-25), `parser_version` (the `PARSER_VERSION`
+that parsed the card, 2026-10-21, 4 since 2026-10-25; None in older pickles, which makes `/update_stats` re-parse them once) and `archived`
 (2026-10-22, set only on an archived card's record in old_stats.pkl, below) live only in the pickle (stats.pkl stores
 CardInfo objects); they are not `to_dict` keys.
 
@@ -504,7 +508,7 @@ in build_site.py and `FROM` in edit.js). "psd": `name`, `stars`, `types`, `hp`/`
 on the card image, so the edit pipeline (docs/EDIT_PIPELINE_DESIGN.md §3) bakes them into the PSD and PNG and the
 website shows "PSD pending" until then (`name` only when it differs from the printed title the parser reads into
 `display_name`; since 2026-10-21 a baked or already-printed name is dropped from the file like any other field). "folder": `type`, `subtype`, `series` come from the card's path. "database": `subseries`, `note`, `aliases`,
-`dup_of`, `hidden`, `problems_ok`, `allow_high_stats`, `creatures` live in the file alone (`creatures` overrides the
+`dup_of`, `hidden`, `problems_ok`, `allow_high_stats`, `creatures`, `art`, `ability_art` live in the file alone (`creatures` overrides the
 parser's per-creature rows but is baked nowhere). Whatever the kind, `apply()` saves the pre-edit value in
 `parsed_values` so dropping the edit restores it — the PSD's value, the folder's, or `False`/`None` for the
 database-only ones (unless Discord's retired `/update_metadata` had set them). The pipeline's verdict rides beside `_by`/`_at` as `_psd`
@@ -512,7 +516,7 @@ database-only ones (unless Discord's retired `/update_metadata` had set them). T
 website computes it from the values; `CardEdits.meta`); `parse()`
 keeps every `_`-key out of `cards`. `aliases` is read by `CardEdits.names()` for name lookups, never by `apply()`;
 `dup_of` makes a card PNG with no PSD (Stubborn_Queen.png, Gust_of_Trees.png) a duplicate of the named card in the bot
-too (`card_data.duplicate_pngs`, 2026-10-23, build_site's rule; since the 5 multi-picture PSDs were tagged, 10-25, a numbered PNG is a variant picture, never a duplicate); on a card with its own PSD the bot ignores it. The website's edit sets the same field by hand;
+too (`card_data.duplicate_pngs`, 2026-10-23, build_site's rule; since the 5 multi-picture PSDs were tagged, 10-25, a numbered PNG is a variant picture, which is a duplicate of picture 1 since 2026-10-25 ~21:10 (owner), above); on a card with its own PSD that is no variant picture the bot ignores it. The website's edit sets the same field by hand;
 a PSD re-parse keeps it with author and series (psd_parser.py:455-461) and a Card Edits.json value wins again at the
 next `/update_stats`.
 
@@ -799,3 +803,5 @@ change, sections 4-5 are stale until rewritten.
 
 2026-10-25 (grid): §7.2 gotcha 10: two or more results come as grid images.
 2026-10-25 (docs lane): every psd_parser.py, card_data.py, query_card.py and psd_analyzer.py citation re-pointed at 6a87179; §3.2/§5: cards need no ability (rule pages do), ABILITY_EXCLUSIONS is R3's waiver; §4 step 5 names the line-padding strip.
+
+2026-10-25 (wrap-up): §2 star counting skips type-icon layers (PARSER_VERSION 4); §6: variant pictures are duplicates (`duplicate_of`), `art` / `ability_art` rows, `variant` fields named.
