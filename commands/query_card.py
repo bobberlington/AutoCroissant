@@ -42,6 +42,8 @@ UNKNOWN_BEFORE = 946684800.0                             # 2000-01-01 UTC; older
 DATE_PATTERN = compile(r"^(created)\s*(<=|>=|==|<|>)\s*(\d{4}(?:-\d{2}){0,2})$")   # created>=2025, created == 2023-10
 FIELD_PATTERN = compile(r"^(\w+)\s*(<=|>=|==|!=|<|>|~)\s*(.*)$")   # a condition: field, operator, value
 NUMBER_FIELDS = ("hp", "def", "atk", "spd", "stars", "total")
+ART_LINES = (("art", "Artwork source"), ("ability_art", "Ability artwork source"))    # a card's artwork sources
+URL_PATTERN = compile(r"https?://[^\s<>\[\]\"'`]+")    # art.js URL_RE
 TEXT_FIELDS = ("type", "subtype", "series", "subseries", "author", "types", "name", "alias", "ability", "path", "created")
 FIELD_HINTS = {"attack": "atk", "defense": "def", "health": "hp", "speed": "spd", "star": "stars", "aliases": "alias"}
 SYNONYMS = {"damage": "dmg", "dmg": "damage", "defense": "def", "def": "defense", "speed": "spd", "spd": "speed",
@@ -829,9 +831,32 @@ def _label(key: str) -> str:
     return splitext(basename(card_repo.git_files.get(key, key)))[0].replace("_", " ")
 
 
+def trim_url(url: str) -> str:
+    """A matched URL without its trailing punctuation, or a ")" it doesn't open (art.js trimUrl)."""
+    while True:
+        cut = url.rstrip(".,;:!?")
+        cut = cut[:len(cut) - 1] if cut.endswith(")") and cut.count(")") > cut.count("(") else cut
+        if cut == url:
+            return url
+        url = cut
+
+
+def art_text(text: str) -> str:
+    """An artwork source as one Discord line: each http(s) URL a masked link named by its host, the rest escaped."""
+    out, at = [], 0
+    for found in URL_PATTERN.finditer(text):
+        url = trim_url(found.group(0))
+        host = url.split("/")[2] if url.count("/") >= 2 else url
+        target = url.replace("(", "%28").replace(")", "%29")
+        out.append(escape_markdown(text[at:found.start()]) + f"[{escape_markdown(host.removeprefix('www.'))}]({target})")
+        at = found.start() + len(url)
+    out.append(escape_markdown(text[at:]))
+    return " ".join("".join(out).split())
+
+
 def _post_card(interaction: Interaction, closest: str, url: Optional[str] = None, note: Optional[str] = None) -> None:
-    """The card's image (an embed when it has a website name, subseries, note or original) and any ambiguity; url: an
-    image other than today's (/query as_of); note: a line above it (a guess, a rename)."""
+    """The card's image (an embed when it has a website name, subseries, note, artwork source or original) and any
+    ambiguity; url: an image other than today's (/query as_of); note: a line above it (a guess, a rename)."""
     url, page = url or card_repo.get_card_url(closest), card_repo.site_url(closest)
     links = [("Card page", page)] if page else None
     card = _stats_card(closest)
@@ -839,7 +864,8 @@ def _post_card(interaction: Interaction, closest: str, url: Optional[str] = None
     subseries = getattr(card, "subseries", None) if card else None
     extra = [f"Same card as {card.duplicate_of}" if card and getattr(card, "duplicate_of", None) else "",
              getattr(card, "note", None) or "" if card else ""]
-    if card and (shown or subseries or any(extra)):     # website name, subseries, note or duplicate: an embed says so
+    extra += [f"{label}: {art_text(getattr(card, key))}" if card and getattr(card, key, None) else "" for key, label in ART_LINES]
+    if card and (shown or subseries or any(extra)):     # website name, subseries, note, art or duplicate: an embed says so
         extra.insert(0, " · ".join(s for s in (card.series, subseries) if s))      # "Series · Subseries"
         created = getattr(card, "created", None)
         if created:

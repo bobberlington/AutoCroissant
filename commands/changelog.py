@@ -32,7 +32,7 @@ from commands.card_models import CardInfo
 # ========================
 STATS = (("hp", "hp", "HP"), ("def", "defense", "DEF"), ("atk", "attack", "ATK"), ("spd", "speed", "SPD"))
 FIELDS = ("name", "card_type", "stars", "subtype", "series", "subseries", "types", "hp", "def", "atk", "spd", "creatures",
-          "ability", "tags", "author", "note", "hidden")
+          "ability", "tags", "author", "note", "art", "ability_art", "hidden")
 # timing tags in ability text: the cooldown and uses tags (2026-10-21) and the older per-turn ones
 TAG_PATTERN = re_compile(r"\((?:-?\d+/\d+|\d+|X)?(?:GCD|CD|U|PGT|PG|PT)\)|\((?:FT)?E(?:\d+|X)G?T\)"
                          r"|\((?:OYT|AAT|BOT|ENDT|BOGT|ENDGT|OFS|OS|OD|WOF)\)")
@@ -66,6 +66,8 @@ BOT = "AutoCroissant"                                    # the bot's _by (build_
 BOT_FIELDS = "_bot"                                      # an entry's fields that aren't its _by's (build_site.BOT_FIELDS)
 EDIT_FIELD = {"card_type": "type", "tags": "ability"}    # a changed field -> its Card Edits.json field
 UNKNOWN_FIELD = {"display_name": "name"}                 # card_history.unknown's field -> the changelog's
+OWN_FIELDS = ("art", "ability_art")                      # a duplicate's own fields (the rest is its original's)
+FIELD_WORD = {"name": "title", "art": "artwork source", "ability_art": "ability artwork source"}   # changes.js FIELD
 
 
 # ========================
@@ -82,7 +84,7 @@ def _stat(value) -> Optional[int]:
 
 def fields_of(card: CardInfo) -> dict:
     """A card's changelog fields: the shown name, the folder fields, the four stats (None when missing), the auxiliary
-    creatures' stats, the ability, its timing tags, author, note and hidden."""
+    creatures' stats, the ability, its timing tags, author, note, artwork sources and hidden."""
     stats = getattr(card, "stats", None)
     out = {"name": getattr(card, "display_name", None) or card.name, "card_type": card.card_type,
            "stars": getattr(card, "stars", None), "subtype": getattr(card, "subtype", None),
@@ -96,6 +98,7 @@ def fields_of(card: CardInfo) -> dict:
     out["ability"] = getattr(card, "ability", None) or None
     out["tags"] = tags_of(out["ability"])
     out["author"], out["note"], out["hidden"] = getattr(card, "author", None), getattr(card, "note", None), bool(getattr(card, "hidden", False))
+    out["art"], out["ability_art"] = getattr(card, "art", None), getattr(card, "ability_art", None)
     return out
 
 
@@ -219,7 +222,8 @@ def events(before: dict, after: dict, archived_before: dict, archived_after: dic
         file_commits: {"edited": the newest commit of Card Edits.json, "authors": of Card Authors.txt} (their events' commit)
 
     Returns:
-        Events in name order, unnumbered (number() gives the seq); a duplicate's change is its original's
+        Events in name order, unnumbered (number() gives the seq); a duplicate's change is its original's, but for its
+        own artwork sources (OWN_FIELDS)
     """
     reparsed, edits_by, file_commits = reparsed or {}, edits_by or {}, file_commits or {}
     renamed = {(getattr(archived_after.get(n), "archived", None) or {}).get("renamed_to")
@@ -237,6 +241,10 @@ def events(before: dict, after: dict, archived_before: dict, archived_after: dic
     for name in sorted(set(before) | set(after) | set(archived_after)):
         old, new = before.get(name), after.get(name)
         if (new is not None and getattr(new, "duplicate_of", None)) or (old is not None and getattr(old, "duplicate_of", None)):
+            own = {k: v for k, v in field_changes(old, new).items() if k in OWN_FIELDS} if old is not None and new is not None else {}
+            if own:                                       # a duplicate's own artwork sources: its own edit
+                out.append(_event("edited", name, new, fields=own, edit_by=edit_credit(edits_by.get(name), own),
+                                  **({"commit": file_commits["edited"]} if file_commits.get("edited") else {})))
             continue
         if old is None and new is not None:
             if name in renamed and name not in archived_before:
@@ -442,7 +450,7 @@ def _changes(fields: dict) -> str:
         elif key == "hidden":
             parts.append("hidden" if b else "shown again")
         elif key != "tags":
-            parts.append(f"{'title' if key == 'name' else key.replace('_', ' ')} \u2192 {_md(_value(b))}")
+            parts.append(f"{FIELD_WORD.get(key, key.replace('_', ' '))} \u2192 {_md(_value(b))}")
     return "; ".join(parts)
 
 
