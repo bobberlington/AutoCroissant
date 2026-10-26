@@ -17,9 +17,9 @@ from functools import lru_cache
 from difflib import SequenceMatcher
 from hashlib import blake2b
 from inspect import signature
-from itertools import zip_longest
+from itertools import combinations, zip_longest
 from io import BytesIO
-from math import hypot
+from math import comb, hypot
 from os import environ
 from os.path import basename, getsize, join
 from re import IGNORECASE, compile as re_compile, escape, fullmatch, search, sub
@@ -4804,6 +4804,12 @@ def _stars_blocked(psd: PSDImage, moves: list, clear: list) -> Optional[str]:
 RELAID = ("rows of two, laid out again",)     # _more_layouts' layouts that change the card's own (told)
 OVERLAP = 0.15              # a new star's core may cover this share of another's (the cards' own shapes overlap a little)
 SPARE_OVERLAP = 0.1         # a hidden spare star covering this share of a shown one (or covered) is not shown (R5)
+BACKDROP_SHARE = 0.9        # a layer behind the stars inking this share of each one's core is what they sit on
+BACKDROP_KEEP = 0.75        # a moved or new star keeps this share of its core on that layer
+SHADE_ALPHA = (0.05, INK_ALPHA)   # see-through ink: a shadow strip over another star greys it
+SHADE_RIM = 2               # px: an anti-aliased rim is no strip
+SHADE_PX = 100              # px of a star under a shadow strip that _shaded allows (none on the cards' own)
+KEPT_TRIES = 252            # _kept_shape's most sets of stars to hide tried (10 choose 5)
 
 
 def _named_star(layer) -> bool:
@@ -4878,6 +4884,123 @@ def _covers(a: tuple, b: tuple) -> float:
     w = min(a[2], b[2]) - max(a[0], b[0])
     h = min(a[3], b[3]) - max(a[1], b[1])
     return w * h / max(1, (b[2] - b[0]) * (b[3] - b[1])) if w > 0 and h > 0 else 0.0
+
+
+def _kept_shape(order: list, size: tuple, count: int) -> Optional[list]:
+    """
+    The stars to hide, 3 or more staying, when neither end of the reading order leaves a layout: the latest ones whose
+    rest is a known layout, else whose rest is mirrored about the shape's middle (a dice 5 loses its middle: Nightmare,
+    Kyle's 2 over 3, The Master's); None.
+    """
+    drop = len(order) - count
+    if comb(len(order), drop) > KEPT_TRIES:
+        return None
+    tol = 2 * _tol(max(size))                   # hand-placed: Zero Override's bottom row is 14 px off level
+    middle = (min(u.core[0] for u in order) + max(u.core[2] for u in order)) / 2
+    mirrored = lambda kept: all(any(abs(2 * middle - a.centre[0] - b.centre[0]) <= tol and abs(a.centre[1] - b.centre[1])
+                                    <= tol for b in kept) for a in kept)
+    tries = [set(gone) for gone in combinations(range(len(order) - 1, -1, -1), drop)]
+    for good in (lambda kept: _known_layout(kept, size), mirrored):
+        for gone in tries:
+            if good([unit for i, unit in enumerate(order) if i not in gone]):
+                return [unit for i, unit in enumerate(order) if i in gone]
+    return None
+
+
+def _shade(lower: list, upper: list) -> int:
+    """
+    Pixels where an upper layer's see-through ink (a shadow strip, SHADE_ALPHA, not its anti-aliased rim: SHADE_RIM px
+    in) lies on a lower layer's solid ink; lower and upper are [(bbox, alpha)].
+    """
+    total = 0
+    for (lx0, ly0, _, _), la in lower:
+        for (ux0, uy0, _, _), ua in upper:
+            x0, y0 = max(lx0, ux0), max(ly0, uy0)
+            x1, y1 = min(lx0 + la.shape[1], ux0 + ua.shape[1]), min(ly0 + la.shape[0], uy0 + ua.shape[0])
+            if x1 <= x0 or y1 <= y0:
+                continue
+            thin = (ua > SHADE_ALPHA[0]) & (ua < SHADE_ALPHA[1])
+            core = thin.copy()
+            for k in range(1, SHADE_RIM + 1):
+                core[k:] &= thin[:-k]
+                core[:-k] &= thin[k:]
+                core[:, k:] &= thin[:, :-k]
+                core[:, :-k] &= thin[:, k:]
+            solid = la[y0 - ly0:y1 - ly0, x0 - lx0:x1 - lx0] > 1 - SHADE_ALPHA[0]
+            total += int((solid & core[y0 - uy0:y1 - uy0, x0 - ux0:x1 - ux0]).sum())
+    return total
+
+
+def _shaded(psd: PSDImage, kept: list, moves: list) -> list:
+    """
+    The moves (unit, dx, dy) that put a star under another star's shadow: more than SHADE_PX of its solid ink under the
+    see-through ink of a star drawn above it, past what lies there now (Flower of Decay's rows of two: the moved star
+    under its neighbour's shadow strip, a grey band).
+    """
+    at = {id(layer): i for i, layer in enumerate(psd.descendants())}
+    moved = {id(unit): (dx, dy) for unit, dx, dy in moves}
+    def inks(unit, shift):
+        out = []
+        for leaf in [leaf for layer in unit.layers for leaf in _drawn(layer)]:
+            alpha = _alpha(leaf)
+            if alpha is not None and alpha.size:
+                out.append((_moved_box(tuple(leaf.bbox), *shift), alpha))
+        return out
+    out = []
+    for unit, dx, dy in moves:
+        top = max(at[id(layer)] for layer in unit.layers)
+        for other in kept:
+            if other is unit or min(at[id(layer)] for layer in other.layers) < top:
+                continue
+            shift = moved.get(id(other), (0, 0))
+            now = _shade(inks(unit, (0, 0)), inks(other, (0, 0)))
+            if _shade(inks(unit, (dx, dy)), inks(other, shift)) > now + SHADE_PX:
+                out.append((unit, dx, dy))
+                break
+    return out
+
+
+def _ink_share(ink: tuple, box: tuple) -> float:
+    """The share of box that a layer's ink ((bbox, solid alpha), _ink) covers."""
+    (x0, y0, _, _), solid = ink
+    bx0, by0, bx1, by1 = (int(round(v)) for v in box)
+    area = max(1, (bx1 - bx0) * (by1 - by0))
+    part = solid[max(0, by0 - y0):max(0, by1 - y0), max(0, bx0 - x0):max(0, bx1 - x0)]
+    return float(part.sum()) / area
+
+
+def _backdrop(psd: PSDImage, shown: list) -> Optional[tuple]:
+    """
+    (layer, ink) of what the stars sit on: the smallest drawn layer behind them, under half the canvas, whose ink holds
+    BACKDROP_SHARE of every shown star's core (Remote Detonator's paper banner); None.
+    """
+    layers = list(psd.descendants())
+    at = {id(layer): i for i, layer in enumerate(layers)}
+    first = min(at[id(layer)] for unit in shown for layer in unit.layers)
+    box = union_box([unit.core for unit in shown])
+    found = []
+    for layer in layers[:first]:
+        b = tuple(layer.bbox)
+        if (layer.is_group() or layer.kind == "type" or not layer.is_visible() or b[0] > box[0] or b[1] > box[1]
+                or b[2] < box[2] or b[3] < box[3] or (b[2] - b[0]) * (b[3] - b[1]) > psd.width * psd.height / 2):
+            continue
+        found.append(((b[2] - b[0]) * (b[3] - b[1]), layer))
+    for _, layer in sorted(found, key=lambda one: one[0]):
+        ink = _ink(layer)
+        if ink is not None and all(_ink_share(ink, unit.core) >= BACKDROP_SHARE for unit in shown):
+            return layer, ink
+    return None
+
+
+def _off_backdrop(back: Optional[tuple], moves: list, copies: list) -> Optional[str]:
+    """Why a moved or copied star leaves the stars' backdrop (_backdrop): under BACKDROP_KEEP of its core on it; None."""
+    if back is None:
+        return None
+    for unit, dx, dy, *_ in moves + copies:
+        box = _moved_box(unit.core, dx, dy)
+        if (dx or dy) and _ink_share(back[1], box) < BACKDROP_KEEP:
+            return f"a star at {tuple(int(v) for v in box)} would leave {back[0].name!r} under the stars"
+    return None
 
 
 def _more_layouts(order: list, size: tuple, count: int, psd: PSDImage) -> list:
@@ -5039,14 +5162,20 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         order = _reading(shown, size[1], True)      # layout and the last does not); rows of two centre an odd one
         drop = len(shown) - count
         hide = next((gone for kept, gone in ((order[:count], order[count:]), (order[drop:], order[:drop]))
-                     if _known_layout(kept, size)), order[count:])
+                     if _known_layout(kept, size)), None)
+        moves = []
+        if hide is None:
+            model = _pyramid(order, size)
+            moves = _place(order[:count], _pyramid_spots(model, count), size)[0] if model else []
+            if moves and (_stars_blocked(psd, moves, clear) or _shaded(psd, order[:count], moves)
+                          or _off_backdrop(_backdrop(psd, shown), moves, [])):     # under a shadow: no moves
+                moves = []
+            shape = None if moves or count < 3 or _known_layout(order, size) else _kept_shape(order, size, count)
+            hide = shape or order[count:]           # a zigzag or a diagonal keeps its first stars (Dark Esau 2)
         plan.hide = [layer for unit in hide for layer in unit.layers]
         plan.how = f"{len(hide)} hidden"
         show.update({id(layer): False for layer in plan.hide})
-        model = _pyramid(order, size)
-        kept = [unit for unit in order if unit not in hide]
-        moves = _place(kept, _pyramid_spots(model, count), size)[0] if model and not _known_layout(kept, size) else []
-        if moves and _stars_blocked(psd, moves, clear) is None:
+        if moves:
             plan.moves, plan.how = moves, "rows of two"
     else:                                   # more: the card's own hidden stars, then the layout's spacing
         total_of = ((lambda show_: _named_total(psd, show_, stars=stars)) if named
@@ -5073,13 +5202,20 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
             order = _reading(shown, size[1], True)
             source = max((unit for unit in order if unit.layers[0].parent is container), default=order[len(order) - 1],
                          key=lambda unit: max(container.index(layer) for layer in unit.layers))   # the last star layer
-            first = None
+            first, back = None, _backdrop(psd, order)
             for how, spots in _star_layouts(order, size, count) + _more_layouts(order, size, count, psd):
                 moves, free = _place(order, spots, size)
+                under = [move for move in _shaded(psd, order, moves) if move[0] is not source]
+                moves = [move for move in moves if move not in under]       # under a shadow: hidden, a copy (on top)
+                free += [(unit.centre[0] + dx, unit.centre[1] + dy) for unit, dx, dy in under]
                 copies = [(source, round(spot[0] - source.centre[0]), round(spot[1] - source.centre[1]), "") for spot in free]
-                why = _stars_blocked(psd, moves + [(unit, dx, dy) for unit, dx, dy, _ in copies], clear)
+                why = (_stars_blocked(psd, moves + [(unit, dx, dy) for unit, dx, dy, _ in copies], clear)
+                       or _off_backdrop(back, moves, copies))
                 if why is None:
                     plan.moves, plan.copies, plan.how = moves, copies, how
+                    gone = [layer for unit, _, _ in under for layer in unit.layers]
+                    plan.hide += gone
+                    show.update({id(layer): False for layer in gone})
                     if how in RELAID:
                         plan.notes.append(f"stars: {how} (the card's own layout does not go on to {count})")
                     break
