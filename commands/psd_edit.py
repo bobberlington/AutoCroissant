@@ -249,6 +249,7 @@ class IconPlan:
     first: str = ""                              # plan_types(): the template whose spot a card's first type icon takes
     centres: list = field(default_factory=list)  # plan_stars(): the header stars' centres once applied, reading order
     notes: list = field(default_factory=list)    # told with the bake: the card's layout changed (stars laid out again)
+    pulled: list = field(default_factory=list)   # plan_types(): icons pulled back onto the card (S3), clear of made ones
 
 
 @dataclass
@@ -4916,6 +4917,7 @@ BACKDROP_KEEP = 0.75        # a moved or new star keeps this share of its core o
 SHADE_ALPHA = (0.05, INK_ALPHA)   # see-through ink: a shadow strip over another star greys it
 SHADE_RIM = 2               # px: an anti-aliased rim is no strip
 SHADE_PX = 100              # px of a star under a shadow strip that _shaded allows (none on the cards' own)
+COVER_MORE = 0.05           # a moved or new star may have this share more of its ink under art drawn over it than now
 KEPT_TRIES = 252            # _kept_shape's most sets of stars to hide tried (10 choose 5)
 
 
@@ -5214,6 +5216,64 @@ def _shaded(psd: PSDImage, kept: list, moves: list) -> list:
     return out
 
 
+def _covered(psd: PSDImage, moves: list, skip: set, cache: dict) -> Optional[str]:
+    """
+    Why a moved or copied star [(unit, dx, dy)] would sit under art drawn over it: more than COVER_MORE more of its solid
+    ink under the solid ink of a visible normal layer above it (skip: ids of the stars' own layers) than where it is now
+    (Massive Moss Charger's 'Hk star' copy under the moss bush); None. cache: id(layer) -> _ink, per plan.
+    """
+    layers = list(psd.descendants())
+    at = {id(layer): i for i, layer in enumerate(layers)}
+
+    def ink(layer):
+        if id(layer) not in cache:
+            found = _ink(layer)
+            if found is not None and layer.opacity < 255:
+                found = (found[0], _alpha(layer) * layer.opacity / 255 > INK_ALPHA)
+            cache[id(layer)] = found
+        return cache[id(layer)]
+
+    def under(stars: list, over: list) -> int:
+        hidden = 0
+        for box, solid in stars:
+            mask = np.zeros_like(solid)
+            for (x0, y0, _, _), theirs in over:
+                cx0, cy0 = max(box[0], x0), max(box[1], y0)
+                cx1, cy1 = min(box[0] + solid.shape[1], x0 + theirs.shape[1]), min(box[1] + solid.shape[0], y0 + theirs.shape[0])
+                if cx1 > cx0 and cy1 > cy0:
+                    mask[cy0 - box[1]:cy1 - box[1], cx0 - box[0]:cx1 - box[0]] |= theirs[cy0 - y0:cy1 - y0, cx0 - x0:cx1 - x0]
+            hidden += int((mask & solid).sum())
+        return hidden
+    for unit, dx, dy in moves:
+        if not (dx or dy):
+            continue
+        own = [one for layer in unit.layers for one in [layer, *(layer.descendants() if layer.is_group() else ())]]
+        top = max(at[id(one)] for one in own)
+        now, new = _moved_inks(unit, 0, 0), _moved_inks(unit, dx, dy)
+        total = sum(int(solid.sum()) for _, solid in now)
+        if not total:
+            continue
+        area = union_box([box for box, _ in now + new])
+        over = []
+        for layer in layers[top + 1:]:
+            b = tuple(layer.bbox)
+            if (id(layer) in skip or layer.is_group() or layer.clipping or _is_text_layer(layer) or not layer.is_visible()
+                    or layer.blend_mode not in (BlendMode.NORMAL, BlendMode.DISSOLVE) or b[2] <= area[0]
+                    or b[0] >= area[2] or b[3] <= area[1] or b[1] >= area[3] or not layer.has_pixels()):
+                continue
+            found = ink(layer)
+            if found is not None:
+                over.append((layer, found))
+        if not over:
+            continue
+        was, will = under(now, [one for _, one in over]), under(new, [one for _, one in over])
+        if will - was > COVER_MORE * total:
+            worst = max(over, key=lambda one: under(new, [one[1]]))[0]
+            return (f"a star at {tuple(int(v) for v in _moved_box(unit.core, dx, dy))} would sit under {worst.name!r} "
+                    f"({round(100 * will / total)}% of it hidden, {round(100 * was / total)}% now)")
+    return None
+
+
 def _ink_share(ink: tuple, box: tuple) -> float:
     """The share of box that a layer's ink ((bbox, solid alpha), _ink) covers."""
     (x0, y0, _, _), solid = ink
@@ -5430,6 +5490,10 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
     if count < 1:
         refuse(f"{container.name!r} draws {len(shown)}: the other {total - len(shown)} are elsewhere")
     clear = _texts(psd) + badge_layers(psd, parser.all_types if parser is not None else ())[1]   # off the text and type icons
+    mine = {id(one) for unit in shown + hidden + (second[1] + second[2] if second is not None else [])
+            for layer in _with_chains(_drawn_as(unit).layers)
+            for one in [layer, *(layer.descendants() if layer.is_group() else ())]}     # the stars' own layers
+    inks: dict = {}
     show: dict = {}
     total_of = ((lambda show_: _named_total(psd, show_, stars=stars)) if named
                 else (lambda show_: _stars_total(psd, show_, types=types, stars=stars)))
@@ -5442,7 +5506,8 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         """
         size = _median_size(shown)
         counted = (lambda show_: PSDParser.stars_below(psd, types, stars, show_)) if below else total_of
-        blocked = lambda moves: _stars_blocked(psd, _as_drawn(moves), clear, below)
+        blocked = lambda moves: (_stars_blocked(psd, _as_drawn(moves), clear, below)
+                                 or _covered(psd, _as_drawn(moves), mine, inks))   # not under the art (MMC's moss)
         backdrop = lambda units: _backdrop(psd, [_drawn_as(unit) for unit in units])
         off_back = lambda back, moves, copies: _off_backdrop(back, _as_drawn(moves), _as_drawn(copies))
 
@@ -5814,13 +5879,15 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
             plan.moves[k] = (layer, dx, dy)
             blocked = _blocked(psd, _moved_inks(unit, dx, dy), _moved_box(unit.core, dx, dy), others)
             shifts = {id(one): (mx, my) for one, mx, my in plan.moves}
-            for icon in [u.layers[0] for u in slots if u.layers[0] is not layer and not any(u is r for r in removed)]:
+            for icon in [u.layers[0] for u in slots if u.layers[0] is not layer and not any(u is r for r in removed)] + \
+                    [one for one in plan.show if one is not layer]:     # and the library icons shown and moved
                 ink = _ink(icon)
                 if blocked is None and ink is not None and ink[1].any():
                     ink = (_moved_box(ink[0], *shifts.get(id(icon), (0, 0))), ink[1])
                     over = sum(_ink_overlap(mine, ink) for mine in _moved_inks(unit, dx, dy))
                     if over > ICON_TOUCH * min(ink[1].sum(), sum(m[1].sum() for m in _moved_inks(unit, dx, dy))):
                         blocked = f"runs off the canvas; pulled back onto it, would cover {icon.name!r}"
+            plan.pulled.append(layer)           # set_icons: clear of the icons made from Types/ too
         if blocked and first and blocked.startswith("would touch"):     # the template's spot: baked, told (rulings)
             plan.notes.append(f"types: {layer.name!r} at {first}'s spot {blocked.replace('would touch', 'touches')}: check it")
         elif blocked:
@@ -6009,6 +6076,13 @@ def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None) ->
                             f"{blocked.replace('would touch', 'touches')}: check it")
         elif blocked:
             raise Refused("unsupported-card", f"types: the {layer.name!r} icon {blocked}", "types")
+        mine = _ink(layer)
+        for pulled in plan.pulled:              # S3: a pulled-back icon over a made one
+            theirs = _ink(pulled)
+            if mine is not None and theirs is not None and \
+                    _ink_overlap(mine, theirs) > ICON_TOUCH * min(mine[1].sum(), theirs[1].sum()):
+                raise Refused("unsupported-card", f"types: {pulled.name!r} runs off the canvas; pulled back onto it, "
+                              f"would cover the {layer.name!r} icon", "types")
         blocks = {bytes(key): layer.tagged_blocks[key].tobytes() for key in EFFECT_BLOCKS if key in layer.tagged_blocks}
         plan.done.append(("made", layer, blocks))
         boxes.append((tuple(layer.bbox), layer))
