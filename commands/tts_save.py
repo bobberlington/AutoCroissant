@@ -29,7 +29,7 @@ from urllib.parse import quote, unquote
 from requests import get
 
 from commands.card_edits import CardAuthors
-from commands.card_models import card_name as _stem
+from commands.card_models import RENAMED, card_name as _stem, rename_trailer
 from commands.git_commit import git as _git, plural as _plural
 from commands.repo_history import pinned_ref, refresh
 from global_config import (CARD_BRANCH, CARD_REPO, EDITS_PATH, HISTORY_CLONE, LOCAL_DIR_LOC, RAW_BASE, RULES_PATH,
@@ -221,6 +221,7 @@ class _Repo:
         self.by_lower = {p.lower(): p for p in self.tree}
         self._at: dict = {}                                 # (sha, path) -> blob there, or None
         self._carried: dict = {}                            # sha -> carried()
+        self._told: Optional[dict] = None                   # old path -> new path: the bake's Renamed trailers (follow())
 
     def sha(self, path: str):
         """Commit that last changed path, or None when history doesn't know it."""
@@ -268,6 +269,9 @@ class _Repo:
                     psds = {p: then.get(splitext(p)[0].lower() + ".psd") for p in gone}
                     seen = self.last_seen(sorted(set(gone) | {q for q in psds.values() if q}))
                     for p in gone:
+                        if self.follow(p):
+                            found.add(self.follow(p))
+                            continue
                         for q in (p, psds[p]):
                             targets = self.by_blob.get(seen.get(q, ("", None))[1], [])
                             if len(targets) == 1:
@@ -278,6 +282,27 @@ class _Repo:
                 found = None
         self._carried[sha] = found
         return found
+
+    def follow(self, path: str) -> Optional[str]:
+        """Where the bake's renames took a gone file (its Renamed trailers: a card renamed and redrawn in one commit), if
+        that path is in the tree."""
+        if self._told is None:
+            self._told = {}
+            if exists(self.clone):
+                try:
+                    out = _git(self.clone, "log", CARD_BRANCH, f"--grep=^{RENAMED}: ",
+                               f"--format=%x1e%(trailers:key={RENAMED},valueonly,separator=%x1f)").decode("utf-8", "replace")
+                except CalledProcessError:
+                    out = ""
+                for value in out.replace("\x1e", "\x1f").split("\x1f"):     # newest first: the newest rename of a path
+                    pair = rename_trailer(value)
+                    if pair:
+                        self._told.setdefault(*pair)
+        seen = {path}
+        while path in self._told and self._told[path] not in seen:
+            path = self._told[path]
+            seen.add(path)
+        return path if len(seen) > 1 and path in self.tree else None
 
     def last_seen(self, paths: list) -> dict:
         """Paths gone from main -> (newest commit that still had them, blob then), walking main's trees."""
@@ -498,6 +523,9 @@ def _pin_links(save: dict, repo: _Repo, report: _Report) -> None:
         targets = repo.by_blob.get(blob, [])
         if len(targets) == 1:
             rename[path] = targets[0]
+    for path in lost:                                       # a card renamed and redrawn (the bake's Renamed trailers)
+        if path not in rename and repo.follow(path):
+            rename[path] = repo.follow(path)
     stems = _stem_index(repo.tree)
     for path in lost:                                       # a card moved and redrawn (its stars: a new "N Stars" folder)
         targets = stems.get(_stem_key(path), [])

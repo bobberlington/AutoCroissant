@@ -15,7 +15,7 @@ from typing import Optional
 from global_config import MAILMAP_PATH
 from commands.card_db import record
 from commands.card_edits import as_parsed
-from commands.card_models import CardInfo, CardStats, card_name
+from commands.card_models import RENAMED, CardInfo, CardStats, card_name, rename_trailer
 
 # ========================
 # Configuration
@@ -24,7 +24,8 @@ from commands.card_models import CardInfo, CardStats, card_name
 DATA_FIELDS = ("card_type", "display_name", "ability", "stars", "subtype", "series", "subseries", "types", "stats",
                "creatures", "author", "note", "hidden", "duplicate_of")
 CAUSES = ("psd", "reparse", "moved", "edit", "authors", "legacy")   # moved: the same blob in another folder (its data)
-LOG_FORMAT = "C%x09%H%x09%ct%x09%aN"                  # one header line per commit: sha, committer time, author (.mailmap'd)
+# one header line per commit: sha, committer time, author (.mailmap'd), the bake's Renamed trailers (a renamed and edited file)
+LOG_FORMAT = f"C%x09%H%x09%ct%x09%aN%x09%(trailers:key={RENAMED},valueonly,separator=%x1f)"
 NO_BLOB = "0" * 40
 TYPE_RENAMES = {"offense": "negation"}                # retired Types/ icon -> its name now (same bytes, 9649b4d)
 # a parse problem -> the field that reading could not know (compared as unknown)
@@ -59,8 +60,8 @@ class GitIndex:
     paths_of: dict = field(default_factory=dict)      # blob -> {path: oldest Commit that added it there}
     pngs: dict = field(default_factory=dict)          # PNG path -> Commits that changed it, newest first
     pngs_lower: dict = field(default_factory=dict)    # the same by lower-cased path (a PNG named in another case)
-    renames: dict = field(default_factory=dict)       # old path -> (new path, Commit): the newest exact rename
-    renamed_from: dict = field(default_factory=dict)  # new path -> old path of its newest exact rename into it
+    renames: dict = field(default_factory=dict)       # old path -> (new path, Commit): the newest exact (or told) rename
+    renamed_from: dict = field(default_factory=dict)  # new path -> old path of its newest exact (or told) rename into it
     by_sha: dict = field(default_factory=dict)        # commit sha -> Commit
     at_path: dict = field(default_factory=dict)       # path -> [(Commit, blob)] that put a blob there, newest first
 
@@ -68,13 +69,17 @@ class GitIndex:
     def parse(cls, text: str) -> "GitIndex":
         """The index of `git log <head> --format=LOG_FORMAT --raw --no-abbrev --no-renames -z -- '*.psd' '*.png'`."""
         index = cls()
-        commit, meta, gone, added = None, None, {}, {}
+        commit, meta, gone, added, told = None, None, {}, {}, []
 
         def close():
             for blob, old in gone.items():
                 if blob in added and old not in index.renames:
                     index.renames[old] = (added[blob], commit)
                     index.renamed_from.setdefault(added[blob], old)
+            for old, new in told:                         # a Renamed trailer: the file renamed and edited in one commit
+                if index.deleted.get(old) is commit and new in added.values() and old not in index.renames:
+                    index.renames[old] = (new, commit)
+                    index.renamed_from.setdefault(new, old)
 
         for token in text.split("\0"):
             token = token.lstrip("\n")
@@ -86,8 +91,9 @@ class GitIndex:
             elif token.startswith("C\t"):
                 if commit is not None:
                     close()
-                _, sha, at, author = (token.split("\t", 3) + [""])[:4]
+                _, sha, at, author, trailers = (token.split("\t", 4) + ["", ""])[:5]
                 commit, gone, added = Commit(len(index.commits), sha, float(at), author), {}, {}
+                told = [pair for pair in map(rename_trailer, trailers.split("\x1f")) if pair]
                 index.commits.append(commit)
                 index.by_sha[sha] = commit
         if commit is not None:

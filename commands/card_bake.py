@@ -61,15 +61,15 @@ from requests import RequestException
 import commands.github_api as github_api
 import commands.png_export as png_export
 import commands.psd_edit as psd_edit
-from commands.card_edits import ORDER, CardAuthors, CardEdits, dump_edits
-from commands.card_models import card_name
-from commands.git_commit import (API_TIMEOUT, COMMIT_TRIES, GIT_TIMEOUT, NO_LAZY, Transient, api, checkout_head, commit_files,
+from commands.card_edits import ORDER, RENAME, CardAuthors, CardDates, CardEdits, CardRatings, dump_edits
+from commands.card_models import RENAMED, card_name, file_stem
+from commands.git_commit import (API_TIMEOUT, AUTHOR, COMMIT_TRIES, GIT_TIMEOUT, NO_LAZY, Transient, api, checkout_head, commit_files,
                                  commit_info, git, local_commit, plural, ref_head)
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_edit import Refusal, Refused
 from commands.psd_parser import shown_in
-from global_config import (CARD_BRANCH, CARD_REPO, EDITS_PATH, FONT_DIRS_ENV, ICON_MANIFEST_PATH, LOCAL_DIR_LOC,
-                           STARS_DIR, TYPES_DIR)
+from global_config import (AUTHORS_PATH, CARD_BRANCH, CARD_REPO, CREATED_PATH, EDITS_PATH, FONT_DIRS_ENV,
+                           ICON_MANIFEST_PATH, LOCAL_DIR_LOC, RATINGS_PATH, RULES_PATH, STARS_DIR, TYPES_DIR)
 
 # ========================
 # Configuration
@@ -91,6 +91,7 @@ VERDICTS_OUT = "verdicts.json"                  # in the work dir: {"schema", "c
 EVENTS_OUT = "bake-events.json"                 # in the work dir: {"events": [...], "landed": [...]} (changelog kinds)
 FIELDS = frozenset(CardEdits.TYPES)            # ORDER (edit.js FIELDS) and PUNCTUATION live in card_edits
 KIND = CardEdits.KIND
+BOT_BY = AUTHOR["name"]                         # the bot's _by (changelog.BOT)
 
 
 # ========================
@@ -134,6 +135,10 @@ class Card:
     moves: dict = field(default_factory=dict)   # a stars edit's move into its "N Stars" folder: old path -> new path
     moved_to: str = ""                          # that folder
     move_notes: list = field(default_factory=list)  # the folder created, the printed stars not redrawn
+    rename: bool = False                        # the entry's `_rename` (CardEdits.renames): its files take its name
+    renames: dict = field(default_factory=dict) # that rename: old path -> new file name (plan_rename; after any move)
+    renamed: str = ""                           # the card's new name
+    relocated: dict = field(default_factory=dict)   # the commit's moves and renames: old path -> new path
 
 
 @dataclass
@@ -166,6 +171,7 @@ class Share:
     rewrite: Callable[[str], Optional[str]]     # edits file text -> new text, None when unchanged; raises Refused to stay out
     out: Optional[Refusal] = None               # why the last attempt left it out
     included: bool = False                      # in the last attempt's commit
+    side: dict = field(default_factory=dict)    # {repo path: text -> new text or None}: other files keyed by the card (a rename)
 
 
 class Snapshot:
@@ -504,13 +510,17 @@ def land(repository: str, shares: list, message: Callable[[list], str], dry_run:
         included = [share for share in shares if share.included]
         if not included:
             return None
+        sides = side_files(tip, included)       # a rename's other files keyed by the card
         if out_path:
             makedirs(dirname(out_path), exist_ok=True)
             with open(out_path, "w", encoding="utf-8", newline="") as fh:
                 fh.write(new_text)
+            for path, data in sides.items():
+                with open(join(dirname(out_path), basename(path)), "wb") as fh:
+                    fh.write(data)
         if dry_run:
             return None
-        payload = {**files, **({edits_path: new_text.encode("utf-8")} if new_text != text else {})}
+        payload = {**files, **({edits_path: new_text.encode("utf-8")} if new_text != text else {}), **sides}
         if not payload:
             return None                         # the rewrites gave back the files as they are
         if local is not None:
@@ -598,6 +608,7 @@ def select(edits: CardEdits, snapshot: Snapshot, only: Optional[str] = None) -> 
         name = card_name(rel) if rel else " ".join(word[:1].upper() + word[1:] for word in key.split())
         cards.append(Card(name, key, wanted, rel, snapshot.sha(rel) if rel else "", creatures=bool(fields.get("creatures")),
                           by=edits.meta.get(key, {}).get("_by")))
+        cards[len(cards) - 1].rename = edits.renames(key)
     return cards
 
 
@@ -639,6 +650,190 @@ def plan_move(snapshot: Snapshot, card: Card, parsed: dict, psd, parser) -> dict
         card.move_notes.append(f"the printed stars are not redrawn: {refused.why.removeprefix('stars: ')}")
         del jobs["stars"]
     return jobs
+
+
+# ========================
+# Renaming a card's files (the editor's "Also rename the card's files", owner 2026-10-25)
+# ========================
+def plan_rename(snapshot: Snapshot, card: Card) -> None:
+    """
+    A name edit with `_rename`: the card's PSD and every PNG of it (its pictures NameN.png too) take the name's file stem
+    (card_models.file_stem), in the folder a stars move takes them to. Impossible, refused (the name's alone, as a
+    stars move's): a name with nothing a file name can hold, another card's file of that name (any case). Fills
+    card.renames and card.renamed; nothing when the stem is the file's already.
+    """
+    name = card.fields.get("name")
+    if not card.rename or not isinstance(name, str) or not ({"name", "parts"} & set(card.jobs) or "name" in card.redundant):
+        return
+    stem = file_stem(name)
+    if not stem:
+        raise Refused("unsupported-card", f"name: {name!r} has nothing a file name can hold: the files can't take it", "name")
+    old_stem = basename(card.rel)[:len(basename(card.rel)) - 4]
+    if stem == old_stem:
+        return
+    files = {card.rel: stem + card.rel[len(card.rel) - 4:]}
+    for n, png in [(1, card.png)] + [(n, p) for n, p in sorted(card.pictures.items()) if n != 1]:
+        files[png] = stem + ("" if n == 1 else str(n)) + png[len(png) - 4:]
+    keys = {CardAuthors.key(card_name(new)) for new in files.values()}
+    for path in snapshot.tree:
+        if path in files or not path.lower().endswith((".psd", ".png")) or path.startswith(TYPES_DIR + "/") \
+                or any(folder in EXCLUDE_FOLDERS for folder in path.split("/")):
+            continue
+        if CardAuthors.key(card_name(path)) in keys:
+            raise Refused("unsupported-card", f"name: {path} already has that name: the files can't take it", "name")
+    card.renames, card.renamed = files, card_name(stem)
+
+
+def _moved_to(card: Card, old: str) -> str:
+    """Where one of the card's files goes: its stars move's folder, its rename's file name."""
+    path = card.moves.get(old, old)
+    folder = path[:path.rfind("/") + 1]
+    return folder + card.renames.get(old, path[len(folder):])
+
+
+def _renamed_names(card: Card) -> list:
+    """[(old card name, new card name)] of a rename: the card's, then its pictures' (A Snack2 -> Snack Attack2)."""
+    pairs = {card_name(old): card_name(new) for old, new in card.relocated.items() if card.renames}
+    return [(old, new) for old, new in pairs.items() if old != new]
+
+
+def _keyed(names: dict, key: str) -> Optional[str]:
+    """The key of a dict naming that card (CardAuthors.key), or None."""
+    return next((k for k in names if CardAuthors.key(k) == key), None)
+
+
+def rename_edits(text: str, card: Card) -> Optional[str]:
+    """
+    Card Edits.json after a card's files were renamed: its entry (and its pictures') under the new name, `_rename` gone,
+    the old name an alias (so /query and the site's search still find it; the bot's field under another's _by: _bot).
+    No rename (the files had the name already): only `_rename` goes, once the name left the entry.
+
+    Returns:
+        The new text, or None when unchanged
+    """
+    data = loads(text)
+    cards = data.get("cards")
+    if not isinstance(cards, dict):
+        return None
+    before = dump_edits(data)
+    pairs = _renamed_names(card)
+    if not pairs:
+        k = _keyed(cards, card.key)
+        if k is not None and isinstance(cards[k], dict) and "name" not in cards[k]:
+            cards[k] = {f: v for f, v in cards[k].items() if f != RENAME}
+        out = dump_edits(data)
+        return out if out != before else None
+    for old, new in pairs:
+        k = _keyed(cards, CardAuthors.key(old))
+        entry = dict(cards.pop(k)) if k is not None and isinstance(cards[k], dict) else None
+        if CardAuthors.key(old) == card.key:
+            entry = entry if entry is not None else {}
+            entry.pop(RENAME, None)
+            aliases = list(entry.get("aliases") or [])
+            if old.lower() not in (a.lower() for a in aliases) and old.lower() != new.lower():
+                if "aliases" not in entry and entry.get("_by") not in (None, BOT_BY):
+                    entry["_bot"] = list(entry.get("_bot") or []) + ["aliases"]
+                entry["aliases"] = aliases + [old]
+            entry.setdefault("_by", BOT_BY)
+            entry.setdefault("_at", _now())
+        if entry is None:
+            continue
+        there = _keyed(cards, CardAuthors.key(new))
+        if there is not None:                   # an entry under the new name already: the card's fields win
+            entry = {**cards.pop(there), **entry}
+        entry = rewrite_entry(entry, psd=entry.get("_psd"))
+        if entry is not None:
+            cards[new] = entry
+    out = dump_edits(data)
+    return out if out != before else None
+
+
+def rename_authors(text: str, pairs: list) -> Optional[str]:
+    """Card Authors.txt with the renamed cards' [cards] lines under their new names (the line stays where it is)."""
+    lines, section, changed = text.split("\n"), None, False
+    new = dict((CardAuthors.key(old), name) for old, name in pairs)
+    for i, line in enumerate(lines):
+        bare = line.strip()
+        if bare.startswith("[") and bare.endswith("]"):
+            section = bare.strip("[]").strip().lower()
+            continue
+        left, sep, right = line.partition("=")
+        if section == "cards" and sep and not bare.startswith("#") and CardAuthors.key(left) in new:
+            lines[i] = new[CardAuthors.key(left)] + " =" + right
+            changed = True
+    return "\n".join(lines) if changed else None
+
+
+def _rename_keys(text: str, pairs: list, merge: Callable) -> Optional[str]:
+    """A {"cards": {name: value}} file (dump_edits' layout) with the renamed cards' keys moved; merge(theirs, ours) when
+    the new name had one."""
+    data = loads(text)
+    cards = data.get("cards")
+    if not isinstance(cards, dict):
+        return None
+    changed = False
+    for old, new in pairs:
+        k = _keyed(cards, CardAuthors.key(old))
+        if k is None:
+            continue
+        value = cards.pop(k)
+        there = _keyed(cards, CardAuthors.key(new))
+        cards[new] = merge(cards.pop(there), value) if there is not None else value
+        changed = True
+    return dump_edits(data) if changed else None
+
+
+def _earlier(theirs, ours):
+    """Creation dates: a hand entry, else the earlier day."""
+    pick = [e for e in (theirs, ours) if isinstance(e, dict) and e.get("from") == "hand"] or \
+        sorted((e for e in (theirs, ours) if isinstance(e, dict)), key=lambda e: str(e.get("date")))
+    return pick[0] if pick else ours
+
+
+def rename_paths(text: str, paths: dict) -> Optional[str]:
+    """TTS/decks.json with the renamed files' paths (JSON strings, the file's own spelling) replaced."""
+    out = text
+    for old, new in paths.items():
+        out = out.replace(dumps(old, ensure_ascii=False), dumps(new, ensure_ascii=False))
+    return out if out != text else None
+
+
+def _rename_share(card: Card, share: Share) -> Share:
+    """A renamed card's share: the edits file's rename after its own rewrite (the rename unticked meanwhile: left out,
+    edit-changed), and the other files keyed by the card (side): Card Authors.txt, Card Creation Dates.json, Card
+    Ratings.json, TTS/decks.json. The TTS save follows at the Card sync's save step (tts_save, the Renamed trailers)."""
+    if not card.rename or not (card.relocated and card.renames or "name" in card.dropped):
+        return share
+    own = share.rewrite
+
+    def rewrite(text: str) -> Optional[str]:
+        if card.renames and not CardEdits.parse(text).renames(card.key):
+            raise Refused("edit-changed", f"the rename changed on {CARD_BRANCH} meanwhile: not touched")
+        out = own(text)
+        return rename_edits(out if out is not None else text, card) or out
+    pairs = _renamed_names(card)
+    share.rewrite = rewrite
+    if pairs:
+        share.side = {AUTHORS_PATH: lambda text: rename_authors(text, pairs),
+                      CREATED_PATH: lambda text: _rename_keys(text, pairs, _earlier),
+                      RATINGS_PATH: lambda text: _rename_keys(text, pairs, lambda a, b: CardRatings.order(list(a) + list(b))),
+                      RULES_PATH: lambda text: rename_paths(text, card.relocated)}
+    return share
+
+
+def side_files(tip: Snapshot, shares: list) -> dict:
+    """The other files the included shares rewrite (side), at H': {path: bytes} of the ones that changed."""
+    out = {}
+    for path in sorted({path for share in shares for path in share.side}):
+        if path not in tip.tree:
+            continue
+        text = new = tip.fetch(tip.tree[path][1]).decode("utf-8")
+        for share in shares:
+            if path in share.side:
+                new = share.side[path](new) or new
+        if new != text:
+            out[path] = new.encode("utf-8")
+    return out
 
 
 def first_type_spot(snapshot: Snapshot, work: str, card: Card, parsed: dict, psd, parser) -> Optional[tuple]:
@@ -830,6 +1025,8 @@ def _describe(card: Card) -> str:
             parts.append(f"name {old!r} -> {value!r}" if old is not None else f"name -> {value!r}")
         else:
             parts.append(f"{name} {old} -> {value}" if old is not None else f"{name} -> {value}")
+    if card.renamed:
+        parts.append(f"renamed: {card.name} -> {card.renamed}")
     return ", ".join(parts)
 
 
@@ -917,7 +1114,7 @@ def editors(card: Card) -> list:
     """
     The logins whose baked fields the commit prints: _by (one login, or {field: login}), sorted, deduplicated.
     """
-    if not card.jobs:                           # nothing printed (redundant only): no credit
+    if not card.jobs and not card.renamed:      # nothing printed (redundant only): no credit
         return []
     by = card.by
     logins = [by.get(f) for f in card.jobs] if isinstance(by, dict) else [by]
@@ -932,12 +1129,13 @@ def _message(cards: list) -> str:
     Args:
         cards: The cards in the commit
     """
-    baked = [c for c in cards if c.jobs and not c.refusal]
-    redundant = [c for c in cards if not c.jobs and not c.refusal]
+    baked = [c for c in cards if (c.jobs or c.renamed) and not c.refusal]
+    redundant = [c for c in cards if not c.jobs and not c.renamed and not c.refusal]
     refused = [c for c in cards if c.refusal]
     counts = [f"{len(group)} {word}" for group, word in ((baked, "baked"), (redundant, "redundant"), (refused, "refused")) if group]
     lines = [f"- {c.name}: {_describe(c)}{_misses(c)}{_fx_notes(c)}" for c in baked]
     trailers = [f"{EDIT_BY}: {login}" for login in sorted(login for c in baked for login in editors(c))]
+    trailers += [f"{RENAMED}: {old} -> {new}" for c in baked if c.renames for old, new in c.relocated.items()]
     return "\n\n".join(part for part in (f"{SUBJECT}: " + ", ".join(counts), "\n".join(lines), "\n".join(trailers)) if part)
 
 
@@ -1059,6 +1257,15 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
             card.partial.append(refused.refusal)
             del card.jobs["stars"]
             bake = dict(card.jobs)
+        try:                                    # the name's files too, when asked (owner 10-25)
+            plan_rename(snapshot, card)
+        except Refused as refused:              # the name stays in the file, refused; the rest bakes
+            if not (set(card.jobs) - {"name"}) and not [f for f in card.redundant if f != "name"] and not settled:
+                raise
+            card.partial.append(refused.refusal)
+            card.jobs.pop("name", None)
+            bake.pop("name", None)
+            card.redundant = [f for f in card.redundant if f != "name"]
         if bake:
             texty = psd_edit.TEXT_FIELDS + ("parts",)
             if any(f in texty for f in card.jobs) and not psd_edit.text_engine():
@@ -1101,6 +1308,8 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                     bake.pop(refused.field, None)
                     if refused.field == "stars":    # not baked: not moved either
                         card.moves, card.moved_to, card.move_notes = {}, "", []
+                    if refused.field == "name":     # not baked: not renamed either
+                        card.renames, card.renamed = {}, ""
                     if not bake:
                         break
         if card.baked is not None:
@@ -1121,18 +1330,22 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                                 "validator": card.baked.reparse["validator"], "fx": card.baked.fx}, indent=1, ensure_ascii=False))
             card.verdict = {"state": "baked", "for": card.jobs, "psd": card.new_psd_sha[:8],
                             "reason": _describe(card) + _fx_notes(card), "at": _now()}
-        if card.moves:                          # the PSD and its PNGs go to the new folder: added there, deleted here
+        card.relocated = {old: _moved_to(card, old) for old in dict.fromkeys(list(card.moves) + list(card.renames))}
+        if card.relocated:                      # the PSD and its PNGs go to the new folder or name: added there, deleted here
             if card.baked is None:
                 card.new_psd_sha = card.psd_sha
                 card.verdict = {"state": "baked", "for": card.jobs, "psd": card.psd_sha[:8], "reason": _describe(card),
                                 "at": _now()}
-            for old, new in card.moves.items():
+            for old, new in card.relocated.items():
                 if old not in card.files:
                     with open(join(folder, "old", basename(old)), "rb") as fh:
                         card.files[old] = fh.read()
                 card.files[new], card.files[old] = card.files[old], None
                 card.expect[new] = ""           # nothing there at the commit
-            card.verdict["moved"] = card.moved_to
+            if card.moves:
+                card.verdict["moved"] = card.moved_to
+            if card.renames:
+                card.verdict["renamed"] = card.renamed
         card.dropped = [f for f in list(card.jobs) + card.redundant if f != "parts"]   # a baked or printed name goes too
         if card.partial:                        # what stays in the file: refused on the PSD this commit leaves; FX notes told
             card.verdict = {"state": "refused", "for": {r.field: card.fields[r.field] for r in card.partial},
@@ -1155,7 +1368,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
 
 def _kept(card: Card) -> bool:
     """A bake's flags (FX notes, skipped layers, a folder move): its verdict stays once no field is left."""
-    return bool(_fx_notes(card)) or bool((card.verdict or {}).get("skipped")) or bool(card.moved_to)
+    return bool(_fx_notes(card)) or bool((card.verdict or {}).get("skipped")) or bool(card.moved_to) or bool(card.renamed)
 
 
 def share_of(card: Card) -> Optional[Share]:
@@ -1177,7 +1390,7 @@ def share_of(card: Card) -> Optional[Share]:
             if n != 1 and gone:
                 out = rewrite_edits(out or text, card_name(png), gone) or out
         return out
-    return Share(card, card.files, card.expect, drop)
+    return _rename_share(card, Share(card, card.files, card.expect, drop))
 
 
 def refusal_verdict(card: Card) -> dict:
@@ -1216,11 +1429,16 @@ def records(report: Report, edits: CardEdits, verdicts: Optional[dict]) -> tuple
             continue
         entry = rewrite_entry(edits.cards.get(card.key, {}), card.dropped, card.verdict, _kept(card), card.part_drop)
         now = (entry or {}).get("_psd")
-        if not (before is None and now is None) and not _same_verdict(before, now):
+        if card.renamed:                        # the verdict goes with the card to its new name
+            if before is not None:
+                landed[card.key] = None
+            landed[CardAuthors.key(card.renamed)] = now
+        elif not (before is None and now is None) and not _same_verdict(before, now):
             landed[card.key] = now
-        if card.jobs:
+        if card.jobs or card.renamed:
             pngs = sorted(p for p, data in card.files.items() if data is not None and p.lower().endswith(".png"))
-            baked.append({"kind": "baked", "card": card.name, "fields": [f for f in card.jobs if f != "parts"] or ["parts"],
+            fields = [f for f in card.jobs if f != "parts"] or (["parts"] if card.jobs else ["name"])
+            baked.append({"kind": "baked", "card": card.renamed or card.name, "fields": fields,
                           "reason": _describe(card) + _misses(card) + _fx_notes(card), "pngs": pngs})
     doc = {"schema": 1, "cards": cards, "landed": landed}
     told = {"events": events, "landed": baked}

@@ -204,7 +204,7 @@ def test_payload_words_links_and_order():
     assert "[Kirby](https://site/c/kirby/) (Creature, 3★) by Bob" in text
     assert "(Auxiliary creature, 4★)" in text                                    # app.js's word, never "Other"
     assert "[Waddle Dee](https://site/#/cards?q=Waddle%20Dee): HP 5 → 6; ability changed (buff)" in text
-    assert "ZOEY!!!!! is now [Z!!!!!](" in text and "Gone (PSD deleted)" in text
+    assert ") (renamed from ZOEY!!!!!)" in text and "[Z!!!!!](" in text and "Gone (PSD deleted)" in text
     assert "[Meta](https://site/#/cards?q=Meta): subseries → Kirby (by mike, on the website)" in text
     assert cl.payload([], "https://site") is None
 

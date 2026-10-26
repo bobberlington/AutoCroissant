@@ -261,6 +261,27 @@ def card_name(path: str) -> str:
     return splitext(basename(path))[0].replace("_", " ")
 
 
+# a card's files renamed (the editor's "Also rename the card's files", owner 2026-10-25): the bake commit's trailer per
+# file, "Renamed: <old path> -> <new path>"; the data build, the TTS save and the website follow it
+RENAMED = "Renamed"
+NOT_IN_FILE_NAMES = '<>:"/\\|?*'              # what a Windows or macOS file name can't hold
+RESERVED_STEMS = frozenset(["con", "prn", "aux", "nul"] + [f"{p}{n}" for p in ("com", "lpt") for n in range(1, 10)])
+
+
+def file_stem(name: str) -> str:
+    """A card name as a file stem, the repo's convention ("Mini Destroyer's Bow" -> "Mini_Destroyer's_Bow"): spaces as
+    underscores, other punctuation kept; characters no file name can hold dropped; "" when nothing usable is left."""
+    text = "".join(c for c in straight(name) if c not in NOT_IN_FILE_NAMES and ord(c) >= 32 and ord(c) != 127)
+    stem = "_".join(text.split()).strip(". _")
+    return "" if stem.split(".")[0].lower() in RESERVED_STEMS else stem
+
+
+def rename_trailer(value: str):
+    """A Renamed trailer's value -> (old path, new path), or None."""
+    old, sep, new = value.strip().partition(" -> ")
+    return (old, new) if sep and old and new else None
+
+
 APOSTROPHE = "\u2019"                         # always ' (U+0027), never this (owner, 2026-10-25)
 STRAIGHT_FIELDS = ("ability", "display_name", "note")   # a card's printed text in the data (names are file stems)
 
@@ -307,10 +328,13 @@ __all__ = [
     'CardInfo',
     'CardStats',
     'CardType',
+    'RENAMED',
     'StatsDatabase',
     'card_name',
     'duplicate_png',
+    'file_stem',
     'get_stats_as_dict',
+    'rename_trailer',
     'stats_db',
     'straight',
     'straighten_card',

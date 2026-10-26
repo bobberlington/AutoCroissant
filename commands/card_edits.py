@@ -27,6 +27,7 @@ ADD_ABILITY = "+ability"                        # the key of an ability added to
 PART_KEY = re_compile(r"^(\d+|\+ability)\Z")   # a layer id, or ADD_ABILITY
 HEX8 = re_compile(r"^[0-9a-f]{8}\Z")
 PARTS_MAX, PART_TEXT_MAX = 64, 4096
+RENAME = "_rename"                              # true: the bake renames the card's files to its name (owner 2026-10-25)
 
 
 @dataclass
@@ -78,6 +79,7 @@ class CardEdits:
     TTSCardMaker's site/Card Edits.json: card fixes from the website's Edit button.
     {"cards": {"Card Name": {"field": value, "_by": ..., "_at": ...}}}; names match like the authors file.
     Same fields as the website (site/build/build_site.py). The PSD values are kept in card.parsed_values.
+    `_rename: true` (beside a name): the bake also renames the card's files (renames()).
     """
     cards: dict = field(default_factory=dict)       # normalized card name -> {field: value}
     meta: dict = field(default_factory=dict)        # normalized card name -> its _-keys (_by, _at, _psd), never applied
@@ -132,6 +134,14 @@ class CardEdits:
                 edits.cards[key] = {k: v for k, v in fields.items() if not k.startswith("_") and cls.valid(k, v)}
                 edits.meta[key] = {k: v for k, v in fields.items() if k.startswith("_")}
         return edits
+
+    def renames(self, key: str) -> bool:
+        """Whether the bake renames a card's files to its name (key: CardAuthors.key): `_rename` true beside a name that
+        isn't website only (`_site`); build_site.parse_edits' rule."""
+        meta = self.meta.get(key) or {}
+        site = meta.get("_site")
+        return meta.get(RENAME) is True and isinstance(self.cards.get(key, {}).get("name"), str) \
+            and not (isinstance(site, list) and "name" in site)
 
     def get(self, card: "CardInfo", name: str):
         if name == "creatures":
@@ -423,6 +433,7 @@ __all__ = [
     'ADD_ABILITY',
     'ORDER',
     'PUNCTUATION',
+    'RENAME',
     'as_parsed',
     'dump_edits',
     'dump_ratings',

@@ -467,7 +467,7 @@ def _line(event: dict, site: str, ids: Optional[dict]) -> str:
         where = f" (by {BOT})" if is_bot(by) else f" (by {_md(by)}, on the website)" if by else ""
         return f"{title}: {_changes(event.get('fields') or {})}{verdict}{where}"
     if kind == "renamed":
-        return f"{_md(event['card'])} is now [{_md(event['renamed_to'])}]({card_link(event['renamed_to'], site, ids)})"
+        return f"[{_md(event['renamed_to'])}]({card_link(event['renamed_to'], site, ids)}) (renamed from {_md(event['card'])})"
     if kind == "moved":
         return f"{title} moved to {_md((event.get('path') or '').rsplit('/', 1)[0])}"
     if kind == "archived":
