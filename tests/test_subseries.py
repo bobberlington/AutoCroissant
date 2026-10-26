@@ -1,4 +1,5 @@
 """Subseries: a database-only card field (Card Edits.json, never the PSD)."""
+from copy import copy
 from types import SimpleNamespace
 
 import pytest
@@ -99,4 +100,10 @@ def test_query_embed_shows_series_and_subseries(monkeypatch):
     assert sent[0][0] is None and sent[0][1]["embed"].description == "mario · Paper Mario: The Thousand-Year Door"
     qc.query_name(SimpleNamespace(), "Kirby")                   # no subseries, no website data: plain link as before
     assert "embed" not in sent[1][1] and sent[1][0].endswith("/Kirby.png")
+    kirby = copy(FAKE["Kirby"])
+    kirby.art, kirby.ability_art = "Drawn by *Ann*: https://www.pixiv.net/en/artworks/1.", "Kirby Super Star"
+    monkeypatch.setitem(cm.stats_db.stats, "Kirby", kirby)
+    qc.query_name(SimpleNamespace(), "Kirby")                   # artwork sources: one line each, URLs as masked links
+    assert sent[2][1]["embed"].description == ("kirby\nArtwork source: Drawn by \\*Ann\\*: [pixiv.net](https://www.pixiv.net/en/artworks/1)."
+                                               "\nAbility artwork source: Kirby Super Star")
 
