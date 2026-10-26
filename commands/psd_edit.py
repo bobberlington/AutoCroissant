@@ -4092,7 +4092,9 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         layer = name_layer(psd, card, own_text)
     follow_kerning(psd, layer)                  # drawn kerned as Photoshop shows it (B12)
     old_text, old_bbox, story = layer.text, tuple(layer.bbox), story_index(layer)
-    own = which == "name" and own_text_title(layer, card)
+    own = which == "name" and own_text_title(layer, card) and any(   # the title by its own text, never a split title's piece
+        found is layer for found in PSDParser.title_layers(psd, [one for one in psd.descendants() if _is_text_layer(one)],
+                                                           card, own_text))
     flags = []
 
     def flag(code: str, why: str) -> None:      # a content problem: baked best-effort and told (owner 2026-10-24)
