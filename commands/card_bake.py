@@ -49,7 +49,7 @@ from hashlib import sha1
 from json import dumps, loads
 from os import environ, makedirs, pathsep, remove
 from os.path import abspath, basename, dirname, exists, expanduser, isdir, join, splitext
-from re import IGNORECASE, escape, fullmatch, search
+from re import IGNORECASE, escape, findall, fullmatch, search
 from subprocess import CalledProcessError, TimeoutExpired, run as run_process
 from sys import stderr
 from tempfile import mkdtemp
@@ -123,6 +123,9 @@ class Card:
     included: bool = False                      # in the commit land made (or would make: a dry run)
     dropped: list = field(default_factory=list)     # fields removed from the file
     creatures: bool = False                     # the entry has a creatures list: a baked stat is creature 1's (its rows)
+    shared: dict = field(default_factory=dict)  # creature n (2...) -> {stat: value} a creature 1 bake changed too (a
+    #   shared bar: Pix's HP, Twin Emperors' shared health), for its creatures list
+    title_anchor: int = 0                       # px an earlier bake of this PSD moved its title on (R4, its verdict)
     site: dict = field(default_factory=dict)    # field -> why: website only now, the card image can't print it (classify)
     by: object = None                           # the entry's _by: who asked for its fields (Edit-by trailers)
     verdict: Optional[dict] = None              # its verdict (baked or refused), for the data's verdicts.json
@@ -383,8 +386,9 @@ def rewrite_entry(entry: dict, drop=(), psd: Optional[dict] = None, keep: bool =
         keep: When no field is left, keep the verdict alone (a bake's flags, shown on the card page)
         part_drop: Keys of `parts` to remove (baked, redundant, skipped, deleted: PARTS_EDITOR.md §4.11); a derived
             name or ability goes with the last part of its field, `parts` with its last key
-        creature: {stat: value} the card now prints for creature 1: its entry in the `creatures` list takes them (the
-            card's stats are creature 1's; a dropped stat would leave the list's old value showing; owner 2026-10-26)
+        creature: [{stat: value} per creature] the card now prints (a dict: creature 1's): its entries in the
+            `creatures` list take them (the card's stats are creature 1's, a bar it shares may change another's; a
+            dropped stat would leave the list's old value showing; owner 2026-10-26)
         site: Fields that are website only from now on (classify's site: the card image can't print them), added to
             `_site` (CardEdits.SITE_FIELDS' order)
 
@@ -393,8 +397,11 @@ def rewrite_entry(entry: dict, drop=(), psd: Optional[dict] = None, keep: bool =
         (section 5 step 10)
     """
     entry, drop = dict(entry), list(drop)
-    if creature and isinstance(entry.get("creatures"), list) and entry["creatures"] and isinstance(entry["creatures"][0], dict):
-        entry["creatures"] = [{**entry["creatures"][0], **creature}, *entry["creatures"][1:]]
+    if isinstance(creature, dict):
+        creature = [creature]
+    if creature and any(creature) and isinstance(entry.get("creatures"), list) \
+            and all(isinstance(one, dict) for one in entry["creatures"]):
+        entry["creatures"] = [{**one, **(creature[n] if n < len(creature) else {})} for n, one in enumerate(entry["creatures"])]
     if site:
         had = entry.get(SITE) if isinstance(entry.get(SITE), list) else []
         entry[SITE] = [f for f in CardEdits.SITE_FIELDS if f in set(had) | set(site)]
@@ -952,7 +959,8 @@ def bake_pictures(card: Card, psd, parsed: dict, parser, folder: str, fonts_dir:
         makedirs(out, exist_ok=True)
         baked = psd_edit.apply_jobs(old_psd, join(folder, "old", basename(card.pictures[n])), target or card.rel, jobs,
                                     parses[n], parser, out, fonts_dir, colors, update_preview=n == saved,
-                                    types_dir=types_dir, psd=psd, view=n, template=template, ability_from=ability_from)
+                                    types_dir=types_dir, psd=psd, view=n, template=template, ability_from=ability_from,
+                                    title_anchor=card.title_anchor)
         if first is None:
             first = baked
         elif psd_edit.layer_records(baked.psd_path) != psd_edit.layer_records(first.psd_path):
@@ -990,6 +998,18 @@ def verdict_of(edits: CardEdits, verdicts: Optional[dict], key: str) -> Optional
     if verdicts and key in verdicts:
         return verdicts[key]
     return edits.meta.get(key, {}).get("_psd")
+
+
+MOVED = r"name: moved ([+-]\d+) px to stay on the card"
+
+
+def title_anchor(verdict: Optional[dict], psd_sha: str) -> int:
+    """The px a baked verdict says its bake moved the title on (R4), while the PSD is still the one it baked; else 0."""
+    if not (isinstance(verdict, dict) and verdict.get("state") == "baked" and psd_sha
+            and verdict.get("psd") == psd_sha[:8]):
+        return 0
+    found = findall(MOVED, str(verdict.get("reason", "")))
+    return int(found[len(found) - 1]) if found else 0
 
 
 def final(edits: CardEdits, snapshot: Snapshot, card: Card, verdicts: Optional[dict] = None) -> bool:
@@ -1338,7 +1358,8 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                     else:
                         card.baked = psd_edit.apply_jobs(old_psd, old_png, target, bake, parsed, parser, new_dir,
                                                          fonts_dir, colors, update_preview=True, types_dir=types_dir,
-                                                         psd=psd, template=template, ability_from=added)
+                                                         psd=psd, template=template, ability_from=added,
+                                                         title_anchor=card.title_anchor)
                     break
                 except Refused as refused:
                     if refused.field not in card.jobs or (len(card.jobs) == 1 and not card.redundant):
@@ -1356,6 +1377,12 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                     if not bake:
                         break
         if card.baked is not None:
+            titled = "name" in card.jobs or any(isinstance(part, dict) and part.get("field") == "name"
+                                                for part in (card.jobs.get("parts") or {}).values())
+            if card.title_anchor and not titled:    # the title stays moved: its verdict keeps saying so
+                card.baked.fx_notes.append(f"overflow: name: moved {card.title_anchor:+d} px to stay on the card")
+            card.shared = shared_creatures(parsed["card"].get("creatures"), card.baked.reparse["card"].get("creatures"),
+                                           card.jobs)
             with open(card.baked.psd_path, "rb") as fh:
                 psd_bytes = fh.read()
             card.new_psd_sha = blob_sha(psd_bytes)
@@ -1443,11 +1470,28 @@ def share_of(card: Card) -> Optional[Share]:
     return _rename_share(card, Share(card, card.files, card.expect, drop))
 
 
-def _creature_one(card: Card) -> dict:
-    """The stats the card prints for creature 1 after the run (baked or already printed), for its creatures list."""
-    if not card.creatures:
+def shared_creatures(before: Optional[list], after: Optional[list], jobs: dict) -> dict:
+    """Creature n (1-based, 2...) -> {stat: value} for the other creatures a stat bake changed as well (a bar they share
+    with creature 1: psd_edit._creatures_after's rule, read off the re-parse)."""
+    if not before or not after or len(before) != len(after):
         return {}
-    return {f: card.fields[f] for f in card.dropped if f in psd_edit.STAT_FIELDS and f in card.fields}
+    out: dict = {}
+    for stat in jobs:
+        if stat in psd_edit.STAT_FIELDS:
+            for n in range(1, len(after)):
+                if after[n].get(stat) != before[n].get(stat):
+                    out.setdefault(n + 1, {})[stat] = after[n].get(stat)
+    return out
+
+
+def _creature_one(card: Card) -> list:
+    """The stats the card prints after the run (baked or already printed) per creature, for its creatures list: creature
+    1's, then any other a shared bar changed ([{stat: value}, ...]; [] for a card without one)."""
+    if not card.creatures:
+        return []
+    one = {f: card.fields[f] for f in card.dropped if f in psd_edit.STAT_FIELDS and f in card.fields}
+    count = max([1] + list(card.shared))
+    return [one] + [card.shared.get(n, {}) for n in range(2, count + 1)]
 
 
 def refusal_verdict(card: Card) -> dict:
@@ -1705,6 +1749,8 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
         if edits is not None:
             known = load_verdicts(verdicts)
             cards = select(edits, snapshot, card)
+            for one in cards:
+                one.title_anchor = title_anchor(verdict_of(edits, known, one.key), one.psd_sha)
             named = len(cards)
             if pending_only:
                 cards = [c for c in cards if not final(edits, snapshot, c, known)]

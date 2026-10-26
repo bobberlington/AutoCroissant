@@ -478,6 +478,85 @@ def test_lane2_bars_read_back(clone, parser, tmp_path):
         pe.set_stat(psd, pe.parse_card(parser, _card(clone, zemer)[0], zemer, psd), "hp", 6)
 
 
+def _edit_saved(parser, path, rel, stat, value, out):
+    """set_stat on the PSD at path, saved to out and re-parsed: (the Edit, the saved PSD reopened, its parse)."""
+    psd = PSDImage.open(path)
+    edit = pe.set_stat(psd, pe.parse_card(parser, path, rel, psd), stat, value)
+    pe.save_psd(psd, out, update_preview=False)
+    return edit, PSDImage.open(out), pe.parse_card(parser, out, rel)
+
+
+LANE2_CHAINS = [
+    ("Creatures/Kirby/3 Stars/Pix.psd", "hp", (3, 10, 6)),                          # the moved tall mask found again
+    ("Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd", "hp", (5, 10, 2)),    # an edge moved to the bar's end and back
+    ("Creatures/Other/2 Stars/Slugcat.psd", "def", (0, 5)),                         # from 0
+    ("Creatures/Other/4 Stars/Sonic.psd", "spd", (10, 5, 20)),                      # the half rows after their own edits
+    ("Items/Active/2 Stars/Dirty_Bed.psd", "def", (3, 0)),                          # one dark picture per cell again
+]
+
+
+def test_lane2_bars_edit_again(clone, parser, tmp_path):
+    """A Lane 2 bar edited again from its own output (review 2026-10-26: Pix, Twin Emperors and Slugcat refused every next
+    value; Sonic's half rows went unseen and its covered row changed instead): each step reads back, Sonic's top row
+    shows the value, Dirty Bed's cell 1 shows one dark picture."""
+    for rel, stat, values in LANE2_CHAINS:
+        path = _card(clone, rel)[0]
+        for k, value in enumerate(values):
+            out = str(tmp_path / f"{Path(rel).stem}{k}.psd")
+            _, psd, parsed = _edit_saved(parser, path, rel, stat, value, out)
+            assert parsed["card"][stat] == value, (rel, value)
+            path = out
+        if stat == "spd":
+            split = pe.split_rows(PSDImage.open(str(tmp_path / "Sonic1.psd")), "spd")
+            assert split.top.visible == [5] and split.bottom.visible == [0] and not split.marker.is_visible()
+    cell1 = [layer for layer in stat_rows(psd)["def"][0][0] if layer.is_visible() and layer.kind == "smartobject"
+             and layer.bbox[0] < 440]
+    assert len(cell1) == 1
+
+
+def test_numbered_layers_go_down_too(clone, parser, tmp_path):
+    """Numbered layers 1-10 with no dark picture (owner 2026-10-26): Tainted Lazarus with its Dead Laz and dark rows
+    taken out, its 'Light' layers in their group or straight in the stat's: a decrease hides the layers past the value."""
+    rel = "Creatures/Isaac/3 Stars/Tainted_Lazarus.psd"
+    for variant in ("group", "flat"):
+        psd = PSDImage.open(_card(clone, rel)[0])
+        psd.remove(next(layer for layer in psd if layer.name == "Dead Laz"))
+        bars = next(layer for layer in next(layer for layer in psd if layer.name == "Laz") if layer.name == "Heart Bars")
+        for row in bars:
+            row.remove(next(layer for layer in row if layer.name.lower().endswith("dark")))
+            if variant == "flat":
+                light = next(layer for layer in row if layer.name == "Light")
+                kids, at = list(light), row.index(light)
+                for kid in kids:
+                    light.remove(kid)
+                row.remove(light)
+                for n, kid in enumerate(kids):
+                    row.insert(at + n, kid)
+        path = str(tmp_path / f"{variant}.psd")
+        psd.save(path)
+        _, saved, parsed = _edit_saved(parser, path, rel, "hp", 3, str(tmp_path / f"{variant}3.psd"))
+        assert parsed["card"]["hp"] == 3
+        _, _, parsed = _edit_saved(parser, str(tmp_path / f"{variant}3.psd"), rel, "hp", 9, str(tmp_path / f"{variant}9.psd"))
+        assert parsed["card"]["hp"] == 9
+
+
+def test_split_cells_borrow_the_dark_look(clone, parser, tmp_path):
+    """False Knight's DEF at 10 has no dark cell showing: from 10 its newly dark cells take the look of another row's
+    (review 2026-10-26: they showed navy), and back at 10 its dark row is hidden again, as the card had it."""
+    rel = "Creatures/Hollow Knight/2 Stars/False_Knight.psd"
+    sig = lambda layer: sorted((bytes(key), layer.tagged_blocks[key].tobytes()) for key in pe.EFFECT_BLOCKS
+                               if key in layer.tagged_blocks)
+    _, psd, parsed = _edit_saved(parser, _card(clone, rel)[0], rel, "def", 4, str(tmp_path / "fk4.psd"))
+    rows = {group.name: group for group, _, _ in stat_rows(psd)["def"]}
+    last = lambda stat: max((layer for group, _, _ in stat_rows(psd)[stat] if group.name == "Empty" for layer in group),
+                            key=lambda layer: layer.bbox[0])          # a dark cell past the row's value (HP 3, ATK 6)
+    dark = sorted(rows["Empty"], key=lambda layer: layer.bbox[0])
+    assert parsed["card"]["def"] == 4 and rows["Empty"].visible
+    assert sig(dark[4]) in (sig(last("hp")), sig(last("atk"))) and all(sig(layer) == sig(dark[4]) for layer in dark[5:])
+    _, psd, parsed = _edit_saved(parser, str(tmp_path / "fk4.psd"), rel, "def", 10, str(tmp_path / "fk10.psd"))
+    assert parsed["card"]["def"] == 10 and not {g.name: g for g, _, _ in stat_rows(psd)["def"]}["Empty"].visible
+
+
 @text_engine
 def test_layout_bar_bakes_and_the_guards_export_it(clone, parser, chart, tmp_path):
     """Tainted Isaac's hp through apply_jobs and every gate (gate_bytes takes the redrawn mask and the rename), and the push
@@ -1948,6 +2027,10 @@ def test_picture_titles_and_titles_off_the_card(clone, parser, chart):
     edit = pe.set_text_layer(psd, "name", "Stay II", str(clone / pe.FONTS_DIR), chart, "Stay", parser=parser)
     flagged(edit.notes, r"^overflow: name: moved \+\d+ px to stay on the card$")
     assert not pe._ink_off_canvas(layer, psd.width, psd.height) and layer.bbox[0] >= 0
+    moved = int(search(r"moved \+(\d+) px", " ".join(edit.notes)).group(1))
+    tx = layer._data.transform[4]                # renamed back: where the card maker put it, not where the move left it
+    edit = pe.set_text_layer(psd, "name", "Stay", str(clone / pe.FONTS_DIR), chart, "Stay", parser=parser, anchor=moved)
+    assert layer._data.transform[4] == tx - moved and "name: back where the card maker put it (-%d px)" % moved in edit.notes
 
 
 @text_edit

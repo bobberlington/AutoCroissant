@@ -283,6 +283,22 @@ def test_creature_one_bakes_and_website_only_fields(github):
     assert [c["hp"] for c in entry["creatures"]] == [6, 2] and "website only: atk 12" in text
 
 
+def test_shared_bars_and_moved_titles_are_remembered():
+    """A creature 1 bake that changed a bar it shares (Pix's HP) updates those creatures in the list too; a title an
+    earlier bake moved on (R4) is moved back first while its PSD is the one that bake left (review 2026-10-26)."""
+    before = [{"hp": 6, "def": 4}, {"hp": 6, "def": 8}, {"hp": 6, "def": 2}]
+    after = [{"hp": 3, "def": 4}, {"hp": 3, "def": 8}, {"hp": 3, "def": 2}]
+    shared = cb.shared_creatures(before, after, {"hp": 3})
+    assert shared == {2: {"hp": 3}, 3: {"hp": 3}} and cb.shared_creatures(before, before, {"def": 5}) == {}
+    entry = {"hp": 3, "creatures": [dict(c) for c in before], "_by": "web"}
+    out = cb.rewrite_entry(entry, ["hp"], creature=[{"hp": 3}, *shared.values()])
+    assert [c["hp"] for c in out["creatures"]] == [3, 3, 3] and [c["def"] for c in out["creatures"]] == [4, 8, 2]
+    assert cb.rewrite_entry(entry, ["hp"], creature={"hp": 3})["creatures"][1]["hp"] == 6       # creature 1's alone
+    baked = {"state": "baked", "psd": "abcdef12", "reason": "name 'Stay' -> 'Stay II'; overflow: name: moved +32 px to stay on the card"}
+    assert cb.title_anchor(baked, "abcdef1234") == 32
+    assert cb.title_anchor(baked, "99999999aa") == 0 and cb.title_anchor({**baked, "state": "refused"}, "abcdef1234") == 0
+
+
 def test_blob_gate(github):
     psd = _sha(github.files_at(github.head)[DOOMER])
     github.broken[psd] = b"not the PSD"

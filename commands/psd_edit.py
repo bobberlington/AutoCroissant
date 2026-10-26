@@ -1953,9 +1953,12 @@ def shown_name(parsed: dict) -> str:
 
 
 def _two_rows(card: dict, psd: Optional[PSDImage], stat: str) -> bool:
-    """Whether the stat has Top and Bottom rows (idea 13): read off the PSD, else inferred from a parse above 10."""
+    """Whether the stat has Top and Bottom rows (idea 13) or two half rows (SplitRows): read off the PSD, else inferred
+    from a parse above 10."""
     if psd is None:
         return (card.get(stat) or 0) > STAT_MAX
+    if split_rows(psd, stat) is not None:
+        return True
     try:
         return len(template_rows(psd, stat)) == 2
     except Refused:
@@ -2017,7 +2020,10 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
             elif value > 2 * STAT_MAX:          # past what the rows print: website only (owner 2026-10-26)
                 out.site[name] = f"{name} {value}: the bar's rows print up to 20"
             elif value > STAT_MAX and psd is not None and split_rows(psd, name) is not None:
-                out.site[name] = f"{name} {value}: its two rows print 0 to 10, or 20"
+                if value < 2 * STAT_MAX:
+                    out.site[name] = f"{name} {value}: its two rows print 0 to 10, or 20"
+                else:                           # both rows full again (set_split)
+                    out.jobs[name] = value
             elif value > STAT_MAX and not _two_rows(card, psd, name):
                 out.site[name] = f"{name} {value}: the bar's one row prints up to 10"
             else:
@@ -2929,27 +2935,45 @@ class SplitRows:
 
 
 def split_rows(psd: PSDImage, stat: str) -> Optional[SplitRows]:
-    """The stat's SplitRows: three rows, one showing only a digit over 10 (the marker), the other two template rows of
-    ten masked digits showing none (full); else None."""
+    """The stat's SplitRows: three rows, two of them sibling template rows of ten masked digits (the half rows), the third
+    the old row, its one digit layer named 10 or more the marker; as set_split leaves them too (the marker hidden, or
+    named 10). Else None."""
     rows = stat_rows(psd)[stat]
     if len(rows) != 3:
         return None
-    marked = [group for group, shown, _ in rows if shown]
-    if len(marked) != 1:
-        return None
-    shown = [layer for layer in marked[0] if not layer.is_group() and base_name(layer).strip().isdigit() and layer.is_visible()]
-    if len(shown) != 1 or int(base_name(shown[0])) <= STAT_MAX or shown[0].kind in DRAWN_LAYER_KINDS:
-        return None
-    halves = []
-    for group, _, band in sorted((row for row in rows if row[0] is not marked[0]), key=lambda row: (row[2] or (0, 0))[1]):
-        try:
-            row = _row(group, stat, False)
-        except Refused:
+    for old, _, _ in rows:
+        others = [row for row in rows if row[0] is not old]
+        markers = [layer for layer in old if not layer.is_group() and base_name(layer).strip().isdigit()
+                   and int(base_name(layer)) >= STAT_MAX and layer.kind not in DRAWN_LAYER_KINDS]
+        if len(markers) != 1 or others[0][0].parent is not others[1][0].parent:
+            continue
+        marker = markers[0]
+        if any(layer.is_visible() for layer in old if layer is not marker and not layer.is_group()
+               and base_name(layer).strip().isdigit()):
             return None
-        if len(row.digits) != len(DIGITS) or row.visible:
+        halves = []
+        for group, _, band in sorted(others, key=lambda row: (row[2] or (0, 0))[1]):
+            try:
+                row = _row(group, stat, False)
+            except Refused:
+                return None
+            if len(row.digits) != len(DIGITS):
+                return None
+            halves.append(row)
+        full = marker.is_visible() and int(base_name(marker)) > STAT_MAX
+        if full and any(row.visible for row in halves):         # as the card maker left it: the half rows full
             return None
-        halves.append(row)
-    return SplitRows(shown[0], *halves)
+        if not full and (len(halves[0].visible) > 1 or halves[1].visible != [0]):   # set_split's: top 0-9 or none, 0
+            return None
+        return SplitRows(marker, *halves)
+    return None
+
+
+def _split_reads(split: SplitRows) -> int:
+    """What the parser reads off SplitRows: the marker's value while it shows, else the top row's digit."""
+    if split.marker.is_visible():
+        return int(base_name(split.marker))
+    return stat_value([split.top, split.bottom])
 
 
 def _still_creatures(psd: PSDImage, emptied) -> bool:
@@ -2973,8 +2997,8 @@ def set_split(psd: PSDImage, parsed: dict, stat: str, value: int, split: SplitRo
     Returns:
         Edit, its changes declared per layer (Edit.bar); raises Refused for any other value
     """
-    old = int(base_name(split.marker))
-    if parsed["card"].get(stat) != old or not split.marker.is_visible():
+    old = _split_reads(split)
+    if parsed["card"].get(stat) != old:
         raise Refused("unsupported-card", f"{stat}: the parser reads {parsed['card'].get(stat)}, the rows show {old}")
     if STAT_MAX < value < 2 * STAT_MAX or value > 2 * STAT_MAX or value < 0:
         raise Refused("stat>10", f"{stat} {value}: its two rows print 0 to 10, or 20")
@@ -2984,7 +3008,8 @@ def set_split(psd: PSDImage, parsed: dict, stat: str, value: int, split: SplitRo
     if value == 2 * STAT_MAX:
         targets, marker = (None, None), (True, str(value))
     else:
-        targets, marker = (value if value < STAT_MAX else None, 0), (value == STAT_MAX, str(STAT_MAX) if value == STAT_MAX else str(old))
+        targets, marker = (value if value < STAT_MAX else None, 0), (value == STAT_MAX, str(STAT_MAX) if value == STAT_MAX
+                                                                     else base_name(split.marker).strip())
     for row, target in zip((split.top, split.bottom), targets):
         for name, layer in row.digits.items():
             layer.visible = target is not None and name == str(target)
@@ -3165,7 +3190,7 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
     if parsed["card"].get(stat) != old:
         raise Refused("unsupported-card", f"{stat}: the parser reads {parsed['card'].get(stat)}, the row shows {old}")
     if value == STAT_MAX and len(rows) == 1 and len(stat_rows(psd)[stat]) > 1 and str(STAT_MAX) not in rows[0].digits \
-            and not _still_creatures(psd, rows[0].group):
+            and len(parsed["card"].get("creatures") or []) > 1 and not _still_creatures(psd, rows[0].group):
         raise Refused("unsupported-card", f"{stat} 10: {rows[0].group.name!r} would show no digit, and the parser would "
                                           "then read the card as one creature, another row's value: edit it in Photoshop")
     if value < 0:
@@ -3290,18 +3315,18 @@ def set_bar(psd: PSDImage, parsed: dict, stat: str, value: int, why: Refused) ->
     if len(rows) != 1:                          # a stat's cells split over a lit and a dark row (R2)
         if pair is None or pair[0] is pair[1]:
             raise why
-        plan = plan_cells(psd, stat, pair, old, value)
+        plan = plan_cells(psd, stat, pair, old, value, parsed["card"])
     else:
         try:
-            plan = plan_bar(psd, rows[0][0], stat, old, value, why)
+            plan = plan_bar(psd, rows[0][0], stat, old, value, why, values=parsed["card"])
         except Refused as strict:               # only where the strict plan refuses, so a bar that baked before bakes
             try:                                # the same bytes: edges anywhere (R4), then the cells by name or look
-                plan = plan_bar(psd, rows[0][0], stat, old, value, why, loose=True, tall=picked)
+                plan = plan_bar(psd, rows[0][0], stat, old, value, why, loose=True, tall=picked, values=parsed["card"])
             except Refused:
                 try:
                     if pair is None:
                         raise strict
-                    plan = plan_cells(psd, stat, pair, old, value)
+                    plan = plan_cells(psd, stat, pair, old, value, parsed["card"])
                 except Refused:
                     raise _held_template(psd, stat, rows, strict) if picked else strict
     layers = list(dict.fromkeys([*plan.show, *plan.hide, *(layer for layer, _ in plan.names),
@@ -3559,12 +3584,13 @@ def _step(profile: np.ndarray, x0: int, at: float, tol: float, bar: tuple, loose
 
 
 def _edge_elements(psd: PSDImage, stat: str, box: tuple, edges: list, old: int, loose: bool = False,
-                   tall: bool = False) -> list:
+                   tall: bool = False, bar_layer=None) -> list:
     """
     The layers drawing the bar's value edge: a mask or pixels that switch on or off at the old value's cell edge and
     stay so across the rest of the bar (Isaac's lit hearts' mask, Chef Saltbaker's dark exposures, Pizza's dark
     overlays), each inside the stat's own row. loose: _step's (R4); tall: one picked from several rows of the stat
-    (bar_rows) may span them all (Pix's shared HP mask over its three creatures' rows).
+    (bar_rows) may span them all (Pix's shared HP mask over its three creatures' rows). The bar layer's own pixels are
+    the bar, never its edge (at 0 or 10 they switch at its end: Uumuu's "hp").
 
     Returns:
         [(layer, use_mask)]
@@ -3582,7 +3608,7 @@ def _edge_elements(psd: PSDImage, stat: str, box: tuple, edges: list, old: int, 
         for use_mask in (True, False):
             if use_mask and not (layer.has_mask() and layer.mask.width and layer.mask.height):
                 continue
-            if not use_mask and (layer.kind not in DRAWN_LAYER_KINDS or layer.bbox[2] <= layer.bbox[0]):
+            if not use_mask and (layer.kind not in DRAWN_LAYER_KINDS or layer.bbox[2] <= layer.bbox[0] or layer is bar_layer):
                 continue
             extent = tuple(layer.mask.bbox) if use_mask else tuple(layer.bbox)
             if layer.kind in DRAWN_LAYER_KINDS and layer.bbox[2] > layer.bbox[0]:
@@ -3625,16 +3651,30 @@ def _roles(cells: list, old: int) -> dict:
     return out
 
 
+def _mask_start(layer) -> int:
+    """Where a mask starts darkening along its middle row: its first column on (a redrawn mask keeps blank columns
+    before it: _held), else its left."""
+    mask = layer.mask
+    try:
+        raster = np.asarray(mask.topil().convert("L"))
+    except Exception:
+        return mask.left
+    if mask.background_color >= 128 or not raster.size:
+        return mask.left
+    on = np.flatnonzero(raster[raster.shape[0] // 2] >= 128)
+    return mask.left + int(on[0]) if on.size else mask.left
+
+
 def _digit_edges(group) -> dict:
     """{k: x} where the row's masked digit k (1-9, adjustment layers) starts darkening: the template's cell edges as
-    the card maker drew them."""
-    out = {}
+    the card maker drew them (of two k, the row's own: the shorter mask; Pix's tall shared one is the value's edge)."""
+    found: dict = {}
     for layer in group:
         digit = None if layer.is_group() else _digit(layer)
         if digit is not None and 0 < int(digit) < STAT_MAX and layer.kind not in DRAWN_LAYER_KINDS and layer.has_mask() \
                 and layer.mask.width:
-            out[int(digit)] = min(out.get(int(digit), layer.mask.left), layer.mask.left)
-    return out
+            found.setdefault(int(digit), []).append((layer.mask.height, _mask_start(layer)))
+    return {k: min(found[k])[1] for k in found}
 
 
 def _held(layer, dx: int, edge: float, tol: float, loose: bool = False) -> tuple:
@@ -3657,7 +3697,12 @@ def _held(layer, dx: int, edge: float, tol: float, loose: bool = False) -> tuple
     xs = np.arange(left, max(mask.left + width, end))
     source = np.where((xs >= start) & (xs < end), xs - dx, xs) - mask.left
     if loose:
-        grows = int(edge - tol - 1) if dx > 0 else int(edge + tol + 1)      # the side that grows over the stretch
+        grows = int(edge - tol - 1) if dx > 0 else int(edge + tol + 1)      # the side that grows over the stretch;
+        last = mask.left + width - 1                                        # past the mask's end, its last column there
+        if dx > 0 and grows < mask.left < edge - tol / 4:                   # (an edge moved to 0 or 10 before)
+            grows = mask.left
+        elif dx < 0 and grows > last > edge + tol / 4:
+            grows = last
         inside = (xs >= start) & (xs < end)
         far = inside & (np.abs(xs - dx - edge) > tol) & ((xs < edge + dx - tol) if dx > 0 else (xs > edge + dx + tol))
         source = np.where(far, grows, source) - np.where(far, mask.left, 0)
@@ -3687,7 +3732,7 @@ def _held_profile(layer, dx: int, edge: float, tol: float, y: int, x0: int, x1: 
 
 
 def plan_bar(psd: PSDImage, group, stat: str, old: int, value: int, why: Refused, loose: bool = False,
-             tall: bool = False) -> BarPlan:
+             tall: bool = False, values: Optional[dict] = None) -> BarPlan:
     """
     How a stat changes on a bar the card maker drew their own way, following their layout (owner 10-24: support, not
     refusals; 10-25: no art swap). The row (the stat's one digit row, stat_rows) may draw its value with:
@@ -3751,7 +3796,8 @@ def plan_bar(psd: PSDImage, group, stat: str, old: int, value: int, why: Refused
                                       and u.bbox[1] < box[3] and u.bbox[3] > box[1] for u in under)
                 if not dark and not covered:
                     raise Refused("unsupported-card", f"{stat} {value}: cell {k} of {group.name!r} has no dark picture")
-                plan.show += [layer for layer in dark if not layer.visible]
+                if dark and not any(layer.visible for layer in dark):   # one dark picture, not a stack of them
+                    plan.show.append(next((layer for layer in dark if base_name(layer).strip() == str(k)), dark[0]))
                 plan.hide += [layer for layer in lit if layer.visible]
         shown = {id(layer): True for layer in plan.show} | {id(layer): False for layer in plan.hide}
     elif cells:
@@ -3760,15 +3806,19 @@ def plan_bar(psd: PSDImage, group, stat: str, old: int, value: int, why: Refused
                                          if key in layer.tagged_blocks))
         lit_ex = bases[old - 1][0] if old >= 1 and bases[old - 1] else None
         dark_ex = bases[old][0] if old < STAT_MAX and bases[old] else None
+        if (lit_ex is None) != (dark_ex is None):       # 0 or 10: the other side's style is on another row of the card
+            ex = lit_ex or dark_ex
+            other = _side_example(psd, stat, values, lit_ex is None, ex,
+                                  (min(l.bbox[0] for l in cells[0]) + max(l.bbox[2] for l in cells[0])) / 2 if lit_ex is None
+                                  else (min(l.bbox[0] for l in cells[9]) + max(l.bbox[2] for l in cells[9])) / 2)
+            lit_ex, dark_ex = (other, dark_ex) if lit_ex is None else (lit_ex, other)
         if lit_ex is not None and dark_ex is not None and sig(lit_ex) != sig(dark_ex):
             hows.append("cell styles")
-        elif (lit_ex is None) != (dark_ex is None):     # 0 or 10: the other side's style is on another row of the card
-            pass
         if hows:
             for k in range(min(old, value) + 1, max(old, value) + 1):
                 source = lit_ex if k <= value else dark_ex
                 plan.styles += [(layer, source) for layer in bases[k - 1] if sig(layer) != sig(source)]
-    elements = _edge_elements(psd, stat, box, edges, old, loose, tall)
+    elements = _edge_elements(psd, stat, box, edges, old, loose, tall, bar_layer)
     if elements:
         hows.append("the value's edge moved")
         dx = round(edges[value] - edges[old])
@@ -3819,6 +3869,38 @@ def plan_bar(psd: PSDImage, group, stat: str, old: int, value: int, why: Refused
     return plan
 
 
+def _side_example(psd: PSDImage, stat: str, values: Optional[dict], lit: bool, like, centre: float):
+    """
+    The cell another stat's row shows on the side this row has none of (at 0 no lit cell, at 10 no dark one): the
+    topmost visible layer of like's kind and size at x `centre` (this row's first or last cell) in the nearest row whose
+    value has a cell on that side (False Knight's DEF at 10 takes ATK's dark look; Uumuu's HP at 0 a lit one). None
+    when no row has one.
+    """
+    if not values:
+        return None
+    width, height = like.bbox[2] - like.bbox[0], like.bbox[3] - like.bbox[1]
+    mine = (like.bbox[1] + like.bbox[3]) / 2
+    order = {id(layer): k for k, layer in enumerate(psd.descendants())}
+    best = None
+    for key in STAT_FIELDS:
+        value = values.get(key)
+        if key == stat or not isinstance(value, int) or not (value >= 1 if lit else value < STAT_MAX):
+            continue
+        bands = [band for group, _, row in bar_rows(psd, key)[0]
+                 for band in [row or _bar_box(psd, group, key, _bar_layer(psd, group, key))] if band]
+        found = [layer for layer in psd.descendants() if not layer.is_group() and layer.kind == like.kind
+                 and layer.is_visible() and abs(layer.bbox[2] - layer.bbox[0] - width) <= 0.1 * width
+                 and abs(layer.bbox[3] - layer.bbox[1] - height) <= 0.25 * height
+                 and abs((layer.bbox[0] + layer.bbox[2]) / 2 - centre) < width / 2
+                 and any(band[1] <= (layer.bbox[1] + layer.bbox[3]) / 2 <= band[3] for band in bands)]
+        if found:
+            top = max(found, key=lambda layer: order[id(layer)])
+            far = abs((top.bbox[1] + top.bbox[3]) / 2 - mine)
+            if best is None or far < best[0]:
+                best = (far, top)
+    return best[1] if best else None
+
+
 LIT_ROW = r"fill|light|lit\b|full"           # a row of lit cells (False Knight's "Filled", Tainted Lazarus's "Light")
 DARK_ROW = r"empty|dark"                     # its dark row ("Empty", "Hp Dark")
 
@@ -3865,15 +3947,23 @@ def _cells_read(groups: list, names: dict, shown: dict) -> Optional[int]:
     return sum(value for value, _ in found)
 
 
-def plan_cells(psd: PSDImage, stat: str, pair: tuple, old: int, value: int) -> BarPlan:
+def _plus(reads: Optional[int], copies: int) -> Optional[int]:
+    """A row's reading with its copied lit cells; None when it shows no digit."""
+    return None if reads is None else reads + copies
+
+
+def plan_cells(psd: PSDImage, stat: str, pair: tuple, old: int, value: int, values: Optional[dict] = None) -> BarPlan:
     """
     A stat whose cells are separate layers, edited by showing cells 1..value lit and the rest dark (the numbered layers
     rule and R2, owner 2026-10-26): the lit and dark layers of each cell, by their names 1-10 when the lit ones carry
     them (Tainted Lazarus), else by place along the bar (False Knight's "0"s). A dark layer under a lit one follows the
     card (hidden where the lit cells hide theirs, as Lazarus, else left as it is); a hidden dark row is shown (False
     Knight's DEF at 10). A cell with no lit picture takes a copy of the lit one the card draws at that cell on another
-    stat's row, moved onto it (R6: Dirty Bed's DEF has no lit 1). The layer named after the value is renamed when the
-    parser reads the names (False Knight). Only where plan_bar refuses (set_bar).
+    stat's row, moved onto it (R6: Dirty Bed's DEF has no lit 1). Numbered layers 1-10 with no dark picture: those past
+    the value are hidden, nothing shown. A crossing cell takes its new side's look, from another row when this one shows
+    none (False Knight's DEF at 10: _side_example); a dark cell left under a lit one takes the card's look there, and a
+    full row hides the dark row again. The layer named after the value is renamed when the parser reads the names (False
+    Knight). Only where plan_bar refuses (set_bar).
 
     Returns:
         BarPlan; raises Refused("unsupported-card")
@@ -3881,12 +3971,14 @@ def plan_cells(psd: PSDImage, stat: str, pair: tuple, old: int, value: int) -> B
     lit_group, dark_group = pair
     leaves = lambda group, kinds: [layer for layer in group if not layer.is_group() and layer.kind in kinds
                                    and base_name(layer).strip().isdigit() and layer.bbox[2] > layer.bbox[0]]
-    if lit_group is dark_group:                 # by look
-        lits, darks = leaves(lit_group, ("pixel",)), leaves(lit_group, ("smartobject",))
+    drawn = tuple(kind for kind in DRAWN_LAYER_KINDS if kind != "type")
+    if lit_group is dark_group:                 # numbered layers 1-10 alone (no dark picture: hidden past the value),
+        lits, darks = leaves(lit_group, drawn), []      # else by look
+        if sorted(int(base_name(layer)) for layer in lits) != list(range(1, STAT_MAX + 1)):
+            lits, darks = leaves(lit_group, ("pixel",)), leaves(lit_group, ("smartobject",))
     else:
-        drawn = tuple(kind for kind in DRAWN_LAYER_KINDS if kind != "type")
         lits, darks = leaves(lit_group, drawn), leaves(dark_group, drawn)
-    if not lits or not darks:
+    if not lits or not (darks or lit_group is dark_group):
         raise Refused("unsupported-card", f"{stat}: no lit and dark cell layers in {lit_group.name!r}")
     every = lits + darks
     x0, x1 = min(layer.bbox[0] for layer in every), max(layer.bbox[2] for layer in every)
@@ -3938,39 +4030,62 @@ def plan_cells(psd: PSDImage, stat: str, pair: tuple, old: int, value: int) -> B
                 pick = next((layer for layer in dark if base_name(layer).strip() == str(k)), dark[0])
                 plan.show.append(pick)
                 shown[id(pick)] = True
-            elif not dark:
+            elif not dark and not by_name:      # numbered layers: the lit one hidden is all
                 raise Refused("unsupported-card", f"{stat} {value}: cell {k} of {lit_group.name!r} has no dark picture")
     sig = lambda layer: tuple(sorted((bytes(key), layer.tagged_blocks[key].tobytes()) for key in EFFECT_BLOCKS
                                      if key in layer.tagged_blocks))
-    examples = (next((layer for k in range(1, old + 1) for layer in cells[k][0] if layer.visible), None),
-                next((layer for k in range(old + 1, STAT_MAX + 1) for layer in cells[k][1] if layer.visible), None))
+    examples = [next((layer for k in range(1, old + 1) for layer in cells[k][0] if layer.visible), None),
+                next((layer for k in range(old + 1, STAT_MAX + 1) for layer in cells[k][1] if layer.visible), None)]
+    centre = lambda k: x0 + ((STAT_MAX - k) if mirrored else (k - 1)) * pitch + pitch / 2
+    if examples[1] is None and value < old and darks:       # no dark cell shows (10): another row's (False Knight's DEF)
+        examples[1] = _side_example(psd, stat, values, False, darks[0], centre(STAT_MAX))
+    if examples[0] is None and value > old and lits:        # none lit (0)
+        examples[0] = _side_example(psd, stat, values, True, lits[0], centre(1))
+    covered = next((layer for k in range(1, old + 1) for layer in cells[k][1]   # a dark cell under a lit one
+                    if layer.visible and any(one.visible for one in cells[k][0])), None)
     for k in range(min(old, value) + 1, max(old, value) + 1):   # a cell crossing over takes its new side's style (FK's
         lit, dark = cells[k]                                    # dark cells past 6 carry an effect the hidden ones lack)
         example = examples[0] if k <= value else examples[1]
         for layer in (lit if k <= value else dark):
             if example is not None and shown.get(id(layer), layer.visible) and sig(layer) != sig(example):
                 plan.styles.append((layer, example))
-    reads = _cells_read(groups, {}, shown) + len(plan.copies)
+        for layer in (dark if k <= value and covered is not None else ()):  # a dark one left under it: the card's look
+            if shown.get(id(layer), layer.visible) and sig(layer) != sig(covered):     # there (a round trip's own)
+                plan.styles.append((layer, covered))
+    def place_names() -> dict:                  # the parser adds up the names: the value's lit cell takes it (FK)
+        out = {}
+        for k, (lit, _) in cells.items():
+            for layer in lit:
+                want = str(value) if k == value and shown.get(id(layer), layer.visible) else "0"
+                if base_name(layer).strip() != want and base_name(layer).strip().isdigit():
+                    out[id(layer)] = want
+        return out
+    names = {}
+    if not by_name and dark_group is not lit_group and _plus(_cells_read(groups, {}, shown), len(plan.copies)) != value:
+        names = place_names()                   # first, so the dark cells stay as the card shows them
+    reads = _plus(_cells_read(groups, names, shown), len(plan.copies))
     for layer in reversed(list(plan.hide)):     # one dark cell left reads as its name (StatTracker._row_value): the
         if reads == value or layer not in darks:    # dark under the value's lit cell stays, covered (Lazarus's SPD 9)
             continue
         plan.hide.remove(layer)
         shown.pop(id(layer))
-        reads = _cells_read(groups, {}, shown) + len(plan.copies)
+        reads = _plus(_cells_read(groups, names, shown), len(plan.copies))
     for k in range(value, 0, -1):               # one lit cell left reads as its name too: a dark under it shows, covered
         for layer in cells[k][1]:               # (Lazarus at 1)
             if reads != value and not shown.get(id(layer), layer.visible) and dark_group is not lit_group:
                 plan.show.append(layer)
                 shown[id(layer)] = True
-                reads = _cells_read(groups, {}, shown) + len(plan.copies)
-    names = {}
-    if reads != value and not by_name:          # the parser adds up the names: the value's lit cell takes it (FK)
-        for k, (lit, _) in cells.items():
-            for layer in lit:
-                want = str(value) if k == value and shown.get(id(layer), layer.visible) else "0"
-                if base_name(layer).strip() != want and base_name(layer).strip().isdigit():
-                    names[id(layer)] = want
+                reads = _plus(_cells_read(groups, names, shown), len(plan.copies))
+    if value == STAT_MAX and dark_group is not lit_group and _shown(dark_group, shown) \
+            and _plus(_cells_read(groups, names, {**shown, id(dark_group): False}), len(plan.copies)) == reads:
+        plan.hide.append(dark_group)            # a full row shows no dark row (False Knight's DEF at 10)
+        shown[id(dark_group)] = False
+    if reads != value and not by_name and not names:
+        names = place_names()
         reads = _cells_read(groups, names, shown)
+    if reads is None:                           # numbered layers at 0: none shows
+        raise Refused("unsupported-card", f"{stat} {value}: no layer of {lit_group.name!r} would show, and the parser "
+                                          "reads no value off a row showing none: edit it in Photoshop")
     if reads != value:
         raise Refused("unsupported-card", f"{stat} {value}: the parser would read {reads} off {lit_group.name!r}")
     plan.names = [(layer, names[id(layer)]) for layer in lits if id(layer) in names and layer.name.strip() != names[id(layer)]]
@@ -4621,7 +4736,7 @@ def back_on(psd: PSDImage, layer) -> int:
 def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: Optional[dict] = None,
                    card: str = "", own_text: bool = True, parser: Optional[PSDParser] = None,
                    original: Optional[PSDImage] = None, layer=None, beside=(), copy: bool = False,
-                   area: Optional[tuple] = None) -> Edit:
+                   area: Optional[tuple] = None, anchor: int = 0) -> Edit:
     """
     Replace the name or the ability text, keeping the runs, and rasterize it with the text engine: only the changed
     glyphs when the fork splices (splices(), SPLICE_UNIT), Photoshop's raster staying on the rest. A title layer found
@@ -4649,6 +4764,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
             ink past the old text not told (the Ability's is)
         area: An added Ability's box (add_ability, canvas px): the text fits it (fit_below), its ink past it is told;
             nothing was printed before (its placeholder is no old text)
+        anchor: px an earlier bake moved this title to keep it on the card (R4, its verdict): moved back first, so a
+            shorter title sits where the card maker put it and a move is always counted from there
 
     Returns:
         Edit with the engine's report. Content problems bake best-effort and are told in Edit.notes as "<code>: <field>:
@@ -4932,12 +5049,19 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         flag("font", f"{which}: {''.join(dict.fromkeys(boxes))!r} has no glyph in its font (drawn as a box)")
     if "monochrome_emoji" in report.warnings and not _overlaid(layer):    # an SVG colour glyph the fork draws in one colour
         flag("font", f"{which}: colour glyphs (the icon font) drawn in one colour")
+    anchor = anchor if which == "name" else 0
+    if anchor:                                  # where the card maker put it, before an earlier bake's move
+        xx, xy, yx, yy, tx, ty = layer._data.transform
+        layer._data.transform = (xx, xy, yx, yy, tx - anchor, ty)
+        layer.left = layer.left - anchor
     moved = back_on(psd, layer) if which == "name" and not off_before else 0
     if moved:                                   # a title running off the card shifts back on (R4, owner 2026-10-26)
         flags.append(f"overflow: name: moved {moved:+d} px to stay on the card")
+    elif anchor:
+        flags.append(f"name: back where the card maker put it ({-anchor:+d} px)")
     bbox = tuple(layer.bbox)
     spliced = getattr(report, "splice", None)
-    band = bbox if spliced is None or spliced.fallback or moved else spliced.zone
+    band = bbox if spliced is None or spliced.fallback or moved or anchor else spliced.zone
     if not off_before and _ink_off_canvas(layer, psd.width, psd.height):
         flag("overflow", f"{which} runs off the canvas")
     halos = None if halo_before is None else (_effect_ink(psd, layer), halo_before)
@@ -7769,17 +7893,18 @@ def save_png(image: Image.Image, path: str, like: Image.Image) -> None:
 def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict, parser: PSDParser, out_dir: str,
                fonts_dir: str, chart: Optional[dict] = None, update_preview: bool = True,
                types_dir: Optional[str] = None, psd: Optional[PSDImage] = None, view: Optional[int] = None,
-               template: Optional[tuple] = None, ability_from: Optional[tuple] = None) -> Baked:
+               template: Optional[tuple] = None, ability_from: Optional[tuple] = None, title_anchor: int = 0) -> Baked:
     """
     _apply_jobs, as picture `view` of a card with variant tags shows it (variant(): its edits, renders, merge onto
     that picture's PNG png_path and its content gates; parsed is that picture's parse), the saved PSD keeping its own
     eye flags. view None: the card as saved. template: plan_types'. rel: where the card will be (a stars edit moves
     a card into its "N Stars" folder: its re-parse reads the stars there). ability_from: set_parts' (a "+ability" job).
+    title_anchor: set_text_layer's anchor for a name job.
     """
     hold = ExitStack()
     try:
         return _apply_jobs(psd_path, png_path, rel, jobs, parsed, parser, out_dir, fonts_dir, chart, update_preview,
-                           types_dir, psd, view, hold, template, ability_from)
+                           types_dir, psd, view, hold, template, ability_from, title_anchor)
     finally:
         hold.close()
 
@@ -7788,7 +7913,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
                 fonts_dir: str, chart: Optional[dict] = None, update_preview: bool = True,
                 types_dir: Optional[str] = None, psd: Optional[PSDImage] = None, view: Optional[int] = None,
                 hold: Optional[ExitStack] = None, template: Optional[tuple] = None,
-                ability_from: Optional[tuple] = None) -> Baked:
+                ability_from: Optional[tuple] = None, title_anchor: int = 0) -> Baked:
     """
     Apply a card's jobs, render the changed region, delta-merge the PNG, save and run every gate.
 
@@ -7876,7 +8001,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
                                _own_text(parsed), parser, old)
         elif name in TEXT_FIELDS:
             edits.append(set_text_layer(new, name, value, fonts_dir, chart, _card_name(parsed), _own_text(parsed), parser,
-                                        old))
+                                        old, anchor=title_anchor if name == "name" else 0))
         elif name == "parts":                   # one box per layer (PARTS_EDITOR.md §4.4-4.6)
             record = card_parts(old, rel, _card_name(parsed), parser)
             edits += set_parts(new, value, record, fonts_dir, chart, _card_name(parsed), _own_text(parsed), parser, old,
