@@ -3283,7 +3283,9 @@ def set_bar(psd: PSDImage, parsed: dict, stat: str, value: int, why: Refused) ->
                     if pair is None:
                         raise strict
                     plan = plan_cells(psd, stat, pair, old, value, parsed["card"])
-                except Refused:
+                except Refused as cells:
+                    if pair is not None and cells.why == none_shows(stat, value, pair[0]):   # the clearer reason
+                        raise cells
                     raise _held_template(psd, stat, rows, strict) if picked else strict
     layers = list(dict.fromkeys([*plan.show, *plan.hide, *(layer for layer, _ in plan.names),
                                  *(layer for layer, _ in plan.moves),
@@ -3392,10 +3394,15 @@ def _bar_layer(psd: PSDImage, group, stat: str):
 
 
 def _bar_box(psd: PSDImage, group, stat: str, layer=None) -> Optional[tuple]:
-    """The bar a row draws (x0, y0, x1, y1): _bar_layer's, else its cells' (Clots), else where psd_regions finds it
-    (the template's row by its label)."""
+    """The bar a row draws (x0, y0, x1, y1): _bar_layer's with the row's cells mostly past it (Clot Black's dark strip),
+    else its cells' (Clots), else where psd_regions finds it (the template's row by its label)."""
     if layer is not None:
-        return clip(tuple(layer.bbox), psd.width, psd.height)
+        x0, x1 = layer.bbox[0], layer.bbox[2]
+        past = [] if layer.parent is not group else [
+            tuple(leaf.bbox) for leaf in group if not leaf.is_group() and leaf.kind in DRAWN_LAYER_KINDS
+            and leaf.kind != "type" and leaf.bbox[2] > leaf.bbox[0]
+            and max(0, min(leaf.bbox[2], x1) - max(leaf.bbox[0], x0)) < (leaf.bbox[2] - leaf.bbox[0]) / 2]
+        return clip(union_box([tuple(layer.bbox)] + past), psd.width, psd.height)
     cells = union_box([tuple(leaf.bbox) for leaf in group if not leaf.is_group() and leaf.kind in DRAWN_LAYER_KINDS
                        and leaf.kind != "type" and leaf.bbox[2] > leaf.bbox[0]])
     if cells and cells[2] - cells[0] >= psd.width / 3:
@@ -3613,7 +3620,7 @@ def _roles(cells: list, old: int) -> dict:
 
 def _mask_start(layer) -> int:
     """Where a mask starts darkening along its middle row: its first column on (a redrawn mask keeps blank columns
-    before it: _held), else its left."""
+    before it: _held), the rows' most common start when the middle row's is off theirs, else its left."""
     mask = layer.mask
     try:
         raster = np.asarray(mask.topil().convert("L"))
@@ -3622,7 +3629,12 @@ def _mask_start(layer) -> int:
     if mask.background_color >= 128 or not raster.size:
         return mask.left
     on = np.flatnonzero(raster[raster.shape[0] // 2] >= 128)
-    return mask.left + int(on[0]) if on.size else mask.left
+    if not on.size:
+        return mask.left
+    starts = [int(row[0]) for row in (np.flatnonzero(line >= 128) for line in raster) if row.size]
+    if abs(int(on[0]) - np.median(starts)) > 2:     # a gap in the middle row (Twin Emperors' "1"): the most common start
+        return mask.left + Counter(starts).most_common(1)[0][0]
+    return mask.left + int(on[0])
 
 
 def _digit_edges(group) -> dict:
@@ -3635,6 +3647,16 @@ def _digit_edges(group) -> dict:
                 and layer.mask.width:
             found.setdefault(int(digit), []).append((layer.mask.height, _mask_start(layer)))
     return {k: min(found[k])[1] for k in found}
+
+
+def _row_edges(psd: PSDImage, stat: str, group, own: dict) -> dict:
+    """The row's _digit_edges (own), the stat's other rows giving those it lacks (Twin Emperors' "7" renamed by a bake)."""
+    out: dict = {}
+    for other, _, _ in stat_rows(psd)[stat]:
+        if other is not group:
+            for k, x in _digit_edges(other).items():
+                out.setdefault(k, x)
+    return {**out, **own}
 
 
 def _held(layer, dx: int, edge: float, tol: float, loose: bool = False) -> tuple:
@@ -3691,6 +3713,13 @@ def _held_profile(layer, dx: int, edge: float, tol: float, y: int, x0: int, x1: 
     return out
 
 
+def none_shows(stat: str, value: int, group) -> str:
+    """The refusal of a row that would show no cell (a 0 with no dark picture): what the card maker can add."""
+    return (f"{stat} {value}: {group.name!r} would show no cell, and a row showing none has no value to read: give its "
+            "cells dark pictures named 1-10 under the lit ones (as Grimora's), or a dark strip named 0 in the row (as "
+            "the Clots')")
+
+
 def plan_bar(psd: PSDImage, group, stat: str, old: int, value: int, why: Refused, loose: bool = False,
              tall: bool = False, values: Optional[dict] = None) -> BarPlan:
     """
@@ -3726,12 +3755,18 @@ def plan_bar(psd: PSDImage, group, stat: str, old: int, value: int, why: Refused
     shapes = None if cells else next((found for layer in sorted(drawn, key=lambda layer: layer.bbox[2] - layer.bbox[0])
                                       for found in [_islands(layer)] if found), None)
     edges = _cell_edges(box, cells, shapes)
-    if loose:                                   # the row's own digit masks say where its cells start (Pix's)
-        for k, x in _digit_edges(group).items():
+    own = _digit_edges(group)
+    if len(own) >= 5:                           # a digit row: its own edges, strict too (a renamed digit: other rows')
+        own = _row_edges(psd, stat, group, own)
+    if loose or len(own) >= 5:                  # the row's own digit masks say where its cells start (Pix's)
+        for k, x in own.items():
             edges[k] = x
     plan = BarPlan("", box)
     names, shown, hows = {}, {}, []
-    toggled = cells is not None and any(not layer.visible for cell in cells for layer in cell)
+    strip = cells is not None and old == STAT_MAX and any(    # at 10 every lit cell shows over a "0" strip (Minecraft Panda)
+        not layer.is_group() and layer.visible and layer.kind in DRAWN_LAYER_KINDS and _digit(layer) == "0"
+        and all(layer is not one for cell in cells for one in cell) for layer in group)
+    toggled = cells is not None and (strip or any(not layer.visible for cell in cells for layer in cell))
     if toggled:
         hows.append("cells shown and hidden")
         roles = _roles(cells, old)
@@ -3806,9 +3841,14 @@ def plan_bar(psd: PSDImage, group, stat: str, old: int, value: int, why: Refused
         raise why
     if _row_reads(group, names, shown) != value:    # the parser's reading: the layer named after the value takes the new one
         named = [layer for layer in group if not layer.is_group() and _digit(layer) == str(old) and layer.visible]
-        if toggled and any(layer is one for cell in cells for one in cell for layer in named):     # a lit cell named
+        # a lit cell named, or at 0 a "0" strip (Minecraft Panda's): the lit cell at the value takes the name
+        if toggled and named and (not old or any(layer is one for cell in cells for one in cell for layer in named)):
             for layer in named:
                 names[id(layer)] = "0"
+            for cell in cells:                  # lit cells shown again drop an old value's name (1 -> 0 -> 2)
+                for layer in cell:
+                    if shown.get(id(layer), layer.visible) and _digit(layer) not in (None, "0"):
+                        names[id(layer)] = "0"
             if value:
                 lit = [layer for layer in cells[value - 1] if shown.get(id(layer), layer.visible)]
                 if lit:
@@ -3822,6 +3862,8 @@ def plan_bar(psd: PSDImage, group, stat: str, old: int, value: int, why: Refused
     every = [layer for layer in group] + [layer for cell in cells or [] for layer in cell]
     plan.names = list({id(layer): (layer, names[id(layer)]) for layer in every
                        if id(layer) in names and layer.name.strip() != names[id(layer)]}.values())
+    if _row_reads(group, names, shown) is None:
+        raise Refused("unsupported-card", none_shows(stat, value, group))
     if _row_reads(group, names, shown) != value:
         raise Refused("unsupported-card", f"{stat} {value}: the parser would read {_row_reads(group, names, shown)} "
                                           f"off {group.name!r}")
@@ -4044,8 +4086,7 @@ def plan_cells(psd: PSDImage, stat: str, pair: tuple, old: int, value: int, valu
         names = place_names()
         reads = _cells_read(groups, names, shown)
     if reads is None:                           # numbered layers at 0: none shows
-        raise Refused("unsupported-card", f"{stat} {value}: no layer of {lit_group.name!r} would show, and the parser "
-                                          "reads no value off a row showing none: edit it in Photoshop")
+        raise Refused("unsupported-card", none_shows(stat, value, lit_group))
     if reads != value:
         raise Refused("unsupported-card", f"{stat} {value}: the parser would read {reads} off {lit_group.name!r}")
     plan.names = [(layer, names[id(layer)]) for layer in lits if id(layer) in names and layer.name.strip() != names[id(layer)]]

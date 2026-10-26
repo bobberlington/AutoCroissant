@@ -434,12 +434,40 @@ def test_dirty_box_bounds_the_untouched_gate(clone, parser):
     assert pe.dirty_box(old, new) == whole
 
 
+BARS_FIX = "e401c98c"       # TTSCardMaker: Clot Black's HP dark hearts 1-2, Minecraft Panda's dark strips in their rows
+CLOT_BLACK, PANDA = "Auxiliary/Minions/Clot_Black.psd", "Creatures/Pandas/2 Stars/Minecraft_Panda.psd"
+
+
 def test_layout_bars_refuse_what_they_lack(clone, parser):
-    """A cell with no dark picture (Clot Black's hp 2 to 1) still refuses."""
-    rel = "Auxiliary/Minions/Clot_Black.psd"
-    psd = PSDImage.open(_card(clone, rel)[0])
-    with pytest.raises(pe.Refused, match="cell 2 of 'hp' has no dark picture"):
-        pe.set_stat(psd, pe.parse_card(parser, _card(clone, rel)[0], rel, psd), "hp", 1)
+    """A cell with no dark picture refuses (Clot Black's HP 2 to 1), and a row that would show none says what to add
+    (Minecraft Panda's 0)."""
+    for rel, stat, value, why in ((CLOT_BLACK, "hp", 1, "cell 2 of 'hp' has no dark picture"),
+                                  (PANDA, "hp", 0, "'Darks' would show no cell, and a row showing none has no value")):
+        psd = PSDImage.open(_card(clone, rel)[0])
+        with pytest.raises(pe.Refused, match=why):
+            pe.set_stat(psd, pe.parse_card(parser, _card(clone, rel)[0], rel, psd), stat, value)
+
+
+def test_layout_bars_bake_what_was_added(clone, parser, tmp_path):
+    """With those added (BARS_FIX) both bake and come home as drawn: Clot Black's cells past its dark strip in the
+    region, 1 -> 0 -> 2 reading 2 (not 3: the old value's name dropped); Minecraft Panda's 0, then 3 (review 2026-10-26:
+    its 0 is its "0" strip's, no cell's, so lit cell 2 came back still "2": 5), then 10 and down from it."""
+    for rel, stat, values in ((CLOT_BLACK, "hp", (1, 0, 2)), (PANDA, "def", (0, 3, 10, 2))):
+        path = tmp_path / Path(rel).name
+        path.write_bytes(at_rev(clone, BARS_FIX, rel))
+        path = str(path)
+        start = PSDImage.open(path)
+        box = tuple(pe.stat_rows(start)[stat][0][0].bbox)
+        for k, value in enumerate(values):
+            out = str(tmp_path / f"{Path(rel).stem}{k}.psd")
+            edit, psd, parsed = _edit_saved(parser, path, rel, stat, value, out)
+            assert parsed["card"][stat] == value, (rel, value)
+            if k == 0:
+                pe.gate_dirty(PSDImage.open(path), psd, [edit])
+            path = out
+        render = lambda psd: np.asarray(psd.composite(viewport=box, ignore_preview=True, apply_icc=False)
+                                        .convert("RGB")).astype(int)
+        assert np.abs(render(psd) - render(start)).max() <= 2, rel
 
 
 def test_numbered_cells_bake(clone, parser, tmp_path):
@@ -533,6 +561,30 @@ def test_lane2_bars_edit_again(clone, parser, tmp_path):
     cell1 = [layer for layer in stat_rows(psd)["def"][0][0] if layer.is_visible() and layer.kind == "smartobject"
              and layer.bbox[0] < 440]
     assert len(cell1) == 1
+
+
+def test_bar_edges_hold_over_a_chain(clone, parser, tmp_path):
+    """Twin Emperors' HP (2026-10-26): 5 -> 10 -> 2 -> 7 comes back as drawn (the strict plan's template edges left a
+    2 px seam at cell 8), and HP 1 lights one cell (its "1" mask's middle row has a gap: it lit two)."""
+    rel = "Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd"
+    original = PSDImage.open(_card(clone, rel)[0])
+    (row, _, box), = pe.bar_rows(original, "hp")[0]
+    render = lambda psd: np.asarray(psd.composite(viewport=box, ignore_preview=True, apply_icc=False)
+                                    .convert("RGB")).astype(int)
+    path = _card(clone, rel)[0]
+    for k, value in enumerate((5, 10, 2, 7)):
+        out = str(tmp_path / f"te{k}.psd")
+        _, psd, parsed = _edit_saved(parser, path, rel, "hp", value, out)
+        assert parsed["card"]["hp"] == value
+        path = out
+    assert np.abs(render(psd) - render(original)).max() <= 2
+    starts = [box[0], *sorted(pe._digit_edges(row).values()), box[2]]
+    centres = [(a + b) // 2 - box[0] for a, b in zip(starts, starts[1:])]
+    shade = lambda image: [image[:, x - 5:x + 5].mean() for x in centres]
+    seven = shade(render(original))             # 7 lit cells, 3 dark
+    cut = (min(seven[:7]) + max(seven[7:])) / 2
+    _, one, _ = _edit_saved(parser, _card(clone, rel)[0], rel, "hp", 1, str(tmp_path / "te_1.psd"))
+    assert [k for k, s in enumerate(shade(render(one)), 1) if s > cut] == [1]
 
 
 def test_numbered_layers_go_down_too(clone, parser, tmp_path):
