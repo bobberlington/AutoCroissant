@@ -118,13 +118,13 @@ def test_header_boxes(records, clone):
     type icons in slot order with spots carrying the row on (a second row for eight); the bake's refusals and a card
     without a Stars group."""
     stars, types = records[DOOMER]["header"]["stars"], records[DOOMER]["header"]["types"]
-    assert [u["core"] for u in stars["units"]] == [[1049, 13, 1165, 115], [936, 15, 1052, 117]] and stars["icon"] == "warpstar"
-    assert stars["at"]["2"] == [[1107, 64], [994, 66]] and stars["at"]["3"] == [[1107, 64], [994, 66], [1051, 167]]
-    assert stars["at"]["6"][4:] == [[1107, 269], [994, 269]] and sorted(stars["at"], key=int) == [str(n) for n in range(1, 11)]
+    assert [u["core"] for u in stars["units"]] == [[1049, 13, 1164, 115], [936, 15, 1051, 117]] and stars["icon"] == "warpstar"
+    assert stars["at"]["2"] == [[1106, 64], [994, 66]] and stars["at"]["3"] == [[1106, 64], [994, 66], [1050, 167]]
+    assert stars["at"]["6"][4:] == [[1106, 269], [994, 269]] and sorted(stars["at"], key=int) == [str(n) for n in range(1, 11)]
     assert stars["refused"] == {}
     assert [t["name"] for t in types["row"]] == ["light", "defensive_minion", "wind"] and types["tokens"] is False
     assert types["spots"]["4"] == [[414, 208, 556, 356]] and [len(types["row"]) + len(types["spots"][n]) for n in types["spots"]] == [4, 5, 6, 7, 8]
-    assert types["spots"]["8"][0] == [81, 378, 241, 538] and types["fixed"] == [] and types["refused"] is None
+    assert types["spots"]["8"][0] == [81, 378, 241, 537] and types["fixed"] == [] and types["refused"] is None
     vocab = _types(clone)
     for rel in (LICH_KING, FREEZER):
         if not (clone / rel).exists():

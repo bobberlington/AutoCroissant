@@ -86,7 +86,8 @@ since 2026-10-20.
 - **Counting** (`PSDParser.stars_drawn`, since 2026-10-26, PARSER_VERSION 5; the bake's plans call the same code):
   the visible layers that can draw (`star_leaf`: pixel, smart object, shape or text; not clipped, so Kyle's Color Fills
   are not stars; no fill or adjustment layer; no type icon, Toy Freddy's Machine) give pieces: each layer's *core*, the
-  box of pixels at least 50% opaque times its pixel mask (`STAR_CORE_ALPHA`, `_core_box`), or one box per separate
+  box of pixels over half opaque times its pixel mask (`STAR_CORE_ALPHA` 129/255 since 2026-10-26: Leshy's painted
+  128 shadow strips are no part of its drops; `_core_box`), or one box per separate
   shape when one layer draws several alike (`star_pieces`: Grimora's row). Pieces whose centre is above the midline
   are judged together (`star_sets`): the commonest size is the stars'; a piece on a star's spot is that star drawn
   twice (Living Bread's copies: 2, not 4); one overlapping a star by 20% of the smaller box is part of it (glows, moss);
@@ -101,7 +102,14 @@ since 2026-10-20.
   The midline test is the box's centre, not its top as for type icons, so a new star whose centre falls below it is
   refused (The Evil Idol's column at 6-8). A new or moved star may not sit under art drawn over it (`_covered`: more
   than 5% more of its ink hidden than now): Massive Moss Charger's fifth, under the moss, is refused; Acrophobia's
-  fifth goes beside the second row, not onto the cliff.
+  fifth goes beside the second row, not onto the cliff. Since 2026-10-26 (the star cases): a hide may not bare a kept
+  star's shadow strip (`_bares`: Leshy's 4 and 1); a moved or new star keeps 90% of its core under a texture clipped
+  onto its group (`_textures`: Yin Yarn's 6 and Paint Warrior's 4-6 refused); a backdrop is a banner only when plain
+  round the stars (`_plain_banner`: Bolts and Screws' gear is art, its column bakes); a row on its banner is centred
+  there and tightened down to 0.85 of a star's width, tried last (`_banner_row`: Remote Detonator 3, How To Jump 2,
+  Computer Virus 4; told); a die's five keeps the die's faces at 1-3 (`DICE_FACES`: the middle, a diagonal, the diagonal
+  through the middle); a V's point becomes a touching pair at one more (`_funnel`: Crowned Magolor 6; told); a refusal
+  gives the reason of the layout that came closest.
 - **Fallback:** with no such group, visible layers whose name has the word "star" ("Patrick Star", "Emerald_Star",
   not "starfish") are counted the same way.
 - **Zero stars** gives the persisted problem `NO STARS FOUND (put the star layers in a group named "Stars")`. On
@@ -824,3 +832,5 @@ change, sections 4-5 are stale until rewritten.
 2026-10-25 (wrap-up): §2 star counting skips type-icon layers (PARSER_VERSION 4); §6: variant pictures are duplicates (`duplicate_of`), `art` / `ability_art` rows, `variant` fields named.
 
 2026-10-26 (lane 1): §2 star counting is `PSDParser.stars_drawn` (pieces judged together, masks read, layers outside the group named after a star icon), shared with the bake; the `display_name` row gains title rule P. PARSER_VERSION 5.
+
+2026-10-26 (stars lane): §2 a star core is over half opaque (129/255); the bake's 10-26 star cases (shadows, textures, plain banners, banner rows, die faces, V funnel, the closest refusal).
