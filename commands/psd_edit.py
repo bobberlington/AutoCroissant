@@ -4785,7 +4785,8 @@ def _star_layouts(order: list, size: tuple, count: int) -> list:
 
 
 def _stars_blocked(psd: PSDImage, moves: list, clear: list) -> Optional[str]:
-    """Why stars cannot move or be copied by [(unit, dx, dy)]: a layer that cannot move or is clipped, or _blocked."""
+    """Why stars cannot move or be copied by [(unit, dx, dy)]: a layer that cannot move or is clipped, _blocked, or a
+    spot below the midline (no count reads it)."""
     for unit, dx, dy in moves:
         why = next((w for w in (_shiftable(layer) for layer in unit.layers) if w), None)
         if why:
@@ -4795,6 +4796,8 @@ def _stars_blocked(psd: PSDImage, moves: list, clear: list) -> Optional[str]:
         blocked = _blocked(psd, _moved_inks(unit, dx, dy), _moved_box(unit.core, dx, dy), clear)
         if blocked:
             return f"a star at {tuple(int(v) for v in _moved_box(unit.core, dx, dy))} {blocked}"
+        if not in_header(_moved_box(unit.core, dx, dy), psd.height):     # the count reads no star there
+            return f"a star at {tuple(int(v) for v in _moved_box(unit.core, dx, dy))} would sit below the card's middle"
     return None
 
 

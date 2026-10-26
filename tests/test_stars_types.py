@@ -435,6 +435,8 @@ def test_star_counter_on_real_cards(clone, parser, tmp_path):
             else:
                 with pytest.raises(pe.Refused, match=refused):
                     pe.plan_stars(psd, parsed, value, parser, moving=True)
+    staff = "N.M.E/Staff_of_Purity.psd"          # a column of 5 would cross the middle, where no count reads a star
+    assert _plan(parser, _clone_card(clone, staff, tmp_path)[0], staff, "stars", 5).how == "its rows carried on"
 
 
 @icons
