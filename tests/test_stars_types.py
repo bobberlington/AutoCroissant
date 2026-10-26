@@ -485,7 +485,9 @@ def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
 def _renamed(parser, clone, rel, tmp_path) -> tuple:
     """A card whose stars are in "Group 1" (Yin Yarn, Leshy) with it named "Stars", as TTSCardMaker has it since."""
     psd, _ = _open(parser, clone, rel, tmp_path)
-    next(layer for layer in psd.descendants() if layer.name == "Group 1").name = "Stars"
+    for layer in psd.descendants():
+        if layer.name == "Group 1":          # none once the pin is past the rename
+            layer.name = "Stars"
     return psd, pe.parse_card(parser, str(tmp_path / "old" / Path(rel).name), rel, psd)
 
 
