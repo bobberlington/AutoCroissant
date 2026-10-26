@@ -83,12 +83,20 @@ see `autocroissant-build-and-env`; do not "clean it up".)
 these three, matched as substrings of the relative path), stars are COUNTED from the PSD: `PSDParser._count_stars`,
 since 2026-10-20.
 - **Search area:** every outermost visible group with "stars" in its name (`_star_groups`).
-- **Counting** (`_stars_in`): child groups count recursively. Visible pixel layers that overlap count as one star
-  (`_count_clusters`). Overlap means one layer's *core* center lies inside the other's core, where the core is the
-  box of pixels at least 50% opaque (`STAR_CORE_ALPHA`, `_core_box`). Glows, frames and the pieces of one star
-  merge; separate stars don't, even when, like Termination Shock's lens flares, their full boxes overlap. A layer
-  named after a type icon (a `Types/` name) is a type, never a star (`PSDParser.type_icon`; Toy Freddy's Machine in its
-  Stars group: 3; since 2026-10-25, PARSER_VERSION 4).
+- **Counting** (`PSDParser.stars_drawn`, since 2026-10-26, PARSER_VERSION 5; the bake's plans call the same code):
+  the visible layers that can draw (`star_leaf`: pixel, smart object, shape or text; not clipped, so Kyle's Color Fills
+  are not stars; no fill or adjustment layer; no type icon, Toy Freddy's Machine) give pieces: each layer's *core*, the
+  box of pixels at least 50% opaque times its pixel mask (`STAR_CORE_ALPHA`, `_core_box`), or one box per separate
+  shape when one layer draws several alike (`star_pieces`: Grimora's row). Pieces whose centre is above the midline
+  are judged together (`star_sets`): the commonest size is the stars'; a piece on a star's spot is that star drawn
+  twice (Living Bread's copies: 2, not 4); one overlapping a star by 20% of the smaller box is part of it (glows, moss);
+  a lone one 0.5-2 times a star's size is a star; the rest is art (Toy Chica's LINE, Auto Croissant's cat).
+  Overlapping stars stay apart (Zoltan, the dice faces of Nightmare and The Lich King). Layers named after a
+  `Types/Stars` icon outside the groups count too, when star-sized and above the midline (Massive Moss Charger's two
+  'Hk star': 4, not 2). Stars below the midline (Tainted Lazarus's dead form) are not counted; the bake refuses a
+  stars edit on such a card, and one with stars outside the group, for now (Massive Moss Charger: every count until
+  Lane 3; main baked its 3 from a wrong count of 2). The midline test is the box's centre, not its top as for type
+  icons, so a new star whose centre falls below it is refused too (The Evil Idol's column at 6-8).
 - **Fallback:** with no such group, visible layers whose name has the word "star" ("Patrick Star", "Emerald_Star",
   not "starfish") are counted the same way.
 - **Zero stars** gives the persisted problem `NO STARS FOUND (put the star layers in a group named "Stars")`. On
@@ -491,7 +499,7 @@ CardInfo fields → pickle/dataframe keys (`to_dict`, commands/card_models.py; t
 | `stats.hp/defense/attack/speed` | `hp` / `def` / `atk` / `spd` | SHORT keys; each omitted unless >= 0 |
 | `problems` | `problem` | list[str], singular key, omitted when empty |
 | `author` | `author` | omitted when falsy |
-| `display_name` | same | the printed title when it differs from the file name (since 2026-10-21, PARSER_VERSION 2: the visible `Text/Name` text layer, several in the title region joined in reading order; else the visible `Name` text layers in the top `TITLE_REGION_RATIO` of the card; else a visible layer under `Text` named after the card, else one named after it elsewhere in the title region (2026-10-23: the status effects' top-level titles; letters and digits alike, so Mr Jawsum and Ms Mowz show 'Mr. Jawsum' and 'Ms. Mowz'); else the one visible text layer in the title region named after its own text, as Photoshop names a new layer (2026-10-23: Papyrus 'The Great Papyrus', Sans 'snas.'; several such, Knight Lost A Lot's stacked words, read as nothing; never on a rule page, whose headings are named so; `psd_parser.named_after_text`); byte-order mark, control characters and whitespace runs collapsed, `psd_parser.title_text`; a `Name` layer holding part of the file name beside layers holding the rest, Royal Eradicator Main Cannon's "Main Cannon", or WX-78's "wx-" beside an image layer named "78", reads as the file name; hidden or rasterized titles read as nothing; 157 of 813 cards, 94 of them differing only in letter case or spacing, shown as printed (the user's call, 2026-10-21); `/query` finds a card by its printed title). A Card Edits.json `name` overrides it (the title is kept in `parsed_values`); duplicates get theirs from `_duplicate_name`; omitted when None |
+| `display_name` | same | the printed title when it differs from the file name (since 2026-10-21, PARSER_VERSION 2: the visible `Text/Name` text layer, several in the title region joined in reading order; else the visible `Name` text layers in the top `TITLE_REGION_RATIO` of the card; else a visible layer under `Text` named after the card, else one named after it elsewhere in the title region (2026-10-23: the status effects' top-level titles; letters and digits alike, so Mr Jawsum and Ms Mowz show 'Mr. Jawsum' and 'Ms. Mowz'); else the one visible text layer in the title region named after its own text, as Photoshop names a new layer (2026-10-23: Papyrus 'The Great Papyrus', Sans 'snas.'; never on a rule page, whose headings are named so; `psd_parser.named_after_text`); else, last, rule P (2026-10-26, PARSER_VERSION 5, `_titles_by_place`): the visible text layers under `Text` in the title region, not Ability or FX, and the lines stacked under them in the same face and size, names and words aside (Alex YIIK, Lorian, Lothric, Thunder Thighs 'Thunder thighs', Dark Matter Swordsman, Chris & Jordi, Knight Lost A Lot's four stacked words); byte-order mark, control characters and whitespace runs collapsed, `psd_parser.title_text`; a `Name` layer holding part of the file name beside layers holding the rest, Royal Eradicator Main Cannon's "Main Cannon", or WX-78's "wx-" beside an image layer named "78", reads as the file name; hidden or rasterized titles read as nothing; 157 of 813 cards, 94 of them differing only in letter case or spacing, shown as printed (the user's call, 2026-10-21); `/query` finds a card by its printed title). A Card Edits.json `name` overrides it (the title is kept in `parsed_values`); duplicates get theirs from `_duplicate_name`; omitted when None |
 | `note` / `hidden` | same | from Card Edits.json; omitted when falsy |
 | `duplicate_of` | same | the original card, for another PNG of the same PSD; since 2026-10-25 also every variant picture 2+ (picture 1, or the card its Card Edits.json `dup_of` names; owner: one category, counted once, `card_data.variant_duplicates`), which keeps its own parse, name, art, author and ratings; omitted when falsy |
 | `art` / `ability_art` | same | artwork sources, database-only, from Card Edits.json (each entry its own, duplicates too; 2026-10-25); `/query` shows them as masked links; omitted when falsy |
@@ -805,3 +813,5 @@ change, sections 4-5 are stale until rewritten.
 2026-10-25 (docs lane): every psd_parser.py, card_data.py, query_card.py and psd_analyzer.py citation re-pointed at 6a87179; §3.2/§5: cards need no ability (rule pages do), ABILITY_EXCLUSIONS is R3's waiver; §4 step 5 names the line-padding strip.
 
 2026-10-25 (wrap-up): §2 star counting skips type-icon layers (PARSER_VERSION 4); §6: variant pictures are duplicates (`duplicate_of`), `art` / `ability_art` rows, `variant` fields named.
+
+2026-10-26 (lane 1): §2 star counting is `PSDParser.stars_drawn` (pieces judged together, masks read, layers outside the group named after a star icon), shared with the bake; the `display_name` row gains title rule P. PARSER_VERSION 5.

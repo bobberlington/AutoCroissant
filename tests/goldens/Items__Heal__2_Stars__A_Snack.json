@@ -3,6 +3,7 @@
  "blob": "ba3ca7cec1a8c5ff646a7978b22e3be47084951d",
  "card": {
   "ability": "Heal 3 HP.\nInflict 2T2 Regen and 2T1 Stuffed.",
+  "display_name": "A snack",
   "path": "Items/Heal/2 Stars/A_Snack.psd",
   "stars": 2,
   "subtype": "heal",

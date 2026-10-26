@@ -9,8 +9,9 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from logging import getLogger, CRITICAL
 from os import PathLike
+import numpy as np
 from psd_tools import PSDImage
-from re import compile as re_compile, fullmatch, sub
+from re import IGNORECASE, compile as re_compile, fullmatch, sub
 from typing import Any, Optional, Union
 
 from global_config import RULEBOOK_DIR
@@ -21,7 +22,7 @@ getLogger("psd_tools").setLevel(CRITICAL)
 # ========================
 # Configuration
 # ========================
-PARSER_VERSION = 4                # bump when every stored card must be re-parsed (the build re-parses older stamps)
+PARSER_VERSION = 5                # bump when every stored card must be re-parsed (the build re-parses older stamps)
 TYPE_REGION_RATIO = 0.5
 MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']
 DRAWN_LAYER_KINDS = ("pixel", "smartobject", "group", "type", "shape")   # every other kind is an adjustment layer
@@ -35,6 +36,15 @@ ICON_SCAN_PATTERN = re_compile(r"\[[^\[\]\r\n\x03]{1,52}\]|[-★]")   # 52
 EFFECT_LAYER_TAG = " FX: "        # "Ability FX: Blazing | Frozen In Time", made by MDW/Scripts/Effect Layers.jsx
 EFFECT_COVERAGE_MIN = 0.95        # share of an effect layer's pixels that must sit on its text layer's pixels
 STAR_CORE_ALPHA = 0.5             # a star's core: its pixels at least this opaque (glows and flares fade out wide)
+STAR_KINDS = ("pixel", "smartobject", "shape", "type")    # layers that can draw a star (no fill or adjustment layer)
+STAR_SAME = 0.2                   # star pieces this alike in width and height are one size
+STAR_ATTACH = 0.2                 # a piece covering this share of the smaller of it and a star is part of it (a glow)
+STAR_RANGE = (0.5, 2.0)           # a piece on no star, this close to the stars' size, is a star of its own
+STAR_TWIN = 0.15                  # stars this close (share of the larger side) are one star drawn twice
+STAR_SPLIT_MIN = 0.25             # one layer's opaque shapes this share of its largest are stars of their own...
+STAR_SPLIT_SAME = 0.4             # ...when they are this alike in size (Grimora's row drawn as one layer)
+STAR_ICON_SHARE = 1 / 36.0        # a star-icon layer outside the Stars groups: up to this share of the card (.0: cdivision)
+TITLE_STACK = 0.6                 # rule P: a title line under another, within this share of its height
 # folders whose stars are counted on the card (elsewhere the folder says them); Auxiliary/Creatures print 2-5 too
 STARS_FROM_PSD = ("Auxiliary/Items", "Auxiliary/Minions", "Auxiliary/Creatures", "N.M.E")
 # a variant tag: a layer or group named "... #2" (" #2,3") shows only in those pictures (PARTS_EDITOR.md §9)
@@ -123,6 +133,169 @@ def named_after_text(layer) -> bool:
     """A type layer named after its own text (name_key alike), as Photoshop names a new one: 'snas.' printing 'snas.'."""
     key = name_key(base_name(layer))
     return bool(key) and key == name_key(layer.text or "")
+
+
+# ========================
+# Stars: the one counter (the parse's and the bake's, psd_edit)
+# ========================
+def _wh(box) -> tuple:
+    return box[2] - box[0], box[3] - box[1]
+
+
+def _area(box):
+    return max(0, box[2] - box[0]) * max(0, box[3] - box[1])
+
+
+def _overlap(a, b):
+    w, h = min(a[2], b[2]) - max(a[0], b[0]), min(a[3], b[3]) - max(a[1], b[1])
+    return w * h if w > 0 and h > 0 else 0
+
+
+def _alike(a, b, tol=STAR_SAME) -> bool:
+    (aw, ah), (bw, bh) = _wh(a), _wh(b)
+    return abs(aw - bw) <= tol * max(aw, bw) and abs(ah - bh) <= tol * max(ah, bh)
+
+
+def same_spot(a, b) -> bool:
+    """Two boxes on nearly one spot: one star drawn twice (Tainted Eden's 'Stars copy')."""
+    tol = STAR_TWIN * max(_wh(a) + _wh(b))
+    return all(abs(x - y) <= tol for x, y in zip(a, b))
+
+
+def in_header(box, height) -> bool:
+    """Whether a box's centre is above the midline (Toy Chica's LINE and Dead Lazarus's stars are below it)."""
+    return (box[1] + box[3]) / 2 <= TYPE_REGION_RATIO * height
+
+
+def star_sets(boxes) -> list:
+    """
+    Index lists, one per star, among core boxes: the commonest size (w and h within STAR_SAME; a tie, the bigger) is
+    the stars'; one on a star's spot is that star drawn twice; a piece over a star (STAR_ATTACH of the smaller box, at
+    most 4 times its area: a glow, a frame, moss) is part of it; a lone one about a star's size (STAR_RANGE) is a star
+    of its own; the rest is art (Auto Croissant's cat, Toy Chica's LINE). Overlapping stars stay apart (dice faces).
+    """
+    boxes = list(boxes)
+    if not boxes:
+        return []
+    classes = []
+    for i, box in enumerate(boxes):
+        for members in classes:
+            if _alike(box, boxes[members[0]]):
+                members.append(i)
+                break
+        else:
+            classes.append([i])
+
+    def middle(members, measure):
+        values = sorted(measure(boxes[i]) for i in members)
+        return values[len(values) // 2]
+    anchor = max(classes, key=lambda members: (len(members), middle(members, _area)))
+    stars = []
+    for i in anchor:
+        twin = next((star for star in stars if same_spot(boxes[i], boxes[star[0]])), None)
+        if twin is not None:
+            twin.append(i)
+        else:
+            stars.append([i])
+    width, height = middle(anchor, lambda box: _wh(box)[0]), middle(anchor, lambda box: _wh(box)[1])
+    for i in sorted((i for i in range(len(boxes)) if i not in anchor), key=lambda i: _area(boxes[i])):
+        box = boxes[i]
+        best = max(stars, key=lambda star: _overlap(box, boxes[star[0]]))
+        core = boxes[best[0]]
+        if _area(box) <= 4 * _area(core) and _overlap(box, core) >= STAR_ATTACH * min(_area(box), _area(core)):
+            best.append(i)
+            continue
+        w, h = _wh(box)
+        if STAR_RANGE[0] * width <= w <= STAR_RANGE[1] * width and STAR_RANGE[0] * height <= h <= STAR_RANGE[1] * height:
+            stars.append([i])
+    return stars
+
+
+def star_alpha(layer):
+    """The layer's opacity per pixel over its bbox, times its pixel mask (a masked-off part draws nothing); None unread."""
+    shape = layer.numpy("shape")
+    if shape is None:
+        return None
+    alpha = shape[:, :, 0].astype(np.float32)
+    mask = layer.mask if layer.has_mask() else None
+    if mask is not None and not mask.disabled:
+        full = np.full(alpha.shape, mask.background_color / 255.0, np.float32)
+        drawn = layer.numpy("mask")
+        if drawn is not None:
+            dx, dy = mask.left - layer.bbox[0], mask.top - layer.bbox[1]
+            y0, y1 = max(0, dy), min(alpha.shape[0], dy + drawn.shape[0])
+            x0, x1 = max(0, dx), min(alpha.shape[1], dx + drawn.shape[1])
+            if y0 < y1 and x0 < x1:
+                full[y0:y1, x0:x1] = drawn[y0 - dy:y1 - dy, x0 - dx:x1 - dx, 0]
+        alpha = alpha * full
+    return alpha
+
+
+def _read_alpha(layer):
+    try:
+        return star_alpha(layer)
+    except (ValueError, KeyError, IndexError, TypeError, AttributeError):
+        return None
+
+
+def _core_of(alpha, bbox) -> tuple:
+    """The box of the mostly opaque pixels (STAR_CORE_ALPHA), else the whole bbox."""
+    if alpha is not None:
+        ys, xs = (alpha >= STAR_CORE_ALPHA).nonzero()
+        if len(xs):
+            return bbox[0] + int(xs.min()), bbox[1] + int(ys.min()), bbox[0] + int(xs.max()) + 1, bbox[1] + int(ys.max()) + 1
+    return bbox[0], bbox[1], bbox[2], bbox[3]
+
+
+def star_pieces(layer) -> list:
+    """
+    The layer's stars' core boxes: its core, or one box per separate opaque shape when it draws 2 or more of about one
+    size (each STAR_SPLIT_MIN of the largest, alike within STAR_SPLIT_SAME: Grimora's row and Dimension D's hearts).
+    """
+    bbox = tuple(layer.bbox)
+    alpha = _read_alpha(layer)
+    core = _core_of(alpha, bbox)
+    if alpha is None:
+        return [core]
+    try:
+        from scipy import ndimage         # psd-tools[composite]'s; lazy: only the star count needs it
+    except ImportError:
+        return [core]
+    solid = alpha >= STAR_CORE_ALPHA
+    labels, count = ndimage.label(ndimage.binary_dilation(solid, iterations=2), structure=np.ones((3, 3)))
+    if count < 2:
+        return [core]
+    shapes = []
+    for i, found in enumerate(ndimage.find_objects(labels), 1):
+        if found is not None:
+            ys, xs = found
+            shapes.append(((bbox[0] + xs.start, bbox[1] + ys.start, bbox[0] + xs.stop, bbox[1] + ys.stop),
+                           int((solid[found] & (labels[found] == i)).sum())))
+    shapes.sort(key=lambda shape: -shape[1])
+    big = [box for box, size in shapes if size >= STAR_SPLIT_MIN * shapes[0][1]]
+    if len(big) >= 2 and all(_alike(box, big[0], STAR_SPLIT_SAME) for box in big):
+        return big
+    return [core]
+
+
+def star_leaf(layer, types=()) -> bool:
+    """A layer that can draw a star: pixels (no fill or adjustment), not clipped to the one under it (Kyle's Color Fills
+    draw on their stars), not named after a type icon (types: Types/ names; Toy Freddy's Machine)."""
+    return (not layer.is_group() and layer.kind in STAR_KINDS and layer.has_pixels() and layer.bbox[2] > layer.bbox[0]
+            and not layer.clipping and not (types and base_name(layer).lower() in types))
+
+
+def star_icon_name(text: str) -> str:
+    """A Types/Stars name or a layer name as star icons compare: no ' copy N', letters and digits only."""
+    return sub(r"[^a-z0-9]+", "", sub(r"\s+copy(\s+\d+)?$", "", text.strip(), flags=IGNORECASE).lower())
+
+
+def _parents(layer) -> list:
+    out, parent = [], layer.parent
+    while parent is not None and not isinstance(parent, PSDImage):
+        out.append(parent)
+        parent = parent.parent
+    return out
 
 
 @dataclass
@@ -579,17 +752,18 @@ class PSDParser:
         The visible text layers _printed_title reads: Text/Name, else the Name layers in the title region, else the
         layers under Text named after the card, else those elsewhere in the title region (a status effect's top-level
         title), else the one layer in the title region named after its own text (named_after_text: Sans's 'snas.';
-        several are stacked words, Knight Lost A Lot's, and read as none); of several, those in the title region.
+        several are stacked words, Knight Lost A Lot's, and read as none); of several, those in the title region; with
+        none, the text under Text by its place (_titles_by_place, rule P: Lorian's 'Twin Princes', Alex YIIK's).
         Named after the card: letters and digits alike ('Mr. Jawsum').
 
         Args:
             psd: The open card
             text_layers: Its text layers
             name: The card's name (file stem)
-            own_text: Whether the last rule applies (False on a rule page)
+            own_text: Whether the last two rules apply (False on a rule page)
 
         Returns:
-            The layers, in layer order
+            The layers, in layer order (rule P's in reading order)
         """
         top = psd.height * TITLE_REGION_RATIO
         text_group = PSDParser.text_group(psd)
@@ -609,7 +783,48 @@ class PSDParser:
             found = own if len(own) == 1 else []
         if len(found) > 1:
             found = [layer for layer in found if layer.bbox[1] < top]
+        if not found and own_text and text_group is not None:
+            found = PSDParser._titles_by_place(text_group, text_layers, top)
         return found
+
+    @staticmethod
+    def _face(layer) -> tuple:
+        """(font name, size in px) of a text layer's first run; (None, None) unread."""
+        try:
+            style = layer.engine_dict["StyleRun"]["RunArray"][0]["StyleSheet"]["StyleSheetData"]
+            font = layer.resource_dict["FontSet"][int(style.get("Font", 0))]["Name"]
+            return str(font), round(float(style.get("FontSize", 0)) * abs(layer.transform[3]))
+        except (KeyError, IndexError, TypeError, ValueError, AttributeError):
+            return None, None
+
+    @staticmethod
+    def _titles_by_place(text_group, text_layers: list, top: float) -> list:
+        """
+        Rule P, the last: the visible text layers under Text, not Ability or FX, whose top is in the title region, and
+        the lines stacked under them (same face and size, overlapping across, within TITLE_STACK of a line's height),
+        in reading order. Names and words aside, so an edited title stays one (Lorian's 'Twin Princes', Knight Lost A
+        Lot's four lines).
+        """
+        inside = {id(layer) for layer in text_group.descendants()}
+        texts = [layer for layer in text_layers if id(layer) in inside and layer.kind == "type" and layer.is_visible()
+                 and EFFECT_LAYER_TAG not in layer.name and base_name(layer).strip().lower() != "ability"
+                 and (layer.text or "").strip()]
+        found = [layer for layer in texts if layer.bbox[1] < top]
+        grew = bool(found)
+        while grew:
+            grew = False
+            for layer in texts:
+                if any(layer is other for other in found):
+                    continue
+                for other in found:
+                    height = other.bbox[3] - other.bbox[1]
+                    if (other.bbox[3] <= layer.bbox[1] <= other.bbox[3] + TITLE_STACK * height
+                            and layer.bbox[0] < other.bbox[2] and other.bbox[0] < layer.bbox[2]
+                            and PSDParser._face(layer) == PSDParser._face(other)):
+                        found.append(layer)
+                        grew = True
+                        break
+        return PSDParser.reading(found)
 
     @staticmethod
     def split_title(psd: PSDImage, found: list, title: str, name: str) -> bool:
@@ -1091,21 +1306,18 @@ class PSDParser:
 
     def _count_stars(self, psd: PSDImage) -> int:
         """
-        Stars drawn on a card whose star count comes from the PSD.
+        Stars drawn on a card whose star count comes from the PSD (stars_drawn: the one counter, the bake's too).
 
-        Each visible group with "stars" in its name is searched: child groups count recursively, and visible layers
-        that overlap (one's core center inside the other's core: a glow, a frame, or the pieces of one star) count
-        as one star. A star is often several layers, e.g. Indoctrination's pentagram and four pieces, which counting
-        layers made 20 stars instead of 4. With no such group, visible layers named "... Star ..." count the same way.
-        A layer named after a type icon is a type, never a star (Toy Freddy's Machine in its stars group).
+        The visible layers that can draw (star_leaf) in the outermost visible groups with "stars" in their name, plus
+        layers named after a Types/Stars icon outside them (Massive Moss Charger's 'Hk star'), with no such group the
+        layers named "... Star ...", give pieces (star_pieces: one layer can draw several); those above the midline are
+        judged together (star_sets): overlapping stars stay apart, glows join their star, a stacked copy is one.
         """
-        groups = self._star_groups(psd)
-        if groups:
-            return sum(self._stars_in(group) for group in groups)
-        named = [layer for layer in psd.descendants()
-                 if not layer.is_group() and layer.is_visible() and layer.has_pixels()
-                 and "star" in sub(r"[^a-z]+", " ", layer.name.lower()).split()]
-        return self._count_clusters(named)
+        return self.stars_drawn(psd, self.all_types, self.star_names())
+
+    def star_names(self) -> frozenset:
+        """The Types/Stars icon names (star_icon_name) of the parser's vocabulary."""
+        return frozenset(star_icon_name(name) for name, kind in self.icons.tokens.values() if kind == "star")
 
     @staticmethod
     def _star_groups(group) -> list:
@@ -1120,16 +1332,93 @@ class PSDParser:
                 found.extend(PSDParser._star_groups(layer))
         return found
 
-    def _stars_in(self, group) -> int:
-        count, loose = 0, []
+    @staticmethod
+    def _visible_leaves(group, show) -> list:
+        """The group's leaves that show (show: id(layer) -> visible, overriding a layer's or group's own flag)."""
+        out = []
         for layer in group:
-            if not layer.is_visible():
+            if not show.get(id(layer), layer.visible):
                 continue
             if layer.is_group():
-                count += self._stars_in(layer)
-            elif layer.has_pixels() and not self.type_icon(layer, self.all_types):
-                loose.append(layer)
-        return count + self._count_clusters(loose)
+                out.extend(PSDParser._visible_leaves(layer, show))
+            else:
+                out.append(layer)
+        return out
+
+    @staticmethod
+    def named_star(layer) -> bool:
+        """A layer the count takes with no Stars group: named with the word star ("Patrick Star", not "starfish")."""
+        return not layer.is_group() and layer.has_pixels() and "star" in sub(r"[^a-z]+", " ", layer.name.lower()).split()
+
+    @staticmethod
+    def outside_stars(psd: PSDImage, groups, stars, show=None) -> list:
+        """
+        Shown layers outside the Stars groups named after a Types/Stars icon (stars: star_names()), star-sized and above
+        the midline: Nosk's and Massive Moss Charger's 'Hk star' (not Blasphemous Blade's card-wide 'Elden Ring').
+        """
+        if not stars:
+            return []
+        show = show or {}
+        inside = {id(layer) for group in groups for layer in group.descendants()}
+        out = []
+        for layer in psd.descendants():
+            if layer.is_group() or id(layer) in inside or star_icon_name(base_name(layer)) not in stars:
+                continue
+            if show.get(id(layer), layer.visible) and all(parent.visible for parent in _parents(layer)) and star_leaf(layer):
+                core = PSDParser._core_box(layer)
+                if in_header(core, psd.height) and _area(core) <= STAR_ICON_SHARE * psd.width * psd.height:
+                    out.append(layer)
+        return out
+
+    @staticmethod
+    def star_leaves(psd: PSDImage, types=(), stars=(), show=None) -> list:
+        """The layers stars_drawn reads (all their pieces, header or not), shown as `show` says."""
+        show = show or {}
+        groups = PSDParser._star_groups(psd)
+        leaves = [layer for group in groups for layer in PSDParser._visible_leaves(group, show) if star_leaf(layer, types)]
+        leaves += [layer for layer in PSDParser.outside_stars(psd, groups, stars, show) if layer not in leaves]
+        if not groups:
+            leaves += [layer for layer in psd.descendants() if PSDParser.named_star(layer) and layer not in leaves
+                       and show.get(id(layer), layer.visible) and all(parent.visible for parent in _parents(layer))
+                       and star_leaf(layer)]
+        return leaves
+
+    @staticmethod
+    def stars_drawn(psd: PSDImage, types=(), stars=(), show=None, boxes=None, counts=None) -> int:
+        """
+        The star count (_count_stars), as the bake asks it once layers are shown, hidden or copied.
+
+        Args:
+            psd: The open card
+            types: Types/ names: a layer named after one is a type icon, no star
+            stars: star_names(): layers outside the Stars groups named after one count
+            show: id(layer) -> visible, overriding its flag
+            boxes: id(group) -> core boxes judged with the pieces (a star's copy)
+            counts: id(group) -> stars added there (a star group's copy)
+        """
+        pieces = [box for layer in PSDParser.star_leaves(psd, types, stars, show) for box in star_pieces(layer)]
+        pieces += [box for found in (boxes or {}).values() for box in found]
+        return len(star_sets([box for box in pieces if in_header(box, psd.height)])) + sum((counts or {}).values())
+
+    @staticmethod
+    def stars_below(psd: PSDImage, types=(), stars=()) -> int:
+        """Stars drawn below the midline, which no count reads (Tainted Lazarus's dead form upside down)."""
+        pieces = [box for layer in PSDParser.star_leaves(psd, types, stars) for box in star_pieces(layer)]
+        return sum(1 for star in star_sets(pieces) if not in_header(pieces[star[0]], psd.height))
+
+    @staticmethod
+    def stars_in(group, types=(), show=None, boxes=None, counts=None) -> int:
+        """The stars one group draws (child groups count on their own), as stars_drawn takes show, boxes and counts."""
+        show, boxes, counts = show or {}, boxes or {}, counts or {}
+        count, loose = counts.get(id(group), 0), list(boxes.get(id(group), ()))
+        for layer in group:
+            if not show.get(id(layer), layer.visible):
+                continue
+            if layer.is_group():
+                count += PSDParser.stars_in(layer, types, show, boxes, counts)
+            elif star_leaf(layer, types):
+                loose += star_pieces(layer)
+        return count + len(star_sets(loose))
 
     @staticmethod
     def type_icon(layer, types) -> bool:
@@ -1138,40 +1427,8 @@ class PSDParser:
 
     @staticmethod
     def _core_box(layer) -> tuple:
-        """Bounding box of the layer's mostly opaque pixels (its whole box if they can't be read)."""
-        x0, y0, x1, y1 = layer.bbox
-        try:
-            shape = layer.numpy("shape")
-        except (ValueError, KeyError, IndexError, TypeError, AttributeError):
-            shape = None
-        if shape is not None:
-            ys, xs = (shape[:, :, 0] >= STAR_CORE_ALPHA).nonzero()
-            if len(xs):
-                return x0 + int(xs.min()), y0 + int(ys.min()), x0 + int(xs.max()) + 1, y0 + int(ys.max()) + 1
-        return x0, y0, x1, y1
-
-    @staticmethod
-    def _center_inside(a: tuple, b: tuple) -> bool:
-        cx, cy = (a[0] + a[2]) / 2, (a[1] + a[3]) / 2
-        return b[0] <= cx <= b[2] and b[1] <= cy <= b[3]
-
-    @classmethod
-    def _count_clusters(cls, layers: list) -> int:
-        """How many separate stars the layers draw: overlapping layers (see _count_stars) are one."""
-        boxes = [cls._core_box(layer) for layer in layers]
-        parent = list(range(len(boxes)))
-
-        def root(i: int) -> int:
-            while parent[i] != i:
-                parent[i] = parent[parent[i]]
-                i = parent[i]
-            return i
-
-        for i in range(len(boxes)):
-            for j in range(i + 1, len(boxes)):
-                if cls._center_inside(boxes[i], boxes[j]) or cls._center_inside(boxes[j], boxes[i]):
-                    parent[root(i)] = root(j)
-        return len({root(i) for i in range(len(boxes))})
+        """Bounding box of the layer's mostly opaque pixels, its pixel mask applied (its whole box if they can't be read)."""
+        return _core_of(_read_alpha(layer), tuple(layer.bbox))
 
     def _is_star_layer(self, layer) -> bool:
         """Check if layer is a star layer."""

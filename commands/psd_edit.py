@@ -17,9 +17,9 @@ from functools import lru_cache
 from difflib import SequenceMatcher
 from hashlib import blake2b
 from inspect import signature
-from itertools import zip_longest
+from itertools import combinations, zip_longest
 from io import BytesIO
-from math import hypot
+from math import comb, hypot
 from os import environ
 from os.path import basename, getsize, join
 from re import IGNORECASE, compile as re_compile, escape, fullmatch, search, sub
@@ -44,6 +44,7 @@ from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_
                                  MutableValue, PSDParser,
                                  StatTracker, base_name, layer_tag, name_key, named_after_text, stars_from_psd,
                                  title_text, token_variant, variant_view, variants_of)
+from commands.psd_parser import in_header, star_leaf, star_pieces, star_sets
 from commands import psd_parts
 from commands.psd_parts import lyid_index, raw_sha
 from commands.psd_regions import (STATS as STAT_PATTERNS, _ancestors, badge_layers, bar_box, clip, fx_pad, overlay_words,
@@ -5134,22 +5135,8 @@ def _moved_box(box, dx: int, dy: int) -> tuple:
 
 
 def _clusters(boxes: list) -> list:
-    """Index lists of the stars among core boxes, joined as PSDParser._count_clusters joins them."""
-    parent = list(range(len(boxes)))
-
-    def root(i: int) -> int:
-        while parent[i] != i:
-            parent[i] = parent[parent[i]]
-            i = parent[i]
-        return i
-    for i in range(len(boxes)):
-        for j in range(i + 1, len(boxes)):
-            if PSDParser._center_inside(boxes[i], boxes[j]) or PSDParser._center_inside(boxes[j], boxes[i]):
-                parent[root(i)] = root(j)
-    out: dict = {}
-    for i in range(len(boxes)):
-        out.setdefault(root(i), []).append(i)
-    return list(out.values())
+    """Index lists of the stars among core boxes, as the parser judges them (psd_parser.star_sets)."""
+    return star_sets(boxes)
 
 
 def _drawn(layer) -> list:
@@ -5166,7 +5153,7 @@ def _core(layer) -> Optional[tuple]:
 
 def _star_count(group, show: dict, boxes: dict, counts: dict, types=()) -> int:
     """
-    What PSDParser._stars_in counts in a group once layers are shown or hidden and copies added.
+    What the parser counts in one group (PSDParser.stars_in) once layers are shown or hidden and copies added.
 
     Args:
         group: A group in a Stars group
@@ -5175,20 +5162,12 @@ def _star_count(group, show: dict, boxes: dict, counts: dict, types=()) -> int:
         counts: id(group) -> stars added there (a star group's copy)
         types: Types/ names: a layer named after one is a type icon, no star (Toy Freddy's Machine)
     """
-    count, loose = counts.get(id(group), 0), list(boxes.get(id(group), ()))
-    for layer in group:
-        if not show.get(id(layer), layer.visible):
-            continue
-        if layer.is_group():
-            count += _star_count(layer, show, boxes, counts, types)
-        elif layer.has_pixels() and not PSDParser.type_icon(layer, types):
-            loose.append(PSDParser._core_box(layer))
-    return count + len(_clusters(loose))
+    return PSDParser.stars_in(group, types, show, boxes, counts)
 
 
-def _stars_total(psd: PSDImage, show=None, boxes=None, counts=None, types=()) -> int:
-    """The parser's count over the card's Stars groups (PSDParser._count_stars), with _star_count's changes."""
-    return sum(_star_count(group, show or {}, boxes or {}, counts or {}, types) for group in PSDParser._star_groups(psd))
+def _stars_total(psd: PSDImage, show=None, boxes=None, counts=None, types=(), stars=()) -> int:
+    """The parser's count (PSDParser.stars_drawn: _count_stars), with _star_count's changes; stars: star_names()."""
+    return PSDParser.stars_drawn(psd, types, stars, show, boxes, counts)
 
 
 @dataclass
@@ -5214,9 +5193,12 @@ class _Unit:
 
 def _star_units(container, types=()) -> tuple:
     """
-    (shown, hidden) stars directly in a group: its child groups that count stars, and its loose layers' clusters; a
-    layer named after a type icon (types: Types/ names) is left out (the parser reads it as a type too: Pike Beam).
+    (shown, hidden) stars directly in a group above the midline: its child groups that count stars, and its loose
+    layers' stars as the parser judges their pieces (star_leaf, star_pieces, _clusters: a glow joins its star, art is
+    none); one layer drawing several stars is one unit counting them (Grimora's row). A layer named after a type icon
+    (types: Types/ names) is left out (the parser reads it as a type too: Pike Beam).
     """
+    height = (container if isinstance(container, PSDImage) else container._psd).height
     shown, hidden, loose = [], [], {True: [], False: []}
     for layer in container:
         if layer.name.strip().lower() in types:
@@ -5224,14 +5206,25 @@ def _star_units(container, types=()) -> tuple:
         if layer.is_group():
             count = _star_count(layer, {}, {}, {}, types)
             core = _core(layer)
-            if count and core:
+            if count and core and in_header(core, height):
                 (shown if layer.visible else hidden).append(_Unit([layer], core, count))
-        elif layer.has_pixels() and layer.bbox[2] > layer.bbox[0]:
+        elif star_leaf(layer, types):
             loose[layer.visible].append(layer)
     for on, layers in loose.items():
-        boxes = [PSDParser._core_box(layer) for layer in layers]
-        for members in _clusters(boxes):
-            (shown if on else hidden).append(_Unit([layers[i] for i in members], union_box([boxes[i] for i in members])))
+        pieces = {id(layer): star_pieces(layer) for layer in layers}
+        items = [(layer, box) for layer in layers for box in pieces[id(layer)] if in_header(box, height)]
+        several: set = set()
+        for members in _clusters([box for _, box in items]):
+            owners = []
+            for i in members:
+                if items[i][0] not in owners:
+                    owners.append(items[i][0])
+            if len(owners) == 1 and len(pieces[id(owners[0])]) > 1:     # one layer drawing several: one unit
+                if id(owners[0]) not in several:
+                    several.add(id(owners[0]))
+                    (shown if on else hidden).append(_Unit(owners, PSDParser._core_box(owners[0]), len(pieces[id(owners[0])])))
+                continue
+            (shown if on else hidden).append(_Unit(owners, union_box([items[i][1] for i in members])))
     return shown, hidden
 
 
@@ -5510,7 +5503,8 @@ def _star_layouts(order: list, size: tuple, count: int) -> list:
 
 
 def _stars_blocked(psd: PSDImage, moves: list, clear: list) -> Optional[str]:
-    """Why stars cannot move or be copied by [(unit, dx, dy)]: a layer that cannot move or is clipped, or _blocked."""
+    """Why stars cannot move or be copied by [(unit, dx, dy)]: a layer that cannot move or is clipped, _blocked, or a
+    spot below the midline (no count reads it)."""
     for unit, dx, dy in moves:
         why = next((w for w in (_shiftable(layer) for layer in unit.layers) if w), None)
         if why:
@@ -5520,26 +5514,48 @@ def _stars_blocked(psd: PSDImage, moves: list, clear: list) -> Optional[str]:
         blocked = _blocked(psd, _moved_inks(unit, dx, dy), _moved_box(unit.core, dx, dy), clear)
         if blocked:
             return f"a star at {tuple(int(v) for v in _moved_box(unit.core, dx, dy))} {blocked}"
+        if not in_header(_moved_box(unit.core, dx, dy), psd.height):     # the count reads no star there
+            return f"a star at {tuple(int(v) for v in _moved_box(unit.core, dx, dy))} would sit below the card's middle"
     return None
 
 
 RELAID = ("rows of two, laid out again",)     # _more_layouts' layouts that change the card's own (told)
 OVERLAP = 0.15              # a new star's core may cover this share of another's (the cards' own shapes overlap a little)
+SPARE_OVERLAP = 0.1         # a hidden spare star covering this share of a shown one (or covered) is not shown (R5)
+BACKDROP_SHARE = 0.9        # a layer behind the stars inking this share of each one's core is what they sit on
+BACKDROP_KEEP = 0.75        # a moved or new star keeps this share of its core on that layer
+SHADE_ALPHA = (0.05, INK_ALPHA)   # see-through ink: a shadow strip over another star greys it
+SHADE_RIM = 2               # px: an anti-aliased rim is no strip
+SHADE_PX = 100              # px of a star under a shadow strip that _shaded allows (none on the cards' own)
+KEPT_TRIES = 252            # _kept_shape's most sets of stars to hide tried (10 choose 5)
 
 
 def _named_star(layer) -> bool:
-    """A layer the parser counts as a star with no Stars group: named with the word star (PSDParser._count_stars)."""
-    return not layer.is_group() and layer.has_pixels() and "star" in sub(r"[^a-z]+", " ", layer.name.lower()).split()
+    """A layer the parser counts as a star with no Stars group: named with the word star (PSDParser.named_star)."""
+    return PSDParser.named_star(layer)
 
 
-def _named_total(psd: PSDImage, show=None, boxes=None) -> int:
-    """What the parser counts on a card with no Stars group: its visible layers named star, clustered; with show
+def _named_total(psd: PSDImage, show=None, boxes=None, stars=()) -> int:
+    """What the parser counts on a card with no Stars group (PSDParser.stars_drawn: its layers named star); with show
     (id(layer) -> visible) and boxes (id(group) -> extra core boxes: copies) as _star_count takes them."""
-    show, cores = show or {}, [box for found in (boxes or {}).values() for box in found]
-    for layer in psd.descendants():
-        if _named_star(layer) and show.get(id(layer), layer.visible) and all(p.visible for p in _ancestors(layer)):
-            cores.append(PSDParser._core_box(layer))
-    return len(_clusters(cores))
+    return PSDParser.stars_drawn(psd, (), stars, show, boxes)
+
+
+def _header_star_tokens(psd: PSDImage, parser: PSDParser, name: str = "") -> int:
+    """Stars the parser adds from icon-font tokens in the header text (PSDParser._process_text_layer's)."""
+    mid = int(psd.height * TYPE_REGION_RATIO)
+    texts = [layer for layer in psd.descendants() if layer.kind == "type" and EFFECT_LAYER_TAG not in layer.name]
+    titles = {id(layer) for layer in PSDParser.title_layers(psd, texts, name)}
+    count = 0
+    for layer in texts:
+        if base_name(layer).lower() == "ability" or id(layer) in titles or not layer.is_visible() or layer.bbox[1] >= mid:
+            continue
+        text = layer.engine_dict["Editor"]["Text"].value
+        spans = PSDParser._icon_font_spans(layer, text)
+        if spans:
+            icons = parser._read_icon_tokens(text, spans, CardInfo(name="", card_type="unknown"))[1]
+            count += sum(1 for _, kind in icons if kind == "star")
+    return count
 
 
 def _loose_units(psd: PSDImage, groups: list, named: bool, types) -> tuple:
@@ -5554,7 +5570,7 @@ def _loose_units(psd: PSDImage, groups: list, named: bool, types) -> tuple:
     out: dict = {True: [], False: []}
     by_parent: dict = {}
     for layer in psd.descendants():
-        if _named_star(layer) and all(p.visible for p in _ancestors(layer)):
+        if _named_star(layer) and all(p.visible for p in _ancestors(layer)) and star_leaf(layer):
             by_parent.setdefault(id(layer.parent), []).append(layer)
     for layers in by_parent.values():
         for on in (True, False):
@@ -5586,6 +5602,123 @@ def _covers(a: tuple, b: tuple) -> float:
     w = min(a[2], b[2]) - max(a[0], b[0])
     h = min(a[3], b[3]) - max(a[1], b[1])
     return w * h / max(1, (b[2] - b[0]) * (b[3] - b[1])) if w > 0 and h > 0 else 0.0
+
+
+def _kept_shape(order: list, size: tuple, count: int) -> Optional[list]:
+    """
+    The stars to hide, 3 or more staying, when neither end of the reading order leaves a layout: the latest ones whose
+    rest is a known layout, else whose rest is mirrored about the shape's middle (a dice 5 loses its middle: Nightmare,
+    Kyle's 2 over 3, The Master's); None.
+    """
+    drop = len(order) - count
+    if comb(len(order), drop) > KEPT_TRIES:
+        return None
+    tol = 2 * _tol(max(size))                   # hand-placed: Zero Override's bottom row is 14 px off level
+    middle = (min(u.core[0] for u in order) + max(u.core[2] for u in order)) / 2
+    mirrored = lambda kept: all(any(abs(2 * middle - a.centre[0] - b.centre[0]) <= tol and abs(a.centre[1] - b.centre[1])
+                                    <= tol for b in kept) for a in kept)
+    tries = [set(gone) for gone in combinations(range(len(order) - 1, -1, -1), drop)]
+    for good in (lambda kept: _known_layout(kept, size), mirrored):
+        for gone in tries:
+            if good([unit for i, unit in enumerate(order) if i not in gone]):
+                return [unit for i, unit in enumerate(order) if i in gone]
+    return None
+
+
+def _shade(lower: list, upper: list) -> int:
+    """
+    Pixels where an upper layer's see-through ink (a shadow strip, SHADE_ALPHA, not its anti-aliased rim: SHADE_RIM px
+    in) lies on a lower layer's solid ink; lower and upper are [(bbox, alpha)].
+    """
+    total = 0
+    for (lx0, ly0, _, _), la in lower:
+        for (ux0, uy0, _, _), ua in upper:
+            x0, y0 = max(lx0, ux0), max(ly0, uy0)
+            x1, y1 = min(lx0 + la.shape[1], ux0 + ua.shape[1]), min(ly0 + la.shape[0], uy0 + ua.shape[0])
+            if x1 <= x0 or y1 <= y0:
+                continue
+            thin = (ua > SHADE_ALPHA[0]) & (ua < SHADE_ALPHA[1])
+            core = thin.copy()
+            for k in range(1, SHADE_RIM + 1):
+                core[k:] &= thin[:-k]
+                core[:-k] &= thin[k:]
+                core[:, k:] &= thin[:, :-k]
+                core[:, :-k] &= thin[:, k:]
+            solid = la[y0 - ly0:y1 - ly0, x0 - lx0:x1 - lx0] > 1 - SHADE_ALPHA[0]
+            total += int((solid & core[y0 - uy0:y1 - uy0, x0 - ux0:x1 - ux0]).sum())
+    return total
+
+
+def _shaded(psd: PSDImage, kept: list, moves: list) -> list:
+    """
+    The moves (unit, dx, dy) that put a star under another star's shadow: more than SHADE_PX of its solid ink under the
+    see-through ink of a star drawn above it, past what lies there now (Flower of Decay's rows of two: the moved star
+    under its neighbour's shadow strip, a grey band).
+    """
+    at = {id(layer): i for i, layer in enumerate(psd.descendants())}
+    moved = {id(unit): (dx, dy) for unit, dx, dy in moves}
+    def inks(unit, shift):
+        out = []
+        for leaf in [leaf for layer in unit.layers for leaf in _drawn(layer)]:
+            alpha = _alpha(leaf)
+            if alpha is not None and alpha.size:
+                out.append((_moved_box(tuple(leaf.bbox), *shift), alpha))
+        return out
+    out = []
+    for unit, dx, dy in moves:
+        top = max(at[id(layer)] for layer in unit.layers)
+        for other in kept:
+            if other is unit or min(at[id(layer)] for layer in other.layers) < top:
+                continue
+            shift = moved.get(id(other), (0, 0))
+            now = _shade(inks(unit, (0, 0)), inks(other, (0, 0)))
+            if _shade(inks(unit, (dx, dy)), inks(other, shift)) > now + SHADE_PX:
+                out.append((unit, dx, dy))
+                break
+    return out
+
+
+def _ink_share(ink: tuple, box: tuple) -> float:
+    """The share of box that a layer's ink ((bbox, solid alpha), _ink) covers."""
+    (x0, y0, _, _), solid = ink
+    bx0, by0, bx1, by1 = (int(round(v)) for v in box)
+    area = max(1, (bx1 - bx0) * (by1 - by0))
+    part = solid[max(0, by0 - y0):max(0, by1 - y0), max(0, bx0 - x0):max(0, bx1 - x0)]
+    return float(part.sum()) / area
+
+
+def _backdrop(psd: PSDImage, shown: list) -> Optional[tuple]:
+    """
+    (layer, ink) of what the stars sit on: the smallest drawn layer behind them, under half the canvas, whose ink holds
+    BACKDROP_SHARE of every shown star's core (Remote Detonator's paper banner); None.
+    """
+    layers = list(psd.descendants())
+    at = {id(layer): i for i, layer in enumerate(layers)}
+    first = min(at[id(layer)] for unit in shown for layer in unit.layers)
+    box = union_box([unit.core for unit in shown])
+    found = []
+    for layer in layers[:first]:
+        b = tuple(layer.bbox)
+        if (layer.is_group() or layer.kind == "type" or not layer.is_visible() or b[0] > box[0] or b[1] > box[1]
+                or b[2] < box[2] or b[3] < box[3] or (b[2] - b[0]) * (b[3] - b[1]) > psd.width * psd.height / 2):
+            continue
+        found.append(((b[2] - b[0]) * (b[3] - b[1]), layer))
+    for _, layer in sorted(found, key=lambda one: one[0]):
+        ink = _ink(layer)
+        if ink is not None and all(_ink_share(ink, unit.core) >= BACKDROP_SHARE for unit in shown):
+            return layer, ink
+    return None
+
+
+def _off_backdrop(back: Optional[tuple], moves: list, copies: list) -> Optional[str]:
+    """Why a moved or copied star leaves the stars' backdrop (_backdrop): under BACKDROP_KEEP of its core on it; None."""
+    if back is None:
+        return None
+    for unit, dx, dy, *_ in moves + copies:
+        box = _moved_box(unit.core, dx, dy)
+        if (dx or dy) and _ink_share(back[1], box) < BACKDROP_KEEP:
+            return f"a star at {tuple(int(v) for v in box)} would leave {back[0].name!r} under the stars"
+    return None
 
 
 def _more_layouts(order: list, size: tuple, count: int, psd: PSDImage) -> list:
@@ -5672,14 +5805,23 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
     if value < 1:
         refuse("a card shows at least one")
     types = parser.all_types if parser is not None else ()
+    stars = parser.star_names() if parser is not None else ()
     groups = [group for group in PSDParser._star_groups(psd) if _star_count(group, {}, {}, {}, types)]
     named = not groups and not PSDParser._star_groups(psd) and stars_from_psd(rel)   # the parser's fallback: layers
     #   named "... Star ..." (only where it counts them: a folder card's are its art, not redrawn)
     if not groups and not named:
         refuse('no group named "Stars" draws them')
-    total = _named_total(psd) if named else _stars_total(psd, types=types)
+    total = _named_total(psd, stars=stars) if named else _stars_total(psd, types=types, stars=stars)
     if total != old:
-        refuse(f"the parser counts {old}, the Stars group draws {total} (stars in the header text)")
+        tokens = _header_star_tokens(psd, parser, info.name if info is not None else "") if parser is not None else 0
+        refuse(f"the parser counts {old}, the Stars group draws {total}" + (f" and the header text {tokens}" if tokens else ""))
+    below = PSDParser.stars_below(psd, types, stars)
+    if below:                                   # Tainted Lazarus's dead form: not redrawn yet
+        refuse(f"the card draws {below} more below its middle (a second creature): edit in Photoshop")
+    outside = [layer for layer in PSDParser.outside_stars(psd, PSDParser._star_groups(psd), stars)
+               if not (named and _named_star(layer))]
+    if outside:                                 # Nosk's 'Hk star': not laid out with the group's yet
+        refuse(f"{outside[0].name!r} outside the Stars group is a star too: edit in Photoshop")
     plan = IconPlan("stars", old, value)
     if named or len(groups) > 1:                # Nasty Patty's Patrick Stars, Paint Warrior's two Stars groups
         shown, hidden = _loose_units(psd, groups, named, types)
@@ -5712,7 +5854,7 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
             container = shown[0]                # the shown folder's stars, one by one (a '3 stars' drawing 4)
             continue
         shown, hidden = _star_units(container, types)
-        if len(shown) == 1 and shown[0].count > 1 and not hidden:
+        if len(shown) == 1 and shown[0].count > 1 and not hidden and shown[0].layers[0].is_group():
             container = shown[0].layers[0]
             continue
         break
@@ -5723,10 +5865,10 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
     shown, hidden = _flat_units(shown, hidden, types)       # Cat's group of two beside its group of one
     if any(unit.count != 1 for unit in shown):
         many = next(unit for unit in shown if unit.count != 1)
-        refuse(f"{many.layers[0].name!r} draws {many.count} in one group")
+        refuse(f"{many.layers[0].name!r} draws {many.count} in one {'group' if many.layers[0].is_group() else 'layer'}")
     stacked = next((u.layers[0].name for i, u in enumerate(shown) for v in shown[:i] if _same_spot(u, v)), None)
-    if stacked:                                 # Living Bread: two copies of its stars stacked, each counted
-        refuse(f"{stacked!r} sits on another star: the parser counts both, the card shows one")
+    if stacked:                                 # Living Bread, Tainted Eden: a copy of each star drawn on it
+        refuse(f"{stacked!r} sits on another star, a copy drawn on it: edit in Photoshop")
     several = len({id(unit.layers[0].parent) for unit in shown + hidden}) > 1
     count = len(shown) + value - total
     if count < 1:
@@ -5738,17 +5880,24 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         order = _reading(shown, size[1], True)      # layout and the last does not); rows of two centre an odd one
         drop = len(shown) - count
         hide = next((gone for kept, gone in ((order[:count], order[count:]), (order[drop:], order[:drop]))
-                     if _known_layout(kept, size)), order[count:])
+                     if _known_layout(kept, size)), None)
+        moves = []
+        if hide is None:
+            model = _pyramid(order, size)
+            moves = _place(order[:count], _pyramid_spots(model, count), size)[0] if model else []
+            if moves and (_stars_blocked(psd, moves, clear) or _shaded(psd, order[:count], moves)
+                          or _off_backdrop(_backdrop(psd, shown), moves, [])):     # under a shadow: no moves
+                moves = []
+            shape = None if moves or count < 3 or _known_layout(order, size) else _kept_shape(order, size, count)
+            hide = shape or order[count:]           # a zigzag or a diagonal keeps its first stars (Dark Esau 2)
         plan.hide = [layer for unit in hide for layer in unit.layers]
         plan.how = f"{len(hide)} hidden"
         show.update({id(layer): False for layer in plan.hide})
-        model = _pyramid(order, size)
-        kept = [unit for unit in order if unit not in hide]
-        moves = _place(kept, _pyramid_spots(model, count), size)[0] if model and not _known_layout(kept, size) else []
-        if moves and _stars_blocked(psd, moves, clear) is None:
+        if moves:
             plan.moves, plan.how = moves, "rows of two"
     else:                                   # more: the card's own hidden stars, then the layout's spacing
-        total_of = (lambda show_: _named_total(psd, show_)) if named else (lambda show_: _stars_total(psd, show_, types=types))
+        total_of = ((lambda show_: _named_total(psd, show_, stars=stars)) if named
+                    else (lambda show_: _stars_total(psd, show_, types=types, stars=stars)))
         spots = [spot for _, layout in _star_layouts(_reading(shown, size[1], True), size, count) + 
                  _more_layouts(_reading(shown, size[1], True), size, count, psd) for spot in layout]
         for unit in _reading(hidden, size[1], True):
@@ -5757,6 +5906,9 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
             if several and not any(abs(unit.centre[0] - x) <= _tol(max(size)) and abs(unit.centre[1] - y) <= _tol(max(size))
                                    for x, y in spots):
                 continue                        # Shadow Queen's spare art: shown only where the layout puts a star
+            if any(_covers(unit.core, other.core) > SPARE_OVERLAP or _covers(other.core, unit.core) > SPARE_OVERLAP
+                   for other in shown):
+                continue                        # on a shown star (Hornet's spare flower): a star is copied instead
             if any(not size[k] / 2 <= unit.size[k] <= size[k] * 2 for k in (0, 1)):
                 continue                        # another size: no star of the row (Toy Freddy's hidden 'star test')
             trial = {**show, **{id(layer): True for layer in unit.layers}}
@@ -5768,13 +5920,20 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
             order = _reading(shown, size[1], True)
             source = max((unit for unit in order if unit.layers[0].parent is container), default=order[len(order) - 1],
                          key=lambda unit: max(container.index(layer) for layer in unit.layers))   # the last star layer
-            first = None
+            first, back = None, _backdrop(psd, order)
             for how, spots in _star_layouts(order, size, count) + _more_layouts(order, size, count, psd):
                 moves, free = _place(order, spots, size)
+                under = [move for move in _shaded(psd, order, moves) if move[0] is not source]
+                moves = [move for move in moves if move not in under]       # under a shadow: hidden, a copy (on top)
+                free += [(unit.centre[0] + dx, unit.centre[1] + dy) for unit, dx, dy in under]
                 copies = [(source, round(spot[0] - source.centre[0]), round(spot[1] - source.centre[1]), "") for spot in free]
-                why = _stars_blocked(psd, moves + [(unit, dx, dy) for unit, dx, dy, _ in copies], clear)
+                why = (_stars_blocked(psd, moves + [(unit, dx, dy) for unit, dx, dy, _ in copies], clear)
+                       or _off_backdrop(back, moves, copies))
                 if why is None:
                     plan.moves, plan.copies, plan.how = moves, copies, how
+                    gone = [layer for unit, _, _ in under for layer in unit.layers]
+                    plan.hide += gone
+                    show.update({id(layer): False for layer in gone})
                     if how in RELAID:
                         plan.notes.append(f"stars: {how} (the card's own layout does not go on to {count})")
                     break
@@ -5795,7 +5954,7 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         else:
             boxes.setdefault(id(unit.layers[0].parent), []).extend(_moved_box(PSDParser._core_box(layer), dx, dy)
                                                                   for layer in unit.layers)
-    drawn = _named_total(psd, show, boxes) if named else _stars_total(psd, show, boxes, counts, types)
+    drawn = _named_total(psd, show, boxes, stars) if named else _stars_total(psd, show, boxes, counts, types, stars)
     if drawn != value:
         refuse(f"the new layout would count {drawn}")
     plan.moves = [(layer, dx, dy) for unit, dx, dy in plan.moves for layer in _with_chains(unit.layers)]

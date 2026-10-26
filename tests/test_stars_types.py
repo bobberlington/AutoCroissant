@@ -272,6 +272,9 @@ def test_stars_fewer_hide_the_last_and_more_show_hidden_first(parser, tmp_path):
     assert [tuple(layer.bbox) for layer in plan.hide] == [(1025, 125, 1125, 225)] and not plan.moves
     plan = _plan(parser, paths[0], REL, "stars", 4)                    # the hidden star first, then the layout
     assert [tuple(layer.bbox) for layer in plan.show] == [(1080, 230, 1180, 330)] and plan.copies == []
+    on = _fixture(tmp_path, stars=((1080, 20), (970, 20)), hidden=((1075, 25),), name="Spare")
+    plan = _plan(parser, on[0], REL, "stars", 3)                       # a spare on a shown star stays hidden (R5)
+    assert not plan.show and len(plan.copies) == 1
     _, baked = _bake(parser, paths, {"stars": 1}, tmp_path)
     assert baked.reparse["card"]["stars"] == 1 and baked.flag_bytes == 2      # two stars hidden: one flag byte each
     hidden = [tuple(layer.bbox) for layer in PSDImage.open(baked.psd_path).descendants()
@@ -287,14 +290,17 @@ def test_stars_refuse_per_field(parser, tmp_path):
     assert _plan(parser, paths[0], REL, "stars", 2).hide                # fewer still bakes: hide the last
     with pytest.raises(pe.Refused, match="at least one"):
         _plan(parser, paths[0], REL, "stars", 0)
+    with pytest.raises(pe.Refused, match=r"the parser counts 5, the Stars group draws 3$"):    # no header text blamed
+        pe.plan_stars(PSDImage.open(paths[0]), {"card": {"stars": 5, "path": REL}, "info": None}, 4, parser)
     with pytest.raises(pe.Refused, match="the '1 Stars' folder sets them"):
         _plan(parser, paths[0], "Items/Equip/1 Stars/Fixture.psd", "stars", 2)
     assert pe.star_target("Auxiliary/Status Effects/Debuffs/2 Stars/Afraid.psd", 3) == "Auxiliary/Status Effects/Debuffs/3 Stars"
     assert pe.star_folder(REL) is None and pe.star_folder("Auxiliary/Status Effects/Buffs/Fixture.psd") is None
     with pytest.raises(pe.Refused, match="the parser reads no stars on a buff card"):
         _plan(parser, paths[0], "Auxiliary/Status Effects/Buffs/Fixture.psd", "stars", 2)
-    edge = _fixture(tmp_path, stars=((1095, 20), (1095, 1650)), name="Edge")     # a column whose next star is off the card:
-    assert _plan(parser, edge[0], REL, "stars", 3).how == "its rows carried on"     # its last star takes one beside it
+    low = _fixture(tmp_path, stars=((1095, 20), (1095, 1650)), name="Low")      # a star below the middle: no count reads
+    with pytest.raises(pe.Refused, match="draws 1 more below its middle"):      # it, so no layout redraws it (refused)
+        _plan(parser, low[0], REL, "stars", 2)
 
 
 @icons
@@ -400,12 +406,81 @@ def test_layout_star_rules(clone, parser, tmp_path, rel, value, how, notes):
     assert plan.how == how and len(plan.notes) == notes
 
 
+STAR_COUNTS = [   # the star counter (psd_parser.star_sets) on real cards: (card, stars, N-1 and N+1 plan or refusal)
+    ("Creatures/FTL/2 Stars/Zoltan.psd", 2, None),                         # two stars overlapping by half
+    ("Creatures/Kirby/5 Stars/Nightmare.psd", 5, None),                    # a dice face: the centre's core on a corner's
+    ("Creatures/Other/5 Stars/Kyle.psd", 5, None),                         # a canvas-wide Color Fill clipped to each star
+    ("Creatures/Fnaf/3 Stars/Toy_Chica.psd", 3, None),                     # a LINE below the middle in its stars group
+    ("Creatures/Isaac/4 Stars/Tainted_Bethany.psd", 4, None),              # glows spanning two rows join their stars
+    ("Creatures/Other/2 Stars/Auto_Croissant.psd", 2, None),               # the cat's art in the Stars group
+    ("Creatures/Other/3 Stars/Grimora.psd", 3, "'Layer 4' draws 3 in one layer"),            # one layer, three stars
+    ("Auxiliary/Minions/Living_Bread.psd", 2, "sits on another star, a copy drawn on it"),   # each star drawn twice
+    ("Auxiliary/Minions/Massive_Moss_Charger.psd", 4, "'Hk star' outside the Stars group"),  # two outside the group
+    ("Creatures/Isaac/3 Stars/Tainted_Lazarus.psd", 3, "draws 3 more below its middle"),     # Dead Laz upside down
+]
+
+
 @icons
-def test_stacked_stars_refuse(clone, parser, tmp_path):
-    """Living Bread draws its two stars twice, stacked: the parser counts four, so no edit can show what it reads."""
-    rel = "Auxiliary/Minions/Living_Bread.psd"
-    with pytest.raises(pe.Refused, match="sits on another star"):
-        _plan(parser, _clone_card(clone, rel, tmp_path)[0], rel, "stars", 5)
+def test_star_counter_on_real_cards(clone, parser, tmp_path):
+    """The parser and the bake count one way: N on each card; plan_stars at N-1 and N+1 plans, or refuses what the bake
+    can't lay out yet (one layer drawing several, stacked copies, stars outside the group or below the middle)."""
+    for rel, stars, refused in STAR_COUNTS:
+        path = _clone_card(clone, rel, tmp_path)[0]
+        psd = PSDImage.open(path)
+        parsed = pe.parse_card(parser, path, rel, psd)
+        assert parser._count_stars(psd) == stars == pe._stars_total(psd, types=parser.all_types, stars=parser.star_names()), rel
+        for value in (stars - 1, stars + 1):
+            if refused is None:
+                assert pe.plan_stars(psd, parsed, value, parser, moving=True).how, (rel, value)
+            else:
+                with pytest.raises(pe.Refused, match=refused):
+                    pe.plan_stars(psd, parsed, value, parser, moving=True)
+    staff = "N.M.E/Staff_of_Purity.psd"          # a column of 5 would cross the middle, where no count reads a star
+    assert _plan(parser, _clone_card(clone, staff, tmp_path)[0], staff, "stars", 5).how == "its rows carried on"
+
+
+@icons
+def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
+    """A dice 5 at 4 loses its middle (Nightmare, Kyle's 2 over 3); a moved star under a shadow is copied on top
+    instead (Flower of Decay); a new star off the banner the stars sit on refuses (Remote Detonator); the website's
+    header counts the stars outside the group as the bake does (Massive Moss Charger)."""
+    import commands.psd_details as pd
+    for rel, gone in (("Creatures/Kirby/5 Stars/Nightmare.psd", "Warpstar copy 4"), ("Creatures/Other/5 Stars/Kyle.psd", "middle")):
+        plan = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 4, parser, moving=True)
+        assert [layer.name for layer in plan.hide] == [gone] and not plan.moves, rel
+    rel = "Items/Infliction/3 Stars/Flower_Of_Decay.psd"
+    plan = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 4, parser, moving=True)
+    assert plan.how == "rows of two" and [layer.name for layer in plan.hide] == ["star"] and not plan.moves
+    assert len(plan.copies) == 2
+    rel = "N.M.E/Remote_Detonator.psd"
+    with pytest.raises(pe.Refused, match="would leave 'Layer 13' under the stars"):
+        pe.plan_stars(*_open(parser, clone, rel, tmp_path), 3, parser)
+    rel = "Auxiliary/Minions/Massive_Moss_Charger.psd"
+    psd = PSDImage.open(_clone_card(clone, rel, tmp_path)[0])
+    header = pd._star_header(psd, rel, tuple(parser.all_types), parser)
+    assert list(header["refused"]) == ["*"] and "'Hk star' outside the Stars group" in header["refused"]["*"]
+
+
+def _open(parser, clone, rel, tmp_path) -> tuple:
+    path = _clone_card(clone, rel, tmp_path)[0]
+    psd = PSDImage.open(path)
+    return psd, pe.parse_card(parser, path, rel, psd)
+
+
+@icons
+def test_star_pieces_split_and_read_masks():
+    """One layer drawing two stars is two pieces; a mask hiding one leaves one, and the core box is the shown star's."""
+    psd = PSDImage.new("RGB", (1200, 1800))
+    two = Image.new("RGBA", (230, 100), (0, 0, 0, 0))
+    two.paste(_star(), (0, 0)), two.paste(_star(), (130, 0))
+    layer = PixelLayer.fromarray(np.asarray(two), psd, name="Stars art", top=20, left=900)
+    psd.append(layer)
+    pieces = sorted(pe.star_pieces(layer))
+    assert len(pieces) == 2 and pieces[0][2] < pieces[1][0]
+    mask = Image.new("L", (230, 100), 0)
+    mask.paste(255, (0, 0, 115, 100))
+    layer.create_mask(mask)
+    assert len(pe.star_pieces(layer)) == 1 and pe.PSDParser._core_box(layer)[2] <= 1015
 
 
 @icons

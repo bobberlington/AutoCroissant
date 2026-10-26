@@ -681,7 +681,7 @@ def test_a_title_named_after_its_own_text(clone, parser):
     named after its own text, as Photoshop names a new text layer, when nothing else is found. Papyrus prints 'The
     Great Papyrus' and Sans 'snas.' (the live bake's two refusals of b22f4cc4): parser and bake read that layer, and
     the website's edits asking for those titles are redundant. Several such layers (Knight Lost A Lot's stacked words)
-    read as none; a rule page's heading is no title."""
+    are no own-text title: rule P reads them by place, one box each; a rule page's heading is no title."""
     for rel, title in ((PAPYRUS, "The Great Papyrus"), (SANS, "snas.")):
         psd_path = _card(clone, rel)[0]
         psd = PSDImage.open(psd_path)
@@ -697,7 +697,7 @@ def test_a_title_named_after_its_own_text(clone, parser):
     assert parsed["card"].get("display_name") is None and pe.shown_name(parsed) == "Knight Lost A Lot"
     assert [r.why for r in pe.classify(parsed, {"name": "Knight Lost A Lot"}, PSDImage.open(psd_path)).refusals] == []
     assert [r.why for r in pe.classify(parsed, {"name": "Knight Lost"}, PSDImage.open(psd_path)).refusals] == [
-        "2 layers in the title region named after their text"]
+        "name: a joined edit on a card printed over 4 layers: edit each box on the website"]
     psd_path = str(clone / GLOBAL_TURN)
     if not Path(psd_path).exists():
         pytest.skip(f"{GLOBAL_TURN} not in the clone")
@@ -730,8 +730,42 @@ def test_own_text_is_the_last_rule():
     assert found(_Fake("snas.", 20), _Fake("Text", kind="group", children=[_Fake("Name", 30, text="Sans")])) == ["Text/Name"]
     assert found(_Fake("snas.", 20), _Fake("Sans", 40, text="the skeleton")) == ["Sans"]      # named after the card first
     stacked = _Fake("", kind="group", children=[_Fake("Text", kind="group", children=[_Fake("Knight", 20), _Fake("Lost", 60)])])
-    with pytest.raises(pe.Refused, match="2 layers in the title region named after their text"):
+    with pytest.raises(pe.Refused, match="2 title layers"):                     # rule P reads both (one box each)
         pe.name_layer(stacked, "Knight Lost A Lot")
+
+
+TITLES_BY_PLACE = [   # rule P: (card, the title layers' names); no other rule finds their titles
+    ("Creatures/Other/5 Stars/Alex_YIIK.psd", ["this card fucking sucks"]),
+    ("Auxiliary/Minions/Lorian.psd", ["Twin Princes"]),
+    ("Creatures/Souls/5 Stars/Lothric.psd", ["Twin Princes"]),
+    ("Items/Heal/2 Stars/Thunder_Thighs.psd", ["Supper"]),
+    ("Creatures/Kirby/3 Stars/Dark_Matter_Swordsman.psd", ["Dark Matter ", "Swordsman"]),
+    ("Creatures/Everhood/5 Stars/Chris_&_Jordi.psd", ["Knight copy", "Knight copy 2", "Knight"]),
+    (KNIGHT, ["Knight", "Lost", "A", "Lot"]),                                  # two lines past the title region, stacked
+]
+
+
+def test_titles_by_place(clone, parser):
+    """Rule P, the last: the text under Text in the title region and the lines stacked under it (same face and size),
+    names and words aside; never where another rule finds a title, on a picture title or on a rule page."""
+    for rel, names in TITLES_BY_PLACE:
+        psd_path = _card(clone, rel)[0]
+        psd = PSDImage.open(psd_path)
+        texts = [layer for layer in psd.descendants() if layer.kind == "type"]
+        found = pe.PSDParser.title_layers(psd, texts, card_name(rel))
+        assert [layer.name for layer in found] == names, rel
+        assert pe.name_key(" ".join(pe.title_text(layer.text) for layer in found)) == pe.name_key(card_name(rel))
+        assert pe.parse_card(parser, psd_path, rel)["card"].get("display_name") == ("Thunder thighs" if "Thunder" in rel else None)
+    for rel in ("Creatures/Other/5 Stars/Baba.psd", BONE):                    # a picture title; a title by its name
+        psd = PSDImage.open(_card(clone, rel)[0])
+        texts = [layer for layer in psd.descendants() if layer.kind == "type"]
+        assert [layer.name for layer in pe.PSDParser.title_layers(psd, texts, card_name(rel))] == ([] if "Baba" in rel else ["Wham Bam Bone"])
+    def found(*layers, own_text=True):
+        psd = _Fake("", kind="group", children=[_Fake("Text", kind="group", children=list(layers))])
+        texts = [layer for layer in psd.descendants() if layer.kind == "type"]
+        return [layer.name for layer in pe.PSDParser.title_layers(psd, texts, "Card", own_text)]
+    assert found(_Fake("Layer 1", 20, text="Card")) == ["Layer 1"] and found(_Fake("Layer 1", 20), own_text=False) == []
+    assert found(_Fake("Layer 1", 500)) == [] and found(_Fake("Ability", 20, text="Deal 2.")) == [] and found(_Fake("Layer 1", 20, text=" ")) == []
 
 
 def test_gate_bytes_allows_only_the_declared_rename(monkeypatch):

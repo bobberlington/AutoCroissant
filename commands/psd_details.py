@@ -299,7 +299,7 @@ def _star_container(group, types):
             group = shown[0]
             continue
         shown, hidden = _star_units(group, types)
-        if len(shown) == 1 and shown[0].count > 1 and not hidden:
+        if len(shown) == 1 and shown[0].count > 1 and not hidden and shown[0].layers[0].is_group():
             group = shown[0].layers[0]
             continue
         return group
@@ -324,17 +324,20 @@ def _plan_centres(plan, container, types, size) -> list:
     return [_ints(unit.centre) for unit in _reading(units, size[1], True)]
 
 
-def _star_header(psd: PSDImage, rel: str, vocab) -> Optional[dict]:
+def _star_header(psd: PSDImage, rel: str, vocab, parser: Optional[PSDParser] = None) -> Optional[dict]:
     """
     The shown stars ({core, box}, reading order), the star layer the bake copies, each count's centres (the bake's plan,
     else the layout's: first n, then _star_layouts) and the counts the bake refuses ("*": all, for one reason).
-    None without exactly one Stars group drawing them.
+    None without exactly one Stars group drawing them. parser: the build's (its Types/Stars names count the stars
+    outside the group, as the bake's does: Massive Moss Charger's 'Hk star'); None: one from vocab.
     """
-    types = _icon_parser(vocab).all_types
+    parser = parser or _icon_parser(vocab)
+    types = parser.all_types
     groups = [group for group in PSDParser._star_groups(psd) if _star_count(group, {}, {}, {}, types)]
     if len(groups) != 1:
         return None
-    total, container = _stars_total(psd, types=types), _star_container(groups[0], types)
+    total = _stars_total(psd, types=types, stars=parser.star_names())
+    container = _star_container(groups[0], types)
     shown = _star_units(container, types)[0]
     if not shown:
         return None
@@ -346,7 +349,7 @@ def _star_header(psd: PSDImage, rel: str, vocab) -> Optional[dict]:
     at, refused = {}, {}
     for n in range(1, HEADER_STARS + 1):
         try:
-            at[str(n)] = _plan_centres(plan_stars(psd, parsed, n, _icon_parser(vocab)), container, types, size)
+            at[str(n)] = _plan_centres(plan_stars(psd, parsed, n, parser), container, types, size)
             continue
         except Refused as e:
             refused[str(n)] = sub(r"^stars: |\s*\([^)]*\bledger [A-Z]\d+\)", "", e.why)   # no ledger codes
@@ -390,9 +393,9 @@ def _type_header(psd: PSDImage, rel: str, name: str, vocab) -> Optional[dict]:
             "refused": f"printed as icon tokens in {tokens[0].name!r}: edit them in Photoshop" if tokens else None}
 
 
-def _header(psd: PSDImage, rel: str, name: str, vocab) -> dict:
+def _header(psd: PSDImage, rel: str, name: str, vocab, parser: Optional[PSDParser] = None) -> dict:
     """Where the header's stars and type icons are and where the bake would put them (canvas px): the mock-up's."""
-    return {"stars": _guard(_star_header, psd, rel, vocab), "types": _guard(_type_header, psd, rel, name, vocab)}
+    return {"stars": _guard(_star_header, psd, rel, vocab, parser), "types": _guard(_type_header, psd, rel, name, vocab)}
 
 
 def _tree(group, depth: int = 0) -> list:
@@ -467,7 +470,7 @@ def _gather(psd: PSDImage, rel: str, name: str, index: Optional[FontIndex], voca
     record["overlays"] = _guard(_overlays, psd, texts)
     record["template"] = _guard(_template, psd, texts, name, record["stats"], record["icons"], record["overlays"],
                                 RULEBOOK_DIR in rel)
-    record["header"] = _guard(_header, psd, rel, name, vocab)
+    record["header"] = _guard(_header, psd, rel, name, vocab, parser)
     record["tree"] = _guard(_tree, psd)
     record["parts"] = _guard(card_parts, psd, rel, name, parser or _icon_parser(vocab), None, card, templates)
     return record
