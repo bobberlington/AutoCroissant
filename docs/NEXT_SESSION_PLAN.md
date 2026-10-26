@@ -73,8 +73,6 @@ What to do with its result:
       (`~/Downloads/Problem cards 2026-10-25 (after fixes).csv` and `.md`; `docs/Future/PROBLEM_CARDS_2026-10-25b.*`).
 - [ ] Safari checks: the grid flash, the many-boxes edge scroll.
 - [ ] Mark PNG-only duplicates on the website.
-- [ ] Confirm the phone first screen stays. The last recorded ruling (10-25 ~16:45) removed it; it came back at 19:09
-      (TC de98ccd4) with the Safari flash root fix, with no ruling recorded.
 - [ ] Data problems from the live problem list (`PROBLEM_CARDS_2026-10-25b.md`): Computer Virus has no stats (no
       template stat bars; Photoshop); Twin Emperors' Vek'lor has DEF 10 on the website and 4 on the card (an editor
       checks which is right).

@@ -88,8 +88,7 @@ From memory `owner-decisions-2026-10-24-night` (the 10-25 lines), in order:
 - Optimization: build the clear wins; phone first paint built; instant bot replies in both bots; /query_ability as
   grid images only. The guards' quiet-window timer at 25 minutes (~14:30). OJWikibot never drops wiki edits or
   scheduled commands; no Cloudflare (~15:20).
-- ~16:45: remove the pre-written first-screen cards (Safari kept flashing). They came back at 19:09 with the root fix
-  (TC de98ccd4); no ruling on that is recorded (plan: owner item).
+- ~16:45: remove the pre-written first-screen cards (Safari kept flashing). The flash survived the removal, so the owner asked for the phone first screen back (evening); it returned at 19:09 with the root fix (TC de98ccd4).
 - Website-only values (~17:30): a card-image field can be marked "Website only (don't change the card image)" per
   field; never baked; a quiet "Website only" tag.
 - File rename (~18:00): a name edit renames the card's files only when "Also rename the card's files" is ticked (off by
