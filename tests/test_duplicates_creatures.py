@@ -1,4 +1,4 @@
-"""Duplicates (<Name>N.png next to <Name>.psd -> duplicate_of) and the multi-creature split, on the real cards."""
+"""Duplicates (a dup_of PNG -> duplicate_of) and the multi-creature split, on the real cards."""
 
 import pytest
 
@@ -35,9 +35,8 @@ def test_duplicate_rules():
              "Items/Heal/2 Stars/x2.png",                      # has its own PSD: not a duplicate
              "Items/Heal/Y3.png",                              # no Y.psd
              "Auxiliary/Rulebook/R.psd", "Auxiliary/Rulebook/R2.png", "MDW/Z.psd", "MDW/Z2.png", "Items/Q.psd"]
-    assert tr._sync_duplicates(Tree(paths)) == 1                  # X3 added; Old2 not seen: archived by the prune
-    assert {n for n, c in tr.db.stats.items() if c.duplicate_of} == {"X3", "Old2"} and tr.db.seen_cards == ["X3"]
-    assert tr.db.stats["X3"].duplicate_of == "X" and tr.db.stats["X3"].display_name == "X"
+    assert tr._sync_duplicates(Tree(paths)) == 0                  # numbered PNGs are variant pictures: no duplicates
+    assert {n for n, c in tr.db.stats.items() if c.duplicate_of} == {"Old2"} and tr.db.seen_cards == []   # Old2: the prune's
 
 
 def test_a_png_only_card_with_dup_of_is_a_duplicate():
@@ -93,12 +92,9 @@ def test_unread_card_edits_keep_the_dup_of_cards(monkeypatch, failure):
 
 
 def test_duplicate_name_order():
-    """A duplicate's own Card Edits.json aliases name it (the longest), else its original's name: hidden title layers
-    name nothing (owner 2026-10-25); a dup_of card with none is titled by its own name (None)."""
-    src = pa.CardInfo(name="A Snack", card_type="item", alt_names=["Breakfast", "Supper"])     # older data
-    assert cd.CardBuild._duplicate_name(src) == "A Snack"
-    assert cd.CardBuild._duplicate_name(src, ["late_supper", "ls"]) == "Late Supper"
-    assert cd.CardBuild._duplicate_name(src, [], own_name=True) is None
+    """A duplicate's own Card Edits.json aliases name it (the longest); with none it is titled by its own name (None)."""
+    assert cd.CardBuild._duplicate_name(["late_supper", "ls"]) == "Late Supper"
+    assert cd.CardBuild._duplicate_name([]) is None
 
 
 # ========================

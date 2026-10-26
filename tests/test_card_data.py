@@ -514,11 +514,12 @@ def test_a_duplicate_keeps_its_originals_version(cards):
     """A duplicate's `version` is its original's even when the original was re-parsed this run (it was copied before
     the original got it back): a full re-parse writes the stats.json an incremental build does, and the run after
     it writes nothing."""
-    put(cards.repo, "Auxiliary/Minions/Mini_Doomer2.png", b"second art")
+    put(cards.repo, "Auxiliary/Minions/Mini_Doomer_Alt.png", b"second art")
+    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {"Mini Doomer Alt": {"dup_of": "Mini Doomer"}}}).encode())
     commit(cards.repo, "alice", 1100)
     assert _build(cards, "--empty")[0] == cd.EXIT_OK
     stats = _read(cards)[0]
-    assert stats["Mini Doomer2"].version == stats["Mini Doomer"].version and stats["Mini Doomer"].version["cause"] == "psd"
+    assert stats["Mini Doomer Alt"].version == stats["Mini Doomer"].version and stats["Mini Doomer"].version["cause"] == "psd"
     first = (cards.db / "stats.json").read_text(encoding="utf-8")
 
     def times():
