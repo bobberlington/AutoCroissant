@@ -4972,11 +4972,11 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         tokens = _header_star_tokens(psd, parser, info.name if info is not None else "") if parser is not None else 0
         refuse(f"the parser counts {old}, the Stars group draws {total}" + (f" and the header text {tokens}" if tokens else ""))
     below = PSDParser.stars_below(psd, types, stars)
-    if below:                                   # Tainted Lazarus's dead form: redrawn with the top set in a later lane
+    if below:                                   # Tainted Lazarus's dead form: not redrawn yet
         refuse(f"the card draws {below} more below its middle (a second creature): edit in Photoshop")
     outside = [layer for layer in PSDParser.outside_stars(psd, PSDParser._star_groups(psd), stars)
                if not (named and _named_star(layer))]
-    if outside:                                 # Nosk's 'Hk star': laid out with the group's stars in a later lane
+    if outside:                                 # Nosk's 'Hk star': not laid out with the group's yet
         refuse(f"{outside[0].name!r} outside the Stars group is a star too: edit in Photoshop")
     plan = IconPlan("stars", old, value)
     if named or len(groups) > 1:                # Nasty Patty's Patrick Stars, Paint Warrior's two Stars groups

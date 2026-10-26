@@ -107,7 +107,7 @@ def test_r3_r4_real_issues_new_cards_and_regressions(clone, context, tmp_path):
     renamed = _open(clone, MINI_DOOMER)
     psd_edit.name_layer(renamed).name = "Title"
     psd_edit.ability_layer(renamed).name = "Effect"         # no Ability layer at all: the ability named otherwise
-    assert psd_edit.read_name(renamed, "Mini_Doomer") is None
+    assert psd_edit.read_name(renamed, "Mini_Doomer") == "Mini Doomer"   # its place says it (title rule P)
     issues = cs.check(_saved(renamed, tmp_path / "renamed.psd"), MINI_DOOMER, context, old=old, added=True)
     assert not [i for i in issues if i.code in ("R3", "R4")]
 
