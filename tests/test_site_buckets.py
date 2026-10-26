@@ -55,11 +55,12 @@ process.stdout.write(JSON.stringify([T.addPin(one, { k: "series", v: "mario " })
 @needs_node
 @needs_tray
 def test_many_pins_keys_reach_the_first_nine(tmp_path):
-    """Up to 100 stored pins load; keys 1-9 and their badges and labels are the first nine boxes' only."""
+    """Up to 100 stored pins load; keys 1-9 and their badges and labels are the first nine boxes' only; Skip past nine."""
     out = node(tmp_path, """
 const many = Array.from({ length: 130 }, (_, i) => ({ k: "series", v: `S${i}` })), pins = T.readPins(JSON.stringify(many));
 const html = T.trayHtml(pins.slice(0, 12), []);
 process.stdout.write(JSON.stringify([pins.length, T.readPins(JSON.stringify(many.slice(0, 9))).length,
   ["1", "9", "0", "10"].map(k => T.pinOfKey(k, pins)), (html.match(/class="kbd"/g) || []).length,
-  /press (1[0-2])/.test(html), (html.match(/choose this box/g) || []).length]));""", T=TRAY_JS)
-    assert out == [100, 9, [0, 8, None, None], 9, False, 3]
+  /press (1[0-2])/.test(html), (html.match(/choose this box/g) || []).length,
+  [html, T.trayHtml(pins.slice(0, 9), [])].map(h => h.includes('class="tray-skip"'))]));""", T=TRAY_JS)
+    assert out == [100, 9, [0, 8, None, None], 9, False, 3, [True, False]]
