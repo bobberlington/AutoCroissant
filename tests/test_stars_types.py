@@ -440,6 +440,34 @@ def test_star_counter_on_real_cards(clone, parser, tmp_path):
 
 
 @icons
+def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
+    """A dice 5 at 4 loses its middle (Nightmare, Kyle's 2 over 3); a moved star under a shadow is copied on top
+    instead (Flower of Decay); a new star off the banner the stars sit on refuses (Remote Detonator); the website's
+    header counts the stars outside the group as the bake does (Massive Moss Charger)."""
+    import commands.psd_details as pd
+    for rel, gone in (("Creatures/Kirby/5 Stars/Nightmare.psd", "Warpstar copy 4"), ("Creatures/Other/5 Stars/Kyle.psd", "middle")):
+        plan = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 4, parser, moving=True)
+        assert [layer.name for layer in plan.hide] == [gone] and not plan.moves, rel
+    rel = "Items/Infliction/3 Stars/Flower_Of_Decay.psd"
+    plan = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 4, parser, moving=True)
+    assert plan.how == "rows of two" and [layer.name for layer in plan.hide] == ["star"] and not plan.moves
+    assert len(plan.copies) == 2
+    rel = "N.M.E/Remote_Detonator.psd"
+    with pytest.raises(pe.Refused, match="would leave 'Layer 13' under the stars"):
+        pe.plan_stars(*_open(parser, clone, rel, tmp_path), 3, parser)
+    rel = "Auxiliary/Minions/Massive_Moss_Charger.psd"
+    psd = PSDImage.open(_clone_card(clone, rel, tmp_path)[0])
+    header = pd._star_header(psd, rel, tuple(parser.all_types), parser)
+    assert list(header["refused"]) == ["*"] and "'Hk star' outside the Stars group" in header["refused"]["*"]
+
+
+def _open(parser, clone, rel, tmp_path) -> tuple:
+    path = _clone_card(clone, rel, tmp_path)[0]
+    psd = PSDImage.open(path)
+    return psd, pe.parse_card(parser, path, rel, psd)
+
+
+@icons
 def test_star_pieces_split_and_read_masks():
     """One layer drawing two stars is two pieces; a mask hiding one leaves one, and the core box is the shown star's."""
     psd = PSDImage.new("RGB", (1200, 1800))
