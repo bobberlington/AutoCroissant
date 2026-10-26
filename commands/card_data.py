@@ -807,7 +807,8 @@ SPARSE_FILES = ("commands/card_data.py", "commands/card_history.py", "commands/c
                 "commands/psd_parts.py", "commands/psd_regions.py", "commands/font_check.py", "commands/github_api.py", "global_config.py",
                 "requirements-cards.txt",
                 "commands/card_bake.py", "commands/psd_edit.py", "commands/png_export.py", "commands/git_commit.py",
-                "commands/repo_history.py", "commands/tts_save.py")
+                "commands/repo_history.py", "commands/tts_save.py",
+                "commands/ability_place.py", "commands/ability_index.json")
 BOT_REPO = "bobberlington/AutoCroissant"
 BUDGET = 400                                                      # REST downloads per run (two runs an hour: 800 of 1,000)
 RATE_FLOOR = 150                                                  # no more REST downloads under this many requests left

@@ -46,7 +46,7 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
         if expected is not None:
             assert set(re.findall(r"--[a-z-]+", done.stdout)) == expected
     code = ("import sys, commands.card_data, commands.card_history, commands.card_db, commands.changelog, commands.psd_details, "
-            "commands.card_bake, commands.tts_save; "
+            "commands.card_bake, commands.tts_save, commands.ability_place; "
             "print(sorted(m for m in ('config', 'discord', 'pandas', 'github', 'commands.psd_analyzer', "
             "'commands.query_card', 'commands.utils', 'commands.type_emojis') if m in sys.modules)); "
             "print(sorted(m for m in sys.modules if m.startswith('commands.') or m == 'global_config'))")
@@ -56,6 +56,7 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
     assert bad == "[]"
     modules = {m.replace(".", "/") + ".py" for m in json.loads(closure.replace("'", '"'))}
     assert modules == {f for f in cd.SPARSE_FILES if f.endswith(".py")}                   # card-sync.yml copies this list
+    assert "commands/ability_index.json" in cd.SPARSE_FILES                              # +ability's sibling facts
     from helpers import ALLOWED_IMPORTS, third_party_imports
     extra = third_party_imports("import commands.card_data, commands.card_history, commands.changelog, commands.psd_details", bot)
     assert not extra - ALLOWED_IMPORTS, f"requirements-cards.txt installs none of these: {sorted(extra - ALLOWED_IMPORTS)}"

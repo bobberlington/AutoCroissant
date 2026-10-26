@@ -7370,7 +7370,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
 GONE = "the layer is gone from the PSD (deleted or remade in Photoshop since this edit): redo it on the website if still wanted"
 CHANGED = "changed in Photoshop since this edit: redo it on the website if still wanted"
 ADDED_LATER = "an added Ability layer (from the template) is not built yet: it waits"
-ADD_ABILITY_LIVE = False    # +ability bakes once the owner has opened the test PSDs in Photoshop (§10 step 6)
+ADD_ABILITY_LIVE = True     # +ability bakes (owner approved plus_ability_2 in Photoshop, 2026-10-26)
 HAS_ABILITY = "the card has an Ability layer now (added in Photoshop): redo it on the website"
 PART_KINDS = (("ability", "ability"), ("title", "name"), ("blocks", "ability"))   # record key -> field, in bake order
 

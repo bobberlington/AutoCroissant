@@ -1953,6 +1953,7 @@ def test_plus_ability_adds_the_templates_layer(clone, parser, chart, tmp_path, m
     psd = PSDImage.open(path)
     parsed = pe.parse_card(parser, path, WATCHER, psd)
     edits = {"parts": {"+ability": {"field": "ability", "text": "Attacks inflict 1T Afraid."}}}
+    monkeypatch.setattr(pe, "ADD_ABILITY_LIVE", False)
     assert pe.classify(parsed, edits, psd, parser).parts.outcome == {"+ability": "waiting"}
     monkeypatch.setattr(pe, "ADD_ABILITY_LIVE", True)
     jobs = pe.classify(parsed, edits, psd, parser).jobs

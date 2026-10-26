@@ -902,7 +902,7 @@ def test_action_shaped_copy(tmp_path):
         done = subprocess.run([executable, "-m", "commands.card_guards", *command.split()], cwd=bot, capture_output=True,
                               text=True, timeout=120)
         assert done.returncode == 0, done.stderr
-    code = ("import sys, commands.card_guards, commands.txt2_repair; "
+    code = ("import sys, commands.card_guards, commands.txt2_repair, commands.ability_place; "
             "print(sorted(m for m in ('config', 'discord', 'commands.psd_analyzer', 'pandas') if m in sys.modules)); "
             "print(sorted(m for m in sys.modules if m.startswith('commands.') or m == 'global_config'))")
     done = subprocess.run([executable, "-c", code], cwd=bot, capture_output=True, text=True, timeout=120)
@@ -912,6 +912,7 @@ def test_action_shaped_copy(tmp_path):
     modules = {m.replace(".", "/") + ".py" for m in json.loads(closure.replace("'", '"'))}
     assert modules == {f for f in cg.SPARSE_FILES if f.endswith(".py")}
     assert "requirements-cards.txt" in cg.SPARSE_FILES                         # what the Action installs
+    assert "commands/ability_index.json" in cg.SPARSE_FILES                    # +ability's sibling facts
     from helpers import ALLOWED_IMPORTS, third_party_imports
     extra = third_party_imports("import commands.card_guards, commands.txt2_repair", bot) - ALLOWED_IMPORTS
     assert not extra, f"card-guards.yml installs none of these: {sorted(extra)}"
