@@ -48,7 +48,7 @@ function fixture() {
 function analytics(cards, extra = {}) {
   const co = (n, p50) => ({ n, kind: "creature", total: { p10: p50 - 2, p50, p90: p50 + 2, min: p50 - 4, max: p50 + 3, mean: p50 } });
   const A = { cohorts: { "creature|2": co(6, 10), "creature|3": co(6, 14) }, cards: {}, counts: { creature: 12 }, versions: 0, since: null,
-    time: { months: [], series: {} }, minCohort: 5, offScale: 40, ...extra };
+    time: { months: [], series: {} }, minCohort: 5, ...extra };
   for (const c of cards) if (c.type === "creature") A.cards[c.id] = { cohort: `creature|${c.stars}`, stats: [c.hp, c.def, c.atk, c.spd], flags: [], below: 0, above: 0 };
   return A;
 }
