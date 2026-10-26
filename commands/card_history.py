@@ -262,15 +262,19 @@ def unknown(card: CardInfo) -> set:
     return found
 
 
-def leaf(data: dict) -> Optional[str]:
-    """The most specific series: the subseries, else the series (the 2026-10-20 split made a series a subseries)."""
-    return data["subseries"] or data["series"]
+def same_series(x: dict, y: dict) -> bool:
+    """Whether two readings' series and subseries are the same, the 2026-10-20 split included (a series became the
+    subseries of a parent: one side has no subseries and its series is the other's subseries). A subseries is one name
+    across series since 2026-10-25, so the same subseries in another series is a change."""
+    if (x["series"], x["subseries"]) == (y["series"], y["subseries"]):
+        return True
+    return any(not a["subseries"] and a["series"] and a["series"] == b["subseries"] for a, b in ((x, y), (y, x)))
 
 
 def knows(a: CardInfo, b: CardInfo, ignore: tuple = ()) -> bool:
     """
     Whether reading a knew all that b did (data_of; not the fields in ignore): every field b could know (unknown), a
-    knew too, with b's value; a series moved under a parent (the same leaf) is the same. So a reading that knew less
+    knew too, with b's value; a series moved under a parent (same_series) is the same. So a reading that knew less
     (a parse that failed on a field) never stands for one that knew more. A value record() can't read counts as not
     known (a version is kept), so a build never fails on it.
     """
@@ -282,7 +286,7 @@ def knows(a: CardInfo, b: CardInfo, ignore: tuple = ()) -> bool:
     skip = unknown(b) | set(ignore)
     if not unknown(a) <= skip:
         return False
-    if leaf(x) == leaf(y):
+    if same_series(x, y):
         skip = skip | set(SERIES)
     return all(x[key] == y[key] for key in DATA_FIELDS if key not in skip)
 
@@ -606,11 +610,11 @@ __all__ = [
     'date_archive',
     'kept_values',
     'knows',
-    'leaf',
     'meta',
     'out_of_range',
     'psd_changed',
     'record_versions',
+    'same_series',
     'start',
     'start_of',
     'unchecked',
