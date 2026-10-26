@@ -64,7 +64,7 @@ from requests import RequestException
 import commands.github_api as github_api
 import commands.png_export as png_export
 import commands.psd_edit as psd_edit
-from commands.card_edits import ORDER, RENAME, CardAuthors, CardDates, CardEdits, CardRatings, dump_edits
+from commands.card_edits import ORDER, RENAME, SITE, CardAuthors, CardDates, CardEdits, CardRatings, dump_edits
 from commands.card_models import RENAMED, card_name, file_stem
 from commands.git_commit import (API_TIMEOUT, AUTHOR, COMMIT_TRIES, GIT_TIMEOUT, NO_LAZY, Transient, api, checkout_head, commit_files,
                                  commit_info, git, local_commit, plural, ref_head)
@@ -83,7 +83,8 @@ COMPARE_FILES = 300                             # a compare lists at most this m
 SUBJECT = "Card edits"                          # the run's commit: "Card edits: 5 baked, 20 redundant, 4 refused"
 EDIT_BY = "Edit-by"                             # trailer key per editor credited (TTSCardMaker build_site.EDIT_BY)
 NO_PNG = "no PNG beside the PSD"
-RULES = "2026-10-24"        # a refused verdict's rules: one written under older ones (content refused) is tried again
+RULES = "2026-10-26"        # a refused verdict's rules: one written under older ones is tried again (10-24: content
+#   refused; 10-26: Lane 2's bars, titles and website-only fields)
 MAX_BAKES = 40                                  # PSD edits per run; the rest wait for the next run (a title took ~30 s)
 BUDGET = timedelta(minutes=40)                  # no card starts later: the commit lands within the job's 60 min
 TRANSIENT = ("recent", "head-moved", "edit-changed", "capped")   # try-again refusals: not a verdict for the editor
@@ -121,7 +122,8 @@ class Card:
     commit: Optional[str] = None                # the run's commit, when the card is in it
     included: bool = False                      # in the commit land made (or would make: a dry run)
     dropped: list = field(default_factory=list)     # fields removed from the file
-    creatures: bool = False                     # the entry has a creatures list (it sets the stats)
+    creatures: bool = False                     # the entry has a creatures list: a baked stat is creature 1's (its rows)
+    site: dict = field(default_factory=dict)    # field -> why: website only now, the card image can't print it (classify)
     by: object = None                           # the entry's _by: who asked for its fields (Edit-by trailers)
     verdict: Optional[dict] = None              # its verdict (baked or refused), for the data's verdicts.json
     partial: list = field(default_factory=list)  # Refusals of its stars or types edit while its other fields bake
@@ -368,7 +370,7 @@ def recent_paths(repository: str, head: str, now: datetime, local: str = "") -> 
 # Card Edits.json (the edit.js editsFile port: dump_edits is card_edits')
 # ========================
 def rewrite_entry(entry: dict, drop=(), psd: Optional[dict] = None, keep: bool = False,
-                  part_drop=()) -> Optional[dict]:
+                  part_drop=(), creature=None, site=()) -> Optional[dict]:
     """
     One card's entry as the pipeline leaves it: the dropped fields gone, "_psd" replaced (None removes it), fields
     in ORDER, then the other keys in their order ("_psd" where it was, else last), "_by", "_at" (edit.js editsFile's
@@ -381,12 +383,21 @@ def rewrite_entry(entry: dict, drop=(), psd: Optional[dict] = None, keep: bool =
         keep: When no field is left, keep the verdict alone (a bake's flags, shown on the card page)
         part_drop: Keys of `parts` to remove (baked, redundant, skipped, deleted: PARTS_EDITOR.md §4.11); a derived
             name or ability goes with the last part of its field, `parts` with its last key
+        creature: {stat: value} the card now prints for creature 1: its entry in the `creatures` list takes them (the
+            card's stats are creature 1's; a dropped stat would leave the list's old value showing; owner 2026-10-26)
+        site: Fields that are website only from now on (classify's site: the card image can't print them), added to
+            `_site` (CardEdits.SITE_FIELDS' order)
 
     Returns:
         The entry, or None when no field is left and no kept verdict: the entry goes whole, its _-keys with it
         (section 5 step 10)
     """
     entry, drop = dict(entry), list(drop)
+    if creature and isinstance(entry.get("creatures"), list) and entry["creatures"] and isinstance(entry["creatures"][0], dict):
+        entry["creatures"] = [{**entry["creatures"][0], **creature}, *entry["creatures"][1:]]
+    if site:
+        had = entry.get(SITE) if isinstance(entry.get(SITE), list) else []
+        entry[SITE] = [f for f in CardEdits.SITE_FIELDS if f in set(had) | set(site)]
     if part_drop and isinstance(entry.get("parts"), dict):
         fields_of = lambda parts: {p.get("field") for p in parts.values() if isinstance(p, dict)}
         left = {k: v for k, v in entry["parts"].items() if k not in part_drop}
@@ -412,7 +423,7 @@ def rewrite_entry(entry: dict, drop=(), psd: Optional[dict] = None, keep: bool =
 
 
 def rewrite_edits(text: str, name: str, drop=(), psd: Optional[dict] = None, keep: bool = False,
-                  part_drop=()) -> Optional[str]:
+                  part_drop=(), creature=None, site=()) -> Optional[str]:
     """
     Card Edits.json with one card's entry rewritten (matched like edit.js: keys compared as CardAuthors.key).
 
@@ -434,7 +445,7 @@ def rewrite_edits(text: str, name: str, drop=(), psd: Optional[dict] = None, kee
     key = next((k for k in cards if CardAuthors.key(k) == CardAuthors.key(name)), None)
     if key is None or not isinstance(cards[key], dict):
         return None
-    entry = rewrite_entry(cards[key], drop, psd, keep, part_drop)
+    entry = rewrite_entry(cards[key], drop, psd, keep, part_drop, creature, site)
     if entry == cards[key]:
         return None
     if entry is None:
@@ -1143,10 +1154,13 @@ def _message(cards: list) -> str:
         cards: The cards in the commit
     """
     baked = [c for c in cards if (c.jobs or c.renamed) and not c.refusal]
-    redundant = [c for c in cards if not c.jobs and not c.renamed and not c.refusal]
+    redundant = [c for c in cards if not c.jobs and not c.renamed and not c.refusal and (c.dropped or c.part_drop or not c.site)]
+    site = [c for c in cards if c.site and not c.refusal]
     refused = [c for c in cards if c.refusal]
-    counts = [f"{len(group)} {word}" for group, word in ((baked, "baked"), (redundant, "redundant"), (refused, "refused")) if group]
+    counts = [f"{len(group)} {word}" for group, word in ((baked, "baked"), (redundant, "redundant"),
+                                                         (site, "website only"), (refused, "refused")) if group]
     lines = [f"- {c.name}: {_describe(c)}{_misses(c)}{_fx_notes(c)}" for c in baked]
+    lines += [f"- {c.name}: website only: {'; '.join(c.site.values())}" for c in site]
     trailers = [f"{EDIT_BY}: {login}" for login in sorted(login for c in baked for login in editors(c))]
     trailers += [f"{RENAMED}: {old} -> {new}" for c in baked if c.renames for old, new in c.relocated.items()]
     return "\n\n".join(part for part in (f"{SUBJECT}: " + ", ".join(counts), "\n".join(lines), "\n".join(trailers)) if part)
@@ -1225,9 +1239,6 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                 card.pngs = snapshot.pngs_key("", card.key)
                 raise Refused("duplicate", f"a numbered PNG exported from `{original}`")
             raise Refused("unsupported-card", "no PSD in the card repo")
-        stats = [f for f in card.fields if f in psd_edit.STAT_FIELDS]
-        if stats and card.creatures:            # CardEdits.apply sets the stats from creature 1: a baked stat would be undone
-            raise Refused("unsupported-card", f"{', '.join(stats)}: the entry's creatures list sets the stats")
         pushed = recent()
         if pushed is None:
             raise Refused("recent", f"too many pushes in the last {RECENT.seconds // 60} min to tell")
@@ -1265,6 +1276,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         template = first_type_spot(snapshot, work, card, parsed, psd, parser) if "types" in card.fields else None
         classified = psd_edit.classify(parsed, card.fields, psd, parser, template)
         card.jobs, card.redundant = dict(classified.jobs), [f for f in classified.redundant if f != "parts"]
+        card.site = dict(classified.site)       # the picture's title, a stat past its rows: website only (owner 10-26)
         card.parts = classified.parts
         card.partial = [r for r in classified.refusals if r.field in psd_edit.ICON_FIELDS]
         settled = _parts_settled(card)          # redundant or skipped boxes: out of the entry, baked or not
@@ -1276,7 +1288,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         if not card.jobs and not card.redundant and not settled:
             if card.parts is not None and "waiting" in card.parts.outcome.values():
                 raise Refused("unsupported-card", f"ability: {psd_edit.ADDED_LATER}")
-            return
+            return                              # (a website-only field alone: share_of marks it)
 
         card.expect = {card.rel: card.psd_sha, card.png: card.png_sha,
                        **{png: snapshot.sha(png) for png in card.pictures.values()}}
@@ -1414,13 +1426,13 @@ def share_of(card: Card) -> Optional[Share]:
     no main commit: its verdict is records()') or a card with nothing to write. At H' a baked or redundant card whose
     edit changed stays out (edit-changed: never remove a value you did not render).
     """
-    if card.refusal is not None or (not card.dropped and not card.part_drop):
+    if card.refusal is not None or (not card.dropped and not card.part_drop and not card.site):
         return None
 
     def drop(text: str) -> Optional[str]:
         if _wanted_at(text, card.name) != card.fields:
             raise Refused("edit-changed", f"the edit changed on {CARD_BRANCH} meanwhile: not touched")
-        out = rewrite_edits(text, card.name, card.dropped, None, False, card.part_drop)
+        out = rewrite_edits(text, card.name, card.dropped, None, False, card.part_drop, _creature_one(card), card.site)
         gone = _gone_fields(card)
         for n, png in sorted(card.pictures.items()):    # the other pictures' entries: their derived name/ability
             if n != 1 and gone:
@@ -1429,6 +1441,13 @@ def share_of(card: Card) -> Optional[Share]:
                 out = (rewrite_edits(out or text, card_name(png), mine) or out) if mine else out
         return out
     return _rename_share(card, Share(card, card.files, card.expect, drop))
+
+
+def _creature_one(card: Card) -> dict:
+    """The stats the card prints for creature 1 after the run (baked or already printed), for its creatures list."""
+    if not card.creatures:
+        return {}
+    return {f: card.fields[f] for f in card.dropped if f in psd_edit.STAT_FIELDS and f in card.fields}
 
 
 def refusal_verdict(card: Card) -> dict:
@@ -1465,7 +1484,8 @@ def records(report: Report, edits: CardEdits, verdicts: Optional[dict]) -> tuple
             continue
         if not card.included:
             continue
-        entry = rewrite_entry(edits.cards.get(card.key, {}), card.dropped, card.verdict, _kept(card), card.part_drop)
+        entry = rewrite_entry(edits.cards.get(card.key, {}), card.dropped, card.verdict, _kept(card), card.part_drop,
+                              _creature_one(card), card.site)
         now = (entry or {}).get("_psd")
         if card.renamed:                        # the verdict goes with the card to its new name
             if before is not None:
@@ -1548,9 +1568,11 @@ def _card_line(card: Card, dry_run: bool) -> str:
         line += _misses(card)
     if card.redundant:
         line += f"; already on the card: {', '.join(card.redundant)}"
+    if card.site:
+        line += f"; website only: {'; '.join(card.site.values())}"
     if card.commit:
         line += f"; committed `{card.commit[:8]}`"
-    elif not card.refusal and (card.dropped or card.baked):
+    elif not card.refusal and (card.dropped or card.baked or card.site):
         line += "; not committed (dry run)" if dry_run else "; nothing to commit"
     if card.note:
         line += f"; {card.note}"

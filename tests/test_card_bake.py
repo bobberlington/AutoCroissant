@@ -268,16 +268,19 @@ def test_recent_paths_by_push_time(monkeypatch):
     assert cb.recent_paths(cb.CARD_REPO, "c3", now) is None                              # a force push: no compare
 
 
-def test_stat_edit_with_creatures_is_refused(github):
-    """CardEdits.apply sets the stats from creature 1: a baked hp would be undone, so the card is refused before any fetch."""
+def test_creature_one_bakes_and_website_only_fields(github):
+    """The card's stats are creature 1's (owner 2026-10-26): its hp bakes and the entry's creatures list takes it for
+    creature 1 (else the list's old value would show again), the others' stay; a stat past the bar's one row is website
+    only: it stays in the entry, added to `_site`, no verdict."""
     files = github.files_at(github.head)
-    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 6, "creatures": [{"hp": 7, "def": 1, "atk": 1, "spd": 1}], "_by": "web", "_at": AT}})
+    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 6, "atk": 12, "creatures": [{"hp": 7, "def": 1, "atk": 1, "spd": 1},
+                                                                                    {"hp": 2, "def": 2, "atk": 2, "spd": 2}],
+                                                   "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
     text, commits = cb.run(card="Mini Doomer")
     entry = _edits_at(github)["cards"]["Mini Doomer"]
-    assert commits == [] and entry["hp"] == 6 and entry["creatures"][0]["hp"] == 7          # a refusal: no main commit
-    assert _verdict("Mini Doomer")["reason"] == "unsupported-card: hp: the entry's creatures list sets the stats"
-    assert not [route for _, route in github.calls if route == f"git/blobs/{_sha(files[DOOMER])}"]
+    assert len(commits) == 1 and "hp" not in entry and entry["atk"] == 12 and entry["_site"] == ["atk"]
+    assert [c["hp"] for c in entry["creatures"]] == [6, 2] and "website only: atk 12" in text
 
 
 def test_blob_gate(github):
