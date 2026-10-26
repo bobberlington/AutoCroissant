@@ -1169,7 +1169,9 @@ def share_of(card: Card) -> Optional[Share]:
         gone = _gone_fields(card)
         for n, png in sorted(card.pictures.items()):    # the other pictures' entries: their derived name/ability
             if n != 1 and gone:
-                out = rewrite_edits(out or text, card_name(png), gone) or out
+                site = CardEdits.parse(out or text).site(CardAuthors.key(card_name(png)))
+                mine = [f for f in gone if f not in site]    # a website-only one stays
+                out = (rewrite_edits(out or text, card_name(png), mine) or out) if mine else out
         return out
     return Share(card, card.files, card.expect, drop)
 

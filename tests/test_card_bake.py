@@ -938,7 +938,7 @@ def test_parts_bake_deletes_skips_and_keeps_photoshop_work(github, clone):
 def test_a_tagged_psd_bakes_each_picture_it_shows_in(github, clone, tmp_path):
     """§11 case 7 on A Snack tagged as §9 (the fixture script's tags, saved on a copy): the shared Ability writes all
     three PNGs; a 'Name #2' edit writes only A_Snack2.png, the others byte for byte; the pictures' entries lose their
-    derived fields with the parts, and are never baked on their own."""
+    derived fields with the parts (but a website-only one), and are never baked on their own."""
     import sys
     from psd_tools import PSDImage
     sys.path.insert(0, str(Path(__file__).parent / "fixtures" / "parts"))
@@ -959,7 +959,7 @@ def test_a_tagged_psd_bakes_each_picture_it_shows_in(github, clone, tmp_path):
     fixture = json.loads((Path(__file__).parent / "fixtures" / "parts" / "card_edits.parts.json").read_text("utf-8"))["cards"]
     ability = fixture["A Snack"]["parts"]["320"]
     for edit, changed in (({"A Snack": {"ability": ability["text"], "parts": {"320": ability}},
-                            "A Snack2": {"ability": ability["text"]}, "A Snack3": {"ability": ability["text"]}}, pngs),
+                            "A Snack2": {"ability": ability["text"]}, "A Snack3": {"ability": "Site", "_site": ["ability"]}}, pngs),
                           ({"A Snack": {"parts": {"1023": fixture["A Snack"]["parts"]["1023"]}},
                             "A Snack2": {"name": "Second Breakfast"}}, pngs[1:2])):
         before = github.files_at(github.head)
@@ -970,7 +970,8 @@ def test_a_tagged_psd_bakes_each_picture_it_shows_in(github, clone, tmp_path):
         after = github.files_at(github.head)
         assert sorted(p for p in after if after[p] != before.get(p)) == sorted([rel, cb.EDITS_PATH, *changed]), text
         cards = _edits_at(github)["cards"]
-        assert "A Snack2" not in cards and "A Snack3" not in cards and "A Snack" not in cards, cards
+        assert "A Snack2" not in cards and "A Snack" not in cards, cards
+        assert cards.pop("A Snack3", {}).get("_site") == edit.get("A Snack3", {}).get("_site"), cards    # website only: kept
     saved = {layer.layer_id: layer for layer in PSDImage.open(str(tmp_path / "A_Snack.psd")).descendants()}
     from io import BytesIO
     new = {layer.layer_id: layer for layer in PSDImage.open(BytesIO(github.files_at(github.head)[rel])).descendants()}
