@@ -7,7 +7,7 @@ lines), `lean-tests-and-verification`, `no-guides-csv-only`, `edits-two-kinds`, 
 `persistent-work-paths`, `agent-model-preference`. What landed on 10-25: `docs/Finished/session-2026-10-25/README.md`
 (the Evening section covers 17:10 to midnight). Designs still queued: `docs/Future/`.
 
-First: the owner's answer on the `+ability` test files (In flight, below).
+First: the open items below; watch the first live `+ability` bake.
 
 ## Standing rules
 
@@ -28,10 +28,10 @@ First: the owner's answer on the `+ability` test files (In flight, below).
 - Send only GitHub tokens to GitHub. Never print config.py values or tokens.
 - No guides or checklists for the owner: problem lists are a CSV plus its `.md` (memory `no-guides-csv-only`).
 
-## State (2026-10-26 ~01:00 PDT)
+## State (2026-10-26 ~02:00 PDT)
 
-- AutoCroissant main 1d462e1, deployed on the jetson (1d462e1).
-- TTSCardMaker main ca43e55a. The Desktop clone is at 8f2b3367, 32 behind, clean.
+- AutoCroissant main d7a6641, deployed on the jetson (d7a6641).
+- TTSCardMaker main 8a913cc4. The Desktop clones of TTSCardMaker and OJWikibot are level with main (pulled 10-26).
 - Data branch 1cf84da1: parser 4 (builder 8b0ce02), 820 cards, details v2; no `db/verdicts.json` yet.
 - psd-tools fork pin `cards-20261025b` (`requirements-cards.txt`).
 - Card sync chains leftover work, with one safety cron at :17. Both proven on 10-25: run 40262751459 was dispatched by
@@ -39,48 +39,35 @@ First: the owner's answer on the `+ability` test files (In flight, below).
   come). The guards' window is 30 minutes from the push.
 - OJWikibot main 8924db4. Its deployed commit is unknown (5135280 in the morning; a70877d, 8ea1c7c..174f62b and
   cdf6f03..8924db4 landed since): check it on the jetson and deploy with the `jetson-deploy` skill if behind.
-- `psd_edit.ADD_ABILITY_LIVE = False` (the +ability placement and font code is on main, off).
+- `psd_edit.ADD_ABILITY_LIVE = True` (since d7a6641).
 
 ## In flight
 
-**`+ability` placement and font: landed, switched off** (AC 1d462e1; scratch `~/Documents/Tools/wt/scratch/plusability2/`).
-One placement rule: the box starts at the top of the card's free text area (below the stats, or the top of the empty
-panel, placed like matching sibling cards), flows down, never over the stats, title, icons or other text, never off the
-card. The card's own font (same-folder/series cards with the same title font, then the card's title font; the
-template's only as the fallback), sized like its siblings' abilities. Leave-one-out on 728 cards: median first-line
-error 19 px, 72% within 40 px (creatures 95%), 0 overlaps, 0 off the canvas (the template's box alone: 26 px, 59%,
-278 off); font right on 84% (template alone 17%). Code: `commands/ability_place.py`, `commands/ability_index.json`
-(the other cards' facts, remade by hand: `python -m commands.ability_place ~/Desktop/TTSCardMaker`),
-`psd_edit.set_text_font`/`set_text_box`/`add_ability`, `psd_regions.bar_box`. Test files:
-`~/std-work-1025/plusability/<card>/plus_ability_2/` (Abyss Watcher below its stats in EB Garamond; Adrenaline and
-Black Hole at the top of the paper panel in the Isaac font). `set_text_box` (moving and resizing a type layer) is a new
-kind of PSD write: not yet opened in Photoshop.
-
-Next: the owner opens `plus_ability_2` in Photoshop. If approved: add both new files to the sparse lists
-(`card_data.SPARSE_FILES`, `card_guards.SPARSE_FILES`, TTSCardMaker's card-sync.yml and card-guards.yml), then flip
-`ADD_ABILITY_LIVE`; it goes live at the next Card sync run (`builder_ref`), not at a jetson deploy. Corrections go
-into a `plus_ability_3/` round.
-
-Options for the owner (not adopted): centre the text on the Isaac-style cards (33 of 34 real Font_soulsV2 abilities are
-centred; the Item template is left-aligned); a size step up for items (78 px against 80-89 px on real cards); a deleted
-ability's own font as the first font step.
+Nothing. **`+ability` is live** (owner approved `plus_ability_2` on 2026-10-26; TC 8a913cc4 adds `ability_place.py` and
+`ability_index.json` to the bot checkouts in card-sync.yml and card-guards.yml; AC d7a6641 adds them to
+`card_data.SPARSE_FILES`/`card_guards.SPARSE_FILES` and sets `ADD_ABILITY_LIVE = True`; deployed). No `+ability` entry
+was waiting in Card Edits.json, so the first real one comes from the website. Placement: the top of the card's free
+text area, placed like matching sibling cards (leave-one-out on 728 cards: median first-line error 19 px, 0 overlaps,
+0 off the canvas); the card's own font (84% right). `ability_index.json` (the other cards' facts) is remade by hand:
+`python -m commands.ability_place ~/Desktop/TTSCardMaker`; a card newer than it just finds fewer siblings. Watch the
+first live `+ability` bake (its flag note names the box, font and source). Options the owner didn't take: centring on
+the Isaac-style cards, a bigger item size, a deleted ability's own font first.
 
 ## Open items
 
 ### Owner
 
-- [ ] Rotate the Discord TOKEN and HF_TOKEN (sent to api.github.com by mistake on 10-25; GitHub answered 401).
-- [ ] Open `~/std-work-1025/plusability/<card>/plus_ability_2/` in Photoshop; approve or correct (then the sparse lists
-      and the flip, In flight above). Options: centring on the Isaac-style cards, a bigger item size.
+- [ ] Rotate the production Discord TOKEN (the jetson's config.py; sent to api.github.com by mistake on 10-25, GitHub
+      answered 401). HF_TOKEN is rotated (Hugging Face rejects the old one, checked 10-26). The Discord token in the
+      jetson's config.py still logs in as AutoCroissant (checked 10-26 against Discord's /users/@me), so it was not reset;
+      after a reset the new token goes into the jetson's config.py and the bot restarts (the Mac's config.py is a
+      different bot, Waxwell).
 - [ ] Photoshop re-saves: 11 badge cards and 7 apostrophe cards (session README), and the 54 problem cards
-      (`~/Downloads/Problem cards 2026-10-25 (after fixes).csv` and `.md`; `docs/Future/PROBLEM_CARDS_2026-10-25b.*`).
-- [ ] Safari checks: the grid flash, the many-boxes edge scroll.
-- [ ] Mark PNG-only duplicates on the website.
+      (`~/Downloads/Problem cards 2026-10-25.csv` and `.md`; `docs/Future/PROBLEM_CARDS_2026-10-25b.*`).
+- [ ] Safari: the many-boxes edge scroll (the grid flash is gone, owner 10-26).
 - [ ] Data problems from the live problem list (`PROBLEM_CARDS_2026-10-25b.md`): Computer Virus has no stats (no
       template stat bars; Photoshop); Twin Emperors' Vek'lor has DEF 10 on the website and 4 on the card (an editor
       checks which is right).
-- [ ] Pull the Desktop TTSCardMaker clone (32 commits behind, clean) and the Desktop OJWikibot clone (174f62b, 9
-      behind).
 - [ ] `site/profiles/MichaelJSr.json`: the series "Don't Starve Gourmet Expansion" isn't a known series. "Gourmet
       Expansion" is a subseries of Don't Starve (1 card, Grapes): probably series "Don't Starve" plus that subseries.
 - Eventually, never blockers: Photoshop standardizing (one Name and one Ability layer per card, rulebook Header/Page
