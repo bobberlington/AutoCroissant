@@ -101,6 +101,7 @@ FIT_SKIP = ("glow", "no_over", "space")     # icon-font glyphs that are no icon'
 ASPECT_TOL = 0.02           # unstretch: a typed icon's x over y scale may be this far off 1 (designers': 678 of 682 at 1.0)
 FONT_IOU_MIN = 0.3          # a text layer redrawn whole against its saved pixels: their ink's IoU (Omori's swapped fonts
                             # 0.11-0.14; of 1,453 titles and Abilities the next is 0.40, Wendy's few px shift)
+FIT_STEP, FIT_MIN = 0.94, 0.4  # fit_below: smaller by this, down to this share of its size (the website's preview)
 BEYOND = (6, 60, 20, 100)   # ink_beyond: px past the old ink's box; luminance levels off the backdrop's median under the
                             # old text (at least; and past its 95th percentile by); px of new ink on such detail to tell
 FX_TAG = EFFECT_LAYER_TAG   # "Ability FX: Blazing": a status word's glyph pixels under the chart's effect (Effect Layers.jsx)
@@ -133,6 +134,7 @@ STORY_STYLE_KEYS = (     # per STORY_KEYS spelling: a story's style runs, a run'
 STORY_MIRROR = {"Font": 0, "FontSize": 1, "FauxBold": 2, "FauxItalic": 3, "AutoLeading": 4, "Leading": 5,
                 "HorizontalScale": 6, "VerticalScale": 7, "Tracking": 8, "BaselineShift": 9, "FillColor": 53,
                 "StrokeColor": 54}   # TySh StyleSheetData keys a story run holds too, with Photoshop CC's feature number
+KERN_FEATURE = "11"      # a numbered story run's kerning: 0 off, else on (TySh's AutoKerning; B12)
 STAR_FOLDER = r"\s*(\d+)\s*stars?\s*"           # a count's own folder in a Stars group: "5 stars", "1 star" (the templates)
 LAYOUT_TOL = 0.12           # a star or icon sits on a layout's spot within this share of its size
 LAYOUT_TOL_MIN = 6          # px, at least
@@ -753,11 +755,12 @@ def _style_spans(runs: list) -> list:
     return out
 
 
-def story_style_drift(psd: PSDImage) -> list:
+def story_style_drift(psd: PSDImage, kerning: bool = True) -> list:
     """
     (layer name, why) per type layer whose Txt2 story holds its text but other styles: per character, each
     STORY_MIRROR key both hold must agree (a font by name, a color by its values). Photoshop would show the story's
     styles, so a fill written to TySh alone would silently go back. Keys a story run leaves out (inherited) are skipped.
+    With kerning, also the kerning of each character that ends a pair (_kerning; B12: Pandamonium's Health).
     """
     root = _txt2(psd)
     if root is None:
@@ -803,9 +806,80 @@ def story_style_drift(psd: PSDImage) -> list:
                     break
             if why:
                 break
+        kerned = _kerning(layer, model, keys, spelling) if kerning and not why else None
+        drift = [(u, t, k) for u, (t, k, pair) in enumerate(kerned or []) if pair and k is not None and t != k]
+        if drift:
+            u, t, k = drift[0]
+            why = f"AutoKerning at {u}: layer {t!r}, story {k!r}"
         if why:
             out.append((layer.name, why))
     return out
+
+
+def _kerning(layer, model, keys: dict, spelling: int) -> Optional[list]:
+    """
+    Per UTF-16 unit of a type layer's text: (TySh's AutoKerning, its Txt2 story's kerning or None when the story run
+    leaves it out, whether the unit ends a pair: no paragraph's first). Photoshop kerns as the story says, the engine as
+    TySh does. None for a story with named keys (no kerning feature known).
+    """
+    if spelling:
+        return None
+    text = str(layer.engine_dict["Editor"]["Text"].value)
+    chars, second = [], []                      # per unit: its character, whether it is an astral one's second half
+    for c in text:
+        chars += [c] * (2 if ord(c) > 0xFFFF else 1)
+        second += [False, True][:2 if ord(c) > 0xFFFF else 1]
+    resources = layer.resource_dict
+    try:
+        normal = resources["StyleSheetSet"][int(getattr(resources["TheNormalStyleSheet"], "value",
+                                                        resources["TheNormalStyleSheet"]))]["StyleSheetData"]
+        default = bool(getattr(normal.get("AutoKerning", True), "value", normal.get("AutoKerning", True)))
+    except (KeyError, IndexError, TypeError, ValueError):
+        default = True
+    style = layer.engine_dict["StyleRun"]
+    tysh = [default] * len(chars)
+    for a, b, data in _style_spans([(int(n), run["StyleSheet"]["StyleSheetData"])
+                                    for n, run in zip(style["RunLengthArray"], style["RunArray"])]):
+        value = data.get("AutoKerning")
+        for u in range(a, min(b, len(chars))):
+            tysh[u] = default if value is None else bool(getattr(value, "value", value))
+    story = [None] * len(chars)
+    for a, b, data in _style_spans([(int(run[keys["length"]].value), _dig(run[keys["data"]], keys["features"]))
+                                    for run in _dig(model, keys["runs"])]):
+        value = data.get(KERN_FEATURE)
+        for u in range(a, min(b, len(chars))):
+            story[u] = None if value is None else bool(getattr(value, "value", value))
+    return [(tysh[u], story[u], u > 0 and chars[u - 1] not in "\r\x03" and not second[u])
+            for u in range(len(chars))]
+
+
+def follow_kerning(psd: PSDImage, layer) -> bool:
+    """
+    The layer's TySh AutoKerning made its Txt2 story's wherever the story sets it, before the engine draws it: Photoshop
+    kerns as the story says (B12: a Kung-Fu-Panda layer kerned off in its story, on in TySh, drew 0.58 IoU against its
+    pixels, 0.97 followed). TySh only (the story already says it). True when it changed.
+    """
+    root = _txt2(psd)
+    index = story_index(layer)
+    if root is None or index is None:
+        return False
+    _, _, items, model_key, text_key, spelling = _story_list(root)
+    if not 0 <= index < len(items) or str(items[index][model_key][text_key].value) != \
+            str(layer.engine_dict["Editor"]["Text"].value):
+        return False
+    kerned = _kerning(layer, items[index][model_key], STORY_STYLE_KEYS[spelling], spelling) or []
+    wrong = [(u, k) for u, (t, k, _) in enumerate(kerned) if k is not None and t != k]
+    if not wrong:
+        return False
+    from psd_tools.api import text_edit
+    from psd_tools.psd import engine_data
+    section = text_edit._section(layer, "StyleRun")
+    spans = text_edit._spans(section, len(kerned))
+    for u, k in wrong:
+        spans = text_edit._restyled(spans, u, u + 1, {"AutoKerning": engine_data.Bool(k)}, text_edit._sheet)
+    text_edit._write_spans(section, spans, merge=True)
+    text_edit._touch(layer)
+    return True
 
 
 def ability_layer(psd: PSDImage):
@@ -931,6 +1005,18 @@ def project(old: str, new: str, raw: str, brk: str = "\r") -> str:
             hi = lo
         raw = raw[:lo] + new[j1:j2].replace("\n", brk) + raw[hi:]
     return raw
+
+
+def from_reading(psd: PSDImage, layer, text: str, parser: Optional[PSDParser]) -> Optional[str]:
+    """
+    A whole-ability edit (the website's text: the parser's reading, edited) put back over the one Ability layer's own
+    text (project): what the reading leaves out stays where the edit keeps it (Deepnest's "reroll :3" kept its space;
+    a space before punctuation and end quotes were dropped), its breaks, tabs and blank ends too, as
+    set_ability_layers does over several layers. None when the parser reads nothing there.
+    """
+    old = _ability_reading(psd, AbilityLayers([layer], None, [[]]), parser)
+    new = straight(text).replace("\r\n", "\n").replace("\r", "\n").strip("\n")
+    return project(old, new, straight(layer.text)) if old.strip() else None
 
 
 def ability_split(old: str, new: str, raws: list, relaid: bool = False) -> list:
@@ -1863,9 +1949,10 @@ def edit_styles(layer, parts: list, chart: Optional[dict]) -> list:
     commonest fill of what it replaces outside status words and blanks (set in the icon font only if all of it is: a
     badge edit); an insertion, or a part replacing only those, the nearest character before it in its line (\\r or
     \\x03), else after, that is no status word, blank or badge and shares no run with a status word (Astr's "3" of its
-    red "1T3 Empowered"), else its line's commonest fill, its paragraph's, the text's. A kept status word's characters
-    take that too: the edit resets status words, set_text_layer giving the new text's their swatch after. Before
-    set_text.
+    red "1T3 Empowered"), else its line's commonest fill, its paragraph's, the text's; its fill the body's (body_fill)
+    when typed between two runs or at a line's end in a line of several colours (Binge Eater's ", 1T" after "SPD" took
+    the olive). A kept status word's characters take that too: the edit resets status words, set_text_layer giving the
+    new text's their swatch after. Before set_text.
 
     Args:
         layer: The text layer
@@ -1900,19 +1987,30 @@ def edit_styles(layer, parts: list, chart: Optional[dict]) -> list:
                 return commonest(found, lo)
         return None
 
+    body = body_fill(layer, chart or {})
+
+    def typed(lo: int, hi: int) -> Optional[tuple]:
+        """Text typed between two runs, or at a line's end, of a line in several colours: the body fill, not the
+        coloured word beside it (Binge Eater's ", 1T" after its olive "SPD"); typed inside a run: that run's."""
+        inside = 0 < lo and hi < len(old) and old[lo - 1] not in "\r\x03" and old[hi] not in "\r\x03" \
+            and runs[lo - 1] == runs[hi]
+        top = max(old.rfind("\r", 0, lo), old.rfind("\x03", 0, lo)) + 1
+        bottom = min([j for j in (old.find("\r", hi), old.find("\x03", hi)) if j >= 0] or [len(old)])
+        line = {fills[j] for j in range(top, bottom) if source(j)}
+        return body if not inside and len(line) > 1 else None
+
     out = []
     for a0, a1, b0, b1, kept in parts:
         if kept:
-            spans = [(b0 + k, b0 + k + 1, near(a0 + k, a0 + k + 1)) for k in range(a1 - a0) if a0 + k in status]
+            spans = [(b0 + k, b0 + k + 1, near(a0 + k, a0 + k + 1), None) for k in range(a1 - a0) if a0 + k in status]
         elif b1 > b0:
             i = next((commonest(found, a0) for icon in (False, True)
                       for found in [[i for i in range(a0, a1) if source(i, icon)]] if found), None)
-            spans = [(b0, b1, near(a0, a1) if i is None else i)]
+            spans = [(b0, b1, i, None) if i is not None else (b0, b1, near(a0, a1), typed(a0, a1))]
         else:
             spans = []
-        for start, end, i in spans:
-            out.append((start, end, body_fill(layer, chart or {}) if i is None else fills[i],
-                        None if i is None or icons[i] else styles[i]))
+        for start, end, i, fill in spans:
+            out.append((start, end, fill or (body if i is None else fills[i]), None if i is None or icons[i] else styles[i]))
     return out
 
 
@@ -3957,6 +4055,68 @@ def ink_beyond(psd: PSDImage, layer, before: np.ndarray, halos: Optional[tuple] 
         (f", {name!r})" if name else ")")
 
 
+def fit_below(psd: PSDImage, layer, before: np.ndarray, fonts, draw, off_before: bool = True) -> tuple:
+    """
+    An Ability whose new text prints past its old text onto the design below it (ink_beyond: Autopsy Report's third
+    line under its panel) or off the canvas (Soul Sanctum's wrapped line) set smaller until it doesn't, no lower than
+    the old text, as the website's preview draws it (mockup.js drawText): by FIT_STEP, down to FIT_MIN of its size,
+    every run's FontSize, Leading and BaselineShift scaled alike (badges keep their size and middle against the
+    letters). No size fits, or a layer with tabs (its stops don't shrink: Michael's Blessing's arrow column would
+    break): left as it was, ink_beyond tells it.
+
+    Args:
+        psd: The card, the text set and rasterized
+        layer: The Ability layer
+        before: _on_canvas() of it before the edit
+        fonts: font_map()
+        draw: Rasterizes the layer as set_text_layer did (its splice); returns the engine's report
+        off_before: It inked off the canvas before the edit (then that is no reason)
+
+    Returns:
+        (scale, report): (1.0, None) when it was left as it was
+    """
+    off = not off_before and _ink_off_canvas(layer, psd.width, psd.height)
+    if "\t" in layer.text or not off and ink_beyond(psd, layer, before) is None:
+        return 1.0, None
+    from psd_tools.api import text_edit
+    text = layer.text
+    units = text_edit.utf16_prefix(text)
+    resources = layer.resource_dict
+    try:
+        normal = resources["StyleSheetSet"][int(getattr(resources["TheNormalStyleSheet"], "value",
+                                                        resources["TheNormalStyleSheet"]))]["StyleSheetData"]
+    except (KeyError, IndexError, TypeError, ValueError):
+        normal = {}
+    runs = []
+    for u0, u1, data in text_edit._spans(text_edit._section(layer, "StyleRun"), units[-1]):
+        sheet = data["StyleSheet"]["StyleSheetData"]
+        keys = {key: float(getattr(sheet.get(key, normal.get(key)), "value", sheet.get(key, normal.get(key))))
+                for key in ("FontSize", "Leading", "BaselineShift") if sheet.get(key, normal.get(key)) is not None}
+        runs.append((text_edit._str_index(units, u0), text_edit._str_index(units, u1), keys))
+
+    def scaled(scale: float) -> None:
+        for a, b, keys in runs:
+            if b > a and keys:
+                layer.set_span_style(a, b, **{key: value if scale == 1 else round(value * scale, 2)
+                                              for key, value in keys.items()})
+    rows = (before[..., 3] > INK_ALPHA * 255).any(axis=1).nonzero()[0]
+    floor = int(rows.max()) + 1 + BEYOND[0] if len(rows) else psd.height
+
+    def fits() -> bool:                         # no lower than the old text (ink_beyond lets a few px onto the design)
+        ink = (_on_canvas(layer, (psd.height, psd.width))[..., 3] > INK_ALPHA * 255).any(axis=1).nonzero()[0]
+        return (not len(ink) or int(ink.max()) + 1 <= floor) and ink_beyond(psd, layer, before) is None \
+            and (off_before or not _ink_off_canvas(layer, psd.width, psd.height))
+    for scale in (FIT_STEP ** k for k in range(1, 99)):    # the largest that fits: a box's first line rises as it
+        if scale < FIT_MIN:                                 # shrinks, so a smaller size can print past the top
+            break
+        scaled(scale)
+        report = layer.rasterize(fonts=fonts)
+        if fits():
+            return scale, report
+    scaled(1.0)
+    return 1.0, draw()
+
+
 def _effect_ink(psd: PSDImage, layer) -> Optional[np.ndarray]:
     """
     The layer drawn with its effects and its groups' (the outermost group with effects, composited alone: the other text
@@ -4189,15 +4349,17 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     from psd_tools.composite.text import MissingFontError
     if not story_sync():
         raise ImportError("this psd-tools fork's set_text leaves the Txt2 story stale (no TypeLayer.sync_story)")
-    text = straight(text)                       # the bake writes ' (owner, 2026-10-25): the layer's kept ones too
+    text, projected = straight(text), None      # the bake writes ' (owner, 2026-10-25): the layer's kept ones too
     if layer is None and which == "ability":
         try:
             layer = ability_layer(psd)
         except Refused:                         # several layers, a relaid one, copies (or none: refused again)
             return set_ability_layers(psd, ability_layers(psd), text, fonts_dir, chart, card, own_text, parser,
                                       original)
+        projected = from_reading(psd, layer, text, parser)
     elif layer is None:
         layer = name_layer(psd, card, own_text)
+    follow_kerning(psd, layer)                  # drawn kerned as Photoshop shows it (B12)
     old_text, old_bbox, story = layer.text, tuple(layer.bbox), story_index(layer)
     own = which == "name" and own_text_title(layer, card)
     flags = []
@@ -4206,7 +4368,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         why = why.removesuffix("; edit in Photoshop")
         flags.append(f"{code}: {why if why.startswith(which) else f'{which}: {why}'}")
     text = text.replace("\r\n", "\n").rstrip("\n").replace("\n", "\r")     # a final \n would add an empty paragraph
-    text = keep_ends(old_text, keep_breaks(old_text, text, which))
+    text = projected if projected is not None else keep_ends(old_text, keep_breaks(old_text, text, which))
     if which == "ability":                      # "[dark]" on the website, "[dark:sticker]" on the card
         text = keep_tokens(layer, text, getattr(parser, "icons", None))
     if "\t" in text and not tab_stops():         # a stale install: the runner's, retried (card_bake)
@@ -4389,8 +4551,16 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                     layer.set_span_style(c, d, fill=plan.fill)
     if which == "ability":                      # one-colour badges and stickers under an overlay (owner 2026-10-25)
         set_alternates(layer, alternate_spans(text, drawn, _char_styles(layer)[1]) if one_colour(layer) else [], changed)
+
+    def draw():
+        return layer.rasterize(fonts=fonts, keep=before, unit=SPLICE_UNIT) if before else layer.rasterize(fonts=fonts)
     try:
-        report = layer.rasterize(fonts=fonts, keep=before, unit=SPLICE_UNIT) if before else layer.rasterize(fonts=fonts)
+        report = draw()
+        if which == "ability" and not copy:     # onto the design below or off the canvas: smaller (the preview's fit)
+            scale, again = fit_below(psd, layer, canvas, fonts, draw, off_before)
+            report = again or report
+            if scale < 1:
+                flag("overflow", f"ability: set at {round(scale * 100)}% of its size to stay on its panel")
     except MissingFontError as error:
         raise Refused("font", str(error))
     loose = sorted(name for name, (how, _) in report.fonts.items() if how not in OK_FONTS)
@@ -6046,6 +6216,7 @@ def whole_redraw(old: PSDImage, edit: Edit, png: Image.Image, fonts_dir: str, ic
     ids = [layer.layer_id for layer in edit.layers]
     for layer in copy.descendants():
         if layer.layer_id in ids:
+            follow_kerning(copy, layer)         # as the edit drew it (B12)
             layer.rasterize(fonts=font_map(fonts_dir))
     return _measure(render_region(copy, edit.region, icc, text, tuple(ids)), png.crop(edit.region))
 
@@ -6610,7 +6781,7 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=()) -> 
             for root, objects, items in ((root_a, objects_a, items_a), (root_b, objects_b, items_b))]
     if rest[0] != rest[1]:
         raise Refused("bytes", "Txt2 changed outside its stories")
-    drift = story_style_drift(new)
+    drift = [d for d in story_style_drift(new) if d not in story_style_drift(old)]    # a layer no edit set keeps its own
     if drift:
         raise Refused("bytes", f"{drift[0][0]}'s Txt2 story has other styles: {drift[0][1]}")
     return changed
@@ -7224,7 +7395,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
         if stale_stories(new):
             raise Refused("unsupported-card", f"{stale[0][0]}'s Txt2 story is stale and txt2_repair could not sync it")
         flags.append(f"Txt2 story repaired (commands.txt2_repair): {', '.join(name for name, _, _ in stale)}")
-    drift = story_style_drift(new)
+    drift = story_style_drift(new, kerning=False)   # kerning: the edited layers follow the story (follow_kerning)
     if drift:                                   # Photoshop shows the story's styles, not the layer's
         raise Refused("unsupported-card", f"{drift[0][0]}'s Txt2 story has other styles: {drift[0][1]}")
 
@@ -7416,8 +7587,13 @@ def record_parts(record: dict) -> dict:
 
 
 def _part_same(a: Optional[str], b: Optional[str], vocab) -> bool:
-    """Two part texts read alike: tokens canonical ([Fire] is [fire]), the parser's whitespace rule."""
-    return normalize_ability(canonical_tokens(a, vocab)) == normalize_ability(canonical_tokens(b, vocab))
+    """Two part texts read alike: tokens canonical ([Fire] is [fire]), layer_text's whitespace rule (a part keeps its
+    quotes and a space before punctuation: normalize_ability's stripping made "Lifesteal ." -> "Lifesteal." redundant)."""
+    def key(text: Optional[str]) -> str:
+        text = canonical_tokens(text, vocab) or ""
+        text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\x03", "\n").replace("\t", " ")
+        return straight(text).replace("\ufeff", "").strip(" \n")
+    return key(a) == key(b)
 
 
 def plan_parts(psd: PSDImage, parsed: dict, parts: dict, parser: Optional[PSDParser], record: Optional[dict] = None) -> PartsPlan:
