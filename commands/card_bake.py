@@ -675,7 +675,7 @@ def plan_rename(snapshot: Snapshot, card: Card, claimed: frozenset = frozenset()
     if stem == old_stem:
         return
     files = {card.rel: stem + card.rel[len(card.rel) - 4:]}
-    for n, png in [(1, card.png)] + [(n, p) for n, p in sorted(card.pictures.items()) if n != 1]:
+    for n, png in [(1, card.png)] * bool(card.png) + [(n, p) for n, p in sorted(card.pictures.items()) if n != 1]:
         files[png] = stem + ("" if n == 1 else str(n)) + png[len(png) - 4:]
     keys = {CardAuthors.key(card_name(new)) for new in files.values()}
     if keys & claimed:
@@ -1163,6 +1163,21 @@ def _printed_already(snapshot: Snapshot, card: Card, parser, folder: str) -> boo
     return True
 
 
+def _rename_printed(snapshot: Snapshot, card: Card, folder: str, duplicates: list, pushed: set, claimed: frozenset) -> None:
+    """A printed name's rename on a card without PNG or with numbered PNGs (tagged or not): every file takes it."""
+    stem = basename(card.rel)[:len(basename(card.rel)) - 4]
+    card.pictures = {**({1: card.png} if card.png else {}),
+                     **{int(basename(p)[len(stem):len(basename(p)) - 4]): p for p in duplicates}}
+    plan_rename(snapshot, card, claimed)
+    for png in card.renames:
+        if png != card.rel:
+            if png in pushed:
+                raise Refused("recent", f"PNG pushed in the last {RECENT.seconds // 60} min")
+            card.expect[png] = snapshot.sha(png)
+            snapshot.fetch(card.expect[png], join(folder, "old", basename(png)))
+    _relocate(card, folder)
+
+
 def _smaller(path: str) -> bytes:
     """A baked PNG file's bytes, recompressed losslessly (png_export.recompress: XMP stripped, an opaque card as RGB;
     docs/Finished/session-2026-10-25/SMALLER_PNG_PUSHES.md) and written back, so the artifacts show what is committed."""
@@ -1214,6 +1229,8 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         if not card.png or duplicates:
             card.pngs = snapshot.pngs_key(card.rel, card.key)
             if _printed_already(snapshot, card, parser, folder):    # nothing to bake: dropped though no PNG can be
+                if card.rename:                 # its files still take the name
+                    _rename_printed(snapshot, card, folder, duplicates, pushed, claimed)
                 return
         if not card.png:
             raise Refused("unsupported-card", NO_PNG)
@@ -1336,22 +1353,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                                 "validator": card.baked.reparse["validator"], "fx": card.baked.fx}, indent=1, ensure_ascii=False))
             card.verdict = {"state": "baked", "for": card.jobs, "psd": card.new_psd_sha[:8],
                             "reason": _describe(card) + _fx_notes(card), "at": _now()}
-        card.relocated = {old: _moved_to(card, old) for old in dict.fromkeys(list(card.moves) + list(card.renames))}
-        if card.relocated:                      # the PSD and its PNGs go to the new folder or name: added there, deleted here
-            if card.baked is None:
-                card.new_psd_sha = card.psd_sha
-                card.verdict = {"state": "baked", "for": card.jobs, "psd": card.psd_sha[:8], "reason": _describe(card),
-                                "at": _now()}
-            for old, new in card.relocated.items():
-                if old not in card.files:
-                    with open(join(folder, "old", basename(old)), "rb") as fh:
-                        card.files[old] = fh.read()
-                card.files[new], card.files[old] = card.files[old], None
-                card.expect[new] = ""           # nothing there at the commit
-            if card.moves:
-                card.verdict["moved"] = card.moved_to
-            if card.renames:
-                card.verdict["renamed"] = card.renamed
+        _relocate(card, folder)
         card.dropped = [f for f in list(card.jobs) + card.redundant if f != "parts"]   # a baked or printed name goes too
         if card.partial:                        # what stays in the file: refused on the PSD this commit leaves; FX notes told
             card.verdict = {"state": "refused", "for": {r.field: card.fields[r.field] for r in card.partial},
@@ -1370,6 +1372,26 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         card.traceback = format_exc()
     finally:
         card.seconds = perf_counter() - started
+
+
+def _relocate(card: Card, folder: str) -> None:
+    """A stars move's or rename's files: the PSD and its PNGs added at the new folder or name, deleted here."""
+    card.relocated = {old: _moved_to(card, old) for old in dict.fromkeys(list(card.moves) + list(card.renames))}
+    if not card.relocated:
+        return
+    if card.baked is None:
+        card.new_psd_sha = card.psd_sha
+        card.verdict = {"state": "baked", "for": card.jobs, "psd": card.psd_sha[:8], "reason": _describe(card), "at": _now()}
+    for old, new in card.relocated.items():
+        if old not in card.files:
+            with open(join(folder, "old", basename(old)), "rb") as fh:
+                card.files[old] = fh.read()
+        card.files[new], card.files[old] = card.files[old], None
+        card.expect[new] = ""                   # nothing there at the commit
+    if card.moves:
+        card.verdict["moved"] = card.moved_to
+    if card.renames:
+        card.verdict["renamed"] = card.renamed
 
 
 def _kept(card: Card) -> bool:
