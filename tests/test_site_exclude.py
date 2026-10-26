@@ -36,7 +36,8 @@ const flips = [[[], [], false], [["a"], [], false], [["a"], [], true], [[], ["a"
   .map(([i, x, ex]) => G.flip(i, x, "a", ex));
 process.stdout.write(JSON.stringify({{ out: Object.fromEntries(["", "xkind=creature", "xkind=status", "xstars=5,3", "xsub=heal", "xtypes=fire",
   "xtypes=fire,water", "xflags=dup", "xflags=nope", "xmissing=series", "xseries=Kirby", "xsubseries=Air", "xauthor=Ann",
-  "xkind=creature&xtypes=water"].map(q => [q, names(q)])), flips, keys: G.X_KEYS }}));
+  "xkind=creature&xtypes=water"].map(q => [q, names(q)])), flips, keys: G.X_KEYS,
+  comma: G.dropExcluded([{{ name: "Fy", series: "Foo, Bar" }}, ...cards], new URLSearchParams({{ xseries: "Foo, Bar" }})).length }}));
 """, encoding="utf-8")
     done = run_process(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60)
     assert done.returncode == 0, done.stderr
@@ -48,4 +49,5 @@ process.stdout.write(JSON.stringify({{ out: Object.fromEntries(["", "xkind=creat
                           "xauthor=Ann": "Al,Cy,Ed", "xkind=creature&xtypes=water": "Cy"}
     # click: neutral -> in -> neutral; right-click: in -> out; click or right-click on an excluded one: neutral
     assert out["flips"] == [[["a"], []], [[], []], [[], ["a"]], [[], []], [[], []], [[], ["a"]]]
+    assert out["comma"] == 5      # a series is one value, commas and all
     assert sorted(out["keys"]) == ["author", "flags", "kind", "missing", "series", "stars", "sub", "subseries", "types"]
