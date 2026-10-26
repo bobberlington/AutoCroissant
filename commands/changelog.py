@@ -54,6 +54,7 @@ COUNT_WORDS = (("new", "new"), ("changed", "changed"), ("art", "new art"), ("mov
                ("guard-png", "PNG"), ("guard-fix", "fixed"))   # the title's counts: "1 new, 2 changed"
 CARD_SYNC = "Card sync"                                  # the push of the run's own commit M
 GUARDS = "Card guards"                                   # the push of a guards commit (card_guards.SUBJECT): never posted
+SWEEP_TRAILER = "Card-sweep"                             # a trailer: a hand-committed sweep of the guards' fixes, its push GUARDS'
 GITHUB = "https://github.com/"
 MESSAGES_MAX = 20                                        # per run; the rest wait for the next one (the cursor)
 EMBEDS_MAX = 10                                          # Discord: embeds per message
@@ -644,6 +645,7 @@ __all__ = [
     'CARD_SYNC',
     'FIELDS',
     'GUARDS',
+    'SWEEP_TRAILER',
     'KINDS',
     'SILENT',
     'TAG_PATTERN',

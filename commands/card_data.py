@@ -1276,6 +1276,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     if base and run(["git", "-C", checkout, "cat-file", "-e", f"{base}^{{commit}}"], capture_output=True).returncode != 0:
         base = None
     guards = _guard_commits(checkout, base, run_build.head) | {d.get("commit") for d in guard_docs or [] if d.get("commit")}
+    sweeps = _sweep_commits(checkout, base, run_build.head)   # their art events kept, their pushes silent as the guards'
     new_events = [e for e in new_events if not (e["kind"] == "art" and e.get("commit") in guards)]   # the guards' events say them
     new_events += side_events(db.stats, db.archived(), side, guard_docs)
     if restore:
@@ -1288,7 +1289,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
             if push["after"] in mine:
                 push["by"] = changelog.CARD_SYNC
         new_events = changelog.assign_pushes(new_events, listed, commits, base,
-                                             ({run_build.head} if baked else set()) | mine, guards)
+                                             ({run_build.head} if baked else set()) | mine, guards | sweeps)
     for name in sorted(run_build.reparsed):
         card = db.stats.get(name)
         notes = CardValidator.validate(card) if card is not None else []
@@ -1390,6 +1391,18 @@ def _guard_commits(checkout: str, base: Optional[str], head: str) -> set:
         return set()
     rows = [(line.split("\t", 2) + ["", ""])[:3] for line in log.splitlines()]
     return {sha for sha, author, subject in rows if author == BOT and subject.startswith(GUARDS + ":")}
+
+
+def _sweep_commits(checkout: str, base: Optional[str], head: str) -> set:
+    """The commits in base..head with a Card-sweep trailer (card_sweep's passes, committed by hand; owner: the guards'
+    fixes are silent): any author, their pushes GUARDS'."""
+    from commands.changelog import SWEEP_TRAILER
+    span = [f"{base}..{head}"] if base else ["--max-count=100", head]
+    try:
+        log = _git(checkout, "log", f"--format=%H%x09%(trailers:key={SWEEP_TRAILER},valueonly,separator=%x2C)", *span)
+    except CalledProcessError:
+        return set()
+    return {sha for sha, _, value in (line.partition("\t") for line in log.splitlines()) if value.strip()}
 
 
 def side_events(stats: dict, archived: dict, side: Optional[list], guard_docs: Optional[list]) -> list:
