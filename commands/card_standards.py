@@ -1260,12 +1260,6 @@ def fit_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Option
     return [name for _, name, *_ in done]
 
 
-def badges_left(path: str, fonts: Optional[Callable[[list], Optional[str]]]) -> list:
-    """What is still off after fit_badges: [(layer name, token, px off, size off)] (badge_plan)."""
-    return [(layer.name.strip(), fit["token"], fit["off_px"], fit["size_off"])
-            for layer, wants in badge_plan(PSDImage.open(path), fonts) for fit, _ in wants]
-
-
 PIXEL_FIXES = {     # kind -> (finds(psd) -> [layer], fix(path, out_path, fonts) -> [layer name], the parse it makes or None)
     "apostrophes": (curly_layers, straighten, straight_parse),
     "old glyphs": (icon_layers, redraw_old_glyphs, None),
@@ -1327,7 +1321,6 @@ __all__ = [
     'card_key',
     'check',
     'badge_plan',
-    'badges_left',
     'composer_layers',
     'curly_layers',
     'every_line',

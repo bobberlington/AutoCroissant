@@ -21,7 +21,6 @@ from global_config import RULEBOOK_DIR
 # ========================
 # Configuration
 # ========================
-PARTS_VERSION = 1
 TEMPLATE_DIR = "MDW/Templates"
 TEMPLATES = {"creature": "Creature_Template", "minion": "Creature_Template", "creatures": "Creature_Template",   # owner 10-25
              "item": "Item_Template", "aux item": "Item_Template", "nme": "Item_Template", "field": "Item_Template",
@@ -230,7 +229,6 @@ def card_parts(psd, rel: str, name: str, parser: PSDParser, variant: Optional[in
 # Module Exports
 # ========================
 __all__ = [
-    'PARTS_VERSION',
     'TEMPLATES',
     'Templates',
     'card_parts',

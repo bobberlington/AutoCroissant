@@ -669,7 +669,7 @@ def test_bake_hp_lands_psd_png_and_file(github, tmp_path):
     assert verdict["reason"] == "hp 5 -> 8"
     work = tmp_path / cb.WORK_NAME / "Mini Doomer"
     saved = PSDImage.open(str(work / "new" / "Mini_Doomer.psd"))
-    assert pe.template_row(saved, "hp")[2] == [8] and (work / "new" / "Mini_Doomer.psd").read_bytes() == after[DOOMER]
+    assert [r.visible for r in pe.template_rows(saved, "hp")] == [[8]] and (work / "new" / "Mini_Doomer.psd").read_bytes() == after[DOOMER]
     assert all((work / f"{name}.png").exists() for name in ("before", "after", "diff"))
     parse = json.loads((work / "parse.json").read_text(encoding="utf-8"))
     assert parse["old"]["hp"] == 5 and parse["new"]["hp"] == 8 and parse["validator"] == []

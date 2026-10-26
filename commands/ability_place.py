@@ -12,7 +12,7 @@ towards the siblings' highest first line (review 2026-10-25: long texts at the b
 
 Font (owner 2026-10-25 "we should use a card's own font when it exists"): the commonest real ability font of the
 cards sharing this card's title font in its folder, else its series, else anywhere, else of its series, else its own
-title font, else the template's (FONT_STEPS; a tie falls through). One not in MDW/Fonts: the template's, told. Size in
+title font, else the template's (font_steps; a tie falls through). One not in MDW/Fonts: the template's, told. Size in
 rendered px (FontSize x the layer's scale x the fork's super/subscript factor): the siblings' in that font, else the
 font's median, else the template's by cap height (H's outline; the leading then keeps the template's line pitch). A font
 that can't be laid out, or one no real ability uses that lays its lines over each other (OVERLAP), gives way to the
@@ -60,7 +60,6 @@ SKIP_STYLE = re_compile(r"star|^(def|hp|atk|spd|dark|header|page number|offensiv
                         r"|^clip |fx:|^(gradient map|selective color|hue/saturation|curves|levels|brightness|color balance|"
                         r"vibrance|exposure|color fill|solid color)|^\d+$", IGNORECASE)
 DEFAULT_NAME = re_compile(r"^(layer|rectangle|ellipse|group|shape|polygon|path)\s*\d+(\s+copy(\s+\d+)?)?$", IGNORECASE)
-FONT_STEPS = ("folder+title font", "series+title font", "title font", "series", "own title font", "template")
 TALL = 100000.0                     # pt: a box no text reaches the bottom of (measuring)
 
 
@@ -278,7 +277,7 @@ def _most(fonts) -> Optional[str]:
 
 
 def font_steps(c: dict, cards: dict) -> list:
-    """[(step, its font or None)] in FONT_STEPS order, the template's left out; c's own ability never counts."""
+    """[(step, its font or None)] in order, the template's left out; c's own ability never counts."""
     tf = c["title"][0]
     others = [o for o in cards.values() if o["rel"] != c["rel"] and o.get("font")]
     titled = [o for o in others if tf and o["title"][0] == tf]
@@ -327,7 +326,7 @@ def in_fonts_dir(fonts, name: str, fonts_dir: str) -> bool:
 
 
 def pick_font(c: dict, cards: dict, tmpl_font: str, tmpl_size: float, fonts, fonts_dir: str) -> tuple:
-    """(font, rendered px, leading factor, notes): the card's own font (FONT_STEPS) and its size, else the template's.
+    """(font, rendered px, leading factor, notes): the card's own font (font_steps) and its size, else the template's.
     Sized by cap height, its leading keeps the template's line pitch (factor: its cap over the template's)."""
     step, font = next(((s, f) for s, f in font_steps(c, cards) if f), ("template", tmpl_font))
     notes = []

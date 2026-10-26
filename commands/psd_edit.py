@@ -2894,23 +2894,6 @@ def _top_bottom(rows: list, stat: str) -> Optional[dict]:
     return None
 
 
-def template_row(psd: PSDImage, stat: str):
-    """
-    The single template bar row of a stat (template_rows() for the two-row layout).
-
-    Args:
-        psd: An open card
-        stat: hp, def, atk or spd
-
-    Returns:
-        (group, {digit: layer}, visible digits); raises Refused("unsupported-card") for any other row shape, two rows included
-    """
-    rows = template_rows(psd, stat)
-    if len(rows) != 1:
-        raise Refused("unsupported-card", f"{stat}: two bar rows (Top and Bottom)")
-    return rows[0].group, rows[0].digits, rows[0].visible
-
-
 @dataclass
 class SplitRows:
     """A stat printed on two half-height rows over the template's old row, which keeps the value's marker (Sonic's SPD
@@ -9493,7 +9476,6 @@ __all__ = [
     'story_style_drift',
     'story_sync',
     'tab_stops',
-    'template_row',
     'template_rows',
     'type_row',
     'unlettered_icons',

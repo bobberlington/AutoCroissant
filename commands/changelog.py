@@ -24,7 +24,7 @@ from urllib.parse import quote
 from global_config import RULEBOOK_DIR, SITE_URL, TIMEZONE
 from commands.card_db import write_text
 from commands.card_edits import as_parsed
-from commands.card_history import TYPE_RENAMES, same_series, unknown
+from commands.card_history import same_series, unknown
 from commands.card_models import CardInfo
 
 # ========================
@@ -96,7 +96,6 @@ def fields_of(card: CardInfo) -> dict:
         out[key] = _stat(getattr(stats, attr, None)) if stats is not None else None
     creatures = getattr(card, "creatures", None)
     out["creatures"] = [[_stat(getattr(c, attr, None)) for _, attr, _ in STATS] for c in creatures] if creatures else None
-    out["types"] = [TYPE_RENAMES.get(t, t) for t in out["types"]]
     out["ability"] = getattr(card, "ability", None) or None
     out["tags"] = tags_of(out["ability"])
     out["author"], out["note"], out["hidden"] = getattr(card, "author", None), getattr(card, "note", None), bool(getattr(card, "hidden", False))

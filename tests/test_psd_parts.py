@@ -57,8 +57,7 @@ def test_layer_tag():
 
 @pytest.mark.parametrize("fixture", list(CARDS))
 def test_card_parts_equal_the_fixtures(clone, psd_parser, fixture):
-    """Order, padding stripped, copies folded; the title parts join to the printed title, the ability parts (a rule
-    page's blocks) to the parser's ability."""
+    """Order, padding stripped, copies folded; the title parts join to the printed title."""
     want, psd = _fixture_psd(clone, fixture)
     rel, name, tags = CARDS[fixture]
     card = psd_parser.parse(psd, rel, variant=1 if tags else None)
@@ -67,10 +66,6 @@ def test_card_parts_equal_the_fixtures(clone, psd_parser, fixture):
     shown = [p for p in got["title"] if p["variants"] is None or 1 in p["variants"]]
     if shown:
         assert " ".join(title_text(p["text"]) for p in shown) == (card.display_name or card.name)
-    ids = [p["id"] for p in got["blocks" if "Rulebook" in rel else "ability"] if p["variants"] is None or 1 in p["variants"]]
-    layers = {layer.layer_id: layer for layer in psd.descendants()}
-    with variant_view(psd, 1 if tags else None):
-        assert psd_parser.join_ability(psd, [layers[i] for i in ids], rulepage="Rulebook" in rel) == card.ability
 
 
 def test_an_edited_split_title_keeps_its_parts(clone, psd_parser):

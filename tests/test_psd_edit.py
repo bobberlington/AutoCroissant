@@ -377,15 +377,13 @@ def test_regions_and_rows_on_mini_doomer(clone, parser):
     assert found["frame"][0] == (0, 1708, 1200, 1748) and found["ability_bg"] == [(0, 1748, 1200, 2400)]
     assert len(found["types"]) == 3 and len(found["stars"]) == 2
     assert {k: [d for _, d, _ in rows] for k, rows in stat_rows(psd).items()} == {"hp": [[5]], "def": [[2]], "atk": [[5]], "spd": [[5]]}
-    group, digits, visible = pe.template_row(psd, "hp")
-    assert group.name == "Hp Dark" and sorted(digits) == sorted(pe.DIGITS) and visible == [5]
+    row, = pe.template_rows(psd, "hp")
+    assert row.group.name == "Hp Dark" and sorted(row.digits) == sorted(pe.DIGITS) and row.visible == [5]
 
 
 def test_non_template_rows_and_titles_refuse(clone):
     cannon = PSDImage.open(_card(clone, CANNON)[0])
-    with pytest.raises(pe.Refused, match="two bar rows") as refused:           # the single-row reader; template_rows takes both
-        pe.template_row(cannon, "atk")
-    assert refused.value.code == "unsupported-card" and len(pe.template_rows(cannon, "atk")) == 2
+    assert len(pe.template_rows(cannon, "atk")) == 2
     split = pe.split_rows(PSDImage.open(_card(clone, "Creatures/Other/4 Stars/Sonic.psd")[0]), "spd")
     assert (split.marker.name, split.top.group.name, split.bottom.group.name) == ("20", "1", "2")   # a renamed 9 under two half rows
     twins = PSDImage.open(_card(clone, "Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd")[0])
@@ -1002,7 +1000,7 @@ def test_mini_doomer_hp_5_to_8(clone, parser, tmp_path):
     row[HP_ROW[1]:HP_ROW[3], HP_ROW[0]:HP_ROW[2]] = True
     assert int((differs & ~row).sum()) == 0 and 0 < int(differs.sum()) <= baked.changed_pixels   # a replaced pixel may equal the PNG's
     saved = PSDImage.open(baked.psd_path)
-    assert saved.has_preview() and {d.name for d in pe.template_row(saved, "hp")[1].values() if d.visible} == {"8"}
+    assert saved.has_preview() and {d.name for r in pe.template_rows(saved, "hp") for d in r.digits.values() if d.visible} == {"8"}
     if saves_preview():                 # else save() regenerated it
         old_preview = PSDImage.open(_card(clone, MINI_DOOMER)[0]).topil(apply_icc=False)
         moved = (np.asarray(old_preview) != np.asarray(saved.topil(apply_icc=False))).any(axis=2)

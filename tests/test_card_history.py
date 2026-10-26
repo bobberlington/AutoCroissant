@@ -216,11 +216,10 @@ V2 = dict(parser_version=2)
 
 def test_one_form_for_the_same_data():
     """An empty ability is None or '' (Anubisath Guardian); a title equal to the name is no title (a Card Edits name
-    fix equal to the file name); a retired type icon is its name now (offense.png became Negation.png)."""
+    fix equal to the file name)."""
     assert ch.knows(_card(ability=None), _card(ability=""))
     named = _card(display_name="A", **V2)
     assert ch.knows(named, _card(**V2)) and ch.data_of(named)["display_name"] is None
-    assert ch.knows(_card(types=["offense"], **V2), _card(types=["negation"], **V2))
 
 
 NO_LAYER = ["NO ABILITY LAYER"]

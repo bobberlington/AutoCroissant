@@ -165,9 +165,9 @@ def test_psd_meta_rides_beside_by_and_at():
 # Parts (docs/Future/PARTS_EDITOR.md §3, §11 case 10)
 # ========================
 def test_parts_valid_and_merged_per_layer():
-    """`parts` as build_site.valid_parts takes it; the fixture's entries parse whole; merge and unset by layer id."""
+    """`parts` as build_site.valid_parts takes it; the fixture's entries parse whole; dumped in place."""
     from pathlib import Path
-    from commands.card_edits import dump_edits, merge_parts
+    from commands.card_edits import dump_edits
     fixture = json.loads((Path(__file__).parent / "fixtures" / "parts" / "card_edits.parts.json").read_text(encoding="utf-8"))
     edits = CardEdits.parse(json.dumps(fixture))
     for name, entry in fixture["cards"].items():
@@ -180,7 +180,6 @@ def test_parts_valid_and_merged_per_layer():
     gone = {k: v for k, v in part.items() if k != "text"} | {"delete": True}
     assert CardEdits.valid("parts", {"1": part, "+ability": {**part, "sha": None, "psd": None}, "2": gone})
     assert CardEdits.KIND["parts"] == "psd" and CardEdits().apply("X", _card()) is False      # never applied to a card
-    merged = merge_parts({"1": part, "2": part}, {"2": {**part, "text": "z"}, "3": part}, ["1"])
-    assert list(merged) == ["2", "3"] and merged["2"]["text"] == "z" and merge_parts({"1": part}, None, ["1"]) is None
+    merged = {"2": {**part, "text": "z"}, "3": part}
     text = dump_edits({"about": "a", "cards": {"C": {"ability": "x", "parts": merged, "note": "n", "_by": "w"}}})
     assert '"ability":"x","parts":{"2":' in text and json.loads(text)["cards"]["C"]["parts"] == merged

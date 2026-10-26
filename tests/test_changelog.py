@@ -67,7 +67,6 @@ def test_field_changes_skip_what_a_reading_could_not_know():
     assert cl.field_changes(_card(stars=0, problems=['NO STARS FOUND (put the star layers in a group named "Stars")']),
                             _card(stars=1)) == {}
     assert cl.field_changes(_card(ability=None), _card(ability="")) == {}
-    assert cl.field_changes(_card(types=["offense"]), _card(types=["negation"])) == {}
     assert cl.field_changes(_card(display_name="A"), _card()) == {}                 # a title equal to the name
 
 

@@ -352,7 +352,7 @@ def test_badges_fitted_to_their_text(clone, tmp_path, monkeypatch):
     fixed = cs.fix((tmp_path / "off.psd").read_bytes(), WOLFGANG, [], str(tmp_path / "work"), None, fonts, only="badges")
     assert fixed.redrawn == {"badges": ["Ability"]} and fixed.pixel_left == [] and fixed.plain
     (tmp_path / "fit.psd").write_bytes(fixed.data)
-    assert cs.badges_left(str(tmp_path / "fit.psd"), fonts) == []
+    assert cs.badge_plan(PSDImage.open(str(tmp_path / "fit.psd")), fonts) == []
     now, = psd_edit.badge_fits(psd_edit.ability_layer(PSDImage.open(tmp_path / "fit.psd")), psd_edit.font_map(fonts([])))
     assert abs(now["off_px"]) < 0.1 and now["size"] == fit["fit_size"]
     from dataclasses import replace
@@ -368,7 +368,7 @@ def test_badges_fitted_to_their_text(clone, tmp_path, monkeypatch):
     fixed = cs.fix(at_rev(clone, "1f07349c", radiance), radiance, [], str(tmp_path / "work"), None, fonts, only="badges")
     assert fixed.redrawn == {"badges": ["Ability"]} and fixed.pixel_left == []
     (tmp_path / "rad.psd").write_bytes(fixed.data)
-    assert cs.badges_left(str(tmp_path / "rad.psd"), fonts) == []
+    assert cs.badge_plan(PSDImage.open(str(tmp_path / "rad.psd")), fonts) == []
     psd = PSDImage.open(tmp_path / "rad.psd")
     text, (fx,) = psd_edit.ability_layer(psd), psd_edit.fx_layers(psd, psd_edit.ability_layer(psd))
     ink, cut = (np.zeros((psd.height, psd.width), bool) for _ in "ab")
@@ -390,7 +390,7 @@ def test_badges_drawn_kerned_as_the_story(clone, tmp_path, monkeypatch):
     fixed = cs.fix(data, rel, [], str(tmp_path / "work"), None, fonts, only="badges")
     assert fixed.redrawn == {"badges": ["Ability"]} and fixed.pixel_left == []
     (tmp_path / "fit.psd").write_bytes(fixed.data)
-    assert cs.badges_left(str(tmp_path / "fit.psd"), fonts) == []
+    assert cs.badge_plan(PSDImage.open(str(tmp_path / "fit.psd")), fonts) == []
     monkeypatch.setattr(psd_edit, "follow_kerning", lambda psd, layer: False)
     fixed = cs.fix(data, rel, [], str(tmp_path / "work"), None, fonts, only="badges")
     assert not fixed.redrawn and "not redrawn by glyph" in fixed.pixel_left[0][1]
@@ -438,7 +438,7 @@ def test_badges_whole_only_where_drawn_as_stored(clone, tmp_path):
     fixed = cs.fix(data, rel, [], str(tmp_path / "work"), None, fonts, only="badges", whole=True)
     assert fixed.redrawn == {"badges": ["Ability"]} and fixed.pixel_left == []
     (tmp_path / "fit.psd").write_bytes(fixed.data)
-    assert cs.badges_left(str(tmp_path / "fit.psd"), fonts) == []
+    assert cs.badge_plan(PSDImage.open(str(tmp_path / "fit.psd")), fonts) == []
     lines = [cs._lines(psd_edit.ability_layer(PSDImage.open(BytesIO(d))), faces) for d in (data, fixed.data)]
     assert lines[0] == lines[1]
     wendy = "Creatures/DST/3 Stars/Wendy.psd"

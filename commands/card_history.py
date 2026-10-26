@@ -23,11 +23,9 @@ from commands.card_models import RENAMED, CardInfo, CardStats, card_name, rename
 # the fields a version is about (the path, blob, timestamp, parse and edit bookkeeping are not data)
 DATA_FIELDS = ("card_type", "display_name", "ability", "stars", "subtype", "series", "subseries", "types", "stats",
                "creatures", "author", "note", "hidden", "duplicate_of")
-CAUSES = ("psd", "reparse", "moved", "edit", "authors", "legacy")   # moved: the same blob in another folder (its data)
 # one header line per commit: sha, committer time, author (.mailmap'd), the bake's Renamed trailers (a renamed and edited file)
 LOG_FORMAT = f"C%x09%H%x09%ct%x09%aN%x09%(trailers:key={RENAMED},valueonly,separator=%x1f)"
 NO_BLOB = "0" * 40
-TYPE_RENAMES = {"offense": "negation"}                # retired Types/ icon -> its name now (same bytes, 9649b4d)
 # a parse problem -> the field that reading could not know (compared as unknown)
 UNKNOWN_IF = (("NO STARS FOUND", "stars"), ("MISSPELT TYPE", "types"), ("NO ABILITY LAYER", "ability"))
 SERIES = ("series", "subseries")
@@ -242,13 +240,13 @@ def mailmap_args(repo: str, head: str = "HEAD") -> list:
 # ========================
 def data_of(card: CardInfo) -> dict:
     """A card's data fields as plain values (card_db's record), the ones a version is about; one form each for the
-    same data: a title equal to the name is none, an empty ability none, a retired type icon its name now."""
+    same data: a title equal to the name is none, an empty ability none."""
     rec = record(card)
     data = {key: rec[key] for key in DATA_FIELDS}
     if data["display_name"] == rec["name"]:
         data["display_name"] = None
     data["ability"] = data["ability"] or None
-    data["types"] = [TYPE_RENAMES.get(t, t) for t in data["types"] or []]
+    data["types"] = list(data["types"] or [])
     return data
 
 
@@ -596,11 +594,9 @@ def close_archived(old_stats: dict, names: list, index: GitIndex) -> None:
 # Module Exports
 # ========================
 __all__ = [
-    'CAUSES',
     'DATA_FIELDS',
     'HIGH_STATS_LISTED',
     'RETIRED',
-    'TYPE_RENAMES',
     'UNKNOWN_IF',
     'Commit',
     'GitIndex',

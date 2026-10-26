@@ -239,15 +239,6 @@ def valid_parts(value) -> bool:
     return True
 
 
-def merge_parts(cur, set_parts: Optional[dict] = None, unset=()) -> Optional[dict]:
-    """An entry's `parts` with an op applied (parts.js mergeParts): set per layer, unset by key; None when none is left."""
-    out = dict(cur) if isinstance(cur, dict) else {}
-    for key in unset:
-        out.pop(key, None)
-    out.update(set_parts or {})
-    return out or None
-
-
 def as_parsed(card: CardInfo) -> CardInfo:
     """
     The card as its PSD reads it: a copy with its parsed_values put back (its Card Edits.json edits undone), so a
@@ -460,6 +451,5 @@ __all__ = [
     'as_parsed',
     'dump_edits',
     'dump_ratings',
-    'merge_parts',
     'valid_parts',
 ]
