@@ -11,7 +11,7 @@ for sk in sorted(glob.glob(".claude/skills/*/SKILL.md")):
         if incode and re.match(r"\s*(grep|git grep)", line):
             cmds.append(re.split(r"\s+#", line)[0].strip())
         for m in re.finditer(r"`([^`]*\bgrep\b[^`]*)`", line):
-            cmds.append(m.group(1).replace("\\|", "|") if "\\|" in m.group(1) and "| grep" not in m.group(1) and "grep -" in m.group(1) and False else m.group(1))
+            cmds.append(m.group(1))
         for c in cmds:
             if re.search(r"(^|\s)(rm|mv|python|python3|>)\s", c) or ">" in c or "$" in c or "~" in c or "<" in c: continue
             if not re.match(r"\s*(grep|git grep|git show|git log)", c): continue

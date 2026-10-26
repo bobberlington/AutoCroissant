@@ -709,18 +709,6 @@ def rename(path: str, out_path: str) -> list:
     return _renamed(psd, path, out_path, inexact_names(psd))
 
 
-def rename_layers(path: str, out_path: str, names: dict) -> list:
-    """
-    {layer id: new name} (the variant tags, tools/variant_tags.py), gated as R11's rename: only those names change.
-
-    Returns:
-        The renames ("old -> new"); raises Refused("bytes"), or KeyError for an id the PSD lacks
-    """
-    psd = PSDImage.open(path)
-    by_id = {layer.layer_id: layer for layer in psd.descendants()}
-    return _renamed(psd, path, out_path, [(by_id[lyid], name) for lyid, name in names.items() if by_id[lyid].name != name])
-
-
 def _renamed(psd: PSDImage, path: str, out_path: str, renames: list) -> list:
     """Rename [(layer, name)] and save without a new preview; gated: only the renamed records' names change."""
     if not renames:
