@@ -305,13 +305,15 @@ owner 2026-10-23; `DISCORD_FONT_WEBHOOK` is deleted), and never reverts or rejec
   whole-repo dispatch, run 39690899334, succeeded, job summary only):
   `.github/workflows/card-check.yml` runs `commands/card_check.py` (uncompiled; `python -m commands.card_check --help`) on every push that
   touches a PSD, `Types/` or `site/Card Edits.json`: for each pushed PSD the notes `/update_stats` would print (`NO STARS FOUND`,
-  `MISSPELT TYPE`, `SEVERAL CREATURES`, `HP/DEF/ATK/SPD NOT FOUND`, `STATS TOO HIGH`, `ABILITY TEXT NOT FOUND`, `UNKNOWN TYPE`; the
-  parser's own, the first three and `NO ABILITY LAYER`, are also the website's Parser notes, the validator's are printed only), after the
-  card's edits-file entry (`problems_ok`, `allow_high_stats`, `creatures` ...) and `ABILITY_EXCLUSIONS`; `Types/`, the icon manifest and
-  the edits file come from the tree at the pushed commit. Report-only, exit 0 always (an unreadable PSD or a failed API call is one error
+  `MISSPELT TYPE`, `SEVERAL CREATURES`, `NO STATS FOUND`, `HP/DEF/ATK/SPD NOT FOUND`, `STATS TOO HIGH`, `ABILITY TEXT NOT FOUND`,
+  `UNKNOWN TYPE`; the parser's own, the first four and `NO ABILITY LAYER`, are also the website's Parser notes, the validator's are
+  printed only), after the card's edits-file entry (`problems_ok`, `allow_high_stats`, `creatures` ...) and `ABILITY_EXCLUSIONS`;
+  `Types/`, the icon manifest and the edits file come from the tree at the pushed commit.
+  Report-only, exit 0 always (an unreadable PSD or a failed API call is one error
   line, never a red push); one Discord line per card, "<login> has pushed <card> with: <note>; <note>."; a dispatch with `all` reads every
   card into the job summary. Today's notes (the clone at e4e0a58): Bubble and God Tamer `NO STARS FOUND`, 20 Creature Types
-  `MISSPELT TYPE: tornado`, Tainted Lazarus, Pix and Twin Emperors `SEVERAL CREATURES`, Computer Virus `HP/DEF/ATK/SPD NOT FOUND`;
+  `MISSPELT TYPE: tornado`, Tainted Lazarus, Pix and Twin Emperors `SEVERAL CREATURES`, Computer Virus `HP/DEF/ATK/SPD NOT FOUND`
+  (since 2026-10-26 one parse-time `NO STATS FOUND` instead, stored at its next re-parse; all four stats or a `creatures` edit answer it);
   `tests/test_card_check.py` pins them. Operations: autocroissant-run-and-operate §7.
 - **Rules 3+, the push guards** (BUILT 2026-10-22 on AutoCroissant `work/push-guards` and TTSCardMaker `work/push-guards`, not
   landed; design and build notes `docs/Campaigns/PUSH_GUARDS.md`): `.github/workflows/card-guards.yml` runs
