@@ -1,6 +1,6 @@
 # Website parts editor: one text box per PSD layer
 
-**Status:** built and landed 2026-10-25 except three steps. Track C (site) TTSCardMaker f6927047; Tracks A and B (data, bake) AutoCroissant aae7233 with TTSCardMaker abf70775; the full re-parse ran (data d547daef, parser 3, details v2, 812 records with parts). Left: the 5 variant PSDs' tags (commit on TTSCardMaker `work/varianttags`, plan shown to the owner first: `~/Documents/Tools/wt/scratch/parts-ab/VARIANT_TAGS_PLAN.md`), `+ability` (§10 step 6, after a Photoshop proof) and the §8 joined-splice deletion (one Card sync cycle with no legacy entries).
+**Status:** built and landed 2026-10-25. Track C (site) TTSCardMaker f6927047; Tracks A and B (data, bake) AutoCroissant aae7233 with TTSCardMaker abf70775; the full re-parse ran (data d547daef, parser 3, details v2, 812 records with parts). The 5 variant PSDs were tagged (TC 572680d5; Card sync links them as variants), then (work/partsfollow) the numbered-PNG duplicate scan and the §8 joined splice were deleted and `+ability` built (`psd_edit.insert_ability`/`add_ability`, the fork's `copy_to`); it stays off (`psd_edit.ADD_ABILITY_LIVE = False`, the entry waits) until the owner has opened the test PSDs in `~/std-work-1025/plusability/` in Photoshop.
 
 **Goal.** Website edits of titles, abilities and rulebook text land exactly in the layer they came from, on any card
 layout, and never overwrite Photoshop work.
@@ -583,7 +583,7 @@ Both designs agree except on NME Stock, where B's explicit tags win. Fit is the 
 2. **Track B text part ships:** `parts` in `card_edits`, per-part classify and splice, sha skip, delete, `_psd.parts`/`skipped`, legacy translation, `card_preview` v2. This must be on AC main before any client writes `parts`.
 3. **Track C build_site ships:** details pass-through, `partState`, variant link keys. Deploy; no UI change.
 4. **Track C editor ships.** From here the site writes only `parts` for printed text.
-5. **Track B variants:** `variant()`, multi-PNG merge, per-variant guard 1. Then the 5 PSDs are tagged (§14 item 4), Card sync shows them as linked variants, and the numbered-PNG duplicate scan is deleted.
+5. **Track B variants:** `variant()`, multi-PNG merge, per-variant guard 1. Then the 5 PSDs are tagged (§14 item 4), Card sync shows them as linked variants, and the numbered-PNG duplicate scan is deleted (done 10-25: `card_data.duplicate_pngs` keeps only `dup_of`).
 6. **Track B extras:**
    - the folder move, after `git_commit` deletions and the TTS stem-follow, with people counts and history checked on the first live move;
    - the first type icon;

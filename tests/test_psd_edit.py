@@ -1918,6 +1918,31 @@ def test_project_keeps_a_layers_padding():
     """A box's edit put back over its layer keeps the layer's blank ends and indent (project)."""
     assert pe.project("Deal 7 DMG.", "Deal 9 DMG.", "\r    Deal 7 DMG.\r   ") == "\r    Deal 9 DMG.\r   "
 
+WATCHER = "Auxiliary/Minions/Abyss_Watcher.psd"                  # no ability part (a hidden empty Ability)
+
+
+@text_edit
+def test_plus_ability_adds_the_templates_layer(clone, parser, chart, tmp_path, monkeypatch):
+    """§10 step 6: "+ability" waits while ADD_ABILITY_LIVE is off; on, Creature_Template's Ability comes in at the top
+    of the Text group, named Ability with a fresh id and its own story, reads the box's text and is flagged."""
+    path, png = _card(clone, WATCHER)
+    psd = PSDImage.open(path)
+    parsed = pe.parse_card(parser, path, WATCHER, psd)
+    edits = {"parts": {"+ability": {"field": "ability", "text": "Attacks inflict 1T Afraid."}}}
+    assert pe.classify(parsed, edits, psd, parser).parts.outcome == {"+ability": "waiting"}
+    monkeypatch.setattr(pe, "ADD_ABILITY_LIVE", True)
+    jobs = pe.classify(parsed, edits, psd, parser).jobs
+    assert pe.template_for(parsed["card"]["type"], WATCHER) == "MDW/Templates/Creature_Template.psd"
+    baked = pe.apply_jobs(path, png, WATCHER, jobs, parsed, parser, str(tmp_path), str(clone / pe.FONTS_DIR), chart,
+                          psd=psd, ability_from=(PSDImage.open(clone / pe.TEMPLATES_DIR / "Creature_Template.psd"),
+                                                 "Creature_Template"))
+    saved = PSDImage.open(baked.psd_path)
+    added = [layer for layer in saved.descendants() if pe._is_text_layer(layer) and layer.text]
+    added = [layer for layer in added if layer.layer_id not in pe.lyid_index(psd)]
+    assert [(layer.name, layer.parent.name, layer.text) for layer in added] == [("Ability", "Text", "Attacks inflict 1T Afraid.")]
+    assert pe.stale_stories(saved) == [] and "ability: ability layer created from Creature_Template: check its place" in baked.fx_notes
+
+
 DRUID = "Creatures/World Of Warcraft/4 Stars/Warcraftian_Druid.psd"   # its title over 'Text/Name' and 'Text/Druid '
 PARTS = Path(__file__).resolve().parent / "fixtures" / "parts"
 

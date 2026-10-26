@@ -277,6 +277,8 @@ class Edit:
     removed: list = field(default_factory=list)  # old record indices of the layers a part edit deleted (gate_bytes)
     removed_stories: list = field(default_factory=list)  # their Txt2 stories' old TextIndex (gate_stories)
     renumbered: list = field(default_factory=list)  # record indices of type layers whose TextIndex moved down (gate_bytes)
+    added: list = field(default_factory=list)   # record index of a layer an added ability made (gate_bytes)
+    added_stories: list = field(default_factory=list)  # its Txt2 story's TextIndex in the new card (gate_stories)
     bar: list = field(default_factory=list)     # a stat on the card maker's own bar: (record index, _bar_spec()) per layer
 
 
@@ -6068,6 +6070,7 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
     moved = {index: (source, dx, dy) for edit in edits for index, source, dx, dy in edit.shifted}
     inserted = {index: ("copy", source, dx, dy) for edit in edits for index, source, dx, dy in edit.copied}
     inserted.update({index: ("made", blocks) for edit in edits for index, blocks in edit.made})
+    inserted.update({index: ("ability",) for edit in edits for index in getattr(edit, "added", ())})
     owner = {index: edit.field for edit in edits
              for index in [*edit.toggled, *(record[0] for record in edit.shifted + edit.copied + edit.made)]}
     bar = {index: spec for edit in edits for index, spec in edit.bar}                # a stat on the card maker's own bar
@@ -6088,9 +6091,12 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
             changed.append((i, a["name"], ["removed"]))
             i += 1
             continue
-        if b is not None and j in inserted:     # a star's copy, or a type icon made from Types/
+        if b is not None and j in inserted:     # a star's copy, a type icon made from Types/, an added ability
             spec = inserted.pop(j)
-            if spec[0] == "made":
+            if spec[0] == "ability":            # an added ability: a type layer named Ability (§4.7)
+                if b["name"] != "Ability" or bytes(Tag.TYPE_TOOL_OBJECT_SETTING) not in dict(b["blocks"]):
+                    raise Refused("bytes", f"layer {j} {b['name']!r} is not the declared Ability type layer")
+            elif spec[0] == "made":
                 blocks = dict(b["blocks"])
                 if not _pixel_record(b) or any(blocks.get(key) != data for key, data in spec[1].items()):
                     raise Refused("bytes", f"type icon {b['name']!r} is not the declared pixel layer", owner.get(j))
@@ -6155,7 +6161,8 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
         i += 1
         j += 1
     if any(dropped.values()) or added or inserted or removed or bar:
-        raise Refused("bytes", "an FX layer, star copy, type icon or deleted layer declared removed or added is not")
+        raise Refused("bytes", "an FX layer, star copy, type icon, ability or deleted layer declared removed or added "
+                               "is not")
     hidden = {index for edit in edits for index in edit.hidden}
     toggled = {index for edit in edits if edit.field in STAT_FIELDS for index in edit.records}
     if (toggled | hidden | toggles) - {index for index, _, fields in changed if fields != ["removed"]}:
@@ -6255,7 +6262,7 @@ def _story_font_name(entry, spelling: int) -> str:
     return str(getattr(entry, "value", entry))
 
 
-def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=()) -> list:
+def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), added=()) -> list:
     """
     Photoshop reads a type layer's text from its Txt2 story and rebuilds the layer's TySh from it on save, so an edit
     to TySh alone is undone the first time the card is opened (2026-10-22: B.F.B. went back to B.F.B). Every type
@@ -6270,6 +6277,8 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=()) -> 
         fonts: The faces the edits added (Edit.fonts)
         removed: TextIndex of each deleted layer (Edit.removed_stories): the old card is compared with those stories
             and their own frames taken out (_drop_story_in), the later indices one lower each
+        added: TextIndex of each added layer in the new card (Edit.added_stories): the new card is compared with those
+            stories and their own frames taken out
 
     Returns:
         The changed stories' indices (the new card's), sorted; raises Refused("bytes")
@@ -6286,12 +6295,15 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=()) -> 
         raise Refused("bytes", f"{name}'s Txt2 story holds {collapse(story)!r}, the layer {collapse(own)!r}")
     if txt2 not in before:
         return []
-    gone = sorted(set(removed))
+    gone, came = sorted(set(removed)), sorted(set(added))
 
     def renumber(i: int) -> int:
         return i - sum(1 for r in gone if r < i)
     indices = [sorted(story_index(layer) for layer in psd.descendants() if _is_text_layer(layer)
                       and story_index(layer) is not None) for psd in (old, new)]
+    if came and not set(came) <= set(indices[1]):
+        raise Refused("bytes", f"an added layer's story {came} is no type layer's")
+    indices[1] = [i - sum(1 for c in came if c < i) for i in indices[1] if i not in came]
     if [renumber(i) for i in indices[0] if i not in gone] != indices[1]:   # a layer without one is orphaned from the
         raise Refused("bytes", f"type layers' TextIndex {indices[0]} -> {indices[1]}")   # story Photoshop would read
     root_a = _txt2(old)
@@ -6300,15 +6312,20 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=()) -> 
         keys, items = _story_keys(root_a)
         for index in reversed(gone):
             _drop_story_in(root_a, keys, items, index)
-    edited = {renumber(i) for i in edited if i not in gone}
-    (objects_a, _, items_a, _, _, _), (objects_b, _, items_b, _, _, _) = _story_list(root_a), _story_list(_txt2(new))
+    root_b = _txt2(new)
+    if came:                                    # the new card with the added layers' stories taken out
+        root_b = deepcopy(root_b)
+        keys, items = _story_keys(root_b)
+        for index in reversed(came):
+            _drop_story_in(root_b, keys, items, index)
+    edited = {renumber(i) for i in edited if i is not None and i not in gone}
+    (objects_a, _, items_a, _, _, _), (objects_b, _, items_b, _, _, _) = _story_list(root_a), _story_list(root_b)
     if len(items_a) != len(items_b):
         raise Refused("bytes", f"Txt2 stories {len(items_a)} -> {len(items_b)}")
     changed = [i for i, (a, b) in enumerate(zip(items_a, items_b)) if _raw(a) != _raw(b)]
     beyond = sorted(set(changed) - set(edited))
     if beyond:
         raise Refused("bytes", f"Txt2 stories {beyond} changed: no edit there")
-    root_b = _txt2(new)
     faces_a, faces_b = _story_fonts(root_a), _story_fonts(root_b)
     if faces_a is not None and faces_b is not None and len(faces_b) > len(faces_a):
         spelling = _story_list(root_b)[5]
@@ -6457,7 +6474,16 @@ def gate_parts(parser: PSDParser, parsed: dict, rel: str, jobs: dict, old: PSDIm
             notes += _gate_icons(new, layer, old, was.get(layer.layer_id), font_map(fonts_dir), vocab, "title")
     deleted = {key for key, job in jobs.items() if job.get("delete")}
     lost = [part["layer"] for key, (_, _, part) in before.items() if key not in after and key not in deleted]
-    came = [part["layer"] for key, (_, _, part) in after.items() if key not in before]
+    came = [(key, part) for key, (_, _, part) in after.items() if key not in before]
+    if ADD_ABILITY in jobs:                     # the added Ability reads its box's text (§4.10)
+        new = [(key, part) for key, part in came if after[key][0] == "ability" and base_name(index[int(key)]) == "Ability"]
+        if len(new) != 1:
+            raise Refused("reparse", f"{len(new)} added Ability layers read as the ability")
+        reads, want = part_text(parser, index[int(new[0][0])]), jobs[ADD_ABILITY]["text"]
+        if not _part_same(reads, want, vocab):
+            raise Refused("reparse", f"the added Ability reads {reads[:60]!r}, not {want[:60]!r}")
+        came.remove(new[0])
+    came = [part["layer"] for _, part in came]
     if lost:
         notes.append(f"parts: {', '.join(map(repr, lost))} no longer read as a title or ability part: check the card")
     if came:
@@ -6875,17 +6901,17 @@ def save_png(image: Image.Image, path: str, like: Image.Image) -> None:
 def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict, parser: PSDParser, out_dir: str,
                fonts_dir: str, chart: Optional[dict] = None, update_preview: bool = True,
                types_dir: Optional[str] = None, psd: Optional[PSDImage] = None, view: Optional[int] = None,
-               template: Optional[tuple] = None) -> Baked:
+               template: Optional[tuple] = None, ability_from: Optional[tuple] = None) -> Baked:
     """
     _apply_jobs, as picture `view` of a card with variant tags shows it (variant(): its edits, renders, merge onto
     that picture's PNG png_path and its content gates; parsed is that picture's parse), the saved PSD keeping its own
     eye flags. view None: the card as saved. template: plan_types'. rel: where the card will be (a stars edit moves
-    a card into its "N Stars" folder: its re-parse reads the stars there).
+    a card into its "N Stars" folder: its re-parse reads the stars there). ability_from: set_parts' (a "+ability" job).
     """
     hold = ExitStack()
     try:
         return _apply_jobs(psd_path, png_path, rel, jobs, parsed, parser, out_dir, fonts_dir, chart, update_preview,
-                           types_dir, psd, view, hold, template)
+                           types_dir, psd, view, hold, template, ability_from)
     finally:
         hold.close()
 
@@ -6893,7 +6919,8 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
 def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict, parser: PSDParser, out_dir: str,
                 fonts_dir: str, chart: Optional[dict] = None, update_preview: bool = True,
                 types_dir: Optional[str] = None, psd: Optional[PSDImage] = None, view: Optional[int] = None,
-                hold: Optional[ExitStack] = None, template: Optional[tuple] = None) -> Baked:
+                hold: Optional[ExitStack] = None, template: Optional[tuple] = None,
+                ability_from: Optional[tuple] = None) -> Baked:
     """
     Apply a card's jobs, render the changed region, delta-merge the PNG, save and run every gate.
 
@@ -6983,7 +7010,8 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
                                         old))
         elif name == "parts":                   # one box per layer (PARTS_EDITOR.md §4.4-4.6)
             record = card_parts(old, rel, _card_name(parsed), parser)
-            edits += set_parts(new, value, record, fonts_dir, chart, _card_name(parsed), _own_text(parsed), parser, old)
+            edits += set_parts(new, value, record, fonts_dir, chart, _card_name(parsed), _own_text(parsed), parser, old,
+                               ability_from)
         else:
             raise Refused("unsupported-card", f"{name}: not yet")
     others = [edit for edit in edits if edit.field not in ICON_FIELDS and (edit.layers or edit.removed)]
@@ -7061,7 +7089,8 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     stories = {story for edit in edits if edit.field in TEXT_FIELDS for story in [edit.story, *edit.stories]}
     gate_stories(old, reopened, stories | repaired,
                  [face for edit in edits for face in edit.fonts],
-                 [index for edit in edits for index in edit.removed_stories])
+                 [index for edit in edits for index in edit.removed_stories],
+                 [index for edit in edits for index in edit.added_stories])
     reparse = gate_reparse(parser, parsed, new_psd, rel, jobs, reopened, edits, flags)
     if "parts" in jobs:
         flags += gate_parts(parser, parsed, rel, jobs["parts"], old, reopened, fonts_dir)
@@ -7087,6 +7116,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
 GONE = "the layer is gone from the PSD (deleted or remade in Photoshop since this edit): redo it on the website if still wanted"
 CHANGED = "changed in Photoshop since this edit: redo it on the website if still wanted"
 ADDED_LATER = "an added Ability layer (from the template) is not built yet: it waits"
+ADD_ABILITY_LIVE = False    # +ability bakes once the owner has opened the test PSDs in Photoshop (§10 step 6)
 HAS_ABILITY = "the card has an Ability layer now (added in Photoshop): redo it on the website"
 PART_KINDS = (("ability", "ability"), ("title", "name"), ("blocks", "ability"))   # record key -> field, in bake order
 
@@ -7181,9 +7211,13 @@ def plan_parts(psd: PSDImage, parsed: dict, parts: dict, parser: Optional[PSDPar
         if key == ADD_ABILITY:
             if record.get("ability"):
                 skip(key, edit, HAS_ABILITY)
-            else:
+            elif not ADD_ABILITY_LIVE:
                 plan.outcome[key] = "waiting"
                 plan.notes.append(f"ability: {ADDED_LATER}")
+            elif template_for(parsed["card"].get("type"), rel) is None:
+                plan.refusals.append(Refusal("unsupported-card", "ability: no template for this kind of card"))
+            else:
+                plan.jobs[key] = edit
             continue
         layer = index.get(int(key))
         if layer is None:
@@ -7305,7 +7339,8 @@ def _combine(which: str, edits: list, subs: list, psd: PSDImage, olds: dict, new
 
 
 def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Optional[dict] = None, card: str = "",
-              own_text: bool = True, parser: Optional[PSDParser] = None, original: Optional[PSDImage] = None) -> list:
+              own_text: bool = True, parser: Optional[PSDParser] = None, original: Optional[PSDImage] = None,
+              ability_from: Optional[tuple] = None) -> list:
     """
     Bake a card's part jobs (plan_parts) on the open card (§4.4-4.6): the deletions first (remove_layer: the layer, its
     visible FX layers and copies, its story), then each ability part, title part and rule-page block set as one text
@@ -7318,9 +7353,10 @@ def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Op
         jobs: plan_parts().jobs
         record: card_parts() of the card as opened
         original: The card before the bake's edits (set_text_layer's; record ids and story indices of what is deleted)
+        ability_from: (the card kind's template, its name): template_for's, for a "+ability" job (added last)
 
     Returns:
-        One Edit per field ("ability" then "name"); raises Refused as set_text_layer does
+        One Edit per field ("ability" then "name"), then the added ability's; raises Refused as set_text_layer does
     """
     found, index = record_parts(record), lyid_index(psd)
     was_index = lyid_index(original) if original is not None else index
@@ -7431,6 +7467,53 @@ def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Op
         out.append(_combine(which, edits, subs, psd, {key: found[key][2]["text"] for key in mine},
                             {key: jobs[key].get("text") for key in mine}, extra, extra_stories, info["removed"],
                             info["stories"], info["moved"], info["boxes"], notes))
+    if ADD_ABILITY in jobs:                     # scheduled last (§4.7)
+        if ability_from is None:
+            raise Refused("unsupported-card", "ability: no template to add the Ability layer from")
+        out.append(add_ability(psd, jobs[ADD_ABILITY]["text"], *ability_from, fonts_dir, chart, card, own_text, parser,
+                               original))
+    return out
+
+
+def insert_ability(psd: PSDImage, template: PSDImage):
+    """
+    The template's visible Ability type layer copied into the card (§4.7, the fork's copy_to: its box, font, size and
+    Txt2 story, its fonts merged): at the top of the card's Text group (the root when there is none), named Ability,
+    a fresh layer id. A card whose canvas is not its template's is impossible (none, 2026-10-25).
+
+    Returns:
+        The new layer
+    """
+    if (psd.width, psd.height) != (template.width, template.height):
+        raise Refused("unsupported-card", f"ability: the card's canvas {psd.width}x{psd.height} is not its template's "
+                                          f"{template.width}x{template.height}")
+    source = next((layer for layer in template.descendants() if _is_text_layer(layer) and layer.is_visible()
+                   and base_name(layer).strip().lower() == "ability"), None)
+    if source is None:
+        raise Refused("unsupported-card", "ability: the template has no visible Ability layer")
+    group = _text_group(psd)
+    layer = source.copy_to(group if group is not None else psd)
+    layer.name = "Ability"
+    return layer
+
+
+def add_ability(psd: PSDImage, text: str, template: PSDImage, name: str, fonts_dir: str, chart: Optional[dict] = None,
+                card: str = "", own_text: bool = True, parser: Optional[PSDParser] = None,
+                original: Optional[PSDImage] = None) -> Edit:
+    """A "+ability" job: insert_ability, then the text set as any ability's (set_text_layer), flagged. Its record and
+    story are declared added (gate_bytes, gate_stories), the faces the Txt2 FontSet gained in Edit.fonts."""
+    faces = lambda: [_story_font_name(entry, _story_list(_txt2(psd))[5]) for entry in _story_fonts(_txt2(psd)) or []] \
+        if _txt2(psd) is not None else []
+    before = faces()
+    layer = insert_ability(psd, template)
+    story = story_index(layer)
+    raw = text.replace("\r\n", "\n").replace("\r", "\n").strip("\n").replace("\n", "\r")
+    edit = set_text_layer(psd, "ability", raw, fonts_dir, chart, card, own_text, parser, original, layer=layer)
+    edit.story = None                           # a new story: gate_stories takes it out (added_stories)
+    out = _combine("ability", [(layer, edit, False)], [_record_ids(psd)], psd, {}, {ADD_ABILITY: text},
+                   notes=[f"ability: ability layer created from {name}: check its place"])
+    out.added, out.added_stories = [_record_index(layer)], [story]
+    out.fonts = list(dict.fromkeys(faces()[len(before):] + out.fonts))
     return out
 
 
