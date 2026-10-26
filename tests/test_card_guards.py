@@ -22,6 +22,7 @@ import commands.card_guards as cg
 import commands.git_commit as gc
 import commands.png_export as pe
 from commands.github_api import blob_sha
+from conftest import CLONE
 from helpers import art, card, fixture_psd, photoshop_png
 
 # ========================
@@ -931,7 +932,7 @@ def test_guard_modules_stay_uncompiled():
 
 
 def _workflow(clone) -> Path:
-    site = Path(os.path.expanduser(os.environ.get("AC_SITE_SRC") or str(clone)))       # a TTSCardMaker checkout
+    site = Path(os.path.expanduser(os.environ.get("AC_SITE_SRC") or str(CLONE)))       # a TTSCardMaker checkout (code, not cards)
     path = WORKFLOW or (site / ".github" / "workflows" / "card-guards.yml")
     if not path.exists():
         pytest.skip(f"no {path} (set CARD_GUARDS_YML to a TTSCardMaker checkout's file, or AC_SITE_SRC to the checkout)")
@@ -1513,3 +1514,15 @@ def test_box_text_fonts_fetched_alone(tmp_path, monkeypatch):
     vocab = type("V", (), {"parser": lambda self: None})()
     cg._init_worker(str(tmp_path / "clone"), "o/r", None, vocab, tree, str(tmp_path / "fonts"))
     assert cg._worker["source"].checked == tree and cg._worker["source"].fonts == str(tmp_path / "fonts")
+
+
+def test_pool_size(monkeypatch):
+    """K-2: every core on a runner; locally half the cores, at most POOL_MAX; never more than the cards."""
+    monkeypatch.setattr(cg, "cpu_count", lambda: 12)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    assert (cg.pool_size(12), cg.pool_size(3)) == (4, 3)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setattr(cg, "cpu_count", lambda: 4)
+    assert (cg.pool_size(12), cg.pool_size(3)) == (4, 3)
+    monkeypatch.setattr(cg, "cpu_count", lambda: 2)
+    assert cg.pool_size(12) == 2

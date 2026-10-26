@@ -127,14 +127,13 @@ def _plan(parser, path, rel, field, value):
 
 
 def _clone_card(clone, rel, tmp_path) -> tuple:
-    source = clone / rel
-    if not source.exists() or not Path(str(source)[:-4] + ".png").exists():
+    source, png = clone / rel, clone / (rel[:-4] + ".png")
+    if not source.exists() or not png.exists():
         pytest.skip(f"{rel} not in the clone")
     (tmp_path / "old").mkdir(exist_ok=True)
-    psd, png = tmp_path / "old" / source.name, tmp_path / "old" / (source.stem + ".png")
-    copy(source, psd)
-    copy(str(source)[:-4] + ".png", png)
-    return str(psd), str(png)
+    copy(source, tmp_path / "old" / source.name)
+    copy(png, tmp_path / "old" / png.name)
+    return str(tmp_path / "old" / source.name), str(tmp_path / "old" / png.name)
 
 
 # ========================
@@ -310,14 +309,13 @@ def test_gate_outside_refuses_a_change_beyond_the_region(tmp_path):
 
 
 @icons
-def test_a_new_icon_goes_above_the_clip_chain_and_takes_it(parser, tmp_path):
+def test_a_new_icon_goes_above_the_clip_chain_and_takes_it(parser, clone, tmp_path):
     """Mini Doomer's Wind has a Curves clipped to it: a Fire beside it goes above that Curves (else Wind would lose it
     to Fire, outside Fire's box: gate_outside's catch) and gets a copy clipped to itself."""
-    from conftest import CLONE
     rel = "Auxiliary/Minions/Mini_Doomer.psd"
-    paths = _clone_card(CLONE, rel, tmp_path) if (CLONE / rel).exists() else pytest.skip("no clone")
+    paths = _clone_card(clone, rel, tmp_path)
     _, baked = _bake(parser, paths, {"types": ["wind", "light", "defensive_minion", "fire"]}, tmp_path, rel,
-                     str(CLONE / "Types"))
+                     str(clone / "Types"))
     row = [(layer.name, layer.clipping) for layer in next(layer for layer in PSDImage.open(baked.psd_path).descendants()
                                                          if layer.name == "fire").parent]
     assert row[:4] == [("wind", False), ("Curves 1 copy", True), ("fire", False), ("Curves 1 copy", True)]

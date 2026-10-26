@@ -6,7 +6,7 @@ import socket
 import sys
 import types
 from importlib.util import find_spec
-from os import cpu_count, environ
+from os import cpu_count, environ, getpid
 from os.path import expanduser
 from pathlib import Path
 
@@ -17,9 +17,13 @@ import pytest
 # ========================
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
-from global_config import DATA_BRANCH, LOCAL_DIR_LOC, REMIND_JSON  # noqa: E402
+from global_config import LOCAL_DIR_LOC, REMIND_JSON  # noqa: E402
 
-CLONE = Path(expanduser(LOCAL_DIR_LOC))                  # PSD tests skip without it; its origin/data holds the live card data
+CLONE = Path(expanduser(LOCAL_DIR_LOC))                  # the card repo checkout: its objects (and its site code)
+CARDS_REV = "a4d137bf06cd372649090a32644023abee8719ea"   # the card repo commit real-card tests read (re-pin: tests/make_goldens.py)
+HISTORY = Path(expanduser("~/Documents/Tools/wt/scratch/tc-history.git"))   # full history (no blobs) for revs the clone lacks
+PINNED = Path(expanduser("~/.cache/autocroissant-tests"))                   # the pinned trees, one per CARDS_REV
+PINNED_BASE = ("Types", "MDW/Fonts", "MDW/Croissant's Special Folder/Satus Effect Colors.psd", "site/Card Edits.json")
 LIVE = (REMIND_JSON,)                                    # the checkout's reminder store, never written by a test
 GIT_CONFIG = {"core.hooksPath": "/dev/null",              # no machine hooks in fixture repos
               "core.looseCompression": "0"}               # fixture repos of real PSDs: no zlib on every add
@@ -121,6 +125,96 @@ def salt_font(clone) -> bool:
 def no_lazy() -> dict:
     """git's env for reading the blobless Desktop clone: a missing blob fails instead of being fetched from GitHub."""
     return {**environ, "GIT_NO_LAZY_FETCH": "1"}
+
+
+class Pinned(type(Path())):
+    """The card repo at CARDS_REV: `pinned / rel` writes rel (a file or a folder) from the pin on first use."""
+    batch = None                                          # this process's git cat-file --batch
+    done: set = set()                                     # folders written by this process
+
+    def __truediv__(self, key):
+        path = super().__truediv__(key)
+        _materialize(self, path.relative_to(self).as_posix())
+        return Path(path)
+
+
+def _blob(root: Path, spec: str):
+    """(type, bytes) of rev:path through one cat-file --batch per process; None when the pin has no such path."""
+    import subprocess
+    if Pinned.batch is None:
+        Pinned.batch = subprocess.Popen(["git", "-C", str(root), "cat-file", "--batch"], stdin=subprocess.PIPE,
+                                        stdout=subprocess.PIPE, env=no_lazy())
+    pipe = Pinned.batch
+    pipe.stdin.write(spec.encode() + b"\n")
+    pipe.stdin.flush()
+    head = pipe.stdout.readline().split()
+    if head[-1] == b"missing":
+        if subprocess.run(["git", "-C", str(root), "rev-parse", "-q", "--verify", spec], capture_output=True).returncode == 0:
+            raise RuntimeError(f"{spec} is in the pin's tree, but neither {CLONE} nor {HISTORY} has its blob")
+        return None
+    data = pipe.stdout.read(int(head[2]))
+    pipe.stdout.read(1)
+    return head[1].decode(), data
+
+
+def _write(path: Path, data: bytes) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(f".{path.name}.{getpid()}")
+    temp.write_bytes(data)
+    temp.replace(path)                                    # xdist workers write the same bytes
+
+
+def _materialize(root: Path, rel: str) -> None:
+    import subprocess
+    root = Path(root)                                     # plain paths: no recursion
+    path = root / rel
+    if path.is_file() or rel in Pinned.done or rel in ("", "."):
+        return
+    found = _blob(root, f"{CARDS_REV}:{rel}")
+    if found is None:
+        return                                            # not in the pin: the test sees no file
+    kind, data = found
+    if kind == "blob":
+        return _write(path, data)
+    listing = subprocess.run(["git", "-C", str(root), "ls-tree", "-r", "-z", "--name-only", CARDS_REV, "--", rel],
+                             capture_output=True, check=True, env=no_lazy()).stdout.decode()
+    for each in filter(None, listing.split("\0")):
+        if not (root / each).is_file():
+            _write(root / each, _blob(root, f"{CARDS_REV}:{each}")[1])
+    Pinned.done.add(rel)
+
+
+def pinned_clone() -> Pinned:
+    """A git repo on the clone's objects (and the history clone's) at CARDS_REV, files written on first use."""
+    import shutil
+    import subprocess
+    root = Pinned(PINNED / CARDS_REV[:12])
+    if not Path(root, ".git", "index").exists():
+        temp = PINNED / f".{CARDS_REV[:12]}.{getpid()}"
+        shutil.rmtree(temp, ignore_errors=True)
+        subprocess.run(["git", "init", "-q", str(temp)], check=True)
+        stores = [p / "objects" for p in (CLONE / ".git", HISTORY) if (p / "objects").is_dir()]
+        (temp / ".git" / "objects" / "info" / "alternates").write_text("".join(f"{p}\n" for p in stores))
+        (temp / ".git" / "HEAD").write_text(CARDS_REV + "\n")
+        if subprocess.run(["git", "-C", str(temp), "read-tree", CARDS_REV], capture_output=True, env=no_lazy()).returncode:
+            shutil.rmtree(temp, ignore_errors=True)
+            pytest.skip(f"neither {CLONE} nor {HISTORY} has the card repo at {CARDS_REV[:8]}")
+        try:
+            temp.rename(root)
+        except OSError:                                   # another worker made it
+            shutil.rmtree(temp, ignore_errors=True)
+    for rel in PINNED_BASE:                               # what the code under test reads straight from disk
+        _materialize(root, rel)
+    return root
+
+
+def smallest(clone: Pinned, folder: str, n: int) -> list:
+    """The folder's n smallest card PSDs at the pin (written out): a fast parse."""
+    import subprocess
+    listing = subprocess.run(["git", "-C", str(clone), "ls-tree", "-r", "-l", "-z", CARDS_REV, "--", folder],
+                             capture_output=True, check=True, env=no_lazy()).stdout.decode().split("\0")
+    sized = sorted((int(line.split()[3]), line.split("\t", 1)[1]) for line in listing if line.endswith(".psd"))
+    return [clone / rel for _, rel in sized[:n]]
 
 
 def at_rev(clone, rev: str, rel: str) -> bytes:
@@ -282,25 +376,11 @@ def offline(monkeypatch, tmp_path):
 
 
 @pytest.fixture(scope="session")
-def real_stats():
-    """The live card data: db/stats.json on the card repo clone's origin/data (fetch it to refresh), in a StatsDatabase."""
-    import subprocess
-    done = subprocess.run(["git", "-C", str(CLONE), "show", f"origin/{DATA_BRANCH}:db/stats.json"], capture_output=True,
-                          env=no_lazy())
-    if done.returncode != 0:
-        pytest.skip(f"no origin/{DATA_BRANCH}:db/stats.json in {CLONE}")
-    import commands.card_db as cdb
-    import commands.card_models as cm
-    db = cm.StatsDatabase()
-    db.stats = cdb.parse_stats(done.stdout.decode("utf-8"))
-    return db
-
-
-@pytest.fixture(scope="session")
 def clone():
-    if not (CLONE / "Types").is_dir():
+    """The card repo at CARDS_REV (pinned_clone), so card pushes never move a test."""
+    if not (CLONE / ".git").exists():
         pytest.skip(f"no card repo clone at {CLONE}")
-    return CLONE
+    return pinned_clone()
 
 
 def pytest_xdist_auto_num_workers(config):

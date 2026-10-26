@@ -468,7 +468,7 @@ burst (the environment `card-sync-quiet`'s wait timer, a TTSCardMaker repo setti
 | `CHANGES_DISCORD`, `CHANGES_COMMENT` | `120`, `600` | characters of a card's changes on Discord and in the commit comment |
 | `QUIET_MARGIN` | 60 s | `land` waits card_bake's `RECENT` plus this after the push |
 | `ANCHOR_WINDOW` | 2 h | in a burst, PSD commits this close to the push may stand in for its PNG's PSD |
-| `POOL_MIN`, `POOL_MAX` | `8`, `4` | from this many cards the checks run in a process pool of half the cores, at most this many (2026-10-25: each runs git; 2 on the 4-core runners); `--workers N` overrides |
+| `POOL_MIN`, `POOL_MAX` | `8`, `4` | from this many cards the checks run in a process pool: every core on a GitHub runner (`GITHUB_ACTIONS`, K-2 experiment 2026-10-25; revert: drop that branch of `pool_size`), else half the cores, at most POOL_MAX (each runs git); `--workers N` overrides |
 | `TELL_PNG_MISMATCH` | `False` | R10 and "current but outside the bar" stay off Discord |
 | `card_standards.AUTO_FIX` | `("R9",)` | what the bot fixes itself (the Txt2 story); everything else is told |
 | `card_standards.LINE_IOU` | `0.9` | R8 (the Single-line Composer, always set and never told since 2026-10-25): a box text line inked under this share of the stored one rewraps, so the layer is redrawn and the guards re-export its PNG; no longer a bar to the switch |
