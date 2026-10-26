@@ -245,7 +245,8 @@ commits-API lookups and the one-time history cleanup, `card_data.update`); that 
 The Tabletop Simulator save lives in the card repo at `TTS/Impossibility Simulator.json` (`TTS_SAVE_PATH`).
 commands/tts_save.py updates it: image links pinned to commit shas, renames followed, missing cards added to
 complete decks (an empty one filled from a template card at its own Transform), new cards added to hand-picked decks
-with `add_new_since`, Nicknames set to the website's names, the Lua resizeTargets table regenerated. An existing card's
+with `add_new_since`, Nicknames set to the website's names (each variant picture by its own PNG since 2026-10-25,
+`tts_save.db_names`: A_Snack.png had read "Supper"), the Lua resizeTargets table regenerated. An existing card's
 Description, GMNotes, Memo, Tags and scripts are the team's: never changed (role tags were cleared once, until
 2026-10-22); new cards start with them empty.
 
@@ -393,6 +394,14 @@ The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes 
   are re-set, so the rest keeps Photoshop's own ink. An edit takes the colour and style of what it replaces, part by part.
   A stat bar with a digit mask wholly off the canvas (Green Mage's four bars, the only ones) refuses `unsupported-card`
   as a final verdict; it was an `error` that failed the run until work/bake-verdicts (2026-10-23).
+- **Census fixes (2026-10-25, 1b17aba; deployed at 8b0ce02):** a stars edit moves a card out of any "N Stars" folder,
+  debuffs too (`psd_edit.STAR_PATH`), except the folders whose stars come from the PSD; a copied smart object's star
+  IDs are derived, so star edits on a PSD with several pictures bake; a type icon touching the title at the template's
+  first spot bakes, flagged; an edited split title keeps its pieces (`PSDParser._named_pieces`); a hidden star layer
+  of another size (Toy Freddy's 'star test') is no star of the row.
+- **`+ability` (2026-10-25, f92fb5e; built, off):** an ability added on the website to a card with no Ability layer
+  makes one from the card kind's template (`psd_edit.insert_ability`/`add_ability`), flagged. Off while
+  `psd_edit.ADD_ABILITY_LIVE` is False: the edit waits. Live at the next Card sync run after the flip.
 - **Ability FX layers (BUG 2, work/fx-rebuild, landed 2026-10-24):** an ability bake makes the card's `Ability FX: ...`
   layers again as Effect Layers.jsx's Update all does (badge layers apart: retired 2026-10-25, deleted, told): each cut in place over
   its words' new places, its own style and place kept (q6); a status layer stays on its status's own words (a numbered
@@ -861,3 +870,5 @@ rendered anyway; no cited line moved.
 2026-10-25 (clean, work/clean): the card and font checks as steps of card-guards.yml's check job; R8 always set, rewraps redrawn; the reminder.pkl conversion, the fonts_cache row and the deploy window removed.
 
 2026-10-25 (cardlist, work/cardlist): `card_tree.json` (B-3a): the card list from the saved tree at startup, `init_query` run by `init_psd` after its sync (on_ready queues four inits); the startup output, the init table and the artifacts table; `init_query` runs even when `init_psd` fails.
+
+2026-10-25 (wrap-up): section 7's TTS save names each variant picture by its own PNG; the bake's census fixes bullet.

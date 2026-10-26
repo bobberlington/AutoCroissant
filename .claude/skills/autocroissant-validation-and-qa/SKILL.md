@@ -345,7 +345,9 @@ parser, so they are PSD edits newer than the bot's last sweep. This is the measu
 never reaches the stored cards by itself. When it must (a new field, a changed reading of the same bytes), bump
 `PARSER_VERSION` in `commands/psd_parser.py` (every parse stamps `CardInfo.parser_version`): the next Card sync sees
 every stored card stamped older and re-parses them all once (~813 PSDs over budgeted runs; gate G4 wants the approval,
-`/update_stats force_update` or a `full` dispatch; no history: the blobs are unchanged), then goes quiet again. Version 2 (the printed title) is the first bump. The gate for such a change is this section's method A with
+`/update_stats force_update` or a `full` dispatch; no history: the blobs are unchanged), then goes quiet again. Version 2 (the printed title) is the first bump; 3 (a PSD's pictures, d6d2f5e) and 4 (the census
+fixes, 1b17aba) followed on 2026-10-25, and 4's full re-parse changed only Pike Beam's stars (3 -> 2) and Leeroy Jenkins'
+title (data 122f9065, 7c52c2b5). The gate for such a change is this section's method A with
 the intended differences written down beforehand; on 2026-10-21 that was exactly 157 `display_name` additions and 2
 `STATS TOO HIGH` (Sonic spd 20, Royal Eradicator Main Cannon atk 12, both allowed by `allow_high_stats` in the edits
 file, so the live validation stays at the section 2 baselines). A change that reads a handful of cards differently needs
@@ -463,7 +465,7 @@ re-verification below disagrees with this file, the repo wins; update this file
 | `update_stats` signature (force_update=False; cards=""; no local options since 2026-10-20; repo_traverser.py gone 2026-10-25) | `grep -n -A4 "def update_stats" commands/card_sync.py main.py` |
 | Exclusion-list size (21; no stat list) | `~/.venvs/ac-py314-fork/bin/python -c "import sys; sys.path.insert(0,'.'); from commands.psd_analyzer import CardValidator as V; print(len(V.ABILITY_EXCLUSIONS), hasattr(V, 'EXCESSIVE_STAT_EXCLUSIONS'))"` (21 False) |
 | Exclusion-list definition & line (1056) (2026-10-23) | `grep -n "ABILITY_EXCLUSIONS: set" commands/psd_parser.py` |
-| `PARSER_VERSION` (2) and its stamp, re-parse and ETag bypass (psd_parser.py:22, :352; card_data.py:220, :247) (2026-10-21) | `grep -n "PARSER_VERSION" commands/psd_parser.py commands/card_data.py commands/card_models.py` |
+| `PARSER_VERSION` (4) and its stamp, re-parse (psd_parser.py:24, :452; card_data.py:144) (2026-10-25) | `grep -n "PARSER_VERSION" commands/psd_parser.py commands/card_data.py commands/card_models.py` |
 | Printed title read into `display_name` (psd_parser.py:409, `_printed_title` :422) (2026-10-21) | `grep -n "_printed_title\|^def title_text" commands/psd_parser.py` |
 | Parse-time problem sites (404, 486; icon problems 593-625) (2026-10-20) | `grep -n "card.problems.append\|_add_problem(card" commands/psd_parser.py` |
 | validate() mutation of card.problems (947-949) (2026-10-20) | `grep -n "NO ABILITY LAYER" commands/psd_parser.py` |
@@ -534,3 +536,5 @@ card-sync dispatch with `cards`, review of the same day).
 2026-10-25 ("Destroy" update): TTSCardMaker 19db3675 reworded Mini Doomer (`(BOT) Die.` -> `(BOT) Destroy this
 creature.`) and The Lich King's middle lines; both re-pinned with `tests/make_goldens.py` (blobs 764b6a06 -> 563305eb,
 c69f7c24 -> 0640adac). Only the ability text changed; types, stars, stats, alt_names and the validator are as before.
+
+2026-10-25 (wrap-up): `PARSER_VERSION` 4 (§4 rule, its provenance row; 4's re-parse changed two cards).
