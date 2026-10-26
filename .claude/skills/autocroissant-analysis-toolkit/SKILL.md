@@ -405,7 +405,7 @@ the tick is ~99% of /query's bot-side time; a reminder takes 2 hops (~1 s). An a
 result (85 per /query_ability on average, median 15, max 763), all through the one dispatch loop; idle cost of the
 1 s loops was 0.33 ms CPU/s. **Changed 2026-10-21** (owner decisions, archaeology 10.30): the drains tick every 0.1 s, so
 the queue bound is ≤ ~100 ms per hop and ≤ ~200 ms for a reminder's two hops. /query_ability listed cards 10 per
-message from then until 2026-10-23, when it went back to one message per card (Discord previews only a few images per message). Idle cost of the four loops (`docs/Finished/optimization-pass-2026-10-20/bench/idle.py` on a snapshot, 10 s, no Discord): 1.29 ms CPU/s with 0
+message from then until 2026-10-23, when it went back to one message per card (Discord previews only a few images per message); since 2026-10-25 two or more cards come as grid images, 20 per message (archaeology 10.30). Idle cost of the four loops (`docs/Finished/optimization-pass-2026-10-20/bench/idle.py` on a snapshot, 10 s, no Discord): 1.29 ms CPU/s with 0
 reminders, 1.53 with 200; 2 threads alive. **Changed 2026-10-25** (B-1, wake on enqueue): simulated with the real
 loops and fake channels (`~/Documents/Tools/wt/scratch/opt/bot/instant/sim_instant.py`, results.jsonl and idle.txt there):
 reply hop 48-51 ms mean / 93-96 ms p95 → 0.4-1.0 ms / 1.2-2.9 ms; two hops 150 ms → 0.6-1.1 ms; the four loops' idle
@@ -582,3 +582,5 @@ baselines 0 stored / 1 full (Computer Virus), old_stats 193,937 B at a7c310e, an
 2026-10-25 (step 10, work/pickles): the pickles left the working tree: the why-paragraph, ground rules and jargon say so; Recipe 4 is marked history (the build budgets itself); Recipe 6 reads the pickles from git history and the JSON alike.
 
 2026-10-25 (B-1, work/instant): Recipe 5 re-derived for the wake-on-enqueue drains (milliseconds per hop, 1 s fallback); simulation numbers added.
+
+2026-10-25 (grid): Recipe 5: /query_ability grids.

@@ -299,6 +299,8 @@ main.py  (registration + queue loops; imports every commands module)
  |                            LAZILY (init_psd) [2026-10-22; NOT compiled]
  |- commands.psd_analyzer  -> the three above, query_card, github_api, utils, pandas: the FACADE. Re-exports every card name, holds the
  |                            metadata/export commands and init_psd. Code outside imports card classes from HERE only.
+ |- commands.card_grid     -> PIL, requests ONLY: grid images of many cards, the card_images/ cache (query_card LAZILY)
+ |                            [2026-10-25; NOT compiled; no discord]
  |- commands.frankenstein  -> utils, query_card (card_repo)
  '- commands.update_bot    -> repo_history (batch_overrides);
                               GitPython LAZILY inside its functions  (no utils: bypasses queues on purpose, invariant 3)
@@ -404,10 +406,11 @@ optimization pass.
    heartbeat). Simulated with the real loops on the Mac (`~/Documents/Tools/wt/scratch/opt/bot/instant/`): reply hop
    50 ms mean / 95 ms p95 before, 0.4-1.0 ms / 1-3 ms after; the four loops' idle CPU 1.67 → 0.54 ms/s. /query_ability
    listed name and image link 10 per message from 2026-10-21 until the owner reverted it on 2026-10-23
-   (Discord previews only a few images per message): it sends one message per card again, the image URL alone
-   (archaeology 10.30; `docs/Finished/optimization-pass-2026-10-20/profile.md` items 1-2). What remains:
-   the dispatch loop awaits sends one after another, so a big result set (`limit` caps it) holds other
-   replies behind it.
+   (Discord previews only a few images per message): it sent one message per card again, the image URL alone.
+   Since 2026-10-25 (branch work/grid) two or more cards come as grid images (commands/card_grid.py, uncompiled: 20
+   numbered cards per JPEG, each with its list of names linking to /c/<slug>/, one message per grid; one card is still
+   its image link): 'damage' 188 sends → 10. The pictures are downloaded once per PNG blob into `card_images/`
+   (gitignored; only from a commit-pinned link, a branch link's CDN can lag: fetched uncached), 4 at a time, in the query's worker thread (archaeology 10.30; `docs/Finished/optimization-pass-2026-10-20/profile.md` items 1-2).
 11. **(Gone 2026-10-25) Pickle saves.** The bot writes no card data; its copy in `card_data/` is replaced file by file
    atomically by `card_db.sync` (temp file, fsync, `os.replace`; the manifest and `sync.json` last, so a cut-off sync
    is reloaded whole by the next; archaeology 10.29 for the pickle era).
@@ -544,3 +547,5 @@ prompts; every main.py, card_models.py, query_card.py, card_data.py and update_b
 2026-10-25 (B-1, work/instant): the drains wake on enqueue (`Wake`, `call_soon_threadsafe`, 1 s fallback poll) instead of
 the 0.1 s tick; `_stop_loops()`; the execution model, the queue trio, WHY #3, invariants 3 and 7, data flows (a) and (c),
 weak point 10 and the re-verify rows updated; main.py and utils.py citations re-pointed.
+
+2026-10-25 (grid): weak point 10: /query_ability answers two or more cards with grid images (commands/card_grid.py in the module map; the wrapper defers).

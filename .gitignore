@@ -43,6 +43,8 @@ type_emojis.json
 type_emojis.json.tmp
 # the bot's copy of the card data (the data branch's db/) after the cutover (commands/card_sync.py)
 card_data/
+# card pictures for /query_ability's grids, by PNG blob (commands/card_grid.py)
+card_images/
 
 # Music downloads
 music/

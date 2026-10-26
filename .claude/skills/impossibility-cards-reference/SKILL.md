@@ -705,8 +705,11 @@ gotcha-4 unknown-field error; `series==mario & subseries~door` is the website's 
    spacing over `rulebook_dff`, no DSL — query_card.py:410). It posts the matching LINES under their page names
    (`rulebook_lines` :1112; long lines cut to SNIPPET around the match, the match in bold outside emoji markup), the
    pages with the most lines first, whole pages per message. 48 pages today.
-10. Each result posts its image URL alone, one message per card (a preview, via `get_card_url`; its name when the PNG
-    is not in the tree). From 2026-10-21 to 2026-10-23 they were listed as `<name> — <url>` lines, 10 per message;
+10. One result posts its image URL alone (a preview, via `get_card_url`; its name when the PNG is not in the tree).
+    Two or more come as grid images since 2026-10-25 (`post_grids`, commands/card_grid.py): 20 cards per JPEG (4 x 5,
+    300 px wide, numbered and named under each), one message per grid listing `**n.** [name](<site /c/<slug>/>)`, the
+    count first and "Displayed ..." with the website button last. From 2026-10-21 to 2026-10-23 they were listed as
+    `<name> — <url>` lines, 10 per message, then one message per card;
     `howmany:True` returns just the count; `limit` caps output (main.py:313-328).
 
 ## 8. When NOT to use this skill
@@ -791,3 +794,5 @@ change, sections 4-5 are stale until rewritten.
 2026-10-25 (retire): /update_metadata, /mass_replace, /alias and the alias migration CLI retired (branch archive/discord-edits); name_choices lost old=/cards=.
 
 2026-10-25 (step 10, work/pickles): the intro and §6 describe the card data (db/ JSON records, card_db) and list the pickles as history.
+
+2026-10-25 (grid): §7.2 gotcha 10: two or more results come as grid images.
