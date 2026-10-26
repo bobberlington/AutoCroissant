@@ -404,12 +404,16 @@ def test_website_only_fields(bs, tmp_path, monkeypatch):
 
 
 def test_parser_notes_answered_as_the_bot_does(bs):
-    """build_site.FIXED_BY is card_edits.FIXED_BY: a stat edit answers NO STATS FOUND on the website too (B3, 2026-10-26)."""
+    """build_site's FIXED_BY and FIXED_BY_ALL are card_edits': NO STATS FOUND stays until all four stats or creatures are
+    edited, so the Parse problems filter keeps a card with a stat still unread (B3, 2026-10-26)."""
     from commands.card_edits import CardEdits
     from commands.psd_parser import NO_STATS
-    assert bs.FIXED_BY == CardEdits.FIXED_BY
+    assert (bs.FIXED_BY, bs.FIXED_BY_ALL) == (CardEdits.FIXED_BY, CardEdits.FIXED_BY_ALL)
     note = f"{NO_STATS}: no HP, DEF, ATK or SPD bars read on this creature"
-    for fields, left in (({"note": "n"}, [note]), ({"hp": 6}, []), ({"creatures": [{"hp": 6, "def": 2, "atk": 3, "spd": 4}]}, [])):
+    four = {"hp": 6, "def": 2, "atk": 3, "spd": 4}
+    for fields, left in (({"note": "n"}, [note]), ({"hp": 6}, [note]), ({**four, "spd": None}, [note]), (four, []),
+                         ({"creatures": [four]}, [])):
+        assert bs.answered(fields) == CardEdits.answered(fields), fields
         card = {"key": "Computer_Virus", "name": "Computer Virus", "type": "creature", "problems": [note]}
         bs.apply_edits(card, {"computer virus": (fields, {})}, shown="Computer Virus")
         assert card["problems"] == left, fields

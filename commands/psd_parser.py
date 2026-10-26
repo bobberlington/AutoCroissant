@@ -26,7 +26,7 @@ PARSER_VERSION = 5                # bump when every stored card must be re-parse
 TYPE_REGION_RATIO = 0.5
 MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']
 STAT_KINDS = (CardType.CREATURE.value, CardType.MINION.value)  # cards with HP, DEF, ATK and SPD bars (CardValidator's)
-NO_STATS = "NO STATS FOUND"       # a stored problem (the website's Parser notes): no bar read (card_edits.FIXED_BY)
+NO_STATS = "NO STATS FOUND"       # a stored problem (the website's Parser notes): no bar read (card_edits.FIXED_BY_ALL)
 DRAWN_LAYER_KINDS = ("pixel", "smartobject", "group", "type", "shape")   # every other kind is an adjustment layer
 
 # stoogedings is the icon font (TTSCardMaker MDW/Fonts). A token such as [fire] set in it renders as the icon,
@@ -1616,23 +1616,22 @@ class CardValidator:
         """Validate stats for creatures and minions (none read: the parser's NO_STATS says it, in card.problems)."""
         problems = []
         stats = card.stats
-        if any(p.startswith(NO_STATS) for p in card.problems):
-            return problems
 
-        # Check for missing stats
-        if stats.hp == -1:
-            problems.append("HP NOT FOUND")
-        if stats.defense == -1:
-            problems.append("DEF NOT FOUND")
+        # Check for missing stats (none read: NO_STATS's one note instead, even after some stat edits)
+        if not any(p.startswith(NO_STATS) for p in card.problems):
+            if stats.hp == -1:
+                problems.append("HP NOT FOUND")
+            if stats.defense == -1:
+                problems.append("DEF NOT FOUND")
 
-        # Active types don't need ATK/SPD
-        is_active = "active" in card.types if card.types else False
+            # Active types don't need ATK/SPD
+            is_active = "active" in card.types if card.types else False
 
-        if not is_active:
-            if stats.attack == -1:
-                problems.append("ATK NOT FOUND")
-            if stats.speed == -1:
-                problems.append("SPD NOT FOUND")
+            if not is_active:
+                if stats.attack == -1:
+                    problems.append("ATK NOT FOUND")
+                if stats.speed == -1:
+                    problems.append("SPD NOT FOUND")
 
         # Above 10 (two bar rows: Royal Eradicator Main Cannon's 10 + 2) unless the website allows it for the card
         if stats.has_excessive_stats() and not getattr(card, "allow_high_stats", False):

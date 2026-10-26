@@ -145,10 +145,11 @@ def test_card_notes_apply_the_edits_then_validate(fake_cards, tmp_path):
     assert cc.card_notes(parser, None, str(psd), "Auxiliary/Rulebook/A.psd") == ["ABILITY TEXT NOT FOUND", "NO ABILITY LAYER"]
     fake_cards[b"a"] = lambda r: creature(r, problems=[NO_STATS])          # no bar read: one note, not four
     assert cc.card_notes(parser, None, str(psd), rel) == [NO_STATS]
-    assert cc.card_notes(parser, cc.CardEdits.parse(edits({"A": {"hp": 5}})), str(psd), rel) == [
-        "DEF NOT FOUND", "ATK NOT FOUND", "SPD NOT FOUND"]                 # a stat edit answers it; the rest told
-    assert cc.card_notes(parser, cc.CardEdits.parse(edits({"A": {"creatures": [{"hp": 1, "def": 1, "atk": 1, "spd": 1}]}})),
-                         str(psd), rel) == []
+    assert cc.card_notes(parser, cc.CardEdits.parse(edits({"A": {"hp": 5}})), str(psd), rel) == [NO_STATS]   # as the website
+    assert cc.card_notes(parser, cc.CardEdits.parse(edits({"A": {"hp": 15}})), str(psd), rel) == ["STATS TOO HIGH", NO_STATS]
+    four = {"hp": 1, "def": 1, "atk": 1, "spd": 1}
+    assert cc.card_notes(parser, cc.CardEdits.parse(edits({"A": four})), str(psd), rel) == []           # every stat: answered
+    assert cc.card_notes(parser, cc.CardEdits.parse(edits({"A": {"creatures": [four]}})), str(psd), rel) == []
 
 
 # ========================

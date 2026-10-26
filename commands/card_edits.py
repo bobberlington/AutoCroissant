@@ -97,11 +97,11 @@ class CardEdits:
              "stars": "stars", "types": "types", "ability": "ability", "note": "note", "art": "art", "ability_art": "ability_art",
              "hidden": "hidden", "problems_ok": "problems_ok", "allow_high_stats": "allow_high_stats"}
     STATS = {"hp": "hp", "def": "defense", "atk": "attack", "spd": "speed"}
-    FIXED_BY = {"hp": ("HP NOT FOUND", "NO STATS FOUND"), "def": ("DEF NOT FOUND", "NO STATS FOUND"),
-                "atk": ("ATK NOT FOUND", "NO STATS FOUND"), "spd": ("SPD NOT FOUND", "NO STATS FOUND"),
+    FIXED_BY = {"hp": ("HP NOT FOUND",), "def": ("DEF NOT FOUND",), "atk": ("ATK NOT FOUND",), "spd": ("SPD NOT FOUND",),
                 "ability": ("ABILITY TEXT NOT FOUND", "NO ABILITY LAYER"), "stars": ("NO STARS FOUND",),
                 "type": ("UNKNOWN TYPE",), "types": ("MISSPELT TYPE",), "allow_high_stats": ("STATS TOO HIGH",),
                 "creatures": ("SEVERAL CREATURES", "NO STATS FOUND")}    # build_site.FIXED_BY alike
+    FIXED_BY_ALL = {("hp", "def", "atk", "spd"): ("NO STATS FOUND",)}   # answered once every one has a value (build_site's)
     # where the value lives: the card image (name: when it differs from the printed title), the card's folder, or this file alone
     KIND = {"name": "psd", "stars": "psd", "types": "psd", "hp": "psd", "def": "psd", "atk": "psd", "spd": "psd", "ability": "psd",
             "parts": "psd", "type": "folder", "subtype": "folder", "series": "folder",
@@ -109,6 +109,12 @@ class CardEdits:
             "dup_of": "database", "hidden": "database", "problems_ok": "database", "allow_high_stats": "database",
             "creatures": "database"}
     SITE_FIELDS = ("name", "stars", "types", "hp", "def", "atk", "spd", "ability")    # what `_site` may name (edit.js SITE)
+
+    @classmethod
+    def answered(cls, fields: dict) -> tuple:
+        """The parser notes these edited fields answer (FIXED_BY; FIXED_BY_ALL's once all its fields have values)."""
+        return tuple(p for key in fields for p in cls.FIXED_BY.get(key, ())) + tuple(
+            p for keys, notes in cls.FIXED_BY_ALL.items() if all(fields.get(k) is not None for k in keys) for p in notes)
 
     @classmethod
     def valid(cls, name: str, value) -> bool:
@@ -201,7 +207,7 @@ class CardEdits:
             saved.update({key: self.get(card, key) for key in self.STATS if key not in saved})
         if fields:
             saved["problems"] = list(card.problems)
-            answered = tuple(p for key in fields for p in self.FIXED_BY.get(key, ()))
+            answered = self.answered(fields)
             card.problems = [] if fields.get("problems_ok") else [p for p in card.problems if not answered or not p.startswith(answered)]
         for key, value in fields.items():
             self.set(card, key, value)

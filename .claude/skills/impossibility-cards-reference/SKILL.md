@@ -443,7 +443,8 @@ Problems come in two kinds, and only one kind is persisted — a common newcomer
   fired by a visible pixel layer named in `MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']`,
   line 26), the effect-layer and icon-token ones through `_add_problem` (:943; callers :678-693, :975-1006), `SEVERAL CREATURES` (:1182)
   and, since 2026-10-26, `NO STATS FOUND: no HP, DEF, ATK or SPD bars read on this creature` (or minion; `STAT_KINDS`):
-  the validator then skips its four `... NOT FOUND` lines; a stat or `creatures` edit answers it (`FIXED_BY`).
+  the validator then skips its four `... NOT FOUND` lines (not STATS TOO HIGH); a `creatures` edit, or edits giving all four
+  stats a value, answer it (`FIXED_BY`, `FIXED_BY_ALL`, build_site's alike), so one stat edit leaves it on the website too.
 - **Validate-time problems** are computed by `CardValidator.validate` during `/update_stats`,
   REPORTED to Discord, and NOT written back to the card. Since 2026-10-21 the same `validate()` (after the card's
   `site/Card Edits.json` entry) also runs per pushed PSD in `commands/card_check.py`, the push guard's card check

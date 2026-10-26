@@ -8054,7 +8054,7 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
                    and (stat in jobs or got.get(stat) != parsed["card"].get(stat)))   # Sonic's SPD 20 was there before
     if any(p.startswith("STATS TOO HIGH") for p in new["validator"]) and not two_rows:
         raise Refused("reparse", "a stat above 10 without Top and Bottom rows")
-    answered = tuple(p for name in jobs for p in CardEdits.FIXED_BY.get(name, ()))
+    answered = CardEdits.answered(jobs)
     old_problems = {p for p in parsed["validator"] if not (answered and p.startswith(answered))}
     added = sorted(p for p in set(new["validator"]) - old_problems if not (two_rows and p.startswith("STATS TOO HIGH")))
     if added and notes is None:
