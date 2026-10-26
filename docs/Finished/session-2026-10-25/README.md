@@ -67,8 +67,10 @@ On main in both repos; the bot code is deployed (8b0ce02). Times are PDT; data c
 | More than 9 pinned boxes | TC 1ccfe437, AC 04b0228 | Cap 100, rows and columns; the tray is height-capped with its own scroll and edge-hover scroll while dragging; keys 1-9 on the first nine; "Skip to cards" |
 | Font filter | TC 3853b688, AC 4b29d55 | A sidebar text box with autofill; counts within the search; several fonts = any; exclusions; `font=`/`xfont=`; `data/cardfonts.json` loaded on first use |
 
-In flight at midnight: the `+ability` placement and font work (AC worktree `~/Documents/Tools/wt/ac-plusplace`, branch
-`work/plusplace`; scratch `~/Documents/Tools/wt/scratch/plusability2/`). See the plan.
+After midnight: the `+ability` placement and card's-own-font work landed switched off (AC 1d462e1, deployed): one
+placement rule from matching sibling cards (19 px median error, 0 overlaps, 0 off the canvas on 728 cards), the card's
+own font (84% right). Test files in `~/std-work-1025/plusability/<card>/plus_ability_2/` wait for the owner's
+Photoshop check. See the plan.
 
 ### The owner's rulings of the day
 

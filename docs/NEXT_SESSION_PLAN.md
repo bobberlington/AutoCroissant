@@ -7,7 +7,7 @@ lines), `lean-tests-and-verification`, `no-guides-csv-only`, `edits-two-kinds`, 
 `persistent-work-paths`, `agent-model-preference`. What landed on 10-25: `docs/Finished/session-2026-10-25/README.md`
 (the Evening section covers 17:10 to midnight). Designs still queued: `docs/Future/`.
 
-First: check the `+ability` workflow's result (In flight, below).
+First: the owner's answer on the `+ability` test files (In flight, below).
 
 ## Standing rules
 
@@ -28,10 +28,10 @@ First: check the `+ability` workflow's result (In flight, below).
 - Send only GitHub tokens to GitHub. Never print config.py values or tokens.
 - No guides or checklists for the owner: problem lists are a CSV plus its `.md` (memory `no-guides-csv-only`).
 
-## State (2026-10-25 ~22:05 PDT)
+## State (2026-10-26 ~01:00 PDT)
 
-- AutoCroissant main 4b29d55. The jetson runs 8b0ce02 (later main commits are tests and skills only).
-- TTSCardMaker main 3853b688. The Desktop clone is at 8f2b3367, 32 behind, clean.
+- AutoCroissant main 1d462e1, deployed on the jetson (1d462e1).
+- TTSCardMaker main ca43e55a. The Desktop clone is at 8f2b3367, 32 behind, clean.
 - Data branch 1cf84da1: parser 4 (builder 8b0ce02), 820 cards, details v2; no `db/verdicts.json` yet.
 - psd-tools fork pin `cards-20261025b` (`requirements-cards.txt`).
 - Card sync chains leftover work, with one safety cron at :17. Both proven on 10-25: run 40262751459 was dispatched by
@@ -39,36 +39,39 @@ First: check the `+ability` workflow's result (In flight, below).
   come). The guards' window is 30 minutes from the push.
 - OJWikibot main 8924db4. Its deployed commit is unknown (5135280 in the morning; a70877d, 8ea1c7c..174f62b and
   cdf6f03..8924db4 landed since): check it on the jetson and deploy with the `jetson-deploy` skill if behind.
-- `psd_edit.ADD_ABILITY_LIVE = False`.
+- `psd_edit.ADD_ABILITY_LIVE = False` (the +ability placement and font code is on main, off).
 
 ## In flight
 
-**`+ability` placement and font** (AC worktree `~/Documents/Tools/wt/ac-plusplace`, branch `work/plusplace` at
-c422934; scratch `~/Documents/Tools/wt/scratch/plusability2/`). One placement rule: the box starts at the top of the
-card's free text area (below the stats, or the top of the empty panel), flows down, never off the card. The card's own
-font when it exists; the template's only as the fallback. Measured leave-one-out on real cards. New test files go to
-`~/std-work-1025/plusability/<card>/plus_ability_2/`. The branch adds `commands/ability_place.py` and
-`commands/ability_index.json` (the other cards' facts, remade by hand: `python -m commands.ability_place
-~/Desktop/TTSCardMaker`) and touches `psd_edit.py` and `psd_regions.py`.
+**`+ability` placement and font: landed, switched off** (AC 1d462e1; scratch `~/Documents/Tools/wt/scratch/plusability2/`).
+One placement rule: the box starts at the top of the card's free text area (below the stats, or the top of the empty
+panel, placed like matching sibling cards), flows down, never over the stats, title, icons or other text, never off the
+card. The card's own font (same-folder/series cards with the same title font, then the card's title font; the
+template's only as the fallback), sized like its siblings' abilities. Leave-one-out on 728 cards: median first-line
+error 19 px, 72% within 40 px (creatures 95%), 0 overlaps, 0 off the canvas (the template's box alone: 26 px, 59%,
+278 off); font right on 84% (template alone 17%). Code: `commands/ability_place.py`, `commands/ability_index.json`
+(the other cards' facts, remade by hand: `python -m commands.ability_place ~/Desktop/TTSCardMaker`),
+`psd_edit.set_text_font`/`set_text_box`/`add_ability`, `psd_regions.bar_box`. Test files:
+`~/std-work-1025/plusability/<card>/plus_ability_2/` (Abyss Watcher below its stats in EB Garamond; Adrenaline and
+Black Hole at the top of the paper panel in the Isaac font). `set_text_box` (moving and resizing a type layer) is a new
+kind of PSD write: not yet opened in Photoshop.
 
-What to do with its result:
+Next: the owner opens `plus_ability_2` in Photoshop. If approved: add both new files to the sparse lists
+(`card_data.SPARSE_FILES`, `card_guards.SPARSE_FILES`, TTSCardMaker's card-sync.yml and card-guards.yml), then flip
+`ADD_ABILITY_LIVE`; it goes live at the next Card sync run (`builder_ref`), not at a jetson deploy. Corrections go
+into a `plus_ability_3/` round.
 
-1. Read its report; check the test files exist and nothing overwrote the first rehearsal files.
-2. Land the branch on main with `ADD_ABILITY_LIVE` still False (targeted tests: `tests/test_psd_edit.py`,
-   `tests/test_card_data.py`, `tests/test_card_guards.py`), then delete the worktree and branch.
-3. Tell the owner the files are ready. Flip `ADD_ABILITY_LIVE` only after the owner approves them in Photoshop.
-   Before the flip, both new files join the sparse lists: `card_data.SPARSE_FILES` and `card_guards.SPARSE_FILES`, and
-   TTSCardMaker's card-sync.yml and card-guards.yml sparse-checkout lists. The flip goes live at the next Card sync run
-   (it checks out AC main at `builder_ref`), not at a jetson deploy. Corrections from the owner go into a
-   `plus_ability_3/` round.
+Options for the owner (not adopted): centre the text on the Isaac-style cards (33 of 34 real Font_soulsV2 abilities are
+centred; the Item template is left-aligned); a size step up for items (78 px against 80-89 px on real cards); a deleted
+ability's own font as the first font step.
 
 ## Open items
 
 ### Owner
 
 - [ ] Rotate the Discord TOKEN and HF_TOKEN (sent to api.github.com by mistake on 10-25; GitHub answered 401).
-- [ ] Open `plus_ability_2` when it lands; approve or correct (then flip `ADD_ABILITY_LIVE`). Possible option: the
-      card family's own centring and colours.
+- [ ] Open `~/std-work-1025/plusability/<card>/plus_ability_2/` in Photoshop; approve or correct (then the sparse lists
+      and the flip, In flight above). Options: centring on the Isaac-style cards, a bigger item size.
 - [ ] Photoshop re-saves: 11 badge cards and 7 apostrophe cards (session README), and the 54 problem cards
       (`~/Downloads/Problem cards 2026-10-25 (after fixes).csv` and `.md`; `docs/Future/PROBLEM_CARDS_2026-10-25b.*`).
 - [ ] Safari checks: the grid flash, the many-boxes edge scroll.
