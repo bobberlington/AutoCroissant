@@ -331,10 +331,10 @@ def _star_header(psd: PSDImage, rel: str, vocab) -> Optional[dict]:
     None without exactly one Stars group drawing them.
     """
     types = _icon_parser(vocab).all_types
-    groups = [group for group in PSDParser._star_groups(psd) if _star_count(group, {}, {}, {})]
+    groups = [group for group in PSDParser._star_groups(psd) if _star_count(group, {}, {}, {}, types)]
     if len(groups) != 1:
         return None
-    total, container = _stars_total(psd), _star_container(groups[0], types)
+    total, container = _stars_total(psd, types=types), _star_container(groups[0], types)
     shown = _star_units(container, types)[0]
     if not shown:
         return None

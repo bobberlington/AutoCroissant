@@ -59,7 +59,7 @@ def records(clone, index):
 # ========================
 def test_record_shape_and_size(records, clone):
     for rel, record in records.items():
-        assert tuple(record) == KEYS and record["path"] == rel and record["name"] == _name(rel) and record["parser"] == 3
+        assert tuple(record) == KEYS and record["path"] == rel and record["name"] == _name(rel) and record["parser"] == pd.PARSER_VERSION
         assert not any(isinstance(v, str) and v.startswith("error") for v in record.values())
         assert record["canvas"] == {"w": 1200, "h": 2400, "mode": "RGB", "depth": 8, "icc": "Display"}
         assert record["fonts"] and all(e["supplied"] is True for e in record["fonts"].values())

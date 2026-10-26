@@ -289,6 +289,8 @@ def test_stars_refuse_per_field(parser, tmp_path):
         _plan(parser, paths[0], REL, "stars", 0)
     with pytest.raises(pe.Refused, match="the '1 Stars' folder sets them"):
         _plan(parser, paths[0], "Items/Equip/1 Stars/Fixture.psd", "stars", 2)
+    assert pe.star_target("Auxiliary/Status Effects/Debuffs/2 Stars/Afraid.psd", 3) == "Auxiliary/Status Effects/Debuffs/3 Stars"
+    assert pe.star_folder(REL) is None and pe.star_folder("Auxiliary/Status Effects/Buffs/Fixture.psd") is None
     with pytest.raises(pe.Refused, match="the parser reads no stars on a buff card"):
         _plan(parser, paths[0], "Auxiliary/Status Effects/Buffs/Fixture.psd", "stars", 2)
     edge = _fixture(tmp_path, stars=((1095, 20), (1095, 1650)), name="Edge")     # a column whose next star is off the card:
@@ -404,6 +406,49 @@ def test_stacked_stars_refuse(clone, parser, tmp_path):
     rel = "Auxiliary/Minions/Living_Bread.psd"
     with pytest.raises(pe.Refused, match="sits on another star"):
         _plan(parser, _clone_card(clone, rel, tmp_path)[0], rel, "stars", 5)
+
+
+@icons
+def test_type_icons_in_stars_are_no_stars(clone, parser, tmp_path):
+    """Toy Freddy's stars group holds its Machine icon beside 3 stars: a move redraws them (a fourth copied); Pike Beam's
+    Offensive_Minion icon in Stars reads 2 stars, not 3."""
+    freddy = "Creatures/Fnaf/3 Stars/Toy_Freddy.psd"
+    path = _clone_card(clone, freddy, tmp_path)[0]
+    plan = pe.plan_stars(PSDImage.open(path), pe.parse_card(parser, path, freddy), 4, parser, moving=True)
+    assert len(plan.copies) == 1 and not plan.hide
+    pike = "Auxiliary/Minions/Pike_Beam.psd"
+    assert pe.parse_card(parser, _clone_card(clone, pike, tmp_path)[0], pike)["card"]["stars"] == 2
+
+
+@icons
+def test_copied_smart_stars_bake_alike(clone, parser, tmp_path):
+    """Mini Doomer's Warpstars are smart objects: two bakes of a third copy one with the same placed ID (bake_pictures
+    compares each picture's layers), one the card doesn't hold yet."""
+    rel = "Auxiliary/Minions/Mini_Doomer.psd"
+    path = _clone_card(clone, rel, tmp_path)[0]
+    records = []
+    for k in range(2):
+        psd = PSDImage.open(path)
+        plan = pe.plan_stars(psd, pe.parse_card(parser, path, rel), 3, parser)
+        pe.set_icons(psd, plan)
+        psd.save(str(tmp_path / f"{k}.psd"))
+        records.append(pe.layer_records(str(tmp_path / f"{k}.psd")))
+        ids = [str(data[b"placed"].value) for layer in psd.descendants() for data in pe._placed(layer)[:1]]
+        assert len(plan.copies) == 1 and len(ids) == len(set(ids))
+    assert records[0] == records[1]
+
+
+@icons
+def test_a_first_type_icon_on_the_title_bakes_flagged(clone, parser, tmp_path):
+    """John Ward has no type icon; Creature_Template's spot touches its Name: the icon is made there, told."""
+    rel = "Creatures/Other/3 Stars/John_Ward.psd"
+    path = _clone_card(clone, rel, tmp_path)[0]
+    template = clone / "MDW/Templates/Creature_Template.psd"
+    psd = PSDImage.open(path)
+    spot = pe.template_icon(PSDImage.open(str(template)), psd, parser, "Creature_Template")
+    plan = pe.plan_types(psd, pe.parse_card(parser, path, rel), ["fire"], parser, spot)
+    edit = pe.set_icons(psd, plan, _types_dir(tmp_path))
+    assert any("at Creature_Template's spot touches 'Name'" in note for note in edit.notes), edit.notes
 
 
 @icons

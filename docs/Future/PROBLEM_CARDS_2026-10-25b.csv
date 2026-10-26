@@ -3,11 +3,10 @@ ABBI,Creatures/Omori/5 Stars,can't bake title,"No title layer the bot reads, so 
 Abyss Watcher,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
 Abyss Watcher,Auxiliary/Minions,bakes with flag,title would print over a layer just below it
 Abyss Watcher,Auxiliary/Minions,can't bake adding an ability,"No ability layer: adding an ability on the website can't bake yet. Who: Bot code (+ability, planned); until then add it in Photoshop"
-Afraid,Auxiliary/Status Effects/Debuffs/2 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Afraid,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Air Totem,Auxiliary/Items,bakes with flag,title runs past an effect layer clipped to it
 Alex YIIK,Creatures/Other/5 Stars,bakes with flag,stars: laid out again as rows of two (the card's own layout doesn't go on)
 Alex YIIK,Creatures/Other/5 Stars,can't bake title,"The title layer has another name, so the website has no title box (layer 'this card fucking sucks'). Who: Card maker in Photoshop"
-All Purpose Medical Kit,Items/Heal/2 Stars,can't bake adding a star,"Safety check: on this multi-picture PSD, adding a star makes different layers for each picture. Who: Bot code"
 Amazing Mirror,Items/Support/4 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Ancient Fuelweaver,Creatures/DST/5 Stars,bakes with flag,title reaches the stars or type icons
 Ancient Fuelweaver,Creatures/DST/5 Stars,bakes with flag,title would print over a layer just below it
@@ -23,7 +22,7 @@ Asteroid Field,Field/2 Stars,bakes with flag,title reaches the stars or type ico
 Asteroid Field,Field/2 Stars,bakes with flag,title would print over a layer just below it
 Auto Croissant,Creatures/Other/2 Stars,bakes with flag,title reaches the stars or type icons
 Auto Croissant,Creatures/Other/2 Stars,bakes with flag,title would print over a layer just below it
-Auto Croissant,Creatures/Other/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder)"
+Auto Croissant,Creatures/Other/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (the bot reads another count from its Stars group's layers than the folder's, though the card prints the folder's: overlapping stars, one layer drawing several, or extra layers in the group)"
 Auto Croissant,Creatures/Other/2 Stars,can't bake adding a type,"A new type icon would touch the title, stars or art (touches 'autocroissant'). Who: Nothing (edit in Photoshop)"
 Autopsy Report,Auxiliary/Items,bakes with flag,title prints past its old text onto the picture below
 Autopsy Report,Auxiliary/Items,bakes with flag,title reaches the stars or type icons
@@ -40,14 +39,13 @@ Battle Spear,Auxiliary/Items,bakes with flag,title reaches the stars or type ico
 Battle Spear,Auxiliary/Items,bakes with flag,title would print over a layer just below it
 Become Back Money,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,title reaches the stars or type icons
 Become Back Money,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,title would print over a layer just below it
-Become Back Money,Auxiliary/Status Effects/Debuffs/3 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
 BergenTRUCK,Creatures/Undertale/3 Stars,bakes with flag,title reaches the stars or type icons
 BergenTRUCK,Creatures/Undertale/3 Stars,bakes with flag,title would print over a layer just below it
 Binge Eater,Items/Equip/4 Stars,bakes with flag,title prints past its old text onto the picture below
 Binge Eater,Items/Equip/4 Stars,bakes with flag,title reaches the stars or type icons
-Blazing,Auxiliary/Status Effects/Debuffs/2 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Blazing,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Blindness,Auxiliary/Status Effects/Debuffs/1 Stars,bakes with flag,title prints past its old text onto the picture below
-Blindness,Auxiliary/Status Effects/Debuffs/1 Stars,can't bake adding a star,"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Blindness,Auxiliary/Status Effects/Debuffs/1 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Blood Bomb,Items/Attack/3 Stars,bakes with flag,title prints past its old text onto the picture below
 Blood Bomb,Items/Attack/3 Stars,bakes with flag,title reaches the stars or type icons
 Bobberlington,Creatures/Other/5 Stars,bakes with flag,title prints past its old text onto the picture below
@@ -69,8 +67,8 @@ Bucket Of Lard,Items/Heal/3 Stars,bakes with flag,title reaches the stars or typ
 Bugzzy,Auxiliary/Minions,bakes with flag,stars: laid out again as rows of two (the card's own layout doesn't go on)
 Bugzzy,Auxiliary/Minions,bakes with flag,ability runs off the card
 Burdened,Auxiliary/Status Effects/Debuffs/1 Stars,bakes with flag,title prints past its old text onto the picture below
-Burdened,Auxiliary/Status Effects/Debuffs/1 Stars,can't bake adding a star,"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
-Burning,Auxiliary/Status Effects/Debuffs/1 Stars,can't bake adding a star,"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Burdened,Auxiliary/Status Effects/Debuffs/1 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
+Burning,Auxiliary/Status Effects/Debuffs/1 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Butterfly,Creatures/Kirby/5 Stars,bakes with flag,title prints past its old text onto the picture below
 Butterfly,Creatures/Kirby/5 Stars,bakes with flag,title reaches the stars or type icons
 Butterfly,Creatures/Kirby/5 Stars,bakes with flag,stars: laid out again as rows of two (the card's own layout doesn't go on)
@@ -85,14 +83,13 @@ Cave Of The Past,Field/4 Stars,bakes with flag,title reaches the stars or type i
 Cave Of The Past,Field/4 Stars,bakes with flag,title would print over a layer just below it
 Chained,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,title reaches the stars or type icons
 Chained,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,a layer above the title would cover part of the new title
-Chained,Auxiliary/Status Effects/Debuffs/2 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
-Charge,Items/Equip/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder)"
+Chained,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Charm Of The Vampire,Items/Equip/3 Stars,bakes with flag,title reaches the stars or type icons
 Charm Of The Vampire,Items/Equip/3 Stars,bakes with flag,title would print over a layer just below it
 Cheap,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,title prints past its old text onto the picture below
-Cheap,Auxiliary/Status Effects/Debuffs/3 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
-Chilled,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,ability runs off the card
-Chilled,Auxiliary/Status Effects/Debuffs/2 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Chilled,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,"ability redrawn whole, small pixel difference (no need to look)"
+Chilled,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
+Chilled,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,overflow: ability: set at 94% of its size to stay on its panel
 Chris & Jordi,Creatures/Everhood/5 Stars,bakes with flag,stars: laid out again as rows of two (the card's own layout doesn't go on)
 Chris & Jordi,Creatures/Everhood/5 Stars,can't bake title,"The title layer has another name, so the website has no title box (layer 'Knight'). Who: Card maker in Photoshop"
 Claw,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
@@ -106,13 +103,13 @@ Computer Virus,Creatures/Kirby/3 Stars,bakes with flag,title needs more lines th
 Computer Virus,Creatures/Kirby/3 Stars,data problem,"No stats: no template stat bars, so the data has no HP/DEF/ATK/SPD"
 Condemned,Auxiliary/Status Effects/Debuffs/4 Stars,bakes with flag,title reaches the stars or type icons
 Condemned,Auxiliary/Status Effects/Debuffs/4 Stars,bakes with flag,a layer above the title would cover part of the new title
-Condemned,Auxiliary/Status Effects/Debuffs/4 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
-Confusion,Auxiliary/Status Effects/Debuffs/2 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
-Contracted,Auxiliary/Status Effects/Debuffs/4 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Condemned,Auxiliary/Status Effects/Debuffs/4 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
+Confusion,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
+Contracted,Auxiliary/Status Effects/Debuffs/4 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Corrupted Blood,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,title reaches the stars or type icons
 Corrupted Blood,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,title would print over a layer just below it
-Corrupted Blood,Auxiliary/Status Effects/Debuffs/3 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
-Corruption,Auxiliary/Status Effects/Debuffs/3 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Corrupted Blood,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
+Corruption,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Cortez,Creatures/Mario/4 Stars,bakes with flag,title reaches the stars or type icons
 Cortez,Creatures/Mario/4 Stars,bakes with flag,title would print over a layer just below it
 Crimson Flag,Items/Infliction/4 Stars,bakes with flag,title reaches the stars or type icons
@@ -122,7 +119,6 @@ Croissant,Creatures/Other/5 Stars,bakes with flag,title reaches the stars or typ
 Croissant,Creatures/Other/5 Stars,bakes with flag,stars: laid out again as rows of two (the card's own layout doesn't go on)
 Crowned Magolor,Creatures/Kirby/5 Stars,bakes with flag,title would print over a layer just below it
 Crowned Magolor,Creatures/Kirby/5 Stars,bakes with flag,title runs off the card
-Crowned Magolor,Creatures/Kirby/5 Stars,bakes with flag,"after the edit, other title or ability boxes no longer read as one (check the card)"
 Crowned Magolor,Creatures/Kirby/5 Stars,can't bake adding a type,"A new type icon would touch the title, stars or art (touches 'Dimensional_rift_C_Bsn_8VwAIzPgw.jpg_large_transparent copy 2'). Who: Nothing (edit in Photoshop)"
 Crystal Guardian,Creatures/Hollow Knight/2 Stars,bakes with flag,title reaches the stars or type icons
 Crystal Guardian,Creatures/Hollow Knight/2 Stars,bakes with flag,title would print over a layer just below it
@@ -133,14 +129,13 @@ Crystal Peak,Field/2 Stars,bakes with flag,"stars: the edit moves the card to th
 Crystal Spikes,Items/Counter/3 Stars,bakes with flag,title reaches the stars or type icons
 Crystal Spikes,Items/Counter/3 Stars,bakes with flag,title would print over a layer just below it
 Crystal Spikes,Items/Counter/3 Stars,bakes with flag,stars baked with a small pixel difference (no need to look)
-Curse,Auxiliary/Status Effects/Debuffs/4 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Curse,Auxiliary/Status Effects/Debuffs/4 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Cursed Inferno,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,title reaches the stars or type icons
 Cursed Inferno,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,a layer above the title would cover part of the new title
-Cursed Inferno,Auxiliary/Status Effects/Debuffs/3 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Cursed Inferno,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Dark Bramble,Field/4 Stars,bakes with flag,title reaches the stars or type icons
 Dark Bramble,Field/4 Stars,bakes with flag,title would print over a layer just below it
 Dark Esau,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
-Dark matter,Creatures/Kirby/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder)"
 Dark Matter Swordsman,Creatures/Kirby/3 Stars,can't bake title,Two layers in the title area look like the title. Who: Card maker in Photoshop
 Dark Mind,Creatures/Kirby/4 Stars,bakes with flag,title prints past its old text onto the picture below
 Dark Mind,Creatures/Kirby/4 Stars,bakes with flag,title reaches the stars or type icons
@@ -163,14 +158,13 @@ Delicate Flower,Auxiliary/Items,bakes with flag,title prints past its old text o
 Delicate Flower,Auxiliary/Items,bakes with flag,title reaches the stars or type icons
 Delta,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
 Delta,Auxiliary/Minions,bakes with flag,title would print over a layer just below it
-Despair,Auxiliary/Status Effects/Debuffs/4 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Despair,Auxiliary/Status Effects/Debuffs/4 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Diligent Watch,Auxiliary/Status Effects/Buffs,bakes with flag,title reaches the stars or type icons
 Diligent Watch,Auxiliary/Status Effects/Buffs,bakes with flag,a layer above the title would cover part of the new title
-Dimension D,Field/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder)"
+Dimension D,Field/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (the bot reads another count from its Stars group's layers than the folder's, though the card prints the folder's: overlapping stars, one layer drawing several, or extra layers in the group)"
 Dirty Bed,Items/Active/2 Stars,can't bake DEF,The stat bar's own layers can't show the new value. Who: Card maker in Photoshop
-Disarmed,Auxiliary/Status Effects/Debuffs/3 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
 Disgusted,Auxiliary/Status Effects/Debuffs/1 Stars,bakes with flag,title prints past its old text onto the picture below
-Disgusted,Auxiliary/Status Effects/Debuffs/1 Stars,can't bake adding a star,"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Disgusted,Auxiliary/Status Effects/Debuffs/1 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Doc,Creatures/Kirby/3 Stars,bakes with flag,title reaches the stars or type icons
 Doc,Creatures/Kirby/3 Stars,bakes with flag,title would print over a layer just below it
 Doc,Creatures/Kirby/3 Stars,bakes with flag,stars: laid out again as rows of two (the card's own layout doesn't go on)
@@ -201,19 +195,18 @@ E. Gadd's Garage,Field/2 Stars,bakes with flag,"stars: the edit moves the card t
 E. Gadd's Garage,Field/2 Stars,can't bake title,"The title layer is hidden, so the website has no title box. Who: Card maker in Photoshop"
 Earth Totem,Auxiliary/Items,bakes with flag,title prints past its old text onto the picture below
 Earth Totem,Auxiliary/Items,bakes with flag,title runs past an effect layer clipped to it
-Edible,Auxiliary/Status Effects/Debuffs/2 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
 Electro Probe,Auxiliary/Minions,bakes with flag,ability runs over a stat bar
 Empress Bulblax,Creatures/Other/3 Stars,bakes with flag,title reaches the stars or type icons
 Empress Bulblax,Creatures/Other/3 Stars,bakes with flag,title would print over a layer just below it
-Empty,Auxiliary/Status Effects/Debuffs/2 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Empty,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Energy Ritual,Items/Support/3 Stars,bakes with flag,title would print over a layer just below it
-Enfeebled,Auxiliary/Status Effects/Debuffs/1 Stars,can't bake adding a star,"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
-Engorged,Auxiliary/Status Effects/Debuffs/2 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Enfeebled,Auxiliary/Status Effects/Debuffs/1 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
+Engorged,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Enraged,Auxiliary/Status Effects/Buffs,bakes with flag,title prints past its old text onto the picture below
 Excess Express,Field/3 Stars,bakes with flag,title reaches the stars or type icons
 Excess Express,Field/3 Stars,bakes with flag,title would print over a layer just below it
 Exposed,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,title prints past its old text onto the picture below
-Exposed,Auxiliary/Status Effects/Debuffs/2 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Exposed,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Fahr Outpost,Field/2 Stars,bakes with flag,"ability redrawn whole, small pixel difference (no need to look)"
 False Knight,Creatures/Hollow Knight/2 Stars,bakes with flag,title prints past its old text onto the picture below
 False Knight,Creatures/Hollow Knight/2 Stars,bakes with flag,title reaches the stars or type icons
@@ -244,11 +237,11 @@ Fragile Heart,Items/Equip/3 Stars,bakes with flag,title would print over a layer
 Freeze Spell,Items/Infliction/3 Stars,bakes with flag,title prints past its old text onto the picture below
 Frog,Creatures/Everhood/5 Stars,bakes with flag,title prints past its old text onto the picture below
 Frog,Creatures/Everhood/5 Stars,bakes with flag,stars: laid out again as rows of two (the card's own layout doesn't go on)
-Frostbite,Auxiliary/Status Effects/Debuffs/2 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
-Frozen,Auxiliary/Status Effects/Debuffs/3 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Frostbite,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
+Frozen,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Frozen In Time,Auxiliary/Status Effects/Debuffs/4 Stars,bakes with flag,title reaches the stars or type icons
 Frozen In Time,Auxiliary/Status Effects/Debuffs/4 Stars,bakes with flag,a layer above the title would cover part of the new title
-Frozen In Time,Auxiliary/Status Effects/Debuffs/4 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Frozen In Time,Auxiliary/Status Effects/Debuffs/4 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Funky D Luffy,Creatures/Monkey D Folder/4 Stars,bakes with flag,title reaches the stars or type icons
 Funky D Luffy,Creatures/Monkey D Folder/4 Stars,bakes with flag,title would print over a layer just below it
 Galacta Knight,Creatures/Kirby/5 Stars,bakes with flag,stars: laid out again as rows of two (the card's own layout doesn't go on)
@@ -259,7 +252,7 @@ Gandhi,Creatures/Other/5 Stars,bakes with flag,title prints past its old text on
 Glaive Main Cannon,Creatures/FTL/4 Stars,bakes with flag,title reaches the stars or type icons
 Glaive Main Cannon,Creatures/FTL/4 Stars,bakes with flag,title would print over a layer just below it
 Glitz Pit,Field/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
-Glued,Auxiliary/Status Effects/Debuffs/2 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Glued,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 God Tamer,Auxiliary/Minions,bakes with flag,stars: laid out again as rows of two (the card's own layout doesn't go on)
 Godskin Apostle,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
 Godskin Apostle,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
@@ -281,7 +274,7 @@ Grey Prince Zote,Creatures/Hollow Knight/4 Stars,bakes with flag,"stars: the edi
 Grey Prince Zote,Creatures/Hollow Knight/4 Stars,can't bake title,"No title layer the bot reads, so the website has no title box. Who: Card maker in Photoshop"
 Grimmchild,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
 Grimmchild,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
-Grimora,Creatures/Other/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder)"
+Grimora,Creatures/Other/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (the bot reads another count from its Stars group's layers than the folder's, though the card prints the folder's: overlapping stars, one layer drawing several, or extra layers in the group)"
 Grimora,Creatures/Other/3 Stars,can't bake all four stats,The stat bar's own layers can't show the new value. Who: Card maker in Photoshop
 Groda,Creatures/Pandas/4 Stars,bakes with flag,title prints past its old text onto the picture below
 Groda,Creatures/Pandas/4 Stars,bakes with flag,title reaches the stars or type icons
@@ -293,9 +286,9 @@ Heavy Mole,Creatures/Kirby/3 Stars,bakes with flag,title would print over a laye
 Helpful Mannequin,Creatures/In Sound Mind/2 Stars,bakes with flag,title prints past its old text onto the picture below
 Helpful Mannequin,Creatures/In Sound Mind/2 Stars,bakes with flag,title reaches the stars or type icons
 Helpful Mannequin,Creatures/In Sound Mind/2 Stars,bakes with flag,title runs off the card
-Helpful Mannequin,Creatures/In Sound Mind/2 Stars,can't bake adding a type,A first type icon at the template's spot would touch the title. Who: Card maker in Photoshop (or bot code: another spot)
-Hemorrhaging,Auxiliary/Status Effects/Debuffs/4 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
-Hexed,Auxiliary/Status Effects/Debuffs/3 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Helpful Mannequin,Creatures/In Sound Mind/2 Stars,bakes with flag,"types: the first type icon, at the card template's spot, touches the title"
+Hemorrhaging,Auxiliary/Status Effects/Debuffs/4 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
+Hexed,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Holo Defense API,Creatures/Kirby/3 Stars,bakes with flag,title prints past its old text onto the picture below
 Holo Defense API,Creatures/Kirby/3 Stars,bakes with flag,title reaches the stars or type icons
 Holo Defense API,Creatures/Kirby/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (a star layer has smart filters)"
@@ -328,15 +321,15 @@ Igor Roballtowski,Auxiliary/Creatures,bakes with flag,type icons baked with a sm
 Igor Robotowski,Creatures/Other/2 Stars,bakes with flag,title prints past its old text onto the picture below
 Igor Robotowski,Creatures/Other/2 Stars,bakes with flag,type icons baked with a small pixel difference (no need to look)
 Imp,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
-Imprisoned,Auxiliary/Status Effects/Debuffs/3 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Imprisoned,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Indoctrination,Auxiliary/Items,bakes with flag,title runs off the card
-Infected,Auxiliary/Status Effects/Debuffs/4 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Infected,Auxiliary/Status Effects/Debuffs/4 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Infected Crossroads,Field/3 Stars,bakes with flag,title prints past its old text onto the picture below
 Infected Crossroads,Field/3 Stars,bakes with flag,title reaches the stars or type icons
 Ingredient Icy Sugar Cubes,Items/Heal/2 Stars,bakes with flag,title reaches the stars or type icons
 Ingredient Icy Sugar Cubes,Items/Heal/2 Stars,bakes with flag,title would print over a layer just below it
 Inkhole,Auxiliary/Items,bakes with flag,title prints past its old text onto the picture below
-Insane,Auxiliary/Status Effects/Debuffs/3 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Insane,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Ipsilon,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
 Ipsilon,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
 Irithyll,Field/2 Stars,bakes with flag,title reaches the stars or type icons
@@ -352,14 +345,14 @@ Joel Miller,Creatures/Lisa/3 Stars,bakes with flag,title would print over a laye
 Joel Miller,Creatures/Lisa/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 John Ward,Creatures/Other/3 Stars,bakes with flag,title prints past its old text onto the picture below
 John Ward,Creatures/Other/3 Stars,bakes with flag,title reaches the stars or type icons
-John Ward,Creatures/Other/3 Stars,can't bake adding a type,A first type icon at the template's spot would touch the title. Who: Card maker in Photoshop (or bot code: another spot)
+John Ward,Creatures/Other/3 Stars,bakes with flag,"types: the first type icon, at the card template's spot, touches the title"
 Katarina,Creatures/Other/4 Stars,bakes with flag,title prints past its old text onto the picture below
 Kel,Creatures/Omori/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 King Dedede,Creatures/Kirby/4 Stars,bakes with flag,title reaches the stars or type icons
 King Dedede,Creatures/Kirby/4 Stars,bakes with flag,title would print over a layer just below it
 King Dedede,Creatures/Kirby/4 Stars,bakes with flag,title runs off the card
-King Dedede,Creatures/Kirby/4 Stars,can't bake adding a type,A first type icon at the template's spot would touch the title. Who: Card maker in Photoshop (or bot code: another spot)
-Knight Lost A Lot,Creatures/Everhood/2 Stars,can't bake adding a type,A first type icon at the template's spot would touch the title. Who: Card maker in Photoshop (or bot code: another spot)
+King Dedede,Creatures/Kirby/4 Stars,bakes with flag,"types: the first type icon, at the card template's spot, touches the title"
+Knight Lost A Lot,Creatures/Everhood/2 Stars,bakes with flag,"types: the first type icon, at the card template's spot, touches the title"
 Knight Lost A Lot,Creatures/Everhood/2 Stars,can't bake title,Two layers in the title area look like the title. Who: Card maker in Photoshop
 Koops,Creatures/Mario/2 Stars,bakes with flag,title prints past its old text onto the picture below
 Koops,Creatures/Mario/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
@@ -368,13 +361,13 @@ Koro-Sensei,Creatures/Other/5 Stars,bakes with flag,title reaches the stars or t
 Koro-Sensei,Creatures/Other/5 Stars,bakes with flag,stars: laid out again as rows of two (the card's own layout doesn't go on)
 Krabby Patty,Auxiliary/Items,bakes with flag,ability runs off the card
 Kyle,Creatures/Other/5 Stars,bakes with flag,title runs off the card
-Kyle,Creatures/Other/5 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder)"
+Kyle,Creatures/Other/5 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (the bot reads another count from its Stars group's layers than the folder's, though the card prints the folder's: overlapping stars, one layer drawing several, or extra layers in the group)"
 Kyle,Creatures/Other/5 Stars,can't bake adding a type,"A new type icon would touch the title, stars or art (touches 'Color Fill 1'). Who: Nothing (edit in Photoshop)"
 Landia,Creatures/Kirby/5 Stars,bakes with flag,title reaches the stars or type icons
 Landia,Creatures/Kirby/5 Stars,bakes with flag,title would print over a layer just below it
 Landia,Creatures/Kirby/5 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
-Leeroy Jenkins,Creatures/World Of Warcraft/3 Stars,bakes with flag,a layer above the title would cover part of the new title
-Leeroy Jenkins,Creatures/World Of Warcraft/3 Stars,can't bake adding a type,A first type icon at the template's spot would touch the title. Who: Card maker in Photoshop (or bot code: another spot)
+Leeroy Jenkins,Creatures/World Of Warcraft/3 Stars,bakes with flag,title needs more lines than its box has
+Leeroy Jenkins,Creatures/World Of Warcraft/3 Stars,bakes with flag,"types: the first type icon, at the card template's spot, touches the title"
 Leshy,Creatures/Other/5 Stars,bakes with flag,title reaches the stars or type icons
 Leshy,Creatures/Other/5 Stars,bakes with flag,title would print over a layer just below it
 Leshy,Creatures/Other/5 Stars,bakes with flag,a layer above the title would cover part of the new title
@@ -385,7 +378,7 @@ Little Guy,Creatures/Other/2 Stars,bakes with flag,title would print over a laye
 Living Bread,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
 Living Bread,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
 Living Bread,Auxiliary/Minions,can't bake stars (add and remove),"The stars are drawn twice, stacked, so the bot counts more stars than show. Who: Card maker in Photoshop"
-Loony,Auxiliary/Status Effects/Debuffs/2 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Loony,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Lor Starcutter,Creatures/Kirby/4 Stars,bakes with flag,title prints past its old text onto the picture below
 Lord Crump,Creatures/Mario/3 Stars,bakes with flag,title prints past its old text onto the picture below
 Lord Crump,Creatures/Mario/3 Stars,bakes with flag,title reaches the stars or type icons
@@ -399,7 +392,6 @@ Magic Shield,Items/Equip/4 Stars,bakes with flag,title reaches the stars or type
 Magnet-shroom,N.M.E,can't bake adding a star,"A star layer has smart filters, so it can't be copied or moved. Who: Card maker in Photoshop"
 Magnum Opus,Auxiliary/Items,can't bake removing a type,"The type to remove is drawn as a frame round the card, not an icon. Who: Nothing (edit in Photoshop)"
 Man Serpent Shield,Items/Equip/2 Stars,can't bake title,"The title layer is hidden, so the website has no title box. Who: Card maker in Photoshop"
-Mangle,Creatures/Fnaf/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder)"
 Mantis,Creatures/FTL/2 Stars,bakes with flag,type icons baked with a small pixel difference (no need to look)
 Mantis Lords,Creatures/Hollow Knight/3 Stars,bakes with flag,title reaches the stars or type icons
 Mantis Lords,Creatures/Hollow Knight/3 Stars,bakes with flag,title would print over a layer just below it
@@ -408,7 +400,7 @@ Mari,Creatures/Omori/4 Stars,bakes with flag,title reaches the stars or type ico
 Mari,Creatures/Omori/4 Stars,bakes with flag,title would print over a layer just below it
 Marilyn,Creatures/Mario/3 Stars,bakes with flag,title reaches the stars or type icons
 Marilyn,Creatures/Mario/3 Stars,bakes with flag,title would print over a layer just below it
-Marked For Death,Auxiliary/Status Effects/Debuffs/4 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Marked For Death,Auxiliary/Status Effects/Debuffs/4 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Marx,Creatures/Kirby/5 Stars,bakes with flag,title prints past its old text onto the picture below
 Marx,Creatures/Kirby/5 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Masher,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
@@ -421,7 +413,6 @@ Massive Moss Charger,Auxiliary/Minions,bakes with flag,title would print over a 
 Massive Moss Charger,Auxiliary/Minions,bakes with flag,a layer above the title would cover part of the new title
 Master Hand,Creatures/Kirby/3 Stars,bakes with flag,title prints past its old text onto the picture below
 Master Hand,Creatures/Kirby/3 Stars,bakes with flag,title reaches the stars or type icons
-Master Hand,Creatures/Kirby/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder)"
 Matterling,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
 Matterling,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
 Maxim Tomato,Items/Heal/3 Stars,bakes with flag,title prints past its old text onto the picture below
@@ -448,10 +439,10 @@ Michael,Creatures/Other/5 Stars,bakes with flag,title reaches the stars or type 
 Michael,Creatures/Other/5 Stars,bakes with flag,title would print over a layer just below it
 Michael,Creatures/Other/5 Stars,bakes with flag,stars: laid out again as rows of two (the card's own layout doesn't go on)
 Michael's Blessing,N.M.E,bakes with flag,stars: laid out again as rows of two (the card's own layout doesn't go on)
-Miles Edgeworth,Creatures/Other/4 Stars,can't bake adding a type,A first type icon at the template's spot would touch the title. Who: Card maker in Photoshop (or bot code: another spot)
+Miles Edgeworth,Creatures/Other/4 Stars,bakes with flag,"types: the first type icon, at the card template's spot, touches the title"
 Militron,Creatures/Other/4 Stars,bakes with flag,title reaches the stars or type icons
 Militron,Creatures/Other/4 Stars,bakes with flag,title would print over a layer just below it
-Militron (No Armor),Auxiliary/Creatures,can't bake adding a type,A first type icon at the template's spot would touch the title. Who: Card maker in Photoshop (or bot code: another spot)
+Militron (No Armor),Auxiliary/Creatures,bakes with flag,"types: the first type icon, at the card template's spot, touches the title"
 Minecraft Panda,Creatures/Pandas/2 Stars,can't bake title,"No title layer the bot reads, so the website has no title box. Who: Card maker in Photoshop"
 Mini Auto Croissant,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
 Mini Auto Croissant,Auxiliary/Minions,bakes with flag,title would print over a layer just below it
@@ -505,18 +496,15 @@ Nefarious Chip,Creatures/Omori/3 Stars,bakes with flag,title reaches the stars o
 Newspaper,Items/Equip/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (a star layer has smart filters)"
 Nightmare,Creatures/Kirby/5 Stars,bakes with flag,title prints past its old text onto the picture below
 Nightmare,Creatures/Kirby/5 Stars,bakes with flag,title reaches the stars or type icons
-Nightmare,Creatures/Kirby/5 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder)"
+Nightmare,Creatures/Kirby/5 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (the bot reads another count from its Stars group's layers than the folder's, though the card prints the folder's: overlapping stars, one layer drawing several, or extra layers in the group)"
 Niiue,Creatures/Other/5 Stars,bakes with flag,title reaches the stars or type icons
 Niiue,Creatures/Other/5 Stars,bakes with flag,title would print over a layer just below it
 Niko,Creatures/Other/3 Stars,bakes with flag,title prints past its old text onto the picture below
 Niko,Creatures/Other/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 NME Salesman,Creatures/Kirby/4 Stars,bakes with flag,title reaches the stars or type icons
 NME Salesman,Creatures/Kirby/4 Stars,bakes with flag,title would print over a layer just below it
-NME Stock,Items/Support/2 Stars,can't bake adding a star,"Safety check: on this multi-picture PSD, adding a star makes different layers for each picture. Who: Bot code"
 Nosk,Creatures/Hollow Knight/4 Stars,bakes with flag,title prints past its old text onto the picture below
-Nosk,Creatures/Hollow Knight/4 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder)"
-Old Chica,Creatures/Fnaf/4 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder)"
-Old Foxy,Creatures/Fnaf/4 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder)"
+Nosk,Creatures/Hollow Knight/4 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (the bot reads another count from its Stars group's layers than the folder's, though the card prints the folder's: overlapping stars, one layer drawing several, or extra layers in the group)"
 Ominous Red Circle,Items/Deploy/2 Stars,bakes with flag,title prints past its old text onto the picture below
 Ominous Red Circle,Items/Deploy/2 Stars,bakes with flag,title reaches the stars or type icons
 Ominous Red Circle,Items/Deploy/2 Stars,bakes with flag,"ability redrawn whole, small pixel difference (no need to look)"
@@ -548,11 +536,10 @@ Pandamonium,Items/Active/4 Stars,bakes with flag,title reaches the stars or type
 Pandanoko,Creatures/Pandas/2 Stars,can't bake title,"No title layer the bot reads, so the website has no title box. Who: Card maker in Photoshop"
 Papa Chip,Creatures/Omori/3 Stars,bakes with flag,title reaches the stars or type icons
 Papa Chip,Creatures/Omori/3 Stars,bakes with flag,title would print over a layer just below it
-Papyrus,Creatures/Undertale/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder)"
-Paralyzed,Auxiliary/Status Effects/Debuffs/2 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Papyrus,Creatures/Undertale/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (the bot reads another count from its Stars group's layers than the folder's, though the card prints the folder's: overlapping stars, one layer drawing several, or extra layers in the group)"
+Paralyzed,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Party!,Auxiliary/Items,bakes with flag,title prints past its old text onto the picture below
 Peppy,Auxiliary/Status Effects/Buffs,bakes with flag,title prints past its old text onto the picture below
-Pessimism,Auxiliary/Status Effects/Debuffs/3 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
 Pike Beam,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
 Pike Beam,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
 Pile Of Swords,Items/Support/4 Stars,bakes with flag,ability runs off the card
@@ -560,7 +547,7 @@ Pillow,Items/Equip/1 Stars,bakes with flag,"stars: the edit moves the card to th
 Pix,Creatures/Kirby/3 Stars,can't bake all four stats,Several bars for one stat. Who: Nothing (edit in Photoshop)
 Pix,Creatures/Kirby/3 Stars,data problem (ruled acceptable),One card holds several creatures; an editor confirmed each one's stats on the website.
 Pizza,Creatures/Other/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
-Plague,Auxiliary/Status Effects/Debuffs/2 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Plague,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 PoD01Red Bloon,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
 PoD04Zebra Bloon,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
 PoD04Zebra Bloon,Auxiliary/Minions,bakes with flag,title would print over a layer just below it
@@ -572,7 +559,7 @@ PoD06Rainbow Bloon,Auxiliary/Minions,bakes with flag,title reaches the stars or 
 PoD08MOAB,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
 PoD09DDT,Auxiliary/Minions,bakes with flag,stars: laid out again as rows of two (the card's own layout doesn't go on)
 PoD11ZOMG,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
-Poison,Auxiliary/Status Effects/Debuffs/1 Stars,can't bake adding a star,"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Poison,Auxiliary/Status Effects/Debuffs/1 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Poison Circle,Items/Deploy/1 Stars,bakes with flag,"ability redrawn whole, small pixel difference (no need to look)"
 Polevaulter Zombie,Auxiliary/Minions,can't bake adding a star,"A star layer has smart filters, so it can't be copied or moved. Who: Card maker in Photoshop"
 Poorly Drawn Cabbage,Auxiliary/Items,can't bake adding a type,"A new type icon would touch the title, stars or art (touches 'Name'). Who: Nothing (edit in Photoshop)"
@@ -595,11 +582,10 @@ Rapier,Auxiliary/Minions,bakes with flag,title prints past its old text onto the
 Rapier,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
 Rasta Beast,Creatures/Everhood/4 Stars,bakes with flag,title prints past its old text onto the picture below
 Rasta Beast,Creatures/Everhood/4 Stars,bakes with flag,title reaches the stars or type icons
-Recursion,Auxiliary/Status Effects/Debuffs/4 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Recursion,Auxiliary/Status Effects/Debuffs/4 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Red Knife,Auxiliary/Items,bakes with flag,title prints past its old text onto the picture below
 Reflection,Items/Support/3 Stars,bakes with flag,title prints past its old text onto the picture below
 Regen,Auxiliary/Status Effects/Buffs,bakes with flag,title prints past its old text onto the picture below
-Regeneration Potion,Items/Heal/2 Stars,can't bake adding a star,"Safety check: on this multi-picture PSD, adding a star makes different layers for each picture. Who: Bot code"
 Regret,Auxiliary/Items,bakes with flag,title prints past its old text onto the picture below
 Reinforced,Auxiliary/Status Effects/Buffs,bakes with flag,title prints past its old text onto the picture below
 Remote Detonator,N.M.E,bakes with flag,title prints past its old text onto the picture below
@@ -607,8 +593,8 @@ Remote Detonator,N.M.E,bakes with flag,title reaches the stars or type icons
 Remote Detonator,N.M.E,bakes with flag,ability prints over the picture or an effect layer
 Resentful Glare,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,title reaches the stars or type icons
 Resentful Glare,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,a layer above the title would cover part of the new title
-Resentful Glare,Auxiliary/Status Effects/Debuffs/3 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
-Restrained,Auxiliary/Status Effects/Debuffs/2 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Resentful Glare,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
+Restrained,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Retro Kirby,Creatures/Kirby/3 Stars,bakes with flag,title prints past its old text onto the picture below
 Retro Kirby,Creatures/Kirby/3 Stars,bakes with flag,title reaches the stars or type icons
 Return To Sender,Items/Counter/4 Stars,can't bake adding a type,"A new type icon would touch the title, stars or art (touches 'Aberson Linchdolt 101 Cardinal Dr. Macon IL 62544'). Who: Nothing (edit in Photoshop)"
@@ -618,7 +604,6 @@ Rope,N.M.E,bakes with flag,title prints past its old text onto the picture below
 Royal Eradicator Main Cannon,Creatures/FTL/5 Stars,bakes with flag,title prints past its old text onto the picture below
 Royal Eradicator Main Cannon,Creatures/FTL/5 Stars,bakes with flag,title reaches the stars or type icons
 Royal Eradicator Main Cannon,Creatures/FTL/5 Stars,bakes with flag,stars: laid out again as rows of two (the card's own layout doesn't go on)
-Royal Eradicator Main Cannon,Creatures/FTL/5 Stars,bakes with flag,"after the edit, other title or ability boxes no longer read as one (check the card)"
 Royal Eradicator Main Cannon,Creatures/FTL/5 Stars,data problem (ruled acceptable),ATK 12 (10 + 2 on two bar rows); allowed on purpose.
 Rusty Knife,Auxiliary/Items,bakes with flag,title prints past its old text onto the picture below
 Sabre,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
@@ -632,11 +617,11 @@ Sans,Creatures/Undertale/5 Stars,bakes with flag,stars: laid out again as rows o
 Second Wind,Items/Support/3 Stars,bakes with flag,title prints past its old text onto the picture below
 Second Wind,Items/Support/3 Stars,bakes with flag,title reaches the stars or type icons
 Shadow Duelist,Auxiliary/Minions,can't bake adding an ability,"No ability layer: adding an ability on the website can't bake yet. Who: Bot code (+ability, planned); until then add it in Photoshop"
-Shell Shock,Auxiliary/Status Effects/Debuffs/3 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Shell Shock,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Shield of the Guilty,Items/Equip/3 Stars,bakes with flag,title prints past its old text onto the picture below
 Shield of the Guilty,Items/Equip/3 Stars,bakes with flag,title reaches the stars or type icons
 Shiny Knife,Items/Equip/3 Stars,can't bake title,The bot's drawing of the new title is more than 25% off the card picture. Who: Bot code (renderer); until then edit in Photoshop
-Sickness,Auxiliary/Status Effects/Debuffs/1 Stars,can't bake adding a star,"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Sickness,Auxiliary/Status Effects/Debuffs/1 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Silithid,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
 Silithid,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
 Silithid,Auxiliary/Minions,bakes with flag,ability runs off the card
@@ -647,8 +632,8 @@ Skullord,Creatures/Kirby/3 Stars,bakes with flag,title would print over a layer 
 Slugcat,Creatures/Other/2 Stars,can't bake SPD,The stat bar's own layers can't show the new value. Who: Card maker in Photoshop
 Smeckeldorfed,Auxiliary/Status Effects/Debuffs/1 Stars,bakes with flag,title reaches the stars or type icons
 Smeckeldorfed,Auxiliary/Status Effects/Debuffs/1 Stars,bakes with flag,a layer above the title would cover part of the new title
-Smeckeldorfed,Auxiliary/Status Effects/Debuffs/1 Stars,can't bake adding a star,"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
-Smoldering,Auxiliary/Status Effects/Debuffs/1 Stars,can't bake adding a star,"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Smeckeldorfed,Auxiliary/Status Effects/Debuffs/1 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
+Smoldering,Auxiliary/Status Effects/Debuffs/1 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Smorg,Creatures/Mario/4 Stars,bakes with flag,title reaches the stars or type icons
 Smorg,Creatures/Mario/4 Stars,bakes with flag,title would print over a layer just below it
 Snake,Auxiliary/Items,bakes with flag,title reaches the stars or type icons
@@ -658,7 +643,7 @@ Snow Angel,Creatures/Omori/3 Stars,bakes with flag,title reaches the stars or ty
 Snow Angel,Creatures/Omori/3 Stars,bakes with flag,"title redrawn whole, small pixel difference (no need to look)"
 Snow Angel,Creatures/Omori/3 Stars,bakes with flag,title's saved pixels don't match its named font (no need to look)
 Snow Angel,Creatures/Omori/3 Stars,can't bake title (typo fix only),The bot's drawing of the new title is more than 25% off the card picture. Who: Bot code (renderer); until then edit in Photoshop
-Softened,Auxiliary/Status Effects/Debuffs/1 Stars,can't bake adding a star,"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Softened,Auxiliary/Status Effects/Debuffs/1 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 SOMETHING,Creatures/Omori/3 Stars,bakes with flag,title prints past its old text onto the picture below
 SOMETHING,Creatures/Omori/3 Stars,bakes with flag,title reaches the stars or type icons
 Sonic,Creatures/Other/4 Stars,"can't bake ability, all four stats, stars (add and remove), types (add and remove)",Sonic's SPD 20 is printed on a one-row bar. Who: Card maker in Photoshop (standardisation)
@@ -685,7 +670,7 @@ SpiralHorn Shield,Items/Equip/2 Stars,bakes with flag,title reaches the stars or
 SpiralHorn Shield,Items/Equip/2 Stars,bakes with flag,title would print over a layer just below it
 Spirit Flame,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,title reaches the stars or type icons
 Spirit Flame,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,a layer above the title would cover part of the new title
-Spirit Flame,Auxiliary/Status Effects/Debuffs/2 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Spirit Flame,Auxiliary/Status Effects/Debuffs/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Springtrap,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
 Springtrap,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
 Springtrap,Auxiliary/Minions,bakes with flag,stars: laid out again as rows of two (the card's own layout doesn't go on)
@@ -698,12 +683,12 @@ Stalwart Shell,Items/Equip/3 Stars,bakes with flag,title reaches the stars or ty
 Star Dream,Creatures/Kirby/5 Stars,bakes with flag,title prints past its old text onto the picture below
 Star Dream,Creatures/Kirby/5 Stars,bakes with flag,stars: laid out again as rows of two (the card's own layout doesn't go on)
 Stay,Creatures/Other/3 Stars,bakes with flag,title runs off the card
-Stay,Creatures/Other/3 Stars,can't bake adding a type,A first type icon at the template's spot would touch the title. Who: Card maker in Photoshop (or bot code: another spot)
+Stay,Creatures/Other/3 Stars,bakes with flag,"types: the first type icon, at the card template's spot, touches the title"
 Stranger,Creatures/Omori/4 Stars,bakes with flag,title reaches the stars or type icons
 Stranger,Creatures/Omori/4 Stars,bakes with flag,title would print over a layer just below it
 Stubborn Queen,Creatures/Other/2 Stars,data problem,"Picture without its own PSD, stuck under Not parsed yet"
-Stuffed,Auxiliary/Status Effects/Debuffs/1 Stars,can't bake adding a star,"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
-Suffocation,Auxiliary/Status Effects/Debuffs/3 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Stuffed,Auxiliary/Status Effects/Debuffs/1 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
+Suffocation,Auxiliary/Status Effects/Debuffs/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Sumo Panda,Creatures/Pandas/3 Stars,bakes with flag,title reaches the stars or type icons
 Sumo Panda,Creatures/Pandas/3 Stars,bakes with flag,title would print over a layer just below it
 Super Shroom,Items/Heal/3 Stars,bakes with flag,title reaches the stars or type icons
@@ -721,11 +706,11 @@ Sword of Aeons,Items/Equip/4 Stars,bakes with flag,title would print over a laye
 Tai Lung,Creatures/Other/4 Stars,bakes with flag,title prints past its old text onto the picture below
 Tainted Bethany,Creatures/Isaac/4 Stars,bakes with flag,title prints past its old text onto the picture below
 Tainted Bethany,Creatures/Isaac/4 Stars,bakes with flag,title reaches the stars or type icons
-Tainted Bethany,Creatures/Isaac/4 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder)"
-Tainted Eden,Creatures/Isaac/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder)"
+Tainted Bethany,Creatures/Isaac/4 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (the bot reads another count from its Stars group's layers than the folder's, though the card prints the folder's: overlapping stars, one layer drawing several, or extra layers in the group)"
+Tainted Eden,Creatures/Isaac/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (the bot reads another count from its Stars group's layers than the folder's, though the card prints the folder's: overlapping stars, one layer drawing several, or extra layers in the group)"
 Tainted Keeper,Creatures/Isaac/4 Stars,bakes with flag,title prints past its old text onto the picture below
 Tainted Keeper,Creatures/Isaac/4 Stars,bakes with flag,title reaches the stars or type icons
-Tainted Lazarus,Creatures/Isaac/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder)"
+Tainted Lazarus,Creatures/Isaac/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (the bot reads another count from its Stars group's layers than the folder's, though the card prints the folder's: overlapping stars, one layer drawing several, or extra layers in the group)"
 Tainted Lazarus,Creatures/Isaac/3 Stars,can't bake all four stats,Several bars for one stat. Who: Nothing (edit in Photoshop)
 Tainted Lazarus,Creatures/Isaac/3 Stars,data problem (ruled acceptable),One card holds several creatures; an editor confirmed each one's stats on the website.
 Tainted Magdalene,Creatures/Isaac/3 Stars,bakes with flag,title prints past its old text onto the picture below
@@ -759,9 +744,9 @@ The Farlands,Field/2 Stars,bakes with flag,title reaches the stars or type icons
 The Farlands,Field/2 Stars,bakes with flag,a layer above the title would cover part of the new title
 The Flash,Creatures/In Sound Mind/4 Stars,bakes with flag,title prints past its old text onto the picture below
 The Flash,Creatures/In Sound Mind/4 Stars,bakes with flag,title reaches the stars or type icons
-The Flash,Creatures/In Sound Mind/4 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder)"
+The Flash,Creatures/In Sound Mind/4 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (the bot reads another count from its Stars group's layers than the folder's, though the card prints the folder's: overlapping stars, one layer drawing several, or extra layers in the group)"
 The Forbidden One,Creatures/Other/5 Stars,bakes with flag,stars: laid out again as rows of two (the card's own layout doesn't go on)
-The Forbidden One,Creatures/Other/5 Stars,can't bake adding a type,A first type icon at the template's spot would touch the title. Who: Card maker in Photoshop (or bot code: another spot)
+The Forbidden One,Creatures/Other/5 Stars,bakes with flag,"types: the first type icon, at the card template's spot, touches the title"
 The Freezer,Field/1 Stars,bakes with flag,title reaches the stars or type icons
 The Freezer,Field/1 Stars,bakes with flag,a layer above the title would cover part of the new title
 The Freezer,Field/1 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
@@ -772,7 +757,7 @@ The Krusty Krab,Field/3 Stars,bakes with flag,title reaches the stars or type ic
 The Krusty Krab,Field/3 Stars,bakes with flag,title would print over a layer just below it
 The Krusty Krab,Field/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 The Last Cabbage Merchant,Creatures/Other/3 Stars,can't bake title,"No title layer the bot reads, so the website has no title box. Who: Card maker in Photoshop"
-The Lich King,Creatures/World Of Warcraft/5 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder)"
+The Lich King,Creatures/World Of Warcraft/5 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (the bot reads another count from its Stars group's layers than the folder's, though the card prints the folder's: overlapping stars, one layer drawing several, or extra layers in the group)"
 The Master,Creatures/Mario/5 Stars,bakes with flag,title prints past its old text onto the picture below
 The Master,Creatures/Mario/5 Stars,bakes with flag,title reaches the stars or type icons
 The Master,Creatures/Mario/5 Stars,bakes with flag,stars: laid out again as rows of two (the card's own layout doesn't go on)
@@ -796,15 +781,14 @@ The Temple of Ahn'Qiraj,Auxiliary/Items,bakes with flag,title reaches the stars 
 The Temple of Ahn'Qiraj,Auxiliary/Items,bakes with flag,title would print over a layer just below it
 The Temple of Ahn'Qiraj,Auxiliary/Items,bakes with flag,"title redrawn whole, small pixel difference (no need to look)"
 The Thin Man,Creatures/Other/5 Stars,bakes with flag,stars: laid out again as rows of two (the card's own layout doesn't go on)
-Thinned,Auxiliary/Status Effects/Debuffs/1 Stars,can't bake adding a star,"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Thinned,Auxiliary/Status Effects/Debuffs/1 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Thunder Thighs,Items/Heal/2 Stars,can't bake title,"The title layer has another name, so the website has no title box (layer 'Snack'). Who: Card maker in Photoshop"
 Thunderfury Blessed Blade of the Windseeker,Items/Equip/4 Stars,bakes with flag,title would print over a layer just below it
 Tomorrow I'll,Items/Equip/2 Stars,bakes with flag,title reaches the stars or type icons
 Tomorrow I'll,Items/Equip/2 Stars,bakes with flag,title would print over a layer just below it
 Toriel,Creatures/Undertale/4 Stars,bakes with flag,title prints past its old text onto the picture below
 Toriel,Creatures/Undertale/4 Stars,bakes with flag,title reaches the stars or type icons
-Toy Chica,Creatures/Fnaf/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder)"
-Toy Freddy,Creatures/Fnaf/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder)"
+Toy Chica,Creatures/Fnaf/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (the bot reads another count from its Stars group's layers than the folder's, though the card prints the folder's: overlapping stars, one layer drawing several, or extra layers in the group)"
 Traitor Lord,Creatures/Hollow Knight/4 Stars,bakes with flag,"ability redrawn whole, small pixel difference (no need to look)"
 Trick Room,Field/2 Stars,bakes with flag,title prints past its old text onto the picture below
 Tutankoopa,Creatures/Mario/3 Stars,bakes with flag,title reaches the stars or type icons
@@ -821,16 +805,11 @@ Undyne,Creatures/Undertale/4 Stars,bakes with flag,stars: laid out again as rows
 Uumuu,Creatures/Hollow Knight/3 Stars,bakes with flag,title prints past its old text onto the picture below
 Uumuu,Creatures/Hollow Knight/3 Stars,bakes with flag,title reaches the stars or type icons
 Vivian,Creatures/Mario/3 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
-Warcraftian Druid,Creatures/World Of Warcraft/4 Stars,bakes with flag,"after the edit, other title or ability boxes no longer read as one (check the card)"
-Warcraftian Druid,Creatures/World Of Warcraft/4 Stars,can't bake adding a type,A first type icon at the template's spot would touch the title. Who: Card maker in Photoshop (or bot code: another spot)
-Warcraftian Hunter,Creatures/World Of Warcraft/4 Stars,bakes with flag,"after the edit, other title or ability boxes no longer read as one (check the card)"
-Warcraftian Hunter,Creatures/World Of Warcraft/4 Stars,can't bake adding a type,A first type icon at the template's spot would touch the title. Who: Card maker in Photoshop (or bot code: another spot)
+Warcraftian Druid,Creatures/World Of Warcraft/4 Stars,bakes with flag,"types: the first type icon, at the card template's spot, touches the title"
+Warcraftian Hunter,Creatures/World Of Warcraft/4 Stars,bakes with flag,"types: the first type icon, at the card template's spot, touches the title"
 Warcraftian Mage,Creatures/World Of Warcraft/4 Stars,bakes with flag,title prints past its old text onto the picture below
-Warcraftian Paladin,Creatures/World Of Warcraft/4 Stars,bakes with flag,"after the edit, other title or ability boxes no longer read as one (check the card)"
-Warcraftian Priest,Creatures/World Of Warcraft/4 Stars,bakes with flag,"after the edit, other title or ability boxes no longer read as one (check the card)"
-Warcraftian Rogue,Creatures/World Of Warcraft/4 Stars,bakes with flag,"after the edit, other title or ability boxes no longer read as one (check the card)"
-Warcraftian Rogue,Creatures/World Of Warcraft/4 Stars,can't bake adding a type,A first type icon at the template's spot would touch the title. Who: Card maker in Photoshop (or bot code: another spot)
-Warcraftian Warrior,Creatures/World Of Warcraft/4 Stars,can't bake adding a type,A first type icon at the template's spot would touch the title. Who: Card maker in Photoshop (or bot code: another spot)
+Warcraftian Rogue,Creatures/World Of Warcraft/4 Stars,bakes with flag,"types: the first type icon, at the card template's spot, touches the title"
+Warcraftian Warrior,Creatures/World Of Warcraft/4 Stars,bakes with flag,"types: the first type icon, at the card template's spot, touches the title"
 Warrior Dee,Auxiliary/Minions,bakes with flag,title prints past its old text onto the picture below
 Warrior Dee,Auxiliary/Minions,bakes with flag,title reaches the stars or type icons
 Warrior Dee,Auxiliary/Minions,can't bake adding an ability,"No ability layer: adding an ability on the website can't bake yet. Who: Bot code (+ability, planned); until then add it in Photoshop"
@@ -859,11 +838,11 @@ Wigfrid,Creatures/DST/3 Stars,bakes with flag,"ability redrawn whole, small pixe
 Wigfrid,Creatures/DST/3 Stars,can't bake title,"The title layer is hidden, so the website has no title box. Who: Card maker in Photoshop"
 Wilson,Creatures/DST/2 Stars,bakes with flag,title reaches the stars or type icons
 Wilson,Creatures/DST/2 Stars,bakes with flag,title would print over a layer just below it
-Withering,Auxiliary/Status Effects/Debuffs/4 Stars,can't bake stars (add and remove),"Stars set by a debuff's ""N Stars"" folder: the stars edit doesn't move the card. Who: Bot code"
+Withering,Auxiliary/Status Effects/Debuffs/4 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (no group named Stars)"
 Wokey D pronouns,Creatures/Monkey D Folder/3 Stars,bakes with flag,title reaches the stars or type icons
 Wokey D pronouns,Creatures/Monkey D Folder/3 Stars,bakes with flag,title would print over a layer just below it
 Wokey D pronouns,Creatures/Monkey D Folder/3 Stars,bakes with flag,title runs off the card
-Wokey D pronouns,Creatures/Monkey D Folder/3 Stars,can't bake adding a type,A first type icon at the template's spot would touch the title. Who: Card maker in Photoshop (or bot code: another spot)
+Wokey D pronouns,Creatures/Monkey D Folder/3 Stars,bakes with flag,"types: the first type icon, at the card template's spot, touches the title"
 Wolfgang,Creatures/DST/4 Stars,can't bake title,"No title layer the bot reads, so the website has no title box. Who: Card maker in Photoshop"
 WX-78,Creatures/DST/3 Stars,bakes with flag,a layer above the title would cover part of the new title
 WX-78,Creatures/DST/3 Stars,bakes with flag,"ability redrawn whole, small pixel difference (no need to look)"
@@ -879,12 +858,12 @@ Zero,Creatures/Kirby/4 Stars,bakes with flag,title prints past its old text onto
 Zero,Creatures/Kirby/4 Stars,bakes with flag,title reaches the stars or type icons
 Zero Override,Creatures/Kirby/5 Stars,bakes with flag,title prints past its old text onto the picture below
 Zero Override,Creatures/Kirby/5 Stars,bakes with flag,title reaches the stars or type icons
-Zero Override,Creatures/Kirby/5 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder)"
+Zero Override,Creatures/Kirby/5 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (the bot reads another count from its Stars group's layers than the folder's, though the card prints the folder's: overlapping stars, one layer drawing several, or extra layers in the group)"
 Zero Two,Creatures/Kirby/5 Stars,bakes with flag,title reaches the stars or type icons
 Zero Two,Creatures/Kirby/5 Stars,bakes with flag,title would print over a layer just below it
-Zero Two,Creatures/Kirby/5 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder)"
+Zero Two,Creatures/Kirby/5 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (the bot reads another count from its Stars group's layers than the folder's, though the card prints the folder's: overlapping stars, one layer drawing several, or extra layers in the group)"
 Zoltan,Creatures/FTL/2 Stars,bakes with flag,title prints past its old text onto the picture below
-Zoltan,Creatures/FTL/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder)"
+Zoltan,Creatures/FTL/2 Stars,bakes with flag,"stars: the edit moves the card to the other ""N Stars"" folder, but its printed stars aren't redrawn (the bot reads another count from its Stars group's layers than the folder's, though the card prints the folder's: overlapping stars, one layer drawing several, or extra layers in the group)"
 Zompanda,Creatures/Pandas/2 Stars,bakes with flag,title prints past its old text onto the picture below
 Zompanda,Creatures/Pandas/2 Stars,bakes with flag,title reaches the stars or type icons
 Zompanda,Creatures/Pandas/2 Stars,bakes with flag,ability prints over the picture or an effect layer

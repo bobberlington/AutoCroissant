@@ -447,12 +447,14 @@ def date_archive(stats: dict, old_stats: dict, index: GitIndex, report: Refined,
     into MDW, not its rename to Pandeity 44 min before; the new name starts there too: intro_of). A deletion or rename older than the record's own reading, or an
     index that lacks the tag's commit (a clone not fetched since: a path deleted, added back and deleted again),
     changes nothing."""
-    for name, versions in sorted(old_stats.items(), key=lambda item: bool(getattr(
-            item[1][len(item[1]) - 1], "duplicate_of", None) if item[1] else False)):     # originals before their copies
+    def copy_of(card) -> Optional[str]:
+        return None if getattr(card, "variant_of", None) else getattr(card, "duplicate_of", None)   # a variant: its own
+    for name, versions in sorted(old_stats.items(), key=lambda item: bool(copy_of(
+            item[1][len(item[1]) - 1]) if item[1] else False)):     # originals before their copies
         if not versions or name in stats:
             continue
         last = versions[len(versions) - 1]
-        original = getattr(last, "duplicate_of", None)
+        original = copy_of(last)
         if original and not getattr(last, "archived", None):
             continue
         if not getattr(last, "archived", None):
@@ -499,7 +501,7 @@ def record_versions(before: dict, archived_before: dict, db, reparsed: dict, res
     re-read of the same PSD (same blob and path: a parser change) replaces its reading, its start kept; a re-read PSD
     whose own data did not change (psd_changed) is an edit or authors version, the edit landing in the same build; a
     card restored with the same data drops its archived record. A reading that knew less (unknown: a parse that failed
-    on a field) keeps the card before as a version. Duplicates get none.
+    on a field) keeps the card before as a version. Duplicates get none; a variant picture (its own data) does.
 
     Args:
         before: stats at the build's start (a deep copy)
@@ -522,8 +524,10 @@ def record_versions(before: dict, archived_before: dict, db, reparsed: dict, res
         return index.by_sha.get(sha) or known.get(sha)
     made = []
     for name, card in db.stats.items():
-        if getattr(card, "duplicate_of", None):
+        variant = bool(getattr(card, "variant_of", None))     # a variant picture duplicate: its own versions
+        if getattr(card, "duplicate_of", None) and not variant:
             continue
+        ignore = ("duplicate_of",) if variant else ()         # marked a duplicate: no version
         old = before.get(name)
         if name in restored:
             versions = db.old_stats.get(name) or []
@@ -532,7 +536,7 @@ def record_versions(before: dict, archived_before: dict, db, reparsed: dict, res
             if getattr(card, "version", None) is None:
                 card.version = start_of(card, index, None, others)
             continue
-        if knows(card, old):                          # the new reading knew all the old one did: no version
+        if knows(card, old, ignore):                  # the new reading knew all the old one did: no version
             info = deepcopy(getattr(old, "version", None)) or start_of(card, index, None, others)
             info["to"], info["to_commit"], info["png_commit"] = None, None, None
             card.version = info

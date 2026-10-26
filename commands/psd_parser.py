@@ -21,7 +21,7 @@ getLogger("psd_tools").setLevel(CRITICAL)
 # ========================
 # Configuration
 # ========================
-PARSER_VERSION = 3                # bump when every stored card must be re-parsed (the build re-parses older stamps)
+PARSER_VERSION = 4                # bump when every stored card must be re-parsed (the build re-parses older stamps)
 TYPE_REGION_RATIO = 0.5
 MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']
 DRAWN_LAYER_KINDS = ("pixel", "smartobject", "group", "type", "shape")   # every other kind is an adjustment layer
@@ -540,8 +540,8 @@ class PSDParser:
         named after the card elsewhere in the title region (a status effect's top-level title), else one in the title
         region named after its own text, the only one there (Photoshop's name for a new layer: Papyrus's 'The Great
         Papyrus'). A Name layer holding part of the name beside layers holding the rest (Royal Eradicator Main Cannon:
-        "Main Cannon", "Royal", "Eradicator"; WX-78: "wx-" and an image layer named "78") prints the name. Hidden or
-        rasterized titles read as nothing.
+        "Main Cannon", "Royal", "Eradicator"; WX-78: "wx-" and an image layer named "78") prints the name; edited, all
+        its pieces as printed (_longer_piece, _named_pieces). Hidden or rasterized titles read as nothing.
 
         Args:
             psd: The open card
@@ -564,9 +564,13 @@ class PSDParser:
             return None                                 # the pieces' order is a guess
         if self.split_title(psd, found, title, name):
             return None                                 # the other layers print the rest of the name
-        longer = self._longer_piece(psd, found, "".join(title.lower().split()), "".join(name.lower().split()))
+        joined, whole = "".join(title.lower().split()), "".join(name.lower().split())
+        longer = self._longer_piece(psd, found, joined, whole)
         if longer is not None:                          # a piece edited longer than the name: the whole title
             return " ".join(title_text(layer.text) for layer in self.reading(found + [longer]))
+        named = self._named_pieces(psd, found, joined, whole, name)
+        if named:                                       # a split title edited: every piece, as printed
+            return " ".join(title_text(layer.text) for layer in self.reading(found + named))
         return title
 
     @staticmethod
@@ -655,6 +659,30 @@ class PSDParser:
                 and layer.is_visible() and id(layer) not in found_ids and layer.bbox[1] < top
                 and "".join(title_text(layer.text).lower().split()).startswith(rest)]
         return hits[0] if len(hits) == 1 else None
+
+    @staticmethod
+    def _named_pieces(psd: PSDImage, found: list, joined: str, whole: str, name: str = "") -> list:
+        """A split title after an edit (Warcraftian Druid's Name now 'Warcraftiun', Royal Eradicator's 'Royal' now
+        'Royaa'): the visible text layers under Text in the title region, beside the title layers, named after a piece
+        of the name ('Druid ') or after their own text (Photoshop's name, which follows an edit: 'Royaa', 'JENKINS II').
+        Those named after their text count beside a piece of the name, or holding a word the title no longer prints
+        (never an epithet: Auto Croissant's 'Master Developer' when the title is cut to 'Croissant')."""
+        if not joined or joined == whole:
+            return []
+        top, text_group = psd.height * TITLE_REGION_RATIO, PSDParser.text_group(psd)
+        found_ids, out, tied = {id(layer) for layer in found}, [], False
+        words = [word for word in sub(r"[^a-z0-9]+", " ", name.lower()).split() if len(word) > 2 and word not in joined]
+        for layer in (text_group if text_group is not None else []):
+            if layer.kind != "type" or not layer.is_visible() or id(layer) in found_ids or layer.bbox[1] >= top:
+                continue
+            key = "".join(title_text(base_name(layer)).lower().split())
+            if key and key in whole:
+                out.append(layer)
+                tied = True
+            elif named_after_text(layer):
+                out.append(layer)
+                tied = tied or any(word in key for word in words)   # a word the title dropped
+        return out if tied else []
 
     @staticmethod
     def text_group(psd: PSDImage):
@@ -853,6 +881,8 @@ class PSDParser:
             pieces = PSDParser._split_pieces(psd, found, joined, whole)
             longer = PSDParser._longer_piece(psd, found, joined, whole) if pieces is None else None
             pieces = [layer for layer in (pieces or []) + ([longer] if longer is not None else []) if layer.kind == "type"]
+        if not pieces:                          # a split title edited: its pieces by their layer names
+            pieces = PSDParser._named_pieces(psd, found, joined, whole, name)
         parts, copies = [], []
         for layer in PSDParser.reading(found + pieces):
             twin = next((kept for kept in parts if PSDParser.words(kept.text) == PSDParser.words(layer.text)), None)
@@ -1066,6 +1096,7 @@ class PSDParser:
         that overlap (one's core center inside the other's core: a glow, a frame, or the pieces of one star) count
         as one star. A star is often several layers, e.g. Indoctrination's pentagram and four pieces, which counting
         layers made 20 stars instead of 4. With no such group, visible layers named "... Star ..." count the same way.
+        A layer named after a type icon is a type, never a star (Toy Freddy's Machine in its stars group).
         """
         groups = self._star_groups(psd)
         if groups:
@@ -1095,9 +1126,14 @@ class PSDParser:
                 continue
             if layer.is_group():
                 count += self._stars_in(layer)
-            elif layer.has_pixels():
+            elif layer.has_pixels() and not self.type_icon(layer, self.all_types):
                 loose.append(layer)
         return count + self._count_clusters(loose)
+
+    @staticmethod
+    def type_icon(layer, types) -> bool:
+        """A layer named after a type icon (Types/ names): a type, never a star (Toy Freddy's Machine in its Stars)."""
+        return base_name(layer).lower() in types
 
     @staticmethod
     def _core_box(layer) -> tuple:

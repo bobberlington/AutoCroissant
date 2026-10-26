@@ -73,6 +73,21 @@ def test_card_parts_equal_the_fixtures(clone, psd_parser, fixture):
         assert psd_parser.join_ability(psd, [layers[i] for i in ids], rulepage="Rulebook" in rel) == card.ability
 
 
+def test_an_edited_split_title_keeps_its_parts(clone, psd_parser):
+    """Warcraftian Druid's first box edited ('Warcraftiaa'): 'Druid ' still reads as a part, the title is the whole."""
+    _, psd = _fixture_psd(clone, "warcraftian_druid")
+    rel, name, _ = CARDS["warcraftian_druid"]
+    next(layer for layer in psd.descendants() if layer.name == "Name").text = "Warcraftiaa \x03\r"
+    got = psd_parts.card_parts(psd, rel, name, psd_parser)
+    assert [title_text(p["text"]) for p in got["title"]] == ["Warcraftiaa", "Druid"]
+    assert psd_parser.parse(psd, rel).display_name == "Warcraftiaa Druid"
+    rel = "Creatures/Other/2 Stars/Auto_Croissant.psd"      # cut to 'Croissant': the epithet stays out
+    psd = PSDImage.open(clone / rel)
+    next(layer for layer in psd.descendants() if layer.name == "Name").text = "Croissant"
+    assert [title_text(p["text"]) for p in psd_parts.card_parts(psd, rel, "Auto Croissant", psd_parser)["title"]] == ["Croissant"]
+    assert psd_parser.parse(psd, rel).display_name == "Croissant"
+
+
 def test_a_snack_tagged_per_picture(clone, psd_parser):
     """Three pictures, each its own parse (its title, the shared ability) and render, within 0.1 of its PNG."""
     _, psd = _fixture_psd(clone, "a_snack_tagged")
