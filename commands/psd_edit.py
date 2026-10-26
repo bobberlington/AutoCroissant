@@ -623,7 +623,7 @@ def name_layer(psd: PSDImage, card: str = "", own_text: bool = True):
     if len(found) > 1:
         raise Refused("unsupported-card", f"{len(found)} title layers")
     joined, whole = "".join(title_text(found[0].text).lower().split()), "".join(card.lower().split())
-    if PSDParser.split_title(psd, found, title_text(found[0].text), card) or PSDParser._named_pieces(psd, found, joined, whole):
+    if PSDParser.split_title(psd, found, title_text(found[0].text), card) or PSDParser._named_pieces(psd, found, joined, whole, card):
         raise Refused("unsupported-card", "the title is split over several layers")
     copy = _copy(psd, found[0])
     if copy is not None:
@@ -4092,9 +4092,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         layer = name_layer(psd, card, own_text)
     follow_kerning(psd, layer)                  # drawn kerned as Photoshop shows it (B12)
     old_text, old_bbox, story = layer.text, tuple(layer.bbox), story_index(layer)
-    own = which == "name" and own_text_title(layer, card) and any(   # the title by its own text, never a split title's piece
-        found is layer for found in PSDParser.title_layers(psd, [one for one in psd.descendants() if _is_text_layer(one)],
-                                                           card, own_text))
+    own = which == "name" and own_text_title(layer, card)
     flags = []
 
     def flag(code: str, why: str) -> None:      # a content problem: baked best-effort and told (owner 2026-10-24)

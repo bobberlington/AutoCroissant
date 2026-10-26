@@ -568,7 +568,7 @@ class PSDParser:
         longer = self._longer_piece(psd, found, joined, whole)
         if longer is not None:                          # a piece edited longer than the name: the whole title
             return " ".join(title_text(layer.text) for layer in self.reading(found + [longer]))
-        named = self._named_pieces(psd, found, joined, whole)
+        named = self._named_pieces(psd, found, joined, whole, name)
         if named:                                       # a split title edited: every piece, as printed
             return " ".join(title_text(layer.text) for layer in self.reading(found + named))
         return title
@@ -661,15 +661,16 @@ class PSDParser:
         return hits[0] if len(hits) == 1 else None
 
     @staticmethod
-    def _named_pieces(psd: PSDImage, found: list, joined: str, whole: str) -> list:
+    def _named_pieces(psd: PSDImage, found: list, joined: str, whole: str, name: str = "") -> list:
         """A split title after an edit (Warcraftian Druid's Name now 'Warcraftiun', Royal Eradicator's 'Royal' now
         'Royaa'): the visible text layers under Text in the title region, beside the title layers, named after a piece
-        of the name ('Druid ') or after their own text (Photoshop's name, which follows an edit: 'Royaa'); [] unless the
-        title layers' text or one such layer's name is still a piece of the name."""
+        of the name ('Druid ') or after their own text (Photoshop's name, which follows an edit: 'Royaa', 'JENKINS II');
+        [] unless the title layers' text or one such layer's name is still a piece of the name, or holds a word of it."""
         if not joined or joined == whole:
             return []
         top, text_group = psd.height * TITLE_REGION_RATIO, PSDParser.text_group(psd)
         found_ids, out, tied = {id(layer) for layer in found}, [], joined in whole
+        words = [word for word in sub(r"[^a-z0-9]+", " ", name.lower()).split() if len(word) > 2]   # the name's words
         for layer in (text_group if text_group is not None else []):
             if layer.kind != "type" or not layer.is_visible() or id(layer) in found_ids or layer.bbox[1] >= top:
                 continue
@@ -679,6 +680,7 @@ class PSDParser:
                 tied = True
             elif named_after_text(layer):
                 out.append(layer)
+                tied = tied or any(word in key for word in words)
         return out if tied else []
 
     @staticmethod
@@ -879,7 +881,7 @@ class PSDParser:
             longer = PSDParser._longer_piece(psd, found, joined, whole) if pieces is None else None
             pieces = [layer for layer in (pieces or []) + ([longer] if longer is not None else []) if layer.kind == "type"]
         if not pieces:                          # a split title edited: its pieces by their layer names
-            pieces = PSDParser._named_pieces(psd, found, joined, whole)
+            pieces = PSDParser._named_pieces(psd, found, joined, whole, name)
         parts, copies = [], []
         for layer in PSDParser.reading(found + pieces):
             twin = next((kept for kept in parts if PSDParser.words(kept.text) == PSDParser.words(layer.text)), None)
