@@ -3,7 +3,8 @@ The website build (TTSCardMaker site/build/build_site.py) on a small card repo m
 db/ (CARD_DATA_DIR, load_card_data; no CARD_DATA_DIR, or no readable stats.json, builds nothing): the current text dated
 from its start (since), a duplicate's history, dates by committer time, an archived card's moved_to, tag,
 author and created, image revisions (the person pages), Pacific contribution months, the person stats, index.html's
-pre-written first screen (checked against grid.js in node), the Font filter's data (cardfonts.json). Loads
+pre-written first screen (checked against grid.js in node), the Font filter's data (cardfonts.json), a profile's
+subseries. Loads
 build_site.py from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without it or before load_card_data.
 """
 import copy
@@ -297,6 +298,24 @@ def test_archived_author_and_created_precedence(bs):
     assert (rows()["author"], rows()["created"]) == ("Last", "2019-05-06")
 
 
+def test_a_profile_subseries_is_checked_like_its_series(bs):
+    """A profile's subseries must be one cards use (any series, or the profile's series when it has one); a bad one is
+    dropped with a warning, like the series."""
+    if "subseries" not in getattr(bs, "PROFILE_FIELDS", ()):
+        pytest.skip(f"{BUILD_SITE} has no profile subseries")
+    cards = {"grapes": {"id": "grapes", "type": "item", "series": "Don't Starve", "subseries": "Gourmet Expansion"},
+             "kirby": {"id": "kirby", "type": "creature", "series": "Kirby", "subseries": "Kirby Star Allies"}}
+    clean = lambda **kw: bs.clean_profile({"login": "Me", **kw}, "Me", cards, [])
+    assert clean(series="Don't Starve", subseries="Gourmet Expansion") == (
+        {"login": "Me", "series": "Don't Starve", "subseries": "Gourmet Expansion"}, [])
+    assert clean(subseries="Gourmet Expansion") == ({"login": "Me", "subseries": "Gourmet Expansion"}, [])
+    p, notes = clean(series="Kirby", subseries="Gourmet Expansion")
+    assert p == {"login": "Me", "series": "Kirby"} and notes == ["subseries 'Gourmet Expansion' has no cards in series 'Kirby', dropped"]
+    p, notes = clean(series="Don't Starve Gourmet Expansion", subseries="Gourmet")
+    assert p == {"login": "Me"} and notes == ["series \"Don't Starve Gourmet Expansion\" isn't a known series, dropped",
+                                              "subseries 'Gourmet' isn't a known subseries, dropped"]
+
+
 def test_contributions_json_has_person_stats(bs, repo, tmp_path, monkeypatch):
     """Maker's row: Alpha's PNG changed in c2 and c3 (self 2), White Palace archived (Retired, without path or commit),
     Alpha's strength."""
@@ -326,7 +345,7 @@ def test_index_carries_the_first_screen(bs, repo, tmp_path, monkeypatch):
 
 
 def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypatch):
-    """The editor (editing.js), Stats (charts.js) and People (profile.js) are imported by app.js with import(): without
+    """The editor (editing.js), Stats (charts.js), People (profile.js) and the font box (tokens.js) are imported by app.js with import(): without
     esbuild as stamped modules no page preloads; with it as chunks of their own, each with its stamped source map, none of
     their code in what a first visit loads (app.js and the chunks it imports), and the meta chunks list naming
     each one's files (app.js early())."""
@@ -336,7 +355,7 @@ def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypat
     monkeypatch.setattr(bs, "esbuild", lambda: None)
     _build(bs, monkeypatch, repo, tmp_path / "a")
     assets, page = tmp_path / "a" / "dist" / "assets", (tmp_path / "a" / "dist" / "index.html").read_text(encoding="utf-8")
-    lazy = ("editing.js", "charts.js", "profile.js")
+    lazy = ("editing.js", "charts.js", "profile.js", "tokens.js")
     app = (assets / "app.js").read_text(encoding="utf-8")
     assert all(re.search(rf'import\("\./{re.escape(m)}\?v=\w+"\)', app) for m in lazy)
     assert not re.search(r'modulepreload" href="assets/(edit|stats|profile|preview|mockup|balance)\.js', page)
