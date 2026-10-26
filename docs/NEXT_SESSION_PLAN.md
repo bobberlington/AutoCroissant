@@ -34,24 +34,33 @@ First: check the `+ability` workflow's result (In flight, below).
 - TTSCardMaker main 3853b688. The Desktop clone is at 8f2b3367, 32 behind, clean.
 - Data branch 1cf84da1: parser 4 (builder 8b0ce02), 820 cards, details v2; no `db/verdicts.json` yet.
 - psd-tools fork pin `cards-20261025b` (`requirements-cards.txt`).
-- Card sync chains leftover work, with one safety cron at :17. The guards' window is 30 minutes from the push.
+- Card sync chains leftover work, with one safety cron at :17. Both proven on 10-25: run 40262751459 was dispatched by
+  github-actions[bot] after 40262608396; the :17 cron fired at 21:19, 00:25 and 06:18 UTC (other hours' runs didn't
+  come). The guards' window is 30 minutes from the push.
+- OJWikibot main 8924db4. Its deployed commit is unknown (5135280 in the morning; a70877d, 8ea1c7c..174f62b and
+  cdf6f03..8924db4 landed since): check it on the jetson and deploy with the `jetson-deploy` skill if behind.
 - `psd_edit.ADD_ABILITY_LIVE = False`.
 
 ## In flight
 
-**`+ability` placement and font** (AC worktree `~/Documents/Tools/wt/ac-plusplace`, branch `work/plusplace`; scratch
-`~/Documents/Tools/wt/scratch/plusability2/`). One placement rule: the box starts at the top of the card's free text area
-(below the stats, or the top of the empty panel), flows down, never off the card. The card's own font when it exists;
-the template's only as the fallback. Measured leave-one-out on real cards. New test files go to
-`~/std-work-1025/plusability/<card>/plus_ability_2/`.
+**`+ability` placement and font** (AC worktree `~/Documents/Tools/wt/ac-plusplace`, branch `work/plusplace` at
+c422934; scratch `~/Documents/Tools/wt/scratch/plusability2/`). One placement rule: the box starts at the top of the
+card's free text area (below the stats, or the top of the empty panel), flows down, never off the card. The card's own
+font when it exists; the template's only as the fallback. Measured leave-one-out on real cards. New test files go to
+`~/std-work-1025/plusability/<card>/plus_ability_2/`. The branch adds `commands/ability_place.py` and
+`commands/ability_index.json` (the other cards' facts, remade by hand: `python -m commands.ability_place
+~/Desktop/TTSCardMaker`) and touches `psd_edit.py` and `psd_regions.py`.
 
 What to do with its result:
 
 1. Read its report; check the test files exist and nothing overwrote the first rehearsal files.
-2. Land the branch on main with `ADD_ABILITY_LIVE` still False (targeted tests: `tests/test_psd_edit.py`), then
-   delete the worktree and branch.
-3. Tell the owner the files are ready. Flip `ADD_ABILITY_LIVE` only after the owner approves them in Photoshop; then
-   deploy. Corrections from the owner go into a `plus_ability_3/` round.
+2. Land the branch on main with `ADD_ABILITY_LIVE` still False (targeted tests: `tests/test_psd_edit.py`,
+   `tests/test_card_data.py`, `tests/test_card_guards.py`), then delete the worktree and branch.
+3. Tell the owner the files are ready. Flip `ADD_ABILITY_LIVE` only after the owner approves them in Photoshop.
+   Before the flip, both new files join the sparse lists: `card_data.SPARSE_FILES` and `card_guards.SPARSE_FILES`, and
+   TTSCardMaker's card-sync.yml and card-guards.yml sparse-checkout lists. The flip goes live at the next Card sync run
+   (it checks out AC main at `builder_ref`), not at a jetson deploy. Corrections from the owner go into a
+   `plus_ability_3/` round.
 
 ## Open items
 
@@ -64,8 +73,15 @@ What to do with its result:
       (`~/Downloads/Problem cards 2026-10-25 (after fixes).csv` and `.md`; `docs/Future/PROBLEM_CARDS_2026-10-25b.*`).
 - [ ] Safari checks: the grid flash, the many-boxes edge scroll.
 - [ ] Mark PNG-only duplicates on the website.
-- [ ] Pull the Desktop TTSCardMaker clone (32 commits behind, clean).
-- [ ] `site/profiles/MichaelJSr.json`: the series "Don't Starve Gourmet Expansion" isn't a known series.
+- [ ] Confirm the phone first screen stays. The last recorded ruling (10-25 ~16:45) removed it; it came back at 19:09
+      (TC de98ccd4) with the Safari flash root fix, with no ruling recorded.
+- [ ] Data problems from the live problem list (`PROBLEM_CARDS_2026-10-25b.md`): Computer Virus has no stats (no
+      template stat bars; Photoshop); Twin Emperors' Vek'lor has DEF 10 on the website and 4 on the card (an editor
+      checks which is right).
+- [ ] Pull the Desktop TTSCardMaker clone (32 commits behind, clean) and the Desktop OJWikibot clone (174f62b, 9
+      behind).
+- [ ] `site/profiles/MichaelJSr.json`: the series "Don't Starve Gourmet Expansion" isn't a known series. "Gourmet
+      Expansion" is a subseries of Don't Starve (1 card, Grapes): probably series "Don't Starve" plus that subseries.
 - Eventually, never blockers: Photoshop standardizing (one Name and one Ability layer per card, rulebook Header/Page
   Number layers); the team's rulings draft; developers resetting clones after the 10-24 rewrite and reinstalling
   stoogedings. Layout support still refuses Grimora, Skeleton Mate, Slugcat's spd, three smart-filter star layouts,
@@ -79,17 +95,23 @@ What to do with its result:
       fallback one cycle later.
 - [x] The joined splice (PARTS_EDITOR §8): already deleted on 10-25 (AC ab132b2, 0 legacy entries). Only the
       `_joined_edit` refusal for legacy joined edits remains.
-- [ ] 16 cards whose star layers the counter misreads keep a reworded flag (they print the right count).
 
 ### Outside
 
 - [ ] OJWikibot's wiki API answers HTTP 500 since 10-23 (wiki/host side); O-6 waits for it.
 
+### Developer
+
+- [ ] Stubborn Queen and Gust of Trees are stuck under "Not parsed yet": PNG-only copies (`dup` set) that
+      build_site.py's "card PNGs without a PSD" loop (site/build/build_site.py ~3486-3503) lists image only, with
+      `parsed: false`. Teach the site these copies. Stubborn Queen's series also shows Other instead of Sort the Court!.
+
 ### Small known
 
 - [ ] The font filter's included sidebar chip: a click removes it (no off state).
 - [ ] Headless checks never ran Safari.
-- [ ] `docs/Future/README.md` still calls the census re-run in flight (it landed: AC ba0b91f).
+- [ ] The 8 first-screen tiles drop their href once adopted: middle-click on them opens no tab.
+- [ ] 16 cards whose star layers the counter misreads keep a reworded flag (they print the right count).
 
 ## Queue (`docs/Future/`)
 

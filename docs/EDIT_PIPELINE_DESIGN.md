@@ -755,7 +755,7 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   render as the card; `PSD_DIRTY_VERIFY`'s whole renders still compare the copy with the card in the tests), and the
   copy shares the card's one stored-preview read (K-5: `preview_image`, the fork's text reference, for `icc_vote`,
   `stored_preview` and the renders: 5 decodes a bake -> 2, the old card's and the saved one's). Over the 317 K-1 bakes
-  (`scratch/bakecopy/`, load average ~75): PNG, PSD bytes and refusals identical; CPU saved per bake, median, plain
+  (`scratch/bakecopy/`: its scripts, `data/` and `logs/`; load average ~75): PNG, PSD bytes and refusals identical; CPU saved per bake, median, plain
   cards 0.15-0.28 s, filtered ones 2.1-3.0 s (stat 4.57 -> 1.91 s). `gate_untouched` leaves out every edit's region, the
   stats' too (a stat with the name or ability always refused `region`), and runs on stat-only bakes. `covered_ink`:
   new text under a visible Normal layer above it (Papyrus' spaghetti) or over a stat bar row the old text did not

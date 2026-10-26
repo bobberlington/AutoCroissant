@@ -35,7 +35,7 @@ On main; deployed with the evening's 8b0ce02.
 | Instant replies (B-1) | AC d1725ce, 9694021; OJWikibot a70877d | drains wake on enqueue, 1 s fallback |
 | OJWikibot lane 3 | OJWikibot 8ea1c7c..174f62b | worker reply slices, early stop, no blocking start, C twister |
 | Site: bundle, WOFF2, lazy chunks (S-1, S-4, S-3) | TC c31e67a3, 7fb7b355, 0a1bfbe3; AC 6a87179, 95b5f20 | one esbuild bundle with a source map; WOFF2 copies of the mock-up's fonts; editor, Stats, People on first use |
-| First screen in index.html (S-2) | TC c31e67a3, removed 54395592; AC 4a4ad4c | Safari redrew its pictures (the flash); removed the same evening |
+| First screen in index.html (S-2) | TC c31e67a3, removed 54395592; AC 4a4ad4c | Safari redrew its pictures (the flash); removed the same evening (back at 19:09, Evening table) |
 
 ## Evening (~17:10-24:00)
 
@@ -43,13 +43,13 @@ On main in both repos; the bot code is deployed (8b0ce02). Times are PDT; data c
 
 | What | Where | Notes |
 |---|---|---|
-| OJWikibot outage lane (O-1, O-4) | OJWikibot cdf6f03..8924db4 | Landed 16:14-16:37, left out of the afternoon table: live game checks opt-in (`OJ_LIVE_GAME`), retries without respawns, durable edits, append-only plans, own-edit conflicts, paced re-runs |
+| OJWikibot outage lane (O-1 to O-5) | OJWikibot cdf6f03..8924db4 | Landed 16:14-16:37, left out of the afternoon table: live game checks opt-in (`OJ_LIVE_GAME`), throttle 2 s, status commands answer during an outage, `basetimestamp` from the caller's read, retries without respawns, durable edits, append-only plans, own-edit conflicts, paced re-runs |
 | Lanes, land3 (17:20) | AC 18223d8, 4f89a2e, 7ba8e4f, 5482254, a3a20a9, d10aca2; TC a58b241a, 1f6e1136, 70bf91f4 | /query_ability as grid images (B-2); the card list saved at startup (B-3a, `card_tree.json`); one main lane per guarded push (P-2); bake copies reopen the card's bytes, one preview decode (K-3, K-5); guards pool at most 4, `AC_TEST_WORKERS`, old Kung Fu Panda copy dropped; badges resized on 43 cards with rewraps allowed |
 | Lanes, land4 (17:53) | AC c9697c0, c3c8d72, c577935, 46e6065 | Real-card tests at one pinned commit (T-2) and guards on every runner core (K-2); numbered-PNG duplicate scan dropped, joined ability splice deleted (ab132b2), `+ability` built and off (f92fb5e); bake bugs (body colour, kept characters, fit, kerning); docs |
 | Link previews | TC 89929404 | The link-preview image URL carries its content stamp |
 | Website-only values | AC a198191, TC 9af79e9b | `_site` in Card Edits; a per-field "Website only (don't change the card image)" checkbox; never baked; a quiet "Website only" tag |
 | File rename | AC 8682e1e, TC d5ae5296 | "Also rename the card's files" (`_rename`); everything keyed by the file follows; old links redirect |
-| Related-card headings, Missing filter | TC 1d979aee, AC bf913c5 | Headings put the count first; Missing filter (no series, subseries, types, ability, author, stars, stats, item type or ratings); missing values sort last both ways |
+| Related-card headings, Missing filter | TC 1d979aee, AC bf913c5 | Headings put the count first; Missing filter (no series, subseries, types, ability, author, stars, stats, item type or ratings, and artwork sources with the artwork fields); missing values sort last both ways |
 | Card stays open | TC cc5f238a | An edit that makes the open card leave the filter keeps it open |
 | Sidebar scroll | TC b9b4228a | The filters keep their scroll on a click |
 | Exclusion filters | TC 6102df89 | Right-click or long-press a filter to exclude it, ≠ on selects, `x`-params |
@@ -86,7 +86,14 @@ From memory `owner-decisions-2026-10-24-night` (the 10-25 lines), in order:
   silently; Discord gets bake posts only.
 - Backups: the bots commit their live files to their repos on change; config.py stays private.
 - Optimization: build the clear wins; phone first paint built; instant bot replies in both bots; /query_ability as
-  grid images only.
+  grid images only. The guards' quiet-window timer at 25 minutes (~14:30). OJWikibot never drops wiki edits or
+  scheduled commands; no Cloudflare (~15:20).
+- ~16:45: remove the pre-written first-screen cards (Safari kept flashing). They came back at 19:09 with the root fix
+  (TC de98ccd4); no ruling on that is recorded (plan: owner item).
+- Website-only values (~17:30): a card-image field can be marked "Website only (don't change the card image)" per
+  field; never baked; a quiet "Website only" tag.
+- File rename (~18:00): a name edit renames the card's files only when "Also rename the card's files" is ticked (off by
+  default); website-only names never rename.
 - Website: related-card counts first; the Missing filter; the open card never closes on an edit.
 - A subseries is one group across series and needs no series. Right-click or long-press excludes a filter.
 - Artwork source and Ability artwork source: database-only, per entry.
@@ -124,7 +131,9 @@ From memory `owner-decisions-2026-10-24-night` (the 10-25 lines), in order:
 - Layout support still refuses: Grimora and Skeleton Mate (bars painted in one layer), Slugcat's spd, three
   smart-filter star layouts, PoD04 Zebra Bloon +1, Living Bread.
 - OJWikibot's wiki API has answered HTTP 500 since 10-23 (wiki/host side).
-- The Card sync schedule fired about 8% of the time: answered by the chain and the :17 safety cron (afternoon).
+- The Card sync schedule fired about 8% of the time: answered by the chain and the :17 safety cron (afternoon). Both
+  proven by night: run 40262751459 was dispatched by github-actions[bot] after 40262608396; the :17 cron fired at
+  21:19, 00:25 and 06:18 UTC.
 
 Evening (open at midnight):
 
@@ -138,3 +147,4 @@ Evening (open at midnight):
 - Mark the PNG-only duplicates on the website.
 - The Desktop TTSCardMaker clone is 32 commits behind origin/main (clean): pull it.
 - `site/profiles/MichaelJSr.json` names the series "Don't Starve Gourmet Expansion", which isn't a known series.
+  "Gourmet Expansion" is a subseries of Don't Starve (1 card): probably series "Don't Starve" plus that subseries.
