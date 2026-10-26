@@ -435,22 +435,29 @@ def test_dirty_box_bounds_the_untouched_gate(clone, parser):
 
 
 BARS_FIX = "e401c98c"       # TTSCardMaker: Clot Black's HP dark hearts 1-2, Minecraft Panda's dark strips in their rows
+CLOT_BLACK, PANDA = "Auxiliary/Minions/Clot_Black.psd", "Creatures/Pandas/2 Stars/Minecraft_Panda.psd"
 
 
-def test_layout_bars_refuse_what_they_lack(clone, parser, tmp_path):
+def test_layout_bars_refuse_what_they_lack(clone, parser):
     """A cell with no dark picture refuses (Clot Black's HP 2 to 1), and a row that would show none says what to add
-    (Minecraft Panda's 0); with them added (BARS_FIX) both bake: Clot Black's cells past its dark strip in the region,
-    1 -> 0 -> 2 reading 2 (not 3: the old value's name dropped), Minecraft Panda's 0 and back."""
-    clot, panda = "Auxiliary/Minions/Clot_Black.psd", "Creatures/Pandas/2 Stars/Minecraft_Panda.psd"
-    for rel, stat, value, why in ((clot, "hp", 1, "cell 2 of 'hp' has no dark picture"),
-                                  (panda, "hp", 0, "'Darks' would show no cell, and a row showing none has no value")):
+    (Minecraft Panda's 0)."""
+    for rel, stat, value, why in ((CLOT_BLACK, "hp", 1, "cell 2 of 'hp' has no dark picture"),
+                                  (PANDA, "hp", 0, "'Darks' would show no cell, and a row showing none has no value")):
         psd = PSDImage.open(_card(clone, rel)[0])
         with pytest.raises(pe.Refused, match=why):
             pe.set_stat(psd, pe.parse_card(parser, _card(clone, rel)[0], rel, psd), stat, value)
-    for rel, stat, values in ((clot, "hp", (1, 0, 2)), (panda, "def", (0, 2))):
+
+
+def test_layout_bars_bake_what_was_added(clone, parser, tmp_path):
+    """With those added (BARS_FIX) both bake and come home as drawn: Clot Black's cells past its dark strip in the
+    region, 1 -> 0 -> 2 reading 2 (not 3: the old value's name dropped); Minecraft Panda's 0, then 3 (review 2026-10-26:
+    its 0 is its "0" strip's, no cell's, so lit cell 2 came back still "2": 5), then 10 and down from it."""
+    for rel, stat, values in ((CLOT_BLACK, "hp", (1, 0, 2)), (PANDA, "def", (0, 3, 10, 2))):
         path = tmp_path / Path(rel).name
         path.write_bytes(at_rev(clone, BARS_FIX, rel))
         path = str(path)
+        start = PSDImage.open(path)
+        box = tuple(pe.stat_rows(start)[stat][0][0].bbox)
         for k, value in enumerate(values):
             out = str(tmp_path / f"{Path(rel).stem}{k}.psd")
             edit, psd, parsed = _edit_saved(parser, path, rel, stat, value, out)
@@ -458,6 +465,9 @@ def test_layout_bars_refuse_what_they_lack(clone, parser, tmp_path):
             if k == 0:
                 pe.gate_dirty(PSDImage.open(path), psd, [edit])
             path = out
+        render = lambda psd: np.asarray(psd.composite(viewport=box, ignore_preview=True, apply_icc=False)
+                                        .convert("RGB")).astype(int)
+        assert np.abs(render(psd) - render(start)).max() <= 2, rel
 
 
 def test_numbered_cells_bake(clone, parser, tmp_path):

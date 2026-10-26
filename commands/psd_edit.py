@@ -3763,7 +3763,10 @@ def plan_bar(psd: PSDImage, group, stat: str, old: int, value: int, why: Refused
             edges[k] = x
     plan = BarPlan("", box)
     names, shown, hows = {}, {}, []
-    toggled = cells is not None and any(not layer.visible for cell in cells for layer in cell)
+    strip = cells is not None and old == STAT_MAX and any(    # at 10 every lit cell shows over a "0" strip (Minecraft Panda)
+        not layer.is_group() and layer.visible and layer.kind in DRAWN_LAYER_KINDS and _digit(layer) == "0"
+        and all(layer is not one for cell in cells for one in cell) for layer in group)
+    toggled = cells is not None and (strip or any(not layer.visible for cell in cells for layer in cell))
     if toggled:
         hows.append("cells shown and hidden")
         roles = _roles(cells, old)
@@ -3838,7 +3841,8 @@ def plan_bar(psd: PSDImage, group, stat: str, old: int, value: int, why: Refused
         raise why
     if _row_reads(group, names, shown) != value:    # the parser's reading: the layer named after the value takes the new one
         named = [layer for layer in group if not layer.is_group() and _digit(layer) == str(old) and layer.visible]
-        if toggled and any(layer is one for cell in cells for one in cell for layer in named):     # a lit cell named
+        # a lit cell named, or at 0 a "0" strip (Minecraft Panda's): the lit cell at the value takes the name
+        if toggled and named and (not old or any(layer is one for cell in cells for one in cell for layer in named)):
             for layer in named:
                 names[id(layer)] = "0"
             for cell in cells:                  # lit cells shown again drop an old value's name (1 -> 0 -> 2)
