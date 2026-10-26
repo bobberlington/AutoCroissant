@@ -434,29 +434,46 @@ def test_events_carry_their_push(cards, monkeypatch):
     assert cdb.read_verdicts(str(cards.db)) == {"mini doomer": refused} and cdb.check_db(str(cards.db)) == []
 
 
-def test_sweep_commits_post_as_the_guards(tmp_path):
-    """A sweep pass committed by hand with a Card-sweep trailer: its push is the guards' (no Discord post), whoever made
-    it; a commit without the trailer, or naming it only in the subject, posts as before."""
+def test_sweep_events_are_silent_in_any_push(tmp_path):
+    """A Card-sweep trailer silences its commit's own art and text changes only: not the other commits of its push (one
+    listed push, the fallback, or a later build holding its card), not a card it adds, not a card an earlier commit
+    changed too; the trailer named only in a subject silences nothing."""
     repo = tmp_path / "swept"
     repo.mkdir()
     git(repo, "init", "-q", "-b", "main")
+    steps = (("base", "me", {"A.psd": b"a0", "B.psd": b"b0", "C.psd": b"c0", "E.psd": b"e0"}),
+             ("Ordinary", "bob", {"B.psd": b"b1", "E.psd": b"e1"}),
+             ("Badges: size on 2 cards\n\nCard-sweep: badges", "me", {"A.psd": b"a1", "E.psd": b"e2", "D.psd": b"d0"}),
+             ("Card-sweep: in the subject only", "me", {"C.psd": b"c1"}),
+             ("Ordinary after", "bob", {"z.txt": b"z"}))
     shas = []
-    for at, message in enumerate(("base", "Badges: size and baseline on 3 cards\n\nCard-sweep: badges",
-                                  "Card-sweep: in the subject only", "Apostrophes: ' on 2 cards\n\nCard-sweep: apostrophes"), 1):
-        put(repo, "Items/A.png", str(at).encode())
+    for at, (message, who, files) in enumerate(steps, 1):
+        for path, data in files.items():
+            put(repo, path, data)
         git(repo, "add", "-A")
         stamp = f"@{at * 1000} +0000"
-        git(repo, "commit", "-q", "-m", message, env={"GIT_AUTHOR_NAME": "MichaelJSr", "GIT_AUTHOR_EMAIL": "me@x",
-                                                      "GIT_COMMITTER_NAME": "MichaelJSr", "GIT_COMMITTER_EMAIL": "me@x",
+        git(repo, "commit", "-q", "-m", message, env={"GIT_AUTHOR_NAME": who, "GIT_AUTHOR_EMAIL": f"{who}@x",
+                                                      "GIT_COMMITTER_NAME": who, "GIT_COMMITTER_EMAIL": f"{who}@x",
                                                       "GIT_AUTHOR_DATE": stamp, "GIT_COMMITTER_DATE": stamp})
         shas.append(git(repo, "rev-parse", "HEAD").strip())
-    base, badges, plain, apostrophes = shas
-    assert cd._sweep_commits(str(repo), base, apostrophes) == {badges, apostrophes}
-    assert cd._guard_commits(str(repo), base, apostrophes) == set()
-    events = [{"kind": "art", "card": c, "commit": sha} for c, sha in (("A", badges), ("B", plain), ("C", apostrophes))]
-    commits = [(sha, float(at), "MichaelJSr") for at, sha in enumerate(shas[1:], 2)]
-    pushed = cl.assign_pushes(events, [], commits, base, set(), cd._sweep_commits(str(repo), base, apostrophes))
-    assert {e["card"]: cl.silent(e) for e in pushed} == {"A": True, "B": False, "C": True}
+    base, x, s, p, z = shas
+    blob = lambda sha, path: git(repo, "rev-parse", f"{sha}:{path}").strip()
+
+    def made():
+        return [{"kind": "art", "card": "A", "path": "A.psd", "commit": s, "blob": [blob(base, "A.psd"), blob(s, "A.psd")]},
+                {"kind": "changed", "card": "B", "path": "B.psd", "commit": x, "blob": [blob(base, "B.psd"), blob(x, "B.psd")]},
+                {"kind": "art", "card": "C", "path": "C.psd", "commit": p, "blob": [blob(base, "C.psd"), blob(p, "C.psd")]},
+                {"kind": "new", "card": "D", "path": "D.psd", "commit": s},
+                {"kind": "changed", "card": "E", "path": "E.psd", "commit": s, "blob": [blob(base, "E.psd"), blob(s, "E.psd")]}]
+    commits = [(sha, float(at), who) for at, (sha, (_, who, _)) in enumerate(zip(shas, steps)) if sha != base]
+    listed = [{"after": z, "before": base, "by": "bob", "at": 5.0, "commits": [x, s, p, z]}]
+    want = {"A": True, "B": False, "C": False, "D": False, "E": False}
+    for pushes, span, since in ((listed, commits, base), ([], commits, base), ([], commits[3:], p)):
+        events = made()
+        cd.mark_sweeps(str(repo), events)
+        pushed = cl.assign_pushes(events, pushes, span, since, set(), set())
+        assert {e["card"]: cl.silent(e) for e in pushed} == want, (pushes, since)
+    assert made()[0].get("sweep") is None and [e.get("sweep") for e in events] == ["badges", None, None, None, None]
 
 
 def _one_email(tmp_path):

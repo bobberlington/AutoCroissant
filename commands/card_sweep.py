@@ -19,8 +19,8 @@ A sparse worktree must hold the paths it writes (git sparse-checkout add), or gi
 Several kinds run as passes in the order given, one commit each: pass n writes into <out>/<kind> (repo paths) and its
 plan beside <out>, and reads the cards an earlier pass rewrote from that pass's files, so its base blobs are what the
 earlier commit lands (`moved` against main after that commit).
-Each pass's commit carries the trailer `Card-sweep: <kind>` (changelog.SWEEP_TRAILER) and is pushed on its own: its
-push is then the guards' (silent, no Discord post; its new art still on the Changes page).
+Each pass's commit carries the trailer `Card-sweep: <kind>` (changelog.SWEEP_TRAILER): the art and text changes it
+alone makes are silent (no Discord post, still on the Changes page; card_data.mark_sweeps), in any push.
 """
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor

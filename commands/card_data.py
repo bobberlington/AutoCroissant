@@ -1276,8 +1276,8 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     if base and run(["git", "-C", checkout, "cat-file", "-e", f"{base}^{{commit}}"], capture_output=True).returncode != 0:
         base = None
     guards = _guard_commits(checkout, base, run_build.head) | {d.get("commit") for d in guard_docs or [] if d.get("commit")}
-    sweeps = _sweep_commits(checkout, base, run_build.head)   # their art events kept, their pushes silent as the guards'
     new_events = [e for e in new_events if not (e["kind"] == "art" and e.get("commit") in guards)]   # the guards' events say them
+    mark_sweeps(checkout, new_events)                     # a sweep's own art and text changes: silent, still on the website
     new_events += side_events(db.stats, db.archived(), side, guard_docs)
     if restore:
         new_events = [{"kind": "restore", "card": "", "restored_from": restore}]
@@ -1289,7 +1289,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
             if push["after"] in mine:
                 push["by"] = changelog.CARD_SYNC
         new_events = changelog.assign_pushes(new_events, listed, commits, base,
-                                             ({run_build.head} if baked else set()) | mine, guards | sweeps)
+                                             ({run_build.head} if baked else set()) | mine, guards)
     for name in sorted(run_build.reparsed):
         card = db.stats.get(name)
         notes = CardValidator.validate(card) if card is not None else []
@@ -1393,16 +1393,34 @@ def _guard_commits(checkout: str, base: Optional[str], head: str) -> set:
     return {sha for sha, author, subject in rows if author == BOT and subject.startswith(GUARDS + ":")}
 
 
-def _sweep_commits(checkout: str, base: Optional[str], head: str) -> set:
-    """The commits in base..head with a Card-sweep trailer (card_sweep's passes, committed by hand; owner: the guards'
-    fixes are silent): any author, their pushes GUARDS'."""
-    from commands.changelog import SWEEP_TRAILER
-    span = [f"{base}..{head}"] if base else ["--max-count=100", head]
+def mark_sweeps(checkout: str, new_events: list) -> None:
+    """
+    Gives "sweep" (the trailer's value) to each art or changed event (changelog.SWEPT) whose own commit carries a
+    Card-sweep trailer (card_sweep's passes, committed by hand; owner: the guards' fixes are silent) and is the card's
+    only change since its stored blob (the blob before that commit is the event's old one). Any push, any build: a card
+    held for a later run still finds its commit; new, archived, renamed and moved cards always post.
+    """
+    from commands.changelog import SWEEP_TRAILER, SWEPT
+    candidates = [e for e in new_events if e["kind"] in SWEPT and e.get("commit") and e.get("path")
+                  and len(e.get("blob") or ()) == 2 and all(e["blob"])]
+    if not candidates:
+        return
     try:
-        log = _git(checkout, "log", f"--format=%H%x09%(trailers:key={SWEEP_TRAILER},valueonly,separator=%x2C)", *span)
+        log = _git(checkout, "log", "--no-walk=unsorted", f"--format=%H%x09%(trailers:key={SWEEP_TRAILER},valueonly,separator=%x2C)",
+                   *sorted({e["commit"] for e in candidates}))
     except CalledProcessError:
-        return set()
-    return {sha for sha, _, value in (line.partition("\t") for line in log.splitlines()) if value.strip()}
+        return
+    kinds = {sha: value.strip() for sha, _, value in (line.partition("\t") for line in log.splitlines()) if value.strip()}
+    for sha in sorted({e["commit"] for e in candidates if e["commit"] in kinds}):
+        mine = [e for e in candidates if e["commit"] == sha]
+        try:                                              # the parent's tree entries: no blob is read
+            listing = _git(checkout, "--literal-pathspecs", "ls-tree", "-r", "-z", f"{sha}^", "--", *sorted({e["path"] for e in mine}))
+        except CalledProcessError:
+            continue
+        before = {path: meta.split()[2] for meta, _, path in (entry.partition("\t") for entry in listing.split("\0") if entry)}
+        for event in mine:
+            if before.get(event["path"]) == event["blob"][0]:
+                event["sweep"] = kinds[sha]
 
 
 def side_events(stats: dict, archived: dict, side: Optional[list], guard_docs: Optional[list]) -> list:
@@ -1637,6 +1655,7 @@ __all__ = [
     'gates',
     'ls_tree',
     'main',
+    'mark_sweeps',
     'pushes',
     'rewrite_commit',
     'side_events',

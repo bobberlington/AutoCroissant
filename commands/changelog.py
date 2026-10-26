@@ -54,7 +54,8 @@ COUNT_WORDS = (("new", "new"), ("changed", "changed"), ("art", "new art"), ("mov
                ("guard-png", "PNG"), ("guard-fix", "fixed"))   # the title's counts: "1 new, 2 changed"
 CARD_SYNC = "Card sync"                                  # the push of the run's own commit M
 GUARDS = "Card guards"                                   # the push of a guards commit (card_guards.SUBJECT): never posted
-SWEEP_TRAILER = "Card-sweep"                             # a trailer: a hand-committed sweep of the guards' fixes, its push GUARDS'
+SWEEP_TRAILER = "Card-sweep"                             # a trailer: a hand-committed sweep of the guards' fixes
+SWEPT = ("art", "changed")                               # a sweep commit's own events of these kinds are silent ("sweep")
 GITHUB = "https://github.com/"
 MESSAGES_MAX = 20                                        # per run; the rest wait for the next one (the cursor)
 EMBEDS_MAX = 10                                          # Discord: embeds per message
@@ -565,8 +566,10 @@ def payload(group: list, site: str = SITE_URL, ids: Optional[dict] = None, repos
 
 
 def silent(event: dict) -> bool:
-    """An event no Discord post shows: a guard event, or any event of a guards commit's push (owner, 2026-10-25)."""
-    return event["kind"] in SILENT or (event.get("push") or {}).get("by") == GUARDS
+    """An event no Discord post shows: a guard event, any event of a guards commit's push (owner, 2026-10-25), or a
+    sweep's own art or text change (its "sweep", card_data.mark_sweeps)."""
+    return event["kind"] in SILENT or (event.get("push") or {}).get("by") == GUARDS \
+        or (event["kind"] in SWEPT and bool(event.get("sweep")))
 
 
 def messages(pending: list, site: str = SITE_URL, ids: Optional[dict] = None, repository: str = "",
@@ -646,6 +649,7 @@ __all__ = [
     'FIELDS',
     'GUARDS',
     'SWEEP_TRAILER',
+    'SWEPT',
     'KINDS',
     'SILENT',
     'TAG_PATTERN',

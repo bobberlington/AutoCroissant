@@ -67,9 +67,9 @@ the Isaac-style cards, a bigger item size, a deleted ability's own font first.
       06_Reading_Cards, 12_Reactions2), and the 54 problem cards (`~/Downloads/Problem cards 2026-10-25.csv` and `.md`;
       `docs/Future/PROBLEM_CARDS_2026-10-25b.*`). The other 5 of the 18 are fixed on TTSCardMaker work/resave18.
 - [ ] Land the resave18 fixes IN THIS ORDER: (1) AutoCroissant work/resave18 on main (the parser reads `\'` as `'`,
-      and a `Card-sweep:` trailer makes a push silent like the guards'); Card sync builds with main's code. (2) Only
-      then push TTSCardMaker work/resave18, its two commits as a push of their own. Pushed first, 10_Attacking and
-      17_Death would store `don\'t` / `DON\'T` and the 5 cards would post "New art" to Discord.
+      and a `Card-sweep:` trailer makes its commit's own art and text changes silent, in any push); Card sync builds
+      with main's code. (2) Only then push TTSCardMaker work/resave18 (rebase it if main moved). Pushed first,
+      10_Attacking and 17_Death would store `don\'t` / `DON\'T` and the 5 cards would post "New art" to Discord.
 - [ ] 03 Setting Up's stored ability keeps `they\'re` (its PSD is unchanged, PARSER_VERSION stays 4): after (1), a Card
       sync `cards: 03 Setting Up` dispatch re-reads that one card, or bump PARSER_VERSION (~812 re-parses, gate G4).
 - [ ] Safari: the many-boxes edge scroll (the grid flash is gone, owner 10-26).
