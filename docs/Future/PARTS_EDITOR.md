@@ -1,6 +1,6 @@
 # Website parts editor: one text box per PSD layer
 
-**Status:** built and landed 2026-10-25 except three steps. Track C (site) TTSCardMaker f6927047; Tracks A and B (data, bake) AutoCroissant aae7233 with TTSCardMaker abf70775; the full re-parse ran (data d547daef, parser 3, details v2, 812 records with parts). Left: the 5 variant PSDs' tags (commit on TTSCardMaker `work/varianttags`, plan shown to the owner first: `~/Documents/Tools/wt/scratch/parts-ab/VARIANT_TAGS_PLAN.md`), `+ability` (§10 step 6, after a Photoshop proof) and the §8 joined-splice deletion (one Card sync cycle with no legacy entries).
+**Status:** built and landed 2026-10-25 except three steps. Track C (site) TTSCardMaker f6927047; Tracks A and B (data, bake) AutoCroissant aae7233 with TTSCardMaker abf70775; the full re-parse ran (data d547daef, parser 3, details v2, 812 records with parts). The 5 variant PSDs' tags landed (TTSCardMaker 572680d5). Left: the numbered-PNG duplicate scan's deletion (§10 step 5), `+ability` (§10 step 6, after a Photoshop proof) and the §8 joined-splice deletion (one Card sync cycle with no legacy entries).
 
 **Goal.** Website edits of titles, abilities and rulebook text land exactly in the layer they came from, on any card
 layout, and never overwrite Photoshop work.
