@@ -1189,8 +1189,9 @@ def fit_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Option
     Badges (owner 2026-10-25), the PIXEL_FIXES kind: badge_plan's badges and icons set (FontSize, BaselineShift; TySh
     and the Txt2 story), their layers' changed glyphs redrawn (a splice), the stored preview patched. A resize is made
     even when it rewraps the text or moves other words (owner 2026-10-25, the 58 shifted only that night): the moved
-    glyphs are redrawn and an FX layer on moved words is cut again (_recut_fx). Gated (_only_pixels, the stories by
-    gate_stories), then checked: each fitted one within FIT_CHECK px of its place and at its computed size.
+    glyphs are redrawn and an FX layer on moved words is cut again (_recut_fx). Refused when a line no longer fits the
+    box or ink runs off the canvas. Gated (_only_pixels, the stories by gate_stories), then checked: each fitted one
+    within FIT_CHECK px of its place and at its computed size.
 
     Returns:
         The layer names fitted; raises Refused or the engine's errors
@@ -1201,9 +1202,13 @@ def fit_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Option
     for layer, wants in badge_plan(psd, fonts):
         name, faces = layer.name.strip(), psd_edit.font_map(fonts(layer_fonts(layer)))
         old, keep, placed = tuple(layer.bbox), capture(layer, faces), _placed(layer, faces)
+        off = psd_edit._ink_off_canvas(layer, psd.width, psd.height)
         _set(layer, wants)
         now = _placed(layer, faces)
-        _by_glyph(layer, layer.rasterize(fonts=faces, keep=keep, unit=psd_edit.SPLICE_UNIT))
+        report = layer.rasterize(fonts=faces, keep=keep, unit=psd_edit.SPLICE_UNIT)
+        _by_glyph(layer, report)
+        if "overflow" in report.warnings or (not off and psd_edit._ink_off_canvas(layer, psd.width, psd.height)):
+            raise Refused("overflow", f"{name}: resizing its badges pushes text out of its box")
         boxes += _padded(layer, old)
         for fx, was in _recut_fx(psd, layer, {i for i in placed if now.get(i) != placed[i]}, faces):
             boxes += _padded(fx, was)
