@@ -94,7 +94,9 @@ since 2026-10-20.
   Overlapping stars stay apart (Zoltan, the dice faces of Nightmare and The Lich King). Layers named after a
   `Types/Stars` icon outside the groups count too, when star-sized and above the midline (Massive Moss Charger's two
   'Hk star': 4, not 2). Stars below the midline (Tainted Lazarus's dead form) are not counted; the bake refuses a
-  stars edit on such a card, and one with stars outside the group, for now.
+  stars edit on such a card, and one with stars outside the group, for now (Massive Moss Charger: every count until
+  Lane 3; main baked its 3 from a wrong count of 2). The midline test is the box's centre, not its top as for type
+  icons, so a new star whose centre falls below it is refused too (The Evil Idol's column at 6-8).
 - **Fallback:** with no such group, visible layers whose name has the word "star" ("Patrick Star", "Emerald_Star",
   not "starfish") are counted the same way.
 - **Zero stars** gives the persisted problem `NO STARS FOUND (put the star layers in a group named "Stars")`. On
