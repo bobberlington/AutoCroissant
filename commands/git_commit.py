@@ -8,7 +8,7 @@ POST git/blobs, or no token) the same objects are written into the blobless hist
     checkout_head(clone) -> the commit its HEAD is at ("" when unborn)
 
 A rate-limited 403 is this run's, not the token's: it raises Transient. No Discord or
-config imports (the token: config through github_api, else GITHUB_TOKEN); never the pickles.
+config imports (the token: config through github_api, else GITHUB_TOKEN).
 """
 from base64 import b64encode
 from os import environ
@@ -26,7 +26,7 @@ from global_config import CARD_BRANCH, CARD_REPO, HISTORY_CLONE
 # ========================
 # Configuration
 # ========================
-AUTHOR = {"name": "AutoCroissant", "email": "autocroissant@gmail.com"}      # as the PICKLE commits
+AUTHOR = {"name": "AutoCroissant", "email": "autocroissant@gmail.com"}
 GIT_IDENTITY = {"GIT_AUTHOR_NAME": AUTHOR["name"], "GIT_AUTHOR_EMAIL": AUTHOR["email"],
                 "GIT_COMMITTER_NAME": AUTHOR["name"], "GIT_COMMITTER_EMAIL": AUTHOR["email"]}
 COMMIT_TRIES = 3                                # the branch moved meanwhile: callers redo their step on the new head

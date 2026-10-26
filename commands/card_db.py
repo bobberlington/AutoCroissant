@@ -155,7 +155,7 @@ def parse_stats(text: str, path: str = STATS_JSON) -> dict:
 
 
 def parse_old_stats(text: str, path: str = OLD_STATS_JSON) -> defaultdict:
-    """old_stats.json's text -> defaultdict(list) of CardInfo, like old_stats.pkl; ValueError for a bad file or record."""
+    """old_stats.json's text -> defaultdict(list) of CardInfo; ValueError for a bad file or record."""
     out = defaultdict(list)
     for name, recs in _cards_of(text, path).items():
         if not isinstance(recs, list):
@@ -394,7 +394,7 @@ def sync(folder: str, repository: str, branch: str) -> dict:
     branch's commit (a 304 is free), then, on a new commit, its manifest and only the data files whose sha256 differ
     from the folder's, raw at that commit (immutable, no lag). Each is checked against the manifest and parsed before
     any is written; then each is replaced atomically, the manifest and SYNC_JSON (commit, ETag) last, so an interrupted
-    sync is finished by the next. Nothing is unpickled.
+    sync is finished by the next.
 
     Args:
         folder: The copy (created when missing)

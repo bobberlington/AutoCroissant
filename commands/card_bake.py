@@ -36,7 +36,7 @@ The report goes to stdout, the artifacts (edited PSD, merged PNG, before/after/d
 work dir. The runner supplies the token
 (GITHUB_TOKEN, or config.GIT_TOKEN on the bot), the fonts (PSD_TOOLS_FONT_DIRS; else the checkout's MDW/Fonts) and the
 work dir (RUNNER_TEMP).
-No Discord or config imports; never the pickles; --dry-run commits nothing. GitHub, git and runner failures (a 5xx,
+No Discord or config imports; --dry-run commits nothing. GitHub, git and runner failures (a 5xx,
 a rate limit, no text engine) are reported but never written as a verdict; such a card error, or a commit that failed,
 exits 1 (failure()). A face no file holds is drawn in the fork's stand-in, told (psd_edit.font_map); a `font` verdict
 (the stand-in itself missing) holds until MDW/Fonts changes.

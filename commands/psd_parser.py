@@ -628,7 +628,7 @@ class PSDParser:
         # Preserve author and series (and subseries) from existing card, as they were before website edits
         if existing_card:
             parsed = getattr(existing_card, "parsed_values", None) or {}
-            for attr in ("author", "series", "subseries"):      # getattr: older pickles lack subseries
+            for attr in ("author", "series", "subseries"):
                 value = parsed[attr] if attr in parsed else getattr(existing_card, attr, None)
                 if value:
                     setattr(card, attr, value)

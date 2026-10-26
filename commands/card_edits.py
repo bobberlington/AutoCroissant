@@ -310,7 +310,7 @@ class CardDates:
         if value == getattr(card, "created", None):
             return False
         if value is None:
-            card.__dict__.pop("created", None)      # the class default: an undated card pickles as before
+            card.__dict__.pop("created", None)      # the class default
         else:
             card.created = value
         return True

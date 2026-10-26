@@ -207,20 +207,6 @@ def test_a_bad_download_writes_nothing(github, tmp_path):
     assert {p.name: p.read_bytes() for p in (tmp_path / "card_data").iterdir()} == before
 
 
-def test_a_pickle_on_the_branch_is_never_loaded(github, tmp_path):
-    import pickle
-    from hashlib import sha256
-    github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
-    files = github.commits[github.tip]
-    files[cdb.STATS_JSON] = pickle.dumps({"A": _card("A")})            # hashed right, but not JSON
-    manifest = json.loads(files[cdb.MANIFEST_JSON])
-    manifest["files"][cdb.STATS_JSON] = sha256(files[cdb.STATS_JSON]).hexdigest()
-    files[cdb.MANIFEST_JSON] = json.dumps(manifest).encode()
-    with pytest.raises(ValueError):
-        cdb.sync("card_data", REPO, "data")
-    assert not (tmp_path / "card_data" / cdb.STATS_JSON).exists()
-
-
 @pytest.mark.parametrize("name, cards", [(cdb.STATS_JSON, {"A": 5}), (cdb.OLD_STATS_JSON, {"A": 5})])
 def test_a_bad_record_writes_nothing_and_is_never_loaded(github, tmp_path, monkeypatch, name, cards):
     """A file whose top level is right but a record isn't: the sync writes nothing; on disk, startup passes it by."""

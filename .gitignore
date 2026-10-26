@@ -88,8 +88,6 @@ ENV/
 Thumbs.db
 .DS_Store
 
-# reminders, per machine: the store, its temp file, the old pickle store (converted 2026-10-24; never committed)
+# reminders, per machine: the store and its temp file (never committed)
 /reminder.json
 reminder.json.tmp
-reminder.pkl
-reminder.pkl.bak

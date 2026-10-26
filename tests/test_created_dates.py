@@ -2,7 +2,6 @@
 created>=2025 and `python -m commands.card_dates created`."""
 import json
 import os
-import pickle
 from types import SimpleNamespace
 
 import pytest
@@ -97,15 +96,14 @@ def test_apply_dates_dates_a_card_the_file_misses(capsys):
     assert build._apply_dates(None) == 0 and new.created["from"] == "git"           # no file read: as they are
 
 
-def test_created_is_no_field_and_undated_cards_pickle_as_before():
+def test_created_is_no_field():
     from dataclasses import fields
     assert "created" not in {f.name for f in fields(cm.CardInfo)} and cm.CardInfo.created is None
     card = _card()
-    assert b"created" not in pickle.dumps(card) and "created" not in card.to_dict()
+    assert "created" not in card.to_dict()
     card.created = {"date": "2023-10-13", "from": "git"}
-    back = pickle.loads(pickle.dumps(card))
-    assert back.created == card.created and back.to_dict()["created"] == "2023-10-13"
-    assert back == _card() and repr(back) == repr(_card())       # no data: eq and repr skip it (CardEdits.apply, history)
+    assert card.to_dict()["created"] == "2023-10-13"
+    assert card == _card() and repr(card) == repr(_card())       # no data: eq and repr skip it (CardEdits.apply, history)
 
 
 # ========================
