@@ -96,3 +96,30 @@ out({ creep: rows(chart(r.balance, "bal-creep")), item: render(cards, A, "kind=i
     assert [[minus(c) for c in row] for row in out["creep"]] == [["2020", "6", "0", "11.3"], ["2021", "6", "-0.2", "12.5"]]
     assert not out["item"] and out["gone"] == []
 
+
+
+def test_a_subseries_is_one_name_across_series(tmp_path):
+    """Owner 10-25: one subseries across series, a card may have one without a series. Stats: under each series it is
+    in, and under "No series" (last); counted once. The editor's helpers (edit.js, tray.js) match it by name alone."""
+    out = node(tmp_path, """
+const cards = fixture();
+cards[0].subseries = "Dream"; cards[6].subseries = "Dream";       // M1 (Mario), K1 (Kirby)
+cards.push(C("Z1", null, 2, [3, 3, 3, 3], "2020-05-01", "Ann", { subseries: "Dream" }));
+const top = render(cards, null).top, sec = chart(top, "series");
+delete globalThis.document;                                       // the stub: edit.js imports fresh.js, which reads a real one or none
+const E = await import(%s), T = await import(%s);
+const pins = T.readPins(JSON.stringify([{ k: "subseries", v: "Dream", s: "Mario" }, { k: "subseries", v: "dream", s: "Kirby" }]));
+out({ rows: rows(sec), kpi: text(top).match(/Creature subseries (\\d+)/)?.[1], links: hrefs(sec).map(params).filter(p => p.subseries),
+  carrying: E.carrying(cards, "subseries", "dream").map(c => c.name),
+  filter: E.renamedFilter(new URLSearchParams("series=Kirby&subseries=Dream"), { key: "subseries", from: "Dream", to: "Dreams" }),
+  buckets: E.readBuckets(JSON.stringify({ subseries: [["Mario", "Dream"], "Dream", "Land"] })).subseries,
+  pins, counts: T.countPins(pins, cards) });
+""" % (json.dumps((ASSETS / "edit.js").as_uri()), json.dumps((ASSETS / "tray.js").as_uri())))
+    assert out["rows"] == [["Mario", "6"], ["↳ Dream", "1"], ["↳ No subseries", "5"], ["Kirby", "6"], ["↳ Dream", "1"],
+                           ["↳ No subseries", "5"], ["No series", "1"], ["↳ Dream", "1"]]
+    assert out["kpi"] == "1"
+    assert out["links"] == [{"kind": "creature", "series": "Mario", "subseries": "Dream"},
+                            {"kind": "creature", "series": "Kirby", "subseries": "Dream"},
+                            {"kind": "creature", "missing": "series", "subseries": "Dream"}]
+    assert out["carrying"] == ["M1", "K1", "Z1"] and out["filter"] == {"subseries": ["Dreams"]}
+    assert out["buckets"] == ["Dream", "Land"] and out["pins"] == [{"k": "subseries", "v": "Dream"}] and out["counts"] == [3]
