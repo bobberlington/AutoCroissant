@@ -62,8 +62,16 @@ the Isaac-style cards, a bigger item size, a deleted ability's own font first.
       jetson's config.py still logs in as AutoCroissant (checked 10-26 against Discord's /users/@me), so it was not reset;
       after a reset the new token goes into the jetson's config.py and the bot restarts (the Mac's config.py is a
       different bot, Waxwell).
-- [ ] Photoshop re-saves: 11 badge cards and 7 apostrophe cards (session README), and the 54 problem cards
-      (`~/Downloads/Problem cards 2026-10-25.csv` and `.md`; `docs/Future/PROBLEM_CARDS_2026-10-25b.*`).
+- [ ] Photoshop re-saves: 8 badge cards (WX-78, Wendy, Wigfrid, Soul Master, Traitor Lord, Ominous Red Circle, Quick
+      Slash, Golden Metronome) and 5 apostrophe cards (The Temple/Gates of Ahn'Qiraj titles, 04_Table5,
+      06_Reading_Cards, 12_Reactions2), and the 54 problem cards (`~/Downloads/Problem cards 2026-10-25.csv` and `.md`;
+      `docs/Future/PROBLEM_CARDS_2026-10-25b.*`). The other 5 of the 18 are fixed on TTSCardMaker work/resave18.
+- [ ] Land the resave18 fixes IN THIS ORDER: (1) AutoCroissant work/resave18 on main (the parser reads `\'` as `'`,
+      and a `Card-sweep:` trailer makes a push silent like the guards'); Card sync builds with main's code. (2) Only
+      then push TTSCardMaker work/resave18, its two commits as a push of their own. Pushed first, 10_Attacking and
+      17_Death would store `don\'t` / `DON\'T` and the 5 cards would post "New art" to Discord.
+- [ ] 03 Setting Up's stored ability keeps `they\'re` (its PSD is unchanged, PARSER_VERSION stays 4): after (1), a Card
+      sync `cards: 03 Setting Up` dispatch re-reads that one card, or bump PARSER_VERSION (~812 re-parses, gate G4).
 - [ ] Safari: the many-boxes edge scroll (the grid flash is gone, owner 10-26).
 - [ ] Data problems from the live problem list (`PROBLEM_CARDS_2026-10-25b.md`): Computer Virus has no stats (no
       template stat bars; Photoshop); Twin Emperors' Vek'lor has DEF 10 on the website and 4 on the card (an editor
