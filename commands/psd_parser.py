@@ -817,6 +817,7 @@ class PSDParser:
             .replace('\\t', ' ')
             .replace('\\x03', '\n')
             .replace('\\ufeff', '')
+            .replace("\\'", "'")     # repr's escape when the text holds both quotes
             .rstrip())
 
         if is_ability:
