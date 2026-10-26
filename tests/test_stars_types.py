@@ -413,17 +413,17 @@ STAR_COUNTS = [   # the star counter (psd_parser.star_sets) on real cards: (card
     ("Creatures/Fnaf/3 Stars/Toy_Chica.psd", 3, None),                     # a LINE below the middle in its stars group
     ("Creatures/Isaac/4 Stars/Tainted_Bethany.psd", 4, None),              # glows spanning two rows join their stars
     ("Creatures/Other/2 Stars/Auto_Croissant.psd", 2, None),               # the cat's art in the Stars group
-    ("Creatures/Other/3 Stars/Grimora.psd", 3, "'Layer 4' draws 3 in one layer"),            # one layer, three stars
-    ("Auxiliary/Minions/Living_Bread.psd", 2, "sits on another star, a copy drawn on it"),   # each star drawn twice
-    ("Auxiliary/Minions/Massive_Moss_Charger.psd", 4, "'Hk star' outside the Stars group"),  # two outside the group
-    ("Creatures/Isaac/3 Stars/Tainted_Lazarus.psd", 3, "draws 3 more below its middle"),     # Dead Laz upside down
+    ("Creatures/Other/3 Stars/Grimora.psd", 3, None),                      # one layer, three stars: split (R4)
+    ("Auxiliary/Minions/Living_Bread.psd", 2, None),                       # each star drawn twice (R3)
+    ("Auxiliary/Minions/Massive_Moss_Charger.psd", 4, None),               # two outside the group (R2)
+    ("Creatures/Isaac/3 Stars/Tainted_Lazarus.psd", 3, None),              # Dead Laz upside down: both sets
 ]
 
 
 @icons
 def test_star_counter_on_real_cards(clone, parser, tmp_path):
-    """The parser and the bake count one way: N on each card; plan_stars at N-1 and N+1 plans, or refuses what the bake
-    can't lay out yet (one layer drawing several, stacked copies, stars outside the group or below the middle)."""
+    """The parser and the bake count one way: N on each card; plan_stars at N-1 and N+1 plans (one layer drawing
+    several split, stacked copies one star, stars outside the group laid out with it, a second creature's turned)."""
     for rel, stars, refused in STAR_COUNTS:
         path = _clone_card(clone, rel, tmp_path)[0]
         psd = PSDImage.open(path)
@@ -443,7 +443,7 @@ def test_star_counter_on_real_cards(clone, parser, tmp_path):
 def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
     """A dice 5 at 4 loses its middle (Nightmare, Kyle's 2 over 3); a moved star under a shadow is copied on top
     instead (Flower of Decay); a new star off the banner the stars sit on refuses (Remote Detonator); the website's
-    header counts the stars outside the group as the bake does (Massive Moss Charger)."""
+    header lays out the stars outside the group as the bake does (Massive Moss Charger)."""
     import commands.psd_details as pd
     for rel, gone in (("Creatures/Kirby/5 Stars/Nightmare.psd", "Warpstar copy 4"), ("Creatures/Other/5 Stars/Kyle.psd", "middle")):
         plan = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 4, parser, moving=True)
@@ -458,7 +458,7 @@ def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
     rel = "Auxiliary/Minions/Massive_Moss_Charger.psd"
     psd = PSDImage.open(_clone_card(clone, rel, tmp_path)[0])
     header = pd._star_header(psd, rel, tuple(parser.all_types), parser)
-    assert list(header["refused"]) == ["*"] and "'Hk star' outside the Stars group" in header["refused"]["*"]
+    assert len(header["units"]) == 4 and len(header["at"]["5"]) == 5     # the two outside are stars of the column
 
 
 def _open(parser, clone, rel, tmp_path) -> tuple:
@@ -542,3 +542,72 @@ def test_real_type_rows(clone, parser, tmp_path):
     core = pe._core(shield)
     assert stem == "fire" and box[0] == core[0] and box[1] > core[3]       # under the row's first icon, not by the title
 
+
+
+@icons
+def test_lane3_star_layouts(clone, parser, tmp_path):
+    """Grimora's one layer drawing three is split into masked copies and its centred row stays centred (a bake: the
+    split's records pass gate_bytes); Tainted Lazarus's dead form takes the new count too, turned half round;
+    Polevaulter Zombie's skewed 2 over 1 goes to rows of two again (owner 2026-10-26)."""
+    rel = "Creatures/Other/3 Stars/Grimora.psd"
+    paths = _clone_card(clone, rel, tmp_path)
+    parsed = pe.parse_card(parser, paths[0], rel)
+    out = tmp_path / "new"
+    out.mkdir(exist_ok=True)
+    baked = pe.apply_jobs(*paths, "Creatures/Other/2 Stars/Grimora.psd", {"stars": 2}, parsed, parser, str(out),
+                          str(tmp_path / "no-fonts"), update_preview=False)
+    assert baked.reparse["card"]["stars"] == 2 and baked.icons["stars"] == "a centred row"
+    saved = PSDImage.open(baked.psd_path)
+    shown = sorted(pe.PSDParser._core_box(layer) for layer in saved.descendants()
+                   if layer.name.startswith("Layer 4") and layer.is_visible())
+    assert len(shown) == 2 and all(layer.has_mask() for layer in saved.descendants() if layer.name.startswith("Layer 4"))
+    assert abs((shown[0][0] + shown[1][2]) / 2 - saved.width / 2) <= 2
+    rel = "Creatures/Isaac/3 Stars/Tainted_Lazarus.psd"
+    psd, parsed = _open(parser, clone, rel, tmp_path)
+    plan = pe.plan_stars(psd, parsed, 4, parser, moving=True)
+    assert plan.how == "rows of two; below, turned: rows of two" and len(plan.copies) == 2
+    rel = "Auxiliary/Minions/Polevaulter_Zombie.psd"
+    assert pe._skewed_pairs([(980, 68), (1094, 57), (1051, 151), (937, 151)], 99, 13)
+    if pe.filter_items():                       # its stars carry smart filters: S1
+        plan = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 4, parser)
+        assert plan.how == "rows of two, laid out again"
+
+
+@icons
+@pytest.mark.skipif(not pe.filter_items(), reason="the fork's SmartObject.filter_item (cards-20261026)")
+def test_smart_filtered_stars_move_as_photoshop_does(clone, parser, tmp_path):
+    """Magnet-shroom's star carries smart filters: its copy gets its own FEid item (the source's planes, its rectangle
+    moved with the copy, named after the copy's placed ID, in file order) and is marked not valid at its new place, as
+    Photoshop writes one; gate_filters refuses an FEid change no edit declares."""
+    rel = "N.M.E/Magnet-shroom.psd"
+    paths = _clone_card(clone, rel, tmp_path)
+    parsed, baked = _bake(parser, paths, {"stars": 2}, tmp_path, rel)
+    assert baked.reparse["card"]["stars"] == 2
+    old, new = PSDImage.open(paths[0]), PSDImage.open(baked.psd_path)
+    filtered = [layer for layer in new.descendants() if layer.kind == "smartobject" and layer.smart_object.filters]
+    assert [str(item.uuid) for item in pe._filter_block(new)] == [layer.smart_object.placed_id for layer in filtered]
+    copy = next(layer for layer in filtered if layer.name == "Layer 1 copy")
+    source = next(layer for layer in old.descendants() if layer.name == "Layer 1 copy 3")
+    item, was = copy.smart_object.filter_item, source.smart_object.filter_item
+    assert item.rectangle == pe._moved_feid(was.rectangle, 0, copy.top - source.top) and item.channels == was.channels
+    assert not copy.smart_object.filters[b"validAtPosition"].value
+    with pytest.raises(pe.Refused, match="no smart-filtered layer moved or copied"):
+        pe.gate_filters(old, new, [pe.Edit("stars", 1, 2, [], [], None)])
+
+
+@icons
+def test_type_rows_carried_on_and_pulled_back(clone, parser, tmp_path):
+    """Masher's 2 over 1 takes a fourth icon beside its third, at the top row's pitch (S2); removing Sword's first icon
+    pulls the next back onto the card (S3), but not over another icon (Nasus: refused)."""
+    masher = "Auxiliary/Minions/Masher.psd"
+    plan = _plan(parser, _clone_card(clone, masher, tmp_path)[0], masher, "types",
+                 ["machine", "dark", "defensive_minion", "fire"])
+    (stem, box, _), = plan.icons
+    assert stem == "fire" and box[0] > 160 and box[1] > 160                  # beside 'dark', under the top row
+    sword = "Auxiliary/Minions/Sword.psd"
+    plan = _plan(parser, _clone_card(clone, sword, tmp_path)[0], sword, "types", ["undead"])
+    (layer, dx, dy), = plan.moves
+    assert layer.name == "Undead" and layer.left + dx == 0 and plan.hide
+    nasus = "Creatures/Other/4 Stars/Nasus.psd"
+    with pytest.raises(pe.Refused, match="pulled back onto it, would cover 'Light'"):
+        _plan(parser, _clone_card(clone, nasus, tmp_path)[0], nasus, "types", ["undead", "light"])
