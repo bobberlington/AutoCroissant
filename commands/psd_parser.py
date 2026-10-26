@@ -664,13 +664,14 @@ class PSDParser:
     def _named_pieces(psd: PSDImage, found: list, joined: str, whole: str, name: str = "") -> list:
         """A split title after an edit (Warcraftian Druid's Name now 'Warcraftiun', Royal Eradicator's 'Royal' now
         'Royaa'): the visible text layers under Text in the title region, beside the title layers, named after a piece
-        of the name ('Druid ') or after their own text (Photoshop's name, which follows an edit: 'Royaa', 'JENKINS II');
-        [] unless the title layers' text or one such layer's name is still a piece of the name, or holds a word of it."""
+        of the name ('Druid ') or after their own text (Photoshop's name, which follows an edit: 'Royaa', 'JENKINS II').
+        Those named after their text count beside a piece of the name, or holding a word the title no longer prints
+        (never an epithet: Auto Croissant's 'Master Developer' when the title is cut to 'Croissant')."""
         if not joined or joined == whole:
             return []
         top, text_group = psd.height * TITLE_REGION_RATIO, PSDParser.text_group(psd)
-        found_ids, out, tied = {id(layer) for layer in found}, [], joined in whole
-        words = [word for word in sub(r"[^a-z0-9]+", " ", name.lower()).split() if len(word) > 2]   # the name's words
+        found_ids, out, tied = {id(layer) for layer in found}, [], False
+        words = [word for word in sub(r"[^a-z0-9]+", " ", name.lower()).split() if len(word) > 2 and word not in joined]
         for layer in (text_group if text_group is not None else []):
             if layer.kind != "type" or not layer.is_visible() or id(layer) in found_ids or layer.bbox[1] >= top:
                 continue
@@ -680,7 +681,7 @@ class PSDParser:
                 tied = True
             elif named_after_text(layer):
                 out.append(layer)
-                tied = tied or any(word in key for word in words)
+                tied = tied or any(word in key for word in words)   # a word the title dropped
         return out if tied else []
 
     @staticmethod

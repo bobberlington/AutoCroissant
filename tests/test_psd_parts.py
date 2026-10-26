@@ -81,6 +81,11 @@ def test_an_edited_split_title_keeps_its_parts(clone, psd_parser):
     got = psd_parts.card_parts(psd, rel, name, psd_parser)
     assert [title_text(p["text"]) for p in got["title"]] == ["Warcraftiaa", "Druid"]
     assert psd_parser.parse(psd, rel).display_name == "Warcraftiaa Druid"
+    rel = "Creatures/Other/2 Stars/Auto_Croissant.psd"      # cut to 'Croissant': the epithet stays out
+    psd = PSDImage.open(clone / rel)
+    next(layer for layer in psd.descendants() if layer.name == "Name").text = "Croissant"
+    assert [title_text(p["text"]) for p in psd_parts.card_parts(psd, rel, "Auto Croissant", psd_parser)["title"]] == ["Croissant"]
+    assert psd_parser.parse(psd, rel).display_name == "Croissant"
 
 
 def test_a_snack_tagged_per_picture(clone, psd_parser):
