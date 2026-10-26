@@ -63,6 +63,15 @@ the schedule and bakes `--pending`. The schedule is one safety cron at :17 every
 most), for unposted events, failed lanes and stopped chains; the guards' Follow up dispatches as before.
 `TTS/checks/card_sync_steps.py` simulates the rules.
 
+**One main lane per guarded push (owner, plan P-2; TTSCardMaker branch work/mainlane, not landed).** A push's main lane
+skips itself at its window's end when that push's guards have fixes to land (card-guards.yml's check-job step "Fixes to
+land": `on` mode with writes; their run unfinished, or done with Follow up started): Card sync's step "Guards' fixes"
+in the Quiet window job. The guards' Follow up then starts Card sync (`bake=pending`) whether Land landed, landed
+nothing or broke, so its one main lane bakes, saves and pins the fixed PNG on the first try: one main commit, one data
+job and one site deploy fewer per guarded push. The schedule's and chained runs' timer skips their main lane while any
+guards run with fixes is unfinished (two hours back), so neither doubles it. A guards run that never started Card sync
+(Follow up failed, cancelled) lets the push's main lane go; runs that cannot be read count as none.
+
 **Status 2026-10-25, two lanes, landed (owner, 03:20: "pushes to any branch other than main do not need to wait").**
 card-sync.yml's run has a data lane and a main lane. Job `data` ("Card data", group
 `card-data`) runs at once on every push, cron and dispatch (not a retry): it re-reads main's head (`card_data`, no
