@@ -47,7 +47,8 @@ TC bcaca99f), `work/resize58` (the 58 badges, resized with rewraps allowed), `wo
 - Layout support still refuses Grimora, Skeleton Mate, Slugcat's spd, three smart-filter star layouts, PoD04 Zebra
   Bloon +1, Living Bread.
 - Eventually, never blockers: Photoshop standardizing (one Name and one Ability layer per card, rulebook Header/Page
-  Number layers); the team's rulings draft; developers resetting clones after the 10-24 rewrite.
+  Number layers); the team's rulings draft; developers resetting clones after the 10-24 rewrite
+  and reinstalling stoogedings.
 
 ## Optimization questions answered no / not now
 

@@ -1,6 +1,6 @@
 # Session 2026-10-25 (unattended, owner asleep from ~07:45 PDT)
 
-Everything below landed on main in both repos and is deployed (AutoCroissant be39f86 on the jetson; OJWikibot
+Everything in Landed is on main in both repos and deployed (AutoCroissant be39f86 on the jetson; OJWikibot
 5135280). Designs that shipped are in this folder; `docs/Future/` keeps the two with a step left.
 
 ## Landed
@@ -20,6 +20,8 @@ Everything below landed on main in both repos and is deployed (AutoCroissant be3
 | PNGs, layout, verdicts | TC a4d137bf, AC be39f86 | `SMALLER_PNG_PUSHES.md`, `LAYOUT_SUPPORT.md`, `docs/Future/CARD_SYNC_VERDICTS.md` (migration left) |
 
 ## Afternoon (owner back, ~13:30-17:10)
+
+On main; bot code after be39f86 is not deployed.
 
 | What | Where | Notes |
 |---|---|---|
