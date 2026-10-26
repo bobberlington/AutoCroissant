@@ -161,6 +161,56 @@ def test_the_current_text_is_dated_from_its_start(bs, repo, tmp_path, monkeypatc
     assert "since" not in _by_name(out["cards.json"]["cards"])["Watermelon"]      # its text started at its last commit
 
 
+def test_each_version_links_the_commit_that_made_its_psd(bs, repo, tmp_path, monkeypatch):
+    """A text's or change's commit is the one that gave its PSD the bytes it was read from (blob_sha): history.json
+    texts carry c (an index into _shas), the newest older one n (the current text's), analytics.json change rows c (into
+    commits). An edit version gets none (no card commit made it)."""
+    if not hasattr(bs, "text_commits"):
+        pytest.skip(f"{BUILD_SITE} has no version commits")
+    (c1, c2, c3), (t1, t2, t3) = repo["commits"], repo["t"]
+    blob = lambda c, p: subprocess.run(["git", "-C", str(repo["root"]), "rev-parse", f"{c}:{p}"], capture_output=True, text=True, check=True).stdout.strip()
+    stats, old, details, _ = cdb.read_db(str(repo["db"]))
+    old["Alpha"][0].blob_sha, old["Alpha"][0].version = blob(c1, f"{ALPHA}.psd"), {"from": float(t1), "cause": "legacy"}
+    stats["Alpha"].blob_sha, stats["Alpha"].version = blob(c3, f"{ALPHA}.psd"), {"from": float(t3), "from_commit": c3, "cause": "psd"}
+    old["Watermelon"][0].blob_sha = blob(c1, f"{MELON}.psd")
+    stats["Watermelon"].blob_sha, stats["Watermelon"].version = blob(c2, f"{MELON}.psd"), {"from": float(t3), "from_commit": c3, "cause": "edit"}
+    cdb.write_db(str(repo["db"]), stats, old, json.dumps({"version": 1, "cards": details}), {"card_commit": c3})
+    out = _build(bs, monkeypatch, repo, tmp_path / "a")
+    cards, h, an = _by_name(out["cards.json"]["cards"]), out["history.json"], out["analytics.json"]
+    sha = lambda i: h["_shas"][i]
+    alpha, melon = cards["Alpha"]["id"], cards["Watermelon"]["id"]
+    assert h[alpha] == [{"ts": t1, "ability": "Old text.", "c": 0, "n": 1}] and h["_shas"][:2] == [c1[:12], c3[:12]]
+    assert [sha(v["c"]) for v in h[melon]] == [c1[:12]] and "n" not in h[melon][0]     # an edit: no link
+    assert [an["commits"][r["c"]] for r in an["cards"][alpha]["changes"]] == [c3[:12]]
+
+
+def test_a_version_commit_follows_renames_and_refuses_doubt(bs):
+    """version_commit on parse_history rows: the commit that made the bytes the PSD held at the version's start, pure
+    renames followed back (also a later one: a record's path is its newest); none for an edit, the previous version's
+    bytes (a move only for a folder change), bytes from after a blobless previous version's start, or another path's."""
+    if not hasattr(bs, "text_commits"):
+        pytest.skip(f"{BUILD_SITE} has no version commits")
+    a = bs.analytics
+    c = lambda n: n * 40
+    commits = [(c("6"), 60, "", "", "", [("M", "y", "z", "New/C.psd")], []),            # newer bytes: a later reading
+               (c("5"), 50, "", "", "", [("D", "y", "0", "Old/C.psd"), ("A", "0", "y", "New/C.psd")], []),   # a move
+               (c("4"), 40, "", "", "", [("M", "x", "y", "Old/C.psd")], []),
+               (c("3"), 30, "", "", "", [("D", "x", "0", "Typo/C.psd"), ("A", "0", "x", "Old/C.psd")], []),  # a rename
+               (c("1"), 10, "", "", "", [("A", "0", "x", "Typo/C.psd"), ("A", "0", "q", "Other.psd")], [])]
+    lin = a.psd_lineage(commits)
+    v = lambda ts, blob, cause="psd", path="New/C.psd", **info: bs.stand_in(bs.CardInfo, {
+        "timestamp": float(ts), "blob_sha": blob, "path": path, "version": {"from": float(ts), "cause": cause, **info}})
+    first, second = v(30, "x", "legacy"), v(40, "z")
+    assert a.version_commit(first, None, lin) == c("1")[:12]                 # the rename at 30 made no bytes
+    assert a.version_commit(second, first, lin) == c("4")[:12]               # read later (z), started at 4's bytes
+    assert a.version_commit(v(50, "z"), second, lin) is None                 # the move: same bytes as before
+    assert a.version_commit(v(50, "z", "moved", from_commit=c("5")), second, lin, moved=True) == c("5")[:12]
+    assert a.version_commit(v(40, "z", "edit"), first, lin) is None
+    assert a.version_commit(second, v(45, None), lin) is None                # 4's bytes may be the blobless one's
+    assert a.version_commit(v(40, "q"), None, lin) is None                   # Other.psd's bytes, not this path's
+    assert [a.version_commit(x, None, lin) for x in (v(40, None), v(5, "x"), None)] == [None] * 3
+
+
 def test_a_renamed_card_goes_on_and_its_old_page_redirects(bs, repo, tmp_path, monkeypatch):
     """The bake renames and redraws Alpha as New Alpha in one commit (its Renamed trailers): the card's image versions
     and text history go on as one card, and c/alpha/ sends its links on to c/new-alpha/; a profile's pick, a published
