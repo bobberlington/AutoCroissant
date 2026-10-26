@@ -4,7 +4,7 @@ Updater for the Tabletop Simulator save of the card table (TTS/Impossibility Sim
     python -m commands.tts_save <save.json> [--names db/stats.json]   (from the bot's root; card-sync.yml)
     update_save(path) -> report text
 
-Pins every repo image link to the commit that last changed the file, follows renames, syncs complete decks with
+Pins every repo image link to the commit that last changed the file, follows renames (the bake's Renamed trailers too), syncs complete decks with
 their rules (TTS/decks.json: missing repo cards added, an empty deck filled, cards outside the rule removed; a rule
 matching nothing leaves its deck alone), adds new cards to hand-picked decks whose rule has add_new_since (cards the
 save at that commit lacked; a card moved to other stars moves between those decks; no record: one taken out by hand
@@ -286,9 +286,9 @@ class _Repo:
     def follow(self, path: str) -> Optional[str]:
         """Where the bake's renames took a gone file (its Renamed trailers: a card renamed and redrawn in one commit), if
         that path is in the tree."""
-        if self._told is None:
+        if getattr(self, "_told", None) is None:       # a _Repo made without __init__ (tests) has none yet
             self._told = {}
-            if exists(self.clone):
+            if exists(getattr(self, "clone", "")):
                 try:
                     out = _git(self.clone, "log", CARD_BRANCH, f"--grep=^{RENAMED}: ",
                                f"--format=%x1e%(trailers:key={RENAMED},valueonly,separator=%x1f)").decode("utf-8", "replace")

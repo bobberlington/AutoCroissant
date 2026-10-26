@@ -24,6 +24,8 @@ read from --verdicts, else (one Card sync cycle, the migration) from the entry's
 (blobless is enough; a blob it lacks by REST) and the run's commit B is made there on head, pushed by no one here; a
 checkout at head moves to B, and the report says where HEAD is. A --head the clone lacks is a failed run (a report,
 exit 1, no B). The recent gate diffs the clone's trees when it has the pushes' base (head may be a previous B).
+A name edit with `_rename` (the editor's "Also rename the card's files", owner 2026-10-25) also renames the card's PSD and
+PNGs in that commit (plan_rename), with Renamed trailers and the files keyed by the card (rename_edits, side_files).
 Refusals are data: one bad card never blocks another, and a refused stars or types edit never blocks its card's other
 fields (they bake; the refused field stays in the file, its refused verdict on the PSD the commit leaves). A
 content problem (text that won't fit, a typed badge or token, a styled word, a font stand-in) never refuses (owner
