@@ -33,7 +33,6 @@ STORE_SCHEMA = "autocroissant.reminder-store"
 TIME_SEMANTICS = "when: Pacific wall time with that instant's offset (America/Los_Angeles); repeats keep the wall time"
 ZONE_LABEL = "Pacific time"
 RUN_AS_CREATOR = True                       # a reminder's command runs with its creator's permissions
-LEGACY_RUNS_AS_BOT = True                   # reminders saved before creator tracking keep running as the bot, as before
 ALLOW_POSITIONAL = True                     # commands may give values by position before name:value options
 ON_LOAD_ERROR = "off"                       # an unreadable store: reminders off, the bot keeps running ("raise": exit)
 CHANNEL_RETRY = timedelta(hours=1)          # a one-shot whose channel is gone waits this long and tries again
@@ -48,7 +47,7 @@ def is_admin(interaction) -> bool:
 # ========================
 # A reminder dict in memory: id, channel_id (int), msg, when (aware datetime in TIMEZONE), frequency (timedelta or
 # None), command (None or canonical "/name key:value ..."), enabled (False: kept but never fires), creator_id (None =
-# saved before creator tracking), creator_name, v (REMINDER_VERSION once migrated), problem (why the scheduler skips
+# saved before creator tracking), creator_name, v (REMINDER_VERSION), problem (why the scheduler skips
 # it, or None). reminder.json holds the same fields (SCHEMA_VERSION; ReminderStore).
 SCHEMA_VERSION = 2
 KEYS = ("id", "channel_id", "msg", "when", "frequency", "command", "enabled", "creator_id", "creator_name", "v", "problem")
@@ -340,11 +339,8 @@ def _type_name(annotation):
     return getattr(annotation, "__name__", None) or str(annotation)
 
 
-def _to_bool(raw, option, legacy):
+def _to_bool(raw, option):
     word = raw.strip().lower()
-    if legacy and word == "true" and raw.strip() != "true":
-        # The old parser turned every "True" except lowercase "true" into False; keep what actually ran.
-        return False
     if word in TRUE_WORDS:
         return True
     if word in FALSE_WORDS:
@@ -352,7 +348,7 @@ def _to_bool(raw, option, legacy):
     raise ValueError(f"`{option}` must be True or False")
 
 
-def _convert(raw, annotation, option, legacy):
+def _convert(raw, annotation, option):
     """Turn a text value into what the slash callback's annotation expects; ValueError (no values) if it can't."""
     if annotation is Parameter.empty or annotation is Any or annotation is str:
         return raw
@@ -362,7 +358,7 @@ def _convert(raw, annotation, option, legacy):
         problem = f"`{option}` can't take that value"
         for choice in choices:
             try:
-                return _convert(raw, choice, option, legacy)
+                return _convert(raw, choice, option)
             except ValueError as e:
                 problem = str(e)
         raise ValueError(problem)
@@ -373,10 +369,10 @@ def _convert(raw, annotation, option, legacy):
         raise ValueError(f"`{option}` must be one of {', '.join(str(a) for a in get_args(annotation))}")
     if annotation is Choice or origin is Choice:
         inner = get_args(annotation)
-        value = _convert(raw, inner[0], option, legacy) if inner else raw
+        value = _convert(raw, inner[0], option) if inner else raw
         return Choice(name=str(value), value=value)
     if annotation is bool:
-        return _to_bool(raw, option, legacy)
+        return _to_bool(raw, option)
     if annotation is int:
         try:
             return int(raw)
@@ -390,7 +386,7 @@ def _convert(raw, annotation, option, legacy):
     raise ValueError(f"`{option}` ({_type_name(annotation)}) can't be filled in by a reminder")
 
 
-def _bind(func, args, kwargs, legacy=False):
+def _bind(func, args, kwargs):
     """
     Match a command's values to its slash callback's options and convert them.
 
@@ -398,7 +394,6 @@ def _bind(func, args, kwargs, legacy=False):
         func: Slash callback from slash_registry
         args: Positional values, in option order
         kwargs: name:value options
-        legacy: Read booleans the way the pre-v2 parser did
 
     Returns:
         {option: converted value}, in option order, only for options that were given
@@ -420,7 +415,7 @@ def _bind(func, args, kwargs, legacy=False):
     values = {}
     for option, annotation, default in params:
         if option in raw:
-            values[option] = _convert(raw[option], annotation, option, legacy)
+            values[option] = _convert(raw[option], annotation, option)
         elif default is Parameter.empty:
             raise ValueError(f"`{option}` is required")
     return values
@@ -436,7 +431,7 @@ def render(name, values):
     return " ".join(parts)
 
 
-def resolve_command(command, legacy=False):
+def resolve_command(command):
     """
     Look up and bind a stored command.
 
@@ -450,9 +445,9 @@ def resolve_command(command, legacy=False):
     func = slash_registry.get(name)
     if func is None:
         raise ValueError(f"`/{name}` is not a bot command")
-    if args and not ALLOW_POSITIONAL and not legacy:
+    if args and not ALLOW_POSITIONAL:
         raise ValueError("give every option as name:value")
-    return func, name, _bind(func, args, kwargs, legacy)
+    return func, name, _bind(func, args, kwargs)
 
 
 def _store_command(command):
@@ -545,7 +540,7 @@ def card(reminder, now):
     creator_id = reminder.get("creator_id")
     if creator_id is not None:
         creator_text = f"<@{creator_id}>"
-    elif RUN_AS_CREATOR and not LEGACY_RUNS_AS_BOT:
+    elif RUN_AS_CREATOR:
         creator_text = "unknown"
     else:
         creator_text = "unknown (runs as the bot)"
@@ -775,94 +770,6 @@ class ReminderStore:
 _store = ReminderStore(STORE_PATH)
 
 
-def _migrate_command(reminder):
-    """
-    Rewrite a stored command into canonical form, keeping what it actually did.
-
-    Pre-v2 booleans are read the way the old parser read them.
-    Returns False (leave the reminder unmigrated, retry later) while slash_registry is still empty.
-    """
-    command = reminder.get("command")
-    if not command:
-        return True
-    if not slash_registry:
-        return False
-    try:
-        _, name, values = resolve_command(command, legacy=reminder.get("v") is None)
-    except ValueError as e:
-        print(f"Reminder {reminder['id']}: stored command `{command}` can't run ({e}); it will report this when due.")
-        return True
-    canonical = render(name, values)
-    if canonical != command:
-        reminder["command"] = canonical
-        print(f"Reminder {reminder['id']}: migrated command `{command}` -> `{canonical}`")
-    return True
-
-
-def _outdated(reminder):
-    """True while a stored reminder still needs _migrate: no version yet, or an older one."""
-    version = reminder.get("v")
-    return not isinstance(version, int) or version < REMINDER_VERSION
-
-
-def _migrate(reminder):
-    """
-    Bring one stored reminder up to REMINDER_VERSION in place. Never drops it: anything unreadable gets a
-    'problem' so the scheduler skips it and /reminders shows it for removal.
-
-    Returns:
-        True if the reminder changed
-    """
-    renamed = "disabled" in reminder
-    if renamed:                                 # the old store's name for problem
-        reminder["problem"] = reminder.pop("disabled") or None
-    reminder.setdefault("problem", None)        # defaults alone are no change (no needless save)
-    reminder.setdefault("enabled", True)
-    before = dict(reminder)
-    if not isinstance(reminder.get("id"), str) or not reminder.get("id"):
-        reminder["id"] = _new_id()
-    try:
-        reminder["channel_id"] = int(reminder.get("channel_id"))
-    except (TypeError, ValueError):
-        reminder["problem"] = "unreadable channel"
-
-    msg = reminder.get("msg")
-    reminder["msg"] = msg if isinstance(msg, str) else ("" if msg is None else str(msg))
-
-    when = reminder.get("when")
-    if isinstance(when, datetime):
-        if when.tzinfo is None:
-            when = when.replace(tzinfo=TIMEZONE)
-        elif when.tzinfo is not TIMEZONE:
-            when = when.astimezone(TIMEZONE)
-        reminder["when"] = when
-    else:
-        reminder["problem"] = "unreadable time"
-
-    frequency = reminder.get("frequency")
-    if isinstance(frequency, (int, float)) and not isinstance(frequency, bool):
-        frequency = timedelta(seconds=frequency) if frequency else None
-    if frequency is not None and not isinstance(frequency, timedelta):
-        reminder["problem"] = "unreadable frequency"
-    elif frequency is not None and frequency <= timedelta(0):
-        reminder["problem"] = "frequency is not positive"
-    else:
-        reminder["frequency"] = frequency or None
-
-    command = reminder.get("command")
-    if command is not None and not isinstance(command, str):
-        command = str(command)
-    reminder["command"] = command.strip() if command and command.strip() else None
-    reminder.setdefault("creator_id", None)
-    reminder.setdefault("creator_name", "")
-
-    if _outdated(reminder) and _migrate_command(reminder):
-        reminder["v"] = REMINDER_VERSION
-    if reminder.get("problem") and before.get("problem") != reminder["problem"]:
-        print(f"WARNING: reminder {reminder['id']} can't run ({reminder['problem']}); delete it with /remove_reminder.")
-    return renamed or reminder != before
-
-
 def save_reminders():
     """Write reminders to disk atomically (reminder.json)."""
     with _lock:
@@ -873,12 +780,11 @@ def save_reminders():
 
 
 def _settle(data):
-    """Migrate old entries and roll past-due repeating ones forward (off ones stay frozen). True if anything changed."""
+    """Roll past-due repeating reminders forward (off ones stay frozen). True if anything changed."""
     changed = False
     now = datetime.now(TIMEZONE)
     for reminder_list in data.values():
         for reminder in reminder_list:
-            changed = _migrate(reminder) or changed
             if reminder.get("frequency") and reminder.get("enabled", True) and not reminder.get("problem") \
                     and reminder["when"] <= now:
                 original_time = reminder["when"]
@@ -892,7 +798,7 @@ def _load_locked():
     """
     Load the reminders once (call with _lock held): reminder.json.
 
-    Old entries are migrated and past-due repeating reminders roll forward. An unreadable store turns reminders
+    Past-due repeating reminders roll forward. An unreadable store turns reminders
     off and leaves the file alone, so a later save can't overwrite reminders that are still recoverable.
     """
     global reminders, _loaded, _load_error
@@ -963,7 +869,7 @@ def _reminder_interaction(reminder, guild_id):
         creator_id = reminder.get("creator_id")
         if creator_id is not None:
             fake.user = _ReminderUser(creator_id, reminder.get("creator_name") or str(creator_id))
-        elif not LEGACY_RUNS_AS_BOT:
+        else:
             fake.user = _ReminderUser(0, "unknown reminder creator")
     return fake
 
@@ -998,7 +904,7 @@ def _fire(reminder, guild_id):
     command = reminder.get("command")
     if command:
         try:
-            func, name, values = resolve_command(command, legacy=reminder.get("v") is None)
+            func, name, values = resolve_command(command)
         except ValueError as e:
             queue_message(fake, f"⚠ Reminder `{reminder_id}` skipped its command: {e}. "
                                 f"Re-create it, then `/remove_reminder reminder_id:{reminder_id}`.")
@@ -1013,10 +919,6 @@ def _process_due(reminder_list, reminder, guild_id, now):
     """Fire a reminder if it is due, then reschedule or remove it. Returns True if anything changed."""
     if not reminder.get("enabled", True) or reminder.get("problem") or reminder["when"] > now:
         return False
-    if _outdated(reminder):
-        _migrate(reminder)
-        if reminder.get("problem"):
-            return True
     try:
         delivered = _fire(reminder, guild_id)
     except Exception:
@@ -1320,7 +1222,7 @@ def init_reminder():
     """
     Load reminders from disk (called from on_ready via queue_command).
 
-    Old entries are migrated in place and past-due repeating reminders roll forward to their next future slot;
+    Past-due repeating reminders roll forward to their next future slot;
     a one-shot reminder that came due while the bot was down fires right after startup.
     """
     with _lock:
