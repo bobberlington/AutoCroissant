@@ -897,11 +897,10 @@ def test_workflow_pending_edits_line_calls_due(github, capsys, monkeypatch):
     monkeypatch.setattr("sys.argv", ["-c", cb.CARD_REPO, github.head, "", str(DB[0] / "verdicts.json")])
     exec(code, {})
     assert capsys.readouterr().out.splitlines() == ["A Snack", "A Snack2", "Nobody", "The Freezer"]
-    left = re.search(r"name: Leftover edits.*?<<'PY'\n(.*?)\n *PY\n", text, re.S)
-    if left:                                    # TTSCardMaker work/chain
-        monkeypatch.setattr("sys.argv", ["-", cb.CARD_REPO, github.head, "", str(DB[0]), str(DB[0] / "none.json")])
-        exec(textwrap.dedent(left.group(1)), {})
-        assert capsys.readouterr().out.split() == ["4", "1"]
+    left = re.search(r"name: Leftover edits.*?<<'PY'\n(.*?)\n *PY\n", text, re.S).group(1)
+    monkeypatch.setattr("sys.argv", ["-", cb.CARD_REPO, github.head, "", str(DB[0]), str(DB[0] / "none.json")])
+    exec(textwrap.dedent(left), {})
+    assert capsys.readouterr().out.split() == ["4", "1"]
 
 
 
