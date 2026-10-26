@@ -362,6 +362,15 @@ set_text_layer(psd, field, raw', fonts_dir, chart, layer=L, beside=parts+followe
 - **Placement.** Put it at the top of the card's `Text` group (the root when there is none), named `Ability`, with a fresh lyid.
 - **Variant tag.** Untagged, unless the card's other ability layers are tagged; then it is tagged with the editing variant.
 - **Text.** Then the normal `set_text_layer`. Flag: "ability layer created from <template>: check its place".
+- **Where and in what font** (owner 2026-10-25; `commands/ability_place.py`, `plan()`). The box goes in the card's free
+  text area under the lowest element above it (the stats; an item's empty panel top), text flowing down, offsets from
+  sibling cards of the same template, canvas and layout; never over the stats, title, stars or icons, never off the
+  canvas (shrink-to-fit, then raised). The font is the card's own: the commonest real ability font of cards sharing
+  its title font (folder, series, anywhere), else its series', else its title font, else the template's; one not in
+  MDW/Fonts falls back to the template's, told. Size in rendered px from the same cards. Colours, effects, alignment
+  and the leading ratio stay the template's. The other cards' facts are `commands/ability_index.json`, remade by hand:
+  `python -m commands.ability_place ~/Desktop/TTSCardMaker`. Before `ADD_ABILITY_LIVE` turns on, both files join
+  card-sync.yml's and card-guards.yml's sparse lists.
 
 **4.8 Stars and types** (first, as today).
 

@@ -4005,7 +4005,8 @@ def drawn_in_font(layer, fonts, shape: tuple) -> Optional[str]:
 
 def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: Optional[dict] = None,
                    card: str = "", own_text: bool = True, parser: Optional[PSDParser] = None,
-                   original: Optional[PSDImage] = None, layer=None, beside=(), copy: bool = False) -> Edit:
+                   original: Optional[PSDImage] = None, layer=None, beside=(), copy: bool = False,
+                   area: Optional[tuple] = None) -> Edit:
     """
     Replace the name or the ability text, keeping the runs, and rasterize it with the text engine: only the changed
     glyphs when the fork splices (splices(), SPLICE_UNIT), Photoshop's raster staying on the rest. A title layer found
@@ -4031,6 +4032,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         beside: Layers printing the same words (its copies), which may cover it
         copy: The layer is a copy of a part (set_parts): no FX layers or overlay words of its own, its
             ink past the old text not told (the Ability's is)
+        area: An added Ability's box (add_ability, canvas px): the text fits it (fit_below), its ink past it is told;
+            nothing was printed before (its placeholder is no old text)
 
     Returns:
         Edit with the engine's report. Content problems bake best-effort and are told in Edit.notes as "<code>: <field>:
@@ -4222,6 +4225,11 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     plain = {moved[i] for i, c in enumerate(old_text) if icons_before[i] and i not in drawn_before and c not in blank
              and moved[i] >= 0}
     canvas = _on_canvas(layer, (psd.height, psd.width))
+    room = canvas                               # what an ability's new text may fill (fit_below, ink_beyond)
+    if area is not None:                        # an added Ability: its planned box; nothing printed before
+        x0, y0, x1, y1 = clip(tuple(int(round(v)) for v in area), psd.width, psd.height)
+        canvas, room = np.zeros_like(canvas), np.zeros_like(canvas)
+        room[y0:y1, x0:x1, 3] = 255
     off_before = _ink_off_canvas(layer, psd.width, psd.height)
     halo_before = _effect_ink(psd, layer) if glows else None
     splice_text(layer, text, parts)
@@ -4288,7 +4296,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     try:
         report = draw()
         if which == "ability" and not copy:     # onto the design below or off the canvas: smaller (the preview's fit)
-            scale, again = fit_below(psd, layer, canvas, fonts, draw, off_before)
+            scale, again = fit_below(psd, layer, room, fonts, draw, off_before)
             report = again or report
             if scale < 1:
                 flag("overflow", f"ability: set at {round(scale * 100)}% of its size to stay on its panel")
@@ -4338,7 +4346,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     reach += [(tuple(fx.bbox), fx_pad(fx)) for fx in old_fx] + [(tuple(overlay.bbox), fx_pad(overlay)) for overlay in hide]
     for overlay in hide:
         overlay.visible = False
-    beyond = ink_beyond(psd, layer, canvas) if which == "ability" and not copy else None
+    beyond = ink_beyond(psd, layer, room) if which == "ability" and not copy else None
     rebuilt, dropped, covered, notes = (_rebuild_fx(psd, layer, text, plans, band, kept, fonts, engine, targets)
                                         if plans else ([], [], [], []))
     if beyond:                                  # told, not refused (owner 2026-10-23: refuse only gross breakage)
@@ -7230,7 +7238,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
         elif name == "parts":                   # one box per layer (PARTS_EDITOR.md §4.4-4.6)
             record = card_parts(old, rel, _card_name(parsed), parser)
             edits += set_parts(new, value, record, fonts_dir, chart, _card_name(parsed), _own_text(parsed), parser, old,
-                               ability_from)
+                               ability_from, rel)
         else:
             raise Refused("unsupported-card", f"{name}: not yet")
     others = [edit for edit in edits if edit.field not in ICON_FIELDS and (edit.layers or edit.removed)]
@@ -7562,7 +7570,7 @@ def _combine(which: str, edits: list, subs: list, psd: PSDImage, olds: dict, new
 
 def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Optional[dict] = None, card: str = "",
               own_text: bool = True, parser: Optional[PSDParser] = None, original: Optional[PSDImage] = None,
-              ability_from: Optional[tuple] = None) -> list:
+              ability_from: Optional[tuple] = None, rel: str = "") -> list:
     """
     Bake a card's part jobs (plan_parts) on the open card (§4.4-4.6): the deletions first (remove_layer: the layer, its
     visible FX layers and copies, its story), then each ability part, title part and rule-page block set as one text
@@ -7576,6 +7584,7 @@ def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Op
         record: card_parts() of the card as opened
         original: The card before the bake's edits (set_text_layer's; record ids and story indices of what is deleted)
         ability_from: (the card kind's template, its name): template_for's, for a "+ability" job (added last)
+        rel: The card's repo path (where a "+ability" goes and its font: ability_place)
 
     Returns:
         One Edit per field ("ability" then "name"), then the added ability's; raises Refused as set_text_layer does
@@ -7693,7 +7702,7 @@ def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Op
         if ability_from is None:
             raise Refused("unsupported-card", "ability: no template to add the Ability layer from")
         out.append(add_ability(psd, jobs[ADD_ABILITY]["text"], *ability_from, fonts_dir, chart, card, own_text, parser,
-                               original))
+                               original, rel))
     return out
 
 
@@ -7719,21 +7728,91 @@ def insert_ability(psd: PSDImage, template: PSDImage):
     return layer
 
 
+def set_text_font(layer, font: str, size: float, leading: float) -> None:
+    """Every run of a type layer in font at size and leading (rendered px: over the layer's y scale), as the bake sets a
+    typed icon's font (add_font, set_span_style); an auto leading stays auto."""
+    from psd_tools.composite.text.model import TextModel
+    model = TextModel.from_layer(layer)
+    scale = hypot(*model.transform[2:4]) or 1.0
+    keys = {"Font": font, "FontSize": round(size / scale, 4)}
+    if not model.runs[0].style.auto_leading:
+        keys["Leading"] = round(leading / scale, 4)
+    layer.add_font(font)
+    layer.set_span_style(0, len(layer.text), **keys)
+
+
+def set_text_box(layer, box: tuple) -> None:
+    """
+    A paragraph type layer's box moved and sized to box (x0, y0, x1, y1, canvas px; the transform's scale kept): the
+    TySh transform and the record (its pixels and fxrp follow), BoxBounds, the TySh bounds, and the Txt2 frame's Bezier
+    and frame strike, which must agree (+ability, §4.7). Point text, or a Txt2 in named keys, raises Refused.
+    """
+    from psd_tools.api import text_edit
+    from psd_tools.psd import engine_data
+    from psd_tools.psd.descriptor import UnitFloat
+    child = layer.engine_dict["Rendered"]["Shapes"]["Children"][0]
+    if int(getattr(child.get("ShapeType"), "value", child.get("ShapeType", 0))) != 1:
+        raise Refused("unsupported-card", "ability: the template's Ability is point text")
+    xx, xy, yx, yy, tx, ty = layer._data.transform
+    dx, dy = round(box[0] - tx), round(box[1] - ty)
+    w, h = (box[2] - box[0]) / xx, (box[3] - box[1]) / yy           # text-space pt
+    f = lambda v: engine_data.Float(float(v))
+    layer._data.transform = (xx, xy, yx, yy, tx + dx, ty + dy)
+    layer.left, layer.top = layer.left + dx, layer.top + dy           # the fork carries fxrp along
+    child["Cookie"]["Photoshop"]["BoxBounds"] = engine_data.List([f(0), f(0), f(w), f(h)])
+    bounds = layer._data.text_data[b"bounds"]
+    for key, value in ((b"Rght", w), (b"Btom", h)):
+        old = bounds[key]
+        bounds[key] = UnitFloat(float(value), old.unit) if isinstance(old, UnitFloat) else type(old)(float(value))
+    found = text_edit._txt2(layer._psd)
+    if found is not None:
+        root, keys, stories = found
+        if not keys.numbered:
+            raise Refused("unsupported-card", "ability: a Txt2 in named keys (its frame layout is unknown)")
+        story = text_edit._nth_story(stories, int(layer._data.text_data[b"TextIndex"].value), keys)
+        frames = text_edit._resource_items(root, keys, keys.frame_set)
+        corners = [0, 0] * 4 + [w, 0] * 4 + [w, h] * 4 + [0, h] * 4  # the Bezier's 4 points, each with its handles
+        for i in text_edit._frame_refs(story, keys):
+            frames[i]["0"]["1"]["0"] = engine_data.List([f(v) for v in corners])
+        tag_key, tag, _ = keys.frame_strike
+        pending = [story[keys.view].get(keys.strikes)]
+        while pending:                          # the frame strike's rect
+            node = pending.pop()
+            if isinstance(node, engine_data.List):
+                pending.extend(node)
+            elif isinstance(node, engine_data.Dict):
+                if str(getattr(node.get(tag_key), "value", node.get(tag_key))) == tag and "1" in node:
+                    node["1"] = engine_data.List([f(0), f(0), f(w), f(h)])
+                pending.extend(node.values())
+    layer.__dict__.pop("_typesetting", None)
+    layer._psd.mark_updated()
+
+
 def add_ability(psd: PSDImage, text: str, template: PSDImage, name: str, fonts_dir: str, chart: Optional[dict] = None,
                 card: str = "", own_text: bool = True, parser: Optional[PSDParser] = None,
-                original: Optional[PSDImage] = None) -> Edit:
-    """A "+ability" job: insert_ability, then the text set as any ability's (set_text_layer), flagged. Its record and
-    story are declared added (gate_bytes, gate_stories), the faces the Txt2 FontSet gained in Edit.fonts."""
+                original: Optional[PSDImage] = None, rel: str = "") -> Edit:
+    """A "+ability" job: insert_ability, in the card's own font and size and in its free text area (ability_place.plan:
+    owner 2026-10-25), the placeholder drawn there, then the text set as any ability's (set_text_layer) and fitted to
+    that area, flagged. Its record and story are declared added (gate_bytes, gate_stories), the faces the Txt2 FontSet
+    gained in Edit.fonts."""
+    from commands import ability_place
     faces = lambda: [_story_font_name(entry, _story_list(_txt2(psd))[5]) for entry in _story_fonts(_txt2(psd)) or []] \
         if _txt2(psd) is not None else []
     before = faces()
+    raw = text.replace("\r\n", "\n").replace("\r", "\n").strip("\n").replace("\n", "\r")
+    planned = ability_place.plan(psd, rel or f"{card}.psd", template, f"{TEMPLATES_DIR}/{name}.psd", raw, fonts_dir, parser)
     layer = insert_ability(psd, template)
     story = story_index(layer)
-    raw = text.replace("\r\n", "\n").replace("\r", "\n").strip("\n").replace("\n", "\r")
-    edit = set_text_layer(psd, "ability", raw, fonts_dir, chart, card, own_text, parser, original, layer=layer)
+    set_text_font(layer, planned.font, planned.size, planned.leading)
+    set_text_box(layer, planned.box)
+    layer.rasterize(fonts=font_map(fonts_dir))     # the placeholder in its new font and place (drawn_in_font)
+    edit = set_text_layer(psd, "ability", raw, fonts_dir, chart, card, own_text, parser, original, layer=layer,
+                          area=planned.box)
     edit.story = None                           # a new story: gate_stories takes it out (added_stories)
+    x0, y0, x1, y1 = planned.box
     out = _combine("ability", [(layer, edit, False)], [_record_ids(psd)], psd, {}, {ADD_ABILITY: text},
-                   notes=[f"ability: ability layer created from {name}: check its place"])
+                   notes=[f"ability: ability layer created from {name}: check its place",
+                          f"ability: box {x0},{y0} to {x1},{y1}", *planned.notes])
     out.added, out.added_stories = [_record_index(layer)], [story]
     out.fonts = list(dict.fromkeys(faces()[len(before):] + out.fonts))
     return out

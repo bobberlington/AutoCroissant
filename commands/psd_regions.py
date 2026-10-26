@@ -147,7 +147,7 @@ def stat_rows(psd: PSDImage) -> dict:
     return out
 
 
-def regions(psd: PSDImage, vocab=(), rulebook=None) -> dict:
+def regions(psd: PSDImage, vocab=(), rulebook=None, pad: bool = True) -> dict:
     """
     Every region of a card as a list of bboxes.
 
@@ -155,6 +155,7 @@ def regions(psd: PSDImage, vocab=(), rulebook=None) -> dict:
         psd: An open card
         vocab: Type icon names (lowercase Types/ stems); a drawn layer so named is an icon
         rulebook: Whether this is a rule page; None guesses (RULEBOOK_WIDTH or a "Page Number" layer)
+        pad: Pad boxes by their effects' reach (False: the layers' own boxes; the art never is)
 
     Returns:
         {region key: [bbox, ...]} over PAINT_ORDER's keys
@@ -167,7 +168,7 @@ def regions(psd: PSDImage, vocab=(), rulebook=None) -> dict:
     if rulebook:
         for layer in texts:
             key = "name" if layer.name.strip().lower() == "header" else "ability"
-            found[key].append(_box(layer, width, height))
+            found[key].append(_box(layer, width, height, pad))
 
     abilities = []
     if not rulebook:
@@ -177,19 +178,19 @@ def regions(psd: PSDImage, vocab=(), rulebook=None) -> dict:
         if not named:
             named = [layer for layer in texts if layer.bbox[1] < NAME_MAX_TOP * height
                      and layer.name.strip().lower() not in STAT_LABELS | {"ability"}]
-        found["name"] += [_box(layer, width, height) for layer in named]
+        found["name"] += [_box(layer, width, height, pad) for layer in named]
         abilities = [layer for layer in texts if layer.name.strip().lower() == "ability"]
         if not abilities:   # a hidden "Ability" re-laid out in separate text layers (Butterfly, Bulborb Larva)
             abilities = [layer for layer in texts if layer.bbox[1] >= TYPE_REGION_RATIO * height
                          and layer.name.strip().lower() not in STAT_LABELS | {"name"}]
-        found["ability"] += [_box(layer, width, height) for layer in abilities]
+        found["ability"] += [_box(layer, width, height, pad) for layer in abilities]
         # ability FX: pixel cuts "<text layer> FX: <words>", and short overlay text layers on the ability box
         for layer in psd.descendants():
             if " FX: " in layer.name and not layer.is_group() and layer.is_visible():
-                found["ability_fx"].append(_box(layer, width, height))
+                found["ability_fx"].append(_box(layer, width, height, pad))
         for layer in overlay_words(psd, abilities, texts):
-            found["ability_fx"].append(_box(layer, width, height))
-        found["stat_labels"] += [_box(layer, width, height) for layer in texts
+            found["ability_fx"].append(_box(layer, width, height, pad))
+        found["stat_labels"] += [_box(layer, width, height, pad) for layer in texts
                                  if layer.name.strip().lower() in STAT_LABELS]
 
     # stats: one bbox per bar row. 1) the digit layers' mask union; 2) visible leaves of a group named like the stat
@@ -197,19 +198,19 @@ def regions(psd: PSDImage, vocab=(), rulebook=None) -> dict:
     # 4) bars painted into the art: the template row centred on the stat label
     rows = stat_rows(psd)
     for key, pattern in STATS.items():
-        boxes = [_box(group, width, height, bbox=b) for group, _, b in rows[key] if b]
+        boxes = [_box(group, width, height, pad, b) for group, _, b in rows[key] if b]
         if not boxes:
             for group in psd.descendants():
                 if (group.is_group() and fullmatch(rf"\s*({pattern})\s*(bars?)?\s*", group.name, IGNORECASE)
                         and any(search(r"bar|stat", owner.name, IGNORECASE) for owner in _ancestors(group))):
-                    boxes.append(union_box([_box(layer, width, height) for layer in _leaves(group)]))
+                    boxes.append(union_box([_box(layer, width, height, pad) for layer in _leaves(group)]))
         if not boxes:
             for layer in psd.descendants():
                 parent = layer.parent
                 if (not layer.is_group() and layer.is_visible() and parent is not None
                         and not isinstance(parent, PSDImage) and parent.name.strip().lower() == "bars"
                         and fullmatch(rf"\s*({pattern})\s*(bar)?\s*", layer.name, IGNORECASE)):
-                    boxes.append(_box(layer, width, height))
+                    boxes.append(_box(layer, width, height, pad))
         if not any(boxes) and width == CARD_WIDTH:
             for layer in texts:
                 if fullmatch(pattern, layer.name.strip(), IGNORECASE) and layer.name.strip().lower() in STAT_LABELS:
@@ -218,9 +219,9 @@ def regions(psd: PSDImage, vocab=(), rulebook=None) -> dict:
         found["stat_" + key] += [b for b in boxes if b]
 
     stars, icons, inline = badge_layers(psd, vocab, rulebook)
-    found["stars"] += [_box(layer, width, height) for layer in stars]
-    found["types"] += [_box(layer, width, height) for layer in icons]
-    found["inline_icons"] += [_box(layer, width, height) for layer in inline]
+    found["stars"] += [_box(layer, width, height, pad) for layer in stars]
+    found["types"] += [_box(layer, width, height, pad) for layer in icons]
+    found["inline_icons"] += [_box(layer, width, height, pad) for layer in inline]
 
     # art / frame: the LINE separator splits the art (above) from the ability panel (below) on 1200x2400 cards
     images = [layer for layer in psd if layer.is_group() and layer.name.strip().lower() == "images" and layer.is_visible()]
@@ -239,7 +240,7 @@ def regions(psd: PSDImage, vocab=(), rulebook=None) -> dict:
         found["art"].append((0, 0, width, height))
     for group in psd.descendants():
         if group.is_group() and group.name.strip().lower() == "lines" and group.is_visible():
-            found["frame"] += [_box(layer, width, height) for layer in _leaves(group)]
+            found["frame"] += [_box(layer, width, height, pad) for layer in _leaves(group)]
     return {key: [b for b in boxes if b] for key, boxes in found.items()}
 
 

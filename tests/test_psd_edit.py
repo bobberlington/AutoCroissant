@@ -25,6 +25,7 @@ from psd_tools.constants import Tag
 from psd_tools.psd import engine_data
 
 import commands.psd_edit as pe
+from commands import ability_place
 from commands.card_models import card_name
 from commands.psd_regions import PAINT_ORDER, badge_layers, clip, fx_pad, regions, stat_rows
 from conftest import (BADGED, PLAIN_DOOMER, at_rev, no_lazy, colour_glyphs, fork_reason, painted,
@@ -1964,6 +1965,31 @@ def test_plus_ability_adds_the_templates_layer(clone, parser, chart, tmp_path, m
     added = [layer for layer in added if layer.layer_id not in pe.lyid_index(psd)]
     assert [(layer.name, layer.parent.name, layer.text) for layer in added] == [("Ability", "Text", "Attacks inflict 1T Afraid.")]
     assert pe.stale_stories(saved) == [] and "ability: ability layer created from Creature_Template: check its place" in baked.fx_notes
+    stats = ability_place.elements(psd, parser.all_types)["stats"]     # below the stats, on the canvas (owner 10-25)
+    ink, first = ability_place.ink_rows(added[0])
+    assert first > max(b[3] for b in stats) and ink[3] <= saved.height and 0 <= ink[0] < ink[2] <= saved.width
+
+
+ADRENALINE = "Items/Equip/3 Stars/Adrenaline.psd"                  # an Isaac-style item: a paper panel under its art
+
+
+@text_edit
+def test_plus_ability_on_an_item_starts_at_its_panels_top(clone, parser, chart):
+    """+ability on an item without its ability: the text starts at the top of the empty paper panel, flows down inside
+    it, in the card's own font (its title's on these cards: ability_place)."""
+    psd = PSDImage.open(str(clone / ADRENALINE))
+    layer = pe.ability_layer(psd)
+    for fx in pe.fx_layers(psd, layer):
+        fx.parent.remove(fx)
+    pe.remove_layer(psd, layer)
+    template = PSDImage.open(clone / pe.TEMPLATES_DIR / "Item_Template.psd")
+    edit = pe.add_ability(psd, "+2 ATK while below half HP.", template, "Item_Template", str(clone / pe.FONTS_DIR), chart,
+                          "Adrenaline", True, parser, None, ADRENALINE)
+    added = next(l for l in psd.descendants() if pe._record_index(l) in edit.added)
+    x0, top, x1, y1 = ability_place.panel(psd)
+    ink, first = ability_place.ink_rows(added)
+    assert top < first < top + (y1 - top) / 4 and x0 <= ink[0] < ink[2] <= x1 and ink[3] <= y1
+    assert ability_place.layer_font(added)[0] == ability_place.title_font(psd, ADRENALINE, parser)[0]
 
 
 DRUID = "Creatures/World Of Warcraft/4 Stars/Warcraftian_Druid.psd"   # its title over 'Text/Name' and 'Text/Druid '
