@@ -415,7 +415,7 @@ STAR_COUNTS = [   # the star counter (psd_parser.star_sets) on real cards: (card
     ("Creatures/Other/2 Stars/Auto_Croissant.psd", 2, None),               # the cat's art in the Stars group
     ("Creatures/Other/3 Stars/Grimora.psd", 3, None),                      # one layer, three stars: split (R4)
     ("Auxiliary/Minions/Living_Bread.psd", 2, None),                       # each star drawn twice (R3)
-    ("Auxiliary/Minions/Massive_Moss_Charger.psd", 4, None),               # two outside the group (R2)
+    ("Creatures/Hollow Knight/4 Stars/Nosk.psd", 4, None),                 # outside the group (R2; MMC's 5th: refused)
     ("Creatures/Isaac/3 Stars/Tainted_Lazarus.psd", 3, None),              # Dead Laz upside down: both sets
 ]
 
@@ -443,7 +443,8 @@ def test_star_counter_on_real_cards(clone, parser, tmp_path):
 def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
     """A dice 5 at 4 loses its middle (Nightmare, Kyle's 2 over 3); a moved star under a shadow is copied on top
     instead (Flower of Decay); a new star off the banner the stars sit on refuses (Remote Detonator); the website's
-    header lays out the stars outside the group as the bake does (Massive Moss Charger)."""
+    header lays out the stars outside the group as the bake does (Massive Moss Charger), whose fifth would sit under the
+    moss (refused)."""
     import commands.psd_details as pd
     for rel, gone in (("Creatures/Kirby/5 Stars/Nightmare.psd", "Warpstar copy 4"), ("Creatures/Other/5 Stars/Kyle.psd", "middle")):
         plan = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 4, parser, moving=True)
@@ -458,7 +459,9 @@ def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
     rel = "Auxiliary/Minions/Massive_Moss_Charger.psd"
     psd = PSDImage.open(_clone_card(clone, rel, tmp_path)[0])
     header = pd._star_header(psd, rel, tuple(parser.all_types), parser)
-    assert len(header["units"]) == 4 and len(header["at"]["5"]) == 5     # the two outside are stars of the column
+    assert parser._count_stars(psd) == 4 and len(header["units"]) == 4 and len(header["at"]["5"]) == 5   # the two
+    #   outside are stars of the column
+    assert "would sit under 'Massive_Moss_Charger'" in header["refused"]["5"]
 
 
 def _open(parser, clone, rel, tmp_path) -> tuple:
@@ -568,17 +571,16 @@ def test_lane3_star_layouts(clone, parser, tmp_path):
     assert plan.how == "rows of two; below, turned: rows of two" and len(plan.copies) == 2
     rel = "Auxiliary/Minions/Polevaulter_Zombie.psd"
     assert pe._skewed_pairs([(980, 68), (1094, 57), (1051, 151), (937, 151)], 99, 13)
-    if pe.filter_items():                       # its stars carry smart filters: S1
-        plan = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 4, parser)
-        assert plan.how == "rows of two, laid out again"
+    plan = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 4, parser)    # its stars carry smart filters: S1
+    assert plan.how == "rows of two, laid out again"
 
 
 @icons
-@pytest.mark.skipif(not pe.filter_items(), reason="the fork's SmartObject.filter_item (cards-20261026)")
 def test_smart_filtered_stars_move_as_photoshop_does(clone, parser, tmp_path):
     """Magnet-shroom's star carries smart filters: its copy gets its own FEid item (the source's planes, its rectangle
     moved with the copy, named after the copy's placed ID, in file order) and is marked not valid at its new place, as
     Photoshop writes one; gate_filters refuses an FEid change no edit declares."""
+    assert pe.filter_items(), "the fork lacks SmartObject.filter_item (cards-20261026)"
     rel = "N.M.E/Magnet-shroom.psd"
     paths = _clone_card(clone, rel, tmp_path)
     parsed, baked = _bake(parser, paths, {"stars": 2}, tmp_path, rel)
@@ -598,7 +600,7 @@ def test_smart_filtered_stars_move_as_photoshop_does(clone, parser, tmp_path):
 @icons
 def test_type_rows_carried_on_and_pulled_back(clone, parser, tmp_path):
     """Masher's 2 over 1 takes a fourth icon beside its third, at the top row's pitch (S2); removing Sword's first icon
-    pulls the next back onto the card (S3), but not over another icon (Nasus: refused)."""
+    pulls the next back onto the card (S3), but not over another icon, kept or made (Nasus: refused)."""
     masher = "Auxiliary/Minions/Masher.psd"
     plan = _plan(parser, _clone_card(clone, masher, tmp_path)[0], masher, "types",
                  ["machine", "dark", "defensive_minion", "fire"])
@@ -611,3 +613,7 @@ def test_type_rows_carried_on_and_pulled_back(clone, parser, tmp_path):
     nasus = "Creatures/Other/4 Stars/Nasus.psd"
     with pytest.raises(pe.Refused, match="pulled back onto it, would cover 'Light'"):
         _plan(parser, _clone_card(clone, nasus, tmp_path)[0], nasus, "types", ["undead", "light"])
+    psd, parsed = _open(parser, clone, nasus, tmp_path)
+    plan = pe.plan_types(psd, parsed, ["undead", "water"], parser)
+    with pytest.raises(pe.Refused, match="would cover the 'water' icon"):
+        pe.set_icons(psd, plan, str(clone / "Types"))
