@@ -5596,7 +5596,7 @@ def _textures(unit: _Unit) -> list:
     return list(found.values())
 
 
-RELAID = ("rows of two, laid out again",)     # _more_layouts' layouts that change the card's own (told)
+RELAID = ("rows of two, laid out again", "a V's point as a pair", "a row on its banner")  # _more_layouts': told
 OVERLAP = 0.15              # a new star's core may cover this share of another's (the cards' own shapes overlap a little)
 SPARE_OVERLAP = 0.1         # a hidden spare star covering this share of a shown one (or covered) is not shown (R5)
 BACKDROP_SHARE = 0.9        # a layer behind the stars inking this share of each one's core is what they sit on
@@ -6173,7 +6173,7 @@ def _funnel(order: list, size: tuple, count: int) -> list:
     if any(_covers(core, unit.core) > OVERLAP or _covers(unit.core, core) > OVERLAP for core in cores for unit in order
            if unit is not rows[last][0]):
         return []
-    return [("a V's point as a pair", [unit.centre for row in rows[:last] for unit in row] + pair)]
+    return [(RELAID[1], [unit.centre for row in rows[:last] for unit in row] + pair)]
 
 
 def _banner_row(order: list, size: tuple, count: int, psd: PSDImage, back: Optional[tuple], clear: list) -> list:
@@ -6214,7 +6214,7 @@ def _banner_row(order: list, size: tuple, count: int, psd: PSDImage, back: Optio
         if pitch < BANNER_PITCH_MIN * w:
             return []
         x = right - w / 2
-    return [("a row on its banner", [(x - i * pitch, y) for i in range(count)])]
+    return [(RELAID[2], [(x - i * pitch, y) for i in range(count)])]
 
 
 def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDParser] = None, moving: bool = False,

@@ -527,12 +527,13 @@ def test_star_cases_of_10_26(clone, parser, tmp_path):
                       moving=True)
     psd, parsed = _open(parser, clone, "N.M.E/Remote_Detonator.psd", tmp_path)
     row = pe.plan_stars(psd, parsed, 3, parser)
-    assert row.how == "a row on its banner" and len(row.copies) == 1
+    assert row.how == "a row on its banner" and len(row.copies) == 1 and "does not go on to 3" in row.notes[0]   # told
     assert _centres(row) == [(1127, 98), (1063, 98), (999, 98)]         # tightened from its pitch of 74 to fit
     magolor = pe.plan_stars(*_open(parser, clone, "Creatures/Kirby/5 Stars/Crowned_Magolor.psd", tmp_path), 6, parser,
                             moving=True)
     assert magolor.how == "a V's point as a pair" and [(dx, dy) for _, dx, dy in magolor.moves] == [(55, 12)]
     assert len(magolor.copies) == 1 and _centres(magolor)[4:] == [(252, 326), (142, 326)]
+    assert magolor.notes == ["stars: a V's point as a pair (the card's own layout does not go on to 6)"]
 
 
 def _open(parser, clone, rel, tmp_path) -> tuple:

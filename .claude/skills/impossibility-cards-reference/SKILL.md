@@ -107,8 +107,8 @@ since 2026-10-20.
   onto its group (`_textures`: Yin Yarn's 6 and Paint Warrior's 4-6 refused); a backdrop is a banner only when plain
   round the stars (`_plain_banner`: Bolts and Screws' gear is art, its column bakes); a row on its banner is centred
   there and tightened down to 0.85 of a star's width, tried last (`_banner_row`: Remote Detonator 3, How To Jump 2,
-  Computer Virus 4); a die's five keeps the die's faces at 1-3 (`DICE_FACES`: the middle, a diagonal, the diagonal
-  through the middle); a V's point becomes a touching pair at one more (`_funnel`: Crowned Magolor 6); a refusal
+  Computer Virus 4; told); a die's five keeps the die's faces at 1-3 (`DICE_FACES`: the middle, a diagonal, the diagonal
+  through the middle); a V's point becomes a touching pair at one more (`_funnel`: Crowned Magolor 6; told); a refusal
   gives the reason of the layout that came closest.
 - **Fallback:** with no such group, visible layers whose name has the word "star" ("Patrick Star", "Emerald_Star",
   not "starfish") are counted the same way.
