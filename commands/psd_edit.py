@@ -3803,10 +3803,12 @@ def on_panel_design(psd: PSDImage, layer, box: tuple) -> Optional[str]:
     x0, y0, x1, y1 = clip(tuple(box), psd.width, psd.height)
     if panel is None or x1 <= x0 or y1 <= y0:
         return None
-    image = panel.composite(viewport=(x0, y0, x1, y1), apply_icc=False)
-    if image is None:
+    try:                                        # its own pixels (a clipping base's art is not its design)
+        pixels = panel.numpy()[y0 - panel.bbox[1]:y1 - panel.bbox[1], x0 - panel.bbox[0]:x1 - panel.bbox[0]] * 255
+    except Exception:
         return None
-    pixels = np.asarray(image.convert("RGBA")).astype(np.float32)
+    if pixels.ndim != 3 or pixels.shape[2] < 4:
+        return None
     solid = pixels[..., 3] > INK_ALPHA * 255
     if not solid.any():
         return None

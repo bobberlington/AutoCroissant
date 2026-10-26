@@ -67,7 +67,7 @@ TALL = 100000.0                     # pt: a box no text reaches the bottom of (m
 @dataclass
 class Plan:
     """plan()'s answer: the paragraph box and the ink expected in it (canvas px), the font, size and leading (rendered
-    px), the notes and the text panel it went in (None: none)."""
+    px), the notes and the text panel it went in on a card with no stats (None: none)."""
     box: tuple
     ink: tuple
     font: str
@@ -586,7 +586,7 @@ def plan(psd: PSDImage, rel: str, template: PSDImage, template_rel: str, text: s
         notes.append(f"ability: drawn in {drawn}, not {font}")
     box = (round(x0), round(top - off), round(x1), round(bottom))
     return Plan(box, (round(x0 + ix0), round(top), round(x0 + ix1), round(top + h)), font, s, s * ratio * lead, notes,
-                pan)
+                pan if mode == "panel" else None)
 
 
 # ========================
