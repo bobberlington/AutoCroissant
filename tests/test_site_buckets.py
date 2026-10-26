@@ -44,10 +44,22 @@ needs_tray = pytest.mark.skipif(not TRAY_JS.is_file(), reason=f"no {TRAY_JS}")
 @needs_tray
 def test_add_and_remove_pins(tmp_path):
     out = node(tmp_path, """
-const one = [{ k: "series", v: "Mario" }], nine = Array.from({ length: 9 }, (_, i) => ({ k: "author", v: `A${i}` }));
+const one = [{ k: "series", v: "Mario" }], full = Array.from({ length: 100 }, (_, i) => ({ k: "author", v: `A${i}` }));
 process.stdout.write(JSON.stringify([T.addPin(one, { k: "series", v: "mario " }), T.addPin(one, { k: "author", v: "Mario" }),
-  T.addPin(nine, { k: "series", v: "Kirby" }), T.removePin(nine, 0).length, T.removePin(one, 5)]));""", T=TRAY_JS)
+  T.addPin(full, { k: "series", v: "Kirby" }), T.addPin(full.slice(0, 99), { k: "series", v: "Kirby" }).pins.length,
+  T.removePin(full, 0).length, T.removePin(one, 5)]));""", T=TRAY_JS)
     assert out == [{"error": "Already pinned"}, {"pins": [{"k": "series", "v": "Mario"}, {"k": "author", "v": "Mario"}]},
-                   {"error": "At most 9 pins"}, 8, [{"k": "series", "v": "Mario"}]]
+                   {"error": "At most 100 pins"}, 100, 99, [{"k": "series", "v": "Mario"}]]
 
 
+@needs_node
+@needs_tray
+def test_many_pins_keys_reach_the_first_nine(tmp_path):
+    """Up to 100 stored pins load; keys 1-9 and their badges and labels are the first nine boxes' only."""
+    out = node(tmp_path, """
+const many = Array.from({ length: 130 }, (_, i) => ({ k: "series", v: `S${i}` })), pins = T.readPins(JSON.stringify(many));
+const html = T.trayHtml(pins.slice(0, 12), []);
+process.stdout.write(JSON.stringify([pins.length, T.readPins(JSON.stringify(many.slice(0, 9))).length,
+  ["1", "9", "0", "10"].map(k => T.pinOfKey(k, pins)), (html.match(/class="kbd"/g) || []).length,
+  /press (1[0-2])/.test(html), (html.match(/choose this box/g) || []).length]));""", T=TRAY_JS)
+    assert out == [100, 9, [0, 8, None, None], 9, False, 3]
