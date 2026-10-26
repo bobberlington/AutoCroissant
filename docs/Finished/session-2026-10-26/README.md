@@ -1,7 +1,7 @@
 # Session 2026-10-26
 
 Continued from 10-25 after midnight. With the owner until ~08:00 ("ask me questions" mode), then unattended. Everything
-below is on main in all repos. The jetson runs AutoCroissant 6da12ba and OJWikibot 77def4b; the psd-tools fork pin is
+below is on main in all repos. The jetson runs AutoCroissant 47c79e5 and OJWikibot 363ddc9; the psd-tools fork pin is
 `cards-20261026` (e156be36) on both machines. Times are PDT.
 
 ## Landed
@@ -26,6 +26,26 @@ below is on main in all repos. The jetson runs AutoCroissant 6da12ba and OJWikib
 | Numbered stat layers | TC 80466bbe | Grimora and Skeleton Mate split into numbered cells (1-10 lit over 1-10 dark per stat) in Photoshop; 80/80 bakes |
 | Dead code | AC 42170d4..a07f822, TC 3c33b34b, 311821b1, d87fd3b1, 429e724c | Owner ~08:00: the verdicts `_psd` fallback and card-sync.yml's older-builder probes; `_joined_edit`; dead constants and helpers; the reminder migration and `LEGACY_RUNS_AS_BOT` (a reminder with no creator runs as an unknown non-admin); the retired badge FX branch; pickle leftovers; `tools/variant_tags.py`; the `vram_usage` cookie fallback; stale test skips; the site's dead fallbacks (old thumbs cache, WebP meta, ratings rounding, numbered-PNG scan, jsDelivr fallback) and the plain-text sign-in migrations (plain-text secrets of before 10-23 are dropped at load). Kept: (1PGT)/(E2T), the first screen, pyoxipng, the older-fork checks, `alt_names`. Suite 641 passed; deployed |
 | OJWikibot dead code | OJWikibot 77def4b | 23 dead rows; deployed |
+
+## After 10:00 (the owner's answers, then unattended)
+
+The owner answered four questions (~10:00), then asked for unattended work. Where a look was still open, the
+coordinator took the diagnosis' recommendation (marked "chosen" below); the design docs with the option sheets are in
+`~/Documents/Tools/wt/scratch/layouts/{stars,types,bars}/DESIGN.md`.
+
+| What | Where | Notes |
+|---|---|---|
+| Jetson tidy | jetson | `~/build` trimmed to its recipes (1.2 GB of ffmpeg build tree, the OpenSSL 3.6.0 rollback archive and logs gone); `~/Documents/Tools` (one timestamp file) removed; stale `.pyc` files of deleted modules removed. The `-backup` clones stay: the bots commit their backups through them |
+| OJWikibot cleanup | OJWikibot 7297ecb..119f27b, 363ddc9 | Leo retired: its units and the 3.10 alias gone (Python 3.11+); the 09-09 stray-heading heal deleted; /update's diverged-checkout handling and the field-events snapshot kept on purpose (noted in change-control); stale comments reworded; README/skills drift fixed; store_heal dry-runs on backup/ off the jetson and refuses `--apply` there. Deployed 119f27b |
+| Three bugs | AC 97b1e73, 3b43659, d287148, 2918732; TC 579eef91, 2b0d3fb3 | A refused card's website-only fields still move to `_site` (an edits-only main commit); R1 checks every ability layer the parser reads (0 cards newly flagged); a creature or minion with no stat bars read gets NO STATS FOUND (Computer Virus at its next re-parse), answered by all four stats or a creatures edit |
+| Follow-ups | AC d376c3f, 86dce67, 97eb6d1, fa85665, 74c7704; TC 773c73c2, 06a8bde9 | The 3.10 alias gone in AutoCroissant too; Auxiliary/Creatures in the stat checks; R1 tolerates a spaced "Ability" name; docs |
+| Stars | AC caffa2f, 34c3e6e, 380f228, 3068bef; TC 1536d831, fc6784fe | A star's core is over half opaque (Leshy counts 5); a hide may not bare a kept star's shadow (Leshy at 4 hides the bottom-left drop, chosen C); a moved star keeps a texture clipped onto its group (Yin Yarn 6, Paint Warrior 4-6, Paint Bomb 7-10 refused); a banner must be plain where the stars sit (Bolts and Screws bakes as a column); a row centred and tightened on its banner, tried last (chosen A: 10 more plans bake); die faces for dice-5 cards at 1-3 (chosen B); Crowned Magolor's V point becomes a pair at 6 (chosen B). Leshy's and Yin Yarn's "Group 1" renamed "Stars" with the psd-tools fork (the prepared Photoshop copies also re-rendered text) |
+| Types | AC 69167cf, a7ec2ac, d143c61, 3d2f9ac | Type icons in a Stars group are no stars (Pike Beam, Dark Matter bake); a closed row makes room (chosen B: the last icon fills the hole, the others slide only to clear); two-row headers take a grid on adds (chosen: the mock-up picked 10-26 for Masher), falling back to today's spot; made icons checked against kept ones |
+| Stat bars | AC a4ccc9e, 01a2d40; TC 22484244, e401c98c | The bar's own cell edges in both plans (Twin Emperors' seam and its HP 1); one clear reason for a 0 that shows nothing; Clot Black's HP row gets hidden dark hearts 1-2 and Minecraft Panda's dark strips move into their rows (chosen D and C: both bake every value; PNGs unchanged); Sonic's SPD 11-19 stay website-only by design |
+| Lands | AC 47c79e5 (merge of 4 lanes, 654 tests), TC 06a8bde9 (one push; guards dry: 4 cards, 0 told, 0 writes) | Deployed AutoCroissant 47c79e5; OJWikibot skills 363ddc9. Data c1389ce ("4 art", 0 posts: Leshy and Yin Yarn read 5 stars, stats unchanged), then a `cards:` dispatch of the 72 cards whose stored star/type headers the new rules move: data 98faaf0 (psd_details only, stats unchanged) |
+
+`~/Documents/Tools/wt/scratch/suite-wait.sh` never saw a running suite (macOS cuts `ps -o comm` to 16 characters); fixed
+to match the executable in `args`.
 
 ## The owner's rulings of the day
 

@@ -34,14 +34,13 @@ First: regenerate the problem-cards list (below), then the campaign tasks in the
   file (osascript is blocked), dialogs off, only documents we opened. Runners: `~/std-work-1026/*/tools/`.
 - No guides or checklists for the owner: problem lists are a CSV plus its `.md` (memory `no-guides-csv-only`).
 
-## State (2026-10-26 ~09:15 PDT)
+## State (2026-10-26 ~12:40 PDT)
 
-- AutoCroissant main 6da12ba, deployed (the wrap-up's docs commit after it touches docs only).
-- TTSCardMaker main b3447b70 (plus Card sync's TTS save commits). Desktop clones of all three repos level with main.
-- Data 23b515a: parser 5, 820 cards; `db/verdicts.json` holds the verdicts (no `_psd` left). Grimora and Skeleton
-  Mate re-parsed with their numbered cells (same stats, 0 Discord posts).
+- AutoCroissant main 47c79e5, deployed (later wrap-up commits touch docs only).
+- TTSCardMaker main 06a8bde9 (plus Card sync's TTS save commits). Desktop clones of all three repos level with main.
+- Data 98faaf0: parser 5, 820 cards; `db/verdicts.json` holds the verdicts.
 - psd-tools fork pin `cards-20261026` = e156be36 on both machines (`requirements-cards.txt`).
-- OJWikibot main 77def4b, deployed.
+- OJWikibot main 363ddc9, deployed. One production host: the jetson (leo retired 10-26).
 - `+ability` is live; no live `+ability` bake yet (the first comes from the website): its flag note names the box, font
   and source.
 
@@ -49,57 +48,55 @@ First: regenerate the problem-cards list (below), then the campaign tasks in the
 
 ### Owner
 
-- [ ] Reset the production Discord TOKEN (jetson's config.py; sent to api.github.com on 10-25; still valid on 10-26),
-      then put the new one in the jetson's config.py and restart. Regenerate TTSCardMaker's Discord webhook (its URL was
-      printed on 10-26).
 - [ ] Photoshop: Computer Virus' stat bars; Ze'mer's full-width flower layers; Terry Hintz and Joel Miller's "Stars"
       groups and typed tags (prepared in `~/std-work-1026/stargroups/`; Photoshop 2023 can't re-save their
       EarthboundZero text, nor Elmadan's); Papyrus' typed tag (Photoshop's Papyrus font doesn't match the card's).
 - [ ] The Panda Future's PSD is 51.6 MB (GitHub warns past 50 MB).
 - [ ] Safari: the many-boxes edge scroll (headless checks never ran Safari).
-- [ ] OJWikibot questions: is the leo host retired; `/update` in both bots; the field-events snapshot; the stray-heading
-      fix.
 - [ ] Open in Photoshop once: a smart-filter star move (lane 3, S1) and a title moved back onto the card (lane 2); both
       were checked only in psd-tools renders.
+- [ ] Looks chosen unattended on 10-26 (sheets in `~/Documents/Tools/wt/scratch/layouts/*/sheets/`; each is one small
+      rule to change): Leshy at 4 hides its bottom-left drop and at 1 keeps it alone; banner rows tighten to 0.85 of a
+      star; die faces at 1-3; Crowned Magolor's funnel; closing a type row (the last icon fills the hole); the
+      two-row grid on adds (Masher, Spamton Neo and Defcon Panda's new icon comes out smaller); Clot Black's and
+      Minecraft Panda's card fixes.
 - Eventually, never blockers: Photoshop standardizing (one Name and one Ability layer per card, rulebook Header/Page
   Number layers; Mr Jawsum's name layer); the team's rulings draft; developers resetting clones after the 10-24 rewrite
   and reinstalling stoogedings.
 
 ### Developer
 
-- [ ] Regenerate the problem-cards list (`docs/Future/PROBLEM_CARDS_2026-10-25b.*` predates lanes 1-3, the numbered
-      cells and the star groups; Twin Emperors was a false alarm; `+ability` cases are handled). Deliver the CSV and its
-      `.md`.
-- [ ] Star counter: Yin Yarn and Leshy (overlapping and shadowed stars).
-- [ ] Star layouts: Bolts and Screws 2's false banner refusal; the 8 off-banner star edits refused (smarter layouts);
-      a dice 5 -> 2 rule; Crowned Magolor's 6 look.
-- [ ] Types: Nasus' type removal (a close-the-row rule); Masher's "dark" under the shell; check Pike Beam and Dark
-      Matter (a moved icon touching another; likely still refused).
-- [ ] Stat bars: Twin Emperors' 2-px seam after 5 -> 10 -> 2 -> 7 (cell spacing 925 vs 921); a numbered-layer 0 refuses
-      with "no dark picture" wording (reword); Sonic's SPD 11-19 are website-only; Clot Black's HP 1 still refuses.
-- [ ] A website-only value is never written when its entry also has a refused field (`card_bake.share_of` returns None
-      for any refusal).
-- [ ] The R1 timing-tag check reads only layers named "Ability" (`card_standards.rule_tags`): tags in split ability
-      layers (Empress Bulblax's `text 4`) are never checked.
-- [ ] The website's "Parse problems" filter misses cards with no stats (Computer Virus: stats -1, empty problems).
+- [ ] Regenerate the problem-cards list (`docs/Future/PROBLEM_CARDS_2026-10-25b.*` predates the 10-26 lanes and fixes).
+      Deliver the CSV and its `.md`.
+- [ ] Stars still refused: Thunder Thighs 3, Consolation Prize, Bubble, Forsaken City and The Core (option B, shrinking
+      every star to fit the banner, is the larger fix); Forgotten Crossroads 3-6 (a black gradient) and Spiky Ball Trap
+      5-6 (a brick wall) wrongly act as the stars' backdrop; Yin Yarn 6, Paint Warrior 4-6 and Paint Bomb 7-10 are
+      refused because a new star would miss the texture clipped onto its group (a copy of the texture would bake them).
+- [ ] Types: in an edit that removes and adds at once, the added icons keep today's free spot instead of going through
+      the closing loop (a made icon landing on a kept one is refused).
+- [ ] Stat bars: Clot Gold's spare hidden HP layers are still shown at low values (E2 in
+      `~/Documents/Tools/wt/scratch/layouts/bars/DESIGN.md`).
+- [ ] Computer Virus' NO STATS FOUND reaches the data at its next re-parse (or never, once its stat bars exist).
 - [ ] Corruption and Dumplings: the font sweep left them out (a PNG bar; a Txt2 reorder).
 - [ ] Kept on purpose until their condition holds: the pyoxipng fallback (until `brew install oxipng` everywhere), the
       older-fork checks (retire the `ac-py314-psd125` venv first), the `alt_names` field (removing it rewrites every
       record), Card Edits.json's `aliases_moved` key (a data edit), the `inspect_pickle.py` name.
 - [ ] OJWikibot: `ojwiki_helpers.py:263-268` optional mwparserfromhell fallback; the backup search misses
-      `Backup: pending.json`; the 10-26 audit's item 36 rewording and its doc-drift list (the audit file is gone:
-      re-derive).
+      `Backup: pending.json`.
 - [ ] Fork, low priority: a tracking change breaks kerning (Quick Slash, Ominous Red Circle), tracked badge ligatures,
       Photoshop's underline box (Golden Metronome). The cards are fixed in Photoshop; re-bakes of those lines differ.
 
 ### Waiting on events
 
-- [ ] OJWikibot's wiki API answers HTTP 500 since 10-23 (wiki/host side); O-6 waits for it.
+- [ ] OJWikibot's wiki API answers HTTP 500 since 10-23 (wiki/host side); O-6 waits for it. When it's back: read
+      All_Cards_Event once for a lone "===Permanent Rotation===" heading (the heal is deleted; remove it by hand if
+      there), and check the 2026-10-21 mixer gap in backup/history/mixers.json against that day's wiki page.
 - [ ] The first live `+ability` bake: check its placement and font.
 
 ### Kept by ruling (no action)
 
-42 glow and gradient FX layers; 6 outline FX layers that change colour; the clock emoji; Miracle Matter's form
+OJWikibot (owner 10-26): `/update`'s diverged-checkout handling (both bots) and the field-events snapshot (a use is
+planned). Cards: 42 glow and gradient FX layers; 6 outline FX layers that change colour; the clock emoji; Miracle Matter's form
 pictures and the 5 card-art inline pictures; MDW/Old Rules pages unswept.
 
 ## Queue (`docs/Future/`)
