@@ -511,6 +511,8 @@ only); its pip install is the other card workflows' (card-sync.yml's, card-edits
 | `PARITY_BAD_MAX` | `0.5` % | bad pixels a box may show against the official PNG; past it the miss is told (report, commit note), not refused |
 | `PARITY_FLOOR` | `25.0` % | the only pixel refusal: a box past this is a broken render (owner, 2026-10-23) |
 | `PARITY_MEAN_MAX` | `2.0` | mean difference over a box (owner, 2026-10-22); a reported measure since 2026-10-23 |
+| `ADD_ABILITY_LIVE` | `False` | `+ability` (a first ability layer from the card kind's template) bakes only when True; off, the edit waits (f92fb5e; on once the owner approves the test PSDs) |
+| env `PSD_DIRTY_VERIFY` | unset | `"1"`: the dirty-box gate also renders whole and raises on any difference (K-1; on in tests/conftest.py) |
 | `card_bake.MAX_BAKES` | `40` | PSD edits per run; the rest wait for the next |
 | `card_bake.RECENT` | 30 min | a PSD or PNG pushed more recently is its author's: the bake and the guards don't race them |
 | `card_bake.BUDGET` | 40 min | no card starts later, so the commit lands within the job's 60 minutes |
@@ -701,7 +703,7 @@ table with its command before quoting it in the future.
 | global_config env overrides (two: LOCAL_DIR_LOC, HISTORY_CLONE) | `grep -n "environ.get" global_config.py`; `grep -rn "AUTOCROISSANT_" --include="*.py" commands/ global_config.py` (global_config.py only) |
 | Module environment reads | `grep -rn "environ.get" --include="*.py" commands/` (FONT_DIRS_ENV, WORK_ENV = RUNNER_TEMP, GITHUB_TOKEN, BUILDER_SHA, DISCORD_ARCHIVE, DISCORD_MATCH_REPO, SSH_AUTH_SOCK) |
 | ACTIONS_TOKEN and the card_sync knobs | `sed -n '38,56p' commands/card_sync.py` |
-| Push-guard, parity and bake knobs | `grep -n "^MODES\|^LINE\|^CHANGES_\|^QUIET_MARGIN\|^ANCHOR_WINDOW\|^POOL_\|^TELL_PNG" commands/card_guards.py`; `grep -n "^AUTO_FIX" commands/card_standards.py`; `grep -n "^TOL\|^BESIDE_CUT" commands/png_export.py`; `grep -n "^PARITY_" commands/psd_edit.py`; `grep -n "^MAX_BAKES\|^RECENT\|^BUDGET" commands/card_bake.py` |
+| Push-guard, parity and bake knobs | `grep -n "^MODES\|^LINE\|^CHANGES_\|^QUIET_MARGIN\|^ANCHOR_WINDOW\|^POOL_\|^TELL_PNG" commands/card_guards.py`; `grep -n "^AUTO_FIX" commands/card_standards.py`; `grep -n "^TOL\|^BESIDE_CUT" commands/png_export.py`; `grep -n "^PARITY_\|^ADD_ABILITY_LIVE\|^DIRTY_VERIFY" commands/psd_edit.py`; `grep -n "^MAX_BAKES\|^RECENT\|^BUDGET" commands/card_bake.py` |
 | Setters never write config.py | `sed -n '954,997p' commands/query_card.py`; confirm zero `open(`/`write` there |
 | update_stats defaults (force_update False both places; use_local_repo / use_local_timestamp removed 2026-10-20) | `grep -n "force_update: \|use_local" main.py commands/card_sync.py commands/card_data.py` (no use_local hits; every force_update default is False) |
 | Icon-font constants | `grep -n "^ICON_" commands/psd_parser.py global_config.py` |
@@ -774,3 +776,4 @@ marker), the `card-guards-quiet` environment among the repo settings, `png_expor
 2026-10-25 (grid): commands/card_grid.py's constants.
 2026-10-25 (cardlist, work/cardlist): `CARD_TREE_JSON`.
 2026-10-25 (wrap-up): `PARSER_VERSION` is 4 (3: a PSD's pictures, d6d2f5e; 4: the census fixes, 1b17aba); card_data.py citations re-pointed.
+2026-10-25 (wrap-up review): `ADD_ABILITY_LIVE` and env `PSD_DIRTY_VERIFY` in the psd_edit table.

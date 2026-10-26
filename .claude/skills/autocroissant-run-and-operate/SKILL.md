@@ -399,6 +399,9 @@ The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes 
   IDs are derived, so star edits on a PSD with several pictures bake; a type icon touching the title at the template's
   first spot bakes, flagged; an edited split title keeps its pieces (`PSDParser._named_pieces`); a hidden star layer
   of another size (Toy Freddy's 'star test') is no star of the row.
+- **`+ability` (2026-10-25, f92fb5e; built, off):** an ability added on the website to a card with no Ability layer
+  makes one from the card kind's template (`psd_edit.insert_ability`/`add_ability`), flagged. Off while
+  `psd_edit.ADD_ABILITY_LIVE` is False: the edit waits. Live at the next Card sync run after the flip.
 - **Ability FX layers (BUG 2, work/fx-rebuild, landed 2026-10-24):** an ability bake makes the card's `Ability FX: ...`
   layers again as Effect Layers.jsx's Update all does (badge layers apart: retired 2026-10-25, deleted, told): each cut in place over
   its words' new places, its own style and place kept (q6); a status layer stays on its status's own words (a numbered
