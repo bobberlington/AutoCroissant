@@ -273,3 +273,36 @@ def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypat
     assert not loaded & {"edit.js", "inline.js", "preview.js", "mockup.js", "tokens.js", "stats.js", "balance.js", "insights.js", "profile.js"}
     assert {"edit.js", "mockup.js"} <= set().union(*(sources[f] for f in chunks["editing.js"]))
     assert {"stats.js", "balance.js"} <= set().union(*(sources[f] for f in chunks["charts.js"]))
+
+
+def test_website_only_fields(bs, tmp_path, monkeypatch):
+    """`_site` (owner 10-25): applied, never "PSD pending", the card's siteOnly (its "Website only" tag); edit.js stores it
+    from an op's ticks as parse_edits and CardEdits.site_only clean it (a field without a value goes); unticked: pending."""
+    from commands.card_edits import CardEdits
+    if shutil.which("node") is None or not EDIT_JS.is_file():
+        pytest.skip("node or edit.js missing")
+    script = tmp_path / "site.mjs"
+    script.write_text(f'const {{ editsFile }} = await import({json.dumps(EDIT_JS.as_uri())});\n'
+                      'const text = JSON.stringify({about: "x", cards: {"Mini Doomer": {"name": "Tiny Doomer", "hp": 9, "_by": "w"}}});\n'
+                      'const ops = [{key: "Mini Doomer", set: {spd: 7}, unset: [], site: {name: true, hp: true, atk: true}}];\n'
+                      'process.stdout.write(editsFile(text, ops, "T", "web"));\n', encoding="utf-8")
+    done = subprocess.run(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert done.returncode == 0, done.stderr
+    entry = json.loads(done.stdout)["cards"]["Mini Doomer"]
+    assert entry == {"name": "Tiny Doomer", "hp": 9, "spd": 7, "_site": ["name", "hp"], "_by": "web", "_at": "T"}   # atk: no value
+    assert CardEdits.parse(done.stdout).site("mini doomer") == ["name", "hp"]
+    (tmp_path / "site").mkdir()
+    (tmp_path / "site" / "Card Edits.json").write_text(done.stdout, encoding="utf-8")
+    monkeypatch.setattr(bs, "REPO", str(tmp_path))
+    edits = bs.parse_edits()
+    card = {"key": "Mini_Doomer", "name": "Mini Doomer", "hp": 5, "spd": 5, "problems": []}
+    bs.apply_edits(card, edits, shown="Mini Doomer")
+    assert card["name"] == "Tiny Doomer" and card["hp"] == 9 and card["siteOnly"] == ["name", "hp"] and card["pending"] == ["spd"]
+    fields, meta = edits["mini doomer"]
+    card = {"key": "Mini_Doomer", "name": "Mini Doomer", "hp": 5, "spd": 5, "problems": []}
+    bs.apply_edits(card, {"mini doomer": (fields, {**meta, "_site": ["name"]})}, shown="Mini Doomer")   # hp unticked
+    assert card["siteOnly"] == ["name"] and card["pending"] == ["hp", "spd"]
+    refused = {"state": "refused", "for": {"name": "Tiny Doomer"}, "psd": "abcd1234", "reason": "r"}    # then ticked
+    card = {"key": "Mini_Doomer", "name": "Mini Doomer", "hp": 5, "spd": 5, "problems": []}
+    bs.apply_edits(card, {"mini doomer": (fields, {**meta, "_psd": refused})}, psd_sha="abcd1234ff", shown="Mini Doomer")
+    assert "refused" not in card and card["siteOnly"] == ["name", "hp"]

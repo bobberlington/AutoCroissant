@@ -28,6 +28,7 @@ PART_KEY = re_compile(r"^(\d+|\+ability)\Z")   # a layer id, or ADD_ABILITY
 HEX8 = re_compile(r"^[0-9a-f]{8}\Z")
 PARTS_MAX, PART_TEXT_MAX = 64, 4096
 RENAME = "_rename"                              # true: the bake renames the card's files to its name (owner 2026-10-25)
+SITE = "_site"                                  # an entry's website-only fields: their values differ from the card image on purpose
 
 
 @dataclass
@@ -77,12 +78,13 @@ class CardAuthors:
 class CardEdits:
     """
     TTSCardMaker's site/Card Edits.json: card fixes from the website's Edit button.
-    {"cards": {"Card Name": {"field": value, "_by": ..., "_at": ...}}}; names match like the authors file.
-    Same fields as the website (site/build/build_site.py). The PSD values are kept in card.parsed_values.
+    {"cards": {"Card Name": {"field": value, "_site": [field, ...], "_by": ..., "_at": ...}}}; names match like the
+    authors file. Same fields as the website (site/build/build_site.py). The PSD values are kept in card.parsed_values.
+    `_site` (owner 2026-10-25): card-image fields that are website only, applied like any edit but never baked (site_only).
     `_rename: true` (beside a name): the bake also renames the card's files (renames()).
     """
     cards: dict = field(default_factory=dict)       # normalized card name -> {field: value}
-    meta: dict = field(default_factory=dict)        # normalized card name -> its _-keys (_by, _at, _psd), never applied
+    meta: dict = field(default_factory=dict)        # normalized card name -> its _-keys (_by, _at, _psd, _site cleaned), never applied
 
     TYPES = {"name": str, "type": str, "subtype": str, "series": str, "subseries": str, "stars": int, "types": list,
              "hp": int, "def": int, "atk": int, "spd": int, "ability": str, "note": str, "aliases": list,
@@ -102,6 +104,7 @@ class CardEdits:
             "parts": "psd", "type": "folder", "subtype": "folder", "series": "folder",
             "subseries": "database", "note": "database", "aliases": "database", "dup_of": "database", "hidden": "database",
             "problems_ok": "database", "allow_high_stats": "database", "creatures": "database"}
+    SITE_FIELDS = ("name", "stars", "types", "hp", "def", "atk", "spd", "ability")    # what `_site` may name (edit.js SITE)
 
     @classmethod
     def valid(cls, name: str, value) -> bool:
@@ -123,6 +126,18 @@ class CardEdits:
         return isinstance(value, kind)
 
     @classmethod
+    def site_only(cls, entry: dict) -> list:
+        """An entry's `_site`, cleaned (edit.js editsFile's rule): card-image fields with a valid value, in ORDER."""
+        named = entry.get(SITE)
+        if not isinstance(named, list):
+            return []
+        return [f for f in ORDER if f in cls.SITE_FIELDS and f in named and entry.get(f) is not None and cls.valid(f, entry[f])]
+
+    def site(self, key: str) -> list:
+        """A card's website-only fields (key: CardAuthors.key)."""
+        return self.meta.get(key, {}).get(SITE) or []
+
+    @classmethod
     def parse(cls, text: str) -> "CardEdits":
         """Raises ValueError for a file that isn't JSON; bad entries are skipped."""
         data = json_loads(text)
@@ -132,16 +147,17 @@ class CardEdits:
             if isinstance(fields, dict):
                 key = CardAuthors.key(name)
                 edits.cards[key] = {k: v for k, v in fields.items() if not k.startswith("_") and cls.valid(k, v)}
-                edits.meta[key] = {k: v for k, v in fields.items() if k.startswith("_")}
+                edits.meta[key] = {k: v for k, v in fields.items() if k.startswith("_") and k != SITE}
+                site = cls.site_only(fields)
+                if site:
+                    edits.meta[key][SITE] = site
         return edits
 
     def renames(self, key: str) -> bool:
         """Whether the bake renames a card's files to its name (key: CardAuthors.key): `_rename` true beside a name that
         isn't website only (`_site`); build_site.parse_edits' rule."""
-        meta = self.meta.get(key) or {}
-        site = meta.get("_site")
-        return meta.get(RENAME) is True and isinstance(self.cards.get(key, {}).get("name"), str) \
-            and not (isinstance(site, list) and "name" in site)
+        return (self.meta.get(key) or {}).get(RENAME) is True and isinstance(self.cards.get(key, {}).get("name"), str) \
+            and "name" not in self.site(key)
 
     def get(self, card: "CardInfo", name: str):
         if name == "creatures":
@@ -434,6 +450,7 @@ __all__ = [
     'ORDER',
     'PUNCTUATION',
     'RENAME',
+    'SITE',
     'as_parsed',
     'dump_edits',
     'dump_ratings',

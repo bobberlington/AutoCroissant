@@ -7,7 +7,8 @@ TTSCardMaker's site/Card Edits.json into the card PSDs and PNGs, one commit per 
     run(repository, head, dry_run, card, pending_only, local, verdicts) -> (markdown report, commit shas: one at most)
     pending(repository, head, local, verdicts) -> the cards a live run has work for; due() those past the 30-minute grace
 
-Input: one tree snapshot at head and blobs by sha (the card folders are never checked out). Per card named in the
+Input: one tree snapshot at head and blobs by sha (the card folders are never checked out). A website-only field (the
+entry's `_site`, owner 2026-10-25) is never baked, dropped or given a verdict: it stays in the file. Per card named in the
 file with a PSD-kind field: refuse `recent` (PSD or PNG pushed in the last 30 min), fetch its PSD and official PNG (gate
 `blob`), classify the edits against a fresh offline parse (psd_edit.classify), apply them with every gate
 (psd_edit.apply_jobs; an ability edit also makes its FX layers again, Effect Layers.jsx's Update all: section 7 idea 14,
@@ -443,14 +444,21 @@ def rewrite_edits(text: str, name: str, drop=(), psd: Optional[dict] = None, kee
     return dump_edits(data)
 
 
-def psd_fields(fields: dict) -> dict:
-    """The PSD-kind fields of an entry with a value (the job key, section 5)."""
-    return {k: v for k, v in fields.items() if KIND.get(k) == "psd" and v is not None}
+def psd_fields(fields: dict, site=()) -> dict:
+    """The PSD-kind fields of an entry with a value (the job key, section 5), but its website-only ones (`_site`, and
+    their part edits): never baked."""
+    out = {k: v for k, v in fields.items() if KIND.get(k) == "psd" and v is not None and k not in site}
+    if site and isinstance(out.get("parts"), dict):
+        out["parts"] = {k: p for k, p in out["parts"].items() if not isinstance(p, dict) or p.get("field") not in site}
+        if not out["parts"]:
+            del out["parts"]
+    return out
 
 
-def _entry_at(text: str, name: str) -> Optional[dict]:
-    """A card's parsed entry in a file text (fields valid for CardEdits), or None."""
-    return CardEdits.parse(text).cards.get(CardAuthors.key(name))
+def _wanted_at(text: str, name: str) -> dict:
+    """A card's fields to bake in a file text (psd_fields of its entry), {} when it has none."""
+    edits, key = CardEdits.parse(text), CardAuthors.key(name)
+    return psd_fields(edits.cards.get(key) or {}, edits.site(key))
 
 
 def _same_verdict(a: Optional[dict], b: Optional[dict]) -> bool:
@@ -587,7 +595,7 @@ def types_icons(snapshot: Snapshot, work: str, parser, names: list, printed: Opt
 
 def select(edits: CardEdits, snapshot: Snapshot, only: Optional[str] = None) -> list:
     """
-    The cards the run looks at: every entry with a PSD-kind field (one card with --card).
+    The cards the run looks at: every entry with a PSD-kind field not website only (one card with --card).
 
     Args:
         edits: The parsed edits file
@@ -601,7 +609,7 @@ def select(edits: CardEdits, snapshot: Snapshot, only: Optional[str] = None) -> 
     for key, fields in edits.cards.items():
         if only is not None and key != CardAuthors.key(only):
             continue
-        wanted = psd_fields(fields)
+        wanted = psd_fields(fields, edits.site(key))
         if not wanted:
             continue
         rel = snapshot.psds.get(key, "")
@@ -1410,13 +1418,15 @@ def share_of(card: Card) -> Optional[Share]:
         return None
 
     def drop(text: str) -> Optional[str]:
-        if psd_fields(_entry_at(text, card.name) or {}) != card.fields:
+        if _wanted_at(text, card.name) != card.fields:
             raise Refused("edit-changed", f"the edit changed on {CARD_BRANCH} meanwhile: not touched")
         out = rewrite_edits(text, card.name, card.dropped, None, False, card.part_drop)
         gone = _gone_fields(card)
         for n, png in sorted(card.pictures.items()):    # the other pictures' entries: their derived name/ability
             if n != 1 and gone:
-                out = rewrite_edits(out or text, card_name(png), gone) or out
+                site = CardEdits.parse(out or text).site(CardAuthors.key(card_name(png)))
+                mine = [f for f in gone if f not in site]    # a website-only one stays
+                out = (rewrite_edits(out or text, card_name(png), mine) or out) if mine else out
         return out
     return _rename_share(card, Share(card, card.files, card.expect, drop))
 

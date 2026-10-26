@@ -122,6 +122,13 @@ One table, three consumers: `CardEdits.KIND` (new, beside `TYPES`/`ATTRS`/`FIXED
 | `type` `subtype` `series` | folder | never touched | stay |
 | `subseries` `note` `aliases` `dup_of` `hidden` `problems_ok` `allow_high_stats` | database-only | never touched; `_by`/`_at` kept | stay |
 
+**Website only (2026-10-25, owner).** An entry's `_site` lists card-image fields whose value differs from the printed
+card on purpose (`"Mini Doomer": {"name": "Tiny Doomer", "_site": ["name"]}`, set by the editor's "Website only" box).
+The data build, the bot, the site and the changelog use them like any edit; the bake never sees them (`psd_fields`
+leaves them and their part edits out): not baked, dropped, refused or pending, no verdict, no bake post. A `_site` name
+without a value is dropped (`CardEdits.site_only`, build_site `parse_edits`, edit.js `editsFile`). Unticked, the field
+is a normal PSD edit again.
+
 **Stars and types (2026-10-23, owner: "teach the bake instead of blocking the card").** `psd_edit.plan_stars` /
 `plan_types` work an edit out on the open card; a layout they don't know refuses that field only (`Refusal.field`), and
 `card_bake` bakes the card's other fields, leaving the refused one in the file with a refused verdict on the PSD the
