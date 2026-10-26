@@ -39,7 +39,7 @@ cards, apostrophes 34). reminder.json is backed up to `backup/reminder.json` on 
   parallelism, edit_copy), O-1..O-9 (OJWikibot tests opt-in, throttle 2 s, outage responsiveness, retry storms...).
 - Michael's Blessing: the badge sweep shrank its badge table (the "->" arrows no longer line up). Keep or revert that
   card from 218a122d?
-- KungFuPandaRegular-xYjV.ttf (the one old font copy kept): delete?
+- KungFuPandaRegular-xYjV.ttf (the one old font copy kept): no PSD asks for its PostScript name `Kung Fu Panda`; deleted on TC work/tooling (bcaca99f).
 - Badges that would rewrap text if resized (58) got the shift only; allow the resize anyway?
 
 ## Found, needs the owner

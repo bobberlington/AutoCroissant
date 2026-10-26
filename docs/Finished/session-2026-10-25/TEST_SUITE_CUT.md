@@ -1,6 +1,7 @@
 # Test suite cut and xdist
 
-**Status:** built and landed 2026-10-25 (AutoCroissant f32dfa7: 1,563 -> 553 tests, about a minute at `-n auto` = 6 workers).
+**Status:** built and landed 2026-10-25 (AutoCroissant f32dfa7: 1,563 -> 553 tests, about a minute at `-n auto` = 6 workers;
+595 by that evening, 1-2 min at 6 workers). `AC_TEST_WORKERS=N` raises the cap on a quiet Mac (each worker peaks near 3 GB).
 
 **Goal.** A suite that runs in about a minute in parallel and tests only what protects something (owner, 10-24: "We
 have too many tests - stop bloating our test suite").
@@ -22,6 +23,8 @@ have too many tests - stop bloating our test suite").
 | 10-24 (164b4a4) | 1,690 | 110 s; serial 40 min |
 | 10-25 (e6a5c54), collected | 1,923 | not measured |
 | After the cut (PLAN §5, re-derive) | about 620 + 15 smoke | about 40-50 s |
+| 10-25 f32dfa7, the cut | 553 | 66 s (load ~25) |
+| 10-25 evening (6a87179) | 595 (592 passed, 2 skipped, 1 failed: `test_one_open_reads_as_two`, also on main) | 218 s at load 32-84 (other runs on the Mac); 1-2 min quiet |
 
 The suite grew after the plan (BUG 2, Python 3.14, split, retire). Re-run the plan's `tools/cuts.py` on a fresh junit file of
 current main before cutting; the rules below decide new files.
@@ -40,7 +43,7 @@ current main before cutting; the rules below decide new files.
    `commands/discord_archive.py`, `commands/discord_match.py`, `commands/png_recompress.py`, txt2_repair's
    `--check`/`--in-place`, the psd_details backfill CLI. `commands/history_backfill.py` goes with step 10
    (`work/pickles`).
-4. **Speed:** the font-index stub and per-session template repos cloned with `--local` (PLAN §2.4 #12-13).
+4. **Speed:** the font-index stub and per-session template repos cloned with `--local` (PLAN §2.4 #12-13; kept, `tests/helpers.py` `cards_template`).
 5. **The rule against re-growth**, one paragraph in `.claude/skills/autocroissant-validation-and-qa/SKILL.md` §1c: a
    change brings tests only for a gate, one happy path of a new command, or a pickle/data-safety property; never for
    TTSCardMaker's code, workflow YAML text, the fork's behaviour, finished migrations, real-card replays beyond the

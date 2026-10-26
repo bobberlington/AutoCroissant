@@ -304,5 +304,6 @@ def clone():
 
 
 def pytest_xdist_auto_num_workers(config):
-    """-n auto runs at most 6 workers: every worker spawns git on the 16 GB card clone (10-25: 400+ git processes ran the Mac out of memory)."""
-    return min(6, cpu_count() or 1)
+    """-n auto runs at most 6 workers: every worker spawns git on the 16 GB card clone (10-25: 400+ git processes ran the Mac out of memory).
+    AC_TEST_WORKERS raises it on a quiet Mac (each worker peaks near 3 GB)."""
+    return int(environ.get("AC_TEST_WORKERS") or 0) or min(6, cpu_count() or 1)

@@ -87,6 +87,7 @@ NOREPLY = r"(?:\d+\+)?([A-Za-z0-9-]+)@users\.noreply\.github\.com"   # a GitHub 
 QUIET_MARGIN = timedelta(seconds=60)            # land waits RECENT plus this after the push
 ANCHOR_WINDOW = timedelta(hours=2)              # a burst: PSD commits this close to the push may stand in for its PNG's PSD
 POOL_MIN = 8                                    # --whole-tree checks this many cards or more in a process pool
+POOL_MAX = 4                                    # at most this many processes (half the cores, 2 on the runners; each runs git)
 FONT_FILES_EACH = 4                             # R8: font files tried a face, likeliest name first (270 of 275 faces in 3, 10-25)
 FONT_FETCH_MAX = 12                             # R8: font files a run (a worker) fetches at most, a request each
 CARD_ROOTS = ("Auxiliary/", "Creatures/", "Field/", "Items/", "N.M.E/")   # where card PNGs live (Types/ icons are not cards)
@@ -1138,7 +1139,7 @@ def check(clone: str, after: str, before: str = "", repository: str = "", author
     with TemporaryDirectory(prefix="guard-fonts-") as fonts:          # R8's fetched font files
         source.fonts = fonts
         if len(jobs) >= POOL_MIN and workers != 1:
-            count = workers or max(1, min((cpu_count() or 2) // 2, len(jobs)))
+            count = workers or max(1, min((cpu_count() or 2) // 2, POOL_MAX, len(jobs)))
             with ProcessPoolExecutor(count, initializer=_init_worker, initargs=(clone, repository, context, vocab, tree, fonts)) as pool:
                 results = list(pool.map(_pooled, [(job, out, mode) for job in jobs], chunksize=2))
         else:
@@ -1514,7 +1515,7 @@ def main(args: Optional[list] = None) -> int:
     one.add_argument("--whole-tree", action="store_true", help="every card PSD at --after: standards and PNG-vs-PSD")
     one.add_argument("--mode", default="dry", choices=MODES, type=str.lower,
                      help="dry, report or on (CARD_GUARDS, any case): the report's wording")
-    one.add_argument("--workers", type=int, default=0, metavar="N", help="processes for 8 cards or more (0: half the cores)")
+    one.add_argument("--workers", type=int, default=0, metavar="N", help="processes for 8 cards or more (0: half the cores, at most 4)")
     one.add_argument("--out", required=True, metavar="DIR", help="report.md, discord.json, plan.json and the artifacts")
     two = sub.add_parser("land", help="commit a plan's writes once, after the quiet window")
     two.add_argument("--plan", required=True, metavar="FILE", help="check's plan.json (its files beside it)")
