@@ -2,28 +2,19 @@
 
 Cards are not required to have types or an ability: a card without them is listed only where an edit to it can't bake.
 
-- **122 of 764 cards** have at least one website edit that can't bake (a real refusal).
+- **54 of 764 cards** have at least one website edit that can't bake (a real refusal).
 - **4 cards** have an open data problem (Computer Virus has no stats; Twin Emperors' second creature has a different DEF on the website than on the card; 2 cards stuck under "Not parsed yet"); 5 more are ruled acceptable on purpose.
-- **383 cards** bake some edit only with a note an editor must look at: 235 only on the census's title made 3 letters longer (it reaches the stars, type icons or picture); 110 on a stars edit (a folder move whose printed stars aren't redrawn, or stars laid out again); 45 on a same-length title fix or a one-word ability change; 1 on a stat or type edit.
+- **413 cards** bake some edit only with a note an editor must look at: 219 only on the census's title made 3 letters longer (it reaches the stars, type icons or picture); 150 on a stars edit (a folder move whose printed stars aren't redrawn, or stars laid out again); 38 on a same-length title fix or a one-word ability change; 15 on a stat or type edit.
 
-Source: dry bakes of 13 kinds of edit over all 764 cards (6,813 bakes, AutoCroissant bef072e, psd-tools fork cards-20261025b, TTSCardMaker a4d137bf (the 5 multi-picture PSDs at 572680d5, where their variant tags landed), nothing written), titles and abilities edited box by box as the website does since 2026-10-25, plus a check of the card data (data d547daef) and live website (2026-10-25 20:43 UTC). A card is listed under each reason it hits, so some cards appear more than once. Spot-check: I re-ran the dry bake for 6 refused edits (Burdened adding a star, Jack-In-The-Box Zombie adding a star, Abyss Watcher adding an ability, Grimora HP, Lorian title, Warcraftian Druid adding a type) and all 6 refused again for the same reason.
+Source: dry bakes of 13 kinds of edit over all 764 cards (6,813 bakes, AutoCroissant bef072e (99 cards re-run at work/censusfix), psd-tools fork cards-20261025b, TTSCardMaker a4d137bf (the 5 multi-picture PSDs at 572680d5, where their variant tags landed), nothing written), titles and abilities edited box by box as the website does since 2026-10-25, plus a check of the card data (data d547daef) and live website (2026-10-25 20:43 UTC). A card is listed under each reason it hits, so some cards appear more than once. Spot-check: I re-ran the dry bake for 4 refused edits (Jack-In-The-Box Zombie adding a star, Abyss Watcher adding an ability, Grimora HP, Lorian title) and all 4 refused again for the same reason.
 
-> **What changed since this morning's list:** the website edits titles and abilities one box per layer (split, doubled and oddly named titles, several ability layers: one box each); a stars edit on a card starred by its "N Stars" folder moves the card; a card with no type icon takes its first at its template's spot (flagged); the bake follows card makers' own stat bars and star layouts. Still to come in code: adding an ability to a card that has no ability layer (+ability).
+> **What changed since this morning's list:** the website edits titles and abilities one box per layer (split, doubled and oddly named titles, several ability layers: one box each); a stars edit on a card starred by its "N Stars" folder moves the card; a card with no type icon takes its first at its template's spot (flagged); the bake follows card makers' own stat bars and star layouts. Still to come in code: adding an ability to a card that has no ability layer (+ability). Evening fixes (99 cards re-run): status effects' stars edits move them too; a type icon in a Stars group is no star (Toy Freddy); a split title keeps its parts after an edit; a first type icon touching the title bakes, flagged; a star added on a multi-picture PSD bakes.
 
 ## 1. Website edits that can't bake
 
 Grouped by the part of the card. Each card shows its folder and the edits the reason blocks. "Who" is who would have to act for the edit to bake.
 
 ### Whole card
-
-#### Safety check: on this multi-picture PSD, adding a star makes different layers for each picture (3 cards)
-
-- **Fix:** Probably a bot bug: the bake runs once per picture (variant tags), and the copied star comes out differently in picture 2, so the bake refuses rather than save a PSD that doesn't match. Needs a look in the bot.
-- **Who:** Bot code
-
-  - All Purpose Medical Kit (Items/Heal/2 Stars): adding a star
-  - NME Stock (Items/Support/2 Stars): adding a star
-  - Regeneration Potion (Items/Heal/2 Stars): adding a star
 
 #### Sonic's SPD 20 is printed on a one-row bar (1 card)
 
@@ -130,64 +121,6 @@ Grouped by the part of the card. Each card shows its folder and the edits the re
 
 ### Stars
 
-#### Stars set by a debuff's "N Stars" folder: the stars edit doesn't move the card (52 cards)
-
-- **Fix:** A stars edit moves creatures, items and field cards into the matching "N Stars" folder; status effects (Auxiliary/Status Effects/Debuffs/N Stars) are left out of the move, so the edit is refused. Add their folders to the move.
-- **Who:** Bot code
-
-  - Afraid (Auxiliary/Status Effects/Debuffs/2 Stars): stars (add and remove)
-  - Become Back Money (Auxiliary/Status Effects/Debuffs/3 Stars): stars (add and remove)
-  - Blazing (Auxiliary/Status Effects/Debuffs/2 Stars): stars (add and remove)
-  - Blindness (Auxiliary/Status Effects/Debuffs/1 Stars): adding a star
-  - Burdened (Auxiliary/Status Effects/Debuffs/1 Stars): adding a star
-  - Burning (Auxiliary/Status Effects/Debuffs/1 Stars): adding a star
-  - Chained (Auxiliary/Status Effects/Debuffs/2 Stars): stars (add and remove)
-  - Cheap (Auxiliary/Status Effects/Debuffs/3 Stars): stars (add and remove)
-  - Chilled (Auxiliary/Status Effects/Debuffs/2 Stars): stars (add and remove)
-  - Condemned (Auxiliary/Status Effects/Debuffs/4 Stars): stars (add and remove)
-  - Confusion (Auxiliary/Status Effects/Debuffs/2 Stars): stars (add and remove)
-  - Contracted (Auxiliary/Status Effects/Debuffs/4 Stars): stars (add and remove)
-  - Corrupted Blood (Auxiliary/Status Effects/Debuffs/3 Stars): stars (add and remove)
-  - Corruption (Auxiliary/Status Effects/Debuffs/3 Stars): stars (add and remove)
-  - Curse (Auxiliary/Status Effects/Debuffs/4 Stars): stars (add and remove)
-  - Cursed Inferno (Auxiliary/Status Effects/Debuffs/3 Stars): stars (add and remove)
-  - Despair (Auxiliary/Status Effects/Debuffs/4 Stars): stars (add and remove)
-  - Disarmed (Auxiliary/Status Effects/Debuffs/3 Stars): stars (add and remove)
-  - Disgusted (Auxiliary/Status Effects/Debuffs/1 Stars): adding a star
-  - Edible (Auxiliary/Status Effects/Debuffs/2 Stars): stars (add and remove)
-  - Empty (Auxiliary/Status Effects/Debuffs/2 Stars): stars (add and remove)
-  - Enfeebled (Auxiliary/Status Effects/Debuffs/1 Stars): adding a star
-  - Engorged (Auxiliary/Status Effects/Debuffs/2 Stars): stars (add and remove)
-  - Exposed (Auxiliary/Status Effects/Debuffs/2 Stars): stars (add and remove)
-  - Frostbite (Auxiliary/Status Effects/Debuffs/2 Stars): stars (add and remove)
-  - Frozen (Auxiliary/Status Effects/Debuffs/3 Stars): stars (add and remove)
-  - Frozen In Time (Auxiliary/Status Effects/Debuffs/4 Stars): stars (add and remove)
-  - Glued (Auxiliary/Status Effects/Debuffs/2 Stars): stars (add and remove)
-  - Hemorrhaging (Auxiliary/Status Effects/Debuffs/4 Stars): stars (add and remove)
-  - Hexed (Auxiliary/Status Effects/Debuffs/3 Stars): stars (add and remove)
-  - Imprisoned (Auxiliary/Status Effects/Debuffs/3 Stars): stars (add and remove)
-  - Infected (Auxiliary/Status Effects/Debuffs/4 Stars): stars (add and remove)
-  - Insane (Auxiliary/Status Effects/Debuffs/3 Stars): stars (add and remove)
-  - Loony (Auxiliary/Status Effects/Debuffs/2 Stars): stars (add and remove)
-  - Marked For Death (Auxiliary/Status Effects/Debuffs/4 Stars): stars (add and remove)
-  - Paralyzed (Auxiliary/Status Effects/Debuffs/2 Stars): stars (add and remove)
-  - Pessimism (Auxiliary/Status Effects/Debuffs/3 Stars): stars (add and remove)
-  - Plague (Auxiliary/Status Effects/Debuffs/2 Stars): stars (add and remove)
-  - Poison (Auxiliary/Status Effects/Debuffs/1 Stars): adding a star
-  - Recursion (Auxiliary/Status Effects/Debuffs/4 Stars): stars (add and remove)
-  - Resentful Glare (Auxiliary/Status Effects/Debuffs/3 Stars): stars (add and remove)
-  - Restrained (Auxiliary/Status Effects/Debuffs/2 Stars): stars (add and remove)
-  - Shell Shock (Auxiliary/Status Effects/Debuffs/3 Stars): stars (add and remove)
-  - Sickness (Auxiliary/Status Effects/Debuffs/1 Stars): adding a star
-  - Smeckeldorfed (Auxiliary/Status Effects/Debuffs/1 Stars): adding a star
-  - Smoldering (Auxiliary/Status Effects/Debuffs/1 Stars): adding a star
-  - Softened (Auxiliary/Status Effects/Debuffs/1 Stars): adding a star
-  - Spirit Flame (Auxiliary/Status Effects/Debuffs/2 Stars): stars (add and remove)
-  - Stuffed (Auxiliary/Status Effects/Debuffs/1 Stars): adding a star
-  - Suffocation (Auxiliary/Status Effects/Debuffs/3 Stars): stars (add and remove)
-  - Thinned (Auxiliary/Status Effects/Debuffs/1 Stars): adding a star
-  - Withering (Auxiliary/Status Effects/Debuffs/4 Stars): stars (add and remove)
-
 #### A star layer has smart filters, so it can't be copied or moved (3 cards)
 
 - **Fix:** Rasterise the star layer (or drop its smart filter).
@@ -226,26 +159,6 @@ Grouped by the part of the card. Each card shows its folder and the edits the re
   - Poorly Drawn Cabbage (Auxiliary/Items): adding a type; touches 'Name'
   - Return To Sender (Items/Counter/4 Stars): adding a type; touches 'Aberson Linchdolt 101 Cardinal Dr. Macon IL 62544'
 
-#### A first type icon at the template's spot would touch the title (14 cards)
-
-- **Fix:** The card has no type icon yet; its first one goes where the card template puts it, and on this card that spot touches the title, so the bake refuses. Add the first icon in Photoshop; after that the bot can add more.
-- **Who:** Card maker in Photoshop (or bot code: another spot)
-
-  - Helpful Mannequin (Creatures/In Sound Mind/2 Stars): adding a type
-  - John Ward (Creatures/Other/3 Stars): adding a type
-  - King Dedede (Creatures/Kirby/4 Stars): adding a type
-  - Knight Lost A Lot (Creatures/Everhood/2 Stars): adding a type
-  - Leeroy Jenkins (Creatures/World Of Warcraft/3 Stars): adding a type
-  - Miles Edgeworth (Creatures/Other/4 Stars): adding a type
-  - Militron (No Armor) (Auxiliary/Creatures): adding a type
-  - Stay (Creatures/Other/3 Stars): adding a type
-  - The Forbidden One (Creatures/Other/5 Stars): adding a type
-  - Warcraftian Druid (Creatures/World Of Warcraft/4 Stars): adding a type
-  - Warcraftian Hunter (Creatures/World Of Warcraft/4 Stars): adding a type
-  - Warcraftian Rogue (Creatures/World Of Warcraft/4 Stars): adding a type
-  - Warcraftian Warrior (Creatures/World Of Warcraft/4 Stars): adding a type
-  - Wokey D pronouns (Creatures/Monkey D Folder/3 Stars): adding a type
-
 #### A type icon would end up off the card (5 cards)
 
 - **Fix:** The icon row is already at the card's edge; edit in Photoshop.
@@ -266,8 +179,8 @@ Grouped by the part of the card. Each card shows its folder and the edits the re
 
 ### Not counted: by design
 
-- **Stars on 528 cards** come from the card's "N Stars" folder: a stars edit moves the card (PSD and PNGs) into the matching folder, creating it when missing (flagged). 527 of 528 moved in the census; a move that can't happen is listed above.
-- **A first type icon** goes at the card template's spot (flagged "check it"): 63 of 77 cards with no type icon took one in the census; the rest are listed above.
+- **Stars on 580 cards** come from the card's "N Stars" folder: a stars edit moves the card (PSD and PNGs) into the matching folder, creating it when missing (flagged). 579 of 580 moved in the census; a move that can't happen is listed above.
+- **A first type icon** goes at the card template's spot (flagged "check it"): 77 of 77 cards with no type icon took one in the census; the rest are listed above.
 - **The 12 buff status effects** show no stars at all, so there is nothing to add or remove.
 
 ## 2. Data problems
@@ -312,26 +225,27 @@ These edits do bake; the bake carries a note for an editor. Most title notes com
 |---|---|---|---|
 | title reaches the stars or type icons | 242 | 238 | yes |
 | title prints past its old text onto the picture below | 174 | 171 | yes |
+| stars: the edit moves the card to the other "N Stars" folder, but its printed stars aren't redrawn (no group named Stars) | 159 | 87 | yes |
 | title would print over a layer just below it | 123 | 121 | yes |
-| stars: the edit moves the card to the other "N Stars" folder, but its printed stars aren't redrawn (no group named Stars) | 77 | 40 | yes |
-| stars: the edit moves the card to the other "N Stars" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder) | 46 | 23 | yes |
 | stars: laid out again as rows of two (the card's own layout doesn't go on) | 41 | 41 | yes |
-| a layer above the title would cover part of the new title | 22 | 21 | yes |
+| stars: the edit moves the card to the other "N Stars" folder, but its printed stars aren't redrawn (the bot reads another count from its Stars group's layers than the folder's, though the card prints the folder's: overlapping stars, one layer drawing several, or extra layers in the group) | 32 | 16 | yes |
+| a layer above the title would cover part of the new title | 21 | 20 | yes |
+| types: the first type icon, at the card template's spot, touches the title | 14 | 14 | yes |
 | title runs off the card | 12 | 11 | yes |
-| ability runs off the card | 11 | 11 | yes |
 | title runs past an effect layer clipped to it | 10 | 10 | yes |
+| ability runs off the card | 10 | 10 | yes |
 | ability runs over a stat bar | 9 | 9 | yes |
-| after the edit, other title or ability boxes no longer read as one (check the card) | 8 | 7 | yes |
 | ability prints over the picture or an effect layer | 6 | 6 | yes |
+| title needs more lines than its box has | 5 | 4 | yes |
 | a character of the new text has no glyph in the layer's font (drawn as a box) | 4 | 4 | yes |
-| title needs more lines than its box has | 4 | 3 | yes |
 | stars: the edit moves the card to the other "N Stars" folder, but its printed stars aren't redrawn (a star layer has smart filters) | 3 | 3 | yes |
 | stars: the edit moves the card to the other "N Stars" folder, but its printed stars aren't redrawn (no room for another star) | 2 | 2 | yes |
 | a styled word in the ability loses its style | 2 | 2 | yes |
 | stat bar: a missing digit was made from the one below it | 1 | 1 | yes |
 | a font the text uses isn't in MDW/Fonts: drawn in a stand-in | 1 | 1 | yes |
 | stars: the edit moves the card to the other "N Stars" folder, but its printed stars aren't redrawn (layout) | 1 | 1 | yes |
-| ability redrawn whole, small pixel difference | 14 | 14 | no (pixel or font note) |
+| overflow: ability: set at 94% of its size to stay on its panel | 1 | 1 | yes |
+| ability redrawn whole, small pixel difference | 15 | 15 | no (pixel or font note) |
 | title redrawn whole, small pixel difference | 10 | 7 | no (pixel or font note) |
 | title's saved pixels don't match its named font | 7 | 4 | no (pixel or font note) |
 | type icons baked with a small pixel difference | 4 | 4 | no (pixel or font note) |
@@ -341,31 +255,31 @@ These edits do bake; the bake carries a note for an editor. Most title notes com
 
 **Title prints past its old text onto the picture below (171 cards):** Anubisath Guardian, Autopsy Report, Bag of Good, Binge Eater, Blindness, Blood Bomb, Bobberlington, Brad Armstrong, Bubble, Bucket Of Lard, Burdened, Butterfly, Cabbage, Cake Mix, Cheap, Claw, Croissant, Dark Esau, Dark Mind, Dark Nebula, Delicate Flower, Disgusted, Door Shield, Dryya, Dung Defender, Dyna Blade*, Dynamite, Earth Totem, Enraged, Exposed, False Knight, Feast, Fire Staff, Firebomb, Fog Canyon, Freeze Spell, Frog, Galacta Warrior, Gandhi, Godskin Apostle, Godskin Noble, Gold Fuzzy, Golden Freddy, Green Mage, Greenpath, Grimmchild, Groda, Heavy Lobster, Helpful Mannequin, Holo Defense API, Hooktail, Hooktail Castle, Hornet, Ice Dragon, Ice Staff, Igor Roballtowski*, Igor Robotowski, Imp, Infected Crossroads, Inkhole, Ipsilon, Jetpack, Jevil, John Ward, Katarina, Koops, Koro-Sensei*, Lit Bob-omb, Living Bread, Lor Starcutter, Lord Crump, Magic Shield, Marx, Masher, Master Hand, Matterling, Maxim Tomato, Meta Knight, Metal General, Metal Shield, Mettaton, Mettaton EX, Mettaton NEO, Mini Bee, Miracle Matter, Monkey D Letion, Moose Goose, Morshu, Moss Charger, Mr Jawsum, Nefarious Chip, Nightmare, Niko, Nosk, Ominous Red Circle, Oryx the Exalted God, Overseer, Paint Bomb, Paint Warrior, Pandamonium, Party!, Peppy, Pike Beam, PoD01Red Bloon, PoD05Lead Bloon, PoD06Rainbow Bloon, PoD08MOAB, PoD11ZOMG, Pure Vessel, Puzzled Cat, Qiraji Soldier, Quote, Rapier, Rasta Beast, Red Knife, Reflection, Regen, Regret, Reinforced, Remote Detonator, Retro Kirby, Rope, Royal Eradicator Main Cannon, Rusty Knife, Sacred Heart, Sandwich of Rejects, Second Wind, Shield of the Guilty, Silithid, Snow Angel, SOMETHING, Soul Master, Spaghetti, Spice, Springtrap, Spur, Stalwart Shell, Star Dream, Supreme Jeh'Oul, Tai Lung, Tainted Bethany, Tainted Keeper, Tainted Magdalene, Tanjerin, Termination Shock, Thalassophobia, The Bank, The Farlands, The Flash, The Gates of Ahn'Qiraj, The Master, The Puppet, The Queen, The Ringed City, The Structure, Toriel, Trick Room, Uumuu, Warcraftian Mage, Warrior Dee, Water Totem, Waxwell, Whacka Bump, Whelp, Whispy Woods, Wickerbottom, Z!!!!!, Zero, Zero Override, Zoltan, Zompanda
 
+**Stars: the edit moves the card to the other "N Stars" folder, but its printed stars aren't redrawn (no group named Stars) (87 cards):** Afraid, Amazing Mirror, Blazing, Blindness, Bobbery, Bone's Loans, Burdened, Burning, Chained, Chilled, Condemned, Confusion, Contracted, Corrupted Blood, Corruption, Crystal Peak, Curse, Cursed Inferno, Dark Sword, Despair, Disgusted, E. Gadd's Garage, Empty, Enfeebled, Engorged, Exposed, Forsaken City, Frostbite, Frozen, Frozen In Time, Glitz Pit, Glued, Goombella, Grey Prince Zote, Hemorrhaging, Hexed, Hooktail, HR-D3, Imprisoned, Infected, Insane, Joel Miller, Kel, Koops, Landia, Leshy, Loony, Marked For Death, Marx, Masked Dedede, Meta Knight, Mr Jawsum, Mr Softener, Ms Mowz, Niko, Paralyzed, Pillow, Pizza, Plague, Poison, POW Block, Recursion, Resentful Glare, Restrained, Reverse Mushroom, Rock Bottom, Sandwich of Rejects, Shell Shock, Sickness, Smeckeldorfed, Smoldering, Softened, Spice, Spicy Spray, Spirit Flame, Stuffed, Suffocation, Terry Hintz, The Core, The Freezer, The Krusty Krab, Thinned, Tutankoopa, Vivian, Watermelon, Withering, Yin Yarn
+
 **Title would print over a layer just below it (121 cards):** Abyss Watcher, Ancient Fuelweaver, Arachnophobia, Assault Panda, Asteroid Field, Auto Croissant, Azamoth the Possessed Vessel, Bag of Evil, Barry The Barrel, Battle Spear, Become Back Money, BergenTRUCK, Bobbery, Boggly Woods, Bolts and Screws, Captain Spaceboy, Cave Of The Past, Charm Of The Vampire, Corrupted Blood, Cortez, Crimson Flag, Crowned Magolor, Crystal Guardian, Crystal King, Crystal Spikes, Dark Bramble, Dark Ritual, Dark Sword, Daroach, Deepnest, Delta, Doc, DooPliss, Drawcia, Drawcia Soul*, Dumplings, Empress Bulblax, Energy Ritual, Excess Express, Flame Trap, Flower Of Decay, Flurrie, Fool Eater, Fragile Heart, Funky D Luffy, Glaive Main Cannon, grand doomer, Heavy Mole, Holy Blade, HR-D3, hr-h, Humphrey, Ingredient Icy Sugar Cubes, Irithyll, Joel Miller, King Dedede, Landia, Leshy, Little Guy, Macho Grubba, Mantis Lords, Mari, Marilyn, Massive Moss Charger, Metronome Lite, Miasma, Michael, Militron, Mini Auto Croissant, Mini Drill, Monkey D Goofy, Monkey D Pression, Monkey D Vour, Mr Krabs, Mr Softener, Mushroom, Necrodeus, Niiue, NME Salesman, P.A.N.D.A. Mk A, P.A.N.D.A. Mk T, Pan D Luffy, Pandabal, Papa Chip, PoD04Zebra Bloon, Project P.A.N.D.A, Sabre, Sans, Skullord, Smorg, Snake, Soul Sanctum, Spawn of the Forbidden One, Spicy Spray, SpiralHorn Shield, Staff of Purity, Stranger, Sumo Panda, Super Shroom, Sword, Sword Knight, Sword of Aeons, Taranza, Termination Shock*, The Big Yellow Cat, The Bull, The Collector, The Core*, The Krusty Krab, The Plaguelands, The Shade, The Temple of Ahn'Qiraj, Thunderfury Blessed Blade of the Windseeker, Tomorrow I'll, Tutankoopa, Unbread Twins, Whippy D Cream, White Space, Wilson, Wokey D pronouns, Zero Two
-
-**Stars: the edit moves the card to the other "N Stars" folder, but its printed stars aren't redrawn (no group named Stars) (40 cards):** Amazing Mirror, Bobbery, Bone's Loans, Crystal Peak, Dark Sword, E. Gadd's Garage, Forsaken City, Glitz Pit, Goombella, Grey Prince Zote, Hooktail, HR-D3, Joel Miller, Kel, Koops, Landia, Leshy, Marx, Masked Dedede, Meta Knight, Mr Jawsum, Mr Softener, Ms Mowz, Niko, Pillow, Pizza, POW Block, Reverse Mushroom, Rock Bottom, Sandwich of Rejects, Spice, Spicy Spray, Terry Hintz, The Core, The Freezer, The Krusty Krab, Tutankoopa, Vivian, Watermelon, Yin Yarn
-
-**Stars: the edit moves the card to the other "N Stars" folder, but its printed stars aren't redrawn (its Stars group already draws another count than its folder) (23 cards):** Auto Croissant, Charge, Dark matter, Dimension D, Grimora, Kyle, Mangle, Master Hand, Nightmare, Nosk, Old Chica, Old Foxy, Papyrus, Tainted Bethany, Tainted Eden, Tainted Lazarus, The Flash, The Lich King, Toy Chica, Toy Freddy, Zero Override, Zero Two, Zoltan
 
 **Stars: laid out again as rows of two (the card's own layout doesn't go on) (41 cards):** Alex YIIK, Ancient Fuelweaver, Baba, Bobberlington, Bugzzy, Butterfly, Captain Spaceboy, Chris & Jordi, Croissant, Dark Mind Eye, Doc, Fawful, Flame Trap, Frog, Galacta Knight, God Tamer, hr-h, Humphrey, Koro-Sensei, Michael, Michael's Blessing, Morpho Knight, Necrodeus, Overseer, Paintbrush, PoD09DDT, Pure Vessel, Royal Eradicator Main Cannon, Sans, Spiky Ball Trap, Springtrap, Star Dream, The Forbidden One, The Master, The Puppet, The Queen, The Radiance, The Thin Man, Undyne, Z!!!!!, Zenith Martlet
 
-**A layer above the title would cover part of the new title (21 cards):** Chained, Condemned, Cursed Inferno, Diligent Watch, Doctor Zomboss*, Frozen In Time, Leeroy Jenkins, Leshy*, Massive Moss Charger, Mosling, Moss Charger, Mr Jawsum, Resentful Glare, Smeckeldorfed, Spirit Flame, The Big Yellow Cat, The Farlands, The Freezer, The Structure, Wickerbottom, WX-78
+**Stars: the edit moves the card to the other "N Stars" folder, but its printed stars aren't redrawn (the bot reads another count from its Stars group's layers than the folder's, though the card prints the folder's: overlapping stars, one layer drawing several, or extra layers in the group) (16 cards):** Auto Croissant, Dimension D, Grimora, Kyle, Nightmare, Nosk, Papyrus, Tainted Bethany, Tainted Eden, Tainted Lazarus, The Flash, The Lich King, Toy Chica, Zero Override, Zero Two, Zoltan
+
+**A layer above the title would cover part of the new title (20 cards):** Chained, Condemned, Cursed Inferno, Diligent Watch, Doctor Zomboss*, Frozen In Time, Leshy*, Massive Moss Charger, Mosling, Moss Charger, Mr Jawsum, Resentful Glare, Smeckeldorfed, Spirit Flame, The Big Yellow Cat, The Farlands, The Freezer, The Structure, Wickerbottom, WX-78
+
+**Types: the first type icon, at the card template's spot, touches the title (14 cards):** Helpful Mannequin, John Ward, King Dedede, Knight Lost A Lot, Leeroy Jenkins, Miles Edgeworth, Militron (No Armor), Stay, The Forbidden One, Warcraftian Druid, Warcraftian Hunter, Warcraftian Rogue, Warcraftian Warrior, Wokey D pronouns
 
 **Title runs off the card (11 cards):** Crowned Magolor, Fawful, Helpful Mannequin, Indoctrination, King Dedede, Kyle, Moose Goose, Mosling*, Stay, Wickerbottom, Wokey D pronouns
 
-**Ability runs off the card (11 cards):** Bugzzy, Chilled, Dumplings, Holy Blade, Ice Storm, Krabby Patty, Love, Nebulous Precipice, Pile Of Swords, Silithid, Whelp
-
 **Title runs past an effect layer clipped to it (10 cards):** Air Totem, Cake Mix, Claw, Dogma, Earth Totem, Fire Totem, Miasma, Paint Bomb, Water Totem, Yin Yarn
+
+**Ability runs off the card (10 cards):** Bugzzy, Dumplings, Holy Blade, Ice Storm, Krabby Patty, Love, Nebulous Precipice, Pile Of Swords, Silithid, Whelp
 
 **Ability runs over a stat bar (9 cards):** Anubisath Guardian, Electro Probe, Galacta Warrior, Mini Bee, Paint Warrior, Qiraji Soldier, Silithid, Tentacle, Whelp
 
-**After the edit, other title or ability boxes no longer read as one (check the card) (7 cards):** Crowned Magolor*, Royal Eradicator Main Cannon*, Warcraftian Druid*, Warcraftian Hunter*, Warcraftian Paladin*, Warcraftian Priest*, Warcraftian Rogue*
-
 **Ability prints over the picture or an effect layer (6 cards):** Claw, Iron Spikes, Miasma, Paint Warrior, Remote Detonator, Zompanda
 
-**A character of the new text has no glyph in the layer's font (drawn as a box) (4 cards):** Mini Bee, Paint Warrior, Sword Knight, Tentacle
+**Title needs more lines than its box has (4 cards):** Basic Shield, Computer Virus, Leeroy Jenkins, Pot Full of Spiders!*
 
-**Title needs more lines than its box has (3 cards):** Basic Shield, Computer Virus, Pot Full of Spiders!*
+**A character of the new text has no glyph in the layer's font (drawn as a box) (4 cards):** Mini Bee, Paint Warrior, Sword Knight, Tentacle
 
 **Stars: the edit moves the card to the other "N Stars" folder, but its printed stars aren't redrawn (a star layer has smart filters) (3 cards):** Doctor Zomboss, Holo Defense API, Newspaper
 
@@ -378,3 +292,5 @@ These edits do bake; the bake carries a note for an editor. Most title notes com
 **A font the text uses isn't in MDW/Fonts: drawn in a stand-in (1 card):** Dark Mind Eye
 
 **Stars: the edit moves the card to the other "N Stars" folder, but its printed stars aren't redrawn (layout) (1 card):** Cloud Soiree
+
+**Overflow: ability: set at 94% of its size to stay on its panel (1 card):** Chilled
