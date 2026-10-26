@@ -5532,64 +5532,22 @@ def render_all(psd: PSDImage) -> np.ndarray:
                                     apply_icc=False).convert("RGBA"))
 
 
-def edit_copy(psd: PSDImage) -> PSDImage:
+def edit_copy(psd: PSDImage, raw: bytes) -> PSDImage:
     """
-    A deepcopy of the card that renders as it: the fork pairs a smart object with its smart filter by id() of its record
-    (PSDImage._opened_records), which deepcopy keeps as the source's ids, so the copy's smart filters went missing
-    (review 2026-10-24: Lorian's, Dragon_Mount's art). The keys are made again from the copied records.
+    The card opened again from raw, the bytes psd was opened from, with psd's eye flags (variant()): a fresh open pairs
+    its smart filters itself (a deepcopy kept the source's id() keys and lost them: review 2026-10-24, Lorian's art) and
+    takes a third of a deepcopy's time. psd's stored preview, once read, is shared (_share_preview). Raises
+    Refused("error") when the layers are not psd's.
     """
-    new = deepcopy(psd)
-    opened = getattr(new, "_opened_records", None)
-    if opened:
-        new._opened_records = {id(entry[0]): entry for entry in opened.values()}
+    new = PSDImage.open(BytesIO(raw))
+    mine, theirs = list(new.descendants()), list(psd.descendants())
+    if [layer.layer_id for layer in mine] != [layer.layer_id for layer in theirs]:
+        raise Refused("error", "the card's copy has other layers than the card")
+    for layer, like in zip(mine, theirs):
+        if layer.visible != like.visible:
+            layer.visible = like.visible
+    _share_preview(psd, new)
     return new
-
-
-def gate_copy(before: np.ndarray, psd: PSDImage) -> None:
-    """
-    The copy apply_jobs edits renders as the card did before any edit (edit_copy: a copy losing its smart filters
-    would put their absence in the PNG wherever an edit's region reaches, every other gate passing). Rendered with no
-    RenderCache: its keys leave the smart-filter pairing out, so a cached render would pass any copy.
-
-    Args:
-        before: render_all() of the card as opened
-        psd: edit_copy() of it
-
-    Returns:
-        None; raises Refused("error") for any pixel that differs
-    """
-    off = int((before != render_all(psd)).any(axis=2).sum())
-    if off:
-        raise Refused("error", f"the card's copy renders {off} pixels unlike the card itself (psd-tools' deepcopy)")
-
-
-def gate_pairs(psd: PSDImage, copy: PSDImage) -> None:
-    """
-    The copy pairs each smart object with its smart filter as the card does (edit_copy, PSDImage._opened_records: the
-    copy of each of the card's entries keyed by id() of its copied record), checked without a render: the known way a
-    copy renders unlike the card (review 2026-10-24: Lorian's art). Raises Refused("error") naming how many do not.
-    """
-    opened = getattr(psd, "_opened_records", None) or {}
-    if not opened:
-        return
-    records = psd._record.layer_and_mask_information.layer_info.layer_records
-    copies = copy._record.layer_and_mask_information.layer_info.layer_records
-    index = {id(record): i for i, record in enumerate(records)}
-    paired = getattr(copy, "_opened_records", None) or {}
-    lost = 0
-    for record, *rest in opened.values():
-        i = index.get(id(record))
-        mine = copies[i] if i is not None and len(copies) == len(records) else None
-        entry = paired.get(id(mine)) if mine is not None else None
-        lost += entry is None or entry[0] is not mine or list(entry[1:]) != rest
-    if lost:
-        raise Refused("error", f"the card's copy lost {lost} smart object pairings (psd-tools' deepcopy): it would "
-                               f"render unlike the card itself")
-
-
-def _filtered(psd: PSDImage) -> bool:
-    """Whether a smart object of the card has a smart filter (PSDImage._opened_records: a filter position)."""
-    return any(entry[1] is not None for entry in (getattr(psd, "_opened_records", None) or {}).values())
 
 
 def render_cache():
@@ -5837,8 +5795,6 @@ def _verify_dirty(old: PSDImage, new: PSDImage, box: Optional[tuple], shown: np.
     outside = (before != whole).any(axis=2)
     outside[y0:y1, x0:x1] = False
     if outside.any():
-        if _filtered(old):
-            gate_copy(before, edit_copy(old))   # a copy that lost its smart filters: apply_jobs' own refusal first
         raise RuntimeError(f"dirty box {box}: {int(outside.sum())} pixels changed outside it")
     if box and not (np.array_equal(before[y0:y1, x0:x1], shown[y0:y1, x0:x1])
                     and np.array_equal(whole[y0:y1, x0:x1], after)):
@@ -5878,6 +5834,40 @@ def foreign_profile(psd: PSDImage) -> Optional[bytes]:
     return None if "srgb" in description.lower() else data
 
 
+def _text_reference(psd: PSDImage) -> Optional[np.ndarray]:
+    """The fork's read of psd's stored preview for text blends (kept with psd until the preview changes); None without
+    the fork, a stored 8-bit RGB preview or a read."""
+    if psd.color_mode != ColorMode.RGB or psd.depth != 8 or not psd.has_preview():
+        return None
+    try:
+        from psd_tools.composite.composite import _text_reference as read
+    except ImportError:
+        return None
+    return read(psd)
+
+
+def _share_preview(psd: PSDImage, copy: PSDImage) -> None:
+    """copy, opened from psd's bytes (edit_copy), takes psd's stored preview as the fork read it: one decode a card."""
+    reference = _text_reference(psd)
+    if reference is None:
+        return
+    from psd_tools.composite.composite import _TEXT_REFERENCES
+    stored = copy._record.image_data
+    if stored.compression == psd._record.image_data.compression and stored.data == psd._record.image_data.data:
+        _TEXT_REFERENCES[copy] = (stored.data, reference)
+
+
+def preview_image(psd: PSDImage) -> Optional[Image.Image]:
+    """
+    psd.topil(apply_icc=False) from the fork's kept read (_text_reference: the same values on every 8-bit RGB card,
+    swept 2026-10-25), so icc_vote, stored_preview and the renders decode the stored preview once; a copy of it.
+    """
+    reference = _text_reference(psd)
+    if reference is not None:
+        return Image.fromarray(reference.copy())
+    return psd.topil(apply_icc=False) if psd.has_preview() else None
+
+
 def icc_vote(psd: PSDImage, png: Image.Image) -> Optional[tuple]:
     """
     The harness's ICC vote (score_cards.py render) over the stored preview: of the pixels the profile's conversion
@@ -5894,7 +5884,7 @@ def icc_vote(psd: PSDImage, png: Image.Image) -> Optional[tuple]:
     profile = foreign_profile(psd)
     if profile is None or not psd.has_preview():
         return None
-    preview = psd.topil(apply_icc=False)
+    preview = preview_image(psd)
     if preview is None or preview.mode not in ("RGB", "RGBA") or preview.size != png.size:
         return None
     raw, conv = _flat(preview)[..., :3].astype(np.int16), _flat(post_process(preview, None, profile))[..., :3].astype(np.int16)
@@ -6034,7 +6024,7 @@ def baseline(psd: PSDImage, png: Image.Image, region: tuple, icc: bool = True,
     return render, measured
 
 
-def whole_redraw(old: PSDImage, edit: Edit, png: Image.Image, fonts_dir: str, icc: bool = True,
+def whole_redraw(old: PSDImage, raw: bytes, edit: Edit, png: Image.Image, fonts_dir: str, icc: bool = True,
                  text: str = "preview") -> dict:
     """
     The edited layer's old text redrawn whole by the engine on a copy of the card, against the official PNG over the
@@ -6042,7 +6032,7 @@ def whole_redraw(old: PSDImage, edit: Edit, png: Image.Image, fonts_dir: str, ic
     only the stored raster and gate_idempotence the engine's own render (review 2026-10-24: Wendy's 2CD badge moved
     6 px, '(3 points)' 8 px, the box 15.7% bad, no note).
     """
-    copy = edit_copy(old)
+    copy = edit_copy(old, raw)
     ids = [layer.layer_id for layer in edit.layers]
     for layer in copy.descendants():
         if layer.layer_id in ids:
@@ -6123,7 +6113,7 @@ def stored_preview(psd: PSDImage) -> Optional[Image.Image]:
         return None
     if not psd.has_preview():
         return None
-    image = psd.topil(apply_icc=False)
+    image = preview_image(psd)
     return image if image is not None and image.mode in ("RGB", "RGBA") else None
 
 
@@ -7196,8 +7186,9 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
         chart: status_fills() for ability edits
         update_preview: save_psd(); the preview is the old one with the merge's pixels when the fork can store it
         types_dir: The card repo's Types/ folder (its PNGs), for a types edit that makes an icon
-        psd: psd_path already open (card_bake's parse and classify share it), never changed: the edit goes on a copy;
-            None: opened here. With the reopened saved PSD, each PSD is opened once per bake (tests/test_card_bake.py)
+        psd: psd_path already open (card_bake's parse and classify share it), never changed: the edit goes on a copy
+            (edit_copy: opened again from psd_path's bytes); None: opened here. Each PSD file is opened once per bake,
+            the saved one too (tests/test_card_bake.py)
 
     Returns:
         Baked; raises Refused (any other exception is the driver's "error"); a refusal of a stars or types edit's own
@@ -7205,9 +7196,10 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     """
     timings = {}
     start = perf_counter()
-    old = psd if psd is not None else PSDImage.open(psd_path)
-    new, old_records = edit_copy(old), layer_records(old)      # a copy: one open (as fast as a second one)
-    gate_pairs(old, new)
+    with open(psd_path, "rb") as fh:
+        raw = fh.read()
+    old = psd if psd is not None else PSDImage.open(BytesIO(raw))
+    new, old_records = edit_copy(old, raw), layer_records(old)     # the copy: a second open of the same bytes
     hold = ExitStack() if hold is None else hold
     hold.enter_context(variant(old, view))      # picture `view`'s eye flags until the save
     hold.enter_context(variant(new, view))
@@ -7231,8 +7223,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     # stars and types first (a title edit then clears the new stars), text next, the ability first: its FX records shift
     # the record indices of the digits and of a Name above them (Fire Staff's); the icon edits' indices are read once
     # all are in (index_icons). The card is rendered whole only once an edit is made (a refused one costs none), in one
-    # RenderCache, and without a stars or types edit only inside the dirty box (gate_dirty); the copy's own render
-    # (gate_copy) only on a card with smart filters, after the edits
+    # RenderCache, and without a stars or types edit only inside the dirty box (gate_dirty)
     cache, first = render_cache(), None
     before, edits = record_map(new), []
     for name, value in sorted(jobs.items(),
@@ -7275,8 +7266,6 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     elif others:
         with cache:
             gate_untouched(shown, new, others)
-    if _filtered(old):
-        gate_copy(render_all(old) if first is None or dirty else first, edit_copy(old))   # deepcopy is deterministic
     timings["outside"] = timings.get("outside", 0.0) + perf_counter() - start
     after = record_map(new)
     for edit in edits:
@@ -7300,7 +7289,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
             raise
         text = parity[edit.field]["text"]
         if edit.whole:                          # every line laid out again: told, refused past the floor
-            whole[edit.field] = measured = whole_redraw(old, edit, png, fonts_dir, icc, text)
+            whole[edit.field] = measured = whole_redraw(old, raw, edit, png, fonts_dir, icc, text)
             if _past_floor(measured):
                 raise Refused("parity", "%s redrawn whole bad %.2f%% mean %.2f max %d: past the %g%% floor"
                               % (edit.field, measured["bad_pct"], measured["mean"], measured["max"], PARITY_FLOOR))
@@ -7840,9 +7829,7 @@ __all__ = [
     'fx_name',
     'fx_phrases',
     'gate_bytes',
-    'gate_copy',
     'gate_dirty',
-    'gate_pairs',
     'gate_fx',
     'gate_fx_colours',
     'gate_idempotence',
@@ -7860,6 +7847,7 @@ __all__ = [
     'edit_copy',
     'edited_ids',
     'icc_vote',
+    'preview_image',
     'icon_engine',
     'icon_font',
     'icon_style',

@@ -637,9 +637,10 @@ def test_bake_hp_lands_psd_png_and_file(github, tmp_path):
 
 @fork_text
 def test_a_bake_opens_each_psd_once(github, clone, monkeypatch):
-    """One PSDImage.open per PSD per bake (tests/test_open_once.py's count): the old card's is shared by the parse,
-    classify and apply_jobs (which edits a copy), the saved card's by gate_bytes, the re-parse and the FX gates; the
-    status chart's once. A stat and an ability edit (its FX layer deleted, the parser's every gate run)."""
+    """One PSDImage.open per PSD file per bake (tests/test_open_once.py's count): the old card's is shared by the parse,
+    classify and apply_jobs, the saved card's by gate_bytes, the re-parse and the FX gates; the status chart's once.
+    apply_jobs' copies (edit_copy) open the old card's bytes again (K-3). A stat and an ability edit (its FX layer
+    deleted, the parser's every gate run)."""
     from collections import Counter
     from hashlib import sha1
     from os import PathLike
@@ -650,12 +651,14 @@ def test_a_bake_opens_each_psd_once(github, clone, monkeypatch):
     files[pe.STATUS_CHART] = (clone / pe.STATUS_CHART).read_bytes()
     files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 8, "ability": "Die.", "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
-    seen, inner = Counter(), PSDImage.open.__func__
+    seen, copies, inner = Counter(), Counter(), PSDImage.open.__func__
 
     def counted(cls, fp, *args, **kwargs):
         if isinstance(fp, (str, bytes, PathLike)):
             with open(fp, "rb") as fh:
                 seen[sha1(fh.read()).hexdigest()] += 1
+        elif hasattr(fp, "getvalue"):
+            copies[sha1(fp.getvalue()).hexdigest()] += 1
         else:
             seen[f"stream {id(fp)}"] += 1
         return inner(cls, fp, *args, **kwargs)
@@ -667,6 +670,7 @@ def test_a_bake_opens_each_psd_once(github, clone, monkeypatch):
     assert after[DOOMER] != files[DOOMER], text            # the saved PSD's open is counted, not a refusal's
     assert seen == Counter({sha1(files[DOOMER]).hexdigest(): 1, sha1(after[DOOMER]).hexdigest(): 1,
                             sha1(files[pe.STATUS_CHART]).hexdigest(): 1}), text
+    assert set(copies) == {sha1(files[DOOMER]).hexdigest()}, text
 
 
 icons = pytest.mark.skipif(not pe.icon_engine(), reason="a stars or types bake needs the fork's layer copy API")
@@ -679,7 +683,6 @@ def test_a_card_refused_after_its_stars_names_both_refusals(github, monkeypatch)
         raise pe.Refused("region", f"{edit.field}: the card changes 9 pixels outside the edited box", edit.field)
     monkeypatch.setattr(pe, "gate_outside", outside)
     monkeypatch.setattr(pe, "render_all", lambda psd: None)    # no render: the whole-card gates pass
-    monkeypatch.setattr(pe, "gate_copy", lambda before, psd: None)
     monkeypatch.setattr(pe, "gate_untouched", lambda before, psd, edits: None)
     monkeypatch.setattr(pe, "set_stat", lambda *a: (_ for _ in ()).throw(pe.Refused("unsupported-card", "hp: no stat row")))
     stars, types = (f"region: {f}: the card changes 9 pixels outside the edited box" for f in ("stars", "types"))
