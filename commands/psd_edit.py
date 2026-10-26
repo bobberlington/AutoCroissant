@@ -5258,7 +5258,9 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
         unit = _Unit([layer], _core(layer) or tuple(layer.bbox))
         others = [other for other in texts + stars if other is not layer]
         blocked = _blocked(psd, _moved_inks(unit, dx, dy), _moved_box(unit.core, dx, dy), others)
-        if blocked:
+        if blocked and first and blocked.startswith("would touch"):     # the template's spot: baked, told (rulings)
+            plan.notes.append(f"types: {layer.name!r} at {first}'s spot {blocked.replace('would touch', 'touches')}: check it")
+        elif blocked:
             refuse(f"{layer.name!r} at {tuple(int(v) for v in _moved_box(unit.core, dx, dy))} {blocked}")
     for _, spot, _ in plan.icons:
         slack = _tol(max(spot[2] - spot[0], spot[3] - spot[1]))
