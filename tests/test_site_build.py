@@ -161,6 +161,42 @@ def test_the_current_text_is_dated_from_its_start(bs, repo, tmp_path, monkeypatc
     assert "since" not in _by_name(out["cards.json"]["cards"])["Watermelon"]      # its text started at its last commit
 
 
+def test_each_version_links_the_commit_it_started_at(bs, repo, tmp_path, monkeypatch):
+    """A version's commit is the bot's version from_commit, kept only when the history has it at that version's start;
+    history.json _commits and analytics.json commits map each shown text's or change's date to it. A second where a
+    version has none (Watermelon's from_commit c2 isn't at t1) is left out, for every card dated then."""
+    if not hasattr(bs, "text_commits"):
+        pytest.skip(f"{BUILD_SITE} has no version commits")
+    (c1, c2, _), (t1, t2, _) = repo["commits"], repo["t"]
+    stats, old, details, _ = cdb.read_db(str(repo["db"]))
+    old["Alpha"][0].version = {"from": float(t1), "from_commit": c1, "to": float(t2), "cause": "psd"}
+    stats["Alpha"].version = {"from": float(t2), "from_commit": c2, "to": None, "cause": "psd"}
+    old["Watermelon"][0].version = {"from": float(t1), "from_commit": c2, "to": float(t2), "cause": "psd"}
+    stats["Watermelon"].version = {"from": float(t2), "from_commit": c2, "to": None, "cause": "psd"}
+    cdb.write_db(str(repo["db"]), stats, old, json.dumps({"version": 1, "cards": details}), {"card_commit": repo["commits"][2]})
+    out = _build(bs, monkeypatch, repo, tmp_path / "a")
+    alpha = _by_name(out["cards.json"]["cards"])["Alpha"]
+    assert out["history.json"][alpha["id"]] == [{"ts": t1, "ability": "Old text."}]
+    assert out["history.json"]["_commits"] == {str(t2): c2[:12]}         # t1: Alpha's c1, but Watermelon's has none
+    assert [r["ts"] for r in out["analytics.json"]["cards"][alpha["id"]]["changes"]] == [t2]
+    assert out["analytics.json"]["commits"] == {str(t2): c2[:12]}
+
+
+def test_a_version_commit_is_exact(bs):
+    """start_commit: from_commit only at the version's own start; commit_table: a second with one commit for every
+    version dated then (none, two commits or a fraction: left out)."""
+    if not hasattr(bs, "text_commits"):
+        pytest.skip(f"{BUILD_SITE} has no version commits")
+    a = bs.analytics
+    v = lambda **info: bs.stand_in(bs.CardInfo, {"timestamp": 50.0, "version": info or None})
+    at = {"c" * 40: 10, "d" * 40: 50}
+    assert a.start_commit(v(**{"from": 10.0, "from_commit": "c" * 40}), at) == "c" * 12
+    assert [a.start_commit(x, at) for x in (v(**{"from": 10.0, "from_commit": "d" * 40}), v(**{"from": 10.0, "from_commit": "e" * 40}),
+                                            v(**{"from": 10.0}), v(), None)] == [None] * 5
+    assert a.start_commit(v(**{"from": 10.0, "from_commit": "c" * 40}), {}) is None
+    assert a.commit_table([(1.0, "a"), (1, "a"), (2, "b"), (2, None), (3, "c"), (3, "d"), (4.5, "e"), (None, "f")]) == {"1": "a"}
+
+
 def test_a_renamed_card_goes_on_and_its_old_page_redirects(bs, repo, tmp_path, monkeypatch):
     """The bake renames and redraws Alpha as New Alpha in one commit (its Renamed trailers): the card's image versions
     and text history go on as one card, and c/alpha/ sends its links on to c/new-alpha/; a profile's pick, a published
