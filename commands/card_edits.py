@@ -328,7 +328,7 @@ class CardDates:
 @dataclass
 class CardRatings:
     """
-    TTSCardMaker's site/Card Ratings.json: dated 1-10 ratings per card, oldest first.
+    TTSCardMaker's site/Card Ratings.json: dated ratings per card, whole numbers 1-10 (owner, 2026-10-26), oldest first.
     {"about": ..., "cards": {"Card Name": [{"date", "scale", "value", "by", "source"}]}}; names match like the authors
     file. by: "group" (a TTS session) or a GitHub login. Written by `python -m commands.tts_ratings` and the website's
     Rate it (edit.js ratingsFile); read by the website only (never the bot, the card sync or the checks).
@@ -338,16 +338,16 @@ class CardRatings:
     SCALES = ("favorability", "power")
     SOURCES = ("TTS session", "website")
     KEYS = ("date", "scale", "value", "by", "source")
-    ABOUT = ("Card ratings, 1 to 10. favorability: how much players like the card; power: 1 weak, 5.5 balanced, 10 too "
-             "strong. Keyed by card file name; entries oldest first. by: \"group\" (a TTS session) or a GitHub login. "
-             "Read by the website only.")      # edit.js RATINGS_ABOUT
+    ABOUT = ("Card ratings, whole numbers 1 to 10. favorability: how much players like the card; power: 1 weak, 10 too "
+             "strong; the middle (5.5) is balanced. Keyed by card file name; entries oldest first. by: \"group\" (a TTS "
+             "session) or a GitHub login. Read by the website only.")      # edit.js RATINGS_ABOUT
 
     @classmethod
     def valid(cls, entry) -> bool:
         if not isinstance(entry, dict) or entry.get("scale") not in cls.SCALES or entry.get("source") not in cls.SOURCES:
             return False
         value, by = entry.get("value"), entry.get("by")
-        if not isinstance(value, (int, float)) or isinstance(value, bool) or not 1 <= value <= 10:
+        if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 10:      # whole numbers only
             return False
         if not isinstance(by, str) or not by or len(by) > 100:
             return False
@@ -358,9 +358,8 @@ class CardRatings:
 
     @staticmethod
     def number(value: float):
-        """One decimal, as JS Math.round(v * 10) / 10; whole values as int (JSON.stringify writes 7, not 7.0)."""
-        value = floor(value * 10 + 0.5) / 10
-        return int(value) if value == int(value) else value
+        """The nearest whole number, halves up like JS Math.round (4.5 -> 5; Python's round() gives 4)."""
+        return int(floor(value + 0.5))
 
     @classmethod
     def entry(cls, day: str, scale: str, value: float, by: str, source: str) -> dict:

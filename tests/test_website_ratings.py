@@ -67,16 +67,16 @@ def _node(tmp_path, body: str, src: Path = EDIT_JS):
 # The import
 # ========================
 def test_score_bands():
-    even = (0, 10, 20, 30, 40)                    # labels centred in their bands: exactly 2i+1.5
-    assert [tr.score(x, even)[1] for x in even] == [1.5, 3.5, 5.5, 7.5, 9.5]
+    even = (0, 10, 20, 30, 40)                    # labels centred in their bands: exactly 2i+1.5, halves up
+    assert [tr.score(x, even)[1] for x in even] == [2, 4, 6, 8, 10]
     labels = tr.LABELS["centre"]
-    assert [tr.score(x, labels) for x in labels] == [(0, 1.5), (1, 3.4), (2, 5.5), (3, 7.6), (4, 9.5)]
+    assert [tr.score(x, labels) for x in labels] == [(0, 2), (1, 3), (2, 6), (3, 8), (4, 10)]   # 1.5 3.4 5.5 7.6 9.5
     mids = [(labels[i] + labels[i + 1]) / 2 for i in range(4)]
-    assert [tr.score(m, labels)[1] for m in mids] == [2.5, 4.5, 6.5, 8.5]
-    assert tr.score(-99, labels) == (0, 1.0) and tr.score(99, labels) == (4, 10.0)
+    assert [tr.score(m, labels)[1] for m in mids] == [3, 5, 7, 9]
+    assert tr.score(-99, labels) == (0, 1) and tr.score(99, labels) == (4, 10)
     sweep = [tr.score(labels[0] - 6 + i * 0.1, labels)[1] for i in range(int((labels[4] - labels[0] + 12) * 10))]
     assert sweep == sorted(sweep)
-    assert tr.score(-1.16, labels) == (2, 5.5)
+    assert tr.score(-1.16, labels) == (2, 6)
     assert [tr.tier_of(v) for v in (1, 2.4, 2.5, 4.5, 6.5, 8.4, 8.5, 10)] == [0, 0, 1, 2, 3, 3, 4, 4]
 
 
@@ -93,9 +93,9 @@ def test_placements_skips_and_dates():
     ], "forbidden": [{"save": "TS_Save_3", "card": "Kalecgos"}], "skipped": {}}
     entries, report = tr.placements(raw)
     got = [(e["card"], e["date"], e["scale"], e["value"]) for e in entries]
-    assert got == [("Alpha", "2023-04-28", "power", 5.5), ("Beta", "2023-04-28", "power", 5.5),
-                   ("Alpha", "2025-03-02", "power", 7.1), ("Beta", "2025-03-02", "power", 7.1),
-                   ("Beta", "2025-04-28", "power", 6.3), ("Cho'Gath", "2025-04-28", "favorability", 2.7)]
+    assert got == [("Alpha", "2023-04-28", "power", 6), ("Beta", "2023-04-28", "power", 6),
+                   ("Alpha", "2025-03-02", "power", 7), ("Beta", "2025-03-02", "power", 7),
+                   ("Beta", "2025-04-28", "power", 6), ("Cho'Gath", "2025-04-28", "favorability", 3)]
     assert all(e["by"] == G and e["source"] == S for e in entries)
     assert [r["card"] for r in report["dropped"]] == ["Double Pain"] and len(report["carried"]) == 1
     assert report["forbidden"] == raw["forbidden"] and report["cards"] == 3
@@ -120,18 +120,33 @@ def test_merge_is_idempotent_and_keeps_website_entries():
 
 def test_dump_ratings_layout():
     data = {"about": "x", "cards": {"Zeta": [_e("2023-04-28", "power", 7.0)],
-                                    "Éclair": [_e("2025-04-28", "favorability", 8.2, "Ünï", "website")]}}
+                                    "Éclair": [_e("2025-04-28", "favorability", 8, "Ünï", "website")]}}
     assert dump_ratings(data) == (
         '{\n  "about": "x",\n  "cards": {\n'
-        '    "Éclair": [{"date":"2025-04-28","scale":"favorability","value":8.2,"by":"Ünï","source":"website"}],\n'
+        '    "Éclair": [{"date":"2025-04-28","scale":"favorability","value":8,"by":"Ünï","source":"website"}],\n'
         '    "Zeta": [{"date":"2023-04-28","scale":"power","value":7,"by":"group","source":"TTS session"}]\n  }\n}\n')
     parsed = CardRatings.parse(dump_ratings(data))
     assert parsed.cards["zeta"] == ("Zeta", data["cards"]["Zeta"])
     bad = [{**_e("2023-04-28", "power", 5), **change} for change in
-           ({"value": 0}, {"value": 10.5}, {"value": True}, {"date": "2023-02-30"}, {"scale": "taste"}, {"source": "Discord"}, {"by": ""})]
-    assert CardRatings.parse(json.dumps({"cards": {"A": bad + [_e("2023-04-28", "power", 5)], "B": "no"}})).cards == \
-        {"a": ("A", [_e("2023-04-28", "power", 5)])}
-    assert [CardRatings.number(v) for v in (7.25, 7.0, 8.2, 1.04)] == [7.3, 7, 8.2, 1]
+           ({"value": 0}, {"value": 7.5}, {"value": 7.0}, {"value": 10.5}, {"value": True}, {"date": "2023-02-30"},
+            {"scale": "taste"}, {"source": "Discord"}, {"by": ""})]
+    assert CardRatings.parse(json.dumps({"cards": {"A": bad + [_e("2023-04-28", "power", 7)], "B": "no"}})).cards == \
+        {"a": ("A", [_e("2023-04-28", "power", 7)])}                        # whole numbers only (owner, 2026-10-26)
+    assert [CardRatings.number(v) for v in (5.5, 9.5, 4.5, 2.5, 7.1, 2.8, 6.49, 7.0)] == [6, 10, 5, 3, 7, 3, 6, 7]   # halves up
+
+
+def test_ratings_file_is_whole():
+    """The card repo's file: whole values only (the 2026-10-26 migration), in dump_ratings' layout; edit.js keeps ABOUT."""
+    path = SITE / RATINGS_PATH
+    if not path.is_file():
+        pytest.skip(f"no {path}")
+    text = path.read_text(encoding="utf-8")
+    data = json.loads(text)
+    assert dump_ratings(data) == text
+    bad = [(name, e) for name, entries in data["cards"].items() for e in entries if not CardRatings.valid(e)]
+    assert not bad, f"{len(bad)} entries not whole 1-10 (pull the card repo?): {bad[:3]}"
+    if EDIT_JS.is_file():
+        assert f"RATINGS_ABOUT = {json.dumps(CardRatings.ABOUT)};" in EDIT_JS.read_text(encoding="utf-8")
 
 
 def test_bot_ignores_ratings():
@@ -152,8 +167,8 @@ def test_bot_ignores_ratings():
 # The website (node)
 # ========================
 def test_ratings_js_helpers(tmp_path):
-    entries = [_e("2023-04-28", "power", 7), _e("2023-04-28", "favorability", 3.9), _e("2025-03-02", "power", 7.1),
-               _e("2025-04-28", "power", 6.3), _e("2026-10-24", "power", 6, "Ann", "website")]
+    entries = [_e("2023-04-28", "power", 7), _e("2023-04-28", "favorability", 4), _e("2025-03-02", "power", 8),
+               _e("2025-04-28", "power", 6), _e("2026-10-24", "power", 9, "Ann", "website")]
     got = _node(tmp_path, f"""
 const list = {json.dumps(entries)};
 const one = m.chartSvg(list.slice(1, 2), "favorability"), two = m.chartSvg(list, "power");
@@ -166,8 +181,8 @@ process.stdout.write(JSON.stringify({{
   two: [two.includes('class="line"'), two.includes('class="mid"'), (two.match(/class="person"/g) || []).length],
   empty: m.blockHtml({{ id: "x" }}), editing: m.blockHtml({{ id: "x" }}, {{ editing: true }}),
   block: m.blockHtml({{ id: "x", ratings: list }}), day: m.dayLabel("2025-04-28") }}));""", RATINGS_JS)
-    assert got["now"] == {"value": 6.2, "raters": 2, "date": "2026-10-24"}       # (6.3 + 6) / 2 = 6.15
-    assert got["asOf"] == {"value": 7.1, "raters": 1, "date": "2025-03-02"} and got["skip"]["value"] == 6.3
+    assert got["now"] == {"value": 7.5, "raters": 2, "date": "2026-10-24"}       # (6 + 9) / 2: means keep a decimal
+    assert got["asOf"] == {"value": 8, "raters": 1, "date": "2025-03-02"} and got["skip"]["value"] == 6
     assert got["latest"] == ["group", "Ann"] and got["dates"] == ["2023-04-28", "2025-03-02", "2025-04-28", "2026-10-24"]
     assert got["none"] is None and got["personal"] == [True, False, False]
     assert got["tiers"] == [0, 0, 1, 2, 3, 3, 4, 4] and got["labels"]["power"][0] == "Plz buff"

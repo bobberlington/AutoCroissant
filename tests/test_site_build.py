@@ -102,8 +102,8 @@ def repo(tmp_path):
     c3, t3 = _commit(root, "Standardize", start + 2 * DAY)
     (root / "site").mkdir()                       # ratings: a commit of no card file (no image version, no edit batch)
     (root / "site" / "Card Ratings.json").write_text(json.dumps({"cards": {
-        "alpha": [{"date": "2023-04-28", "scale": "power", "value": 5.5, "by": "group", "source": "TTS session"}],
-        "White Palace": [{"date": "2025-04-28", "scale": "favorability", "value": 7.1, "by": "group", "source": "TTS session"}]}}))
+        "alpha": [{"date": "2023-04-28", "scale": "power", "value": 6, "by": "group", "source": "TTS session"}],
+        "White Palace": [{"date": "2025-04-28", "scale": "favorability", "value": 7, "by": "group", "source": "TTS session"}]}}))
     _commit(root, "Ratings", start + 3 * DAY)
 
     stats = {"Alpha": _card("Alpha", f"{ALPHA}.psd", "New text.", t3, blob_sha="b3", series="Kirby"),

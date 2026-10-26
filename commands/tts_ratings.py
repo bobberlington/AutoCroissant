@@ -7,7 +7,8 @@ The TTS sessions' card ratings into TTSCardMaker's site/Card Ratings.json (card_
 --raw is the parse of TS_Save_3, 8 and 10 (cards placed on the rating boards, matched to card names). Each board has
 five category labels (3DText) at x positions; a card's value is piecewise linear in its x: the midpoint between labels
 i and i+1 -> 2i+2.5 (label i about 2i+1.5, exactly when centred), past the end labels the same half-band, clamped to
-1-10, one decimal.
+1-10, one decimal, then the nearest whole number, halves up (owner, 2026-10-26: whole ratings; the stored decimals were
+rounded the same way, so a re-run matches them).
 Every entry is a group one ("by": "group", "source": "TTS session"), dated the session's evening. Skipped: TS_Save_3's
 joke "Double Pain" column, the Forbidden Tier, TS_Save_10 power placements left where TS_Save_8 had them.
 Re-running replaces the sessions' group entries and keeps every other one (idempotent). It also writes a review table
@@ -62,14 +63,14 @@ def score(x: float, labels: tuple) -> tuple:
         labels: The board's five label x positions, left to right
 
     Returns:
-        (band 0-4, value 1-10 with one decimal)
+        (band 0-4, whole value 1-10)
     """
     mids = [(labels[i] + labels[i + 1]) / 2 for i in range(4)]
     i = sum(1 for m in mids if x > m)
     lo = mids[i - 1] if i else labels[0] - (mids[0] - labels[0])
     hi = mids[i] if i < 4 else labels[4] + (labels[4] - mids[3])
     v = 2 * i + 0.5 + 2 * (x - lo) / (hi - lo)
-    return i, round(min(10.0, max(1.0, v)) + 1e-9, 1)
+    return i, CardRatings.number(round(min(10.0, max(1.0, v)) + 1e-9, 1))      # one decimal, then halves up
 
 
 def _span(labels: tuple) -> tuple:
@@ -190,7 +191,7 @@ def kinds_of(repo: str) -> dict:
 
 
 def _cell(e: Optional[dict]) -> str:
-    return f"{e['value']:.1f} {CATEGORIES[e['scale']][tier_of(e['value'])].replace(' :(', '')}" if e else ""
+    return f"{e['value']} {CATEGORIES[e['scale']][tier_of(e['value'])].replace(' :(', '')}" if e else ""
 
 
 def _columns() -> list:
@@ -235,7 +236,7 @@ def review(entries: list, report: dict, authors: Optional[CardAuthors] = None, k
     md = ["# Card ratings from the TTS sessions: review", "",
           "Rule: each board has five category labels (0-4) at x positions. The midpoint between labels i and i+1 "
           "maps to 2i+2.5 (label i about 2i+1.5, exactly when centred); past the end labels the same half-band; "
-          "clamped to 1-10, one decimal. "
+          "clamped to 1-10, one decimal, then the nearest whole number (halves up). "
           "A value's category: 1-2.4 / 2.5-4.4 / 4.5-6.4 / 6.5-8.4 / 8.5-10 (tierOf). All entries are group ones "
           "(\"by\": \"group\", \"source\": \"TTS session\").", "",
           "| Board | Scale | " + " | ".join(f"label {i}" for i in range(5)) + " |", "|---|---|---|---|---|---|---|"]
