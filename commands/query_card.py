@@ -604,7 +604,8 @@ class CardRepository:
         for name, card in cards.items():
             title = getattr(card, "display_name", None)
             shown_as[CardAuthors.key(name)] = title or name      # Card Edits.json's keys, as players know the card
-            if getattr(card, "hidden", False) or getattr(card, "duplicate_of", None) or self._key_of(name) is None:
+            if getattr(card, "hidden", False) or self._key_of(name) is None or (
+                    getattr(card, "duplicate_of", None) and not getattr(card, "variant_of", None)):   # a variant: its own title
                 continue
             add(title or name, title or name)
             if title and title.lower() != name.lower():
@@ -1002,7 +1003,8 @@ def _query_as_of(interaction: Interaction, query: str, as_of: str) -> None:
     if guess:
         print(f"Search guess: /query {query!r} as_of -> {name}")
     current = stats_db.stats.get(name)
-    if current is not None and getattr(current, "duplicate_of", None):     # a copy: its original's history
+    if current is not None and getattr(current, "duplicate_of", None) and not getattr(current, "variant_of", None):
+        # a copy: its original's history (a variant picture has its own)
         label = f"**{name}** (same card as {current.duplicate_of})"
         name = current.duplicate_of
         current = stats_db.stats.get(name)

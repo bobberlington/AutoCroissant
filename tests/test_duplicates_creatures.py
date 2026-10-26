@@ -91,6 +91,36 @@ def test_unread_card_edits_keep_the_dup_of_cards(monkeypatch, failure):
         assert (gone == []) is kept and ("Stubborn Queen" in tr.db.stats) is kept
 
 
+def test_variant_pictures_are_duplicates():
+    """Every variant picture is a duplicate of its picture 1 (owner 10-25), or of the card its dup_of names (not a
+    duplicate, another picture or itself), keeping its own data and version; Card Edits.json unread: one set stays.
+    The bot's sync counts the marking as no card gone."""
+    from copy import deepcopy
+    from commands import card_sync
+    from commands.card_edits import CardEdits
+
+    def pic(name, n=None, of=None):
+        card = pa.CardInfo(name=name, card_type="item", path="Items/Heal/2 Stars/Kit.psd", ability=f"{name}.", variant=n,
+                           variant_of=of)
+        card.version = {"from": float(n or 0)}
+        return card
+    cards = {"Kit": pic("Kit", 1), "Kit2": pic("Kit2", 2, "Kit"), "Kit3": pic("Kit3", 3, "Kit"), "Kit4": pic("Kit4", 4, "Kit"),
+             "Other": pic("Other"), "Queen": pa.CardInfo(name="Queen", card_type="item", duplicate_of="Other")}
+    before = deepcopy(cards)
+    tr = _traverser(cards)
+    tr.edits = CardEdits.parse('{"cards": {"Kit2": {"dup_of": "other"}, "Kit3": {"dup_of": "Queen"}, "Kit4": {"dup_of": "Kit3"}}}')
+    assert tr._variant_duplicates() == 3 and tr._variant_duplicates() == 0
+    tr.duplicate_versions()
+    assert {n: c.duplicate_of for n, c in cards.items()} == {
+        "Kit": None, "Kit2": "Other", "Kit3": "Kit", "Kit4": "Kit", "Other": None, "Queen": "Other"}
+    assert [(cards[n].ability, cards[n].version) for n in ("Kit2", "Kit3")] == [("Kit2.", {"from": 2.0}), ("Kit3.", {"from": 3.0})]
+    assert card_sync.changes(before, cards) == {"changed": 0, "new": 0, "archived": 0}
+    tr.edits, tr.edits_unread = None, True
+    assert tr._variant_duplicates() == 0 and cards["Kit2"].duplicate_of == "Other"     # unread: kept
+    tr.edits_unread = False
+    assert tr._variant_duplicates() == 1 and cards["Kit2"].duplicate_of == "Kit"       # no dup_of: picture 1
+
+
 def test_duplicate_name_order():
     """A duplicate's own Card Edits.json aliases name it (the longest); with none it is titled by its own name (None)."""
     assert cd.CardBuild._duplicate_name(["late_supper", "ls"]) == "Late Supper"

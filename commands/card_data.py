@@ -176,6 +176,7 @@ class CardBuild:
         authors = self._authors_from_response(resp, repository)
         self.changed += self._apply_authors(authors)
         self.changed += self._apply_edits()
+        self.changed += self._variant_duplicates()
         self.changed += self._sync_duplicates(resp)
         self.changed += self._apply_edits()             # the duplicates' own edits
         dates = self._dates_from_response(resp, repository)
@@ -282,7 +283,8 @@ class CardBuild:
         """
         paths = [item.get("path", "") for item in self._tree_items(response)]
         found = duplicate_pngs(paths, self.db.stats, self.edits)
-        before = {n: repr(c) for n, c in self.db.stats.items() if getattr(c, "duplicate_of", None)}
+        before = {n: repr(c) for n, c in self.db.stats.items()
+                  if getattr(c, "duplicate_of", None) and not getattr(c, "variant_of", None)}
         if self.edits_unread:
             lower = {p.lower() for p in paths}
             for name in before:
@@ -302,12 +304,24 @@ class CardBuild:
             self.db.seen_cards.append(name)             # not pruned as a missing PSD
         return sum(1 for n in found if before.get(n) != repr(self.db.stats[n]))
 
+    def _variant_duplicates(self) -> int:
+        """Each variant picture's duplicate_of (variant_duplicates): the same card, counted once; it keeps its own parse,
+        PNG, parts and history. Card Edits.json unread: one already set stays. Returns how many changed."""
+        changed = 0
+        for name, original in variant_duplicates(self.db.stats, None if self.edits_unread else self.edits).items():
+            card = self.db.stats[name]
+            if self.edits_unread and getattr(card, "duplicate_of", None) in self.db.stats:
+                continue
+            changed += getattr(card, "duplicate_of", None) != original
+            card.duplicate_of = original
+        return changed
+
     def duplicate_versions(self) -> None:
         """Each duplicate's `version` a copy of its original's, once the original has its own for this run (a re-parsed
         original gets it after _sync_duplicates copied it): the same whether or not the original was re-parsed."""
         for card in self.db.stats.values():
             original = self.db.stats.get(getattr(card, "duplicate_of", None) or "")
-            if original is None or original is card:
+            if original is None or original is card or getattr(card, "variant_of", None):     # a variant: its own
                 continue
             info = getattr(original, "version", None)
             if info is None:
@@ -737,7 +751,7 @@ def duplicate_pngs(paths: list, stats: dict, edits: Optional[CardEdits]) -> dict
     """
     The tree's duplicates: {name: original}: a card PNG with no PSD whose Card Edits.json
     entry names its original in dup_of (Stubborn_Queen.png; build_site's rule). The original must be a listed card, no
-    duplicate. A numbered PNG beside a PSD is one of its variant pictures (" #N" layers), no duplicate.
+    duplicate. A numbered PNG beside a PSD is one of its variant pictures (" #N" layers): variant_duplicates.
     """
     lower = {p.lower() for p in paths}
     by_key = {CardAuthors.key(n): n for n, c in stats.items() if not getattr(c, "duplicate_of", None)}
@@ -755,6 +769,20 @@ def duplicate_pngs(paths: list, stats: dict, edits: Optional[CardEdits]) -> dict
         if original and original != card_name(path):
             found[card_name(path)] = original
     return found
+
+
+def variant_duplicates(stats: dict, edits: Optional[CardEdits]) -> dict:
+    """
+    {variant picture: original} for every variant picture 2..N of a tagged PSD: a duplicate of its picture 1 (owner,
+    10-25: one category), or of another listed card its Card Edits.json dup_of names (no duplicate itself).
+    """
+    pictures = {n: c.variant_of for n, c in stats.items() if getattr(c, "variant_of", None) in stats}
+    by_key = {CardAuthors.key(n): n for n, c in stats.items() if n not in pictures and not getattr(c, "duplicate_of", None)}
+    out = {}
+    for name, first in pictures.items():
+        target = (edits.cards.get(CardAuthors.key(name)) or {}).get("dup_of") if edits is not None else None
+        out[name] = by_key.get(CardAuthors.key(target), first) if target else first
+    return out
 
 
 def can_prune(build: CardBuild) -> bool:
