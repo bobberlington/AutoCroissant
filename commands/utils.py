@@ -1,4 +1,4 @@
-from asyncio import Event, get_running_loop, to_thread as asyncio_to_thread, wait_for, TimeoutError as AsyncTimeout
+from asyncio import Event, get_running_loop, to_thread as asyncio_to_thread, wait_for
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from discord import File, Interaction, Object
@@ -55,7 +55,7 @@ class Wake:
         event = self.bound[1]
         try:
             await wait_for(event.wait(), FALLBACK)
-        except AsyncTimeout:  # asyncio's: builtin only from 3.11
+        except TimeoutError:
             pass
         event.clear()
 
