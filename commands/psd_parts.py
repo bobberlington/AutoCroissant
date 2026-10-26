@@ -1,5 +1,5 @@
 """
-A card's parts: one box per PSD layer the website edits (docs/Future/PARTS_EDITOR.md §2): the title layers, the ability
+A card's parts: one box per PSD layer the website edits (docs/Finished/session-2026-10-26/PARTS_EDITOR.md §2): the title layers, the ability
 layers, a rule page's text blocks, the layers that follow them (copies, watermarks, a relaid hidden Ability), the
 variant pictures and, for a card without an ability or a type icon, its kind's template. The selection is the parser's
 (PSDParser.title_parts, ability_parts, blocks, under psd_parser.variant_view); this module only assembles the record.

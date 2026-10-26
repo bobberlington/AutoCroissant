@@ -22,7 +22,7 @@ ORDER = ("name", "type", "subtype", "series", "subseries", "stars", "types", "hp
          "parts", "note", "art", "ability_art", "aliases", "dup_of", "hidden", "problems_ok", "allow_high_stats", "creatures")
 # what localeCompare(…, {sensitivity: "base"}) puts before digits and letters, in CLDR root order
 PUNCTUATION = "_-,;:!?.'\"()[]{}@*/\\&#%`^+<=>|~$"
-# per-layer text edits (docs/Future/PARTS_EDITOR.md §3): build_site.valid_parts' rules
+# per-layer text edits (docs/Finished/session-2026-10-26/PARTS_EDITOR.md §3): build_site.valid_parts' rules
 ADD_ABILITY = "+ability"                        # the key of an ability added to a card that has none
 PART_KEY = re_compile(r"^(\d+|\+ability)\Z")   # a layer id, or ADD_ABILITY
 HEX8 = re_compile(r"^[0-9a-f]{8}\Z")

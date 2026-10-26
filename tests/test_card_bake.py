@@ -905,7 +905,7 @@ def test_workflow_pending_edits_line_calls_due(github, capsys, monkeypatch):
 
 
 # ========================
-# Parts: one box per layer (docs/Future/PARTS_EDITOR.md §4, §11 cases 4 and 5)
+# Parts: one box per layer (docs/Finished/session-2026-10-26/PARTS_EDITOR.md §4, §11 cases 4 and 5)
 # ========================
 MIRACLE = "Creatures/Kirby/3 Stars/Miracle_Matter.psd"            # five Ability layers, padded ('\r    \r    Earth: ...')
 

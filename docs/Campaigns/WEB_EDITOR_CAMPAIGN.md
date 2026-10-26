@@ -2,7 +2,7 @@
 
 **Status:** designed 2026-10-20, not scheduled (`docs/NEXT_SESSION_PLAN.md`, "Ideas parked"). Grows out of the website's inline editing; what it waited
 for (the edit pipeline, the standardization batches, the rendering parity rounds) was done by 2026-10-25; the parts
-editor (`docs/Future/PARTS_EDITOR.md`) is its next step. Numbers are 2026-10-20: `~/Desktop/TTSCardMaker/site/dist/data/cards.json` (801 rows), `site/Card
+editor (`docs/Finished/session-2026-10-26/PARTS_EDITOR.md`) is its next step. Numbers are 2026-10-20: `~/Desktop/TTSCardMaker/site/dist/data/cards.json` (801 rows), `site/Card
 Edits.json` (56 cards), `~/Documents/Tools/psd-research/RENDER_STATUS.md` (`cards_v1_icc`), the ledger
 `docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md`. Anything not checked on disk is marked "to confirm".
 

@@ -17,7 +17,7 @@ Then one commit on the branch's current head (land): every baked card's PSD and 
 baked and redundant fields removed (a Python port of edit.js editsFile), through git_commit (the GitHub API, or git
 objects in the history clone pushed over SSH when the token can't write). A card whose PSD, PNG or edit changed meanwhile
 is left out of the commit as a try-again refusal; the others still land. The verdicts live on the data branch
-(db/verdicts.json, docs/Future/CARD_SYNC_VERDICTS.md): the run writes them, with its bake events, to the work dir's
+(db/verdicts.json, docs/Finished/session-2026-10-26/CARD_SYNC_VERDICTS.md): the run writes them, with its bake events, to the work dir's
 verdicts.json and bake-events.json (records()), split into what needs no main commit (a refusal: never one) and what
 holds only once the commit lands; Card sync merges them into the data (card_data --verdicts, --events). A verdict is
 read from --verdicts.

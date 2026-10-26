@@ -5,7 +5,7 @@ and after (new, changed, art, reparse, moved, renamed, archived, restored, edite
 the push that brought each (the activity list, else consecutive commits by one author), their numbering, and one
 Discord message per push within Discord's limits. Design: docs/Campaigns/DATA_BUILD_ACTION.md section 12.1. The bake's
 events (baked, bake-refused) ride their push's post; the guards' (guard-png, guard-fix) and every event of a guards
-commit's push are the Changes page's alone (owner, 2026-10-25): docs/Future/CARD_SYNC_VERDICTS.md.
+commit's push are the Changes page's alone (owner, 2026-10-25): docs/Finished/session-2026-10-26/CARD_SYNC_VERDICTS.md.
 
 CLI: python -m commands.changelog post --db <db dir> --site <url> --out <file>
      |  advance --db <db dir> --seq <n> --push <sha>  (after Discord accepted that message)

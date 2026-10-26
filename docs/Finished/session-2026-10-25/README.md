@@ -18,8 +18,8 @@ this folder; `docs/Future/` keeps the two with a step left.
 | Optimization clear wins | AC d3f622c, TC b77998c0 | `/query` fuzzy p95 129 -> 6.5 ms, the `/query` refresh race fixed, faster restarts, single-pass git walks, opaque-pixel fast path, font-name index, inlined CSS + esbuild minify (836 -> 520 KB), wheel cache on requirement lines. Plan and questions: `~/Documents/Tools/wt/scratch/opt/PLAN.md` |
 | Guard and bake pack | AC 4d4574c, TC 1c717c8b | Straight apostrophes everywhere; badges sized 1.35x the text's drawn cap height and centred by Baseline Shift; old stoogedings glyphs redrawn; all silent (commit messages only) |
 | Sweeps | TC 218a122d, 6778c592 | Badges on 101 cards, apostrophes on 34; guards on both pushes green and in agreement (byte-identical fixes) |
-| Parts editor, data + bake | AC aae7233, TC abf70775 | `docs/Future/PARTS_EDITOR.md`: parser 3, details v2 with parts, per-layer bake, variants, star folder moves, first type icon; full re-parse: 1 field change (Ms Mowz's display name) |
-| PNGs, layout, verdicts | TC a4d137bf, AC be39f86 | `SMALLER_PNG_PUSHES.md`, `LAYOUT_SUPPORT.md`, `docs/Future/CARD_SYNC_VERDICTS.md` (migration left) |
+| Parts editor, data + bake | AC aae7233, TC abf70775 | `docs/Finished/session-2026-10-26/PARTS_EDITOR.md`: parser 3, details v2 with parts, per-layer bake, variants, star folder moves, first type icon; full re-parse: 1 field change (Ms Mowz's display name) |
+| PNGs, layout, verdicts | TC a4d137bf, AC be39f86 | `SMALLER_PNG_PUSHES.md`, `LAYOUT_SUPPORT.md`, `docs/Finished/session-2026-10-26/CARD_SYNC_VERDICTS.md` (migration left) |
 
 ## Afternoon (owner back, ~13:30-17:10)
 

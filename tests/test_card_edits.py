@@ -162,7 +162,7 @@ def test_psd_meta_rides_beside_by_and_at():
 
 
 # ========================
-# Parts (docs/Future/PARTS_EDITOR.md §3, §11 case 10)
+# Parts (docs/Finished/session-2026-10-26/PARTS_EDITOR.md §3, §11 case 10)
 # ========================
 def test_parts_valid_and_merged_per_layer():
     """`parts` as build_site.valid_parts takes it; the fixture's entries parse whole; dumped in place."""

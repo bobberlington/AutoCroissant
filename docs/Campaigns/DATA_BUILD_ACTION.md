@@ -47,7 +47,7 @@ stayed until work/clean (2026-10-25) removed them too, with the seed pass, the P
 seed input, empty-branch bootstrap and `POSTS`/`MAIN_COMMIT` switches: a build refuses an empty db/ unless `--empty`
 (new card data), and §7.4's seed and recovery text below is history. TTSCardMaker's site.yml always reads `data` (no `CARD_DATA` switch) and build_site.py lost its pickle loader. The
 data branch is the only source; the rollback of the whole move (§13) is gone with them. §16 item 7 (verdicts;
-`docs/Future/CARD_SYNC_VERDICTS.md`): steps 1-5 landed 2026-10-25 (AC b1d0b08, TC a01e6bc4); step 6, the migration, waits for the first live bake or refusal. The Discord card edits (`/update_metadata`,
+`docs/Finished/session-2026-10-26/CARD_SYNC_VERDICTS.md`): steps 1-5 landed 2026-10-25 (AC b1d0b08, TC a01e6bc4); step 6, the migration, waits for the first live bake or refusal. The Discord card edits (`/update_metadata`,
 `/mass_replace`, `/alias`) that §2, §5 and §11 describe were retired 2026-10-25 (AC 6e8f8e3); the website is the one
 edit path, with Rename everywhere (TC 706f750a).
 

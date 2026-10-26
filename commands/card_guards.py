@@ -19,7 +19,7 @@ the same pixels) when that saves more than 10% and 64 KiB (our thresholds), and 
 
 A landed commit's changelog events (guard-png: a PNG re-made or recompressed; guard-fix: a fix the guards landed; the
 Single-line Composer none) go to guard-events.json beside the plan, which card-guards.yml uploads and Card sync's data
-job reads (card_data --guard-events): the Changes page shows them, never Discord (docs/Future/CARD_SYNC_VERDICTS.md).
+job reads (card_data --guard-events): the Changes page shows them, never Discord (docs/Finished/session-2026-10-26/CARD_SYNC_VERDICTS.md).
 
 check reads trees from a local clone (the Action's blobless checkout with its history; a full clone locally) and blobs
 from it or, when it lacks them, by sha through the API (verified). It writes nothing to the card repo, ever: a dry run

@@ -447,8 +447,9 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   Also, a stored command that failed to parse hit `continue` before the reschedule step, so it re-fired its error
   message every second.
 - **Fix**: reminders store `creator_id`/`creator_name` and fire as a `_ReminderUser` stand-in, so the slash
-  callback's own `lacks_admin` runs again at fire time. Legacy reminders with no creator still run as the bot
-  (`LEGACY_RUNS_AS_BOT = True`, analytics.py:37; :36 on 2026-10-25) and `/list_reminders` labels them. `/remove_reminder` is limited
+  callback's own `lacks_admin` runs again at fire time. Legacy reminders with no creator ran as the bot
+  (`LEGACY_RUNS_AS_BOT`) until 2026-10-26, when it and the old-entry migration were deleted: one with no creator now
+  runs as an unknown non-admin user, labelled "unknown". `/remove_reminder` is limited
   to admins or the creator. Each reminder is isolated (a crash disables only that one), and a bad command reports
   once per due slot.
 - Operating detail: autocroissant-run-and-operate §9. Flow and invariant: autocroissant-architecture-contract.
@@ -906,7 +907,7 @@ Written 2026-07-11 against HEAD = 284d13c ("PICKLE", 2026-06-20). Extended 2026-
 | Local mode archived (Entry 10.12) | `grep -rn 'use_local' main.py commands/` (finds nothing since 2026-10-25); `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived`; `grep -n '^REMINDER_VERSION' commands/analytics.py` (3) |
 | Dead helpers deleted (Entry 10.13) | `git branch --list 'archive/*'` (two branches: archive/ai-generation, archive/local-update-stats); `grep -rn 'convert_value\|parse_named_args\|url_to_pilimage\|cv2_to_pil\|pil_to_cv2\|_exact_match_pattern' main.py commands/` (expect empty) |
 | Exact token spellings (Entry 10.11) | `grep -n -A8 "def spellings" commands/psd_parser.py` |
-| Entry 10 fixes present | `grep -n "self._release(source)\|startswith('.')\|force_update: bool = False" commands/card_data.py` (508, 208, 152 on 2026-10-25; repo_traverser.py deleted 2026-10-25); `grep -n '^LEGACY_RUNS_AS_BOT\|^def next_run' commands/analytics.py`; `grep -n 'target_message: Optional\[Message\]' commands/management.py` (one hit, before the `try`) |
+| Entry 10 fixes present | `grep -n "self._release(source)\|startswith('.')\|force_update: bool = False" commands/card_data.py` (508, 208, 152 on 2026-10-25; repo_traverser.py deleted 2026-10-25); `grep -n '^RUN_AS_CREATOR\|^def next_run' commands/analytics.py`; `grep -n 'target_message: Optional\[Message\]' commands/management.py` (one hit, before the `try`) |
 | B6 hazard (only relevant if local mode is revived from the archive) | unpickle stats.pkl with stub classes and compare each `card.timestamp` with `os.path.getmtime(~/Desktop/TTSCardMaker/<card.path>)`: 813/813 newer on 2026-10-19 |
 | Data still healthy / counts | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py` (813 cards, 218/223 old, newest 2026-06-18 — all drift with TTSCardMaker) |
 | old_stats byte trace | `for c in 793abf1 e380cee cca0aaf eb9aa84 637698b 76baa15 e5f5393 532b34f d31b948 8753489 284d13c; do echo "$c $(git cat-file -s $c:old_stats.pkl)"; done` |

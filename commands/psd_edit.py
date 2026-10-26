@@ -8752,7 +8752,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
 
 
 # ========================
-# Parts: one text box per PSD layer (docs/Future/PARTS_EDITOR.md §2-4)
+# Parts: one text box per PSD layer (docs/Finished/session-2026-10-26/PARTS_EDITOR.md §2-4)
 # ========================
 GONE = "the layer is gone from the PSD (deleted or remade in Photoshop since this edit): redo it on the website if still wanted"
 CHANGED = "changed in Photoshop since this edit: redo it on the website if still wanted"

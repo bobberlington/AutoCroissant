@@ -1,121 +1,99 @@
-# Next session plan (2026-10-26 start)
+# Next session plan (after 2026-10-26)
 
 ## Where to start
 
-Start in `~/Desktop/AutoCroissant`. Read memories `resource-limits`, `owner-decisions-2026-10-24-night` (its 10-25
-lines), `lean-tests-and-verification`, `no-guides-csv-only`, `edits-two-kinds`, `jetson-server`,
-`persistent-work-paths`, `agent-model-preference`. What landed on 10-25: `docs/Finished/session-2026-10-25/README.md`
-(the Evening section covers 17:10 to midnight). Designs still queued: `docs/Future/`.
+Start in `~/Desktop/AutoCroissant`. Read memories `resource-limits`, `secrets-never-printed`,
+`owner-decisions-2026-10-24-night` (its 10-25 and 10-26 lines), `lean-tests-and-verification`, `no-guides-csv-only`,
+`edits-two-kinds`, `jetson-server`, `persistent-work-paths`, `agent-model-preference`. What landed:
+`docs/Finished/session-2026-10-26/README.md` (and `session-2026-10-25/`). `docs/Future/` holds only the problem-cards
+lists; nothing is in flight.
 
-First: the open items below; watch the first live `+ability` bake.
+First: regenerate the problem-cards list (below), then the campaign tasks in the order the owner picks.
 
 ## Standing rules
 
-- Work unattended unless the owner says "ask me questions". Agents on Opus or lower.
+- Work unattended unless the owner says "ask me questions". Agents on Opus or lower; a single Agent for a build (two
+  workflow agents answered the owner's latest question instead of building: pin "your job is the code build").
 - Commit to main in both repos; `work/*` only while in flight, then delete. Very short commit messages; no Claude
   attribution. Persistent paths only (`~/Documents/Tools/wt/`, `~/std-work-*`).
 - Deploy with the `jetson-deploy` skill: push main and deploy in one sitting.
-- Tests: `~/.venvs/ac-py314-fork/bin/python -m pytest -n auto -q tests` (618 collected on 10-25; `-n auto` = 6
-  workers). Targeted files unless a full run is needed.
-- Resource limits (memory `resource-limits`):
-  - never a partial (`blob:none`) clone of the local card repo; read history blobs with one `cat-file --batch`;
-  - xdist at most 6; one full suite at a time (`~/Documents/Tools/wt/scratch/suite-wait.sh`);
-  - at most 2 workflows; process pools at most 4;
-  - the git watchdog (`~/Documents/Tools/wt/scratch/git-watchdog.sh`) under Monitor during long unattended work;
-  - no repack or gc of the big clones while agents run.
-- `gh run list -c` needs the FULL sha (short shas made wait loops hang): `git rev-parse` first.
-- zsh doesn't split unquoted variables: use arrays or `${=var}`.
-- Send only GitHub tokens to GitHub. Never print config.py values or tokens.
+- Tests: `AUTOCROISSANT_LOCAL_DIR=~/Desktop/TTSCardMaker AC_SITE_SRC=<tc tree>
+  ESBUILD=~/Documents/Tools/wt/scratch/esbuild/node_modules/.bin/esbuild ~/.venvs/ac-py314-fork/bin/python -m pytest
+  -n auto -q -p no:cacheprovider tests` (641 on 10-26, about 3 minutes). Targeted files unless a full run is needed.
+- Resource limits (memory `resource-limits`): never a partial (`blob:none`) clone of the local card repo; xdist at most
+  6; one full suite at a time (`~/Documents/Tools/wt/scratch/suite-wait.sh`); at most 2 workflows; process pools at
+  most 4; the git watchdog (`~/Documents/Tools/wt/scratch/git-watchdog.sh`) under Monitor during long unattended work;
+  no repack or gc of the big clones while agents run.
+- `gh run list -c` needs the FULL sha: `git rev-parse` first. zsh doesn't split unquoted variables.
+- Secrets (memory `secrets-never-printed`): never print config.py values, tokens or webhook URLs; a token goes only to
+  its own service; hooks: name, active flag and host only.
+- PSD pushes: run the guards dry first (`python -m commands.card_guards check --clone <wt> --after <head> --before
+  origin/main --repo MichaelJSr/TTSCardMaker --mode on --workers 2 --out <dir>`), discord.json must be `{}`; sweep
+  fixes carry `Card-sweep: <kind>` (silent per commit).
+- Photoshop 2023 may be used on copies under `~/std-work-*`: `open -a "Adobe Photoshop 2023" script.jsx` plus a result
+  file (osascript is blocked), dialogs off, only documents we opened. Runners: `~/std-work-1026/*/tools/`.
 - No guides or checklists for the owner: problem lists are a CSV plus its `.md` (memory `no-guides-csv-only`).
 
-## State (2026-10-26 ~02:00 PDT)
+## State (2026-10-26 ~09:15 PDT)
 
-- AutoCroissant main d7a6641, deployed on the jetson (d7a6641).
-- TTSCardMaker main 8a913cc4. The Desktop clones of TTSCardMaker and OJWikibot are level with main (pulled 10-26).
-- Data branch 1cf84da1: parser 4 (builder 8b0ce02), 820 cards, details v2; no `db/verdicts.json` yet.
-- psd-tools fork pin `cards-20261025b` (`requirements-cards.txt`).
-- Card sync chains leftover work, with one safety cron at :17. Both proven on 10-25: run 40262751459 was dispatched by
-  github-actions[bot] after 40262608396; the :17 cron fired at 21:19, 00:25 and 06:18 UTC (other hours' runs didn't
-  come). The guards' window is 30 minutes from the push.
-- OJWikibot main 8924db4. Its deployed commit is unknown (5135280 in the morning; a70877d, 8ea1c7c..174f62b and
-  cdf6f03..8924db4 landed since): check it on the jetson and deploy with the `jetson-deploy` skill if behind.
-- `psd_edit.ADD_ABILITY_LIVE = True` (since d7a6641).
+- AutoCroissant main = deployed a07f822 plus docs and skills commits only.
+- TTSCardMaker main 429e724c (plus Card sync's TTS save commits). Desktop clones of all three repos level with main.
+- Data 6b8f9050: parser 5 (builder 234b1b0), 820 cards; `db/verdicts.json` holds the verdicts (no `_psd` left).
+  Grimora and Skeleton Mate re-parse in the Card sync run after 80466bbe.
+- psd-tools fork pin `cards-20261026` = e156be36 on both machines (`requirements-cards.txt`).
+- OJWikibot main 77def4b, deployed.
+- `+ability` is live; no live `+ability` bake yet (the first comes from the website): its flag note names the box, font
+  and source.
 
-## In flight
-
-Nothing. **`+ability` is live** (owner approved `plus_ability_2` on 2026-10-26; TC 8a913cc4 adds `ability_place.py` and
-`ability_index.json` to the bot checkouts in card-sync.yml and card-guards.yml; AC d7a6641 adds them to
-`card_data.SPARSE_FILES`/`card_guards.SPARSE_FILES` and sets `ADD_ABILITY_LIVE = True`; deployed). No `+ability` entry
-was waiting in Card Edits.json, so the first real one comes from the website. Placement: the top of the card's free
-text area, placed like matching sibling cards (leave-one-out on 728 cards: median first-line error 19 px, 0 overlaps,
-0 off the canvas); the card's own font (84% right). `ability_index.json` (the other cards' facts) is remade by hand:
-`python -m commands.ability_place ~/Desktop/TTSCardMaker`; a card newer than it just finds fewer siblings. Watch the
-first live `+ability` bake (its flag note names the box, font and source). Options the owner didn't take: centring on
-the Isaac-style cards, a bigger item size, a deleted ability's own font first.
-
-## Open items
+## Campaign tasks
 
 ### Owner
 
-- [ ] Rotate the production Discord TOKEN (the jetson's config.py; sent to api.github.com by mistake on 10-25, GitHub
-      answered 401). HF_TOKEN is rotated (Hugging Face rejects the old one, checked 10-26). The Discord token in the
-      jetson's config.py still logs in as AutoCroissant (checked 10-26 against Discord's /users/@me), so it was not reset;
-      after a reset the new token goes into the jetson's config.py and the bot restarts (the Mac's config.py is a
-      different bot, Waxwell).
-- [ ] Photoshop re-saves: 8 badge cards (WX-78, Wendy, Wigfrid, Soul Master, Traitor Lord, Ominous Red Circle, Quick
-      Slash, Golden Metronome) and 5 apostrophe cards (The Temple/Gates of Ahn'Qiraj titles, 04_Table5,
-      06_Reading_Cards, 12_Reactions2), and the 54 problem cards (`~/Downloads/Problem cards 2026-10-25.csv` and `.md`;
-      `docs/Future/PROBLEM_CARDS_2026-10-25b.*`). The other 5 of the 18 are fixed on TTSCardMaker work/resave18.
-- [ ] Land the resave18 fixes IN THIS ORDER: (1) AutoCroissant work/resave18 on main (the parser reads `\'` as `'`,
-      and a `Card-sweep:` trailer makes its commit's own art and text changes silent, in any push); Card sync builds
-      with main's code. (2) Only then push TTSCardMaker work/resave18 (rebase it if main moved). Pushed first,
-      10_Attacking and 17_Death would store `don\'t` / `DON\'T` and the 5 cards would post "New art" to Discord.
-- [ ] 03 Setting Up's stored ability keeps `they\'re` (its PSD is unchanged, PARSER_VERSION stays 4): after (1), a Card
-      sync `cards: 03 Setting Up` dispatch re-reads that one card, or bump PARSER_VERSION (~812 re-parses, gate G4).
-- [ ] Safari: the many-boxes edge scroll (the grid flash is gone, owner 10-26).
-- [ ] Data problems from the live problem list (`PROBLEM_CARDS_2026-10-25b.md`): Computer Virus has no stats (no
-      template stat bars; Photoshop); Twin Emperors' Vek'lor has DEF 10 on the website and 4 on the card (an editor
-      checks which is right).
-- [ ] `site/profiles/MichaelJSr.json`: the series "Don't Starve Gourmet Expansion" isn't a known series. "Gourmet
-      Expansion" is a subseries of Don't Starve (1 card, Grapes): probably series "Don't Starve" plus that subseries.
-- Eventually, never blockers: Photoshop standardizing (one Name and one Ability layer per card, rulebook Header/Page
-  Number layers); the team's rulings draft; developers resetting clones after the 10-24 rewrite and reinstalling
-  stoogedings. Layout support still refuses Slugcat's spd, three smart-filter star layouts, PoD04 Zebra Bloon +1,
-  Living Bread (Grimora and Skeleton Mate bake since TTSCardMaker 80466bbe's numbered cells).
-
-### Waiting on events
-
-- [ ] Verdicts migration step 6 (`docs/Future/CARD_SYNC_VERDICTS.md`; runbook
-      `~/Documents/Tools/wt/scratch/verdicts/MIGRATION.md` section B): one `_psd` block left in Card Edits.json
-      (PoD11ZOMG's). Waits for the first live bake or refusal to write a verdict to the data; drop the `_psd`
-      fallback one cycle later.
-- [x] The joined splice (PARTS_EDITOR §8): already deleted on 10-25 (AC ab132b2, 0 legacy entries). Only the
-      `_joined_edit` refusal for legacy joined edits remains.
-
-### Outside
-
-- [ ] OJWikibot's wiki API answers HTTP 500 since 10-23 (wiki/host side); O-6 waits for it.
+- [ ] Reset the production Discord TOKEN (jetson's config.py; sent to api.github.com on 10-25; still valid on 10-26),
+      then put the new one in the jetson's config.py and restart. Regenerate TTSCardMaker's Discord webhook (its URL was
+      printed on 10-26).
+- [ ] Photoshop: Computer Virus' stat bars; Ze'mer's full-width flower layers; Terry Hintz and Joel Miller's "Stars"
+      groups and typed tags (prepared in `~/std-work-1026/stargroups/`; Photoshop 2023 can't re-save their
+      EarthboundZero text, nor Elmadan's); Papyrus' typed tag (Photoshop's Papyrus font doesn't match the card's).
+- [ ] The Panda Future's PSD is 51.6 MB (GitHub warns past 50 MB).
+- [ ] Safari: the many-boxes edge scroll (headless checks never ran Safari).
+- [ ] OJWikibot questions: is the leo host retired; `/update` in both bots; the field-events snapshot; the stray-heading
+      fix.
 
 ### Developer
 
-- [ ] Stubborn Queen and Gust of Trees are stuck under "Not parsed yet": PNG-only copies (`dup` set) that
-      build_site.py's "card PNGs without a PSD" loop (site/build/build_site.py ~3486-3503) lists image only, with
-      `parsed: false`. Teach the site these copies. Stubborn Queen's series also shows Other instead of Sort the Court!.
+- [ ] Regenerate the problem-cards list (`docs/Future/PROBLEM_CARDS_2026-10-25b.*` predates lanes 1-3, the numbered
+      cells and the star groups; Twin Emperors was a false alarm; `+ability` cases are handled). Deliver the CSV and its
+      `.md`.
+- [ ] Star counter: Yin Yarn and Leshy (overlapping and shadowed stars).
+- [ ] Star layouts: Bolts and Screws 2's false banner refusal; the 8 off-banner star edits refused (smarter layouts);
+      a dice 5 -> 2 rule; Crowned Magolor's 6 look.
+- [ ] Types: Nasus' type removal (a close-the-row rule); Masher's "dark" under the shell.
+- [ ] Stat bars: Twin Emperors' 2-px seam after 5 -> 10 -> 2 -> 7 (cell spacing 925 vs 921); a numbered-layer 0 refuses
+      with "no dark picture" wording (reword); Sonic's SPD 11-19 are website-only.
+- [ ] Corruption and Dumplings: the font sweep left them out (a PNG bar; a Txt2 reorder).
+- [ ] Kept on purpose until their condition holds: the pyoxipng fallback (until `brew install oxipng` everywhere), the
+      older-fork checks (retire the `ac-py314-psd125` venv first), the `alt_names` field (removing it rewrites every
+      record), Card Edits.json's `aliases_moved` key (a data edit), the `inspect_pickle.py` name.
+- [ ] OJWikibot: `ojwiki_helpers.py:263-268` optional mwparserfromhell fallback; the backup search misses
+      `Backup: pending.json`.
 
-### Small known
+### Waiting on events
 
-- [ ] The font filter's included sidebar chip: a click removes it (no off state).
-- [ ] Headless checks never ran Safari.
-- [ ] The 8 first-screen tiles drop their href once adopted: middle-click on them opens no tab.
-- [ ] 16 cards whose star layers the counter misreads keep a reworded flag (they print the right count).
+- [ ] OJWikibot's wiki API answers HTTP 500 since 10-23 (wiki/host side); O-6 waits for it.
+- [ ] The first live `+ability` bake: check its placement and font.
+
+### Kept by ruling (no action)
+
+42 glow and gradient FX layers; 6 outline FX layers that change colour; the clock emoji; Miracle Matter's form
+pictures and the 5 card-art inline pictures; MDW/Old Rules pages unswept.
 
 ## Queue (`docs/Future/`)
 
 | File | What is left |
 |---|---|
-| `PARTS_EDITOR.md` | `+ability` live (In flight); the rest landed 10-25 |
-| `CARD_SYNC_VERDICTS.md` | Step 6, the `_psd` migration (waiting on events) |
-| `PROBLEM_CARDS_2026-10-25b.csv` / `.md` | The live problem-cards list (54 cards with an edit that can't bake); `PROBLEM_CARDS_2026-10-25.csv` is the morning's |
+| `PROBLEM_CARDS_2026-10-25b.csv` / `.md` | The last problem-cards list (54 cards); stale, regenerate first |
+| `PROBLEM_CARDS_2026-10-25.csv` | The 10-25 morning census |
 
 ## Not chosen
 

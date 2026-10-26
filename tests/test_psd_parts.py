@@ -1,5 +1,5 @@
 """
-The parts editor's data (docs/Future/PARTS_EDITOR.md §11, Track A's 1-3): the variant tag rule, psd_parts.card_parts on
+The parts editor's data (docs/Finished/session-2026-10-26/PARTS_EDITOR.md §11, Track A's 1-3): the variant tag rule, psd_parts.card_parts on
 the five fixture PSDs (tests/fixtures/parts/, each read at its own blob: skipped when the clone lacks it) with the parser's
 fields their joins, and a tagged A Snack parsed and drawn per picture.
 """

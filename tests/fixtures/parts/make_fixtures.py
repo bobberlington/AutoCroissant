@@ -1,5 +1,5 @@
 """
-The parts editor's frozen contract fixtures (docs/Future/PARTS_EDITOR.md §2.3, §2.4, §3, §5, §13), from real cards.
+The parts editor's frozen contract fixtures (docs/Finished/session-2026-10-26/PARTS_EDITOR.md §2.3, §2.4, §3, §5, §13), from real cards.
 
 Writes, next to this file:
 - mini_doomer.json, miracle_matter.json, warcraftian_druid.json, a_snack_tagged.json, getting_started.json: I1, each
@@ -106,7 +106,7 @@ def main() -> int:
     snack = {320: "Heal 4 HP.\nInflict 2T2 Regen and 2T1 Stuffed.", 1023: "Second\nBreakfast"}
     at, by = "2026-10-26T01:00:00Z", "MichaelJSr"
     gs = made["getting_started"]["parts"]["blocks"]
-    edits = {"about": "The parts editor's Card Edits.json entries (docs/Future/PARTS_EDITOR.md §3): a fixture.", "cards": {
+    edits = {"about": "The parts editor's Card Edits.json entries (docs/Finished/session-2026-10-26/PARTS_EDITOR.md §3): a fixture.", "cards": {
         "01 Getting Started": {"ability": "\n".join("HOW TO WIN:" if p["id"] == 15 else p["text"] for p in gs),
                                "parts": {"15": edit("getting_started", 15, "HOW TO WIN:")}, "_by": by, "_at": at},
         "A Snack": {"ability": snack[320], "parts": {"320": edit("a_snack_tagged", 320, snack[320]),

@@ -1059,7 +1059,7 @@ class PSDParser:
                       key=lambda layer: (layer.bbox[1], layer.bbox[0]))
 
     # ------------------------
-    # The parts: what the website edits, one box per layer (docs/Future/PARTS_EDITOR.md §2.2)
+    # The parts: what the website edits, one box per layer (docs/Finished/session-2026-10-26/PARTS_EDITOR.md §2.2)
     # ------------------------
     def layer_text(self, layer, card: Optional[CardInfo] = None) -> str:
         """
