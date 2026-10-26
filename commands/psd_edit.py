@@ -109,7 +109,6 @@ FIT_STEP, FIT_MIN = 0.94, 0.4  # fit_below: smaller by this, down to this share 
 BEYOND = (6, 60, 20, 100)   # ink_beyond: px past the old ink's box; luminance levels off the backdrop's median under the
                             # old text (at least; and past its 95th percentile by); px of new ink on such detail to tell
 FX_TAG = EFFECT_LAYER_TAG   # "Ability FX: Blazing": a status word's glyph pixels under the chart's effect (Effect Layers.jsx)
-BADGE_FX = re_compile(r"[(\[][^()\[\]]+[)\]](?: \| [(\[][^()\[\]]+[)\]])*")   # "(1CD) | (3U)": a retired badge layer
 KEY_INK = 0.5 / 255         # the JSX's key copy, the word white over black, selects every pixel its red channel reaches (level 1)
 KEY_WHITE, KEY_BLACK = (1.0, 1.0, 1.0), (0.0, 0.0, 0.0)
 FX_SEP = " | "              # Effect Layers.jsx's SEP between an FX layer's phrases
@@ -1127,8 +1126,7 @@ def _tinted(layer) -> Optional[str]:
     a pale pill), a drawn layer over the Ability's box (Pizza's Multiply 'Layer 12'; review 2026-10-24).
     A Satin, Inner Glow or Inner Shadow paints over them too, and a group's effects as its own (review 2026-10-24: The
     Radiance's title in 'Group 1' with a Gradient Overlay printed a typed [fire] as a cream silhouette).
-    Under an overlay the badges and stickers take one-colour shapes (one_colour); the badge FX layers that restored
-    the colours are retired (owner 2026-10-25).
+    Under an overlay the badges and stickers take one-colour shapes (one_colour).
     None when nothing does; else the first cause, for a refusal ("its Inner Glow", "the Gradient Overlay of its group
     'Group 1'"; review 2026-10-24: Butterfly's title refused naming an overlay it lacks).
     """
@@ -2093,7 +2091,7 @@ class FxPlan:
     """An FX layer of the edited ability, read before the text changes (plan_fx)."""
     layer: object
     phrases: list           # its name's phrases ("Frozen#2" keeps its number)
-    kind: str               # fx_kind(): "badge", "status", "styled" or "own"
+    kind: str               # fx_kind(): "status", "styled" or "own"
     fill: Optional[tuple] = None    # "styled", "own": its words' colour, the first drawn run (Effect Layers.jsx 8308103f)
     box: tuple = ()         # its bbox before the edit
     ranges: list = field(default_factory=list)  # phrase_ranges() of its phrases in the old text
@@ -2224,16 +2222,13 @@ def _style_key(blocks) -> tuple:
 
 def fx_kind(fx, base, chart: Optional[dict]) -> str:
     """
-    How an ability edit makes an FX layer again (each keeps its own style, owner q6): "badge" (badge and token runs,
-    queue A's gradient cards: retired, the edit deletes it; owner 2026-10-25), "status" (a styled chart status), "styled" (another phrase under a styled chart
+    How an ability edit makes an FX layer again (each keeps its own style, owner q6): "status" (a styled chart status), "styled" (another phrase under a styled chart
     status's style: Monkey D Goofy's "1#1"), "own" (a style no chart status has, or none: Smoldering's stroke, Mr
     Krabs' "2T"; rebuilt in it since 2026-10-23, the owner's ruling); "" when it is no pixel layer (Photoshop draws a
     type layer from its text): refused.
     """
     if getattr(fx, "kind", None) != "pixel":
         return ""
-    if BADGE_FX.fullmatch(fx_label(base, fx)):
-        return "badge"
     styled = [status for status in (chart or {}).values() if status.styled]
     names = {collapse(_numbered(phrase)[0]).lower() for phrase in fx_phrases(base, fx)}   # "Frozen #2": no status (the JSX)
     if len(names) == 1 and getattr((chart or {}).get(next(iter(names))), "styled", False):
@@ -2568,8 +2563,7 @@ def _rebuild_fx(psd: PSDImage, layer, text: str, plans: list, band: Optional[tup
     (name, flags, opacity, fill, blending, clipping, id, place, style): only its pixels change. A layer whose words were not redrawn keeps its record whole
     (_kept) unless it holds pixels its words' cut does not (_holds: a badge an older JSX leaked into it, cut again
     clean). A phrase that left the text leaves the name (the parser flags a name the text lacks; a renumbered one is
-    renamed); a layer with none left is deleted. A badge layer is deleted, told: the icon font's one-colour badges and
-    stickers replace it (set_alternates; owner 2026-10-25). Every layer keeps its own style, the chart's
+    renamed); a layer with none left is deleted. Every layer keeps its own style, the chart's
     or not (owner q6, unattended call 2026-10-23): only a new one takes the chart's (_regenerate_fx); a typed word that
     joins a layer whose style is no chart status's for it (FxPlan.own_style) is told ("moved to" it when none of the
     layer's old words stayed: Doctor Zomboss's Blazing swapped with Frostbite).
@@ -2596,15 +2590,8 @@ def _rebuild_fx(psd: PSDImage, layer, text: str, plans: list, band: Optional[tup
     color, shape = layer.numpy("color"), layer.numpy("shape")      # None for a blank text: every layer deleted below
     icons, glyphs = _char_styles(layer)[1], None
     rebuilt, deleted, covered, notes = [], [], [], []
-    blend = None if one_colour(layer) else _tinted(layer)      # Binge Eater's Pin Light: no one-colour badges there
     for plan, target in zip(plans, targets):
         fx, old = plan.layer, plan.layer.name
-        if plan.kind == "badge":                # retired: the icon font draws the badges in one colour (owner 2026-10-25)
-            fx.parent.remove(fx)
-            deleted.append(old)
-            notes.append(f"{old} deleted: badge FX layers are retired"
-                         + (f"; the Ability's look ({blend}) now changes its badges' colours" if blend else ""))
-            continue
         ranges = [span for _, name, now, _, _ in target if name for span in now]
         left = [(phrase, why) for phrase, name, _, _, why in target if name is None]
         names = [name for _, name, _, _, _ in target if name]
@@ -4778,8 +4765,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     stroke-only layer shows it: the copy printed in the body's grey, review 2026-10-23), a status word among them keeping
     the chart's (a layer whose words are in several colours: the first, told). A hand-made overlay word layer over the
     ability (Gasoline's "Blazing") is hidden, the FX layer standing in for it when it names a styled chart status (one
-    naming anything else: told); an FX layer whose phrase the ability lacks is deleted, and so is a retired badge FX
-    layer ("Ability FX: (1CD)"). Under an overlay on the Ability or its group (one_colour) every badge and :sticker,
+    naming anything else: told); an FX layer whose phrase the ability lacks is deleted. Under an overlay on the Ability or its group (one_colour) every badge and :sticker,
     typed or kept, takes the icon font's Stylistic Alternates (set_alternates; owner 2026-10-25). Told too: another typed
     badge or token under the Ability's overlay (any opacity) or blending (Pin Light) (_tinted), a [type] token
     on a card with image icons in its gaps (image_icons), letters the icon font draws plainly (typed, or left by

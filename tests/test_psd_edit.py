@@ -1126,8 +1126,7 @@ def test_ability_edit_colours_a_status_word(clone, parser, chart, tmp_path):
 
 
 def test_fx_kind_names_how_each_fx_layer_is_made_again(chart):
-    """BUG 2: an ability edit makes every FX layer again, each keeping its own style (owner q6): badge or token runs
-    (none), a styled chart status, another word under a chart status's style (Monkey D Goofy's "1#1" under Become Back
+    """BUG 2: an ability edit makes every FX layer again, each keeping its own style (owner q6): a styled chart status, another word under a chart status's style (Monkey D Goofy's "1#1" under Become Back
     Money's gradient), and since 2026-10-23 one in a style no chart status has, or none ("own": Smoldering's stroke,
     +2/4/6 ATK's; the owner's ruling, the 2026-10-21 refusal gone). Only an FX layer that is no pixel layer refuses
     (Photoshop would draw a type layer from its text)."""
@@ -1137,8 +1136,8 @@ def test_fx_kind_names_how_each_fx_layer_is_made_again(chart):
     fx = [SimpleNamespace(name=name, kind="pixel") for name in names]
     assert [pe.fx_label(base, layer) for layer in fx] == ["(1CD) | (3U) | (OYT) | (ENDT)", "[fire]", "Blazing", "Frozen",
                                                            "Smoldering", "+2/4/6 ATK", "1"]
-    assert [pe.fx_kind(layer, base, chart) for layer in fx] == ["badge", "badge", "status", "status", "own", "own", "own"]
-    assert [pe.fx_kind(layer, base, None) for layer in fx] == ["badge", "badge"] + ["own"] * 5
+    assert [pe.fx_kind(layer, base, chart) for layer in fx] == ["own", "own", "status", "status", "own", "own", "own"]
+    assert [pe.fx_kind(layer, base, None) for layer in fx] == ["own"] * 7
     goofy = SimpleNamespace(name="Ability FX: 1#1", kind="pixel", tagged_blocks=chart["become back money"].blocks)
     assert pe.fx_kind(goofy, base, chart) == "styled" and set(pe.ANCHORED) == {"styled", "own"}
     typed = [SimpleNamespace(name=name, kind="type") for name in names[:4]]
@@ -1214,14 +1213,14 @@ def test_ambiguous_fx_layers(clone, chart):
 def test_own_style_fx_layers_are_made_again_in_their_style(clone, parser, chart, tmp_path):
     """Owner 2026-10-23: FX layers in no chart status's style are rebuilt in their own style, as the others (the 2026-10-21
     refusal went). Morpho Knight's Burning, +2/4/6 ATK and Smoldering strokes bake an appended sentence through every
-    gate: each record kept whole or cut again (rect and channels), its style bytes unchanged, no new layer; its badge
-    layer goes (retired, owner 2026-10-25). Without the chart the card still refuses (its FX words can't be told apart)."""
+    gate: each record kept whole or cut again (rect and channels), its style bytes unchanged, no new layer; its old badge
+    layer goes (its words fall in a badge). Without the chart the card still refuses (its FX words can't be told apart)."""
     paths = _at(clone, tmp_path, BADGED, MORPHO)
     psd_path = paths[0]
     psd = PSDImage.open(psd_path)
     layer = pe.ability_layer(psd)
     text, fx = pe.normalize_ability(layer.text), [f.name for f in pe.fx_layers(psd, layer)]
-    assert [pe.fx_kind(f, layer, chart) for f in pe.fx_layers(psd, layer)] == ["badge", "own", "status", "own", "own"]
+    assert [pe.fx_kind(f, layer, chart) for f in pe.fx_layers(psd, layer)] == ["own", "own", "status", "own", "own"]
     with pytest.raises(pe.Refused, match="status word layers over the ability"):
         pe.set_text_layer(psd, "ability", text + " Die.", str(clone / pe.FONTS_DIR), None)
     old = pe.normalize_ability(pe.parse_card(parser, psd_path, MORPHO)["card"]["ability"])
@@ -1245,15 +1244,15 @@ def _noop(clone, parser, chart, rel, tmp_path, paths=None):
 
 
 @text_edit
-def test_noop_ability_bake_retires_the_badge_layer(clone, parser, chart, tmp_path):
-    """Owner 2026-10-25: badge FX layers are retired. A no-op ability bake on Mini Doomer (a Gradient Overlay on Text)
-    deletes 'Ability FX: (BOT)', told, and sets Stylistic Alternates on its "(BOT)", in the Txt2 story only (TySh has no
+def test_noop_ability_bake_drops_an_old_badge_layer(clone, parser, chart, tmp_path):
+    """A no-op ability bake on Mini Doomer before its badge layer went (a Gradient Overlay on Text) deletes 'Ability FX:
+    (BOT)' (its words fall in a badge), told, and sets Stylistic Alternates on its "(BOT)", in the Txt2 story only (TySh has no
     such key), every gate passing; the re-parse reads the same text."""
     paths = _at(clone, tmp_path, BADGED, MINI_DOOMER)
     psd_path, png_path, baked = _noop(clone, parser, chart, MINI_DOOMER, tmp_path, paths)
     edit, = baked.edits
     assert edit.fx_names == [] and edit.dropped == ["Ability FX: (BOT)"] and edit.rebuilt == [] and edit.fx == []
-    assert baked.fx_notes == ["Ability FX: (BOT) deleted: badge FX layers are retired"]
+    assert baked.fx_notes == ["Ability FX: (BOT) deleted: its words now fall in a badge or token"]
     assert ("Ability FX: (BOT)", ["removed"]) in [(name, fields) for _, name, fields in baked.records]
     layer = pe.ability_layer(PSDImage.open(baked.psd_path))
     at = layer.text.index("(BOT)")
@@ -1379,8 +1378,8 @@ def test_typed_icons_under_any_tint(clone, parser, chart, tmp_path):
     """Review 2026-10-23: the tint counted only an opaque Normal overlay. Soul of Eden's Pin Light blend printed a typed
     (2CD) white on cyan, Ice Staff's two 69% gradients a pale blue one and Holy Mantle's Pin Light a washed [fire], The
     Patients' 78% opacity a dimmed one, Claw's and Miasma's Exposure 1 clipped to Text a pale one (reviews 2026-10-24):
-    _tinted names each, and the edit is flagged. Binge Eater, Pin Light with a badge layer: the layer goes (retired,
-    owner 2026-10-25) and a typed badge is told as any (no overlay: no alternates)."""
+    _tinted names each, and the edit is flagged. Binge Eater, Pin Light with an old badge layer: the layer goes (its
+    words fall in a badge) and a typed badge is told as any (no overlay: no alternates)."""
     fonts = str(clone / pe.FONTS_DIR)
     for rel, why in (("Items/Equip/2 Stars/Soul_of_Eden.psd", "its Pin Light blending"),
                      ("Items/Equip/2 Stars/Ice_Staff.psd", "its Gradient Overlay"),
@@ -1401,8 +1400,7 @@ def test_typed_icons_under_any_tint(clone, parser, chart, tmp_path):
     text = pe.normalize_ability(pe.ability_layer(psd).text) + " (2CD) Die."
     edit = pe.set_text_layer(psd, "ability", text, fonts, chart, parser=parser)
     assert edit.fx_names == [] and edit.dropped == ["Ability FX: (1CD)"]
-    assert "Ability FX: (1CD) deleted: badge FX layers are retired; the Ability's look (its Pin Light blending) now " \
-           "changes its badges' colours" in edit.notes
+    assert "Ability FX: (1CD) deleted: its words now fall in a badge or token" in edit.notes
     flagged(edit.notes, r"^unsupported-card: ability: \(2CD\): the Ability's look \(its Pin Light blending\) changes the "
                         r"typed badge's colours$")
 
@@ -1410,14 +1408,15 @@ def test_typed_icons_under_any_tint(clone, parser, chart, tmp_path):
 @text_edit
 def test_a_badge_edited_by_deleting_letters_takes_the_alternates(clone, parser, chart, tmp_path):
     """Review 2026-10-23: Turtle's "(1GCD)" made "(1CD)" keeps every character, so it does not count as typed; under
-    the Ability's Color Overlay it takes Stylistic Alternates all the same (every badge does), and the badge layer goes
-    (retired, owner 2026-10-25), every gate passing, nothing told about colours."""
+    the Ability's Color Overlay it takes Stylistic Alternates all the same (every badge does), and the old badge layer
+    goes, every gate passing, nothing told about colours."""
     paths = _at(clone, tmp_path, BADGED, TURTLE)
     old = pe.normalize_ability(pe.parse_card(parser, paths[0], TURTLE)["card"]["ability"])
     parsed, baked = _bake(clone, parser, TURTLE, {"ability": old.replace("(1GCD)", "(1CD)")}, tmp_path, chart, paths=paths)
     edit, = baked.edits
     assert edit.fx_names == [] and edit.dropped == ["Ability FX: (1GCD)"] and baked.fx == []
-    assert baked.fx_notes == ["Ability FX: (1GCD) deleted: badge FX layers are retired"]
+    assert baked.fx_notes == ["Ability FX: (1GCD) deleted: the edit changes its '(1GCD)' (now '(1CD)'), which would lose "
+                              "the layer's style"]
     layer = pe.ability_layer(PSDImage.open(baked.psd_path))
     assert [layer.text[a:b] for a, b in pe.stylistic_alternates(layer)] == ["(1CD)"]
 
@@ -1469,7 +1468,7 @@ def test_gate_fx_tells_a_bare_badge_under_a_tinted_ability(clone, tmp_path):
 def test_letters_a_deletion_leaves_in_the_icon_font_are_flagged(clone, parser, chart, tmp_path):
     """"(1GCD)" made "(GCD)" (Turtle) left "(GCD)" in the icon font, drawn as plain letters: the check looked only at
     typed characters. Any letter the icon font now draws plainly is told, unless it did before the edit. A "★" typed
-    for the badge is told under the overlay (a colour icon; the badge layer goes, retired)."""
+    for the badge is told under the overlay (a colour icon; the old badge layer goes)."""
     turtle = _at(clone, tmp_path, BADGED, TURTLE)[0]
     psd = PSDImage.open(turtle)
     text = pe.normalize_ability(pe.ability_layer(psd).text)
@@ -1477,7 +1476,7 @@ def test_letters_a_deletion_leaves_in_the_icon_font_are_flagged(clone, parser, c
     flagged(edit.notes, r"^unsupported-card: ability: '\(GCD\)' set in the icon font, which draws no badge or icon of it$")
     psd = PSDImage.open(turtle)
     edit = pe.set_text_layer(psd, "ability", text.replace("(1GCD)", "★"), str(clone / pe.FONTS_DIR), chart, parser=parser)
-    flagged(edit.notes, r"^Ability FX: \(1GCD\) deleted: badge FX layers are retired$")
+    flagged(edit.notes, r"^Ability FX: \(1GCD\) deleted: its words left the ability$")
     flagged(edit.notes, r"^unsupported-card: ability: ★: the Ability's look \(its Color Overlay\) changes the typed icon's")
 
 
