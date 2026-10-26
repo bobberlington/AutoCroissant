@@ -170,6 +170,24 @@ def test_layouts_rows_of_two_and_lines():
     assert [(unit.core, dx, dy) for unit, dx, dy in moves] == [((1025, 125, 1125, 225), 55, 0)] and free == [(1020, 175)]
 
 
+def test_dice_faces_and_a_v_funnel():
+    """A die's five is found by its spots (the middle a little low, as Nightmare's); a V's point becomes a touching pair
+    a tenth of a star lower, and no other shape or count takes the funnel."""
+    size = (100, 100)
+    die = [_unit(1080, 20), _unit(960, 20), _unit(1020, 75), _unit(1080, 140), _unit(960, 140)]
+    spots = pe._dice_five(die, size)
+    assert {spot: unit.core[:2] for spot, unit in spots.items()} == {
+        "top right": (1080, 20), "top left": (960, 20), "middle": (1020, 75), "bottom right": (1080, 140),
+        "bottom left": (960, 140)}
+    assert pe._dice_five(die[:4] + [_unit(1100, 75)], size) is None                  # the fifth off the middle
+    vee = [_unit(300, 0), _unit(0, 0), _unit(230, 110), _unit(70, 110), _unit(150, 210)]
+    (how, centres), = pe._funnel(pe._reading(vee, 100, True), size, 6)
+    assert how == "a V's point as a pair" and centres[4:] == [(250, 270), (150, 270)]
+    assert pe._funnel(pe._reading(vee, 100, True), size, 7) == []
+    assert pe._funnel(pe._reading([_unit(300, 0), _unit(0, 0), _unit(300, 110), _unit(0, 110), _unit(150, 210)], 100,
+                                  True), size, 6) == []                               # rows of two, the odd one under
+
+
 class SimpleLayer:
     """A layer's name and bbox, all the layout code reads."""
     def __init__(self, name, bbox):
@@ -442,7 +460,7 @@ def test_star_counter_on_real_cards(clone, parser, tmp_path):
 @icons
 def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
     """A dice 5 at 4 loses its middle (Nightmare, Kyle's 2 over 3); a moved star under a shadow is copied on top
-    instead (Flower of Decay); a new star off the banner the stars sit on refuses (Remote Detonator); the website's
+    instead (Flower of Decay); a new star off the banner the stars sit on refuses (Thunder Thighs); the website's
     header lays out the stars outside the group as the bake does (Massive Moss Charger), whose fifth would sit under the
     moss (refused)."""
     import commands.psd_details as pd
@@ -453,15 +471,66 @@ def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
     plan = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 4, parser, moving=True)
     assert plan.how == "rows of two" and [layer.name for layer in plan.hide] == ["star"] and not plan.moves
     assert len(plan.copies) == 2
-    rel = "N.M.E/Remote_Detonator.psd"
+    rel = "Items/Heal/2 Stars/Thunder_Thighs.psd"            # no room on its banner either (Remote Detonator's: below)
     with pytest.raises(pe.Refused, match="would leave 'Layer 13' under the stars"):
-        pe.plan_stars(*_open(parser, clone, rel, tmp_path), 3, parser)
+        pe.plan_stars(*_open(parser, clone, rel, tmp_path), 3, parser, moving=True)
     rel = "Auxiliary/Minions/Massive_Moss_Charger.psd"
     psd = PSDImage.open(_clone_card(clone, rel, tmp_path)[0])
     header = pd._star_header(psd, rel, tuple(parser.all_types), parser)
     assert parser._count_stars(psd) == 4 and len(header["units"]) == 4 and len(header["at"]["5"]) == 5   # the two
     #   outside are stars of the column
     assert "would sit under 'Massive_Moss_Charger'" in header["refused"]["5"]
+
+
+def _renamed(parser, clone, rel, tmp_path) -> tuple:
+    """A card whose stars are in "Group 1" (Yin Yarn, Leshy) with it named "Stars", as TTSCardMaker has it since."""
+    psd, _ = _open(parser, clone, rel, tmp_path)
+    next(layer for layer in psd.descendants() if layer.name == "Group 1").name = "Stars"
+    return psd, pe.parse_card(parser, str(tmp_path / "old" / Path(rel).name), rel, psd)
+
+
+def _centres(plan) -> list:
+    return [(round(x), round(y)) for x, y in plan.centres]
+
+
+@icons
+def test_star_cases_of_10_26(clone, parser, tmp_path):
+    """Leshy's half-opaque shadows are no stars (5, not 3); its 4 hides the bottom-left drop (the middle one would bare
+    its neighbour's shadow) and its 1 keeps it (the top-right's shadow would show). Yin Yarn's 6 would leave the yarn
+    clipped onto its group, as Paint Warrior's 4 its paint (both refused). A die's five keeps its faces (Yin Yarn,
+    Nightmare: 1 the middle, 2 and 3 a diagonal). Bolts and Screws' gear is no banner: a column. A refusal tells the
+    layout that came closest (Consolation Prize: off its banner, not its first layout's title). Remote Detonator's row
+    is centred and tightened on its banner; Crowned Magolor's V point becomes a pair."""
+    leshy = "Creatures/Other/5 Stars/Leshy.psd"
+    psd, parsed = _renamed(parser, clone, leshy, tmp_path)
+    assert parser._count_stars(psd) == 5
+    assert [layer.name for layer in pe.plan_stars(psd, parsed, 4, parser, moving=True).hide] == ["Layer 9 copy 2"]
+    assert _centres(pe.plan_stars(psd, parsed, 1, parser, moving=True)) == [(912, 209)]
+    yarn = "Creatures/Kirby/5 Stars/Yin_Yarn.psd"
+    psd, parsed = _renamed(parser, clone, yarn, tmp_path)
+    with pytest.raises(pe.Refused, match="would leave 'Layer 6', clipped onto its group"):
+        pe.plan_stars(psd, parsed, 6, parser, moving=True)
+    assert _centres(pe.plan_stars(psd, parsed, 2, parser, moving=True)) == [(1137, 108), (1024, 205)]   # a diagonal
+    paint = "Auxiliary/Minions/Paint_Warrior.psd"
+    with pytest.raises(pe.Refused, match="would leave 'pngwing.com copy 2', clipped onto its group"):
+        pe.plan_stars(*_open(parser, clone, paint, tmp_path), 4, parser)
+    psd, parsed = _open(parser, clone, "Creatures/Kirby/5 Stars/Nightmare.psd", tmp_path)
+    assert _centres(pe.plan_stars(psd, parsed, 1, parser, moving=True)) == [(1048, 118)]             # the middle
+    assert _centres(pe.plan_stars(psd, parsed, 3, parser, moving=True)) == [(1104, 70), (1048, 118), (992, 174)]
+    bolts = pe.plan_stars(*_open(parser, clone, "Items/Heal/1 Stars/Bolts_and_Screws.psd", tmp_path), 2, parser,
+                          moving=True)
+    assert bolts.how == "a column" and [(dx, dy) for _, dx, dy, _ in bolts.copies] == [(0, 130)]
+    with pytest.raises(pe.Refused, match="would leave 'Layer 13' under the stars"):
+        pe.plan_stars(*_open(parser, clone, "Items/Support/1 Stars/Consolation_Prize.psd", tmp_path), 2, parser,
+                      moving=True)
+    psd, parsed = _open(parser, clone, "N.M.E/Remote_Detonator.psd", tmp_path)
+    row = pe.plan_stars(psd, parsed, 3, parser)
+    assert row.how == "a row on its banner" and len(row.copies) == 1
+    assert _centres(row) == [(1127, 98), (1063, 98), (999, 98)]         # tightened from its pitch of 74 to fit
+    magolor = pe.plan_stars(*_open(parser, clone, "Creatures/Kirby/5 Stars/Crowned_Magolor.psd", tmp_path), 6, parser,
+                            moving=True)
+    assert magolor.how == "a V's point as a pair" and [(dx, dy) for _, dx, dy in magolor.moves] == [(55, 12)]
+    assert len(magolor.copies) == 1 and _centres(magolor)[4:] == [(252, 326), (142, 326)]
 
 
 def _open(parser, clone, rel, tmp_path) -> tuple:

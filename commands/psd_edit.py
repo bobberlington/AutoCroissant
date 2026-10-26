@@ -5575,7 +5575,25 @@ def _stars_blocked(psd: PSDImage, moves: list, clear: list, below: bool = False)
         if in_header(_moved_box(unit.core, dx, dy), psd.height) == below:     # the count reads no star there
             return f"a star at {tuple(int(v) for v in _moved_box(unit.core, dx, dy))} would sit " + \
                 ("above" if below else "below") + " the card's middle"
+    for unit, dx, dy in moves:                  # off a texture clipped onto its group, a star prints bare
+        box = _moved_box(unit.core, dx, dy)
+        for texture in _textures(unit):
+            ink = _ink(texture)
+            if ink is not None and _ink_share(ink, box) < TEXTURE_KEEP:
+                return f"a star at {tuple(int(v) for v in box)} would leave {texture.name!r}, clipped onto its group"
     return None
+
+
+def _textures(unit: _Unit) -> list:
+    """The drawn layers clipped onto a group holding the star (Yin Yarn's yarn 'Layer 6' on its Stars group)."""
+    found: dict = {}
+    for layer in unit.layers:
+        for group in _ancestors(layer):
+            for above in _clip_chain(group):
+                b = tuple(above.bbox)
+                if above.visible and above.kind in TEXTURE_KINDS and b[2] > b[0] and b[3] > b[1]:
+                    found[id(above)] = above
+    return list(found.values())
 
 
 RELAID = ("rows of two, laid out again",)     # _more_layouts' layouts that change the card's own (told)
@@ -5588,6 +5606,17 @@ SHADE_RIM = 2               # px: an anti-aliased rim is no strip
 SHADE_PX = 100              # px of a star under a shadow strip that _shaded allows (none on the cards' own)
 COVER_MORE = 0.05           # a moved or new star may have this share more of its ink under art drawn over it than now
 KEPT_TRIES = 252            # _kept_shape's most sets of stars to hide tried (10 choose 5)
+REVEAL_REACH = 0.15         # a kept star's ink this share of its core's size off its core: its art (Leshy's shadow)
+TEXTURE_KEEP = 0.9          # a moved or new star keeps this share of its core under a texture clipped onto its group
+TEXTURE_KINDS = ("pixel", "smartobject", "shape")
+PLAIN_LEVELS = 16           # a backdrop's pixels within this of their median colour (each channel, 0-255)...
+PLAIN_SHARE = 0.45          # ...this share of them round the stars: a banner, not art (Bolts and Screws' gear)
+BANNER_GAP = 6              # px a row on its banner keeps from the text's ink and the banner's end
+BANNER_FULL = 0.9           # a banner's column counts where it inks this share of the stars' middle half
+BANNER_TEXT_GAP = 8         # px at least between the text and the row (else the stars' own gap)
+BANNER_PITCH_MIN = 1 - OVERLAP   # star widths: a row on its banner tightens down to this pitch
+FUNNEL_DROP = 0.1           # star heights a V's point drops as it becomes a pair
+DICE_FACES = {1: ("middle",), 2: ("top right", "bottom left"), 3: ("top right", "middle", "bottom left")}  # kept
 
 
 def _named_star(layer) -> bool:
@@ -5815,7 +5844,7 @@ def _kept_shape(order: list, size: tuple, count: int) -> Optional[list]:
     """
     The stars to hide, 3 or more staying, when neither end of the reading order leaves a layout: the latest ones whose
     rest is a known layout, else whose rest is mirrored about the shape's middle (a dice 5 loses its middle: Nightmare,
-    Kyle's 2 over 3, The Master's); None.
+    Kyle's 2 over 3, The Master's), none that bares a kept star's shadow (_bares: Leshy's); None.
     """
     drop = len(order) - count
     if comb(len(order), drop) > KEPT_TRIES:
@@ -5825,11 +5854,70 @@ def _kept_shape(order: list, size: tuple, count: int) -> Optional[list]:
     mirrored = lambda kept: all(any(abs(2 * middle - a.centre[0] - b.centre[0]) <= tol and abs(a.centre[1] - b.centre[1])
                                     <= tol for b in kept) for a in kept)
     tries = [set(gone) for gone in combinations(range(len(order) - 1, -1, -1), drop)]
+    alphas: dict = {}
     for good in (lambda kept: _known_layout(kept, size), mirrored):
         for gone in tries:
-            if good([unit for i, unit in enumerate(order) if i not in gone]):
-                return [unit for i, unit in enumerate(order) if i in gone]
+            kept = [unit for i, unit in enumerate(order) if i not in gone]
+            hidden = [unit for i, unit in enumerate(order) if i in gone]
+            if good(kept) and not _bares(hidden, kept, alphas):
+                return hidden
     return None
+
+
+def _dice_five(units: list, size: tuple) -> Optional[dict]:
+    """
+    The stars by spot ("top right", "middle", "bottom left"...) when they are a die's five: four corners in two level
+    rows whose columns line up, the fifth on their middle (Nightmare, The Lich King; hand-placed: twice _tol); None.
+    """
+    if len(units) != 5:
+        return None
+    tol = 2 * _tol(max(size))
+    mx, my = sum(unit.centre[0] for unit in units) / 5, sum(unit.centre[1] for unit in units) / 5
+    middle = min(units, key=lambda unit: (unit.centre[0] - mx) ** 2 + (unit.centre[1] - my) ** 2)
+    rest = sorted((unit for unit in units if unit is not middle), key=lambda unit: unit.centre[1])
+    top, bottom = (sorted(row, key=lambda unit: -unit.centre[0]) for row in (rest[:2], rest[2:]))
+    if any(abs(row[0].centre[1] - row[1].centre[1]) > tol for row in (top, bottom)) \
+            or any(abs(top[k].centre[0] - bottom[k].centre[0]) > tol for k in (0, 1)) \
+            or bottom[0].centre[1] - top[0].centre[1] < size[1] / 2 \
+            or top[0].centre[0] - top[1].centre[0] < size[0] / 2:
+        return None
+    if abs(middle.centre[0] - sum(unit.centre[0] for unit in rest) / 4) > tol \
+            or abs(middle.centre[1] - sum(unit.centre[1] for unit in rest) / 4) > tol:
+        return None
+    return {"top right": top[0], "top left": top[1], "middle": middle, "bottom right": bottom[0],
+            "bottom left": bottom[1]}
+
+
+def _bares(gone: list, kept: list, alphas: dict) -> bool:
+    """
+    Whether hiding the gone stars bares more than SHADE_PX of a kept star's ink (any alpha) under their solid ink and
+    away from its own core (grown by REVEAL_REACH: no glow round it): Leshy's middle drop over its neighbour's shadow
+    strip. alphas: id(layer) -> _alpha.
+    """
+    def inks(unit):
+        out = []
+        for leaf in [leaf for layer in unit.layers for leaf in _drawn(layer)]:
+            if id(leaf) not in alphas:
+                alphas[id(leaf)] = _alpha(leaf)
+            if alphas[id(leaf)] is not None and alphas[id(leaf)].size:
+                out.append((tuple(leaf.bbox), alphas[id(leaf)]))
+        return out
+    over = [one for unit in gone for one in inks(unit)]
+    for unit in kept:
+        x0, y0, x1, y1 = unit.core
+        gx, gy = REVEAL_REACH * (x1 - x0), REVEAL_REACH * (y1 - y0)
+        for (bx, by, _, _), alpha in inks(unit):
+            ys, xs = np.ogrid[by:by + alpha.shape[0], bx:bx + alpha.shape[1]]
+            away = (alpha > SHADE_ALPHA[0]) & ~((xs >= x0 - gx) & (xs < x1 + gx) & (ys >= y0 - gy) & (ys < y1 + gy))
+            for (hx, hy, _, _), theirs in over:
+                cx0, cy0 = max(bx, hx), max(by, hy)
+                cx1, cy1 = min(bx + alpha.shape[1], hx + theirs.shape[1]), min(by + alpha.shape[0], hy + theirs.shape[0])
+                if cx1 <= cx0 or cy1 <= cy0:
+                    continue
+                solid = theirs[cy0 - hy:cy1 - hy, cx0 - hx:cx1 - hx] > 1 - SHADE_ALPHA[0]
+                if int((away[cy0 - by:cy1 - by, cx0 - bx:cx1 - bx] & solid).sum()) > SHADE_PX:
+                    return True
+    return False
 
 
 def _shade(lower: list, upper: list) -> int:
@@ -5955,7 +6043,7 @@ def _ink_share(ink: tuple, box: tuple) -> float:
 def _backdrop(psd: PSDImage, shown: list) -> Optional[tuple]:
     """
     (layer, ink) of what the stars sit on: the smallest drawn layer behind them, under half the canvas, whose ink holds
-    BACKDROP_SHARE of every shown star's core (Remote Detonator's paper banner); None.
+    BACKDROP_SHARE of every shown star's core (Remote Detonator's paper banner), if plain there (_plain_banner); None.
     """
     layers = list(psd.descendants())
     at = {id(layer): i for i, layer in enumerate(layers)}
@@ -5971,8 +6059,31 @@ def _backdrop(psd: PSDImage, shown: list) -> Optional[tuple]:
     for _, layer in sorted(found, key=lambda one: one[0]):
         ink = _ink(layer)
         if ink is not None and all(_ink_share(ink, unit.core) >= BACKDROP_SHARE for unit in shown):
-            return layer, ink
+            return (layer, ink) if _plain_banner(layer, shown) else None   # art (a gear) is no banner
     return None
+
+
+def _plain_banner(layer, shown: list) -> bool:
+    """Whether a backdrop is plain round the stars (their box grown by half a star): PLAIN_SHARE of its solid pixels
+    within PLAIN_LEVELS of their median colour (a banner, not Bolts and Screws' gear); True when unread."""
+    box = union_box([unit.core for unit in shown])
+    w = max(unit.core[2] - unit.core[0] for unit in shown) // 2
+    h = max(unit.core[3] - unit.core[1] for unit in shown) // 2
+    b = tuple(layer.bbox)
+    alpha = _alpha(layer)
+    try:
+        pixels = layer.numpy()
+    except Exception:
+        return True
+    if alpha is None or pixels is None or pixels.ndim != 3 or pixels.shape[2] < 3:
+        return True
+    x0, y0 = int(max(0, box[0] - w - b[0])), int(max(0, box[1] - h - b[1]))
+    x1, y1 = int(max(0, box[2] + w - b[0])), int(max(0, box[3] + h - b[1]))
+    rgb = pixels[y0:y1, x0:x1, :3][alpha[y0:y1, x0:x1] > INK_ALPHA] * 255
+    if not len(rgb):
+        return True
+    median = np.median(rgb, axis=0)
+    return float((np.abs(rgb - median).max(axis=1) <= PLAIN_LEVELS).mean()) >= PLAIN_SHARE
 
 
 def _off_backdrop(back: Optional[tuple], moves: list, copies: list) -> Optional[str]:
@@ -5986,17 +6097,21 @@ def _off_backdrop(back: Optional[tuple], moves: list, copies: list) -> Optional[
     return None
 
 
-def _more_layouts(order: list, size: tuple, count: int, psd: PSDImage) -> list:
+def _more_layouts(order: list, size: tuple, count: int, psd: PSDImage, back: Optional[tuple] = None,
+                  clear: list = ()) -> list:
     """
-    More layouts for stars in a shape _star_layouts does not carry on (LAYOUT_SUPPORT.md): its shortest row grows at
-    the end that keeps the shape centred (Lorian's 2 over 3, Springtrap's), each new star clear of the others and on
-    the card; else, or when the stars overlap (a dice face), every star laid out again as rows of two from the shape's
-    top-right star (God Tamer's and Michael's Blessing's dice: their six; Morpho Knight's 2-1-2; told). Rows of two
-    whose columns do not line up once carried on (the zombies' 2 over 1) try the rows of two again first.
+    More layouts for stars in a shape _star_layouts does not carry on (LAYOUT_SUPPORT.md): a V's point becomes a pair
+    (_funnel: Crowned Magolor's); its shortest row grows at the end that keeps the shape centred (Lorian's 2 over 3,
+    Springtrap's), each new star clear of the others and on the card; else, or when the stars overlap (a dice face),
+    every star laid out again as rows of two from the shape's top-right star (God Tamer's and Michael's Blessing's dice:
+    their six; Morpho Knight's 2-1-2; told). Rows of two whose columns do not line up once carried on (the zombies' 2
+    over 1) try the rows of two again first. Last, a row on its backdrop (back, _backdrop; clear: the text and icons
+    it keeps from) centred and tightened there (_banner_row: Remote Detonator's).
     """
     out = []
     if count <= len(order):
         return out
+    funnel, banner = _funnel(order, size, count), _banner_row(order, size, count, psd, back, clear)
     w, h = size
     rows = _rows(order, h, False)
     pitches = sorted(row[i + 1].centre[0] - row[i].centre[0] for row in rows for i in range(len(row) - 1))
@@ -6032,8 +6147,74 @@ def _more_layouts(order: list, size: tuple, count: int, psd: PSDImage) -> list:
     steps = [b - a for a, b in zip(ys, ys[1:]) if b - a >= h * 0.9]
     relaid = (RELAID[0], _pyramid_spots((right, right - pitch, top, min(steps) if steps else h * 1.05, False), count))
     if new and _skewed_pairs(out[0][1], h, slack):     # skewed rows of two: the templates' rows of two first (owner
-        return [relaid] + out                       # 2026-10-26, Polevaulter Zombie), then carried on
-    return out + [relaid]
+        return funnel + [relaid] + out + banner     # 2026-10-26, Polevaulter Zombie), then carried on
+    return funnel + out + [relaid] + banner
+
+
+def _funnel(order: list, size: tuple, count: int) -> list:
+    """
+    One star more on a V (rows of two narrowing down to one centred star: Crowned Magolor's round its light icon): its
+    point becomes a touching pair centred where it was, FUNNEL_DROP of a star lower, so the V still narrows; [] for
+    another shape or count, or when the pair would cover more than OVERLAP of a star.
+    """
+    w, h = size
+    rows = _rows(order, h, True)
+    last = len(rows) - 1
+    if count != len(order) + 1 or last < 2 or len(rows[last]) != 1 or any(len(row) != 2 for row in rows[:last]):
+        return []
+    tol = _tol(max(size))
+    (x, y), widths = rows[last][0].centre, [row[0].centre[0] - row[1].centre[0] for row in rows[:last]]
+    if any(abs(row[0].centre[1] - row[1].centre[1]) > tol or abs((row[0].centre[0] + row[1].centre[0]) / 2 - x) > tol
+           for row in rows[:last]) or any(lower > upper - tol for upper, lower in zip(widths, widths[1:])) \
+            or widths[last - 1] - tol <= w:
+        return []
+    pair = [(x + w / 2, y + FUNNEL_DROP * h), (x - w / 2, y + FUNNEL_DROP * h)]
+    cores = [(px - w / 2, py - h / 2, px + w / 2, py + h / 2) for px, py in pair]
+    if any(_covers(core, unit.core) > OVERLAP or _covers(unit.core, core) > OVERLAP for core in cores for unit in order
+           if unit is not rows[last][0]):
+        return []
+    return [("a V's point as a pair", [unit.centre for row in rows[:last] for unit in row] + pair)]
+
+
+def _banner_row(order: list, size: tuple, count: int, psd: PSDImage, back: Optional[tuple], clear: list) -> list:
+    """
+    One row of stars on its backdrop (back: _backdrop's (layer, ink)) at `count`: the free run along the backdrop's
+    middle half at the stars' height (its columns BANNER_FULL inked, BANNER_GAP in from its end and from the text's ink
+    left of the stars, then the stars' own gap, BANNER_TEXT_GAP at least); centred there at the card's pitch, else
+    tightened to fill it down to BANNER_PITCH_MIN; [] for no backdrop, more than one row, or no room.
+    """
+    if back is None or count <= len(order) or len(_rows(order, size[1], True)) != 1:
+        return []
+    w, h = size
+    (bx, by, _, _), solid = back[1]
+    y = sum(unit.centre[1] for unit in order) / len(order)
+    band = solid[max(0, int(y - h / 4) - by):max(0, int(y + h / 4) - by)]
+    full = np.nonzero(band.mean(axis=0) >= BANNER_FULL)[0] if band.size else []
+    if not len(full):
+        return []
+    left, right = bx + int(full.min()) + BANNER_GAP, min(bx + int(full.max()) + 1, psd.width) - BANNER_GAP
+    y0, y1 = min(unit.core[1] for unit in order), max(unit.core[3] for unit in order)
+    first = min(unit.core[0] for unit in order)
+    for layer in clear:
+        ink = _ink(layer)
+        if ink is None:
+            continue
+        (tx, ty, _, _), theirs = ink
+        inked = np.nonzero(theirs[max(0, int(y0) - ty):max(0, int(y1) - ty)].any(axis=0))[0]
+        if len(inked) and tx + int(inked.max()) < first + w:          # text left of the stars, in their rows
+            left = max(left, tx + int(inked.max()) + 1 + BANNER_GAP)
+    pitches = sorted(order[i].centre[0] - order[i + 1].centre[0] for i in range(len(order) - 1))
+    pitch = pitches[len(pitches) // 2] if pitches else w * 1.05
+    left += max(BANNER_TEXT_GAP, pitch - w)
+    span = right - left
+    if (count - 1) * pitch + w <= span:
+        x = right - (span - (count - 1) * pitch - w) / 2 - w / 2
+    else:
+        pitch = (span - w) / (count - 1)
+        if pitch < BANNER_PITCH_MIN * w:
+            return []
+        x = right - w / 2
+    return [("a row on its banner", [(x - i * pitch, y) for i in range(count)])]
 
 
 def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDParser] = None, moving: bool = False,
@@ -6044,12 +6225,14 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
 
     - a count's own folder ("3 stars" beside "5 stars", the templates' 1-5 layouts): it shows, the others hide;
     - else, in the group holding the stars one by one: fewer hide the last in reading order (rows top to bottom, each
-      right to left; the first when only that leaves a layout); more show the card's own hidden stars first, then copy
+      right to left; the first when only that leaves a layout; none that bares a kept star's shadow: _bares), a die's
+      five keeps the die's faces (DICE_FACES); more show the card's own hidden stars first, then copy
       the last star layer at the layout's spacing (_star_layouts, the first that stays clear): rows of two with an odd
       one centred under or over them (the templates; the odd one moves aside when a pair fills its row, and back to
-      the middle when one goes), a row or column carried on, a zigzag carried on, a lone star's column. A row centred
-      on the card stays centred at its pitch (Grimora's). A new or moved star must stay on the canvas, off the text and
-      type icons, and add exactly one to what the parser counts.
+      the middle when one goes), a row or column carried on, a zigzag carried on, a lone star's column, then
+      _more_layouts'. A row centred on the card stays centred at its pitch (Grimora's). A new or moved star must stay
+      on the canvas, off the text and type icons, under a texture clipped onto its group, and add exactly one to what
+      the parser counts; a refusal gives the reason of the layout that came closest.
     - star-icon layers outside the group (Nosk's 'Hk star') are stars of the layout (R2); a star drawn twice on one
       spot is one star (R3: Tainted Eden, Living Bread); one layer drawing several is split into masked copies first
       (R4: split_stars; Grimora, Dimension D); a second creature's stars upside down below the midline (Tainted
@@ -6175,8 +6358,15 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         """
         size = _median_size(shown)
         counted = (lambda show_: PSDParser.stars_below(psd, types, stars, show_)) if below else total_of
-        blocked = lambda moves: (_stars_blocked(psd, _as_drawn(moves), clear, below)
-                                 or _covered(psd, _as_drawn(moves), mine, inks))   # not under the art (MMC's moss)
+
+        def failed(moves: list) -> tuple:
+            """(why, how far its checks got: 0 not placed, 1 under art), else (None, 2): the deciding reason's rank."""
+            why = _stars_blocked(psd, _as_drawn(moves), clear, below)
+            if why:
+                return why, 0
+            why = _covered(psd, _as_drawn(moves), mine, inks)                       # not under the art (MMC's moss)
+            return (why, 1) if why else (None, 2)
+        blocked = lambda moves: failed(moves)[0]
         backdrop = lambda units: _backdrop(psd, [_drawn_as(unit) for unit in units])
         off_back = lambda back, moves, copies: _off_backdrop(back, _as_drawn(moves), _as_drawn(copies))
 
@@ -6187,16 +6377,20 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         how, copies = "", []
         if count < len(shown):              # fewer: hide the last in reading order (or the first, when that leaves a
             order = _reading(shown, size[1], True)      # layout and the last does not); rows of two centre an odd one
-            drop, hide, moves = len(shown) - count, None, []
+            drop, hide, moves, alphas = len(shown) - count, None, [], {}
             if centred:                     # a centred row stays centred (Grimora's)
                 moves = _place(order[:count], _centred_spots(centred, count, psd.width), size)[0]
                 if not (blocked(moves) or shaded(order[:count], moves) or off_back(backdrop(shown), moves, [])):
                     hide = order[count:]
                 else:
                     moves = []
-            if hide is None:
+            die = _dice_five(order, size) if hide is None and count in DICE_FACES else None
+            if die:                         # a die's five: the die's own face (1 the middle, 2 and 3 a diagonal)
+                keep = [die[spot] for spot in DICE_FACES[count]]
+                hide = [unit for unit in order if not any(unit is one for one in keep)]
+            if hide is None:                # none that bares a kept star's shadow (Leshy's 1: its right drop's)
                 hide = next((gone for kept, gone in ((order[:count], order[count:]), (order[drop:], order[:drop]))
-                             if _known_layout(kept, size)), None)
+                             if _known_layout(kept, size) and not _bares(gone, kept, alphas)), None)
             if hide is None:
                 model = _pyramid(order, size)
                 moves = _place(order[:count], _pyramid_spots(model, count), size)[0] if model else []
@@ -6240,18 +6434,20 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
                          key=lambda unit: max(container.index(layer) for layer in unit.layers
                                               if layer.parent is container))   # the last star layer
             first, back = None, backdrop(order)
+            more = _more_layouts(order, size, count, psd, None if below else back, clear)   # a row on its banner last
             if centred:                     # the centred row once the hidden stars shown are in it
                 layouts = [("a centred row", _centred_spots(centred, count, psd.width))] + \
-                    _star_layouts(order, size, count) + _more_layouts(order, size, count, psd)
+                    _star_layouts(order, size, count) + more
             else:
-                layouts = _star_layouts(order, size, count) + _more_layouts(order, size, count, psd)
+                layouts = _star_layouts(order, size, count) + more
             for name, spots in layouts:
                 moves, free = _place(order, spots, size)
                 under = [move for move in shaded(order, moves) if move[0] is not source]
                 moves = [move for move in moves if move not in under]       # under a shadow: hidden, a copy (on top)
                 free += [(unit.centre[0] + dx, unit.centre[1] + dy) for unit, dx, dy in under]
                 copies = [(source, round(spot[0] - source.centre[0]), round(spot[1] - source.centre[1]), "") for spot in free]
-                why = blocked(moves + [(unit, dx, dy) for unit, dx, dy, _ in copies]) or off_back(back, moves, copies)
+                why, far = failed(moves + [(unit, dx, dy) for unit, dx, dy, _ in copies])
+                why = why or off_back(back, moves, copies)
                 if why is None:
                     plan.moves += _as_drawn(moves)
                     copies = _as_drawn(copies)
@@ -6263,9 +6459,10 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
                         plan.notes.append(f"stars: {name} (the card's own layout does not go on to {count})")
                     shown = [unit for unit in shown if not any(unit is one for one, _, _ in under)]
                     break
-                first = first or why
+                if first is None or far > first[0]:     # the deciding reason: the layout whose checks got furthest
+                    first = (far, why)
             else:
-                refuse(first or f"{len(order)} stars laid out as no row, column or rows of two")
+                refuse(first[1] if first else f"{len(order)} stars laid out as no row, column or rows of two")
         return how, shown, copies, size
 
     how, kept, copies, size = lay_out(shown, hidden, container, count)
