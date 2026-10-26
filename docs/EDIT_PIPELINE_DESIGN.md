@@ -387,7 +387,9 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    `python -m commands.txt2_repair` rewrites it; a fork without `TypeLayer.sync_story` edits no text (transient error).
    The gate also holds every type layer's `TextIndex` (a layer without one orphans its story) and the styles: per
    character, the story's font, size, colours and the other mirrored keys equal the layer's (`story_style_drift`; a card
-   that already differs is refused `unsupported-card`). A forced line break (`\x03`, a newline on the website) stays
+   that already differs is refused `unsupported-card`). Kerning too (B12, 2026-10-25), but never refused: an edited
+   layer's TySh takes its story's kerning first (`follow_kerning`: Photoshop kerns as the story says; 220 of 813 cards
+   differ, mostly the template's Health label) and a layer no edit set keeps its own. A forced line break (`\x03`, a newline on the website) stays
    one where the edit kept it (`keep_breaks`; the fork ends a paragraph run there, as Photoshop does). **Typed badges and
    icons (owner 2026-10-23 ~17:40):** every timing tag and every token the stoogedings font draws that the edit types
    (`icon_text`: a tag of `badge_tags()` in any letter case, "(1cd)"; a `[token]` the parser's vocabulary knows with a

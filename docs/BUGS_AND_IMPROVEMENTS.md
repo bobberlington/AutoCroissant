@@ -1,6 +1,6 @@
 # AutoCroissant — Known Bugs and Future Improvements
 
-Compiled 2026-07-11 from a full repo audit; revised 2026-10-19, 2026-10-20, 2026-10-21, 2026-10-23 and 2026-10-25. Detail, evidence and procedures
+Compiled 2026-07-11 from a full repo audit; revised 2026-10-19, 2026-10-20, 2026-10-21, 2026-10-23 and 2026-10-25 (twice). Detail, evidence and procedures
 live in the skill library under `.claude/skills/`; each entry points at its owner (`ttscardmaker-companion`
 covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes route through
 `autocroissant-change-control`. When an entry is fixed or retired, move its story to
@@ -47,6 +47,9 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 - 2026-10-24/25 (report `docs/Finished/session-2026-10-24/`): B11 fixed in the fork (74a65e2b, round 12); B9 moot since the
   cutover (the legacy tree read goes with data build step 10); D3, D8 and V6 re-parsed (the `data` branch has them);
   D7 (BUG 2) landed 10-24 (phase 6 48cfd94; `work/badgealt` replaces the badge FX layers); V2 and V5 verified.
+- 2026-10-25 (work/bakebugs, archaeology 10.34): B12, the bake follows a layer's Txt2 kerning; text typed beside a
+  coloured word takes the body colour (Binge Eater); a whole-ability edit and a part edit keep the characters
+  `normalize_ability` strips (Deepnest, Blasphemous Blade); an Ability past its panel is set smaller to fit (Autopsy Report).
 
 ---
 
@@ -54,9 +57,7 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 
 ### 1.1 OPEN — high priority
 
-| # | Bug | Where | Impact | Workaround / candidate fix | Detail owner |
-|---|-----|-------|--------|---------------------------|--------------|
-| B12 | **`psd_edit.story_style_drift` doesn't compare the kerning setting** (found 2026-10-23 checking the Kung-Fu-Panda font). Pandamonium's Health layer has kerning on in TySh and off in its Txt2 story; the drift check passes it. | `commands/psd_edit.py` `story_style_drift` | A layer whose Txt2 kerning differs from TySh goes unreported | Not fixed: compare the kerning key too, with a test on Pandamonium Health. Evidence `~/std-work-1022/kfp/scripts/kfp_story.py` | `docs/EDIT_PIPELINE_DESIGN.md` |
+None open (2026-10-25: B12 and the plan's three bake bugs fixed, archaeology 10.34).
 
 ### 1.2 OPEN — data debt (as of 2026-10-19)
 

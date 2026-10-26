@@ -842,6 +842,31 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   font checks folded into card-guards.yml's check job. Kept: the read-only diagnostics on db/ JSON.
 - **Status**: built 2026-10-25 on work/clean in both repos.
 
+### 10.34 Bake bugs: kerning, typed colour, dropped characters, text past the panel (was B12 and plan items, 2026-10-25)
+
+- **Symptom**: (a) Binge Eater's ", 1T" typed after its olive "SPD" printed olive; (b) a whole-ability edit dropped
+  what the parser's reading strips (Deepnest's "reroll :3" baked "reroll:3"), and a part edit removing a space before
+  punctuation ("+100% Lifesteal ." -> ".") was skipped as redundant; (c) Autopsy Report's appended sentence printed a
+  third line under its panel (told, not fitted); (d) B12: Pandamonium's Health is kerned off in its Txt2 story, on in
+  TySh, and `story_style_drift` passed it.
+- **Root cause**: (a) `edit_styles` gave an insertion the nearest character's fill, the coloured word beside it;
+  (b) the single-layer path set the website's text (the parser's reading, `normalize_ability`) as given, and
+  `_part_same` compared parts by that rule; (c) no fit rule in the bake (the website's preview shrinks the text);
+  (d) the Txt2 kerning (story feature 11: 0 off) is no STORY_MIRROR key, and the engine kerns as TySh says.
+- **Evidence**: branch work/bakebugs. (a) text typed between two runs or at a line's end in a line of several colours
+  takes `body_fill`; inside a run, that run's. (b) `from_reading` projects the edit over the layer (`project`, as over
+  several layers); `_part_same` keeps quotes and spaces. (c) `fit_below`: past the old text onto the design below
+  (`ink_beyond`) or off the canvas, the Ability is scaled by 0.94 down to 40% (the preview's `fit`) until it is no lower
+  than the old text; a tabbed layer or no fitting size: as before, told. (d) `story_style_drift` compares kerning on
+  characters that end a pair (Photoshop writes a paragraph's first character's TySh kerning off); 220 of 813 PSDs differ
+  (196 the template's Health label, 42 Abilities, 10 titles), so the bake does not refuse it: `follow_kerning` sets the
+  edited layer's TySh from its story, `whole_redraw` too, and the after-save gate refuses only new drift. Measured over
+  the 57 drifted titles and Abilities: 4 drew closer to their pixels (Soul Sanctum IoU 0.67 -> 0.995, Colosseum of Fools
+  0.55 -> 0.98), none worse; an edit on them spliced instead of redrawn whole (17.3% and 7.7% bad -> 0.3% and 0.6%).
+  Proof bakes (`PSD_DIRTY_VERIFY=1`, base vs branch): 11 other cards byte-identical (Mini Doomer's title too), The Hive
+  keeps its trailing blank, Frostmourne's off-canvas line fitted at 88%.
+- **Status**: built 2026-10-25 on work/bakebugs.
+
 ## How to add an entry
 
 Use this template (the evidence bar — one mechanism must explain ALL observations including negatives, numbers predicted before measured — is owned by autocroissant-research-methodology; retired ideas from the idea lifecycle land here too):
