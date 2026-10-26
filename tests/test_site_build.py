@@ -166,10 +166,11 @@ def test_a_picture_only_duplicate_is_its_originals_card(bs, repo, tmp_path, monk
     (duplicate_of): the site lists it parsed, with Alpha's data, its own name and picture (owner 10-26)."""
     root = repo["root"]
     _png(root / "Creatures/Other/2 Stars/Gamma.png", 70)
-    (root / "site" / "Card Edits.json").write_text(json.dumps({"cards": {"Gamma": {"dup_of": "Alpha"}}}), encoding="utf-8")
+    stats, old, details, _ = cdb.read_db(str(repo["db"]))
+    hp = stats["Alpha"].stats.hp + 1                         # a PSD edit on Alpha: pending on Alpha, never on Gamma
+    (root / "site" / "Card Edits.json").write_text(json.dumps({"cards": {"Gamma": {"dup_of": "Alpha"}, "Alpha": {"hp": hp}}}), encoding="utf-8")
     subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(root), "-c", "user.name=M", "-c", "user.email=m@x", "commit", "-q", "-m", "Gamma"], check=True)
-    stats, old, details, _ = cdb.read_db(str(repo["db"]))
     gamma = copy.deepcopy(stats["Alpha"])
     gamma.name, gamma.duplicate_of = "Gamma", "Alpha"
     stats["Gamma"] = gamma
@@ -179,6 +180,7 @@ def test_a_picture_only_duplicate_is_its_originals_card(bs, repo, tmp_path, monk
     assert "parsed" not in g and g["dup"] == alpha["id"] and alpha["dups"] == [g["id"]]
     assert g["png"] == "Creatures/Other/2 Stars/Gamma.png" and g["img"] != alpha["img"]
     assert all(g.get(k) == alpha.get(k) for k in ("type", "series", "stars", "types", "hp", "def", "atk", "spd", "ability", "author"))
+    assert alpha["pending"] == ["hp"] and "pending" not in g          # the bake never redraws Gamma.png
     game = (tmp_path / "a" / "dist" / "game.txt").read_text(encoding="utf-8")
     assert "duplicate of Alpha" in next(line for line in game.splitlines() if line.startswith("Gamma |"))
 
