@@ -43,6 +43,9 @@ type_emojis.json
 type_emojis.json.tmp
 # the bot's copy of the card data (the data branch's db/) after the cutover (commands/card_sync.py)
 card_data/
+# the card repo's last tree and its ETag: the card list at startup (commands/query_card.py)
+card_tree.json
+card_tree.json.tmp
 
 # Music downloads
 music/

@@ -3,6 +3,8 @@ from copy import copy
 from dataclasses import dataclass
 from datetime import date, datetime, time as dt_time, timedelta
 from difflib import get_close_matches, SequenceMatcher
+from hashlib import sha256
+from json import dumps, loads
 from discord import Embed, Interaction
 from os.path import basename, splitext
 from asyncio import to_thread
@@ -16,8 +18,9 @@ from pandas import DataFrame, Index, Series, concat, to_numeric
 from re import compile, escape, IGNORECASE
 from urllib.parse import quote
 
-from global_config import CARD_REPO, EDITS_PATH, RULEBOOK_DIR, SITE_URL, TIMEZONE
+from global_config import CARD_REPO, CARD_TREE_JSON, EDITS_PATH, RULEBOOK_DIR, SITE_URL, TIMEZONE
 from commands.card_edits import CardAuthors
+from commands.card_db import write_text
 from commands.card_history import start as version_start
 from commands.card_models import stats_db
 from commands.github_api import blob_text, fetch_tree
@@ -47,8 +50,9 @@ EMOJI = compile(r"(<a?:\w+:\d+>)")                     # Discord emoji markup: n
 SNIPPET = 200                                            # /query_rulebook: a longer line is cut around the match
 AS_OF_EDITS_NOTE = ("Database edits (website, Discord) are versions of their own only since late October "
                     "2026: an older version shows those it had when it was replaced.")
-REGISTRY = ("git_files", "blobs", "ambiguous_names", "_spaced", "_edits", "_edit_names", "_renamed", "choices",
-            "site_ids", "_site_etag")                    # what populate_files builds aside and swaps in
+REGISTRY = ("git_files", "blobs", "ambiguous_names", "_spaced", "_edits", "_edit_names", "_edits_text", "_renamed",
+            "choices", "site_ids", "_site_etag")         # what populate_files builds aside and swaps in
+TREE_VERSION = 1                                         # CARD_TREE_JSON's layout
 
 
 class QueryError(ValueError):
@@ -110,6 +114,8 @@ class CardRepository:
         self._tree_lock = Lock()                         # held while _tree/_tree_etag change; type emojis wait on it
         self._edit_names: tuple = ("", {})               # (Card Edits.json blob sha, names)
         self._edits = None                               # that file, parsed (CardEdits)
+        self._edits_text = ""                            # and its text, for CARD_TREE_JSON
+        self._saved = ("", "", "")                       # (repository, ETag, Card Edits.json sha) CARD_TREE_JSON holds
         self._site_etag = ""
         self.ambiguous_names: dict[str, tuple[str, ...]] = {}
         self._spaced: dict[str, str] = {}                # underscore key -> the space-named file it stands for
@@ -145,6 +151,13 @@ class CardRepository:
                       f"keeping the last good list ({len(self.git_files)} entries)")
                 return status
             self.repository, self._tree, self._tree_etag = repo, tree, etag or ""   # an ETag must match _tree
+        self._build(tree)
+        if repo == DEFAULT_REPOSITORY:                          # never a /set_repo one's
+            self._save_tree()
+        return status
+
+    def _build(self, tree: dict, site: bool = True) -> None:
+        """The registry from tree, built aside and swapped in whole (site: the website's card ids too)."""
         new = copy(self)                                        # built aside: lookups never see a half-built list
         new.git_files, new.blobs, new.ambiguous_names, new._spaced = {}, {}, {}, {}
 
@@ -161,11 +174,78 @@ class CardRepository:
         new._populate_edit_names()
         new._populate_titles()
         new._populate_renames()
-        new._populate_site_ids()
+        if site:
+            new._populate_site_ids()
         for name in REGISTRY:                                   # swapped in whole
             setattr(self, name, getattr(new, name))
 
-        return status
+    def _save_tree(self) -> None:
+        """The tree, its ETag and Card Edits.json's text into CARD_TREE_JSON when one changed (a failed write is logged)."""
+        with self._tree_lock:
+            tree, etag = self._tree or {}, self._tree_etag
+            pairs = [[item.get("path", ""), item.get("sha", "")] for item in tree.get("tree", [])]
+        sha = next((s for p, s in pairs if p == EDITS_PATH), "")
+        edits = [sha, self._edits_text] if sha and self._edit_names[0] == sha else None
+        key = (self.repository, etag, edits[0] if edits else "")
+        if key == self._saved:
+            return
+        body = {"version": TREE_VERSION, "repository": self.repository, "etag": etag,
+                "truncated": bool(tree.get("truncated")), "tree": pairs, "edits": edits}
+        text = dumps(body, separators=(",", ":"), sort_keys=True)
+        try:
+            write_text(CARD_TREE_JSON, dumps({"sha256": sha256(text.encode()).hexdigest(), "body": body},
+                                             separators=(",", ":")))
+            self._saved = key
+        except OSError as e:
+            print(f"Card list: could not save {CARD_TREE_JSON}: {e}")
+
+    def load_saved(self) -> int:
+        """
+        The card list from CARD_TREE_JSON, no network (startup, before GitHub's tree): only while no tree is loaded.
+        A file that is not this repository's, or does not read or check out, is ignored; the next fetch rewrites it.
+
+        Returns:
+            The card list's entries, or 0 when the file was not used
+        """
+        if self._tree is not None:
+            return 0
+        try:
+            with open(CARD_TREE_JSON, encoding="utf-8") as f:
+                saved = loads(f.read())
+            body = saved["body"]
+            text = dumps(body, separators=(",", ":"), sort_keys=True)
+            if sha256(text.encode()).hexdigest() != saved["sha256"] or body["version"] != TREE_VERSION:
+                raise ValueError("checksum or version")
+            edits, pairs = body["edits"], body["tree"]
+            tree = {"tree": [{"path": p, "sha": s} for p, s in pairs], "truncated": bool(body["truncated"])}
+            if not all(isinstance(p, str) and isinstance(s, str) for p, s in pairs) \
+                    or not isinstance(body["etag"], str) \
+                    or edits is not None and not (isinstance(edits[0], str) and isinstance(edits[1], str)):
+                raise ValueError("not a tree")
+        except FileNotFoundError:
+            return 0
+        except (OSError, ValueError, KeyError, TypeError, IndexError, AttributeError) as e:
+            print(f"Card list: ignoring {CARD_TREE_JSON} ({type(e).__name__}: {e}); GitHub's tree replaces it")
+            return 0
+        if body["repository"] != self.repository:
+            return 0
+        parsed = None
+        if edits is not None:
+            from commands.psd_analyzer import CardEdits
+            try:
+                parsed = CardEdits.parse(edits[1])
+            except ValueError:                                  # read again from GitHub
+                edits = None
+        with self._tree_lock:
+            if self._tree is not None:                          # GitHub's came first
+                return 0
+            self._tree, self._tree_etag = tree, body["etag"]
+            if parsed is not None:
+                self._edits, self._edit_names, self._edits_text = parsed, (edits[0], parsed.names()), edits[1]
+        self._saved = (body["repository"], body["etag"], edits[0] if edits else "")
+        self._build(tree, site=False)                           # the website's ids: with GitHub's tree
+        print(f"Card list: {len(self.git_files)} entries from the saved tree")
+        return len(self.git_files)
 
     def _fetch_tree(self, repo: str) -> tuple:
         """
@@ -196,6 +276,8 @@ class CardRepository:
         Returns:
             (tree, "") or, when GitHub failed, (the last good tree, why); raises when there is no tree yet
         """
+        if self._tree is None:                                  # startup: the saved tree's ETag (304: no download)
+            self.load_saved()
         with self._tree_lock:
             tree, etag, _, why = self._fetch_tree(self.repository)
             if tree is not None:
@@ -449,11 +531,12 @@ class CardRepository:
         sha = shas[path]
         if self._edit_names[0] != sha:                           # download only when the file changed
             try:
-                edits = CardEdits.parse(blob_text(self.repository, sha))
+                text = blob_text(self.repository, sha)
+                edits = CardEdits.parse(text)
             except Exception as e:
                 print(f"Could not read {path}: {e}")
             else:
-                self._edits, self._edit_names = edits, (sha, edits.names())
+                self._edits, self._edit_names, self._edits_text = edits, (sha, edits.names()), text
         # a failed read keeps the last good names
         for card, extra in self._edit_names[1].items():
             self._add_lookup(card, extra)
@@ -1159,10 +1242,16 @@ async def set_repository(interaction: Interaction, new_repo: Optional[str] = Non
 # ========================
 card_repo = CardRepository()
 def init_query() -> None:
-    """Initialize the card repository: its files and Card Edits.json's names."""
+    """The card list at startup (init_psd, after the card data): GitHub's tree, with the saved tree's ETag (304: kept)."""
+    before = card_repo._tree
     status = card_repo.populate_files()
     if status != 200:
         print(f"Warning: Failed to populate files from repository (status {status})")
+        if card_repo._tree is not None:             # the saved tree: rebuilt with the loaded data's titles
+            card_repo._build(card_repo._tree)
+    else:
+        fetched = card_repo._tree is not before
+        print(f"Card list: {len(card_repo.git_files)} entries, tree {'fetched' if fetched else 'unchanged'}")
 
 
 # ========================

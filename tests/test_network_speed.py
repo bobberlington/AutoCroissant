@@ -90,6 +90,30 @@ def test_the_card_list_tree_etag_makes_the_next_fetch_a_304(monkeypatch):
     assert repo.populate_files() == 200 and log == [304]
 
 
+def test_the_saved_tree_is_the_card_list_at_startup(monkeypatch, capsys):
+    """CARD_TREE_JSON: the card list and Card Edits.json's names with no request, then a 304; never a /set_repo tree;
+    a corrupt file is ignored and rewritten."""
+    edit_names, fetched = qc.CardRepository._populate_edit_names, []
+    state, log = {"tree": _tree(("Items/Foo.png", "f"), (qc.EDITS_PATH, "e")), "etag": '"1"'}, []
+    _fake_github(monkeypatch, state, log)
+    monkeypatch.setattr(qc.CardRepository, "_populate_edit_names", edit_names)
+    monkeypatch.setattr(qc, "blob_text", lambda repo, sha, **kw: fetched.append(sha) or EDITS_TEXT[sha])
+    qc.CardRepository().populate_files()
+    qc.CardRepository().populate_files("someone/Other")
+    log.clear(), fetched.clear()
+    repo = qc.CardRepository()
+    assert repo.load_saved() == 2 and repo.git_files == {"foo.png": "Items/Foo.png", "web_foo.png": "Items/Foo.png"}
+    assert log == fetched == [] and repo.populate_files() == 200 and log == [304] and fetched == []
+    with open(qc.CARD_TREE_JSON, "r+", encoding="utf-8") as f:
+        text = f.read()
+        f.seek(0)
+        f.write(text.replace("Items/Foo", "Items/Fop"))
+    log.clear()
+    repo = qc.CardRepository()
+    assert repo.load_saved() == 0 and "ignoring card_tree.json" in capsys.readouterr().out
+    assert repo.populate_files() == 200 and log == [200] and qc.CardRepository().load_saved() == 2
+
+
 # ========================
 # Card Edits.json names
 # ========================

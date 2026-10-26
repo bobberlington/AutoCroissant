@@ -15,6 +15,7 @@ TIMEZONE        = ZoneInfo("America/Los_Angeles")
 # The card data: the Card sync Action's data branch (commands/card_sync.py; the only source since 2026-10-25)
 DATA_BRANCH     = "data"                       # the card repo's branch holding db/ (written by Card sync only)
 CARD_DATA_DIR   = "card_data"                  # the bot's copy of that db/ (gitignored)
+CARD_TREE_JSON  = "card_tree.json"             # the card repo's last tree, its ETag and Card Edits.json (gitignored)
 
 # The card repo (TTSCardMaker) and where things live in it. /set_repo overrides CARD_REPO at runtime (card_repo.repository).
 CARD_REPO       = "MichaelJSr/TTSCardMaker"
