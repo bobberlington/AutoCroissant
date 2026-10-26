@@ -27,8 +27,9 @@ from psd_tools.constants import Resource
 import commands.psd_edit as psd_edit
 from commands.font_check import NAMES_ENV, FontIndex, dir_fonts, layer_fonts, load_names, local_fonts, tree_fonts
 from commands.psd_edit import (
-    STAR_FOLDER, Refused, _Unit, _core, _icon_reason, _icon_spots, _median_size, _moved_box, _reading, _star_count,
-    _star_layouts, _star_units, _stars_total, _texts, offline_parser, plan_stars, type_row,
+    STAR_FOLDER, Refused, _Unit, _core, _icon_reason, _icon_spots, _median_size, _merge_twins, _moved_box,
+    _outside_units, _reading, _star_count, _star_layouts, _star_units, _stars_total, _texts, offline_parser, plan_stars,
+    type_row,
 )
 from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, PARSER_VERSION, PSDParser
 from commands.psd_parts import card_parts
@@ -306,7 +307,10 @@ def _star_container(group, types):
 
 
 def _plan_centres(plan, container, types, size) -> list:
-    """The star centres once a plan_stars plan is applied, in reading order."""
+    """The star centres once a plan_stars plan is applied, in reading order (the plan's own when it gives them: stars
+    outside the group, drawn twice, split or turned)."""
+    if plan.centres:
+        return [_ints(centre) for centre in plan.centres]
     if plan.how.startswith("folder"):
         units = _star_units(plan.show[0] if plan.show else container, types)[0]
     else:
@@ -338,13 +342,15 @@ def _star_header(psd: PSDImage, rel: str, vocab, parser: Optional[PSDParser] = N
         return None
     total = _stars_total(psd, types=types, stars=parser.star_names())
     container = _star_container(groups[0], types)
-    shown = _star_units(container, types)[0]
+    outside = _outside_units(PSDParser.outside_stars(psd, PSDParser._star_groups(psd), parser.star_names()))
+    shown = _merge_twins(_star_units(container, types)[0] + outside)     # as plan_stars lays them out (R2, R3)
     if not shown:
         return None
     size = _median_size(shown)
     order = _reading(shown, size[1], True)
     plain = len(order) == total and all(unit.count == 1 for unit in order)     # one unit per star: the layout's spots hold
-    source = max(order, key=lambda unit: max(container.index(layer) for layer in unit.layers))
+    source = max((unit for unit in order if unit.layers[0].parent is container), default=order[len(order) - 1],
+                 key=lambda unit: max(container.index(layer) for layer in unit.layers if layer.parent is container))
     parsed = {"card": {"stars": total, "path": rel, "type": ""}, "info": None}
     at, refused = {}, {}
     for n in range(1, HEADER_STARS + 1):

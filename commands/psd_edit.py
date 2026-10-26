@@ -35,7 +35,7 @@ from psd_tools import PSDImage
 from psd_tools.api.pil_io import post_process
 from psd_tools.constants import BlendMode, ColorMode, Resource, Tag
 from psd_tools.psd.base import ListElement
-from psd_tools.psd.descriptor import String
+from psd_tools.psd.descriptor import Bool, String
 
 from commands.card_edits import ADD_ABILITY, CardEdits
 from commands.card_models import CardInfo, StatsDatabase, straight
@@ -144,6 +144,8 @@ LAYOUT_TOL = 0.12           # a star or icon sits on a layout's spot within this
 LAYOUT_TOL_MIN = 6          # px, at least
 ICON_FRAME = 0.1            # a type layer over more of the canvas is a frame (Magnum Opus's field), not an icon
 ICON_GAP = 22               # px between an icon and the one under it on a 1200-wide card (Item_Template: Attack, NME)
+ICON_TOUCH = 0.05           # a type icon pulled back onto the card (S3) may ink over this share of another's (the cards'
+#   own rows: 158 of 161 rows of two or more touch nowhere, Pandora's pandas 5.5%; 2026-10-26)
 CARD_WIDTH = 1200
 PLACED = (Tag.SMART_OBJECT_LAYER_DATA1, Tag.SMART_OBJECT_LAYER_DATA2, Tag.PLACED_LAYER1, Tag.PLACED_LAYER2)
 MOVE_BLOCKS = {bytes(key) for key in (*PLACED, Tag.REFERENCE_POINT)}    # a moved layer's record: its transform, anchor
@@ -245,6 +247,7 @@ class IconPlan:
     icons: list = field(default_factory=list)    # (Types/ stem, canvas box, reference layer): a type icon made in the box
     done: list = field(default_factory=list)     # set_icons(): ("copy", source, copy, dx, dy) and ("made", layer, blocks)
     first: str = ""                              # plan_types(): the template whose spot a card's first type icon takes
+    centres: list = field(default_factory=list)  # plan_stars(): the header stars' centres once applied, reading order
     notes: list = field(default_factory=list)    # told with the bake: the card's layout changed (stars laid out again)
 
 
@@ -277,6 +280,9 @@ class Edit:
     shifted: list = field(default_factory=list)  # (record index, old record index, dx, dy): a layer it moved
     copied: list = field(default_factory=list)   # (record index, old record index, dx, dy): a record of a star it copied
     made: list = field(default_factory=list)     # (record index, {block key: bytes}): a type icon it made from Types/
+    masked: list = field(default_factory=list)   # record indices given a pixel mask: a star layer split (split_stars)
+    filters: list = field(default_factory=list)  # (placed ID, its source's, dx, dy): a smart-filtered layer moved or
+    #   copied, its FEid item with it (S1; gate_filters)
     stories: list = field(default_factory=list)  # a part bake: every TextIndex it may change
     parts: list = field(default_factory=list)    # and (layer id, that layer's Edit, a copy?) per layer it set
     several: bool = False   # a part bake's Edit (set_parts): its layers are in parts
@@ -4473,14 +4479,15 @@ class _Unit:
         return self.core[2] - self.core[0], self.core[3] - self.core[1]
 
 
-def _star_units(container, types=()) -> tuple:
+def _star_units(container, types=(), below: bool = False) -> tuple:
     """
-    (shown, hidden) stars directly in a group above the midline: its child groups that count stars, and its loose
-    layers' stars as the parser judges their pieces (star_leaf, star_pieces, _clusters: a glow joins its star, art is
-    none); one layer drawing several stars is one unit counting them (Grimora's row). A layer named after a type icon
-    (types: Types/ names) is left out (the parser reads it as a type too: Pike Beam).
+    (shown, hidden) stars directly in a group above the midline (below: under it, a second creature's): its child
+    groups that count stars, and its loose layers' stars as the parser judges their pieces (star_leaf, star_pieces,
+    _clusters: a glow joins its star, art is none); one layer drawing several stars is one unit counting them (Grimora's
+    row). A layer named after a type icon (types: Types/ names) is left out (the parser reads it as a type too: Pike Beam).
     """
     height = (container if isinstance(container, PSDImage) else container._psd).height
+    side = (lambda box: not in_header(box, height)) if below else (lambda box: in_header(box, height))
     shown, hidden, loose = [], [], {True: [], False: []}
     for layer in container:
         if layer.name.strip().lower() in types:
@@ -4488,13 +4495,13 @@ def _star_units(container, types=()) -> tuple:
         if layer.is_group():
             count = _star_count(layer, {}, {}, {}, types)
             core = _core(layer)
-            if count and core and in_header(core, height):
+            if count and core and side(core):
                 (shown if layer.visible else hidden).append(_Unit([layer], core, count))
         elif star_leaf(layer, types):
             loose[layer.visible].append(layer)
     for on, layers in loose.items():
         pieces = {id(layer): star_pieces(layer) for layer in layers}
-        items = [(layer, box) for layer in layers for box in pieces[id(layer)] if in_header(box, height)]
+        items = [(layer, box) for layer in layers for box in pieces[id(layer)] if side(box)]
         several: set = set()
         for members in _clusters([box for _, box in items]):
             owners = []
@@ -4635,6 +4642,17 @@ def _inks_touch(a: tuple, b: tuple) -> bool:
     return bool(np.any(ink_a[y0 - ay0:y1 - ay0, x0 - ax0:x1 - ax0] & ink_b[y0 - by0:y1 - by0, x0 - bx0:x1 - bx0]))
 
 
+def _ink_overlap(a: tuple, b: tuple) -> int:
+    """Pixels where two inks ((bbox, solid alpha), _ink) overlap."""
+    (ax0, ay0, _, _), ink_a = a
+    (bx0, by0, _, _), ink_b = b
+    x0, y0 = max(ax0, bx0), max(ay0, by0)
+    x1, y1 = min(ax0 + ink_a.shape[1], bx0 + ink_b.shape[1]), min(ay0 + ink_a.shape[0], by0 + ink_b.shape[0])
+    if x1 <= x0 or y1 <= y0:
+        return 0
+    return int((ink_a[y0 - ay0:y1 - ay0, x0 - ax0:x1 - ax0] & ink_b[y0 - by0:y1 - by0, x0 - bx0:x1 - bx0]).sum())
+
+
 def _blocked(psd: PSDImage, inks: list, core: tuple, others: list) -> Optional[str]:
     """
     Why a star or icon cannot go where its inks are ((bbox, alpha) on the canvas): its core off the canvas, or its ink on
@@ -4675,21 +4693,107 @@ def _copy_name(unit: _Unit, container, taken: set) -> str:
     return name
 
 
+def filter_items() -> bool:
+    """Does this psd-tools copy find a smart object's FEid item by its placed ID (the fork's SmartObject.filter_item)."""
+    from psd_tools.api.smart_object import SmartObject
+    return hasattr(SmartObject, "filter_item")
+
+
+def _filtered(leaf) -> bool:
+    """A smart object carrying smart filters (filterFX)."""
+    placed = next((leaf.tagged_blocks.get_data(key) for key in PLACED[:2] if key in leaf.tagged_blocks), None)
+    return placed is not None and b"filterFX" in placed.data
+
+
 def _shiftable(layer) -> Optional[str]:
-    """Why a layer (a group: everything in it) cannot be moved; None when it can."""
+    """Why a layer (a group: everything in it) cannot be moved; None when it can. A smart-filtered layer moves when its
+    FEid item is found by its placed ID (the fork's filter_item; S1), as Photoshop moves one (_shift_filters)."""
     for leaf in [layer, *(layer.descendants() if layer.is_group() else ())]:
         if leaf.is_group():
             continue
         if leaf.kind in ("type", "shape") or leaf.has_vector_mask() or Tag.VECTOR_ORIGINATION_DATA in leaf.tagged_blocks:
             return f"{leaf.name!r} is {'text' if leaf.kind == 'type' else 'a vector shape'}"
-        placed = next((leaf.tagged_blocks.get_data(key) for key in PLACED[:2] if key in leaf.tagged_blocks), None)
-        if placed is not None and b"filterFX" in placed.data:
+        if _filtered(leaf) and not (filter_items() and leaf.kind == "smartobject"
+                                    and leaf.smart_object.filter_item is not None):
             return f"{leaf.name!r} has smart filters"
     return None
 
 
-def _shift(layer, dx: int, dy: int) -> None:
-    """Move a layer (a group: every layer in it) on the canvas: pixels, masks, a smart object's transform, fxrp."""
+def _shift_filters(leaf, dx: int, dy: int) -> None:
+    """
+    A smart-filtered layer moved as Photoshop moves one (The Flash's 'pngwing.com copy 3'): its FEid item's rectangle
+    moves (its planes stay), the filter mask's too when linked to the layer, and its filters are marked as not valid
+    at the new place (validAtPosition false). Nothing for another layer.
+    """
+    if leaf.is_group() or leaf.kind != "smartobject" or not _filtered(leaf) or not filter_items():
+        return
+    so = leaf.smart_object
+    item = so.filter_item
+    if item is None:                            # _shiftable refuses such a layer
+        return
+    top, left, bottom, right = item.rectangle
+    item.rectangle = (top + dy, left + dx, bottom + dy, right + dx)
+    extra = item.extra
+    if getattr(extra, "rectangle", None) and bool(getattr(so.filters.get(b"filterMaskLinked"), "value", False)):
+        top, left, bottom, right = extra.rectangle
+        extra.rectangle = [top + dy, left + dx, bottom + dy, right + dx]
+    so.filters[b"validAtPosition"] = Bool(False)
+
+
+def _filter_block(psd: PSDImage):
+    """The document's FEid items (a ListElement), None without them."""
+    for key in (Tag.FILTER_EFFECTS1, Tag.FILTER_EFFECTS2, Tag.FILTER_EFFECTS3):
+        items = psd.tagged_blocks.get_data(key) if psd.tagged_blocks is not None else None
+        if items is not None:
+            return items
+    return None
+
+
+def _copy_filters(source, copy) -> None:
+    """
+    A copied smart-filtered layer's own FEid item, as Photoshop gives a copy one: its source's item (planes, mask) named
+    after the copy's placed ID, right after the source's (copy and source are next to each other in file order); a
+    later _shift moves it with the copy. Call after same_placed().
+    """
+    if not filter_items():
+        return
+    for old, new in zip([source, *(source.descendants() if source.is_group() else ())],
+                        [copy, *(copy.descendants() if copy.is_group() else ())]):
+        if old.is_group() or old.kind != "smartobject" or not _filtered(old):
+            continue
+        item, items = old.smart_object.filter_item, _filter_block(copy._psd)
+        if item is None or items is None:
+            continue
+        made = deepcopy(item)
+        made.uuid = new.smart_object.placed_id
+        at = next(i for i, one in enumerate(items) if one is item)
+        items.insert(at + 1, made)
+        copy._psd.mark_updated()
+
+
+def _order_filters(psd: PSDImage) -> None:
+    """The FEid items in file order of their layers (Photoshop's order), when every item names one filtered layer."""
+    items = _filter_block(psd)
+    if not items or not filter_items():
+        return
+    at = {}
+    for i, layer in enumerate(psd.descendants()):
+        if not layer.is_group() and layer.kind == "smartobject" and _filtered(layer):
+            at.setdefault(layer.smart_object.placed_id, i)
+    keys = [at.get((item.uuid or "").strip("\x00")) for item in items]
+    if None in keys or len(set(keys)) != len(keys) or keys == sorted(keys):
+        return
+    ordered = [item for _, item in sorted(zip(keys, list(items)), key=lambda pair: pair[0])]
+    for _ in range(len(items)):
+        items.pop()
+    for item in ordered:
+        items.append(item)
+    psd.mark_updated()
+
+
+def _shift(layer, dx: int, dy: int, filters: bool = False) -> None:
+    """Move a layer (a group: every layer in it) on the canvas: pixels, masks, a smart object's transform, fxrp, and
+    with filters a smart-filtered one's FEid item (_shift_filters: the stars and type icons, S1)."""
     if not (dx or dy):
         return
     for leaf in [layer, *(layer.descendants() if layer.is_group() else ())]:
@@ -4706,6 +4810,8 @@ def _shift(layer, dx: int, dy: int) -> None:
             data = leaf.tagged_blocks.get_data(key) if key in leaf.tagged_blocks else None
             if data is not None:
                 data.transform = tuple(float(v) + (dx if i % 2 == 0 else dy) for i, v in enumerate(data.transform))
+        if filters:
+            _shift_filters(leaf, dx, dy)
         leaf._psd.mark_updated()
 
 
@@ -4784,9 +4890,9 @@ def _star_layouts(order: list, size: tuple, count: int) -> list:
     return out
 
 
-def _stars_blocked(psd: PSDImage, moves: list, clear: list) -> Optional[str]:
+def _stars_blocked(psd: PSDImage, moves: list, clear: list, below: bool = False) -> Optional[str]:
     """Why stars cannot move or be copied by [(unit, dx, dy)]: a layer that cannot move or is clipped, _blocked, or a
-    spot below the midline (no count reads it)."""
+    spot below the midline (no count reads it; below: a second creature's star over it)."""
     for unit, dx, dy in moves:
         why = next((w for w in (_shiftable(layer) for layer in unit.layers) if w), None)
         if why:
@@ -4796,8 +4902,9 @@ def _stars_blocked(psd: PSDImage, moves: list, clear: list) -> Optional[str]:
         blocked = _blocked(psd, _moved_inks(unit, dx, dy), _moved_box(unit.core, dx, dy), clear)
         if blocked:
             return f"a star at {tuple(int(v) for v in _moved_box(unit.core, dx, dy))} {blocked}"
-        if not in_header(_moved_box(unit.core, dx, dy), psd.height):     # the count reads no star there
-            return f"a star at {tuple(int(v) for v in _moved_box(unit.core, dx, dy))} would sit below the card's middle"
+        if in_header(_moved_box(unit.core, dx, dy), psd.height) == below:     # the count reads no star there
+            return f"a star at {tuple(int(v) for v in _moved_box(unit.core, dx, dy))} would sit " + \
+                ("above" if below else "below") + " the card's middle"
     return None
 
 
@@ -4863,11 +4970,11 @@ def _loose_units(psd: PSDImage, groups: list, named: bool, types) -> tuple:
     return out[True], out[False]
 
 
-def _flat_units(shown: list, hidden: list, types) -> tuple:
+def _flat_units(shown: list, hidden: list, types, below: bool = False) -> tuple:
     """Stars inside a shown group drawing several (Cat's "Group 1" of two) as their own units, its hidden ones too."""
     while any(unit.count > 1 and unit.layers[0].is_group() for unit in shown):
         unit = next(unit for unit in shown if unit.count > 1 and unit.layers[0].is_group())
-        inner, spare = _star_units(unit.layers[0], types)
+        inner, spare = _star_units(unit.layers[0], types, below)
         shown = [one for one in shown if one is not unit] + inner
         hidden = hidden + spare
     return shown, hidden
@@ -4877,6 +4984,153 @@ def _same_spot(a: _Unit, b: _Unit) -> bool:
     """Two stars drawn on one spot (a stacked copy): their cores nearly the same box."""
     tol = 0.15 * max(a.size + b.size)
     return all(abs(x - y) <= tol for x, y in zip(a.core, b.core))
+
+
+def _merge_twins(units: list) -> list:
+    """Stars drawn twice on one spot (a stacked copy: Tainted Eden's 'Stars copy', Living Bread's second 'stars') as one
+    star whose layers hide, move and are copied together (R3); the count reads them as one too (star_sets)."""
+    out: list = []
+    for unit in units:
+        twin = next((one for one in out if one.count == 1 and unit.count == 1 and _same_spot(one, unit)), None)
+        if twin is None:
+            out.append(_Unit(list(unit.layers), unit.core, unit.count))
+        else:
+            twin.layers = twin.layers + [layer for layer in unit.layers if layer not in twin.layers]
+    return out
+
+
+def _outside_units(layers: list) -> list:
+    """The star-icon layers outside the Stars groups (PSDParser.outside_stars: Nosk's and Massive Moss Charger's 'Hk
+    star') as stars, clustered per parent as the count judges them: laid out with the group's (R2)."""
+    by_parent: dict = {}
+    for layer in layers:
+        by_parent.setdefault(id(layer.parent), []).append(layer)
+    out = []
+    for some in by_parent.values():
+        boxes = [PSDParser._core_box(layer) for layer in some]
+        out += [_Unit([some[i] for i in members], union_box([boxes[i] for i in members])) for members in _clusters(boxes)]
+    return out
+
+
+@dataclass
+class _Turned(_Unit):
+    """A star of a set drawn upside down below the midline (a second creature's: Tainted Lazarus's dead form) turned half
+    round about the canvas's centre, where the layouts read it as a header star; real: the star as drawn."""
+    real: Optional[_Unit] = None
+    turned: tuple = ()
+
+    @property
+    def box(self) -> tuple:
+        return self.turned
+
+
+def _turn_box(box, psd: PSDImage) -> tuple:
+    """A canvas box turned half round about the canvas's centre."""
+    return psd.width - box[2], psd.height - box[3], psd.width - box[0], psd.height - box[1]
+
+
+def _turned(units: list, psd: PSDImage) -> list:
+    return [_Turned(unit.layers, _turn_box(unit.core, psd), unit.count, unit, _turn_box(unit.box, psd)) for unit in units]
+
+
+def _drawn_as(unit: _Unit) -> _Unit:
+    """The star as drawn (a turned one's real)."""
+    return unit.real if isinstance(unit, _Turned) else unit
+
+
+def _as_drawn(moves: list) -> list:
+    """[(unit, dx, dy, ...)] with turned units as drawn: their offsets turned back."""
+    return [(unit.real, -dx, -dy, *rest) if isinstance(unit, _Turned) else (unit, dx, dy, *rest)
+            for unit, dx, dy, *rest in moves]
+
+
+def _second_set(psd: PSDImage, groups: list, types) -> Optional[tuple]:
+    """(group, shown, hidden) of a second creature's stars drawn upside down below the midline (Tainted Lazarus's dead
+    form): the one Stars group drawing stars there and none above it; None otherwise."""
+    found = [group for group in groups if _star_units(group, types, True)[0] and not _star_units(group, types)[0]]
+    if len(found) != 1:
+        return None
+    shown, hidden = _flat_units(*_star_units(found[0], types, True), types, True)
+    return found[0], shown, hidden
+
+
+def _centred_row(units: list, size: tuple, width: int) -> Optional[tuple]:
+    """(y, pitch) when the stars are a row of two or more centred on the card (Grimora's three); None otherwise."""
+    line = _line(units, size, True)
+    if line is None:
+        return None
+    (x, _), (dx, dy) = line
+    tol = _tol(max(size))
+    if abs(dy) > tol or dx >= 0 or abs(x + (len(units) - 1) * dx / 2 - width / 2) > tol:
+        return None
+    return sum(unit.centre[1] for unit in units) / len(units), -dx
+
+
+def _centred_spots(model: tuple, count: int, width: int) -> list:
+    """The centres of `count` stars in a row centred on the card at the model's pitch (_centred_row), right to left."""
+    y, pitch = model
+    return [(width / 2 + ((count - 1) / 2 - i) * pitch, y) for i in range(count)]
+
+
+def _skewed_pairs(spots: list, height: float, tol: float) -> bool:
+    """Rows of two whose columns do not line up (a 2 over 1 carried on: Polevaulter Zombie's skewed 2 over 2)."""
+    rows = _rows([_Unit([], (x, y, x, y)) for x, y in spots], height, True)
+    return len(rows) > 1 and all(len(row) == 2 for row in rows) and any(
+        abs(row[k].centre[0] - rows[0][k].centre[0]) > tol for row in rows for k in (0, 1))
+
+
+def _splittable(layer) -> Optional[str]:
+    """Why one layer drawing several stars cannot be split into masked copies (split_stars); None when it can: a pixel
+    layer or smart object with no mask, no layers clipped to it, no effects and no smart filters."""
+    if layer.is_group() or layer.kind not in ("pixel", "smartobject"):
+        return f"it is a {'group' if layer.is_group() else layer.kind + ' layer'}"
+    if layer.has_mask() or layer.has_vector_mask():
+        return "it has a mask"
+    if _clip_chain(layer) or _enabled_effects(layer) or _filtered(layer):
+        return "it has clipped layers, effects or smart filters"
+    return None
+
+
+def _split_masks(layer, pieces: list) -> list:
+    """One mask per star over the layer's bbox (255 shown): each pixel goes to the star whose box is nearest (its glow
+    and shadow with it), so the masks together show the whole layer and the split alone changes no pixel."""
+    x0, y0, x1, y1 = layer.bbox
+    ys, xs = np.ogrid[y0:y1, x0:x1]
+    far = [np.maximum(np.maximum(bx0 - xs, xs - (bx1 - 1)), 0) ** 2 + np.maximum(np.maximum(by0 - ys, ys - (by1 - 1)), 0) ** 2
+           for bx0, by0, bx1, by1 in pieces]
+    owner = np.argmin(np.stack(np.broadcast_arrays(*far)), axis=0)
+    return [np.where(owner == k, 255, 0).astype(np.uint8) for k in range(len(pieces))]
+
+
+def split_stars(psd: PSDImage, layer) -> list:
+    """
+    One layer drawing several stars split into masked copies, one per star (R4: Grimora's row, Dimension D's hearts):
+    it keeps the first star in reading order and a copy above it ("<name> copy", Photoshop's names) takes each other,
+    each masked to its star's share of the layer (_split_masks).
+
+    Returns:
+        set_icons()' done entries: ("split", layer, copy) per copy, then ("masked", layer)
+    """
+    units = [_Unit([layer], box) for box in star_pieces(layer)]
+    pieces = [unit.core for unit in _reading(units, _median_size(units)[1], True)]
+    masks = _split_masks(layer, pieces)
+    x0, y0 = layer.bbox[:2]
+    parent, taken, done = layer.parent, set(), []
+    for k in range(1, len(pieces)):
+        copy = layer.duplicate(parent, index=parent.index(layer) + k, name=_copy_name(units[0], parent, taken))
+        same_placed(layer, copy, f"split {layer.name}|{k}")
+        copy.create_mask(Image.fromarray(masks[k], "L"), top=y0, left=x0)
+        done.append(("split", layer, copy))
+    layer.create_mask(Image.fromarray(masks[0], "L"), top=y0, left=x0)
+    done.append(("masked", layer))
+    return done
+
+
+def _reopened(psd: PSDImage) -> PSDImage:
+    """The card as it stands, saved and opened again: plan_stars splits a layer there when it may not change psd."""
+    buf = BytesIO()
+    psd.save(buf, update_preview=False)
+    return PSDImage.open(BytesIO(buf.getvalue()))
 
 
 def _covers(a: tuple, b: tuple) -> float:
@@ -5006,10 +5260,10 @@ def _off_backdrop(back: Optional[tuple], moves: list, copies: list) -> Optional[
 def _more_layouts(order: list, size: tuple, count: int, psd: PSDImage) -> list:
     """
     More layouts for stars in a shape _star_layouts does not carry on (LAYOUT_SUPPORT.md): its shortest row grows at
-    the end that keeps the shape centred (Lorian's 2 over 3, Springtrap's, the zombies' 2 over 1), each new star clear
-    of the others and on the card; else, or when the stars overlap (a dice face), every star laid out again as rows of
-    two from the shape's top-right star (God Tamer's and Michael's Blessing's dice: their six; Morpho Knight's 2-1-2;
-    told).
+    the end that keeps the shape centred (Lorian's 2 over 3, Springtrap's), each new star clear of the others and on
+    the card; else, or when the stars overlap (a dice face), every star laid out again as rows of two from the shape's
+    top-right star (God Tamer's and Michael's Blessing's dice: their six; Morpho Knight's 2-1-2; told). Rows of two
+    whose columns do not line up once carried on (the zombies' 2 over 1) try the rows of two again first.
     """
     out = []
     if count <= len(order):
@@ -5047,11 +5301,14 @@ def _more_layouts(order: list, size: tuple, count: int, psd: PSDImage) -> list:
     right, top = max(unit.centre[0] for unit in order), tops[0].centre[1]
     ys = sorted({round(sum(u.centre[1] for u in row) / len(row)) for row in rows})
     steps = [b - a for a, b in zip(ys, ys[1:]) if b - a >= h * 0.9]
-    out.append((RELAID[0], _pyramid_spots((right, right - pitch, top, min(steps) if steps else h * 1.05, False), count)))
-    return out
+    relaid = (RELAID[0], _pyramid_spots((right, right - pitch, top, min(steps) if steps else h * 1.05, False), count))
+    if new and _skewed_pairs(out[0][1], h, slack):     # skewed rows of two: the templates' rows of two first (owner
+        return [relaid] + out                       # 2026-10-26, Polevaulter Zombie), then carried on
+    return out + [relaid]
 
 
-def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDParser] = None, moving: bool = False) -> IconPlan:
+def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDParser] = None, moving: bool = False,
+               split: bool = False) -> IconPlan:
     """
     How to show `value` stars on a card whose stars the parser counts from its PSD (minions, aux items and creatures,
     N.M.E.; elsewhere the "N Stars" folder sets them). In the one Stars group that draws them:
@@ -5061,15 +5318,21 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
       right to left; the first when only that leaves a layout); more show the card's own hidden stars first, then copy
       the last star layer at the layout's spacing (_star_layouts, the first that stays clear): rows of two with an odd
       one centred under or over them (the templates; the odd one moves aside when a pair fills its row, and back to
-      the middle when one goes), a row or column carried on, a zigzag carried on, a lone star's column. A new or moved
-      star must stay on the canvas, off the text and type icons, and add exactly one to what the parser counts.
+      the middle when one goes), a row or column carried on, a zigzag carried on, a lone star's column. A row centred
+      on the card stays centred at its pitch (Grimora's). A new or moved star must stay on the canvas, off the text and
+      type icons, and add exactly one to what the parser counts.
+    - star-icon layers outside the group (Nosk's 'Hk star') are stars of the layout (R2); a star drawn twice on one
+      spot is one star (R3: Tainted Eden, Living Bread); one layer drawing several is split into masked copies first
+      (R4: split_stars; Grimora, Dimension D); a second creature's stars upside down below the midline (Tainted
+      Lazarus's dead form) take the same count, laid out turned half round, or neither set is redrawn.
 
     Args:
-        psd: The open card (not changed)
+        psd: The open card (not changed, but split: a layer drawing several stars is split in it)
         parsed: parse_card() of it
         value: The stars to show, 1 or more
         parser: offline_parser(): a layer in the Stars group named after a type icon is no star to hide or copy
         moving: The card moves into its new "N Stars" folder (card_bake): its printed stars are redrawn, if it draws them
+        split: May split a layer in psd (apply_jobs, on its working copy); else the plan is made on a copy of the card
 
     Returns:
         IconPlan; raises Refused("unsupported-card", field="stars") when the layout is not one of those
@@ -5098,12 +5361,13 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         tokens = _header_star_tokens(psd, parser, info.name if info is not None else "") if parser is not None else 0
         refuse(f"the parser counts {old}, the Stars group draws {total}" + (f" and the header text {tokens}" if tokens else ""))
     below = PSDParser.stars_below(psd, types, stars)
-    if below:                                   # Tainted Lazarus's dead form: not redrawn yet
-        refuse(f"the card draws {below} more below its middle (a second creature): edit in Photoshop")
+    second = _second_set(psd, groups, types) if below else None
+    if below:                                   # Tainted Lazarus's dead form: the same count, turned half round
+        if second is None or below != old or len(second[1]) != below or any(unit.count != 1 for unit in second[1]):
+            refuse(f"the card draws {below} more below its middle, not one second creature's {old}")
+        groups = [group for group in groups if group is not second[0]]
     outside = [layer for layer in PSDParser.outside_stars(psd, PSDParser._star_groups(psd), stars)
                if not (named and _named_star(layer))]
-    if outside:                                 # Nosk's 'Hk star': not laid out with the group's yet
-        refuse(f"{outside[0].name!r} outside the Stars group is a star too: edit in Photoshop")
     plan = IconPlan("stars", old, value)
     if named or len(groups) > 1:                # Nasty Patty's Patrick Stars, Paint Warrior's two Stars groups
         shown, hidden = _loose_units(psd, groups, named, types)
@@ -5118,7 +5382,7 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
             found = fullmatch(STAR_FOLDER, child.name, IGNORECASE) if child.is_group() else None
             if found:
                 folders.setdefault(int(found.group(1)), []).append(child)
-        if folders:
+        if folders and not outside and second is None:
             shown = [f for group in folders.values() for f in group if f.visible]
             target = folders.get(value - total + sum(_star_count(f, {}, {}, {}, types) for f in shown))
             if target:
@@ -5142,46 +5406,83 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         break
     if container is None:
         refuse('no group named "Stars" draws them')
+    shown = shown + _outside_units(outside)     # Nosk's 'Hk star': laid out with the group's (R2)
     if not shown:
         refuse(f"no star shows in {container.name!r}")
     shown, hidden = _flat_units(shown, hidden, types)       # Cat's group of two beside its group of one
-    if any(unit.count != 1 for unit in shown):
-        many = next(unit for unit in shown if unit.count != 1)
-        refuse(f"{many.layers[0].name!r} draws {many.count} in one {'group' if many.layers[0].is_group() else 'layer'}")
-    stacked = next((u.layers[0].name for i, u in enumerate(shown) for v in shown[:i] if _same_spot(u, v)), None)
-    if stacked:                                 # Living Bread, Tainted Eden: a copy of each star drawn on it
-        refuse(f"{stacked!r} sits on another star, a copy drawn on it: edit in Photoshop")
+    many = next((unit for unit in shown if unit.count != 1), None)
+    if many is not None:                        # R4: one layer drawing several, split into masked copies first
+        why = "it is a group" if many.layers[0].is_group() or len(many.layers) != 1 else _splittable(many.layers[0])
+        if why:
+            refuse(f"{many.layers[0].name!r} draws {many.count} in one {'group' if many.layers[0].is_group() else 'layer'}"
+                   f" ({why})")
+        if not split:                           # psd stays as it is: the plan is made on a copy
+            return plan_stars(_reopened(psd), parsed, value, parser, moving, True)
+        done = split_stars(psd, many.layers[0])
+        plan = plan_stars(psd, parsed, value, parser, moving, True)
+        plan.done = done + plan.done
+        plan.notes.append(f"stars: {many.layers[0].name!r} drew {many.count} in one layer: split into masked copies, one "
+                          f"per star")
+        return plan
     several = len({id(unit.layers[0].parent) for unit in shown + hidden}) > 1
+    shown, hidden = _merge_twins(shown), _merge_twins(hidden)       # R3: a star drawn twice on one spot is one
     count = len(shown) + value - total
     if count < 1:
         refuse(f"{container.name!r} draws {len(shown)}: the other {total - len(shown)} are elsewhere")
-    size = _median_size(shown)
     clear = _texts(psd) + badge_layers(psd, parser.all_types if parser is not None else ())[1]   # off the text and type icons
     show: dict = {}
-    if count < len(shown):                  # fewer: hide the last in reading order (or the first, when that leaves a
-        order = _reading(shown, size[1], True)      # layout and the last does not); rows of two centre an odd one
-        drop = len(shown) - count
-        hide = next((gone for kept, gone in ((order[:count], order[count:]), (order[drop:], order[:drop]))
-                     if _known_layout(kept, size)), None)
-        moves = []
-        if hide is None:
-            model = _pyramid(order, size)
-            moves = _place(order[:count], _pyramid_spots(model, count), size)[0] if model else []
-            if moves and (_stars_blocked(psd, moves, clear) or _shaded(psd, order[:count], moves)
-                          or _off_backdrop(_backdrop(psd, shown), moves, [])):     # under a shadow: no moves
-                moves = []
-            shape = None if moves or count < 3 or _known_layout(order, size) else _kept_shape(order, size, count)
-            hide = shape or order[count:]           # a zigzag or a diagonal keeps its first stars (Dark Esau 2)
-        plan.hide = [layer for unit in hide for layer in unit.layers]
-        plan.how = f"{len(hide)} hidden"
-        show.update({id(layer): False for layer in plan.hide})
-        if moves:
-            plan.moves, plan.how = moves, "rows of two"
-    else:                                   # more: the card's own hidden stars, then the layout's spacing
-        total_of = ((lambda show_: _named_total(psd, show_, stars=stars)) if named
-                    else (lambda show_: _stars_total(psd, show_, types=types, stars=stars)))
-        spots = [spot for _, layout in _star_layouts(_reading(shown, size[1], True), size, count) + 
-                 _more_layouts(_reading(shown, size[1], True), size, count, psd) for spot in layout]
+    total_of = ((lambda show_: _named_total(psd, show_, stars=stars)) if named
+                else (lambda show_: _stars_total(psd, show_, types=types, stars=stars)))
+
+    def lay_out(shown: list, hidden: list, container, count: int, below: bool = False) -> tuple:
+        """
+        One set's stars hidden, shown, moved and copied into plan to show `count` (below: a second creature's, turned
+        half round: the layouts read it as a header). Returns (how, the set's shown stars, its copies: (unit, dx, dy, ""),
+        its stars' median size).
+        """
+        size = _median_size(shown)
+        counted = (lambda show_: PSDParser.stars_below(psd, types, stars, show_)) if below else total_of
+        blocked = lambda moves: _stars_blocked(psd, _as_drawn(moves), clear, below)
+        backdrop = lambda units: _backdrop(psd, [_drawn_as(unit) for unit in units])
+        off_back = lambda back, moves, copies: _off_backdrop(back, _as_drawn(moves), _as_drawn(copies))
+
+        def shaded(kept: list, moves: list) -> list:
+            flagged = {id(unit) for unit, _, _ in _shaded(psd, [_drawn_as(unit) for unit in kept], _as_drawn(moves))}
+            return [move for move in moves if id(_drawn_as(move[0])) in flagged]
+        centred = _centred_row(shown, size, psd.width)
+        how, copies = "", []
+        if count < len(shown):              # fewer: hide the last in reading order (or the first, when that leaves a
+            order = _reading(shown, size[1], True)      # layout and the last does not); rows of two centre an odd one
+            drop, hide, moves = len(shown) - count, None, []
+            if centred:                     # a centred row stays centred (Grimora's)
+                moves = _place(order[:count], _centred_spots(centred, count, psd.width), size)[0]
+                if not (blocked(moves) or shaded(order[:count], moves) or off_back(backdrop(shown), moves, [])):
+                    hide = order[count:]
+                else:
+                    moves = []
+            if hide is None:
+                hide = next((gone for kept, gone in ((order[:count], order[count:]), (order[drop:], order[:drop]))
+                             if _known_layout(kept, size)), None)
+            if hide is None:
+                model = _pyramid(order, size)
+                moves = _place(order[:count], _pyramid_spots(model, count), size)[0] if model else []
+                if moves and (blocked(moves) or shaded(order[:count], moves)
+                              or off_back(backdrop(shown), moves, [])):        # under a shadow: no moves
+                    moves = []
+                shape = None if moves or count < 3 or _known_layout(order, size) else _kept_shape(order, size, count)
+                hide = shape or order[count:]           # a zigzag or a diagonal keeps its first stars (Dark Esau 2)
+            plan.hide += [layer for unit in hide for layer in unit.layers]
+            how = f"{len(hide)} hidden"
+            show.update({id(layer): False for unit in hide for layer in unit.layers})
+            if moves:
+                plan.moves += _as_drawn(moves)
+                how = "a centred row" if centred else "rows of two"
+            return how, [unit for unit in shown if not any(unit is one for one in hide)], copies, size
+        layouts = _star_layouts(_reading(shown, size[1], True), size, count) + \
+            _more_layouts(_reading(shown, size[1], True), size, count, psd)
+        if centred:                         # more: a centred row stays centred, else the card's own hidden stars,
+            layouts = [("a centred row", _centred_spots(centred, count, psd.width))] + layouts   # then the layout's
+        spots = [spot for _, layout in layouts for spot in layout]
         for unit in _reading(hidden, size[1], True):
             if len(shown) == count:
                 break
@@ -5194,34 +5495,53 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
             if any(not size[k] / 2 <= unit.size[k] <= size[k] * 2 for k in (0, 1)):
                 continue                        # another size: no star of the row (Toy Freddy's hidden 'star test')
             trial = {**show, **{id(layer): True for layer in unit.layers}}
-            if total_of(trial) == total_of(show) + 1 and _stars_blocked(psd, [(unit, 0, 0)], clear) is None:
-                show, shown = trial, shown + [unit]
+            if counted(trial) == counted(show) + 1 and blocked([(unit, 0, 0)]) is None:
+                show.update(trial)
+                shown = shown + [unit]
                 plan.show += unit.layers
-        plan.how = "hidden stars shown" if plan.show else ""
+                how = "hidden stars shown"
         if len(shown) < count:
             order = _reading(shown, size[1], True)
             source = max((unit for unit in order if unit.layers[0].parent is container), default=order[len(order) - 1],
-                         key=lambda unit: max(container.index(layer) for layer in unit.layers))   # the last star layer
-            first, back = None, _backdrop(psd, order)
-            for how, spots in _star_layouts(order, size, count) + _more_layouts(order, size, count, psd):
+                         key=lambda unit: max(container.index(layer) for layer in unit.layers
+                                              if layer.parent is container))   # the last star layer
+            first, back = None, backdrop(order)
+            if centred:                     # the centred row once the hidden stars shown are in it
+                layouts = [("a centred row", _centred_spots(centred, count, psd.width))] + \
+                    _star_layouts(order, size, count) + _more_layouts(order, size, count, psd)
+            else:
+                layouts = _star_layouts(order, size, count) + _more_layouts(order, size, count, psd)
+            for name, spots in layouts:
                 moves, free = _place(order, spots, size)
-                under = [move for move in _shaded(psd, order, moves) if move[0] is not source]
+                under = [move for move in shaded(order, moves) if move[0] is not source]
                 moves = [move for move in moves if move not in under]       # under a shadow: hidden, a copy (on top)
                 free += [(unit.centre[0] + dx, unit.centre[1] + dy) for unit, dx, dy in under]
                 copies = [(source, round(spot[0] - source.centre[0]), round(spot[1] - source.centre[1]), "") for spot in free]
-                why = (_stars_blocked(psd, moves + [(unit, dx, dy) for unit, dx, dy, _ in copies], clear)
-                       or _off_backdrop(back, moves, copies))
+                why = blocked(moves + [(unit, dx, dy) for unit, dx, dy, _ in copies]) or off_back(back, moves, copies)
                 if why is None:
-                    plan.moves, plan.copies, plan.how = moves, copies, how
+                    plan.moves += _as_drawn(moves)
+                    copies = _as_drawn(copies)
+                    how = name
                     gone = [layer for unit, _, _ in under for layer in unit.layers]
                     plan.hide += gone
                     show.update({id(layer): False for layer in gone})
-                    if how in RELAID:
-                        plan.notes.append(f"stars: {how} (the card's own layout does not go on to {count})")
+                    if name in RELAID:
+                        plan.notes.append(f"stars: {name} (the card's own layout does not go on to {count})")
+                    shown = [unit for unit in shown if not any(unit is one for one, _, _ in under)]
                     break
                 first = first or why
             else:
                 refuse(first or f"{len(order)} stars laid out as no row, column or rows of two")
+        return how, shown, copies, size
+
+    how, kept, copies, size = lay_out(shown, hidden, container, count)
+    plan.how = how
+    if second is not None:                      # the second creature's: the same count, turned half round
+        dead_how, _, dead_copies, _ = lay_out(_turned(_merge_twins(second[1]), psd), _turned(_merge_twins(second[2]), psd),
+                                           second[0], value, True)
+        plan.how = f"{how}; below, turned: {dead_how}"
+        copies = copies + dead_copies
+    plan.copies = copies
     boxes: dict = {}
     counts: dict = {}
     for unit, dx, dy in plan.moves:
@@ -5239,9 +5559,27 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
     drawn = _named_total(psd, show, boxes, stars) if named else _stars_total(psd, show, boxes, counts, types, stars)
     if drawn != value:
         refuse(f"the new layout would count {drawn}")
+    if second is not None and PSDParser.stars_below(psd, types, stars, show, boxes) != value:
+        refuse(f"the second creature's new layout below would count {PSDParser.stars_below(psd, types, stars, show, boxes)}")
+    moved = {id(unit): (dx, dy) for unit, dx, dy in plan.moves}
+    gone = {id(layer) for layer in plan.hide}
+    plan.centres = [unit.centre for unit in _reading(
+        [_Unit(unit.layers, _moved_box(unit.core, *moved.get(id(unit), (0, 0)))) for unit in kept
+         if not any(id(layer) in gone for layer in unit.layers)]
+        + [_Unit(unit.layers, _moved_box(unit.core, dx, dy)) for unit, dx, dy, _ in copies if not isinstance(unit, _Turned)
+           and in_header(_moved_box(unit.core, dx, dy), psd.height)], size[1], True)]
     plan.moves = [(layer, dx, dy) for unit, dx, dy in plan.moves for layer in _with_chains(unit.layers)]
     taken: set = set()
-    plan.copies = [(unit, dx, dy, _copy_name(unit, unit.layers[0].parent, taken)) for unit, dx, dy, _ in plan.copies]
+    out = []
+    for unit, dx, dy, _ in plan.copies:         # a star drawn twice: a copy in each group it is drawn in
+        parents = []
+        for layer in unit.layers:
+            if layer.parent not in parents:
+                parents.append(layer.parent)
+        for parent in parents:
+            one = unit if len(parents) == 1 else _Unit([layer for layer in unit.layers if layer.parent is parent], unit.core)
+            out.append((one, dx, dy, _copy_name(one, parent, taken)))
+    plan.copies = out
     return plan
 
 
@@ -5304,7 +5642,9 @@ def _icon_spots(psd: PSDImage, slots: list, extra: int, clear: list) -> list:
     """
     Boxes for `extra` icons past the row's last: the row carried on at its spacing (under a lone icon: Item_Template's
     column), else, when those boxes would touch the text or stars, a second row under the first icon (a row running
-    into the title) or a lone icon's right; the first whose boxes stay clear, else the row carried on.
+    into the title) or a lone icon's right; the first whose boxes stay clear, else the row carried on. When the last two
+    icons sit in two rows (Masher's 2 over 1), the last row first carries on at the pitch of the row above it, toward
+    the card's middle, else away (S2: the new icon beside the last, not down the diagonal).
     """
     first, last = slots[0].core, slots[len(slots) - 1].core
     gap = round(ICON_GAP * psd.width / CARD_WIDTH)
@@ -5319,9 +5659,20 @@ def _icon_spots(psd: PSDImage, slots: list, extra: int, clear: list) -> list:
         options.append([_moved_box(first, step[0] * k, down) for k in range(extra)])
     elif len(slots) == 1:
         options.append([_moved_box(last, (last[2] - last[0] + gap) * k, 0) for k in range(1, extra + 1)])
+    clear_of = lambda box: _blocked(psd, [((box[0], box[1], box[2], box[3]),
+                                           np.ones((box[3] - box[1], box[2] - box[0]), bool))], box, clear) is None
+    rows = [row for row in _rows(slots, _median_size(slots)[1], False) if len(row) > 1]
+    if len(slots) > 1 and abs(step[1]) > (last[3] - last[1]) / 2 and rows:     # the last two in two rows
+        row = rows[len(rows) - 1]
+        pitch = abs(round(row[len(row) - 1].centre[0] - row[len(row) - 2].centre[0]))
+        for dx in sorted((pitch, -pitch), key=lambda dx: abs(_centre(last)[0] + dx - psd.width / 2)) if pitch else ():
+            boxes = [_moved_box(last, dx * k, 0) for k in range(1, extra + 1)]
+            inside = lambda point, box: box[0] <= point[0] <= box[2] and box[1] <= point[1] <= box[3]
+            if all(clear_of(box) and not any(inside(unit.centre, box) or inside(_centre(box), unit.core) for unit in slots)
+                   for box in boxes):          # on no icon of another row
+                return boxes
     for boxes in options:
-        if all(_blocked(psd, [((box[0], box[1], box[2], box[3]), np.ones((box[3] - box[1], box[2] - box[0]), bool))],
-                        box, clear) is None for box in boxes):
+        if all(clear_of(box) for box in boxes):
             return boxes
     return options[0]
 
@@ -5447,13 +5798,29 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
         if stem is None:
             refuse(f"no Types/ icon for {name!r}")
         plan.icons.append((stem, spot, reference))
-    for layer, dx, dy in plan.moves:
+    inset = (max(0, min(u.core[0] for u in slots)), max(0, min(u.core[1] for u in slots)),
+             max(0, min(psd.width - u.core[2] for u in slots))) if slots else (0, 0, 0)
+    for k, (layer, dx, dy) in enumerate(list(plan.moves)):
         why = _shiftable(layer)
         if why:
             refuse(f"{why}: it cannot move")
         unit = _Unit([layer], _core(layer) or tuple(layer.bbox))
         others = [other for other in texts + stars if other is not layer]
         blocked = _blocked(psd, _moved_inks(unit, dx, dy), _moved_box(unit.core, dx, dy), others)
+        box = _moved_box(unit.core, dx, dy)
+        if blocked == "runs off the canvas":    # S3: pulled back onto the card, at the row's own inset
+            dx += max(0, inset[0] - box[0]) - max(0, box[2] - (psd.width - inset[2]))
+            dy += max(0, inset[1] - box[1])
+            plan.moves[k] = (layer, dx, dy)
+            blocked = _blocked(psd, _moved_inks(unit, dx, dy), _moved_box(unit.core, dx, dy), others)
+            shifts = {id(one): (mx, my) for one, mx, my in plan.moves}
+            for icon in [u.layers[0] for u in slots if u.layers[0] is not layer and not any(u is r for r in removed)]:
+                ink = _ink(icon)
+                if blocked is None and ink is not None and ink[1].any():
+                    ink = (_moved_box(ink[0], *shifts.get(id(icon), (0, 0))), ink[1])
+                    over = sum(_ink_overlap(mine, ink) for mine in _moved_inks(unit, dx, dy))
+                    if over > ICON_TOUCH * min(ink[1].sum(), sum(m[1].sum() for m in _moved_inks(unit, dx, dy))):
+                        blocked = f"runs off the canvas; pulled back onto it, would cover {icon.name!r}"
         if blocked and first and blocked.startswith("would touch"):     # the template's spot: baked, told (rulings)
             plan.notes.append(f"types: {layer.name!r} at {first}'s spot {blocked.replace('would touch', 'touches')}: check it")
         elif blocked:
@@ -5563,7 +5930,8 @@ def _copy_chain(reference, layer, done: list) -> list:
     for k, clipped in enumerate(_clip_chain(reference)):
         copy = clipped.duplicate(parent, index=parent.index(layer) + 1 + k)
         same_placed(clipped, copy, f"chain {layer.name}|{dx},{dy}|{k}")
-        _shift(copy, dx, dy)
+        _copy_filters(clipped, copy)
+        _shift(copy, dx, dy, True)
         done.append(("copy", clipped, copy, dx, dy))
         out.append(copy)
     return out
@@ -5615,15 +5983,18 @@ def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None) ->
         for k, layer in enumerate(_with_chains(sorted(unit.layers, key=parent.index))):
             copy = layer.duplicate(parent, index=index + k, name=name if layer is top else None)
             same_placed(layer, copy, f"{name}|{dx},{dy}|{k}")
-            _shift(copy, dx, dy)
+            _copy_filters(layer, copy)          # a smart-filtered star's own FEid item (S1)
+            _shift(copy, dx, dy, True)
             plan.done.append(("copy", layer, copy, dx, dy))
             boxes.append((_extent(copy), copy))
+    if plan.copies:
+        _order_filters(psd)
     for layer in plan.hide:
         layer.visible = False
     for layer in plan.show:
         layer.visible = True
     for layer, dx, dy in plan.moves:
-        _shift(layer, dx, dy)
+        _shift(layer, dx, dy, True)
         boxes.append((_extent(layer), layer))
     stars, texts = badge_layers(psd)[0], _texts(psd)
     touching = []
@@ -5657,13 +6028,31 @@ def index_icons(edit: Edit, before: dict, after: dict) -> None:
     records keep their identity through the edits), after = record_map() now (what the saved file holds).
     """
     plan = edit.icons
+    split = {id(done[2]): done[1] for done in plan.done if done[0] == "split"}      # a split's copy: its layer's record
+    moved = {id(layer): (dx, dy) for layer, dx, dy in plan.moves}
     edit.toggled = sorted(after[id(layer._record)] for layer in plan.hide + plan.show)
     edit.shifted = [(after[id(record)], before[id(record)], dx, dy) for layer, dx, dy in plan.moves
-                    for record in _subtree_records(layer)]
-    edit.copied = [(after[id(new)], before[id(old)], dx, dy) for done in plan.done if done[0] == "copy"
-                   for old, new, dx, dy in [(o, n, done[3], done[4]) for o, n in zip(_subtree_records(done[1]),
-                                                                                     _subtree_records(done[2]))]]
+                    if id(layer) not in split for record in _subtree_records(layer)]
+    edit.shifted += [(after[id(done[1]._record)], before[id(done[1]._record)], 0, 0) for done in plan.done
+                     if done[0] == "masked" and id(done[1]) not in moved]   # a split layer staying where it is
+    origin = {id(done[2]._record): done[1]._record for done in plan.done if done[0] == "split"}   # a split's copy: the
+    edit.copied = [(after[id(new)], before[id(origin.get(id(old), old))], dx, dy) for done in plan.done   # layer it was
+                   if done[0] == "copy" for old, new, dx, dy in [(o, n, done[3], done[4]) for o, n in
+                                                                 zip(_subtree_records(done[1]), _subtree_records(done[2]))]]
+    edit.copied += [(after[id(done[2]._record)], before[id(done[1]._record)], *moved.get(id(done[2]), (0, 0)))
+                    for done in plan.done if done[0] == "split"]
     edit.made = [(after[id(done[1]._record)], done[2]) for done in plan.done if done[0] == "made"]
+    edit.masked = sorted({after[id(done[2 if done[0] == "split" else 1]._record)] for done in plan.done
+                          if done[0] in ("split", "masked")}
+                         | {after[id(done[2]._record)] for done in plan.done if done[0] == "copy"
+                            and (id(done[1]._record) in origin or any(one[0] == "masked" and one[1] is done[1]
+                                                                     for one in plan.done))})
+    leaves = lambda layer: [one for one in [layer, *(layer.descendants() if layer.is_group() else ())]
+                            if not one.is_group() and one.kind == "smartobject" and _filtered(one)]
+    edit.filters = [(leaf.smart_object.placed_id, leaf.smart_object.placed_id, dx, dy) for layer, dx, dy in plan.moves
+                    for leaf in leaves(layer)]
+    edit.filters += [(copy.smart_object.placed_id, source.smart_object.placed_id, done[3], done[4]) for done in plan.done
+                     if done[0] == "copy" for source, copy in zip(leaves(done[1]), leaves(done[2]))]
 
 
 def render_all(psd: PSDImage) -> np.ndarray:
@@ -6396,19 +6785,27 @@ def _moved_mask(box, dx: int, dy: int):
     return tuple(out)
 
 
-def _record_moved(a: dict, b: dict, dx: int, dy: int, keys: set, flags: bool = False, renamed: bool = False) -> Optional[str]:
+def _record_moved(a: dict, b: dict, dx: int, dy: int, keys: set, flags: bool = False, renamed: bool = False,
+                  masked: bool = False) -> Optional[str]:
     """
     Why record b is not record a moved by (dx, dy) (a layer _shift moved, or a copy of it); None when it is: the rect
     and mask moved, the channels, blending and other blocks the same, only `keys` blocks changed; flags: one flag
-    byte may differ (the layer was shown or hidden too); renamed: the name may differ (a copy's).
+    byte may differ (the layer was shown or hidden too); renamed: the name may differ (a copy's); masked: b gained a
+    pixel mask a had none of (split_stars), its one more channel the mask's.
     """
     if b["rect"] != _moved_rect(a["rect"], dx, dy):
         return f"rect {a['rect']} -> {b['rect']}"
-    if a["channels"] != b["channels"] or a["blend"] != b["blend"]:
+    channels = b["channels"]
+    if masked:
+        if a["mask"] or not b["mask"] or [c[0] for c in channels].count(-2) != 1:
+            return "mask (no new pixel mask)"
+        channels = tuple(c for c in channels if c[0] != -2)
+    if a["channels"] != channels or a["blend"] != b["blend"]:
         return "channels or blending"
     if not renamed and a["name"] != b["name"]:
         return "name"
-    if a.get("mask_norm") != b.get("mask_norm") or _moved_mask(a.get("mask_box"), dx, dy) != b.get("mask_box"):
+    if not masked and (a.get("mask_norm") != b.get("mask_norm")
+                       or _moved_mask(a.get("mask_box"), dx, dy) != b.get("mask_box")):
         return "mask"
     differing = sum(1 for x, y in zip(a["flags"], b["flags"]) if x != y)
     if differing > (1 if flags else 0):
@@ -6482,6 +6879,7 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
     toggles = {index for edit in edits for index in edit.toggled}
     allowed.update({index: ("toggle", ALLOWED_RECORD_FIELDS["toggle"]) for index in toggles})
     moved = {index: (source, dx, dy) for edit in edits for index, source, dx, dy in edit.shifted}
+    masked = {index for edit in edits for index in edit.masked}
     inserted = {index: ("copy", source, dx, dy) for edit in edits for index, source, dx, dy in edit.copied}
     inserted.update({index: ("made", blocks) for edit in edits for index, blocks in edit.made})
     inserted.update({index: ("ability",) for edit in edits for index in getattr(edit, "added", ())})
@@ -6516,7 +6914,7 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
                     raise Refused("bytes", f"type icon {b['name']!r} is not the declared pixel layer", owner.get(j))
                 block_bytes += sum(len(data) for data in spec[1].values())
             else:
-                why = _record_moved(old[spec[1]], b, spec[2], spec[3], COPY_BLOCKS, renamed=True)
+                why = _record_moved(old[spec[1]], b, spec[2], spec[3], COPY_BLOCKS, j in toggles, True, j in masked)
                 if why:
                     raise Refused("bytes", f"layer {j} {b['name']!r} is no copy of {old[spec[1]]['name']!r} moved: {why}",
                                   owner.get(j))
@@ -6545,7 +6943,8 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
             changed.append((j, a["name"], fields))
         elif j in moved:                        # a star or type icon moved: its rect, mask, transform and anchor
             source, dx, dy = moved[j]
-            why = f"paired with old layer {i}" if source != i else _record_moved(a, b, dx, dy, MOVE_BLOCKS, j in toggles)
+            why = f"paired with old layer {i}" if source != i else _record_moved(a, b, dx, dy, MOVE_BLOCKS, j in toggles,
+                                                                                    masked=j in masked)
             if why:
                 raise Refused("bytes", f"moved layer {j} {a['name']!r}: {why}", owner.get(j))
             flag_bytes += sum(1 for x, y in zip(a["flags"], b["flags"]) if x != y)
@@ -6646,6 +7045,69 @@ def _raw(element) -> bytes:
     return buf.getvalue()
 
 
+FILTER_KEYS = {bytes(Tag.FILTER_EFFECTS1), bytes(Tag.FILTER_EFFECTS2), bytes(Tag.FILTER_EFFECTS3)}
+
+
+def _item_bytes(item, rect: Optional[tuple] = None, uuid: Optional[str] = None, mask: Optional[list] = None) -> bytes:
+    """An FEid item's bytes, with its rectangle, name or mask rectangle replaced."""
+    one = deepcopy(item)
+    one.rectangle = one.rectangle if rect is None else rect
+    one.uuid = one.uuid if uuid is None else uuid
+    if mask is not None:
+        one.extra.rectangle = mask
+    buf = BytesIO()
+    one.write(buf)
+    return buf.getvalue()
+
+
+def _moved_feid(rect, dx: int, dy: int):
+    """An FEid (top, left, bottom, right) moved, as the type it was."""
+    top, left, bottom, right = rect
+    return type(rect)((top + dy, left + dx, bottom + dy, right + dx))
+
+
+def gate_filters(old: PSDImage, new: PSDImage, edits: list) -> None:
+    """
+    The document's FEid block (the smart filters' sources and masks) holds the old bytes but what the edits declare
+    (Edit.filters, S1), as Photoshop writes them (The Flash's 'pngwing.com copy 3'): a moved smart-filtered layer's item
+    moved by its offset, a copy's its source's moved by the copy's and named after it (the planes the same bytes, the
+    mask's rectangle moved only when linked to the layer), the items in file order of their layers; raises
+    Refused("bytes").
+    """
+    declared = {uid: (src, dx, dy) for edit in edits for uid, src, dx, dy in edit.filters}
+    a, b = _filter_block(old), _filter_block(new)
+    if not declared:
+        before, after = _document_blocks(old), _document_blocks(new)
+        if any(before.get(key) != after.get(key) for key in FILTER_KEYS):
+            raise Refused("bytes", "the FEid block changed: no smart-filtered layer moved or copied")
+        return
+    if a is None or b is None or a.version != b.version:
+        raise Refused("bytes", "the FEid block came, went or changed its version")
+    olds = {(item.uuid or "").strip("\x00"): item for item in a}
+    order = [layer for layer in new.descendants() if not layer.is_group() and layer.kind == "smartobject" and _filtered(layer)]
+    linked = {layer.smart_object.placed_id: bool(getattr(layer.smart_object.filters.get(b"filterMaskLinked"), "value", False))
+              for layer in order}
+    seen = set()
+    for item in b:
+        uid = (item.uuid or "").strip("\x00")
+        src, dx, dy = declared.get(uid, (uid, 0, 0))
+        base = olds.get(src)
+        if base is None or uid in seen:
+            raise Refused("bytes", f"FEid item {uid}: no item's, or twice")
+        mask = getattr(base.extra, "rectangle", None)
+        mask = _moved_feid(mask, dx, dy) if mask and linked.get(uid) else None
+        if _item_bytes(item) != _item_bytes(base, _moved_feid(base.rectangle, dx, dy), item.uuid, mask):
+            raise Refused("bytes", f"FEid item {uid}: not {src}'s moved by ({dx}, {dy})")
+        seen.add(uid)
+    if set(olds) - seen:
+        raise Refused("bytes", f"FEid items gone: {sorted(set(olds) - seen)}")
+    if [(item.uuid or "").strip("\x00") for item in b] != [layer.smart_object.placed_id for layer in order] and \
+            [(item.uuid or "").strip("\x00") for item in a] == [layer.smart_object.placed_id for layer in old.descendants()
+                                                              if not layer.is_group() and layer.kind == "smartobject"
+                                                              and _filtered(layer)]:
+        raise Refused("bytes", "FEid items out of their layers' file order")
+
+
 def _document_blocks(psd: PSDImage) -> dict:
     return {bytes(key): block.tobytes() for key, block in (psd._record.layer_and_mask_information.tagged_blocks or {}).items()}
 
@@ -6676,7 +7138,7 @@ def _story_font_name(entry, spelling: int) -> str:
     return str(getattr(entry, "value", entry))
 
 
-def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), added=()) -> list:
+def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), added=(), filters: bool = False) -> list:
     """
     Photoshop reads a type layer's text from its Txt2 story and rebuilds the layer's TySh from it on save, so an edit
     to TySh alone is undone the first time the card is opened (2026-10-22: B.F.B. went back to B.F.B). Every type
@@ -6693,6 +7155,7 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), add
             and their own frames taken out (_drop_story_in), the later indices one lower each
         added: TextIndex of each added layer in the new card (Edit.added_stories): the new card is compared with those
             stories and their own frames taken out
+        filters: the FEid block is gate_filters' (a bake's: smart-filtered stars moved or copied, S1)
 
     Returns:
         The changed stories' indices (the new card's), sorted; raises Refused("bytes")
@@ -6700,7 +7163,8 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), add
     before, after = _document_blocks(old), _document_blocks(new)
     txt2 = bytes(Tag.TEXT_ENGINE_DATA)
     moved = sorted(key.decode("latin-1") for key in set(before) | set(after)
-                   if (key != txt2 or (key in before) != (key in after)) and before.get(key) != after.get(key))
+                   if (key != txt2 or (key in before) != (key in after)) and before.get(key) != after.get(key)
+                   and not (filters and key in FILTER_KEYS))
     if moved:
         raise Refused("bytes", f"document blocks changed: {', '.join(moved)}")
     stale = stale_stories(new)
@@ -7394,7 +7858,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
                               key=lambda job: (job[0] not in ICON_FIELDS, job[0] in STAT_FIELDS, job[0] == "name")):
         if name in ICON_FIELDS:
             try:
-                plan = plan_stars(new, parsed, value, parser, moving=True) if name == "stars" \
+                plan = plan_stars(new, parsed, value, parser, moving=True, split=True) if name == "stars" \
                     else plan_types(new, parsed, value, parser, template)
                 start = perf_counter()
                 if first is None:
@@ -7503,7 +7967,8 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     gate_stories(old, reopened, stories | repaired,
                  [face for edit in edits for face in edit.fonts],
                  [index for edit in edits for index in edit.removed_stories],
-                 [index for edit in edits for index in edit.added_stories])
+                 [index for edit in edits for index in edit.added_stories], filters=True)
+    gate_filters(old, reopened, edits)
     reparse = gate_reparse(parser, parsed, new_psd, rel, jobs, reopened, edits, flags)
     if "parts" in jobs:
         flags += gate_parts(parser, parsed, rel, jobs["parts"], old, reopened, fonts_dir)

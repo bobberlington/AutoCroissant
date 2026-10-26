@@ -1401,9 +1401,11 @@ class PSDParser:
         return len(star_sets([box for box in pieces if in_header(box, psd.height)])) + sum((counts or {}).values())
 
     @staticmethod
-    def stars_below(psd: PSDImage, types=(), stars=()) -> int:
-        """Stars drawn below the midline, which no count reads (Tainted Lazarus's dead form upside down)."""
-        pieces = [box for layer in PSDParser.star_leaves(psd, types, stars) for box in star_pieces(layer)]
+    def stars_below(psd: PSDImage, types=(), stars=(), show=None, boxes=None) -> int:
+        """Stars drawn below the midline, which no count reads (Tainted Lazarus's dead form upside down); show and
+        boxes as stars_drawn takes them."""
+        pieces = [box for layer in PSDParser.star_leaves(psd, types, stars, show) for box in star_pieces(layer)]
+        pieces += [box for found in (boxes or {}).values() for box in found]
         return sum(1 for star in star_sets(pieces) if not in_header(pieces[star[0]], psd.height))
 
     @staticmethod
