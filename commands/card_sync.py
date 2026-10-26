@@ -118,8 +118,11 @@ def built_line(manifest: dict, now: Optional[float] = None) -> str:
 
 def changes(before: dict, after: dict) -> dict:
     """{"changed", "new", "archived"} cards between two databases, duplicates left out (they follow their original)."""
+    # a picture marked or unmarked as a duplicate is neither new nor gone
+    dups = {n for cards in (before, after) for n, c in cards.items() if getattr(c, "duplicate_of", None)}
+
     def originals(cards: dict) -> dict:
-        return {name: c for name, c in cards.items() if not getattr(c, "duplicate_of", None)}
+        return {name: c for name, c in cards.items() if name not in dups}
     a, b = originals(before), originals(after)
     return {"changed": sum(1 for name in a.keys() & b.keys() if card_db.record(a[name]) != card_db.record(b[name])),
             "new": len(b.keys() - a.keys()), "archived": len(a.keys() - b.keys())}

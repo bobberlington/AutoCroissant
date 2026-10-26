@@ -240,7 +240,8 @@ def events(before: dict, after: dict, archived_before: dict, archived_after: dic
     out = []
     for name in sorted(set(before) | set(after) | set(archived_after)):
         old, new = before.get(name), after.get(name)
-        if (new is not None and getattr(new, "duplicate_of", None)) or (old is not None and getattr(old, "duplicate_of", None)):
+        if any(c is not None and getattr(c, "duplicate_of", None) and not getattr(c, "variant_of", None) for c in (old, new)):
+            # a PNG-only duplicate (a variant picture's events are its own)
             both = old is not None and new is not None
             own = {k: v for k, v in field_changes(old, new).items() if k in OWN_FIELDS} if both else {}
             if own:                                       # a duplicate's own artwork sources: its own edit
