@@ -25,6 +25,8 @@ getLogger("psd_tools").setLevel(CRITICAL)
 PARSER_VERSION = 5                # bump when every stored card must be re-parsed (the build re-parses older stamps)
 TYPE_REGION_RATIO = 0.5
 MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']
+STAT_KINDS = (CardType.CREATURE.value, CardType.MINION.value)  # cards with HP, DEF, ATK and SPD bars (CardValidator's)
+NO_STATS = "NO STATS FOUND"       # a stored problem (the website's Parser notes): no bar read (card_edits.FIXED_BY)
 DRAWN_LAYER_KINDS = ("pixel", "smartobject", "group", "type", "shape")   # every other kind is an adjustment layer
 
 # stoogedings is the icon font (TTSCardMaker MDW/Fonts). A token such as [fire] set in it renders as the icon,
@@ -698,6 +700,9 @@ class PSDParser:
         if len(set(ids)) < len(ids):
             card.problems.append("DUPLICATE LAYER IDS")
         self._process_stats(card, stat_trackers)
+        stats = card.stats
+        if card.card_type in STAT_KINDS and (stats.hp, stats.defense, stats.attack, stats.speed) == (-1, -1, -1, -1):
+            card.problems.append(f"{NO_STATS}: no HP, DEF, ATK or SPD bars read on this {card.card_type}")
 
         if get_stars_from_psd:
             card.stars = num_stars.value + self._count_stars(psd)    # icon-font stars in the header + drawn stars
@@ -1595,7 +1600,7 @@ class CardValidator:
             problems.append("ABILITY TEXT NOT FOUND")
 
         # Stat problems
-        if card.card_type in [CardType.CREATURE.value, CardType.MINION.value]:
+        if card.card_type in STAT_KINDS:
             problems.extend(CardValidator._validate_stats(card))
 
         # Add any problems found during parsing
@@ -1608,9 +1613,11 @@ class CardValidator:
 
     @staticmethod
     def _validate_stats(card: CardInfo) -> list[str]:
-        """Validate stats for creatures and minions."""
+        """Validate stats for creatures and minions (none read: the parser's NO_STATS says it, in card.problems)."""
         problems = []
         stats = card.stats
+        if any(p.startswith(NO_STATS) for p in card.problems):
+            return problems
 
         # Check for missing stats
         if stats.hp == -1:
@@ -1638,8 +1645,10 @@ class CardValidator:
 # Module Exports
 # ========================
 __all__ = [
+    'NO_STATS',
     'PARSER_VERSION',
     'STARS_FROM_PSD',
+    'STAT_KINDS',
     'BarRow',
     'BoundingBox',
     'CardClassifier',

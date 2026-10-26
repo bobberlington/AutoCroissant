@@ -869,7 +869,7 @@ or `Types/` (and by hand with `all`): the pushed PSDs by blob sha, Types/, the i
 no card-repo checkout at all; the bot files are `card_check.SPARSE_FILES` (card_check, font_check, github_api, psd_parser,
 card_models, card_edits, global_config; pip `psd-tools fonttools requests`; since 2026-10-24, branch work/py314:
 requirements-cards.txt in the list and the fork from the card workflows' wheel cache on Python 3.14). It reports what `/update_stats` prints for each card
-(the parser's own notes such as NO STARS FOUND, MISSPELT TYPE, SEVERAL CREATURES are also the website's Parser notes; the
+(the parser's own notes such as NO STARS FOUND, NO STATS FOUND, MISSPELT TYPE, SEVERAL CREATURES are also the website's Parser notes; the
 validator's HP/DEF/ATK/SPD NOT FOUND, STATS TOO HIGH, ABILITY TEXT NOT FOUND, UNKNOWN TYPE are printed only), after the card's
 edits entry and `ABILITY_EXCLUSIONS`. Same three outputs and the same secret, but no ping; the Discord line is plain: "<login> has pushed <card>
 with: <note>; <note>." An unreadable PSD or a failed API call is one error line, exit 0 (both checkers since 2026-10-21).

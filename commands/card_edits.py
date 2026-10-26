@@ -97,10 +97,11 @@ class CardEdits:
              "stars": "stars", "types": "types", "ability": "ability", "note": "note", "art": "art", "ability_art": "ability_art",
              "hidden": "hidden", "problems_ok": "problems_ok", "allow_high_stats": "allow_high_stats"}
     STATS = {"hp": "hp", "def": "defense", "atk": "attack", "spd": "speed"}
-    FIXED_BY = {"hp": ("HP NOT FOUND",), "def": ("DEF NOT FOUND",), "atk": ("ATK NOT FOUND",), "spd": ("SPD NOT FOUND",),
+    FIXED_BY = {"hp": ("HP NOT FOUND", "NO STATS FOUND"), "def": ("DEF NOT FOUND", "NO STATS FOUND"),
+                "atk": ("ATK NOT FOUND", "NO STATS FOUND"), "spd": ("SPD NOT FOUND", "NO STATS FOUND"),
                 "ability": ("ABILITY TEXT NOT FOUND", "NO ABILITY LAYER"), "stars": ("NO STARS FOUND",),
                 "type": ("UNKNOWN TYPE",), "types": ("MISSPELT TYPE",), "allow_high_stats": ("STATS TOO HIGH",),
-                "creatures": ("SEVERAL CREATURES",)}
+                "creatures": ("SEVERAL CREATURES", "NO STATS FOUND")}    # build_site.FIXED_BY alike
     # where the value lives: the card image (name: when it differs from the printed title), the card's folder, or this file alone
     KIND = {"name": "psd", "stars": "psd", "types": "psd", "hp": "psd", "def": "psd", "atk": "psd", "spd": "psd", "ability": "psd",
             "parts": "psd", "type": "folder", "subtype": "folder", "series": "folder",

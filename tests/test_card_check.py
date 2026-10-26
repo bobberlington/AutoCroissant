@@ -19,6 +19,7 @@ from helpers import ChecksGitHub as FakeGitHub
 
 NO_STARS = 'NO STARS FOUND (put the star layers in a group named "Stars")'
 SEVERAL = "SEVERAL CREATURES: check each one's stats on the website"
+NO_STATS = "NO STATS FOUND: no HP, DEF, ATK or SPD bars read on this creature"
 OLD = {                                         # the clone's last versions with notes (fixed by these commits' children)
     "N.M.E/Bubble.psd": ("dc37f4adf5309ff0ebacadfbd2f2e07001eec3a5^", [NO_STARS]),          # L14 star groups
     "Auxiliary/Minions/God_Tamer.psd": ("dc37f4adf5309ff0ebacadfbd2f2e07001eec3a5^", [NO_STARS]),
@@ -142,6 +143,12 @@ def test_card_notes_apply_the_edits_then_validate(fake_cards, tmp_path):
     assert cc.card_notes(parser, None, str(psd), rel) == []                                 # older data's note: dropped
     fake_cards[b"a"] = lambda r: creature(r, problems=["NO ABILITY LAYER"], ability=None, card_type="rulebook")
     assert cc.card_notes(parser, None, str(psd), "Auxiliary/Rulebook/A.psd") == ["ABILITY TEXT NOT FOUND", "NO ABILITY LAYER"]
+    fake_cards[b"a"] = lambda r: creature(r, problems=[NO_STATS])          # no bar read: one note, not four
+    assert cc.card_notes(parser, None, str(psd), rel) == [NO_STATS]
+    assert cc.card_notes(parser, cc.CardEdits.parse(edits({"A": {"hp": 5}})), str(psd), rel) == [
+        "DEF NOT FOUND", "ATK NOT FOUND", "SPD NOT FOUND"]                 # a stat edit answers it; the rest told
+    assert cc.card_notes(parser, cc.CardEdits.parse(edits({"A": {"creatures": [{"hp": 1, "def": 1, "atk": 1, "spd": 1}]}})),
+                         str(psd), rel) == []
 
 
 # ========================
@@ -156,17 +163,17 @@ def test_cli_psd_mode(clone, tmp_path, capsys):
     text = capsys.readouterr().out
     assert text.startswith("## Card check\n\n3 card PSDs read.\n\n")
     assert f"- `Auxiliary/Minions/God_Tamer.psd` (bobber): {NO_STARS}\n" in text
-    assert "- `Creatures/Kirby/3 Stars/Computer_Virus.psd` (bobber): HP NOT FOUND; DEF NOT FOUND; ATK NOT FOUND; SPD NOT FOUND\n" in text
+    assert f"- `Creatures/Kirby/3 Stars/Computer_Virus.psd` (bobber): {NO_STATS}\n" in text
     assert "Mini_Doomer" not in text and "Errors" not in text
     data = json.loads(out.read_text(encoding="utf-8"))
     assert data == {"checked": 3, "errors": [],
                     "cards": [{"path": "Auxiliary/Minions/God_Tamer.psd", "author": "bobber", "notes": [NO_STARS]},
                               {"path": "Creatures/Kirby/3 Stars/Computer_Virus.psd", "author": "bobber",
-                               "notes": ["HP NOT FOUND", "DEF NOT FOUND", "ATK NOT FOUND", "SPD NOT FOUND"]}]}
+                               "notes": [NO_STATS]}]}
     payload = json.loads(disc.read_text(encoding="utf-8"))
     assert payload["content"].splitlines() == [
         f"bobber has pushed God Tamer with: {NO_STARS}.",
-        "bobber has pushed Computer Virus with: HP NOT FOUND; DEF NOT FOUND; ATK NOT FOUND; SPD NOT FOUND.",
+        f"bobber has pushed Computer Virus with: {NO_STATS}.",
         cc.CLOSING]
     assert payload["allowed_mentions"] == {"parse": []} and len(payload["content"]) < 2000
     assert "http" not in payload["content"] and "token" not in payload["content"].lower()
@@ -206,7 +213,7 @@ def test_cli_all_mode_with_the_edits(clone, tmp_path, capsys):
         "Auxiliary/Minions/God_Tamer.psd": [NO_STARS],
         "Auxiliary/Rulebook/20_Creature_Types.psd": ["MISSPELT TYPE: tornado"],
         "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd": ["STATS TOO HIGH"],
-        "Creatures/Kirby/3 Stars/Computer_Virus.psd": ["HP NOT FOUND", "DEF NOT FOUND", "ATK NOT FOUND", "SPD NOT FOUND"],
+        "Creatures/Kirby/3 Stars/Computer_Virus.psd": [NO_STATS],
         "Creatures/Kirby/3 Stars/Pix.psd": [SEVERAL]}
 
 
@@ -251,8 +258,8 @@ def test_discord_payload_wording():
     assert set(payload) == {"content", "allowed_mentions"} and payload["allowed_mentions"] == {"parse": []}
     assert payload["content"] == (f"bobber has pushed God Tamer with: {NO_STARS}.\n"
                                   "michael has pushed Computer Virus with: HP NOT FOUND; DEF NOT FOUND.\n"
-                                  "The bot's next /update_stats prints these too; the parser's own notes (no stars found, misspelt type, "
-                                  "several creatures) also show on the website as Parser notes.")
+                                  "The bot's next /update_stats prints these too; the parser's own notes (no stars or stats found, "
+                                  "misspelt type, several creatures) also show on the website as Parser notes.")
     assert "website shows these" not in payload["content"]        # the validator's notes never reach the website's Parser notes
     assert "<@" not in payload["content"]                                       # nobody is pinged (owner, 2026-10-23)
     assert cc.discord_payload(cc.Report(checked=2, errors=["x.psd: could not be read (boom)"])) == {}

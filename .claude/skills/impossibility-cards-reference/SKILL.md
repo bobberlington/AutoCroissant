@@ -441,7 +441,9 @@ Problems come in two kinds, and only one kind is persisted — a common newcomer
 - **Parse-time problems** are appended to `card.problems` during parsing and stored in the card data (the website's Parser notes):
   `NO ABILITY LAYER` (rule pages only since 2026-10-25, psd_parser.py:523), `DUPLICATE LAYER IDS` (:526), `NO STARS FOUND` (:532), `MISSPELT TYPE: <name>` (:756-757,
   fired by a visible pixel layer named in `MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']`,
-  line 26), the effect-layer and icon-token ones through `_add_problem` (:943; callers :678-693, :975-1006) and `SEVERAL CREATURES` (:1182).
+  line 26), the effect-layer and icon-token ones through `_add_problem` (:943; callers :678-693, :975-1006), `SEVERAL CREATURES` (:1182)
+  and, since 2026-10-26, `NO STATS FOUND: no HP, DEF, ATK or SPD bars read on this creature` (or minion; `STAT_KINDS`):
+  the validator then skips its four `... NOT FOUND` lines; a stat or `creatures` edit answers it (`FIXED_BY`).
 - **Validate-time problems** are computed by `CardValidator.validate` during `/update_stats`,
   REPORTED to Discord, and NOT written back to the card. Since 2026-10-21 the same `validate()` (after the card's
   `site/Card Edits.json` entry) also runs per pushed PSD in `commands/card_check.py`, the push guard's card check

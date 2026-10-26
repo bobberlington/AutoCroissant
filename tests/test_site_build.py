@@ -403,6 +403,18 @@ def test_website_only_fields(bs, tmp_path, monkeypatch):
     assert "refused" not in card and card["siteOnly"] == ["name", "hp"]
 
 
+def test_parser_notes_answered_as_the_bot_does(bs):
+    """build_site.FIXED_BY is card_edits.FIXED_BY: a stat edit answers NO STATS FOUND on the website too (B3, 2026-10-26)."""
+    from commands.card_edits import CardEdits
+    from commands.psd_parser import NO_STATS
+    assert bs.FIXED_BY == CardEdits.FIXED_BY
+    note = f"{NO_STATS}: no HP, DEF, ATK or SPD bars read on this creature"
+    for fields, left in (({"note": "n"}, [note]), ({"hp": 6}, []), ({"creatures": [{"hp": 6, "def": 2, "atk": 3, "spd": 4}]}, [])):
+        card = {"key": "Computer_Virus", "name": "Computer Virus", "type": "creature", "problems": [note]}
+        bs.apply_edits(card, {"computer virus": (fields, {})}, shown="Computer Virus")
+        assert card["problems"] == left, fields
+
+
 def test_font_filter_data_is_the_details_fonts(bs):
     """data/cardfonts.json (owner 10-25, the grid's Font filter): a card's fonts are its Details record's, a variant picture
     its PSD's, a PNG-only duplicate (no record) and an unreadable fonts section none; names by use, then name."""

@@ -11,7 +11,7 @@ summary, commit comment and a Discord message in the standards channel at once, 
     markdown(report), discord_payload(report) -> the job summary / commit comment and the webhook body
 
 The notes equal /update_stats' for the same PSD, Types/ names and site/Card Edits.json: the parser's own (NO STARS FOUND,
-MISSPELT TYPE, SEVERAL CREATURES ...) and CardValidator's (HP NOT FOUND, STATS TOO HIGH ...), after
+NO STATS FOUND, MISSPELT TYPE, SEVERAL CREATURES ...) and CardValidator's (HP NOT FOUND, STATS TOO HIGH ...), after
 the card's website edits (problems_ok, allow_high_stats, creatures ...); a PSD with variant tags: each picture's ("A Snack2:
 ..."). A notification, never a
 gate: findings exit 0, an unreadable PSD or a failed API call is one error line. The repo path classifies a card, so
@@ -45,8 +45,8 @@ from global_config import EDITS_PATH, ICON_MANIFEST_PATH, STARS_DIR, TYPES_DIR
 # Configuration
 # ========================
 LINE = "{name} has pushed {card} with: {notes}."                                  # the Discord line per card
-CLOSING = ("The bot's next /update_stats prints these too; the parser's own notes (no stars found, misspelt type, several "
-           "creatures) also show on the website as Parser notes.")                  # the Discord message's last line
+CLOSING = ("The bot's next /update_stats prints these too; the parser's own notes (no stars or stats found, misspelt type, "
+           "several creatures) also show on the website as Parser notes.")          # the Discord message's last line
 UNREADABLE = "could not be read"
 _worker: tuple = ()                         # (parser, edits) of a pool worker, built once by _init_worker
 
