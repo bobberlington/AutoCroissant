@@ -28,6 +28,11 @@ cards, apostrophes 34). reminder.json is backed up to `backup/reminder.json` on 
       (`~/Documents/Tools/wt/tc-varianttags`); the plan to show the owner first:
       `~/Documents/Tools/wt/scratch/parts-ab/VARIANT_TAGS_PLAN.md`. Land after his look (then the numbered-PNG
       duplicate scan goes, PARTS_EDITOR §10 step 5).
+- [ ] **Badges resized anyway** (owner 10-25: rewraps allowed): AutoCroissant `work/resize58` (the guards resize even when
+      the text rewraps; an FX layer on moved words is cut again), TTSCardMaker `work/resize58` 32039569 (43 cards, 13
+      rewrapped; the other 11 are the cards below that need a Photoshop re-save). Land AutoCroissant first, then the card
+      commit once `python -m commands.card_sweep moved --plan ~/Documents/Tools/wt/scratch/resize58/card-sweep-badges.json
+      --clone ~/Desktop/TTSCardMaker` prints nothing.
 - [ ] **OJWikibot optimization lane 3** (opt PLAN §(a)): in flight at the end of the night (`work/opt3`).
 
 ## Questions for the owner (recommended answers in bold in the source)
@@ -40,7 +45,6 @@ cards, apostrophes 34). reminder.json is backed up to `backup/reminder.json` on 
 - Michael's Blessing: the badge sweep shrank its badge table (the "->" arrows no longer line up). Keep or revert that
   card from 218a122d?
 - KungFuPandaRegular-xYjV.ttf (the one old font copy kept): delete?
-- Badges that would rewrap text if resized (58) got the shift only; allow the resize anyway?
 
 ## Found, needs the owner
 
