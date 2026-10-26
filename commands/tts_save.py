@@ -325,9 +325,9 @@ class _Repo:
 def db_names(stats_path: str, tree: dict) -> dict:
     """
     cards.json's png -> name from a card data build's stats.json, by build_site's rule: a card's printed title (the
-    parser's, under any Card Edits.json name) else its name, a duplicate PNG its display name, then a PSD or PNG the
-    data lacks its file stem; rule pages are left out (build_site lists them apart). Card Edits.json names are applied
-    by _Names, as for cards.json.
+    parser's, under any Card Edits.json name) else its name (a variant picture N: NameN.png), a duplicate PNG its
+    display name, then a PSD or PNG the data lacks its file stem; rule pages are left out (build_site lists them
+    apart). Card Edits.json names are applied by _Names, as for cards.json.
     """
     from commands.card_db import parse_stats
     with open(stats_path, encoding="utf-8") as fh:
@@ -338,17 +338,18 @@ def db_names(stats_path: str, tree: dict) -> dict:
         if path.lower().endswith(".png"):
             by_name.setdefault(basename(path).lower(), path)
 
-    def png_for(psd: str, name: str):
-        guess = psd[:len(psd) - 4] + ".png" if psd.lower().endswith(".psd") else None
+    def png_for(psd: str, name: str, variant=None):
+        number = str(variant) if isinstance(variant, int) and variant > 1 else ""     # variant N: NameN.png
+        guess = psd[:len(psd) - 4] + number + ".png" if psd.lower().endswith(".psd") else None
         return guess if guess in tree else by_name.get(name.replace(" ", "_").lower() + ".png")
     out, seen, dup_names, known = {}, set(), {}, set()
     for name, card in sorted(stats.items(), key=lambda kv: kv[0].lower()):
         path = getattr(card, "path", "") or ""
-        if getattr(card, "duplicate_of", None):
+        if getattr(card, "duplicate_of", None) and not getattr(card, "variant_of", None):     # a variant: its own card
             if getattr(card, "display_name", None):
                 dup_names[name.replace(" ", "_").lower() + ".png"] = card.display_name
             continue
-        png = png_for(path, name)
+        png = png_for(path, name, getattr(card, "variant", None))
         parsed = getattr(card, "parsed_values", None) or {}
         title = parsed["name"] if "name" in parsed else getattr(card, "display_name", None)
         rule = getattr(card, "card_type", "") == "rulebook" or "/Rulebook/" in path

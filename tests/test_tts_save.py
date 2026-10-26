@@ -393,6 +393,24 @@ def test_db_names_follow_build_site(tmp_path):
 
 
 
+def test_db_names_variant_pictures(tmp_path):
+    """Each variant picture names its own PNG (NameN.png, build_site's png_for), marked a duplicate or not (data from
+    before 10-25); picture 1 keeps its title."""
+    import commands.card_db as cdb
+    import commands.card_models as cm
+    psd = "Items/Heal/2 Stars/A_Snack.psd"
+
+    def pic(name, n, title, dup=None):
+        return cm.CardInfo(name=name, card_type="item", path=psd, display_name=title, variant=n,
+                           variant_of=None if n == 1 else "A Snack", duplicate_of=dup)
+    stats = {"A Snack": pic("A Snack", 1, "A snack"), "A Snack2": pic("A Snack2", 2, "Breakfast"),
+             "A Snack3": pic("A Snack3", 3, "Supper", "A Snack")}
+    (tmp_path / "stats.json").write_text(cdb.stats_text(stats), encoding="utf-8")
+    pngs = [psd[:-4] + n + ".png" for n in ("", "2", "3")]
+    tree = {p: "0" * 40 for p in [psd, *pngs]}
+    assert tts.db_names(str(tmp_path / "stats.json"), tree) == dict(zip(pngs, ("A snack", "Breakfast", "Supper")))
+
+
 def test_pin_links_follow_a_moved_and_redrawn_card(repo, monkeypatch):
     """PARTS_EDITOR.md §4.12 (§11 case 8): a stars edit moves a card into another "N Stars" folder and redraws its stars
     (a new blob): its links follow the one file of that card key under the same top folder."""
