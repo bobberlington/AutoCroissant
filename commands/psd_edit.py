@@ -26,6 +26,7 @@ from re import IGNORECASE, compile as re_compile, escape, fullmatch, search, sub
 from struct import pack
 from time import perf_counter
 from typing import Optional
+from uuid import NAMESPACE_URL, uuid5
 
 import numpy as np
 from PIL import Image
@@ -34,6 +35,7 @@ from psd_tools import PSDImage
 from psd_tools.api.pil_io import post_process
 from psd_tools.constants import BlendMode, ColorMode, Resource, Tag
 from psd_tools.psd.base import ListElement
+from psd_tools.psd.descriptor import String
 
 from commands.card_edits import ADD_ABILITY, CardEdits
 from commands.card_models import CardInfo, StatsDatabase, straight
@@ -620,7 +622,8 @@ def name_layer(psd: PSDImage, card: str = "", own_text: bool = True):
         raise Refused("unsupported-card", _no_title(psd, own_text))
     if len(found) > 1:
         raise Refused("unsupported-card", f"{len(found)} title layers")
-    if PSDParser.split_title(psd, found, title_text(found[0].text), card):
+    joined, whole = "".join(title_text(found[0].text).lower().split()), "".join(card.lower().split())
+    if PSDParser.split_title(psd, found, title_text(found[0].text), card) or PSDParser._named_pieces(psd, found, joined, whole):
         raise Refused("unsupported-card", "the title is split over several layers")
     copy = _copy(psd, found[0])
     if copy is not None:
@@ -4406,7 +4409,7 @@ def _core(layer) -> Optional[tuple]:
     return union_box([PSDParser._core_box(leaf) for leaf in _drawn(layer)])
 
 
-def _star_count(group, show: dict, boxes: dict, counts: dict) -> int:
+def _star_count(group, show: dict, boxes: dict, counts: dict, types=()) -> int:
     """
     What PSDParser._stars_in counts in a group once layers are shown or hidden and copies added.
 
@@ -4415,21 +4418,22 @@ def _star_count(group, show: dict, boxes: dict, counts: dict) -> int:
         show: id(layer) -> visible, overriding its flag
         boxes: id(group) -> core boxes counted among its loose layers (a loose star's copy)
         counts: id(group) -> stars added there (a star group's copy)
+        types: Types/ names: a layer named after one is a type icon, no star (Toy Freddy's Machine)
     """
     count, loose = counts.get(id(group), 0), list(boxes.get(id(group), ()))
     for layer in group:
         if not show.get(id(layer), layer.visible):
             continue
         if layer.is_group():
-            count += _star_count(layer, show, boxes, counts)
-        elif layer.has_pixels():
+            count += _star_count(layer, show, boxes, counts, types)
+        elif layer.has_pixels() and not PSDParser.type_icon(layer, types):
             loose.append(PSDParser._core_box(layer))
     return count + len(_clusters(loose))
 
 
-def _stars_total(psd: PSDImage, show=None, boxes=None, counts=None) -> int:
+def _stars_total(psd: PSDImage, show=None, boxes=None, counts=None, types=()) -> int:
     """The parser's count over the card's Stars groups (PSDParser._count_stars), with _star_count's changes."""
-    return sum(_star_count(group, show or {}, boxes or {}, counts or {}) for group in PSDParser._star_groups(psd))
+    return sum(_star_count(group, show or {}, boxes or {}, counts or {}, types) for group in PSDParser._star_groups(psd))
 
 
 @dataclass
@@ -4463,7 +4467,7 @@ def _star_units(container, types=()) -> tuple:
         if layer.name.strip().lower() in types:
             continue
         if layer.is_group():
-            count = _star_count(layer, {}, {}, {})
+            count = _star_count(layer, {}, {}, {}, types)
             core = _core(layer)
             if count and core:
                 (shown if layer.visible else hidden).append(_Unit([layer], core, count))
@@ -4907,18 +4911,18 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
     if not stars_from_psd(rel):
         folder = rel.split("/")[len(rel.split("/")) - 2] if "/" in rel else ""
         if fullmatch(STAR_FOLDER, folder, IGNORECASE) and not moving:
-            refuse(f"the {folder!r} folder sets them (moving the card is ledger S9)")
+            refuse(f"the {folder!r} folder sets them")   # a folder star_folder can't move along
         elif not fullmatch(STAR_FOLDER, folder, IGNORECASE):
             refuse(f"the parser reads no stars on a {parsed['card'].get('type') or 'card'} card")
     if value < 1:
         refuse("a card shows at least one")
-    groups = [group for group in PSDParser._star_groups(psd) if _star_count(group, {}, {}, {})]
     types = parser.all_types if parser is not None else ()
+    groups = [group for group in PSDParser._star_groups(psd) if _star_count(group, {}, {}, {}, types)]
     named = not groups and not PSDParser._star_groups(psd) and stars_from_psd(rel)   # the parser's fallback: layers
     #   named "... Star ..." (only where it counts them: a folder card's are its art, not redrawn)
     if not groups and not named:
         refuse('no group named "Stars" draws them')
-    total = _named_total(psd) if named else _stars_total(psd)
+    total = _named_total(psd) if named else _stars_total(psd, types=types)
     if total != old:
         refuse(f"the parser counts {old}, the Stars group draws {total} (stars in the header text)")
     plan = IconPlan("stars", old, value)
@@ -4937,10 +4941,10 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
                 folders.setdefault(int(found.group(1)), []).append(child)
         if folders:
             shown = [f for group in folders.values() for f in group if f.visible]
-            target = folders.get(value - total + sum(_star_count(f, {}, {}, {}) for f in shown))
+            target = folders.get(value - total + sum(_star_count(f, {}, {}, {}, types) for f in shown))
             if target:
                 show = {id(f): f is target[0] for group in folders.values() for f in group}
-                drawn = _stars_total(psd, show)
+                drawn = _stars_total(psd, show, types=types)
                 if drawn == value:
                     plan.show = [] if target[0].visible else [target[0]]
                     plan.hide = [f for f in shown if f is not target[0]]
@@ -4989,7 +4993,7 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         if moves and _stars_blocked(psd, moves, clear) is None:
             plan.moves, plan.how = moves, "rows of two"
     else:                                   # more: the card's own hidden stars, then the layout's spacing
-        total_of = (lambda show_: _named_total(psd, show_)) if named else (lambda show_: _stars_total(psd, show_))
+        total_of = (lambda show_: _named_total(psd, show_)) if named else (lambda show_: _stars_total(psd, show_, types=types))
         spots = [spot for _, layout in _star_layouts(_reading(shown, size[1], True), size, count) + 
                  _more_layouts(_reading(shown, size[1], True), size, count, psd) for spot in layout]
         for unit in _reading(hidden, size[1], True):
@@ -4998,6 +5002,8 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
             if several and not any(abs(unit.centre[0] - x) <= _tol(max(size)) and abs(unit.centre[1] - y) <= _tol(max(size))
                                    for x, y in spots):
                 continue                        # Shadow Queen's spare art: shown only where the layout puts a star
+            if any(not size[k] / 2 <= unit.size[k] <= size[k] * 2 for k in (0, 1)):
+                continue                        # another size: no star of the row (Toy Freddy's hidden 'star test')
             trial = {**show, **{id(layer): True for layer in unit.layers}}
             if total_of(trial) == total_of(show) + 1 and _stars_blocked(psd, [(unit, 0, 0)], clear) is None:
                 show, shown = trial, shown + [unit]
@@ -5034,7 +5040,7 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         else:
             boxes.setdefault(id(unit.layers[0].parent), []).extend(_moved_box(PSDParser._core_box(layer), dx, dy)
                                                                   for layer in unit.layers)
-    drawn = _named_total(psd, show, boxes) if named else _stars_total(psd, show, boxes, counts)
+    drawn = _named_total(psd, show, boxes) if named else _stars_total(psd, show, boxes, counts, types)
     if drawn != value:
         refuse(f"the new layout would count {drawn}")
     plan.moves = [(layer, dx, dy) for unit, dx, dy in plan.moves for layer in _with_chains(unit.layers)]
@@ -5320,6 +5326,37 @@ def _types_group(psd: PSDImage):
     return next((layer for layer in psd if layer.is_group() and layer.visible and "type" in layer.name.lower()), psd)
 
 
+SMART_BLOCKS = (Tag.SMART_OBJECT_LAYER_DATA1, Tag.SMART_OBJECT_LAYER_DATA2)
+
+
+def _placed(layer) -> list:
+    """A smart object's placed-instance descriptors (its SoLd/SoLE data), [] for another layer."""
+    blocks = layer._record.tagged_blocks
+    found = [blocks.get_data(key) for key in SMART_BLOCKS] if blocks else []
+    return [data.data for data in found if data is not None and b"placed" in getattr(data, "data", {})]
+
+
+def same_placed(source, copy, salt: str) -> None:
+    """
+    A copied smart object's placed ID made from its source's and salt, not at random (the fork's duplicate gives a
+    uuid4): every picture's bake of a tagged PSD makes the same layers (bake_pictures' check). An ID the card already
+    holds is skipped (a star copied again where a hidden copy sits).
+    """
+    pairs = zip([source, *(source.descendants() if source.is_group() else ())],
+                [copy, *(copy.descendants() if copy.is_group() else ())])
+    taken = {str(data[b"placed"].value) for layer in copy._psd.descendants() for data in _placed(layer)}
+    for old, new in pairs:
+        theirs, mine = _placed(old), _placed(new)
+        if not theirs or not mine:
+            continue
+        n = 0
+        while (made := str(uuid5(NAMESPACE_URL, f"{theirs[0][b'placed'].value}|{salt}|{n}"))) in taken:
+            n += 1
+        taken.add(made)
+        for data in mine:                       # both blocks name one instance
+            data[b"placed"] = String(made)
+
+
 def _copy_chain(reference, layer, done: list) -> list:
     """The reference icon's clip chain (its Curves...) copied onto a new icon, moved as far as the icon is from it."""
     (rx, ry), (lx, ly) = _centre(_core(reference) or tuple(reference.bbox)), _centre(_core(layer) or tuple(layer.bbox))
@@ -5327,6 +5364,7 @@ def _copy_chain(reference, layer, done: list) -> list:
     parent, out = layer.parent, []
     for k, clipped in enumerate(_clip_chain(reference)):
         copy = clipped.duplicate(parent, index=parent.index(layer) + 1 + k)
+        same_placed(clipped, copy, f"chain {layer.name}|{dx},{dy}|{k}")
         _shift(copy, dx, dy)
         done.append(("copy", clipped, copy, dx, dy))
         out.append(copy)
@@ -5368,7 +5406,7 @@ def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None) ->
 
     Returns:
         Edit over the layers it touched, its region their old and new boxes padded by their effects; raises Refused
-        (field set) for a type icon that lands on the text or stars
+        (field set) for a type icon that lands on the text or stars (at the template's spot: baked, flagged)
     """
     boxes = [(_extent(layer), layer) for layer in plan.hide + plan.show]
     boxes += [(_extent(layer), layer) for layer, _, _ in plan.moves]
@@ -5378,6 +5416,7 @@ def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None) ->
         top = max(unit.layers, key=parent.index)
         for k, layer in enumerate(_with_chains(sorted(unit.layers, key=parent.index))):
             copy = layer.duplicate(parent, index=index + k, name=name if layer is top else None)
+            same_placed(layer, copy, f"{name}|{dx},{dy}|{k}")
             _shift(copy, dx, dy)
             plan.done.append(("copy", layer, copy, dx, dy))
             boxes.append((_extent(copy), copy))
@@ -5389,13 +5428,17 @@ def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None) ->
         _shift(layer, dx, dy)
         boxes.append((_extent(layer), layer))
     stars, texts = badge_layers(psd)[0], _texts(psd)
+    touching = []
     for stem, box, reference in plan.icons:
         if types_dir is None:
             raise Refused("unsupported-card", "types: no Types/ icons to make one from", "types")
         layer = _make_icon(psd, types_dir, stem, box, reference)
         others = [other for other in texts + stars if other is not layer]
         blocked = _blocked(psd, [_ink(layer)], _core(layer) or tuple(layer.bbox), others)
-        if blocked:
+        if blocked and plan.first and blocked.startswith("would touch"):    # the template's spot: baked, told (rulings)
+            touching.append(f"types: the {layer.name!r} icon at {plan.first}'s spot "
+                            f"{blocked.replace('would touch', 'touches')}: check it")
+        elif blocked:
             raise Refused("unsupported-card", f"types: the {layer.name!r} icon {blocked}", "types")
         blocks = {bytes(key): layer.tagged_blocks[key].tobytes() for key in EFFECT_BLOCKS if key in layer.tagged_blocks}
         plan.done.append(("made", layer, blocks))
@@ -5406,6 +5449,7 @@ def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None) ->
     layers = plan.hide + plan.show + [layer for layer, _, _ in plan.moves] + [done[2] if done[0] == "copy" else done[1]
                                                                              for done in plan.done]
     notes = list(plan.notes) + ([f"types: the first type icon is placed at {plan.first}'s spot: check it"] if plan.first else [])
+    notes += touching
     return Edit(plan.field, plan.old, plan.new, layers, [], region, icons=plan, notes=notes)
 
 
@@ -7704,7 +7748,7 @@ def _typed_lines(note: str, typed: int) -> bool:
 # ========================
 # Stars by folder and first type icons (PARTS_EDITOR.md §4.8)
 # ========================
-STAR_PATH = re_compile(r"^((?:Creatures|Items)/[^/]+/|Field/)(\d+) Stars/", IGNORECASE)   # cards starred by folder
+STAR_PATH = re_compile(r"^((?:[^/]+/)*)(\d+) Stars/[^/]+$", IGNORECASE)   # a card in an "N Stars" folder (debuffs too)
 TEMPLATES_DIR = "MDW/Templates"
 TEMPLATES = {"creature": "Creature_Template", "minion": "Creature_Template", "creatures": "Creature_Template",
              "item": "Item_Template", "aux item": "Item_Template", "nme": "Item_Template", "field": "Item_Template",
@@ -7718,7 +7762,7 @@ def _card_path(parsed: dict) -> str:
 
 def star_folder(rel: str) -> Optional[tuple]:
     """(the path up to the "N Stars" folder, N) of a card whose stars come from its folder, else None."""
-    found = STAR_PATH.match(rel or "")
+    found = None if stars_from_psd(rel or "") else STAR_PATH.match(rel or "")
     return (found.group(1), int(found.group(2))) if found else None
 
 
