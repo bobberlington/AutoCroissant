@@ -437,10 +437,10 @@ def test_recompress_keeps_the_image_and_its_colour_chunks(opaque, icc):
     profile (Photoshop's sRGB one too: oxipng would make it an sRGB chunk), gAMA and pHYs; the text (Photoshop's XMP)
     goes, and a fully opaque card becomes RGB (SMALLER_PNG_PUSHES.md)."""
     if icc == "photoshop":                      # a card's own: sRGB IEC61966-2.1
-        from conftest import CLONE
-        path = CLONE / "Auxiliary/Minions/Mini_Doomer.png"
-        if not path.is_file():
-            pytest.skip("Mini Doomer's PNG not in the clone")
+        from conftest import CLONE, pinned_clone
+        if not (CLONE / ".git").exists():
+            pytest.skip(f"no card repo clone at {CLONE}")
+        path = pinned_clone() / "Auxiliary/Minions/Mini_Doomer.png"
         icc = pe.open_png(path.read_bytes()).info["icc_profile"]
     image = art()
     if not opaque:

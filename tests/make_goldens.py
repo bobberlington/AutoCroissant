@@ -1,6 +1,7 @@
 """
-Write tests/goldens/ from the CURRENT parser. By default only the goldens whose PSD changed upstream (or that have none
-yet); name card paths to re-pin just those; --all only after a parser change was accepted (validation-and-qa section 4):
+Write tests/goldens/ from the CURRENT parser and the cards at conftest.CARDS_REV. By default only the goldens whose PSD
+differs at the pin (or that have none yet); name card paths to redo just those; --all only after a parser change was
+accepted (validation-and-qa section 4):
     python tests/make_goldens.py [--vocab] [--all | <card path> ...]
 (--vocab also re-freezes Types/, Types/Stars/ and the manifest)
 """
@@ -9,8 +10,10 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from conftest import CLONE, blob_sha  # noqa: E402  (also puts the repo on sys.path, with config)
+from conftest import blob_sha, pinned_clone  # noqa: E402  (also puts the repo on sys.path, with config)
 from golden_cards import CARDS, VOCAB, golden_file, parse, parser  # noqa: E402
+
+CLONE = pinned_clone()                    # the card repo at CARDS_REV
 
 
 def freeze_vocab() -> None:

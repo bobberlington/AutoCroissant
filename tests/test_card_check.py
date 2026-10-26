@@ -14,7 +14,7 @@ import pytest
 import commands.card_check as cc
 import commands.github_api as ga
 from commands.card_models import CardInfo, CardStats, card_name
-from conftest import Reply, blob_sha_bytes as _sha, no_lazy
+from conftest import Reply, blob_sha_bytes as _sha, no_lazy, smallest
 from helpers import ChecksGitHub as FakeGitHub
 
 NO_STARS = 'NO STARS FOUND (put the star layers in a group named "Stars")'
@@ -105,7 +105,7 @@ def test_clone_readers_match_the_traversers(clone, monkeypatch):
     """The bot's own readers (/update_stats) over the clone as a tree: the same types, icons and edits as clone_vocabulary/clone_edits."""
     import commands.card_data as cd
     tracked = run_process(["git", "-C", str(clone), "ls-files", "-z"], capture_output=True, check=True).stdout
-    paths = sorted(p for p in tracked.decode().split("\0") if p and (clone / p).is_file())   # no ignored .DS_Store
+    paths = sorted(p for p in tracked.decode().split("\0") if p)
     traverser = cd.CardBuild(cc.StatsDatabase())
     traverser.tree = {"tree": [{"path": p, "type": "blob", "sha": p} for p in paths]}
     traverser.shas = {p: p for p in paths}
@@ -213,9 +213,7 @@ def test_cli_all_mode_with_the_edits(clone, tmp_path, capsys):
 def test_check_checkout_pool_matches_sequential(clone, tmp_path, monkeypatch):
     """--all from POOL_MIN PSDs parses in a process pool (a parser per worker): the same report as the sequential path."""
     n = cc.POOL_MIN
-    psds = sorted(clone.joinpath("Auxiliary", "Minions").glob("*.psd"), key=lambda p: p.stat().st_size)[:n]
-    if len(psds) < n:
-        pytest.skip("not enough card PSDs in the clone")
+    psds = smallest(clone, "Auxiliary/Minions", n)
     root = tmp_path / "repo"
     for path in psds:
         link = root / path.relative_to(clone)
