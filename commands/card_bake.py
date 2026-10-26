@@ -657,12 +657,13 @@ def plan_move(snapshot: Snapshot, card: Card, parsed: dict, psd, parser) -> dict
 # ========================
 # Renaming a card's files (the editor's "Also rename the card's files", owner 2026-10-25)
 # ========================
-def plan_rename(snapshot: Snapshot, card: Card) -> None:
+def plan_rename(snapshot: Snapshot, card: Card, claimed: frozenset = frozenset()) -> None:
     """
     A name edit with `_rename`: the card's PSD and every PNG of it (its pictures NameN.png too) take the name's file stem
     (card_models.file_stem), in the folder a stars move takes them to. Impossible, refused (the name's alone, as a
-    stars move's): a name with nothing a file name can hold, another card's file of that name (any case). Fills
-    card.renames and card.renamed; nothing when the stem is the file's already.
+    stars move's): a name with nothing a file name can hold, another card's file of that name (any case), a name another
+    card of the run renames to (claimed: their card keys). Fills card.renames and card.renamed; nothing when the stem is
+    the file's already.
     """
     name = card.fields.get("name")
     if not card.rename or not isinstance(name, str) or not ({"name", "parts"} & set(card.jobs) or "name" in card.redundant):
@@ -677,6 +678,8 @@ def plan_rename(snapshot: Snapshot, card: Card) -> None:
     for n, png in [(1, card.png)] + [(n, p) for n, p in sorted(card.pictures.items()) if n != 1]:
         files[png] = stem + ("" if n == 1 else str(n)) + png[len(png) - 4:]
     keys = {CardAuthors.key(card_name(new)) for new in files.values()}
+    if keys & claimed:
+        raise Refused("unsupported-card", f"name: another card of this run takes the name {name!r}: the files can't take it", "name")
     for path in snapshot.tree:
         if path in files or not path.lower().endswith((".psd", ".png")) or path.startswith(TYPES_DIR + "/") \
                 or any(folder in EXCLUDE_FOLDERS for folder in path.split("/")):
@@ -1174,7 +1177,7 @@ def _smaller(path: str) -> bytes:
 
 
 def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Callable[[], Optional[dict]], work: str,
-              recent: Callable[[], Optional[set]]) -> None:
+              recent: Callable[[], Optional[set]], claimed: frozenset = frozenset()) -> None:
     """
     Section 5 for one card up to the commit: the recent, duplicate and blob gates, classify, apply with every gate.
     Fills the Card in place (its files, expect, verdict and dropped fields for land); a Refused becomes its refusal,
@@ -1188,6 +1191,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         chart: Returns status_fills() of the status chart, or None when the tree has none (fetched once)
         work: The run's work dir (the card's artifacts go in a folder named after it)
         recent: Returns recent_paths() (fetched once)
+        claimed: Card keys the run's earlier cards rename to (plan_rename)
     """
     started = perf_counter()
     folder = join(work, card.name.replace("/", "_"))
@@ -1260,7 +1264,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
             del card.jobs["stars"]
             bake = dict(card.jobs)
         try:                                    # the name's files too, when asked (owner 10-25)
-            plan_rename(snapshot, card)
+            plan_rename(snapshot, card, claimed)
         except Refused as refused:              # the name stays in the file, refused; the rest bakes
             if not (set(card.jobs) - {"name"}) and not [f for f in card.redundant if f != "name"] and not settled:
                 raise
@@ -1675,6 +1679,7 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
                             colors.append(psd_edit.status_fills(PSDImage.open(path)))
                     return colors[0]
                 pushed: list = []               # recent_paths(), read once
+                claimed: set = set()            # the card keys earlier cards rename to: one name, one card
 
                 def recent() -> Optional[set]:
                     if not pushed:
@@ -1686,7 +1691,9 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
                         one.refusal = Refusal("capped", f"{baked} cards baked in {(perf_counter() - started) / 60:.0f} min "
                                                         f"(at most {MAX_BAKES} or {BUDGET.seconds // 60} min a run)")
                         continue
-                    bake_card(snapshot, one, parser, fonts, chart, work, recent)
+                    bake_card(snapshot, one, parser, fonts, chart, work, recent, frozenset(claimed))
+                    if one.renames and one.refusal is None:
+                        claimed.update(CardAuthors.key(card_name(new)) for new in one.renames.values())
                 waiting = sum(1 for c in cards if c.refusal and c.refusal.code == "capped")
                 if waiting:
                     report.lines.append(f"- Capped: {plural(waiting, 'card')} wait for the next run")
