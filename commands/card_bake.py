@@ -654,6 +654,12 @@ def first_type_spot(snapshot: Snapshot, work: str, card: Card, parsed: dict, psd
     spot, owner 10-25); the templates fetched and opened once a run."""
     if psd_edit.type_row(psd, parser, card.name)[0]:
         return None
+    found = card_template(snapshot, work, card, parsed)
+    return psd_edit.template_icon(found[0], psd, parser, found[1]) if found else None
+
+
+def card_template(snapshot: Snapshot, work: str, card: Card, parsed: dict) -> Optional[tuple]:
+    """(the card kind's template opened, its name) (psd_edit.template_for), or None; fetched and opened once a run."""
     path = psd_edit.template_for(parsed["card"].get("type"), card.rel)
     if not path or path not in snapshot.tree:
         return None
@@ -662,7 +668,7 @@ def first_type_spot(snapshot: Snapshot, work: str, card: Card, parsed: dict, psd
         local = join(work, "templates", basename(path))
         snapshot.fetch(snapshot.sha(path), local)
         cache[path] = PSDImage.open(local)
-    return psd_edit.template_icon(cache[path], psd, parser, basename(path)[:len(basename(path)) - 4])
+    return cache[path], basename(path)[:len(basename(path)) - 4]
 
 
 def pictures_of(psd, card: Card, duplicates: list) -> dict:
@@ -691,6 +697,9 @@ def _views(card: Card, record: dict, numbers: list, jobs: Optional[dict] = None)
             out |= every
             continue
         for key in value:
+            if key == psd_edit.ADD_ABILITY:     # untagged: every picture
+                out |= every
+                continue
             shown = found[key][2].get("variants")
             out |= set(shown) if shown else every
             for f in record.get("follow") or []:
@@ -702,7 +711,8 @@ def _views(card: Card, record: dict, numbers: list, jobs: Optional[dict] = None)
 
 
 def bake_pictures(card: Card, psd, parsed: dict, parser, folder: str, fonts_dir: str, colors, types_dir,
-                  jobs: Optional[dict] = None, target: str = "", template: Optional[tuple] = None) -> psd_edit.Baked:
+                  jobs: Optional[dict] = None, target: str = "", template: Optional[tuple] = None,
+                  ability_from: Optional[tuple] = None) -> psd_edit.Baked:
     """
     A tagged PSD's bake (§4.9): one apply_jobs per picture the edit shows in, each as that picture (psd_edit.variant)
     onto its own PNG, the saved picture's first (its run writes the PSD and its stored preview); every run's PSD must
@@ -731,7 +741,7 @@ def bake_pictures(card: Card, psd, parsed: dict, parser, folder: str, fonts_dir:
         makedirs(out, exist_ok=True)
         baked = psd_edit.apply_jobs(old_psd, join(folder, "old", basename(card.pictures[n])), target or card.rel, jobs,
                                     parses[n], parser, out, fonts_dir, colors, update_preview=n == saved,
-                                    types_dir=types_dir, psd=psd, view=n, template=template)
+                                    types_dir=types_dir, psd=psd, view=n, template=template, ability_from=ability_from)
         if first is None:
             first = baked
         elif psd_edit.layer_records(baked.psd_path) != psd_edit.layer_records(first.psd_path):
@@ -902,7 +912,9 @@ def _describe_parts(card: Card) -> list:
         field_name, kind, k, n = plan.where.get(key, (job["field"], "", 0, 1)) if plan is not None else (job["field"], "", 0, 1)
         what = "title" if field_name == "name" else "text block" if kind == "blocks" else "ability"
         place = f" ({_nth(k)} layer)" if n > 1 and k else ""
-        if job.get("delete"):
+        if key == psd_edit.ADD_ABILITY:
+            out.append(f"ability layer added {job['text'][:40]!r}")
+        elif job.get("delete"):
             out.append(f"{_nth(k) + ' ' if n > 1 and k else ''}{what} layer deleted")
         else:
             out.append(f"{what}{place} {_short_change(was.get(key, job.get('was') or ''), job['text'])}")
@@ -1074,15 +1086,17 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
             types_dir = types_icons(snapshot, work, parser, card.jobs["types"], parsed["card"].get("types")) \
                 if "types" in card.jobs else None
             target = card.moves.get(card.rel, card.rel) if "stars" in bake else card.rel
+            added = card_template(snapshot, work, card, parsed) \
+                if psd_edit.ADD_ABILITY in psd_edit.parts_jobs(card.jobs) else None
             while True:                         # a stars or types refusal leaves the card's other fields to bake
                 try:
                     if card.pictures:
                         card.baked = bake_pictures(card, psd, parsed, parser, folder, fonts_dir, colors, types_dir,
-                                                   bake, target, template)
+                                                   bake, target, template, added)
                     else:
                         card.baked = psd_edit.apply_jobs(old_psd, old_png, target, bake, parsed, parser, new_dir,
                                                          fonts_dir, colors, update_preview=True, types_dir=types_dir,
-                                                         psd=psd, template=template)
+                                                         psd=psd, template=template, ability_from=added)
                     break
                 except Refused as refused:
                     if refused.field not in card.jobs or (len(card.jobs) == 1 and not card.redundant):

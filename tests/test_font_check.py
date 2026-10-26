@@ -12,7 +12,7 @@ from requests import HTTPError
 
 import commands.font_check as fc
 import commands.github_api as ga
-from conftest import Reply, at_rev, blob_sha_bytes as _sha
+from conftest import Reply, at_rev, blob_sha_bytes as _sha, smallest
 
 fontBuilder = pytest.importorskip("fontTools.fontBuilder")
 from fontTools.ttLib import TTCollection, TTFont  # noqa: E402
@@ -318,9 +318,7 @@ def test_real_card_psd(clone, tmp_path):
 def test_check_checkout_pool_matches_sequential(clone, tmp_path, monkeypatch):
     """--all from POOL_MIN PSDs parses in a process pool: the same report as the sequential path, in path order."""
     n = fc.POOL_MIN
-    psds = sorted(clone.joinpath("Creatures", "Other").rglob("*.psd"), key=lambda p: p.stat().st_size)[:n]   # the smallest: a fast parse
-    if len(psds) < n:
-        pytest.skip("not enough card PSDs in the clone")
+    psds = smallest(clone, "Creatures/Other", n)
     root = tmp_path / "repo"
     for path in psds:
         link = root / path.relative_to(clone)

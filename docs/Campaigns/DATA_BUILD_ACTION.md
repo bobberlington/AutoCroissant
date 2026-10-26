@@ -47,11 +47,11 @@ stayed until work/clean (2026-10-25) removed them too, with the seed pass, the P
 seed input, empty-branch bootstrap and `POSTS`/`MAIN_COMMIT` switches: a build refuses an empty db/ unless `--empty`
 (new card data), and §7.4's seed and recovery text below is history. TTSCardMaker's site.yml always reads `data` (no `CARD_DATA` switch) and build_site.py lost its pickle loader. The
 data branch is the only source; the rollback of the whole move (§13) is gone with them. §16 item 7 (verdicts;
-`docs/Future/CARD_SYNC_VERDICTS.md`): steps 1-5 built on `work/verdicts`, the migration prepared, not landed. The Discord card edits (`/update_metadata`,
+`docs/Future/CARD_SYNC_VERDICTS.md`): steps 1-5 landed 2026-10-25 (AC b1d0b08, TC a01e6bc4); step 6, the migration, waits for the first live bake or refusal. The Discord card edits (`/update_metadata`,
 `/mass_replace`, `/alias`) that §2, §5 and §11 describe were retired 2026-10-25 (AC 6e8f8e3); the website is the one
 edit path, with Rename everywhere (TC 706f750a).
 
-**Status 2026-10-25, the chain and a safety schedule (owner's choice; TTSCardMaker branch work/chain, not landed).** The
+**Status 2026-10-25, the chain and a safety schedule (owner's choice; landed, TTSCardMaker 3ca08fda).** The
 cron fired about 8% of the time on :00/:30. A live run that ends with work left now dispatches the next Card sync itself
 (job `chain`, input `chain` = `now|wait <runs> <idle>`): at once for cards still to re-parse (`pending.stale`), bake
 records no data commit merged and website edits due but over the bake's cap; through `card-sync-quiet`'s 30 minutes
@@ -286,8 +286,8 @@ run-name: "Card sync", "Card sync (dry run)" for a dry dispatch, "Card sync (ret
           # the alert's streak check skips dry runs; the bot follows a retry by its name (card-guards' dispatch is plain)
 on:
   schedule:                  # added at step 7; as built (step 6) the workflow is dispatch only
-    - cron: "0,30 * * * *"   # every 30 minutes; "0 * * * *" for hourly (decision 5; on the :00/:30 marks since 2026-10-24;
-                             # "17 * * * *", the safety net beside the chain, on work/chain: the status notes)
+    - cron: "0,30 * * * *"   # every 30 minutes; "0 * * * *" for hourly (decision 5; on the :00/:30 marks 2026-10-24;
+                             # "17 * * * *", the safety net beside the chain, since 2026-10-25: the status notes)
   workflow_dispatch:
     inputs:                  # all optional; all 10 of GitHub's 10
       force: boolean         # run every stage even when the gate finds nothing

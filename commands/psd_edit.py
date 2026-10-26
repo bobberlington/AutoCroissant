@@ -22,7 +22,7 @@ from io import BytesIO
 from math import hypot
 from os import environ
 from os.path import basename, getsize, join
-from re import IGNORECASE, compile as re_compile, escape, finditer as re_finditer, fullmatch, search, sub
+from re import IGNORECASE, compile as re_compile, escape, fullmatch, search, sub
 from struct import pack
 from time import perf_counter
 from typing import Optional
@@ -39,8 +39,9 @@ from commands.card_edits import ADD_ABILITY, CardEdits
 from commands.card_models import CardInfo, StatsDatabase, straight
 from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_PREFIX, ICON_SCAN_PATTERN,
                                  TITLE_REGION_RATIO, TYPE_REGION_RATIO, BoundingBox, CardValidator, IconVocabulary,
-                                 MutableValue, PSDParser, StatTracker, base_name, layer_tag, name_key, named_after_text,
-                                 stars_from_psd, title_text, token_variant, variant_view, variants_of)
+                                 MutableValue, PSDParser,
+                                 StatTracker, base_name, layer_tag, name_key, named_after_text, stars_from_psd,
+                                 title_text, token_variant, variant_view, variants_of)
 from commands import psd_parts
 from commands.psd_parts import lyid_index, raw_sha
 from commands.psd_regions import (STATS as STAT_PATTERNS, _ancestors, badge_layers, clip, fx_pad, overlay_words, stat_rows,
@@ -101,6 +102,7 @@ FIT_SKIP = ("glow", "no_over", "space")     # icon-font glyphs that are no icon'
 ASPECT_TOL = 0.02           # unstretch: a typed icon's x over y scale may be this far off 1 (designers': 678 of 682 at 1.0)
 FONT_IOU_MIN = 0.3          # a text layer redrawn whole against its saved pixels: their ink's IoU (Omori's swapped fonts
                             # 0.11-0.14; of 1,453 titles and Abilities the next is 0.40, Wendy's few px shift)
+FIT_STEP, FIT_MIN = 0.94, 0.4  # fit_below: smaller by this, down to this share of its size (the website's preview)
 BEYOND = (6, 60, 20, 100)   # ink_beyond: px past the old ink's box; luminance levels off the backdrop's median under the
                             # old text (at least; and past its 95th percentile by); px of new ink on such detail to tell
 FX_TAG = EFFECT_LAYER_TAG   # "Ability FX: Blazing": a status word's glyph pixels under the chart's effect (Effect Layers.jsx)
@@ -133,6 +135,7 @@ STORY_STYLE_KEYS = (     # per STORY_KEYS spelling: a story's style runs, a run'
 STORY_MIRROR = {"Font": 0, "FontSize": 1, "FauxBold": 2, "FauxItalic": 3, "AutoLeading": 4, "Leading": 5,
                 "HorizontalScale": 6, "VerticalScale": 7, "Tracking": 8, "BaselineShift": 9, "FillColor": 53,
                 "StrokeColor": 54}   # TySh StyleSheetData keys a story run holds too, with Photoshop CC's feature number
+KERN_FEATURE = "11"      # a numbered story run's kerning: 0 off, else on (TySh's AutoKerning; B12)
 STAR_FOLDER = r"\s*(\d+)\s*stars?\s*"           # a count's own folder in a Stars group: "5 stars", "1 star" (the templates)
 LAYOUT_TOL = 0.12           # a star or icon sits on a layout's spot within this share of its size
 LAYOUT_TOL_MIN = 6          # px, at least
@@ -271,12 +274,14 @@ class Edit:
     shifted: list = field(default_factory=list)  # (record index, old record index, dx, dy): a layer it moved
     copied: list = field(default_factory=list)   # (record index, old record index, dx, dy): a record of a star it copied
     made: list = field(default_factory=list)     # (record index, {block key: bytes}): a type icon it made from Types/
-    stories: list = field(default_factory=list)  # an ability over several layers: every TextIndex it may change
+    stories: list = field(default_factory=list)  # a part bake: every TextIndex it may change
     parts: list = field(default_factory=list)    # and (layer id, that layer's Edit, a copy?) per layer it set
-    several: bool = False   # an ability over several layers (set_ability_layers)
+    several: bool = False   # a part bake's Edit (set_parts): its layers are in parts
     removed: list = field(default_factory=list)  # old record indices of the layers a part edit deleted (gate_bytes)
     removed_stories: list = field(default_factory=list)  # their Txt2 stories' old TextIndex (gate_stories)
     renumbered: list = field(default_factory=list)  # record indices of type layers whose TextIndex moved down (gate_bytes)
+    added: list = field(default_factory=list)   # record index of a layer an added ability made (gate_bytes)
+    added_stories: list = field(default_factory=list)  # its Txt2 story's TextIndex in the new card (gate_stories)
     bar: list = field(default_factory=list)     # a stat on the card maker's own bar: (record index, _bar_spec()) per layer
 
 
@@ -753,11 +758,12 @@ def _style_spans(runs: list) -> list:
     return out
 
 
-def story_style_drift(psd: PSDImage) -> list:
+def story_style_drift(psd: PSDImage, kerning: bool = True) -> list:
     """
     (layer name, why) per type layer whose Txt2 story holds its text but other styles: per character, each
     STORY_MIRROR key both hold must agree (a font by name, a color by its values). Photoshop would show the story's
     styles, so a fill written to TySh alone would silently go back. Keys a story run leaves out (inherited) are skipped.
+    With kerning, also the kerning of each character that ends a pair (_kerning; B12: Pandamonium's Health).
     """
     root = _txt2(psd)
     if root is None:
@@ -803,9 +809,80 @@ def story_style_drift(psd: PSDImage) -> list:
                     break
             if why:
                 break
+        kerned = _kerning(layer, model, keys, spelling) if kerning and not why else None
+        drift = [(u, t, k) for u, (t, k, pair) in enumerate(kerned or []) if pair and k is not None and t != k]
+        if drift:
+            u, t, k = drift[0]
+            why = f"AutoKerning at {u}: layer {t!r}, story {k!r}"
         if why:
             out.append((layer.name, why))
     return out
+
+
+def _kerning(layer, model, keys: dict, spelling: int) -> Optional[list]:
+    """
+    Per UTF-16 unit of a type layer's text: (TySh's AutoKerning, its Txt2 story's kerning or None when the story run
+    leaves it out, whether the unit ends a pair: no paragraph's first). Photoshop kerns as the story says, the engine as
+    TySh does. None for a story with named keys (no kerning feature known).
+    """
+    if spelling:
+        return None
+    text = str(layer.engine_dict["Editor"]["Text"].value)
+    chars, second = [], []                      # per unit: its character, whether it is an astral one's second half
+    for c in text:
+        chars += [c] * (2 if ord(c) > 0xFFFF else 1)
+        second += [False, True][:2 if ord(c) > 0xFFFF else 1]
+    resources = layer.resource_dict
+    try:
+        normal = resources["StyleSheetSet"][int(getattr(resources["TheNormalStyleSheet"], "value",
+                                                        resources["TheNormalStyleSheet"]))]["StyleSheetData"]
+        default = bool(getattr(normal.get("AutoKerning", True), "value", normal.get("AutoKerning", True)))
+    except (KeyError, IndexError, TypeError, ValueError):
+        default = True
+    style = layer.engine_dict["StyleRun"]
+    tysh = [default] * len(chars)
+    for a, b, data in _style_spans([(int(n), run["StyleSheet"]["StyleSheetData"])
+                                    for n, run in zip(style["RunLengthArray"], style["RunArray"])]):
+        value = data.get("AutoKerning")
+        for u in range(a, min(b, len(chars))):
+            tysh[u] = default if value is None else bool(getattr(value, "value", value))
+    story = [None] * len(chars)
+    for a, b, data in _style_spans([(int(run[keys["length"]].value), _dig(run[keys["data"]], keys["features"]))
+                                    for run in _dig(model, keys["runs"])]):
+        value = data.get(KERN_FEATURE)
+        for u in range(a, min(b, len(chars))):
+            story[u] = None if value is None else bool(getattr(value, "value", value))
+    return [(tysh[u], story[u], u > 0 and chars[u - 1] not in "\r\x03" and not second[u])
+            for u in range(len(chars))]
+
+
+def follow_kerning(psd: PSDImage, layer) -> bool:
+    """
+    The layer's TySh AutoKerning made its Txt2 story's wherever the story sets it, before the engine draws it: Photoshop
+    kerns as the story says (B12: a Kung-Fu-Panda layer kerned off in its story, on in TySh, drew 0.58 IoU against its
+    pixels, 0.97 followed). TySh only (the story already says it). True when it changed.
+    """
+    root = _txt2(psd)
+    index = story_index(layer)
+    if root is None or index is None:
+        return False
+    _, _, items, model_key, text_key, spelling = _story_list(root)
+    if not 0 <= index < len(items) or str(items[index][model_key][text_key].value) != \
+            str(layer.engine_dict["Editor"]["Text"].value):
+        return False
+    kerned = _kerning(layer, items[index][model_key], STORY_STYLE_KEYS[spelling], spelling) or []
+    wrong = [(u, k) for u, (t, k, _) in enumerate(kerned) if k is not None and t != k]
+    if not wrong:
+        return False
+    from psd_tools.api import text_edit
+    from psd_tools.psd import engine_data
+    section = text_edit._section(layer, "StyleRun")
+    spans = text_edit._spans(section, len(kerned))
+    for u, k in wrong:
+        spans = text_edit._restyled(spans, u, u + 1, {"AutoKerning": engine_data.Bool(k)}, text_edit._sheet)
+    text_edit._write_spans(section, spans, merge=True)
+    text_edit._touch(layer)
+    return True
 
 
 def ability_layer(psd: PSDImage):
@@ -827,51 +904,10 @@ def ability_layer(psd: PSDImage):
 
 
 # ========================
-# An ability over several layers (owner 2026-10-24: "is there a way we could support multiple ability layers?")
+# Putting a box's edit back over its layer (PARTS_EDITOR.md §4.4)
 # ========================
-ORDINALS = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth")
 PAD = " \t\r\n\x03\ufeff"   # a layer's blank ends: its place on the card (Miracle Matter's '\r    Fire: 5/5/8/7')
 
-
-@dataclass
-class AbilityLayers:
-    """Where a card prints its ability (ability_layers)."""
-    layers: list            # the visible text layers printing it, in the parser's reading order
-    hidden: object = None   # the hidden Ability layer the parser reads when they lay it out again (PSDParser._relaid)
-    copies: list = field(default_factory=list)  # per layer, the other visible layers printing its words (_copies)
-
-
-def ability_layers(psd: PSDImage) -> AbilityLayers:
-    """
-    The layers the parser reads the ability from: the visible Ability layers in its reading order (Lit Bob-omb's two,
-    Miracle Matter's five), else the visible layers laying a hidden one out again (_relaid: Butterfly's 'Section 1'
-    and 'Section 2'), each with its copies (SOMETHING's two offset ones). Raises Refused("unsupported-card") for none.
-    """
-    texts = [layer for layer in psd.descendants() if _is_text_layer(layer) and EFFECT_LAYER_TAG not in layer.name]
-    shown, hidden = [layer for layer in texts if layer.is_visible() and layer.name.lower() == "ability"], None
-    if shown:
-        shown = [layer for layer, _ in
-                 PSDParser._sort_by_position([(layer, BoundingBox.from_tuple(layer.bbox[:2])) for layer in shown])]
-    else:
-        hidden = next((layer for layer in texts if not layer.is_visible() and layer.name.lower() == "ability"
-                       and PSDParser._relaid(layer, texts)), None)
-        if hidden is None:
-            raise Refused("unsupported-card", "0 visible Ability layers")
-        shown = PSDParser._pieces(hidden, texts)
-    return AbilityLayers(shown, hidden, [_copies(psd, layer, shown) for layer in shown])
-
-
-def _ability_reading(psd: PSDImage, found: AbilityLayers, parser: Optional[PSDParser]) -> str:
-    """The ability the parser reads from the layers (_process_text_layer, _process_abilities), image icons' tokens in."""
-    sources = [found.hidden] if found.hidden is not None else found.layers
-    if parser is None:
-        return normalize_ability("\n".join(layer.text for layer in sources))
-    mid, read = int(psd.height * TYPE_REGION_RATIO), []
-    card = CardInfo(name="", card_type="")
-    for layer in sources:
-        parser._process_text_layer(layer, card, MutableValue(0), read, False, False, mid, relaid=True)
-    icons = [(layer.name.lower(), BoundingBox.from_tuple(layer.bbox[:2])) for layer in image_icons(psd, parser)]
-    return parser._process_abilities(read, icons, mid)
 
 
 def _align(old: str, raw: str) -> dict:
@@ -933,88 +969,26 @@ def project(old: str, new: str, raw: str, brk: str = "\r") -> str:
     return raw
 
 
-def ability_split(old: str, new: str, raws: list, relaid: bool = False) -> list:
+def _layer_reading(psd: PSDImage, layer, parser: Optional[PSDParser]) -> str:
+    """The ability the parser reads from one layer (_process_text_layer, _process_abilities), image icons' tokens in."""
+    if parser is None:
+        return normalize_ability(layer.text)
+    mid, read = int(psd.height * TYPE_REGION_RATIO), []
+    parser._process_text_layer(layer, CardInfo(name="", card_type=""), MutableValue(0), read, False, False, mid, relaid=True)
+    icons = [(icon.name.lower(), BoundingBox.from_tuple(icon.bbox[:2])) for icon in image_icons(psd, parser)]
+    return parser._process_abilities(read, icons, mid)
+
+
+def from_reading(psd: PSDImage, layer, text: str, parser: Optional[PSDParser]) -> Optional[str]:
     """
-    An ability edit shared out over the layers printing it. old (the parser's text) is cut at each layer's characters
-    (_align over the layers' texts, blank ends left out, joined by \\n); the boundary between two layers holds where
-    the edit keeps a line break of old between them (the \\n the parser joins them with; between relaid layers a
-    space too), and new is cut there. Layers whose boundary the edit removes make one group, its text going to the one whose
-    characters it keeps most (the first on a tie).
-
-    Args:
-        old: The ability the parser reads (_ability_reading)
-        new: The edited ability (\\n breaks)
-        raws: The layers' texts, in the parser's order
-        relaid: They lay a hidden Ability layer out again (the parser joins them with a space)
-
-    Returns:
-        [(members, receiver, its old characters, the group's new text, the other members whose words it keeps)] in
-        order: indices into raws (a layer the parser reads nothing from is in none); the new text without its blank
-        ends or the parser's own additions (an image icon's [type] token, which the parse adds back)
+    A whole-ability edit (the website's text: the parser's reading, edited) put back over the one Ability layer's own
+    text (project): what the reading leaves out stays where the edit keeps it (Deepnest's "reroll :3" kept its space;
+    a space before punctuation and end quotes were dropped), its breaks, tabs and blank ends too. None when the parser
+    reads nothing there.
     """
-    owner, cores = [], []
-    for k, raw in enumerate(raws):
-        core = raw.strip(PAD)
-        if cores:
-            owner.append(-1)                    # the \n joining two layers
-        owner += [k] * len(core)
-        cores.append(core)
-    at = _align(old, "\n".join(cores))
-    spans = {}
-    for i in sorted(at):
-        k = owner[at[i]]
-        if k >= 0:
-            spans[k] = (spans[k][0] if k in spans else i, i + 1)
-    present = sorted(spans)
-    if not present:
-        return []
-    equal = {}
-    for tag, i1, i2, j1, j2 in _opcodes(old, new):
-        if tag == "equal":
-            equal.update(zip(range(i1, i2), range(j1, j2)))
-    groups, o0, n0, members = [], 0, 0, [present[0]]
-    for p, q in zip(present, present[1:]):
-        kept = [i for i in range(spans[p][1], spans[q][0]) if old[i] in (" \n" if relaid else "\n") and i in equal]
-        cut = next((i for i in kept if i in at and owner[at[i]] < 0),
-                   next((i for i in kept if old[i] == "\n"), kept[0] if kept else None))
-        if cut is None:
-            members.append(q)
-            continue
-        groups.append((members, o0, cut, n0, equal[cut]))
-        o0, n0, members = cut + 1, equal[cut] + 1, [q]
-    groups.append((members, o0, len(old), n0, len(new)))
-    out = []
-    for members, o0, o1, n0, n1 in groups:
-        kept = Counter(owner[at[i]] for i in range(o0, o1) if i in equal and i in at and owner[at[i]] >= 0)
-        receiver = max(members, key=lambda m: (kept[m], -m))
-        added = {equal[i] for i in range(o0, o1) if i in equal and old[i] not in PAD
-                 and not any(spans[m][0] <= i < spans[m][1] for m in present)}
-        text = "".join(c for j, c in enumerate(new[n0:n1], n0) if j not in added).strip(" \t\n")
-        start, end = spans[receiver]
-        out.append((members, receiver, old[start:end], text, [m for m in members if m != receiver and kept[m]]))
-    return out
-
-
-def _lines(text: str) -> int:
-    return sum(1 for line in text.split("\n") if line.strip())
-
-
-def unpadded(text: str) -> str:
-    """The text without its blank lines and line ends: on an ability over several layers they place the layers."""
-    return "\n".join(line.rstrip() for line in text.split("\n") if line.strip())
-
-
-def several_layers(psd: PSDImage) -> bool:
-    """Whether set_text_layer sets the ability with set_ability_layers (ability_layer refuses, ability_layers finds)."""
-    try:
-        ability_layer(psd)
-        return False
-    except Refused:
-        try:
-            ability_layers(psd)
-            return True
-        except Refused:
-            return False
+    old = _layer_reading(psd, layer, parser)
+    new = straight(text).replace("\r\n", "\n").replace("\r", "\n").strip("\n")
+    return project(old, new, straight(layer.text)) if old.strip() else None
 
 
 def _record_ids(psd: PSDImage) -> list:
@@ -1027,141 +1001,6 @@ def _renumber(edit: Edit, ids: list, now: dict) -> None:
     edit.records = [now[ids[i]] for i in edit.records]
     edit.hidden = [now[ids[i]] for i in edit.hidden]
     edit.rebuilt = [(now[ids[i]], was, name) for i, was, name in edit.rebuilt]
-
-
-def _restyle_due(psd: PSDImage, layer, vocab: Optional[IconVocabulary]) -> bool:
-    """Whether an ability layer the edit leaves as it is still needs setting: a retired badge FX layer over it, or a badge
-    or sticker under an overlay without Stylistic Alternates (owner 2026-10-25)."""
-    if any(fx_kind(fx, layer, None) == "badge" for fx in fx_layers(psd, layer)):
-        return True
-    if not one_colour(layer):
-        return False
-    spans = alternate_spans(layer.text, icon_text(layer.text, vocab), _char_styles(layer)[1])
-    on = {i for a, b in (stylistic_alternates(layer) or ()) for i in range(a, b)} if spans else set()
-    return any(i not in on for a, b in spans for i in range(a, b))
-
-
-def set_ability_layers(psd: PSDImage, found: AbilityLayers, text: str, fonts_dir: str, chart: Optional[dict] = None,
-                       card: str = "", own_text: bool = True, parser: Optional[PSDParser] = None,
-                       original: Optional[PSDImage] = None) -> Edit:
-    """
-    set_text_layer's ability edit on a card printing it over several layers (ability_layers): each layer the edit
-    changes is set as one (set_text_layer, its notes naming the layer), the rest left byte for byte (ability_split,
-    project). An edit across layers bakes, told (owner 2026-10-24: "In general I do not want to refuse bakes"): a line
-    added or removed in a layer (the layers around it don't move), a layer whose words all go hidden, two layers
-    joined in one (the other hidden); a layer's copies are edited as it is (SOMETHING's), a hidden Ability layer the
-    layers lay out again given the new text too (the parser reads it: Butterfly's).
-
-    Returns:
-        One Edit over the layers (Edit.parts: each layer's own); raises Refused as set_text_layer does
-    """
-    old = _ability_reading(psd, found, parser)
-    new = text.replace("\r\n", "\n").replace("\r", "\n").strip("\n")
-    many = len(found.layers) > 1
-
-    def nth(k: int) -> str:
-        return ORDINALS[k] if k < len(ORDINALS) else f"#{k + 1}"
-
-    def both(ks) -> str:                        # "first", "first and third", "first, third and fourth"
-        words = [nth(k) for k in ks]
-        return " and ".join(words) if len(words) < 3 else f"{', '.join(words[:-1])} and {words[-1]}"
-
-    def where(*ks: int) -> str:                 # "the second ability layer", "the first and second ability layers"
-        if not many:
-            return "the ability layer"
-        return f"the {both(ks)} ability layer{'s' if len(ks) > 1 else ''}"
-    flags, hide, plans = [], [], []
-    for members, receiver, core, words, moved in ability_split(old, new, [layer.text for layer in found.layers],
-                                                               found.hidden is not None):
-        gone = [m for m in members if m not in moved and (m != receiver or not words)]
-        if gone:
-            flags.append(f"ability: the words of {where(*gone)} were removed, so "
-                         f"{'they are' if len(gone) > 1 else 'it is'} hidden")
-        if moved:
-            flags.append(f"ability: the break between {where(*sorted(moved + [receiver]))} was removed: their words "
-                         f"are joined in the {nth(receiver)} and the {both(moved)} hidden; check the "
-                         f"card")
-        for m in members:
-            if m != receiver or not words:
-                hide += [found.layers[m], *found.copies[m],
-                         *(fx for fx in fx_layers(psd, found.layers[m]) if fx.is_visible())]
-        if words:
-            plans.append((receiver, core, words))
-    for layer in hide:                          # first: a joined layer may print where they did
-        layer.visible = False
-    subs, edits, layers, stories = [], [], [], []
-    for k, core, words in plans:
-        layer, copies = found.layers[k], found.copies[k]
-        raw = project(core, words, layer.text)
-        if raw == layer.text and not _restyle_due(psd, layer, getattr(parser, "icons", None)):
-            continue
-        if _lines(words) > _lines(core):
-            below = "the layer below" if k + 1 < len(found.layers) else "the design below it"
-            flags.append(f"ability: a line was added to {where(k)}; check it doesn't print over {below}")
-        elif _lines(words) < _lines(core):
-            flags.append(f"ability: a line was removed from {where(k)}; the text below it doesn't move up")
-        edit = set_text_layer(psd, "ability", raw, fonts_dir, chart, card, own_text, parser, original, layer=layer,
-                              beside=copies)
-        mine = list(edit.notes)
-        edit.notes = [sub(r"^((?:[\w-]+: )?)ability\b", rf"\1ability ({where(k)})", note, count=1) if many else note
-                      for note in mine]
-        edits.append((layer, edit, False))
-        subs.append(_record_ids(psd))
-        own = fx_layers(psd, layer)             # its FX layers, made: over its copies as it is
-        for copy in copies:                     # set as the layer is; told only what the layer is not
-            again = project(core, words, copy.text)
-            if again != copy.text or _restyle_due(psd, copy, getattr(parser, "icons", None)):
-                done = set_text_layer(psd, "ability", again, fonts_dir, None, card, own_text, parser, original,
-                                      layer=copy, beside=[layer, *own, *(c for c in copies if c is not copy)],
-                                      copy=True)
-                done.notes = [f"{note} (its copy {copy.name[:24]!r})" for note in done.notes if note not in mine]
-                edits.append((copy, done, True))
-                subs.append(_record_ids(psd))
-    hidden = found.hidden
-    if hidden is not None:                      # the parser reads it: it takes the new text, its pieces its words
-        raw = project(old, new, hidden.text)
-        if raw != hidden.text:
-            stories.append(story_index(hidden))
-            hidden.set_text(raw, keep="runs")
-            layers.append(hidden)
-        texts = [layer for layer in psd.descendants() if _is_text_layer(layer) and EFFECT_LAYER_TAG not in layer.name]
-        if not PSDParser._relaid(hidden, texts):
-            raise Refused("unsupported-card", "ability: the layers over the hidden Ability layer no longer print its "
-                                              "words; edit in Photoshop")
-    if many and parser is not None:             # the edit's blank lines between the layers: theirs stay
-        read = _ability_reading(psd, AbilityLayers([layer for layer in found.layers if layer.is_visible()]), parser)
-        read, want = (normalize_ability(canonical_tokens(t, parser.icons, chars)) for t, chars in ((read, False),
-                                                                                                   (new, True)))
-        if read != want and unpadded(read) == unpadded(want):
-            flags.append("ability: the blank lines between the ability layers stay as they were: they place the "
-                         "layers on the card")
-    named = [fx.name for layer in found.layers for fx in fx_layers(psd, layer)]
-    twice = sorted({name for name, _ in (fx for _, edit, _ in edits for fx in edit.fx) if named.count(name) > 1})
-    if twice:                                   # two layers' status words given one FX layer name
-        raise Refused("unsupported-card", f"two FX layers would be named {', '.join(twice)}; edit in Photoshop")
-    now = record_map(psd)                       # a later layer's FX records move the earlier ones' indices
-    for (_, edit, _), ids in zip(edits, subs):
-        _renumber(edit, ids, now)
-    region = union_box([edit.region for _, edit, _ in edits]
-                       + [_pad(tuple(layer.bbox), fx_pad(layer), psd) for layer in hide])
-    first = edits[0][1] if edits else None
-    kept = set(_record_ids(psd))                # an FX layer an edit deleted has no index
-    return Edit("ability", old, new, [layer for layer, _, _ in edits] + layers + [l for l in hide if _is_text_layer(l)],
-                [i for _, edit, _ in edits for i in edit.records] + [_record_index(layer) for layer in layers], region,
-                hidden=[i for _, edit, _ in edits for i in edit.hidden]
-                + [_record_index(layer) for layer in hide if id(layer._record) in kept],
-                fx=[fx for _, edit, _ in edits for fx in edit.fx],
-                dropped=[name for _, edit, _ in edits for name in edit.dropped],
-                rebuilt=[spec for _, edit, _ in edits for spec in edit.rebuilt],
-                fx_names=[name for _, edit, _ in edits for name in edit.fx_names],
-                notes=[note for _, edit, _ in edits for note in edit.notes] + flags,
-                held=[held for _, edit, _ in edits for held in edit.held],
-                story=first.story if first else None,
-                stories=[edit.story for _, edit, _ in edits] + stories,
-                fonts=list(dict.fromkeys(face for _, edit, _ in edits for face in edit.fonts)),
-                band=union_box([edit.band for _, edit, _ in edits]),
-                whole=any(edit.whole for _, edit, _ in edits),
-                parts=[(layer.layer_id, edit, copy) for layer, edit, copy in edits], several=True)
 
 
 def icon_font(layer) -> Optional[str]:
@@ -1863,9 +1702,10 @@ def edit_styles(layer, parts: list, chart: Optional[dict]) -> list:
     commonest fill of what it replaces outside status words and blanks (set in the icon font only if all of it is: a
     badge edit); an insertion, or a part replacing only those, the nearest character before it in its line (\\r or
     \\x03), else after, that is no status word, blank or badge and shares no run with a status word (Astr's "3" of its
-    red "1T3 Empowered"), else its line's commonest fill, its paragraph's, the text's. A kept status word's characters
-    take that too: the edit resets status words, set_text_layer giving the new text's their swatch after. Before
-    set_text.
+    red "1T3 Empowered"), else its line's commonest fill, its paragraph's, the text's; its fill the body's (body_fill)
+    when typed between two runs or at a line's end in a line of several colours (Binge Eater's ", 1T" after "SPD" took
+    the olive). A kept status word's characters take that too: the edit resets status words, set_text_layer giving the
+    new text's their swatch after. Before set_text.
 
     Args:
         layer: The text layer
@@ -1900,19 +1740,30 @@ def edit_styles(layer, parts: list, chart: Optional[dict]) -> list:
                 return commonest(found, lo)
         return None
 
+    body = body_fill(layer, chart or {})
+
+    def typed(lo: int, hi: int) -> Optional[tuple]:
+        """Text typed between two runs, or at a line's end, of a line in several colours: the body fill, not the
+        coloured word beside it (Binge Eater's ", 1T" after its olive "SPD"); typed inside a run: that run's."""
+        inside = 0 < lo and hi < len(old) and old[lo - 1] not in "\r\x03" and old[hi] not in "\r\x03" \
+            and runs[lo - 1] == runs[hi]
+        top = max(old.rfind("\r", 0, lo), old.rfind("\x03", 0, lo)) + 1
+        bottom = min([j for j in (old.find("\r", hi), old.find("\x03", hi)) if j >= 0] or [len(old)])
+        line = {fills[j] for j in range(top, bottom) if source(j)}
+        return body if not inside and len(line) > 1 else None
+
     out = []
     for a0, a1, b0, b1, kept in parts:
         if kept:
-            spans = [(b0 + k, b0 + k + 1, near(a0 + k, a0 + k + 1)) for k in range(a1 - a0) if a0 + k in status]
+            spans = [(b0 + k, b0 + k + 1, near(a0 + k, a0 + k + 1), None) for k in range(a1 - a0) if a0 + k in status]
         elif b1 > b0:
             i = next((commonest(found, a0) for icon in (False, True)
                       for found in [[i for i in range(a0, a1) if source(i, icon)]] if found), None)
-            spans = [(b0, b1, near(a0, a1) if i is None else i)]
+            spans = [(b0, b1, i, None) if i is not None else (b0, b1, near(a0, a1), typed(a0, a1))]
         else:
             spans = []
-        for start, end, i in spans:
-            out.append((start, end, body_fill(layer, chart or {}) if i is None else fills[i],
-                        None if i is None or icons[i] else styles[i]))
+        for start, end, i, fill in spans:
+            out.append((start, end, fill or (body if i is None else fills[i]), None if i is None or icons[i] else styles[i]))
     return out
 
 
@@ -2004,9 +1855,9 @@ def _slide(old: str, a0: int, a1: int, floor: int) -> int:
 def keep_breaks(old: str, new: str, which: str) -> str:
     """
     The new text with the layer's own breaks back where the edit kept them: the website shows an ability's forced line
-    break (\\x03) as a newline, its tabs and a name's breaks as spaces, so setting its text as given would turn a soft
-    break into a paragraph (Mini Doomer's "it. \\x03(BOT) Die."), Michael's Blessing's tab columns into spaces or a
-    two-line title into one line.
+    break (\\x03) as a newline and its tabs as spaces, so setting its text as given would turn a soft break into a
+    paragraph (Mini Doomer's "it. \\x03(BOT) Die.") or Michael's Blessing's tab columns into spaces. A name is set as
+    given (its box shows its breaks).
 
     Args:
         old: The layer's text
@@ -2015,33 +1866,13 @@ def keep_breaks(old: str, new: str, which: str) -> str:
 
     Returns:
         new, each \\r (ability) the diff pairs with an old \\x03 made that break and each space with an old tab that
-        tab, each lone space (name) it pairs with an old run of blanks made that run (review 2026-10-24:
-        "Pepperoni\\r\\rPizza" lost a break, "The  Spire" a space); only between the old text's characters: its blank
-        first and last paragraphs are keep_ends' (review 2026-10-24: "Old Foxy\\r" set a typed " [fire]" on a new
+        tab; only between the old text's characters: its blank first and last paragraphs are keep_ends' (review 2026-10-24: "Old Foxy\\r" set a typed " [fire]" on a new
         line, its space paired with the trailing \\r)
     """
+    if which == "name" or ("\x03" not in old and "\t" not in old):     # a title box shows its breaks
+        return new
     blank = " \t\r\x03"
     lo, hi = len(old) - len(old.lstrip(blank)), len(old.rstrip(blank))
-    if which == "name":                         # the website shows each run of blanks as one space: runs pair as runs
-        runs = [(m.start(), m.end()) for m in re_finditer(r"[ \t\r\x03]+", old) if lo <= m.start() and m.end() <= hi]
-        if all(old[a:b] == " " for a, b in runs):
-            return new
-        seen, at, k = [], {}, 0
-        for a, b in runs:
-            seen.append(old[k:a])
-            at[sum(map(len, seen))] = old[a:b]
-            seen.append(" ")
-            k = b
-        seen = "".join(seen) + old[k:]
-        out = list(new)
-        for a, b, size in SequenceMatcher(None, seen, new, autojunk=False).get_matching_blocks():
-            for i in range(size):
-                j = b + i               # a run the new text keeps as one space (two typed spaces stay as typed)
-                if a + i in at and (j == 0 or new[j - 1] not in blank) and (j + 1 == len(new) or new[j + 1] not in blank):
-                    out[j] = at[a + i]
-        return "".join(out)
-    if "\x03" not in old and "\t" not in old:
-        return new
     seen = old.replace("\x03", "\r").replace("\t", " ")
     out = list(new)
     for a, b, size in SequenceMatcher(None, seen, new, autojunk=False).get_matching_blocks():
@@ -2169,8 +2000,8 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
         elif name == "ability":                 # [Fire] for [fire] prints the same icon: redundant
             vocab = getattr(parser, "icons", None)
             was, now = (normalize_ability(canonical_tokens(text, vocab)) for text in (card.get("ability"), value))
-            if was == now or (unpadded(was) == unpadded(now) and psd is not None and several_layers(psd)):
-                out.redundant.append(name)      # over several layers the blank lines place them (they stay)
+            if was == now:
+                out.redundant.append(name)
             else:
                 joined = _joined_edit(parsed, psd, parser, name)
                 if joined:
@@ -2273,7 +2104,7 @@ def fx_layers(psd: PSDImage, base) -> list:
     """
     The FX layers cut from a text layer ("<its name> FX: ..."), bottom to top, wherever they sit; of several text
     layers of its name (Miracle Matter's Abilities) only those on it, as the parser pairs them: the first visible one an
-    FX layer overlaps, else a hidden one's (a part set_ability_layers hid), else the first visible.
+    FX layer overlaps, else a hidden one's, else the first visible.
     """
     prefix = base.name + FX_TAG
     found = [layer for layer in psd.descendants() if not layer.is_group() and layer.name.startswith(prefix)]
@@ -3957,6 +3788,68 @@ def ink_beyond(psd: PSDImage, layer, before: np.ndarray, halos: Optional[tuple] 
         (f", {name!r})" if name else ")")
 
 
+def fit_below(psd: PSDImage, layer, before: np.ndarray, fonts, draw, off_before: bool = True) -> tuple:
+    """
+    An Ability whose new text prints past its old text onto the design below it (ink_beyond: Autopsy Report's third
+    line under its panel) or off the canvas (Soul Sanctum's wrapped line) set smaller until it doesn't, no lower than
+    the old text, as the website's preview draws it (mockup.js drawText): by FIT_STEP, down to FIT_MIN of its size,
+    every run's FontSize, Leading and BaselineShift scaled alike (badges keep their size and middle against the
+    letters). No size fits, or a layer with tabs (its stops don't shrink: Michael's Blessing's arrow column would
+    break): left as it was, ink_beyond tells it.
+
+    Args:
+        psd: The card, the text set and rasterized
+        layer: The Ability layer
+        before: _on_canvas() of it before the edit
+        fonts: font_map()
+        draw: Rasterizes the layer as set_text_layer did (its splice); returns the engine's report
+        off_before: It inked off the canvas before the edit (then that is no reason)
+
+    Returns:
+        (scale, report): (1.0, None) when it was left as it was
+    """
+    off = not off_before and _ink_off_canvas(layer, psd.width, psd.height)
+    if "\t" in layer.text or not off and ink_beyond(psd, layer, before) is None:
+        return 1.0, None
+    from psd_tools.api import text_edit
+    text = layer.text
+    units = text_edit.utf16_prefix(text)
+    resources = layer.resource_dict
+    try:
+        normal = resources["StyleSheetSet"][int(getattr(resources["TheNormalStyleSheet"], "value",
+                                                        resources["TheNormalStyleSheet"]))]["StyleSheetData"]
+    except (KeyError, IndexError, TypeError, ValueError):
+        normal = {}
+    runs = []
+    for u0, u1, data in text_edit._spans(text_edit._section(layer, "StyleRun"), units[-1]):
+        sheet = data["StyleSheet"]["StyleSheetData"]
+        keys = {key: float(getattr(sheet.get(key, normal.get(key)), "value", sheet.get(key, normal.get(key))))
+                for key in ("FontSize", "Leading", "BaselineShift") if sheet.get(key, normal.get(key)) is not None}
+        runs.append((text_edit._str_index(units, u0), text_edit._str_index(units, u1), keys))
+
+    def scaled(scale: float) -> None:
+        for a, b, keys in runs:
+            if b > a and keys:
+                layer.set_span_style(a, b, **{key: value if scale == 1 else round(value * scale, 2)
+                                              for key, value in keys.items()})
+    rows = (before[..., 3] > INK_ALPHA * 255).any(axis=1).nonzero()[0]
+    floor = int(rows.max()) + 1 + BEYOND[0] if len(rows) else psd.height
+
+    def fits() -> bool:                         # no lower than the old text (ink_beyond lets a few px onto the design)
+        ink = (_on_canvas(layer, (psd.height, psd.width))[..., 3] > INK_ALPHA * 255).any(axis=1).nonzero()[0]
+        return (not len(ink) or int(ink.max()) + 1 <= floor) and ink_beyond(psd, layer, before) is None \
+            and (off_before or not _ink_off_canvas(layer, psd.width, psd.height))
+    for scale in (FIT_STEP ** k for k in range(1, 99)):    # the largest that fits: a box's first line rises as it
+        if scale < FIT_MIN:                                 # shrinks, so a smaller size can print past the top
+            break
+        scaled(scale)
+        report = layer.rasterize(fonts=fonts)
+        if fits():
+            return scale, report
+    scaled(1.0)
+    return 1.0, draw()
+
+
 def _effect_ink(psd: PSDImage, layer) -> Optional[np.ndarray]:
     """
     The layer drawn with its effects and its groups' (the outermost group with effects, composited alone: the other text
@@ -4131,10 +4024,9 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         original: The card before any of the bake's edits (apply_jobs' old), where a typed :sticker or :tint reads the
             other text layer's colours (variant_fill): the Ability's edit, made first, would give a title's typed
             [dark:sticker] the colour of the one it typed (review 2026-10-24: Salt's purple on its white title); None: psd
-        layer: The text layer to set (set_ability_layers' one of several); None: name_layer's or ability_layer's, an
-            ability over several layers going to set_ability_layers
+        layer: The text layer to set (set_parts' part); None: name_layer's or ability_layer's
         beside: Layers printing the same words (its copies), which may cover it
-        copy: The layer is a copy of the Ability (set_ability_layers): no FX layers or overlay words of its own, its
+        copy: The layer is a copy of a part (set_parts): no FX layers or overlay words of its own, its
             ink past the old text not told (the Ability's is)
 
     Returns:
@@ -4189,15 +4081,13 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     from psd_tools.composite.text import MissingFontError
     if not story_sync():
         raise ImportError("this psd-tools fork's set_text leaves the Txt2 story stale (no TypeLayer.sync_story)")
-    text = straight(text)                       # the bake writes ' (owner, 2026-10-25): the layer's kept ones too
+    text, projected = straight(text), None      # the bake writes ' (owner, 2026-10-25): the layer's kept ones too
     if layer is None and which == "ability":
-        try:
-            layer = ability_layer(psd)
-        except Refused:                         # several layers, a relaid one, copies (or none: refused again)
-            return set_ability_layers(psd, ability_layers(psd), text, fonts_dir, chart, card, own_text, parser,
-                                      original)
+        layer = ability_layer(psd)
+        projected = from_reading(psd, layer, text, parser)
     elif layer is None:
         layer = name_layer(psd, card, own_text)
+    follow_kerning(psd, layer)                  # drawn kerned as Photoshop shows it (B12)
     old_text, old_bbox, story = layer.text, tuple(layer.bbox), story_index(layer)
     own = which == "name" and own_text_title(layer, card)
     flags = []
@@ -4206,7 +4096,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         why = why.removesuffix("; edit in Photoshop")
         flags.append(f"{code}: {why if why.startswith(which) else f'{which}: {why}'}")
     text = text.replace("\r\n", "\n").rstrip("\n").replace("\n", "\r")     # a final \n would add an empty paragraph
-    text = keep_ends(old_text, keep_breaks(old_text, text, which))
+    text = projected if projected is not None else keep_ends(old_text, keep_breaks(old_text, text, which))
     if which == "ability":                      # "[dark]" on the website, "[dark:sticker]" on the card
         text = keep_tokens(layer, text, getattr(parser, "icons", None))
     if "\t" in text and not tab_stops():         # a stale install: the runner's, retried (card_bake)
@@ -4389,8 +4279,16 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                     layer.set_span_style(c, d, fill=plan.fill)
     if which == "ability":                      # one-colour badges and stickers under an overlay (owner 2026-10-25)
         set_alternates(layer, alternate_spans(text, drawn, _char_styles(layer)[1]) if one_colour(layer) else [], changed)
+
+    def draw():
+        return layer.rasterize(fonts=fonts, keep=before, unit=SPLICE_UNIT) if before else layer.rasterize(fonts=fonts)
     try:
-        report = layer.rasterize(fonts=fonts, keep=before, unit=SPLICE_UNIT) if before else layer.rasterize(fonts=fonts)
+        report = draw()
+        if which == "ability" and not copy:     # onto the design below or off the canvas: smaller (the preview's fit)
+            scale, again = fit_below(psd, layer, canvas, fonts, draw, off_before)
+            report = again or report
+            if scale < 1:
+                flag("overflow", f"ability: set at {round(scale * 100)}% of its size to stay on its panel")
     except MissingFontError as error:
         raise Refused("font", str(error))
     loose = sorted(name for name, (how, _) in report.fonts.items() if how not in OK_FONTS)
@@ -6036,6 +5934,7 @@ def whole_redraw(old: PSDImage, raw: bytes, edit: Edit, png: Image.Image, fonts_
     ids = [layer.layer_id for layer in edit.layers]
     for layer in copy.descendants():
         if layer.layer_id in ids:
+            follow_kerning(copy, layer)         # as the edit drew it (B12)
             layer.rasterize(fonts=font_map(fonts_dir))
     return _measure(render_region(copy, edit.region, icc, text, tuple(ids)), png.crop(edit.region))
 
@@ -6343,6 +6242,7 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
     moved = {index: (source, dx, dy) for edit in edits for index, source, dx, dy in edit.shifted}
     inserted = {index: ("copy", source, dx, dy) for edit in edits for index, source, dx, dy in edit.copied}
     inserted.update({index: ("made", blocks) for edit in edits for index, blocks in edit.made})
+    inserted.update({index: ("ability",) for edit in edits for index in getattr(edit, "added", ())})
     owner = {index: edit.field for edit in edits
              for index in [*edit.toggled, *(record[0] for record in edit.shifted + edit.copied + edit.made)]}
     bar = {index: spec for edit in edits for index, spec in edit.bar}                # a stat on the card maker's own bar
@@ -6363,9 +6263,12 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
             changed.append((i, a["name"], ["removed"]))
             i += 1
             continue
-        if b is not None and j in inserted:     # a star's copy, or a type icon made from Types/
+        if b is not None and j in inserted:     # a star's copy, a type icon made from Types/, an added ability
             spec = inserted.pop(j)
-            if spec[0] == "made":
+            if spec[0] == "ability":            # an added ability: a type layer named Ability (§4.7)
+                if b["name"] != "Ability" or bytes(Tag.TYPE_TOOL_OBJECT_SETTING) not in dict(b["blocks"]):
+                    raise Refused("bytes", f"layer {j} {b['name']!r} is not the declared Ability type layer")
+            elif spec[0] == "made":
                 blocks = dict(b["blocks"])
                 if not _pixel_record(b) or any(blocks.get(key) != data for key, data in spec[1].items()):
                     raise Refused("bytes", f"type icon {b['name']!r} is not the declared pixel layer", owner.get(j))
@@ -6430,7 +6333,8 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
         i += 1
         j += 1
     if any(dropped.values()) or added or inserted or removed or bar:
-        raise Refused("bytes", "an FX layer, star copy, type icon or deleted layer declared removed or added is not")
+        raise Refused("bytes", "an FX layer, star copy, type icon, ability or deleted layer declared removed or added "
+                               "is not")
     hidden = {index for edit in edits for index in edit.hidden}
     toggled = {index for edit in edits if edit.field in STAT_FIELDS for index in edit.records}
     if (toggled | hidden | toggles) - {index for index, _, fields in changed if fields != ["removed"]}:
@@ -6530,7 +6434,7 @@ def _story_font_name(entry, spelling: int) -> str:
     return str(getattr(entry, "value", entry))
 
 
-def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=()) -> list:
+def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), added=()) -> list:
     """
     Photoshop reads a type layer's text from its Txt2 story and rebuilds the layer's TySh from it on save, so an edit
     to TySh alone is undone the first time the card is opened (2026-10-22: B.F.B. went back to B.F.B). Every type
@@ -6545,6 +6449,8 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=()) -> 
         fonts: The faces the edits added (Edit.fonts)
         removed: TextIndex of each deleted layer (Edit.removed_stories): the old card is compared with those stories
             and their own frames taken out (_drop_story_in), the later indices one lower each
+        added: TextIndex of each added layer in the new card (Edit.added_stories): the new card is compared with those
+            stories and their own frames taken out
 
     Returns:
         The changed stories' indices (the new card's), sorted; raises Refused("bytes")
@@ -6561,12 +6467,15 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=()) -> 
         raise Refused("bytes", f"{name}'s Txt2 story holds {collapse(story)!r}, the layer {collapse(own)!r}")
     if txt2 not in before:
         return []
-    gone = sorted(set(removed))
+    gone, came = sorted(set(removed)), sorted(set(added))
 
     def renumber(i: int) -> int:
         return i - sum(1 for r in gone if r < i)
     indices = [sorted(story_index(layer) for layer in psd.descendants() if _is_text_layer(layer)
                       and story_index(layer) is not None) for psd in (old, new)]
+    if came and not set(came) <= set(indices[1]):
+        raise Refused("bytes", f"an added layer's story {came} is no type layer's")
+    indices[1] = [i - sum(1 for c in came if c < i) for i in indices[1] if i not in came]
     if [renumber(i) for i in indices[0] if i not in gone] != indices[1]:   # a layer without one is orphaned from the
         raise Refused("bytes", f"type layers' TextIndex {indices[0]} -> {indices[1]}")   # story Photoshop would read
     root_a = _txt2(old)
@@ -6575,15 +6484,20 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=()) -> 
         keys, items = _story_keys(root_a)
         for index in reversed(gone):
             _drop_story_in(root_a, keys, items, index)
-    edited = {renumber(i) for i in edited if i not in gone}
-    (objects_a, _, items_a, _, _, _), (objects_b, _, items_b, _, _, _) = _story_list(root_a), _story_list(_txt2(new))
+    root_b = _txt2(new)
+    if came:                                    # the new card with the added layers' stories taken out
+        root_b = deepcopy(root_b)
+        keys, items = _story_keys(root_b)
+        for index in reversed(came):
+            _drop_story_in(root_b, keys, items, index)
+    edited = {renumber(i) for i in edited if i is not None and i not in gone}
+    (objects_a, _, items_a, _, _, _), (objects_b, _, items_b, _, _, _) = _story_list(root_a), _story_list(root_b)
     if len(items_a) != len(items_b):
         raise Refused("bytes", f"Txt2 stories {len(items_a)} -> {len(items_b)}")
     changed = [i for i, (a, b) in enumerate(zip(items_a, items_b)) if _raw(a) != _raw(b)]
     beyond = sorted(set(changed) - set(edited))
     if beyond:
         raise Refused("bytes", f"Txt2 stories {beyond} changed: no edit there")
-    root_b = _txt2(new)
     faces_a, faces_b = _story_fonts(root_a), _story_fonts(root_b)
     if faces_a is not None and faces_b is not None and len(faces_b) > len(faces_a):
         spelling = _story_list(root_b)[5]
@@ -6600,7 +6514,7 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=()) -> 
             for root, objects, items in ((root_a, objects_a, items_a), (root_b, objects_b, items_b))]
     if rest[0] != rest[1]:
         raise Refused("bytes", "Txt2 changed outside its stories")
-    drift = story_style_drift(new)
+    drift = [d for d in story_style_drift(new) if d not in story_style_drift(old)]    # a layer no edit set keeps its own
     if drift:
         raise Refused("bytes", f"{drift[0][0]}'s Txt2 story has other styles: {drift[0][1]}")
     return changed
@@ -6664,8 +6578,6 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
         elif name == "ability":                 # a typed token as the parser reads it in the icon font ([Fire] -> [fire]);
             expected["ability"], got["ability"] = (normalize_ability(canonical_tokens(text, parser.icons, chars))
                                                    for text, chars in ((value, True), (got.get("ability"), False)))
-            if any(e.field == "ability" and getattr(e, "several", False) for e in edits):
-                expected["ability"], got["ability"] = unpadded(expected["ability"]), unpadded(got["ability"])
             #   a "★" the parser reads as typed is not in the icon font: no [star]
         elif name == "name":                    # the new title is read back below
             expected.pop("display_name", None)
@@ -6734,7 +6646,16 @@ def gate_parts(parser: PSDParser, parsed: dict, rel: str, jobs: dict, old: PSDIm
             notes += _gate_icons(new, layer, old, was.get(layer.layer_id), font_map(fonts_dir), vocab, "title")
     deleted = {key for key, job in jobs.items() if job.get("delete")}
     lost = [part["layer"] for key, (_, _, part) in before.items() if key not in after and key not in deleted]
-    came = [part["layer"] for key, (_, _, part) in after.items() if key not in before]
+    came = [(key, part) for key, (_, _, part) in after.items() if key not in before]
+    if ADD_ABILITY in jobs:                     # the added Ability reads its box's text (§4.10)
+        new = [(key, part) for key, part in came if after[key][0] == "ability" and base_name(index[int(key)]) == "Ability"]
+        if len(new) != 1:
+            raise Refused("reparse", f"{len(new)} added Ability layers read as the ability")
+        reads, want = part_text(parser, index[int(new[0][0])]), jobs[ADD_ABILITY]["text"]
+        if not _part_same(reads, want, vocab):
+            raise Refused("reparse", f"the added Ability reads {reads[:60]!r}, not {want[:60]!r}")
+        came.remove(new[0])
+    came = [part["layer"] for _, part in came]
     if lost:
         notes.append(f"parts: {', '.join(map(repr, lost))} no longer read as a title or ability part: check the card")
     if came:
@@ -7152,17 +7073,17 @@ def save_png(image: Image.Image, path: str, like: Image.Image) -> None:
 def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict, parser: PSDParser, out_dir: str,
                fonts_dir: str, chart: Optional[dict] = None, update_preview: bool = True,
                types_dir: Optional[str] = None, psd: Optional[PSDImage] = None, view: Optional[int] = None,
-               template: Optional[tuple] = None) -> Baked:
+               template: Optional[tuple] = None, ability_from: Optional[tuple] = None) -> Baked:
     """
     _apply_jobs, as picture `view` of a card with variant tags shows it (variant(): its edits, renders, merge onto
     that picture's PNG png_path and its content gates; parsed is that picture's parse), the saved PSD keeping its own
     eye flags. view None: the card as saved. template: plan_types'. rel: where the card will be (a stars edit moves
-    a card into its "N Stars" folder: its re-parse reads the stars there).
+    a card into its "N Stars" folder: its re-parse reads the stars there). ability_from: set_parts' (a "+ability" job).
     """
     hold = ExitStack()
     try:
         return _apply_jobs(psd_path, png_path, rel, jobs, parsed, parser, out_dir, fonts_dir, chart, update_preview,
-                           types_dir, psd, view, hold, template)
+                           types_dir, psd, view, hold, template, ability_from)
     finally:
         hold.close()
 
@@ -7170,7 +7091,8 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
 def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict, parser: PSDParser, out_dir: str,
                 fonts_dir: str, chart: Optional[dict] = None, update_preview: bool = True,
                 types_dir: Optional[str] = None, psd: Optional[PSDImage] = None, view: Optional[int] = None,
-                hold: Optional[ExitStack] = None, template: Optional[tuple] = None) -> Baked:
+                hold: Optional[ExitStack] = None, template: Optional[tuple] = None,
+                ability_from: Optional[tuple] = None) -> Baked:
     """
     Apply a card's jobs, render the changed region, delta-merge the PNG, save and run every gate.
 
@@ -7216,7 +7138,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
         if stale_stories(new):
             raise Refused("unsupported-card", f"{stale[0][0]}'s Txt2 story is stale and txt2_repair could not sync it")
         flags.append(f"Txt2 story repaired (commands.txt2_repair): {', '.join(name for name, _, _ in stale)}")
-    drift = story_style_drift(new)
+    drift = story_style_drift(new, kerning=False)   # kerning: the edited layers follow the story (follow_kerning)
     if drift:                                   # Photoshop shows the story's styles, not the layer's
         raise Refused("unsupported-card", f"{drift[0][0]}'s Txt2 story has other styles: {drift[0][1]}")
 
@@ -7249,12 +7171,20 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
             edits.append(edit)
         elif name in STAT_FIELDS:
             edits.append(set_stat(new, parsed, name, value))
+        elif name == "ability" and _lone_part(new) is None:     # copies or a relaid layer: as its one box (§3)
+            record = card_parts(old, rel, _card_name(parsed), parser)
+            found = record.get("ability") or []
+            if len(found) != 1:
+                raise Refused("unsupported-card", f"{len(found)} ability layers: edit each box on the website")
+            edits += set_parts(new, {str(found[0]["id"]): {"text": value}}, record, fonts_dir, chart, _card_name(parsed),
+                               _own_text(parsed), parser, old)
         elif name in TEXT_FIELDS:
             edits.append(set_text_layer(new, name, value, fonts_dir, chart, _card_name(parsed), _own_text(parsed), parser,
                                         old))
         elif name == "parts":                   # one box per layer (PARTS_EDITOR.md §4.4-4.6)
             record = card_parts(old, rel, _card_name(parsed), parser)
-            edits += set_parts(new, value, record, fonts_dir, chart, _card_name(parsed), _own_text(parsed), parser, old)
+            edits += set_parts(new, value, record, fonts_dir, chart, _card_name(parsed), _own_text(parsed), parser, old,
+                               ability_from)
         else:
             raise Refused("unsupported-card", f"{name}: not yet")
     others = [edit for edit in edits if edit.field not in ICON_FIELDS and (edit.layers or edit.removed)]
@@ -7330,7 +7260,8 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     stories = {story for edit in edits if edit.field in TEXT_FIELDS for story in [edit.story, *edit.stories]}
     gate_stories(old, reopened, stories | repaired,
                  [face for edit in edits for face in edit.fonts],
-                 [index for edit in edits for index in edit.removed_stories])
+                 [index for edit in edits for index in edit.removed_stories],
+                 [index for edit in edits for index in edit.added_stories])
     reparse = gate_reparse(parser, parsed, new_psd, rel, jobs, reopened, edits, flags)
     if "parts" in jobs:
         flags += gate_parts(parser, parsed, rel, jobs["parts"], old, reopened, fonts_dir)
@@ -7356,6 +7287,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
 GONE = "the layer is gone from the PSD (deleted or remade in Photoshop since this edit): redo it on the website if still wanted"
 CHANGED = "changed in Photoshop since this edit: redo it on the website if still wanted"
 ADDED_LATER = "an added Ability layer (from the template) is not built yet: it waits"
+ADD_ABILITY_LIVE = False    # +ability bakes once the owner has opened the test PSDs in Photoshop (§10 step 6)
 HAS_ABILITY = "the card has an Ability layer now (added in Photoshop): redo it on the website"
 PART_KINDS = (("ability", "ability"), ("title", "name"), ("blocks", "ability"))   # record key -> field, in bake order
 
@@ -7394,6 +7326,14 @@ def part_text(parser: Optional[PSDParser], layer) -> str:
     return (parser or _bare_parser()).layer_text(layer)
 
 
+def _lone_part(psd: PSDImage):
+    """ability_layer(), or None when it refuses (a plain ability edit then goes through set_parts)."""
+    try:
+        return ability_layer(psd)
+    except Refused:
+        return None
+
+
 def card_parts(psd: PSDImage, rel: str, name: str, parser: Optional[PSDParser]) -> dict:
     """The details record's `parts` (§2.3) over every variant: psd_parts.card_parts, a bare parser when none."""
     return psd_parts.card_parts(psd, rel, name, parser or _bare_parser())
@@ -7405,8 +7345,13 @@ def record_parts(record: dict) -> dict:
 
 
 def _part_same(a: Optional[str], b: Optional[str], vocab) -> bool:
-    """Two part texts read alike: tokens canonical ([Fire] is [fire]), the parser's whitespace rule."""
-    return normalize_ability(canonical_tokens(a, vocab)) == normalize_ability(canonical_tokens(b, vocab))
+    """Two part texts read alike: tokens canonical ([Fire] is [fire]), layer_text's whitespace rule (a part keeps its
+    quotes and a space before punctuation: normalize_ability's stripping made "Lifesteal ." -> "Lifesteal." redundant)."""
+    def key(text: Optional[str]) -> str:
+        text = canonical_tokens(text, vocab) or ""
+        text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\x03", "\n").replace("\t", " ")
+        return straight(text).replace("\ufeff", "").strip(" \n")
+    return key(a) == key(b)
 
 
 def plan_parts(psd: PSDImage, parsed: dict, parts: dict, parser: Optional[PSDParser], record: Optional[dict] = None) -> PartsPlan:
@@ -7442,9 +7387,13 @@ def plan_parts(psd: PSDImage, parsed: dict, parts: dict, parser: Optional[PSDPar
         if key == ADD_ABILITY:
             if record.get("ability"):
                 skip(key, edit, HAS_ABILITY)
-            else:
+            elif not ADD_ABILITY_LIVE:
                 plan.outcome[key] = "waiting"
                 plan.notes.append(f"ability: {ADDED_LATER}")
+            elif template_for(parsed["card"].get("type"), rel) is None:
+                plan.refusals.append(Refusal("unsupported-card", "ability: no template for this kind of card"))
+            else:
+                plan.jobs[key] = edit
             continue
         layer = index.get(int(key))
         if layer is None:
@@ -7538,7 +7487,7 @@ def _part_raw(raw: str, was: str, text: str) -> str:
 
 def _combine(which: str, edits: list, subs: list, psd: PSDImage, olds: dict, news: dict, extra_layers=(),
              extra_stories=(), removed=(), removed_stories=(), renumbered=(), boxes=(), notes=()) -> Edit:
-    """One Edit for a field's part jobs (set_ability_layers' shape: several, parts), the deletions in it; old and new:
+    """One Edit for a field's part jobs (Edit.parts: each layer's own), the deletions in it; old and new:
     {layer id: its part's text} (new None: deleted)."""
     now = record_map(psd)
     for (_, edit, _), ids in zip(edits, subs):
@@ -7566,7 +7515,8 @@ def _combine(which: str, edits: list, subs: list, psd: PSDImage, olds: dict, new
 
 
 def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Optional[dict] = None, card: str = "",
-              own_text: bool = True, parser: Optional[PSDParser] = None, original: Optional[PSDImage] = None) -> list:
+              own_text: bool = True, parser: Optional[PSDParser] = None, original: Optional[PSDImage] = None,
+              ability_from: Optional[tuple] = None) -> list:
     """
     Bake a card's part jobs (plan_parts) on the open card (§4.4-4.6): the deletions first (remove_layer: the layer, its
     visible FX layers and copies, its story), then each ability part, title part and rule-page block set as one text
@@ -7579,9 +7529,10 @@ def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Op
         jobs: plan_parts().jobs
         record: card_parts() of the card as opened
         original: The card before the bake's edits (set_text_layer's; record ids and story indices of what is deleted)
+        ability_from: (the card kind's template, its name): template_for's, for a "+ability" job (added last)
 
     Returns:
-        One Edit per field ("ability" then "name"), several=True; raises Refused as set_text_layer does
+        One Edit per field ("ability" then "name"), then the added ability's; raises Refused as set_text_layer does
     """
     found, index = record_parts(record), lyid_index(psd)
     was_index = lyid_index(original) if original is not None else index
@@ -7692,6 +7643,53 @@ def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Op
         out.append(_combine(which, edits, subs, psd, {key: found[key][2]["text"] for key in mine},
                             {key: jobs[key].get("text") for key in mine}, extra, extra_stories, info["removed"],
                             info["stories"], info["moved"], info["boxes"], notes))
+    if ADD_ABILITY in jobs:                     # scheduled last (§4.7)
+        if ability_from is None:
+            raise Refused("unsupported-card", "ability: no template to add the Ability layer from")
+        out.append(add_ability(psd, jobs[ADD_ABILITY]["text"], *ability_from, fonts_dir, chart, card, own_text, parser,
+                               original))
+    return out
+
+
+def insert_ability(psd: PSDImage, template: PSDImage):
+    """
+    The template's visible Ability type layer copied into the card (§4.7, the fork's copy_to: its box, font, size and
+    Txt2 story, its fonts merged): at the top of the card's Text group (the root when there is none), named Ability,
+    a fresh layer id. A card whose canvas is not its template's is impossible (none, 2026-10-25).
+
+    Returns:
+        The new layer
+    """
+    if (psd.width, psd.height) != (template.width, template.height):
+        raise Refused("unsupported-card", f"ability: the card's canvas {psd.width}x{psd.height} is not its template's "
+                                          f"{template.width}x{template.height}")
+    source = next((layer for layer in template.descendants() if _is_text_layer(layer) and layer.is_visible()
+                   and base_name(layer).strip().lower() == "ability"), None)
+    if source is None:
+        raise Refused("unsupported-card", "ability: the template has no visible Ability layer")
+    group = _text_group(psd)
+    layer = source.copy_to(group if group is not None else psd)
+    layer.name = "Ability"
+    return layer
+
+
+def add_ability(psd: PSDImage, text: str, template: PSDImage, name: str, fonts_dir: str, chart: Optional[dict] = None,
+                card: str = "", own_text: bool = True, parser: Optional[PSDParser] = None,
+                original: Optional[PSDImage] = None) -> Edit:
+    """A "+ability" job: insert_ability, then the text set as any ability's (set_text_layer), flagged. Its record and
+    story are declared added (gate_bytes, gate_stories), the faces the Txt2 FontSet gained in Edit.fonts."""
+    faces = lambda: [_story_font_name(entry, _story_list(_txt2(psd))[5]) for entry in _story_fonts(_txt2(psd)) or []] \
+        if _txt2(psd) is not None else []
+    before = faces()
+    layer = insert_ability(psd, template)
+    story = story_index(layer)
+    raw = text.replace("\r\n", "\n").replace("\r", "\n").strip("\n").replace("\n", "\r")
+    edit = set_text_layer(psd, "ability", raw, fonts_dir, chart, card, own_text, parser, original, layer=layer)
+    edit.story = None                           # a new story: gate_stories takes it out (added_stories)
+    out = _combine("ability", [(layer, edit, False)], [_record_ids(psd)], psd, {}, {ADD_ABILITY: text},
+                   notes=[f"ability: ability layer created from {name}: check its place"])
+    out.added, out.added_stories = [_record_index(layer)], [story]
+    out.fonts = list(dict.fromkeys(faces()[len(before):] + out.fonts))
     return out
 
 
@@ -7790,14 +7788,8 @@ __all__ = [
     'BADGE_KEYS',
     'BADGE_TAGS',
     'ICON_FONT',
-    'AbilityLayers',
     'ability_layer',
-    'ability_layers',
-    'ability_split',
     'project',
-    'set_ability_layers',
-    'several_layers',
-    'unpadded',
     'badge_fit',
     'badge_fits',
     'badge_tags',

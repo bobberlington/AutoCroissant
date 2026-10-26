@@ -201,6 +201,8 @@ def test_normalize_ability_matches_the_parser():
     site = "Has stats -2.\n(BOT) Die."
     assert pe.normalize_ability(layer) == pe.normalize_ability(site) == "Has stats -2.\n(BOT) Die."
     assert pe.normalize_ability("﻿\"Gain\t1 \nhp .\"\n") == "Gain 1 \nhp." and pe.normalize_ability("") == ""
+    assert not pe._part_same("+100% Lifesteal .", "+100% Lifesteal.", None)     # a part's own characters count
+    assert not pe._part_same('"Hi"', "Hi", None) and pe._part_same("a\r\tb ", "a\n b", None)
     assert pe.collapse(" Shooting\rStar ") == "Shooting Star" and pe.collapse(None) == ""
 
 
@@ -635,8 +637,8 @@ def test_gate_bytes_allows_only_the_declared_rename(monkeypatch):
 @composites
 def test_a_title_or_ability_printed_twice_refuses(clone):
     """Another visible text layer printing the same words refuses (Tainted Eden's glitch copies of its title, SOMETHING's
-    two offset copies of its ability): a bake would change one and leave the copies (an ability bake edits them too:
-    set_ability_layers). An empty layer has no copies (Anubisath's empty Ability beside an empty 'Layer 1')."""
+    two offset copies of its ability): a bake would change one and leave the copies (a plain ability edit there goes
+    through set_parts, which edits them too). An empty layer has no copies (Anubisath's empty Ability beside an empty 'Layer 1')."""
     with pytest.raises(pe.Refused, match="the title is printed again by 'Name copy'") as refused:
         pe.name_layer(PSDImage.open(_card(clone, EDEN)[0]), card_name(EDEN))
     assert refused.value.code == "unsupported-card"
@@ -1268,18 +1270,6 @@ def test_alternates_go_on_badges_and_stickers_only(clone):
 
 
 @text_engine
-def test_restyle_due_names_layers_an_edit_leaves(clone, tmp_path):
-    """A layer of a several-layer Ability the edit leaves alone is set all the same when a retired badge FX layer is over
-    it (Miracle Matter's first) or its badge under an overlay lacks Stylistic Alternates; the rest are left."""
-    psd = PSDImage.open(_at(clone, tmp_path, BADGED, MIRACLE)[0])
-    layers = pe.ability_layers(psd).layers
-    due = [pe._restyle_due(psd, layer, None) for layer in layers]
-    assert due[0] and not any(due[1:])
-    psd = PSDImage.open(_at(clone, tmp_path, "19db3675^", "Creatures/Kirby/5 Stars/Butterfly.psd")[0])   # (OFS), (OD) in its body font
-    assert not any(pe._restyle_due(psd, layer, None) for layer in pe.ability_layers(psd).layers)
-
-
-@text_engine
 def test_gate_fx_tells_a_bare_badge_under_a_tinted_ability(clone, tmp_path):
     """bare_icons, independent of the rebuild: Turtle's badge under its Color Overlay is in the overlay's colour until
     it takes Stylistic Alternates (owner 2026-10-25: one colour on purpose); gate_fx tells a new one, even for an edit
@@ -1522,6 +1512,35 @@ def _at(clone, tmp_path, rev: str, rel: str) -> tuple:
 
 
 @text_edit
+def test_typed_text_keeps_the_layers_characters_and_takes_the_body_colour(clone, parser, chart):
+    """Bake bugs (owner 2026-10-25): text typed at a line's end in a line of several colours takes the body fill, not
+    the coloured word beside it (Binge Eater's ", 1T" after its olive "SPD"), typed inside a run that run's; a whole
+    ability edit keeps what the parser's reading leaves out (Deepnest's "reroll :3": normalize_ability dropped it)."""
+    fonts = str(clone / pe.FONTS_DIR)
+    psd = PSDImage.open(_card(clone, "Items/Equip/4 Stars/Binge_Eater.psd")[0])
+    layer = pe.ability_layer(psd)
+    body, olive = pe.body_fill(layer, chart), pe._char_styles(layer)[0][layer.text.index("SPD")]
+    old = pe.normalize_ability(layer.text)
+    pe.set_text_layer(psd, "ability", old.replace("-1 SPD", "-1 big SPD, 1T", 1), fonts, chart, parser=parser)
+    fills, text = pe._char_styles(layer)[0], layer.text
+    assert body != olive and fills[text.index(", 1T") + 3] == body and fills[text.index("big")] == olive
+    psd = PSDImage.open(_card(clone, "Field/3 Stars/Deepnest.psd")[0])
+    pe.set_text_layer(psd, "ability", "Does nothing at all, reroll:3", fonts, chart, parser=parser)
+    assert pe.ability_layer(psd).text == "Does nothing at all, reroll :3"
+
+
+def test_story_style_drift_compares_kerning(clone):
+    """B12: Pandamonium's Health is kerned off in its Txt2 story (Photoshop's), on in TySh (the engine's); the drift says
+    so, the bake's own check leaves it (kerning=False: an edited layer follows the story, the others keep their pixels)
+    and follow_kerning makes TySh the story's."""
+    psd = PSDImage.open(_card(clone, "Items/Active/4 Stars/Pandamonium.psd")[0])
+    assert pe.story_style_drift(psd) == [("Health", "AutoKerning at 1: layer True, story False")]
+    assert pe.story_style_drift(psd, kerning=False) == []
+    health = next(layer for layer in psd.descendants() if layer.name == "Health")
+    assert pe.follow_kerning(psd, health) and pe.story_style_drift(psd) == [] and not pe.follow_kerning(psd, health)
+
+
+@text_edit
 def test_a_two_site_edit_bakes_its_runs_into_the_story(clone, parser, chart, tmp_path):
     """Through apply_jobs and every gate: the saved PSD's TySh and Txt2 story agree run by run (story_style_drift) and
     keep the badge between the edits."""
@@ -1540,16 +1559,21 @@ def test_a_two_site_edit_bakes_its_runs_into_the_story(clone, parser, chart, tmp
 def test_new_text_past_its_design_is_told(clone, parser, chart):
     """Review 2026-10-24: an Ability's added line printed over what lies below its old text (Deep Focus' flourish, Holy
     Card's torn panel border, Autopsy Report off its box) with no note; inks_over passed them, the old ink touching
-    those layers elsewhere. It bakes with a note; a line added on the plain panel has none. A title's too."""
+    those layers elsewhere. It bakes set smaller until it stays off them and no lower than the old text (fit_below, the
+    website preview's fit), else as it is with a note (six more sentences on Deep Focus); a line added on the plain
+    panel has none. A title's too."""
     fonts = str(clone / pe.FONTS_DIR)
-    for rel, told in (("Items/Equip/3 Stars/Deep_Focus.psd", True), ("Items/Equip/2 Stars/Holy_Card.psd", True),
-                      ("Auxiliary/Items/Autopsy_Report.psd", True), ("Auxiliary/Creatures/Mettaton_EX.psd", False)):
+    focus, gain = "Items/Equip/3 Stars/Deep_Focus.psd", " Gain 1 HP. Die."
+    for rel, more, want in ((focus, gain, "fit"), ("Items/Equip/2 Stars/Holy_Card.psd", gain, "fit"),
+                            ("Auxiliary/Items/Autopsy_Report.psd", gain, "fit"), (focus, " Gain 1 HP and draw a card." * 6, "told"),
+                            ("Auxiliary/Creatures/Mettaton_EX.psd", gain, None)):
         psd_path = _card(clone, rel)[0]
         psd = PSDImage.open(psd_path)
         old = pe.normalize_ability(pe.parse_card(parser, psd_path, rel)["card"]["ability"])
-        edit = pe.set_text_layer(psd, "ability", old + " Gain 1 HP. Die.", fonts, chart, parser=parser)
+        edit = pe.set_text_layer(psd, "ability", old + more, fonts, chart, parser=parser)
         notes = [note for note in edit.notes if note.startswith("ability: ")]
-        assert bool(notes) == told, (rel, notes)
+        fit = [note for note in edit.notes if search(r"^overflow: ability: set at [4-9]\d% of its size to stay on", note)]
+        assert (bool(notes), bool(fit)) == (want == "told", want == "fit"), (rel, edit.notes)
         assert all(note.endswith("; check the card") for note in notes)
     # a longer title past the banner it sits on (Bubble's parchment) or the texture clipped to it (Fire Totem's 'firefx':
     # the new letters print in the plain fill), review 2026-10-24
@@ -1903,7 +1927,7 @@ def test_bake_repairs_a_stale_story(clone, parser, tmp_path):
 
 
 # ========================
-# An ability over several layers (owner 2026-10-24)
+# Part edits (PARTS_EDITOR.md)
 # ========================
 MIRACLE = "Creatures/Kirby/3 Stars/Miracle_Matter.psd"            # five, padded ('\r    Fire: 5/5/8/7'), 'Ability FX: (1GCD)'
 
@@ -1913,29 +1937,33 @@ def _dir(tmp_path, name: str):
     return tmp_path / name
 
 
-def test_ability_split_shares_an_edit_out():
-    """Each changed span goes to the layer it lies in (padding kept); a line added at a boundary to the layer above; a
-    removed break joins two layers in the one that keeps most; a part removed whole leaves its layer empty; an image
-    icon's [type] token the parser adds stays out."""
-    raws = ["Costs 0 SP to use.", "\r    Deal 7 DMG.\r   "]
-    old = "Costs 0 SP to use.\nDeal 7 DMG."
-    split = pe.ability_split(old, "Costs 0 SP to use.\nDeal 9 DMG.", raws)
-    assert [(m, r, core, new) for m, r, core, new, _ in split] == [
-        ([0], 0, "Costs 0 SP to use.", "Costs 0 SP to use."), ([1], 1, "Deal 7 DMG.", "Deal 9 DMG.")]
-    assert pe.project("Deal 7 DMG.", "Deal 9 DMG.", raws[1]) == "\r    Deal 9 DMG.\r   "
-    added = pe.ability_split(old, "Costs 0 SP to use.\nDiscard after use.\nDeal 7 DMG.", raws)
-    assert [new for *_, new, _ in added] == ["Costs 0 SP to use.\nDiscard after use.", "Deal 7 DMG."]
-    joined, = pe.ability_split(old, "Costs 0 SP to use. Deal 7 DMG.", raws)
-    assert joined == ([0, 1], 0, "Costs 0 SP to use.", "Costs 0 SP to use. Deal 7 DMG.", [1])
-    dropped, = pe.ability_split(old, "Deal 7 DMG.", raws)
-    assert dropped == ([0, 1], 1, "Deal 7 DMG.", "Deal 7 DMG.", [])
-    tokened = pe.ability_split(old + " [undead]", "Costs 1 SP to use.\nDeal 7 DMG. [undead]", raws)
-    assert [new for *_, new, _ in tokened] == ["Costs 1 SP to use.", "Deal 7 DMG."]
-    one_line = pe.ability_split(old, "Costs 0 SP. Deal 7 DMG to all.", raws)     # no cut at a space (review)
-    assert [members for members, *_ in one_line] == [[0, 1]]
-    relaid = pe.ability_split("Costs 0 SP to use. Deal 7 DMG.", "Costs 1 SP to use. Deal 7 DMG.", raws, relaid=True)
-    assert [new for *_, new, _ in relaid] == ["Costs 1 SP to use.", "Deal 7 DMG."]
-    assert pe.unpadded("Fire: 5/5/8/7\n    \nEarth   \n") == "Fire: 5/5/8/7\nEarth"
+def test_project_keeps_a_layers_padding():
+    """A box's edit put back over its layer keeps the layer's blank ends and indent (project)."""
+    assert pe.project("Deal 7 DMG.", "Deal 9 DMG.", "\r    Deal 7 DMG.\r   ") == "\r    Deal 9 DMG.\r   "
+
+WATCHER = "Auxiliary/Minions/Abyss_Watcher.psd"                  # no ability part (a hidden empty Ability)
+
+
+@text_edit
+def test_plus_ability_adds_the_templates_layer(clone, parser, chart, tmp_path, monkeypatch):
+    """§10 step 6: "+ability" waits while ADD_ABILITY_LIVE is off; on, Creature_Template's Ability comes in at the top
+    of the Text group, named Ability with a fresh id and its own story, reads the box's text and is flagged."""
+    path, png = _card(clone, WATCHER)
+    psd = PSDImage.open(path)
+    parsed = pe.parse_card(parser, path, WATCHER, psd)
+    edits = {"parts": {"+ability": {"field": "ability", "text": "Attacks inflict 1T Afraid."}}}
+    assert pe.classify(parsed, edits, psd, parser).parts.outcome == {"+ability": "waiting"}
+    monkeypatch.setattr(pe, "ADD_ABILITY_LIVE", True)
+    jobs = pe.classify(parsed, edits, psd, parser).jobs
+    assert pe.template_for(parsed["card"]["type"], WATCHER) == "MDW/Templates/Creature_Template.psd"
+    baked = pe.apply_jobs(path, png, WATCHER, jobs, parsed, parser, str(tmp_path), str(clone / pe.FONTS_DIR), chart,
+                          psd=psd, ability_from=(PSDImage.open(clone / pe.TEMPLATES_DIR / "Creature_Template.psd"),
+                                                 "Creature_Template"))
+    saved = PSDImage.open(baked.psd_path)
+    added = [layer for layer in saved.descendants() if pe._is_text_layer(layer) and layer.text]
+    added = [layer for layer in added if layer.layer_id not in pe.lyid_index(psd)]
+    assert [(layer.name, layer.parent.name, layer.text) for layer in added] == [("Ability", "Text", "Attacks inflict 1T Afraid.")]
+    assert pe.stale_stories(saved) == [] and "ability: ability layer created from Creature_Template: check its place" in baked.fx_notes
 
 
 DRUID = "Creatures/World Of Warcraft/4 Stars/Warcraftian_Druid.psd"   # its title over 'Text/Name' and 'Text/Druid '
@@ -1946,7 +1974,8 @@ PARTS = Path(__file__).resolve().parent / "fixtures" / "parts"
 def test_parts_title_enter_and_legacy_edits(clone, parser, chart, tmp_path):
     """PARTS_EDITOR.md §11 cases 6 and 9: an Enter in Warcraftian Druid's second title box makes its layer two lines
     (one record, renamed as named after its text) and the name reads one line; a plain ability edit bakes on a card
-    printing it over one layer, and is refused as impossible on Miracle Matter's five."""
+    printing it over one layer (SOMETHING's two copies follow it: set_parts), and is refused as impossible on Miracle
+    Matter's five."""
     fixture = json.loads((PARTS / "card_edits.parts.json").read_text(encoding="utf-8"))["cards"]["Warcraftian Druid"]
     psd_path, png = _card(clone, DRUID)
     psd = PSDImage.open(psd_path)
@@ -1973,4 +2002,11 @@ def test_parts_title_enter_and_legacy_edits(clone, parser, chart, tmp_path):
     single = pe.classify(pe.parse_card(parser, _card(clone, MINI_DOOMER)[0], MINI_DOOMER, doomer), {"ability": "Die."},
                          doomer, parser)
     assert single.jobs == {"ability": "Die."} and not single.refusals
+    path, png = _card(clone, SOMETHING)
+    parsed = pe.parse_card(parser, path, SOMETHING)
+    value = parsed["card"]["ability"].replace("piercing", "very piercing", 1)
+    baked = pe.apply_jobs(path, png, SOMETHING, {"ability": value}, parsed, parser, str(_dir(tmp_path, "s")),
+                          str(clone / pe.FONTS_DIR), chart)
+    assert sum("very piercing" in layer.text for layer in PSDImage.open(baked.psd_path).descendants()
+               if layer.kind == "type") == 3
 

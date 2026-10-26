@@ -8,6 +8,7 @@ import shutil
 import subprocess
 from copy import deepcopy
 from datetime import datetime, timezone
+from functools import lru_cache
 from io import BytesIO
 from os import environ
 from pathlib import Path
@@ -388,12 +389,19 @@ def _rows_off(monkeypatch, rows: int, start: int = 3, levels: int = 30) -> None:
     monkeypatch.setattr(pe, "render_region", off)
 
 
+@lru_cache(maxsize=None)
+def lcms_profile(name: str) -> bytes:
+    """An LCMS profile's bytes, made once: its header stamps the second it was made."""
+    from PIL import ImageCms
+    return ImageCms.ImageCmsProfile(ImageCms.createProfile(name)).tobytes()
+
+
 def photoshop_png(image: Image.Image, icc="sRGB") -> bytes:
     """image as Photoshop exports it: no deflate (zlib level 0), with its colour and text chunks (icc: an LCMS profile's
     name, or a profile's bytes)."""
     import io
     from struct import pack
-    from PIL import ImageCms, PngImagePlugin
+    from PIL import PngImagePlugin
     info = PngImagePlugin.PngInfo()
     info.add(b"gAMA", pack(">I", 45455))
     info.add_itxt("XML:com.adobe.xmp", "<x:xmpmeta xmlns:x='adobe:ns:meta/'>" + "photoshop " * 400 + "</x:xmpmeta>")
@@ -401,7 +409,7 @@ def photoshop_png(image: Image.Image, icc="sRGB") -> bytes:
     info.add_text("Software", "Adobe Photoshop 24.0", zip=True)
     buf = io.BytesIO()
     image.save(buf, "PNG", compress_level=0, pnginfo=info, dpi=(300, 300),
-               icc_profile=icc if isinstance(icc, bytes) else ImageCms.ImageCmsProfile(ImageCms.createProfile(icc)).tobytes())
+               icc_profile=icc if isinstance(icc, bytes) else lcms_profile(icc))
     return buf.getvalue()
 
 
@@ -446,8 +454,7 @@ def cards_template(tmp_path_factory, clone):
     psds = {}
     for rel in (DOOMER, FREEZER, OTHER):
         data = (clone / rel).read_bytes()
-        if blob_sha_bytes(data) != json.loads(golden_file(rel).read_text(encoding="utf-8"))["blob"]:
-            pytest.skip(f"{rel} changed upstream since the goldens were made")
+        assert blob_sha_bytes(data) == json.loads(golden_file(rel).read_text(encoding="utf-8"))["blob"], f"{rel}: goldens not at CARDS_REV"
         psds[rel] = data
     vocab = json.loads(VOCAB.read_text(encoding="utf-8"))
     repo = tmp_path_factory.mktemp("cards-template") / "cards"
@@ -545,10 +552,10 @@ def _typo_fix(title: str) -> str:
 
 
 def _card(clone, rel: str) -> tuple:
-    path = clone / rel
-    if not path.exists() or not Path(str(path)[:-4] + ".png").exists():
+    path, png = clone / rel, clone / (rel[:-4] + ".png")
+    if not path.exists() or not png.exists():
         pytest.skip(f"{rel} not in the clone")
-    return str(path), str(path)[:-4] + ".png"
+    return str(path), str(png)
 
 
 def stale_copy(clone, rel: str, title: str, tmp_path) -> tuple:

@@ -1,69 +1,61 @@
-# Next session plan (2026-10-25 evening, after the unattended run)
+# Next session plan (2026-10-25 night, after the afternoon lanes)
 
 Start in `~/Desktop/AutoCroissant`. Read memories `owner-decisions-2026-10-24-night`, `resource-limits`,
 `lean-tests-and-verification`, `no-guides-csv-only`, `jetson-server`, `persistent-work-paths`, `agent-model-preference`.
-What landed on 10-25: `docs/Finished/session-2026-10-25/README.md` (10-24: `docs/Finished/session-2026-10-24/`). Designs still queued: `docs/Future/`.
+What landed on 10-25: `docs/Finished/session-2026-10-25/README.md` (its Afternoon section for after 13:30; 10-24:
+`docs/Finished/session-2026-10-24/`). Designs still queued: `docs/Future/`.
 
 **Standing rules:** work unattended unless the owner says "ask me questions". Agents on Opus or lower. Commit to main;
 `work/*` only while in flight. Persistent paths only. Deploy with the `jetson-deploy` skill. Tests:
-`~/.venvs/ac-py314-fork/bin/python -m pytest -n auto -q tests` (about 570 tests, about a minute; `-n auto` = 6 workers).
+`~/.venvs/ac-py314-fork/bin/python -m pytest -n auto -q tests` (about 595 tests, 1-2 minutes; `-n auto` = 6 workers).
 **Resource limits (memory `resource-limits`):** one full suite at a time (`~/Documents/Tools/wt/scratch/suite-wait.sh`),
 at most 2 workflows, pools of 4, never a partial clone of the local card repo, the git watchdog under Monitor.
 
 ## State
 
-AutoCroissant main be39f86 (deployed); TTSCardMaker main a4d137bf; data branch at parser 3 with details v2 (812 records
-with parts). Fork pin `cards-20261025b`. The website editor is in box-per-layer mode on every card; the bake applies
-per-layer edits (splice, delete, sha skip, variants, star folder moves, first type icon). The guards silently fix
-Single-line Composer, curly apostrophes, badge size/centring and old stoogedings glyphs; sweeps landed (badges 101
-cards, apostrophes 34). reminder.json is backed up to `backup/reminder.json` on change (SSH from
-`~/Documents/AutoCroissant-backup`).
+AutoCroissant main 4a4ad4c (jetson last known at be39f86: B-1's main.py and later bot code need a deploy); TTSCardMaker
+main 54395592; data d4dd2172 (parser 3, details v2). Fork pin `cards-20261025b`. Card sync chains leftover work and
+has one safety cron at :17 (none fired at 22:17 or 23:17 UTC; no Card sync run at all since 21:24 UTC). The guards'
+window is 30 minutes from the push (`card-guards-quiet` timer 25, set). Reply queues wake on enqueue. The site ships
+one esbuild bundle (editor, Stats and People load on first use) and WOFF2 mock-up fonts; the first screen in
+index.html was removed for Safari's flash.
 
-## In flight / prepared, not landed
+## In flight at 17:10 (each lane reports its own leftovers)
 
-- [ ] **Card sync verdicts, step 6**: migrate today's one `_psd` block after the first live bake or refusal shows
-      `db/verdicts.json` and `db/bake-records.json` on data (`~/Documents/Tools/wt/scratch/verdicts/MIGRATION.md`); drop
-      the `_psd` fallback one cycle later.
-- [ ] **Variant tags** for the 5 multi-picture PSDs: commit on TTSCardMaker `work/varianttags`
-      (`~/Documents/Tools/wt/tc-varianttags`); the plan to show the owner first:
-      `~/Documents/Tools/wt/scratch/parts-ab/VARIANT_TAGS_PLAN.md`. Land after his look (then the numbered-PNG
-      duplicate scan goes, PARTS_EDITOR §10 step 5).
-- [ ] **Badges resized anyway** (owner 10-25: rewraps allowed): AutoCroissant `work/resize58` (the guards resize even when
-      the text rewraps; an FX layer on moved words is cut again; a line pushed out of its box refuses), TTSCardMaker `work/resize58` 32039569 (43 cards, 13
-      rewrapped; the other 11 are the cards below that need a Photoshop re-save). Land AutoCroissant first, then the card
-      commit once `python -m commands.card_sweep moved --plan ~/Documents/Tools/wt/scratch/resize58/card-sweep-badges.json
-      --clone ~/Desktop/TTSCardMaker` prints nothing.
-- [ ] **OJWikibot optimization lane 3** (opt PLAN §(a)): in flight at the end of the night (`work/opt3`).
+AC/TC `work/grid` (B-2: /query_ability as grid images), `work/cardlist` (B-3a: saved tree at startup),
+`work/mainlane` (P-2), `work/bakecopy` (K-3 + K-5), `work/tooling` (T-1, T-3, T-4, T-5; Kung Fu Panda copy deleted,
+TC bcaca99f), `work/resize58` (the 58 badges, resized with rewraps allowed), `work/pintests` (T-2), `work/partsfollow`,
+`work/bakebugs`, OJWikibot `work/ojres` (O-1, O-4, edit conflicts), the problem-cards census re-run
+(`~/Documents/Tools/wt/scratch/census-1025b`).
 
-## Questions for the owner (recommended answers in bold in the source)
+## Left
 
-- Optimization pass: `~/Documents/Tools/wt/scratch/opt/PLAN.md` §(b): S-1..S-6 (site bundle, first screen in HTML,
-  lazy modules, WOFF2 preview fonts, CDN caching), B-1..B-5 (bot queue wake-ups, /query_ability grouping, card list at
-  start, pandas), P-1..P-6 (guards window from the push, one main lane per guarded push, thumbs off Pages, **P-5 the
-  Card sync fallback: the cron fires ~8% of the time**), T-1..T-5, K-1..K-6 (dirty-box gate 1.6x stat bakes, runner
-  parallelism, edit_copy), O-1..O-9 (OJWikibot tests opt-in, throttle 2 s, outage responsiveness, retry storms...).
-- Michael's Blessing: the badge sweep shrank its badge table (the "->" arrows no longer line up). Keep or revert that
-  card from 218a122d?
-- KungFuPandaRegular-xYjV.ttf (the one old font copy kept): no PSD asks for its PostScript name `Kung Fu Panda`; deleted on TC work/tooling (bcaca99f).
+- [ ] **Safari flash:** the owner still sees it; the first screen is gone since TC 54395592 (17:07): check on Safari again.
+- [ ] **Card sync verdicts, step 6:** migrate the one `_psd` block after the first live bake or refusal puts
+      `db/verdicts.json` and `db/bake-records.json` on data (not there at d4dd2172;
+      `~/Documents/Tools/wt/scratch/verdicts/MIGRATION.md`); drop the `_psd` fallback one cycle later.
+- [ ] **`+ability`** (PARTS_EDITOR §10 step 6): waits on the owner's Photoshop check of the fork's `import_layer`.
+- [ ] The numbered-PNG duplicate scan's deletion now that the 5 PSDs are tagged (PARTS_EDITOR §10 step 5), unless
+      `work/partsfollow` did it; the §8 joined-splice deletion after one Card sync cycle with no legacy entries.
+- [ ] Deliver the problem-cards CSV from the census re-run (memory `no-guides-csv-only`).
+- [ ] Watch the first chained run and the first :17 safety run.
 
-## Found, needs the owner
+## Owner's open items
 
-- **OJWikibot's wiki API answers HTTP 500 since 10-23** (last good login 10-22 01:19): wiki/host side.
-- 11 cards' badges and 7 apostrophe cards could not be fixed glyph by glyph (stored ink outside the layout): listed in
-  the night log; a Photoshop re-save fixes them.
+- OJWikibot's wiki API answers HTTP 500 since 10-23 (wiki/host side); O-6 waits for it.
+- A Photoshop re-save for the 11 badge and 7 apostrophe cards that couldn't be fixed glyph by glyph (session README).
+- Layout support still refuses Grimora, Skeleton Mate, Slugcat's spd, three smart-filter star layouts, PoD04 Zebra
+  Bloon +1, Living Bread.
+- Eventually, never blockers: Photoshop standardizing (one Name and one Ability layer per card, rulebook Header/Page
+  Number layers); the team's rulings draft; developers resetting clones after the 10-24 rewrite
+  and reinstalling stoogedings.
 
-## Queue
+## Optimization questions answered no / not now
 
-1. [ ] Re-run the problem-cards census (`docs/Future/PROBLEM_CARDS_2026-10-25.csv`) now that the parts editor and layout
-       support landed; the CSV is the only deliverable (memory `no-guides-csv-only`).
-2. [ ] `+ability` (PARTS_EDITOR §10 step 6, after a Photoshop proof of `import_layer`) and the §8 joined-splice deletion
-       after one Card sync cycle with no legacy entries.
-3. [ ] The parked research ideas below.
-
-## Owner, eventually (never blockers)
-
-Photoshop standardizing (one Name and one Ability layer per card, rulebook Header/Page Number layers); the team's
-rulings draft; developers resetting clones after the 10-24 rewrite and reinstalling stoogedings.
+From `~/Documents/Tools/wt/scratch/opt/PLAN.md` §(b), not chosen on 10-25: S-5 (CDN caching), S-6 (small site items),
+B-4 (pandas out), B-5 (changes() from JSON), P-3 (thumbs off Pages), P-4 (site inside Card sync), P-6 (deploy-pages as
+a step), K-2 (runner parallelism), K-4 (smart-filter pair check), K-6 (row-limited decode, dirty box for stars/types,
+prange, zlib level), O-7, O-8, O-9. O-2, O-5 and O-6: as `work/ojres` reports (O-6 needs the wiki back).
 
 ## Ideas parked / not chosen
 
