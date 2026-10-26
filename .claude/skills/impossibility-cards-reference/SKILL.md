@@ -124,7 +124,8 @@ the 7. They are, as of 2026-07-11: Azamoth the Possessed Vessel, Igor Roballtows
 Mettaton NEO, Militron (No Armor), Morpho Knight, Shadow Queen. Workaround: `type~creature`
 (contains) matches both. The same fall-through gives `Auxiliary/Rulebook/` pages type
 **"rulebook"** (48 entries). Also note the 7 "creatures" cards skip the creature-specific handling:
-no series, no −1 stat seeding, so the stat validators (section 5) never fire for them. Their printed stars (2-5) are
+no series, no −1 stat seeding. The stat checks (section 5) cover them since 2026-10-26 (`STAT_KINDS`; none has a stat
+note on that day's data). Their printed stars (2-5) are
 counted from the PSD since 2026-10-23 (`psd_parser.STARS_FROM_PSD`); the stored cards get them at a `cards:` re-parse.
 
 ### Excluded folders
@@ -442,7 +443,7 @@ Problems come in two kinds, and only one kind is persisted — a common newcomer
   `NO ABILITY LAYER` (rule pages only since 2026-10-25, psd_parser.py:523), `DUPLICATE LAYER IDS` (:526), `NO STARS FOUND` (:532), `MISSPELT TYPE: <name>` (:756-757,
   fired by a visible pixel layer named in `MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']`,
   line 26), the effect-layer and icon-token ones through `_add_problem` (:943; callers :678-693, :975-1006), `SEVERAL CREATURES` (:1182)
-  and, since 2026-10-26, `NO STATS FOUND: no HP, DEF, ATK or SPD bars read on this creature` (or minion; `STAT_KINDS`):
+  and, since 2026-10-26, `NO STATS FOUND: no HP, DEF, ATK or SPD bars read on this creature` (or minion; `STAT_KINDS`, with the "creatures" kind):
   the validator then skips its four `... NOT FOUND` lines (not STATS TOO HIGH); a `creatures` edit, or edits giving all four
   stats a value, answer it (`FIXED_BY`, `FIXED_BY_ALL`, build_site's alike), so one stat edit leaves it on the website too.
 - **Validate-time problems** are computed by `CardValidator.validate` during `/update_stats`,
@@ -457,7 +458,7 @@ one card has one: rulebook page "20 Creature Types" with `MISSPELT TYPE: tornado
 |---|---|---|
 | `UNKNOWN TYPE` | `card_type == "unknown"` (path matched no classifier row) | :1311-1312 |
 | `ABILITY TEXT NOT FOUND` | a rule page with no ability text (other cards need no ability since 2026-10-25, owner) | :1315-1317 |
-| `HP NOT FOUND` / `DEF NOT FOUND` | creature or minion with that stat still −1 | :1338-1341 |
+| `HP NOT FOUND` / `DEF NOT FOUND` | creature, minion or "creatures" card (`STAT_KINDS`) with that stat still −1 | :1338-1341 |
 | `ATK NOT FOUND` / `SPD NOT FOUND` | same, UNLESS `"active"` is in `card.types` (active creatures have no atk/spd) | :1344-1350 |
 | `STATS TOO HIGH` | any found stat > 10 and not `allow_high_stats` (Card Edits.json; the stat exclusion list went 2026-10-21) | psd_parser.py:1353-1354 |
 | `NO ABILITY LAYER` | a rule page with no text at parse time; validate() drops older data's on other cards | :523, :1325-1326 |

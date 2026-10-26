@@ -135,13 +135,30 @@ AUX_CREATURES = {"Azamoth_the_Possessed_Vessel": 5, "Igor_Roballtowski": 2, "Met
 
 
 def test_auxiliary_creatures_count_their_printed_stars(clone):
-    """The 7 Auxiliary/Creatures cards print 2-5 stars; their folder says none, so the PSD's are counted."""
+    """The 7 Auxiliary/Creatures cards print 2-5 stars; their folder says none, so the PSD's are counted. Their stat bars
+    are checked like a creature's (STAT_KINDS): no note on any of the 7."""
     import commands.psd_parser as pp
     assert pp.stars_from_psd("Auxiliary/Creatures/Shadow_Queen.psd") and not pp.stars_from_psd("Creatures/Other/3 Stars/X.psd")
-    found = {}
+    found, notes = {}, {}
     for stem, stars in AUX_CREATURES.items():
         rel = f"Auxiliary/Creatures/{stem}.psd"
         if not (clone / rel).exists():
             pytest.skip(f"{rel} not in the clone")
-        found[stem] = parser().parse(str(clone / rel), rel).stars
-    assert found == AUX_CREATURES
+        card = parser().parse(str(clone / rel), rel)
+        found[stem] = card.stars
+        notes[stem] = pp.CardValidator.validate(card)
+    assert found == AUX_CREATURES and notes == dict.fromkeys(AUX_CREATURES, [])
+
+
+def test_auxiliary_creature_without_bars(clone):
+    """No stat bar read on an Auxiliary/Creatures card: one NO STATS FOUND note, worded for a creature."""
+    from psd_tools import PSDImage
+    import commands.psd_parser as pp
+    rel = "Auxiliary/Creatures/Morpho_Knight.psd"
+    if not (clone / rel).exists():
+        pytest.skip(f"{rel} not in the clone")
+    psd = PSDImage.open(clone / rel)
+    psd.remove(next(layer for layer in psd if layer.name == "Stats Bars"))
+    card = parser().parse(psd, rel)
+    note = f"{pp.NO_STATS}: no HP, DEF, ATK or SPD bars read on this creature"
+    assert card.card_type == "creatures" and card.problems == [note] and pp.CardValidator.validate(card) == [note]

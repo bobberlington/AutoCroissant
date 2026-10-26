@@ -25,7 +25,7 @@ getLogger("psd_tools").setLevel(CRITICAL)
 PARSER_VERSION = 5                # bump when every stored card must be re-parsed (the build re-parses older stamps)
 TYPE_REGION_RATIO = 0.5
 MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']
-STAT_KINDS = (CardType.CREATURE.value, CardType.MINION.value)  # cards with HP, DEF, ATK and SPD bars (CardValidator's)
+STAT_KINDS = (CardType.CREATURE.value, CardType.MINION.value, "creatures")  # with stat bars ("creatures": Auxiliary/Creatures)
 NO_STATS = "NO STATS FOUND"       # a stored problem (the website's Parser notes): no bar read (card_edits.FIXED_BY_ALL)
 DRAWN_LAYER_KINDS = ("pixel", "smartobject", "group", "type", "shape")   # every other kind is an adjustment layer
 
@@ -702,7 +702,8 @@ class PSDParser:
         self._process_stats(card, stat_trackers)
         stats = card.stats
         if card.card_type in STAT_KINDS and (stats.hp, stats.defense, stats.attack, stats.speed) == (-1, -1, -1, -1):
-            card.problems.append(f"{NO_STATS}: no HP, DEF, ATK or SPD bars read on this {card.card_type}")
+            kind = "creature" if card.card_type == "creatures" else card.card_type
+            card.problems.append(f"{NO_STATS}: no HP, DEF, ATK or SPD bars read on this {kind}")
 
         if get_stars_from_psd:
             card.stars = num_stars.value + self._count_stars(psd)    # icon-font stars in the header + drawn stars
