@@ -435,12 +435,31 @@ def test_dirty_box_bounds_the_untouched_gate(clone, parser):
 
 
 def test_layout_bars_refuse_what_they_lack(clone, parser):
-    """A cell with no dark picture (Clot Black's hp 2 to 1) and bars painted into the art (Skeleton Mate) still refuse."""
-    for rel, stat, value, why in (("Auxiliary/Minions/Clot_Black.psd", "hp", 1, "cell 2 of 'hp' has no dark picture"),
-                                  ("Auxiliary/Minions/Skeleton_Mate.psd", "hp", 3, "painted")):
-        psd = PSDImage.open(_card(clone, rel)[0])
-        with pytest.raises(pe.Refused, match=why):
-            pe.set_stat(psd, pe.parse_card(parser, _card(clone, rel)[0], rel, psd), stat, value)
+    """A cell with no dark picture (Clot Black's hp 2 to 1) still refuses."""
+    rel = "Auxiliary/Minions/Clot_Black.psd"
+    psd = PSDImage.open(_card(clone, rel)[0])
+    with pytest.raises(pe.Refused, match="cell 2 of 'hp' has no dark picture"):
+        pe.set_stat(psd, pe.parse_card(parser, _card(clone, rel)[0], rel, psd), "hp", 1)
+
+
+def test_numbered_cells_bake(clone, parser, tmp_path):
+    """Skeleton Mate's and Grimora's bars, painted into the art until TTSCardMaker 80466bbe (numbered cells 1-10, lit over
+    dark): every stat's edit bakes and reads back."""
+    for rel in ("Auxiliary/Minions/Skeleton_Mate.psd", "Creatures/Other/3 Stars/Grimora.psd"):
+        path = tmp_path / Path(rel).name
+        path.write_bytes(at_rev(clone, "80466bbe", rel))
+        psd = PSDImage.open(str(path))
+        parsed, before = pe.parse_card(parser, str(path), rel, psd), pe.record_map(psd)
+        want = {stat: parsed["card"][stat] % 10 + 1 for stat in pe.STAT_FIELDS}
+        edits = [pe.set_stat(psd, parsed, stat, value) for stat, value in want.items()]
+        for edit in edits:
+            if edit.icons is not None:
+                pe.index_icons(edit, before, pe.record_map(psd))
+        saved = str(tmp_path / ("new_" + path.name))
+        pe.save_psd(psd, saved, update_preview=False)
+        pe.gate_bytes(str(path), saved, edits)
+        card = pe.parse_card(parser, saved, rel)["card"]
+        assert {stat: card[stat] for stat in want} == want, rel
 
 
 # Lane 2 (owner 2026-10-26): a stat's several rows, split cells, numbered layers, moved edges, two half rows

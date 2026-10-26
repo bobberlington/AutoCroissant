@@ -80,8 +80,8 @@ the Isaac-style cards, a bigger item size, a deleted ability's own font first.
       Expansion" is a subseries of Don't Starve (1 card, Grapes): probably series "Don't Starve" plus that subseries.
 - Eventually, never blockers: Photoshop standardizing (one Name and one Ability layer per card, rulebook Header/Page
   Number layers); the team's rulings draft; developers resetting clones after the 10-24 rewrite and reinstalling
-  stoogedings. Layout support still refuses Grimora, Skeleton Mate, Slugcat's spd, three smart-filter star layouts,
-  PoD04 Zebra Bloon +1, Living Bread.
+  stoogedings. Layout support still refuses Slugcat's spd, three smart-filter star layouts, PoD04 Zebra Bloon +1,
+  Living Bread (Grimora and Skeleton Mate bake since TTSCardMaker 80466bbe's numbered cells).
 
 ### Waiting on events
 
