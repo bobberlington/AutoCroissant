@@ -1,7 +1,7 @@
 # Session 2026-10-26
 
 Continued from 10-25 after midnight. With the owner until ~08:00 ("ask me questions" mode), then unattended. Everything
-below is on main in all repos. The jetson runs AutoCroissant a07f822 and OJWikibot 77def4b; the psd-tools fork pin is
+below is on main in all repos. The jetson runs AutoCroissant 6da12ba and OJWikibot 77def4b; the psd-tools fork pin is
 `cards-20261026` (e156be36) on both machines. Times are PDT.
 
 ## Landed
@@ -52,6 +52,8 @@ From memory `owner-decisions-2026-10-24-night` (its 10-26 lines):
   only.
 
 ## Cleanup
+
+Open items and the future campaign tasks: `docs/NEXT_SESSION_PLAN.md`.
 
 No worktrees or `work/*` branches left in AutoCroissant, TTSCardMaker, OJWikibot or the psd-tools fork (the fork's
 filteritem branch deleted). Scratch: the landed lanes' folders (about 29 GB) deleted; their top-level scripts kept in

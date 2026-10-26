@@ -36,10 +36,10 @@ First: regenerate the problem-cards list (below), then the campaign tasks in the
 
 ## State (2026-10-26 ~09:15 PDT)
 
-- AutoCroissant main = deployed a07f822 plus docs and skills commits only.
-- TTSCardMaker main 429e724c (plus Card sync's TTS save commits). Desktop clones of all three repos level with main.
-- Data 6b8f9050: parser 5 (builder 234b1b0), 820 cards; `db/verdicts.json` holds the verdicts (no `_psd` left).
-  Grimora and Skeleton Mate re-parse in the Card sync run after 80466bbe.
+- AutoCroissant main 6da12ba, deployed (the wrap-up's docs commit after it touches docs only).
+- TTSCardMaker main b3447b70 (plus Card sync's TTS save commits). Desktop clones of all three repos level with main.
+- Data 23b515a: parser 5, 820 cards; `db/verdicts.json` holds the verdicts (no `_psd` left). Grimora and Skeleton
+  Mate re-parsed with their numbered cells (same stats, 0 Discord posts).
 - psd-tools fork pin `cards-20261026` = e156be36 on both machines (`requirements-cards.txt`).
 - OJWikibot main 77def4b, deployed.
 - `+ability` is live; no live `+ability` bake yet (the first comes from the website): its flag note names the box, font
@@ -59,6 +59,11 @@ First: regenerate the problem-cards list (below), then the campaign tasks in the
 - [ ] Safari: the many-boxes edge scroll (headless checks never ran Safari).
 - [ ] OJWikibot questions: is the leo host retired; `/update` in both bots; the field-events snapshot; the stray-heading
       fix.
+- [ ] Open in Photoshop once: a smart-filter star move (lane 3, S1) and a title moved back onto the card (lane 2); both
+      were checked only in psd-tools renders.
+- Eventually, never blockers: Photoshop standardizing (one Name and one Ability layer per card, rulebook Header/Page
+  Number layers; Mr Jawsum's name layer); the team's rulings draft; developers resetting clones after the 10-24 rewrite
+  and reinstalling stoogedings.
 
 ### Developer
 
@@ -68,15 +73,24 @@ First: regenerate the problem-cards list (below), then the campaign tasks in the
 - [ ] Star counter: Yin Yarn and Leshy (overlapping and shadowed stars).
 - [ ] Star layouts: Bolts and Screws 2's false banner refusal; the 8 off-banner star edits refused (smarter layouts);
       a dice 5 -> 2 rule; Crowned Magolor's 6 look.
-- [ ] Types: Nasus' type removal (a close-the-row rule); Masher's "dark" under the shell.
+- [ ] Types: Nasus' type removal (a close-the-row rule); Masher's "dark" under the shell; check Pike Beam and Dark
+      Matter (a moved icon touching another; likely still refused).
 - [ ] Stat bars: Twin Emperors' 2-px seam after 5 -> 10 -> 2 -> 7 (cell spacing 925 vs 921); a numbered-layer 0 refuses
-      with "no dark picture" wording (reword); Sonic's SPD 11-19 are website-only.
+      with "no dark picture" wording (reword); Sonic's SPD 11-19 are website-only; Clot Black's HP 1 still refuses.
+- [ ] A website-only value is never written when its entry also has a refused field (`card_bake.share_of` returns None
+      for any refusal).
+- [ ] The R1 timing-tag check reads only layers named "Ability" (`card_standards.rule_tags`): tags in split ability
+      layers (Empress Bulblax's `text 4`) are never checked.
+- [ ] The website's "Parse problems" filter misses cards with no stats (Computer Virus: stats -1, empty problems).
 - [ ] Corruption and Dumplings: the font sweep left them out (a PNG bar; a Txt2 reorder).
 - [ ] Kept on purpose until their condition holds: the pyoxipng fallback (until `brew install oxipng` everywhere), the
       older-fork checks (retire the `ac-py314-psd125` venv first), the `alt_names` field (removing it rewrites every
       record), Card Edits.json's `aliases_moved` key (a data edit), the `inspect_pickle.py` name.
 - [ ] OJWikibot: `ojwiki_helpers.py:263-268` optional mwparserfromhell fallback; the backup search misses
-      `Backup: pending.json`.
+      `Backup: pending.json`; the 10-26 audit's item 36 rewording and its doc-drift list (the audit file is gone:
+      re-derive).
+- [ ] Fork, low priority: a tracking change breaks kerning (Quick Slash, Ominous Red Circle), tracked badge ligatures,
+      Photoshop's underline box (Golden Metronome). The cards are fixed in Photoshop; re-bakes of those lines differ.
 
 ### Waiting on events
 
