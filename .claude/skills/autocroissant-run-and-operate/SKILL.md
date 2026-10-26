@@ -52,9 +52,11 @@ Synced commands to guild: <name> (<id>)                <- one line per guild, as
 Trying to open reminder.json.                          <- init_reminder (or "No reminder.json yet: an empty schedule.")
                                                        <- plus any "Rescheduled reminder <id> from <t1> to <t2>" lines
 Card data loaded from card_data: 819 cards             <- init_psd: card_sync.startup's local copy (no network)
+Card list: 1101 entries from the saved tree           <- the card list from card_tree.json (no network; since 2026-10-25)
 Card data is already current: built 12 min ago from TTSCardMaker@1a2b3c4d (run: <...>).   <- its sync (one conditional request)
 Loaded 771 cards and 48 rulebook entries               <- prep_dataframes (query_card.py); counts vary
 Stats database initialized.
+Card list: 1131 entries, tree unchanged               <- init_query: GitHub's tree, a 304 on the saved ETag ("fetched" when it moved)
 Repo history: 2268 files at f219a126 (0.3s)            <- refresh_history (repo_history.py:230); 2026-10-23
 Type emojis: 126 icons and crossed-out variants in MichaelJSr/TTSCardMaker, 0 uploaded, 126 ready.   <- init_type_emojis (2026-10-19); N uploaded = 0 once synced
 ```
@@ -67,7 +69,7 @@ The token-presence line prints ONCE, from main.py (`print_token_status`; since t
 ### on_ready init order (main.py:114-142)
 
 `on_ready` spawns a per-guild command sync task, populates `slash_registry` (command name -> callback; this is what
-lets reminders run bot commands), then QUEUES five commands (main.py:133-137) and finally starts the reminder heartbeat
+lets reminders run bot commands), then QUEUES four commands (main.py:136-139) and finally starts the reminder heartbeat
 and the three queue-drain loops through `_start()` (main.py:139-140). It does all that once (`_started`; a reconnect
 only revives failed loops, above). Queued work only executes once the loops
 start draining — so the loops effectively start first, and nothing is sent to Discord before they run.
@@ -75,10 +77,10 @@ start draining — so the loops effectively start first, and nothing is sent to 
 | Init (queued in this order) | What it does | Failure/no-op behavior |
 |---|---|---|
 | `init_reminder` (analytics.py:1474) | Loads `reminder.json` (the 2026-10-24 conversion from `reminder.pkl` was removed on 2026-10-25), migrates old entries, rolls past-due REPEATING reminders that are on forward to their next future slot in one step, saves atomically | No file: an empty schedule. Unreadable file: "ERROR: reminder.json could not be read ... Reminders are OFF" (the file is left untouched; every reminder command replies "✗ Reminders are off"). |
-| `init_psd` (psd_analyzer.py) | `card_sync.startup`: `card_data/` into `stats_db`, then one sync; builds the query DataFrames | No `card_data/` and GitHub unreachable: no cards until a sync works ("No card data yet" on /update_stats) |
-| `init_query` (query_card.py) | Fetches the TTSCardMaker GitHub file tree (1 API call; 3 tries 1 s and 2 s apart on a connection error, 429 or 5xx, `github_api.get_with_retry`) | A failed or non-tree reply keeps the last good list: "Card list: GitHub tree fetch for <repo> failed (...); keeping the last good list (N entries)" (0 entries right after a start, so /query finds nothing until the next /update_stats or restart) and "Warning: Failed to populate files from repository (status N)" |
+| `init_psd` (psd_analyzer.py) | `card_data/` into `stats_db`, the card list from `card_tree.json` (`load_saved`, no network; 2026-10-25), the query DataFrames, one sync, then `init_query` | No `card_data/` and GitHub unreachable: no cards until a sync works ("No card data yet" on /update_stats) |
+| `init_query` (query_card.py; run by `init_psd` after its sync since 2026-10-25, so titles and renames are the synced data's) | Fetches the TTSCardMaker GitHub file tree with the saved tree's ETag (1 API call, a 304 when unchanged; 3 tries 1 s and 2 s apart on a connection error, 429 or 5xx, `github_api.get_with_retry`), rebuilds the list and rewrites `card_tree.json` when the tree or Card Edits.json changed | A failed or non-tree reply keeps the last good list: "Card list: GitHub tree fetch for <repo> failed (...); keeping the last good list (N entries)" and "Warning: Failed to populate files from repository (status N)"; the saved tree's list stays (rebuilt with the loaded data) until the next sync's refresh. No `card_tree.json` (first start) or a corrupt one ("Card list: ignoring card_tree.json (...)"): no list until this fetch, as before |
 | `refresh_history` (repo_history.py:198) | Fetches the bare history clone (`~/Documents/TTSCardMaker-history.git`) and maps each card PNG to the commit that last changed it, for sha-pinned image links | Never raises; on failure the old map stays and links fall back to `main` |
-| `init_type_emojis(client)` (type_emojis.py:413; added 2026-10-19) | Uploads any MISSING type emojis for the logged-in bot identity and fills the `[token]` → emoji map (section 11). Shares the card list's tree (since 2026-10-20 the second startup tree fetch is a 304, 0 bytes) + 1 Discord list call; uploads only on first start per identity | A failed GitHub listing falls back to the card list's last tree ("using the last good card tree"); any other failure prints "Emoji sync failed: <err> (using the N existing emojis)" and the existing emojis still render. Nothing else depends on it |
+| `init_type_emojis(client)` (type_emojis.py:413; added 2026-10-19) | Uploads any MISSING type emojis for the logged-in bot identity and fills the `[token]` → emoji map (section 11). Shares the card list's tree (since 2026-10-20 the second startup tree fetch is a 304, 0 bytes; since 2026-10-25 it starts from `card_tree.json`'s ETag, so it never waits on a full download when the tree is unchanged) + 1 Discord list call; uploads only on first start per identity | A failed GitHub listing falls back to the card list's last tree ("using the last good card tree"); any other failure prints "Emoji sync failed: <err> (using the N existing emojis)" and the existing emojis still render. Nothing else depends on it |
 
 AI generation (and its `init_pipeline`) lives only on branch `archive/ai-generation`; main has none.
 
@@ -533,6 +535,7 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 | Card bake work dir | card-sync.yml's Bake step (card_bake.run) | OS temp dir via `mkdtemp(prefix="card-bake_")` per run (`$RUNNER_TEMP/card-bake` on the Action), kept: edited PSD, merged PNG, before/after/diff crops, `report.md`, the rewritten edits file; the report is also posted in Discord as `card_bake_report.md` | n/a (commits go to the card repo) |
 | Type emojis | /sync_emojis, startup sync, /update_stats on a changed tree | Discord-side application emojis owned by the logged-in bot identity; `type_emojis.json` (repo root) records each one's icon blob, per bot identity | NO (gitignored) — per-machine; if deleted, startup adopts the existing emojis as current |
 | `card_data/` | startup, every /update_stats and card commands on use (commands/card_sync.py, `card_db.sync`) | repo root: the card repo's `data` branch's `db/` (`stats.json`, `old_stats.json`, `psd_details.json`, `manifest.json`) plus `sync.json` (the data commit held and its ETag); each file replaced atomically, the manifest and `sync.json` last | NO (gitignored) — the Card sync Action's output; delete it and the next sync fetches it again (about 3.5 MB) |
+| `card_tree.json` | startup (read), every card list fetch whose tree or Card Edits.json changed (commands/query_card.py) | repo root: the card repo's last tree (paths and blob shas), its ETag and Card Edits.json's text, with a sha256; written atomically, never for a /set_repo repository | NO (gitignored) — delete it and the next start fetches the tree whole |
 | `.ssh/` deploy key | operator-provisioned | repo root | NO (gitignored) — per-machine, SECRET |
 | Offline test suite | developers (`python -m pytest -q -n auto tests`, before a push) | `tests/` (goldens in `tests/goldens/`, re-pinned only by `tests/make_goldens.py`) | YES — code; never writes the reminder store |
 | 2026-10-20 optimization-pass audits, bench and regression scripts | the optimization pass (read-only audits; sandboxes in /tmp) | reports and `bench/` on (`docs/Finished/optimization-pass-2026-10-20/`: profile.md, network-robustness.md, network-speed-results.md, code-health.md, docs.md, refs_table.md); scripts in `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/` | YES — scripts on main (same commit as this row), reports on the archive branch only |
@@ -850,3 +853,5 @@ rendered anyway; no cited line moved.
 2026-10-25 (step 10, work/pickles): the pickles, psd_details.json, /push, the `CARD_SYNC` switch, the legacy /update_stats path (repo_traverser.py) and the legacy /fonts cache removed: the intro, section 1's startup lines and init table, sections 5, 6 and 7 rewritten, the PSD details and Font check subsections, the artifact rows, section 12's intro and rows; 46 commands.
 
 2026-10-25 (clean, work/clean): the card and font checks as steps of card-guards.yml's check job; R8 always set, rewraps redrawn; the reminder.pkl conversion, the fonts_cache row and the deploy window removed.
+
+2026-10-25 (cardlist, work/cardlist): `card_tree.json` (B-3a): the card list from the saved tree at startup, `init_query` run by `init_psd` after its sync (on_ready queues four inits); the startup output, the init table and the artifacts table.

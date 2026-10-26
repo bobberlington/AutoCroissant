@@ -681,7 +681,7 @@ system `python3`; compare.py and the line-ref tools are stdlib.
 | parse_all_ns.py | `parse_all_ns.py <out.json> [ROOT]` (ROOT defaults to `/tmp/psdreg/ac`) | Parses every card PSD of the `~/Desktop/TTSCardMaker` clone with ROOT's parser (16 processes); dumps every field plus the validator's list, `timestamp`/`author` dropped |
 | compare.py | `compare.py a.json b.json` | Field-by-field differences between two parse_all_ns dumps; expect `813 cards, 0 differences` |
 | import_ns.py | `import_ns.py ROOT [N]` | `import main` wall time, RSS and heavy modules loaded, best of N fresh processes (default 5) |
-| startup_ns.py | `startup_ns.py ROOT` | Live: tree requests at startup (init_query and the type-emoji listing in parallel), then one /sync_emojis listing |
+| startup_ns.py | `startup_ns.py ROOT` | Live: tree requests at startup (init_query and the type-emoji listing in parallel; since 2026-10-25 init_query runs after init_psd's sync, so the script's overlap is the worst case), then one /sync_emojis listing |
 | search_ns.py | `search_ns.py ROOT OUT.json` | Search timings and every result on ROOT (its `card_data/` and the `~/Desktop/TTSCardMaker` clone); diff two OUTs for identity |
 | search_ab.py | `search_ab.py ROOT` | Interleaved A/B in one process: old fuzzy step / name lookup vs the new ones, same queries, results asserted equal; `exec`s search_ns.py beside it |
 | grepcheck.py | no arguments | Runs every read-only grep quoted in the skills; lists the ones that now print nothing |

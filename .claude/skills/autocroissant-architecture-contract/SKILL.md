@@ -113,9 +113,9 @@ Mechanics you must know:
    explicit rate-limit code. Cost since the wake-ups: about 1 ms per hop (simulated 2026-10-25: reply hop mean
    0.4-1.0 ms, p95 1-3 ms; a reminder's two hops about 1 ms; the 0.1 s tick gave 50 ms mean / 95 ms p95 per hop and
    150 ms for two hops).
-4. **Deferred init without blocking login.** `on_ready` queues five commands instead of running them:
-   `init_reminder`, `init_psd` (the card data: `card_data/`, then a sync), `init_query`, `refresh_history`,
-   `init_type_emojis(client)`. (Until 2026-10-25 a `sweep_temp_psds` of the parse's temp PSDs ran first.) The card data
+4. **Deferred init without blocking login.** `on_ready` queues four commands instead of running them:
+   `init_reminder`, `init_psd` (the card data: `card_data/`, the card list from `card_tree.json`, a sync, then
+   `init_query`'s tree fetch, a 304 on the saved ETag), `refresh_history`, `init_type_emojis(client)`. (Until 2026-10-25 a `sweep_temp_psds` of the parse's temp PSDs ran first.) The card data
    load and the GitHub tree fetch happen in worker threads after the bot is already up. `init_type_emojis` is async: it runs on the loop and threads
    its own downloads. The inits run **once** (the `_started` flag, 778c2ce, 2026-10-21): discord.py calls `on_ready`
    again after a failed RESUME, and that repeat only syncs any guild not synced yet, restarts the loops whose task
@@ -544,3 +544,5 @@ prompts; every main.py, card_models.py, query_card.py, card_data.py and update_b
 2026-10-25 (B-1, work/instant): the drains wake on enqueue (`Wake`, `call_soon_threadsafe`, 1 s fallback poll) instead of
 the 0.1 s tick; `_stop_loops()`; the execution model, the queue trio, WHY #3, invariants 3 and 7, data flows (a) and (c),
 weak point 10 and the re-verify rows updated; main.py and utils.py citations re-pointed.
+
+2026-10-25 (cardlist, work/cardlist): WHY #4: four queued inits; `init_psd` loads the card list from `card_tree.json` (query_card `load_saved`) and runs `init_query` after its sync.
