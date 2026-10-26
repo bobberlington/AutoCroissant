@@ -44,6 +44,7 @@ STAR_TWIN = 0.15                  # stars this close (share of the larger side) 
 STAR_SPLIT_MIN = 0.25             # one layer's opaque shapes this share of its largest are stars of their own...
 STAR_SPLIT_SAME = 0.4             # ...when they are this alike in size (Grimora's row drawn as one layer)
 STAR_ICON_SHARE = 1 / 36.0        # a star-icon layer outside the Stars groups: up to this share of the card (.0: cdivision)
+TITLE_STACK = 0.6                 # rule P: a title line under another, within this share of its height
 # folders whose stars are counted on the card (elsewhere the folder says them); Auxiliary/Creatures print 2-5 too
 STARS_FROM_PSD = ("Auxiliary/Items", "Auxiliary/Minions", "Auxiliary/Creatures", "N.M.E")
 # a variant tag: a layer or group named "... #2" (" #2,3") shows only in those pictures (PARTS_EDITOR.md §9)
@@ -751,17 +752,18 @@ class PSDParser:
         The visible text layers _printed_title reads: Text/Name, else the Name layers in the title region, else the
         layers under Text named after the card, else those elsewhere in the title region (a status effect's top-level
         title), else the one layer in the title region named after its own text (named_after_text: Sans's 'snas.';
-        several are stacked words, Knight Lost A Lot's, and read as none); of several, those in the title region.
+        several are stacked words, Knight Lost A Lot's, and read as none); of several, those in the title region; with
+        none, the text under Text by its place (_titles_by_place, rule P: Lorian's 'Twin Princes', Alex YIIK's).
         Named after the card: letters and digits alike ('Mr. Jawsum').
 
         Args:
             psd: The open card
             text_layers: Its text layers
             name: The card's name (file stem)
-            own_text: Whether the last rule applies (False on a rule page)
+            own_text: Whether the last two rules apply (False on a rule page)
 
         Returns:
-            The layers, in layer order
+            The layers, in layer order (rule P's in reading order)
         """
         top = psd.height * TITLE_REGION_RATIO
         text_group = PSDParser.text_group(psd)
@@ -781,7 +783,48 @@ class PSDParser:
             found = own if len(own) == 1 else []
         if len(found) > 1:
             found = [layer for layer in found if layer.bbox[1] < top]
+        if not found and own_text and text_group is not None:
+            found = PSDParser._titles_by_place(text_group, text_layers, top)
         return found
+
+    @staticmethod
+    def _face(layer) -> tuple:
+        """(font name, size in px) of a text layer's first run; (None, None) unread."""
+        try:
+            style = layer.engine_dict["StyleRun"]["RunArray"][0]["StyleSheet"]["StyleSheetData"]
+            font = layer.resource_dict["FontSet"][int(style.get("Font", 0))]["Name"]
+            return str(font), round(float(style.get("FontSize", 0)) * abs(layer.transform[3]))
+        except (KeyError, IndexError, TypeError, ValueError, AttributeError):
+            return None, None
+
+    @staticmethod
+    def _titles_by_place(text_group, text_layers: list, top: float) -> list:
+        """
+        Rule P, the last: the visible text layers under Text, not Ability or FX, whose top is in the title region, and
+        the lines stacked under them (same face and size, overlapping across, within TITLE_STACK of a line's height),
+        in reading order. Names and words aside, so an edited title stays one (Lorian's 'Twin Princes', Knight Lost A
+        Lot's four lines).
+        """
+        inside = {id(layer) for layer in text_group.descendants()}
+        texts = [layer for layer in text_layers if id(layer) in inside and layer.kind == "type" and layer.is_visible()
+                 and EFFECT_LAYER_TAG not in layer.name and base_name(layer).strip().lower() != "ability"
+                 and (layer.text or "").strip()]
+        found = [layer for layer in texts if layer.bbox[1] < top]
+        grew = bool(found)
+        while grew:
+            grew = False
+            for layer in texts:
+                if any(layer is other for other in found):
+                    continue
+                for other in found:
+                    height = other.bbox[3] - other.bbox[1]
+                    if (other.bbox[3] <= layer.bbox[1] <= other.bbox[3] + TITLE_STACK * height
+                            and layer.bbox[0] < other.bbox[2] and other.bbox[0] < layer.bbox[2]
+                            and PSDParser._face(layer) == PSDParser._face(other)):
+                        found.append(layer)
+                        grew = True
+                        break
+        return PSDParser.reading(found)
 
     @staticmethod
     def split_title(psd: PSDImage, found: list, title: str, name: str) -> bool:
