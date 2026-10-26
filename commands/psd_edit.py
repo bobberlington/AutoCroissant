@@ -46,8 +46,8 @@ from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_
                                  title_text, token_variant, variant_view, variants_of)
 from commands import psd_parts
 from commands.psd_parts import lyid_index, raw_sha
-from commands.psd_regions import (STATS as STAT_PATTERNS, _ancestors, badge_layers, clip, fx_pad, overlay_words, stat_rows,
-                                  union_box)
+from commands.psd_regions import (STATS as STAT_PATTERNS, _ancestors, badge_layers, bar_box, clip, fx_pad, overlay_words,
+                                  stat_rows, union_box)
 from global_config import RULEBOOK_DIR
 
 # ========================
@@ -3577,8 +3577,9 @@ def covered_ink(psd: PSDImage, layer, before: np.ndarray, skip: list, halos: Opt
     What would hide the ink a text edit drew, or what it would run over: the layer's pixels past INK_ALPHA that differ
     from before, under a visible Normal layer drawn above it (later in paint order, no clipped one, no group; skip: its
     FX and overlay word layers) where that layer alone renders past INK_ALPHA (Papyrus' spaghetti 'Layer 10' over the
-    text's gap: "Die." printed under it), or inside a stat bar row's box (stat_rows) the old text did not reach (Paint
-    Warrior's blank Ability box runs over its Health bar; Pure Vessel's digit masks cover its text). Review 2026-10-24.
+    text's gap: "Die." printed under it), or inside a stat bar row's box (stat_rows; a digit mask far past its bar: the
+    bar, bar_box: an added ability under Pure Vessel's) the old text did not reach (Paint Warrior's blank Ability box
+    runs over its Health bar; Pure Vessel's digit masks cover its text). Review 2026-10-24.
     Layers that already ran over the old text's ink are the card's design (Leshy's and DooPliss' titles under their
     art: a title of another length moves every glyph): together they may cover as much of the new text as of the old.
 
@@ -3608,7 +3609,7 @@ def covered_ink(psd: PSDImage, layer, before: np.ndarray, skip: list, halos: Opt
         for group, _, box in rows:
             if box is None or not group.is_visible():
                 continue
-            x0, y0, x1, y1 = clip(box, psd.width, psd.height)
+            x0, y0, x1, y1 = clip(bar_box(psd, stat, box), psd.width, psd.height)     # a digit mask: its bar
             if x1 > x0 and y1 > y0 and not was[y0:y1, x0:x1].any() and ink[y0:y1, x0:x1].any():
                 return f"the new text runs over the {stat} bar ({int(ink[y0:y1, x0:x1].sum())} px)"
     ys, xs = (ink | was).nonzero()
@@ -3789,6 +3790,32 @@ def ink_beyond(psd: PSDImage, layer, before: np.ndarray, halos: Optional[tuple] 
             best, name = hits, other.name
     return f"the new text prints past the old text onto the design below it ({count} px" + \
         (f", {name!r})" if name else ")")
+
+
+def on_panel_design(psd: PSDImage, layer, box: tuple) -> Optional[str]:
+    """
+    An added Ability's ink on its text panel's own design (the pixel layer whose box is box: Deep Focus' flourishes;
+    review 2026-10-25, the box being the text's own, ink_beyond looks only past it): the panel's pixels whose luminance
+    lies off its median by BEYOND[1] levels and by BEYOND[2] more than 95% of it does, under BEYOND[3] px or more of ink.
+    """
+    panel = next((other for other in psd.descendants() if other.kind == "pixel" and other.is_visible()
+                  and tuple(other.bbox) == tuple(box)), None)
+    x0, y0, x1, y1 = clip(tuple(box), psd.width, psd.height)
+    if panel is None or x1 <= x0 or y1 <= y0:
+        return None
+    image = panel.composite(viewport=(x0, y0, x1, y1), apply_icc=False)
+    if image is None:
+        return None
+    pixels = np.asarray(image.convert("RGBA")).astype(np.float32)
+    solid = pixels[..., 3] > INK_ALPHA * 255
+    if not solid.any():
+        return None
+    luma = pixels[..., :3].mean(axis=2)
+    off = np.abs(luma - float(np.median(luma[solid])))
+    bar = max(BEYOND[1], float(np.percentile(off[solid], 95)) + BEYOND[2])
+    ink = _on_canvas(layer, (psd.height, psd.width))[y0:y1, x0:x1, 3] > INK_ALPHA * 255
+    count = int((ink & solid & (off > bar)).sum())
+    return f"the new text prints on its panel's design ({count} px, {panel.name!r})" if count >= BEYOND[3] else None
 
 
 def fit_below(psd: PSDImage, layer, before: np.ndarray, fonts, draw, off_before: bool = True) -> tuple:
@@ -7745,7 +7772,8 @@ def set_text_box(layer, box: tuple) -> None:
     """
     A paragraph type layer's box moved and sized to box (x0, y0, x1, y1, canvas px; the transform's scale kept): the
     TySh transform and the record (its pixels and fxrp follow), BoxBounds, the TySh bounds, and the Txt2 frame's Bezier
-    and frame strike, which must agree (+ability, §4.7). Point text, or a Txt2 in named keys, raises Refused.
+    (its points scaled, Photoshop's order kept) and its frame and region strikes, which must agree (+ability, §4.7).
+    Point text, or a Txt2 in named keys, raises Refused.
     """
     from psd_tools.api import text_edit
     from psd_tools.psd import engine_data
@@ -7757,6 +7785,8 @@ def set_text_box(layer, box: tuple) -> None:
     dx, dy = round(box[0] - tx), round(box[1] - ty)
     w, h = (box[2] - box[0]) / xx, (box[3] - box[1]) / yy           # text-space pt
     f = lambda v: engine_data.Float(float(v))
+    was = [float(v) for v in child["Cookie"]["Photoshop"]["BoxBounds"]]
+    sx, sy = w / ((was[2] - was[0]) or 1.0), h / ((was[3] - was[1]) or 1.0)
     layer._data.transform = (xx, xy, yx, yy, tx + dx, ty + dy)
     layer.left, layer.top = layer.left + dx, layer.top + dy           # the fork carries fxrp along
     child["Cookie"]["Photoshop"]["BoxBounds"] = engine_data.List([f(0), f(0), f(w), f(h)])
@@ -7771,17 +7801,26 @@ def set_text_box(layer, box: tuple) -> None:
             raise Refused("unsupported-card", "ability: a Txt2 in named keys (its frame layout is unknown)")
         story = text_edit._nth_story(stories, int(layer._data.text_data[b"TextIndex"].value), keys)
         frames = text_edit._resource_items(root, keys, keys.frame_set)
-        corners = [0, 0] * 4 + [w, 0] * 4 + [w, h] * 4 + [0, h] * 4  # the Bezier's 4 points, each with its handles
-        for i in text_edit._frame_refs(story, keys):
-            frames[i]["0"]["1"]["0"] = engine_data.List([f(v) for v in corners])
+        for i in text_edit._frame_refs(story, keys):   # the Bezier scaled: Photoshop's point order kept
+            points = [float(v) for v in frames[i]["0"]["1"]["0"]]
+            frames[i]["0"]["1"]["0"] = engine_data.List([f((v - was[k % 2]) * (sx, sy)[k % 2])
+                                                         for k, v in enumerate(points)])
         tag_key, tag, _ = keys.frame_strike
+
+        def same(rect) -> bool:                 # the old box's rect
+            try:
+                return len(rect) == 4 and all(abs(float(a) - b) < 0.01 for a, b in zip(rect, was))
+            except (TypeError, ValueError):
+                return False
         pending = [story[keys.view].get(keys.strikes)]
-        while pending:                          # the frame strike's rect
+        while pending:                          # the frame strike's rect and its region strikes' (the old box)
             node = pending.pop()
             if isinstance(node, engine_data.List):
                 pending.extend(node)
             elif isinstance(node, engine_data.Dict):
-                if str(getattr(node.get(tag_key), "value", node.get(tag_key))) == tag and "1" in node:
+                rect = node.get("1")
+                if rect is not None and (str(getattr(node.get(tag_key), "value", node.get(tag_key))) == tag
+                                         or isinstance(rect, engine_data.List) and same(rect)):
                     node["1"] = engine_data.List([f(0), f(0), f(w), f(h)])
                 pending.extend(node.values())
     layer.__dict__.pop("_typesetting", None)
@@ -7810,9 +7849,11 @@ def add_ability(psd: PSDImage, text: str, template: PSDImage, name: str, fonts_d
                           area=planned.box)
     edit.story = None                           # a new story: gate_stories takes it out (added_stories)
     x0, y0, x1, y1 = planned.box
+    design = on_panel_design(psd, layer, planned.panel) if planned.panel else None
     out = _combine("ability", [(layer, edit, False)], [_record_ids(psd)], psd, {}, {ADD_ABILITY: text},
                    notes=[f"ability: ability layer created from {name}: check its place",
-                          f"ability: box {x0},{y0} to {x1},{y1}", *planned.notes])
+                          f"ability: box {x0},{y0} to {x1},{y1}", *planned.notes]
+                   + ([f"ability: {design}; check the card"] if design else []))
     out.added, out.added_stories = [_record_index(layer)], [story]
     out.fonts = list(dict.fromkeys(faces()[len(before):] + out.fonts))
     return out

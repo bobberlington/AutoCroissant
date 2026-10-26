@@ -371,6 +371,15 @@ set_text_layer(psd, field, raw', fonts_dir, chart, layer=L, beside=parts+followe
   and the leading ratio stay the template's. The other cards' facts are `commands/ability_index.json`, remade by hand:
   `python -m commands.ability_place ~/Desktop/TTSCardMaker`. Before `ADD_ABILITY_LIVE` turns on, both files join
   card-sync.yml's and card-guards.yml's sparse lists.
+- **Review fixes (2026-10-25).** A text panel is a mostly opaque pixel layer (no smart-object art, fade or FX cut), and
+  on a card with stats only one under them (Humphrey's art beside its stats squeezed the text into 22 px). The card's
+  other visible text layers are obstacles too (Autopsy Report's second Name). A long text shrinks to 80%, then rises
+  to the siblings' highest first line (plain cards: or the template's 10th percentile), then shrinks to 40%; in a
+  panel it stays above the bottom border every same-panel card keeps clear, and ink on the panel's own design is told
+  (Deep Focus' flourishes). A font sized by cap height (H's outline) keeps the template's line pitch; one that can't be
+  laid out or overlaps its lines more than the template's gives way to the template's. The frame's Bezier is the
+  template's scaled (Photoshop's point order) and its 'R' strikes follow the 'F' strike. An added ability under Pure
+  Vessel's digit masks is checked against the bars, not the masks (`psd_regions.bar_box`).
 
 **4.8 Stars and types** (first, as today).
 

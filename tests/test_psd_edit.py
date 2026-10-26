@@ -1968,6 +1968,35 @@ def test_plus_ability_adds_the_templates_layer(clone, parser, chart, tmp_path, m
     stats = ability_place.elements(psd, parser.all_types)["stats"]     # below the stats, on the canvas (owner 10-25)
     ink, first = ability_place.ink_rows(added[0])
     assert first > max(b[3] for b in stats) and ink[3] <= saved.height and 0 <= ink[0] < ink[2] <= saved.width
+    # its Txt2 frame: the template's Bezier scaled to the new BoxBounds (Photoshop's point order), every strike rect
+    # that was the template's box now the new one (review 2026-10-25)
+    template = PSDImage.open(clone / pe.TEMPLATES_DIR / "Creature_Template.psd")
+    was = _frame(template, next(l for l in template.descendants() if pe._is_text_layer(l) and l.name == "Ability"))
+    now = _frame(saved, added[0])
+    (_, _, w0, h0), (_, _, w1, h1) = was[0], now[0]
+    assert now[1] == pytest.approx([v * (w1 / w0 if k % 2 == 0 else h1 / h0) for k, v in enumerate(was[1])], abs=0.01)
+    assert len(now[2]) == len(was[2]) >= 2 and all(rect == pytest.approx([0, 0, w1, h1]) for rect in now[2])
+
+
+def _frame(psd, layer) -> tuple:
+    """(BoxBounds, its story's frame Bezier points, the rects of its 'F' and 'R' strikes) from the saved Txt2."""
+    from psd_tools.api import text_edit
+    root, keys, stories = text_edit._txt2(psd)
+    story = text_edit._nth_story(stories, int(layer._data.text_data[b"TextIndex"].value), keys)
+    frames = text_edit._resource_items(root, keys, keys.frame_set)
+    points = [float(v) for i in text_edit._frame_refs(story, keys) for v in frames[i]["0"]["1"]["0"]]
+    rects, pending = [], [story[keys.view].get(keys.strikes)]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, engine_data.List):
+            pending.extend(node)
+        elif isinstance(node, engine_data.Dict):
+            tag = node.get(keys.frame_strike[0])
+            if str(getattr(tag, "value", tag)) in ("F", "R") and "1" in node:
+                rects.append([float(v) for v in node["1"]])
+            pending.extend(node.values())
+    box = [float(v) for v in layer.engine_dict["Rendered"]["Shapes"]["Children"][0]["Cookie"]["Photoshop"]["BoxBounds"]]
+    return box, points, rects
 
 
 ADRENALINE = "Items/Equip/3 Stars/Adrenaline.psd"                  # an Isaac-style item: a paper panel under its art
@@ -1990,6 +2019,26 @@ def test_plus_ability_on_an_item_starts_at_its_panels_top(clone, parser, chart):
     ink, first = ability_place.ink_rows(added)
     assert top < first < top + (y1 - top) / 4 and x0 <= ink[0] < ink[2] <= x1 and ink[3] <= y1
     assert ability_place.layer_font(added)[0] == ability_place.title_font(psd, ADRENALINE, parser)[0]
+
+
+@text_edit
+def test_plus_ability_skips_art_and_other_text(clone, parser):
+    """Review 2026-10-25: Humphrey's art beside its stats is no text panel (its text went into a 22 px band above the
+    free space), and Autopsy Report's second Name and "Type: ..." layers are no place for the text."""
+    for rel, text in (("Creatures/Omori/5 Stars/Humphrey.psd", "Attacks inflict 1T Afraid. When this dies, draw a card."),
+                      ("Auxiliary/Items/Autopsy_Report.psd", "Attacks inflict 1T Afraid. When this dies, draw a card.")):
+        psd = PSDImage.open(str(clone / rel))
+        layer = pe.ability_layer(psd)
+        for fx in pe.fx_layers(psd, layer):
+            fx.parent.remove(fx)
+        pe.remove_layer(psd, layer)
+        t = pe.template_for(pe.parse_card(parser, str(clone / rel), rel, psd)["card"]["type"], rel)
+        got = ability_place.plan(psd, rel, PSDImage.open(str(clone / t)), t, text, str(clone / pe.FONTS_DIR), parser)
+        el = ability_place.elements(psd, parser.all_types)
+        assert not any("shrunk" in note for note in got.notes)
+        assert got.box[3] - got.box[1] > 3 * got.size and got.ink[3] <= got.box[3]
+        for b in el["stats"] + el["text"]:
+            assert min(got.ink[3], b[3]) <= max(got.ink[1], b[1]) or min(got.ink[2], b[2]) <= max(got.ink[0], b[0])
 
 
 DRUID = "Creatures/World Of Warcraft/4 Stars/Warcraftian_Druid.psd"   # its title over 'Text/Name' and 'Text/Druid '

@@ -5,14 +5,19 @@ Place (owner 2026-10-25: below the stats, not on them; at the top of an item's p
 text area under the lowest element above it, the text flowing down from a top-aligned box. The offsets come from the
 card's siblings: other cards with an ability, the same template and canvas, and the same layout (stats within
 STATS_TOL px, else the text panel within PANEL_TOL px, else a shared distinctive layer name), the nearest folder first.
-No sibling: just below the stats, else the template's medians. Never over the stats, title, stars or type icons, never
-off the canvas: shrink-to-fit (FIT_STEP down to FIT_MIN), then raised towards what is above.
+No sibling: just below the stats, else the template's medians. Never over the stats, title, stars, type icons or the
+card's other text layers, never off the canvas, inside a panel (a mostly opaque pixel layer; on a card with stats, one
+under them) above its bottom border as the siblings' text: shrink-to-fit (FIT_STEP) down to RAISE_AT, then raised
+towards the siblings' highest first line (review 2026-10-25: long texts at the bottom), then smaller to FIT_MIN.
 
 Font (owner 2026-10-25 "we should use a card's own font when it exists"): the commonest real ability font of the
 cards sharing this card's title font in its folder, else its series, else anywhere, else of its series, else its own
 title font, else the template's (FONT_STEPS; a tie falls through). One not in MDW/Fonts: the template's, told. Size in
 rendered px (FontSize x the layer's scale x the fork's super/subscript factor): the siblings' in that font, else the
-font's median, else the template's by cap height. Colours, effects, alignment and leading ratio stay the template's.
+font's median, else the template's by cap height (H's outline; the leading then keeps the template's line pitch). A font
+that can't be laid out, or one no real ability uses that lays its lines over each other (OVERLAP), gives way to the
+template's, told. Colours,
+effects, alignment and leading ratio stay the template's.
 
 The other cards come from ability_index.json, made by hand from the card repo's working tree:
     python -m commands.ability_place ~/Desktop/TTSCardMaker
@@ -30,8 +35,8 @@ from typing import Optional
 
 from psd_tools import PSDImage
 
-from commands.psd_parser import ICON_FONT_PREFIX, base_name, variants_of
-from commands.psd_regions import regions
+from commands.psd_parser import EFFECT_LAYER_TAG as EFFECT_TAG, ICON_FONT_PREFIX, base_name, variants_of
+from commands.psd_regions import bar_box, regions
 
 # ========================
 # Configuration
@@ -43,7 +48,11 @@ EDGE = 12                           # px: least room to the canvas or panel bott
 SIDE = 30                           # px: side margin with no sibling (and inside a panel)
 BELOW_STATS = 30                    # px: no sibling: the first line this far under the stats
 FIT_STEP, FIT_MIN = 0.94, 0.4       # shrink-to-fit, as psd_edit.fit_below
-ROW_MAX, ROW_HALF, FRAME = 130, 42, 0.1     # a taller stat row is a digit mask (its label's band); a bigger icon a frame
+FRAME = 0.1                         # a star or icon box over this share of the canvas is a frame
+STRETCH = 1.25                      # a text layer scaled this unevenly is a watermark, no obstacle
+PANEL_FILL = 0.6                    # a text panel's box is this much opaque
+RAISE_AT = 0.8                      # a text not fitting at this size rises towards the siblings' highest first line
+OVERLAP = 0.15                      # of the size: lines overlapping this much more than the template's are illegible
 LABELS = ("health", "defense", "attack", "speed")
 STYLE_COUNT = (2, 60)               # a distinctive layer name is on this many cards
 JUNK_FONTS = {"AdobeInvisFont", "MyriadPro-Regular", "TimesNewRomanPSMT"}
@@ -58,13 +67,14 @@ TALL = 100000.0                     # pt: a box no text reaches the bottom of (m
 @dataclass
 class Plan:
     """plan()'s answer: the paragraph box and the ink expected in it (canvas px), the font, size and leading (rendered
-    px), and the notes."""
+    px), the notes and the text panel it went in (None: none)."""
     box: tuple
     ink: tuple
     font: str
     size: float
     leading: float
     notes: list = field(default_factory=list)
+    panel: Optional[tuple] = None
 
 
 # ========================
@@ -72,36 +82,49 @@ class Plan:
 # ========================
 def elements(psd: PSDImage, vocab=()) -> dict:
     """Stats rows, title, stars and type icons (their own boxes, no effects; a digit mask far past its bar is its
-    label's band, a star or icon box over FRAME of the canvas a frame) and the text panel."""
+    label's band, a star or icon box over FRAME of the canvas a frame), every other visible text layer but an Ability
+    or a stretched watermark (a second Name, a "Type: ..." line, "Chomp Chomp") and the text panel."""
     found = regions(psd, vocab, False, pad=False)
     labels = {layer.name.strip().lower(): layer.bbox for layer in psd.descendants()
               if layer.kind == "type" and layer.is_visible() and layer.name.strip().lower() in LABELS}
     stats = [tuple(b) for b in found.get("stat_labels", [])]
-    for key, label in zip(("stat_hp", "stat_def", "stat_atk", "stat_spd"), LABELS):
-        for b in found.get(key, []):
-            if b[3] - b[1] > ROW_MAX * psd.width / 1200 and label in labels:
-                mid = (labels[label][1] + labels[label][3]) // 2
-                b = (b[0], mid - ROW_HALF, b[2], mid + ROW_HALF)
-            stats.append(tuple(b))
+    for key in ("hp", "def", "atk", "spd"):
+        stats += [bar_box(psd, key, b, labels) for b in found.get("stat_" + key, [])]
     small = lambda boxes: [tuple(b) for b in boxes if (b[2] - b[0]) * (b[3] - b[1]) <= FRAME * psd.width * psd.height]
+    text = [tuple(layer.bbox) for layer in psd.descendants() if layer.kind == "type" and layer.is_visible()
+            and base_name(layer).strip().lower() != "ability" and layer.bbox[2] > layer.bbox[0]
+            and layer.bbox[3] > layer.bbox[1] and not _stretched(layer)]
     return {"stats": stats, "title": [tuple(b) for b in found.get("name", [])], "stars": small(found.get("stars", [])),
-            "types": small(found.get("types", [])), "panel": panel(psd)}
+            "types": small(found.get("types", [])), "text": text, "panel": panel(psd)}
+
+
+def _stretched(layer) -> bool:
+    """Lettering scaled unevenly, a watermark the abilities print over (the DST creatures' tall names)."""
+    xx, xy, yx, yy = (float(v) for v in layer.transform[:4])
+    a, b = hypot(xx, xy), hypot(yx, yy)
+    return bool(a and b) and max(a, b) / min(a, b) > STRETCH
 
 
 def panel(psd: PSDImage) -> Optional[tuple]:
-    """The text panel: the biggest visible drawn layer starting in the lower part, spanning most of the width (Isaac's
-    paper)."""
+    """The text panel: the biggest visible pixel layer starting in the lower part, spanning most of the width, mostly
+    opaque (PANEL_FILL: Isaac's paper; not a fade, an FX cut or a smart object's art: Humphrey's, Double Pain's)."""
     W, H = psd.width, psd.height
-    best = None
+    found = []
     for layer in psd.descendants():
-        if layer.kind in ("group", "type", "solidcolorfill", "gradientfill", "patternfill") or not layer.is_visible():
+        if layer.kind != "pixel" or not layer.is_visible() or EFFECT_TAG in layer.name:
             continue
         x0, y0, x1, y1 = layer.bbox
         w, h = min(x1, W) - max(x0, 0), y1 - y0
         if w >= 0.75 * W and 0.1 * H <= h <= 0.6 * H and y0 >= 0.45 * H and y1 <= H + 5 and x0 >= -20 and x1 <= W + 20:
-            if best is None or w * h > (best[2] - best[0]) * (best[3] - best[1]):
-                best = tuple(layer.bbox)
-    return best
+            found.append((w * h, tuple(layer.bbox), layer))
+    for _, box, layer in sorted(found, key=lambda f: -f[0]):
+        try:
+            fill = float((layer.numpy("shape")[..., 0] > 0.5).mean())
+        except Exception:
+            fill = 1.0
+        if fill >= PANEL_FILL:
+            return box
+    return None
 
 
 def layer_font(layer) -> tuple:
@@ -234,12 +257,13 @@ def siblings(c: dict, cards: dict) -> tuple:
 
 
 def _fallback(cards: dict, tmpl: str, mode: str, rel: str) -> Optional[dict]:
-    """The template's medians in a mode: the first line's offset from the anchor, the ink's gap to the bottom, the
-    median first line."""
+    """The template's medians in a mode: the first line's offset from the anchor (and its 10th percentile, how high a
+    long text rises), the ink's gap to the bottom, the median first line."""
     group = [o for o in cards.values() if "first" in o and o["tmpl"] == tmpl and _mode(o) == mode and o["rel"] != rel]
     if not group:
         return None
-    return {"offset": st.median(o["first"] - _anchor(o) for o in group),
+    offsets = sorted(o["first"] - _anchor(o) for o in group)
+    return {"offset": st.median(offsets), "rise": offsets[len(offsets) // 10],
             "bottom_gap": st.median(o["canvas"][1] - o["ink"][3] for o in group),
             "high": st.median(o["first"] for o in group)}
 
@@ -284,11 +308,14 @@ def size_for(c: dict, font: str, cards: dict) -> tuple:
 
 
 def _cap(fonts, name: str) -> Optional[float]:
-    """Cap height / em of a font (the engine's ascent glyph, when it is H)."""
+    """Cap height / em of a font: its H's outline top (FreeType, unscaled)."""
     try:
         face = fonts.resolve(name).face
-        metrics = face.metrics
-        return metrics.ascent_units / metrics.upem if metrics.ascent_glyph == "H" and metrics.upem else None
+        ft = face.ft
+        with face.lock:
+            ft.load_char("H", 1)                # FT_LOAD_NO_SCALE
+            top = ft.glyph.outline.get_bbox().yMax
+        return top / ft.units_per_EM if top > 0 and ft.units_per_EM else None
     except Exception:
         return None
 
@@ -300,19 +327,22 @@ def in_fonts_dir(fonts, name: str, fonts_dir: str) -> bool:
 
 
 def pick_font(c: dict, cards: dict, tmpl_font: str, tmpl_size: float, fonts, fonts_dir: str) -> tuple:
-    """(font, rendered px, notes): the card's own font (FONT_STEPS) and its size, else the template's."""
+    """(font, rendered px, leading factor, notes): the card's own font (FONT_STEPS) and its size, else the template's.
+    Sized by cap height, its leading keeps the template's line pitch (factor: its cap over the template's)."""
     step, font = next(((s, f) for s, f in font_steps(c, cards) if f), ("template", tmpl_font))
     notes = []
     if font != tmpl_font and not in_fonts_dir(fonts, font, fonts_dir):
         notes.append(f"ability: the card's font {font} is not in MDW/Fonts: the template's {tmpl_font} used")
         step, font = "template", tmpl_font
     if font == tmpl_font:
-        return font, tmpl_size, notes + [f"ability: font {font} ({step}), {tmpl_size:.0f} px (the template's)"]
+        return font, tmpl_size, 1.0, notes + [f"ability: font {font} ({step}), {tmpl_size:.0f} px (the template's)"]
     size, how = size_for(c, font, cards)
+    lead = 1.0
     if size is None:
         a, b = _cap(fonts, tmpl_font), _cap(fonts, font)
-        size, how = (tmpl_size * a / b, "the template's by cap height") if a and b else (tmpl_size, "the template's")
-    return font, size, notes + [f"ability: font {font} ({step}), {size:.0f} px ({how})"]
+        size, how, lead = (tmpl_size * a / b, "the template's by cap height", b / a) if a and b else \
+            (tmpl_size, "the template's", 1.0)
+    return font, size, lead, notes + [f"ability: font {font} ({step}), {size:.0f} px ({how})"]
 
 
 # ========================
@@ -328,7 +358,7 @@ def measure(model, text: str, font: str, size_pt: float, lead_pt: float, width_p
 
     Returns:
         (lines, ink x0, ink x1 from the box's left, the first line's ink top below the box's top, ink height,
-        the face drawn) in canvas px; zeros and None when nothing inks
+        the face drawn, the most a line's ink runs into the next one's) in canvas px; zeros and None when nothing inks
     """
     from psd_tools.composite.text import layout as engine
     from psd_tools.composite.text.geometry import _ink, _map_box
@@ -349,15 +379,20 @@ def measure(model, text: str, font: str, size_pt: float, lead_pt: float, width_p
         if ink is not None:
             inks.append((glyph, _map_box(one.transform, ink)))
     if not inks:
-        return 0, 0, 0, 0, 0, None
+        return 0, 0, 0, 0, 0, None, 0
     starts = [line.start for line in laid.lines]
     line_of = lambda g: max(i for i, s in enumerate(starts) if s <= g.cluster) if starts else 0
-    lines = {line_of(g) for g, _ in inks}
-    first = [box for g, box in inks if line_of(g) == min(lines)]
+    rows = {}
+    for g, box in inks:
+        i = line_of(g)
+        a, b = rows.get(i, (box[1], box[3]))
+        rows[i] = (min(a, box[1]), max(b, box[3]))
+    spans = [rows[i] for i in sorted(rows)]
     drawn = Counter((g.face.ft.postscript_name or b"").decode() for g, _ in inks).most_common(1)[0][0]
-    top = min(box[1] for box in first)
-    return (len(lines), min(b[0] for _, b in inks), max(b[2] for _, b in inks), top,
-            max(b[3] for _, b in inks) - top, drawn)
+    top = spans[0][0]
+    into = max([a[1] - b[0] for a, b in zip(spans, spans[1:])], default=0)
+    return (len(spans), min(b[0] for _, b in inks), max(b[2] for _, b in inks), top,
+            max(b[3] for _, b in inks) - top, drawn, into)
 
 
 # ========================
@@ -389,13 +424,23 @@ def _bands(H: int, x0: float, x1: float, boxes: list, pan) -> list:
     return out
 
 
+def _rise(ceiling: float, top: float, x0: float, x1: float, boxes: list) -> float:
+    """The highest start in [ceiling, top] with no element between it and top in x0..x1."""
+    hits = [b[3] + GAP for b in boxes if b[0] < x1 and b[2] > x0 and b[1] < top and b[3] + GAP > ceiling]
+    return min(top, max([ceiling] + hits))
+
+
 def card_facts(psd: PSDImage, rel: str, template_rel: str, template: PSDImage, parser) -> dict:
-    """What plan() and the index know of a card, live from its PSD: template, canvas, folder, stats span, text panel,
-    distinctive names, title font; series from the index."""
+    """What plan() and the index know of a card, live from its PSD: template, canvas, folder, stats span, text panel
+    (on a card with stats only one under them: art beside the stats is no panel), distinctive names, title font;
+    series from the index."""
     found = elements(psd, getattr(parser, "all_types", ()))
     stats = found["stats"]
+    span = (min(b[1] for b in stats), max(b[3] for b in stats)) if stats else None
+    if span and found["panel"] and found["panel"][1] < span[1] - STATS_TOL:
+        found["panel"] = None
     return {"rel": rel, "tmpl": template_rel, "canvas": (psd.width, psd.height), "folder": dirname(rel),
-            "top": rel.split("/")[0], "stats": (min(b[1] for b in stats), max(b[3] for b in stats)) if stats else None,
+            "top": rel.split("/")[0], "stats": span,
             "panel": found["panel"], "title": title_font(psd, rel, parser),
             "names": own_names(psd, template, getattr(parser, "all_types", ())),
             "elements": found}
@@ -416,7 +461,7 @@ def plan(psd: PSDImage, rel: str, template: PSDImage, template_rel: str, text: s
         parser: offline_parser() (its icon names); None: none
 
     Returns:
-        Plan; raises psd_edit.Refused when no free area is left or the font can't be laid out
+        Plan; raises psd_edit.Refused when no free area is left or no font can be laid out legibly
     """
     from commands.psd_edit import Refused, _is_text_layer, font_map
     from psd_tools.composite.text.model import TextModel
@@ -437,65 +482,102 @@ def plan(psd: PSDImage, rel: str, template: PSDImage, template_rel: str, text: s
     base = model.runs[0].style
     tmpl_font, tmpl_size = layer_font(source)
     tmpl_font, tmpl_size = tmpl_font or base.font, tmpl_size or base.size * scale
-    font, size, notes = pick_font(me, cards, tmpl_font, tmpl_size, fonts, fonts_dir)
+    font, size, lead, notes = pick_font(me, cards, tmpl_font, tmpl_size, fonts, fonts_dir)
     ratio = base.leading / base.size if base.size else 1.0
 
     sib, scope = siblings(me, cards)
-    mode, pan = _mode(me), me["panel"]
+    mode, pan, anchor = _mode(me), me["panel"], _anchor(me)
     if sib:
         notes.append(f"ability: placed as {len(sib)} sibling{'s' if len(sib) > 1 else ''} ({scope}, {mode})")
         boxes = [o.get("box") or o["ink"] for o in sib]
         x0, x1 = st.median(b[0] for b in boxes), st.median(b[2] for b in boxes)
-        first = _anchor(me) + st.median(o["first"] - _anchor(o) for o in sib)
+        offsets = [o["first"] - _anchor(o) for o in sib]
+        first, ceiling = anchor + st.median(offsets), anchor + min(offsets)
         ink_bottom = st.median(o["ink"][3] for o in sib)
         highest = max(H * 0.5, st.median(o["first"] for o in sib))
+        alike = [o for o in cards.values() if _sibling(me, o)] if mode == "panel" else sib    # every scope
+        gaps = [o["panel"][3] - o["ink"][3] for o in alike if o["panel"]]
+        ceiling = min(ceiling, anchor + min(o["first"] - _anchor(o) for o in alike))
     else:                                       # just below the stats; else the template's medians
-        fb = _fallback(cards, template_rel, mode, rel) or {"offset": 0, "bottom_gap": EDGE, "high": H * 0.5}
+        fb = _fallback(cards, template_rel, mode, rel) or {"offset": 0, "rise": 0, "bottom_gap": EDGE, "high": H * 0.5}
         notes.append(f"ability: no sibling: geometric ({mode})")
         x0, x1 = SIDE, W - SIDE
-        first = _anchor(me) + (BELOW_STATS if mode == "stats" else fb["offset"])
+        first = anchor + (BELOW_STATS if mode == "stats" else fb["offset"])
+        ceiling = anchor + (BELOW_STATS if mode == "stats" else fb["rise"])
         ink_bottom = H - fb["bottom_gap"]
         highest = max(H * 0.5, fb["high"])
+        gaps = []
+    # a long text rises to the siblings' highest first line (a panel's content area; plain: or the template's 10th
+    # percentile, few siblings being no measure), never over the stats
+    if mode == "plain":
+        rise = (_fallback(cards, template_rel, mode, rel) or {}).get("rise", ceiling)
+        ceiling = max(H * 0.5, min(ceiling, rise))
+    ceiling = first if mode == "stats" else min(first, ceiling)
     if pan:                                     # inside the panel
         x0, x1 = max(x0, pan[0] + SIDE), min(x1, pan[2] - SIDE)
     x0, x1 = max(x0, SIDE // 2), min(x1, W - SIDE // 2)
     floor = (pan[3] if pan else H) - EDGE
-    obstacles = el["stats"] + el["title"] + el["stars"] + el["types"]
+    if mode == "panel" and gaps:                # above the panel's bottom border as every same-panel card's text (Deep Focus)
+        floor = min(floor, pan[3] - max(EDGE, min(gaps)))
+    obstacles = el["stats"] + el["title"] + el["stars"] + el["types"] + el["text"]
     width = x1 - x0
 
-    def laid(s: float) -> tuple:
+    def into(f: str, s: float, k: float):
+        """How far a line's ink runs into the next one's, over the size; the error when it can't be laid out."""
         try:
-            return measure(model, text, font, s / scale, s * ratio / scale, width / model.transform[0], fonts)
-        except Exception as error:              # FreeType's raster overflow on Holy Blade's ChiQuel
-            raise Refused("font", f"ability: {font} could not be laid out ({error})")
+            return measure(model, text, f, s / scale, s * ratio * k / scale, width / model.transform[0], fonts)[6] / s
+        except Exception as error:              # FreeType's raster overflow on Holy Blade's ChiQuel at 104 px
+            return error
 
-    def fit(top_ink: float, bottom: float) -> tuple:
-        """The largest size down to FIT_MIN whose block fits between top_ink and bottom."""
+    if font != tmpl_font:                       # the template's own lines may touch (Andy-Bold's tight leading)
+        mine = into(font, size, lead)
+        vetted = any(o.get("font") == font for o in cards.values() if o["rel"] != rel)     # real abilities touch too (DST)
+        theirs = None if vetted or isinstance(mine, Exception) else into(tmpl_font, tmpl_size, 1.0)
+        why = f"could not be laid out ({mine})" if isinstance(mine, Exception) else \
+            f"lays its lines over each other ({mine * size:.0f} px)" \
+            if isinstance(theirs, float) and mine > theirs + OVERLAP else None
+        if why:
+            notes.append(f"ability: {font} {why}: the template's {tmpl_font} used")
+            font, size, lead = tmpl_font, tmpl_size, 1.0
+
+    def fit(top_ink: float, bottom: float, least: float = FIT_MIN) -> tuple:
+        """The largest size down to least whose block fits between top_ink and bottom."""
         s = size
         while True:
-            m = laid(s)
-            if top_ink + m[4] <= bottom or s * FIT_STEP < size * FIT_MIN:
+            try:
+                m = measure(model, text, font, s / scale, s * ratio * lead / scale, width / model.transform[0], fonts)
+            except Exception as error:
+                raise Refused("font", f"ability: {font} could not be laid out ({error})")
+            if top_ink + m[4] <= bottom or s * FIT_STEP < size * least:
                 return s, m
             s *= FIT_STEP
 
     if mode == "plain":                         # the block ends where the siblings' blocks end, no higher than theirs
         end = min(ink_bottom, floor)
-        first = max(highest, end - fit(highest, end)[1][4])
+        first = max(highest, end - fit(highest, end, RAISE_AT)[1][4])
     top, bottom = _clear(first, floor, x0, x1, obstacles)
-    if bottom - top < 0.3 * size:               # no room under what it landed on: the biggest free band
+    line = size * FIT_MIN * max(ratio * lead, 1.0)
+    if bottom - top < line:                     # no room for a line under what it landed on: the biggest free band
         bands = _bands(H, x0, x1, obstacles, pan)
         if not bands:
             raise Refused("unsupported-card", "ability: no free area for it on the card")
         top, bottom = max(bands, key=lambda b: b[1] - b[0])
+        ceiling = min(ceiling, top)
         notes.append(f"ability: moved to the free band {top:.0f}-{bottom:.0f}")
-    s, m = fit(top, bottom)
-    _, ix0, ix1, off, h, drawn = m
-    if top + h > bottom:                        # past the bottom at the least size: towards what is above
-        band_top = _clear(_anchor(me) if mode == "stats" else (pan[1] if pan else H * 0.5), floor, x0, x1, obstacles)[0]
-        risen = max(min(top, band_top), bottom - h)
-        if risen < top:
-            notes.append(f"ability: raised {top - risen:.0f} px to fit")
-            top = risen
+    start = top
+    s, m = fit(top, bottom, RAISE_AT)
+    if top + m[4] > bottom:                     # too long at RAISE_AT: up towards the ceiling first, then smaller
+        high = _rise(ceiling, top, x0, x1, obstacles)
+        s, m = fit(high, bottom)
+        top = min(top, max(high, bottom - m[4]))
+    if top + m[4] > bottom:                     # past it at FIT_MIN: the whole panel or free area, its border too (told)
+        bottom = _clear(top, (pan[3] if pan else H) - EDGE, x0, x1, obstacles)[1]
+        high = _rise(anchor if mode == "stats" else pan[1] if pan else H * 0.5, top, x0, x1, obstacles)
+        s, m = fit(high, bottom)
+        top = min(top, max(high, bottom - m[4]))
+    if top < start - 0.5:
+        notes.append(f"ability: raised {start - top:.0f} px to fit")
+    _, ix0, ix1, off, h, drawn, _ = m
     if s < size:
         notes.append(f"ability: shrunk to {s / size:.0%}")
     if mode == "plain" and top + h < bottom:    # on the bottom edge after a push
@@ -503,7 +585,8 @@ def plan(psd: PSDImage, rel: str, template: PSDImage, template_rel: str, text: s
     if drawn and drawn != font:
         notes.append(f"ability: drawn in {drawn}, not {font}")
     box = (round(x0), round(top - off), round(x1), round(bottom))
-    return Plan(box, (round(x0 + ix0), round(top), round(x0 + ix1), round(top + h)), font, s, s * ratio, notes)
+    return Plan(box, (round(x0 + ix0), round(top), round(x0 + ix1), round(top + h)), font, s, s * ratio * lead, notes,
+                pan)
 
 
 # ========================

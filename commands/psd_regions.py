@@ -5,6 +5,7 @@ pipeline uses stat_rows, badge_layers, fx_pad and union_box to find the pixels a
 or config.
 """
 from re import IGNORECASE, fullmatch, search, sub
+from typing import Optional
 
 from psd_tools import PSDImage
 
@@ -20,6 +21,7 @@ RULEBOOK_WIDTH = 1080        # rule pages are 1080 wide; every card is 1200
 CARD_WIDTH = 1200
 BAR_X = (360, 1173)          # the template bar's x range on 1200-wide cards
 BAR_HALF_HEIGHT = 42         # template rows are 84 px tall, centred on the stat label
+BAR_MASK_MAX = 130           # px at 1200 wide: a taller row box is a digit mask far past its bar (Pure Vessel)
 STAR_CORNER = (0.6, 0.2)     # loose stars: drawn in the top-right corner (x0 >= 60% W, y1 <= 20% H)
 OVERLAY_INSIDE = 0.8         # an overlay word layer has 80% of its bbox inside the ability box
 OVERLAY_MAX_CHARS = 40       # and is a short text (the longest status name is 17)
@@ -145,6 +147,23 @@ def stat_rows(psd: PSDImage) -> dict:
         pixels = [tuple(c.bbox) for c in digits if c.bbox[2] > c.bbox[0]]
         out[key].append((group, sorted(int(c.name) for c in digits if c.is_visible()), union_box(masks or pixels)))
     return out
+
+
+def bar_box(psd: PSDImage, stat: str, box: tuple, labels: Optional[dict] = None) -> tuple:
+    """
+    A stat row's box as drawn: a digit mask far past its bar (BAR_MASK_MAX) is its label's band (the template bar's
+    height); labels: {label: bbox} of the visible stat label layers (found when None).
+    """
+    if box[3] - box[1] <= BAR_MASK_MAX * psd.width / CARD_WIDTH:
+        return tuple(box)
+    if labels is None:
+        labels = {layer.name.strip().lower(): layer.bbox for layer in psd.descendants()
+                  if layer.kind == "type" and layer.is_visible() and layer.name.strip().lower() in STAT_LABELS}
+    label = {"hp": "health", "def": "defense", "atk": "attack", "spd": "speed"}.get(stat)
+    if label not in labels:
+        return tuple(box)
+    mid = (labels[label][1] + labels[label][3]) // 2
+    return (box[0], mid - BAR_HALF_HEIGHT, box[2], mid + BAR_HALF_HEIGHT)
 
 
 def regions(psd: PSDImage, vocab=(), rulebook=None, pad: bool = True) -> dict:
