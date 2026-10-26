@@ -35,13 +35,13 @@ The books balance exactly: 904 − 90 (`MDW/`, excluded) − 1 (`Auxiliary/Marke
 non-excluded PSDs, all with unique names.
 
 **Card identity**: a card's name is its PSD filename with underscores turned into spaces
-(`The_Freezer.psd` → "The Freezer"; `commands/psd_parser.py:337`). Names are the keys of
+(`The_Freezer.psd` → "The Freezer"; `card_name`, `commands/card_models.py:259`). Names are the keys of
 `stats.pkl` and the index of the query dataframes. Two PSDs with the same basename would silently
 share one entry — today there are none outside the excluded folders.
 
 ## 2. Folder taxonomy → card classification
 
-`CardClassifier.classify` (`commands/psd_parser.py:230-315`) derives a card's type and several
+`CardClassifier.classify` (`commands/psd_parser.py:315-412`) derives a card's type and several
 fields purely from its repo-relative path. Every row below was verified against the code and the
 live folder tree.
 
@@ -68,10 +68,10 @@ series (24 of them: BTD, Kirby, Souls, World Of Warcraft, ...) have star folders
 `2 Stars`..`5 Stars` range; `Auxiliary/` contains Creatures, Items, Markers, Minions, Rulebook,
 Status Effects.
 
-**The stars parse** (psd_parser.py:260, 259, 278, 304) is:
+**The stars parse** (`CardClassifier._stars`, psd_parser.py:368-373; called at 348, 353, 380, 406) is:
 
 ```python
-"stars": int(folders[len(folders) - 1].split()[0])
+"stars": CardClassifier._stars(folders[len(folders) - 1])     # int(folder.split()[0]); a blank folder raises ValueError
 ```
 
 i.e. the integer prefix of the LEAF folder name ("3 Stars" → 3). Consequence: for Field, Items,
@@ -114,8 +114,8 @@ counted from the PSD since 2026-10-23 (`psd_parser.STARS_FROM_PSD`); the stored 
 
 ### Excluded folders
 
-`EXCLUDE_FOLDERS = ["Markers", "MDW"]` (card_data.py:42 since 2026-10-22) is checked against every path segment
-during stats traversal and duplicate-PNG detection (card_data.py:438, 377). `MDW/` (90 PSDs) is
+`EXCLUDE_FOLDERS = ["Markers", "MDW"]` (card_data.py:45) is checked against every path segment
+during stats traversal and duplicate-PNG detection (card_data.py:412, 752). `MDW/` (90 PSDs) is
 Photoshop templates — card backs, `.aco`/`.atn` assets; `Auxiliary/Markers/` (1 PSD) is a board
 marker. Neither reaches `stats.pkl` (verified: 0 MDW-typed entries). The `MDW` classifier branch is
 therefore dead in normal traversal; it only matters if `classify` is called on such a path directly
@@ -128,7 +128,7 @@ minion 91, debuff 52, field 50, aux item 48, rulebook 48, nme 26, buff 12, creat
 
 This is the part newcomers lack. A card PSD is a layer TREE; the parser walks
 `psd.descendants()` and dispatches on layer kind, name, visibility, and position
-(`PSDParser._process_layer`, psd_parser.py:522-549). Annotated excerpt of a real dump
+(`PSDParser._process_layer`, psd_parser.py:729-757). Annotated excerpt of a real dump
 (`dump_psd_layers.py`, reproduced 2026-07-11):
 
 ```
@@ -158,7 +158,7 @@ problems NONE.
 ### 3.1 The naming trap: `layer.kind == "type"` means TEXT
 
 In psd-tools, "type" is the layer KIND for text layers (typography), and has nothing to do with
-card types. `psd_parser.py:528` dispatches text layers on exactly this. Card-type ICONS are
+card types. `psd_parser.py:735` dispatches text layers on exactly this. Card-type ICONS are
 pixel/smart-object layers matched by NAME (3.3). Misread this and nothing else in the parser makes
 sense.
 
@@ -166,8 +166,8 @@ sense.
 
 A text layer contributes ability text iff its name (lowercased) is `"ability"` — OR the card is a
 rulebook page (`"Rulebook" in relative_path`), in which case ALL text layers contribute
-(psd_parser.py:562, 377). The raw string is `str(layer.engine_dict["Editor"]["Text"])` — a
-repr-like string wrapped in quotes, with literal escape sequences. Cleanup (psd_parser.py:561-582):
+(psd_parser.py:772, 488). The raw string is `str(layer.engine_dict["Editor"]["Text"])` — a
+repr-like string wrapped in quotes, with literal escape sequences. Cleanup (psd_parser.py:786-792):
 
 | Raw sequence | Becomes | Why |
 |---|---|---|
@@ -180,15 +180,15 @@ repr-like string wrapped in quotes, with literal escape sequences. Cleanup (psd_
 
 Multiple ability text layers (common on rulebook pages) are sorted by position (3.5's row sort) and
 joined with `\n`; the wrapping `'`/`"` quotes are stripped during the join and at the end
-(psd_parser.py:832-842). If NO ability text layer exists at all, the parse-time problem
-`NO ABILITY LAYER` is recorded (psd_parser.py:414).
+(`_process_abilities`, psd_parser.py:1151-1162). If a rule page has NO ability text, the parse-time problem
+`NO ABILITY LAYER` is recorded (psd_parser.py:522-523); since 2026-10-25 (owner) other cards need no ability.
 
 ### 3.3 Card-type icons and the midline
 
 `all_types` is the vocabulary of icon names, populated from TTSCardMaker's `Types/` folder
 (excluding `Types/Stars/`), lowercased file stems: 'fire', 'ice', 'undead', 'defensive_minion', ...
 Remote traversal yields 35 (`_populate_types_from_response`); the clone-based helper used by the
-diagnostics scripts (`_populate_types_from_local`, card_data.py:294) also yields 35 since 2026-10-19, when it started
+diagnostics scripts (`_populate_types_from_local`, card_data.py:201) also yields 35 since 2026-10-19, when it started
 skipping dotfiles — before that it leaked `'.ds_store'` as a 36th entry (archaeology Entry 10.3).
 Since 2026-10-19 a second vocabulary
 sits beside `all_types`: `IconVocabulary`, which adds `Types/Stars/` names and the font manifest's
@@ -196,9 +196,9 @@ aliases for icon-font tokens (§4.1).
 
 A visible, pixel-bearing layer whose lowercased name is in `all_types` is a type icon, except on a rule page
 (2026-10-25: there it is a picture; a rule page's icons count only typed as tokens)
-(psd_parser.py:536-541). Position decides its meaning, using
+(psd_parser.py:742-747). Position decides its meaning, using
 `card_mid_y = int(psd.height * TYPE_REGION_RATIO)` with `TYPE_REGION_RATIO = 0.5`
-(psd_parser.py:23, 375):
+(psd_parser.py:25, 486):
 
 - bbox top `y < card_mid_y` (upper half, the corner badges) → appended to `card.types`
   (in raw traversal order, NOT sorted);
@@ -207,7 +207,7 @@ A visible, pixel-bearing layer whose lowercased name is in `all_types` is a type
 
 ### 3.4 Stats (hp/def/atk/spd)
 
-Two-stage name matching (psd_parser.py:690-740):
+Two-stage name matching (psd_parser.py:1008-1059):
 
 1. A layer is a stat layer if any ancestor (up to 3 levels) has "dark" or "bars" in its name
    (`Stats Bars > Darks > Hp Dark` qualifies).
@@ -244,7 +244,7 @@ nothing; its printed cells are pixel layers), so its stored ATK is 10 while the 
 
 ### 3.5 Position sorting (shared by text layers and icons)
 
-`_sort_by_position` (psd_parser.py:864-891): sort by bbox top `y`; group into visual rows where
+`_sort_by_position` (psd_parser.py:1185-1211): sort by bbox top `y`; group into visual rows where
 `|y − first_in_row.y| <= 40` px (`row_threshold=40`); sort each row left-to-right by `x`; flatten.
 This is reading order — top-to-bottom, then left-to-right — and it determines both multi-text-layer
 join order and type-icon injection order.
@@ -254,17 +254,17 @@ join order and type-icon injection order.
 Card authors drop type ICONS inside the ability paragraph in Photoshop; the text layer just has a
 run of spaces where each icon sits. Extraction must splice `[typename]` tokens back into those
 gaps. This is the owner-stated hardest live problem; the spec below is exact
-(`_inject_type_names`, psd_parser.py:901-945, plus callers at 529-539).
+(`_inject_type_names`, psd_parser.py:1221-1265, called by `_process_abilities` :1159).
 
 Constants:
 
 | Constant | Value | Where |
 |---|---|---|
-| `TYPE_REGION_RATIO` | 0.5 (midline) | psd_parser.py:23 |
-| gap pattern | `\s{3,}` (3+ whitespace chars) | psd_parser.py:324 |
-| row grouping threshold | 40 px | psd_parser.py:865 |
-| prune rule | keep icon iff `y >= max(last_sorted_icon_y // 3, card_mid_y)` | psd_parser.py:898 |
-| punctuation cleanup | `sub(r'\s+([:;,\.\?!])', r'\1')` after injection | psd_parser.py:841 |
+| `TYPE_REGION_RATIO` | 0.5 (midline) | psd_parser.py:25 |
+| gap pattern | `\s{3,}` (3+ whitespace chars) | psd_parser.py:420 |
+| row grouping threshold | 40 px | psd_parser.py:1185 |
+| prune rule | keep icon iff `y >= max(last_sorted_icon_y // 3, card_mid_y)` | psd_parser.py:1218 |
+| punctuation cleanup | `sub(r'\s+([:;,\.\?!])', r'\1')` after injection | psd_parser.py:1161 |
 
 Algorithm:
 
@@ -279,8 +279,9 @@ Algorithm:
    ` [next_type] ` (text before the gap rstripped, after lstripped, line lstripped). Lines without
    gaps pass through unchanged. Types are consumed strictly in sorted (reading) order.
 4. LEFTOVER types (more icons than gaps) are appended to the LAST line as ` [t1] [t2] ...`
-   (psd_parser.py:1045, 2026-10-23). More gaps than icons: extra gaps stay as-is as literal spaces.
-5. Punctuation cleanup: whitespace before `: ; , . ? !` is deleted. This glues `[ice] :` into
+   (psd_parser.py:1259-1263, 2026-10-23). More gaps than icons: extra gaps stay as-is as literal spaces.
+5. A line's leading run of 3+ blanks (an unfilled gap at a line start: layout padding) is removed
+   (psd_parser.py:1160). Punctuation cleanup: whitespace before `: ; , . ? !` is deleted. This glues `[ice] :` into
    `[ice]:` — and, derived from the code, it also silently swallows an UNFILLED gap that sits
    directly before punctuation, which can mask a missed icon.
 
@@ -418,14 +419,14 @@ The pixel check uses psd-tools `layer.numpy("shape")` on both layers (alpha only
 layers keep their last-rendered pixels in the PSD even when hidden. If either layer has no pixel data, the check
 is skipped.
 
-## 5. Validation semantics (`CardValidator`, psd_parser.py:966-1056)
+## 5. Validation semantics (`CardValidator`, psd_parser.py:1268-1361)
 
 Problems come in two kinds, and only one kind is persisted — a common newcomer misread:
 
-- **Parse-time problems** are appended to `card.problems` during parsing and stored in the pickle (the website's Parser notes):
-  `NO ABILITY LAYER` (psd_parser.py:414), `NO STARS FOUND` (:420), `MISSPELT TYPE: <name>` (:566-567,
+- **Parse-time problems** are appended to `card.problems` during parsing and stored in the card data (the website's Parser notes):
+  `NO ABILITY LAYER` (rule pages only since 2026-10-25, psd_parser.py:523), `DUPLICATE LAYER IDS` (:526), `NO STARS FOUND` (:532), `MISSPELT TYPE: <name>` (:756-757,
   fired by a visible pixel layer named in `MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']`,
-  line 24), the effect-layer and icon-token ones through `_add_problem` (:641; callers :489-504, :674-706) and `SEVERAL CREATURES` (:880).
+  line 26), the effect-layer and icon-token ones through `_add_problem` (:943; callers :678-693, :975-1006) and `SEVERAL CREATURES` (:1182).
 - **Validate-time problems** are computed by `CardValidator.validate` during `/update_stats`,
   REPORTED to Discord, and NOT written back to the card. Since 2026-10-21 the same `validate()` (after the card's
   `site/Card Edits.json` entry) also runs per pushed PSD in `commands/card_check.py`, the push guard's card check
@@ -436,18 +437,19 @@ one card has one: rulebook page "20 Creature Types" with `MISSPELT TYPE: tornado
 
 | Problem string | Fires when | Source |
 |---|---|---|
-| `UNKNOWN TYPE` | `card_type == "unknown"` (path matched no classifier row) | :1008-1009 |
-| `ABILITY TEXT NOT FOUND` | type is not unknown/MDW, ability empty, name not in ABILITY_EXCLUSIONS | :1012-1016 |
-| `HP NOT FOUND` / `DEF NOT FOUND` | creature or minion with that stat still −1 | :1038-1041 |
-| `ATK NOT FOUND` / `SPD NOT FOUND` | same, UNLESS `"active"` is in `card.types` (active creatures have no atk/spd) | :1044-1050 |
-| `STATS TOO HIGH` | any found stat > 10 and not `allow_high_stats` (Card Edits.json; the stat exclusion list went 2026-10-21) | psd_parser.py:1053-1054 |
-| `NO ABILITY LAYER` | no ability text layer found at parse time; validate() DELETES it again for names in ABILITY_EXCLUSIONS | :414, :1024-1026 |
-| `MISSPELT TYPE: <t>` | visible layer named undread/tornado/error | :566-567 |
+| `UNKNOWN TYPE` | `card_type == "unknown"` (path matched no classifier row) | :1311-1312 |
+| `ABILITY TEXT NOT FOUND` | a rule page with no ability text (other cards need no ability since 2026-10-25, owner) | :1315-1317 |
+| `HP NOT FOUND` / `DEF NOT FOUND` | creature or minion with that stat still −1 | :1338-1341 |
+| `ATK NOT FOUND` / `SPD NOT FOUND` | same, UNLESS `"active"` is in `card.types` (active creatures have no atk/spd) | :1344-1350 |
+| `STATS TOO HIGH` | any found stat > 10 and not `allow_high_stats` (Card Edits.json; the stat exclusion list went 2026-10-21) | psd_parser.py:1353-1354 |
+| `NO ABILITY LAYER` | a rule page with no text at parse time; validate() drops older data's on other cards | :523, :1325-1326 |
+| `MISSPELT TYPE: <t>` | visible layer named undread/tornado/error | :756-757 |
 
 **The exclusion list is the "perfect extraction" debt register** — per-card allowances the owner
 wants to eliminate (see autocroissant-research-frontier; the campaign to shrink them is
 autocroissant-psd-extraction-campaign). `EXCESSIVE_STAT_EXCLUSIONS` (5 names) was deleted on 2026-10-21: stats above 10
-are allowed per card by `allow_high_stats` in Card Edits.json. Verbatim, psd_parser.py:968-990:
+are allowed per card by `allow_high_stats` in Card Edits.json. Since 2026-10-25 (cards need no ability) the validator
+no longer reads `ABILITY_EXCLUSIONS`: it is card_standards' R3 waiver (card_standards.py:638). Verbatim, psd_parser.py:1271-1293:
 
 - `ABILITY_EXCLUSIONS` (21, allowed to have no ability text): Crystal Bits, Bugzzy, Electro Probe,
   Galacta Warrior, God Tamer, Mini Bee, Paint Warrior, PoD01Red Bloon, Sabre, Shadow Duelist,
@@ -511,15 +513,15 @@ website computes it from the values; `CardEdits.meta`); `parse()`
 keeps every `_`-key out of `cards`. `aliases` is read by `CardEdits.names()` for name lookups, never by `apply()`;
 `dup_of` makes a card PNG with no PSD (Stubborn_Queen.png, Gust_of_Trees.png) a duplicate of the named card in the bot
 too (`card_data.duplicate_pngs`, 2026-10-23, build_site's rule; since the 5 multi-picture PSDs were tagged, 10-25, a numbered PNG is a variant picture, never a duplicate); on a card with its own PSD the bot ignores it. The website's edit sets the same field by hand;
-a PSD re-parse keeps it with author and series (psd_parser.py:355-361) and a Card Edits.json value wins again at the
+a PSD re-parse keeps it with author and series (psd_parser.py:455-461) and a Card Edits.json value wins again at the
 next `/update_stats`.
 
 Omitted keys become NaN in the query dataframes — which is why numeric queries naturally skip
-cards lacking that stat. `COLUMN_ORDER` (psd_analyzer.py:60-64) fixes export/display order:
-aliases, type, ability, hp, def, atk, spd, types, path, timestamp, author, stars, problem, series,
+cards lacking that stat. `COLUMN_ORDER` (psd_analyzer.py:28-32) fixes export/display order:
+aliases, type, ability, hp, def, atk, spd, types, path, timestamp, created, author, stars, problem, series,
 subseries, subtype.
 
-**Timestamp semantics**: the date of the commit that introduced the PSD's current blob, from git (the card data build's `GitBuild._get_remote_timestamp`, card_data.py:877, through `card_history.GitIndex.intro_of`: a move or the same bytes again is no new date; after a revert, the revert). The timestamp does not decide re-parsing; the blob sha does (`_psd_changed` card_data.py:140, called at :441). A card re-parses if it is new, its path changed, it was parsed by an older `PARSER_VERSION`, or its stored `blob_sha` differs from the tree's sha (none stored: always). `force_update` or naming the card in `cards:` skips the check (both dispatch a Card sync run since the 2026-10-24 cutover). Until 2026-10-25 the bot's legacy /update_stats dated a card by its last commit through the GitHub API and recorded a sha without re-parsing for a no-sha card not committed since the newest stored timestamp; step 10 removed that path. Local mode, which used file mtimes instead (`use_local_timestamp`) and so re-parsed and archived every card, was archived out of the bot on 2026-10-20 (kept on branch `archive/local-update-stats`). **Author** comes from TTSCardMaker's `site/Card Authors.txt` (`AUTHORS_PATH`, `CardAuthors`, since 2026-10-20; in `MDW/` before), the
+**Timestamp semantics**: the date of the commit that introduced the PSD's current blob, from git (the card data build's `GitBuild._get_remote_timestamp`, card_data.py:958, through `card_history.GitIndex.intro_of`: a move or the same bytes again is no new date; after a revert, the revert). The timestamp does not decide re-parsing; the blob sha does (`_psd_changed` card_data.py:142, called at :453). A card re-parses if it is new, its path changed, it was parsed by an older `PARSER_VERSION`, or its stored `blob_sha` differs from the tree's sha (none stored: always). `force_update` or naming the card in `cards:` skips the check (both dispatch a Card sync run since the 2026-10-24 cutover). Until 2026-10-25 the bot's legacy /update_stats dated a card by its last commit through the GitHub API and recorded a sha without re-parsing for a no-sha card not committed since the newest stored timestamp; step 10 removed that path. Local mode, which used file mtimes instead (`use_local_timestamp`) and so re-parsed and archived every card, was archived out of the bot on 2026-10-20 (kept on branch `archive/local-update-stats`). **Author** comes from TTSCardMaker's `site/Card Authors.txt` (`AUTHORS_PATH`, `CardAuthors`, since 2026-10-20; in `MDW/` before), the
 team's record of who made each card.
 - **Format:** two sections of `left = right` lines.
   - `[people]`: git/GitHub name = display name. One person's several git names are merged before it by the card
@@ -618,27 +620,27 @@ both to the repo root (gitignored). Rulebook entries are excluded from card expo
 
 ### 7.1 Name lookup and ambiguous names (`/query`)
 
-`CardRepository` (`commands/query_card.py:56`, singleton `card_repo` at :1192) maintains
+`CardRepository` (`commands/query_card.py:98`, singleton `card_repo` at :1160) maintains
 `git_files`: lowercase png filename → repo path, built from one GitHub trees API call
-(`populate_files` :89). It indexes EVERY `.png` in TTSCardMaker — including `Types/` icons,
+(`populate_files` :130). It indexes EVERY `.png` in TTSCardMaker — including `Types/` icons,
 `Auxiliary/Markers`, and MDW card backs; `EXCLUDE_FOLDERS` applies only to stats traversal, not
 here. So `/query panda` can legitimately return a type icon.
 
-Lookup (`lookup` :635, 2026-10-24) normalizes to `name.replace(' ', '_').lower() + '.png'`, then: an exact key
+Lookup (`lookup` :613, 2026-10-24) normalizes to `name.replace(' ', '_').lower() + '.png'`, then: an exact key
 (file names, printed titles, Card Edits.json names and aliases); else a renamed card's old name (`_renamed`, built by
 `_populate_renames` from the archive's `renamed_to`, followed along chains to a card of today; the reply says
-"(renamed from X)"); else a guess (`closest` :654), which the reply labels "Closest match: X" and the console logs
+"(renamed from X)"); else a guess (`closest` :632), which the reply labels "Closest match: X" and the console logs
 (`Search guess:`; a miss logs `Search miss:`). `closest` compares names WITHOUT ".png" (it lifted every score:
 "luigi" used to find Light): first a name starting with the text, or with a word that does (3+ letters; the shortest;
 a plain key before its folder-prefixed twins), then difflib `get_close_matches` above `match_ratio` (default 0.6,
-`DEFAULT_MATCH_RATIO` query_card.py:32; runtime-settable via `/set_ratio`, resets on restart — see
+`DEFAULT_MATCH_RATIO` query_card.py:34; runtime-settable via `/set_ratio`, resets on restart — see
 autocroissant-config-and-flags). `/query as_of` guesses the same way over current and archived names, and says so.
 Card-name options autocomplete from `name_choices`: `choices` (cards, titles, aliases, old names).
 main.py's `on_interaction` logs one console line per slash command (option values only for searches).
 
 **Duplicate filenames**: when two repo paths share a basename, both also get prefixed keys
 `<top_folder>/<name>.png` (lowercased), and `ambiguous_names` records the options
-(`_add_file_to_registry` :163-180). The bare name STILL resolves — to the first-seen path — and `/query` appends a "try
+(`_add_file_to_registry` :208). The bare name STILL resolves — to the first-seen path — and `/query` appends a "try
 these instead" list when the hit is ambiguous. Duplicated basenames in the repo today: active.png,
 cardback.png, equip.png, field.png, fragile equip.png, nme.png, panda.png (mostly card-vs-Types
 icon collisions).
@@ -651,10 +653,10 @@ Examples: `abyss_watchers -> the_abyss_watchers.png`, `red_bloon -> pod01red_blo
 card_data's duplicate names) and aliases are edited on the website (`/alias` and the migration CLI were retired
 2026-10-25, branch `archive/discord-edits`).
 
-### 7.2 The ability-search DSL (`/query_ability` → `ability_search_engine`, query_card.py:336)
+### 7.2 The ability-search DSL (`/query_ability` → `ability_search_engine`, query_card.py:349)
 
 Search runs over `cards_dff`, a pandas DataFrame built from stats.pkl (`prep_dataframes`
-:597): index = card names, columns = the dict keys of section 6, **ability column lowercased**,
+:575): index = card names, columns = the dict keys of section 6, **ability column lowercased**,
 rulebook pages split into a separate `rulebook_dff`, and rows with no ability text (MDW-style)
 excluded entirely. Refreshed at startup and queued after every `/update_stats`.
 
@@ -697,20 +699,20 @@ gotcha-4 unknown-field error; `series==mario & subseries~door` is the website's 
 5. `type==creature` misses the 7 plural-"creatures" cards (section 2); use `type~creature`.
 6. Numeric compares drop NaN rows, i.e. only cards that HAVE the stat participate.
 7. Bare-text search also runs a fuzzy pass: `SequenceMatcher(None, query, whole_ability).ratio() >
-   match_ratio` (`_fuzzy_labels`, query_card.py:377-389). It compares against the ENTIRE ability, so it only adds
+   match_ratio` (`_fuzzy_labels`, query_card.py:409-424). It compares against the ENTIRE ability, so it only adds
    near-whole-text matches; short queries effectively rely on the substring pass.
-8. `"quoted"` builds `(?:^|\s|$|\b)<escaped>(?:^|\s|$|\b)` (:358) — approximately word-bounded,
+8. `"quoted"` builds `(?:^|\s|$|\b)<escaped>(?:^|\s|$|\b)` (:399) — approximately word-bounded,
    punctuation-tolerant.
 9. Rulebook pages are NEVER returned by `/query_ability`; use `/query_rulebook` (case-insensitive words with any
-   spacing over `rulebook_dff`, no DSL — query_card.py:410). It posts the matching LINES under their page names
-   (`rulebook_lines` :1112; long lines cut to SNIPPET around the match, the match in bold outside emoji markup), the
+   spacing over `rulebook_dff`, no DSL — query_card.py:426-440). It posts the matching LINES under their page names
+   (`rulebook_lines` :1080; long lines cut to SNIPPET around the match, the match in bold outside emoji markup), the
    pages with the most lines first, whole pages per message. 48 pages today.
 10. One result posts its image URL alone (a preview, via `get_card_url`; its name when the PNG is not in the tree).
     Two or more come as grid images since 2026-10-25 (`post_grids`, commands/card_grid.py): 20 cards per JPEG (4 x 5,
     300 px wide, numbered and named under each), one message per grid listing `**n.** [name](<site /c/<slug>/>)`, the
     count first and "Displayed ..." with the website button last. From 2026-10-21 to 2026-10-23 they were listed as
     `<name> — <url>` lines, 10 per message, then one message per card;
-    `howmany:True` returns just the count; `limit` caps output (main.py:313-328).
+    `howmany:True` returns just the count; `limit` caps output (main.py:316-332).
 
 ## 8. When NOT to use this skill
 
@@ -796,3 +798,4 @@ change, sections 4-5 are stale until rewritten.
 2026-10-25 (step 10, work/pickles): the intro and §6 describe the card data (db/ JSON records, card_db) and list the pickles as history.
 
 2026-10-25 (grid): §7.2 gotcha 10: two or more results come as grid images.
+2026-10-25 (docs lane): every psd_parser.py, card_data.py, query_card.py and psd_analyzer.py citation re-pointed at 6a87179; §3.2/§5: cards need no ability (rule pages do), ABILITY_EXCLUSIONS is R3's waiver; §4 step 5 names the line-padding strip.

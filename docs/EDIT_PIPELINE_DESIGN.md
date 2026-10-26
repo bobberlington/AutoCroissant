@@ -566,7 +566,7 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   the declared removed/added FX records; gate `reparse` checks the layers back, visible, styled, directly above `Text`, no overlay
   showing, no `EFFECT LAYER` problem. Tests: `tests/test_psd_edit.py` (the JSX comparison skips when the trial copies are gone),
   `tests/test_card_bake.py` dry run.
-  **BUG 2 (2026-10-23, `work/fx-rebuild`, not landed): Update all, not derived state.** The FX layers are no longer deleted
+  **BUG 2 (2026-10-23, `work/fx-rebuild`, landed 2026-10-24): Update all, not derived state.** The FX layers are no longer deleted
   and regenerated: each is cut again in place (section 5 step 4), so badge layers, chart-style word layers and the L7
   cards' converted overlays keep their records, styles and places, and a repeat is cut into the same layer (`Blazing`
   over both, as the JSX's phraseRanges does), no longer `Blazing#1`/`#2`. Dry census with every gate (UNBAKEABLE_CARDS

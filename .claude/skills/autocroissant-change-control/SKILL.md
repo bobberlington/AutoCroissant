@@ -50,8 +50,8 @@ rebase fallback, and the restart mechanics — lives in autocroissant-run-and-op
 §5.** What change control needs you to know:
 
 - **/pull** → `git_pull()`: fetch + merge, never a reset. On merge **CONFLICT** every file takes the remote side
-  (`checkout --theirs`), committed as `AUTO-RESOLVE: Merge conflict resolved (accepted remote)`. The bot commits
-  nothing else, so a /pull is normally a fast-forward.
+  (`checkout --theirs`), committed as `AUTO-RESOLVE: Merge conflict resolved (accepted remote)`. The bot's clone commits
+  nothing else (the reminder backup pushes from a separate clone), so a /pull is normally a fast-forward.
 - **/update** → `update_bot()`: stops the four loops first, then `/pull` + restart. With `force_reset:True` it instead
   runs `git reset --hard origin/main` (`git_reset_hard`) and restarts: it discards local code changes only (the card
   data is gitignored in `card_data/` and on GitHub).
@@ -76,7 +76,7 @@ python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.
 Exit 0 = no changes; 1 = changes found — read them; 2 = load error. Red flags: cards "removed" that nobody deleted,
 mass path changes, type counts shifting, hundreds of cards whose only change is `timestamp`, old_stats growing more
 than about 10% in one run (the `-- history --` section). A version is archived only when a card's data changes
-(`card_history.same_data`), so a `cards:`/`force_update` re-parse of unchanged PSDs should not grow it at all. Bad data
+(`card_history.record_versions`), so a `cards:`/`force_update` re-parse of unchanged PSDs should not grow it at all. Bad data
 that passed: pin the builder ref or disable card-sync.yml, then dispatch `restore=<good data commit>` (DATA_BUILD_ACTION.md
 §13). Interpretation guide and the other scripts: **autocroissant-diagnostics-and-tooling**. The full acceptance
 procedure for parser changes (goldens → old-vs-new sweep → diff review): **autocroissant-validation-and-qa**.
@@ -97,7 +97,7 @@ and 2026-10-23 (the font and card-data lines shifted the rest again):
 |---|---|---|
 | `config.py` | 36 | Secret tokens (TOKEN, GIT_TOKEN...). Per-machine. A leaked token means rotation, not deletion — git history is forever |
 | `.ssh/` | 37 | Credentials, same reasoning |
-| `reminder.pkl`, `reminder.pkl.bak`, `reminder.json`, `reminder.json.tmp` | 39; 100-102 (2026-10-24) | Volatile per-host scheduling state (see above); the `.bak` is the pickle the one-time conversion kept |
+| `reminder.pkl`, `reminder.pkl.bak`, `/reminder.json`, `reminder.json.tmp` | 87-90 (2026-10-25) | Volatile per-host scheduling state (see above); the `.bak` is the pickle the one-time conversion kept. Production's copy is committed to `backup/reminder.json` by the bot (commands/backup.py, from a separate clone; run-and-operate §9), so pull before pushing main |
 | `repo_history.json`, `.tmp` | 45-46 (added 2026-10-20) | Per-machine map of repo path -> commit that last changed it, rebuilt from the history clone by commands/repo_history.py |
 | `type_emojis.json`, `.tmp` | 48-49 (added 2026-10-20) | Per-machine map of bot application id -> {type emoji name -> icon blob it was made from} (commands/type_emojis.py); if deleted, startup adopts the existing emojis as current (an icon edited meanwhile then needs `/sync_emojis refresh:True`) |
 | `card_data/` | (2026-10-22) | The bot's copy of the Card sync data (the data branch's `db/`; commands/card_sync.py) |
