@@ -1,6 +1,6 @@
 # Card sync verdicts on the data branch, bake and guard events in the changelog
 
-**Status:** built and landed 2026-10-25 (TTSCardMaker a4d137bf, AutoCroissant be39f86; steps 1-5, see "As built"). Left: step 6, the migration of today's `_psd` blocks (one: PoD11ZOMG), after the first live bake or refusal shows `db/verdicts.json` and `db/bake-records.json` on data: runbook `~/Documents/Tools/wt/scratch/verdicts/MIGRATION.md`; then drop the `_psd` fallback one cycle later.
+**Status:** built and landed 2026-10-25 (TTSCardMaker a4d137bf, AutoCroissant be39f86; steps 1-5, see "As built"). Step 6 done 2026-10-26: the migration (data 0680843, main fec70c94), and the `_psd` fallback dropped after its green cycle (work/deadcode).
 
 **Goal.** `site/Card Edits.json` on main holds only people's edits; the bake's verdicts live on `data`, so a refusal
 makes no main commit. Bakes and guard fixes show on the Changes page.

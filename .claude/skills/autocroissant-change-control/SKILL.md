@@ -81,7 +81,7 @@ that passed: pin the builder ref or disable card-sync.yml, then dispatch `restor
 §13). Interpretation guide and the other scripts: **autocroissant-diagnostics-and-tooling**. The full acceptance
 procedure for parser changes (goldens → old-vs-new sweep → diff review): **autocroissant-validation-and-qa**.
 
-**The reminder store** (`reminder.json`, gitignored; `reminder.pkl` before 2026-10-24, now `reminder.pkl.bak`) is
+**The reminder store** (`reminder.json`, gitignored; `reminder.pkl` before 2026-10-24) is
 volatile per-host scheduling state: never committed. Edit `reminder.json` by hand only with the bot stopped (the bot
 rewrites it on every firing and refuses an unreadable one: reminders off). Its saves are atomic (temp file, fsync,
 replace), as card_db's writes are.
@@ -97,7 +97,7 @@ and 2026-10-23 (the font and card-data lines shifted the rest again):
 |---|---|---|
 | `config.py` | 36 | Secret tokens (TOKEN, GIT_TOKEN...). Per-machine. A leaked token means rotation, not deletion — git history is forever |
 | `.ssh/` | 37 | Credentials, same reasoning |
-| `reminder.pkl`, `reminder.pkl.bak`, `/reminder.json`, `reminder.json.tmp` | 87-90 (2026-10-25) | Volatile per-host scheduling state (see above); the `.bak` is the pickle the one-time conversion kept. Production's copy is committed to `backup/reminder.json` by the bot (commands/backup.py, from a separate clone; run-and-operate §9), so pull before pushing main |
+| `/reminder.json`, `reminder.json.tmp` | 92-93 (2026-10-26) | Volatile per-host scheduling state (see above). Production's copy is committed to `backup/reminder.json` by the bot (commands/backup.py, from a separate clone; run-and-operate §9), so pull before pushing main |
 | `repo_history.json`, `.tmp` | 45-46 (added 2026-10-20) | Per-machine map of repo path -> commit that last changed it, rebuilt from the history clone by commands/repo_history.py |
 | `type_emojis.json`, `.tmp` | 48-49 (added 2026-10-20) | Per-machine map of bot application id -> {type emoji name -> icon blob it was made from} (commands/type_emojis.py); if deleted, startup adopts the existing emojis as current (an icon edited meanwhile then needs `/sync_emojis refresh:True`) |
 | `card_data/` | (2026-10-22) | The bot's copy of the Card sync data (the data branch's `db/`; commands/card_sync.py) |
@@ -236,7 +236,7 @@ ignored — read the story before you decide the rule doesn't apply to you.
   rebuilds every `.so`, and query_card itself takes `stats_db` from card_models since 2026-10-21
   (autocroissant-architecture-contract, lazy-import cycle breaks).
 - **Letting a test or script write the live reminder store.** `tests/conftest.py`'s `live_files_untouched` fixture
-  hashes reminder.pkl and reminder.json around the run and fails it on any change; tests run in a temp cwd.
+  hashes reminder.json around the run and fails it on any change; tests run in a temp cwd.
 - **Editing card text or stats in this repo.** Ability text and stats live in
   TTSCardMaker PSDs (class (d)) and the website's `site/Card Edits.json`; the card data is the build's output.
 - **Renaming a Types/ icon PNG in TTSCardMaker "to fix a name".** Image-layer type names,
@@ -286,7 +286,7 @@ and update this file.
 | The data's one writer and its gates | DATA_BUILD_ACTION.md §13; `grep -n "^def gates\|G6" commands/card_data.py` |
 | force_reset behavior and its "dangerous!" label | `grep -n "force_reset" main.py commands/update_bot.py` |
 | restart: `./startup.sh` if present, else re-exec main.py (the Jetson has no startup.sh) | `grep -n "execv\|execl" commands/update_bot.py` |
-| Gitignore coverage (config.py, .ssh, reminder.pkl, music, txt/csv/log) | `git check-ignore -v config.py reminder.pkl music/x a.txt a.csv a.log` |
+| Gitignore coverage (config.py, .ssh, reminder.json, music, txt/csv/log) | `git check-ignore -v config.py reminder.json music/x a.txt a.csv a.log` |
 | Grandfathered requirements.txt | `git ls-files '*.txt'` |
 | Incident hashes and their diffs | `git show --stat cca0aaf eb9aa84 366c8d9 f7c915c` ; `git show dd800bc` ; `git show 3bbaa2b 4bcee6b` |
 | Cython include list; boundscheck and wraparound on (2026-10-23) | `grep -n "wraparound\|boundscheck\|INCLUDE_FILES" setup.py` |

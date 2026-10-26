@@ -1,6 +1,6 @@
 ---
 name: autocroissant-config-and-flags
-description: Catalog of EVERY configuration axis in the AutoCroissant Discord bot. Load for any question containing "config", "flag", "setting", "default", "where is X configured", "how do I change/set X", or "why did my setting reset" — and for any mention of TOKEN, ADMINS, GIT_TOKEN, ACTIONS_TOKEN, CARD_SYNC (removed 2026-10-25), CARD_GUARDS, card-preview.yml and the previews branch (KEEP, DAYS: no secret needed), browser_cookies, KEEPVIDEO, POSTPROCESS, SITE_URL, match ratio, /set_ratio, /set_repo, admin-only commands, rate limits, BREAK_LEN, UPDATE_RATE, DOWNLOAD_WORKERS, TYPE_REGION_RATIO, EXCLUDE_FOLDERS, MUSIC_BASE_DIR, LOCAL_DIR_LOC, HISTORY_CLONE, TTS_SAVE_PATH, AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE, TIMEZONE/PST, the pickle filenames (removed 2026-10-25), ICON_FONT_PREFIX, ICON_MANIFEST_PATH, ICON_VARIANTS, ICON_SCAN_PATTERN, EFFECT_LAYER_TAG, EFFECT_COVERAGE_MIN, AUTHORS_PATH(S), EDITS_PATH(S), STAR_CORE_ALPHA, the type_emojis constants (EMOJI_SIZE, MAX_NAME_LEN, ICON_FOLDERS, NO_SUFFIX, NO_RED, TOKEN_PATTERN), the reminder constants (REMINDER_VERSION, MAX_INTERVAL, CHANNEL_RETRY, LEGACY_RUNS_AS_BOT, TIME_FORMATS, WEEKDAYS), or the AI fields and setters that live only on branch archive/ai-generation (HF_TOKEN, model, lora, device_no, scheduler_name, vram_usage, /set_scheduler, /set_model, /set_lora, /set_device). Contains the config.py field table (names only), global_config.py and per-module constants (incl. card_sync, the push guards, psd_edit parity, card_bake), the TTSCardMaker repo settings (names only), prod-vs-experimental status, runtime-settable vs restart-required (/set_* do NOT persist), update_stats defaults, an add-a-config-field checklist and re-verification greps.
+description: Catalog of EVERY configuration axis in the AutoCroissant Discord bot. Load for any question containing "config", "flag", "setting", "default", "where is X configured", "how do I change/set X", or "why did my setting reset" — and for any mention of TOKEN, ADMINS, GIT_TOKEN, ACTIONS_TOKEN, CARD_SYNC (removed 2026-10-25), CARD_GUARDS, card-preview.yml and the previews branch (KEEP, DAYS: no secret needed), browser_cookies, KEEPVIDEO, POSTPROCESS, SITE_URL, match ratio, /set_ratio, /set_repo, admin-only commands, rate limits, BREAK_LEN, UPDATE_RATE, DOWNLOAD_WORKERS, TYPE_REGION_RATIO, EXCLUDE_FOLDERS, MUSIC_BASE_DIR, LOCAL_DIR_LOC, HISTORY_CLONE, TTS_SAVE_PATH, AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE, TIMEZONE/PST, the pickle filenames (removed 2026-10-25), ICON_FONT_PREFIX, ICON_MANIFEST_PATH, ICON_VARIANTS, ICON_SCAN_PATTERN, EFFECT_LAYER_TAG, EFFECT_COVERAGE_MIN, AUTHORS_PATH(S), EDITS_PATH(S), STAR_CORE_ALPHA, the type_emojis constants (EMOJI_SIZE, MAX_NAME_LEN, ICON_FOLDERS, NO_SUFFIX, NO_RED, TOKEN_PATTERN), the reminder constants (REMINDER_VERSION, MAX_INTERVAL, CHANNEL_RETRY, TIME_FORMATS, WEEKDAYS), or the AI fields and setters that live only on branch archive/ai-generation (HF_TOKEN, model, lora, device_no, scheduler_name, vram_usage, /set_scheduler, /set_model, /set_lora, /set_device). Contains the config.py field table (names only), global_config.py and per-module constants (incl. card_sync, the push guards, psd_edit parity, card_bake), the TTSCardMaker repo settings (names only), prod-vs-experimental status, runtime-settable vs restart-required (/set_* do NOT persist), update_stats defaults, an add-a-config-field checklist and re-verification greps.
 ---
 
 # AutoCroissant: Configuration and Flags
@@ -63,8 +63,7 @@ Ground rules:
 | `ADMINS` | no | `[]` (commands/utils.py:19) | utils.py | prod | list of Discord user IDs (ints) allowed past `lacks_admin` — see gate table below |
 | `GIT_TOKEN` | no (strongly recommended) | `""` (commands/github_api.py — the one read since 2026-10-20; query_card, card_data (the traverser's code since 2026-10-22) and type_emojis import it from there; git_commit.token() reads it, else the Actions' GITHUB_TOKEN, for card_bake and card_guards) | github_api | prod | GitHub API auth: raises the rate limit 60 → 5000 req/hr. Used for the Authorization headers (the PyGithub client for commit timestamps until 2026-10-25) and the emoji sync's tree listing (1 call per startup or /sync_emojis). Since 2026-10-20 it also WRITES: `/update_tts_save` commits the TTS save to the card repo with it, so it needs write access there (when the token can't write — 401/403/404 on the blob upload, or no token — it commits through the history clone and pushes over SSH with the service's agent instead) |
 | `ACTIONS_TOKEN` (2026-10-22) | no | `""` (commands/card_sync.py) | card_sync | prod | A fine-grained token for TTSCardMaker only, Actions read and write. `/update_stats force_update` or `cards:` dispatches card-sync.yml with it and follows the run. (Until 2026-10-25 `/push` also dispatched the website build with it after a push of the pickles (card_sync.dispatch_site). In the jetson's config.py since 2026-10-22 ~12:25 |
-| `browser_cookies` (2026-10-20) | no | absent → falls back to `vram_usage == "mps"` (music_player.py:37) | music_player | prod | True = yt-dlp uses Safari cookies — see the browser_cookies section below |
-| `vram_usage` | no | `""` in the fallback (music_player.py:37) | music_player | legacy fallback | on main it matters ONLY when `browser_cookies` is absent (old configs). Its AI meaning is branch-only, below |
+| `browser_cookies` (2026-10-20) | no | `False` (music_player.py:37) | music_player | prod | True = yt-dlp uses Safari cookies — see the browser_cookies section below |
 | `KEEPVIDEO` | no | `True` (commands/music_player.py:54) | music_player | prod | yt-dlp `keepvideo`: keep the downloaded media file after any post-processing |
 | `POSTPROCESS` | no | `False` (music_player.py:61) | music_player | prod | if True, appends a yt-dlp `FFmpegExtractAudio` postprocessor: mp3 at 320k (music_player.py:61-67) |
 
@@ -89,11 +88,10 @@ and boots without any AI field or torch. Details: **autocroissant-ai-boundary** 
 ### browser_cookies — the music downloader's Safari cookies
 
 `commands/music_player.py:37` reads
-`cookies_from_browser: bool = bool(getattr(config, "browser_cookies", getattr(config, "vram_usage", "") == "mps"))`;
+`cookies_from_browser: bool = bool(getattr(config, "browser_cookies", False))`;
 when true, yt-dlp gets `"cookiesfrombrowser": ("safari", None, None, None)` (music_player.py:55). Set
-`browser_cookies = True` only on a machine with Safari (the Mac). A config.py without `browser_cookies`
-falls back to the old side channel `vram_usage == "mps"` (default `""`), so old Mac configs keep their
-cookies. This replaced the vram_usage-only hack on 2026-10-20 (docs/BUGS_AND_IMPROVEMENTS.md S1).
+`browser_cookies = True` only on a machine with Safari (the Mac; the jetson has False). This replaced the
+vram_usage-only hack on 2026-10-20 (docs/BUGS_AND_IMPROVEMENTS.md S1); the `vram_usage` fallback went 2026-10-26.
 
 ### ADMINS — which commands it gates
 
@@ -134,8 +132,8 @@ Two more ADMINS uses outside main.py since 2026-10-19 (commands/analytics.py):
 - `/remove_reminder` and the `/reminders` panel's Reschedule, Turn off/on and Delete: admins, or the reminder's
   creator (`can_edit`; no creator: admins only). The panel's New is admin only, like `/set_reminder`.
 - A firing reminder runs as its creator, so every gate above is re-checked against the creator at fire time.
-  Reminders saved before 2026-10-19 have no creator and still run as the bot (`LEGACY_RUNS_AS_BOT`); the bot's
-  own id is in the dev Mac's ADMINS. Mechanism: autocroissant-architecture-contract invariant 9.
+  A reminder with no creator (saved before 2026-10-19) runs as an unknown non-admin user since 2026-10-26.
+  Mechanism: autocroissant-architecture-contract invariant 9.
 
 Quirk, stated plainly: `/restart_bot` (main.py:167-175) is NOT gated — anyone in the guild can
 restart the bot, while `/stop_bot` is admin-only. Observed code fact as of 2026-10-20; whether
@@ -293,7 +291,7 @@ Both seed fields of the `CardRepository` dataclass whose singleton is `card_repo
 |---|---|---|
 | `MUSIC_BASE_DIR` | `"music/"` | download/playback directory (gitignored; the dir is kept by the tracked `music/.gitignore` stub — no `.gitkeep` exists despite .gitignore's `!music/.gitkeep` exception) |
 | `SKIP_FILES` | `{".gitignore", ".DS_Store"}` | filenames ignored when traversing `music/` (defined music_player.py:30, used :171, :470) |
-| `cookies_from_browser` | derived (line 37): `browser_cookies`, else `vram_usage == "mps"` | see the browser_cookies section |
+| `cookies_from_browser` | derived (line 37): `browser_cookies`, default False | see the browser_cookies section |
 | `ydl_opts` | dict, music_player.py:50-58 | yt-dlp options: bestaudio, restricted filenames, `music/%(title)s-%(id)s.%(ext)s` template, `keepvideo` from KEEPVIDEO, Safari `cookiesfrombrowser` iff `cookies_from_browser`, quiet. `POSTPROCESS=True` appends mp3-320k extraction (61-67). Built ONCE at import — all its config fields are restart-required (the YoutubeDL objects themselves are made on first use since 2026-10-20) |
 
 ### commands/diffusion.py (lines 21-119)
@@ -418,7 +416,7 @@ for the jetson went on 2026-10-25: nothing there bakes).
 
 The "Bot adapter" block at the top holds what differs from OJWikibot's copy of the module: `STORE_PATH`
 (`REMIND_JSON`), `STORE_SCHEMA`, `TIME_SEMANTICS`, `ZONE_LABEL` ("Pacific time"),
-`RUN_AS_CREATOR = True`, `LEGACY_RUNS_AS_BOT`, `ALLOW_POSITIONAL = True`, `ON_LOAD_ERROR = "off"` (an unreadable
+`RUN_AS_CREATOR = True`, `ALLOW_POSITIONAL = True`, `ON_LOAD_ERROR = "off"` (an unreadable
 store turns reminders off; OJWikibot exits), `CHANNEL_RETRY` and `is_admin`.
 
 | Constant | Value | Meaning |
@@ -429,7 +427,6 @@ store turns reminders off; OJWikibot exits), `CHANNEL_RETRY` and `is_admin`.
 | `REMINDER_VERSION` | `3` (2 until 2026-10-20) | stored as `v` on each reminder once migrated; reminders without `v` are read with the old command semantics, and any reminder below the current version is migrated on load (3 = retired options stripped) |
 | `MAX_INTERVAL` | `timedelta(days=366)` | upper limit for `offset` and `frequency` (longer = typo, and huge values overflow datetime) |
 | `CHANNEL_RETRY` | `timedelta(hours=1)` | how long a one-shot reminder whose channel is gone waits before trying again |
-| `LEGACY_RUNS_AS_BOT` | `True` | reminders saved before creator tracking keep running as the bot. Set False to run them as an unknown non-admin user instead (their admin commands would then be refused) |
 | `INTERVAL_UNITS` | s/m/h/d/w in seconds | the units `offset`/`frequency` accept; combinations like `1d12h` are allowed |
 | `WEEKDAYS`, `TIME_FORMATS` | Monday-first names; `("%H:%M", "%I%p", "%I:%M%p")` | what `when` accepts (weekday prefixes need 3+ letters) |
 | `TRUE_WORDS`, `FALSE_WORDS` | true/yes/y/on/1 and false/no/n/off/0 | how boolean command options are read (any case) |
@@ -597,7 +594,7 @@ THE classic confusion in this bot. Two facts, verified by reading every setter:
 | `/set_repo` | `card_repo.repository` + re-runs `populate_files` (`set_repository`, query_card.py:965-988) | `"MichaelJSr/TTSCardMaker"` — always |
 
 Restart-required only (no runtime setter exists): `TOKEN`, `ADMINS`, `GIT_TOKEN`, `ACTIONS_TOKEN`,
-`browser_cookies`, `vram_usage`, `KEEPVIDEO`, `POSTPROCESS` — edit config.py on that machine, then restart.
+`browser_cookies`, `KEEPVIDEO`, `POSTPROCESS` — edit config.py on that machine, then restart.
 
 > Branch `archive/ai-generation` only: `/set_scheduler`, `/set_model`, `/set_lora` and `/set_device`
 > set the diffusion globals `SCHEDULER_NAME`, `MODEL`, `LORA`, `DEVICE_NO` (reset to the config.py
@@ -625,9 +622,8 @@ Since 2026-10-20 `/set_repo` switches only once the new tree loads; a failed fet
    slash command and from `update_stats()`, the traversal lives on branch `archive/local-update-stats`
    (not in main, not compiled), and stored reminders naming them fail binding (the dropping shim was removed 2026-10-25).
    (`force_update` now dispatches a full Card sync re-parse: an admin's decision, not a config probe.)
-3. **Same field, two meanings:** on main `vram_usage` is only the browser_cookies fallback
-   (music_player.py:37, default `""`); on branch `archive/ai-generation` it is the diffusion memory
-   mode (default `"low"`). A grep for the field must check both.
+3. **`vram_usage` is branch-only:** main reads it nowhere since 2026-10-26 (the browser_cookies fallback went);
+   on branch `archive/ai-generation` it is the diffusion memory mode (default `"low"`).
 4. **Unvalidated config.py values (branch `archive/ai-generation`):** neither `vram_usage` nor
    `scheduler_name` is checked against a whitelist at init — typos silently degrade (fallthrough
    memory behavior; default scheduler). Only the `/set_*` paths validate.

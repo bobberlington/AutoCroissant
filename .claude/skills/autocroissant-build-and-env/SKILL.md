@@ -103,7 +103,7 @@ synced by `/push` until 2026-10-25 — see **autocroissant-run-and-operate**). W
 | Axis | Mac (dev) | Jetson (production) |
 |---|---|---|
 | Python / run | venv (section 1), plain `python3 main.py` | Python 3.14 venv `~/venvs/autocroissant`, systemd `autocroissant.service` (ExecStart = the venv's python), compiled `.so` (section 5) |
-| yt-dlp cookies | `browser_cookies = True` in config.py → `cookiesfrombrowser = ('safari', ...)` (`music_player.py:37`, used at :55). Old configs fall back to `vram_usage == "mps"`. | Unset → no browser cookies |
+| yt-dlp cookies | `browser_cookies = True` in config.py → `cookiesfrombrowser = ('safari', ...)` (`music_player.py:37`, used at :55). | Unset → no browser cookies |
 | psd-tools | `~/.venvs/ac-py314-psd125`: stock 1.25.0 (older tests); `~/.venvs/ac-py314-fork`: the fork at the pin (`cards-20261025b` = c17e0734 since 2026-10-25, per `pip freeze`; with pyoxipng, pytest-xdist and setuptools: the full suite, card_guards, bakes; the one fork venv since 2026-10-25) | The fork at the pin (`cards-20261025b` = c17e0734, 2026-10-25: Stylistic Alternates, the one-colour badges; `cards-20261025` = 9edbc1fa before it, tab stops; `cards-20261024b` = a651cd08 before it, glow halos; check `pip freeze`: `psd-tools @ git+...@c17e0734...`). Move it to the pin with `~/venvs/autocroissant/bin/pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"` (gcc compiles `_distance`; a plain `pip install -r` keeps the old commit), then `pip check`. The Actions (card-edits, card-guards, card-sync, card-preview) install the same file |
 
 The torch/CUDA/MPS differences went with the AI to branch `archive/ai-generation`.
@@ -316,7 +316,7 @@ Line numbers drift; re-verify volatile facts with:
 | Negative-index idiom commit | `git show dd800bc \| grep -E "^[-+].*bboxes"` |
 | Cythonization commit date | `git log --format='%h %ad %s' --date=short -1 f7c915c` |
 | TOKEN is the only direct config import | `grep -rn "from config import" main.py commands/` |
-| Safari cookies (`browser_cookies`, `vram_usage` fallback) | `grep -n "browser_cookies\|cookiesfrombrowser" commands/music_player.py` |
+| Safari cookies (`browser_cookies`) | `grep -n "browser_cookies\|cookiesfrombrowser" commands/music_player.py` |
 | Tracked stub in music/; .ssh untracked | `git ls-files music .ssh` |
 | Token-presence print line | `grep -rn "git token" -i commands/github_api.py main.py` |
 | LOCAL_DIR_LOC card-repo path | `grep -n "LOCAL_DIR_LOC" global_config.py` |

@@ -318,7 +318,7 @@ grep -n "'--rebase'" commands/update_bot.py                              # /pull
 # Section 9 - reminders (2026-10-19 rewrite)
 grep -n "skipped its command\|Reminders are off\|crashed the scheduler\|not found (deleted or no access)" commands/analytics.py   # user-visible messages
 grep -n "Rescheduled reminder\|migrated command" commands/analytics.py  # startup log lines
-grep -n "^CHANNEL_RETRY\|^LEGACY_RUNS_AS_BOT" commands/analytics.py
+grep -n "^CHANNEL_RETRY" commands/analytics.py
 grep -n "queue_command(check_reminder)" main.py                          # fires only while loops run (928)
 grep -n "reminder" .gitignore                                            # not synced across machines
 

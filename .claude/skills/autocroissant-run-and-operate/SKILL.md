@@ -76,7 +76,7 @@ start draining — so the loops effectively start first, and nothing is sent to 
 
 | Init (queued in this order) | What it does | Failure/no-op behavior |
 |---|---|---|
-| `init_reminder` (analytics.py:1474) | Loads `reminder.json` (the 2026-10-24 conversion from `reminder.pkl` was removed on 2026-10-25), migrates old entries, rolls past-due REPEATING reminders that are on forward to their next future slot in one step, saves atomically | No file: an empty schedule. Unreadable file: "ERROR: reminder.json could not be read ... Reminders are OFF" (the file is left untouched; every reminder command replies "✗ Reminders are off"). |
+| `init_reminder` (analytics.py:1474) | Loads `reminder.json` (the 2026-10-24 conversion from `reminder.pkl` was removed on 2026-10-25), rolls past-due REPEATING reminders that are on forward to their next future slot in one step, saves atomically | No file: an empty schedule. Unreadable file: "ERROR: reminder.json could not be read ... Reminders are OFF" (the file is left untouched; every reminder command replies "✗ Reminders are off"). |
 | `init_psd` (psd_analyzer.py) | `card_data/` into `stats_db`, the card list from `card_tree.json` (`load_saved`, no network; 2026-10-25), the query DataFrames, one sync, then `init_query` (in a `finally`: it runs even when the load or sync raises) | No `card_data/` and GitHub unreachable: no cards until a sync works ("No card data yet" on /update_stats) |
 | `init_query` (query_card.py; run by `init_psd` after its sync since 2026-10-25, so titles and renames are the synced data's) | Fetches the TTSCardMaker GitHub file tree with the saved tree's ETag (1 API call, a 304 when unchanged; 3 tries 1 s and 2 s apart on a connection error, 429 or 5xx, `github_api.get_with_retry`), rebuilds the list and rewrites `card_tree.json` when the tree or Card Edits.json changed | A failed or non-tree reply keeps the last good list: "Card list: GitHub tree fetch for <repo> failed (...); keeping the last good list (N entries)" and "Warning: Failed to populate files from repository (status N)"; the saved tree's list stays (rebuilt with the loaded data) until the next sync's refresh. No `card_tree.json` (first start) or a corrupt one ("Card list: ignoring card_tree.json (...)"): no list until this fetch, as before |
 | `refresh_history` (repo_history.py:198) | Fetches the bare history clone (`~/Documents/TTSCardMaker-history.git`) and maps each card PNG to the commit that last changed it, for sha-pinned image links | Never raises; on failure the old map stays and links fall back to `main` |
@@ -390,7 +390,7 @@ The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes 
   (refused-layers): a printed-title layer named after the card (no `Name` layer, or outside the Text group) or, failing
   those, after its own text (title-own-text: Papyrus, Sans; a bake renames it after the new title), and a single
   visible Ability layer under another name; since 2026-10-25 an ability over several layers is edited box by box
-  (`parts`, `psd_edit.set_parts`, copies following; a plain joined edit there refuses as impossible). Text bakes are line-spliced (fork feat/line-splice): only the edited lines
+  (`parts`, `psd_edit.set_parts`, copies following; a plain edit there refuses at bake time: "N title layers", "N ability layers"). Text bakes are line-spliced (fork feat/line-splice): only the edited lines
   are re-set, so the rest keeps Photoshop's own ink. An edit takes the colour and style of what it replaces, part by part.
   A stat bar with a digit mask wholly off the canvas (Green Mage's four bars, the only ones) refuses `unsupported-card`
   as a final verdict; it was an `error` that failed the run until work/bake-verdicts (2026-10-23).
@@ -536,7 +536,6 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 |---|---|---|---|
 | `reminder.json` | /set_reminder, /reminders, every firing (schema_version 2, `ReminderStore` in analytics.py) | repo root | NO (gitignored) — per-machine; production's copy is committed to `backup/reminder.json` (§9). Edit by hand only with the bot stopped |
 | `reminder.json.tmp` | every reminder save (written, fsynced, then renamed over reminder.json) | repo root, normally gone within milliseconds | NO (gitignored). If a hard kill leaves one behind, delete it |
-| `reminder.pkl.bak` | the one-time conversion (2026-10-24) | repo root | NO (gitignored). The old store, read by nothing since 2026-10-25: delete it |
 | `repo_history.json` | startup and every /update_stats (commands/repo_history.py; a failed refresh retries on the next one) | repo root; its bare clone at `~/Documents/TTSCardMaker-history.git` | NO (gitignored) — per-machine, rebuilt from the clone if deleted |
 | `stats.csv` / `stats.txt` | /export_cards (`as_csv` picks which) | repo root | NO (gitignored via `*.csv`/`*.txt`) |
 | `rules.txt` | /export_rulebook | repo root | NO (gitignored) |
@@ -604,10 +603,8 @@ The first is stored as `/update_stats`. The second is a weekly full emoji sync, 
   with carries a stand-in user with that id (`_ReminderUser`, analytics.py:95). The slash wrapper's own
   `lacks_admin` therefore runs again at fire time: if the creator has left `ADMINS`, an admin command replies
   "You do not have permission." in the channel instead of running.
-- **Legacy reminders** (saved before 2026-10-19, so no creator) still run as the bot: `LEGACY_RUNS_AS_BOT = True`
-  (analytics.py:37). The bot's own id is in `ADMINS` on the dev Mac, so those pass every admin check.
-  `/reminders` labels them "unknown (runs as the bot)". To bring one under the new
-  rule, re-create it and then remove the old one.
+- **Reminders with no creator** (saved before 2026-10-19) run as an unknown non-admin user since 2026-10-26: their
+  admin commands are refused. `/reminders` labels them "unknown". Re-create one to give it a creator.
 
 ### When things go wrong
 
@@ -782,9 +779,9 @@ re-find volatile facts with these before trusting them:
 | Local traversal archived on its own branch, not in main | `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived`; `ls archive 2>/dev/null` (nothing: main has no archive folder) |
 | No reminder retirement shims (removed 2026-10-25) | `grep -n "RETIRED_\|_drop_retired" commands/analytics.py` (nothing); `grep -n "^REMINDER_VERSION" commands/analytics.py` (3) |
 | The legacy /update_stats path is gone (2026-10-25) | `grep -c "def update(\|legacy\|_commit_page" commands/card_data.py` (0, 0, 0); `ls commands/repo_traverser.py` (absent) |
-| Reminder formats, limits, defaults | `grep -n "^TIME_FORMATS\|^WEEKDAYS\|^MAX_INTERVAL\|^CHANNEL_RETRY\|^LEGACY_RUNS_AS_BOT\|^INTERVAL_UNITS" commands/analytics.py` |
+| Reminder formats, limits, defaults | `grep -n "^TIME_FORMATS\|^WEEKDAYS\|^MAX_INTERVAL\|^CHANNEL_RETRY\|^INTERVAL_UNITS" commands/analytics.py` |
 | Reminders run as creator; changes gated | `grep -n "_ReminderUser(\|def can_edit\|Only an admin or the reminder" commands/analytics.py` |
-| Reminder files ignored | `git check-ignore -v reminder.json reminder.json.tmp reminder.pkl.bak` |
+| Reminder files ignored | `git check-ignore -v reminder.json reminder.json.tmp` |
 | TTS save wiring (none in the bot since 2026-10-25) | `grep -c "tts_save" main.py` (0) |
 | Type emoji sync wiring | `grep -n "init_type_emojis\|sync_emojis" main.py`; `grep -n "^EMOJI_SIZE\|^MAX_NAME_LEN\|^NO_SUFFIX" commands/type_emojis.py` |
 | Font check wiring (/fonts from the card data; the Action is a step of TTSCardMaker's card-guards.yml) | `grep -n "fonts_text\|name=\"fonts\"" main.py`; `grep -n "^ROLE_ID\|^BITE" commands/font_check.py` |
