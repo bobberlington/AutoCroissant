@@ -241,7 +241,8 @@ def events(before: dict, after: dict, archived_before: dict, archived_after: dic
     for name in sorted(set(before) | set(after) | set(archived_after)):
         old, new = before.get(name), after.get(name)
         if (new is not None and getattr(new, "duplicate_of", None)) or (old is not None and getattr(old, "duplicate_of", None)):
-            own = {k: v for k, v in field_changes(old, new).items() if k in OWN_FIELDS} if old is not None and new is not None else {}
+            both = old is not None and new is not None
+            own = {k: v for k, v in field_changes(old, new).items() if k in OWN_FIELDS} if both else {}
             if own:                                       # a duplicate's own artwork sources: its own edit
                 out.append(_event("edited", name, new, fields=own, edit_by=edit_credit(edits_by.get(name), own),
                                   **({"commit": file_commits["edited"]} if file_commits.get("edited") else {})))

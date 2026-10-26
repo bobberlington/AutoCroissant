@@ -864,7 +864,8 @@ def _post_card(interaction: Interaction, closest: str, url: Optional[str] = None
     subseries = getattr(card, "subseries", None) if card else None
     extra = [f"Same card as {card.duplicate_of}" if card and getattr(card, "duplicate_of", None) else "",
              getattr(card, "note", None) or "" if card else ""]
-    extra += [f"{label}: {art_text(getattr(card, key))}" if card and getattr(card, key, None) else "" for key, label in ART_LINES]
+    extra += [f"{label}: {art_text(getattr(card, key))}" if card and getattr(card, key, None) else ""
+              for key, label in ART_LINES]
     if card and (shown or subseries or any(extra)):     # website name, subseries, note, art or duplicate: an embed says so
         extra.insert(0, " · ".join(s for s in (card.series, subseries) if s))      # "Series · Subseries"
         created = getattr(card, "created", None)

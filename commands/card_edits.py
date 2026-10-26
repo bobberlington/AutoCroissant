@@ -29,7 +29,7 @@ HEX8 = re_compile(r"^[0-9a-f]{8}\Z")
 PARTS_MAX, PART_TEXT_MAX = 64, 4096
 RENAME = "_rename"                              # true: the bake renames the card's files to its name (owner 2026-10-25)
 SITE = "_site"                                  # an entry's website-only fields: their values differ from the card image on purpose
-ART_FIELDS = ("art", "ability_art")             # artwork sources (main, ability): free text, a URL or a name (owner 2026-10-25)
+ART_FIELDS = ("art", "ability_art")             # artwork sources (main, ability): free text, a URL or a name (10-25)
 ART_MAX = 500                                   # characters (edit.js ART_MAX, build_site ART_MAX)
 
 
@@ -89,14 +89,13 @@ class CardEdits:
     meta: dict = field(default_factory=dict)        # normalized card name -> its _-keys (_by, _at, _psd, _site cleaned), never applied
 
     TYPES = {"name": str, "type": str, "subtype": str, "series": str, "subseries": str, "stars": int, "types": list,
-             "hp": int, "def": int, "atk": int, "spd": int, "ability": str, "note": str, "art": str,
-             "ability_art": str, "aliases": list, "dup_of": str, "hidden": bool, "problems_ok": bool, "allow_high_stats": bool, "creatures": list,
+             "hp": int, "def": int, "atk": int, "spd": int, "ability": str, "note": str, "art": str, "ability_art": str,
+             "aliases": list, "dup_of": str, "hidden": bool, "problems_ok": bool, "allow_high_stats": bool, "creatures": list,
              "parts": dict}
     NULLABLE = {"subtype", "series", "subseries", "stars", "hp", "def", "atk", "spd", "art", "ability_art"}
     ATTRS = {"name": "display_name", "type": "card_type", "subtype": "subtype", "series": "series", "subseries": "subseries",
-             "stars": "stars", "types": "types", "ability": "ability", "note": "note", "art": "art",
-             "ability_art": "ability_art", "hidden": "hidden",
-             "problems_ok": "problems_ok", "allow_high_stats": "allow_high_stats"}
+             "stars": "stars", "types": "types", "ability": "ability", "note": "note", "art": "art", "ability_art": "ability_art",
+             "hidden": "hidden", "problems_ok": "problems_ok", "allow_high_stats": "allow_high_stats"}
     STATS = {"hp": "hp", "def": "defense", "atk": "attack", "spd": "speed"}
     FIXED_BY = {"hp": ("HP NOT FOUND",), "def": ("DEF NOT FOUND",), "atk": ("ATK NOT FOUND",), "spd": ("SPD NOT FOUND",),
                 "ability": ("ABILITY TEXT NOT FOUND", "NO ABILITY LAYER"), "stars": ("NO STARS FOUND",),
@@ -105,8 +104,9 @@ class CardEdits:
     # where the value lives: the card image (name: when it differs from the printed title), the card's folder, or this file alone
     KIND = {"name": "psd", "stars": "psd", "types": "psd", "hp": "psd", "def": "psd", "atk": "psd", "spd": "psd", "ability": "psd",
             "parts": "psd", "type": "folder", "subtype": "folder", "series": "folder",
-            "subseries": "database", "note": "database", "art": "database", "ability_art": "database", "aliases": "database", "dup_of": "database", "hidden": "database",
-            "problems_ok": "database", "allow_high_stats": "database", "creatures": "database"}
+            "subseries": "database", "note": "database", "art": "database", "ability_art": "database", "aliases": "database",
+            "dup_of": "database", "hidden": "database", "problems_ok": "database", "allow_high_stats": "database",
+            "creatures": "database"}
     SITE_FIELDS = ("name", "stars", "types", "hp", "def", "atk", "spd", "ability")    # what `_site` may name (edit.js SITE)
 
     @classmethod
