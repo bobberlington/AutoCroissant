@@ -53,11 +53,12 @@ def test_the_panel_for_each_state(tmp_path):
 const v = { card: { name: "Mini <Doomer>", ts: 1, img: "ab" }, n: 1, hash: "h", now: 3 * 60000, scopes: "repo", images: ["https://r/p.webp", "https://r/p.png"], current: "thumbs/ab-720.avif", diff: false };
 const e = state => ({ request: "req-00001", at: 0, hash: "h", base: { ts: 1, img: "ab" }, edit: { hp: 8 }, state });
 const res = (state, extra = {}) => ({ ...e(state), result: { fields: { hp: state }, notes: ["<script>x</script>"], base: {}, files: {}, ...extra } });
-out([p.renderedHtml(res("baked"), v), p.renderedHtml(res("refused", { reason: "stat>10: hp 25", image: "refused" }), v),
-  p.renderedHtml(res("refused", { reason: "overflow" }), { ...v, images: [] }), p.renderedHtml(res("error", { reason: "input: bad edit" }), v),
-  p.renderedHtml(res("error", { reason: "error: timeout", transient: true }), v), p.renderedHtml(e("running"), v), p.renderedHtml(null, { ...v, n: 0 }),
-  p.renderedHtml(res("baked"), { ...v, hash: "other" }), p.renderedHtml(res("baked"), { ...v, images: [] }),
-  p.renderedHtml(res("error", { reason: "error: timeout", transient: true }), { ...v, hash: "other" })]);""")
+const html = (x, w) => { const r = p.renderedParts(x, w); return r.stage + r.caption; };
+out([html(res("baked"), v), html(res("refused", { reason: "stat>10: hp 25", image: "refused" }), v),
+  html(res("refused", { reason: "overflow" }), { ...v, images: [] }), html(res("error", { reason: "input: bad edit" }), v),
+  html(res("error", { reason: "error: timeout", transient: true }), v), html(e("running"), v), html(null, { ...v, n: 0 }),
+  html(res("baked"), { ...v, hash: "other" }), html(res("baked"), { ...v, images: [] }),
+  html(res("error", { reason: "error: timeout", transient: true }), { ...v, hash: "other" })]);""")
     baked, refused_img, refused, bug, transient, running, none, stale, no_file, err_stale = out
     assert 'data-pv-img="current"' in baked and 'src="https://r/p.webp"' in baked and 'href="https://r/p.png"' in baked and 'data-pv="diff"' in baked
     assert "HP baked" in baked and "&lt;script&gt;" in baked and "<script>" not in baked and "Mini &lt;Doomer&gt;" in baked and "3 min ago" in baked

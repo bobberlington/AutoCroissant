@@ -110,7 +110,7 @@ const pins = T.readPins(JSON.stringify([{ k: "subseries", v: "Dream", s: "Mario"
 out({ rows: rows(sec), kpi: text(top).match(/Creature subseries (\\d+)/)?.[1], links: hrefs(sec).map(params).filter(p => p.subseries),
   carrying: E.carrying(cards, "subseries", "dream").map(c => c.name),
   filter: E.renamedFilter(new URLSearchParams("series=Kirby&subseries=Dream"), { key: "subseries", from: "Dream", to: "Dreams" }),
-  buckets: E.readBuckets(JSON.stringify({ subseries: [["Mario", "Dream"], "Dream", "Land"] })).subseries,
+  buckets: E.readBuckets(JSON.stringify({ subseries: ["Dream", "Land"] })).subseries,
   pins, counts: T.countPins(pins, cards) });
 """ % (json.dumps((ASSETS / "edit.js").as_uri()), json.dumps((ASSETS / "tray.js").as_uri())))
     assert out["rows"] == [["Mario", "6"], ["↳ Dream", "1"], ["↳ No subseries", "5"], ["Kirby", "6"], ["↳ Dream", "1"],
