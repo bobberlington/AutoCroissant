@@ -1,6 +1,6 @@
 # The card code's packages: what the bot (requirements.txt) and the card Actions (card-guards with the card and font
 # checks, card-sync, card-preview; one wheel cache keyed on this file) install. The one place to
 # re-pin the fork.
-psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@cards-20261025b
+psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@cards-20261026
 fonttools
 requests
