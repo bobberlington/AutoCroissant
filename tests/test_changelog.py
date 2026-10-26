@@ -54,13 +54,16 @@ def test_field_changes_list_the_data_fields():
 
 def test_field_changes_skip_what_a_reading_could_not_know():
     """No phantom steps: a name before parser 2 read titles (Mol D Truffy), a series the 2026-10-20 split moved under
-    a parent (Bob-ulk), stars a parse could not find (Bubble), an empty ability's two forms, a retired icon's name."""
+    a parent (Bob-ulk; the same subseries in another series is a step), stars a parse could not find (Bubble), an
+    empty ability's two forms, a retired icon's name."""
     early = _card(parser_version=None, display_name=None)
     assert cl.field_changes(early, _card(display_name="Mol D. A")) == {}
     assert list(cl.field_changes(early, _card(display_name="Mol D. A", stars=4))) == ["stars"]
     mario = _card(series="Mario", subseries="Paper Mario")
     assert cl.field_changes(_card(series="Paper Mario"), mario) == {}
     assert list(cl.field_changes(_card(series="Zelda"), mario)) == ["series", "subseries"]
+    assert list(cl.field_changes(_card(series="Kirby", subseries="Paper Mario"), mario)) == ["series"]
+    assert list(cl.field_changes(mario, _card(subseries="Paper Mario"))) == ["series"]       # a subseries, no series
     assert cl.field_changes(_card(stars=0, problems=['NO STARS FOUND (put the star layers in a group named "Stars")']),
                             _card(stars=1)) == {}
     assert cl.field_changes(_card(ability=None), _card(ability="")) == {}
@@ -204,7 +207,7 @@ def test_payload_words_links_and_order():
     assert "[Kirby](https://site/c/kirby/) (Creature, 3★) by Bob" in text
     assert "(Auxiliary creature, 4★)" in text                                    # app.js's word, never "Other"
     assert "[Waddle Dee](https://site/#/cards?q=Waddle%20Dee): HP 5 → 6; ability changed (buff)" in text
-    assert "ZOEY!!!!! is now [Z!!!!!](" in text and "Gone (PSD deleted)" in text
+    assert ") (renamed from ZOEY!!!!!)" in text and "[Z!!!!!](" in text and "Gone (PSD deleted)" in text
     assert "[Meta](https://site/#/cards?q=Meta): subseries → Kirby (by mike, on the website)" in text
     assert cl.payload([], "https://site") is None
 

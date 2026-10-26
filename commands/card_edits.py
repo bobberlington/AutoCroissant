@@ -19,7 +19,7 @@ from commands.card_models import CardInfo, CardStats
 # ========================
 # edit.js FIELDS, in order: how an entry lists its fields
 ORDER = ("name", "type", "subtype", "series", "subseries", "stars", "types", "hp", "def", "atk", "spd", "ability",
-         "parts", "note", "aliases", "dup_of", "hidden", "problems_ok", "allow_high_stats", "creatures")
+         "parts", "note", "art", "ability_art", "aliases", "dup_of", "hidden", "problems_ok", "allow_high_stats", "creatures")
 # what localeCompare(…, {sensitivity: "base"}) puts before digits and letters, in CLDR root order
 PUNCTUATION = "_-,;:!?.'\"()[]{}@*/\\&#%`^+<=>|~$"
 # per-layer text edits (docs/Future/PARTS_EDITOR.md §3): build_site.valid_parts' rules
@@ -27,7 +27,10 @@ ADD_ABILITY = "+ability"                        # the key of an ability added to
 PART_KEY = re_compile(r"^(\d+|\+ability)\Z")   # a layer id, or ADD_ABILITY
 HEX8 = re_compile(r"^[0-9a-f]{8}\Z")
 PARTS_MAX, PART_TEXT_MAX = 64, 4096
+RENAME = "_rename"                              # true: the bake renames the card's files to its name (owner 2026-10-25)
 SITE = "_site"                                  # an entry's website-only fields: their values differ from the card image on purpose
+ART_FIELDS = ("art", "ability_art")             # artwork sources (main, ability): free text, a URL or a name (10-25)
+ART_MAX = 500                                   # characters (edit.js ART_MAX, build_site ART_MAX)
 
 
 @dataclass
@@ -80,18 +83,19 @@ class CardEdits:
     {"cards": {"Card Name": {"field": value, "_site": [field, ...], "_by": ..., "_at": ...}}}; names match like the
     authors file. Same fields as the website (site/build/build_site.py). The PSD values are kept in card.parsed_values.
     `_site` (owner 2026-10-25): card-image fields that are website only, applied like any edit but never baked (site_only).
+    `_rename: true` (beside a name): the bake also renames the card's files (renames()).
     """
     cards: dict = field(default_factory=dict)       # normalized card name -> {field: value}
     meta: dict = field(default_factory=dict)        # normalized card name -> its _-keys (_by, _at, _psd, _site cleaned), never applied
 
     TYPES = {"name": str, "type": str, "subtype": str, "series": str, "subseries": str, "stars": int, "types": list,
-             "hp": int, "def": int, "atk": int, "spd": int, "ability": str, "note": str, "aliases": list,
-             "dup_of": str, "hidden": bool, "problems_ok": bool, "allow_high_stats": bool, "creatures": list,
+             "hp": int, "def": int, "atk": int, "spd": int, "ability": str, "note": str, "art": str, "ability_art": str,
+             "aliases": list, "dup_of": str, "hidden": bool, "problems_ok": bool, "allow_high_stats": bool, "creatures": list,
              "parts": dict}
-    NULLABLE = {"subtype", "series", "subseries", "stars", "hp", "def", "atk", "spd"}
+    NULLABLE = {"subtype", "series", "subseries", "stars", "hp", "def", "atk", "spd", "art", "ability_art"}
     ATTRS = {"name": "display_name", "type": "card_type", "subtype": "subtype", "series": "series", "subseries": "subseries",
-             "stars": "stars", "types": "types", "ability": "ability", "note": "note", "hidden": "hidden",
-             "problems_ok": "problems_ok", "allow_high_stats": "allow_high_stats"}
+             "stars": "stars", "types": "types", "ability": "ability", "note": "note", "art": "art", "ability_art": "ability_art",
+             "hidden": "hidden", "problems_ok": "problems_ok", "allow_high_stats": "allow_high_stats"}
     STATS = {"hp": "hp", "def": "defense", "atk": "attack", "spd": "speed"}
     FIXED_BY = {"hp": ("HP NOT FOUND",), "def": ("DEF NOT FOUND",), "atk": ("ATK NOT FOUND",), "spd": ("SPD NOT FOUND",),
                 "ability": ("ABILITY TEXT NOT FOUND", "NO ABILITY LAYER"), "stars": ("NO STARS FOUND",),
@@ -100,8 +104,9 @@ class CardEdits:
     # where the value lives: the card image (name: when it differs from the printed title), the card's folder, or this file alone
     KIND = {"name": "psd", "stars": "psd", "types": "psd", "hp": "psd", "def": "psd", "atk": "psd", "spd": "psd", "ability": "psd",
             "parts": "psd", "type": "folder", "subtype": "folder", "series": "folder",
-            "subseries": "database", "note": "database", "aliases": "database", "dup_of": "database", "hidden": "database",
-            "problems_ok": "database", "allow_high_stats": "database", "creatures": "database"}
+            "subseries": "database", "note": "database", "art": "database", "ability_art": "database", "aliases": "database",
+            "dup_of": "database", "hidden": "database", "problems_ok": "database", "allow_high_stats": "database",
+            "creatures": "database"}
     SITE_FIELDS = ("name", "stars", "types", "hp", "def", "atk", "spd", "ability")    # what `_site` may name (edit.js SITE)
 
     @classmethod
@@ -121,6 +126,8 @@ class CardEdits:
             return isinstance(value, list) and all(isinstance(x, str) for x in value)
         if name == "parts":
             return valid_parts(value)
+        if name in ART_FIELDS:
+            return isinstance(value, str) and len(value) <= ART_MAX
         return isinstance(value, kind)
 
     @classmethod
@@ -150,6 +157,12 @@ class CardEdits:
                 if site:
                     edits.meta[key][SITE] = site
         return edits
+
+    def renames(self, key: str) -> bool:
+        """Whether the bake renames a card's files to its name (key: CardAuthors.key): `_rename` true beside a name that
+        isn't website only (`_site`); build_site.parse_edits' rule."""
+        return (self.meta.get(key) or {}).get(RENAME) is True and isinstance(self.cards.get(key, {}).get("name"), str) \
+            and "name" not in self.site(key)
 
     def get(self, card: "CardInfo", name: str):
         if name == "creatures":
@@ -439,8 +452,11 @@ __all__ = [
     'CardEdits',
     'CardRatings',
     'ADD_ABILITY',
+    'ART_FIELDS',
+    'ART_MAX',
     'ORDER',
     'PUNCTUATION',
+    'RENAME',
     'SITE',
     'as_parsed',
     'dump_edits',

@@ -575,3 +575,27 @@ def test_every_record_straightened(cards):
     assert _build(cards)[0] == cd.EXIT_OK
     stats = _read(cards)[0]
     assert stats["The Freezer"].ability.startswith("It's cold. ") and stats["Mini Doomer"].note == "It's small"
+
+
+def test_artwork_sources_are_each_entrys_own(cards):
+    """Artwork sources (Card Edits.json art, ability_art) reach stats.json per entry: a duplicate never takes its
+    original's, and an edit of a duplicate's own is an edited event."""
+    put(cards.repo, "Auxiliary/Minions/Mini_Doomer_Alt.png", b"second art")
+    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {
+        "Mini Doomer": {"art": "https://x.com/a/1", "ability_art": "Ann", "_by": "web"},
+        "Mini Doomer Alt": {"dup_of": "Mini Doomer", "ability_art": "Bob", "_by": "web"}}}).encode())
+    commit(cards.repo, "web", 1100)
+    assert _build(cards, "--empty")[0] == cd.EXIT_OK
+    stats = _read(cards)[0]
+    assert (stats["Mini Doomer"].art, stats["Mini Doomer"].ability_art) == ("https://x.com/a/1", "Ann")
+    assert (stats["Mini Doomer Alt"].art, stats["Mini Doomer Alt"].ability_art) == (None, "Bob")
+    assert stats["Mini Doomer"].to_dict()["art"] == "https://x.com/a/1" and "art" not in stats["The Freezer"].to_dict()
+    put(cards.repo, "site/Card Edits.json", json.dumps({"cards": {
+        "Mini Doomer": {"art": "https://x.com/a/1", "ability_art": "Ann", "_by": "web"},
+        "Mini Doomer Alt": {"dup_of": "Mini Doomer", "art": "Cy", "ability_art": "Bob", "_by": "web"}}}).encode())
+    commit(cards.repo, "web", 1200)
+    assert _build(cards)[0] == cd.EXIT_OK
+    stats, _, _, _, events = _read(cards)
+    assert stats["Mini Doomer Alt"].art == "Cy" and stats["Mini Doomer"].art == "https://x.com/a/1"
+    last = [(e["kind"], e["card"], e.get("fields"), e.get("edit_by")) for e in events if e["at"] == max(x["at"] for x in events)]
+    assert last == [("edited", "Mini Doomer Alt", {"art": [None, "Cy"]}, "web")]

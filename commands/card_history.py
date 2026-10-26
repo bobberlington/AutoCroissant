@@ -15,7 +15,7 @@ from typing import Optional
 from global_config import MAILMAP_PATH
 from commands.card_db import record
 from commands.card_edits import as_parsed
-from commands.card_models import CardInfo, CardStats, card_name
+from commands.card_models import RENAMED, CardInfo, CardStats, card_name, rename_trailer
 
 # ========================
 # Configuration
@@ -24,7 +24,8 @@ from commands.card_models import CardInfo, CardStats, card_name
 DATA_FIELDS = ("card_type", "display_name", "ability", "stars", "subtype", "series", "subseries", "types", "stats",
                "creatures", "author", "note", "hidden", "duplicate_of")
 CAUSES = ("psd", "reparse", "moved", "edit", "authors", "legacy")   # moved: the same blob in another folder (its data)
-LOG_FORMAT = "C%x09%H%x09%ct%x09%aN"                  # one header line per commit: sha, committer time, author (.mailmap'd)
+# one header line per commit: sha, committer time, author (.mailmap'd), the bake's Renamed trailers (a renamed and edited file)
+LOG_FORMAT = f"C%x09%H%x09%ct%x09%aN%x09%(trailers:key={RENAMED},valueonly,separator=%x1f)"
 NO_BLOB = "0" * 40
 TYPE_RENAMES = {"offense": "negation"}                # retired Types/ icon -> its name now (same bytes, 9649b4d)
 # a parse problem -> the field that reading could not know (compared as unknown)
@@ -59,8 +60,8 @@ class GitIndex:
     paths_of: dict = field(default_factory=dict)      # blob -> {path: oldest Commit that added it there}
     pngs: dict = field(default_factory=dict)          # PNG path -> Commits that changed it, newest first
     pngs_lower: dict = field(default_factory=dict)    # the same by lower-cased path (a PNG named in another case)
-    renames: dict = field(default_factory=dict)       # old path -> (new path, Commit): the newest exact rename
-    renamed_from: dict = field(default_factory=dict)  # new path -> old path of its newest exact rename into it
+    renames: dict = field(default_factory=dict)       # old path -> (new path, Commit): the newest exact (or told) rename
+    renamed_from: dict = field(default_factory=dict)  # new path -> old path of its newest exact (or told) rename into it
     by_sha: dict = field(default_factory=dict)        # commit sha -> Commit
     at_path: dict = field(default_factory=dict)       # path -> [(Commit, blob)] that put a blob there, newest first
 
@@ -68,13 +69,17 @@ class GitIndex:
     def parse(cls, text: str) -> "GitIndex":
         """The index of `git log <head> --format=LOG_FORMAT --raw --no-abbrev --no-renames -z -- '*.psd' '*.png'`."""
         index = cls()
-        commit, meta, gone, added = None, None, {}, {}
+        commit, meta, gone, added, told = None, None, {}, {}, []
 
         def close():
             for blob, old in gone.items():
                 if blob in added and old not in index.renames:
                     index.renames[old] = (added[blob], commit)
                     index.renamed_from.setdefault(added[blob], old)
+            for old, new in told:                         # a Renamed trailer: the file renamed and edited in one commit
+                if index.deleted.get(old) is commit and new in added.values() and old not in index.renames:
+                    index.renames[old] = (new, commit)
+                    index.renamed_from.setdefault(new, old)
 
         for token in text.split("\0"):
             token = token.lstrip("\n")
@@ -86,8 +91,9 @@ class GitIndex:
             elif token.startswith("C\t"):
                 if commit is not None:
                     close()
-                _, sha, at, author = (token.split("\t", 3) + [""])[:4]
+                _, sha, at, author, trailers = (token.split("\t", 4) + ["", ""])[:5]
                 commit, gone, added = Commit(len(index.commits), sha, float(at), author), {}, {}
+                told = [pair for pair in map(rename_trailer, trailers.split("\x1f")) if pair]
                 index.commits.append(commit)
                 index.by_sha[sha] = commit
         if commit is not None:
@@ -256,15 +262,19 @@ def unknown(card: CardInfo) -> set:
     return found
 
 
-def leaf(data: dict) -> Optional[str]:
-    """The most specific series: the subseries, else the series (the 2026-10-20 split made a series a subseries)."""
-    return data["subseries"] or data["series"]
+def same_series(x: dict, y: dict) -> bool:
+    """Whether two readings' series and subseries are the same, the 2026-10-20 split included (a series became the
+    subseries of a parent: one side has no subseries and its series is the other's subseries). A subseries is one name
+    across series since 2026-10-25, so the same subseries in another series is a change."""
+    if (x["series"], x["subseries"]) == (y["series"], y["subseries"]):
+        return True
+    return any(not a["subseries"] and a["series"] and a["series"] == b["subseries"] for a, b in ((x, y), (y, x)))
 
 
 def knows(a: CardInfo, b: CardInfo, ignore: tuple = ()) -> bool:
     """
     Whether reading a knew all that b did (data_of; not the fields in ignore): every field b could know (unknown), a
-    knew too, with b's value; a series moved under a parent (the same leaf) is the same. So a reading that knew less
+    knew too, with b's value; a series moved under a parent (same_series) is the same. So a reading that knew less
     (a parse that failed on a field) never stands for one that knew more. A value record() can't read counts as not
     known (a version is kept), so a build never fails on it.
     """
@@ -276,7 +286,7 @@ def knows(a: CardInfo, b: CardInfo, ignore: tuple = ()) -> bool:
     skip = unknown(b) | set(ignore)
     if not unknown(a) <= skip:
         return False
-    if leaf(x) == leaf(y):
+    if same_series(x, y):
         skip = skip | set(SERIES)
     return all(x[key] == y[key] for key in DATA_FIELDS if key not in skip)
 
@@ -600,11 +610,11 @@ __all__ = [
     'date_archive',
     'kept_values',
     'knows',
-    'leaf',
     'meta',
     'out_of_range',
     'psd_changed',
     'record_versions',
+    'same_series',
     'start',
     'start_of',
     'unchecked',

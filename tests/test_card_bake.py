@@ -995,3 +995,45 @@ def test_a_stars_edit_moves_a_card_starred_by_its_folder(github):
     assert all(old not in after and after[new] == files[old] for old, new in moved.items())   # the same bytes, moved
     verdict = _verdict("The Freezer")
     assert verdict["moved"] == "Field/3 Stars" and verdict["psd"] == _sha(files[FREEZER])[:8]
+
+
+@fork_text
+def test_a_rename_bake_moves_the_files_and_everything_keyed_by_them(github, local):
+    """The editor's "Also rename the card's files" (owner 10-25) on a scratch repo: Mini Doomer's name edit with
+    `_rename` bakes the title and renames its PSD and PNG in B, with the files keyed by the card (its edits entry, the
+    old name an alias, its authors line, creation date, ratings, the decks' rules); the Renamed trailers let the history
+    follow the renamed and redrawn PSD as one card. The Freezer renamed to that name in the same run is refused."""
+    from commands.card_history import GitIndex
+    from conftest import blob_sha_bytes
+    png, new = DOOMER[:len(DOOMER) - 4] + ".png", "Auxiliary/Minions/Mini_Destroyer"
+    side = {cb.EDITS_PATH: _edits({"Mini Doomer": {"name": "Mini Destroyer", "_rename": True, "_by": "web", "_at": AT},
+                                   "The Freezer": {"name": "Mini Destroyer", "_rename": True, "_by": "web", "_at": AT}}),
+            cb.AUTHORS_PATH: b"[people]\nweb = Web\n\n[cards]\nMini Doomer = Chestnut\nThe Freezer = Web\n",
+            cb.CREATED_PATH: _edits({"Mini Doomer": {"date": "2020-07-26", "from": "discord"}}),
+            cb.RATINGS_PATH: _edits({"Mini Doomer": [{"date": "2023-04-28", "scale": "power", "value": 5, "by": "group",
+                                                      "source": "TTS session"}]}),
+            cb.RULES_PATH: json.dumps({"decks": {"d1": {"rule": {"include": [png]}, "card_list": [png]}}}, indent=2).encode()}
+    _put(local.origin, side)
+    _commit_in(local.origin, "Website edit: Mini Doomer")
+    _git(local.clone, "pull", "-q", "--ff-only")
+    for data in side.values():
+        github.blobs[blob_sha_bytes(data)] = data                                # REST for what the sparse clone lacks
+    text, (b,) = cb.run(local=str(local.clone))
+    message = _git(local.clone, "log", "-1", "--format=%B", b)
+    assert message.startswith("Card edits: 1 baked\n\n- Mini Doomer: name 'Mini Doomer' -> 'Mini Destroyer', renamed: Mini "
+                              "Doomer -> Mini Destroyer"), message
+    assert f"Renamed: {DOOMER} -> {new}.psd\nRenamed: {png} -> {new}.png" in message
+    tree = _files_in(local.clone, b)
+    assert DOOMER not in tree and png not in tree and {f"{new}.psd", f"{new}.png"} <= set(tree)
+    show = lambda path: _git(local.clone, "show", f"{b}:{path}")
+    entry = json.loads(show(cb.EDITS_PATH))["cards"]
+    assert "another card of this run takes the name" in _verdict("The Freezer")["reason"]    # one name, one card
+    assert entry.pop("The Freezer")["_rename"] and list(entry) == ["Mini Destroyer"] and entry["Mini Destroyer"]["aliases"] == ["Mini Doomer"]   # name baked, _rename gone
+    assert entry["Mini Destroyer"]["_by"] == "AutoCroissant" and set(entry["Mini Destroyer"]) == {"aliases", "_by", "_at"}
+    assert "Mini Destroyer = Chestnut\nThe Freezer = Web" in show(cb.AUTHORS_PATH)
+    assert list(json.loads(show(cb.CREATED_PATH))["cards"]) == list(json.loads(show(cb.RATINGS_PATH))["cards"]) == ["Mini Destroyer"]
+    assert json.loads(show(cb.RULES_PATH))["decks"]["d1"]["card_list"] == [f"{new}.png"]
+    verdict = _verdict("Mini Destroyer")
+    assert verdict["renamed"] == "Mini Destroyer" and verdict["psd"] == tree[f"{new}.psd"][:8] and _verdict("Mini Doomer") is None
+    index = GitIndex.from_git(str(local.clone), b)
+    assert index.renamed_from[f"{new}.psd"] == DOOMER and index.origin(f"{new}.png") == png
