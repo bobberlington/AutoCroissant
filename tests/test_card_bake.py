@@ -290,6 +290,7 @@ def test_shared_bars_and_moved_titles_are_remembered():
     after = [{"hp": 3, "def": 4}, {"hp": 3, "def": 8}, {"hp": 3, "def": 2}]
     shared = cb.shared_creatures(before, after, {"hp": 3})
     assert shared == {2: {"hp": 3}, 3: {"hp": 3}} and cb.shared_creatures(before, before, {"def": 5}) == {}
+    assert cb.shared_creatures(before, after, {"hp": 3}, [{}, {"hp": 9}]) == {3: {"hp": 3}}    # the editor's 9 stays
     entry = {"hp": 3, "creatures": [dict(c) for c in before], "_by": "web"}
     out = cb.rewrite_entry(entry, ["hp"], creature=[{"hp": 3}, *shared.values()])
     assert [c["hp"] for c in out["creatures"]] == [3, 3, 3] and [c["def"] for c in out["creatures"]] == [4, 8, 2]

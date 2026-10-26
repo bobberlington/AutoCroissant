@@ -497,15 +497,19 @@ LANE2_CHAINS = [
 
 def test_lane2_bars_edit_again(clone, parser, tmp_path):
     """A Lane 2 bar edited again from its own output (review 2026-10-26: Pix, Twin Emperors and Slugcat refused every next
-    value; Sonic's half rows went unseen and its covered row changed instead): each step reads back, Sonic's top row
-    shows the value, Dirty Bed's cell 1 shows one dark picture."""
+    value; Sonic's half rows went unseen and its covered row changed instead): each step reads back, the bar's art stays
+    where it is, Sonic's top row shows the value, Dirty Bed's cell 1 shows one dark picture."""
+    art = lambda psd: sorted(tuple(layer.bbox) for layer in psd.descendants() if layer.kind == "pixel"
+                             and layer.bbox[2] - layer.bbox[0] > psd.width / 3)
     for rel, stat, values in LANE2_CHAINS:
         path = _card(clone, rel)[0]
+        drawn = art(PSDImage.open(path))
         for k, value in enumerate(values):
             out = str(tmp_path / f"{Path(rel).stem}{k}.psd")
             _, psd, parsed = _edit_saved(parser, path, rel, stat, value, out)
             assert parsed["card"][stat] == value, (rel, value)
             path = out
+        assert art(psd) == drawn, rel           # the bar's art stays (at 10 Pix's and Twin Emperors' moved off the bar)
         if stat == "spd":
             split = pe.split_rows(PSDImage.open(str(tmp_path / "Sonic1.psd")), "spd")
             assert split.top.visible == [5] and split.bottom.visible == [0] and not split.marker.is_visible()
@@ -2049,13 +2053,13 @@ SWAPPED_FONTS = {"Items/Equip/3 Stars/Shiny_Knife.psd": "OMORI_GAME2",    # its 
 @text_edit
 def test_picture_titles_and_titles_off_the_card(clone, parser, chart):
     """A title that is part of the picture (no title layer, no text in the title region) takes a new name on the website
-    only (classify's site; owner 2026-10-26), a title layer with another name still refuses; a new title running off
-    the card's side moves back on, its outline too (R4)."""
+    only (classify's site; owner 2026-10-26), a title layer with another name bakes (rule P finds it); a new title
+    running off the card's side moves back on, its outline too (R4), and back where it was through its title box too."""
     for rel, site in (("Items/Equip/2 Stars/Holy_Card.psd", True), ("Field/2 Stars/E._Gadd's_Garage.psd", True),
                       ("Creatures/Other/5 Stars/Alex_YIIK.psd", False)):
         psd = PSDImage.open(_card(clone, rel)[0])
         out = pe.classify(pe.parse_card(parser, _card(clone, rel)[0], rel, psd), {"name": "X II"}, psd, parser)
-        assert (out.site == {"name": pe.PICTURE_TITLE}) == site and bool(out.refusals) != site and not out.jobs
+        assert (out.site == {"name": pe.PICTURE_TITLE}) == site and bool(out.jobs) != site and not out.refusals
     psd = PSDImage.open(_card(clone, "Creatures/Other/3 Stars/Stay.psd")[0])
     layer = pe.name_layer(psd, "Stay")
     edit = pe.set_text_layer(psd, "name", "Stay II", str(clone / pe.FONTS_DIR), chart, "Stay", parser=parser)
@@ -2065,6 +2069,11 @@ def test_picture_titles_and_titles_off_the_card(clone, parser, chart):
     tx = layer._data.transform[4]                # renamed back: where the card maker put it, not where the move left it
     edit = pe.set_text_layer(psd, "name", "Stay", str(clone / pe.FONTS_DIR), chart, "Stay", parser=parser, anchor=moved)
     assert layer._data.transform[4] == tx - moved and "name: back where the card maker put it (-%d px)" % moved in edit.notes
+    pe.set_text_layer(psd, "name", "Stay II", str(clone / pe.FONTS_DIR), chart, "Stay", parser=parser)   # its title box too
+    record = pe.card_parts(psd, "Creatures/Other/3 Stars/Stay.psd", "Stay", parser)
+    pe.set_parts(psd, {str(record["title"][0]["id"]): {"field": "name", "text": "Stay"}}, record, str(clone / pe.FONTS_DIR),
+                 chart, "Stay", parser=parser, anchor=moved)
+    assert layer._data.transform[4] == tx - moved
 
 
 @text_edit

@@ -3590,8 +3590,8 @@ def _edge_elements(psd: PSDImage, stat: str, box: tuple, edges: list, old: int, 
     The layers drawing the bar's value edge: a mask or pixels that switch on or off at the old value's cell edge and
     stay so across the rest of the bar (Isaac's lit hearts' mask, Chef Saltbaker's dark exposures, Pizza's dark
     overlays), each inside the stat's own row. loose: _step's (R4); tall: one picked from several rows of the stat
-    (bar_rows) may span them all (Pix's shared HP mask over its three creatures' rows). The bar layer's own pixels are
-    the bar, never its edge (at 0 or 10 they switch at its end: Uumuu's "hp").
+    (bar_rows) may span them all (Pix's shared HP mask over its three creatures' rows). The bar layer's own pixels, and
+    any over the whole bar, are the bar, never its edge (at 0 or 10 they switch at its end: Uumuu's "hp").
 
     Returns:
         [(layer, use_mask)]
@@ -3619,6 +3619,10 @@ def _edge_elements(psd: PSDImage, stat: str, box: tuple, edges: list, old: int, 
             if any(min(extent[3], b[3]) - max(extent[1], b[1]) > (b[3] - b[1]) / 4 for b in other_bands):
                 continue
             profile = _profile(layer, use_mask, y, lo, hi)
+            if profile is not None and not use_mask and old in (0, STAT_MAX) \
+                    and profile[int(edges[0] + tol) - lo:int(edges[10] - tol) - lo].all():
+                continue                        # pixels over the whole bar at 0 or 10: its art, not its edge (Pix's
+                #   "White Lines copy", Twin Emperors' "Shared Hp": moved, they left the bar)
             if profile is not None and _step(profile, lo, edges[old], tol, (int(edges[0]), int(edges[10])), loose):
                 out.append((layer, use_mask))
                 break
@@ -8058,7 +8062,7 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
     that picture's PNG png_path and its content gates; parsed is that picture's parse), the saved PSD keeping its own
     eye flags. view None: the card as saved. template: plan_types'. rel: where the card will be (a stars edit moves
     a card into its "N Stars" folder: its re-parse reads the stars there). ability_from: set_parts' (a "+ability" job).
-    title_anchor: set_text_layer's anchor for a name job.
+    title_anchor: set_text_layer's anchor for a name job or the one title box of a parts job.
     """
     hold = ExitStack()
     try:
@@ -8164,7 +8168,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
         elif name == "parts":                   # one box per layer (PARTS_EDITOR.md §4.4-4.6)
             record = card_parts(old, rel, _card_name(parsed), parser)
             edits += set_parts(new, value, record, fonts_dir, chart, _card_name(parsed), _own_text(parsed), parser, old,
-                               ability_from, rel)
+                               ability_from, rel, title_anchor)
         else:
             raise Refused("unsupported-card", f"{name}: not yet")
     others = [edit for edit in edits if edit.field not in ICON_FIELDS and (edit.layers or edit.removed)]
@@ -8496,7 +8500,7 @@ def _combine(which: str, edits: list, subs: list, psd: PSDImage, olds: dict, new
 
 def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Optional[dict] = None, card: str = "",
               own_text: bool = True, parser: Optional[PSDParser] = None, original: Optional[PSDImage] = None,
-              ability_from: Optional[tuple] = None, rel: str = "") -> list:
+              ability_from: Optional[tuple] = None, rel: str = "", anchor: int = 0) -> list:
     """
     Bake a card's part jobs (plan_parts) on the open card (§4.4-4.6): the deletions first (remove_layer: the layer, its
     visible FX layers and copies, its story), then each ability part, title part and rule-page block set as one text
@@ -8511,6 +8515,7 @@ def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Op
         original: The card before the bake's edits (set_text_layer's; record ids and story indices of what is deleted)
         ability_from: (the card kind's template, its name): template_for's, for a "+ability" job (added last)
         rel: The card's repo path (where a "+ability" goes and its font: ability_place)
+        anchor: set_text_layer's, for the card's one title box (R4: an earlier bake's move, undone first)
 
     Returns:
         One Edit per field ("ability" then "name"), then the added ability's; raises Refused as set_text_layer does
@@ -8562,7 +8567,8 @@ def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Op
             raw = _part_raw(layer_was, part["text"], text)
             copies = followers(layer.layer_id, "copy")
             edit = set_text_layer(psd, which, raw, fonts_dir, chart if kind == "ability" else None, card, own_text, parser,
-                                  original, layer=layer, beside=copies)   # a rule page's words keep their own colours
+                                  original, layer=layer, beside=copies,    # a rule page's words keep their own colours
+                                  anchor=anchor if kind == "title" and len(joined[kind]) == 1 else 0)
             edit.story = first_story(layer)
             typed = sum(raw.strip(PAD).count(c) for c in "\r\x03") - sum(layer_was.strip(PAD).count(c) for c in "\r\x03")
             edit.notes = [note for note in edit.notes if not _typed_lines(note, typed)]    # an Enter in the box is no overflow

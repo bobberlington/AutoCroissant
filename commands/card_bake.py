@@ -125,6 +125,7 @@ class Card:
     creatures: bool = False                     # the entry has a creatures list: a baked stat is creature 1's (its rows)
     shared: dict = field(default_factory=dict)  # creature n (2...) -> {stat: value} a creature 1 bake changed too (a
     #   shared bar: Pix's HP, Twin Emperors' shared health), for its creatures list
+    listed: list = field(default_factory=list)  # the entry's creatures list: a value set apart from the print stays
     title_anchor: int = 0                       # px an earlier bake of this PSD moved its title on (R4, its verdict)
     site: dict = field(default_factory=dict)    # field -> why: website only now, the card image can't print it (classify)
     by: object = None                           # the entry's _by: who asked for its fields (Edit-by trailers)
@@ -635,6 +636,7 @@ def select(edits: CardEdits, snapshot: Snapshot, only: Optional[str] = None) -> 
             continue                            # its PSD's entry holds the parts: this picture's name and ability follow
         name = card_name(rel) if rel else " ".join(word[:1].upper() + word[1:] for word in key.split())
         cards.append(Card(name, key, wanted, rel, snapshot.sha(rel) if rel else "", creatures=bool(fields.get("creatures")),
+                          listed=list(fields["creatures"]) if isinstance(fields.get("creatures"), list) else [],
                           by=edits.meta.get(key, {}).get("_by")))
         cards[len(cards) - 1].rename = edits.renames(key)
     return cards
@@ -1382,7 +1384,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
             if card.title_anchor and not titled:    # the title stays moved: its verdict keeps saying so
                 card.baked.fx_notes.append(f"overflow: name: moved {card.title_anchor:+d} px to stay on the card")
             card.shared = shared_creatures(parsed["card"].get("creatures"), card.baked.reparse["card"].get("creatures"),
-                                           card.jobs)
+                                           card.jobs, card.listed)
             with open(card.baked.psd_path, "rb") as fh:
                 psd_bytes = fh.read()
             card.new_psd_sha = blob_sha(psd_bytes)
@@ -1470,16 +1472,18 @@ def share_of(card: Card) -> Optional[Share]:
     return _rename_share(card, Share(card, card.files, card.expect, drop))
 
 
-def shared_creatures(before: Optional[list], after: Optional[list], jobs: dict) -> dict:
+def shared_creatures(before: Optional[list], after: Optional[list], jobs: dict, listed=()) -> dict:
     """Creature n (1-based, 2...) -> {stat: value} for the other creatures a stat bake changed as well (a bar they share
-    with creature 1: psd_edit._creatures_after's rule, read off the re-parse)."""
+    with creature 1: psd_edit._creatures_after's rule, read off the re-parse), but where the entry's creatures list
+    (listed) sets the stat apart from what the card printed: the editor's, website only, it stays."""
     if not before or not after or len(before) != len(after):
         return {}
     out: dict = {}
     for stat in jobs:
         if stat in psd_edit.STAT_FIELDS:
             for n in range(1, len(after)):
-                if after[n].get(stat) != before[n].get(stat):
+                mine = listed[n] if n < len(listed) and isinstance(listed[n], dict) else {}
+                if after[n].get(stat) != before[n].get(stat) and mine.get(stat) in (None, before[n].get(stat)):
                     out.setdefault(n + 1, {})[stat] = after[n].get(stat)
     return out
 
