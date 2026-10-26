@@ -1509,3 +1509,14 @@ def test_box_text_fonts_fetched_alone(tmp_path, monkeypatch):
     cg._init_worker(str(tmp_path / "clone"), "o/r", None, vocab, tree, str(tmp_path / "fonts"))
     assert cg._worker["source"].checked == tree and cg._worker["source"].fonts == str(tmp_path / "fonts")
 
+
+def test_pool_size(monkeypatch):
+    """K-2: every core on a runner; locally half the cores, at most POOL_MAX; never more than the cards."""
+    monkeypatch.setattr(cg, "cpu_count", lambda: 12)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    assert (cg.pool_size(12), cg.pool_size(3)) == (4, 3)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setattr(cg, "cpu_count", lambda: 4)
+    assert (cg.pool_size(12), cg.pool_size(3)) == (4, 3)
+    monkeypatch.setattr(cg, "cpu_count", lambda: 2)
+    assert cg.pool_size(12) == 2
