@@ -489,13 +489,20 @@ def test_star_pieces_split_and_read_masks():
 @icons
 def test_type_icons_in_stars_are_no_stars(clone, parser, tmp_path):
     """Toy Freddy's stars group holds its Machine icon beside 3 stars: a move redraws them (a fourth copied); Pike Beam's
-    Offensive_Minion icon in Stars reads 2 stars, not 3."""
+    Offensive_Minion icon in Stars reads 2 stars, not 3, and taking it off moves Machine into its spot (it blocked
+    that as a star), the stars unchanged; Dark Matter's two icons in Stars likewise."""
     freddy = "Creatures/Fnaf/3 Stars/Toy_Freddy.psd"
     path = _clone_card(clone, freddy, tmp_path)[0]
     plan = pe.plan_stars(PSDImage.open(path), pe.parse_card(parser, path, freddy), 4, parser, moving=True)
     assert len(plan.copies) == 1 and not plan.hide
     pike = "Auxiliary/Minions/Pike_Beam.psd"
-    assert pe.parse_card(parser, _clone_card(clone, pike, tmp_path)[0], pike)["card"]["stars"] == 2
+    paths = _clone_card(clone, pike, tmp_path)
+    assert pe.parse_card(parser, paths[0], pike)["card"]["stars"] == 2
+    _, baked = _bake(parser, paths, {"types": ["machine"]}, tmp_path, pike)
+    assert baked.reparse["card"]["types"] == ["machine"] and baked.reparse["card"]["stars"] == 2
+    dark = "Creatures/Kirby/3 Stars/Dark_matter.psd"           # its PNG is Dark_Matter.png: the PSD alone
+    plan = _plan(parser, str(clone / dark), dark, "types", ["darkmatter"])
+    assert [layer.name for layer, _, _ in plan.moves] == ["darkmatter"] and [layer.name for layer in plan.hide] == ["electric"]
 
 
 @icons

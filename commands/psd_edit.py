@@ -6510,7 +6510,8 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
         plan.moves.append((unit.layers[0], round(sx - cx), round(sy - cy)))
         holder[i] = unit
     plan.hide = [layer for unit in removed for layer in unit.layers]
-    stars = badge_layers(psd, parser.all_types)[0]
+    row_ids = {id(layer) for _, layer in images}       # the row's own icons are no stars (Pike Beam)
+    stars = [layer for layer in badge_layers(psd, parser.all_types)[0] if id(layer) not in row_ids]
     texts = _texts(psd)
     library = [layer for layer in psd.descendants() if not layer.is_group() and not layer.visible
                and layer.kind in ("pixel", "smartobject") and layer.name.lower() in parser.all_types and layer.has_pixels()
