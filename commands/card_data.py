@@ -1,6 +1,6 @@
 """
 The card data build, without Discord, pandas or config: the card repo's tree, the PSDs whose blob changed re-parsed
-(one bad PSD fails its card, never the run), then the authors file, Card Edits.json, the duplicate PNGs and the archive
+(one bad PSD fails its card, never the run), then the authors file, Card Edits.json, the dup_of PNGs and the archive
 of deleted cards.
 
 The build (`python -m commands.card_data`, run by the card repo's Card sync Action): a local clone's tree and history,
@@ -17,7 +17,6 @@ from datetime import datetime, timezone
 from json import loads as json_loads
 from os import environ, fdopen, listdir, remove, walk
 from os.path import abspath, basename, dirname, isdir, isfile, join as path_join, splitext
-from re import IGNORECASE, match as re_match
 from subprocess import CalledProcessError, run
 from sys import version_info
 from tempfile import mkstemp
@@ -275,8 +274,8 @@ class CardBuild:
 
     def _sync_duplicates(self, response) -> int:
         """
-        Duplicates: <Name>N.png next to <Name>.psd with no PSD of its own (A_Snack2.png "Breakfast"), and a card PNG
-        with no PSD whose Card Edits.json entry has dup_of (Stubborn_Queen.png, build_site's rule). Each is recorded as a
+        Duplicates: a card PNG with no PSD whose Card Edits.json entry has dup_of (Stubborn_Queen.png, build_site's
+        rule; numbered PNGs are variant pictures since the 5 PSDs were tagged). Each is recorded as a
         copy of the original's card with duplicate_of set. One that is no longer found stays out of seen_cards, so the
         guarded prune archives it like any card; with Card Edits.json unread, one whose PNG and original are still
         there stays as it is (its dup_of can't be read). Returns how many entries changed.
@@ -292,12 +291,12 @@ class CardBuild:
                 if name not in found and original is not None and not getattr(original, "duplicate_of", None) \
                         and duplicate_png(card).lower() in lower:
                     self.db.seen_cards.append(name)     # kept, not archived for a file that failed to read
-        for name, (original, number, png) in found.items():
+        for name, original in found.items():
             src = self.db.stats[original]
             card = deepcopy(src)
             card.name, card.duplicate_of, card.parsed_values, card.problems, card.alt_names = name, original, None, [], None
             own = (self.edits.cards.get(CardAuthors.key(name), {}).get("aliases") or []) if self.edits is not None else []
-            card.display_name = self._duplicate_name(src, own, own_name=number is None)
+            card.display_name = self._duplicate_name(own)
             self.db.stats[name] = card
             self.db.seen_cards.append(name)             # not pruned as a missing PSD
         return sum(1 for n in found if before.get(n) != repr(self.db.stats[n]))
@@ -316,17 +315,12 @@ class CardBuild:
                 card.version = deepcopy(info)
 
     @staticmethod
-    def _duplicate_name(original: CardInfo, own: Optional[list] = None, own_name: bool = False) -> Optional[str]:
-        """
-        The longest of own (the duplicate's Card Edits.json aliases), else the original's name; with own_name (a dup_of
-        card, named by its own file), else None: its name is its title.
-        """
+    def _duplicate_name(own: Optional[list] = None) -> Optional[str]:
+        """The longest of own (the duplicate's Card Edits.json aliases), else None: it is titled by its own name."""
         found = [a for a in own or [] if a.strip()]
         if found:
             return " ".join(w[:1].upper() + w[1:] for w in max(found, key=len).replace("_", " ").split())
-        if own_name:
-            return None
-        return original.display_name or original.name
+        return None
 
     def _apply_edits(self) -> int:
         """Apply the website fixes to every card, then straight apostrophes on every record, re-parsed or not (owner,
@@ -740,10 +734,9 @@ class CardBuild:
 # ========================
 def duplicate_pngs(paths: list, stats: dict, edits: Optional[CardEdits]) -> dict:
     """
-    The tree's alt-art duplicates: {name: (original, number or None, PNG file name lower-cased)}. A numbered PNG beside
-    its original's PSD with no PSD of its own (A_Snack2.png), and a card PNG with no PSD whose Card Edits.json entry
-    names its original in dup_of (number None; build_site's rule). The original must be a listed card, no duplicate. A
-    tagged PSD's picture (in its card's `variants`) is a card of its own, no duplicate.
+    The tree's duplicates: {name: original}: a card PNG with no PSD whose Card Edits.json
+    entry names its original in dup_of (Stubborn_Queen.png; build_site's rule). The original must be a listed card, no
+    duplicate. A numbered PNG beside a PSD is one of its variant pictures (" #N" layers), no duplicate.
     """
     lower = {p.lower() for p in paths}
     by_key = {CardAuthors.key(n): n for n, c in stats.items() if not getattr(c, "duplicate_of", None)}
@@ -752,20 +745,14 @@ def duplicate_pngs(paths: list, stats: dict, edits: Optional[CardEdits]) -> dict
         if (not path.lower().endswith(".png") or any(folder in EXCLUDE_FOLDERS for folder in path.split("/"))
                 or RULEBOOK_DIR in path or (splitext(path)[0] + ".psd").lower() in lower):
             continue
-        m = re_match(r"(.+?)(\d+)\.png$", path, IGNORECASE)
-        if m and f"{m.group(1)}.psd".lower() in lower:
-            original = basename(m.group(1)).replace("_", " ")
-            if original in stats and card_name(path) in (getattr(stats[original], "variants", None) or []):
-                continue                                # a tagged PSD's picture: its own card (variant_of)
-            if original in stats and not stats[original].duplicate_of:
-                found[card_name(path)] = (original, int(m.group(2)), basename(path).lower())
-            continue
         if "/" not in path or path.split("/")[0] in (TYPES_DIR, "site", "TTS"):
             continue                                    # no card folder
+        if getattr(stats.get(card_name(path)), "variant_of", None):
+            continue                                    # a tagged PSD's picture: its own card
         target = ((edits.cards.get(CardAuthors.key(card_name(path))) or {}).get("dup_of") if edits is not None else None)
         original = by_key.get(CardAuthors.key(target)) if target else None
         if original and original != card_name(path):
-            found[card_name(path)] = (original, None, basename(path).lower())
+            found[card_name(path)] = original
     return found
 
 

@@ -510,7 +510,7 @@ database-only ones (unless Discord's retired `/update_metadata` had set them). T
 website computes it from the values; `CardEdits.meta`); `parse()`
 keeps every `_`-key out of `cards`. `aliases` is read by `CardEdits.names()` for name lookups, never by `apply()`;
 `dup_of` makes a card PNG with no PSD (Stubborn_Queen.png, Gust_of_Trees.png) a duplicate of the named card in the bot
-too (`card_data.duplicate_pngs`, 2026-10-23, build_site's rule); on a card with its own PSD the bot ignores it. The website's edit sets the same field by hand;
+too (`card_data.duplicate_pngs`, 2026-10-23, build_site's rule; since the 5 multi-picture PSDs were tagged, 10-25, a numbered PNG is a variant picture, never a duplicate); on a card with its own PSD the bot ignores it. The website's edit sets the same field by hand;
 a PSD re-parse keeps it with author and series (psd_parser.py:355-361) and a Card Edits.json value wins again at the
 next `/update_stats`.
 
