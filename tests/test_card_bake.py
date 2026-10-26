@@ -142,6 +142,9 @@ def test_rewrite_entry_rules():
     assert cb.rewrite_edits(text, "mini doomer", ["spd"]) is None and cb.rewrite_edits(text, "nobody", ["hp"]) is None
     assert cb.rewrite_edits(text, "other", ["hp"]) == cb.dump_edits({"about": ABOUT, "cards": {"Mini_Doomer": {"hp": 8, "note": "n"}}})
     assert cb.psd_fields({"hp": 8, "spd": None, "name": "X", "series": "m", "creatures": [{"hp": 1}]}) == {"hp": 8, "name": "X"}
+    parts = {"1": {"field": "name"}, "2": {"field": "ability"}}
+    assert cb.psd_fields({"name": "X", "hp": 1, "parts": parts}, ["name"]) == {"hp": 1, "parts": {"2": {"field": "ability"}}}   # _site
+    assert cb.psd_fields({"name": "X", "parts": {"1": parts["1"]}}, ["name"]) == {}
 
 
 # ========================
@@ -191,6 +194,25 @@ def test_run_drops_redundant_and_writes_verdicts(github, tmp_path):
     github.commit(github.files_at(github.head), "web", "Website edit: something else")
     text, commits = cb.run()
     assert commits == [] and "## Refused (4)" in text and "committed `" not in text
+
+
+def test_website_only_fields_never_bake(github, tmp_path):
+    """`_site` (owner 10-25): its fields stay in the file, unbaked, with no verdict; the card's other fields bake as usual;
+    unticked, the field is a normal PSD edit again."""
+    files = github.files_at(github.head)
+    entry = {"name": "Tiny Doomer", "hp": 9, "def": 2, "note": "checked", "_site": ["name", "hp"], "_by": "web", "_at": AT}
+    files[cb.EDITS_PATH] = _edits({"Mini Doomer": entry})
+    github.commit(files, "web", "Website edit: Mini Doomer")
+    assert [c.fields for c in cb.select(cb.CardEdits.parse(files[cb.EDITS_PATH].decode()), cb.snapshot_at(cb.CARD_REPO, github.head))] == [{"def": 2}]
+    text, commits = cb.run()
+    assert len(commits) == 1 and "Card edits: 1 redundant" in github.commits[commits[0]]["message"]      # def 2 is printed
+    assert _edits_at(github)["cards"]["Mini Doomer"] == {k: v for k, v in entry.items() if k != "def"}
+    assert _verdict("Mini Doomer") is None and _records(tmp_path)[1]["landed"] == []
+    assert cb.pending() == [] and cb.run()[1] == []                                     # nothing left to do
+    files = github.files_at(github.head)
+    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {**entry, "_site": ["name"]}})        # hp unticked
+    github.commit(files, "web", "Website edit: Mini Doomer")
+    assert cb.pending() == ["Mini Doomer"] and [c.fields for c in cb._pending(cb.CARD_REPO, "", "")[1]] == [{"hp": 9, "def": 2}]
 
 
 def test_dry_run_commits_nothing(github, tmp_path):

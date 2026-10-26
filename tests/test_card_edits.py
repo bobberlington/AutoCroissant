@@ -150,6 +150,11 @@ def test_psd_meta_rides_beside_by_and_at():
     card = _card()
     assert e.apply("Foo Bar", card) is True
     assert card.stats.hp == 5 and card.parsed_values == {"hp": None, "problems": ["MISSPELT TYPE: tornado"]}
+    # _site: website-only image fields, applied like any edit; one naming no value (or no image field) is dropped
+    e = _edits({"Mini Doomer": {"name": "Tiny Doomer", "hp": 9, "def": None, "note": "n", "_site": ["hp", "name", "def", "atk", "note"]},
+                "Baz": {"hp": 1, "_site": ["spd"]}, "Qux": {"hp": 1, "_site": "hp"}})
+    assert e.site("mini doomer") == ["name", "hp"] and e.meta["mini doomer"] == {"_site": ["name", "hp"]}
+    assert e.site("baz") == e.site("qux") == [] and "_site" not in e.meta["baz"]
 
 
 
