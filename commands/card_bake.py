@@ -18,9 +18,9 @@ baked and redundant fields removed (a Python port of edit.js editsFile), through
 objects in the history clone pushed over SSH when the token can't write). A card whose PSD, PNG or edit changed meanwhile
 is left out of the commit as a try-again refusal; the others still land. The verdicts live on the data branch
 (db/verdicts.json, docs/Finished/session-2026-10-26/CARD_SYNC_VERDICTS.md): the run writes them, with its bake events, to the work dir's
-verdicts.json and bake-events.json (records()), split into what needs no main commit (a refusal: never one) and what
-holds only once the commit lands; Card sync merges them into the data (card_data --verdicts, --events). A verdict is
-read from --verdicts.
+verdicts.json and bake-events.json (records()), split into what needs no main commit (a refusal: none of its own; its
+website-only fields still move to `_site` in the run's commit) and what holds only once the commit lands; Card sync
+merges them into the data (card_data --verdicts, --events). A verdict is read from --verdicts.
 --local (card-sync.yml's stage 1, docs/Campaigns/DATA_BUILD_ACTION.md 6.3): the tree and blobs come from a local clone
 (blobless is enough; a blob it lacks by REST) and the run's commit B is made there on head, pushed by no one here; a
 checkout at head moves to B, and the report says where HEAD is. A --head the clone lacks is a failed run (a report,
@@ -1170,8 +1170,8 @@ def _message(cards: list) -> str:
     """
     baked = [c for c in cards if (c.jobs or c.renamed) and not c.refusal]
     redundant = [c for c in cards if not c.jobs and not c.renamed and not c.refusal and (c.dropped or c.part_drop or not c.site)]
-    site = [c for c in cards if c.site and not c.refusal]
-    refused = [c for c in cards if c.refusal]
+    site = [c for c in cards if c.site]          # a refused card's too: its website-only fields alone (share_of)
+    refused = [c for c in cards if c.refusal and not c.site]
     counts = [f"{len(group)} {word}" for group, word in ((baked, "baked"), (redundant, "redundant"),
                                                          (site, "website only"), (refused, "refused")) if group]
     lines = [f"- {c.name}: {_describe(c)}{_misses(c)}{_fx_notes(c)}" for c in baked]
@@ -1444,11 +1444,21 @@ def _kept(card: Card) -> bool:
 def share_of(card: Card) -> Optional[Share]:
     """
     A card's part of the run's commit: a baked card's PSD, PNG and dropped fields, a redundant card's dropped fields
-    (the verdicts live on the data branch). None for any refusal (a refusal makes
-    no main commit: its verdict is records()') or a card with nothing to write. At H' a baked or redundant card whose
-    edit changed stays out (edit-changed: never remove a value you did not render).
+    (the verdicts live on the data branch). A refusal makes no main commit of its own (its verdict is records()'): a
+    refused card's share only moves its website-only fields to `_site` (no PSD, PNG or dropped field), when its
+    refusal is a lasting one; else None, as for a card with nothing to write. At H' a card whose edit changed stays
+    out (edit-changed: never remove a value you did not render).
     """
-    if card.refusal is not None or (not card.dropped and not card.part_drop and not card.site):
+    if card.refusal is not None:
+        if not card.site or not _lasting(card):
+            return None
+
+        def site_only(text: str) -> Optional[str]:
+            if _wanted_at(text, card.name) != card.fields:
+                raise Refused("edit-changed", f"the edit changed on {CARD_BRANCH} meanwhile: not touched")
+            return rewrite_edits(text, card.name, site=card.site)
+        return Share(card, {}, {}, site_only)
+    if not card.dropped and not card.part_drop and not card.site:
         return None
 
     def drop(text: str) -> Optional[str]:
@@ -1491,9 +1501,15 @@ def _creature_one(card: Card) -> list:
     return [one] + [card.shared.get(n, {}) for n in range(2, count + 1)]
 
 
+def _lasting(card: Card) -> bool:
+    """A refusal that is a verdict (records() writes it), not a try-again one or a runner error."""
+    return card.refusal is not None and card.refusal.code not in TRANSIENT and not card.transient
+
+
 def refusal_verdict(card: Card) -> dict:
-    """A refused card's verdict on the PSD it was tried on."""
-    return {"state": "refused", "for": card.fields, "psd": card.psd_sha[:8], "rules": RULES,
+    """A refused card's verdict on the PSD it was tried on, for its fields but the website-only ones (share_of moves
+    them to `_site`: select() then wants the rest, so final() holds)."""
+    return {"state": "refused", "for": psd_fields(card.fields, card.site), "psd": card.psd_sha[:8], "rules": RULES,
             **({"fonts": card.fonts} if card.fonts else {}),
             **({"pngs": card.pngs} if card.pngs else {}),
             "reason": f"{card.refusal.code}: {card.refusal.why}", "at": _now()}
@@ -1515,7 +1531,7 @@ def records(report: Report, edits: CardEdits, verdicts: Optional[dict]) -> tuple
     for card in report.cards:
         before = verdict_of(verdicts, card.key)
         if card.refusal is not None:
-            if card.refusal.code in TRANSIENT or card.transient:
+            if not _lasting(card):
                 continue
             card.verdict = refusal_verdict(card)
             if not _same_verdict(before, card.verdict):
@@ -1550,8 +1566,8 @@ def land_cards(report: Report, dry_run: bool, local: Optional[Snapshot] = None) 
     """
     Land the run's cards in one commit (land; with --local's snapshot, in its clone) and record the outcome on them. A
     card left out at H' gets its try-again refusal; when the commit itself fails, the baked and redundant cards get that
-    failure and the run is failed (main exits 1). Refused cards are never in it (records()). Fenced like a card's
-    steps: the report always comes out.
+    failure and the run is failed (main exits 1). A refused card is in it only for its website-only fields (share_of)
+    and keeps its refusal either way (records()). Fenced like a card's steps: the report always comes out.
     """
     shares = [s for s in (share_of(c) for c in report.cards) if s]
     if not shares:
@@ -1568,7 +1584,10 @@ def land_cards(report: Report, dry_run: bool, local: Optional[Snapshot] = None) 
                 report.traceback = format_exc()
         report.note, report.commit_failed = f"Nothing committed: {failure.code}: {failure.why}", True
         for s in shares:
-            s.card.refusal, s.card.transient = failure, True
+            if s.card.refusal is None:          # a refused card's verdict needs no commit: it stays
+                s.card.refusal, s.card.transient = failure, True
+            else:
+                s.card.note = f"website only not moved: {failure.code}"
         return
     if local is not None and report.commit:
         try:
@@ -1580,7 +1599,9 @@ def land_cards(report: Report, dry_run: bool, local: Optional[Snapshot] = None) 
     if included:
         report.subject = _message([s.card for s in included]).split("\n", 1)[0]
     for s in shares:
-        if s.out is not None:
+        if s.out is not None and s.card.refusal is not None:
+            s.card.note = f"website only not moved: {s.out.code}: {s.out.why}"
+        elif s.out is not None:
             s.card.refusal, s.card.transient = s.out, True
         elif s.included:
             s.card.included, s.card.commit = True, report.commit
@@ -1612,7 +1633,7 @@ def _card_line(card: Card, dry_run: bool) -> str:
         line += f"; website only: {'; '.join(card.site.values())}"
     if card.commit:
         line += f"; committed `{card.commit[:8]}`"
-    elif not card.refusal and (card.dropped or card.baked or card.site):
+    elif (not card.refusal or card.included) and (card.dropped or card.baked or card.site):
         line += "; not committed (dry run)" if dry_run else "; nothing to commit"
     if card.note:
         line += f"; {card.note}"

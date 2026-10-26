@@ -42,7 +42,8 @@ makes no main commit. Bakes and guard fixes show on the Changes page.
    `bake-events.json` `{"events": bake-refused, "landed": baked}` (`records()`). A refusal whose verdict equals the data's
    is not recorded again, so a dispatch's re-check tells nothing twice. `--verdicts db/verdicts.json` feeds `final()`,
    `--pending` and `due()`; the entry's old `_psd` is the fallback (step 6's cycle). Entries B rewrites lose their
-   `_psd`. A refusal-only run makes no B.
+   `_psd`. A refusal-only run makes no B, but for a refused card's website-only fields (10-26 B1): B moves them to
+   `_site` (Card Edits.json only) and the verdict's `for` leaves them out, so `final()` holds once B lands.
 2. **card-sync.yml.** The main job's Bake records step keeps the landed part (and gives the baked events M's sha) only
    when M landed, uploads `bake-records` (a dry run's is `bake-records-dry-run`, never merged); `after` runs when M baked
    or records exist (`AFTER` = M or empty). Every data job (data, after) merges the records no data job merged yet

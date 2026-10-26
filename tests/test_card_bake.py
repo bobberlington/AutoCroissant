@@ -283,6 +283,60 @@ def test_creature_one_bakes_and_website_only_fields(github):
     assert [c["hp"] for c in entry["creatures"]] == [6, 2] and "website only: atk 12" in text
 
 
+def _freezer_site(github):
+    """The Freezer: stars 2 (refused: its move collides) beside hp 25 (past the rows: website only)."""
+    files = github.files_at(github.head)
+    files[cb.EDITS_PATH] = _edits({"The Freezer": {"stars": 2, "hp": 25, "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: The Freezer")
+
+
+def test_website_only_field_lands_beside_a_refusal(github, tmp_path):
+    """A refused card's website-only field still moves to `_site` (an edits-only commit: no PSD, no PNG); its verdict is
+    for the rest, so it is final and a re-check tells nothing again (B1, 2026-10-26)."""
+    _freezer_site(github)
+    psd = github.files_at(github.head)[FREEZER]
+    text, commits = cb.run()
+    assert len(commits) == 1, text
+    commit = github.commits[commits[0]]
+    assert commit["message"] == "Card edits: 1 website only\n\n- The Freezer: website only: hp 25: the bar's rows print up to 20"
+    files = github.files_at(commits[0])
+    assert files[FREEZER] == psd and files["Field/1 Stars/The_Freezer.png"] == github.files_at(commit["parents"][0]["sha"])["Field/1 Stars/The_Freezer.png"]
+    assert _edits_at(github)["cards"]["The Freezer"] == {"stars": 2, "hp": 25, "_site": ["hp"], "_by": "web", "_at": AT}
+    verdict = _verdict("The Freezer")
+    assert verdict["state"] == "refused" and verdict["for"] == {"stars": 2} and verdict["reason"].startswith("unsupported-card: stars:")
+    verdicts, events = _records(tmp_path)
+    assert list(verdicts["cards"]) == ["the freezer"] and verdicts["landed"] == {} and events["landed"] == []
+    assert [e["kind"] for e in events["events"]] == ["bake-refused"]
+    assert "## Refused (1)" in text and f"website only: hp 25: the bar's rows print up to 20; committed `{commits[0][:8]}`" in text
+    assert cb.pending() == []                                                   # final: no re-bake loop
+    text, commits = cb.run()                                                    # a dispatch re-checks it
+    assert commits == [] and _records(tmp_path)[0]["cards"] == {} and _records(tmp_path)[1]["events"] == []
+
+
+def test_website_only_beside_a_refusal_left_out(github, tmp_path, monkeypatch):
+    """Its edit changed before the commit: the move stays out, the card keeps its refusal and verdict (it needs no
+    commit); the next run moves the field and tells nothing again."""
+    _freezer_site(github)
+    real = cb.land
+
+    def land(repository, shares, message, dry_run, out_path="", local=None):
+        current = github.files_at(github.head)
+        data = json.loads(current[cb.EDITS_PATH].decode("utf-8"))
+        data["cards"]["The Freezer"]["hp"] = 30
+        current[cb.EDITS_PATH] = cb.dump_edits(data).encode("utf-8")
+        github.commit(current, "web", "Website edit: The Freezer again")
+        return real(repository, shares, message, dry_run, out_path, local)
+    monkeypatch.setattr(cb, "land", land)
+    text, commits = cb.run()
+    assert commits == [] and "website only not moved: edit-changed" in text
+    assert _verdict("The Freezer")["for"] == {"stars": 2} and [e["kind"] for e in _records(tmp_path)[1]["events"]] == ["bake-refused"]
+    assert cb.pending() == ["The Freezer"]                                      # hp 30 still to move
+    monkeypatch.setattr(cb, "land", real)
+    text, commits = cb.run()
+    assert len(commits) == 1 and _edits_at(github)["cards"]["The Freezer"]["_site"] == ["hp"]
+    assert _records(tmp_path)[1]["events"] == [] and cb.pending() == []
+
+
 def test_shared_bars_and_moved_titles_are_remembered():
     """A creature 1 bake that changed a bar it shares (Pix's HP) updates those creatures in the list too; a title an
     earlier bake moved on (R4) is moved back first while its PSD is the one that bake left (review 2026-10-26)."""
