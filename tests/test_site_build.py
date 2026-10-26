@@ -161,6 +161,28 @@ def test_the_current_text_is_dated_from_its_start(bs, repo, tmp_path, monkeypatc
     assert "since" not in _by_name(out["cards.json"]["cards"])["Watermelon"]      # its text started at its last commit
 
 
+def test_a_picture_only_duplicate_is_its_originals_card(bs, repo, tmp_path, monkeypatch):
+    """Gamma.png has no PSD and its Card Edits.json entry names Alpha in dup_of; the card data copies Alpha as Gamma
+    (duplicate_of): the site lists it parsed, with Alpha's data, its own name and picture (owner 10-26)."""
+    root = repo["root"]
+    _png(root / "Creatures/Other/2 Stars/Gamma.png", 70)
+    (root / "site" / "Card Edits.json").write_text(json.dumps({"cards": {"Gamma": {"dup_of": "Alpha"}}}), encoding="utf-8")
+    subprocess.run(["git", "-C", str(root), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(root), "-c", "user.name=M", "-c", "user.email=m@x", "commit", "-q", "-m", "Gamma"], check=True)
+    stats, old, details, _ = cdb.read_db(str(repo["db"]))
+    gamma = copy.deepcopy(stats["Alpha"])
+    gamma.name, gamma.duplicate_of = "Gamma", "Alpha"
+    stats["Gamma"] = gamma
+    cdb.write_db(str(repo["db"]), stats, old, json.dumps({"version": 1, "cards": details}), {"card_commit": repo["commits"][2]})
+    cards = _by_name(_build(bs, monkeypatch, repo, tmp_path / "a")["cards.json"]["cards"])
+    alpha, g = cards["Alpha"], cards["Gamma"]
+    assert "parsed" not in g and g["dup"] == alpha["id"] and alpha["dups"] == [g["id"]]
+    assert g["png"] == "Creatures/Other/2 Stars/Gamma.png" and g["img"] != alpha["img"]
+    assert all(g.get(k) == alpha.get(k) for k in ("type", "series", "stars", "types", "hp", "def", "atk", "spd", "ability", "author"))
+    game = (tmp_path / "a" / "dist" / "game.txt").read_text(encoding="utf-8")
+    assert "duplicate of Alpha" in next(line for line in game.splitlines() if line.startswith("Gamma |"))
+
+
 def test_each_version_links_the_commit_that_made_its_psd(bs, repo, tmp_path, monkeypatch):
     """A text's or change's commit is the one that gave its PSD the bytes it was read from (blob_sha): history.json
     texts carry c (an index into _shas), the newest older one n (the current text's), analytics.json change rows c (into
