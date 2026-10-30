@@ -11,7 +11,7 @@ save at that commit lacked; a card moved to other stars moves between those deck
 comes back unless excluded), sets card Nicknames to the card browser's names (or, with --names, the same names made
 from a card data build's stats.json), regenerates the Lua resizeTargets table, and puts the rulebook's PDF
 (TTS/Rulebook/Rulebook.pdf, commands.rulebook_pages) in the Rulebooks bag as a Custom_PDF object (the Photoshop pages
-moved once into a bag of their own inside it, kept).
+and their bag taken out, owner 10-30).
 An existing card's Description, GMNotes, Memo, Tags and scripts are left to the team, never changed; new cards start
 with them empty. When something changed it writes <stem>.<time>.bak.json, <stem>.report.md and <stem>.message.txt
 (the commit subject) next to the save. The shas in the links are the only state.
@@ -49,7 +49,7 @@ SITE_CARDS = "site/dist/data/cards.json"     # local site build: fallback when t
 CARD_NAMES = ("Card", "CardCustom")
 HAND_NAMED = ("Auxiliary/Rulebook/", "Auxiliary/Markers/", RULEBOOK_PAGES + "/")   # page and marker cards: not website names
 RULEBOOK_BAG = "Rulebooks"                   # the save's bag of rulebook pages
-OLD_RULEBOOK = "Old Rulebook (Photoshop pages)"   # the bag inside it the Photoshop pages moved to (kept, owner 10-29)
+OLD_RULEBOOK = "Old Rulebook (Photoshop pages)"   # the bag inside it the Photoshop pages went to on 10-29 (taken out, owner 10-30)
 OLD_PAGES = "Auxiliary/Rulebook/"
 PDF_NAME = "Rulebook"                        # the PDF object's Nickname when made
 PDF_SCALE = 3.0                              # its size when made (a 1080x1920 page); the team may resize it
@@ -832,8 +832,8 @@ def _rulebook(save: dict, repo: _Repo, report: _Report) -> None:
     """
     The Rulebooks bag holds the rulebook's PDF as one Custom_PDF object (on top: the bag's last object), made once from
     the bag's settings and linked to TTS/Rulebook/Rulebook.pdf (its link's commit is _pin_links'); page cards of the
-    rulebook's pages from before the PDF are taken out; the bag's Photoshop pages move once into a bag of their own
-    inside it (OLD_RULEBOOK). Anything else in the bag stays, the PDF object's place and settings too once made.
+    rulebook's pages from before the PDF, the Photoshop pages and their bag (OLD_RULEBOOK) are taken out. Anything else in
+    the bag stays, the PDF object's place and settings too once made.
     """
     book = read_pages(repo.checkout)
     if not book.get("pdf"):
@@ -859,14 +859,11 @@ def _rulebook(save: dict, repo: _Repo, report: _Report) -> None:
             if g not in guids:
                 guids.add(g)
                 return g
-    nested = next((o for o in others if o.get("Nickname") == OLD_RULEBOOK), None)
-    if old:
-        if nested is None:
-            nested = {k: deepcopy(v) for k, v in bag.items() if k != "ContainedObjects"}
-            nested.update(GUID=guid(), Nickname=OLD_RULEBOOK, ContainedObjects=[])
-            others.insert(0, nested)
-        nested["ContainedObjects"] = list(nested.get("ContainedObjects") or []) + old
-        report.rulebook.append(f"{_plural(len(old), 'Photoshop page')} moved into the bag {OLD_RULEBOOK}")
+    nested = [o for o in others if o.get("Nickname") == OLD_RULEBOOK]
+    if nested or old:
+        n = len(old) + sum(len(o.get("ContainedObjects") or []) for o in nested)
+        others = [o for o in others if o not in nested]
+        report.rulebook.append(f"the Photoshop rulebook taken out ({_plural(n, 'page')}{', and its bag' if nested else ''})")
     if pages:
         report.rulebook.append(f"{_plural(len(pages), 'page card')} taken out (the rulebook is a PDF now)")
     if pdfs:
@@ -874,7 +871,7 @@ def _rulebook(save: dict, repo: _Repo, report: _Report) -> None:
         for extra in pdfs[1:]:
             report.rulebook.append(f"a second PDF object `{extra.get('GUID')}` taken out")
     else:
-        template = next((o for o in [*pages, *old, *((nested or {}).get("ContainedObjects") or [])] if o.get("Transform")), None)
+        template = next((o for o in [*pages, *old, *(c for b in nested for c in b.get("ContainedObjects") or [])] if o.get("Transform")), None)
         pdf = {"GUID": guid(), "Name": "Custom_PDF",
                "Transform": deepcopy((template or bag).get("Transform") or {}), "Nickname": PDF_NAME,
                "Description": f"The rulebook. Flip pages with the arrows; also on the website: {SITE_URL}/#/rules",

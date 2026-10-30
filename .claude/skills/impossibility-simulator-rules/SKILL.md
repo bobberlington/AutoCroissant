@@ -513,6 +513,18 @@ Assembled from the rulebook's own examples; the joins are this skill's.
 
 ## Known gaps and ambiguities
 
+**Resolved 2026-10-30 (owner rulings, now in the website chapters `site/rulebook/`):** NORMAL damage is DMG − DEF (the
+½DEF leftover fixed) and damage types combine (21); OVERKILL defined: only when a card says so, carried to the next
+target the card names, reduced by its DEF, not an attack, no on-hit effects (21); attacks from abilities can't trigger
+counter damage or counter items (10); revived creatures reset HP, stats, abilities, turn timers and counters (17); a
+creature replacing one that died after acting can't act but may use an ability (17); SPD can't go below 1, ATK and DEF
+not below 0, MAX HP not below 1 bar (07); two sources negating each other at once are both negated (22); conflicting
+debuffs: the higher star level wins (19); a creature finishes its turn if turn order changes mid-turn, and NO STALLING:
+if none of a team's creatures attack during a full global turn, they take 1 TRUE DAMAGE at its end (08); no items on
+creatures in hand (13); field cards can't be sold or targeted by items (18); a reaction chain resolves before a new one
+begins (12); typos fixed: Reactions 3 "6 stacks", Setting Up "Two 1-star items ★ ★". The cooldown/uses tags are defined
+in the new chapter 23 Timing Tags. The lists below predate these rulings.
+
 Contradictions:
 - NORMAL "DMG - (1/2*DEF)" (21_Damage_Types) vs "Attacks deal ATK - DEF" (10_Attacking, 07_Stats3): an old-rules leftover
   (`MDW/Old Rules/17_Damage_Types`, when DEF was the bar value); current pages and examples use ATK − DEF.

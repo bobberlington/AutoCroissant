@@ -76,8 +76,8 @@ def _card(guid, path, nick, deck_id):
 
 
 def test_rulebooks_bag_takes_the_pdf(tmp_path):
-    """The Photoshop pages move into their own bag (once), the page cards of before the PDF go, one Custom_PDF object is
-    made on top (linked to the PDF, a fresh GUID); a second run changes nothing and keeps the team's changes to it."""
+    """The Photoshop pages (loose or in their bag) and the page cards of before the PDF go, one Custom_PDF object is made
+    on top (linked to the PDF, a fresh GUID); a second run changes nothing and keeps the team's changes to it."""
     folder = tmp_path / "TTS" / "Rulebook"
     folder.mkdir(parents=True)
     (folder / "pages.json").write_text(json.dumps({"pdf": "Rulebook.pdf", "pages": [{"name": "Cover"}, {"name": "Stats"}]}), encoding="utf-8")
@@ -91,12 +91,12 @@ def test_rulebooks_bag_takes_the_pdf(tmp_path):
     report = tts_save._Report()
     tts_save._rulebook(save, repo, report)
     inside = bag["ContainedObjects"]
-    assert inside[0]["Nickname"] == tts_save.OLD_RULEBOOK and inside[0]["ContainedObjects"] == old and inside[1] is note
-    assert len(inside) == 3 and inside[2]["Name"] == "Custom_PDF" and inside[2]["Nickname"] == "Rulebook"
-    pdf = inside[2]
+    assert len(inside) == 2 and inside[0] is note and inside[1]["Name"] == "Custom_PDF" and inside[1]["Nickname"] == "Rulebook"
+    pdf = inside[1]
     assert pdf["CustomPDF"] == {"PDFUrl": f"{tts_save.RAW}main/TTS/Rulebook/Rulebook.pdf", "PDFPassword": "", "PDFPage": 0, "PDFPageOffset": 0}
     assert pdf["Transform"]["scaleX"] == tts_save.PDF_SCALE and pdf["Transform"]["posX"] == 1.0
     assert report.unpinned == {"TTS/Rulebook/Rulebook.pdf"} and any("1 page card taken out" in x for x in report.rulebook)
+    assert any("Photoshop rulebook taken out (2 pages)" in x for x in report.rulebook)
     guids = [o.get("GUID") for o, _ in tts_save._walk(save["ObjectStates"])]
     assert len(guids) == len(set(guids))
     pdf["Transform"]["scaleX"] = 2.0                       # the team resized it
@@ -104,3 +104,8 @@ def test_rulebooks_bag_takes_the_pdf(tmp_path):
     again = tts_save._Report()
     tts_save._rulebook(save, repo, again)
     assert again.rulebook == [] and bag["ContainedObjects"] == inside and pdf["Transform"]["scaleX"] == 2.0
+    nested = {"GUID": "abcdef", "Name": "Custom_Model_Bag", "Nickname": tts_save.OLD_RULEBOOK, "ContainedObjects": old}   # the bag of 10-29
+    bag["ContainedObjects"] = [nested, *inside]
+    gone = tts_save._Report()
+    tts_save._rulebook(save, repo, gone)
+    assert bag["ContainedObjects"] == inside and gone.rulebook == ["the Photoshop rulebook taken out (2 pages, and its bag)"]
