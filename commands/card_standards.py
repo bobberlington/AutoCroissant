@@ -15,7 +15,8 @@ and gated but reported until the owner says yes (AUTO_FIX). Rule pages are never
 silent, owner 2026-10-25) run on every card and rule page: straight apostrophes, and icon font glyphs Photoshop drew with
 an older font drawn again; on cards only, badges and icons fitted to their text (fit_badges: a badge's pill 1.35 times
 the text's capital height, its middle on the capitals' middle, even when that rewraps the text; an FX layer on words
-that moved is cut again); each redraws only the changed glyphs and the guards re-export the PNG.
+that moved is cut again) and badges under an overlay set one-colour (one_colour_badges); each redraws only the changed
+glyphs and the guards re-export the PNG.
 
     check(psd, rel, context, old=None, added=False) -> [Issue]
     fix(data, rel, issues, work, parser=None, fonts=None, only=None) -> Fixed   the fixes, gated (one PSD's new bytes)
@@ -1264,14 +1265,77 @@ def fit_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Option
     return [name for _, name, *_ in done]
 
 
+def _salt_spans(layer) -> list:
+    """The layer's badges and :stickers in the icon font when an overlay paints over it (psd_edit.one_colour)."""
+    if not psd_edit.one_colour(layer):
+        return []
+    text = layer.text
+    return psd_edit.alternate_spans(text, psd_edit.icon_text(text, None), psd_edit._char_styles(layer)[1])
+
+
+def _unsalted(layer) -> bool:
+    spans = _salt_spans(layer)
+    if not spans:
+        return False
+    flagged = {i for a, b in psd_edit.stylistic_alternates(layer) or () for i in range(a, b)}
+    return any(i not in flagged for a, b in spans for i in range(a, b))
+
+
+def salt_layers(psd: PSDImage) -> list:
+    """The visible type layers under an overlay with a badge or :sticker not in the icon font's Stylistic Alternates:
+    printed as a blob (Butterfly's Section layers, re-saved in Photoshop; owner 2026-10-30)."""
+    out = []
+    for layer in icon_layers(psd):
+        try:
+            if _unsalted(layer):
+                out.append(layer)
+        except Exception:                       # unreadable runs, or a fork without the alternates: left alone
+            continue
+    return out
+
+
+def one_colour_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]]) -> list:
+    """
+    One-colour badges (owner 2026-10-30): salt_layers' badges and :stickers set in the icon font's Stylistic Alternates
+    (psd_edit.set_alternates, the Txt2 story alone, as the bake sets them), those glyphs redrawn (a splice), the stored
+    preview patched; gated (_only_pixels, the stories by gate_stories).
+
+    Returns:
+        The layer names changed; raises Refused or the engine's errors
+    """
+    from psd_tools.composite.text import capture
+    before, psd = PSDImage.open(path), PSDImage.open(path)
+    boxes, records, stories, names = [], set(), [], []
+    for layer in salt_layers(psd):
+        found = _fonts_of(layer, fonts)
+        psd_edit.follow_kerning(psd, layer)
+        keep, old = capture(layer, found), tuple(layer.bbox)
+        psd_edit.set_alternates(layer, _salt_spans(layer), [])
+        _by_glyph(layer, layer.rasterize(fonts=found, keep=keep, unit=psd_edit.SPLICE_UNIT))
+        boxes += _padded(layer, old)
+        records.add(psd_edit._record_index(layer))
+        if psd_edit.story_index(layer) is not None:
+            stories.append(psd_edit.story_index(layer))
+        names.append(layer.name.strip())
+    if not names:
+        return []
+    _save_patched(before, psd, boxes, out_path)
+    _only_pixels(path, out_path, records, stories)
+    if salt_layers(PSDImage.open(out_path)):
+        raise Refused("bytes", "a badge is left without its one-colour shape")
+    return names
+
+
 PIXEL_FIXES = {     # kind -> (finds(psd) -> [layer], fix(path, out_path, fonts) -> [layer name], the parse it makes or None)
     "apostrophes": (curly_layers, straighten, straight_parse),
     "old glyphs": (icon_layers, redraw_old_glyphs, None),
     "badges": (icon_layers, fit_badges, None),
+    "overlay badges": (salt_layers, one_colour_badges, None),
 }
 PIXEL_LINES = {"apostrophes": "straight apostrophes", "old glyphs": "old icon font glyphs redrawn",
-               "badges": "badges and icons fitted to their text"}
-CARD_PIXELS = ("badges",)   # not on rule pages: their badges are laid out by hand (legends, tables)
+               "badges": "badges and icons fitted to their text",
+               "overlay badges": "badges under an overlay in one colour"}
+CARD_PIXELS = ("badges", "overlay badges")   # not on rule pages: their badges are laid out by hand (legends, tables)
 
 
 def pixel_kinds(psd, kinds: tuple = ()) -> tuple:
@@ -1335,9 +1399,11 @@ __all__ = [
     'kind_of',
     'mark_new',
     'old_glyphs',
+    'one_colour_badges',
     'PIXEL_FIXES',
     'PIXEL_LINES',
     'pixel_kinds',
+    'salt_layers',
     'rename',
     'reported',
     'redraw',

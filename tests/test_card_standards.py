@@ -478,6 +478,28 @@ def test_badges_whole_only_where_drawn_as_stored(clone, tmp_path):
     assert not fixed.redrawn and "not redrawn by glyph" in fixed.pixel_left[0][1]
 
 
+BUTTERFLY = ("2e4c9dd1", "Creatures/Kirby/5 Stars/Butterfly.psd")   # badges in Section layers under a Gradient Overlay
+
+
+@pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
+def test_badges_under_an_overlay_set_one_colour(clone, tmp_path):
+    """Owner 2026-10-30: Butterfly's (OFS) and (OD), re-saved in Photoshop without the icon font's Stylistic Alternates,
+    printed as blobs under their layers' Gradient Overlay: set in the alternates (the story alone), those glyphs redrawn,
+    never told; nothing left. Mini Doomer's, set by the bake, are left alone."""
+    fonts = _fonts(clone)
+    rev, rel = BUTTERFLY
+    data = at_rev(clone, rev, rel)
+    assert [layer.name for layer in cs.salt_layers(PSDImage.open(BytesIO(data)))] == ["Section 2", "Section 1"]
+    fixed = cs.fix(data, rel, [], str(tmp_path / "work"), None, fonts, only="overlay badges")
+    assert fixed.redrawn == {"overlay badges": ["Section 2", "Section 1"]} and fixed.pixel_left == [] and fixed.plain
+    new = PSDImage.open(BytesIO(fixed.data))
+    assert cs.salt_layers(new) == []
+    salted = {layer.name: [layer.text[a:b] for a, b in psd_edit.stylistic_alternates(layer)]
+              for layer in new.descendants() if layer.kind == "type" and layer.name.startswith("Section")}
+    assert salted == {"Section 1": ["(OFS)"], "Section 2": ["(OD)"]}
+    assert cs.salt_layers(PSDImage.open(BytesIO(at_rev(clone, rev, MINI_DOOMER)))) == []
+
+
 def test_text_with_both_quotes_parses_without_backslash(clone, tmp_path):
     """str() of an engine string is its repr, which escapes ' as \\' when the text also holds a ": the parse unescapes it
     (03 Setting Up's "they're")."""

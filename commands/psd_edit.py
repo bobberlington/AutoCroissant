@@ -1081,7 +1081,7 @@ def one_colour(layer) -> bool:
 def alternate_spans(text: str, drawn: list, icons: Optional[list] = None) -> list:
     """
     The badges and :stickers among icon_text spans: what the icon font's Stylistic Alternates draw in one colour. icons
-    (_char_styles' [1]): only those set in the icon font (Butterfly's (OD) in its body font stays as it is; review).
+    (_char_styles' [1]): only those set in the icon font (a badge in its body font stays as it is; review).
     """
     return [(a, b) for a, b in drawn if (text[a] == "(" or token_variant(text[a:b]) == "sticker")
             and (icons is None or all(icons[i] for i in range(a, b)))]

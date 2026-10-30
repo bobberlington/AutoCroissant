@@ -414,7 +414,11 @@ Character panel menu > OpenType > Stylistic Alternates). The text stays as typed
   `set_span_style(..., StylisticAlternates=True)` writes the story alone.
 - The bake (AutoCroissant `psd_edit.one_colour`, `set_alternates`): an Ability whose layer or group has an enabled
   overlay (the layer's Effects switch on too) gets the flag on every badge and `:sticker` set in the icon font, typed
-  or kept, and a typed character next to one loses it. A badge typed in a body font (Butterfly's (OD)) is left alone.
+  or kept, and a typed character next to one loses it. A badge typed in a body font is left alone.
+- Cards nobody re-bakes (owner 2026-10-30, Butterfly: a Photoshop re-save of its `Section` layers dropped the flag):
+  the guards' silent pixel fix `overlay badges` (`card_standards.one_colour_badges`) sets it on every visible text
+  layer under an overlay, those glyphs redrawn, the PNG re-exported; one `Card-sweep: overlay badges` commit fixed
+  the cards already pushed.
 - The badge FX layers (`Ability FX: (1CD)`, 31 cards, std-batch2 and queue A) are retired: an ability edit deletes
   one and says so. Word FX layers (`Ability FX: Burning`) stay as they were. TTSCardMaker `work/badgealt` drops the 31
   (one no-op ability bake each with the new font, on copies; 27 have an overlay and take the alternates). Binge Eater,
