@@ -20,7 +20,7 @@ tasks in the order the owner picks.
 - Deploy with the `jetson-deploy` skill: push main and deploy in one sitting.
 - Tests: `AUTOCROISSANT_LOCAL_DIR=~/Desktop/TTSCardMaker AC_SITE_SRC=<tc tree>
   ESBUILD=~/Documents/Tools/wt/scratch/esbuild/node_modules/.bin/esbuild ~/.venvs/ac-py314-fork/bin/python -m pytest
-  -n auto -q -p no:cacheprovider tests` (641 on 10-26, about 3 minutes). Targeted files unless a full run is needed.
+  -n auto -q -p no:cacheprovider tests` (660 on 10-30, about 3 minutes). Targeted files unless a full run is needed.
 - Resource limits (memory `resource-limits`): never a partial (`blob:none`) clone of the local card repo; xdist at most
   6; one full suite at a time (`~/Documents/Tools/wt/scratch/suite-wait.sh`); at most 2 workflows; process pools at
   most 4; the git watchdog (`~/Documents/Tools/wt/scratch/git-watchdog.sh`) under Monitor during long unattended work;
@@ -42,11 +42,11 @@ tasks in the order the owner picks.
   --ref main -f bake=pending`; check first that the website deploy holding any rulebook change has finished (the PDF is
   printed from the live site).
 
-## State (2026-10-30 ~11:50 PDT)
+## State (2026-10-30 ~04:55 PDT)
 
 - AutoCroissant main d86fe30 (plus this wrap-up's docs); the jetson runs 17601aa: the later bot commits touch only Card
   sync's modules (card_data, rulebook_pages, tts_save), tests and skills, so no deploy is owed (deploy any time).
-- TTSCardMaker main 3b32375e (the TTS save rebuilt 10-30 11:44 with everything below). Desktop clones level with main.
+- TTSCardMaker main 3b32375e (the TTS save rebuilt 10-30 04:44 PDT with everything below). Desktop clones level with main.
 - Data f417aaf9: parser 5, 772 cards (the 48 Photoshop rule pages are no longer cards); `db/rulebook.json` holds the
   24 chapters.
 - psd-tools fork pin `cards-20261026` = e156be36 on both machines (`requirements-cards.txt`).
@@ -63,7 +63,8 @@ tasks in the order the owner picks.
       a card (right-click the table); Contents and search (right-click the rulebook or its bag): does Book.setPage land
       on the right page (0-based assumed)?; hand zones following seats (alone on a side you hold them all; a teammate
       sitting gets theirs back); turn markers (flips with F or the menu count, physics tumbles don't); the first open of
-      a panel per player (a short build); any Lua error.
+      a panel per player (a short build; it re-lays out other players' open panels, so their dragged spots reset);
+      whether TTS's PDF viewer searches the text; any Lua error.
 - [ ] Decide: TTS-sized JPEG card copies (the save loads 839 files, 1.5 GB of 1200 px PNGs; half-size JPEGs cut it about
       10x): 600 or 800 px wide, or not. Also the holder pictures (Creature_Deck.png 6.7 MB).
 - [ ] Try the website editor's new drags (anchor grid, Make space, blank space, snapping, undo) and report what feels
@@ -89,7 +90,11 @@ tasks in the order the owner picks.
 - [ ] `TTS/checks/lua_mock.py` still tests the old 48-line global script (and `scripts_global_refs.py` warns "owner is
       on no team" for every hand zone: it reads TEAMS the old way): rewrite both for today's `TTS/Global.lua` (the
       fengari harness in `~/Documents/Tools/wt/scratch/tts/luacheck` has the scenarios); offered as "test the script
-      before it reaches the save".
+      before it reaches the save". Until then `run_all.py` is red on lua_mock. Same pass, TTSCardMaker docs gone stale:
+      `TTS/checks/README.md` (rule pages as PNG cards, lua_mock's "no zone calls", "claiming retired in c9873ddf"),
+      `site/README.md` (the editor paragraph: anchor grid, undo, Make space, menus; `data/tts.json` feeds Global.lua),
+      `build_site.py`'s "hover strip" comment, and `TTS/decks.json`'s unread "objects" list (imgur, pastebin, Steam
+      links and the old Auxiliary/Rulebook cover; editing decks.json starts a Card sync run).
 - [ ] Delete the bot's now-dead Photoshop rule-page handling (psd_parser rule pages, psd_details/psd_parts rule cases,
       the query and export filters, the changelog's rulebook link): no card PSD is a rule page since 10-30.
 - [ ] The website's global Escape closes an open dialog even while typing in it (app.js keydown): the rulebook editor
@@ -97,6 +102,8 @@ tasks in the order the owner picks.
 - [ ] Editor ideas offered, not chosen: replace a picture by dropping a file on it, Ctrl/Cmd+D duplicate, a diff before
       Publish. Deck sheets for TTS: not recommended (every card edit rebuilds a sheet).
 - [ ] Card Authors.txt still credits the 48 old rule pages (kept; card_data no longer warns about them).
+- [ ] `docs/BUGS_AND_IMPROVEMENTS.md`: live checks V1 (`/sync_emojis refresh:True`) and V4 (`/query Raw Kawk`) are
+      still open; rows D1 and D4 are from the pickle era (re-word or retire).
 - [ ] Regenerate the problem-cards list (`docs/Future/PROBLEM_CARDS_2026-10-25b.*` predates the 10-26 lanes and fixes).
       Deliver the CSV and its `.md`.
 - [ ] Stars still refused: Thunder Thighs 3, Consolation Prize, Bubble, Forsaken City and The Core (option B, shrinking

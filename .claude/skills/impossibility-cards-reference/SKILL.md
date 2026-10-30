@@ -130,8 +130,8 @@ fall-through type — the literal leaf folder name, lowercased: **"creatures" (p
 cards under top-level `Creatures/` get **"creature" (singular)**. A `type==creature` query MISSES
 the 7. They are, as of 2026-07-11: Azamoth the Possessed Vessel, Igor Roballtowski, Mettaton EX,
 Mettaton NEO, Militron (No Armor), Morpho Knight, Shadow Queen. Workaround: `type~creature`
-(contains) matches both. The same fall-through gives `Auxiliary/Rulebook/` pages type
-**"rulebook"** (48 entries). Also note the 7 "creatures" cards skip the creature-specific handling:
+(contains) matches both. The same fall-through gave `Auxiliary/Rulebook/` pages type
+**"rulebook"** (48 entries; since 2026-10-30 rule pages are not cards: website chapters, `db/rulebook.json`). Also note the 7 "creatures" cards skip the creature-specific handling:
 no series, no −1 stat seeding. The stat checks (section 5) cover them since 2026-10-26 (`STAT_KINDS`; none has a stat
 note on that day's data). Their printed stars (2-5) are
 counted from the PSD since 2026-10-23 (`psd_parser.STARS_FROM_PSD`); the stored cards get them at a `cards:` re-parse.

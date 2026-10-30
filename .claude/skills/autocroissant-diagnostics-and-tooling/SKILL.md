@@ -400,7 +400,7 @@ entries with suspicious (non repo-relative) paths: 0
 ```
 
 `--problems` prints nothing on 2026-10-23 (0 stored problem cards): anything it lists is new. On 2026-07-11 it
-listed exactly one card, `20 Creature Types [Auxiliary/Rulebook/20_Creature_Types.psd]: ['MISSPELT TYPE: tornado']`.
+listed exactly one card, `20 Creature Types [Auxiliary/Rulebook/20_Creature_Types.psd]: ['MISSPELT TYPE: tornado']` (a rule page; rule pages aren't cards since 2026-10-30).
 
 **Card lookup** (`"the lich king"`): resolution order is exact name → case-insensitive match →
 substring candidates printed as `did you mean: ...` (up to 10) with exit 1. Verified: lowercase

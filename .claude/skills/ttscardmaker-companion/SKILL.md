@@ -680,16 +680,20 @@ bot ran the updater itself after `/update_stats`; this Action replaced that.
   updated" added, since 2026-10-22: before, 131 names read "398 Nicknames fixed"), `git push`. `permissions: contents: write`,
   `concurrency: tts-save` (no cancel), `timeout-minutes: 20`. The `.bak.json`, `.report.md` and `.message.txt` the
   updater writes beside the save stay on the runner (and are git-ignored).
-- **The save's Lua** (TTSCardMaker c9873ddf, 48 lines): `TEAMS` puts Red, Orange and Green on the TTS team Hearts and
-  Blue, Purple and Pink on Clubs (other seats None; Grey and Black untouched), on each seat change and once after load;
-  the large cards in `resizeTargets` go to scale 3,1,3 three frames after they leave a container. The updater rewrites
-  that table (one `["Nickname"] = true,` row per line, `}` at column 0, no comments in it; any other shape is an
-  Errors line and the table is left alone). No zone claiming any more: every hand zone keeps its saved owner, and a
-  TTS team lets teammates see each other's hand zones (TTS knowledge base, "Teams"), so the facedown item holders owned
-  by Red and Blue show to their whole side (not verified with that seat empty).
+- **The save's Lua** (since 2026-10-30 the source is `TTS/Global.lua` + `TTS/Global.xml`; tts_save writes them into the
+  save on every update; never edit the save's script by hand): `TEAMS` puts Red, Orange and Green on Hearts and Blue,
+  Purple and Pink on Clubs; the large cards in `resizeTargets` go to scale 3,1,3 after they leave a container (the
+  updater rewrites that table: one `["Nickname"] = true,` row per line, `}` at column 0). `shareHands()` hands a side's
+  zones to its seated players (`zone.setValue`: own seat if taken, else the first seated teammate; homes kept in
+  `onSave` state); TTS teams share only visibility, which is why c9873ddf's (10-22) dropped zone claiming lost hands.
+  Right-click menus: a card > Card details (up to 3 panels per player, Rules buttons, "+ Name" spawns), the table >
+  Find a card, the rulebook or its bag > Contents and search (Book.setPage, 0-based assumed). Data from the website's
+  `data/tts.json` and `TTS/Rulebook/pages.json`, decoded and panels built on a player's first use. Turn markers cycle
+  from one `onObjectRotate`. No Lua patterns over long text (MoonSharp "pattern too complex"). Nothing has run in TTS
+  itself yet; the fengari harness is `~/Documents/Tools/wt/scratch/tts/luacheck`.
 - **Checks:** `TTS/checks/` (its README: what each checks, interpreters, variables). `run_all.py` runs all 24 on the
-  save in about 2 minutes: structure, serializer, CustomDeck collisions, drift against c9873ddf, deck contents, names,
-  backs, rules, the Lua (lupa mock of the TTS API), link pins and HTTP, the updater run as the Action runs it, its
+  save in about 2 minutes: structure, serializer, CustomDeck collisions, drift against 0ee01372 (moved by each deliberate hand edit), deck contents, names,
+  backs, rules, the Lua (lupa mock of the TTS API; stale since 10-30, it expects the 48-line script, so run_all is red), link pins and HTTP, the updater run as the Action runs it, its
   report and commit subject, and the daily gate against real history (names hashed from the bot's stats.pkl at
   3888392 and 39da9ed). Drift fails on any change to an existing card's Description, GMNotes, Memo, Tags or scripts and
   on the global Lua outside resizeTargets. Any Python with `requests` and `Pillow`; the

@@ -7,7 +7,7 @@ description: "Load to explain how the Impossibility Simulator card game is PLAYE
 
 Rulebook text verified 2026-10-20 and re-checked 2026-10-22 (unchanged by the cooldown update) against
 `~/Desktop/TTSCardMaker/site/dist/data/rules.json` (rebuilt 2026-10-22 00:43; 48 pages, byte-identical to the 48
-`rulebook` entries in `stats.pkl` at PICKLE `3888392` and in a fresh parse of TTSCardMaker `73904dbd`) and the PNGs in `~/Desktop/TTSCardMaker/Auxiliary/Rulebook/`. A
+`rulebook` entries in `stats.pkl` at PICKLE `3888392` and in a fresh parse of TTSCardMaker `73904dbd`) and the PNGs in `~/Desktop/TTSCardMaker/Auxiliary/Rulebook/` (since 2026-10-30 `MDW/Old Rules/Rulebook/`). A
 citation like (08_Global_Turn) is the page's PSD stem. Tag and status effect counts are over the cards.json shape of
 2026-10-22: 773 rows, which is 767 distinct cards plus 6 `dup` copy rows, and 771 distinct names (`tags.py` drops the
 dup rows and dedupes on psd/png path + name), built with build_site.py's own card loop from a forced sweep of
@@ -491,8 +491,8 @@ Assembled from the rulebook's own examples; the joins are this skill's.
 2. **Quote and cite** as (NN_Stem), in the rulebook's words. If pages disagree or the book is silent, say so and point to
    Known gaps. Status effect and type effects are card text — say so.
 3. **Where the text lives.** Since 2026-10-29 the source of truth is the website's chapters, `site/rulebook/NN-slug.md`
-   in the card repo (23 chapters, the 48 pages' text kept as printed; the bot reads them from `db/rulebook.json`). The
-   Photoshop pages below are kept but no longer on the website; until then: the PSD text layers in `Auxiliary/Rulebook/` (PNG beside each); published
+   in the card repo (24 chapters: Contents + 23, the 48 pages' text kept as printed; the bot reads them from `db/rulebook.json`). The
+   Photoshop pages below are kept but no longer on the website; until then: the PSD text layers in `MDW/Old Rules/Rulebook/` (PNG beside each; `Auxiliary/Rulebook/` until 10-30); published
    as `site/dist/data/rules.json` (`{"rules": [{id, name, ability, …}]}`) and the website's Rulebook tab; `stats.pkl`
    holds the same 48 entries. Verbatim extract with hidden/overflow markers: `.claude/skills/impossibility-simulator-rules/reference/rulebook.md` (beside it: `glossary.md`, every defined term and abbreviation with its page; `data-facts.md`, the card-data counts behind this file; `header.md`/`footer.md`, build_rulebook.py's inputs).
 4. **The bot.** `/query_rulebook search_text [limit]`: case-insensitive substring search over the chapters (48 pages until
@@ -566,7 +566,7 @@ are defined only on cards (the book names ~22 of 64).
 
 | Fact | Re-verify with |
 |---|---|
-| 48 pages, PSD per PNG | `ls ~/Desktop/TTSCardMaker/Auxiliary/Rulebook/*.psd \| wc -l` (and `*.png`) |
+| 48 pages, PSD per PNG | `ls ~/Desktop/TTSCardMaker/MDW/Old\ Rules/Rulebook/*.psd \| wc -l` (and `*.png`) |
 | rules.json count and any page's text | `python3 -I -c "import json;r=json.load(open('$HOME/Desktop/TTSCardMaker/site/dist/data/rules.json'))['rules'];print(len(r));print(r[0])"` |
 | card data == rules.json | `git -C ~/Desktop/TTSCardMaker show origin/data:db/stats.json > /tmp/s.json` (the card data since 2026-10-25; loadpkl.py and the pickles went then) then compare `ability` per name |
 | Hidden / off-canvas layers | `python .claude/skills/impossibility-simulator-rules/scripts/alllayers.py <page.psd>` from a venv with psd-tools (the system `python3` lacks it; autocroissant-build-and-env §1) |

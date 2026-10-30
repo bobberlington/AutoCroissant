@@ -208,7 +208,7 @@ python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pic
 ```
 
 **EXPECTED (2026-10-23):** no lines (0 stored problems). On 2026-07-11 exactly one:
-`20 Creature Types [Auxiliary/Rulebook/20_Creature_Types.psd]: ['MISSPELT TYPE: tornado']`
+`20 Creature Types [Auxiliary/Rulebook/20_Creature_Types.psd]: ['MISSPELT TYPE: tornado']` (a rule page; rule pages aren't cards since 2026-10-30)
 
 ### Gate 1c — Exclusion-list sizes (the numbers this campaign exists to drive to zero)
 

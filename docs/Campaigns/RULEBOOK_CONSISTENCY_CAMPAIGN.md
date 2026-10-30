@@ -1,6 +1,6 @@
 # Rulebook consistency campaign (2026-10-20)
 
-**Status:** designed 2026-10-20, not scheduled (`docs/NEXT_SESSION_PLAN.md`, "Ideas parked"). User request of
+**Status:** overtaken 2026-10-30: the rulebook is now chapters on the website (TTSCardMaker `site/rulebook/`) with the owner's 10-30 rulings written in; the Photoshop pages moved to `MDW/Old Rules/Rulebook`. Designed 2026-10-20. User request of
 2026-10-20: "one last campaign to find rulebook inconsistencies".
 The user is the rules owner and makes every ruling; this campaign finds, classifies, logs and guards, it never decides.
 Page citations are the PSD stems of `~/Desktop/TTSCardMaker/Auxiliary/Rulebook/` (48 PSD + PNG pairs) as
