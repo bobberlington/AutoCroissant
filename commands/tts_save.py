@@ -9,7 +9,8 @@ their rules (TTS/decks.json: missing repo cards added, an empty deck filled, car
 matching nothing leaves its deck alone), adds new cards to hand-picked decks whose rule has add_new_since (cards the
 save at that commit lacked; a card moved to other stars moves between those decks; no record: one taken out by hand
 comes back unless excluded), sets card Nicknames to the card browser's names (or, with --names, the same names made
-from a card data build's stats.json), regenerates the Lua resizeTargets table, and puts the rulebook's PDF
+from a card data build's stats.json), writes the global script and UI from TTS/Global.lua and TTS/Global.xml (nobody
+edits the save's script by hand) and regenerates their resizeTargets table, and puts the rulebook's PDF
 (TTS/Rulebook/Rulebook.pdf, commands.rulebook_pages) in the Rulebooks bag as a Custom_PDF object (the Photoshop pages
 and their bag taken out, owner 10-30).
 An existing card's Description, GMNotes, Memo, Tags and scripts are left to the team, never changed; new cards start
@@ -57,6 +58,8 @@ CARD_FOLDERS = ("Creatures/", "Items/", "Field/", "N.M.E/", "Auxiliary/")   # bu
 SKIP_PARTS = ("MDW", "Markers")                                             # build_site.SKIP_PARTS
 LARGE_CARDS = "Auxiliary/Creatures/"         # the Lua resizeTargets table lists these by Nickname
 LUA_TABLE = regex(r"(resizeTargets\s*=\s*\{\n)(.*?)(\n\})", DOTALL)
+GLOBAL_LUA = "TTS/Global.lua"               # the save's global script (resizeTargets' rows are the updater's)
+GLOBAL_XML = "TTS/Global.xml"               # the save's global UI
 LUA_ROW = regex(r'^(\s*)\[\s*"((?:[^"\\]|\\.)*)"\s*\]\s*=\s*(.*?)\s*,?\s*$', MULTILINE)
 STARS_FOLDER = regex(r"(?<=/)\d+ Stars(?=/)")
 JSON_ESCAPED = {"\u0085": "\\u0085", "\u2028": "\\u2028", "\u2029": "\\u2029"}   # TTS (Newtonsoft) escapes these
@@ -476,6 +479,7 @@ class _Report:
         self.stale: list = []
         self.lua_added: list = []
         self.lua_removed: list = []
+        self.script: list = []          # the global script and UI written from their files
         self.rulebook: list = []        # the Rulebooks bag's changes, one line each
         self.left: list = []
         self.errors: list = []
@@ -796,6 +800,28 @@ def _fix_cards(save: dict, repo: _Repo, names: _Names, report: _Report) -> None:
             group[(path, old, name)] = group.get((path, old, name), 0) + 1
 
 
+def _global_script(save: dict, repo: _Repo, report: _Report) -> None:
+    """The save's global script and UI from TTS/Global.lua and TTS/Global.xml (a missing file leaves its part alone);
+    the script's resizeTargets rows stay the save's, for _resize_targets to regenerate."""
+    for path, key in ((GLOBAL_LUA, "LuaScript"), (GLOBAL_XML, "XmlUI")):
+        try:
+            with open(join(repo.checkout, path), encoding="utf-8") as f:
+                text = f.read().replace("\r\n", "\n")
+        except OSError:
+            continue
+        old = save.get(key) or ""
+        if key == "LuaScript":
+            now, mine = LUA_TABLE.search(old), LUA_TABLE.search(text)
+            if not mine:
+                report.errors.append(f"{path}: no resizeTargets table; the save's script left as it is.")
+                continue
+            if now:                                         # the rows the updater keeps
+                text = text[:mine.start(2)] + now.group(2) + text[mine.end(2):]
+        if text != old:
+            save[key] = text
+            report.script.append(f"`{path}` written into the save")
+
+
 def _resize_targets(save: dict, repo: _Repo, names: _Names, report: _Report) -> None:
     """The global script's resizeTargets table lists the large creatures by their Nicknames in the save."""
     lua = save.get("LuaScript") or ""
@@ -949,6 +975,7 @@ def _render(report: _Report, head: list) -> str:
                                                     for (p, old), n in sorted(report.unnamed.items())])
     section("CustomDeck keys fixed", report.stale)
     section("resizeTargets", [f"added `{k}`" for k in report.lua_added] + [f"removed `{k}`" for k in report.lua_removed])
+    section("Global script", report.script)
     section("Rulebook", report.rulebook)
     section("Images gone from the repo (report only)",
             [f"`{p}`: {shas(refs)} ({n} links){'; ' + note if note else ''}" for p, (refs, n, note) in sorted(report.gone.items())])
@@ -970,7 +997,8 @@ def _commit_message(report: _Report) -> str:
              f"{_plural(len(report.moved), 'card')} moved" if report.moved else "",
              f"{_plural(names, 'Nickname')} fixed" if names else "",
              "resizeTargets updated" if report.lua_added or report.lua_removed else "",
-             "rulebook pages updated" if report.rulebook else ""]
+             "rulebook pages updated" if report.rulebook else "",
+             "global script updated" if report.script else ""]
     return "TTS save: " + (", ".join(p for p in parts if p) or "updated")
 
 
@@ -989,6 +1017,7 @@ def _update(save_path: str, names_from: str = "") -> tuple:
         if rules is not None:
             _sync_decks(save, rules, repo, names, report)
         _fix_cards(save, repo, names, report)
+        _global_script(save, repo, report)
         _resize_targets(save, repo, names, report)
         _rulebook(save, repo, report)
 

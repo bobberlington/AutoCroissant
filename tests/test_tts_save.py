@@ -9,6 +9,7 @@ import pytest
 
 import commands.repo_history as rh
 import commands.tts_save as tts
+from types import SimpleNamespace
 from conftest import CLONE, REPO
 
 RAW = tts.RAW
@@ -421,3 +422,25 @@ def test_pin_links_follow_a_moved_and_redrawn_card(repo, monkeypatch):
     report = tts._Report()
     tts._pin_links({"ObjectStates": [tile]}, repo, report)
     assert tile["CustomImage"]["ImageURL"] == f"{RAW}c0ffee1/{tts._encode(B)}" and report.renamed == {moved: (B, 1)}
+
+
+def test_global_script_from_its_file(tmp_path):
+    """TTS/Global.lua and TTS/Global.xml are the save's global script and UI (owner 10-30: never edited in the save); the
+    save's resizeTargets rows stay for _resize_targets; a file without the table leaves the script; a second run changes
+    nothing."""
+    (tmp_path / "TTS").mkdir()
+    (tmp_path / "TTS" / "Global.lua").write_text('-- new\nlocal resizeTargets = {\n    ["X"] = true,\n}\nfunction onLoad() end\n', encoding="utf-8")
+    (tmp_path / "TTS" / "Global.xml").write_text("<Panel/>", encoding="utf-8")
+    save = {"LuaScript": '-- old\nlocal resizeTargets = {\n    ["Big"] = true,\n}\n', "XmlUI": ""}
+    repo = SimpleNamespace(checkout=str(tmp_path))
+    report = tts._Report()
+    tts._global_script(save, repo, report)
+    assert save["LuaScript"] == '-- new\nlocal resizeTargets = {\n    ["Big"] = true,\n}\nfunction onLoad() end\n' and save["XmlUI"] == "<Panel/>"
+    assert len(report.script) == 2
+    again = tts._Report()
+    tts._global_script(save, repo, again)
+    assert again.script == []
+    (tmp_path / "TTS" / "Global.lua").write_text("-- no table\n", encoding="utf-8")
+    broken = tts._Report()
+    tts._global_script(save, repo, broken)
+    assert "resizeTargets" in save["LuaScript"] and broken.errors
