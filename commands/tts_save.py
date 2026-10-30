@@ -11,8 +11,7 @@ save at that commit lacked; a card moved to other stars moves between those deck
 comes back unless excluded), sets card Nicknames to the card browser's names (or, with --names, the same names made
 from a card data build's stats.json), writes the global script and UI from TTS/Global.lua and TTS/Global.xml (nobody
 edits the save's script by hand) and regenerates their resizeTargets table, and puts the rulebook's PDF
-(TTS/Rulebook/Rulebook.pdf, commands.rulebook_pages) in the Rulebooks bag as a Custom_PDF object (the Photoshop pages
-and their bag taken out, owner 10-30).
+(TTS/Rulebook/Rulebook.pdf, commands.rulebook_pages) in the Rulebooks bag as a Custom_PDF object.
 An existing card's Description, GMNotes, Memo, Tags and scripts are left to the team, never changed; new cards start
 with them empty. When something changed it writes <stem>.<time>.bak.json, <stem>.report.md and <stem>.message.txt
 (the commit subject) next to the save. The shas in the links are the only state.
@@ -48,10 +47,9 @@ LINK = regex(escape(RAW) + f"({escape(MAIN_REFS[1])}|{escape(MAIN_REFS[0])}|" + 
 URL_SAFE = "/'!()*-._~"                     # left as is in the save's links (GitHub raw style; spaces are %20)
 SITE_CARDS = "site/dist/data/cards.json"     # local site build: fallback when the website is unreachable
 CARD_NAMES = ("Card", "CardCustom")
-HAND_NAMED = ("Auxiliary/Rulebook/", "Auxiliary/Markers/", RULEBOOK_PAGES + "/")   # page and marker cards: not website names
-RULEBOOK_BAG = "Rulebooks"                   # the save's bag of rulebook pages
-OLD_RULEBOOK = "Old Rulebook (Photoshop pages)"   # the bag inside it the Photoshop pages went to on 10-29 (taken out, owner 10-30)
-OLD_PAGES = "Auxiliary/Rulebook/"
+HAND_NAMED = ("Auxiliary/Markers/",)          # marker cards: not website names
+RULEBOOK_BAG = "Rulebooks"                   # the save's bag holding the rulebook's PDF
+BOOK_COVER = "Book_Cover.png"                # the bag's look, in RULEBOOK_PAGES
 PDF_NAME = "Rulebook"                        # the PDF object's Nickname when made
 PDF_SCALE = 3.0                              # its size when made (a 1080x1920 page); the team may resize it
 CARD_FOLDERS = ("Creatures/", "Items/", "Field/", "N.M.E/", "Auxiliary/")   # build_site.CARD_FOLDERS
@@ -857,9 +855,8 @@ def _resize_targets(save: dict, repo: _Repo, names: _Names, report: _Report) -> 
 def _rulebook(save: dict, repo: _Repo, report: _Report) -> None:
     """
     The Rulebooks bag holds the rulebook's PDF as one Custom_PDF object (on top: the bag's last object), made once from
-    the bag's settings and linked to TTS/Rulebook/Rulebook.pdf (its link's commit is _pin_links'); page cards of the
-    rulebook's pages from before the PDF, the Photoshop pages and their bag (OLD_RULEBOOK) are taken out. Anything else in
-    the bag stays, the PDF object's place and settings too once made.
+    the bag's settings and linked to TTS/Rulebook/Rulebook.pdf (its link's commit is _pin_links'), and wears
+    TTS/Rulebook/Book_Cover.png. Anything else in the bag stays, the PDF object's place and settings too once made.
     """
     book = read_pages(repo.checkout)
     if not book.get("pdf"):
@@ -869,40 +866,26 @@ def _rulebook(save: dict, repo: _Repo, report: _Report) -> None:
     if bag is None:
         report.errors.append(f"No bag named {RULEBOOK_BAG}: the rulebook's PDF is not in the save.")
         return
+    cover, mesh = f"{RULEBOOK_PAGES}/{BOOK_COVER}", bag.get("CustomMesh")
+    link = LINK.search((mesh or {}).get("DiffuseURL") or "")
+    if isinstance(mesh, dict) and exists(join(repo.checkout, cover)) and (not link or unquote(link.group(2)) != cover):
+        mesh["DiffuseURL"] = repo.url(cover)
+        report.rulebook.append(f"the bag's cover is `{cover}`")
     inside = list(bag.get("ContainedObjects") or [])
-    page_of = lambda o: (_face_path(o) or "") if o.get("Name") in CARD_NAMES else ""
     pdf_of = lambda o: (unquote(m.group(2)) if (m := LINK.search((o.get("CustomPDF") or {}).get("PDFUrl") or "")) else "") if o.get("Name") == "Custom_PDF" else ""
-    old = [o for o in inside if page_of(o).startswith(OLD_PAGES)]
-    pages = [o for o in inside if page_of(o).startswith(RULEBOOK_PAGES + "/")]
     pdfs = [o for o in inside if pdf_of(o) == path]
-    taken = {id(o) for o in old + pages + pdfs}
-    others = [o for o in inside if id(o) not in taken]
-    guids = {o.get("GUID") for o, _ in _walk(save.get("ObjectStates"))}
-
-    def guid() -> str:
-        while True:
-            g = token_hex(3)
-            if g not in guids:
-                guids.add(g)
-                return g
-    nested = [o for o in others if o.get("Nickname") == OLD_RULEBOOK]
-    if nested or old:
-        n = len(old) + sum(len(o.get("ContainedObjects") or []) for o in nested)
-        others = [o for o in others if o not in nested]
-        report.rulebook.append(f"the Photoshop rulebook taken out ({_plural(n, 'page')}{', and its bag' if nested else ''})")
-    if pages:
-        report.rulebook.append(f"{_plural(len(pages), 'page card')} taken out (the rulebook is a PDF now)")
+    others = [o for o in inside if o not in pdfs]
     if pdfs:
         pdf = pdfs[0]
         for extra in pdfs[1:]:
             report.rulebook.append(f"a second PDF object `{extra.get('GUID')}` taken out")
     else:
-        template = next((o for o in [*pages, *old, *(c for b in nested for c in b.get("ContainedObjects") or [])] if o.get("Transform")), None)
-        pdf = {"GUID": guid(), "Name": "Custom_PDF",
-               "Transform": deepcopy((template or bag).get("Transform") or {}), "Nickname": PDF_NAME,
+        guids = {o.get("GUID") for o, _ in _walk(save.get("ObjectStates"))}
+        pdf = {"GUID": next(g for g in iter(lambda: token_hex(3), None) if g not in guids), "Name": "Custom_PDF",
+               "Transform": deepcopy(bag.get("Transform") or {}), "Nickname": PDF_NAME,
                "Description": f"The rulebook. Flip pages with the arrows; also on the website: {SITE_URL}/#/rules",
                "GMNotes": ""}
-        for k in ("AltLookAngle", "ColorDiffuse", "LayoutGroupSortIndex", "Value", "Locked", "Grid", "Snap", "IgnoreFoW",
+        for k in ("AltLookAngle", "LayoutGroupSortIndex", "Value", "Locked", "Grid", "Snap", "IgnoreFoW",
                   "MeasureMovement", "DragSelectable", "Autoraise", "Sticky", "Tooltip", "GridProjection"):
             if k in bag:
                 pdf[k] = deepcopy(bag[k])

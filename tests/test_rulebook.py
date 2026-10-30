@@ -1,6 +1,5 @@
 """The rulebook written on the website (owner 2026-10-29): its chapters as plain text for db/rulebook.json, its TTS PDF
-printed again only when a page's pixels change, and the save's Rulebooks bag holding the PDF, the Photoshop pages moved
-into a bag of their own and kept."""
+printed again only when a page's pixels change, and the save's Rulebooks bag holding the PDF."""
 import json
 import types
 from io import BytesIO
@@ -76,16 +75,15 @@ def _card(guid, path, nick, deck_id):
 
 
 def test_rulebooks_bag_takes_the_pdf(tmp_path):
-    """The Photoshop pages (loose or in their bag) and the page cards of before the PDF go, one Custom_PDF object is made
-    on top (linked to the PDF, a fresh GUID); a second run changes nothing and keeps the team's changes to it."""
+    """One Custom_PDF object is made on top of the Rulebooks bag (linked to the PDF, a fresh GUID), the bag wears
+    TTS/Rulebook/Book_Cover.png; a second run changes nothing and keeps the team's changes to the PDF object."""
     folder = tmp_path / "TTS" / "Rulebook"
     folder.mkdir(parents=True)
     (folder / "pages.json").write_text(json.dumps({"pdf": "Rulebook.pdf", "pages": [{"name": "Cover"}, {"name": "Stats"}]}), encoding="utf-8")
-    old = [_card("aaaaaa", "Auxiliary/Rulebook/01_Getting_Started.png", "Page 1: Getting Started", 40),
-           _card("bbbbbb", "Auxiliary/Rulebook/00_Table_of_Contents.png", "Page 0: Table of Contents", 41)]
-    pages = [_card("ffffff", "TTS/Rulebook/07-01.png", "Page 7: Stats", 50)]
+    (folder / "Book_Cover.png").write_bytes(_png("black"))
     note = {"GUID": "cccccc", "Name": "Notecard", "Nickname": "House rules"}
-    bag = {"GUID": "dddddd", "Name": "Custom_Model_Bag", "Nickname": "Rulebooks", "Locked": False, "ContainedObjects": [*old, note, *pages]}
+    bag = {"GUID": "dddddd", "Name": "Custom_Model_Bag", "Nickname": "Rulebooks", "Locked": False, "Transform": {"posX": 1.0, "scaleX": 5.0},
+           "CustomMesh": {"DiffuseURL": f"{tts_save.RAW}abc1234/MDW/Old%20Rules/Rulebook/0000_Cover_Book.png"}, "ContainedObjects": [note]}
     save = {"ObjectStates": [bag, _card("eeeeee", "Items/x.png", "X", 90)]}
     repo = types.SimpleNamespace(checkout=str(tmp_path), url=lambda p: f"{tts_save.RAW}main/{p}", sha=lambda p: None)
     report = tts_save._Report()
@@ -95,17 +93,13 @@ def test_rulebooks_bag_takes_the_pdf(tmp_path):
     pdf = inside[1]
     assert pdf["CustomPDF"] == {"PDFUrl": f"{tts_save.RAW}main/TTS/Rulebook/Rulebook.pdf", "PDFPassword": "", "PDFPage": 0, "PDFPageOffset": 0}
     assert pdf["Transform"]["scaleX"] == tts_save.PDF_SCALE and pdf["Transform"]["posX"] == 1.0
-    assert report.unpinned == {"TTS/Rulebook/Rulebook.pdf"} and any("1 page card taken out" in x for x in report.rulebook)
-    assert any("Photoshop rulebook taken out (2 pages)" in x for x in report.rulebook)
+    assert bag["CustomMesh"]["DiffuseURL"] == f"{tts_save.RAW}main/TTS/Rulebook/Book_Cover.png"
+    assert report.unpinned == {"TTS/Rulebook/Rulebook.pdf"}
     guids = [o.get("GUID") for o, _ in tts_save._walk(save["ObjectStates"])]
     assert len(guids) == len(set(guids))
     pdf["Transform"]["scaleX"] = 2.0                       # the team resized it
     pdf["CustomPDF"]["PDFUrl"] = f"{tts_save.RAW}{'1' * 40}/TTS/Rulebook/Rulebook.pdf"   # _pin_links pinned it
+    bag["CustomMesh"]["DiffuseURL"] = f"{tts_save.RAW}{'2' * 40}/TTS/Rulebook/Book_Cover.png"
     again = tts_save._Report()
     tts_save._rulebook(save, repo, again)
     assert again.rulebook == [] and bag["ContainedObjects"] == inside and pdf["Transform"]["scaleX"] == 2.0
-    nested = {"GUID": "abcdef", "Name": "Custom_Model_Bag", "Nickname": tts_save.OLD_RULEBOOK, "ContainedObjects": old}   # the bag of 10-29
-    bag["ContainedObjects"] = [nested, *inside]
-    gone = tts_save._Report()
-    tts_save._rulebook(save, repo, gone)
-    assert bag["ContainedObjects"] == inside and gone.rulebook == ["the Photoshop rulebook taken out (2 pages, and its bag)"]

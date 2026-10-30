@@ -22,7 +22,7 @@ fresh sweep exactly (819 entries, no ability, display_name or stars difference),
 00:43) gives the same tag counts. So the bot and the site carry the new tags and printed titles: `/query_ability (1gcd)`
 finds 82 cards and `(1pt)` none (only the rulebook page 11_Abilities2 still holds it, for `/query_rulebook`).
 
-`MDW/Old Rules/` is history only. Where the rulebook is silent or contradicts itself this skill says so under "Known
+`MDW/Old Rules/` is history only (since 2026-10-30: `Rulebook/` the 48 Photoshop pages this file cites as (NN_Stem), `Very Old Rulebook/` the first rules). Where the rulebook is silent or contradicts itself this skill says so under "Known
 gaps and ambiguities"; never fill a gap by guessing. Use the rulebook's words only (creatures, minions, items, item
 types, field cards, N.M.E. items, status effects, buffs, debuffs, stars, types, abilities, timing tags, global turn, slots,
 lanes, primary/secondary field, points, star points, BRICKS, shops, starting hand, facedown items).

@@ -177,6 +177,24 @@ def test_changed_moved_archived(cards):
     assert (last["kind"], last["card"], last["by"], last["seq"]) == ("archived", "The Freezer", "dave", 5)
 
 
+def test_rule_pages_are_not_cards(cards):
+    """The Photoshop rule pages (owner 10-29/10-30: the rulebook is site/rulebook's chapters): a PSD in a Rulebook folder is
+    never read, and a stored rule page is dropped without an archive tag or an event."""
+    from copy import deepcopy
+    _build(cards, "--empty")
+    stats, old, details, manifest = cdb.read_db(str(cards.db))
+    page = deepcopy(stats["Mini Doomer"])
+    page.name, page.path, page.card_type = "08 Global Turn", "Auxiliary/Rulebook/08_Global_Turn.psd", "rulebook"
+    stats[page.name] = page
+    cdb.write_db(str(cards.db), stats, old, (cards.db / "psd_details.json").read_text(encoding="utf-8"), manifest)
+    put(cards.repo, "Auxiliary/Rulebook/09_Taking_Your_Turn.psd", cards.psds[OTHER])
+    commit(cards.repo, "bob", 2000)
+    assert _build(cards)[0] == cd.EXIT_OK
+    stats, old, _, manifest, events = _read(cards)
+    assert set(stats) == {"Mini Doomer", "The Freezer"} and "08 Global Turn" not in old
+    assert not [e for e in events if e["card"] in ("08 Global Turn", "09 Taking Your Turn")] and not manifest["counts"].get("archived")
+
+
 def test_failed_psd_waits_for_a_new_blob(cards, monkeypatch):
     """A PSD that could not be read is not read again until its blob changes, or `cards` names it; it stays failed
     (and, a new name, holds the archive) meanwhile."""

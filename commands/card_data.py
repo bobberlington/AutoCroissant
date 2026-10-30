@@ -413,13 +413,15 @@ class CardBuild:
         return IconVocabulary.build(self.db.all_types, stars, manifest)
 
     def _card_psds(self, response) -> list:
-        """The tree's card PSDs (excluded folders left out), one per card name: of two PSDs with one name the stored
+        """The tree's card PSDs (excluded folders and rule pages left out: the rulebook is site/rulebook's chapters since
+        2026-10-29), one per card name: of two PSDs with one name the stored
         card's path stays (else the first in tree order) and the other is ignored, one line each (a clash would
         otherwise flip the card between them and add a version at every run)."""
         items, by_name = [], {}
         for item in self._tree_items(response):
             path = item.get("path", "")
-            if path.endswith('.psd') and not any(folder in EXCLUDE_FOLDERS for folder in path.split('/')):
+            parts = path.split('/')
+            if path.endswith('.psd') and not any(folder in EXCLUDE_FOLDERS or folder == RULEBOOK_DIR for folder in parts):
                 by_name.setdefault(card_name(path), []).append(item)
                 items.append(item)
         skipped = set()
@@ -1215,6 +1217,8 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     out = Outcome()
     data_head = _data_head(db_dir)
     stats, old, details, manifest_before = read_db(db_dir)
+    for name in [n for n, c in stats.items() if getattr(c, "card_type", "") == "rulebook" or RULEBOOK_DIR in (c.path or "").split("/")]:
+        del stats[name]                                       # the Photoshop rule pages: not cards (dropped, never archived or told)
     if not stats and not empty:
         raise ValueError(f"{db_dir} holds no cards: give --empty to start new card data")
     pending_before = (manifest_before.get("pending") or {}) if not restore else {}
