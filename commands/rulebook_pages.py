@@ -9,14 +9,14 @@ sync's main lane runs it before the save; tts_save puts the PDF in the save's Ru
 The website must show the checkout's chapters (the page lists the chapters it was cut from): else nothing changes and
 the next run draws them. Headless Chrome ($CHROME, else the first of CHROMES on PATH) over its DevTools pipe; no
 package beyond Pillow. Each page is screenshot and hashed: the PDF is printed again only when a hash changed (a PDF's
-bytes carry its print time), so an unchanged rulebook keeps its file and its pinned link. Page PNGs left from before the
-PDF are removed. Exit 1 when the pages could not be drawn (nothing changed then).
+bytes carry its print time), so an unchanged rulebook keeps its file and its pinned link. Other files in the folder
+(Book_Cover.png) are left alone. Exit 1 when the pages could not be drawn (nothing changed then).
 """
 from argparse import ArgumentParser
 from base64 import b64decode
 from io import BytesIO
 from json import dumps, loads
-from os import close, environ, listdir, makedirs, pipe, read, remove, write
+from os import close, environ, listdir, makedirs, pipe, read, write
 from hashlib import sha256
 from os.path import getsize, isdir, isfile, join
 from platform import system
@@ -227,10 +227,10 @@ def read_pages(checkout: str) -> dict:
 def write_pages(folder: str, shots: list, pdf_maker) -> dict:
     """
     pages.json and the PDF into folder: the PDF printed (pdf_maker(), bytes) when a page's hash changed, the list changed or the
-    PDF is missing; page PNGs left from before removed.
+    PDF is missing.
 
     Returns:
-        {"pages": n, "changed": [page names], "printed": bool, "removed": [files]}
+        {"pages": n, "changed": [page names], "printed": bool}
     """
     makedirs(folder, exist_ok=True)
     pages = [{"name": entry["name"], "num": entry.get("num") or "", "sha": page_sha(png)} for entry, png in shots]
@@ -245,16 +245,12 @@ def write_pages(folder: str, shots: list, pdf_maker) -> dict:
     before = [(p.get("name"), p.get("sha")) for p in old.get("pages") or [] if isinstance(p, dict)]
     changed = [p["name"] for k, p in enumerate(pages) if k >= len(before) or before[k] != (p["name"], p["sha"])]
     need = bool(changed) or len(before) != len(pages) or not isfile(pdf)
-    out = {"pages": len(pages), "changed": changed, "printed": False, "removed": []}
+    out = {"pages": len(pages), "changed": changed, "printed": False}
     if need:
         data = pdf_maker()
         with open(pdf, "wb") as fh:
             fh.write(data)
         out["printed"] = True
-    for name in sorted(listdir(folder)):
-        if name.lower().endswith(".png"):                    # the page images of before the PDF
-            remove(join(folder, name))
-            out["removed"].append(name)
     text = dumps({"about": ABOUT, "pdf": PDF_FILE, "pages": pages}, ensure_ascii=False, indent=1) + "\n"
     if text != (open(listing, encoding="utf-8").read() if isfile(listing) else None):
         with open(listing, "w", encoding="utf-8") as fh:
@@ -289,12 +285,11 @@ def update_pages(checkout: str, site: str = SITE_URL, exe: str = "") -> str:
         done = write_pages(join(checkout, RULEBOOK_PAGES), shots, printer.pdf)
     finally:
         printer.close()
-    note = f"; {len(done['removed'])} old page images removed" if done["removed"] else ""
     if not done["printed"]:
-        return f"Rulebook PDF: {done['pages']} pages, as they were{note}."
+        return f"Rulebook PDF: {done['pages']} pages, as they were."
     size = getsize(join(checkout, RULEBOOK_PAGES, PDF_FILE))
     what = f"{len(done['changed'])} pages changed" if done["changed"] and len(done["changed"]) < done["pages"] else "printed"
-    return f"Rulebook PDF: {done['pages']} pages, {what} ({size / 1e6:.1f} MB){note}."
+    return f"Rulebook PDF: {done['pages']} pages, {what} ({size / 1e6:.1f} MB)."
 
 
 def main(args: Optional[list] = None) -> int:

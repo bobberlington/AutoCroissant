@@ -50,15 +50,15 @@ def _png(colour) -> bytes:
 
 def test_pdf_printed_only_when_a_page_changes(tmp_path):
     """pages.json keeps each page's pixel hash; the PDF is printed again only when one changes (its bytes carry the print
-    time); page PNGs of before the PDF go."""
+    time); the bag's cover beside it stays."""
     folder = tmp_path / "TTS" / "Rulebook"
     folder.mkdir(parents=True)
-    (folder / "07-01.png").write_bytes(_png("white"))
+    (folder / "Book_Cover.png").write_bytes(_png("white"))
     printed = []
     pdf = lambda: printed.append(1) or b"%PDF-1.4 fake"
     shots = [({"name": "Cover", "num": ""}, _png("white")), ({"name": "Stats", "num": "7"}, _png("blue")), ({"name": "Stats 2", "num": "7.2"}, _png("red"))]
     done = rulebook_pages.write_pages(str(folder), shots, pdf)
-    assert done["printed"] and done["removed"] == ["07-01.png"] and (folder / "Rulebook.pdf").read_bytes() == b"%PDF-1.4 fake"
+    assert done["printed"] and (folder / "Book_Cover.png").exists() and (folder / "Rulebook.pdf").read_bytes() == b"%PDF-1.4 fake"
     again = [shots[0], (shots[1][0], _png("blue")), shots[2]]                     # same pixels
     assert not rulebook_pages.write_pages(str(folder), again, pdf)["printed"] and len(printed) == 1
     done = rulebook_pages.write_pages(str(folder), [shots[0], shots[1], (shots[2][0], _png("green"))], pdf)
