@@ -130,14 +130,17 @@ def test_sync_decks_keeps_non_png_and_skips_bad_entries(save, repo):
 
 
 def test_pin_links_reports_pinned_and_repinned(repo):
-    """Links on main are 'Links pinned', links on an older sha 'Links re-pinned (changed files)' (UPD-3)."""
+    """Links on main are 'Links pinned', links on an older sha 'Links re-pinned (changed files)' (UPD-3); the global
+    script's live-data links stay on main."""
     tile = {"Name": "Custom_Tile", "CustomImage": {"ImageURL": f"{RAW}main/{tts._encode(B)}",
                                                    "ImageSecondaryURL": f"{RAW}0dd0001/{BACK}"}}
-    save = {"ObjectStates": [tile]}
+    lua = f'local PAGES = "{RAW}main/{tts._encode(B)}"'
+    save = {"ObjectStates": [tile], "LuaScript": lua}
     report = tts._Report()
     tts._pin_links(save, repo, report)
     assert tile["CustomImage"] == {"ImageURL": f"{RAW}c0ffee1/Items/Heal/2%20Stars/B.png",
                                    "ImageSecondaryURL": f"{RAW}bac0001/{BACK}"}
+    assert save["LuaScript"] == lua
     text = tts._render(report, [])
     assert f"## Links pinned (1)\n- `{B}`: main -> `c0ffee1` (1 link)" in text
     assert f"## Links re-pinned (changed files) (1)\n- `{BACK}`: `0dd0001` -> `bac0001` (1 link)" in text

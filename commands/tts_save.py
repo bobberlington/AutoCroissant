@@ -141,12 +141,13 @@ def _walk(objects, parents=()):
             yield from _walk([state], parents + (o,))
 
 
-def _strings(value, fn):
-    """Apply fn to every string holding a repo link, in place inside containers (a card's TEAM_FIELDS skipped)."""
+def _strings(value, fn, top=False):
+    """Apply fn to every string holding a repo link, in place inside containers (a card's TEAM_FIELDS skipped; top: the
+    save, whose global script and UI are Global.lua's and Global.xml's, their links live data on main)."""
     if isinstance(value, dict):
         card = value.get("Name") in CARD_NAMES
         for k, v in value.items():
-            if not (card and k in TEAM_FIELDS):
+            if not (card and k in TEAM_FIELDS) and not (top and k in ("LuaScript", "XmlUI")):
                 value[k] = _strings(v, fn)
     elif isinstance(value, list):
         for i, v in enumerate(value):
@@ -509,7 +510,7 @@ def _pin_links(save: dict, repo: _Repo, report: _Report) -> None:
         for m in LINK.finditer(text):
             links[m.groups()] = links.get(m.groups(), 0) + 1
         return text
-    _strings(save, collect)
+    _strings(save, collect, top=True)
     if not repo.tree or not repo.history:
         return
     check: dict = {}                                        # sha -> paths whose pin differs from the current one
@@ -578,7 +579,7 @@ def _pin_links(save: dict, repo: _Repo, report: _Report) -> None:
         return LINK.sub(lambda m: f"{RAW}{changes[m.groups()][0]}/{changes[m.groups()][1]}" if m.groups() in changes
                         else m.group(0), text)
     if changes:
-        _strings(save, apply)
+        _strings(save, apply, top=True)
 
 
 def _template(everything: list, deck: dict, back: str):
