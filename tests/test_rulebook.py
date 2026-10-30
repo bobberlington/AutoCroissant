@@ -1,6 +1,6 @@
-"""The rulebook written on the website (owner 2026-10-29): its chapters as plain text for db/rulebook.json, the TTS pages
-written beside pages.json (same pixels: same file), and the save's Rulebooks bag filled from them, the Photoshop pages
-moved into a bag of their own and kept."""
+"""The rulebook written on the website (owner 2026-10-29): its chapters as plain text for db/rulebook.json, its TTS PDF
+printed again only when a page's pixels change, and the save's Rulebooks bag holding the PDF, the Photoshop pages moved
+into a bag of their own and kept."""
 import json
 import types
 from io import BytesIO
@@ -49,56 +49,58 @@ def _png(colour) -> bytes:
     return out.getvalue()
 
 
-def test_pages_written_only_when_their_pixels_change(tmp_path):
+def test_pdf_printed_only_when_a_page_changes(tmp_path):
+    """pages.json keeps each page's pixel hash; the PDF is printed again only when one changes (its bytes carry the print
+    time); page PNGs of before the PDF go."""
     folder = tmp_path / "TTS" / "Rulebook"
-    shots = [({"name": "Table of Contents", "num": "", "ch": "00", "n": 1}, _png("white")),
-             ({"name": "Stats", "num": "7", "ch": "07", "n": 1}, _png("blue")), ({"name": "Stats 2", "num": "7.2", "ch": "07", "n": 2}, _png("red"))]
-    assert rulebook_pages.write_pages(str(folder), shots) == {"new": ["00-01.png", "07-01.png", "07-02.png"], "redrawn": [], "removed": [], "listed": True}
-    first = (folder / "07-01.png").stat().st_mtime_ns
-    again = [shots[0], (shots[1][0], _png("blue")), (shots[2][0], _png("green"))]
-    assert rulebook_pages.write_pages(str(folder), again) == {"new": [], "redrawn": ["07-02.png"], "removed": [], "listed": False}
-    assert (folder / "07-01.png").stat().st_mtime_ns == first                       # same pixels: the file (its pin) stays
-    assert rulebook_pages.write_pages(str(folder), again[:2])["removed"] == ["07-02.png"]
-    assert rulebook_pages.read_pages(str(tmp_path)) == [{"file": "00-01.png", "name": "Table of Contents", "num": ""},
-                                                        {"file": "07-01.png", "name": "Stats", "num": "7"}]
+    folder.mkdir(parents=True)
+    (folder / "07-01.png").write_bytes(_png("white"))
+    printed = []
+    pdf = lambda: printed.append(1) or b"%PDF-1.4 fake"
+    shots = [({"name": "Cover", "num": ""}, _png("white")), ({"name": "Stats", "num": "7"}, _png("blue")), ({"name": "Stats 2", "num": "7.2"}, _png("red"))]
+    done = rulebook_pages.write_pages(str(folder), shots, pdf)
+    assert done["printed"] and done["removed"] == ["07-01.png"] and (folder / "Rulebook.pdf").read_bytes() == b"%PDF-1.4 fake"
+    again = [shots[0], (shots[1][0], _png("blue")), shots[2]]                     # same pixels
+    assert not rulebook_pages.write_pages(str(folder), again, pdf)["printed"] and len(printed) == 1
+    done = rulebook_pages.write_pages(str(folder), [shots[0], shots[1], (shots[2][0], _png("green"))], pdf)
+    assert done["printed"] and done["changed"] == ["Stats 2"] and len(printed) == 2
+    book = rulebook_pages.read_pages(str(tmp_path))
+    assert book["pdf"] == "Rulebook.pdf" and [p["name"] for p in book["pages"]] == ["Cover", "Stats", "Stats 2"]
 
 
 def _card(guid, path, nick, deck_id):
     url = f"{tts_save.RAW}abc1234/{path}"
     return {"GUID": guid, "Name": "CardCustom", "Nickname": nick, "Description": "theirs", "CardID": deck_id * 100,
-            "CustomDeck": {str(deck_id): {"FaceURL": url, "BackURL": url, "NumWidth": 1, "NumHeight": 1}}, "LuaScript": "x"}
+            "CustomDeck": {str(deck_id): {"FaceURL": url, "BackURL": url, "NumWidth": 1, "NumHeight": 1}}, "LuaScript": "x",
+            "Transform": {"posX": 1.0, "scaleX": 4.0, "scaleY": 1.0, "scaleZ": 4.0}}
 
 
-def test_rulebooks_bag_takes_the_pages(tmp_path):
-    """The Photoshop pages move into their own bag (once); the pages go in book order, the first page last as before,
-    made from a page card with fresh GUIDs and CustomDeck ids; a gone page leaves; a second run changes nothing."""
-    pages = tmp_path / "TTS" / "Rulebook"
-    pages.mkdir(parents=True)
-    listing = [{"file": "00-01.png", "name": "Table of Contents", "num": ""}, {"file": "07-01.png", "name": "Stats", "num": "7"},
-               {"file": "07-02.png", "name": "Stats 2", "num": "7.2"}]
-    (pages / "pages.json").write_text(json.dumps({"pages": listing}), encoding="utf-8")
+def test_rulebooks_bag_takes_the_pdf(tmp_path):
+    """The Photoshop pages move into their own bag (once), the page cards of before the PDF go, one Custom_PDF object is
+    made on top (linked to the PDF, a fresh GUID); a second run changes nothing and keeps the team's changes to it."""
+    folder = tmp_path / "TTS" / "Rulebook"
+    folder.mkdir(parents=True)
+    (folder / "pages.json").write_text(json.dumps({"pdf": "Rulebook.pdf", "pages": [{"name": "Cover"}, {"name": "Stats"}]}), encoding="utf-8")
     old = [_card("aaaaaa", "Auxiliary/Rulebook/01_Getting_Started.png", "Page 1: Getting Started", 40),
            _card("bbbbbb", "Auxiliary/Rulebook/00_Table_of_Contents.png", "Page 0: Table of Contents", 41)]
+    pages = [_card("ffffff", "TTS/Rulebook/07-01.png", "Page 7: Stats", 50)]
     note = {"GUID": "cccccc", "Name": "Notecard", "Nickname": "House rules"}
-    bag = {"GUID": "dddddd", "Name": "Custom_Model_Bag", "Nickname": "Rulebooks", "ContainedObjects": [*old, note]}
+    bag = {"GUID": "dddddd", "Name": "Custom_Model_Bag", "Nickname": "Rulebooks", "Locked": False, "ContainedObjects": [*old, note, *pages]}
     save = {"ObjectStates": [bag, _card("eeeeee", "Items/x.png", "X", 90)]}
     repo = types.SimpleNamespace(checkout=str(tmp_path), url=lambda p: f"{tts_save.RAW}main/{p}", sha=lambda p: None)
     report = tts_save._Report()
     tts_save._rulebook(save, repo, report)
     inside = bag["ContainedObjects"]
     assert inside[0]["Nickname"] == tts_save.OLD_RULEBOOK and inside[0]["ContainedObjects"] == old and inside[1] is note
-    assert [c["Nickname"] for c in inside[2:]] == ["Page 7.2: Stats 2", "Page 7: Stats", "Page 0: Table of Contents"]
-    made = inside[2:]
-    assert sorted(c["CardID"] // 100 for c in made) == [91, 92, 93] and all(list(c["CustomDeck"]) == [str(c["CardID"] // 100)] for c in made)
-    assert all(c["Description"] == "" and c["LuaScript"] == "" for c in made)
-    assert next(iter(made[2]["CustomDeck"].values()))["FaceURL"].endswith("main/TTS/Rulebook/00-01.png")
+    assert len(inside) == 3 and inside[2]["Name"] == "Custom_PDF" and inside[2]["Nickname"] == "Rulebook"
+    pdf = inside[2]
+    assert pdf["CustomPDF"] == {"PDFUrl": f"{tts_save.RAW}main/TTS/Rulebook/Rulebook.pdf", "PDFPassword": "", "PDFPage": 0, "PDFPageOffset": 0}
+    assert pdf["Transform"]["scaleX"] == tts_save.PDF_SCALE and pdf["Transform"]["posX"] == 1.0
+    assert report.unpinned == {"TTS/Rulebook/Rulebook.pdf"} and any("1 page card taken out" in x for x in report.rulebook)
     guids = [o.get("GUID") for o, _ in tts_save._walk(save["ObjectStates"])]
     assert len(guids) == len(set(guids))
-    assert report.unpinned == {f"TTS/Rulebook/{p['file']}" for p in listing}
+    pdf["Transform"]["scaleX"] = 2.0                       # the team resized it
+    pdf["CustomPDF"]["PDFUrl"] = f"{tts_save.RAW}{'1' * 40}/TTS/Rulebook/Rulebook.pdf"   # _pin_links pinned it
     again = tts_save._Report()
     tts_save._rulebook(save, repo, again)
-    assert again.rulebook == [] and bag["ContainedObjects"] == inside
-    (pages / "pages.json").write_text(json.dumps({"pages": listing[:2]}), encoding="utf-8")
-    tts_save._rulebook(save, repo, again)
-    assert [c["Nickname"] for c in bag["ContainedObjects"][2:]] == ["Page 7: Stats", "Page 0: Table of Contents"]
-    assert again.rulebook == ["removed Page 7.2: Stats 2 `TTS/Rulebook/07-02.png` (no longer a page)"]
+    assert again.rulebook == [] and bag["ContainedObjects"] == inside and pdf["Transform"]["scaleX"] == 2.0

@@ -1,21 +1,24 @@
 """
-The rulebook's TTS pages: the website's #/rules/print pages (1080x1920, the chapters cut as the Photoshop pages were) as
-PNGs in the card repo's TTS/Rulebook, and pages.json listing them in book order. Card sync's main lane runs it before
-the save; tts_save puts the pages in the save's Rulebooks bag.
+The rulebook's TTS PDF: the website's #/rules/print pages (1080x1920, the cover then the chapters cut as the Photoshop
+pages were) printed by Chrome to the card repo's TTS/Rulebook/Rulebook.pdf (real text: searchable and selectable, one
+page per sheet, bookmarks from the headings), and pages.json listing the pages with a hash of each one's pixels. Card
+sync's main lane runs it before the save; tts_save puts the PDF in the save's Rulebooks bag (a Custom_PDF object).
 
     python -m commands.rulebook_pages <card repo checkout> [--site URL]
 
 The website must show the checkout's chapters (the page lists the chapters it was cut from): else nothing changes and
 the next run draws them. Headless Chrome ($CHROME, else the first of CHROMES on PATH) over its DevTools pipe; no
-package beyond Pillow. A page whose pixels are the same keeps its file (its pinned link too); pages no longer listed
-go. Exit 1 when the pages could not be drawn (nothing changed then).
+package beyond Pillow. Each page is screenshot and hashed: the PDF is printed again only when a hash changed (a PDF's
+bytes carry its print time), so an unchanged rulebook keeps its file and its pinned link. Page PNGs left from before the
+PDF are removed. Exit 1 when the pages could not be drawn (nothing changed then).
 """
 from argparse import ArgumentParser
 from base64 import b64decode
 from io import BytesIO
 from json import dumps, loads
 from os import close, environ, listdir, makedirs, pipe, read, remove, write
-from os.path import isdir, isfile, join
+from hashlib import sha256
+from os.path import getsize, isdir, isfile, join
 from platform import system
 from select import select
 from shutil import rmtree, which
@@ -35,11 +38,27 @@ from global_config import RULEBOOK_PAGES, RULEBOOK_SRC, SITE_URL
 CHROMES = ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "chrome-headless-shell", "chrome")
 VIEW = "#/rules/print"                         # the website's TTS pages (app.js renderSheets)
 PAGES_JSON = "pages.json"
+PDF_FILE = "Rulebook.pdf"
+TITLE = "Impossibility Simulator Rulebook"     # the PDF's title
+JPEG_QUALITY = 0.88                            # opaque pictures go in the PDF as JPEG (Chrome keeps them; others go lossless)
+TO_JPEG = """Promise.all([...document.querySelectorAll('.rb-sheets img')].map(async im => {
+  if (!im.naturalWidth || im.src.startsWith('data:image/jpeg')) return 0;
+  const c = document.createElement('canvas'); c.width = im.naturalWidth; c.height = im.naturalHeight;
+  const g = c.getContext('2d'); g.drawImage(im, 0, 0);
+  const a = g.getImageData(0, 0, c.width, c.height).data;
+  for (let i = 3; i < a.length; i += 4) if (a[i] < 255) return 0;     // see-through: as it is
+  im.src = c.toDataURL('image/jpeg', %s); await im.decode().catch(() => 0); return 1;
+})).then(r => r.reduce((x, y) => x + y, 0))"""
+PRINT_CSS = ("@page { size: 1080px 1920px; margin: 0 } "   # one sheet a page, nothing else printed
+             "@media print { body > :not(main), main > :not(.rb-sheets) { display: none !important } "
+             "main { padding: 0 !important; margin: 0 !important; max-width: none !important } .rb-sheets { display: block !important } "
+             ".rb-sheets .rb-sheet { zoom: 1 !important; box-shadow: none !important; break-after: page; margin: 0 !important } }")
 SHEET = (1080, 1920)                           # a page, as the Photoshop pages were (rulebook.js SHEET)
 WAIT_SECONDS = 180                             # for the website to load and cut its pages
 CALL_SECONDS = 60                              # one DevTools call
-ABOUT = ("The rulebook's TTS pages, drawn from the website's #/rules/print by AutoCroissant commands/rulebook_pages.py "
-         "(Card sync); the chapters are site/rulebook. tts_save puts them in the save's Rulebooks bag, in this order.")
+ABOUT = ("The rulebook's TTS PDF, printed from the website's #/rules/print by AutoCroissant commands/rulebook_pages.py "
+         "(Card sync); the chapters are site/rulebook. sha: each page's pixels (the PDF is printed again when one changes). "
+         "tts_save puts the PDF in the save's Rulebooks bag.")
 
 
 # ========================
@@ -113,7 +132,8 @@ def draw(site: str, exe: str) -> tuple:
     The website's TTS pages.
 
     Returns:
-        ({file: source} of the chapters the website cut them from, [(sheet entry, PNG bytes)] in book order)
+        ({file: source} of the chapters the website cut them from, [(sheet entry, PNG bytes)] in book order, a Printer:
+        its pdf() prints the PDF, its close() quits Chrome (call it in any case))
     """
     chrome = Chrome(exe)
     try:
@@ -134,7 +154,10 @@ def draw(site: str, exe: str) -> tuple:
             sleep(0.5)
         listed = loads(run('document.getElementById("rb-sheet-list").textContent'))
         run('document.head.insertAdjacentHTML("beforeend", "<style>.rb-sheets .rb-sheet { zoom: 1 !important; }</style>"); '
-            'Promise.all([...document.images].map(i => i.decode().catch(() => 0))).then(() => document.fonts.ready).then(() => 1)')
+            'const bg = [...new Set([...document.querySelectorAll(".rb-sheets *")].map(e => getComputedStyle(e).backgroundImage)'
+            '.flatMap(v => [...v.matchAll(/url\\("?([^")]+)"?\\)/g)].map(m => m[1])))].map(u => Object.assign(new Image(), { src: u }));'   # the ability boxes' texture
+            'Promise.all([...document.images, ...bg].map(i => i.decode().catch(() => 0))).then(() => document.fonts.ready)'
+            '.then(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))).then(() => 1)')
         boxes = run('[...document.querySelectorAll(".rb-sheets .rb-sheet")].map(e => { const r = e.getBoundingClientRect(); '
                     'return [r.left + scrollX, r.top + scrollY, r.width, r.height]; })')
         if len(boxes) != len(listed["sheets"]):
@@ -146,9 +169,28 @@ def draw(site: str, exe: str) -> tuple:
             got = chrome.call("Page.captureScreenshot", {"format": "png", "captureBeyondViewport": True,
                                                          "clip": {"x": x, "y": y, "width": w, "height": h, "scale": 1}}, session)
             shots.append((entry, b64decode(got["data"])))
-        return dict(listed["chapters"]), shots
-    finally:
+
+        def pdf() -> bytes:
+            run(f"document.title = {dumps(TITLE)}; document.head.insertAdjacentHTML('beforeend', {dumps('<style>' + PRINT_CSS + '</style>')}); 1")
+            run(TO_JPEG % JPEG_QUALITY)
+            params = {"printBackground": True, "preferCSSPageSize": True, "marginTop": 0, "marginBottom": 0, "marginLeft": 0,
+                      "marginRight": 0, "generateDocumentOutline": True, "generateTaggedPDF": True}
+            try:
+                got = chrome.call("Page.printToPDF", params, session, seconds=240)
+            except RuntimeError:                       # an older Chrome without the outline: plain
+                got = chrome.call("Page.printToPDF", {k: v for k, v in params.items() if not k.startswith("generate")}, session, seconds=240)
+            return b64decode(got["data"])
+        return dict(listed["chapters"]), shots, Printer(pdf, chrome.close)
+    except BaseException:
         chrome.close()
+        raise
+
+
+class Printer:
+    """The drawn website's PDF (pdf()) and Chrome's end (close())."""
+
+    def __init__(self, pdf, close):
+        self.pdf, self.close = pdf, close
 
 
 # ========================
@@ -165,65 +207,59 @@ def chapter_sources(checkout: str) -> dict:
     return found
 
 
-def page_file(entry: dict) -> str:
-    """A page's file: its chapter's number and its page in it ("07-02.png": Stats 2)."""
-    return f"{entry['ch']}-{int(entry['n']):02d}.png"
+def page_sha(png: bytes) -> str:
+    """A page's pixels' hash (its PNG bytes may differ for the same pixels)."""
+    with Image.open(BytesIO(png)) as im:
+        return sha256(im.convert("RGB").tobytes() + str(im.size).encode()).hexdigest()
 
 
-def same_pixels(png: bytes, path: str) -> bool:
-    if not isfile(path):
-        return False
-    with Image.open(path) as old, Image.open(BytesIO(png)) as new:
-        return old.size == new.size and old.convert("RGB").tobytes() == new.convert("RGB").tobytes()
-
-
-def write_pages(folder: str, shots: list) -> dict:
-    """
-    The pages into folder: a changed one rewritten (Pillow, optimized), the same one left, the ones no longer listed
-    removed, pages.json rewritten when it differs.
-
-    Returns:
-        {"new": [files], "redrawn": [files], "removed": [files], "listed": bool (pages.json changed)}
-    """
-    makedirs(folder, exist_ok=True)
-    out = {"new": [], "redrawn": [], "removed": [], "listed": False}
-    pages = []
-    for entry, png in shots:
-        name = page_file(entry)
-        path = join(folder, name)
-        pages.append({"file": name, "name": entry["name"], "num": entry.get("num") or ""})
-        if same_pixels(png, path):
-            continue
-        out["redrawn" if isfile(path) else "new"].append(name)
-        with Image.open(BytesIO(png)) as im:
-            im.convert("RGB").save(path, "PNG", optimize=True)
-    keep = {p["file"] for p in pages}
-    for name in sorted(listdir(folder)):
-        if name.lower().endswith(".png") and name not in keep:
-            remove(join(folder, name))
-            out["removed"].append(name)
-    text = dumps({"about": ABOUT, "pages": pages}, ensure_ascii=False, indent=1) + "\n"
-    listing = join(folder, PAGES_JSON)
-    old = None
-    if isfile(listing):
-        with open(listing, encoding="utf-8") as fh:
-            old = fh.read()
-    if text != old:
-        with open(listing, "w", encoding="utf-8") as fh:
-            fh.write(text)
-        out["listed"] = True
-    return out
-
-
-def read_pages(checkout: str) -> list:
-    """pages.json's pages ([] when missing or unreadable): [{file, name, num}] in book order."""
+def read_pages(checkout: str) -> dict:
+    """pages.json ({} when missing or unreadable): {"pdf": file, "pages": [{name, num, sha}]}."""
     path = join(checkout, RULEBOOK_PAGES, PAGES_JSON)
     try:
         with open(path, encoding="utf-8") as fh:
-            pages = loads(fh.read()).get("pages")
-    except (OSError, ValueError, AttributeError):
-        return []
-    return [p for p in pages if isinstance(p, dict) and isinstance(p.get("file"), str)] if isinstance(pages, list) else []
+            data = loads(fh.read())
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) and isinstance(data.get("pages"), list) else {}
+
+
+def write_pages(folder: str, shots: list, pdf_maker) -> dict:
+    """
+    pages.json and the PDF into folder: the PDF printed (pdf_maker(), bytes) when a page's hash changed, the list changed or the
+    PDF is missing; page PNGs left from before removed.
+
+    Returns:
+        {"pages": n, "changed": [page names], "printed": bool, "removed": [files]}
+    """
+    makedirs(folder, exist_ok=True)
+    pages = [{"name": entry["name"], "num": entry.get("num") or "", "sha": page_sha(png)} for entry, png in shots]
+    listing, pdf = join(folder, PAGES_JSON), join(folder, PDF_FILE)
+    old = {}
+    if isfile(listing):
+        try:
+            with open(listing, encoding="utf-8") as fh:
+                old = loads(fh.read())
+        except ValueError:
+            old = {}
+    before = [(p.get("name"), p.get("sha")) for p in old.get("pages") or [] if isinstance(p, dict)]
+    changed = [p["name"] for k, p in enumerate(pages) if k >= len(before) or before[k] != (p["name"], p["sha"])]
+    need = bool(changed) or len(before) != len(pages) or not isfile(pdf)
+    out = {"pages": len(pages), "changed": changed, "printed": False, "removed": []}
+    if need:
+        data = pdf_maker()
+        with open(pdf, "wb") as fh:
+            fh.write(data)
+        out["printed"] = True
+    for name in sorted(listdir(folder)):
+        if name.lower().endswith(".png"):                    # the page images of before the PDF
+            remove(join(folder, name))
+            out["removed"].append(name)
+    text = dumps({"about": ABOUT, "pdf": PDF_FILE, "pages": pages}, ensure_ascii=False, indent=1) + "\n"
+    if text != (open(listing, encoding="utf-8").read() if isfile(listing) else None):
+        with open(listing, "w", encoding="utf-8") as fh:
+            fh.write(text)
+    return out
 
 
 # ========================
@@ -245,25 +281,32 @@ def update_pages(checkout: str, site: str = SITE_URL, exe: str = "") -> str:
     mine = chapter_sources(checkout)
     if not mine:
         return f"Rulebook pages: no chapters in {RULEBOOK_SRC}; pages left as they are."
-    theirs, shots = draw(site, exe)
-    if theirs != mine:
-        return (f"Rulebook pages: the website doesn't show main's chapters yet ({len(set(theirs.items()) ^ set(mine.items()))} "
-                "differ); pages left as they are, the next run draws them.")
-    done = write_pages(join(checkout, RULEBOOK_PAGES), shots)
-    changed = [f"{len(done[k])} {k}" for k in ("new", "redrawn", "removed") if done[k]]
-    return f"Rulebook pages: {len(shots)} pages" + (f", {', '.join(changed)}." if changed else ", all as they were.")
+    theirs, shots, printer = draw(site, exe)
+    try:
+        if theirs != mine:
+            return (f"Rulebook PDF: the website doesn't show main's chapters yet ({len(set(theirs.items()) ^ set(mine.items()))} "
+                    "differ); left as it is, the next run prints it.")
+        done = write_pages(join(checkout, RULEBOOK_PAGES), shots, printer.pdf)
+    finally:
+        printer.close()
+    note = f"; {len(done['removed'])} old page images removed" if done["removed"] else ""
+    if not done["printed"]:
+        return f"Rulebook PDF: {done['pages']} pages, as they were{note}."
+    size = getsize(join(checkout, RULEBOOK_PAGES, PDF_FILE))
+    what = f"{len(done['changed'])} pages changed" if done["changed"] and len(done["changed"]) < done["pages"] else "printed"
+    return f"Rulebook PDF: {done['pages']} pages, {what} ({size / 1e6:.1f} MB){note}."
 
 
 def main(args: Optional[list] = None) -> int:
     """The command line (card-sync.yml): update_pages, its report on stdout."""
-    parser = ArgumentParser(prog="python -m commands.rulebook_pages", description="Draw the rulebook's TTS pages from the website.")
-    parser.add_argument("checkout", help="the card repo's checkout (its site/rulebook; the pages go to TTS/Rulebook)")
+    parser = ArgumentParser(prog="python -m commands.rulebook_pages", description="Print the rulebook's TTS PDF from the website.")
+    parser.add_argument("checkout", help="the card repo's checkout (its site/rulebook; the PDF goes to TTS/Rulebook)")
     parser.add_argument("--site", default=SITE_URL, help="the website (default: the card browser)")
     options = parser.parse_args(args)
     try:
         print(update_pages(options.checkout, options.site))
     except (RuntimeError, TimeoutError, OSError, ValueError, KeyError) as e:
-        print(f"Rulebook pages not drawn: {e}")
+        print(f"Rulebook PDF not printed: {e}")
         return 1
     return 0
 
@@ -277,6 +320,7 @@ if __name__ == "__main__":
 # ========================
 __all__ = [
     'PAGES_JSON',
+    'PDF_FILE',
     'main',
     'read_pages',
     'update_pages',
