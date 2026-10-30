@@ -76,7 +76,7 @@ def _card(guid, path, nick, deck_id):
 
 def test_rulebooks_bag_takes_the_pdf(tmp_path):
     """One Custom_PDF object is made on top of the Rulebooks bag (linked to the PDF, a fresh GUID), the bag wears
-    MDW/Book_Cover.png; a second run changes nothing and keeps the team's changes to the PDF object."""
+    MDW/Assets/Book_Cover.png; a second run changes nothing and keeps the team's changes to the PDF object."""
     folder = tmp_path / "TTS" / "Rulebook"
     folder.mkdir(parents=True)
     (folder / "pages.json").write_text(json.dumps({"pdf": "Rulebook.pdf", "pages": [{"name": "Cover"}, {"name": "Stats"}]}), encoding="utf-8")
@@ -93,13 +93,13 @@ def test_rulebooks_bag_takes_the_pdf(tmp_path):
     pdf = inside[1]
     assert pdf["CustomPDF"] == {"PDFUrl": f"{tts_save.RAW}main/TTS/Rulebook/Rulebook.pdf", "PDFPassword": "", "PDFPage": 0, "PDFPageOffset": 0}
     assert pdf["Transform"]["scaleX"] == tts_save.PDF_SCALE and pdf["Transform"]["posX"] == 1.0
-    assert bag["CustomMesh"]["DiffuseURL"] == f"{tts_save.RAW}main/MDW/Book_Cover.png"
+    assert bag["CustomMesh"]["DiffuseURL"] == f"{tts_save.RAW}main/MDW/Assets/Book_Cover.png"
     assert report.unpinned == {"TTS/Rulebook/Rulebook.pdf"}
     guids = [o.get("GUID") for o, _ in tts_save._walk(save["ObjectStates"])]
     assert len(guids) == len(set(guids))
     pdf["Transform"]["scaleX"] = 2.0                       # the team resized it
     pdf["CustomPDF"]["PDFUrl"] = f"{tts_save.RAW}{'1' * 40}/TTS/Rulebook/Rulebook.pdf"   # _pin_links pinned it
-    bag["CustomMesh"]["DiffuseURL"] = f"{tts_save.RAW}{'2' * 40}/MDW/Book_Cover.png"
+    bag["CustomMesh"]["DiffuseURL"] = f"{tts_save.RAW}{'2' * 40}/MDW/Assets/Book_Cover.png"
     again = tts_save._Report()
     tts_save._rulebook(save, repo, again)
     assert again.rulebook == [] and bag["ContainedObjects"] == inside and pdf["Transform"]["scaleX"] == 2.0

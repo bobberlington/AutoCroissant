@@ -47,9 +47,9 @@ LINK = regex(escape(RAW) + f"({escape(MAIN_REFS[1])}|{escape(MAIN_REFS[0])}|" + 
 URL_SAFE = "/'!()*-._~"                     # left as is in the save's links (GitHub raw style; spaces are %20)
 SITE_CARDS = "site/dist/data/cards.json"     # local site build: fallback when the website is unreachable
 CARD_NAMES = ("Card", "CardCustom")
-HAND_NAMED = ("Auxiliary/Markers/",)          # marker cards: not website names
+HAND_NAMED = ("MDW/Assets/Markers/",)        # marker cards: not website names
 RULEBOOK_BAG = "Rulebooks"                   # the save's bag holding the rulebook's PDF
-BOOK_COVER = "MDW/Book_Cover.png"            # the bag's look
+BOOK_COVER = "MDW/Assets/Book_Cover.png"     # the bag's look
 PDF_NAME = "Rulebook"                        # the PDF object's Nickname when made
 PDF_SCALE = 3.0                              # its size when made (a 1080x1920 page); the team may resize it
 CARD_FOLDERS = ("Creatures/", "Items/", "Field/", "N.M.E/", "Auxiliary/")   # build_site.CARD_FOLDERS
@@ -856,7 +856,7 @@ def _rulebook(save: dict, repo: _Repo, report: _Report) -> None:
     """
     The Rulebooks bag holds the rulebook's PDF as one Custom_PDF object (on top: the bag's last object), made once from
     the bag's settings and linked to TTS/Rulebook/Rulebook.pdf (its link's commit is _pin_links'), and wears
-    MDW/Book_Cover.png. Anything else in the bag stays, the PDF object's place and settings too once made.
+    MDW/Assets/Book_Cover.png. Anything else in the bag stays, the PDF object's place and settings too once made.
     """
     book = read_pages(repo.checkout)
     if not book.get("pdf"):
