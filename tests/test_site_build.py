@@ -456,7 +456,9 @@ def test_tts_details_for_the_save(bs):
               "hp": 5, "def": 1, "atk": 2, "spd": 3, "ability": "(1cd) Inflict 2T burning. (3CD) [fire] again. (OD) Burning! Starts with 2 Dark Tentacles and a Secret. Deals piercing damage; negates.", "author": "Bob"},
              {"name": "Burning", "type": "debuff", "types": ["debuff"], "png": "Aux/Burning.png", "ability": "3 DMG, can't affect [fire]"},
              {"name": "Secret", "type": "item", "png": "Items/Secret.png", "hidden": True, "ability": "Burning"},
-             {"name": "Dark Tentacle", "type": "minion", "png": "Aux/Dark_Tentacle.png", "ability": ""}]
+             {"name": "Dark Tentacle", "type": "minion", "png": "Aux/Dark_Tentacle.png", "ability": ""},
+             {"name": "Gate", "type": "field", "png": "Field/Gate.png", "ability": "(3CD) summon a dark tentacle, then stay."},
+             {"name": "Stay", "type": "creature", "png": "Creatures/Stay.png", "ability": ""}]
     got = bs.tts_details(cards, chapters, icons, bs.tag_meanings(chapters))
     assert got["types"] == {"fire": {"n": "Fire", "x": "Immune to Burning", "c": "creature-types"},
                             "wind": {"n": "Wind", "x": "Swap.", "c": "creature-types"},
@@ -466,7 +468,8 @@ def test_tts_details_for_the_save(bs):
     assert got["tags"] == {"1CD": {"g": "turn", "m": "Wait 1 turn"}, "3CD": {"g": "turn", "m": "Wait 3 turns"},
                            "OD": {"g": "trigger", "m": "On death"}}
     assert got["statuses"] == {"Burning": {"x": "3 DMG, can't affect fire", "k": "debuff", "p": "Aux/Burning.png"}}
-    assert set(got["cards"]) == {"Creatures/Hot_Guy.png", "Aux/Burning.png", "Aux/Dark_Tentacle.png"}
+    assert set(got["cards"]) == {"Creatures/Hot_Guy.png", "Aux/Burning.png", "Aux/Dark_Tentacle.png", "Field/Gate.png", "Creatures/Stay.png"}
+    assert got["cards"]["Field/Gate.png"]["m"] == ["Aux/Dark_Tentacle.png"]   # as text.js links: a lowercase minion after its verb
     assert got["cards"]["Creatures/Hot_Guy.png"] == {
         "n": "Hot Guy", "k": "Creature", "st": 3, "s": "HP 5 DEF 1 ATK 2 SPD 3",
         "a": "(1cd) Inflict 2T burning. (3CD) fire again. (OD) Burning! Starts with 2 Dark Tentacles and a Secret. Deals piercing damage; negates.",
