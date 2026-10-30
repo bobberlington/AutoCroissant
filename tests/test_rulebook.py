@@ -50,15 +50,15 @@ def _png(colour) -> bytes:
 
 def test_pdf_printed_only_when_a_page_changes(tmp_path):
     """pages.json keeps each page's pixel hash; the PDF is printed again only when one changes (its bytes carry the print
-    time); the bag's cover beside it stays."""
+    time); other files beside it stay."""
     folder = tmp_path / "TTS" / "Rulebook"
     folder.mkdir(parents=True)
-    (folder / "Book_Cover.png").write_bytes(_png("white"))
+    (folder / "notes.png").write_bytes(_png("white"))
     printed = []
     pdf = lambda: printed.append(1) or b"%PDF-1.4 fake"
     shots = [({"name": "Cover", "num": ""}, _png("white")), ({"name": "Stats", "num": "7"}, _png("blue")), ({"name": "Stats 2", "num": "7.2"}, _png("red"))]
     done = rulebook_pages.write_pages(str(folder), shots, pdf)
-    assert done["printed"] and (folder / "Book_Cover.png").exists() and (folder / "Rulebook.pdf").read_bytes() == b"%PDF-1.4 fake"
+    assert done["printed"] and (folder / "notes.png").exists() and (folder / "Rulebook.pdf").read_bytes() == b"%PDF-1.4 fake"
     again = [shots[0], (shots[1][0], _png("blue")), shots[2]]                     # same pixels
     assert not rulebook_pages.write_pages(str(folder), again, pdf)["printed"] and len(printed) == 1
     done = rulebook_pages.write_pages(str(folder), [shots[0], shots[1], (shots[2][0], _png("green"))], pdf)
@@ -76,16 +76,16 @@ def _card(guid, path, nick, deck_id):
 
 def test_rulebooks_bag_takes_the_pdf(tmp_path):
     """One Custom_PDF object is made on top of the Rulebooks bag (linked to the PDF, a fresh GUID), the bag wears
-    TTS/Rulebook/Book_Cover.png; a second run changes nothing and keeps the team's changes to the PDF object."""
+    MDW/Book_Cover.png; a second run changes nothing and keeps the team's changes to the PDF object."""
     folder = tmp_path / "TTS" / "Rulebook"
     folder.mkdir(parents=True)
     (folder / "pages.json").write_text(json.dumps({"pdf": "Rulebook.pdf", "pages": [{"name": "Cover"}, {"name": "Stats"}]}), encoding="utf-8")
-    (folder / "Book_Cover.png").write_bytes(_png("black"))
     note = {"GUID": "cccccc", "Name": "Notecard", "Nickname": "House rules"}
     bag = {"GUID": "dddddd", "Name": "Custom_Model_Bag", "Nickname": "Rulebooks", "Locked": False, "Transform": {"posX": 1.0, "scaleX": 5.0},
            "CustomMesh": {"DiffuseURL": f"{tts_save.RAW}abc1234/MDW/Old%20Rules/Rulebook/0000_Cover_Book.png"}, "ContainedObjects": [note]}
     save = {"ObjectStates": [bag, _card("eeeeee", "Items/x.png", "X", 90)]}
-    repo = types.SimpleNamespace(checkout=str(tmp_path), url=lambda p: f"{tts_save.RAW}main/{p}", sha=lambda p: None)
+    repo = types.SimpleNamespace(checkout=str(tmp_path), url=lambda p: f"{tts_save.RAW}main/{p}", sha=lambda p: None,
+                                 tree={tts_save.BOOK_COVER: "b"})
     report = tts_save._Report()
     tts_save._rulebook(save, repo, report)
     inside = bag["ContainedObjects"]
@@ -93,13 +93,13 @@ def test_rulebooks_bag_takes_the_pdf(tmp_path):
     pdf = inside[1]
     assert pdf["CustomPDF"] == {"PDFUrl": f"{tts_save.RAW}main/TTS/Rulebook/Rulebook.pdf", "PDFPassword": "", "PDFPage": 0, "PDFPageOffset": 0}
     assert pdf["Transform"]["scaleX"] == tts_save.PDF_SCALE and pdf["Transform"]["posX"] == 1.0
-    assert bag["CustomMesh"]["DiffuseURL"] == f"{tts_save.RAW}main/TTS/Rulebook/Book_Cover.png"
+    assert bag["CustomMesh"]["DiffuseURL"] == f"{tts_save.RAW}main/MDW/Book_Cover.png"
     assert report.unpinned == {"TTS/Rulebook/Rulebook.pdf"}
     guids = [o.get("GUID") for o, _ in tts_save._walk(save["ObjectStates"])]
     assert len(guids) == len(set(guids))
     pdf["Transform"]["scaleX"] = 2.0                       # the team resized it
     pdf["CustomPDF"]["PDFUrl"] = f"{tts_save.RAW}{'1' * 40}/TTS/Rulebook/Rulebook.pdf"   # _pin_links pinned it
-    bag["CustomMesh"]["DiffuseURL"] = f"{tts_save.RAW}{'2' * 40}/TTS/Rulebook/Book_Cover.png"
+    bag["CustomMesh"]["DiffuseURL"] = f"{tts_save.RAW}{'2' * 40}/MDW/Book_Cover.png"
     again = tts_save._Report()
     tts_save._rulebook(save, repo, again)
     assert again.rulebook == [] and bag["ContainedObjects"] == inside and pdf["Transform"]["scaleX"] == 2.0

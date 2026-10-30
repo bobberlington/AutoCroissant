@@ -9,8 +9,8 @@ sync's main lane runs it before the save; tts_save puts the PDF in the save's Ru
 The website must show the checkout's chapters (the page lists the chapters it was cut from): else nothing changes and
 the next run draws them. Headless Chrome ($CHROME, else the first of CHROMES on PATH) over its DevTools pipe; no
 package beyond Pillow. Each page is screenshot and hashed: the PDF is printed again only when a hash changed (a PDF's
-bytes carry its print time), so an unchanged rulebook keeps its file and its pinned link. Other files in the folder
-(Book_Cover.png) are left alone. Exit 1 when the pages could not be drawn (nothing changed then).
+bytes carry its print time), so an unchanged rulebook keeps its file and its pinned link. Other files in the folder are
+left alone. Exit 1 when the pages could not be drawn (nothing changed then).
 """
 from argparse import ArgumentParser
 from base64 import b64decode

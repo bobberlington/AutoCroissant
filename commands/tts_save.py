@@ -49,7 +49,7 @@ SITE_CARDS = "site/dist/data/cards.json"     # local site build: fallback when t
 CARD_NAMES = ("Card", "CardCustom")
 HAND_NAMED = ("Auxiliary/Markers/",)          # marker cards: not website names
 RULEBOOK_BAG = "Rulebooks"                   # the save's bag holding the rulebook's PDF
-BOOK_COVER = "Book_Cover.png"                # the bag's look, in RULEBOOK_PAGES
+BOOK_COVER = "MDW/Book_Cover.png"            # the bag's look
 PDF_NAME = "Rulebook"                        # the PDF object's Nickname when made
 PDF_SCALE = 3.0                              # its size when made (a 1080x1920 page); the team may resize it
 CARD_FOLDERS = ("Creatures/", "Items/", "Field/", "N.M.E/", "Auxiliary/")   # build_site.CARD_FOLDERS
@@ -856,7 +856,7 @@ def _rulebook(save: dict, repo: _Repo, report: _Report) -> None:
     """
     The Rulebooks bag holds the rulebook's PDF as one Custom_PDF object (on top: the bag's last object), made once from
     the bag's settings and linked to TTS/Rulebook/Rulebook.pdf (its link's commit is _pin_links'), and wears
-    TTS/Rulebook/Book_Cover.png. Anything else in the bag stays, the PDF object's place and settings too once made.
+    MDW/Book_Cover.png. Anything else in the bag stays, the PDF object's place and settings too once made.
     """
     book = read_pages(repo.checkout)
     if not book.get("pdf"):
@@ -866,9 +866,9 @@ def _rulebook(save: dict, repo: _Repo, report: _Report) -> None:
     if bag is None:
         report.errors.append(f"No bag named {RULEBOOK_BAG}: the rulebook's PDF is not in the save.")
         return
-    cover, mesh = f"{RULEBOOK_PAGES}/{BOOK_COVER}", bag.get("CustomMesh")
+    cover, mesh = BOOK_COVER, bag.get("CustomMesh")
     link = LINK.search((mesh or {}).get("DiffuseURL") or "")
-    if isinstance(mesh, dict) and exists(join(repo.checkout, cover)) and (not link or unquote(link.group(2)) != cover):
+    if isinstance(mesh, dict) and cover in repo.tree and (not link or unquote(link.group(2)) != cover):
         mesh["DiffuseURL"] = repo.url(cover)
         report.rulebook.append(f"the bag's cover is `{cover}`")
     inside = list(bag.get("ContainedObjects") or [])
