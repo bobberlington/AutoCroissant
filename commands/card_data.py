@@ -1217,8 +1217,13 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     out = Outcome()
     data_head = _data_head(db_dir)
     stats, old, details, manifest_before = read_db(db_dir)
-    for name in [n for n, c in stats.items() if getattr(c, "card_type", "") == "rulebook" or RULEBOOK_DIR in (c.path or "").split("/")]:
+    rule = lambda c: getattr(c, "card_type", "") == "rulebook" or RULEBOOK_DIR in (getattr(c, "path", "") or "").split("/")
+    for name in [n for n, c in stats.items() if rule(c)]:
         del stats[name]                                       # the Photoshop rule pages: not cards (dropped, never archived or told)
+    for name in [n for n, vs in old.items() if vs and all(rule(v) for v in vs)]:
+        del old[name]                                         # and their versions (the rulebook's history is site/rulebook's)
+    for sha in [k for k, d in details.items() if RULEBOOK_DIR in (d.get("path") or "").split("/")]:
+        del details[sha]                                      # and their details (before G5 counts them)
     if not stats and not empty:
         raise ValueError(f"{db_dir} holds no cards: give --empty to start new card data")
     pending_before = (manifest_before.get("pending") or {}) if not restore else {}
