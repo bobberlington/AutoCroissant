@@ -436,3 +436,35 @@ def test_font_filter_data_is_the_details_fonts(bs):
     assert got == {"fonts": ["stoogedings-Regular", "Perpetua"], "cards": {"a": [1, 0], "a2": [1, 0], "b": [0]}}
     for cid, ix in got["cards"].items():                  # the Details panel's list, in its order
         assert [got["fonts"][i] for i in ix] == list(files[cid]["fonts"])
+
+
+def test_tts_details_for_the_save(bs):
+    """data/tts.json (owner 10-30, the TTS hover strip and details): types' meanings from the chapters (an icon heading's
+    section to the page break, a "[token]:" line, a line ending in tokens; secret text, "(See: ...)" and non-icons left
+    out), tags as text.js reads them, the statuses an ability names, cards by PNG path, hidden cards left out."""
+    chapters = [{"id": "creature-types", "num": "20", "title": "Creature Types", "source":
+                 "# Creature Types\n## FIRE {icon=fire}\nImmune to [[Burning]] (See: [“X”](#/rules/x))\n## WIND {icon=wind}\nSwap.\n"},
+                {"id": "item-types", "num": "14", "title": "Item Types", "source":
+                 "## [support] SUPPORT\nGeneral use. [joke]{.secret}\n=== page ===\nNot this.\n"},
+                {"id": "minions", "num": "15", "title": "Minions", "source": "[offensive_minion]:Same field as the [fire] summoner.\n"},
+                {"id": "status-effects", "num": "19", "title": "Status Effects", "source": "One instance only. [debuff] [nothere]\n"},
+                {"id": "timing-tags", "num": "23", "title": "Timing Tags", "source": "| Tag | Meaning |\n|---|---|\n| (XCD) | Wait X turn(s) |\n"}]
+    icons = {k: {} for k in ("fire", "wind", "support", "offensiveminion", "debuff")}
+    cards = [{"name": "Hot Guy", "type": "creature", "types": ["fire", "offensive_minion"], "png": "Creatures/Hot_Guy.png", "stars": 3,
+              "hp": 5, "def": 1, "atk": 2, "spd": 3, "ability": "(1cd) Inflict 2T burning. (3CD) [fire] again. (OD) Burning!", "author": "Bob"},
+             {"name": "Burning", "type": "debuff", "types": ["debuff"], "png": "Aux/Burning.png", "ability": "3 DMG, can't affect [fire]"},
+             {"name": "Secret", "type": "item", "png": "Items/Secret.png", "hidden": True, "ability": "Burning"}]
+    got = bs.tts_details(cards, chapters, icons, bs.tag_meanings(chapters))
+    assert got["types"] == {"fire": {"n": "Fire", "x": "Immune to Burning", "c": "creature-types"},
+                            "wind": {"n": "Wind", "x": "Swap.", "c": "creature-types"},
+                            "support": {"n": "Support", "x": "General use.", "c": "item-types"},
+                            "offensiveminion": {"n": "Offensive Minion", "x": "Same field as the fire summoner.", "c": "minions"},
+                            "debuff": {"n": "Debuff", "x": "One instance only.", "c": "status-effects"}}
+    assert got["tags"] == {"1CD": {"g": "turn", "m": "Wait 1 turn"}, "3CD": {"g": "turn", "m": "Wait 3 turns"},
+                           "OD": {"g": "trigger", "m": "On death"}}
+    assert got["statuses"] == {"Burning": {"x": "3 DMG, can't affect fire", "k": "debuff"}}
+    assert set(got["cards"]) == {"Creatures/Hot_Guy.png", "Aux/Burning.png"}
+    assert got["cards"]["Creatures/Hot_Guy.png"] == {
+        "n": "Hot Guy", "k": "Creature", "st": 3, "s": "HP 5 DEF 1 ATK 2 SPD 3", "a": "(1cd) Inflict 2T burning. (3CD) fire again. (OD) Burning!",
+        "t": ["fire", "offensiveminion"], "g": ["1CD", "3CD", "OD"], "x": ["Burning"], "by": "Bob"}
+    assert "x" not in got["cards"]["Aux/Burning.png"] and got["chapters"]["minions"] == {"num": "15", "title": "Minions"}
