@@ -53,3 +53,16 @@ The website and TTS changes were checked in headless Chrome (scratch harness `~/
 run with `rulebook/cdpeval.mjs`) and a fengari Lua harness (`scratch/tts/luacheck`); nothing ran inside TTS itself.
 Card sync's 30-minute window was skipped four times at the owner's request (cancel the waiting run, dispatch with
 `bake=pending`).
+
+## After the wrap-up (owner: fix the TTS check suite and the stale docs)
+
+- `TTS/checks` 24 of 24 again (was 18): `lua_mock.py` rewritten for today's Global.lua (on the save's own objects and
+  zones; 124 checks; it caught all ten deliberate breakages tried), `scripts_global_refs.py` reads `TEAMS` as seat = team
+  and checks `SIDE_ORDER`, the link checks leave the global script's live-data links unpinned (and fetch `.obj` files
+  uncompressed), the updater checks copy the whole bot and its new inputs.
+- A real updater bug it found: tts_save pinned the global script's `main/…/pages.json` link and the next step wrote
+  Global.lua back, so every run reported "1 link pinned" and "Global script written" for an unchanged save; the global
+  script and UI are now left out of the pinning.
+- Stale docs: the checks README, the website README's editor paragraph and `tts.json`, `build_site.py`'s comment, the TC
+  README (the in-game right-click menus), `TTS/decks.json`'s unread 10-20 `objects` inventory dropped, bugs doc D1
+  re-worded and D4 retired.

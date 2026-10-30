@@ -1,6 +1,6 @@
 # AutoCroissant — Known Bugs and Future Improvements
 
-Compiled 2026-07-11 from a full repo audit; revised 2026-10-19, 2026-10-20, 2026-10-21, 2026-10-23 and 2026-10-25 (twice). Detail, evidence and procedures
+Compiled 2026-07-11 from a full repo audit; revised 2026-10-19, 2026-10-20, 2026-10-21, 2026-10-23, 2026-10-25 (twice) and 2026-10-30. Detail, evidence and procedures
 live in the skill library under `.claude/skills/`; each entry points at its owner (`ttscardmaker-companion`
 covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes route through
 `autocroissant-change-control`. When an entry is fixed or retired, move its story to
@@ -50,6 +50,8 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 - 2026-10-25 (work/bakebugs, archaeology 10.34): B12, the bake follows a layer's Txt2 kerning; text typed beside a
   coloured word takes the body colour (Binge Eater); a whole-ability edit and a part edit keep the characters
   `normalize_ability` strips (Deepnest, Blasphemous Blade); an Ability past its panel is set smaller to fit (Autopsy Report).
+- 2026-10-30: D4, the old_stats balloon: its duplicates are removed by `card_data.clean_history` on every data build
+  (the pickles went 10-25; Entry 3).
 
 ---
 
@@ -59,12 +61,11 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
 
 None open (2026-10-25: B12 and the plan's three bake bugs fixed, archaeology 10.34).
 
-### 1.2 OPEN — data debt (as of 2026-10-19)
+### 1.2 OPEN — data debt (as of 2026-10-30)
 
 | # | Issue | Evidence | Suggested action | Detail owner |
 |---|-------|----------|------------------|--------------|
-| D1 | **4 latent problem cards invisible in the pickled count.** stats.pkl stores only parse-time problems (count: 1); full re-validation reports 5: Computer Virus (all stats missing), Anubisath Guardian, Qiraji Soldier, Silithid (blank ability layers, June 2026 WoW batch). 2026-10-21: one card now: the user put Anubisath Guardian, Qiraji Soldier and Silithid into `ABILITY_EXCLUSIONS` (e4e0a58, 21 names); Computer Virus (a creature with no stat rows) remains. | Re-validation sweep, `autocroissant-validation-and-qa` baselines | Owner 2026-10-25: a card with no ability is no problem (the parts editor drops the check); left: Computer Virus's stats, in its PSD or certified | `autocroissant-validation-and-qa` §baselines |
-| D4 | **A second, never-reverted old_stats balloon** (`637698b`, 2025-11-25): ~26 unchanged cards breadth-archived in one sweep still pollute old_stats.pkl history. | Byte trace in archaeology; snapshot forensics | 2026-10-22: the first `/update_stats` after the deploy removes the duplicates itself (`card_history.dedupe`, since 2026-10-23 inside `card_data.clean_history`; 475 -> 460 versions on cb8fe54's pickles, starts carried in `version`). Check that PICKLE with `diff_stats.py --history` (2026-10-23: it diffs old_stats.pkl too: versions dropped or added, starts moved, archive tags). The website dates versions by that record (`analytics.when`, TTSCardMaker work/version-dates, landed 2026-10-22 with c0b6f2d7). Owner notes: a card back after a deletion gap with the same data keeps its first start (as restore() does), so as_of and the site's over-time count it alive through the gap; a run folded into the current card can leave a later archived record before it (no row shows; nothing new) | `autocroissant-failure-archaeology` Entry 3 |
+| D1 | **Computer Virus has no stat rows** (NO STATS FOUND on a creature). The other three of 10-19 (blank ability layers) are in `ABILITY_EXCLUSIONS` since 10-21, and a card without an ability is no problem (owner 10-25). | The validator's problem list in Card sync's data | Its stat bars in the PSD (the owner's Photoshop task); its next re-parse clears it | `autocroissant-validation-and-qa` §baselines |
 | D6 | **Icon-font adoption (re-measured 2026-10-23).** `psd_details.json` at the 05:00 run (813 PSD records, before batch B2's ~219 re-parses): 275 PSDs have text in stoogedings; the `icons` field reads tokens 45, mixed 230, images 470, none 68. The 470 `images` cards (and the image half of `mixed`) still depend on gap injection. (2026-10-19: 0 of 813.) | `psd_details.json` `icons` per record | Keep migrating in TTSCardMaker as cards are touched (the standardization batches: 242 cards on 2026-10-22, queue A, B2 7fd2aa30 on 2026-10-23); `icons` is the measure | `autocroissant-psd-extraction-campaign` |
 
 ### 1.3 OPEN — docs and cosmetics

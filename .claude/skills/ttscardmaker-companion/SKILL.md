@@ -690,10 +690,10 @@ bot ran the updater itself after `/update_stats`; this Action replaced that.
   Find a card, the rulebook or its bag > Contents and search (Book.setPage, 0-based assumed). Data from the website's
   `data/tts.json` and `TTS/Rulebook/pages.json`, decoded and panels built on a player's first use. Turn markers cycle
   from one `onObjectRotate`. No Lua patterns over long text (MoonSharp "pattern too complex"). Nothing has run in TTS
-  itself yet; the fengari harness is `~/Documents/Tools/wt/scratch/tts/luacheck`.
+  itself yet; `TTS/checks/lua_mock.py` tests it (since 10-30).
 - **Checks:** `TTS/checks/` (its README: what each checks, interpreters, variables). `run_all.py` runs all 24 on the
-  save in about 2 minutes: structure, serializer, CustomDeck collisions, drift against 0ee01372 (moved by each deliberate hand edit), deck contents, names,
-  backs, rules, the Lua (lupa mock of the TTS API; stale since 10-30, it expects the 48-line script, so run_all is red), link pins and HTTP, the updater run as the Action runs it, its
+  save in about 4 minutes: structure, serializer, CustomDeck collisions, drift against 0ee01372 (moved by each deliberate hand edit), deck contents, names,
+  backs, rules, the Lua (lupa mock of the TTS API on the save's objects: teams, shared hand zones, card details, rulebook and finder panels, markers, no Lua patterns; `lua_mock.py <save> <file.lua>` tries a Global.lua change before it reaches the save), link pins and HTTP, the updater run as the Action runs it, its
   report and commit subject, and the daily gate against real history (names hashed from the bot's stats.pkl at
   3888392 and 39da9ed). Drift fails on any change to an existing card's Description, GMNotes, Memo, Tags or scripts and
   on the global Lua outside resizeTargets. Any Python with `requests` and `Pillow`; the
