@@ -1,14 +1,15 @@
-# Next session plan (after 2026-10-26)
+# Next session plan (after 2026-10-30)
 
 ## Where to start
 
 Start in `~/Desktop/AutoCroissant`. Read memories `resource-limits`, `secrets-never-printed`,
 `owner-decisions-2026-10-24-night` (its 10-25 and 10-26 lines), `lean-tests-and-verification`, `no-guides-csv-only`,
-`edits-two-kinds`, `jetson-server`, `persistent-work-paths`, `agent-model-preference`. What landed:
-`docs/Finished/session-2026-10-26/README.md` (and `session-2026-10-25/`). `docs/Future/` holds only the problem-cards
-lists; nothing is in flight.
+`edits-two-kinds`, `jetson-server`, `persistent-work-paths`, `agent-model-preference`, `rulebook-on-website`. What
+landed: `docs/Finished/session-2026-10-30/README.md` (the rulebook on the website, its editor, the TTS save's panels;
+10-26's in `session-2026-10-26/`). `docs/Future/` holds only the problem-cards lists; nothing is in flight.
 
-First: regenerate the problem-cards list (below), then the campaign tasks in the order the owner picks.
+First: the owner's checks of the new TTS panels in a real game (below), then the problem-cards list, then the campaign
+tasks in the order the owner picks.
 
 ## Standing rules
 
@@ -33,12 +34,21 @@ First: regenerate the problem-cards list (below), then the campaign tasks in the
 - Photoshop 2023 may be used on copies under `~/std-work-*`: `open -a "Adobe Photoshop 2023" script.jsx` plus a result
   file (osascript is blocked), dialogs off, only documents we opened. Runners: `~/std-work-1026/*/tools/`.
 - No guides or checklists for the owner: problem lists are a CSV plus its `.md` (memory `no-guides-csv-only`).
+- The TTS save's global script is `TTS/Global.lua` (+ `Global.xml`); never edit the save's script by hand. No Lua
+  patterns over long text (MoonSharp); test changes in the fengari harness (`~/Documents/Tools/wt/scratch/tts/luacheck`,
+  `node run.js <tts.json> <pages.json> <Global.lua>` with a `scenario.lua`). A deliberate hand edit of the save moves
+  drift.py's BASELINE to that commit.
+- "Rebuild the save now" (owner, per request only): cancel Card sync's waiting run, then `gh workflow run card-sync.yml
+  --ref main -f bake=pending`; check first that the website deploy holding any rulebook change has finished (the PDF is
+  printed from the live site).
 
-## State (2026-10-26 ~12:40 PDT)
+## State (2026-10-30 ~11:50 PDT)
 
-- AutoCroissant main 47c79e5, deployed (later wrap-up commits touch docs only).
-- TTSCardMaker main 06a8bde9 (plus Card sync's TTS save commits). Desktop clones of all three repos level with main.
-- Data 98faaf0: parser 5, 820 cards; `db/verdicts.json` holds the verdicts.
+- AutoCroissant main d86fe30 (plus this wrap-up's docs); the jetson runs 17601aa: the later bot commits touch only Card
+  sync's modules (card_data, rulebook_pages, tts_save), tests and skills, so no deploy is owed (deploy any time).
+- TTSCardMaker main 3b32375e (the TTS save rebuilt 10-30 11:44 with everything below). Desktop clones level with main.
+- Data f417aaf9: parser 5, 772 cards (the 48 Photoshop rule pages are no longer cards); `db/rulebook.json` holds the
+  24 chapters.
 - psd-tools fork pin `cards-20261026` = e156be36 on both machines (`requirements-cards.txt`).
 - OJWikibot main 363ddc9, deployed. One production host: the jetson (leo retired 10-26).
 - `+ability` is live; no live `+ability` bake yet (the first comes from the website): its flag note names the box, font
@@ -48,6 +58,16 @@ First: regenerate the problem-cards list (below), then the campaign tasks in the
 
 ### Owner
 
+- [ ] TTS, first real-game checks of the 10-30 save (all were tested only in a Lua emulator): right-click Card details
+      (in hand too; three panels; drag, A-/A+, Rules buttons, "+ Name" into the hand face down at the right size); Find
+      a card (right-click the table); Contents and search (right-click the rulebook or its bag): does Book.setPage land
+      on the right page (0-based assumed)?; hand zones following seats (alone on a side you hold them all; a teammate
+      sitting gets theirs back); turn markers (flips with F or the menu count, physics tumbles don't); the first open of
+      a panel per player (a short build); any Lua error.
+- [ ] Decide: TTS-sized JPEG card copies (the save loads 839 files, 1.5 GB of 1200 px PNGs; half-size JPEGs cut it about
+      10x): 600 or 800 px wide, or not. Also the holder pictures (Creature_Deck.png 6.7 MB).
+- [ ] Try the website editor's new drags (anchor grid, Make space, blank space, snapping, undo) and report what feels
+      off; Safari never ran.
 - [ ] Photoshop: Computer Virus' stat bars; Ze'mer's full-width flower layers; Terry Hintz and Joel Miller's "Stars"
       groups and typed tags (prepared in `~/std-work-1026/stargroups/`; Photoshop 2023 can't re-save their
       EarthboundZero text, nor Elmadan's); Papyrus' typed tag (Photoshop's Papyrus font doesn't match the card's).
@@ -66,6 +86,17 @@ First: regenerate the problem-cards list (below), then the campaign tasks in the
 
 ### Developer
 
+- [ ] `TTS/checks/lua_mock.py` still tests the old 48-line global script (and `scripts_global_refs.py` warns "owner is
+      on no team" for every hand zone: it reads TEAMS the old way): rewrite both for today's `TTS/Global.lua` (the
+      fengari harness in `~/Documents/Tools/wt/scratch/tts/luacheck` has the scenarios); offered as "test the script
+      before it reaches the save".
+- [ ] Delete the bot's now-dead Photoshop rule-page handling (psd_parser rule pages, psd_details/psd_parts rule cases,
+      the query and export filters, the changelog's rulebook link): no card PSD is a rule page since 10-30.
+- [ ] The website's global Escape closes an open dialog even while typing in it (app.js keydown): the rulebook editor
+      keeps the draft, but it is surprising.
+- [ ] Editor ideas offered, not chosen: replace a picture by dropping a file on it, Ctrl/Cmd+D duplicate, a diff before
+      Publish. Deck sheets for TTS: not recommended (every card edit rebuilds a sheet).
+- [ ] Card Authors.txt still credits the 48 old rule pages (kept; card_data no longer warns about them).
 - [ ] Regenerate the problem-cards list (`docs/Future/PROBLEM_CARDS_2026-10-25b.*` predates the 10-26 lanes and fixes).
       Deliver the CSV and its `.md`.
 - [ ] Stars still refused: Thunder Thighs 3, Consolation Prize, Bubble, Forsaken City and The Core (option B, shrinking
