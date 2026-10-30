@@ -93,6 +93,7 @@ class CardBuild:
         self.reparsed: dict = {}                 # name -> (its card before, path, blob) of each card parsed (the history)
         self.variant_cards: dict = {}            # name -> its PSD's variants 2..N parsed this run (CardInfo each)
         self.templates = None                    # psd_parts.Templates over this tree (the parts' template facts)
+        self.rule_pages: set = set()             # the Photoshop rule pages' names (not cards; their credits stay)
 
     # ------------------------
     # The source: GitHub's REST blobs
@@ -424,6 +425,8 @@ class CardBuild:
             if path.endswith('.psd') and not any(folder in EXCLUDE_FOLDERS or folder == RULEBOOK_DIR for folder in parts):
                 by_name.setdefault(card_name(path), []).append(item)
                 items.append(item)
+            elif path.endswith('.psd') and RULEBOOK_DIR in parts:
+                self.rule_pages.add(CardAuthors.key(card_name(path)))
         skipped = set()
         for name, found in by_name.items():
             if len(found) < 2:
@@ -678,14 +681,15 @@ class CardBuild:
 
     def _unmatched(self, authors: Optional[CardAuthors], dates: Optional[CardDates]) -> None:
         """The side files' names that match no card (a typo; Card Edits.json lines of an archived card too: Card
-        Authors.txt and Card Creation Dates.json may credit and date archived cards): one console line per file."""
+        Authors.txt and Card Creation Dates.json may credit and date archived cards, any of them the rule pages): one
+        console line per file."""
         side_names = {path: set(found.cards) for path, found in
                       ((AUTHORS_PATH, authors), (EDITS_PATH, self.edits), (CREATED_PATH, dates)) if found is not None}
         listed = {CardAuthors.key(name) for name in self.db.stats}
         archived = {CardAuthors.key(name) for name, versions in self.db.old_stats.items()
                     if versions and getattr(versions[len(versions) - 1], "archived", None)}   # credits, dates of archived cards
         for path, keys in side_names.items():
-            names = sorted(keys - listed - (set() if path == EDITS_PATH else archived))
+            names = sorted(keys - listed - self.rule_pages - (set() if path == EDITS_PATH else archived))
             if names:
                 print(f"{basename(path)}: {len(names)} name{'' if len(names) == 1 else 's'} match no card: "
                       f"{', '.join(names[:20])}{', ...' if len(names) > 20 else ''}")
