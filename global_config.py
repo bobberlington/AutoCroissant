@@ -24,7 +24,9 @@ API_BASE        = "https://api.github.com/repos/"
 RAW_BASE        = "https://raw.githubusercontent.com/"
 TYPES_DIR       = "Types"                      # type icons (PNG stems are the type names)
 STARS_DIR       = "Types/Stars"                # star icons
-RULEBOOK_DIR    = "Rulebook"                   # rule pages: any card path containing it
+RULEBOOK_DIR    = "Rulebook"                   # rule pages: any card path containing it (the old Photoshop pages)
+RULEBOOK_SRC    = "site/rulebook"              # the rulebook's chapters (NN-slug.md), written on the website
+RULEBOOK_PAGES  = "TTS/Rulebook"               # their TTS pages (PNGs and pages.json: python -m commands.rulebook_pages)
 ICON_MANIFEST_PATH = "MDW/Fonts/stoogedings-src/stoogedings.json"   # icon aliases + codepoints, written by the font build
 # The website's hand-kept files in the card repo's site/
 AUTHORS_PATH    = "site/Card Authors.txt"      # who made each card; wins over the database

@@ -25,7 +25,7 @@ try:
 except ImportError:                                  # tests and scripts without config.py
     config = None
 from global_config import (AUTHORS_PATH, CARD_BRANCH, CARD_DATA_DIR, CARD_REPO, CREATED_PATH, DATA_BRANCH, EDITS_PATH,
-                           ICON_MANIFEST_PATH, RULES_PATH, TYPES_DIR)
+                           ICON_MANIFEST_PATH, RULEBOOK_SRC, RULES_PATH, TYPES_DIR)
 from commands import card_db
 from commands.github_api import HEADERS, api_url, get_with_retry, session
 from commands.psd_analyzer import card_name, stats_db                # the facade's (architecture invariant: one stats_db)
@@ -142,7 +142,7 @@ def report(manifest: dict, counts: Optional[dict], reloaded: bool, now: Optional
 def card_input(path: str) -> bool:
     """A card repo path Card sync's gate goes for (the hand-edited save aside): card-sync.yml's push paths."""
     return (path.lower().endswith((".psd", ".png")) or path.startswith(f"{TYPES_DIR}/") or path in CARD_FILES
-            or (path.startswith(FONTS_PREFIX) and "/" not in path[len(FONTS_PREFIX):]))
+            or (path.startswith(FONTS_PREFIX) and "/" not in path[len(FONTS_PREFIX):]) or path.startswith(f"{RULEBOOK_SRC}/"))
 
 
 def _json(url: str, headers: dict):
@@ -247,9 +247,9 @@ def _by_reminder(interaction) -> bool:
 # ========================
 # Loading and syncing
 # ========================
-def _swap(stats: dict, old_stats, commit: Optional[str]) -> None:
+def _swap(stats: dict, old_stats, rulebook: list, commit: Optional[str]) -> None:
     """The in-memory database replaced by synced data (readers see the old or the new dict, never half)."""
-    stats_db.stats, stats_db.old_stats = stats, old_stats
+    stats_db.stats, stats_db.old_stats, stats_db.rulebook = stats, old_stats, rulebook
     _loaded["commit"] = commit
 
 
@@ -262,13 +262,14 @@ def load_local(folder: str = CARD_DATA_DIR) -> bool:
         return False
     try:
         stats, old, _, _ = card_db.read_db(folder, details=False)
+        rulebook = card_db.read_rulebook(folder)
     except (OSError, ValueError, TypeError) as e:
         print(f"{folder}: not loaded ({e}); the sync fetches it again")
         return False
     problems = card_db.check_db(folder, parse=False)    # parsed just above; the details file by its hash
     if problems:
         print(f"{folder}: a sync was cut off ({'; '.join(problems)}); loaded until the next sync completes it")
-    _swap(stats, old, None if problems else card_db.read_json(join(folder, card_db.SYNC_JSON)).get("commit"))
+    _swap(stats, old, rulebook, None if problems else card_db.read_json(join(folder, card_db.SYNC_JSON)).get("commit"))
     print(f"Card data loaded from {folder}: {len(stats)} cards")
     return True
 
@@ -285,7 +286,7 @@ def _pull() -> tuple:
     reloaded = got["commit"] != _loaded["commit"]
     if reloaded:
         stats, old, _, _ = card_db.read_db(CARD_DATA_DIR, details=False)
-        _swap(stats, old, got["commit"])
+        _swap(stats, old, card_db.read_rulebook(CARD_DATA_DIR), got["commit"])
     return (got["manifest"], reloaded)
 
 

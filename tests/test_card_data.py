@@ -28,8 +28,8 @@ BROKEN = b"8BPS" + b"\0" * 30
 # The Action's sparse copy
 # ========================
 def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
-    """Exactly SPARSE_FILES, no config.py: --help works on the three CLIs card-sync.yml runs (the build, the bake, the
-    save), and their modules (lazy ones too) are that list, with no Discord, pandas or the bot's modules."""
+    """Exactly SPARSE_FILES, no config.py: --help works on the CLIs card-sync.yml runs (the build, the bake, the
+    rulebook's pages, the save), and their modules (lazy ones too) are that list, with no Discord, pandas or the bot's modules."""
     bot = tmp_path / "bot"
     for rel in cd.SPARSE_FILES:
         assert (REPO / rel).is_file(), f"{rel} is in SPARSE_FILES but missing here"
@@ -38,7 +38,7 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
     flags = {"card_data": {"--repo", "--checkout", "--head", "--blobs", "--db", "--empty", "--full", "--cards",
                            "--allow-archive", "--restore", "--budget", "--run", "--builder-ref", "--summary", "--message",
                            "--dry-run", "--baked", "--own", "--rewrite", "--verdicts", "--events", "--guard-events", "--help"},
-             "card_bake": None, "tts_save": {"--names", "--help"}}
+             "card_bake": None, "tts_save": {"--names", "--help"}, "rulebook_pages": {"--site", "--help"}}
     for cli, expected in flags.items():
         done = run_process([executable, "-m", f"commands.{cli}", "--help"], cwd=bot, capture_output=True, text=True, timeout=120)
         assert done.returncode == 0, done.stderr
@@ -46,7 +46,7 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
         if expected is not None:
             assert set(re.findall(r"--[a-z-]+", done.stdout)) == expected
     code = ("import sys, commands.card_data, commands.card_history, commands.card_db, commands.changelog, commands.psd_details, "
-            "commands.card_bake, commands.tts_save, commands.ability_place; "
+            "commands.card_bake, commands.tts_save, commands.ability_place, commands.rulebook_pages; "
             "print(sorted(m for m in ('config', 'discord', 'pandas', 'github', 'commands.psd_analyzer', "
             "'commands.query_card', 'commands.utils', 'commands.type_emojis') if m in sys.modules)); "
             "print(sorted(m for m in sys.modules if m.startswith('commands.') or m == 'global_config'))")

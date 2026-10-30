@@ -490,12 +490,14 @@ Assembled from the rulebook's own examples; the joins are this skill's.
    Types, 21 Damage Types, 22 Negation. Sleepy Kirby marks "more technical rules" (00_Table_of_Contents).
 2. **Quote and cite** as (NN_Stem), in the rulebook's words. If pages disagree or the book is silent, say so and point to
    Known gaps. Status effect and type effects are card text — say so.
-3. **Where the text lives.** Source of truth: the PSD text layers in `Auxiliary/Rulebook/` (PNG beside each); published
+3. **Where the text lives.** Since 2026-10-29 the source of truth is the website's chapters, `site/rulebook/NN-slug.md`
+   in the card repo (23 chapters, the 48 pages' text kept as printed; the bot reads them from `db/rulebook.json`). The
+   Photoshop pages below are kept but no longer on the website; until then: the PSD text layers in `Auxiliary/Rulebook/` (PNG beside each); published
    as `site/dist/data/rules.json` (`{"rules": [{id, name, ability, …}]}`) and the website's Rulebook tab; `stats.pkl`
    holds the same 48 entries. Verbatim extract with hidden/overflow markers: `.claude/skills/impossibility-simulator-rules/reference/rulebook.md` (beside it: `glossary.md`, every defined term and abbreviation with its page; `data-facts.md`, the card-data counts behind this file; `header.md`/`footer.md`, build_rulebook.py's inputs).
-4. **The bot.** `/query_rulebook search_text [limit]`: case-insensitive substring search over the 48 pages, sorted by page
-   name, lowercased, icons as emojis; `search_text` is required by the slash command (main.py), so only a whitespace-only
-   search reaches the engine's all-pages path. `/export_rulebook`: all pages as a text file.
+4. **The bot.** `/query_rulebook search_text [limit]`: case-insensitive substring search over the chapters (48 pages until
+   2026-10-29), icons as emojis; `search_text` is required by the slash command (main.py), so only a whitespace-only
+   search reaches the engine's all-chapters path. `/export_rulebook`: all chapters as a text file.
    `/query_ability` searches card text (`type==debuff & stars==3`, `(1gcd)`; DSL in impossibility-cards-reference §7).
    It searches the bot's card data (`stats.pkl` until 2026-10-25), which carries the new tags since PICKLE `3888392` (header).
 5. **Text players never see** is in rules.json/stats.pkl/`/query_rulebook`: hidden duplicates (09), a hidden PASSIVES

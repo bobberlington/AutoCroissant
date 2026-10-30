@@ -25,9 +25,10 @@ from typing import Callable, Optional
 from psd_tools import PSDImage
 from requests.exceptions import RequestException
 
-from global_config import (AUTHORS_PATH, CARD_BRANCH, CREATED_PATH, EDITS_PATH, ICON_MANIFEST_PATH, RULEBOOK_DIR, RULES_PATH,
+from global_config import (AUTHORS_PATH, CARD_BRANCH, CREATED_PATH, EDITS_PATH, ICON_MANIFEST_PATH, RULEBOOK_DIR, RULEBOOK_SRC, RULES_PATH,
                            STARS_DIR, TYPES_DIR)
 from commands.card_edits import CardAuthors, CardDates, CardEdits
+from commands import rulebook
 from commands.card_models import CardInfo, StatsDatabase, card_name, duplicate_png, straight, straighten_card
 from commands.github_api import RangeError, RemotePSD, blob_text, fetch_blob, range_reads
 from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser, variants_of
@@ -808,7 +809,8 @@ SPARSE_FILES = ("commands/card_data.py", "commands/card_history.py", "commands/c
                 "requirements-cards.txt",
                 "commands/card_bake.py", "commands/psd_edit.py", "commands/png_export.py", "commands/git_commit.py",
                 "commands/repo_history.py", "commands/tts_save.py",
-                "commands/ability_place.py", "commands/ability_index.json")
+                "commands/ability_place.py", "commands/ability_index.json",
+                "commands/rulebook.py", "commands/rulebook_pages.py")
 BOT_REPO = "bobberlington/AutoCroissant"
 BUDGET = 400                                                      # REST downloads per run (two runs an hour: 800 of 1,000)
 RATE_FLOOR = 150                                                  # no more REST downloads under this many requests left
@@ -1238,8 +1240,11 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     run_build.failed_before = {(f.get("path"), f.get("blob")): f for f in pending_before.get("failed") or []}
     run_build.details = details
     edits = authors = None
+    book = None                                               # rulebook.json's text (None: a restore keeps db/'s)
     if not restore:
         run_build.traverse_remote(repository, True, full)
+        found = {p: run_build._repo_text(p) for p in run_build.shas if p.startswith(RULEBOOK_SRC + "/") and p.endswith(".md")}
+        book = rulebook.rulebook_text(rulebook.chapters({p: t for p, t in found.items() if t is not None}))
         pruning = can_prune(run_build)
         gone, backfilled = db.prune_clean_cards(run_build.at) if pruning else ([], [])
         if pruning:
@@ -1368,10 +1373,11 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     unchanged = (not restore and not numbered and manifest_before.get("card_commit") == run_build.head
                  and manifest_before.get("pending") == out.manifest["pending"]
                  and stats_text(db.stats) == _text(db_dir, "stats.json") and old_stats_text(db.old_stats) == _text(db_dir, "old_stats.json")
-                 and psd_details.text_of(details) == _text(db_dir, "psd_details.json"))
+                 and psd_details.text_of(details) == _text(db_dir, "psd_details.json")
+                 and book in (None, _text(db_dir, "rulebook.json")))
     if unchanged:
         return out
-    write_db(db_dir, db.stats, db.old_stats, psd_details.text_of(details), out.manifest)
+    write_db(db_dir, db.stats, db.old_stats, psd_details.text_of(details), out.manifest, book)
     if numbered:
         changelog.append_events(db_dir, numbered)
     problems = check_db(db_dir)

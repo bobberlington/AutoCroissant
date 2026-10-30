@@ -17,6 +17,7 @@ from commands.card_edits import CardAuthors, CardEdits
 from commands.card_models import CardInfo, CardStats, CardType, StatsDatabase, card_name, get_stats_as_dict, stats_db
 from commands.github_api import GIT_TOKEN
 from commands.query_card import archived_text, card_repo, history_match, init_query
+from commands.rulebook import label as chapter_label
 from commands.utils import queue_message, queue_file, queue_long_message
 
 # ========================
@@ -260,7 +261,7 @@ def export_stats_to_file(interaction: Interaction,
 
 def export_rulebook_to_file(interaction: Interaction) -> None:
     """
-    Export rulebook pages to a text file.
+    Export the rulebook's chapters (db/rulebook.json) to a text file, in book order.
 
     Args:
         interaction: Discord interaction
@@ -269,13 +270,8 @@ def export_rulebook_to_file(interaction: Interaction) -> None:
     ascii_pattern = re_compile(r'[^\x00-\x7f]')
 
     with open(filename, 'w') as f:
-        for name, card in stats_db.stats.items():
-            if RULEBOOK_DIR in card.path:
-                f.write(f"{name}\n")
-                if card.ability:
-                    cleaned = ascii_pattern.sub('', card.ability)
-                    f.write(f"{cleaned}\n")
-                f.write('\n')
+        for chapter in stats_db.rulebook:
+            f.write(f"{chapter_label(chapter)}\n{ascii_pattern.sub('', chapter['text'])}\n\n")
 
     with open(filename, 'rb') as f:
         queue_file(interaction, File(f, filename))

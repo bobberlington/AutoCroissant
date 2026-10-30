@@ -9,7 +9,9 @@ their rules (TTS/decks.json: missing repo cards added, an empty deck filled, car
 matching nothing leaves its deck alone), adds new cards to hand-picked decks whose rule has add_new_since (cards the
 save at that commit lacked; a card moved to other stars moves between those decks; no record: one taken out by hand
 comes back unless excluded), sets card Nicknames to the card browser's names (or, with --names, the same names made
-from a card data build's stats.json), regenerates the Lua resizeTargets table.
+from a card data build's stats.json), regenerates the Lua resizeTargets table, and fills the Rulebooks bag with the
+rulebook's TTS pages (TTS/Rulebook/pages.json, commands.rulebook_pages; the Photoshop pages moved once into a bag of their
+own inside it, kept).
 An existing card's Description, GMNotes, Memo, Tags and scripts are left to the team, never changed; new cards start
 with them empty. When something changed it writes <stem>.<time>.bak.json, <stem>.report.md and <stem>.message.txt
 (the commit subject) next to the save. The shas in the links are the only state.
@@ -32,7 +34,8 @@ from commands.card_edits import CardAuthors
 from commands.card_models import RENAMED, card_name as _stem, rename_trailer
 from commands.git_commit import git as _git, plural as _plural
 from commands.repo_history import pinned_ref, refresh
-from global_config import (CARD_BRANCH, CARD_REPO, EDITS_PATH, HISTORY_CLONE, LOCAL_DIR_LOC, RAW_BASE, RULES_PATH,
+from commands.rulebook_pages import read_pages
+from global_config import (CARD_BRANCH, CARD_REPO, EDITS_PATH, HISTORY_CLONE, LOCAL_DIR_LOC, RAW_BASE, RULEBOOK_PAGES, RULES_PATH,
                            SITE_URL, TTS_SAVE_PATH)
 
 # ========================
@@ -44,7 +47,10 @@ LINK = regex(escape(RAW) + f"({escape(MAIN_REFS[1])}|{escape(MAIN_REFS[0])}|" + 
 URL_SAFE = "/'!()*-._~"                     # left as is in the save's links (GitHub raw style; spaces are %20)
 SITE_CARDS = "site/dist/data/cards.json"     # local site build: fallback when the website is unreachable
 CARD_NAMES = ("Card", "CardCustom")
-HAND_NAMED = ("Auxiliary/Rulebook/", "Auxiliary/Markers/")   # page and marker cards keep their Nicknames
+HAND_NAMED = ("Auxiliary/Rulebook/", "Auxiliary/Markers/", RULEBOOK_PAGES + "/")   # page and marker cards: not website names
+RULEBOOK_BAG = "Rulebooks"                   # the save's bag of rulebook pages
+OLD_RULEBOOK = "Old Rulebook (Photoshop pages)"   # the bag inside it the Photoshop pages moved to (kept, owner 10-29)
+OLD_PAGES = "Auxiliary/Rulebook/"
 CARD_FOLDERS = ("Creatures/", "Items/", "Field/", "N.M.E/", "Auxiliary/")   # build_site.CARD_FOLDERS
 SKIP_PARTS = ("MDW", "Markers")                                             # build_site.SKIP_PARTS
 LARGE_CARDS = "Auxiliary/Creatures/"         # the Lua resizeTargets table lists these by Nickname
@@ -468,6 +474,7 @@ class _Report:
         self.stale: list = []
         self.lua_added: list = []
         self.lua_removed: list = []
+        self.rulebook: list = []        # the Rulebooks bag's changes, one line each
         self.left: list = []
         self.errors: list = []
         self.changed = False
@@ -819,6 +826,79 @@ def _resize_targets(save: dict, repo: _Repo, names: _Names, report: _Report) -> 
     report.lua_removed = [k for k in old if k not in wanted]
 
 
+def _rulebook(save: dict, repo: _Repo, report: _Report) -> None:
+    """
+    The Rulebooks bag holds the rulebook's TTS pages in book order (pages.json; the bag's last object is the first page,
+    as with the Photoshop pages): a missing page is made from a page card (a new GUID and CustomDeck id), a page gone
+    is taken out, Nicknames read "Page 7.2: Stats 2" (the contents "Page 0: ..."). The bag's Photoshop pages move once into a bag of their own inside
+    it (OLD_RULEBOOK). Anything else in the bag stays.
+    """
+    pages = read_pages(repo.checkout)
+    if not pages:
+        return
+    bag = next((o for o in save.get("ObjectStates") or [] if str(o.get("Name", "")).endswith("Bag") and o.get("Nickname") == RULEBOOK_BAG), None)
+    if bag is None:
+        report.errors.append(f"No bag named {RULEBOOK_BAG}: the rulebook's pages are not in the save.")
+        return
+    inside = list(bag.get("ContainedObjects") or [])
+    page_of = lambda o: (_face_path(o) or "") if o.get("Name") in CARD_NAMES else ""
+    old = [o for o in inside if page_of(o).startswith(OLD_PAGES)]
+    mine = {page_of(o): o for o in inside if page_of(o).startswith(RULEBOOK_PAGES + "/")}
+    taken = {id(o) for o in old} | {id(o) for o in mine.values()}
+    others = [o for o in inside if id(o) not in taken]
+    everything = list(_walk(save.get("ObjectStates")))
+    guids = {o.get("GUID") for o, _ in everything}
+
+    def guid() -> str:
+        while True:
+            g = token_hex(3)
+            if g not in guids:
+                guids.add(g)
+                return g
+    nested = next((o for o in others if o.get("Nickname") == OLD_RULEBOOK), None)
+    if old:
+        if nested is None:
+            nested = {k: deepcopy(v) for k, v in bag.items() if k != "ContainedObjects"}
+            nested.update(GUID=guid(), Nickname=OLD_RULEBOOK, ContainedObjects=[])
+            others.insert(0, nested)
+        nested["ContainedObjects"] = list(nested.get("ContainedObjects") or []) + old
+        report.rulebook.append(f"{_plural(len(old), 'Photoshop page')} moved into the bag {OLD_RULEBOOK}")
+    template = next(iter(mine.values()), None) or (old or (nested or {}).get("ContainedObjects") or [None])[0]
+    top = 0
+    for o, _ in everything:
+        top = max([top, o.get("CardID", 0) // 100 if isinstance(o.get("CardID"), int) else 0]
+                  + [int(k) for k in (o.get("CustomDeck") or {}) if k.isdigit()])
+    book = []
+    for page in pages:
+        path = f"{RULEBOOK_PAGES}/{page['file']}"
+        name = f"Page {page.get('num') or 0}: {page.get('name') or page['file']}"      # the contents: Page 0, as before
+        card = mine.pop(path, None)
+        if card is None:
+            if template is None:
+                report.errors.append(f"No page card in the {RULEBOOK_BAG} bag to copy: {path} not added.")
+                continue
+            top += 1
+            face = deepcopy(_entry(template) or {})
+            face.update(FaceURL=repo.url(path), BackURL=repo.url(path), NumWidth=1, NumHeight=1)
+            card = deepcopy(template)
+            card.update(GUID=guid(), Nickname=name, Description="", CardID=top * 100, CustomDeck={str(top): face})
+            card.update({k: "" for k in CARD_SCRIPTS if k in card})
+            for k in CARD_EXTRAS:
+                card.pop(k, None)
+            if repo.sha(path) is None:
+                report.unpinned.add(path)
+            report.rulebook.append(f"added {name} `{path}`")
+        elif card.get("Nickname") != name:
+            report.rulebook.append(f"`{path}`: '{card.get('Nickname') or ''}' -> '{name}'")
+            card["Nickname"] = name
+        book.append(card)
+    for path, card in sorted(mine.items()):
+        report.rulebook.append(f"removed {card.get('Nickname') or path} `{path}` (no longer a page)")
+    contained = others + book[::-1]
+    if [id(o) for o in contained] != [id(o) for o in inside]:
+        bag["ContainedObjects"] = contained
+
+
 def _decks(rules):
     """The parsed rules, if their top level is an object with a "decks" object."""
     if not isinstance(rules, dict) or not isinstance(rules.get("decks", {}), dict):
@@ -875,6 +955,7 @@ def _render(report: _Report, head: list) -> str:
                                                     for (p, old), n in sorted(report.unnamed.items())])
     section("CustomDeck keys fixed", report.stale)
     section("resizeTargets", [f"added `{k}`" for k in report.lua_added] + [f"removed `{k}`" for k in report.lua_removed])
+    section("Rulebook", report.rulebook)
     section("Images gone from the repo (report only)",
             [f"`{p}`: {shas(refs)} ({n} links){'; ' + note if note else ''}" for p, (refs, n, note) in sorted(report.gone.items())])
     section("Decks left alone", report.left)
@@ -894,7 +975,8 @@ def _commit_message(report: _Report) -> str:
              f"{_plural(len(report.renamed), 'rename')} followed" if report.renamed else "",
              f"{_plural(len(report.moved), 'card')} moved" if report.moved else "",
              f"{_plural(names, 'Nickname')} fixed" if names else "",
-             "resizeTargets updated" if report.lua_added or report.lua_removed else ""]
+             "resizeTargets updated" if report.lua_added or report.lua_removed else "",
+             "rulebook pages updated" if report.rulebook else ""]
     return "TTS save: " + (", ".join(p for p in parts if p) or "updated")
 
 
@@ -914,6 +996,7 @@ def _update(save_path: str, names_from: str = "") -> tuple:
             _sync_decks(save, rules, repo, names, report)
         _fix_cards(save, repo, names, report)
         _resize_targets(save, repo, names, report)
+        _rulebook(save, repo, report)
 
     out = _dump(save).encode("utf-8")
     stem = splitext(save_path)[0]

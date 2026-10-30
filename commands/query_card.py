@@ -27,6 +27,7 @@ from commands.card_history import start as version_start
 from commands.card_models import stats_db
 from commands.github_api import blob_text, fetch_tree
 from commands.repo_history import commit_before, pinned_ref, raw_url, raw_url_at
+from commands.rulebook import label as chapter_label
 from commands.type_emojis import render_type_tokens
 from commands.utils import BREAK_LEN, queue_file, queue_message
 
@@ -676,18 +677,17 @@ class CardRepository:
             if "duplicate_of" in cards_df:              # same card as its original
                 cards_df = cards_df[cards_df["duplicate_of"].isna()]
 
-            # Separate cards and rulebook entries
+            # Cards DataFrame (the Photoshop rule pages, still parsed, left out)
             has_ability = cards_df["ability"].notna()
             is_rulebook = cards_df["path"].str.contains(RULEBOOK_DIR, na=False)
-
-            # Cards DataFrame (excludes rulebook)
             self.cards_dff = cards_df[has_ability & ~is_rulebook].copy()
             self.cards_dff["ability"] = self.cards_dff["ability"].str.lower()
 
-            # Rulebook DataFrame (only rulebook entries; as printed: /query_rulebook quotes its lines)
-            self.rulebook_dff = cards_df[has_ability & is_rulebook].copy()
-
-            print(f"Loaded {len(self.cards_dff)} cards and {len(self.rulebook_dff)} rulebook entries")
+            print(f"Loaded {len(self.cards_dff)} cards")
+        # the rulebook: its chapters (db/rulebook.json), as written: /query_rulebook quotes their lines
+        chapters = stats_db.rulebook
+        self.rulebook_dff = DataFrame({"ability": [c["text"] for c in chapters]}, index=[chapter_label(c) for c in chapters])
+        print(f"Loaded {len(self.rulebook_dff)} rulebook chapters")
         self._populate_renames()                        # renamed cards and autocomplete follow the new stats
 
     def _normalize_card_name(self, query: str) -> str:
@@ -1192,15 +1192,15 @@ def query_rulebook(interaction: Interaction,
                    search_text: str,
                    limit: int = -1) -> None:
     """
-    Search the rulebook: the matching lines under their page names, pages with the most matches first.
+    Search the rulebook: the matching lines under their chapter names, chapters with the most matches first.
 
     Args:
         interaction: Discord interaction
         search_text: Text to search for in rulebook
-        limit: Maximum number of pages to show (-1 for all)
+        limit: Maximum number of chapters to show (-1 for all)
     """
     if card_repo.rulebook_dff.empty:
-        queue_message(interaction, "No card data yet, or no rulebook entries. Run `/update_stats` first.")
+        queue_message(interaction, "No card data yet, or no rulebook chapters. Run `/update_stats` first.")
         return
     text = " ".join(search_text.split())
     if not text:
@@ -1215,12 +1215,12 @@ def query_rulebook(interaction: Interaction,
         return
     shown = pages if limit < 0 else pages[:limit]
     count = sum(len(lines) for _, lines in pages)
-    head = f"'{text}' is on {count} line{'s' if count != 1 else ''} of {len(pages)} rulebook page{'s' if len(pages) != 1 else ''}"
-    head += f" (showing {len(shown)} pages):" if len(shown) < len(pages) else ":"
+    head = f"'{text}' is on {count} line{'s' if count != 1 else ''} of {len(pages)} rulebook chapter{'s' if len(pages) != 1 else ''}"
+    head += f" (showing {len(shown)} chapters):" if len(shown) < len(pages) else ":"
     blocks = [head] + [f"**{name}**\n" + "\n".join(f"- {_bold(render_type_tokens(line, escape=True), text)}" for line in lines)
                        for name, lines in shown]
     messages = [blocks[0]]
-    for block in blocks[1:]:                         # whole pages per message while they fit
+    for block in blocks[1:]:                         # whole chapters per message while they fit
         if len(messages[len(messages) - 1]) + len(block) + 2 <= BREAK_LEN:
             messages[len(messages) - 1] += "\n\n" + block
         else:

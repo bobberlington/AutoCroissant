@@ -106,4 +106,4 @@ def test_rulebook_lines(monkeypatch):
     sent = [kw for _, kw in utils.dispatch_queue]
     utils.dispatch_queue.clear()
     assert len(sent) == 1 and "links" in sent[0]
-    assert sent[0]["content"].startswith("'turn' is on 7 lines of 4 rulebook pages:\n\n**08 Global Turn**\n- THE GLOBAL **TURN**")
+    assert sent[0]["content"].startswith("'turn' is on 7 lines of 4 rulebook chapters:\n\n**08 Global Turn**\n- THE GLOBAL **TURN**")

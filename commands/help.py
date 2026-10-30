@@ -54,8 +54,8 @@ card_commands = {
                                                    "- limit: Max number of cards to display (default: all)\n"
                                                    "- howmany: If True, only returns the count instead of the cards (default: False)",
     "/query_rulebook <search_text> [limit]:"    : "Searches the rulebook and posts the lines holding <search_text> (any case) under their "
-                                                  "page names, the pages with the most matches first; the button opens the rulebook on the website.\n"
-                                                  "- limit: Max number of pages to show (default: all)",
+                                                  "chapter names, the chapters with the most matches first; the button opens the rulebook on the website.\n"
+                                                  "- limit: Max number of chapters to show (default: all)",
     "Query Syntax:"                             : "Flexible query syntax for /query_ability:\n"
                                                   "- Exact text match: Surround with quotes \"like this\"\n"
                                                   "- Exclude matches: Prefix any term with ! to get cards that don't match, e.g. !die, !type==creature\n"
@@ -98,7 +98,7 @@ stats_commands = {
     "/export_cards [only_ability] [as_csv]:"    : "Exports all card data/metadata to a file (excludes rulebook), its creation date (created) included.\n"
                                                    "- only_ability: Text export only: just names, aliases and ability text (default: False)\n"
                                                    "- as_csv: Export as CSV instead of text; cards with no ability field are left out (default: True)",
-    "/export_rulebook:"                         : "Exports the rulebook pages as a text file.",
+    "/export_rulebook:"                         : "Exports the rulebook's chapters as a text file.",
     "/view_old_metadata <query> [version]:"     : "Shows an older stored version of a card's data (archived cards too, by their own name).\n"
                                                   "- version: 0 = most recent old version (default), 1, 2, ... = older ones, -1 = oldest",
     "/list_orphans:"                            : "Lists all cards without a listed author.",

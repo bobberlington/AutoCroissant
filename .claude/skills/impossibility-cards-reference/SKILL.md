@@ -732,10 +732,11 @@ gotcha-4 unknown-field error; `series==mario & subseries~door` is the website's 
    near-whole-text matches; short queries effectively rely on the substring pass.
 8. `"quoted"` builds `(?:^|\s|$|\b)<escaped>(?:^|\s|$|\b)` (:399) — approximately word-bounded,
    punctuation-tolerant.
-9. Rulebook pages are NEVER returned by `/query_ability`; use `/query_rulebook` (case-insensitive words with any
-   spacing over `rulebook_dff`, no DSL — query_card.py:426-440). It posts the matching LINES under their page names
-   (`rulebook_lines` :1080; long lines cut to SNIPPET around the match, the match in bold outside emoji markup), the
-   pages with the most lines first, whole pages per message. 48 pages today.
+9. The rulebook is NEVER returned by `/query_ability`; use `/query_rulebook` (case-insensitive words with any
+   spacing over `rulebook_dff`, no DSL). Since 2026-10-29 `rulebook_dff` is the website's chapters (`db/rulebook.json`,
+   `commands/rulebook.py`: 23 chapters, index "7. Stats"), not the Photoshop pages (still parsed into stats, left out of
+   both tables). It posts the matching LINES under their chapter names (`rulebook_lines`; long lines cut to SNIPPET
+   around the match, the match in bold outside emoji markup), the chapters with the most lines first.
 10. One result posts its image URL alone (a preview, via `get_card_url`; its name when the PNG is not in the tree).
     Two or more come as grid images since 2026-10-25 (`post_grids`, commands/card_grid.py): 20 cards per JPEG (4 x 5,
     300 px wide, numbered and named under each), one message per grid listing `**n.** [name](<site /c/<slug>/>)`, the

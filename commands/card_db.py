@@ -17,6 +17,7 @@ from threading import Lock
 from typing import Optional
 
 from commands.card_models import CardInfo, CardStats
+from commands.rulebook import parse_rulebook, rulebook_text
 
 # ========================
 # Configuration
@@ -25,8 +26,9 @@ SCHEMA = 1
 STATS_JSON = "stats.json"
 OLD_STATS_JSON = "old_stats.json"
 DETAILS_JSON = "psd_details.json"                  # psd_details' own format, copied as is
+RULEBOOK_JSON = "rulebook.json"                    # the rulebook's chapters as text (commands.rulebook)
 MANIFEST_JSON = "manifest.json"
-DATA_FILES = (STATS_JSON, OLD_STATS_JSON, DETAILS_JSON)
+DATA_FILES = (STATS_JSON, OLD_STATS_JSON, DETAILS_JSON, RULEBOOK_JSON)
 VERDICTS_JSON = "verdicts.json"                    # the bake's verdicts per card key (CARD_SYNC_VERDICTS.md), kept apart
 SYNC_JSON = "sync.json"                            # the bot's copy only: the data commit it holds and that request's ETag
 SHA_MEDIA = "application/vnd.github.sha"           # Accept: a commit's sha alone (the sync's conditional request)
@@ -221,6 +223,15 @@ def merge_verdicts(folder: str, incoming: dict) -> list:
     return sorted(changed)
 
 
+def read_rulebook(folder: str) -> list:
+    """db/rulebook.json's chapters ([] when missing); ValueError for a bad file."""
+    path = join(folder, RULEBOOK_JSON)
+    if not isfile(path):
+        return []
+    with open(path, encoding="utf-8") as fh:
+        return parse_rulebook(fh.read(), path)
+
+
 def file_sha256(path: str) -> str:
     with open(path, "rb") as fh:
         return sha256(fh.read()).hexdigest()
@@ -252,16 +263,25 @@ def read_db(folder: str, details: bool = True) -> tuple:
     return (stats, old, found, manifest)
 
 
-def write_db(folder: str, stats: dict, old_stats: dict, details_text: str, manifest: dict) -> dict:
+def write_db(folder: str, stats: dict, old_stats: dict, details_text: str, manifest: dict, rulebook: Optional[str] = None) -> dict:
     """
-    db/'s three data files, then the manifest with each file's sha256 (written last: a reader checks the files
-    against it).
+    db/'s data files, then the manifest with each file's sha256 (written last: a reader checks the files against it).
+
+    Args:
+        rulebook: rulebook.json's text; None keeps the folder's (none there: no chapters)
 
     Returns:
         The manifest written
     """
     makedirs(folder, exist_ok=True)
-    texts = {STATS_JSON: stats_text(stats), OLD_STATS_JSON: old_stats_text(old_stats), DETAILS_JSON: details_text}
+    if rulebook is None:
+        path = join(folder, RULEBOOK_JSON)
+        if isfile(path):
+            with open(path, encoding="utf-8") as fh:
+                rulebook = fh.read()
+        else:
+            rulebook = rulebook_text([])
+    texts = {STATS_JSON: stats_text(stats), OLD_STATS_JSON: old_stats_text(old_stats), DETAILS_JSON: details_text, RULEBOOK_JSON: rulebook}
     for name, text in texts.items():
         write_text(join(folder, name), text)
     manifest = {**manifest, "schema": SCHEMA, "files": {name: file_sha256(join(folder, name)) for name in texts}}
@@ -296,6 +316,7 @@ def check_db(folder: str, parse: bool = True) -> list:
     try:
         if parse:
             read_db(folder)
+            read_rulebook(folder)
     except (ValueError, TypeError) as e:
         problems.append(str(e))
     return problems
@@ -374,6 +395,8 @@ def _check_text(name: str, data: bytes) -> None:
         parse_stats(text, name)
     elif name == OLD_STATS_JSON:
         parse_old_stats(text, name)
+    elif name == RULEBOOK_JSON:
+        parse_rulebook(text, name)
     elif not isinstance(loads(text).get("cards"), dict):
         raise ValueError(f"{name}: not a details file")
 
@@ -474,6 +497,7 @@ __all__ = [
     'DATA_FILES',
     'MANIFEST_JSON',
     'OLD_STATS_JSON',
+    'RULEBOOK_JSON',
     'SCHEMA',
     'STATS_JSON',
     'SYNC_JSON',
@@ -489,6 +513,7 @@ __all__ = [
     'read_cards',
     'read_db',
     'read_json',
+    'read_rulebook',
     'read_verdicts',
     'record',
     'round_trip_problems',

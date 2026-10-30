@@ -139,6 +139,7 @@ class StatsDatabase:
         self.old_stats: defaultdict[str, list[CardInfo]] = defaultdict(list)
         self.all_types: list[str] = []
         self.seen_cards: list[str] = []            # names in the last tree; the rest are archived
+        self.rulebook: list[dict] = []             # the rulebook's chapters (db/rulebook.json: commands.rulebook)
 
     def archived(self) -> dict:
         """Cards whose PSD left the card repo: {name: its last version}, for names not in stats whose last old_stats
