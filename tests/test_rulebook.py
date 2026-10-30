@@ -50,13 +50,13 @@ def _png(colour) -> bytes:
 
 def test_pdf_printed_only_when_a_page_changes(tmp_path):
     """pages.json keeps each page's pixel hash; the PDF is printed again only when one changes (its bytes carry the print
-    time); other files beside it stay."""
+    time); other files beside it stay; each page's text is kept for the TTS save's search."""
     folder = tmp_path / "TTS" / "Rulebook"
     folder.mkdir(parents=True)
     (folder / "notes.png").write_bytes(_png("white"))
     printed = []
     pdf = lambda: printed.append(1) or b"%PDF-1.4 fake"
-    shots = [({"name": "Cover", "num": ""}, _png("white")), ({"name": "Stats", "num": "7"}, _png("blue")), ({"name": "Stats 2", "num": "7.2"}, _png("red"))]
+    shots = [({"name": "Cover", "num": ""}, _png("white")), ({"name": "Stats", "num": "7", "text": "STATS HP DEF"}, _png("blue")), ({"name": "Stats 2", "num": "7.2"}, _png("red"))]
     done = rulebook_pages.write_pages(str(folder), shots, pdf)
     assert done["printed"] and (folder / "notes.png").exists() and (folder / "Rulebook.pdf").read_bytes() == b"%PDF-1.4 fake"
     again = [shots[0], (shots[1][0], _png("blue")), shots[2]]                     # same pixels
@@ -65,6 +65,7 @@ def test_pdf_printed_only_when_a_page_changes(tmp_path):
     assert done["printed"] and done["changed"] == ["Stats 2"] and len(printed) == 2
     book = rulebook_pages.read_pages(str(tmp_path))
     assert book["pdf"] == "Rulebook.pdf" and [p["name"] for p in book["pages"]] == ["Cover", "Stats", "Stats 2"]
+    assert book["pages"][1]["t"] == "STATS HP DEF" and "t" not in book["pages"][0]                   # each page's text: the save's search
 
 
 def _card(guid, path, nick, deck_id):

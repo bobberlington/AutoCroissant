@@ -1,7 +1,7 @@
 """
 The rulebook's TTS PDF: the website's #/rules/print pages (1080x1920, the cover then the chapters cut as the Photoshop
 pages were) printed by Chrome to the card repo's TTS/Rulebook/Rulebook.pdf (real text: searchable and selectable, one
-page per sheet, bookmarks from the headings), and pages.json listing the pages with a hash of each one's pixels. Card
+page per sheet, bookmarks from the headings), and pages.json listing the pages with a hash of each one's pixels and its text (the TTS save's search). Card
 sync's main lane runs it before the save; tts_save puts the PDF in the save's Rulebooks bag (a Custom_PDF object).
 
     python -m commands.rulebook_pages <card repo checkout> [--site URL]
@@ -162,6 +162,9 @@ def draw(site: str, exe: str) -> tuple:
                     'return [r.left + scrollX, r.top + scrollY, r.width, r.height]; })')
         if len(boxes) != len(listed["sheets"]):
             raise RuntimeError(f"{len(boxes)} pages on the website, {len(listed['sheets'])} listed")
+        texts = run('[...document.querySelectorAll(".rb-sheets .rb-sheet")].map(e => e.innerText.replace(/\\s+/g, " ").trim())')
+        for entry, text in zip(listed["sheets"], texts or []):
+            entry["text"] = text                             # the TTS save's search (Global.lua)
         shots = []
         for entry, (x, y, w, h) in zip(listed["sheets"], boxes):
             if (round(w), round(h)) != SHEET:
@@ -233,7 +236,8 @@ def write_pages(folder: str, shots: list, pdf_maker) -> dict:
         {"pages": n, "changed": [page names], "printed": bool}
     """
     makedirs(folder, exist_ok=True)
-    pages = [{"name": entry["name"], "num": entry.get("num") or "", "sha": page_sha(png)} for entry, png in shots]
+    pages = [{"name": entry["name"], "num": entry.get("num") or "", "sha": page_sha(png), **({"t": entry["text"]} if entry.get("text") else {})}
+             for entry, png in shots]
     listing, pdf = join(folder, PAGES_JSON), join(folder, PDF_FILE)
     old = {}
     if isfile(listing):
