@@ -438,6 +438,20 @@ def test_font_filter_data_is_the_details_fonts(bs):
         assert [got["fonts"][i] for i in ix] == list(files[cid]["fonts"])
 
 
+def test_rulebook_picture_outline(bs):
+    """A transparent rulebook picture's outline (owner 10-30: text wraps to a ball's edges): its opaque extent per band
+    as polygon points in %, right side down, left side up; none for an opaque picture."""
+    from PIL import Image, ImageDraw
+    ball = Image.new("RGBA", (100, 100), (0, 0, 0, 0))
+    ImageDraw.Draw(ball).ellipse((20, 0, 80, 100), fill=(255, 0, 0, 255))
+    points = [tuple(float(v.rstrip("%")) for v in q.split()) for q in bs.picture_outline(ball).split(", ")]
+    xs = [x for x, _ in points]
+    assert min(xs) >= 19 and max(xs) <= 81 and points[0][1] == 0 and max(y for _, y in points) == 100
+    assert min(xs) <= 21 and max(xs) >= 79 and points[0][0] < 70      # widest at the middle, narrow at the top
+    assert bs.picture_outline(Image.new("RGB", (40, 40))) == ""
+    assert bs.picture_outline(Image.new("RGBA", (40, 40), (1, 2, 3, 255))) == ""
+
+
 def test_tts_details_for_the_save(bs):
     """data/tts.json (owner 10-30, the TTS hover strip and details): types' meanings from the chapters (an icon heading's
     section to the page break, a "[token]:" line, a line ending in tokens; secret text, "(See: ...)" and non-icons left
