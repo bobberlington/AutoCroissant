@@ -43,6 +43,7 @@ exits 1 (failure()). A face no file holds is drawn in the fork's stand-in, told 
 """
 from argparse import ArgumentParser
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from hashlib import sha1
@@ -96,6 +97,7 @@ EVENTS_OUT = "bake-events.json"                 # in the work dir: {"events": [.
 FIELDS = frozenset(CardEdits.TYPES)            # ORDER (edit.js FIELDS) and PUNCTUATION live in card_edits
 KIND = CardEdits.KIND
 BOT_BY = AUTHOR["name"]                         # the bot's _by (changelog.BOT)
+PREFETCH_WORKERS = 4                            # blob downloads at once (Snapshot.prefetch)
 
 
 # ========================
@@ -194,14 +196,31 @@ class Snapshot:
             if path.lower().endswith(".psd") and not any(folder in EXCLUDE_FOLDERS for folder in path.split("/")):
                 self.psds[CardAuthors.key(card_name(path))] = path
         self.edits_path = EDITS_PATH if EDITS_PATH in tree else None
+        self._ahead: dict = {}                  # sha -> Future of fetch_verified (prefetch)
 
     def sha(self, path: str) -> str:
         """The blob sha of a path in the tree."""
         return self.tree[path][1]
 
     def fetch(self, sha: str, path: str = "") -> bytes:
-        """fetch_verified, from the local clone first."""
-        return fetch_verified(self.repository, sha, path, self.local)
+        """fetch_verified, from the local clone first (a prefetched blob: its download, raising as fetch_verified)."""
+        ahead = self._ahead.pop(sha, None)
+        if ahead is None:
+            return fetch_verified(self.repository, sha, path, self.local)
+        data = ahead.result()
+        if path:
+            makedirs(dirname(path), exist_ok=True)
+            with open(path, "wb") as fh:
+                fh.write(data)
+        return data
+
+    def prefetch(self, paths) -> None:
+        """Start these paths' blobs downloading side by side (fetch takes each once); "" or a path not in the tree is
+        skipped."""
+        for path in paths:
+            sha = self.tree[path][1] if path in self.tree else ""
+            if sha and sha not in self._ahead:
+                self._ahead[sha] = _pool().submit(fetch_verified, self.repository, sha, "", self.local)
 
     def fonts_key(self) -> str:
         """MDW/Fonts' top-level files (what the Action installs) as 8 hex digits: a `font` verdict holds while they do."""
@@ -257,6 +276,16 @@ class Snapshot:
 # ========================
 # GitHub
 # ========================
+_POOL: list = []
+
+
+def _pool() -> ThreadPoolExecutor:
+    """The prefetch threads (one pool a process)."""
+    if not _POOL:
+        _POOL.append(ThreadPoolExecutor(PREFETCH_WORKERS, thread_name_prefix="prefetch"))
+    return _POOL[0]
+
+
 def _tree(repository: str, tree_sha: str) -> dict:
     """{path: (mode, blob sha)} of a whole tree."""
     data = api(repository, "GET", f"git/trees/{tree_sha}?recursive=1").json()
@@ -1280,6 +1309,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                 raise Refused("recent", f"PNG pushed in the last {RECENT.seconds // 60} min")
         card.png_sha = snapshot.sha(card.png)
         old_psd, old_png = join(folder, "old", basename(card.rel)), join(folder, "old", basename(card.png))
+        snapshot.prefetch([card.png] + [png for n, png in card.pictures.items() if n != 1])   # beside the PSD
         snapshot.fetch(card.psd_sha, old_psd)
         snapshot.fetch(card.png_sha, old_png)
         for n, png in card.pictures.items():

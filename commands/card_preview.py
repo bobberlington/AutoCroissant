@@ -43,7 +43,7 @@ from commands.card_models import card_name
 from commands.card_preview_branch import BEFORE, MAX_CARD, PNG, REQUEST, RESULT, WEBP, blank, clean, stamp
 from commands.git_commit import ref_head
 from commands.github_api import token_from_env
-from global_config import CARD_REPO
+from global_config import CARD_REPO, ICON_MANIFEST_PATH
 
 # ========================
 # Configuration
@@ -134,6 +134,15 @@ def resolve(snapshot: Snapshot, card: str, fields: dict) -> Card:
     name = card_name(rel) if rel else " ".join(word[:1].upper() + word[1:] for word in key.split())
     return Card(name, key, psd_fields(fields), rel, snapshot.sha(rel) if rel else "", creatures=bool(fields.get("creatures")),
                 view=view)
+
+
+def blobs_of(snapshot: Snapshot, card: Card) -> list:
+    """What the preview reads first: the icon manifest, the card's PSD and official PNG, the status chart for an ability
+    or parts edit."""
+    if not card.rel:
+        return [ICON_MANIFEST_PATH]
+    chart = psd_edit.STATUS_CHART if {"ability", "parts"} & set(card.fields) else ""
+    return [ICON_MANIFEST_PATH, card.rel, snapshot.png_for(card.rel)[0], chart]
 
 
 def picture_of(snapshot: Snapshot, key: str) -> Optional[tuple]:
@@ -295,6 +304,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
         snapshot = local_snapshot(repository, clone, head) if clone else snapshot_at(repository, head or ref_head(repository))
         result["base"].update(repo=repository, commit=snapshot.head)
         one = resolve(snapshot, card, fields)
+        snapshot.prefetch(blobs_of(snapshot, one))    # side by side
         png_rel = snapshot.png_for(one.rel)[0] if one.rel else ""
         if one.view is not None:                # the picture's own PNG
             png_rel = next((p for p in snapshot.png_for(one.rel)[1] if picture_of(snapshot, CardAuthors.key(card_name(p)))
@@ -422,6 +432,7 @@ __all__ = [
     'RESULT_V',
     'changes_of',
     'SPARSE_FILES',
+    'blobs_of',
     'check_card',
     'load_edit',
     'main',
