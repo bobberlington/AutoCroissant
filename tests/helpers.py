@@ -265,7 +265,7 @@ def _uses_setup(step) -> bool:
 def fork_action(workflows) -> str:
     """
     The card workflows' one setup (.github/actions/cards-python): Python 3.14; a venv cached whole by requirements-cards.txt's
-    hash, runner and Python, an import checking a restored one; on a miss the wheels restored by the same key, built only
+    hash, runner and Python, a restored one's packages checked; on a miss the wheels restored by the same key, built only
     on a miss, installed offline by name with uv (pip builds a URL line from git again), both saved only after they
     installed; the venv first on PATH when the caller names none.
 
