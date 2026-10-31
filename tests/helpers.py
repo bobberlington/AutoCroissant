@@ -264,28 +264,36 @@ def _uses_setup(step) -> bool:
 
 def fork_action(workflows) -> str:
     """
-    The card workflows' one setup (.github/actions/cards-python): Python 3.14; requirements-cards.txt's wheels restored by
-    the file's hash, runner and Python (one entry for all), built only on a miss, installed offline by name with uv (pip
-    builds a URL line from git again), saved only after they installed.
+    The card workflows' one setup (.github/actions/cards-python): Python 3.14; a venv cached whole by requirements-cards.txt's
+    hash, runner and Python, an import checking a restored one; on a miss the wheels restored by the same key, built only
+    on a miss, installed offline by name with uv (pip builds a URL line from git again), both saved only after they
+    installed; the venv first on PATH when the caller names none.
 
     Returns:
-        The cache key.
+        The wheels' cache key.
     """
     yaml = pytest.importorskip("yaml")
     steps = yaml.safe_load((workflows.parent.parent / FORK_ACTION).read_text(encoding="utf-8"))["runs"]["steps"]
-    python, reqs, restore, uv, install, save, oxipng = steps
+    python, reqs, env, check, restore, uv, install, save, save_env, path, oxipng = steps
     assert reqs["id"] == "reqs" and "sha256sum" in reqs["run"]          # the key: requirement lines, comments stripped
     assert python["uses"].startswith("actions/setup-python@") and python["id"] == "python"
     assert python["with"] == {"python-version": FORK_PYTHON}                   # no pip cache
-    assert restore["uses"].startswith("actions/cache/restore@") and restore["id"] == "wheels"
+    assert env["uses"].startswith("actions/cache/restore@") and env["id"] == "env"
+    assert env["with"] == {"path": "${{ steps.reqs.outputs.venv }}", "key": FORK_KEY.replace("cards-", "cards-venv-", 1)}
+    assert check["id"] == "check" and check["env"]["HIT"] == "${{ steps.env.outputs.cache-hit }}" and 'rm -rf "$VENV"' in check["run"]
+    missed = "steps.check.outputs.ok != 'true'"
+    assert restore["uses"].startswith("actions/cache/restore@") and restore["id"] == "wheels" and restore["if"] == missed
     assert restore["with"] == {"path": FORK_WHEELS, "key": FORK_KEY}
-    assert uv["uses"].startswith("astral-sh/setup-uv@") and uv["with"]["enable-cache"] is False
+    assert uv["uses"].startswith("astral-sh/setup-uv@") and uv["with"]["enable-cache"] is False and uv["if"] == missed
     run = install["run"]
-    assert install["env"]["HIT"] == "${{ steps.wheels.outputs.cache-hit }}" and '"$HIT"' in run
+    assert install["if"] == missed and install["env"]["HIT"] == "${{ steps.wheels.outputs.cache-hit }}" and '"$HIT"' in run
     assert run.index("pip wheel -q -f ~/.cache/card-wheels -w ~/.cache/card-wheels -r bot/requirements-cards.txt") < run.index(BY_NAME)
     assert run.index(BY_NAME) < run.index('uv pip install -q --no-index -f ~/.cache/card-wheels -r "$RUNNER_TEMP/cards.txt"')
-    assert save["uses"].startswith("actions/cache/save@") and save["if"].startswith("steps.wheels.outputs.cache-hit != 'true'")
+    assert save["uses"].startswith("actions/cache/save@") and save["if"].startswith(f"{missed} && steps.wheels.outputs.cache-hit != 'true'")
     assert save["with"] == {"path": FORK_WHEELS, "key": "${{ steps.wheels.outputs.cache-primary-key }}"}
+    assert save_env["uses"].startswith("actions/cache/save@") and save_env["if"].startswith(missed)
+    assert save_env["with"] == {"path": env["with"]["path"], "key": "${{ steps.env.outputs.cache-primary-key }}"}
+    assert 'echo "$VENV/bin" >> "$GITHUB_PATH"' in path["run"] and '"$VENV/bin/python" -m "commands.$module" --help' in path["run"]
     assert oxipng["if"] == "inputs.oxipng == 'true'" and oxipng["env"]["VERSION"] == OXIPNG_VERSION    # the CLI, pinned
     assert re.fullmatch(r"[0-9a-f]{64}", oxipng["env"]["SHA256"]) and "sha256sum -c" in oxipng["run"]
     assert oxipng["run"].index("sha256sum -c") < oxipng["run"].index("tar ") < oxipng["run"].index("GITHUB_PATH")
