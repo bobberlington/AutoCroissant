@@ -21,7 +21,7 @@ from re import compile, escape, IGNORECASE
 from urllib.parse import quote
 
 from global_config import CARD_REPO, CARD_TREE_JSON, EDITS_PATH, RULEBOOK_DIR, SITE_URL, TIMEZONE
-from commands.card_edits import CardAuthors
+from commands.card_edits import CardAuthors, art_list
 from commands.card_db import write_text
 from commands.card_history import start as version_start
 from commands.card_models import stats_db
@@ -43,7 +43,6 @@ UNKNOWN_BEFORE = 946684800.0                             # 2000-01-01 UTC; older
 DATE_PATTERN = compile(r"^(created)\s*(<=|>=|==|<|>)\s*(\d{4}(?:-\d{2}){0,2})$")   # created>=2025, created == 2023-10
 FIELD_PATTERN = compile(r"^(\w+)\s*(<=|>=|==|!=|<|>|~)\s*(.*)$")   # a condition: field, operator, value
 NUMBER_FIELDS = ("hp", "def", "atk", "spd", "stars", "total")
-ART_LINES = (("art", "Artwork source"), ("ability_art", "Ability artwork source"))    # a card's artwork sources
 URL_PATTERN = compile(r"https?://[^\s<>\[\]\"'`]+")    # art.js URL_RE
 TEXT_FIELDS = ("type", "subtype", "series", "subseries", "author", "types", "name", "alias", "ability", "path", "created")
 FIELD_HINTS = {"attack": "atk", "defense": "def", "health": "hp", "speed": "spd", "star": "stars", "aliases": "alias"}
@@ -865,8 +864,8 @@ def _post_card(interaction: Interaction, closest: str, url: Optional[str] = None
     subseries = getattr(card, "subseries", None) if card else None
     extra = [f"Same card as {card.duplicate_of}" if card and getattr(card, "duplicate_of", None) else "",
              getattr(card, "note", None) or "" if card else ""]
-    extra += [f"{label}: {art_text(getattr(card, key))}" if card and getattr(card, key, None) else ""
-              for key, label in ART_LINES]
+    arts = art_list(getattr(card, "art", None), getattr(card, "ability_art", None)) if card else []   # a card's artwork sources
+    extra += [f"Artwork source{f' #{i}' if len(arts) > 1 else ''}: {art_text(source)}" for i, source in enumerate(arts, 1)]
     if card and (shown or subseries or any(extra)):     # website name, subseries, note, art or duplicate: an embed says so
         extra.insert(0, " · ".join(s for s in (card.series, subseries) if s))      # "Series · Subseries"
         created = getattr(card, "created", None)

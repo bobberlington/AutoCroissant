@@ -3,6 +3,7 @@ import json
 from copy import deepcopy
 
 
+from commands.card_edits import CardAuthors
 from commands.psd_analyzer import CardEdits, CardInfo, CardStats
 from commands.psd_parser import CardValidator
 
@@ -37,6 +38,7 @@ VALID_CASES = [
     ("creatures", [{"mana": 1}], False), ("creatures", [1], False), ("creatures", {}, False),
     ("art", "https://x.com/a", True), ("art", None, True), ("art", "x" * 500, True), ("art", "x" * 501, False),
     ("ability_art", "Kirby Super Star", True), ("ability_art", 5, False), ("ability_art", ["a"], False),
+    ("art", ["a", "b"], True), ("art", ["x" * 501], False), ("art", ["a", 5], False),
 ]
 
 
@@ -110,10 +112,10 @@ def test_creatures_edit_undone_brings_back_the_stats():
 # ========================
 KINDS = [("name", "psd"), ("stars", "psd"), ("types", "psd"), ("hp", "psd"), ("def", "psd"), ("atk", "psd"), ("spd", "psd"),
          ("ability", "psd"), ("type", "folder"), ("subtype", "folder"), ("series", "folder"), ("subseries", "database"),
-         ("note", "database"), ("art", "database"), ("ability_art", "database"), ("aliases", "database"), ("dup_of", "database"), ("hidden", "database"),
+         ("note", "database"), ("art", "database"), ("aliases", "database"), ("dup_of", "database"), ("hidden", "database"),
          ("problems_ok", "database"), ("allow_high_stats", "database"), ("creatures", "database")]
 SAMPLE = {"name": "Foo Prime", "stars": 3, "types": ["ice"], "hp": 7, "def": 7, "atk": 7, "spd": 7, "ability": "New.", "type": "item",
-          "subtype": "heal", "series": "Mario", "subseries": "Paper Mario", "note": "n", "art": "https://a", "ability_art": "Bob",
+          "subtype": "heal", "series": "Mario", "subseries": "Paper Mario", "note": "n", "art": ["https://a"],
           "aliases": ["f"], "dup_of": "Bar", "hidden": True,
           "problems_ok": True, "allow_high_stats": True,
           "creatures": [{"hp": None, "def": 2, "atk": 3, "spd": 4}, {"hp": 5, "def": 6, "atk": 7, "spd": 8}]}   # creature 1 = the card's stats
@@ -141,6 +143,20 @@ def test_kind_table():
                 assert saved in (None, False)                     # database-only: no PSD or folder value exists
         assert CardEdits().apply("Foo Bar", card) is applied
         assert repr(card) == original
+
+
+def test_artwork_sources_fold():
+    """art is a list: an older string and the retired ability_art read as its sources, in order (10-31)."""
+    e = _edits({"Foo Bar": {"art": "https://a", "ability_art": " Bob "}, "Baz": {"ability_art": "Cy"}})
+    assert e.cards[CardAuthors.key("Foo Bar")] == {"art": ["https://a", "Bob"]} and e.cards[CardAuthors.key("Baz")] == {"art": ["Cy"]}
+    card = _card(series="mario", stars=2)
+    card.ability_art = "old"
+    e.apply("Foo Bar", card)
+    assert (card.art, card.ability_art) == (["https://a", "Bob"], None)
+    from commands.changelog import field_changes          # an older record's string and ability_art: the same sources, no event
+    old = deepcopy(card)
+    old.art, old.ability_art = "https://a", "Bob"
+    assert "art" not in field_changes(old, card)
 
 
 def test_psd_meta_rides_beside_by_and_at():

@@ -85,8 +85,8 @@ class CardInfo:
     variant: Optional[int] = None             # a tagged PSD's picture (1: Name.png, N: NameN.png); None: one picture
     variant_of: Optional[str] = None          # variant N's: variant 1's card (same PSD, its own PNG)
     variants: Optional[list] = None           # variant 1's: the other variants' cards
-    art: Optional[str] = None                 # artwork source (Card Edits.json); each entry its own, duplicates too
-    ability_art: Optional[str] = None         # the ability's artwork source
+    art: Optional[list] = None                # artwork sources (Card Edits.json; a string in older records); each entry its own
+    ability_art: Optional[str] = None         # retired: older records' second source (card_edits.art_list reads it last)
     version = None                            # card_history's {from, to, cause...}; no field (card_db.EXTRA_KEYS)
     created = None                            # CardDates: {date, from[, provisional]}; no field either
 

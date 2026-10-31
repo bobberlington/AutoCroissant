@@ -40,8 +40,7 @@ process.stdout.write(JSON.stringify({{ missing, x, hp: [order(c => c.hp ?? null,
     out = json.loads(done.stdout)
     assert out["missing"] == {"series": ["Al", "Cy"], "subseries": ["Al", "Cy", "Di"], "types": ["Al", "Cy", "Ed"],
                               "ability": ["Al", "Cy"], "author": ["Al", "Cy"], "stars": ["Al", "Cy"], "stats": ["Al"],
-                              "itemtype": ["Di"], "ratings": ["Al", "Cy", "Di", "Ed"], "art": ["Al", "Cy", "Ed"],
-                              "abilityart": ["Al", "Cy", "Di", "Ed"]}
+                              "itemtype": ["Di"], "ratings": ["Al", "Cy", "Di", "Ed"], "art": ["Al", "Cy", "Ed"]}
     assert out["x"] == ["Bob", "Di"]                                      # the anti-filter: those with a source
     assert out["hp"] == [["Ed", "Al", "Bob", "Cy", "Di"], ["Cy", "Bob", "Al", "Ed", "Di"]]
     # by series, then subseries: no series last, and in a series no subseries last, either way

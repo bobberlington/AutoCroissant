@@ -23,7 +23,7 @@ from urllib.parse import quote
 
 from global_config import RULEBOOK_DIR, SITE_URL, TIMEZONE
 from commands.card_db import write_text
-from commands.card_edits import as_parsed
+from commands.card_edits import art_list, as_parsed
 from commands.card_history import same_series, unknown
 from commands.card_models import CardInfo
 
@@ -32,7 +32,7 @@ from commands.card_models import CardInfo
 # ========================
 STATS = (("hp", "hp", "HP"), ("def", "defense", "DEF"), ("atk", "attack", "ATK"), ("spd", "speed", "SPD"))
 FIELDS = ("name", "card_type", "stars", "subtype", "series", "subseries", "types", "hp", "def", "atk", "spd", "creatures",
-          "ability", "tags", "author", "note", "art", "ability_art", "hidden")
+          "ability", "tags", "author", "note", "art", "hidden")
 # timing tags in ability text: the cooldown and uses tags (2026-10-21) and the older per-turn ones
 TAG_PATTERN = re_compile(r"\((?:-?\d+/\d+|\d+|X)?(?:GCD|CD|U|PGT|PG|PT)\)|\((?:FT)?E(?:\d+|X)G?T\)"
                          r"|\((?:OYT|AAT|BOT|ENDT|BOGT|ENDGT|OFS|OS|OD|WOF)\)")
@@ -68,8 +68,8 @@ BOT = "AutoCroissant"                                    # the bot's _by (build_
 BOT_FIELDS = "_bot"                                      # an entry's fields that aren't its _by's (build_site.BOT_FIELDS)
 EDIT_FIELD = {"card_type": "type", "tags": "ability"}    # a changed field -> its Card Edits.json field
 UNKNOWN_FIELD = {"display_name": "name"}                 # card_history.unknown's field -> the changelog's
-OWN_FIELDS = ("art", "ability_art")                      # a duplicate's own fields (the rest is its original's)
-FIELD_WORD = {"name": "title", "art": "artwork source", "ability_art": "ability artwork source"}   # changes.js FIELD
+OWN_FIELDS = ("art",)                                    # a duplicate's own fields (the rest is its original's)
+FIELD_WORD = {"name": "title", "art": "artwork sources", "ability_art": "ability artwork source"}   # changes.js FIELD
 
 
 # ========================
@@ -99,7 +99,7 @@ def fields_of(card: CardInfo) -> dict:
     out["ability"] = getattr(card, "ability", None) or None
     out["tags"] = tags_of(out["ability"])
     out["author"], out["note"], out["hidden"] = getattr(card, "author", None), getattr(card, "note", None), bool(getattr(card, "hidden", False))
-    out["art"], out["ability_art"] = getattr(card, "art", None), getattr(card, "ability_art", None)
+    out["art"] = art_list(getattr(card, "art", None), getattr(card, "ability_art", None)) or None   # older records: a string, and ability_art
     return out
 
 

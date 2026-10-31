@@ -29,8 +29,22 @@ HEX8 = re_compile(r"^[0-9a-f]{8}\Z")
 PARTS_MAX, PART_TEXT_MAX = 64, 4096
 RENAME = "_rename"                              # true: the bake renames the card's files to its name (owner 2026-10-25)
 SITE = "_site"                                  # an entry's website-only fields: their values differ from the card image on purpose
-ART_FIELDS = ("art", "ability_art")             # artwork sources (main, ability): free text, a URL or a name (10-25)
-ART_MAX = 500                                   # characters (edit.js ART_MAX, build_site ART_MAX)
+ART_FIELDS = ("art", "ability_art")             # artwork sources: art a list (one string in older entries), ability_art retired (10-31)
+ART_MAX = 500                                   # characters a source (art.js ART_MAX, build_site ART_MAX)
+
+
+def art_list(art, ability_art=None) -> list:
+    """The artwork sources, in order: art (a list, or one string) then a legacy ability_art; whitespace collapsed, empty
+    ones left out (build_site.art_list, art.js artList)."""
+    items = (art if isinstance(art, list) else [art]) + [ability_art]
+    return [t for t in (" ".join(x.split()) for x in items if isinstance(x, str)) if t]
+
+
+def fold_art(fields: dict) -> dict:
+    """fields with art as art_list's list (None when empty) and no ability_art, when either is there."""
+    if "art" in fields or "ability_art" in fields:
+        fields["art"] = art_list(fields.get("art"), fields.pop("ability_art", None)) or None
+    return fields
 
 
 @dataclass
@@ -89,7 +103,7 @@ class CardEdits:
     meta: dict = field(default_factory=dict)        # normalized card name -> its _-keys (_by, _at, _site cleaned), never applied
 
     TYPES = {"name": str, "type": str, "subtype": str, "series": str, "subseries": str, "stars": int, "types": list,
-             "hp": int, "def": int, "atk": int, "spd": int, "ability": str, "note": str, "art": str, "ability_art": str,
+             "hp": int, "def": int, "atk": int, "spd": int, "ability": str, "note": str, "art": list, "ability_art": str,
              "aliases": list, "dup_of": str, "hidden": bool, "problems_ok": bool, "allow_high_stats": bool, "creatures": list,
              "parts": dict}
     NULLABLE = {"subtype", "series", "subseries", "stars", "hp", "def", "atk", "spd", "art", "ability_art"}
@@ -129,12 +143,12 @@ class CardEdits:
             return isinstance(value, list) and all(isinstance(c, dict) and all(
                 k in cls.STATS and (v is None or (isinstance(v, int) and not isinstance(v, bool) and v >= 0))
                 for k, v in c.items()) for c in value)
+        if name in ART_FIELDS:                  # a source, or (art) a list of them
+            return all(isinstance(x, str) and len(x) <= ART_MAX for x in (value if name == "art" and isinstance(value, list) else [value]))
         if kind is list:
             return isinstance(value, list) and all(isinstance(x, str) for x in value)
         if name == "parts":
             return valid_parts(value)
-        if name in ART_FIELDS:
-            return isinstance(value, str) and len(value) <= ART_MAX
         return isinstance(value, kind)
 
     @classmethod
@@ -158,7 +172,7 @@ class CardEdits:
         for name, fields in (cards if isinstance(cards, dict) else {}).items():
             if isinstance(fields, dict):
                 key = CardAuthors.key(name)
-                edits.cards[key] = {k: v for k, v in fields.items() if not k.startswith("_") and cls.valid(k, v)}
+                edits.cards[key] = fold_art({k: v for k, v in fields.items() if not k.startswith("_") and cls.valid(k, v)})
                 edits.meta[key] = {k: v for k, v in fields.items() if k.startswith("_") and k != SITE}
                 site = cls.site_only(fields)
                 if site:
@@ -191,6 +205,8 @@ class CardEdits:
             setattr(card.stats, self.STATS[name], -1 if value is None else value)
         elif name == "problems":
             card.problems = list(value or [])
+        elif name == "art":                     # the list; the retired second field is in it
+            card.art, card.ability_art = art_list(value) or None, None
         else:
             setattr(card, self.ATTRS[name], list(value) if isinstance(value, list) else value)
 
@@ -451,6 +467,8 @@ __all__ = [
     'ADD_ABILITY',
     'ART_FIELDS',
     'ART_MAX',
+    'art_list',
+    'fold_art',
     'ORDER',
     'PUNCTUATION',
     'RENAME',

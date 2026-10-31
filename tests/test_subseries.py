@@ -103,7 +103,7 @@ def test_query_embed_shows_series_and_subseries(monkeypatch):
     kirby = copy(FAKE["Kirby"])
     kirby.art, kirby.ability_art = "Drawn by *Ann*: https://www.pixiv.net/en/artworks/1.", "Kirby Super Star"
     monkeypatch.setitem(cm.stats_db.stats, "Kirby", kirby)
-    qc.query_name(SimpleNamespace(), "Kirby")                   # artwork sources: one line each, URLs as masked links
-    assert sent[2][1]["embed"].description == ("kirby\nArtwork source: Drawn by \\*Ann\\*: [pixiv.net](https://www.pixiv.net/en/artworks/1)."
-                                               "\nAbility artwork source: Kirby Super Star")
+    qc.query_name(SimpleNamespace(), "Kirby")                   # artwork sources: one numbered line each, URLs as masked links
+    assert sent[2][1]["embed"].description == ("kirby\nArtwork source #1: Drawn by \\*Ann\\*: [pixiv.net](https://www.pixiv.net/en/artworks/1)."
+                                               "\nArtwork source #2: Kirby Super Star")
 
