@@ -170,6 +170,7 @@ def draw(site: str, exe: str) -> tuple:
             if (round(w), round(h)) != SHEET:
                 raise RuntimeError(f"page {entry.get('num') or entry.get('name')} is {w:.0f}x{h:.0f}, not {SHEET[0]}x{SHEET[1]}")
             got = chrome.call("Page.captureScreenshot", {"format": "png", "captureBeyondViewport": True,
+                                                         "optimizeForSpeed": True,     # a faster PNG, the same pixels
                                                          "clip": {"x": x, "y": y, "width": w, "height": h, "scale": 1}}, session)
             shots.append((entry, b64decode(got["data"])))
 
