@@ -68,6 +68,7 @@ class FakeGitHub:
         self.down: set = set()              # blob shas answering 503
         self.rate_limited = False           # POST git/blobs answers a rate-limit 403
         self.forbidden = False              # POST git/blobs answers 403 without rate-limit headers: the token can't write
+        self.max_blob = None                # POST git/blobs answers GitHub's 422 "too large" past this many bytes
         self.calls: list = []
         self.head = self.commit(files, author, message)
 
@@ -130,6 +131,8 @@ class FakeGitHub:
             if self.forbidden:
                 return Reply(403, body={"message": "Resource not accessible by integration"})
             data = b64decode(json["content"])
+            if self.max_blob is not None and len(data) > self.max_blob:
+                return Reply(422, body={"message": "Sorry, your input was too large to process."})
             self.blobs[blob_sha_bytes(data)] = data
             return Reply(201, body={"sha": blob_sha_bytes(data)})
         if method == "POST" and route == "git/trees":

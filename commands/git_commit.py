@@ -1,7 +1,8 @@
 """
 One commit on the card repo's branch, shared by the edit pipeline (card_bake) and the push guards (card_guards):
 blobs, tree and commit through the Git Data API with a non-force ref update; when the token can't write (NO_WRITE on
-POST git/blobs, or no token) the same objects are written into the blobless history clone and pushed over SSH.
+POST git/blobs, or no token) or a blob is over the API's size limit, the same objects are written into the blobless
+history clone and pushed: over SSH with the service's agent, else (an Action) over HTTPS with the token.
 
     commit_files(repository, head, base_tree, modes, {path: bytes}, message) -> sha, or None when the branch moved
     local_commit(clone, head, {path: bytes}, message) -> sha: the same objects in a local clone, nothing pushed
@@ -35,6 +36,7 @@ NO_WRITE = (401, 403, 404)                      # blob upload refused: the token
 GIT_TIMEOUT = 300
 NO_LAZY = {"GIT_NO_LAZY_FETCH": "1"}            # a blobless clone fails on a missing blob instead of fetching it
 API_TIMEOUT = 300                               # a PSD blob is up to 85 MB (113 MB as base64)
+TOO_LARGE = "too large"                         # POST git/blobs' 422 past its size limit (a 73 MB PSD, 2026-10-31)
 
 # ========================
 # Global State
@@ -47,6 +49,10 @@ cant_write = False                              # POST git/blobs got a NO_WRITE 
 # ========================
 class Transient(RuntimeError):
     """A GitHub, git or runner failure: reported, never written as a verdict (the next run retries)."""
+
+
+class TooLarge(Transient):
+    """POST git/blobs refused a blob as too large: the commit goes through git (commit_files)."""
 
 
 # ========================
@@ -119,6 +125,8 @@ def upload_blob(repository: str, data: bytes) -> Optional[str]:
             raise Transient(f"{status(reply)}: rate limited (on POST git/blobs)")
         cant_write = True
         return None
+    if reply.status_code == 422 and TOO_LARGE in reply.text.lower():
+        raise TooLarge(f"{status(reply)} (on POST git/blobs)")
     if not reply.ok:
         raise Transient(f"{status(reply)} (on POST git/blobs)")
     sha = reply.json()["sha"]
@@ -204,9 +212,20 @@ def git_tree(clone: str, tree: Optional[str], changes: dict, env: dict) -> str:
     return git(clone, "mktree", "-z", "--missing", stdin=data.encode("utf-8"), env=env).decode().strip()
 
 
+def push_target(repository: str) -> tuple:
+    """(url, env): SSH with the service's agent; without one but with a token (an Action), HTTPS with the token sent
+    as a header through git's env config, never in the URL or argv."""
+    secret = token()
+    if environ.get("SSH_AUTH_SOCK") or not secret:
+        return f"git@github.com:{repository}.git", {}
+    basic = b64encode(f"x-access-token:{secret}".encode()).decode("ascii")
+    return f"https://github.com/{repository}.git", {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "http.https://github.com/.extraheader",
+                                                    "GIT_CONFIG_VALUE_0": f"AUTHORIZATION: basic {basic}"}
+
+
 def git_commit(repository: str, head: str, files: dict, message: str) -> Optional[str]:
     """
-    Commit files on head in the history clone and push to the branch over SSH (no force).
+    Commit files on head in the history clone and push to the branch (no force): push_target's way.
 
     Args:
         files: {repo path: bytes}
@@ -220,9 +239,10 @@ def git_commit(repository: str, head: str, files: dict, message: str) -> Optiona
     refresh()                                   # the clone exists and knows head
     clone, env = expanduser(HISTORY_CLONE), git_env()
     commit = _write_commit(clone, head, files, message, env, "the history clone")
+    url, auth = push_target(repository)
     try:                                        # --no-thin: a thin pack would fetch the old blobs as its delta bases
-        push = run_process(["git", "-C", clone, "push", "--porcelain", "--no-thin", f"git@github.com:{repository}.git",
-                            f"{commit}:refs/heads/{CARD_BRANCH}"], capture_output=True, timeout=GIT_TIMEOUT, env=env)
+        push = run_process(["git", "-C", clone, "push", "--porcelain", "--no-thin", url,
+                            f"{commit}:refs/heads/{CARD_BRANCH}"], capture_output=True, timeout=GIT_TIMEOUT, env={**env, **auth})
     except (TimeoutExpired, OSError) as error:
         raise Transient(f"git push failed: {error}") from error
     if push.returncode:
@@ -231,7 +251,7 @@ def git_commit(repository: str, head: str, files: dict, message: str) -> Optiona
             return None
         err = [line for line in (push.stderr.decode("utf-8", "replace") or out).splitlines() if line.strip()]
         raise Transient(f"git push failed: {' / '.join(err[max(0, len(err) - 3):])}"
-                        + ("" if environ.get("SSH_AUTH_SOCK") else " (no SSH_AUTH_SOCK: no SSH agent)"))
+                        + ("" if environ.get("SSH_AUTH_SOCK") or auth else " (no SSH_AUTH_SOCK: no SSH agent)"))
     refresh()
     return commit
 
@@ -303,7 +323,7 @@ def checkout_head(clone: str, env: Optional[dict] = None) -> str:
 def commit_files(repository: str, head: str, base_tree: str, modes: dict, files: dict, message: str,
                  uploaded: Optional[set] = None) -> Optional[str]:
     """
-    One commit of files on head: the API when the token can write, else git objects pushed over SSH.
+    One commit of files on head: the API when the token can write and every blob fits, else git (git_commit).
 
     Args:
         head: The branch commit to build on (its tree is base_tree)
@@ -318,17 +338,20 @@ def commit_files(repository: str, head: str, base_tree: str, modes: dict, files:
     """
     if token() and not cant_write:
         uploaded = set() if uploaded is None else uploaded
-        for data in files.values():
-            if data is None:                    # a deletion: nothing to upload
-                continue
-            sha = blob_sha(data)
-            if sha not in uploaded:
-                if upload_blob(repository, data) is None:
-                    break
-                uploaded.add(sha)
-        else:
-            return api_commit(repository, head, base_tree, modes,
-                              {path: None if data is None else blob_sha(data) for path, data in files.items()}, message)
+        try:
+            for data in files.values():
+                if data is None:                # a deletion: nothing to upload
+                    continue
+                sha = blob_sha(data)
+                if sha not in uploaded:
+                    if upload_blob(repository, data) is None:
+                        break
+                    uploaded.add(sha)
+            else:
+                return api_commit(repository, head, base_tree, modes,
+                                  {path: None if data is None else blob_sha(data) for path, data in files.items()}, message)
+        except TooLarge:
+            pass                                # past the API's size limit: git takes the whole commit
     return git_commit(repository, head, files, message)
 
 
@@ -348,6 +371,7 @@ __all__ = [
     'GIT_TIMEOUT',
     'NO_LAZY',
     'NO_WRITE',
+    'TooLarge',
     'Transient',
     'api',
     'api_commit',
@@ -362,6 +386,7 @@ __all__ = [
     'plural',
     'ref_head',
     'status',
+    'push_target',
     'token',
     'upload_blob',
 ]

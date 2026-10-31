@@ -1,6 +1,6 @@
 """
 git_commit, the commit path card_bake and card_guards share: upload_blob's NO_WRITE / rate-limit split, commit_files'
-API-then-SSH order against the card_bake fake GitHub, and git_commit's push outcomes with git faked (no clone, no network).
+API-then-git order (a blob too large for the API too), push_target against the card_bake fake GitHub, and git_commit's push outcomes with git faked (no clone, no network).
 """
 from subprocess import CalledProcessError, CompletedProcess, TimeoutExpired
 
@@ -70,8 +70,32 @@ def test_commit_files_falls_to_ssh(github, monkeypatch):
     assert _posts(github) == ["git/blobs"] and len(seen) == 3
 
 
+def test_commit_files_too_large_goes_through_git(github, monkeypatch):
+    """A blob past the API's size limit (Quote.psd, 73 MB, 10-31): git takes the whole commit; the API stays usable."""
+    github.max_blob = 2
+    seen = []
+    monkeypatch.setattr(gc, "git_commit", lambda repository, head, files, message: seen.append(sorted(files)) or "c0ffee")
+    assert gc.commit_files(gc.CARD_REPO, "h", "t", {}, {"a.txt": b"x", "big.psd": b"xyz"}, "m") == "c0ffee"
+    assert seen == [["a.txt", "big.psd"]] and gc.cant_write is False
+
+
+def test_push_target(monkeypatch):
+    """SSH with an agent or without a token; else HTTPS, the token in env config only."""
+    monkeypatch.setattr(ga, "GIT_TOKEN", "")
+    monkeypatch.setenv("GITHUB_TOKEN", "s3cret")
+    monkeypatch.setenv("SSH_AUTH_SOCK", "/tmp/agent")
+    assert gc.push_target(gc.CARD_REPO) == (f"git@github.com:{gc.CARD_REPO}.git", {})
+    monkeypatch.delenv("SSH_AUTH_SOCK")
+    url, env = gc.push_target(gc.CARD_REPO)
+    assert url == f"https://github.com/{gc.CARD_REPO}.git" and "s3cret" not in url and env["GIT_CONFIG_KEY_0"] == "http.https://github.com/.extraheader"
+    monkeypatch.delenv("GITHUB_TOKEN")
+    assert gc.push_target(gc.CARD_REPO)[0].startswith("git@github.com:")
+
+
 def test_git_commit_push_outcomes(monkeypatch):
     calls = []
+    monkeypatch.setattr(ga, "GIT_TOKEN", "")
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)       # no token: SSH
 
     def git(where, *args, stdin=None, env=None):
         calls.append(args[0])
