@@ -372,6 +372,13 @@ def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypat
     assert {"stats.js", "balance.js"} <= set().union(*(sources[f] for f in chunks["charts.js"]))
 
 
+def test_inlined_css_urls(bs):
+    """index.html inlines style.css: its relative url()s, relative to assets/, now to the page (../rulebook/... left the site)."""
+    page = bs.inline_css('<link rel="stylesheet" href="assets/style.css?v=1">',
+                         'a{src:url("../rulebook/x.woff2")}b{background:url(data:image/png;base64,AA)}c{background:url(i.png)}')
+    assert page == '<style>a{src:url("rulebook/x.woff2")}b{background:url(data:image/png;base64,AA)}c{background:url(assets/i.png)}</style>'
+
+
 def test_website_only_fields(bs, tmp_path, monkeypatch):
     """`_site` (owner 10-25): applied, never "PSD pending", the card's siteOnly (its "Website only" tag); edit.js stores it
     from an op's ticks as parse_edits and CardEdits.site_only clean it (a field without a value goes); unticked: pending."""
