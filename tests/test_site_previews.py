@@ -70,6 +70,28 @@ out([html(res("baked"), v), html(res("refused", { reason: "stat>10: hp 25", imag
     assert "Out of date" in err_stale and "Try again" not in err_stale and "Preview again" in err_stale   # Try again would send the newer edit
 
 
+discards = pytest.mark.skipif(not has(PREVIEW_JS, "export function discard"), reason="no Discard in preview.js")
+
+
+@needs_js
+@discards
+def test_a_preview_can_be_discarded(tmp_path):
+    """Discard (owner 2026-10-30, a trash icon): the preview shown goes from this browser's list, a card with none left goes
+    from the store; the trash shows on a finished, expired or stale preview, never while one is drawn."""
+    out = node(tmp_path, """
+const e = (request, state, at) => ({ request, at, hash: "h", card: "c1", edit: { hp: 8 }, state, result: { fields: {}, base: {}, files: {} } });
+const store = { c1: [e("req-00002", "baked", 2), e("req-00001", "refused", 1)], c2: [{ ...e("req-00003", "baked", 3), card: "c2" }] };
+const v = { card: { name: "X", ts: 1, img: "ab" }, n: 1, hash: "h", now: 5, scopes: "repo", images: [], current: null, diff: false };
+const html = (x, w) => { const r = p.renderedParts(x, w); return r.stage + r.caption; };
+out([p.discard(store, "req-00002"), p.discard(store, "req-00003"), html(e("req-1", "baked", 2), v), html(e("req-1", "running", 2), v),
+  html(e("req-1", "expired", 2), v), html(e("req-1", "baked", 2), { ...v, hash: "other" })]);""")
+    first, last, baked, running, expired, stale = out
+    assert [x["request"] for x in first["c1"]] == ["req-00001"] and "c2" in first
+    assert "c2" not in last and len(last["c1"]) == 2
+    assert 'data-pv="discard"' in baked and 'data-pv="discard"' in expired and 'data-pv="discard"' in stale
+    assert 'data-pv="discard"' not in running and "Discard this preview" in baked
+
+
 @needs_js
 def test_tokens_wrap_and_fit(tmp_path):
     """[fire] is an icon (":no" crossed out), an unknown bracket stays text, no break inside "[ice].", a blank line is an
