@@ -500,6 +500,32 @@ def test_badges_under_an_overlay_set_one_colour(clone, tmp_path):
     assert cs.salt_layers(PSDImage.open(BytesIO(at_rev(clone, rev, MINI_DOOMER)))) == []
 
 
+NAME_CARDS = (("Silithid", "Silithid", "minion"), ("Stay", "Stay", "creature"), ("Polevaulter Zombie", "Polevaulter Zombie", "minion"),
+              ("Burning", "Burning", "debuff"), ("The Gates of Ahn'Qiraj", "The Gates of Ahn'Qiraj", "field"))
+
+
+def test_card_names_in_another_case():
+    """R14 (owner 2026-10-30, report only): names the website would link in any case (text.js: several words, a capital,
+    a lowercase one after its verb) but typed in another case; plain words, [tokens], badges and the card's own name
+    are no mention."""
+    text = ("(2GCD)(OYT) summon a silithid on any slot. Stay here, stay calm. Summon a polevaulter zombie.\r"
+            "Inflict 2T1 burning. Summon a Silithid. [burning] burning")
+    assert cs.miscased_names(text, NAME_CARDS) == [("silithid", "Silithid"), ("polevaulter zombie", "Polevaulter Zombie"),
+                                                   ("burning", "Burning")]
+    assert cs.miscased_names(text, NAME_CARDS, cs.CardAuthors.key("Silithid")) == [("polevaulter zombie", "Polevaulter Zombie"),
+                                                                                 ("burning", "Burning")]
+    assert cs.miscased_names(text, ()) == []
+
+
+def test_card_names_case_rule_on_the_gates(clone):
+    """The Gates of Ahn'Qiraj's "summon a silithid": an R14 report, told, never fixed; without card names, not checked."""
+    rel = "Field/4 Stars/The_Gates_of_Ahn'Qiraj.psd"
+    psd = PSDImage.open(clone / rel)
+    found = [issue for issue in cs.check(psd, rel, cs.Context(cards=NAME_CARDS)) if issue.code == "R14"]
+    assert [issue.items for issue in found] == [("silithid",)] and cs.reported(found) == found and "'silithid' should be 'Silithid'" in found[0].text
+    assert not any(issue.code == "R14" for issue in cs.check(psd, rel, cs.Context()))
+
+
 def test_text_with_both_quotes_parses_without_backslash(clone, tmp_path):
     """str() of an engine string is its repr, which escapes ' as \\' when the text also holds a ": the parse unescapes it
     (03 Setting Up's "they're")."""

@@ -9,7 +9,7 @@ rasterized Name layer the title can't be read from): the template layout they al
 2026-10-23.
 Since the parts editor (PARTS_EDITOR.md §7) R3's several Ability layers and R4's several title layers are notes ("not
 standardized yet"), R11 also suggests names for the parts not named Name or Ability, R12 checks variant tags and R13
-duplicate layer ids.
+duplicate layer ids. R14 (owner 2026-10-30) reports card names typed in another letter case (report only).
 R9 (Txt2 stories) is fixed by the fork with byte gates, the rest is reported. R11's rename (exact layer names) is built
 and gated but reported until the owner says yes (AUTO_FIX). Rule pages are never checked. The pixel fixes (PIXEL_FIXES,
 silent, owner 2026-10-25) run on every card and rule page: straight apostrophes, and icon font glyphs Photoshop drew with
@@ -27,9 +27,11 @@ glyphs and the guards re-export the PNG.
 No Discord, network or config.
 """
 from dataclasses import dataclass, field
+from functools import lru_cache
 from io import BytesIO
 from os import makedirs
 from os.path import basename, getsize, join
+from re import IGNORECASE, compile as re_compile, escape
 from shutil import rmtree
 from tempfile import mkdtemp
 from typing import Callable, Optional
@@ -79,7 +81,7 @@ WAIVED = {                                      # the owner's class waivers (sec
 @dataclass
 class Issue:
     """One standards finding on one PSD."""
-    code: str                                   # R1..R11
+    code: str                                   # R1..R14
     text: str                                   # for card makers: "the Name layer is hidden"
     items: tuple = ()                           # what it is about (tags, layer names): "(new)" compares these
     fix: bool = False                           # AUTO_FIX and fixable here
@@ -102,6 +104,7 @@ class Context:
     chart: Optional[dict] = None                # psd_edit.status_fills of the status chart (R5 reports every overlay without)
     story_sync: bool = False                    # the fork can sync Txt2 stories (R9 is a fix, else a report)
     pngs: Optional[frozenset] = None            # the tree's PNG paths, lowercased (R12's pictures); None: not checked
+    cards: Optional[tuple] = None               # ((title, key, kind), ...) of the shown cards (R14); None: not checked
 
 
 @dataclass
@@ -618,6 +621,106 @@ def rule_names(psd: PSDImage) -> Optional[Issue]:
 # ========================
 # Public API Functions
 # ========================
+# R14 (owner 2026-10-30, report only): a card named in the ability text in another letter case (while TTSCardMaker
+# text.js EXACT_CASE is on, the website doesn't link it); which words name a card is text.js makeRenderer's rule
+# (build_site.name_links ports it too): any name of several words, a capitalised one, a lowercase one after its verb
+NAME_LEAD = re_compile(r"(?:Summon|Resummon|Equip|Create|Cleanse|Inflict|Draw|Acquire|Revive|Gain|Give|Steal|Copy|Become|"
+                       r"Remove|Destroy|Discard|Use|Play|Return|Swap|Choose|Target|If|When|Whenever|While|Once|Until|"
+                       r"Unless|After|Before|Then|And|Or|A|An|The|This|That|These|Each|Every|Any|Your|Its)")
+_STATUS_VERB = re_compile(r"\b(?:inflict|cleanse|stacks? of)(?:[^\S\n]+[\dX]+T[\dX]+(?:\([^)\n]*\))?)?[^\S\n]+$", IGNORECASE)
+NAME_VERB = {"buff": _STATUS_VERB, "debuff": _STATUS_VERB,
+             "minion": re_compile(r"\b(?:summon|resummon|revive)(?:[^\S\n]+(?:a|an|the|\d+))?[^\S\n]+$", IGNORECASE)}
+
+
+def _fold(s) -> str:
+    return " ".join(str(s or "").replace("\u2018", "'").replace("\u2019", "'").split()).lower()
+
+
+def _same(s) -> str:
+    return " ".join(str(s or "").replace("\u2018", "'").replace("\u2019", "'").split())
+
+
+@lru_cache(maxsize=2)
+def _name_index(cards: tuple) -> tuple:
+    """(names regex, {fold: (title, key, kind)} first come, {fold: the spellings in their own case}) of cards, as text.js
+    adds them: titles, keys, titles without a trailing !?., several-word titles' singulars."""
+    by_name, spelt = {}, {}
+    one_word = lambda s: len(str(s or "").split()) <= 1
+
+    def add(n, card):
+        k = _fold(n)
+        if len(k) >= 3:
+            by_name.setdefault(k, card)
+            spelt.setdefault(k, set()).add(_same(n))
+    for card in cards:
+        add(card[0], card)
+    for card in cards:
+        if not one_word(card[1]) or one_word(card[0]):
+            add(card[1], card)
+    for card in cards:
+        add(card[0].strip().rstrip("!?."), card)
+    for card in cards:
+        title = card[0].strip()
+        if not one_word(title) and title[-1:].lower() == "s" and title[-2:-1].lower() not in ("s", "i", "u"):
+            add(title[:-1], card)
+    if not by_name:
+        return None, by_name, spelt
+    pat = lambda k: escape(k).replace("'", "['\u2018\u2019]").replace(r"\ ", "[ \t]+")
+    names = re_compile(r"(?<![\w'\u2018\u2019])(" + "|".join(pat(k) for k in sorted(by_name, key=len, reverse=True)) + r")"
+                       r"((?:['\u2018\u2019]s|(?<=s)['\u2018\u2019]|e?s)(?![\w'\u2018\u2019]))?(?![\w'\u2018\u2019])", IGNORECASE)
+    return names, by_name, spelt
+
+
+def _is_ref(found, text: str, card: tuple, by_name: dict) -> bool:
+    """text.js isRef: whether the matched words name the card (not a heading, label, verb or plain word)."""
+    typed, spelt = found[1], [card[0].strip(), str(card[1] or "").strip()]
+    if typed == typed.upper() and typed != typed.lower() and typed not in spelt:
+        return False
+    if len(typed.split()) > 1:
+        return True
+    after, before = text[found.end():], text[:found.start()]
+    if after[:1] == ":" or re_compile(r"[^\S\n]+(?:\d|X\b)").match(after):
+        return False
+    if not (typed in spelt and not found[2]) and not typed[0].isupper():
+        verb = NAME_VERB.get(card[2])
+        return bool(verb and verb.search(before))
+    word = re_compile(r"(?:^|[\s(\u201c\"\u2018'])([^\W\d_][\w'\u2019-]*)[^\S\n]+$").search(before)
+    if word and word[1][0].isupper():
+        return bool(NAME_LEAD.fullmatch(word[1])) or _fold(word[1]) in by_name
+    return not (re_compile(r"(?:^|[\n.!?:)])[^\S\n]*$").search(before)
+                and re_compile(r"[^\S\n]+(?:to|the|a|an|your|its|all|any|each|it|this|that)\b").match(after))
+
+
+def miscased_names(text: str, cards: tuple, own: str = "") -> list:
+    """[(typed, the card's spelling)]: the cards the text names in another letter case ("silithid" for Silithid); badges
+    and [tokens] read as blanks, the card's own name (own: a card key) left out."""
+    names, by_name, spelt = _name_index(cards)
+    if names is None:
+        return []
+    flat = spaced = text.replace("\r", "\n").replace("\x03", "\n")
+    for a, b in psd_edit.icon_text(flat, None):
+        flat, spaced = flat[:a] + "\0" * (b - a) + flat[b:], spaced[:a] + " " * (b - a) + spaced[b:]
+    out = []
+    for found in names.finditer(flat):
+        card = by_name[_fold(found[1])]
+        if CardAuthors.key(card[1]) == own or CardAuthors.key(card[0]) == own or _same(found[1]) in spelt[_fold(found[1])]:
+            continue
+        if _is_ref(found, spaced, card, by_name):
+            out.append((found[1], card[0].strip()))
+    return out
+
+
+def rule_name_case(psd: PSDImage, own: str, cards: Optional[tuple]) -> Optional[Issue]:
+    """R14: a card named in the ability text in another letter case (report only)."""
+    if not cards:
+        return None
+    found = list(dict.fromkeys(pair for layer in ability_layers(psd) for pair in miscased_names(layer.text or "", cards, own)))
+    if not found:
+        return None
+    return Issue("R14", "card names typed in another letter case: "
+                 + ", ".join(f"'{typed}' should be '{right}'" for typed, right in found), tuple(typed for typed, _ in found))
+
+
 def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = None, added: bool = False) -> list:
     """
     The standards issues of one card PSD.
@@ -672,6 +775,7 @@ def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = N
         run("R11", rule_part_names, psd, card)
     run("R12", rule_variants, psd, rel, context.pngs)
     run("R13", rule_layer_ids, psd)
+    run("R14", rule_name_case, psd, key, context.cards)
     issues = [issue for issue in out if issue is not None]
     for issue in issues:
         waiver = WAIVED.get(issue.code, {})
@@ -1398,6 +1502,7 @@ __all__ = [
     'inexact_names',
     'kind_of',
     'mark_new',
+    'miscased_names',
     'old_glyphs',
     'one_colour_badges',
     'PIXEL_FIXES',

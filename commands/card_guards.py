@@ -35,7 +35,7 @@ from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from functools import partial
-from json import dump, load
+from json import dump, load, loads
 from os import cpu_count, environ, getpid, listdir, makedirs, pathsep, replace
 from os.path import basename, dirname, isdir, join, splitext
 from re import fullmatch, sub
@@ -72,6 +72,7 @@ SPARSE_FILES = ("commands/card_guards.py", "commands/png_export.py", "commands/c
 SUBJECT = "Card guards"                         # the bot commit: "Card guards: 2 PNGs re-exported, 1 PSD fixed (push 7cb4c867)"
 TRAILER = "Guarded-push"                        # the push the commit guards
 RECOMPRESSED = "Recompressed"                   # a trailer per PNG only recompressed: no image version (build_site)
+DATA_STATS = "db/stats.json"                    # the card data on the data branch (card_data): R14's card names
 BOT_EMAILS = ("41898282+github-actions[bot]@users.noreply.github.com",)   # besides git_commit.AUTHOR: never guarded
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 ZEROS = "0" * 40
@@ -578,8 +579,25 @@ def build_context(source: Source, tree: dict, errors: Optional[list] = None) -> 
         except Exception as error:              # R5 reports every overlay without the chart
             errors.append(f"{psd_edit.STATUS_CHART}: {error}")
     context = standards.Context(frozenset(vocab.all_types), chart, psd_edit.story_sync(),
-                                frozenset(path.lower() for path in tree if path.lower().endswith(".png")))   # R12's pictures
+                                frozenset(path.lower() for path in tree if path.lower().endswith(".png")),   # R12's pictures
+                                shown_cards(source, errors))
     return context, vocab
+
+
+def shown_cards(source: Source, errors: list) -> Optional[tuple]:
+    """((title, key, kind), ...) of the cards the website shows, from the card data (db/stats.json on the data branch):
+    R14's names. None without them (R14 not checked; an unreadable file is an error line)."""
+    data = source.commit("origin/data") or source.commit("data")
+    found = source.tree(data).get(DATA_STATS) if data else None
+    if not found:                               # a clone with no card data: nothing to check names against
+        return None
+    try:
+        cards = loads(source.blob(found[1]))["cards"]
+    except Exception as error:                  # R14 is left out
+        errors.append(f"card names (R14): {error}")
+        return None
+    return tuple(sorted((str(c.get("display_name") or c.get("name") or key), key, str(c.get("card_type") or ""))
+                        for key, c in cards.items() if isinstance(c, dict) and not c.get("hidden")))
 
 
 # ========================

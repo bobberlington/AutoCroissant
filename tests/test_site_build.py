@@ -452,6 +452,22 @@ def test_rulebook_picture_outline(bs):
     assert bs.picture_outline(Image.new("RGBA", (40, 40), (1, 2, 3, 255))) == ""
 
 
+def test_guards_name_rule_matches_the_site(bs):
+    """AutoCroissant's R14 (card_standards.miscased_names) and build_site.name_links share text.js's rule of which words
+    name a card: on the same text, R14's names are the links typed in another case."""
+    import commands.card_standards as cs
+    cards = [{"name": "Silithid", "key": "Silithid", "type": "minion"}, {"name": "Stay", "key": "Stay", "type": "creature"},
+             {"name": "Polevaulter Zombie", "key": "Polevaulter Zombie", "type": "minion"}, {"name": "Burning", "key": "Burning", "type": "debuff"},
+             {"name": "Cat", "key": "Cat", "type": "minion"}, {"name": "Flip", "key": "Flip", "type": "item"}]
+    text = ("(2GCD)(OYT) summon a silithid. Stay here, stay calm. Summon a polevaulter zombie and a Cat. Cat: +2 SPD.\n"
+            "Inflict 2T1 burning. Flip to the other side. (BOGT) Flip. Revive the cat.")
+    links = bs.name_links(cards, {}, {})
+    typed = {c["name"] for c in links(text)}
+    miscased = cs.miscased_names(text, tuple((c["name"], c["key"], c["type"]) for c in cards))
+    assert {right for _, right in miscased} == {"Silithid", "Polevaulter Zombie", "Burning", "Cat"}
+    assert {right for _, right in miscased} <= typed
+
+
 def test_tts_details_for_the_save(bs):
     """data/tts.json (owner 10-30, the TTS hover strip and details): types' meanings from the chapters (an icon heading's
     section to the page break, a "[token]:" line, a line ending in tokens; secret text, "(See: ...)" and non-icons left
