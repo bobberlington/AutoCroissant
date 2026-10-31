@@ -468,6 +468,20 @@ def test_guards_name_rule_matches_the_site(bs):
     assert {right for _, right in miscased} <= typed
 
 
+def test_a_card_naming_itself_mentions_itself(tmp_path):
+    """Owner 2026-10-30: a card whose text names it is in its own Mentions and Mentioned by (text.js mentions)."""
+    text_js = BUILD_SITE.parents[1] / "assets" / "text.js"
+    if shutil.which("node") is None or not text_js.is_file():
+        pytest.skip("no node or text.js")
+    probe = tmp_path / "probe.mjs"
+    probe.write_text(f"const t = await import({json.dumps(text_js.as_uri())});\n"
+                     "const r = t.makeRenderer({ cards: [{ id: 'mk', name: 'Mirror Knight', key: 'Mirror Knight', type: 'creature' }], icons: {} });\n"
+                     "process.stdout.write(JSON.stringify([...r.mentions('(OD) Summon another Mirror Knight.')]));\n", encoding="utf-8")
+    done = subprocess.run(["node", str(probe)], capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    assert json.loads(done.stdout) == ["mk"]
+
+
 def test_tts_details_for_the_save(bs):
     """data/tts.json (owner 10-30, the TTS hover strip and details): types' meanings from the chapters (an icon heading's
     section to the page break, a "[token]:" line, a line ending in tokens; secret text, "(See: ...)" and non-icons left
@@ -488,7 +502,8 @@ def test_tts_details_for_the_save(bs):
              {"name": "Secret", "type": "item", "png": "Items/Secret.png", "hidden": True, "ability": "Burning"},
              {"name": "Dark Tentacle", "type": "minion", "png": "Aux/Dark_Tentacle.png", "ability": ""},
              {"name": "Gate", "type": "field", "png": "Field/Gate.png", "ability": "(3CD) summon a dark tentacle, then stay."},
-             {"name": "Stay", "type": "creature", "png": "Creatures/Stay.png", "ability": ""}]
+             {"name": "Stay", "type": "creature", "png": "Creatures/Stay.png", "ability": ""},
+             {"name": "Mirror Knight", "type": "creature", "png": "Creatures/Mirror_Knight.png", "ability": "(OD) Summon another Mirror Knight."}]
     got = bs.tts_details(cards, chapters, icons, bs.tag_meanings(chapters))
     assert got["types"] == {"fire": {"n": "Fire", "x": "Immune to Burning", "c": "creature-types"},
                             "wind": {"n": "Wind", "x": "Swap.", "c": "creature-types"},
@@ -498,7 +513,9 @@ def test_tts_details_for_the_save(bs):
     assert got["tags"] == {"1CD": {"g": "turn", "m": "Wait 1 turn"}, "3CD": {"g": "turn", "m": "Wait 3 turns"},
                            "OD": {"g": "trigger", "m": "On death"}}
     assert got["statuses"] == {"Burning": {"x": "3 DMG, can't affect fire", "k": "debuff", "p": "Aux/Burning.png"}}
-    assert set(got["cards"]) == {"Creatures/Hot_Guy.png", "Aux/Burning.png", "Aux/Dark_Tentacle.png", "Field/Gate.png", "Creatures/Stay.png"}
+    assert set(got["cards"]) == {"Creatures/Hot_Guy.png", "Aux/Burning.png", "Aux/Dark_Tentacle.png", "Field/Gate.png", "Creatures/Stay.png",
+                                 "Creatures/Mirror_Knight.png"}
+    assert got["cards"]["Creatures/Mirror_Knight.png"]["m"] == ["Creatures/Mirror_Knight.png"]   # a card naming itself spawns itself (owner 10-30)
     assert got["cards"]["Field/Gate.png"]["m"] == ["Aux/Dark_Tentacle.png"]   # as text.js links: a lowercase minion after its verb
     assert got["cards"]["Creatures/Hot_Guy.png"] == {
         "n": "Hot Guy", "k": "Creature", "st": 3, "s": "HP 5 DEF 1 ATK 2 SPD 3",

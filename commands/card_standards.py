@@ -691,9 +691,9 @@ def _is_ref(found, text: str, card: tuple, by_name: dict) -> bool:
                 and re_compile(r"[^\S\n]+(?:to|the|a|an|your|its|all|any|each|it|this|that)\b").match(after))
 
 
-def miscased_names(text: str, cards: tuple, own: str = "") -> list:
-    """[(typed, the card's spelling)]: the cards the text names in another letter case ("silithid" for Silithid); badges
-    and [tokens] read as blanks, the card's own name (own: a card key) left out."""
+def miscased_names(text: str, cards: tuple) -> list:
+    """[(typed, the card's spelling)]: the cards the text names in another letter case ("silithid" for Silithid), its own
+    name too (owner 10-30: a card naming itself mentions itself); badges and [tokens] read as blanks."""
     names, by_name, spelt = _name_index(cards)
     if names is None:
         return []
@@ -703,18 +703,18 @@ def miscased_names(text: str, cards: tuple, own: str = "") -> list:
     out = []
     for found in names.finditer(flat):
         card = by_name[_fold(found[1])]
-        if CardAuthors.key(card[1]) == own or CardAuthors.key(card[0]) == own or _same(found[1]) in spelt[_fold(found[1])]:
+        if _same(found[1]) in spelt[_fold(found[1])]:
             continue
         if _is_ref(found, spaced, card, by_name):
             out.append((found[1], card[0].strip()))
     return out
 
 
-def rule_name_case(psd: PSDImage, own: str, cards: Optional[tuple]) -> Optional[Issue]:
+def rule_name_case(psd: PSDImage, cards: Optional[tuple]) -> Optional[Issue]:
     """R14: a card named in the ability text in another letter case (report only)."""
     if not cards:
         return None
-    found = list(dict.fromkeys(pair for layer in ability_layers(psd) for pair in miscased_names(layer.text or "", cards, own)))
+    found = list(dict.fromkeys(pair for layer in ability_layers(psd) for pair in miscased_names(layer.text or "", cards)))
     if not found:
         return None
     return Issue("R14", "card names typed in another letter case: "
@@ -775,7 +775,7 @@ def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = N
         run("R11", rule_part_names, psd, card)
     run("R12", rule_variants, psd, rel, context.pngs)
     run("R13", rule_layer_ids, psd)
-    run("R14", rule_name_case, psd, key, context.cards)
+    run("R14", rule_name_case, psd, context.cards)
     issues = [issue for issue in out if issue is not None]
     for issue in issues:
         waiver = WAIVED.get(issue.code, {})

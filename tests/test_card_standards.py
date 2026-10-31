@@ -506,14 +506,12 @@ NAME_CARDS = (("Silithid", "Silithid", "minion"), ("Stay", "Stay", "creature"), 
 
 def test_card_names_in_another_case():
     """R14 (owner 2026-10-30, report only): names the website would link in any case (text.js: several words, a capital,
-    a lowercase one after its verb) but typed in another case; plain words, [tokens], badges and the card's own name
+    a lowercase one after its verb) but typed in another case, the card's own name too; plain words, [tokens] and badges
     are no mention."""
     text = ("(2GCD)(OYT) summon a silithid on any slot. Stay here, stay calm. Summon a polevaulter zombie.\r"
             "Inflict 2T1 burning. Summon a Silithid. [burning] burning")
     assert cs.miscased_names(text, NAME_CARDS) == [("silithid", "Silithid"), ("polevaulter zombie", "Polevaulter Zombie"),
                                                    ("burning", "Burning")]
-    assert cs.miscased_names(text, NAME_CARDS, cs.CardAuthors.key("Silithid")) == [("polevaulter zombie", "Polevaulter Zombie"),
-                                                                                 ("burning", "Burning")]
     assert cs.miscased_names(text, ()) == []
 
 
