@@ -64,7 +64,7 @@ out([html(res("baked"), v), html(res("refused", { reason: "stat>10: hp 25", imag
     assert "HP baked" in baked and "&lt;script&gt;" in baked and "<script>" not in baked and "Mini &lt;Doomer&gt;" in baked and "3 min ago" in baked
     assert "stat&gt;10: hp 25" in refused_img and "before refusing" in refused_img and "data-pv-img" not in refused
     assert "website bug" in bug and "try again" in transient.lower()
-    assert "pv-spin" in running and "1 to 3 minutes" in running and "16 min" in running and "disabled" in none
+    assert "pv-spin" in running and "about a minute" in running and "16 min" in running and "disabled" in none
     assert "Out of date: the edit changed since" in stale
     assert "no image came with the result" in no_file and 'class="err"' not in no_file and "HP baked" in no_file   # not an error
     assert "Out of date" in err_stale and "Try again" not in err_stale and "Preview again" in err_stale   # Try again would send the newer edit
