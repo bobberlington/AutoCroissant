@@ -1,12 +1,13 @@
-# Next session plan (after 2026-10-30)
+# Next session plan (after 2026-10-31)
 
 ## Where to start
 
 Start in `~/Desktop/AutoCroissant`. Read memories `resource-limits`, `secrets-never-printed`,
 `owner-decisions-2026-10-24-night` (its 10-25 and 10-26 lines), `lean-tests-and-verification`, `no-guides-csv-only`,
 `edits-two-kinds`, `jetson-server`, `persistent-work-paths`, `agent-model-preference`, `rulebook-on-website`. What
-landed: `docs/Finished/session-2026-10-30b/README.md` (the afternoon: overlay badges, TTS names and panels, History
-revert, rulebook to scale) and `session-2026-10-30/README.md` (the rulebook on the website, its editor, the TTS
+landed: `docs/Finished/session-2026-10-30c/README.md` (10-30 evening to 10-31: rulebook pictures wrap and hang out,
+names and mentions, guard R14, TTS panel buttons and speed), `session-2026-10-30b/README.md` (the afternoon: overlay
+badges, TTS names and panels, History revert, rulebook to scale) and `session-2026-10-30/README.md` (the rulebook on the website, its editor, the TTS
 save's panels; 10-26's in `session-2026-10-26/`). `docs/Future/` holds only the problem-cards lists; nothing is in flight.
 
 First: the owner's checks of the new TTS panels in a real game (below), then the problem-cards list, then the campaign
@@ -21,7 +22,7 @@ tasks in the order the owner picks.
 - Deploy with the `jetson-deploy` skill: push main and deploy in one sitting.
 - Tests: `AUTOCROISSANT_LOCAL_DIR=~/Desktop/TTSCardMaker AC_SITE_SRC=<tc tree>
   ESBUILD=~/Documents/Tools/wt/scratch/esbuild/node_modules/.bin/esbuild ~/.venvs/ac-py314-fork/bin/python -m pytest
-  -n auto -q -p no:cacheprovider tests` (660 on 10-30, about 3 minutes). Targeted files unless a full run is needed.
+  -n auto -q -p no:cacheprovider tests` (665 on 10-31, about 3 minutes). Targeted files unless a full run is needed.
 - Resource limits (memory `resource-limits`): never a partial (`blob:none`) clone of the local card repo; xdist at most
   6; one full suite at a time (`~/Documents/Tools/wt/scratch/suite-wait.sh`); at most 2 workflows; process pools at
   most 4; the git watchdog (`~/Documents/Tools/wt/scratch/git-watchdog.sh`) under Monitor during long unattended work;
@@ -44,15 +45,16 @@ tasks in the order the owner picks.
   --ref main -f bake=pending`; check first that the website deploy holding any rulebook change has finished (the PDF is
   printed from the live site).
 
-## State (2026-10-30 ~16:30 PDT)
+## State (2026-10-31 ~01:45 PDT)
 
-- AutoCroissant main d9f15d5 (plus this wrap-up's docs); the jetson runs 17601aa: the later bot commits touch only Card
-  sync's modules (card_data, rulebook_pages, tts_save), the guards (card_standards), tests and skills, so no deploy is
-  owed (deploy any time).
-- TTSCardMaker main 30a050f7 (the TTS save rebuilt 10-30 15:33 PDT with today's Global.lua; TTS checks 24 of 24 on it). Desktop clones level with
-  main. Tabletop Simulator's Saves folder holds no copy of the save (owner asked whether to copy it there; unanswered).
-- Data a1f7993b (10-30 22:15 UTC, Butterfly's art): parser 5, 772 cards (the 48 Photoshop rule pages are no longer cards); `db/rulebook.json` holds the
-  24 chapters.
+- AutoCroissant main 1658cc6 (plus this wrap-up's docs); the jetson runs 17601aa: the later bot commits touch only Card
+  sync's modules (card_data, rulebook_pages, tts_save), the parser (run by Card sync in Actions), the guards
+  (card_standards, card_guards), a psd_edit docstring, tests, docs and skills, so no deploy is owed (deploy any time).
+- TTSCardMaker main 098bd28a; the TTS save rebuilt 10-31 07:22 UTC (09a590d5) with the optimized Global.lua (TTS checks:
+  TTS checks 24 of 24 on it at this wrap-up). Desktop clones level with main. Tabletop Simulator's Saves folder
+  (`~/Library/Tabletop Simulator/Saves/Impossibility Simulator.json`) held the 10-30 afternoon save (30a050f7,
+  unmodified); updated at this wrap-up to the current one (09a590d5).
+- Data 679b1309 (10-31 04:37 UTC, 5 split titles re-parsed): parser 5, 772 cards; `db/rulebook.json` holds the 24 chapters.
 - psd-tools fork pin `cards-20261026` = e156be36 on both machines (`requirements-cards.txt`).
 - OJWikibot main 363ddc9, deployed. One production host: the jetson (leo retired 10-26).
 - `+ability` is live; no live `+ability` bake yet (the first comes from the website): its flag note names the box, font
@@ -69,14 +71,21 @@ tasks in the order the owner picks.
       sitting gets theirs back); turn markers (flips with F or the menu count, physics tumbles don't); the panels' build
       about 2 s after the data loads (seated players) and 2 s after someone sits later (a short stall; others' open
       panels are re-laid out, dragged spots reset); The Gates of Ahn'Qiraj's "+ Silithid"; whether TTS's PDF viewer
-      searches the text; any Lua error.
+      searches the text; any Lua error. Since 10-31: spawn buttons on up to 2 rows, long names shortened with "..." and
+      whole on hover (`tooltip`, unverified in TTS), Rules buttons wrapping; only changed UI attributes sent, in one
+      `UI.setAttributes` call per element (unverified in TTS); the first spawn without a stall (cards indexed in the
+      background); a card naming itself has its own "+ Name".
 - [ ] Website, first real use (10-30 afternoon, tested only against mocks): History "Revert to this version" on a
       chapter, the ban list (admins) and a card (the PSD and PNGs go back to that commit's blobs); the rulebook drawn to
       scale (zoom keeps the layout; the editor preview's text is about 10px: a preview zoom control is offered; on a
       1400px window zooming in enlarges the page only from about 175%; 7 of 1,070 card texts have no known commit and
-      get no Revert).
-- [ ] Answer: copy the rebuilt save into Tabletop Simulator's Saves folder (`~/Library/Tabletop Simulator/Saves/`)?
-      Its list still names one copied in on 10-30 at 04:45, but the file is gone.
+      get no Revert). Also since 10-31: the preview trash button, the editor's "On the site now · File" and "These boxes
+      make" lines, cards naming themselves (Mentions, Mentioned by, links), Unused for every Auxiliary kind.
+- [ ] Rulebook, look over (10-30 evening): see-through pictures wrap text to their edges (37 traced outlines), pictures
+      hang out of their panels (solid ones stay inside), `out=` on Getting Started's Kirby (`width=30 out=62 dy=-6`);
+      Make space drops between list items and lines. Getting Started's intro text follows Kirby's outline (ragged).
+- [ ] Before a game: the Saves folder copy is a plain copy of `TTS/Impossibility Simulator.json`; re-copy it after Card
+      sync rebuilds the save (it was updated to 09a590d5 at the 10-31 wrap-up).
 - [ ] Decide: TTS-sized JPEG card copies (the save loads 839 files, 1.5 GB of 1200 px PNGs; half-size JPEGs cut it about
       10x): 600 or 800 px wide, or not. Also the holder pictures (Creature_Deck.png 6.7 MB).
 - [ ] Try the website editor's new drags (anchor grid, Make space, blank space, snapping, undo) and report what feels
@@ -99,7 +108,7 @@ tasks in the order the owner picks.
 
 ### Developer
 
-- [ ] 10-31 (owner): set `EXACT_CASE` back to `false` in TTSCardMaker `site/assets/text.js` (since 10-30 evening card
+- [ ] DUE 10-31 (owner; asked again at the 10-31 wrap-up, unanswered): set `EXACT_CASE` back to `false` in TTSCardMaker `site/assets/text.js` (since 10-30 evening card
       names link and count as mentions only in their own letter case; the TTS buttons' `build_site.name_links` kept any
       case). The guards' R14 (report only: names typed in another case) stays.
 
