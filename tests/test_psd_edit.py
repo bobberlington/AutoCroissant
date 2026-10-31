@@ -866,6 +866,17 @@ def test_a_title_or_ability_printed_twice_refuses(clone):
     assert pe.ability_layer(PSDImage.open(_card(clone, ANUBISATH)[0])).text == ""
 
 
+def test_split_title_keeps_its_printed_letter_case(clone, parser):
+    """A title split over layers (owner 2026-10-30): the same words as the file name in its order but another letter case
+    is printed (Azamoth's "Azamoth The" + "Possessed Vessel"); the name's words in another order still fall back to the
+    file name (the pieces' order is a guess)."""
+    rel = "Auxiliary/Creatures/Azamoth_the_Possessed_Vessel.psd"
+    psd = PSDImage.open(clone / rel)
+    texts = [layer for layer in psd.descendants() if layer.kind == "type"]
+    assert parser._printed_title(psd, texts, "Azamoth the Possessed Vessel") == "Azamoth The Possessed Vessel"
+    assert parser._printed_title(psd, texts, "Possessed Vessel the Azamoth") is None
+
+
 def test_name_redundancy_uses_the_printed_title(clone, parser):
     """A name edit is redundant when the bot already shows it (the parser's display_name, else the file name)."""
     path = _card(clone, MINI_DOOMER)[0]

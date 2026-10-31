@@ -739,8 +739,9 @@ class PSDParser:
         title = " ".join(texts)
         if not title or title == name:
             return None
-        if len(texts) > 1 and sorted(title.lower().split()) == sorted(name.lower().split()):
-            return None                                 # the pieces' order is a guess
+        if len(texts) > 1 and title.lower() != name.lower() and sorted(title.lower().split()) == sorted(name.lower().split()):
+            return None                                 # the name's words in another order: the pieces' order is a guess
+                                                        # (only the letter case differing is printed: Azamoth The..., owner 10-30)
         if self.split_title(psd, found, title, name):
             return None                                 # the other layers print the rest of the name
         joined, whole = "".join(title.lower().split()), "".join(name.lower().split())
