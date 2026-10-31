@@ -452,6 +452,19 @@ def test_rulebook_picture_outline(bs):
     assert bs.picture_outline(Image.new("RGBA", (40, 40), (1, 2, 3, 255))) == ""
 
 
+def test_overhang_card_body(bs, tmp_path):
+    """An OVERHANG card's own box (owner 10-31, Sumo Panda): the solid card inside see-through edges, art spilling out
+    the left; none for an opaque picture."""
+    from PIL import Image, ImageDraw
+    pic = Image.new("RGBA", (120, 240), (0, 0, 0, 0))
+    ImageDraw.Draw(pic).rectangle((18, 0, 116, 239), fill=(200, 180, 150, 255))
+    ImageDraw.Draw(pic).ellipse((0, 60, 60, 100), fill=(255, 255, 255, 255))
+    pic.save(tmp_path / "hang.png")
+    Image.new("RGBA", (120, 240), (1, 2, 3, 255)).save(tmp_path / "solid.png")
+    assert bs.card_body(tmp_path / "hang.png") == [0.15, 0.0, 0.975, 1.0]
+    assert bs.card_body(tmp_path / "solid.png") is None
+
+
 def test_guards_name_rule_matches_the_site(bs):
     """AutoCroissant's R14 (card_standards.miscased_names) and build_site.name_links share text.js's rule of which words
     name a card: on the same text, R14's names are the links typed in another case."""
