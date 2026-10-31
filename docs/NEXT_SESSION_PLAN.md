@@ -99,6 +99,10 @@ tasks in the order the owner picks.
 
 ### Developer
 
+- [ ] 10-31 (owner): set `EXACT_CASE` back to `false` in TTSCardMaker `site/assets/text.js` (since 10-30 evening card
+      names link and count as mentions only in their own letter case; the TTS buttons' `build_site.name_links` kept any
+      case).
+
 - [ ] Delete the bot's now-dead Photoshop rule-page handling (psd_parser rule pages, psd_details/psd_parts rule cases,
       the query and export filters, the changelog's rulebook link): no card PSD is a rule page since 10-30.
 - [ ] The website's global Escape closes an open dialog even while typing in it (app.js keydown): the rulebook editor
