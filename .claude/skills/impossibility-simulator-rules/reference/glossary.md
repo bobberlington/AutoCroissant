@@ -146,7 +146,7 @@ Old tags appear only in ch 23's OLD SYSTEM table: (1PT) now (1CD), (E2T) now (2C
 | SUPPORT | "general use items with various effects" | 14 |
 | COUNTER (item) | "can only be activated under certain conditions. These can only be used reactively."; discarded when all uses are spent | 14 |
 | INFLICTION (item) | "These items inflict a status effect and count as an infliction." | 14 |
-| EQUIP | equipped to your own creatures for a passive effect; "Creatures do not inherit the abilities of equip items, they are only affected by them."; unequip on your turn; negative-effect equips are locked until the next global turn; returned to hand on death | 14 |
+| EQUIP | equipped to your own creatures for a passive effect; "Creatures do not inherit the abilities of equip items, they are only affected by them." A creature's innate abilities and its equip's are separate; negating a creature does not negate its equipped items (22); unequip on your turn; negative-effect equips are locked until the next global turn; returned to hand on death | 14 |
 | forcibly unequipped | "An equip can be “Forcibly” unequipped by an effect at any time" | 14 |
 | FRAGILE EQUIP | "same as equips but cannot be unequipped by any means and are discarded when the creature they are on dies" | 14 |
 | ACTIVE | "placed in a slot and stay there on the field with a constant effect until they are destroyed, whether or not they affect that slot. They are considered on the primary field. They have health and defense, although they are not creatures" | 14; 16 |
@@ -154,6 +154,7 @@ Old tags appear only in ch 23's OLD SYSTEM table: (1PT) now (1CD), (E2T) now (2C
 | minions | "small creatures that when summoned are attached onto a parent prime creature"; "considered creatures" for most purposes; "they do not yield points when defeated. They do go to the graveyard when defeated."; "5 star minions cannot be targeted by minion effects." | 15 |
 | summon (bare word) | "If something just says “summon”, it means onto the creature that the ability is from." | 15 |
 | parent creature | the prime creature minions attach to | 15 |
+| parent creature | the creature a minion is on, not always its summoner; minions are tied to it; defeated, its minions die unless persistent | 15; 22 |
 | offensive minions | "occupy the same field as the summoner" | 15; 16 |
 | protective minions | occupy the field the parent is not in; push the parent "back to the secondary field" | 15; 16 |
 | persistent (minion) | survives the parent's defeat and attaches to the next prime creature in the slot; alone in an empty slot it "must be killed for the game to be won by the opponent" | 15 |

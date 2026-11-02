@@ -289,7 +289,7 @@ Ability-summoned items come from the auxiliary items deck (04). Star points are 
 | SUPPORT [Support] | "general use items with various effects" | 30 |
 | COUNTER [Counter] | conditional, "can only be used reactively"; often multi-use | 9 |
 | INFLICTION [Infliction] | inflict a status effect; count as an infliction | 10 |
-| EQUIP [Equip] | passive effect on your creature, "Creatures do not inherit the abilities of equip items, they are only affected by them"; unequip on your turn (a negative-effect equip locks until the next global turn); returns to hand if the creature dies; stays on a creature swapped to hand; a harmless one may go on an enemy, who then owns it; effects may "Forcibly" unequip (14) | 65 |
+| EQUIP [Equip] | passive effect on your creature, "Creatures do not inherit the abilities of equip items, they are only affected by them" (separate from innate abilities, and a negated creature's items are not negated: 14, 22); unequip on your turn (a negative-effect equip locks until the next global turn); returns to hand if the creature dies; stays on a creature swapped to hand; a harmless one may go on an enemy, who then owns it; effects may "Forcibly" unequip (14) | 65 |
 | FRAGILE EQUIP (icon, no folder) | cannot be unequipped; discarded when the creature dies (14) | 11 by icon: 10 inside Equip's 65, 1 (Life Shroom) in Heal |
 | ACTIVE [Active] | "placed in a slot" with a constant effect until destroyed, "considered on the primary field"; has HP and DEF but is not a creature: no equips, healing items or status effects; discarded at 0 HP (14). "something that hits everything on the PF hits them too. Something that hits all enemy creatures on the PF does not." (16) | 9 |
 | DEPLOY [Deploy] | constant effect on a chosen slot (not "used on" that creature); cannot be attacked (14) | 3 |
@@ -524,12 +524,12 @@ opponents (16); 5★ minions not targetable by minion effects, bare "summon" (15
 destruction: no (AAT) reaction with that card's effects (12, 22); field cards are not items apart from paying star points (18); actions only (OYT) (09);
 Toy Chica + Chef Saltbaker (11); "field item" is now "field card" in the chapters, the ban list and the TTS save.
 
+**Owner rulings 2026-11-01, later (now in 14, 15, 22):** minions are tied to their parent creature (the creature they are on), not their summoner, and a summoner can occasionally summon onto another creature; a defeated parent's minions die unless persistent. A creature's innate abilities and its equip's are separate (Sword of Aeons grants lifesteal; the creature has none innately), and negating a creature does not negate its equipped items.
+
 Tensions left in the text:
 - Cards still counting lanes as turns (card text is not changed by rulebook work): Delicate Flower "3 lane turns", The Last Cabbage Merchant "each time a
   lane turn ends", Time Riddle "until 2 lanes have gone", Asteroid Field "Every time a lane ends its turn", Forget Me Now "after the current lane ends", NME
   Salesman "3 lanes' turns must end", Lost Kin "always go first in its lane". Other cards' "lane" is the place (Dimension D, Inner Eye, Mom's Knife).
-- (15) a defeated parent's minions die vs (22) minions summoned by an ability "remain even if ... the creature that summoned them dies": no chapter joins them.
-- (14) creatures "do not inherit the abilities of equip items" vs (22) a negated creature "may still use the abilities of any equipped items".
 - (02) lists (XU) under PER GAME though it is per full charge; (23) calls the group "Per game & triggers".
 - Ch 12's pictures show old card text (§3).
 
