@@ -30,7 +30,7 @@ Source: the website chapters `TTSCardMaker/site/rulebook/NN-slug.md` (24 files, 
 | (OD) | On death | FORCED | 11 Life and death ("also forced"), 17 |
 | (WOF) | While on field | FORCED | 11 Passives: often written only when the ability affects other creatures, to show it ends when the creature exits the field |
 | (XPG) | "Ability can only be activated X time(s) per game." | PER GAME | 11 Basic abilities: "always either (AAT) or (OYT)" |
-| (XU) | "X use(s) per full charge." | PER GAME | 11 Basic abilities; 23 |
+| (XU) | "X use(s) per full charge." | USES | 11 Basic abilities; 23 |
 | (Action) | "Costs the creature's action" | colour note (grey) | 23 Other tags |
 | ⏳ | "(XCD), (Y/XCD), (XGCD) and (Y/XGCD) abilities with X of 2 or more are considered "multi turn" abilities." | footer | 11 Multi-turn |
 | 🕐 | "Abilites marked with 🕐 are considered "time based"." | footer | 11 Multi-turn tip |
@@ -111,7 +111,7 @@ Old tags appear only in ch 23's OLD SYSTEM table: (1PT) now (1CD), (E2T) now (2C
 | attacks | "occur when creatures use an action to perform an attack, when an attack item is used, or an ability deals damage (DMG) separate from the ATK stat"; "Attacks deal ATK - DEF in damage."; hit the PRIMARY FIELD by default; "Creatures with 0 ATK cannot declare an attack (of any type)." | 10 |
 | retaliation limits | "Damage from abilities and item effects cannot trigger counter damage as retaliation. Attacks from abilities cannot trigger counter items." | 10; 21 |
 | COMBO DAMAGE | twice the target's speed: x1.5; triple: x2 | 10 |
-| sneak attack | "an attack that deals piercing damage equal to 25% of their attack stat +1, and has the same on-hit effects as a normal attack"; "Minion sneak attacks are only 25% of their attack stat, without the +1." | 10 |
+| sneak attack | "an attack that deals piercing damage equal to 25% of their attack stat, plus 1, and has the same on-hit effects as a normal attack"; "Minion sneak attacks are only 25% of their attack stat, without the +1." | 10 |
 | multi-hit attacks | "Multi-hit attacks do not count as separate attacks. Each instance of damage cannot be reacted to on its own, only the entire attack can." | 10 Multi-hit attacks |
 | attacking several creatures at once | by ability or item: "the attacks happen left-to-right from the attacker's perspective and on death effects happen after all instances of the attack are resolved." | 10 Multi-hit attacks |
 | Redirections | "change the attack's target to a creature of choice" | 10 Redirections |

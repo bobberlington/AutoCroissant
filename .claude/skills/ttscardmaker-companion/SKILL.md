@@ -174,7 +174,7 @@ tag, in the trigger group (orchestrator decision 2026-10-21; the owner may revis
 | turn, on your turn (blue `#4f86f7`→`#2563eb`) | `OYT`, `nPT`, `EnT`, `FTEnT` | `nCD`, `a/bCD` |
 | any, at any time (purple `#9f67ff`→`#7c3aed`) | `AAT`, `nPGT`, `EnGT` | `nGCD`, `a/bGCD` |
 | forced (red `#ef5050`→`#dc2626`) | `BOT`, `ENDT`, `BOGT`, `ENDGT` | — |
-| trigger, per game and triggers (orange `#e08a1e`→`#b45309`) | `OFS`, `OS`, `OD`, `WOF`, `nPG` | `nU` |
+| trigger, per game, uses and triggers (orange `#e08a1e`→`#b45309`) | `OFS`, `OS`, `OD`, `WOF`, `nPG` | `nU` |
 | neutral, not a timing tag (slate grey `#64748b`→`#475569`) | — | `Action` |
 
 Grey for `(Action)` because it says what kind of ability it is, not when it can be used: a fifth hue would read as a

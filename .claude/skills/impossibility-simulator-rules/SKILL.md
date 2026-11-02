@@ -235,7 +235,7 @@ damage", primary field only by default. "Creatures with 0 ATK cannot declare an 
 item effects cannot trigger counter damage as retaliation. Attacks from abilities cannot trigger counter items." COMBO DAMAGE:
 attacker has "TWICE THE SPEED VALUE" of the target → x1.5; "TRIPLE" → doubled (reading these as "at least 2x / 3x" is an inference,
 not chapter text). Examples: A (ATK 7, SPD 4) hits B (DEF 1, SPD 4): 7 − 1 = 6, B at 4/10. C (ATK 7, SPD 6) hits D (DEF 1, SPD 3): 6
-x 1.5 = 9, D at 1/10. SNEAK ATTACK replaces a normal attack: piercing "25% of their attack stat +1", same on-hit effects; "Minion
+x 1.5 = 9, D at 1/10. SNEAK ATTACK replaces a normal attack: piercing "25% of their attack stat, plus 1", same on-hit effects; "Minion
 sneak attacks are only 25% of their attack stat, without the +1." Multi-hit attacks "do not count as separate attacks. Each instance
 of damage cannot be reacted to on its own, only the entire attack can"; "To make 3 separate attacks, a creature must attack 3
 separate times." When an ability or item attacks "multiple enemy creatures at once" the attacks go left-to-right from the attacker's
@@ -518,8 +518,7 @@ place (08, 04); swapping out cannot change turn order (08); dying vs being defea
 creature (16) and base stats (07) defined; the cooldown tags and charge, so how a cooldown counts, (XCD) implying (OYT), (XGCD) implying (AAT), when uses
 refill, the -1 of (-1/1GCD), and which tags are time based and multi turn (02, 11, 23); multi-hit attacks are one attack (10); active items sit in a slot
 on the primary field (14, 16); damage from abilities and item effects cannot trigger counter damage as retaliation (10, 21); damage dealt when something
-dies IS counter damage (21; owner ruling, the poll's result was lost); 0 ATK cannot declare an attack (10); minion sneak attacks 25% without +1, which also
-groups the "+1" outside the 25% (10); Max HP decrease rules (07); items not on creatures in hand or graveyard (13); secondary field untargetable by
+dies IS counter damage (21; owner ruling, the poll's result was lost); 0 ATK cannot declare an attack (10); sneak attacks are 25% of ATK, plus 1; minions' are 25% without the +1 (10); (XU) has its own USES group (02, 23); Max HP decrease rules (07); items not on creatures in hand or graveyard (13); secondary field untargetable by
 opponents (16); 5★ minions not targetable by minion effects, bare "summon" (15); no inheriting equip abilities (14); targeted for negation or field card
 destruction: no (AAT) reaction with that card's effects (12, 22); field cards are not items apart from paying star points (18); actions only (OYT) (09);
 Toy Chica + Chef Saltbaker (11); "field item" is now "field card" in the chapters, the ban list and the TTS save.
@@ -530,7 +529,6 @@ Tensions left in the text:
 - Cards still counting lanes as turns (card text is not changed by rulebook work): Delicate Flower "3 lane turns", The Last Cabbage Merchant "each time a
   lane turn ends", Time Riddle "until 2 lanes have gone", Asteroid Field "Every time a lane ends its turn", Forget Me Now "after the current lane ends", NME
   Salesman "3 lanes' turns must end", Lost Kin "always go first in its lane". Other cards' "lane" is the place (Dimension D, Inner Eye, Mom's Knife).
-- (02) lists (XU) under PER GAME though it is per full charge; (23) calls the group "Per game & triggers".
 - Ch 12's pictures show old card text (§3).
 
 Undefined: "tier"; "proc", "instance", "on-hit", "reactively", "innate actions/type"; "cleanse" (card word); "N.M.E."; the "Don't be stupid" rule.
