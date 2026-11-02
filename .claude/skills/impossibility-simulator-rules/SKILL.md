@@ -6,7 +6,7 @@ description: "Load to explain how the Impossibility Simulator card game is PLAYE
 # Impossibility Simulator: the rules of the game
 
 The game's rules live only in the website's chapters, `~/Desktop/TTSCardMaker/site/rulebook/NN-slug.md` (24 files:
-Contents + 23). They are the authority: quote them. This file was checked against them at TTSCardMaker `c6b1e144`
+Contents + 23). They are the authority: quote them. This file was checked against them at TTSCardMaker `87797b2b` and later
 (2026-11-01). A citation like (08) or (ch 08) is the chapter number. The Photoshop pages are history in `MDW/Old Rules/`
 (`Rulebook/` the 48 pages, `Very Old Rulebook/` the first rules). Where the chapters are silent or disagree this skill says
 so under "Known gaps and ambiguities"; never fill a gap by guessing. Use the rulebook's words only (creatures, minions,
@@ -529,6 +529,7 @@ Tensions left in the text:
 - Cards still counting lanes as turns (card text is not changed by rulebook work): Delicate Flower "3 lane turns", The Last Cabbage Merchant "each time a
   lane turn ends", Time Riddle "until 2 lanes have gone", Asteroid Field "Every time a lane ends its turn", Forget Me Now "after the current lane ends", NME
   Salesman "3 lanes' turns must end", Lost Kin "always go first in its lane". Other cards' "lane" is the place (Dimension D, Inner Eye, Mom's Knife).
+- Pair turns are undefined with uneven slots (White Palace). Prime creature (16) and base stats (07) are our wording from Discord discussion, no official text.
 - Ch 12's pictures show old card text (§3).
 
 Undefined: "tier"; "proc", "instance", "on-hit", "reactively", "innate actions/type"; "cleanse" (card word); "N.M.E."; the "Don't be stupid" rule.
@@ -553,7 +554,7 @@ innate actions" (11) and Inspired (+1 Action); "5+ star creatures" vs decks topp
 ## Provenance and maintenance
 
 Source: `site/rulebook/` in `~/Desktop/TTSCardMaker`, plus the card data on its `data` branch. To re-verify a rule, read its chapter and compare; to re-verify a
-count, run the row below on the current card data (`git -C ~/Desktop/TTSCardMaker show origin/data:db/stats.json > /tmp/s.json`, or the site's built `cards.json`).
+count, run the row below on the current card data (`git -C ~/Desktop/TTSCardMaker fetch -q origin +data:refs/remotes/origin/data; git -C ~/Desktop/TTSCardMaker show origin/data:db/stats.json > /tmp/s.json`, or the site's built `cards.json`).
 
 | Fact | Re-verify with |
 |---|---|

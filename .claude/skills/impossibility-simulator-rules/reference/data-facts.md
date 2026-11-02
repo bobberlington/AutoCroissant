@@ -206,7 +206,7 @@ colors (ch 02 and ch 23; old tags appear only in ch 23's conversion table):
 | Per game and triggers (`trigger`, orange #b45309) | (OFS), (OS), (OD), (WOF), (XPG), (nU) | "On first summon", "On summon", "On death", "While on field", "Can only be activated X time(s) per game", (2U) "2 uses per full charge" |
 | Other tags (`neutral`, slate grey #475569; not a time frame) | (Action), since TTSCardMaker `f6ce500e` (2026-10-22); any letter case draws it since the font's CASE lookup (TTSCardMaker work/badges-any-case, 2026-10-22) | "Costs the creature's action" |
 
-(nU) is uses per full charge (ch 02, ch 11), despite sitting in the per-game group.
+(nU) is uses per full charge (ch 02, ch 11); the chapters list it under USES, and only its badge stays in the orange `trigger` group.
 
 Ch 02 also defines: SP = Star Points, DMG = Damage, HP/ATK/DEF/SPD = the stats, PF = Primary field, CDMG = Counter damage;
 '(XCD), (Y/XCD), (XGCD) and (Y/XGCD) abilities with X of 2 or more are considered "multi turn" abilities.'; 'Abilites

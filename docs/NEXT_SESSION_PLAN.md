@@ -1,16 +1,14 @@
-# Next session plan (after 2026-10-31)
+# Next session plan (after 2026-11-01)
 
 ## Where to start
 
 Start in `~/Desktop/AutoCroissant`. Read memories `resource-limits`, `secrets-never-printed`,
 `owner-decisions-2026-10-24-night` (its 10-25 and 10-26 lines), `lean-tests-and-verification`, `no-guides-csv-only`,
-`edits-two-kinds`, `jetson-server`, `persistent-work-paths`, `agent-model-preference`, `rulebook-on-website`. What
-landed: `docs/Finished/session-2026-10-30c/README.md` (10-30 evening to 10-31: rulebook pictures wrap and hang out,
+`edits-two-kinds`, `jetson-server`, `persistent-work-paths`, `agent-model-preference`, `rulebook-on-website`,
+`discord-pending-updates`. What landed: `docs/Finished/session-2026-11-01/README.md` (the Discord rulebook batch), `session-2026-10-30c/README.md` (10-30 evening to 10-31: rulebook pictures wrap and hang out,
 names and mentions, guard R14, TTS panel buttons and speed), `session-2026-10-30b/README.md` (the afternoon: overlay
 badges, TTS names and panels, History revert, rulebook to scale) and `session-2026-10-30/README.md` (the rulebook on the website, its editor, the TTS
 save's panels; 10-26's in `session-2026-10-26/`). `docs/Future/` holds only the problem-cards lists; nothing is in flight.
-
-**2026-11-01 (rulebook batch):** all 32 📖 messages of Discord pending-updates are in `site/rulebook/` (TC `c3eb51a6`), forwarded to finished-updates and deleted; TTS save's field item tiles named field cards, drift baseline `2fecc66d`; the rules skill now cites the chapters (its Photoshop extract deleted). Procedure: memory `discord-pending-updates`. Open from it, for the owner: cards counting lanes as turns (Delicate Flower, The Last Cabbage Merchant, Time Riddle, Asteroid Field, Forget Me Now, NME Salesman, Lost Kin), the tensions in the rules skill's Known gaps, uneven slots in pair turns (White Palace).
 
 First: the owner's checks of the new TTS panels in a real game (below), then the problem-cards list, then the campaign
 tasks in the order the owner picks.
@@ -47,18 +45,18 @@ tasks in the order the owner picks.
   --ref main -f bake=pending`; check first that the website deploy holding any rulebook change has finished (the PDF is
   printed from the live site).
 
-## State (2026-10-31 ~01:45 PDT)
+## State (2026-11-01 evening)
 
-- AutoCroissant main 1658cc6 (plus this wrap-up's docs); the jetson runs 17601aa: the later bot commits touch only Card
-  sync's modules (card_data, rulebook_pages, tts_save), the parser (run by Card sync in Actions), the guards
-  (card_standards, card_guards), a psd_edit docstring, tests, docs and skills, so no deploy is owed (deploy any time).
-- TTSCardMaker main 098bd28a; the TTS save rebuilt 10-31 07:22 UTC (09a590d5) with the optimized Global.lua (TTS checks:
-  TTS checks 24 of 24 on it at this wrap-up). Desktop clones level with main. Tabletop Simulator's Saves folder
-  (`~/Library/Tabletop Simulator/Saves/Impossibility Simulator.json`) held the 10-30 afternoon save (30a050f7,
-  unmodified); updated at this wrap-up to the current one (09a590d5).
-- Data 679b1309 (10-31 04:37 UTC, 5 split titles re-parsed): parser 5, 772 cards; `db/rulebook.json` holds the 24 chapters.
+- AutoCroissant main is the wrap-up docs commit after `396d2d2`; the jetson runs `828847a`. Every commit since touches only
+  skills and docs, so no deploy is owed.
+- TTSCardMaker main `bf67cd8e` (save re-pinned; rulebook PDF printed `09357e06`, both from `b2ae3c02`). Drift baseline
+  `2fecc66d`; TTS checks 24 of 24 at `c6b1e144`. Tabletop Simulator's Saves folder holds the save at `bf67cd8e`.
+- Data `cb39a2b4` (parser 5, 772 cards); `db/rulebook.json` holds the 24 chapters. TC's local `origin/data` isn't fetched by a
+  plain `git fetch origin main`: use `git fetch origin +data:refs/remotes/origin/data` or `git ls-remote origin data`.
+- Discord `pending-updates`: no 📖 messages left; 8 card messages stay (crystal stars twice, Tainted Lazarus split, The Puppet
+  to The Beholster, Earth Totem, the type 2 death card list, the equip stat formatting poll and its result).
 - psd-tools fork pin `cards-20261026` = e156be36 on both machines (`requirements-cards.txt`).
-- OJWikibot main 363ddc9, deployed. One production host: the jetson (leo retired 10-26).
+- OJWikibot: the jetson runs `8ed817f` (11-01; later commits are backups and skills, no deploy owed). One production host: the jetson (leo retired 10-26).
 - `+ability` is live; no live `+ability` bake yet (the first comes from the website): its flag note names the box, font
   and source.
 
@@ -66,6 +64,11 @@ tasks in the order the owner picks.
 
 ### Owner
 
+- [ ] Discord pending-updates: the 8 card messages (State above) are undone card work; pick which to do.
+- [ ] Rules left by the 11-01 batch: seven cards count lanes as turns (Delicate Flower, The Last Cabbage Merchant, Time
+      Riddle, Asteroid Field, Forget Me Now, NME Salesman, Lost Kin), and pair turns are undefined with uneven slots
+      (White Palace). Rulebook wording written from discussion, no official text: prime creature, base stats. Full list:
+      `impossibility-simulator-rules` Known gaps.
 - [ ] TTS, first real-game checks of the 10-30 save (all were tested only in a Lua emulator): right-click Card details
       (in hand too; three panels; drag, A-/A+, Rules buttons, "+ Name" into the hand face down at the right size); Find
       a card (right-click the table); Contents and search (right-click the rulebook or its bag): does Book.setPage land
@@ -87,7 +90,7 @@ tasks in the order the owner picks.
       hang out of their panels (solid ones stay inside), `out=` on Getting Started's Kirby (`width=30 out=62 dy=-6`);
       Make space drops between list items and lines. Getting Started's intro text follows Kirby's outline (ragged).
 - [ ] Before a game: the Saves folder copy is a plain copy of `TTS/Impossibility Simulator.json`; re-copy it after Card
-      sync rebuilds the save (it was updated to 09a590d5 at the 10-31 wrap-up).
+      sync rebuilds the save (it was updated to bf67cd8e at the 11-01 wrap-up).
 - [ ] Decide: TTS-sized JPEG card copies (the save loads 839 files, 1.5 GB of 1200 px PNGs; half-size JPEGs cut it about
       10x): 600 or 800 px wide, or not. Also the holder pictures (Creature_Deck.png 6.7 MB).
 - [ ] Try the website editor's new drags (anchor grid, Make space, blank space, snapping, undo) and report what feels
@@ -147,11 +150,12 @@ tasks in the order the owner picks.
 - [ ] Fork, low priority: a tracking change breaks kerning (Quick Slash, Ominous Red Circle), tracked badge ligatures,
       Photoshop's underline box (Golden Metronome). The cards are fixed in Photoshop; re-bakes of those lines differ.
 
+- [ ] OJWikibot's wiki reads and saves again (`8ed817f`; only `meta=siteinfo` fails, worked around). Now due: O-6; read
+      All_Cards_Event once for a lone "===Permanent Rotation===" heading (remove it by hand if there); check the 2026-10-21
+      mixer gap in backup/history/mixers.json against that day's wiki page.
+
 ### Waiting on events
 
-- [ ] OJWikibot's wiki API answers HTTP 500 since 10-23 (wiki/host side); O-6 waits for it. When it's back: read
-      All_Cards_Event once for a lone "===Permanent Rotation===" heading (the heal is deleted; remove it by hand if
-      there), and check the 2026-10-21 mixer gap in backup/history/mixers.json against that day's wiki page.
 - [ ] The first live `+ability` bake: check its placement and font.
 
 ### Kept by ruling (no action)

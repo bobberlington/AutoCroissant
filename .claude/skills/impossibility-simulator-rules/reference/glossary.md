@@ -13,8 +13,8 @@ Source: the website chapters `TTSCardMaker/site/rulebook/NN-slug.md` (24 files, 
 | ATK | Attack stat | GENERAL | 07 |
 | DEF | Defense stat | GENERAL | 07 |
 | SPD | Speed stat | GENERAL | 07 |
-| PF | Primary field | GENERAL (second box) | 16 |
-| CDMG | Counter damage | GENERAL (second box) | 21 Counter |
+| PF | Primary field | GENERAL | 16 |
+| CDMG | Counter damage | GENERAL | 21 Counter |
 | (OYT) | On your turn | TIME FRAME | 11 When abilities can be used |
 | (AAT) | At any time | TIME FRAME | 11 When abilities can be used |
 | (XCD) | "Cooldown: needs X turn(s) of charge." 🕐, implies (OYT) | 🕐ON YOUR TURN | 11 Basic abilities: "the most common ability type"; 23 |
@@ -155,7 +155,7 @@ Old tags appear only in ch 23's OLD SYSTEM table: (1PT) now (1CD), (E2T) now (2C
 | summon (bare word) | "If something just says “summon”, it means onto the creature that the ability is from." | 15 |
 | parent creature | the prime creature minions attach to | 15 |
 | parent creature | the creature a minion is on, not always its summoner; minions are tied to it; defeated, its minions die unless persistent | 15; 22 |
-| offensive minions | "occupy the same field as the summoner" | 15; 16 |
+| offensive minions | "occupy the same field as their parent creature" | 15; 16 |
 | protective minions | occupy the field the parent is not in; push the parent "back to the secondary field" | 15; 16 |
 | persistent (minion) | survives the parent's defeat and attaches to the next prime creature in the slot; alone in an empty slot it "must be killed for the game to be won by the opponent" | 15 |
 | the field | "The place that creatures are placed on is called the field, which is organized into 6 slots, 3 for each team." | 16 |
