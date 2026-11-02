@@ -1,11 +1,15 @@
 # Impossibility Simulator: data facts (extracted 2026-10-20, re-extracted 2026-10-22)
 
-Sources, all read-only. Card repo: TTSCardMaker clone at `73904dbd` (2026-10-21 23:57 -0700, then equal to origin/main),
+A measured snapshot: the counts stay as measured then. Rules live only in the website chapters
+`TTSCardMaker/site/rulebook/NN-slug.md`, which win over anything here ("ch 11" below is chapter 11). Rule claims and field
+card names were corrected 2026-11-01 (`c6b1e144`); the numbers were not re-measured. Paths are as measured: on 2026-10-30 (`e30c8c61`) the cardbacks and Markers moved to `MDW/Assets/`.
+
+Sources of the counts, all read-only. Card repo: TTSCardMaker clone at `73904dbd` (2026-10-21 23:57 -0700, then equal to origin/main),
 after the cooldown update `df02b3b6`..`7cb4c867`. Fresh parse: a sandboxed forced sweep of that HEAD with the bot's own
 parser (AutoCroissant origin/main `39da9ed`, parser v2) → `stats_now.pkl`, and from it `cards_now.json` with
 build_site.py's own card loop (the shape of `site/dist/data/cards.json`). Before: AutoCroissant `stats.pkl` at PICKLE
 `56b43b9` (2026-10-21 05:30, parser v1) → `cards_before.json` the same way. Both live in `/tmp/rules_refresh` (scratch,
-gone on reboot; recipes in SKILL.md Provenance). Also `site/dist/data/rules.json` (rebuilt 2026-10-22 00:43, same 48 page texts);
+gone on reboot; the recipes are in git history, SKILL.md before 2026-11-01). Also `site/dist/data/rules.json` (rebuilt 2026-10-22 00:43, same 48 page texts);
 `MDW/Fonts/stoogedings-src/stoogedings.json` and `build_stoogedings.py`; `site/assets/deck.js`, `text.js`, `app.js`,
 `search.js`; `site/Constructed Ban List.txt`; `TTS/Impossibility Simulator.json` and `TTS/decks.json`, audited with a
 copy of `TTS/audit.py` (removed 2026-10-25; `git show 843a4a99:TTS/audit.py`) that writes to /tmp. Extraction scripts: `.claude/skills/impossibility-simulator-rules/scripts/`
@@ -28,8 +32,8 @@ Terms follow the rulebook: creatures, minions, items (item types), field cards, 
 | PSDs in HEAD (outside MDW/ and Auxiliary/Markers/) | 813 | the sweep parsed all 813: 0 errors, 0 unknown types, 0 moved; no card added or removed by the update |
 | stats.pkl (fresh sweep) | 819 | 813 PSDs + 6 copy rows from `site/Card Edits.json` duplicates (A Snack2, A Snack3, All Purpose Medical Kit2, NME Stock2, Regeneration Potion2, Watermelon2) |
 | stats.pkl by card_type | creature 297, item 188, minion 91, debuff 52, field 50, aux item 48, rulebook 48, nme 26, buff 12, creatures 7 | item 188 = 182 PSDs + the 6 copy rows |
-| cards.json `cards` | 773 rows | 767 distinct cards + 6 copy rows (`dup`); 771 distinct names. Rulebook pages are not in cards.json; they are in rules.json (48) |
-| rules.json | 48 pages | text identical to the 48 `rulebook` entries in stats.pkl, before and after the update (checked page by page) |
+| cards.json `cards` | 773 rows | 767 distinct cards + 6 copy rows (`dup`); 771 distinct names. The rulebook is not in cards.json; it is in rules.json |
+| rules.json (then) | 48 pages | text identical to the 48 `rulebook` entries in stats.pkl, before and after the update (checked page by page). Today it holds the chapters' text (section 6) |
 
 PNG-only cards (no PSD, so not parsed, `parsed: false` on the site): `Creatures/Other/2 Stars/Stubborn_Queen.png`,
 `Items/Support/2 Stars/Gust_of_Trees.png`, plus the six copy PNGs (`A_Snack2.png`, `A_Snack3.png`,
@@ -41,7 +45,7 @@ The 28 doubled `<id>-2` rows of the 2026-10-20 local build are gone; the 2026-10
 Names. Parser v2 stores the printed title as `display_name`; the website shows it as `name` and keeps the file-derived
 name as `key`. In the fresh parse 131 rows changed name (130 cards and 1 copy row), mostly case or punctuation
 ("FAWFUL", "Mr. Krabs", "Michael’s Blessing" with a curly apostrophe, "Doopliss", "Militron (no Armor)"), a few more:
-Blockade → "The Wall By Ech", Leeroy Jenkins → "LEEEEEEEEEROY", Rasta Beast → "Pasta Beast", Sir Grodus → "Grodus",
+Blockade → "The Wall By Ech", Leeroy Jenkins → "LEEROOOOOOOOY JENKINS", Rasta Beast → "Pasta Beast", Sir Grodus → "Grodus",
 The Chicken → "Chicken", Zenith Martlet → "Martlet Zenith of Monsterkind", Computer Virus → "Computer Virus appears!",
 The Bagel → "The Bagel Or... is it". Counted against file names, the printed title differs for 159 cards (165 rows with
 the copy rows): the 130 above plus 29 already renamed in `site/Card Edits.json` (the Clots, the Ingredients and others).
@@ -112,7 +116,7 @@ By stars (182): 1★ 24, 2★ 59, 3★ 69, 4★ 30. No 5★ items.
 
 Plus in stats.pkl 6 copy rows (Heal 2★: A Snack2, A Snack3, All Purpose Medical Kit2, Regeneration Potion2,
 Watermelon2; Support 2★: NME Stock2) = 188 `item` rows, and the PNG-only Gust of Trees (Support 2★).
-Nine item folders; the rulebook's "14 Item Types" names ten item types: Healing ("also referred to as food"), Attack,
+Nine item folders; ch 14 names ten item types: Healing ("also referred to as food"), Attack,
 Negation, Support, Counter, Infliction (discarded after being played) and Equip, Fragile Equip, Active, Deploy (not
 discarded immediately). Fragile Equip has no folder: it is a type icon on cards in Equip (and Auxiliary/Items).
 Type icons on the 182 items: equip 55, food 36, support 30, attack 17, infliction 12, fragile equip 11, active 9,
@@ -127,7 +131,7 @@ Stars counted from the PSD: 0★ 1 (Bubble, "NO STARS FOUND"), 1★ 8, 2★ 11, 
 2★: Crock Pot, Electric Dart, Jera, Minion Dematerializer, Paintbrush, Remote Detonator, Rope, Staff of Purity, The Bank, Whacka Bump, chuckya.
 3★: Black Hole, Duel Flag, Termination Shock, The Claw.
 Type icons: nme 26 plus an item type on some (support 11, active 5, equip 4, food 3, deploy 2, attack 1, negation 1).
-Rulebook 05 Shops: the N.M.E. shop shows 4 random N.M.E. items; their purchase cost is written on each card; N.M.E. items are not in the standard deck.
+Ch 05: the N.M.E. shop shows 4 random N.M.E. items; their purchase cost is written on each card; N.M.E. items are not in the standard deck.
 
 ### 1.5 Auxiliary (`Auxiliary/...`)
 
@@ -136,10 +140,10 @@ Rulebook 05 Shops: the N.M.E. shop shows 4 random N.M.E. items; their purchase c
 | `Auxiliary/Minions/` | `minion` | 91 | from PSD: 0★ 1 (God Tamer), 1★ 15, 2★ 31, 3★ 27, 4★ 11, 5★ 6 | types: offensive_minion 68, defensive_minion 22, wind 20, machine 12, undead 11, dark 9, fire 7, light 3, water 3, darkmatter 2, electric 2, ice 1; 1 with none |
 | `Auxiliary/Status Effects/Buffs/` | `buff` | 12 | none | see section 3 |
 | `Auxiliary/Status Effects/Debuffs/<N Stars>/` | `debuff` | 52 | 1★ 12, 2★ 16, 3★ 14, 4★ 10 | see section 3 |
-| `Auxiliary/Items/` | `aux item` | 48 | from PSD: 1★ 4, 2★ 21, 3★ 12, 4★ 11 | items summoned by abilities ("04 Table4": the auxiliary items deck); types: equip 10, food 9, active 8, fragile equip 8, infliction 5, attack 4, field 4, deploy 2, support 1 |
+| `Auxiliary/Items/` | `aux item` | 48 | from PSD: 1★ 4, 2★ 21, 3★ 12, 4★ 11 | items summoned by abilities (ch 04: the auxiliary items deck); types: equip 10, food 9, active 8, fragile equip 8, infliction 5, attack 4, field 4, deploy 2, support 1 |
 | `Auxiliary/Creatures/` | `creatures` (plural, folder fall-through) | 7 | none | the large cards: Azamoth the Possessed Vessel, Igor Roballtowski, Mettaton EX, Mettaton NEO, Militron (No Armor) (printed "Militron (no Armor)"), Morpho Knight, Shadow Queen. `type==creature` misses them; `type~creature` finds both |
-| `Auxiliary/Rulebook/` | `rulebook` | 48 PSD+PNG | - | pages 00..22 (section 6) |
-| `Auxiliary/Markers/` | excluded | 1 PSD (`Green and red.psd`), 10 PNG | - | Green.png/Red.png (the .5 tile faces), health/defense/attack/speed_marker.png and their minus_ versions (stat markers) |
+| `Auxiliary/Rulebook/` (then; `MDW/Old Rules/Rulebook/` since 2026-10-30) | `rulebook` (then) | 48 PSD+PNG | - | the Photoshop pages 00..22, now history (section 6) |
+| `Auxiliary/Markers/` (then; `MDW/Assets/Markers/` since 2026-10-30) | excluded | 1 PSD (`Green and red.psd`), 10 PNG | - | Green.png/Red.png (the .5 tile faces), health/defense/attack/speed_marker.png and their minus_ versions (stat markers) |
 
 Retired cards: `MDW/The Morgue/` (12 PNGs incl. cardback: Cho'Gath, Developper, Ech, Fire Guardian's Stronghold,
 Grandfather Clock, Pandeity Old, Poison Incantation, Satou, Satou Matsustaka, The Missile, ...); excluded from stats.
@@ -157,10 +161,10 @@ The 35 type icons, grouped by what the rulebook uses them for:
 
 | Group | Tokens (aliases) |
 |---|---|
-| Creature types (rulebook "20 Creature Types", 14) | machine, wind, rock, panda, fire, ice, water, electric, undead, dark, light, darkmatter ("dark matter"), unknown, girl |
+| Creature types (ch 20, 14) | machine, wind, rock, panda, fire, ice, water, electric, undead, dark, light, darkmatter ("dark matter"), unknown, girl |
 | Other creature-type icons | lightshadow ("light shadow"; the TTS "Light" token uses this PNG), null (TTS token "No Type") |
 | Minion types | offensive_minion, defensive_minion |
-| Item types (rulebook "14 Item Types", 10) | attack, counter, deploy, equip, food (= Healing items), fragile equip, infliction, negation, support, active |
+| Item types (ch 14, 10) | attack, counter, deploy, equip, food (= Healing items), fragile equip, infliction, negation, support, active |
 | Status effect kinds | buff, buffstack ("buff stack"), debuff, debuffstack ("debuff stack"), debuffupgrade ("debuff upgrade") |
 | Card kinds | field, nme ("n.m.e") |
 
@@ -179,7 +183,7 @@ support 43, light 43, dark 35, undead 35, fire 35, debuff 27, panda 26, nme 26, 
 rock 22, water 21, debuffstack 20, fragile equip 19, infliction 17, electric 17, darkmatter 13, unknown 12, buffstack 11,
 ice 10, counter 9, deploy 7, negation 6, debuffupgrade 5, girl 2, buff 1. Never on a card: lightshadow, null.
 
-Creature type effects (rulebook "20 Creature Types"; the page's text puts each description BEFORE its type name):
+Creature type effects (ch 20):
 MACHINE: cannot have food items used on them; immune to Sickness, Plague, Poison. WIND: can swap out/in for 1 less point.
 ROCK: +1 Brick when mining for Bricks. PANDA: immune to Stuffed, Engorged. FIRE: immune to Smoldering, Burning, Blazing.
 ICE: immune to Chilled, Frostbite, Frozen. WATER: immune to Suffocation. ELECTRIC: immune to Paralyzed.
@@ -190,30 +194,28 @@ These match the status effects' own "can't affect [type]" text (checked for ever
 
 ### Timing tags (badge_tags)
 `stoogedings.json` has NO badge_tags key. The tag list lives in `build_stoogedings.py` `badge_tags()` and `BADGE_GROUPS`
-(cooldown and uses badges since `8ec1b925`, 2026-10-21), mirrored by `site/assets/text.js` `tagInfo()` (`c3f9d685`,
-`73904dbd`, MichaelJSr, written during the update: a reading of the cards, not a designer source). n = 1-9 or X; in a pair a/b, a = -1, 0-9 or X and b = 1-9 or X; a "-" is drawn as a minus sign. Groups and
-colors (the rulebook "02 Abbreviations" time frames; the old tags stay for the rulebook pages):
+(cooldown and uses badges since `8ec1b925`, 2026-10-21), mirrored by `site/assets/text.js` `tagInfo()`, whose meanings come
+from ch 23's tables (`build_site.py` `tag_meanings`); `GAME_TAGS` in `site/build/build_site.py` gives game.txt the same words. n = 1-9 or X; in a pair a/b, a = -1, 0-9 or X and b = 1-9 or X; a "-" is drawn as a minus sign. Groups and
+colors (ch 02 and ch 23; old tags appear only in ch 23's conversion table):
 
-| Group (color) | Tags | Website tooltip (`tagInfo`) |
+| Group (color) | Tags | Website tooltip (ch 23) |
 |---|---|---|
-| On your turn (`turn`, blue #2563eb) | (OYT), (nCD), (a/bCD); old (XPT), (EXT), (FTEXT) | "On your turn"; "Cooldown: 1 turn" / "2 turns"; "(1/2CD) Cooldown: 1 turn, then 2"; old ones "Old system: usable once per turn (on your turn)", "Old system: every 2 turns, starting on turn 2 (multi-turn)", "... starting on your 1st turn (multi-turn)" |
-| At any time (`any`, purple #7c3aed) | (AAT), (nGCD), (a/bGCD); old (XPGT), (EXGT) | "At any time"; "Global cooldown: 1 global turn"; "(-1/1GCD) Global cooldown: -1 global turn, then 1"; "Old system: usable once per global turn (at any time)", "Old system: every 2 global turns (at any time, multi-turn)" |
+| On your turn (`turn`, blue #2563eb) | (OYT), (nCD), (a/bCD) | "On your turn"; (2CD) "Cooldown: needs 2 turns of charge"; (1/2CD) "Cooldown: starts with 1 of 2 turns of charge" |
+| At any time (`any`, purple #7c3aed) | (AAT), (nGCD), (a/bGCD) | "At any time"; "Global cooldown: needs 1 turn of charge"; (-1/1GCD) "Global cooldown: starts with -1 of 1 turn of charge" |
 | Forced (`forced`, red #dc2626) | (BOT), (ENDT), (BOGT), (ENDGT) | "Beginning of turn (forced)" and so on |
-| Per game and triggers (`trigger`, orange #b45309) | (OFS), (OS), (OD), (WOF), (XPG), (nU) | "On first summon", "On summon", "On death", "While on field", "Can only be activated once per game", "(2U) 2 uses" |
-| Other tags (`neutral`, slate grey #475569; not a time frame) | (Action), since TTSCardMaker `f6ce500e` (2026-10-22); any letter case draws it since the font's CASE lookup (TTSCardMaker work/badges-any-case, 2026-10-22) | "Action" |
+| Per game and triggers (`trigger`, orange #b45309) | (OFS), (OS), (OD), (WOF), (XPG), (nU) | "On first summon", "On summon", "On death", "While on field", "Can only be activated X time(s) per game", (2U) "2 uses per full charge" |
+| Other tags (`neutral`, slate grey #475569; not a time frame) | (Action), since TTSCardMaker `f6ce500e` (2026-10-22); any letter case draws it since the font's CASE lookup (TTSCardMaker work/badges-any-case, 2026-10-22) | "Costs the creature's action" |
 
-(nU) in the per-game group could suggest uses per game; Time Riddle's "(1CD) -> (1CD)(2U)" suggests uses per cooldown.
+(nU) is uses per full charge (ch 02, ch 11), despite sitting in the per-game group.
 
-Rulebook also defines on that page: SP = Star Points, DMG = Damage, HP/ATK/DEF/SPD = the stats, PF = Primary field,
-CDMG = Counter damage; "Abilities marked with ⏳ are considered "multi turn" abilities."; "Abilites marked with 🕐 are
-considered "time based"."; 'Time based abilities are considered "refreshed" and become usable again in the specified
-timeframe.' The website's Rulebook tab glossary (`site/assets/app.js`) shows 22 badges: OYT, 1CD, 1/2CD, AAT, 1GCD,
-1/2GCD, BOT, ENDT, BOGT, ENDGT, OFS, OS, OD, WOF, 1PG, 2U, Action (under "Other tags"), then the old 1PT, E2T, FTE2T, 1PGT, E2GT, with "X can be any
-number; the first number of a pair such as (1/2CD) can also be 0 or −1."
+Ch 02 also defines: SP = Star Points, DMG = Damage, HP/ATK/DEF/SPD = the stats, PF = Primary field, CDMG = Counter damage;
+'(XCD), (Y/XCD), (XGCD) and (Y/XGCD) abilities with X of 2 or more are considered "multi turn" abilities.'; 'Abilites
+marked with 🕐 are considered "time based".'; "Time based abilities with a cooldown become usable again once they are
+fully charged." Every tag and tooltip is in ch 23, the website's Timing Tags chapter.
 
 ## 3. Status effects (64 cards: 12 buffs, 52 debuffs)
 
-Rulebook "19 Status Effects" / "19 Status Effects2" (verbatim points): a status effect is a buff or debuff. If it deals
+Ch 19 (verbatim points): a status effect is a buff or debuff. If it deals
 DMG or heals, by default it procs in phase 4, after (ENDT) effects; otherwise it takes effect immediately. Duration counts down in phase 4.
 DMG-dealing status effects are one instance of damage per unique stack ("5 stacks of Poison is one instance of 5 damage"),
 piercing, and not an attack. The creature's owner chooses the order of resolution per unique status effect in phase 4.
@@ -228,8 +230,7 @@ card is "Smoldering".)
 
 Kind icons (the card's `types`): buffs: `buff` 1 (Diligent Watch), `buffstack` 11. Debuffs: `debuff` 27, `debuffstack`
 20, `debuffupgrade` 5 (exactly the five upgradable ones: Smoldering, Burning, Chilled, Frostbite, Sickness). Mapping
-`debuff`/`buff` = standard and `*stack` = stacking follows the rulebook 19.2 examples (inference from the page's example
-icons; the page text itself does not name the icons). Buffs have no stars; debuffs have 1-4 stars from their folder.
+`debuff`/`buff` = standard and `*stack` = stacking is ch 19's: it prints those icons beside each kind. Buffs have no stars; debuffs have 1-4 stars from their folder.
 Ability text below is identical in stats.pkl and cards.json, and the cooldown update changed no status effect card
 (re-checked 2026-10-22: texts and the mention counts below are unchanged). "Cards naming it" = other cards (not status effects) whose
 ability contains the name as a whole word, case-insensitive (approximate: "Frozen" also counts "Frozen In Time" mentions;
@@ -307,7 +308,7 @@ the website flags 0-mention ones as "Unused").
 `tags.py` over the ability text of the 767 distinct cards in the cards.json shape (copy rows skipped; rulebook pages
 excluded). Its regex also matches pairs such as (1/2CD) and (-1/1GCD), which the 2026-10-20 regex missed (hence 604/351
 then, 606/352 for the same data now). Now = fresh parse of `73904dbd`; before = PICKLE `56b43b9`. Group = badge group
-(section 2). Meanings of the new tags are the website's readings, not rule text (SKILL.md §3).
+(section 2). Meanings of the tags: ch 02, 11 and 23.
 
 | Tag | Now uses | Now cards | Before uses / cards | Group | Where now (card kind: uses) |
 |---|---|---|---|---|---|
@@ -342,10 +343,10 @@ then, 606/352 for the same data now). Now = fresh parse of `73904dbd`; before = 
 Total now: 625 occurrences of 27 tags in 352 cards. Before: 606 occurrences of 37 tags in 352 cards, of which these are
 now gone from the cards: (1PT) 83 / 72, (1PGT) 61 / 55, (E2T) 42 / 42, (FTE2T) 14 / 14, (E2GT) 8 / 8, (2PGT) 6 / 6,
 (2PT) 6 / 6, (E3T) 2 / 2, (XPT) 2 / 2, (-1/1CD) 1 / 1, (3PGT) 1 / 1, (4PGT) 1 / 1, (EXGT) 1 / 1, (EXT) 1 / 1, (XPGT) 1 /
-1. The tags the rulebook defines that remain on cards: 320 uses in 220 cards. Family totals now (uses / cards): (nCD)
+1. The tags the Photoshop pages defined that remained on cards: 320 uses in 220 cards. Family totals now (uses / cards): (nCD)
 159 / 138, (a/bCD) 15 / 15, (nGCD) 106 / 93, (a/bGCD) 1 / 1, (nU) 24 / 22; 218 cards carry at least one.
 
-### 4.1 What changed, per line (`changes.py` over the 178 changed PSDs)
+### 4.1 What changed, per line (a scratch script of 2026-10-22, since gone, over the 178 changed PSDs)
 
 Line pairs before → now (pairs by line position): (1PT) → (1CD) 74, (1PGT) → (1GCD) 49, (E2T) → (2CD) 40, (FTE2T) →
 (1/2CD) 11, (E2GT) → (2GCD) 8, (2PGT) → (1GCD)(2U) 5, (2PT) → (1CD)(2U) 4, (1PGT)(OYT) → (1GCD)(OYT) 3, (E3T) → (3CD)
@@ -430,18 +431,17 @@ counters such as (x counters) 3, (3 counters) 2, (4 counters) 2.
 
 ## 5. Constructed starting hand
 
-### 5.1 Rulebook "03 Setting Up" (verbatim content)
+### 5.1 Ch 03 (verbatim content)
 Each team starts with 2 points and 7 star points. Starting hand: one 5-star creature, two 4-star creatures, three 3-star
-creatures, one 2-star creature; two 4-star items, three 3-star items, three 2-star items, two 1-star items (the extracted
-text shows "⭐⭐ ⭐⭐" under "Two 1-star items", a typo on the page). "Refer to SHOPS for setting up the shops!" Each team
+creatures, one 2-star creature; two 4-star items, three 3-star items, three 2-star items, two 1-star items. "Refer to SHOPS for setting up the shops!" Each team
 fills each of the 3 slots with a creature face down; 3 "Facedown items" are placed one behind each slot. Flip the
 creatures when everyone is ready; items are revealed only when played. Only your side can see your Facedown Items while
 they are in the holders; pull them out to reveal and play them.
-Related: "04 Table2": the Star Point counter is set to 7 at the beginning of each global turn; items cost their star
+Related: ch 04: the Star Point counter is set to 7 at the beginning of each global turn; items cost their star
 value in star points. BRICKS buy field cards (2x star level); mining gives BRICKS equal to the creature's star level;
 1 BRICK to each team at the end of every global turn. Points: start with 2; gain points equal to your creature's star
-level when it dies; spent on abilities and on the item shop (4x star level).
-"05 Shops": item shop = 2 items per star level, revealed, cost 4x star level in points, reshuffle once per global turn
+level when it is defeated; spent on abilities and on the item shop (4x star level).
+Ch 05: item shop = 2 items per star level, revealed, cost 4x star level in points, reshuffle once per global turn
 for 1 point, restock same star level. Field shop = 2 field cards per star level, only 1 per star level revealed before
 the game, the remaining 4 revealed at the end of global turn 1, cost 2x star level in BRICKS, no restock. N.M.E. shop =
 4 random N.M.E. items, all revealed, restocked randomly, cost printed on the card.
@@ -458,14 +458,14 @@ export const FIELD_MAX_STARS = 3;
 and `type == "item"` fill slots (minions, aux items, N.M.E. items, status effects, the plural "creatures" cannot).
 One of each card (`already in this hand`); a banned card makes the hand illegal (it can still be added, with a warning);
 the field card is also checked against the ban list. `randomFill` picks unbanned, parsed cards. Export: text list,
-share link `d/#/deck/<base64>`, a TTS save with a creature pile (back `MDW/cardback.png`), an item pile and the field
-card (back `MDW/cardback_item.png`), and a print sheet. Builder text (unchanged; only its comment now names `site/Constructed Ban List.txt`): "7 creatures and 10 items, one of each, none
+share link `d/#/deck/<base64>`, a TTS save with a creature pile (back `MDW/Assets/cardback.png`), an item pile and the field
+card (back `MDW/Assets/cardback_item.png`), and a print sheet. Builder text (unchanged; only its comment now names `site/Constructed Ban List.txt`): "7 creatures and 10 items, one of each, none
 banned, plus an optional field card (≤3★) for the shop."
 
 ### 5.3 Constructed ban list (`site/Constructed Ban List.txt`, moved from `MDW/` on 2026-10-20 in `13ac6802` with no change; also cards.json `banlist`, 53 entries)
 Notes: "Constructed format is where you can choose whatever cards you want out of the entire deck for your hand." Ban
 list "to avoid unfun playstyles and overly broken combos." "You may also only have one of each item in your hand."
-"Each player can also choose one 3 star or lower field item to be active in the shop at the start of the game (besides
+"Each player can also choose one 3 star or lower field card to be active in the shop at the start of the game (besides
 banned ones, obviously)."
 
 | Group | Banned (reason) |
@@ -478,31 +478,31 @@ banned ones, obviously)."
 | 3 star items (8) | Stalwart Shell, Reflection, Blank Card, Credit Card, Wand of Obesity (too easy to build combos), Scapular, Life Link, Forget Me Now (too easy to build combos, too powerful of a counter) |
 | 2 star items (3) | Tomorrow I'll (too easy to build combos, too powerful of a counter), Gust of Wind (too powerful of a counter), Berserk (too easy to build combos) |
 | 1 star items (1) | NME stock (simply too strong) |
-| Field Items (4) | The Bank, E. Gadd's Garage, Error room (too easy to build combos), Cave of the Past (too powerful of a counter) |
+| Field Cards (4) | The Bank, E. Gadd's Garage, Error room (too easy to build combos), Cave of the Past (too powerful of a counter) |
 
 All 53 resolve to a card on the website, with the 2026-10-21 names and with the fresh printed titles (build_site.py's
 letters-and-digits match on name, file name and aliases). Mismatches between the list and the card data: "The Wall (By
 Ech)" is the card Blockade (Items/Active/4 Stars; printed title "The Wall By Ech", aliases "the wall", "Blockade");
-"Leeroy Jenkins" prints as "LEEEEEEEEEROY"; "Berserk" is "Berserk!"; Tainted Bethany is a 4★ creature
+"Leeroy Jenkins" prints as "LEEROOOOOOOOY JENKINS"; "Berserk" is "Berserk!"; Tainted Bethany is a 4★ creature
 (listed under 3 star); NME Stock™ is a 2★ Support item (listed under 1 star items); The Bank is an N.M.E. item (2★,
-listed under Field Items); Cave Of The Past and Error Room are 4★ field cards (so already outside the ≤3★ field rule).
+listed under Field Cards); Cave Of The Past and Error Room are 4★ field cards (so already outside the ≤3★ field rule).
 
-## 6. Rulebook pages (48; `Auxiliary/Rulebook/*.psd` + PNG)
+## 6. The rulebook
 
-00 Table of Contents, 0000 Cover, 0000 Cover Book, 01 Getting Started, 02 Abbreviations, 03 Setting Up, 04 Table,
-04 Table2..5, 05 Shops, 06 Reading Cards, 06 Reading Cards2, 07 Stats1..5, 08 Global Turn, 09 TakingYourTurn,
-10 Attacking, 10 Attacking2, 11 Abilities, 11 Abilities2..7, 12 Reactions, 12 Reactions2..5, 13 Items, 14 Item Types,
-14 Item Types2, 15 Minions, 16 The Field, 16 The Field2, 17 Death, 18 Field Cards, 19 Status Effects, 19 Status Effects2,
-20 Creature Types, 21 Damage Types, 22 Negation. The table of contents lists 22 chapters: Getting Started,
-Abbreviations, Setting Up, Table, Shops, Reading Cards, Stats, The Global Turn, Taking Your Turn, Attacking, Abilities,
-Reactions, Items, Item Types, Minions, The Field, Death, Field Cards, Status Effects, Creature Types, Damage Types,
-Negation. Sleepy Kirby on a page marks more technical rules. Win condition ("01 Getting Started"): defeat all of your
-opponent's creatures while they don't defeat all of yours. Old versions: `MDW/Old Rules/` (44 files, 22 PSD+PNG pairs,
-e.g. 01_Start_of_the_Game, 02_Setting_Up, 03_The_Field, 04_Creatures, 05_Stats): history only, no text extraction.
+The rules are the 24 website chapters, `site/rulebook/NN-slug.md`: 00 Table of Contents, 01 Getting Started, 02 Abbreviations,
+03 Setting Up, 04 Table, 05 Shops, 06 Reading Cards, 07 Stats, 08 The Global Turn, 09 Taking Your Turn, 10 Attacking,
+11 Abilities, 12 Reactions, 13 Items, 14 Item Types, 15 Minions, 16 The Field, 17 Death, 18 Field Cards, 19 Status Effects,
+20 Creature Types, 21 Damage Types, 22 Negation, 23 Timing Tags. Built from them: `db/rulebook.json` on the data branch (the
+bot), the site's `rules.json` and game.txt, and `TTS/Rulebook/Rulebook.pdf` (the save). Sleepy Kirby marks more technical
+rules. Win condition (ch 01): defeat all of your opponent's creatures while they don't defeat all of yours.
+
+History, no longer rule text: the 48 Photoshop pages this snapshot counted (`MDW/Old Rules/Rulebook/`, moved from
+`Auxiliary/Rulebook/` on 2026-10-30, `36788262`) and the older `MDW/Old Rules/Very Old Rulebook/` (44 files, 22 PSD+PNG pairs,
+e.g. 01_Start_of_the_Game, 02_Setting_Up, 03_The_Field, 04_Creatures, 05_Stats).
 
 ## 7. What sits on the TTS table (`TTS/decks.json`, `TTS/Impossibility Simulator.json`; `TTS/audit.py` until 2026-10-25)
 
-Rulebook "04 Table".."04 Table5" names these: main deck = CREATURE DECKS (5★ leftmost, then 4, 3, 2), ITEM DECKS (4★
+Ch 04 names these: main deck = CREATURE DECKS (5★ leftmost, then 4, 3, 2), ITEM DECKS (4★
 leftmost, then 3, 2, 1), FIELD CARDS for the field card shop (4★..1★), N.M.E. items for the N.M.E. shop; DEVELOPER DECK
 (reduced creature decks of newer/recently changed cards) and "Baseline" creatures mixed into it; Global Turn counter
 (starts at 1, ticks up once every filled slot on the field has taken a turn); Star Point counter; BRICKS counter;
@@ -533,7 +533,7 @@ to commits and re-pinned when a file changes (after the cooldown commits, four r
 | Creatures Simple Version | 5★ 26, 4★ 42, 3★ 47, 2★ 17 (hand-picked) | 1 | none |
 | Items (complete) | 4★ 30, 3★ 89 (Piko Piko Hammer since 2026-10-22), 2★ 96, 1★ 39 | usual count 1 (1★: 2); 3★: 18 cards at 2-3 copies; 2★: 21 cards at 2-5 copies (Metronome, Stopwatch ×5; Bomb, Basic Shield, Pep Drink ×3); 1★: 9 cards at 1 | twin set at "Items Copy" |
 | Items Simple Version | 4★ 17, 3★ 68, 2★ 75, 1★ 30 (hand-picked) | same pattern (Metronome, Stopwatch ×4) | none |
-| Field Items | 4★ 10 (White Palace to The Morgue, b6330730), 3★ 12, 2★ 18, 1★ 9 | 1 | twin set at "Field Items Copy" |
+| Field Cards | 4★ 10 (White Palace to The Morgue, b6330730), 3★ 12, 2★ 18, 1★ 9 | 1 | twin set at "Field Cards Copy" |
 | N.M.E Items | 26 | 1 | "N.M.E. Items Copy" |
 | All Status Effects | 64 (12 buffs + 52 debuffs) | 1 | 3 decks (2 on "All Status Effects", 1 "Status Effects Copy"); back `MDW/cardback_statuseffect.png` |
 | Minions | 99 = Auxiliary/Minions 91 + Auxiliary/Creatures 7 + Stubborn Queen | 1 | 3 decks (2 + "Minions Copy") |
@@ -547,8 +547,8 @@ the Penalty Box Creatures tile), Z!!!!! (5★, replacing the renamed ZOEY!!!!!),
 items), and Militron (No Armor), Anubisath Guardian, Qiraji Soldier, Silithid (minions).
 
 ### 7.2 Bags, counters, markers, tiles
-- Rulebooks: Custom_Model_Bag with 46 page cards ("Page N: Title"); the two covers are not in it (0000_Cover_Book.png
-  is the bag's own texture).
+- Rulebooks: Custom_Model_Bag holding one Custom_PDF "Rulebook" (`TTS/Rulebook/Rulebook.pdf`, printed from the chapters).
+  At this snapshot it held 46 page cards ("Page N: Title").
 - Creature Types: Bag of 19 Custom_Token: Offensive Minion, Defensive Minion, Machine, Wind, Rock, Panda, Fire, Ice, Water,
   Electric, Undead, Dark, Light (lightshadow.png), Dark Matter, Unknown, Girl, No Type (null.png), Star (star.png),
   No Star (Null Star.png).
@@ -560,14 +560,14 @@ items), and Militron (No Armor), Anubisath Guardian, Qiraji Soldier, Silithid (m
 - Counters on the table (43): HP 10, DEF 10, ATK 8, SPD 8, Points 2, Star Points 2, Bricks 2, Global Turn 1.
 - 36 unnamed Green/Red .5 tiles: 4 beside each of the 6 Creature Holders (24) and 12 near the bags.
 - Holders and tiles: Creature Holder ×6 (3 per side, one per lane slot), Item Holder ×6 (facedown items, "Holds 1 card"),
-  Minion Holder ×2, Active Holder ×2 (tokens), Field Item Holder ×2, Graveyard ×2, Discard Pile, Item Shop, Field Shop,
+  Minion Holder ×2, Active Holder ×2 (tokens), Field Card Holder ×2, Graveyard ×2, Discard Pile, Item Shop, Field Shop,
   N.M.E. Shop, deck tiles (Creatures, Creatures Copy, Creatures Developer Version, Baseline Creatures, Creatures Simple
-  Version, Items, Items Copy, Items Simple Version, Field Items, Field Items Copy, N.M.E Items, N.M.E. Items Copy, All
+  Version, Items, Items Copy, Items Simple Version, Field Cards, Field Cards Copy, N.M.E Items, N.M.E. Items Copy, All
   Status Effects ×2, Status Effects Copy, Minions ×2, Minions Copy, Auxiliary Items ×2, Auxiliary Items Copy).
 - Penalty boxes: "Penalty Box Creatures" (Graveyard image) and "Penalty Box Items" (Discard image), both described
   "Needs to be changed"; the loose Militron card sits on Penalty Box Creatures. The rulebook does not mention a penalty box.
 - Turn markers: 6 BlockSquare "Has not taken its turn". RNG: Die_6_Rounded "Redirection Cube", Quarter "Order
-  Determinator". Also 2 go bowls "Pebbles", 16 HandTriggers, a Custom_Board (`MDW/Raid_Boss_Table_Top.png`), "Flex Table
+  Determinator" (ch 04). Also 2 go bowls "Pebbles", 16 HandTriggers, a Custom_Board (`MDW/Raid_Boss_Table_Top.png`), "Flex Table
   Control".
 - Large cards: Lua `resizeTargets` keyed by Nickname (case-sensitive): Azamoth the Possessed Vessel, Igor Roballtowski,
   Mettaton EX, Mettaton NEO, Militron (No Armor), Morpho Knight, Shadow Queen: exactly the 7 Auxiliary/Creatures cards,
@@ -576,23 +576,22 @@ items), and Militron (No Armor), Anubisath Guardian, Qiraji Soldier, Silithid (m
 ## 8. How the bot and the website expose the rules
 
 Bot (AutoCroissant, `main.py` + `commands/query_card.py`):
-- `/query_rulebook search_text [limit]`: plain case-insensitive substring (regex-escaped) over the 48 rulebook entries
-  (`rulebook_dff`, rows whose path contains "Rulebook"); no DSL; results sorted by page name; each page's text sent with
-  `render_type_tokens` (icons as emojis). The frame's ability column is lowercased, so the replies are lowercase text.
-  Empty search returns every page.
-- `/export_rulebook`: a text file of every rulebook page (non-ASCII stripped).
+- `/query_rulebook search_text [limit]`: plain case-insensitive substring over the chapters (`db/rulebook.json`,
+  `rulebook_dff`); no DSL; the reply quotes the matching lines under their chapter names, the chapters with the most
+  matches first, as written, with `render_type_tokens` (icons as emojis). An empty search asks for a word or phrase.
+- `/export_rulebook`: a text file of every chapter, in book order (non-ASCII stripped).
 - `/query name`: card image by fuzzy file-name match (works for status effect cards, e.g. "poison", and for Types/ icons).
 - `/query_ability query [limit] [howmany]`: the DSL over every non-rulebook card with ability text. For status effects
   and types: `type==debuff`, `type==buff`, `type==debuff & stars==3`, `types~debuffstack`, `types~debuffupgrade`,
   `types~undead`, `type~creature` (creature + the 7 large "creatures"), `subtype==equip`, text like `(1gcd)`, `"2t1 poison"`,
   `[fire]`, `can't affect [ice]`. The query is lowercased; `|` splits before `&`; `!` negates text only. It searches the
-  bot's `stats.pkl` (new tags since PICKLE `3888392`): `(1gcd)` hits 82 cards and `(1pt)` none (only the rulebook page
-  11 Abilities2 still holds it).
+  bot's card data, without the rulebook: `(1gcd)` hit 82 cards and `(1pt)` none at this snapshot (old tags are only in
+  ch 23's conversion table).
 - `/website`: link to https://michaeljsr.github.io/TTSCardMaker.
 
 Website (`site/`):
-- Rulebook tab (`#/rules`): every page image + text, a search box ("Search the rulebook…"), a "Timing tags" glossary (21
-  badges with their tooltips, old ones last; section 2) and the "Constructed ban list" section; each page has an Edit button.
+- Rulebook tab (`#/rules`): the chapters (section 6), a search box ("Search the rulebook…"), links to the PDF, the TTS pages
+  and game.txt, and the "Constructed ban list" section; each chapter has Edit and History buttons.
 - Cards tab: kinds Creatures, Items, Field cards, Minions, N.M.E. items, Auxiliary items, Status effects (buffs +
   debuffs), Auxiliary creatures; flags incl. "Unused status effects", "Duplicates", "Edited on the website"; banned cards
   get a "Banned" flag in the deck builder. Search uses the bot's syntax plus `total`, `name~`, `subseries~`, `!` on any

@@ -1,6 +1,6 @@
 ---
 name: autocroissant-run-and-operate
-description: Day-to-day operations runbook for the AutoCroissant Discord bot. Load this when the task sounds like "run the bot", "start the bot", "stop", "restart", "deploy", "update the bot", "pull the code", "switch machines" / "handoff to the other machine", "sync commands" / "commands not showing up after deploy", "run update_stats", "local mode vs remote mode", "set a reminder" / "schedule a command" / "reminder didn't run" / "/reminders panel" / "reminder.json", "sync emojis" / "/sync_emojis" / "type emojis not showing", "TTS save" / "Tabletop Simulator save" / "TTS/decks.json", "card guards" / "CARD_GUARDS" / "push guards" / "stale PNG" / "standards channel", or "where do files go" (exports, music downloads, temp files). Contains the start command and healthy startup output, on_ready init order, stop/restart (jetson systemd), the command-sync model, the ANATOMY of /pull and /update (theirs on a conflict, force_reset, every failure message; live triage is autocroissant-debugging-playbook; /push and the pickles were removed 2026-10-25), the machine handoff runbook, the /update_stats operating rule (just run it), artifact locations, reminder, type-emoji and TTS-save operations, a guild-admin table, and (section 12) the bot's card data: "cutover", "card sync", "card_data/", "ACTIONS_TOKEN", "refresh on use" (card commands sync themselves, /update_stats syncs the Card sync Action's data branch, force_update and cards dispatch a run, /fonts from the data).
+description: Day-to-day operations runbook for the AutoCroissant Discord bot. Load this when the task sounds like "run the bot", "start the bot", "stop", "restart", "deploy", "update the bot", "pull the code", "switch machines" / "handoff to the other machine", "sync commands" / "commands not showing up after deploy", "run update_stats", "local mode vs remote mode", "set a reminder" / "schedule a command" / "reminder didn't run" / "/reminders panel" / "reminder.json", "sync emojis" / "/sync_emojis" / "type emojis not showing", "TTS save" / "Tabletop Simulator save" / "TTS/decks.json", "card guards" / "CARD_GUARDS" / "push guards" / "stale PNG" / "standards channel", or "where do files go" (exports, music downloads, temp files). Contains the start command and healthy startup output, on_ready init order, stop/restart (jetson systemd), the command-sync model, the ANATOMY of /pull and /update (theirs on a conflict, force_reset, every failure message; live triage is autocroissant-debugging-playbook; /push and the pickles were removed 2026-10-25), the machine handoff runbook, the /update_stats operating rule (just run it), artifact locations, reminder, type-emoji and TTS-save operations, a guild-admin table, and (section 12) the bot's card data - "cutover", "card sync", "card_data/", "ACTIONS_TOKEN", "refresh on use" (card commands sync themselves, /update_stats syncs the Card sync Action's data branch, force_update and cards dispatch a run, /fonts from the data).
 ---
 
 # AutoCroissant: Run and Operate
@@ -54,7 +54,8 @@ Trying to open reminder.json.                          <- init_reminder (or "No 
 Card data loaded from card_data: 819 cards             <- init_psd: card_sync.startup's local copy (no network)
 Card list: 1101 entries from the saved tree           <- the card list from card_tree.json (no network; since 2026-10-25)
 Card data is already current: built 12 min ago from TTSCardMaker@1a2b3c4d (run: <...>).   <- its sync (one conditional request)
-Loaded 771 cards and 48 rulebook entries               <- prep_dataframes (query_card.py); counts vary
+Loaded 771 cards                                       <- prep_dataframes (query_card.py); counts vary
+Loaded 24 rulebook chapters                            <- the same, from db/rulebook.json
 Stats database initialized.
 Card list: 1131 entries, tree unchanged               <- init_query: GitHub's tree, a 304 on the saved ETag ("fetched" when it moved)
 Repo history: 2268 files at f219a126 (0.3s)            <- refresh_history (repo_history.py:230); 2026-10-23
@@ -699,7 +700,7 @@ text instead of a code block, because code blocks don't render emojis.
   and slash in the same red as the font's `:no`. The font side of these names: ttscardmaker-companion.
 - **Requires discord.py 2.5+** (application-emoji API; `requirements.txt` says `discord.py>=2.5`).
 - **Not yet run against live Discord** (offline fake-client test only, docs/BUGS_AND_IMPROVEMENTS.md V1). On the
-  first live start, check the terminal line above, then run `/query_rulebook` on a page with icons.
+  first live start, check the terminal line above, then run `/query_rulebook` on a chapter with icons.
 
 ## 12. The bot reads Card sync's data
 
@@ -870,3 +871,5 @@ rendered anyway; no cited line moved.
 2026-10-25 (cardlist, work/cardlist): `card_tree.json` (B-3a): the card list from the saved tree at startup, `init_query` run by `init_psd` after its sync (on_ready queues four inits); the startup output, the init table and the artifacts table; `init_query` runs even when `init_psd` fails.
 
 2026-10-25 (wrap-up): section 7's TTS save names each variant picture by its own PNG; the bake's census fixes bullet.
+
+2026-11-01 (chapters): the startup output's rulebook line; §11 searches a chapter.

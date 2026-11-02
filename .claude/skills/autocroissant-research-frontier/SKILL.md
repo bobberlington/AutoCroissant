@@ -35,15 +35,15 @@ Jargon used below, defined once:
 ## Item 1 — Game-grounded question answering (CANDIDATE)
 
 Ambition (A). Goal: a friend asks "can I stack two debuffs on one creature?" and gets a
-correct answer *with a citation to the rulebook page or card that proves it*.
+correct answer *with a citation to the rulebook chapter or card that proves it*.
 
 ### Why the current state falls short
 
-- `/query_rulebook` is a case-insensitive **substring** search over the 48 rulebook pages'
-  text (`rulebook_search_engine`, commands/query_card.py:410 — one `str.contains` call; since 2026-10-24 it
-  posts the matching lines with their page names, not whole pages; wrapper `query_rulebook` :1071).
+- `/query_rulebook` is a case-insensitive **substring** search over the rulebook's
+  chapters (`rulebook_search_engine`, commands/query_card.py:513 — one `str.contains` call; it
+  posts the matching lines with their chapter names; wrapper `query_rulebook` :1190).
   Ask it a question and it matches nothing unless your words appear verbatim.
-- `/query_ability` is a hand-rolled DSL (`ability_search_engine`, query_card.py:307): `|` OR,
+- `/query_ability` is a hand-rolled DSL (`ability_search_engine`, query_card.py:436): `|` OR,
   `&` AND, `!` NOT, `"exact"` word-boundary, numeric `hp>5`, `type==creature`, `series~kirby`,
   else substring + difflib fuzzy above `match_ratio` (0.6 default). Powerful for people who
   know the DSL; useless for natural questions.
@@ -53,10 +53,10 @@ correct answer *with a citation to the rulebook page or card that proves it*.
 
 | Asset | Where | Why it matters |
 |---|---|---|
-| 813 structured cards | `stats.pkl` (765 cards + 48 rulebook pages) | The knowledge base already exists — no scraping project needed |
-| Rulebook as plain text | `export_rulebook_to_file` (commands/psd_analyzer.py:300) writes `rules.txt`; `/export_rulebook` (main.py:466) | 48 pages of game rules, one function call away |
-| Cards as CSV | `export_stats_to_file` (psd_analyzer.py:205) writes `stats.csv` with an aliases column; `/export_cards` (main.py:453) | Structured stats + ability text in one table |
-| Type-annotated ability text | `_inject_type_names` (psd_parser.py:901) already embeds `[water]`, `[ice]` etc. inline | Icon semantics are already textual — a retriever can match on them |
+| 813 structured cards | `stats.pkl` (765 cards + 48 rule pages; rule pages are not cards since 2026-10-30) | The knowledge base already exists — no scraping project needed |
+| Rulebook as plain text | `export_rulebook_to_file` (commands/psd_analyzer.py:262) writes `rules.txt` from the website's chapters (`db/rulebook.json`); `/export_rulebook` (main.py:426) | The game's rules, one function call away |
+| Cards as CSV | `export_stats_to_file` (psd_analyzer.py:167) writes `stats.csv` with an aliases column; `/export_cards` (main.py:413) | Structured stats + ability text in one table |
+| Type-annotated ability text | `_inject_type_names` (psd_parser.py:1506) already embeds `[water]`, `[ice]` etc. inline | Icon semantics are already textual — a retriever can match on them |
 | Synonym map | `aliases.pkl` — 60 alias→filename entries (e.g. `red_bloon` → `pod01red_bloon.png`) | Free query-expansion vocabulary |
 | A live friend group | the bot's actual users | Real questions, real ground truth, real judges — most hobby QA projects never have this |
 
@@ -64,9 +64,11 @@ correct answer *with a citation to the rulebook page or card that proves it*.
 
 **Step 1 — Build the corpus OUTSIDE the bot.** Do not touch bot code yet. Either run
 `/export_rulebook` and `/export_cards` from Discord when the bot is up (files land in the repo
-root, gitignored via `*.txt`/`*.csv`, .gitignore:71-72), or build offline from the pickle.
+root, gitignored via `*.txt`/`*.csv`, .gitignore:72-73), or build offline from the pickle.
 This exact snippet was dry-run 2026-07-11 and produced 48 pages / 765 cards (expect two
-"Git token found" line only when run through main.py; the card modules print nothing since 2026-10-20):
+"Git token found" line only when run through main.py; the card modules print nothing since 2026-10-20).
+It is that day's record: `stats.pkl` went on 2026-10-25, and the rules now live only in
+`~/Desktop/TTSCardMaker/site/rulebook/NN-slug.md`:
 
 ```bash
 cd /Users/michaelsrouji/Desktop/AutoCroissant   # unpickling CardInfo needs repo cwd + config.py
@@ -91,9 +93,9 @@ EOF
 
 **Step 2 — Create the eval set FIRST (the durable asset; zero dependencies).** Collect 20
 real questions from the friend group (scroll the Discord server; ask them), write the
-ground-truth answer for each with the rulebook page or card name that proves it. One TSV/MD
+ground-truth answer for each with the rulebook chapter or card name that proves it. One TSV/MD
 file, e.g. `.claude/skills/autocroissant-research-frontier/eval/rules_qa_v1.md`, format:
-`question | correct answer | citation (page/card name)`. This file outlives every model,
+`question | correct answer | citation (chapter/card name)`. This file outlives every model,
 library, and approach you will ever try; it is the single most valuable artifact of this whole
 item. Committing it routes through autocroissant-change-control like any repo change.
 
@@ -111,7 +113,7 @@ autocroissant-change-control).
 ### You have a result when...
 
 **>= 15 of the 20 eval questions are answered correctly WITH a citation to the right rulebook
-page or card name — measured against the eval file, not vibed.** Predict your score before
+chapter or card name — measured against the eval file, not vibed.** Predict your score before
 each run (autocroissant-research-methodology). A baseline that scores 8/20 is a real result
 too: it is the number every fancier approach must beat.
 
@@ -351,7 +353,7 @@ commands. Line numbers drift — re-find with the greps below before trusting th
 
 | Volatile fact | Re-verify with (cwd = repo root) |
 |---|---|
-| 813 cards / 48 rulebook pages / type distribution | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py` |
+| Card count / type distribution (rule pages left the data on 2026-10-30) | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py --db origin/data --git ~/Desktop/TTSCardMaker` |
 | Rulebook search is substring | `grep -n "str.contains" commands/query_card.py` (inside `rulebook_search_engine`; def: `grep -n "def rulebook_search_engine" commands/query_card.py`) |
 | Ability DSL location | `grep -n "def ability_search_engine" commands/query_card.py` |
 | Export functions / filenames | `grep -n "def export_" commands/psd_analyzer.py; grep -n "EXPORTED_" commands/psd_analyzer.py` |
@@ -385,3 +387,5 @@ changing old questions invalidates every historical score.
 2026-10-23 (unbatch): the rulebook and ability search citations, the export functions and their commands re-pointed.
 
 2026-10-25 (step 10): Item 4 marked done (the card data build replaced the pickles-in-git state).
+
+2026-11-01 (chapters): citations and assets name the website's chapters, the only home of the rules.

@@ -36,7 +36,7 @@ by **impossibility-cards-reference §4.1**. This skill only summarizes it.
 | Website output | `site/dist/`, thumbnail cache `site/.cache/` (both gitignored by `site/.gitignore`) | Generated |
 | Pages workflow | `.github/workflows/site.yml` | Source |
 | TTS global script (2026-10-30) | `TTS/Global.lua` and `TTS/Global.xml`: the save's global script and UI, written into the save by tts_save on every save update (`_global_script`; the `resizeTargets` rows are generated from `Auxiliary/Creatures`). Owner: never edit the save's script by hand; a push of either file starts Card sync; drift.py fails a save whose script differs from the file | Source |
-| Rulebook (2026-10-29) | `site/rulebook/NN-slug.md` (one chapter each; pictures in `img/`, fonts in `fonts/`), written on the website (each chapter's Edit, `site/assets/rulebook-edit.js`; drawn by `rulebook.js`, syntax in its header); the TTS PDF `TTS/Rulebook/Rulebook.pdf` (+ `pages.json`, each page's pixel hash: printed again only when one changes) printed from the website's `#/rules/print` by Card sync's main lane (`commands.rulebook_pages`, the runner's Chrome; real text, about 9 MB) and put in the save's Rulebooks bag as one Custom_PDF object by tts_save (the Photoshop pages and their bag taken out of the save 10-30; the page PNGs of 10-29 05:00 replaced). The Timing Tags chapter (`23-timing-tags.md`) is the badges' meanings site-wide (its table -> cards.json `tagMeanings` -> text.js `setTagMeanings`; "(XCD)" rows stand for families); the ban list is edited on the rulebook page (admins, `openBans`); pictures placed anywhere are `{.free x= y= width=}` in % of their panel; the bot reads `db/rulebook.json`. the Photoshop pages moved to `MDW/Old Rules/Rulebook/` on 2026-10-30 (the first rules pages to `MDW/Old Rules/Very Old Rulebook/`); the data build reads no rule pages (card_data drops them, never archived), and the Rulebooks bag wears `MDW/Assets/Book_Cover.png`; the table's assets (card backs, holders, markers, felts, models, asset bundles) are all in `MDW/Assets` since 10-30, nothing hosted outside the repo | Source |
+| Rulebook (2026-10-29) | `site/rulebook/NN-slug.md` (24 chapters, the only home of the game's rules; pictures in `img/`, fonts in `fonts/`), written on the website (each chapter's Edit, `site/assets/rulebook-edit.js`; drawn by `rulebook.js`, syntax in its header); the TTS PDF `TTS/Rulebook/Rulebook.pdf` (+ `pages.json`, each page's pixel hash: printed again only when one changes) printed from the website's `#/rules/print` by Card sync's main lane (`commands.rulebook_pages`, the runner's Chrome; real text, about 9 MB) and put in the save's Rulebooks bag as one Custom_PDF object by tts_save (the Photoshop pages and their bag taken out of the save 10-30; the page PNGs of 10-29 05:00 replaced). The Timing Tags chapter (`23-timing-tags.md`) is the badges' meanings site-wide (its table -> cards.json `tagMeanings` -> text.js `setTagMeanings`; "(XCD)" rows stand for families); the ban list is edited on the rulebook page (admins, `openBans`); pictures placed anywhere are `{.free x= y= width=}` in % of their panel; the bot reads `db/rulebook.json`. the Photoshop pages moved to `MDW/Old Rules/Rulebook/` on 2026-10-30 (the first rules pages to `MDW/Old Rules/Very Old Rulebook/`); the data build reads no rule pages (card_data drops them, never archived), and the Rulebooks bag wears `MDW/Assets/Book_Cover.png`; the table's assets (card backs, holders, markers, felts, models, asset bundles) are all in `MDW/Assets` since 10-30, nothing hosted outside the repo | Source |
 | TTS save | card-sync.yml's "TTS save" step since the cutover (2026-10-24): keeps `TTS/Impossibility Simulator.json` current with the bot's updater (`--names` from the new data), rules `TTS/decks.json`, the save committed in Card sync's main commit M by its main lane (30 minutes after the first card push of a burst, card-sync.yml's push timer since 2026-10-24; the data lane runs at once since 2026-10-25), the baked PNGs' links re-pinned by a second commit right after; `.github/workflows/tts-save.yml` did it until then and is deleted (§2.6, its history) | Source |
 | Font check | a step of `card-guards.yml`'s check job since 2026-10-25 (`.github/workflows/font-check.yml` before; on a push changing a PSD or `MDW/Fonts/`: the fonts the pushed cards ask for that `MDW/Fonts` lacks, as a job summary, a commit comment and a Discord role ping in the standards channel, secret `DISCORD_STANDARDS_WEBHOOK` since the owner's ruling of 2026-10-22 (`DISCORD_FONT_WEBHOOK` before, now deleted); the only role ping of the checks' posts; never reverts; §3) | Source |
 | Card check | a step of `card-guards.yml`'s check job since 2026-10-25 (`.github/workflows/card-check.yml` before, 2026-10-21, push guard rule 2: on a push changing a PSD (its `site/Card Edits.json` and `Types/` triggers dropped: it checks only pushed PSDs), the bot's parser and validator notes for the pushed PSDs, as a job summary, a commit comment and a Discord post at once with plain wording and no ping (owner, 2026-10-23); AutoCroissant `commands/card_check.py`, from the guards' sparse list `card_guards.SPARSE_FILES`, the `DISCORD_STANDARDS_WEBHOOK` secret (the standards channel); never reverts; §3) | Source |
@@ -106,13 +106,13 @@ Notes:
 - **Tags without badges:** the commonest is `(n points)` (68). It isn't a rulebook abbreviation, so it gets no badge
   unless the owner wants one. `(Action)` (36) has had one since 2026-10-22 (owner decision, §1.2).
 
-### 1.2 Timing-tag badges (341: the rulebook's 70 + the cards' 270 + `(Action)`)
+### 1.2 Timing-tag badges (341: the first 70 + the cards' 270 + `(Action)`)
 
 **Badges are part of the font going forward** (the user adopted them on 2026-10-19). `badge_tags()` in
 build_stoogedings.py defines two vocabularies and one extra tag:
-- **Rulebook (old system), 70:** the tags of page "02 Abbreviations", 10 fixed tags plus 6 patterns × 10 values of n
-  (1–9 and X). They stay: on the cards they were replaced on 2026-10-21, but the pages 02_Abbreviations,
-  11_Abilities2, 11_Abilities4 and 22_Negation still use them.
+- **The first 70:** the tags of the old Photoshop page "02 Abbreviations" (`MDW/Old Rules/`), 10 fixed tags plus 6
+  patterns × 10 values of n (1–9 and X). All keep their badges. `nPT`, `EnT`, `FTEnT`, `nPGT`, `EnGT` were replaced on
+  the cards on 2026-10-21, and the rules show them only in ch 23's conversion table (`23-timing-tags.md`); the rest are current.
 - **Cards (2026-10-21), 270:** the team's cooldown update (TTSCardMaker df02b3b..7cb4c86; tags and counts in
   impossibility-simulator-rules §3). `nCD`, `nGCD`, `nU` over the same 10 values of n = 30, plus `a/bCD` and `a/bGCD`
   with a in -1, 0–9, X (12) and b in 1–9, X (10) = 240. The a/b range covers every two-number tag on the cards:
@@ -165,11 +165,11 @@ Glyph names: `badge_` + the tag with `/` → `_` and `-` → `m` (`badge_1_2CD`,
 The label draws `-` as a real minus sign U+2212 (`BADGE_LABEL`); the website does the same. `(OPT)` (Bobberlington, Michael) is in neither vocabulary
 and stays text.
 
-The colors are the rulebook's groups (`BADGE_GROUPS`, page "02 Abbreviations"). The cooldowns sit beside the old
+The colors are the rulebook's groups (`BADGE_GROUPS`, ch 23's first panel). The cooldowns sit beside the old
 tags they replaced; `nU` (which replaced the n of `nPT`/`nPGT` on some cards) sits beside `nPG`, the other counted
 tag, in the trigger group (orchestrator decision 2026-10-21; the owner may revise):
 
-| Group (color) | Rulebook tags (old system) | Cards' tags (2026-10-21) |
+| Group (color) | The first 70 (old: `nPT`, `EnT`, `FTEnT`, `nPGT`, `EnGT`) | Cards' tags (2026-10-21) |
 |---|---|---|
 | turn, on your turn (blue `#4f86f7`→`#2563eb`) | `OYT`, `nPT`, `EnT`, `FTEnT` | `nCD`, `a/bCD` |
 | any, at any time (purple `#9f67ff`→`#7c3aed`) | `AAT`, `nPGT`, `EnGT` | `nGCD`, `a/bGCD` |
@@ -180,14 +180,12 @@ tag, in the trigger group (orchestrator decision 2026-10-21; the owner may revis
 Grey for `(Action)` because it says what kind of ability it is, not when it can be used: a fifth hue would read as a
 fifth time frame, and grey stays clear of the four group colors (white label contrast about 7.6:1 on `#475569`).
 
-Website tooltips (`tagInfo()` in text.js) follow the letters only, no invented rules: "Cooldown: 2 turns", "Global
-cooldown: 2 global turns", "Cooldown: 1 turn, then 2", the same in global turns for `a/bGCD`, "2 uses" (X stays
-"X"). `count()` gives the singular for 1 and -1 ("Cooldown: 1 turn", "1 use", "Global cooldown: -1 global turn,
-then 1"). Some read oddly because they are literal ("0 turns, then 1", "X global turns, then X"). The old tags keep
-their meanings, prefixed "Old system: ". `(Action)`'s tooltip is "Action"; the rules glossary lists it under
-"Other tags" (`GROUP_NAMES.neutral`). The site reads ability text from stats.pkl, so the new badges appear there only after an
-`/update_stats` + `/push` and a site rebuild (2026-10-21: stats.pkl was PICKLE 56b43b9, before the update; 175 of
-the 178 changed cards still showed old tags).
+Website tooltips (`tagInfo()` in text.js) are ch 23's table: the tag's own row, or its X family's (`XCD` for (2CD)):
+(2CD) "Cooldown: needs 2 turns of charge", (1GCD) "Global cooldown: needs 1 turn of charge", (1/2CD) "Cooldown: starts
+with 1 of 2 turns of charge", (2U) "2 uses per full charge". `GAME_TAGS` in build_site.py (game.txt) has the same
+words. Pairs ch 23 doesn't list keep the literal fallback: (0/3CD) "Cooldown: 0 turns, then 3", (2/3GCD) "Global
+cooldown: 2 global turns, then 3". Old tags are prefixed "Old system: " ("Old system: Now (1CD)").
+`(Action)`'s tooltip is "Costs the creature's action", under "Other tags" (`GROUP_NAMES.neutral`).
 
 Shape (revised 2026-10-19, confirmed in Photoshop 2023 on 2026-10-20 with the reinstalled font): a pill about
 0.95 em tall with label capitals about 0.55 em, the label centred, color only — no extra symbol on multi-turn
@@ -580,8 +578,8 @@ python -m http.server -d site/dist 8000            # open http://localhost:8000
 | **Speed pass** (2026-10-24): one `route()` per navigation (a card closes without a redraw unless `viewSig()` changed or the view under it is still `.loading`), cached date formatters (`dateFmt`), the grid reuses its tile nodes (`gridTiles`) and draws the window's tiles first, Table rows in chunks (a collapsed `tbody.sizer` of the rest's widest rows, measured on a canvas, holds the column widths), Back/Forward draws at once (`history.state.drawn`), a card opened from a link draws no grid behind it, the grid kept across redraws (`keepGrid`, `fillGrid` reconciles tiles in place; 2026-10-25, Safari's flash, NOTES §36), index.html's first 8 tiles adopted in place (`adoptFirst`; removed and back on 2026-10-25, NOTES §31), lazy type icons, preload hints (the grid's first pictures on index.html: `grid_preload`; the 720 px picture on `c/<id>/`); build: `?v=` stamps by content, site.yml `paths`, `build.txt` (no deploy gate: owner's call). The rules code must keep: TTSCardMaker `site/NOTES.md` §27 (its AutoCroissant tests went with the 2026-10-25 test cut) | `site/assets/app.js`, `text.js`, `stats.js`, `site/build/build_site.py` |
 
 **Vocabulary** (the user's rule, 2026-10-20): use the game's own terms, per the rulebook, never invented ones.
-- **Card groups:** creatures, minions ("for most purposes considered creatures"), items, **field cards** (the field is
-  the play area), **N.M.E. items**, **auxiliary** items/creatures, status effects / buffs / debuffs.
+- **Card groups:** creatures, minions ("for most purposes considered creatures"), items, **field cards** (never "field
+  items"; the field is the play area), **N.M.E. items**, **auxiliary** items/creatures, status effects / buffs / debuffs.
 - **Types:** the creature and item types on a card.
 - **Other terms:** stars, abilities, global turn.
 - **"Slot"** means one of the 3 field positions, so the hand builder never calls its places slots.
@@ -650,7 +648,7 @@ bot ran the updater itself after `/update_stats`; this Action replaced that.
   left to the team (custom fields, descriptions: 2026-10-22): the updater never changes them on an existing card
   (links in them are not re-pinned) and new cards start with them empty. The one-time role-tag clearing is retired.
 - **Deck rules** (`TTS/decks.json`, 2026-10-22): the 7 "Specific Item Decks" are complete rules (count 1, back
-  `MDW/cardback_item.png`, 94 cards); Piko Piko Hammer is in the 3★ item decks too; the four "Creatures Developer
+  `MDW/Assets/cardback_item.png`, 94 cards); Piko Piko Hammer is in the 3★ item decks too; the four "Creatures Developer
   Version" decks have `add_new_since: 318001ea` (the save's first commit): each gains every creature of its
   stars the save then lacked (renames followed by blob; a card moved to other stars moves deck with it, nothing else
   moves; no record is
@@ -696,13 +694,13 @@ bot ran the updater itself after `/update_stats`; this Action replaced that.
   from one `onObjectRotate`. No Lua patterns over long text (MoonSharp "pattern too complex"). Nothing has run in TTS
   itself yet; `TTS/checks/lua_mock.py` tests it (since 10-30).
 - **Checks:** `TTS/checks/` (its README: what each checks, interpreters, variables). `run_all.py` runs all 24 on the
-  save in about 4 minutes: structure, serializer, CustomDeck collisions, drift against 0ee01372 (moved by each deliberate hand edit), deck contents, names,
+  save in about 4 minutes: structure, serializer, CustomDeck collisions, drift against 2fecc66d (`drift.py` BASELINE, moved by each deliberate hand edit), deck contents, names,
   backs, rules, the Lua (lupa mock of the TTS API on the save's objects: teams, shared hand zones, card details, rulebook and finder panels, markers, no Lua patterns; `lua_mock.py <save> <file.lua>` tries a Global.lua change before it reaches the save), link pins and HTTP, the updater run as the Action runs it, its
   report and commit subject, and the daily gate against real history (names hashed from the bot's stats.pkl at
   3888392 and 39da9ed). Drift fails on any change to an existing card's Description, GMNotes, Memo, Tags or scripts and
   on the global Lua outside resizeTargets. Any Python with `requests` and `Pillow`; the
   Lua checks need `lupa`. The names checks follow the live website, so between a data commit and the next run they fail
-  (`contents_names`, `final_spot`, `updater_idempotent`; 24 of 24 after the 2026-10-22 update).
+  (`contents_names`, `final_spot`, `updater_idempotent`; 24 of 24 at c6b1e144, 2026-11-01).
   `AUTOCROISSANT` defaults to `~/Desktop/AutoCroissant`; `updater_report_decks.py` needs that checkout to have the
   updater as on main since 2026-10-22 (pull first, or point `AUTOCROISSANT` at a clone that has it).
 
@@ -743,7 +741,7 @@ Full notes: TTSCardMaker `site/NOTES.md` §19; user docs: `site/README.md` Editi
   or alias (2+ letters), and only when none of those match (3+ letters) a typo's (a start one edit away, two from 6
   letters: `[fier` → fire, field); types before stars, then the most used in the cards' text, then by name; an exact
   name is followed by its variants. After `name:`, `VARIANTS` (= the bot's `ICON_VARIANTS`: tint, sticker, no, glow,
-  darkglow). After `(`, the font's 341 badge tags (`badge_tags`, the cards' own first, the rulebook's old ones last;
+  darkglow). After `(`, the font's 341 badge tags (`badge_tags`, the cards' own first, the first 70 last;
   up to 7 characters, `(-1/2GCD)`) starting with what was typed; text that starts in lower case or holds a space
   never opens it ("(see below)"); "(Only once)" opens at "(O" and closes at "(On". Accepting writes the canonical
   `[name]`, `[name:variant]` or `(TAG)` over what was typed; text after the caret stays (`[fi|and ice` → `[fire]and
@@ -1187,3 +1185,5 @@ quiet window an environment (AutoCroissant docs/Campaigns/PUSH_GUARDS.md section
 2026-10-25 (P-2, TTSCardMaker work/mainlane): §0's card guards row: one main lane per guarded push.
 
 2026-10-25 (wrap-up): §2.1 Duplicates row and §2.5 (variant pictures are duplicates; /query's duplicate and artwork lines); §2.4 gained the Filters and the card page / editor rows, and the speed pass row the kept grid and the first screen's return.
+
+2026-11-01 (chapters, field cards): §0's rulebook row, §1.2's old tags and tooltips, §2.4's vocabulary, §2.6's drift baseline, against TTSCardMaker c3eb51a6 and c6b1e144; the save's tiles renamed in 2fecc66d: 1f4935, 0942e7 "Field Card Holder", 1c6e7f "Field Cards", b83429 "Field Cards Copy" (and decks.json's where-labels); ban list group "Field Cards".

@@ -66,7 +66,7 @@ Observed live subtrees (2026-07-11): `Items/` subtypes = Active, Attack, Counter
 Heal, Infliction, Negation, Support; `Field/` and `Items/*/` have `1 Stars`..`4 Stars`; Creatures
 series (24 of them: BTD, Kirby, Souls, World Of Warcraft, ...) have star folders in roughly the
 `2 Stars`..`5 Stars` range; `Auxiliary/` contains Creatures, Items, Markers, Minions, Rulebook,
-Status Effects.
+Status Effects. On 2026-10-30 the Photoshop rule pages moved to `MDW/Old Rules/` and Markers to `MDW/Assets/Markers/`.
 
 **The stars parse** (`CardClassifier._stars`, psd_parser.py:368-373; called at 348, 353, 380, 406) is:
 
@@ -140,7 +140,7 @@ counted from the PSD since 2026-10-23 (`psd_parser.STARS_FROM_PSD`); the stored 
 
 `EXCLUDE_FOLDERS = ["Markers", "MDW"]` (card_data.py:45) is checked against every path segment
 during stats traversal and duplicate-PNG detection (card_data.py:412, 752). `MDW/` (90 PSDs) is
-Photoshop templates — card backs, `.aco`/`.atn` assets; `Auxiliary/Markers/` (1 PSD) is a board
+Photoshop templates — card backs, `.aco`/`.atn` assets; `MDW/Assets/Markers/` (1 PSD) is a board
 marker. Neither reaches `stats.pkl` (verified: 0 MDW-typed entries). The `MDW` classifier branch is
 therefore dead in normal traversal; it only matters if `classify` is called on such a path directly
 (e.g. by `parse_one.py`).
@@ -378,8 +378,8 @@ There are four new parse-time problems, all persisted:
 
 **Badges.** The font also turns timing tags typed in it, such as `(1GCD)`, `(1/2CD)`, `(2U)` or `(OYT)`, into
 colored pill badges (exact uppercase only), adopted as part of the font on 2026-10-19; the cards' cooldown and uses
-tags of 2026-10-21 join the rulebook's old tags, which stay (tag list, count, look and sizes: ttscardmaker-companion
-§1.2; meanings: impossibility-simulator-rules §3). That is purely a rendering ligature: the text is still `(1GCD)`,
+tags of 2026-10-21 replaced `nPT`, `EnT`, `FTEnT`, `nPGT` and `EnGT`, which keep their badges; the rules show them only in ch 23's
+conversion table (tag list, count, look and sizes: ttscardmaker-companion §1.2; meanings: `site/rulebook/` ch 2, 11 and 23). That is purely a rendering ligature: the text is still `(1GCD)`,
 so the parser stores it unchanged, and nothing in AutoCroissant parses badges. Matching rule for the
 parser: a tag in parentheses is never a token, because tokens need square brackets.
 
@@ -652,7 +652,7 @@ both to the repo root (gitignored). Rulebook entries are excluded from card expo
 `CardRepository` (`commands/query_card.py:98`, singleton `card_repo` at :1160) maintains
 `git_files`: lowercase png filename → repo path, built from one GitHub trees API call
 (`populate_files` :130). It indexes EVERY `.png` in TTSCardMaker — including `Types/` icons,
-`Auxiliary/Markers`, and MDW card backs; `EXCLUDE_FOLDERS` applies only to stats traversal, not
+`MDW/Assets/Markers`, and MDW card backs; `EXCLUDE_FOLDERS` applies only to stats traversal, not
 here. So `/query panda` can legitimately return a type icon.
 
 Lookup (`lookup` :613, 2026-10-24) normalizes to `name.replace(' ', '_').lower() + '.png'`, then: an exact key
@@ -686,7 +686,7 @@ card_data's duplicate names) and aliases are edited on the website (`/alias` and
 
 Search runs over `cards_dff`, a pandas DataFrame built from stats.pkl (`prep_dataframes`
 :575): index = card names, columns = the dict keys of section 6, **ability column lowercased**,
-rulebook pages split into a separate `rulebook_dff`, and rows with no ability text (MDW-style)
+the rulebook's chapters in a separate `rulebook_dff` (gotcha 9), and rows with no ability text (MDW-style)
 excluded entirely. Refreshed at startup and queued after every `/update_stats`.
 
 | Syntax | Meaning | Example |
@@ -734,8 +734,8 @@ gotcha-4 unknown-field error; `series==mario & subseries~door` is the website's 
    punctuation-tolerant.
 9. The rulebook is NEVER returned by `/query_ability`; use `/query_rulebook` (case-insensitive words with any
    spacing over `rulebook_dff`, no DSL). Since 2026-10-29 `rulebook_dff` is the website's chapters (`db/rulebook.json`,
-   `commands/rulebook.py`: 23 chapters, index "7. Stats"), not the Photoshop pages (still parsed into stats, left out of
-   both tables). It posts the matching LINES under their chapter names (`rulebook_lines`; long lines cut to SNIPPET
+   `commands/rulebook.py`: the contents and chapters 1-23, index "7. Stats"), not the Photoshop pages (history in
+   `MDW/Old Rules/`, not cards since 2026-10-30). It posts the matching LINES under their chapter names (`rulebook_lines`; long lines cut to SNIPPET
    around the match, the match in bold outside emoji markup), the chapters with the most lines first.
 10. One result posts its image URL alone (a preview, via `get_card_url`; its name when the PNG is not in the tree).
     Two or more come as grid images since 2026-10-25 (`post_grids`, commands/card_grid.py): 20 cards per JPEG (4 x 5,
@@ -835,3 +835,5 @@ change, sections 4-5 are stale until rewritten.
 2026-10-26 (lane 1): §2 star counting is `PSDParser.stars_drawn` (pieces judged together, masks read, layers outside the group named after a star icon), shared with the bake; the `display_name` row gains title rule P. PARSER_VERSION 5.
 
 2026-10-26 (stars lane): §2 a star core is over half opaque (129/255); the bake's 10-26 star cases (shadows, textures, plain banners, banner rows, die faces, V funnel, the closest refusal).
+
+2026-11-01 (chapters): §4.1's old tags, §7.2's `rulebook_dff`, and the Photoshop pages' move to `MDW/Old Rules/`, against TTSCardMaker c6b1e144.

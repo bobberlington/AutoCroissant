@@ -10,6 +10,8 @@ names and mentions, guard R14, TTS panel buttons and speed), `session-2026-10-30
 badges, TTS names and panels, History revert, rulebook to scale) and `session-2026-10-30/README.md` (the rulebook on the website, its editor, the TTS
 save's panels; 10-26's in `session-2026-10-26/`). `docs/Future/` holds only the problem-cards lists; nothing is in flight.
 
+**2026-11-01 (rulebook batch):** all 32 📖 messages of Discord pending-updates are in `site/rulebook/` (TC `c3eb51a6`), forwarded to finished-updates and deleted; TTS save's field item tiles named field cards, drift baseline `2fecc66d`; the rules skill now cites the chapters (its Photoshop extract deleted). Procedure: memory `discord-pending-updates`. Open from it, for the owner: cards counting lanes as turns (Delicate Flower, The Last Cabbage Merchant, Time Riddle, Asteroid Field, Forget Me Now, NME Salesman, Lost Kin), the tensions in the rules skill's Known gaps, uneven slots in pair turns (White Palace).
+
 First: the owner's checks of the new TTS panels in a real game (below), then the problem-cards list, then the campaign
 tasks in the order the owner picks.
 

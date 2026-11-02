@@ -89,7 +89,7 @@ Metric definitions (verified 2026-07-11; counts updated 2026-10-23):
   `/update_stats cards:Shadow Duelist` (it prints no ability).
 - **Residual-gap cards**: cards whose STORED ability still contains a 3+ space run (a gap that
   received no icon). Today 10 (unchanged until the `cards:` re-parse of the padding fix): 00 Table of Contents,
-  04 Table3, 06 Reading Cards, 08 Global Turn (rulebook pages) + `Michael's Blessing`,
+  04 Table3, 06 Reading Cards, 08 Global Turn (rule pages, not cards since 2026-10-30) + `Michael's Blessing`,
   `Miracle Matter`, `Pile Of Swords`, `Twin Emperors`, `Warcraftian Druid`, `Warcraftian Hunter`.
   These 6 are the standing Phase 2 suspect list. 2026-10-23 (fixes-1023): a line's leading gap no type fills is
   dropped as padding, so after a re-parse Twin Emperors and Warcraftian Druid have none; Michael's Blessing,
@@ -662,3 +662,5 @@ is a token card since TTSCardMaker 1c24dd48); psd_parser.py glossary lines re-po
 2026-10-25 (retire): /update_metadata retired (branch archive/discord-edits); the manual-entry row and paragraph point at the website.
 
 2026-10-25 (step 10): the promotion step and the force_update citation follow the card data build (no pickles, no repo_traverser).
+
+2026-11-01 (chapters): the residual-gap list says its four rule pages are not cards.
