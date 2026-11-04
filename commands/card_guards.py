@@ -9,15 +9,14 @@ always sets unsaid, box text that rewraps redrawn and its PNG re-exported: only 
 badges fitted, timing tags set as badges: R1 then untold),
 rule pages included, the PNG re-exported the same way. One report per push: the job
 summary and commit comment (report.md), one Discord post for the standards channel (discord.json: no mentions, no
-previews), and a plan of the writes (plan.json) that `land` commits once, right after the check (a 30-minute quiet window
-until 2026-11-03: RECENT, now 0). Each card
-pushed over an older PSD carries what changed inside it (psd_diff: "added Ability FX: Blazing", "Name text: 'a' -> 'b'").
+previews), and a plan of the writes (plan.json) that `land` commits once, right after the check. Each card pushed
+over an older PSD carries what changed inside it (psd_diff: "added Ability FX: Blazing", "Name text: 'a' -> 'b'").
 Every card PNG the push brought is recompressed losslessly in that commit (owner, 2026-10-23; png_export.recompress,
 the same pixels) when that saves more than 10% and 64 KiB (our thresholds), and so is every PNG the bot writes.
 
     python -m commands.card_guards check --clone <dir> --after <sha> [--before <sha>] [--repo <owner/name>] [--author <login>]
                                          [--cards <names>] [--whole-tree] [--mode dry|report|on] --out <dir>
-    python -m commands.card_guards land --plan <out>/plan.json [--quiet-from <ISO time>] [--dry-run] [--local <clone>] [--rerun]
+    python -m commands.card_guards land --plan <out>/plan.json [--dry-run] [--local <clone>] [--rerun]
 
 A landed commit's changelog events (guard-png: a PNG re-made or recompressed; guard-fix: a fix the guards landed; the
 Single-line Composer none) go to guard-events.json beside the plan, which card-guards.yml uploads and Card sync's data
@@ -25,10 +24,10 @@ job reads (card_data --guard-events): the Changes page shows them, never Discord
 
 check reads trees from a local clone (the Action's blobless checkout with its history; a full clone locally) and blobs
 from it or, when it lacks them, by sha through the API (verified). It writes nothing to the card repo, ever: a dry run
-and a replay are the same command. land re-reads the branch head, drops a card whose PSD or PNG moved or that a later
-push touched (card_bake.recent_paths), and makes one commit (git_commit.commit_files; --local: in a clone, nothing
-pushed). The guards' own commits and the bake's, the save's and Card sync's are skipped (the AutoCroissant author or
-github-actions; a path a person also changed in the range is still guarded). No Discord or config imports (the token:
+and a replay are the same command. land re-reads the branch head, drops a card whose PSD or PNG moved, and makes one
+commit (git_commit.commit_files; --local: in a clone, nothing pushed). The guards' own commits and the bake's, the
+save's and Card sync's are skipped (the AutoCroissant author or github-actions; a path a person also changed in the range
+is still guarded). No Discord or config imports (the token:
 config through github_api, else GITHUB_TOKEN); SPARSE_FILES is what card-guards.yml checks out: the import closure (the card
 and font checks' too, run in its check job) and requirements-cards.txt.
 """
@@ -44,7 +43,6 @@ from re import fullmatch, sub
 from subprocess import CalledProcessError, TimeoutExpired
 from sys import stderr
 from tempfile import TemporaryDirectory
-from time import sleep as _sleep
 from traceback import format_exc
 from typing import Callable, Optional
 
@@ -52,7 +50,7 @@ import commands.card_standards as standards
 import commands.png_export as png_export
 import commands.psd_diff as psd_diff
 import commands.psd_edit as psd_edit
-from commands.card_bake import RECENT, Snapshot, fetch_verified, local_snapshot, recent_paths, snapshot_at
+from commands.card_bake import Snapshot, fetch_verified, local_snapshot, snapshot_at
 from commands.card_check import vocabulary
 from commands.card_edits import CardAuthors
 from commands.font_check import face_names, is_card_psd, tree_fonts
@@ -88,7 +86,6 @@ SUPPRESS_EMBEDS = 4                             # Discord message flag: no link 
 URL_SHA = 12                                    # hex digits of a commit link (GitHub resolves it; 28 characters a line saved)
 NOBODY = "Someone"
 NOREPLY = r"(?:\d+\+)?([A-Za-z0-9-]+)@users\.noreply\.github\.com"   # a GitHub noreply email names its login
-QUIET_MARGIN = timedelta(0)                    # land waits RECENT plus this after the push (owner 2026-11-03: no wait; 60 s before)
 ANCHOR_WINDOW = timedelta(hours=2)              # a burst: PSD commits this close to the push may stand in for its PNG's PSD
 POOL_MIN = 8                                    # checks of this many cards or more run in a process pool (2 on a runner)
 POOL_MAX = 4                                    # local pools at most this many (each runs git); runners use every core (K-2)
@@ -1276,29 +1273,21 @@ def _holds(entry: dict, path: str, blob: str) -> bool:
     return blob == entry.get("expect", {}).get(path, "") or (bool(blob) and blob in _ours(entry).get(path, ()))
 
 
-def _drawn(entry: dict, here: Head, recent: Optional[set]) -> list:
+def _drawn(entry: dict, here: Head) -> list:
     """A card's writes as they may land: when a PNG re-exported for R8's redraw cannot, the PSD lands switched but not
     redrawn (its plain) and no other such PNG lands, so the PSD and its PNGs never disagree."""
     writes = entry["writes"]
     if not any(w.get("plain") for w in writes):
         return writes
     redraw = [w for w in writes if w["kind"] == "png" and w.get("composer")]
-    if not any(_superseded(entry, w, here, recent) for w in redraw):
+    if not any(_superseded(entry, w, here) for w in redraw):
         return writes
     return [{**w, "pixels": [], **w["plain"], "plain": None} if w.get("plain") else w for w in writes if w not in redraw]
 
 
-def _superseded(entry: dict, write: dict, here: Head, recent: Optional[set]) -> str:
-    rests = _rests_on(entry, write)
-    moved = [p for p in rests if not _holds(entry, p, here(p))]
-    if moved:
-        return f"superseded: {moved[0]} changed on the branch"
-    if here(write["path"]) == write["sha"]:
-        return ""                               # already there (checked by the caller): no later push to look for
-    if recent is None:
-        return "superseded: too many pushes to tell"
-    touched = sorted(p for p in rests if p.lower() in {r.lower() for r in recent})
-    return f"superseded: a later push touched {touched[0]}" if touched else ""
+def _superseded(entry: dict, write: dict, here: Head) -> str:
+    moved = [p for p in _rests_on(entry, write) if not _holds(entry, p, here(p))]
+    return f"superseded: {moved[0]} changed on the branch" if moved else ""
 
 
 def _bot_changed(repository: str, local: str, head: str, path: str) -> bool:
@@ -1422,16 +1411,14 @@ def events_of(entry: dict, write: dict, drawn: list) -> list:
     return [{"kind": "guard-fix", **base, "line": "; ".join(said)}] if said else []
 
 
-def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bool = False, local: str = "",
-         rerun: bool = False, sleep: Callable[[float], None] = _sleep, now: Callable[[], datetime] = _now) -> dict:
+def land(plan_path: str, repository: str = "", dry_run: bool = False, local: str = "", rerun: bool = False) -> dict:
     """
-    After the quiet window (quiet_from + RECENT), commit a plan's writes once (G9) and settle what the one Discord post
-    says (after_window). A write is left out when its card no longer holds the blobs it rests on (a PSD fix rests on its
-    PSD alone, a PNG on the whole card; any letter case; an R8 redraw lands plain without its PNGs) or, after a push's window, a later push touched them; a write the
-    branch already holds (a re-run after a landing) is not written again. The rest is one commit on the branch head
-    (retried on a moved head, COMMIT_TRIES times); --local commits in that clone instead (nothing pushed). dry_run (report
-    mode) commits nothing. Without quiet_from (a dispatch) nothing waits and the blob check alone decides: the pushes in the
-    last 30 minutes would include the checked push itself. Never raises once the plan is read: any failure is the error.
+    Commit a plan's writes once (G9) and settle what the one Discord post says (after_window). A write is left out when
+    its card no longer holds the blobs it rests on (a PSD fix rests on its PSD alone, a PNG on the whole card; any letter
+    case; an R8 redraw lands plain without its PNGs); a write the branch already holds (a re-run after a landing) is not
+    written again. The rest is one commit on the branch head (retried on a moved head, COMMIT_TRIES times); --local
+    commits in that clone instead (nothing pushed). dry_run (report mode) commits nothing. Never raises once the plan is
+    read: any failure is the error.
     rerun (a re-run or a dispatch: an earlier run may have landed the writes): when the branch could not be read, no
     write is told as not made ("unread").
 
@@ -1450,12 +1437,6 @@ def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bo
               "dry": dry_run, "unread": False, "events": []}
     if not entries and not any(entry.get("told") for entry in data["cards"]):
         return report
-    if quiet_from:
-        mark = datetime.fromisoformat(quiet_from.replace("Z", "+00:00")) + RECENT + QUIET_MARGIN
-        wait = (mark - now()).total_seconds()
-        if wait > 0:
-            print(f"Waiting {wait / 60:.1f} min for the quiet window.", file=stderr)
-            sleep(wait)
     tip, bot_moved = None, frozenset()
     try:
         files = _read_files(out_dir, entries)
@@ -1463,20 +1444,15 @@ def land(plan_path: str, repository: str = "", quiet_from: str = "", dry_run: bo
         for _ in range(COMMIT_TRIES if not local else 1):
             tip = local_snapshot(repository, local) if local else snapshot_at(repository, ref_head(repository))
             here = Head(tip)
-            # a clone alone has no push times; a dispatch's window would hold its own push. A first attempt's from the
-            # push, not now: the post job may start after the window, and pushes made during the check count too. A
-            # re-run's from now, as before (from the push, a late one counts the whole day's pushes)
-            recent = (recent_paths(repository, tip.head, now() if rerun else min(now(), mark), local)
-                      if repository and quiet_from else set())
             included, report["dropped"], report["already"], told = [], [], [], []
             for entry in entries:
-                drawn = _drawn(entry, here, recent)
+                drawn = _drawn(entry, here)
                 for write in entry["writes"]:
                     if write not in drawn and write["kind"] == "png":
-                        why = _superseded(entry, write, here, recent) or "superseded: the PSD landed without the redraw"
+                        why = _superseded(entry, write, here) or "superseded: the PSD landed without the redraw"
                         report["dropped"].append([entry["card"], why, write["path"]])
                 for write in drawn:
-                    why = _superseded(entry, write, here, recent)
+                    why = _superseded(entry, write, here)
                     if why:
                         report["dropped"].append([entry["card"], why, write["path"]])
                     elif here(write["path"]) == write["sha"]:
@@ -1563,10 +1539,9 @@ def main(args: Optional[list] = None) -> int:
                      help="dry, report or on (CARD_GUARDS, any case): the report's wording")
     one.add_argument("--workers", type=int, default=0, metavar="N", help="processes for 8 cards or more (0: every core on a runner, else half the cores, at most 4)")
     one.add_argument("--out", required=True, metavar="DIR", help="report.md, discord.json, plan.json and the artifacts")
-    two = sub.add_parser("land", help="commit a plan's writes once, after the quiet window")
+    two = sub.add_parser("land", help="commit a plan's writes once")
     two.add_argument("--plan", required=True, metavar="FILE", help="check's plan.json (its files beside it)")
     two.add_argument("--repo", default="", metavar="OWNER/NAME", help="the card repo (default: the plan's)")
-    two.add_argument("--quiet-from", default="", metavar="ISO", help="the push time: land waits until 30 min after it")
     two.add_argument("--dry-run", action="store_true", help="decide what would land, commit nothing (needed for a plan not checked with --mode on)")
     two.add_argument("--local", default="", metavar="DIR", help="commit in this clone (nothing pushed)")
     two.add_argument("--rerun", action="store_true",
@@ -1588,7 +1563,7 @@ def main(args: Optional[list] = None) -> int:
             return 1
         print(data["markdown"], end="")
         return 0
-    report = land(options.plan, options.repo, options.quiet_from, options.dry_run, options.local, options.rerun)
+    report = land(options.plan, options.repo, options.dry_run, options.local, options.rerun)
     finish(options.plan, report)
     if report["error"]:
         print(f"Not landed: {report['error']}")

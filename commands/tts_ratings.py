@@ -79,7 +79,7 @@ def _span(labels: tuple) -> tuple:
 
 
 def tier_of(value: float) -> int:
-    """The category a value falls in, 0-4 (edges 2.5, 4.5, 6.5, 8.5): build_site tier_of, ratings.js tierOf."""
+    """The category a value falls in, 0-4 (edges 2.5, 4.5, 6.5, 8.5): ratings.js tierOf too."""
     return max(0, min(4, floor((value - 0.5) / 2)))
 
 

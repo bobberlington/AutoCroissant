@@ -5,14 +5,13 @@ TTSCardMaker's site/Card Edits.json into the card PSDs and PNGs, one commit per 
     python -m commands.card_bake --repo MichaelJSr/TTSCardMaker --head <sha> [--dry-run] [--card <Name>] [--pending]
                                  [--local <clone>] [--verdicts <db/verdicts.json>]
     run(repository, head, dry_run, card, pending_only, local, verdicts) -> (markdown report, commit shas: one at most)
-    pending(repository, head, local, verdicts) -> the cards a live run has work for; due() those past the grace (RECENT, none since 2026-11-03)
+    pending(repository, head, local, verdicts) -> the cards a live run has work for
 
 Input: one tree snapshot at head and blobs by sha (the card folders are never checked out). A website-only field (the
 entry's `_site`, owner 2026-10-25) is never baked, dropped or given a verdict: it stays in the file. Per card named in the
-file with a PSD-kind field: refuse `recent` (PSD or PNG pushed in the last 30 min), fetch its PSD and official PNG (gate
-`blob`), classify the edits against a fresh offline parse (psd_edit.classify), apply them with every gate
-(psd_edit.apply_jobs; an ability edit also makes its FX layers again, Effect Layers.jsx's Update all: section 7 idea 14,
-BUG 2).
+file with a PSD-kind field: fetch its PSD and official PNG (gate `blob`), classify the edits against a fresh offline parse
+(psd_edit.classify), apply them with every gate (psd_edit.apply_jobs; an ability edit also makes its FX layers again,
+Effect Layers.jsx's Update all: section 7 idea 14, BUG 2).
 Then one commit on the branch's current head (land): every baked card's PSD and PNG and the file rewritten with the
 baked and redundant fields removed (a Python port of edit.js editsFile), through git_commit (the GitHub API, or git
 objects in the history clone pushed over SSH when the token can't write). A card whose PSD, PNG or edit changed meanwhile
@@ -24,7 +23,7 @@ merges them into the data (card_data --verdicts, --events). A verdict is read fr
 --local (card-sync.yml's stage 1, docs/Campaigns/DATA_BUILD_ACTION.md 6.3): the tree and blobs come from a local clone
 (blobless is enough; a blob it lacks by REST) and the run's commit B is made there on head, pushed by no one here; a
 checkout at head moves to B, and the report says where HEAD is. A --head the clone lacks is a failed run (a report,
-exit 1, no B). The recent gate diffs the clone's trees when it has the pushes' base (head may be a previous B).
+exit 1, no B).
 A name edit with `_rename` (the editor's "Also rename the card's files", owner 2026-10-25) also renames the card's PSD and
 PNGs in that commit (plan_rename), with Renamed trailers and the files keyed by the card (rename_edits, side_files).
 Refusals are data: one bad card never blocks another, and a refused stars or types edit never blocks its card's other
@@ -78,9 +77,6 @@ from global_config import (AUTHORS_PATH, CARD_BRANCH, CARD_REPO, CREATED_PATH, E
 # ========================
 # Configuration
 # ========================
-RECENT = timedelta(0)                          # a PSD or PNG pushed more recently is its author's (owner 2026-11-03: no wait; 30 min before)
-PUSHES = 100                                    # activity entries per request (GitHub's max)
-COMPARE_FILES = 300                             # a compare lists at most this many files
 SUBJECT = "Card edits"                          # the run's commit: "Card edits: 5 baked, 20 redundant, 4 refused"
 EDIT_BY = "Edit-by"                             # trailer key per editor credited (TTSCardMaker build_site.EDIT_BY)
 NO_PNG = "no PNG beside the PSD"
@@ -88,7 +84,7 @@ RULES = "2026-10-26"        # a refused verdict's rules: one written under older
 #   refused; 10-26: Lane 2's bars, titles and website-only fields)
 MAX_BAKES = 40                                  # PSD edits per run; the rest wait for the next run (a title took ~30 s)
 BUDGET = timedelta(minutes=40)                  # no card starts later: the commit lands within the job's 60 min
-TRANSIENT = ("recent", "head-moved", "edit-changed", "capped")   # try-again refusals: not a verdict for the editor
+TRANSIENT = ("head-moved", "edit-changed", "capped")   # try-again refusals: not a verdict for the editor
 EXCLUDE_FOLDERS = ("Markers", "MDW")            # not cards (card_data.EXCLUDE_FOLDERS)
 WORK_ENV = "RUNNER_TEMP"                        # the Action's temp dir; the work dir is card-bake/ in it
 WORK_NAME = "card-bake"
@@ -321,14 +317,6 @@ def _local_blob(clone: str, sha: str) -> Optional[bytes]:
     return done.stdout if done.returncode == 0 else None
 
 
-def _local_commit_exists(clone: str, sha: str) -> bool:
-    try:
-        return run_process(["git", "-C", clone, "cat-file", "-e", f"{sha}^{{commit}}"], capture_output=True,
-                           timeout=GIT_TIMEOUT, env={**environ, **NO_LAZY}).returncode == 0
-    except (TimeoutExpired, OSError):
-        return False
-
-
 def local_snapshot(repository: str, clone: str, head: str = "") -> Snapshot:
     """The card repo at a commit of a local clone (head "" = its HEAD): git ls-tree, no API, never truncated."""
     head = _git_local(clone, "rev-parse", "--verify", f"{head or 'HEAD'}^{{commit}}").strip()
@@ -367,38 +355,6 @@ def fetch_verified(repository: str, sha: str, path: str = "", local: str = "") -
         with open(path, "wb") as fh:
             fh.write(data)
     return data
-
-
-def recent_paths(repository: str, head: str, now: datetime, local: str = "") -> Optional[set]:
-    """
-    The paths that pushes within RECENT of now changed, up to head: by push time, not commit date (two requests at most).
-
-    Args:
-        local: --local's clone: the paths from its trees when it has the window's base (head may be a commit GitHub
-            lacks, a previous B), else by the compare API
-
-    Returns:
-        The paths, or None when there were too many pushes or files to tell, or no compare (a force push)
-    """
-    if not RECENT:                              # no grace: nothing is recent (no request)
-        return set()
-    since = (now - RECENT).strftime("%Y-%m-%dT%H:%M:%SZ")
-    pushes = api(repository, "GET", "activity", params={"ref": CARD_BRANCH, "time_period": "day", "per_page": PUSHES}).json()
-    window = [push for push in pushes if (push.get("timestamp") or "") >= since]
-    if not window:
-        return set()
-    base = min(window, key=lambda push: push["timestamp"]).get("before") or ""
-    if len(window) >= PUSHES or not base.strip("0"):  # a new branch has no before
-        return None
-    if local and _local_commit_exists(local, base):
-        return {p for p in _git_local(local, "diff", "--no-renames", "--name-only", "-z", f"{base}...{head}").split("\0") if p}
-    reply = api(repository, "GET", f"compare/{base}...{head}", check=False, params={"per_page": 1})
-    if not reply.ok:                            # 404/422 after a force push: can't tell
-        return None
-    files = reply.json().get("files") or []
-    if len(files) >= COMPARE_FILES:
-        return None
-    return {f["filename"] for f in files} | {f["previous_filename"] for f in files if f.get("previous_filename")}
 
 
 # ========================
@@ -1231,7 +1187,7 @@ def _printed_already(snapshot: Snapshot, card: Card, parser, folder: str) -> boo
     return True
 
 
-def _rename_printed(snapshot: Snapshot, card: Card, folder: str, duplicates: list, pushed: set, claimed: frozenset) -> None:
+def _rename_printed(snapshot: Snapshot, card: Card, folder: str, duplicates: list, claimed: frozenset) -> None:
     """A printed name's rename on a card without PNG or with numbered PNGs (tagged or not): every file takes it."""
     stem = basename(card.rel)[:len(basename(card.rel)) - 4]
     card.pictures = {**({1: card.png} if card.png else {}),
@@ -1239,8 +1195,6 @@ def _rename_printed(snapshot: Snapshot, card: Card, folder: str, duplicates: lis
     plan_rename(snapshot, card, claimed)
     for png in card.renames:
         if png != card.rel:
-            if png in pushed:
-                raise Refused("recent", f"PNG pushed in the last {RECENT.seconds // 60} min")
             card.expect[png] = snapshot.sha(png)
             snapshot.fetch(card.expect[png], join(folder, "old", basename(png)))
     _relocate(card, folder)
@@ -1260,9 +1214,9 @@ def _smaller(path: str) -> bytes:
 
 
 def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Callable[[], Optional[dict]], work: str,
-              recent: Callable[[], Optional[set]], claimed: frozenset = frozenset()) -> None:
+              claimed: frozenset = frozenset()) -> None:
     """
-    Section 5 for one card up to the commit: the recent, duplicate and blob gates, classify, apply with every gate.
+    Section 5 for one card up to the commit: the duplicate and blob gates, classify, apply with every gate.
     Fills the Card in place (its files, expect, verdict and dropped fields for land); a Refused becomes its refusal,
     any other exception its "error".
 
@@ -1273,7 +1227,6 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         fonts_dir: MDW/Fonts for the text engine
         chart: Returns status_fills() of the status chart, or None when the tree has none (fetched once)
         work: The run's work dir (the card's artifacts go in a folder named after it)
-        recent: Returns recent_paths() (fetched once)
         claimed: Card keys the run's earlier cards rename to (plan_rename)
     """
     started = perf_counter()
@@ -1285,17 +1238,12 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                 card.pngs = snapshot.pngs_key("", card.key)
                 raise Refused("duplicate", f"a numbered PNG exported from `{original}`")
             raise Refused("unsupported-card", "no PSD in the card repo")
-        pushed = recent()
-        if pushed is None:
-            raise Refused("recent", f"too many pushes in the last {RECENT.seconds // 60} min to tell")
-        if card.rel in pushed:
-            raise Refused("recent", f"PSD pushed in the last {RECENT.seconds // 60} min")
         card.png, duplicates = snapshot.png_for(card.rel)
         if not card.png or duplicates:
             card.pngs = snapshot.pngs_key(card.rel, card.key)
             if _printed_already(snapshot, card, parser, folder):    # nothing to bake: dropped though no PNG can be
                 if card.rename:                 # its files still take the name
-                    _rename_printed(snapshot, card, folder, duplicates, pushed, claimed)
+                    _rename_printed(snapshot, card, folder, duplicates, claimed)
                 return
         if not card.png:
             raise Refused("unsupported-card", NO_PNG)
@@ -1306,9 +1254,6 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                               + " (tag the variant layers: PARTS_EDITOR.md §9)")
         if card.view is not None and card.view not in (card.pictures or {1: card.png}):
             raise Refused("unsupported-card", f"no picture {card.view}")
-        for png in [card.png] + [p for n, p in sorted(card.pictures.items()) if n != 1]:
-            if png in pushed:                   # a teammate's re-export: the merge would build on it unseen
-                raise Refused("recent", f"PNG pushed in the last {RECENT.seconds // 60} min")
         card.png_sha = snapshot.sha(card.png)
         old_psd, old_png = join(folder, "old", basename(card.rel)), join(folder, "old", basename(card.png))
         snapshot.prefetch([card.png] + [png for n, png in card.pictures.items() if n != 1])   # beside the PSD
@@ -1827,20 +1772,14 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
                             snapshot.fetch(snapshot.sha(psd_edit.STATUS_CHART), path)
                             colors.append(psd_edit.status_fills(PSDImage.open(path)))
                     return colors[0]
-                pushed: list = []               # recent_paths(), read once
                 claimed: set = set()            # the card keys earlier cards rename to: one name, one card
-
-                def recent() -> Optional[set]:
-                    if not pushed:
-                        pushed.append(recent_paths(repository, head, datetime.now(timezone.utc), local))
-                    return pushed[0]
                 for one in cards:
                     baked = sum(1 for c in cards if c.baked)
                     if baked >= MAX_BAKES or perf_counter() - started >= BUDGET.total_seconds():
                         one.refusal = Refusal("capped", f"{baked} cards baked in {(perf_counter() - started) / 60:.0f} min "
                                                         f"(at most {MAX_BAKES} or {BUDGET.seconds // 60} min a run)")
                         continue
-                    bake_card(snapshot, one, parser, fonts, chart, work, recent, frozenset(claimed))
+                    bake_card(snapshot, one, parser, fonts, chart, work, frozenset(claimed))
                     if one.renames and one.refusal is None:
                         claimed.update(CardAuthors.key(card_name(new)) for new in one.renames.values())
                 waiting = sum(1 for c in cards if c.refusal and c.refusal.code == "capped")
@@ -1871,8 +1810,7 @@ def pending(repository: str = CARD_REPO, head: str = "", local: str = "", verdic
     """
     The schedule's change gate: the cards a live run has work for at head, i.e. a PSD-kind edit
     without a final verdict (final(); build_site.apply_edits shows a refusal by the same rule); a baked field leaves the
-    file. So new, changed and redundant edits, try-again refusals (recent, head-moved, edit-changed, capped, runner
-    errors), refused cards whose PSD changed since, `font` refusals whose MDW/Fonts changed and `duplicate` or no-PNG
+    file. So new, changed and redundant edits, try-again refusals (head-moved, edit-changed, capped, runner errors), refused cards whose PSD changed since, `font` refusals whose MDW/Fonts changed and `duplicate` or no-PNG
     refusals whose PNGs changed are pending, and after a complete live run nothing is.
 
     Args:
@@ -1884,20 +1822,6 @@ def pending(repository: str = CARD_REPO, head: str = "", local: str = "", verdic
         file isn't JSON (the gate step fails and Discord is told)
     """
     return [card.name for card in _pending(repository, head, local, verdicts)[1]]
-
-
-def due(repository: str = CARD_REPO, head: str = "", local: str = "", verdicts: str = "") -> list:
-    """
-    pending()'s cards a run can bake now: PSD and PNG not pushed within RECENT (Card sync's Pending edits step). []
-    while the pushes can't be told (the bake would refuse them all `recent`).
-    """
-    snapshot, cards = _pending(repository, head, local, verdicts)
-    if not cards:
-        return []
-    pushed = recent_paths(repository, snapshot.head, datetime.now(timezone.utc), snapshot.local)
-    if pushed is None:
-        return []
-    return [card.name for card in cards if not card.rel or not {card.rel, snapshot.png_for(card.rel)[0]} & pushed]
 
 
 def main(args: Optional[list] = None) -> int:
@@ -1941,7 +1865,6 @@ __all__ = [
     'Snapshot',
     'Transient',
     'bake_card',
-    'due',
     'dump_edits',
     'editors',
     'failure',
@@ -1954,7 +1877,6 @@ __all__ = [
     'main',
     'pending',
     'psd_fields',
-    'recent_paths',
     'records',
     'refusal_verdict',
     'render',

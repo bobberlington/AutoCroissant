@@ -58,9 +58,8 @@ from global_config import RULEBOOK_DIR
 # ========================
 STATUS_CHART = "MDW/Croissant's Special Folder/Satus Effect Colors.psd"   # one text layer per status; its fill is the color
 FONTS_DIR = "MDW/Fonts"
-CODES = ("duplicate", "unsupported-card", "stat>10", "recent", "blob", "parity", "styled-word", "font", "overflow",
-         "bytes", "size", "region", "shape", "reparse", "idempotence", "edit-changed", "head-moved", "capped", "error",
-         "integrity")
+CODES = ("duplicate", "unsupported-card", "stat>10", "blob", "parity", "styled-word", "font", "overflow", "bytes",
+         "size", "region", "shape", "reparse", "idempotence", "edit-changed", "head-moved", "capped", "error", "integrity")
 STAT_FIELDS = ("hp", "def", "atk", "spd")
 TEXT_FIELDS = ("name", "ability")
 ICON_FIELDS = ("stars", "types")                # printed as icons; refused per field, never for the card (owner, 2026-10-23)

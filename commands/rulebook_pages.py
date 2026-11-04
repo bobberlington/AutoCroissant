@@ -55,7 +55,7 @@ PRINT_CSS = ("@page { size: 1080px 1920px; margin: 0 } "   # one sheet a page, n
              "@media print { body > :not(main), main > :not(.rb-sheets) { display: none !important } "
              "main { padding: 0 !important; margin: 0 !important; max-width: none !important } .rb-sheets { display: block !important } "
              ".rb-sheets .rb-sheet { zoom: 1 !important; box-shadow: none !important; break-after: page; margin: 0 !important } }")
-SHEET = (1080, 1920)                           # a page, as the Photoshop pages were (rulebook.js SHEET)
+SHEET = (1080, 1920)                           # a page, as the Photoshop pages were (rulebook.js draws them)
 WAIT_SECONDS = 180                             # for the website to load and cut its pages
 # what the pages draw (key()): the sheets' HTML (text, and the pictures' and assets' URLs, which carry their content's
 # stamp), the style sheets, the loaded fonts; with UNSTAMPED, the folders the CSS reads by plain URL

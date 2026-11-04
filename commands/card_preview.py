@@ -12,8 +12,8 @@ PNG the bake would commit, recompressed losslessly where oxipng is installed), p
 card view's width) and before.webp (the card's official PNG made the same way: the site's Diff compares like with like).
 The edit is the card's Card Edits.json entry as it would be published (any of its fields; the PSD-kind ones are baked,
 `creatures` gates the stats as in the bake, `_`-keys are ignored); result.json's `edit` is it exactly as sent, without
-the `_`-keys. Not the bake's: the `recent` gate (a preview races nobody: it commits nothing). Exit 0, 2 for a bad input,
-1 for any other error (result.json's `transient`: try again). Every dispatched value printed goes through clean().
+the `_`-keys. Exit 0, 2 for a bad input, 1 for any other error (result.json's `transient`: try again). Every dispatched
+value printed goes through clean().
 No Discord or config imports; SPARSE_FILES is what card-preview.yml checks out: the import closure and
 requirements-cards.txt.
 """
@@ -327,7 +327,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
                     snapshot.fetch(snapshot.sha(psd_edit.STATUS_CHART), path)
                     colors.append(psd_edit.status_fills(PSDImage.open(path)))
             return colors[0]
-        card_bake.bake_card(snapshot, one, parser, fonts, chart, work, lambda: set())   # no `recent` gate: nothing is committed
+        card_bake.bake_card(snapshot, one, parser, fonts, chart, work)
         state, transient, reason, outcomes = outcome(one)
         result.update(state=state, transient=transient, reason=reason, fields=outcomes, notes=notes_of(one))
         if one.traceback:

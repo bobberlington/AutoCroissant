@@ -1,7 +1,7 @@
 """
 card_guards (the push guards' driver): a card repo made here with git (fixture PSDs, every case of PUSH_GUARDS.md 4.2,
 bot commits left out), check end to end on it (the report, the one Discord post without mentions or previews, the plan),
-land against a fake GitHub (superseded cards, a moved head, the quiet wait) and in a local clone, the replay of the real
+land against a fake GitHub (superseded cards, a moved head) and in a local clone, the replay of the real
 push 38c55bd3..07589cc7 from the card clone (read-only: God Tamer, Bubble and 12 Reactions2 "PNG still current"), the
 Action's sparse copy (SPARSE_FILES), card-guards.yml's shape, and its steps' shell against a fake gh and curl (one post
 per push, the failure streak, a re-run's lookups and window, the refused dispatch, MODE in any case).
@@ -11,7 +11,6 @@ import os
 import re
 import shutil
 import subprocess
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from sys import executable
 
@@ -25,13 +24,6 @@ from commands.github_api import blob_sha
 from conftest import CLONE
 from helpers import art, card, fixture_psd, photoshop_png
 
-
-@pytest.fixture
-def thirty(monkeypatch):
-    """The 30-minute grace of before 2026-11-03 (RECENT is 0 now, owner: nothing waits): the machinery when it is set."""
-    import commands.card_guards as guards
-    monkeypatch.setattr(__import__('commands.card_bake', fromlist=['RECENT']), "RECENT", timedelta(minutes=30))
-    monkeypatch.setattr(guards, "RECENT", timedelta(minutes=30))
 
 # ========================
 # Configuration
@@ -448,14 +440,13 @@ def test_message():
 # land
 # ========================
 class FakeHub:
-    """snapshot_at / ref_head / recent_paths / commit_files for land."""
-    def __init__(self, tree, heads=("h1",), recent=()):
-        self.tree, self.heads, self.recent, self.commits, self.calls = dict(tree), list(heads), set(recent), [], 0
+    """snapshot_at / ref_head / commit_files for land."""
+    def __init__(self, tree, heads=("h1",)):
+        self.tree, self.heads, self.commits, self.calls = dict(tree), list(heads), [], 0
 
     def install(self, monkeypatch):
         monkeypatch.setattr(cg, "ref_head", lambda repo: self.heads[min(self.calls, len(self.heads) - 1)])
         monkeypatch.setattr(cg, "snapshot_at", lambda repo, head: cg.Snapshot(repo, head, {"tree": {"sha": "t" + head}}, self.tree))
-        monkeypatch.setattr(cg, "recent_paths", lambda repo, head, now, local="": self.recent)
         monkeypatch.setattr(cg, "commit_files", self.commit)
 
     def commit(self, repo, head, base_tree, modes, files, message, uploaded=None):
@@ -481,43 +472,18 @@ def _plan(tmp_path, entries):
 
 def test_land_commits_what_still_holds(tmp_path, monkeypatch):
     plan = _plan(tmp_path, [("A", "X/A.png", b"a", {"X/A.psd": "s1", "X/A.png": "p1"}),
-                            ("B", "X/B.png", b"b", {"X/B.psd": "s2", "X/B.png": "p2"}),
-                            ("C", "X/C.png", b"c", {"X/C.psd": "s3", "X/C.png": ""})])
+                            ("B", "X/B.png", b"b", {"X/B.psd": "s2", "X/B.png": "p2"})])
     hub = FakeHub({"X/A.psd": ("100644", "s1"), "X/A.png": ("100644", "p1"), "X/B.psd": ("100644", "moved"),
-                   "X/B.png": ("100644", "p2"), "X/C.psd": ("100644", "s3")}, heads=("h1", "h2"), recent={"X/C.psd"})
+                   "X/B.png": ("100644", "p2")}, heads=("h1", "h2"))
     hub.install(monkeypatch)
-    now = datetime(2026, 10, 22, 18, 0, tzinfo=timezone.utc)
-    report = cg.land(plan, quiet_from="2026-10-22T17:00:00Z", now=lambda: now)          # a push run: later pushes count
+    report = cg.land(plan)
     assert report["sha"] == "c" * 40 and report["landed"] == ["A"]
-    assert report["dropped"] == [["B", "superseded: X/B.psd changed on the branch", "X/B.png"],
-                                 ["C", "superseded: a later push touched X/C.psd", "X/C.png"]]
-    assert report["told"] == {"X/A.psd": [], "X/B.psd": [], "X/C.psd": ["PNG not made: a later push touched X/C.psd; export it in Photoshop"]}
+    assert report["dropped"] == [["B", "superseded: X/B.psd changed on the branch", "X/B.png"]]
+    assert report["told"] == {"X/A.psd": [], "X/B.psd": []}
     assert report["after"]["X/B.psd"] == ["the PSD changed again on the branch: that push's own check tells"]
     assert len(hub.commits) == 1 and hub.commits[0][:2] == ("h2", ["X/A.png"])            # retried on the new head
     assert hub.commits[0][2].startswith("Card guards: 1 PNG re-exported (push ffffffff)")
     assert report["events"] == [{"kind": "guard-png", "card": "A", "path": "X/A.png", "line": "made"}]
-
-
-def test_a_push_during_the_check_still_supersedes(tmp_path, monkeypatch, thirty):
-    """The environment's timer starts Land 30 minutes after the check job ends: a push made while the check ran (here a
-    case-only rename 3 minutes after the PSD, the same blob) is still a later push. The window counts from the push."""
-    import commands.card_bake as cb
-    plan = _plan(tmp_path, [("Foo", "C/foo.png", b"bot png", {"C/foo.psd": "s1", "C/foo.png": "p1"})])
-    hub = FakeHub({"C/foo.psd": ("100644", "s1"), "C/Foo.png": ("100644", "p1")})
-    hub.install(monkeypatch)
-    monkeypatch.setattr(cg, "recent_paths", cb.recent_paths)                 # the real window, over a faked API
-    start = datetime(2026, 10, 24, 12, 0, tzinfo=timezone.utc)
-    pushes = [{"timestamp": "2026-10-24T12:03:00Z", "before": "b" * 40, "after": "h1"}]
-
-    def api(repo, method, path, **kwargs):
-        reply = {"activity": pushes, f"compare/{'b' * 40}...h1": {"files": [
-            {"filename": "C/Foo.png", "previous_filename": "C/foo.png", "status": "renamed"}]}}[path]
-        return type("Reply", (), {"ok": True, "json": lambda self: reply})()
-    monkeypatch.setattr(cb, "api", api)
-    report = cg.land(plan, quiet_from="2026-10-24T12:00:00Z", sleep=lambda s: None,
-                     now=lambda: start + timedelta(minutes=40))               # check 10 min, then the 30-minute timer
-    assert report["sha"] == "" and report["landed"] == [] and not hub.commits
-    assert report["dropped"] == [["Foo", "superseded: a later push touched C/foo.png", "C/foo.png"]]
 
 
 def test_land_refuses_a_tampered_file(tmp_path, monkeypatch):
@@ -551,31 +517,6 @@ def _full_plan(tmp_path, entries, mode="on"):
     (out / "plan.json").write_text(json.dumps({"repo": "o/r", "mode": mode, "before": "e" * 40, "after": "f" * 40,
                                                "report": {"notes": [], "skipped": [], "errors": []}, "cards": entries}))
     return str(out / "plan.json")
-
-
-def test_the_post_waits_for_the_quiet_window(tmp_path, monkeypatch, thirty):
-    """A PNG refusal is withdrawn when the author pushed the PNG during the window; a card whose PSD changed again is left
-    to that push's check; the other lines stand (report mode: nothing committed, the same post)."""
-    refused = "PNG not made: the PSD and its old PNG already disagreed outside your change (3.0% of pixels); export it in Photoshop"
-    snack = _entry("Snack", export={"outcome": "refused", "why": refused, "gate": "G5"}, told=[refused])
-    bread = _entry("Bread", told=["timing tag (1GCD) not set in the stoogedings badge font"])
-    kept = _entry("Kept", told=["timing tag (1GCD) not set in the stoogedings badge font"])
-    plan = _full_plan(tmp_path, [snack, bread, kept], mode="report")
-    FakeHub({"X/Snack.psd": ("100644", "s1"), "X/Snack.png": ("100644", "pushed"), "X/Bread.psd": ("100644", "again"),
-             "X/Bread.png": ("100644", "p1"), "X/Kept.psd": ("100644", "s1"), "X/Kept.png": ("100644", "p1")}).install(monkeypatch)
-    now = datetime(2026, 10, 22, 18, 0, tzinfo=timezone.utc)
-    waits = []
-    report = cg.land(plan, quiet_from="2026-10-22T17:59:00Z", dry_run=True, sleep=waits.append, now=lambda: now)
-    assert waits and report["told"] == {"X/Snack.psd": [], "X/Bread.psd": [], "X/Kept.psd": ["timing tag (1GCD) not set in the stoogedings badge font"]}
-    post = cg.finish(plan, report)["content"]
-    assert post.startswith("Alice pushed Kept with these issues:") and len(post.splitlines()) == 1
-    comment = (Path(plan).parent / "report-landed.md").read_text()
-    assert "Report only (CARD_GUARDS=report)" in comment and "Landed" not in comment
-    assert "- After the quiet window: Snack.png was pushed since: the refusal is withdrawn" in comment
-    assert "- After the quiet window: the PSD changed again on the branch" in comment
-    assert cg.land(_full_plan(tmp_path, [_entry("Quiet")]), quiet_from="2026-10-22T17:59:00Z", sleep=waits.append,
-                   now=lambda: now)["told"] == {}                          # nothing to tell or write: no wait
-    assert len(waits) == 1
 
 
 def test_a_psd_fix_survives_a_later_png_push(tmp_path, monkeypatch):
@@ -691,10 +632,9 @@ def test_report_mode_tells_the_png_it_would_make(tmp_path, monkeypatch):
     (out / "files").mkdir(parents=True)
     (out / "files" / "Snack.png").write_bytes(b"png")
     (out / "plan.json").write_text(json.dumps(report))
-    now = datetime(2026, 10, 22, 18, 0, tzinfo=timezone.utc)
     for png, told in (("p1", ["PNG not exported with the PSD: export it in Photoshop"]), ("author's", [])):
         FakeHub({"X/Snack.psd": ("100644", "s1"), "X/Snack.png": ("100644", png)}).install(monkeypatch)
-        landed = cg.land(str(out / "plan.json"), quiet_from="2026-10-22T17:00:00Z", dry_run=True, now=lambda: now)
+        landed = cg.land(str(out / "plan.json"), dry_run=True)
         assert landed["told"] == {"X/Snack.psd": told} and landed["sha"] == "", png
         post = cg.finish(str(out / "plan.json"), landed)
         assert (post.get("content", "").startswith("Alice pushed Snack with these issues: PNG not exported")) is bool(told)
@@ -855,10 +795,9 @@ def test_a_recompression_rests_on_its_png_and_is_never_told(tmp_path, monkeypatc
     fat = _entry("Fat", case="pair")
     _write(out, fat, "X/Fat.png", "recompress", b"small", line)
     plan = _full_plan(tmp_path, [fat])
-    now = datetime(2026, 10, 22, 18, 0, tzinfo=timezone.utc)
-    hub = FakeHub({"X/Fat.psd": ("100644", "s1"), "X/Fat.png": ("100644", "p1")}, recent={"X/Fat.psd"})
+    hub = FakeHub({"X/Fat.psd": ("100644", "moved"), "X/Fat.png": ("100644", "p1")})
     hub.install(monkeypatch)
-    report = cg.land(plan, quiet_from="2026-10-22T17:00:00Z", now=lambda: now)
+    report = cg.land(plan)
     assert report["landed"] == ["Fat"] and hub.commits[0][2].startswith("Card guards: 1 PNG recompressed (push ffffffff)")
     cg.finish(plan, report)                                 # the landed commit's changelog events, for Card sync
     assert json.loads((Path(plan).parent / cg.GUARD_EVENTS).read_text()) == {"schema": 1, "commit": "c" * 40, "push": "f" * 40,
@@ -1001,7 +940,7 @@ def test_workflow_shape(clone):
     assert "if" not in job and steps_by_name["Check"]["if"] == "env.MODE != 'off'"     # the checks run whatever MODE says
     assert job["env"]["MODE"] == ("${{ github.event_name == 'push' && (vars.CARD_GUARDS || 'off') || "
                                   "((inputs.dry_run || inputs.all) && 'dry' || 'on') }}")
-    # no quiet window (owner 2026-11-03): the post job takes no environment and Land waits for nothing (RECENT 0)
+    # no quiet window (owner 2026-11-03): the post job takes no environment and Land waits for nothing
     assert post["needs"] == "check" and finish["needs"] == ["check", "post"]
     assert "environment" not in post
     assert post["if"] == ("!cancelled() && needs.check.outputs.checked == 'success' && needs.check.outputs.land == 'true' && "
@@ -1009,13 +948,13 @@ def test_workflow_shape(clone):
     assert finish["if"] == "always() && needs.check.outputs.mode != 'off'"       # nothing when the guards are off
     assert job["timeout-minutes"] == "${{ inputs.all && 150 || 40 }}" and post["timeout-minutes"] == 30
     assert "environment" not in job and "environment" not in finish
-    assert {k: v for k, v in job["outputs"].items() if k != "saved"} == {"mode": "${{ steps.start.outputs.mode }}", "quiet_from": "${{ steps.start.outputs.quiet_from }}",
+    assert {k: v for k, v in job["outputs"].items() if k != "saved"} == {"mode": "${{ steps.start.outputs.mode }}",
                               "started": "${{ steps.start.outputs.started }}", "checked": "${{ steps.check.outcome }}",
                               "comment": "${{ steps.comment.outputs.id }}", "told": "${{ steps.comment.outputs.told }}",
                               "land": "${{ steps.plan.outputs.land }}", "card_errors": "${{ steps.plan.outputs.card_errors }}",
                               "bot_sha": "${{ steps.bot.outputs.sha }}", "fixes": "${{ steps.plan.outputs.fixes }}"}
     assert post["outputs"] == {"posted": "${{ steps.tell.outputs.posted }}"}
-    assert post["env"]["QUIET_FROM"] == "${{ needs.check.outputs.quiet_from }}" and post["env"]["MODE"] == "${{ needs.check.outputs.mode }}"
+    assert post["env"]["MODE"] == "${{ needs.check.outputs.mode }}"
     assert post["env"]["TOLD"] == job["env"]["TOLD"] == finish["env"]["TOLD"]
     for one in (job, post):
         bot = next(s for s in one["steps"] if s.get("with", {}).get("repository") == "bobberlington/AutoCroissant")
@@ -1058,7 +997,7 @@ def test_workflow_shape(clone):
     land = steps["Land"]
     # Land never waits on the Comment step's success (a failed comment must not drop the writes): the post job runs
     # whatever the check job's result, once Check passed
-    assert "if" not in land and "--quiet-from" in land["run"] and "--dry-run" in land["run"]
+    assert "if" not in land and "--dry-run" in land["run"]
     assert "discord.json" not in tell["run"].replace("discord-final.json", "")      # never check's early post
     assert steps["Fail on card errors"]["env"]["ERRORS"] == "${{ needs.check.outputs.card_errors }}"
     alert = steps["Tell Discord the run failed"]
@@ -1304,7 +1243,7 @@ def test_workflow_land_and_a_rerun_after_a_landing(clone, tmp_path):
     out.mkdir()
     (tmp_path / "bot").mkdir()
     env = {"PATH": f"{bin_dir}:{os.environ['PATH']}", "OUT": str(out), "GITHUB_REPOSITORY": "o/cards", "EVENT": "push",
-           "QUIET_FROM": "2026-10-22T17:00:00Z", "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "FAKE_PYTHON_ARGS": str(args),
+           "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "FAKE_PYTHON_ARGS": str(args),
            "GITHUB_OUTPUT": str(tmp_path / "land.output"), "FAKE_STATE": str(state), "TOLD": jenv["TOLD"]}
     landed = json.dumps({"sha": "", "already": [["Snack", "X/Snack.png"]], "landed": []})
     for mode, told, writes, attempt, event, ran, rerun in (("report", 0, 2, "1", "push", False, False),
@@ -1391,24 +1330,19 @@ def test_workflow_refuses_a_landing_dispatch_while_a_push_run_waits(clone, tmp_p
 
 def test_workflow_lowercases_card_guards(clone, tmp_path):
     """The job's `if` matches CARD_GUARDS in any case ("On"), the shell does not: Start lowercases MODE for every later
-    step (Land's --dry-run test is exact; `land` would also refuse a report plan without it). The quiet window counts
-    from the push on every attempt (P-1: the environment's timer may be shorter than 30 minutes), else from now."""
+    step (Land's --dry-run test is exact; `land` would also refuse a report plan without it)."""
     pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc, steps, jenv = _guard_steps(clone)
     step = steps["Start"]
-    for typed, mode, pushed, quiet in (("On", "on", "1761400000", "2025-10-25T13:46:40Z"),
-                                       ("REPORT", "report", "2026-10-25T12:00:00Z", "2026-10-25T12:00:00Z"),
-                                       ("dry", "dry", "", None)):
+    for typed, mode in (("On", "on"), ("REPORT", "report"), ("dry", "dry")):
         github_env = tmp_path / f"env-{typed}"
         github_env.write_text("")
-        done, out = _shell(step, {"PATH": os.environ["PATH"], "MODE": typed, "RUNNER_TEMP": str(tmp_path), "PUSHED_AT": pushed,
+        done, _ = _shell(step, {"PATH": os.environ["PATH"], "MODE": typed, "RUNNER_TEMP": str(tmp_path),
                                   "GITHUB_RUN_ATTEMPT": "1", "GITHUB_EVENT_NAME": "push",
                                   "GITHUB_ENV": str(github_env), "GITHUB_OUTPUT": str(tmp_path / "start.output")})
         assert done.returncode == 0 and f"MODE={mode}" in github_env.read_text().splitlines(), done.stderr
-        assert out["quiet_from"] == (quiet or out["quiet_from"]) and f"QUIET_FROM={out['quiet_from']}" in github_env.read_text()
-        assert ("no push time" in done.stdout) is (quiet is None)
     land = steps["Land"]
     assert '[ "$MODE" = report ] && args+=(--dry-run)' in land["run"]
 

@@ -874,8 +874,8 @@ Recommendations:
   not rendered glyphs.
 
 **Push guard (2026-10-21).** Since 2026-10-25 the font check and the card check below are steps of `card-guards.yml`'s
-check job (one install, one PSD download), whatever `CARD_GUARDS` says, each still posting its own report at once (only the
-guards' fixes and post wait the quiet window); what follows describes them as `font-check.yml` and `card-check.yml` ran
+check job (one install, one PSD download), whatever `CARD_GUARDS` says, each still posting its own report at once (the
+guards' fixes and post follow it; the quiet window went 2026-11-03); what follows describes them as `font-check.yml` and `card-check.yml` ran
 them until then. `.github/workflows/font-check.yml` ran AutoCroissant's `commands/font_check.py` on every
 push to main that changes a PSD or `MDW/Fonts/` (and by hand; `all` scans every card by blob, ~813 downloads): the PSDs
 the push changed come by blob sha through the API, the fonts folder is a sparse checkout cached by its tree sha, the bot

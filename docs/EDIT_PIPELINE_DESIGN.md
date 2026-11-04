@@ -210,11 +210,11 @@ finds no PSD-kind field but the refused ones, whose verdicts are unchanged, and 
 mechanism, state lives in git. Refusals are data with a code, never exceptions; one bad card never blocks another.
 
 0. **Snapshot.** Tree at head H; `CardEdits.parse` of the file blob; card key -> PSD path (same stem, case-insensitive like
-   `png_for`), PNG path(s) and shas. The pipeline's own commits are not skipped (2026-10-22): a card refused `recent` or
-   `head-moved` is retried by the next run even when nothing else landed on top.
+   `png_for`), PNG path(s) and shas. The pipeline's own commits are not skipped (2026-10-22): a card refused `head-moved`
+   (or `recent`, removed 2026-11-04) is retried by the next run even when nothing else landed on top.
 1. **Fetch** every card named in the file that has a field outside the folder and database-only kinds (section 3): PSD,
    PNG(s), chart (once per run), fonts (cached). Gate `blob`: sha1(`blob N\0` + data) == tree sha. Refuse `recent` first
-   (PSD or official PNG pushed < 30 min ago: don't race its author, and don't merge into a teammate's re-export unseen; by
+   (removed 2026-11-04; PSD or official PNG pushed < 30 min ago: don't race its author, and don't merge into a teammate's re-export unseen; by
    push time, not commit date: `activity` + one `compare` per run).
 2. **Classify** (section 3) against the open PSD and a fresh parse. Refuse: `duplicate` (5 PSDs with numbered PNGs),
    `unsupported-card` (non-template rows, not one visible `Ability`, not one title layer the parser reads, overlay word
@@ -957,8 +957,8 @@ jobs:
 ```
 **The gate** (`card_bake.pending`, 2026-10-22): a scheduled run bakes only when some PSD-kind edit has no final verdict, a
 refused `_psd` for exactly its values on the PSD blob the tree holds now (build_site.apply_edits shows a refusal by the same
-rule; a baked field leaves the file). So a new, changed or redundant edit, a try-again refusal (`recent`, `head-moved`,
-`edit-changed`, a runner error) and a refused card whose PSD changed all open it, and a complete live run closes it. Chosen
+rule; a baked field leaves the file). So a new, changed or redundant edit, a try-again refusal (`head-moved`,
+`edit-changed`, a runner error; `recent` removed 2026-11-04) and a refused card whose PSD changed all open it, and a complete live run closes it. Chosen
 over "Card Edits.json changed since the last successful run" (tts-save.yml's kind): it needs no run history or state, it
 retries try-again refusals and refused cards whose art was fixed (a diff of the edits file sees neither), and a wrong "go"
 costs a run that commits nothing. A scheduled run then bakes only the gate's cards (`--pending`, `run_report(pending_only=)`:
@@ -1058,7 +1058,7 @@ reminder's cadence (daily `/update_stats` at 5AM).
 
 Four sinks: the commit body; the job summary + artifact (report, before/after/diff crops, parse diff, record diff); `_psd` for
 the editor; Discord on the jetson (summary, `.md`, commit link). Refusal codes are a closed list: `duplicate`, `unsupported-card`,
-`stat>10`, `recent`, `blob`, `parity`, `styled-word`, `font`, `overflow`, `bytes`, `size`, `region`, `shape`, `reparse`,
+`stat>10`, `recent` (removed 2026-11-04), `blob`, `parity`, `styled-word`, `font`, `overflow`, `bytes`, `size`, `region`, `shape`, `reparse`,
 `idempotence`, `edit-changed`, `head-moved`, `capped`, `error`. Since 2026-10-23 `parity` and `idempotence` on pixels mean
 past the 25% floor (a broken render), or for `parity` a box that misses the bar and whose render shows no change; a miss of
 the bar is no refusal but a note in the commit body and the report (section 5
@@ -1103,7 +1103,7 @@ try-again code.
 - **Two bakes.** Actions `concurrency: card-edits` for the schedule (one run going and one pending, a newer pending tick
   replaces the older, a running one is never cancelled; not tts-save's group since 2026-10-22, section 8); a dispatch has a
   group of its own and may overlap it (`land`'s expected blob shas and the re-read at the head keep that safe); jetson: the
-  Lock. A PSD or PNG pushed in the last 30 min is skipped (`recent`). Site lag
+  Lock. A PSD or PNG pushed in the last 30 min is skipped (`recent`; removed 2026-11-04). Site lag
   after a bake (old value until `/update_stats` + `/push` + build) is named by "Re-parse pending" (section 9).
 
 ## 12. Acceptance: the 10 edits
@@ -1204,8 +1204,7 @@ The preview is `card_bake.bake_card` itself on one `Card` (the duplicate, no-PNG
 `psd_edit.classify`, `apply_jobs` with every gate, the stars/types-refused-beside-the-rest rule, the creatures-stats
 gate), with the bake's fonts (`card_bake._fonts_dir`: `PSD_TOOLS_FONT_DIRS`, set to the checkout's `MDW/Fonts` from
 card-edits.yml's font cache), status chart (by blob sha, `psd_edit.status_fills`, as `run_report` reads it) and icon
-vocabulary (`card_bake.vocabulary`), under the same fork pin and Python. Not the bake's: the `recent` gate (it guards a
-commit; a preview commits nothing), the cap and budget (one card), and the edits file (the edit is the input). The card
+vocabulary (`card_bake.vocabulary`), under the same fork pin and Python. Not the bake's: the `recent` gate (removed 2026-11-04), the cap and budget (one card), and the edits file (the edit is the input). The card
 repo is only read: the tree by `git ls-tree` in the blobless checkout, the card's PSD and PNG, the chart, the manifest
 and the Types/ PNGs it needs by blob sha through the API (verified), as card-edits.yml reads them. **Adjusted from the
 ask:** no sparse checkout of the card's files (that would put a dispatcher's path into a sparse pattern; by sha the

@@ -1,11 +1,11 @@
 """
 card_bake: the edit.js editsFile port (today's file round-trips byte-identically; node cross-check), and the driver
 against a fake GitHub (tree, blobs, refs, commits: the test_update_stats pattern) for the gates of EDIT_PIPELINE_DESIGN
-sections 5 and 11: recent, duplicate, blob, classify, edit-changed, head-moved (409 and 422), one commit per run with a
+sections 5 and 11: duplicate, blob, classify, edit-changed, head-moved (409 and 422), one commit per run with a
 moved card left out, the schedule gate (pending), the SSH fallback for a token that can't write, --dry-run, --card; the
 verdicts on the data branch (CARD_SYNC_VERDICTS.md: the data_branch fixture merges each run's records as Card sync does). A
 real bake (a stat, and an ability with an FX layer) needs the fork's renderer; those tests skip under stock psd-tools.
-card-sync.yml's Pending edits line runs as written (card_bake.due). Fork as conftest.find_fork finds it; a Python without
+card-sync.yml's Pending edits line runs as written (card_bake.pending). Fork as conftest.find_fork finds it; a Python without
 requests skips this file:
     ~/.venvs/ac-py314-fork/bin/python -m pytest -q -n auto tests/test_psd_edit.py tests/test_card_bake.py
 """
@@ -14,7 +14,7 @@ import json
 import re
 import shutil
 import textwrap
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from io import StringIO
 from os import environ
 from os.path import expanduser
@@ -28,17 +28,10 @@ pytest.importorskip("requests", reason="card_bake imports requests (absent from 
 import commands.card_bake as cb  # noqa: E402
 import commands.git_commit as gc  # noqa: E402
 import commands.psd_edit as pe  # noqa: E402
-from conftest import (CLONE, Reply, blob_sha_bytes as _sha, fork_reason, story_sync as _story_sync,
+from conftest import (CLONE, blob_sha_bytes as _sha, fork_reason, story_sync as _story_sync,
                       text_engine as _text_engine)  # noqa: E402
 from helpers import ABOUT, AT, DOOMER, EDITS, FREEZER, SNACK, _edits, files, github  # noqa: E402,F401 (fixtures)
 
-
-@pytest.fixture
-def thirty(monkeypatch):
-    """The 30-minute grace of before 2026-11-03 (RECENT is 0 now, owner: nothing waits): the machinery when it is set."""
-    import commands.card_guards as guards
-    monkeypatch.setattr(cb, "RECENT", timedelta(minutes=30))
-    monkeypatch.setattr(guards, "RECENT", timedelta(minutes=30))
 
 GREEN_MAGE = "Creatures/Everhood/4 Stars/Green_Mage.psd"   # fixed 2026-10-23: its stat bars on the canvas
 OFF_CANVAS_MAGE = "45cf8746^"   # Green Mage before its bars moved onto the card (they lay below the canvas)
@@ -74,7 +67,10 @@ def data_branch(tmp_path, monkeypatch):
             merge_verdicts(str(db), {**doc["cards"], **(doc["landed"] if commits else {})})
         return text, commits
     monkeypatch.setattr(cb, "run", run)
-    monkeypatch.setattr(cb, "pending", lambda **kwargs: real_pending(**{"verdicts": str(db / "verdicts.json"), **kwargs}))
+
+    def pending(repository=cb.CARD_REPO, head="", local="", verdicts=str(db / "verdicts.json")):
+        return real_pending(repository, head, local, verdicts)
+    monkeypatch.setattr(cb, "pending", pending)
 
 
 def _edits_at(github, sha=None) -> dict:
@@ -158,7 +154,7 @@ def test_rewrite_entry_rules():
 # ========================
 # The driver against the fake GitHub
 # ========================
-def test_run_drops_redundant_and_writes_verdicts(github, tmp_path, thirty):
+def test_run_drops_redundant_and_writes_verdicts(github, tmp_path):
     before = github.head
     text, commits = cb.run()
     assert len(commits) == 1 and github.head == commits[0]
@@ -190,7 +186,6 @@ def test_run_drops_redundant_and_writes_verdicts(github, tmp_path, thirty):
     assert "**Nothing baked.**" in text and f"One commit: `{commits[0][:8]}` Card edits: 1 redundant." in text
     blobs = [route for method, route in github.calls if route.startswith("git/blobs/")]
     assert len(blobs) == 8      # the edits file + manifest, PSD + PNG of Mini Doomer and The Freezer, A Snack's PSD
-    assert [route for _, route in github.calls].count("activity") == 1     # the recent gate reads the pushes once a run
     assert cb.pending() == []                                               # every PSD-kind edit has its final verdict
 
     # a rerun on the pipeline's own commit: the redundant field is gone, the verdicts are unchanged: nothing to commit
@@ -235,45 +230,6 @@ def test_dry_run_commits_nothing(github, tmp_path):
     assert _records(tmp_path)[0]["cards"]["the freezer"]["state"] == "refused"               # but its artifact says it
     assert "Would commit: Card edits: 1 redundant." in text
     assert (work / "report.md").read_text(encoding="utf-8") == text
-
-
-def test_recent_refuses_before_fetching(github, thirty):
-    github.recent.add(DOOMER)
-    text, commits = cb.run(card="Mini Doomer")
-    assert commits == [] and "recent: PSD pushed in the last 30 min" in text
-    assert not [route for _, route in github.calls if route.startswith("git/blobs/") and route.endswith(_sha(github.blobs[_sha(github.files_at(github.head)[DOOMER])]))]
-    assert _verdict("Mini Doomer") is None                                         # transient: no verdict
-    github.recent = {DOOMER[:len(DOOMER) - 4] + ".png"}                          # a teammate's PNG re-export
-    text, commits = cb.run(card="Mini Doomer")
-    assert commits == [] and "recent: PNG pushed in the last 30 min" in text
-    assert _verdict("Mini Doomer") is None and "Mini Doomer" in cb.pending()
-    github.recent = {f"Other/{i}.psd" for i in range(cb.COMPARE_FILES)}
-    text, commits = cb.run(card="Mini Doomer")
-    assert commits == [] and "recent: too many pushes in the last 30 min to tell" in text
-
-
-def test_recent_paths_by_push_time(monkeypatch, thirty):
-    """A commit dated hours ago but pushed just now is recent: the window is the pushes', the paths the compare's."""
-    now = datetime(2026, 10, 21, 12, 0, tzinfo=timezone.utc)
-    pushes = [{"before": "c2", "after": "c3", "timestamp": "2026-10-21T11:50:00Z"},
-              {"before": "c1", "after": "c2", "timestamp": "2026-10-21T11:40:00Z"},
-              {"before": "c0", "after": "c1", "timestamp": "2026-10-21T11:00:00Z"}]      # before the window
-    asked = []
-
-    def api(repository, method, path, **kwargs):
-        asked.append(path)
-        if path == "activity":
-            return Reply(body=pushes)
-        return Reply(body={"files": [{"filename": "a.psd"}, {"filename": "b.psd", "previous_filename": "old b.psd"}]})
-    monkeypatch.setattr(cb, "api", api)
-    assert cb.recent_paths(cb.CARD_REPO, "c3", now) == {"a.psd", "b.psd", "old b.psd"} and asked == ["activity", "compare/c1...c3"]
-    assert cb.recent_paths(cb.CARD_REPO, "c3", now + timedelta(hours=1)) == set() and asked[2:] == ["activity"]
-    pushes[1]["before"] = "0" * 40                                                      # a new branch: can't tell
-    assert cb.recent_paths(cb.CARD_REPO, "c3", now) is None
-    pushes[1]["before"] = "c1"
-    monkeypatch.setattr(cb, "api", lambda repository, method, path, **kwargs: Reply(body=pushes) if path == "activity"
-                        else Reply(status=422, body={"message": "Sorry, this diff is taking too long to generate."}))
-    assert cb.recent_paths(cb.CARD_REPO, "c3", now) is None                              # a force push: no compare
 
 
 def test_creature_one_bakes_and_website_only_fields(github):
@@ -852,7 +808,7 @@ def local(github, files, tmp_path):
     return SimpleNamespace(origin=origin, clone=clone, head=_git(clone, "rev-parse", "HEAD").strip())
 
 
-def test_local_makes_one_local_commit_and_pushes_nothing(github, local, thirty):
+def test_local_makes_one_local_commit_and_pushes_nothing(github, local):
     """Pending edits -> one commit B on the clone's head, the checkout on it; origin and GitHub untouched; the small files
     from the clone, only the PSDs and PNGs by REST; the same files as the live run's commit."""
     lacks = run_process(["git", "-C", str(local.clone), "cat-file", "-e", _sha((local.origin / DOOMER).read_bytes())],
@@ -865,7 +821,7 @@ def test_local_makes_one_local_commit_and_pushes_nothing(github, local, thirty):
     assert _git(local.clone, "rev-list", "--count", "origin/main..HEAD").strip() == "1"
     assert _git(local.origin, "rev-parse", "main").strip() == local.head                       # nothing pushed
     assert _git(local.clone, "log", "-1", "--format=%an|%s", b).strip() == "AutoCroissant|Card edits: 1 redundant"
-    assert not [m for m, _ in github.calls if m != "GET"] and "activity" in [r for _, r in github.calls]   # the recent gate as ever
+    assert not [m for m, _ in github.calls if m != "GET"]
     assert not [r for _, r in github.calls if r.startswith(("git/ref", "git/commits", "git/trees"))]       # the tree from the clone
     rest = sorted(r for _, r in github.calls if r.startswith("git/blobs/"))
     cards = {path: data for path, data in github.files_at(github.head).items()
@@ -909,25 +865,6 @@ def test_local_head_the_clone_lacks_is_a_failed_run(github, local, monkeypatch):
     assert _git(local.clone, "rev-parse", "HEAD").strip() == local.head
 
 
-def test_local_recent_gate_reads_the_clone(local, monkeypatch, thirty):
-    """--local: a head GitHub lacks (a previous B) is diffed in the clone, renames as both paths; else the compare API."""
-    _put(local.clone, {"TTS/a.txt": b"a"})
-    base = _commit_in(local.clone, "add")
-    _git(local.clone, "mv", "TTS/a.txt", "TTS/b.txt")
-    head = _commit_in(local.clone, "rename")
-    now = datetime.now(timezone.utc)
-    pushes = [{"before": base, "after": "x" * 40, "timestamp": now.strftime("%Y-%m-%dT%H:%M:%SZ")}]
-    asked = []
-
-    def api(repository, method, path, **kwargs):
-        asked.append(path)
-        return Reply(body=pushes) if path == "activity" else Reply(body={"files": [{"filename": "c.psd"}]})
-    monkeypatch.setattr(cb, "api", api)
-    assert cb.recent_paths(cb.CARD_REPO, head, now, str(local.clone)) == {"TTS/a.txt", "TTS/b.txt"} and asked == ["activity"]
-    pushes[0]["before"] = "e" * 40                                                      # a base the clone lacks: the API
-    assert cb.recent_paths(cb.CARD_REPO, head, now, str(local.clone)) == {"c.psd"} and asked[1:] == ["activity", f"compare/{'e' * 40}...{head}"]
-
-
 @fork
 def test_local_bake_lands_psd_png_and_file_in_b(github, local):
     """A real bake with --local: B holds the PSD, the PNG and the file; the verdict names B's PSD blob."""
@@ -948,21 +885,20 @@ def test_local_bake_lands_psd_png_and_file_in_b(github, local):
 # ========================
 # The Action's sparse copy
 # ========================
-def test_workflow_pending_edits_line_calls_due(github, capsys, monkeypatch, thirty):
-    """card-sync.yml's Pending edits line, run as written: the due card names, one per line (recent ones wait); its
-    Leftover edits script (the chain's counts): due, then held by a recent push."""
+def test_workflow_pending_edits_line_calls_pending(github, capsys, monkeypatch):
+    """card-sync.yml's Pending edits line, run as written: the pending card names, one per line; its Leftover edits
+    script (the chain's count)."""
     if not WORKFLOW.exists():
         pytest.skip(f"no {WORKFLOW}")
     text = WORKFLOW.read_text(encoding="utf-8")
     code = re.search(r"Pending edits.*?python\" -c '([^']+)'", text, re.S).group(1)
-    github.recent.add(DOOMER)
     monkeypatch.setattr("sys.argv", ["-c", cb.CARD_REPO, github.head, "", str(DB[0] / "verdicts.json")])
     exec(code, {})
-    assert capsys.readouterr().out.splitlines() == ["A Snack", "A Snack2", "Nobody", "The Freezer"]
+    assert capsys.readouterr().out.splitlines() == ["A Snack", "A Snack2", "Mini Doomer", "Nobody", "The Freezer"]
     left = re.search(r"name: Leftover edits.*?<<'PY'\n(.*?)\n *PY\n", text, re.S).group(1)
     monkeypatch.setattr("sys.argv", ["-", cb.CARD_REPO, github.head, "", str(DB[0]), str(DB[0] / "none.json")])
     exec(textwrap.dedent(left), {})
-    assert capsys.readouterr().out.split() == ["4", "1"]
+    assert capsys.readouterr().out.split() == ["5"]
 
 
 

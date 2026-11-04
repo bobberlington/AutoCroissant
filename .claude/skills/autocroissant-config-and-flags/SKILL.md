@@ -464,7 +464,7 @@ timer; before, the environment `card-sync-quiet`'s wait timer held it 30 minutes
 | `card_guards.MODES` | `("dry", "report", "on")` | what the Action does; the repo variable `CARD_GUARDS` picks it (unset or off = the guards' steps skip; the card and font checks still run) |
 | `card_guards.LINE` | `"{login} pushed {card}{changes} with these issues: {issues}. [{short}]({url})"` | the standards-channel line (no ping); `{changes}` is the card's semantic PSD diff (psd_diff) |
 | `CHANGES_DISCORD`, `CHANGES_COMMENT` | `120`, `600` | characters of a card's changes on Discord and in the commit comment |
-| `QUIET_MARGIN` | 60 s | `land` waits card_bake's `RECENT` plus this after the push |
+| `QUIET_MARGIN` | removed 2026-11-04 (0 since 2026-11-03; 60 s before) | `land` waited card_bake's `RECENT` plus this after the push |
 | `ANCHOR_WINDOW` | 2 h | in a burst, PSD commits this close to the push may stand in for its PNG's PSD |
 | `POOL_MIN`, `POOL_MAX` | `8`, `4` | from this many cards the checks run in a process pool: every core on a GitHub runner (`GITHUB_ACTIONS`, K-2 experiment 2026-10-25; revert: drop that branch of `pool_size`), else half the cores, at most POOL_MAX (each runs git); `--workers N` overrides |
 | `TELL_PNG_MISMATCH` | `False` | R10 and "current but outside the bar" stay off Discord |
@@ -512,7 +512,7 @@ only); its pip install is the other card workflows' (card-sync.yml's, card-edits
 | `ADD_ABILITY_LIVE` | `False` | `+ability` (a first ability layer from the card kind's template) bakes only when True; off, the edit waits (f92fb5e; on once the owner approves the test PSDs) |
 | env `PSD_DIRTY_VERIFY` | unset | `"1"`: the dirty-box gate also renders whole and raises on any difference (K-1; on in tests/conftest.py) |
 | `card_bake.MAX_BAKES` | `40` | PSD edits per run; the rest wait for the next |
-| `card_bake.RECENT` | 30 min | a PSD or PNG pushed more recently is its author's: the bake and the guards don't race them |
+| `card_bake.RECENT` | removed 2026-11-04 (0 since 2026-11-03; 30 min before) | a PSD or PNG pushed more recently was its author's: the bake and the guards didn't race them |
 | `card_bake.BUDGET` | 40 min | no card starts later, so the commit lands within the job's 60 minutes |
 
 ## TTSCardMaker repo settings (names only; never write a value)
@@ -701,7 +701,7 @@ table with its command before quoting it in the future.
 | global_config env overrides (two: LOCAL_DIR_LOC, HISTORY_CLONE) | `grep -n "environ.get" global_config.py`; `grep -rn "AUTOCROISSANT_" --include="*.py" commands/ global_config.py` (global_config.py only) |
 | Module environment reads | `grep -rn "environ.get" --include="*.py" commands/` (FONT_DIRS_ENV, WORK_ENV = RUNNER_TEMP, GITHUB_TOKEN, BUILDER_SHA, DISCORD_ARCHIVE, DISCORD_MATCH_REPO, SSH_AUTH_SOCK) |
 | ACTIONS_TOKEN and the card_sync knobs | `sed -n '38,56p' commands/card_sync.py` |
-| Push-guard, parity and bake knobs | `grep -n "^MODES\|^LINE\|^CHANGES_\|^QUIET_MARGIN\|^ANCHOR_WINDOW\|^POOL_\|^TELL_PNG" commands/card_guards.py`; `grep -n "^AUTO_FIX" commands/card_standards.py`; `grep -n "^TOL\|^BESIDE_CUT" commands/png_export.py`; `grep -n "^PARITY_\|^ADD_ABILITY_LIVE\|^DIRTY_VERIFY" commands/psd_edit.py`; `grep -n "^MAX_BAKES\|^RECENT\|^BUDGET" commands/card_bake.py` |
+| Push-guard, parity and bake knobs | `grep -n "^MODES\|^LINE\|^CHANGES_\|^ANCHOR_WINDOW\|^POOL_\|^TELL_PNG" commands/card_guards.py`; `grep -n "^AUTO_FIX" commands/card_standards.py`; `grep -n "^TOL\|^BESIDE_CUT" commands/png_export.py`; `grep -n "^PARITY_\|^ADD_ABILITY_LIVE\|^DIRTY_VERIFY" commands/psd_edit.py`; `grep -n "^MAX_BAKES\|^BUDGET" commands/card_bake.py` |
 | Setters never write config.py | `sed -n '954,997p' commands/query_card.py`; confirm zero `open(`/`write` there |
 | update_stats defaults (force_update False both places; use_local_repo / use_local_timestamp removed 2026-10-20) | `grep -n "force_update: \|use_local" main.py commands/card_sync.py commands/card_data.py` (no use_local hits; every force_update default is False) |
 | Icon-font constants | `grep -n "^ICON_" commands/psd_parser.py global_config.py` |

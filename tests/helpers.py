@@ -7,7 +7,6 @@ import re
 import shutil
 import subprocess
 from copy import deepcopy
-from datetime import datetime, timezone
 from functools import lru_cache
 from io import BytesIO
 from os import environ
@@ -52,14 +51,13 @@ TOKEN = "test-token"
 
 
 class FakeGitHub:
-    """A repo with git objects: blobs, trees, commits and one branch. recent / conflicts / broken simulate the races."""
+    """A repo with git objects: blobs, trees, commits and one branch. conflicts / broken simulate the races."""
 
     def __init__(self, repo: str, files: dict, author="web", message="Website edit: test"):
         self.repo = repo
         self.blobs: dict = {}
         self.trees: dict = {}
         self.commits: dict = {}
-        self.recent: set = set()            # paths pushed "in the last 30 minutes"
         self.conflicts = 0                  # PATCH ref answers conflict_status this many times, someone else's push landing first
         self.stuck = False                  # PATCH ref answers 422 with the branch unmoved (a ruleset)
         self.conflict_status = 422          # ... 409 or 422 (both mean "not a fast forward")
@@ -119,11 +117,6 @@ class FakeGitHub:
             if sha in self.down:
                 return Reply(503, body={"message": "Service Unavailable"})
             return Reply(data=self.broken.get(sha, self.blobs[sha]))
-        if method == "GET" and route == "activity":
-            now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-            return Reply(body=[{"before": "b" * 40, "after": self.head, "timestamp": now}] if self.recent else [])
-        if method == "GET" and route.startswith("compare/"):
-            return Reply(body={"files": [{"filename": path} for path in sorted(self.recent)]})
         if method == "POST" and route == "git/blobs":
             from base64 import b64decode
             if self.rate_limited:

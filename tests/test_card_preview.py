@@ -122,7 +122,7 @@ def _preview(cards, tmp_path, edit, card="Mini Doomer", request=REQUEST, name="o
 # The preview
 # ========================
 @fork
-def test_a_stat_edit_bakes_the_bakes_pixels(cards, tmp_path, monkeypatch):
+def test_a_stat_edit_bakes_the_bakes_pixels(cards, tmp_path):
     """hp 5 -> 8: baked, the PNG the bake's dry run makes (the same pixels), recompressed losslessly, a 720 px WebP; the
     base is the commit and the blobs it read; the card repo is untouched and nothing is left in the runner's temp."""
     from PIL import Image
@@ -148,7 +148,6 @@ def test_a_stat_edit_bakes_the_bakes_pixels(cards, tmp_path, monkeypatch):
     (cards.repo / cb.EDITS_PATH).parent.mkdir(parents=True, exist_ok=True)
     (cards.repo / cb.EDITS_PATH).write_bytes(cb.dump_edits({"cards": {"Mini Doomer": {"hp": 8}}}).encode())
     _commit(cards.repo, "Website edit: Mini Doomer")
-    monkeypatch.setattr(cb, "recent_paths", lambda *a, **k: set())
     report = cb.run_report(dry_run=True, card="Mini Doomer", local=str(cards.repo))
     assert [c.name for c in report.cards if c.baked] == ["Mini Doomer"]
     bake = Image.open(report.cards[0].baked.png_path)
