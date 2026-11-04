@@ -121,6 +121,7 @@ class Fixed:
     plain: bytes = b""                          # data without the redraw (when the PNG can't follow it)
     redrawn: dict = field(default_factory=dict) # PIXEL_FIXES kind -> layers redrawn in data (silent; the PNG follows)
     pixel_left: list = field(default_factory=list)  # (kind, why) a pixel fix not made (plan.json only)
+    notes: list = field(default_factory=list)   # what a pixel fix did that a reader should look at (plan.json only)
 
 
 # ========================
@@ -1718,18 +1719,19 @@ def relay_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Opti
     view; an earlier icon font's, fonts.earlier: the guards' and a sweep's) laid out again at the current ones, its lines
     rewrapped in its box as they now fall: a splice from that old layout (the glyphs that moved or were drawn old
     redrawn, an FX layer on moved words cut again), the stored preview patched; the text, its styles and its story untouched. Refused when a
-    line no longer fits the box or ink runs off the canvas. The splice may fall back to a whole redraw only when the fork
-    draws the layer as stored at its old advances (WHOLE_OFF beside the redrawn glyphs), in the guards too. Gated
-    (_only_pixels), then checked: nothing left to re-lay.
+    line no longer fits the box (its baseline below it too: Photoshop hides it) or ink runs off the canvas; noted (the
+    sweep plan) when a layer gains a line, a line holds one word it didn't, or ink comes near the canvas edge. The splice
+    may fall back to a whole redraw only when the fork draws the layer as stored at its old advances (WHOLE_OFF beside
+    the redrawn glyphs), in the guards too. Gated (_only_pixels), then checked: nothing left to re-lay.
 
     Returns:
-        The layer names re-laid; raises Refused or the engine's errors
+        The layer names re-laid (their notes in .notes); raises Refused or the engine's errors
     """
     from dataclasses import replace
     from psd_tools.composite.text import capture
     earlier = tuple(getattr(fonts, "earlier", ()))
     before, psd = PSDImage.open(path), PSDImage.open(path)
-    boxes, records, names = [], set(), []
+    boxes, records, names = [], set(), Relaid()
     for record, faces, plan in _laid_plans(path, fonts, earlier):
         layer = next(layer for layer in icon_layers(psd) if psd_edit._record_index(layer) == record)
         psd_edit.follow_kerning(psd, layer)
@@ -1741,8 +1743,10 @@ def relay_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Opti
         report = layer.rasterize(fonts=faces, keep=replace(keep, layout=replace(keep.layout, glyphs=glyphs)),
                                  unit=psd_edit.SPLICE_UNIT)
         _by_glyph(layer, report, share <= WHOLE_OFF)
-        if "overflow" in report.warnings or (not off and psd_edit._ink_off_canvas(layer, psd.width, psd.height)):
+        if ("overflow" in report.warnings or (not off and psd_edit._ink_off_canvas(layer, psd.width, psd.height))
+                or _below_box(keep, report.lines)):
             raise Refused("overflow", f"{name}: its badges at their new widths push text out of its box")
+        names.notes += _reflow_notes(name, keep.layout.lines, report.lines, old, tuple(layer.bbox), psd.width, psd.height)
         boxes += _padded(layer, old)
         for fx, was in _recut_fx(psd, layer, {i for i in placed if now.get(i) != placed[i]}, faces):
             boxes += _padded(fx, was)
@@ -1760,6 +1764,41 @@ def relay_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Opti
     if left:
         raise Refused("bytes", "a badge is left at its old width")
     return names
+
+
+class Relaid(list):
+    """relay_badges' layer names, with notes: what the re-layout did that a reader should look at."""
+    notes: list
+
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.notes = []
+
+
+EDGE_NEAR = 24                                  # px: ink this near the canvas edge is noted (it was not before)
+
+
+def _below_box(keep, lines) -> bool:
+    """Whether lines (a re-layout's) draw more baselines below the box's bottom than keep's layout did: Photoshop hides
+    such a line (overset: Croissant, 2026-11-04), though the fork draws it."""
+    from psd_tools.composite.text.layout import frame
+    box = frame(keep.model)
+    if box is None:
+        return False
+    below = lambda ls: sum(1 for line in ls if line.drawn and line.y > box[1] + box[3] + 1e-6)
+    return below(lines) > below(keep.layout.lines)
+
+
+def _reflow_notes(name: str, was, now, bbox_was, bbox_now, width: int, height: int) -> list:
+    """A re-layout's notes: more lines, a new line of one word (a widow), ink newly within EDGE_NEAR of the canvas edge."""
+    texts = lambda ls: [line.text.strip() for line in ls if line.drawn]
+    old, new = texts(was), texts(now)
+    notes = [f"{name}: {len(old)} line{'s' * (len(old) != 1)} became {len(new)}"] if len(new) > len(old) else []
+    notes += [f"{name}: {t!r} alone on a line" for t in new if len(t.split()) == 1 and t not in old]
+    edge = lambda b: min(b[0], b[1], width - b[2], height - b[3])
+    if edge(bbox_now) < EDGE_NEAR <= edge(bbox_was):
+        notes.append(f"{name}: ink {edge(bbox_now)} px from the canvas edge (was {edge(bbox_was)})")
+    return notes
 
 
 def _laid_plans(path: str, fonts, earlier: tuple) -> list:
@@ -1816,6 +1855,7 @@ def _pixel_fixes(folder: str, base: str, current: str, rel: str, parser: Optiona
             result.pixel_left.append((kind, f"{type(error).__name__}: {error}"))
             continue
         result.redrawn[kind], result.data, current = names, data, out
+        result.notes += getattr(names, "notes", [])
     if result.redrawn and not result.rewrapped:
         if not plain:
             with open(base, "rb") as fh:

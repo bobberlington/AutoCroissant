@@ -82,7 +82,7 @@ def sweep_card(job) -> dict:
 
     Returns:
         {"card", "psd", "state": skip | fixed | refused | error, "why", "base": {path: blob}, "files": {path: bytes},
-         "layers", "changed_px"}
+         "layers", "notes" (fixed: what a reader should look at), "changed_px"}
     """
     source, kind = _worker["source"], _worker["kind"]
     out = {"card": card_name(job.psd), "psd": job.psd, "state": "skip", "why": "", "files": {}, "layers": [],
@@ -97,7 +97,7 @@ def sweep_card(job) -> dict:
         if not fixed.redrawn:
             return {**out, "state": "refused" if fixed.pixel_left else "skip",
                     "why": "; ".join(why for _, why in fixed.pixel_left)}
-        out["layers"] = fixed.redrawn[kind]
+        out["layers"], out["notes"] = list(fixed.redrawn[kind]), fixed.notes
         if not job.png:
             return {**out, "state": "refused", "why": "no PNG"}
         pngs = {path: png_export.open_png(source.blob(sha)) for path, sha in {job.png: job.png_new, **job.numbered}.items()}
@@ -221,6 +221,7 @@ def summary(plan: dict) -> str:
     lines = [f"{plan['kind']} sweep of {plan['ref']} ({plan['commit'][:8]}): {len(plan['fixed'])} cards fixed, "
              f"{len(plan['refused'])} refused, {len(plan['errors'])} errors, {plan['skipped']} not affected"]
     lines += [f"  fixed {e['psd']}: {', '.join(e['layers'])}" for e in plan["fixed"]]
+    lines += [f"  look at {e['psd']}: {note}" for e in plan["fixed"] for note in e.get("notes", ())]
     lines += [f"  refused {e['psd']}: {e['why']}" for e in plan["refused"]]
     lines += [f"  error {e['psd']}: {e['why']}" for e in plan["errors"]]
     return "\n".join(lines + ([f"plan: {plan['path']}"] if plan.get("path") else []))
