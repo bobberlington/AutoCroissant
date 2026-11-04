@@ -729,7 +729,7 @@ jobs:                    # three since 2026-10-24 (section 20): no runner sleeps
         run: python -m commands.card_guards check --repo "$GITHUB_REPOSITORY" --after "${SHA:-$GITHUB_SHA}" ... --out "$RUNNER_TEMP/guards" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Comment on the commit                     # MODE report/on; a re-run edits its own comment
       - name: Plan for the post job                     # land=true: something to tell (report) or write (on); card_errors
-      - uses: actions/upload-artifact@v4                # card-guards: the plan and its files, for the post job
+      - uses: actions/upload-artifact@v7                # card-guards: the plan and its files, for the post job
   post:
     needs: check
     if: "!cancelled() && needs.check.outputs.checked == 'success' && needs.check.outputs.land == 'true' && (mode report or on)"
@@ -738,7 +738,7 @@ jobs:                    # three since 2026-10-24 (section 20): no runner sleeps
     timeout-minutes: 75
     steps:
       - name: Work dir                                  # OUT
-      - uses: actions/download-artifact@v4              # the check job's plan
+      - uses: actions/download-artifact@v8              # the check job's plan
       - name: Told before                               # the check's told; a re-run of this job alone looks the comment's mark up
       # the bot checkout, setup-python 3.14 and the wheels, as in check
       - name: Land                                      # sleep to the quiet mark (nothing left after the timer), recent check, one commit,
@@ -749,7 +749,7 @@ jobs:                    # three since 2026-10-24 (section 20): no runner sleeps
       - name: Tell Discord                              # always(), not told before: discord-final.json only; URL never printed
         env: {WEBHOOK: "${{ secrets.DISCORD_STANDARDS_WEBHOOK }}"}
         run: curl -sS -o /dev/null -f -H "Content-Type: application/json" --data @"$OUT/discord-final.json" "$WEBHOOK" || echo "::warning::..."
-      - uses: actions/upload-artifact@v4                # card-guards again (overwrite): the plan and what Land settled
+      - uses: actions/upload-artifact@v7                # card-guards again (overwrite): the plan and what Land settled
   finish:
     needs: [check, post]
     if: always() && needs.check.result != 'skipped'
@@ -758,7 +758,7 @@ jobs:                    # three since 2026-10-24 (section 20): no runner sleeps
       - name: Tell Discord the run failed               # a failed push run whose post did not go out, not told before (the comment's
                                                         # mark, looked up here on a re-run), not cancelled by hand (no cancelled job
                                                         # ran to its timeout): once per failure streak (the last push run's STREAK)
-      - uses: actions/upload-artifact@v4                # STREAK (card-guards-failure-told), when the alert told or stayed quiet in a streak
+      - uses: actions/upload-artifact@v7                # STREAK (card-guards-failure-told), when the alert told or stayed quiet in a streak
 ```
 
 ## 13. Code plan

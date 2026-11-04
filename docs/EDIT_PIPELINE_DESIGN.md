@@ -951,7 +951,7 @@ jobs:
       - run: python -m commands.card_bake --repo "$GITHUB_REPOSITORY" --head "$GITHUB_SHA" [--pending] [--dry-run] [--card "$CARD"] | tee "$RUNNER_TEMP/report.md" >> "$GITHUB_STEP_SUMMARY"
         working-directory: bot         # if go; --pending on a schedule; dry run only for a dispatch with dry_run ticked; timeout 50 min
         env: {GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}", PSD_TOOLS_FONT_DIRS: "${{ github.workspace }}/MDW/Fonts"}
-      - uses: actions/upload-artifact@v4   # report + before/after/diff crops per card
+      - uses: actions/upload-artifact@v7   # report + before/after/diff crops per card
       - run: gh workflow run site.yml && gh workflow run tts-save.yml   # !cancelled(), only when the run committed ("committed `" in the report)
       - name: Tell Discord             # (failure() || cancelled()) on a schedule, first of a streak: DISCORD_CHANGELOG_WEBHOOK with the run's link
 ```
