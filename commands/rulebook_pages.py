@@ -60,8 +60,10 @@ PRINT_CSS = ("@page { size: 1080px 1920px; margin: 0 } "   # one sheet a page, n
 SHEET = (1080, 1920)                           # a page, as the Photoshop pages were (rulebook.js draws them)
 WAIT_SECONDS = 180                             # for the website to load and cut its pages
 # what the pages draw (key()): the sheets' HTML (text, and the pictures' and assets' URLs, which carry their content's
-# stamp), the style sheets, the loaded fonts; with UNSTAMPED, the folders the CSS reads by plain URL
-KEY_JS = ('JSON.stringify([document.querySelector(".rb-sheets")?.outerHTML || "", [...document.styleSheets].map(s => s.href || ""), '
+# stamp), the style sheets (an inline <style>'s text: index.html's style.css), the loaded fonts; with UNSTAMPED, the
+# folders the CSS reads by plain URL
+KEY_JS = ('JSON.stringify([document.querySelector(".rb-sheets")?.outerHTML || "", '
+          '[...document.styleSheets].map(s => s.href || s.ownerNode?.textContent || ""), '
           '[...document.fonts].filter(f => f.status === "loaded").map(f => [f.family, f.weight, f.style].join(" ")).sort()])')
 UNSTAMPED = ("site/rulebook/fonts", "site/rulebook/img")
 FONTS_DIR = "MDW/Fonts"                        # the card repo's fonts (psd_edit.FONTS_DIR)
@@ -284,7 +286,8 @@ def read_pages(checkout: str) -> dict:
 def write_pages(folder: str, shots: list, pdf_maker, key: str = "") -> dict:
     """
     pages.json and the PDF into folder: the PDF printed (pdf_maker(), bytes) when a page's hash changed, the list changed or the
-    PDF is missing; key (draw's) kept for the next run.
+    PDF is missing; key (draw's) kept for the next run only when the PDF was printed (else the last print's stays: what
+    a late picture or font changes is screenshot again).
 
     Returns:
         {"pages": n, "changed": [page names], "printed": bool}
@@ -309,7 +312,8 @@ def write_pages(folder: str, shots: list, pdf_maker, key: str = "") -> dict:
         with open(pdf, "wb") as fh:
             fh.write(data)
         out["printed"] = True
-    text = dumps({"about": ABOUT, "pdf": PDF_FILE, **({"key": key} if key else {}), "pages": pages}, ensure_ascii=False, indent=1) + "\n"
+    k = key if out["printed"] else old.get("key", "")
+    text = dumps({"about": ABOUT, "pdf": PDF_FILE, **({"key": k} if k else {}), "pages": pages}, ensure_ascii=False, indent=1) + "\n"
     if text != (open(listing, encoding="utf-8").read() if isfile(listing) else None):
         with open(listing, "w", encoding="utf-8") as fh:
             fh.write(text)

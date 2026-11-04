@@ -34,7 +34,7 @@ from commands.card_edits import CardAuthors
 from commands.card_models import RENAMED, card_name as _stem, rename_trailer
 from commands.git_commit import git as _git, plural as _plural
 from commands.repo_history import pinned_ref, refresh
-from commands.rulebook_pages import PDF_FILE, read_pages
+from commands.rulebook_pages import PAGES_JSON, PDF_FILE, read_pages
 from global_config import (CARD_BRANCH, CARD_REPO, EDITS_PATH, HISTORY_CLONE, LOCAL_DIR_LOC, RAW_BASE, RULEBOOK_PAGES, RULES_PATH,
                            SITE_URL, TTS_SAVE_PATH)
 
@@ -143,7 +143,8 @@ def _walk(objects, parents=()):
 
 def _strings(value, fn, top=False):
     """Apply fn to every string holding a repo link, in place inside containers (a card's TEAM_FIELDS skipped; top: the
-    save, whose global script and UI are Global.lua's and Global.xml's, their links live data on main)."""
+    save, whose global script and UI are Global.lua's and Global.xml's, their links live data on main but pages.json's,
+    which _global_script pins with the PDF)."""
     if isinstance(value, dict):
         card = value.get("Name") in CARD_NAMES
         for k, v in value.items():
@@ -801,7 +802,10 @@ def _fix_cards(save: dict, repo: _Repo, names: _Names, report: _Report) -> None:
 
 def _global_script(save: dict, repo: _Repo, report: _Report) -> None:
     """The save's global script and UI from TTS/Global.lua and TTS/Global.xml (a missing file leaves its part alone);
-    the script's resizeTargets rows stay the save's, for _resize_targets to regenerate."""
+    the script's resizeTargets rows stay the save's, for _resize_targets to regenerate; its pages.json link pinned to the
+    PDF's commit (the Rulebooks bag's link), so the page list is the PDF's (main when history doesn't know the PDF)."""
+    pages = f"{RULEBOOK_PAGES}/{PAGES_JSON}"
+    ref = repo.sha(f"{RULEBOOK_PAGES}/{PDF_FILE}")
     for path, key in ((GLOBAL_LUA, "LuaScript"), (GLOBAL_XML, "XmlUI")):
         try:
             with open(join(repo.checkout, path), encoding="utf-8") as f:
@@ -816,6 +820,8 @@ def _global_script(save: dict, repo: _Repo, report: _Report) -> None:
                 continue
             if now:                                         # the rows the updater keeps
                 text = text[:mine.start(2)] + now.group(2) + text[mine.end(2):]
+            if ref:
+                text = text.replace(f"{RAW}{CARD_BRANCH}/{pages}", f"{RAW}{ref}/{pages}")
         if text != old:
             save[key] = text
             report.script.append(f"`{path}` written into the save")

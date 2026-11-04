@@ -429,20 +429,27 @@ def test_pin_links_follow_a_moved_and_redrawn_card(repo, monkeypatch):
 
 def test_global_script_from_its_file(tmp_path):
     """TTS/Global.lua and TTS/Global.xml are the save's global script and UI (owner 10-30: never edited in the save); the
-    save's resizeTargets rows stay for _resize_targets; a file without the table leaves the script; a second run changes
-    nothing."""
+    save's resizeTargets rows stay for _resize_targets; its pages.json link goes to the PDF's commit (main when history
+    doesn't know it); a file without the table leaves the script; a second run changes nothing."""
     (tmp_path / "TTS").mkdir()
-    (tmp_path / "TTS" / "Global.lua").write_text('-- new\nlocal resizeTargets = {\n    ["X"] = true,\n}\nfunction onLoad() end\n', encoding="utf-8")
+    pages = f"{tts.RAW}main/TTS/Rulebook/pages.json"
+    (tmp_path / "TTS" / "Global.lua").write_text(f'-- new\nlocal resizeTargets = {{\n    ["X"] = true,\n}}\nlocal PAGES_URL = "{pages}"\n',
+                                                 encoding="utf-8")
     (tmp_path / "TTS" / "Global.xml").write_text("<Panel/>", encoding="utf-8")
     save = {"LuaScript": '-- old\nlocal resizeTargets = {\n    ["Big"] = true,\n}\n', "XmlUI": ""}
-    repo = SimpleNamespace(checkout=str(tmp_path))
+    asked = []
+    repo = SimpleNamespace(checkout=str(tmp_path), sha=lambda p: asked.append(p) or "abc1234")
     report = tts._Report()
     tts._global_script(save, repo, report)
-    assert save["LuaScript"] == '-- new\nlocal resizeTargets = {\n    ["Big"] = true,\n}\nfunction onLoad() end\n' and save["XmlUI"] == "<Panel/>"
-    assert len(report.script) == 2
+    pinned = f"{tts.RAW}abc1234/TTS/Rulebook/pages.json"
+    assert save["LuaScript"] == f'-- new\nlocal resizeTargets = {{\n    ["Big"] = true,\n}}\nlocal PAGES_URL = "{pinned}"\n' and save["XmlUI"] == "<Panel/>"
+    assert len(report.script) == 2 and asked[0] == "TTS/Rulebook/Rulebook.pdf"
     again = tts._Report()
     tts._global_script(save, repo, again)
     assert again.script == []
+    unknown = {"LuaScript": "", "XmlUI": ""}
+    tts._global_script(unknown, SimpleNamespace(checkout=str(tmp_path), sha=lambda p: None), tts._Report())
+    assert f'PAGES_URL = "{pages}"' in unknown["LuaScript"]
     (tmp_path / "TTS" / "Global.lua").write_text("-- no table\n", encoding="utf-8")
     broken = tts._Report()
     tts._global_script(save, repo, broken)
