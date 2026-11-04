@@ -589,6 +589,25 @@ def test_a_psd_fix_survives_a_later_png_push(tmp_path, monkeypatch):
     assert "- The rest landed in `cccccccc`" in comment
 
 
+@pytest.mark.parametrize("png_pushed", [False, True])
+def test_r1_is_untold_once_its_tags_fix_lands(tmp_path, monkeypatch, png_pushed):
+    """Owner 2026-11-03, the guards set plain timing tags as badges: R1 is not told when the fixed PSD lands; when the
+    author pushed the PNG since, the redraw's PNG is dropped, the PSD lands as its plain and R1 stays told."""
+    r1 = "timing tag (Action) not set in the stoogedings badge font"
+    out = tmp_path / "plan"
+    snack = _entry("Snack", told=[r1])
+    _write(out, snack, "X/Snack.png", "png", b"png", "re-exported for timing tags set as badges")
+    _write(out, snack, "X/Snack.psd", "psd", b"psd", "timing tags set as badges (Ability)")
+    _write(out, snack, "X/Snack.psd.plain", "psd", b"plain", "")
+    plain = snack["writes"].pop()
+    snack["writes"][0].update(composer=True, silent=True)
+    snack["writes"][1].update(silent=True, pixels=["tags"], settles=[r1], plain={"file": plain["file"], "sha": plain["sha"], "line": ""})
+    plan = _full_plan(tmp_path, [snack])
+    FakeHub({"X/Snack.psd": ("100644", "s1"), "X/Snack.png": ("100644", "author's" if png_pushed else "p1")}).install(monkeypatch)
+    report = cg.land(plan)
+    assert report["sha"] and report["told"] == {"X/Snack.psd": [r1] if png_pushed else []}
+
+
 def test_land_never_raises_and_still_settles_the_post(tmp_path, monkeypatch):
     """A requests error (a POST, or a GET past its retries) is the error like a Transient: landed.json, the comment's
     new body and the settled post are written, exit 1, and the post tells the PNG and the fix that were not made."""

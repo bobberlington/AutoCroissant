@@ -1437,7 +1437,8 @@ def one_colour_badges(path: str, out_path: str, fonts: Optional[Callable[[list],
 
 def tags_to_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]]) -> list:
     """
-    R1's fix (owner 2026-11-03: "make sure everything uses the badges"), a sweep's PIXEL_FIXES kind: tag_layers' plain
+    R1's fix (owner 2026-11-03: "make sure everything uses the badges"; the guards on every push too), the PIXEL_FIXES
+    kind: tag_layers' plain
     timing tags set in the icon font at the layer's own badge style (psd_edit.icon_style; with none, at the text's own
     style, ICON_FONT added as the bake adds it), ligatures on, then fitted as a typed badge (badge_fits: size and
     middle); their layers' changed glyphs redrawn (a splice; text a badge moves is redrawn, an FX layer on moved words
@@ -1501,14 +1502,13 @@ PIXEL_LINES = {"apostrophes": "straight apostrophes", "old glyphs": "old icon fo
                "badges": "badges and icons fitted to their text",
                "overlay badges": "badges under an overlay in one colour", "tags": "timing tags set as badges"}
 CARD_PIXELS = ("badges", "overlay badges", "tags")   # not on rule pages: their badges are laid out by hand (legends, tables)
-SWEEP_ONLY = ("tags",)      # run by a sweep (card_sweep --kind) alone, never on a push: R1 is told to the card maker
 
 
 def pixel_kinds(psd, kinds: tuple = ()) -> tuple:
     """The pixel fix kinds (all by default) whose layers the PSD (open, or its bytes) has."""
     try:
         psd = PSDImage.open(BytesIO(psd)) if isinstance(psd, bytes) else psd
-        return tuple(kind for kind in kinds or tuple(k for k in PIXEL_FIXES if k not in SWEEP_ONLY) if PIXEL_FIXES[kind][0](psd))
+        return tuple(kind for kind in kinds or tuple(PIXEL_FIXES) if PIXEL_FIXES[kind][0](psd))
     except Exception:                           # unreadable: nothing to fix
         return ()
 
@@ -1570,7 +1570,6 @@ __all__ = [
     'plain_tags',
     'PIXEL_FIXES',
     'PIXEL_LINES',
-    'SWEEP_ONLY',
     'pixel_kinds',
     'salt_layers',
     'tag_layers',

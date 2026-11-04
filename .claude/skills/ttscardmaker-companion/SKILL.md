@@ -194,9 +194,9 @@ Cost badges (2026-11-03, website only: the font has none, the mock-up and the ba
 has bricks in parentheses yet. Diffs (History, Changes, Balance, versions) draw badges and icons too (`inlineHtml`).
 
 Plain tags on cards (R1, 2026-11-03): four live cards typed a tag in their body font (Elmadan, Terry Hintz, Joel
-Miller: `(Action)` in Apple-Kid; Papyrus: `(1CD)` in ParchmentMF). The sweep-only pixel fix `tags`
-(`card_standards.tags_to_badges`, `SWEEP_ONLY`: never on a push) sets them in the icon font, fitted as a typed badge,
-by glyph; `python -m commands.card_sweep run --kind tags --cards ...`.
+Miller: `(Action)` in Apple-Kid; Papyrus: `(1CD)` in ParchmentMF), swept in TC a8ec8a1b. The pixel fix `tags`
+(`card_standards.tags_to_badges`) sets them in the icon font, fitted as a typed badge, by glyph; the guards run it on
+every push (owner 2026-11-03), and R1 is told only when that fix doesn't land (`card_guards._fix_stands`).
 
 Shape (revised 2026-10-19, confirmed in Photoshop 2023 on 2026-10-20 with the reinstalled font): a pill about
 0.95 em tall with label capitals about 0.55 em, the label centred, color only — no extra symbol on multi-turn

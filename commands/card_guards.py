@@ -5,7 +5,8 @@ merged into the old PNG; Photoshop's stored composite only cross-checks, and a P
 bake's own gates, told "no stored image to cross-check"); guard 2 (card_standards) checks the pushed PSDs against the card
 standards (missing fonts are the font check's alone) and fixes only the 0-pixel classes; the Single-line Composer (R8) it
 always sets unsaid, box text that rewraps redrawn and its PNG re-exported: only the bot commit's message names it
-(owner, 2026-10-25); so are the pixel fixes (card_standards.PIXEL_FIXES: straight apostrophes, old icon font glyphs),
+(owner, 2026-10-25); so are the pixel fixes (card_standards.PIXEL_FIXES: straight apostrophes, old icon font glyphs,
+badges fitted, timing tags set as badges: R1 then untold),
 rule pages included, the PNG re-exported the same way. One report per push: the job
 summary and commit comment (report.md), one Discord post for the standards channel (discord.json: no mentions, no
 previews), and a plan of the writes (plan.json) that `land` commits once, after the 30-minute quiet window. Each card
@@ -815,6 +816,8 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
             write = {"path": job.psd, "file": file, "sha": blob_sha(data), "kind": "psd",
                      "line": "; ".join(fixed.applied + composer + silent), "shown": said, "silent": not said,
                      "composer": bool(fixed.composer), "pixels": sorted(result.redrawn)}
+            if "tags" in result.redrawn:        # R1 is told only if this write doesn't land with its tags (after_window)
+                write["settles"] = [issue["line"] for issue in result.issues if issue["code"] == "R1" and issue["told"]]
             if redrawn:                         # land swaps in plain when the redraw's PNGs do not land
                 write["plain"] = {"file": _save(out, job.psd + ".plain", fixed.plain), "sha": blob_sha(fixed.plain),
                                   "line": "; ".join(fixed.applied + composer), "pixels": []}   # no redraw: no pixel fix
@@ -1362,12 +1365,26 @@ def after_window(data: dict, landed: dict, tip: Optional[Snapshot], bot_moved: f
                 lines.append(f"PNG not made: {why}; export it in Photoshop")
             else:
                 lines.append(f"{basename(write['path'])} not updated: {why}; re-export it in Photoshop")
+        for write in entry.get("writes", []):   # R1's tags set as badges by the bot: not told once that write stands
+            if write.get("settles") and _fix_stands(entry, write, landed, here):
+                lines = [line for line in lines if line not in write["settles"]]
         unchecked = export.get("unchecked")
         if unchecked in lines and png and (any(line.startswith("PNG not made: ") for line in lines)
                                            or (here and not _holds(entry, png, here(png)))):
             lines.remove(unchecked)             # no bot PNG stands: the author's, or none
         told[psd], after[psd] = list(dict.fromkeys(lines)), notes
     return told, after
+
+
+def _fix_stands(entry: dict, write: dict, landed: dict, here: Optional[Head]) -> bool:
+    """A PSD write stands with its pixel fixes: on the branch already, or committed now with its redraw's PNGs (when one
+    of them is dropped the PSD lands as its plain, without them)."""
+    if here is not None and here(write["path"]) == write["sha"]:
+        return True
+    if not landed.get("sha") or [entry["card"], write["path"]] not in landed.get("included", []):
+        return False
+    pngs = {w["path"] for w in entry["writes"] if w["kind"] == "png" and w.get("composer")}
+    return not any(card == entry["card"] and path in pngs for card, _, path in landed.get("dropped", []))
 
 
 def _read_files(out_dir: str, entries: list) -> dict:
