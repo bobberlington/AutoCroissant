@@ -3,9 +3,9 @@ from os import environ, remove, replace
 from os.path import abspath, exists, expanduser, isdir
 from re import IGNORECASE, compile as re_compile
 from shutil import rmtree
-from subprocess import CalledProcessError, SubprocessError, run
+from subprocess import CalledProcessError, SubprocessError, TimeoutExpired, run
 from threading import Lock
-from time import monotonic
+from time import monotonic, sleep
 from typing import Optional
 from urllib.parse import quote
 
@@ -229,7 +229,14 @@ def refresh() -> bool:
                 _load()
             clone = expanduser(HISTORY_CLONE)
             if exists(clone):
-                _git("fetch", "--quiet", "origin", f"+refs/heads/{CARD_BRANCH}:refs/heads/{CARD_BRANCH}")
+                for attempt in (1, 2):              # once more after a moment: a blip (11-04: SSH refused once)
+                    try:
+                        _git("fetch", "--quiet", "origin", f"+refs/heads/{CARD_BRANCH}:refs/heads/{CARD_BRANCH}")
+                        break
+                    except (CalledProcessError, TimeoutExpired):
+                        if attempt == 2:
+                            raise
+                        sleep(5)
             else:                                   # clone beside it, then rename: no half clone left behind
                 rmtree(f"{clone}.tmp", ignore_errors=True)
                 run(["git", "clone", "--quiet", "--bare", "--filter=blob:none",

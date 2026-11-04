@@ -90,7 +90,7 @@ NOBODY = "Someone"
 NOREPLY = r"(?:\d+\+)?([A-Za-z0-9-]+)@users\.noreply\.github\.com"   # a GitHub noreply email names its login
 QUIET_MARGIN = timedelta(0)                    # land waits RECENT plus this after the push (owner 2026-11-03: no wait; 60 s before)
 ANCHOR_WINDOW = timedelta(hours=2)              # a burst: PSD commits this close to the push may stand in for its PNG's PSD
-POOL_MIN = 8                                    # checks of this many cards or more run in a process pool
+POOL_MIN = 8                                    # checks of this many cards or more run in a process pool (2 on a runner)
 POOL_MAX = 4                                    # local pools at most this many (each runs git); runners use every core (K-2)
 FONT_FILES_EACH = 4                             # R8: font files tried a face, likeliest name first (270 of 275 faces in 3, 10-25)
 FONT_FETCH_MAX = 12                             # R8: font files a run (a worker) fetches at most, a request each
@@ -1169,10 +1169,11 @@ def check(clone: str, after: str, before: str = "", repository: str = "", author
     context, vocab = build_context(source, tree, errors) if jobs else (standards.Context(), None)
     with TemporaryDirectory(prefix="guard-fonts-") as fonts:          # R8's fetched font files
         source.fonts = fonts
-        if len(jobs) >= POOL_MIN and workers != 1:
+        least = 2 if environ.get("GITHUB_ACTIONS") == "true" else POOL_MIN
+        if len(jobs) >= least and workers != 1:
             count = workers or pool_size(len(jobs))
             with ProcessPoolExecutor(count, initializer=_init_worker, initargs=(clone, repository, context, vocab, tree, fonts)) as pool:
-                results = list(pool.map(_pooled, [(job, out, mode) for job in jobs], chunksize=2))
+                results = list(pool.map(_pooled, [(job, out, mode) for job in jobs], chunksize=1))
         else:
             parser = vocab.parser() if vocab is not None else None
             results = [run_job(source, job, context, parser, out, mode) for job in jobs]

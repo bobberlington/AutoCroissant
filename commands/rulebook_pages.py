@@ -23,7 +23,7 @@ from os.path import getsize, isdir, isfile, join
 from platform import system
 from select import select
 from shutil import rmtree, which
-from subprocess import DEVNULL, Popen, TimeoutExpired
+from subprocess import DEVNULL, PIPE, Popen, TimeoutExpired, run as run_process
 from tempfile import mkdtemp
 from time import monotonic, sleep, time
 from typing import Optional
@@ -57,7 +57,12 @@ PRINT_CSS = ("@page { size: 1080px 1920px; margin: 0 } "   # one sheet a page, n
              ".rb-sheets .rb-sheet { zoom: 1 !important; box-shadow: none !important; break-after: page; margin: 0 !important } }")
 SHEET = (1080, 1920)                           # a page, as the Photoshop pages were (rulebook.js SHEET)
 WAIT_SECONDS = 180                             # for the website to load and cut its pages
-SITE_WAIT = 15 * 60                            # for the website's build of the checkout's chapters (Card sync goes at once)
+# what the pages draw (key()): the sheets' HTML (text, and the pictures' and assets' URLs, which carry their content's
+# stamp), the style sheets, the loaded fonts; with UNSTAMPED, the folders the CSS reads by plain URL
+KEY_JS = ('JSON.stringify([document.querySelector(".rb-sheets")?.outerHTML || "", [...document.styleSheets].map(s => s.href || ""), '
+          '[...document.fonts].filter(f => f.status === "loaded").map(f => [f.family, f.weight, f.style].join(" ")).sort()])')
+UNSTAMPED = ("site/rulebook/fonts", "site/rulebook/img")
+SITE_WAIT = 8 * 60                             # for the website's build of the checkout's chapters (Card sync goes at once; its step's limit is 10)
 SITE_POLL = 20                                 # seconds between looks at its data/rules.json
 CALL_SECONDS = 60                              # one DevTools call
 ABOUT = ("The rulebook's TTS PDF, printed from the website's #/rules/print by AutoCroissant commands/rulebook_pages.py "
@@ -131,13 +136,16 @@ def find_chrome() -> Optional[str]:
     return environ.get("CHROME") or next((found for name in CHROMES if (found := which(name))), None)
 
 
-def draw(site: str, exe: str) -> tuple:
+def draw(site: str, exe: str, key_of=None, known: str = "") -> tuple:
     """
     The website's TTS pages.
 
+    Args:
+        key_of: what the pages draw (KEY_JS's text) -> their key; known: the last print's key (no screenshots when the same)
+
     Returns:
-        ({file: source} of the chapters the website cut them from, [(sheet entry, PNG bytes)] in book order, a Printer:
-        its pdf() prints the PDF, its close() quits Chrome (call it in any case))
+        ({file: source} of the chapters the website cut them from, [(sheet entry, PNG bytes)] in book order, or None when
+        the key is known's, a Printer: its pdf() prints the PDF, its close() quits Chrome (call it in any case), the key)
     """
     chrome = Chrome(exe)
     try:
@@ -166,6 +174,9 @@ def draw(site: str, exe: str) -> tuple:
                     'return [r.left + scrollX, r.top + scrollY, r.width, r.height]; })')
         if len(boxes) != len(listed["sheets"]):
             raise RuntimeError(f"{len(boxes)} pages on the website, {len(listed['sheets'])} listed")
+        key = key_of(run(KEY_JS)) if key_of else ""
+        if key and key == known:                             # nothing they draw changed: no screenshots
+            return dict(listed["chapters"]), None, Printer(None, chrome.close), key
         texts = run('[...document.querySelectorAll(".rb-sheets .rb-sheet")].map(e => e.innerText.replace(/\\s+/g, " ").trim())')
         for entry, text in zip(listed["sheets"], texts or []):
             entry["text"] = text                             # the TTS save's search (Global.lua)
@@ -188,7 +199,7 @@ def draw(site: str, exe: str) -> tuple:
             except RuntimeError:                       # an older Chrome without the outline: plain
                 got = chrome.call("Page.printToPDF", {k: v for k, v in params.items() if not k.startswith("generate")}, session, seconds=240)
             return b64decode(got["data"])
-        return dict(listed["chapters"]), shots, Printer(pdf, chrome.close)
+        return dict(listed["chapters"]), shots, Printer(pdf, chrome.close), key
     except BaseException:
         chrome.close()
         raise
@@ -215,6 +226,18 @@ def chapter_sources(checkout: str) -> dict:
     return found
 
 
+def key(drawn: str, checkout: str) -> str:
+    """The print's key: what the pages draw (KEY_JS's text) and the UNSTAMPED folders' git trees in the checkout."""
+    trees = []
+    for path in UNSTAMPED:
+        try:
+            got = run_process(["git", "-C", checkout, "rev-parse", f"HEAD:{path}"], stdout=PIPE, stderr=DEVNULL, timeout=30)
+            trees.append(got.stdout.decode().strip() if got.returncode == 0 else "")
+        except (OSError, TimeoutExpired):
+            trees.append("")
+    return sha256("\n".join([drawn, *trees]).encode("utf-8")).hexdigest()
+
+
 def page_sha(png: bytes) -> str:
     """A page's pixels' hash (its PNG bytes may differ for the same pixels)."""
     with Image.open(BytesIO(png)) as im:
@@ -222,7 +245,7 @@ def page_sha(png: bytes) -> str:
 
 
 def read_pages(checkout: str) -> dict:
-    """pages.json ({} when missing or unreadable): {"pdf": file, "pages": [{name, num, sha}]}."""
+    """pages.json ({} when missing or unreadable): {"pdf": file, "pages": [{name, num, sha}], "key": the print's key}."""
     path = join(checkout, RULEBOOK_PAGES, PAGES_JSON)
     try:
         with open(path, encoding="utf-8") as fh:
@@ -232,10 +255,10 @@ def read_pages(checkout: str) -> dict:
     return data if isinstance(data, dict) and isinstance(data.get("pages"), list) else {}
 
 
-def write_pages(folder: str, shots: list, pdf_maker) -> dict:
+def write_pages(folder: str, shots: list, pdf_maker, key: str = "") -> dict:
     """
     pages.json and the PDF into folder: the PDF printed (pdf_maker(), bytes) when a page's hash changed, the list changed or the
-    PDF is missing.
+    PDF is missing; key (draw's) kept for the next run.
 
     Returns:
         {"pages": n, "changed": [page names], "printed": bool}
@@ -260,7 +283,7 @@ def write_pages(folder: str, shots: list, pdf_maker) -> dict:
         with open(pdf, "wb") as fh:
             fh.write(data)
         out["printed"] = True
-    text = dumps({"about": ABOUT, "pdf": PDF_FILE, "pages": pages}, ensure_ascii=False, indent=1) + "\n"
+    text = dumps({"about": ABOUT, "pdf": PDF_FILE, **({"key": key} if key else {}), "pages": pages}, ensure_ascii=False, indent=1) + "\n"
     if text != (open(listing, encoding="utf-8").read() if isfile(listing) else None):
         with open(listing, "w", encoding="utf-8") as fh:
             fh.write(text)
@@ -312,12 +335,16 @@ def update_pages(checkout: str, site: str = SITE_URL, exe: str = "", wait: float
         return f"Rulebook pages: no chapters in {RULEBOOK_SRC}; pages left as they are."
     if wait:
         wait_for_site(site, mine, wait)
-    theirs, shots, printer = draw(site, exe)
+    old = read_pages(checkout)
+    known = old.get("key", "") if isfile(join(checkout, RULEBOOK_PAGES, PDF_FILE)) else ""
+    theirs, shots, printer, drawn = draw(site, exe, lambda text: key(text, checkout), known)
     try:
         if theirs != mine:
             return (f"Rulebook PDF: the website doesn't show main's chapters yet ({len(set(theirs.items()) ^ set(mine.items()))} "
                     "differ); left as it is, the next run prints it.")
-        done = write_pages(join(checkout, RULEBOOK_PAGES), shots, printer.pdf)
+        if shots is None:
+            return f"Rulebook PDF: {len(old['pages'])} pages, as they were (nothing they draw changed)."
+        done = write_pages(join(checkout, RULEBOOK_PAGES), shots, printer.pdf, drawn)
     finally:
         printer.close()
     if not done["printed"]:

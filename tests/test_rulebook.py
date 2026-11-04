@@ -66,6 +66,9 @@ def test_pdf_printed_only_when_a_page_changes(tmp_path):
     book = rulebook_pages.read_pages(str(tmp_path))
     assert book["pdf"] == "Rulebook.pdf" and [p["name"] for p in book["pages"]] == ["Cover", "Stats", "Stats 2"]
     assert book["pages"][1]["t"] == "STATS HP DEF" and "t" not in book["pages"][0]                   # each page's text: the save's search
+    rulebook_pages.write_pages(str(folder), shots, pdf, "k1")                       # draw's key, for the next run's skip
+    assert rulebook_pages.read_pages(str(tmp_path))["key"] == "k1" and len(printed) == 3
+    assert rulebook_pages.key("<sheets>", str(tmp_path)) == rulebook_pages.key("<sheets>", str(tmp_path)) != rulebook_pages.key("<sheet>", str(tmp_path))
 
 
 def _card(guid, path, nick, deck_id):

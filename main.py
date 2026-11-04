@@ -342,7 +342,6 @@ async def slash_query_rulebook(
     interaction: Interaction,
     search_text: str,
     limit: int = -1):
-    await interaction.response.defer()
     await query_rulebook(interaction, search_text, limit)
 
 

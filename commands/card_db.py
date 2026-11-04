@@ -388,17 +388,18 @@ def write_bytes(path: str, data: bytes) -> None:
             raise
 
 
-def _check_text(name: str, data: bytes) -> None:
-    """A downloaded data file loads as its kind, every record too; else ValueError (nothing is written then)."""
+def _check_text(name: str, data: bytes):
+    """A downloaded data file loads as its kind, every record too; else ValueError (nothing is written then). Returns
+    what it parsed (the cards, the chapters), None for the details: its sha256 is the manifest's, and the build's
+    gate parsed it (4 MB the bot reads only for /fonts)."""
     text = data.decode("utf-8")
     if name == STATS_JSON:
-        parse_stats(text, name)
-    elif name == OLD_STATS_JSON:
-        parse_old_stats(text, name)
-    elif name == RULEBOOK_JSON:
-        parse_rulebook(text, name)
-    elif not isinstance(loads(text).get("cards"), dict):
-        raise ValueError(f"{name}: not a details file")
+        return parse_stats(text, name)
+    if name == OLD_STATS_JSON:
+        return parse_old_stats(text, name)
+    if name == RULEBOOK_JSON:
+        return parse_rulebook(text, name)
+    return None
 
 
 def read_json(path: str) -> dict:
@@ -425,7 +426,8 @@ def sync(folder: str, repository: str, branch: str) -> dict:
         branch: The data branch
 
     Returns:
-        {"commit", "changed": [file names written], "manifest"}: changed is [] when the folder was already there
+        {"commit", "changed": [file names written], "manifest", "parsed": {file name: its data, for the written ones but
+        the details}}: changed is [] when the folder was already there
 
     Raises:
         LookupError: the branch does not exist; requests' exceptions or ValueError: a failed or bad download (nothing
@@ -456,7 +458,7 @@ def sync(folder: str, repository: str, branch: str) -> dict:
     files = manifest.get("files") if isinstance(manifest, dict) else None
     if not isinstance(files, dict):
         raise ValueError(f"{MANIFEST_JSON} at {commit[:8]}: no file hashes")
-    wanted = {}
+    wanted, parsed = {}, {}
     for name in DATA_FILES:
         if not files.get(name):
             raise ValueError(f"{MANIFEST_JSON} at {commit[:8]} lists no {name}")
@@ -466,14 +468,16 @@ def sync(folder: str, repository: str, branch: str) -> dict:
         data = raw(name)
         if sha256(data).hexdigest() != files[name]:
             raise ValueError(f"{name} at {commit[:8]}: sha256 differs from the manifest")
-        _check_text(name, data)
+        found = _check_text(name, data)
+        if found is not None:
+            parsed[name] = found
         wanted[name] = data
     makedirs(folder, exist_ok=True)
     for name, data in wanted.items():
         write_bytes(join(folder, name), data)
     write_bytes(join(folder, MANIFEST_JSON), manifest_data)
     write_text(join(folder, SYNC_JSON), dumps({"commit": commit, "etag": etag}) + "\n")
-    return {"commit": commit, "changed": sorted(wanted), "manifest": manifest}
+    return {"commit": commit, "changed": sorted(wanted), "manifest": manifest, "parsed": parsed}
 
 
 # ========================

@@ -240,8 +240,8 @@ def git_commit(repository: str, head: str, files: dict, message: str) -> Optiona
     clone, env = expanduser(HISTORY_CLONE), git_env()
     commit = _write_commit(clone, head, files, message, env, "the history clone")
     url, auth = push_target(repository)
-    try:                                        # --no-thin: a thin pack would fetch the old blobs as its delta bases
-        push = run_process(["git", "-C", clone, "push", "--porcelain", "--no-thin", url,
+    try:                                        # no delta search: over HTTPS the pack is thin anyway and would want the old blobs
+        push = run_process(["git", "-C", clone, "-c", "pack.window=0", "push", "--porcelain", "--no-thin", url,
                             f"{commit}:refs/heads/{CARD_BRANCH}"], capture_output=True, timeout=GIT_TIMEOUT, env={**env, **auth})
     except (TimeoutExpired, OSError) as error:
         raise Transient(f"git push failed: {error}") from error

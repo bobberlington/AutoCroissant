@@ -38,7 +38,7 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
     flags = {"card_data": {"--repo", "--checkout", "--head", "--blobs", "--db", "--empty", "--full", "--cards",
                            "--allow-archive", "--restore", "--budget", "--run", "--builder-ref", "--summary", "--message",
                            "--dry-run", "--baked", "--own", "--rewrite", "--verdicts", "--events", "--guard-events", "--help"},
-             "card_bake": None, "tts_save": {"--names", "--help"}, "rulebook_pages": {"--site", "--help"}}
+             "card_bake": None, "tts_save": {"--names", "--help"}, "rulebook_pages": {"--site", "--wait", "--help"}}
     for cli, expected in flags.items():
         done = run_process([executable, "-m", f"commands.{cli}", "--help"], cwd=bot, capture_output=True, text=True, timeout=120)
         assert done.returncode == 0, done.stderr

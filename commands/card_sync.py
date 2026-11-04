@@ -283,9 +283,15 @@ def _pull() -> tuple:
     _checked["at"] = monotonic()
     got = card_db.sync(CARD_DATA_DIR, CARD_REPO, DATA_BRANCH)
     reloaded = got["commit"] != _loaded["commit"]
-    if reloaded:
-        stats, old, _, _ = card_db.read_db(CARD_DATA_DIR, details=False)
-        _swap(stats, old, card_db.read_rulebook(CARD_DATA_DIR), got["commit"])
+    if reloaded:                                     # what the sync parsed, the rest from the copy
+        parsed = got.get("parsed") or {}
+        if card_db.STATS_JSON in parsed and card_db.OLD_STATS_JSON in parsed:
+            stats, old = parsed[card_db.STATS_JSON], parsed[card_db.OLD_STATS_JSON]
+        else:
+            stats, old, _, _ = card_db.read_db(CARD_DATA_DIR, details=False)
+            stats, old = parsed.get(card_db.STATS_JSON, stats), parsed.get(card_db.OLD_STATS_JSON, old)
+        rulebook = parsed[card_db.RULEBOOK_JSON] if card_db.RULEBOOK_JSON in parsed else card_db.read_rulebook(CARD_DATA_DIR)
+        _swap(stats, old, rulebook, got["commit"])
     return (got["manifest"], reloaded)
 
 
@@ -402,11 +408,12 @@ def check() -> bool:
 
 
 def _refresh_cards(interaction) -> None:
-    """After a sync: the card list (a 304 when the tree is unchanged), the query tables, then the type emojis over it."""
+    """After a sync: the query tables (the new data searchable at once), the card list (a 304 when the tree is unchanged;
+    seconds of network), then the type emojis over it."""
     from commands.query_card import DEFAULT_REPOSITORY, card_repo
     from commands.type_emojis import sync_changed_emojis
-    card_repo.populate_files()
     card_repo.prep_dataframes()
+    card_repo.populate_files()
     tree = card_repo._tree                           # emojis follow the card repo, never a /set_repo one
     if tree is not None and not tree.get("truncated") and card_repo.repository == DEFAULT_REPOSITORY:
         shas = {item.get("path", ""): item.get("sha") for item in tree.get("tree", [])}

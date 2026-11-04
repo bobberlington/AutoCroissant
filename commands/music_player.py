@@ -54,6 +54,7 @@ ydl_opts = {
     "keepvideo":          getattr(config, "KEEPVIDEO", True),
     "cookiesfrombrowser": ("safari", None, None, None) if cookies_from_browser else None,
     "quiet":              True,  # Suppress console spam
+    "noprogress":         True,  # and the progress bars (journald took them for blobs)
     "no_warnings":        True,
 }
 ydl_preprocess_opts = {**ydl_opts, "playlistend": 1}

@@ -362,8 +362,9 @@ def _workflow() -> tuple:
 def test_workflow_shape():
     """Dispatch only, three required inputs, the request in the run name and the concurrency group. Two jobs: the
     preview (the workflow's contents: read; its bot checkout card_preview.SPARSE_FILES; the card workflows' install of
-    requirements-cards.txt, but not pyoxipng, and its cache entry) hands its out dir to the publish job (contents: write;
-    card_preview_branch.SPARSE_FILES; Python 3.14 without site-packages, no pip; no --png), 15 minutes between them;
+    requirements-cards.txt, but not pyoxipng, and its cache entry) hands its out dir to the publish job (contents: write,
+    actions: read; card_preview_branch.SPARSE_FILES; Python 3.14 without site-packages, no pip; no --png), which starts
+    beside it and waits for the hand-over (Take over and Publish only then), 15 minutes at most;
     no secret but GITHUB_TOKEN (the Preview step's REST reads), no Discord, and no input expanded inside a shell script
     (only in env)."""
     text, doc = _workflow()
@@ -376,10 +377,13 @@ def test_workflow_shape():
     assert doc["concurrency"] == {"group": "card-preview-${{ inputs.request }}", "cancel-in-progress": False}
     assert list(doc["jobs"]) == ["preview", "publish", "caches"]
     preview, publish = doc["jobs"]["preview"], doc["jobs"]["publish"]
-    assert "permissions" not in preview and publish["permissions"] == {"contents": "write"}
+    assert "permissions" not in preview and publish["permissions"] == {"contents": "write", "actions": "read"}
     assert "if" not in preview and preview["outputs"]["ok"] == "${{ steps.validate.outputs.ok }}"
-    assert publish["needs"] == "preview" and publish["if"] == "${{ !cancelled() && needs.preview.outputs.ok == 'true' }}"
-    assert preview["timeout-minutes"] + publish["timeout-minutes"] <= 15
+    assert "needs" not in publish and "if" not in publish                          # beside the preview
+    assert preview["timeout-minutes"] < publish["timeout-minutes"] <= 15
+    wait = next(s for s in publish["steps"] if s.get("id") == "wait")
+    assert "card-preview" in wait["run"] and '"Validate"' in wait["run"] and wait["env"] == {"GH_TOKEN": "${{ github.token }}"}
+    assert all(s.get("if") == "steps.wait.outputs.go == 'true'" for s in publish["steps"] if s.get("name") in ("Take over", "Publish"))
     for step in preview["steps"] + publish["steps"]:
         assert "${{" not in step.get("run", ""), step.get("name") or step["run"][:40]    # inputs reach the shell through env only
 
@@ -483,8 +487,7 @@ def _run_jobs(text: str, inputs: dict, workspaces: dict, bots: dict, tmp_path: P
         artifact.mkdir(parents=True, exist_ok=True)
         shutil.copy(path, artifact / path.name)
     outputs = dict(line.partition("=")[::2] for line in (runner / "output").read_text().splitlines()) if (runner / "output").exists() else {}
-    assert doc["jobs"]["publish"]["if"] == "${{ !cancelled() && needs.preview.outputs.ok == 'true' }}"
-    if outputs.get("ok") == "true":
+    if outputs.get("ok") == "true":                     # the publish job's wait: go once a validated preview ends
         runner = tmp_path / name / "publish"
         runner.mkdir(parents=True)
         codes["Take over"] = 0 if artifact.is_dir() else 1
