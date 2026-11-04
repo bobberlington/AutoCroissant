@@ -97,8 +97,10 @@ out({ creep: rows(chart(r.balance, "bal-creep")), item: render(cards, A, "kind=i
 
 
 def test_a_subseries_is_one_name_across_series(tmp_path):
-    """Owner 10-25: one subseries across series, a card may have one without a series. Stats: under each series it is
-    in, and under "No series" (last); counted once. The editor's helpers (edit.js, tray.js) match it by name alone."""
+    """Owner 10-25: one subseries across series, a card may have one without a series. Stats (owner 10-31: a Series /
+    Subseries toggle): the series view lists the series and "No series"; the subseries view one row per subseries,
+    counted once across its series, its link by subseries alone. The editor's helpers (edit.js, tray.js) match it by
+    name alone."""
     out = node(tmp_path, """
 const cards = fixture();
 cards[0].subseries = "Dream"; cards[6].subseries = "Dream";       // M1 (Mario), K1 (Kirby)
@@ -113,11 +115,8 @@ out({ rows: rows(sec), kpi: text(top).match(/Creature subseries (\\d+)/)?.[1], l
   buckets: E.readBuckets(JSON.stringify({ subseries: ["Dream", "Land"] })).subseries,
   pins, counts: T.countPins(pins, cards) });
 """ % (json.dumps((ASSETS / "edit.js").as_uri()), json.dumps((ASSETS / "tray.js").as_uri())))
-    assert out["rows"] == [["Mario", "6"], ["↳ Dream", "1"], ["↳ No subseries", "5"], ["Kirby", "6"], ["↳ Dream", "1"],
-                           ["↳ No subseries", "5"], ["No series", "1"], ["↳ Dream", "1"]]
+    assert out["rows"] == [["Mario", "6"], ["Kirby", "6"], ["No series", "1"], ["Dream", "3"]]   # series view, then subseries
     assert out["kpi"] == "1"
-    assert out["links"] == [{"kind": "creature", "series": "Mario", "subseries": "Dream"},
-                            {"kind": "creature", "series": "Kirby", "subseries": "Dream"},
-                            {"kind": "creature", "missing": "series", "subseries": "Dream"}]
+    assert out["links"] == [{"kind": "creature", "subseries": "Dream"}]
     assert out["carrying"] == ["M1", "K1", "Z1"] and out["filter"] == {"subseries": ["Dreams"]}
     assert out["buckets"] == ["Dream", "Land"] and out["pins"] == [{"k": "subseries", "v": "Dream"}] and out["counts"] == [3]
