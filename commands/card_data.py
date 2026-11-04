@@ -375,10 +375,8 @@ class CardBuild:
         """
         The UTC day of the earliest version of the card the database holds: its first upload as far as the bot saw it
         (the website's is its PNG's first commit; the dates file covers the cards from before the bot's history).
-        None for a rulebook page (the website dates none) or no real date.
+        None for no real date.
         """
-        if RULEBOOK_DIR in (card.path or ""):
-            return None
         from commands.card_history import start
         versions = [*self.db.old_stats.get(name, ()), card]
         known = [at for at in (start(v)[0] for v in versions) if at and at >= REAL_DATES]
@@ -1221,13 +1219,6 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     out = Outcome()
     data_head = _data_head(db_dir)
     stats, old, details, manifest_before = read_db(db_dir)
-    rule = lambda c: getattr(c, "card_type", "") == "rulebook" or RULEBOOK_DIR in (getattr(c, "path", "") or "").split("/")
-    for name in [n for n, c in stats.items() if rule(c)]:
-        del stats[name]                                       # the Photoshop rule pages: not cards (dropped, never archived or told)
-    for name in [n for n, vs in old.items() if vs and all(rule(v) for v in vs)]:
-        del old[name]                                         # and their versions (the rulebook's history is site/rulebook's)
-    for sha in [k for k, d in details.items() if RULEBOOK_DIR in (d.get("path") or "").split("/")]:
-        del details[sha]                                      # and their details (before G5 counts them)
     if not stats and not empty:
         raise ValueError(f"{db_dir} holds no cards: give --empty to start new card data")
     pending_before = (manifest_before.get("pending") or {}) if not restore else {}

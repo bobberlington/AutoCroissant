@@ -34,7 +34,6 @@ from commands.psd_edit import (
 from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, PARSER_VERSION, PSDParser
 from commands.psd_parts import card_parts
 from commands.psd_regions import STATS, badge_layers, overlay_words, stat_rows
-from global_config import RULEBOOK_DIR
 
 # ========================
 # Configuration
@@ -249,31 +248,29 @@ def _overlays(psd: PSDImage, texts: list) -> list:
     return [layer_path(layer) for layer in overlay_words(psd, None, shown)]
 
 
-def _template(psd: PSDImage, texts: list, name: str, stats, icons, overlays, rulebook: bool) -> dict:
+def _template(psd: PSDImage, texts: list, name: str, stats, icons, overlays) -> dict:
     """
     The title layer the parser reads (Text/Name, else a root Name, one named after the card or after its own text: no
-    rename needed, L6), the Ability layers and the ledger's cheap rules (L1, L2, L5, L6, L7); rule pages get no
-    deviations.
+    rename needed, L6), the Ability layers and the ledger's cheap rules (L1, L2, L5, L6, L7).
     """
     text_group = next((layer for layer in psd if layer.is_group() and layer.name.strip() == "Text"), None)
-    titles = PSDParser.title_layers(psd, texts, name, own_text=not rulebook)
+    titles = PSDParser.title_layers(psd, texts, name)
     abilities = [layer for layer in texts if layer.is_visible() and layer.name.strip().lower() == "ability"]
     deviations = []
-    if not rulebook:
-        if not titles:
-            deviations.append("no title layer")
-        if not abilities:
-            deviations.append("no Ability layer")
-        elif len(abilities) > 1:
-            deviations.append("several visible Ability layers")
-        if any(layer.parent is not text_group for layer in abilities):
-            deviations.append("ability layer outside Text")
-        if isinstance(stats, dict) and any(value in ("pixel", "other") for value in stats.values()):
-            deviations.append("stat bars drawn")
-        if icons in ("images", "mixed"):
-            deviations.append("icons as images")
-        if isinstance(overlays, list) and overlays:
-            deviations.append("overlay word layers")
+    if not titles:
+        deviations.append("no title layer")
+    if not abilities:
+        deviations.append("no Ability layer")
+    elif len(abilities) > 1:
+        deviations.append("several visible Ability layers")
+    if any(layer.parent is not text_group for layer in abilities):
+        deviations.append("ability layer outside Text")
+    if isinstance(stats, dict) and any(value in ("pixel", "other") for value in stats.values()):
+        deviations.append("stat bars drawn")
+    if icons in ("images", "mixed"):
+        deviations.append("icons as images")
+    if isinstance(overlays, list) and overlays:
+        deviations.append("overlay word layers")
     return {"name_layer": layer_path(titles[0]) if titles else None,
             "ability_layers": [layer_path(layer) for layer in abilities], "deviations": deviations}
 
@@ -372,13 +369,13 @@ def _star_header(psd: PSDImage, rel: str, vocab, parser: Optional[PSDParser] = N
             "at": at, "refused": refused}
 
 
-def _type_header(psd: PSDImage, rel: str, name: str, vocab) -> Optional[dict]:
+def _type_header(psd: PSDImage, name: str, vocab) -> Optional[dict]:
     """
     The header type icons as plan_types reads them (a title's tokens are the name's): the row ({name, core, box}, slot
     order), each longer row's spots past it ({count: boxes}), icons the bake can't take off ([name, why]) and a token
     row's refusal. None without icons.
     """
-    images, tokens = type_row(psd, _icon_parser(vocab), name, RULEBOOK_DIR not in rel)
+    images, tokens = type_row(psd, _icon_parser(vocab), name)
     if not images and not tokens:
         return None
     units, names, fixed = [], {}, []
@@ -401,7 +398,7 @@ def _type_header(psd: PSDImage, rel: str, name: str, vocab) -> Optional[dict]:
 
 def _header(psd: PSDImage, rel: str, name: str, vocab, parser: Optional[PSDParser] = None) -> dict:
     """Where the header's stars and type icons are and where the bake would put them (canvas px): the mock-up's."""
-    return {"stars": _guard(_star_header, psd, rel, vocab, parser), "types": _guard(_type_header, psd, rel, name, vocab)}
+    return {"stars": _guard(_star_header, psd, rel, vocab, parser), "types": _guard(_type_header, psd, name, vocab)}
 
 
 def _tree(group, depth: int = 0) -> list:
@@ -474,8 +471,7 @@ def _gather(psd: PSDImage, rel: str, name: str, index: Optional[FontIndex], voca
     record["stats"] = _guard(_stats, psd)
     record["fx"] = _guard(_fx, layers)
     record["overlays"] = _guard(_overlays, psd, texts)
-    record["template"] = _guard(_template, psd, texts, name, record["stats"], record["icons"], record["overlays"],
-                                RULEBOOK_DIR in rel)
+    record["template"] = _guard(_template, psd, texts, name, record["stats"], record["icons"], record["overlays"])
     record["header"] = _guard(_header, psd, rel, name, vocab, parser)
     record["tree"] = _guard(_tree, psd)
     record["parts"] = _guard(card_parts, psd, rel, name, parser or _icon_parser(vocab), None, card, templates)

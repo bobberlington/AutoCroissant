@@ -83,7 +83,7 @@ def elements(psd: PSDImage, vocab=()) -> dict:
     """Stats rows, title, stars and type icons (their own boxes, no effects; a digit mask far past its bar is its
     label's band, a star or icon box over FRAME of the canvas a frame), every other visible text layer but an Ability
     or a stretched watermark (a second Name, a "Type: ..." line, "Chomp Chomp") and the text panel."""
-    found = regions(psd, vocab, False, pad=False)
+    found = regions(psd, vocab, pad=False)
     labels = {layer.name.strip().lower(): layer.bbox for layer in psd.descendants()
               if layer.kind == "type" and layer.is_visible() and layer.name.strip().lower() in LABELS}
     stats = [tuple(b) for b in found.get("stat_labels", [])]

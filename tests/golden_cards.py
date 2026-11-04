@@ -17,8 +17,6 @@ CARDS = CERTIFIED + (
     "Auxiliary/Minions/Anubisath_Guardian.psd",                         # empty ability; card_data's edited Mini Doomer
     "Auxiliary/Minions/God_Tamer.psd",                                  # 5 stars in a Stars group (none until 2026-10-22), ability excluded
     "Auxiliary/Status Effects/Debuffs/1 Stars/Poison.psd",              # status-effect folder
-    "Auxiliary/Rulebook/20_Creature_Types.psd",                         # rule page: pictures named after icons read as nothing
-    "Auxiliary/Rulebook/16_The_Field.psd",                              # row grouping
     "N.M.E/Termination_Shock.psd",                                      # star count (STAR_CORE_ALPHA)
 )
 

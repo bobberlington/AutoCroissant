@@ -68,7 +68,7 @@ def test_the_websites_rule_with_the_first_upload():
 
 def test_first_upload_is_the_earliest_version_the_bot_holds():
     """Its old_stats versions' starts and its own (a version record's from, else its timestamp), as a UTC day; a stamp
-    before 2000 (no commit found) and a rulebook page give none."""
+    before 2000 (no commit found) gives none."""
     from datetime import datetime, timezone
     at = lambda *a: datetime(*a, tzinfo=timezone.utc).timestamp()
     old = [_card(timestamp=at(2025, 3, 1, 23, 30)), _card(timestamp=at(2025, 6, 1))]
@@ -78,9 +78,6 @@ def test_first_upload_is_the_earliest_version_the_bot_holds():
     assert cd.CardBuild._first_upload(build, "Foo Bar", card) == "2024-12-31"
     assert cd.CardBuild._first_upload(build, "Other", card) == "2026-01-05"
     assert cd.CardBuild._first_upload(build, "Other", _card(timestamp=datetime(1000, 1, 1).timestamp())) is None
-    page = cm.CardInfo(name="00 Toc", card_type="rulebook", path="Auxiliary/Rulebook/00_Toc.psd", ability="x",
-                       timestamp=at(2025, 1, 1))
-    assert cd.CardBuild._first_upload(build, "00 Toc", page) is None
 
 
 def test_apply_dates_dates_a_card_the_file_misses(capsys):

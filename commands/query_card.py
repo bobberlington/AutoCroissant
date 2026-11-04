@@ -20,7 +20,7 @@ from pandas import DataFrame, Index, Series, concat, to_numeric
 from re import compile, escape, IGNORECASE
 from urllib.parse import quote
 
-from global_config import CARD_REPO, CARD_TREE_JSON, EDITS_PATH, RULEBOOK_DIR, SITE_URL, TIMEZONE
+from global_config import CARD_REPO, CARD_TREE_JSON, EDITS_PATH, SITE_URL, TIMEZONE
 from commands.card_edits import CardAuthors, art_list
 from commands.card_db import write_text
 from commands.card_history import start as version_start
@@ -676,10 +676,7 @@ class CardRepository:
             if "duplicate_of" in cards_df:              # same card as its original
                 cards_df = cards_df[cards_df["duplicate_of"].isna()]
 
-            # Cards DataFrame (the Photoshop rule pages, still parsed, left out)
-            has_ability = cards_df["ability"].notna()
-            is_rulebook = cards_df["path"].str.contains(RULEBOOK_DIR, na=False)
-            self.cards_dff = cards_df[has_ability & ~is_rulebook].copy()
+            self.cards_dff = cards_df[cards_df["ability"].notna()].copy()
             self.cards_dff["ability"] = self.cards_dff["ability"].str.lower()
 
             print(f"Loaded {len(self.cards_dff)} cards")

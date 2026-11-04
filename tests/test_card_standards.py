@@ -73,10 +73,10 @@ def test_badge_tags_are_the_fonts_glyphs():
 
 
 def test_kinds_and_keys():
-    assert [cs.kind_of(p) for p in ("Auxiliary/Rulebook/02_A.psd", "Auxiliary/Creatures/X.psd", "Auxiliary/Items/X.psd",
+    assert [cs.kind_of(p) for p in ("Auxiliary/Creatures/X.psd", "Auxiliary/Items/X.psd",
                                      "Auxiliary/Minions/X.psd", "Auxiliary/Status Effects/Buffs/1 Stars/X.psd", "N.M.E/X.psd",
                                      "Field/1 Stars/X.psd", "Items/Heal/2 Stars/X.psd", "Creatures/Isaac/3 Stars/X.psd")] == [
-        "rule", "aux creature", "aux item", "minion", "status", "nme", "field", "item", "creature"]
+        "aux creature", "aux item", "minion", "status", "nme", "field", "item", "creature"]
     assert cs.card_key("Creatures/Isaac/3 Stars/Tainted_Lazarus.psd") == "tainted lazarus"
     assert set(cs.SCOPE) >= set(cs.STARS_KINDS)
 
@@ -242,9 +242,7 @@ def test_two_cards_of_one_key_fix_in_separate_files(tmp_path, monkeypatch):
     assert not list((tmp_path / "work").iterdir())
 
 
-def test_nothing_fixed_on_rule_pages_or_waived(clone):
-    issue = cs.Issue("R9", "x", ("Name",), fix=True)
-    assert cs.fix(b"", "Auxiliary/Rulebook/02_A.psd", [issue], "unused").data == b""
+def test_nothing_fixed_when_waived(clone):
     assert cs.fix(b"", "Items/X.psd", [cs.Issue("R9", "x", fix=True, waived="w")], "unused").data == b""
 
 
@@ -309,7 +307,7 @@ def test_composer_set_single_line(clone, tmp_path, monkeypatch):
 # ========================
 # Pixel fixes: straight apostrophes, old icon font glyphs (silent, owner 2026-10-25)
 # ========================
-CURLY = "b67b8799"              # main with 42 cards' curly apostrophes (13 titles, 29 abilities and rule pages)
+CURLY = "b67b8799"              # main with 42 cards' curly apostrophes (13 titles, 29 abilities and the old rule pages)
 
 
 def _fonts(clone):
@@ -321,8 +319,8 @@ def _fonts(clone):
 
 @pytest.mark.skipif(not story_sync(), reason="needs the fork's Txt2 story sync (fix/txt2-sync)")
 def test_apostrophes_straightened(clone, tmp_path):
-    """A title and a rule page: every U+2019 set as ' in the layer and its story, the glyphs redrawn, the parse the same
-    but for the apostrophes; nothing else fixed on the rule page."""
+    """A title: every U+2019 set as ' in the layer and its story, the glyphs redrawn, the parse the same but for the
+    apostrophes."""
     fonts, parser = _fonts(clone), clone_vocabulary(str(clone)).parser()
     rel = "Auxiliary/Items/Papa's_Cookie.psd"
     data = at_rev(clone, CURLY, rel)
@@ -332,9 +330,6 @@ def test_apostrophes_straightened(clone, tmp_path):
     name = next(layer for layer in new.descendants() if layer.name == "Name")
     assert cs.curly_layers(new) == [] and name.text == "Papa's Cookie" and name.story_text == "Papa's Cookie\r"
     assert psd_edit.read_name(new) == "Papa's Cookie"
-    rule = "Auxiliary/Rulebook/11_Abilities2.psd"
-    fixed = cs.fix(at_rev(clone, CURLY, rule), rule, [], str(tmp_path / "work"), parser, fonts)
-    assert list(fixed.redrawn) == ["apostrophes"] and fixed.applied == [] and fixed.composer == []
     assert not list((tmp_path / "work").iterdir())
     temple = "Auxiliary/Items/The_Temple_of_Ahn'Qiraj.psd"     # stored ink past the layout: the engine would redraw it whole
     fixed = cs.fix(at_rev(clone, CURLY, temple), temple, [], str(tmp_path / "work"), parser, fonts)
@@ -379,7 +374,7 @@ WOLFGANG = "Creatures/DST/4 Stars/Wolfgang.psd"     # one (BOT) badge in Belisap
 def test_badges_fitted_to_their_text(clone, tmp_path, monkeypatch):
     """Owner 2026-10-25: a badge 20% small and 3 pt low is set back to the computed size (the pill 1.35 times the text's
     capital height) and middle (the capitals' middle), its glyphs redrawn, never told; the check finds nothing left.
-    Rule pages keep theirs. A resize that moves the text is made anyway, its FX layers cut again on the moved words."""
+    A resize that moves the text is made anyway, its FX layers cut again on the moved words."""
     import numpy as np
     fonts = _fonts(clone)
     psd = PSDImage.open(clone / WOLFGANG)
@@ -400,8 +395,6 @@ def test_badges_fitted_to_their_text(clone, tmp_path, monkeypatch):
     fixed = cs.fix((tmp_path / "off.psd").read_bytes(), WOLFGANG, [], str(tmp_path / "work"), None, fonts, only="badges")
     assert not fixed.redrawn and fixed.pixel_left[0][1].startswith("Refused: overflow")
     monkeypatch.undo()
-    rule = "Auxiliary/Rulebook/11_Abilities5.psd"
-    assert not cs.fix((clone / rule).read_bytes(), rule, [], str(tmp_path / "work"), None, fonts, only="badges").data
     radiance = "Creatures/Hollow Knight/5 Stars/The_Radiance.psd"   # resized anyway: its lines move, Infected's FX follows
     fixed = cs.fix(at_rev(clone, "1f07349c", radiance), radiance, [], str(tmp_path / "work"), None, fonts, only="badges")
     assert fixed.redrawn == {"badges": ["Ability"]} and fixed.pixel_left == []
@@ -528,15 +521,6 @@ def test_card_names_case_rule_on_the_gates(clone):
     found = [issue for issue in cs.check(psd, rel, cs.Context(cards=NAME_CARDS)) if issue.code == "R14"]
     assert [issue.items for issue in found] == [("silithid",)] and cs.reported(found) == found and "'silithid' should be 'Silithid'" in found[0].text
     assert not any(issue.code == "R14" for issue in cs.check(psd, rel, cs.Context()))
-
-
-def test_text_with_both_quotes_parses_without_backslash(clone, tmp_path):
-    """str() of an engine string is its repr, which escapes ' as \\' when the text also holds a ": the parse unescapes it
-    (03 Setting Up's "they're")."""
-    rel = "Auxiliary/Rulebook/03_Setting_Up.psd"
-    (tmp_path / "card.psd").write_bytes(at_rev(clone, RESAVE, rel))
-    ability = psd_edit.parse_card(clone_vocabulary(str(clone)).parser(), str(tmp_path / "card.psd"), rel)["card"]["ability"]
-    assert "they're" in ability and "\\'" not in ability and '"' in ability
 
 
 def test_plain_timing_tags_set_as_badges(clone, tmp_path):

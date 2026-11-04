@@ -23,8 +23,7 @@ SAME = (DOOMER,                                                             # th
         "Creatures/Kirby/3 Stars/Computer_Virus.psd",                      # no stats; title from a root Name layer
         "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd",          # STATS TOO HIGH; title in 3 layers
         "Items/Heal/2 Stars/A_Snack.psd",                                  # hidden titles
-        "N.M.E/Termination_Shock.psd",                                     # drawn stars
-        "Auxiliary/Rulebook/20_Creature_Types.psd")                        # a rule page
+        "N.M.E/Termination_Shock.psd")                                     # drawn stars
 
 
 def _key(data: bytes) -> str:

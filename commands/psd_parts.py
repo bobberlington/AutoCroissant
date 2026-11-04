@@ -1,8 +1,8 @@
 """
 A card's parts: one box per PSD layer the website edits (docs/Finished/session-2026-10-26/PARTS_EDITOR.md §2): the title layers, the ability
-layers, a rule page's text blocks, the layers that follow them (copies, watermarks, a relaid hidden Ability), the
+layers, the layers that follow them (copies, watermarks, a relaid hidden Ability), the
 variant pictures and, for a card without an ability or a type icon, its kind's template. The selection is the parser's
-(PSDParser.title_parts, ability_parts, blocks, under psd_parser.variant_view); this module only assembles the record.
+(PSDParser.title_parts, ability_parts, under psd_parser.variant_view); this module only assembles the record.
 No Discord or config; psd_edit and psd_details are imported where used (psd_edit imports this module).
 
     card_parts(psd, rel, name, parser, card=card, templates=Templates.from_dir(clone))
@@ -16,7 +16,6 @@ from psd_tools import PSDImage
 
 from commands.psd_parser import (EFFECT_LAYER_TAG, PSDParser, base_name, layer_tag, name_key,
                                  title_text, variant_view, variants_of)
-from global_config import RULEBOOK_DIR
 
 # ========================
 # Configuration
@@ -109,7 +108,7 @@ class Templates:
                 font, size, _ = _style(layer)
                 ability = {"box": list(layer.bbox), "font": font, "size": size}
             try:
-                header = _type_header(psd, rel, stem, vocab)
+                header = _type_header(psd, stem, vocab)
             except Exception:                   # a header psd-tools can't read: no spot
                 header = None
             facts = {"file": rel, "ability": ability,
@@ -121,10 +120,8 @@ class Templates:
 # ========================
 # The record
 # ========================
-def _part(parser: PSDParser, layer, role: Optional[str] = None, named: Optional[bool] = None) -> dict:
+def _part(parser: PSDParser, layer, named: Optional[bool] = None) -> dict:
     out = {"id": layer.layer_id, "layer": layer_path(layer)}
-    if role is not None:
-        out["role"] = role
     if named is not None:
         out["named"] = named
     out.update(text=parser.layer_text(layer), sha=raw_sha(layer), box=list(layer.bbox), variants=None)
@@ -136,11 +133,9 @@ def _shows(psd, layer) -> bool:
     return shows(psd, layer)
 
 
-def _select(psd, rel: str, name: str, parser: PSDParser) -> tuple:
-    """One picture's ([title layers], [ability layers], [(block layer, role)], [(follower, [of], how)])."""
+def _select(psd, name: str, parser: PSDParser) -> tuple:
+    """One picture's ([title layers], [ability layers], [(follower, [of], how)])."""
     texts = [layer for layer in psd.descendants() if layer.kind == "type" and EFFECT_LAYER_TAG not in layer.name]
-    if RULEBOOK_DIR in rel:
-        return [], [], parser.blocks(texts), []
     titles, copies = parser.title_parts(psd, texts, name)
     abilities, hidden = parser.ability_parts(texts)
     follow = [(layer, [twin], "copy") for layer, twin in copies]
@@ -158,7 +153,7 @@ def _select(psd, rel: str, name: str, parser: PSDParser) -> tuple:
             follow.append((layer, titles, "watermark"))
     if hidden is not None:
         follow.append((hidden, abilities, "relaid"))
-    return titles, abilities, [], follow
+    return titles, abilities, follow
 
 
 def card_parts(psd, rel: str, name: str, parser: PSDParser, variant: Optional[int] = None, card=None,
@@ -176,7 +171,8 @@ def card_parts(psd, rel: str, name: str, parser: PSDParser, variant: Optional[in
         templates: Templates for a card with no ability part or type icon; None: "template" stays null
 
     Returns:
-        {"title", "ability", "blocks", "follow", "variants", "template"}
+        {"title", "ability", "blocks", "follow", "variants", "template"}; "blocks" (the old rule pages' text) stays [],
+        as the stored records have it
     """
     pictures = variants_of(psd)
     tagged = len(pictures) > 1
@@ -184,14 +180,12 @@ def card_parts(psd, rel: str, name: str, parser: PSDParser, variant: Optional[in
     seen, shown, follows = {}, {}, {}
     for n in (pictures if tagged else [None]):
         with variant_view(psd, n):
-            titles, abilities, blocks, follow = _select(psd, rel, name, parser)
-            entries = [("title", layer, None, base_name(layer).strip() == "Name") for layer in titles]
-            entries += [("ability", layer, None, base_name(layer).strip() == "Ability") for layer in abilities]
-            entries += [("blocks", layer, role, True if role == "header" else base_name(layer).strip() == "Page Number"
-                         if role == "page" else None) for layer, role in blocks]
-            for key, layer, role, named in entries:
+            titles, abilities, follow = _select(psd, name, parser)
+            entries = [("title", layer, base_name(layer).strip() == "Name") for layer in titles]
+            entries += [("ability", layer, base_name(layer).strip() == "Ability") for layer in abilities]
+            for key, layer, named in entries:
                 if layer.layer_id not in seen:
-                    seen[layer.layer_id] = _part(parser, layer, role, named)
+                    seen[layer.layer_id] = _part(parser, layer, named)
                     out[key].append(seen[layer.layer_id])
                 shown.setdefault(layer.layer_id, set()).add(n)
             for layer, of, how in follow:
@@ -209,7 +203,7 @@ def card_parts(psd, rel: str, name: str, parser: PSDParser, variant: Optional[in
                            "pngs": {str(n): f"{stem}{'' if n == 1 else n}.png" for n in pictures},
                            "tagged": [{"id": layer.layer_id, "layer": layer_path(layer), "in": sorted(layer_tag(layer.name)[1])}
                                       for layer in psd.descendants() if layer_tag(layer.name)[1] is not None]}
-    if RULEBOOK_DIR not in rel and templates is not None:
+    if templates is not None:
         if card is None:
             card = parser.parse(psd, rel, variant=1 if tagged else None)
         if not out["ability"] or not card.types:
@@ -221,7 +215,7 @@ def card_parts(psd, rel: str, name: str, parser: PSDParser, variant: Optional[in
                                    "types": facts["types"] if not card.types else None}
     if variant is not None and tagged:
         return {**out, **{key: [e for e in out[key] if e["variants"] is None or variant in e["variants"]]
-                          for key in ("title", "ability", "blocks", "follow")}}
+                          for key in ("title", "ability", "follow")}}
     return out
 
 

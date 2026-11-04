@@ -179,20 +179,8 @@ def test_changed_moved_archived(cards):
 
 def test_rule_pages_are_not_cards(cards, capsys):
     """The Photoshop rule pages (owner 10-29/10-30: the rulebook is site/rulebook's chapters): a PSD in a Rulebook folder is
-    never read, and a stored rule page, its versions and details are dropped without an archive tag or an event; their
-    credits aren't typos."""
-    from copy import deepcopy
+    never read, no event; their credits aren't typos."""
     _build(cards, "--empty")
-    stats, old, details, manifest = cdb.read_db(str(cards.db))
-    page = deepcopy(stats["Mini Doomer"])
-    page.name, page.path, page.card_type = "08 Global Turn", "Auxiliary/Rulebook/08_Global_Turn.psd", "rulebook"
-    stats[page.name] = page
-    older = deepcopy(page)
-    older.archived = {"at": 500.0, "path": page.path}                  # a tag left from an earlier move
-    old[page.name] = [older]
-    details = json.loads((cards.db / "psd_details.json").read_text(encoding="utf-8"))
-    details["cards"].update({f"{n:040x}": {"path": f"Auxiliary/Rulebook/{n}.psd", "name": str(n)} for n in range(len(details["cards"]))})
-    cdb.write_db(str(cards.db), stats, old, json.dumps(details), manifest)
     put(cards.repo, "Auxiliary/Rulebook/09_Taking_Your_Turn.psd", cards.psds[OTHER])
     put(cards.repo, "site/Card Authors.txt", b"[people]\nbobgit = Bob\n[cards]\nmini_doomer = bobgit\n09_taking_your_turn = bobgit\n")
     commit(cards.repo, "bob", 2000)
@@ -200,9 +188,8 @@ def test_rule_pages_are_not_cards(cards, capsys):
     assert _build(cards)[0] == cd.EXIT_OK
     assert "match no card" not in capsys.readouterr().out                              # its credit isn't a typo
     stats, old, details, manifest, events = _read(cards)
-    assert set(stats) == {"Mini Doomer", "The Freezer"} and "08 Global Turn" not in old and manifest["counts"]["archived"] == 0
-    assert not [d for d in details.values() if "Rulebook" in d["path"]]                # many, yet G5 doesn't count them
-    assert not [e for e in events if e["card"] in ("08 Global Turn", "09 Taking Your Turn")] and not manifest["counts"].get("archived")
+    assert set(stats) == {"Mini Doomer", "The Freezer"} and not [d for d in details.values() if "Rulebook" in d["path"]]
+    assert not [e for e in events if e["card"] == "09 Taking Your Turn"]
 
 
 def test_failed_psd_waits_for_a_new_blob(cards, monkeypatch):

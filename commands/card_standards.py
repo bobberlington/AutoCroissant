@@ -11,9 +11,9 @@ Since the parts editor (PARTS_EDITOR.md §7) R3's several Ability layers and R4'
 standardized yet"), R11 also suggests names for the parts not named Name or Ability, R12 checks variant tags and R13
 duplicate layer ids. R14 (owner 2026-10-30) reports card names typed in another letter case (report only).
 R9 (Txt2 stories) is fixed by the fork with byte gates, the rest is reported. R11's rename (exact layer names) is built
-and gated but reported until the owner says yes (AUTO_FIX). Rule pages are never checked. The pixel fixes (PIXEL_FIXES,
-silent, owner 2026-10-25) run on every card and rule page: straight apostrophes, and icon font glyphs Photoshop drew with
-an older font drawn again; on cards only, badges and icons fitted to their text (fit_badges: a badge's pill 1.35 times
+and gated but reported until the owner says yes (AUTO_FIX). The pixel fixes (PIXEL_FIXES,
+silent, owner 2026-10-25) run on every card: straight apostrophes, icon font glyphs Photoshop drew with
+an older font drawn again, badges and icons fitted to their text (fit_badges: a badge's pill 1.35 times
 the text's capital height, its middle on the capitals' middle, even when that rewraps the text; an FX layer on words
 that moved is cut again) and badges under an overlay set one-colour (one_colour_badges); each redraws only the changed
 glyphs and the guards re-export the PNG.
@@ -47,7 +47,6 @@ from commands.psd_edit import BADGE_KEYS, BADGE_TAGS, ICON_FONT, Refused, badge_
 from commands.psd_parser import (EFFECT_LAYER_TAG, ICON_FONT_PREFIX, TAG, CardValidator, PSDParser, base_name, layer_tag,
                                  variant_view, variants_of)
 from commands.psd_regions import clip, fx_pad, overlay_words, union_box
-from global_config import RULEBOOK_DIR
 
 # ========================
 # Configuration
@@ -126,8 +125,6 @@ class Fixed:
 # ========================
 def kind_of(rel: str) -> str:
     """The card's class from its repo path."""
-    if RULEBOOK_DIR in rel.split("/"):
-        return "rule"
     for prefix, kind in (("Auxiliary/Status Effects/", "status"), ("Auxiliary/Minions/", "minion"),
                          ("Auxiliary/Items/", "aux item"), ("Auxiliary/Creatures/", "aux creature"), ("N.M.E/", "nme"),
                          ("Field/", "field"), ("Items/", "item"), ("Creatures/", "creature")):
@@ -738,11 +735,9 @@ def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = N
         added: A new card (R4 applies in full)
 
     Returns:
-        [Issue] in rule order, waived ones included (waived set); [] for a rule page
+        [Issue] in rule order, waived ones included (waived set)
     """
     kind = kind_of(rel)
-    if kind == "rule":
-        return []
     key = card_key(rel)
     out: list = []
 
@@ -943,7 +938,7 @@ def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDPars
     """
     The fixable issues of one PSD (R11 renames, then R9 story syncs), each gated, then R8's Single-line Composer
     (single_line: never told, a refusal left in composer_left); then the size and the reparse gates over the result. A
-    refusal leaves that fix out (and reports it); a rule page takes the pixel fixes alone. Box text that rewraps is
+    refusal leaves that fix out (and reports it). Box text that rewraps is
     redrawn (redraw, gated again: data, the result without it in plain), then the pixel fixes (PIXEL_FIXES, each gated;
     redrawn, a refusal in pixel_left; plain without them).
 
@@ -961,10 +956,9 @@ def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDPars
         Fixed
     """
     result = Fixed()
-    rule = kind_of(rel) == "rule"               # a rule page takes the pixel fixes alone
-    wanted = [] if rule or only else [issue for issue in issues if issue.fix and not issue.waived]
-    composer = not (rule or only) and _every_line_in(data)
-    pixels = tuple(kind for kind in pixel_kinds(data, (only,) if only else ()) if not (rule and kind in CARD_PIXELS))
+    wanted = [] if only else [issue for issue in issues if issue.fix and not issue.waived]
+    composer = not only and _every_line_in(data)
+    pixels = pixel_kinds(data, (only,) if only else ())
     if not (wanted or composer or pixels):
         return result
     makedirs(work, exist_ok=True)
@@ -1506,7 +1500,6 @@ PIXEL_FIXES = {     # kind -> (finds(psd) -> [layer], fix(path, out_path, fonts)
 PIXEL_LINES = {"apostrophes": "straight apostrophes", "old glyphs": "old icon font glyphs redrawn",
                "badges": "badges and icons fitted to their text",
                "overlay badges": "badges under an overlay in one colour", "tags": "timing tags and costs set as badges"}
-CARD_PIXELS = ("badges", "overlay badges", "tags")   # not on rule pages: their badges are laid out by hand (legends, tables)
 
 
 def pixel_kinds(psd, kinds: tuple = ()) -> tuple:

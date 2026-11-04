@@ -7,7 +7,7 @@ standards (missing fonts are the font check's alone) and fixes only the 0-pixel 
 always sets unsaid, box text that rewraps redrawn and its PNG re-exported: only the bot commit's message names it
 (owner, 2026-10-25); so are the pixel fixes (card_standards.PIXEL_FIXES: straight apostrophes, old icon font glyphs,
 badges fitted, timing tags set as badges: R1 then untold),
-rule pages included, the PNG re-exported the same way. One report per push: the job
+the PNG re-exported the same way. One report per push: the job
 summary and commit comment (report.md), one Discord post for the standards channel (discord.json: no mentions, no
 previews), and a plan of the writes (plan.json) that `land` commits once, right after the check. Each card pushed
 over an older PSD carries what changed inside it (psd_diff: "added Ability FX: Blazing", "Name text: 'a' -> 'b'").
@@ -712,7 +712,6 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
     old = png_export.open_psd(source.blob(job.psd_old)) if job.psd_old else None
     if old is not None:
         result.changes = changes(old, new, parser)
-    rule_page = standards.kind_of(job.psd) == "rule"
     shown: dict = {}                            # the PNGs (path: image) that show the pushed PSD: R8's redraw follows
     # guard 1
     if job.case in ("stale", "beside"):
@@ -789,10 +788,10 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
         if measured.get("ok") is None:
             result.notes.append((f"{basename(job.png)} could not be checked against the PSD ({measured.get('why')})", False))
     pixels = standards.pixel_kinds(new) if job.case != "png-only" else ()
-    if job.case == "png-only" or (rule_page and not pixels):
+    if job.case == "png-only":
         return
-    # guard 2 (a rule page: the pixel fixes alone)
-    issues = [] if rule_page else standards.check(new, job.psd, context, old=old, added=added(job))
+    # guard 2
+    issues = standards.check(new, job.psd, context, old=old, added=added(job))
     told = {id(issue) for issue in standards.reported(issues)}
     result.issues = [{**issue.as_dict(), "line": issue.line(), "told": id(issue) in told, "discord": issue.discord}
                      for issue in issues]

@@ -311,8 +311,8 @@ dropped [], `[5]` 0 vs 0 (match), `[6]` the same final text as before the batch.
 
 **MAINTENANCE NOTE** (from the script's docstring — keep it true): the extraction loop mirrors
 `PSDParser._extract_from_layers` (commands/psd_parser.py:404 as of 2026-10-23): effect layers
-(`EFFECT_LAYER_TAG`, " FX: ") set aside, hidden rule-page text skipped, hidden Ability layers read last, with
-`RULEBOOK_DIR` and `stars_from_psd()` (the mirror gained the effect-layer skip and those two on 2026-10-23; before,
+(`EFFECT_LAYER_TAG`, " FX: ") set aside, hidden Ability layers read last, with
+`stars_from_psd()` (the mirror gained the effect-layer skip, `RULEBOOK_DIR` and that on 2026-10-23, the rule-page skip and `RULEBOOK_DIR` removed 2026-11-04; before,
 it fed "Ability FX: ..." pixel layers to `_process_layer` and hardcoded the folders). If that method changes shape,
 update gap_trace to match; the one-line check is to compare against that method's body.
 
@@ -761,7 +761,7 @@ Cited code locations (line numbers drift; re-find with these):
 ```bash
 grep -n "TYPE_REGION_RATIO = " commands/psd_parser.py               # 0.5 (psd_parser.py since the 2026-10-20 split)
 grep -n "_extract_from_layers" commands/psd_parser.py               # gap_trace's mirrored method (404)
-grep -n "EFFECT_LAYER_TAG\|stars_from_psd\|RULEBOOK_DIR" .claude/skills/autocroissant-diagnostics-and-tooling/scripts/gap_trace.py   # the mirror's skip and folders
+grep -n "EFFECT_LAYER_TAG\|stars_from_psd" .claude/skills/autocroissant-diagnostics-and-tooling/scripts/gap_trace.py   # the mirror's skip and folders (RULEBOOK_DIR removed 2026-11-04)
 grep -n "def _process_layer" commands/psd_parser.py                 # gap_trace calls it; signature unchanged by the 2026-10-19 icon work
 grep -n "Preserve author and series" commands/psd_parser.py         # parse_one --with-db semantics
 git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py   # the 2026-10-19 local-path fix; local mode archived 2026-10-20

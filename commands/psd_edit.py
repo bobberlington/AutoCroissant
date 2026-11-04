@@ -51,7 +51,6 @@ from commands.text_align import (BREAKS as TEXT_BREAKS, blocks as text_blocks, m
                                  opcodes as text_opcodes, segments as text_segments)
 from commands.psd_regions import (STATS as STAT_PATTERNS, _ancestors, badge_layers, bar_box, clip, fx_pad, overlay_words,
                                   stat_rows, union_box)
-from global_config import RULEBOOK_DIR
 
 # ========================
 # Configuration
@@ -614,8 +613,8 @@ def _copy(psd: PSDImage, layer) -> Optional[str]:
     return found[0].name if found else None
 
 
-def _no_title(psd: PSDImage, own_text: bool = True) -> str:
-    """Why the parser reads no title layer (name_layer's refusal); own_text: title_layers' last rule applies."""
+def _no_title(psd: PSDImage) -> str:
+    """Why the parser reads no title layer (name_layer's refusal)."""
     group = _text_group(psd)
     if group is None:
         return "no Text group"
@@ -628,15 +627,14 @@ def _no_title(psd: PSDImage, own_text: bool = True) -> str:
         return f"{len(named)} Name layers, none in the title region"
     own = [layer for layer in psd.descendants() if _is_text_layer(layer) and layer.is_visible()
            and layer.bbox[1] < psd.height * TITLE_REGION_RATIO and named_after_text(layer)]
-    if own_text and len(own) > 1:
+    if len(own) > 1:
         return f"{len(own)} layers in the title region named after their text"
     titles = [child.name for child in group if _is_text_layer(child) and child.name.strip().lower() != "ability"
               and child.bbox[1] < psd.height * 0.15]
-    names = "Name, the card's name or its text" if own_text else "Name or the card's name"
-    return f"title layer named {titles[0]!r}, not {names}" if titles else "no Text/Name layer"
+    return f"title layer named {titles[0]!r}, not Name, the card's name or its text" if titles else "no Text/Name layer"
 
 
-def name_layer(psd: PSDImage, card: str = "", own_text: bool = True):
+def name_layer(psd: PSDImage, card: str = ""):
     """
     The card's title layer: the one visible text layer the parser reads the printed title from (PSDParser.title_layers:
     Text/Name, else a Name layer in the title region, else a layer under Text named after the card, else one elsewhere
@@ -645,15 +643,14 @@ def name_layer(psd: PSDImage, card: str = "", own_text: bool = True):
     Args:
         psd: The open card
         card: The card's name (file stem), which a title layer may be named after
-        own_text: Whether the last rule applies (False on a rule page, as the parser: _own_text)
 
     Returns:
         The layer; raises Refused("unsupported-card") when no layer or several print the title (an epithet layer, a
         title split over layers, a copy for an effect that shows)
     """
-    found = PSDParser.title_layers(psd, [layer for layer in psd.descendants() if _is_text_layer(layer)], card, own_text)
+    found = PSDParser.title_layers(psd, [layer for layer in psd.descendants() if _is_text_layer(layer)], card)
     if not found:
-        raise Refused("unsupported-card", _no_title(psd, own_text))
+        raise Refused("unsupported-card", _no_title(psd))
     if len(found) > 1:
         raise Refused("unsupported-card", f"{len(found)} title layers")
     joined, whole = "".join(title_text(found[0].text).lower().split()), "".join(card.lower().split())
@@ -668,14 +665,14 @@ def name_layer(psd: PSDImage, card: str = "", own_text: bool = True):
 PICTURE_TITLE = "the title is part of the picture"     # classify(): a name edit there is website only (owner 2026-10-26)
 
 
-def title_in_picture(psd: PSDImage, card: str = "", own_text: bool = True) -> bool:
+def title_in_picture(psd: PSDImage, card: str = "") -> bool:
     """
     Whether the printed title is part of the picture: no layer the parser reads it from and no visible text in the title
     region of the Text group (of the card, without one): ABBI's key pictures, Baba's sprite, E. Gadd's Garage over a
     hidden Name layer. A title layer with another name (Alex YIIK's) or split over layers (Knight Lost A Lot) is text.
     """
     texts = [layer for layer in psd.descendants() if _is_text_layer(layer)]
-    if not own_text or PSDParser.title_layers(psd, texts, card, own_text):
+    if PSDParser.title_layers(psd, texts, card):
         return False
     group = _text_group(psd)
     scope = [layer for layer in group.descendants() if _is_text_layer(layer)] if group is not None else texts
@@ -684,10 +681,10 @@ def title_in_picture(psd: PSDImage, card: str = "", own_text: bool = True) -> bo
                    and base_name(layer).strip().lower() != "ability" for layer in scope)
 
 
-def read_name(psd: PSDImage, card: str = "", own_text: bool = True) -> Optional[str]:
-    """The printed title, whitespace collapsed; None when name_layer refuses (own_text: as name_layer's)."""
+def read_name(psd: PSDImage, card: str = "") -> Optional[str]:
+    """The printed title, whitespace collapsed; None when name_layer refuses."""
     try:
-        return collapse(name_layer(psd, card, own_text).text)
+        return collapse(name_layer(psd, card).text)
     except Refused:
         return None
 
@@ -701,12 +698,6 @@ def _card_name(parsed: dict) -> str:
     """The parse's card name (file stem)."""
     info = parsed.get("info")
     return info.name if info is not None else parsed["card"].get("name") or ""
-
-
-def _own_text(parsed: dict) -> bool:
-    """Whether a title named after its own text counts for the parse's card: not on a rule page (its headings)."""
-    info = parsed.get("info")
-    return RULEBOOK_DIR not in ((info.path if info is not None else parsed["card"].get("path")) or "")
 
 
 def story_sync() -> bool:
@@ -1031,7 +1022,7 @@ def _layer_reading(psd: PSDImage, layer, parser: Optional[PSDParser]) -> str:
     if parser is None:
         return normalize_ability(layer.text)
     mid, read = int(psd.height * TYPE_REGION_RATIO), []
-    parser._process_text_layer(layer, CardInfo(name="", card_type=""), MutableValue(0), read, False, False, mid, relaid=True)
+    parser._process_text_layer(layer, CardInfo(name="", card_type=""), MutableValue(0), read, False, mid, relaid=True)
     icons = [(icon.name.lower(), BoundingBox.from_tuple(icon.bbox[:2])) for icon in image_icons(psd, parser)]
     return parser._process_abilities(read, icons, mid)
 
@@ -1536,10 +1527,10 @@ def variant_fill(piece: str, vocab: Optional[IconVocabulary], found: list, flag=
     return None
 
 
-def _other_text(psd: PSDImage, which: str, card: str, own_text: bool):
+def _other_text(psd: PSDImage, which: str, card: str):
     """The card's other text layer: the Ability for a title edit, the title for an ability edit; None when none reads."""
     try:
-        return ability_layer(psd) if which == "name" else name_layer(psd, card, own_text)
+        return ability_layer(psd) if which == "name" else name_layer(psd, card)
     except Refused:
         return None
 
@@ -2099,11 +2090,11 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
                 out.redundant.append(name)
             elif psd is None:
                 out.refusals.append(Refusal("unsupported-card", "no PSD to find the title layer in"))
-            elif title_in_picture(psd, _card_name(parsed), _own_text(parsed)):
+            elif title_in_picture(psd, _card_name(parsed)):
                 out.site[name] = PICTURE_TITLE
             else:
                 try:
-                    name_layer(psd, _card_name(parsed), _own_text(parsed))
+                    name_layer(psd, _card_name(parsed))
                     out.jobs[name] = value
                 except Refused as refused:
                     out.refusals.append(refused.refusal)
@@ -4788,7 +4779,7 @@ def back_on(psd: PSDImage, layer) -> int:
 
 
 def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: Optional[dict] = None,
-                   card: str = "", own_text: bool = True, parser: Optional[PSDParser] = None,
+                   card: str = "", parser: Optional[PSDParser] = None,
                    original: Optional[PSDImage] = None, layer=None, beside=(), copy: bool = False,
                    area: Optional[tuple] = None, anchor: int = 0) -> Edit:
     """
@@ -4805,7 +4796,6 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         fonts_dir: Directory of the card fonts (MDW/Fonts)
         chart: status_fills(); ability status words take their swatch fill and the styled ones their FX layer
         card: The card's name (file stem), for name_layer
-        own_text: name_layer's (False on a rule page: _own_text)
         parser: offline_parser(): its icon vocabulary says which typed [tokens] the icon font draws (icon_text) and its
             types which image icons the parser reads into the ability (image_icons); None: every [token], and a layer
             without the icon font counts as one with image icons
@@ -4877,7 +4867,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         layer = ability_layer(psd)
         projected = from_reading(psd, layer, text, parser)
     elif layer is None:
-        layer = name_layer(psd, card, own_text)
+        layer = name_layer(psd, card)
     follow_kerning(psd, layer)                  # drawn kerned as Photoshop shows it (B12)
     old_text, old_bbox, story = layer.text, tuple(layer.bbox), story_index(layer)
     own = which == "name" and own_text_title(layer, card)
@@ -4920,7 +4910,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     drawn = icon_text(text, vocab) if icons_too else []    # what the icon font draws (owner 2026-10-23: a typed one
     looks = {kind: icon_style(layer, kind, vocab) for kind in (True, False)}   # is set in it); badge, token
     tints = [variant_fills(each, vocab) for each in
-             (layer, _other_text(psd if original is None else original, which, card, own_text))] \
+             (layer, _other_text(psd if original is None else original, which, card))] \
         if any(text[a] == "[" and token_variant(text[a:b]) in TEXT_COLOURED for a, b in drawn) else []
     if which == "ability":
         old_fx, overlays = fx_layers(psd, layer), [] if copy else overlay_words(psd)
@@ -6619,7 +6609,7 @@ def same_types(parser: Optional[PSDParser], a, b) -> bool:
     return Counter(canonical_type(parser, t) for t in a or []) == Counter(canonical_type(parser, t) for t in b or [])
 
 
-def type_row(psd: PSDImage, parser: PSDParser, card: str = "", own_text: bool = True) -> tuple:
+def type_row(psd: PSDImage, parser: PSDParser, card: str = "") -> tuple:
     """
     The header type icons the parser reads: (image layers [(canonical name, layer)], icon-font text layers).
 
@@ -6631,11 +6621,10 @@ def type_row(psd: PSDImage, parser: PSDParser, card: str = "", own_text: bool = 
         psd: The open card
         parser: offline_parser()
         card: The card's name (file stem), for title_layers
-        own_text: title_layers' last rule applies (False on a rule page)
     """
     mid = int(psd.height * TYPE_REGION_RATIO)
     texts = [layer for layer in psd.descendants() if layer.kind == "type" and EFFECT_LAYER_TAG not in layer.name]
-    titles = {id(layer) for layer in PSDParser.title_layers(psd, texts, card, own_text)}
+    titles = {id(layer) for layer in PSDParser.title_layers(psd, texts, card)}
     images, tokens = [], []
     for layer in psd.descendants():
         if EFFECT_LAYER_TAG in layer.name and not layer.is_group():
@@ -6857,7 +6846,7 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
         if hit is None or hit[1] != "type":
             refuse(f"{name!r} is no type icon")
         want.append(hit[0])
-    images, tokens = type_row(psd, parser, _card_name(parsed), _own_text(parsed))
+    images, tokens = type_row(psd, parser, _card_name(parsed))
     if tokens:
         refuse(f"printed as icon tokens in {tokens[0].name!r}: edit them in Photoshop")
     plan = IconPlan("types", [name for name, _ in images], value)
@@ -8484,7 +8473,7 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
         notes.append("validator: new problems: " + "; ".join(added))
     if any(p.startswith("EFFECT LAYER") for p in new["validator"]):
         raise Refused("reparse", "effect layer problems remain")
-    title = read_name(psd, _card_name(parsed), _own_text(parsed)) if "name" in jobs else None
+    title = read_name(psd, _card_name(parsed)) if "name" in jobs else None
     if "name" in jobs and straight(title) != straight(collapse(jobs["name"])):
         raise Refused("reparse", f"the title reads {title!r}")
     return new
@@ -9067,13 +9056,13 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
             if len(found) != 1:
                 raise Refused("unsupported-card", f"{len(found)} ability layers: edit each box on the website")
             edits += set_parts(new, {str(found[0]["id"]): {"text": value}}, record, fonts_dir, chart, _card_name(parsed),
-                               _own_text(parsed), parser, old)
+                               parser, old)
         elif name in TEXT_FIELDS:
-            edits.append(set_text_layer(new, name, value, fonts_dir, chart, _card_name(parsed), _own_text(parsed), parser,
+            edits.append(set_text_layer(new, name, value, fonts_dir, chart, _card_name(parsed), parser,
                                         old, anchor=title_anchor if name == "name" else 0))
         elif name == "parts":                   # one box per layer (PARTS_EDITOR.md §4.4-4.6)
             record = card_parts(old, rel, _card_name(parsed), parser)
-            edits += set_parts(new, value, record, fonts_dir, chart, _card_name(parsed), _own_text(parsed), parser, old,
+            edits += set_parts(new, value, record, fonts_dir, chart, _card_name(parsed), parser, old,
                                ability_from, rel, title_anchor)
         else:
             raise Refused("unsupported-card", f"{name}: not yet")
@@ -9156,8 +9145,8 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     reparse = gate_reparse(parser, parsed, new_psd, rel, jobs, reopened, edits, flags)
     if "parts" in jobs:
         flags += gate_parts(parser, parsed, rel, jobs["parts"], old, reopened, fonts_dir)
-    titles = (name_layer(reopened, _card_name(parsed), _own_text(parsed)),
-              name_layer(old, _card_name(parsed), _own_text(parsed))) if "name" in jobs else None
+    titles = (name_layer(reopened, _card_name(parsed)),
+              name_layer(old, _card_name(parsed))) if "name" in jobs else None
     flags += gate_fx(reopened, edits, fonts_dir, chart, old, parser.icons, titles)
     timings["reparse"] = perf_counter() - start
     start = perf_counter()
@@ -9180,7 +9169,7 @@ CHANGED = "changed in Photoshop since this edit: redo it on the website if still
 ADDED_LATER = "an added Ability layer (from the template) is not built yet: it waits"
 ADD_ABILITY_LIVE = True     # +ability bakes (owner approved plus_ability_2 in Photoshop, 2026-10-26)
 HAS_ABILITY = "the card has an Ability layer now (added in Photoshop): redo it on the website"
-PART_KINDS = (("ability", "ability"), ("title", "name"), ("blocks", "ability"))   # record key -> field, in bake order
+PART_KINDS = (("ability", "ability"), ("title", "name"))   # record key -> field, in bake order
 
 
 @dataclass
@@ -9250,7 +9239,7 @@ def plan_parts(psd: PSDImage, parsed: dict, parts: dict, parser: Optional[PSDPar
     Sort a card's `parts` edits against the PSD (§4.3): a gone layer, one no longer a part of its field, or one whose raw
     text changed since the edit (sha) is skipped and flagged ("redo it on the website"), unless it already reads the
     edit (redundant); one reading the edit is redundant; the rest are jobs. Never overwrites Photoshop work: a sha
-    mismatch only ever skips. Impossible: emptying the title, deleting a rule page's block. An added ability waits
+    mismatch only ever skips. Impossible: emptying the title. An added ability waits
     (not built yet).
 
     Args:
@@ -9300,9 +9289,6 @@ def plan_parts(psd: PSDImage, parsed: dict, parts: dict, parser: Optional[PSDPar
                 plan.outcome[key] = "redundant"
             else:
                 skip(key, edit, CHANGED, now)
-        elif edit.get("delete") and hit[1] == "blocks":
-            plan.refusals.append(Refusal("unsupported-card", "a rule page's text block can't be deleted: empty it on "
-                                                             "the website or edit it in Photoshop"))
         elif not edit.get("delete") and _part_same(now, edit["text"], vocab):
             plan.outcome[key] = "redundant"
         else:
@@ -9406,11 +9392,11 @@ def _combine(which: str, edits: list, subs: list, psd: PSDImage, olds: dict, new
 
 
 def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Optional[dict] = None, card: str = "",
-              own_text: bool = True, parser: Optional[PSDParser] = None, original: Optional[PSDImage] = None,
+              parser: Optional[PSDParser] = None, original: Optional[PSDImage] = None,
               ability_from: Optional[tuple] = None, rel: str = "", anchor: int = 0) -> list:
     """
     Bake a card's part jobs (plan_parts) on the open card (§4.4-4.6): the deletions first (remove_layer: the layer, its
-    visible FX layers and copies, its story), then each ability part, title part and rule-page block set as one text
+    visible FX layers and copies, its story), then each ability part and title part set as one text
     layer (set_text_layer, layer=) with its box's edit put back over the layer's raw text (_part_raw), its copies the
     same, a watermark of the title the new title when it printed the old one (else told), a relaid hidden Ability the
     new join.
@@ -9473,8 +9459,8 @@ def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Op
             layer_was = layer.text
             raw = _part_raw(layer_was, part["text"], text)
             copies = followers(layer.layer_id, "copy")
-            edit = set_text_layer(psd, which, raw, fonts_dir, chart if kind == "ability" else None, card, own_text, parser,
-                                  original, layer=layer, beside=copies,    # a rule page's words keep their own colours
+            edit = set_text_layer(psd, which, raw, fonts_dir, chart if kind == "ability" else None, card, parser,
+                                  original, layer=layer, beside=copies,
                                   anchor=anchor if kind == "title" and len(joined[kind]) == 1 else 0)
             edit.story = first_story(layer)
             typed = sum(raw.strip(PAD).count(c) for c in "\r\x03") - sum(layer_was.strip(PAD).count(c) for c in "\r\x03")
@@ -9484,7 +9470,7 @@ def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Op
                 layer.name = edit.renamed = f"{layer.name} #{','.join(map(str, sorted(tag)))}"
             many = len(joined[kind]) > 1
             if many:
-                label = "block" if kind == "blocks" else "ability" if which == "ability" else "title"
+                label = "ability" if which == "ability" else "title"
                 where = f"{label} {joined[kind].index(part) + 1}/{len(joined[kind])}"
                 edit.notes = [sub(rf"^((?:[\w-]+: )?){which}\b", rf"\1{which} ({where})", note, count=1)
                               for note in edit.notes]
@@ -9494,7 +9480,7 @@ def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Op
             for copy in copies:
                 again = _part_raw(copy.text, part["text"], text)
                 if again != copy.text:
-                    done = set_text_layer(psd, which, again, fonts_dir, None, card, own_text, parser, original,
+                    done = set_text_layer(psd, which, again, fonts_dir, None, card, parser, original,
                                           layer=copy, beside=[layer, *own], copy=True)
                     done.story = first_story(copy)
                     done.notes = [f"{note} (its copy {copy.name[:24]!r})" for note in done.notes if note not in edit.notes]
@@ -9515,7 +9501,7 @@ def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Op
                     notes.append(f"name: the watermark {f['layer']!r} doesn't match the title: not changed")
                     continue
                 done = set_text_layer(psd, "name", project(title_text(mark.text), new_title, mark.text), fonts_dir,
-                                      None, card, own_text, parser, original, layer=mark, copy=True)
+                                      None, card, parser, original, layer=mark, copy=True)
                 done.story = first_story(mark)
                 edits.append((mark, done, True))
                 subs.append(_record_ids(psd))
@@ -9540,7 +9526,7 @@ def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Op
     if ADD_ABILITY in jobs:                     # scheduled last (§4.7)
         if ability_from is None:
             raise Refused("unsupported-card", "ability: no template to add the Ability layer from")
-        out.append(add_ability(psd, jobs[ADD_ABILITY]["text"], *ability_from, fonts_dir, chart, card, own_text, parser,
+        out.append(add_ability(psd, jobs[ADD_ABILITY]["text"], *ability_from, fonts_dir, chart, card, parser,
                                original, rel))
     return out
 
@@ -9640,7 +9626,7 @@ def set_text_box(layer, box: tuple) -> None:
 
 
 def add_ability(psd: PSDImage, text: str, template: PSDImage, name: str, fonts_dir: str, chart: Optional[dict] = None,
-                card: str = "", own_text: bool = True, parser: Optional[PSDParser] = None,
+                card: str = "", parser: Optional[PSDParser] = None,
                 original: Optional[PSDImage] = None, rel: str = "") -> Edit:
     """A "+ability" job: insert_ability, in the card's own font and size and in its free text area (ability_place.plan:
     owner 2026-10-25), the placeholder drawn there, then the text set as any ability's (set_text_layer) and fitted to
@@ -9657,7 +9643,7 @@ def add_ability(psd: PSDImage, text: str, template: PSDImage, name: str, fonts_d
     set_text_font(layer, planned.font, planned.size, planned.leading)
     set_text_box(layer, planned.box)
     layer.rasterize(fonts=font_map(fonts_dir))     # the placeholder in its new font and place (drawn_in_font)
-    edit = set_text_layer(psd, "ability", raw, fonts_dir, chart, card, own_text, parser, original, layer=layer,
+    edit = set_text_layer(psd, "ability", raw, fonts_dir, chart, card, parser, original, layer=layer,
                           area=planned.box)
     edit.story = None                           # a new story: gate_stories takes it out (added_stories)
     x0, y0, x1, y1 = planned.box
@@ -9717,7 +9703,7 @@ def template_for(card_type: str, rel: str = "") -> Optional[str]:
 def template_icon(template: PSDImage, psd: PSDImage, parser: PSDParser, name: str = "") -> Optional[tuple]:
     """(spot on the card, the template's first type icon, the template's name): the template's spot scaled to the
     card's canvas, or None when it has no type icon."""
-    images, _ = type_row(template, parser, name, True)
+    images, _ = type_row(template, parser, name)
     if not images:
         return None
     units = [_Unit([layer], _core(layer) or tuple(layer.bbox)) for _, layer in images]

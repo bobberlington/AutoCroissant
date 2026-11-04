@@ -1124,8 +1124,8 @@ def _describe_parts(card: Card) -> list:
     was = {key: text for edit in (card.baked.edits if card.baked else []) if isinstance(edit.old, dict)
            for key, text in edit.old.items()}     # the PSD's text, not the editor's `was`
     for key, job in (card.jobs.get("parts") or {}).items():
-        field_name, kind, k, n = plan.where.get(key, (job["field"], "", 0, 1)) if plan is not None else (job["field"], "", 0, 1)
-        what = "title" if field_name == "name" else "text block" if kind == "blocks" else "ability"
+        field_name, _, k, n = plan.where.get(key, (job["field"], "", 0, 1)) if plan is not None else (job["field"], "", 0, 1)
+        what = "title" if field_name == "name" else "ability"
         place = f" ({_nth(k)} layer)" if n > 1 and k else ""
         if key == psd_edit.ADD_ABILITY:
             out.append(f"ability layer added {job['text'][:40]!r}")

@@ -1,6 +1,6 @@
 """
 The parts editor's data (docs/Finished/session-2026-10-26/PARTS_EDITOR.md §11, Track A's 1-3): the variant tag rule, psd_parts.card_parts on
-the five fixture PSDs (tests/fixtures/parts/, each read at its own blob: skipped when the clone lacks it) with the parser's
+the four fixture PSDs (tests/fixtures/parts/, each read at its own blob: skipped when the clone lacks it) with the parser's
 fields their joins, and a tagged A Snack parsed and drawn per picture.
 """
 import json
@@ -25,7 +25,6 @@ CARDS = {      # fixture: (path, card name, {lyid: name} tags applied in memory:
     "warcraftian_druid": ("Creatures/World Of Warcraft/4 Stars/Warcraftian_Druid.psd", "Warcraftian Druid", {}),
     "a_snack_tagged": ("Items/Heal/2 Stars/A_Snack.psd", "A Snack",
                        {1015: "A Snack #1", 327: "Name #1", 1022: "Breakfast #2", 1023: "Name #2", 1024: "Supper #3", 1025: "Name #3"}),
-    "getting_started": ("Auxiliary/Rulebook/01_Getting_Started.psd", "01 Getting Started", {}),
 }
 
 

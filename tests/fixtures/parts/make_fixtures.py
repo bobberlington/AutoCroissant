@@ -2,7 +2,7 @@
 The parts editor's frozen contract fixtures (docs/Finished/session-2026-10-26/PARTS_EDITOR.md §2.3, §2.4, §3, §5, §13), from real cards.
 
 Writes, next to this file:
-- mini_doomer.json, miracle_matter.json, warcraftian_druid.json, a_snack_tagged.json, getting_started.json: I1, each
+- mini_doomer.json, miracle_matter.json, warcraftian_druid.json, a_snack_tagged.json: I1, each
   {"blob", "path", "name", "parts"} with "parts" the details record's VERSION 2 key (card_parts(psd, rel, name, parser));
   a_snack_tagged is A_Snack.psd with §9's tags applied in memory (the card repo stays untagged);
 - card_edits.parts.json (I2), stats.variants.json (I3), result.v2.json (I4).
@@ -40,7 +40,6 @@ CARDS = {      # fixture: (path, card name, {lyid: new name} tags applied in mem
     "warcraftian_druid": ("Creatures/World Of Warcraft/4 Stars/Warcraftian_Druid.psd", "Warcraftian Druid", {}),
     "a_snack_tagged": ("Items/Heal/2 Stars/A_Snack.psd", "A Snack",
                        {1015: "A Snack #1", 327: "Name #1", 1022: "Breakfast #2", 1023: "Name #2", 1024: "Supper #3", 1025: "Name #3"}),
-    "getting_started": ("Auxiliary/Rulebook/01_Getting_Started.psd", "01 Getting Started", {}),
 }
 
 
@@ -88,7 +87,7 @@ def main() -> int:
         write(f"{fixture}.json", made[fixture])
 
     def edit(fixture, lyid, text=None, delete=False):
-        p = next(x for k in ("title", "ability", "blocks") for x in made[fixture]["parts"][k] if x["id"] == lyid)
+        p = next(x for k in ("title", "ability") for x in made[fixture]["parts"][k] if x["id"] == lyid)
         field = "name" if any(x["id"] == lyid for x in made[fixture]["parts"]["title"]) else "ability"
         out = {"field": field}
         out.update({"delete": True} if delete else {"text": text})
@@ -96,7 +95,7 @@ def main() -> int:
         return out
 
     def joined(fixture, changes, key="ability", n=None):
-        parts = [p for p in made[fixture]["parts"][key if key != "blocks" else "blocks"]
+        parts = [p for p in made[fixture]["parts"][key]
                  if n is None or p["variants"] is None or n in p["variants"]]
         texts = [changes.get(p["id"], p["text"]) for p in parts]
         texts = [t for t in texts if t is not None]
@@ -105,10 +104,7 @@ def main() -> int:
     mm = {1368: "Earth: 5/8/6/5 and heal 3 HP", 417: None}
     snack = {320: "Heal 4 HP.\nInflict 2T2 Regen and 2T1 Stuffed.", 1023: "Second\nBreakfast"}
     at, by = "2026-10-26T01:00:00Z", "MichaelJSr"
-    gs = made["getting_started"]["parts"]["blocks"]
     edits = {"about": "The parts editor's Card Edits.json entries (docs/Finished/session-2026-10-26/PARTS_EDITOR.md §3): a fixture.", "cards": {
-        "01 Getting Started": {"ability": "\n".join("HOW TO WIN:" if p["id"] == 15 else p["text"] for p in gs),
-                               "parts": {"15": edit("getting_started", 15, "HOW TO WIN:")}, "_by": by, "_at": at},
         "A Snack": {"ability": snack[320], "parts": {"320": edit("a_snack_tagged", 320, snack[320]),
                                                      "1023": edit("a_snack_tagged", 1023, snack[1023])}, "_by": by, "_at": at},
         "A Snack2": {"name": joined("a_snack_tagged", snack, "title", 2), "ability": joined("a_snack_tagged", snack, "ability", 2),

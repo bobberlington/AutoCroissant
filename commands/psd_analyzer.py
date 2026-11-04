@@ -12,7 +12,7 @@ from re import compile as re_compile
 from typing import Optional
 import pandas as pd
 
-from global_config import AUTHORS_PATH, EDITS_PATH, ICON_MANIFEST_PATH, RULEBOOK_DIR
+from global_config import AUTHORS_PATH, EDITS_PATH, ICON_MANIFEST_PATH
 from commands.card_edits import CardAuthors, CardEdits
 from commands.card_models import CardInfo, CardStats, CardType, StatsDatabase, card_name, get_stats_as_dict, stats_db
 from commands.github_api import GIT_TOKEN
@@ -168,18 +168,14 @@ def export_stats_to_file(interaction: Interaction,
                          only_ability: bool = False,
                          as_csv: bool = True) -> None:
     """
-    Export card statistics to a file (excluding rulebook entries).
+    Export card statistics to a file.
 
     Args:
         interaction: Discord interaction
         only_ability: Export only ability text
         as_csv: Export as CSV (otherwise text file)
     """
-    # Filter out rulebook entries and convert to dict format
-    filtered_stats = {
-        name: card.to_dict() for name, card in stats_db.stats.items()
-        if RULEBOOK_DIR not in card.path
-    }
+    filtered_stats = {name: card.to_dict() for name, card in stats_db.stats.items()}
 
     # Get all card aliases using helper function
     card_to_aliases = get_card_aliases()
@@ -224,9 +220,6 @@ def export_stats_to_file(interaction: Interaction,
     with open(filename, 'w') as f:
         current_type = None
         for name, card in sorted_cards:
-            if RULEBOOK_DIR in card.path:
-                continue
-
             card_type = card.card_type
 
             # Add section header when type changes

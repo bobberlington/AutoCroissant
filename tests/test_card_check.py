@@ -23,7 +23,6 @@ NO_STATS = "NO STATS FOUND: no HP, DEF, ATK or SPD bars read on this creature"
 OLD = {                                         # the clone's last versions with notes (fixed by these commits' children)
     "N.M.E/Bubble.psd": ("dc37f4adf5309ff0ebacadfbd2f2e07001eec3a5^", [NO_STARS]),          # L14 star groups
     "Auxiliary/Minions/God_Tamer.psd": ("dc37f4adf5309ff0ebacadfbd2f2e07001eec3a5^", [NO_STARS]),
-    "Auxiliary/Rulebook/20_Creature_Types.psd": ("100511d37848773bb8e948ba29625397f6ce5216^", ["MISSPELT TYPE: tornado"]),   # L11
 }
 
 
@@ -141,8 +140,6 @@ def test_card_notes_apply_the_edits_then_validate(fake_cards, tmp_path):
     assert cc.card_notes(parser, None, str(psd), rel) == []                                 # cards need no ability (10-25)
     fake_cards[b"a"] = lambda r: creature(r, 7, 4, 5, 6, problems=["NO ABILITY LAYER"], ability=None, card_type="minion")
     assert cc.card_notes(parser, None, str(psd), rel) == []                                 # older data's note: dropped
-    fake_cards[b"a"] = lambda r: creature(r, problems=["NO ABILITY LAYER"], ability=None, card_type="rulebook")
-    assert cc.card_notes(parser, None, str(psd), "Auxiliary/Rulebook/A.psd") == ["ABILITY TEXT NOT FOUND", "NO ABILITY LAYER"]
     fake_cards[b"a"] = lambda r: creature(r, problems=[NO_STATS])          # no bar read: one note, not four
     assert cc.card_notes(parser, None, str(psd), rel) == [NO_STATS]
     assert cc.card_notes(parser, cc.CardEdits.parse(edits({"A": {"hp": 5}})), str(psd), rel) == [NO_STATS]   # as the website
@@ -183,21 +180,20 @@ def test_cli_psd_mode(clone, tmp_path, capsys):
 
 
 def test_cli_all_mode_with_the_edits(clone, tmp_path, capsys):
-    """Six real cards (two from the clone's history) in a tmp checkout: the edits file answers four of their notes; MDW/, Markers/ and .git/ are skipped."""
+    """Five real cards (one from the clone's history) in a tmp checkout: the edits file answers three of their notes; MDW/, Markers/ and .git/ are skipped."""
     root = tmp_path / "repo"
     cards = ["Auxiliary/Minions/God_Tamer.psd", "Creatures/Kirby/3 Stars/Computer_Virus.psd", "Creatures/Kirby/3 Stars/Pix.psd",
-             "Auxiliary/Rulebook/20_Creature_Types.psd", "Auxiliary/Minions/Mini_Doomer.psd",
+             "Auxiliary/Minions/Mini_Doomer.psd",
              "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd"]
     for rel in cards:
         (root / rel).parent.mkdir(parents=True, exist_ok=True)
-        if rel in OLD:                                                          # God Tamer and 20_Creature_Types with their notes
+        if rel in OLD:                                                          # God Tamer with its note
             (root / rel).write_bytes(old_blob(clone, rel))
         else:
             (root / rel).symlink_to(clone / rel)
     names = [p.name for p in (clone / "Types").iterdir() if p.is_file() and not p.name.startswith(".")]
     text = edits({"Computer Virus": {"problems_ok": True},
                   "Pix": {"creatures": [{"hp": 3, "def": 3, "atk": 3, "spd": 3}] * 3},
-                  "20_Creature_Types": {"types": ["wind"]},
                   "Royal Eradicator Main Cannon": {"allow_high_stats": True}})
     fake_root(root, {"MDW/Templates/Creature_Template.psd": b"", "Auxiliary/Markers/M.psd": b"", ".git/x.psd": b"", "Items/note.txt": b""},
               types=names, edits_text=text)
@@ -205,14 +201,13 @@ def test_cli_all_mode_with_the_edits(clone, tmp_path, capsys):
     out = tmp_path / "r.json"
     assert cc.main(["--all", str(root), "--json", str(out)]) == 0
     text = capsys.readouterr().out
-    assert "6 card PSDs read." in text and f"- `Auxiliary/Minions/God_Tamer.psd` (Someone): {NO_STARS}\n" in text
+    assert "5 card PSDs read." in text and f"- `Auxiliary/Minions/God_Tamer.psd` (Someone): {NO_STARS}\n" in text
     data = json.loads(out.read_text(encoding="utf-8"))
     assert data["cards"] == [{"path": "Auxiliary/Minions/God_Tamer.psd", "author": "Someone", "notes": [NO_STARS]}] and data["errors"] == []
-    (root / "site" / "Card Edits.json").unlink()                                 # without the edits the four notes come back
+    (root / "site" / "Card Edits.json").unlink()                                 # without the edits the three notes come back
     report = cc.check_checkout(str(root))
     assert {c.path: c.notes for c in report.cards} == {
         "Auxiliary/Minions/God_Tamer.psd": [NO_STARS],
-        "Auxiliary/Rulebook/20_Creature_Types.psd": ["MISSPELT TYPE: tornado"],
         "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd": ["STATS TOO HIGH"],
         "Creatures/Kirby/3 Stars/Computer_Virus.psd": [NO_STATS],
         "Creatures/Kirby/3 Stars/Pix.psd": [SEVERAL]}

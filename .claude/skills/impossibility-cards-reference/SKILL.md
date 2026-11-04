@@ -188,9 +188,8 @@ sense.
 
 ### 3.2 Ability text
 
-A text layer contributes ability text iff its name (lowercased) is `"ability"` — OR the card is a
-rulebook page (`"Rulebook" in relative_path`), in which case ALL text layers contribute
-(psd_parser.py:772, 488). The raw string is `str(layer.engine_dict["Editor"]["Text"])` — a
+A text layer contributes ability text iff its name (lowercased) is `"ability"` (on a rulebook page every text
+layer did, until that rule-page parsing was removed 2026-11-04). The raw string is `str(layer.engine_dict["Editor"]["Text"])` — a
 repr-like string wrapped in quotes, with literal escape sequences. Cleanup (psd_parser.py:786-792):
 
 | Raw sequence | Becomes | Why |
@@ -202,10 +201,10 @@ repr-like string wrapped in quotes, with literal escape sequences. Cleanup (psd_
 | `\ufeff` (BOM char) | removed | byte-order mark (BOM) |
 | trailing whitespace | `.rstrip()` | |
 
-Multiple ability text layers (common on rulebook pages) are sorted by position (3.5's row sort) and
+Multiple ability text layers are sorted by position (3.5's row sort) and
 joined with `\n`; the wrapping `'`/`"` quotes are stripped during the join and at the end
-(`_process_abilities`, psd_parser.py:1151-1162). If a rule page has NO ability text, the parse-time problem
-`NO ABILITY LAYER` is recorded (psd_parser.py:522-523); since 2026-10-25 (owner) other cards need no ability.
+(`_process_abilities`, psd_parser.py:1151-1162). Since 2026-10-25 (owner) cards need no ability; `NO ABILITY LAYER`
+(a rule page with no text) went with the rule-page parsing (removed 2026-11-04).
 
 ### 3.3 Card-type icons and the midline
 
@@ -218,9 +217,8 @@ Since 2026-10-19 a second vocabulary
 sits beside `all_types`: `IconVocabulary`, which adds `Types/Stars/` names and the font manifest's
 aliases for icon-font tokens (§4.1).
 
-A visible, pixel-bearing layer whose lowercased name is in `all_types` is a type icon, except on a rule page
-(2026-10-25: there it is a picture; a rule page's icons count only typed as tokens)
-(psd_parser.py:742-747). Position decides its meaning, using
+A visible, pixel-bearing layer whose lowercased name is in `all_types` is a type icon (the rule-page exception
+of 2026-10-25 removed 2026-11-04) (psd_parser.py:742-747). Position decides its meaning, using
 `card_mid_y = int(psd.height * TYPE_REGION_RATIO)` with `TYPE_REGION_RATIO = 0.5`
 (psd_parser.py:25, 486):
 
@@ -448,7 +446,7 @@ is skipped.
 Problems come in two kinds, and only one kind is persisted — a common newcomer misread:
 
 - **Parse-time problems** are appended to `card.problems` during parsing and stored in the card data (the website's Parser notes):
-  `NO ABILITY LAYER` (rule pages only since 2026-10-25, psd_parser.py:523), `DUPLICATE LAYER IDS` (:526), `NO STARS FOUND` (:532), `MISSPELT TYPE: <name>` (:756-757,
+  `NO ABILITY LAYER` (rule pages only since 2026-10-25; not recorded since the rule-page parsing was removed 2026-11-04), `DUPLICATE LAYER IDS` (:526), `NO STARS FOUND` (:532), `MISSPELT TYPE: <name>` (:756-757,
   fired by a visible pixel layer named in `MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']`,
   line 26), the effect-layer and icon-token ones through `_add_problem` (:943; callers :678-693, :975-1006), `SEVERAL CREATURES` (:1182)
   and, since 2026-10-26, `NO STATS FOUND: no HP, DEF, ATK or SPD bars read on this creature` (or minion; `STAT_KINDS`, with the "creatures" kind):
@@ -465,11 +463,11 @@ one card has one: rulebook page "20 Creature Types" with `MISSPELT TYPE: tornado
 | Problem string | Fires when | Source |
 |---|---|---|
 | `UNKNOWN TYPE` | `card_type == "unknown"` (path matched no classifier row) | :1311-1312 |
-| `ABILITY TEXT NOT FOUND` | a rule page with no ability text (other cards need no ability since 2026-10-25, owner) | :1315-1317 |
+| `ABILITY TEXT NOT FOUND` | removed 2026-11-04 with the rule-page parsing (it fired on a rule page with no ability text; cards need no ability since 2026-10-25, owner) | — |
 | `HP NOT FOUND` / `DEF NOT FOUND` | creature, minion or "creatures" card (`STAT_KINDS`) with that stat still −1 | :1338-1341 |
 | `ATK NOT FOUND` / `SPD NOT FOUND` | same, UNLESS `"active"` is in `card.types` (active creatures have no atk/spd) | :1344-1350 |
 | `STATS TOO HIGH` | any found stat > 10 and not `allow_high_stats` (Card Edits.json; the stat exclusion list went 2026-10-21) | psd_parser.py:1353-1354 |
-| `NO ABILITY LAYER` | a rule page with no text at parse time; validate() drops older data's on other cards | :523, :1325-1326 |
+| `NO ABILITY LAYER` | not recorded since 2026-11-04 (a rule page with no text at parse time); validate() drops older data's | `validate` |
 | `MISSPELT TYPE: <t>` | visible layer named undread/tornado/error | :756-757 |
 
 **The exclusion list is the "perfect extraction" debt register** — per-card allowances the owner
@@ -643,7 +641,7 @@ Each history version keeps the path it was parsed at (`_update_old_stats_paths`,
 current path after each /update_stats, was removed 2026-10-23), so git can date it there.
 
 Exports: `/export_cards` writes `stats.csv`/`stats.txt`, `/export_rulebook` writes `rules.txt`,
-both to the repo root (gitignored). Rulebook entries are excluded from card exports.
+both to the repo root (gitignored). The card exports' rulebook-entry filter was removed 2026-11-04 (the data holds none).
 
 ## 7. Querying: name lookup, aliases, and the ability DSL
 

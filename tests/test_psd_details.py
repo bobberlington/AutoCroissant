@@ -18,7 +18,6 @@ BONE = "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd"                     # its tit
 ABBI = "Creatures/Omori/5 Stars/ABBI.psd"                              # no title layer the parser reads
 AFRAID = "Auxiliary/Status Effects/Debuffs/2 Stars/Afraid.psd"         # no Text group: a top-level title named after the card
 PAPYRUS = "Creatures/Undertale/3 Stars/Papyrus.psd"                    # its title layer is named after its own text
-GLOBAL_TURN = "Auxiliary/Rulebook/08_Global_Turn.psd"                  # a rule page: its heading too
 LICH_KING = "Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd"     # stars set by its folder: every count refused
 FREEZER = "Field/1 Stars/The_Freezer.psd"                              # no Stars group; one type icon, a column of spots
 FROSTMOURNE = "Auxiliary/Items/Frostmourne.psd"                        # four stars in a shown "N stars" folder

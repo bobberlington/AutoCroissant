@@ -40,7 +40,7 @@ def test_certified_values():
 
 def test_goldens_cover_every_folder():
     tops = {rel.split("/")[0] for rel in CARDS} | {"/".join(rel.split("/")[:2]) for rel in CARDS if rel.startswith("Auxiliary")}
-    assert {"Creatures", "Items", "Field", "N.M.E", "Auxiliary/Minions", "Auxiliary/Status Effects", "Auxiliary/Rulebook"} <= tops
+    assert {"Creatures", "Items", "Field", "N.M.E", "Auxiliary/Minions", "Auxiliary/Status Effects"} <= tops
 
 
 # ========================
@@ -90,3 +90,17 @@ def test_unfilled_line_gaps_are_padding():
     assert p._process_abilities(texts, [], 1200) == "Vek'nilash:\nImmune.\n(2CD) Hit.\nTurtle        Cat"
     assert p._process_abilities([("    Burn.\n    Then.\n", BoundingBox(20, 2000))], [("fire", BoundingBox(30, 2010))], 1200) \
         == "[fire] Burn.\nThen."
+
+
+def test_text_with_both_quotes_parses_without_backslash():
+    """str() of an engine string is its repr, which escapes ' as \\' when the text also holds a ": the parse unescapes it
+    (the old rule page 03 Setting Up's "they're")."""
+    from psd_tools.psd.engine_data import String
+    from commands.psd_analyzer import CardInfo, StatsDatabase
+    from commands.psd_parser import MutableValue, PSDParser
+    layer = types.SimpleNamespace(name="Ability", engine_dict={"Editor": {"Text": String('They\'re "in" now\r')}}, resource_dict={},
+                                  bbox=(0, 2000, 100, 2100), is_visible=lambda: True)
+    found = []
+    PSDParser([], StatsDatabase())._process_text_layer(layer, CardInfo(name="Card", card_type="item"), MutableValue(0), found,
+                                                       False, 1200)
+    assert found[0][0].strip("'\"\n") == 'They\'re "in" now' and "\\" not in found[0][0]

@@ -517,7 +517,7 @@ cannot currently say "blank on purpose" without a hardcoded name.
 **Structural CANDIDATE (the single highest-leverage exclusion killer):** the validator conflates
 `ability == ""` with `ability is None` (`not card.ability`, in `CardValidator.validate`, psd_parser.py:1101-1104 as of 2026-10-23). The parser
 already distinguishes them: a present-but-blank `Ability` layer yields `""`, a MISSING layer yields
-`None` + parse-time `NO ABILITY LAYER`. Candidate rule: blank-but-present = legitimate no-ability
+`None` + parse-time `NO ABILITY LAYER` (rule pages only from 2026-10-25; removed 2026-11-04). Candidate rule: blank-but-present = legitimate no-ability
 card; only `None` (or absence of the layer) is a problem. **Predicted effect (2026-10-23):**
 ABILITY_EXCLUSIONS 21 → 0 (20 blank + Shadow Duelist, blank after its re-parse), re-validation problems stay 1
 (`Computer Virus`), empty-string abilities stays 20 (21 after Shadow Duelist's re-parse) and becomes the watched
