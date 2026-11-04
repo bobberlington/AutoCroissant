@@ -37,7 +37,7 @@ by **impossibility-cards-reference §4.1**. This skill only summarizes it.
 | Pages workflow | `.github/workflows/site.yml` | Source |
 | TTS global script (2026-10-30) | `TTS/Global.lua` and `TTS/Global.xml`: the save's global script and UI, written into the save by tts_save on every save update (`_global_script`; the `resizeTargets` rows are generated from `Auxiliary/Creatures`). Owner: never edit the save's script by hand; a push of either file starts Card sync; drift.py fails a save whose script differs from the file | Source |
 | Rulebook (2026-10-29) | `site/rulebook/NN-slug.md` (24 chapters, the only home of the game's rules; pictures in `img/`, fonts in `fonts/`), written on the website (each chapter's Edit, `site/assets/rulebook-edit.js`; drawn by `rulebook.js`, syntax in its header); the TTS PDF `TTS/Rulebook/Rulebook.pdf` (+ `pages.json`, each page's pixel hash: printed again only when one changes) printed from the website's `#/rules/print` by Card sync's main lane (`commands.rulebook_pages`, the runner's Chrome; real text, about 9 MB) and put in the save's Rulebooks bag as one Custom_PDF object by tts_save (the Photoshop pages and their bag taken out of the save 10-30; the page PNGs of 10-29 05:00 replaced). The Timing Tags chapter (`23-timing-tags.md`) is the badges' meanings site-wide (its table -> cards.json `tagMeanings` -> text.js `setTagMeanings`; "(XCD)" rows stand for families); the ban list is edited on the rulebook page (admins, `openBans`); pictures placed anywhere are `{.free x= y= width=}` in % of their panel; the bot reads `db/rulebook.json`. the Photoshop pages moved to `MDW/Old Rules/Rulebook/` on 2026-10-30 (the first rules pages to `MDW/Old Rules/Very Old Rulebook/`); the data build reads no rule pages (card_data drops them, never archived), and the Rulebooks bag wears `MDW/Assets/Book_Cover.png`; the table's assets (card backs, holders, markers, felts, models, asset bundles) are all in `MDW/Assets` since 10-30, nothing hosted outside the repo | Source |
-| TTS save | card-sync.yml's "TTS save" step since the cutover (2026-10-24): keeps `TTS/Impossibility Simulator.json` current with the bot's updater (`--names` from the new data), rules `TTS/decks.json`, the save committed in Card sync's main commit M by its main lane (30 minutes after the first card push of a burst, card-sync.yml's push timer since 2026-10-24; the data lane runs at once since 2026-10-25), the baked PNGs' links re-pinned by a second commit right after; `.github/workflows/tts-save.yml` did it until then and is deleted (§2.6, its history) | Source |
+| TTS save | card-sync.yml's "TTS save" step since the cutover (2026-10-24; since 2026-11-03 at once after a push, owner: no 30-minute window, the rulebook PDF waiting up to 15 min for the site's build of the chapters, `rulebook_pages --wait`): keeps `TTS/Impossibility Simulator.json` current with the bot's updater (`--names` from the new data), rules `TTS/decks.json`, the save committed in Card sync's main commit M by its main lane (30 minutes after the first card push of a burst, card-sync.yml's push timer since 2026-10-24; the data lane runs at once since 2026-10-25), the baked PNGs' links re-pinned by a second commit right after; `.github/workflows/tts-save.yml` did it until then and is deleted (§2.6, its history) | Source |
 | Font check | a step of `card-guards.yml`'s check job since 2026-10-25 (`.github/workflows/font-check.yml` before; on a push changing a PSD or `MDW/Fonts/`: the fonts the pushed cards ask for that `MDW/Fonts` lacks, as a job summary, a commit comment and a Discord role ping in the standards channel, secret `DISCORD_STANDARDS_WEBHOOK` since the owner's ruling of 2026-10-22 (`DISCORD_FONT_WEBHOOK` before, now deleted); the only role ping of the checks' posts; never reverts; §3) | Source |
 | Card check | a step of `card-guards.yml`'s check job since 2026-10-25 (`.github/workflows/card-check.yml` before, 2026-10-21, push guard rule 2: on a push changing a PSD (its `site/Card Edits.json` and `Types/` triggers dropped: it checks only pushed PSDs), the bot's parser and validator notes for the pushed PSDs, as a job summary, a commit comment and a Discord post at once with plain wording and no ping (owner, 2026-10-23); AutoCroissant `commands/card_check.py`, from the guards' sparse list `card_guards.SPARSE_FILES`, the `DISCORD_STANDARDS_WEBHOOK` secret (the standards channel); never reverts; §3) | Source |
 | The psd-tools fork in three workflows | `card-guards.yml` (its check and post jobs; the card and font checks run in its check job since 2026-10-25; card-edits.yml too until it was deleted at the cutover, 2026-10-24), `card-sync.yml` (one venv; until 2026-10-24 the builder's 3.14 and the baker's 3.12), `card-preview.yml` (and card-check.yml and font-check.yml from 2026-10-24 until they were folded into the guards on 2026-10-25), one local composite action `.github/actions/cards-python` for the setup since 2026-10-25, all on Python 3.14 like every Action: since 2026-10-23 they install AutoCroissant `requirements-cards.txt` (the one pin: the fork's tag is only there; fonttools, requests; the shared setup also downloads the oxipng 10.2.1 CLI by its pinned sha256, but not for card-preview.yml, whose PNG is never published; pyoxipng until 2026-10-25), checked out of the bot repo in each one's sparse list; no pin of their own (TTSCardMaker d3b744c7 had env `PSD_TOOLS_REF`). The packages install offline from wheels in the Actions cache (`~/.cache/card-wheels`, key `cards-<hashFiles('bot/requirements-cards.txt')>-<OS>-<arch>-py<Python>`, one entry for the six since 2026-10-24; card-sync's named both its Pythons before), built by `pip wheel -r` only on a miss and saved once they installed; the install goes by name (`sed 's/ @ [^;]*//'`: pip builds a URL line from git again, offline or not), so a re-pin in AutoCroissant refreshes every entry. The install was 29-35 s a run on 2026-10-23 (the git clone and the C build ~25 s of it); a hit skips both. The two repos' changes land together. Re-pin: autocroissant-config-and-flags; shape test: AutoCroissant `tests/test_card_bake.py` `fork_install` | Source |
@@ -103,8 +103,8 @@ Notes:
 - **Icon size:** about 7% smaller than typical hand-placed icons on Gasoline (flame 85 px vs 91 px at 115 px text).
   It was kept, because cards use tight fixed leading (about 0.74 em) and bigger icons would hit the lines around them.
 - **lightshadow:** `Types/lightshadow.png` differs from `light.png` only by a faint dark halo; that's the source art.
-- **Tags without badges:** the commonest is `(n points)` (68). It isn't a rulebook abbreviation, so it gets no badge
-  unless the owner wants one. `(Action)` (36) has had one since 2026-10-22 (owner decision, §1.2).
+- **Costs:** `(n points)` (68 on the cards) and the other costs have badges since 2026-11-03 (§1.2, "Cost badges").
+  `(Action)` (36) has had one since 2026-10-22 (owner decision, §1.2).
 
 ### 1.2 Timing-tag badges (341: the first 70 + the cards' 270 + `(Action)`)
 
@@ -187,16 +187,33 @@ words. Pairs ch 23 doesn't list keep the literal fallback: (0/3CD) "Cooldown: 0 
 cooldown: 2 global turns, then 3". Old tags are prefixed "Old system: " ("Old system: Now (1CD)").
 `(Action)`'s tooltip is "Costs the creature's action", under "Other tags" (`GROUP_NAMES.neutral`).
 
-Cost badges (2026-11-03, website only: the font has none, the mock-up and the bake leave them as text): text.js
-`COST` draws `(2 points)`, `(1.5 points)`, `(X bricks)` and a card's own currency (`(4 souls)`, `(3 counters)`,
-`(2 Ritual counters)`) as pills: points gold, bricks brown, own teal. The Badges panel's switch (localStorage
-`costs`, `html[data-costs="icons"]`) draws points as a coin and bricks as a brick, own currencies unchanged. No card
-has bricks in parentheses yet. Diffs (History, Changes, Balance, versions) draw badges and icons too (`inlineHtml`).
+**Wider range (owner 2026-11-03: "(-2/1CD) and other variants"):** after the 341, `badge_tags()` adds n 1-20 or X
+for nCD, nGCD, nU, nPG, and a/bCD, a/bGCD with b 1-20 or X and a from -9 up to b (or X): 1139 tags. The first 341
+keep their glyph ids, the new glyphs (and the costs') come after every older one. text.js `BADGE_TAGS`, build_site
+`_badge_tags` and psd_edit `badge_tags` are the same rule (the site also reads ch 23's `(Y/XCD)` family rows). `TAG`
+reads 2-8 characters.
+
+**Cost badges (owner 2026-11-03, in the font):** `cost_badges()`: `(2 points)` a green coin with the number on it and
+"Points" in a dark green pill, `(2 bricks)` a red brick and "Bricks", `(2 SP)` and `(2 star points)` a yellow star
+and "SP" in navy; `(4 souls)`, `(3 counters)` (a card's own currency) a teal text pill. The colours are the TTS
+save's counters (`COIN` #00ffae Points, `BRICK` #ff0000 Bricks, `STAR` #ffff00 Star Points). Numbers 0-50, halves
+0.5-9.5 and X, one ASCII space, singular or plural, any case (the label is singular for 1): 310 glyphs, 682
+spellings (psd_edit `COST_TAGS`). A cost right after a letter, digit or "." is a multiplier ("Deal 2(x counters)"):
+the GLUED lookup swaps its "(" for `parenleft.glued` (same outline), so no badge forms; text.js `COST` has the
+same lookbehind, psd_edit `badge_spans` too. SVG: fills only, strokes on rects alone (the fork's SVG renderer, which
+draws the PNGs, refuses other strokes; every badge passes `SvgTable.drawing`). Font 11,371,432 bytes (was
+7,269,696), 4031 glyphs; old glyph ids, old texts' shaping and the 341's glyphs unchanged (HarfBuzz proof
+2026-11-03, `~/Documents/Tools/wt/scratch/badges-1103/proof.py`). The site draws the same badges (style.css
+`.badge.cost`, the P4/B6 look the owner picked) and the mock-up (mockup.js `COST_ICON`); the Text / Coins switch is
+gone. The rulebook's ch 23 has a Costs table.
 
 Plain tags on cards (R1, 2026-11-03): four live cards typed a tag in their body font (Elmadan, Terry Hintz, Joel
 Miller: `(Action)` in Apple-Kid; Papyrus: `(1CD)` in ParchmentMF), swept in TC a8ec8a1b. The pixel fix `tags`
-(`card_standards.tags_to_badges`) sets them in the icon font, fitted as a typed badge, by glyph; the guards run it on
-every push (owner 2026-11-03), and R1 is told only when that fix doesn't land (`card_guards._fix_stands`).
+(`card_standards.tags_to_badges`) sets them, and costs since 2026-11-03, in the icon font, fitted as a typed badge,
+by glyph, in Stylistic Alternates under an overlay (Morpho Knight); `--whole` sweeps may redraw a layer whole. The
+guards run it on every push (owner 2026-11-03), and R1 is told only when that fix doesn't land
+(`card_guards._fix_stands`). The cost sweep of 2026-11-03 set 62 cards; WX-78, Wendy and Nefarious Chip are left to
+Photoshop (see the batch commit).
 
 Shape (revised 2026-10-19, confirmed in Photoshop 2023 on 2026-10-20 with the reinstalled font): a pill about
 0.95 em tall with label capitals about 0.55 em, the label centred, color only — no extra symbol on multi-turn

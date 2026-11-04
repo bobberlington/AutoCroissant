@@ -32,7 +32,7 @@ from typing import Optional
 # Configuration
 # ========================
 BREAKS = "\r\n\x03"
-UNIT = re_compile(r"\[[^\[\]\r\n\x03]{1,52}\]|\(-?[0-9A-Za-z/]{2,6}\)|[^\W_]+(?:['’][^\W_]+)*|.", DOTALL)
+UNIT = re_compile(r"\[[^\[\]\r\n\x03]{1,52}\]|\(-?[0-9A-Za-z/]{2,8}\)|[^\W_]+(?:['’][^\W_]+)*|.", DOTALL)
 WORD = re_compile(r"[^\W_]")
 PAIR_BONUS = 0.05       # a pair's worth beyond its likeness: paragraphs pair in place unless added or deleted ones
 REFINE_MIN = 0.5        # one word into one word: letters compared when this alike (difflib ratio)

@@ -6,8 +6,9 @@ sync's main lane runs it before the save; tts_save puts the PDF in the save's Ru
 
     python -m commands.rulebook_pages <card repo checkout> [--site URL]
 
-The website must show the checkout's chapters (the page lists the chapters it was cut from): else nothing changes and
-the next run draws them. Headless Chrome ($CHROME, else the first of CHROMES on PATH) over its DevTools pipe; no
+The website must show the checkout's chapters (the page lists the chapters it was cut from): the command line waits up
+to SITE_WAIT for its build of them (data/rules.json, polled without Chrome), else nothing changes and the next run draws
+them. Headless Chrome ($CHROME, else the first of CHROMES on PATH) over its DevTools pipe; no
 package beyond Pillow. Each page is screenshot and hashed: the PDF is printed again only when a hash changed (a PDF's
 bytes carry its print time), so an unchanged rulebook keeps its file and its pinned link. Other files in the folder are
 left alone. Exit 1 when the pages could not be drawn (nothing changed then).
@@ -24,8 +25,9 @@ from select import select
 from shutil import rmtree, which
 from subprocess import DEVNULL, Popen, TimeoutExpired
 from tempfile import mkdtemp
-from time import monotonic, sleep
+from time import monotonic, sleep, time
 from typing import Optional
+from urllib.request import Request, urlopen
 
 from PIL import Image
 
@@ -55,6 +57,8 @@ PRINT_CSS = ("@page { size: 1080px 1920px; margin: 0 } "   # one sheet a page, n
              ".rb-sheets .rb-sheet { zoom: 1 !important; box-shadow: none !important; break-after: page; margin: 0 !important } }")
 SHEET = (1080, 1920)                           # a page, as the Photoshop pages were (rulebook.js SHEET)
 WAIT_SECONDS = 180                             # for the website to load and cut its pages
+SITE_WAIT = 15 * 60                            # for the website's build of the checkout's chapters (Card sync goes at once)
+SITE_POLL = 20                                 # seconds between looks at its data/rules.json
 CALL_SECONDS = 60                              # one DevTools call
 ABOUT = ("The rulebook's TTS PDF, printed from the website's #/rules/print by AutoCroissant commands/rulebook_pages.py "
          "(Card sync); the chapters are site/rulebook. sha: each page's pixels (the PDF is printed again when one changes). "
@@ -263,12 +267,36 @@ def write_pages(folder: str, shots: list, pdf_maker) -> dict:
     return out
 
 
+def site_chapters(site: str) -> dict:
+    """{file: source} of the chapters the website shows (its data/rules.json, past the CDN's copy), {} when unreadable."""
+    try:
+        with urlopen(Request(f"{site.rstrip('/')}/data/rules.json?t={int(time())}", headers={"User-Agent": "rulebook-pages"}),
+                     timeout=30) as reply:
+            data = loads(reply.read())
+        return {c["file"]: c["source"].replace("\r\n", "\n") for c in data.get("chapters") or []
+                if isinstance(c, dict) and CHAPTER_FILE.match(c.get("file") or "") and isinstance(c.get("source"), str)}
+    except (OSError, ValueError):
+        return {}
+
+
+def wait_for_site(site: str, mine: dict, wait: float) -> bool:
+    """Whether the website shows mine within wait seconds (polled every SITE_POLL)."""
+    until = monotonic() + wait
+    while True:
+        if site_chapters(site) == mine:
+            return True
+        if monotonic() + SITE_POLL > until:
+            return False
+        sleep(SITE_POLL)
+
+
 # ========================
 # Public API Functions
 # ========================
-def update_pages(checkout: str, site: str = SITE_URL, exe: str = "") -> str:
+def update_pages(checkout: str, site: str = SITE_URL, exe: str = "", wait: float = 0) -> str:
     """
-    The TTS pages brought to the website's rulebook, when the website shows the checkout's chapters.
+    The TTS pages brought to the website's rulebook, when the website shows the checkout's chapters (waiting up to wait
+    seconds for its build of them).
 
     Returns:
         The report (one line)
@@ -282,6 +310,8 @@ def update_pages(checkout: str, site: str = SITE_URL, exe: str = "") -> str:
     mine = chapter_sources(checkout)
     if not mine:
         return f"Rulebook pages: no chapters in {RULEBOOK_SRC}; pages left as they are."
+    if wait:
+        wait_for_site(site, mine, wait)
     theirs, shots, printer = draw(site, exe)
     try:
         if theirs != mine:
@@ -302,9 +332,10 @@ def main(args: Optional[list] = None) -> int:
     parser = ArgumentParser(prog="python -m commands.rulebook_pages", description="Print the rulebook's TTS PDF from the website.")
     parser.add_argument("checkout", help="the card repo's checkout (its site/rulebook; the PDF goes to TTS/Rulebook)")
     parser.add_argument("--site", default=SITE_URL, help="the website (default: the card browser)")
+    parser.add_argument("--wait", type=float, default=SITE_WAIT, help="seconds to wait for the website to show the chapters")
     options = parser.parse_args(args)
     try:
-        print(update_pages(options.checkout, options.site))
+        print(update_pages(options.checkout, options.site, wait=options.wait))
     except (RuntimeError, TimeoutError, OSError, ValueError, KeyError) as e:
         print(f"Rulebook PDF not printed: {e}")
         return 1

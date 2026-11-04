@@ -5,8 +5,8 @@ The Card sync Action in the card repo builds the card data and commits it to the
   database reloaded from it, then the card list, query tables, type emojis and image links refreshed;
 - on use: a card command or autocomplete queues that sync (quiet) when none ran for REFRESH_SECONDS; its reply uses
   the data loaded now, the next one the new data;
-- /update_stats: that sync and one reply; Card sync starts itself (a card push: the data at once, the bake and the
-  TTS save after a 30-minute timer in card-sync.yml); with force_update or cards (admins), a run dispatched
+- /update_stats: that sync and one reply; Card sync starts itself (a card push: the data, the bake and the TTS save at
+  once; a 30-minute timer until 2026-11-03); with force_update or cards (admins), a run dispatched
   (ACTIONS_TOKEN) and its Card data job followed until it ends (not the bake), then the sync;
 - /fonts: from the data's psd_details.json, whose fonts the build marked supplied or not.
 Uncompiled (not in setup.py), like card_data.
@@ -217,8 +217,7 @@ def notes(manifest: dict, repository: str = CARD_REPO) -> list:
         going = next((r for r in runs if r.get("status") != "completed"), None)
         lines.append("The card repo has card changes not in the data yet: "
                      + (f"the card sync under way picks them up (<{going.get('html_url')}>)." if going else
-                        "the next card sync picks them up within minutes of the push (website edits are baked into the PSDs "
-                        "30 minutes after the first card push of a burst)."))
+                        "the next card sync picks them up within minutes of the push (website edits baked into the PSDs too)."))
     try:
         lanes = _lanes(repository, runs)
     except (RequestException, ValueError) as e:

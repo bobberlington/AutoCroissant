@@ -43,7 +43,7 @@ import commands.psd_edit as psd_edit
 from commands.card_edits import CardAuthors
 from commands.card_models import APOSTROPHE, straight
 from commands.font_check import _get, _value, layer_fonts
-from commands.psd_edit import BADGE_KEYS, BADGE_TAGS, ICON_FONT, PAREN, Refused, badge_tags
+from commands.psd_edit import BADGE_KEYS, BADGE_TAGS, ICON_FONT, Refused, badge_spans, badge_tags
 from commands.psd_parser import (EFFECT_LAYER_TAG, ICON_FONT_PREFIX, TAG, CardValidator, PSDParser, base_name, layer_tag,
                                  variant_view, variants_of)
 from commands.psd_regions import clip, fx_pad, overlay_words, union_box
@@ -400,18 +400,17 @@ def ability_layers(psd: PSDImage) -> list:
 
 
 def plain_tags(layer) -> list:
-    """The layer's timing tags (BADGE_KEYS) with a letter outside the icon font: [(start, end)] into its text."""
+    """The layer's timing tags and costs (psd_edit.badge_spans: "(1CD)", "(2 points)") with a letter outside the icon
+    font: [(start, end)] into its text."""
     try:
         text, runs = run_fonts(layer)
     except (KeyError, IndexError, TypeError, ValueError, AttributeError):
         return []
     out = []
-    for match in PAREN.finditer(text):
-        if match.group(1).lower() not in BADGE_KEYS:
-            continue
-        fonts = {font for start, end, font in runs if start < match.end() and end > match.start()}
+    for a, b in badge_spans(text):
+        fonts = {font for start, end, font in runs if start < b and end > a}
         if not fonts or any(not font.lower().startswith(ICON_FONT_PREFIX) for font in fonts):
-            out.append((match.start(), match.end()))
+            out.append((a, b))
     return out
 
 
@@ -431,7 +430,8 @@ def rule_tags(psd: PSDImage) -> Optional[Issue]:
     if not bad:
         return None
     tags = _unique(bad)
-    return Issue("R1", f"timing tag{'s' if len(tags) > 1 else ''} {_list(tags)} not set in the stoogedings badge font", tags)
+    what = "cost" if all(" " in t for t in tags) else "timing tag" if not any(" " in t for t in tags) else "badge"
+    return Issue("R1", f"{what}{'s' if len(tags) > 1 else ''} {_list(tags)} not set in the stoogedings badge font", tags)
 
 
 def rule_icons(psd: PSDImage, types) -> Optional[Issue]:
@@ -1435,15 +1435,17 @@ def one_colour_badges(path: str, out_path: str, fonts: Optional[Callable[[list],
     return names
 
 
-def tags_to_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]]) -> list:
+def tags_to_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]], whole: bool = False) -> list:
     """
     R1's fix (owner 2026-11-03: "make sure everything uses the badges"; the guards on every push too), the PIXEL_FIXES
-    kind: tag_layers' plain
-    timing tags set in the icon font at the layer's own badge style (psd_edit.icon_style; with none, at the text's own
-    style, ICON_FONT added as the bake adds it), ligatures on, then fitted as a typed badge (badge_fits: size and
-    middle); their layers' changed glyphs redrawn (a splice; text a badge moves is redrawn, an FX layer on moved words
-    cut again), the stored preview patched. Refused when a line no longer fits the box or ink runs off the canvas.
-    Gated (_only_pixels, the stories and the added face by gate_stories), then checked: no plain tag left.
+    kind: tag_layers' plain timing tags and costs set in the icon font at the layer's own badge style
+    (psd_edit.icon_style; with none, at the text's own style, ICON_FONT added as the bake adds it), ligatures on, then
+    fitted as a typed badge (badge_fits: size and middle), in Stylistic Alternates under an overlay (psd_edit.one_colour);
+    their layers' changed glyphs redrawn (a splice; text a badge moves is redrawn, an FX layer on moved words cut
+    again), the stored preview patched. Refused when a line no longer fits the box or ink runs off the canvas.
+    Gated (_only_pixels, the stories and the added face by gate_stories), then checked: no plain tag left. whole (a
+    sweep's --whole, never the guards): a layer the splice can't take is redrawn whole when the fork draws it as
+    stored (_ink_off within WHOLE_OFF).
 
     Returns:
         The layer names changed; raises Refused or the engine's errors
@@ -1454,6 +1456,7 @@ def tags_to_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Op
     for layer in tag_layers(psd):
         spans, name = plain_tags(layer), layer.name.strip()
         faces = psd_edit.font_map(fonts(layer_fonts(layer)), layer)
+        whole_ok = whole and _ink_off(layer, faces) <= WHOLE_OFF
         psd_edit.follow_kerning(psd, layer)
         old, keep, placed = tuple(layer.bbox), capture(layer, faces), _placed(layer, faces)
         off = psd_edit._ink_off_canvas(layer, psd.width, psd.height)
@@ -1469,9 +1472,11 @@ def tags_to_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Op
         faces = psd_edit.font_map(fonts(layer_fonts(layer)), layer)
         for fit in psd_edit.badge_fits(layer, faces, spans):
             layer.set_span_style(fit["start"], fit["end"], FontSize=fit["fit_size"], BaselineShift=fit["fit_shift"])
+        if psd_edit.one_colour(layer):          # under an overlay: in one colour, as its other badges (Morpho Knight)
+            psd_edit.set_alternates(layer, _salt_spans(layer), [])
         now = _placed(layer, faces)
         report = layer.rasterize(fonts=faces, keep=keep, unit=psd_edit.SPLICE_UNIT)
-        _by_glyph(layer, report)
+        _by_glyph(layer, report, whole_ok)
         if "overflow" in report.warnings or (not off and psd_edit._ink_off_canvas(layer, psd.width, psd.height)):
             raise Refused("overflow", f"{name}: its badges push text out of its box")
         boxes += _padded(layer, old)
@@ -1500,7 +1505,7 @@ PIXEL_FIXES = {     # kind -> (finds(psd) -> [layer], fix(path, out_path, fonts)
 }
 PIXEL_LINES = {"apostrophes": "straight apostrophes", "old glyphs": "old icon font glyphs redrawn",
                "badges": "badges and icons fitted to their text",
-               "overlay badges": "badges under an overlay in one colour", "tags": "timing tags set as badges"}
+               "overlay badges": "badges under an overlay in one colour", "tags": "timing tags and costs set as badges"}
 CARD_PIXELS = ("badges", "overlay badges", "tags")   # not on rule pages: their badges are laid out by hand (legends, tables)
 
 
@@ -1522,7 +1527,8 @@ def _pixel_fixes(folder: str, base: str, current: str, rel: str, parser: Optiona
         _, apply, reads = PIXEL_FIXES[kind]
         out = join(folder, kind.replace(" ", "-") + ".psd")
         try:
-            names = apply(current, out, fonts, whole=True) if whole and apply is fit_badges else apply(current, out, fonts)
+            names = (apply(current, out, fonts, whole=True) if whole and apply in (fit_badges, tags_to_badges)
+                     else apply(current, out, fonts))
             if not names:
                 continue
             data = _gated(current, out, rel, parser, reads, sized=False)

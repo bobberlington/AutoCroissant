@@ -5,7 +5,7 @@ TTSCardMaker's site/Card Edits.json into the card PSDs and PNGs, one commit per 
     python -m commands.card_bake --repo MichaelJSr/TTSCardMaker --head <sha> [--dry-run] [--card <Name>] [--pending]
                                  [--local <clone>] [--verdicts <db/verdicts.json>]
     run(repository, head, dry_run, card, pending_only, local, verdicts) -> (markdown report, commit shas: one at most)
-    pending(repository, head, local, verdicts) -> the cards a live run has work for; due() those past the 30-minute grace
+    pending(repository, head, local, verdicts) -> the cards a live run has work for; due() those past the grace (RECENT, none since 2026-11-03)
 
 Input: one tree snapshot at head and blobs by sha (the card folders are never checked out). A website-only field (the
 entry's `_site`, owner 2026-10-25) is never baked, dropped or given a verdict: it stays in the file. Per card named in the
@@ -78,7 +78,7 @@ from global_config import (AUTHORS_PATH, CARD_BRANCH, CARD_REPO, CREATED_PATH, E
 # ========================
 # Configuration
 # ========================
-RECENT = timedelta(minutes=30)                  # a PSD or PNG pushed more recently is its author's: don't race them
+RECENT = timedelta(0)                          # a PSD or PNG pushed more recently is its author's (owner 2026-11-03: no wait; 30 min before)
 PUSHES = 100                                    # activity entries per request (GitHub's max)
 COMPARE_FILES = 300                             # a compare lists at most this many files
 SUBJECT = "Card edits"                          # the run's commit: "Card edits: 5 baked, 20 redundant, 4 refused"
@@ -380,6 +380,8 @@ def recent_paths(repository: str, head: str, now: datetime, local: str = "") -> 
     Returns:
         The paths, or None when there were too many pushes or files to tell, or no compare (a force push)
     """
+    if not RECENT:                              # no grace: nothing is recent (no request)
+        return set()
     since = (now - RECENT).strftime("%Y-%m-%dT%H:%M:%SZ")
     pushes = api(repository, "GET", "activity", params={"ref": CARD_BRANCH, "time_period": "day", "per_page": PUSHES}).json()
     window = [push for push in pushes if (push.get("timestamp") or "") >= since]

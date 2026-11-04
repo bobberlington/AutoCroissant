@@ -25,6 +25,14 @@ from commands.github_api import blob_sha
 from conftest import CLONE
 from helpers import art, card, fixture_psd, photoshop_png
 
+
+@pytest.fixture
+def thirty(monkeypatch):
+    """The 30-minute grace of before 2026-11-03 (RECENT is 0 now, owner: nothing waits): the machinery when it is set."""
+    import commands.card_guards as guards
+    monkeypatch.setattr(__import__('commands.card_bake', fromlist=['RECENT']), "RECENT", timedelta(minutes=30))
+    monkeypatch.setattr(guards, "RECENT", timedelta(minutes=30))
+
 # ========================
 # Configuration
 # ========================
@@ -490,7 +498,7 @@ def test_land_commits_what_still_holds(tmp_path, monkeypatch):
     assert report["events"] == [{"kind": "guard-png", "card": "A", "path": "X/A.png", "line": "made"}]
 
 
-def test_a_push_during_the_check_still_supersedes(tmp_path, monkeypatch):
+def test_a_push_during_the_check_still_supersedes(tmp_path, monkeypatch, thirty):
     """The environment's timer starts Land 30 minutes after the check job ends: a push made while the check ran (here a
     case-only rename 3 minutes after the PSD, the same blob) is still a later push. The window counts from the push."""
     import commands.card_bake as cb
@@ -545,7 +553,7 @@ def _full_plan(tmp_path, entries, mode="on"):
     return str(out / "plan.json")
 
 
-def test_the_post_waits_for_the_quiet_window(tmp_path, monkeypatch):
+def test_the_post_waits_for_the_quiet_window(tmp_path, monkeypatch, thirty):
     """A PNG refusal is withdrawn when the author pushed the PNG during the window; a card whose PSD changed again is left
     to that push's check; the other lines stand (report mode: nothing committed, the same post)."""
     refused = "PNG not made: the PSD and its old PNG already disagreed outside your change (3.0% of pixels); export it in Photoshop"
@@ -960,7 +968,7 @@ def _workflow(clone) -> Path:
 
 
 SYNC = "workflow run card-sync.yml -f dry_run=false -f bake=pending"   # Follow up's card sync (its data commit builds the site)
-ENVIRONMENT = "card-guards-quiet"               # the post job's environment: its 30-minute wait timer is the quiet window
+
 
 
 def _guard_steps(clone) -> tuple:
@@ -977,8 +985,8 @@ def test_workflow_shape(clone):
     2026-10-25), dry dispatches by default, a run per push, the sparse list = SPARSE_FILES, requirements-cards.txt's
     install (the fork's one pin) in both jobs that run the guards, as the other card workflows have it (one cache entry),
     secrets by name only, no ping, no fonts for the guards' own check (R7 is the font check's). Three jobs (2026-10-24):
-    check (ends after the comment), post (the quiet window: a push's first attempt waits in the environment's timer; only
-    with something to land or tell), finish (card errors, the alert)."""
+    check (ends after the comment), post (at once since 2026-11-03: no environment, no quiet window; only with something
+    to land or tell), finish (card errors, the alert)."""
     path = _workflow(clone)
     text = path.read_text(encoding="utf-8")
     doc, steps_by_name, env = _guard_steps(clone)
@@ -993,15 +1001,13 @@ def test_workflow_shape(clone):
     assert "if" not in job and steps_by_name["Check"]["if"] == "env.MODE != 'off'"     # the checks run whatever MODE says
     assert job["env"]["MODE"] == ("${{ github.event_name == 'push' && (vars.CARD_GUARDS || 'off') || "
                                   "((inputs.dry_run || inputs.all) && 'dry' || 'on') }}")
-    # the quiet window: no runner sleeps for it. A push's first attempt waits in the environment; a dispatch (lands at
-    # once) and a re-run (the window counts from the push) take none. Without the timer, Land sleeps it out (--quiet-from).
+    # no quiet window (owner 2026-11-03): the post job takes no environment and Land waits for nothing (RECENT 0)
     assert post["needs"] == "check" and finish["needs"] == ["check", "post"]
-    assert post["environment"] == ("${{ (github.event_name == 'push' && github.run_attempt == '1') && '" + ENVIRONMENT
-                                   + "' || '' }}")
+    assert "environment" not in post
     assert post["if"] == ("!cancelled() && needs.check.outputs.checked == 'success' && needs.check.outputs.land == 'true' && "
                           "(needs.check.outputs.mode == 'report' || needs.check.outputs.mode == 'on')")
     assert finish["if"] == "always() && needs.check.outputs.mode != 'off'"       # nothing when the guards are off
-    assert job["timeout-minutes"] == "${{ inputs.all && 150 || 40 }}" and post["timeout-minutes"] == 75
+    assert job["timeout-minutes"] == "${{ inputs.all && 150 || 40 }}" and post["timeout-minutes"] == 30
     assert "environment" not in job and "environment" not in finish
     assert {k: v for k, v in job["outputs"].items() if k != "saved"} == {"mode": "${{ steps.start.outputs.mode }}", "quiet_from": "${{ steps.start.outputs.quiet_from }}",
                               "started": "${{ steps.start.outputs.started }}", "checked": "${{ steps.check.outcome }}",

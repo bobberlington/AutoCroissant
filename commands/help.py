@@ -86,7 +86,7 @@ card_commands = {
 stats_commands = {
     "/update_stats [output_problematic_cards] [force_update] [cards]:" : "Loads the card data the Card sync Action built in the card repo (it re-parses "
                                                                "changed PSDs, bakes website edits, archives deleted cards and restores returned ones). Says when it was built and what changed. "
-                                                               "Card sync starts itself on a card push: the data within minutes, website edits baked into the PSDs 30 minutes after the first push of a burst. "
+                                                               "Card sync starts itself on a card push: the data and the website edits baked into the PSDs within minutes. "
                                                                "Then refreshes the card list and type emojis. "
                                                                "Card commands load new data by themselves (the bot looks at most every 2 minutes when one is used; the reply after it has the new data), "
                                                                "so this is for seeing it at once or for the options below.\n"

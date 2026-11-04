@@ -376,7 +376,7 @@ The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes 
   its own; `/update_stats` ends with the emoji sync and the card-list refresh. The `notice_edits` hook (a dry-run `bake_cards`
   queued at the end of `/update_stats` when `site/Card Edits.json`'s blob sha changed) landed and was removed the same day.
   Since the cutover (2026-10-24) TTSCardMaker's `card-sync.yml` bakes (its Bake step, `--local`, section 12): a run a
-  card push's 30-minute timer starts (its main lane; the data lane runs at once since 2026-10-25), a run it chains for
+  card push starts (at once since 2026-11-03, owner; a 30-minute timer until then; the bake's grace `card_bake.RECENT` is 0) (its main lane; the data lane runs at once since 2026-10-25), a run it chains for
   leftover work, or its hourly safety cron (:17), with `--pending`; its main gate also goes when a put-off edit's grace has passed. card-edits.yml is deleted. From 2026-10-22 until then `card-edits.yml` baked live every 30 minutes when its gate (`card_bake.pending`: a PSD-kind
   edit without a refused verdict for exactly its values on the current PSD) finds work, bakes only those cards (`--pending`;
   a dispatch re-checks every card), at most 40 a run, and posts to Discord (`DISCORD_CHANGELOG_WEBHOOK`) when a streak of
@@ -481,7 +481,7 @@ until the owner says yes, `card_standards.AUTO_FIX`; R3 and R4 keep only the rea
 with words the parser reads nowhere and a hidden or rasterized Name layer (kept unattended, for the owner to confirm): their
 template layout was dropped by the owner on 2026-10-23), one commit comment, one Discord post to the standards channel
 (`DISCORD_STANDARDS_WEBHOOK`, no ping; the card check posts there too at once, no ping, and the font check, with its role ping: both steps of the same check job since 2026-10-25) and at most one bot commit,
-both after a 30-minute quiet window from the push (since 2026-10-24; from the push, not the check's end, since 2026-10-25, P-1:
+both right after the check since 2026-11-03 (owner: no wait; the post job takes no environment, `RECENT` and `QUIET_MARGIN` are 0); until then after a 30-minute quiet window from the push (since 2026-10-24; from the push, not the check's end, since 2026-10-25, P-1:
 the post job waits in the TTSCardMaker environment `card-guards-quiet`'s 25-minute timer, counted from the check's end, and
 Land sleeps out the rest; no runner sleeps; a PSD saved without
 Maximize Compatibility gets its PNG anyway, told "no stored image to cross-check"; docs/Campaigns/PUSH_GUARDS.md section 20). Since the owner's ruling of 2026-10-23 the bot's drawing refuses only past 25% bad;

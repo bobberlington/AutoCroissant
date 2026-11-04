@@ -1609,18 +1609,21 @@ def test_new_text_under_a_layer_above_it_or_over_a_bar_is_flagged(clone, parser,
 
 
 def test_icon_text_follows_the_fonts_spellings(parser):
-    """What the stoogedings font draws (its GSUB): timing tags of badge_tags() in any case, tokens the vocabulary knows
-    with a variant the font has; not "(2 points)", "[fire: no]" (no space by the variant) or "[foo]". canonical_tokens
-    reads them as the parser does in the icon font, and classify calls "[Fire]" for "[fire]" redundant."""
+    """What the stoogedings font draws (its GSUB): timing tags of badge_tags() and costs of cost_tags() in any case (not
+    a cost glued to a number, "2(x counters)", nor one past the font's numbers), tokens the vocabulary knows with a
+    variant the font has; not "[fire: no]" (no space by the variant) or "[foo]". canonical_tokens reads them as the
+    parser does in the icon font, and classify calls "[Fire]" for "[fire]" redundant."""
     text = "(1cd)(Action)(2 points) [Fire:Sticker] [fire: no] [foo] [warp star] [fire:NO] (2/3GCD)"
     assert [text[a:b] for a, b in pe.icon_text(text, parser.icons)] == [
-        "(1cd)", "(Action)", "[Fire:Sticker]", "[warp star]", "[fire:NO]", "(2/3GCD)"]
-    assert [text[a:b] for a, b in pe.icon_text(text, None)][2:7] == ["[Fire:Sticker]", "[fire: no]", "[foo]", "[warp star]", "[fire:NO]"]
+        "(1cd)", "(Action)", "(2 points)", "[Fire:Sticker]", "[warp star]", "[fire:NO]", "(2/3GCD)"]
+    assert [text[a:b] for a, b in pe.icon_text(text, None)][3:8] == ["[Fire:Sticker]", "[fire: no]", "[foo]", "[warp star]", "[fire:NO]"]
+    more = "Deal 2(x counters) DMG. (x counters)(-2/1cd)(7 Star Points)(51 points)(12/10CD)(1.5 POINTS)"
+    assert [more[a:b] for a, b in pe.icon_text(more, None)] == ["(x counters)", "(-2/1cd)", "(7 Star Points)", "(1.5 POINTS)"]
     assert pe.canonical_tokens(text, parser.icons) == "(1cd)(Action)(2 points) [fire] [fire: no] [foo] [warpstar] [fire:no] (2/3GCD)"
     parsed = {"card": {"ability": "Deal 1 [fire] damage."}}
     assert pe.classify(parsed, {"ability": "Deal 1 [Fire] damage."}, parser=parser).redundant == ["ability"]
     assert pe.classify(parsed, {"ability": "Deal 1 [Fire] damage."}).jobs == {"ability": "Deal 1 [Fire] damage."}
-    assert len(pe.BADGE_TAGS) == 341 and pe.BADGE_KEYS["action"] == "Action"
+    assert len(pe.BADGE_TAGS) == 1139 and len(pe.COST_TAGS) == 682 and pe.BADGE_KEYS["action"] == "Action"
 
 
 def test_icon_style_takes_the_commonest_size_first(parser, monkeypatch):

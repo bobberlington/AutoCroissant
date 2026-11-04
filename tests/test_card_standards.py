@@ -25,7 +25,7 @@ MEASURED = "6e50c3ee"                                        # the whole-tree ru
 STALE_TXT2 = "d81631039734ba3c90683a68ced5de20f65304a3"   # Clot White's title story out of sync (7b48db05 repaired it)
 CASES = (   # card, rules told to the author, rules waived (the 6e50c3ee whole-tree run)
     ("Items/Active/2 Stars/Dirty_Bed.psd", {"R1"}, set()),
-    ("Creatures/Kirby/3 Stars/Skullord.psd", {"R5"}, set()),      # its Ability outside Text and title in Stat Txt: layout
+    ("Creatures/Kirby/3 Stars/Skullord.psd", {"R1", "R5"}, set()),   # its Ability outside Text and title in Stat Txt: layout; a plain (2 points)
     ("Auxiliary/Minions/Shadow_Duelist.psd", set(), {"R3"}),      # its Ability layer hidden; waived: in ABILITY_EXCLUSIONS
     ("Auxiliary/Minions/Abyss_Watcher.psd", set(), set()),        # hidden and empty: no ability
     ("Creatures/Other/4 Stars/Sonic.psd", set(), {"R4"}),          # hidden Name, the title a pixel layer
@@ -55,15 +55,21 @@ def _codes(issues, waived: bool) -> set:
 # ========================
 # Vocabulary and classes
 # ========================
-def test_badge_tags_are_the_fonts_glyphs(clone):
-    """badge_<tag>, "/" as "_" and "-" as "m" (build_stoogedings.badge_glyph): reversible, so the font is the source."""
+def test_badge_tags_are_the_fonts_glyphs():
+    """badge_<tag>, "/" as "_" and "-" as "m" (build_stoogedings.badge_glyph): reversible, so the font is the source.
+    The checkout's font (the vocabulary the bake and the guards must match), not the pin's."""
     from fontTools.ttLib import TTFont
-    font = clone / "MDW/Fonts/stoogedings.ttf"
+    from conftest import CLONE
+    font = CLONE / "MDW/Fonts/stoogedings.ttf"
     if not font.exists():
         pytest.skip("no stoogedings.ttf")
     glyphs = [n for n in TTFont(str(font)).getGlyphOrder() if n.startswith("badge_") and "." not in n]   # not .salt
-    tags = {("-" + n[7:] if n.startswith("badge_m") else n[6:]).replace("_", "/") for n in glyphs}
-    assert tags == set(cs.BADGE_TAGS) and len(cs.BADGE_TAGS) == len(set(cs.BADGE_TAGS)) == 341
+    tags = {("-" + n[7:] if n.startswith("badge_m") else n[6:]).replace("_", "/") for n in glyphs if "_cost_" not in n}
+    assert tags == set(cs.BADGE_TAGS) and len(cs.BADGE_TAGS) == len(set(cs.BADGE_TAGS)) == 1139
+    costs = {n for n in glyphs if "_cost_" in n}      # badge_cost_<kind>_<number, "." as "p">: one per number and kind
+    kinds = {"point": "points", "brick": "bricks", "sp": "sp", "star point": "sp", "soul": "souls", "counter": "counters"}
+    assert costs == {f"badge_cost_{kinds[w.lower().rstrip('s')]}_{n.replace('.', 'p')}"
+                     for n, w in (t.split(" ", 1) for t in psd_edit.COST_TAGS)} and len(costs) == 310
 
 
 def test_kinds_and_keys():
@@ -534,12 +540,12 @@ def test_text_with_both_quotes_parses_without_backslash(clone, tmp_path):
 
 
 def test_plain_timing_tags_set_as_badges(clone, tmp_path):
-    """Owner 2026-11-03: Elmadan's "(Action)", typed in its body font (Apple-Kid) before the font had the badge: the
-    tags kind (the guards' on every push) sets it in the icon font (added to the card), fitted, by glyph; R1 has nothing
-    left."""
+    """Owner 2026-11-03: Elmadan's "(Action)" and "(2 points)", typed in its body font (Apple-Kid) before the font had
+    the badges: the tags kind (the guards' on every push) sets them in the icon font (added to the card), fitted, by
+    glyph; R1 has nothing left."""
     rel = "Creatures/Other/3 Stars/Elmadan.psd"
     data = at_rev(clone, "2e4c9dd1", rel)
-    assert cs.rule_tags(PSDImage.open(BytesIO(data))).items == ("(Action)",)
+    assert cs.rule_tags(PSDImage.open(BytesIO(data))).items == ("(Action)", "(2 points)")   # a cost too (2026-11-03)
     assert "tags" in cs.pixel_kinds(data)
     fixed = cs.fix(data, rel, [], str(tmp_path / "work"), None, _fonts(clone), only="tags")
     assert fixed.redrawn == {"tags": ["Ability"]} and fixed.pixel_left == []

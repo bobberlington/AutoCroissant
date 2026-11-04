@@ -453,8 +453,8 @@ autocroissant-run-and-operate §9.
 
 No clock in the bot since 2026-10-24: card-sync.yml starts itself on a card push (its `push` trigger). Since 2026-10-25
 (owner: only main's writes wait; branch work/split) its data lane (job `data`, the data branch, posts, site) runs at once
-and only its main lane (job `main`: the bake and the TTS save on main) waits 30 minutes after the first card push of a
-burst (the environment `card-sync-quiet`'s wait timer, a TTSCardMaker repo setting). /update_stats only syncs, and since
+and its main lane (job `main`: the bake and the TTS save on main) goes at once too since 2026-11-03 (owner: no 30-minute
+timer; before, the environment `card-sync-quiet`'s wait timer held it 30 minutes after the first card push of a burst). /update_stats only syncs, and since
 2026-10-25 card commands sync on use (run-and-operate section 12), so no reminder is needed.
 
 ### the push guards: commands/card_guards.py, card_standards.py, png_export.py (2026-10-22/23; not compiled; card-guards.yml only)
@@ -522,8 +522,8 @@ only); its pip install is the other card workflows' (card-sync.yml's, card-edits
 | `CARD_GUARDS` | repository variable | the push guards' mode (`dry`, `report`, `on`); unset = off (2026-10-23) |
 | `DISCORD_CHANGELOG_WEBHOOK` | secret | the changelog channel (changelog, bake/sync failure alerts; never pings) |
 | `DISCORD_STANDARDS_WEBHOOK` | secret | the standards channel: card-check, the push guards (no ping) and font-check (pings the card makers' role) |
-| `card-guards-quiet` | environment (planned 2026-10-24, branch work/py314; the owner creates it after both branches land) | its 30-minute wait timer is the push guards' quiet window: card-guards.yml's post job waits in it on a push's first attempt (no runner held); without the timer, Land sleeps the window out. Command: docs/Campaigns/PUSH_GUARDS.md section 20 |
-| `card-sync-quiet` | environment (2026-10-24, branch work/clock; created by the session at landing: `wait_timer=30`, no branch policy) | its 30-minute wait timer is Card sync's push timer for the main lane (bake and save; since 2026-10-25 the data lane does not wait): card-sync.yml's `Quiet window` job waits in it on a push's first attempt (no runner held); a push while one waits skips its own main lane (its data lane runs). Without the timer, Quiet sleeps the window out |
+| `card-guards-quiet` | environment, UNUSED since 2026-11-03 (no job names it: owner, no 30-minute wait; deletable in Settings > Environments) (planned 2026-10-24, branch work/py314; the owner creates it after both branches land) | its 30-minute wait timer is the push guards' quiet window: card-guards.yml's post job waits in it on a push's first attempt (no runner held); without the timer, Land sleeps the window out. Command: docs/Campaigns/PUSH_GUARDS.md section 20 |
+| `card-sync-quiet` | environment, UNUSED since 2026-11-03 (no job names it; deletable) (2026-10-24, branch work/clock; created by the session at landing: `wait_timer=30`, no branch policy) | its 30-minute wait timer is Card sync's push timer for the main lane (bake and save; since 2026-10-25 the data lane does not wait): card-sync.yml's `Quiet window` job waits in it on a push's first attempt (no runner held); a push while one waits skips its own main lane (its data lane runs). Without the timer, Quiet sleeps the window out |
 
 `DISCORD_FONT_WEBHOOK` was deleted on 2026-10-23 (owner).
 

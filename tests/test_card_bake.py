@@ -32,6 +32,14 @@ from conftest import (CLONE, Reply, blob_sha_bytes as _sha, fork_reason, story_s
                       text_engine as _text_engine)  # noqa: E402
 from helpers import ABOUT, AT, DOOMER, EDITS, FREEZER, SNACK, _edits, files, github  # noqa: E402,F401 (fixtures)
 
+
+@pytest.fixture
+def thirty(monkeypatch):
+    """The 30-minute grace of before 2026-11-03 (RECENT is 0 now, owner: nothing waits): the machinery when it is set."""
+    import commands.card_guards as guards
+    monkeypatch.setattr(cb, "RECENT", timedelta(minutes=30))
+    monkeypatch.setattr(guards, "RECENT", timedelta(minutes=30))
+
 GREEN_MAGE = "Creatures/Everhood/4 Stars/Green_Mage.psd"   # fixed 2026-10-23: its stat bars on the canvas
 OFF_CANVAS_MAGE = "45cf8746^"   # Green Mage before its bars moved onto the card (they lay below the canvas)
 PURE_VESSEL = "Creatures/Hollow Knight/5 Stars/Pure_Vessel.psd"     # its stat masks reach past the canvas
@@ -150,7 +158,7 @@ def test_rewrite_entry_rules():
 # ========================
 # The driver against the fake GitHub
 # ========================
-def test_run_drops_redundant_and_writes_verdicts(github, tmp_path):
+def test_run_drops_redundant_and_writes_verdicts(github, tmp_path, thirty):
     before = github.head
     text, commits = cb.run()
     assert len(commits) == 1 and github.head == commits[0]
@@ -229,7 +237,7 @@ def test_dry_run_commits_nothing(github, tmp_path):
     assert (work / "report.md").read_text(encoding="utf-8") == text
 
 
-def test_recent_refuses_before_fetching(github):
+def test_recent_refuses_before_fetching(github, thirty):
     github.recent.add(DOOMER)
     text, commits = cb.run(card="Mini Doomer")
     assert commits == [] and "recent: PSD pushed in the last 30 min" in text
@@ -244,7 +252,7 @@ def test_recent_refuses_before_fetching(github):
     assert commits == [] and "recent: too many pushes in the last 30 min to tell" in text
 
 
-def test_recent_paths_by_push_time(monkeypatch):
+def test_recent_paths_by_push_time(monkeypatch, thirty):
     """A commit dated hours ago but pushed just now is recent: the window is the pushes', the paths the compare's."""
     now = datetime(2026, 10, 21, 12, 0, tzinfo=timezone.utc)
     pushes = [{"before": "c2", "after": "c3", "timestamp": "2026-10-21T11:50:00Z"},
@@ -844,7 +852,7 @@ def local(github, files, tmp_path):
     return SimpleNamespace(origin=origin, clone=clone, head=_git(clone, "rev-parse", "HEAD").strip())
 
 
-def test_local_makes_one_local_commit_and_pushes_nothing(github, local):
+def test_local_makes_one_local_commit_and_pushes_nothing(github, local, thirty):
     """Pending edits -> one commit B on the clone's head, the checkout on it; origin and GitHub untouched; the small files
     from the clone, only the PSDs and PNGs by REST; the same files as the live run's commit."""
     lacks = run_process(["git", "-C", str(local.clone), "cat-file", "-e", _sha((local.origin / DOOMER).read_bytes())],
@@ -901,7 +909,7 @@ def test_local_head_the_clone_lacks_is_a_failed_run(github, local, monkeypatch):
     assert _git(local.clone, "rev-parse", "HEAD").strip() == local.head
 
 
-def test_local_recent_gate_reads_the_clone(local, monkeypatch):
+def test_local_recent_gate_reads_the_clone(local, monkeypatch, thirty):
     """--local: a head GitHub lacks (a previous B) is diffed in the clone, renames as both paths; else the compare API."""
     _put(local.clone, {"TTS/a.txt": b"a"})
     base = _commit_in(local.clone, "add")
@@ -940,7 +948,7 @@ def test_local_bake_lands_psd_png_and_file_in_b(github, local):
 # ========================
 # The Action's sparse copy
 # ========================
-def test_workflow_pending_edits_line_calls_due(github, capsys, monkeypatch):
+def test_workflow_pending_edits_line_calls_due(github, capsys, monkeypatch, thirty):
     """card-sync.yml's Pending edits line, run as written: the due card names, one per line (recent ones wait); its
     Leftover edits script (the chain's counts): due, then held by a recent push."""
     if not WORKFLOW.exists():

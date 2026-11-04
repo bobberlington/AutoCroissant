@@ -9,7 +9,8 @@ always sets unsaid, box text that rewraps redrawn and its PNG re-exported: only 
 badges fitted, timing tags set as badges: R1 then untold),
 rule pages included, the PNG re-exported the same way. One report per push: the job
 summary and commit comment (report.md), one Discord post for the standards channel (discord.json: no mentions, no
-previews), and a plan of the writes (plan.json) that `land` commits once, after the 30-minute quiet window. Each card
+previews), and a plan of the writes (plan.json) that `land` commits once, right after the check (a 30-minute quiet window
+until 2026-11-03: RECENT, now 0). Each card
 pushed over an older PSD carries what changed inside it (psd_diff: "added Ability FX: Blazing", "Name text: 'a' -> 'b'").
 Every card PNG the push brought is recompressed losslessly in that commit (owner, 2026-10-23; png_export.recompress,
 the same pixels) when that saves more than 10% and 64 KiB (our thresholds), and so is every PNG the bot writes.
@@ -87,7 +88,7 @@ SUPPRESS_EMBEDS = 4                             # Discord message flag: no link 
 URL_SHA = 12                                    # hex digits of a commit link (GitHub resolves it; 28 characters a line saved)
 NOBODY = "Someone"
 NOREPLY = r"(?:\d+\+)?([A-Za-z0-9-]+)@users\.noreply\.github\.com"   # a GitHub noreply email names its login
-QUIET_MARGIN = timedelta(seconds=60)            # land waits RECENT plus this after the push
+QUIET_MARGIN = timedelta(0)                    # land waits RECENT plus this after the push (owner 2026-11-03: no wait; 60 s before)
 ANCHOR_WINDOW = timedelta(hours=2)              # a burst: PSD commits this close to the push may stand in for its PNG's PSD
 POOL_MIN = 8                                    # checks of this many cards or more run in a process pool
 POOL_MAX = 4                                    # local pools at most this many (each runs git); runners use every core (K-2)
@@ -1026,7 +1027,7 @@ def markdown(data: dict, notes: list, skipped, errors: list, landed: Optional[di
     """The job summary and commit comment; with land's report (landed.json), the comment as edited after the quiet window."""
     mode = data["mode"]
     head = {"dry": "Dry run: nothing is posted or committed.", "report": "Report only (CARD_GUARDS=report): nothing is committed.",
-            "on": "Writes land after the 30-minute quiet window, in one bot commit."}[mode]
+            "on": "Writes land right after the check, in one bot commit."}[mode]
     final = landed is not None and not landed.get("dry")
     if final:
         landed = _unsaid(data, landed)

@@ -94,7 +94,8 @@ SAME_RUN = 3                # edit_parts: characters an edit keeps this many in 
 STYLE_KEYS = ("Font", "FontSize", "FauxBold", "FauxItalic", "AutoLeading", "Leading", "HorizontalScale",
               "VerticalScale", "Tracking", "BaselineShift", "FontCaps", "FontBaseline", "Ligatures",
               "BaselineDirection", "Tsume", "StyleRunAlignment", "Language", "NoBreak")   # edit_styles copies these
-PAREN = re_compile(r"\(([^()\r\n\x03]{1,12})\)")    # a timing tag candidate: "(1CD)"
+PAREN = re_compile(r"\(([^()\r\n\x03]{1,20})\)")    # a timing tag or cost candidate: "(1CD)", "(2 points)"
+GLUED = re_compile(r"[\w.]")                          # a cost right after one is a multiplier: "2(x counters)" (the font's GLUED)
 ICON_FONT = "stoogedings-Regular"                   # the icon font's PostScript name (every card's FontSet entry)
 INK_ALPHA = 0.5             # a pixel is ink past this alpha (a title grazing a badge's anti-aliased edge is not an overlap)
 ICON_OVERLAP = 16           # px a typed icon may ink over the layer's other glyphs (typed_icon_fit; 0 on 140 of 145 titles)
@@ -154,7 +155,8 @@ COPY_BLOCKS = MOVE_BLOCKS | {bytes(Tag.LAYER_ID), bytes(Tag.UNICODE_LAYER_NAME)}
 
 
 def badge_tags() -> list:
-    """Every timing tag the stoogedings font draws as a badge: TTSCardMaker build_stoogedings.badge_tags(), mirrored."""
+    """Every timing tag the stoogedings font draws as a badge: TTSCardMaker build_stoogedings.badge_tags(), mirrored: the
+    341 of 2026-10-22, then the wider range (owner 2026-11-03: n 1-20 or X, a/b with a from -9 up to b)."""
     nums, firsts = "123456789X", ["-1", *"0123456789", "X"]
     tags = ["OYT", "AAT", "BOT", "ENDT", "BOGT", "ENDGT", "OFS", "OS", "OD", "WOF", "Action"]
     for n in nums:                              # the old system (rule pages)
@@ -163,11 +165,32 @@ def badge_tags() -> list:
         tags += [f"{n}CD", f"{n}GCD", f"{n}U"]
     for cd in ("CD", "GCD"):
         tags += [f"{a}/{b}{cd}" for a in firsts for b in nums]
-    return tags
+    counts, wide = [*map(str, range(1, 21)), "X"], [*map(str, range(-9, 21)), "X"]
+    more = [f"{n}{kind}" for n in counts for kind in ("CD", "GCD", "U", "PG")]
+    for cd in ("CD", "GCD"):
+        more += [f"{a}/{b}{cd}" for b in counts for a in wide if "X" in (a, b) or int(a) <= int(b)]
+    seen = set(tags)
+    return tags + [t for t in more if t not in seen and not seen.add(t)]
+
+
+def cost_tags() -> list:
+    """Every cost the font draws as a badge (build_stoogedings.cost_badges' spellings, owner 2026-11-03): "2 points",
+    "1 point", "1.5 points", "X bricks", "2 SP", "7 star points", "4 souls", "3 counters"; 0-50, halves to 9.5 and X."""
+    numbers = [*map(str, range(51)), *(f"{n}.5" for n in range(10)), "X"]
+    words = ("point", "points", "brick", "bricks", "SP", "star point", "star points", "soul", "souls", "counter", "counters")
+    return [f"{n} {w}" for w in words for n in numbers]
 
 
 BADGE_TAGS = tuple(badge_tags())
-BADGE_KEYS = {tag.lower(): tag for tag in BADGE_TAGS}   # the font matches any letter case (TTSCardMaker 6e50c3ee)
+COST_TAGS = tuple(cost_tags())
+BADGE_KEYS = {tag.lower(): tag for tag in BADGE_TAGS + COST_TAGS}   # any letter case is the same (TTSCardMaker 6e50c3ee)
+
+
+def badge_spans(text: str) -> list:
+    """[(start, end)] of each timing tag and cost in text the font draws as a badge, any letter case; a cost glued to a
+    word or number before it ("2(x counters)") is a multiplier the font leaves as letters."""
+    return [m.span() for m in PAREN.finditer(text) if m.group(1).lower() in BADGE_KEYS
+            and not (" " in m.group(1) and m.start() and GLUED.match(text[m.start() - 1]))]
 
 
 # ========================
@@ -1172,7 +1195,7 @@ def icon_text(text: str, vocab: Optional[IconVocabulary]) -> list:
     the font has (token_variant: "[Fire:Sticker]", "[warp star]", "[fire:no]", not "[fire:]") and an icon character it
     maps ("★", the gold star; the website writes "5★"); every [token] and icon character when vocab is None.
     """
-    out = [match.span() for match in PAREN.finditer(text) if match.group(1).lower() in BADGE_KEYS]
+    out = badge_spans(text)
     for match in ICON_SCAN_PATTERN.finditer(text):
         piece = match.group(0)
         if not piece.startswith("["):
@@ -9743,12 +9766,15 @@ __all__ = [
     'ANCHORED',
     'BADGE_KEYS',
     'BADGE_TAGS',
+    'COST_TAGS',
     'ICON_FONT',
     'ability_layer',
     'project',
     'badge_fit',
     'badge_fits',
+    'badge_spans',
     'badge_tags',
+    'cost_tags',
     'badge_wants',
     'cap_of',
     'bare_icons',

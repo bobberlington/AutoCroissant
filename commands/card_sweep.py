@@ -11,7 +11,8 @@ a card whose PSD or PNG moved since (never over a newer PSD): `moved` lists them
                                       [--ref main] [--cards <names>] [--plan <file>] [--workers 4]
     python -m commands.card_sweep run --kind apostrophes,badges --clone ~/Desktop/TTSCardMaker --out <folder>
     python -m commands.card_sweep run --kind badges --whole --cards <names> ...   (a layer the splice can't take redrawn
-                                      whole, when the fork draws it as stored and its lines stay: fit_badges' whole)
+                                      whole, when the fork draws it as stored and its lines stay: fit_badges' whole;
+                                      --kind tags too: tags_to_badges' whole)
     python -m commands.card_sweep moved --plan <file> --clone <clone> [--ref origin/main]
 
 A sparse worktree must hold the paths it writes (git sparse-checkout add), or git does not see them.
@@ -144,8 +145,8 @@ def run(clone: str, kind: str, out_dir: str, ref: str = "main", cards: str = "",
         The plans: [{"kind", "ref", "commit", "fixed": [...], "refused": [...], "errors": [...], "skipped": n}]
     """
     kinds = kinds_of(kind)
-    if whole and kinds != ["badges"]:
-        raise ValueError("--whole is for badges alone")
+    if whole and kinds not in (["badges"], ["tags"]):
+        raise ValueError("--whole is for badges or tags alone")
     source = Source(clone)
     commit = source.commit(ref)
     if not commit:
@@ -229,7 +230,7 @@ def main(args: Optional[list] = None) -> int:
     one.add_argument("--cards", default="", help="comma-separated card names (default: every card)")
     one.add_argument("--plan", default="")
     one.add_argument("--workers", type=int, default=WORKERS)
-    one.add_argument("--whole", action="store_true", help="badges: redraw a layer whole when the splice can't")
+    one.add_argument("--whole", action="store_true", help="badges, tags: redraw a layer whole when the splice can't")
     held = sub.add_parser("moved", help="the planned cards whose files moved since")
     held.add_argument("--plan", required=True)
     held.add_argument("--clone", required=True)
