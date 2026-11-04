@@ -1,11 +1,11 @@
 """
-A sweep: one kind of the guards' silent pixel fixes (card_standards.PIXEL_FIXES: apostrophes, old glyphs, and any kind
-registered there, such as badges) on every card of a clone's main that needs it, through the guards' own code: the fix
-(card_standards.fix, only that kind, gated), the PNG re-export (png_export.export over the PNGs that show the PSD,
-numbered ones too) and the guards' checks on the result (the PNG against the new PSD: png_check; the standards: no new
-issue). One PSD rewrite per card. The rewritten PSDs and PNGs go into a worktree at their repo paths; nothing is
-committed or pushed. The plan (beside the worktree) records the blobs each card rested on, so the landing can leave out
-a card whose PSD or PNG moved since (never over a newer PSD): `moved` lists them.
+A sweep: one kind of the guards' silent pixel fixes (card_standards.PIXEL_FIXES, in order: badge widths, apostrophes,
+old glyphs, and any kind registered there, such as badges) on every card of a clone's main that needs it, through the
+guards' own code: the fix (card_standards.fix, only that kind, gated), the PNG re-export (png_export.export over the
+PNGs that show the PSD, numbered ones too) and the guards' checks on the result (the PNG against the new PSD: png_check;
+the standards: no new issue). One PSD rewrite per card. The rewritten PSDs and PNGs go into a worktree at their repo
+paths; nothing is committed or pushed. The plan (beside the worktree) records the blobs each card rested on, so the
+landing can leave out a card whose PSD or PNG moved since (never over a newer PSD): `moved` lists them.
 
     python -m commands.card_sweep run --kind apostrophes --clone ~/Desktop/TTSCardMaker --out <worktree>
                                       [--ref main] [--cards <names>] [--plan <file>] [--workers 4]
@@ -13,6 +13,8 @@ a card whose PSD or PNG moved since (never over a newer PSD): `moved` lists them
     python -m commands.card_sweep run --kind badges --whole --cards <names> ...   (a layer the splice can't take redrawn
                                       whole, when the fork draws it as stored and its lines stay: fit_badges' whole;
                                       --kind tags too: tags_to_badges' whole)
+    python -m commands.card_sweep run --kind badge-widths ...   (relay_badges: card_guards.earlier_fonts, the icon font's
+                                      versions before the ref's, are the widths a raster the fork drew may show)
     python -m commands.card_sweep moved --plan <file> --clone <clone> [--ref origin/main]
 
 A sparse worktree must hold the paths it writes (git sparse-checkout add), or git does not see them.
@@ -25,6 +27,7 @@ alone makes are silent (no Discord post, still on the Changes page; card_data.ma
 """
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor
+from functools import partial
 from json import dump, load
 from os import cpu_count, makedirs
 from os.path import abspath, basename, dirname, join
@@ -37,27 +40,31 @@ from typing import Optional
 import commands.card_standards as standards
 import commands.png_export as png_export
 from commands.card_edits import CardAuthors
-from commands.card_guards import Source, build_context, card_name, whole_tree_jobs
+from commands.card_guards import Source, build_context, card_name, earlier_fonts, whole_tree_jobs
 from commands.github_api import blob_sha
 
 # ========================
 # Configuration
 # ========================
 WORKERS = 4                                     # process pool at most (memory: one PSD each)
+EARLIER_KINDS = ("badge widths", "old glyphs")  # the kinds that read the icon font's earlier versions
 _worker: dict = {}
 
 
 # ========================
 # One card
 # ========================
-def _init(clone: str, tree: dict, kind: str, work: str, chained: Optional[dict] = None, whole: bool = False) -> None:
+def _init(clone: str, tree: dict, kind: str, work: str, chained: Optional[dict] = None, whole: bool = False,
+          earlier: tuple = ()) -> None:
     source = Source(clone)
     if chained:                                 # blobs an earlier pass wrote: {sha: file}
         stored = source.blob
         source.blob = lambda sha: _read(chained[sha]) if sha in chained else stored(sha)
     source.checked = tree
     context, vocab = build_context(source, tree)
-    _worker.update(source=source, context=context, parser=vocab.parser(), kind=kind, work=work, whole=whole)
+    fonts = partial(source.fonts_for)
+    fonts.earlier = earlier                     # card_standards.relay_badges, redraw_old_glyphs
+    _worker.update(source=source, context=context, parser=vocab.parser(), kind=kind, work=work, whole=whole, fonts=fonts)
 
 
 def _read(path: str) -> bytes:
@@ -85,7 +92,7 @@ def sweep_card(job) -> dict:
         pushed = png_export.open_psd(data)
         if not standards.pixel_kinds(pushed, (kind,)):
             return out
-        fixed = standards.fix(data, job.psd, [], _worker["work"], _worker["parser"], source.fonts_for, only=kind,
+        fixed = standards.fix(data, job.psd, [], _worker["work"], _worker["parser"], _worker["fonts"], only=kind,
                               whole=_worker.get("whole", False))
         if not fixed.redrawn:
             return {**out, "state": "refused" if fixed.pixel_left else "skip",
@@ -162,7 +169,8 @@ def run(clone: str, kind: str, out_dir: str, ref: str = "main", cards: str = "",
         work = mkdtemp(prefix="sweep-")
         plan = {"kind": kind, "ref": ref, "commit": commit, "fixed": [], "refused": [], "errors": [], "skipped": 0}
         try:
-            _sweep(plan, jobs, clone, tree, kind, work, target, workers, chained, whole)
+            earlier = tuple(earlier_fonts(source, commit, tree, work)) if kind in EARLIER_KINDS else ()
+            _sweep(plan, jobs, clone, tree, kind, work, target, workers, chained, whole, earlier)
         finally:
             rmtree(work, ignore_errors=True)
         for entry in plan["fixed"]:             # the next pass reads these
@@ -178,9 +186,9 @@ def run(clone: str, kind: str, out_dir: str, ref: str = "main", cards: str = "",
 
 
 def _sweep(plan: dict, jobs: list, clone: str, tree: dict, kind: str, work: str, out_dir: str, workers: int,
-           chained: Optional[dict] = None, whole: bool = False) -> None:
+           chained: Optional[dict] = None, whole: bool = False, earlier: tuple = ()) -> None:
     with ProcessPoolExecutor(max(1, min(workers, WORKERS, cpu_count() or 1)), initializer=_init,
-                             initargs=(clone, tree, kind, work, chained, whole)) as pool:
+                             initargs=(clone, tree, kind, work, chained, whole, earlier)) as pool:
         for done in pool.map(sweep_card, jobs, chunksize=4):
             state = done.pop("state")
             if state == "skip":

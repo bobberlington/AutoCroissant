@@ -9,11 +9,13 @@ rasterized Name layer the title can't be read from): the template layout they al
 2026-10-23.
 Since the parts editor (PARTS_EDITOR.md §7) R3's several Ability layers and R4's several title layers are notes ("not
 standardized yet"), R11 also suggests names for the parts not named Name or Ability, R12 checks variant tags and R13
-duplicate layer ids. R14 (owner 2026-10-30) reports card names typed in another letter case (report only).
+duplicate layer ids. R14 (owner 2026-10-30) reports card names typed in another letter case (report only); R15 the
+ability's or title's text run off the card's edge (report only; existing cards waived as R4).
 R9 (Txt2 stories) is fixed by the fork with byte gates, the rest is reported. R11's rename (exact layer names) is built
 and gated but reported until the owner says yes (AUTO_FIX). The pixel fixes (PIXEL_FIXES,
-silent, owner 2026-10-25) run on every card: straight apostrophes, icon font glyphs Photoshop drew with
-an older font drawn again, badges and icons fitted to their text (fit_badges: a badge's pill 1.35 times
+silent, owner 2026-10-25) run on every card, in this order: badges laid out at older widths laid out again
+(relay_badges), straight apostrophes, icon font glyphs Photoshop drew with an older font drawn again (never one whose
+advance moved: relay_badges'), badges and icons fitted to their text (fit_badges: a badge's pill 1.35 times
 the text's capital height, its middle on the capitals' middle, even when that rewraps the text; an FX layer on words
 that moved is cut again) and badges under an overlay set one-colour (one_colour_badges); each redraws only the changed
 glyphs and the guards re-export the PNG.
@@ -71,6 +73,7 @@ WAIVED = {                                      # the owner's class waivers (sec
     "R3 excluded": {"why": "in the parser's ABILITY_EXCLUSIONS: prints no ability (2026-10-23)"},
     "R4": {"why": "existing Name layers are left as they are (owner, 2026-10-22); new cards and regressions are reported"},
     "R5": {"why": "overlay words with no chart style stay (decision 2026-10-21, L7)"},
+    "R15": {"why": "text already off the card's edge is left as it is (as R4); new cards and regressions are reported"},
 }
 
 
@@ -80,7 +83,7 @@ WAIVED = {                                      # the owner's class waivers (sec
 @dataclass
 class Issue:
     """One standards finding on one PSD."""
-    code: str                                   # R1..R14
+    code: str                                   # R1..R15
     text: str                                   # for card makers: "the Name layer is hidden"
     items: tuple = ()                           # what it is about (tags, layer names): "(new)" compares these
     fix: bool = False                           # AUTO_FIX and fixable here
@@ -723,6 +726,24 @@ def rule_name_case(psd: PSDImage, cards: Optional[tuple]) -> Optional[Issue]:
                  + ", ".join(f"'{typed}' should be '{right}'" for typed, right in found), tuple(typed for typed, _ in found))
 
 
+def _off_card(layer, width: int, height: int) -> bool:
+    bbox = tuple(layer.bbox)
+    if clip(bbox, width, height) == bbox or psd_edit._alpha(layer) is None:
+        return False                            # inside, or no stored pixels to read
+    return psd_edit._ink_off_canvas(layer, width, height)
+
+
+def rule_off_card(psd: PSDImage, card: str) -> list:
+    """R15: the ability's layers (ability_layers) and the title's (PSDParser.title_parts) ink inside the card in
+    Photoshop's stored pixels (psd_edit._ink_off_canvas): text off its edge is cut in the PNG and TTS (report only)."""
+    texts = [layer for layer in psd.descendants() if psd_edit._is_text_layer(layer)]
+    layers = {id(layer): layer for layer in ability_layers(psd)}
+    for layer in PSDParser.title_parts(psd, texts, card.replace("_", " "))[0]:
+        layers.setdefault(id(layer), layer)
+    return [Issue("R15", f"{layer.name.strip()}'s text runs off the card's edge (cut in the PNG and TTS)",
+                  (layer.name.strip(),)) for layer in layers.values() if _off_card(layer, psd.width, psd.height)]
+
+
 def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = None, added: bool = False) -> list:
     """
     The standards issues of one card PSD.
@@ -731,14 +752,16 @@ def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = N
         psd: The pushed PSD
         rel: Its repo path (the class: scope, waivers)
         context: Types/, the chart, the story sync
-        old: The PSD before the push (R4 regressions; "(new)" marks)
-        added: A new card (R4 applies in full)
+        old: The PSD before the push (R4 and R15 regressions; "(new)" marks)
+        added: A new card (R4 and R15 apply in full)
 
     Returns:
         [Issue] in rule order, waived ones included (waived set)
     """
     kind = kind_of(rel)
     key = card_key(rel)
+    stem = basename(rel)
+    card = stem[:len(stem) - 4]
     out: list = []
 
     def run(code: str, rule, *args) -> None:
@@ -751,8 +774,6 @@ def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = N
     run("R1", rule_tags, psd)
     run("R2", rule_icons, psd, context.types)
     if kind in SCOPE:
-        stem = basename(rel)
-        card = stem[:len(stem) - 4]
         run("R3", rule_ability, psd)
         ability = out[len(out) - 1]
         if ability is not None and ability.code == "R3" and key in {CardAuthors.key(n) for n in CardValidator.ABILITY_EXCLUSIONS}:
@@ -776,6 +797,17 @@ def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = N
     run("R12", rule_variants, psd, rel, context.pngs)
     run("R13", rule_layer_ids, psd)
     run("R14", rule_name_case, psd, context.cards)
+    start = len(out)
+    run("R15", rule_off_card, psd, card)
+    off = [issue for issue in out[start:] if issue is not None and issue.code == "R15"]
+    if off and not added:                       # as R4: waived unless the old blob had the layer inside the card
+        try:
+            had = None if old is None else {item for issue in rule_off_card(old, card) for item in issue.items}
+        except Exception:                       # an unreadable old blob: the existing card's waiver
+            had = None
+        for issue in off:
+            if had is None or set(issue.items) <= had:
+                issue.waived = WAIVED["R15"]["why"]
     issues = [issue for issue in out if issue is not None]
     for issue in issues:
         waiver = WAIVED.get(issue.code, {})
@@ -982,6 +1014,10 @@ OLD_GLYPH_MIN_INK = 20      # px of ink: a smaller glyph is not judged
 STALE_FILL = (-1.0, -1.0, -1.0)   # marks a glyph changed for the splice (it redraws that glyph alone)
 FIT_CHECK = 1.0             # px a fitted badge or icon may sit off its place after fit_badges (the check)
 WHOLE_OFF = 0.01            # fit_badges(whole): the share of a layer's ink the fork's render may have off its stored pixels
+LAID_TOL = 0.01             # pt: an icon glyph Photoshop stepped this far off the current font was laid out at another advance
+LAID_OFF = 0.15             # badge widths: the share of a layer's ink (its re-laid glyphs aside) its render at the advances
+                            # it was laid out with may have off its stored pixels (census 2026-11-04, 219 cooldown cards:
+                            # 0.13 at most at their old widths, 0.19 and up at others)
 
 
 def _straightened(value):
@@ -1072,6 +1108,41 @@ def _off_share(stored, drawn, box: tuple) -> float:
     return best[0] / ink if ink >= OLD_GLYPH_MIN_INK else 0.0
 
 
+def _icon_face(face) -> bool:
+    name = face.ft.postscript_name
+    name = name.decode("latin-1") if isinstance(name, bytes) else str(name or "")
+    return name.lower().startswith(ICON_FONT_PREFIX)
+
+
+def _drawn_old(layer, fonts) -> Optional[tuple]:
+    """old_glyphs with what it compared: (capture, window, stored, drawn: premultiplied on the window, the old glyphs'
+    indices); None without stored pixels."""
+    from psd_tools.composite.text import capture, render
+    from psd_tools.composite.text.splice import _glyph_box
+    before = capture(layer, fonts)
+    if before.rgba is None or before.bbox is None:
+        return None
+    drawn = render(layer, fonts=fonts)
+    pad = OLD_GLYPH_SHIFT + 2
+    boxes = [b for b in (before.bbox, drawn.bbox) if b is not None]
+    window = (min(b[0] for b in boxes) - pad, min(b[1] for b in boxes) - pad,
+              max(b[2] for b in boxes) + pad, max(b[3] for b in boxes) + pad)
+    stored, mine = _premultiplied(before.rgba, before.bbox, window), _premultiplied(drawn.rgba, drawn.bbox, window)
+    out = []
+    for index, glyph in enumerate(before.layout.glyphs):
+        if not _icon_face(glyph.face):
+            continue
+        box = _glyph_box(glyph, before.model.transform, 1)
+        if box is None:
+            continue
+        x0, y0, x1, y1 = (box[0] - window[0], box[1] - window[1], box[2] - window[0], box[3] - window[1])
+        x0, y0 = max(x0, pad), max(y0, pad)
+        x1, y1 = min(x1, window[2] - window[0] - pad), min(y1, window[3] - window[1] - pad)
+        if x1 > x0 and y1 > y0 and _off_share(stored, mine, (x0, y0, x1, y1)) > OLD_GLYPH_BAD:
+            out.append(index)
+    return before, window, stored, mine, out
+
+
 def old_glyphs(layer, fonts) -> list:
     """
     The icon font glyphs Photoshop drew with an older version of the font: their stored pixels against the current
@@ -1083,32 +1154,8 @@ def old_glyphs(layer, fonts) -> list:
     Returns:
         Indices into the layout's glyphs (capture(layer, fonts).layout)
     """
-    from psd_tools.composite.text import capture, render
-    from psd_tools.composite.text.splice import _glyph_box
-    before = capture(layer, fonts)
-    if before.rgba is None or before.bbox is None:
-        return []
-    drawn = render(layer, fonts=fonts)
-    pad = OLD_GLYPH_SHIFT + 2
-    boxes = [b for b in (before.bbox, drawn.bbox) if b is not None]
-    window = (min(b[0] for b in boxes) - pad, min(b[1] for b in boxes) - pad,
-              max(b[2] for b in boxes) + pad, max(b[3] for b in boxes) + pad)
-    stored, mine = _premultiplied(before.rgba, before.bbox, window), _premultiplied(drawn.rgba, drawn.bbox, window)
-    out = []
-    for index, glyph in enumerate(before.layout.glyphs):
-        name = glyph.face.ft.postscript_name
-        name = name.decode("latin-1") if isinstance(name, bytes) else str(name or "")
-        if not name.lower().startswith(ICON_FONT_PREFIX):
-            continue
-        box = _glyph_box(glyph, before.model.transform, 1)
-        if box is None:
-            continue
-        x0, y0, x1, y1 = (box[0] - window[0], box[1] - window[1], box[2] - window[0], box[3] - window[1])
-        x0, y0 = max(x0, pad), max(y0, pad)
-        x1, y1 = min(x1, window[2] - window[0] - pad), min(y1, window[3] - window[1] - pad)
-        if x1 > x0 and y1 > y0 and _off_share(stored, mine, (x0, y0, x1, y1)) > OLD_GLYPH_BAD:
-            out.append(index)
-    return out
+    drawn = _drawn_old(layer, fonts)
+    return drawn[4] if drawn else []
 
 
 def _save_patched(before: PSDImage, psd: PSDImage, boxes: list, out_path: str) -> None:
@@ -1196,13 +1243,17 @@ def straighten(path: str, out_path: str, fonts: Optional[Callable[[list], Option
 def redraw_old_glyphs(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]]) -> list:
     """
     Icon font glyphs Photoshop drew with an older font (old_glyphs) drawn again with the current one, those glyphs alone
-    (a splice; refused when it would redraw the layer whole), the stored preview patched; gated (_only_pixels).
+    (a splice; refused when it would redraw the layer whole), the stored preview patched; gated (_only_pixels). Refused
+    when one of them has another advance in the layout it may have been laid out with (laid_advances: Photoshop's view,
+    an earlier icon font's, fonts.earlier): the splice would set it at its new width in the old layout (badge widths,
+    first, re-lays those).
 
     Returns:
         The layer names redrawn; raises Refused or the engine's errors
     """
     from dataclasses import replace
     from psd_tools.composite.text import capture
+    earlier = tuple(getattr(fonts, "earlier", ()))
     before, psd = PSDImage.open(path), PSDImage.open(path)
     boxes, records, names = [], set(), []
     for layer in icon_layers(psd):
@@ -1212,6 +1263,10 @@ def redraw_old_glyphs(path: str, out_path: str, fonts: Optional[Callable[[list],
             continue
         psd_edit.follow_kerning(psd, layer)     # B12: drawn as Photoshop kerns it (the story)
         keep, old = capture(layer, found), tuple(layer.bbox)
+        moved = {gid for way in laid_advances(layer, found, earlier) for gid in way}
+        if any(keep.layout.glyphs[i].gid in moved for i in stale):
+            raise Refused("unsupported-card", f"{layer.name.strip()}: an old glyph was laid out at another width "
+                                              "(badge widths')")
         glyphs = tuple(replace(g, fill=STALE_FILL) if i in stale else g for i, g in enumerate(keep.layout.glyphs))
         _by_glyph(layer, layer.rasterize(fonts=found, keep=replace(keep, layout=replace(keep.layout, glyphs=glyphs)),
                                          unit="glyph"))
@@ -1490,14 +1545,246 @@ def tags_to_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Op
     return names
 
 
+def _view_steps(layer) -> dict:
+    """Photoshop's layout of the layer's story when it last laid it out (Txt2's view, its glyph strikes; Photoshop CC's
+    numbered keys): {index into the text: [each glyph's pen step, pt]} per glyph run; {} without one."""
+    from psd_tools.api import text_edit
+    from psd_tools.psd import engine_data
+    try:
+        _, keys, stories = text_edit._txt2(layer._psd)
+        story = text_edit._nth_story(stories, psd_edit.story_index(layer), keys)
+    except (TypeError, ValueError, KeyError):
+        return {}
+    if not keys.numbered:
+        return {}
+    out, pending = {}, [(story[keys.view].get(keys.strikes), 0)]
+    while pending:
+        node, start = pending.pop()
+        if isinstance(node, engine_data.List):
+            pending.extend((item, start) for item in node)
+        elif isinstance(node, engine_data.Dict):
+            tag = str(_value(node.get("99", "")))
+            if tag == "S":                      # a segment: its first character
+                start = int(_value(node.get("20", 0)))
+            if tag != "G":
+                pending.extend((item, start) for item in node.values())
+                continue
+            try:                                # a glyph strike: runs of glyphs, pen positions
+                pen, k = [float(_value(x)) for x in node["15"]], 0
+                for run, n in zip(node["10"]["0"], node["10"]["1"]):
+                    n = int(_value(n))
+                    out[start + int(_value(run.get("0", 0)))] = [b - a for a, b in zip(pen[k:k + n], pen[k + 1:k + n + 1])]
+                    k += n
+            except (KeyError, TypeError, ValueError):
+                continue
+    return out
+
+
+@lru_cache(maxsize=4)
+def _hb_font(path: str):
+    import uharfbuzz as hb
+    return hb.Font(hb.Face(hb.Blob.from_file_path(path), 0))
+
+
+def laid_advances(layer, faces, earlier: tuple = ()) -> list:
+    """
+    The advances the layer's icon font glyphs may have been laid out with where they differ from the current font's:
+    Photoshop's (its Txt2 view, _view_steps: exact when Photoshop drew the layer last), each earlier icon font's (by
+    glyph name: a raster the fork drew), and the view's over each.
+
+    Args:
+        faces: A FontMap (psd_edit.font_map)
+        earlier: Earlier icon font files
+
+    Returns:
+        [{glyph id in the current font: advance in font units}], one per way; [] when none differs
+    """
+    from psd_tools.composite.text.layout import layout
+    from psd_tools.composite.text.model import TextModel
+    from psd_tools.composite.text.shape import rendered_em
+    model = TextModel.from_layer(layer)
+    glyphs = layout(model, faces).glyphs
+    icons = [g for g in glyphs if _icon_face(g.face)]
+    if not icons:
+        return []
+    face, first, view = icons[0].face, {}, {}
+    for i, g in enumerate(glyphs):
+        first.setdefault(g.cluster, i)
+    for at, steps in _view_steps(layer).items():
+        run = glyphs[first[at]:first[at] + len(steps)] if at in first else ()
+        if len(run) != len(steps) or not all(_icon_face(g.face) for g in run):
+            continue
+        for g, step in zip(run, steps):
+            style = model.runs[g.run].style
+            off = step - g.advance - style.tracking / 1000 * rendered_em(style, model.sub_size)
+            if abs(off) > LAID_TOL and g.face is face:
+                units = round(face.hb.get_glyph_h_advance(g.gid) + off * face.metrics.upem / g.em_w)
+                if view.setdefault(g.gid, units) != units:
+                    view = {None: None}         # two sizes in the view: not a layout of this text
+    ways = [{} if None in view else view]
+    for path in earlier:
+        font, way = _hb_font(path), {}
+        for g in icons:
+            found = font.get_glyph_from_name(face.hb.get_glyph_name(g.gid) or "")
+            if found is not None and font.get_glyph_h_advance(found) != face.hb.get_glyph_h_advance(g.gid):
+                way[g.gid] = font.get_glyph_h_advance(found)
+        ways += [way, {**way, **ways[0]}]
+    return [way for i, way in enumerate(ways) if way and way not in ways[:i]]
+
+
+class _Laid:
+    """A FontMap whose icon font glyphs take other advances (a HarfBuzz sub-font): the same file, outlines and face key, so
+    the splice and the glyph cache take its glyphs for the current font's."""
+
+    def __init__(self, faces, advances: dict):
+        self.faces, self.advances, self._made = faces, dict(advances), {}
+
+    def resolve(self, name: str):
+        import uharfbuzz as hb
+        from psd_tools.composite.text.fonts import Face, Resolved
+        found = self.faces.resolve(name)
+        face = found.face
+        if face is None or not _icon_face(face):
+            return found
+        if face.key not in self._made:
+            sub, funcs, parent = hb.Font(face.hb), hb.FontFuncs(), face.hb.get_glyph_h_advance
+            funcs.set_glyph_h_advance_func(lambda _, gid, wants: wants[gid] if gid in wants else parent(gid), self.advances)
+            sub.funcs = funcs
+            made = Face(hb=sub, ft=face.ft, metrics=face.metrics, key=face.key, lock=face.lock,
+                        _instructed=face._instructed)
+            made.__dict__["svg"] = face.svg     # its parsed SVG table shared
+            self._made[face.key] = made
+        return Resolved(self._made[face.key], found.how)
+
+    def resolve_all(self, names) -> dict:
+        return {name: self.resolve(name) for name in dict.fromkeys(names)}
+
+
+def _off_beside(drawn: tuple, marks: set) -> float:
+    """_drawn_old's share of the layer's ink (stored or drawn) off the render, unshifted, outside the marked glyphs' boxes
+    and pen cells (1.0 with no ink)."""
+    from math import ceil, floor
+    import numpy as np
+    from psd_tools.composite.text.geometry import _cell, _map_box
+    from psd_tools.composite.text.splice import _glyph_box
+    before, window, stored, mine, _ = drawn
+    ink = (stored[..., 3] > OLD_GLYPH_INK) | (mine[..., 3] > OLD_GLYPH_INK)
+    off = (np.abs(stored - mine).max(axis=2) > OLD_GLYPH_LEVEL) & ink
+    for i in marks:
+        g = before.layout.glyphs[i]
+        cell = _map_box(before.model.transform, _cell(g))
+        for box in (_glyph_box(g, before.model.transform, OLD_GLYPH_SHIFT),
+                    (floor(cell[0]) - OLD_GLYPH_SHIFT, floor(cell[1]), ceil(cell[2]) + OLD_GLYPH_SHIFT, ceil(cell[3]))):
+            if box is not None:
+                x0, y0 = max(box[0] - window[0], 0), max(box[1] - window[1], 0)
+                ink[y0:max(box[3] - window[1], 0), x0:max(box[2] - window[0], 0)] = False
+    off &= ink
+    return float(off.sum()) / int(ink.sum()) if ink.any() else 1.0
+
+
+def laid_plan(layer, faces, earlier: tuple = ()) -> Optional[tuple]:
+    """
+    Whether the layer's stored pixels show its icon font glyphs laid out at other advances: some glyph laid_advances
+    finds is drawn old (old_glyphs) and the layer drawn at one of its ways is its pixels, those glyphs and the ones drawn
+    old there aside (_off_beside within LAID_OFF; the nearest way). None when the pixels show the current font's
+    (re-laid already, or drawn in it) or no advance differs; raises Refused when no way is (the fork lays the layer out
+    off Photoshop's pixels).
+
+    Returns:
+        (_Laid faces, {glyph index: redrawn}, that share)
+    """
+    ways = laid_advances(layer, faces, earlier)
+    now = _drawn_old(layer, faces) if ways else None
+    if now is None or not any(now[0].layout.glyphs[i].gid in way for i in now[4] for way in ways):
+        return None
+    best = None
+    for way in ways:
+        laid = _Laid(faces, way)
+        drawn = _drawn_old(layer, laid)
+        marks = set(drawn[4]) | {i for i, g in enumerate(drawn[0].layout.glyphs) if g.gid in way and _icon_face(g.face)}
+        share = _off_beside(drawn, marks)
+        if best is None or share < best[2]:
+            best = (laid, marks, share)
+    if best[2] > LAID_OFF:
+        raise Refused("unsupported-card", f"{layer.name.strip()}: at its old badge widths the fork's layout is "
+                                          f"{best[2]:.0%} off its pixels")
+    return best
+
+
+def relay_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]]) -> list:
+    """
+    Badge widths (owner 2026-11-04: the cooldown ring widens every cooldown badge), the PIXEL_FIXES kind: a layer whose
+    icon font glyphs were laid out at other advances than the current font's (laid_plan: Photoshop's, from its Txt2
+    view; an earlier icon font's, fonts.earlier: the guards' and a sweep's) laid out again at the current ones, its lines
+    rewrapped in its box as they now fall: a splice from that old layout (the glyphs that moved or were drawn old
+    redrawn, an FX layer on moved words cut again), the stored preview patched; the text, its styles and its story untouched. Refused when a
+    line no longer fits the box or ink runs off the canvas. The splice may fall back to a whole redraw only when the fork
+    draws the layer as stored at its old advances (WHOLE_OFF beside the redrawn glyphs), in the guards too. Gated
+    (_only_pixels), then checked: nothing left to re-lay.
+
+    Returns:
+        The layer names re-laid; raises Refused or the engine's errors
+    """
+    from dataclasses import replace
+    from psd_tools.composite.text import capture
+    earlier = tuple(getattr(fonts, "earlier", ()))
+    before, psd = PSDImage.open(path), PSDImage.open(path)
+    boxes, records, names = [], set(), []
+    for record, faces, plan in _laid_plans(path, fonts, earlier):
+        layer = next(layer for layer in icon_layers(psd) if psd_edit._record_index(layer) == record)
+        psd_edit.follow_kerning(psd, layer)
+        laid, marks, share = plan
+        name, keep = layer.name.strip(), capture(layer, laid)
+        glyphs = tuple(replace(g, fill=STALE_FILL) if i in marks else g for i, g in enumerate(keep.layout.glyphs))
+        old, placed, now = tuple(layer.bbox), _placed(layer, laid), _placed(layer, faces)
+        off = psd_edit._ink_off_canvas(layer, psd.width, psd.height)
+        report = layer.rasterize(fonts=faces, keep=replace(keep, layout=replace(keep.layout, glyphs=glyphs)),
+                                 unit=psd_edit.SPLICE_UNIT)
+        _by_glyph(layer, report, share <= WHOLE_OFF)
+        if "overflow" in report.warnings or (not off and psd_edit._ink_off_canvas(layer, psd.width, psd.height)):
+            raise Refused("overflow", f"{name}: its badges at their new widths push text out of its box")
+        boxes += _padded(layer, old)
+        for fx, was in _recut_fx(psd, layer, {i for i in placed if now.get(i) != placed[i]}, faces):
+            boxes += _padded(fx, was)
+            records.add(psd_edit._record_index(fx))
+        records.add(psd_edit._record_index(layer))
+        names.append(name)
+    if not names:
+        return []
+    _save_patched(before, psd, boxes, out_path)
+    _only_pixels(path, out_path, records)
+    try:
+        left = _laid_plans(out_path, fonts, earlier)
+    except Refused as error:
+        left = [error]
+    if left:
+        raise Refused("bytes", "a badge is left at its old width")
+    return names
+
+
+def _laid_plans(path: str, fonts, earlier: tuple) -> list:
+    """laid_plan over the PSD's icon layers, each measured as Photoshop kerns it (B12, follow_kerning: on a copy, so a
+    layer left alone keeps its bytes): [(record index, faces, plan)]."""
+    psd, out = PSDImage.open(path), []
+    for layer in icon_layers(psd):
+        faces = _fonts_of(layer, fonts)
+        psd_edit.follow_kerning(psd, layer)
+        plan = laid_plan(layer, faces, earlier)
+        if plan is not None:
+            out.append((psd_edit._record_index(layer), faces, plan))
+    return out
+
+
 PIXEL_FIXES = {     # kind -> (finds(psd) -> [layer], fix(path, out_path, fonts) -> [layer name], the parse it makes or None)
+    "badge widths": (icon_layers, relay_badges, None),   # first: straighten and old glyphs lay out at the current widths
     "apostrophes": (curly_layers, straighten, straight_parse),
     "old glyphs": (icon_layers, redraw_old_glyphs, None),
     "badges": (icon_layers, fit_badges, None),
     "overlay badges": (salt_layers, one_colour_badges, None),
     "tags": (tag_layers, tags_to_badges, None),
 }
-PIXEL_LINES = {"apostrophes": "straight apostrophes", "old glyphs": "old icon font glyphs redrawn",
+PIXEL_LINES = {"badge widths": "badges laid out again at their new widths", "apostrophes": "straight apostrophes",
+               "old glyphs": "old icon font glyphs redrawn",
                "badges": "badges and icons fitted to their text",
                "overlay badges": "badges under an overlay in one colour", "tags": "timing tags and costs set as badges"}
 
@@ -1562,6 +1849,8 @@ __all__ = [
     'icon_layers',
     'inexact_names',
     'kind_of',
+    'laid_advances',
+    'laid_plan',
     'mark_new',
     'miscased_names',
     'old_glyphs',
@@ -1577,6 +1866,7 @@ __all__ = [
     'reported',
     'redraw',
     'redraw_old_glyphs',
+    'relay_badges',
     'reflow',
     'run_fonts',
     'single_line',

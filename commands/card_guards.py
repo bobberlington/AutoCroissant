@@ -5,8 +5,8 @@ merged into the old PNG; Photoshop's stored composite only cross-checks, and a P
 bake's own gates, told "no stored image to cross-check"); guard 2 (card_standards) checks the pushed PSDs against the card
 standards (missing fonts are the font check's alone) and fixes only the 0-pixel classes; the Single-line Composer (R8) it
 always sets unsaid, box text that rewraps redrawn and its PNG re-exported: only the bot commit's message names it
-(owner, 2026-10-25); so are the pixel fixes (card_standards.PIXEL_FIXES: straight apostrophes, old icon font glyphs,
-badges fitted, timing tags set as badges: R1 then untold),
+(owner, 2026-10-25); so are the pixel fixes (card_standards.PIXEL_FIXES, in order: badges laid out again at their new
+widths, straight apostrophes, old icon font glyphs, badges fitted, timing tags set as badges: R1 then untold),
 the PNG re-exported the same way. One report per push: the job
 summary and commit comment (report.md), one Discord post for the standards channel (discord.json: no mentions, no
 previews), and a plan of the writes (plan.json) that `land` commits once, right after the check. Each card pushed
@@ -45,6 +45,8 @@ from sys import stderr
 from tempfile import TemporaryDirectory
 from traceback import format_exc
 from typing import Callable, Optional
+
+from requests.exceptions import RequestException
 
 import commands.card_standards as standards
 import commands.png_export as png_export
@@ -92,6 +94,8 @@ POOL_MAX = 4                                    # local pools at most this many 
 FONT_FILES_EACH = 4                             # R8: font files tried a face, likeliest name first (270 of 275 faces in 3, 10-25)
 FONT_FETCH_MAX = 12                             # R8: font files a run (a worker) fetches at most, a request each
 CARD_ROOTS = ("Auxiliary/", "Creatures/", "Field/", "Items/", "N.M.E/")   # where card PNGs live (Types/ icons are not cards)
+ICON_FONT_FILE = f"{psd_edit.FONTS_DIR}/stoogedings.ttf"
+EARLIER_FONTS = 3                               # badge widths: the icon font's versions before the ref's, newest first
 GUARD_EVENTS = "guard-events.json"              # beside the plan: the landed commit's changelog events
 REDRAW = "; re-exported for "                   # _rewrapped_pngs' line on a guard 1 PNG (the composer's rewrap): not told
 QUIET_KEYS = ("EveryLineComposer",)            # fixed unsaid (owner, 2026-10-25): never in the changes either
@@ -662,7 +666,7 @@ def added(job: Job) -> bool:
     return job.case in ("new", "beside") or (job.case in ("pair", "psd-only") and not job.psd_old)
 
 
-def run_job(source: Source, job: Job, context, parser, out: str, mode: str) -> Result:
+def run_job(source: Source, job: Job, context, parser, out: str, mode: str, earlier: tuple = ()) -> Result:
     """
     Both guards on one card; never raises (an error is the result's error line).
 
@@ -673,10 +677,11 @@ def run_job(source: Source, job: Job, context, parser, out: str, mode: str) -> R
         parser: The offline parser (the fixes' reparse gate)
         out: The artifacts dir
         mode: dry, report or on (wording only: the writes are planned either way, land commits them)
+        earlier: The icon font's earlier versions (earlier_fonts: badge widths)
     """
     result = Result(job)
     try:
-        _run(source, job, context, parser, out, result)
+        _run(source, job, context, parser, out, result, earlier)
     except Exception as error:                  # one bad card never stops the others
         result.error = f"{type(error).__name__}: {error}"
         result.notes.append((f"error: {result.error}", False))
@@ -684,7 +689,7 @@ def run_job(source: Source, job: Job, context, parser, out: str, mode: str) -> R
     return result
 
 
-def _run(source: Source, job: Job, context, parser, out: str, result: Result) -> None:
+def _run(source: Source, job: Job, context, parser, out: str, result: Result, earlier: tuple = ()) -> None:
     for path, sha in sorted(job.pushed.items()):
         _recompress(out, result, path, partial(source.blob, sha))
     if job.case == "numbered":
@@ -796,7 +801,9 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result) ->
     result.issues = [{**issue.as_dict(), "line": issue.line(), "told": id(issue) in told, "discord": issue.discord}
                      for issue in issues]
     if any(issue.fix and not issue.waived for issue in issues) or standards.composer_layers(new) or pixels:
-        fixed = standards.fix(new_bytes, job.psd, issues, join(out, "work"), parser, source.fonts_for)
+        fonts = partial(source.fonts_for)
+        fonts.earlier = earlier                 # card_standards.relay_badges, redraw_old_glyphs
+        fixed = standards.fix(new_bytes, job.psd, issues, join(out, "work"), parser, fonts)
         result.fixed, result.composer, result.composer_left = fixed.applied, fixed.composer, fixed.composer_left
         result.pixel_left = list(fixed.pixel_left)
         lines = {issue.code: issue.line() for issue in issues if issue.fix}
@@ -875,16 +882,16 @@ def changes(old, new, parser) -> list:
         return []
 
 
-def _init_worker(clone: str, repository: str, context, vocab, tree: dict, fonts: str) -> None:
+def _init_worker(clone: str, repository: str, context, vocab, tree: dict, fonts: str, earlier: tuple = ()) -> None:
     token_from_env()        # a spawned worker (macOS; forkserver on 3.14) starts without main()'s header
     source = Source(clone, repository, fonts)
     source.checked = tree
-    _worker.update(source=source, context=context, parser=vocab.parser())
+    _worker.update(source=source, context=context, parser=vocab.parser(), earlier=tuple(earlier))
 
 
 def _pooled(item: tuple) -> Result:
     job, out, mode = item
-    return run_job(_worker["source"], job, _worker["context"], _worker["parser"], out, mode)
+    return run_job(_worker["source"], job, _worker["context"], _worker["parser"], out, mode, _worker["earlier"])
 
 
 # ========================
@@ -1132,6 +1139,28 @@ def discord_payload(data: dict, repository: str) -> dict:
 # ========================
 # check
 # ========================
+def earlier_fonts(source: Source, commit: str, tree: dict, folder: str) -> list:
+    """The icon font's EARLIER_FONTS versions before the one commit's tree holds, from its history, written into folder
+    (named .earlier: a FontMap over folder never takes one for the current font): the advances a raster drawn before may
+    show (badge widths). Raises Transient, the API's errors or Refused("blob")."""
+    now, shas = tree.get(ICON_FONT_FILE, ("", ""))[1], []
+    for line in source.git("log", "--format=%H", commit, "--", ICON_FONT_FILE).split():
+        try:
+            sha = source.git("rev-parse", f"{line}:{ICON_FONT_FILE}").strip()
+        except Transient:                       # deleted there
+            continue
+        if sha != now and sha not in shas:
+            shas.append(sha)
+        if len(shas) == EARLIER_FONTS:
+            break
+    files = []
+    for sha in shas:
+        files.append(join(folder, f"stoogedings-{sha[:12]}.earlier"))
+        with open(files[-1], "wb") as fh:
+            fh.write(source.blob(sha))
+    return files
+
+
 def pool_size(jobs: int) -> int:
     """Processes for a pooled check: every core on a GitHub runner (K-2; revert: the local rule there too), else half
     the cores, at most POOL_MAX."""
@@ -1163,16 +1192,22 @@ def check(clone: str, after: str, before: str = "", repository: str = "", author
         notes += more
     source.checked = tree
     context, vocab = build_context(source, tree, errors) if jobs else (standards.Context(), None)
-    with TemporaryDirectory(prefix="guard-fonts-") as fonts:          # R8's fetched font files
-        source.fonts = fonts
+    with TemporaryDirectory(prefix="guard-fonts-") as fonts:          # R8's fetched font files, the earlier icon fonts
+        source.fonts, earlier = fonts, ()
+        if jobs and repository:                 # badge widths: read once for every worker
+            try:
+                earlier = tuple(earlier_fonts(source, head, tree, fonts))
+            except (Transient, RequestException, Refused):    # best effort: Photoshop's layouts alone
+                print(format_exc(), file=stderr)
         least = 2 if environ.get("GITHUB_ACTIONS") == "true" else POOL_MIN
         if len(jobs) >= least and workers != 1:
             count = workers or pool_size(len(jobs))
-            with ProcessPoolExecutor(count, initializer=_init_worker, initargs=(clone, repository, context, vocab, tree, fonts)) as pool:
+            with ProcessPoolExecutor(count, initializer=_init_worker,
+                                     initargs=(clone, repository, context, vocab, tree, fonts, earlier)) as pool:
                 results = list(pool.map(_pooled, [(job, out, mode) for job in jobs], chunksize=1))
         else:
             parser = vocab.parser() if vocab is not None else None
-            results = [run_job(source, job, context, parser, out, mode) for job in jobs]
+            results = [run_job(source, job, context, parser, out, mode, earlier) for job in jobs]
     data = plan(results, repository, base, head, mode)
     errors += [f"{r.job.psd}: {r.error}" for r in results if r.error]
     data["report"] = {"notes": notes, "skipped": sorted(skipped), "errors": errors}   # landed_markdown re-renders from these
@@ -1585,6 +1620,8 @@ if __name__ == "__main__":
 __all__ = [
     'BOT_EMAILS',
     'Change',
+    'EARLIER_FONTS',
+    'ICON_FONT_FILE',
     'Head',
     'Job',
     'LINE',
@@ -1600,6 +1637,7 @@ __all__ = [
     'changes',
     'check',
     'discord_payload',
+    'earlier_fonts',
     'after_window',
     'events_of',
     'finish',

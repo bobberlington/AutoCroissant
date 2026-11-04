@@ -14,7 +14,7 @@ from psd_tools import PSDImage
 import commands.card_standards as cs
 import commands.psd_edit as psd_edit
 from commands.card_check import clone_vocabulary
-from conftest import at_rev, story_sync
+from conftest import RING, at_rev, story_sync
 
 # ========================
 # Configuration
@@ -537,3 +537,130 @@ def test_plain_timing_tags_set_as_badges(clone, tmp_path):
     assert cs.rule_tags(new) is None
     layer = next(layer for layer in new.descendants() if layer.kind == "type" and layer.name.strip() == "Ability")
     assert "(Action)(2 points)" in layer.text
+
+
+# ========================
+# Badge widths (owner 2026-11-04: the cooldown ring widens every cooldown badge)
+# ========================
+DAROACH = "Creatures/Kirby/4 Stars/Dark_Daroach.psd"
+
+
+@pytest.fixture(scope="module")
+def ring_fonts(clone, tmp_path_factory):
+    """The pin's MDW/Fonts with RING's icon font: (fonts, the same with .earlier the pin's icon font, before the ring)."""
+    from functools import partial
+    pinned = clone / "MDW" / "Fonts"
+    if not pinned.is_dir():
+        pytest.skip("no MDW/Fonts in the clone")
+    folder = tmp_path_factory.mktemp("ring-fonts")
+    for font in pinned.iterdir():
+        if font.is_file() and font.name != "stoogedings.ttf":
+            (folder / font.name).symlink_to(font)
+    (folder / "stoogedings.ttf").write_bytes(at_rev(clone, RING, "MDW/Fonts/stoogedings.ttf"))
+    fonts = lambda names: str(folder)
+    earlier = partial(fonts)
+    earlier.earlier = (str(pinned / "stoogedings.ttf"),)
+    return fonts, earlier
+
+
+def _ability(data: bytes):
+    return next(layer for layer in PSDImage.open(BytesIO(data)).descendants()
+                if layer.kind == "type" and layer.name.strip() == "Ability")
+
+
+@pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
+def test_badge_widths_relaid_from_photoshops_layout(clone, tmp_path, ring_fonts):
+    """The guards' case: Dark Daroach's (1/2CD) and (2CD), drawn at the old widths (Photoshop's view says them), laid out
+    again at the ring font's, by glyph; its text and stories untouched; afterwards nothing is left, so it never fires
+    again."""
+    fonts, _ = ring_fonts
+    data = at_rev(clone, RING, DAROACH)
+    assert "badge widths" in cs.pixel_kinds(data)
+    fixed = cs.fix(data, DAROACH, [], str(tmp_path / "work"), None, fonts, only="badge widths")
+    assert fixed.redrawn == {"badge widths": ["Ability"]} and fixed.pixel_left == [] and fixed.plain
+    old, new = _ability(data), _ability(fixed.data)
+    faces = psd_edit.font_map(fonts([]), new)
+    assert cs.laid_plan(new, faces) is None and cs.old_glyphs(new, faces) == []
+    assert new.text == old.text and psd_edit.stories(new._psd) == psd_edit.stories(old._psd)
+    assert cs.fix(fixed.data, DAROACH, [], str(tmp_path / "work"), None, fonts, only="badge widths").redrawn == {}
+
+
+@pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
+def test_badge_widths_from_an_earlier_font(clone, tmp_path, ring_fonts):
+    """A raster the fork drew: Waxwell's view is older than its pixels, so alone it refuses; with the earlier icon font
+    (fonts.earlier, the guards' and a sweep's) its (1CD) is re-laid. Michael's Blessing's seven badges at their new
+    widths overflow its box: refused."""
+    fonts, earlier = ring_fonts
+    rel = "Creatures/DST/3 Stars/Waxwell.psd"
+    data = at_rev(clone, RING, rel)
+    fixed = cs.fix(data, rel, [], str(tmp_path / "work"), None, fonts, only="badge widths")
+    assert not fixed.redrawn and "off its pixels" in fixed.pixel_left[0][1]
+    fixed = cs.fix(data, rel, [], str(tmp_path / "work"), None, earlier, only="badge widths")
+    assert fixed.redrawn == {"badge widths": ["Ability"]} and fixed.pixel_left == []
+    new = _ability(fixed.data)
+    assert cs.laid_plan(new, psd_edit.font_map(fonts([]), new), earlier.earlier) is None
+    rel = "N.M.E/Michael's_Blessing.psd"
+    fixed = cs.fix(at_rev(clone, RING, rel), rel, [], str(tmp_path / "work"), None, earlier, only="badge widths")
+    assert not fixed.redrawn and fixed.pixel_left[0][1].startswith("Refused: overflow")
+
+
+@pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
+def test_old_glyphs_refuse_a_moved_advance(clone, tmp_path, ring_fonts):
+    """The safety net: Dark Daroach's badges drawn at the old widths are old glyphs to the ring font, their advances
+    moved (Photoshop's view): old glyphs refuses them before any splice (badge widths' to re-lay)."""
+    fonts, _ = ring_fonts
+    (tmp_path / "in.psd").write_bytes(at_rev(clone, RING, DAROACH))
+    with pytest.raises(psd_edit.Refused, match="laid out at another width"):
+        cs.redraw_old_glyphs(str(tmp_path / "in.psd"), str(tmp_path / "out.psd"), fonts)
+
+
+def _typed_curly(data: bytes, fonts, path) -> bytes:
+    """Taranza's "creature's" typed with a curly apostrophe before the ring: spliced at the old widths it was laid out
+    with (laid_plan's), as Photoshop drew it then."""
+    from psd_tools.composite.text import capture
+    psd = PSDImage.open(BytesIO(data))
+    layer = next(layer for layer in psd.descendants() if layer.kind == "type" and layer.name.strip() == "Ability")
+    laid = cs.laid_plan(layer, psd_edit.font_map(fonts([]), layer))[0]
+    keep = capture(layer, laid)
+    layer.set_text(layer.text.replace("creature's", "creature’s"), keep="runs")
+    layer.rasterize(fonts=laid, keep=keep, unit=psd_edit.SPLICE_UNIT)
+    psd_edit.save_psd(psd, str(path), update_preview=False)
+    return path.read_bytes()
+
+
+@pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
+def test_guards_fixes_compose_with_the_ring_font(clone, tmp_path, ring_fonts):
+    """The guards' fixes over a push with the ring font (and the earlier icon font, as the guards read it): Martlet's
+    plain (2CD) under its overlay (before the badges) set as a badge in the new font and one colour; Taranza's one-colour
+    (2CD) at the old width, a curly apostrophe typed in the same layer, re-laid first and then straightened (straighten
+    lays out at the current widths), still one colour."""
+    fonts, earlier = ring_fonts
+    martlet, taranza = "Creatures/Undertale/3 Stars/Martlet.psd", "Creatures/Kirby/3 Stars/Taranza.psd"
+    for rel, data, kinds in ((martlet, at_rev(clone, "1b4f36a0", martlet), ["tags"]),
+                             (taranza, _typed_curly(at_rev(clone, RING, taranza), fonts, tmp_path / "curly.psd"),
+                              ["badge widths", "apostrophes"])):
+        fixed = cs.fix(data, rel, [], str(tmp_path / "work"), None, earlier)
+        assert fixed.redrawn == {kind: ["Ability"] for kind in kinds} and list(fixed.redrawn) == kinds, (rel, fixed.pixel_left)
+        new = _ability(fixed.data)
+        faces = psd_edit.font_map(fonts([]), new)
+        assert cs.salt_layers(new._psd) == [] and [new.text[a:b] for a, b in psd_edit.stylistic_alternates(new)] == ["(2CD)"]
+        assert cs.laid_plan(new, faces, earlier.earlier) is None and cs.curly_layers(new._psd) == []
+        assert cs.rule_tags(new._psd) is None and cs.old_glyphs(new, faces) == []
+
+
+# ========================
+# R15: text off the card
+# ========================
+LEAD_BLOON = "Auxiliary/Minions/PoD05Lead_Bloon.psd"   # its Ability's ink runs past the card's edge
+
+
+def test_text_off_the_card(clone, context):
+    """R15 on every card kind, report only: a new card's Ability run off the edge is told; the same text in the old blob
+    is waived (as R4); a card inside its edges has none."""
+    psd = PSDImage.open(clone / LEAD_BLOON)
+    (found,) = [i for i in cs.check(psd, LEAD_BLOON, context, added=True) if i.code == "R15"]
+    assert found.items == ("Ability",) and not found.waived and cs.reported([found]) == [found]
+    (again,) = [i for i in cs.check(psd, LEAD_BLOON, context, old=PSDImage.open(clone / LEAD_BLOON)) if i.code == "R15"]
+    assert again.waived and not again.new
+    clean = "Auxiliary/Minions/PoD01Red_Bloon.psd"
+    assert not [i for i in cs.check(PSDImage.open(clone / clean), clean, context, added=True) if i.code == "R15"]

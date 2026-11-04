@@ -214,6 +214,7 @@ by glyph, in Stylistic Alternates under an overlay (Morpho Knight); `--whole` sw
 guards run it on every push (owner 2026-11-03), and R1 is told only when that fix doesn't land
 (`card_guards._fix_stands`). The cost sweep of 2026-11-03 set 62 cards; WX-78, Wendy and Nefarious Chip are left to
 Photoshop (see the batch commit).
+Badge widths (2026-11-04: the cooldown ring makes every cooldown badge wider): the pixel fix `badge widths` (`card_standards.relay_badges`, first of the pixel fixes: `apostrophes` and `old glyphs` lay out at the current widths) re-lays a layer whose pixels show its icon font glyphs at other advances (Photoshop's, from the Txt2 view's glyph strikes; also the icon font's 3 earlier versions from the ref's history, `card_guards.earlier_fonts`, which the guards read once a push, best effort, and a sweep reads too), by glyph, rewrapped in its box, refused on overflow; the guards run it on every push. `old glyphs` refuses a glyph whose advance moved (never a half-ringed splice).
 
 Shape (revised 2026-10-19, confirmed in Photoshop 2023 on 2026-10-20 with the reinstalled font): a pill about
 0.95 em tall with label capitals about 0.55 em, the label centred, color only — no extra symbol on multi-turn

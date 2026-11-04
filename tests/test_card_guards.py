@@ -1472,8 +1472,9 @@ def test_box_text_fonts_fetched_alone(tmp_path, monkeypatch):
     monkeypatch.setattr(cg, "_worker", {})
     monkeypatch.setattr(cg, "token_from_env", lambda: None)
     vocab = type("V", (), {"parser": lambda self: None})()
-    cg._init_worker(str(tmp_path / "clone"), "o/r", None, vocab, tree, str(tmp_path / "fonts"))
+    cg._init_worker(str(tmp_path / "clone"), "o/r", None, vocab, tree, str(tmp_path / "fonts"), ("old.earlier",))
     assert cg._worker["source"].checked == tree and cg._worker["source"].fonts == str(tmp_path / "fonts")
+    assert cg._worker["earlier"] == ("old.earlier",)
 
 
 def test_pool_size(monkeypatch):
