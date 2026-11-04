@@ -187,6 +187,17 @@ words. Pairs ch 23 doesn't list keep the literal fallback: (0/3CD) "Cooldown: 0 
 cooldown: 2 global turns, then 3". Old tags are prefixed "Old system: " ("Old system: Now (1CD)").
 `(Action)`'s tooltip is "Costs the creature's action", under "Other tags" (`GROUP_NAMES.neutral`).
 
+Cost badges (2026-11-03, website only: the font has none, the mock-up and the bake leave them as text): text.js
+`COST` draws `(2 points)`, `(1.5 points)`, `(X bricks)` and a card's own currency (`(4 souls)`, `(3 counters)`,
+`(2 Ritual counters)`) as pills: points gold, bricks brown, own teal. The Badges panel's switch (localStorage
+`costs`, `html[data-costs="icons"]`) draws points as a coin and bricks as a brick, own currencies unchanged. No card
+has bricks in parentheses yet. Diffs (History, Changes, Balance, versions) draw badges and icons too (`inlineHtml`).
+
+Plain tags on cards (R1, 2026-11-03): four live cards typed a tag in their body font (Elmadan, Terry Hintz, Joel
+Miller: `(Action)` in Apple-Kid; Papyrus: `(1CD)` in ParchmentMF). The sweep-only pixel fix `tags`
+(`card_standards.tags_to_badges`, `SWEEP_ONLY`: never on a push) sets them in the icon font, fitted as a typed badge,
+by glyph; `python -m commands.card_sweep run --kind tags --cards ...`.
+
 Shape (revised 2026-10-19, confirmed in Photoshop 2023 on 2026-10-20 with the reinstalled font): a pill about
 0.95 em tall with label capitals about 0.55 em, the label centred, color only — no extra symbol on multi-turn
 tags, in the font or on the website (an earlier extra mark read as an "I" and was dropped). The exact sizes

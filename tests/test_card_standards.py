@@ -531,3 +531,19 @@ def test_text_with_both_quotes_parses_without_backslash(clone, tmp_path):
     (tmp_path / "card.psd").write_bytes(at_rev(clone, RESAVE, rel))
     ability = psd_edit.parse_card(clone_vocabulary(str(clone)).parser(), str(tmp_path / "card.psd"), rel)["card"]["ability"]
     assert "they're" in ability and "\\'" not in ability and '"' in ability
+
+
+def test_plain_timing_tags_set_as_badges(clone, tmp_path):
+    """Owner 2026-11-03: Elmadan's "(Action)", typed in its body font (Apple-Kid) before the font had the badge: the
+    sweep-only tags kind sets it in the icon font (added to the card), fitted, by glyph; R1 has nothing left. Never on a
+    push (SWEEP_ONLY)."""
+    rel = "Creatures/Other/3 Stars/Elmadan.psd"
+    data = at_rev(clone, "2e4c9dd1", rel)
+    assert cs.rule_tags(PSDImage.open(BytesIO(data))).items == ("(Action)",)
+    assert "tags" not in cs.pixel_kinds(data)
+    fixed = cs.fix(data, rel, [], str(tmp_path / "work"), None, _fonts(clone), only="tags")
+    assert fixed.redrawn == {"tags": ["Ability"]} and fixed.pixel_left == []
+    new = PSDImage.open(BytesIO(fixed.data))
+    assert cs.rule_tags(new) is None
+    layer = next(layer for layer in new.descendants() if layer.kind == "type" and layer.name.strip() == "Ability")
+    assert "(Action)(2 points)" in layer.text

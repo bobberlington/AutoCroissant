@@ -43,7 +43,7 @@ import commands.psd_edit as psd_edit
 from commands.card_edits import CardAuthors
 from commands.card_models import APOSTROPHE, straight
 from commands.font_check import _get, _value, layer_fonts
-from commands.psd_edit import BADGE_KEYS, BADGE_TAGS, PAREN, Refused, badge_tags
+from commands.psd_edit import BADGE_KEYS, BADGE_TAGS, ICON_FONT, PAREN, Refused, badge_tags
 from commands.psd_parser import (EFFECT_LAYER_TAG, ICON_FONT_PREFIX, TAG, CardValidator, PSDParser, base_name, layer_tag,
                                  variant_view, variants_of)
 from commands.psd_regions import clip, fx_pad, overlay_words, union_box
@@ -399,25 +399,35 @@ def ability_layers(psd: PSDImage) -> list:
     return list(out.values())
 
 
-def rule_tags(psd: PSDImage) -> Optional[Issue]:
-    """R1: timing tags in the ability's layers (ability_layers) set in the stoogedings badge font (L1); a visible
-    "Ability " or " Ability" layer too (the parser reads only "Ability")."""
-    bad = []
+def plain_tags(layer) -> list:
+    """The layer's timing tags (BADGE_KEYS) with a letter outside the icon font: [(start, end)] into its text."""
+    try:
+        text, runs = run_fonts(layer)
+    except (KeyError, IndexError, TypeError, ValueError, AttributeError):
+        return []
+    out = []
+    for match in PAREN.finditer(text):
+        if match.group(1).lower() not in BADGE_KEYS:
+            continue
+        fonts = {font for start, end, font in runs if start < match.end() and end > match.start()}
+        if not fonts or any(not font.lower().startswith(ICON_FONT_PREFIX) for font in fonts):
+            out.append((match.start(), match.end()))
+    return out
+
+
+def tag_layers(psd: PSDImage) -> list:
+    """The layers R1 reads (ability_layers; a visible "Ability " or " Ability" layer too) holding plain_tags."""
     layers = {id(layer): layer for layer in ability_layers(psd)}
     for layer in _visible_texts(psd):
         if base_name(layer).strip().lower() == "ability":
             layers.setdefault(id(layer), layer)
-    for layer in layers.values():
-        try:
-            text, runs = run_fonts(layer)
-        except (KeyError, IndexError, TypeError, ValueError, AttributeError):
-            continue
-        for match in PAREN.finditer(text):
-            if match.group(1).lower() not in BADGE_KEYS:
-                continue
-            fonts = {font for start, end, font in runs if start < match.end() and end > match.start()}
-            if not fonts or any(not font.lower().startswith(ICON_FONT_PREFIX) for font in fonts):
-                bad.append(match.group(0))
+    return [layer for layer in layers.values() if plain_tags(layer)]
+
+
+def rule_tags(psd: PSDImage) -> Optional[Issue]:
+    """R1: timing tags in the ability's layers (ability_layers) set in the stoogedings badge font (L1); a visible
+    "Ability " or " Ability" layer too (the parser reads only "Ability")."""
+    bad = [layer.text[a:b] for layer in tag_layers(psd) for a, b in plain_tags(layer)]
     if not bad:
         return None
     tags = _unique(bad)
@@ -623,10 +633,8 @@ def rule_names(psd: PSDImage) -> Optional[Issue]:
 # ========================
 # R14 (owner 2026-10-30, report only): a card named in the ability text in another letter case (while TTSCardMaker
 # text.js EXACT_CASE is on, the website doesn't link it); which words name a card is text.js makeRenderer's rule
-# (build_site.name_links ports it too): any name of several words, a capitalised one, a lowercase one after its verb
-NAME_LEAD = re_compile(r"(?:Summon|Resummon|Equip|Create|Cleanse|Inflict|Draw|Acquire|Revive|Gain|Give|Steal|Copy|Become|"
-                       r"Remove|Destroy|Discard|Use|Play|Return|Swap|Choose|Target|If|When|Whenever|While|Once|Until|"
-                       r"Unless|After|Before|Then|And|Or|A|An|The|This|That|These|Each|Every|Any|Your|Its)")
+# (build_site.name_links ports it too): any name of several words, a capitalised one whatever comes before it, a
+# lowercase one after its verb
 _STATUS_VERB = re_compile(r"\b(?:inflict|cleanse|stacks? of)(?:[^\S\n]+[\dX]+T[\dX]+(?:\([^)\n]*\))?)?[^\S\n]+$", IGNORECASE)
 NAME_VERB = {"buff": _STATUS_VERB, "debuff": _STATUS_VERB,
              "minion": re_compile(r"\b(?:summon|resummon|revive)(?:[^\S\n]+(?:a|an|the|\d+))?[^\S\n]+$", IGNORECASE)}
@@ -671,7 +679,7 @@ def _name_index(cards: tuple) -> tuple:
     return names, by_name, spelt
 
 
-def _is_ref(found, text: str, card: tuple, by_name: dict) -> bool:
+def _is_ref(found, text: str, card: tuple) -> bool:
     """text.js isRef: whether the matched words name the card (not a heading, label, verb or plain word)."""
     typed, spelt = found[1], [card[0].strip(), str(card[1] or "").strip()]
     if typed == typed.upper() and typed != typed.lower() and typed not in spelt:
@@ -684,9 +692,6 @@ def _is_ref(found, text: str, card: tuple, by_name: dict) -> bool:
     if not (typed in spelt and not found[2]) and not typed[0].isupper():
         verb = NAME_VERB.get(card[2])
         return bool(verb and verb.search(before))
-    word = re_compile(r"(?:^|[\s(\u201c\"\u2018'])([^\W\d_][\w'\u2019-]*)[^\S\n]+$").search(before)
-    if word and word[1][0].isupper():
-        return bool(NAME_LEAD.fullmatch(word[1])) or _fold(word[1]) in by_name
     return not (re_compile(r"(?:^|[\n.!?:)])[^\S\n]*$").search(before)
                 and re_compile(r"[^\S\n]+(?:to|the|a|an|your|its|all|any|each|it|this|that)\b").match(after))
 
@@ -705,7 +710,7 @@ def miscased_names(text: str, cards: tuple) -> list:
         card = by_name[_fold(found[1])]
         if _same(found[1]) in spelt[_fold(found[1])]:
             continue
-        if _is_ref(found, spaced, card, by_name):
+        if _is_ref(found, spaced, card):
             out.append((found[1], card[0].strip()))
     return out
 
@@ -1124,9 +1129,9 @@ def _save_patched(before: PSDImage, psd: PSDImage, boxes: list, out_path: str) -
     psd_edit.save_psd(psd, out_path, preview=psd_edit.merge_preview(preview, [(moved.any(axis=2), now, region)]))
 
 
-def _only_pixels(path: str, out_path: str, records: set, stories: Optional[list] = None) -> None:
-    """Gate: only these records' pixels, rectangle and TySh changed, and (stories) only these Txt2 stories, else the
-    document is the old bytes but its preview; raises Refused("bytes")."""
+def _only_pixels(path: str, out_path: str, records: set, stories: Optional[list] = None, fonts: tuple = ()) -> None:
+    """Gate: only these records' pixels, rectangle and TySh changed, and (stories) only these Txt2 stories and the faces
+    added at the end of its FontSet (fonts), else the document is the old bytes but its preview; raises Refused("bytes")."""
     old_records, new_records = psd_edit.layer_records(path), psd_edit.layer_records(out_path)
     if len(old_records) != len(new_records):
         raise Refused("bytes", "layer count changed")
@@ -1145,7 +1150,7 @@ def _only_pixels(path: str, out_path: str, records: set, stories: Optional[list]
         if psd_edit._document_blocks(before) != psd_edit._document_blocks(new):
             raise Refused("bytes", "document blocks changed")
     else:
-        psd_edit.gate_stories(before, new, stories)
+        psd_edit.gate_stories(before, new, stories, fonts=fonts)
 
 
 def _padded(layer, old: tuple) -> list:
@@ -1430,23 +1435,80 @@ def one_colour_badges(path: str, out_path: str, fonts: Optional[Callable[[list],
     return names
 
 
+def tags_to_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]]) -> list:
+    """
+    R1's fix (owner 2026-11-03: "make sure everything uses the badges"), a sweep's PIXEL_FIXES kind: tag_layers' plain
+    timing tags set in the icon font at the layer's own badge style (psd_edit.icon_style; with none, at the text's own
+    style, ICON_FONT added as the bake adds it), ligatures on, then fitted as a typed badge (badge_fits: size and
+    middle); their layers' changed glyphs redrawn (a splice; text a badge moves is redrawn, an FX layer on moved words
+    cut again), the stored preview patched. Refused when a line no longer fits the box or ink runs off the canvas.
+    Gated (_only_pixels, the stories and the added face by gate_stories), then checked: no plain tag left.
+
+    Returns:
+        The layer names changed; raises Refused or the engine's errors
+    """
+    from psd_tools.composite.text import capture
+    before, psd = PSDImage.open(path), PSDImage.open(path)
+    boxes, records, stories, names, added = [], set(), [], [], []
+    for layer in tag_layers(psd):
+        spans, name = plain_tags(layer), layer.name.strip()
+        faces = psd_edit.font_map(fonts(layer_fonts(layer)), layer)
+        psd_edit.follow_kerning(psd, layer)
+        old, keep, placed = tuple(layer.bbox), capture(layer, faces), _placed(layer, faces)
+        off = psd_edit._ink_off_canvas(layer, psd.width, psd.height)
+        look = psd_edit.icon_style(layer, True, None)
+        if look is None:                        # no badge or token on the layer: at the text's own style
+            if ICON_FONT not in layer_fonts(layer):
+                added.append(ICON_FONT)
+            layer.add_font(ICON_FONT)
+            look = {"Font": ICON_FONT}
+        for a, b in spans:
+            layer.set_span_style(a, b, **look)
+            layer.set_span_style(a, b, Ligatures=True)
+        faces = psd_edit.font_map(fonts(layer_fonts(layer)), layer)
+        for fit in psd_edit.badge_fits(layer, faces, spans):
+            layer.set_span_style(fit["start"], fit["end"], FontSize=fit["fit_size"], BaselineShift=fit["fit_shift"])
+        now = _placed(layer, faces)
+        report = layer.rasterize(fonts=faces, keep=keep, unit=psd_edit.SPLICE_UNIT)
+        _by_glyph(layer, report)
+        if "overflow" in report.warnings or (not off and psd_edit._ink_off_canvas(layer, psd.width, psd.height)):
+            raise Refused("overflow", f"{name}: its badges push text out of its box")
+        boxes += _padded(layer, old)
+        for fx, was in _recut_fx(psd, layer, {i for i in placed if now.get(i) != placed[i]}, faces):
+            boxes += _padded(fx, was)
+            records.add(psd_edit._record_index(fx))
+        records.add(psd_edit._record_index(layer))
+        if psd_edit.story_index(layer) is not None:
+            stories.append(psd_edit.story_index(layer))
+        names.append(name)
+    if not names:
+        return []
+    _save_patched(before, psd, boxes, out_path)
+    _only_pixels(path, out_path, records, stories, tuple(dict.fromkeys(added)))
+    if tag_layers(PSDImage.open(out_path)):
+        raise Refused("bytes", "a timing tag is left outside the badge font")
+    return names
+
+
 PIXEL_FIXES = {     # kind -> (finds(psd) -> [layer], fix(path, out_path, fonts) -> [layer name], the parse it makes or None)
     "apostrophes": (curly_layers, straighten, straight_parse),
     "old glyphs": (icon_layers, redraw_old_glyphs, None),
     "badges": (icon_layers, fit_badges, None),
     "overlay badges": (salt_layers, one_colour_badges, None),
+    "tags": (tag_layers, tags_to_badges, None),
 }
 PIXEL_LINES = {"apostrophes": "straight apostrophes", "old glyphs": "old icon font glyphs redrawn",
                "badges": "badges and icons fitted to their text",
-               "overlay badges": "badges under an overlay in one colour"}
-CARD_PIXELS = ("badges", "overlay badges")   # not on rule pages: their badges are laid out by hand (legends, tables)
+               "overlay badges": "badges under an overlay in one colour", "tags": "timing tags set as badges"}
+CARD_PIXELS = ("badges", "overlay badges", "tags")   # not on rule pages: their badges are laid out by hand (legends, tables)
+SWEEP_ONLY = ("tags",)      # run by a sweep (card_sweep --kind) alone, never on a push: R1 is told to the card maker
 
 
 def pixel_kinds(psd, kinds: tuple = ()) -> tuple:
     """The pixel fix kinds (all by default) whose layers the PSD (open, or its bytes) has."""
     try:
         psd = PSDImage.open(BytesIO(psd)) if isinstance(psd, bytes) else psd
-        return tuple(kind for kind in kinds or tuple(PIXEL_FIXES) if PIXEL_FIXES[kind][0](psd))
+        return tuple(kind for kind in kinds or tuple(k for k in PIXEL_FIXES if k not in SWEEP_ONLY) if PIXEL_FIXES[kind][0](psd))
     except Exception:                           # unreadable: nothing to fix
         return ()
 
@@ -1505,10 +1567,14 @@ __all__ = [
     'miscased_names',
     'old_glyphs',
     'one_colour_badges',
+    'plain_tags',
     'PIXEL_FIXES',
     'PIXEL_LINES',
+    'SWEEP_ONLY',
     'pixel_kinds',
     'salt_layers',
+    'tag_layers',
+    'tags_to_badges',
     'rename',
     'reported',
     'redraw',
