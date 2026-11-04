@@ -517,8 +517,8 @@ def test_help_says_the_card_sync(monkeypatch):
     for kind in ("general", "card", "stats"):
         help_module.print_help(None, kind)
     text = "".join(sent)
-    assert "Loads the card data the Card sync Action built" in text and "/push" not in text and "pickle" not in text
-    assert "from the card data" in text and "- force_update: Admin only." in text and "- cards: Admin only." in text
+    assert "Loads the card data Card sync built" in text and "/push" not in text and "pickle" not in text
+    assert "from the card data" in text and "force_update or cards" in text
 
 
 def test_slash_texts_fit():

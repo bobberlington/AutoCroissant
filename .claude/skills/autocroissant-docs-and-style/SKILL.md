@@ -52,28 +52,18 @@ the five dicts' own now.
 | `stats_commands` | 86 | 6 (`/update_metadata`, `/mass_replace`, `/update_tts_save`, `/bake_cards` retired 2026-10-25) | `stats` |
 | `music_commands` | 121 | 17 | `music` |
 
-Total: 48 keys, 47 real commands documented (all of them, 2026-10-25: the five Discord commands that pushed to the card repo, `/alias` among them, retired to branch `archive/discord-edits`). The `"Query Syntax:"` key
-(help.py:52) is a sanctioned pseudo-entry — a non-command key used to document
-the `/query_ability` DSL. Pseudo-entries are allowed; they just must end with a
-colon like real keys so they render uniformly.
+Total: 48 keys, 47 real commands documented (all of them, 2026-10-25: the five Discord commands that pushed to the card repo, `/alias` among them, retired to branch `archive/discord-edits`). The `"Query syntax"` key is a sanctioned pseudo-entry — a non-command key used to document the `/query_ability` DSL.
 
 ### 2.2 Entry format
 
-Key = the command signature string, `<angle>` for required, `[square]` for
-optional, ending in `:`. Value = the description; multi-line via `\n` with
-hyphen bullets, one bullet per parameter. Keys are padded with spaces so the
-`:` column roughly aligns within a dict (cosmetic, but keep it). A real entry,
-quoted exactly (help.py:24-26):
+Since 2026-11-04 (owner: concise): one line per command. Key = the signature, `<angle>` required, `[square]`
+optional, no trailing colon; value = one short sentence, `(admin)` when gated. No per-option bullets: Discord's
+picker shows each option's hint (main.py's describe strings). The `"Query syntax"` pseudo-entry keeps its lines
+(the picker can't show them). print_help writes `key: value` per line in one code block. A real entry:
 
 ```python
-    "/react <reactions> [message_id]:"          : "Adds reactions to a message.\n"
-                                                  "- reactions: Space-separated emojis (👍 👎 or <:custom:123456>)\n"
-                                                  "- message_id: Optional. If omitted, reacts to the most recent message in the channel.",
+    "/react <reactions> [message_id]":       "Adds reactions to a message (default: the latest).",
 ```
-
-Conventions visible across the dicts: state defaults inline (`"(default 100)"`,
-`"(default: all)"`), mark admin gating with `"(admin only)"`, keep the first
-line a one-sentence summary and push parameter detail into bullets.
 
 ### 2.3 How print_help routes
 
@@ -271,13 +261,10 @@ when non-obvious (`GIT_TOKEN: str = getattr(...)`, github_api.py:17).
 ### 6.1 help.py entry
 
 ```python
-    "/my_command <required_arg> [optional_arg]:" : "One-sentence summary of what it does (admin only).\n"
-                                                   "- required_arg: What it means, units if any\n"
-                                                   "- optional_arg: What it means (default: False)",
+    "/my_command <required_arg> [optional_arg]": "One short sentence of what it does (admin).",
 ```
 
-Drop "(admin only)" if not perms-gated. Pad the key so the `:` aligns with its
-dict's column. Defaults in the bullets MUST match the main.py signature.
+Drop "(admin)" if not perms-gated; option details go in main.py's describe strings, not here.
 
 ### 6.2 New module skeleton (commands/my_module.py)
 
