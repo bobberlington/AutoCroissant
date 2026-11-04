@@ -2,7 +2,9 @@
 The rulebook's TTS PDF: the website's #/rules/print pages (1080x1920, the cover then the chapters cut as the Photoshop
 pages were) printed by Chrome to the card repo's TTS/Rulebook/Rulebook.pdf (real text: searchable and selectable, one
 page per sheet, bookmarks from the headings), and pages.json listing the pages with a hash of each one's pixels and its text (the TTS save's search). Card
-sync's main lane runs it before the save; tts_save puts the PDF in the save's Rulebooks bag (a Custom_PDF object).
+sync's main lane runs it before the save; tts_save puts the PDF in the save's Rulebooks bag (a Custom_PDF object). The
+pages are drawn in the website's fonts (BOOK_FONTS, the checkout's MDW/Fonts copies, also where the machine has none:
+Card sync's Ubuntu), so their lines break as on the website.
 
     python -m commands.rulebook_pages <card repo checkout> [--site URL]
 
@@ -14,7 +16,7 @@ bytes carry its print time), so an unchanged rulebook keeps its file and its pin
 left alone. Exit 1 when the pages could not be drawn (nothing changed then).
 """
 from argparse import ArgumentParser
-from base64 import b64decode
+from base64 import b64decode, b64encode
 from io import BytesIO
 from json import dumps, loads
 from os import close, environ, listdir, makedirs, pipe, read, write
@@ -62,6 +64,12 @@ WAIT_SECONDS = 180                             # for the website to load and cut
 KEY_JS = ('JSON.stringify([document.querySelector(".rb-sheets")?.outerHTML || "", [...document.styleSheets].map(s => s.href || ""), '
           '[...document.fonts].filter(f => f.status === "loaded").map(f => [f.family, f.weight, f.style].join(" ")).sort()])')
 UNSTAMPED = ("site/rulebook/fonts", "site/rulebook/img")
+FONTS_DIR = "MDW/Fonts"                        # the card repo's fonts (psd_edit.FONTS_DIR)
+# the rulebook's fonts on the website (style.css: .rb's first, .rb-grid's tables' first): their files in FONTS_DIR
+BOOK_FONTS = ("Consolas", "Century")
+# the book fonts' files ([base64, family, weight, style]) as the page's own, before the website cuts its pages
+FONT_JS = """for (const [b64, family, weight, style] of %s)
+  document.fonts.add(new FontFace(family, Uint8Array.from(atob(b64), c => c.charCodeAt(0)), { weight, style }));"""
 SITE_WAIT = 8 * 60                             # for the website's build of the checkout's chapters (Card sync goes at once; its step's limit is 10)
 SITE_POLL = 20                                 # seconds between looks at its data/rules.json
 CALL_SECONDS = 60                              # one DevTools call
@@ -136,12 +144,27 @@ def find_chrome() -> Optional[str]:
     return environ.get("CHROME") or next((found for name in CHROMES if (found := which(name))), None)
 
 
-def draw(site: str, exe: str, key_of=None, known: str = "") -> tuple:
+def book_fonts(checkout: str) -> list:
+    """BOOK_FONTS' files in the checkout's FONTS_DIR ("Consolas.ttf", "Consolas Bold Italic.ttf"...) as [base64, family,
+    weight, style] (FONT_JS's), [] when it has none."""
+    folder, found = join(checkout, FONTS_DIR), []
+    for name in sorted(listdir(folder)) if isdir(folder) else []:
+        stem, _, ext = name.rpartition(".")
+        family = next((f for f in BOOK_FONTS if stem == f or stem.startswith(f + " ")), None)
+        styles = set(stem[len(family or ""):].split())
+        if family and ext.lower() in ("ttf", "otf") and styles <= {"Bold", "Italic"}:   # not "Century Gothic"
+            with open(join(folder, name), "rb") as fh:
+                found.append([b64encode(fh.read()).decode(), family, "700" if "Bold" in styles else "400", "italic" if "Italic" in styles else "normal"])
+    return found
+
+
+def draw(site: str, exe: str, key_of=None, known: str = "", fonts: Optional[list] = None) -> tuple:
     """
     The website's TTS pages.
 
     Args:
         key_of: what the pages draw (KEY_JS's text) -> their key; known: the last print's key (no screenshots when the same)
+        fonts: book_fonts(), the page's BOOK_FONTS
 
     Returns:
         ({file: source} of the chapters the website cut them from, [(sheet entry, PNG bytes)] in book order, or None when
@@ -158,6 +181,9 @@ def draw(site: str, exe: str, key_of=None, known: str = "") -> tuple:
                 raise RuntimeError(f"the page: {got['exceptionDetails'].get('text')}")
             return (got.get("result") or {}).get("value")
         chrome.call("Emulation.setDeviceMetricsOverride", {"width": 1400, "height": 1000, "deviceScaleFactor": 1, "mobile": False}, session)
+        if fonts:                                      # (Page.enable: else the script never runs)
+            chrome.call("Page.enable", session=session)
+            chrome.call("Page.addScriptToEvaluateOnNewDocument", {"source": FONT_JS % dumps(fonts)}, session)
         chrome.call("Page.navigate", {"url": f"{site.rstrip('/')}/{VIEW}"}, session)
         until = monotonic() + WAIT_SECONDS
         while not run("document.body?.dataset.sheets || ''"):
@@ -227,9 +253,9 @@ def chapter_sources(checkout: str) -> dict:
 
 
 def key(drawn: str, checkout: str) -> str:
-    """The print's key: what the pages draw (KEY_JS's text) and the UNSTAMPED folders' git trees in the checkout."""
+    """The print's key: what the pages draw (KEY_JS's text) and the UNSTAMPED and FONTS_DIR git trees in the checkout."""
     trees = []
-    for path in UNSTAMPED:
+    for path in (*UNSTAMPED, FONTS_DIR):
         try:
             got = run_process(["git", "-C", checkout, "rev-parse", f"HEAD:{path}"], stdout=PIPE, stderr=DEVNULL, timeout=30)
             trees.append(got.stdout.decode().strip() if got.returncode == 0 else "")
@@ -337,7 +363,7 @@ def update_pages(checkout: str, site: str = SITE_URL, exe: str = "", wait: float
         wait_for_site(site, mine, wait)
     old = read_pages(checkout)
     known = old.get("key", "") if isfile(join(checkout, RULEBOOK_PAGES, PDF_FILE)) else ""
-    theirs, shots, printer, drawn = draw(site, exe, lambda text: key(text, checkout), known)
+    theirs, shots, printer, drawn = draw(site, exe, lambda text: key(text, checkout), known, book_fonts(checkout))
     try:
         if theirs != mine:
             return (f"Rulebook PDF: the website doesn't show main's chapters yet ({len(set(theirs.items()) ^ set(mine.items()))} "
