@@ -539,8 +539,9 @@ starts with `-r requirements-cards.txt`, `requirements-dev.txt` with `-r require
 Python 3.14 (six until card-edits.yml was deleted at the cutover, 2026-10-24), card-guards.yml (its check and post jobs), card-sync.yml (one venv for every stage),
 card-preview.yml (without the oxipng CLI: its PNG is never published), and until 2026-10-25 card-check.yml and font-check.yml
 (now card-guards.yml's check job), check the file out of AutoCroissant and install it offline from wheels in the Actions cache (path
-`~/.cache/card-wheels`, key `cards-<hashFiles('bot/requirements-cards.txt')>-<OS>-<arch>-py<Python>`: one entry for all
-of them; until 2026-10-24 card-edits, card-guards and card-preview on 3.12 and card-sync's own `-py<3.14.x>-py<3.12.x>`). The
+`~/.cache/card-wheels`, key `card-wheels-<requirement lines' sha256>-<OS>-<arch>-py<3.14>` since 2026-11-04 (the minor
+version: a runner image's new patch reuses them; the venv beside it, `card-venv-...-py<3.14.x>`, is per patch; `cards-...-py<3.14.x>`
+before, which two runner images in turn kept rebuilding): one entry for all of them; until 2026-10-24 card-edits, card-guards and card-preview on 3.12 and card-sync's own `-py<3.14.x>-py<3.12.x>`). The
 first run after a change to the file or a new runner Python builds them (`pip wheel -r`: the fork's C extensions,
 pyoxipng's Rust) and saves them; later runs skip the git clone and the builds (a cold miss on the Mac: 16.4 s for the
 wheels, 19.5 s for pyoxipng's sdist, 10.7 s to install; a runner is slower, PUSH_GUARDS.md section 20). The

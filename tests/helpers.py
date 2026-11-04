@@ -245,8 +245,10 @@ FORK_WHEELS = "~/.cache/card-wheels"
 
 OXIPNG_VERSION = "10.2.1"                                               # the CLI the Actions download (SMALLER_PNG_PUSHES.md)
 
-FORK_KEY = ("cards-${{ steps.reqs.outputs.sha }}-${{ runner.os }}-${{ runner.arch }}"
-            "-py${{ steps.python.outputs.python-version }}")             # one entry for all
+FORK_KEY = ("card-wheels-${{ steps.reqs.outputs.sha }}-${{ runner.os }}-${{ runner.arch }}"
+            "-py${{ steps.reqs.outputs.minor }}")                       # one entry for all, any 3.14.x
+FORK_VENV_KEY = ("card-venv-${{ steps.reqs.outputs.sha }}-${{ runner.os }}-${{ runner.arch }}"
+                 "-py${{ steps.python.outputs.python-version }}")        # its interpreter's path: the patch version
 
 BY_NAME = "sed 's/ @ [^;]*//' bot/requirements-cards.txt > \"$RUNNER_TEMP/cards.txt\""
 
@@ -268,7 +270,8 @@ def _uses_setup(step) -> bool:
 def fork_action(workflows) -> str:
     """
     The card workflows' one setup (.github/actions/cards-python): Python 3.14; a venv cached whole by requirements-cards.txt's
-    hash, runner and Python, a restored one's packages checked; on a miss the wheels restored by the same key, built only
+    hash, runner and Python patch version, a restored one's packages checked; on a miss the wheels (keyed by the minor
+    version: a runner image's new patch reuses them) restored, built only
     on a miss, installed offline by name with uv (pip builds a URL line from git again), both saved only after they
     installed; the venv first on PATH when the caller names none.
 
@@ -278,11 +281,11 @@ def fork_action(workflows) -> str:
     yaml = pytest.importorskip("yaml")
     steps = yaml.safe_load((workflows.parent.parent / FORK_ACTION).read_text(encoding="utf-8"))["runs"]["steps"]
     python, reqs, env, check, restore, uv, install, save, save_env, path, oxipng = steps
-    assert reqs["id"] == "reqs" and "sha256sum" in reqs["run"]          # the key: requirement lines, comments stripped
+    assert reqs["id"] == "reqs" and "sha256sum" in reqs["run"] and 'echo "minor=' in reqs["run"]   # the key: requirement lines, comments stripped
     assert python["uses"].startswith("actions/setup-python@") and python["id"] == "python"
     assert python["with"] == {"python-version": FORK_PYTHON}                   # no pip cache
     assert env["uses"].startswith("actions/cache/restore@") and env["id"] == "env"
-    assert env["with"] == {"path": "${{ steps.reqs.outputs.venv }}", "key": FORK_KEY.replace("cards-", "cards-venv-", 1)}
+    assert env["with"] == {"path": "${{ steps.reqs.outputs.venv }}", "key": FORK_VENV_KEY}
     assert check["id"] == "check" and check["env"]["HIT"] == "${{ steps.env.outputs.cache-hit }}" and 'rm -rf "$VENV"' in check["run"]
     missed = "steps.check.outputs.ok != 'true'"
     assert restore["uses"].startswith("actions/cache/restore@") and restore["id"] == "wheels" and restore["if"] == missed
