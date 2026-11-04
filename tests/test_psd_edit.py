@@ -2355,3 +2355,22 @@ def test_parts_title_enter_and_legacy_edits(clone, parser, chart, tmp_path):
     assert sum("very piercing" in layer.text for layer in PSDImage.open(baked.psd_path).descendants()
                if layer.kind == "type") == 3
 
+
+
+def test_a_rewritten_paragraph_keeps_its_own_colour(clone):
+    """Owner 2026-11-03, Pot Full of Spiders!: its first two paragraphs rewritten at once, the second's new words take
+    its own bright red, never the first's dark red (a letter diff paired them with the first's leftovers); the badges
+    typed in the first take the first's colour, the third is untouched."""
+    layer = pe.ability_layer(PSDImage.open(_card(clone, "Creatures/Crypt/2 Stars/Pot_Full_of_Spiders!.psd")[0]))
+    old, fills = layer.text, pe._char_styles(layer)[0]
+    one, two, three = old.split("\r")[:3]
+    new = old.replace(one, "(OFS)/(BOT) Gain 2 spider counters.").replace(
+        two, "When damaged, spend all spider counters to summon an equal amount of Lil Spoods.")
+    parts = pe.edit_parts(old, new, *pe._word_bounds(new, *pe.changed_range(old, new)))
+    styles = pe.edit_styles(layer, parts, None, pe.text_moves(old, new))
+    colour = {k: Counter(fills[i] for i in range(start, start + len(p)) if not p[i - start].isspace()).most_common(1)[0][0]
+              for k, (start, p) in enumerate([(0, one), (len(one) + 1, two)])}
+    second = new.index("When damaged")
+    assert colour[0] != colour[1]
+    assert {fill for a, b, fill, _ in styles if a >= second} == {colour[1]}
+    assert {fill for a, b, fill, _ in styles if b <= second} == {colour[0]}

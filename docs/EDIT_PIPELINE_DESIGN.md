@@ -872,6 +872,14 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   and "would be set in the icon font" refusals of such deletions 36 -> 0). An
   Ability's new line printed past the old text onto the design below (Deep Focus' flourish, Holy Card's torn border,
   Autopsy Report off its box) is told in the notes, not refused (`ink_beyond`; 18 of 503 cards given a line).
+  **Alignment (2026-11-03, owner: Pot Full of Spiders!):** an edit lines up by paragraphs, then words
+  (`commands/text_align.py`), not difflib over letters ("When damaged, spend all spider counters" took the line above's
+  dark red from its leftover letters). Paragraphs pair in place or by likeness; a deleted, added or moved paragraph is a
+  change of its own, a moved one keeps its colours (`moves`, `edit_styles`); a kept break always stays kept. Census of
+  generated edits over the 294 cards whose paragraphs differ in colour (`scratch/spiders/synth.py`): edits leaving a
+  colour off its paragraph 553 -> 4 (rewrites), 520 -> 33 (a line added), 513 -> 28 (one deleted), 271 -> 0 (two
+  swapped); the previews branch's 142 previews (91 bake): 86 the same, Pot Full of Spiders!'s 3 fixed, 2 differ in
+  blanks only. Tests: `test_text_align.py`, `test_a_rewritten_paragraph_keeps_its_own_colour`.
   A text layer with tabs bakes (owner 2026-10-24): the fork lays them to Photoshop's 36 pt default stops (`tab_stops`;
   before, Michael's Blessing's arrows collapsed) and `keep_breaks` makes the website's spaces the layer's tabs again;
   a fork without them is an ImportError, card_bake's `Transient`.

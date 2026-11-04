@@ -47,6 +47,8 @@ from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_
 from commands.psd_parser import in_header, star_leaf, star_pieces, star_sets
 from commands import psd_parts
 from commands.psd_parts import lyid_index, raw_sha
+from commands.text_align import (BREAKS as TEXT_BREAKS, blocks as text_blocks, moves as text_moves,
+                                 opcodes as text_opcodes, segments as text_segments)
 from commands.psd_regions import (STATS as STAT_PATTERNS, _ancestors, badge_layers, bar_box, clip, fx_pad, overlay_words,
                                   stat_rows, union_box)
 from global_config import RULEBOOK_DIR
@@ -951,10 +953,11 @@ def _align(old: str, raw: str) -> dict:
 
 def _opcodes(old: str, new: str) -> list:
     """
-    SequenceMatcher's opcodes, an insertion between kept text slid back to start with the nearest line break it can
-    ("use.\\nD" + "iscard after use.\\nD" + "eal": the added line "\\nDiscard after use." after "use.", in its layer).
+    The edit's opcodes (text_align: paragraphs, then words), an insertion between kept text slid back to start with
+    the nearest line break it can ("use.\\nD" + "iscard after use.\\nD" + "eal": the added line "\\nDiscard after
+    use." after "use.", in its layer).
     """
-    ops = [list(op) for op in SequenceMatcher(None, old, new, autojunk=False).get_opcodes()]
+    ops = [list(op) for op in text_opcodes(old, new)]
     for k in range(1, len(ops) - 1):
         (_, _, _, pj1, _), (tag, i1, _, j1, j2), nxt = ops[k - 1], ops[k], ops[k + 1]
         if tag != "insert" or ops[k - 1][0] != "equal" or nxt[0] != "equal":
@@ -1667,7 +1670,9 @@ def _stretches(indices: list) -> list:
 def edit_parts(old: str, new: str, start: int, end: int) -> list:
     """
     The edited span new[start:end] against the old text it replaces, in order: stretches of SAME_RUN or more characters
-    the edit keeps, and the changed parts between them (one side may be empty: an insertion or a deletion).
+    the edit keeps (a kept break whatever its length), and the changed parts between them (one side may be empty: an
+    insertion or a deletion). The alignment is text_align's over the span's whole paragraphs: a changed part never
+    spans two paragraphs, and a deleted or added paragraph is a part of its own (Pot Full of Spiders!, 2026-11-03).
 
     Args:
         old: The layer's text
@@ -1677,24 +1682,26 @@ def edit_parts(old: str, new: str, start: int, end: int) -> list:
     Returns:
         [(old start, old end, new start, new end, kept)]
     """
-    lo = min(start, len(old))                   # the span starts in the common prefix: the same index in old
-    hi = min(max(end + len(old) - len(new), lo), len(old))
-    out, a0, b0 = [], 0, 0
-    for a, b, size in SequenceMatcher(None, old[lo:hi], new[start:end], autojunk=False).get_matching_blocks():
-        if 0 < size < SAME_RUN:
-            continue
-        if a > a0 or b > b0:
-            out.append((lo + a0, lo + a, start + b0, start + b, False))
-        if size:
-            out.append((lo + a, lo + a + size, start + b, start + b + size, True))
-        a0, b0 = a + size, b + size
+    # aligned over the whole text (text_align: a new line never takes the line above's leftover letters, Pot Full of
+    # Spiders! 2026-11-03; a common "." at the end is no sign two paragraphs are one, Azamoth's swapped lines); kept
+    # text outside the span left out
+    out = []
+    for tag, a0, a1, b0, b1, group in text_segments(old, new):
+        if tag == "equal" and (a1 - a0 >= SAME_RUN or any(c in TEXT_BREAKS for c in old[a0:a1])):
+            out.append([a0, a1, b0, b1, True, group])
+        elif out and not out[-1][4] and out[-1][5] == group:     # a short kept stretch joins its paragraph's change
+            out[-1][1], out[-1][3] = a1, b1
+        else:
+            out.append([a0, a1, b0, b1, False, group])
+    out = [_inside(tuple(part[:5]), start, end) for part in out]
+    out = [part for part in out if part is not None]
     for k, (a0, a1, b0, b1, kept) in enumerate(out):     # a deletion slid to whole lines or words (deletion_start)
         if kept or b1 > b0 or a1 <= a0:
             continue
         floor = max([part[1] for part in out[:k] if not part[4]] or [0])
         shift = a0 - _slide(old, a0, a1, floor)
-        if not shift or k and not out[k - 1][4]:
-            continue
+        if not shift or k and not out[k - 1][4] or k + 1 < len(out) and not out[k + 1][4]:
+            continue                            # slides only between kept text
         out[k] = (a0 - shift, a1 - shift, b0 - shift, b0 - shift, False)
         if k + 1 < len(out):
             na0, na1, nb0, nb1, _ = out[k + 1]
@@ -1705,6 +1712,15 @@ def edit_parts(old: str, new: str, start: int, end: int) -> list:
             pa0, pa1, pb0, pb1, _ = out[k - 1]
             out[k - 1] = (pa0, pa1 - shift, pb0, pb1 - shift, True)
     return [part for part in out if part[1] > part[0] or part[3] > part[2]]
+
+
+def _inside(part: tuple, start: int, end: int) -> Optional[tuple]:
+    """A kept part trimmed to the new span [start, end) (None when outside it); a changed part as it is."""
+    a0, a1, b0, b1, kept = part
+    if not kept:
+        return part
+    lo, hi = max(b0, start), min(b1, end)
+    return (a0 + lo - b0, a1 - (b1 - hi), lo, hi, True) if hi > lo else None
 
 
 def splice_text(layer, text: str, parts: list) -> None:
@@ -1727,7 +1743,7 @@ def splice_text(layer, text: str, parts: list) -> None:
     layer.set_text(text, keep="runs")           # nothing left but a stale story to bring along
 
 
-def edit_styles(layer, parts: list, chart: Optional[dict]) -> list:
+def edit_styles(layer, parts: list, chart: Optional[dict], moves: tuple = ()) -> list:
     """
     The style of each changed part (edit_parts) of an ability edit, from the old text: a part replacing text takes the
     commonest fill of what it replaces outside status words and blanks (set in the icon font only if all of it is: a
@@ -1736,12 +1752,15 @@ def edit_styles(layer, parts: list, chart: Optional[dict]) -> list:
     red "1T3 Empowered"), else its line's commonest fill, its paragraph's, the text's; its fill the body's (body_fill)
     when typed between two runs or at a line's end in a line of several colours (Binge Eater's ", 1T" after "SPD" took
     the olive). A kept status word's characters take that too: the edit resets status words, set_text_layer giving the
-    new text's their swatch after. Before set_text.
+    new text's their swatch after. A paragraph the edit moved (moves: text_align.moves) takes its own old colours,
+    letter for letter where it kept them, else its commonest (a line moved up no longer takes the colour of the line
+    it lands under). Before set_text.
 
     Args:
         layer: The text layer
         parts: edit_parts()
         chart: status_fills(), or None
+        moves: text_align.moves() of the old and new text
 
     Returns:
         [(new start, new end, RGB 0..1 or None, the source's STYLE_KEYS or None when it is a badge character)]
@@ -1795,6 +1814,17 @@ def edit_styles(layer, parts: list, chart: Optional[dict]) -> list:
             spans = []
         for start, end, i, fill in spans:
             out.append((start, end, fill or (body if i is None else fills[i]), None if i is None or icons[i] else styles[i]))
+    changed = {i for _, _, b0, b1, kept in parts if not kept for i in range(b0, b1)}
+    for (s0, e0), (t0, t1), kept_letters in moves:
+        found = [i for i in range(s0, e0) if source(i)]
+        if not found:
+            continue
+        common = commonest(found, s0)
+        mapped = {t0 + q + k: s0 + p + k for p, q, n in kept_letters for k in range(n)}
+        for k in range(t0, t1):
+            if k in changed:
+                i = mapped.get(k, common)
+                out.append((k, k + 1, fills[i], None if icons[i] else styles[i]))
     return out
 
 
@@ -1906,7 +1936,7 @@ def keep_breaks(old: str, new: str, which: str) -> str:
     lo, hi = len(old) - len(old.lstrip(blank)), len(old.rstrip(blank))
     seen = old.replace("\x03", "\r").replace("\t", " ")
     out = list(new)
-    for a, b, size in SequenceMatcher(None, seen, new, autojunk=False).get_matching_blocks():
+    for a, b, size in text_blocks(seen, new):
         for i in range(size):
             if old[a + i] in "\x03\t" and lo <= a + i < hi:
                 out[b + i] = old[a + i]
@@ -2496,9 +2526,9 @@ def _cut_fx(psd: PSDImage, name: str, cut: tuple, blocks: dict, engine: tuple):
 
 
 def kept_chars(old: str, new: str) -> list:
-    """Per index of old: where the edit keeps that character in new (difflib's matching blocks), else -1."""
+    """Per index of old: where the edit keeps that character in new (text_align's matching blocks), else -1."""
     out = [-1] * len(old)
-    for a, b, size in SequenceMatcher(None, old, new, autojunk=False).get_matching_blocks():
+    for a, b, size in text_blocks(old, new):
         out[a:a + size] = range(b, b + size)
     return out
 
@@ -4913,7 +4943,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
             if styled or old_fx or hide:
                 engine = _fx_engine()
     parts = edit_parts(old_text, text, start, end)
-    styles = edit_styles(layer, parts, chart) if which == "ability" else []
+    styles = edit_styles(layer, parts, chart, text_moves(old_text, text)) if which == "ability" else []
     restyle = title_styles(layer, parts) if which == "name" else []
     changed = [(b0, b1) for _, _, b0, b1, same in parts if not same and b1 > b0]
     typed = [(a, b) for a, b in drawn if any(a < b1 and b0 < b for b0, b1 in changed)]     # badges and tokens it types

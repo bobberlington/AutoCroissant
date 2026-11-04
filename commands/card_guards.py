@@ -66,7 +66,7 @@ from global_config import CARD_REPO, FONT_DIRS_ENV, ICON_MANIFEST_PATH
 # ========================
 SPARSE_FILES = ("commands/card_guards.py", "commands/png_export.py", "commands/card_standards.py", "commands/txt2_repair.py",
                 "commands/psd_diff.py", "commands/card_bake.py", "commands/card_check.py", "commands/psd_edit.py", "commands/psd_regions.py",
-                "commands/psd_parser.py", "commands/psd_parts.py", "commands/card_models.py", "commands/card_edits.py", "commands/font_check.py",
+                "commands/psd_parser.py", "commands/psd_parts.py", "commands/text_align.py", "commands/card_models.py", "commands/card_edits.py", "commands/font_check.py",
                 "commands/github_api.py", "commands/git_commit.py", "commands/repo_history.py", "global_config.py",
                 "requirements-cards.txt",
                 "commands/ability_place.py", "commands/ability_index.json")

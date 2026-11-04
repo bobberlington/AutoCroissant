@@ -811,7 +811,7 @@ def can_prune(build: CardBuild) -> bool:
 # (tests/test_card_data.py runs --help on the three CLIs with exactly this list)
 SPARSE_FILES = ("commands/card_data.py", "commands/card_history.py", "commands/card_db.py", "commands/changelog.py",
                 "commands/card_models.py", "commands/card_edits.py", "commands/psd_parser.py", "commands/psd_details.py",
-                "commands/psd_parts.py", "commands/psd_regions.py", "commands/font_check.py", "commands/github_api.py", "global_config.py",
+                "commands/psd_parts.py", "commands/text_align.py", "commands/psd_regions.py", "commands/font_check.py", "commands/github_api.py", "global_config.py",
                 "requirements-cards.txt",
                 "commands/card_bake.py", "commands/psd_edit.py", "commands/png_export.py", "commands/git_commit.py",
                 "commands/repo_history.py", "commands/tts_save.py",
