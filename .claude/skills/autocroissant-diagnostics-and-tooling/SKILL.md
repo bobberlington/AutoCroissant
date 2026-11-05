@@ -22,8 +22,8 @@ at all and runs from anywhere — it needs only psd-tools and an absolute/`~` PS
 
 **Which Python (2026-10-23).** `diff_stats.py` and `inspect_pickle.py` run on the Mac's plain `python3` (Homebrew
 3.14.8). `parse_one.py`, `gap_trace.py` and `dump_psd_layers.py` need psd-tools and pandas, which that `python3` lacks
-("No module named pandas" / "psd_tools"): use the production-equivalent venv `~/.venvs/ac-py314-fork` (the psd-tools fork,
-tag `cards-20261023` = ecc4b773, with `range_reader`, as on the jetson), or `~/.venvs/ac-py314-psd125` (stock psd-tools
+("No module named pandas" / "psd_tools"): use the production-equivalent venv `~/.venvs/ac-py314-fork` (the psd-tools fork at
+the pin, `cards-20261104` = 1258fcbd on 2026-11-05, with `range_reader`, as on the jetson), or `~/.venvs/ac-py314-psd125` (stock psd-tools
 1.25.0). Below, `$P` means `~/.venvs/ac-py314-fork/bin/python` for those three.
 
 **The card data in any form (2026-10-23).** `diff_stats.py` and `inspect_pickle.py` read it through
@@ -797,3 +797,5 @@ row and Workflow 1; the gate snapshots go to `~/Documents/Tools/wt/scratch/head/
 2026-10-25 (step 10, work/pickles): the pickles left the repo: inspect_pickle.py reads `card_data/` by default, parse_one.py's `--with-db` loads it, diff_stats.py's examples are data commits (the last PICKLE by git show); Workflow 1 is the data commit's review, Workflow 4 is history; commits_ns, e2e_update_ns, etag_handoff_ns and race_ns deleted with the legacy /update_stats.
 
 2026-10-25 (clean, work/clean): diff_stats.py and inspect_pickle.py read db/ JSON only (the pickle sides and card_db's unpickler removed); the line-ref rewriters deleted; tests/test_diagnostics.py runs both scripts on db/ JSON.
+
+2026-11-05 (ring badges): the fork venv's pin is `cards-20261104` (1258fcbd).

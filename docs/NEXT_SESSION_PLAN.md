@@ -1,174 +1,267 @@
-# Next session plan (after 2026-11-01)
+# Next session plan (after 2026-11-05)
 
 ## Where to start
 
-Start in `~/Desktop/AutoCroissant`. Read memories `resource-limits`, `secrets-never-printed`,
-`owner-decisions-2026-10-24-night` (its 10-25 and 10-26 lines), `lean-tests-and-verification`, `no-guides-csv-only`,
+Start in `~/Desktop/AutoCroissant`. Read memories `resource-limits`, `secrets-never-printed`, `ttscardmaker-integration`
+(its 11-03 and 11-04 lines hold this session's rulings), `lean-tests-and-verification`, `no-guides-csv-only`,
 `edits-two-kinds`, `jetson-server`, `persistent-work-paths`, `agent-model-preference`, `rulebook-on-website`,
-`discord-pending-updates`. What landed: `docs/Finished/session-2026-11-01/README.md` (the Discord rulebook batch), `session-2026-10-30c/README.md` (10-30 evening to 10-31: rulebook pictures wrap and hang out,
-names and mentions, guard R14, TTS panel buttons and speed), `session-2026-10-30b/README.md` (the afternoon: overlay
-badges, TTS names and panels, History revert, rulebook to scale) and `session-2026-10-30/README.md` (the rulebook on the website, its editor, the TTS
-save's panels; 10-26's in `session-2026-10-26/`). `docs/Future/` holds only the problem-cards lists; nothing is in flight.
+`discord-pending-updates`. What landed: `docs/Finished/session-2026-11-03-05/README.md` (cost badges, the cooldown ring
+font, the card rollout); earlier `session-2026-11-01/`, `-10-30c/`, `-10-30b/`, `-10-30/`, `-10-26/`.
 
-First: the owner's checks of the new TTS panels in a real game (below), then the problem-cards list, then the campaign
-tasks in the order the owner picks.
+First: check that the batch chain finished (In flight), then the go-day leftovers in order, then the owner's decisions.
 
 ## Standing rules
 
-- Work unattended unless the owner says "ask me questions". Agents on Opus or lower; a single Agent for a build (two
-  workflow agents answered the owner's latest question instead of building: pin "your job is the code build").
+- Work unattended unless the owner says "ask me questions" (he asked again on 11-04). Agents on Opus or lower; a single
+  Agent for a build. Owner picks are never dropped without asking: a review may only flag them.
 - Commit to main in both repos; `work/*` only while in flight, then delete. Very short commit messages; no Claude
   attribution. Persistent paths only (`~/Documents/Tools/wt/`, `~/std-work-*`).
 - Deploy with the `jetson-deploy` skill: push main and deploy in one sitting.
 - Tests: `AUTOCROISSANT_LOCAL_DIR=~/Desktop/TTSCardMaker AC_SITE_SRC=<tc tree>
   ESBUILD=~/Documents/Tools/wt/scratch/esbuild/node_modules/.bin/esbuild ~/.venvs/ac-py314-fork/bin/python -m pytest
-  -n auto -q -p no:cacheprovider tests` (665 on 10-31, about 3 minutes). Targeted files unless a full run is needed.
-- Resource limits (memory `resource-limits`): never a partial (`blob:none`) clone of the local card repo; xdist at most
-  6; one full suite at a time (`~/Documents/Tools/wt/scratch/suite-wait.sh`); at most 2 workflows; process pools at
-  most 4; the git watchdog (`~/Documents/Tools/wt/scratch/git-watchdog.sh`) under Monitor during long unattended work;
-  no repack or gc of the big clones while agents run.
-- `gh run list -c` needs the FULL sha: `git rev-parse` first. zsh doesn't split unquoted variables.
+  -n auto -q -p no:cacheprovider tests` (689 on 11-04, about 3.5 minutes). Targeted files unless a full run is needed.
+- Resource limits (memory `resource-limits`): never a partial (`blob:none`) clone of the local card repo; xdist at
+  most 6; one full suite at a time (`~/Documents/Tools/wt/scratch/suite-wait.sh`); at most 2 workflows; process pools
+  at most 4; the git watchdog (`~/Documents/Tools/wt/scratch/git-watchdog.sh`) under Monitor during long unattended
+  work; no repack or gc of the big clones while agents run.
+- The Desktop TTSCardMaker clone is blobless from GitHub: every git call with `GIT_NO_LAZY_FETCH=1`, never a fetch of
+  many blobs; `git write-tree` needs `--missing-ok` there. TC's local `origin/data` is stale (679b1309): use `git
+  ls-remote origin data` or `git fetch origin +data:refs/remotes/origin/data`.
+- zsh arrays start at 1 and zsh doesn't split unquoted variables: loops over arrays under `bash -c`. `gh run list -c`
+  needs the FULL sha.
 - Secrets (memory `secrets-never-printed`): never print config.py values, tokens or webhook URLs; a token goes only to
   its own service; hooks: name, active flag and host only.
-- PSD pushes: run the guards dry first (`python -m commands.card_guards check --clone <wt> --after <head> --before
-  origin/main --repo MichaelJSr/TTSCardMaker --mode on --workers 2 --out <dir>`), discord.json must be `{}`; sweep
-  fixes carry `Card-sweep: <kind>` (silent per commit).
+- PSD pushes: run the guards dry first, with `--repo` (without it the earlier icon fonts are not read):
+  `python -m commands.card_guards check --clone ~/Desktop/TTSCardMaker --repo MichaelJSr/TTSCardMaker --before
+  origin/main --after <head> --mode dry --out <dir>`; discord.json must be `{}`. Sweep fixes carry `Card-sweep: <kind>`
+  (silent per commit). A font rollout's sweep and batch pushes: `ttscardmaker-companion` §1.10.
 - Photoshop 2023 may be used on copies under `~/std-work-*`: `open -a "Adobe Photoshop 2023" script.jsx` plus a result
-  file (osascript is blocked), dialogs off, only documents we opened. Runners: `~/std-work-1026/*/tools/`.
+  file (osascript is blocked), dialogs off, only documents we opened. It draws with the fonts installed here: MDW's
+  stoogedings (the ring build), Futura-Bold, Lucida Grande Bold, Rockwell Bold, Elephant Italic, Myriad Arabic and
+  Roboto Black are in `~/Library/Fonts`; keep stoogedings.ttf identical to main's.
 - No guides or checklists for the owner: problem lists are a CSV plus its `.md` (memory `no-guides-csv-only`).
-- The TTS save's global script is `TTS/Global.lua` (+ `Global.xml`); never edit the save's script by hand. No Lua
-  patterns (MoonSharp); test a change with `~/.venvs/tts-checks/bin/python TTS/checks/lua_mock.py "TTS/Impossibility
-  Simulator.json" TTS/Global.lua` (the whole suite: `TTS_HISTORY=~/Documents/Tools/wt/scratch/tts/history.git
-  ~/.venvs/tts-checks/bin/python TTS/checks/run_all.py`, 24 checks, about 4 minutes). A deliberate hand edit of the save moves
-  drift.py's BASELINE to that commit.
+- The TTS save's global script is `TTS/Global.lua` (+ `Global.xml`); never edit the save by hand except as a deliberate
+  edit (then move drift.py's BASELINE). No Lua patterns (MoonSharp). Test a Lua change with
+  `~/.venvs/tts-checks/bin/python TTS/checks/lua_mock.py "TTS/Impossibility Simulator.json" TTS/Global.lua`; the whole
+  suite: `TTS_HISTORY=~/Documents/Tools/wt/scratch/tts/history.git ~/.venvs/tts-checks/bin/python
+  TTS/checks/run_all.py` (24 checks, about 4 minutes).
 - "Rebuild the save now" (owner, per request only): cancel Card sync's waiting run, then `gh workflow run card-sync.yml
-  --ref main -f bake=pending`; check first that the website deploy holding any rulebook change has finished (the PDF is
-  printed from the live site).
+  --ref main -f bake=pending`; first check that the site deploy holding any rulebook change has finished.
 
-## State (2026-11-01 evening)
+## State (2026-11-05 ~00:30)
 
-- AutoCroissant main is the wrap-up docs commit after `396d2d2`; the jetson runs `828847a`. Every commit since touches only
-  skills and docs, so no deploy is owed.
-- TTSCardMaker main `bf67cd8e` (save re-pinned; rulebook PDF printed `09357e06`, both from `b2ae3c02`). Drift baseline
-  `2fecc66d`; TTS checks 24 of 24 at `c6b1e144`. Tabletop Simulator's Saves folder holds the save at `bf67cd8e`.
-- Data `cb39a2b4` (parser 5, 772 cards); `db/rulebook.json` holds the 24 chapters. TC's local `origin/data` isn't fetched by a
-  plain `git fetch origin main`: use `git fetch origin +data:refs/remotes/origin/data` or `git ls-remote origin data`.
-- Discord `pending-updates`: no 📖 messages left; 8 card messages stay (crystal stars twice, Tainted Lazarus split, The Puppet
-  to The Beholster, Earth Totem, the type 2 death card list, the equip stat formatting poll and its result).
-- psd-tools fork pin `cards-20261104` = 1258fcbd (`requirements-cards.txt`; the Mac's venv; the tag goes to GitHub with the owner's go, then re-pin the jetson).
-- OJWikibot: the jetson runs `8ed817f` (11-01; later commits are backups and skills, no deploy owed). One production host: the jetson (leo retired 10-26).
-- `+ability` is live; no live `+ability` bake yet (the first comes from the website): its flag note names the box, font
-  and source.
+- AutoCroissant main 3641756, pushed; the jetson runs 3641756 (deployed 11-04 23:34). psd-tools fork `cards-20261104`
+  = 1258fcbd on both machines, the tag on GitHub. Local only: `work/big-push` 8dd6e22 (worktree
+  `~/Documents/Tools/wt/ac-big`, on 082d37b).
+- TTSCardMaker origin/main: the font 0ade8c3d (blob 2c0f8b1a, 17,416,116 bytes, the same in `~/Library/Fonts`), the
+  20 site commits, batch 1 (7d5782ca + 955e780d), Card sync's 714b9791 + 7610ca42, batch 2 (e71b3610), then the
+  rest of the batches (In flight). Local main e43b7f3c holds all 9 card commits before re-parenting
+  (8367cec2..e43b7f3c).
+- Data: moves with each batch's Card sync (`git ls-remote origin data`). Drift baseline 0a7db1c3 (f26dcd9c).
+- The TTS Saves folder copy is at 384bbecf (11-04 morning): re-copy after the last batch.
+- Discord `pending-updates`: the 8 card messages of 11-01 (crystal stars twice, Tainted Lazarus split, The Puppet to The
+  Beholster, Earth Totem, the type 2 death card list, the equip stat formatting poll and its result). Earth Totem's PSD
+  changed 11-02 ("earth totem nerf", 03119c90, hdckighfkvhvgmk): its message may be done.
+- OJWikibot: the jetson runs 8ed817f; nothing changed this session.
+- `+ability` is live; no live `+ability` bake yet.
 
-## Campaign tasks
+## In flight
 
-### Owner
+- [ ] **Batches 2-7** (`~/Documents/Tools/wt/scratch/ring-sweep-final/chain.sh`, started 00:14): b2 af82957a (pushed
+      00:24 as e71b3610), b3 759a9923, b4 99daffca (with Stubborn_Queen.png), b5 d61df7e8 + 948a47fe (the Drawcia and
+      NME Salesman wording, no trailer: Discord tells it), b6 f3d964ce, b7 e43b7f3c (Koro-Sensei, Traitor Lord). Each
+      runs `batch_push.sh` and starts when the previous push's runs have settled green; 15-30 minutes a batch (upload
+      6-22, runs about 8), so done by about 03:00. Each batch's `git fetch` also writes a ~6.3 GB duplicate pack in the
+      clone (Clean up): watch the disk (22 GiB free at 01:00). Logs: `ring-sweep-final/go/<batch>/` (guards.log,
+      guards/, push.log, runs.tsv). If it stopped ("FAIL" or "CHAIN STOPPED at bN"): read that batch's logs, fix the
+      cause (a card moved on main: leave it out or sweep it again), then run the remaining `chain.sh` lines by hand.
+      Never force-push.
 
-- [ ] Discord pending-updates: the 8 card messages (State above) are undone card work; pick which to do.
+## Go-day leftovers (in this order, after the last batch)
+
+1. [ ] **Completeness**, against the sweep's own lists. `git fetch origin main`; `git log --oneline origin/main` shows
+       batch 7/7. The 9 commits hold every PSD in `ring-sweep-final/`'s plan.json `fixed` (334), ps-fixes.json `fixed`
+       (41) and plan-tags.json (3), 373 together, plus Koro-Sensei, Michael's Blessing and Traitor Lord (376), and
+       Stubborn_Queen.png (checked 11-05). Their 753 files (376 PSDs, 377 PNGs) must have the same blobs on
+       origin/main: `comm -12 <(GIT_NO_LAZY_FETCH=1 git diff-tree -r --no-renames --name-only 8367cec2 e43b7f3c |
+       sort) <(GIT_NO_LAZY_FETCH=1 git diff --no-renames --name-only e43b7f3c origin/main | sort)` prints nothing (a
+       later website bake of one of them would show here: check it; `git diff` has no `--pathspec-from-file`).
+       Then the last lane: the newest Card sync's Bake and save ran on main's head and its Chain says "Nothing left";
+       the rulebook PDF shows the ringed omori, Computer Virus and Withering (pages.json changed for chapters 01 and
+       19); no EFFECT LAYER OUT OF DATE in the batches' Card sync "Parser notes" (AG6). If any fails and nothing runs:
+       `gh workflow run card-sync.yml -R MichaelJSr/TTSCardMaker --ref main -f bake=pending` with the owner's go.
+2. [ ] **Push work/big-push** (8dd6e22, owner yes on 11-04: Card check and Font check read a push GitHub can't list
+       from the clone). Rebase it onto main first (it sits on 082d37b), run `tests/test_font_check.py` and
+       `tests/test_card_check.py`, push. Such pushes then post real card and font findings (a font finding pings the
+       card makers' role) and the check job runs 1.5-3 minutes longer. Only the Actions run this path; deploy anyway
+       to keep the jetson on main.
+3. [ ] **site.yml drops `/Types/`** from the first checkout's sparse list (round 3 wbd2-2); keep the header comment
+       (Types/ still starts Card sync). The next build logs "icons: 91"; about 0.85 s and 24.7 MB less a build.
+4. [ ] **Whole-tree guards dry run:** `gh workflow run card-guards.yml -R MichaelJSr/TTSCardMaker --ref main -f all=true
+       -f dry_run=true`. Read its summary and artifact (the whole-tree jobs run the pixel fixes too): no `badge
+       widths` or `old glyphs` in any card's `redrawn`, `pixel_left` or its writes' `pixels` (a card that still needs
+       a re-lay shows in `redrawn` and `pixels`), as in each batch's check; what it tells is the next problem list.
+5. [ ] **Clean up:** TC branches `work/ring-batches` and `keep/pre-reorder` (a pre-reorder copy of the 11-04 commits);
+       AC `work/big-push` and its worktree; the two stale agent worktrees in `.claude/worktrees/` (clean; at c850328 and
+       ab8b880, which landed rebased as 8737edd; `agent-a3c05d6ea0f86f4db` at c850328 is locked by the session of pid
+       84383: `git worktree unlock` it, or remove it after that session ends); bulky scratch (52 GB; keep
+       `ring-sweep-final/` scripts and lists, `futura-research/` findings). TC's duplicate packs: from batch 2 on, each
+       batch's `git fetch` wrote a ~6.3 GB promisor pack holding the last pushed batch's card folders whole (git's
+       `index-pack --promisor` repacks the local objects a fetched pack points to: Card sync's commits sit on the
+       re-parented batch commits): pack-02fc03a0…, pack-7f0a52ba…, pack-be1f68d9… (b2-b4), then one per later fetch
+       after a pushed batch (b5-b7's, and step 1's for batch 7); most of their objects are in other packs too. They
+       and TC's 7.09 GiB of loose objects: repack only when nothing else runs and the disk has room (a whole repack
+       writes the new pack before it deletes the old ones).
+6. [ ] **Owner:** post the card makers' font note (his ruling; facts in `opt-round4/plan.json` go_day cm-r4-2: pull,
+       install `MDW/Fonts/stoogedings.ttf` (17,416,116 bytes) over the old one, restart Photoshop, Update All Text
+       Layers on locally saved badge cards; the pull is up to ~10 GB of card files). Re-upload the TTS Workshop item by
+       hand (memory `tts-workshop-research`). Re-copy the save into the Saves folder.
+
+## Open owner decisions
+
+- [ ] **Futura on Macs.** MDW's Futura-Bold differs from macOS's own Futura in every glyph (macOS's 2.8% wider);
+      Photoshop draws with macOS's unless MDW's is installed, and the guards then refuse its re-lays (Koro-Sensei). No
+      swap helps (Jost 89%, League Spartan 90%, macOS's 69% off; MDW's fits). Keep MDW's file (recommended); should
+      card makers on Macs install MDW's Futura-Bold, as this Mac now does? Rockwell Bold (8.3% wider) and Lucida Grande
+      Bold differ from macOS's too. Files: `~/Documents/Tools/wt/scratch/futura-research/`.
+- [ ] **Sans and Mantis Lords** (R14, a card name typed in another case): their lines posted once with batch 1. Fix the
+      case in the PSDs as a separate edit, or leave.
+- [ ] **Old-font note for refused re-lays** (round 4 cm-a1-offpixels): tell OLD_FONT when an earlier font explains a
+      refused re-lay. The tightened rule (every glyph old to the current font must be drawn by an earlier one) is in
+      `opt-round4/skeptic-cm-a1-tools/proposed2.py`: 15 of 16 told, Koro-Sensei silent. Not voted on; a guards change.
+- [ ] **Traitor Lord, look:** the gap from its (2U) badge to "You" is 8.4 px (was 21.9; Hornet's 27.6), the outlines
+      touch. Sheet: `ring-sweep-final/owner-fix/sheets/Traitor_Lord-gap.png`.
+- [ ] Discord pending-updates: the 8 card messages (State) are undone card work; pick which to do.
 - [ ] Rules left by the 11-01 batch: seven cards count lanes as turns (Delicate Flower, The Last Cabbage Merchant, Time
       Riddle, Asteroid Field, Forget Me Now, NME Salesman, Lost Kin), and pair turns are undefined with uneven slots
-      (White Palace). Rulebook wording written from discussion, no official text: prime creature, base stats. Full list:
+      (White Palace). Wording written from discussion, no official text: prime creature, base stats. Full list:
       `impossibility-simulator-rules` Known gaps.
-- [ ] TTS, first real-game checks of the 10-30 save (all were tested only in a Lua emulator): right-click Card details
-      (in hand too; three panels; drag, A-/A+, Rules buttons, "+ Name" into the hand face down at the right size); Find
-      a card (right-click the table); Contents and search (right-click the rulebook or its bag): does Book.setPage land
-      on the right page (0-based assumed)?; hand zones following seats (alone on a side you hold them all; a teammate
-      sitting gets theirs back); turn markers (flips with F or the menu count, physics tumbles don't); the panels' build
-      about 2 s after the data loads (seated players) and 2 s after someone sits later (a short stall; others' open
-      panels are re-laid out, dragged spots reset); The Gates of Ahn'Qiraj's "+ Silithid"; whether TTS's PDF viewer
-      searches the text; any Lua error. Since 10-31: spawn buttons on up to 2 rows, long names shortened with "..." and
-      whole on hover (`tooltip`, unverified in TTS), Rules buttons wrapping; only changed UI attributes sent, in one
-      `UI.setAttributes` call per element (unverified in TTS); the first spawn without a stall (cards indexed in the
-      background); a card naming itself has its own "+ Name".
-- [ ] Website, first real use (10-30 afternoon, tested only against mocks): History "Revert to this version" on a
-      chapter, the ban list (admins) and a card (the PSD and PNGs go back to that commit's blobs); the rulebook drawn to
-      scale (zoom keeps the layout; the editor preview's text is about 10px: a preview zoom control is offered; on a
-      1400px window zooming in enlarges the page only from about 175%; 7 of 1,070 card texts have no known commit and
-      get no Revert). Also since 10-31: the preview trash button, the editor's "On the site now · File" and "These boxes
-      make" lines, cards naming themselves (Mentions, Mentioned by, links), Unused for every Auxiliary kind.
-- [ ] Rulebook, look over (10-30 evening): see-through pictures wrap text to their edges (37 traced outlines), pictures
-      hang out of their panels (solid ones stay inside), `out=` on Getting Started's Kirby (`width=30 out=62 dy=-6`);
-      Make space drops between list items and lines. Getting Started's intro text follows Kirby's outline (ragged).
-- [ ] Before a game: the Saves folder copy is a plain copy of `TTS/Impossibility Simulator.json`; re-copy it after Card
-      sync rebuilds the save (it was updated to bf67cd8e at the 11-01 wrap-up).
-- [ ] Decide: TTS-sized JPEG card copies (the save loads 839 files, 1.5 GB of 1200 px PNGs; half-size JPEGs cut it about
-      10x): 600 or 800 px wide, or not. Also the holder pictures (Creature_Deck.png 6.7 MB).
-- [ ] Try the website editor's new drags (anchor grid, Make space, blank space, snapping, undo) and report what feels
-      off; Safari never ran.
-- [ ] Photoshop: Computer Virus' stat bars; Ze'mer's full-width flower layers; Terry Hintz and Joel Miller's "Stars"
-      groups and typed tags (prepared in `~/std-work-1026/stargroups/`; Photoshop 2023 can't re-save their
-      EarthboundZero text, nor Elmadan's); Papyrus' typed tag (Photoshop's Papyrus font doesn't match the card's).
-- [ ] The Panda Future's PSD is 51.6 MB (GitHub warns past 50 MB).
-- [ ] Safari: the many-boxes edge scroll (headless checks never ran Safari).
-- [ ] Open in Photoshop once: a smart-filter star move (lane 3, S1) and a title moved back onto the card (lane 2); both
-      were checked only in psd-tools renders.
+- [ ] TTS-sized JPEG card copies (the save loads 839 files, 1.5 GB of 1200 px PNGs; half-size JPEGs cut it about 10x):
+      600 or 800 px wide, or not. Also the holder pictures (Creature_Deck.png 6.7 MB).
 - [ ] Looks chosen unattended on 10-26 (sheets in `~/Documents/Tools/wt/scratch/layouts/*/sheets/`; each is one small
       rule to change): Leshy at 4 hides its bottom-left drop and at 1 keeps it alone; banner rows tighten to 0.85 of a
-      star; die faces at 1-3; Crowned Magolor's funnel; closing a type row (the last icon fills the hole); the
-      two-row grid on adds (Masher, Spamton Neo and Defcon Panda's new icon comes out smaller); Clot Black's and
-      Minecraft Panda's card fixes.
+      star; die faces at 1-3; Crowned Magolor's funnel; closing a type row (the last icon fills the hole); the two-row
+      grid on adds (Masher, Spamton Neo and Defcon Panda's new icon comes out smaller); Clot Black's and Minecraft
+      Panda's card fixes.
+- Offered by the research rounds, not yet put to the owner: a light-theme-only `--muted: #686661` (round 3 WQ5, a look
+  change); "Should the card website show up in Google?" (round 4 wss-3: only the root and `c/` pages if yes).
+
+## Owner checks (nothing is blocked on them)
+
+- [ ] The ring badges on real cards: the website, the TTS save (1200 px PNGs) and the rulebook PDF; deep starts (more
+      than a whole ring below zero: a thinner band, lap rings inside); the one-colour version under overlays.
+- [ ] TTS, first real-game checks of the 10-30 save (tested only in a Lua emulator): right-click Card details (in hand
+      too; three panels; drag, A-/A+, Rules buttons, "+ Name" into the hand face down at the right size); Find a card;
+      the rulebook's Contents and search (does Book.setPage land on the right page, 0-based assumed?); hand zones
+      following seats; turn markers (F or the menu count; physics tumbles don't flip them); the panels' build about 2 s
+      after the data loads and after someone sits; The Gates of Ahn'Qiraj's "+ Silithid"; whether TTS's PDF viewer
+      searches the text; any Lua error. Since 10-31: spawn buttons on up to 2 rows, long names shortened with "..."
+      and whole as a `tooltip`; one `UI.setAttributes` call per element; the first spawn without a stall; a card naming
+      itself has its own "+ Name". Since 11-03: the mirrored table, brown Bricks counters, SP counters, the table map.
+- [ ] Website, first real use: History "Revert to this version" on a chapter, the ban list and a card; the rulebook (its
+      look as before 11-03, TTS pages cut from it, the editor's cut marks); the preview trash button and Trash all; the
+      editor's "On the site now · File" and "These boxes make" lines; Mentions and Unused; the round 3 and 4 changes on
+      a phone (deck builder in 3 columns, the card picker, hand links). Safari never ran (also the many-boxes edge
+      scroll).
+- [ ] Rulebook, look over: see-through pictures wrap text to their edges, pictures hang out of their panels, `out=` on
+      Getting Started's Kirby; Make space between list items and lines.
+- [ ] Try the website editor's drags (anchor grid, Make space, blank space, snapping, undo) and report what feels off.
+- [ ] Photoshop: Computer Virus' stat bars (its NO STATS FOUND stays until then); Ze'mer's full-width flower layers;
+      Terry Hintz and Joel Miller's "Stars" groups and typed tags (prepared in `~/std-work-1026/stargroups/`; Photoshop
+      2023 can't re-save their EarthboundZero text, nor Elmadan's); Papyrus' typed tag.
+- [ ] Big PSDs: GitHub warns past 50 MB (Quote.psd 69.4 MB on batch 2's push; The Panda Future 54,114,387 bytes).
+- [ ] Open in Photoshop once: a smart-filter star move (lane 3, S1) and a title moved back onto the card (lane 2); both
+      were checked only in psd-tools renders.
 - Eventually, never blockers: Photoshop standardizing (one Name and one Ability layer per card, rulebook Header/Page
-  Number layers; Mr Jawsum's name layer); the team's rulings draft; developers resetting clones after the 10-24 rewrite
-  and reinstalling stoogedings.
+  Number layers; Mr Jawsum's name layer); the team's rulings draft; developers resetting clones after the 10-24 rewrite.
 
-### Developer
+## Developer
 
+### Follow-ups from the research rounds (not done)
 
-- [ ] Delete the bot's now-dead Photoshop rule-page handling (psd_parser rule pages, psd_details/psd_parts rule cases,
-      the query and export filters, the changelog's rulebook link): no card PSD is a rule page since 10-30.
+From `~/Documents/Tools/wt/scratch/opt-round3/plan.json`, `opt-round4/plan.json` and `opt-1104/round2-plan.json`
+(their `dropped` lists say why each waited).
+
+- [ ] **Earlier fonts window** (round 3 ag3-earlier-fonts-window): the guards read the icon font's 3 earlier builds, so
+      3 font commits after the ring the pre-ring build drops out and an old save is judged against none. A real fix
+      keeps font eras: match `_drawn_earlier` by glyph name (ids shift when icons are added), normalise SVG ids, cap
+      the walk. Due before the third font commit after 0ade8c3d.
+- [ ] Font builds look the same to a card maker (name ID 5, uniqueID, fontRevision, head.modified): only the file size
+      tells a stale stoogedings (round 2 automation gap; AG3, a build id in the version name, was dropped as a separate
+      commit: put it in the next font build if wanted).
+- [ ] PNG-only duplicates (Stubborn Queen) get no guards job and aren't re-exported when the original's PSD changes
+      (round 2 automation gap; the ring rollout moved it by hand).
+- [ ] /update_stats notes hidden by a compare 422 (round 4 bot-r2-1): give the compare its own try in `notes()`.
+- [ ] The mock-up's erase memo (round 3 W1, ~25 ms on long texts, editors only): its collision with the ring
+      mockup.js work is gone (the key needs bfam; a fresh measure must set `.label`).
+- [ ] Rulebook PDF waits for its pictured cards (round 2 A12, part a only; optional: push order covers it today).
+- [ ] The card-sync.yml main-lane push retry's misleading warning (round 3 pipe2-push-retry): reword it.
+- [ ] Only if they show up: one API call per Quiet poll (pipe2-quiet-poll, if the token runs short); `MALLOC_ARENA_MAX`
+      on the jetson (bot-malloc-arenas, if memory pressure appears); 403s on the guards' reads.
+- [ ] Small website items, low priority: shared 64 px icons (web-first-load-1, ~55 KB, with other build work); the
+      rulebook chapter HTML cache in a WeakMap (W2, ~5 ms a search render); lazy versions.json and history.json in the
+      card dialog (WFL2-4 + wr3-2, ~34 + 57 KB on phones); `.cl-push{content-visibility:auto}` once the Edits tab
+      grows (wr2-changes-pager); a 3-line focus fix for the card dialog (WQ3, with a later accessibility pass);
+      `table-map.webp`'s rounded corners filled so the PDF's JPEG step saves ~2.2 MB a print (P4); the profile
+      editor's author list counts duplicates (edit.js, web4-profile-autolist); the type emojis' 3-line swap if
+      type_emojis.py is touched (bad3-2).
+- Revisit with their event: published deck buttons with the first public deck (wss-1); SEC-2's `pull_request` filter
+  (`startswith`) if PR runs ever appear.
+
+### Older items
+
 - [ ] The website's global Escape closes an open dialog even while typing in it (app.js keydown): the rulebook editor
       keeps the draft, but it is surprising.
 - [ ] Editor ideas offered, not chosen: replace a picture by dropping a file on it, Ctrl/Cmd+D duplicate, a diff before
-      Publish, a zoom control for the to-scale preview. Deck sheets for TTS: not recommended (every card edit rebuilds a sheet).
+      Publish, a zoom control for the to-scale preview. Deck sheets for TTS: not recommended.
 - [ ] Card Authors.txt still credits the 48 old rule pages (kept; card_data no longer warns about them).
 - [ ] `docs/BUGS_AND_IMPROVEMENTS.md`: live checks V1 (`/sync_emojis refresh:True`) and V4 (`/query Raw Kawk`,
-      `/query Black Clot`) are still open (Discord commands on the live bot). D6 (icon-font adoption) is ongoing.
-- [ ] `psd_parser` ABILITY_EXCLUSIONS still holds 21 names (only the guards' R3 waiver reads it); the bugs doc's §2.1
-      item 5 target is 0.
-- [ ] Idea 14's orphaned-FX validator (an "Ability FX" layer whose phrase the ability lacks, outside a bake) was never
-      built; the bake already deletes such layers when it edits a card.
-- [ ] Regenerate the problem-cards list (`docs/Future/PROBLEM_CARDS_2026-10-25b.*` predates the 10-26 lanes and fixes).
-      Deliver the CSV and its `.md`.
+      `/query Black Clot`) still open. D6 (icon-font adoption) is ongoing.
+- [ ] `psd_parser` ABILITY_EXCLUSIONS still holds 21 names (only the guards' R3 waiver reads it); target 0.
+- [ ] Idea 14's orphaned-FX validator was never built; the bake already deletes such layers when it edits a card.
+- [ ] Regenerate the problem-cards list after the whole-tree dry run (`docs/Future/PROBLEM_CARDS_2026-10-25b.*` is
+      stale). Deliver the CSV and its `.md`.
 - [ ] Stars still refused: Thunder Thighs 3, Consolation Prize, Bubble, Forsaken City and The Core (option B, shrinking
-      every star to fit the banner, is the larger fix); Forgotten Crossroads 3-6 (a black gradient) and Spiky Ball Trap
-      5-6 (a brick wall) wrongly act as the stars' backdrop; Yin Yarn 6, Paint Warrior 4-6 and Paint Bomb 7-10 are
-      refused because a new star would miss the texture clipped onto its group (a copy of the texture would bake them).
+      every star to fit the banner, is the larger fix); Forgotten Crossroads 3-6 and Spiky Ball Trap 5-6 wrongly act as
+      the stars' backdrop; Yin Yarn 6, Paint Warrior 4-6 and Paint Bomb 7-10 miss the texture clipped onto their group.
 - [ ] Types: in an edit that removes and adds at once, the added icons keep today's free spot instead of going through
-      the closing loop (a made icon landing on a kept one is refused).
-- [ ] Stat bars: Clot Gold's spare hidden HP layers are still shown at low values (E2 in
+      the closing loop.
+- [ ] Stat bars: Clot Gold's spare hidden HP layers still shown at low values (E2 in
       `~/Documents/Tools/wt/scratch/layouts/bars/DESIGN.md`).
-- [ ] Computer Virus' NO STATS FOUND reaches the data at its next re-parse (or never, once its stat bars exist).
-- [ ] Corruption and Dumplings: the font sweep left them out (a PNG bar; a Txt2 reorder).
-- [ ] Kept on purpose until their condition holds: the pyoxipng fallback (until `brew install oxipng` everywhere), the
-      older-fork checks (retire the `ac-py314-psd125` venv first), the `alt_names` field (removing it rewrites every
-      record), Card Edits.json's `aliases_moved` key (a data edit), the `inspect_pickle.py` name.
-- [ ] OJWikibot: `ojwiki_helpers.py:263-268` optional mwparserfromhell fallback; the backup search misses
-      `Backup: pending.json`.
+- [ ] Corruption and Dumplings: the 10-26 font sweep left them out (a PNG bar; a Txt2 reorder).
+- [ ] Kept on purpose until their condition holds: the pyoxipng fallback (until `brew install oxipng` everywhere; the
+      Mac still uses it), the older-fork checks (retire the `ac-py314-psd125` venv first), the `alt_names` field, Card
+      Edits.json's `aliases_moved` key, the `inspect_pickle.py` name.
 - [ ] Fork, low priority: a tracking change breaks kerning (Quick Slash, Ominous Red Circle), tracked badge ligatures,
-      Photoshop's underline box (Golden Metronome). The cards are fixed in Photoshop; re-bakes of those lines differ.
-
-- [ ] OJWikibot's wiki reads and saves again (`8ed817f`; only `meta=siteinfo` fails, worked around). Now due: O-6; read
-      All_Cards_Event once for a lone "===Permanent Rotation===" heading (remove it by hand if there); check the 2026-10-21
+      Photoshop's underline box (Golden Metronome). `cards-20261104` now scales tracking with the horizontal scale.
+- [ ] OJWikibot: `ojwiki_helpers.py:263-268` optional mwparserfromhell fallback; the backup search misses `Backup:
+      pending.json`; O-6; read All_Cards_Event once for a lone "===Permanent Rotation===" heading; check the 10-21
       mixer gap in backup/history/mixers.json against that day's wiki page.
 
 ### Waiting on events
 
 - [ ] The first live `+ability` bake: check its placement and font.
+- [ ] The first card maker push after the font: an old-font save gets the A1 note (`OLD_FONT`); a guards re-lay of a
+      Photoshop-finished card stays silent.
 
 ### Kept by ruling (no action)
 
-OJWikibot (owner 10-26): `/update`'s diverged-checkout handling (both bots) and the field-events snapshot (a use is
-planned). Cards: 42 glow and gradient FX layers; 6 outline FX layers that change colour; the clock emoji; Miracle Matter's form
-pictures and the 5 card-art inline pictures; MDW/Old Rules pages unswept.
+The 14 old rulebook PSDs in `MDW/Old Rules/Rulebook/` keep their old badges. Future Niiue's ringed line ends 2 px
+from the edge (as made). OJWikibot (owner 10-26): `/update`'s diverged-checkout handling (both bots) and the
+field-events snapshot. Cards: 42 glow and gradient FX layers; 6 outline FX layers that change colour; the clock emoji;
+Miracle Matter's form pictures and the 5 card-art inline pictures. The jetson's autocroissant.service on disk changed
+10-20 and was never daemon-reloaded (owner's call).
 
 ## Queue (`docs/Future/`)
 
 | File | What is left |
 |---|---|
-| `PROBLEM_CARDS_2026-10-25b.csv` / `.md` | The last problem-cards list (54 cards); stale, regenerate first |
+| `PROBLEM_CARDS_2026-10-25b.csv` / `.md` | The last problem-cards list (54 cards); stale, regenerate after the whole-tree dry run |
 | `PROBLEM_CARDS_2026-10-25.csv` | The 10-25 morning census |
 
 ## Not chosen
 
-Optimization questions answered no or not now: `~/Documents/Tools/wt/scratch/opt/PLAN.md` §(b) (S-5, S-6, B-4, B-5,
-P-3, P-4, P-6, K-4, K-6, O-7, O-8, O-9). Parked ideas: `docs/Finished/session-2026-10-24/README.md`.
+Answered no by the owner (11-04): 24 first-screen tiles, an opaque top bar, phone chart labels. Research items dropped
+with reasons: the `dropped` lists of `opt-round3/plan.json`, `opt-round4/plan.json` and `opt-1104/round2-plan.json`
+(the ones worth revisiting are under Follow-ups). Older: `~/Documents/Tools/wt/scratch/opt/PLAN.md` §(b) (S-5, S-6,
+B-4, B-5, P-3, P-4, P-6, K-4, K-6, O-7, O-8, O-9). Parked ideas: `docs/Finished/session-2026-10-24/README.md`.

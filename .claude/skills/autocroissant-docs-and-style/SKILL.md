@@ -390,7 +390,7 @@ neighboring fact, check this map and link instead.
 | autocroissant-analysis-toolkit | First-principles investigation recipes with worked examples |
 | autocroissant-research-frontier | The two ambitions + first steps + milestones |
 | autocroissant-research-methodology | Evidence bar, idea lifecycle, keep-it-fun clause |
-| ttscardmaker-companion (added 2026-10-19) | The TTSCardMaker side: stoogedings icon font (tokens, badges, manifest, codepoints, rebuild, renderer facts), cross-repo icon-name contracts, the card website and its Pages workflow, the TTS save (card-sync.yml's step since 2026-10-24; tts-save.yml's history, §2.6), the missing-fonts audit, Photoshop automation recipes, the PSD migration prototype |
+| ttscardmaker-companion (added 2026-10-19) | The TTSCardMaker side: stoogedings icon font (tokens, badges and their ring, manifest, codepoints, rebuild, renderer facts), a font rollout (card_sweep, the batch pushes; 2026-11-05), cross-repo icon-name contracts, the card website and its Pages workflow, the TTS save (card-sync.yml's step since 2026-10-24; tts-save.yml's history, §2.6), the missing-fonts audit, Photoshop automation recipes, the PSD migration prototype |
 | impossibility-simulator-rules (added 2026-10-20) | How the game is played: rulebook rules, timing tags, damage arithmetic, status effects, glossary, known rulebook gaps |
 | autocroissant-docs-and-style (THIS) | help.py/describe formats + sync checklist + drift audit; house code style; skill-library meta-rules; templates |
 
@@ -505,3 +505,5 @@ its ownership row in §7.3. Refresh the date stamps whenever you touch this file
 2026-10-25 (retire): /update_metadata, /mass_replace, /alias, /bake_cards and /update_tts_save retired (branch archive/discord-edits): 47 commands, help.py 182 lines; cards are edited on the website.
 
 2026-10-25 (step 10, work/pickles): help.py has no override dict (no `CARD_SYNC`); 10 compiled modules; /push removed.
+
+2026-11-05 (ring badges): §7.3's ttscardmaker-companion row owns font rollouts (card_sweep, the batch pushes: its §1.10).

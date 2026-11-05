@@ -147,6 +147,12 @@ considered "multi turn" abilities." Forced tags are "non-optional and assumed to
 time based [such as (BOGT)] effects with any (AAT) effects or facedown items" (12); nothing is stated for (OFS)/(OS)/(OD), and
 (OFS) abilities have true negation immunity (22).
 
+**The ring** (23, "Reading the ring", 2026-11-04). A cooldown badge's left end is a ring, on the cards, the website
+and in the book: a segment per turn of charge the ability needs, zero at the top; green clockwise the charge it starts
+with, red counter-clockwise a start below zero (past a whole ring, thin red rings inside, up to two), hollow the charge
+to come, dashed for X. The number in the middle is the turns until its first full charge: green when fully charged on
+the ability's first turn, red below zero, else light grey. It adds no rule; how it is drawn: ttscardmaker-companion.
+
 **Old tags.** Ch 23's OLD SYSTEM table is their only place in the rulebook, and on no card since 2026-10-21. The team
 replaced them on every card: TTSCardMaker `df02b3b6` "cooldowns (2)" (50 PSDs), `09131c67` "(3)" (49), `1b4f36a0` "(4)" (50) and
 `7cb4c867` "(5)" (29), all by Zomoroko on 2026-10-21, 178 PSDs with their PNGs (no "(1)" exists): 141 creatures, 17 items, 14
@@ -580,4 +586,4 @@ When a chapter changes: update this file (the section stating the rule, its cita
 tags.py, lines.py and mentions.py on its db/stats.json (or on the site's cards.json); refresh §3 and data-facts §4. If the ban list moves: update §2.
 
 2026-10-22: counts re-measured after the cooldown update (TTSCardMaker `73904dbd`). 2026-10-25: scripts read db/stats.json. 2026-11-01: restated from the chapters; the
-verbatim Photoshop extract and its build scripts removed (a copy would drift; they remain in git history).
+verbatim Photoshop extract and its build scripts removed (a copy would drift; they remain in git history). 2026-11-05: §3's ring paragraph (ch 23 "Reading the ring" at TTSCardMaker 0ade8c3d).

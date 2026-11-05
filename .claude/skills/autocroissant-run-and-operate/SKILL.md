@@ -133,8 +133,9 @@ The rebuild is NOT optional since the 2026-10-20 split: stale `.so` next to new 
   `~/venvs/autocroissant/bin/pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"`
   (gcc compiles `_distance`), then `~/venvs/autocroissant/bin/pip check`. A plain `pip install -r requirements.txt`
   keeps the old commit while the fork's version is unchanged (1.25.0 at every tag up to `cards-20261023d`): pip calls
-  it satisfied (checked 2026-10-23). `pip freeze | grep psd` shows the commit. Today: tag `cards-20261023` = ecc4b773,
-  installed 2026-10-23 10:36. The Actions install the same file (autocroissant-change-control, class (a)).
+  it satisfied (checked 2026-10-23). `pip freeze | grep psd` shows the commit. Today: tag `cards-20261104` = 1258fcbd,
+  installed with the deploy of 3641756 (2026-11-04). The Actions install the same file (autocroissant-change-control,
+  class (a)).
 Hand-run scripts need `SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt`; push from the box with
 `SSH_AUTH_SOCK=/run/autocroissant/ssh-agent.sock git push`. Memory: jetson-server.
 
@@ -440,10 +441,10 @@ The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes 
   below it (N px, 'layer'); check the card": `ink_beyond`, 18 of 503 cards given a line).
 - **Content flags (owner 2026-10-24 ~18:30, same branch):** "In general I do not want to refuse bakes": the editor
   previewed the edit, so a content problem bakes best-effort and is told as `<code>: <field>: <why>` in the bake report,
-  the commit line and the baked verdict's reason (the preview's notes too): text that won't fit (`overflow`: off the
-  canvas, onto the stars or icons, more title lines, under a layer above or over a stat bar, past the design below or
-  a texture clipped to it: `ink_beyond`, `ink_past_clip`), typed badges and tokens, FX layers that can't follow
-  (deleted, told), overlay word layers the chart has no style for (hidden, told), font stand-ins (`font`: a face no
+  the commit line and the baked verdict's reason (the preview's notes too): text that won't fit (`overflow`: a last line
+  below its box, where Photoshop hides it (`psd_edit.below_box`, 2026-11-04), off the canvas, onto the stars or icons,
+  more title lines, under a layer above or over a stat bar, past the design below or a texture clipped to it:
+  `ink_beyond`, `ink_past_clip`), typed badges and tokens, FX layers that can't follow (deleted, told), overlay word layers the chart has no style for (hidden, told), font stand-ins (`font`: a face no
   file holds is drawn in the fork's stand-in, `font_map`), new validator problems (`validator: new problems: ...`), and
   a stale Txt2 story (synced by `txt2_repair.sync_stories`, told). Still refused: the waits (`head-moved`,
   `edit-changed`, `blob`, `capped`; `recent` removed 2026-11-04), impossible cases (no PSD, a numbered PNG copy, a creatures list setting the
@@ -506,9 +507,11 @@ within 8 levels (`png_export.BESIDE_CUT`, owner); with no stored image, up to 30
   lands, so dispatch dry while testing in the `report` phase. An author with no GitHub account is named by the git author
   name there, never the dispatcher.
 - **Locally, read-only:** `python -m commands.card_guards check --clone <card repo clone> --after <sha> [--before <sha>]
-  --out <dir>` (any clone with the history; blobs it lacks come by API), then `land --plan <dir>/plan.json --dry-run`
-  or `--local <clone>` (commits there, pushes nothing). A bare `land` commits to TTSCardMaker with config.py's token, so it
-  refuses a plan not checked with `--mode on` (exit 2). Needs the fork's psd-tools (`~/.venvs/ac-py314-fork`).
+  --repo MichaelJSr/TTSCardMaker --out <dir>` (any clone with the history; blobs it lacks come by API; without `--repo`
+  it reads none of the icon font's earlier versions, so badge widths judge otherwise than the Action:
+  ttscardmaker-companion §1.2), then `land --plan <dir>/plan.json --dry-run` or `--local <clone>` (commits there,
+  pushes nothing). A bare `land` commits to TTSCardMaker with config.py's token, so it refuses a plan not checked with
+  `--mode on` (exit 2). Needs the fork's psd-tools (`~/.venvs/ac-py314-fork`).
 - **Re-runs:** "Re-run jobs" edits the same commit comment and never posts twice (the told mark on any guards comment;
   the lookup is tried 3 times, and a re-run that still cannot read the comments counts the push as told: neither its
   failure alert nor its post goes out, and its error says the push may be untold, so re-run again once GitHub answers).
@@ -767,7 +770,7 @@ re-find volatile facts with these before trusting them:
 | Volatile fact | Re-verify with |
 |---|---|
 | on_ready order / loop starts / startup prints | `grep -n "queue_command(\|_start(loop)\|Bot initialization complete\|Reconnected" main.py` (133-137 queued, 125/140 starts, 126, 142) |
-| Fork tag in the jetson venv | on the jetson: `~/venvs/autocroissant/bin/pip freeze \| grep psd` (`@ecc4b773...` on 2026-10-23) |
+| Fork tag in the jetson venv | on the jetson: `~/venvs/autocroissant/bin/pip freeze \| grep psd` (`@1258fcbd...` on 2026-11-05; the service up since 2026-11-04 23:34:40) |
 | Shadow state | `gh run list -R MichaelJSr/TTSCardMaker --workflow card-sync.yml --limit 5`; `gh api repos/MichaelJSr/TTSCardMaker/branches/data` (404 until the first live run) |
 | Slash-command count (46 on 2026-10-25: five Discord edit commands retired, then /push; 52 on 2026-10-21) | `grep -c "@tree.command" main.py` |
 | Members intent off, so no /list_guild_members (removed 2026-10-20, C6) | `grep -n "Intents\|list_guild_members" main.py` (Intents lines only) |
@@ -873,3 +876,6 @@ rendered anyway; no cited line moved.
 2026-10-25 (wrap-up): section 7's TTS save names each variant picture by its own PNG; the bake's census fixes bullet.
 
 2026-11-01 (chapters): the startup output's rulebook line; §11 searches a chapter.
+
+2026-11-05 (ring badges): the fork tag today (`cards-20261104` = 1258fcbd, on the jetson since 3641756; the re-verify
+row checked there by `pip freeze`), `--repo` in the guards' local check, the bake's below-the-box overflow note.

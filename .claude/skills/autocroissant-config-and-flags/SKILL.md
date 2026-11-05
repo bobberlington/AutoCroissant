@@ -457,7 +457,7 @@ and its main lane (job `main`: the bake and the TTS save on main) goes at once t
 timer; before, the environment `card-sync-quiet`'s wait timer held it 30 minutes after the first card push of a burst). /update_stats only syncs, and since
 2026-10-25 card commands sync on use (run-and-operate section 12), so no reminder is needed.
 
-### the push guards: commands/card_guards.py, card_standards.py, png_export.py (2026-10-22/23; not compiled; card-guards.yml only)
+### the push guards: commands/card_guards.py, card_standards.py, png_export.py, card_sweep.py (2026-10-22/23; card_sweep 2026-11-04; not compiled; card-guards.yml only, card_sweep by hand)
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -466,10 +466,15 @@ timer; before, the environment `card-sync-quiet`'s wait timer held it 30 minutes
 | `CHANGES_DISCORD`, `CHANGES_COMMENT` | `120`, `600` | characters of a card's changes on Discord and in the commit comment |
 | `QUIET_MARGIN` | removed 2026-11-04 (0 since 2026-11-03; 60 s before) | `land` waited card_bake's `RECENT` plus this after the push |
 | `ANCHOR_WINDOW` | 2 h | in a burst, PSD commits this close to the push may stand in for its PNG's PSD |
-| `POOL_MIN`, `POOL_MAX` | `8`, `4` | from this many cards the checks run in a process pool: every core on a GitHub runner (`GITHUB_ACTIONS`, K-2 experiment 2026-10-25; revert: drop that branch of `pool_size`), else half the cores, at most POOL_MAX (each runs git); `--workers N` overrides |
+| `POOL_MIN`, `POOL_MAX` | `8`, `4` | from this many cards the checks run in a process pool, locally; on a GitHub runner (`GITHUB_ACTIONS`) from 2 cards (`least = 2` in `check`, efc7808, 2026-11-04). The pool: every core on a runner (K-2 experiment 2026-10-25; revert: drop that branch of `pool_size`), else half the cores, at most POOL_MAX (each runs git); `--workers N` overrides |
 | `TELL_PNG_MISMATCH` | `False` | R10 and "current but outside the bar" stay off Discord |
 | `card_standards.AUTO_FIX` | `("R9",)` | what the bot fixes itself (the Txt2 story); everything else is told |
 | `card_standards.LINE_IOU` | `0.9` | R8 (the Single-line Composer, always set and never told since 2026-10-25): a box text line inked under this share of the stored one rewraps, so the layer is redrawn and the guards re-export its PNG; no longer a bar to the switch |
+| `EARLIER_FONTS` | `3` | badge widths (2026-11-04): the icon font's versions before the ref's, read once a push, only with `--repo` (ttscardmaker-companion §1.2) |
+| `OLD_FONT` | "its badges were drawn with another version of the stoogedings font: pull first, install MDW/Fonts/stoogedings.ttf over the old one, ..." | told when a layer drawn with another build of the icon font stays so (`stale_left`; owner 2026-11-04, A1) |
+| `card_standards.OLD_GLYPH_BAD`, `EARLIER_FIT`, `EARLIER_GAIN` | `0.40`, `= OLD_GLYPH_BAD`, `0.03` | an icon glyph is drawn old past this share of its ink off the current font's render, or when an earlier font's render fits it within EARLIER_FIT and better by EARLIER_GAIN (2026-11-04: the Roboto labels) |
+| `card_standards.DRAWN_ODD`, `LAID_OFF`, `RAZOR`, `EDGE_NEAR` | `0.30`, `0.15`, `0.001`, `24` px | badge widths: a moved glyph this far off that no known font draws is refused; a layer's ink its old layout may have off its pixels; breaks that change in a box this share narrower or wider hang on a hair (refused when the last line would drop below the box); ink this near a canvas edge (and nearer than before) is noted |
+| `card_sweep.WORKERS`, `EARLIER_KINDS` | `4`, `("badge widths", "old glyphs")` | the sweep's process pool at most; the kinds that read the earlier icon fonts (ttscardmaker-companion §1.10) |
 | `png_export.TOL` | `2` | the difference a pixel may show and still be unchanged (ICC rounding) |
 | `png_export.BESIDE_CUT` | `8` | a new PSD pushed beside its PNG counts as current within this many levels (owner, 2026-10-23) |
 | `png_export.UNCHECKED` | "no stored image to cross-check the bot's PNG against: save the PSD with Maximize Compatibility on" | told for a PNG the guards made from a PSD with no stored composite (G2 rendered anyway, owner 2026-10-24, branch work/py314) |
@@ -701,7 +706,7 @@ table with its command before quoting it in the future.
 | global_config env overrides (two: LOCAL_DIR_LOC, HISTORY_CLONE) | `grep -n "environ.get" global_config.py`; `grep -rn "AUTOCROISSANT_" --include="*.py" commands/ global_config.py` (global_config.py only) |
 | Module environment reads | `grep -rn "environ.get" --include="*.py" commands/` (FONT_DIRS_ENV, WORK_ENV = RUNNER_TEMP, GITHUB_TOKEN, BUILDER_SHA, DISCORD_ARCHIVE, DISCORD_MATCH_REPO, SSH_AUTH_SOCK) |
 | ACTIONS_TOKEN and the card_sync knobs | `sed -n '38,56p' commands/card_sync.py` |
-| Push-guard, parity and bake knobs | `grep -n "^MODES\|^LINE\|^CHANGES_\|^ANCHOR_WINDOW\|^POOL_\|^TELL_PNG" commands/card_guards.py`; `grep -n "^AUTO_FIX" commands/card_standards.py`; `grep -n "^TOL\|^BESIDE_CUT" commands/png_export.py`; `grep -n "^PARITY_\|^ADD_ABILITY_LIVE\|^DIRTY_VERIFY" commands/psd_edit.py`; `grep -n "^MAX_BAKES\|^BUDGET" commands/card_bake.py` |
+| Push-guard, parity and bake knobs | `grep -n "^MODES\|^LINE\|^CHANGES_\|^ANCHOR_WINDOW\|^POOL_\|^TELL_PNG\|^EARLIER_FONTS\|^OLD_FONT" commands/card_guards.py`; `grep -n "^AUTO_FIX\|^OLD_GLYPH_BAD\|^EARLIER_\|^DRAWN_ODD\|^LAID_OFF\|^RAZOR\|^EDGE_NEAR" commands/card_standards.py`; `grep -n "^WORKERS\|^EARLIER_KINDS" commands/card_sweep.py`; `grep -n "^TOL\|^BESIDE_CUT" commands/png_export.py`; `grep -n "^PARITY_\|^ADD_ABILITY_LIVE\|^DIRTY_VERIFY" commands/psd_edit.py`; `grep -n "^MAX_BAKES\|^BUDGET" commands/card_bake.py` |
 | Setters never write config.py | `sed -n '954,997p' commands/query_card.py`; confirm zero `open(`/`write` there |
 | update_stats defaults (force_update False both places; use_local_repo / use_local_timestamp removed 2026-10-20) | `grep -n "force_update: \|use_local" main.py commands/card_sync.py commands/card_data.py` (no use_local hits; every force_update default is False) |
 | Icon-font constants | `grep -n "^ICON_" commands/psd_parser.py global_config.py` |
@@ -776,3 +781,4 @@ marker), the `card-guards-quiet` environment among the repo settings, `png_expor
 2026-10-25 (wrap-up): `PARSER_VERSION` is 4 (3: a PSD's pictures, d6d2f5e; 4: the census fixes, 1b17aba); card_data.py citations re-pointed.
 2026-10-25 (wrap-up review): `ADD_ABILITY_LIVE` and env `PSD_DIRTY_VERIFY` in the psd_edit table.
 2026-10-26 (stars lane): `STAR_CORE_ALPHA` 129/255.
+2026-11-05 (ring badges): the badge widths and old-font constants (card_guards `EARLIER_FONTS`, `OLD_FONT`; card_standards `OLD_GLYPH_BAD`, `EARLIER_FIT`, `EARLIER_GAIN`, `DRAWN_ODD`, `LAID_OFF`, `RAZOR`, `EDGE_NEAR`) and card_sweep's `WORKERS`, `EARLIER_KINDS` in the push guards table (card_sweep.py in its heading), at AutoCroissant 3641756; `POOL_MIN`'s runner threshold of 2 (efc7808); the fork pin is `cards-20261104` (1258fcbd).

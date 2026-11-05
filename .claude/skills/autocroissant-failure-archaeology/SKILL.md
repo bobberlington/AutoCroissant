@@ -1,6 +1,6 @@
 ---
 name: autocroissant-failure-archaeology
-description: "The chronicle of every major AutoCroissant investigation, dead end, rejected fix, and revert — so nobody re-fights a settled battle. Load this whenever a task or question sounds like \"why is this code like this\", \"has this been tried before\", \"who broke/fixed X\", \"when did X change\", \"revert\", \"regression\", \"history\", \"post-mortem\", \"why was X removed/deleted\", or names any of: the removeprefix / UNKNOWN-type local-mode bug (fixed 2026-10-19 with relpath), the 2026-10-19 fix batch (scheduled /update_stats pinned remote, temp-PSD leak, .DS_Store type, force_update default, management.py Cython 3.3 compile error, reminder True→False parser, reminders running as the bot), whitespace collapsing in ability text, the old_stats.pkl balloon / duplicate archiving, the reverted PICKLE, TYPE/WHITESPACE MISMATCH, \"am forehead\", the Big massive refactor (366c8d9), cythonization (f7c915c), Text_Export.jsx, convert_nf4_flux.py, aliases.py, descriptions.pkl, metadata.pkl, requirements-linux. Every entry gives Symptom → Root cause → Evidence (commit hashes and diffs) → Status. Also load it BEFORE re-proposing an old idea or asking why odd-looking historical code exists (the act of cleaning it up is gated by autocroissant-change-control). Live-symptom triage belongs to autocroissant-debugging-playbook; making a new fix belongs to autocroissant-change-control / autocroissant-psd-extraction-campaign."
+description: "The chronicle of every major AutoCroissant investigation, dead end, rejected fix, and revert — so nobody re-fights a settled battle. Load this whenever a task or question sounds like \"why is this code like this\", \"has this been tried before\", \"who broke/fixed X\", \"when did X change\", \"revert\", \"regression\", \"history\", \"post-mortem\", \"why was X removed/deleted\", or names any of: the removeprefix / UNKNOWN-type local-mode bug (fixed 2026-10-19 with relpath), the 2026-10-19 fix batch (scheduled /update_stats pinned remote, temp-PSD leak, .DS_Store type, force_update default, management.py Cython 3.3 compile error, reminder True→False parser, reminders running as the bot), whitespace collapsing in ability text, the old_stats.pkl balloon / duplicate archiving, the reverted PICKLE, TYPE/WHITESPACE MISMATCH, \"am forehead\", the Big massive refactor (366c8d9), cythonization (f7c915c), Text_Export.jsx, convert_nf4_flux.py, aliases.py, descriptions.pkl, metadata.pkl, requirements-linux, the cooldown ring rollout (why no glow, why Roboto Black, the dropped owner pick, write-tree --missing-ok). Every entry gives Symptom → Root cause → Evidence (commit hashes and diffs) → Status. Also load it BEFORE re-proposing an old idea or asking why odd-looking historical code exists (the act of cleaning it up is gated by autocroissant-change-control). Live-symptom triage belongs to autocroissant-debugging-playbook; making a new fix belongs to autocroissant-change-control / autocroissant-psd-extraction-campaign."
 ---
 
 # AutoCroissant Failure Archaeology
@@ -29,7 +29,7 @@ Read-only git commands (`git log`, `git show`, `git diff`) are always safe here.
 | 7 | Dead ends & deleted artifacts | each closed, see table |
 | 8 | Smaller settled battles | each fixed, see subsections |
 | 9 | Lore corrections (wrong attributions refuted by diffs) | reference |
-| 10 | The 2026-10-19/20 fix batch (B2, C7, C8, C9, C11, Cython 3.3, reminder parser and privileges, .gitignore; B6 mitigated, then retired by archiving local mode; C13(a) fixed; C10 and other dead helpers deleted; blob-sha updates; AI moved off main; sha links, emoji sync in /update_stats, TTS save (10.17-10.19); C12 (10.26); optimization pass: C1-C3, B4, B5, C6, B7, C5 (10.20-10.25), psd_analyzer split (10.27), network/speed (10.28); 2026-10-21: B10 atomic locked pickle saves (10.29), the 0.1 s queue tick and grouped /query_ability output (10.30; the grouping reverted 2026-10-23)) | committed 2026-10-20: 53db8ee (10.1-10.13), bacab06 + 9fb3093 (10.15), 05c643e (10.16), e13d754 (10.17-10.18), bad0496 + ce94585 + c4caaf9 (10.19), df01761 (10.26) |
+| 10 | The 2026-10-19/20 fix batch (B2, C7, C8, C9, C11, Cython 3.3, reminder parser and privileges, .gitignore; B6 mitigated, then retired by archiving local mode; C13(a) fixed; C10 and other dead helpers deleted; blob-sha updates; AI moved off main; sha links, emoji sync in /update_stats, TTS save (10.17-10.19); C12 (10.26); optimization pass: C1-C3, B4, B5, C6, B7, C5 (10.20-10.25), psd_analyzer split (10.27), network/speed (10.28); 2026-10-21: B10 atomic locked pickle saves (10.29), the 0.1 s queue tick and grouped /query_ability output (10.30; the grouping reverted 2026-10-23); 2026-11-04/05: the ring badge rollout's lessons (10.35)) | committed 2026-10-20: 53db8ee (10.1-10.13), bacab06 + 9fb3093 (10.15), 05c643e (10.16), e13d754 (10.17-10.18), bad0496 + ce94585 + c4caaf9 (10.19), df01761 (10.26) |
 
 ---
 
@@ -872,6 +872,38 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   keeps its trailing blank, Frostmourne's off-canvas line fitted at 88%.
 - **Status**: built 2026-10-25 on work/bakebugs.
 
+### 10.35 The ring badge rollout: lessons (2026-11-04/05)
+
+- **Symptom**: (a) a review workflow of the ring design dropped an owner pick (the thin outer arcs for starts more than
+  a lap below zero) without asking; (b) `git write-tree` in the batch replay stops on the partial clone; (c) array loops
+  written for bash went wrong in the Mac's zsh; (d) batch 1's push took 22 minutes; (e) a local
+  `card_guards check` judged badge widths otherwise than the Action; (f) Koro-Sensei's re-lay was refused: the fork
+  broke its lines unlike Photoshop.
+- **Root cause**: (a) the review weighed the pick as one option among its own; (b) the index read from origin/main
+  holds blobs only the remote has (Card sync's commits), and write-tree checks every object; (c) zsh arrays start at
+  1, bash's at 0; (d) pushes are upload-bound (1.2-1.3 GB a batch); (e) `check` reads the icon font's earlier
+  versions only with `--repo` (`if jobs and repository`); (f) Photoshop on the dev Mac drew it with Apple's Futura,
+  wider than MDW/Fonts' Futura-Bold, until MDW's was installed.
+- **Evidence**: (a) owner ruling 2026-11-04 evening: the arcs replaced by a thinner band with up to 2 inner lap rings
+  (`RING_DEEP_IN`, `RING_LAPS`, TC 0ade8c3d); (b) `~/Documents/Tools/wt/scratch/ring-sweep-final/reparent.py`
+  (`write-tree --missing-ok`); (c) its `batch_push.sh` and `chain.sh` are bash; (d) `go/b1/`: the check done 23:43,
+  the push of 1.23 GB (1,228,532,202 bytes) done 00:05; batches 2 and 3 (1.27 GB each) about 6 minutes each
+  (`go/b2/`, `go/b3/`: push.log 00:18-00:24, 00:36-00:42); (e) commands/card_guards.py `check`; goday-r1-1 in the
+  round-4 plan (`opt-round4/plan.json` `go_day`; `opt-1104/round2-plan.json`'s `batch_procedure` cites it); (f) `scratch/futura-research/`, `ring-sweep-final/owner-cards.md`; Koro-Sensei
+  landed in batch 7 (TC e43b7f3c) once MDW's Futura-Bold was installed (with it: Lucida Grande Bold, Rockwell Bold,
+  Elephant Italic, Myriad Arabic and Roboto Black).
+- **Design reversals the same days** (owner): the ring beside the pill (website only, TC 675e4bda, about 1.3 em)
+  became design B, the ring as the pill's round left end (0ade8c3d); the ring's soft green glow when ready went
+  (card strokes and shadows traced it into a lump; no cue replaces it), and its number is green only when ready, red
+  below zero, else light grey (it read like a cost coin); Changa One labels became Roboto
+  Black; the trigger orange stayed as it was (a darker `#cc7614` was tried and dropped before the font landed: this
+  library's 498cbb5, back in 57604ea).
+- **Status**: rules since: an owner pick is never dropped without asking; plumbing on the partial clone uses
+  `--missing-ok`; array loops run under bash (`bash -c` from zsh); plan 6-22 minutes per 1.2-1.3 GB pushed (batch 1
+  22, batches 2 and 3 about 6); a local guards check always passes `--repo MichaelJSr/TTSCardMaker`. The guards render
+  with `PSD_TOOLS_FONT_DIRS` = MDW/Fonts, so they need no installed fonts; Photoshop fixes on this Mac need MDW's faces
+  installed (Koro-Sensei). Procedure: ttscardmaker-companion §1.10.
+
 ## How to add an entry
 
 Use this template (the evidence bar — one mechanism must explain ALL observations including negatives, numbers predicted before measured — is owned by autocroissant-research-methodology; retired ideas from the idea lifecycle land here too):
@@ -944,3 +976,6 @@ Written 2026-07-11 against HEAD = 284d13c ("PICKLE", 2026-06-20). Extended 2026-
 
 2026-10-25 (grid): entry 10.30: /query_ability grids.
 2026-10-25 (docs lane): current-code citations re-pointed at 6a87179 (psd_parser.py, card_data.py, setup.py, utils.py, analytics.py, query_card.py, main.py); code removed that day (repo_traverser.py, the pickle saves, the `__module__` pin, `RETIRED_OPTIONS`) marked so in Entries 10, 10.12, 10.27, 10.29 and the re-verify rows.
+
+2026-11-05 (ring badges): Entry 10.35 (the ring rollout's lessons and design reversals), against AutoCroissant 3641756, TTSCardMaker 0ade8c3d to e43b7f3c and the scratch folders it names; the push times
+from `ring-sweep-final/go/b1/`-`b3/`.

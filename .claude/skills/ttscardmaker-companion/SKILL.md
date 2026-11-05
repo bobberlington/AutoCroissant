@@ -1,6 +1,6 @@
 ---
 name: ttscardmaker-companion
-description: "Load for anything on the TTSCardMaker side (the card-art repo at ~/Desktop/TTSCardMaker) that AutoCroissant depends on. Trigger words include stoogedings, icon font, \"[fire]\" tokens, [x:tint], [x:sticker], [x:no], [x:glow], [x:darkglow], glow halo, ★ star glyph, Private Use Area / PUA codepoints (U+E000…), stoogedings.json manifest, build_stoogedings.py, rebuild the font, add/rename an icon in Types/ or Types/Stars/, timing tags and badges such as (1CD), (1GCD), (1/2CD), (2U), (OYT), (Action), the old (1PGT) / (E2T), badge size, type emojis, application emojis, the _no crossed-out emojis, /sync_emojis naming, the website, card browser, site/, build_site.py, site.yml, GitHub Pages, deck builder, Tabletop Simulator export, card-preview.yml / website card previews / the previews branch, the token picker (tokens.js, typing \"[\" or \"(\" in card text), variant pictures, the TTS save (card-sync.yml's step since 2026-10-24; tts-save.yml until then: TTS/decks.json, its daily gate, the save's Lua and teams, the TTS/checks suite, AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE), share links /c/<slug>/, Open Graph previews, \"the website is stale\", missing fonts, font audit, \"Photoshop says fonts are missing\", Photoshop scripting, JSX, ExtendScript, ActionManager, migrating PSDs from image-layer icons to tokens, status-effect word effects (glow/stroke on \"Blazing\"), overlay text layers, effect layers \"Ability FX: …\", Effect Layers.jsx, Effect Layers - All Cards.jsx, Single-line vs Every-line Composer reflow, and the MDW folder's .asl/.aco/templates. Contains the font's token/badge grammar, manifest, codepoints and rebuild checklist, a cross-repo rename-an-icon table, the website's data flow and Pages setup, the missing-fonts audit, Photoshop recipes and the PSD migration status."
+description: "Load for anything on the TTSCardMaker side (the card-art repo at ~/Desktop/TTSCardMaker) that AutoCroissant depends on. Trigger words include stoogedings, icon font, \"[fire]\" tokens, [x:tint], [x:sticker], [x:no], [x:glow], [x:darkglow], glow halo, ★ star glyph, Private Use Area / PUA codepoints (U+E000…), stoogedings.json manifest, build_stoogedings.py, rebuild the font, add/rename an icon in Types/ or Types/Stars/, timing tags and badges such as (1CD), (1GCD), (1/2CD), (2U), (OYT), (Action), the old (1PGT) / (E2T), badge size, the cooldown ring, Roboto Black badge labels, badge_web_font.py, badge widths, the old-font note, card_sweep, a font rollout's batch pushes, type emojis, application emojis, the _no crossed-out emojis, /sync_emojis naming, the website, card browser, site/, build_site.py, site.yml, GitHub Pages, deck builder, Tabletop Simulator export, card-preview.yml / website card previews / the previews branch, the token picker (tokens.js, typing \"[\" or \"(\" in card text), variant pictures, the TTS save (card-sync.yml's step since 2026-10-24; tts-save.yml until then: TTS/decks.json, its daily gate, the save's Lua and teams, the TTS/checks suite, AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE), share links /c/<slug>/, Open Graph previews, \"the website is stale\", missing fonts, font audit, \"Photoshop says fonts are missing\", Photoshop scripting, JSX, ExtendScript, ActionManager, migrating PSDs from image-layer icons to tokens, status-effect word effects (glow/stroke on \"Blazing\"), overlay text layers, effect layers \"Ability FX: …\", Effect Layers.jsx, Effect Layers - All Cards.jsx, Single-line vs Every-line Composer reflow, and the MDW folder's .asl/.aco/templates. Contains the font's token/badge grammar, manifest, codepoints and rebuild checklist, the card sweep and batch pushes of a font rollout, a cross-repo rename-an-icon table, the website's data flow and Pages setup, the missing-fonts audit, Photoshop recipes and the PSD migration status."
 ---
 
 # TTSCardMaker companion: icon font, card website, fonts, Photoshop automation
@@ -25,10 +25,10 @@ by **impossibility-cards-reference §4.1**. This skill only summarizes it.
 
 | Thing | Path (TTSCardMaker unless noted) | Generated or source |
 |---|---|---|
-| The font | `MDW/Fonts/stoogedings.ttf` (5,721,356 bytes since 8ec1b92, 2026-10-21; 5,136,060 before; 5,736,204 with any-case badges; 6,966,396 with `:glow` (0.3 em halos) on branch work/glow-tokens, §1.8; 7,269,696 with the `salt` shapes, §1.9. PostScript name `stoogedings-Regular`, family `stoogedings`) | Generated, but committed |
+| The font | `MDW/Fonts/stoogedings.ttf` (5,721,356 bytes since 8ec1b92, 2026-10-21; 5,136,060 before; 5,736,204 with any-case badges; 6,966,396 with `:glow` (0.3 em halos) on branch work/glow-tokens, §1.8; 7,269,696 with the `salt` shapes, §1.9; 11,372,244 with the cost badges, 2026-11-03; 17,416,116 with the ring badges and Roboto Black labels, TC 0ade8c3d, 2026-11-04, §1.2. PostScript name `stoogedings-Regular`, family `stoogedings`) | Generated, but committed |
 | Build script | `MDW/Fonts/stoogedings-src/build_stoogedings.py` | Source |
 | Manifest | `MDW/Fonts/stoogedings-src/stoogedings.json` (icon names, aliases, codepoints, tint modes) | Rewritten by every build. Hand edits survive |
-| Build deps | `MDW/Fonts/stoogedings-src/requirements.txt` (fonttools, opencv-python-headless, numpy, pillow) | Source |
+| Build deps | `MDW/Fonts/stoogedings-src/requirements.txt` (fonttools, skia-pathops, opencv-python-headless, numpy, pillow, brotli; skia-pathops and brotli since 2026-11-04: label overlaps removed, the web font's woff2) | Source |
 | Build venv | `MDW/Fonts/stoogedings-src/.venv/` (gitignored by `stoogedings-src/.gitignore`) | Local only |
 | Icon sources | `Types/*.png` (35 "type" icons), `Types/Stars/*.png` (56 "star" icons) | Source art |
 | Letter / badge fonts the build embeds | `MDW/Fonts/Bree Serif Regular.ttf` (OFL letters), `MDW/Fonts/Roboto Black.ttf` (badge labels, numbers and the ring's number, at Changa One's old capital height; Roboto 3.015 at weight 900, OFL in `MDW/Fonts/OFL-Roboto.txt`; Changa One until 2026-11-04). `LABEL_METRICS` re-spaces its tabular 1 and its word space. The website sets badges in its subset `site/rulebook/fonts/roboto-black.woff2`, written by `stoogedings-src/badge_web_font.py` (the same metrics; it also prints text.js `RING_DIGITS`) | Inputs |
@@ -43,7 +43,7 @@ by **impossibility-cards-reference §4.1**. This skill only summarizes it.
 | The psd-tools fork in three workflows | `card-guards.yml` (its check and post jobs; the card and font checks run in its check job since 2026-10-25; card-edits.yml too until it was deleted at the cutover, 2026-10-24), `card-sync.yml` (one venv; until 2026-10-24 the builder's 3.14 and the baker's 3.12), `card-preview.yml` (and card-check.yml and font-check.yml from 2026-10-24 until they were folded into the guards on 2026-10-25), one local composite action `.github/actions/cards-python` for the setup since 2026-10-25, all on Python 3.14 like every Action: since 2026-10-23 they install AutoCroissant `requirements-cards.txt` (the one pin: the fork's tag is only there; fonttools, requests; the shared setup also downloads the oxipng 10.2.1 CLI by its pinned sha256, but not for card-preview.yml, whose PNG is never published; pyoxipng until 2026-10-25), checked out of the bot repo in each one's sparse list; no pin of their own (TTSCardMaker d3b744c7 had env `PSD_TOOLS_REF`). The packages install offline from wheels in the Actions cache (`~/.cache/card-wheels`, key `card-wheels-<requirement lines' sha256>-<OS>-<arch>-py<3.14>` since 2026-11-04 (`cards-...-py<3.14.x>` before; the venv `card-venv-...-py<3.14.x>`), one entry for the six since 2026-10-24; card-sync's named both its Pythons before), built by `pip wheel -r` only on a miss and saved once they installed; the install goes by name (`sed 's/ @ [^;]*//'`: pip builds a URL line from git again, offline or not), so a re-pin in AutoCroissant refreshes every entry. The install was 29-35 s a run on 2026-10-23 (the git clone and the C build ~25 s of it); a hit skips both. The two repos' changes land together. Re-pin: autocroissant-config-and-flags; shape test: AutoCroissant `tests/test_card_bake.py` `fork_install` | Source |
 | Card guards workflow | `.github/workflows/card-guards.yml` (landed 2026-10-23 in TTSCardMaker a7d1fe56; the repo variable `CARD_GUARDS` is `report` since 2026-10-23 13:04 after a full dry run (812 cards, 16 told, 0 errors), `on` after ~3 days (owner); unset or off = the guards' steps skip, the card and font checks still run): on a push changing a PSD or PNG, a PSD pushed without its PNG gets the PNG the bake would make (owner's ruling 2026-10-22: the fork at `cards-20261023` renders the changed layers in the card's ICC export mode, merged into the old PNG; Photoshop's stored composite only cross-checks and never is the PNG; a refusal is told "PNG not made: ...; export it in Photoshop"; since the owner's ruling of 2026-10-23 the fork's drawing refuses only past 25% bad (a card drawn whole, new or beside its PNG, per text and stat box, and a missed box drawn blank refuses too), a smaller miss is made and told in the comment and the bot commit; 29 of the 34 replayed commits get their PNG, the rest refuse on stale old PNGs and type rasters Photoshop redrew), and the pushed PSDs are checked against the card standards (fonts, R7, dropped 2026-10-24: font-check.yml's alone; a PSD with no stored image is rendered anyway and told "no stored image to cross-check", branch work/py314) (Txt2 sync fixed, the owner's one easy fix; the rest reported, exact layer names too until the owner says yes; R3 and R4 without their template layout, dropped by the owner on 2026-10-23: several visible Ability layers, a hidden one with words the parser reads nowhere, a hidden or rasterized Name layer; kept unattended, for the owner to confirm; the parser's `ABILITY_EXCLUSIONS` cards, Shadow_Duelist, are waived); one Discord post per push to the standards channel (`DISCORD_STANDARDS_WEBHOOK`, no role ping, no previews), a commit comment, writes landed in one bot commit after 30 quiet minutes (since 2026-10-24, branch work/py314: a post job waiting in the environment `card-guards-quiet`'s 30-minute timer, no runner sleeping; three jobs: check, post, finish; since 2026-10-25 the Single-line Composer (R8) is always set, unsaid, box text that rewraps redrawn and its PNG re-exported, and a landing's Follow up starts only `card-sync.yml -f bake=pending`, whose data commit builds the site; since P-2 (2026-10-25, branch work/mainlane) a push with fixes to land marks its check job "Fixes to land", that push's Card sync main lane skips itself and Follow up starts Card sync landed or not). AutoCroissant `commands/card_guards.py`, `png_export.py`, `card_standards.py`; sparse list `card_guards.SPARSE_FILES`; AutoCroissant `docs/Campaigns/PUSH_GUARDS.md` | Source |
 | Card preview workflow | `.github/workflows/card-preview.yml` (2026-10-23, landed in TTSCardMaker 2150d0ed and AutoCroissant 8983719: dispatch only, inputs `card`, `edit`, `request`): one card's website edit baked as the bake would (AutoCroissant `commands/card_preview.py`, `card_bake.bake_card`, in a read-only job), nothing written to main; a second job (`commands/card_preview_branch.py`, standard library, the only one that writes) puts the result on the orphan branch `previews` (`previews/<request>/result.json`, `preview.webp`, `before.webp`, `index.json`), rewritten past 200 previews or 7 days; no secret beyond GITHUB_TOKEN, no Discord; public like the repo; the website's contract is §2.7 | Source |
-| Installed copy of the font on the dev Mac | `~/Library/Fonts/stoogedings.ttf` (identical to the repo build on 2026-10-19) | Install |
+| Installed copy of the font on the dev Mac | `~/Library/Fonts/stoogedings.ttf` (identical to the repo build: on 2026-10-19, and to TC 0ade8c3d's on 2026-11-05; keep it so, owner 2026-11-04) | Install |
 | Bot code that depends on the font | AutoCroissant `commands/psd_parser.py` (`ICON_FONT_PREFIX`, `IconVocabulary`), `global_config.py` (`ICON_MANIFEST_PATH`), `commands/type_emojis.py` | See §1.7 |
 | Card authors file | `site/Card Authors.txt` (in `MDW/` until 2026-10-20, like `Card Edits.json`, `Website Admins.txt` and `Constructed Ban List.txt`; moved by 13ac680, read from `site/` by the build and the bot): `[people]` git name = display name, `[cards]` Card = person; one person's several git names are merged first by the root `.mailmap` (2026-10-23: Michael -> MichaelJSr, its old `[people]` line gone; build_site reads `%aN`/`%aE`, the bot `%aN` with head's .mailmap blob). The bot (every `/update_stats`) and the website build both apply it; it wins over the database. Seeded 2026-10-20 from stats.pkl | Source, committed (3ef3776) |
 | Effect-layer scripts | `MDW/Scripts/Effect Layers.jsx` (one card: Add / Update all / Convert overlays), `MDW/Scripts/Effect Layers - All Cards.jsx` (every card) | Source, committed (54278c1, last changed c3e9f66) (§6) |
@@ -65,7 +65,7 @@ Set the text in the **stoogedings** font in Photoshop. These ASCII sequences tur
 | `[fire:glow]`, `[fire:darkglow]` (branch work/glow-tokens, §1.8) | The color icon on a soft white or black halo, 0.3 em wide | `[fire]` |
 | `★` (U+2605) | The gold `star` icon | `[star]` |
 | A PUA character (U+E000–U+E05A) inserted from the Glyphs panel | That icon | `[name]` |
-| `(1GCD)`, `(1/2CD)`, `(OYT)`, `(Action)` and the other tags (1139 since 2026-11-03, §1.2), in any letter case | A colored pill badge, the tag's own one (`(1gcd)` draws (1GCD)). The text is still what was typed | The text, unchanged (`(1gcd)` stays `(1gcd)`) |
+| `(1GCD)`, `(1/2CD)`, `(OYT)`, `(Action)` and the other tags (1139 since 2026-11-03, §1.2), in any letter case | A colored pill badge, the tag's own one (`(1gcd)` draws (1GCD)); a cooldown's left end is its charge ring (2026-11-04, §1.2). The text is still what was typed | The text, unchanged (`(1gcd)` stays `(1gcd)`) |
 | A badge or `[fire:sticker]` with **Stylistic Alternates** on (Character panel, OpenType; §1.9) | One colour, in the text color: a pill outline with solid letters; a thin outline round the `:tint` icon | Unchanged |
 
 Matching rules inside the font (build_stoogedings.py `spellings()` and the MARK lookup):
@@ -194,18 +194,18 @@ keep their glyph ids, the new glyphs (and the costs') come after every older one
 reads 2-8 characters.
 
 **Cost badges (owner 2026-11-03, in the font):** `cost_badges()`: `(2 points)` a green coin with the number on it and
-"Points" in a dark green pill, `(2 bricks)` a red brick and "Bricks", `(2 SP)` and `(2 star points)` a yellow star
-and "SP" in navy; `(4 souls)`, `(3 counters)` (a card's own currency) a teal text pill. The colours are the TTS
-save's counters (`COIN` #00ffae Points, `BRICK` #ff0000 Bricks, `STAR` #ffff00 Star Points). Numbers 0-50, halves
-0.5-9.5 and X, one ASCII space, singular or plural, any case (the label is singular for 1): 310 glyphs, 682
-spellings (psd_edit `COST_TAGS`). A cost right after a letter, digit or "." is a multiplier ("Deal 2(x counters)"):
-the GLUED lookup swaps its "(" for `parenleft.glued` (same outline), so no badge forms; text.js `COST` has the
-same lookbehind, psd_edit `badge_spans` too. SVG: fills only, strokes on rects alone (the fork's SVG renderer, which
-draws the PNGs, refuses other strokes; every badge passes `SvgTable.drawing`). Font 11,371,432 bytes (was
-7,269,696), 4031 glyphs; old glyph ids, old texts' shaping and the 341's glyphs unchanged (HarfBuzz proof
-2026-11-03, `~/Documents/Tools/wt/scratch/badges-1103/proof.py`). The site draws the same badges (style.css
-`.badge.cost`, the P4/B6 look the owner picked) and the mock-up (mockup.js `COST_ICON`); the Text / Coins switch is
-gone. The rulebook's ch 23 has a Costs table.
+"Points" in a dark green pill, `(2 bricks)` a brown brick and "Bricks" (red until the owner's later 2026-11-03
+ruling), `(2 SP)` and `(2 star points)` a yellow star and "SP" in navy; `(4 souls)`, `(3 counters)` (a card's own
+currency) a teal text pill. The colours are the TTS save's counters (`COIN` #00ffae Points, `BRICK` #a0522d Bricks,
+`STAR` #ffff00 Star Points). Numbers 0-50, halves 0.5-9.5 and X, one ASCII space, singular or plural, any case (the
+label is singular for 1): 310 glyphs, 682 spellings (psd_edit `COST_TAGS`). A cost right after a letter, digit or "."
+is a multiplier ("Deal 2(x counters)"): the GLUED lookup swaps its "(" for `parenleft.glued` (same outline), so no
+badge forms; text.js `COST` has the same lookbehind, psd_edit `badge_spans` too. SVG: fills only, strokes on rects
+alone (the fork's SVG renderer, which draws the PNGs, refuses other strokes; every badge passes `SvgTable.drawing`).
+Font 11,371,432 bytes (was 7,269,696), 4031 glyphs; old glyph ids, old texts' shaping and the 341's glyphs unchanged
+(HarfBuzz proof 2026-11-03, `~/Documents/Tools/wt/scratch/badges-1103/proof.py`). The site draws the same badges
+(style.css `.badge.cost`, the P4/B6 look the owner picked) and the mock-up (mockup.js `COST_ICON`); the Text / Coins
+switch is gone. The rulebook's ch 23 has a Costs table.
 
 Plain tags on cards (R1, 2026-11-03): four live cards typed a tag in their body font (Elmadan, Terry Hintz, Joel
 Miller: `(Action)` in Apple-Kid; Papyrus: `(1CD)` in ParchmentMF), swept in TC a8ec8a1b. The pixel fix `tags`
@@ -214,7 +214,33 @@ by glyph, in Stylistic Alternates under an overlay (Morpho Knight); `--whole` sw
 guards run it on every push (owner 2026-11-03), and R1 is told only when that fix doesn't land
 (`card_guards._fix_stands`). The cost sweep of 2026-11-03 set 62 cards; WX-78, Wendy and Nefarious Chip are left to
 Photoshop (see the batch commit).
-Badge widths (2026-11-04: the cooldown ring makes every cooldown badge wider): the pixel fix `badge widths` (`card_standards.relay_badges`, first of the pixel fixes: `apostrophes` and `old glyphs` lay out at the current widths) re-lays a layer whose pixels show its icon font glyphs at other advances (Photoshop's, from the Txt2 view's glyph strikes; also the icon font's 3 earlier versions from the ref's history, `card_guards.earlier_fonts`, which the guards read once a push, best effort, and a sweep reads too), a glyph counting as drawn old when it is off the current font's render past `OLD_GLYPH_BAD` or (2026-11-04, the Roboto labels: a badge whose letters alone changed) an earlier font's own render fits it (`_drawn_earlier`: within `EARLIER_FIT`, now `OLD_GLYPH_BAD`, better by `EARLIER_GAIN` 0.03: Soul Master's (OD), main's font 0.136 against 0.186), by glyph, rewrapped in its box; refused when a moved badge fits no known font (`DRAWN_ODD` 0.30), on overflow (an empty last line never counts), ink taken nearer a canvas edge than its outline (`psd_edit._stroke_reach`; each side on its own), a new line of badges alone (`_badges_only`: badge spans, not any bracket), tracking under a horizontal scale (the fork spaces it unscaled, Photoshop scaled: Wigfrid, Wendy, WX-78) or a line that fits by a hair and would drop the last line below the box (`_razor`, `RAZOR` 0.1%); noted when breaks hang on a hair, a line gains or holds one word, a new break cuts a count (`COUNT_END`, signed too), a coloured term or a card's name (`fonts.cards`: Context.cards), or ink comes within `EDGE_NEAR` and nearer on a side (with its outline's and glow's distance); the guards run it on every push. `old glyphs` refuses a glyph whose advance moved (never a half-ringed splice).
+Badge widths (2026-11-04: the cooldown ring makes every cooldown badge wider): the pixel fix `badge widths`
+(`card_standards.relay_badges`, first of the pixel fixes: `apostrophes` and `old glyphs` lay out at the current
+widths) re-lays a layer whose pixels show its icon font glyphs at other advances (Photoshop's, from the Txt2 view's
+glyph strikes; also the icon font's 3 earlier versions from the ref's history, `card_guards.earlier_fonts`, which the
+guards read once a push, best effort and only with `--repo` (the Actions pass it; a local `card_guards check` without
+it reads none and may judge a card otherwise), and a sweep reads too), a glyph counting as drawn old when it is off
+the current font's render past `OLD_GLYPH_BAD` or (2026-11-04, the Roboto labels: a badge whose letters alone changed)
+an earlier font's own render fits it (`_drawn_earlier`: within `EARLIER_FIT`, now `OLD_GLYPH_BAD`, better by
+`EARLIER_GAIN` 0.03: Soul Master's (OD), main's font 0.136 against 0.186), by glyph, rewrapped in its box; refused
+when a moved badge fits no known font (`DRAWN_ODD` 0.30), on overflow or a new last line below the box
+(`psd_edit.below_box`: Photoshop hides it, the fork draws it; an empty last line never counts; `fit_badges` and `tags`
+refuse it too since 2026-11-04), ink taken nearer a canvas edge than its outline (`psd_edit._stroke_reach`; each side
+on its own), a new line of badges alone (`_badges_only`: badge spans, not any bracket) or a line that fits by a hair
+and would drop the last line below the box (`_razor`, `RAZOR` 0.1%); tracking under a horizontal scale was refused
+until the fork's `cards-20261104` scaled it as Photoshop does (Wigfrid, Wendy and WX-78 were swept on it); noted when
+breaks hang on a hair, a line gains or holds one word, a new break cuts a count (`COUNT_END`, signed too), a coloured
+term or a card's name (`fonts.cards`: Context.cards), or ink comes within `EDGE_NEAR` and nearer on a side (with its
+outline's and glow's distance); the notes of a fix that lands go in plan.json's `pixel_notes` (per card, plan.json
+alone); the guards run it on every push. `old glyphs` refuses a glyph whose advance moved (never a half-ringed
+splice).
+Old-font note (A1, owner 2026-11-04; the one pixel-fix refusal that is told): a layer drawn with another build of the
+icon font that the PSD keeps so (refused, a splice that fell back, or a PNG that couldn't follow:
+`card_guards.stale_left`) gets `card_guards.OLD_FONT` in the post: "its badges were drawn with another version of the
+stoogedings font: pull first, install MDW/Fonts/stoogedings.ttf over the old one, restart Photoshop, then Type >
+Update All Text Layers, save and push".
+A bake whose new text puts a last line below its box bakes, told (`overflow: ...: its last line falls below its text
+box, where Photoshop hides it`; `psd_edit.below_box`, never refused).
 
 Shape (owner 2026-11-04): a pill 0.95 em tall, label capitals 540/950 in Roboto Black (`LABEL_FONT`;
 `LABEL_METRICS` re-spaces its 1, / and X and its word space), tracking between letters only. A cooldown's left end
@@ -229,7 +255,10 @@ after the ring by `RING_ENDS` 86, the visible walls' round ends), its letters' o
 skia-pathops: Roboto Black's static instance keeps the variable font's). Three copies change together: build_stoogedings.py (`BADGE_*`, `RING_*`, `COSTS`), text.js
 `ringParts`/`tagHtml`/`costHtml` with style.css `.badge`/`.ring`, and mockup.js `drawRing`/`PILL`;
 `tests/test_badge_parity.py` checks their colours, rings and metrics. Rebuild (§1.4) and rerun `badge_web_font.py`
-after changing them.
+after changing them (it writes the website's `site/rulebook/fonts/roboto-black.woff2` and prints text.js `RING_DIGITS`,
+`LSB` and `RSB` to paste; the web side is site/NOTES.md's "Badge letters" bullet). Cards, website, mock-up, rulebook
+and its TTS PDF draw the same badge since TC 0ade8c3d (2026-11-04; the website alone had a ring beside the pill from
+675e4bda); the 14 PSDs in `MDW/Old Rules/Rulebook/` keep their old badges by design.
 
 **The tag vocabulary is defined in three places that must change together**, plus the batch copies below. All three
 carry the same set: 341 since 2026-10-22 (TTSCardMaker f6ce500), 1139 since 2026-11-03 (n 1-20 or X, a/b with a from -9 up to b; the 341 first, in glyph order); `tests/test_badge_parity.py` checks them, the walk part only where it exists,
@@ -276,11 +305,11 @@ skips the glyph, but the entry stays.
 Do this after any change to Types/ or Types/Stars/, or to aliases or tint modes:
 
 1. One-time setup: `python3 -m venv MDW/Fonts/stoogedings-src/.venv && MDW/Fonts/stoogedings-src/.venv/bin/pip install -r MDW/Fonts/stoogedings-src/requirements.txt`
-2. Build (no arguments; it finds the repo from its own location; about 13 s, with `:glow` about 32 s of CPU):
+2. Build (no arguments; it finds the repo from its own location; about 34 s since the ring badges, 2026-11-04):
    `MDW/Fonts/stoogedings-src/.venv/bin/python MDW/Fonts/stoogedings-src/build_stoogedings.py`
-   Expected output today: `built …/stoogedings.ttf: 5.7 MB, 91 icons, 1024 token spellings` (with `:glow`:
-   `7.0 MB, 91 icons, 1536 token spellings`).
-   Read any "token collision" or "missing file" lines.
+   Expected output today: `built …/stoogedings.ttf: 17.4 MB, 91 icons, 1536 token spellings` (5.7 MB and 1024
+   before `:glow`). Read any "token collision" or "missing file" lines. A badge change also needs
+   `MDW/Fonts/stoogedings-src/.venv/bin/python MDW/Fonts/stoogedings-src/badge_web_font.py` (§1.2, "Shape").
 3. Rebuilds are **byte-identical** (`recalcTimestamp = False`, :514), so `git status` shows the font as changed only
    when something really changed. Verified 2026-10-19: a rebuild of a /tmp copy matched both the committed TTF and
    the JSON byte for byte. Why `/tmp/fontexplore/venv` once packed GSUB differently from `~/.venvs/ac-py314-psd125`
@@ -289,7 +318,9 @@ Do this after any change to Types/ or Types/Stars/, or to aliases or tint modes:
    gives the same bytes: both venvs rebuilt f6ce500's TTF exactly, and the any-case build identically. The write is
    atomic (`.tmp` + `os.replace`).
 4. Install: copy the TTF to `~/Library/Fonts/` (or open it in Font Book), replacing the old copy. Photoshop pitfalls
-   are in §4.
+   are in §4. Keep the dev Mac's copy identical to the committed build (owner 2026-11-04; a built batch's check
+   compares the commit's blob with `~/Library/Fonts`'s, §1.10). A badge change is a font rollout: card makers reinstall it and
+   restart Photoshop, and the cards are re-laid in batches (§1.10).
 5. In TTSCardMaker, commit the PNG(s), `stoogedings.ttf` and `stoogedings.json` together (the script's docstring
    says to). After that, the bot side needs no code change. The parser reads the manifest from GitHub on each
    `/update_stats` (`_icons_from_response` via `_repo_text`, re-downloaded only when its blob changes; the offline
@@ -316,7 +347,7 @@ contextual lookups:
 
 Every icon also gets a plain TrueType outline in `glyf` as a fallback for renderers without SVG support. The SVG table
 holds 523 documents in the 341-badge build (91 icons + 91 no-signs + 341 badges; 1449 badge glyphs since 2026-11-03: 1139 timing tags and 310 costs; 522 with 340 before 2026-10-22, 252 with 70 before 2026-10-21;
-705 with the 182 halos of §1.8).
+705 with the 182 halos of §1.8; 1813 since 2026-11-03, kept by the ring font of 2026-11-04 with its 4031 glyphs and 14 lookups).
 
 Renderer facts. These were tested 2026-10-19 in Photoshop 2023 and macOS CoreText. They are also recorded in the
 build script's docstring:
@@ -468,6 +499,67 @@ Character panel menu > OpenType > Stylistic Alternates). The text stays as typed
   meets a badge under an overlay); merge, push, deploy the jetson with the re-pin; (3) TTSCardMaker `work/badgealt`.
 - Developers must reinstall the font and restart Photoshop, or Photoshop shows the old glyphs.
 
+### 1.10 Font rollouts: the card sweep and batch pushes (ring badges, 2026-11-04/05)
+
+A badge change leaves the cards' badges drawn in the old font (other widths, other letters), so the cards are re-laid
+by the guards' own pixel fix, run over the tree by AutoCroissant `commands/card_sweep.py`, and pushed in batches. The
+ring rollout: 390 PSDs had badges at TC 0ade8c3d; 376 card PSDs re-laid (plus Stubborn_Queen.png), the 14 old rulebook
+PSDs left alone.
+
+**The sweep** (read-only on the clone; nothing committed or pushed):
+`python -m commands.card_sweep run --kind badge-widths --clone ~/Desktop/TTSCardMaker --ref <font commit> --out <worktree> [--cards <names>] [--plan <file>] [--workers 4] [--whole]`.
+One kind per pass, one commit each, every commit carrying the trailer `Card-sweep: <kind>` (its art and text changes
+stay off Discord, still on the Changes page); one PSD rewrite per card. It writes the PSDs and their PNGs (re-exported,
+already oxipng'd) into the worktree at their repo paths (a sparse worktree must hold them) and a plan of the base blobs;
+`card_sweep moved --plan <plan> --clone <clone> --ref origin/main` lists cards whose PSD or PNG moved since. Cards it
+refuses: fixed in Photoshop on copies, timeboxed, no fix that makes a card unlike the rest; the rest go on the owner's
+list (a CSV and its .md). Hand-exported PNGs are recompressed (`png_export.recompress`) before staging.
+
+**Batches:** about 50 cards a push (1.1-1.3 GB with the PNGs, under GitHub's 2 GB; under 150 cards: the compare API
+lists 300 files); each PSD touched once since the last data build; titles "batch n/N" with the real N; author
+MichaelJSr, no attribution lines. A wording change rides as its own commit without the trailer, so Discord tells it.
+
+**Each push** (scripts in `~/Documents/Tools/wt/scratch/ring-sweep-final/`: `batch_push.sh`, `reparent.py`,
+`settle.sh`, `chain.sh`; bash, not zsh: zsh arrays start at 1; every git call with `GIT_NO_LAZY_FETCH=1`):
+1. No run still open; `git fetch origin main` (trees only); none of the batch's paths moved on origin/main since the
+   font commit (else leave the card out or sweep it again; never settle a binary conflict with the batch's copy).
+   Watch the disk: once a re-parented batch has landed, the next fetch's `index-pack --promisor` repacks the local
+   objects the fetched commits point to, so each fetch wrote the last batch's card folders whole into a new ~6.3 GB
+   promisor pack, mostly duplicates (2026-11-05, git 2.56).
+2. Reparent, never rebase: Card sync commits land on main between batches, so `reparent.py <origin/main> <old base>
+   <old head>` replays the batch's commits onto it by plumbing (read-tree the new parent into a temporary index,
+   `update-index --index-info` with each commit's changed entries, `write-tree --missing-ok`: on the partial clone the
+   index holds blobs only the remote has; `commit-tree` with the same message and author; each new commit's diff
+   asserted equal to the old one's). No blob is read.
+3. The guards' dry check against the new parent, from AutoCroissant at what its main holds:
+   `~/.venvs/ac-py314-fork/bin/python -m commands.card_guards check --clone ~/Desktop/TTSCardMaker --repo
+   MichaelJSr/TTSCardMaker --author MichaelJSr --before <origin/main> --after <new> --mode dry --out <dir>` (`--repo`,
+   or the earlier icon fonts are not read, §1.2). Pass: summary.json `cards` = the batch's PSDs, no writes, errors or
+   card_errors, no `redrawn` or `pixel_left` entries, discord.json `{}` (or only names allowed for that batch). That is
+   the only check `batch_push.sh` runs. `card_check --psd ... --discord` and `font_check --fonts MDW/Fonts --psd ...
+   --discord` (both `{}`) and the font blob (the commit's against `~/Library/Fonts`) ran once per built batch, before
+   re-parenting (`batches/tools/run_checks3.sh`, output in `batches/checks/<n>/`); re-parenting keeps the blobs. On
+   GitHub those two checks gave up past ~40 PSDs ("GitHub API: 422", the compare API) until AutoCroissant
+   work/big-push (8dd6e22, to push after the last batch) reads such a push from the clone.
+4. `git -c pack.window=0 push origin <new>:refs/heads/main`, never forced (rejected: fetch and start again). The push
+   is upload-bound: 6-22 minutes per 1.2-1.3 GB here (batch 1 22, batches 2 and 3 about 6).
+5. Settle: every run since the push (Card guards, Card sync with its chain, the site build) finished green
+   (`settle.sh`: two quiet checks in a row, at least 4 minutes in); then the next batch at once (owner 2026-11-04: no
+   fixed 30-minute spacing; watch GITHUB_TOKEN's 1000 an hour, about 230-350 REST calls a push).
+
+**After the last batch:** the completeness check against the sweep's own lists (its plan's and the Photoshop fixes'
+cards, plus extra files such as Stubborn_Queen.png), never a tag pattern; Card sync's last bake on main's head; a
+whole-tree guards dry run (`gh workflow run card-guards.yml -R MichaelJSr/TTSCardMaker -f all=true -f dry_run=true`).
+
+The ring rollout's commits (TC 8367cec2..e43b7f3c, 9 commits): 9407d03a (`Card-sweep: tags`, 3 cards), 7 `badge
+widths` batches 206cd02e to e43b7f3c (Koro-Sensei in 7: the card maker's 10-20 save, MDW's Futura, through the guards' tags-as-badges fix) and 948a47fe (Drawcia,
+NME Salesman worded shorter, no trailer), pushed from 2026-11-05 00:05 (batch 1 landed as 7d5782ca + 955e780d; `git
+log origin/main` for the rest). Details in `~/Documents/Tools/wt/scratch/ring-sweep-final/`: for the 9 final commits
+`batches/built.json` (as built on 0ade8c3d, the same changes; batch 7 rebuilt with Koro-Sensei as e36bdd33, checked
+in `batches/checks/7k/`), `batches/checks/<n>/` and `go/<batch>/` (the push logs). REPORT.md (369 cards on
+54125397) and owner-cards.md/.csv (375 on ad3008ba, without Koro-Sensei) were written before the final build. Also
+`opt-1104/round2-plan.json` `batch_procedure` (its 30-minute spacing superseded).
+
 ## 2. The card-browser website
 
 **Live since 2026-10-20 at https://michaeljsr.github.io/TTSCardMaker/** (Pages source: "GitHub Actions").
@@ -611,6 +703,7 @@ python -m http.server -d site/dist 8000            # open http://localhost:8000
 | **Edit button** (sign-in with a GitHub token, edit form, batch tray, one-commit publish via the Git Data API, Card Authors / ban list line edits, rulebook pages, per-creature stats, admins list) | `site/assets/edit.js` |
 | **Sharing**: address bar shows `c/<id>/` (cards) and `d/#/deck/…` (hands) via `syncUrl` (base pinned at load); `c` copies the card link (no card Share dialog, Full image or PSD on GitHub link since 2026-10-23); deck and person pages keep their Share; a hand's Discord message links cards as `[name](<url>)` | `site/assets/app.js` |
 | **Link previews**: per-card `c/<id>/index.html` with og tags, `og:image` = 480 px JPEG `thumbs/<blob16>-og.jpg` (from the 720 px AVIF), `theme-color` = card accent color; `og.jpg` banner; `d/` page | `site/build/build_site.py` (`og_tags`, `share_text`, `accent_color`, `site_banner`) |
+| **Rounds 3 and 4** (2026-11-04, TC 0ade8c3d..8367cec2: dfd06e3f to 8367cec2, 20 commits; details in their messages and site/NOTES.md): card pages draw the card before the scripts, share and rulebook pages preload their chunks, card pages with badges preload the badge font; steady grid placeholders, reloads keep the reader's place (a table reload lands on its row), load errors and grid pictures retry once online, sized feed pictures, a big commit links a card's history; keyboard and screen-reader fixes, Enter opens one result only on Cards; phones: rulebook, fields, long links, the card picker, a hand slot's ✕, the deck builder in 3 card columns (≤435 px); a hand holds one of each card (duplicate pictures, renamed ids), a broken hand link says so, another tab's hands and staged edits are kept; person pages use the login's real spelling; card names, the rulebook's too, link to `c/<id>/`; quoted search finds timing tags and `[type]` tokens; a hand's Discord copy has no site banner preview. Owner: no 24 first-screen tiles, opaque top bar or phone chart labels; `+ Deck` stays hidden on touch | `site/assets/*.js`, `style.css`, `site/build/build_site.py` |
 | **Speed pass** (2026-10-24): one `route()` per navigation (a card closes without a redraw unless `viewSig()` changed or the view under it is still `.loading`), cached date formatters (`dateFmt`), the grid reuses its tile nodes (`gridTiles`) and draws the window's tiles first, Table rows in chunks (a collapsed `tbody.sizer` of the rest's widest rows, measured on a canvas, holds the column widths), Back/Forward draws at once (`history.state.drawn`), a card opened from a link draws no grid behind it, the grid kept across redraws (`keepGrid`, `fillGrid` reconciles tiles in place; 2026-10-25, Safari's flash, NOTES §36), index.html's first 8 tiles adopted in place (`adoptFirst`; removed and back on 2026-10-25, NOTES §31), lazy type icons, preload hints (the grid's first pictures on index.html: `grid_preload`; the 720 px picture on `c/<id>/`); build: `?v=` stamps by content, site.yml `paths`, `build.txt` (no deploy gate: owner's call). The rules code must keep: TTSCardMaker `site/NOTES.md` §27 (its AutoCroissant tests went with the 2026-10-25 test cut) | `site/assets/app.js`, `text.js`, `stats.js`, `site/build/build_site.py` |
 
 **Vocabulary** (the user's rule, 2026-10-20): use the game's own terms, per the rulebook, never invented ones.
@@ -1154,7 +1247,7 @@ work/site-round-2 (not on main yet; its NOTES sections are 21 and 22 since main 
 date-stamps whenever you touch this file.
 
 ```bash
-# Font identity, icon count, codepoint range, badges, GSUB lookup types (expect: stoogedings-Regular, 0xe000..0xe05a, ★ mapped, 1449 badges (2898 with their .salt; 341 before 2026-11-03), [1, 6, 4, 2, 1, 1, 6, 4], 523 SVG docs; with :glow [1, 6, 4, 2, 1, 1, 6, 4, 7, 7] and 705; lookups [1, 6, 4, 2, 4] before the any-case build, 340 / 522 before 2026-10-22, 70 / 252 before 2026-10-21)
+# Font identity, icon count, codepoint range, badges, GSUB lookup types (expect on 2026-11-05, TC 0ade8c3d's font: stoogedings-Regular, 0xe000..0xe05a, True, 2898 (1449 badges with their .salt; 341 before 2026-11-03), [1, 6, 4, 2, 1, 1, 1, 6, 7, 7, 7, 7, 7, 7], 1813 SVG docs; [1, 6, 4, 2, 1, 1, 6, 4] and 523 in the 341-badge build; with :glow [1, 6, 4, 2, 1, 1, 6, 4, 7, 7] and 705; lookups [1, 6, 4, 2, 4] before the any-case build, 340 / 522 before 2026-10-22, 70 / 252 before 2026-10-21)
 MDW/Fonts/stoogedings-src/.venv/bin/python -I -c "from fontTools.ttLib import TTFont; f=TTFont('MDW/Fonts/stoogedings.ttf'); c=f.getBestCmap(); print(f['name'].getDebugName(6), hex(min(x for x in c if x>=0xE000)), hex(max(c)), 0x2605 in c, sum(n.startswith('badge_') for n in f.getGlyphOrder()), [l.LookupType for l in f['GSUB'].table.LookupList.Lookup], len(f['SVG '].docList))"
 # Manifest: 91 icons (35 type / 56 star), contiguous PUA, 15 with aliases
 python3 -c "import json,collections as C; m=json.load(open('MDW/Fonts/stoogedings-src/stoogedings.json'))['icons']; print(len(m), C.Counter(v['kind'] for v in m.values()), sum(bool(v['aliases']) for v in m.values()))"
@@ -1188,8 +1281,8 @@ ls /private/tmp/fontexplore/build/missing_fonts.json /private/tmp/fontexplore/ps
 Maintenance rules:
 - If the website's `norm()` is aligned with the parser, update the §1.6 website row.
 - If the migration prototype is moved into the repo, replace every `/private/tmp/fontexplore` path.
-- When a tag or icon is added, re-run the first two provenance lines and update the counts (91 / 341 / 126 /
-  U+E05A).
+- When a tag or icon is added, re-run the first two provenance lines and update the counts (91 icons / 1449 badges
+  since 2026-11-03 / 126 emojis / U+E05A).
 2026-10-21 (details): section 2.1 data-flow row and the `data/details/<id>.json` output line for the card Details dropdown (plan item 23; the bot side is autocroissant-run-and-operate's "PSD details").
 2026-10-21 (cooldowns): §1.1, §1.2 (340 badges, the cards' tags, tooltips, size and widths, the three places), §1.4's expected output and byte-equality note, §1.5's SVG count, §5 step 2 and the provenance expectations re-verified against TTSCardMaker 8ec1b92 (font), c3f9d68 and 73904db (site); font line above run on the committed TTF (340, [1, 6, 4, 2, 4], 522); shaping `/tmp/cdverify/shape.py` and site `/tmp/cdverify/harness.mjs` 0 problems.
 2026-10-22 (Action): §1.1, §1.2 (341, the `neutral` group, tooltip, the three places), §1.5's SVG count, §5 step 2 and the provenance expectations against TTSCardMaker f6ce500 (font, site) and 6e7fc0c (notes); font line above run on the committed TTF (341, [1, 6, 4, 2, 4], 523); the three-places parity is `tests/test_badge_parity.py`. Later the same day: the batch copies as a fourth place (`test_batches_match_font`), the "clone behind" skip, the walk's font rule and the Stats chart's `neutral` exclusion (TTSCardMaker b686d0c).
@@ -1223,3 +1316,7 @@ quiet window an environment (AutoCroissant docs/Campaigns/PUSH_GUARDS.md section
 2026-10-25 (wrap-up): §2.1 Duplicates row and §2.5 (variant pictures are duplicates; /query's duplicate and artwork lines); §2.4 gained the Filters and the card page / editor rows, and the speed pass row the kept grid and the first screen's return.
 
 2026-11-01 (chapters, field cards): §0's rulebook row, §1.2's old tags and tooltips, §2.4's vocabulary, §2.6's drift baseline, against TTSCardMaker c3eb51a6 and c6b1e144; the save's tiles renamed in 2fecc66d: 1f4935, 0942e7 "Field Card Holder", 1c6e7f "Field Cards", b83429 "Field Cards Copy" (and decks.json's where-labels); ban list group "Field Cards".
+
+2026-11-05 (ring badges): §0's font and build-deps rows, §1.1, §1.2 (badge widths without the scaled-tracking refusal, `below_box`, `pixel_notes`, the A1 old-font note, the bake's below-the-box note, the web font), §1.4 steps 2 and 4, §1.5's SVG count, the new §1.10 (card_sweep, the batch pushes) and the font line above (run on the committed TTF) against TTSCardMaker 0ade8c3d and the local batches 8367cec2..e43b7f3c, AutoCroissant 3641756 (commands/card_guards.py `OLD_FONT`, `stale_left`, `earlier_fonts`; card_standards.py `relay_badges`; psd_edit.py `below_box`; card_sweep.py) and the scratch scripts in ring-sweep-final/. Later on 2026-11-05: §1.10's
+push times from `go/b1/`-`b3/`, the checks that ran per built batch (`batches/tools/run_checks3.sh`), the fetch's
+duplicate packs (the clone's `.git/objects/pack`, `git help index-pack`), the details' build dates.
