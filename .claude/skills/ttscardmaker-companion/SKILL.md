@@ -106,7 +106,7 @@ Notes:
 - **Costs:** `(n points)` (68 on the cards) and the other costs have badges since 2026-11-03 (§1.2, "Cost badges").
   `(Action)` (36) has had one since 2026-10-22 (owner decision, §1.2).
 
-### 1.2 Timing-tag badges (341: the first 70 + the cards' 270 + `(Action)`)
+### 1.2 Timing-tag badges (1139 since 2026-11-03; the first 341: the first 70 + the cards' 270 + `(Action)`)
 
 **Badges are part of the font going forward** (the user adopted them on 2026-10-19). `badge_tags()` in
 build_stoogedings.py defines two vocabularies and one extra tag:
@@ -217,7 +217,9 @@ Photoshop (see the batch commit).
 Badge widths (2026-11-04: the cooldown ring makes every cooldown badge wider): the pixel fix `badge widths`
 (`card_standards.relay_badges`, first of the pixel fixes: `apostrophes` and `old glyphs` lay out at the current
 widths) re-lays a layer whose pixels show its icon font glyphs at other advances (Photoshop's, from the Txt2 view's
-glyph strikes; also the icon font's 3 earlier versions from the ref's history, `card_guards.earlier_fonts`, which the
+glyph strikes; also the icon font's earlier eras from the ref's history (a version whose shared glyphs' advances all
+match a kept one is skipped; `EARLIER_FONTS` 4 eras, `EARLIER_WALK` 40 versions read; since 11-05, before that the last
+3 versions, which missed the glow era), `card_guards.earlier_fonts`, which the
 guards read once a push, best effort and only with `--repo` (the Actions pass it; a local `card_guards check` without
 it reads none and may judge a card otherwise), and a sweep reads too), a glyph counting as drawn old when it is off
 the current font's render past `OLD_GLYPH_BAD` or (2026-11-04, the Roboto labels: a badge whose letters alone changed)
@@ -539,8 +541,8 @@ MichaelJSr, no attribution lines. A wording change rides as its own commit witho
    the only check `batch_push.sh` runs. `card_check --psd ... --discord` and `font_check --fonts MDW/Fonts --psd ...
    --discord` (both `{}`) and the font blob (the commit's against `~/Library/Fonts`) ran once per built batch, before
    re-parenting (`batches/tools/run_checks3.sh`, output in `batches/checks/<n>/`); re-parenting keeps the blobs. On
-   GitHub those two checks gave up past ~40 PSDs ("GitHub API: 422", the compare API) until AutoCroissant
-   work/big-push (8dd6e22, to push after the last batch) reads such a push from the clone.
+   GitHub those two checks gave up past ~40 PSDs ("GitHub API: 422", the compare API) until AutoCroissant 855de4d
+   (2026-11-05) let them read such a push from the clone.
 4. `git -c pack.window=0 push origin <new>:refs/heads/main`, never forced (rejected: fetch and start again). The push
    is upload-bound: 6-22 minutes per 1.2-1.3 GB here (batch 1 22, batches 2 and 3 about 6).
 5. Settle: every run since the push (Card guards, Card sync with its chain, the site build) finished green
@@ -551,10 +553,10 @@ MichaelJSr, no attribution lines. A wording change rides as its own commit witho
 cards, plus extra files such as Stubborn_Queen.png), never a tag pattern; Card sync's last bake on main's head; a
 whole-tree guards dry run (`gh workflow run card-guards.yml -R MichaelJSr/TTSCardMaker -f all=true -f dry_run=true`).
 
-The ring rollout's commits (TC 8367cec2..e43b7f3c, 9 commits): 9407d03a (`Card-sweep: tags`, 3 cards), 7 `badge
-widths` batches 206cd02e to e43b7f3c (Koro-Sensei in 7: the card maker's 10-20 save, MDW's Futura, through the guards' tags-as-badges fix) and 948a47fe (Drawcia,
-NME Salesman worded shorter, no trailer), pushed from 2026-11-05 00:05 (batch 1 landed as 7d5782ca + 955e780d; `git
-log origin/main` for the rest). Details in `~/Documents/Tools/wt/scratch/ring-sweep-final/`: for the 9 final commits
+The ring rollout's commits as landed on TC main (2026-11-05 00:05-02:02, each followed by Card sync's): 7d5782ca
+(`Card-sweep: tags`, 3 cards), the 7 `badge widths` batches 955e780d, e71b3610, 4557a03c, cbe36122, 3b76c75e,
+9bb3a287, 9bf14176 (Koro-Sensei in 7: the card maker's 10-20 save, MDW's Futura, through the guards' tags-as-badges fix)
+and 94fd83c6 (Drawcia, NME Salesman worded shorter, no trailer). The local pre-push ids below are gone. Details in `~/Documents/Tools/wt/scratch/ring-sweep-final/`: for the 9 final commits
 `batches/built.json` (as built on 0ade8c3d, the same changes; batch 7 rebuilt with Koro-Sensei as e36bdd33, checked
 in `batches/checks/7k/`), `batches/checks/<n>/` and `go/<batch>/` (the push logs). REPORT.md (369 cards on
 54125397) and owner-cards.md/.csv (375 on ad3008ba, without Koro-Sensei) were written before the final build. Also

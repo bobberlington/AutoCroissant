@@ -4,10 +4,9 @@ From the 11-01 wrap-up (AutoCroissant 548a34c, TTSCardMaker bf67cd8e) to the go-
 11-05. Times are PST. With the owner ("ask me questions" again from 11-04 15:20) until the owner's go (~23:00 11-04); the
 batches ran unattended after it.
 
-Heads when this was written (11-05 ~00:30): AutoCroissant main 3641756, pushed, and the jetson runs it (deployed 23:34;
-psd-tools fork `cards-20261104` = 1258fcbd on both machines, the tag on GitHub). TTSCardMaker origin/main e71b3610:
-batches 1 and 2 of 7 pushed, 3-7 still to come (`git log origin/main`). The data moves with each batch (`git
-ls-remote origin data`). What is left: `docs/NEXT_SESSION_PLAN.md`.
+Heads at the end (11-05 ~03:30): AutoCroissant main ac78439 (code at 855de4d, deployed on the jetson); TTSCardMaker
+origin/main 6e12ef05 (after Zomoroko's first post-rollout push, 780a7b33); psd-tools fork `cards-20261104` = 1258fcbd on
+both machines and GitHub. What is left: `docs/NEXT_SESSION_PLAN.md`.
 
 ## Landed
 
@@ -90,8 +89,32 @@ word start first ("ring" opens Timing Tags); 3641756 the /website reply in plain
    208 pushed blobs prefetched in about 3 min; the post job posted the allowed R14 lines for Sans and Mantis Lords; Card
    check and Font check had nothing to report on GitHub, where a push past ~40 PSDs can't be listed: the local runs
    were the checks), Card sync 7.3 min, data 36411905 ("52 art"), save and PDF 714b9791 + 7610ca42.
-5. Batches 2-7 (the wording commit in batch 5's push) chained from 00:14 (`chain.sh`); batch 2 pushed 00:24 as
-   e71b3610 (GitHub warned that Quote.psd is 69.4 MB). The rest: `git log origin/main`.
+5. Batches 2-7 (the wording commit in batch 5's push) chained from 00:14 (`chain.sh`), each after the previous push's
+   runs settled green: e71b3610, 4557a03c, cbe36122, 3b76c75e + 94fd83c6 (the wording), 9bb3a287, 9bf14176 (02:02). Every
+   local guards check: cards = batch size, 0 writes, 0 errors; uploads 6-22 minutes a batch.
+6. Completeness: all 753 files (376 PSDs, 377 PNGs with Stubborn_Queen.png) on origin/main exactly as checked.
+7. AC 855de4d pushed and deployed: the big-push checks (Card check and Font check read a push GitHub can't list from
+   the clone), R14's lowercase-card exception (5ae271f: snas.; Kyle/hdckighfkvhvgmk is not one), the docs.
+8. site.yml without `/Types/` (8e040018); its build logged "icons: 91", no warnings.
+9. Whole-tree guards dry run (run 42009352040): 764 cards, 0 writes, 0 errors, no badge widths or old glyphs left, every
+   PNG matches its PSD; told only R6 (Nasty Patty, Shell Shield), R14 (Mantis Lords) and R11 part names (comments).
+10. The first card push after the rollout (Zomoroko, "generational (2)", 780a7b33: Wigfrid, Gold Fuzzy, Fragile Heart,
+    Fragile Strength) needed no re-lay and told nothing: their PSDs already had the ring font. The guards recompressed
+    4 PNGs (a495a0a8); Card sync saved (6e12ef05). The TTS Saves copy refreshed to it (27e28372).
+11. Clean-up: the TC clone's 8 duplicate fetch packs (~46 GB) removed, then the clone slimmed (31 -> 12 GB) and the
+    test suite's 1,042 old blobs fetched back in one batch; scratch 22 -> 2.3 GB; Photoshop copies removed; branches
+    and worktrees down to main in all three repos.
+12. The jetson (after the owner's request): tailscale and the Ubuntu Pro client upgraded (apt upgradable 0), AdGuard Home
+    0.107.79 -> 0.107.80, Jellyfin 12.1 -> 12.4, minor/patch updates in both bot venvs (psd-tools pin unchanged),
+    ojwikibot enabled at boot, smartmontools added, ~1 GB cleaned (an unused OpenSSL 3.6.0 tree, caches), journal capped
+    at 200 MB; rollback files in `~/maint-20261105`. Power-cycled 03:19 with the Shelly plug: up at 03:20, both bots
+    initialised, DNS and the containers back, NVMe media errors 0. AdGuard's 3 lists refreshed and blocking checked.
+13. Maintenance round (04:00-07:30): the guards' earlier icon fonts are eras (`EARLIER_FONTS` 4, `EARLIER_WALK` 40;
+    glyphs matched by name), so the glow era is no longer missed; TC 6383bbca (Mantis Lords' letter case, Nasty Patty
+    and Shell Shield's stars named Stars), all runs green; on the jetson the ssh-agent drop-ins, smartd on the NVMe and
+    the held packages (Cython 3.3.1, pandas 3.1.1, fonttools 4.68.0, uharfbuzz 0.57.0, dateutil 4.0.0; davey held);
+    5 orphaned pool workers of a dead sweep (16 h, 1.5 GB) killed; the test suite's last 34 blobs fetched (693 pass,
+    none skip); test and uv caches cleared.
 
 ## Owner rulings
 
@@ -172,5 +195,4 @@ Stories in `autocroissant-failure-archaeology`.
 
 ## Left open
 
-The rest of the batches, the go-day leftovers, owner decisions and the research rounds' follow-ups:
-`docs/NEXT_SESSION_PLAN.md`.
+Owner decisions and the research rounds' follow-ups: `docs/NEXT_SESSION_PLAN.md`.

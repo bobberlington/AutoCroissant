@@ -19,7 +19,9 @@ First: check that the batch chain finished (In flight), then the go-day leftover
 - Deploy with the `jetson-deploy` skill: push main and deploy in one sitting.
 - Tests: `AUTOCROISSANT_LOCAL_DIR=~/Desktop/TTSCardMaker AC_SITE_SRC=<tc tree>
   ESBUILD=~/Documents/Tools/wt/scratch/esbuild/node_modules/.bin/esbuild ~/.venvs/ac-py314-fork/bin/python -m pytest
-  -n auto -q -p no:cacheprovider tests` (689 on 11-04, about 3.5 minutes). Targeted files unless a full run is needed.
+  -n auto -q -p no:cacheprovider tests` (693 on 11-05, about 2.5 minutes at `-n 4`; they read old card blobs from the clone, skipping when missing). Never
+  with `GIT_NO_LAZY_FETCH=1` exported (10 tests' own fixture repos then fail; conftest sets it for the clone). Targeted
+  files unless a full run is needed.
 - Resource limits (memory `resource-limits`): never a partial (`blob:none`) clone of the local card repo; xdist at
   most 6; one full suite at a time (`~/Documents/Tools/wt/scratch/suite-wait.sh`); at most 2 workflows; process pools
   at most 4; the git watchdog (`~/Documents/Tools/wt/scratch/git-watchdog.sh`) under Monitor during long unattended
@@ -48,17 +50,18 @@ First: check that the batch chain finished (In flight), then the go-day leftover
 - "Rebuild the save now" (owner, per request only): cancel Card sync's waiting run, then `gh workflow run card-sync.yml
   --ref main -f bake=pending`; first check that the site deploy holding any rulebook change has finished.
 
-## State (2026-11-05 ~02:45, all pushed)
+## State (2026-11-05 ~07:30, all pushed)
 
-- AutoCroissant main 855de4d, pushed and deployed on the jetson (11-05). psd-tools fork `cards-20261104` = 1258fcbd on
-  both machines and on GitHub. No work branches or extra worktrees left in either repo.
-- TTSCardMaker origin/main 8e040018: the ring font 0ade8c3d (blob 2c0f8b1a, 17,416,116 bytes, the same in
+- AutoCroissant main: the earlier-fonts eras fix after ac78439, deployed on the jetson 11-05. psd-tools fork `cards-20261104` = 1258fcbd on
+  both machines and on GitHub. No work branches or extra worktrees left in any of the three repos.
+- TTSCardMaker origin/main 474c642c (the maintenance fixes 6383bbca: Mantis Lords' letter case, Nasty Patty and Shell
+  Shield's stars grouped as Stars, after Zomoroko's 780a7b33 and 8e040018): the ring font 0ade8c3d (blob 2c0f8b1a, 17,416,116 bytes, the same in
   `~/Library/Fonts`), the 20 site commits, the 9 card commits (tags + 7 batches + the Drawcia/NME Salesman wording), Card
   sync's commits after each, then site.yml without `/Types/`. Completeness checked: all 753 card files (376 PSDs, 377
   PNGs with Stubborn_Queen.png) on origin/main exactly as checked locally. The 14 `MDW/Old Rules/Rulebook` PSDs keep
   their old badges by design.
 - Data: moves with Card sync (`git ls-remote origin data`). Drift baseline 0a7db1c3 (f26dcd9c).
-- The TTS Saves folder copy is the pushed save (0d88ea9a, 11-05); the old one is in
+- The TTS Saves folder copy is the pushed save (474c642c, 11-05 after 6383bbca); older ones are in
   `~/Documents/Tools/wt/scratch/tts-saves-bak/`.
 - Discord `pending-updates`: the 8 card messages of 11-01 (crystal stars twice, Tainted Lazarus split, The Puppet to The
   Beholster, Earth Totem, the type 2 death card list, the equip stat formatting poll and its result). Earth Totem's PSD
@@ -77,13 +80,46 @@ First: check that the batch chain finished (In flight), then the go-day leftover
       named Stars), R14 on Mantis Lords; R11 part names (comment only) on 101. Artifact copy:
       `~/Documents/Tools/wt/scratch/whole-tree-1105/`. The first card push after the rollout (Zomoroko's "generational
       (2)", 780a7b33, Wigfrid among 4) needed no re-lay and told nothing: their PSDs already had the ring font.
-- [x] Disk: the TC clone slimmed to HEAD's blobs, every commit/tree and the icon font's history (31 GB -> 12 GB; old
-      blob versions come back from GitHub on demand); scratch 22 -> 2.3 GB.
+- [x] Disk: the TC clone's 8 duplicate fetch packs removed (~46 GB), then the clone slimmed to HEAD's blobs, every
+      commit/tree and the icon font's history (31 -> 12 GB), then the test suite's 1,042 old blobs (the pin a4d137bf
+      and the tests' at_rev pairs) fetched back in one batch (`git fetch --filter=blob:none --stdin`); scratch 22 ->
+      2.3 GB. A future slimming must keep the test pins' blobs (tests skip without them); 34 more fetched 11-05 (the
+      full suite skips none). `~/.cache/autocroissant-tests` and the uv caches cleared.
+- [x] Maintenance round (11-05): the guards' earlier icon fonts are eras, not the last 3 versions (the glow era was
+      missed); PSD fixes 6383bbca (whole-tree R6 and R14 gone; Card sync's changelog wrongly said "2 new art" for Nasty
+      Patty and Shell Shield: a PSD change without a `Card-sweep:` trailer counts as art).
 
 6. [ ] **Owner:** post the card makers' font note (the owner's ruling; facts in `opt-round4/plan.json` go_day cm-r4-2: pull,
        install `MDW/Fonts/stoogedings.ttf` (17,416,116 bytes) over the old one, restart Photoshop, Update All Text
        Layers on locally saved badge cards; the pull is up to ~10 GB of card files). Re-upload the TTS Workshop item by
-       hand (memory `tts-workshop-research`). Re-copy the save into the Saves folder.
+       hand (memory `tts-workshop-research`).
+
+## Jetson (maintenance 11-05; rollback files in `~/maint-20261105`)
+
+- [ ] **Ubuntu Pro / ESM:** 20.04's standard support is over; ~357 security updates wait (openssl, libc, systemd...).
+      Needs the owner's own token: `sudo pro attach` in a planned window (dpkg snapshot, install, power-cycle).
+- [ ] **Python 3.14.10** is out (the jetson runs 3.14.8): a PGO+LTO build takes hours on the Xavier NX; its own session
+      (`~/build/python/build314.sh`, then restart both bots).
+- [x] **Bot packages** (11-05, tested on the Mac first: both suites and 376 badge cards' renders identical): Cython
+      3.3.1 (full rebuild in both venvs), pandas 3.1.1, fonttools 4.68.0, uharfbuzz 0.57.0, python-dateutil 4.0.0 (+
+      tzdata). Undo: `~/maint-20261105/held-upgrades.txt`.
+- [ ] **davey 0.2.0 held:** its DAVE API needs prepare/execute_transition, which discord.py 2.7.1 never calls (voice
+      would break). Upgrade with a discord.py release that supports it. The Mac venv `~/.venvs/ac-py314-fork` still has
+      pandas 3.0.6 with dateutil 3.0.0 (crashes on dateutil time zones, unused) and trails the jetson's versions.
+- [ ] **Network:** a DHCP reservation for 192.168.4.30 (AdGuard listens only there; `ssh jetson` uses it); no host
+      firewall: the AdGuard UI (:3000), SMB and Jellyfin answer on the global IPv6 addresses: confirm the router blocks
+      inbound IPv6, or bind them to the LAN. Jellyfin's library is empty (~435 MB RAM): keep it or stop it?
+- [ ] After a week of normal running: `sudo docker rmi adguard/adguardhome:rollback-v0.107.79
+      jellyfin/jellyfin:rollback-12.1` (~970 MB) and remove `~/maint-20261105` (its tarballs hold password hashes and
+      keys: never print them).
+- [ ] **NVMe unsafe shutdowns:** 107 of ~140 power cycles, and the ordinary 03:20 reboot counted as one too: L4T's
+      reboot/poweroff may cut the drive before it flushes, not only the Shelly. No media errors, 0% wear.
+- [ ] OJWikibot logs a harmless shutdown Traceback (`login_manager.py:443` shutdown_handler: the wiki worker gets
+      SIGTERM twice and raises SystemExit inside urllib3's atexit): ignore a repeated signal.
+- Notes: ojwikibot is now enabled at boot (`sudo systemctl disable ojwikibot` if that was deliberate); both bot units
+  use RestartSec=900 (a failed boot start waits 15 minutes). The units' ssh-agent warning is fixed by the drop-ins
+  `/etc/systemd/system/<bot>.service.d/ssh-agent.conf` (the bot runs as the agent's command; main PID still python).
+  smartd watches the NVMe (health, error log, 70/80 C) into the journal only; no NVMe self-tests (smartmontools 7.1).
 
 ## Open owner decisions
 
@@ -146,6 +182,10 @@ First: check that the batch chain finished (In flight), then the go-day leftover
 ## Developer
 
 ### Follow-ups from the research rounds (not done)
+
+- [ ] Phones at 389-390 px: a rulebook deep link (e.g. #/rules/timing-tags/reading-the-ring) lands with its title 22 px
+      under the sticky bar, because the rulebook web fonts swap in after the scroll (Inconsolata/EB Garamond,
+      font-display: swap). Re-scroll once `document.fonts.ready` settles, or preload those two fonts (audit 11-05).
 
 From `~/Documents/Tools/wt/scratch/opt-round3/plan.json`, `opt-round4/plan.json` and `opt-1104/round2-plan.json`
 (their `dropped` lists say why each waited).
