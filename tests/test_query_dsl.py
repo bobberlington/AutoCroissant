@@ -18,7 +18,7 @@ CARDS = [
     dict(name="Mettaton EX", type="creatures", hp=6, defense=6, atk=6, spd=6, ability="Gain +2 DEF."),
     dict(name="Fire Bomb", type="item", subtype="attack", stars=2, ability="Deal 3 damage to a [fire] creature."),
     dict(name="Panda Shield", type="item", subtype="equip", stars=1, aliases=["buckler"], ability="+1 defense."),
-    dict(name="Bloon", type="minion", hp=2, defense=1, atk=1, spd=3, ability="Pop: heal 2 health."),
+    dict(name="Bloon", type="minion", hp=2, defense=1, atk=1, spd=3, ability="(2U)(OYT) Pop: heal 2 health."),
     dict(name="Burning", type="debuff", stars=1, ability="Burning: 3 DMG, can't affect [fire]."),
 ]
 ERROR = "error"                                          # the bot answers with an error
@@ -28,7 +28,7 @@ QUERIES = [                                              # query, the cards foun
     ("dmg", {"Kirby", "Burning", "Meta Knight", "Fire Bomb"}),
     ("defense", {"Panda Shield", "Mettaton EX"}),
     ("health", {"Bloon"}), ("speed", {"sans."}),
-    ('"damage"', {"Meta Knight", "Fire Bomb"}),
+    ('"damage"', {"Meta Knight", "Fire Bomb"}), ('"(2u)"', {"Bloon"}),
     ("!type==creature", {"Mettaton EX", "Fire Bomb", "Panda Shield", "Bloon", "Burning"}),
     ("type==creature", {"Kirby", "Meta Knight", "sans.", "King Dedede"}),
     ("type~creature", {"Kirby", "Meta Knight", "sans.", "King Dedede", "Mettaton EX"}),

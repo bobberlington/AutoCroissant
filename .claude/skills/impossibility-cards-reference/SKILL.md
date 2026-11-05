@@ -728,8 +728,8 @@ gotcha-4 unknown-field error; `series==mario & subseries~door` is the website's 
 7. Bare-text search also runs a fuzzy pass: `SequenceMatcher(None, query, whole_ability).ratio() >
    match_ratio` (`_fuzzy_labels`, query_card.py:409-424). It compares against the ENTIRE ability, so it only adds
    near-whole-text matches; short queries effectively rely on the substring pass.
-8. `"quoted"` builds `(?:^|\s|$|\b)<escaped>(?:^|\s|$|\b)` (:399) — approximately word-bounded,
-   punctuation-tolerant.
+8. `"quoted"` matches whole words: `\b` at an end that is a letter, digit or `_`, none at punctuation, so `"(2u)"`
+   finds `(2U)(OYT)` and `"[fire]"` finds `[fire]` (2026-11-04; the old `(?:^|\s|$|\b)` ends missed tags written together).
 9. The rulebook is NEVER returned by `/query_ability`; use `/query_rulebook` (case-insensitive words with any
    spacing over `rulebook_dff`, no DSL). Since 2026-10-29 `rulebook_dff` is the website's chapters (`db/rulebook.json`,
    `commands/rulebook.py`: the contents and chapters 1-23, index "7. Stats"), not the Photoshop pages (history in

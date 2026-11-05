@@ -483,7 +483,9 @@ class CardRepository:
         # Text: names, aliases and ability (as the website); "quoted" as whole words
         hay = self._haystack()
         if len(ability) > 1 and ability.startswith('"') and ability.endswith('"'):
-            pattern = r"(?:^|\s|$|\b)" + escape(ability.strip('"')) + r"(?:^|\s|$|\b)"
+            term = ability.strip('"')
+            edge = lambda ch: r"\b" if ch.isalnum() or ch == "_" else ""   # a word's edge; a tag's ( and ) are their own
+            pattern = edge(term[:1]) + escape(term) + edge(term[-1:])
             return self.cards_dff[hay.str.contains(pattern, na=False).values]
         exact_matches = self.cards_dff[hay.str.contains(self._text_pattern(ability), na=False).values]
 
