@@ -1,7 +1,7 @@
 # Session 2026-11-03 to 11-05: cost badges, the cooldown ring font, the card rollout
 
 From the 11-01 wrap-up (AutoCroissant 548a34c, TTSCardMaker bf67cd8e) to the go-day pushes in the night of 11-04 to
-11-05. Times are PST. With the owner ("ask me questions" again from 11-04 15:20) until his go (~23:00 11-04); the
+11-05. Times are PST. With the owner ("ask me questions" again from 11-04 15:20) until the owner's go (~23:00 11-04); the
 batches ran unattended after it.
 
 Heads when this was written (11-05 ~00:30): AutoCroissant main 3641756, pushed, and the jetson runs it (deployed 23:34;

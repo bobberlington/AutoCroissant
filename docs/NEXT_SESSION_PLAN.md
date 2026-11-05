@@ -12,7 +12,7 @@ First: check that the batch chain finished (In flight), then the go-day leftover
 
 ## Standing rules
 
-- Work unattended unless the owner says "ask me questions" (he asked again on 11-04). Agents on Opus or lower; a single
+- Work unattended unless the owner says "ask me questions" (asked again on 11-04). Agents on Opus or lower; a single
   Agent for a build. Owner picks are never dropped without asking: a review may only flag them.
 - Commit to main in both repos; `work/*` only while in flight, then delete. Very short commit messages; no Claude
   attribution. Persistent paths only (`~/Documents/Tools/wt/`, `~/std-work-*`).
@@ -48,71 +48,34 @@ First: check that the batch chain finished (In flight), then the go-day leftover
 - "Rebuild the save now" (owner, per request only): cancel Card sync's waiting run, then `gh workflow run card-sync.yml
   --ref main -f bake=pending`; first check that the site deploy holding any rulebook change has finished.
 
-## State (2026-11-05 ~00:30)
+## State (2026-11-05 ~02:45, all pushed)
 
-- AutoCroissant main 3641756, pushed; the jetson runs 3641756 (deployed 11-04 23:34). psd-tools fork `cards-20261104`
-  = 1258fcbd on both machines, the tag on GitHub. Local only: `work/big-push` 8dd6e22 (worktree
-  `~/Documents/Tools/wt/ac-big`, on 082d37b).
-- TTSCardMaker origin/main: the font 0ade8c3d (blob 2c0f8b1a, 17,416,116 bytes, the same in `~/Library/Fonts`), the
-  20 site commits, batch 1 (7d5782ca + 955e780d), Card sync's 714b9791 + 7610ca42, batch 2 (e71b3610), then the
-  rest of the batches (In flight). Local main e43b7f3c holds all 9 card commits before re-parenting
-  (8367cec2..e43b7f3c).
-- Data: moves with each batch's Card sync (`git ls-remote origin data`). Drift baseline 0a7db1c3 (f26dcd9c).
-- The TTS Saves folder copy is at 384bbecf (11-04 morning): re-copy after the last batch.
+- AutoCroissant main 855de4d, pushed and deployed on the jetson (11-05). psd-tools fork `cards-20261104` = 1258fcbd on
+  both machines and on GitHub. No work branches or extra worktrees left in either repo.
+- TTSCardMaker origin/main 8e040018: the ring font 0ade8c3d (blob 2c0f8b1a, 17,416,116 bytes, the same in
+  `~/Library/Fonts`), the 20 site commits, the 9 card commits (tags + 7 batches + the Drawcia/NME Salesman wording), Card
+  sync's commits after each, then site.yml without `/Types/`. Completeness checked: all 753 card files (376 PSDs, 377
+  PNGs with Stubborn_Queen.png) on origin/main exactly as checked locally. The 14 `MDW/Old Rules/Rulebook` PSDs keep
+  their old badges by design.
+- Data: moves with Card sync (`git ls-remote origin data`). Drift baseline 0a7db1c3 (f26dcd9c).
+- The TTS Saves folder copy is the pushed save (0d88ea9a, 11-05); the old one is in
+  `~/Documents/Tools/wt/scratch/tts-saves-bak/`.
 - Discord `pending-updates`: the 8 card messages of 11-01 (crystal stars twice, Tainted Lazarus split, The Puppet to The
   Beholster, Earth Totem, the type 2 death card list, the equip stat formatting poll and its result). Earth Totem's PSD
   changed 11-02 ("earth totem nerf", 03119c90, hdckighfkvhvgmk): its message may be done.
 - OJWikibot: the jetson runs 8ed817f; nothing changed this session.
 - `+ability` is live; no live `+ability` bake yet.
 
-## In flight
+## Go-day: done (11-05)
 
-- [ ] **Batches 2-7** (`~/Documents/Tools/wt/scratch/ring-sweep-final/chain.sh`, started 00:14): b2 af82957a (pushed
-      00:24 as e71b3610), b3 759a9923, b4 99daffca (with Stubborn_Queen.png), b5 d61df7e8 + 948a47fe (the Drawcia and
-      NME Salesman wording, no trailer: Discord tells it), b6 f3d964ce, b7 e43b7f3c (Koro-Sensei, Traitor Lord). Each
-      runs `batch_push.sh` and starts when the previous push's runs have settled green; 15-30 minutes a batch (upload
-      6-22, runs about 8), so done by about 03:00. Each batch's `git fetch` also writes a ~6.3 GB duplicate pack in the
-      clone (Clean up): watch the disk (22 GiB free at 01:00). Logs: `ring-sweep-final/go/<batch>/` (guards.log,
-      guards/, push.log, runs.tsv). If it stopped ("FAIL" or "CHAIN STOPPED at bN"): read that batch's logs, fix the
-      cause (a card moved on main: leave it out or sweep it again), then run the remaining `chain.sh` lines by hand.
-      Never force-push.
-
-## Go-day leftovers (in this order, after the last batch)
-
-1. [ ] **Completeness**, against the sweep's own lists. `git fetch origin main`; `git log --oneline origin/main` shows
-       batch 7/7. The 9 commits hold every PSD in `ring-sweep-final/`'s plan.json `fixed` (334), ps-fixes.json `fixed`
-       (41) and plan-tags.json (3), 373 together, plus Koro-Sensei, Michael's Blessing and Traitor Lord (376), and
-       Stubborn_Queen.png (checked 11-05). Their 753 files (376 PSDs, 377 PNGs) must have the same blobs on
-       origin/main: `comm -12 <(GIT_NO_LAZY_FETCH=1 git diff-tree -r --no-renames --name-only 8367cec2 e43b7f3c |
-       sort) <(GIT_NO_LAZY_FETCH=1 git diff --no-renames --name-only e43b7f3c origin/main | sort)` prints nothing (a
-       later website bake of one of them would show here: check it; `git diff` has no `--pathspec-from-file`).
-       Then the last lane: the newest Card sync's Bake and save ran on main's head and its Chain says "Nothing left";
-       the rulebook PDF shows the ringed omori, Computer Virus and Withering (pages.json changed for chapters 01 and
-       19); no EFFECT LAYER OUT OF DATE in the batches' Card sync "Parser notes" (AG6). If any fails and nothing runs:
-       `gh workflow run card-sync.yml -R MichaelJSr/TTSCardMaker --ref main -f bake=pending` with the owner's go.
-2. [ ] **Push work/big-push** (8dd6e22, owner yes on 11-04: Card check and Font check read a push GitHub can't list
-       from the clone). Rebase it onto main first (it sits on 082d37b), run `tests/test_font_check.py` and
-       `tests/test_card_check.py`, push. Such pushes then post real card and font findings (a font finding pings the
-       card makers' role) and the check job runs 1.5-3 minutes longer. Only the Actions run this path; deploy anyway
-       to keep the jetson on main.
-3. [ ] **site.yml drops `/Types/`** from the first checkout's sparse list (round 3 wbd2-2); keep the header comment
-       (Types/ still starts Card sync). The next build logs "icons: 91"; about 0.85 s and 24.7 MB less a build.
-4. [ ] **Whole-tree guards dry run:** `gh workflow run card-guards.yml -R MichaelJSr/TTSCardMaker --ref main -f all=true
-       -f dry_run=true`. Read its summary and artifact (the whole-tree jobs run the pixel fixes too): no `badge
-       widths` or `old glyphs` in any card's `redrawn`, `pixel_left` or its writes' `pixels` (a card that still needs
-       a re-lay shows in `redrawn` and `pixels`), as in each batch's check; what it tells is the next problem list.
-5. [ ] **Clean up:** TC branches `work/ring-batches` and `keep/pre-reorder` (a pre-reorder copy of the 11-04 commits);
-       AC `work/big-push` and its worktree; the two stale agent worktrees in `.claude/worktrees/` (clean; at c850328 and
-       ab8b880, which landed rebased as 8737edd; `agent-a3c05d6ea0f86f4db` at c850328 is locked by the session of pid
-       84383: `git worktree unlock` it, or remove it after that session ends); bulky scratch (52 GB; keep
-       `ring-sweep-final/` scripts and lists, `futura-research/` findings). TC's duplicate packs: from batch 2 on, each
-       batch's `git fetch` wrote a ~6.3 GB promisor pack holding the last pushed batch's card folders whole (git's
-       `index-pack --promisor` repacks the local objects a fetched pack points to: Card sync's commits sit on the
-       re-parented batch commits): pack-02fc03a0…, pack-7f0a52ba…, pack-be1f68d9… (b2-b4), then one per later fetch
-       after a pushed batch (b5-b7's, and step 1's for batch 7); most of their objects are in other packs too. They
-       and TC's 7.09 GiB of loose objects: repack only when nothing else runs and the disk has room (a whole repack
-       writes the new pack before it deletes the old ones).
-6. [ ] **Owner:** post the card makers' font note (his ruling; facts in `opt-round4/plan.json` go_day cm-r4-2: pull,
+- [x] Batches 1-7 pushed, each after the previous push's runs settled green (logs `ring-sweep-final/go/<batch>/`).
+- [x] Completeness: 753 of 753 files as checked. [x] work/big-push landed (855de4d) and deployed. [x] site.yml without
+      `/Types/` (8e040018): the next build logged "icons: 91", no warnings. [x] Clean up: branches, worktrees, scratch
+      (11 GB left), Photoshop copies, the clone's 8 duplicate packs (~46 GB; memory `partial-clone-fetch-packs`).
+- [ ] **Whole-tree guards dry run** (dispatched 11-05 10:16 UTC, run 42009352040): read its summary and artifact. No
+      card should show `badge widths` or `old glyphs` in `redrawn`, `pixel_left` or its writes' `pixels`; what it tells
+      is the next problem list.
+6. [ ] **Owner:** post the card makers' font note (the owner's ruling; facts in `opt-round4/plan.json` go_day cm-r4-2: pull,
        install `MDW/Fonts/stoogedings.ttf` (17,416,116 bytes) over the old one, restart Photoshop, Update All Text
        Layers on locally saved badge cards; the pull is up to ~10 GB of card files). Re-upload the TTS Workshop item by
        hand (memory `tts-workshop-research`). Re-copy the save into the Saves folder.
@@ -124,13 +87,13 @@ First: check that the batch chain finished (In flight), then the go-day leftover
       swap helps (Jost 89%, League Spartan 90%, macOS's 69% off; MDW's fits). Keep MDW's file (recommended); should
       card makers on Macs install MDW's Futura-Bold, as this Mac now does? Rockwell Bold (8.3% wider) and Lucida Grande
       Bold differ from macOS's too. Files: `~/Documents/Tools/wt/scratch/futura-research/`.
-- [ ] **Sans and Mantis Lords** (R14, a card name typed in another case): their lines posted once with batch 1. Fix the
-      case in the PSDs as a separate edit, or leave.
+- [ ] **Mantis Lords** (R14): its 'mantis lord' (a plain noun) is still told on a push of it; snas.'s 'smeckeldorfed'
+      no longer is (5ae271f: a card written in lowercase on purpose; Kyle/hdckighfkvhvgmk is not one). Fix the PSD's
+      case or leave it.
 - [ ] **Old-font note for refused re-lays** (round 4 cm-a1-offpixels): tell OLD_FONT when an earlier font explains a
       refused re-lay. The tightened rule (every glyph old to the current font must be drawn by an earlier one) is in
       `opt-round4/skeptic-cm-a1-tools/proposed2.py`: 15 of 16 told, Koro-Sensei silent. Not voted on; a guards change.
-- [ ] **Traitor Lord, look:** the gap from its (2U) badge to "You" is 8.4 px (was 21.9; Hornet's 27.6), the outlines
-      touch. Sheet: `ring-sweep-final/owner-fix/sheets/Traitor_Lord-gap.png`.
+- [x] **Traitor Lord:** the owner kept the 8.4 px gap (tracking 0) on 11-05.
 - [ ] Discord pending-updates: the 8 card messages (State) are undone card work; pick which to do.
 - [ ] Rules left by the 11-01 batch: seven cards count lanes as turns (Delicate Flower, The Last Cabbage Merchant, Time
       Riddle, Asteroid Field, Forget Me Now, NME Salesman, Lost Kin), and pair turns are undefined with uneven slots
