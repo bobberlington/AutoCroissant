@@ -1016,6 +1016,15 @@ STALE_FILL = (-1.0, -1.0, -1.0)   # marks a glyph changed for the splice (it red
 FIT_CHECK = 1.0             # px a fitted badge or icon may sit off its place after fit_badges (the check)
 WHOLE_OFF = 0.01            # fit_badges(whole): the share of a layer's ink the fork's render may have off its stored pixels
 LAID_TOL = 0.01             # pt: an icon glyph Photoshop stepped this far off the current font was laid out at another advance
+EARLIER_FIT = OLD_GLYPH_BAD # badge widths: an icon glyph is drawn in an earlier icon font when that font's own render of the layer
+EARLIER_GAIN = 0.03         # fits it this well and better by this than the current font's (owner 2026-11-04: Roboto labels
+                            # move a badge's letters less than OLD_GLYPH_BAD; census of 376 badge cards: short labels such
+                            # as Halberd Reactor's (BOT) gain 0.046, a glyph the fonts draw alike 0; review 2026-11-04: not
+                            # 0.05, Soul Master's (OD) fits main's font 0.136 against the current 0.186)
+RAZOR = 0.001               # badge widths: a re-laid layer whose breaks change in a box this share narrower or wider fits
+                            # by a hair (Photoshop measures its lines a little otherwise: Croissant 0.015% wrapped)
+DRAWN_ODD = 0.30            # badge widths: a moved icon glyph this far off the current font's render that no earlier font
+                            # draws (past Photoshop's own current glyphs, 0.26 at most: OLD_GLYPH_BAD's census) is refused
 LAID_OFF = 0.15             # badge widths: the share of a layer's ink (its re-laid glyphs aside) its render at the advances
                             # it was laid out with may have off its stored pixels (census 2026-11-04, 219 cooldown cards:
                             # 0.13 at most at their old widths, 0.19 and up at others)
@@ -1118,6 +1127,13 @@ def _icon_face(face) -> bool:
 def _drawn_old(layer, fonts) -> Optional[tuple]:
     """old_glyphs with what it compared: (capture, window, stored, drawn: premultiplied on the window, the old glyphs'
     indices); None without stored pixels."""
+    found = _glyph_offs(layer, fonts)
+    return None if found is None else (*found[:4], [i for i, share in found[4].items() if share > OLD_GLYPH_BAD])
+
+
+def _glyph_offs(layer, fonts) -> Optional[tuple]:
+    """(capture, window, stored, drawn, {icon glyph index: _off_share of its box}): the layer's stored pixels against the
+    render in fonts, at the layout fonts give; None without stored pixels."""
     from psd_tools.composite.text import capture, render
     from psd_tools.composite.text.splice import _glyph_box
     before = capture(layer, fonts)
@@ -1129,7 +1145,7 @@ def _drawn_old(layer, fonts) -> Optional[tuple]:
     window = (min(b[0] for b in boxes) - pad, min(b[1] for b in boxes) - pad,
               max(b[2] for b in boxes) + pad, max(b[3] for b in boxes) + pad)
     stored, mine = _premultiplied(before.rgba, before.bbox, window), _premultiplied(drawn.rgba, drawn.bbox, window)
-    out = []
+    out = {}
     for index, glyph in enumerate(before.layout.glyphs):
         if not _icon_face(glyph.face):
             continue
@@ -1139,8 +1155,8 @@ def _drawn_old(layer, fonts) -> Optional[tuple]:
         x0, y0, x1, y1 = (box[0] - window[0], box[1] - window[1], box[2] - window[0], box[3] - window[1])
         x0, y0 = max(x0, pad), max(y0, pad)
         x1, y1 = min(x1, window[2] - window[0] - pad), min(y1, window[3] - window[1] - pad)
-        if x1 > x0 and y1 > y0 and _off_share(stored, mine, (x0, y0, x1, y1)) > OLD_GLYPH_BAD:
-            out.append(index)
+        if x1 > x0 and y1 > y0:
+            out[index] = _off_share(stored, mine, (x0, y0, x1, y1))
     return before, window, stored, mine, out
 
 
@@ -1617,7 +1633,8 @@ def laid_advances(layer, faces, earlier: tuple = ()) -> list:
             continue
         for g, step in zip(run, steps):
             style = model.runs[g.run].style
-            off = step - g.advance - style.tracking / 1000 * rendered_em(style, model.sub_size)
+            # Photoshop's tracking is scaled by the run's HorizontalScale (Wigfrid's strike: 9.54 pt, not 16.17)
+            off = step - g.advance - style.tracking / 1000 * rendered_em(style, model.sub_size) * style.horizontal_scale
             if abs(off) > LAID_TOL and g.face is face:
                 units = round(face.hb.get_glyph_h_advance(g.gid) + off * face.metrics.upem / g.em_w)
                 if view.setdefault(g.gid, units) != units:
@@ -1631,6 +1648,42 @@ def laid_advances(layer, faces, earlier: tuple = ()) -> list:
                 way[g.gid] = font.get_glyph_h_advance(found)
         ways += [way, {**way, **ways[0]}]
     return [way for i, way in enumerate(ways) if way and way not in ways[:i]]
+
+
+class _Swapped:
+    """A FontMap whose icon font is another file (an earlier version): its own glyphs, advances and drawings."""
+
+    def __init__(self, faces, path: str):
+        self.faces, self.path, self._face = faces, path, None
+
+    def resolve(self, name: str):
+        from psd_tools.composite.text.fonts import Resolved, load_face
+        found = self.faces.resolve(name)
+        if found.face is None or not _icon_face(found.face):
+            return found
+        self._face = self._face or load_face(self.path)
+        return Resolved(self._face, found.how)
+
+    def resolve_all(self, names) -> dict:
+        return {name: self.resolve(name) for name in dict.fromkeys(names)}
+
+
+def _drawn_earlier(layer, faces, earlier: tuple, now: tuple) -> set:
+    """The icon glyphs (indices into now's layout: _glyph_offs at the current font) an earlier icon font draws as the
+    layer's pixels show them: that font's own render at its own layout fits the glyph within EARLIER_FIT (not old to it)
+    and better by EARLIER_GAIN than the current font's (a badge whose letters changed, its ring or pill alike). Only a
+    layout of the same glyphs counts (an older font that sets the text otherwise is not compared)."""
+    glyphs, found = now[0].layout.glyphs, set()
+    for path in earlier:
+        try:
+            then = _glyph_offs(layer, _Swapped(faces, path))
+        except Exception:                       # an unreadable earlier font: no evidence
+            continue
+        if then is None or [(g.cluster, g.gid) for g in then[0].layout.glyphs] != [(g.cluster, g.gid) for g in glyphs]:
+            continue
+        found |= {i for i, share in then[4].items()
+                  if i in now[4] and share <= EARLIER_FIT and now[4][i] - share >= EARLIER_GAIN}
+    return found
 
 
 class _Laid:
@@ -1686,8 +1739,8 @@ def _off_beside(drawn: tuple, marks: set) -> float:
 def laid_plan(layer, faces, earlier: tuple = ()) -> Optional[tuple]:
     """
     Whether the layer's stored pixels show its icon font glyphs laid out at other advances: some glyph laid_advances
-    finds is drawn old (old_glyphs) and the layer drawn at one of its ways is its pixels, those glyphs and the ones drawn
-    old there aside (_off_beside within LAID_OFF; the nearest way). None when the pixels show the current font's
+    finds is drawn old (old_glyphs, or in an earlier icon font: _drawn_earlier) and the layer drawn at one of its ways is
+    its pixels, those glyphs and the ones drawn old there aside (_off_beside within LAID_OFF; the nearest way). None when the pixels show the current font's
     (re-laid already, or drawn in it) or no advance differs; raises Refused when no way is (the fork lays the layer out
     off Photoshop's pixels).
 
@@ -1695,8 +1748,16 @@ def laid_plan(layer, faces, earlier: tuple = ()) -> Optional[tuple]:
         (_Laid faces, {glyph index: redrawn}, that share)
     """
     ways = laid_advances(layer, faces, earlier)
-    now = _drawn_old(layer, faces) if ways else None
-    if now is None or not any(now[0].layout.glyphs[i].gid in way for i in now[4] for way in ways):
+    now = _glyph_offs(layer, faces) if ways else None
+    if now is None:
+        return None
+    moved = lambda found: any(now[0].layout.glyphs[i].gid in way for i in found for way in ways)
+    drawn_then = _drawn_earlier(layer, faces, earlier, now)
+    if not moved({i for i, share in now[4].items() if share > OLD_GLYPH_BAD}) and not moved(drawn_then):
+        odd = {i for i, share in now[4].items() if share > DRAWN_ODD and i not in drawn_then}
+        if moved(odd):
+            raise Refused("unsupported-card", f"{layer.name.strip()}: a badge drawn in no known icon font (its pixels "
+                                              f"{max(now[4][i] for i in odd):.0%} off this font's); export it in Photoshop")
         return None
     best = None
     for way in ways:
@@ -1737,16 +1798,32 @@ def relay_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Opti
         psd_edit.follow_kerning(psd, layer)
         laid, marks, share = plan
         name, keep = layer.name.strip(), capture(layer, laid)
+        if _scaled_tracking(keep.model):
+            raise Refused("unsupported-card", f"{name}: tracking under a horizontal scale (the fork spaces it unlike "
+                                              "Photoshop, Wigfrid 2026-11-04)")
         glyphs = tuple(replace(g, fill=STALE_FILL) if i in marks else g for i, g in enumerate(keep.layout.glyphs))
         old, placed, now = tuple(layer.bbox), _placed(layer, laid), _placed(layer, faces)
-        off = psd_edit._ink_off_canvas(layer, psd.width, psd.height)
+        off, inked = psd_edit._ink_off_canvas(layer, psd.width, psd.height), _ink_box(layer)
         report = layer.rasterize(fonts=faces, keep=replace(keep, layout=replace(keep.layout, glyphs=glyphs)),
                                  unit=psd_edit.SPLICE_UNIT)
         _by_glyph(layer, report, share <= WHOLE_OFF)
-        if ("overflow" in report.warnings or (not off and psd_edit._ink_off_canvas(layer, psd.width, psd.height))
-                or _below_box(keep, report.lines)):
+        if "overflow" in report.warnings or _below_box(keep, report.lines):
             raise Refused("overflow", f"{name}: its badges at their new widths push text out of its box")
-        names.notes += _reflow_notes(name, keep.layout.lines, report.lines, old, tuple(layer.bbox), psd.width, psd.height)
+        reach, sides = psd_edit._stroke_reach(layer), _sides(_ink_box(layer), psd.width, psd.height)
+        close = [now for now, was in zip(sides, _sides(inked, psd.width, psd.height)) if now <= max(reach, 1) and now < was]
+        if (not off and psd_edit._ink_off_canvas(layer, psd.width, psd.height)) or close:   # its outline at the edge too, a side each
+            raise Refused("overflow", f"{name}: its badges at their new widths take its ink {min(close or sides)} px from "
+                                      f"the canvas edge (its outline {reach} px)")
+        alone = _badges_alone(keep.layout.lines, report.lines)
+        if alone:
+            raise Refused("overflow", f"{name}: its badges at their new widths leave {alone!r} alone on a line")
+        hair = _razor(layer, faces)
+        if hair == "overset":
+            raise Refused("overflow", f"{name}: a line fits its box by a hair (its breaks change {RAZOR:.1%} narrower and "
+                                      "its last line drops below the box): Photoshop may hide it")
+        names.notes += [f"{name}: its line breaks hang on a hair (they change in a box {RAZOR:.1%} narrower or wider)"] * bool(hair)
+        names.notes += _reflow_notes(name, keep.layout.lines, report.lines, inked, _ink_box(layer), psd.width, psd.height,
+                                     keep.model, (reach, _glow_reach(layer)), getattr(fonts, "cards", None))
         boxes += _padded(layer, old)
         for fx, was in _recut_fx(psd, layer, {i for i in placed if now.get(i) != placed[i]}, faces):
             boxes += _padded(fx, was)
@@ -1775,7 +1852,7 @@ class Relaid(list):
         self.notes = []
 
 
-EDGE_NEAR = 24                                  # px: ink this near the canvas edge is noted (it was not before)
+EDGE_NEAR = 24                                  # px: ink this near the canvas edge is noted (nearer than before)
 
 
 def _below_box(keep, lines) -> bool:
@@ -1785,19 +1862,155 @@ def _below_box(keep, lines) -> bool:
     box = frame(keep.model)
     if box is None:
         return False
-    below = lambda ls: sum(1 for line in ls if line.drawn and line.y > box[1] + box[3] + 1e-6)
+    below = lambda ls: sum(1 for line in ls if line.drawn and line.text.strip() and line.y > box[1] + box[3] + 1e-6)
     return below(lines) > below(keep.layout.lines)
 
 
-def _reflow_notes(name: str, was, now, bbox_was, bbox_now, width: int, height: int) -> list:
-    """A re-layout's notes: more lines, a new line of one word (a widow), ink newly within EDGE_NEAR of the canvas edge."""
+def _scaled_tracking(model) -> bool:
+    """Whether some run of the text sets tracking at a horizontal scale: Photoshop scales the tracking by it, the fork
+    does not, so their lines break apart (Wigfrid's badge run: 303 at 0.59)."""
+    return any(run.style.tracking and abs(run.style.horizontal_scale - 1) > 1e-3 and model.text[run.start:run.end].strip()
+               for run in model.runs)
+
+
+def _ink_box(layer) -> tuple:
+    """The layer's ink (alpha past psd_edit.INK_ALPHA) as a canvas bbox: a faint fringe (a halo's tail) left out."""
+    import numpy as np
+    bbox, alpha = tuple(layer.bbox), psd_edit._alpha(layer)
+    if alpha is None or not (alpha > psd_edit.INK_ALPHA).any():
+        return bbox
+    rows, cols = np.nonzero((alpha > psd_edit.INK_ALPHA).any(axis=1))[0], np.nonzero((alpha > psd_edit.INK_ALPHA).any(axis=0))[0]
+    return bbox[0] + int(cols[0]), bbox[1] + int(rows[0]), bbox[0] + int(cols[-1]) + 1, bbox[1] + int(rows[-1]) + 1
+
+
+def _sides(bbox, width: int, height: int) -> tuple:
+    """px from ink (a bbox) to each canvas edge: left, top, right, bottom."""
+    return bbox[0], bbox[1], width - bbox[2], height - bbox[3]
+
+
+def _edge(bbox, width: int, height: int) -> int:
+    """px from ink (a bbox) to the nearest canvas edge."""
+    return min(_sides(bbox, width, height))
+
+
+def _glow_reach(layer) -> int:
+    """Pixels the outer glows and drop shadows of the layer and its groups draw past its ink (the farthest)."""
+    out = 0
+    for owner in (layer, *psd_edit._ancestors(layer)):
+        try:
+            effects = list(owner.effects)
+        except Exception:                       # no effects block, or one psd-tools can't read
+            effects = []
+        for effect in effects:
+            kind = type(effect).__name__
+            if effect.enabled and kind in ("OuterGlow", "DropShadow"):
+                out = max(out, int(float(getattr(effect, "size", 0) or 0)
+                                   + (float(getattr(effect, "distance", 0) or 0) if kind == "DropShadow" else 0) + 0.5))
+    return out
+
+
+BADGE_LINE_REST = re_compile(r"[\s.,;:!?]*")      # what a line of badges alone may hold beside them: (ENDT).
+
+
+def _badges_only(text: str) -> bool:
+    """Whether a line holds badges (psd_edit.badge_spans: timing tags and costs the font draws) and nothing else but
+    spaces and punctuation: (1CD), (1CD)(3 points), (ENDT).; not plain bracketed text ('(cannot ignore usage conditions).')."""
+    spans = psd_edit.badge_spans(text)
+    rest = "".join(text[b:a] for (_, b), (a, _) in zip([(0, 0), *spans], [*spans, (len(text), len(text))]))
+    return bool(spans) and BADGE_LINE_REST.fullmatch(rest) is not None
+
+
+def _badges_alone(was, now) -> str:
+    """A new line of the re-layout that holds only badges (Wigfrid's '(1CD)', cut off from its cost), or ""."""
+    texts = lambda ls: [line.text.strip() for line in ls if line.drawn and line.text.strip()]
+    old = texts(was)
+    return next((t for t in texts(now) if _badges_only(t) and t not in old), "")
+
+
+def _razor(layer, faces) -> str:
+    """Whether the layer's breaks hang on a hair: "overset" when a box RAZOR narrower breaks them so that a line drops
+    below the box (Photoshop hides it), "breaks" when it or one RAZOR wider breaks them otherwise, else ""."""
+    from dataclasses import replace
+    from psd_tools.composite.text.layout import frame, layout
+    from psd_tools.composite.text.model import TextModel
+    model = TextModel.from_layer(layer)
+    box = frame(model)
+    if box is None:
+        return ""
+    lines = lambda m: layout(m, faces).lines
+    below = lambda ls: sum(1 for line in ls if line.text.strip() and line.y > box[1] + box[3] + 1e-6)
+    base = lines(model)
+    left, top, right, bottom = model.box
+    found = ""
+    for sign in (-1, 1):
+        now = lines(replace(model, box=(left, top, right + sign * RAZOR * (right - left), bottom)))
+        if [(line.start, line.end) for line in now] == [(line.start, line.end) for line in base]:
+            continue
+        if sign < 0 and below(now) > below(base):
+            return "overset"
+        found = "breaks"
+    return found
+
+
+COUNT_END = re_compile(r"[+\-\u2212]?\d+(?:\.\d+)?|\d+T\d*|lvl?|x\d+", IGNORECASE)   # a count cut from its word: '4' / 'HP',
+                                                # '+2' / 'ATK', '1T' / 'Insane', 'lv' / '1-3', 'x2' / 'DMG'
+TERM_WORDS = 4                                  # a coloured term ('Fire Totem', 'Frozen In Time'): a coloured paragraph isn't one
+
+
+def _split_terms(model, was, now, cards: Optional[tuple] = None) -> list:
+    """New breaks of a re-layout (not in its old layout) that cut a term: right after a count, a word next; inside
+    a run of up to TERM_WORDS words coloured unlike the layer's main colour ('Fire' / 'Totem'); or inside a card's
+    name (cards: Context.cards; 'Mini' / 'Drill.', however coloured): [(before, after)]. model: its text and runs."""
+    from collections import Counter
+    lines = [line for line in now if line.drawn and line.text.strip()]
+    old, out = {line.start for line in was if line.drawn}, []
+    names = _name_index(cards)[0] if cards and model is not None else None
+    spans = [m.span(1) for m in names.finditer(model.text)] if names else []
+    fill, main = {}, None
+    if model is not None:
+        fill = {i: tuple(run.style.fill) for run in model.runs for i in range(run.start, run.end)}
+        counts = Counter(fill[i] for i in fill if i < len(model.text) and not model.text[i].isspace())
+        main = counts.most_common(1)[0][0] if counts else None
+    for a, b in zip(lines, lines[1:]):
+        head, tail = a.text.split(), b.text.split()
+        if b.start in old or not head or not tail:
+            continue
+        cut = (COUNT_END.fullmatch(head[-1]) and tail[0][:1].isalnum()) or any(a0 < b.start < b1 for a0, b1 in spans)
+        if not cut and main is not None:
+            text = model.text
+            last = next((i for i in range(min(a.end, len(text)) - 1, a.start - 1, -1) if not text[i].isspace()), None)
+            first = next((i for i in range(b.start, min(b.end, len(text))) if not text[i].isspace()), None)
+            cut = None not in (last, first) and fill.get(last) == fill.get(first) != main and fill.get(last) is not None
+            if cut:                                     # the coloured run's words, spaces inside it included
+                same = lambda i: fill.get(i) == fill[last] or (text[i].isspace() and fill.get(i + 1) == fill[last])
+                a0, b1 = last, first
+                while a0 > 0 and same(a0 - 1) and text[a0 - 1] != "\r":
+                    a0 -= 1
+                while b1 + 1 < len(text) and same(b1 + 1) and text[b1 + 1] != "\r":
+                    b1 += 1
+                cut = len(text[a0:b1 + 1].split()) <= TERM_WORDS
+        if cut:
+            out.append((head[-1], tail[0]))
+    return out
+
+
+def _reflow_notes(name: str, was, now, bbox_was, bbox_now, width: int, height: int, model=None, reach=(0, 0),
+                  cards: Optional[tuple] = None) -> list:
+    """A re-layout's notes: more lines, a new line of one word (a widow), a new break that cuts a term (_split_terms),
+    ink within EDGE_NEAR of a canvas edge and nearer than before there (each side; reach: its outline's px and its
+    glow's or shadow's, how near they come too)."""
     texts = lambda ls: [line.text.strip() for line in ls if line.drawn]
     old, new = texts(was), texts(now)
     notes = [f"{name}: {len(old)} line{'s' * (len(old) != 1)} became {len(new)}"] if len(new) > len(old) else []
     notes += [f"{name}: {t!r} alone on a line" for t in new if len(t.split()) == 1 and t not in old]
-    edge = lambda b: min(b[0], b[1], width - b[2], height - b[3])
-    if edge(bbox_now) < EDGE_NEAR <= edge(bbox_was):
-        notes.append(f"{name}: ink {edge(bbox_now)} px from the canvas edge (was {edge(bbox_was)})")
+    notes += [f"{name}: {a!r} / {b!r} split across lines" for a, b in _split_terms(model, was, now, cards)]
+    near = [(now, was) for now, was in zip(_sides(bbox_now, width, height), _sides(bbox_was, width, height))
+            if now < EDGE_NEAR and now < was]
+    if near:
+        now, was = min(near)
+        stroke, glow = reach
+        notes.append(f"{name}: ink {now} px from the canvas edge (was {was})" + (f", its outline {now - stroke} px" if stroke else "")
+                     + (f", its glow {now - glow} px" if glow > stroke else ""))
     return notes
 
 

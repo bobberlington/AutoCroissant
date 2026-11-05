@@ -7,6 +7,7 @@ glyph names of MDW/Fonts/stoogedings.ttf.
 """
 from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from psd_tools import PSDImage
@@ -569,13 +570,17 @@ def _ability(data: bytes):
 
 
 @pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
-def test_badge_widths_relaid_from_photoshops_layout(clone, tmp_path, ring_fonts):
+def test_badge_widths_relaid_from_photoshops_layout(clone, tmp_path, ring_fonts, monkeypatch):
     """The guards' case: Dark Daroach's (1/2CD) and (2CD), drawn at the old widths (Photoshop's view says them), laid out
     again at the ring font's, by glyph; its text and stories untouched; afterwards nothing is left, so it never fires
-    again."""
+    again. At that font its 5 px outline would run to the canvas edge (ink 5 px off it): refused (review 2026-11-04,
+    Greenpath); an outline a px short of it is re-laid."""
     fonts, _ = ring_fonts
     data = at_rev(clone, RING, DAROACH)
     assert "badge widths" in cs.pixel_kinds(data)
+    fixed = cs.fix(data, DAROACH, [], str(tmp_path / "work"), None, fonts, only="badge widths")
+    assert not fixed.redrawn and fixed.pixel_left[0][1].endswith("5 px from the canvas edge (its outline 5 px)")
+    monkeypatch.setattr(psd_edit, "_stroke_reach", lambda layer: 4)
     fixed = cs.fix(data, DAROACH, [], str(tmp_path / "work"), None, fonts, only="badge widths")
     assert fixed.redrawn == {"badge widths": ["Ability"]} and fixed.pixel_left == [] and fixed.plain
     old, new = _ability(data), _ability(fixed.data)
@@ -602,6 +607,56 @@ def test_badge_widths_from_an_earlier_font(clone, tmp_path, ring_fonts):
     rel = "N.M.E/Michael's_Blessing.psd"
     fixed = cs.fix(at_rev(clone, RING, rel), rel, [], str(tmp_path / "work"), None, earlier, only="badge widths")
     assert not fixed.redrawn and fixed.pixel_left[0][1].startswith("Refused: overflow")
+
+
+def test_badge_widths_line_guards(monkeypatch):
+    """relay_badges' line guards (review 2026-11-04): a new line of badges alone is found (Wigfrid's '(1CD)' cut off from
+    its cost), an empty last line is never below the box (Sumo Panda), ink nearer the canvas edge than before is noted
+    once inside EDGE_NEAR (Sword of Aeons), tracking under a horizontal scale is found (Wigfrid's badge run), a new
+    break that cuts a count from its word or a coloured term is noted (Toriel's '4' / 'HP', Warcraftian Shaman's
+    'Fire' / 'Totem'), a badge and its full stop alone on a line are found (Warcraftian Paladin's '(ENDT).'), not plain
+    bracketed text (Puzzled Cat's); a break inside a card's name (Heavy Mole's 'Mini' / 'Drill.') or after a signed count
+    is noted; each canvas side is judged on its own, the outline's and the glow's distance said."""
+    line = lambda text, y=0.0: SimpleNamespace(text=text, y=y, drawn=True)
+    assert cs._badges_alone([line("(1CD)(3 points) Create a"), line("Battle Spear.")],
+                            [line("(1CD)"), line("(3 points) Create a")]) == "(1CD)"
+    assert cs._badges_alone([line("(1CD)"), line("Go.")], [line("(1CD)"), line("Go.")]) == ""
+    assert cs._badges_alone([line("immune until (ENDT).")], [line("immune until"), line("(ENDT).")]) == "(ENDT)."
+    assert cs._badges_alone([line("Go (cannot ignore usage conditions).")],
+                            [line("Go"), line("(cannot ignore usage conditions).")]) == ""
+    mole = "Summon a Mini Drill. Gain +2 ATK."
+    on = lambda a, b: SimpleNamespace(text=mole[a:b], start=a, end=b, drawn=True, y=0.0)
+    plain = SimpleNamespace(text=mole, runs=(SimpleNamespace(start=0, end=len(mole), style=SimpleNamespace(fill=(1, 1, 1))),))
+    cards = (("Mini Drill", "mini-drill", "minion"),)
+    assert cs._split_terms(plain, [on(0, len(mole))], [on(0, 13), on(14, 28), on(29, len(mole))], cards) == [
+        ("Mini", "Drill."), ("+2", "ATK.")]
+    assert cs._split_terms(plain, [on(0, len(mole))], [on(0, 13), on(14, len(mole))]) == []
+    text = "Heal a creature for 4 HP, and inflict 1T Insane. Fire Totem, Air Totem."   # 4 HP and Fire Totem coloured
+    at = lambda a, b: SimpleNamespace(text=text[a:b], start=a, end=b, drawn=True, y=0.0)
+    paint = lambda a, b, rgb: SimpleNamespace(start=a, end=b, style=SimpleNamespace(fill=rgb))
+    white, green = (1.0, 1.0, 1.0), (0.2, 0.9, 0.3)
+    model = SimpleNamespace(text=text, runs=(paint(0, 20, white), paint(20, 24, green), paint(24, 49, white),
+                                             paint(49, 59, green), paint(59, len(text), white)))
+    old = [at(0, 25), at(26, len(text))]
+    assert cs._split_terms(model, old, [at(0, 21), at(22, 40), at(41, len(text))]) == [("4", "HP,"), ("1T", "Insane.")]
+    assert cs._split_terms(model, old, [at(0, 25), at(26, 53), at(54, len(text))]) == [("Fire", "Totem,")]
+    assert cs._split_terms(model, old, old) == []
+    assert cs._reflow_notes("Ability", old, [at(0, 21), at(22, len(text))], (90, 0, 99, 9), (90, 0, 99, 9), 200, 200,
+                            model) == ["Ability: '4' / 'HP,' split across lines"]
+    monkeypatch.setattr("psd_tools.composite.text.layout.frame", lambda model: (0, 0, 100, 50))
+    keep = SimpleNamespace(model=None, layout=SimpleNamespace(lines=[line("Attack.", 40)]))
+    assert not cs._below_box(keep, [line("Attack.", 40), line("", 60)])
+    assert cs._below_box(keep, [line("Attack", 40), line("now.", 60)])
+    assert cs._reflow_notes("Ability", [], [], (21, 900, 1179, 1100), (2, 900, 1200, 1100), 1200, 2400) == [
+        "Ability: ink 0 px from the canvas edge (was 21)"]
+    assert cs._reflow_notes("Ability", [], [], (10, 900, 1190, 1100), (10, 900, 1190, 1100), 1200, 2400) == []
+    assert cs._reflow_notes("Ability", [], [], (40, 900, 1190, 2395), (6, 900, 1190, 2395), 1200, 2400, None, (7, 29)) == [
+        "Ability: ink 6 px from the canvas edge (was 40), its outline -1 px, its glow -23 px"]   # the bottom 5 px both times
+    style = lambda tracking, scale: SimpleNamespace(tracking=tracking, horizontal_scale=scale)
+    run = lambda a, b, st: SimpleNamespace(start=a, end=b, style=st)
+    model = lambda *runs: SimpleNamespace(text="(1CD)(3 points) Create", runs=runs)
+    assert cs._scaled_tracking(model(run(0, 15, style(303, 0.59)), run(15, 22, style(0, 1.0))))
+    assert not cs._scaled_tracking(model(run(0, 15, style(303, 1.0)), run(15, 22, style(0, 0.8))))
 
 
 @pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")

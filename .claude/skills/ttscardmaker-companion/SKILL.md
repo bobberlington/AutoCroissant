@@ -31,7 +31,7 @@ by **impossibility-cards-reference §4.1**. This skill only summarizes it.
 | Build deps | `MDW/Fonts/stoogedings-src/requirements.txt` (fonttools, opencv-python-headless, numpy, pillow) | Source |
 | Build venv | `MDW/Fonts/stoogedings-src/.venv/` (gitignored by `stoogedings-src/.gitignore`) | Local only |
 | Icon sources | `Types/*.png` (35 "type" icons), `Types/Stars/*.png` (56 "star" icons) | Source art |
-| Letter / badge fonts the build embeds | `MDW/Fonts/Bree Serif Regular.ttf` (OFL letters), `MDW/Fonts/Changa One.ttf` (badge labels) | Inputs |
+| Letter / badge fonts the build embeds | `MDW/Fonts/Bree Serif Regular.ttf` (OFL letters), `MDW/Fonts/Roboto Black.ttf` (badge labels, numbers and the ring's number, at Changa One's old capital height; Roboto 3.015 at weight 900, OFL in `MDW/Fonts/OFL-Roboto.txt`; Changa One until 2026-11-04). `LABEL_METRICS` re-spaces its tabular 1 and its word space. The website sets badges in its subset `site/rulebook/fonts/roboto-black.woff2`, written by `stoogedings-src/badge_web_font.py` (the same metrics; it also prints text.js `RING_DIGITS`) | Inputs |
 | Website source | `site/index.html`, `site/assets/{app,search,deck,stats,text,edit,profile,pick,inline,details,decks,balance}.js`, `site/assets/style.css`, `site/build/build_site.py`, `site/build/analytics.py`, `site/build/requirements.txt`, `site/README.md` | Source |
 | Website output | `site/dist/`, thumbnail cache `site/.cache/` (both gitignored by `site/.gitignore`) | Generated |
 | Pages workflow | `.github/workflows/site.yml` | Source |
@@ -65,7 +65,7 @@ Set the text in the **stoogedings** font in Photoshop. These ASCII sequences tur
 | `[fire:glow]`, `[fire:darkglow]` (branch work/glow-tokens, §1.8) | The color icon on a soft white or black halo, 0.3 em wide | `[fire]` |
 | `★` (U+2605) | The gold `star` icon | `[star]` |
 | A PUA character (U+E000–U+E05A) inserted from the Glyphs panel | That icon | `[name]` |
-| `(1GCD)`, `(1/2CD)`, `(OYT)`, `(Action)` and the other tags (341, §1.2), in any letter case | A colored pill badge, the tag's own one (`(1gcd)` draws (1GCD)). The text is still what was typed | The text, unchanged (`(1gcd)` stays `(1gcd)`) |
+| `(1GCD)`, `(1/2CD)`, `(OYT)`, `(Action)` and the other tags (1139 since 2026-11-03, §1.2), in any letter case | A colored pill badge, the tag's own one (`(1gcd)` draws (1GCD)). The text is still what was typed | The text, unchanged (`(1gcd)` stays `(1gcd)`) |
 | A badge or `[fire:sticker]` with **Stylistic Alternates** on (Character panel, OpenType; §1.9) | One colour, in the text color: a pill outline with solid letters; a thin outline round the `:tint` icon | Unchanged |
 
 Matching rules inside the font (build_stoogedings.py `spellings()` and the MARK lookup):
@@ -174,7 +174,7 @@ tag, in the trigger group (orchestrator decision 2026-10-21; the owner may revis
 | turn, on your turn (blue `#4f86f7`→`#2563eb`) | `OYT`, `nPT`, `EnT`, `FTEnT` | `nCD`, `a/bCD` |
 | any, at any time (purple `#9f67ff`→`#7c3aed`) | `AAT`, `nPGT`, `EnGT` | `nGCD`, `a/bGCD` |
 | forced (red `#ef5050`→`#dc2626`) | `BOT`, `ENDT`, `BOGT`, `ENDGT` | — |
-| trigger, per game, uses and triggers (orange `#e08a1e`→`#b45309`) | `OFS`, `OS`, `OD`, `WOF`, `nPG` | `nU` |
+| trigger, per game, uses and triggers (orange `#cc7614`→`#aa4e08`; `#e08a1e`→`#b45309` until 2026-11-04) | `OFS`, `OS`, `OD`, `WOF`, `nPG` | `nU` |
 | neutral, not a timing tag (slate grey `#64748b`→`#475569`) | — | `Action` |
 
 Grey for `(Action)` because it says what kind of ability it is, not when it can be used: a fifth hue would read as a
@@ -214,23 +214,28 @@ by glyph, in Stylistic Alternates under an overlay (Morpho Knight); `--whole` sw
 guards run it on every push (owner 2026-11-03), and R1 is told only when that fix doesn't land
 (`card_guards._fix_stands`). The cost sweep of 2026-11-03 set 62 cards; WX-78, Wendy and Nefarious Chip are left to
 Photoshop (see the batch commit).
-Badge widths (2026-11-04: the cooldown ring makes every cooldown badge wider): the pixel fix `badge widths` (`card_standards.relay_badges`, first of the pixel fixes: `apostrophes` and `old glyphs` lay out at the current widths) re-lays a layer whose pixels show its icon font glyphs at other advances (Photoshop's, from the Txt2 view's glyph strikes; also the icon font's 3 earlier versions from the ref's history, `card_guards.earlier_fonts`, which the guards read once a push, best effort, and a sweep reads too), by glyph, rewrapped in its box, refused on overflow; the guards run it on every push. `old glyphs` refuses a glyph whose advance moved (never a half-ringed splice).
+Badge widths (2026-11-04: the cooldown ring makes every cooldown badge wider): the pixel fix `badge widths` (`card_standards.relay_badges`, first of the pixel fixes: `apostrophes` and `old glyphs` lay out at the current widths) re-lays a layer whose pixels show its icon font glyphs at other advances (Photoshop's, from the Txt2 view's glyph strikes; also the icon font's 3 earlier versions from the ref's history, `card_guards.earlier_fonts`, which the guards read once a push, best effort, and a sweep reads too), a glyph counting as drawn old when it is off the current font's render past `OLD_GLYPH_BAD` or (2026-11-04, the Roboto labels: a badge whose letters alone changed) an earlier font's own render fits it (`_drawn_earlier`: within `EARLIER_FIT`, now `OLD_GLYPH_BAD`, better by `EARLIER_GAIN` 0.03: Soul Master's (OD), main's font 0.136 against 0.186), by glyph, rewrapped in its box; refused when a moved badge fits no known font (`DRAWN_ODD` 0.30), on overflow (an empty last line never counts), ink taken nearer a canvas edge than its outline (`psd_edit._stroke_reach`; each side on its own), a new line of badges alone (`_badges_only`: badge spans, not any bracket), tracking under a horizontal scale (the fork spaces it unscaled, Photoshop scaled: Wigfrid, Wendy, WX-78) or a line that fits by a hair and would drop the last line below the box (`_razor`, `RAZOR` 0.1%); noted when breaks hang on a hair, a line gains or holds one word, a new break cuts a count (`COUNT_END`, signed too), a coloured term or a card's name (`fonts.cards`: Context.cards), or ink comes within `EDGE_NEAR` and nearer on a side (with its outline's and glow's distance); the guards run it on every push. `old glyphs` refuses a glyph whose advance moved (never a half-ringed splice).
 
-Shape (revised 2026-10-19, confirmed in Photoshop 2023 on 2026-10-20 with the reinstalled font): a pill about
-0.95 em tall with label capitals about 0.55 em, the label centred, color only — no extra symbol on multi-turn
-tags, in the font or on the website (an earlier extra mark read as an "I" and was dropped). The exact sizes
-and spacing are the `BADGE_*` constants in build_stoogedings.py (pill top/bottom, capital height, padding,
-`BADGE_TRACKING` letter spacing, border, side); read them there rather than quoting numbers, and rebuild (§1.4)
-after changing them. Centring pitfall fixed on 2026-10-20: tracking must go between letters only — adding it
-after the last letter pushes the label off centre.
+Shape (owner 2026-11-04): a pill 0.95 em tall, label capitals 540/950 in Roboto Black (`LABEL_FONT`;
+`LABEL_METRICS` re-spaces its 1, / and X and its word space), tracking between letters only. A cooldown's left end
+is its ring (the `ring_parts` comment in build_stoogedings.py): a segment per turn of charge, the start green
+clockwise, below zero red counter-clockwise, still to come hollow, past 8 by share, X dashed; the number (turns to
+its first full charge) green at 0 or 1, red below zero ((-1/XCD) a red X), else grey, a leading 1 nudged left
+(`RING_ONE`); (X/XCD)'s dashes green; no glow anywhere (owner 2026-11-04); under salt the charge solid, below zero a
+band, to come outlined, a divider after the ring (`SALT_DIVIDER`: from the outline mirrored, the ring centred, 66 units wide). Every label sits by its ink (`_sides`;
+after the ring by `RING_ENDS` 86, the visible walls' round ends), its letters' overlaps removed (`_merged`,
+skia-pathops: Roboto Black's static instance keeps the variable font's). Three copies change together: build_stoogedings.py (`BADGE_*`, `RING_*`, `COSTS`), text.js
+`ringParts`/`tagHtml`/`costHtml` with style.css `.badge`/`.ring`, and mockup.js `drawRing`/`PILL`;
+`tests/test_badge_parity.py` checks their colours, rings and metrics. Rebuild (§1.4) and rerun `badge_web_font.py`
+after changing them.
 
 **The tag vocabulary is defined in three places that must change together**, plus the batch copies below. All three
-carry the same 341 since 2026-10-22 (TTSCardMaker f6ce500); `tests/test_badge_parity.py` checks them, the walk part only where it exists,
+carry the same set: 341 since 2026-10-22 (TTSCardMaker f6ce500), 1139 since 2026-11-03 (n 1-20 or X, a/b with a from -9 up to b; the 341 first, in glyph order); `tests/test_badge_parity.py` checks them, the walk part only where it exists,
 and every case of every tag: all 2^letters combinations, 2530 spellings (the font by HarfBuzz: `uharfbuzz` where importable,
 e.g. `~/.venvs/ac-py314-fork`, else the `hb-shape` tool, so it runs in `ac-py314-psd125` too; the walk
 test skips "still exact-case" until the patch is applied, and "clone behind" for an any-case walk with an older font):
 - `badge_tags()`/`BADGE_GROUPS` in build_stoogedings.py
-- `FIXED`/`tagInfo()` in `site/assets/text.js`, plus the `--b-*` colors and `.badge` styles in `site/assets/style.css`.
+- `FIXED`/`tagInfo()` in `site/assets/text.js`, plus the `.badge.<group>` colors (`--bt`/`--bb`/`--be`) and `.badge` styles in `site/assets/style.css`.
   Candidates come from text.js's exported `TAG` (`/\((-?[0-9A-Za-z/]{2,6})\)/` since 2026-10-22, any case; no /g flag since
   73904db so it holds no `lastIndex`); the renderer's `PIECE` is built from `TAG.source` and stats.js iterates `new RegExp(TAG.source, "g")`
 - the `TAG` regex of the migration walk (§5; `~/Documents/Tools/psd-research/std/std_l1.jsx:9`, also `std.jsx:8` and
@@ -308,7 +313,7 @@ contextual lookups:
 | SALT_BADGES, SALT_STICKERS (§1.9) | Single, Ligature | Under `salt` only: badge → `badge_*.salt`; a `:sticker`'s [outline][icon][spacer] → `icon_*.sticker.salt` |
 
 Every icon also gets a plain TrueType outline in `glyf` as a fallback for renderers without SVG support. The SVG table
-holds 523 documents (91 icons + 91 no-signs + 341 badges; 522 with 340 before 2026-10-22, 252 with 70 before 2026-10-21;
+holds 523 documents in the 341-badge build (91 icons + 91 no-signs + 341 badges; 1449 badge glyphs since 2026-11-03: 1139 timing tags and 310 costs; 522 with 340 before 2026-10-22, 252 with 70 before 2026-10-21;
 705 with the 182 halos of §1.8).
 
 Renderer facts. These were tested 2026-10-19 in Photoshop 2023 and macOS CoreText. They are also recorded in the
@@ -1147,7 +1152,7 @@ work/site-round-2 (not on main yet; its NOTES sections are 21 and 22 since main 
 date-stamps whenever you touch this file.
 
 ```bash
-# Font identity, icon count, codepoint range, badges, GSUB lookup types (expect: stoogedings-Regular, 0xe000..0xe05a, ★ mapped, 341 badges, [1, 6, 4, 2, 1, 1, 6, 4], 523 SVG docs; with :glow [1, 6, 4, 2, 1, 1, 6, 4, 7, 7] and 705; lookups [1, 6, 4, 2, 4] before the any-case build, 340 / 522 before 2026-10-22, 70 / 252 before 2026-10-21)
+# Font identity, icon count, codepoint range, badges, GSUB lookup types (expect: stoogedings-Regular, 0xe000..0xe05a, ★ mapped, 1449 badges (2898 with their .salt; 341 before 2026-11-03), [1, 6, 4, 2, 1, 1, 6, 4], 523 SVG docs; with :glow [1, 6, 4, 2, 1, 1, 6, 4, 7, 7] and 705; lookups [1, 6, 4, 2, 4] before the any-case build, 340 / 522 before 2026-10-22, 70 / 252 before 2026-10-21)
 MDW/Fonts/stoogedings-src/.venv/bin/python -I -c "from fontTools.ttLib import TTFont; f=TTFont('MDW/Fonts/stoogedings.ttf'); c=f.getBestCmap(); print(f['name'].getDebugName(6), hex(min(x for x in c if x>=0xE000)), hex(max(c)), 0x2605 in c, sum(n.startswith('badge_') for n in f.getGlyphOrder()), [l.LookupType for l in f['GSUB'].table.LookupList.Lookup], len(f['SVG '].docList))"
 # Manifest: 91 icons (35 type / 56 star), contiguous PUA, 15 with aliases
 python3 -c "import json,collections as C; m=json.load(open('MDW/Fonts/stoogedings-src/stoogedings.json'))['icons']; print(len(m), C.Counter(v['kind'] for v in m.values()), sum(bool(v['aliases']) for v in m.values()))"

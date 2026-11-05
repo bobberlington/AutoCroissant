@@ -803,6 +803,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
     if any(issue.fix and not issue.waived for issue in issues) or standards.composer_layers(new) or pixels:
         fonts = partial(source.fonts_for)
         fonts.earlier = earlier                 # card_standards.relay_badges, redraw_old_glyphs
+        fonts.cards = context.cards             # relay_badges' notes: a break inside a card's name
         fixed = standards.fix(new_bytes, job.psd, issues, join(out, "work"), parser, fonts)
         result.fixed, result.composer, result.composer_left = fixed.applied, fixed.composer, fixed.composer_left
         result.pixel_left = list(fixed.pixel_left)

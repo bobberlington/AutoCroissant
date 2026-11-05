@@ -64,6 +64,7 @@ def _init(clone: str, tree: dict, kind: str, work: str, chained: Optional[dict] 
     context, vocab = build_context(source, tree)
     fonts = partial(source.fonts_for)
     fonts.earlier = earlier                     # card_standards.relay_badges, redraw_old_glyphs
+    fonts.cards = context.cards                 # relay_badges' notes: a break inside a card's name
     _worker.update(source=source, context=context, parser=vocab.parser(), kind=kind, work=work, whole=whole, fonts=fonts)
 
 
