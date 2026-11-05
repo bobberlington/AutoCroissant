@@ -205,6 +205,13 @@ def test_each_version_links_the_commit_that_made_its_psd(bs, repo, tmp_path, mon
     assert [an["commits"][r["c"]] for r in an["cards"][alpha]["changes"]] == [c3[:12]]
 
 
+def test_a_commit_of_many_card_psds_is_heavy(bs, repo, tmp_path, monkeypatch):
+    """cards.json heavy: the 12-char shas of commits changing HEAVY_PSDS card PSDs or more, whose GitHub page fails
+    (text.js commitLink links the card's history instead). c1 added 3; c2 and c3 changed 2 (the Morgue's is no card)."""
+    monkeypatch.setattr(bs, "HEAVY_PSDS", 3)
+    assert _build(bs, monkeypatch, repo, tmp_path / "a")["cards.json"]["heavy"] == [repo["commits"][0][:12]]
+
+
 def test_a_version_commit_follows_renames_and_refuses_doubt(bs):
     """version_commit on parse_history rows: the commit that made the bytes the PSD held at the version's start, pure
     renames followed back (also a later one: a record's path is its newest); none for an edit, the previous version's
@@ -319,7 +326,7 @@ def test_contributions_json_has_person_stats(bs, repo, tmp_path, monkeypatch):
 
 def test_index_carries_the_first_screen(bs, repo, tmp_path, monkeypatch):
     """index.html's pre-written grid: the cards in Name order as links to their pages, checked against grid.js in node;
-    a difference fails the build."""
+    a difference fails the build. A card's page carries its dialog's picture, the one it preloads (card_frame)."""
     if not shutil.which("node"):
         pytest.skip("no node")
     out = _build(bs, monkeypatch, repo, tmp_path / "a")
@@ -327,6 +334,9 @@ def test_index_carries_the_first_screen(bs, repo, tmp_path, monkeypatch):
     ids = [c["id"] for c in sorted(out["cards.json"]["cards"], key=lambda c: c["name"].lower())]
     assert re.findall(r'<a class="tile" href="c/([^/"]+)/"', page) == ids
     assert page.count('fetchpriority="high"') == min(len(ids), bs.FIRST_EAGER)
+    card = (tmp_path / "a" / "dist" / "c" / "alpha" / "index.html").read_text(encoding="utf-8")
+    assert re.search(r'<img id="detail-img" src="([^"]+)"', card)[1] == re.search(r'<link rel="preload" as="image" href="([^"]+)"', card)[1]
+    assert (bs.BADGE_FONT in card) == bs.has_badges(next(c for c in out["cards.json"]["cards"] if c["id"] == "alpha").get("ability") or "")
     monkeypatch.setattr(bs, "tile_html", lambda c, eager, icons: f'<a class="tile" href="c/{c["id"]}/">')
     with pytest.raises(SystemExit, match="differs from grid.js"):
         _build(bs, monkeypatch, repo, tmp_path / "b")
@@ -337,7 +347,8 @@ def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypat
     editor rulebook-edit.js) are imported by app.js with import(): without
     esbuild as stamped modules no page preloads; with it as chunks of their own, each with its stamped source map, none of
     their code in what a first visit loads (app.js and the chunks it imports), and the meta chunks list naming
-    each one's files (app.js early())."""
+    each one's files (app.js early()). Share pages preload the chunks app.js imports, index.html doesn't; its head script
+    names the rulebook's for a Rulebook link."""
     exe = bs.esbuild()
     monkeypatch.setattr(bs, "esbuild", lambda: None)
     _build(bs, monkeypatch, repo, tmp_path / "a")
@@ -359,6 +370,10 @@ def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypat
             todo += re.findall(r'from\s*"\./([\w-]+\.js)"', (assets / f).read_text(encoding="utf-8"))
     chunks = {k: [p.removeprefix("assets/") for p in v] for k, v in json.loads(html_unescape(re.search(r'<meta name="chunks" content="([^"]*)">', page)[1])).items()}
     assert sorted(chunks) == sorted(lazy) and chunks["editing.js"][0].startswith("editing-")
+    assert f'["modulepreload", "assets/{chunks["rulebook.js"][0]}"]' in page
+    hinted = lambda p: re.findall(r'<link rel="modulepreload" href="assets/(?!app\.js)([^"]+)">', p)
+    card = (tmp_path / "b" / "dist" / "c" / "alpha" / "index.html").read_text(encoding="utf-8")
+    assert sorted(hinted(card)) == sorted(first[1:]) and first[1:] and not hinted(page)
     sources = {}
     for f in {*first, *(n for v in chunks.values() for n in v)}:
         code = (assets / f).read_text(encoding="utf-8")
@@ -502,6 +517,24 @@ def test_a_card_naming_itself_mentions_itself(tmp_path):
     assert json.loads(done.stdout) == ["mk"]
 
 
+def test_a_heavy_commit_links_the_cards_history(tmp_path):
+    """text.js commitLink: a heavy commit (cards.json heavy) links GitHub's history of the card's PNG from it, its path
+    encoded, and nothing without a path; any other commit its commit page."""
+    text_js = BUILD_SITE.parents[1] / "assets" / "text.js"
+    if shutil.which("node") is None or not text_js.is_file():
+        pytest.skip("no node or text.js")
+    probe = tmp_path / "probe.mjs"
+    probe.write_text(f"const t = await import({json.dumps(text_js.as_uri())});\n"
+                     "t.setHeavy(['aaaaaaaaaaaa']); const a = 'a'.repeat(40), b = 'b'.repeat(40), p = \"Items/2 Stars/Ahn'Qiraj #1.png\";\n"
+                     "process.stdout.write(JSON.stringify([t.commitLink('o/r', b, 'x', p), t.commitLink('o/r', a, 'x'), t.commitLink('o/r', a, 'x', p)]));\n",
+                     encoding="utf-8")
+    done = subprocess.run(["node", str(probe)], capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    hrefs = [html_unescape(m[1]) if m else None for m in (re.search(r'href="([^"]*)"', h) for h in json.loads(done.stdout))]
+    assert hrefs == [f"https://github.com/o/r/commit/{'b' * 40}", None,
+                     f"https://github.com/o/r/commits/{'a' * 40}/Items/2%20Stars/Ahn'Qiraj%20%231.png"]
+
+
 def test_tts_details_for_the_save(bs):
     """data/tts.json (owner 10-30, the TTS hover strip and details): types' meanings from the chapters (an icon heading's
     section to the page break, a "[token]:" line, a line ending in tokens; secret text, "(See: ...)" and non-icons left
@@ -542,3 +575,9 @@ def test_tts_details_for_the_save(bs):
         "a": "(1cd) Inflict 2T burning. (3CD) fire again. (OD) Burning! Starts with 2 Dark Tentacles and a Secret. Deals piercing damage; negates.",
         "t": ["fire", "offensiveminion"], "g": ["1CD", "3CD", "OD"], "x": ["Burning"], "m": ["Aux/Dark_Tentacle.png"], "r": ["damage-types", "negation"], "by": "Bob"}
     assert "x" not in got["cards"]["Aux/Burning.png"] and got["chapters"]["minions"] == {"num": "15", "title": "Minions"}
+
+
+def test_badge_font_preloaded_where_badges_show(bs):
+    """A card page preloads the badge font when its text draws a badge (text.js's tags and costs, any case), not otherwise."""
+    assert all(map(bs.has_badges, ["(1cd) Hit.", "(-1/1GCD) Wait.", "Pay (2 points).", "(Action) Swap.", "(0.5 SP)"]))
+    assert not any(map(bs.has_badges, ["Deal 2 (x) damage.", "(Actions) twice", "x(2 points)", "Plain text."]))
