@@ -1190,7 +1190,7 @@ def query_rulebook(interaction: Interaction,
                    search_text: str,
                    limit: int = -1) -> None:
     """
-    Search the rulebook: the matching lines under their chapter names, chapters with the most matches first.
+    Search the rulebook: the matching lines under their chapter names, chapters with the text at a word start first.
 
     Args:
         interaction: Discord interaction
@@ -1232,16 +1232,18 @@ def rulebook_lines(pages: DataFrame, text: str) -> list:
     The lines of each page holding text (any case), cut to SNIPPET around it.
 
     Returns:
-        [(page name, [lines])], the most lines first, then by name; a match across a line break: that passage
+        [(page name, [lines])], the most lines with the text at a word start first ("ring" before "during"), then the
+        most lines, then by name; a match across a line break: that passage
     """
     found, low = [], text.lower()
+    start = compile(r"(?<![a-z])" + escape(low), IGNORECASE)   # no letter just before: "ring", not "during"
     for name, ability in pages["ability"].items():
         lines = [BULLET.sub("", " ".join(line.split())) for line in str(ability).split("\n")]
         lines = [line for line in lines if low in line.lower()]
         if not lines:                                # the text runs over a line break
             lines = [" ".join(str(ability).split())]
         found.append((name, [_cut(line, low) for line in lines]))
-    found.sort(key=lambda page: (-len(page[1]), str(page[0]).lower()))
+    found.sort(key=lambda page: (-sum(bool(start.search(line)) for line in page[1]), -len(page[1]), str(page[0]).lower()))
     return found
 
 

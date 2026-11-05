@@ -82,7 +82,7 @@ def test_bot(repo):
 
 
 def test_rulebook_lines(monkeypatch):
-    """/query_rulebook: the matching lines under their page names (most matches first), whole pages per message."""
+    """/query_rulebook: the matching lines under their page names (word starts, then most matches), whole pages per message."""
     import commands.utils as utils
     from pandas import DataFrame
     pages = {"08 Global Turn": "THE GLOBAL TURN\nEach slot takes its turn.\nThen the next turn.",
@@ -107,3 +107,5 @@ def test_rulebook_lines(monkeypatch):
     utils.dispatch_queue.clear()
     assert len(sent) == 1 and "links" in sent[0]
     assert sent[0]["content"].startswith("'turn' is on 7 lines of 4 rulebook chapters:\n\n**08 Global Turn**\n- THE GLOBAL **TURN**")
+    repo.rulebook_dff = DataFrame({"ability": ["During a turn.\nAll during it.", "The ring (1CD)."]}, index=["A", "B"])
+    assert [n for n, _ in qc.rulebook_lines(repo.rulebook_search_engine("ring"), "ring")] == ["B", "A"]   # word starts first
