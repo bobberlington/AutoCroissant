@@ -528,6 +528,21 @@ def test_card_names_case_rule_on_the_gates(clone):
     assert not any(issue.code == "R14" for issue in cs.check(psd, rel, cs.Context()))
 
 
+def test_card_names_case_rule_skips_lowercase_cards(clone):
+    """snas. (Sans.psd) is written all in lowercase on purpose, its name too: its 'smeckeldorfed' is no R14 (owner
+    2026-11-05); the same mention elsewhere still is, and Kyle (printed hdckighfkvhvgmk, capitalised text) is no exception."""
+    cards = NAME_CARDS + (("snas.", "Sans", "creature"), ("Smeckeldorfed", "Smeckeldorfed", "debuff"))
+    rel = "Creatures/Undertale/5 Stars/Sans.psd"
+    psd = PSDImage.open(clone / rel)
+    assert any(f[0] == "smeckeldorfed" for layer in cs.ability_layers(psd) for f in cs.miscased_names(layer.text or "", cards))
+    assert not [issue for issue in cs.check(psd, rel, cs.Context(cards=cards)) if issue.code == "R14"]
+    assert cs.rule_name_case(psd, cards, "other") is not None
+    kyle = PSDImage.open(clone / "Creatures/Other/5 Stars/Kyle.psd")   # a lowercase name, capitalised text: no exception
+    texts = [layer.text or "" for layer in cs.ability_layers(kyle)]
+    assert cs._lowercase_card([layer.text or "" for layer in cs.ability_layers(psd)], "snas.")
+    assert not cs._lowercase_card(texts, "hdckighfkvhvgmk") and not cs._lowercase_card(texts, "Kyle")
+
+
 def test_plain_timing_tags_set_as_badges(clone, tmp_path):
     """Owner 2026-11-03: Elmadan's "(Action)" and "(2 points)", typed in its body font (Apple-Kid) before the font had
     the badges: the tags kind (the guards' on every push) sets them in the icon font (added to the card), fitted, by

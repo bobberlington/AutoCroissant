@@ -717,11 +717,28 @@ def miscased_names(text: str, cards: tuple) -> list:
     return out
 
 
-def rule_name_case(psd: PSDImage, cards: Optional[tuple]) -> Optional[Issue]:
-    """R14: a card named in the ability text in another letter case (report only)."""
+def _lowercase_card(texts: list, own: str) -> bool:
+    """Written in lowercase on purpose (snas.): its own name and every sentence of its ability text start lowercase,
+    badges and [tokens] read as blanks (owner 2026-11-05; a lowercase name alone, as hdckighfkvhvgmk's, is not)."""
+    if own != own.lower() or not any(ch.isalpha() for ch in own):
+        return False
+    starts = []
+    for text in texts:
+        for a, b in reversed(psd_edit.icon_text(text, None)):
+            text = text[:a] + " " * (b - a) + text[b:]
+        starts += [m[1] for m in re_compile(r"(?:^|[\n\r.!?])[^A-Za-z\n\r.!?]*([A-Za-z])").finditer(text)]
+    return bool(starts) and not any(ch.isupper() for ch in starts)
+
+
+def rule_name_case(psd: PSDImage, cards: Optional[tuple], key: str = "") -> Optional[Issue]:
+    """R14: a card named in the ability text in another letter case (report only); a card written in lowercase on
+    purpose (_lowercase_card) has its lowercase mentions pass."""
     if not cards:
         return None
-    found = list(dict.fromkeys(pair for layer in ability_layers(psd) for pair in miscased_names(layer.text or "", cards)))
+    texts = [layer.text or "" for layer in ability_layers(psd)]
+    lower = _lowercase_card(texts, next((title for title, k, _ in cards if CardAuthors.key(k) == key), ""))
+    found = list(dict.fromkeys(pair for text in texts for pair in miscased_names(text, cards)
+                               if not (lower and pair[0] == pair[0].lower())))
     if not found:
         return None
     return Issue("R14", "card names typed in another letter case: "
@@ -798,7 +815,7 @@ def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = N
         run("R11", rule_part_names, psd, card)
     run("R12", rule_variants, psd, rel, context.pngs)
     run("R13", rule_layer_ids, psd)
-    run("R14", rule_name_case, psd, context.cards)
+    run("R14", rule_name_case, psd, context.cards, key)
     start = len(out)
     run("R15", rule_off_card, psd, card)
     off = [issue for issue in out[start:] if issue is not None and issue.code == "R15"]
