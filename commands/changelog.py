@@ -41,6 +41,7 @@ USES = re_compile(r"\((\d+)U\)")                         # more is stronger
 KINDS = ("new", "changed", "art", "reparse", "moved", "renamed", "archived", "restored", "edited", "authors", "restore",
          "baked", "bake-refused", "guard-png", "guard-fix")
 SILENT = ("guard-png", "guard-fix")                      # never in a Discord post: the Changes page and the commit say them
+PLAIN = re_compile(r"\boverflow: |: bad [\d.]+%, mean [\d.]+, max \d+| \([+-]?\d+ px(?:, '(?:[^'\\]|\\.)*'|, \"[^\"]*\")?\)")   # Discord: no codes, no pixel counts (nor the layer they name)
 KIND_LABEL = {"creature": "Creature", "item": "Item", "field": "Field card", "minion": "Minion", "nme": "N.M.E. item",
               "aux item": "Auxiliary item", "debuff": "Debuff", "buff": "Buff", "creatures": "Auxiliary creature",
               "unknown": "Other", "rulebook": "Rulebook page"}   # site/assets/app.js KIND_LABEL, and the rulebook's pages
@@ -485,7 +486,7 @@ def _line(event: dict, site: str, ids: Optional[dict]) -> str:
         gone = f"moved to {_md(event['moved_to'].rsplit('/', 1)[0])}" if event.get("moved_to") else "PSD deleted"
         return f"{_md(event.get('title') or event['card'])} ({gone})"
     if kind in ("baked", "bake-refused", "guard-png", "guard-fix"):
-        why = event.get("reason") or event.get("line") or ""
+        why = PLAIN.sub("", event.get("reason") or event.get("line") or "")
         png = " (PNG re-made)" if kind == "baked" and event.get("pngs") else ""
         return f"{title}: {_md(why)}{png}" if why else f"{title}{png}"
     return title

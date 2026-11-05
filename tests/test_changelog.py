@@ -256,14 +256,16 @@ def test_bake_and_guard_events():
     sync = dict(PUSH, by=cl.CARD_SYNC)
     guards = dict(PUSH, after="b2" * 20, by=cl.GUARDS)
     events = cl.number([dict(e, push=sync) for e in (
-        {"kind": "baked", "card": "Kirby", "reason": "hp 5 -> 8", "pngs": ["a.png"]},
+        {"kind": "baked", "card": "Kirby", "reason": "hp 5 -> 8; overflow: ability: set at 90% of its size to stay on its panel; "
+         "ability: onto the design below it (40 px, 'Background (1)'); check the card", "pngs": ["a.png"]},
         {"kind": "bake-refused", "card": "Meta", "reason": "font: no Face"},
         {"kind": "guard-fix", "card": "Kirby", "line": "straight apostrophes"})]
         + [dict(e, push=guards) for e in ({"kind": "art", "card": "Kirby"}, {"kind": "guard-png", "card": "Kirby", "line": "re-exported"})], 0, at=T)
     first, second = cl.messages(events, "https://site", repository="o/r")
     assert first["body"]["embeds"][0]["title"] == "Website edits baked into the PSDs, Oct 22 14:13: 1 baked, 1 bake refused"
     text = "\n".join(e["description"] for e in first["body"]["embeds"])
-    assert text == ("**Baked into the PSDs**\n[Kirby](https://site/#/cards?q=Kirby): hp 5 -> 8 (PNG re-made)\n"
+    assert text == ("**Baked into the PSDs**\n[Kirby](https://site/#/cards?q=Kirby): hp 5 -> 8; ability: set at 90% of its "
+                    "size to stay on its panel; ability: onto the design below it; check the card (PNG re-made)\n"
                     "**Bake refused**\n[Meta](https://site/#/cards?q=Meta): font: no Face")
     assert second == {"body": None, "cursor": {"seq": 5, "push": "b2" * 20}}
     assert cl.messages(events[2:3] + events[3:], "https://site") == [{"body": None, "cursor": {"seq": 3, "push": PUSH["after"]}},
