@@ -4428,6 +4428,27 @@ def on_panel_design(psd: PSDImage, layer, box: tuple) -> Optional[str]:
     return f"the new text prints on its panel's design ({count} px, {panel.name!r})" if count >= BEYOND[3] else None
 
 
+def below_box(keep, lines, added: bool = False) -> bool:
+    """
+    Whether lines (a new layout's) draw more baselines with letters below the text box's bottom than keep's layout did:
+    Photoshop hides such a line (overset: Croissant, 2026-11-04), though the fork draws it. Point text has no box.
+
+    Args:
+        keep: The layer's capture before the change (its model's box, its layout's lines)
+        lines: The new layout's lines (the engine's report)
+        added: An added Ability: its placeholder's lines count as none
+
+    Returns:
+        Whether a line more falls below the box
+    """
+    from psd_tools.composite.text.layout import frame
+    box = frame(keep.model)
+    if box is None:
+        return False
+    below = lambda ls: sum(1 for line in ls if line.drawn and line.text.strip() and line.y > box[1] + box[3] + 1e-6)
+    return below(lines) > (0 if added else below(keep.layout.lines))
+
+
 def fit_below(psd: PSDImage, layer, before: np.ndarray, fonts, draw, off_before: bool = True) -> tuple:
     """
     An Ability whose new text prints past its old text onto the design below it (ink_beyond: Autopsy Report's third
@@ -4813,16 +4834,16 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
 
     Returns:
         Edit with the engine's report. Content problems bake best-effort and are told in Edit.notes as "<code>: <field>:
-        <why>" (owner 2026-10-24: the editor previewed it): text that won't fit (overflow, off the canvas, under a layer
-        above or over a stat bar: covered_ink; a title on more lines, lower, onto the stars or icons or past the design
-        below it: ink_beyond; past a texture clipped to it: ink_past_clip), typed badges and tokens (a tint, letters,
-        a typed icon over the other glyphs or far from its letters' height: typed_icon_fit), font stand-ins, boxes
-        and saved pixels in another font (drawn_in_font); an FX layer whose style can't follow its words is deleted,
-        its words printing plain (styled words given the chart's layer by new_fx). Raises Refused for what it cannot
-        edit: unsupported-card (FX layers that are no pixel layers, two FX layers one name, status word
-        layers without a chart), styled-word (no glyph cutting in this psd-tools); ImportError when the fork
-        edits TySh alone (no story_sync: Photoshop would show the story's old text), draws no glow halos (glow_halos)
-        or lays no tab stops (tab_stops)
+        <why>" (owner 2026-10-24: the editor previewed it): text that won't fit (overflow, a last line below its box:
+        below_box, off the canvas, under a layer above or over a stat bar: covered_ink; a title on more lines, lower,
+        onto the stars or icons or past the design below it: ink_beyond; past a texture clipped to it: ink_past_clip),
+        typed badges and tokens (a tint, letters, a typed icon over the other glyphs or far from its letters' height:
+        typed_icon_fit), font stand-ins, boxes and saved pixels in another font (drawn_in_font); an FX layer whose style
+        can't follow its words is deleted, its words printing plain (styled words given the chart's layer by new_fx).
+        Raises Refused for what it cannot edit: unsupported-card (FX layers that are no pixel layers, two FX layers one
+        name, status word layers without a chart), styled-word (no glyph cutting in this psd-tools); ImportError when
+        the fork edits TySh alone (no story_sync: Photoshop would show the story's old text), draws no glow halos
+        (glow_halos) or lays no tab stops (tab_stops)
 
     The text is set one changed part at a time (splice_text), a deletion cutting whole lines or words (deletion_start),
     so what the edit keeps keeps its runs; an Ability's new ink past its old text on the design below it is told in
@@ -5087,6 +5108,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         flag("font", f"not resolved exactly, drawn in a stand-in: {', '.join(loose)}")
     if "overflow" in report.warnings:
         flag("overflow", f"{which} does not fit its box")
+    elif before is not None and below_box(before, report.lines, area is not None):     # told, never refused
+        flag("overflow", f"{which}: its last line falls below its text box, where Photoshop hides it")
     boxes = no_glyph(layer, text, changed, fonts)
     if boxes:
         flag("font", f"{which}: {''.join(dict.fromkeys(boxes))!r} has no glyph in its font (drawn as a box)")
@@ -9758,6 +9781,7 @@ __all__ = [
     'badge_fit',
     'badge_fits',
     'badge_spans',
+    'below_box',
     'badge_tags',
     'cost_tags',
     'badge_wants',

@@ -459,9 +459,10 @@ def test_old_glyph_redrawn_kerned_as_the_story(clone, tmp_path, monkeypatch):
 
 
 @pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
-def test_badges_whole_only_where_drawn_as_stored(clone, tmp_path):
-    """A sweep's whole: Restrained (the splice misses its pill's 1 px edge) is redrawn whole, its lines kept; Wendy, which
-    the fork lays out off Photoshop's pixels, still refuses. The guards never redraw whole."""
+def test_badges_whole_only_where_drawn_as_stored(clone, tmp_path, monkeypatch):
+    """A sweep's whole: Restrained (the splice misses its pill's 1 px edge) is redrawn whole, its lines kept; drawn off
+    its pixels, it refuses. The guards never redraw whole. Wendy, which the fork laid out off Photoshop's pixels until it
+    spaced tracked badges as Photoshop (cards-20261104), is spliced by glyph."""
     fonts, faces = _fonts(clone), psd_edit.font_map(_fonts(clone)([]))
     rel = "Auxiliary/Status Effects/Debuffs/2 Stars/Restrained.psd"
     data = at_rev(clone, RESAVE, rel)
@@ -473,9 +474,12 @@ def test_badges_whole_only_where_drawn_as_stored(clone, tmp_path):
     assert cs.badge_plan(PSDImage.open(str(tmp_path / "fit.psd")), fonts) == []
     lines = [cs._lines(psd_edit.ability_layer(PSDImage.open(BytesIO(d))), faces) for d in (data, fixed.data)]
     assert lines[0] == lines[1]
-    wendy = "Creatures/DST/3 Stars/Wendy.psd"
-    fixed = cs.fix(at_rev(clone, RESAVE, wendy), wendy, [], str(tmp_path / "work"), None, fonts, only="badges", whole=True)
+    monkeypatch.setattr(cs, "_ink_off", lambda layer, faces: cs.WHOLE_OFF * 2)
+    fixed = cs.fix(data, rel, [], str(tmp_path / "work"), None, fonts, only="badges", whole=True)
     assert not fixed.redrawn and "not redrawn by glyph" in fixed.pixel_left[0][1]
+    wendy = "Creatures/DST/3 Stars/Wendy.psd"
+    fixed = cs.fix(at_rev(clone, RESAVE, wendy), wendy, [], str(tmp_path / "work"), None, fonts, only="badges")
+    assert fixed.redrawn == {"badges": ["Ability"]} and fixed.pixel_left == []
 
 
 BUTTERFLY = ("2e4c9dd1", "Creatures/Kirby/5 Stars/Butterfly.psd")   # badges in Section layers under a Gradient Overlay
@@ -559,8 +563,10 @@ def ring_fonts(clone, tmp_path_factory):
             (folder / font.name).symlink_to(font)
     (folder / "stoogedings.ttf").write_bytes(at_rev(clone, RING, "MDW/Fonts/stoogedings.ttf"))
     fonts = lambda names: str(folder)
+    before = tmp_path_factory.mktemp("ring-earlier") / "stoogedings.earlier"      # the icon font before the ring's commit
+    before.write_bytes(at_rev(clone, f"{RING}^", "MDW/Fonts/stoogedings.ttf"))
     earlier = partial(fonts)
-    earlier.earlier = (str(pinned / "stoogedings.ttf"),)
+    earlier.earlier = (str(before),)
     return fonts, earlier
 
 
@@ -573,14 +579,15 @@ def _ability(data: bytes):
 def test_badge_widths_relaid_from_photoshops_layout(clone, tmp_path, ring_fonts, monkeypatch):
     """The guards' case: Dark Daroach's (1/2CD) and (2CD), drawn at the old widths (Photoshop's view says them), laid out
     again at the ring font's, by glyph; its text and stories untouched; afterwards nothing is left, so it never fires
-    again. At that font its 5 px outline would run to the canvas edge (ink 5 px off it): refused (review 2026-11-04,
-    Greenpath); an outline a px short of it is re-laid."""
+    again. At that font its ink stays 37 px off the canvas edge: an outline that wide would reach it, refused (review
+    2026-11-04, Greenpath); its own 5 px outline is re-laid."""
     fonts, _ = ring_fonts
     data = at_rev(clone, RING, DAROACH)
     assert "badge widths" in cs.pixel_kinds(data)
+    monkeypatch.setattr(psd_edit, "_stroke_reach", lambda layer: 37)
     fixed = cs.fix(data, DAROACH, [], str(tmp_path / "work"), None, fonts, only="badge widths")
-    assert not fixed.redrawn and fixed.pixel_left[0][1].endswith("5 px from the canvas edge (its outline 5 px)")
-    monkeypatch.setattr(psd_edit, "_stroke_reach", lambda layer: 4)
+    assert not fixed.redrawn and fixed.pixel_left[0][1].endswith("37 px from the canvas edge (its outline 37 px)")
+    monkeypatch.undo()
     fixed = cs.fix(data, DAROACH, [], str(tmp_path / "work"), None, fonts, only="badge widths")
     assert fixed.redrawn == {"badge widths": ["Ability"]} and fixed.pixel_left == [] and fixed.plain
     old, new = _ability(data), _ability(fixed.data)
@@ -609,10 +616,9 @@ def test_badge_widths_from_an_earlier_font(clone, tmp_path, ring_fonts):
     assert not fixed.redrawn and fixed.pixel_left[0][1].startswith("Refused: overflow")
 
 
-def test_badge_widths_line_guards(monkeypatch):
+def test_badge_widths_line_guards():
     """relay_badges' line guards (review 2026-11-04): a new line of badges alone is found (Wigfrid's '(1CD)' cut off from
-    its cost), an empty last line is never below the box (Sumo Panda), ink nearer the canvas edge than before is noted
-    once inside EDGE_NEAR (Sword of Aeons), tracking under a horizontal scale is found (Wigfrid's badge run), a new
+    its cost), ink nearer the canvas edge than before is noted once inside EDGE_NEAR (Sword of Aeons), a new
     break that cuts a count from its word or a coloured term is noted (Toriel's '4' / 'HP', Warcraftian Shaman's
     'Fire' / 'Totem'), a badge and its full stop alone on a line are found (Warcraftian Paladin's '(ENDT).'), not plain
     bracketed text (Puzzled Cat's); a break inside a card's name (Heavy Mole's 'Mini' / 'Drill.') or after a signed count
@@ -643,20 +649,31 @@ def test_badge_widths_line_guards(monkeypatch):
     assert cs._split_terms(model, old, old) == []
     assert cs._reflow_notes("Ability", old, [at(0, 21), at(22, len(text))], (90, 0, 99, 9), (90, 0, 99, 9), 200, 200,
                             model) == ["Ability: '4' / 'HP,' split across lines"]
-    monkeypatch.setattr("psd_tools.composite.text.layout.frame", lambda model: (0, 0, 100, 50))
-    keep = SimpleNamespace(model=None, layout=SimpleNamespace(lines=[line("Attack.", 40)]))
-    assert not cs._below_box(keep, [line("Attack.", 40), line("", 60)])
-    assert cs._below_box(keep, [line("Attack", 40), line("now.", 60)])
     assert cs._reflow_notes("Ability", [], [], (21, 900, 1179, 1100), (2, 900, 1200, 1100), 1200, 2400) == [
         "Ability: ink 0 px from the canvas edge (was 21)"]
     assert cs._reflow_notes("Ability", [], [], (10, 900, 1190, 1100), (10, 900, 1190, 1100), 1200, 2400) == []
     assert cs._reflow_notes("Ability", [], [], (40, 900, 1190, 2395), (6, 900, 1190, 2395), 1200, 2400, None, (7, 29)) == [
         "Ability: ink 6 px from the canvas edge (was 40), its outline -1 px, its glow -23 px"]   # the bottom 5 px both times
-    style = lambda tracking, scale: SimpleNamespace(tracking=tracking, horizontal_scale=scale)
-    run = lambda a, b, st: SimpleNamespace(start=a, end=b, style=st)
-    model = lambda *runs: SimpleNamespace(text="(1CD)(3 points) Create", runs=runs)
-    assert cs._scaled_tracking(model(run(0, 15, style(303, 0.59)), run(15, 22, style(0, 1.0))))
-    assert not cs._scaled_tracking(model(run(0, 15, style(303, 1.0)), run(15, 22, style(0, 0.8))))
+
+
+def test_old_glyphs_told_only_from_another_build(monkeypatch):
+    """The guards tell old glyphs (owner 2026-11-04) only when they show another build of the icon font: the rest of the
+    layer is the current font's layout, or, their advances moved, an earlier layout is; never when the fork lays the
+    layer out off Photoshop's pixels (Michael's Blessing re-saved with a 65536 times larger tracking)."""
+    drawn = (None, None, None, None, [3])
+    off = {"share": 0.02}
+    monkeypatch.setattr(cs, "_off_beside", lambda drawn, marks: off["share"])
+    monkeypatch.setattr(cs, "laid_plan", lambda layer, faces, earlier: ("laid", {3}, 0.01))
+    assert cs._another_build(None, None, (), drawn, False)
+    off["share"] = 0.6
+    assert not cs._another_build(None, None, (), drawn, False)
+    assert cs._another_build(None, None, (), drawn, True)
+    off["share"] = 0.0126                       # Michael's Blessing: the rest fits, two badges thrown off by the tracking
+
+    def refused(layer, faces, earlier):
+        raise psd_edit.Refused("unsupported-card", "Ability: at its old badge widths the fork's layout is 44% off")
+    monkeypatch.setattr(cs, "laid_plan", refused)
+    assert not cs._another_build(None, None, (), drawn, True)
 
 
 @pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
@@ -669,13 +686,13 @@ def test_old_glyphs_refuse_a_moved_advance(clone, tmp_path, ring_fonts):
         cs.redraw_old_glyphs(str(tmp_path / "in.psd"), str(tmp_path / "out.psd"), fonts)
 
 
-def _typed_curly(data: bytes, fonts, path) -> bytes:
+def _typed_curly(data: bytes, fonts, path, earlier=()) -> bytes:
     """Taranza's "creature's" typed with a curly apostrophe before the ring: spliced at the old widths it was laid out
     with (laid_plan's), as Photoshop drew it then."""
     from psd_tools.composite.text import capture
     psd = PSDImage.open(BytesIO(data))
     layer = next(layer for layer in psd.descendants() if layer.kind == "type" and layer.name.strip() == "Ability")
-    laid = cs.laid_plan(layer, psd_edit.font_map(fonts([]), layer))[0]
+    laid = cs.laid_plan(layer, psd_edit.font_map(fonts([]), layer), earlier)[0]
     keep = capture(layer, laid)
     layer.set_text(layer.text.replace("creature's", "creature’s"), keep="runs")
     layer.rasterize(fonts=laid, keep=keep, unit=psd_edit.SPLICE_UNIT)
@@ -692,7 +709,7 @@ def test_guards_fixes_compose_with_the_ring_font(clone, tmp_path, ring_fonts):
     fonts, earlier = ring_fonts
     martlet, taranza = "Creatures/Undertale/3 Stars/Martlet.psd", "Creatures/Kirby/3 Stars/Taranza.psd"
     for rel, data, kinds in ((martlet, at_rev(clone, "1b4f36a0", martlet), ["tags"]),
-                             (taranza, _typed_curly(at_rev(clone, RING, taranza), fonts, tmp_path / "curly.psd"),
+                             (taranza, _typed_curly(at_rev(clone, RING, taranza), fonts, tmp_path / "curly.psd", earlier.earlier),
                               ["badge widths", "apostrophes"])):
         fixed = cs.fix(data, rel, [], str(tmp_path / "work"), None, earlier)
         assert fixed.redrawn == {kind: ["Ability"] for kind in kinds} and list(fixed.redrawn) == kinds, (rel, fixed.pixel_left)

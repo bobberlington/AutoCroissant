@@ -1397,6 +1397,27 @@ def test_pixel_fixes_are_said_only_in_the_commit(tmp_path, monkeypatch):
     assert cg.message([entry], "f" * 40).startswith(f"Card guards: straight apostrophes on 1 card (push {'f' * 8})")
 
 
+def test_an_old_font_save_is_told():
+    """Owner 2026-11-04: badges drawn with another build of the icon font that the PSD keeps (old glyphs refused or
+    fallen back, or a redraw whose PNG couldn't follow) are told, on Discord and in the commit comment; one that lands
+    never. A landing pixel fix's notes go to plan.json alone."""
+    from types import SimpleNamespace
+    fixed = lambda stale=(), redrawn=None: SimpleNamespace(stale_glyphs=list(stale), redrawn=redrawn or {})
+    relaid = {"badge widths": ["Ability"]}
+    assert cg.stale_left(fixed(), {}) == []
+    assert cg.stale_left(fixed(["Ability"]), {}) == ["Ability"]                     # refused, or its PNG didn't follow
+    assert cg.stale_left(fixed(["Ability"], {"old glyphs": ["Ability"]}), {"old glyphs": ["Ability"]}) == []
+    assert cg.stale_left(fixed((), relaid), {}) == ["Ability"]                       # re-laid, its PNG didn't follow
+    assert cg.stale_left(fixed(["Name"], relaid), relaid) == ["Name"]
+    result = cg.Result(cg.Job("X/A.psd", "pair", png="X/A.png"), notes=[(cg.OLD_FONT, True)],
+                       pixel_notes=["Ability: 3 lines became 4"])
+    assert result.told() == [cg.OLD_FONT]
+    data = cg.plan([result], "o/r", "a" * 40, "b" * 40, "on")
+    assert data["cards"][0]["pixel_notes"] == ["Ability: 3 lines became 4"]
+    text = cg.markdown(data, [], [], [])
+    assert f"- {cg.OLD_FONT}" in text and "became" not in text
+
+
 def test_a_rewrap_redraw_follows_into_the_png_unsaid(tmp_path, monkeypatch):
     """R8 always switches; box text that rewraps is redrawn and its PNG re-exported through guard 1's export, unsaid (a
     guard 1 write takes the new pixels, the pushed PNG's recompression gives way); a refused export, or no PNG that shows

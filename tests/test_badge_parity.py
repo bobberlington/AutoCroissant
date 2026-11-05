@@ -113,7 +113,9 @@ def test_token_limit_fits_every_icon():
 SITE = CLONE / "site" / "assets"
 LABEL_FONT = CLONE / "MDW" / "Fonts" / "Roboto Black.ttf"
 RING_SAMPLE = ["1CD", "2CD", "3GCD", "8CD", "-1/1CD", "-1/2GCD", "-5/2CD", "1/2CD", "2/2CD", "12CD", "4/12CD", "-3/12GCD",
-               "-9/12CD", "XCD", "XGCD", "X/XCD", "X/2CD", "1/XCD", "-1/XCD", "-3/XGCD", "20GCD", "11CD", "1/12CD"]
+               "-9/12CD", "XCD", "XGCD", "X/XCD", "X/2CD", "1/XCD", "-1/XCD", "-3/XGCD", "20GCD", "11CD", "1/12CD",
+               "-2/2CD", "-2/1CD", "-3/1GCD", "-6/1CD", "-9/1CD", "-4/3CD", "-9/8GCD"]
+DEEP_BY_SHARE = [(12, -13), (12, -25), (12, -30), (9, -10)]   # past 8 segments (website only): by share
 
 
 @pytest.fixture(scope="module")
@@ -190,6 +192,72 @@ console.log(JSON.stringify(out));""")
         placed = build.ring_number(glyphs, cmap, caps, number)
         assert len(placed) == len(got["number"]), tag
         assert all(abs(a - b) < 1e-3 for (_, *p), q in zip(placed, got["number"]) for a, b in zip(p, q)), tag
+
+
+def _py_commands(build, contours):
+    """build_stoogedings contours as text.js path commands: (M|L, x, y), (A, r, r, 0, large, sweep, x, y), (Z,); a whole
+    circle as two halves (SVG can't draw one arc of 360 degrees)."""
+    out = []
+    for c in contours:
+        for op in c:
+            if op[0] != "A":
+                out.append((op[0], op[1], op[2]))
+                continue
+            _, r, a0, a1 = op
+            for f, t in ([(a0, (a0 + a1) / 2), ((a0 + a1) / 2, a1)] if abs(a1 - a0) >= 360 - 1e-9 else [(a0, a1)]):
+                out.append(("A", r, r, 0, int(abs(t - f) > 180), int(t > f), *build._rpt(r, t)))
+        out.append(("Z",))
+    return out
+
+
+def _js_commands(d: str):
+    toks, out, i = re.findall(r"[MLAZ]|-?\d*\.?\d+(?:e-?\d+)?", d), [], 0
+    while i < len(toks):
+        n = {"M": 2, "L": 2, "A": 7, "Z": 0}[toks[i]]
+        out.append((toks[i], *map(float, toks[i + 1:i + 1 + n])))
+        i += 1 + n
+    return out
+
+
+def test_ring_shapes_agree(build, tmp_path):
+    """(owner 2026-11-04, deep starts) the same shapes point by point, colour and salt: text.js ringParts' path data
+    against build_stoogedings ring_parts' contours (arc radii and flags, points within toFixed(2)), every sample without
+    an X (an X ring's dashes come in another order) and deep starts by share past 8 segments."""
+    keys = [t for t in RING_SAMPLE if "X" not in t] + [f"{s}/{c}" for c, s in DEEP_BY_SHARE]
+    js = site_node(tmp_path, f"""const out = {{}}, runs = ps => ps.reduce((o, [p, d]) => {{
+  if (o.length && o.at(-1)[0] === p) o.at(-1)[1] += d; else o.push([p, d]); return o; }}, []);
+for (const key of {json.dumps(keys)}) {{ const m = /^(-?\\d+)\\/(\\d+)$/.exec(key), c = m ? {{ cap: +m[2], start: +m[1], y: false }} : t.cooldownOf(key);
+  out[key] = [runs(t.ringParts(c).parts), runs(t.ringParts(c, true).parts)]; }}
+console.log(JSON.stringify(out));""")
+    for key in keys:
+        cap, start = build.cooldown_of(key) if key in RING_SAMPLE else map(int, reversed(key.split("/")))
+        for one, got in zip((False, True), js[key]):
+            parts = [(p, cs) for p, cs in build.ring_parts(cap, start, one=one)[0] if p not in ("body", "rim")]
+            assert [p for p, _ in parts] == [p for p, _ in got], (key, one)
+            for (_, cs), (_, d) in zip(parts, got):
+                a, b = _py_commands(build, cs), _js_commands(d)
+                assert len(a) == len(b) and all(x[0] == y[0] and len(x) == len(y) for x, y in zip(a, b)), (key, one)
+                assert all(x[4:6] == y[4:6] for x, y in zip(a, b) if x[0] == "A"), (key, one)
+                assert max((abs(u - v) for x, y in zip(a, b) for u, v in zip(x[1:], y[1:])), default=0) < 0.006, (key, one)
+
+
+def test_deep_starts_draw_lap_rings(build):
+    """A start more than a whole ring below zero (owner 2026-11-04, "C2"): its red band thinner (RING_DEEP_IN) and a thin
+    red lap ring per further ring, up to 2 (RING_LAPS), on the segments that deep; a start up to a whole ring below
+    zero keeps the band from RING_IN, no lap ring; salt: the band from RING_DEEP_IN, the lap rings in ink."""
+    radii = lambda cs: sorted({op[1] for c in cs for op in c if op[0] == "A"})
+    for tag, (bands, laps) in {"-1/1CD": (1, 0), "-2/2CD": (2, 0), "-2/1CD": (1, 1), "-3/1GCD": (1, 2), "-9/1CD": (1, 2),
+                               "-3/2CD": (2, 1), "-5/2CD": (2, 3), "-6/2CD": (2, 4), "-4/3CD": (3, 1), "-9/8GCD": (8, 1)}.items():
+        cap, start = build.cooldown_of(tag)
+        red = [cs for p, cs in build.ring_parts(cap, start)[0] if p == "red"]
+        assert len(red) == 1 and len(red[0]) == bands + laps, tag
+        inner = build.RING_DEEP_IN if laps else build.RING_IN
+        rings = build.RING_LAPS[:-(-(-start - cap) // cap)] if laps else []   # as deep as its deepest segment
+        assert radii(red[0]) == sorted({inner, build.RING_OUT, *(r for lap in rings for r in lap)}), tag
+        ink = [c for p, cs in build.ring_parts(cap, start, one=True)[0] if p == "ink" for c in cs]
+        assert len(ink) == bands + laps + 1, tag   # and the divider
+        assert {inner, inner + build.SALT_BAND} <= set(radii(ink)), tag
+    assert build.RING_LAPS[1][0] < build.RING_LAPS[1][1] < build.RING_LAPS[0][0] < build.RING_LAPS[0][1] < build.RING_DEEP_IN
 
 
 def test_web_metrics_match_the_label_font(build):

@@ -122,6 +122,7 @@ class Fixed:
     redrawn: dict = field(default_factory=dict) # PIXEL_FIXES kind -> layers redrawn in data (silent; the PNG follows)
     pixel_left: list = field(default_factory=list)  # (kind, why) a pixel fix not made (plan.json only)
     notes: list = field(default_factory=list)   # what a pixel fix did that a reader should look at (plan.json only)
+    stale_glyphs: list = field(default_factory=list)    # layers old glyphs found in another font build (told)
 
 
 # ========================
@@ -1257,13 +1258,18 @@ def straighten(path: str, out_path: str, fonts: Optional[Callable[[list], Option
     return [layer.name.strip() for layer in layers]
 
 
-def redraw_old_glyphs(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]]) -> list:
+def redraw_old_glyphs(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]],
+                      seen: Optional[list] = None) -> list:
     """
     Icon font glyphs Photoshop drew with an older font (old_glyphs) drawn again with the current one, those glyphs alone
     (a splice; refused when it would redraw the layer whole), the stored preview patched; gated (_only_pixels). Refused
     when one of them has another advance in the layout it may have been laid out with (laid_advances: Photoshop's view,
     an earlier icon font's, fonts.earlier): the splice would set it at its new width in the old layout (badge widths,
     first, re-lays those).
+
+    Args:
+        seen: Gets each layer whose old glyphs show another build of the icon font (_another_build), before any
+            refusal: the guards tell one they leave
 
     Returns:
         The layer names redrawn; raises Refused or the engine's errors
@@ -1275,13 +1281,17 @@ def redraw_old_glyphs(path: str, out_path: str, fonts: Optional[Callable[[list],
     boxes, records, names = [], set(), []
     for layer in icon_layers(psd):
         found = _fonts_of(layer, fonts)
-        stale = old_glyphs(layer, found)
+        drawn = _drawn_old(layer, found)
+        stale = drawn[4] if drawn else []
         if not stale:
             continue
         psd_edit.follow_kerning(psd, layer)     # B12: drawn as Photoshop kerns it (the story)
         keep, old = capture(layer, found), tuple(layer.bbox)
         moved = {gid for way in laid_advances(layer, found, earlier) for gid in way}
-        if any(keep.layout.glyphs[i].gid in moved for i in stale):
+        relaid = any(keep.layout.glyphs[i].gid in moved for i in stale)
+        if seen is not None and _another_build(layer, found, earlier, drawn, relaid):
+            seen.append(layer.name.strip())
+        if relaid:
             raise Refused("unsupported-card", f"{layer.name.strip()}: an old glyph was laid out at another width "
                                               "(badge widths')")
         glyphs = tuple(replace(g, fill=STALE_FILL) if i in stale else g for i, g in enumerate(keep.layout.glyphs))
@@ -1295,6 +1305,19 @@ def redraw_old_glyphs(path: str, out_path: str, fonts: Optional[Callable[[list],
     _save_patched(before, psd, boxes, out_path)
     _only_pixels(path, out_path, records)
     return names
+
+
+def _another_build(layer, faces, earlier: tuple, drawn: tuple, relaid: bool) -> bool:
+    """Whether a layer's old glyphs (drawn: _drawn_old's) show another build of the icon font, not a layout the fork can't
+    make (Photoshop 2023's own saves: Wigfrid's line that fits its box by 0.05 pt, broken there; Michael's Blessing's
+    tracking re-saved 65536 times larger): their advances moved, an earlier layout is its pixels (laid_plan); else,
+    beside them, the current font's layout is (_off_beside within LAID_OFF)."""
+    if not relaid:
+        return _off_beside(drawn, set(drawn[4])) <= LAID_OFF
+    try:
+        return laid_plan(layer, faces, earlier) is not None
+    except Refused:
+        return False
 
 
 def badge_plan(psd: PSDImage, fonts: Optional[Callable[[list], Optional[str]]]) -> list:
@@ -1397,10 +1420,10 @@ def fit_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Option
     and the Txt2 story), their layers' changed glyphs redrawn (a splice), the stored preview patched. A resize is made
     even when it rewraps the text or moves other words (owner 2026-10-25, the 58 shifted only that night): the moved
     glyphs are redrawn and an FX layer on moved words is cut again (_recut_fx). Refused when a line no longer fits the
-    box or ink runs off the canvas. Gated (_only_pixels, the stories by gate_stories), then checked: each fitted one
-    within FIT_CHECK px of its place and at its computed size. whole (a sweep's --whole, never the guards): a layer the
-    splice can't take is redrawn whole when the fork draws it as stored (_ink_off within WHOLE_OFF) and the fit keeps
-    its lines.
+    box (a new last line below it too: psd_edit.below_box) or ink runs off the canvas. Gated (_only_pixels, the stories
+    by gate_stories), then checked: each fitted one within FIT_CHECK px of its place and at its computed size. whole (a
+    sweep's --whole, never the guards): a layer the splice can't take is redrawn whole when the fork draws it as stored
+    (_ink_off within WHOLE_OFF) and the fit keeps its lines.
 
     Returns:
         The layer names fitted; raises Refused or the engine's errors
@@ -1419,7 +1442,8 @@ def fit_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Option
         now = _placed(layer, faces)
         report = layer.rasterize(fonts=faces, keep=keep, unit=psd_edit.SPLICE_UNIT)
         _by_glyph(layer, report, whole_ok and _lines(layer, faces) == lines)
-        if "overflow" in report.warnings or (not off and psd_edit._ink_off_canvas(layer, psd.width, psd.height)):
+        if "overflow" in report.warnings or psd_edit.below_box(keep, report.lines) or \
+                (not off and psd_edit._ink_off_canvas(layer, psd.width, psd.height)):
             raise Refused("overflow", f"{name}: resizing its badges pushes text out of its box")
         boxes += _padded(layer, old)
         for fx, was in _recut_fx(psd, layer, {i for i in placed if now.get(i) != placed[i]}, faces):
@@ -1508,10 +1532,10 @@ def tags_to_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Op
     (psd_edit.icon_style; with none, at the text's own style, ICON_FONT added as the bake adds it), ligatures on, then
     fitted as a typed badge (badge_fits: size and middle), in Stylistic Alternates under an overlay (psd_edit.one_colour);
     their layers' changed glyphs redrawn (a splice; text a badge moves is redrawn, an FX layer on moved words cut
-    again), the stored preview patched. Refused when a line no longer fits the box or ink runs off the canvas.
-    Gated (_only_pixels, the stories and the added face by gate_stories), then checked: no plain tag left. whole (a
-    sweep's --whole, never the guards): a layer the splice can't take is redrawn whole when the fork draws it as
-    stored (_ink_off within WHOLE_OFF).
+    again), the stored preview patched. Refused when a line no longer fits the box (a new last line below it too:
+    psd_edit.below_box) or ink runs off the canvas. Gated (_only_pixels, the stories and the added face by
+    gate_stories), then checked: no plain tag left. whole (a sweep's --whole, never the guards): a layer the splice
+    can't take is redrawn whole when the fork draws it as stored (_ink_off within WHOLE_OFF).
 
     Returns:
         The layer names changed; raises Refused or the engine's errors
@@ -1543,7 +1567,8 @@ def tags_to_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Op
         now = _placed(layer, faces)
         report = layer.rasterize(fonts=faces, keep=keep, unit=psd_edit.SPLICE_UNIT)
         _by_glyph(layer, report, whole_ok)
-        if "overflow" in report.warnings or (not off and psd_edit._ink_off_canvas(layer, psd.width, psd.height)):
+        if "overflow" in report.warnings or psd_edit.below_box(keep, report.lines) or \
+                (not off and psd_edit._ink_off_canvas(layer, psd.width, psd.height)):
             raise Refused("overflow", f"{name}: its badges push text out of its box")
         boxes += _padded(layer, old)
         for fx, was in _recut_fx(psd, layer, {i for i in placed if now.get(i) != placed[i]}, faces):
@@ -1798,16 +1823,13 @@ def relay_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Opti
         psd_edit.follow_kerning(psd, layer)
         laid, marks, share = plan
         name, keep = layer.name.strip(), capture(layer, laid)
-        if _scaled_tracking(keep.model):
-            raise Refused("unsupported-card", f"{name}: tracking under a horizontal scale (the fork spaces it unlike "
-                                              "Photoshop, Wigfrid 2026-11-04)")
         glyphs = tuple(replace(g, fill=STALE_FILL) if i in marks else g for i, g in enumerate(keep.layout.glyphs))
         old, placed, now = tuple(layer.bbox), _placed(layer, laid), _placed(layer, faces)
         off, inked = psd_edit._ink_off_canvas(layer, psd.width, psd.height), _ink_box(layer)
         report = layer.rasterize(fonts=faces, keep=replace(keep, layout=replace(keep.layout, glyphs=glyphs)),
                                  unit=psd_edit.SPLICE_UNIT)
         _by_glyph(layer, report, share <= WHOLE_OFF)
-        if "overflow" in report.warnings or _below_box(keep, report.lines):
+        if "overflow" in report.warnings or psd_edit.below_box(keep, report.lines):
             raise Refused("overflow", f"{name}: its badges at their new widths push text out of its box")
         reach, sides = psd_edit._stroke_reach(layer), _sides(_ink_box(layer), psd.width, psd.height)
         close = [now for now, was in zip(sides, _sides(inked, psd.width, psd.height)) if now <= max(reach, 1) and now < was]
@@ -1853,24 +1875,6 @@ class Relaid(list):
 
 
 EDGE_NEAR = 24                                  # px: ink this near the canvas edge is noted (nearer than before)
-
-
-def _below_box(keep, lines) -> bool:
-    """Whether lines (a re-layout's) draw more baselines below the box's bottom than keep's layout did: Photoshop hides
-    such a line (overset: Croissant, 2026-11-04), though the fork draws it."""
-    from psd_tools.composite.text.layout import frame
-    box = frame(keep.model)
-    if box is None:
-        return False
-    below = lambda ls: sum(1 for line in ls if line.drawn and line.text.strip() and line.y > box[1] + box[3] + 1e-6)
-    return below(lines) > below(keep.layout.lines)
-
-
-def _scaled_tracking(model) -> bool:
-    """Whether some run of the text sets tracking at a horizontal scale: Photoshop scales the tracking by it, the fork
-    does not, so their lines break apart (Wigfrid's badge run: 303 at 0.59)."""
-    return any(run.style.tracking and abs(run.style.horizontal_scale - 1) > 1e-3 and model.text[run.start:run.end].strip()
-               for run in model.runs)
 
 
 def _ink_box(layer) -> tuple:
@@ -2059,8 +2063,12 @@ def _pixel_fixes(folder: str, base: str, current: str, rel: str, parser: Optiona
         _, apply, reads = PIXEL_FIXES[kind]
         out = join(folder, kind.replace(" ", "-") + ".psd")
         try:
-            names = (apply(current, out, fonts, whole=True) if whole and apply in (fit_badges, tags_to_badges)
-                     else apply(current, out, fonts))
+            if whole and apply in (fit_badges, tags_to_badges):
+                names = apply(current, out, fonts, whole=True)
+            elif apply is redraw_old_glyphs:    # its stale layers kept before any refusal (told)
+                names = apply(current, out, fonts, seen=result.stale_glyphs)
+            else:
+                names = apply(current, out, fonts)
             if not names:
                 continue
             data = _gated(current, out, rel, parser, reads, sized=False)

@@ -189,6 +189,25 @@ def test_own_pixels():
     assert pe.own_pixels(replaced, region, [(0, 0, 200, 200)]).sum() == 5   # covered: every replaced pixel counts
 
 
+def test_below_box(monkeypatch):
+    """A new last line with letters below the box is found (Photoshop hides it: Croissant); an empty or undrawn one never
+    (Sumo Panda), nor one the old layout had below already; an added Ability's placeholder lines count as none; point
+    text has no box."""
+    pytest.importorskip("psd_tools.composite.text.layout")
+    line = lambda text, y: SimpleNamespace(text=text, y=y, drawn=True)
+    monkeypatch.setattr("psd_tools.composite.text.layout.frame", lambda model: (0, 0, 100, 50))
+    keep = SimpleNamespace(model=None, layout=SimpleNamespace(lines=[line("Attack.", 40)]))
+    assert not pe.below_box(keep, [line("Attack.", 40), line("", 60)])
+    assert pe.below_box(keep, [line("Attack", 40), line("now.", 60)])
+    assert not pe.below_box(keep, [line("Attack now.", 40), SimpleNamespace(text="Go.", y=60, drawn=False)])
+    assert not pe.below_box(keep, [line("Attack", 50), line("now.", 50.0000001)])
+    was = SimpleNamespace(model=None, layout=SimpleNamespace(lines=[line("Your", 40), line("ability", 60)]))
+    assert not pe.below_box(was, [line("Attack", 40), line("now.", 60)])
+    assert pe.below_box(was, [line("Attack", 40), line("now.", 60)], added=True)
+    monkeypatch.setattr("psd_tools.composite.text.layout.frame", lambda model: None)
+    assert not pe.below_box(keep, [line("Attack", 40), line("now.", 60)])
+
+
 def test_codes_are_the_closed_list():
     assert pe.CODES == ("duplicate", "unsupported-card", "stat>10", "blob", "parity", "styled-word", "font",
                         "overflow", "bytes", "size", "region", "shape", "reparse", "idempotence", "edit-changed",

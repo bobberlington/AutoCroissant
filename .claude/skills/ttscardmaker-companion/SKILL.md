@@ -174,7 +174,7 @@ tag, in the trigger group (orchestrator decision 2026-10-21; the owner may revis
 | turn, on your turn (blue `#4f86f7`→`#2563eb`) | `OYT`, `nPT`, `EnT`, `FTEnT` | `nCD`, `a/bCD` |
 | any, at any time (purple `#9f67ff`→`#7c3aed`) | `AAT`, `nPGT`, `EnGT` | `nGCD`, `a/bGCD` |
 | forced (red `#ef5050`→`#dc2626`) | `BOT`, `ENDT`, `BOGT`, `ENDGT` | — |
-| trigger, per game, uses and triggers (orange `#cc7614`→`#aa4e08`; `#e08a1e`→`#b45309` until 2026-11-04) | `OFS`, `OS`, `OD`, `WOF`, `nPG` | `nU` |
+| trigger, per game, uses and triggers (orange `#e08a1e`→`#b45309`) | `OFS`, `OS`, `OD`, `WOF`, `nPG` | `nU` |
 | neutral, not a timing tag (slate grey `#64748b`→`#475569`) | — | `Action` |
 
 Grey for `(Action)` because it says what kind of ability it is, not when it can be used: a fifth hue would read as a
@@ -219,10 +219,12 @@ Badge widths (2026-11-04: the cooldown ring makes every cooldown badge wider): t
 Shape (owner 2026-11-04): a pill 0.95 em tall, label capitals 540/950 in Roboto Black (`LABEL_FONT`;
 `LABEL_METRICS` re-spaces its 1, / and X and its word space), tracking between letters only. A cooldown's left end
 is its ring (the `ring_parts` comment in build_stoogedings.py): a segment per turn of charge, the start green
-clockwise, below zero red counter-clockwise, still to come hollow, past 8 by share, X dashed; the number (turns to
+clockwise, below zero red counter-clockwise (more than a whole ring below zero: a thinner band and inside it a thin red
+lap ring per further ring, up to 2, `RING_DEEP_IN`, `RING_LAPS`, the number clear of them), still to come hollow,
+past 8 by share, X dashed; the number (turns to
 its first full charge) green at 0 or 1, red below zero ((-1/XCD) a red X), else grey, a leading 1 nudged left
 (`RING_ONE`); (X/XCD)'s dashes green; no glow anywhere (owner 2026-11-04); under salt the charge solid, below zero a
-band, to come outlined, a divider after the ring (`SALT_DIVIDER`: from the outline mirrored, the ring centred, 66 units wide). Every label sits by its ink (`_sides`;
+band (and the lap rings), to come outlined, a divider after the ring (`SALT_DIVIDER`: from the outline mirrored, the ring centred, 66 units wide). Every label sits by its ink (`_sides`;
 after the ring by `RING_ENDS` 86, the visible walls' round ends), its letters' overlaps removed (`_merged`,
 skia-pathops: Roboto Black's static instance keeps the variable font's). Three copies change together: build_stoogedings.py (`BADGE_*`, `RING_*`, `COSTS`), text.js
 `ringParts`/`tagHtml`/`costHtml` with style.css `.badge`/`.ring`, and mockup.js `drawRing`/`PILL`;

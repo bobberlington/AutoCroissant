@@ -113,7 +113,7 @@ def blob_sha(path) -> str:
 
 PLAIN_DOOMER = "38c55bd361b60b99b9521c43cf9577213845a4ce^"   # Mini Doomer before queue A's "Ability FX: (BOT)" badge layer
 BADGED = "e51649baa4143fde379f9fa9d860a0003bfb4380"          # main before the 31 badge FX layers were retired (2026-10-25)
-RING = "17dc077c"       # TTSCardMaker's first ring font (local, 2026-11-04): every cooldown badge 1240 units wider (re-pin here)
+RING = "0ade8c3d"       # TTSCardMaker's ring font (2026-11-04, design B, Roboto labels): (1CD) 2040 -> 2658 units (re-pin here)
 
 
 def no_lazy() -> dict:

@@ -7,7 +7,8 @@ standards (missing fonts are the font check's alone) and fixes only the 0-pixel 
 always sets unsaid, box text that rewraps redrawn and its PNG re-exported: only the bot commit's message names it
 (owner, 2026-10-25); so are the pixel fixes (card_standards.PIXEL_FIXES, in order: badges laid out again at their new
 widths, straight apostrophes, old icon font glyphs, badges fitted, timing tags set as badges: R1 then untold),
-the PNG re-exported the same way. One report per push: the job
+the PNG re-exported the same way; badges drawn with another build of the icon font that the PSD keeps are told
+(owner 2026-11-04: OLD_FONT). One report per push: the job
 summary and commit comment (report.md), one Discord post for the standards channel (discord.json: no mentions, no
 previews), and a plan of the writes (plan.json) that `land` commits once, right after the check. Each card pushed
 over an older PSD carries what changed inside it (psd_diff: "added Ability FX: Blazing", "Name text: 'a' -> 'b'").
@@ -101,6 +102,8 @@ REDRAW = "; re-exported for "                   # _rewrapped_pngs' line on a gua
 QUIET_KEYS = ("EveryLineComposer",)            # fixed unsaid (owner, 2026-10-25): never in the changes either
 TELL_PNG_MISMATCH = False                       # R10 and "current but outside the bar" on Discord too (beyond the owner's
                                                 # two rules: the commit comment only until the owner asks)
+OLD_FONT = ("its badges don't match MDW/Fonts/stoogedings.ttf (saved with another build of the font): install MDW/Fonts' "
+            "stoogedings.ttf, restart Photoshop, then Type > Update All Text Layers and save")   # told (owner 2026-11-04)
 _worker: dict = {}
 
 
@@ -168,6 +171,7 @@ class Result:
     composer_left: list = field(default_factory=list)   # R8: (layer, why) not redrawn or not set (plan.json alone)
     redrawn: dict = field(default_factory=dict)  # pixel fixes (card_standards.PIXEL_FIXES): kind -> layers (silent)
     pixel_left: list = field(default_factory=list)  # (kind, why) a pixel fix not made (plan.json alone)
+    pixel_notes: list = field(default_factory=list)     # what a landing pixel fix did to look at (plan.json alone)
     error: str = ""
 
     @property
@@ -817,6 +821,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
             said = "; ".join(fixed.applied)     # what the comment and the post may say: never the composer
             composer = [f"Single-line Composer ({', '.join(fixed.composer)})"] if fixed.composer else []
             result.redrawn = dict(fixed.redrawn) if redrawn else {}
+            result.pixel_notes = list(fixed.notes) if result.redrawn else []
             silent = [f"{standards.PIXEL_LINES[kind]} ({', '.join(names)})" for kind, names in result.redrawn.items()]
             write = {"path": job.psd, "file": file, "sha": blob_sha(data), "kind": "psd",
                      "line": "; ".join(fixed.applied + composer + silent), "shown": said, "silent": not said,
@@ -827,6 +832,17 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
                 write["plain"] = {"file": _save(out, job.psd + ".plain", fixed.plain), "sha": blob_sha(fixed.plain),
                                   "line": "; ".join(fixed.applied + composer), "pixels": []}   # no redraw: no pixel fix
             result.writes.append(write)
+        if stale_left(fixed, result.redrawn):
+            result.notes.append((OLD_FONT, True))
+
+
+def stale_left(fixed, redrawn: dict) -> list:
+    """The layers drawn with another build of the icon font (old glyphs' finds, badge widths' re-laid layers) that the
+    PSD keeps so: refused, a splice that fell back, or a PNG that couldn't follow (redrawn: what lands). Told (owner
+    2026-11-04), unlike the pixel fixes' other refusals."""
+    stale = dict.fromkeys([*getattr(fixed, "stale_glyphs", ()), *fixed.redrawn.get("badge widths", ())])
+    done = {*redrawn.get("badge widths", ()), *redrawn.get("old glyphs", ())}
+    return [name for name in stale if name not in done]
 
 
 def _drawn_as(found) -> str:
@@ -918,7 +934,7 @@ def plan(results: list, repository: str, before: str, after: str, mode: str) -> 
                  "told": result.told(mode), "error": result.error, "writes": result.writes, "png": result.job.png,
                  "changes": result.changes, "expect": _expect(result.job), "pushed": sorted(result.job.pushed),
                  "composer": result.composer, "composer_left": result.composer_left,
-                 "redrawn": result.redrawn, "pixel_left": result.pixel_left}
+                 "redrawn": result.redrawn, "pixel_left": result.pixel_left, "pixel_notes": result.pixel_notes}
         cards.append(entry)
     return {"repo": repository, "before": before, "after": after, "mode": mode, "checked_at": _now().isoformat(),
             "cards": cards}
@@ -1626,6 +1642,7 @@ __all__ = [
     'Head',
     'Job',
     'LINE',
+    'OLD_FONT',
     'RECOMPRESSED',
     'Result',
     'SPARSE_FILES',
@@ -1651,6 +1668,7 @@ __all__ = [
     'plan_jobs',
     'push_range',
     'run_job',
+    'stale_left',
     'summary',
     'whole_tree_jobs',
 ]

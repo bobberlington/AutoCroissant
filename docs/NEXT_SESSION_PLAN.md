@@ -55,7 +55,7 @@ tasks in the order the owner picks.
   plain `git fetch origin main`: use `git fetch origin +data:refs/remotes/origin/data` or `git ls-remote origin data`.
 - Discord `pending-updates`: no 📖 messages left; 8 card messages stay (crystal stars twice, Tainted Lazarus split, The Puppet
   to The Beholster, Earth Totem, the type 2 death card list, the equip stat formatting poll and its result).
-- psd-tools fork pin `cards-20261026` = e156be36 on both machines (`requirements-cards.txt`).
+- psd-tools fork pin `cards-20261104` = 1258fcbd (`requirements-cards.txt`; the Mac's venv; the tag goes to GitHub with the owner's go, then re-pin the jetson).
 - OJWikibot: the jetson runs `8ed817f` (11-01; later commits are backups and skills, no deploy owed). One production host: the jetson (leo retired 10-26).
 - `+ability` is live; no live `+ability` bake yet (the first comes from the website): its flag note names the box, font
   and source.
