@@ -102,8 +102,8 @@ REDRAW = "; re-exported for "                   # _rewrapped_pngs' line on a gua
 QUIET_KEYS = ("EveryLineComposer",)            # fixed unsaid (owner, 2026-10-25): never in the changes either
 TELL_PNG_MISMATCH = False                       # R10 and "current but outside the bar" on Discord too (beyond the owner's
                                                 # two rules: the commit comment only until the owner asks)
-OLD_FONT = ("its badges don't match MDW/Fonts/stoogedings.ttf (saved with another build of the font): install MDW/Fonts' "
-            "stoogedings.ttf, restart Photoshop, then Type > Update All Text Layers and save")   # told (owner 2026-11-04)
+OLD_FONT = ("its badges were drawn with another version of the stoogedings font: pull first, install "   # told (owner 2026-11-04)
+            "MDW/Fonts/stoogedings.ttf over the old one, restart Photoshop, then Type > Update All Text Layers, save and push")
 _worker: dict = {}
 
 
