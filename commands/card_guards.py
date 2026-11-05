@@ -96,7 +96,8 @@ FONT_FILES_EACH = 4                             # R8: font files tried a face, l
 FONT_FETCH_MAX = 12                             # R8: font files a run (a worker) fetches at most, a request each
 CARD_ROOTS = ("Auxiliary/", "Creatures/", "Field/", "Items/", "N.M.E/")   # where card PNGs live (Types/ icons are not cards)
 ICON_FONT_FILE = f"{psd_edit.FONTS_DIR}/stoogedings.ttf"
-EARLIER_FONTS = 3                               # badge widths: the icon font's versions before the ref's, newest first
+EARLIER_FONTS = 4                               # badge widths: the icon font's earlier eras at most (earlier_fonts)
+EARLIER_WALK = 40                               # versions of its history earlier_fonts reads at most (10 by 2026-11-05)
 GUARD_EVENTS = "guard-events.json"              # beside the plan: the landed commit's changelog events
 REDRAW = "; re-exported for "                   # _rewrapped_pngs' line on a guard 1 PNG (the composer's rewrap): not told
 QUIET_KEYS = ("EveryLineComposer",)            # fixed unsaid (owner, 2026-10-25): never in the changes either
@@ -105,6 +106,7 @@ TELL_PNG_MISMATCH = False                       # R10 and "current but outside t
 OLD_FONT = ("its badges were drawn with another version of the stoogedings font: pull first, install "   # told (owner 2026-11-04)
             "MDW/Fonts/stoogedings.ttf over the old one, restart Photoshop, then Type > Update All Text Layers, save and push")
 _worker: dict = {}
+_advances: dict = {}                            # icon font blob sha -> {glyph name: advance} (earlier_fonts)
 
 
 # ========================
@@ -1156,25 +1158,67 @@ def discord_payload(data: dict, repository: str) -> dict:
 # ========================
 # check
 # ========================
+def font_advances(data: bytes) -> dict:
+    """{glyph name: advance in font units} of a font file's bytes."""
+    import uharfbuzz as hb
+    face = hb.Face(hb.Blob(data))
+    font = hb.Font(face)
+    return {name: font.get_glyph_h_advance(gid) for gid in range(face.glyph_count)
+            if (name := font.get_glyph_name(gid))}
+
+
+def _font_blob(source: Source, sha: str) -> bytes:
+    """An icon font blob: the clone's own file first when it is that blob (the Action's cached MDW/Fonts)."""
+    try:
+        with open(join(source.clone, ICON_FONT_FILE), "rb") as fh:
+            data = fh.read()
+        if blob_sha(data) == sha:
+            return data
+    except OSError:
+        pass
+    return source.blob(sha)
+
+
+def _laid_alike(older: dict, newer: dict, names: dict) -> bool:
+    """Whether newer has every glyph of older that names (the current font's) has, at the same advance."""
+    return all(newer.get(name) == advance for name, advance in older.items() if name in names)
+
+
 def earlier_fonts(source: Source, commit: str, tree: dict, folder: str) -> list:
-    """The icon font's EARLIER_FONTS versions before the one commit's tree holds, from its history, written into folder
-    (named .earlier: a FontMap over folder never takes one for the current font): the advances a raster drawn before may
-    show (badge widths). Raises Transient, the API's errors or Refused("blob")."""
-    now, shas = tree.get(ICON_FONT_FILE, ("", ""))[1], []
+    """
+    The icon font's earlier eras before the one commit's tree holds, from its history, newest first, written into folder
+    (named .earlier: a FontMap over folder never takes one for the current font): each era's newest version, an era
+    being the versions a newer one lays out alike (_laid_alike: an icon added keeps the era, an advance changed ends
+    it), none the current font's. EARLIER_FONTS at most, from the EARLIER_WALK newest versions, each read once a
+    process (_advances). The advances a raster drawn before may show (badge widths). Raises Transient, the API's errors
+    or Refused("blob").
+    """
+    now = tree.get(ICON_FONT_FILE, ("", ""))[1]
+    if not now:
+        return []
+    if now not in _advances:
+        _advances[now] = font_advances(_font_blob(source, now))
+    current, kept, seen, files = _advances[now], [], {now}, []
     for line in source.git("log", "--format=%H", commit, "--", ICON_FONT_FILE).split():
+        if len(kept) == EARLIER_FONTS or len(seen) > EARLIER_WALK:
+            break
         try:
             sha = source.git("rev-parse", f"{line}:{ICON_FONT_FILE}").strip()
         except Transient:                       # deleted there
             continue
-        if sha != now and sha not in shas:
-            shas.append(sha)
-        if len(shas) == EARLIER_FONTS:
-            break
-    files = []
-    for sha in shas:
+        if sha in seen:
+            continue
+        seen.add(sha)
+        data = None
+        if sha not in _advances:
+            data = source.blob(sha)
+            _advances[sha] = font_advances(data)
+        if any(_laid_alike(_advances[sha], newer, current) for newer in [current] + [_advances[k] for k in kept]):
+            continue
+        kept.append(sha)
         files.append(join(folder, f"stoogedings-{sha[:12]}.earlier"))
         with open(files[-1], "wb") as fh:
-            fh.write(source.blob(sha))
+            fh.write(source.blob(sha) if data is None else data)
     return files
 
 
@@ -1638,6 +1682,7 @@ __all__ = [
     'BOT_EMAILS',
     'Change',
     'EARLIER_FONTS',
+    'EARLIER_WALK',
     'ICON_FONT_FILE',
     'Head',
     'Job',
@@ -1659,6 +1704,7 @@ __all__ = [
     'after_window',
     'events_of',
     'finish',
+    'font_advances',
     'land',
     'landed_markdown',
     'main',

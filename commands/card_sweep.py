@@ -14,7 +14,7 @@ landing can leave out a card whose PSD or PNG moved since (never over a newer PS
                                       whole, when the fork draws it as stored and its lines stay: fit_badges' whole;
                                       --kind tags too: tags_to_badges' whole)
     python -m commands.card_sweep run --kind badge-widths ...   (relay_badges: card_guards.earlier_fonts, the icon font's
-                                      versions before the ref's, are the widths a raster the fork drew may show)
+                                      eras before the ref's, are the widths a raster the fork drew may show)
     python -m commands.card_sweep moved --plan <file> --clone <clone> [--ref origin/main]
 
 A sparse worktree must hold the paths it writes (git sparse-checkout add), or git does not see them.

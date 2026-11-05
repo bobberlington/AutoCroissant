@@ -1,12 +1,18 @@
 """
-card_sweep: the kinds it takes and the icon font's earlier versions (card_guards.earlier_fonts) a badge widths sweep and
+card_sweep: the kinds it takes and the icon font's earlier eras (card_guards.earlier_fonts) a badge widths sweep and
 the guards read from the ref's history (the advances a raster drawn before the cooldown ring may show).
 """
+import subprocess
+
 import pytest
 
-from commands.card_guards import EARLIER_FONTS, ICON_FONT_FILE, Source, earlier_fonts
+import commands.card_guards as card_guards
+from commands.card_guards import ICON_FONT_FILE, Source, earlier_fonts
 from commands.card_sweep import kinds_of
-from conftest import RING, blob_sha
+from conftest import RING, blob_sha, no_lazy
+
+PRE_RING = "0a7db1c3"   # the batch's icon font (2026-11-04): the last before the ring
+GLOW_12 = "0a4bc2eb"    # the glow halos at 12 units per px (2026-10-23): [fire:glow] 1011 units, 1411 since 903e2d6b
 
 
 def _advance(path: str, text: str) -> int:
@@ -18,18 +24,58 @@ def _advance(path: str, text: str) -> int:
     return sum(pos.x_advance for pos in buf.glyph_positions)
 
 
+def _font_at(source: Source, rev: str) -> str:
+    return source.git("rev-parse", f"{rev}:{ICON_FONT_FILE}").strip()
+
+
 def test_earlier_icon_fonts(clone, tmp_path):
-    """At the ring font's commit: up to EARLIER_FONTS older icon fonts, newest first, none the ref's own, their (1CD) the
-    pre-ring width (the ring's 2658 units), named so a FontMap over the folder never indexes them."""
+    """At the ring font's commit: one icon font per earlier era, newest first (the pre-ring batch's, then the 12 units
+    per px glow halos'), none the ref's own nor another version of an era (the last three versions were all the batch's
+    era), their (1CD) the pre-ring width (the ring's 2658 units), named so a FontMap over the folder never indexes
+    them; a second walk reads only the fonts it writes."""
     from psd_tools.composite.text.fonts import font_files
     source = Source(str(clone))
     commit = source.commit(RING) or pytest.skip(f"the clone lacks {RING}")
     tree = source.tree(commit)
     files = earlier_fonts(source, commit, tree, str(tmp_path))
     shas = [blob_sha(path) for path in files]
-    assert 1 <= len(files) <= EARLIER_FONTS and len(set(shas)) == len(shas) and tree[ICON_FONT_FILE][1] not in shas
+    assert shas == [_font_at(source, PRE_RING), _font_at(source, GLOW_12)]
     assert font_files(str(tmp_path)) == []
     ring = tmp_path / "ring.ttf"
     ring.write_bytes(source.blob(tree[ICON_FONT_FILE][1]))
-    assert [_advance(path, "(1CD)") for path in files] == [2040] * len(files) and _advance(str(ring), "(1CD)") == 2658
+    assert [_advance(path, "(1CD)") for path in files] == [2040, 2040] and _advance(str(ring), "(1CD)") == 2658
+    assert [_advance(path, "[fire:glow]") for path in files] == [1411, 1011]
+    read, blob = [], source.blob
+    source.blob = lambda sha: read.append(sha) or blob(sha)
+    (tmp_path / "again").mkdir()
+    again = earlier_fonts(source, commit, tree, str(tmp_path / "again"))
+    assert [blob_sha(path) for path in again] == shas and read == shas
     assert kinds_of("badge-widths") == ["badge widths"]
+
+
+def test_earlier_eras_past_more_font_changes(clone, tmp_path, monkeypatch):
+    """Three font changes past the ring that keep its advances (the last 3 versions would all be the ring's era): the
+    walk still finds the pre-ring eras; it stops at EARLIER_WALK versions and EARLIER_FONTS eras."""
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / ".git" / "objects" / "info" / "alternates").write_text(f"{clone / '.git' / 'objects'}\n")
+
+    def git(*args, data=None) -> str:
+        return subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", *args], input=data,
+                              capture_output=True, check=True, env=no_lazy()).stdout.decode().strip()
+    source = Source(str(repo))
+    head = source.commit(RING) or pytest.skip(f"the clone lacks {RING}")
+    ring = source.blob(_font_at(source, RING))
+    for n in (1, 2, 3):                         # another blob, the same glyphs and advances (a tree of it alone)
+        sha = git("hash-object", "-w", "--stdin", data=ring + b"\0" * n)
+        git("update-index", "--add", "--cacheinfo", f"100644,{sha},{ICON_FONT_FILE}")
+        head = git("commit-tree", git("write-tree"), "-p", head, "-m", f"font {n}")
+    tree = source.tree(head)
+    for name in ("all", "one", "short"):
+        (tmp_path / name).mkdir()
+    eras = [_font_at(source, PRE_RING), _font_at(source, GLOW_12)]
+    assert [blob_sha(path) for path in earlier_fonts(source, head, tree, str(tmp_path / "all"))] == eras
+    monkeypatch.setattr(card_guards, "EARLIER_FONTS", 1)
+    assert [blob_sha(path) for path in earlier_fonts(source, head, tree, str(tmp_path / "one"))] == eras[:1]
+    monkeypatch.setattr(card_guards, "EARLIER_WALK", 3)      # the ring and the two after it
+    assert earlier_fonts(source, head, tree, str(tmp_path / "short")) == []

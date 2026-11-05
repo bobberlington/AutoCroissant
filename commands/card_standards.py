@@ -1710,18 +1710,24 @@ class _Swapped:
         return {name: self.resolve(name) for name in dict.fromkeys(names)}
 
 
+def _glyph_key(g) -> tuple:
+    """A laid glyph as two icon font versions' layouts compare: its cluster and, in the icon font, its name (ids shift
+    when icons are added), else its id."""
+    return g.cluster, g.face.hb.get_glyph_name(g.gid) if _icon_face(g.face) else g.gid
+
+
 def _drawn_earlier(layer, faces, earlier: tuple, now: tuple) -> set:
     """The icon glyphs (indices into now's layout: _glyph_offs at the current font) an earlier icon font draws as the
     layer's pixels show them: that font's own render at its own layout fits the glyph within EARLIER_FIT (not old to it)
     and better by EARLIER_GAIN than the current font's (a badge whose letters changed, its ring or pill alike). Only a
-    layout of the same glyphs counts (an older font that sets the text otherwise is not compared)."""
-    glyphs, found = now[0].layout.glyphs, set()
+    layout of the same glyphs counts (_glyph_key; an older font that sets the text otherwise is not compared)."""
+    found, keys = set(), [_glyph_key(g) for g in now[0].layout.glyphs]
     for path in earlier:
         try:
             then = _glyph_offs(layer, _Swapped(faces, path))
         except Exception:                       # an unreadable earlier font: no evidence
             continue
-        if then is None or [(g.cluster, g.gid) for g in then[0].layout.glyphs] != [(g.cluster, g.gid) for g in glyphs]:
+        if then is None or [_glyph_key(g) for g in then[0].layout.glyphs] != keys:
             continue
         found |= {i for i, share in then[4].items()
                   if i in now[4] and share <= EARLIER_FIT and now[4][i] - share >= EARLIER_GAIN}

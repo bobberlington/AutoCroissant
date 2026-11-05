@@ -631,6 +631,27 @@ def test_badge_widths_from_an_earlier_font(clone, tmp_path, ring_fonts):
     assert not fixed.redrawn and fixed.pixel_left[0][1].startswith("Refused: overflow")
 
 
+def test_drawn_earlier_by_glyph_name(monkeypatch):
+    """_drawn_earlier lays an earlier icon font's layout beside the current one's by glyph name in the icon font (ids
+    shift when icons are added), by id in other fonts: a badge at another id counts, another badge or body glyph does
+    not."""
+    def face(postscript: str, names: dict):
+        return SimpleNamespace(ft=SimpleNamespace(postscript_name=postscript),
+                               hb=SimpleNamespace(get_glyph_name=names.get))
+
+    def offs(glyphs: list, shares: dict):
+        laid = [SimpleNamespace(cluster=i, gid=gid, face=f) for i, (gid, f) in enumerate(glyphs)]
+        return SimpleNamespace(layout=SimpleNamespace(glyphs=laid)), None, None, None, shares
+
+    body = face("Arial", {})
+    now = offs([(36, body), (714, face("stoogedings-Regular", {714: "badge_1CD"}))], {1: 0.20})
+    for glyphs, found in (([(36, body), (700, face("stoogedings-Regular", {700: "badge_1CD"}))], {1}),
+                          ([(36, body), (701, face("stoogedings-Regular", {701: "badge_2CD"}))], set()),
+                          ([(37, body), (700, face("stoogedings-Regular", {700: "badge_1CD"}))], set())):
+        monkeypatch.setattr(cs, "_glyph_offs", lambda layer, faces: offs(glyphs, {1: 0.05}))
+        assert cs._drawn_earlier(None, None, ("then.earlier",), now) == found
+
+
 def test_badge_widths_line_guards():
     """relay_badges' line guards (review 2026-11-04): a new line of badges alone is found (Wigfrid's '(1CD)' cut off from
     its cost), ink nearer the canvas edge than before is noted once inside EDGE_NEAR (Sword of Aeons), a new
