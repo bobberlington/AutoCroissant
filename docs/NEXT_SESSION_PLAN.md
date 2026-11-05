@@ -72,9 +72,14 @@ First: check that the batch chain finished (In flight), then the go-day leftover
 - [x] Completeness: 753 of 753 files as checked. [x] work/big-push landed (855de4d) and deployed. [x] site.yml without
       `/Types/` (8e040018): the next build logged "icons: 91", no warnings. [x] Clean up: branches, worktrees, scratch
       (11 GB left), Photoshop copies, the clone's 8 duplicate packs (~46 GB; memory `partial-clone-fetch-packs`).
-- [ ] **Whole-tree guards dry run** (dispatched 11-05 10:16 UTC, run 42009352040): read its summary and artifact. No
-      card should show `badge widths` or `old glyphs` in `redrawn`, `pixel_left` or its writes' `pixels`; what it tells
-      is the next problem list.
+- [x] **Whole-tree guards dry run** (run 42009352040, 11-05): 764 cards, 0 writes, 0 errors, no `badge widths` or `old
+      glyphs` left anywhere, every PNG matches its PSD. Told: R6 on Nasty Patty and Shell Shield (stars not in a group
+      named Stars), R14 on Mantis Lords; R11 part names (comment only) on 101. Artifact copy:
+      `~/Documents/Tools/wt/scratch/whole-tree-1105/`. The first card push after the rollout (Zomoroko's "generational
+      (2)", 780a7b33, Wigfrid among 4) needed no re-lay and told nothing: their PSDs already had the ring font.
+- [x] Disk: the TC clone slimmed to HEAD's blobs, every commit/tree and the icon font's history (31 GB -> 12 GB; old
+      blob versions come back from GitHub on demand); scratch 22 -> 2.3 GB.
+
 6. [ ] **Owner:** post the card makers' font note (the owner's ruling; facts in `opt-round4/plan.json` go_day cm-r4-2: pull,
        install `MDW/Fonts/stoogedings.ttf` (17,416,116 bytes) over the old one, restart Photoshop, Update All Text
        Layers on locally saved badge cards; the pull is up to ~10 GB of card files). Re-upload the TTS Workshop item by
