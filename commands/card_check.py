@@ -440,7 +440,7 @@ def main(args: Optional[list] = None) -> int:
             if options.whole_tree:
                 psds, notes = {p: (s, options.author) for p, s in blobs.items() if is_card_psd(p)}, []
             else:
-                psds, _, notes = pushed_files(options.repo, options.before, options.after, options.author)
+                psds, _, notes = pushed_files(options.repo, options.before, options.after, options.author, options.clone)
             report = check_blobs(options.repo, psds, parser, edits, options.after, options.clone)
         except Exception as e:                  # the API failed (a 5xx after the retries, no network, a truncated tree): one line
             report, notes = Report(), [f"GitHub API: {e}"]

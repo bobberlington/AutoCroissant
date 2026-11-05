@@ -15,8 +15,9 @@ psd_details.json instead (card_sync.fonts_text, details_report here).
     save_names(dir, path), load_names(path) -> a fonts dir's index as a small JSON file (NAMES_ENV)
 
 A notification tool, never a gate: findings exit 0, nothing is reverted or rejected. --repo mode reads the PSDs the push
-changed (before..after through the compare API; --whole-tree: every card PSD of the tree at after) by blob sha, each
-blob's sha1 verified. --all parses the checkout's PSDs in a process pool (the parse is the whole cost: 0.1 s a PSD).
+changed (before..after through the compare API, or --clone's diff-tree when GitHub can't list them; --whole-tree: every
+card PSD of the tree at after) by blob sha, each blob's sha1 verified. --all parses the checkout's PSDs in a process pool
+(the parse is the whole cost: 0.1 s a PSD).
 No Discord or config imports (the token: config through github_api, else GITHUB_TOKEN); stock psd-tools reads the
 engine data, fontTools the font names (psd-tools' text engine fork: composite/text/fonts.py).
 """
@@ -28,10 +29,12 @@ from json import dump, load as json_load
 from os import cpu_count, environ, pathsep, walk
 from os.path import basename, expanduser, isdir, join, relpath, splitext
 from re import sub
+from subprocess import run
 from typing import Optional
 
 from fontTools.ttLib import TTCollection, TTFont
 from psd_tools import PSDImage
+from requests import HTTPError
 
 import commands.github_api as github_api
 from commands.github_api import api_url, blob_sha, fetch_tree, fetch_verified, get_with_retry, token_from_env
@@ -412,36 +415,58 @@ def _login(commit: dict, fallback: str) -> str:
     return (commit.get("author") or {}).get("login") or fallback      # null when the commit email is not a GitHub account's
 
 
-def pushed_files(repository: str, before: str, after: str, author: str = NOBODY) -> tuple:
+def _clone_files(clone: str, base: str, after: str) -> list:
+    """base..after's files from git diff-tree in a clone, as the APIs list them (trees only: no blob read)."""
+    raw = run(["git", "-C", clone, "diff-tree", "-r", "-z", "--no-renames", base, after], capture_output=True, text=True,
+              check=True, env={**environ, "GIT_NO_LAZY_FETCH": "1"}).stdout.split("\0")
+    return [{"filename": p, "sha": m.split(" ")[3], "status": {"A": "added", "D": "removed"}.get(m.split(" ")[4], "modified")}
+            for m, p in zip(raw[0::2], raw[1::2]) if m]
+
+
+def pushed_files(repository: str, before: str, after: str, author: str = NOBODY, clone: str = "") -> tuple:
     """
     What a push changed.
 
     before..after through the compare API; the files of after alone when before is empty or all zeros (a dispatch, a new
     branch) or no longer exists (a force push). With several commits each is read for who touched which file last. The
     APIs page at FILES_PAGE files and COMMITS_PAGE commits: past them a note says files may be credited to the wrong author.
+    With clone, a push GitHub can't list (the compare's 422 on ~40+ PSDs, a commit listing no files) is read from it.
 
     Args:
         repository: owner/name
         before: The push's previous head (github.event.before)
         after: The push's head
         author: Who to name when a commit's author has no login (github.actor)
+        clone: A clone holding both heads (blobless is fine); "" for none
 
     Returns:
         ({card PSD path: (blob sha at after, author login)}, [fonts MDW/Fonts gained], [notes])
     """
-    notes = []
-    data = _get_json(repository, f"compare/{before}...{after}", missing_ok=True) if before and set(before) != {"0"} else None
-    if data is None:
-        if before and set(before) != {"0"}:
-            notes.append(f"the previous head {before[:8]} is gone (a force push?); only the head commit's files were checked")
-        head = _get_json(repository, f"commits/{after}")
-        commits, files = [head], head.get("files", [])
-    else:
-        commits, files = data.get("commits", []), data.get("files", [])
+    notes, commits, files = [], [], []
+    ranged = bool(before) and set(before) != {"0"}
+    base = before if ranged else f"{after}^"
+    try:
+        data = _get_json(repository, f"compare/{before}...{after}", missing_ok=True) if ranged else None
+        if data is None:
+            if ranged:
+                notes.append(f"the previous head {before[:8]} is gone (a force push?); only the head commit's files were checked")
+                base = f"{after}^"
+            head = _get_json(repository, f"commits/{after}")
+            commits, files = [head], head.get("files", [])
+        else:
+            commits, files = data.get("commits", []), data.get("files", [])
+    except HTTPError:
+        if not clone:
+            raise
     if len(files) >= FILES_PAGE:
         notes.append(f"the push changed {FILES_PAGE} files or more; only the first {FILES_PAGE} were checked")
     if len(commits) >= COMMITS_PAGE:
         notes.append(f"the push has {COMMITS_PAGE} commits or more; later files may be credited to the wrong author")
+    if clone and not files:
+        files = _clone_files(clone, base, after)
+        if files:
+            commits = []
+            notes.append(f"GitHub could not list this push's files; read from the clone, all credited to {author}")
     who: dict = {}
     if len(commits) > 1:
         for commit in commits:                  # oldest first: the last writer wins
@@ -584,7 +609,7 @@ def main(args: Optional[list] = None) -> int:
                 psds = {p: (s, options.author) for p, s in tree_blobs(options.repo, options.after).items() if is_card_psd(p)}
                 fonts_added, notes = [], []
             else:
-                psds, fonts_added, notes = pushed_files(options.repo, options.before, options.after, options.author)
+                psds, fonts_added, notes = pushed_files(options.repo, options.before, options.after, options.author, options.clone)
             report = check_blobs(options.repo, psds, index, options.clone)
         except Exception as e:                  # the API failed (a 5xx after the retries, no network, a truncated tree): one line
             report, fonts_added, notes = Report(), [], [f"GitHub API: {e}"]

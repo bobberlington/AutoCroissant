@@ -16,7 +16,7 @@ from conftest import Reply, at_rev, blob_sha_bytes as _sha, smallest
 
 fontBuilder = pytest.importorskip("fontTools.fontBuilder")
 from fontTools.ttLib import TTCollection, TTFont  # noqa: E402
-from helpers import ChecksGitHub as FakeGitHub  # noqa: E402,F401
+from helpers import ChecksGitHub as FakeGitHub, commit, git, put  # noqa: E402,F401
 
 BABA = "Creatures/Other/5 Stars/Baba.psd"                  # BabaUI on four visible digit layers and the hidden Name
 BABA_REV = "3a268cad"                                       # Baba as this test was written, from the clone's history
@@ -295,6 +295,38 @@ def test_force_push_falls_back_to_the_head_commit(monkeypatch):
     monkeypatch.setattr(ga, "get", fake.get)
     with pytest.raises(HTTPError):
         fc.pushed_files("o/r", "f" * 40, "h")
+
+
+def test_big_push_read_from_the_clone(fonts_dir, fake_psds, monkeypatch, tmp_path):
+    """GitHub can't list a big push (the compare's 422; a commit listing no files): --clone's diff-tree does, every file
+    credited to the pusher, and the PSDs are read from the clone. Without a clone the 422 still raises."""
+    repo = tmp_path / "cards"
+    repo.mkdir()
+    git(repo, "init", "-q", "-b", "main")
+    for rel, data in (("Items/A.psd", b"a1"), ("Items/Gone.psd", b"g"), ("MDW/Fonts/Old.ttf", b"o1")):
+        put(repo, rel, data)
+    first = commit(repo, "alice", 1000)
+    for rel, data in (("Items/A.psd", b"a2"), ("Creatures/Other/5 Stars/B.psd", b"b"), ("MDW/Templates/T.psd", b"t"),
+                      ("MDW/Fonts/Old.ttf", b"o2"), ("MDW/Fonts/New.ttf", b"n"), ("MDW/Fonts/stoogedings-src/x.ttf", b"x")):
+        put(repo, rel, data)
+    (repo / "Items/Gone.psd").unlink()
+    after = commit(repo, "bob", 2000)
+    fake = FakeGitHub({}, None, {after: {"sha": after, "author": {"login": "bob"}, "files": []}})   # (b) 200, no files
+    monkeypatch.setattr(ga, "get", lambda url, **kw: Reply(422) if "/compare/" in url else fake.get(url))   # (a)
+    note = "GitHub could not list this push's files; read from the clone, all credited to pusher"
+    expected = ({"Items/A.psd": (_sha(b"a2"), "pusher"), "Creatures/Other/5 Stars/B.psd": (_sha(b"b"), "pusher")}, ["New.ttf"], [note])
+    assert fc.pushed_files("o/r", first, after, "pusher", str(repo)) == expected
+    assert fc.pushed_files("o/r", "", after, "pusher", str(repo)) == expected              # a dispatch: after^..after
+    with pytest.raises(HTTPError):
+        fc.pushed_files("o/r", first, after, "pusher")
+    fake_psds[b"a2"], fake_psds[b"b"] = {"JavaneseText": ["Name"]}, {"PsdToolsFixture-TT": ["Ability"]}
+    out = tmp_path / "r.json"
+    assert fc.main(["--fonts", str(fonts_dir), "--repo", "o/r", "--before", first, "--after", after, "--author", "pusher",
+                    "--clone", str(repo), "--json", str(out)]) == 0
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert (data["checked"], data["fonts_added"], data["errors"]) == (2, ["New.ttf"], [note])
+    assert data["cards"] == [{"path": "Items/A.psd", "author": "pusher", "missing": {"JavaneseText": ["Name"]}}]
+    assert fake.blob_calls() == 0                                               # read from the clone, not the API
 
 
 # ========================
