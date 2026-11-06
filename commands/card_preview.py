@@ -179,6 +179,8 @@ def outcome(card: Card) -> tuple:
         (state, transient, reason, {field: baked | redundant | refused | error})
     """
     baked = set(card.baked.jobs) if card.baked is not None and card.refusal is None else set()
+    if card.moved_to and card.refusal is None:     # a stars move alone (printed stars not redrawn) bakes too
+        baked.add("stars")
     transient = card.transient or (card.refusal is not None and card.refusal.code in RETRY)
     if card.refusal is not None:
         state = "error" if card.refusal.code == "error" or transient else "refused"
@@ -342,8 +344,8 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
         shown = png_rel if one.view is not None else one.png
         rendered = join(folder, "new", basename(shown)) if shown else ""
         official = join(folder, "old", basename(shown)) if shown else ""    # bake_card's fetch of the card's PNG
-        if state == "baked":
-            result.update(image="baked", **write_images(one.baked.png_path, out, official))
+        if state == "baked" and (one.baked is not None or isfile(official)):    # a move alone: the card as it is
+            result.update(image="baked", **write_images(one.baked.png_path if one.baked else official, out, official))
         elif state == "refused" and rendered and isfile(rendered):    # a gate after the save: what the render got
             result.update(image="refused", **write_images(rendered, out, official))
     except BadInput as error:

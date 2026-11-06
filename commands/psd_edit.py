@@ -3535,6 +3535,9 @@ def set_bar(psd: PSDImage, parsed: dict, stat: str, value: int, why: Refused) ->
     region = union_box([box for box in boxes if box])
     if icons is not None:
         region = union_box([region] + [_where(done[2]) for done in icons.done] if region else [_where(done[2]) for done in icons.done])
+    if region and _off_canvas(region, psd):     # Computer Virus: a bar beside the canvas (its region would be empty)
+        raise Refused("unsupported-card", f"{stat}: the bar lies outside the card ({region} on the {psd.width}x"
+                                          f"{psd.height} canvas): a change would show nothing on the card")
     remasked = {id(layer) for layer, *_ in plan.remasks}
     specs = [(layer, _bar_spec(layer, snaps[id(layer)], id(layer) in remasked)) for layer in layers]
     touched = [(layer, spec) for layer, spec in specs if spec is not None]
