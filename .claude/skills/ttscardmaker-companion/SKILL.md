@@ -560,6 +560,25 @@ in `batches/checks/7k/`), `batches/checks/<n>/` and `go/<batch>/` (the push logs
 54125397) and owner-cards.md/.csv (375 on ad3008ba, without Koro-Sensei) were written before the final build. Also
 `opt-1104/round2-plan.json` `batch_procedure` (its 30-minute spacing superseded).
 
+### 1.11 The Alt template rollout (2026-11-06)
+
+`MDW/Templates/Alt_Creature_Template.psd`: one layer-comp smart object per stat (`Stats Bars > Darks`, NORMAL 67%),
+comps "0".."20" (11-20: a full top row plus a bottom half row; Photoshop-built, TC 9878d123).
+`Alt_Raid_Boss_Template.psd`: the same on the raid boss's 20-cell bars, comps "0".."40". The old templates stay (owner).
+Stats are STATS TOO HIGH only above 20 (impossibility-cards-reference).
+
+Cards moved by `card_sweep run --kind alt-template` (card_standards.alt_template), §1.10's batches, trailer
+`Card-sweep: alt template`: 356 creatures and minions in 8 batches. Each card gets the template's bars on its own rows,
+plus three steps where its render moves at most 24 levels: bar art as the template's vector shapes, "Stat Txt" renamed
+"Stat Text and Name" with the Name layers inside, the art and ability clip bases as the template's shapes. Text drop
+shadows stay. Sweep only: the guards never convert, and old bars pushed later are not reported (owner).
+Not converted, on the owner's problem list: hand-drawn or custom bars (a manual pass) and several-creature cards.
+Igor Roballtowski has the bars only (the renderer shifts its pattern overlay on any change).
+
+**Photoshop:** a psd-tools save that keeps an embedded smart-object document no layer uses won't open ("program
+error"). The conversion's gate refuses one. Before pushing PSDs our code rewrote, open every one in Photoshop by script.
+Scripts: `~/Documents/Tools/wt/scratch/alt-template/push/` (build_batches.py, batch_push.sh, open_all.sh).
+
 ## 2. The card-browser website
 
 **Live since 2026-10-20 at https://michaeljsr.github.io/TTSCardMaker/** (Pages source: "GitHub Actions").

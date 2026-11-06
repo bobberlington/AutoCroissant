@@ -258,6 +258,7 @@ The VISIBLE digit layers are grouped by bar row (their parent group) and each ro
   11-20: a full top row and a bottom half row of darks, `comp_render` draws every layer of the bar doc), and
   cards move onto the template with `card_sweep run --kind alt-template` (card_standards.alt_template: the
   darks; the bar art, text layout and clip bases too where the card renders the same; sweep only, never the guards).
+  `Alt_Raid_Boss_Template.psd` has the same bars on 20 cells, comps "0".."40" (ttscardmaker-companion §1.11).
 
 Rows add up, so stats can pass 10 (Royal Eradicator Main Cannon's attack is 10 + 2). Multi-creature
 cards (rows named "1", "2", … or a repeated stat block: Pix, Twin Emperors, Tainted Lazarus) get
