@@ -249,6 +249,12 @@ The VISIBLE digit layers are grouped by bar row (their parent group) and each ro
   group draw the same bar and count once.
 - **Anything else** (value layers or groups, plus "0" decorations: Clots, False Knight): the visible
   digits add up.
+- **Layer-comp bars** (the Alt template, `MDW/Templates/Alt_Creature_Template.psd`, 2026-11-06): one
+  smart object per stat (`Stats Bars > Darks > Health`...) whose embedded bar has layer comps "0".."10";
+  the value is the chosen comp's name (SoLd `comp`, what Photoshop's Properties panel sets; checked on
+  a Photoshop save at 3/7/10/0). Its dark is a black shape at 67% under a mask each comp slides. Hidden:
+  a full bar (10). `psd_regions.comp_bars`; the bake sets it with `psd_edit.set_comp` (renders equal
+  Photoshop's at 0, 3, 5, 7, 10); the details call it "template".
 
 Rows add up, so stats can pass 10 (Royal Eradicator Main Cannon's attack is 10 + 2). Multi-creature
 cards (rows named "1", "2", … or a repeated stat block: Pix, Twin Emperors, Tainted Lazarus) get

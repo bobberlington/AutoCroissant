@@ -15,6 +15,7 @@ from re import IGNORECASE, compile as re_compile, fullmatch, sub
 from typing import Any, Optional, Union
 
 from commands.card_models import CardInfo, CardStats, CardType, StatsDatabase, card_name
+from commands.psd_regions import comp_stat, comp_value
 
 getLogger("psd_tools").setLevel(CRITICAL)
 
@@ -1238,6 +1239,19 @@ class PSDParser:
 
     def _process_stat_layer(self, layer, stat_trackers: StatTrackers) -> None:
         """Process stat layer."""
+        value = comp_value(layer)
+        if value is not None:                   # the Alt template: one smart object per stat, its layer comp the value
+            key = comp_stat(layer)
+            tracker = {"hp": stat_trackers.hp, "def": stat_trackers.defense, "atk": stat_trackers.attack,
+                       "spd": stat_trackers.speed}.get(key)
+            if tracker is not None:
+                tracker.found = True
+                parent = layer.parent
+                row = tracker.rows.setdefault(id(layer), BarRow(id(parent), base_name(layer), getattr(parent, "name", "") or "",
+                                                                id(getattr(parent, "parent", None))))
+                if layer.is_visible():          # hidden: no dark drawn, a full bar
+                    row.items.append((value, layer.kind))
+            return
         digits = base_name(layer)
         if not digits.isdigit():
             return

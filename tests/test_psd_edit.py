@@ -27,7 +27,7 @@ from psd_tools.psd import engine_data
 import commands.psd_edit as pe
 from commands import ability_place
 from commands.card_models import card_name
-from commands.psd_regions import PAINT_ORDER, badge_layers, clip, fx_pad, regions, stat_rows
+from commands.psd_regions import PAINT_ORDER, badge_layers, clip, comp_bars, fx_pad, regions, stat_rows
 from conftest import (BADGED, PLAIN_DOOMER, at_rev, no_lazy, colour_glyphs, fork_reason, painted,
                       saves_preview, story_sync as _story_sync, text_engine as _text_engine)
 from helpers import MINI_DOOMER, _card, _typo_fix, stale_copy
@@ -378,6 +378,37 @@ def test_save_png_keeps_the_official_colour_chunks(tmp_path):
 # ========================
 # Layer shapes (the clone, any psd-tools)
 # ========================
+ALT_TEMPLATE = ("1289718e", "MDW/Templates/Alt_Creature_Template.psd")   # layer-comp stat bars, all at "5"
+ALT_PHOTOSHOP = {"hp": (3, (605, 1200, 1173, 1284)), "def": (7, (928, 1326, 1173, 1410)),   # Photoshop's save of
+                 "atk": (10, (0, 0, 0, 0)), "spd": (0, (360, 1578, 1173, 1662))}            # these comps: each dark's box
+
+
+@text_engine
+def test_alt_template_bars(clone, parser, tmp_path):
+    """The Alt template's bars (one smart object per stat, its layer comp the value) parse, are "template" bars to the
+    details, and bake: each comp set, its dark drawn where Photoshop draws it, nothing else changed; past 10 refuses."""
+    from commands.psd_details import _stats
+    rev, rel = ALT_TEMPLATE
+    path, card_rel = tmp_path / "Alt_Test.psd", "Creatures/Other/5 Stars/Alt_Test.psd"
+    path.write_bytes(at_rev(clone, rev, rel))
+    psd = PSDImage.open(str(path))
+    parsed = pe.parse_card(parser, str(path), card_rel, psd)
+    assert [parsed["card"][stat] for stat in pe.STAT_FIELDS] == [5] * 4
+    assert set(_stats(psd).values()) == {"template"}
+    edits = [pe.set_stat(psd, parsed, stat, value) for stat, (value, _) in ALT_PHOTOSHOP.items()]
+    saved = str(tmp_path / "new.psd")
+    pe.save_psd(psd, saved, update_preview=False)
+    changed = pe.gate_bytes(str(path), saved, edits)[0]
+    assert sorted(name for _, name, _ in changed) == ["Attack", "Defense", "Health", "Speed"]
+    new = PSDImage.open(saved)
+    card = pe.parse_card(parser, saved, card_rel, new)
+    assert {stat: card["card"][stat] for stat in ALT_PHOTOSHOP} == {stat: v for stat, (v, _) in ALT_PHOTOSHOP.items()}
+    assert {stat: tuple(rows[0][0].bbox) for stat, rows in comp_bars(new).items()} == \
+        {stat: box for stat, (_, box) in ALT_PHOTOSHOP.items()}
+    with pytest.raises(pe.Refused, match="stat>10"):
+        pe.set_stat(new, card, "hp", 11)
+
+
 def test_regions_and_rows_on_mini_doomer(clone, parser):
     path = _card(clone, MINI_DOOMER)[0]
     psd = PSDImage.open(path)

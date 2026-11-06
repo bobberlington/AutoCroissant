@@ -26,7 +26,7 @@ from re import IGNORECASE, compile as re_compile, escape, fullmatch, search, sub
 from struct import pack
 from time import perf_counter
 from typing import Optional
-from uuid import NAMESPACE_URL, uuid5
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 import numpy as np
 from PIL import Image
@@ -35,7 +35,7 @@ from psd_tools import PSDImage
 from psd_tools.api.pil_io import post_process
 from psd_tools.constants import BlendMode, ColorMode, Resource, Tag
 from psd_tools.psd.base import ListElement
-from psd_tools.psd.descriptor import Bool, String
+from psd_tools.psd.descriptor import Bool, Integer, String
 
 from commands.card_edits import ADD_ABILITY, CardEdits
 from commands.card_models import CardInfo, StatsDatabase, straight
@@ -49,8 +49,8 @@ from commands import psd_parts
 from commands.psd_parts import lyid_index, raw_sha
 from commands.text_align import (BREAKS as TEXT_BREAKS, blocks as text_blocks, moves as text_moves,
                                  opcodes as text_opcodes, segments as text_segments)
-from commands.psd_regions import (STATS as STAT_PATTERNS, _ancestors, badge_layers, bar_box, clip, fx_pad, overlay_words,
-                                  stat_rows, union_box)
+from commands.psd_regions import (STATS as STAT_PATTERNS, _ancestors, badge_layers, bar_box, clip, comp_bars, comp_names,
+                                  fx_pad, overlay_words, placed_data, stat_rows, union_box)
 
 # ========================
 # Configuration
@@ -124,9 +124,11 @@ EFFECT_MULTI = {b"dropShadowMulti": b"DrSh", b"innerShadowMulti": b"IrSh", b"sol
 SPLICE_UNIT = "glyph"       # a text edit redraws its changed glyphs ("line": their lines); Photoshop's raster stays elsewhere
 KEY_SLACK = 2               # px a key render may pass a spliced layer's bbox (Photoshop's ink beside the engine's)
 ALLOWED_RECORD_FIELDS = {"stat": {"flags", "blocks"}, "text": {"rect", "channels", "blocks"},
-                         "overlay": {"flags"}, "toggle": {"flags"}, "fx": {"rect", "channels", "name", "blocks"}}
+                         "overlay": {"flags"}, "toggle": {"flags"}, "fx": {"rect", "channels", "name", "blocks"},
+                         "comp": {"rect", "channels", "blocks"}}
 #   what an edit may change per record (overlay: a hidden hand-made word layer; toggle: a star or type icon shown or
-#   hidden; fx: an FX layer cut again in place, its name and blocks only as _fx_rebuilt allows)
+#   hidden; fx: an FX layer cut again in place, its name and blocks only as _fx_rebuilt allows; comp: a layer-comp stat
+#   bar set, its SoLd block alone)
 STORY_KEYS = (("1", "1", "0", "0"), ("DocumentObjects", "TextObjects", "Model", "Text"))   # Txt2's stories and their
 #   text: Photoshop CC numbers the keys, older versions name them
 STORY_STYLE_KEYS = (     # per STORY_KEYS spelling: a story's style runs, a run's features, the FontSet, a paint's values
@@ -318,6 +320,7 @@ class Edit:
     added: list = field(default_factory=list)   # record index of a layer an added ability made (gate_bytes)
     added_stories: list = field(default_factory=list)  # its Txt2 story's TextIndex in the new card (gate_stories)
     bar: list = field(default_factory=list)     # a stat on the card maker's own bar: (record index, _bar_spec()) per layer
+    comps: list = field(default_factory=list)   # record indices of the layer-comp bars it set (set_comp)
 
 
 @dataclass
@@ -3142,6 +3145,113 @@ def _toggle_row(row: TemplateRow, target: Optional[int], stat: str) -> tuple:
     return changed, moves, reach
 
 
+def comp_render(layer, value: int) -> tuple:
+    """
+    A layer-comp stat bar (the Alt template's) drawn at comp `value` as Photoshop draws it (equal to its stored renders at
+    0, 3, 5, 7 and 10, 2026-11-06): the embedded document's one shape layer, its vector mask in its fill colour, through
+    its pixel mask moved by that comp's offset; placed by a translation.
+
+    Returns:
+        (straight RGBA float32, canvas bbox), or (None, (0, 0, 0, 0)) when nothing shows; Refused("unsupported-card")
+        for any other embedded document or placement
+    """
+    from psd_tools.composite.vector import draw_vector_mask
+    def refuse(why: str):
+        raise Refused("unsupported-card", f"{layer.name!r}: {why}: set it in Photoshop")
+    placed = placed_data(layer)
+    warp = (placed.get(b"warp") or {}).get(b"warpStyle")
+    if warp is not None and getattr(warp, "enum", b"warpNone") != b"warpNone":
+        refuse("a warped layer-comp bar")
+    if layer.smart_object.has_enabled_filters:
+        refuse("a smart-filtered layer-comp bar")
+    doc = PSDImage.open(BytesIO(layer.smart_object.data))
+    inner = list(doc)
+    if len(inner) != 1 or inner[0].kind != "shape" or not inner[0].has_vector_mask() or not inner[0].has_mask():
+        refuse("its bar is not one shape layer with a pixel mask")
+    shape = inner[0]
+    comps = doc.image_resources.get_data(Resource.LAYER_COMPS) or {}
+    names = {int(c[b"compID"]): str(getattr(c[b"Nm  "], "value", c[b"Nm  "])).rstrip("\x00").strip()
+             for c in comps.get(b"list") or []}
+    settings = next((item.data for item in shape.tagged_blocks.get_data(Tag.METADATA_SETTING) or []
+                     if item.key == b"cmls"), None)
+    offsets, vectors = {}, set()
+    for setting in (settings or {}).get(b"layerSettings") or []:
+        if not setting.get(b"enab", True):
+            refuse("a comp hides its bar")
+        off = (setting.get(b"imageMask") or {}).get(b"Ofst") or {}
+        vectors.add(tuple(int(v) for v in ((setting.get(b"vectorMask") or {}).get(b"Ofst") or {}).values()))
+        for cid in setting.get(b"compList") or []:
+            if int(cid) in names:
+                offsets[names[int(cid)]] = (int(off.get(b"Hrzn", 0)), int(off.get(b"Vrtc", 0)))
+    now = offsets.get(names.get(int(comps.get(b"lastAppliedComp", -1)), ""))
+    if vectors - {(), (-1, -1)} or str(value) not in offsets or now is None:     # (-1, -1): not moved (comp "0"'s)
+        refuse("its comps do more than move the bar's mask")
+    corners = [float(v) for v in placed.get(b"Trnf") or []]
+    x0, y0 = min(corners[0::2]), min(corners[1::2])
+    if (len(corners) != 8 or max(corners[0::2]) - x0 != doc.width or max(corners[1::2]) - y0 != doc.height
+            or x0 != int(x0) or y0 != int(y0)):
+        refuse("a scaled, turned or half-pixel layer-comp bar")
+    width, height = doc.width, doc.height
+    cover = np.asarray(draw_vector_mask(shape, (0, 0, width, height)), np.float32).reshape(height, width)
+    cover = cover / 255.0 if cover.max() > 1.0 else cover
+    mask = shape.mask
+    raster = np.asarray(mask.topil().convert("L"), np.float32) / 255.0
+    dx, dy = offsets[str(value)][0] - now[0], offsets[str(value)][1] - now[1]
+    full = np.full((height, width), mask.background_color / 255.0, np.float32)
+    left, top = mask.bbox[0] + dx, mask.bbox[1] + dy
+    a0, b0 = max(0, left), max(0, top)
+    a1, b1 = min(width, left + raster.shape[1]), min(height, top + raster.shape[0])
+    if a1 > a0 and b1 > b0:
+        full[b0:b1, a0:a1] = raster[b0 - top:b1 - top, a0 - left:a1 - left]
+    opacity = shape.opacity / 255.0 * getattr(shape, "fill_opacity", 255) / 255.0
+    alpha = cover * full * opacity
+    ys, xs = (np.round(alpha * 255) > 0).nonzero()
+    if not len(xs):
+        return None, (0, 0, 0, 0)
+    fill = (shape.tagged_blocks.get_data(Tag.SOLID_COLOR_SHEET_SETTING) or {}).get(b"Clr ") or {}
+    color = [float(fill.get(key, 0.0)) / 255.0 for key in (b"Rd  ", b"Grn ", b"Bl  ")]
+    c0, c1, r0, r1 = int(xs.min()), int(xs.max()) + 1, int(ys.min()), int(ys.max()) + 1
+    rgba = np.zeros((r1 - r0, c1 - c0, 4), np.float32)
+    rgba[..., :3] = color
+    rgba[..., 3] = alpha[r0:r1, c0:c1]
+    return rgba, (int(x0) + c0, int(y0) + r0, int(x0) + c1, int(y0) + r1)
+
+
+def set_comp(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
+    """
+    A stat on the Alt template's layer-comp bar: its chosen comp (SoLd "comp") set to the comp named str(value) and its
+    pixels drawn again (comp_render), as Photoshop's Properties panel does (it also gives the instance a new "placed"
+    ID); nothing else changes (gate_bytes, _comp_record).
+
+    Returns:
+        Edit over the bar (Edit.comps); raises Refused for several bars, a hidden or comp-less one, a value it has no
+        comp for (stat>10) and a bar comp_render cannot draw
+    """
+    bars = comp_bars(psd)[stat]
+    if len(bars) != 1:
+        raise Refused("unsupported-card", f"{stat}: {len(bars)} layer-comp bars")
+    layer, old, box = bars[0]
+    if old is None or not layer.is_visible():
+        raise Refused("unsupported-card", f"{stat}: {layer.name!r} shows no layer comp: set it in Photoshop")
+    if parsed["card"].get(stat) != old:
+        raise Refused("unsupported-card", f"{stat}: the parser reads {parsed['card'].get(stat)}, the bar shows {old}")
+    if value < 0:
+        raise ValueError(f"{stat} {value}: not a stat")
+    placed = placed_data(layer)
+    ids = {int(name): cid for cid, name in comp_names(placed).items()}
+    if value not in ids:
+        raise Refused("stat>10", f"{stat} {value}: {layer.name!r} has comps {min(ids)}-{max(ids)}")
+    rgba, where = comp_render(layer, value)
+    reach = fx_pad(layer)
+    region = _pad(union_box([box, tuple(layer.bbox) if layer.bbox[2] > layer.bbox[0] else None]), reach, psd)
+    placed[b"comp"] = Integer(ids[value])
+    placed[b"placed"] = String(f"{uuid4()}\x00")
+    from psd_tools.api.layers import TypeLayer     # the fork's raster writer: channels and rect, the record kept
+    TypeLayer._store_raster(layer, rgba if rgba is not None else np.zeros((0, 0, 4), np.float32), where)
+    layer._invalidate_bbox()
+    return Edit(stat, old, value, [layer], [_record_index(layer)], region, comps=[_record_index(layer)])
+
+
 def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
     """
     Toggle a stat: the digit str(value) visible in "<Stat> Dark", the other nine hidden, 10 = none. On a two-row card
@@ -3169,6 +3279,8 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
         canvas and ambiguous effects (unsupported-card), values the rows cannot show (stat>10) and unreadable effect
         stacks (parity)
     """
+    if comp_bars(psd)[stat]:                    # the Alt template: one smart object, its layer comp the value
+        return set_comp(psd, parsed, stat, value)
     split = split_rows(psd, stat)
     if split is not None:                       # two half rows over the old one (the two-row rule)
         return set_split(psd, parsed, stat, value, split)
@@ -7924,6 +8036,15 @@ def layer_records(path) -> list:
     return out
 
 
+def _comp_record(a: dict, b: dict) -> Optional[str]:
+    """What a layer-comp bar's record changed besides its rect, channels and SoLd block (set_comp), else None."""
+    if [key for key, _ in a["blocks"]] != [key for key, _ in b["blocks"]]:
+        return "changed its blocks' list"
+    placed = (Tag.SMART_OBJECT_LAYER_DATA1.value, Tag.SMART_OBJECT_LAYER_DATA2.value)
+    other = [key for (key, x), (_, y) in zip(a["blocks"], b["blocks"]) if x != y and key not in placed]
+    return f"changed {', '.join(map(repr, other))}" if other else None
+
+
 def _digest(channel) -> bytes:
     """A channel's compression and data, hashed: a same-length change to a layer's pixels shows."""
     if channel is None:
@@ -8051,6 +8172,9 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
         for index, _, name in edit.rebuilt:
             allowed[index] = ("fx", ALLOWED_RECORD_FIELDS["fx"])
             names[index] = name                 # a rebuilt FX layer's declared name (_fx_rebuilt checks it too)
+    for edit in edits:
+        for index in edit.comps:                # a layer-comp bar: its rect, pixels and SoLd block (_comp_record)
+            allowed[index] = ("comp", ALLOWED_RECORD_FIELDS["comp"])
     rebuilt = {index: spec for edit in edits for index, *spec in edit.rebuilt}
     toggles = {index for edit in edits for index in edit.toggled}
     allowed.update({index: ("toggle", ALLOWED_RECORD_FIELDS["toggle"]) for index in toggles})
@@ -8146,6 +8270,10 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
                 why = _fx_rebuilt(a, b, *rebuilt[j])
                 if why:
                     raise Refused("bytes", f"FX layer {j} {a['name']!r} is not the declared rebuild: {why}")
+            if kind == "comp":
+                why = _comp_record(a, b)
+                if why:
+                    raise Refused("bytes", f"layer-comp bar {j} {a['name']!r} {why}")
             changed.append((j, a["name"], fields))
         i += 1
         j += 1
@@ -8163,7 +8291,8 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
     landed = {(dst, key): blocks_of(old, old_of[src]).get(key) for src, dst, key in moves if dst is not None}
     if None in left.values():
         raise Refused("bytes", "a moved effect block was not on its digit")
-    for index in toggled:                       # each digit's blocks as the moves leave them (a block may land equal to
+    comped = {index for edit in edits for index in edit.comps}      # their SoLd: _comp_record above
+    for index in toggled - comped:              # each digit's blocks as the moves leave them (a block may land equal to
         before, after = blocks_of(old, old_of[index]), blocks_of(new, index)    # the one it replaced: Dark Mind's lrFX)
         expected = {key: data for key, data in before.items() if (index, key) not in left}
         expected.update({key: data for (dst, key), data in landed.items() if dst == index})

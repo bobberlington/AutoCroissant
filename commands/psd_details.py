@@ -33,7 +33,7 @@ from commands.psd_edit import (
 )
 from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, PARSER_VERSION, PSDParser
 from commands.psd_parts import card_parts
-from commands.psd_regions import STATS, badge_layers, overlay_words, stat_rows
+from commands.psd_regions import STATS, badge_layers, comp_bars, overlay_words, stat_rows
 
 # ========================
 # Configuration
@@ -220,11 +220,17 @@ def _drawn_bar(psd: PSDImage, key: str) -> bool:
 
 
 def _stats(psd: PSDImage) -> dict:
-    """Per stat: "template" (one digit row of exposure layers), "two-row" (several), "pixel" (drawn cells or bars), "other", "none"."""
-    rows = stat_rows(psd)
+    """
+    Per stat: "template" (one digit row of exposure layers, or the Alt template's layer-comp bar), "two-row" (several),
+    "pixel" (drawn cells or bars), "other", "none".
+    """
+    rows, comps = stat_rows(psd), comp_bars(psd)
     out = {}
     for key in STATS:
         found = rows.get(key) or []
+        if not found and len(comps[key]) == 1:
+            out[key] = "template"
+            continue
         if not found:
             out[key] = "pixel" if _drawn_bar(psd, key) else "none"
             continue

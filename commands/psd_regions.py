@@ -8,6 +8,7 @@ from re import IGNORECASE, fullmatch, search, sub
 from typing import Optional
 
 from psd_tools import PSDImage
+from psd_tools.constants import Tag
 
 # ========================
 # Configuration
@@ -148,6 +149,69 @@ def stat_rows(psd: PSDImage) -> dict:
     return out
 
 
+def placed_data(layer):
+    """A smart object's SoLd descriptor (its placement and layer comps), else None."""
+    if layer.kind != "smartobject" or not layer._record.tagged_blocks:
+        return None
+    for key in (Tag.SMART_OBJECT_LAYER_DATA1, Tag.SMART_OBJECT_LAYER_DATA2):
+        block = layer._record.tagged_blocks.get_data(key)
+        if block is not None:
+            return block.data
+    return None
+
+
+def comp_names(placed) -> dict:
+    """{comp ID: name} of a placed layer's layer comps."""
+    comps = (placed.get(b"compInfo") or {}).get(b"compList") or []
+    return {int(c[b"Idnt"]): str(getattr(c[b"Nm  "], "value", c[b"Nm  "])).rstrip("\x00").strip() for c in comps}
+
+
+def comp_value(layer) -> Optional[int]:
+    """
+    A layer-comp stat bar's value (the Alt template, MDW/Templates/Alt_Creature_Template.psd): a smart object whose
+    layer comps are all named by numbers ("0".."10"); the stat is the chosen comp's name (SoLd "comp", what Photoshop's
+    Properties panel sets). None for other layers and for no comp applied (-1).
+    """
+    placed = placed_data(layer)
+    if placed is None:
+        return None
+    names = comp_names(placed)
+    if not names or not all(name.isdigit() for name in names.values()):
+        return None
+    chosen = int(placed.get(b"comp", -1))
+    return int(names[chosen]) if chosen in names else None
+
+
+def comp_stat(layer) -> Optional[str]:
+    """The stat a layer-comp bar draws: named on it or within ROW_ANCESTORS - 1 groups, under a *dark*/*bars* group."""
+    chain = [layer, *_ancestors(layer)][:ROW_ANCESTORS]
+    if not any(search(r"dark|bars", owner.name, IGNORECASE) for owner in chain[1:]):
+        return None
+    return next((k for owner in chain for k, pattern in STATS.items()
+                 if search(rf"\b({pattern})\b", owner.name, IGNORECASE)), None)
+
+
+def comp_bars(psd: PSDImage) -> dict:
+    """
+    The layer-comp stat bars per stat: {stat: [(layer, value, box)]}; value as comp_value(), box the placed transform's
+    bbox (the whole bar). Hidden ones included: the parser reads a hidden one as a full bar, as Photoshop draws it.
+    """
+    out = {key: [] for key in STATS}
+    for layer in psd.descendants():
+        placed = placed_data(layer)
+        names = comp_names(placed) if placed is not None else {}
+        if not names or not all(name.isdigit() for name in names.values()):
+            continue
+        key = comp_stat(layer)
+        if key is None:
+            continue
+        corners = [float(v) for v in placed.get(b"Trnf") or []]
+        box = (round(min(corners[0::2])), round(min(corners[1::2])), round(max(corners[0::2])),
+               round(max(corners[1::2]))) if len(corners) == 8 else tuple(layer.bbox)
+        out[key].append((layer, comp_value(layer), box))
+    return out
+
+
 def bar_box(psd: PSDImage, stat: str, box: tuple, labels: Optional[dict] = None) -> tuple:
     """
     A stat row's box as drawn: a digit mask far past its bar (BAR_MASK_MAX) is its label's band (the template bar's
@@ -202,12 +266,13 @@ def regions(psd: PSDImage, vocab=(), pad: bool = True) -> dict:
     found["stat_labels"] += [_box(layer, width, height, pad) for layer in texts
                              if layer.name.strip().lower() in STAT_LABELS]
 
-    # stats: one bbox per bar row. 1) the digit layers' mask union; 2) visible leaves of a group named like the stat
-    # under a *bar*/*stat* group (Isaac hearts, custom bars); 3) a layer named like the stat (+ "bar") inside "Bars";
-    # 4) bars painted into the art: the template row centred on the stat label
-    rows = stat_rows(psd)
+    # stats: one bbox per bar row. 1) the digit layers' mask union, or a layer-comp bar's placement (the Alt template);
+    # 2) visible leaves of a group named like the stat under a *bar*/*stat* group (Isaac hearts, custom bars); 3) a layer
+    # named like the stat (+ "bar") inside "Bars"; 4) bars painted into the art: the template row centred on the stat label
+    rows, comps = stat_rows(psd), comp_bars(psd)
     for key, pattern in STATS.items():
         boxes = [_box(group, width, height, pad, b) for group, _, b in rows[key] if b]
+        boxes += [_box(layer, width, height, pad, b) for layer, _, b in comps[key]]
         if not boxes:
             for group in psd.descendants():
                 if (group.is_group() and fullmatch(rf"\s*({pattern})\s*(bars?)?\s*", group.name, IGNORECASE)
@@ -341,7 +406,12 @@ __all__ = [
     'STATS',
     'badge_layers',
     'clip',
+    'comp_bars',
+    'comp_names',
+    'comp_stat',
+    'comp_value',
     'fx_pad',
+    'placed_data',
     'overlay_words',
     'regions',
     'stat_rows',
