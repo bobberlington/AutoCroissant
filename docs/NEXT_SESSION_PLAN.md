@@ -54,10 +54,11 @@ The owner's problem list: `docs/Future/PROBLEM_CARDS_2026-11-06.csv` and `.md`.
 
 ## State (2026-11-06, all pushed)
 
-- AutoCroissant main: 0ee2d10 plus the wrap-up docs, deployed on the jetson. Fork pin `cards-20261104` (unchanged).
-- TTSCardMaker main 4406bd0c (the raid boss template). The Alt template rollout: c79cc4a2 (with the 0-20 template),
+- AutoCroissant main: dc9f674 (stats past 10 bake on the Alt template; raid bosses no limit) plus the wrap-up docs,
+  deployed on the jetson. Fork pin `cards-20261104` (unchanged).
+- TTSCardMaker main d460db0e (the stat slider past 10; 4406bd0c the raid boss template). The Alt template rollout: c79cc4a2 (with the 0-20 template),
   c63597c3, bd8745fc, 117664d7, f4b2f573, d1a8e80c, d65536ba, 23865bd8, each followed by Card sync's TTS save commit;
-  every run green. The Desktop clone is on 4406bd0c, clean, its fetch-duplicate packs removed.
+  every run green. The Desktop clone is on d460db0e, clean, its fetch-duplicate packs removed.
 - No worktrees or work/* branches in either repo (AC keeps its three archive/* branches).
 
 - Data: moves with Card sync (`git ls-remote origin data`). Drift baseline befdf769 (37dcf02a: the deck buttons).
