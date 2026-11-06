@@ -50,7 +50,7 @@ from commands.psd_edit import BADGE_KEYS, BADGE_TAGS, ICON_FONT, Refused, badge_
 from commands.psd_parser import (EFFECT_LAYER_TAG, ICON_FONT_PREFIX, TAG, CardValidator, PSDParser, base_name, layer_tag,
                                  variant_view, variants_of)
 from commands.psd_regions import (STATS as STAT_PATTERNS, bar_box, clip, comp_bars, comp_stat, comp_value, fx_pad,
-                                  overlay_words, placed_data, stat_rows, union_box)
+                                  overlay_words, stat_rows, union_box)
 
 # ========================
 # Configuration
@@ -1915,11 +1915,6 @@ def _ink_box(layer) -> tuple:
 def _sides(bbox, width: int, height: int) -> tuple:
     """px from ink (a bbox) to each canvas edge: left, top, right, bottom."""
     return bbox[0], bbox[1], width - bbox[2], height - bbox[3]
-
-
-def _edge(bbox, width: int, height: int) -> int:
-    """px from ink (a bbox) to the nearest canvas edge."""
-    return min(_sides(bbox, width, height))
 
 
 def _glow_reach(layer) -> int:

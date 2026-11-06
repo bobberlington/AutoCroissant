@@ -756,21 +756,6 @@ class CardRepository:
         path = self.git_files[filename]
         return raw_url(self.repository, path, self.blobs.get(path))     # pinned to the card's last commit
 
-    def get_card_path(self, query: str) -> Optional[str]:
-        """
-        Get the path for a card (without extension) given its name.
-
-        Args:
-            query: Card name
-
-        Returns:
-            Path to card (with spaces, no extension, not URL-encoded) or None if not found
-        """
-        closest = self._find_closest_match(query)
-        if not closest:
-            return None
-        return splitext(self.git_files[closest])[0]
-
 
 # ========================
 # Discord Command Functions

@@ -15,8 +15,8 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from json import loads as json_loads
-from os import environ, fdopen, listdir, remove, walk
-from os.path import abspath, basename, dirname, isdir, isfile, join as path_join, splitext
+from os import environ, fdopen, remove, walk
+from os.path import abspath, basename, dirname, isfile, join as path_join, splitext
 from subprocess import CalledProcessError, run
 from sys import version_info
 from tempfile import mkstemp
@@ -396,20 +396,6 @@ class CardBuild:
             print(f"{len(missing)} cards not in {CREATED_PATH}, dated by their first upload until it has them "
                   f"(python -m commands.card_dates created): {', '.join(missing[:10])}")
         return changed
-
-    def _icons_from_local(self, local_path: str) -> IconVocabulary:
-        """Icon vocabulary from a local clone: Types/ and Types/Stars/ names plus the font's manifest, if any."""
-        stars_dir = path_join(local_path, STARS_DIR)
-        stars = [self._star_name(f) for f in listdir(stars_dir) if f.lower().endswith(".png")] if isdir(stars_dir) else []
-        manifest = None
-        manifest_path = path_join(local_path, ICON_MANIFEST_PATH)
-        if isfile(manifest_path):
-            try:
-                with open(manifest_path, encoding="utf-8") as fh:
-                    manifest = json_loads(fh.read())
-            except (OSError, ValueError) as e:
-                print(f"Could not read {manifest_path}, icon aliases and codepoints unavailable: {e}")
-        return IconVocabulary.build(self.db.all_types, stars, manifest)
 
     def _card_psds(self, response) -> list:
         """The tree's card PSDs (excluded folders and rule pages left out: the rulebook is site/rulebook's chapters since
