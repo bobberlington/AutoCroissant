@@ -409,6 +409,25 @@ def test_alt_template_bars(clone, parser, tmp_path):
         pe.set_stat(new, card, "hp", 11)
 
 
+@text_engine
+def test_alt_template_converts_a_card(clone, parser, tmp_path):
+    """The sweep kind alt template: a card's exposure digit rows become the template's layer-comp bars on its own rows,
+    its stats read as before, the rest unchanged but what the gate allows, a styled dark digit's effects on its bar, and
+    the template's bar shapes and (Mr Krabs) text layout where the card renders the same with them."""
+    import commands.card_standards as standards
+    template = tmp_path / "alt.psd"
+    template.write_bytes(at_rev(clone, *ALT_TEMPLATE))
+    for rel, styled, layout in (("Creatures/Kirby/2 Stars/Acro.psd", False, False), ("Creatures/Other/4 Stars/Mr_Krabs.psd", True, True)):
+        psd, _ = _card(clone, rel)
+        out = str(tmp_path / Path(rel).name)
+        done = standards.alt_template(psd, out, SimpleNamespace(template=str(template)))
+        assert any(n.startswith("bar shapes: ") and n.count(",") == 3 for n in done) and ("text layout" in done) == layout, done
+        new = PSDImage.open(out)
+        assert pe.parse_card(parser, out, rel, new)["card"] == pe.parse_card(parser, psd, rel)["card"]
+        assert not any(stat_rows(new).values()) and all(len(rows) == 1 for rows in comp_bars(new).values())
+        assert all(rows[0][0].has_effects() == styled for rows in comp_bars(new).values()), rel
+
+
 def test_regions_and_rows_on_mini_doomer(clone, parser):
     path = _card(clone, MINI_DOOMER)[0]
     psd = PSDImage.open(path)
@@ -932,7 +951,7 @@ def test_royal_eradicator_two_row_atk(clone, parser, tmp_path):
     path = _card(clone, CANNON)[0]
     psd = PSDImage.open(path)
     parsed = pe.parse_card(parser, path, CANNON)
-    assert parsed["card"]["atk"] == 12 and parsed["validator"] == ["STATS TOO HIGH"]
+    assert parsed["card"]["atk"] == 12 and parsed["validator"] == []
     assert parsed["card"].get("display_name") is None and pe.read_name(psd) == "Main Cannon"
     assert not hasattr(pe.CardValidator, "EXCESSIVE_STAT_EXCLUSIONS")
     assert sorted((group.name.strip(), digits) for group, digits, _ in stat_rows(psd)["atk"]) == [("Bottom", [2]), ("Top", [10])]
@@ -960,7 +979,7 @@ def test_royal_eradicator_two_row_atk(clone, parser, tmp_path):
         assert {name: fields for _, name, fields in records} == {shown: STAT_RECORD, "2": STAT_RECORD, **({"7": ["flags"]} if value == 7 else {})}
         reopened = PSDImage.open(saved)
         reparsed = pe.gate_reparse(parser, parsed, saved, CANNON, {"atk": value}, reopened)
-        assert reparsed["card"]["atk"] == value and reparsed["validator"] == (["STATS TOO HIGH"] if value > 10 else [])
+        assert reparsed["card"]["atk"] == value and reparsed["validator"] == []
         again = pe.template_rows(reopened, "atk")[1]
         assert sorted(pe._enabled_effects(again.digits[shown])) == ["BevelEmboss", "ColorOverlay"] and pe._enabled_effects(again.digits["2"]) == []
         assert pe.classify(reparsed, {"atk": value}, reopened).redundant == ["atk"]
@@ -982,7 +1001,7 @@ def test_royal_eradicator_two_row_atk(clone, parser, tmp_path):
     records, flag_bytes, block_bytes = pe.gate_bytes(path, saved, [edit])
     assert (flag_bytes, block_bytes) == (2, 6360 + 2 * 28) and [(name, fields) for _, name, fields in records] == [("2", STAT_RECORD), ("9", STAT_RECORD)]
     assert sorted(pe._enabled_effects(pe.template_rows(PSDImage.open(saved), "hp")[0].digits["2"])) == ["BevelEmboss", "ColorOverlay"]
-    # a raise from <= 10 adds STATS TOO HIGH on two rows: by design, not a new problem (review fix)
+    # a raise from <= 10 onto two rows bakes (STATS TOO HIGH only past 20 since 11-06)
     seven = str(tmp_path / "cannon_7.psd")
     at_seven = pe.parse_card(parser, seven, CANNON)
     assert at_seven["card"]["atk"] == 7 and at_seven["validator"] == []
@@ -993,7 +1012,7 @@ def test_royal_eradicator_two_row_atk(clone, parser, tmp_path):
         raised = str(tmp_path / f"cannon_7_to_{value}.psd")
         pe.save_psd(psd, raised, update_preview=False)
         reparsed = pe.gate_reparse(parser, at_seven, raised, CANNON, {"atk": value}, PSDImage.open(raised), [edit])
-        assert reparsed["card"]["atk"] == value and reparsed["validator"] == ["STATS TOO HIGH"]
+        assert reparsed["card"]["atk"] == value and reparsed["validator"] == []
     # the marker is load-bearing: hidden, the parser reads Bottom alone and the shape refuses
     psd = PSDImage.open(path)
     pe.template_rows(psd, "atk")[0].marker.visible = False

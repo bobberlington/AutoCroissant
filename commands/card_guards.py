@@ -80,8 +80,7 @@ BOT_EMAILS = ("41898282+github-actions[bot]@users.noreply.github.com",)   # besi
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 ZEROS = "0" * 40
 MODES = ("dry", "report", "on")
-LINE = "{login} pushed {card}{changes} with these issues: {issues}. [{short}]({url})"
-CHANGES_DISCORD = 120                           # characters of a card's changes in its Discord line (psd_diff)
+LINE = "{login} pushed {card}: {issues}. [{short}]({url})"           # what to do, as short as it goes (owner 2026-11-06)
 CHANGES_COMMENT = 600                           # and in the commit comment
 MARKDOWN = r"([\\`*_~|<\[\]])"                   # escaped in card text and layer names (GitHub and Discord markdown)
 DISCORD_LIMIT = 2000
@@ -103,8 +102,8 @@ REDRAW = "; re-exported for "                   # _rewrapped_pngs' line on a gua
 QUIET_KEYS = ("EveryLineComposer",)            # fixed unsaid (owner, 2026-10-25): never in the changes either
 TELL_PNG_MISMATCH = False                       # R10 and "current but outside the bar" on Discord too (beyond the owner's
                                                 # two rules: the commit comment only until the owner asks)
-OLD_FONT = ("its badges were drawn with another version of the stoogedings font: pull first, install "   # told (owner 2026-11-04)
-            "MDW/Fonts/stoogedings.ttf over the old one, restart Photoshop, then Type > Update All Text Layers, save and push")
+OLD_FONT = ("old stoogedings font: pull, reinstall MDW/Fonts/stoogedings.ttf, restart Photoshop, "   # told (owner 2026-11-04)
+            "Type > Update All Text Layers, save and push")
 _worker: dict = {}
 _advances: dict = {}                            # icon font blob sha -> {glyph name: advance} (earlier_fonts)
 
@@ -1114,26 +1113,15 @@ def _changes_line(entry: dict, limit: int) -> str:
     return psd_diff.line([sub(MARKDOWN, r"\\\1", phrase) for phrase in entry.get("changes", [])], limit)
 
 
-def _changed(entry: dict) -> str:
-    """" (what changed)" after the card's name in its Discord line; "" for a new PSD or a re-save."""
-    text = _changes_line(entry, CHANGES_DISCORD)
-    return f" ({text})" if text else ""
-
-
 def discord_payload(data: dict, repository: str) -> dict:
     """
-    The webhook body: one LINE per card with something to tell (a refusal or a remaining issue), with what changed in
-    its PSD; to fit DISCORD_LIMIT, cards lose their changes (the last card first) before whole lines go from the end; {}
-    when nothing. Nobody is pinged and links get no preview.
+    The webhook body: one LINE per card with something to tell (a refusal or a remaining issue); whole lines go from the
+    end to fit DISCORD_LIMIT; {} when nothing. Nobody is pinged and links get no preview.
     """
     url = f"https://github.com/{repository}/commit/"
-    told = [entry for entry in data["cards"] if entry["told"]]
-
-    def card_line(entry: dict, changes: bool = True) -> str:
-        return LINE.format(login=entry["login"], card=entry["card"], changes=_changed(entry) if changes else "",
-                           issues="; ".join(entry["told"]).rstrip("."), short=(entry["commit"] or data["after"])[:8],
-                           url=url + (entry["commit"] or data["after"])[:URL_SHA])
-    lines = [card_line(entry) for entry in told]
+    lines = [LINE.format(login=entry["login"], card=entry["card"], issues="; ".join(entry["told"]).rstrip("."),
+                         short=(entry["commit"] or data["after"])[:8], url=url + (entry["commit"] or data["after"])[:URL_SHA])
+             for entry in data["cards"] if entry["told"]]
     if not lines:
         return {}
 
@@ -1144,11 +1132,6 @@ def discord_payload(data: dict, repository: str) -> dict:
 
     kept = len(lines)
     content = assemble(kept)
-    for i in range(len(lines) - 1, -1, -1):     # the issues are what the post is for
-        if len(content) <= DISCORD_LIMIT:
-            break
-        lines[i] = card_line(told[i], False)
-        content = assemble(kept)
     while len(content) > DISCORD_LIMIT and kept > 0:
         kept -= 1
         content = assemble(kept)

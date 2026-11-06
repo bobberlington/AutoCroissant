@@ -24,6 +24,9 @@ class CardType(Enum):
     NME = "nme"
 
 
+STAT_LIMIT = 20                                 # a stat above it is STATS TOO HIGH (10 until 2026-11-06)
+
+
 @dataclass
 class CardStats:
     """Represents card statistics."""
@@ -46,9 +49,9 @@ class CardStats:
         return value >= 0
 
     def has_excessive_stats(self) -> bool:
-        """Check if any stat exceeds maximum value of 10."""
+        """Whether any stat is above STAT_LIMIT (the Alt template's split bars show 0-20; owner 2026-11-06)."""
         return any(
-            stat > 10 for stat in [self.hp, self.defense, self.attack, self.speed]
+            stat > STAT_LIMIT for stat in [self.hp, self.defense, self.attack, self.speed]
             if self.is_valid_stat(stat)
         )
 

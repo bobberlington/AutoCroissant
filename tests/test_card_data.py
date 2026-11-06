@@ -243,17 +243,17 @@ def test_an_exact_rename_passes_g2(cards, monkeypatch):
 
 def test_history_values_out_of_range_become_unknown_and_are_gated(cards, monkeypatch, capsys):
     """Tainted Lazarus' 110s: a build sets them unknown and says so; a value out of range left in history (the range
-    check failing to run) refuses G3. A parser-2 reading's 12 (a problem when read) is kept and listed."""
+    check failing to run) refuses G3. A parser-2 reading's 22 (a problem when read) is kept and listed."""
     old = defaultdict(list, {"Mini Doomer": [cm.CardInfo(name="Mini Doomer", card_type="minion", path=DOOMER, ability="Old.",
                                                           stats=cm.CardStats(110, 110, 110, 110), timestamp=500.0),
                                              cm.CardInfo(name="Mini Doomer", card_type="minion", path=DOOMER, ability="Mid.",
-                                                          stats=cm.CardStats(12, 3, 3, 3), timestamp=600.0,
+                                                          stats=cm.CardStats(22, 3, 3, 3), timestamp=600.0,
                                                           parser_version=2)]})
     cdb.write_db(str(cards.db), {}, old, '{"version": 1, "cards": {\n\n}}\n', {})
     code, message = _build(cards, "--empty")
     assert code == cd.EXIT_OK and "History values out of range set to unknown: 1 (Mini Doomer)" in message
     assert "History values out of range kept (an allow_high_stats entry allows them): Mini Doomer" in message
-    assert [v.stats for v in _read(cards)[1]["Mini Doomer"]] == [cm.CardStats(), cm.CardStats(12, 3, 3, 3)]
+    assert [v.stats for v in _read(cards)[1]["Mini Doomer"]] == [cm.CardStats(), cm.CardStats(22, 3, 3, 3)]
     import commands.card_history as ch
     monkeypatch.setattr(ch, "unknown_values", lambda stats, old_stats: [])
     shutil.rmtree(cards.db)

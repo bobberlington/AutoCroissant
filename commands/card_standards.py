@@ -33,11 +33,12 @@ from functools import lru_cache
 from io import BytesIO
 from os import makedirs
 from os.path import basename, getsize, join
-from re import IGNORECASE, compile as re_compile, escape
+from re import IGNORECASE, compile as re_compile, escape, fullmatch, search
 from shutil import rmtree
 from tempfile import mkdtemp
 from typing import Callable, Optional
 
+import numpy as np
 from psd_tools import PSDImage
 from psd_tools.constants import Tag
 
@@ -48,7 +49,8 @@ from commands.font_check import _get, _value, layer_fonts
 from commands.psd_edit import BADGE_KEYS, BADGE_TAGS, ICON_FONT, Refused, badge_spans, badge_tags
 from commands.psd_parser import (EFFECT_LAYER_TAG, ICON_FONT_PREFIX, TAG, CardValidator, PSDParser, base_name, layer_tag,
                                  variant_view, variants_of)
-from commands.psd_regions import clip, fx_pad, overlay_words, union_box
+from commands.psd_regions import (STATS as STAT_PATTERNS, bar_box, clip, comp_bars, comp_stat, comp_value, fx_pad,
+                                  overlay_words, placed_data, stat_rows, union_box)
 
 # ========================
 # Configuration
@@ -2054,6 +2056,293 @@ def _laid_plans(path: str, fonts, earlier: tuple) -> list:
     return out
 
 
+# ========================
+# Alt template bars (owner 2026-11-06): the template's layer-comp stat bars in place of the exposure digit rows
+# ========================
+ALT_TEMPLATE = "MDW/Templates/Alt_Creature_Template.psd"
+ALT_ROW = (813, 84)         # a template bar row's size; a card's row within ALT_ROW_TOL of it takes the template's bar
+ALT_ROW_TOL = 4
+ALT_FILL = (0.96, 0.99)    # the share of its box a bar shaped like the template's fills (0.977; Little Guy's squares 0.84)
+ALT_SIZES = ((300, 40), (1400, 160))   # a card's own bar this size takes a resized bar (Little Guy 920x78, Sonic's 816x99)
+ALT_PLAIN, ALT_STYLED = 171, 255   # a bar's dark: the template's 67%; one whose dark digit was styled keeps its style at full
+
+
+def _bar_art(psd, stat: str) -> Optional[tuple]:
+    """
+    The card's own bar for a stat: a visible layer named like it ("hp", "hp bar") in a group named like *bar*, else a
+    visible group so named there (its drawn leaves but lines and darks: Sonic's "spd top" and "spd bottom"); its bbox.
+    """
+    named = lambda layer: fullmatch(rf"\s*({STAT_PATTERNS[stat]})\s*(bar)?\s*", layer.name, IGNORECASE)
+    under_bars = lambda layer: (layer.parent is not None and not isinstance(layer.parent, PSDImage)
+                                and "bar" in layer.parent.name.lower())
+    for layer in psd.descendants():
+        if not layer.is_group() and layer.is_visible() and under_bars(layer) and named(layer):
+            image = layer.topil()               # the template's rounded bar fills ALT_FILL of its box (squares or arrows don't)
+            filled = (np.asarray(image.convert("RGBA"))[..., 3] > 128).mean() if image is not None else ALT_FILL[0]
+            return tuple(layer.bbox) if ALT_FILL[0] <= filled <= ALT_FILL[1] else None
+    for group in psd.descendants():
+        if group.is_group() and group.is_visible() and under_bars(group) and named(group):
+            art = [l.bbox for l in group.descendants() if not l.is_group() and l.is_visible() and l.bbox[2] > l.bbox[0]
+                   and not search(r"line|dark", l.name, IGNORECASE)]
+            if art:
+                return union_box(art)
+    return None
+
+
+def _alt_parts(psd):
+    """
+    (the Darks group, {stat: (value, its bar's box, its styled digit or None)}, the empty dark groups to drop) when the
+    card's bars are the template's exposure digit rows: per stat one "<Stat> Dark" group of them, or of its half rows (a
+    stat past 10: Top and Bottom, the parser's sum), all four in one visible Darks group holding nothing else; another
+    dark group of a stat showing no digit draws nothing and goes (Sonic's). A bar takes the card's own bar's box
+    (_bar_art, resized ones too), else its digit masks' at the template's size; else None.
+    """
+    if any(comp_bars(psd).values()):
+        return None
+    parts, parents, drop = {}, {}, []
+    for stat, found in stat_rows(psd).items():
+        if not found:
+            return None
+        owners = {}
+        for g, shown, _ in found:
+            owner = next((a for a in [g, *_ancestors_of(g)]
+                          if fullmatch(rf".*\b({STAT_PATTERNS[stat]})\b.*dark.*", a.name.strip(), IGNORECASE)), None)
+            if owner is None:
+                return None
+            owners.setdefault(id(owner), [owner, False])[1] |= bool(shown)
+        drawn = [o for o, any_shown in owners.values() if any_shown] or [next(iter(owners.values()))[0]]
+        if len(drawn) != 1:
+            return None
+        owner = drawn[0]
+        drop += [o for o, _ in owners.values() if o is not owner]
+        rows = [(g, shown, box) for g, shown, box in found if g is owner or any(a is owner for a in _ancestors_of(g))]
+        leaves = [d for d in owner.descendants() if not d.is_group()]
+        if not leaves or any(d.kind != "exposure" or not d.name.strip().isdigit() for d in leaves):
+            return None
+        filled = [min(shown) for _, shown, _ in rows if shown]
+        value = sum(filled) if filled else 10
+        art = _bar_art(psd, stat)
+        (w0, h0), (w1, h1) = ALT_SIZES
+        if art and w0 <= art[2] - art[0] <= w1 and h0 <= art[3] - art[1] <= h1:
+            box = tuple(art)
+        elif len(rows) == 1 and rows[0][2]:
+            x0, y0, x1, y1 = bar_box(psd, stat, rows[0][2])
+            if abs(y1 - y0 - ALT_ROW[1]) > ALT_ROW_TOL or abs(x1 - x0 - ALT_ROW[0]) > ALT_ROW_TOL:
+                return None
+            box = (x0, y0, x0 + ALT_ROW[0], y0 + ALT_ROW[1])
+        else:                                   # half rows and no bar of its own: placed by the other rows (_spaced)
+            box = None
+        style = next((d for d in leaves if d.is_visible() and d.has_effects() and any(e.enabled for e in d.effects)),
+                     None)                      # the shown digit's style alone: a hidden one's can be stale (set_stat's rule)
+        parts[stat] = (value, box, style)
+        parents[id(owner.parent)] = owner.parent
+    if len(parts) != 4 or len(parents) != 1 or not _spaced(parts):
+        return None
+    darks = next(iter(parents.values()))
+    if (isinstance(darks, PSDImage) or len(darks) != 4 or not darks.visible or darks.opacity != 255 or darks.has_mask()
+            or darks.has_effects()):
+        return None
+    return darks, parts, drop
+
+
+def _spaced(parts: dict) -> bool:
+    """A bar with no box of its own takes the others' size and x, and their evenly spaced y in stat order (the
+    template's 126 px); False when the others are not so spaced or two bars lack one."""
+    order = list(STAT_PATTERNS)
+    placed = {stat: box for stat, (_, box, _) in parts.items() if box}
+    missing = [stat for stat in parts if parts[stat][1] is None]
+    if not missing:
+        return True
+    if len(missing) > 1 or len(placed) < 2 or len({(b[0], b[2] - b[0], b[3] - b[1]) for b in placed.values()}) != 1:
+        return False
+    known = sorted((order.index(stat), box[1]) for stat, box in placed.items())
+    steps = {(y1 - y0) / (i1 - i0) for (i0, y0), (i1, y1) in zip(known, known[1:])}
+    if len(steps) != 1:
+        return False
+    step, (i0, y0), like = steps.pop(), known[0], next(iter(placed.values()))
+    stat = missing[0]
+    top = round(y0 + (order.index(stat) - i0) * step)
+    value, _, style = parts[stat]
+    parts[stat] = (value, (like[0], top, like[2], top + like[3] - like[1]), style)
+    return True
+
+
+def _ancestors_of(layer) -> list:
+    out, parent = [], layer.parent
+    while parent is not None and not isinstance(parent, PSDImage):
+        out.append(parent)
+        parent = parent.parent
+    return out
+
+
+def alt_bar_rows(psd: PSDImage) -> list:
+    """The Darks group the Alt template's bars would replace (alt_template), else []."""
+    found = _alt_parts(psd)
+    return [found[0]] if found else []
+
+
+def _alt_darks(psd: PSDImage, template: PSDImage, found: tuple) -> list:
+    """The card's Darks group of exposure digit rows replaced by the template's layer-comp bars, each moved onto the
+    card's row and set to its value (psd_edit.set_comp); a styled dark digit's effects go onto its bar, at full."""
+    darks, parts, drop = found
+    source = next(group for group in template.descendants()
+                  if group.is_group() and group.name.strip() == "Darks" and any(comp_value(l) is not None for l in group))
+    parent = darks.parent
+    new = source.copy_to(parent, list(parent).index(darks) + 1)
+    bars = {comp_stat(layer): layer for layer in new if comp_value(layer) is not None}
+    if set(bars) != set(parts):
+        raise Refused("unsupported-card", "the Alt template's Darks group is not one bar per stat")
+    styled = any(style is not None for _, _, style in parts.values())
+    if styled:                                  # per bar: plain ones at the template's 67%, styled ones at full
+        new.opacity = 255
+    for stat, (value, box, style) in parts.items():
+        bar = bars[stat]
+        psd_edit.place_bar(bar, box)
+        psd_edit.set_comp(psd, {"card": {key: comp_value(b) for key, b in bars.items()}}, stat, value)
+        if styled:
+            bar.opacity = ALT_STYLED if style is not None else ALT_PLAIN
+        if style is not None:
+            bar.copy_effects_from(style)
+    parent.remove(darks)
+    for group in drop:
+        group.parent.remove(group)
+    return [f"{bars[stat].name} {value}" for stat, (value, _, _) in parts.items()]
+
+
+ALT_BAR_AT = {"hp": (360, 1200), "def": (360, 1326), "atk": (360, 1452), "spd": (360, 1578)}   # the old template's bars
+ALT_SHAPE = {"hp": "Health", "def": "Defense", "atk": "Attack", "spd": "Speed"}                  # the template's shapes
+
+
+def _alt_shapes(psd: PSDImage, template: PSDImage) -> list:
+    """The old template's bar art (a pixel bar at its place, coloured by its effects) replaced by the template's vector
+    bar shapes, the card's effects on them."""
+    bars = next((g for g in psd.descendants() if g.is_group() and g.name.strip() == "Bars"
+                 and g.parent is not None and not isinstance(g.parent, PSDImage) and g.parent.name.strip() == "Stats Bars"), None)
+    shapes = {layer.name.strip(): layer for group in template.descendants() if group.is_group() and group.name.strip() == "Bars"
+              for layer in group if layer.kind == "shape"}
+    done = []
+    for layer in list(bars or []):
+        stat = next((k for k, pattern in STAT_PATTERNS.items() if fullmatch(rf"\s*({pattern})\s*", layer.name, IGNORECASE)), None)
+        if (stat is None or layer.kind != "pixel" or not layer.has_effects() or tuple(layer.bbox[:2]) != ALT_BAR_AT[stat]
+                or abs(layer.bbox[2] - layer.bbox[0] - ALT_ROW[0]) > 3 or abs(layer.bbox[3] - layer.bbox[1] - ALT_ROW[1]) > 2
+                or ALT_SHAPE[stat] not in shapes):
+            continue
+        shape = shapes[ALT_SHAPE[stat]].copy_to(bars, list(bars).index(layer) + 1)
+        shape.copy_effects_from(layer)
+        shape.visible = layer.visible
+        bars.remove(layer)
+        done.append(ALT_SHAPE[stat])
+    return [f"bar shapes: {', '.join(done)}"] if done else []
+
+
+def _alt_text(psd: PSDImage, template: PSDImage = None) -> list:
+    """The old template's text layout as the template's: "Stat Txt" named "Stat Text and Name", the Name layers moved
+    into it."""
+    text = next((l for l in psd if l.is_group() and l.name.strip() == "Text"), None)
+    stats = next((g for g in text if g.is_group() and g.name.strip() == "Stat Txt"), None) if text is not None else None
+    names = [l for l in text if l.kind == "type" and base_name(l).strip() == "Name"] if text is not None else []
+    if stats is None or not names:
+        return []
+    stats.name = "Stat Text and Name"
+    for name in names:                          # a split title's parts together, in their order
+        name.move_to(stats)
+    return ["text layout"]
+
+
+ALT_CLIPS = {"Clip Ability Backround to this": ((0, 1721, 1200, 2400), "Clip Ability Backround to this"),
+             "Clip Main image to this": ((0, 0, 1200, 1731), "Clip Main Image to this")}   # old base: (its box, the template's shape)
+
+
+def _alt_clips(psd: PSDImage, template: PSDImage) -> list:
+    """The old template's clip bases in images (pixel layers at their place, LINE beside them) swapped for the
+    template's vector shapes, each where the old one was (the art clipped to it stays clipped)."""
+    images = next((l for l in psd if l.is_group() and l.name.strip() == "images"), None)
+    kids = {l.name.strip(): l for l in images} if images is not None else {}
+    if "LINE" not in kids or not all(n in kids and kids[n].kind == "pixel" and tuple(kids[n].bbox) == box
+                                     for n, (box, _) in ALT_CLIPS.items()):
+        return []
+    shapes = {l.name: l for g in template if g.is_group() and g.name == "images" for l in g if l.kind == "shape"}
+    for old_name, (_, shape_name) in ALT_CLIPS.items():
+        old = kids[old_name]
+        shapes[shape_name].copy_to(images, list(images).index(old))
+        images.remove(old)
+    return ["clip shapes"]
+
+
+ALT_STEP_OFF = 24           # a step past the dark cells is kept only where no pixel of the card moves past this
+
+
+def alt_template(path: str, out_path: str, fonts) -> list:
+    """
+    A card on the Alt template (fonts.template, its PSD) in one rewrite: its dark cells as layer-comp bars (_alt_darks),
+    and where the card renders the same with them (each tried alone, ALT_STEP_OFF), its bar art as the template's bar
+    shapes (_alt_shapes), its text layout (_alt_text) and its clip bases as the template's shapes (_alt_clips). Gate:
+    every layer none of them touched as it was (_alt_gate).
+
+    Returns:
+        what it did; [] when the card's bars are not the template's rows
+    """
+    template = getattr(fonts, "template", None)
+    psd = PSDImage.open(path)
+    found = _alt_parts(psd)
+    if not found or not template:
+        return []
+    tmpl = PSDImage.open(template)
+    base = np.asarray(PSDImage.open(path).composite().convert("RGB"), np.int16)
+    steps = []
+    for step in (_alt_shapes, _alt_text, _alt_clips):
+        trial = PSDImage.open(path)
+        if step(trial, tmpl) and (np.abs(np.asarray(trial.composite().convert("RGB"), np.int16) - base).max() <= ALT_STEP_OFF):
+            steps.append(step)
+    boxes = [box for _, box, _ in found[1].values()]
+    stats = next((l for l in psd if l.is_group() and l.name.strip() == "Stats Bars"), None)
+    if _alt_shapes in steps and stats is not None:
+        boxes.append(tuple(stats.bbox))
+    names = _alt_darks(psd, tmpl, found)
+    for step in steps:
+        names += step(psd, tmpl)
+    _save_patched(PSDImage.open(path), psd, [union_box(boxes)], out_path)   # the other steps render the same
+    _alt_gate(path, out_path)
+    return names
+
+
+def _orphan_links(psd: PSDImage) -> set:
+    """The embedded smart-object documents (linked layer uuids) no layer of psd uses."""
+    used = {str(layer.smart_object.unique_id).strip("\x00") for layer in psd.descendants() if layer.kind == "smartobject"}
+    links = set()
+    for tag in (Tag.LINKED_LAYER1, Tag.LINKED_LAYER2, Tag.LINKED_LAYER3):
+        links |= {str(item.uuid).strip("\x00") for item in (psd.tagged_blocks.get_data(tag) or [])} \
+            if psd.tagged_blocks and tag in psd.tagged_blocks else set()
+    return links - used
+
+
+def _alt_gate(path: str, out_path: str) -> None:
+    """Gate: the only layers gone are the ones the conversion replaces (the Darks rows, the old bar art, the old clip
+    bases), and every other layer's record is as it was (by layer id; "Stat Txt" renamed); raises Refused("bytes")."""
+    def by_id(psd: PSDImage) -> dict:
+        records = psd_edit.layer_records(psd)
+        return {layer.layer_id: (records[psd_edit._record_index(layer)], layer) for layer in psd.descendants()}
+    before, after = PSDImage.open(path), PSDImage.open(out_path)
+    if _orphan_links(after) - _orphan_links(before):    # Photoshop 2023 won't open a file holding them
+        raise Refused("bytes", "a smart object's embedded document is left with no layer using it")
+    old, new = by_id(before), by_id(after)
+    found = _alt_parts(before)
+    replaced = {id(layer) for group in ([found[0], *found[2]] if found else []) for layer in [group, *group.descendants()]}
+    for layer in before.descendants():
+        parent = layer.parent
+        where = parent.name.strip() if parent is not None and not isinstance(parent, PSDImage) else ""
+        if (where == "Bars" and layer.kind == "pixel") or (where == "images" and layer.name.strip() in ALT_CLIPS):
+            replaced.add(id(layer))
+    for lid, (a, layer) in old.items():
+        if lid not in new:
+            if id(layer) not in replaced:
+                raise Refused("bytes", f"{layer.name!r} went missing")
+            continue
+        b = new[lid][0]
+        if a != b and not (layer.name.strip() == "Stat Txt" and {k for k in a if a[k] != b[k]} <= {"name", "blocks"}):
+            raise Refused("bytes", f"{layer.name!r} changed beyond the conversion")
+
+
 PIXEL_FIXES = {     # kind -> (finds(psd) -> [layer], fix(path, out_path, fonts) -> [layer name], the parse it makes or None)
     "badge widths": (icon_layers, relay_badges, None),   # first: straighten and old glyphs lay out at the current widths
     "apostrophes": (curly_layers, straighten, straight_parse),
@@ -2061,18 +2350,22 @@ PIXEL_FIXES = {     # kind -> (finds(psd) -> [layer], fix(path, out_path, fonts)
     "badges": (icon_layers, fit_badges, None),
     "overlay badges": (salt_layers, one_colour_badges, None),
     "tags": (tag_layers, tags_to_badges, None),
+    "alt template": (alt_bar_rows, alt_template, None),
 }
+SWEEP_ONLY = {"alt template"}   # run by card_sweep alone, never by the push guards (owner's call, 2026-11-06)
 PIXEL_LINES = {"badge widths": "badges laid out again at their new widths", "apostrophes": "straight apostrophes",
                "old glyphs": "old icon font glyphs redrawn",
                "badges": "badges and icons fitted to their text",
-               "overlay badges": "badges under an overlay in one colour", "tags": "timing tags and costs set as badges"}
+               "overlay badges": "badges under an overlay in one colour", "tags": "timing tags and costs set as badges",
+               "alt template": "the Alt template's stat bars, bar shapes, text layout and clip shapes"}
 
 
 def pixel_kinds(psd, kinds: tuple = ()) -> tuple:
-    """The pixel fix kinds (all by default) whose layers the PSD (open, or its bytes) has."""
+    """The pixel fix kinds (all but SWEEP_ONLY by default) whose layers the PSD (open, or its bytes) has."""
     try:
         psd = PSDImage.open(BytesIO(psd)) if isinstance(psd, bytes) else psd
-        return tuple(kind for kind in kinds or tuple(PIXEL_FIXES) if PIXEL_FIXES[kind][0](psd))
+        default = tuple(kind for kind in PIXEL_FIXES if kind not in SWEEP_ONLY)
+        return tuple(kind for kind in kinds or default if PIXEL_FIXES[kind][0](psd))
     except Exception:                           # unreadable: nothing to fix
         return ()
 

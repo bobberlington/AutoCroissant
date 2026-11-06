@@ -3145,11 +3145,33 @@ def _toggle_row(row: TemplateRow, target: Optional[int], stat: str) -> tuple:
     return changed, moves, reach
 
 
+def _comp_states(layer, order: list) -> dict:
+    """
+    {comp ID: {setting key: value}} of one embedded layer: its layer comp settings (cmls) list each comp in order with
+    only what changed since the comp before (a comp's missing keys carry over), "enab" its eye, imageMask/vectorMask
+    their offsets.
+    """
+    settings = next((item.data for item in layer.tagged_blocks.get_data(Tag.METADATA_SETTING) or []
+                     if item.key == b"cmls"), None)
+    state, out = {}, {}
+    for setting in (settings or {}).get(b"layerSettings") or []:
+        state = {**state, **{key: value for key, value in setting.items() if key != b"compList"}}
+        for cid in setting.get(b"compList") or []:
+            out[int(cid)] = state
+    return {cid: out.get(cid, state) for cid in order}
+
+
+def _offset(state: dict, key: bytes) -> tuple:
+    off = (state.get(key) or {}).get(b"Ofst") or {}
+    return int(off.get(b"Hrzn", 0)), int(off.get(b"Vrtc", 0))
+
+
 def comp_render(layer, value: int) -> tuple:
     """
     A layer-comp stat bar (the Alt template's) drawn at comp `value` as Photoshop draws it (equal to its stored renders at
-    0, 3, 5, 7 and 10, 2026-11-06): the embedded document's one shape layer, its vector mask in its fill colour, through
-    its pixel mask moved by that comp's offset; placed by a translation.
+    every comp, 0-20, 2026-11-06): each embedded layer that comp shows, bottom to top in normal blending, a shape as its
+    vector mask in its fill colour, a pixel layer as its pixels, each through its pixel mask moved to that comp's offset;
+    placed on its transform's rectangle (resized: resampled bicubic).
 
     Returns:
         (straight RGBA float32, canvas bbox), or (None, (0, 0, 0, 0)) when nothing shows; Refused("unsupported-card")
@@ -3165,56 +3187,91 @@ def comp_render(layer, value: int) -> tuple:
     if layer.smart_object.has_enabled_filters:
         refuse("a smart-filtered layer-comp bar")
     doc = PSDImage.open(BytesIO(layer.smart_object.data))
-    inner = list(doc)
-    if len(inner) != 1 or inner[0].kind != "shape" or not inner[0].has_vector_mask() or not inner[0].has_mask():
-        refuse("its bar is not one shape layer with a pixel mask")
-    shape = inner[0]
     comps = doc.image_resources.get_data(Resource.LAYER_COMPS) or {}
     names = {int(c[b"compID"]): str(getattr(c[b"Nm  "], "value", c[b"Nm  "])).rstrip("\x00").strip()
              for c in comps.get(b"list") or []}
-    settings = next((item.data for item in shape.tagged_blocks.get_data(Tag.METADATA_SETTING) or []
-                     if item.key == b"cmls"), None)
-    offsets, vectors = {}, set()
-    for setting in (settings or {}).get(b"layerSettings") or []:
-        if not setting.get(b"enab", True):
-            refuse("a comp hides its bar")
-        off = (setting.get(b"imageMask") or {}).get(b"Ofst") or {}
-        vectors.add(tuple(int(v) for v in ((setting.get(b"vectorMask") or {}).get(b"Ofst") or {}).values()))
-        for cid in setting.get(b"compList") or []:
-            if int(cid) in names:
-                offsets[names[int(cid)]] = (int(off.get(b"Hrzn", 0)), int(off.get(b"Vrtc", 0)))
-    now = offsets.get(names.get(int(comps.get(b"lastAppliedComp", -1)), ""))
-    if vectors - {(), (-1, -1)} or str(value) not in offsets or now is None:     # (-1, -1): not moved (comp "0"'s)
-        refuse("its comps do more than move the bar's mask")
+    want = next((cid for cid, name in names.items() if name == str(value)), None)
+    last = int(comps.get(b"lastAppliedComp", -1))
+    if want is None or last not in names:
+        refuse(f"no comp {value} to draw")
     corners = [float(v) for v in placed.get(b"Trnf") or []]
-    x0, y0 = min(corners[0::2]), min(corners[1::2])
-    if (len(corners) != 8 or max(corners[0::2]) - x0 != doc.width or max(corners[1::2]) - y0 != doc.height
-            or x0 != int(x0) or y0 != int(y0)):
-        refuse("a scaled, turned or half-pixel layer-comp bar")
+    if len(corners) != 8 or not (corners[0] == corners[6] and corners[2] == corners[4] and corners[1] == corners[3]
+                                 and corners[5] == corners[7] and corners[2] > corners[0] and corners[5] > corners[1]):
+        refuse("a turned or skewed layer-comp bar")
+    x0, y0, x1, y1 = corners[0], corners[1], corners[2], corners[5]
     width, height = doc.width, doc.height
-    cover = np.asarray(draw_vector_mask(shape, (0, 0, width, height)), np.float32).reshape(height, width)
-    cover = cover / 255.0 if cover.max() > 1.0 else cover
-    mask = shape.mask
-    raster = np.asarray(mask.topil().convert("L"), np.float32) / 255.0
-    dx, dy = offsets[str(value)][0] - now[0], offsets[str(value)][1] - now[1]
-    full = np.full((height, width), mask.background_color / 255.0, np.float32)
-    left, top = mask.bbox[0] + dx, mask.bbox[1] + dy
-    a0, b0 = max(0, left), max(0, top)
-    a1, b1 = min(width, left + raster.shape[1]), min(height, top + raster.shape[0])
-    if a1 > a0 and b1 > b0:
-        full[b0:b1, a0:a1] = raster[b0 - top:b1 - top, a0 - left:a1 - left]
-    opacity = shape.opacity / 255.0 * getattr(shape, "fill_opacity", 255) / 255.0
-    alpha = cover * full * opacity
+    rgb, alpha = np.zeros((height, width, 3), np.float32), np.zeros((height, width), np.float32)
+    for inner in doc:
+        states = _comp_states(inner, [want, last])
+        now, then = states[want], states[last]
+        if not now.get(b"enab", True):
+            continue
+        if inner.is_group() or inner.kind not in ("shape", "pixel") or inner.blend_mode != BlendMode.NORMAL or inner.has_effects():
+            refuse(f"its bar holds a {inner.kind} layer {inner.name!r} the bake cannot draw")
+        if _offset(now, b"vectorMask") != _offset(then, b"vectorMask"):
+            refuse("a comp moves its vector mask")
+        if inner.kind == "shape":
+            cover = np.asarray(draw_vector_mask(inner, (0, 0, width, height)), np.float32).reshape(height, width)
+            cover = cover / 255.0 if cover.max() > 1.0 else cover
+            fill = (inner.tagged_blocks.get_data(Tag.SOLID_COLOR_SHEET_SETTING) or {}).get(b"Clr ") or {}
+            color = np.array([float(fill.get(key, 0.0)) / 255.0 for key in (b"Rd  ", b"Grn ", b"Bl  ")], np.float32)
+            paint = np.broadcast_to(color, (height, width, 3))
+        else:
+            cover, paint = np.zeros((height, width), np.float32), np.zeros((height, width, 3), np.float32)
+            image = inner.topil()
+            if image is not None:
+                px = np.asarray(image.convert("RGBA"), np.float32) / 255.0
+                l, t = inner.bbox[0], inner.bbox[1]
+                a0, b0, a1, b1 = max(0, l), max(0, t), min(width, l + px.shape[1]), min(height, t + px.shape[0])
+                if a1 > a0 and b1 > b0:
+                    cover[b0:b1, a0:a1] = px[b0 - t:b1 - t, a0 - l:a1 - l, 3]
+                    paint[b0:b1, a0:a1] = px[b0 - t:b1 - t, a0 - l:a1 - l, :3]
+        if inner.has_mask():
+            mask = inner.mask
+            raster = np.asarray(mask.topil().convert("L"), np.float32) / 255.0
+            dx, dy = (a - b for a, b in zip(_offset(now, b"imageMask"), _offset(then, b"imageMask")))
+            full = np.full((height, width), mask.background_color / 255.0, np.float32)
+            left, top = mask.bbox[0] + dx, mask.bbox[1] + dy
+            a0, b0 = max(0, left), max(0, top)
+            a1, b1 = min(width, left + raster.shape[1]), min(height, top + raster.shape[0])
+            if a1 > a0 and b1 > b0:
+                full[b0:b1, a0:a1] = raster[b0 - top:b1 - top, a0 - left:a1 - left]
+            cover = cover * full
+        a = cover * inner.opacity / 255.0 * getattr(inner, "fill_opacity", 255) / 255.0
+        out = a + alpha * (1 - a)
+        rgb = np.where(out[..., None] > 0, (paint * a[..., None] + rgb * (alpha * (1 - a))[..., None])
+                       / np.maximum(out, 1e-12)[..., None], rgb)
+        alpha = out
+    left, top = round(x0), round(y0)
+    size = (round(x1) - left, round(y1) - top)
+    if size != (width, height):                 # a resized bar (Little Guy's): resampled, premultiplied, as Photoshop's bicubic
+        pre = np.concatenate([rgb * alpha[..., None], alpha[..., None]], axis=2)
+        pre = np.stack([np.asarray(Image.fromarray(pre[..., k], "F").resize(size, Image.BICUBIC)) for k in range(4)], axis=2)
+        alpha = np.clip(pre[..., 3], 0.0, 1.0)
+        rgb = np.where(alpha[..., None] > 0, np.clip(pre[..., :3], 0.0, None) / np.maximum(alpha, 1e-6)[..., None], 0.0)
+        rgb = np.clip(rgb, 0.0, 1.0)
     ys, xs = (np.round(alpha * 255) > 0).nonzero()
     if not len(xs):
         return None, (0, 0, 0, 0)
-    fill = (shape.tagged_blocks.get_data(Tag.SOLID_COLOR_SHEET_SETTING) or {}).get(b"Clr ") or {}
-    color = [float(fill.get(key, 0.0)) / 255.0 for key in (b"Rd  ", b"Grn ", b"Bl  ")]
     c0, c1, r0, r1 = int(xs.min()), int(xs.max()) + 1, int(ys.min()), int(ys.max()) + 1
-    rgba = np.zeros((r1 - r0, c1 - c0, 4), np.float32)
-    rgba[..., :3] = color
-    rgba[..., 3] = alpha[r0:r1, c0:c1]
-    return rgba, (int(x0) + c0, int(y0) + r0, int(x0) + c1, int(y0) + r1)
+    rgba = np.concatenate([rgb[r0:r1, c0:c1], alpha[r0:r1, c0:c1, None]], axis=2).astype(np.float32)
+    return rgba, (left + c0, top + r0, left + c1, top + r1)
+
+
+def place_bar(layer, box: tuple) -> None:
+    """A layer-comp bar's placed transform set to box (x0, y0, x1, y1): moved there and, unlike the template's, resized."""
+    x0, y0, x1, y1 = (float(v) for v in box)
+    corners = (x0, y0, x1, y0, x1, y1, x0, y1)
+    for key in PLACED[:2]:
+        data = layer.tagged_blocks.get_data(key) if key in layer.tagged_blocks else None
+        for name in (b"Trnf", b"nonAffineTransform"):
+            for value, new in zip(data.data.get(name, ()) if data is not None else (), corners):
+                value.value = new
+    for key in PLACED[2:]:
+        data = layer.tagged_blocks.get_data(key) if key in layer.tagged_blocks else None
+        if data is not None:
+            data.transform = corners
+    layer._psd.mark_updated()
 
 
 def set_comp(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
@@ -8615,7 +8672,7 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
     two_rows = all(_two_rows(got, psd, stat) for stat in STAT_FIELDS if (got.get(stat) or 0) > STAT_MAX
                    and (stat in jobs or got.get(stat) != parsed["card"].get(stat)))   # Sonic's SPD 20 was there before
     if any(p.startswith("STATS TOO HIGH") for p in new["validator"]) and not two_rows:
-        raise Refused("reparse", "a stat above 10 without Top and Bottom rows")
+        raise Refused("reparse", "a stat above 20 without Top and Bottom rows")
     answered = CardEdits.answered(jobs)
     old_problems = {p for p in parsed["validator"] if not (answered and p.startswith(answered))}
     added = sorted(p for p in set(new["validator"]) - old_problems if not (two_rows and p.startswith("STATS TOO HIGH")))

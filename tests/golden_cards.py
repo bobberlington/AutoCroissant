@@ -12,7 +12,7 @@ CERTIFIED = ("Auxiliary/Minions/Mini_Doomer.psd",                       # valida
              "Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd")
 CARDS = CERTIFIED + (
     "Creatures/Kirby/3 Stars/Pix.psd",                                  # 3 creatures
-    "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd",           # atk 10 + 2 (STATS TOO HIGH); title in 3 layers
+    "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd",           # atk 10 + 2; title in 3 layers
     "Items/Heal/2 Stars/A_Snack.psd",                                   # hidden titles of 2 duplicates: no alt_names
     "Auxiliary/Minions/Anubisath_Guardian.psd",                         # empty ability; card_data's edited Mini Doomer
     "Auxiliary/Minions/God_Tamer.psd",                                  # 5 stars in a Stars group (none until 2026-10-22), ability excluded

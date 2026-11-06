@@ -238,9 +238,7 @@ alone); the guards run it on every push. `old glyphs` refuses a glyph whose adva
 splice).
 Old-font note (A1, owner 2026-11-04; the one pixel-fix refusal that is told): a layer drawn with another build of the
 icon font that the PSD keeps so (refused, a splice that fell back, or a PNG that couldn't follow:
-`card_guards.stale_left`) gets `card_guards.OLD_FONT` in the post: "its badges were drawn with another version of the
-stoogedings font: pull first, install MDW/Fonts/stoogedings.ttf over the old one, restart Photoshop, then Type >
-Update All Text Layers, save and push".
+`card_guards.stale_left`) gets `card_guards.OLD_FONT` in the post: "old stoogedings font: pull, reinstall MDW/Fonts/stoogedings.ttf, restart Photoshop, Type > Update All Text Layers, save and push".
 A bake whose new text puts a last line below its box bakes, told (`overflow: ...: its last line falls below its text
 box, where Photoshop hides it`; `psd_edit.below_box`, never refused).
 

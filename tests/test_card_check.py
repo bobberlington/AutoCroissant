@@ -134,6 +134,8 @@ def test_card_notes_apply_the_edits_then_validate(fake_cards, tmp_path):
     two = edits({"A": {"creatures": [{"hp": 7, "def": 4, "atk": 5, "spd": 6}, {"hp": 1, "def": 1, "atk": 1, "spd": 1}]}})
     assert cc.card_notes(parser, cc.CardEdits.parse(two), str(psd), rel) == []
     fake_cards[b"a"] = lambda r: creature(r, 7, 4, 12, 6)
+    assert cc.card_notes(parser, None, str(psd), rel) == []                                 # up to 20 (11-06)
+    fake_cards[b"a"] = lambda r: creature(r, 7, 4, 22, 6)
     assert cc.card_notes(parser, None, str(psd), rel) == ["STATS TOO HIGH"]
     assert cc.card_notes(parser, cc.CardEdits.parse(edits({"A": {"allow_high_stats": True}})), str(psd), rel) == []
     fake_cards[b"a"] = lambda r: creature(r, 7, 4, -1, -1, types=["active"], ability=None)
@@ -143,7 +145,7 @@ def test_card_notes_apply_the_edits_then_validate(fake_cards, tmp_path):
     fake_cards[b"a"] = lambda r: creature(r, problems=[NO_STATS])          # no bar read: one note, not four
     assert cc.card_notes(parser, None, str(psd), rel) == [NO_STATS]
     assert cc.card_notes(parser, cc.CardEdits.parse(edits({"A": {"hp": 5}})), str(psd), rel) == [NO_STATS]   # as the website
-    assert cc.card_notes(parser, cc.CardEdits.parse(edits({"A": {"hp": 15}})), str(psd), rel) == ["STATS TOO HIGH", NO_STATS]
+    assert cc.card_notes(parser, cc.CardEdits.parse(edits({"A": {"hp": 25}})), str(psd), rel) == ["STATS TOO HIGH", NO_STATS]
     four = {"hp": 1, "def": 1, "atk": 1, "spd": 1}
     assert cc.card_notes(parser, cc.CardEdits.parse(edits({"A": four})), str(psd), rel) == []           # every stat: answered
     assert cc.card_notes(parser, cc.CardEdits.parse(edits({"A": {"creatures": [four]}})), str(psd), rel) == []
@@ -160,8 +162,8 @@ def test_cli_psd_mode(clone, tmp_path, capsys):
     assert cc.main(["--psd", *map(str, psds), "--author", "bobber", "--json", str(out), "--discord", str(disc)]) == 0
     text = capsys.readouterr().out
     assert text.startswith("## Card check\n\n3 card PSDs read.\n\n")
-    assert f"- `Auxiliary/Minions/God_Tamer.psd` (bobber): {NO_STARS}\n" in text
-    assert f"- `Creatures/Kirby/3 Stars/Computer_Virus.psd` (bobber): {NO_STATS}\n" in text
+    assert '- `Auxiliary/Minions/God_Tamer.psd` (bobber): no stars (group them in "Stars")\n' in text
+    assert "- `Creatures/Kirby/3 Stars/Computer_Virus.psd` (bobber): no stat bars\n" in text
     assert "Mini_Doomer" not in text and "Errors" not in text
     data = json.loads(out.read_text(encoding="utf-8"))
     assert data == {"checked": 3, "errors": [],
@@ -170,9 +172,8 @@ def test_cli_psd_mode(clone, tmp_path, capsys):
                                "notes": [NO_STATS]}]}
     payload = json.loads(disc.read_text(encoding="utf-8"))
     assert payload["content"].splitlines() == [
-        f"bobber has pushed God Tamer with: {NO_STARS}.",
-        f"bobber has pushed Computer Virus with: {NO_STATS}.",
-        cc.CLOSING]
+        'bobber pushed God Tamer: no stars (group them in "Stars").',
+        "bobber pushed Computer Virus: no stat bars."]
     assert payload["allowed_mentions"] == {"parse": []} and len(payload["content"]) < 2000
     assert "http" not in payload["content"] and "token" not in payload["content"].lower()
     assert cc.main(["--psd", str(clone / "Auxiliary/Minions/Mini_Doomer.psd"), "--discord", str(disc)]) == 0
@@ -180,7 +181,7 @@ def test_cli_psd_mode(clone, tmp_path, capsys):
 
 
 def test_cli_all_mode_with_the_edits(clone, tmp_path, capsys):
-    """Five real cards (one from the clone's history) in a tmp checkout: the edits file answers three of their notes; MDW/, Markers/ and .git/ are skipped."""
+    """Five real cards (one from the clone's history) in a tmp checkout: the edits file answers two of their notes; MDW/, Markers/ and .git/ are skipped."""
     root = tmp_path / "repo"
     cards = ["Auxiliary/Minions/God_Tamer.psd", "Creatures/Kirby/3 Stars/Computer_Virus.psd", "Creatures/Kirby/3 Stars/Pix.psd",
              "Auxiliary/Minions/Mini_Doomer.psd",
@@ -193,22 +194,20 @@ def test_cli_all_mode_with_the_edits(clone, tmp_path, capsys):
             (root / rel).symlink_to(clone / rel)
     names = [p.name for p in (clone / "Types").iterdir() if p.is_file() and not p.name.startswith(".")]
     text = edits({"Computer Virus": {"problems_ok": True},
-                  "Pix": {"creatures": [{"hp": 3, "def": 3, "atk": 3, "spd": 3}] * 3},
-                  "Royal Eradicator Main Cannon": {"allow_high_stats": True}})
+                  "Pix": {"creatures": [{"hp": 3, "def": 3, "atk": 3, "spd": 3}] * 3}})
     fake_root(root, {"MDW/Templates/Creature_Template.psd": b"", "Auxiliary/Markers/M.psd": b"", ".git/x.psd": b"", "Items/note.txt": b""},
               types=names, edits_text=text)
     assert cc.card_psds(str(root)) == [(rel, str(root / rel)) for rel in sorted(cards)]
     out = tmp_path / "r.json"
     assert cc.main(["--all", str(root), "--json", str(out)]) == 0
     text = capsys.readouterr().out
-    assert "5 card PSDs read." in text and f"- `Auxiliary/Minions/God_Tamer.psd` (Someone): {NO_STARS}\n" in text
+    assert "5 card PSDs read." in text and '- `Auxiliary/Minions/God_Tamer.psd` (Someone): no stars (group them in "Stars")\n' in text
     data = json.loads(out.read_text(encoding="utf-8"))
     assert data["cards"] == [{"path": "Auxiliary/Minions/God_Tamer.psd", "author": "Someone", "notes": [NO_STARS]}] and data["errors"] == []
-    (root / "site" / "Card Edits.json").unlink()                                 # without the edits the three notes come back
+    (root / "site" / "Card Edits.json").unlink()                                 # without the edits the two notes come back
     report = cc.check_checkout(str(root))
     assert {c.path: c.notes for c in report.cards} == {
         "Auxiliary/Minions/God_Tamer.psd": [NO_STARS],
-        "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd": ["STATS TOO HIGH"],
         "Creatures/Kirby/3 Stars/Computer_Virus.psd": [NO_STATS],
         "Creatures/Kirby/3 Stars/Pix.psd": [SEVERAL]}
 
@@ -252,10 +251,8 @@ def report() -> cc.Report:
 def test_discord_payload_wording():
     payload = cc.discord_payload(report())
     assert set(payload) == {"content", "allowed_mentions"} and payload["allowed_mentions"] == {"parse": []}
-    assert payload["content"] == (f"bobber has pushed God Tamer with: {NO_STARS}.\n"
-                                  "michael has pushed Computer Virus with: HP NOT FOUND; DEF NOT FOUND.\n"
-                                  "The bot's next /update_stats prints these too; the parser's own notes (no stars or stats found, "
-                                  "misspelt type, several creatures) also show on the website as Parser notes.")
+    assert payload["content"] == ('bobber pushed God Tamer: no stars (group them in "Stars").\n'
+                                  "michael pushed Computer Virus: no HP bar; no DEF bar.")      # what to do, short (owner 2026-11-06)
     assert "website shows these" not in payload["content"]        # the validator's notes never reach the website's Parser notes
     assert "<@" not in payload["content"]                                       # nobody is pinged (owner, 2026-10-23)
     assert cc.discord_payload(cc.Report(checked=2, errors=["x.psd: could not be read (boom)"])) == {}
@@ -303,9 +300,9 @@ def test_repo_mode_push(fake_cards, monkeypatch, tmp_path, capsys):
     assert fake.blob_calls() == 5                                                   # the manifest, the edits file, three card PSDs
     assert any(u.endswith("/git/trees/c2?recursive=1") for u in fake.calls)
     text = capsys.readouterr().out
-    assert f"- `Items/Heal/1 Stars/B.psd` (pusher): {NO_STARS}\n" in text and "A.psd" not in text
+    assert '- `Items/Heal/1 Stars/B.psd` (pusher): no stars (group them in "Stars")\n' in text and "A.psd" not in text
     payload = json.loads(disc.read_text(encoding="utf-8"))
-    assert payload["content"].splitlines()[0] == f"pusher has pushed B with: {NO_STARS}."
+    assert payload["content"].splitlines()[0] == 'pusher pushed B: no stars (group them in "Stars").'
     assert "http" not in payload["content"] and "token" not in payload["content"].lower()
 
 

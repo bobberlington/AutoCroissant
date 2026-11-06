@@ -254,7 +254,10 @@ The VISIBLE digit layers are grouped by bar row (their parent group) and each ro
   the value is the chosen comp's name (SoLd `comp`, what Photoshop's Properties panel sets; checked on
   a Photoshop save at 3/7/10/0). Its dark is a black shape at 67% under a mask each comp slides. Hidden:
   a full bar (10). `psd_regions.comp_bars`; the bake sets it with `psd_edit.set_comp` (renders equal
-  Photoshop's at 0, 3, 5, 7, 10); the details call it "template".
+  Photoshop's at 0, 3, 5, 7, 10); the details call it "template". Since 2026-11-06 the bar shows 0-20 (comps
+  11-20: a full top row and a bottom half row of darks, `comp_render` draws every layer of the bar doc), and
+  cards move onto the template with `card_sweep run --kind alt-template` (card_standards.alt_template: the
+  darks; the bar art, text layout and clip bases too where the card renders the same; sweep only, never the guards).
 
 Rows add up, so stats can pass 10 (Royal Eradicator Main Cannon's attack is 10 + 2). Multi-creature
 cards (rows named "1", "2", … or a repeated stat block: Pix, Twin Emperors, Tainted Lazarus) get
@@ -478,8 +481,8 @@ one card has one: rulebook page "20 Creature Types" with `MISSPELT TYPE: tornado
 
 **The exclusion list is the "perfect extraction" debt register** — per-card allowances the owner
 wants to eliminate (see autocroissant-research-frontier; the campaign to shrink them is
-autocroissant-psd-extraction-campaign). `EXCESSIVE_STAT_EXCLUSIONS` (5 names) was deleted on 2026-10-21: stats above 10
-are allowed per card by `allow_high_stats` in Card Edits.json. Since 2026-10-25 (cards need no ability) the validator
+autocroissant-psd-extraction-campaign). `EXCESSIVE_STAT_EXCLUSIONS` (5 names) was deleted on 2026-10-21: since 2026-11-06 a stat is STATS TOO
+HIGH only above 20 (`card_models.STAT_LIMIT`, owner; 10 before), and `allow_high_stats` in Card Edits.json allows more. Since 2026-10-25 (cards need no ability) the validator
 no longer reads `ABILITY_EXCLUSIONS`: it is card_standards' R3 waiver (card_standards.py:638). Verbatim, psd_parser.py:1271-1293:
 
 - `ABILITY_EXCLUSIONS` (21, allowed to have no ability text): Crystal Bits, Bugzzy, Electro Probe,
@@ -613,8 +616,8 @@ renamed card's history starts at the rename (`GitIndex.intro_of`: the old name's
 Consecutive versions whose PSD changed, PNG did not (from the older reading to the newer one's start) and types alone
 differ are one misread (`misreads`), and impossible history values become unknown with an `OUT OF RANGE: ...` problem
 keeping the old value (`unknown_values`, only on versions read before parser 2: `unchecked`): stars outside 0..7, a
-stat above 10 without an allowance (`allows_high`: the card's allow_high_stats, the retired EXCESSIVE_STAT_EXCLUSIONS
-names, or no current card), any stat of three digits; the kept ones above 10 are listed for the owner (`high_values`),
+stat above 20 (10 until 2026-11-06) without an allowance (`allows_high`: the card's allow_high_stats, the retired EXCESSIVE_STAT_EXCLUSIONS
+names, or no current card), any stat of three digits; the kept ones above 20 are listed for the owner (`high_values`),
 a parser-2 reading's out-of-range value is kept and listed by the data build (`kept_values`). **Archived cards** (2026-10-22): `prune_clean_cards(at)`
 (card_models.py) moves a card whose PSD left the tree from stats.pkl to the end of its old_stats list, tagged
 `archived = {"at": when, "path": last PSD path, "blob": last blob sha or None, "commit": the deleting commit or None}`

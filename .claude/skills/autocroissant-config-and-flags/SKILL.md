@@ -250,7 +250,7 @@ Build mode only (`python -m commands.card_data`); legacy /update_stats ignores t
 | `EXIT_OK`, `EXIT_ERROR`, `EXIT_GATE` | `0`, `1`, `2` | written or nothing to do; an error (a file not fetched included); a gate refused |
 | changelog `MESSAGES_MAX` | `20` | Discord posts per run (one per push); the rest wait for the next run (commands/changelog.py) |
 
-`EXCESSIVE_STAT_EXCLUSIONS` went on 2026-10-21: a stat above 10 is allowed per card by `allow_high_stats` in Card Edits.json.
+`EXCESSIVE_STAT_EXCLUSIONS` went on 2026-10-21: a stat above 20 (10 until 2026-11-06) is allowed per card by `allow_high_stats` in Card Edits.json.
 The exclusion set is a per-card whitelist the owner wants to eventually eliminate ("perfect
 extraction" goal). Their semantics and the validation rules live in
 **impossibility-cards-reference**; the elimination campaign in
@@ -382,8 +382,8 @@ The Actions' token: `GITHUB_TOKEN` from the environment when config.py supplied 
 
 | Constant | Value | Meaning |
 |---|---|---|
-| `LINE` | `"{name} has pushed {card} with: {notes}."` | the Discord line per card (card = `card_name(path)`, notes joined by "; ") |
-| `CLOSING` | `"The bot's next /update_stats prints these too; the parser's own notes (no stars found, misspelt type, several creatures) also show on the website as Parser notes."` | the Discord message's last line (the validator's notes never reach the website) |
+| `LINE` | `"{name} pushed {card}: {notes}."` | the Discord line per card (card = `card_name(path)`, notes through `short()` joined by "; ") |
+| `SHORT` | (note start, what to do) pairs | each note as the action, as short as it goes (owner 2026-11-06); the job summary and comment use them too |
 | `UNREADABLE` | `"could not be read"` | the error line's wording for a PSD psd-tools can't open or an edits file that isn't JSON |
 
 Shared with font_check (imported): `DISCORD_LIMIT`, `NOBODY`, `API_TIMEOUT`, `EXCLUDE_FOLDERS`, `POOL_MIN`, `POOL_CHUNK`; the token
@@ -462,8 +462,8 @@ timer; before, the environment `card-sync-quiet`'s wait timer held it 30 minutes
 | Constant | Value | Meaning |
 |---|---|---|
 | `card_guards.MODES` | `("dry", "report", "on")` | what the Action does; the repo variable `CARD_GUARDS` picks it (unset or off = the guards' steps skip; the card and font checks still run) |
-| `card_guards.LINE` | `"{login} pushed {card}{changes} with these issues: {issues}. [{short}]({url})"` | the standards-channel line (no ping); `{changes}` is the card's semantic PSD diff (psd_diff) |
-| `CHANGES_DISCORD`, `CHANGES_COMMENT` | `120`, `600` | characters of a card's changes on Discord and in the commit comment |
+| `card_guards.LINE` | `"{login} pushed {card}: {issues}. [{short}]({url})"` | the standards-channel line (no ping), what to do and the commit link (owner 2026-11-06: no "what changed", as short as it goes) |
+| `CHANGES_COMMENT` | `600` | characters of a card's changes in the commit comment (the Discord line has none since 2026-11-06) |
 | `QUIET_MARGIN` | removed 2026-11-04 (0 since 2026-11-03; 60 s before) | `land` waited card_bake's `RECENT` plus this after the push |
 | `ANCHOR_WINDOW` | 2 h | in a burst, PSD commits this close to the push may stand in for its PNG's PSD |
 | `POOL_MIN`, `POOL_MAX` | `8`, `4` | from this many cards the checks run in a process pool, locally; on a GitHub runner (`GITHUB_ACTIONS`) from 2 cards (`least = 2` in `check`, efc7808, 2026-11-04). The pool: every core on a runner (K-2 experiment 2026-10-25; revert: drop that branch of `pool_size`), else half the cores, at most POOL_MAX (each runs git); `--workers N` overrides |
@@ -471,7 +471,7 @@ timer; before, the environment `card-sync-quiet`'s wait timer held it 30 minutes
 | `card_standards.AUTO_FIX` | `("R9",)` | what the bot fixes itself (the Txt2 story); everything else is told |
 | `card_standards.LINE_IOU` | `0.9` | R8 (the Single-line Composer, always set and never told since 2026-10-25): a box text line inked under this share of the stored one rewraps, so the layer is redrawn and the guards re-export its PNG; no longer a bar to the switch |
 | `EARLIER_FONTS`, `EARLIER_WALK` | `4`, `40` | badge widths (2026-11-04; eras 2026-11-05): the icon font's earlier eras at most (each era's newest version: an icon added keeps the era, an advance changed ends it; none laid out as the current font), from that many newest versions of its history, read once a push, only with `--repo` (ttscardmaker-companion §1.2) |
-| `OLD_FONT` | "its badges were drawn with another version of the stoogedings font: pull first, install MDW/Fonts/stoogedings.ttf over the old one, ..." | told when a layer drawn with another build of the icon font stays so (`stale_left`; owner 2026-11-04, A1) |
+| `OLD_FONT` | "old stoogedings font: pull, reinstall MDW/Fonts/stoogedings.ttf, restart Photoshop, Type > Update All Text Layers, save and push" | told when a layer drawn with another build of the icon font stays so (`stale_left`; owner 2026-11-04, A1) |
 | `card_standards.OLD_GLYPH_BAD`, `EARLIER_FIT`, `EARLIER_GAIN` | `0.40`, `= OLD_GLYPH_BAD`, `0.03` | an icon glyph is drawn old past this share of its ink off the current font's render, or when an earlier font's render fits it within EARLIER_FIT and better by EARLIER_GAIN (2026-11-04: the Roboto labels) |
 | `card_standards.DRAWN_ODD`, `LAID_OFF`, `RAZOR`, `EDGE_NEAR` | `0.30`, `0.15`, `0.001`, `24` px | badge widths: a moved glyph this far off that no known font draws is refused; a layer's ink its old layout may have off its pixels; breaks that change in a box this share narrower or wider hang on a hair (refused when the last line would drop below the box); ink this near a canvas edge (and nearer than before) is noted |
 | `card_sweep.WORKERS`, `EARLIER_KINDS` | `4`, `("badge widths", "old glyphs")` | the sweep's process pool at most; the kinds that read the earlier icon fonts (ttscardmaker-companion §1.10) |
@@ -706,7 +706,7 @@ table with its command before quoting it in the future.
 | global_config env overrides (two: LOCAL_DIR_LOC, HISTORY_CLONE) | `grep -n "environ.get" global_config.py`; `grep -rn "AUTOCROISSANT_" --include="*.py" commands/ global_config.py` (global_config.py only) |
 | Module environment reads | `grep -rn "environ.get" --include="*.py" commands/` (FONT_DIRS_ENV, WORK_ENV = RUNNER_TEMP, GITHUB_TOKEN, BUILDER_SHA, DISCORD_ARCHIVE, DISCORD_MATCH_REPO, SSH_AUTH_SOCK) |
 | ACTIONS_TOKEN and the card_sync knobs | `sed -n '38,56p' commands/card_sync.py` |
-| Push-guard, parity and bake knobs | `grep -n "^MODES\|^LINE\|^CHANGES_\|^ANCHOR_WINDOW\|^POOL_\|^TELL_PNG\|^EARLIER_\|^OLD_FONT" commands/card_guards.py`; `grep -n "^AUTO_FIX\|^OLD_GLYPH_BAD\|^EARLIER_\|^DRAWN_ODD\|^LAID_OFF\|^RAZOR\|^EDGE_NEAR" commands/card_standards.py`; `grep -n "^WORKERS\|^EARLIER_KINDS" commands/card_sweep.py`; `grep -n "^TOL\|^BESIDE_CUT" commands/png_export.py`; `grep -n "^PARITY_\|^ADD_ABILITY_LIVE\|^DIRTY_VERIFY" commands/psd_edit.py`; `grep -n "^MAX_BAKES\|^BUDGET" commands/card_bake.py` |
+| Push-guard, parity and bake knobs | `grep -n "^MODES\|^LINE\|^CHANGES_COMMENT\|^ANCHOR_WINDOW\|^POOL_\|^TELL_PNG\|^EARLIER_\|^OLD_FONT" commands/card_guards.py`; `grep -n "^AUTO_FIX\|^OLD_GLYPH_BAD\|^EARLIER_\|^DRAWN_ODD\|^LAID_OFF\|^RAZOR\|^EDGE_NEAR" commands/card_standards.py`; `grep -n "^WORKERS\|^EARLIER_KINDS" commands/card_sweep.py`; `grep -n "^TOL\|^BESIDE_CUT" commands/png_export.py`; `grep -n "^PARITY_\|^ADD_ABILITY_LIVE\|^DIRTY_VERIFY" commands/psd_edit.py`; `grep -n "^MAX_BAKES\|^BUDGET" commands/card_bake.py` |
 | Setters never write config.py | `sed -n '954,997p' commands/query_card.py`; confirm zero `open(`/`write` there |
 | update_stats defaults (force_update False both places; use_local_repo / use_local_timestamp removed 2026-10-20) | `grep -n "force_update: \|use_local" main.py commands/card_sync.py commands/card_data.py` (no use_local hits; every force_update default is False) |
 | Icon-font constants | `grep -n "^ICON_" commands/psd_parser.py global_config.py` |

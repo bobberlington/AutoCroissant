@@ -232,19 +232,18 @@ def test_check_end_to_end(cards, tmp_path, monkeypatch):
     payload = json.loads((out / "discord.json").read_text())
     assert payload["allowed_mentions"] == {"parse": []} and payload["flags"] == 4 and "<@" not in payload["content"]
     lines = payload["content"].splitlines()
-    assert all(re.fullmatch(r"\S+ pushed .+ with these issues: .+\. \[[0-9a-f]{8}\]\(https://github\.com/o/cards/commit/[0-9a-f]{12}\)", l)
+    assert all(re.fullmatch(r"\S+ pushed .+: .+\. \[[0-9a-f]{8}\]\(https://github\.com/o/cards/commit/[0-9a-f]{12}\)", l)
                for l in lines), lines
     assert "Lonely.png does not match its PSD" in report and not any("Lonely" in l for l in lines)
     assert not any("Snack" in l and "re-exported" in l for l in lines)        # writes are not issues
     assert "- PNG would be re-exported by the bot's render of the PSD (441 px changed" in report and "with CARD_GUARDS=on" in report
     assert "- PNG re-exported" not in report and "- PNG copied" not in report
-    assert "Alice pushed Snack (Square pixels changed) with these issues: PNG not exported with the PSD: export it in " \
-           "Photoshop; Snack2.png" in payload["content"]
+    assert "Alice pushed Snack: PNG not exported with the PSD: export it in Photoshop; Snack2.png" in payload["content"]
     # what changed inside each PSD pushed over an older one (psd_diff): a new PSD or a PNG alone has none
     assert snack["changes"] == by["Bread"]["changes"] == by["Dropped"]["changes"] == ["Square pixels changed"]
     assert by["New_Card"]["changes"] == by["Lonely"]["changes"] == by["New_Name"]["changes"] == []
     assert "**Snack** (`Items/Heal/2 Stars/Snack.psd`, Alice, `" in report and "- Changed: Square pixels changed" in report
-    assert "Alice pushed New Card with these issues" in payload["content"]              # a new PSD: nothing to compare
+    assert "Alice pushed New Card: " in payload["content"]
 
 
 def test_a_new_psd_beside_its_pushed_png_tells_nothing(cards, tmp_path):
@@ -395,7 +394,7 @@ def test_a_card_error_is_told_and_counted(cards, tmp_path, monkeypatch):
     assert by["Snack"]["writes"] and not by["Snack"]["error"]
     summary = json.loads((out / "summary.json").read_text())
     assert summary["card_errors"] == 1 and summary["errors"] == 1 and summary["told"] >= 1
-    assert "New Card with these issues: the bot could not finish checking it" in data["discord"]["content"]
+    assert "New Card: the bot could not finish checking it" in data["discord"]["content"]
     result = cg.Result(cg.Job("X/A.psd", "pair"), error="KeyError: 'x'")
     assert result.told() == ["the bot could not finish checking it (KeyError)"]
     monkeypatch.setattr(cg.png_export, "export_new", real)
@@ -416,7 +415,7 @@ def test_discord_fits_and_says_nothing_without_issues():
     last = payload["content"].splitlines()[-1]
     assert re.fullmatch(r"\.\.\. and \d+ more cards: \[details\]\(https://github\.com/MichaelJSr/TTSCardMaker/commit/a{40}\)", last)
     one = cg.discord_payload({"after": "a" * 40, "cards": [entry]}, "MichaelJSr/TTSCardMaker")["content"]
-    assert one == ("Zomoroko pushed Skullord with these issues: timing tag (1GCD) not set in the stoogedings badge font. "
+    assert one == ("Zomoroko pushed Skullord: timing tag (1GCD) not set in the stoogedings badge font. "
                    "[77777777](https://github.com/MichaelJSr/TTSCardMaker/commit/" + "7" * 12 + ")")
     assert cg.discord_payload({"after": "a" * 40, "cards": [dict(entry, told=[])]}, "o/r") == {}
 
@@ -618,7 +617,7 @@ def test_report_mode_tells_the_png_it_would_make(tmp_path, monkeypatch):
     (entry,) = report["cards"]
     assert entry["told"] == ["PNG not exported with the PSD: export it in Photoshop"]
     assert cg.discord_payload(report, "o/r")["content"].startswith(
-        "Alice pushed Snack with these issues: PNG not exported with the PSD: export it in Photoshop.")
+        "Alice pushed Snack: PNG not exported with the PSD: export it in Photoshop.")
     text = cg.markdown(report, [], [], [])
     assert "Report only (CARD_GUARDS=report): nothing is committed." in text
     assert ("- PNG would be re-exported by the bot's render of the PSD (1,234 px changed in 10x10 at (0, 0); ICC converted; "
@@ -637,7 +636,7 @@ def test_report_mode_tells_the_png_it_would_make(tmp_path, monkeypatch):
         landed = cg.land(str(out / "plan.json"), dry_run=True)
         assert landed["told"] == {"X/Snack.psd": told} and landed["sha"] == "", png
         post = cg.finish(str(out / "plan.json"), landed)
-        assert (post.get("content", "").startswith("Alice pushed Snack with these issues: PNG not exported")) is bool(told)
+        assert (post.get("content", "").startswith("Alice pushed Snack: PNG not exported")) is bool(told)
         comment = (out / "report-landed.md").read_text()
         assert ("- After the quiet window: Snack.png was pushed since: not told" in comment) is not told
         assert "would be re-exported" in comment and "Landed" not in comment
@@ -713,7 +712,7 @@ def test_a_png_made_without_a_stored_image_is_told_not_refused(tmp_path, monkeyp
     hub.install(monkeypatch)
     report = cg.land(plan)
     assert report["sha"] and report["told"] == {"X/Snack.psd": [pe.UNCHECKED]}
-    assert cg.finish(plan, report)["content"].startswith(f"Alice pushed Snack with these issues: {pe.UNCHECKED}.")
+    assert cg.finish(plan, report)["content"].startswith(f"Alice pushed Snack: {pe.UNCHECKED}.")
     FakeHub({"X/Snack.psd": ("100644", "s1"), "X/Snack.png": ("100644", "author's")}).install(monkeypatch)
     assert cg.land(plan)["told"] == {"X/Snack.psd": []}                     # the author pushed the PNG: nothing to tell
     hub.install(monkeypatch)

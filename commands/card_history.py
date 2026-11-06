@@ -30,7 +30,7 @@ NO_BLOB = "0" * 40
 UNKNOWN_IF = (("NO STARS FOUND", "stars"), ("MISSPELT TYPE", "types"), ("NO ABILITY LAYER", "ability"))
 SERIES = ("series", "subseries")
 RETIRED = ("MDW", "Markers")                          # no card folders (card_data.EXCLUDE_FOLDERS): a PSD there retired
-STAT_MAX, STAT_CAP, STARS_MAX = 10, 99, 7             # a stat above 10 needs an allowance (allows_high); 3 digits: none
+STAT_MAX, STAT_CAP, STARS_MAX = 20, 99, 7             # a stat above 20 needs an allowance (allows_high); 3 digits: none
 # CardValidator.EXCESSIVE_STAT_EXCLUSIONS until parser 2 (5835139, 2026-10-21): their history's high stats were allowed
 HIGH_STATS_LISTED = frozenset({"Royal Eradicator Main Cannon", "Pix", "Tainted Lazarus", "Sonic", "Twin Emperors"})
 RANGE_PARSER = 2                                      # parser 2 (5835139): the validator's range check, allow_high_stats

@@ -21,7 +21,7 @@ from helpers import DOOMER
 SAME = (DOOMER,                                                             # the identity cards: golden oddities
         "Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd",           # font tokens
         "Creatures/Kirby/3 Stars/Computer_Virus.psd",                      # no stats; title from a root Name layer
-        "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd",          # STATS TOO HIGH; title in 3 layers
+        "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd",          # atk 12; title in 3 layers
         "Items/Heal/2 Stars/A_Snack.psd",                                  # hidden titles
         "N.M.E/Termination_Shock.psd")                                     # drawn stars
 

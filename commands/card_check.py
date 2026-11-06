@@ -44,9 +44,18 @@ from global_config import EDITS_PATH, ICON_MANIFEST_PATH, STARS_DIR, TYPES_DIR
 # ========================
 # Configuration
 # ========================
-LINE = "{name} has pushed {card} with: {notes}."                                  # the Discord line per card
-CLOSING = ("The bot's next /update_stats prints these too; the parser's own notes (no stars or stats found, misspelt type, "
-           "several creatures) also show on the website as Parser notes.")          # the Discord message's last line
+LINE = "{name} pushed {card}: {notes}."                                          # the Discord line per card
+SHORT = (                                   # a note's start -> what to do, as short as it goes (owner 2026-11-06)
+    ("NO STATS FOUND", "no stat bars"), ("NO STARS FOUND", 'no stars (group them in "Stars")'),
+    ("SEVERAL CREATURES", "several creatures: set each one's stats on the website"),
+    ("NO ABILITY LAYER", "no Ability layer"), ("ABILITY TEXT NOT FOUND", "no ability text"),
+    ("UNKNOWN TYPE", "unknown card kind (check its folder)"), ("STATS TOO HIGH", "a stat over 20"),
+    ("HP NOT FOUND", "no HP bar"), ("DEF NOT FOUND", "no DEF bar"), ("ATK NOT FOUND", "no ATK bar"),
+    ("SPD NOT FOUND", "no SPD bar"), ("MISSPELT TYPE: ", "misspelt type "), ("UNKNOWN ICON TOKEN: ", "unknown icon "),
+    ("UNKNOWN ICON CHARACTER: ", "unknown icon character "), ("ICON TOKEN NOT IN STOOGEDINGS FONT: ", "not in stoogedings: "),
+    ("ICON TOKEN PARTLY IN STOOGEDINGS FONT: ", "partly in stoogedings: "), ("DUPLICATE LAYER IDS", "duplicate layer IDs"),
+    ("EFFECT LAYER WITHOUT TEXT LAYER: ", "FX layer without its text: "), ("EFFECT LAYER WORDS NOT IN TEXT: ", "FX words not in the text: "),
+    ("EFFECT LAYER OUT OF DATE: ", "FX layer out of date: "))
 UNREADABLE = "could not be read"
 _worker: tuple = ()                         # (parser, edits) of a pool worker, built once by _init_worker
 
@@ -208,8 +217,7 @@ def markdown(report: Report) -> str:
     """The job summary and commit comment: one line per card with notes, else "Nothing to report."; then the errors."""
     out = ["## Card check", "", f"{report.checked} card PSD{'s' if report.checked != 1 else ''} read.", ""]
     if report.cards:
-        out.append("Notes (what /update_stats prints; the parser's own ones also show on the website as Parser notes):")
-        out += [f"- `{card.path}` ({card.author}): " + "; ".join(card.notes) for card in report.cards]
+        out += [f"- `{card.path}` ({card.author}): " + "; ".join(map(short, card.notes)) for card in report.cards]
     else:
         out.append("Nothing to report.")
     if report.errors:
@@ -217,19 +225,31 @@ def markdown(report: Report) -> str:
     return "\n".join(out) + "\n"
 
 
+def short(note: str) -> str:
+    """A note as what to do (SHORT); a variant's "A Snack2: " before it kept, a named one's name after it."""
+    split = note.find(": ")
+    for prefix, rest in (("", note), *([(note[:split + 2], note[split + 2:])] if split > 0 else [])):
+        for start, phrase in SHORT:
+            if rest.startswith(start):
+                tail = rest[len(start):].removesuffix(" (run Effect Layers > Update all)") if start.endswith(": ") else ""
+                return prefix + phrase + tail
+    return note
+
+
 def discord_payload(report: Report) -> dict:
     """
-    The webhook body (standards channel): one LINE per card, CLOSING last; {} when nothing to report. Whole lines are
-    dropped from the end to fit DISCORD_LIMIT ("... and N more cards"). Nobody is pinged (owner, 2026-10-23).
+    The webhook body (standards channel): one LINE per card, its notes as what to do (short); {} when nothing to
+    report. Whole lines are dropped from the end to fit DISCORD_LIMIT ("... and N more cards"). Nobody is pinged
+    (owner, 2026-10-23).
     """
     if not report.cards:
         return {}
-    lines = [LINE.format(name=c.author, card=card_name(c.path), notes="; ".join(c.notes)) for c in report.cards]
+    lines = [LINE.format(name=c.author, card=card_name(c.path), notes="; ".join(map(short, c.notes))) for c in report.cards]
 
     def assemble(kept: int) -> str:
         rest = len(lines) - kept
         more = [f"... and {rest} more card{'s' if rest != 1 else ''}"] if rest else []
-        return "\n".join(lines[:kept] + more + [CLOSING])
+        return "\n".join(lines[:kept] + more)
 
     kept = len(lines)
     content = assemble(kept)
@@ -467,13 +487,13 @@ if __name__ == "__main__":
 # Module Exports
 # ========================
 __all__ = [
-    'CLOSING',
     'Card',
     'LINE',
     'Report',
     'UNREADABLE',
     'Vocabulary',
     'card_notes',
+    'short',
     'card_psds',
     'check_blobs',
     'check_checkout',
