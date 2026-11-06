@@ -7,7 +7,7 @@ Start a session at `docs/NEXT_SESSION_PLAN.md`. Everything here is prose; proced
 | Document | What it is | Read it when |
 |---|---|---|
 | `docs/NEXT_SESSION_PLAN.md` | The plan: the state now, what is in progress, the owner's queue, what waits on the owner and on developers, ideas parked | Starting a session; before picking work |
-| `docs/Future/` | One short design per decided, unbuilt item (none queued on 2026-10-30); the problem-cards lists `PROBLEM_CARDS_2026-10-25b.csv`/`.md` (stale) and `PROBLEM_CARDS_2026-10-25.csv`, the census. `README.md` there indexes them | Before building a queue item; before planning bake or layout work |
+| `docs/Future/` | One short design per decided, unbuilt item (none queued on 2026-10-30); the problem-cards list `PROBLEM_CARDS_2026-11-06.csv`/`.md` (after the Alt template rollout). `README.md` there indexes them | Before building a queue item; before planning bake or layout work |
 | `docs/EDIT_PIPELINE_DESIGN.md` | The PSD edit pipeline (Task 3 steps 4-7): two kinds of edits, per-card gates, delta merge, the bake in Card sync, "PSD pending", acceptance | Before implementing or changing how website edits reach the PSDs |
 | `docs/BUGS_AND_IMPROVEMENTS.md` | Open bugs (B/D/V rows), retired rows, candidate improvements; each row names its owner skill | Before fixing or proposing anything; after a fix (move the story to failure-archaeology) |
 | `docs/Campaigns/SIMULATOR_CAMPAIGN.md` | Play tab: hand test stats, sandbox table, rules automation, ability scripts, batch simulation  | Designing or estimating the Play tab |

@@ -6,8 +6,7 @@ verification, open questions only if real), and the live problem-cards list. The
 
 | File | What it is |
 |---|---|
-| `PROBLEM_CARDS_2026-10-25.csv` | The 10-25 morning census (card, folder, kind, reason) |
-| `PROBLEM_CARDS_2026-10-25b.csv`, `.md` | The last list: the census re-run after the 10-25 fixes (AC eadbd36, ba0b91f; 54 cards with an edit that can't bake). Stale since the 10-26 lanes: regenerate |
+| `PROBLEM_CARDS_2026-11-06.csv`, `.md` | The live list (card, folder, kind, reason): the census of 13 website edits on every card after the Alt template rollout, the cards not on the Alt template, the validator. The 10-25 lists are in git history |
 
 Landed and moved to `docs/Finished/`: `TEST_SUITE_CUT.md`, `WEBSITE_SMALL_FIXES.md`, `GAME_TXT.md`,
 `SMALLER_PNG_PUSHES.md`, `LAYOUT_SUPPORT.md` (`session-2026-10-25/`); `PARTS_EDITOR.md`, `CARD_SYNC_VERDICTS.md`

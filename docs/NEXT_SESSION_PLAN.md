@@ -1,14 +1,13 @@
-# Next session plan (after 2026-11-05)
+# Next session plan (after 2026-11-06)
 
 ## Where to start
 
-Start in `~/Desktop/AutoCroissant`. Read memories `resource-limits`, `secrets-never-printed`, `ttscardmaker-integration`
-(its 11-03 and 11-04 lines hold this session's rulings), `lean-tests-and-verification`, `no-guides-csv-only`,
-`edits-two-kinds`, `jetson-server`, `persistent-work-paths`, `agent-model-preference`, `rulebook-on-website`,
-`discord-pending-updates`. What landed: `docs/Finished/session-2026-11-03-05/README.md` (cost badges, the cooldown ring
-font, the card rollout); earlier `session-2026-11-01/`, `-10-30c/`, `-10-30b/`, `-10-30/`, `-10-26/`.
-
-First: check that the batch chain finished (In flight), then the go-day leftovers in order, then the owner's decisions.
+Start in `~/Desktop/AutoCroissant`. Read memories `resource-limits`, `secrets-never-printed`, `ttscardmaker-integration`,
+`alt-template-layer-comp-bars` (the 11-06 rulings), `photoshop-orphan-linked-data`, `lean-tests-and-verification`,
+`no-guides-csv-only`, `edits-two-kinds`, `jetson-server`, `persistent-work-paths`, `agent-model-preference`,
+`rulebook-on-website`, `discord-pending-updates`. What landed: `docs/Finished/session-2026-11-06/README.md` (TTS deck
+buttons, the Alt template and its rollout, stats to 20); earlier `session-2026-11-03-05/`, `-11-01/`, `-10-30c/`.
+The owner's problem list: `docs/Future/PROBLEM_CARDS_2026-11-06.csv` and `.md`.
 
 ## Standing rules
 
@@ -27,8 +26,8 @@ First: check that the batch chain finished (In flight), then the go-day leftover
   at most 4; the git watchdog (`~/Documents/Tools/wt/scratch/git-watchdog.sh`) under Monitor during long unattended
   work; no repack or gc of the big clones while agents run.
 - The Desktop TTSCardMaker clone is blobless from GitHub: every git call with `GIT_NO_LAZY_FETCH=1`, never a fetch of
-  many blobs; `git write-tree` needs `--missing-ok` there. TC's local `origin/data` is stale (679b1309): use `git
-  ls-remote origin data` or `git fetch origin +data:refs/remotes/origin/data`.
+  many blobs; `git write-tree` needs `--missing-ok` there. Refresh TC's local `origin/data` with
+  `git fetch origin +data:refs/remotes/origin/data` (or check `git ls-remote origin data`) before reading it.
 - zsh arrays start at 1 and zsh doesn't split unquoted variables: loops over arrays under `bash -c`. `gh run list -c`
   needs the FULL sha.
 - Secrets (memory `secrets-never-printed`): never print config.py values, tokens or webhook URLs; a token goes only to
@@ -37,6 +36,9 @@ First: check that the batch chain finished (In flight), then the go-day leftover
   `python -m commands.card_guards check --clone ~/Desktop/TTSCardMaker --repo MichaelJSr/TTSCardMaker --before
   origin/main --after <head> --mode dry --out <dir>`; discord.json must be `{}`. Sweep fixes carry `Card-sweep: <kind>`
   (silent per commit). A font rollout's sweep and batch pushes: `ttscardmaker-companion` §1.10.
+- PSDs our code rewrote: open every one in Photoshop by script before pushing (a leftover embedded smart-object
+  document makes Photoshop refuse a file; `~/Documents/Tools/wt/scratch/alt-template/push/open_all.sh`, it reads only
+  from /private/tmp). Card rollouts: `ttscardmaker-companion` §1.10-1.11.
 - Photoshop 2023 may be used on copies under `~/std-work-*`: `open -a "Adobe Photoshop 2023" script.jsx` plus a result
   file (osascript is blocked), dialogs off, only documents we opened. It draws with the fonts installed here: MDW's
   stoogedings (the ring build), Futura-Bold, Lucida Grande Bold, Rockwell Bold, Elephant Italic, Myriad Arabic and
@@ -50,49 +52,26 @@ First: check that the batch chain finished (In flight), then the go-day leftover
 - "Rebuild the save now" (owner, per request only): cancel Card sync's waiting run, then `gh workflow run card-sync.yml
   --ref main -f bake=pending`; first check that the site deploy holding any rulebook change has finished.
 
-## State (2026-11-05 ~07:30, all pushed)
+## State (2026-11-06, all pushed)
 
-- AutoCroissant main: the earlier-fonts eras fix after ac78439, deployed on the jetson 11-05. psd-tools fork `cards-20261104` = 1258fcbd on
-  both machines and on GitHub. No work branches or extra worktrees left in any of the three repos.
-- TTSCardMaker origin/main 474c642c (the maintenance fixes 6383bbca: Mantis Lords' letter case, Nasty Patty and Shell
-  Shield's stars grouped as Stars, after Zomoroko's 780a7b33 and 8e040018): the ring font 0ade8c3d (blob 2c0f8b1a, 17,416,116 bytes, the same in
-  `~/Library/Fonts`), the 20 site commits, the 9 card commits (tags + 7 batches + the Drawcia/NME Salesman wording), Card
-  sync's commits after each, then site.yml without `/Types/`. Completeness checked: all 753 card files (376 PSDs, 377
-  PNGs with Stubborn_Queen.png) on origin/main exactly as checked locally. The 14 `MDW/Old Rules/Rulebook` PSDs keep
-  their old badges by design.
-- Data: moves with Card sync (`git ls-remote origin data`). Drift baseline 0a7db1c3 (f26dcd9c).
-- The TTS Saves folder copy is the pushed save (474c642c, 11-05 after 6383bbca); older ones are in
-  `~/Documents/Tools/wt/scratch/tts-saves-bak/`.
-- Discord `pending-updates`: the 8 card messages of 11-01 (crystal stars twice, Tainted Lazarus split, The Puppet to The
-  Beholster, Earth Totem, the type 2 death card list, the equip stat formatting poll and its result). Earth Totem's PSD
-  changed 11-02 ("earth totem nerf", 03119c90, hdckighfkvhvgmk): its message may be done.
+- AutoCroissant main: 0ee2d10 plus the wrap-up docs, deployed on the jetson. Fork pin `cards-20261104` (unchanged).
+- TTSCardMaker main 4406bd0c (the raid boss template). The Alt template rollout: c79cc4a2 (with the 0-20 template),
+  c63597c3, bd8745fc, 117664d7, f4b2f573, d1a8e80c, d65536ba, 23865bd8, each followed by Card sync's TTS save commit;
+  every run green. The Desktop clone is on 4406bd0c, clean, its fetch-duplicate packs removed.
+- No worktrees or work/* branches in either repo (AC keeps its three archive/* branches).
+
+- Data: moves with Card sync (`git ls-remote origin data`). Drift baseline befdf769 (37dcf02a: the deck buttons).
+- The TTS Saves folder copy: re-copy the pushed save after the 11-06 deck buttons if not done (owner copies it).
+- Discord `pending-updates`: the 8 card messages of 11-01 (see 11-05's list in git history of this file).
 - OJWikibot: the jetson runs 8ed817f; nothing changed this session.
-- `+ability` is live; no live `+ability` bake yet.
 
-## Go-day: done (11-05)
+## Owner (11-06)
 
-- [x] Batches 1-7 pushed, each after the previous push's runs settled green (logs `ring-sweep-final/go/<batch>/`).
-- [x] Completeness: 753 of 753 files as checked. [x] work/big-push landed (855de4d) and deployed. [x] site.yml without
-      `/Types/` (8e040018): the next build logged "icons: 91", no warnings. [x] Clean up: branches, worktrees, scratch
-      (11 GB left), Photoshop copies, the clone's 8 duplicate packs (~46 GB; memory `partial-clone-fetch-packs`).
-- [x] **Whole-tree guards dry run** (run 42009352040, 11-05): 764 cards, 0 writes, 0 errors, no `badge widths` or `old
-      glyphs` left anywhere, every PNG matches its PSD. Told: R6 on Nasty Patty and Shell Shield (stars not in a group
-      named Stars), R14 on Mantis Lords; R11 part names (comment only) on 101. Artifact copy:
-      `~/Documents/Tools/wt/scratch/whole-tree-1105/`. The first card push after the rollout (Zomoroko's "generational
-      (2)", 780a7b33, Wigfrid among 4) needed no re-lay and told nothing: their PSDs already had the ring font.
-- [x] Disk: the TC clone's 8 duplicate fetch packs removed (~46 GB), then the clone slimmed to HEAD's blobs, every
-      commit/tree and the icon font's history (31 -> 12 GB), then the test suite's 1,042 old blobs (the pin a4d137bf
-      and the tests' at_rev pairs) fetched back in one batch (`git fetch --filter=blob:none --stdin`); scratch 22 ->
-      2.3 GB. A future slimming must keep the test pins' blobs (tests skip without them); 34 more fetched 11-05 (the
-      full suite skips none). `~/.cache/autocroissant-tests` and the uv caches cleared.
-- [x] Maintenance round (11-05): the guards' earlier icon fonts are eras, not the last 3 versions (the glow era was
-      missed); PSD fixes 6383bbca (whole-tree R6 and R14 gone; Card sync's changelog wrongly said "2 new art" for Nasty
-      Patty and Shell Shield: a PSD change without a `Card-sweep:` trailer counts as art).
-
-6. [ ] **Owner:** post the card makers' font note (the owner's ruling; facts in `opt-round4/plan.json` go_day cm-r4-2: pull,
-       install `MDW/Fonts/stoogedings.ttf` (17,416,116 bytes) over the old one, restart Photoshop, Update All Text
-       Layers on locally saved badge cards; the pull is up to ~10 GB of card files). Re-upload the TTS Workshop item by
-       hand (memory `tts-workshop-research`).
+- [ ] Check `MDW/Templates/Alt_Raid_Boss_Template.psd` (20-cell split bars, 0-40; built unattended). Raid boss stats
+      above 20 need `allow_high_stats` until there is a raid rule.
+- [ ] Manual pass on the cards not on the Alt template (problem list section 2: hand-drawn bars, several creatures).
+- [ ] Tell card makers about the Alt template (the old templates stay; the bot reads both).
+- [ ] Post the card makers' ring font note and re-upload the TTS Workshop item (from 11-05, still open).
 
 ## Jetson (maintenance 11-05; rollback files in `~/maint-20261105`)
 
@@ -170,7 +149,8 @@ First: check that the batch chain finished (In flight), then the go-day leftover
 - [ ] Rulebook, look over: see-through pictures wrap text to their edges, pictures hang out of their panels, `out=` on
       Getting Started's Kirby; Make space between list items and lines.
 - [ ] Try the website editor's drags (anchor grid, Make space, blank space, snapping, undo) and report what feels off.
-- [ ] Photoshop: Computer Virus' stat bars (its NO STATS FOUND stays until then); Ze'mer's full-width flower layers;
+- [ ] Photoshop: Computer Virus' stat bars (added 11-06 by netverk, but beside the 1200 px canvas, x 1245-1982: no
+      stat edit can show; several creatures, on the manual list); Ze'mer's full-width flower layers;
       Terry Hintz and Joel Miller's "Stars" groups and typed tags (prepared in `~/std-work-1026/stargroups/`; Photoshop
       2023 can't re-save their EarthboundZero text, nor Elmadan's); Papyrus' typed tag.
 - [ ] Big PSDs: GitHub warns past 50 MB (Quote.psd 69.4 MB on batch 2's push; The Panda Future 54,114,387 bytes).
@@ -227,8 +207,6 @@ From `~/Documents/Tools/wt/scratch/opt-round3/plan.json`, `opt-round4/plan.json`
       `/query Black Clot`) still open. D6 (icon-font adoption) is ongoing.
 - [ ] `psd_parser` ABILITY_EXCLUSIONS still holds 21 names (only the guards' R3 waiver reads it); target 0.
 - [ ] Idea 14's orphaned-FX validator was never built; the bake already deletes such layers when it edits a card.
-- [ ] Regenerate the problem-cards list after the whole-tree dry run (`docs/Future/PROBLEM_CARDS_2026-10-25b.*` is
-      stale). Deliver the CSV and its `.md`.
 - [ ] Stars still refused: Thunder Thighs 3, Consolation Prize, Bubble, Forsaken City and The Core (option B, shrinking
       every star to fit the banner, is the larger fix); Forgotten Crossroads 3-6 and Spiky Ball Trap 5-6 wrongly act as
       the stars' backdrop; Yin Yarn 6, Paint Warrior 4-6 and Paint Bomb 7-10 miss the texture clipped onto their group.
@@ -264,8 +242,7 @@ Miracle Matter's form pictures and the 5 card-art inline pictures. The jetson's 
 
 | File | What is left |
 |---|---|
-| `PROBLEM_CARDS_2026-10-25b.csv` / `.md` | The last problem-cards list (54 cards); stale, regenerate after the whole-tree dry run |
-| `PROBLEM_CARDS_2026-10-25.csv` | The 10-25 morning census |
+| `PROBLEM_CARDS_2026-11-06.csv` / `.md` | The owner's problem list after the Alt template rollout (census: `~/Documents/Tools/wt/scratch/alt-template/census/`) |
 
 ## Not chosen
 
