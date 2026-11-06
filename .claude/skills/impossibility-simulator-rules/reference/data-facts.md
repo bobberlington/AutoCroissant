@@ -147,7 +147,7 @@ Ch 05: the N.M.E. shop shows 4 random N.M.E. items; their purchase cost is writt
 
 Retired cards: `MDW/The Morgue/` (12 PNGs incl. cardback: Cho'Gath, Developper, Ech, Fire Guardian's Stronghold,
 Grandfather Clock, Pandeity Old, Poison Incantation, Satou, Satou Matsustaka, The Missile, ...); excluded from stats.
-On the TTS table 7 of them are the "Deck of Rejects" in the Specific Item Decks bag.
+On the TTS table 7 of them were the "Deck of Rejects" in the Specific Item Decks bag (both removed 2026-11-06).
 
 ## 2. Type vocabulary (Types/, Types/Stars/, stoogedings.json)
 
@@ -512,7 +512,7 @@ holder; Redirection cube (RNG); Order Determinator (RNG for 1 in 2); 0.5 chip "i
 counters (status effect durations, ability counters); Health/Defense/Attack/Speed markers ("Flip them over for stat
 downs. One of these represents the actual value of a stat, not the bar. (1 DEF marker is 0.5 DEF, 1 HP marker is 1
 HP)"); Active item holder; the simple version (decks without complex cards, no field cards or N.M.E. items); a copy of
-the deck; a bag of specific sorted item decks; a bag of tokens for each creature type.
+the deck; a bag of specific sorted item decks (removed 2026-11-06: Card details deck buttons instead); a bag of tokens for each creature type.
 
 Save totals (a copy of `TTS/audit.py` writing to /tmp, run 2026-10-22 against HEAD `73904dbd`; the removed
 `TTS/AUDIT.md` (at `843a4a99`) is the 2026-10-20 run against `9fbe683`, before `dceef8eb` added 23 cards): 228 top-level objects; 57
@@ -538,7 +538,7 @@ to commits and re-pinned when a file changes (after the cooldown commits, four r
 | All Status Effects | 64 (12 buffs + 52 debuffs) | 1 | 3 decks (2 on "All Status Effects", 1 "Status Effects Copy"); back `MDW/cardback_statuseffect.png` |
 | Minions | 99 = Auxiliary/Minions 91 + Auxiliary/Creatures 7 + Stubborn Queen | 1 | 3 decks (2 + "Minions Copy") |
 | Auxiliary Items | 60 = Auxiliary/Items 48 + 12 main-pool items summoned by abilities (Bomb, Poison Circle, Holy Card, Piko Piko Hammer, the 5 Ingredients, Pepperoni Pizza, Gasoline, N.M.E Rope) | 1 | 3 decks (2 + "Auxiliary Items Copy") |
-| Bag "Specific Item Decks" | Deck of Rejects 7 (The Morgue, hand-picked, names kept), 1/2/3/4 Star Equips 9/17/23/16, 2/4 Star Attack Items 5/2, 2 Star Healing Items 22 (complete since 2026-10-22, back `MDW/cardback_item.png`) | 1 | none |
+| Bag "Specific Item Decks" | Deck of Rejects 7 (The Morgue, hand-picked, names kept), 1/2/3/4 Star Equips 9/17/23/16, 2/4 Star Attack Items 5/2, 2 Star Healing Items 22 (complete since 2026-10-22, back `MDW/cardback_item.png`); removed 2026-11-06 (TC befdf769) | 1 | none |
 
 Backs: creatures and minions `MDW/cardback.png`; items, field cards, N.M.E. and auxiliary items `MDW/cardback_item.png`.
 Repo cards missing from the complete decks: none. The 2026-10-20 gaps were filled by `dceef8eb` that day: The Gates of
@@ -552,7 +552,7 @@ items), and Militron (No Armor), Anubisath Guardian, Qiraji Soldier, Silithid (m
 - Creature Types: Bag of 19 Custom_Token: Offensive Minion, Defensive Minion, Machine, Wind, Rock, Panda, Fire, Ice, Water,
   Electric, Undead, Dark, Light (lightshadow.png), Dark Matter, Unknown, Girl, No Type (null.png), Star (star.png),
   No Star (Null Star.png).
-- Specific Item Decks: Bag of 8 decks (above).
+- Specific Item Decks: Bag of 8 decks (above); removed 2026-11-06, Global.lua `DECKS` builds those decks on a click.
 - Infinite bags (12, two sets, one per side at x≈100.8): Counters ×2 (Counter), .5 ×2 (Custom_Tile, `Auxiliary/Markers/
   Green.png` face, `Red.png` back), Max HP ×2 (CardCustom "HP", `health_marker.png` / back `minus_health_marker.png`),
   DEF ×2 (`defense_marker` / `minus_defense_marker`), ATK ×2 (`attack_marker` / `minus_attack_marker`), SPD ×2

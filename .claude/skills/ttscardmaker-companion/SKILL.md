@@ -778,8 +778,9 @@ bot ran the updater itself after `/update_stats`; this Action replaced that.
 - **Team fields:** a card's Description, GMNotes, Memo, Tags and scripts (LuaScript, LuaScriptState, XmlUI) are
   left to the team (custom fields, descriptions: 2026-10-22): the updater never changes them on an existing card
   (links in them are not re-pinned) and new cards start with them empty. The one-time role-tag clearing is retired.
-- **Deck rules** (`TTS/decks.json`, 2026-10-22): the 7 "Specific Item Decks" are complete rules (count 1, back
-  `MDW/Assets/cardback_item.png`, 94 cards); Piko Piko Hammer is in the 3★ item decks too; the four "Creatures Developer
+- **Deck rules** (`TTS/decks.json`, 2026-10-22): the 7 "Specific Item Decks" were complete rules (count 1, back
+  `MDW/Assets/cardback_item.png`, 94 cards; the bag, its decks and the Deck of Rejects removed 2026-11-06, TC befdf769:
+  Card details deck buttons build them instead); Piko Piko Hammer is in the 3★ item decks too; the four "Creatures Developer
   Version" decks have `add_new_since: 318001ea` (the save's first commit): each gains every creature of its
   stars the save then lacked (renames followed by blob; a card moved to other stars moves deck with it, nothing else
   moves; no record is
@@ -819,13 +820,16 @@ bot ran the updater itself after `/update_stats`; this Action replaced that.
   updater rewrites that table: one `["Nickname"] = true,` row per line, `}` at column 0). `shareHands()` hands a side's
   zones to its seated players (`zone.setValue`: own seat if taken, else the first seated teammate; homes kept in
   `onSave` state); TTS teams share only visibility, which is why c9873ddf's (10-22) dropped zone claiming lost hands.
-  Right-click menus: a card > Card details (up to 3 panels per player, Rules buttons, "+ Name" spawns), the table >
+  Right-click menus: a card > Card details (up to 3 panels per player, Rules buttons, "+ Name" spawns; deck buttons
+  for the cards in Global.lua `DECKS` (2026-11-06): a shuffled deck built from tts.json's paths, face down beside the
+  card, or at the pointer when the card is in a hand), the table >
   Find a card, the rulebook or its bag > Contents and search (Book.setPage, 0-based assumed). Data from the website's
   `data/tts.json` and `TTS/Rulebook/pages.json`, decoded and panels built on a player's first use. Turn markers cycle
   from one `onObjectRotate`. No Lua patterns over long text (MoonSharp "pattern too complex"). Nothing has run in TTS
   itself yet; `TTS/checks/lua_mock.py` tests it (since 10-30).
 - **Checks:** `TTS/checks/` (its README: what each checks, interpreters, variables). `run_all.py` runs all 24 on the
-  save in about 4 minutes: structure, serializer, CustomDeck collisions, drift against 2fecc66d (`drift.py` BASELINE, moved by each deliberate hand edit), deck contents, names,
+  save in about 4 minutes: structure, serializer, CustomDeck collisions, drift against befdf769 (`drift.py` BASELINE, moved by each deliberate hand edit; it reads Global.lua at
+  `TTS_REF`, default origin/main, so a local script change fails it until pushed: `TTS_REF=HEAD`), deck contents, names,
   backs, rules, the Lua (lupa mock of the TTS API on the save's objects: teams, shared hand zones, card details, rulebook and finder panels, markers, no Lua patterns; `lua_mock.py <save> <file.lua>` tries a Global.lua change before it reaches the save), link pins and HTTP, the updater run as the Action runs it, its
   report and commit subject, and the daily gate against real history (names hashed from the bot's stats.pkl at
   3888392 and 39da9ed). Drift fails on any change to an existing card's Description, GMNotes, Memo, Tags or scripts and
