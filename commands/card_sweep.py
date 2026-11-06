@@ -31,11 +31,11 @@ from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor
 from functools import partial
 from json import dump, load
-from os import cpu_count, makedirs
+from os import cpu_count, makedirs, replace
 from os.path import abspath, basename, dirname, join
 from shutil import rmtree
 from sys import stderr
-from tempfile import mkdtemp
+from tempfile import NamedTemporaryFile, mkdtemp
 from traceback import format_exc
 from typing import Optional
 
@@ -70,8 +70,9 @@ def _init(clone: str, tree: dict, kind: str, work: str, chained: Optional[dict] 
     if kind == "alt template":                      # the template's bars: the given file, else the ref's
         if not template and standards.ALT_TEMPLATE in tree:
             template = join(work, "alt-template.psd")
-            with open(template, "wb") as fh:
+            with NamedTemporaryFile(dir=work, delete=False) as fh:     # whole, then in place: other workers read it
                 fh.write(source.blob(tree[standards.ALT_TEMPLATE][1]))
+            replace(fh.name, template)
         fonts.template = template
     _worker.update(source=source, context=context, parser=vocab.parser(), kind=kind, work=work, whole=whole, fonts=fonts)
 
