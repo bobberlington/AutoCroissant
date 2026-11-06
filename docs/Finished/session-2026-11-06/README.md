@@ -18,6 +18,7 @@ Heads at the end: AutoCroissant 0ee2d10 plus this wrap-up's docs (deployed), TTS
 | Stats to 20 | AC 9ac5236 | STATS TOO HIGH only above 20 (`card_models.STAT_LIMIT`; history `STAT_MAX` 20); the bake's one-row limit stays 10 |
 | Reports | AC 9ac5236 | Only actionable, as short as possible: `"{name} pushed {card}: {notes}."`, no closing line, no changes list |
 | Website preview | AC 0ee2d10 | A stars edit that only moves a card to its "N Stars" folder (printed stars not redrawn) previewed as "the bake did nothing" (the real bake moved it): now baked, shown with the card's own picture. 148 census edits on 86 cards. A card maker's stat bar beside the canvas is refused with its reason, not a crash (Computer Virus) |
+| Stats past 10 | AC (this commit); TC d460db0e | The bake's planner sent 11-20 on the Alt template to website only (it checked the old rows before the layer comps; the census tried only ±1): now a job up to the bar's top comp (0-20, raid boss 0-40), website only past it. Raid bosses (6+ stars, `card_models.RAID_STARS`) have no stat limit. The website's stat slider edits any stat in place: a full row opens an empty one below (10 opens 11-20), up to 99; Royal Eradicator Main Cannon's too |
 | Dead code | AC 3bf99d7 | `card_data._icons_from_local`, `card_standards._edge`, `query_card.get_card_path` |
 | Problem cards | AC docs/Future/PROBLEM_CARDS_2026-11-06.csv + .md | Census of 13 website edits on every card after the rollout, the cards not on the Alt template, the validator |
 
@@ -37,7 +38,6 @@ Heads at the end: AutoCroissant 0ee2d10 plus this wrap-up's docs (deployed), TTS
 
 ## Owner
 
-- Check `MDW/Templates/Alt_Raid_Boss_Template.psd` (raid boss stats above 20 need `allow_high_stats` until a rule for
-  raid bosses exists).
+- Check `MDW/Templates/Alt_Raid_Boss_Template.psd` (raid bosses, 6+ stars, have no stat limit).
 - The hand-drawn and several-creature cards are on the problem list for a manual pass.
 - Tell card makers about the Alt template (owner's call).

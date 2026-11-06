@@ -67,8 +67,8 @@ The owner's problem list: `docs/Future/PROBLEM_CARDS_2026-11-06.csv` and `.md`.
 
 ## Owner (11-06)
 
-- [ ] Check `MDW/Templates/Alt_Raid_Boss_Template.psd` (20-cell split bars, 0-40; built unattended). Raid boss stats
-      above 20 need `allow_high_stats` until there is a raid rule.
+- [ ] Check `MDW/Templates/Alt_Raid_Boss_Template.psd` (20-cell split bars, 0-40; built unattended). Raid bosses
+      (6+ stars, `card_models.RAID_STARS`) have no stat limit; their bars bake up to 40.
 - [ ] Manual pass on the cards not on the Alt template (problem list section 2: hand-drawn bars, several creatures).
 - [ ] Tell card makers about the Alt template (the old templates stay; the bot reads both).
 - [ ] Post the card makers' ring font note and re-upload the TTS Workshop item (from 11-05, still open).

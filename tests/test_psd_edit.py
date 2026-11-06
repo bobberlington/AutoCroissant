@@ -407,6 +407,8 @@ def test_alt_template_bars(clone, parser, tmp_path):
         {stat: box for stat, (_, box) in ALT_PHOTOSHOP.items()}
     with pytest.raises(pe.Refused, match="stat>10"):
         pe.set_stat(new, card, "hp", 11)
+    plan = pe.classify(card, {"hp": 9, "def": 11}, new)          # up to the bar's top comp; past it website only
+    assert plan.jobs == {"hp": 9} and plan.site == {"def": "def 11: the bar's layer comps show up to 10"}
 
 
 @text_engine

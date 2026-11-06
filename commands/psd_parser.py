@@ -14,7 +14,7 @@ from psd_tools import PSDImage
 from re import IGNORECASE, compile as re_compile, fullmatch, sub
 from typing import Any, Optional, Union
 
-from commands.card_models import CardInfo, CardStats, CardType, StatsDatabase, card_name
+from commands.card_models import RAID_STARS, CardInfo, CardStats, CardType, StatsDatabase, card_name
 from commands.psd_regions import comp_stat, comp_value
 
 getLogger("psd_tools").setLevel(CRITICAL)
@@ -1620,8 +1620,9 @@ class CardValidator:
                 if stats.speed == -1:
                     problems.append("SPD NOT FOUND")
 
-        # Above 10 (two bar rows: Royal Eradicator Main Cannon's 10 + 2) unless the website allows it for the card
-        if stats.has_excessive_stats() and not getattr(card, "allow_high_stats", False):
+        # Above 20 unless the website allows it for the card; raid bosses (RAID_STARS) have no limit
+        if stats.has_excessive_stats() and not getattr(card, "allow_high_stats", False) \
+                and (card.stars or 0) < RAID_STARS:
             problems.append("STATS TOO HIGH")
 
         return problems

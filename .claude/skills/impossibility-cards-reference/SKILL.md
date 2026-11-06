@@ -483,7 +483,8 @@ one card has one: rulebook page "20 Creature Types" with `MISSPELT TYPE: tornado
 **The exclusion list is the "perfect extraction" debt register** — per-card allowances the owner
 wants to eliminate (see autocroissant-research-frontier; the campaign to shrink them is
 autocroissant-psd-extraction-campaign). `EXCESSIVE_STAT_EXCLUSIONS` (5 names) was deleted on 2026-10-21: since 2026-11-06 a stat is STATS TOO
-HIGH only above 20 (`card_models.STAT_LIMIT`, owner; 10 before), and `allow_high_stats` in Card Edits.json allows more. Since 2026-10-25 (cards need no ability) the validator
+HIGH only above 20 (`card_models.STAT_LIMIT`, owner; 10 before), and `allow_high_stats` in Card Edits.json allows more; a raid
+boss (6 or more stars, `card_models.RAID_STARS`: the 6-star raid bosses in `MDW/Unfinished/6 Stars/`) has no limit. Since 2026-10-25 (cards need no ability) the validator
 no longer reads `ABILITY_EXCLUSIONS`: it is card_standards' R3 waiver (card_standards.py:638). Verbatim, psd_parser.py:1271-1293:
 
 - `ABILITY_EXCLUSIONS` (21, allowed to have no ability text): Crystal Bits, Bugzzy, Electro Probe,

@@ -25,6 +25,7 @@ class CardType(Enum):
 
 
 STAT_LIMIT = 20                                 # a stat above it is STATS TOO HIGH (10 until 2026-11-06)
+RAID_STARS = 6                                  # a card with this many stars is a raid boss: no STAT_LIMIT (owner 11-06)
 
 
 @dataclass
@@ -334,6 +335,7 @@ __all__ = [
     'CardInfo',
     'CardStats',
     'CardType',
+    'RAID_STARS',
     'RENAMED',
     'StatsDatabase',
     'card_name',

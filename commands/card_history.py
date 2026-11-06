@@ -15,7 +15,7 @@ from typing import Optional
 from global_config import MAILMAP_PATH
 from commands.card_db import record
 from commands.card_edits import as_parsed
-from commands.card_models import RENAMED, CardInfo, CardStats, card_name, rename_trailer
+from commands.card_models import RAID_STARS, RENAMED, CardInfo, CardStats, card_name, rename_trailer
 
 # ========================
 # Configuration
@@ -363,17 +363,19 @@ def start_of(card: CardInfo, index: GitIndex, previous: Optional[CardInfo], othe
 
 
 def allows_high(name: str, holder: Optional[CardInfo]) -> bool:
-    """Whether a name's history may hold stats above STAT_MAX (up to STAT_CAP): its card has allow_high_stats, it was
-    on the retired exclusion list (HIGH_STATS_LISTED), or it has no current card to tell (archived: never unknown)."""
-    return holder is None or bool(getattr(holder, "allow_high_stats", False)) or name in HIGH_STATS_LISTED
+    """Whether a name's history may hold stats above STAT_MAX (up to STAT_CAP): its card has allow_high_stats or is a
+    raid boss (RAID_STARS), it was on the retired exclusion list (HIGH_STATS_LISTED), or it has no current card to tell
+    (archived: never unknown)."""
+    return holder is None or bool(getattr(holder, "allow_high_stats", False)) or name in HIGH_STATS_LISTED \
+        or (getattr(holder, "stars", None) or 0) >= RAID_STARS
 
 
 def out_of_range(card: CardInfo, allowed: bool = False) -> list:
     """The values no card prints, as fields: a stat above STAT_CAP (three digits), or above STAT_MAX without an
-    allowance (the version's allow_high_stats, or `allowed`: allows_high), stars outside 0..STARS_MAX."""
+    allowance (the version's allow_high_stats or raid boss stars, or `allowed`: allows_high), stars outside 0..STARS_MAX."""
     found = []
     stats = getattr(card, "stats", None)
-    high = allowed or getattr(card, "allow_high_stats", False)
+    high = allowed or getattr(card, "allow_high_stats", False) or (getattr(card, "stars", None) or 0) >= RAID_STARS
     values = [getattr(stats, key, -1) for key in STAT_KEYS] if stats is not None else []
     if any(isinstance(v, int) and v > (STAT_CAP if high else STAT_MAX) for v in values):
         found.append("stats")

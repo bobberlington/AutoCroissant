@@ -2018,11 +2018,19 @@ def _two_rows(card: dict, psd: Optional[PSDImage], stat: str) -> bool:
         return False
 
 
+def comp_top(psd: Optional[PSDImage], stat: str) -> Optional[int]:
+    """The highest layer comp of the stat's layer-comp bars (the Alt template); None without a PSD or such a bar."""
+    names = [name for layer, _, _ in (comp_bars(psd)[stat] if psd is not None else [])
+             for name in comp_names(placed_data(layer)).values()]
+    return max(map(int, names)) if names else None
+
+
 def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: Optional[PSDParser] = None,
              template: Optional[tuple] = None) -> Classification:
     """
     Sort a card's edits: PSD-kind fields whose value differs from the fresh parse are jobs, equal ones redundant.
-    A stat above 10 is a job only on a two-row card (idea 13), above 20 never. Stars and types are jobs when the card's
+    A stat above 10 is a job only on a two-row card (idea 13), above 20 never; on a layer-comp bar, up to its top comp
+    (comp_top). Stars and types are jobs when the card's
     layout is one plan_stars / plan_types knows; their refusals carry the field (the card's other fields still bake).
 
     Args:
@@ -2068,8 +2076,14 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
         elif name in STAT_FIELDS:
             if not isinstance(value, int) or value < 0:
                 raise ValueError(f"{name} {value!r}: not a stat")     # CardEdits.valid never lets one through
+            top = comp_top(psd, name)
             if card.get(name) == value:
                 out.redundant.append(name)
+            elif top is not None:               # the Alt template: what its layer comps show (0-20, raid boss 0-40)
+                if value > top:
+                    out.site[name] = f"{name} {value}: the bar's layer comps show up to {top}"
+                else:
+                    out.jobs[name] = value
             elif value > 2 * STAT_MAX:          # past what the rows print: website only (owner 2026-10-26)
                 out.site[name] = f"{name} {value}: the bar's rows print up to 20"
             elif value > STAT_MAX and psd is not None and split_rows(psd, name) is not None:
@@ -9986,6 +10000,7 @@ __all__ = [
     'deletion_start',
     'changed_region',
     'classify',
+    'comp_top',
     'covered_ink',
     'crop_pair',
     'ink_beyond',
