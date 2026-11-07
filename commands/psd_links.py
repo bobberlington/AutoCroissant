@@ -18,7 +18,8 @@ SmartObject.link_target), never from the filesystem.
     unused / duplicates / restore / repair           the guards' housekeeping (G2-G4)
     redraw_linked(...) -> Redrawn                    Card sync: a changed linked file drawn again in its users (C1-C6)
 
-    python -m commands.psd_links catalogue --clone DIR --ref SHA --out FILE [--held LIST --held-ref REF]
+    python -m commands.psd_links catalogue --clone DIR --ref SHA --out FILE [--held LIST --held-ref REF --held-base SHA]
+                                           [--recheck catalogue.json]
     python -m commands.psd_links redraw --checkout DIR --links FILE [--head SHA] [--cards N] [--bytes N] [--until SECONDS]
 
 Classes (assign): 1 the bytes of a Types file; 2 its ink pixels (raster kept, placed by place_trim); 3 that file drawn
@@ -627,7 +628,7 @@ def items(psd: PSDImage, vocab=()) -> list:
     return list(out.values()) + pixels
 
 
-def assign(psds: list, types: TypesIndex, linked: dict) -> dict:
+def assign(psds: list, types: TypesIndex, linked: dict, kept: Optional[dict] = None) -> dict:
     """
     Every item's class and target in catalogue order (PLAN 5.1: cards by repo path, then MDW/Unfinished, then
     MDW/Templates; "first user" is first in it). An item takes the most cautious class its layers allow: a name-only
@@ -638,6 +639,8 @@ def assign(psds: list, types: TypesIndex, linked: dict) -> dict:
         psds: [(repo path, items())] in catalogue order
         types: TypesIndex
         linked: {MDW/Linked path: blob} at the base (Croissant's names kept, Q1)
+        kept: An earlier catalogue's new files (the per-batch re-check): their names stay, unless main now holds the
+            same bytes under another name (that file is used and the unlanded name dropped)
 
     Returns:
         {"psds": {rel: [entry + {"class", "target"}]}, "files": {new path: {"blob", "first", "ext"}}}
@@ -646,7 +649,12 @@ def assign(psds: list, types: TypesIndex, linked: dict) -> dict:
     for path, blob in sorted(linked.items()):
         by_blob.setdefault(blob, path)
     taken = {basename(path).casefold() for path in linked}
-    files, out = {}, {}
+    files, out, made = {}, {}, set()
+    for path, info in (kept or {}).items():
+        if info["blob"] not in by_blob and path not in linked and not info.get("fallback"):
+            by_blob[info["blob"]] = path
+            taken.add(basename(path).casefold())
+            files[path] = {key: info[key] for key in ("blob", "first", "ext")}
 
     def new_file(entry: dict, rel: str) -> str:
         path = by_blob.get(entry["blob"])
@@ -675,21 +683,26 @@ def assign(psds: list, types: TypesIndex, linked: dict) -> dict:
             hit = types.match(entry["blob"], key, names, all(layer["row"] for layer in entry["layers"]))
             if hit is not None:
                 entry.update({"class": hit[0], "target": hit[1]})
-            elif entry["blob"] in by_blob:
-                entry.update({"class": LINKED, "target": by_blob[entry["blob"]]})
             else:
-                entry.update({"class": NEW, "target": new_file(entry, rel)})
+                path = new_file(entry, rel)
+                first = (files.get(path) or {}).get("first") == rel and path not in made
+                made.add(path)
+                entry.update({"class": NEW if first else LINKED, "target": path})
             rows.append(entry)
         out[rel] = rows
     return {"psds": out, "files": files}
 
 
-def fallback_names(catalogue: dict, linked: dict) -> None:
+def fallback_names(catalogue: dict, linked: dict, kept: Optional[dict] = None) -> None:
     """A fallback file name for every class 2 or 3 item still without one: the name its exact copy takes (dedupe by blob
-    first), registered in the catalogue's files like a new one."""
+    first; kept: an earlier catalogue's fallback names stay), registered in the catalogue's files like a new one."""
     by_blob = {info["blob"]: path for path, info in catalogue["files"].items()}
     for path, blob in linked.items():
         by_blob.setdefault(blob, path)
+    for path, info in (kept or {}).items():
+        if info.get("fallback") and info["blob"] not in by_blob and path not in linked:
+            by_blob[info["blob"]] = path
+            catalogue["files"][path] = dict(info)
     taken = {basename(p).casefold() for p in list(linked) + list(catalogue["files"])}
     for rel, rows in catalogue["psds"].items():
         for entry in rows:
@@ -920,6 +933,14 @@ def repair(psd: PSDImage, rel: str, tree) -> tuple:
 # ========================
 # Housekeeping (PLAN G2-G4)
 # ========================
+def records_of(links: dict) -> tuple:
+    """db/links.json as ({PSD path: record}, files): {"psds": ..., "files": ...}, or PSD paths beside "files"."""
+    files = links.get("files") or {}
+    if isinstance(links.get("psds"), dict):
+        return links["psds"], files
+    return {rel: record for rel, record in links.items() if rel != "files"}, files
+
+
 def unused(links: dict, tree: dict, pushed=(), read=()) -> list:
     """
     MDW/Linked files no PSD links (G2), to delete silently. Used: every link in db/links.json at `after`, every link of
@@ -935,7 +956,7 @@ def unused(links: dict, tree: dict, pushed=(), read=()) -> list:
     Returns:
         The paths to delete, sorted ([] when anything blocks)
     """
-    direct = {rel: found for rel, found in read}
+    direct, (links, _) = {rel: found for rel, found in read}, records_of(links)
     used, names = set(), set()
     for rel, blob in tree.items():
         if not rel.lower().endswith((".psd", ".psb")):
@@ -1157,8 +1178,7 @@ def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARD
     import commands.png_export as png_export
     from commands.psd_edit import save_psd
     tree = _tree_at(clone, head)
-    seen = links.get("files") or {}
-    records = {rel: record for rel, record in links.items() if rel != "files"}
+    records, seen = records_of(links)
     linked = sorted({link["path"] for record in records.values() for link in record.get("links") or [] if link.get("path")})
     sizes = {path: (seen.get(path) or {}).get(tree[path]) for path in linked if path in tree}
     unknown = [tree[p] for p, size in sizes.items() if size is None]
@@ -1240,8 +1260,12 @@ def catalogue_order(paths: list) -> list:
     return sorted(paths, key=lambda p: (rank(p), p))
 
 
-def run_catalogue(clone: str, ref: str, held: dict, workers: int = 4) -> dict:
-    """The whole scope's catalogue (PLAN 5.1) read from a clone's objects at ref (held: {rel: blob} read instead)."""
+def run_catalogue(clone: str, ref: str, held: dict, workers: int = 4, prev: Optional[dict] = None) -> dict:
+    """
+    The whole scope's catalogue (PLAN 5.1) read from a clone's objects at ref (held: {rel: blob} read instead). With
+    prev (the per-batch re-check): only PSDs whose blob moved are read again, the rest keep their items; prev's names
+    stay (assign's kept) and every Types target is classed again against ref's Types.
+    """
     from concurrent.futures import ProcessPoolExecutor
     from commands.font_check import is_card_psd
     tree = _tree_at(clone, ref)
@@ -1250,8 +1274,14 @@ def run_catalogue(clone: str, ref: str, held: dict, workers: int = 4) -> dict:
     types = TypesIndex({p: data[tree[p]] for p in types_files if tree[p] in data}, types_history(clone))
     scope = [p for p in tree if p.lower().endswith(".psd") and (is_card_psd(p) or p.startswith(("MDW/Templates/",
                                                                                                "MDW/Unfinished/")))]
-    jobs = [(clone, rel, held.get(rel, tree[rel]), types.vocab()) for rel in catalogue_order(scope)]
+    blobs = {rel: held.get(rel, tree[rel]) for rel in scope}
     found, errors = {}, {}
+    if prev:
+        for rel in scope:
+            if (prev.get("blobs") or {}).get(rel) == blobs[rel] and rel in prev["psds"]:
+                found[rel] = [{key: value for key, value in entry.items() if key not in ("class", "target", "fallback")}
+                              for entry in prev["psds"][rel]]
+    jobs = [(clone, rel, blobs[rel], types.vocab()) for rel in catalogue_order(scope) if rel not in found]
     with ProcessPoolExecutor(max_workers=workers) as pool:
         for rel, rows, error in pool.map(_catalogue_job, jobs, chunksize=2):
             if rows is None:
@@ -1259,10 +1289,11 @@ def run_catalogue(clone: str, ref: str, held: dict, workers: int = 4) -> dict:
             else:
                 found[rel] = rows
     linked = {p: b for p, b in tree.items() if p.startswith(LINKED_DIR + "/")}
-    out = assign([(rel, found[rel]) for rel in catalogue_order(found)], types, linked)
-    fallback_names(out, linked)
-    out.update(base=ref, blobs={rel: held.get(rel, tree[rel]) for rel in found}, errors=errors,
-               held=sorted(held), linked=linked)
+    kept = (prev or {}).get("files")
+    out = assign([(rel, found[rel]) for rel in catalogue_order(found)], types, linked, kept)
+    fallback_names(out, linked, kept)
+    out.update(base=ref, blobs={rel: blobs[rel] for rel in found}, errors=errors, held=sorted(held), linked=linked,
+               read=[rel for _, rel, _, _ in jobs])
     return out
 
 
@@ -1284,6 +1315,8 @@ def main(args: Optional[list] = None) -> int:
     cat.add_argument("--ref", default="HEAD", help="the commit to read")
     cat.add_argument("--held", default="", help="a list of PSD paths read at --held-ref instead")
     cat.add_argument("--held-ref", default="", help="where the held PSDs are read")
+    cat.add_argument("--held-base", default="", help="a held PSD that moved on --ref since this commit is read at --ref")
+    cat.add_argument("--recheck", default="", help="an earlier catalogue.json: its names kept, moved PSDs read again")
     cat.add_argument("--out", required=True, help="catalogue.json")
     cat.add_argument("--workers", type=int, default=4)
     red = sub_.add_parser("redraw", help="Card sync: PSDs whose linked files changed drawn again (C1-C6)")
@@ -1307,7 +1340,14 @@ def main(args: Optional[list] = None) -> int:
                                         capture_output=True, text=True, env=env)
                     if found.returncode == 0:
                         held[rel.strip()] = found.stdout.strip()
-        out = run_catalogue(opts.clone, opts.ref, held, opts.workers)
+            if opts.held_base:                  # PLAN 5.3: a held card someone pushed meanwhile is rebuilt from theirs
+                base, now = _tree_at(opts.clone, opts.held_base), _tree_at(opts.clone, opts.ref)
+                held = {rel: blob for rel, blob in held.items() if base.get(rel) == now.get(rel)}
+        prev = None
+        if opts.recheck:
+            with open(opts.recheck, encoding="utf-8") as fh:
+                prev = load(fh)
+        out = run_catalogue(opts.clone, opts.ref, held, opts.workers, prev)
         makedirs(dirname(opts.out) or ".", exist_ok=True)
         with open(opts.out, "w", encoding="utf-8") as fh:
             dump(out, fh, indent=0, sort_keys=True)
