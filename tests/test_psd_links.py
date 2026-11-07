@@ -171,13 +171,15 @@ def test_links_placed_from_any_depth_and_url():
 
 
 def test_redraw_linked_one_file_two_users(tmp_path):
-    """One MDW/Linked file, two users at two depths and scales. A lossless re-save: their sizes and contentIDs only, no
-    raster, no PNG. A pixel edit: both drawn again (the stored mode, bicubic), their PNGs re-exported to the new drawing."""
+    """One MDW/Linked file, two users at two depths and scales (one PNG named in another case). A lossless re-save: their
+    sizes and contentIDs only, no raster, no PNG. A pixel edit: both drawn again (the stored mode, bicubic), their PNGs
+    re-exported to the new drawing."""
     repo = tmp_path / "cards"
     git = lambda *a: subprocess.run(["git", "-C", str(repo), *a], check=True, capture_output=True, text=True).stdout
     repo.mkdir()
     git("init", "-q")
     art, users = _art(), {"Creatures/X/3 Stars/A.psd": (40, 60, 2.0), "Items/B.psd": (300, 200, 1.5)}
+    pngs = {"Creatures/X/3 Stars/A.psd": "Creatures/X/3 Stars/A.png", "Items/B.psd": "Items/b.png"}
     data = _png(art, 9)
     (repo / "MDW/Linked").mkdir(parents=True)
     (repo / "MDW/Linked/art.png").write_bytes(data)
@@ -190,7 +192,7 @@ def test_redraw_linked_one_file_two_users(tmp_path):
         pl.link_pixels(layer, rel, "MDW/Linked/art.png", data, corners)
         (repo / rel).parent.mkdir(parents=True, exist_ok=True)
         _strip(psd).save(repo / rel, update_preview=False)
-        (repo / (rel[:-4] + ".png")).write_bytes(png_export.encode(PSDImage.open(repo / rel).composite(ignore_preview=True)
+        (repo / pngs[rel]).write_bytes(png_export.encode(PSDImage.open(repo / rel).composite(ignore_preview=True)
                                                                    .convert("RGB"), None))
     git("add", "-A")
     git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base")
@@ -224,11 +226,11 @@ def test_redraw_linked_one_file_two_users(tmp_path):
     ImageDraw.Draw(edit).rectangle((10, 30, 40, 50), fill=(250, 250, 0, 255))
     pixels = commit(edit, 6)
     done = pl.redraw_linked(str(repo), known, fetch=False)
-    assert sorted(done.files) == sorted([*users, *(rel[:-4] + ".png" for rel in users)]) and not done.notes
+    assert sorted(done.files) == sorted([*users, *pngs.values()]) and not done.notes
     for rel, (x, y, s) in users.items():
         new = PSDImage.open(BytesIO(done.files[rel]))
         want, box = pl.draw(np.asarray(edit), [x, y, x + 100 * s, y, x + 100 * s, y + 80 * s, x, y + 80 * s], Image.BICUBIC)
         assert tuple(new[1].bbox) == box and np.abs(new[1].numpy() - want).max() <= 1 / 255 and new[1].smart_object.filesize == len(pixels)
         render = np.asarray(new.composite(ignore_preview=True).convert("RGB"), np.int16)
-        png = np.asarray(Image.open(BytesIO(done.files[rel[:-4] + ".png"])).convert("RGB"), np.int16)
+        png = np.asarray(Image.open(BytesIO(done.files[pngs[rel]])).convert("RGB"), np.int16)
         assert np.abs(png - render).max() <= png_export.TOL

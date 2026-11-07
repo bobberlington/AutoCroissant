@@ -34,7 +34,7 @@ from hashlib import sha1
 from io import BytesIO
 from json import dump, dumps, load
 from os import environ, makedirs
-from posixpath import basename, dirname, splitext
+from posixpath import basename, dirname, join as posixpath_join, splitext
 from re import IGNORECASE, compile as re_compile, sub
 from subprocess import PIPE, Popen, run as run_process
 from time import time
@@ -1178,11 +1178,22 @@ def _tree_at(clone: str, head: str) -> dict:
     return tree
 
 
-def _pictures(tree: dict, rel: str) -> list:
-    """A PSD's PNGs in the tree: Name.png and the numbered NameN.png beside it."""
-    stem = rel[:len(rel) - 4]
-    return [p for p in tree if p.lower().endswith(".png") and (p == stem + ".png" or (
-        p[:len(stem)].lower() == stem.lower() and p[len(stem):len(p) - 4].isdigit()))]
+def _pictures(tree: dict, rel: str) -> tuple:
+    """A PSD's PNGs as card_bake's png_for finds them: (Name.png in the tree's case or "", the numbered NameN.png
+    beside it that are no other PSD's)."""
+    folder, name = dirname(rel), basename(rel)[:len(basename(rel)) - 4]
+    lower = {p.lower() for p in tree}
+    main, numbered = "", []
+    for path in tree:
+        if dirname(path) != folder or not path.lower().endswith(".png"):
+            continue
+        base = basename(path)[:len(basename(path)) - 4]
+        if base.lower() == name.lower():
+            main = path
+        elif base[:len(name)].lower() == name.lower() and base[len(name):].isdigit() and \
+                posixpath_join(folder, base + ".psd").lower() not in lower:
+            numbered.append(path)
+    return main, sorted(numbered)
 
 
 def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARDS_CAP, budget: int = 1 << 30,
@@ -1222,7 +1233,8 @@ def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARD
         if len(out.cards) >= cards or (until and time() > until) or written >= budget:
             out.due = order[n:]
             break
-        pngs = _pictures(tree, rel)
+        main, numbered_pngs = _pictures(tree, rel)
+        pngs = ([main] if main else []) + numbered_pngs
         wanted = [tree[rel]] + [tree[p] for p in pngs] + [blob for _, blob in due[rel]]
         wanted += [b for link, _ in due[rel] for b in (seen.get(link["path"]) or {}) if b != tree[link["path"]]]
         if fetch:
@@ -1247,15 +1259,18 @@ def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARD
             continue
         buf = BytesIO()
         save_psd(new, buf, update_preview=False)    # stripped (A1): the export below reads the saved PSD
-        files, main = {rel: buf.getvalue()}, rel[:len(rel) - 4] + ".png"
-        if moved and main in tree and tree[main] in blobs:
-            numbered = {p: png_export.open_png(blobs[tree[p]]) for p in pngs if p != main and tree[p] in blobs}
+        files = {rel: buf.getvalue()}
+        if moved and main:
+            if any(tree[p] not in blobs for p in pngs):     # C5: the PSD lands only with its PNGs
+                out.due.append(rel)
+                continue
+            numbered = {p: png_export.open_png(blobs[tree[p]]) for p in numbered_pngs}
             found = png_export.export(old, PSDImage.open(BytesIO(files[rel])), png_export.open_png(blobs[tree[main]]),
                                       numbered, main)
             refused = [why for data, why in (found.numbered or {}).values() if data == b""]
-            if found.outcome == "refused" or refused:
+            if found.outcome not in ("re-exported", "current") or refused:
                 out.notes.setdefault(rel, []).append(
-                    f"Its pictures could not be drawn again ({found.why or refused[0]}): export them in Photoshop.")
+                    f"Its pictures could not be drawn again ({found.why or (refused or [found.outcome])[0]}): export them in Photoshop.")
                 continue
             if found.outcome == "re-exported":
                 files[main] = found.data
