@@ -821,9 +821,9 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
             shown[job.png] = png
         if measured.get("ok") is None:
             result.notes.append((f"{basename(job.png)} could not be checked against the PSD ({measured.get('why')})", False))
-    pixels = standards.pixel_kinds(new) if job.case != "png-only" else ()
-    result.convert = [kind for kind in pixels if kind == NORMALISE]     # converted after the check (convert_plan)
-    pixels = tuple(kind for kind in pixels if kind != NORMALISE)
+    pixels = tuple(kind for kind in standards.pixel_kinds(new) if kind != NORMALISE) if job.case != "png-only" else ()
+    if job.case != "png-only":                  # converted after the check (convert_plan), SWEEP_ONLY or not
+        result.convert = list(standards.pixel_kinds(new, (NORMALISE,)))
     if job.case == "png-only":
         return
     # guard 2
@@ -1002,16 +1002,29 @@ def _final(out: str, entry: dict, source: Source, tree: dict) -> bytes:
     return source.blob(tree[entry["psd"]])
 
 
-def catalogue(source: Source, tree: dict, rels: list, index: Optional[dict], vocab=()) -> dict:
-    """The parent's catalogue of the PSDs to convert (psd_links.items, then assign in catalogue order): Types/ from the
-    tree (the checkout's /Types/, else by blob), its older blobs from db/links.json's files, MDW/Linked by blob."""
+def _items(item: tuple) -> tuple:
+    """(rel, psd_links.items of its PSD at after, or None unread): the catalogue's worker."""
     from commands import psd_links
-    found = []
-    for rel in psd_links.catalogue_order(rels):
-        try:
-            found.append((rel, psd_links.items(png_export.open_psd(source.blob(tree[rel])), vocab)))
-        except Exception:                       # unread: that PSD converts with no catalogue rows (left as pushed)
-            print(format_exc(), file=stderr)
+    clone, repository, rel, sha, vocab = item
+    try:
+        return rel, psd_links.items(png_export.open_psd(Source(clone, repository).blob(sha)), vocab)
+    except Exception:                           # unread: that PSD converts with no catalogue rows (left as pushed)
+        print(format_exc(), file=stderr)
+        return rel, None
+
+
+def catalogue(source: Source, tree: dict, rels: list, index: Optional[dict], vocab=(), workers: int = 0) -> dict:
+    """The parent's catalogue of the PSDs to convert: their items read in the pool (psd_links.items), then named here in
+    catalogue order (psd_links.assign: a new file two of them share is named once, after its first user). Types/ from
+    the tree (the checkout's /Types/, else by blob), its older blobs from db/links.json's files, MDW/Linked by blob."""
+    from commands import psd_links
+    jobs = [(source.clone, source.repository, rel, tree[rel], vocab) for rel in psd_links.catalogue_order(rels)]
+    if len(jobs) >= POOL_MIN and workers != 1:
+        with ProcessPoolExecutor(workers or pool_size(len(jobs)), initializer=token_from_env) as pool:
+            read = list(pool.map(_items, jobs, chunksize=1))
+    else:
+        read = [_items(job) for job in jobs]
+    found = [(rel, rows) for rel, rows in read if rows is not None]
     history = {blob: path for path, blobs in ((index or {}).get("files") or {}).items() if path.startswith("Types/")
                for blob in blobs}
     types = psd_links.TypesIndex({path: source.blob(sha) for path, sha in tree.items() if path.startswith("Types/")}, history)
@@ -1206,7 +1219,7 @@ def convert_plan(data: dict, source: Source, out: str, minutes: float = CONVERT_
     if entries:
         context, vocab = build_context(source, source.checked)
         ctx = LinkContext(tree, catalogue(source, tree, [e["psd"] for e in entries], index,
-                                          sorted(vocab.all_types) if vocab is not None else ()), source.blob)
+                                          sorted(vocab.all_types) if vocab is not None else (), workers), source.blob)
         deadline = time() + minutes * 60
         if len(entries) >= POOL_MIN and workers != 1:
             with ProcessPoolExecutor(workers or pool_size(len(entries)), initializer=_init_convert,
