@@ -16,7 +16,7 @@ without a push) and marks the people's flags that went. Exit 0, also for what it
 Which edits are tried (a real bake is 25 s; the whole list of 13 kinds of edit, 4 minutes a card, would be 50 hours a
 tree): the plans alone for titles, stars and types, a made icon on a copy; a real bake only where a plan cannot tell:
 stars on a card with variant pictures, the ability on a card with FX layers, the stats on digit rows or new bars under
-art (their pixels too), a type on a very small PSD.
+art (each bar must move), a type on a very small PSD. A bake that breaks leaves no record: the next run tries again.
 """
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor, as_completed
