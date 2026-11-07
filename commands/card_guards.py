@@ -736,10 +736,13 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
         if job.left:
             result.notes.append((f"{basename(job.left)} is left at the PSD's old name", False))
         if job.convert:
-            result.convert = list(standards.pixel_kinds(source.blob(job.psd_new), (NORMALISE,)))
+            moved = png_export.open_psd(source.blob(job.psd_new))
+            moved.repo_path = job.psd           # its links judged from its new folder
+            result.convert = list(standards.pixel_kinds(moved, (NORMALISE,)))
         return
     new_bytes = source.blob(job.psd_new)
     new = png_export.open_psd(new_bytes)
+    new.repo_path = job.psd                     # the link step places and judges its links from here
     if job.case == "convert":
         result.convert = list(standards.pixel_kinds(new, (NORMALISE,)))
         return
