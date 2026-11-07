@@ -16,8 +16,17 @@ Every card PNG the push brought is recompressed losslessly in that commit (owner
 the same pixels) when that saves more than 10% and 64 KiB (our thresholds), and so is every PNG the bot writes.
 
     python -m commands.card_guards check --clone <dir> --after <sha> [--before <sha>] [--repo <owner/name>] [--author <login>]
-                                         [--cards <names>] [--whole-tree] [--mode dry|report|on] --out <dir>
+                                         [--cards <names>] [--whole-tree] [--mode dry|report|on] [--convert now|later|off]
+                                         --out <dir>
+    python -m commands.card_guards convert --plan <out>/plan.json --clone <dir> [--repo <owner/name>] [--minutes <n>]
     python -m commands.card_guards land --plan <out>/plan.json [--dry-run] [--local <clone>] [--rerun]
+
+After the 11-07 pass (PLAN 7, all silent: no Discord, comment or changelog event): a pushed card, template or
+MDW/Unfinished PSD with an embedded picture, sub or superscript text, a merged image or a link to repair is converted
+by card_standards' normalise fix (G1; `convert`, after the check's Decided, or in the check with --convert now), a
+renamed PSD whose folder depth changed has its links repaired (G4); MDW/Linked files no PSD links are deleted (G2,
+db/links.json on the data branch), a pushed one with another's bytes merged into it (G3), a link to a deleted one put
+back (G4); one landing (git past GIT_LAND files).
 
 A landed commit's changelog events (guard-png: a PNG re-made or recompressed; guard-fix: a fix the guards landed; the
 Single-line Composer none) go to guard-events.json beside the plan, which card-guards.yml uploads and Card sync's data
