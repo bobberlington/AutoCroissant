@@ -11,9 +11,12 @@ requests skips this file:
 """
 import contextlib
 import json
+import pickle
 import re
 import shutil
 import textwrap
+from concurrent.futures import Future
+from concurrent.futures.process import BrokenProcessPool
 from datetime import timedelta
 from io import StringIO
 from os import environ
@@ -30,7 +33,7 @@ import commands.git_commit as gc  # noqa: E402
 import commands.psd_edit as pe  # noqa: E402
 from conftest import (CLONE, blob_sha_bytes as _sha, fork_reason, story_sync as _story_sync,
                       text_engine as _text_engine)  # noqa: E402
-from helpers import ABOUT, AT, DOOMER, EDITS, FREEZER, SNACK, _edits, files, github  # noqa: E402,F401 (fixtures)
+from helpers import ABOUT, AT, DOOMER, EDITS, FREEZER, SNACK, _card_files, _edits, files, github  # noqa: E402,F401 (fixtures)
 
 
 GREEN_MAGE = "Creatures/Everhood/4 Stars/Green_Mage.psd"   # fixed 2026-10-23: its stat bars on the canvas
@@ -465,8 +468,64 @@ def test_main_exits_1_when_the_commit_fails_or_a_card_errors(github, monkeypatch
     assert cb.main([]) == 0 and cb.main([]) == 0 and err.getvalue() == ""   # 1 redundant committed, 4 refused; then nothing to do
 
 
-def test_cap_leaves_the_rest_for_the_next_run(github, monkeypatch):
+class Inline:
+    """ProcessPoolExecutor in this process (no real worker reaches the fake GitHub), cards through pickle as a worker's
+    are. broken: the send a killed worker's pool dies at."""
+    broken = 0
+
+    def __init__(self, workers, initializer, initargs):
+        initializer(*initargs)
+        self.sent = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def submit(self, work, card):
+        self.sent += 1
+        future = Future()
+        if self.broken and self.sent > self.broken:
+            raise BrokenProcessPool("killed")
+        if self.sent == self.broken:
+            future.set_exception(BrokenProcessPool("killed"))
+        else:
+            future.set_result(pickle.loads(pickle.dumps(work(pickle.loads(pickle.dumps(card))))))
+        return future
+
+
+def _on_a_runner(monkeypatch, pool=Inline):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setattr(cb, "cpu_count", lambda: 2)
+    monkeypatch.setattr(cb, "ProcessPoolExecutor", pool)
+
+
+def _same_run(text: str) -> str:
+    """A report but for its times and work dir."""
+    return re.sub(r"\(\d+\.\d s\)|Took \d+ s|Work dir: .*", "", text)
+
+
+def test_a_killed_worker_leaves_the_rest_for_the_next_run(github, monkeypatch):
+    """In the pool a run reports as the loop does; a worker killed at the third card: it and those not sent are try-again
+    errors (no verdict, pending, main exits 1), the two finished stand."""
+    serial, _ = cb.run(dry_run=True)
+    _on_a_runner(monkeypatch)
+    assert _same_run(cb.run(dry_run=True)[0]) == _same_run(serial)
+    monkeypatch.setattr(Inline, "broken", 3)
+    report = cb.run_report(dry_run=True)
+    tried = [c.name for c in report.cards if c.refusal and c.refusal.code == "error"]
+    assert tried == [c.name for c in report.cards[2:]] and len(tried) == 3 and all(c.transient for c in report.cards[2:])
+    assert "its bake worker stopped (BrokenProcessPool)" in report.text and report.cards[0].refusal.code != "error"
+    assert set(tried) <= set(cb.pending()) and cb.failure(report).startswith("3 cards with an error")
+    assert set(json.loads((Path(report.work) / cb.VERDICTS_OUT).read_text())["cards"]).isdisjoint(c.key for c in report.cards[2:])
+
+
+@pytest.mark.parametrize("pooled", [False, True])
+def test_cap_leaves_the_rest_for_the_next_run(github, monkeypatch, pooled):
     """At most MAX_BAKES cards baked and none started after BUDGET: the rest are `capped`, no verdict, pending next run."""
+    if pooled:
+        _on_a_runner(monkeypatch)
     monkeypatch.setattr(cb, "BUDGET", timedelta(0))
     text, commits = cb.run()
     assert commits == [] and "## Next run (capped) (5)" in text and "- Capped: 5 cards wait for the next run" in text
@@ -1017,6 +1076,33 @@ def test_a_stars_edit_moves_a_card_starred_by_its_folder(github):
 
 
 @fork_text
+@fork_text
+def test_real_workers_share_the_work_dir_and_keep_one_name_one_card(github, local, clone, monkeypatch):
+    """A runner's pool in real processes on a full clone: an added ability and a first type icon fetch the template, the
+    chart and Types/ side by side. A Ghost's rename is refused, so Mini Doomer takes the name and The Freezer can't."""
+    name = {"name": "Mini Destroyer", "_rename": True, "_by": "web", "_at": AT}
+    added = {pe.ADD_ABILITY: {"field": "ability", "text": "Attacks inflict 1T Afraid."}}
+    side = {**_card_files(clone, "Auxiliary/Minions/Warrior_Dee.psd"), **_card_files(clone, "Auxiliary/Minions/Bulborb Larva.psd"),
+            **{path: (clone / path).read_bytes() for path in ("Types/fire.png", pe.STATUS_CHART, pe.template_for("creature"))},
+            cb.EDITS_PATH: _edits({"A Ghost": name, "Warrior Dee": {"parts": added, "_by": "web", "_at": AT},
+                                   "Bulborb Larva": {"types": ["fire"], "_by": "web", "_at": AT},
+                                   "Mini Doomer": name, "The Freezer": name})}
+    _put(local.origin, side)
+    _commit_in(local.origin, "Website edit: test")
+    _on_a_runner(monkeypatch, cb.ProcessPoolExecutor)
+    report = cb.run_report(local=str(local.origin), dry_run=True)
+    assert [(c.name, bool(c.baked), c.refusal and c.refusal.code) for c in report.cards] == [
+        ("A Ghost", False, "unsupported-card"), ("Bulborb Larva", True, None), ("Mini Doomer", True, None),
+        ("The Freezer", False, "unsupported-card"), ("Warrior Dee", True, None)]
+    assert report.cards[2].renamed == "Mini Destroyer" and "another card of this run" in report.cards[3].refusal.why
+    work = Path(report.work)
+    assert [p.name for p in (work / "Types").iterdir()] == ["fire.png"] and len(list((work / "templates").iterdir())) == 1
+    renamed = {}                                # a shared file shows up whole: at its rename, not while written
+    monkeypatch.setattr(cb, "replace", lambda temp, path: renamed.update({path: Path(temp).read_bytes()}))
+    cb._save(str(work / "Types" / "water.png"), b"whole")
+    assert renamed == {str(work / "Types" / "water.png"): b"whole"} and not (work / "Types" / "water.png").exists()
+
+
 def test_a_rename_bake_moves_the_files_and_everything_keyed_by_them(github, local):
     """The editor's "Also rename the card's files" (owner 10-25) on a scratch repo: Mini Doomer's name edit with
     `_rename` bakes the title and renames its PSD and PNG in B, with the files keyed by the card (its edits entry, the
