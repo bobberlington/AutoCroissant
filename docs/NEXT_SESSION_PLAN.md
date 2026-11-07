@@ -180,7 +180,6 @@ From `~/Documents/Tools/wt/scratch/opt-round3/plan.json`, `opt-round4/plan.json`
       commit: put it in the next font build if wanted).
 - [ ] PNG-only duplicates (Stubborn Queen) get no guards job and aren't re-exported when the original's PSD changes
       (round 2 automation gap; the ring rollout moved it by hand).
-- [ ] /update_stats notes hidden by a compare 422 (round 4 bot-r2-1): give the compare its own try in `notes()`.
 - [ ] The mock-up's erase memo (round 3 W1, ~25 ms on long texts, editors only): its collision with the ring
       mockup.js work is gone (the key needs bfam; a fresh measure must set `.label`).
 - [ ] Rulebook PDF waits for its pictured cards (round 2 A12, part a only; optional: push order covers it today).
