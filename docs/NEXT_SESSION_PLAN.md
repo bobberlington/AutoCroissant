@@ -7,7 +7,7 @@ Start in `~/Desktop/AutoCroissant`. Read memories `resource-limits`, `secrets-ne
 `no-guides-csv-only`, `edits-two-kinds`, `jetson-server`, `persistent-work-paths`, `agent-model-preference`,
 `rulebook-on-website`, `discord-pending-updates`. What landed: `docs/Finished/session-2026-11-06/README.md` (TTS deck
 buttons, the Alt template and its rollout, stats to 20); earlier `session-2026-11-03-05/`, `-11-01/`, `-10-30c/`.
-The owner's problem list: `docs/Future/PROBLEM_CARDS_2026-11-06.csv` and `.md`.
+The problem cards: the website's Needs handling (automatic flags, `commands/card_checks.py`).
 
 ## Standing rules
 
@@ -243,7 +243,6 @@ Miracle Matter's form pictures and the 5 card-art inline pictures. The jetson's 
 
 | File | What is left |
 |---|---|
-| `PROBLEM_CARDS_2026-11-06.csv` / `.md` | The owner's problem list after the Alt template rollout (census: `~/Documents/Tools/wt/scratch/alt-template/census/`) |
 
 ## Not chosen
 
