@@ -1090,9 +1090,9 @@ def _convert_one(source: Source, entry: dict, ctx: LinkContext, parser, out: str
             if entry.get("png") or is_card_psd(entry["psd"]):
                 continue                        # a card's PNG not followed here (a rename): exact copies
             return {"psd": fixed.data, "files": dict(fixed.files), "pngs": {}, "left": list(fixed.left)}
-        start = png_export.open_psd(base if entry.get("shows") == "fixed" else source.blob(tree[entry["psd"]]))
+        start = png_export.open_psd(base if entry.get("shows") == "fixed" else source.blob(tree[entry["psd"]]), entry["psd"])
         numbered = {path: image for path, image in shown.items() if path != entry["png"]}
-        found = png_export.export(start, png_export.open_psd(fixed.data), shown[entry["png"]], numbered)
+        found = png_export.export(start, png_export.open_psd(fixed.data, entry["psd"]), shown[entry["png"]], numbered)
         if found.outcome == "refused" or any(data == b"" for data, _ in found.numbered.values()):
             continue                            # the redraw cannot reach its PNGs: exact copies instead
         pngs = {entry["png"]: found.data} if found.outcome == "re-exported" else {}
