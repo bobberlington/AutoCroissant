@@ -2,7 +2,7 @@
 The push guards (docs/Campaigns/PUSH_GUARDS.md): TTSCardMaker's card-guards.yml runs this on every push to main. Guard 1
 (png_export) gives a card PSD pushed without its PNG the PNG the bake would make (the fork's render of the changed layers,
 merged into the old PNG; Photoshop's stored composite only cross-checks, and a PSD without one gets the PNG under the
-bake's own gates, told "no stored image to cross-check"); guard 2 (card_standards) checks the pushed PSDs against the card
+bake's own gates, nothing told since 2026-11-07: every save strips it); guard 2 (card_standards) checks the pushed PSDs against the card
 standards (missing fonts are the font check's alone) and fixes only the 0-pixel classes; the Single-line Composer (R8) it
 always sets unsaid, box text that rewraps redrawn and its PNG re-exported: only the bot commit's message names it
 (owner, 2026-10-25); so are the pixel fixes (card_standards.PIXEL_FIXES, in order: badges laid out again at their new
