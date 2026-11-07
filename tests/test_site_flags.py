@@ -81,7 +81,7 @@ const file = E.editsFile(JSON.stringify({ cards: { X: { creatures: null, note: "
 const lines = op => E.describeItems(op, { flags: { hand: "why", bars: "" }, edited: ["flags"] }).map(x => x.text);
 process.stdout.write(JSON.stringify({ hits: ["flag:hand", "flag:bars", "flag:any", "!flag:any", "FLAG:HAND & flag:bars"].map(hits),
   clean: [F.cleanFlags({ bars: "", hand: 1, other: "x" }), F.cleanFlags({}), F.withFlag({ hand: "" }, "hand", null), F.withFlag({ hand: "", psd: "0" }, "bars", "", "1a2b3c4d"), F.withFlag({ hand: "", psd: "0" }, "hand", null, "1a2b3c4d")],
-  note: F.flagsHtml(cards[4]), own: [F.hasFlag(cards[4], "hand"), F.ownFlag(cards[4], "hand")], error: [F.flagError({ hand: "x".repeat(300) }), F.flagError({ bars: "x".repeat(301) })],
+  note: F.flagsHtml(cards[4]), own: [F.hasFlag(cards[4], "hand"), F.ownFlag(cards[4], "hand")], error: [F.flagError({ hand: "x".repeat(300) }), F.flagError({ bars: "x".repeat(301) }), F.flagError({ hand: "" }), F.flagError({ bars: "" })],
   file, unset: E.editsFile(file, [{ key: "X", set: {}, unset: ["flags"] }], "T", "web"), nulled: E.editsFile(file, [{ key: "X", set: { flags: null }, unset: [] }], "T", "web"),
   lines: [lines({ set: { flags: { hand: "new" } }, unset: [] }), lines({ set: {}, unset: ["flags"] })],
   raw: [D.rawOf(cards[1], "flag-bars"), D.rawOf(cards[0], "flag:hand"), D.rawOf(cards[3], "flag-hand"), D.rawOf(cards[3], "flag:bars")], names: D.fieldNames({ "flag:bars": "x", "flag-bars": true }) }));
@@ -89,7 +89,7 @@ process.stdout.write(JSON.stringify({ hits: ["flag:hand", "flag:bars", "flag:any
     assert out["hits"] == ["ACE", "BC", "ABCE", "D", "C"]
     assert out["clean"] == [{"bars": ""}, None, None, {"hand": "", "bars": "", "psd": "1a2b3c4d"}, None]
     assert '<span class="flag-note">note</span>' in out["note"] and "data-flag" not in out["note"] and out["own"] == [True, False]
-    assert out["error"] == ["", "Special stat bars: at most 300 characters"]
+    assert out["error"] == ["", "Special stat bars: at most 300 characters", "Needs doing by hand: say what the issue is", ""]
     assert out["file"] == dump_edits(json.loads(out["file"]))
     entry = json.loads(out["file"])["cards"]["X"]
     assert list(entry) == ["note", "creatures", "flags", "_by", "_at"] and entry["flags"] == {"hand": "why", "bars": "two words"}
