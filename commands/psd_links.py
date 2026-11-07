@@ -1090,11 +1090,17 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
         if link.path is None or link.path not in tree:
             continue
         blob, known = tree[link.path], seen.get(link.path) or {}
+        ours = next((b for b in [blob, *known] if link_content_id(b, rel, link.uuid) == link.content), None)
+        size = known.get(blob)                  # known sizes first: no file is read for a link that is not due
+        if size is None:
+            new = read_blob(blob)
+            if new is None:
+                continue
+            size = len(new)
+        if link.size == size and (ours is None or ours == blob):
+            continue
         new = read_blob(blob)
         if new is None:
-            continue
-        ours = next((b for b in [blob, *known] if link_content_id(b, rel, link.uuid) == link.content), None)
-        if link.size == len(new) and (ours is None or ours == blob):
             continue
         old_blob = ours or next((b for b, size in known.items() if size == link.size and b != blob), None)
         old = read_blob(old_blob) if old_blob else None
@@ -1223,6 +1229,7 @@ def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARD
         fetch_blobs(clone, unknown)
     got = _git_bytes(clone, unknown)
     sizes.update({p: len(got[tree[p]]) for p, size in sizes.items() if size is None and tree[p] in got})
+    seen = {**seen, **{p: {**(seen.get(p) or {}), tree[p]: size} for p, size in sizes.items() if size is not None}}
     due = due_links(records, tree, sizes)
     for rel in pushed:
         if rel in tree and (records.get(rel) or {}).get("blob") != tree[rel]:
@@ -1236,7 +1243,10 @@ def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARD
         main, numbered_pngs = _pictures(tree, rel)
         pngs = ([main] if main else []) + numbered_pngs
         wanted = [tree[rel]] + [tree[p] for p in pngs] + [blob for _, blob in due[rel]]
-        wanted += [b for link, _ in due[rel] for b in (seen.get(link["path"]) or {}) if b != tree[link["path"]]]
+        for link, blob in due[rel]:             # C3: the blob each was drawn from, else the file's blobs of its size
+            drawn = link.get("drawn")
+            wanted += [drawn] if drawn and drawn != blob else \
+                [b for b, size in (seen.get(link["path"]) or {}).items() if size == link.get("size") and b != blob]
         if fetch:
             fetch_blobs(clone, wanted)
         blobs = _git_bytes(clone, list(dict.fromkeys(wanted)))
