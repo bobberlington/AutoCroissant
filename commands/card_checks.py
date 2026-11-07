@@ -86,7 +86,7 @@ WHAT = {"name": "A new title", "adding a star": "Adding a star", "removing a sta
 TITLE_NOTE = "The title is part of the picture: a new title has to be drawn in Photoshop."
 OLD_NOTE = "Its stat bars are old-style digit rows: put them on the new bars in Photoshop."
 CREATURES_NOTE = "Several creatures: the website changes the first one's bars, the others are changed in Photoshop."
-NO_CHANGE_NOTE = "{} edits bake but change nothing on the card: change them in Photoshop."
+NO_CHANGE_NOTE = "{} {} bake but change nothing on the card: change them in Photoshop."
 SWAP_NOTE = "The {} bars are on each other's rows: a stat edit moves the wrong bar, put them back in Photoshop."
 BRIGHT_NOTE = "Its shown digits brighten the cells, so a stat edit turns the bars dark: change its stats in Photoshop."
 CUSTOM_NOTES = {"icons": "Its stat bars are separate icons with gaps, not the template's cells.",
@@ -438,15 +438,15 @@ def _stat_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str,
     if any(one.is_visible() and one.exposure > 0 for one in exposures) and any(not one.is_visible() and one.exposure < 0 for one in exposures):
         return [BRIGHT_NOTE]
     png = np.asarray(image.convert("RGB"), np.int16) if image is not None else None
-    for fields in ({stat: value - 1 if value > 0 else value + 1 for stat, value in have.items()},
-                   {stat: value + 1 if value < 10 else value - 1 for stat, value in have.items()}):
+    for what, fields in (("edits", {stat: value - 1 if value > 0 else value + 1 for stat, value in have.items()}),
+                         ("raises", {stat: value + 1 if value < 10 else value - 1 for stat, value in have.items()})):
         state, reason, moved = _real_bake(ctx, rel, fields, png)
         if state == "refused":
             return [_note("stats", reason)]
         still = _still(psd, moved) if state == "baked" and moved is not None else []
         if still:
             names = "Stat" if len(still) == len(STAT_ORDER) else " and ".join(STAT_NAMES[stat] for stat in still)
-            return [NO_CHANGE_NOTE.format(names)]
+            return [NO_CHANGE_NOTE.format(names, what)]
     return []
 
 
