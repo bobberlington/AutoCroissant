@@ -14,6 +14,7 @@ import subprocess
 import sys
 import types
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 from sys import executable
 from types import SimpleNamespace
@@ -449,7 +450,10 @@ def _links_module(monkeypatch, unused=(), duplicates=None, links=None) -> list:
     fake.items = lambda psd, vocab=(): []
     fake.TypesIndex = lambda files, history=None: None
     fake.assign = lambda psds, kinds, linked: {"psds": {rel: [] for rel, _ in psds}, "files": {}}
-    fake.links_of = lambda psd, rel, tree: [SimpleNamespace(path=p, uuid="u1", size=3) for p in (links or {}).get(rel, [])]
+    fake.fallback_names = lambda catalogue, linked, kept=None: None
+    fake.links_of = lambda psd, rel, tree: [SimpleNamespace(path=p, name=p.rsplit("/", 1)[-1], uuid="u1", size=3)
+                                            for p in (links or {}).get(rel, [])]
+    fake.records_of = lambda index: ({k: v for k, v in index.items() if k != "files"}, index.get("files") or {})
     fake.unused = lambda index, tree, pushed=(), read=(): list(unused)
     fake.duplicates = lambda tree, pushed=(): dict(duplicates or {})
     fake.restore = lambda size, history: None
@@ -460,9 +464,9 @@ def _links_module(monkeypatch, unused=(), duplicates=None, links=None) -> list:
 
 def test_a_later_push_is_converted_silently(cards, tmp_path, monkeypatch):
     """G1 (owner 11-07): a card and a template pushed with what the normalise fix finds are converted after the check
-    (--convert later: summary.json counts them, so Card sync's wait ends at Decided), the card on top of guard 1's PNG,
-    its new MDW/Linked file beside it, the template with nothing else checked; one landing, no Discord line, no
-    guard-event for the conversion, the commit message alone says it."""
+    (--convert later: summary.json counts them, so Card sync's wait ends at Decided), the card on top of guard 1's PNG
+    (its redrawn picture re-exported in it), its new MDW/Linked file beside it, the template with nothing else checked;
+    one landing, no Discord line, no guard-event for the conversion, the commit message alone says it."""
     root, base, alice, bot = cards
     _psd(root, tmp_path / "psds", f"{FOLDER}/Snack.psd", card(colour=(0, 0, 200)))
     _psd(root, tmp_path / "psds", "MDW/Templates/Item_Template.psd", card())
@@ -470,6 +474,8 @@ def test_a_later_push_is_converted_silently(cards, tmp_path, monkeypatch):
     _links_module(monkeypatch)
     monkeypatch.setitem(cg.standards.PIXEL_FIXES, cg.NORMALISE, (lambda psd: [psd], None, None))
     real, converted = cg.standards.fix, []
+    fixture_psd(tmp_path / "psds", card(colour=(0, 200, 0)), "Redrawn")   # Snack's picture drawn again (class 3)
+    redrawn = (tmp_path / "psds" / "Redrawn.psd").read_bytes()
 
     def fix(data, rel, issues, work, parser=None, fonts=None, only=None, whole=False, skip=()):
         if only != cg.NORMALISE:
@@ -477,8 +483,10 @@ def test_a_later_push_is_converted_silently(cards, tmp_path, monkeypatch):
             return real(data, rel, issues, work, parser, fonts, only, whole, skip)
         assert isinstance(fonts.links, cg.LinkContext) and fonts.links.tree[rel]
         converted.append(rel)
-        files = {"MDW/Linked/Snack - art.png": b"art"} if rel.endswith("Snack.psd") else {}
-        return SimpleNamespace(data=data + b"linked", files=files, redrawn={cg.NORMALISE: ["art"]}, left=[], pixel_left=[])
+        if rel.endswith("Snack.psd"):           # card_standards' shape: the redrawn layers' names
+            return SimpleNamespace(data=redrawn, files={"MDW/Linked/Snack - art.png": b"art"},
+                                   redrawn={cg.NORMALISE: ["Square"]}, left=[], pixel_left=[])
+        return SimpleNamespace(data=data + b"linked", files={}, redrawn={cg.NORMALISE: ["art"]}, left=[], pixel_left=[])
     monkeypatch.setattr(cg.standards, "fix", fix)
     out = tmp_path / "out"
     data = cg.check(str(root), head, bot, mode="on", out=str(out), workers=1, convert="later")
@@ -499,6 +507,8 @@ def test_a_later_push_is_converted_silently(cards, tmp_path, monkeypatch):
     landed = _git(root, "show", "--name-only", "--format=%B", report["sha"])
     assert "1 linked file added" in landed and "MDW/Linked/Snack - art.png" in landed
     assert _git(root, "show", f"{report['sha']}:MDW/Linked/Snack - art.png") == "art"
+    png = subprocess.run(["git", "-C", str(root), "show", f"{report['sha']}:{FOLDER}/Snack.png"], capture_output=True, check=True)
+    assert Image.open(BytesIO(png.stdout)).convert("RGB").getpixel((20, 20)) == (0, 200, 0)   # the PNG followed
     assert subprocess.run(["git", "-C", str(root), "show", f"{report['sha']}:MDW/Templates/Item_Template.psd"],
                           capture_output=True, check=True).stdout.endswith(b"linked")
 

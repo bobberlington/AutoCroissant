@@ -72,7 +72,7 @@ from commands.git_commit import (AUTHOR, COMMIT_TRIES, NO_LAZY, Transient, api, 
                                  plural, ref_head, token)
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_edit import Refused
-from global_config import CARD_REPO, FONT_DIRS_ENV, ICON_MANIFEST_PATH
+from global_config import CARD_REPO, FONT_DIRS_ENV, ICON_MANIFEST_PATH, STARS_DIR, TYPES_DIR
 
 # ========================
 # Configuration
@@ -962,7 +962,8 @@ class LinkContext:
     """
     What the normalise fix's link step reads (fonts.links: psd_links.link_card's entries, read and first): the tree at
     after, the parent's catalogue (psd_links.assign over every PSD the run converts, so a new file shared by two of them
-    gets one name, its first user's), the run's new files and the repo's by blob.
+    gets one name, its first user's), the run's new files and the repo's by blob. Every user writes the new files it
+    links (first: None), so none lands linking a file whose first user did not convert or land (one write each).
     """
     tree: dict                                  # {repo path: blob} at after
     catalogue: dict                             # psd_links.assign's {"psds": {rel: rows}, "files": {new path: info}}
@@ -973,8 +974,8 @@ class LinkContext:
     def entries(self, rel: str) -> list:
         return self.catalogue.get("psds", {}).get(rel, [])
 
-    def first(self, rel: str) -> set:
-        return {path for path, info in self.catalogue.get("files", {}).items() if info.get("first") == rel}
+    def first(self, rel: str) -> None:
+        return None                             # link_card: every new file it uses
 
     def read(self, path: str) -> Optional[bytes]:
         if path in self.files:
@@ -1039,8 +1040,12 @@ def catalogue(source: Source, tree: dict, rels: list, index: Optional[dict], voc
     found = [(rel, rows) for rel, rows in read if rows is not None]
     history = {blob: path for path, blobs in ((index or {}).get("files") or {}).items() if path.startswith("Types/")
                for blob in blobs}
-    types = psd_links.TypesIndex({path: source.blob(sha) for path, sha in tree.items() if path.startswith("Types/")}, history)
-    return psd_links.assign(found, types, {path: sha for path, sha in tree.items() if path.startswith(LINKED_DIR)})
+    types = psd_links.TypesIndex({path: source.blob(sha) for path, sha in tree.items()
+                                  if dirname(path) in (TYPES_DIR, STARS_DIR)}, history)
+    linked = {path: sha for path, sha in tree.items() if path.startswith(LINKED_DIR)}
+    out = psd_links.assign(found, types, linked)
+    psd_links.fallback_names(out, linked)       # a class 2 or 3 refused, or redraw off: its exact copy's name (5.2 step 9)
+    return out
 
 
 def _shown_images(out: str, source: Source, entry: dict) -> dict:
@@ -1070,12 +1075,12 @@ def _convert_one(source: Source, entry: dict, ctx: LinkContext, parser, out: str
         fixed = standards.fix(base, entry["psd"], [], join(out, "work"), parser, fonts, only=NORMALISE)
         if not fixed.data:
             return {"left": "; ".join(why for _, why in fixed.pixel_left) or "nothing to convert"}
-        redraws = list(getattr(fixed.redrawn.get(NORMALISE), "redraws", ()))
+        redraws = list(fixed.redrawn.get(NORMALISE) or ())     # card_standards: the layers drawn again
         if not redraws:
             return {"psd": fixed.data, "files": dict(fixed.files), "pngs": {}, "left": list(fixed.left)}
         if not shown:                           # no PNG shows it (templates, Unfinished): nothing follows
-            if entry.get("png"):
-                continue
+            if entry.get("png") or is_card_psd(entry["psd"]):
+                continue                        # a card's PNG not followed here (a rename): exact copies
             return {"psd": fixed.data, "files": dict(fixed.files), "pngs": {}, "left": list(fixed.left)}
         start = png_export.open_psd(base if entry.get("shows") == "fixed" else source.blob(tree[entry["psd"]]))
         numbered = {path: image for path, image in shown.items() if path != entry["png"]}
@@ -1693,8 +1698,8 @@ def message(landed: list, after: str) -> str:
     psds = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "psd" and not w.get("silent"))
     composer = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "psd" and w.get("composer"))
     smaller = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "recompress")
-    added = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "file")
-    deleted = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "delete")
+    added = len({w["path"] for entry in landed for w in entry["writes"] if w["kind"] == "file"})    # users share one
+    deleted = len({w["path"] for entry in landed for w in entry["writes"] if w["kind"] == "delete"})
     pixels = [kind for entry in landed for w in entry["writes"] if w["kind"] == "psd" for kind in w.get("pixels", ())]
     silent = [f"{standards.PIXEL_LINES.get(kind, kind)} on {plural(pixels.count(kind), 'card')}"
               for kind in dict.fromkeys(pixels)]          # the pixel fixes: said here alone, as the composer
