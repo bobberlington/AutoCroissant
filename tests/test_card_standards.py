@@ -457,7 +457,8 @@ def test_old_glyph_redrawn_kerned_as_the_story(clone, tmp_path, monkeypatch):
     assert fixed.redrawn == {"old glyphs": ["Ability"]} and fixed.pixel_left == []
     new = PSDImage.open(BytesIO(fixed.data))
     assert cs.old_glyphs(psd_edit.ability_layer(new), found) == []
-    assert psd_edit.gate_stories(PSDImage.open(str(old)), new, []) == []
+    story = psd_edit.story_index(psd_edit.ability_layer(new))
+    assert psd_edit.gate_stories(PSDImage.open(str(old)), new, [story]) == [story]
     monkeypatch.setattr(psd_edit, "follow_kerning", lambda psd, layer: False)
     fixed = cs.fix(old.read_bytes(), rel, [], str(tmp_path / "work"), None, fonts, only="old glyphs")
     assert not fixed.redrawn and "not redrawn by glyph" in fixed.pixel_left[0][1]

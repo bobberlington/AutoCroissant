@@ -2438,7 +2438,7 @@ def test_plus_ability_adds_the_templates_layer(clone, parser, chart, tmp_path, m
     now = _frame(saved, added[0])
     (_, _, w0, h0), (_, _, w1, h1) = was[0], now[0]
     assert now[1] == pytest.approx([v * (w1 / w0 if k % 2 == 0 else h1 / h0) for k, v in enumerate(was[1])], abs=0.01)
-    assert len(now[2]) == len(was[2]) >= 2 and all(rect == pytest.approx([0, 0, w1, h1]) for rect in now[2])
+    assert len(was[2]) >= 2 and now[2] == []    # the redraw dropped its strikes: Photoshop composes the story at open
 
 
 def _frame(psd, layer) -> tuple:

@@ -338,7 +338,7 @@ def redraw(path: str, out_path: str, names: list, fonts: Callable[[list], Option
     """
     R8: the named text layers (lines that rewrap Single-line) drawn again whole by the fork and saved stripped
     (psd_edit.save_psd), so the guards' export can follow (png_export.export); gated: only those records' pixels,
-    rectangle and TySh change.
+    rectangle, TySh and stories change.
 
     Args:
         fonts: single_line()'s
@@ -353,7 +353,8 @@ def redraw(path: str, out_path: str, names: list, fonts: Callable[[list], Option
     for layer in layers:
         layer.rasterize(fonts=psd_edit.font_map(fonts(layer_fonts(layer)), layer))
     psd_edit.save_psd(psd, out_path)
-    _only_pixels(path, out_path, {psd_edit._record_index(layer) for layer in layers})
+    _only_pixels(path, out_path, {psd_edit._record_index(layer) for layer in layers},
+                 [psd_edit.story_index(layer) for layer in layers])
     return [layer.name.strip() for layer in layers]
 
 
@@ -1263,7 +1264,7 @@ def redraw_old_glyphs(path: str, out_path: str, fonts: Optional[Callable[[list],
     from psd_tools.composite.text import capture
     earlier = tuple(getattr(fonts, "earlier", ()))
     psd = PSDImage.open(path)
-    records, names = set(), []
+    records, stories, names = set(), [], []
     for layer in icon_layers(psd):
         found = _fonts_of(layer, fonts)
         drawn = _drawn_old(layer, found)
@@ -1283,11 +1284,12 @@ def redraw_old_glyphs(path: str, out_path: str, fonts: Optional[Callable[[list],
         _by_glyph(layer, layer.rasterize(fonts=found, keep=replace(keep, layout=replace(keep.layout, glyphs=glyphs)),
                                          unit="glyph"))
         records.add(psd_edit._record_index(layer))
+        stories.append(psd_edit.story_index(layer))
         names.append(layer.name.strip())
     if not names:
         return []
     psd_edit.save_psd(psd, out_path)
-    _only_pixels(path, out_path, records)
+    _only_pixels(path, out_path, records, stories)
     return names
 
 
@@ -1802,7 +1804,7 @@ def relay_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Opti
     from psd_tools.composite.text import capture
     earlier = tuple(getattr(fonts, "earlier", ()))
     psd = PSDImage.open(path)
-    records, names = set(), Relaid()
+    records, stories, names = set(), [], Relaid()
     for record, faces, plan in _laid_plans(path, fonts, earlier):
         layer = next(layer for layer in icon_layers(psd) if psd_edit._record_index(layer) == record)
         psd_edit.follow_kerning(psd, layer)
@@ -1834,11 +1836,12 @@ def relay_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Opti
         for fx, _ in _recut_fx(psd, layer, {i for i in placed if now.get(i) != placed[i]}, faces):
             records.add(psd_edit._record_index(fx))
         records.add(psd_edit._record_index(layer))
+        stories.append(psd_edit.story_index(layer))
         names.append(name)
     if not names:
         return []
     psd_edit.save_psd(psd, out_path)
-    _only_pixels(path, out_path, records)
+    _only_pixels(path, out_path, records, stories)
     try:
         left = _laid_plans(out_path, fonts, earlier)
     except Refused as error:
