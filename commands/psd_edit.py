@@ -5644,7 +5644,9 @@ def _moved_inks(unit: _Unit, dx: int, dy: int) -> list:
 
 
 def _texts(psd: PSDImage) -> list:
-    return [layer for layer in psd.descendants() if _is_text_layer(layer) and layer.is_visible()]
+    """The text stars and icons keep clear of: none in the images group (picture)."""
+    return [layer for layer in psd.descendants() if _is_text_layer(layer) and layer.is_visible()
+            and not any(owner.name.strip().lower() == "images" for owner in layer_parents(layer))]
 
 
 def _copy_name(unit: _Unit, container, taken: set) -> str:
