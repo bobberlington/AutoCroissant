@@ -703,8 +703,8 @@ def test_links_gather_every_psd_and_the_linked_files(cards, clone):
     assert _build(cards, "--empty")[0] == cd.EXIT_OK
     links = cd.read_links(str(cards.db))
     link = {"path": "Types/unknown.png", "name": "unknown.png", "size": 132191, "drawn": None}
-    assert links["psds"][rel] == {"blob": blob_sha_bytes(data), "links": [link]}
-    assert links["psds"]["MDW/Templates/Linked_Template.psd"]["links"] == [link]
-    assert "error" in links["psds"]["MDW/Unfinished/Broken.psd"] and links["psds"][DOOMER]["links"] == []
+    assert links[rel] == {"blob": blob_sha_bytes(data), "links": [link]}
+    assert links["MDW/Templates/Linked_Template.psd"]["links"] == [link]
+    assert "error" in links["MDW/Unfinished/Broken.psd"] and links[DOOMER]["links"] == []
     assert links["files"]["Types/unknown.png"] == {blob_sha_bytes(b"unknown"): 7}
     assert links["files"]["MDW/Linked/a - b.png"] == {blob_sha_bytes(b"not a png"): 9} and links["pixels"] == {}

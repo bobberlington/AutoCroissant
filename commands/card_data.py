@@ -49,7 +49,7 @@ PROGRESS = "{count} cards updated."                               # every UPDATE
 REAL_DATES = 946684800.0                                          # 2000-01-01 UTC: older stamps are no commit found (year 1000)
 LINKS_JSON = "links.json"                                         # db/: every PSD's links (Card sync's redraw, the guards' files,
                                                                   # the card checks' notes); not in the manifest: no bot reads it
-LINKS_SCHEMA = 1
+LINK_KEYS = ("files", "pixels")                                  # links.json's keys beside the PSD paths
 LINKED_DIR = "MDW/Linked"                                         # the cards' linked pictures (the 11-07 pass)
 LINK_HOLDERS = (".psd", ".psb")                                   # files whose links count: MDW/Linked's .psb documents link too
 FETCH_CHUNK, FETCH_POOL = 8, 4                                    # blobs a git fetch, fetches at a time (the guards' Pushed blobs)
@@ -766,15 +766,15 @@ class CardBuild:
 # db/links.json (the 11-07 pass: every PSD's links, the linked files' blobs)
 # ========================
 def read_links(db_dir: str) -> dict:
-    """db/links.json: {"schema", "psds": {PSD path: {"blob", "links": [{"path", "name", "size", "drawn"}]} or {"blob",
-    "error"}}, "files": {Types/ or MDW/Linked path: {blob: size or None}}, "pixels": {MDW/Linked blob: decoded pixels'
-    sha1}}; empty sections without one."""
+    """db/links.json (PLAN A10's shape, psd_links reads it): {PSD path: {"blob", "links": [{"path", "name", "size",
+    "drawn"}]} or {"blob", "error"}, "files": {Types/ or MDW/Linked path: {blob: size or None}}, "pixels": {MDW/Linked
+    blob: its decoded pixels' sha1}}; "files" and "pixels" empty without one."""
     path = path_join(db_dir, LINKS_JSON)
     data = {}
     if isfile(path):
         with open(path, encoding="utf-8") as fh:
             data = json_loads(fh.read())
-    return {"schema": LINKS_SCHEMA, **{key: dict(data.get(key) or {}) for key in ("psds", "files", "pixels")}}
+    return {**data, **{key: dict(data.get(key) or {}) for key in LINK_KEYS}}
 
 
 def links_text(data: dict) -> str:
@@ -888,6 +888,7 @@ def gather_links(build: "GitBuild", before: dict) -> dict:
     history, sizes unknown) and the pixels of MDW/Linked's (batched git fetches).
     """
     files = {path: dict(blobs) for path, blobs in before["files"].items()}
+    kept_psds = {path: record for path, record in before.items() if path not in LINK_KEYS}
     if not files:
         files = _history(build.checkout, build.head)
     linked = [path for path in build.sizes if linked_file(path)]
@@ -900,7 +901,7 @@ def gather_links(build: "GitBuild", before: dict) -> dict:
     psds, unread = {}, []
     for path in sorted(p for p in build.sizes if p.lower().endswith(LINK_HOLDERS)):
         sha = build.shas[path]
-        found, kept = build.links.get(path), before["psds"].get(path) or {}
+        found, kept = build.links.get(path), kept_psds.get(path) or {}
         if found is not None and found["blob"] == sha:
             psds[path] = _link_record(found, path, files)
         elif kept.get("blob") == sha:
@@ -941,7 +942,7 @@ def gather_links(build: "GitBuild", before: dict) -> dict:
                                              env={**environ, **NO_LAZY}).stdout, path)
             except Exception as e:                  # no look-alike test for it
                 print(f"{path}: pixels not read ({e})")
-    return {"schema": LINKS_SCHEMA, "psds": psds, "files": files, "pixels": pixels}
+    return {**psds, "files": files, "pixels": pixels}
 
 
 def duplicate_pngs(paths: list, stats: dict, edits: Optional[CardEdits]) -> dict:
