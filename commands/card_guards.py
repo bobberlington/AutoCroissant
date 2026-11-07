@@ -1133,7 +1133,7 @@ def _pooled_convert(item: tuple) -> dict:
         return {"left": f"not converted ({type(error).__name__}: {error})"}
 
 
-def housekeeping(data: dict, source: Source, tree: dict, out: str, index: Optional[dict]) -> dict:
+def housekeeping(data: dict, source: Source, tree: dict, out: str, index: Optional[dict], deadline: float = 0.0) -> dict:
     """
     G2-G4 over what lands (psd_links.unused, duplicates, restore, relink), as plan.json's "linked" entry, silent: the
     MDW/Linked files no PSD links deleted (nothing while any PSD's links are unknown); a pushed MDW/Linked file with the
@@ -1169,8 +1169,11 @@ def housekeeping(data: dict, source: Source, tree: dict, out: str, index: Option
                   and any((link.get("path") or "") == dup for link in record.get("links") or [])]
         if any(rel not in direct and ((index or {}).get(rel) or {}).get("blob") != tree.get(rel) for rel in users):
             continue                            # a user's links are unknown: both files stay
-        relinked = {}
+        relinked: Optional[dict] = {}
         for rel in sorted(set(users)):
+            if deadline and time() > deadline:  # the users do not fit the time: both files stay (harmless)
+                relinked = None
+                break
             psd = png_export.open_psd(finals.get(rel) or source.blob(tree[rel]))
             for link in psd_links.links_of(psd, rel, paths):
                 if link.path == dup:
@@ -1178,6 +1181,8 @@ def housekeeping(data: dict, source: Source, tree: dict, out: str, index: Option
             saved = BytesIO()
             psd_edit.save_psd(psd, saved)
             relinked[rel] = saved.getvalue()
+        if relinked is None:
+            continue
         for rel, raw in relinked.items():
             if rel in cards:                    # a pushed card: its own write carries the relink
                 done = {"psd": raw, "files": {}, "pngs": {}}
@@ -1219,11 +1224,11 @@ def convert_plan(data: dict, source: Source, out: str, minutes: float = CONVERT_
     tree = {path: sha for path, (_, sha) in source.checked.items()}
     index = links_index(source)
     entries = [e for e in data["cards"] if e.get("convert") and not e.get("error") and "converted" not in e]
+    deadline = time() + minutes * 60
     if entries:
         context, vocab = build_context(source, source.checked)
         ctx = LinkContext(tree, catalogue(source, tree, [e["psd"] for e in entries], index,
                                           sorted(vocab.all_types) if vocab is not None else (), workers), source.blob)
-        deadline = time() + minutes * 60
         if len(entries) >= POOL_MIN and workers != 1:
             with ProcessPoolExecutor(workers or pool_size(len(entries)), initializer=_init_convert,
                                      initargs=(source.clone, source.repository, ctx, vocab, source.checked, source.fonts)) as pool:
@@ -1240,7 +1245,7 @@ def convert_plan(data: dict, source: Source, out: str, minutes: float = CONVERT_
         for entry, result in zip(entries, done):
             _merge(out, entry, result, tree)
     try:
-        data["linked"] = housekeeping(data, source, tree, out, index)
+        data["linked"] = housekeeping(data, source, tree, out, index, deadline)
     except Exception:                           # best effort: nothing deleted or merged this run
         print(format_exc(), file=stderr)
         data["linked"] = {"card": "", "psd": "", "case": "linked", "writes": [], "expect": {}, "notes": [], "told": []}
