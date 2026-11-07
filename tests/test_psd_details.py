@@ -18,7 +18,7 @@ BONE = "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd"                     # its tit
 ABBI = "Creatures/Omori/5 Stars/ABBI.psd"                              # no title layer the parser reads
 AFRAID = "Auxiliary/Status Effects/Debuffs/2 Stars/Afraid.psd"         # no Text group: a top-level title named after the card
 PAPYRUS = "Creatures/Undertale/3 Stars/Papyrus.psd"                    # its title layer is named after its own text
-LICH_KING = "Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd"     # stars set by its folder: every count refused
+LICH_KING = "Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd"     # stars set by its folder: planned as a move
 FREEZER = "Field/1 Stars/The_Freezer.psd"                              # no Stars group; one type icon, a column of spots
 FROSTMOURNE = "Auxiliary/Items/Frostmourne.psd"                        # four stars in a shown "N stars" folder
 MAGNUM = "Auxiliary/Items/Magnum_Opus.psd"                             # its 'field' icon is a frame: fixed
@@ -114,8 +114,8 @@ def test_text_layers_and_template(records):
 
 def test_header_boxes(records, clone):
     """The mock-up's header: Mini Doomer's two stars in reading order, rows of two past them, no count refused; its three
-    type icons in slot order with spots carrying the row on (a second row for eight); the bake's refusals and a card
-    without a Stars group."""
+    type icons in slot order with spots carrying the row on (a second row for eight); a folder card's counts planned as
+    its move (card_bake's) and a card without a Stars group."""
     stars, types = records[DOOMER]["header"]["stars"], records[DOOMER]["header"]["types"]
     assert [u["core"] for u in stars["units"]] == [[1049, 13, 1164, 115], [936, 15, 1051, 117]] and stars["icon"] == "warpstar"
     assert stars["at"]["2"] == [[1106, 64], [994, 66]] and stars["at"]["3"] == [[1106, 64], [994, 66], [1050, 167]]
@@ -129,8 +129,8 @@ def test_header_boxes(records, clone):
         if not (clone / rel).exists():
             pytest.skip(f"{rel} not in the clone")
     lich = pd.gather(str(clone / LICH_KING), LICH_KING, "The Lich King", None, vocab)["header"]
-    assert list(lich["stars"]["refused"]) == ["*"] and lich["stars"]["refused"]["*"].endswith("folder sets them")
-    assert "6" not in lich["stars"]["at"] and [t["name"] for t in lich["types"]["row"]] == ["undead", "ice"]
+    assert lich["stars"]["refused"] == {} and sorted(lich["stars"]["at"], key=int) == [str(n) for n in range(1, 11)]
+    assert lich["stars"]["at"]["6"][4:] == [[1130, 317], [998, 317]] and [t["name"] for t in lich["types"]["row"]] == ["undead", "ice"]
     freezer = pd.gather(str(clone / FREEZER), FREEZER, "The Freezer", None, vocab)["header"]
     assert freezer["stars"] is None and [t["name"] for t in freezer["types"]["row"]] == ["field"]
     assert freezer["types"]["spots"]["2"] == [[7, 226, 136, 418]]                    # under a lone icon (Item_Template's column)

@@ -334,7 +334,8 @@ def _plan_centres(plan, container, types, size) -> list:
 def _star_header(psd: PSDImage, rel: str, vocab, parser: Optional[PSDParser] = None) -> Optional[dict]:
     """
     The shown stars ({core, box}, reading order), the star layer the bake copies, each count's centres (the bake's plan,
-    else the layout's: first n, then _star_layouts) and the counts the bake refuses ("*": all, for one reason).
+    a move on a folder card as card_bake's; else the layout's: first n, then _star_layouts) and the counts the bake
+    refuses ("*": all, for one reason).
     None without exactly one Stars group drawing them. parser: the build's (its Types/Stars names count the stars
     outside the group, as the bake's does: Massive Moss Charger's 'Hk star'); None: one from vocab.
     """
@@ -358,7 +359,7 @@ def _star_header(psd: PSDImage, rel: str, vocab, parser: Optional[PSDParser] = N
     at, refused = {}, {}
     for n in range(1, HEADER_STARS + 1):
         try:
-            at[str(n)] = _plan_centres(plan_stars(psd, parsed, n, parser), container, types, size)
+            at[str(n)] = _plan_centres(plan_stars(psd, parsed, n, parser, moving=True), container, types, size)
             continue
         except Refused as e:
             refused[str(n)] = sub(r"^stars: |\s*\([^)]*\bledger [A-Z]\d+\)", "", e.why)   # no ledger codes
