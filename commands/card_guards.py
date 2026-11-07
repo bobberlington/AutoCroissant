@@ -33,7 +33,7 @@ config through github_api, else GITHUB_TOKEN); SPARSE_FILES is what card-guards.
 and font checks' too, run in its check job) and requirements-cards.txt.
 """
 from argparse import ArgumentParser
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from functools import partial
@@ -53,7 +53,7 @@ import commands.card_standards as standards
 import commands.png_export as png_export
 import commands.psd_diff as psd_diff
 import commands.psd_edit as psd_edit
-from commands.card_bake import Snapshot, fetch_verified, local_snapshot, snapshot_at
+from commands.card_bake import PREFETCH_WORKERS, Snapshot, fetch_verified, local_snapshot, snapshot_at
 from commands.card_check import vocabulary
 from commands.card_edits import CardAuthors
 from commands.font_check import face_names, is_card_psd, tree_fonts
@@ -1173,35 +1173,41 @@ def earlier_fonts(source: Source, commit: str, tree: dict, folder: str) -> list:
     (named .earlier: a FontMap over folder never takes one for the current font): each era's newest version, an era
     being the versions a newer one lays out alike (_laid_alike: an icon added keeps the era, an advance changed ends
     it), none the current font's. EARLIER_FONTS at most, from the EARLIER_WALK newest versions, each read once a
-    process (_advances). The advances a raster drawn before may show (badge widths). Raises Transient, the API's errors
-    or Refused("blob").
+    process (_advances), PREFETCH_WORKERS at a time. The advances a raster drawn before may show (badge widths). Raises
+    Transient, the API's errors or Refused("blob").
     """
     now = tree.get(ICON_FONT_FILE, ("", ""))[1]
     if not now:
         return []
     if now not in _advances:
         _advances[now] = font_advances(_font_blob(source, now))
-    current, kept, seen, files = _advances[now], [], {now}, []
+    current, kept, seen, files, walk = _advances[now], [], {now}, [], []
     for line in source.git("log", "--format=%H", commit, "--", ICON_FONT_FILE).split():
-        if len(kept) == EARLIER_FONTS or len(seen) > EARLIER_WALK:
+        if len(seen) > EARLIER_WALK:
             break
         try:
             sha = source.git("rev-parse", f"{line}:{ICON_FONT_FILE}").strip()
         except Transient:                       # deleted there
             continue
-        if sha in seen:
-            continue
-        seen.add(sha)
-        data = None
-        if sha not in _advances:
-            data = source.blob(sha)
-            _advances[sha] = font_advances(data)
-        if any(_laid_alike(_advances[sha], newer, current) for newer in [current] + [_advances[k] for k in kept]):
-            continue
-        kept.append(sha)
-        files.append(join(folder, f"stoogedings-{sha[:12]}.earlier"))
-        with open(files[-1], "wb") as fh:
-            fh.write(source.blob(sha) if data is None else data)
+        if sha not in seen:
+            seen.add(sha)
+            walk.append(sha)
+    with ThreadPoolExecutor(PREFETCH_WORKERS) as pool:
+        reads = pool.map(source.blob, [sha for sha in walk if sha not in _advances])     # in walk's order
+        for sha in walk:
+            if len(kept) == EARLIER_FONTS:
+                reads.close()                   # the reads not begun stay unread
+                break
+            data = None
+            if sha not in _advances:
+                data = next(reads)
+                _advances[sha] = font_advances(data)
+            if any(_laid_alike(_advances[sha], newer, current) for newer in [current] + [_advances[k] for k in kept]):
+                continue
+            kept.append(sha)
+            files.append(join(folder, f"stoogedings-{sha[:12]}.earlier"))
+            with open(files[-1], "wb") as fh:
+                fh.write(source.blob(sha) if data is None else data)
     return files
 
 
