@@ -1255,7 +1255,7 @@ def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARD
     order = sorted(due)
     for n, rel in enumerate(order):
         if len(out.cards) >= cards or (until and time() > until) or written >= budget:
-            out.due = order[n:]
+            out.due += order[n:]
             break
         main, numbered_pngs = _pictures(tree, rel)
         pngs = ([main] if main else []) + numbered_pngs
