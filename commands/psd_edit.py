@@ -5558,6 +5558,53 @@ def _core(layer) -> Optional[tuple]:
     return union_box([PSDParser._core_box(leaf) for leaf in _drawn(layer)])
 
 
+# The spot record (owner 11-07): icons the big pass redrew, their pre-pass ink cores (new icons go where they went)
+SPOT_RECORD = join(dirname(abspath(__file__)), "spot_record.json")     # {PSD path: {layer id: entry}}; shipped in AC
+
+
+@lru_cache(maxsize=1)
+def spot_record() -> dict:
+    """{PSD path: {layer id: {"link", "trnf", "content", "core"}}}; {} without the file."""
+    try:
+        with open(SPOT_RECORD, encoding="utf-8") as fh:
+            return load(fh)
+    except FileNotFoundError:
+        return {}
+
+
+def spot_key(layer, rel: str) -> Optional[dict]:
+    """What a record entry holds while the layer is as the pass left it: its link (repo path), transform and content
+    ID; None for a layer that links no file."""
+    try:
+        linked = layer.kind == "smartobject" and layer.smart_object.kind == "external"
+        if not linked:
+            return None
+        return {"link": layer.smart_object.link_target(rel or None), "trnf": [round(v, 3) for v in corners_of(layer)],
+                "content": layer.smart_object.content_id or ""}
+    except (ValueError, KeyError, AttributeError):
+        return None
+
+
+def _icon_core(layer, rel: str) -> tuple:
+    """A header type icon's core for its spots: the spot record's while its key holds, else its ink core."""
+    entry = spot_record().get(rel, {}).get(str(layer.layer_id))
+    if entry and spot_key(layer, rel) == {key: entry[key] for key in ("link", "trnf", "content")}:
+        return tuple(entry["core"])
+    return _core(layer) or tuple(layer.bbox)
+
+
+def spot_entries(before: PSDImage, after: PSDImage, parser: PSDParser, rel: str, name: str = "") -> dict:
+    """One PSD's spot record entries: each header type icon the pass left linked whose ink core moved, its core from
+    before (the PSD before the pass); {layer id: entry}."""
+    was = {layer.layer_id: _core(layer) or tuple(layer.bbox) for _, layer in type_row(before, parser, name)[0]}
+    out = {}
+    for _, layer in type_row(after, parser, name)[0]:
+        key, core = spot_key(layer, rel), was.get(layer.layer_id)
+        if key and core and tuple(core) != (_core(layer) or tuple(layer.bbox)):
+            out[str(layer.layer_id)] = {**key, "core": [int(v) for v in core]}
+    return out
+
+
 def _star_count(group, show: dict, boxes: dict, counts: dict, types=()) -> int:
     """
     What the parser counts in one group (PSDParser.stars_in) once layers are shown or hidden and copies added.
@@ -7235,7 +7282,8 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
             refuse(f"{layer.name!r} is {reason}, not an icon to take off")
         left[name] -= 1 if reason else 0
     row = [(name, layer) for (name, layer), reason in zip(images, reasons) if not reason]
-    icons = [_Unit([layer], _core(layer) or tuple(layer.bbox)) for _, layer in row]
+    rel = _card_path(parsed)
+    icons = [_Unit([layer], _icon_core(layer, rel)) for _, layer in row]
     names = {id(unit): name for unit, (name, _) in zip(icons, row)}
     size = _median_size(icons) if icons else (0, 0)
     slots = _reading(icons, size[1], False)
@@ -7313,7 +7361,7 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
         why = _shiftable(layer)
         if why:
             refuse(f"{why}: it cannot move")
-        unit = _Unit([layer], _core(layer) or tuple(layer.bbox))
+        unit = _Unit([layer], _icon_core(layer, rel))
         others = [other for other in texts + stars if other is not layer]
         blocked = _blocked(psd, _moved_inks(unit, dx, dy), _moved_box(unit.core, dx, dy), others)
         box = _moved_box(unit.core, dx, dy)
@@ -7337,7 +7385,7 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
             if (id(layer) in shifts or id(other) in shifts) and \
                     _ink_overlap(mine, theirs) > ICON_TOUCH * min(mine[1].sum(), theirs[1].sum()):
                 one, two = (layer, other) if id(layer) in shifts else (other, layer)
-                box = tuple(int(v) for v in _moved_box(_core(one) or tuple(one.bbox), *shifts[id(one)]))
+                box = tuple(int(v) for v in _moved_box(_icon_core(one, rel), *shifts[id(one)]))
                 pulled = "runs off the canvas; pulled back onto it, " if any(one is x for x in plan.pulled) else ""
                 refuse(f"{one.name!r} at {box} {pulled}would cover {two.name!r}")
     for _, spot, _ in plan.icons:
@@ -10283,7 +10331,8 @@ def template_icon(template: PSDImage, psd: PSDImage, parser: PSDParser, name: st
     images, _ = type_row(template, parser, name)
     if not images:
         return None
-    units = [_Unit([layer], _core(layer) or tuple(layer.bbox)) for _, layer in images]
+    rel = f"{TEMPLATES_DIR}/{name}.psd" if name else ""
+    units = [_Unit([layer], _icon_core(layer, rel)) for _, layer in images]
     first = _reading(units, _median_size(units)[1], False)[0]
     sx, sy = psd.width / template.width, psd.height / template.height
     x0, y0, x1, y1 = first.core
@@ -10430,6 +10479,9 @@ __all__ = [
     'shown_name',
     'splice_text',
     'splices',
+    'spot_entries',
+    'spot_key',
+    'spot_record',
     'render_record',
     'render_region',
     'raster_key',

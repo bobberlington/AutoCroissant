@@ -61,7 +61,8 @@ SPARSE_FILES = ("commands/card_checks.py", "commands/card_bake.py", "commands/ca
                 "commands/psd_regions.py", "commands/repo_history.py", "commands/rulebook.py", "commands/text_align.py",
                 "commands/txt2_repair.py", "commands/ability_place.py", "commands/ability_index.json", "global_config.py",
                 "requirements-cards.txt",
-                "commands/psd_links.py", "commands/render_record.json")         # card-checks.yml's bot checkout
+                "commands/psd_links.py", "commands/render_record.json",
+                "commands/spot_record.json")         # card-checks.yml's bot checkout
 VERSION = 1                                 # the file's "version"
 STAT_ORDER = tuple(STATS)                   # hp, def, atk, spd: the template's rows, top to bottom
 STAT_NAMES = {"hp": "HP", "def": "DEF", "atk": "ATK", "spd": "SPD"}

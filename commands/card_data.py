@@ -1008,7 +1008,8 @@ SPARSE_FILES = ("commands/card_data.py", "commands/card_history.py", "commands/c
                 "commands/repo_history.py", "commands/tts_save.py",
                 "commands/ability_place.py", "commands/ability_index.json",
                 "commands/rulebook.py", "commands/rulebook_pages.py",
-                "commands/psd_links.py", "commands/render_record.json")
+                "commands/psd_links.py", "commands/render_record.json",
+                "commands/spot_record.json")
 BOT_REPO = "bobberlington/AutoCroissant"
 BUDGET = 400                                                      # REST downloads per run (two runs an hour: 800 of 1,000)
 RATE_FLOOR = 150                                                  # no more REST downloads under this many requests left

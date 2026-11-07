@@ -27,7 +27,7 @@ from psd_tools.constants import Resource
 import commands.psd_edit as psd_edit
 from commands.font_check import NAMES_ENV, FontIndex, dir_fonts, layer_fonts, load_names, local_fonts, tree_fonts
 from commands.psd_edit import (
-    STAR_FOLDER, Refused, _Unit, _core, _icon_reason, _icon_spots, _median_size, _merge_twins, _moved_box,
+    STAR_FOLDER, Refused, _Unit, _icon_core, _icon_reason, _icon_spots, _median_size, _merge_twins, _moved_box,
     _outside_units, _reading, _star_count, _star_layouts, _star_units, _stars_total, _texts, offline_parser, plan_stars,
     type_row,
 )
@@ -405,11 +405,11 @@ def _star_header(psd: PSDImage, rel: str, vocab, parser: Optional[PSDParser] = N
             "at": at, "refused": refused}
 
 
-def _type_header(psd: PSDImage, name: str, vocab) -> Optional[dict]:
+def _type_header(psd: PSDImage, name: str, vocab, rel: str = "") -> Optional[dict]:
     """
     The header type icons as plan_types reads them (a title's tokens are the name's): the row ({name, core, box}, slot
     order), each longer row's spots past it ({count: boxes}), icons the bake can't take off ([name, why]) and a token
-    row's refusal. None without icons.
+    row's refusal. None without icons. rel: the card's repo path (the spot record's cores).
     """
     images, tokens = type_row(psd, _icon_parser(vocab), name)
     if not images and not tokens:
@@ -420,7 +420,7 @@ def _type_header(psd: PSDImage, name: str, vocab) -> Optional[dict]:
         if why:
             fixed.append([name, f"{layer.name!r} is {why}"])
         else:
-            unit = _Unit([layer], _core(layer) or tuple(layer.bbox))
+            unit = _Unit([layer], _icon_core(layer, rel))
             units.append(unit)
             names[id(unit)] = name
     slots = _reading(units, _median_size(units)[1], False) if units else []
@@ -434,7 +434,8 @@ def _type_header(psd: PSDImage, name: str, vocab) -> Optional[dict]:
 
 def _header(psd: PSDImage, rel: str, name: str, vocab, parser: Optional[PSDParser] = None) -> dict:
     """Where the header's stars and type icons are and where the bake would put them (canvas px): the mock-up's."""
-    return {"stars": _guard(_star_header, psd, rel, vocab, parser), "types": _guard(_type_header, psd, name, vocab)}
+    return {"stars": _guard(_star_header, psd, rel, vocab, parser),
+            "types": _guard(_type_header, psd, name, vocab, rel)}
 
 
 def _tree(group, depth: int = 0) -> list:

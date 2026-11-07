@@ -665,6 +665,39 @@ def test_a_first_type_icon_on_the_title_bakes_flagged(clone, parser, tmp_path):
 
 
 @icons
+def test_a_redrawn_icon_keeps_its_spots(clone, parser, tmp_path, monkeypatch):
+    """Owner 11-07: the pass redraws Mari's Light from a Types file with a fainter edge (its ink core smaller): with
+    its spot record entry a new icon goes where it went before; a bake adding a type leaves the entry valid."""
+    import commands.psd_links as pl
+    from io import BytesIO
+    rel = "Creatures/Omori/4 Stars/Mari.psd"
+    before, parsed = _open(parser, clone, rel, tmp_path)
+    light = next(layer for layer in before.descendants() if layer.name == "Light")
+    rgba = pl.decode(light.smart_object.data, "png").copy()
+    x0, y0, x1, y1 = pl.ink_box(rgba)
+    ring = np.ones(rgba.shape[:2], bool)
+    ring[y0 + (y1 - y0) // 6:y1 - (y1 - y0) // 6, x0 + (x1 - x0) // 6:x1 - (x1 - x0) // 6] = False
+    rgba[..., 3] = np.where(ring, np.minimum(rgba[..., 3], 100), rgba[..., 3])
+    out = BytesIO()
+    Image.fromarray(rgba).save(out, "PNG")
+    files = {"Types/light.png": out.getvalue()}
+    rows = pl.assign([(rel, pl.items(before, pl.TypesIndex(files).vocab()))], pl.TypesIndex(files), {})["psds"][rel]
+    after = PSDImage.open(_clone_card(clone, rel, tmp_path)[0])
+    assert pl.link_card(after, rel, rows, files.get).redrawn == ["Light"]
+    saved = BytesIO()
+    after.save(saved)
+    after = PSDImage.open(BytesIO(saved.getvalue()))
+    spot = lambda card: pe.plan_types(card, parsed, ["light", "fire"], parser).icons[0][1]     # noqa: E731
+    entries = pe.spot_entries(before, after, parser, rel, "Mari")
+    assert list(entries) == [str(light.layer_id)] and spot(after) != spot(before)              # the ink moved
+    monkeypatch.setattr(pe, "spot_record", lambda: {rel: entries})
+    assert spot(after) == spot(before)
+    pe.set_icons(after, pe.plan_types(after, parsed, ["light", "fire"], parser), _types_dir(tmp_path), rel)
+    light = next(layer for layer in after.descendants() if layer.name == "Light")
+    assert {k: v for k, v in entries[str(light.layer_id)].items() if k != "core"} == pe.spot_key(light, rel)
+
+
+@icons
 def test_real_type_rows(clone, parser, tmp_path):
     morpho = _plan(parser, _clone_card(clone, MORPHO, tmp_path)[0], MORPHO, "types", ["undead"])
     assert [layer.name for layer in morpho.hide] == ["Fire"] and [layer.name for layer, _, _ in morpho.moves] == ["Undead", "Gradient Map 2"]
