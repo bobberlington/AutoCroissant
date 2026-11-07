@@ -123,7 +123,8 @@ class Card:
     commit: Optional[str] = None                # the run's commit, when the card is in it
     included: bool = False                      # in the commit land made (or would make: a dry run)
     dropped: list = field(default_factory=list)     # fields removed from the file
-    creatures: bool = False                     # the entry has a creatures list: a baked stat is creature 1's (its rows)
+    creatures: bool = False                     # the entry has a creatures list: a baked stat is creature 1's (its rows),
+    #   the rest prints on a bar per creature (psd_edit.classify)
     shared: dict = field(default_factory=dict)  # creature n (2...) -> {stat: value} a creature 1 bake changed too (a
     #   shared bar: Pix's HP, Twin Emperors' shared health), for its creatures list
     listed: list = field(default_factory=list)  # the entry's creatures list: a value set apart from the print stays
@@ -461,8 +462,10 @@ def rewrite_edits(text: str, name: str, drop=(), psd: Optional[dict] = None, kee
 
 def psd_fields(fields: dict, site=()) -> dict:
     """The PSD-kind fields of an entry with a value (the job key, section 5), but its website-only ones (`_site`, and
-    their part edits): never baked."""
+    their part edits; a website-only stat on every creature): never baked."""
     out = {k: v for k, v in fields.items() if KIND.get(k) == "psd" and v is not None and k not in site}
+    if site and out.get("creatures"):
+        out["creatures"] = [{k: v for k, v in one.items() if k not in site} for one in out["creatures"]]
     if site and isinstance(out.get("parts"), dict):
         out["parts"] = {k: p for k, p in out["parts"].items() if not isinstance(p, dict) or p.get("field") not in site}
         if not out["parts"]:
@@ -1057,6 +1060,9 @@ def _describe(card: Card) -> str:
                          + "".join(f"; {note}" for note in card.move_notes) + ")")
         elif name == "name":
             parts.append(f"name {old!r} -> {value!r}" if old is not None else f"name -> {value!r}")
+        elif name == "creatures":
+            parts += [f"creature {n} {stat} {was.get(stat)} -> {now}" if was else f"creature {n} {stat} -> {now}"
+                      for n, (was, stats) in enumerate(zip(old or [{}] * len(value), value), 1) for stat, now in stats.items()]
         else:
             parts.append(f"{name} {old} -> {value}" if old is not None else f"{name} -> {value}")
     if card.renamed:

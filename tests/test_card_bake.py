@@ -150,7 +150,8 @@ def test_rewrite_entry_rules():
     assert cb.rewrite_edits(text, "mini doomer", ["hp"]) == cb.dump_edits({"about": ABOUT, "cards": {"Mini_Doomer": {"note": "n"}, "Other": {"hp": 1}}})
     assert cb.rewrite_edits(text, "mini doomer", ["spd"]) is None and cb.rewrite_edits(text, "nobody", ["hp"]) is None
     assert cb.rewrite_edits(text, "other", ["hp"]) == cb.dump_edits({"about": ABOUT, "cards": {"Mini_Doomer": {"hp": 8, "note": "n"}}})
-    assert cb.psd_fields({"hp": 8, "spd": None, "name": "X", "series": "m", "creatures": [{"hp": 1}]}) == {"hp": 8, "name": "X"}
+    assert cb.psd_fields({"hp": 8, "spd": None, "name": "X", "series": "m"}) == {"hp": 8, "name": "X"}
+    assert cb.psd_fields({"hp": 8, "creatures": [{"hp": 8, "def": 1}]}, ["hp"]) == {"creatures": [{"def": 1}]}   # _site: every creature
     parts = {"1": {"field": "name"}, "2": {"field": "ability"}}
     assert cb.psd_fields({"name": "X", "hp": 1, "parts": parts}, ["name"]) == {"hp": 1, "parts": {"2": {"field": "ability"}}}   # _site
     assert cb.psd_fields({"name": "X", "parts": {"1": parts["1"]}}, ["name"]) == {}
@@ -239,8 +240,8 @@ def test_dry_run_commits_nothing(github, tmp_path):
 
 def test_creature_one_bakes_and_website_only_fields(github):
     """The card's stats are creature 1's (owner 2026-10-26): its hp bakes and the entry's creatures list takes it for
-    creature 1 (else the list's old value would show again), the others' stay; a stat past the bar's one row is website
-    only: it stays in the entry, added to `_site`, no verdict."""
+    creature 1 (else the list's old value would show again), the others' stay; a stat past the bar's one row and a list on
+    bars not one per creature are website only: they stay in the entry, added to `_site`, no verdict."""
     files = github.files_at(github.head)
     files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 6, "atk": 12, "creatures": [{"hp": 7, "def": 1, "atk": 1, "spd": 1},
                                                                                     {"hp": 2, "def": 2, "atk": 2, "spd": 2}],
@@ -248,7 +249,7 @@ def test_creature_one_bakes_and_website_only_fields(github):
     github.commit(files, "web", "Website edit: Mini Doomer")
     text, commits = cb.run(card="Mini Doomer")
     entry = _edits_at(github)["cards"]["Mini Doomer"]
-    assert len(commits) == 1 and "hp" not in entry and entry["atk"] == 12 and entry["_site"] == ["atk"]
+    assert len(commits) == 1 and "hp" not in entry and entry["atk"] == 12 and entry["_site"] == ["atk", "creatures"]
     assert [c["hp"] for c in entry["creatures"]] == [6, 2] and "website only: atk 12" in text
 
 

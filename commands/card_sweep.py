@@ -15,7 +15,7 @@ landing can leave out a card whose PSD or PNG moved since (never over a newer PS
                                       --kind tags too: tags_to_badges' whole)
     python -m commands.card_sweep run --kind badge-widths ...   (relay_badges: card_guards.earlier_fonts, the icon font's
                                       eras before the ref's, are the widths a raster the fork drew may show)
-    python -m commands.card_sweep run --kind alt-template ... [--template <psd>]   (cards onto the Alt template: its layer-comp bars in
+    python -m commands.card_sweep run --kind alt-template ... [--template <psd>]   (cards onto the template: its layer-comp bars in
                                       place of exposure digit rows; the template: the file given, else the ref's)
     python -m commands.card_sweep moved --plan <file> --clone <clone> [--ref origin/main]
 
@@ -250,7 +250,7 @@ def main(args: Optional[list] = None) -> int:
     one.add_argument("--plan", default="")
     one.add_argument("--workers", type=int, default=WORKERS)
     one.add_argument("--whole", action="store_true", help="badges, tags: redraw a layer whole when the splice can't")
-    one.add_argument("--template", default="", help="alt-template: the Alt template PSD (default: the ref's)")
+    one.add_argument("--template", default="", help="alt-template: the template PSD (default: the ref's)")
     held = sub.add_parser("moved", help="the planned cards whose files moved since")
     held.add_argument("--plan", required=True)
     held.add_argument("--clone", required=True)

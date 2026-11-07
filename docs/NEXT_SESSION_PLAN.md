@@ -68,10 +68,10 @@ The problem cards: the website's Needs handling (automatic flags, `commands/card
 
 ## Owner (11-06)
 
-- [ ] Check `MDW/Templates/Alt_Raid_Boss_Template.psd` (20-cell split bars, 0-40; built unattended). Raid bosses
+- [ ] Check `MDW/Templates/Raid_Boss_Template.psd` (20-cell split bars, 0-40; built unattended). Raid bosses
       (6+ stars, `card_models.RAID_STARS`) have no stat limit; their bars bake up to 40.
 - [ ] Manual pass on the cards not on the Alt template (problem list section 2: hand-drawn bars, several creatures).
-- [ ] Tell card makers about the Alt template (the old templates stay; the bot reads both).
+- [ ] Tell card makers about the new templates (the Alt ones took the old paths on 11-07; the bot reads both kinds of bars).
 - [ ] Post the card makers' ring font note and re-upload the TTS Workshop item (from 11-05, still open).
 
 ## Jetson (maintenance 11-05; rollback files in `~/maint-20261105`)

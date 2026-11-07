@@ -15,7 +15,7 @@ from re import IGNORECASE, compile as re_compile, fullmatch, sub
 from typing import Any, Optional, Union
 
 from commands.card_models import RAID_STARS, CardInfo, CardStats, CardType, StatsDatabase, card_name
-from commands.psd_regions import comp_stat, comp_value
+from commands.psd_regions import comp_creature, comp_stat, comp_value
 
 getLogger("psd_tools").setLevel(CRITICAL)
 
@@ -388,6 +388,7 @@ class StatTrackers:
     defense: StatTracker = field(default_factory=StatTracker)
     attack: StatTracker = field(default_factory=StatTracker)
     speed: StatTracker = field(default_factory=StatTracker)
+    comps: bool = False                          # layer-comp bars: each creature read as drawn
 
     def creatures(self) -> Optional[list]:
         """
@@ -1240,14 +1241,15 @@ class PSDParser:
     def _process_stat_layer(self, layer, stat_trackers: StatTrackers) -> None:
         """Process stat layer."""
         value = comp_value(layer)
-        if value is not None:                   # the Alt template: one smart object per stat, its layer comp the value
+        if value is not None:                   # one smart object per stat (and creature), its layer comp the value
             key = comp_stat(layer)
             tracker = {"hp": stat_trackers.hp, "def": stat_trackers.defense, "atk": stat_trackers.attack,
                        "spd": stat_trackers.speed}.get(key)
             if tracker is not None:
-                tracker.found = True
+                tracker.found = stat_trackers.comps = True
                 parent = layer.parent
-                row = tracker.rows.setdefault(id(layer), BarRow(id(parent), base_name(layer), getattr(parent, "name", "") or "",
+                row = tracker.rows.setdefault(id(layer), BarRow(id(parent), str(comp_creature(layer) or base_name(layer)),
+                                                                getattr(parent, "name", "") or "",
                                                                 id(getattr(parent, "parent", None))))
                 if layer.is_visible():          # hidden: no dark drawn, a full bar
                     row.items.append((value, layer.kind))
@@ -1455,7 +1457,8 @@ class PSDParser:
         if creatures:
             card.creatures = creatures
             card.stats = deepcopy(creatures[0])
-            card.problems.append("SEVERAL CREATURES: check each one's stats on the website")
+            if not stat_trackers.comps:
+                card.problems.append("SEVERAL CREATURES: check each one's stats on the website")
 
     @staticmethod
     def _sort_by_position(items: list[tuple[str, BoundingBox]], row_threshold: int = 40) -> list[tuple[str, BoundingBox]]:

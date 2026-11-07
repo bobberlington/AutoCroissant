@@ -249,7 +249,8 @@ The VISIBLE digit layers are grouped by bar row (their parent group) and each ro
   group draw the same bar and count once.
 - **Anything else** (value layers or groups, plus "0" decorations: Clots, False Knight): the visible
   digits add up.
-- **Layer-comp bars** (the Alt template, `MDW/Templates/Alt_Creature_Template.psd`, 2026-11-06): one
+- **Layer-comp bars** (`MDW/Templates/Creature_Template.psd`, 2026-11-06; named Alt_Creature_Template.psd until 2026-11-07, when it
+  replaced the digit-row template; cards on digit rows read as ever): one
   smart object per stat (`Stats Bars > Darks > Health`...) whose embedded bar has layer comps "0".."10";
   the value is the chosen comp's name (SoLd `comp`, what Photoshop's Properties panel sets; checked on
   a Photoshop save at 3/7/10/0). Its dark is a black shape at 67% under a mask each comp slides. Hidden:
@@ -258,7 +259,12 @@ The VISIBLE digit layers are grouped by bar row (their parent group) and each ro
   11-20: a full top row and a bottom half row of darks, `comp_render` draws every layer of the bar doc), and
   cards move onto the template with `card_sweep run --kind alt-template` (card_standards.alt_template: the
   darks; the bar art, text layout and clip bases too where the card renders the same; sweep only, never the guards).
-  `Alt_Raid_Boss_Template.psd` has the same bars on 20 cells, comps "0".."40" (ttscardmaker-companion §1.11).
+  `Raid_Boss_Template.psd` has the same bars on 20 cells, comps "0".."40" (ttscardmaker-companion §1.11).
+  `2_Creature_Template.psd` and `3_Creature_Template.psd` (2026-11-07): a bar per creature and stat in
+  `Darks > Creature n` (`psd_regions.comp_creature`), comps "0".."20" on every bar, and `Shared Health` in `Darks`, read by
+  every creature whose own HP bar is hidden (shown on the 2 creature template, hidden on the 3). These read exactly, so no
+  SEVERAL CREATURES note, and every creature bakes (the `creatures` field, `psd_edit.set_creatures`; a shared bar moves
+  every creature); the details call them "creatures" and record `creature_bars`.
 
 Rows add up, so stats can pass 10 (Royal Eradicator Main Cannon's attack is 10 + 2). Multi-creature
 cards (rows named "1", "2", … or a repeated stat block: Pix, Twin Emperors, Tainted Lazarus) get
