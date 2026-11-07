@@ -16,7 +16,7 @@ without a push) and marks the people's flags that went. Exit 0, also for what it
 Which edits are tried (a real bake is 25 s; the whole list of 13 kinds of edit, 4 minutes a card, would be 50 hours a
 tree): the plans alone for titles, stars and types, a made icon on a copy; a real bake only where a plan cannot tell:
 stars on a card with variant pictures, the ability on a card with FX layers, the stats on digit rows or new bars under
-art (each bar must move), a type on a very small PSD. A bake that breaks leaves no record: the next run tries again.
+art (their pixels too), a type on a very small PSD. A bake that breaks leaves no record: the next run tries again.
 """
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -413,17 +413,20 @@ def _art_over_darks(psd: PSDImage) -> bool:
     return any(layer.is_visible() and layer.name.strip().lower() != "lines" for layer in above)
 
 
-def _still(psd: PSDImage, moved: np.ndarray) -> list:
-    """The stats a bake left as they were: every one when nothing moved; a bar past the canvas has no say."""
+def _still(psd: PSDImage, moved: np.ndarray, style: str) -> list:
+    """The stats a bake left as they were: every one when nothing moved, else bar by bar on new bars alone (a digit row's
+    box need not be where its picture changes: Zigg); a bar past the canvas has no say."""
     if not moved.any():
         return list(STAT_ORDER)
+    if style != "new":
+        return []
     rows = {stat: [_cut(moved, box, psd.width) for box in boxes] for stat, boxes in by_label(psd, bar_boxes(psd)).items()}
     return [stat for stat in STAT_ORDER if rows[stat] and all(row is not None and not row.any() for row in rows[stat])]
 
 
 def _stat_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str, image: Optional[Image.Image]) -> list:
     """Stat edits that cannot bake: new bars by their state (their bakes draw: measured on every card) unless art lies
-    over them; those and digit rows by a real bake of all four, one down and one up, which must move each bar."""
+    over them; those and digit rows by a real bake of all four, one down and one up, which must move pixels (new bars: each)."""
     card = parsed["card"]
     have = {stat: card.get(stat) for stat in STAT_ORDER if isinstance(card.get(stat), int) and card.get(stat) >= 0}
     if len(have) < len(STAT_ORDER) or not style:
@@ -443,7 +446,7 @@ def _stat_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str,
         state, reason, moved = _real_bake(ctx, rel, fields, png)
         if state == "refused":
             return [_note("stats", reason)]
-        still = _still(psd, moved) if state == "baked" and moved is not None else []
+        still = _still(psd, moved, style) if state == "baked" and moved is not None else []
         if still:
             names = "Stat" if len(still) == len(STAT_ORDER) else " and ".join(STAT_NAMES[stat] for stat in still)
             return [NO_CHANGE_NOTE.format(names, what)]

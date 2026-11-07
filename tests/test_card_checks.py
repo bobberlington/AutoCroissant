@@ -102,9 +102,10 @@ def test_still_and_swapped(monkeypatch):
     monkeypatch.setattr(cc, "bar_boxes", lambda psd: boxes)
     monkeypatch.setattr(cc, "by_label", lambda psd, found: {**found, "def": found["atk"], "atk": found["def"]})
     moved = np.zeros((40, 100), bool)
-    assert cc._still(psd, moved) == ["hp", "def", "atk", "spd"]
+    assert cc._still(psd, moved, "custom") == ["hp", "def", "atk", "spd"]
     moved[:20] = True
-    assert cc._still(psd, moved) == ["def"]                     # by its row; spd past the canvas has no say
+    assert cc._still(psd, moved, "new") == ["def"]              # by its row; spd past the canvas has no say
+    assert cc._still(psd, moved, "custom") == []                # its boxes need not be where the picture changes
     assert cc.swapped(psd) == ["def", "atk"]
 
 
