@@ -143,6 +143,8 @@ def test_rewrite_entry_rules():
     assert cb.rewrite_entry({"hp": 8, "_by": "w", "_at": AT, "_psd": verdict}, ["hp"]) is None       # the entry goes whole
     assert cb.rewrite_entry({"hp": 8, "_by": "w"}, ["hp"], verdict, keep=True) == {"_psd": verdict}   # a flagged bake's verdict stays
     assert cb.rewrite_entry({"name": "X", "hp": 8, "_by": "w"}, ["hp"], None) == {"name": "X", "_by": "w"}   # name stays
+    assert cb.rewrite_entry({"hp": 8, "flags": {"hand": ""}, "_by": "w"}, ["hp"]) == {"flags": {"hand": ""}, "_by": "w"}   # flags outlive a bake
+    assert cb.psd_fields({"flags": {"hand": "why"}}) == {}                     # and never make one
     assert cb.rewrite_entry({"_psd": verdict, "hp": 8}, (), None) == {"hp": 8}                       # None removes _psd
     text = cb.dump_edits({"about": ABOUT, "cards": {"Mini_Doomer": {"hp": 8, "note": "n"}, "Other": {"hp": 1}}})
     assert cb.rewrite_edits(text, "mini doomer", ["hp"]) == cb.dump_edits({"about": ABOUT, "cards": {"Mini_Doomer": {"note": "n"}, "Other": {"hp": 1}}})
@@ -580,8 +582,8 @@ def test_font_verdict_is_retried_when_the_fonts_change(github, monkeypatch):
     assert cb.pending() == ["Mini Doomer"]
 
 
-def test_pixel_miss_bakes_with_a_note(github, monkeypatch):
-    """A box past the parity bar, under the floor, bakes (owner, 2026-10-23): the commit note and the report say so."""
+def test_pixel_miss_bakes(github, monkeypatch):
+    """A box past the parity bar, under the floor, bakes (owner, 2026-10-23); no soft note in the commit (owner, 2026-11-07)."""
     files = github.files_at(github.head)
     files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 8, "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
@@ -598,9 +600,8 @@ def test_pixel_miss_bakes_with_a_note(github, monkeypatch):
     monkeypatch.setattr(pe, "apply_jobs", apply_jobs)
     monkeypatch.setattr(pe, "artifacts", lambda *args: {})
     text, commits = cb.run()
-    note = "hp baked with a pixel difference: bad 1.97%, mean 1.60, max 217"
-    assert len(commits) == 1 and github.commits[commits[0]]["message"] == f"Card edits: 1 baked\n\n- Mini Doomer: hp 5 -> 8; {note}\n\nEdit-by: web"
-    assert f"parity hp 1.97% bad, mean 1.60; {note}; 2 flag bytes" in text.split("## Baked (1)", 1)[1]
+    assert len(commits) == 1 and github.commits[commits[0]]["message"] == "Card edits: 1 baked\n\n- Mini Doomer: hp 5 -> 8\n\nEdit-by: web"
+    assert "parity hp 1.97% bad, mean 1.60; 2 flag bytes" in text.split("## Baked (1)", 1)[1]
     assert "Mini Doomer" not in _edits_at(github)["cards"]                  # baked: the entry goes whole
 
 

@@ -19,7 +19,8 @@ from commands.card_models import CardInfo, CardStats
 # ========================
 # edit.js FIELDS, in order: how an entry lists its fields
 ORDER = ("name", "type", "subtype", "series", "subseries", "stars", "types", "hp", "def", "atk", "spd", "ability",
-         "parts", "note", "art", "ability_art", "aliases", "dup_of", "hidden", "problems_ok", "allow_high_stats", "creatures")
+         "parts", "note", "art", "ability_art", "aliases", "dup_of", "hidden", "problems_ok", "allow_high_stats", "creatures",
+         "flags")
 # what localeCompare(…, {sensitivity: "base"}) puts before digits and letters, in CLDR root order
 PUNCTUATION = "_-,;:!?.'\"()[]{}@*/\\&#%`^+<=>|~$"
 # per-layer text edits (docs/Finished/session-2026-10-26/PARTS_EDITOR.md §3): build_site.valid_parts' rules
@@ -31,6 +32,8 @@ RENAME = "_rename"                              # true: the bake renames the car
 SITE = "_site"                                  # an entry's website-only fields: their values differ from the card image on purpose
 ART_FIELDS = ("art", "ability_art")             # artwork sources: art a list (one string in older entries), ability_art retired (10-31)
 ART_MAX = 500                                   # characters a source (art.js ART_MAX, build_site ART_MAX)
+FLAGS = ("hand", "bars")                        # what a card needs from a developer, each with a reason or "" (flags.js CARD_FLAGS, build_site FLAGS)
+FLAG_MAX = 300                                  # characters a reason (flags.js, build_site)
 
 
 def art_list(art, ability_art=None) -> list:
@@ -105,7 +108,7 @@ class CardEdits:
     TYPES = {"name": str, "type": str, "subtype": str, "series": str, "subseries": str, "stars": int, "types": list,
              "hp": int, "def": int, "atk": int, "spd": int, "ability": str, "note": str, "art": list, "ability_art": str,
              "aliases": list, "dup_of": str, "hidden": bool, "problems_ok": bool, "allow_high_stats": bool, "creatures": list,
-             "parts": dict}
+             "parts": dict, "flags": dict}
     NULLABLE = {"subtype", "series", "subseries", "stars", "hp", "def", "atk", "spd", "art", "ability_art"}
     ATTRS = {"name": "display_name", "type": "card_type", "subtype": "subtype", "series": "series", "subseries": "subseries",
              "stars": "stars", "types": "types", "ability": "ability", "note": "note", "art": "art", "ability_art": "ability_art",
@@ -121,7 +124,7 @@ class CardEdits:
             "parts": "psd", "type": "folder", "subtype": "folder", "series": "folder",
             "subseries": "database", "note": "database", "art": "database", "ability_art": "database", "aliases": "database",
             "dup_of": "database", "hidden": "database", "problems_ok": "database", "allow_high_stats": "database",
-            "creatures": "database"}
+            "creatures": "database", "flags": "database"}
     SITE_FIELDS = ("name", "stars", "types", "hp", "def", "atk", "spd", "ability")    # what `_site` may name (edit.js SITE)
 
     @classmethod
@@ -147,6 +150,10 @@ class CardEdits:
             return all(isinstance(x, str) and len(x) <= ART_MAX for x in (value if name == "art" and isinstance(value, list) else [value]))
         if kind is list:
             return isinstance(value, list) and all(isinstance(x, str) for x in value)
+        if name == "flags":                     # {"hand": "reason", "bars": "", "psd": the PSD blob it was set on}
+            return isinstance(value, dict) and any(k in FLAGS for k in value) and all(
+                bool(HEX8.match(v)) if k == "psd" and isinstance(v, str) else k in FLAGS and isinstance(v, str) and len(v) <= FLAG_MAX
+                for k, v in value.items())
         if name == "parts":
             return valid_parts(value)
         return isinstance(value, kind)
@@ -467,6 +474,8 @@ __all__ = [
     'ADD_ABILITY',
     'ART_FIELDS',
     'ART_MAX',
+    'FLAGS',
+    'FLAG_MAX',
     'art_list',
     'fold_art',
     'ORDER',

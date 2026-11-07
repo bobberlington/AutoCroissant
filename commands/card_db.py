@@ -30,6 +30,7 @@ RULEBOOK_JSON = "rulebook.json"                    # the rulebook's chapters as 
 MANIFEST_JSON = "manifest.json"
 DATA_FILES = (STATS_JSON, OLD_STATS_JSON, DETAILS_JSON, RULEBOOK_JSON)
 VERDICTS_JSON = "verdicts.json"                    # the bake's verdicts per card key (CARD_SYNC_VERDICTS.md), kept apart
+CHECKS_JSON = "card_checks.json"                   # the automatic flags by PSD blob (card_checks), kept apart: card-checks.yml's
 SYNC_JSON = "sync.json"                            # the bot's copy only: the data commit it holds and that request's ETag
 SHA_MEDIA = "application/vnd.github.sha"           # Accept: a commit's sha alone (the sync's conditional request)
 EXTRA_KEYS = ("version", "created")              # CardInfo attributes outside its dataclass fields

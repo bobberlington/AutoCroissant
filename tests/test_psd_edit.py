@@ -2032,7 +2032,6 @@ def test_a_broken_render_is_refused_past_the_floor(clone, parser, tmp_path):
     out.mkdir()
     _, baked = _bake(clone, parser, MINI_DOOMER, {"hp": 8}, out, paths=_painted(clone, out, 0.1))
     assert 5 < baked.parity["hp"]["bad_pct"] < pe.PARITY_FLOOR and baked.reparse["card"]["hp"] == 8
-    assert pe.miss_notes(baked)[0].startswith("hp baked with a pixel difference: bad ")
     merged = np.array(Image.open(baked.png_path))
     x0, y0, x1, y1 = HP_ROW
     merged[y0:y1, x0:x1, :3] = 255 - merged[y0:y1, x0:x1, :3]

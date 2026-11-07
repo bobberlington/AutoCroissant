@@ -1081,6 +1081,24 @@ def _data_head(db_dir: str) -> str:
         return ""
 
 
+def _data_branch(db_dir: str) -> str:
+    """The branch of the repo db/ sits in."""
+    try:
+        return _git(db_dir, "symbolic-ref", "-q", "--short", "HEAD").strip() or "data"
+    except CalledProcessError:
+        return "data"                                # a detached checkout of the data branch
+
+
+def _checks_only(db_dir: str, head: str) -> bool:
+    """G6: origin past head by card-checks.yml's commits alone, no other writer: the data commit goes on top of them."""
+    from commands.card_db import CHECKS_JSON
+    try:
+        _git(db_dir, "fetch", "-q", "origin", _data_branch(db_dir))
+        return bool(head) and _git(db_dir, "diff", "--name-only", f"{head}...FETCH_HEAD").split() == [f"db/{CHECKS_JSON}"]
+    except (CalledProcessError, OSError):
+        return False
+
+
 def _remote_tip(db_dir: str) -> Optional[str]:
     """
     G6: the data branch's tip on origin now (git ls-remote, no API call): "" when the branch isn't there yet, None
@@ -1090,10 +1108,7 @@ def _remote_tip(db_dir: str) -> Optional[str]:
         _git(db_dir, "remote", "get-url", "origin")
     except (CalledProcessError, OSError):
         return None
-    try:
-        branch = _git(db_dir, "symbolic-ref", "-q", "--short", "HEAD").strip() or "data"
-    except CalledProcessError:
-        branch = "data"                              # a detached checkout of the data branch
+    branch = _data_branch(db_dir)
     done = run(["git", "-C", db_dir, "ls-remote", "--exit-code", "origin", f"refs/heads/{branch}"], capture_output=True,
                env={**environ, **NO_LAZY})
     if done.returncode == 2:
@@ -1351,7 +1366,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     if dry_run:
         return out
     tip = _remote_tip(db_dir)
-    if tip is not None and tip != data_head:
+    if tip is not None and tip != data_head and not _checks_only(db_dir, data_head):
         out.refused["G6"] = (f"the data branch is at {tip[:8] or 'nothing'} on origin, this build started from "
                              f"{data_head[:8] or 'nothing'} (another writer)")
         out.code = EXIT_GATE

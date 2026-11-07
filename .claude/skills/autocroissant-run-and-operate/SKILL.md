@@ -437,9 +437,9 @@ The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes 
   (`drawn_in_font`: Dull Knife, Shiny Knife, Dark Tentacle and Snow Angel's Omori titles). A text layer with tabs
   bakes (the fork lays Photoshop's 36 pt default stops; on a stale fork it is a runner error, retried). A
   deleted line or word is cut whole, so the text after it keeps its own colours and badge size; an Ability's new line
-  printed past the old text onto the design below it bakes with a note ("... prints past the old text onto the design
-  below it (N px, 'layer'); check the card": `ink_beyond`, 18 of 503 cards given a line).
-- **Content flags (owner 2026-10-24 ~18:30, same branch):** "In general I do not want to refuse bakes": the editor
+  printed past the old text onto the design below it bakes all the same (`ink_beyond`, 18 of 503 cards given a line).
+- **Content flags (owner 2026-10-24 ~18:30, same branch; the soft ones told nowhere since 2026-11-07, `psd_edit.SOFT_NOTE`):**
+  "In general I do not want to refuse bakes": the editor
   previewed the edit, so a content problem bakes best-effort and is told as `<code>: <field>: <why>` in the bake report,
   the commit line and the baked verdict's reason (the preview's notes too): text that won't fit (`overflow`: a last line
   below its box, where Photoshop hides it (`psd_edit.below_box`, 2026-11-04), off the canvas, onto the stars or icons,

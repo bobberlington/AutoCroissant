@@ -1098,7 +1098,7 @@ A duplicate's change is listed under its original.
 | G3 round trip | any record changes through record → CardInfo → record; psd_details doesn't parse; a written file's sha256 differs from the manifest | nothing |
 | G4 same-blob re-parses | more than 25 cards re-parsed with an unchanged blob | `full` (approval kept in `pending.full`) or naming them in `cards` |
 | G5 quality | UNKNOWN card_type up by more than 3; more than 3 cards lost their ability text; more than 3 lost every stat; psd_details records down by more than 5% | after review: `cards` for the listed cards, or `full` |
-| G6 freshness | the `data` tip moved since checkout (another writer) | the next run, automatically |
+| G6 freshness | the `data` tip moved since checkout (another writer; a Card checks commit, `db/card_checks.json` alone, is rebased over since 2026-11-07) | the next run, automatically |
 
 A gate refusal also skips the main commit when the run baked, so a bake is never committed without the data that reads it;
 the save then waits too. Without a bake, the save still commits on the last good data.

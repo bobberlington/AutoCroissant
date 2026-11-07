@@ -214,13 +214,10 @@ def changes_of(edits: list) -> list:
 
 
 def notes_of(card: Card) -> list:
-    """The bake's notes: pixel misses, FX layers, icon layouts, what the bot's validator would say of the new card, the
-    stars or types edits refused beside it, the fields already on the card (when not all of them are)."""
+    """The bake's notes but the soft ones: icon layouts, what the bot's validator would say of the new card, the stars or
+    types edits refused beside it, the fields already on the card (when not all of them are)."""
     notes = []
     if card.baked is not None and card.refusal is None:
-        notes += psd_edit.miss_notes(card.baked)
-        if card.baked.fx:
-            notes.append(f"FX layers: {', '.join(card.baked.fx)}")
         notes += [str(note) for note in getattr(card.baked, "fx_notes", [])]     # work/fx-rebuild's (BUG 2)
         notes += [f"{f}: {how}" for f, how in getattr(card.baked, "icons", {}).items() if how]
         notes += [f"validator: {problem}" for problem in card.baked.reparse.get("validator") or []]
@@ -230,7 +227,7 @@ def notes_of(card: Card) -> list:
         notes += [f"layer {key} skipped: {skip['why']}" for key, skip in plan.skipped.items()] + list(plan.notes)
     if card.redundant and set(card.redundant) != set(card.fields):
         notes.append(f"already on the card: {', '.join(card.redundant)}")
-    return notes
+    return psd_edit.real_notes(notes)
 
 
 def _small(data: bytes, path: str) -> list:
