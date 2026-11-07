@@ -685,3 +685,26 @@ def test_artwork_sources_are_each_entrys_own(cards):
     commit(cards.repo, "web", 1300)
     assert _build(cards)[0] == cd.EXIT_OK
     assert edited() == had
+
+
+def test_links_gather_every_psd_and_the_linked_files(cards, clone):
+    """db/links.json (the 11-07 pass): a card's links from its parse, an MDW PSD's read when its blob moves (an unreadable
+    one recorded as an error: the guards then delete nothing), the linked files' blobs with their sizes."""
+    rel = "Auxiliary/Creatures/Militron_(No_Armor).psd"
+    if not (clone / rel).exists():
+        pytest.skip("no Militron (No Armor)")
+    data = (clone / rel).read_bytes()
+    put(cards.repo, rel, data)
+    put(cards.repo, "MDW/Templates/Linked_Template.psd", data)
+    put(cards.repo, "MDW/Unfinished/Broken.psd", BROKEN)
+    put(cards.repo, "Types/unknown.png", b"unknown")
+    put(cards.repo, "MDW/Linked/a - b.png", b"not a png")
+    commit(cards.repo, "bob", 2000)
+    assert _build(cards, "--empty")[0] == cd.EXIT_OK
+    links = cd.read_links(str(cards.db))
+    link = {"path": "Types/unknown.png", "name": "unknown.png", "size": 132191, "drawn": None}
+    assert links["psds"][rel] == {"blob": blob_sha_bytes(data), "links": [link]}
+    assert links["psds"]["MDW/Templates/Linked_Template.psd"]["links"] == [link]
+    assert "error" in links["psds"]["MDW/Unfinished/Broken.psd"] and links["psds"][DOOMER]["links"] == []
+    assert links["files"]["Types/unknown.png"] == {blob_sha_bytes(b"unknown"): 7}
+    assert links["files"]["MDW/Linked/a - b.png"] == {blob_sha_bytes(b"not a png"): 9} and links["pixels"] == {}

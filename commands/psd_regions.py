@@ -191,6 +191,38 @@ def comp_stat(layer) -> Optional[str]:
                  if search(rf"\b({pattern})\b", owner.name, IGNORECASE)), None)
 
 
+def linked_items(psd: PSDImage, psd_path: str, tree=None) -> list:
+    """
+    The files the PSD's layers link (the 11-07 pass), one entry per linked item in use, read off the records (the
+    document's lnkE alone: a lazy open never reads its embedded documents), never the files: {"uuid", "path" (its repo
+    path, psd_tools.api.links.place; None when it places nowhere), "name" (the file name), "size" (the record's:
+    Photoshop's change test, with the date), "content" (contentID, "" without one), "layers" (their names)}.
+
+    Args:
+        psd_path: The PSD's repo path
+        tree: The repo's paths (a psd_tools.api.links.RepoTree, or any iterable): placed blind to case
+    """
+    from psd_tools.api.links import as_tree, place
+    blocks = psd._record.layer_and_mask_information.tagged_blocks
+    items = {str(item.uuid).strip("\x00"): item for item in (blocks.get_data(Tag.LINKED_LAYER_EXTERNAL) or [])
+             } if blocks is not None and Tag.LINKED_LAYER_EXTERNAL in blocks else {}
+    found: dict = {}
+    tree = as_tree(tree)
+    for layer in psd.descendants() if items else ():
+        placed = placed_data(layer)
+        key = str(getattr(placed.get(b"Idnt"), "value", placed.get(b"Idnt")) or "").strip("\x00") if placed else ""
+        item = items.get(key)
+        if item is None:
+            continue
+        if key not in found:
+            content = item.content_descriptor.get(b"contentID") if item.content_descriptor is not None else None
+            found[key] = {"uuid": key, "path": place(item.linked_file, psd_path, tree),
+                          "name": str(item.filename or "").strip("\x00"), "size": int(item.filesize or 0),
+                          "content": str(getattr(content, "value", content) or "").strip("\x00"), "layers": []}
+        found[key]["layers"].append(layer.name)
+    return list(found.values())
+
+
 def comp_bars(psd: PSDImage) -> dict:
     """
     The layer-comp stat bars per stat: {stat: [(layer, value, box)]}; value as comp_value(), box the placed transform's
@@ -428,6 +460,7 @@ __all__ = [
     'comp_stat',
     'comp_value',
     'fx_pad',
+    'linked_items',
     'placed_data',
     'overlay_words',
     'regions',

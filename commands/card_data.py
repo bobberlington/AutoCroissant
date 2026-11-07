@@ -1,7 +1,7 @@
 """
 The card data build, without Discord, pandas or config: the card repo's tree, the PSDs whose blob changed re-parsed
 (one bad PSD fails its card, never the run), then the authors file, Card Edits.json, the dup_of PNGs and the archive
-of deleted cards.
+of deleted cards; db/links.json, every PSD's links and the linked files' blobs (gather_links).
 
 The build (`python -m commands.card_data`, run by the card repo's Card sync Action): a local clone's tree and history,
 db/ JSON through card_db, versions only on data changes (card_history), changelog events and the gates. CardBuild is the
@@ -14,7 +14,9 @@ from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from json import loads as json_loads
+from hashlib import sha1
+from io import BytesIO
+from json import dumps as json_dumps, loads as json_loads
 from os import environ, fdopen, remove, walk
 from os.path import abspath, basename, dirname, isfile, join as path_join, splitext
 from subprocess import CalledProcessError, run
@@ -30,7 +32,7 @@ from global_config import (AUTHORS_PATH, CARD_BRANCH, CREATED_PATH, EDITS_PATH, 
 from commands.card_edits import CardAuthors, CardDates, CardEdits
 from commands import rulebook
 from commands.card_models import CardInfo, StatsDatabase, card_name, duplicate_png, straight, straighten_card
-from commands.github_api import RangeError, RemotePSD, blob_text, fetch_blob, range_reads
+from commands.github_api import HEADERS, RangeError, RemotePSD, api_url, blob_text, fetch_blob, get_with_retry, range_reads
 from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser, variants_of
 
 # ========================
@@ -45,6 +47,12 @@ RANGE_REFUSALS = 3                                                # PSDs refused
 EXCLUDE_FOLDERS = ["Markers", "MDW"]
 PROGRESS = "{count} cards updated."                               # every UPDATE_RATE parses
 REAL_DATES = 946684800.0                                          # 2000-01-01 UTC: older stamps are no commit found (year 1000)
+LINKS_JSON = "links.json"                                         # db/: every PSD's links (Card sync's redraw, the guards' files,
+                                                                  # the card checks' notes); not in the manifest: no bot reads it
+LINKS_SCHEMA = 1
+LINKED_DIR = "MDW/Linked"                                         # the cards' linked pictures (the 11-07 pass)
+LINK_HOLDERS = (".psd", ".psb")                                   # files whose links count: MDW/Linked's .psb documents link too
+FETCH_CHUNK, FETCH_POOL = 8, 4                                    # blobs a git fetch, fetches at a time (the guards' Pushed blobs)
 
 
 # ========================
@@ -93,6 +101,8 @@ class CardBuild:
         self.reparsed: dict = {}                 # name -> (its card before, path, blob) of each card parsed (the history)
         self.variant_cards: dict = {}            # name -> its PSD's variants 2..N parsed this run (CardInfo each)
         self.templates = None                    # psd_parts.Templates over this tree (the parts' template facts)
+        self.links: dict = {}                    # PSD path -> its link record read this run (_linked; gather_links)
+        self._repo_tree = None                   # psd_tools' RepoTree of the tree's files (links placed blind to case)
         self.rule_pages: set = set()             # the Photoshop rule pages' names (not cards; their credits stay)
 
     # ------------------------
@@ -640,6 +650,7 @@ class CardBuild:
             try:
                 card = self._parse_psd(source.psd, path, name, existing)
                 details = self._details(source.psd, path, name, card)
+                self.links[path] = self._linked(source.psd, path, sha)
             except Exception as e:
                 print(f"{path}: range reads failed ({e}); downloading it whole")
                 return None
@@ -651,6 +662,7 @@ class CardBuild:
             psd = PSDImage.open(source)
             card = self._parse_psd(psd, path, name, existing)
             details = self._details(psd, path, name, card)
+            self.links[path] = self._linked(psd, path, sha)
         if details is not None:
             self.details[sha] = details
         return card
@@ -706,6 +718,18 @@ class CardBuild:
             print(f"{path}: details not gathered ({e})")
             return None
 
+    def _linked(self, psd: PSDImage, path: str, sha: str) -> dict:
+        """A PSD's link record ({"blob", "items": psd_regions.linked_items}, or {"blob", "error"}: the fork cannot read
+        its links, which holds the guards' deletions)."""
+        try:
+            from commands.psd_regions import linked_items
+            if self._repo_tree is None:
+                from psd_tools.api.links import RepoTree
+                self._repo_tree = RepoTree(self.sizes)
+            return {"blob": sha, "items": linked_items(psd, path, self._repo_tree)}
+        except Exception as e:                  # recorded: the guards delete nothing while a PSD's links are unknown
+            return {"blob": sha, "error": f"{type(e).__name__}: {e}"[:200]}
+
     def _send_failures(self) -> None:
         """The failed downloads, the failed date lookups, then the PSDs that could not be read (by path)."""
         unread, unlooked = len(self.unreadable), len(self.unlooked)
@@ -738,6 +762,188 @@ class CardBuild:
 # ========================
 # Helper Functions
 # ========================
+# ========================
+# db/links.json (the 11-07 pass: every PSD's links, the linked files' blobs)
+# ========================
+def read_links(db_dir: str) -> dict:
+    """db/links.json: {"schema", "psds": {PSD path: {"blob", "links": [{"path", "name", "size", "drawn"}]} or {"blob",
+    "error"}}, "files": {Types/ or MDW/Linked path: {blob: size or None}}, "pixels": {MDW/Linked blob: decoded pixels'
+    sha1}}; empty sections without one."""
+    path = path_join(db_dir, LINKS_JSON)
+    data = {}
+    if isfile(path):
+        with open(path, encoding="utf-8") as fh:
+            data = json_loads(fh.read())
+    return {"schema": LINKS_SCHEMA, **{key: dict(data.get(key) or {}) for key in ("psds", "files", "pixels")}}
+
+
+def links_text(data: dict) -> str:
+    return json_dumps(data, ensure_ascii=False, indent=1, sort_keys=True) + "\n"
+
+
+def linked_file(path: str) -> bool:
+    """A file cards link: Types/ (stars and types) or MDW/Linked (every other picture)."""
+    return path.startswith((f"{TYPES_DIR}/", f"{LINKED_DIR}/"))
+
+
+def _drawn(item: dict, psd_path: str, files: dict) -> Optional[str]:
+    """The file blob a link's raster was drawn from: the one whose contentID (the fork's link_content_id over blob, PSD
+    path and item) the record carries; None for a link Photoshop made (no contentID of ours) or an unknown blob."""
+    if not item.get("content") or not item.get("path"):
+        return None
+    from psd_tools.api.links import link_content_id
+    return next((blob for blob in files.get(item["path"], {})
+                 if link_content_id(blob, psd_path, item["uuid"]) == item["content"]), None)
+
+
+def _link_record(found: dict, psd_path: str, files: dict) -> dict:
+    if "error" in found:
+        return {"blob": found["blob"], "error": found["error"]}
+    return {"blob": found["blob"], "links": [{"path": item["path"], "name": item["name"], "size": item["size"],
+                                              "drawn": _drawn(item, psd_path, files)} for item in found["items"]]}
+
+
+def _batch(store: str, shas: list) -> dict:
+    """{sha: size} of the blobs a local store holds (cat-file --batch-check: no lazy fetch)."""
+    if not store or not shas:
+        return {}
+    done = run(["git", "-C", store, "cat-file", "--batch-check"], input="\n".join(shas).encode() + b"\n",
+               capture_output=True, env={**environ, **NO_LAZY})
+    out = {}
+    for line in done.stdout.decode("utf-8", "replace").splitlines():
+        parts = line.split()
+        if len(parts) == 3 and parts[1] == "blob":
+            out[parts[0]] = int(parts[2])
+    return out
+
+
+def fetch_blobs(checkout: str, shas: list) -> None:
+    """The blobs a blobless clone lacks, fetched from origin FETCH_CHUNK a fetch, FETCH_POOL at a time (no REST); a failed
+    fetch leaves its blobs out (the caller reads what came)."""
+    def one(chunk: list) -> None:
+        run(["git", "-C", checkout, "-c", "fetch.negotiationAlgorithm=noop", "fetch", "-q", "--no-tags",
+             "--no-write-fetch-head", "--recurse-submodules=no", "--filter=blob:none", "origin", *chunk],
+            capture_output=True, env={**environ, "GIT_NO_LAZY_FETCH": "1"})
+    missing = [sha for sha in shas if sha not in _batch(checkout, shas)]
+    chunks = [missing[i:i + FETCH_CHUNK] for i in range(0, len(missing), FETCH_CHUNK)]
+    if chunks:
+        with ThreadPoolExecutor(FETCH_POOL) as pool:
+            list(pool.map(one, chunks))
+
+
+def _sizes(build: "GitBuild", paths: list) -> dict:
+    """{path: size} of linked files: from the local stores, else one REST tree read per top folder (Types/, MDW/Linked)."""
+    shas = {path: build.shas[path] for path in paths}
+    have = {**_batch(build.checkout, list(shas.values())), **_batch(build.blobs, list(shas.values()))}
+    out = {path: have[sha] for path, sha in shas.items() if sha in have}
+    for top in (TYPES_DIR, LINKED_DIR):
+        if not build.repository or not any(p.startswith(f"{top}/") and p not in out for p in shas) or not build.shas.get(top):
+            continue
+        try:
+            reply = get_with_retry(api_url(build.repository, f"git/trees/{build.shas[top]}?recursive=1"), headers=HEADERS)
+            reply.raise_for_status()
+            for entry in reply.json().get("tree", []):
+                full = f"{top}/{entry.get('path', '')}"
+                if full in shas and entry.get("size") is not None and entry.get("sha") == shas[full]:
+                    out[full] = int(entry["size"])
+        except (RequestException, ValueError) as e:      # sizes unknown this run: the redraw waits for them
+            print(f"{top}: sizes not read ({e})")
+    return out
+
+
+def _history(checkout: str, head: str) -> dict:
+    """{path: {blob: None}} of every Types/ blob in head's history (trees only: git log --raw)."""
+    out: dict = {}
+    try:
+        raw = _git(checkout, "log", "--raw", "--no-renames", "--no-abbrev", "--format=", head, "--", f"{TYPES_DIR}/")
+    except CalledProcessError:
+        return out
+    for line in raw.splitlines():
+        meta, _, path = line.partition("\t")
+        fields = meta.split()
+        if len(fields) >= 4 and path:
+            for sha in fields[2:4]:
+                if set(sha) != {"0"}:
+                    out.setdefault(path, {})[sha] = None
+    return out
+
+
+def pixel_hash(data: bytes, path: str) -> str:
+    """sha1 of a picture's decoded pixels (mode, size, RGBA): look-alike linked files (the guards flag them)."""
+    from PIL import Image
+    if path.lower().endswith(LINK_HOLDERS):
+        image = PSDImage.open(BytesIO(data)).composite()
+    else:
+        image = Image.open(BytesIO(data))
+        image.load()
+    image = image.convert("RGBA")
+    return sha1(repr(image.size).encode() + image.tobytes()).hexdigest()
+
+
+def gather_links(build: "GitBuild", before: dict) -> dict:
+    """
+    db/links.json after this run: every PSD and .psb of the tree (cards from this run's parse, the others read when
+    their blob moved: range reads, else the local store, else REST within the budget; a card not parsed since its blob
+    moved has no record, so the guards delete nothing), the linked files' blobs (append-only; seeded once from Types/
+    history, sizes unknown) and the pixels of MDW/Linked's (batched git fetches).
+    """
+    files = {path: dict(blobs) for path, blobs in before["files"].items()}
+    if not files:
+        files = _history(build.checkout, build.head)
+    linked = [path for path in build.sizes if linked_file(path)]
+    sizes = _sizes(build, linked)
+    for path in linked:
+        blobs = files.setdefault(path, {})
+        blobs[build.shas[path]] = sizes.get(path, blobs.get(build.shas[path]))
+    cards = {path for path in build.sizes if path.endswith(".psd")
+             and not any(folder in EXCLUDE_FOLDERS or folder == RULEBOOK_DIR for folder in path.split("/"))}
+    psds, unread = {}, []
+    for path in sorted(p for p in build.sizes if p.lower().endswith(LINK_HOLDERS)):
+        sha = build.shas[path]
+        found, kept = build.links.get(path), before["psds"].get(path) or {}
+        if found is not None and found["blob"] == sha:
+            psds[path] = _link_record(found, path, files)
+        elif kept.get("blob") == sha:
+            psds[path] = kept
+        elif path not in cards:
+            unread.append(path)
+    if unread and range_reads() and not build.raw_ref:
+        build.raw_ref = build._raw_ref()
+    for path in unread:
+        sha = build.shas[path]
+        if not build._store(sha) and not build.raw_ref:
+            if build.rest >= build.budget:
+                continue                            # unknown this run: read on a later one
+            build.rest += 1
+        source = build._fetch_psd(path, sha)
+        if source is None:
+            continue
+        try:
+            psd = source.psd if isinstance(source, RemotePSD) else PSDImage.open(source)
+            found = build._linked(psd, path, sha)
+            if isinstance(source, RemotePSD) and source.failed:
+                continue
+            psds[path] = _link_record(found, path, files)
+        except Exception as e:                      # unreadable: recorded, the guards' deletions held
+            psds[path] = {"blob": sha, "error": f"{type(e).__name__}: {e}"[:200]}
+        finally:
+            build._release(source)
+    pixels = {blob: found for blob, found in before["pixels"].items()}
+    wanted = {build.shas[p]: p for p in linked if p.startswith(f"{LINKED_DIR}/") and build.shas[p] not in pixels}
+    if wanted:
+        fetch_blobs(build.checkout, list(wanted))
+        for sha, path in wanted.items():
+            store = build._store(sha)
+            if not store:
+                continue
+            try:
+                pixels[sha] = pixel_hash(run(["git", "-C", store, "cat-file", "blob", sha], capture_output=True,
+                                             env={**environ, **NO_LAZY}).stdout, path)
+            except Exception as e:                  # no look-alike test for it
+                print(f"{path}: pixels not read ({e})")
+    return {"schema": LINKS_SCHEMA, "psds": psds, "files": files, "pixels": pixels}
+
+
 def duplicate_pngs(paths: list, stats: dict, edits: Optional[CardEdits]) -> dict:
     """
     The tree's duplicates: {name: original}: a card PNG with no PSD whose Card Edits.json
@@ -1220,6 +1426,8 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     out = Outcome()
     data_head = _data_head(db_dir)
     stats, old, details, manifest_before = read_db(db_dir)
+    links_before = read_links(db_dir)
+    links = links_before
     if not stats and not empty:
         raise ValueError(f"{db_dir} holds no cards: give --empty to start new card data")
     pending_before = (manifest_before.get("pending") or {}) if not restore else {}
@@ -1261,6 +1469,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
             close_archived(db.old_stats, list(gone) + list(backfilled), index)
         edits, authors = run_build.file_commit(EDITS_PATH), run_build.file_commit(AUTHORS_PATH)
         record_versions(before, archived_before, db, run_build.reparsed, run_build.restored, index, edits, authors)
+        links = gather_links(run_build, links_before)
         run_build.duplicate_versions()
         db.drop_stale_archives()
         impossible = unknown_values(db.stats, db.old_stats)        # a replaced misparse's values: unknown in history
@@ -1371,7 +1580,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
                              f"{data_head[:8] or 'nothing'} (another writer)")
         out.code = EXIT_GATE
         return out
-    from commands.card_db import merge_verdicts, old_stats_text, stats_text
+    from commands.card_db import merge_verdicts, old_stats_text, stats_text, write_text
     recorded = merge_verdicts(db_dir, verdicts) if verdicts and not restore else []
     if recorded:
         out.lines.append(f"verdicts: {', '.join(recorded[:20])}" + (", ..." if len(recorded) > 20 else ""))
@@ -1379,10 +1588,12 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
                  and manifest_before.get("pending") == out.manifest["pending"]
                  and stats_text(db.stats) == _text(db_dir, "stats.json") and old_stats_text(db.old_stats) == _text(db_dir, "old_stats.json")
                  and psd_details.text_of(details) == _text(db_dir, "psd_details.json")
+                 and links_text(links) == links_text(read_links(db_dir))
                  and book in (None, _text(db_dir, "rulebook.json")))
     if unchanged:
         return out
     write_db(db_dir, db.stats, db.old_stats, psd_details.text_of(details), out.manifest, book)
+    write_text(path_join(db_dir, LINKS_JSON), links_text(links))
     if numbered:
         changelog.append_events(db_dir, numbered)
     problems = check_db(db_dir)
@@ -1666,7 +1877,13 @@ __all__ = [
     'gates',
     'ls_tree',
     'main',
+    'fetch_blobs',
+    'gather_links',
+    'linked_file',
+    'links_text',
     'mark_sweeps',
+    'pixel_hash',
+    'read_links',
     'pushes',
     'rewrite_commit',
     'side_events',
