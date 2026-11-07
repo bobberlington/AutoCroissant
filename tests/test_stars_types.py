@@ -523,7 +523,7 @@ def test_star_cases_of_10_26(clone, parser, tmp_path):
     its neighbour's shadow) and its 1 keeps it (the top-right's shadow would show). Yin Yarn's 6 would leave the yarn
     clipped onto its group, as Paint Warrior's 4 its paint (both refused). A die's five keeps its faces (Yin Yarn,
     Nightmare: 1 the middle, 2 and 3 a diagonal). Bolts and Screws' gear is no banner: a column. A refusal tells the
-    layout that came closest (Consolation Prize: off its banner, not its first layout's title). Remote Detonator's row
+    layout that came closest (Thunder Thighs: off its banner, not its first layout's title). Remote Detonator's row
     is centred and tightened on its banner; Crowned Magolor's V point becomes a pair."""
     leshy = "Creatures/Other/5 Stars/Leshy.psd"
     psd, parsed = _renamed(parser, clone, leshy, tmp_path)
@@ -545,8 +545,10 @@ def test_star_cases_of_10_26(clone, parser, tmp_path):
                           moving=True)
     assert bolts.how == "a column" and [(dx, dy) for _, dx, dy, _ in bolts.copies] == [(0, 130)]
     with pytest.raises(pe.Refused, match="would leave 'Layer 13' under the stars"):
-        pe.plan_stars(*_open(parser, clone, "Items/Support/1 Stars/Consolation_Prize.psd", tmp_path), 2, parser,
-                      moving=True)
+        pe.plan_stars(*_open(parser, clone, "Items/Heal/2 Stars/Thunder_Thighs.psd", tmp_path), 3, parser, moving=True)
+    prize = pe.plan_stars(*_open(parser, clone, "Items/Support/1 Stars/Consolation_Prize.psd", tmp_path), 2, parser,
+                          moving=True)
+    assert prize.how == "a column"                                      # a lone star's banner binds last
     psd, parsed = _open(parser, clone, "N.M.E/Remote_Detonator.psd", tmp_path)
     row = pe.plan_stars(psd, parsed, 3, parser)
     assert row.how == "a row on its banner" and len(row.copies) == 1 and "does not go on to 3" in row.notes[0]   # told

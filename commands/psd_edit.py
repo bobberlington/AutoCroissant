@@ -17,7 +17,7 @@ from functools import lru_cache
 from difflib import SequenceMatcher
 from hashlib import blake2b
 from inspect import signature
-from itertools import combinations, zip_longest
+from itertools import combinations, product, zip_longest
 from io import BytesIO
 from math import comb, hypot
 from os import environ
@@ -6742,7 +6742,8 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
                     _star_layouts(order, size, count) + more
             else:
                 layouts = _star_layouts(order, size, count) + more
-            for name, spots in layouts:
+            backs = (back, None) if back is not None and len(order) == 1 else (back,)   # a lone star's, while a layout keeps it
+            for back, (name, spots) in product(backs, layouts):
                 moves, free = _place(order, spots, size)
                 under = [move for move in shaded(order, moves) if move[0] is not source]
                 moves = [move for move in moves if move not in under]       # under a shadow: hidden, a copy (on top)
