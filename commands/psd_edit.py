@@ -6870,7 +6870,8 @@ def _icon_spots(psd: PSDImage, slots: list, extra: int, clear: list) -> list:
     """
     Boxes for `extra` icons past the row's last: the row carried on at its spacing (under a lone icon: Item_Template's
     column), else, when those boxes would touch the text or stars, a second row under the first icon (a row running
-    into the title) or a lone icon's right; the first whose boxes stay clear, else the row carried on. When the last two
+    into the title) or a second column at a lone icon's or a column's right; the first whose boxes stay clear, else the
+    row carried on. When the last two
     icons sit in two rows (Masher's 2 over 1), the last row first carries on at the pitch of the row above it, toward
     the card's middle, else away (S2: the new icon beside the last, not down the diagonal).
     """
@@ -6885,7 +6886,7 @@ def _icon_spots(psd: PSDImage, slots: list, extra: int, clear: list) -> list:
     if len(slots) > 1 and abs(step[0]) > abs(step[1]):
         down = max(unit.core[3] for unit in slots) - first[1] + gap
         options.append([_moved_box(first, step[0] * k, down) for k in range(extra)])
-    elif len(slots) == 1:
+    else:
         options.append([_moved_box(last, (last[2] - last[0] + gap) * k, 0) for k in range(1, extra + 1)])
     clear_of = lambda box: _blocked(psd, [((box[0], box[1], box[2], box[3]),
                                            np.ones((box[3] - box[1], box[2] - box[0]), bool))], box, clear) is None
