@@ -54,6 +54,7 @@ import commands.card_standards as standards
 import commands.png_export as png_export
 import commands.psd_edit as psd_edit
 from commands.card_edits import CardAuthors
+from commands.card_bake import Snapshot
 from commands.card_guards import Job, LinkContext, Source, build_context, card_name, earlier_fonts, whole_tree_jobs
 from commands.github_api import blob_sha
 
@@ -386,10 +387,13 @@ def _normalised(job, out: dict, data: bytes, pushed, pngs: dict, facts: dict, fo
 def normalise_jobs(tree: dict, names: Optional[set], batch: str = "") -> list:
     """The big pass's PSDs in catalogue order (the cards by repo path, then MDW_ROOTS'), names only (card keys) when
     given; batch "k/n": the k-th of n even runs of the cards ("k": of BATCHES), "T": the MDW PSDs alone."""
-    cards = whole_tree_jobs(tree, "sweep", names or None)
-    extra = [Job(path, "whole", "", tree[path][1], login="sweep") for root in MDW_ROOTS for path in sorted(tree)
-             if path.startswith(root) and path.lower().endswith(".psd")
-             and (not names or CardAuthors.key(card_name(path)) in names)]
+    cards, extra = whole_tree_jobs(tree, "sweep", names or None), []
+    snapshot = Snapshot("", "", {}, tree)       # MDW/Unfinished PSDs have PNGs too (S0: 16 of 17)
+    for path in (p for root in MDW_ROOTS for p in sorted(tree) if p.startswith(root) and p.lower().endswith(".psd")):
+        if not names or CardAuthors.key(card_name(path)) in names:
+            png, numbered = snapshot.png_for(path)
+            extra.append(Job(path, "whole", "", tree[path][1], png, "", tree[png][1] if png else "", login="sweep",
+                             numbered={p: tree[p][1] for p in numbered if p in tree}))
     if not batch:
         return cards + extra
     if batch.upper() == "T":
