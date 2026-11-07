@@ -20,7 +20,7 @@ SmartObject.link_target), never from the filesystem.
     redraw_linked(...) -> Redrawn                    Card sync: a changed linked file drawn again in its users (C1-C6)
 
     python -m commands.psd_links catalogue --clone DIR --ref SHA --out FILE [--held LIST --held-ref REF --held-base SHA]
-                                           [--recheck catalogue.json]
+                                           [--recheck catalogue.json] [--history CLONE]
     python -m commands.psd_links redraw --checkout DIR --links FILE [--head SHA] [--cards N] [--bytes N] [--until SECONDS]
 
 Classes (assign): 1 the bytes of a Types file; 2 its ink pixels (raster kept, placed by place_trim); 3 that file drawn
@@ -34,6 +34,7 @@ from hashlib import sha1
 from io import BytesIO
 from json import dump, dumps, load
 from os import environ, makedirs
+from os.path import expanduser, isdir
 from posixpath import basename, dirname, join as posixpath_join, splitext
 from re import IGNORECASE, compile as re_compile, sub
 from subprocess import PIPE, Popen, run as run_process
@@ -53,7 +54,7 @@ from psd_tools.psd.tagged_blocks import SmartObjectLayerData, TaggedBlock
 from psd_tools.terminology import Unit
 
 from commands.psd_regions import _ancestors, badge_layers, comp_names, placed_data
-from global_config import STARS_DIR, TYPES_DIR
+from global_config import HISTORY_CLONE, STARS_DIR, TYPES_DIR
 
 # ========================
 # Configuration
@@ -1329,11 +1330,13 @@ def catalogue_order(paths: list) -> list:
     return sorted(paths, key=lambda p: (rank(p), p))
 
 
-def run_catalogue(clone: str, ref: str, held: dict, workers: int = 4, prev: Optional[dict] = None) -> dict:
+def run_catalogue(clone: str, ref: str, held: dict, workers: int = 4, prev: Optional[dict] = None,
+                  history=()) -> dict:
     """
     The whole scope's catalogue (PLAN 5.1) read from a clone's objects at ref (held: {rel: blob} read instead). With
     prev (the per-batch re-check): only PSDs whose blob moved are read again, the rest keep their items; prev's names
-    stay (assign's kept) and every Types target is classed again against ref's Types.
+    stay (assign's kept) and every Types target is classed again against ref's Types. Older Types blobs: the clone's
+    history and each of history's clones (a shallow clone misses some).
     """
     from concurrent.futures import ProcessPoolExecutor
     from commands.font_check import is_card_psd
@@ -1342,7 +1345,11 @@ def run_catalogue(clone: str, ref: str, held: dict, workers: int = 4, prev: Opti
     tree = _tree_at(clone, ref)
     types_files = [p for p in tree if dirname(p) in (TYPES_DIR, STARS_DIR)]
     data = _git_bytes(clone, [tree[p] for p in types_files])
-    types = TypesIndex({p: data[tree[p]] for p in types_files if tree[p] in data}, types_history(clone))
+    older = {}
+    for source in (clone, *history):
+        for blob, path in types_history(source).items():
+            older.setdefault(blob, path)
+    types = TypesIndex({p: data[tree[p]] for p in types_files if tree[p] in data}, older)
     scope = [p for p in tree if p.lower().endswith(".psd") and (is_card_psd(p) or p.startswith(("MDW/Templates/",
                                                                                                "MDW/Unfinished/")))]
     blobs = {rel: held.get(rel, tree[rel]) for rel in scope}
@@ -1388,6 +1395,7 @@ def main(args: Optional[list] = None) -> int:
     cat.add_argument("--held-ref", default="", help="where the held PSDs are read")
     cat.add_argument("--held-base", default="", help="a held PSD that moved on --ref since this commit is read at --ref")
     cat.add_argument("--recheck", default="", help="an earlier catalogue.json: its names kept, moved PSDs read again")
+    cat.add_argument("--history", action="append", help="a clone whose Types/ history counts too (default HISTORY_CLONE)")
     cat.add_argument("--out", required=True, help="catalogue.json")
     cat.add_argument("--workers", type=int, default=4)
     red = sub_.add_parser("redraw", help="Card sync: PSDs whose linked files changed drawn again (C1-C6)")
@@ -1420,7 +1428,11 @@ def main(args: Optional[list] = None) -> int:
         if opts.recheck:
             with open(opts.recheck, encoding="utf-8") as fh:
                 prev = load(fh)
-        out = run_catalogue(opts.clone, opts.ref, held, opts.workers, prev)
+        history = opts.history if opts.history is not None else [HISTORY_CLONE] if isdir(expanduser(HISTORY_CLONE)) else []
+        history = [expanduser(path) for path in history]
+        if not all(isdir(path) for path in history):
+            parser.error(f"--history: no such clone in {history}")
+        out = run_catalogue(opts.clone, opts.ref, held, opts.workers, prev, history)
         makedirs(dirname(opts.out) or ".", exist_ok=True)
         with open(opts.out, "w", encoding="utf-8") as fh:
             dump(out, fh, indent=0, sort_keys=True)
