@@ -323,6 +323,16 @@ def test_stars_refuse_per_field(parser, tmp_path):
         _plan(parser, low[0], REL, "stars", 2)
 
 
+def test_gate_size_floor(tmp_path):
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.write_bytes(bytes(1000))
+    new.write_bytes(bytes(1000 + pe.SIZE_FLOOR))
+    pe.gate_size(str(old), str(new))
+    new.write_bytes(bytes(1001 + pe.SIZE_FLOOR))
+    with pytest.raises(pe.Refused):
+        pe.gate_size(str(old), str(new))
+
+
 @icons
 def test_gate_outside_refuses_a_change_beyond_the_region(tmp_path):
     paths = _fixture(tmp_path)

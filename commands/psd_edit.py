@@ -81,6 +81,7 @@ ICC_MIN_PX = 1000           # fewer moved pixels: no evidence, converted
 # Under "preview" the edited layers are pinned to the gamma (text_kwargs()): the old preview does not show them
 TEXT_BLENDS = {"preview": {}, "gamma": {"text_preview": False}, "straight": {"text_gamma": None}}
 SIZE_TOLERANCE = 0.2        # a saved PSD stays within 20% of the old blob
+SIZE_FLOOR = 262144         # or this many bytes: one icon on a small PSD (Poorly Drawn Cabbage)
 OK_FONTS = ("exact", "system")                  # how a font may resolve; loose or substituted faces refuse
 TOKEN = re_compile(r"\[[^\[\]\r\n\x03]{1,52}\]")   # an icon token in ability text ([fire]); psd_parser.ICON_SCAN_PATTERN
 WEB_NORM = re_compile(r"[\s_\-.'\u2019]+")          # what the website's norm() drops from a token's base (site/assets/text.js)
@@ -8085,9 +8086,9 @@ def gate_region(png: Image.Image, merged: Image.Image, region: tuple) -> int:
 
 
 def gate_size(old_path: str, new_path: str) -> None:
-    """The saved PSD stays within SIZE_TOLERANCE of the old one; else Refused("size")."""
+    """The saved PSD stays within SIZE_TOLERANCE of the old one or SIZE_FLOOR bytes; else Refused("size")."""
     old, new = getsize(old_path), getsize(new_path)
-    if abs(new - old) > SIZE_TOLERANCE * old:
+    if abs(new - old) > max(SIZE_TOLERANCE * old, SIZE_FLOOR):
         raise Refused("size", f"PSD {old} -> {new} bytes")
 
 
