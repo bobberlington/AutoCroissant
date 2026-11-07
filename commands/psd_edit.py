@@ -17,7 +17,7 @@ from functools import lru_cache
 from difflib import SequenceMatcher
 from hashlib import blake2b
 from inspect import signature
-from itertools import combinations, zip_longest
+from itertools import combinations, product, zip_longest
 from io import BytesIO
 from math import comb, hypot
 from os import environ
@@ -81,6 +81,7 @@ ICC_MIN_PX = 1000           # fewer moved pixels: no evidence, converted
 # Under "preview" the edited layers are pinned to the gamma (text_kwargs()): the old preview does not show them
 TEXT_BLENDS = {"preview": {}, "gamma": {"text_preview": False}, "straight": {"text_gamma": None}}
 SIZE_TOLERANCE = 0.2        # a saved PSD stays within 20% of the old blob
+SIZE_FLOOR = 262144         # or this many bytes: one icon on a small PSD (Poorly Drawn Cabbage)
 OK_FONTS = ("exact", "system")                  # how a font may resolve; loose or substituted faces refuse
 TOKEN = re_compile(r"\[[^\[\]\r\n\x03]{1,52}\]")   # an icon token in ability text ([fire]); psd_parser.ICON_SCAN_PATTERN
 WEB_NORM = re_compile(r"[\s_\-.'\u2019]+")          # what the website's norm() drops from a token's base (site/assets/text.js)
@@ -144,7 +145,7 @@ KERN_FEATURE = "11"      # a numbered story run's kerning: 0 off, else on (TySh'
 STAR_FOLDER = r"\s*(\d+)\s*stars?\s*"           # a count's own folder in a Stars group: "5 stars", "1 star" (the templates)
 LAYOUT_TOL = 0.12           # a star or icon sits on a layout's spot within this share of its size
 LAYOUT_TOL_MIN = 6          # px, at least
-ICON_FRAME = 0.1            # a type layer over more of the canvas is a frame (Magnum Opus's field), not an icon
+ICON_FRAME = 0.1            # ink over more of the canvas is a frame or a fill, not an icon or a star
 ICON_GAP = 22               # px between an icon and the one under it on a 1200-wide card (Item_Template: Attack, NME)
 ICON_TOUCH = 0.05           # a moved, shown or made type icon may ink over this share of another's (the cards'
 #   own rows: 158 of 161 rows of two or more touch nowhere, Pandora's pandas 5.5%; 2026-10-26)
@@ -5699,7 +5700,9 @@ def _blocked(psd: PSDImage, inks: list, core: tuple, others: list) -> Optional[s
         return "runs off the canvas"
     for other in others:
         theirs = _ink(other)
-        if theirs is not None and any(_inks_touch(mine, theirs) for mine in inks):
+        if theirs is None or (other.kind != "type" and theirs[1].sum() > ICON_FRAME * psd.width * psd.height):
+            continue                            # a fill or art filed with the stars (Kyle's) is neither
+        if any(_inks_touch(mine, theirs) for mine in inks):
             return f"would touch {other.name!r}"
     return None
 
@@ -5715,7 +5718,13 @@ def _moved_inks(unit: _Unit, dx: int, dy: int) -> list:
 
 
 def _texts(psd: PSDImage) -> list:
-    return [layer for layer in psd.descendants() if _is_text_layer(layer) and layer.is_visible()]
+    """The text stars and icons keep clear of: on any of the card's pictures, none in the images group (picture)."""
+    pictures, out = variants_of(psd), {}
+    for n in [None, *pictures] if len(pictures) > 1 else [None]:
+        with variant_view(psd, n):
+            out.update({id(layer): layer for layer in psd.descendants() if _is_text_layer(layer) and layer.is_visible()
+                        and not any(owner.name.strip().lower() == "images" for owner in layer_parents(layer))})
+    return list(out.values())
 
 
 def _copy_name(unit: _Unit, container, taken: set) -> str:
@@ -6806,7 +6815,8 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
                     _star_layouts(order, size, count) + more
             else:
                 layouts = _star_layouts(order, size, count) + more
-            for name, spots in layouts:
+            backs = (back, None) if back is not None and len(order) == 1 else (back,)   # a lone star's, while a layout keeps it
+            for back, (name, spots) in product(backs, layouts):
                 moves, free = _place(order, spots, size)
                 under = [move for move in shaded(order, moves) if move[0] is not source]
                 moves = [move for move in moves if move not in under]       # under a shadow: hidden, a copy (on top)
@@ -6923,12 +6933,13 @@ def type_row(psd: PSDImage, parser: PSDParser, card: str = "") -> tuple:
 
 
 def _icon_reason(psd: PSDImage, layer) -> Optional[str]:
-    """Why a header type layer is no icon the bake moves or hides (a group, a frame round the card, text); None."""
+    """Why a header type layer is no icon the bake moves or hides (a group, a frame round the card, text); None. By
+    ink: a card-sized smart object can hold a small icon (Godskin Apostle's)."""
     if layer.is_group():
         return "a group"
     if layer.kind not in ("pixel", "smartobject"):
         return f"a {layer.kind} layer"
-    x0, y0, x1, y1 = layer.bbox
+    x0, y0, x1, y1 = _core(layer) or layer.bbox
     if (x1 - x0) * (y1 - y0) > ICON_FRAME * psd.width * psd.height:
         return "a frame round the card"
     return None
@@ -6938,7 +6949,8 @@ def _icon_spots(psd: PSDImage, slots: list, extra: int, clear: list) -> list:
     """
     Boxes for `extra` icons past the row's last: the row carried on at its spacing (under a lone icon: Item_Template's
     column), else, when those boxes would touch the text or stars, a second row under the first icon (a row running
-    into the title) or a lone icon's right; the first whose boxes stay clear, else the row carried on. When the last two
+    into the title) or a second column at a lone icon's or a column's right; the first whose boxes stay clear, else the
+    row carried on; a row of overlapping icons carries on an icon's width apart (Kyle's). When the last two
     icons sit in two rows (Masher's 2 over 1), the last row first carries on at the pitch of the row above it, toward
     the card's middle, else away (S2: the new icon beside the last, not down the diagonal).
     """
@@ -6947,13 +6959,15 @@ def _icon_spots(psd: PSDImage, slots: list, extra: int, clear: list) -> list:
     if len(slots) > 1:
         (x0, y0), (x1, y1) = slots[len(slots) - 2].centre, slots[len(slots) - 1].centre
         step = (round(x1 - x0), round(y1 - y0))
+        if abs(step[1]) < abs(step[0]) < last[2] - last[0]:
+            step = (last[2] - last[0] if step[0] > 0 else last[0] - last[2], step[1])
     else:
         step = (0, last[3] - last[1] + gap)
     options = [[_moved_box(last, step[0] * k, step[1] * k) for k in range(1, extra + 1)]]
     if len(slots) > 1 and abs(step[0]) > abs(step[1]):
         down = max(unit.core[3] for unit in slots) - first[1] + gap
         options.append([_moved_box(first, step[0] * k, down) for k in range(extra)])
-    elif len(slots) == 1:
+    else:
         options.append([_moved_box(last, (last[2] - last[0] + gap) * k, 0) for k in range(1, extra + 1)])
     clear_of = lambda box: _blocked(psd, [((box[0], box[1], box[2], box[3]),
                                            np.ones((box[3] - box[1], box[2] - box[0]), bool))], box, clear) is None
@@ -7295,6 +7309,13 @@ def _make_icon(psd: PSDImage, types_dir: str, stem: str, box: tuple, reference):
     from psd_tools.api.layers import PixelLayer
     path = _icon_png(types_dir, stem)
     image, left, top = _icon_image(path, box)
+    profile, source = foreign_profile(psd), image.info.get("icc_profile")      # field.png: Adobe RGB
+    if profile is not None or source:           # the PNG's profile (else sRGB) into the card's, as Photoshop places it
+        from PIL import ImageCms
+        def cms(data): return ImageCms.ImageCmsProfile(BytesIO(data)) if data else ImageCms.createProfile("sRGB")
+        alpha = image.getchannel("A")
+        image = ImageCms.profileToProfile(image.convert("RGB"), cms(source), cms(profile), outputMode="RGB")
+        image.putalpha(alpha)
     name = basename(path)[:len(basename(path)) - 4]
     layer = PixelLayer.fromarray(np.asarray(image), psd, name=name, top=top, left=left)
     layer.name = name
@@ -8141,9 +8162,9 @@ def gate_region(png: Image.Image, merged: Image.Image, region: tuple) -> int:
 
 
 def gate_size(old_path: str, new_path: str) -> None:
-    """The saved PSD stays within SIZE_TOLERANCE of the old one; else Refused("size")."""
+    """The saved PSD stays within SIZE_TOLERANCE of the old one or SIZE_FLOOR bytes; else Refused("size")."""
     old, new = getsize(old_path), getsize(new_path)
-    if abs(new - old) > SIZE_TOLERANCE * old:
+    if abs(new - old) > max(SIZE_TOLERANCE * old, SIZE_FLOOR):
         raise Refused("size", f"PSD {old} -> {new} bytes")
 
 

@@ -339,24 +339,46 @@ def _plan_centres(plan, container, types, size) -> list:
     return [_ints(unit.centre) for unit in _reading(units, size[1], True)]
 
 
+def _why(refused: Refused) -> str:
+    """A stars refusal without its field and ledger codes."""
+    return sub(r"^stars: |\s*\([^)]*\bledger [A-Z]\d+\)", "", refused.why)
+
+
+def _kept_stars(psd: PSDImage, rel: str, parser: PSDParser) -> Optional[dict]:
+    """A header without units: each count the bake refuses as card_bake plans it (moving), its printed stars kept; None
+    when it plans one (Paint Warrior's two groups)."""
+    total = _stars_total(psd, types=parser.all_types, stars=parser.star_names())
+    parsed = {"card": {"stars": total, "path": rel, "type": ""}, "info": None}
+    refused = {}
+    for n in range(1, HEADER_STARS + 1):
+        try:
+            plan_stars(psd, parsed, n, parser, moving=True)
+            return None
+        except Refused as e:
+            refused[str(n)] = _why(e)
+    return {"units": [], "icon": None, "at": {}, "refused": {"*": refused["1"]} if len(set(refused.values())) == 1 else refused}
+
+
 def _star_header(psd: PSDImage, rel: str, vocab, parser: Optional[PSDParser] = None) -> Optional[dict]:
     """
     The shown stars ({core, box}, reading order), the star layer the bake copies, each count's centres (the bake's plan,
-    else the layout's: first n, then _star_layouts) and the counts the bake refuses ("*": all, for one reason).
-    None without exactly one Stars group drawing them. parser: the build's (its Types/Stars names count the stars
-    outside the group, as the bake's does: Massive Moss Charger's 'Hk star'); None: one from vocab.
+    a move on a folder card as card_bake's; else the layout's: first n, then _star_layouts) and the counts the bake
+    refuses ("*": all, for one reason).
+    Without exactly one Stars group drawing them: no units, the bake's refusals (_kept_stars), or None when it plans
+    some count. parser: the build's (its Types/Stars names count the stars outside the group, as the bake's does:
+    Massive Moss Charger's 'Hk star'); None: one from vocab.
     """
     parser = parser or _icon_parser(vocab)
     types = parser.all_types
     groups = [group for group in PSDParser._star_groups(psd) if _star_count(group, {}, {}, {}, types)]
     if len(groups) != 1:
-        return None
+        return _kept_stars(psd, rel, parser)
     total = _stars_total(psd, types=types, stars=parser.star_names())
     container = _star_container(groups[0], types)
     outside = _outside_units(PSDParser.outside_stars(psd, PSDParser._star_groups(psd), parser.star_names()))
     shown = _merge_twins(_star_units(container, types)[0] + outside)     # as plan_stars lays them out (R2, R3)
     if not shown:
-        return None
+        return _kept_stars(psd, rel, parser)
     size = _median_size(shown)
     order = _reading(shown, size[1], True)
     plain = len(order) == total and all(unit.count == 1 for unit in order)     # one unit per star: the layout's spots hold
@@ -366,10 +388,10 @@ def _star_header(psd: PSDImage, rel: str, vocab, parser: Optional[PSDParser] = N
     at, refused = {}, {}
     for n in range(1, HEADER_STARS + 1):
         try:
-            at[str(n)] = _plan_centres(plan_stars(psd, parsed, n, parser), container, types, size)
+            at[str(n)] = _plan_centres(plan_stars(psd, parsed, n, parser, moving=True), container, types, size)
             continue
         except Refused as e:
-            refused[str(n)] = sub(r"^stars: |\s*\([^)]*\bledger [A-Z]\d+\)", "", e.why)   # no ledger codes
+            refused[str(n)] = _why(e)
         if plain and n <= len(order):
             at[str(n)] = [_ints(unit.centre) for unit in order[:n]]
         elif plain:

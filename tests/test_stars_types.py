@@ -10,6 +10,7 @@ import json
 from math import cos, pi, sin
 from pathlib import Path
 from shutil import copy
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -28,7 +29,7 @@ SPRINGTRAP = "Auxiliary/Minions/Springtrap.psd"         # two stars over three: 
 CLAW = "N.M.E/The_Claw.psd"                             # one star over a pair: a fourth makes two rows of two
 FREEZER = "Field/1 Stars/The_Freezer.psd"               # a field card: its "1 Stars" folder sets the stars
 MORPHO = "Auxiliary/Creatures/Morpho_Knight.psd"        # Fire over Undead: dropping Fire moves Undead up
-MAGNUM = "Auxiliary/Items/Magnum_Opus.psd"              # its field type is a frame round the card
+MAGNUM = "Auxiliary/Items/Magnum_Opus.psd"              # its field type: a small icon in a card-sized smart object
 ABIGAIL = "Auxiliary/Minions/Abigail.psd"               # a row of two icons running into the title: a third goes under
 
 icons = pytest.mark.skipif(not pe.icon_engine(), reason="the fork's layer copy API (Layer.duplicate, PixelLayer.fromarray)")
@@ -323,6 +324,25 @@ def test_stars_refuse_per_field(parser, tmp_path):
         _plan(parser, low[0], REL, "stars", 2)
 
 
+def test_gate_size_floor(tmp_path):
+    old, new = tmp_path / "old", tmp_path / "new"
+    old.write_bytes(bytes(1000))
+    new.write_bytes(bytes(1000 + pe.SIZE_FLOOR))
+    pe.gate_size(str(old), str(new))
+    new.write_bytes(bytes(1001 + pe.SIZE_FLOOR))
+    with pytest.raises(pe.Refused):
+        pe.gate_size(str(old), str(new))
+
+
+def test_texts_take_every_picture():
+    """A Snack's pictures plan the same stars: every picture's title is clear of them, on any view."""
+    class Text(SimpleNamespace):
+        def is_visible(self):
+            return self.visible
+    one, two = (Text(name=f"Name #{n}", kind="type", visible=n == 1, parent=None) for n in (1, 2))
+    assert pe._texts(SimpleNamespace(descendants=lambda: [one, two])) == [one, two] and not two.visible
+
+
 @icons
 def test_gate_outside_refuses_a_change_beyond_the_region(tmp_path):
     paths = _fixture(tmp_path)
@@ -348,6 +368,30 @@ def test_a_new_icon_goes_above_the_clip_chain_and_takes_it(parser, clone, tmp_pa
                                                          if layer.name == "fire").parent]
     assert row[:4] == [("wind", False), ("Curves 1 copy", True), ("fire", False), ("Curves 1 copy", True)]
     assert sorted(fields for _, _, fields in baked.records) == [["added"], ["added"]]
+
+
+@icons
+def test_a_made_icon_takes_the_cards_profile(clone, tmp_path):
+    """As Photoshop places one: stored converted into Abigail's 'Display' profile (the export gives Types/' colours back),
+    as it is on an sRGB card, and from a PNG's own profile (field.png's Adobe RGB)."""
+    from io import BytesIO
+    from PIL import ImageCms
+    from psd_tools.api.pil_io import post_process
+    types_dir = _types_dir(tmp_path)
+    with Image.open(clone / "Types/field.png") as png:
+        adobe = png.info["icc_profile"]
+    _icon((230, 80, 20), (200, 160)).save(Path(types_dir) / "field.png", icc_profile=adobe)
+    field = ImageCms.profileToProfile(Image.new("RGB", (1, 1), (230, 80, 20)), ImageCms.ImageCmsProfile(BytesIO(adobe)),
+                                      ImageCms.createProfile("sRGB")).getpixel((0, 0))
+    for psd in (PSDImage.open(_clone_card(clone, ABIGAIL, tmp_path)[0]), PSDImage.open(_fixture(tmp_path)[0])):
+        reference = next(layer for layer in psd.descendants() if layer.name in ("Undead", "Fire"))
+        profile = pe.foreign_profile(psd)
+        for stem, colour in (("fire", (230, 80, 20)), ("field", field)):
+            stored = pe._make_icon(psd, types_dir, stem, (20, 400, 220, 560), reference).topil(apply_icc=False).convert("RGB")
+            shown = post_process(stored, None, profile) if profile else stored
+            centre = stored.width // 2, stored.height // 2
+            assert (stored.getpixel(centre) != colour) is (profile is not None), stem
+            assert max(abs(a - b) for a, b in zip(shown.getpixel(centre), colour)) <= 1, (stem, shown.getpixel(centre), colour)
 
 
 @icons
@@ -503,7 +547,7 @@ def test_star_cases_of_10_26(clone, parser, tmp_path):
     its neighbour's shadow) and its 1 keeps it (the top-right's shadow would show). Yin Yarn's 6 would leave the yarn
     clipped onto its group, as Paint Warrior's 4 its paint (both refused). A die's five keeps its faces (Yin Yarn,
     Nightmare: 1 the middle, 2 and 3 a diagonal). Bolts and Screws' gear is no banner: a column. A refusal tells the
-    layout that came closest (Consolation Prize: off its banner, not its first layout's title). Remote Detonator's row
+    layout that came closest (Thunder Thighs: off its banner, not its first layout's title). Remote Detonator's row
     is centred and tightened on its banner; Crowned Magolor's V point becomes a pair."""
     leshy = "Creatures/Other/5 Stars/Leshy.psd"
     psd, parsed = _renamed(parser, clone, leshy, tmp_path)
@@ -525,8 +569,10 @@ def test_star_cases_of_10_26(clone, parser, tmp_path):
                           moving=True)
     assert bolts.how == "a column" and [(dx, dy) for _, dx, dy, _ in bolts.copies] == [(0, 130)]
     with pytest.raises(pe.Refused, match="would leave 'Layer 13' under the stars"):
-        pe.plan_stars(*_open(parser, clone, "Items/Support/1 Stars/Consolation_Prize.psd", tmp_path), 2, parser,
-                      moving=True)
+        pe.plan_stars(*_open(parser, clone, "Items/Heal/2 Stars/Thunder_Thighs.psd", tmp_path), 3, parser, moving=True)
+    prize = pe.plan_stars(*_open(parser, clone, "Items/Support/1 Stars/Consolation_Prize.psd", tmp_path), 2, parser,
+                          moving=True)
+    assert prize.how == "a column"                                      # a lone star's banner binds last
     psd, parsed = _open(parser, clone, "N.M.E/Remote_Detonator.psd", tmp_path)
     row = pe.plan_stars(psd, parsed, 3, parser)
     assert row.how == "a row on its banner" and len(row.copies) == 1 and "does not go on to 3" in row.notes[0]   # told
@@ -614,8 +660,7 @@ def test_a_first_type_icon_on_the_title_bakes_flagged(clone, parser, tmp_path):
 def test_real_type_rows(clone, parser, tmp_path):
     morpho = _plan(parser, _clone_card(clone, MORPHO, tmp_path)[0], MORPHO, "types", ["undead"])
     assert [layer.name for layer in morpho.hide] == ["Fire"] and [layer.name for layer, _, _ in morpho.moves] == ["Undead", "Gradient Map 2"]
-    with pytest.raises(pe.Refused, match="'field' is a frame round the card, not an icon to take off"):
-        _plan(parser, _clone_card(clone, MAGNUM, tmp_path)[0], MAGNUM, "types", ["active"])
+    assert [layer.name for layer in _plan(parser, _clone_card(clone, MAGNUM, tmp_path)[0], MAGNUM, "types", ["active"]).hide] == ["field"]
     freezer = _clone_card(clone, FREEZER, tmp_path)
     _, baked = _bake(parser, freezer, {"types": ["field", "ice"]}, tmp_path, FREEZER, str(clone / "Types"))
     assert sorted(baked.reparse["card"]["types"]) == ["field", "ice"]
@@ -626,6 +671,19 @@ def test_real_type_rows(clone, parser, tmp_path):
     core = pe._core(shield)
     assert stem == "fire" and box[0] == core[0] and box[1] > core[3]       # under the row's first icon, not by the title
 
+
+
+@icons
+def test_icons_and_stars_go_by_ink(clone, parser, tmp_path):
+    """Refused until 11-07: fills (Cloud Soiree, Kyle), a row of overlapping icons (Kyle), text in the picture (Return To
+    Sender), a column (Masked Dedede), a lone star's backdrop (Bubble)."""
+    types = str(clone / "Types")
+    for rel in ("Field/1 Stars/Cloud_Soiree.psd", "Creatures/Other/5 Stars/Kyle.psd",
+                "Items/Counter/4 Stars/Return_To_Sender.psd", "Creatures/Kirby/5 Stars/Masked_Dedede.psd"):
+        psd, parsed = _open(parser, clone, rel, tmp_path)
+        pe.set_icons(psd, pe.plan_types(psd, parsed, parsed["card"]["types"] + ["fire"], parser, types_dir=types), types)
+    psd, parsed = _open(parser, clone, "N.M.E/Bubble.psd", tmp_path)
+    pe.plan_stars(psd, parsed, 2, parser, moving=True)
 
 
 @icons

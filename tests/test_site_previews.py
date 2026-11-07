@@ -107,6 +107,34 @@ out([lines, fitted.lines.length * fitted.size * m.LINE <= 40.5, fitted.size < 20
     assert out[1] is True and out[2] is True and out[3] == 1
 
 
+kept = pytest.mark.skipif(not has(MOCKUP_JS, "statSite"), reason="no statSite in mockup.js")
+
+
+@needs_js
+@kept
+def test_what_the_bake_wont_print(tmp_path):
+    """The mock-up leaves what the bake won't print and says so: stars the bake keeps (no Stars group: the card only moves
+    folder; an older record's "folder sets them" is still redrawn), a title in the picture, a stat past an old bar's 10
+    (a layer-comp bar bakes it)."""
+    out = node(tmp_path, f"""
+const P = await import({json.dumps((ASSETS / "parts.js").as_uri())});
+const none = {{ units: [], at: {{}}, refused: {{ "*": 'no group named "Stars" draws them' }} }};
+const rec = (title, so, stats) => ({{ canvas: {{ h: 1000 }}, parts: {{ title, ability: [{{ id: 1, text: "x" }}] }}, smart_objects: so, stats,
+  text: [{{ layer: "Text/Ability", text: "x", visible: true, box: [0, 600, 10, 700] }}] }});
+const digits = rec([], [], {{ hp: "template" }}), why = m.statSite(digits, "hp", 12);
+out([P.starsKept(none, 3), P.starsKept({{ units: [{{}}], refused: {{ "*": "the '2 Stars' folder sets them" }} }}, 3),
+  P.titleInPicture(rec([], [])), P.titleInPicture(rec([{{ id: 2, text: "Name" }}], [])),
+  why, m.statSite(digits, "hp", 9), m.statSite(rec([], ["Stats Bars/Darks/Health"], {{ hp: "template" }}), "hp", 15),
+  m.statSite(rec([], [], {{ hp: "two-row" }}), "hp", 15),
+  p.mockNote({{ starsKept: {{ why: none.refused["*"], to: "Creatures/Mario/4 Stars/" }}, site: [["name", "title"], ["HP 12", why]] }})]);""")
+    stars, folder, pictured, titled, old, low, comp, rows, note = out
+    assert stars == 'no group named "Stars" draws them' and folder is None
+    assert pictured is True and titled is False
+    assert old == "the card's old-style bars print up to 10" and low is comp is rows is None   # several rows: can't tell
+    assert "The printed stars stay as they are" in note and "only moves to the 4 Stars folder" in note
+    assert "website only until it's drawn in Photoshop" in note and "HP 12 shows on the website only: the card's old-style bars" in note
+
+
 # ---- the build's web fonts (build_site.py)
 @pytest.fixture(scope="module")
 def bs():
