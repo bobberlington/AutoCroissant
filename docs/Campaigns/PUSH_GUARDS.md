@@ -531,7 +531,8 @@ not land.**
 - **The card sync:** a bot commit's run starts it with `bake=pending` (a `GITHUB_TOKEN` push triggers no workflow; the
   card sync's data commit starts the site build). **One main lane per guarded push (2026-10-25, plan P-2):** a push run
   in `on` mode with writes marks its check job (step "Fixes to land", output `fixes`); that push's Card sync run skips
-  its main lane at its window's end (its "Guards' fixes" step), and Follow up starts Card sync once Land is done,
+  its main lane at its window's end (its "Guards' fixes" step: it looks every 3 s until the check job's `Decided` step
+  or the job itself is done, since 2026-11-07), and Follow up starts Card sync once Land is done,
   landed, landed nothing or broke (`always()`), tried 3 times, so one main commit pins the fixed PNG. Card sync's
   schedule and chained runs skip their main lane while any guards run with fixes is unfinished. When it does not start, the comment says so, the run fails, and the
   post says so when it fits in 2,000 characters (its cron catches up); with nothing else to tell, the failure
@@ -729,8 +730,10 @@ jobs:                    # three since 2026-10-24 (section 20): no runner sleeps
         working-directory: bot
         env: {GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}", BEFORE: "${{ github.event.before }}", SHA: "${{ inputs.sha }}"}
         run: python -m commands.card_guards check --repo "$GITHUB_REPOSITORY" --after "${SHA:-$GITHUB_SHA}" ... --out "$RUNNER_TEMP/guards" | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: Comment on the commit                     # MODE report/on; a re-run edits its own comment
       - name: Plan for the post job                     # land=true: something to tell (report) or write (on); card_errors
+      - name: Fixes to land                             # the mark Card sync reads
+      - name: Decided                                   # no-op: Card sync's wait ends here, not at the job's end (2026-11-07)
+      - name: Comment on the commit                     # MODE report/on; a re-run edits its own comment
       - uses: actions/upload-artifact@v7                # card-guards: the plan and its files, for the post job
   post:
     needs: check
@@ -1519,8 +1522,8 @@ also checks the numbered PNGs, G8, on this path), `test_a_png_made_without_a_sto
 
 **5. The quiet window is an environment.** card-guards.yml has three jobs:
 - `check` (timeout 100): Start, the checkouts, the refusal of a landing dispatch, Bot commit (the AutoCroissant commit
-  checked out, output `bot_sha`), the install, Check, Comment, "Plan for the post job" (`land=true` when report mode has something to tell or on mode something to tell or write; the card
-  errors), the `card-guards` artifact. It ends at once;
+  checked out, output `bot_sha`), the install, Check, "Plan for the post job" (`land=true` when report mode has something to tell or on mode something to tell or write; the card
+  errors), Fixes to land, Decided, Comment, the `card-guards` artifact. It ends at once;
 - `post` (needs check; only with `land=true`; timeout 75): `environment: card-guards-quiet` on a push's first attempt (a
   dispatch lands at once; a re-run waits from the push and counts later pushes from now), then Work dir, the artifact, Told before (the check's TOLD answer,
   or on a re-run of this job alone the comment's mark looked up again: never a second post), AutoCroissant at the check's
