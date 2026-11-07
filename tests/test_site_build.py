@@ -517,6 +517,21 @@ def test_a_card_naming_itself_mentions_itself(tmp_path):
     assert json.loads(done.stdout) == ["mk"]
 
 
+def test_a_web_chapter_is_not_printed(bs, tmp_path):
+    """Owner 2026-11-07: a chapter titled {.web} is on the website only (rulebook.js printed, build_site printed_chapters)."""
+    book_js = BUILD_SITE.parents[1] / "assets" / "rulebook.js"
+    if shutil.which("node") is None or not hasattr(bs, "printed_chapters"):
+        pytest.skip("no node or a site before {.web}")
+    book = [{"id": "stats", "source": "# Stats\n\n## HEALTH {.hp}\nWords.\n"}, {"id": "font", "source": "# Font {.web}\n\nWords.\n"}]
+    assert [c["id"] for c in bs.printed_chapters(book)] == ["stats"]
+    probe = tmp_path / "probe.mjs"
+    probe.write_text(f"const rb = await import({json.dumps(book_js.as_uri())});\n"
+                     f"process.stdout.write(JSON.stringify(rb.printed({json.dumps(book)}).map(c => c.id)));\n", encoding="utf-8")
+    done = subprocess.run(["node", str(probe)], capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    assert json.loads(done.stdout) == ["stats"]
+
+
 def test_a_heavy_commit_links_the_cards_history(tmp_path):
     """text.js commitLink: a heavy commit (cards.json heavy) links GitHub's history of the card's PNG from it, its path
     encoded, and nothing without a path; any other commit its commit page."""
