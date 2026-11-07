@@ -40,7 +40,7 @@ from typing import Callable, Optional
 
 import numpy as np
 from psd_tools import PSDImage
-from psd_tools.constants import Tag
+from psd_tools.constants import BlendMode, Tag
 
 import commands.psd_edit as psd_edit
 from commands.card_edits import CardAuthors
@@ -2059,13 +2059,17 @@ ALT_ROW = (813, 84)         # a template bar row's size; a card's row within ALT
 ALT_ROW_TOL = 4
 ALT_FILL = (0.96, 0.99)    # the share of its box a bar shaped like the template's fills (0.977; Little Guy's squares 0.84)
 ALT_SIZES = ((300, 40), (1400, 160))   # a card's own bar this size takes a resized bar (Little Guy 920x78, Sonic's 816x99)
-ALT_PLAIN, ALT_STYLED = 171, 255   # a bar's dark: the template's 67%; one whose dark digit was styled keeps its style at full
+ALT_PLAIN = 171             # a bar's dark: the template's 67%
+ALT_PLAIN_NEAR = 0.1        # a plain digit passing this near what ALT_PLAIN passes stays at it
+ALT_COVER = 99.5            # an overlay's % that hides the cells: its bar stays solid
+ALT_GAMMA = 2.2             # an exposure e passes 2 ** (e / ALT_GAMMA) of the art
 
 
 def _bar_art(psd, stat: str) -> Optional[tuple]:
     """
     The card's own bar for a stat: a visible layer named like it ("hp", "hp bar") in a group named like *bar*, else a
-    visible group so named there (its drawn leaves but lines and darks: Sonic's "spd top" and "spd bottom"); its bbox.
+    visible group so named there (its drawn leaves but lines and darks: Sonic's "spd top" and "spd bottom"), else its
+    top and bottom halves there (Royal Eradicator's "atk top" and "atk bottom"); its bbox.
     """
     named = lambda layer: fullmatch(rf"\s*({STAT_PATTERNS[stat]})\s*(bar)?\s*", layer.name, IGNORECASE)
     under_bars = lambda layer: (layer.parent is not None and not isinstance(layer.parent, PSDImage)
@@ -2081,16 +2085,18 @@ def _bar_art(psd, stat: str) -> Optional[tuple]:
                    and not search(r"line|dark", l.name, IGNORECASE)]
             if art:
                 return union_box(art)
-    return None
+    return union_box([layer.bbox for layer in psd.descendants() if not layer.is_group() and layer.is_visible() and under_bars(layer)
+                      and fullmatch(rf"\s*({STAT_PATTERNS[stat]})\s+(top|bottom)\s*", layer.name, IGNORECASE)])
 
 
 def _alt_parts(psd):
     """
-    (the Darks group, {stat: (value, its bar's box, its styled digit or None)}, the empty dark groups to drop) when the
+    (the Darks group, {stat: (value, its bar's box, its shown digit or None)}, the empty dark groups to drop) when the
     card's bars are the template's exposure digit rows: per stat one "<Stat> Dark" group of them, or of its half rows (a
-    stat past 10: Top and Bottom, the parser's sum), all four in one visible Darks group holding nothing else; another
-    dark group of a stat showing no digit draws nothing and goes (Sonic's). A bar takes the card's own bar's box
-    (_bar_art, resized ones too), else its digit masks' at the template's size; else None.
+    stat past 10: Top and Bottom, the parser's sum), all four in one visible Darks group holding nothing else that draws;
+    another dark group of a stat showing no digit draws nothing and goes (Sonic's). A bar takes the card's own bar's box
+    (_bar_art, resized ones too) when it is on the digits' row and spans it, else the art on that row (a name can lie:
+    the Pandas' def and atk), else its digit masks' at the template's size; else None.
     """
     if any(comp_bars(psd).values()):
         return None
@@ -2111,25 +2117,30 @@ def _alt_parts(psd):
         owner = drawn[0]
         drop += [o for o, _ in owners.values() if o is not owner]
         rows = [(g, shown, box) for g, shown, box in found if g is owner or any(a is owner for a in _ancestors_of(g))]
-        leaves = [d for d in owner.descendants() if not d.is_group()]
+        leaves = [d for d in owner.descendants() if not d.is_group() and (d.is_visible() or d.name.strip().isdigit())
+                  and not (d.kind == "type" and not (d.text or "").strip())]
         if not leaves or any(d.kind != "exposure" or not d.name.strip().isdigit() for d in leaves):
             return None
         filled = [min(shown) for _, shown, _ in rows if shown]
         value = sum(filled) if filled else 10
+        row = bar_box(psd, stat, rows[0][2]) if len(rows) == 1 and rows[0][2] else None
+        on_row = lambda box: box and row[1] <= (box[1] + box[3]) / 2 <= row[3] \
+            and box[2] - box[0] >= min(row[2] - row[0], ALT_ROW[0]) - ALT_ROW_TOL       # Monkey D Letion's icons don't span it
         art = _bar_art(psd, stat)
+        if art and row and not on_row(art):
+            art = next((box for box in (_bar_art(psd, other) for other in STAT_PATTERNS) if on_row(box)), None)
         (w0, h0), (w1, h1) = ALT_SIZES
         if art and w0 <= art[2] - art[0] <= w1 and h0 <= art[3] - art[1] <= h1:
             box = tuple(art)
-        elif len(rows) == 1 and rows[0][2]:
-            x0, y0, x1, y1 = bar_box(psd, stat, rows[0][2])
+        elif row:
+            x0, y0, x1, y1 = row
             if abs(y1 - y0 - ALT_ROW[1]) > ALT_ROW_TOL or abs(x1 - x0 - ALT_ROW[0]) > ALT_ROW_TOL:
                 return None
             box = (x0, y0, x0 + ALT_ROW[0], y0 + ALT_ROW[1])
         else:                                   # half rows and no bar of its own: placed by the other rows (_spaced)
             box = None
-        style = next((d for d in leaves if d.is_visible() and d.has_effects() and any(e.enabled for e in d.effects)),
-                     None)                      # the shown digit's style alone: a hidden one's can be stale (set_stat's rule)
-        parts[stat] = (value, box, style)
+        shown = [d for d in leaves if d.is_visible()]
+        parts[stat] = (value, box, next((d for d in shown if _styled(d)), next(iter(shown), None)))
         parents[id(owner.parent)] = owner.parent
     if len(parts) != 4 or len(parents) != 1 or not _spaced(parts):
         return None
@@ -2157,8 +2168,8 @@ def _spaced(parts: dict) -> bool:
     step, (i0, y0), like = steps.pop(), known[0], next(iter(placed.values()))
     stat = missing[0]
     top = round(y0 + (order.index(stat) - i0) * step)
-    value, _, style = parts[stat]
-    parts[stat] = (value, (like[0], top, like[2], top + like[3] - like[1]), style)
+    value, _, digit = parts[stat]
+    parts[stat] = (value, (like[0], top, like[2], top + like[3] - like[1]), digit)
     return True
 
 
@@ -2176,9 +2187,46 @@ def alt_bar_rows(psd: PSDImage) -> list:
     return [found[0]] if found else []
 
 
+def _styled(digit) -> bool:
+    """A digit draws a style (the shown one alone counts: a hidden one's can be stale, set_stat's rule)."""
+    return digit.has_effects() and any(e.enabled for e in digit.effects)
+
+
+def alt_dark(digit) -> tuple:
+    """
+    (a bar's opacity, its overlay's % or None) that draw like the dark digit: passing T = (1 - p) * 2 ** (e / ALT_GAMMA)
+    of the art under a Normal overlay at p, the bar at 1 - T, the overlay at p / (1 - T) to land its colour as before.
+    A plain digit: the template's dark when near it, else 1 - T. Any other style: solid.
+    """
+    exposure = digit.exposure if digit is not None and digit.kind == "exposure" else None
+    if exposure is None or exposure > 0:
+        return ALT_PLAIN, None
+    passes = 2 ** (exposure / ALT_GAMMA)
+    drawn = [e for e in digit.effects if e.enabled] if _styled(digit) else []
+    if not drawn:
+        near = abs(passes - (1 - ALT_PLAIN / 255)) <= ALT_PLAIN_NEAR
+        return (ALT_PLAIN if near else round((1 - passes) * 255)), None
+    over = drawn[0]
+    if len(drawn) > 1 or type(over).__name__ not in ("GradientOverlay", "ColorOverlay") or over.blend_mode != BlendMode.NORMAL \
+            or over.opacity >= ALT_COVER:
+        return 255, None
+    p = over.opacity / 100
+    solid = 1 - (1 - p) * passes
+    return round(solid * 255), p / solid * 100
+
+
+def set_overlay(bar, percent: float) -> None:
+    """A bar's enabled overlay at percent."""
+    for effect in bar.effects:
+        if type(effect).__name__ in ("GradientOverlay", "ColorOverlay") and effect.enabled:
+            effect.descriptor[b"Opct"].value = percent
+    bar._psd.mark_updated()
+
+
 def _alt_darks(psd: PSDImage, template: PSDImage, found: tuple) -> list:
     """The card's Darks group of exposure digit rows replaced by the template's layer-comp bars, each moved onto the
-    card's row and set to its value (psd_edit.set_comp); a styled dark digit's effects go onto its bar, at full."""
+    card's row and set to its value (psd_edit.set_comp), a styled dark digit's effects on its bar, each bar drawn like
+    its digit (alt_dark)."""
     darks, parts, drop = found
     source = next(group for group in template.descendants()
                   if group.is_group() and group.name.strip() == "Darks" and any(comp_value(l) is not None for l in group))
@@ -2187,17 +2235,21 @@ def _alt_darks(psd: PSDImage, template: PSDImage, found: tuple) -> list:
     bars = {comp_stat(layer): layer for layer in new if comp_value(layer) is not None}
     if set(bars) != set(parts):
         raise Refused("unsupported-card", "the template's Darks group is not one bar per stat")
-    styled = any(style is not None for _, _, style in parts.values())
-    if styled:                                  # per bar: plain ones at the template's 67%, styled ones at full
+    looks = {stat: alt_dark(digit) for stat, (_, _, digit) in parts.items()}
+    own = any(opacity != ALT_PLAIN for opacity, _ in looks.values())
+    if own:                                     # the darks per bar
         new.opacity = 255
-    for stat, (value, box, style) in parts.items():
+    for stat, (value, box, digit) in parts.items():
         bar = bars[stat]
         psd_edit.place_bar(bar, box)
         psd_edit.set_comp(psd, {"card": {key: comp_value(b) for key, b in bars.items()}}, stat, value)
-        if styled:
-            bar.opacity = ALT_STYLED if style is not None else ALT_PLAIN
-        if style is not None:
-            bar.copy_effects_from(style)
+        opacity, overlay = looks[stat]
+        if own:
+            bar.opacity = opacity
+        if digit is not None and _styled(digit):
+            bar.copy_effects_from(digit)
+        if overlay is not None:
+            set_overlay(bar, overlay)
     parent.remove(darks)
     for group in drop:
         group.parent.remove(group)

@@ -469,6 +469,72 @@ def test_alt_template_converts_a_card(clone, parser, tmp_path):
         assert all(rows[0][0].has_effects() == styled for rows in comp_bars(new).values()), rel
 
 
+def test_hard_edged(tmp_path):
+    """Pixel art resizes nearest, its colours kept; a soft edge, many colours or smooth shading stays smooth."""
+    rng = np.random.default_rng(1)
+    art = np.zeros((16, 16, 4), np.uint8)
+    art[..., :3], art[4:12, 4:12, 3] = (250, 240, 20), 255
+    assert pe.hard_edged(art) and pe.hard_edged(np.kron(art, np.ones((20, 20, 1), np.uint8)))
+    soft = art.copy()
+    soft[3, 4:12, 3] = 100
+    assert not pe.hard_edged(soft)
+    many = np.dstack([rng.integers(0, 255, (32, 32, 3), np.uint8), np.full((32, 32), 255, np.uint8)])
+    assert not pe.hard_edged(many)
+    shaded = rng.integers(0, 4, (300, 300, 4), np.uint8) * 60
+    shaded[..., 3] = 255
+    assert not pe.hard_edged(shaded)
+    icon = tmp_path / "Art.png"
+    Image.fromarray(art).save(icon)
+    image, _, _ = pe._icon_image(str(icon), (0, 0, 100, 100))
+    assert set(np.asarray(image)[..., 3].ravel()) == {255}
+    assert len(np.unique(np.asarray(image).reshape(-1, 4), axis=0)) == 1
+
+
+@text_engine
+def test_resized_bar_mode(clone, tmp_path):
+    """A resized bar draws nearest (no in-between alpha, as Photoshop redraws it), unless its stored pixels show bicubic;
+    pixels stored for another box tell nothing."""
+    from psd_tools.api.layers import TypeLayer
+    path = tmp_path / "alt.psd"
+    path.write_bytes(at_rev(clone, *ALT_TEMPLATE))
+    layer = comp_bars(PSDImage.open(str(path)))["hp"][0][0]
+    pe.place_bar(layer, (355, 1190, 1176, 1289))
+    assert pe.stored_mode(layer) is None
+    alpha = pe.comp_render(layer, 3)[0][..., 3]
+    assert not ((alpha > 0.01) & (alpha < 0.99)).any()
+    for mode in (Image.BICUBIC, Image.NEAREST):
+        TypeLayer._store_raster(layer, *pe.comp_render(layer, 5, mode))
+        layer._invalidate_bbox()
+        assert pe.stored_mode(layer) == mode
+
+
+def test_alt_parts_rows_decide(clone):
+    """The digits' row decides a bar's place (the Pandas' def and atk art are named for each other's rows) and a split
+    row's halves are one bar (Royal Eradicator's "atk top" and "atk bottom")."""
+    import commands.card_standards as standards
+    parts = standards._alt_parts(PSDImage.open(_card(clone, "Creatures/Pandas/2 Stars/Peter_Panda.psd")[0]))[1]
+    assert (parts["def"][1], parts["atk"][1]) == ((360, 1326, 1173, 1410), (360, 1452, 1173, 1536))
+    parts = standards._alt_parts(PSDImage.open(_card(clone, "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd")[0]))[1]
+    assert parts["atk"][1] == (360, 1443, 1176, 1542)
+
+
+def test_alt_dark():
+    """A bar draws like its digit: the template's dark near -2.95, the digit's own off it, a partial overlay split between
+    the bar and the overlay, a covering one solid."""
+    import commands.card_standards as standards
+    from psd_tools.constants import BlendMode
+
+    class Overlay(SimpleNamespace):
+        enabled, blend_mode = True, BlendMode.NORMAL
+    GradientOverlay = type("GradientOverlay", (Overlay,), {})
+    digit = lambda e, *fx: SimpleNamespace(kind="exposure", exposure=e, effects=list(fx), has_effects=lambda: bool(fx))
+    assert standards.alt_dark(digit(-2.95)) == (171, None)
+    assert standards.alt_dark(digit(-1.11)) == (75, None)
+    opacity, overlay = standards.alt_dark(digit(-4.67, GradientOverlay(opacity=48.0)))
+    assert (opacity, round(overlay, 1)) == (225, 54.5)
+    assert standards.alt_dark(digit(-2.95, GradientOverlay(opacity=100.0))) == (255, None)
+
+
 def test_regions_and_rows_on_mini_doomer(clone, parser):
     path = _card(clone, MINI_DOOMER)[0]
     psd = PSDImage.open(path)

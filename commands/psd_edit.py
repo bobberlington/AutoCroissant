@@ -50,7 +50,7 @@ from commands.psd_parts import lyid_index, raw_sha
 from commands.text_align import (BREAKS as TEXT_BREAKS, blocks as text_blocks, moves as text_moves,
                                  opcodes as text_opcodes, segments as text_segments)
 from commands.psd_regions import (STATS as STAT_PATTERNS, _ancestors, badge_layers, bar_box, clip, comp_bars, comp_creature,
-                                  comp_names, comp_row, fx_pad, overlay_words, placed_data, stat_rows, union_box)
+                                  comp_names, comp_row, comp_value, fx_pad, overlay_words, placed_data, stat_rows, union_box)
 
 # ========================
 # Configuration
@@ -102,6 +102,11 @@ ICON_HEIGHT = (0.6, 2.2)    # a typed icon at the text's own size: its height ov
 BADGE_RATIO = 1.35          # a badge's pill over the text's capital height (the cards' median, 1.357 over 731 badges)
 BADGE_PILL = (-130, 820)    # the pill's bottom and top, icon font units of 1000 (build_stoogedings BADGE_BOTTOM, BADGE_TOP)
 BADGE_RESIZE = 0.10         # the guards resize a badge more than this off its computed size
+HARD_SOFT = 0.005           # hard_edged: the share of a picture's pixels with in-between alpha
+HARD_COLOURS = 256          # its colours at most
+HARD_SMALL = 128            # px: its pixels show at this size; a larger one must be blocky
+HARD_BLOCKY = 0.5           # the share of its neighbouring pixels that match
+HARD_CLEAR = 4              # stored_mode: times closer one mode must redraw the stored pixels
 FIT_PX, FIT_PCT = 2.0, 3.0  # and shift a badge or icon whose middle is off by more than both: px, % of the text's em
 FIT_SKIP = ("glow", "no_over", "space")     # icon-font glyphs that are no icon's body (halos, the red sign, spacers)
 ASPECT_TOL = 0.02           # unstretch: a typed icon's x over y scale may be this far off 1 (designers': 678 of 682 at 1.0)
@@ -3228,12 +3233,46 @@ def _offset(state: dict, key: bytes) -> tuple:
     return int(off.get(b"Hrzn", 0)), int(off.get(b"Vrtc", 0))
 
 
-def comp_render(layer, value: int) -> tuple:
+def hard_edged(rgba: np.ndarray) -> bool:
+    """Pixel art or a flat shape (uint8 RGBA): no in-between alpha, few colours, blocky at its size. It resizes nearest."""
+    alpha = rgba[..., 3]
+    solid = alpha >= 128
+    if not solid.any() or ((alpha > 8) & (alpha < 247)).sum() > HARD_SOFT * (alpha > 0).sum():
+        return False
+    if len(np.unique(rgba[solid][:, :3].astype(np.uint32) @ np.array([65536, 256, 1], np.uint32))) > HARD_COLOURS:
+        return False
+    pairs = solid[:, 1:] & solid[:, :-1]
+    same = (rgba[:, 1:, :3] == rgba[:, :-1, :3]).all(axis=2) & pairs
+    return max(alpha.shape) <= HARD_SMALL or same.sum() >= HARD_BLOCKY * pairs.sum()
+
+
+def stored_mode(layer) -> Optional[int]:
+    """The resize mode a bar's stored pixels show, or None when they tell neither (moved since, or drawn the same)."""
+    value, stored = comp_value(layer), layer.numpy()
+    if value is None or stored is None:
+        return None
+    drawn = {mode: comp_render(layer, value, mode) for mode in (Image.NEAREST, Image.BICUBIC)}
+    if any(rgba is None for rgba, _ in drawn.values()):
+        return None
+    box = tuple(layer.bbox)
+    area = union_box([box, *(where for _, where in drawn.values())])
+
+    def plane(alpha, where):
+        out = np.zeros((area[3] - area[1], area[2] - area[0]), np.float32)
+        out[where[1] - area[1]:where[3] - area[1], where[0] - area[0]:where[2] - area[0]] = alpha
+        return out
+    own = plane(stored[..., 3], box)
+    near, cubic = (float(np.abs(plane(rgba[..., 3], where) - own).sum()) for rgba, where in drawn.values())
+    return Image.NEAREST if near * HARD_CLEAR < cubic else Image.BICUBIC if cubic * HARD_CLEAR < near else None
+
+
+def comp_render(layer, value: int, mode: Optional[int] = None) -> tuple:
     """
     A layer-comp stat bar drawn at comp `value` as Photoshop draws it (equal to its stored renders at
     every comp, 0-20, 2026-11-06): each embedded layer that comp shows, bottom to top in normal blending, a shape as its
     vector mask in its fill colour, a pixel layer as its pixels, each through its pixel mask moved to that comp's offset;
-    placed on its transform's rectangle (resized: resampled bicubic).
+    placed on its transform's rectangle. Resized: by mode, else as its stored pixels show (stored_mode), else nearest if
+    hard_edged, else bicubic. The card stores no mode; Photoshop's redraw on a copy equals nearest (2026-11-07).
 
     Returns:
         (straight RGBA float32, canvas bbox), or (None, (0, 0, 0, 0)) when nothing shows; Refused("unsupported-card")
@@ -3306,9 +3345,13 @@ def comp_render(layer, value: int) -> tuple:
         alpha = out
     left, top = round(x0), round(y0)
     size = (round(x1) - left, round(y1) - top)
-    if size != (width, height):                 # a resized bar (Little Guy's): resampled, premultiplied, as Photoshop's bicubic
+    if size != (width, height):                 # a resized bar: premultiplied
         pre = np.concatenate([rgb * alpha[..., None], alpha[..., None]], axis=2)
-        pre = np.stack([np.asarray(Image.fromarray(pre[..., k], "F").resize(size, Image.BICUBIC)) for k in range(4)], axis=2)
+        if mode is None:
+            mode = stored_mode(layer)
+        if mode is None:
+            mode = Image.NEAREST if hard_edged(np.round(np.dstack([rgb, alpha]) * 255).astype(np.uint8)) else Image.BICUBIC
+        pre = np.stack([np.asarray(Image.fromarray(pre[..., k], "F").resize(size, mode)) for k in range(4)], axis=2)
         alpha = np.clip(pre[..., 3], 0.0, 1.0)
         rgb = np.where(alpha[..., None] > 0, np.clip(pre[..., :3], 0.0, None) / np.maximum(alpha, 1e-6)[..., None], 0.0)
         rgb = np.clip(rgb, 0.0, 1.0)
@@ -7288,7 +7331,7 @@ def _icon_png(types_dir: str, stem: str) -> str:
 
 
 def _icon_image(path: str, box: tuple) -> tuple:
-    """A Types/ PNG fitted into the box (its opaque part, aspect kept, centred): (RGBA image, left, top)."""
+    """A Types/ PNG fitted into the box (its opaque part, aspect kept, centred; hard_edged: nearest): (RGBA image, left, top)."""
     image = Image.open(path).convert("RGBA")
     solid = image.getchannel("A").point(lambda a: 255 if a >= 128 else 0).getbbox()
     if solid is None:
@@ -7296,7 +7339,8 @@ def _icon_image(path: str, box: tuple) -> tuple:
     image = image.crop(solid)
     scale = min((box[2] - box[0]) / image.width, (box[3] - box[1]) / image.height)
     width, height = max(1, round(image.width * scale)), max(1, round(image.height * scale))
-    image = image.convert("RGBa").resize((width, height), Image.LANCZOS).convert("RGBA")
+    mode = Image.NEAREST if hard_edged(np.asarray(image)) else Image.LANCZOS
+    image = image.convert("RGBa").resize((width, height), mode).convert("RGBA")
     cx, cy = _centre(box)
     return image, round(cx - width / 2), round(cy - height / 2)
 
