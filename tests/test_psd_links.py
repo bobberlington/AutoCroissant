@@ -124,6 +124,14 @@ def test_trim_map_on_star_of_beth(clone):
     assert not set(pl._items_of(psd)) - {pl._uid(layer) for layer in psd.descendants() if layer.kind == "smartobject"}
 
 
+def test_update_snaps_like_photoshop():
+    """S0 (11-07): Photoshop's Update of Delta's background resized to 922x518 placed it at 153,37-2977,1623."""
+    assert pl.snapped([153.188, 36.5, 2976.812, 36.5, 2976.812, 1622.875, 153.188, 1622.875]) == \
+        [153, 37, 2977, 37, 2977, 1623, 153, 1623]
+    assert pl.snapped([60.473, 1738.007, 1208.498, 1738.007, 1208.498, 2382.993, 60.473, 2382.993]) == \
+        [60, 1738, 1208, 1738, 1208, 2383, 60, 2383]
+
+
 def test_links_placed_from_any_depth_and_url():
     """links_of places a link from its PSD's folder 1, 2 and 3 deep, and from absolute forms cut at /TTSCardMaker/
     (Militron's Windows file:// URL, Tomorrow I'll's Mac one, a Windows path), case-blind; repair() makes each canonical

@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 from hashlib import sha1
 from io import BytesIO
 from json import dump, dumps, load
+from math import floor
 from os import environ, makedirs
 from os.path import expanduser, isdir
 from posixpath import basename, dirname, join as posixpath_join, splitext
@@ -200,6 +201,15 @@ def upright(corners: list) -> bool:
     x0, y0, x1, y1, x2, y2, x3, y3 = corners
     return (abs(y0 - y1) < QUAD_TOL and abs(y2 - y3) < QUAD_TOL and abs(x0 - x3) < QUAD_TOL and abs(x1 - x2) < QUAD_TOL
             and x1 > x0 and y3 > y0)
+
+
+def snapped(corners: list) -> list:
+    """An upright quad as Photoshop's Update places a file of a new pixel size (S0, 11-07): its size rounded to whole
+    pixels, then its corner round the same centre."""
+    x0, y0, x1, _, _, y1, _, _ = corners
+    w, h = floor(x1 - x0 + 0.5), floor(y1 - y0 + 0.5)
+    left, top = floor((x0 + x1 - w) / 2 + 0.5), floor((y0 + y1 - h) / 2 + 0.5)
+    return [float(v) for v in (left, top, left + w, top, left + w, top + h, left, top + h)]
 
 
 def warped(layer) -> bool:
@@ -1175,8 +1185,8 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
     drawn from an older blob of the path (a same-size edit; a link Photoshop made of the file's size is never due, R21).
     Per layer: (i) the drawn-from file's pixels equal the new file's: size, Sz and contentID only; (ii) the same ink at a
     new size (a trim): place_trim's quad, raster kept; (iii) else drawn again at psd_edit.image_mode, the new file at the
-    old one's scale round the same centre, as Photoshop updates a link. Refused (a warp, smart filters, a quad the redraw
-    cannot reproduce): the link stays as it is, with a hand note.
+    old one's scale round the same centre, whole pixels when upright (snapped), as Photoshop updates a link. Refused (a
+    warp, smart filters, a quad the redraw cannot reproduce): the link stays as it is, with a hand note.
 
     Args:
         tree: {repo path: blob} at the head
@@ -1231,7 +1241,8 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
                 quads[tuple(corners)] = place_trim(corners, (w0, h0), size, ink_box(old_rgba), ink_box(new_rgba))
             else:
                 dx, dy = (size[0] - w0) / 2, (size[1] - h0) / 2
-                quads[tuple(corners)] = quad = place_trim(corners, (w0, h0), size, (0, 0, w0, h0), (dx, dy, dx + w0, dy + h0))
+                quad = place_trim(corners, (w0, h0), size, (0, 0, w0, h0), (dx, dy, dx + w0, dy + h0))
+                quads[tuple(corners)] = quad = snapped(quad) if upright(quad) else quad
                 redraw(layer, drawn, quad, image_mode(layer, drawn, old_rgba))
                 pixels = True
         relink(psd, link.uuid, rel, link.path, len(new), blob, quads, size)
