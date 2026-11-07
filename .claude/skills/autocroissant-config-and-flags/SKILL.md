@@ -499,7 +499,7 @@ timer; before, the environment `card-sync-quiet`'s wait timer held it 30 minutes
 | `BRANCH`, `DIR`, `INDEX` | `previews`, `previews`, `index.json` | where it writes on the card repo |
 | `KEEP`, `DAYS` | 200, 7 days | more previews or an older one: the next publish is a fresh orphan commit... |
 | `KEEP_AFTER`, `DAYS_AFTER` | 150, 6 days | ... keeping the newest this many under this age (so a rewrite comes about daily) |
-| `TRIES` | 5 | publish pushes, each from the branch head then |
+| `TRIES` | 5 | publish pushes, each from the branch head then (after one on `WARM_REF`'s head when `--warm` ran) |
 | `IDENTITY` | AutoCroissant | git_commit's `GIT_IDENTITY`, copied (that module imports requests; a test compares them) |
 
 The workflow needs **no secret and no variable**: `GITHUB_TOKEN` reads the card's blobs by sha in the preview job

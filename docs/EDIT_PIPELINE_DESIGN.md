@@ -1199,6 +1199,7 @@ python3: the standard library and git only (import closure `card_preview_branch.
 
     python -m commands.card_preview --card <key or PSD path> --edit <json file> --out <dir> [--clone <checkout>] [--request <id>]
     python -m commands.card_preview_branch --out <dir> --request <id> [--git <checkout>] [--remote origin] [--png]
+    python -m commands.card_preview_branch --warm [--git <checkout>] [--remote origin]
 
 The preview is `card_bake.bake_card` itself on one `Card` (the duplicate, no-PNG and blob gates, the redundancy check,
 `psd_edit.classify`, `apply_jobs` with every gate, the stars/types-refused-beside-the-rest rule, the creatures-stats
@@ -1264,7 +1265,10 @@ missing or foreign result.json is published as `error`, `transient`: the preview
 run on the branch head, from the publish job's blobless depth-1 checkout and its credentials:
 `git fetch --depth 1 --filter=blob:none` of the head into `refs/card-preview/previews` (index.json by a lazy fetch),
 blobs and trees by `hash-object`/`mktree`, `commit-tree`, `push --no-thin` (card-sync.yml's lesson: a thin pack would
-want blobs a blobless clone lacks); a refused push (the head moved) is retried from the new head, 5 tries. When the
+want blobs a blobless clone lacks); a refused push (the head moved) is retried from the new head, 5 tries. The publish
+job does those reads during its wait (`--warm`, 2026-11-07: into `refs/card-preview/warm`, index.json included), so
+publish's first try reaches the push with no network; refused, it goes on to the 5 tries with no sleep, and without a
+warm read (it failed, or ran past its 10 s) those 5 tries are all there is. When the
 branch would hold more than `KEEP` (200) previews or one older than `DAYS` (7 days, or of unknown age), the commit is a
 fresh orphan with this preview and the newest `KEEP_AFTER` (150) under `DAYS_AFTER` (6 days), pushed with
 `--force-with-lease` on the head it read (a run that landed meanwhile breaks the lease and the retry keeps its preview);

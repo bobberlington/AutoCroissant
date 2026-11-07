@@ -5,7 +5,7 @@ written; a blobless clone for the REST blob path), and its publication on the pr
 for GitHub, through a blobless depth-1 clone (the Action's checkout): a baked stat edit (the same pixels as card_bake's
 dry run), a refused edit (with and without a render), a redundant edit, a stars edit refused beside a baked stat, the
 creatures and duplicate gates, bad inputs, dispatched values kept off the runner's command lines, a runner error and a
-bad blob; one commit per publish, a re-run, the rewrites by age and count, a moved head and a moved lease, the publisher
+bad blob; one commit per publish, a re-run, the rewrites by age and count, a moved head and a moved lease, a warm read, the publisher
 on the standard library alone. Then card-preview.yml: its shape, no trigger elsewhere on the branch, the Action-shaped
 copies of both SPARSE_FILES, and its two jobs' Validate, Preview, hand-over and Publish steps run as the runner would
 (bash) against those repos, a failed install too. The workflows come from $AC_SITE_SRC (a TTSCardMaker checkout) or the
@@ -346,6 +346,33 @@ def test_publish_retries_a_moved_head_and_a_moved_lease(remote, tmp_path, monkey
     assert done["rewritten"] and "race-0-1-00" in _index(remote.bare) and "mine-1-0000" in _index(remote.bare)
 
 
+def test_publish_on_a_warm_read(remote, tmp_path, monkeypatch):
+    """--warm reads the branch: publish's first try fetches nothing. A head moved since: refused, then the usual path
+    with no sleep; a rewrite's lease on the warm head likewise."""
+    other = tmp_path / "other"
+    _git(tmp_path, "clone", "-q", "--depth", "1", "--filter=blob:none", f"file://{remote.bare}", str(other))
+    head = br.publish(str(_out(tmp_path, "base-0-0000")), "base-0-0000", str(remote.work))["commit"]
+    real, fetched, naps = br._fetch, [], []
+    monkeypatch.setattr(br, "_fetch", lambda *a: fetched.append(a) or real(*a))
+    monkeypatch.setattr(br, "sleep", naps.append)
+    assert br.main(["--warm", "--git", str(remote.work)]) == 0
+    fetched.clear()
+    assert br.publish(str(_out(tmp_path, "mine-0-0000")), "mine-0-0000", str(remote.work))["parent"] == head and not fetched
+
+    br.warm(str(remote.work))
+    fetched.clear()
+    theirs = br.publish(str(_out(tmp_path, "race-0-0000")), "race-0-0000", str(other))["commit"]
+    fetched.clear()
+    assert br.publish(str(_out(tmp_path, "mine-1-0000")), "mine-1-0000", str(remote.work))["parent"] == theirs
+    assert len(fetched) == 1 and not naps
+
+    br.warm(str(remote.work))
+    br.publish(str(_out(tmp_path, "race-1-0000")), "race-1-0000", str(other))
+    monkeypatch.setattr(br, "KEEP", 4)              # the warm head rewrites, on a lease the other run broke
+    assert br.publish(str(_out(tmp_path, "mine-2-0000")), "mine-2-0000", str(remote.work))["rewritten"]
+    assert sorted(_index(remote.bare)) == ["base-0-0000", "mine-0-0000", "mine-1-0000", "mine-2-0000", "race-0-0000", "race-1-0000"] and not naps
+
+
 # ========================
 # card-preview.yml
 # ========================
@@ -382,6 +409,7 @@ def test_workflow_shape():
     assert preview["timeout-minutes"] < publish["timeout-minutes"] <= 15
     wait = next(s for s in publish["steps"] if s.get("id") == "wait")
     assert "card-preview" in wait["run"] and '"Validate"' in wait["run"] and wait["env"] == {"GH_TOKEN": "${{ github.token }}"}
+    assert "card_preview_branch --warm" in wait["run"] and wait["working-directory"] == "bot"
     assert all(s.get("if") == "steps.wait.outputs.go == 'true'" for s in publish["steps"] if s.get("name") in ("Take over", "Publish"))
     for step in preview["steps"] + publish["steps"]:
         assert "${{" not in step.get("run", ""), step.get("name") or step["run"][:40]    # inputs reach the shell through env only

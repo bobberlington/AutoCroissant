@@ -6,6 +6,10 @@ orphan with the KEEP_AFTER newest under DAYS_AFTER old (pushed with a lease). Al
 which keeps a dispatched value on one line of the job's log.
 
     python -m commands.card_preview_branch --out <dir> --request <id> [--git <checkout>] [--remote <name or url>] [--png]
+    python -m commands.card_preview_branch --warm [--git <checkout>] [--remote <name or url>]
+
+--warm reads the branch while the job waits for the preview: publish's first try then builds on that head, no network
+until the push (a refused push: the usual tries from the head then).
 
 Standard library and git only (never PIL, psd-tools, requests or card_bake): card-preview.yml's publish job runs it with
 the runner's own python3 and no pip install, so a preview that never ran (a failed install, a timeout) is still published,
@@ -41,6 +45,7 @@ BRANCH = "previews"
 DIR = "previews"                                # previews/<request>/ on the branch
 INDEX, README = "index.json", "README.md"
 LOCAL_REF = "refs/card-preview/previews"        # where publish fetches the branch head (no remote-tracking ref moved)
+WARM_REF = "refs/card-preview/warm"             # where warm() fetches it, for publish's first try
 KEEP, DAYS = 200, timedelta(days=7)             # more previews or an older one: the next commit is a fresh orphan...
 KEEP_AFTER, DAYS_AFTER = 150, timedelta(days=6)  # ... with the newest this many under this age (a rewrite about daily)
 TRIES = 5                                       # attempts, each from the head then; 1-2 s, 2-4 s, 3-6 s ... between them
@@ -111,14 +116,14 @@ def _git(where: str, *args: str, stdin: Optional[bytes] = None, lazy: bool = Fal
         raise Unpublished(f"git {args[0]} failed: {error}") from error
 
 
-def _fetch(where: str, remote: str) -> str:
-    """The branch's head from the remote into LOCAL_REF (one commit, its trees, no blobs); "" when there is no branch."""
+def _fetch(where: str, remote: str, ref: str = LOCAL_REF) -> str:
+    """The branch's head from the remote into ref (one commit, its trees, no blobs); "" when there is no branch."""
     listed = _git(where, "ls-remote", "--heads", remote, f"refs/heads/{BRANCH}").split()
     if not listed:
         return ""
     _git(where, "fetch", "-q", "--no-tags", "--no-write-fetch-head", "--depth", "1", "--filter=blob:none", remote,
-         f"+refs/heads/{BRANCH}:{LOCAL_REF}")
-    return _git(where, "rev-parse", "--verify", f"{LOCAL_REF}^{{commit}}").strip()
+         f"+refs/heads/{BRANCH}:{ref}")
+    return _git(where, "rev-parse", "--verify", f"{ref}^{{commit}}").strip()
 
 
 def _listing(where: str, head: str) -> tuple:
@@ -139,6 +144,21 @@ def _listing(where: str, head: str) -> tuple:
         except ValueError:
             index = {}
     return entries, index
+
+
+def warm(where: str = ".", remote: str = "origin") -> str:
+    """publish's reads ahead of it: the head into WARM_REF, index.json local. Returns the head ("": no branch)."""
+    head = _fetch(where, remote, WARM_REF)
+    _listing(where, head)
+    return head
+
+
+def _warmed(where: str) -> str:
+    """warm()'s head; "" when it never ran or failed."""
+    try:
+        return _git(where, "rev-parse", "--verify", "-q", f"{WARM_REF}^{{commit}}").strip()
+    except Unpublished:
+        return ""
 
 
 def _age(at, now: datetime) -> Optional[timedelta]:
@@ -194,13 +214,15 @@ def _result_of(out: str, request: str) -> dict:
 def publish(out: str, request: str, where: str = ".", remote: str = "origin", png: bool = False,
             now: Optional[datetime] = None) -> dict:
     """
-    One commit on the previews branch with previews/<request>/ and its index row, on the branch's head (TRIES times
-    from a moved head); a rewrite as a fresh orphan commit when kept() says so, pushed with a lease.
+    One commit on the previews branch with previews/<request>/ and its index row, on warm()'s head if it ran, then on
+    the branch's head (TRIES times from a moved head); a rewrite as a fresh orphan commit when kept() says so, pushed
+    with a lease.
 
     Args:
         out: The preview's out dir
         request: The client's id (REQUEST)
         where: A checkout of the card repo (its git and credentials; blobless is enough); nothing in it moves but LOCAL_REF
+            (warm() moves WARM_REF)
         remote: Its remote name or a URL
         png: Publish preview.png too (the workflow does not: the site shows the WebP)
 
@@ -224,11 +246,13 @@ def publish(out: str, request: str, where: str = ".", remote: str = "origin", pn
     entry = _tree(where, [("100644", "blob", _blob(where, data), name) for name, data in files.items()])
     readme = _blob(where, BRANCH_README.encode("utf-8"))
     why = ""
-    for attempt in range(TRIES):
-        if attempt:
+    head = _warmed(where)
+    for attempt in range(-1 if head else 0, TRIES):     # -1: on warm()'s head, an extra try; 0 follows it with no sleep
+        if attempt > 0:
             sleep(uniform(1, 2) * attempt)
         try:
-            head = _fetch(where, remote)
+            if attempt >= 0:
+                head = _fetch(where, remote)
             entries, index = _listing(where, head)
             entries[request], index[request] = entry, row
             keep = kept(entries, index, request, now or datetime.now(timezone.utc)) if head else None
@@ -262,16 +286,23 @@ def main(args: Optional[list] = None) -> int:
     parser = ArgumentParser(prog="python -m commands.card_preview_branch",
                             description=f"Publish a card preview's out dir on the {BRANCH} branch, one commit "
                                         "(docs/EDIT_PIPELINE_DESIGN.md section 16).")
-    parser.add_argument("--out", required=True, help="the preview's out dir")
-    parser.add_argument("--request", required=True, help="the client's id (8-64 of A-Z a-z 0-9 -)")
+    parser.add_argument("--out", help="the preview's out dir")
+    parser.add_argument("--request", help="the client's id (8-64 of A-Z a-z 0-9 -)")
     parser.add_argument("--git", default=".", help="a checkout of the card repo (its git and credentials)")
     parser.add_argument("--remote", default="origin", help="its remote (name or URL)")
     parser.add_argument("--png", action="store_true", help=f"publish {PNG} too")
+    parser.add_argument("--warm", action="store_true", help="only read the branch, for a publish later (no --out or --request)")
     options = parser.parse_args(argv[1:] if args is None else args)
+    if not options.warm and (options.out is None or options.request is None):
+        parser.error("--out and --request are required")
     try:
+        if options.warm:
+            head = warm(options.git, options.remote)
+            print(f"Read `{BRANCH}` at `{head[:8]}`." if head else f"No `{BRANCH}` branch yet.")
+            return 0
         done = publish(options.out, options.request, options.git, options.remote, options.png)
     except (ValueError, Unpublished) as error:  # a bad request, or no push landed
-        print(f"card_preview_branch: not published: {clean(error, 2000)}", file=stderr)
+        print(f"card_preview_branch: not {'read' if options.warm else 'published'}: {clean(error, 2000)}", file=stderr)
         return 1
     kept_n = done["kept"]
     how = (f"on `{done['parent'][:8]}`" if done["parent"] else "as the branch's first commit" if not done["rewritten"] else
@@ -296,4 +327,5 @@ __all__ = [
     'main',
     'publish',
     'stamp',
+    'warm',
 ]
