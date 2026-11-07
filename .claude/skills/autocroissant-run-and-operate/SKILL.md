@@ -491,8 +491,8 @@ a smaller miss is made and told in the comment and the bot commit ("made with a 
 replayed commits the PNG is made on 29 and refused on 5 (PUSH_GUARDS.md sections 17 and 18). The comment and the post
 carry each card's semantic PSD diff (`psd_diff`, 0a34292): "{login} pushed {card}{changes} with these issues: ...", the
 changes cut to 120 characters on Discord and 600 in the comment. A new PSD pushed beside its PNG counts as current only
-within 8 levels (`png_export.BESIDE_CUT`, owner); with no stored image, up to 300 px past it the PNG is kept and told
-(`png_export.KEPT`/`KEPT_PX`, default 2026-10-24, owner to confirm), past that redrawn.
+within 8 levels (`png_export.BESIDE_CUT`, owner); with no stored image, up to 300 px past it the PNG is kept, nothing
+told (`png_export.KEPT_PX`; owner 2026-11-07: soft notes are no issue), past that redrawn.
 
 - **The switch: repo variable `CARD_GUARDS`** (TTSCardMaker Settings > Variables, not a secret; any letter case). Unset or
   `off`: the guards' own steps skip (the card and font checks in the same job still run and post at once). `report`: check, comment and post (after the window), never commit: the PNG the bot

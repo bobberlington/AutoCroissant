@@ -968,7 +968,8 @@ def _gated(base: str, path: str, rel: str, parser: Optional[PSDParser], reads: O
 
 
 def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDParser] = None,
-        fonts: Optional[Callable[[list], Optional[str]]] = None, only: Optional[str] = None, whole: bool = False) -> Fixed:
+        fonts: Optional[Callable[[list], Optional[str]]] = None, only: Optional[str] = None, whole: bool = False,
+        skip: tuple = ()) -> Fixed:
     """
     The fixable issues of one PSD (R11 renames, then R9 story syncs), each gated, then R8's Single-line Composer
     (single_line: never told, a refusal left in composer_left); then the size and the reparse gates over the result. A
@@ -985,6 +986,7 @@ def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDPars
         fonts: Gives MDW/Fonts for R8's box text (single_line) and the pixel fixes
         only: One PIXEL_FIXES kind alone (a sweep: card_sweep), no other fix
         whole: fit_badges may redraw a layer whole (a sweep's --whole)
+        skip: PIXEL_FIXES kinds left out (the guards convert in a step of their own)
 
     Returns:
         Fixed
@@ -992,7 +994,7 @@ def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDPars
     result = Fixed()
     wanted = [] if only else [issue for issue in issues if issue.fix and not issue.waived]
     composer = not only and _every_line_in(data)
-    pixels = pixel_kinds(data, (only,) if only else ())
+    pixels = tuple(kind for kind in pixel_kinds(data, (only,) if only else ()) if kind not in skip)
     if not (wanted or composer or pixels):
         return result
     makedirs(work, exist_ok=True)

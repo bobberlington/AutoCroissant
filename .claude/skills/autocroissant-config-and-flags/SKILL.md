@@ -479,7 +479,7 @@ timer; before, the environment `card-sync-quiet`'s wait timer held it 30 minutes
 | `psd_edit.RENDER_RECORD`, `GLYPH_TOL` | `commands/render_record.json`, `0.0001` | each card's ICC vote and text blends read off its stored image before the strip (A16); a restyled text's glyphs this near (canvas px) draw nothing new |
 | `png_export.TOL` | `2` | the difference a pixel may show and still be unchanged (ICC rounding) |
 | `png_export.BESIDE_CUT` | `8` | a new PSD pushed beside its PNG counts as current within this many levels (owner, 2026-10-23) |
-| `png_export.KEPT` | "PNG kept as it is: the bot's drawing differs from the PNG in only {px:,} px, ..." | told for a PNG kept beside a new PSD with no stored composite, at most `png_export.KEPT_PX` (300) px past BESIDE_CUT of the render, else redrawn (default 2026-10-24, owner to confirm; branch work/py314) |
+| `png_export.KEPT_PX` | `300` | a PNG beside a new PSD with no stored composite is kept, nothing told, up to this many px past BESIDE_CUT of the render, else redrawn (owner 2026-11-07: soft notes are no issue) |
 
 ### commands/card_preview.py (2026-10-23; not compiled; TTSCardMaker's card-preview.yml only; design section 16)
 

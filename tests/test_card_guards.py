@@ -11,9 +11,13 @@ import os
 import re
 import shutil
 import subprocess
+import sys
+import types
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 from sys import executable
+from types import SimpleNamespace
 
 import pytest
 from PIL import Image, ImageDraw
@@ -224,8 +228,8 @@ def test_check_end_to_end(cards, tmp_path, monkeypatch):
     assert by["Kept"]["told"] == [] and by["Kept"]["notes"] == ["Kept.png was deleted; the PSD stays"]
     assert (out / "crops" / FOLDER / "Snack.diff.png").exists()
     summary = json.loads((out / "summary.json").read_text())
-    assert summary == {"after": bot, "cards": 8, "told": summary["told"], "comment": 6, "writes": 4, "errors": 0,
-                       "card_errors": 0} and summary["told"] >= 1
+    assert summary == {"after": bot, "cards": 8, "told": summary["told"], "comment": 6, "writes": 4, "normalise": 0,
+                       "errors": 0, "card_errors": 0} and summary["told"] >= 1
     assert by["Bread"]["told"] == [] and not by["Bread"]["issues"]      # R3: no Ability layer is the developer's layout
     assert not by["Dropped"]["writes"] and not by["Dropped"]["export"]
     report = (out / "report.md").read_text()
@@ -316,7 +320,7 @@ def test_a_burst_without_a_stored_image_is_made_against_the_anchor(cards, tmp_pa
     data = cg.check(str(root), two, one, mode="on", out=str(out), workers=1)
     (entry,) = data["cards"]
     assert not entry["error"], entry["error"]
-    assert entry["export"]["outcome"] == "re-exported" and entry["export"]["unchecked"] == ""      # told nothing
+    assert entry["export"]["outcome"] == "re-exported" and entry["export"]["unchecked"] is True
     assert any("an earlier push changed the PSD without its PNG" in note for note in entry["notes"])
     (write,) = entry["writes"]
     made = Image.open(out / write["file"])
@@ -434,6 +438,122 @@ def test_message():
     assert text.splitlines()[0] == f"Card guards: 1 PNG re-exported, 1 PSD fixed, 1 PNG recompressed (push {'f' * 8})"
     trailers = subprocess.run(["git", "interpret-trailers", "--parse"], input=text, capture_output=True, text=True, check=True).stdout
     assert trailers == f"Recompressed: Items/Z.png\nGuarded-push: {'f' * 40}\n"     # what git (and build_site) reads
+
+
+# ========================
+# The 11-07 pass's conversions and linked files (G1-G4)
+# ========================
+def _links_module(monkeypatch, unused=(), duplicates=None, links=None) -> list:
+    """commands.psd_links as the guards call it (the links lane's module); returns the relinks made."""
+    fake, relinked = types.ModuleType("commands.psd_links"), []
+    fake.catalogue_order = sorted
+    fake.items = lambda psd, vocab=(): []
+    fake.TypesIndex = lambda files, history=None: None
+    fake.assign = lambda psds, kinds, linked: {"psds": {rel: [] for rel, _ in psds}, "files": {}}
+    fake.fallback_names = lambda catalogue, linked, kept=None: None
+    fake.links_of = lambda psd, rel, tree: [SimpleNamespace(path=p, name=p.rsplit("/", 1)[-1], uuid="u1", size=3)
+                                            for p in (links or {}).get(rel, [])]
+    fake.records_of = lambda index: ({k: v for k, v in index.items() if k != "files"}, index.get("files") or {})
+    fake.unused = lambda index, tree, pushed=(), read=(): list(unused)
+    fake.duplicates = lambda tree, pushed=(): dict(duplicates or {})
+    fake.restore = lambda size, history: None
+    fake.relink = lambda psd, uuid, rel, path, size, blob: relinked.append((rel, path))
+    monkeypatch.setitem(sys.modules, "commands.psd_links", fake)
+    return relinked
+
+
+def test_a_later_push_is_converted_silently(cards, tmp_path, monkeypatch):
+    """G1 (owner 11-07): a card and a template pushed with what the normalise fix finds are converted after the check
+    (--convert later: summary.json counts them, so Card sync's wait ends at Decided), the card on top of guard 1's PNG
+    (its redrawn picture re-exported in it), its new MDW/Linked file beside it, the template with nothing else checked;
+    one landing, no Discord line, no guard-event for the conversion, the commit message alone says it."""
+    root, base, alice, bot = cards
+    _psd(root, tmp_path / "psds", f"{FOLDER}/Snack.psd", card(colour=(0, 0, 200)))
+    _psd(root, tmp_path / "psds", "MDW/Templates/Item_Template.psd", card())
+    head = _commit(root, "Alice again", author="Alice")
+    _links_module(monkeypatch)
+    monkeypatch.setitem(cg.standards.PIXEL_FIXES, cg.NORMALISE, (lambda psd: [psd], None, None))
+    real, converted = cg.standards.fix, []
+    fixture_psd(tmp_path / "psds", card(colour=(0, 200, 0)), "Redrawn")   # Snack's picture drawn again (class 3)
+    redrawn = (tmp_path / "psds" / "Redrawn.psd").read_bytes()
+
+    def fix(data, rel, issues, work, parser=None, fonts=None, only=None, whole=False, skip=()):
+        if only != cg.NORMALISE:
+            assert cg.NORMALISE in skip            # never in the check itself
+            return real(data, rel, issues, work, parser, fonts, only, whole, skip)
+        assert isinstance(fonts.links, cg.LinkContext) and fonts.links.tree[rel]
+        converted.append(rel)
+        if rel.endswith("Snack.psd"):           # card_standards' shape: the redrawn layers' names
+            return SimpleNamespace(data=redrawn, files={"MDW/Linked/Snack - art.png": b"art"},
+                                   redrawn={cg.NORMALISE: ["Square"]}, left=[], pixel_left=[])
+        return SimpleNamespace(data=data + b"linked", files={}, redrawn={cg.NORMALISE: ["art"]}, left=[], pixel_left=[])
+    monkeypatch.setattr(cg.standards, "fix", fix)
+    out = tmp_path / "out"
+    data = cg.check(str(root), head, bot, mode="on", out=str(out), workers=1, convert="later")
+    by = {Path(e["psd"]).name: e for e in data["cards"]}
+    assert by["Snack.psd"]["convert"] == [cg.NORMALISE] and by["Item_Template.psd"]["case"] == "convert"
+    assert data["summary"]["normalise"] == 2 and data["summary"]["writes"] >= 3 and not converted
+    assert "Item_Template" not in data["markdown"] and data["discord"] == {}
+    plan = str(out / "plan.json")
+    after = cg.convert(plan, str(root), workers=1)
+    assert sorted(converted) == [f"{FOLDER}/Snack.psd", "MDW/Templates/Item_Template.psd"] and after["summary"]["normalise"] == 0
+    snack = {w["path"]: w for w in next(e for e in after["cards"] if e["psd"].endswith("Snack.psd"))["writes"]}
+    assert snack[f"{FOLDER}/Snack.psd"]["silent"] and snack[f"{FOLDER}/Snack.psd"]["pixels"] == [cg.NORMALISE]
+    assert snack["MDW/Linked/Snack - art.png"]["kind"] == "file" and snack["MDW/Linked/Snack - art.png"]["silent"]
+    report = cg.land(plan, local=str(root))
+    assert report["sha"] and not report["error"] and report["told"] == {e["psd"]: [] for e in after["cards"]}
+    assert {(e["kind"], e["path"]) for e in report["events"]} == {("guard-png", f"{FOLDER}/Snack.png"),
+                                                                 ("guard-png", f"{FOLDER}/Snack2.png")}   # guard 1's alone
+    landed = _git(root, "show", "--name-only", "--format=%B", report["sha"])
+    assert "1 linked file added" in landed and "MDW/Linked/Snack - art.png" in landed
+    assert _git(root, "show", f"{report['sha']}:MDW/Linked/Snack - art.png") == "art"
+    png = subprocess.run(["git", "-C", str(root), "show", f"{report['sha']}:{FOLDER}/Snack.png"], capture_output=True, check=True)
+    assert Image.open(BytesIO(png.stdout)).convert("RGB").getpixel((20, 20)) == (0, 200, 0)   # the PNG followed
+    assert subprocess.run(["git", "-C", str(root), "show", f"{report['sha']}:MDW/Templates/Item_Template.psd"],
+                          capture_output=True, check=True).stdout.endswith(b"linked")
+
+
+def test_unused_and_duplicate_linked_files_go_in_one_silent_commit(cards, tmp_path, monkeypatch):
+    """G2 and G3: a pushed MDW/Linked file with another's bytes merged (its user relinked, the duplicate deleted) and an
+    unused one deleted, in the one landing, silent; nothing deleted while the links index is missing or lacks a PSD, nor
+    once a PSD moved on the branch before the landing (it may link them)."""
+    root, base, alice, bot = cards
+    for name in ("kept", "dup", "old"):
+        (root / "MDW/Linked").mkdir(parents=True, exist_ok=True)
+        (root / f"MDW/Linked/{name}.png").write_bytes(b"one" if name != "old" else b"two")
+    head = _commit(root, "files", author="Alice")
+    tree = {path: sha for path, (_, sha) in cg.Source(str(root)).tree(head).items()}
+    user = f"{FOLDER}/Bread.psd"
+    relinked = _links_module(monkeypatch, unused=["MDW/Linked/old.png"], duplicates={"MDW/Linked/dup.png": "MDW/Linked/kept.png"},
+                             links={user: ["MDW/Linked/dup.png"]})
+    monkeypatch.setattr(cg, "links_index", lambda source: None)
+    alone = cg.check(str(root), head, bot, mode="on", out=str(tmp_path / "none"), workers=1)
+    assert alone["linked"]["writes"] == []      # no index: a user of dup.png may be unknown
+    index = {rel: {"blob": sha, "links": []} for rel, sha in tree.items() if rel.endswith(".psd")}
+    index[user]["links"] = [{"path": "MDW/Linked/dup.png", "name": "dup.png", "size": 3, "drawn": None}]
+    monkeypatch.setattr(cg, "links_index", lambda source: {k: v for k, v in index.items() if k != "MDW/Template.psd"})
+    gap = cg.check(str(root), head, bot, mode="on", out=str(tmp_path / "gap"), workers=1)["linked"]["writes"]
+    assert [w["path"] for w in gap] == ["MDW/Linked/old.png"]     # the fake's G2 alone: G3 waits for every PSD's links
+    monkeypatch.setattr(cg, "links_index", lambda source: index)
+    out = tmp_path / "out"
+    data = cg.check(str(root), head, bot, mode="on", out=str(out), workers=1)
+    assert relinked == [(user, "MDW/Linked/kept.png")]
+    writes = {w["path"]: w["kind"] for w in data["linked"]["writes"]}
+    assert writes == {"MDW/Linked/old.png": "delete", user: "psd", "MDW/Linked/dup.png": "delete"}
+    assert data["summary"]["writes"] == 3 and data["discord"] == {} and "linked" not in data["markdown"].lower()
+    other, moved = tmp_path / "other", tmp_path / "moved"
+    _git(tmp_path, "clone", "-q", "--local", str(root), str(other))
+    shutil.copytree(out, moved)
+    _psd(other, tmp_path / "psds", f"{FOLDER}/Snack.psd", card(colour=(1, 2, 3)))
+    _commit(other, "a PSD pushed before the landing", author="Alice")
+    raced = cg.land(str(moved / "plan.json"), local=str(other))
+    assert sorted(path for _, why, path in raced["dropped"] if "a PSD changed" in why) == ["MDW/Linked/dup.png",
+                                                                                         "MDW/Linked/old.png"]
+    report = cg.land(str(out / "plan.json"), local=str(root))
+    assert report["sha"] and report["landed"] == [] and report["events"] == []
+    names = _git(root, "ls-tree", "-r", "--name-only", report["sha"]).splitlines()
+    assert "MDW/Linked/kept.png" in names and "MDW/Linked/dup.png" not in names and "MDW/Linked/old.png" not in names
+    assert "2 linked files deleted" in _git(root, "log", "-1", "--format=%s", report["sha"])
 
 
 # ========================
@@ -664,65 +784,31 @@ def test_a_png_pushed_in_another_case_counts(tmp_path, monkeypatch):
     assert report["after"]["X/Bar.psd"] == ["Bar.png was pushed since: the refusal is withdrawn"]
 
 
-def test_a_png_kept_beside_a_psd_without_a_stored_image_is_told():
-    """Default 2026-10-24, owner to confirm: a new PSD with no stored image beside a PNG at most KEPT_PX px past
-    BESIDE_CUT of the fork's render keeps the PNG (png_export's numbers["kept"]); the post tells it (KEPT, with the px past the cut) on Discord
-    and as the comment's guard-1 line, nothing written."""
-    exported = cg._export_dict(pe.Export("current", unchecked=True, numbers={"kept": 33, "png_vs_render": {"max": 17}}))
-    line = pe.KEPT.format(px=33)
-    assert exported["unchecked"] == line and line.startswith("PNG kept as it is: ") and " 33 px" in line
-    job = cg.Job("X/Snack.psd", "beside", png="X/Snack.png")
-    result = cg.Result(job, export=exported)
-    assert result.told("on") == [line] and result.told("report") == [line]
-    assert cg._guard1_line({"export": exported, "case": "beside"}) == line
-    assert cg._export_dict(pe.Export("current", numbers={"kept": 33}))["unchecked"] == ""      # checked: never kept
-
-
-def test_a_png_made_without_a_stored_image_tells_nothing(tmp_path, monkeypatch):
-    """Owner, 2026-10-24 (G2 rendered anyway) and 2026-11-07 (Maximize Compatibility off is the rule): a PSD with no
-    stored image gets the bot's PNG and nothing is told for it, nor in the comment's guard-1 line (report mode: the PNG
-    it would make). Drawn as another picture than the PSD was saved showing, that is told (PICTURE), and withdrawn, as a
-    refusal is, when the author pushed the PNG in the window, or replaced by the "PNG not made" line when the write did
-    not land."""
-    found = pe.Export("re-exported", changed_px=5, unchecked=True)
+def test_nothing_is_told_for_a_png_made_or_kept_without_a_stored_image(tmp_path, monkeypatch):
+    """Owner 2026-11-07: every card lacks a stored image after the pass, so a PNG the bot makes or keeps without one is
+    no issue: nothing told, on Discord or in the comment (the old UNCHECKED, KEPT, RESTYLED and PICTURE lines); the
+    numbers stay in plan.json."""
+    found = pe.Export("re-exported", changed_px=5, unchecked=True, numbers={"picture": {"drawn": 1, "saved": 2}})
     exported = cg._export_dict(found)
-    assert exported["unchecked"] == "" and cg._export_dict(pe.Export("current", unchecked=True))["unchecked"] == ""
-    restyled = cg._export_dict(pe.Export("current", unchecked=True, numbers={"restyled": ["the Header text"]}))
-    assert restyled["unchecked"] == pe.RESTYLED.format(what="the Header text")
-    assert "stored image" not in restyled["unchecked"]
-    assert cg._guard1_line({"export": restyled, "case": "stale"}) == restyled["unchecked"]
+    assert exported["unchecked"] is True
     job = cg.Job("X/Snack.psd", "stale", png="X/Snack.png")
     result = cg.Result(job, export=exported, writes=[{"path": "X/Snack.png", "kind": "png"}])
     assert result.told("on") == []
     assert result.told("report") == ["PNG not exported with the PSD: export it in Photoshop"]
+    assert cg._drawn_as(found) == "its picture 1"
     line = cg._guard1_line({"export": {**exported, "numbers": {}, "icc": "as stored"}, "case": "stale"})
     assert line.startswith("PNG re-exported by the bot's render of the PSD (") and "stored image" not in line
-    beside = cg._guard1_line({"export": {**exported, "numbers": {"png_vs_render": {"bad_pct": 51.9}}, "icc": "as stored",
-                                         "misses": []}, "case": "beside"})
-    assert "old PSD" not in beside and "made with a pixel difference" not in beside    # the author's change, no miss
-    # default 2026-10-24, owner to confirm: the new PSD drawn against its PNG is plan.json's number alone, not posted
-    assert "51.90" not in beside and "the new PSD drawn against its PNG" not in beside
-
-    picture = cg._export_dict(pe.Export("re-exported", changed_px=5, unchecked=True,
-                                        numbers={"picture": {"drawn": 1, "saved": 2}}))
-    told = picture["unchecked"]
-    assert told == pe.PICTURE.format(drawn=1, saved="picture 2")
+    for numbers in ({"kept": 33}, {"restyled": ["the Header text"]}):
+        kept = cg._export_dict(pe.Export("current", unchecked=True, numbers=numbers))
+        assert cg.Result(cg.Job("X/Snack.psd", "beside", png="X/Snack.png"), export=kept).told("on") == []
+        assert cg._guard1_line({"export": kept, "case": "beside"}) == "PNG still current (the push moved no pixel of the card)"
     out = tmp_path / "plan"
-    snack = _entry("Snack", export=dict(picture, numbers={}), told=[told])
+    snack = _entry("Snack", export=dict(exported, numbers={}), told=[])
     _write(out, snack, "X/Snack.png", "png", b"png", "re-exported")
     plan = _full_plan(tmp_path, [snack])
-    hub = FakeHub({"X/Snack.psd": ("100644", "s1"), "X/Snack.png": ("100644", "p1")})
-    hub.install(monkeypatch)
+    FakeHub({"X/Snack.psd": ("100644", "s1"), "X/Snack.png": ("100644", "p1")}).install(monkeypatch)
     report = cg.land(plan)
-    assert report["sha"] and report["told"] == {"X/Snack.psd": [told]}
-    FakeHub({"X/Snack.psd": ("100644", "s1"), "X/Snack.png": ("100644", "author's")}).install(monkeypatch)
-    assert cg.land(plan)["told"] == {"X/Snack.psd": []}                     # the author pushed the PNG: nothing to tell
-    hub.install(monkeypatch)
-
-    def down(*args, **kwargs):
-        raise gc.Transient("the API is down")
-    monkeypatch.setattr(cg, "commit_files", down)
-    assert cg.land(plan)["told"] == {"X/Snack.psd": ["PNG not made: the bot's commit failed; export it in Photoshop"]}
+    assert report["sha"] and report["told"] == {"X/Snack.psd": []} and cg.finish(plan, report) == {}
 
 
 def test_land_local_commits_in_the_clone(cards, tmp_path):

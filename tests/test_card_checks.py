@@ -167,3 +167,32 @@ def test_action_shaped_copy(tmp_path):
         steps = yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"]["check"]["steps"]
         checkout = next(s for s in steps if s.get("with", {}).get("repository"))
         assert checkout["with"]["sparse-checkout"].split() == ["/" + f for f in cc.SPARSE_FILES]
+
+
+def test_link_notes_word_the_links_against_the_tree():
+    """db/links.json's hand notes (owner 11-07, plain words): a file the repo lacks (cleared once it is pushed), a
+    look-alike of another linked file, a changed file Card sync could not draw again; none off the record's blob."""
+    tree = {"MDW/Linked/a.png": "b1", "MDW/Linked/b.png": "b2", "Types/fire.png": "f2"}
+    links = {"X/C.psd": {"blob": "c1", "links": [{"path": "MDW/Linked/gone.png", "name": "gone.png", "size": 3, "drawn": None},
+                                                 {"path": "MDW/Linked/b.png", "name": "b.png", "size": 5, "drawn": None},
+                                                 {"path": "Types/fire.png", "name": "fire.png", "size": 9, "drawn": "f1"}]},
+             "X/D.psd": {"blob": "d1", "links": [{"path": "MDW/Linked/a.png", "name": "a.png", "size": 4, "drawn": None}]},
+             "X/E.psd": {"blob": "e1", "links": [{"path": "MDW/Linked/a.png", "name": "a.png", "size": 4, "drawn": None}]},
+             "files": {"Types/fire.png": {"f1": 9, "f2": 9}, "MDW/Linked/b.png": {"b2": 5}},
+             "pixels": {"b1": "same", "b2": "same"}}
+
+    def sha(path):
+        return tree.get(path, "")
+    alike = cc.look_alikes(links, sha, tree)
+    assert alike == {"MDW/Linked/b.png": "MDW/Linked/a.png"}      # a.png has more users: b.png's get the note
+    b = [{"path": "MDW/Linked/b.png", "name": "b.png", "size": 5, "drawn": None}]
+    assert cc.look_alikes({**links, "X/D.psd": {"blob": "d1", "links": b}, "X/E.psd": {"blob": "e1", "links": b}},
+                          sha, tree) == {"MDW/Linked/a.png": "MDW/Linked/b.png"}
+    record = {"unredrawable": {"Types/fire.png": ["Fire", "a warp"]}}
+    assert cc.link_notes("X/C.psd", "c1", links, sha, alike, record) == [
+        "Links gone.png, which is not in the repo: push that file.",
+        "Links b.png, which looks the same as a.png: link a.png instead.",
+        "Fire links fire.png, changed since: Card sync could not draw it again (a warp); update it in Photoshop."]
+    assert cc.link_notes("X/C.psd", "c0", links, sha, alike, record) == []
+    tree["MDW/Linked/gone.png"] = "g1"
+    assert len(cc.link_notes("X/C.psd", "c1", links, sha, alike, record)) == 2

@@ -1,8 +1,8 @@
 """
 The push guards (docs/Campaigns/PUSH_GUARDS.md): TTSCardMaker's card-guards.yml runs this on every push to main. Guard 1
 (png_export) gives a card PSD pushed without its PNG the PNG the bake would make (the fork's render of the changed layers,
-merged into the old PNG; Photoshop's stored composite only cross-checks, and a PSD without one gets the PNG under the
-bake's own gates, nothing told since 2026-11-07: every save strips it); guard 2 (card_standards) checks the pushed PSDs against the card
+merged into the old PNG; Photoshop's stored composite only cross-checks, and a PSD without one, every card since the
+11-07 pass, gets the PNG under the bake's own gates, nothing told); guard 2 (card_standards) checks the pushed PSDs against the card
 standards (missing fonts are the font check's alone) and fixes only the 0-pixel classes; the Single-line Composer (R8) it
 always sets unsaid, box text that rewraps redrawn and its PNG re-exported: only the bot commit's message names it
 (owner, 2026-10-25); so are the pixel fixes (card_standards.PIXEL_FIXES, in order: badges laid out again at their new
@@ -16,8 +16,17 @@ Every card PNG the push brought is recompressed losslessly in that commit (owner
 the same pixels) when that saves more than 10% and 64 KiB (our thresholds), and so is every PNG the bot writes.
 
     python -m commands.card_guards check --clone <dir> --after <sha> [--before <sha>] [--repo <owner/name>] [--author <login>]
-                                         [--cards <names>] [--whole-tree] [--mode dry|report|on] --out <dir>
+                                         [--cards <names>] [--whole-tree] [--mode dry|report|on] [--convert now|later|off]
+                                         --out <dir>
+    python -m commands.card_guards normalise --out <dir> --clone <dir> [--repo <owner/name>] [--minutes <n>] [--deadline <epoch>]
     python -m commands.card_guards land --plan <out>/plan.json [--dry-run] [--local <clone>] [--rerun]
+
+After the 11-07 pass (PLAN 7, all silent: no Discord, comment or changelog event): a pushed card, template or
+MDW/Unfinished PSD with an embedded picture, sub or superscript text, a merged image or a link to repair is converted
+by card_standards' normalise fix (G1; `normalise`, after the check's Decided, or in the check with --convert now), a
+renamed PSD whose folder depth changed has its links repaired (G4); MDW/Linked files no PSD links are deleted (G2,
+db/links.json on the data branch), a pushed one with another's bytes merged into it (G3), a link to a deleted one put
+back (G4); one landing (git past GIT_LAND files).
 
 A landed commit's changelog events (guard-png: a PNG re-made or recompressed; guard-fix: a fix the guards landed; the
 Single-line Composer none) go to guard-events.json beside the plan, which card-guards.yml uploads and Card sync's data
@@ -37,6 +46,7 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from functools import partial
+from io import BytesIO
 from json import dump, load, loads
 from os import cpu_count, environ, getpid, listdir, makedirs, pathsep, replace
 from os.path import basename, dirname, isdir, join, splitext
@@ -44,6 +54,7 @@ from re import fullmatch, sub
 from subprocess import CalledProcessError, TimeoutExpired
 from sys import stderr
 from tempfile import TemporaryDirectory
+from time import time
 from traceback import format_exc
 from typing import Callable, Optional
 
@@ -57,11 +68,11 @@ from commands.card_bake import PREFETCH_WORKERS, Snapshot, fetch_verified, local
 from commands.card_check import vocabulary
 from commands.card_edits import CardAuthors
 from commands.font_check import face_names, is_card_psd, tree_fonts
-from commands.git_commit import (AUTHOR, COMMIT_TRIES, NO_LAZY, Transient, api, commit_files, git, local_commit, plural,
-                                 ref_head, token)
+from commands.git_commit import (AUTHOR, COMMIT_TRIES, NO_LAZY, Transient, api, commit_files, git, git_commit, local_commit,
+                                 plural, ref_head, token)
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_edit import Refused
-from global_config import CARD_REPO, FONT_DIRS_ENV, ICON_MANIFEST_PATH
+from global_config import CARD_REPO, FONT_DIRS_ENV, ICON_MANIFEST_PATH, STARS_DIR, TYPES_DIR
 
 # ========================
 # Configuration
@@ -104,6 +115,15 @@ TELL_PNG_MISMATCH = False                       # R10 and "current but outside t
                                                 # two rules: the commit comment only until the owner asks)
 OLD_FONT = ("old stoogedings font: pull, reinstall MDW/Fonts/stoogedings.ttf, restart Photoshop, "   # told (owner 2026-11-04)
             "Type > Update All Text Layers, save and push")
+NORMALISE = "normalise"                         # the 11-07 pass's fix (card_standards): linked pictures, normal text, no
+                                                # merged image; the guards run it on every later push, silent (G1)
+QUIET_PIXELS = (NORMALISE,)                     # pixel fixes that make no guard-event (owner 11-07)
+CONVERT_ROOTS = ("MDW/Templates/", "MDW/Unfinished/")   # PSDs converted and nothing else (Q3)
+CONVERTS = ("now", "later", "off")              # check's --convert: in the check, in the normalise step (after Decided), never
+CONVERT_MINUTES = 20                            # no conversion starts past this; the rest stay as pushed (their next push)
+LINKS = "db/links.json"                         # the data branch's links (card_data.gather_links): G2-G4's index
+LINKED_DIR = "MDW/Linked/"
+GIT_LAND = 40                                   # files past which land commits by git (git_commit: no blob upload each)
 _worker: dict = {}
 _advances: dict = {}                            # icon font blob sha -> {glyph name: advance} (earlier_fonts)
 
@@ -140,7 +160,7 @@ class Job:
     """One card's work in the push."""
     psd: str                                    # the PSD path at after (the deleted one's for "deleted")
     case: str                                   # stale, pair, new, beside, rename, psd-only, png-only, deleted, png-deleted, whole,
-                                                # numbered (numbered PNGs pushed alone)
+                                                # numbered (numbered PNGs pushed alone), convert (normalise alone: Q3, G4)
     psd_old: str = ""                           # its blob before the push
     psd_new: str = ""                           # its blob at after
     png: str = ""                               # the PNG path (to check, or to write)
@@ -152,6 +172,7 @@ class Job:
     anchor_commit: str = ""                     # changed the PSD without the PNG (G5's second try); that commit
     left: str = ""                              # rename: the old PNG, still at its old path
     pushed: dict = field(default_factory=dict)  # numbered PNG path -> blob the push brought (recompressed only)
+    convert: bool = False                       # rename: its links repaired too (its folder depth changed, G4)
     login: str = NOBODY
     commit: str = ""                            # the last writer's commit (the Discord link)
 
@@ -173,6 +194,9 @@ class Result:
     redrawn: dict = field(default_factory=dict)  # pixel fixes (card_standards.PIXEL_FIXES): kind -> layers (silent)
     pixel_left: list = field(default_factory=list)  # (kind, why) a pixel fix not made (plan.json alone)
     pixel_notes: list = field(default_factory=list)     # what a landing pixel fix did to look at (plan.json alone)
+    convert: list = field(default_factory=list) # what the normalise fix finds (convert_plan converts it, silent)
+    shown: dict = field(default_factory=dict)   # PNG path -> {"file"} or {"blob"}: the PNGs that show the PSD as checked
+    shows: str = "pushed"                       # which PSD they show: "pushed", or "fixed" (guard 2 redrew and they follow)
     error: str = ""
 
     @property
@@ -185,8 +209,6 @@ class Result:
         out = []
         if self.export.get("outcome") == "refused":
             out.append(self.export["why"])
-        if self.export.get("unchecked"):        # G2 rendered anyway (owner, 2026-10-24): told instead of refused
-            out.append(self.export["unchecked"])
         out += [why for why, _ in self.export.get("numbered_refused", [])]
         if mode == "report":
             out += [would_make(self.job.case, self.job.png, w) for w in self.writes if w["kind"] == "png" and not w.get("silent")]
@@ -460,6 +482,7 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
     changes = [c for c in changes if c.path not in skipped]
     psds = [c for c in changes if is_card_psd(c.path)]
     pngs = {c.path: c for c in changes if card_png(c.path)}
+    converts = [c for c in changes if c.status in "AM" and convertible(c.path)]
     deleted: dict = {}                          # blob -> deleted paths: an added path with one of them is a rename
     for c in psds:
         if c.status == "D":
@@ -492,13 +515,16 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
             continue
         if change.path in renamed_new:
             old_path = renamed_new[change.path]
-            if not png:
-                old_png = old_snapshot.png_for(old_path)[0]
-                if old_png:
-                    job.case, job.png = "rename", splitext(change.path)[0] + splitext(old_png)[1]
-                    job.copy_from, job.psd_old = old_tree[old_png][1], change.new
-                    job.left = old_png if old_png in tree else ""
-                    jobs.append(job)
+            moved = old_path.count("/") != change.path.count("/")   # its relPaths name other files now (G4)
+            old_png = old_snapshot.png_for(old_path)[0] if not png else ""
+            if old_png:
+                job.case, job.png = "rename", splitext(change.path)[0] + splitext(old_png)[1]
+                job.copy_from, job.psd_old = old_tree[old_png][1], change.new
+                job.left = old_png if old_png in tree else ""
+                job.convert = moved
+                jobs.append(job)
+            elif moved:
+                jobs.append(Job(change.path, "convert", "", change.new, login=login, commit=commit))
             continue
         if png and png in pngs and pngs[png].status in "AM":
             job.case, job.png, job.png_new, job.numbered = "pair", png, pngs[png].new, numbered(change.path)
@@ -546,6 +572,9 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
     for psd, found in alone.items():
         login, commit = who(sorted(found)[0])
         jobs.append(Job(psd, "numbered", "", tree[psd][1], login=login, commit=commit, pushed=found))
+    for change in converts:                     # templates and MDW/Unfinished: converted, nothing else (Q3)
+        login, commit = who(change.path)
+        jobs.append(Job(change.path, "convert", change.old, change.new, login=login, commit=commit))
     if cards:
         jobs = [job for job in jobs if CardAuthors.key(card_name(job.psd)) in cards]
     return sorted(jobs, key=lambda job: job.psd), skipped, notes, tree
@@ -650,13 +679,12 @@ def _recompress(out: str, result: Result, path: str, read: Callable[[], bytes]) 
 
 
 def _export_dict(found) -> dict:
-    """An Export as plan.json keeps it; "unchecked" is the line told for a PNG made with no stored image (G2) as another
-    picture than the PSD was saved showing (PICTURE), or for one kept (KEPT beside such a PSD, RESTYLED over one)."""
+    """An Export as plan.json keeps it ("unchecked": no stored image to cross-check, G2; never told)."""
     return {"outcome": found.outcome, "why": found.why, "gate": found.gate, "changed_px": found.changed_px,
             "box": list(found.box) if found.box else None, "icc": found.icc, "writer": found.writer,
             "vote": list(found.vote) if found.vote else None, "numbers": found.numbers,
             "misses": png_export.miss_notes(found),
-            "unchecked": png_export.unchecked_line(found)}
+            "unchecked": found.unchecked}
 
 
 def _r10_line(job: Job, measured: dict) -> str:
@@ -716,9 +744,17 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
         result.writes.append({"path": job.png, "file": file, "sha": blob_sha(data), "kind": "png", "line": line})
         if job.left:
             result.notes.append((f"{basename(job.left)} is left at the PSD's old name", False))
+        if job.convert:
+            moved = png_export.open_psd(source.blob(job.psd_new))
+            moved.repo_path = job.psd           # its links judged from its new folder
+            result.convert = list(standards.pixel_kinds(moved, (NORMALISE,)))
         return
     new_bytes = source.blob(job.psd_new)
     new = png_export.open_psd(new_bytes, job.psd)
+    new.repo_path = job.psd                     # the link step places and judges its links from here
+    if job.case == "convert":
+        result.convert = list(standards.pixel_kinds(new, (NORMALISE,)))
+        return
     old = png_export.open_psd(source.blob(job.psd_old), job.psd) if job.psd_old else None
     faces = partial(source.fonts_for)          # a restyle keeping every glyph is laid out in them (psd_edit.same_glyphs)
     if old is not None:
@@ -798,7 +834,9 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
             shown[job.png] = png
         if measured.get("ok") is None:
             result.notes.append((f"{basename(job.png)} could not be checked against the PSD ({measured.get('why')})", False))
-    pixels = standards.pixel_kinds(new) if job.case != "png-only" else ()
+    pixels = tuple(kind for kind in standards.pixel_kinds(new) if kind != NORMALISE) if job.case != "png-only" else ()
+    if job.case != "png-only":                  # converted after the check (convert_plan), SWEEP_ONLY or not
+        result.convert = list(standards.pixel_kinds(new, (NORMALISE,)))
     if job.case == "png-only":
         return
     # guard 2
@@ -810,7 +848,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
         fonts = partial(source.fonts_for)
         fonts.earlier = earlier                 # card_standards.relay_badges, redraw_old_glyphs
         fonts.cards = context.cards             # relay_badges' notes: a break inside a card's name
-        fixed = standards.fix(new_bytes, job.psd, issues, join(out, "work"), parser, fonts)
+        fixed = standards.fix(new_bytes, job.psd, issues, join(out, "work"), parser, fonts, skip=(NORMALISE,))
         result.fixed, result.composer, result.composer_left = fixed.applied, fixed.composer, fixed.composer_left
         result.pixel_left = list(fixed.pixel_left)
         lines = {issue.code: issue.line() for issue in issues if issue.fix}
@@ -836,6 +874,11 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
             result.writes.append(write)
         if stale_left(fixed, result.redrawn):
             result.notes.append((OLD_FONT, True))
+    if result.convert:                          # what the conversion's PNGs start from
+        for path in shown:
+            write = next((w for w in result.writes if w["path"] == path and w["kind"] == "png"), None)
+            result.shown[path] = {"file": write["file"]} if write else {"blob": source.checked.get(path, ("", ""))[1]}
+        result.shows = "fixed" if any(w.get("composer") for w in result.writes if w["kind"] == "png") else "pushed"
 
 
 def stale_left(fixed, redrawn: dict) -> list:
@@ -849,8 +892,7 @@ def stale_left(fixed, redrawn: dict) -> list:
 
 def _drawn_as(found) -> str:
     """What guard 1's main PNG is a render of: a tagged PSD saved showing another picture is drawn as picture 1."""
-    picture = found.numbers.get("picture")
-    return f"its picture 1 ({png_export.unchecked_line(found)})" if picture else "the PSD"
+    return "its picture 1" if found.numbers.get("picture") else "the PSD"
 
 
 def _rewrapped_pngs(out: str, result: Result, pushed, fixed, shown: dict, faces=None) -> bool:
@@ -916,6 +958,342 @@ def _pooled(item: tuple) -> Result:
 
 
 # ========================
+# Conversions and linked files (the 11-07 pass, PLAN 7: G1-G4; all silent)
+# ========================
+@dataclass
+class LinkContext:
+    """
+    What the normalise fix's link step reads (fonts.links: psd_links.link_card's entries, read and first): the tree at
+    after, the parent's catalogue (psd_links.assign over every PSD the run converts, so a new file shared by two of them
+    gets one name, its first user's), the run's new files and the repo's by blob. Every user writes the new files it
+    links (first: None), so none lands linking a file whose first user did not convert or land (one write each).
+    """
+    tree: dict                                  # {repo path: blob} at after
+    catalogue: dict                             # psd_links.assign's {"psds": {rel: rows}, "files": {new path: info}}
+    read_blob: Callable                         # blob sha -> bytes (Source.blob)
+    files: dict = field(default_factory=dict)   # {new path: bytes} written by this run's first users
+    redraw: bool = True                         # False: class 3 taken as exact copies (its PNG could not follow)
+
+    def entries(self, rel: str) -> list:
+        return self.catalogue.get("psds", {}).get(rel, [])
+
+    def first(self, rel: str) -> None:
+        return None                             # link_card: every new file it uses
+
+    def read(self, path: str) -> Optional[bytes]:
+        if path in self.files:
+            return self.files[path]
+        sha = self.tree.get(path)
+        return self.read_blob(sha) if sha else None
+
+
+def convertible(path: str) -> bool:
+    """A PSD the guards convert and do nothing else to (Q3): MDW/Templates, MDW/Unfinished."""
+    return path.lower().endswith(".psd") and path.startswith(CONVERT_ROOTS)
+
+
+def _link_holder(path: str) -> bool:
+    return path.lower().endswith((".psd", ".psb"))
+
+
+def _holders(pairs) -> str:
+    """A digest of a tree's PSDs and PSBs ((path, blob) pairs): what a linked-file deletion was decided on."""
+    return blob_sha("\n".join(sorted(f"{path}\t{blob}" for path, blob in pairs if _link_holder(path))).encode())
+
+
+def links_index(source: Source) -> Optional[dict]:
+    """db/links.json at the data branch (card_data.gather_links; one blob read), None without it (nothing deleted)."""
+    data = source.commit("origin/data") or source.commit("data")
+    found = source.tree(data).get(LINKS) if data else None
+    if not found:
+        return None
+    try:
+        return loads(source.blob(found[1]))
+    except Exception:                           # unread: no housekeeping this run
+        print(format_exc(), file=stderr)
+        return None
+
+
+def _final(out: str, entry: dict, source: Source, tree: dict) -> bytes:
+    """A pushed PSD as it lands: its planned PSD write, else its blob at after."""
+    write = next((w for w in entry.get("writes", []) if w["kind"] == "psd" and w["path"] == entry["psd"]), None)
+    if write is not None:
+        with open(join(out, write["file"]), "rb") as fh:
+            return fh.read()
+    return source.blob(tree[entry["psd"]])
+
+
+def _items(item: tuple) -> tuple:
+    """(rel, psd_links.items of its PSD at after, or None unread): the catalogue's worker."""
+    from commands import psd_links
+    clone, repository, rel, sha, vocab = item
+    try:
+        return rel, psd_links.items(png_export.open_psd(Source(clone, repository).blob(sha)), vocab)
+    except Exception:                           # unread: that PSD converts with no catalogue rows (left as pushed)
+        print(format_exc(), file=stderr)
+        return rel, None
+
+
+def catalogue(source: Source, tree: dict, rels: list, index: Optional[dict], vocab=(), workers: int = 0) -> dict:
+    """The parent's catalogue of the PSDs to convert: their items read in the pool (psd_links.items), then named here in
+    catalogue order (psd_links.assign: a new file two of them share is named once, after its first user). Types/ from
+    the tree (the checkout's /Types/, else by blob), its older blobs from db/links.json's files, MDW/Linked by blob."""
+    from commands import psd_links
+    jobs = [(source.clone, source.repository, rel, tree[rel], vocab) for rel in psd_links.catalogue_order(rels)]
+    if len(jobs) >= POOL_MIN and workers != 1:
+        with ProcessPoolExecutor(workers or pool_size(len(jobs)), initializer=token_from_env) as pool:
+            read = list(pool.map(_items, jobs, chunksize=1))
+    else:
+        read = [_items(job) for job in jobs]
+    found = [(rel, rows) for rel, rows in read if rows is not None]
+    history = {blob: path for path, blobs in ((index or {}).get("files") or {}).items() if path.startswith("Types/")
+               for blob in blobs}
+    types = psd_links.TypesIndex({path: source.blob(sha) for path, sha in tree.items()
+                                  if dirname(path) in (TYPES_DIR, STARS_DIR)}, history)
+    linked = {path: sha for path, sha in tree.items() if path.startswith(LINKED_DIR)}
+    out = psd_links.assign(found, types, linked)
+    psd_links.fallback_names(out, linked)       # a class 2 or 3 refused, or redraw off: its exact copy's name (5.2 step 9)
+    return out
+
+
+def _shown_images(out: str, source: Source, entry: dict) -> dict:
+    """{PNG path: image} of the PNGs that show the PSD the conversion starts from (the check's "shown")."""
+    images = {}
+    for path, found in entry.get("shown", {}).items():
+        if found.get("file"):
+            with open(join(out, found["file"]), "rb") as fh:
+                images[path] = png_export.open_png(fh.read())
+        else:
+            images[path] = png_export.open_png(source.blob(found["blob"]))
+    return images
+
+
+def _convert_one(source: Source, entry: dict, ctx: LinkContext, parser, out: str, deadline: float) -> dict:
+    """One PSD's normalise (card_standards.fix, only normalise) on top of the check's write; a class 3 redraw takes its
+    PNGs along (png_export.export over the PNGs the check found showing the PSD), else it is redone as exact copies."""
+    if time() > deadline:
+        return {"left": "not converted: the guards' time ran out (its next push converts it)"}
+    tree = ctx.tree
+    base = _final(out, entry, source, tree)
+    fonts = partial(source.fonts_for)
+    fonts.links = ctx
+    shown = _shown_images(out, source, entry) if entry.get("png") in entry.get("shown", {}) else {}
+    for redraw in (True, False):
+        ctx.redraw = redraw
+        fixed = standards.fix(base, entry["psd"], [], join(out, "work"), parser, fonts, only=NORMALISE)
+        if not fixed.data:
+            return {"left": "; ".join(why for _, why in fixed.pixel_left) or "nothing to convert"}
+        redraws = list(fixed.redrawn.get(NORMALISE) or ())     # card_standards: the layers drawn again
+        if not redraws:
+            return {"psd": fixed.data, "files": dict(fixed.files), "pngs": {}, "left": list(fixed.left)}
+        if not shown:                           # no PNG shows it (templates, Unfinished): nothing follows
+            if entry.get("png") or is_card_psd(entry["psd"]):
+                continue                        # a card's PNG not followed here (a rename): exact copies
+            return {"psd": fixed.data, "files": dict(fixed.files), "pngs": {}, "left": list(fixed.left)}
+        start = png_export.open_psd(base if entry.get("shows") == "fixed" else source.blob(tree[entry["psd"]]))
+        numbered = {path: image for path, image in shown.items() if path != entry["png"]}
+        found = png_export.export(start, png_export.open_psd(fixed.data), shown[entry["png"]], numbered)
+        if found.outcome == "refused" or any(data == b"" for data, _ in found.numbered.values()):
+            continue                            # the redraw cannot reach its PNGs: exact copies instead
+        pngs = {entry["png"]: found.data} if found.outcome == "re-exported" else {}
+        pngs.update({path: data for path, (data, _) in found.numbered.items() if data})
+        return {"psd": fixed.data, "files": dict(fixed.files), "pngs": pngs, "left": list(fixed.left), "base": base}
+    return {"left": "not converted: its redrawn pictures' PNGs could not follow"}
+
+
+def _merge(out: str, entry: dict, done: dict, tree: dict) -> None:
+    """A conversion into the card's writes: its PSD write (the check's carries it), its new files, its PNGs; silent."""
+    entry["converted"] = "psd" in done
+    if done.get("left"):
+        entry.setdefault("convert_left", []).extend([done["left"]] if isinstance(done["left"], str) else done["left"])
+    if "psd" not in done:
+        return
+    line = standards.PIXEL_LINES.get(NORMALISE, NORMALISE)
+    write = next((w for w in entry["writes"] if w["kind"] == "psd" and w["path"] == entry["psd"]), None)
+    if write is None:
+        write = {"path": entry["psd"], "kind": "psd", "line": line, "shown": "", "silent": True, "composer": False,
+                 "pixels": []}
+        entry["writes"].append(write)
+    else:
+        write["line"] = "; ".join(filter(None, [write.get("line"), line]))
+    if done.get("pngs") and not write.get("plain"):     # a PNG that can't land lands the PSD as it was checked
+        write["plain"] = {"file": _save(out, entry["psd"] + ".plain", done["base"]), "sha": blob_sha(done["base"]),
+                          "line": write["line"], "pixels": list(write.get("pixels", []))}
+    write.update(file=_save(out, entry["psd"], done["psd"]), sha=blob_sha(done["psd"]),
+                 pixels=sorted({*write.get("pixels", []), NORMALISE}))
+    for path, data in sorted(done.get("files", {}).items()):
+        entry["expect"][path] = tree.get(path, "")
+        if data is None:
+            entry["writes"].append({"path": path, "kind": "delete", "file": None, "sha": None, "silent": True,
+                                    "line": "linked file deleted"})
+        else:
+            entry["writes"].append({"path": path, "kind": "file", "file": _save(out, path, data), "sha": blob_sha(data),
+                                    "silent": True, "line": "linked file added"})
+    for path, data in sorted(done.get("pngs", {}).items()):
+        entry["writes"] = [w for w in entry["writes"] if not (w["path"] == path and w["kind"] == "recompress")]
+        old = next((w for w in entry["writes"] if w["path"] == path and w["kind"] == "png"), None)
+        if old is None:
+            old = {"path": path, "kind": "png", "line": f"re-exported for {line}", "shown": "", "silent": True}
+            entry["writes"].append(old)
+        old.update(file=_save(out, path, data), sha=blob_sha(data), composer=True)
+
+
+def _init_convert(clone: str, repository: str, ctx: LinkContext, vocab, tree: dict, fonts: str) -> None:
+    token_from_env()
+    source = Source(clone, repository, fonts)
+    source.checked = tree
+    ctx.read_blob = source.blob
+    _worker.update(source=source, ctx=ctx, parser=vocab.parser() if vocab is not None else None)
+
+
+def _pooled_convert(item: tuple) -> dict:
+    entry, out, deadline = item
+    try:
+        return _convert_one(_worker["source"], entry, _worker["ctx"], _worker["parser"], out, deadline)
+    except Exception as error:                  # one bad PSD never stops the others: left as pushed
+        print(format_exc(), file=stderr)
+        return {"left": f"not converted ({type(error).__name__}: {error})"}
+
+
+def housekeeping(data: dict, source: Source, tree: dict, out: str, index: Optional[dict], deadline: float = 0.0) -> dict:
+    """
+    G2-G4 over what lands (psd_links.unused, duplicates, restore, relink), as plan.json's "linked" entry, silent: the
+    MDW/Linked files no PSD links deleted (nothing while any PSD's links are unknown); a pushed MDW/Linked file with the
+    bytes of another merged into it (every user relinked, no pixel changed; within the time budget, else both stay); a
+    link to an MDW/Linked file missing at after restored from history when its last blob has the link's size (a file
+    pushed ahead of its PSD and deleted meanwhile, R13).
+    """
+    from commands import psd_links
+    entry = {"card": "", "psd": "", "case": "linked", "login": SUBJECT, "commit": data["after"], "writes": [],
+             "expect": {}, "notes": [], "told": []}
+    pushed_linked = [p for p in data.get("pushed_paths", []) if p.startswith(LINKED_DIR)]
+    cards = {e["psd"]: e for e in data["cards"] if e.get("psd") in tree}
+    finals: dict = {}
+    for path in data.get("pushed_paths", []):
+        if _link_holder(path) and path in tree:
+            try:
+                finals[path] = _final(out, cards[path], source, tree) if path in cards else source.blob(tree[path])
+            except Exception:                   # unread: its links unknown, nothing deleted
+                print(format_exc(), file=stderr)
+                return entry
+    paths = set(tree)
+    entry["holders"] = _holders(tree.items())   # land drops the deletions once any PSD moved (it may link them)
+    read = [(rel, psd_links.links_of(png_export.open_psd(raw), rel, paths)) for rel, raw in sorted(finals.items())]
+    direct = dict(read)
+    records = psd_links.records_of(index)[0] if index is not None else {}
+    known = index is not None and all(rel in direct or ((records.get(rel) or {}).get("blob") == blob
+                                                        and not records[rel].get("error"))
+                                      for rel, blob in tree.items() if _link_holder(rel))   # G2's rule: every user known
+    links = {rel: [{"path": link.path, "name": link.name} for link in found] for rel, found in direct.items()}
+    links.update({rel: record.get("links") or [] for rel, record in records.items()
+                  if rel not in direct and isinstance(record, dict) and rel in tree})
+    unplaced = {basename(link.get("name") or "").lower() for found in links.values() for link in found if not link.get("path")}
+    dups = {dup: kept for dup, kept in psd_links.duplicates(tree, pushed_linked).items()
+            if basename(dup).lower() not in unplaced} if known else {}
+    for path in psd_links.unused(index, tree, pushed_linked, read) if index is not None else ():
+        if path in dups.values():               # G3 points its duplicate's users at it
+            continue
+        entry["expect"][path] = tree[path]
+        entry["writes"].append({"path": path, "kind": "delete", "file": None, "sha": None, "silent": True,
+                                "line": "unused linked file deleted"})
+    deleted = {w["path"] for w in entry["writes"]}
+    users: dict = {}                            # PSD -> the duplicates it links
+    for rel, found in links.items():
+        for link in found:
+            if link.get("path") in dups:
+                users.setdefault(rel, set()).add(link["path"])
+    held = {dup for rel, mine in users.items() if rel in cards and any(w.get("plain") for w in cards[rel]["writes"])
+            for dup in mine}                    # a write that may land as its plain (unrelinked): both files stay
+    relinked: dict = {}
+    for rel in sorted(users):
+        mine = users[rel] - held
+        if not mine:
+            continue
+        if deadline and time() > deadline:      # the rest do not fit the time: their files stay (harmless)
+            break
+        psd = png_export.open_psd(finals.get(rel) or source.blob(tree[rel]))
+        for link in psd_links.links_of(psd, rel, paths):
+            if link.path in mine:
+                psd_links.relink(psd, link.uuid, rel, dups[link.path], link.size, tree[dups[link.path]])
+        saved = BytesIO()
+        psd_edit.save_psd(psd, saved)           # one save a PSD, every duplicate it links
+        relinked[rel] = (saved.getvalue(), sorted({dups[dup] for dup in mine}))
+    for rel, (raw, kept) in sorted(relinked.items()):
+        owner = cards.get(rel, entry)           # a pushed card: its own write carries the relink
+        write = next((w for w in owner["writes"] if w["kind"] == "psd" and w["path"] == rel), None)
+        if write is None:
+            write = {"path": rel, "kind": "psd", "line": "", "shown": "", "silent": True, "composer": False, "pixels": []}
+            owner["writes"].append(write)
+            owner["expect"].setdefault(rel, tree[rel])
+        write["line"] = "; ".join(filter(None, [write.get("line"), f"relinked to {', '.join(kept)}"]))
+        write.update(file=_save(out, rel, raw), sha=blob_sha(raw))
+    for dup, kept in sorted(dups.items()):
+        if dup in deleted or dup in held or any(dup in mine and rel not in relinked for rel, mine in users.items()):
+            continue                            # a user not relinked: both files stay
+        entry["expect"][dup] = tree[dup]
+        entry["writes"].append({"path": dup, "kind": "delete", "file": None, "sha": None, "silent": True,
+                                "line": f"the same file as {kept}"})
+    from commands.psd_regions import linked_items
+    made = {w["path"] for e in data["cards"] for w in e.get("writes", []) if w["kind"] == "file"}
+    for rel, raw in sorted(finals.items()):
+        for item in linked_items(png_export.open_psd(raw), rel, paths):
+            path = item["path"] or ""
+            if not path.startswith(LINKED_DIR) or path in tree or path in entry["expect"] or path in made:
+                continue                        # a conversion's new file is written by its card
+            try:
+                last = source.git("log", "-1", "--format=%H", "--diff-filter=AM", data["after"], "--", path).strip()
+                blob = source.git("rev-parse", f"{last}:{path}").strip() if last else ""
+                raw_file = source.blob(blob) if blob else b""
+            except (Transient, Refused):
+                continue
+            if blob and psd_links.restore(item["size"], [(blob, len(raw_file))]):
+                entry["expect"][path] = ""
+                entry["writes"].append({"path": path, "kind": "file", "file": _save(out, path, raw_file), "sha": blob,
+                                        "silent": True, "line": f"restored for {rel}"})
+    return entry
+
+
+def convert_plan(data: dict, source: Source, out: str, minutes: float = CONVERT_MINUTES, workers: int = 0,
+                 deadline: float = 0.0) -> dict:
+    """
+    G1-G4 after the check (the CLI's `normalise`, or check's --convert now): every PSD the check marked (an embedded
+    picture, sub or superscript, a merged image, a link to repair, a linked stat bar) converted by the normalise fix
+    with the parent's names, then the linked files' housekeeping (data["linked"]). No PSD starts past deadline (else
+    `minutes` from now); the rest stay as pushed (their next push converts them). Silent throughout. Edits data in place
+    and returns it.
+    """
+    tree = {path: sha for path, (_, sha) in source.checked.items()}
+    index = links_index(source)
+    entries = [e for e in data["cards"] if e.get("convert") and not e.get("error") and "converted" not in e]
+    deadline = deadline or time() + minutes * 60
+    if entries:
+        context, vocab = build_context(source, source.checked)
+        ctx = LinkContext(tree, catalogue(source, tree, [e["psd"] for e in entries], index,
+                                          sorted(vocab.all_types) if vocab is not None else (), workers), source.blob)
+        if len(entries) >= POOL_MIN and workers != 1:
+            with ProcessPoolExecutor(workers or pool_size(len(entries)), initializer=_init_convert,
+                                     initargs=(source.clone, source.repository, ctx, vocab, source.checked, source.fonts)) as pool:
+                done = list(pool.map(_pooled_convert, [(e, out, deadline) for e in entries], chunksize=1))
+        else:
+            parser = vocab.parser() if vocab is not None else None
+            done = []
+            for entry in entries:
+                try:
+                    done.append(_convert_one(source, entry, ctx, parser, out, deadline))
+                except Exception as error:      # left as pushed
+                    print(format_exc(), file=stderr)
+                    done.append({"left": f"not converted ({type(error).__name__}: {error})"})
+        for entry, result in zip(entries, done):
+            _merge(out, entry, result, tree)
+    try:
+        data["linked"] = housekeeping(data, source, tree, out, index, deadline)
+    except Exception:                           # best effort: nothing deleted or merged this run
+        print(format_exc(), file=stderr)
+        data["linked"] = {"card": "", "psd": "", "case": "linked", "writes": [], "expect": {}, "notes": [], "told": []}
+    return data
+
+
+# ========================
 # Reports
 # ========================
 def _expect(job: Job) -> dict:
@@ -938,7 +1316,8 @@ def plan(results: list, repository: str, before: str, after: str, mode: str) -> 
                  "told": result.told(mode), "error": result.error, "writes": result.writes, "png": result.job.png,
                  "changes": result.changes, "expect": _expect(result.job), "pushed": sorted(result.job.pushed),
                  "composer": result.composer, "composer_left": result.composer_left,
-                 "redrawn": result.redrawn, "pixel_left": result.pixel_left, "pixel_notes": result.pixel_notes}
+                 "redrawn": result.redrawn, "pixel_left": result.pixel_left, "pixel_notes": result.pixel_notes,
+                 "convert": result.convert, "shown": result.shown, "shows": result.shows}
         cards.append(entry)
     return {"repo": repository, "before": before, "after": after, "mode": mode, "checked_at": _now().isoformat(),
             "cards": cards}
@@ -958,8 +1337,6 @@ def _guard1_line(entry: dict, mode: str = "on") -> str:
         return ""
     if outcome == "current" and "png_ahead" in found.get("numbers", {}):
         return "PNG already shows the pushed PSD (exported before the PSD was pushed): nothing to make"
-    if outcome == "current" and found.get("unchecked"):
-        return found["unchecked"]
     if outcome == "current":
         return "PNG still current (the push moved no pixel of the card)"
     if outcome == "refused":
@@ -1064,6 +1441,8 @@ def markdown(data: dict, notes: list, skipped, errors: list, landed: Optional[di
     if not data["cards"]:
         out.append("No card PSD or PNG to guard.")
     for entry in data["cards"]:
+        if entry["case"] == "convert" and not (entry["error"] or entry["told"]):
+            continue                            # converted silently (Q3, G4): nothing to say
         out.append(f"**{entry['card']}** (`{entry['psd']}`, {entry['login']}, `{entry['commit'][:8]}`)")
         if entry.get("changes"):
             out.append(f"- Changed: {_changes_line(entry, CHANGES_COMMENT)}")
@@ -1221,9 +1600,12 @@ def pool_size(jobs: int) -> int:
 
 
 def check(clone: str, after: str, before: str = "", repository: str = "", author: str = NOBODY, cards: Optional[set] = None,
-          whole_tree: bool = False, mode: str = "dry", out: str = "guards", workers: int = 0) -> dict:
+          whole_tree: bool = False, mode: str = "dry", out: str = "guards", workers: int = 0, convert: str = "later") -> dict:
     """
     Both guards on a push (or a whole tree); writes report.md, discord.json and plan.json (with the artifacts) to out.
+    The 11-07 pass's conversions and linked-file housekeeping (convert_plan, G1-G4, silent): in the check (convert
+    "now"), left to the normalise step after Decided ("later", card-guards.yml's: summary.json's normalise counts them;
+    with none, the housekeeping runs here), or none ("off"; a whole tree never).
 
     Returns:
         plan.json's data (with "markdown" and "discord")
@@ -1259,7 +1641,13 @@ def check(clone: str, after: str, before: str = "", repository: str = "", author
         else:
             parser = vocab.parser() if vocab is not None else None
             results = [run_job(source, job, context, parser, out, mode, earlier) for job in jobs]
-    data = plan(results, repository, base, head, mode)
+        data = plan(results, repository, base, head, mode)
+        data["pushed_paths"] = [] if whole_tree else [c.path for c in source.diff(base, head) if c.status in "AM"]
+        if whole_tree or convert == "off":
+            for entry in data["cards"]:
+                entry["convert"] = []
+        elif convert == "now" or not any(entry["convert"] for entry in data["cards"]):
+            convert_plan(data, source, out, workers=workers)    # later, nothing to convert: G2-G4 counted by Decided
     errors += [f"{r.job.psd}: {r.error}" for r in results if r.error]
     data["report"] = {"notes": notes, "skipped": sorted(skipped), "errors": errors}   # landed_markdown re-renders from these
     data["markdown"] = markdown(data, notes, skipped, errors)
@@ -1268,11 +1656,39 @@ def check(clone: str, after: str, before: str = "", repository: str = "", author
         fh.write(data["markdown"])
     with open(join(out, "discord.json"), "w", encoding="utf-8") as fh:
         dump(data["discord"], fh)
+    _write_plan(data, out)
+    return data
+
+
+def _write_plan(data: dict, out: str) -> None:
+    """plan.json and summary.json (data["summary"] set)."""
     with open(join(out, "plan.json"), "w", encoding="utf-8") as fh:
-        dump({k: v for k, v in data.items() if k not in ("markdown", "discord")}, fh, indent=1)
-    data["summary"] = summary(data, errors)
+        dump({k: v for k, v in data.items() if k not in ("markdown", "discord", "summary")}, fh, indent=1)
+    data["summary"] = summary(data, data.get("report", {}).get("errors", []))
     with open(join(out, "summary.json"), "w", encoding="utf-8") as fh:
         dump(data["summary"], fh)
+
+
+def convert(plan_path: str, clone: str, repository: str = "", minutes: float = CONVERT_MINUTES, workers: int = 0,
+            deadline: float = 0.0) -> dict:
+    """
+    The normalise step (card-guards.yml, after Decided): a `check --convert later` plan's conversions and linked-file
+    housekeeping (convert_plan; no PSD starts past deadline, epoch seconds, else minutes from now), plan.json and
+    summary.json written again beside it; report.md and discord.json stand (it is silent). Raises Transient when the
+    clone lacks the push.
+    """
+    out = dirname(plan_path)
+    with open(plan_path, encoding="utf-8") as fh:
+        data = load(fh)
+    source = Source(clone, repository or data.get("repo", ""))
+    head = source.commit(data["after"])
+    if not head:
+        raise Transient(f"the clone has no commit {data['after'][:8]}")
+    source.checked = source.tree(head)
+    with TemporaryDirectory(prefix="guard-fonts-") as fonts:
+        source.fonts = fonts
+        convert_plan(data, source, out, minutes, workers, deadline)
+    _write_plan(data, out)
     return data
 
 
@@ -1288,9 +1704,11 @@ def summary(data: dict, errors: list) -> dict:
     (the Comment step: a context error alone, a standing manifest or chart one say, comments on no push) and with an error
     (a red run); writes planned; errors (the cards' and the context's)."""
     cards = data["cards"]
+    pending = sum(1 for c in cards if c.get("convert") and "converted" not in c)    # --convert later: the normalise step's
     return {"after": data["after"], "cards": len(cards), "told": sum(1 for c in cards if c["told"]),
-            "comment": sum(1 for c in cards if _for_comment(c)), "writes": sum(len(c["writes"]) for c in cards),
-            "errors": len(errors), "card_errors": sum(1 for c in cards if c["error"])}
+            "comment": sum(1 for c in cards if _for_comment(c)),
+            "writes": sum(len(c["writes"]) for c in cards) + len((data.get("linked") or {}).get("writes", [])) + pending,
+            "normalise": pending, "errors": len(errors), "card_errors": sum(1 for c in cards if c["error"])}
 
 
 # ========================
@@ -1309,6 +1727,8 @@ def message(landed: list, after: str) -> str:
     psds = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "psd" and not w.get("silent"))
     composer = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "psd" and w.get("composer"))
     smaller = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "recompress")
+    added = len({w["path"] for entry in landed for w in entry["writes"] if w["kind"] == "file"})    # users share one
+    deleted = len({w["path"] for entry in landed for w in entry["writes"] if w["kind"] == "delete"})
     pixels = [kind for entry in landed for w in entry["writes"] if w["kind"] == "psd" for kind in w.get("pixels", ())]
     silent = [f"{standards.PIXEL_LINES.get(kind, kind)} on {plural(pixels.count(kind), 'card')}"
               for kind in dict.fromkeys(pixels)]          # the pixel fixes: said here alone, as the composer
@@ -1316,7 +1736,9 @@ def message(landed: list, after: str) -> str:
                                          plural(psds, "PSD") + " fixed" if psds else "",
                                          "Single-line Composer on " + plural(composer, "card") if composer else "",
                                          *silent,
-                                         plural(smaller, "PNG") + " recompressed" if smaller else "") if part)
+                                         plural(smaller, "PNG") + " recompressed" if smaller else "",
+                                         plural(added, "linked file") + " added" if added else "",
+                                         plural(deleted, "linked file") + " deleted" if deleted else "") if part)
     lines = [f"{w['path']}: {w['line']} ({entry['login']}, {(entry['commit'] or after)[:8]})"
              for entry in landed for w in entry["writes"]]
     trailers = sorted(f"{RECOMPRESSED}: {w['path']}" for entry in landed for w in entry["writes"] if w["kind"] == "recompress")
@@ -1329,7 +1751,9 @@ def _rests_on(entry: dict, write: dict) -> list:
     on itself, a PNG on the whole card (PSD, PNG, numbered) but the numbered PNGs the push brought (only their
     recompressions rest on them)."""
     if write["kind"] == "psd":
-        return [entry["psd"]]
+        return [write["path"]]
+    if write["kind"] in ("file", "delete"):     # a linked file with the card whose conversion makes or frees it
+        return [write["path"]] + ([entry["psd"]] if entry.get("psd") else [])
     pushed = set(entry.get("pushed", ()))
     return [write["path"]] if write["kind"] == "recompress" else sorted(p for p in entry["expect"] if p not in pushed)
 
@@ -1343,6 +1767,12 @@ class Head:
 
     def __call__(self, path: str) -> str:
         return self.tree[path][1] if path in self.tree else self.lower.get(path.lower(), "")
+
+    @property
+    def holders(self) -> str:
+        if not hasattr(self, "_holders"):
+            self._holders = _holders((path, sha) for path, (_, sha) in self.tree.items())
+        return self._holders
 
 
 def _ours(entry: dict) -> dict:
@@ -1371,6 +1801,8 @@ def _drawn(entry: dict, here: Head) -> list:
 
 
 def _superseded(entry: dict, write: dict, here: Head) -> str:
+    if write["kind"] == "delete" and entry.get("holders") and here(write["path"]) and entry["holders"] != here.holders:
+        return "superseded: a PSD changed on the branch (it may link the file)"     # G2-G3 decided on after's PSDs
     moved = [p for p in _rests_on(entry, write) if not _holds(entry, p, here(p))]
     return f"superseded: {moved[0]} changed on the branch" if moved else ""
 
@@ -1396,8 +1828,7 @@ def after_window(data: dict, landed: dict, tip: Optional[Snapshot], bot_moved: f
     PNG refusal, or in report mode a PNG the bot would make, whose PNG was pushed since; plus the writes that did not land
     and were not replaced by the author (the bot's commit failed, a later push touched the card). A write the branch
     already holds (a re-run) is not told, nor any write when a re-run could not read the branch (an earlier attempt may
-    have landed it). A numbered PNG's refusal (G8) is withdrawn as the main PNG's is, and so is the line of a PNG made with
-    no stored image (G2) whose PNG was pushed since or did not land.
+    have landed it). A numbered PNG's refusal (G8) is withdrawn as the main PNG's is.
 
     Args:
         bot_moved: The PSDs whose last change on the branch is a bot commit's
@@ -1444,10 +1875,6 @@ def after_window(data: dict, landed: dict, tip: Optional[Snapshot], bot_moved: f
         for write in entry.get("writes", []):   # R1's tags set as badges by the bot: not told once that write stands
             if write.get("settles") and _fix_stands(entry, write, landed, here):
                 lines = [line for line in lines if line not in write["settles"]]
-        unchecked = export.get("unchecked")
-        if unchecked in lines and png and (any(line.startswith("PNG not made: ") for line in lines)
-                                           or (here and not _holds(entry, png, here(png)))):
-            lines.remove(unchecked)             # no bot PNG stands: the author's, or none
         told[psd], after[psd] = list(dict.fromkeys(lines)), notes
     return told, after
 
@@ -1469,7 +1896,7 @@ def _read_files(out_dir: str, entries: list) -> dict:
     for entry in entries:
         for write in entry["writes"]:
             for one in (write, write.get("plain")):
-                if one:
+                if one and one.get("file"):
                     with open(join(out_dir, one["file"]), "rb") as fh:
                         files[one["file"]] = fh.read()
                     if blob_sha(files[one["file"]]) != one["sha"]:
@@ -1484,10 +1911,12 @@ def events_of(entry: dict, write: dict, drawn: list) -> list:
     (owner, 2026-10-25). drawn: the card's writes as they landed (_drawn: a redraw's plain has no pixel fix).
     """
     base = {"card": entry["card"], "path": write["path"]}
+    if write["kind"] in ("file", "delete"):     # the linked files: silent (G1-G4)
+        return []
     if write["kind"] == "recompress":
         return [{"kind": "guard-png", **base, "line": "recompressed losslessly"}]
     psd = next((w for w in drawn if w["kind"] == "psd"), {})
-    pixels = [standards.PIXEL_LINES.get(kind, kind) for kind in psd.get("pixels", ())]
+    pixels = [standards.PIXEL_LINES.get(kind, kind) for kind in psd.get("pixels", ()) if kind not in QUIET_PIXELS]
     if write["kind"] == "png":
         if write.get("silent"):                 # a redraw's PNG: told only for the pixel fixes it carries
             return [{"kind": "guard-png", **base, "line": "re-exported for " + " and ".join(pixels)}] if pixels else []
@@ -1517,7 +1946,7 @@ def land(plan_path: str, repository: str = "", dry_run: bool = False, local: str
     with open(plan_path, encoding="utf-8") as fh:
         data = load(fh)
     repository = repository or data.get("repo") or ("" if local else CARD_REPO)
-    entries = [entry for entry in data["cards"] if entry.get("writes")]
+    entries = [entry for entry in data["cards"] + [data.get("linked") or {}] if entry.get("writes")]   # + G2-G4's
     report = {"sha": "", "landed": [], "included": [], "dropped": [], "already": [], "error": "", "told": {}, "after": {},
               "dry": dry_run, "unread": False, "events": []}
     if not entries and not any(entry.get("told") for entry in data["cards"]):
@@ -1540,24 +1969,26 @@ def land(plan_path: str, repository: str = "", dry_run: bool = False, local: str
                     why = _superseded(entry, write, here)
                     if why:
                         report["dropped"].append([entry["card"], why, write["path"]])
-                    elif here(write["path"]) == write["sha"]:
+                    elif here(write["path"]) == (write["sha"] or ""):      # a deletion: already gone
                         report["already"].append([entry["card"], write["path"]])
                     else:
                         included.append((entry, write))
                         told += events_of(entry, write, drawn)
             cards = list(dict.fromkeys(entry["card"] for entry, _ in included))
-            report["landed"], report["included"] = cards, [[entry["card"], write["path"]] for entry, write in included]
+            report["landed"] = [card for card in cards if card]                # the linked files' entry is no card
+            report["included"] = [[entry["card"], write["path"]] for entry, write in included]
             report["events"] = told
             if not included or dry_run:
                 break
-            payload = {write["path"]: files[write["file"]] for _, write in included}
+            payload = {write["path"]: files[write["file"]] if write.get("file") else None for _, write in included}
             text = message([{**entry, "writes": [w for e, w in included if e is entry]} for entry in entries
                             if entry["card"] in cards], data["after"])
             if local:
                 report["sha"] = local_commit(local, tip.head, payload, text)
                 break
             modes = {path: tip.tree[path][0] for path in payload if path in tip.tree}
-            sha = commit_files(repository, tip.head, tip.info["tree"]["sha"], modes, payload, text, uploaded)
+            sha = (git_commit(repository, tip.head, payload, text) if len(payload) > GIT_LAND else   # no upload cap
+                   commit_files(repository, tip.head, tip.info["tree"]["sha"], modes, payload, text, uploaded))
             if sha:
                 report["sha"] = sha
                 break
@@ -1604,9 +2035,9 @@ def finish(plan_path: str, landed: dict) -> dict:
 # Command line
 # ========================
 def main(args: Optional[list] = None) -> int:
-    """check: the report on stdout (exit 0 whatever it finds, 1 when it could not check); land: one line per card, exit 1
-    when the commit failed (its files are written either way), exit 2 for a plan not checked with --mode on that would
-    commit to the repo (neither --dry-run nor --local)."""
+    """check: the report on stdout (exit 0 whatever it finds, 1 when it could not check); convert: one line (exit 1 when
+    the clone lacks the push); land: one line per card, exit 1 when the commit failed (its files are written either
+    way), exit 2 for a plan not checked with --mode on that would commit to the repo (neither --dry-run nor --local)."""
     cli = ArgumentParser(prog="python -m commands.card_guards",
                          description="The push guards: a forgotten PNG drawn from the PSD by the fork (the bake's render), the card "
                                      "standards checked (0-pixel fixes planned). check never writes to the card repo; land commits a plan once.")
@@ -1624,6 +2055,15 @@ def main(args: Optional[list] = None) -> int:
                      help="dry, report or on (CARD_GUARDS, any case): the report's wording")
     one.add_argument("--workers", type=int, default=0, metavar="N", help="processes for 8 cards or more (0: every core on a runner, else half the cores, at most 4)")
     one.add_argument("--out", required=True, metavar="DIR", help="report.md, discord.json, plan.json and the artifacts")
+    one.add_argument("--convert", default="later", choices=CONVERTS,
+                     help="the pass's conversions and linked files: in the check (now), in the normalise step (later), none (off)")
+    three = sub.add_parser("normalise", help="a check --convert later plan's conversions and linked files (silent)")
+    three.add_argument("--out", required=True, metavar="DIR", help="check's --out (plan.json and summary.json rewritten)")
+    three.add_argument("--clone", required=True, metavar="DIR", help="the clone the check read")
+    three.add_argument("--repo", default="", metavar="OWNER/NAME", help="blobs the clone lacks by API (default: the plan's)")
+    three.add_argument("--minutes", type=float, default=CONVERT_MINUTES, metavar="N", help="no PSD converted past this")
+    three.add_argument("--deadline", type=float, default=0.0, metavar="EPOCH", help="no PSD converted past this time")
+    three.add_argument("--workers", type=int, default=0, metavar="N", help="as check's")
     two = sub.add_parser("land", help="commit a plan's writes once")
     two.add_argument("--plan", required=True, metavar="FILE", help="check's plan.json (its files beside it)")
     two.add_argument("--repo", default="", metavar="OWNER/NAME", help="the card repo (default: the plan's)")
@@ -1642,11 +2082,21 @@ def main(args: Optional[list] = None) -> int:
         cards = {CardAuthors.key(n) for n in options.cards.split(",") if n.strip()} or None
         try:
             data = check(options.clone, options.after, options.before, options.repo, options.author, cards, options.whole_tree,
-                         options.mode, options.out, options.workers)
+                         options.mode, options.out, options.workers, options.convert)
         except (Transient, Refused) as error:   # the clone or the API failed: one line; the run fails (card-guards.yml alerts)
             print(f"## Card guards\n\nNot checked: {error}\n")
             return 1
         print(data["markdown"], end="")
+        return 0
+    if options.command == "normalise":
+        try:
+            data = convert(join(options.out, "plan.json"), options.clone, options.repo, options.minutes, options.workers,
+                           options.deadline)
+        except (Transient, Refused) as error:
+            print(f"Not converted: {error}")
+            return 1
+        done = [entry["psd"] for entry in data["cards"] if entry.get("converted")]
+        print(f"Converted {plural(len(done), 'PSD')}; linked files: {plural(len((data.get('linked') or {}).get('writes', [])), 'write')}")
         return 0
     report = land(options.plan, options.repo, options.dry_run, options.local, options.rerun)
     finish(options.plan, report)
@@ -1670,6 +2120,13 @@ if __name__ == "__main__":
 # ========================
 __all__ = [
     'BOT_EMAILS',
+    'LinkContext',
+    'catalogue',
+    'convert',
+    'convert_plan',
+    'convertible',
+    'housekeeping',
+    'links_index',
     'Change',
     'EARLIER_FONTS',
     'EARLIER_WALK',

@@ -92,7 +92,7 @@ def test_no_visible_change_is_current(tmp_path):
 def test_g2_renders_anyway_with_the_bakes_own_gates(tmp_path):
     """Owner, 2026-10-24: a PSD saved without Maximize Compatibility (no stored image) gets its PNG anyway: the fork's
     render merged as always, under the bake's own gates (the baseline, the shape and region), nothing cross-checked
-    ("cross" never measured), unchecked so the guards tell it. A push that moved nothing is current; a new card is made
+    ("cross" never measured), unchecked (never told). A push that moved nothing is current; a new card is made
     whole; a new PSD beside its PNG is current within the bar of the render, else redrawn where it differs."""
     old = fixture_psd(tmp_path, card(), "old")
     new = fixture_psd(tmp_path, card(colour=(0, 255, 0)), "new")
@@ -256,9 +256,9 @@ def test_a_new_psd_beside_its_own_png_is_current(tmp_path, monkeypatch):
     assert (found.outcome, found.numbers["composite_px"], found.data) == ("current", 25, b"")
 
 
-def test_g2_keeps_a_png_beside_up_to_kept_px_and_tells(tmp_path, monkeypatch):
-    """Default 2026-10-24, owner to confirm: with no stored image, a PNG at most KEPT_PX px past BESIDE_CUT of the fork's
-    whole-card render (its own noise beside a current PNG) is kept and told (numbers["kept"], KEPT), never redrawn; past
+def test_g2_keeps_a_png_beside_up_to_kept_px(tmp_path, monkeypatch):
+    """Default 2026-10-24: with no stored image, a PNG at most KEPT_PX px past BESIDE_CUT of the fork's
+    whole-card render (its own noise beside a current PNG) is kept (numbers["kept"]), never redrawn; past
     KEPT_PX it is redrawn where it differs past the cut, within the bar or not (review of 2026-10-24: the whole-card bar
     kept real edits of up to 13,496 px stale)."""
     new = fixture_psd(tmp_path, card(size=(300, 400)), "new")
@@ -417,11 +417,34 @@ def test_a_new_card_is_rendered_and_cross_checked(tmp_path, monkeypatch):
     assert refused.gate == "G6" and refused.why.startswith("PNG not made: the bot's drawing of the new PSD")
 
 
+def test_a_link_rewritten_is_no_layer_change(clone, tmp_path):
+    """The pass's linking rewrites a smart object's SoLE (as Photoshop rewrites SoLd on a save) and the document's lnk
+    items, never its pixels: no changed layer, so guard 1 draws nothing for a converted card."""
+    from psd_tools.constants import Tag
+    from psd_tools.psd.descriptor import Integer
+    path = clone / "Auxiliary/Creatures/Militron_(No_Armor).psd"
+    if not path.exists():
+        pytest.skip("no Militron (No Armor)")
+    old, new = PSDImage.open(str(path)), PSDImage.open(str(path))
+    layer = next(each for each in new.descendants() if each.kind == "smartobject" and each.smart_object.kind == "external")
+    layer._record.tagged_blocks.get_data(Tag.SMART_OBJECT_LAYER_DATA2).data[b"frameCount"] = Integer(2)
+    layer.smart_object._data.filesize += 1
+    out = tmp_path / "linked.psd"
+    psd_edit.save_psd(new, str(out), update_preview=False)
+    assert pe.changed_layers(old, PSDImage.open(str(out))) == (None, 0)
+
+
 def test_png_check(tmp_path):
+    """R10 against the stored image within the bar; without one (Maximize Compatibility off) against the fork's render
+    at the parity floor."""
     psd = fixture_psd(tmp_path, card(), "a")
     assert pe.png_check(psd, card())["ok"] is True
     assert pe.png_check(psd, card(colour=(255, 255, 255), box=(0, 0, 59, 60)))["ok"] is False
     assert pe.png_check(psd, card(size=(10, 10)))["ok"] is None
+    psd.has_preview = lambda: False
+    drawn = pe.png_check(psd, card())
+    assert drawn["ok"] is True and drawn["rendered"] and drawn["bad_pct"] == 0
+    assert pe.png_check(psd, card(colour=(255, 255, 255), box=(0, 0, 59, 60)))["ok"] is False
 
 
 # ========================
@@ -571,6 +594,6 @@ def test_a_normalised_card_moves_nothing(clone, tmp_path):
     old, new, png, fonts = normalised(clone, BALLOON_BOY, tmp_path)
     assert pe.changed_layers(old, new) == (None, 0)
     found = pe.export(old, new, png, {}, BALLOON_BOY[:-4] + ".png", fonts)
-    assert found.outcome == "current" and found.unchecked and pe.unchecked_line(found) == ""
+    assert found.outcome == "current" and found.unchecked
     checked = pe.png_check(new, png)
     assert checked["ok"] is True and checked["rendered"]

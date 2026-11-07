@@ -1,8 +1,10 @@
 """
 Automatic card flags (owner 2026-11-07): what a card needs from a developer, read off its PSD and its picture, kept by PSD
 blob in the card data's db/card_checks.json (TTSCardMaker's card-checks.yml, off Card sync's path; the website shows them).
-hand: the picture says other than the data, old-style bars, a website edit that cannot bake. bars: special bars that do
-not read like the template. A note is one short sentence a developer can act on. Nothing here blocks or tells anyone.
+hand: the picture says other than the data, old-style bars, a website edit that cannot bake, a linked picture the repo
+lacks, one that looks the same as another file, or one Card sync could not draw again (db/links.json, worded at each
+save). bars: special bars that do not read like the template. A note is one short sentence a developer can act on.
+Nothing here blocks or tells anyone.
 
     python -m commands.card_checks list --clone <checkout> --db <db dir> [--head <sha>] [--all] [--shard i/n]
     python -m commands.card_checks run  --clone <checkout> --db <db dir> --out <file> [--head <sha>] [--all] [--shard i/n]
@@ -24,7 +26,7 @@ from dataclasses import dataclass, field
 from io import BytesIO
 from json import dumps, load as json_load, loads
 from os import environ
-from os.path import exists, join
+from os.path import basename, exists, join
 from re import IGNORECASE, finditer, fullmatch, search, sub
 from shutil import rmtree
 from sys import argv
@@ -46,7 +48,7 @@ from commands.card_preview import outcome, resolve
 from commands.card_standards import _bar_art
 from commands.github_api import token_from_env
 from commands.psd_parser import EFFECT_LAYER_TAG, variants_of
-from commands.psd_regions import STATS, bar_box, comp_bars, stat_rows
+from commands.psd_regions import STATS, bar_box, comp_bars, linked_items, placed_data, stat_rows
 from global_config import CARD_REPO, EDITS_PATH, ICON_MANIFEST_PATH, TYPES_DIR
 
 # ========================
@@ -89,6 +91,10 @@ CREATURES_NOTE = "Several creatures: the website changes the first one's bars, t
 NO_CHANGE_NOTE = "{} {} bake but change nothing on the card: change them in Photoshop."
 SWAP_NOTE = "The {} bars are on each other's rows: a stat edit moves the wrong bar, put them back in Photoshop."
 BRIGHT_NOTE = "Its shown digits brighten the cells, so a stat edit turns the bars dark: change its stats in Photoshop."
+LINKS_JSON = "links.json"                   # the card data's db/: every PSD's links (card_data.gather_links)
+LINK_MISSING = "Links {name}, which is not in the repo: push that file."
+LINK_ALIKE = "Links {name}, which looks the same as {kept}: link {kept} instead."
+LINK_STUCK = "{layer} links {name}, changed since: Card sync could not draw it again ({why}); update it in Photoshop."
 CUSTOM_NOTES = {"icons": "Its stat bars are separate icons with gaps, not the template's cells.",
                 "pictures": "Its stat bars are pictures, not the template's cells.",
                 "shape": "Its stat bars have their own shape, not the template's cells.",
@@ -553,12 +559,75 @@ def check_card(ctx: Context, rel: str) -> dict:
     reads = read_picture(psd, image) if style and image is not None and len(variants_of(psd)) < 2 else {}
     notes += edit_notes(ctx, rel, psd, parsed, style, image)
     return {"card": card_name(rel), "png": snapshot.sha(png_rel)[:8] if png_rel else "", "style": style, "reads": reads,
-            "notes": notes, "bars": CUSTOM_NOTES[why] if style == "custom" else None}
+            "notes": notes, "bars": CUSTOM_NOTES[why] if style == "custom" else None,
+            "unredrawable": unredrawable(psd, rel, snapshot.tree)}
 
 
-def flags(record: dict, data: Optional[dict], site=()) -> dict:
-    """{"hand": note or None, "bars": note or None} of a record against the card's data."""
-    hand = (mismatches(record, data, site) if data else []) + list(record.get("notes") or [])
+def unredrawable(psd: PSDImage, rel: str, tree) -> dict:
+    """{linked path: [layer, why]} of the linked layers Card sync cannot draw again when their file changes (a warp, smart
+    filters: psd_links.why_not_redrawn); a fact of the blob, worded only once its file changed (link_notes)."""
+    try:
+        from commands.psd_links import why_not_redrawn
+    except ImportError:                         # the links module not checked out: none known
+        return {}
+    paths = {item["uuid"]: item["path"] for item in linked_items(psd, rel, tree) if item["path"]}
+    out: dict = {}
+    for layer in psd.descendants():
+        placed = placed_data(layer)
+        key = str(getattr(placed.get(b"Idnt"), "value", placed.get(b"Idnt")) or "").strip("\x00") if placed else ""
+        if paths.get(key) and paths[key] not in out:
+            why = why_not_redrawn(layer)
+            if why:
+                out[paths[key]] = [layer.name, why]
+    return out
+
+
+def look_alikes(links: dict, sha: Callable[[str], str], paths) -> dict:
+    """{MDW/Linked path: the file it looks the same as}: equal decoded pixels (db/links.json's pixels), other bytes; the
+    one most PSDs link is kept (the older, Q6: no dates at depth 1), then the first by path (G3 merges byte-equal
+    copies; these only get the note)."""
+    groups: dict = {}
+    for path in sorted(paths):
+        found = (links.get("pixels") or {}).get(sha(path)) if path.startswith("MDW/Linked/") else None
+        if found:
+            groups.setdefault(found, []).append(path)
+    users: dict = {}
+    for rel, record in links.items():
+        if rel not in ("files", "pixels") and isinstance(record, dict):
+            for link in {link.get("path") for link in record.get("links") or []}:
+                users[link] = users.get(link, 0) + 1
+    out = {}
+    for group in groups.values():
+        kept = min(group, key=lambda p: (-users.get(p, 0), p))
+        out.update({path: kept for path in group if sha(path) != sha(kept)})
+    return out
+
+
+def link_notes(rel: str, blob: str, links: dict, sha: Callable[[str], str], alike: dict, record: dict) -> list:
+    """The hand notes of a PSD's links (db/links.json at its blob) against the tree now: a file the repo lacks, a
+    look-alike, a changed file Card sync could not draw again (record's unredrawable). [] without a record at the blob."""
+    found = links.get(rel)
+    if not isinstance(found, dict) or found.get("blob") != blob:
+        return []
+    out = []
+    for link in found.get("links") or []:
+        path, name = link.get("path") or "", link.get("name") or ""
+        if not path or not sha(path):
+            out.append(LINK_MISSING.format(name=name or basename(path)))
+            continue
+        if path in alike:
+            out.append(LINK_ALIKE.format(name=basename(path), kept=basename(alike[path])))
+        size = ((links.get("files") or {}).get(path) or {}).get(sha(path))
+        due = size is not None and (link.get("size") != size or bool(link.get("drawn") and link["drawn"] != sha(path)))
+        stuck = (record.get("unredrawable") or {}).get(path)
+        if due and stuck:
+            out.append(LINK_STUCK.format(layer=stuck[0], name=basename(path), why=stuck[1]))
+    return list(dict.fromkeys(out))
+
+
+def flags(record: dict, data: Optional[dict], site=(), linked=()) -> dict:
+    """{"hand": note or None, "bars": note or None} of a record against the card's data (linked: link_notes)."""
+    hand = (mismatches(record, data, site) if data else []) + list(record.get("notes") or []) + list(linked)
     return {"hand": " ".join(hand) or None, "bars": record.get("bars")}
 
 
@@ -601,14 +670,19 @@ def blobs_of(snapshot: Snapshot, rels: list) -> list:
     return [snapshot.sha(path) for path in rels + [png for png in pngs if png] + (shared if rels else [])]
 
 
-def refresh(checks: dict, snapshot: Snapshot, stats: dict, edits: CardEdits) -> None:
-    """Every record's "hand" and "bars" against the data, the records of PSDs gone from the tree out, and the people's
-    flags that went: set on another PSD than the card's, whose checks are clean (build_site leaves them out)."""
+def refresh(checks: dict, snapshot: Snapshot, stats: dict, edits: CardEdits, links: Optional[dict] = None) -> None:
+    """Every record's "hand" and "bars" against the data and the links (db/links.json: a pushed file clears its note),
+    the records of PSDs gone from the tree out, and the people's flags that went: set on another PSD than the card's,
+    whose checks are clean (build_site leaves them out)."""
     cards = {card.get("blob_sha"): card for card in stats.values() if card.get("blob_sha")}
     blobs = {snapshot.sha(rel): key for key, rel in snapshot.psds.items()}
     checks["cards"] = {sha: record for sha, record in checks["cards"].items() if sha in blobs}
-    for sha, record in checks["cards"].items():
-        record.update(flags(record, cards.get(sha), edits.cards.get(blobs[sha]) or {}))
+    def sha(path: str) -> str:
+        return snapshot.sha(path) if path in snapshot.tree else ""
+    alike = look_alikes(links, sha, snapshot.tree) if links else {}
+    for blob, record in checks["cards"].items():
+        linked = link_notes(snapshot.psds[blobs[blob]], blob, links, sha, alike, record) if links else []
+        record.update(flags(record, cards.get(blob), edits.cards.get(blobs[blob]) or {}, linked))
     was, cleared = checks.get("cleared") or {}, {}
     for key, entry in edits.cards.items():
         mark, rel = (entry.get("flags") or {}).get("psd"), snapshot.psds.get(key)
@@ -694,7 +768,11 @@ def main(args: Optional[list] = None) -> int:
         with open(join(options.db, STATS_JSON), encoding="utf-8") as fh:
             stats = json_load(fh)["cards"]
         text = snapshot.fetch(snapshot.sha(EDITS_PATH)).decode("utf-8") if EDITS_PATH in snapshot.tree else "{}"
-        refresh(checks, snapshot, stats, CardEdits.parse(text))
+        links = {}
+        if exists(join(options.db, LINKS_JSON)):
+            with open(join(options.db, LINKS_JSON), encoding="utf-8") as fh:
+                links = json_load(fh)
+        refresh(checks, snapshot, stats, CardEdits.parse(text), links)
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(text_of(checks))
         print(f"{len(checks['cards'])} records, {sum(1 for r in checks['cards'].values() if r.get('hand'))} hand, "
@@ -723,7 +801,9 @@ __all__ = [
     'context',
     'edit_notes',
     'flags',
+    'link_notes',
     'load',
+    'look_alikes',
     'main',
     'mismatches',
     'read_picture',
@@ -733,4 +813,5 @@ __all__ = [
     'swapped',
     'text_of',
     'to_check',
+    'unredrawable',
 ]

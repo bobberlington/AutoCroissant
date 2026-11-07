@@ -49,6 +49,7 @@ WAITING = ("queued", "pending", "waiting", "requested")   # a run not started ye
 FAILED = ("failure", "timed_out", "startup_failure")
 BOT_LOGIN = "github-actions[bot]"                    # GITHUB_TOKEN dispatches (Card sync's retry, card-guards)
 FONTS_PREFIX = "MDW/Fonts/"                           # its top-level files only (the gate's MDW/Fonts/*)
+LINKED_PREFIX = "MDW/Linked/"                         # the cards' linked pictures, every extension (a redraw, 11-07)
 CARD_FILES = {ICON_MANIFEST_PATH, RULES_PATH, AUTHORS_PATH, EDITS_PATH, CREATED_PATH}
 REFRESH_SECONDS = 120                                # on use: the data branch looked at most this often
 READERS = frozenset({                                # the slash commands that read card data (on_use); autocomplete too
@@ -141,7 +142,7 @@ def report(manifest: dict, counts: Optional[dict], reloaded: bool, now: Optional
 
 def card_input(path: str) -> bool:
     """A card repo path Card sync's gate goes for (the hand-edited save aside): card-sync.yml's push paths."""
-    return (path.lower().endswith((".psd", ".png")) or path.startswith(f"{TYPES_DIR}/") or path in CARD_FILES
+    return (path.lower().endswith((".psd", ".png")) or path.startswith((f"{TYPES_DIR}/", LINKED_PREFIX)) or path in CARD_FILES
             or (path.startswith(FONTS_PREFIX) and "/" not in path[len(FONTS_PREFIX):]) or path.startswith(f"{RULEBOOK_SRC}/"))
 
 

@@ -135,3 +135,26 @@ def test_a_normalised_card_has_no_changes(clone, tmp_path):
     """Big pass: normal text from sub and superscript, every glyph where it was, and no merged image: no Changes line."""
     old, new, _, fonts = normalised(clone, BALLOON_BOY, tmp_path)
     assert pdf.changes(old, new, fonts=fonts) == []
+
+
+def test_a_link_rewritten_says_nothing_until_its_pixels_move(clone):
+    """A linked picture's fact is its path, never its file, size or date: its size and relPath rewritten (the 11-07 pass,
+    the guards' repairs) with the layer's pixels kept say nothing; with its pixels moved too, the content changed."""
+    from psd_tools.psd.descriptor import String
+    path = clone / "Auxiliary/Creatures/Militron_(No_Armor).psd"
+    if not path.exists():
+        pytest.skip("no Militron (No Armor)")
+    old = PSDImage.open(str(path))
+
+    def rewritten(move: int) -> PSDImage:
+        new = PSDImage.open(str(path))
+        layer = next(each for each in new.descendants() if each.kind == "smartobject" and each.smart_object.kind == "external")
+        item = layer.smart_object._data
+        item.linked_file[b"relPath"] = String("../../Types/x.png\x00")
+        item.filesize += 1
+        layer._record.left, layer._record.right = layer._record.left + move, layer._record.right + move
+        saved = BytesIO()
+        new.save(saved, update_preview=False)
+        return PSDImage.open(BytesIO(saved.getvalue()))
+    assert pdf.changes(old, rewritten(0)) == []
+    assert pdf.changes(old, rewritten(1)) == ["unknown smart object content changed"]
