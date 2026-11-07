@@ -139,12 +139,12 @@ def read_row(row: np.ndarray) -> dict:
     top, bottom = _steps(row, TOP_BAND), _steps(row, BOTTOM_BAND)
     both = (top + bottom) / 2
     strongest = float(both.max())
-    if strongest < STEP_MIN:
-        return {"best": None, "could": [0, 10, 20], "flat": True}
     near = [k + 1 for k, step in enumerate(both) if step >= STEP_NEAR * strongest]
     low = _clear(bottom)
     if low is not None and top[low - 1] < HALF_ROW * bottom[low - 1]:
         return {"best": 10 + low, "could": sorted({low, 10 + low, *near, *(10 + k for k in near)})}   # own art can hide a step
+    if strongest < STEP_MIN:
+        return {"best": None, "could": [0, 10, 20], "flat": True}
     best = _clear(both)
     return {"best": best, "could": near} if best is not None else {"best": None, "could": None}
 

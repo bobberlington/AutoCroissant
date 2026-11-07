@@ -42,6 +42,9 @@ def test_read_row():
     """A step in both halves, a step in the bottom half alone, a flat row, a busy one."""
     assert cc.read_row(bar(5)) == {"best": 5, "could": [5]}
     assert cc.read_row(bar(10, 2))["best"] == 12
+    soft = bar(10)
+    soft[42:, cc.TEMPLATE_CELLS[2]:] -= 40                      # see-through: a soft step, the bottom half alone
+    assert cc.read_row(soft)["best"] == 12
     assert cc.read_row(bar(10)).get("flat") and cc.read_row(bar(0)).get("flat")
     assert cc.read_row(np.random.default_rng(1).integers(0, 255, (84, 813, 3)).astype(np.uint8))["best"] is None
 
