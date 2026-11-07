@@ -296,6 +296,26 @@ def test_data_tip_moved_refuses(cards, tmp_path):
     assert _build(cards)[0] == cd.EXIT_OK and _read(cards)[0]["Mini Doomer"].ability == _golden(OTHER)["ability"]
 
 
+def test_data_tip_moved_by_the_checks_goes_on(cards, tmp_path):
+    """Card checks commits only db/card_checks.json: no other writer, the build goes on and Commit data rebases over it."""
+    origin = tmp_path / "origin.git"
+    git(tmp_path, "init", "-q", "--bare", "-b", "data", str(origin))
+    data = cards.db.parent
+    git(data, "init", "-q", "-b", "data")
+    git(data, "remote", "add", "origin", str(origin))
+    _build(cards, "--empty")
+    commit(data, "AutoCroissant", 1500)
+    git(data, "push", "-q", "origin", "data")
+    other = tmp_path / "other"
+    git(tmp_path, "clone", "-q", "-b", "data", str(origin), str(other))
+    put(other, "db/card_checks.json", b"{}")
+    commit(other, "AutoCroissant", 1600)
+    git(other, "push", "-q", "origin", "data")
+    put(cards.repo, DOOMER, cards.psds[OTHER])
+    commit(cards.repo, "bob", 2000)
+    assert _build(cards)[0] == cd.EXIT_OK
+
+
 def _rest_psds(cards, monkeypatch, parsed=None):
     """Every PSD blob off the local stores, so each is a budgeted REST download (served from the repo's git)."""
     monkeypatch.setattr("commands.github_api.RANGE_READS", False)
