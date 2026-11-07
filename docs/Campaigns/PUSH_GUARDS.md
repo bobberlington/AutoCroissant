@@ -8,7 +8,8 @@ named below, were retired at the 2026-10-24 cutover (Card sync does both). Open 
 2026-10-25 (AutoCroissant `work/composer`): only the bot commit's message names it; since work/clean (2026-10-25) it
 always switches, box text that rewraps redrawn and its PNG re-exported through guard 1's export. Since work/clean too
 the card check and the font check (card-check.yml and font-check.yml before) are steps of the guards' check job, each
-still posting at once. Two guards in one TTSCardMaker Action, `card-guards.yml` ("Card guards"), run by three new bot modules. Dry run first: a dispatch defaults to `dry_run: true`, and the repo variable `CARD_GUARDS` (unset = off)
+still posting at once; a push's run in their own `checks` job beside it since 2026-11-07, so Card sync and the post wait
+for neither (a dispatch keeps them in check: `all` reads its 813 PSDs once). Two guards in one TTSCardMaker Action, `card-guards.yml` ("Card guards"), run by three new bot modules. Dry run first: a dispatch defaults to `dry_run: true`, and the repo variable `CARD_GUARDS` (unset = off)
 switches the push trigger on. Measured read-only on 2026-10-22 at TTSCardMaker origin/main 6e50c3ee (812 card PSDs) with the
 psd-tools fork at `cards` da3b0f6d (round 5b + fix/txt2-sync, not tagged yet) and AutoCroissant work/integ-1022.
 
@@ -166,8 +167,9 @@ God_Tamer.psd, Bubble.psd and 12_Reactions2.psd without their PNGs (`stale_real.
 ## 3. Architecture
 
 ```
- git push (PSD/PNG paths) ──> card-guards.yml "Card guards" (three jobs since 2026-10-24; check always runs: the card
-                              and font checks post at once; with CARD_GUARDS unset/off only the guards' steps skip)
+ git push (PSD/PNG paths) ──> card-guards.yml "Card guards" (check, post, finish since 2026-10-24, checks since 2026-11-07;
+                              check and checks always run: the card and font checks post at once; with CARD_GUARDS
+                              unset/off only the guards' steps skip)
  job check (timeout 40, 150 for all; ends at once, no runner waits for the window)
    1 range    before..after: files, renames by blob sha, deletes, the last writer's login per file
    2 fetch    the pushed PSDs (and for stale-PNG cards the old PSD and old PNG) by blob sha, verified
@@ -529,7 +531,8 @@ not land.**
 - **The card sync:** a bot commit's run starts it with `bake=pending` (a `GITHUB_TOKEN` push triggers no workflow; the
   card sync's data commit starts the site build). **One main lane per guarded push (2026-10-25, plan P-2):** a push run
   in `on` mode with writes marks its check job (step "Fixes to land", output `fixes`); that push's Card sync run skips
-  its main lane at its window's end (its "Guards' fixes" step), and Follow up starts Card sync once Land is done,
+  its main lane at its window's end (its "Guards' fixes" step: it looks every 3 s until the check job's `Decided` step
+  or the job itself is done, since 2026-11-07), and Follow up starts Card sync once Land is done,
   landed, landed nothing or broke (`always()`), tried 3 times, so one main commit pins the fixed PNG. Card sync's
   schedule and chained runs skip their main lane while any guards run with fixes is unfinished. When it does not start, the comment says so, the run fails, and the
   post says so when it fits in 2,000 characters (its cron catches up); with nothing else to tell, the failure
@@ -648,7 +651,7 @@ not land.**
 | The land step fails (API 5xx, a requests error such as a reset connection or a GET past its 3 tries, a bad file) | land never raises (review 3: any exception is the error), so landed.json, the comment's "Not landed: ..." and the settled post are written; the post tells each PNG not made and fix not made; red run, the plan in the artifact, nothing half-written (one commit or none) | re-run the job; the idempotent re-check writes only what is still due |
 | The Land step is killed (job timeout, a runner lost) | no settled post: Tell Discord fails and the run-failed message goes out (check's early post is never sent) | re-run the job (or the post job alone: Told before looks the mark up) |
 | The environment `card-guards-quiet` has no wait timer (not created yet, or deleted) | GitHub makes the environment on first use, with no rule: the post job starts at once and Land sleeps out the window (the behaviour before 2026-10-24). Deleting it fails every post job waiting in it | create it with section 20's command; delete it only with no push run waiting (section 20), else re-run their failed jobs |
-| A run cancelled by hand (the post job waiting out the window, say) | no message: the finish job's alert is quiet when no cancelled job ran to its timeout (the attempt's job list: check 40 minutes, post 75; GitHub reads a timeout as cancelled; without the list, under 38 minutes since the check's Start), and leaves no streak mark; the comment says "The bot could not finish this push" when Land had begun (review 6) | re-run it, or dispatch |
+| A run cancelled by hand (the post job waiting out the window, say) | no message: the finish job's alert is quiet when no cancelled job ran to its timeout (the attempt's job list: check and checks 40 minutes, post 75; GitHub reads a timeout as cancelled; without the list, under 38 minutes since the check's Start), and leaves no streak mark; the comment says "The bot could not finish this push" when Land had begun (review 6) | re-run it, or dispatch |
 | The comment call fails | red run; Land, the post and the writes go on (Land waits on Check only); a failed POST: Tell Discord's own comment carries the told mark, or it warns that a re-run would post again; a failed edit: the id is already out, so the mark is still set; with nothing to tell, the alert says the push "was checked, but its run failed"; the lookup is tried 3 times, then on a re-run or a dispatch counts as told (never a second post; the step's error says the push may be untold) | re-run once GitHub answers |
 | The card sync does not start after a bot commit | red run; the comment says so, and the post gets a line for it when it fits (with nothing else to tell, the alert goes out); its cron catches up | re-run the job (it finds the writes landed and starts it again; review 6), run it by hand, or wait |
 | A re-run (or a landing dispatch) cannot read the branch head | an earlier run may have landed the writes, so none is told as "not made" (Land's `--rerun`): the post keeps the card's other lines, the comment says "Nothing was committed by this run; an earlier run may have landed it" (review 6; a first attempt that cannot read it tells "PNG not made" as before) | re-run once GitHub answers |
@@ -727,8 +730,10 @@ jobs:                    # three since 2026-10-24 (section 20): no runner sleeps
         working-directory: bot
         env: {GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}", BEFORE: "${{ github.event.before }}", SHA: "${{ inputs.sha }}"}
         run: python -m commands.card_guards check --repo "$GITHUB_REPOSITORY" --after "${SHA:-$GITHUB_SHA}" ... --out "$RUNNER_TEMP/guards" | tee -a "$GITHUB_STEP_SUMMARY"
-      - name: Comment on the commit                     # MODE report/on; a re-run edits its own comment
       - name: Plan for the post job                     # land=true: something to tell (report) or write (on); card_errors
+      - name: Fixes to land                             # the mark Card sync reads
+      - name: Decided                                   # no-op: Card sync's wait ends here, not at the job's end (2026-11-07)
+      - name: Comment on the commit                     # MODE report/on; a re-run edits its own comment
       - uses: actions/upload-artifact@v7                # card-guards: the plan and its files, for the post job
   post:
     needs: check
@@ -1517,8 +1522,8 @@ also checks the numbered PNGs, G8, on this path), `test_a_png_made_without_a_sto
 
 **5. The quiet window is an environment.** card-guards.yml has three jobs:
 - `check` (timeout 100): Start, the checkouts, the refusal of a landing dispatch, Bot commit (the AutoCroissant commit
-  checked out, output `bot_sha`), the install, Check, Comment, "Plan for the post job" (`land=true` when report mode has something to tell or on mode something to tell or write; the card
-  errors), the `card-guards` artifact. It ends at once;
+  checked out, output `bot_sha`), the install, Check, "Plan for the post job" (`land=true` when report mode has something to tell or on mode something to tell or write; the card
+  errors), Fixes to land, Decided, Comment, the `card-guards` artifact. It ends at once;
 - `post` (needs check; only with `land=true`; timeout 75): `environment: card-guards-quiet` on a push's first attempt (a
   dispatch lands at once; a re-run waits from the push and counts later pushes from now), then Work dir, the artifact, Told before (the check's TOLD answer,
   or on a re-run of this job alone the comment's mark looked up again: never a second post), AutoCroissant at the check's

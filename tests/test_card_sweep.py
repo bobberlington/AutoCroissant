@@ -3,11 +3,12 @@ card_sweep: the kinds it takes and the icon font's earlier eras (card_guards.ear
 the guards read from the ref's history (the advances a raster drawn before the cooldown ring may show).
 """
 import subprocess
+from threading import Barrier
 
 import pytest
 
 import commands.card_guards as card_guards
-from commands.card_guards import ICON_FONT_FILE, Source, earlier_fonts
+from commands.card_guards import ICON_FONT_FILE, PREFETCH_WORKERS, Refused, Source, earlier_fonts
 from commands.card_sweep import kinds_of
 from conftest import RING, blob_sha, no_lazy
 
@@ -51,6 +52,34 @@ def test_earlier_icon_fonts(clone, tmp_path):
     again = earlier_fonts(source, commit, tree, str(tmp_path / "again"))
     assert [blob_sha(path) for path in again] == shas and read == shas
     assert kinds_of("badge-widths") == ["badge widths"]
+
+
+def test_earlier_fonts_read_side_by_side(tmp_path, monkeypatch):
+    """The versions are read PREFETCH_WORKERS at a time, the eras still newest first; a failed read is raised."""
+    shas = [str(n) * 12 for n in range(1, 7)]
+    meet = Barrier(PREFETCH_WORKERS, timeout=10)    # breaks unless that many read at once
+
+    class History(Source):
+        def git(self, *args):
+            return " ".join(shas) if args[0] == "log" else args[1].split(":")[0]
+
+        def blob(self, sha):
+            if sha in shas[:PREFETCH_WORKERS]:
+                meet.wait()
+            return sha.encode()
+
+    source, tree = History(str(tmp_path)), {ICON_FONT_FILE: ("100644", "now")}
+    monkeypatch.setattr(card_guards, "font_advances", lambda data: {"glyph": int(data[:1])})
+    monkeypatch.setattr(card_guards, "_advances", {"now": {"glyph": 0}})
+    files = earlier_fonts(source, "head", tree, str(tmp_path))
+    assert files == [str(tmp_path / f"stoogedings-{sha}.earlier") for sha in shas[:card_guards.EARLIER_FONTS]]
+
+    def refused(sha):
+        raise Refused("blob", sha)
+    source.blob = refused
+    monkeypatch.setattr(card_guards, "_advances", {"now": {"glyph": 0}})
+    with pytest.raises(Refused):
+        earlier_fonts(source, "head", tree, str(tmp_path))
 
 
 def test_earlier_eras_past_more_font_changes(clone, tmp_path, monkeypatch):
