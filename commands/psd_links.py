@@ -646,7 +646,7 @@ def assign(psds: list, types: TypesIndex, linked: dict, kept: Optional[dict] = N
     taken = {basename(path).casefold() for path in linked}
     files, out, made = {}, {}, set()
     for path, info in (kept or {}).items():
-        if info["blob"] not in by_blob and path not in linked and not info.get("fallback"):
+        if info["blob"] not in by_blob and basename(path).casefold() not in taken and not info.get("fallback"):
             by_blob[info["blob"]] = path
             taken.add(basename(path).casefold())
             files[path] = {key: info[key] for key in ("blob", "first", "ext")}
@@ -694,11 +694,12 @@ def fallback_names(catalogue: dict, linked: dict, kept: Optional[dict] = None) -
     by_blob = {info["blob"]: path for path, info in catalogue["files"].items()}
     for path, blob in linked.items():
         by_blob.setdefault(blob, path)
+    taken = {basename(p).casefold() for p in list(linked) + list(catalogue["files"])}
     for path, info in (kept or {}).items():
-        if info.get("fallback") and info["blob"] not in by_blob and path not in linked:
+        if info.get("fallback") and info["blob"] not in by_blob and basename(path).casefold() not in taken:
             by_blob[info["blob"]] = path
             catalogue["files"][path] = dict(info)
-    taken = {basename(p).casefold() for p in list(linked) + list(catalogue["files"])}
+            taken.add(basename(path).casefold())
     for rel, rows in catalogue["psds"].items():
         for entry in rows:
             if entry.get("class") in (INK, REDRAW) and not entry.get("fallback") and "pixel" not in entry:
@@ -1330,6 +1331,8 @@ def run_catalogue(clone: str, ref: str, held: dict, workers: int = 4, prev: Opti
     """
     from concurrent.futures import ProcessPoolExecutor
     from commands.font_check import is_card_psd
+    ref = run_process(["git", "-C", clone, "rev-parse", "--verify", ref + "^{commit}"], capture_output=True, text=True,
+                      check=True, env={**environ, "GIT_NO_LAZY_FETCH": "1"}).stdout.strip()     # base: a commit, not a name
     tree = _tree_at(clone, ref)
     types_files = [p for p in tree if dirname(p) in (TYPES_DIR, STARS_DIR)]
     data = _git_bytes(clone, [tree[p] for p in types_files])
@@ -1392,6 +1395,8 @@ def main(args: Optional[list] = None) -> int:
     red.add_argument("--dry-run", action="store_true", help="commit nothing")
     red.add_argument("--output", default="", help="append redraw_due= and redrawn= here (GITHUB_OUTPUT)")
     opts = parser.parse_args(args)
+    if opts.command == "catalogue" and opts.held and not (opts.held_ref and opts.held_base):
+        parser.error("--held needs --held-ref and --held-base (PLAN 5.3: a held card pushed meanwhile is read at --ref)")
     if opts.command == "catalogue":
         held = {}
         if opts.held:
