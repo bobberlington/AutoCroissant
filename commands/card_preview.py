@@ -49,7 +49,7 @@ from global_config import CARD_REPO, ICON_MANIFEST_PATH
 # Configuration
 # ========================
 SPARSE_FILES = ("commands/card_preview.py", "commands/card_preview_branch.py", "commands/card_bake.py",
-                "commands/psd_edit.py", "commands/psd_regions.py", "commands/psd_parser.py", "commands/psd_parts.py", "commands/text_align.py", "commands/card_models.py",
+                "commands/psd_edit.py", "commands/psd_links.py", "commands/psd_regions.py", "commands/psd_parser.py", "commands/psd_parts.py", "commands/text_align.py", "commands/card_models.py",
                 "commands/card_edits.py", "commands/png_export.py", "commands/github_api.py", "commands/git_commit.py",
                 "commands/repo_history.py", "global_config.py", "requirements-cards.txt")
 MAX_EDIT = 16384                                # bytes of edit JSON (an ability is a few hundred)
