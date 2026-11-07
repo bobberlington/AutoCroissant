@@ -993,6 +993,11 @@ def _link_holder(path: str) -> bool:
     return path.lower().endswith((".psd", ".psb"))
 
 
+def _holders(pairs) -> str:
+    """A digest of a tree's PSDs and PSBs ((path, blob) pairs): what a linked-file deletion was decided on."""
+    return blob_sha("\n".join(sorted(f"{path}\t{blob}" for path, blob in pairs if _link_holder(path))).encode())
+
+
 def links_index(source: Source) -> Optional[dict]:
     """db/links.json at the data branch (card_data.gather_links; one blob read), None without it (nothing deleted)."""
     data = source.commit("origin/data") or source.commit("data")
@@ -1169,52 +1174,69 @@ def housekeeping(data: dict, source: Source, tree: dict, out: str, index: Option
                 print(format_exc(), file=stderr)
                 return entry
     paths = set(tree)
+    entry["holders"] = _holders(tree.items())   # land drops the deletions once any PSD moved (it may link them)
     read = [(rel, psd_links.links_of(png_export.open_psd(raw), rel, paths)) for rel, raw in sorted(finals.items())]
-    if index is not None:
-        for path in psd_links.unused(index, tree, pushed_linked, read):
-            entry["expect"][path] = tree[path]
-            entry["writes"].append({"path": path, "kind": "delete", "file": None, "sha": None, "silent": True,
-                                    "line": "unused linked file deleted"})
-    deleted = {w["path"] for w in entry["writes"]}
     direct = dict(read)
-    for dup, kept in sorted(psd_links.duplicates(tree, pushed_linked).items()):
-        users = [rel for rel, found in direct.items() if any(link.path == dup for link in found)]
-        users += [rel for rel, record in (index or {}).items() if rel not in direct and isinstance(record, dict)
-                  and any((link.get("path") or "") == dup for link in record.get("links") or [])]
-        if any(rel not in direct and ((index or {}).get(rel) or {}).get("blob") != tree.get(rel) for rel in users):
-            continue                            # a user's links are unknown: both files stay
-        relinked: Optional[dict] = {}
-        for rel in sorted(set(users)):
-            if deadline and time() > deadline:  # the users do not fit the time: both files stay (harmless)
-                relinked = None
-                break
-            psd = png_export.open_psd(finals.get(rel) or source.blob(tree[rel]))
-            for link in psd_links.links_of(psd, rel, paths):
-                if link.path == dup:
-                    psd_links.relink(psd, link.uuid, rel, kept, link.size, tree[kept])
-            saved = BytesIO()
-            psd_edit.save_psd(psd, saved)
-            relinked[rel] = saved.getvalue()
-        if relinked is None:
+    records = psd_links.records_of(index)[0] if index is not None else {}
+    known = index is not None and all(rel in direct or ((records.get(rel) or {}).get("blob") == blob
+                                                        and not records[rel].get("error"))
+                                      for rel, blob in tree.items() if _link_holder(rel))   # G2's rule: every user known
+    links = {rel: [{"path": link.path, "name": link.name} for link in found] for rel, found in direct.items()}
+    links.update({rel: record.get("links") or [] for rel, record in records.items()
+                  if rel not in direct and isinstance(record, dict) and rel in tree})
+    unplaced = {basename(link.get("name") or "").lower() for found in links.values() for link in found if not link.get("path")}
+    dups = {dup: kept for dup, kept in psd_links.duplicates(tree, pushed_linked).items()
+            if basename(dup).lower() not in unplaced} if known else {}
+    for path in psd_links.unused(index, tree, pushed_linked, read) if index is not None else ():
+        if path in dups.values():               # G3 points its duplicate's users at it
             continue
-        for rel, raw in relinked.items():
-            if rel in cards:                    # a pushed card: its own write carries the relink
-                done = {"psd": raw, "files": {}, "pngs": {}}
-                _merge(out, cards[rel], done, tree)
-            else:
-                entry["expect"][rel] = tree[rel]
-                entry["writes"].append({"path": rel, "kind": "psd", "file": _save(out, rel, raw), "sha": blob_sha(raw),
-                                        "silent": True, "line": f"relinked to {kept}", "pixels": []})
-        if dup not in deleted:
-            entry["expect"][dup] = tree[dup]
-            entry["writes"].append({"path": dup, "kind": "delete", "file": None, "sha": None, "silent": True,
-                                    "line": f"the same file as {kept}"})
+        entry["expect"][path] = tree[path]
+        entry["writes"].append({"path": path, "kind": "delete", "file": None, "sha": None, "silent": True,
+                                "line": "unused linked file deleted"})
+    deleted = {w["path"] for w in entry["writes"]}
+    users: dict = {}                            # PSD -> the duplicates it links
+    for rel, found in links.items():
+        for link in found:
+            if link.get("path") in dups:
+                users.setdefault(rel, set()).add(link["path"])
+    held = {dup for rel, mine in users.items() if rel in cards and any(w.get("plain") for w in cards[rel]["writes"])
+            for dup in mine}                    # a write that may land as its plain (unrelinked): both files stay
+    relinked: dict = {}
+    for rel in sorted(users):
+        mine = users[rel] - held
+        if not mine:
+            continue
+        if deadline and time() > deadline:      # the rest do not fit the time: their files stay (harmless)
+            break
+        psd = png_export.open_psd(finals.get(rel) or source.blob(tree[rel]))
+        for link in psd_links.links_of(psd, rel, paths):
+            if link.path in mine:
+                psd_links.relink(psd, link.uuid, rel, dups[link.path], link.size, tree[dups[link.path]])
+        saved = BytesIO()
+        psd_edit.save_psd(psd, saved)           # one save a PSD, every duplicate it links
+        relinked[rel] = (saved.getvalue(), sorted({dups[dup] for dup in mine}))
+    for rel, (raw, kept) in sorted(relinked.items()):
+        owner = cards.get(rel, entry)           # a pushed card: its own write carries the relink
+        write = next((w for w in owner["writes"] if w["kind"] == "psd" and w["path"] == rel), None)
+        if write is None:
+            write = {"path": rel, "kind": "psd", "line": "", "shown": "", "silent": True, "composer": False, "pixels": []}
+            owner["writes"].append(write)
+            owner["expect"].setdefault(rel, tree[rel])
+        write["line"] = "; ".join(filter(None, [write.get("line"), f"relinked to {', '.join(kept)}"]))
+        write.update(file=_save(out, rel, raw), sha=blob_sha(raw))
+    for dup, kept in sorted(dups.items()):
+        if dup in deleted or dup in held or any(dup in mine and rel not in relinked for rel, mine in users.items()):
+            continue                            # a user not relinked: both files stay
+        entry["expect"][dup] = tree[dup]
+        entry["writes"].append({"path": dup, "kind": "delete", "file": None, "sha": None, "silent": True,
+                                "line": f"the same file as {kept}"})
     from commands.psd_regions import linked_items
+    made = {w["path"] for e in data["cards"] for w in e.get("writes", []) if w["kind"] == "file"}
     for rel, raw in sorted(finals.items()):
-        for item in linked_items(png_export.open_psd(raw), rel):
+        for item in linked_items(png_export.open_psd(raw), rel, paths):
             path = item["path"] or ""
-            if not path.startswith(LINKED_DIR) or path in tree or path in entry["expect"]:
-                continue
+            if not path.startswith(LINKED_DIR) or path in tree or path in entry["expect"] or path in made:
+                continue                        # a conversion's new file is written by its card
             try:
                 last = source.git("log", "-1", "--format=%H", "--diff-filter=AM", data["after"], "--", path).strip()
                 blob = source.git("rev-parse", f"{last}:{path}").strip() if last else ""
@@ -1739,6 +1761,12 @@ class Head:
     def __call__(self, path: str) -> str:
         return self.tree[path][1] if path in self.tree else self.lower.get(path.lower(), "")
 
+    @property
+    def holders(self) -> str:
+        if not hasattr(self, "_holders"):
+            self._holders = _holders((path, sha) for path, (_, sha) in self.tree.items())
+        return self._holders
+
 
 def _ours(entry: dict) -> dict:
     """{path: {blob}} of a card's planned writes (a redraw's plain too)."""
@@ -1766,6 +1794,8 @@ def _drawn(entry: dict, here: Head) -> list:
 
 
 def _superseded(entry: dict, write: dict, here: Head) -> str:
+    if write["kind"] == "delete" and entry.get("holders") and here(write["path"]) and entry["holders"] != here.holders:
+        return "superseded: a PSD changed on the branch (it may link the file)"     # G2-G3 decided on after's PSDs
     moved = [p for p in _rests_on(entry, write) if not _holds(entry, p, here(p))]
     return f"superseded: {moved[0]} changed on the branch" if moved else ""
 

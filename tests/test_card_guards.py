@@ -515,7 +515,8 @@ def test_a_later_push_is_converted_silently(cards, tmp_path, monkeypatch):
 
 def test_unused_and_duplicate_linked_files_go_in_one_silent_commit(cards, tmp_path, monkeypatch):
     """G2 and G3: a pushed MDW/Linked file with another's bytes merged (its user relinked, the duplicate deleted) and an
-    unused one deleted, in the one landing, silent; nothing deleted while the links index is missing."""
+    unused one deleted, in the one landing, silent; nothing deleted while the links index is missing or lacks a PSD, nor
+    once a PSD moved on the branch before the landing (it may link them)."""
     root, base, alice, bot = cards
     for name in ("kept", "dup", "old"):
         (root / "MDW/Linked").mkdir(parents=True, exist_ok=True)
@@ -527,8 +528,12 @@ def test_unused_and_duplicate_linked_files_go_in_one_silent_commit(cards, tmp_pa
                              links={user: ["MDW/Linked/dup.png"]})
     monkeypatch.setattr(cg, "links_index", lambda source: None)
     alone = cg.check(str(root), head, bot, mode="on", out=str(tmp_path / "none"), workers=1)
-    assert [w["path"] for w in alone["linked"]["writes"]] == ["MDW/Linked/dup.png"]     # no index: G2 waits, G3 goes
-    index = {user: {"blob": tree[user], "links": [{"path": "MDW/Linked/dup.png", "name": "dup.png", "size": 3, "drawn": None}]}}
+    assert alone["linked"]["writes"] == []      # no index: a user of dup.png may be unknown
+    index = {rel: {"blob": sha, "links": []} for rel, sha in tree.items() if rel.endswith(".psd")}
+    index[user]["links"] = [{"path": "MDW/Linked/dup.png", "name": "dup.png", "size": 3, "drawn": None}]
+    monkeypatch.setattr(cg, "links_index", lambda source: {k: v for k, v in index.items() if k != "MDW/Template.psd"})
+    gap = cg.check(str(root), head, bot, mode="on", out=str(tmp_path / "gap"), workers=1)["linked"]["writes"]
+    assert [w["path"] for w in gap] == ["MDW/Linked/old.png"]     # the fake's G2 alone: G3 waits for every PSD's links
     monkeypatch.setattr(cg, "links_index", lambda source: index)
     out = tmp_path / "out"
     data = cg.check(str(root), head, bot, mode="on", out=str(out), workers=1)
@@ -536,6 +541,14 @@ def test_unused_and_duplicate_linked_files_go_in_one_silent_commit(cards, tmp_pa
     writes = {w["path"]: w["kind"] for w in data["linked"]["writes"]}
     assert writes == {"MDW/Linked/old.png": "delete", user: "psd", "MDW/Linked/dup.png": "delete"}
     assert data["summary"]["writes"] == 3 and data["discord"] == {} and "linked" not in data["markdown"].lower()
+    other, moved = tmp_path / "other", tmp_path / "moved"
+    _git(tmp_path, "clone", "-q", "--local", str(root), str(other))
+    shutil.copytree(out, moved)
+    _psd(other, tmp_path / "psds", f"{FOLDER}/Snack.psd", card(colour=(1, 2, 3)))
+    _commit(other, "a PSD pushed before the landing", author="Alice")
+    raced = cg.land(str(moved / "plan.json"), local=str(other))
+    assert sorted(path for _, why, path in raced["dropped"] if "a PSD changed" in why) == ["MDW/Linked/dup.png",
+                                                                                         "MDW/Linked/old.png"]
     report = cg.land(str(out / "plan.json"), local=str(root))
     assert report["sha"] and report["landed"] == [] and report["events"] == []
     names = _git(root, "ls-tree", "-r", "--name-only", report["sha"]).splitlines()
