@@ -531,6 +531,9 @@ def summary(plan: dict) -> str:
     lines += [f"  look at {e['psd']}: {note}" for e in plan["fixed"] for note in e.get("notes", ())]
     lines += [f"  PNGs re-exported {e['psd']}: {e['k1']['px']:,} px past {DRAWN_TOL}" for e in plan["fixed"]
               if e.get("k1") and not e["k1"]["same"]]
+    for e in plan["fixed"]:                     # 5.2 step 1: converted all the same, its PNG kept
+        off = [name for name, ok in e.get("png_check", {}).items() if not ok]
+        lines += [f"  PNG off its stored image, kept {e['psd']}: {', '.join(off)}"] if off else []
     lines += [f"  render record: {plan['recorded']} PSDs"] if "recorded" in plan else []
     lines += [f"  refused {e['psd']}: {e['why']}" for e in plan["refused"]]
     lines += [f"  error {e['psd']}: {e['why']}" for e in plan["errors"]]
