@@ -584,14 +584,23 @@ def unredrawable(psd: PSDImage, rel: str, tree) -> dict:
 
 def look_alikes(links: dict, sha: Callable[[str], str], paths) -> dict:
     """{MDW/Linked path: the file it looks the same as}: equal decoded pixels (db/links.json's pixels), other bytes; the
-    first by path is kept (G3 merges byte-equal copies; these only get the note)."""
+    one most PSDs link is kept (the older, Q6: no dates at depth 1), then the first by path (G3 merges byte-equal
+    copies; these only get the note)."""
     groups: dict = {}
     for path in sorted(paths):
         found = (links.get("pixels") or {}).get(sha(path)) if path.startswith("MDW/Linked/") else None
         if found:
             groups.setdefault(found, []).append(path)
-    return {path: group[0] for group in groups.values() if len({sha(p) for p in group}) > 1
-            for path in group[1:] if sha(path) != sha(group[0])}
+    users: dict = {}
+    for rel, record in links.items():
+        if rel not in ("files", "pixels") and isinstance(record, dict):
+            for link in {link.get("path") for link in record.get("links") or []}:
+                users[link] = users.get(link, 0) + 1
+    out = {}
+    for group in groups.values():
+        kept = min(group, key=lambda p: (-users.get(p, 0), p))
+        out.update({path: kept for path in group if sha(path) != sha(kept)})
+    return out
 
 
 def link_notes(rel: str, blob: str, links: dict, sha: Callable[[str], str], alike: dict, record: dict) -> list:
