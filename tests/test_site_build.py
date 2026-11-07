@@ -4,7 +4,7 @@ db/ (CARD_DATA_DIR, load_card_data; no CARD_DATA_DIR, or no readable stats.json,
 from its start (since), a duplicate's history, dates by committer time, an archived card's moved_to, tag,
 author and created, image revisions (the person pages), Pacific contribution months, the person stats, index.html's
 pre-written first screen (checked against grid.js in node), the Font filter's data (cardfonts.json), a profile's
-subseries. Loads
+subseries, PSD sizes. Loads
 build_site.py from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without it or before load_card_data.
 """
 import copy
@@ -158,6 +158,23 @@ def test_the_current_text_is_dated_from_its_start(bs, repo, tmp_path, monkeypatc
     assert (alpha["ts"], alpha["since"]) == (t3, t2)
     assert out["history.json"][alpha["id"]] == [{"ts": t1, "ability": "Old text."}]
     assert "since" not in _by_name(out["cards.json"]["cards"])["Watermelon"]      # its text started at its last commit
+
+
+def test_psd_sizes_come_by_blob_and_a_duplicate_has_its_psds(bs, repo, tmp_path, monkeypatch):
+    """PSD_TREE (site.yml's trees API reply) sizes each card by its PSD's blob at HEAD: Watermelon2 (a numbered PNG of
+    Watermelon's PSD) gets Watermelon's; a blob the reply doesn't list gets none."""
+    if not hasattr(bs, "psd_sizes"):
+        pytest.skip("the site has no PSD sizes yet")
+    blob = lambda path: subprocess.run(["git", "-C", str(repo["root"]), "rev-parse", f"HEAD:{path}"], capture_output=True,
+                                       text=True, check=True).stdout.strip()
+    tree = tmp_path / "tree.json"
+    tree.write_text(json.dumps({"truncated": False, "tree": [
+        {"path": f"{MELON}.psd", "type": "blob", "sha": blob(f"{MELON}.psd"), "size": 34_712_345},
+        {"path": f"{ALPHA}.psd", "type": "blob", "sha": "0" * 40, "size": 9}]}))      # another blob than HEAD's
+    monkeypatch.setattr(bs, "PSD_TREE", str(tree))
+    cards = _by_name(_build(bs, monkeypatch, repo, tmp_path / "a")["cards.json"]["cards"])
+    assert cards["Watermelon"]["psdSize"] == cards["Inconspicuous Watermelon"]["psdSize"] == 34_712_345
+    assert "psdSize" not in cards["Alpha"]
 
 
 def test_a_picture_only_duplicate_is_its_originals_card(bs, repo, tmp_path, monkeypatch):
