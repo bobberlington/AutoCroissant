@@ -63,7 +63,7 @@ const file = E.editsFile(JSON.stringify({ cards: { X: { creatures: null, note: "
 const lines = op => E.describeItems(op, { flags: { hand: "why", bars: "" }, edited: ["flags"] }).map(x => x.text);
 process.stdout.write(JSON.stringify({ hits: ["flag:hand", "flag:bars", "flag:any", "!flag:any", "FLAG:HAND & flag:bars"].map(hits),
   clean: [F.cleanFlags({ bars: "", hand: 1, other: "x" }), F.cleanFlags({}), F.withFlag({ hand: "" }, "hand", null)], error: [F.flagError({ hand: "x".repeat(300) }), F.flagError({ bars: "x".repeat(301) })],
-  file, unset: E.editsFile(file, [{ key: "X", set: {}, unset: ["flags"] }], "T", "web"),
+  file, unset: E.editsFile(file, [{ key: "X", set: {}, unset: ["flags"] }], "T", "web"), nulled: E.editsFile(file, [{ key: "X", set: { flags: null }, unset: [] }], "T", "web"),
   lines: [lines({ set: { flags: { hand: "new" } }, unset: [] }), lines({ set: {}, unset: ["flags"] })],
   raw: [D.rawOf(cards[1], "flag-bars"), D.rawOf(cards[0], "flag:hand"), D.rawOf(cards[3], "flag-hand"), D.rawOf(cards[3], "flag:bars")], names: D.fieldNames({ "flag:bars": "x", "flag-bars": true }) }));
 """)
@@ -73,6 +73,6 @@ process.stdout.write(JSON.stringify({ hits: ["flag:hand", "flag:bars", "flag:any
     assert out["file"] == dump_edits(json.loads(out["file"]))
     entry = json.loads(out["file"])["cards"]["X"]
     assert list(entry) == ["note", "creatures", "flags", "_by", "_at"] and entry["flags"] == {"hand": "why", "bars": "two words"}
-    assert "flags" not in json.loads(out["unset"])["cards"]["X"]
+    assert "flags" not in json.loads(out["unset"])["cards"]["X"] and "flags" not in json.loads(out["nulled"])["cards"]["X"]
     assert out["lines"] == [["Flags: Needs doing by hand: new; Special stat bars cleared"], ["Flags: Needs doing by hand cleared; Special stat bars cleared"]]
     assert out["raw"] == [True, "why", False, ""] and out["names"] == "Special stat bars"
