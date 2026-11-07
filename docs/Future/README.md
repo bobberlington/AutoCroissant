@@ -7,6 +7,8 @@ verification, open questions only if real). The order is the plan's queue
 - `CARD_CREATOR.md`: an in-browser card creator, a template copy baked by the Actions (owner, 11-07; not queued).
 - `SIMULATOR.md`: a simulator only against the AI or by the numbers (owner, 11-07; not scheduled). Where it differs
   from `docs/Campaigns/SIMULATOR_CAMPAIGN.md`, it wins.
+- `TTS_CARD_FORMS.md`: a card's forms as one TTS object switched by number keys, Card details showing them all (owner, 11-07;
+  Stage 0 test save made).
 
 Landed and moved to `docs/Finished/`: `TEST_SUITE_CUT.md`, `WEBSITE_SMALL_FIXES.md`, `GAME_TXT.md`,
 `SMALLER_PNG_PUSHES.md`, `LAYOUT_SUPPORT.md` (`session-2026-10-25/`); `PARTS_EDITOR.md`, `CARD_SYNC_VERDICTS.md`
