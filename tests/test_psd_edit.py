@@ -430,6 +430,33 @@ def test_alt_template_converts_a_card(clone, parser, tmp_path):
         assert all(rows[0][0].has_effects() == styled for rows in comp_bars(new).values()), rel
 
 
+def test_alt_parts_rows_decide(clone):
+    """The digits' row decides a bar's place (the Pandas' def and atk art are named for each other's rows) and a split
+    row's halves are one bar (Royal Eradicator's "atk top" and "atk bottom")."""
+    import commands.card_standards as standards
+    parts = standards._alt_parts(PSDImage.open(_card(clone, "Creatures/Pandas/2 Stars/Peter_Panda.psd")[0]))[1]
+    assert (parts["def"][1], parts["atk"][1]) == ((360, 1326, 1173, 1410), (360, 1452, 1173, 1536))
+    parts = standards._alt_parts(PSDImage.open(_card(clone, "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd")[0]))[1]
+    assert parts["atk"][1] == (360, 1443, 1176, 1542)
+
+
+def test_alt_dark():
+    """A bar draws like its digit: the template's dark near -2.95, the digit's own off it, a partial overlay split between
+    the bar and the overlay, a covering one solid."""
+    import commands.card_standards as standards
+    from psd_tools.constants import BlendMode
+
+    class Overlay(SimpleNamespace):
+        enabled, blend_mode = True, BlendMode.NORMAL
+    GradientOverlay = type("GradientOverlay", (Overlay,), {})
+    digit = lambda e, *fx: SimpleNamespace(kind="exposure", exposure=e, effects=list(fx), has_effects=lambda: bool(fx))
+    assert standards.alt_dark(digit(-2.95)) == (171, None)
+    assert standards.alt_dark(digit(-1.11)) == (75, None)
+    opacity, overlay = standards.alt_dark(digit(-4.67, GradientOverlay(opacity=48.0)))
+    assert (opacity, round(overlay, 1)) == (225, 54.5)
+    assert standards.alt_dark(digit(-2.95, GradientOverlay(opacity=100.0))) == (255, None)
+
+
 def test_regions_and_rows_on_mini_doomer(clone, parser):
     path = _card(clone, MINI_DOOMER)[0]
     psd = PSDImage.open(path)
