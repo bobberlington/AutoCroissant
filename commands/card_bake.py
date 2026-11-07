@@ -31,6 +31,7 @@ fields (they bake; the refused field stays in the file, its refused verdict on t
 content problem (text that won't fit, a typed badge or token, a styled word, a font stand-in) never refuses (owner
 2026-10-24): it bakes, told in the commit line, the report and the baked verdict's reason (psd_edit's notes). A run
 bakes at most MAX_BAKES cards and starts none after BUDGET (the rest are refused `capped` and wait for the next run).
+On a GitHub runner POOL_MIN or more cards bake on every core (bake_pool); they come back in file order, so all else holds.
 The report goes to stdout, the artifacts (edited PSD, merged PNG, before/after/diff crops, the rewritten file) to the
 work dir. The runner supplies the token
 (GITHUB_TOKEN, or config.GIT_TOKEN on the bot), the fonts (PSD_TOOLS_FONT_DIRS; else the checkout's MDW/Fonts) and the
@@ -42,12 +43,13 @@ exits 1 (failure()). A face no file holds is drawn in the fork's stand-in, told 
 """
 from argparse import ArgumentParser
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, ThreadPoolExecutor, wait
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from hashlib import sha1
 from json import dumps, loads
-from os import environ, makedirs, pathsep, remove
+from os import cpu_count, environ, getpid, makedirs, pathsep, remove, replace
 from os.path import abspath, basename, dirname, exists, expanduser, isdir, join, splitext
 from re import IGNORECASE, escape, findall, fullmatch
 from subprocess import CalledProcessError, TimeoutExpired, run as run_process
@@ -94,6 +96,7 @@ FIELDS = frozenset(CardEdits.TYPES)            # ORDER (edit.js FIELDS) and PUNC
 KIND = CardEdits.KIND
 BOT_BY = AUTHOR["name"]                         # the bot's _by (changelog.BOT)
 PREFETCH_WORKERS = 4                            # blob downloads at once (Snapshot.prefetch)
+POOL_MIN = 3                                    # cards due before a runner bakes them side by side (pool_size)
 
 
 # ========================
@@ -205,9 +208,7 @@ class Snapshot:
             return fetch_verified(self.repository, sha, path, self.local)
         data = ahead.result()
         if path:
-            makedirs(dirname(path), exist_ok=True)
-            with open(path, "wb") as fh:
-                fh.write(data)
+            _save(path, data)
         return data
 
     def prefetch(self, paths) -> None:
@@ -273,6 +274,7 @@ class Snapshot:
 # GitHub
 # ========================
 _POOL: list = []
+_worker: dict = {}                              # a pool worker's bake_card arguments (_init_worker)
 
 
 def _pool() -> ThreadPoolExecutor:
@@ -351,10 +353,17 @@ def fetch_verified(repository: str, sha: str, path: str = "", local: str = "") -
         except ValueError as error:
             raise Refused("blob", str(error)) from error
     if path:
-        makedirs(dirname(path), exist_ok=True)
-        with open(path, "wb") as fh:
-            fh.write(data)
+        _save(path, data)
     return data
+
+
+def _save(path: str, data: bytes) -> None:
+    """A blob to its file in one step (temp file, then rename): pool workers share templates/ and Types/."""
+    makedirs(dirname(path), exist_ok=True)
+    temp = f"{path}.{getpid()}"
+    with open(temp, "wb") as fh:
+        fh.write(data)
+    replace(temp, path)
 
 
 # ========================
@@ -1393,6 +1402,114 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         card.seconds = perf_counter() - started
 
 
+def status_chart(snapshot: Snapshot, work: str) -> Callable[[], Optional[dict]]:
+    """bake_card's chart: status_fills() of the tree's status chart, read once, or None when it has none."""
+    colors: list = []
+
+    def chart() -> Optional[dict]:
+        if not colors:
+            if psd_edit.STATUS_CHART not in snapshot.tree:
+                colors.append(None)
+            else:
+                path = join(work, basename(psd_edit.STATUS_CHART))
+                snapshot.fetch(snapshot.sha(psd_edit.STATUS_CHART), path)
+                colors.append(psd_edit.status_fills(PSDImage.open(path)))
+        return colors[0]
+    return chart
+
+
+def cap_refusal(cards: list, started: float) -> Optional[Refusal]:
+    """The `capped` refusal of a card not started, once the run is at MAX_BAKES or past BUDGET, else None."""
+    baked = sum(1 for c in cards if c.baked)
+    if baked >= MAX_BAKES or perf_counter() - started >= BUDGET.total_seconds():
+        return Refusal("capped", f"{baked} cards baked in {(perf_counter() - started) / 60:.0f} min "
+                                 f"(at most {MAX_BAKES} or {BUDGET.seconds // 60} min a run)")
+    return None
+
+
+def pool_size(due: int) -> int:
+    """Processes for the run's bakes: every core on a GitHub runner when POOL_MIN cards are due, else 1 (serial)."""
+    if environ.get("GITHUB_ACTIONS") != "true" or due < POOL_MIN:
+        return 1
+    return max(1, min(cpu_count() or 1, due))
+
+
+def name_clashes(cards: list) -> set:
+    """One name, one card, before a pool starts: the keys, in file order, of the cards whose `_rename` may take a name
+    an earlier card's may (digits aside: NameN.png). They bake after the pool, seeing which earlier renames held."""
+    names, clashes = set(), set()
+    for card in cards:
+        name = card.fields.get("name")
+        if card.rename and isinstance(name, str):
+            stem = CardAuthors.key(file_stem(name)).rstrip("0123456789 ")
+            if stem in names:
+                clashes.add(card.key)
+            names.add(stem)
+    return clashes
+
+
+def _init_worker(repository: str, head: str, info: dict, tree: dict, local: str, fonts_dir: str, work: str) -> None:
+    token_from_env()        # a spawned worker (forkserver on 3.14) starts without the run's header
+    snapshot = Snapshot(repository, head, info, tree, local)
+    _worker.update(snapshot=snapshot, parser=vocabulary(snapshot), fonts_dir=fonts_dir,
+                   chart=status_chart(snapshot, work), work=work)
+
+
+def _pooled(card: Card) -> Card:
+    """bake_card in a worker. A Baked's Edits hold the open PSD: what the report reads of them goes back, not it."""
+    bake_card(card=card, **_worker)
+    for baked in [card.baked, *card.views.values()]:
+        if baked is not None:
+            baked.edits = [psd_edit.Edit(edit.field, edit.old, None, [], [], None) for edit in baked.edits]
+    return card
+
+
+def _try_again(card: Card, error: Exception) -> None:
+    card.refusal = Refusal("error", f"its bake worker stopped ({type(error).__name__}): the next run tries again")
+    card.transient = True
+
+
+def bake_pool(cards: list, snapshot: Snapshot, fonts_dir: str, work: str, started: float, workers: int) -> set:
+    """
+    bake_card on several processes. The cards go out in file order as workers free up and each comes back over its
+    Card; cap_refusal() is asked per card, and while the cards running could reach MAX_BAKES the next one waits to see. A
+    worker killed: the cards not finished get a try-again `error`; the finished ones land.
+
+    Returns:
+        The keys of the cards settled; the others (name_clashes) are left to run_report's loop
+    """
+    clashes = name_clashes(cards)
+    waiting = [c for c in cards if c.key not in clashes]
+    running: dict = {}                          # Future -> its Card
+    settled: set = set()
+    try:
+        with ProcessPoolExecutor(workers, initializer=_init_worker, initargs=(
+                snapshot.repository, snapshot.head, snapshot.info, snapshot.tree, snapshot.local, fonts_dir, work)) as pool:
+            while waiting or running:
+                while waiting and len(running) < workers:
+                    if running and sum(1 for c in cards if c.baked) + len(running) >= MAX_BAKES:
+                        break
+                    waiting[0].refusal = cap_refusal(cards, started)
+                    if waiting[0].refusal:
+                        settled.add(waiting.pop(0).key)
+                        continue
+                    running[pool.submit(_pooled, waiting[0])] = waiting[0]
+                    waiting.pop(0)
+                for future in wait(running, return_when=FIRST_COMPLETED).done:
+                    card = running.pop(future)
+                    try:
+                        vars(card).update(vars(future.result()))
+                    except Exception as error:  # noqa: BLE001 - killed, or a Card that won't pickle
+                        _try_again(card, error)
+                    settled.add(card.key)
+    except BrokenProcessPool as error:          # the next submit: the cards still out and those not sent
+        for card in cards:
+            if card.key not in settled:
+                _try_again(card, error)
+                settled.add(card.key)
+    return settled
+
+
 def _relocate(card: Card, folder: str) -> None:
     """A stars move's or rename's files: the PSD and its PNGs added at the new folder or name, deleted here."""
     card.relocated = {old: _moved_to(card, old) for old in dict.fromkeys(list(card.moves) + list(card.renames))}
@@ -1761,25 +1878,16 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
                 report.lines.append(f"- Runner: psd-tools {PSD_TOOLS_VERSION} ({engine}); fonts `{fonts}`"
                                     + ("" if isdir(fonts) else " (missing)"))
                 parser = vocabulary(snapshot)
-                colors: list = []               # the chart's fills, read once
-
-                def chart() -> Optional[dict]:
-                    if not colors:
-                        if psd_edit.STATUS_CHART not in snapshot.tree:
-                            colors.append(None)
-                        else:
-                            path = join(work, basename(psd_edit.STATUS_CHART))
-                            snapshot.fetch(snapshot.sha(psd_edit.STATUS_CHART), path)
-                            colors.append(psd_edit.status_fills(PSDImage.open(path)))
-                    return colors[0]
+                chart = status_chart(snapshot, work)
+                workers = pool_size(len(cards))
+                settled = bake_pool(cards, snapshot, fonts, work, started, workers) if workers > 1 else set()
                 claimed: set = set()            # the card keys earlier cards rename to: one name, one card
                 for one in cards:
-                    baked = sum(1 for c in cards if c.baked)
-                    if baked >= MAX_BAKES or perf_counter() - started >= BUDGET.total_seconds():
-                        one.refusal = Refusal("capped", f"{baked} cards baked in {(perf_counter() - started) / 60:.0f} min "
-                                                        f"(at most {MAX_BAKES} or {BUDGET.seconds // 60} min a run)")
-                        continue
-                    bake_card(snapshot, one, parser, fonts, chart, work, frozenset(claimed))
+                    if one.key not in settled:
+                        one.refusal = cap_refusal(cards, started)
+                        if one.refusal:
+                            continue
+                        bake_card(snapshot, one, parser, fonts, chart, work, frozenset(claimed))
                     if one.renames and one.refusal is None:
                         claimed.update(CardAuthors.key(card_name(new)) for new in one.renames.values())
                 waiting = sum(1 for c in cards if c.refusal and c.refusal.code == "capped")
@@ -1865,6 +1973,7 @@ __all__ = [
     'Snapshot',
     'Transient',
     'bake_card',
+    'bake_pool',
     'dump_edits',
     'editors',
     'failure',
@@ -1876,6 +1985,7 @@ __all__ = [
     'local_snapshot',
     'main',
     'pending',
+    'pool_size',
     'psd_fields',
     'records',
     'refusal_verdict',
