@@ -944,17 +944,17 @@ def link_issues(psd: PSDImage, rel: str, tree) -> list:
         ["embedded: <layer>", "linked bar: <layer>", "repair: <file>", "missing: <file>", "orphan: <uuid>"]
     """
     known, used, out = _items_of(psd), set(), []
-    for layer in psd.descendants():
-        if layer.kind != "smartobject":
-            continue
+    placed = [layer for layer in psd.descendants() if layer.kind == "smartobject"]
+    bars = {_uid(layer) for layer in placed if _bar(placed_data(layer))}     # an item a bar shares stays embedded (items)
+    for layer in placed:
         uid = _uid(layer)
         used.add(uid)
         item = known.get(uid, (None, None))[1]
         if item is None:
             continue
         bar = _bar(placed_data(layer))
-        if item.kind == LinkedLayerType.DATA and not bar and file_type(item.data[:16] if item.data else b"",
-                                                                       _text(item.filename)) in FILETYPES:
+        if item.kind == LinkedLayerType.DATA and uid not in bars and file_type(item.data[:16] if item.data else b"",
+                                                                               _text(item.filename)) in FILETYPES:
             out.append(f"embedded: {layer.name}")
         elif item.kind == LinkedLayerType.EXTERNAL and bar:
             out.append(f"linked bar: {layer.name}")
