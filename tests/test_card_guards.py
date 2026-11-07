@@ -1017,7 +1017,8 @@ def test_workflow_shape(clone):
     text = path.read_text(encoding="utf-8")
     doc, steps_by_name, env = _guard_steps(clone)
     on = doc[True]
-    assert on["push"] == {"branches": ["main"], "paths": ["**/*.psd", "**/*.PSD", "**/*.png", "**/*.PNG", "MDW/Fonts/*"]}
+    assert on["push"] == {"branches": ["main"], "paths": ["**/*.psd", "**/*.PSD", "**/*.png", "**/*.PNG", "MDW/Fonts/*",
+                                                   "Types/**", "MDW/Linked/**"]}          # linked files: G2, G3
     inputs = on["workflow_dispatch"]["inputs"]
     assert inputs["dry_run"]["default"] is True and inputs["all"]["default"] is False and set(inputs) == {"dry_run", "sha", "cards", "all"}
     assert doc["concurrency"]["group"] == ("${{ github.event_name == 'push' && format('card-guards-{0}', github.sha) || "
@@ -1074,7 +1075,12 @@ def test_workflow_shape(clone):
     assert "--fonts" not in steps_by_name["Check"]["run"]                     # R7 is the font check's
     names = [s.get("name") for s in job["steps"]]
     assert names.index("Start") < names.index("No push run in its window") < names.index("Check") \
-        < names.index("Plan for the post job") < names.index("Fixes to land") < names.index("Decided") < names.index("Comment on the commit")
+        < names.index("Plan for the post job") < names.index("Fixes to land") < names.index("Decided") \
+        < names.index("Types for the conversion") < names.index("Normalise") < names.index("Comment on the commit")
+    types, normalise = steps_by_name["Types for the conversion"], steps_by_name["Normalise"]     # after Decided: Card sync waits for neither
+    assert types["env"] == {"GIT_NO_LAZY_FETCH": "0"} and "sparse.expectFilesOutsideOfPatterns true" in types["run"]
+    assert normalise["if"] == "${{ !cancelled() && steps.types.outcome == 'success' }}" and normalise["continue-on-error"] is True
+    assert "card_guards normalise" in normalise["run"] and "--deadline" in normalise["run"]
     plan = job["steps"][names.index("Plan for the post job")]
     assert plan["id"] == "plan" and plan["if"] == "always() && steps.check.outcome == 'success'"
     assert job["steps"][names.index("Decided")]["if"] == "always()"             # Card sync's wait ends on it, whatever the check did
