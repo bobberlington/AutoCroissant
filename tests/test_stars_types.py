@@ -650,6 +650,19 @@ def test_real_type_rows(clone, parser, tmp_path):
 
 
 @icons
+def test_icons_and_stars_go_by_ink(clone, parser, tmp_path):
+    """Refused until 11-07: fills (Cloud Soiree, Kyle), a row of overlapping icons (Kyle), text in the picture (Return To
+    Sender), a column (Masked Dedede), a lone star's backdrop (Bubble)."""
+    types = str(clone / "Types")
+    for rel in ("Field/1 Stars/Cloud_Soiree.psd", "Creatures/Other/5 Stars/Kyle.psd",
+                "Items/Counter/4 Stars/Return_To_Sender.psd", "Creatures/Kirby/5 Stars/Masked_Dedede.psd"):
+        psd, parsed = _open(parser, clone, rel, tmp_path)
+        pe.set_icons(psd, pe.plan_types(psd, parsed, parsed["card"]["types"] + ["fire"], parser, types_dir=types), types)
+    psd, parsed = _open(parser, clone, "N.M.E/Bubble.psd", tmp_path)
+    pe.plan_stars(psd, parsed, 2, parser, moving=True)
+
+
+@icons
 def test_lane3_star_layouts(clone, parser, tmp_path):
     """Grimora's one layer drawing three is split into masked copies and its centred row stays centred (a bake: the
     split's records pass gate_bytes); Tainted Lazarus's dead form takes the new count too, turned half round;
