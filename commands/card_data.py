@@ -660,9 +660,9 @@ class CardBuild:
             self.ranged.append(source.fetched)
         else:
             psd = PSDImage.open(source)
+            self.links[path] = self._linked(psd, path, sha)     # before the parse: one it refuses still has its links
             card = self._parse_psd(psd, path, name, existing)
             details = self._details(psd, path, name, card)
-            self.links[path] = self._linked(psd, path, sha)
         if details is not None:
             self.details[sha] = details
         return card
