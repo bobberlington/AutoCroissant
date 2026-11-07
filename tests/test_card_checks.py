@@ -88,6 +88,19 @@ def test_refresh_clears():
     assert checks["cleared"] == {}
 
 
+def test_art_over_darks(monkeypatch):
+    """Only Lines may lie over the new bars' Darks group: else a stat edit bakes for real (Sans, The Thin Man)."""
+    layer = lambda name, shown=True: SimpleNamespace(name=name, is_visible=lambda: shown)
+    darks, bars = layer("Darks"), layer("Bars")
+    monkeypatch.setattr(cc, "comp_bars", lambda psd: {"hp": [(SimpleNamespace(parent=darks), 5, (0, 0, 1, 1))]})
+    darks.parent = [bars, darks, layer("Lines")]
+    assert not cc._art_over_darks(None)
+    darks.parent = [darks, bars, layer("Lines")]
+    assert cc._art_over_darks(None)
+    darks.parent = [darks, layer("Bars", False)]
+    assert not cc._art_over_darks(None)
+
+
 def test_to_check_and_file():
     """No result, or a new PNG: checked; --all, a shard; the file reads back."""
     tree = {"A.psd": ("", "11111111aa"), "A.png": ("", "22222222bb"), "B.psd": ("", "33333333cc")}

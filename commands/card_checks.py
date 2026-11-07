@@ -15,8 +15,8 @@ without a push) and marks the people's flags that went. Exit 0, also for what it
 
 Which edits are tried (a real bake is 25 s; the whole list of 13 kinds of edit, 4 minutes a card, would be 50 hours a
 tree): the plans alone for titles, stars and types, a made icon on a copy; a real bake only where a plan cannot tell:
-stars on a card with variant pictures, the ability on a card with FX layers, the stats on digit rows (their pixels too),
-a type on a very small PSD.
+stars on a card with variant pictures, the ability on a card with FX layers, the stats on digit rows or new bars under
+art (their pixels too), a type on a very small PSD.
 """
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -387,9 +387,17 @@ def _ability_edit(text: str) -> Optional[str]:
     return text[:word.start()] + ("test" if word.group() != "test" else "card") + text[word.end():]
 
 
+def _art_over_darks(psd: PSDImage) -> bool:
+    """Layers but Lines above the new bars' Darks group: they can hide it (Sans, The Thin Man: their bars never change)."""
+    darks = next(layer.parent for bars in comp_bars(psd).values() for layer, _, _ in bars)
+    siblings = list(darks.parent)
+    above = siblings[next(n for n, layer in enumerate(siblings) if layer is darks) + 1:]
+    return any(layer.is_visible() and layer.name.strip().lower() != "lines" for layer in above)
+
+
 def _stat_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str, image: Optional[Image.Image]) -> list:
-    """Stat edits that cannot bake: new bars by their state (their bakes draw: measured on every card), digit rows by a
-    real bake of all four, one down and one up, which must move pixels."""
+    """Stat edits that cannot bake: new bars by their state (their bakes draw: measured on every card) unless art lies
+    over them; those and digit rows by a real bake of all four, one down and one up, which must move pixels."""
     card = parsed["card"]
     have = {stat: card.get(stat) for stat in STAT_ORDER if isinstance(card.get(stat), int) and card.get(stat) >= 0}
     if len(have) < len(STAT_ORDER) or not style:
@@ -398,7 +406,8 @@ def _stat_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str,
         for stat, bars in comp_bars(psd).items():
             if len(bars) == 1 and (bars[0][1] is None or not bars[0][0].is_visible()):
                 return [_note("stats", f"{stat}: its bar shows no layer comp")]
-        return []
+        if not _art_over_darks(psd):
+            return []
     exposures = [layer for layer in _digits(stat_rows(psd)) if layer.kind == "exposure"]
     if any(one.is_visible() and one.exposure > 0 for one in exposures) and any(not one.is_visible() and one.exposure < 0 for one in exposures):
         return [BRIGHT_NOTE]
