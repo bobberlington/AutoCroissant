@@ -1233,7 +1233,9 @@ def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARD
             continue
 
         def read_blob(blob: str) -> Optional[bytes]:
-            if blob not in blobs:
+            if blob not in blobs:                   # a pushed PSD's own links (its record is stale)
+                if fetch:
+                    fetch_blobs(clone, [blob])
                 blobs.update(_git_bytes(clone, [blob]))
             return blobs.get(blob)
         raw = blobs[tree[rel]]
@@ -1381,7 +1383,10 @@ def main(args: Optional[list] = None) -> int:
         return 1 if out["errors"] else 0
     with open(opts.links, encoding="utf-8") as fh:
         links = load(fh)
-    pushed = open(opts.pushed, encoding="utf-8").read().split("\n") if opts.pushed else ()
+    pushed = ()
+    if opts.pushed:
+        with open(opts.pushed, encoding="utf-8") as fh:
+            pushed = fh.read().splitlines()
     found = redraw_linked(opts.checkout, links, opts.head, opts.cards, opts.bytes, opts.until,
                           [p for p in pushed if p.strip()])
     commit = ""
