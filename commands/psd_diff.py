@@ -52,6 +52,8 @@ STYLE = {"Font": "font", "FontSize": "size", "FillColor": "colour", "FauxBold": 
          "Underline": "underline", "Strikethrough": "strikethrough", "StrokeFlag": "stroke", "StrokeColor": "stroke",
          "OutlineWidth": "stroke"}
 SCALED = {"FontSize", "Leading", "BaselineShift", "OutlineWidth"}   # times the transform's scale
+NORMAL_TEXT = {"FontSize", "FontBaseline", "Leading", "AutoLeading", "BaselineShift"}   # what normal text from sub or
+#   superscript restyles (card_standards.to_normal): no change while every glyph stays (psd_edit.same_glyphs)
 PARAGRAPH = {"Justification": "alignment", "FirstLineIndent": "indent", "StartIndent": "indent", "EndIndent": "indent",
              "SpaceBefore": "spacing", "SpaceAfter": "spacing", "EveryLineComposer": "composer"}
 ALIGN = {0: "left", 1: "right", 2: "centre", 3: "justified", 4: "justified", 5: "justified", 6: "justified"}
@@ -457,7 +459,7 @@ def _blend(name: str) -> str:
     return name.replace("_", " ").title()
 
 
-def _compare(a: Facts, b: Facts, codepoints: Optional[dict], quiet=()) -> list:
+def _compare(a: Facts, b: Facts, codepoints: Optional[dict], quiet=(), fonts=None) -> list:
     """[(rank, template)] for one paired layer: the template's {} is the layer's label."""
     out = []
     if a.name != b.name:
@@ -474,7 +476,7 @@ def _compare(a: Facts, b: Facts, codepoints: Optional[dict], quiet=()) -> list:
         elif a.text != b.text:
             out.append((TEXT, "{} " + _unseen(a.text, b.text)))
         style = _style_change(a, b, codepoints, quiet)
-        if style:
+        if style and not _drawn_alike(a, b, fonts):
             out.append((LOOK, "{} " + style))
         if a.box and b.box:
             dw, dh = b.box[0] - a.box[0], b.box[1] - a.box[1]
@@ -524,6 +526,19 @@ def _compare(a: Facts, b: Facts, codepoints: Optional[dict], quiet=()) -> list:
     else:
         out += [(OTHER, "{} " + _tag(key) + " changed") for key in settings]
     return out
+
+
+def _drawn_alike(a: Facts, b: Facts, fonts) -> bool:
+    """The same text restyled in NORMAL_TEXT's keys alone, every glyph where it was (normal text from sub or
+    superscript: the big pass, the guards' later conversions)."""
+    if a.text != b.text or a.layer is None or b.layer is None or len(a.chars) != len(b.chars):
+        return False
+    for (style_a, para_a), (style_b, para_b) in zip(a.chars, b.chars):
+        changed = {k for k in set(style_a) | set(style_b) if style_a.get(k) != style_b.get(k)}
+        if para_a != para_b or changed - NORMAL_TEXT:
+            return False
+    from commands.psd_edit import same_glyphs
+    return same_glyphs(a.layer, b.layer, fonts)
 
 
 def _same(a: Facts, b: Facts, differ: bool, mask: bool) -> bool:
@@ -642,7 +657,7 @@ def _join(subjects: list) -> str:
     return named[0] if len(named) == 1 else ", ".join(named[:len(named) - 1]) + " and " + named[len(named) - 1]
 
 
-def changes(old: PSDImage, new: PSDImage, codepoints: Optional[dict] = None, quiet=()) -> list:
+def changes(old: PSDImage, new: PSDImage, codepoints: Optional[dict] = None, quiet=(), fonts=None) -> list:
     """
     What changed between two versions of a card PSD, Photoshop's re-save noise left out.
 
@@ -652,6 +667,7 @@ def changes(old: PSDImage, new: PSDImage, codepoints: Optional[dict] = None, qui
         codepoints: Private-use icon characters -> icon names (psd_parser.IconVocabulary.codepoints), to quote icons as
             [name] in text changes
         quiet: Paragraph and style keys left out ("EveryLineComposer": the guards fix it unsaid)
+        fonts: Gives MDW/Fonts for faces (names -> dir): a restyle that keeps every glyph is laid out in them
 
     Returns:
         The phrases, the most telling first ([] when nothing but a re-save changed)
@@ -689,7 +705,7 @@ def changes(old: PSDImage, new: PSDImage, codepoints: Optional[dict] = None, qui
             rows.append((ADDED, "added {}", labels[key] + _count(b, key, new_keys) + hidden))
     for key_a, key_b in pairs.items():
         rows += [(rank, template, before[key_a] if rank == RENAMED else labels[key_b])
-                 for rank, template in _compare(a[key_a], b[key_b], codepoints, quiet)]
+                 for rank, template in _compare(a[key_a], b[key_b], codepoints, quiet, fonts)]
     rows += [(rank, template, labels[key]) for rank, template, key in _order(a, b, pairs)]
     out += rows
     merged: dict = {}

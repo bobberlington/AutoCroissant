@@ -4,9 +4,9 @@ layer's own TySh text but not its story in the document's Txt2 block, which is t
 and saving the card in Photoshop put the old text back (B.F.B. -> B.F.B). Per PSD, every type layer whose story lacks
 its TySh text gets the story rewritten to that text through the fork's TypeLayer.sync_story (text and run lengths; the
 story's styles stay, and Photoshop redoes its glyph layout), and nothing else changes: the PSD is saved without a new
-preview, then checked (every story holds its layer's text and styles, only the repaired stories changed, the rest of
-Txt2 and the other document blocks are the old bytes: psd_edit.gate_stories; every layer record, the image resources
-and the stored composite are the old bytes too).
+preview and stripped (psd_edit.save_psd), then checked (every story holds its layer's text and styles, only the
+repaired stories changed, the rest of Txt2 and the other document blocks are the old bytes: psd_edit.gate_stories;
+every layer record and the image resources are the old bytes too).
 
     python -m commands.txt2_repair <psd>... --out DIR
     repair(path, out_path) -> Repair; verify(old_path, new_path, stories) -> the changed stories
@@ -41,10 +41,6 @@ class Repair:
 # ========================
 # Helper Functions
 # ========================
-def _raw(element) -> bytes:
-    return element.tobytes() if element is not None else b""
-
-
 def _show(text: Optional[str]) -> str:
     return repr(psd_edit.collapse(text))
 
@@ -63,7 +59,8 @@ def sync_stories(psd: PSDImage) -> set:
 def verify(old_path: str, new_path: str, stories) -> list:
     """
     Check a repaired PSD against its original: only the given stories changed, every story holds its layer's text,
-    and every layer record, the document's other blocks, the image resources and the stored composite are the old bytes.
+    and every layer record, the document's other blocks and the image resources are the old bytes (the merged image's
+    strip aside: psd_edit.changed_part).
 
     Args:
         old_path: The PSD as it was
@@ -77,9 +74,9 @@ def verify(old_path: str, new_path: str, stories) -> list:
     changed = psd_edit.gate_stories(old, new, stories)
     if psd_edit.layer_records(old_path) != psd_edit.layer_records(new_path):
         raise Refused("bytes", "a layer record changed")
-    for part in ("header", "color_mode_data", "image_resources", "image_data"):
-        if _raw(getattr(old._record, part)) != _raw(getattr(new._record, part)):
-            raise Refused("bytes", f"{part} changed")
+    part = psd_edit.changed_part(old, new)
+    if part:
+        raise Refused("bytes", f"{part} changed")
     return changed
 
 
@@ -102,7 +99,7 @@ def repair(path: str, out_path: str) -> Repair:
     synced = sync_stories(psd)
     temp = join(dirname(out_path) or ".", f".{basename(out_path)}.repair")
     try:
-        psd_edit.save_psd(psd, temp, update_preview=False)
+        psd_edit.save_psd(psd, temp)
         found.stories = verify(path, temp, synced)
     except BaseException:
         if exists(temp):

@@ -650,8 +650,8 @@ def _recompress(out: str, result: Result, path: str, read: Callable[[], bytes]) 
 
 
 def _export_dict(found) -> dict:
-    """An Export as plan.json keeps it; "unchecked" is the line told for a PNG made with no stored image (G2), or for one
-    kept (KEPT beside such a PSD, RESTYLED over one)."""
+    """An Export as plan.json keeps it; "unchecked" is the line told for a PNG made with no stored image (G2) as another
+    picture than the PSD was saved showing (PICTURE), or for one kept (KEPT beside such a PSD, RESTYLED over one)."""
     return {"outcome": found.outcome, "why": found.why, "gate": found.gate, "changed_px": found.changed_px,
             "box": list(found.box) if found.box else None, "icc": found.icc, "writer": found.writer,
             "vote": list(found.vote) if found.vote else None, "numbers": found.numbers,
@@ -718,24 +718,25 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
             result.notes.append((f"{basename(job.left)} is left at the PSD's old name", False))
         return
     new_bytes = source.blob(job.psd_new)
-    new = png_export.open_psd(new_bytes)
-    old = png_export.open_psd(source.blob(job.psd_old)) if job.psd_old else None
+    new = png_export.open_psd(new_bytes, job.psd)
+    old = png_export.open_psd(source.blob(job.psd_old), job.psd) if job.psd_old else None
+    faces = partial(source.fonts_for)          # a restyle keeping every glyph is laid out in them (psd_edit.same_glyphs)
     if old is not None:
-        result.changes = changes(old, new, parser)
+        result.changes = changes(old, new, parser, faces)
     shown: dict = {}                            # the PNGs (path: image) that show the pushed PSD: R8's redraw follows
     # guard 1
     if job.case in ("stale", "beside"):
         old_png = png_export.open_png(source.blob(job.png_old))
         numbered = {path: png_export.open_png(source.blob(sha)) for path, sha in job.numbered.items()}
-        found = png_export.export(old if job.case == "stale" else None, new, old_png, numbered, job.png)
+        found = png_export.export(old if job.case == "stale" else None, new, old_png, numbered, job.png, faces)
         # a burst: when the old PNG shows the anchor rather than the old PSD (not a PNG pushed before its PSD), the
         # anchored verdict, a refusal too (a small push-1 change hides under G5's bar, review 2026-10-24); else, checked,
         # a G5/G6 refusal retried, the anchored export kept unless it refuses
         if job.psd_anchor and old is not None:
-            anchor = png_export.open_psd(source.blob(job.psd_anchor))
+            anchor = png_export.open_psd(source.blob(job.psd_anchor), job.psd)
             matched = png_export.shows(old_png, anchor, old)
             if matched or (not found.unchecked and found.outcome == "refused" and found.gate in ("G5", "G6")):
-                anchored = png_export.export(anchor, new, old_png, numbered, job.png)
+                anchored = png_export.export(anchor, new, old_png, numbered, job.png, faces)
                 if matched or anchored.outcome != "refused":   # the PNG matched the PSD before the burst
                     found = anchored
                     result.notes.append((f"checked against the PSD as of {basename(job.png)}'s last change "
@@ -815,7 +816,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
         lines = {issue.code: issue.line() for issue in issues if issue.fix}
         result.fix_refused = [(lines.get(code, code), why) for code, why in fixed.refused]
         redraws = bool(fixed.rewrapped or fixed.redrawn)
-        redrawn = bool(fixed.data) and redraws and _rewrapped_pngs(out, result, new, fixed, shown)
+        redrawn = bool(fixed.data) and redraws and _rewrapped_pngs(out, result, new, fixed, shown, faces)
         data = fixed.plain if redraws and not redrawn else fixed.data
         if data and data != new_bytes:
             file = _save(out, job.psd, data)
@@ -852,7 +853,7 @@ def _drawn_as(found) -> str:
     return f"its picture 1 ({png_export.unchecked_line(found)})" if picture else "the PSD"
 
 
-def _rewrapped_pngs(out: str, result: Result, pushed, fixed, shown: dict) -> bool:
+def _rewrapped_pngs(out: str, result: Result, pushed, fixed, shown: dict, faces=None) -> bool:
     """
     R8's redrawn box text (fixed.rewrapped) into the card's PNGs through guard 1's export (pushed PSD -> fixed one, over
     the PNGs that show the pushed PSD): silent writes, a guard 1 write taking the new pixels. Whether the redraw stands
@@ -870,7 +871,8 @@ def _rewrapped_pngs(out: str, result: Result, pushed, fixed, shown: dict) -> boo
     if gone:                                    # a numbered PNG would keep the old wrap
         return left(f"{basename(gone[0])} does not show the PSD")
     numbered = {path: image for path, image in shown.items() if path != result.job.png}
-    found = png_export.export(pushed, png_export.open_psd(fixed.data), shown[result.job.png], numbered)
+    found = png_export.export(pushed, png_export.open_psd(fixed.data, result.job.psd), shown[result.job.png], numbered,
+                              fonts=faces)
     if found.outcome == "current":
         return True
     if found.outcome != "re-exported" or any(data == b"" for data, _ in found.numbered.values()):
@@ -890,11 +892,12 @@ def _rewrapped_pngs(out: str, result: Result, pushed, fixed, shown: dict) -> boo
     return True
 
 
-def changes(old, new, parser) -> list:
+def changes(old, new, parser, fonts=None) -> list:
     """What changed inside the PSD (psd_diff), icons named by the parser's vocabulary; [] when psd_diff fails (it only
     tells, so it never stops a card)."""
     try:
-        return psd_diff.changes(old, new, getattr(getattr(parser, "icons", None), "codepoints", None), QUIET_KEYS)
+        icons = getattr(getattr(parser, "icons", None), "codepoints", None)
+        return psd_diff.changes(old, new, icons, QUIET_KEYS, fonts)
     except Exception:                           # report only: the guards go on without it
         print(format_exc(), file=stderr)
         return []
@@ -975,8 +978,6 @@ def _guard1_line(entry: dict, mode: str = "on") -> str:
                      f"mean {numbers['cross'].get('mean', 0):.2f}")
     if found.get("writer") in ("photoshop", "tool"):
         parts.append("saved by Photoshop" if found["writer"] == "photoshop" else "not saved by Photoshop")
-    if found.get("unchecked"):
-        parts.append("no stored image to cross-check (saved without Maximize Compatibility)")
     verb = "made" if entry["case"] == "new" else "re-exported"
     misses = "".join(f"; {note}" for note in found.get("misses", []))
     return f"PNG{would} {verb} by the bot's render of the PSD ({'; '.join(parts)}){switch}{misses}"

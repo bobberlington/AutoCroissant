@@ -20,7 +20,7 @@ from psd_tools.api.layers import PixelLayer
 import commands.png_export as pe
 import commands.psd_edit as psd_edit
 from conftest import fork_reason, text_engine
-from helpers import _rows_off, art, card, fixture_psd, photoshop_png
+from helpers import BALLOON_BOY, _rows_off, art, card, fixture_psd, normalised, photoshop_png
 
 # ========================
 # Configuration
@@ -527,7 +527,7 @@ def test_a_script_save_under_a_stale_composite_is_refused(clone, tmp_path):
     edited = PSDImage.open(str(path))
     psd_edit.name_layer(edited).visible = False
     out = tmp_path / "Mini_Doomer.psd"
-    psd_edit.save_psd(edited, str(out), update_preview=False)
+    edited.save(str(out), update_preview=False)
     found = pe.export(old, PSDImage.open(str(out)), pe.open_png((clone / (MINI_DOOMER + ".png")).read_bytes()))
     assert (found.outcome, found.gate, found.why) == ("refused", "G6", pe.G6_STALE)
 
@@ -563,3 +563,14 @@ def test_shows_no_anchor_in_a_png_showing_neither(tmp_path):
     v1, v2 = fixture_psd(tmp_path, card(), "v1"), fixture_psd(tmp_path, card(colour=(0, 255, 0)), "v2")
     assert not pe.shows(card(colour=(0, 60, 200)), v1, v2)
 
+
+def test_a_normalised_card_moves_nothing(clone, tmp_path):
+    """Big pass (owner 2026-11-07): normal text from sub and superscript and no merged image change no layer the export
+    sees (A7), so guard 1's export is current with no told line (A8), and R10 holds the PNG to the fork's render (no
+    stored composite) within the parity floor."""
+    old, new, png, fonts = normalised(clone, BALLOON_BOY, tmp_path)
+    assert pe.changed_layers(old, new) == (None, 0)
+    found = pe.export(old, new, png, {}, BALLOON_BOY[:-4] + ".png", fonts)
+    assert found.outcome == "current" and found.unchecked and pe.unchecked_line(found) == ""
+    checked = pe.png_check(new, png)
+    assert checked["ok"] is True and checked["rendered"]

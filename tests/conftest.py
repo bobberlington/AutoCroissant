@@ -276,13 +276,6 @@ def colour_glyphs() -> bool:
     return "color_glyphs" in {field.name for field in fields(Options)}
 
 
-def saves_preview() -> bool:
-    """The fork stores a given preview (round 3's perf/save-with-preview, tag cards-20261021)."""
-    from inspect import signature
-    from psd_tools import PSDImage
-    return "preview" in signature(PSDImage.save).parameters
-
-
 def fork_reason() -> str:
     """The skip reason of a test that needs the fork's text engine."""
     return FORK_WHY or f"the fork at {FORK_SRC} found, but psd_tools.composite.text does not import"

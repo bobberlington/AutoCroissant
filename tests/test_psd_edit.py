@@ -11,6 +11,7 @@ import json
 from collections import Counter
 from dataclasses import replace
 from importlib.util import find_spec
+from io import BytesIO
 from os import environ
 from pathlib import Path
 from re import search
@@ -29,7 +30,7 @@ from commands import ability_place
 from commands.card_models import card_name
 from commands.psd_regions import PAINT_ORDER, badge_layers, clip, comp_bars, comp_row, fx_pad, regions, stat_rows
 from conftest import (BADGED, PLAIN_DOOMER, at_rev, no_lazy, colour_glyphs, fork_reason, painted,
-                      saves_preview, story_sync as _story_sync, text_engine as _text_engine)
+                      story_sync as _story_sync, text_engine as _text_engine)
 from helpers import MINI_DOOMER, _card, _typo_fix, stale_copy
 
 PRE_SWEEP = "1c717c8b"     # TTSCardMaker main before the badge sweep re-made some test cards
@@ -154,12 +155,11 @@ def flagged(notes: list, pattern: str) -> str:
     return hit[0]
 
 
-def _bake(clone, parser, rel, jobs, tmp_path, chart=None, update_preview=False, paths=None):
+def _bake(clone, parser, rel, jobs, tmp_path, chart=None, paths=None):
     psd, png = paths or _card(clone, rel)
     parsed = pe.parse_card(parser, psd, rel)
     assert pe.classify(parsed, jobs, PSDImage.open(psd)).jobs == jobs
-    return parsed, pe.apply_jobs(psd, png, rel, jobs, parsed, parser, str(tmp_path), str(clone / pe.FONTS_DIR), chart,
-                                 update_preview=update_preview)
+    return parsed, pe.apply_jobs(psd, png, rel, jobs, parsed, parser, str(tmp_path), str(clone / pe.FONTS_DIR), chart)
 
 
 # ========================
@@ -397,7 +397,7 @@ def test_alt_template_bars(clone, parser, tmp_path):
     assert set(_stats(psd).values()) == {"template"}
     edits = [pe.set_stat(psd, parsed, stat, value) for stat, (value, _) in ALT_PHOTOSHOP.items()]
     saved = str(tmp_path / "new.psd")
-    pe.save_psd(psd, saved, update_preview=False)
+    psd.save(saved, update_preview=False)
     changed = pe.gate_bytes(str(path), saved, edits)[0]
     assert sorted(name for _, name, _ in changed) == ["Attack", "Defense", "Health", "Speed"]
     new = PSDImage.open(saved)
@@ -436,7 +436,7 @@ def test_creature_bars(clone, parser, tmp_path):
     edits = [pe.set_stat(psd, parsed, "atk", 2), pe.set_creatures(psd, parsed, plan.jobs["creatures"])]
     assert edits[1].old == [{"hp": 5}, {"hp": 5, "def": 5}]
     saved = str(tmp_path / "new.psd")
-    pe.save_psd(psd, saved, update_preview=False)
+    psd.save(saved, update_preview=False)
     assert sorted(name for _, name, _ in pe.gate_bytes(str(path), saved, edits)[0]) == ["Attack", "Defense", "Shared Health"]
     new = PSDImage.open(saved)
     card = pe.parse_card(parser, saved, rel, new)
@@ -658,7 +658,7 @@ def test_numbered_cells_bake(clone, parser, tmp_path):
             if edit.icons is not None:
                 pe.index_icons(edit, before, pe.record_map(psd))
         saved = str(tmp_path / ("new_" + path.name))
-        pe.save_psd(psd, saved, update_preview=False)
+        psd.save(saved, update_preview=False)
         pe.gate_bytes(str(path), saved, edits)
         card = pe.parse_card(parser, saved, rel)["card"]
         assert {stat: card[stat] for stat in want} == want, rel
@@ -688,7 +688,7 @@ def test_lane2_bars_read_back(clone, parser, tmp_path):
         if edit.icons is not None:
             pe.index_icons(edit, before, pe.record_map(psd))
         saved = str(tmp_path / Path(rel).name)
-        pe.save_psd(psd, saved, update_preview=False)
+        psd.save(saved, update_preview=False)
         pe.gate_bytes(path, saved, [edit])
         assert pe.parse_card(parser, saved, rel)["card"][stat] == value, rel
     zemer = "Creatures/Hollow Knight/5 Stars/Ze'mer.psd"
@@ -701,7 +701,7 @@ def _edit_saved(parser, path, rel, stat, value, out):
     """set_stat on the PSD at path, saved to out and re-parsed: (the Edit, the saved PSD reopened, its parse)."""
     psd = PSDImage.open(path)
     edit = pe.set_stat(psd, pe.parse_card(parser, path, rel, psd), stat, value)
-    pe.save_psd(psd, out, update_preview=False)
+    psd.save(out, update_preview=False)
     return edit, PSDImage.open(out), pe.parse_card(parser, out, rel)
 
 
@@ -810,7 +810,7 @@ def test_layout_bar_bakes_and_the_guards_export_it(clone, parser, chart, tmp_pat
     guards' PNG check (png_export) draws the same PNG from the saved PSD: an exposure's change is where its mask is."""
     from commands import png_export
     rel = "Creatures/Isaac/3 Stars/Tainted_Isaac.psd"
-    parsed, baked = _bake(clone, parser, rel, {"hp": 7}, tmp_path, chart, update_preview=True)
+    parsed, baked = _bake(clone, parser, rel, {"hp": 7}, tmp_path, chart)
     assert baked.reparse["card"]["hp"] == 7 and [fields for _, _, fields in baked.records] == [["blocks", "channels", "mask", "mask_box", "name"]]
     found = png_export.export(PSDImage.open(_card(clone, rel)[0]), PSDImage.open(baked.psd_path), Image.open(_card(clone, rel)[1]))
     assert found.outcome == "re-exported"
@@ -1080,7 +1080,7 @@ def test_royal_eradicator_two_row_atk(clone, parser, tmp_path):
         two, new_digit = pe._record_index(bottom.digits["2"]), pe._record_index(bottom.digits[shown])
         assert edit.moves == [(two, new_digit, b"lfx2"), (two, new_digit, b"lrFX"), (two, new_digit, b"fxrp"), (new_digit, two, b"fxrp")]
         saved = str(tmp_path / f"cannon_{value}.psd")
-        pe.save_psd(psd, saved, update_preview=False)
+        psd.save(saved, update_preview=False)
         records, flag_bytes, block_bytes = pe.gate_bytes(path, saved, [edit])
         assert flag_bytes == len(names) and block_bytes == 6360 + 2 * 28 and sorted(name for _, name, _ in records) == sorted(names)
         assert {name: fields for _, name, fields in records} == {shown: STAT_RECORD, "2": STAT_RECORD, **({"7": ["flags"]} if value == 7 else {})}
@@ -1104,7 +1104,7 @@ def test_royal_eradicator_two_row_atk(clone, parser, tmp_path):
     assert edit.moves == [(two, None, b"lfx2"), (two, None, b"lrFX"), (nine, two, b"lfx2"), (nine, two, b"lrFX"),
                           (nine, two, b"fxrp"), (two, nine, b"fxrp")]
     saved = str(tmp_path / "cannon_hp2.psd")
-    pe.save_psd(psd, saved, update_preview=False)
+    psd.save(saved, update_preview=False)
     records, flag_bytes, block_bytes = pe.gate_bytes(path, saved, [edit])
     assert (flag_bytes, block_bytes) == (2, 6360 + 2 * 28) and [(name, fields) for _, name, fields in records] == [("2", STAT_RECORD), ("9", STAT_RECORD)]
     assert sorted(pe._enabled_effects(pe.template_rows(PSDImage.open(saved), "hp")[0].digits["2"])) == ["BevelEmboss", "ColorOverlay"]
@@ -1117,7 +1117,7 @@ def test_royal_eradicator_two_row_atk(clone, parser, tmp_path):
         assert pe.classify(at_seven, {"atk": value}, psd).jobs == {"atk": value}
         edit = pe.set_stat(psd, at_seven, "atk", value)
         raised = str(tmp_path / f"cannon_7_to_{value}.psd")
-        pe.save_psd(psd, raised, update_preview=False)
+        psd.save(raised, update_preview=False)
         reparsed = pe.gate_reparse(parser, at_seven, raised, CANNON, {"atk": value}, PSDImage.open(raised), [edit])
         assert reparsed["card"]["atk"] == value and reparsed["validator"] == []
     # the marker is load-bearing: hidden, the parser reads Bottom alone and the shape refuses
@@ -1126,7 +1126,7 @@ def test_royal_eradicator_two_row_atk(clone, parser, tmp_path):
     with pytest.raises(pe.Refused, match="10 marker"):
         pe.template_rows(psd, "atk")
     hidden = str(tmp_path / "cannon_no_marker.psd")
-    pe.save_psd(psd, hidden, update_preview=False)
+    psd.save(hidden, update_preview=False)
     assert pe.parse_card(parser, hidden, CANNON)["card"]["atk"] == 2
 
 
@@ -1225,8 +1225,9 @@ def test_export_icc_follows_the_png(clone, tmp_path):
 
 @text_engine
 def test_mini_doomer_hp_5_to_8(clone, parser, tmp_path):
-    """S2's gate: 2 flag bytes, the parser reads 8, 0 pixels differ outside the row mask, a rerun does nothing."""
-    parsed, baked = _bake(clone, parser, MINI_DOOMER, {"hp": 8}, tmp_path, update_preview=True)
+    """S2's gate: 2 flag bytes, the parser reads 8, 0 pixels differ outside the row mask, a rerun does nothing. The PSD
+    is saved with no merged image (owner 2026-11-07)."""
+    parsed, baked = _bake(clone, parser, MINI_DOOMER, {"hp": 8}, tmp_path)
     assert parsed["card"]["hp"] == 5 and baked.reparse["card"]["hp"] == 8 and baked.reparse["validator"] == []
     assert baked.flag_bytes == 2 and [(name, fields) for _, name, fields in baked.records] == [("5", ["flags"]), ("8", ["flags"])]
     assert baked.block_bytes == 0 and baked.edits[0].moves == []
@@ -1239,13 +1240,8 @@ def test_mini_doomer_hp_5_to_8(clone, parser, tmp_path):
     row[HP_ROW[1]:HP_ROW[3], HP_ROW[0]:HP_ROW[2]] = True
     assert int((differs & ~row).sum()) == 0 and 0 < int(differs.sum()) <= baked.changed_pixels   # a replaced pixel may equal the PNG's
     saved = PSDImage.open(baked.psd_path)
-    assert saved.has_preview() and {d.name for r in pe.template_rows(saved, "hp") for d in r.digits.values() if d.visible} == {"8"}
-    if saves_preview():                 # else save() regenerated it
-        old_preview = PSDImage.open(_card(clone, MINI_DOOMER)[0]).topil(apply_icc=False)
-        moved = (np.asarray(old_preview) != np.asarray(saved.topil(apply_icc=False))).any(axis=2)
-        # Photoshop's preview, the merge's pixels replaced (outside the PNG's changes only where a replaced pixel kept its value)
-        assert moved.any() and int((moved & ~row).sum()) == 0
-        assert int((moved & ~differs).sum()) <= baked.changed_pixels - int(differs.sum())
+    shown = {d.name for r in pe.template_rows(saved, "hp") for d in r.digits.values() if d.visible}
+    assert not saved.has_preview() and shown == {"8"}
     assert Image.open(baked.png_path).info.get("icc_profile") == Image.open(_card(clone, MINI_DOOMER)[1]).info.get("icc_profile")
     again = pe.classify(baked.reparse, {"hp": 8}, saved)
     assert again.jobs == {} and again.redundant == ["hp"]
@@ -1460,7 +1456,7 @@ def _noop(clone, parser, chart, rel, tmp_path, paths=None):
     text = pe.ability_layer(PSDImage.open(psd_path)).text.replace("\r", "\n")
     parsed = pe.parse_card(parser, psd_path, rel)
     return psd_path, png_path, pe.apply_jobs(psd_path, png_path, rel, {"ability": text}, parsed, parser, str(tmp_path),
-                                             str(clone / pe.FONTS_DIR), chart, update_preview=False)
+                                             str(clone / pe.FONTS_DIR), chart)
 
 
 @text_edit
@@ -1867,9 +1863,48 @@ def test_a_glow_disc_on_a_stat_bar_is_flagged(clone, parser, chart, monkeypatch)
         assert (f"overflow: ability: the new text runs over the {stat} bar (1 px)" in notes) == disc
 
 
+MIASMA = "Auxiliary/Minions/Miasma.psd"   # its merged image a third of the file
+
+
+def test_a_first_strip_passes_the_size_gate(clone, tmp_path):
+    """A2: a card's first strip may shrink it past SIZE_TOLERANCE (its old merged image left out of both); a save cut
+    short by as much still refuses."""
+    path = _card(clone, MIASMA)[0]
+    stripped = tmp_path / "stripped.psd"
+    pe.save_psd(PSDImage.open(path), str(stripped))
+    assert stripped.stat().st_size < Path(path).stat().st_size * (1 - pe.SIZE_TOLERANCE)
+    pe.gate_size(path, str(stripped))
+    cut = tmp_path / "cut.psd"
+    cut.write_bytes(stripped.read_bytes()[:int(stripped.stat().st_size * 0.7)])
+    with pytest.raises(pe.Refused, match="size"):
+        pe.gate_size(str(stripped), str(cut))
+
+
+KEL = "Creatures/Omori/3 Stars/Kel.psd"   # its stat labels drawn straight in its stored image
+
+
+def test_the_render_record_draws_as_the_stored_image(clone):
+    """A16: the facts read off Kel's stored image (its ICC vote; each type layer straight or in the gamma) draw the card
+    stripped of it as the stored image's blends did, in the bake's renders; with none its straight labels move."""
+    path, png = _card(clone, KEL)
+    psd, raw = PSDImage.open(path), Path(path).read_bytes()
+    facts = pe.look_facts(psd, Image.open(png))
+    assert "straight" in {how for _, how in facts["text"].values()} and facts["icc"][1] >= pe.ICC_MIN_PX
+    want = pe.render_all(psd)
+    bare = pe.edit_copy(psd, raw)
+    pe._LOOKS.pop(bare, None)
+    pe.strip(bare)
+    assert not bare.has_preview() and not np.array_equal(pe.render_all(bare), want)
+    stripped = pe.use_record(PSDImage.open(BytesIO(raw)), KEL, facts)
+    pe.strip(stripped)
+    assert np.array_equal(pe.render_all(stripped), want)
+    assert pe.icc_vote(stripped, Image.open(png)) == tuple(facts["icc"]) and pe.export_icc(stripped, Image.open(png)) \
+        == pe.export_icc(psd, Image.open(png))
+
+
 def test_the_edit_copy_renders_as_the_card(clone):
     """K-3/K-5: apply_jobs edits the card opened again from its bytes (a deepcopy lost Lorian's smart filters, review
-    2026-10-24), with the card's eye flags, sharing its one stored-preview read (icc_vote, stored_preview, renders)."""
+    2026-10-24), with the card's eye flags, sharing its one stored-preview read (icc_vote, renders)."""
     from psd_tools.composite.composite import _TEXT_REFERENCES
     path = _card(clone, LORIAN)[0]
     old, raw = PSDImage.open(path), Path(path).read_bytes()
@@ -2153,7 +2188,7 @@ def _no_ability(monkeypatch):
     """The fork drawing no ability text: every render hides the visible Text/Ability layer (the baseline's too: no cut
     from the whole render, crop_pair)."""
     monkeypatch.setattr(pe, "crop_pair", lambda *args, **kwargs: None)
-    for name in ("render_region", "render_pair"):
+    for name in ("render_region",):
         def blank(psd, region, icc=True, text="preview", edited=(), real=getattr(pe, name)):
             layer = pe.ability_layer(psd)
             layer.visible = False

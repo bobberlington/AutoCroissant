@@ -934,7 +934,7 @@ def bake_pictures(card: Card, psd, parsed: dict, parser, folder: str, fonts_dir:
                   ability_from: Optional[tuple] = None) -> psd_edit.Baked:
     """
     A tagged PSD's bake (§4.9): one apply_jobs per picture the edit shows in, each as that picture (psd_edit.variant)
-    onto its own PNG, the saved picture's first (its run writes the PSD and its stored preview); every run's PSD must
+    onto its own PNG, the saved picture's first (its run writes the PSD); every run's PSD must
     hold the same layer records. A stars, types or stat edit whose value differs by picture is impossible.
 
     Returns:
@@ -959,9 +959,8 @@ def bake_pictures(card: Card, psd, parsed: dict, parser, folder: str, fonts_dir:
         out = join(folder, "new" if first is None else f"new{n}")
         makedirs(out, exist_ok=True)
         baked = psd_edit.apply_jobs(old_psd, join(folder, "old", basename(card.pictures[n])), target or card.rel, jobs,
-                                    parses[n], parser, out, fonts_dir, colors, update_preview=n == saved,
-                                    types_dir=types_dir, psd=psd, view=n, template=template, ability_from=ability_from,
-                                    title_anchor=card.title_anchor)
+                                    parses[n], parser, out, fonts_dir, colors, types_dir=types_dir, psd=psd, view=n,
+                                    template=template, ability_from=ability_from, title_anchor=card.title_anchor)
         if first is None:
             first = baked
         elif psd_edit.layer_records(baked.psd_path) != psd_edit.layer_records(first.psd_path):
@@ -1343,7 +1342,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                                                    bake, target, template, added)
                     else:
                         card.baked = psd_edit.apply_jobs(old_psd, old_png, target, bake, parsed, parser, new_dir,
-                                                         fonts_dir, colors, update_preview=True, types_dir=types_dir,
+                                                         fonts_dir, colors, types_dir=types_dir,
                                                          psd=psd, template=template, ability_from=added,
                                                          title_anchor=card.title_anchor)
                     break

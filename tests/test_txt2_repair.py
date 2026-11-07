@@ -46,7 +46,9 @@ def test_repair_rewrites_the_story_and_nothing_else(clone, tmp_path):
     assert result.stale == [("Name", title + "\r", new + "\r")] and result.stories == [index] and result.out == str(out)
     repaired = PSDImage.open(str(out))
     assert pe.stale_stories(repaired) == [] and pe.stories(repaired)[index] == new + "\r"
-    assert _outside_txt2(out) == _outside_txt2(stale)
+    stripped = tmp_path / "stripped.psd"                # saves strip the merged image (owner 2026-11-07): nothing else
+    pe.save_psd(PSDImage.open(stale), str(stripped))
+    assert not repaired.has_preview() and _outside_txt2(out) == _outside_txt2(stripped)
     # the story a fixed bake writes: the fork's set_text on the original
     fresh = PSDImage.open(_card(clone, MINI_DOOMER)[0])
     pe.name_layer(fresh).set_text(new)
@@ -63,7 +65,7 @@ def test_verify_refuses_any_other_change(clone, tmp_path):
     layer = next(layer for layer in psd.descendants() if layer.kind != "type")
     layer.visible = not layer.visible
     other = tmp_path / "other.psd"
-    pe.save_psd(psd, str(other), update_preview=False)
+    psd.save(str(other), update_preview=False)
     with pytest.raises(pe.Refused, match="layer record changed"):
         tr.verify(stale, str(other), {index})
 
