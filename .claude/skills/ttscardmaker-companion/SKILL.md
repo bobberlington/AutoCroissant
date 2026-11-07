@@ -562,9 +562,15 @@ in `batches/checks/7k/`), `batches/checks/<n>/` and `go/<batch>/` (the push logs
 
 ### 1.11 The Alt template rollout (2026-11-06)
 
-`MDW/Templates/Alt_Creature_Template.psd`: one layer-comp smart object per stat (`Stats Bars > Darks`, NORMAL 67%),
+`MDW/Templates/Creature_Template.psd` (Alt_Creature_Template.psd until 2026-11-07, when it took the path and the digit-row
+template went; the 43 cards on digit rows need nothing from the file): one layer-comp smart object per stat (`Stats Bars > Darks`, NORMAL 67%),
 comps "0".."20" (11-20: a full top row plus a bottom half row; Photoshop-built, TC 9878d123).
-`Alt_Raid_Boss_Template.psd`: the same on the raid boss's 20-cell bars, comps "0".."40". The old templates stay (owner).
+`Raid_Boss_Template.psd` (Alt_Raid_Boss_Template.psd until 2026-11-07): the same on the raid boss's 20-cell bars, comps "0".."40".
+`2_Creature_Template.psd`, `3_Creature_Template.psd` (2026-11-07, built by Photoshop's own save): `Stats Bars > Darks` holds
+`Creature n` groups of Health, Defense, Attack, Speed, comps "0".."20" on every bar (`Dark` for 0, `Upper k`, nothing for 10, `Lower k` +
+`Divider`, `Divider` for 20), one embedded document per row shape cut from the template's row art, and `Shared Health`. The 2 creature
+template shows shared HP (Shared Health, `Lines > Shared hp`, `Bars > Shared` shown; each creature's Health, `Hp lines`, `Hp Top`, `Hp Bottom`
+hidden); the 3 creature template shows separate bars. Every creature bakes; existing several-creature cards are not converted.
 Stats are STATS TOO HIGH only above 20 (impossibility-cards-reference).
 
 Cards moved by `card_sweep run --kind alt-template` (card_standards.alt_template), §1.10's batches, trailer
@@ -577,7 +583,7 @@ Igor Roballtowski has the bars only (the renderer shifts its pattern overlay on 
 
 **Photoshop:** a psd-tools save that keeps an embedded smart-object document no layer uses won't open ("program
 error"). The conversion's gate refuses one. Before pushing PSDs our code rewrote, open every one in Photoshop by script.
-Scripts: `~/Documents/Tools/wt/scratch/alt-template/push/` (build_batches.py, batch_push.sh, open_all.sh).
+Scripts of the 2 and 3 creature templates: `~/Documents/Tools/wt/scratch/s1107/t4/scripts/build_tpl.jsx`, `verify_tpl.py`, `bake_tpl.py`.
 
 ## 2. The card-browser website
 

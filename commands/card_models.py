@@ -50,7 +50,7 @@ class CardStats:
         return value >= 0
 
     def has_excessive_stats(self) -> bool:
-        """Whether any stat is above STAT_LIMIT (the Alt template's split bars show 0-20; owner 2026-11-06)."""
+        """Whether any stat is above STAT_LIMIT (the template's split bars show 0-20; owner 2026-11-06)."""
         return any(
             stat > STAT_LIMIT for stat in [self.hp, self.defense, self.attack, self.speed]
             if self.is_valid_stat(stat)

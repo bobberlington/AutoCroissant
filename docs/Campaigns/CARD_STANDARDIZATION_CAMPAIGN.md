@@ -70,6 +70,7 @@ score vs the official PNG (`score/score_cards.py`, |diff| > 24); **goldens** = `
   other-case tag on the cards is A P E X P R E D A T O R's `(action)`, which is in neither batch.
 
 ### L2. Stat rows to the template layout (45 deviating cards)
+- **2026-11-07.** `Creature_Template.psd` holds layer-comp bars now; the digit rows below are the old file's (TC blob 7fb53acf).
 - **What.** `Stats Bars/Darks/<Stat> Dark/0..9` exposure digits with masks, one row per stat; `Bars` leaves named `hp`/`def`/`atk`/`spd`.
   **Why.** The pipeline toggles digits only on template rows (`psd_edit.template_row`); the parser's drawn-layer rules in `StatTracker`
   exist only for these cards; `psd_regions.stat_rows` reads the mask boxes.

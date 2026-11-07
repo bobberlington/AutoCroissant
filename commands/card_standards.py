@@ -2052,9 +2052,9 @@ def _laid_plans(path: str, fonts, earlier: tuple) -> list:
 
 
 # ========================
-# Alt template bars (owner 2026-11-06): the template's layer-comp stat bars in place of the exposure digit rows
+# Template bars (owner 2026-11-06): the creature template's layer-comp stat bars in place of the exposure digit rows
 # ========================
-ALT_TEMPLATE = "MDW/Templates/Alt_Creature_Template.psd"
+ALT_TEMPLATE = "MDW/Templates/Creature_Template.psd"
 ALT_ROW = (813, 84)         # a template bar row's size; a card's row within ALT_ROW_TOL of it takes the template's bar
 ALT_ROW_TOL = 4
 ALT_FILL = (0.96, 0.99)    # the share of its box a bar shaped like the template's fills (0.977; Little Guy's squares 0.84)
@@ -2171,7 +2171,7 @@ def _ancestors_of(layer) -> list:
 
 
 def alt_bar_rows(psd: PSDImage) -> list:
-    """The Darks group the Alt template's bars would replace (alt_template), else []."""
+    """The Darks group the template's bars would replace (alt_template), else []."""
     found = _alt_parts(psd)
     return [found[0]] if found else []
 
@@ -2186,7 +2186,7 @@ def _alt_darks(psd: PSDImage, template: PSDImage, found: tuple) -> list:
     new = source.copy_to(parent, list(parent).index(darks) + 1)
     bars = {comp_stat(layer): layer for layer in new if comp_value(layer) is not None}
     if set(bars) != set(parts):
-        raise Refused("unsupported-card", "the Alt template's Darks group is not one bar per stat")
+        raise Refused("unsupported-card", "the template's Darks group is not one bar per stat")
     styled = any(style is not None for _, _, style in parts.values())
     if styled:                                  # per bar: plain ones at the template's 67%, styled ones at full
         new.opacity = 255
@@ -2269,7 +2269,7 @@ ALT_STEP_OFF = 24           # a step past the dark cells is kept only where no p
 
 def alt_template(path: str, out_path: str, fonts) -> list:
     """
-    A card on the Alt template (fonts.template, its PSD) in one rewrite: its dark cells as layer-comp bars (_alt_darks),
+    A card onto the template (fonts.template, its PSD) in one rewrite: its dark cells as layer-comp bars (_alt_darks),
     and where the card renders the same with them (each tried alone, ALT_STEP_OFF), its bar art as the template's bar
     shapes (_alt_shapes), its text layout (_alt_text) and its clip bases as the template's shapes (_alt_clips). Gate:
     every layer none of them touched as it was (_alt_gate).
@@ -2352,7 +2352,7 @@ PIXEL_LINES = {"badge widths": "badges laid out again at their new widths", "apo
                "old glyphs": "old icon font glyphs redrawn",
                "badges": "badges and icons fitted to their text",
                "overlay badges": "badges under an overlay in one colour", "tags": "timing tags and costs set as badges",
-               "alt template": "the Alt template's stat bars, bar shapes, text layout and clip shapes"}
+               "alt template": "the template's stat bars, bar shapes, text layout and clip shapes"}
 
 
 def pixel_kinds(psd, kinds: tuple = ()) -> tuple:
