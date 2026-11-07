@@ -11,9 +11,12 @@ import os
 import re
 import shutil
 import subprocess
+import sys
+import types
 from datetime import datetime, timezone
 from pathlib import Path
 from sys import executable
+from types import SimpleNamespace
 
 import pytest
 from PIL import Image, ImageDraw
@@ -224,8 +227,8 @@ def test_check_end_to_end(cards, tmp_path, monkeypatch):
     assert by["Kept"]["told"] == [] and by["Kept"]["notes"] == ["Kept.png was deleted; the PSD stays"]
     assert (out / "crops" / FOLDER / "Snack.diff.png").exists()
     summary = json.loads((out / "summary.json").read_text())
-    assert summary == {"after": bot, "cards": 8, "told": summary["told"], "comment": 6, "writes": 4, "errors": 0,
-                       "card_errors": 0} and summary["told"] >= 1
+    assert summary == {"after": bot, "cards": 8, "told": summary["told"], "comment": 6, "writes": 4, "convert": 0,
+                       "errors": 0, "card_errors": 0} and summary["told"] >= 1
     assert by["Bread"]["told"] == [] and not by["Bread"]["issues"]      # R3: no Ability layer is the developer's layout
     assert not by["Dropped"]["writes"] and not by["Dropped"]["export"]
     report = (out / "report.md").read_text()
@@ -434,6 +437,100 @@ def test_message():
     assert text.splitlines()[0] == f"Card guards: 1 PNG re-exported, 1 PSD fixed, 1 PNG recompressed (push {'f' * 8})"
     trailers = subprocess.run(["git", "interpret-trailers", "--parse"], input=text, capture_output=True, text=True, check=True).stdout
     assert trailers == f"Recompressed: Items/Z.png\nGuarded-push: {'f' * 40}\n"     # what git (and build_site) reads
+
+
+# ========================
+# The 11-07 pass's conversions and linked files (G1-G4)
+# ========================
+def _links_module(monkeypatch, unused=(), duplicates=None, links=None) -> list:
+    """commands.psd_links as the guards call it (the links lane's module); returns the relinks made."""
+    fake, relinked = types.ModuleType("commands.psd_links"), []
+    fake.catalogue_order = sorted
+    fake.items = lambda psd, vocab=(): []
+    fake.TypesIndex = lambda files, history=None: None
+    fake.assign = lambda psds, kinds, linked: {"psds": {rel: [] for rel, _ in psds}, "files": {}}
+    fake.links_of = lambda psd, rel, tree: [SimpleNamespace(path=p, uuid="u1", size=3) for p in (links or {}).get(rel, [])]
+    fake.unused = lambda index, tree, pushed=(), read=(): list(unused)
+    fake.duplicates = lambda tree, pushed=(): dict(duplicates or {})
+    fake.restore = lambda size, history: None
+    fake.relink = lambda psd, uuid, rel, path, size, blob: relinked.append((rel, path))
+    monkeypatch.setitem(sys.modules, "commands.psd_links", fake)
+    return relinked
+
+
+def test_a_later_push_is_converted_silently(cards, tmp_path, monkeypatch):
+    """G1 (owner 11-07): a card and a template pushed with what the normalise fix finds are converted after the check
+    (--convert later: summary.json counts them, so Card sync's wait ends at Decided), the card on top of guard 1's PNG,
+    its new MDW/Linked file beside it, the template with nothing else checked; one landing, no Discord line, no
+    guard-event for the conversion, the commit message alone says it."""
+    root, base, alice, bot = cards
+    _psd(root, tmp_path / "psds", f"{FOLDER}/Snack.psd", card(colour=(0, 0, 200)))
+    _psd(root, tmp_path / "psds", "MDW/Templates/Item_Template.psd", card())
+    head = _commit(root, "Alice again", author="Alice")
+    _links_module(monkeypatch)
+    monkeypatch.setitem(cg.standards.PIXEL_FIXES, cg.NORMALISE, (lambda psd: [psd], None, None))
+    real, converted = cg.standards.fix, []
+
+    def fix(data, rel, issues, work, parser=None, fonts=None, only=None, whole=False, skip=()):
+        if only != cg.NORMALISE:
+            assert cg.NORMALISE in skip            # never in the check itself
+            return real(data, rel, issues, work, parser, fonts, only, whole, skip)
+        assert isinstance(fonts.links, cg.LinkContext) and fonts.links.tree[rel]
+        converted.append(rel)
+        files = {"MDW/Linked/Snack - art.png": b"art"} if rel.endswith("Snack.psd") else {}
+        return SimpleNamespace(data=data + b"linked", files=files, redrawn={cg.NORMALISE: ["art"]}, left=[], pixel_left=[])
+    monkeypatch.setattr(cg.standards, "fix", fix)
+    out = tmp_path / "out"
+    data = cg.check(str(root), head, bot, mode="on", out=str(out), workers=1, convert="later")
+    by = {Path(e["psd"]).name: e for e in data["cards"]}
+    assert by["Snack.psd"]["convert"] == [cg.NORMALISE] and by["Item_Template.psd"]["case"] == "convert"
+    assert data["summary"]["convert"] == 2 and data["summary"]["writes"] >= 3 and not converted
+    assert "Item_Template" not in data["markdown"] and data["discord"] == {}
+    plan = str(out / "plan.json")
+    after = cg.convert(plan, str(root), workers=1)
+    assert sorted(converted) == [f"{FOLDER}/Snack.psd", "MDW/Templates/Item_Template.psd"] and after["summary"]["convert"] == 0
+    snack = {w["path"]: w for w in next(e for e in after["cards"] if e["psd"].endswith("Snack.psd"))["writes"]}
+    assert snack[f"{FOLDER}/Snack.psd"]["silent"] and snack[f"{FOLDER}/Snack.psd"]["pixels"] == [cg.NORMALISE]
+    assert snack["MDW/Linked/Snack - art.png"]["kind"] == "file" and snack["MDW/Linked/Snack - art.png"]["silent"]
+    report = cg.land(plan, local=str(root))
+    assert report["sha"] and not report["error"] and report["told"] == {e["psd"]: [] for e in after["cards"]}
+    assert {(e["kind"], e["path"]) for e in report["events"]} == {("guard-png", f"{FOLDER}/Snack.png"),
+                                                                 ("guard-png", f"{FOLDER}/Snack2.png")}   # guard 1's alone
+    landed = _git(root, "show", "--name-only", "--format=%B", report["sha"])
+    assert "1 linked file added" in landed and "MDW/Linked/Snack - art.png" in landed
+    assert _git(root, "show", f"{report['sha']}:MDW/Linked/Snack - art.png") == "art"
+    assert subprocess.run(["git", "-C", str(root), "show", f"{report['sha']}:MDW/Templates/Item_Template.psd"],
+                          capture_output=True, check=True).stdout.endswith(b"linked")
+
+
+def test_unused_and_duplicate_linked_files_go_in_one_silent_commit(cards, tmp_path, monkeypatch):
+    """G2 and G3: a pushed MDW/Linked file with another's bytes merged (its user relinked, the duplicate deleted) and an
+    unused one deleted, in the one landing, silent; nothing deleted while the links index is missing."""
+    root, base, alice, bot = cards
+    for name in ("kept", "dup", "old"):
+        (root / "MDW/Linked").mkdir(parents=True, exist_ok=True)
+        (root / f"MDW/Linked/{name}.png").write_bytes(b"one" if name != "old" else b"two")
+    head = _commit(root, "files", author="Alice")
+    tree = {path: sha for path, (_, sha) in cg.Source(str(root)).tree(head).items()}
+    user = f"{FOLDER}/Bread.psd"
+    relinked = _links_module(monkeypatch, unused=["MDW/Linked/old.png"], duplicates={"MDW/Linked/dup.png": "MDW/Linked/kept.png"},
+                             links={user: ["MDW/Linked/dup.png"]})
+    monkeypatch.setattr(cg, "links_index", lambda source: None)
+    alone = cg.check(str(root), head, bot, mode="on", out=str(tmp_path / "none"), workers=1)
+    assert [w["path"] for w in alone["linked"]["writes"]] == ["MDW/Linked/dup.png"]     # no index: G2 waits, G3 goes
+    index = {user: {"blob": tree[user], "links": [{"path": "MDW/Linked/dup.png", "name": "dup.png", "size": 3, "drawn": None}]}}
+    monkeypatch.setattr(cg, "links_index", lambda source: index)
+    out = tmp_path / "out"
+    data = cg.check(str(root), head, bot, mode="on", out=str(out), workers=1)
+    assert relinked == [(user, "MDW/Linked/kept.png")]
+    writes = {w["path"]: w["kind"] for w in data["linked"]["writes"]}
+    assert writes == {"MDW/Linked/old.png": "delete", user: "psd", "MDW/Linked/dup.png": "delete"}
+    assert data["summary"]["writes"] == 3 and data["discord"] == {} and "linked" not in data["markdown"].lower()
+    report = cg.land(str(out / "plan.json"), local=str(root))
+    assert report["sha"] and report["landed"] == [] and report["events"] == []
+    names = _git(root, "ls-tree", "-r", "--name-only", report["sha"]).splitlines()
+    assert "MDW/Linked/kept.png" in names and "MDW/Linked/dup.png" not in names and "MDW/Linked/old.png" not in names
+    assert "2 linked files deleted" in _git(root, "log", "-1", "--format=%s", report["sha"])
 
 
 # ========================
