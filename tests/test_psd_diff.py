@@ -128,3 +128,26 @@ def test_smart_filters_renumbered_by_a_save_say_nothing(clone):
         "Ability text: '(1PGT)' -> '(1GCD)'"]
     assert "tumblr_nguxntKncE1u258ivo1_500 smart filters changed" in pdf.changes(
         *_pair(clone, "91fcda38", "56a79f4f", "Items/Heal/2 Stars/Pep_Drink.psd"))
+
+
+def test_a_link_rewritten_says_nothing_until_its_pixels_move(clone):
+    """A linked picture's fact is its path, never its file, size or date: its size and relPath rewritten (the 11-07 pass,
+    the guards' repairs) with the layer's pixels kept say nothing; with its pixels moved too, the content changed."""
+    from psd_tools.psd.descriptor import String
+    path = clone / "Auxiliary/Creatures/Militron_(No_Armor).psd"
+    if not path.exists():
+        pytest.skip("no Militron (No Armor)")
+    old = PSDImage.open(str(path))
+
+    def rewritten(move: int) -> PSDImage:
+        new = PSDImage.open(str(path))
+        layer = next(each for each in new.descendants() if each.kind == "smartobject" and each.smart_object.kind == "external")
+        item = layer.smart_object._data
+        item.linked_file[b"relPath"] = String("../../Types/x.png\x00")
+        item.filesize += 1
+        layer._record.left, layer._record.right = layer._record.left + move, layer._record.right + move
+        saved = BytesIO()
+        new.save(saved, update_preview=False)
+        return PSDImage.open(BytesIO(saved.getvalue()))
+    assert pdf.changes(old, rewritten(0)) == []
+    assert pdf.changes(old, rewritten(1)) == ["unknown smart object content changed"]
