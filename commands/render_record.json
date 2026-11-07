@@ -1,1 +1,18564 @@
-{}
+{
+"Auxiliary/Creatures/Azamoth_the_Possessed_Vessel.psd": {
+"icc": [
+0.0,
+192593
+],
+"text": {
+"3291": [
+"81d3675f7fe3",
+"gamma"
+],
+"417": [
+"8d7ae192ba84",
+"gamma"
+],
+"418": [
+"1f7168ace583",
+"gamma"
+],
+"419": [
+"b1377e8980e1",
+"gamma"
+],
+"420": [
+"ef890f6e4ea5",
+"gamma"
+],
+"421": [
+"b16128c6695c",
+"gamma"
+],
+"422": [
+"4533dbd46d7a",
+"gamma"
+]
+}
+},
+"Auxiliary/Creatures/Igor_Roballtowski.psd": {
+"icc": [
+0.0,
+992439
+],
+"text": {
+"417": [
+"ff38addafdf0",
+"gamma"
+],
+"418": [
+"16640a494cb8",
+"gamma"
+],
+"419": [
+"62ccee535512",
+"gamma"
+],
+"420": [
+"052048dc2361",
+"gamma"
+],
+"421": [
+"04fde832e317",
+"gamma"
+],
+"422": [
+"97641457f0a8",
+"gamma"
+]
+}
+},
+"Auxiliary/Creatures/Mettaton_EX.psd": {
+"icc": [
+0.0,
+992746
+],
+"text": {
+"215": [
+"966fefec5592",
+"gamma"
+],
+"303": [
+"4cfd70c93b9d",
+"gamma"
+],
+"37": [
+"db0af3b4f930",
+"gamma"
+],
+"95": [
+"b94599c1404d",
+"gamma"
+],
+"96": [
+"b94a6e03236b",
+"gamma"
+],
+"97": [
+"f0a7109ca821",
+"gamma"
+]
+}
+},
+"Auxiliary/Creatures/Mettaton_NEO.psd": {
+"icc": [
+0.0,
+242360
+],
+"text": {
+"215": [
+"a0a895d5699f",
+"gamma"
+],
+"303": [
+"55456474108b",
+"gamma"
+],
+"37": [
+"db0af3b4f930",
+"gamma"
+],
+"95": [
+"b94599c1404d",
+"gamma"
+],
+"96": [
+"b94a6e03236b",
+"gamma"
+],
+"97": [
+"f0a7109ca821",
+"gamma"
+]
+}
+},
+"Auxiliary/Creatures/Militron_(No_Armor).psd": {
+"icc": [
+0.0,
+211278
+],
+"text": {
+"417": [
+"5596e0701e60",
+"gamma"
+],
+"418": [
+"edb8df348ccb",
+"gamma"
+],
+"419": [
+"dc98147a8f75",
+"gamma"
+],
+"420": [
+"1faba830d667",
+"gamma"
+],
+"421": [
+"5424019bec12",
+"gamma"
+],
+"422": [
+"d10bd016028e",
+"gamma"
+]
+}
+},
+"Auxiliary/Creatures/Morpho_Knight.psd": {
+"icc": [
+0.0,
+741006
+],
+"text": {
+"417": [
+"635f61c9b853",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"2c708ac9caec",
+"gamma"
+]
+}
+},
+"Auxiliary/Creatures/Shadow_Queen.psd": {
+"icc": [
+0.0,
+215186
+],
+"text": {
+"3897": [
+"f3697a1b8bc9",
+"gamma"
+],
+"418": [
+"dd38834e5b18",
+"gamma"
+],
+"419": [
+"7c4db990afac",
+"gamma"
+],
+"420": [
+"823311ae7b28",
+"gamma"
+],
+"421": [
+"d9b17f8c0328",
+"gamma"
+],
+"422": [
+"2f4068166f55",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Air_Totem.psd": {
+"text": {
+"320": [
+"414a8056eedc",
+"gamma"
+],
+"327": [
+"3e61bb02db99",
+"gamma"
+],
+"843": [
+"8e6f0e9bd1d0",
+"gamma"
+],
+"844": [
+"0e00ab67f8e0",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Autopsy_Report.psd": {
+"text": {
+"1931": [
+"7bdc5ef243b4",
+"gamma"
+],
+"1943": [
+"249a4321af0a",
+"gamma"
+],
+"1944": [
+"cae47c9e065e",
+"gamma"
+],
+"320": [
+"e572a8eebf9e",
+"gamma"
+],
+"327": [
+"249a4321af0a",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Battle_Helmet.psd": {
+"text": {
+"320": [
+"9668c826c694",
+"gamma"
+],
+"327": [
+"0ef32f13cdce",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Battle_Spear.psd": {
+"text": {
+"1531": [
+"9590aa724f4a",
+"gamma"
+],
+"327": [
+"b03cc81b2a20",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Cabbage.psd": {
+"text": {
+"1974": [
+"beba5b3b3c30",
+"gamma"
+],
+"327": [
+"068afc53bcde",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Crystal_Bits.psd": {
+"text": {
+"327": [
+"6d9c1e197498",
+"gamma"
+],
+"843": [
+"6cbe167842a1",
+"gamma"
+],
+"844": [
+"41ad9d89f99b",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Delicate_Flower.psd": {
+"text": {
+"320": [
+"1a2c608181d3",
+"gamma"
+],
+"327": [
+"a7d5c89cb9e2",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Dragon_Mount.psd": {
+"text": {
+"320": [
+"2d03c07f0cf2",
+"gamma"
+],
+"327": [
+"610a5add5625",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Dreamshield.psd": {
+"text": {
+"320": [
+"1ff2f5d9e94d",
+"gamma"
+],
+"327": [
+"febc3efbfbd1",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Dull_Knife.psd": {
+"text": {
+"320": [
+"d8349fd54961",
+"gamma"
+],
+"327": [
+"8e757a6556c2",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Earth_Totem.psd": {
+"text": {
+"320": [
+"94dd2260434d",
+"gamma"
+],
+"327": [
+"b004e9997dfb",
+"gamma"
+],
+"843": [
+"8e6f0e9bd1d0",
+"gamma"
+],
+"844": [
+"0e00ab67f8e0",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Evil_Cookie.psd": {
+"text": {
+"320": [
+"49da25a7a13c",
+"gamma"
+],
+"327": [
+"5ae4e85ad72b",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Fire_Totem.psd": {
+"text": {
+"320": [
+"aa4e4755c63b",
+"gamma"
+],
+"327": [
+"c467bc5cdffd",
+"gamma"
+],
+"843": [
+"8e6f0e9bd1d0",
+"gamma"
+],
+"844": [
+"0e00ab67f8e0",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Flame_Bomb.psd": {
+"text": {
+"320": [
+"6b0be402c6fa",
+"gamma"
+],
+"327": [
+"3fcc994942fe",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Frostmourne.psd": {
+"text": {
+"320": [
+"124df4df51d2",
+"gamma"
+],
+"327": [
+"2ffa5aa2cfb6",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Hero_Cap.psd": {
+"text": {
+"320": [
+"dcc897d6e760",
+"gamma"
+],
+"327": [
+"9b13ad5a30bf",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Humphrey's_Belly.psd": {
+"text": {
+"320": [
+"98711e8e8083",
+"gamma"
+],
+"327": [
+"c869be2e52dc",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Inconspicuous_Cake.psd": {
+"text": {
+"320": [
+"915bbbb14598",
+"gamma"
+],
+"327": [
+"bc8db1de65b5",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Indoctrination.psd": {
+"text": {
+"320": [
+"2228a376fd58",
+"gamma"
+],
+"327": [
+"78b9db70e2ac",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Ingredient_Wondertart.psd": {
+"text": {
+"320": [
+"21ad35cdc1ef",
+"gamma"
+],
+"327": [
+"182c0d76e533",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Inkhole.psd": {
+"text": {
+"320": [
+"92db21085899",
+"gamma"
+],
+"327": [
+"394b2c0100c6",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Joy.psd": {
+"text": {
+"320": [
+"64bebfa7c84e",
+"gamma"
+],
+"327": [
+"be11054547ac",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Krabby_Patty.psd": {
+"text": {
+"320": [
+"8168dba4e9ee",
+"gamma"
+],
+"327": [
+"df6b9edc540f",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Lit_Bob-omb.psd": {
+"text": {
+"2177": [
+"2d6df3a4c8a9",
+"gamma"
+],
+"320": [
+"70d1c9e271bd",
+"gamma"
+],
+"327": [
+"55f21315a045",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Love.psd": {
+"text": {
+"320": [
+"f5295c594221",
+"gamma"
+],
+"327": [
+"f53888b7e989",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Machine_Gun.psd": {
+"text": {
+"2012": [
+"7a4f148680ad",
+"gamma"
+],
+"2018": [
+"c996167ad204",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Magnum_Opus.psd": {
+"text": {
+"320": [
+"5f973152297a",
+"gamma"
+],
+"327": [
+"b47acd6af4cb",
+"gamma"
+],
+"843": [
+"76f7d6db11ce",
+"gamma"
+],
+"844": [
+"2107a1a1c2ea",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Motivation.psd": {
+"text": {
+"320": [
+"dcb1005f9598",
+"gamma"
+],
+"327": [
+"359d5cc87f66",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Nasty_Patty.psd": {
+"text": {
+"320": [
+"d9b8805cd590",
+"gamma"
+],
+"327": [
+"ed92420b47fd",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Paint_Bomb.psd": {
+"text": {
+"320": [
+"4afd97e37aab",
+"gamma"
+],
+"327": [
+"a2d072c538bd",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Papa's_Cookie.psd": {
+"text": {
+"320": [
+"db718dd2599d",
+"gamma"
+],
+"327": [
+"6e13c714ad85",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Party!.psd": {
+"text": {
+"320": [
+"f8b1ffeac70e",
+"gamma"
+],
+"327": [
+"5056f53f6320",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Polar_Star.psd": {
+"text": {
+"2012": [
+"801d8a23a735",
+"straight"
+],
+"2018": [
+"c674729264da",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Poorly_Drawn_Cabbage.psd": {
+"text": {
+"2023": [
+"f013c127485c",
+"gamma"
+],
+"327": [
+"d7ce17393c7f",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Red_Knife.psd": {
+"text": {
+"320": [
+"e47cee655292",
+"gamma"
+],
+"327": [
+"2d33a024d1e9",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Regenerative_Shield.psd": {
+"text": {
+"320": [
+"44acfa5e5edd",
+"gamma"
+],
+"327": [
+"e98cbee2be13",
+"gamma"
+],
+"843": [
+"66b6c5cfccdb",
+"gamma"
+],
+"844": [
+"3466351ffb0d",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Regret.psd": {
+"text": {
+"320": [
+"8e678742a49f",
+"gamma"
+],
+"327": [
+"2da007530668",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Rusty_Knife.psd": {
+"text": {
+"320": [
+"c70ea1711d06",
+"gamma"
+],
+"327": [
+"1e8d0410ffef",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Salt.psd": {
+"text": {
+"320": [
+"f905141e37d6",
+"gamma"
+],
+"327": [
+"a84846807ffa",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Shell_Shield.psd": {
+"text": {
+"1923": [
+"f0ba2b6cc1ce",
+"gamma"
+],
+"1924": [
+"7ced8d0c4746",
+"gamma"
+],
+"320": [
+"1f9307faf10b",
+"gamma"
+],
+"327": [
+"0badc30608a4",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Snake.psd": {
+"text": {
+"2012": [
+"689b0ff61860",
+"gamma"
+],
+"2018": [
+"3d2fa276006f",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Spaghetti.psd": {
+"text": {
+"320": [
+"e0363abf89f5",
+"gamma"
+],
+"327": [
+"0a27287c8cf7",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Spur.psd": {
+"text": {
+"2012": [
+"f531e8674339",
+"gamma"
+],
+"2018": [
+"ea67a3e1bf12",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Sting_Shard.psd": {
+"text": {
+"320": [
+"080a443ea2ae",
+"gamma"
+],
+"327": [
+"880ddeacb301",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/The_Temple_of_Ahn'Qiraj.psd": {
+"text": {
+"2213": [
+"6f1377c8a6e2",
+"gamma"
+],
+"320": [
+"7190c72b2d57",
+"gamma"
+],
+"327": [
+"c328e1f2becf",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Unbreakable_Strength.psd": {
+"text": {
+"320": [
+"2f71f27a4a27",
+"gamma"
+],
+"327": [
+"f354f6744800",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Unbreakable_heart.psd": {
+"text": {
+"320": [
+"875b3878c593",
+"gamma"
+],
+"327": [
+"f83ab4d8f44d",
+"gamma"
+]
+}
+},
+"Auxiliary/Items/Water_Totem.psd": {
+"text": {
+"320": [
+"0d7a6a4a1b3e",
+"gamma"
+],
+"327": [
+"b6a92a5bd4e6",
+"gamma"
+],
+"843": [
+"8e6f0e9bd1d0",
+"gamma"
+],
+"844": [
+"0e00ab67f8e0",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Abigail.psd": {
+"icc": [
+0.0,
+52067
+],
+"text": {
+"417": [
+"f1adc5c321d5",
+"gamma"
+],
+"418": [
+"5f802b74786e",
+"gamma"
+],
+"419": [
+"2bb48877afe9",
+"gamma"
+],
+"420": [
+"03d303b97df2",
+"gamma"
+],
+"421": [
+"d6189be92899",
+"gamma"
+],
+"422": [
+"f6b3b30bcc19",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Abyss_Watcher.psd": {
+"icc": [
+0.0,
+20699
+],
+"text": {
+"418": [
+"1514c5e27289",
+"gamma"
+],
+"419": [
+"01d8ac9f6130",
+"gamma"
+],
+"420": [
+"8d0052dd79c8",
+"gamma"
+],
+"421": [
+"1d858e8c371a",
+"gamma"
+],
+"422": [
+"d8793e4296b7",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Anubisath_Guardian.psd": {
+"icc": [
+0.0001,
+1516591
+],
+"text": {
+"418": [
+"27a61ebdd98f",
+"gamma"
+],
+"419": [
+"793c0206725d",
+"gamma"
+],
+"420": [
+"b9f33f95f848",
+"gamma"
+],
+"421": [
+"5f2c321fe71d",
+"gamma"
+],
+"422": [
+"9e49ecb85f2e",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Armored_Squit.psd": {
+"icc": [
+0.0,
+84716
+],
+"text": {
+"417": [
+"9779c0cdbc49",
+"gamma"
+],
+"418": [
+"a9a7b6002dcb",
+"gamma"
+],
+"419": [
+"b7fa90197f88",
+"gamma"
+],
+"420": [
+"112c3e5e6c43",
+"gamma"
+],
+"421": [
+"9aaad3758f11",
+"gamma"
+],
+"422": [
+"8f14c0e061eb",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Artemis_Missiles.psd": {
+"icc": [
+0.0,
+32460
+],
+"text": {
+"417": [
+"0f4cc994013f",
+"gamma"
+],
+"418": [
+"3e85497faa62",
+"gamma"
+],
+"419": [
+"815b006c6591",
+"gamma"
+],
+"420": [
+"eb29d3c35f23",
+"gamma"
+],
+"421": [
+"f6bd6e0c3c7b",
+"gamma"
+],
+"422": [
+"ce29edbba755",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Astr_Mionion.psd": {
+"icc": [
+0.0,
+17672
+],
+"text": {
+"3980": [
+"f783e8b38e2d",
+"gamma"
+],
+"3982": [
+"b34559fe4bac",
+"gamma"
+],
+"3983": [
+"2933f86d1bd5",
+"gamma"
+],
+"3984": [
+"d7ddbbef1cb6",
+"gamma"
+],
+"3985": [
+"e22f28832215",
+"gamma"
+],
+"3987": [
+"78643fcf558e",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Blooper_Tentacle.psd": {
+"icc": [
+0.0002,
+551351
+],
+"text": {
+"546": [
+"b9cd95e64869",
+"gamma"
+],
+"547": [
+"a109184a5642",
+"gamma"
+],
+"548": [
+"7f97da974a81",
+"gamma"
+],
+"549": [
+"ba97e5167281",
+"gamma"
+],
+"550": [
+"668ba2b3056d",
+"gamma"
+],
+"552": [
+"2a794ce04a2b",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Bugzzy.psd": {
+"icc": [
+0.0,
+206689
+],
+"text": {
+"215": [
+"243696568482",
+"gamma"
+],
+"514": [
+"346a8e14cd7e",
+"gamma"
+],
+"95": [
+"804e3011da5b",
+"gamma"
+],
+"96": [
+"7e0c46244f24",
+"gamma"
+],
+"97": [
+"4c107cd6b2b1",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Bulborb Larva.psd": {
+"icc": [
+0.0,
+356674
+],
+"text": {
+"4063": [
+"dbf6126e9e95",
+"gamma"
+],
+"4064": [
+"72b6eb244cf7",
+"gamma"
+],
+"4065": [
+"b008e5a0d3f6",
+"gamma"
+],
+"418": [
+"4810326eb94c",
+"gamma"
+],
+"419": [
+"81cda1363972",
+"gamma"
+],
+"420": [
+"0bab573bbff1",
+"gamma"
+],
+"421": [
+"fce0ae665f75",
+"gamma"
+],
+"422": [
+"f40a9001377d",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Burst_Laser_II.psd": {
+"icc": [
+0.0,
+46268
+],
+"text": {
+"417": [
+"d5002645ac04",
+"gamma"
+],
+"418": [
+"3e85497faa62",
+"gamma"
+],
+"419": [
+"815b006c6591",
+"gamma"
+],
+"420": [
+"eb29d3c35f23",
+"gamma"
+],
+"421": [
+"f6bd6e0c3c7b",
+"gamma"
+],
+"422": [
+"4dae620c728a",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Cat.psd": {
+"icc": [
+0.0,
+384302
+],
+"text": {
+"417": [
+"a7aa4d2693db",
+"gamma"
+],
+"418": [
+"867d5b89f670",
+"gamma"
+],
+"419": [
+"46da5ee121fa",
+"gamma"
+],
+"420": [
+"e1ce1df906e3",
+"gamma"
+],
+"421": [
+"576d05261bd7",
+"gamma"
+],
+"422": [
+"69be476f8324",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Chomp.psd": {
+"icc": [
+0.0,
+233320
+],
+"text": {
+"2276": [
+"a97cef8c82c5",
+"gamma"
+],
+"418": [
+"1c142f4aaee1",
+"gamma"
+],
+"419": [
+"7c2f16ecaebc",
+"gamma"
+],
+"420": [
+"6b62096fd01c",
+"gamma"
+],
+"421": [
+"75eaf7383130",
+"gamma"
+],
+"422": [
+"0bd048f50019",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Claw.psd": {
+"icc": [
+0.0,
+107256
+],
+"text": {
+"2068": [
+"02c6d9a7f3b8",
+"gamma"
+],
+"418": [
+"64d2b9694c3d",
+"gamma"
+],
+"419": [
+"d54a26965a09",
+"gamma"
+],
+"420": [
+"72a8ddd6d6c5",
+"gamma"
+],
+"421": [
+"6dc030059551",
+"gamma"
+],
+"422": [
+"ff93f1cba17e",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Clot_Black.psd": {
+"icc": [
+0.0,
+13223
+],
+"text": {
+"417": [
+"0ee77e19ef8d",
+"gamma"
+],
+"418": [
+"acbb9a63f85a",
+"gamma"
+],
+"419": [
+"0274d21a4804",
+"gamma"
+],
+"420": [
+"e7140095fb05",
+"gamma"
+],
+"421": [
+"b9eb65ac28a6",
+"gamma"
+],
+"422": [
+"32c9fd9e2dd3",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Clot_Blood.psd": {
+"icc": [
+0.0,
+219660
+],
+"text": {
+"417": [
+"acc2555cf188",
+"gamma"
+],
+"418": [
+"acbb9a63f85a",
+"gamma"
+],
+"419": [
+"0274d21a4804",
+"gamma"
+],
+"420": [
+"e7140095fb05",
+"gamma"
+],
+"421": [
+"b9eb65ac28a6",
+"gamma"
+],
+"422": [
+"8a4c3befca78",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Clot_Bone.psd": {
+"icc": [
+0.0,
+24298
+],
+"text": {
+"417": [
+"a470a5932fcd",
+"gamma"
+],
+"418": [
+"acbb9a63f85a",
+"gamma"
+],
+"419": [
+"0274d21a4804",
+"gamma"
+],
+"420": [
+"e7140095fb05",
+"gamma"
+],
+"421": [
+"b9eb65ac28a6",
+"gamma"
+],
+"422": [
+"efb7c1d479f9",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Clot_Gold.psd": {
+"icc": [
+0.0,
+363887
+],
+"text": {
+"417": [
+"e005f62745a6",
+"gamma"
+],
+"418": [
+"acbb9a63f85a",
+"gamma"
+],
+"419": [
+"0274d21a4804",
+"gamma"
+],
+"420": [
+"e7140095fb05",
+"gamma"
+],
+"421": [
+"b9eb65ac28a6",
+"gamma"
+],
+"422": [
+"33e64606e6df",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Clot_White.psd": {
+"icc": [
+0.0,
+12211
+],
+"text": {
+"417": [
+"1bb7bddad6cf",
+"gamma"
+],
+"418": [
+"acbb9a63f85a",
+"gamma"
+],
+"419": [
+"0274d21a4804",
+"gamma"
+],
+"420": [
+"e7140095fb05",
+"gamma"
+],
+"421": [
+"b9eb65ac28a6",
+"gamma"
+],
+"422": [
+"b33644ceb2bc",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Corruptor.psd": {
+"icc": [
+0.0,
+496079
+],
+"text": {
+"417": [
+"6192485cbe97",
+"gamma"
+],
+"418": [
+"867d5b89f670",
+"gamma"
+],
+"419": [
+"46da5ee121fa",
+"gamma"
+],
+"420": [
+"e1ce1df906e3",
+"gamma"
+],
+"421": [
+"576d05261bd7",
+"gamma"
+],
+"422": [
+"b3e5af599ab5",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Dark_Esau.psd": {
+"icc": [
+0.0,
+130046
+],
+"text": {
+"417": [
+"6bc9f65f222a",
+"gamma"
+],
+"418": [
+"acbb9a63f85a",
+"gamma"
+],
+"419": [
+"0274d21a4804",
+"gamma"
+],
+"420": [
+"e7140095fb05",
+"gamma"
+],
+"421": [
+"b9eb65ac28a6",
+"gamma"
+],
+"422": [
+"3ac5a8a5b57f",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Dark_Tentacle.psd": {
+"icc": [
+0.0,
+8624
+],
+"text": {
+"1300": [
+"9377efa3ddc8",
+"gamma"
+],
+"417": [
+"52425bb53755",
+"gamma"
+],
+"418": [
+"57bd4494378b",
+"gamma"
+],
+"419": [
+"bfb3e6f82bb3",
+"gamma"
+],
+"420": [
+"0550aa39cdbd",
+"gamma"
+],
+"421": [
+"53bb06d3744b",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Delta.psd": {
+"icc": [
+0.0,
+0
+],
+"text": {
+"4008": [
+"660a8e7083a9",
+"gamma"
+],
+"4009": [
+"fb171c5ba946",
+"gamma"
+],
+"4010": [
+"e7f0eb57ad32",
+"gamma"
+],
+"4011": [
+"7fe11f150782",
+"gamma"
+],
+"417": [
+"ce36362de396",
+"gamma"
+],
+"422": [
+"46de708d5877",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Drone.psd": {
+"icc": [
+0.0,
+28310
+],
+"text": {
+"417": [
+"a8349f46bc2e",
+"gamma"
+],
+"418": [
+"31744064012b",
+"gamma"
+],
+"419": [
+"6cc22b12771d",
+"gamma"
+],
+"420": [
+"080529207a3e",
+"gamma"
+],
+"421": [
+"6a9104e3bf39",
+"gamma"
+],
+"422": [
+"a80c521a4bec",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Electro_Probe.psd": {
+"icc": [
+1.0,
+461744
+],
+"text": {
+"418": [
+"34bc584e7eb9",
+"gamma"
+],
+"419": [
+"27b53b28b854",
+"gamma"
+],
+"420": [
+"c244299259cd",
+"gamma"
+],
+"421": [
+"810799d1039a",
+"gamma"
+],
+"422": [
+"9d6563c9f268",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Felhunter.psd": {
+"icc": [
+0.0,
+44103
+],
+"text": {
+"417": [
+"f9aa73df6921",
+"gamma"
+],
+"418": [
+"867d5b89f670",
+"gamma"
+],
+"419": [
+"46da5ee121fa",
+"gamma"
+],
+"420": [
+"e1ce1df906e3",
+"gamma"
+],
+"421": [
+"576d05261bd7",
+"gamma"
+],
+"422": [
+"76f3ed86b62d",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Fool_Eater.psd": {
+"icc": [
+0.0,
+124591
+],
+"text": {
+"417": [
+"60dc6ce4a2b2",
+"gamma"
+],
+"418": [
+"f8c278fbeada",
+"gamma"
+],
+"419": [
+"b7fa90197f88",
+"gamma"
+],
+"420": [
+"112c3e5e6c43",
+"gamma"
+],
+"421": [
+"9aaad3758f11",
+"gamma"
+],
+"422": [
+"5ead4f3d4b4b",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Fuzzy_Horde.psd": {
+"icc": [
+0.0,
+251534
+],
+"text": {
+"417": [
+"b60cc17d28fb",
+"gamma"
+],
+"418": [
+"00486a885c3b",
+"gamma"
+],
+"419": [
+"fabbfed8865f",
+"gamma"
+],
+"420": [
+"7cde5a64a5e7",
+"gamma"
+],
+"421": [
+"a5d347f195d5",
+"gamma"
+],
+"422": [
+"24188ce268db",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Galacta_Warrior.psd": {
+"icc": [
+0.0,
+1067839
+],
+"text": {
+"418": [
+"34bc584e7eb9",
+"gamma"
+],
+"419": [
+"27b53b28b854",
+"gamma"
+],
+"420": [
+"08b78734b447",
+"gamma"
+],
+"421": [
+"810799d1039a",
+"gamma"
+],
+"422": [
+"cb285255f9bd",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/God_Tamer.psd": {
+"icc": [
+0.0,
+33270
+],
+"text": {
+"215": [
+"86b04a2cce53",
+"gamma"
+],
+"37": [
+"3d5c4036de34",
+"gamma"
+],
+"95": [
+"2487cc54ad87",
+"gamma"
+],
+"96": [
+"66735eb790a0",
+"gamma"
+],
+"97": [
+"3d6ad0663ac2",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Godskin_Apostle.psd": {
+"icc": [
+0.0,
+167437
+],
+"text": {
+"417": [
+"c406af4481eb",
+"gamma"
+],
+"418": [
+"0a3f8de19901",
+"gamma"
+],
+"419": [
+"3b04efdd1e93",
+"gamma"
+],
+"420": [
+"919c16c7c9a5",
+"gamma"
+],
+"421": [
+"03815d907a7c",
+"gamma"
+],
+"422": [
+"e47527023081",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Grimmchild.psd": {
+"icc": [
+0.0,
+459534
+],
+"text": {
+"417": [
+"34811d64fb03",
+"gamma"
+],
+"418": [
+"e9ab3a18b1ee",
+"gamma"
+],
+"419": [
+"758a8bcb45ce",
+"gamma"
+],
+"420": [
+"f033c8c97fcb",
+"gamma"
+],
+"421": [
+"1fd8c5c32675",
+"gamma"
+],
+"422": [
+"29cdcfcfa01e",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Grodus_X.psd": {
+"icc": [
+0.0,
+301905
+],
+"text": {
+"417": [
+"4c194a8e083f",
+"gamma"
+],
+"418": [
+"64d2b9694c3d",
+"gamma"
+],
+"419": [
+"d54a26965a09",
+"gamma"
+],
+"420": [
+"72a8ddd6d6c5",
+"gamma"
+],
+"421": [
+"6dc030059551",
+"gamma"
+],
+"422": [
+"6c5915e1bec4",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Gulka.psd": {
+"icc": [
+0.0,
+26207
+],
+"text": {
+"417": [
+"8b7ab0ed47ac",
+"gamma"
+],
+"418": [
+"f8c278fbeada",
+"gamma"
+],
+"419": [
+"b7fa90197f88",
+"gamma"
+],
+"420": [
+"112c3e5e6c43",
+"gamma"
+],
+"421": [
+"9aaad3758f11",
+"gamma"
+],
+"422": [
+"3129c86d91a4",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Hawk.psd": {
+"icc": [
+0.0,
+81581
+],
+"text": {
+"417": [
+"857513dbf1b7",
+"gamma"
+],
+"418": [
+"867d5b89f670",
+"gamma"
+],
+"419": [
+"46da5ee121fa",
+"gamma"
+],
+"420": [
+"e1ce1df906e3",
+"gamma"
+],
+"421": [
+"576d05261bd7",
+"gamma"
+],
+"422": [
+"6f4ec9a66621",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Heavy_Ion.psd": {
+"icc": [
+0.0,
+77573
+],
+"text": {
+"417": [
+"62d13063833d",
+"gamma"
+],
+"418": [
+"3e85497faa62",
+"gamma"
+],
+"419": [
+"815b006c6591",
+"gamma"
+],
+"420": [
+"eb29d3c35f23",
+"gamma"
+],
+"421": [
+"f6bd6e0c3c7b",
+"gamma"
+],
+"422": [
+"af3f4e5e6812",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Hook.psd": {
+"icc": [
+0.0,
+23876
+],
+"text": {
+"2065": [
+"47f1b4b290e5",
+"gamma"
+],
+"2066": [
+"aad5d1db8b5d",
+"gamma"
+],
+"2067": [
+"f0ba2b6cc1ce",
+"gamma"
+],
+"2068": [
+"5052c715fe42",
+"gamma"
+],
+"417": [
+"41a92296ce55",
+"gamma"
+],
+"422": [
+"ac8b267d3536",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Ice_Dragon.psd": {
+"icc": [
+0.0,
+1127279
+],
+"text": {
+"215": [
+"833b38cb27ae",
+"gamma"
+],
+"514": [
+"0b97d2a86e0e",
+"gamma"
+],
+"526": [
+"bae160058878",
+"gamma"
+],
+"95": [
+"1f2259a9b34b",
+"gamma"
+],
+"96": [
+"a87dcbdc8fd2",
+"gamma"
+],
+"97": [
+"dd71544691c7",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Imp.psd": {
+"icc": [
+0.0,
+352038
+],
+"text": {
+"417": [
+"06348fbbaa63",
+"gamma"
+],
+"418": [
+"867d5b89f670",
+"gamma"
+],
+"419": [
+"46da5ee121fa",
+"gamma"
+],
+"420": [
+"e1ce1df906e3",
+"gamma"
+],
+"421": [
+"576d05261bd7",
+"gamma"
+],
+"422": [
+"b6dd79709c1c",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Ipsilon.psd": {
+"icc": [
+0.0,
+6282
+],
+"text": {
+"3982": [
+"660a8e7083a9",
+"gamma"
+],
+"3983": [
+"fb171c5ba946",
+"gamma"
+],
+"3984": [
+"e7f0eb57ad32",
+"gamma"
+],
+"3985": [
+"7fe11f150782",
+"gamma"
+],
+"417": [
+"0f57a52210cf",
+"gamma"
+],
+"422": [
+"e5489fdde5c4",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Jack-In-The-Box_Zombie.psd": {
+"icc": [
+0.0003,
+263701
+],
+"text": {
+"417": [
+"80dfc5acc551",
+"gamma"
+],
+"418": [
+"72fad278759e",
+"gamma"
+],
+"419": [
+"272b8a43716f",
+"gamma"
+],
+"420": [
+"ae17138b8007",
+"gamma"
+],
+"421": [
+"29c787ea607f",
+"gamma"
+],
+"422": [
+"b114964293e9",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Jetpack.psd": {
+"icc": [
+0.0,
+184183
+],
+"text": {
+"2049": [
+"525f639aa32f",
+"gamma"
+],
+"418": [
+"64d2b9694c3d",
+"gamma"
+],
+"419": [
+"7a7c92b06732",
+"gamma"
+],
+"420": [
+"8637605bc37b",
+"gamma"
+],
+"421": [
+"6dc030059551",
+"gamma"
+],
+"422": [
+"3c341bf2b2b7",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Lil_Spood.psd": {
+"icc": [
+0.0,
+549755
+],
+"text": {
+"3890": [
+"869d53ba0de0",
+"gamma"
+],
+"417": [
+"1b57878eb053",
+"gamma"
+],
+"419": [
+"f874032dd831",
+"gamma"
+],
+"420": [
+"8687bf05d5df",
+"gamma"
+],
+"421": [
+"f6789fa1b288",
+"gamma"
+],
+"422": [
+"fb7c10cbf3ee",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Living_Bread.psd": {
+"icc": [
+0.0,
+1525813
+],
+"text": {
+"417": [
+"710d1bb52b66",
+"gamma"
+],
+"418": [
+"4fa756f5e529",
+"gamma"
+],
+"419": [
+"0ff5aacf7871",
+"gamma"
+],
+"420": [
+"b1a4ccbae6f0",
+"gamma"
+],
+"421": [
+"fbd1e03c2dfb",
+"gamma"
+],
+"422": [
+"5de80826cf75",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Lorian.psd": {
+"icc": [
+0.0,
+342802
+],
+"text": {
+"1449": [
+"c3ad82f0463e",
+"gamma"
+],
+"215": [
+"f075c3cb4d8b",
+"gamma"
+],
+"37": [
+"e06e87da69cf",
+"gamma"
+],
+"95": [
+"884c4ef1db77",
+"gamma"
+],
+"96": [
+"a1b26fe8ed92",
+"gamma"
+],
+"97": [
+"e07713f30488",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Masher.psd": {
+"icc": [
+0.0,
+58184
+],
+"text": {
+"215": [
+"5c49deb3d33a",
+"gamma"
+],
+"514": [
+"569b6986eff4",
+"gamma"
+],
+"526": [
+"5c4626a90e7b",
+"gamma"
+],
+"95": [
+"bb8f4ecf13d1",
+"gamma"
+],
+"96": [
+"be9b2e6c5c81",
+"gamma"
+],
+"97": [
+"e7203d2980f9",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Massive_Moss_Charger.psd": {
+"icc": [
+0.0,
+77580
+],
+"text": {
+"2942": [
+"8766c9853d4c",
+"gamma"
+],
+"417": [
+"c6cba327b4fc",
+"gamma"
+],
+"418": [
+"a9a7b6002dcb",
+"gamma"
+],
+"419": [
+"b7fa90197f88",
+"gamma"
+],
+"420": [
+"112c3e5e6c43",
+"gamma"
+],
+"421": [
+"9aaad3758f11",
+"gamma"
+],
+"422": [
+"d7e84b3c446f",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Matterling.psd": {
+"icc": [
+0.0,
+183094
+],
+"text": {
+"417": [
+"c2d7408340c2",
+"gamma"
+],
+"418": [
+"4c174abe8111",
+"gamma"
+],
+"419": [
+"eef89d6b4950",
+"gamma"
+],
+"420": [
+"5b633fe8a1f0",
+"gamma"
+],
+"421": [
+"88a1fb00c3de",
+"gamma"
+],
+"422": [
+"2dc4f1e4b245",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Miasma.psd": {
+"icc": [
+0.0,
+58765
+],
+"text": {
+"2068": [
+"294a34f5ea64",
+"gamma"
+],
+"418": [
+"64d2b9694c3d",
+"gamma"
+],
+"419": [
+"d54a26965a09",
+"gamma"
+],
+"420": [
+"72a8ddd6d6c5",
+"gamma"
+],
+"421": [
+"6dc030059551",
+"gamma"
+],
+"422": [
+"87c788cfe67d",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Mini_Auto_Croissant.psd": {
+"icc": [
+0.0,
+166653
+],
+"text": {
+"3569": [
+"3bafcb1ff037",
+"gamma"
+],
+"417": [
+"e07e6279f418",
+"gamma"
+],
+"418": [
+"51aea8c9c1ce",
+"gamma"
+],
+"419": [
+"2310c11ee8ff",
+"gamma"
+],
+"420": [
+"e47f0380db5a",
+"gamma"
+],
+"421": [
+"9b1adc233b93",
+"gamma"
+],
+"422": [
+"3937510e3dd1",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Mini_Bee.psd": {
+"icc": [
+1.0,
+1884977
+],
+"text": {
+"418": [
+"0a712c7e4c63",
+"gamma"
+],
+"419": [
+"000fd95d9245",
+"gamma"
+],
+"420": [
+"0532b2e6fe25",
+"gamma"
+],
+"421": [
+"ed2efa67be16",
+"gamma"
+],
+"422": [
+"17438c639038",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Mini_Doomer.psd": {
+"icc": [
+0.0,
+249521
+],
+"text": {
+"2068": [
+"edd2eb606b8e",
+"gamma"
+],
+"418": [
+"acc0079e4f8c",
+"gamma"
+],
+"419": [
+"ea75f3fc67dd",
+"gamma"
+],
+"420": [
+"84d8dd528f0f",
+"gamma"
+],
+"421": [
+"5cc2b527890b",
+"gamma"
+],
+"422": [
+"9aae3c359224",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Mini_Drill.psd": {
+"icc": [
+0.0,
+439010
+],
+"text": {
+"417": [
+"efed4bbcc8bc",
+"gamma"
+],
+"418": [
+"acc0079e4f8c",
+"gamma"
+],
+"419": [
+"ea75f3fc67dd",
+"gamma"
+],
+"420": [
+"104b30db6b7f",
+"gamma"
+],
+"421": [
+"88a1fb00c3de",
+"gamma"
+],
+"422": [
+"b6a366e50bd0",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Mosling.psd": {
+"icc": [
+0.0,
+172949
+],
+"text": {
+"1535": [
+"53f4eb03c94a",
+"gamma"
+],
+"417": [
+"05b23503f650",
+"gamma"
+],
+"418": [
+"4f26ed90c392",
+"gamma"
+],
+"419": [
+"1ed92eb60975",
+"gamma"
+],
+"420": [
+"c29e71c85727",
+"gamma"
+],
+"421": [
+"427fa6d4e2b9",
+"gamma"
+],
+"422": [
+"63fd10b1e124",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Moss_Charger.psd": {
+"icc": [
+0.0,
+83520
+],
+"text": {
+"417": [
+"c1f43f1f5134",
+"gamma"
+],
+"418": [
+"a9a7b6002dcb",
+"gamma"
+],
+"419": [
+"b7fa90197f88",
+"gamma"
+],
+"420": [
+"112c3e5e6c43",
+"gamma"
+],
+"421": [
+"9aaad3758f11",
+"gamma"
+],
+"422": [
+"c60f7bdb6047",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Paint_Warrior.psd": {
+"icc": [
+1.0,
+708998
+],
+"text": {
+"418": [
+"4c174abe8111",
+"gamma"
+],
+"419": [
+"eef89d6b4950",
+"gamma"
+],
+"420": [
+"37790aba418f",
+"gamma"
+],
+"421": [
+"88a1fb00c3de",
+"gamma"
+],
+"422": [
+"4ecc2c8fbfe7",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Pike_Beam.psd": {
+"icc": [
+0.0,
+47768
+],
+"text": {
+"417": [
+"e3be62f61a6a",
+"gamma"
+],
+"418": [
+"f64d544e097f",
+"gamma"
+],
+"419": [
+"f9264e5dbd3d",
+"gamma"
+],
+"420": [
+"033285c65062",
+"gamma"
+],
+"421": [
+"5309ff47199d",
+"gamma"
+],
+"422": [
+"1a5d96daa4bd",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/PoD01Red_Bloon.psd": {
+"icc": [
+1.0,
+657425
+],
+"text": {
+"418": [
+"4a89e1587cfb",
+"gamma"
+],
+"419": [
+"2352d23bba86",
+"gamma"
+],
+"420": [
+"a341093554ef",
+"gamma"
+],
+"421": [
+"0a76738083f7",
+"gamma"
+],
+"422": [
+"29250af96918",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/PoD02Black_Bloon.psd": {
+"icc": [
+0.0,
+158604
+],
+"text": {
+"417": [
+"c4f835c1f512",
+"gamma"
+],
+"418": [
+"4a89e1587cfb",
+"gamma"
+],
+"419": [
+"2352d23bba86",
+"gamma"
+],
+"420": [
+"a341093554ef",
+"gamma"
+],
+"421": [
+"0a76738083f7",
+"gamma"
+],
+"422": [
+"7ccebfdecb88",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/PoD03White_Bloon.psd": {
+"icc": [
+0.0,
+170289
+],
+"text": {
+"417": [
+"479629e5539c",
+"gamma"
+],
+"418": [
+"4a89e1587cfb",
+"gamma"
+],
+"419": [
+"2352d23bba86",
+"gamma"
+],
+"420": [
+"a341093554ef",
+"gamma"
+],
+"421": [
+"0a76738083f7",
+"gamma"
+],
+"422": [
+"df32d27cc37e",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/PoD04Zebra_Bloon.psd": {
+"icc": [
+0.0,
+159177
+],
+"text": {
+"417": [
+"840dad1179b6",
+"gamma"
+],
+"418": [
+"4a89e1587cfb",
+"gamma"
+],
+"419": [
+"2352d23bba86",
+"gamma"
+],
+"420": [
+"a341093554ef",
+"gamma"
+],
+"421": [
+"0a76738083f7",
+"gamma"
+],
+"422": [
+"799cdcaeb861",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/PoD05Lead_Bloon.psd": {
+"icc": [
+0.0,
+153513
+],
+"text": {
+"417": [
+"71dbb3080bb2",
+"gamma"
+],
+"418": [
+"4a89e1587cfb",
+"gamma"
+],
+"419": [
+"2352d23bba86",
+"gamma"
+],
+"420": [
+"a341093554ef",
+"gamma"
+],
+"421": [
+"0a76738083f7",
+"gamma"
+],
+"422": [
+"0b834dbfc823",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/PoD06Rainbow_Bloon.psd": {
+"icc": [
+0.0,
+694399
+],
+"text": {
+"1688": [
+"9069db401d3a",
+"gamma"
+],
+"417": [
+"97f61e72eb03",
+"gamma"
+],
+"418": [
+"4a89e1587cfb",
+"gamma"
+],
+"419": [
+"2352d23bba86",
+"gamma"
+],
+"420": [
+"a341093554ef",
+"gamma"
+],
+"422": [
+"3cfd56934321",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/PoD07Ceramic_Bloon.psd": {
+"icc": [
+0.0,
+743105
+],
+"text": {
+"417": [
+"d0c656894820",
+"gamma"
+],
+"418": [
+"4a89e1587cfb",
+"gamma"
+],
+"419": [
+"2352d23bba86",
+"gamma"
+],
+"420": [
+"a341093554ef",
+"gamma"
+],
+"421": [
+"0a76738083f7",
+"gamma"
+],
+"422": [
+"c39013724c0d",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/PoD08MOAB.psd": {
+"icc": [
+0.0,
+776366
+],
+"text": {
+"417": [
+"fd3489a7fa92",
+"gamma"
+],
+"418": [
+"4a89e1587cfb",
+"gamma"
+],
+"419": [
+"2352d23bba86",
+"gamma"
+],
+"420": [
+"a341093554ef",
+"gamma"
+],
+"421": [
+"0a76738083f7",
+"gamma"
+],
+"422": [
+"2a9c9ff1c530",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/PoD09DDT.psd": {
+"icc": [
+0.0,
+111618
+],
+"text": {
+"417": [
+"5e75afeb2e23",
+"gamma"
+],
+"418": [
+"4a89e1587cfb",
+"gamma"
+],
+"419": [
+"2352d23bba86",
+"gamma"
+],
+"420": [
+"a341093554ef",
+"gamma"
+],
+"421": [
+"0a76738083f7",
+"gamma"
+],
+"422": [
+"10b480d6cd4a",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/PoD10BFB.psd": {
+"icc": [
+0.0,
+925243
+],
+"text": {
+"417": [
+"bd14562a75bc",
+"gamma"
+],
+"418": [
+"4a89e1587cfb",
+"gamma"
+],
+"419": [
+"2352d23bba86",
+"gamma"
+],
+"420": [
+"a341093554ef",
+"gamma"
+],
+"421": [
+"0a76738083f7",
+"gamma"
+],
+"422": [
+"08485b644607",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/PoD11ZOMG.psd": {
+"icc": [
+0.0,
+532623
+],
+"text": {
+"417": [
+"a074cee08b47",
+"gamma"
+],
+"418": [
+"4a89e1587cfb",
+"gamma"
+],
+"419": [
+"2352d23bba86",
+"gamma"
+],
+"420": [
+"a341093554ef",
+"gamma"
+],
+"421": [
+"0a76738083f7",
+"gamma"
+],
+"422": [
+"22a8e35b254b",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/PoD12BAD.psd": {
+"icc": [
+0.0,
+894481
+],
+"text": {
+"417": [
+"dfa9ef3ccfd2",
+"gamma"
+],
+"418": [
+"4a89e1587cfb",
+"gamma"
+],
+"419": [
+"2352d23bba86",
+"gamma"
+],
+"420": [
+"a341093554ef",
+"gamma"
+],
+"421": [
+"0a76738083f7",
+"gamma"
+],
+"422": [
+"48d46422e4ca",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Polevaulter_Zombie.psd": {
+"icc": [
+0.0005,
+193902
+],
+"text": {
+"417": [
+"710e8cb68903",
+"gamma"
+],
+"418": [
+"72fad278759e",
+"gamma"
+],
+"419": [
+"272b8a43716f",
+"gamma"
+],
+"420": [
+"ae17138b8007",
+"gamma"
+],
+"421": [
+"29c787ea607f",
+"gamma"
+],
+"422": [
+"e52ba4cf24f1",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Primal_Aspid.psd": {
+"icc": [
+0.0,
+183811
+],
+"text": {
+"417": [
+"73dbb1fee07f",
+"gamma"
+],
+"418": [
+"bc7e49c6814e",
+"gamma"
+],
+"419": [
+"fb8046e7a726",
+"gamma"
+],
+"420": [
+"8c2690807ac1",
+"gamma"
+],
+"421": [
+"232b8c740409",
+"gamma"
+],
+"422": [
+"bef7bc65bc49",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Qiraji_Soldier.psd": {
+"icc": [
+0.0,
+967907
+],
+"text": {
+"418": [
+"27a61ebdd98f",
+"gamma"
+],
+"419": [
+"793c0206725d",
+"gamma"
+],
+"420": [
+"b9f33f95f848",
+"gamma"
+],
+"421": [
+"5f2c321fe71d",
+"gamma"
+],
+"422": [
+"5fb9b3cf0774",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Rapier.psd": {
+"icc": [
+1.0,
+8961
+],
+"text": {
+"2058": [
+"47f1b4b290e5",
+"gamma"
+],
+"2059": [
+"aad5d1db8b5d",
+"gamma"
+],
+"2060": [
+"f0ba2b6cc1ce",
+"gamma"
+],
+"2061": [
+"5052c715fe42",
+"gamma"
+],
+"417": [
+"ab3e19e247e4",
+"gamma"
+],
+"422": [
+"6a7f05af479f",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Sabre.psd": {
+"icc": [
+1.0,
+37343
+],
+"text": {
+"2066": [
+"47f1b4b290e5",
+"gamma"
+],
+"2067": [
+"aad5d1db8b5d",
+"gamma"
+],
+"2068": [
+"f0ba2b6cc1ce",
+"gamma"
+],
+"2069": [
+"5052c715fe42",
+"gamma"
+],
+"422": [
+"dc5c433029fc",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Shadow_Chopper.psd": {
+"icc": [
+0.0,
+0
+],
+"text": {
+"417": [
+"18ac1fd0edac",
+"gamma"
+],
+"418": [
+"cda8589ba247",
+"gamma"
+],
+"419": [
+"365990dda4c6",
+"gamma"
+],
+"420": [
+"e9ee3639b9ed",
+"gamma"
+],
+"421": [
+"8fdd7aec458b",
+"gamma"
+],
+"422": [
+"c6f594d10f97",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Shadow_Duelist.psd": {
+"icc": [
+0.0,
+0
+],
+"text": {
+"418": [
+"cda8589ba247",
+"gamma"
+],
+"419": [
+"365990dda4c6",
+"gamma"
+],
+"420": [
+"e9ee3639b9ed",
+"gamma"
+],
+"421": [
+"8fdd7aec458b",
+"gamma"
+],
+"422": [
+"3e9811ed9a5b",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Shadow_Miner.psd": {
+"icc": [
+0.0,
+3781
+],
+"text": {
+"417": [
+"24d318a30cbe",
+"gamma"
+],
+"418": [
+"cda8589ba247",
+"gamma"
+],
+"419": [
+"365990dda4c6",
+"gamma"
+],
+"420": [
+"e9ee3639b9ed",
+"gamma"
+],
+"421": [
+"8fdd7aec458b",
+"gamma"
+],
+"422": [
+"b43281fca8e7",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Sharp_Baldur.psd": {
+"icc": [
+0.0,
+133398
+],
+"text": {
+"417": [
+"f846b6f90dda",
+"gamma"
+],
+"418": [
+"cc6ece33761c",
+"gamma"
+],
+"419": [
+"fb8046e7a726",
+"gamma"
+],
+"420": [
+"8c2690807ac1",
+"gamma"
+],
+"421": [
+"cc9257145247",
+"gamma"
+],
+"422": [
+"745862ea1c47",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Sigma.psd": {
+"icc": [
+0.0,
+9507
+],
+"text": {
+"3984": [
+"660a8e7083a9",
+"gamma"
+],
+"3985": [
+"fb171c5ba946",
+"gamma"
+],
+"3986": [
+"e7f0eb57ad32",
+"gamma"
+],
+"3987": [
+"7fe11f150782",
+"gamma"
+],
+"417": [
+"2451255134bf",
+"gamma"
+],
+"422": [
+"4027ed7e5d4c",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Silithid.psd": {
+"icc": [
+0.0,
+1183021
+],
+"text": {
+"418": [
+"cbfab939ac05",
+"gamma"
+],
+"419": [
+"9f186a831977",
+"gamma"
+],
+"420": [
+"77c6364dab30",
+"gamma"
+],
+"421": [
+"9414e4f08788",
+"gamma"
+],
+"422": [
+"798865a5e6df",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Skeleton_Mate.psd": {
+"icc": [
+0.0,
+28303
+],
+"text": {
+"3478": [
+"e72234c7259b",
+"gamma"
+],
+"3479": [
+"fc38fa084314",
+"gamma"
+],
+"3480": [
+"95b04f21bc5f",
+"gamma"
+],
+"3481": [
+"2056e265cd73",
+"gamma"
+],
+"417": [
+"3393db2e69ee",
+"gamma"
+],
+"422": [
+"90de9c4a4541",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Spawn_of_the_Forbidden_One.psd": {
+"icc": [
+0.0,
+247404
+],
+"text": {
+"3178": [
+"4ffb8867e3a5",
+"gamma"
+],
+"418": [
+"814e833f488d",
+"gamma"
+],
+"419": [
+"c539b59d1987",
+"gamma"
+],
+"420": [
+"310d7975410a",
+"gamma"
+],
+"421": [
+"df25e00e4fcc",
+"gamma"
+],
+"422": [
+"67a1ea6b0896",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Springtrap.psd": {
+"icc": [
+0.0,
+306690
+],
+"text": {
+"417": [
+"7d2b159a478f",
+"gamma"
+],
+"418": [
+"538abc999815",
+"gamma"
+],
+"419": [
+"62fa30fb1c63",
+"gamma"
+],
+"420": [
+"f77e61118d36",
+"gamma"
+],
+"421": [
+"1ee3fa098ca4",
+"gamma"
+],
+"422": [
+"6844821ecf1e",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Sword.psd": {
+"icc": [
+1.0,
+233035
+],
+"text": {
+"2065": [
+"47f1b4b290e5",
+"gamma"
+],
+"2066": [
+"7609177d4e4f",
+"gamma"
+],
+"2067": [
+"ba97e5167281",
+"gamma"
+],
+"2068": [
+"5052c715fe42",
+"gamma"
+],
+"417": [
+"41d71ff6f3ab",
+"gamma"
+],
+"422": [
+"a42d658f1a37",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Sword_Knight.psd": {
+"icc": [
+1.0,
+91817
+],
+"text": {
+"418": [
+"34bc584e7eb9",
+"gamma"
+],
+"419": [
+"27b53b28b854",
+"gamma"
+],
+"420": [
+"c244299259cd",
+"gamma"
+],
+"421": [
+"810799d1039a",
+"gamma"
+],
+"422": [
+"023a2d448322",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Tainted_Soul.psd": {
+"icc": [
+0.0,
+120929
+],
+"text": {
+"417": [
+"a668a83cbd55",
+"gamma"
+],
+"418": [
+"acbb9a63f85a",
+"gamma"
+],
+"419": [
+"0274d21a4804",
+"gamma"
+],
+"420": [
+"e7140095fb05",
+"gamma"
+],
+"421": [
+"b9eb65ac28a6",
+"gamma"
+],
+"422": [
+"cb1efe45c72a",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Tentacle.psd": {
+"icc": [
+1.0,
+18649
+],
+"text": {
+"418": [
+"9f2a25352cc9",
+"gamma"
+],
+"419": [
+"2dfa74ce9c19",
+"gamma"
+],
+"420": [
+"7e39fcbae7d6",
+"gamma"
+],
+"421": [
+"8fdd7aec458b",
+"gamma"
+],
+"422": [
+"336d174b651e",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Turtle.psd": {
+"icc": [
+0.0,
+191978
+],
+"text": {
+"417": [
+"95e140595eb1",
+"gamma"
+],
+"418": [
+"7d37dc028a4d",
+"gamma"
+],
+"419": [
+"1533559ab684",
+"gamma"
+],
+"420": [
+"e1ce1df906e3",
+"gamma"
+],
+"421": [
+"576d05261bd7",
+"gamma"
+],
+"422": [
+"ee2054c0325b",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Voidwalker.psd": {
+"icc": [
+0.0,
+626076
+],
+"text": {
+"417": [
+"494e609308e2",
+"gamma"
+],
+"418": [
+"7d37dc028a4d",
+"gamma"
+],
+"419": [
+"1533559ab684",
+"gamma"
+],
+"420": [
+"e1ce1df906e3",
+"gamma"
+],
+"421": [
+"576d05261bd7",
+"gamma"
+],
+"422": [
+"c9c2a500b73f",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Warrior_Dee.psd": {
+"icc": [
+0.0,
+906920
+],
+"text": {
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"ae7d26d24ef2",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Whelp.psd": {
+"icc": [
+0.0,
+151750
+],
+"text": {
+"418": [
+"867d5b89f670",
+"gamma"
+],
+"419": [
+"46da5ee121fa",
+"gamma"
+],
+"420": [
+"e1ce1df906e3",
+"gamma"
+],
+"421": [
+"576d05261bd7",
+"gamma"
+],
+"422": [
+"604f5274dc7d",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/Wolf.psd": {
+"icc": [
+0.0,
+92457
+],
+"text": {
+"417": [
+"b8a61420b521",
+"gamma"
+],
+"418": [
+"867d5b89f670",
+"gamma"
+],
+"419": [
+"46da5ee121fa",
+"gamma"
+],
+"420": [
+"e1ce1df906e3",
+"gamma"
+],
+"421": [
+"576d05261bd7",
+"gamma"
+],
+"422": [
+"a50022868454",
+"gamma"
+]
+}
+},
+"Auxiliary/Minions/X-Fist.psd": {
+"icc": [
+1.0,
+1319591
+],
+"text": {
+"417": [
+"077d39582537",
+"gamma"
+],
+"418": [
+"b6bbdb20b8ef",
+"gamma"
+],
+"419": [
+"ea3c7deb8340",
+"gamma"
+],
+"420": [
+"a48765d4773a",
+"gamma"
+],
+"421": [
+"c6fe56df7493",
+"gamma"
+],
+"422": [
+"5a9441f1b985",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Buffs/Diligent_Watch.psd": {
+"icc": [
+0.0,
+428950
+],
+"text": {
+"100": [
+"fc38e2e1d3b1",
+"gamma"
+],
+"19": [
+"86e20c95e70e",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Buffs/Empowered.psd": {
+"icc": [
+1.0,
+127354
+],
+"text": {
+"19": [
+"4877b0bfca9e",
+"gamma"
+],
+"23": [
+"223075fc6e34",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Buffs/Enraged.psd": {
+"icc": [
+0.9997,
+303022
+],
+"text": {
+"19": [
+"34459333e2fc",
+"gamma"
+],
+"23": [
+"d9725cf362c2",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Buffs/Hardened.psd": {
+"icc": [
+0.0,
+212462
+],
+"text": {
+"19": [
+"0b121f02a31b",
+"gamma"
+],
+"23": [
+"5b693c387582",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Buffs/Hyper.psd": {
+"icc": [
+0.0,
+276123
+],
+"text": {
+"19": [
+"75c356715639",
+"gamma"
+],
+"23": [
+"f4b9d3fb6109",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Buffs/Inspired.psd": {
+"icc": [
+0.0,
+413674
+],
+"text": {
+"19": [
+"99898a7155f2",
+"gamma"
+],
+"23": [
+"4b4194212f6d",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Buffs/Marked For Life.psd": {
+"icc": [
+0.0002,
+308060
+],
+"text": {
+"19": [
+"5f4032d45fc6",
+"gamma"
+],
+"68": [
+"5f8dfbe2b070",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Buffs/Peppy.psd": {
+"icc": [
+0.0001,
+441764
+],
+"text": {
+"19": [
+"caf80c7573a8",
+"gamma"
+],
+"23": [
+"a119bc1fe443",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Buffs/Regen.psd": {
+"icc": [
+0.0,
+261298
+],
+"text": {
+"19": [
+"cbe88f7a2d5f",
+"gamma"
+],
+"23": [
+"d5caae583105",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Buffs/Reinforced.psd": {
+"icc": [
+0.0,
+320952
+],
+"text": {
+"19": [
+"e418b390ed61",
+"gamma"
+],
+"23": [
+"7daa1cbb2bc6",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Buffs/Thickened.psd": {
+"icc": [
+0.0002,
+258985
+],
+"text": {
+"19": [
+"a5c8906cb13d",
+"gamma"
+],
+"23": [
+"b697815119e3",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Buffs/Vigor.psd": {
+"icc": [
+0.0002,
+575739
+],
+"text": {
+"19": [
+"04519cfe29e0",
+"gamma"
+],
+"23": [
+"e70b86d4fe97",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/1 Stars/Blindness.psd": {
+"icc": [
+0.0,
+245273
+],
+"text": {
+"19": [
+"2f8b4a14dabf",
+"gamma"
+],
+"23": [
+"c3e57221019c",
+"straight"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/1 Stars/Burdened.psd": {
+"icc": [
+0.0,
+202882
+],
+"text": {
+"19": [
+"07334c808a97",
+"gamma"
+],
+"23": [
+"5fc76c1a9280",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/1 Stars/Burning.psd": {
+"icc": [
+0.0,
+266286
+],
+"text": {
+"19": [
+"95dc3aaf5d63",
+"gamma"
+],
+"23": [
+"b05ab303e43d",
+"straight"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/1 Stars/Disgusted.psd": {
+"icc": [
+0.001,
+308525
+],
+"text": {
+"19": [
+"516c0ea8f109",
+"gamma"
+],
+"23": [
+"6ae6ad55a009",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/1 Stars/Enfeebled.psd": {
+"icc": [
+0.0,
+126371
+],
+"text": {
+"19": [
+"4e9e695a9329",
+"gamma"
+],
+"23": [
+"141343efe4dd",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/1 Stars/Poison.psd": {
+"icc": [
+0.0,
+236440
+],
+"text": {
+"19": [
+"207adf1f6d5c",
+"gamma"
+],
+"23": [
+"95aa2b12c68a",
+"straight"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/1 Stars/Sickness.psd": {
+"icc": [
+0.0,
+860048
+],
+"text": {
+"19": [
+"233e2cfc0a27",
+"gamma"
+],
+"23": [
+"7c08e8d96af4",
+"straight"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/1 Stars/Smeckeldorfed.psd": {
+"icc": [
+0.0002,
+321593
+],
+"text": {
+"19": [
+"0f5a20e707c1",
+"gamma"
+],
+"23": [
+"06c4dfd5f3a1",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/1 Stars/Smoldering.psd": {
+"icc": [
+0.0,
+240160
+],
+"text": {
+"19": [
+"524ac50f8d29",
+"gamma"
+],
+"23": [
+"6e37e3c7f786",
+"straight"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/1 Stars/Softened.psd": {
+"icc": [
+0.0,
+28278
+],
+"text": {
+"19": [
+"79bc87cc63e2",
+"gamma"
+],
+"23": [
+"a4ffb8eb904f",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/1 Stars/Stuffed.psd": {
+"icc": [
+0.0,
+207907
+],
+"text": {
+"19": [
+"334619b1ff8f",
+"gamma"
+],
+"23": [
+"9486c5e5d357",
+"straight"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/1 Stars/Thinned.psd": {
+"icc": [
+0.0,
+22144
+],
+"text": {
+"19": [
+"16d24de7014e",
+"gamma"
+],
+"23": [
+"b601e5ae22e0",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/2 Stars/Afraid.psd": {
+"icc": [
+0.0,
+325397
+],
+"text": {
+"19": [
+"fda74be5d991",
+"gamma"
+],
+"23": [
+"889589fb19b4",
+"straight"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/2 Stars/Blazing.psd": {
+"icc": [
+0.0,
+876871
+],
+"text": {
+"19": [
+"82d91bc8e23c",
+"gamma"
+],
+"23": [
+"7d530d2ce73e",
+"straight"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/2 Stars/Chained.psd": {
+"icc": [
+0.0,
+669505
+],
+"text": {
+"23": [
+"22c717f26cc5",
+"gamma"
+],
+"95": [
+"dc105f2d2dab",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/2 Stars/Chilled.psd": {
+"icc": [
+0.0005,
+51196
+],
+"text": {
+"19": [
+"b54fbdcdec01",
+"gamma"
+],
+"23": [
+"f7eeb3dca28b",
+"straight"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/2 Stars/Confusion.psd": {
+"icc": [
+0.0024,
+197826
+],
+"text": {
+"19": [
+"6ddf0f5f5366",
+"gamma"
+],
+"23": [
+"28214e66d481",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/2 Stars/Edible.psd": {
+"icc": [
+0.0,
+448288
+],
+"text": {
+"177": [
+"c207b43687b0",
+"gamma"
+],
+"19": [
+"206462709d38",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/2 Stars/Empty.psd": {
+"icc": [
+0.0,
+152378
+],
+"text": {
+"19": [
+"5138e95a6258",
+"gamma"
+],
+"23": [
+"c1c5270410bc",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/2 Stars/Engorged.psd": {
+"icc": [
+0.0,
+76398
+],
+"text": {
+"112": [
+"55623f4d34fc",
+"gamma"
+],
+"23": [
+"f8055d50fcc6",
+"straight"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/2 Stars/Exposed.psd": {
+"icc": [
+0.0,
+258472
+],
+"text": {
+"19": [
+"c33ed132fddb",
+"gamma"
+],
+"23": [
+"3fdaaae8a817",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/2 Stars/Frostbite.psd": {
+"icc": [
+0.0,
+498867
+],
+"text": {
+"19": [
+"3a71080e9bc3",
+"gamma"
+],
+"23": [
+"4858d615fc59",
+"straight"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/2 Stars/Glued.psd": {
+"icc": [
+0.0,
+89826
+],
+"text": {
+"19": [
+"12f5472254b7",
+"gamma"
+],
+"23": [
+"42c6ac937483",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/2 Stars/Loony.psd": {
+"icc": [
+0.0,
+627317
+],
+"text": {
+"19": [
+"c3092514d931",
+"gamma"
+],
+"23": [
+"1e54d2baba84",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/2 Stars/Paralyzed.psd": {
+"icc": [
+0.0,
+141765
+],
+"text": {
+"19": [
+"ff19e4cdd0f4",
+"gamma"
+],
+"23": [
+"67932b997775",
+"straight"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/2 Stars/Plague.psd": {
+"icc": [
+0.0,
+322725
+],
+"text": {
+"19": [
+"b3fae2153b97",
+"gamma"
+],
+"23": [
+"b28dc9ff8124",
+"straight"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/2 Stars/Restrained.psd": {
+"icc": [
+0.0,
+109549
+],
+"text": {
+"19": [
+"4c0da1b67469",
+"gamma"
+],
+"70": [
+"ce837ed6033d",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/2 Stars/Spirit_Flame.psd": {
+"icc": [
+0.0,
+406883
+],
+"text": {
+"19": [
+"b82ca8f91530",
+"gamma"
+],
+"23": [
+"50d3f5f3a2e4",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/3 Stars/Become_Back_Money.psd": {
+"icc": [
+0.0,
+581031
+],
+"text": {
+"19": [
+"4ce3d224ad43",
+"gamma"
+],
+"23": [
+"db400622d268",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/3 Stars/Cheap.psd": {
+"icc": [
+0.0,
+576830
+],
+"text": {
+"19": [
+"9a875bba9774",
+"gamma"
+],
+"23": [
+"f08d2b9d6dd3",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/3 Stars/Corrupted_Blood.psd": {
+"icc": [
+0.0002,
+822058
+],
+"text": {
+"19": [
+"6b0bd8e4d2ad",
+"gamma"
+],
+"85": [
+"47ad83c44b1d",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/3 Stars/Corruption.psd": {
+"icc": [
+0.0,
+915372
+],
+"text": {
+"19": [
+"3515dc313d64",
+"straight"
+],
+"85": [
+"de2f6caebd3e",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/3 Stars/Cursed_Inferno.psd": {
+"icc": [
+0.0001,
+965631
+],
+"text": {
+"19": [
+"5f628d113b32",
+"gamma"
+],
+"23": [
+"79bc918273f8",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/3 Stars/Disarmed.psd": {
+"icc": [
+0.999,
+236887
+],
+"text": {
+"19": [
+"7f92fcd2031f",
+"gamma"
+],
+"23": [
+"7a4cda043ed2",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/3 Stars/Frozen.psd": {
+"icc": [
+0.0001,
+200254
+],
+"text": {
+"19": [
+"a67d6ff37e03",
+"gamma"
+],
+"23": [
+"71917a3f175d",
+"straight"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/3 Stars/Hexed.psd": {
+"icc": [
+0.0,
+450264
+],
+"text": {
+"19": [
+"0362641d0a5a",
+"gamma"
+],
+"55": [
+"781825f6251f",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/3 Stars/Imprisoned.psd": {
+"icc": [
+0.0001,
+572934
+],
+"text": {
+"19": [
+"b3425e5a63f5",
+"gamma"
+],
+"89": [
+"19bc599b8e6b",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/3 Stars/Insane.psd": {
+"icc": [
+0.0029,
+176670
+],
+"text": {
+"19": [
+"870d3cae4fe0",
+"gamma"
+],
+"85": [
+"4948d5affa19",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/3 Stars/Pessimism.psd": {
+"icc": [
+1.0,
+661869
+],
+"text": {
+"19": [
+"c6af96afdf85",
+"gamma"
+],
+"23": [
+"f732b4071f76",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/3 Stars/Resentful_Glare.psd": {
+"icc": [
+0.0,
+19197
+],
+"text": {
+"19": [
+"d11de4927efd",
+"gamma"
+],
+"23": [
+"3e6aa4bcc510",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/3 Stars/Shell_Shock.psd": {
+"icc": [
+0.0,
+137730
+],
+"text": {
+"173": [
+"b2f8d7fa5110",
+"gamma"
+],
+"19": [
+"9c870a36a78e",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/3 Stars/Suffocation.psd": {
+"icc": [
+0.0,
+320592
+],
+"text": {
+"19": [
+"109ede4df829",
+"gamma"
+],
+"23": [
+"926499051afe",
+"straight"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/4 Stars/Condemned.psd": {
+"icc": [
+0.0,
+62088
+],
+"text": {
+"19": [
+"d000b0c1c5cd",
+"gamma"
+],
+"88": [
+"617eaae1ab52",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/4 Stars/Contracted.psd": {
+"icc": [
+0.0002,
+242667
+],
+"text": {
+"19": [
+"1d9677628da3",
+"gamma"
+],
+"23": [
+"c0a9ee106cfa",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/4 Stars/Curse.psd": {
+"icc": [
+0.0004,
+278114
+],
+"text": {
+"19": [
+"1feb4e35ba97",
+"straight"
+],
+"23": [
+"a4904120f73d",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/4 Stars/Despair.psd": {
+"icc": [
+0.0,
+266663
+],
+"text": {
+"19": [
+"41bddecc41c6",
+"straight"
+],
+"23": [
+"f0df4e0339c9",
+"straight"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/4 Stars/Frozen_In_Time.psd": {
+"icc": [
+0.0,
+320246
+],
+"text": {
+"19": [
+"5cd4a96606f0",
+"gamma"
+],
+"62": [
+"b7acda681cb7",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/4 Stars/Hemorrhaging.psd": {
+"icc": [
+0.0,
+101578
+],
+"text": {
+"19": [
+"55f71c71da4d",
+"gamma"
+],
+"23": [
+"5b0e785d05d8",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/4 Stars/Infected.psd": {
+"icc": [
+0.0001,
+115442
+],
+"text": {
+"19": [
+"47cccfb70f8d",
+"gamma"
+],
+"88": [
+"739a00d442e3",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/4 Stars/Marked For Death.psd": {
+"icc": [
+0.0,
+189349
+],
+"text": {
+"19": [
+"a48ed551a1a0",
+"gamma"
+],
+"68": [
+"496dc059f6f5",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/4 Stars/Recursion.psd": {
+"icc": [
+0.0005,
+625401
+],
+"text": {
+"19": [
+"3e060867de12",
+"gamma"
+],
+"68": [
+"94c4f90d2129",
+"gamma"
+]
+}
+},
+"Auxiliary/Status Effects/Debuffs/4 Stars/Withering.psd": {
+"icc": [
+0.0,
+87148
+],
+"text": {
+"19": [
+"dcecd7be06bc",
+"gamma"
+],
+"23": [
+"742c689d85be",
+"gamma"
+]
+}
+},
+"Creatures/BTD/4 Stars/Avatar_Of_Wrath.psd": {
+"icc": [
+0.0,
+531147
+],
+"text": {
+"417": [
+"1b92365baef1",
+"gamma"
+],
+"418": [
+"7a880675516a",
+"gamma"
+],
+"419": [
+"625497817767",
+"gamma"
+],
+"420": [
+"21f7dd8aa264",
+"gamma"
+],
+"421": [
+"eef69b9472bc",
+"gamma"
+],
+"422": [
+"2b19180fd8b5",
+"gamma"
+]
+}
+},
+"Creatures/BTD/5 Stars/Prince_Of_Darkness.psd": {
+"icc": [
+0.0,
+751737
+],
+"text": {
+"417": [
+"b640860b2d75",
+"gamma"
+],
+"418": [
+"4a89e1587cfb",
+"gamma"
+],
+"419": [
+"2352d23bba86",
+"gamma"
+],
+"420": [
+"a341093554ef",
+"gamma"
+],
+"421": [
+"0a76738083f7",
+"gamma"
+],
+"422": [
+"4a0dc6fa9187",
+"gamma"
+]
+}
+},
+"Creatures/Bug Fables/2 Stars/Spuder.psd": {
+"icc": [
+0.0,
+13602
+],
+"text": {
+"417": [
+"5c6d1cbb829a",
+"gamma"
+],
+"418": [
+"4982ba55ea7c",
+"gamma"
+],
+"419": [
+"37c956b67d14",
+"gamma"
+],
+"420": [
+"1c317c7c495e",
+"gamma"
+],
+"421": [
+"5ed147666b81",
+"gamma"
+],
+"422": [
+"058eb7e48f8e",
+"gamma"
+]
+}
+},
+"Creatures/Bug Fables/5 Stars/Tanjerin.psd": {
+"icc": [
+0.0,
+879475
+],
+"text": {
+"153": [
+"642137d15fbd",
+"gamma"
+],
+"17": [
+"d57d4b155adf",
+"gamma"
+],
+"18": [
+"7865697ae249",
+"gamma"
+],
+"20": [
+"e897454fa3ed",
+"gamma"
+],
+"21": [
+"ddc9475531a9",
+"gamma"
+],
+"8": [
+"3586c7c67d82",
+"gamma"
+]
+}
+},
+"Creatures/Crypt/2 Stars/Pot_Full_of_Spiders!.psd": {
+"icc": [
+0.0,
+408162
+],
+"text": {
+"3889": [
+"67a6ce95e5d5",
+"gamma"
+],
+"417": [
+"97833e88f59a",
+"gamma"
+],
+"418": [
+"869d53ba0de0",
+"gamma"
+],
+"419": [
+"f874032dd831",
+"gamma"
+],
+"420": [
+"8687bf05d5df",
+"gamma"
+],
+"421": [
+"f6789fa1b288",
+"gamma"
+]
+}
+},
+"Creatures/Crypt/2 Stars/Stone_Golem.psd": {
+"icc": [
+0.0,
+289546
+],
+"text": {
+"417": [
+"382130f55f29",
+"gamma"
+],
+"418": [
+"630d14944c45",
+"gamma"
+],
+"419": [
+"edf185d3c34a",
+"gamma"
+],
+"420": [
+"9a8ad32c1935",
+"gamma"
+],
+"421": [
+"c82bd62930de",
+"gamma"
+],
+"422": [
+"04551697a8ff",
+"gamma"
+]
+}
+},
+"Creatures/Crypt/4 Stars/Grief.psd": {
+"icc": [
+0.0,
+127758
+],
+"text": {
+"417": [
+"0f3cf61fb3e0",
+"gamma"
+],
+"418": [
+"869d53ba0de0",
+"gamma"
+],
+"419": [
+"f874032dd831",
+"gamma"
+],
+"420": [
+"8687bf05d5df",
+"gamma"
+],
+"421": [
+"f6789fa1b288",
+"gamma"
+],
+"422": [
+"7b3846262772",
+"gamma"
+]
+}
+},
+"Creatures/Cuphead/5 Stars/Chef_Saltbaker.psd": {
+"icc": [
+0.0,
+157257
+],
+"text": {
+"417": [
+"3412baa7f6ce",
+"gamma"
+],
+"418": [
+"f52713ac406c",
+"gamma"
+],
+"419": [
+"b4a2635089ea",
+"gamma"
+],
+"420": [
+"cfbf423aa988",
+"gamma"
+],
+"421": [
+"0733a494688e",
+"gamma"
+],
+"422": [
+"a0b9697d9e77",
+"gamma"
+]
+}
+},
+"Creatures/DST/2 Stars/Wilson.psd": {
+"icc": [
+0.0,
+58892
+],
+"text": {
+"417": [
+"670e31a3f988",
+"gamma"
+],
+"418": [
+"971cff155b5a",
+"gamma"
+],
+"419": [
+"479c0a3f7e7f",
+"gamma"
+],
+"420": [
+"1d8bd321a970",
+"gamma"
+],
+"421": [
+"8da3e3781232",
+"gamma"
+],
+"422": [
+"0c905eab3c0d",
+"gamma"
+]
+}
+},
+"Creatures/DST/3 Stars/Moose_Goose.psd": {
+"icc": [
+0.0,
+64228
+],
+"text": {
+"1511": [
+"fd3afd498af2",
+"gamma"
+],
+"1535": [
+"9437d7bb3986",
+"gamma"
+],
+"417": [
+"21f9a925d4b2",
+"gamma"
+],
+"418": [
+"4f26ed90c392",
+"gamma"
+],
+"419": [
+"1ed92eb60975",
+"gamma"
+],
+"420": [
+"c29e71c85727",
+"gamma"
+],
+"421": [
+"427fa6d4e2b9",
+"gamma"
+],
+"422": [
+"9057718d1627",
+"gamma"
+]
+}
+},
+"Creatures/DST/3 Stars/WX-78.psd": {
+"icc": [
+0.0,
+307198
+],
+"text": {
+"1432": [
+"8b308a663eda",
+"gamma"
+],
+"417": [
+"04c1213d458f",
+"gamma"
+],
+"418": [
+"4f26ed90c392",
+"gamma"
+],
+"419": [
+"1ed92eb60975",
+"gamma"
+],
+"420": [
+"c29e71c85727",
+"gamma"
+],
+"421": [
+"427fa6d4e2b9",
+"gamma"
+],
+"422": [
+"c737414c655d",
+"gamma"
+]
+}
+},
+"Creatures/DST/3 Stars/Waxwell.psd": {
+"icc": [
+0.0,
+55936
+],
+"text": {
+"1511": [
+"fd3afd498af2",
+"gamma"
+],
+"417": [
+"27ed5e9f86ce",
+"gamma"
+],
+"418": [
+"4f26ed90c392",
+"gamma"
+],
+"419": [
+"1ed92eb60975",
+"gamma"
+],
+"420": [
+"c29e71c85727",
+"gamma"
+],
+"421": [
+"427fa6d4e2b9",
+"gamma"
+],
+"422": [
+"48aaadc8b954",
+"gamma"
+]
+}
+},
+"Creatures/DST/3 Stars/Wendy.psd": {
+"icc": [
+0.0,
+34915
+],
+"text": {
+"417": [
+"3054730c30dc",
+"gamma"
+],
+"418": [
+"4f26ed90c392",
+"gamma"
+],
+"419": [
+"1ed92eb60975",
+"gamma"
+],
+"420": [
+"c29e71c85727",
+"gamma"
+],
+"421": [
+"427fa6d4e2b9",
+"gamma"
+],
+"422": [
+"527fd841bf2c",
+"gamma"
+]
+}
+},
+"Creatures/DST/3 Stars/Wickerbottom.psd": {
+"icc": [
+0.0,
+1033872
+],
+"text": {
+"1432": [
+"0ac223632772",
+"gamma"
+],
+"417": [
+"e81272b2148d",
+"gamma"
+],
+"418": [
+"4f26ed90c392",
+"gamma"
+],
+"419": [
+"1ed92eb60975",
+"gamma"
+],
+"420": [
+"c29e71c85727",
+"gamma"
+],
+"421": [
+"427fa6d4e2b9",
+"gamma"
+],
+"422": [
+"216c55f0eda0",
+"gamma"
+]
+}
+},
+"Creatures/DST/3 Stars/Wigfrid.psd": {
+"icc": [
+0.0,
+513474
+],
+"text": {
+"1432": [
+"1646f74982df",
+"gamma"
+],
+"417": [
+"a9d49ad08c62",
+"gamma"
+],
+"418": [
+"4f26ed90c392",
+"gamma"
+],
+"419": [
+"1ed92eb60975",
+"gamma"
+],
+"420": [
+"c29e71c85727",
+"gamma"
+],
+"421": [
+"427fa6d4e2b9",
+"gamma"
+]
+}
+},
+"Creatures/DST/4 Stars/Wolfgang.psd": {
+"icc": [
+0.0,
+24808
+],
+"text": {
+"1432": [
+"e5ee5a0b822a",
+"gamma"
+],
+"417": [
+"fc20fbeba92f",
+"gamma"
+],
+"418": [
+"a2e0491537ce",
+"gamma"
+],
+"419": [
+"7ad3d433fb6e",
+"gamma"
+],
+"420": [
+"ff47b569aa87",
+"gamma"
+],
+"421": [
+"9ffb2688b35c",
+"gamma"
+]
+}
+},
+"Creatures/DST/5 Stars/Ancient_Fuelweaver.psd": {
+"icc": [
+0.0,
+228492
+],
+"text": {
+"417": [
+"4964df5e9293",
+"gamma"
+],
+"418": [
+"4f26ed90c392",
+"gamma"
+],
+"419": [
+"1ed92eb60975",
+"gamma"
+],
+"420": [
+"c29e71c85727",
+"gamma"
+],
+"421": [
+"427fa6d4e2b9",
+"gamma"
+],
+"422": [
+"2995d3da8ff9",
+"gamma"
+]
+}
+},
+"Creatures/Everhood/2 Stars/Knight_Lost_A_Lot.psd": {
+"icc": [
+0.0,
+1155413
+],
+"text": {
+"2575": [
+"60ec5e974ad6",
+"gamma"
+],
+"2576": [
+"7f45d8c31ce5",
+"gamma"
+],
+"2577": [
+"edf0ba7c65eb",
+"gamma"
+],
+"417": [
+"7c13ef260339",
+"gamma"
+],
+"418": [
+"413325097ef2",
+"gamma"
+],
+"419": [
+"542ac7bdbee2",
+"gamma"
+],
+"420": [
+"f2cfe1574434",
+"gamma"
+],
+"421": [
+"af41c7f21190",
+"gamma"
+],
+"422": [
+"ef78be0c0467",
+"gamma"
+]
+}
+},
+"Creatures/Everhood/3 Stars/Zigg.psd": {
+"icc": [
+0.0,
+420096
+],
+"text": {
+"417": [
+"c7144b93b156",
+"gamma"
+],
+"418": [
+"413325097ef2",
+"gamma"
+],
+"419": [
+"542ac7bdbee2",
+"gamma"
+],
+"420": [
+"f2cfe1574434",
+"gamma"
+],
+"421": [
+"af41c7f21190",
+"gamma"
+],
+"422": [
+"2cb5b0f44915",
+"gamma"
+]
+}
+},
+"Creatures/Everhood/4 Stars/Green_Mage.psd": {
+"icc": [
+0.0,
+664251
+],
+"text": {
+"417": [
+"93b8c9a2e5b6",
+"gamma"
+],
+"418": [
+"413325097ef2",
+"gamma"
+],
+"419": [
+"542ac7bdbee2",
+"gamma"
+],
+"420": [
+"f2cfe1574434",
+"gamma"
+],
+"421": [
+"af41c7f21190",
+"gamma"
+],
+"422": [
+"13d88b5f7fdb",
+"gamma"
+]
+}
+},
+"Creatures/Everhood/4 Stars/Rasta_Beast.psd": {
+"icc": [
+0.0,
+1161968
+],
+"text": {
+"417": [
+"2b8e952f3820",
+"gamma"
+],
+"418": [
+"413325097ef2",
+"gamma"
+],
+"419": [
+"542ac7bdbee2",
+"gamma"
+],
+"420": [
+"f2cfe1574434",
+"gamma"
+],
+"421": [
+"af41c7f21190",
+"gamma"
+],
+"422": [
+"2dec4ac6259b",
+"gamma"
+]
+}
+},
+"Creatures/Everhood/5 Stars/Chris_&_Jordi.psd": {
+"icc": [
+0.0,
+880835
+],
+"text": {
+"2768": [
+"22a49b80bdcb",
+"gamma"
+],
+"2769": [
+"8b8a2f37aebf",
+"gamma"
+],
+"417": [
+"3326129e5f8f",
+"gamma"
+],
+"418": [
+"45407762f75d",
+"gamma"
+],
+"419": [
+"76feb844bf98",
+"gamma"
+],
+"420": [
+"f2cfe1574434",
+"gamma"
+],
+"421": [
+"96fa83fd8dd5",
+"gamma"
+],
+"422": [
+"12739fac1dce",
+"gamma"
+]
+}
+},
+"Creatures/Everhood/5 Stars/Frog.psd": {
+"icc": [
+0.0,
+447802
+],
+"text": {
+"417": [
+"38deb00005d1",
+"gamma"
+],
+"418": [
+"413325097ef2",
+"gamma"
+],
+"419": [
+"542ac7bdbee2",
+"gamma"
+],
+"420": [
+"f2cfe1574434",
+"gamma"
+],
+"421": [
+"af41c7f21190",
+"gamma"
+],
+"422": [
+"5ef1f1429ac9",
+"gamma"
+]
+}
+},
+"Creatures/FTL/2 Stars/Mantis.psd": {
+"icc": [
+1.0,
+310893
+],
+"text": {
+"417": [
+"db484d00ace7",
+"gamma"
+],
+"418": [
+"62e4f2d32939",
+"gamma"
+],
+"419": [
+"2edb658eeb3a",
+"gamma"
+],
+"420": [
+"8fda9bb7018d",
+"gamma"
+],
+"421": [
+"d76a1419d1eb",
+"gamma"
+],
+"422": [
+"18a69f046822",
+"gamma"
+]
+}
+},
+"Creatures/FTL/2 Stars/Zoltan.psd": {
+"icc": [
+0.0,
+400443
+],
+"text": {
+"417": [
+"9e64d00d5cb8",
+"gamma"
+],
+"418": [
+"62e4f2d32939",
+"gamma"
+],
+"419": [
+"2edb658eeb3a",
+"gamma"
+],
+"420": [
+"8fda9bb7018d",
+"gamma"
+],
+"421": [
+"d76a1419d1eb",
+"gamma"
+],
+"422": [
+"146baced0636",
+"gamma"
+]
+}
+},
+"Creatures/FTL/4 Stars/Glaive_Main_Cannon.psd": {
+"icc": [
+0.0,
+405606
+],
+"text": {
+"417": [
+"fcb9441a3880",
+"gamma"
+],
+"418": [
+"c08ae12cb836",
+"gamma"
+],
+"419": [
+"f872e43f8063",
+"gamma"
+],
+"420": [
+"69936b3dabff",
+"gamma"
+],
+"421": [
+"041455e3da8e",
+"gamma"
+],
+"422": [
+"a3767a8cb7da",
+"gamma"
+]
+}
+},
+"Creatures/FTL/4 Stars/The_Kestrel.psd": {
+"icc": [
+0.0,
+132707
+],
+"text": {
+"417": [
+"65319bb48899",
+"gamma"
+],
+"418": [
+"f64d544e097f",
+"gamma"
+],
+"419": [
+"f9264e5dbd3d",
+"gamma"
+],
+"420": [
+"033285c65062",
+"gamma"
+],
+"421": [
+"5309ff47199d",
+"gamma"
+],
+"422": [
+"7fae546b0fd7",
+"gamma"
+]
+}
+},
+"Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd": {
+"icc": [
+0.0,
+356760
+],
+"text": {
+"1533": [
+"6f374acf8239",
+"gamma"
+],
+"1535": [
+"b273c60a0e3f",
+"gamma"
+],
+"417": [
+"a903cb3d18c8",
+"gamma"
+],
+"418": [
+"1f9e25d250a9",
+"gamma"
+],
+"419": [
+"aa73d5c947e5",
+"gamma"
+],
+"420": [
+"d91f3356d39e",
+"gamma"
+],
+"421": [
+"731c8e1d638f",
+"gamma"
+],
+"422": [
+"f56854268078",
+"gamma"
+]
+}
+},
+"Creatures/Fnaf/3 Stars/Balloon_Boy.psd": {
+"icc": [
+0.0,
+39413
+],
+"text": {
+"215": [
+"d31adcfaef56",
+"gamma"
+],
+"321": [
+"f1dee359c8be",
+"gamma"
+],
+"37": [
+"02c5fb65e138",
+"gamma"
+],
+"95": [
+"f28dfcbb6960",
+"gamma"
+],
+"96": [
+"b4eb26d974ea",
+"gamma"
+],
+"97": [
+"ec00c6c37cca",
+"gamma"
+]
+}
+},
+"Creatures/Fnaf/3 Stars/Mangle.psd": {
+"icc": [
+0.0,
+30147
+],
+"text": {
+"215": [
+"81e830604068",
+"gamma"
+],
+"321": [
+"813bbcd817f7",
+"gamma"
+],
+"37": [
+"cf43613b865d",
+"gamma"
+],
+"95": [
+"a81633209d78",
+"gamma"
+],
+"96": [
+"deebcca6e4a4",
+"gamma"
+],
+"97": [
+"0f55b32e1056",
+"gamma"
+]
+}
+},
+"Creatures/Fnaf/3 Stars/Toy_Bonnie.psd": {
+"icc": [
+0.0,
+169659
+],
+"text": {
+"215": [
+"52c07ba99963",
+"gamma"
+],
+"321": [
+"c15b945450f4",
+"gamma"
+],
+"37": [
+"02c5fb65e138",
+"gamma"
+],
+"95": [
+"f28dfcbb6960",
+"gamma"
+],
+"96": [
+"b4eb26d974ea",
+"gamma"
+],
+"97": [
+"ec00c6c37cca",
+"gamma"
+]
+}
+},
+"Creatures/Fnaf/3 Stars/Toy_Chica.psd": {
+"icc": [
+0.0,
+187758
+],
+"text": {
+"215": [
+"7fd296d18a52",
+"gamma"
+],
+"321": [
+"8e76d825ac71",
+"gamma"
+],
+"37": [
+"02c5fb65e138",
+"gamma"
+],
+"95": [
+"f28dfcbb6960",
+"gamma"
+],
+"96": [
+"b4eb26d974ea",
+"gamma"
+],
+"97": [
+"ec00c6c37cca",
+"gamma"
+]
+}
+},
+"Creatures/Fnaf/3 Stars/Toy_Freddy.psd": {
+"icc": [
+0.0,
+217666
+],
+"text": {
+"215": [
+"a857c284301d",
+"gamma"
+],
+"321": [
+"f7f10a86b4fe",
+"gamma"
+],
+"37": [
+"02c5fb65e138",
+"gamma"
+],
+"95": [
+"f28dfcbb6960",
+"gamma"
+],
+"96": [
+"b4eb26d974ea",
+"gamma"
+],
+"97": [
+"ec00c6c37cca",
+"gamma"
+]
+}
+},
+"Creatures/Fnaf/4 Stars/Old_Bonnie.psd": {
+"icc": [
+0.0,
+51711
+],
+"text": {
+"215": [
+"81f67dd0580b",
+"gamma"
+],
+"321": [
+"2164b97eda17",
+"gamma"
+],
+"37": [
+"02c5fb65e138",
+"gamma"
+],
+"95": [
+"f28dfcbb6960",
+"gamma"
+],
+"96": [
+"b4eb26d974ea",
+"gamma"
+],
+"97": [
+"ec00c6c37cca",
+"gamma"
+]
+}
+},
+"Creatures/Fnaf/4 Stars/Old_Chica.psd": {
+"icc": [
+0.0,
+516592
+],
+"text": {
+"215": [
+"cf6c76fe7d83",
+"gamma"
+],
+"321": [
+"09b36df46f98",
+"gamma"
+],
+"37": [
+"02c5fb65e138",
+"gamma"
+],
+"95": [
+"f28dfcbb6960",
+"gamma"
+],
+"96": [
+"b4eb26d974ea",
+"gamma"
+],
+"97": [
+"ec00c6c37cca",
+"gamma"
+]
+}
+},
+"Creatures/Fnaf/4 Stars/Old_Foxy.psd": {
+"icc": [
+0.0,
+258422
+],
+"text": {
+"215": [
+"1b5bafc8d372",
+"gamma"
+],
+"321": [
+"738250f824f0",
+"gamma"
+],
+"37": [
+"02c5fb65e138",
+"gamma"
+],
+"95": [
+"f28dfcbb6960",
+"gamma"
+],
+"96": [
+"b4eb26d974ea",
+"gamma"
+],
+"97": [
+"ec00c6c37cca",
+"gamma"
+]
+}
+},
+"Creatures/Fnaf/4 Stars/Old_Freddy.psd": {
+"icc": [
+0.0,
+179372
+],
+"text": {
+"215": [
+"18a6145a5d80",
+"gamma"
+],
+"321": [
+"da2da7fb441b",
+"gamma"
+],
+"37": [
+"4c141142e1f2",
+"gamma"
+],
+"95": [
+"ca1dc4941506",
+"gamma"
+],
+"96": [
+"6c2b34334664",
+"gamma"
+],
+"97": [
+"259382b3cec2",
+"gamma"
+]
+}
+},
+"Creatures/Fnaf/5 Stars/Golden_Freddy.psd": {
+"icc": [
+0.0,
+331163
+],
+"text": {
+"417": [
+"b82b8013323e",
+"gamma"
+],
+"418": [
+"0b99f6da1da3",
+"gamma"
+],
+"419": [
+"84f844034637",
+"gamma"
+],
+"420": [
+"fda66fea1d19",
+"gamma"
+],
+"421": [
+"558345a807c5",
+"gamma"
+],
+"422": [
+"1c17931b61ea",
+"gamma"
+]
+}
+},
+"Creatures/Fnaf/5 Stars/The_Man_Behind_The_Slaughter.psd": {
+"icc": [
+0.0,
+277326
+],
+"text": {
+"417": [
+"b8942134ae29",
+"gamma"
+],
+"418": [
+"2d29fc91473f",
+"gamma"
+],
+"419": [
+"6af0a0945412",
+"gamma"
+],
+"420": [
+"4fa7947dcbb0",
+"gamma"
+],
+"421": [
+"166754cfcf18",
+"gamma"
+],
+"422": [
+"47ff1560064b",
+"gamma"
+]
+}
+},
+"Creatures/Fnaf/5 Stars/The_Puppet.psd": {
+"icc": [
+0.0001,
+314140
+],
+"text": {
+"417": [
+"e1478b2feecf",
+"gamma"
+],
+"418": [
+"015ac64343cd",
+"gamma"
+],
+"419": [
+"6a6f78fc5ef9",
+"gamma"
+],
+"420": [
+"ff13be2a91e1",
+"gamma"
+],
+"421": [
+"adfb09103dc0",
+"gamma"
+],
+"422": [
+"47e617af223e",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight Silksong/4 Stars/Shakra.psd": {
+"icc": [
+0.0,
+575004
+],
+"text": {
+"3892": [
+"10ea716f52fd",
+"gamma"
+],
+"3893": [
+"c386cca93e66",
+"gamma"
+],
+"3894": [
+"61a459f7c374",
+"gamma"
+],
+"3895": [
+"c9ff690d3bdd",
+"gamma"
+],
+"3896": [
+"35ace247f917",
+"gamma"
+],
+"3897": [
+"fcf90cab2895",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/2 Stars/Crystal_Guardian.psd": {
+"icc": [
+0.0,
+108239
+],
+"text": {
+"417": [
+"c5e3dbd6403e",
+"gamma"
+],
+"418": [
+"22c28e02dd48",
+"gamma"
+],
+"419": [
+"e0c07faf52a7",
+"gamma"
+],
+"420": [
+"d17d7b89084b",
+"gamma"
+],
+"421": [
+"6e3cd5802b0a",
+"gamma"
+],
+"422": [
+"276b6b88ae4a",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/2 Stars/False_Knight.psd": {
+"icc": [
+0.0,
+53317
+],
+"text": {
+"215": [
+"a7cab5eacb13",
+"gamma"
+],
+"303": [
+"d63b45d977c2",
+"gamma"
+],
+"37": [
+"56616a10671e",
+"gamma"
+],
+"95": [
+"4a2ff1dec9bf",
+"gamma"
+],
+"96": [
+"570f99da5f68",
+"gamma"
+],
+"97": [
+"18b9ad3a7fd0",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/3 Stars/Dung_Defender.psd": {
+"icc": [
+0.0,
+95466
+],
+"text": {
+"417": [
+"99de047c3bd9",
+"gamma"
+],
+"418": [
+"54511c4bedf6",
+"gamma"
+],
+"419": [
+"940b8d4e2e42",
+"gamma"
+],
+"420": [
+"1576196de6e9",
+"gamma"
+],
+"421": [
+"6672b22dfc75",
+"gamma"
+],
+"422": [
+"951ab3d828a8",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/3 Stars/Hive_Knight.psd": {
+"icc": [
+0.0,
+802117
+],
+"text": {
+"215": [
+"5af30cbe61ba",
+"gamma"
+],
+"303": [
+"c049fa102f2c",
+"gamma"
+],
+"37": [
+"73942424e8e9",
+"gamma"
+],
+"95": [
+"3b756b6abba8",
+"gamma"
+],
+"96": [
+"68c7ea654498",
+"gamma"
+],
+"97": [
+"30d5837a43a7",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/3 Stars/Mantis_Lords.psd": {
+"icc": [
+0.0,
+71615
+],
+"text": {
+"417": [
+"6193906d8758",
+"gamma"
+],
+"419": [
+"e0c07faf52a7",
+"gamma"
+],
+"420": [
+"d17d7b89084b",
+"gamma"
+],
+"421": [
+"6e3cd5802b0a",
+"gamma"
+],
+"422": [
+"63fc9725061e",
+"gamma"
+],
+"746": [
+"22c28e02dd48",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/3 Stars/Markoth.psd": {
+"icc": [
+0.0,
+121638
+],
+"text": {
+"417": [
+"5ce352ae691f",
+"gamma"
+],
+"418": [
+"cc6ece33761c",
+"gamma"
+],
+"419": [
+"fb8046e7a726",
+"gamma"
+],
+"420": [
+"8c2690807ac1",
+"gamma"
+],
+"421": [
+"cc9257145247",
+"gamma"
+],
+"422": [
+"eca3873d1234",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/3 Stars/The_Beast.psd": {
+"icc": [
+0.0,
+92865
+],
+"text": {
+"215": [
+"b797233794c0",
+"gamma"
+],
+"303": [
+"803c863109c8",
+"gamma"
+],
+"37": [
+"3d5c4036de34",
+"gamma"
+],
+"95": [
+"2487cc54ad87",
+"gamma"
+],
+"96": [
+"66735eb790a0",
+"gamma"
+],
+"97": [
+"3d6ad0663ac2",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/3 Stars/The_Collector.psd": {
+"icc": [
+0.0,
+573416
+],
+"text": {
+"417": [
+"8b79c9438dcd",
+"gamma"
+],
+"418": [
+"cc6ece33761c",
+"gamma"
+],
+"419": [
+"fb8046e7a726",
+"gamma"
+],
+"420": [
+"8c2690807ac1",
+"gamma"
+],
+"421": [
+"cc9257145247",
+"gamma"
+],
+"422": [
+"dc48b640721b",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/3 Stars/Uumuu.psd": {
+"icc": [
+0.0,
+236370
+],
+"text": {
+"215": [
+"2fbb886fc777",
+"gamma"
+],
+"303": [
+"18dadc13162c",
+"gamma"
+],
+"37": [
+"ef56b96526ad",
+"gamma"
+],
+"95": [
+"a7fd238f72d5",
+"gamma"
+],
+"96": [
+"4f28152a0186",
+"gamma"
+],
+"97": [
+"a337690359be",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/4 Stars/Dryya.psd": {
+"icc": [
+0.0,
+3220
+],
+"text": {
+"417": [
+"e9e2f49a6588",
+"gamma"
+],
+"418": [
+"f8c278fbeada",
+"gamma"
+],
+"419": [
+"b7fa90197f88",
+"gamma"
+],
+"420": [
+"112c3e5e6c43",
+"gamma"
+],
+"421": [
+"9aaad3758f11",
+"gamma"
+],
+"422": [
+"7f63f7ab4c52",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/4 Stars/Grey_Prince_Zote.psd": {
+"icc": [
+0.0,
+31544
+],
+"text": {
+"303": [
+"cf1e7d66cc4b",
+"gamma"
+],
+"37": [
+"4852c744c22f",
+"gamma"
+],
+"95": [
+"f6a5bbf135f8",
+"gamma"
+],
+"96": [
+"b7f47a31ff1c",
+"gamma"
+],
+"97": [
+"856813e76dc0",
+"gamma"
+],
+"978": [
+"222f66f4e8c8",
+"gamma"
+],
+"979": [
+"69d63be3f5ae",
+"gamma"
+],
+"980": [
+"893064bce718",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/4 Stars/Hegemol.psd": {
+"icc": [
+0.0,
+0
+],
+"text": {
+"417": [
+"7e3a7ba7a021",
+"gamma"
+],
+"418": [
+"54511c4bedf6",
+"gamma"
+],
+"419": [
+"940b8d4e2e42",
+"gamma"
+],
+"420": [
+"1576196de6e9",
+"gamma"
+],
+"421": [
+"6672b22dfc75",
+"gamma"
+],
+"422": [
+"3b38929143a3",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/4 Stars/Hornet.psd": {
+"icc": [
+0.0,
+50622
+],
+"text": {
+"417": [
+"177ec1cd00bd",
+"gamma"
+],
+"418": [
+"c9ff690d3bdd",
+"gamma"
+],
+"419": [
+"61a459f7c374",
+"gamma"
+],
+"420": [
+"c386cca93e66",
+"gamma"
+],
+"421": [
+"88c4dba81ece",
+"gamma"
+],
+"422": [
+"c10e08f2bfcb",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/4 Stars/Isma.psd": {
+"icc": [
+0.0,
+1144192
+],
+"text": {
+"417": [
+"ff5b4b235615",
+"gamma"
+],
+"418": [
+"cc6ece33761c",
+"gamma"
+],
+"419": [
+"fb8046e7a726",
+"gamma"
+],
+"420": [
+"8c2690807ac1",
+"gamma"
+],
+"421": [
+"cc9257145247",
+"gamma"
+],
+"422": [
+"11adc244f10b",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/4 Stars/Lost_Kin.psd": {
+"icc": [
+0.0,
+1154791
+],
+"text": {
+"417": [
+"a56723db67e3",
+"gamma"
+],
+"418": [
+"f8c278fbeada",
+"gamma"
+],
+"419": [
+"b7fa90197f88",
+"gamma"
+],
+"420": [
+"112c3e5e6c43",
+"gamma"
+],
+"421": [
+"9aaad3758f11",
+"gamma"
+],
+"422": [
+"5baa3586868f",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/4 Stars/Nailsage_Sly.psd": {
+"icc": [
+0.0,
+10400
+],
+"text": {
+"215": [
+"cad7c8180ff4",
+"gamma"
+],
+"303": [
+"cac7cbced2b9",
+"gamma"
+],
+"37": [
+"29564d1c99a7",
+"gamma"
+],
+"95": [
+"33d16dca381a",
+"gamma"
+],
+"96": [
+"e0a6630ea2f3",
+"gamma"
+],
+"97": [
+"c547085ad11e",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/4 Stars/Nosk.psd": {
+"icc": [
+0.0,
+246917
+],
+"text": {
+"215": [
+"8294a355072e",
+"gamma"
+],
+"303": [
+"8a3d52cededb",
+"gamma"
+],
+"37": [
+"76f81718382c",
+"gamma"
+],
+"95": [
+"23de9c1883bb",
+"gamma"
+],
+"96": [
+"2277984e63cf",
+"gamma"
+],
+"97": [
+"318d250c63a2",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/4 Stars/Soul_Master.psd": {
+"icc": [
+0.0,
+8259
+],
+"text": {
+"215": [
+"ee584d68126a",
+"gamma"
+],
+"303": [
+"58043a4156d6",
+"gamma"
+],
+"37": [
+"89a16e386a00",
+"gamma"
+],
+"95": [
+"7d5c7b6071f2",
+"gamma"
+],
+"96": [
+"93e9af8c674f",
+"gamma"
+],
+"97": [
+"a5ff0666c007",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/4 Stars/Traitor_Lord.psd": {
+"icc": [
+0.0,
+178282
+],
+"text": {
+"215": [
+"11844e221f28",
+"gamma"
+],
+"303": [
+"601c07113517",
+"gamma"
+],
+"37": [
+"9bca08052f0b",
+"gamma"
+],
+"95": [
+"c0fed2a858ca",
+"gamma"
+],
+"96": [
+"570f99da5f68",
+"gamma"
+],
+"97": [
+"fa80d4ed2e49",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/4 Stars/White Defender.psd": {
+"icc": [
+0.0,
+28253
+],
+"text": {
+"417": [
+"c73563843120",
+"gamma"
+],
+"418": [
+"f8c278fbeada",
+"gamma"
+],
+"419": [
+"b7fa90197f88",
+"gamma"
+],
+"420": [
+"112c3e5e6c43",
+"gamma"
+],
+"421": [
+"9aaad3758f11",
+"gamma"
+],
+"422": [
+"46e31f009672",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/5 Stars/Nightmare_King_Grimm.psd": {
+"icc": [
+0.0001,
+120147
+],
+"text": {
+"417": [
+"79f510ff5406",
+"gamma"
+],
+"418": [
+"54511c4bedf6",
+"gamma"
+],
+"419": [
+"940b8d4e2e42",
+"gamma"
+],
+"420": [
+"1576196de6e9",
+"gamma"
+],
+"421": [
+"6672b22dfc75",
+"gamma"
+],
+"422": [
+"10426e5fed00",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/5 Stars/Pure_Vessel.psd": {
+"icc": [
+0.0,
+23133
+],
+"text": {
+"418": [
+"22c28e02dd48",
+"gamma"
+],
+"419": [
+"e0c07faf52a7",
+"gamma"
+],
+"420": [
+"d17d7b89084b",
+"gamma"
+],
+"421": [
+"6e3cd5802b0a",
+"gamma"
+],
+"541": [
+"af031eea7ec5",
+"gamma"
+],
+"672": [
+"9c71dea6d4a4",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/5 Stars/The_Radiance.psd": {
+"icc": [
+0.0011,
+432479
+],
+"text": {
+"418": [
+"22c28e02dd48",
+"gamma"
+],
+"419": [
+"e0c07faf52a7",
+"gamma"
+],
+"420": [
+"d17d7b89084b",
+"gamma"
+],
+"421": [
+"6e3cd5802b0a",
+"gamma"
+],
+"422": [
+"ab3022da4e70",
+"gamma"
+],
+"541": [
+"7d43280121ee",
+"gamma"
+]
+}
+},
+"Creatures/Hollow Knight/5 Stars/Ze'mer.psd": {
+"icc": [
+0.0,
+14491
+],
+"text": {
+"417": [
+"fbde2820143d",
+"gamma"
+],
+"418": [
+"a32763b69c80",
+"gamma"
+],
+"419": [
+"de4f8e046d65",
+"gamma"
+],
+"420": [
+"8ffcefbde0f9",
+"gamma"
+],
+"421": [
+"c33eb7b43b4e",
+"gamma"
+],
+"422": [
+"76c7bd829eee",
+"gamma"
+]
+}
+},
+"Creatures/In Sound Mind/2 Stars/Helpful_Mannequin.psd": {
+"icc": [
+0.0,
+5090
+],
+"text": {
+"417": [
+"7188dc198f1e",
+"gamma"
+],
+"418": [
+"2b028798dca7",
+"gamma"
+],
+"419": [
+"00195dc1f067",
+"gamma"
+],
+"420": [
+"084c060833cc",
+"gamma"
+],
+"421": [
+"405d3278c3f6",
+"gamma"
+],
+"422": [
+"1c1bbc06ae8a",
+"gamma"
+]
+}
+},
+"Creatures/In Sound Mind/3 Stars/The_Shade.psd": {
+"icc": [
+0.0,
+105210
+],
+"text": {
+"417": [
+"49c5a7ceed12",
+"gamma"
+],
+"418": [
+"2b028798dca7",
+"gamma"
+],
+"419": [
+"00195dc1f067",
+"gamma"
+],
+"420": [
+"084c060833cc",
+"gamma"
+],
+"421": [
+"405d3278c3f6",
+"gamma"
+],
+"422": [
+"217dc0195e8d",
+"gamma"
+]
+}
+},
+"Creatures/In Sound Mind/3 Stars/The_Watcher.psd": {
+"icc": [
+0.0,
+658098
+],
+"text": {
+"417": [
+"df17f936d7e6",
+"gamma"
+],
+"418": [
+"d7a69ed1a2c4",
+"gamma"
+],
+"419": [
+"14d989560106",
+"gamma"
+],
+"420": [
+"a809bbf16e27",
+"gamma"
+],
+"421": [
+"d7284ebe1ecb",
+"gamma"
+],
+"422": [
+"601ab65255ba",
+"gamma"
+]
+}
+},
+"Creatures/In Sound Mind/4 Stars/The_Bull.psd": {
+"icc": [
+0.0,
+782854
+],
+"text": {
+"417": [
+"2d213111f968",
+"gamma"
+],
+"418": [
+"2b028798dca7",
+"gamma"
+],
+"419": [
+"ffc3923fefc5",
+"gamma"
+],
+"420": [
+"084c060833cc",
+"gamma"
+],
+"421": [
+"405d3278c3f6",
+"gamma"
+],
+"422": [
+"79212ccea68e",
+"gamma"
+]
+}
+},
+"Creatures/In Sound Mind/4 Stars/The_Flash.psd": {
+"icc": [
+0.0,
+67315
+],
+"text": {
+"417": [
+"bace8e510300",
+"gamma"
+],
+"418": [
+"2b028798dca7",
+"gamma"
+],
+"419": [
+"ffc3923fefc5",
+"gamma"
+],
+"420": [
+"084c060833cc",
+"gamma"
+],
+"421": [
+"405d3278c3f6",
+"gamma"
+],
+"422": [
+"8cb6682f07ce",
+"gamma"
+]
+}
+},
+"Creatures/Isaac/2 Stars/Tainted_Eden.psd": {
+"icc": [
+0.0,
+178855
+],
+"text": {
+"3816": [
+"b9eb65ac28a6",
+"gamma"
+],
+"3817": [
+"0274d21a4804",
+"gamma"
+],
+"3818": [
+"e7140095fb05",
+"gamma"
+],
+"3819": [
+"acbb9a63f85a",
+"gamma"
+],
+"3822": [
+"b9eb65ac28a6",
+"gamma"
+],
+"3823": [
+"0274d21a4804",
+"gamma"
+],
+"3824": [
+"e7140095fb05",
+"gamma"
+],
+"3825": [
+"acbb9a63f85a",
+"gamma"
+],
+"4011": [
+"3719996dce2b",
+"gamma"
+],
+"4012": [
+"3719996dce2b",
+"gamma"
+],
+"417": [
+"bb93fa3a8bc0",
+"gamma"
+],
+"418": [
+"acbb9a63f85a",
+"gamma"
+],
+"419": [
+"0274d21a4804",
+"gamma"
+],
+"420": [
+"e7140095fb05",
+"gamma"
+],
+"421": [
+"b9eb65ac28a6",
+"gamma"
+],
+"422": [
+"3719996dce2b",
+"gamma"
+]
+}
+},
+"Creatures/Isaac/2 Stars/Tainted_Lost.psd": {
+"icc": [
+0.0,
+128620
+],
+"text": {
+"417": [
+"64b9247ed94d",
+"gamma"
+],
+"418": [
+"acbb9a63f85a",
+"gamma"
+],
+"419": [
+"0274d21a4804",
+"gamma"
+],
+"420": [
+"e7140095fb05",
+"gamma"
+],
+"421": [
+"b9eb65ac28a6",
+"gamma"
+],
+"422": [
+"62cb78868a31",
+"gamma"
+]
+}
+},
+"Creatures/Isaac/3 Stars/Tainted_Isaac.psd": {
+"icc": [
+0.0,
+183192
+],
+"text": {
+"417": [
+"5236f833cf2c",
+"gamma"
+],
+"418": [
+"acbb9a63f85a",
+"gamma"
+],
+"419": [
+"0274d21a4804",
+"gamma"
+],
+"420": [
+"e7140095fb05",
+"gamma"
+],
+"421": [
+"b9eb65ac28a6",
+"gamma"
+],
+"422": [
+"8bc337de7457",
+"gamma"
+]
+}
+},
+"Creatures/Isaac/3 Stars/Tainted_Jacob.psd": {
+"icc": [
+0.0,
+83017
+],
+"text": {
+"417": [
+"71cfc86ba7ca",
+"gamma"
+],
+"418": [
+"acbb9a63f85a",
+"gamma"
+],
+"419": [
+"0274d21a4804",
+"gamma"
+],
+"420": [
+"e7140095fb05",
+"gamma"
+],
+"421": [
+"b9eb65ac28a6",
+"gamma"
+],
+"422": [
+"ebab894b414a",
+"gamma"
+]
+}
+},
+"Creatures/Isaac/3 Stars/Tainted_Lazarus.psd": {
+"icc": [
+0.0,
+190705
+],
+"text": {
+"3421": [
+"c4bbf56b1933",
+"gamma"
+],
+"3422": [
+"b2b51a79b204",
+"gamma"
+],
+"3423": [
+"39eb69f1d3be",
+"gamma"
+],
+"3424": [
+"fb1353f3a79a",
+"gamma"
+],
+"3426": [
+"bd8c0c835e2e",
+"gamma"
+],
+"3427": [
+"c4897c2bc1dc",
+"gamma"
+],
+"416": [
+"d3d3ad0ac23e",
+"gamma"
+],
+"418": [
+"9d999fcb01a0",
+"gamma"
+],
+"419": [
+"70508a662b9d",
+"gamma"
+],
+"420": [
+"9ab362cc5f29",
+"gamma"
+],
+"421": [
+"8aade8a4f14f",
+"gamma"
+],
+"422": [
+"c078b5a8ff73",
+"gamma"
+]
+}
+},
+"Creatures/Isaac/3 Stars/Tainted_Lilith.psd": {
+"icc": [
+0.0,
+133275
+],
+"text": {
+"417": [
+"af808d226036",
+"gamma"
+],
+"418": [
+"acbb9a63f85a",
+"gamma"
+],
+"419": [
+"0274d21a4804",
+"gamma"
+],
+"420": [
+"e7140095fb05",
+"gamma"
+],
+"421": [
+"b9eb65ac28a6",
+"gamma"
+],
+"422": [
+"c042da68a61b",
+"gamma"
+]
+}
+},
+"Creatures/Isaac/3 Stars/Tainted_Magdalene.psd": {
+"icc": [
+0.0,
+430621
+],
+"text": {
+"417": [
+"8418fdb5c7cb",
+"gamma"
+],
+"418": [
+"acbb9a63f85a",
+"gamma"
+],
+"419": [
+"0274d21a4804",
+"gamma"
+],
+"420": [
+"e7140095fb05",
+"gamma"
+],
+"421": [
+"b9eb65ac28a6",
+"gamma"
+],
+"422": [
+"e961869a5bf5",
+"gamma"
+]
+}
+},
+"Creatures/Isaac/4 Stars/Dogma.psd": {
+"icc": [
+0.0,
+8646
+],
+"text": {
+"417": [
+"6cb88762e704",
+"gamma"
+],
+"418": [
+"acbb9a63f85a",
+"gamma"
+],
+"419": [
+"0274d21a4804",
+"gamma"
+],
+"420": [
+"e7140095fb05",
+"gamma"
+],
+"421": [
+"b9eb65ac28a6",
+"gamma"
+],
+"422": [
+"856885096b1a",
+"gamma"
+]
+}
+},
+"Creatures/Isaac/4 Stars/Tainted_Bethany.psd": {
+"icc": [
+0.0,
+450181
+],
+"text": {
+"417": [
+"6036f85613a4",
+"gamma"
+],
+"418": [
+"acbb9a63f85a",
+"gamma"
+],
+"419": [
+"0274d21a4804",
+"gamma"
+],
+"420": [
+"e7140095fb05",
+"gamma"
+],
+"421": [
+"b9eb65ac28a6",
+"gamma"
+],
+"422": [
+"fd4f4dc14d6d",
+"gamma"
+]
+}
+},
+"Creatures/Isaac/4 Stars/Tainted_Eve.psd": {
+"icc": [
+0.0,
+101231
+],
+"text": {
+"417": [
+"72860093a0e4",
+"gamma"
+],
+"418": [
+"acbb9a63f85a",
+"gamma"
+],
+"419": [
+"0274d21a4804",
+"gamma"
+],
+"420": [
+"e7140095fb05",
+"gamma"
+],
+"421": [
+"b9eb65ac28a6",
+"gamma"
+],
+"422": [
+"80000f621bbc",
+"gamma"
+]
+}
+},
+"Creatures/Isaac/4 Stars/Tainted_Forgotten.psd": {
+"icc": [
+0.0,
+139059
+],
+"text": {
+"417": [
+"e80730e8e9f3",
+"gamma"
+],
+"418": [
+"acbb9a63f85a",
+"gamma"
+],
+"419": [
+"0274d21a4804",
+"gamma"
+],
+"420": [
+"e7140095fb05",
+"gamma"
+],
+"421": [
+"b9eb65ac28a6",
+"gamma"
+],
+"422": [
+"7add08e7ba4f",
+"gamma"
+]
+}
+},
+"Creatures/Isaac/4 Stars/Tainted_Keeper.psd": {
+"icc": [
+0.0,
+371309
+],
+"text": {
+"417": [
+"7c9aacb56020",
+"gamma"
+],
+"418": [
+"acbb9a63f85a",
+"gamma"
+],
+"419": [
+"0274d21a4804",
+"gamma"
+],
+"420": [
+"e7140095fb05",
+"gamma"
+],
+"421": [
+"b9eb65ac28a6",
+"gamma"
+],
+"422": [
+"14a73cbfe705",
+"gamma"
+]
+}
+},
+"Creatures/Isaac/5 Stars/Tainted_Cain.psd": {
+"icc": [
+0.0,
+101678
+],
+"text": {
+"417": [
+"4cedaba53bcb",
+"gamma"
+],
+"418": [
+"acbb9a63f85a",
+"gamma"
+],
+"419": [
+"0274d21a4804",
+"gamma"
+],
+"420": [
+"e7140095fb05",
+"gamma"
+],
+"421": [
+"b9eb65ac28a6",
+"gamma"
+],
+"422": [
+"ee39027425ec",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/2 Stars/Acro.psd": {
+"icc": [
+0.0,
+174361
+],
+"text": {
+"417": [
+"c57230f42b75",
+"gamma"
+],
+"418": [
+"34bc584e7eb9",
+"gamma"
+],
+"419": [
+"27b53b28b854",
+"gamma"
+],
+"420": [
+"d3cffcbff73b",
+"gamma"
+],
+"421": [
+"97549496a7da",
+"gamma"
+],
+"422": [
+"9202c23169c0",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/2 Stars/Whispy_Woods.psd": {
+"icc": [
+0.0,
+1322467
+],
+"text": {
+"417": [
+"63337e0fd6e2",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"621": [
+"1b6f64d99445",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Computer_Virus.psd": {
+"icc": [
+0.0,
+425061
+],
+"text": {
+"422": [
+"e81130bab22c",
+"gamma"
+],
+"891": [
+"01039604c639",
+"gamma"
+],
+"983": [
+"e8b4694b2232",
+"gamma"
+],
+"989": [
+"6fcc4f6aa080",
+"gamma"
+],
+"992": [
+"02fd7eba19ab",
+"gamma"
+],
+"993": [
+"5296cc2a59fe",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Dark_Matter_Swordsman.psd": {
+"icc": [
+0.0,
+149042
+],
+"text": {
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"6b6e70162115",
+"gamma"
+],
+"578": [
+"5cb9ff3016b3",
+"gamma"
+],
+"596": [
+"2b18f8f9a7c0",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Dark_matter.psd": {
+"icc": [
+0.0,
+654294
+],
+"text": {
+"215": [
+"4592deb072ef",
+"gamma"
+],
+"303": [
+"e2dc540fa303",
+"gamma"
+],
+"37": [
+"01cc4b72550b",
+"gamma"
+],
+"95": [
+"85654447fc77",
+"gamma"
+],
+"96": [
+"b38a4dbe197e",
+"gamma"
+],
+"97": [
+"2027989f329d",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Daroach.psd": {
+"icc": [
+0.0,
+96936
+],
+"text": {
+"417": [
+"efc5c1dad583",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"1d80c2e3f201",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Doc.psd": {
+"icc": [
+0.0,
+322594
+],
+"text": {
+"417": [
+"12698f791dd9",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"9547c27f4b27",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Drawcia.psd": {
+"icc": [
+0.0,
+282164
+],
+"text": {
+"417": [
+"bdc10fbd391d",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"4222f052b70f",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Fatty_Whale.psd": {
+"icc": [
+0.0005,
+1188400
+],
+"text": {
+"417": [
+"1091fcc17729",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"eb55ceb9b3ef",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Final_Dark_Mind_Eye.psd": {
+"icc": [
+0.0,
+2035440
+],
+"text": {
+"417": [
+"855301eaa749",
+"gamma"
+],
+"418": [
+"34bc584e7eb9",
+"gamma"
+],
+"419": [
+"27b53b28b854",
+"gamma"
+],
+"420": [
+"d3cffcbff73b",
+"gamma"
+],
+"421": [
+"97549496a7da",
+"gamma"
+],
+"422": [
+"bdd4e01b3022",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Halberd_Main_Cannon.psd": {
+"icc": [
+0.0008,
+777109
+],
+"text": {
+"417": [
+"f5c74f22e7aa",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"8b6aa16e74f6",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Halberd_Reactor.psd": {
+"icc": [
+0.0,
+193307
+],
+"text": {
+"417": [
+"353975bad78d",
+"gamma"
+],
+"418": [
+"34bc584e7eb9",
+"gamma"
+],
+"419": [
+"27b53b28b854",
+"gamma"
+],
+"420": [
+"d3cffcbff73b",
+"gamma"
+],
+"421": [
+"97549496a7da",
+"gamma"
+],
+"422": [
+"3b178a7c4b17",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Heavy_Lobster.psd": {
+"icc": [
+0.0,
+476422
+],
+"text": {
+"417": [
+"63a27e7085d3",
+"gamma"
+],
+"418": [
+"34bc584e7eb9",
+"gamma"
+],
+"419": [
+"27b53b28b854",
+"gamma"
+],
+"420": [
+"d3cffcbff73b",
+"gamma"
+],
+"421": [
+"97549496a7da",
+"gamma"
+],
+"422": [
+"7052a49547f7",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Heavy_Mole.psd": {
+"icc": [
+0.0,
+443073
+],
+"text": {
+"417": [
+"1bde3e76c541",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"0e0f6af64f6d",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Holo_Defense_API.psd": {
+"icc": [
+0.0,
+623473
+],
+"text": {
+"417": [
+"401253ee43df",
+"gamma"
+],
+"418": [
+"edc10d2d086d",
+"gamma"
+],
+"419": [
+"fa596c05b5a9",
+"gamma"
+],
+"420": [
+"1f57e885021d",
+"gamma"
+],
+"421": [
+"b17aa6967f7d",
+"gamma"
+],
+"422": [
+"de9e5c2811f4",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Kabula.psd": {
+"icc": [
+0.0,
+94306
+],
+"text": {
+"417": [
+"2856d810ffee",
+"gamma"
+],
+"418": [
+"34bc584e7eb9",
+"gamma"
+],
+"419": [
+"27b53b28b854",
+"gamma"
+],
+"420": [
+"c244299259cd",
+"gamma"
+],
+"421": [
+"810799d1039a",
+"gamma"
+],
+"422": [
+"2a0f64441ea6",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Kracko.psd": {
+"icc": [
+0.0,
+134722
+],
+"text": {
+"417": [
+"7bba016e680f",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"b1ffb70b7656",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Magolor.psd": {
+"icc": [
+0.0,
+302955
+],
+"text": {
+"417": [
+"8c82e136c724",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"ff326fd28d0c",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Master_Hand.psd": {
+"icc": [
+0.0,
+57934
+],
+"text": {
+"215": [
+"2148bad9bc53",
+"gamma"
+],
+"322": [
+"4eb0254b870c",
+"gamma"
+],
+"37": [
+"65a497f3a500",
+"gamma"
+],
+"95": [
+"82b8688a9b28",
+"gamma"
+],
+"96": [
+"dac4258b079a",
+"gamma"
+],
+"97": [
+"6f4583445035",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Mega_Titan.psd": {
+"icc": [
+0.0,
+336494
+],
+"text": {
+"417": [
+"7e51f9ab7962",
+"gamma"
+],
+"418": [
+"34bc584e7eb9",
+"gamma"
+],
+"419": [
+"27b53b28b854",
+"gamma"
+],
+"420": [
+"c244299259cd",
+"gamma"
+],
+"421": [
+"810799d1039a",
+"gamma"
+],
+"422": [
+"88de627fdccf",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Metal_General.psd": {
+"icc": [
+0.0001,
+581779
+],
+"text": {
+"417": [
+"67688515b27a",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"7de5a4a40318",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Miracle_Matter.psd": {
+"icc": [
+0.0,
+246501
+],
+"text": {
+"1366": [
+"20385bfe17ad",
+"gamma"
+],
+"1367": [
+"ff010929b60f",
+"gamma"
+],
+"1368": [
+"b16b97fbd1e3",
+"gamma"
+],
+"1369": [
+"06ceb9253754",
+"gamma"
+],
+"417": [
+"703eb5c6215d",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"f41a76f207f1",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Pix.psd": {
+"icc": [
+0.0,
+127098
+],
+"text": {
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"72a1ec8fb3f4",
+"gamma"
+],
+"897": [
+"c1e2356090fd",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Retro_Kirby.psd": {
+"icc": [
+0.0,
+3801
+],
+"text": {
+"417": [
+"525c024ba6ab",
+"gamma"
+],
+"418": [
+"1b1e18ed6a6b",
+"gamma"
+],
+"419": [
+"ce8a7af7d64e",
+"gamma"
+],
+"420": [
+"9611039334e7",
+"gamma"
+],
+"421": [
+"3247cc16d8a1",
+"gamma"
+],
+"422": [
+"b55d14fdd395",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Skullord.psd": {
+"icc": [
+0.0,
+589892
+],
+"text": {
+"417": [
+"23920d5c4206",
+"gamma"
+],
+"418": [
+"34bc584e7eb9",
+"gamma"
+],
+"419": [
+"27b53b28b854",
+"gamma"
+],
+"420": [
+"c244299259cd",
+"gamma"
+],
+"421": [
+"810799d1039a",
+"gamma"
+],
+"422": [
+"49538a2fcb4f",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Spinni.psd": {
+"icc": [
+1.0,
+556774
+],
+"text": {
+"417": [
+"be3065a5436f",
+"gamma"
+],
+"418": [
+"34bc584e7eb9",
+"gamma"
+],
+"419": [
+"27b53b28b854",
+"gamma"
+],
+"420": [
+"d3cffcbff73b",
+"gamma"
+],
+"421": [
+"97549496a7da",
+"gamma"
+],
+"422": [
+"7be5c396b30a",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Storo.psd": {
+"icc": [
+0.0004,
+199829
+],
+"text": {
+"417": [
+"7d0b398e01bd",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"a0cce6a58b7b",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Taranza.psd": {
+"icc": [
+0.0,
+1513994
+],
+"text": {
+"417": [
+"733b9883cc6f",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"83c14c63b00d",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Waddle_Dee.psd": {
+"icc": [
+0.0,
+570440
+],
+"text": {
+"417": [
+"61a2e9b18847",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"a8be81942240",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/3 Stars/Wham_Bam_Rock.psd": {
+"icc": [
+0.0,
+412151
+],
+"text": {
+"417": [
+"4cf44541e900",
+"gamma"
+],
+"418": [
+"34bc584e7eb9",
+"gamma"
+],
+"419": [
+"27b53b28b854",
+"gamma"
+],
+"420": [
+"d3cffcbff73b",
+"gamma"
+],
+"421": [
+"97549496a7da",
+"gamma"
+],
+"422": [
+"26b1f0af348c",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/4 Stars/Dark_Daroach.psd": {
+"icc": [
+0.0,
+507242
+],
+"text": {
+"417": [
+"e288f2090cd1",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"eaaf43073c9f",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/4 Stars/Dark_Mind.psd": {
+"icc": [
+0.0,
+676283
+],
+"text": {
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"e69858a4fad7",
+"gamma"
+],
+"762": [
+"b3da234fcc82",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/4 Stars/Dark_Nebula.psd": {
+"icc": [
+0.0068,
+810828
+],
+"text": {
+"417": [
+"a119095ae5fd",
+"straight"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"2817a9a8f0fa",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/4 Stars/Drawcia_Soul.psd": {
+"icc": [
+0.0,
+315220
+],
+"text": {
+"417": [
+"77975f710417",
+"gamma"
+],
+"418": [
+"34bc584e7eb9",
+"gamma"
+],
+"419": [
+"27b53b28b854",
+"gamma"
+],
+"420": [
+"c244299259cd",
+"gamma"
+],
+"421": [
+"810799d1039a",
+"gamma"
+],
+"422": [
+"5d93db48807d",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/4 Stars/Dyna_Blade.psd": {
+"icc": [
+0.0,
+1004254
+],
+"text": {
+"215": [
+"9e6156ced249",
+"gamma"
+],
+"303": [
+"3c8fb5b6d5df",
+"gamma"
+],
+"37": [
+"65a497f3a500",
+"gamma"
+],
+"95": [
+"82b8688a9b28",
+"gamma"
+],
+"96": [
+"dac4258b079a",
+"gamma"
+],
+"97": [
+"6f4583445035",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/4 Stars/King_Dedede.psd": {
+"icc": [
+0.0,
+1081911
+],
+"text": {
+"417": [
+"ffa066104501",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"10e97d123c5c",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/4 Stars/Lor_Starcutter.psd": {
+"icc": [
+0.0009,
+101210
+],
+"text": {
+"417": [
+"707f5d411946",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"086c1da238f1",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/4 Stars/Meta_Knight.psd": {
+"icc": [
+0.0,
+239702
+],
+"text": {
+"417": [
+"0afd30e342c2",
+"gamma"
+],
+"418": [
+"05df6e1b2db8",
+"gamma"
+],
+"419": [
+"5f268949aaa2",
+"gamma"
+],
+"420": [
+"38cfcdf5d105",
+"gamma"
+],
+"421": [
+"c4c2196ffa25",
+"gamma"
+],
+"422": [
+"89e677a75504",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/4 Stars/NME_Salesman.psd": {
+"icc": [
+0.0,
+442316
+],
+"text": {
+"417": [
+"b12c2957968e",
+"gamma"
+],
+"418": [
+"62668437f4a3",
+"gamma"
+],
+"419": [
+"9cc7bab6eeb2",
+"gamma"
+],
+"420": [
+"fb922a4c52b3",
+"gamma"
+],
+"421": [
+"3b8db3de80f4",
+"gamma"
+],
+"422": [
+"c9a911e0d52e",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd": {
+"icc": [
+0.0,
+157
+],
+"text": {
+"417": [
+"a70f8533dfbd",
+"gamma"
+],
+"418": [
+"34bc584e7eb9",
+"gamma"
+],
+"419": [
+"27b53b28b854",
+"gamma"
+],
+"420": [
+"d3cffcbff73b",
+"gamma"
+],
+"421": [
+"97549496a7da",
+"gamma"
+],
+"422": [
+"1ef657fb6af9",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/4 Stars/Wham_Bam_Jewel.psd": {
+"icc": [
+0.0003,
+268611
+],
+"text": {
+"417": [
+"a6744d3d333c",
+"gamma"
+],
+"418": [
+"34bc584e7eb9",
+"gamma"
+],
+"419": [
+"27b53b28b854",
+"gamma"
+],
+"420": [
+"c244299259cd",
+"gamma"
+],
+"421": [
+"810799d1039a",
+"gamma"
+],
+"422": [
+"b1efa8be0029",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/4 Stars/Zero.psd": {
+"icc": [
+0.0,
+204618
+],
+"text": {
+"417": [
+"acdda55ca8c1",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"68e179393d6c",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/4 Stars/grand_doomer.psd": {
+"icc": [
+0.0,
+124903
+],
+"text": {
+"417": [
+"8b7cafed281a",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"1e5690c8098f",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/4 Stars/hr-h.psd": {
+"icc": [
+0.0,
+130693
+],
+"text": {
+"417": [
+"14857cf71434",
+"gamma"
+],
+"418": [
+"943a0d2a72e8",
+"gamma"
+],
+"419": [
+"5251ba02e38c",
+"gamma"
+],
+"420": [
+"8dd8bfd862a2",
+"gamma"
+],
+"421": [
+"dd7df675b415",
+"gamma"
+],
+"422": [
+"026577313325",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/5 Stars/Butterfly.psd": {
+"icc": [
+0.0,
+1517845
+],
+"text": {
+"1574": [
+"ed5061f429d5",
+"gamma"
+],
+"417": [
+"a74cc8370fbe",
+"gamma"
+],
+"418": [
+"ee63ef5a93e7",
+"gamma"
+],
+"419": [
+"b917d2207749",
+"gamma"
+],
+"420": [
+"5747e50a644c",
+"gamma"
+],
+"421": [
+"ed52b3157b4c",
+"gamma"
+],
+"422": [
+"3f2b1366f384",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/5 Stars/Crowned_Magolor.psd": {
+"icc": [
+0.0,
+762389
+],
+"text": {
+"1410": [
+"5c7df2645d1b",
+"gamma"
+],
+"417": [
+"61c3069fc74f",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"017f11ecb415",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/5 Stars/Dark_Mind_Eye.psd": {
+"icc": [
+0.0,
+1578857
+],
+"text": {
+"417": [
+"cafff4e46a10",
+"gamma"
+],
+"418": [
+"34bc584e7eb9",
+"gamma"
+],
+"419": [
+"27b53b28b854",
+"gamma"
+],
+"420": [
+"c244299259cd",
+"gamma"
+],
+"421": [
+"810799d1039a",
+"gamma"
+],
+"422": [
+"8f9ae9236389",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/5 Stars/Galacta_Knight.psd": {
+"icc": [
+0.0,
+38348
+],
+"text": {
+"417": [
+"42e9907f2014",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"c1c1e47be54c",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/5 Stars/HR-D3.psd": {
+"icc": [
+0.0,
+99149
+],
+"text": {
+"417": [
+"4341717605a8",
+"gamma"
+],
+"418": [
+"34bc584e7eb9",
+"gamma"
+],
+"419": [
+"27b53b28b854",
+"gamma"
+],
+"420": [
+"c244299259cd",
+"gamma"
+],
+"421": [
+"810799d1039a",
+"gamma"
+],
+"422": [
+"ea15b170535f",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/5 Stars/Landia.psd": {
+"icc": [
+0.0,
+246987
+],
+"text": {
+"417": [
+"feb0fd147859",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"f0ee270fc287",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/5 Stars/Marx.psd": {
+"icc": [
+0.0,
+846852
+],
+"text": {
+"417": [
+"84e673311b7a",
+"gamma"
+],
+"418": [
+"4c174abe8111",
+"gamma"
+],
+"419": [
+"eef89d6b4950",
+"gamma"
+],
+"420": [
+"e95f97c1482a",
+"gamma"
+],
+"421": [
+"88a1fb00c3de",
+"gamma"
+],
+"422": [
+"c519d2f06dfc",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/5 Stars/Masked_Dedede.psd": {
+"icc": [
+0.0,
+379769
+],
+"text": {
+"417": [
+"d77cae8cde7a",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"e352c1603186",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/5 Stars/Necrodeus.psd": {
+"icc": [
+0.0,
+303608
+],
+"text": {
+"417": [
+"ebc879ffcbc3",
+"gamma"
+],
+"418": [
+"150fbed8fe45",
+"gamma"
+],
+"419": [
+"c3861e636b53",
+"gamma"
+],
+"420": [
+"bb11248084ac",
+"gamma"
+],
+"421": [
+"e163444143f1",
+"gamma"
+],
+"422": [
+"96e50c375b21",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/5 Stars/Nightmare.psd": {
+"icc": [
+0.0,
+133194
+],
+"text": {
+"417": [
+"76f287dfde9b",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"659c10142eeb",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/5 Stars/Star_Dream.psd": {
+"icc": [
+0.0,
+1342426
+],
+"text": {
+"417": [
+"7825ef0cc966",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"859cffa64bc2",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/5 Stars/Yin_Yarn.psd": {
+"icc": [
+0.0,
+296486
+],
+"text": {
+"417": [
+"47d516b8864d",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"16b61ccbee32",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"a6320335a140",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/5 Stars/Zero_Override.psd": {
+"icc": [
+0.0,
+227076
+],
+"text": {
+"417": [
+"72ff5aa4c9de",
+"gamma"
+],
+"418": [
+"34bc584e7eb9",
+"gamma"
+],
+"419": [
+"27b53b28b854",
+"gamma"
+],
+"420": [
+"c244299259cd",
+"gamma"
+],
+"421": [
+"810799d1039a",
+"gamma"
+],
+"422": [
+"9c497366a050",
+"gamma"
+]
+}
+},
+"Creatures/Kirby/5 Stars/Zero_Two.psd": {
+"icc": [
+0.0,
+418894
+],
+"text": {
+"417": [
+"12786908e971",
+"gamma"
+],
+"418": [
+"3e6e37e72dfa",
+"gamma"
+],
+"419": [
+"5e4ddee03b13",
+"gamma"
+],
+"420": [
+"9fd21a3be2a3",
+"gamma"
+],
+"421": [
+"3d3d11867335",
+"gamma"
+],
+"422": [
+"7e2d31649367",
+"gamma"
+]
+}
+},
+"Creatures/Lisa/2 Stars/Terry_Hintz.psd": {
+"icc": [
+0.0,
+76115
+],
+"text": {
+"417": [
+"624f8c9bff60",
+"gamma"
+],
+"418": [
+"f05db6ba6a89",
+"gamma"
+],
+"419": [
+"9c9d7cc359b5",
+"gamma"
+],
+"420": [
+"dff059c86a0f",
+"gamma"
+],
+"421": [
+"99fa6eea5882",
+"gamma"
+],
+"422": [
+"8237f31878c2",
+"gamma"
+]
+}
+},
+"Creatures/Lisa/3 Stars/Joel_Miller.psd": {
+"icc": [
+0.0,
+163392
+],
+"text": {
+"417": [
+"8535ec6f9d00",
+"gamma"
+],
+"418": [
+"f05db6ba6a89",
+"gamma"
+],
+"419": [
+"9c9d7cc359b5",
+"gamma"
+],
+"420": [
+"dff059c86a0f",
+"gamma"
+],
+"421": [
+"99fa6eea5882",
+"gamma"
+],
+"422": [
+"adc0aee12c15",
+"gamma"
+]
+}
+},
+"Creatures/Lisa/4 Stars/Brad_Armstrong.psd": {
+"icc": [
+0.0001,
+1477651
+],
+"text": {
+"417": [
+"e390adc0d89f",
+"gamma"
+],
+"418": [
+"8b8ed66ab7f5",
+"gamma"
+],
+"419": [
+"4bdc9173156d",
+"gamma"
+],
+"420": [
+"04dcc81ebb59",
+"gamma"
+],
+"421": [
+"348eed12b6e6",
+"gamma"
+],
+"422": [
+"eb5ab247b904",
+"gamma"
+]
+}
+},
+"Creatures/Lisa/4 Stars/Buzzo.psd": {
+"icc": [
+0.0,
+128543
+],
+"text": {
+"417": [
+"6aad5c6f767d",
+"gamma"
+],
+"418": [
+"8b8ed66ab7f5",
+"gamma"
+],
+"419": [
+"4bdc9173156d",
+"gamma"
+],
+"420": [
+"04dcc81ebb59",
+"gamma"
+],
+"421": [
+"348eed12b6e6",
+"gamma"
+],
+"422": [
+"c430b60c345d",
+"gamma"
+]
+}
+},
+"Creatures/Mario/2 Stars/Block_Hopper.psd": {
+"icc": [
+1.0,
+1851483
+],
+"text": {
+"417": [
+"e737952f9d8d",
+"gamma"
+],
+"418": [
+"64d2b9694c3d",
+"gamma"
+],
+"419": [
+"d54a26965a09",
+"gamma"
+],
+"420": [
+"72a8ddd6d6c5",
+"gamma"
+],
+"421": [
+"6dc030059551",
+"gamma"
+],
+"422": [
+"4318dd35a705",
+"gamma"
+]
+}
+},
+"Creatures/Mario/2 Stars/Bob-ulk.psd": {
+"icc": [
+0.0,
+343436
+],
+"text": {
+"546": [
+"7c8bf89a12ac",
+"gamma"
+],
+"552": [
+"f96b6bb13f0f",
+"gamma"
+],
+"861": [
+"e99cec7da63d",
+"gamma"
+],
+"862": [
+"1f8236e8f55c",
+"gamma"
+],
+"863": [
+"93fc90d201e9",
+"gamma"
+],
+"864": [
+"08b3109e147e",
+"gamma"
+]
+}
+},
+"Creatures/Mario/2 Stars/Gold_Fuzzy.psd": {
+"icc": [
+0.0,
+608367
+],
+"text": {
+"546": [
+"a17198d83098",
+"gamma"
+],
+"552": [
+"4cff1777324e",
+"gamma"
+],
+"798": [
+"1c142f4aaee1",
+"gamma"
+],
+"799": [
+"7c2f16ecaebc",
+"gamma"
+],
+"800": [
+"0dc9e4c2d43f",
+"gamma"
+],
+"801": [
+"75eaf7383130",
+"gamma"
+]
+}
+},
+"Creatures/Mario/2 Stars/Goombella.psd": {
+"icc": [
+0.0,
+553549
+],
+"text": {
+"546": [
+"d5dcada6a5ce",
+"gamma"
+],
+"552": [
+"a78f2dff4c85",
+"gamma"
+],
+"868": [
+"24c004156444",
+"gamma"
+],
+"869": [
+"a49760cc8d69",
+"gamma"
+],
+"870": [
+"d386ed0d5c8f",
+"gamma"
+],
+"871": [
+"08b3109e147e",
+"gamma"
+]
+}
+},
+"Creatures/Mario/2 Stars/Gooper_Blooper.psd": {
+"icc": [
+0.0,
+712249
+],
+"text": {
+"546": [
+"cc781eedd347",
+"gamma"
+],
+"547": [
+"433b97ceef28",
+"gamma"
+],
+"548": [
+"09aea1959650",
+"gamma"
+],
+"549": [
+"a7d9240be556",
+"gamma"
+],
+"550": [
+"ddc2b04d3e7c",
+"gamma"
+],
+"552": [
+"ed2856c9c54f",
+"gamma"
+]
+}
+},
+"Creatures/Mario/2 Stars/Hooktail.psd": {
+"icc": [
+0.0,
+851420
+],
+"text": {
+"417": [
+"a06d51039843",
+"gamma"
+],
+"418": [
+"4e42557bbf07",
+"gamma"
+],
+"419": [
+"787ef649b68b",
+"gamma"
+],
+"420": [
+"a4ac7a1a54ab",
+"gamma"
+],
+"421": [
+"b414befde962",
+"gamma"
+],
+"422": [
+"aaa918efa6ed",
+"gamma"
+]
+}
+},
+"Creatures/Mario/2 Stars/Koops.psd": {
+"icc": [
+0.0,
+836110
+],
+"text": {
+"417": [
+"3f08e5b4f52a",
+"gamma"
+],
+"418": [
+"7ced8d0c4746",
+"gamma"
+],
+"419": [
+"7f97da974a81",
+"gamma"
+],
+"420": [
+"ba97e5167281",
+"gamma"
+],
+"421": [
+"12dd8776f1f2",
+"gamma"
+],
+"422": [
+"22b90730fa43",
+"gamma"
+]
+}
+},
+"Creatures/Mario/2 Stars/Magnus_von_Grapple.psd": {
+"icc": [
+0.0002,
+755149
+],
+"text": {
+"546": [
+"09f30fc9d57e",
+"gamma"
+],
+"552": [
+"c28c3409eb41",
+"gamma"
+],
+"868": [
+"e99cec7da63d",
+"gamma"
+],
+"869": [
+"1f8236e8f55c",
+"gamma"
+],
+"870": [
+"93fc90d201e9",
+"gamma"
+],
+"871": [
+"08b3109e147e",
+"gamma"
+]
+}
+},
+"Creatures/Mario/2 Stars/Ms_Mowz.psd": {
+"icc": [
+0.0,
+239053
+],
+"text": {
+"546": [
+"ede2cdbf73b5",
+"gamma"
+],
+"552": [
+"a6ec7b729dcc",
+"gamma"
+],
+"868": [
+"1c142f4aaee1",
+"gamma"
+],
+"869": [
+"7c2f16ecaebc",
+"gamma"
+],
+"870": [
+"0dc9e4c2d43f",
+"gamma"
+],
+"871": [
+"75eaf7383130",
+"gamma"
+]
+}
+},
+"Creatures/Mario/2 Stars/Yoshi_Kid.psd": {
+"icc": [
+0.0,
+710058
+],
+"text": {
+"546": [
+"612a2c39a131",
+"gamma"
+],
+"547": [
+"8dedddcaca8d",
+"gamma"
+],
+"548": [
+"6e2e0c97e434",
+"gamma"
+],
+"549": [
+"c7b89f6d806d",
+"gamma"
+],
+"550": [
+"9ef46c8bdb53",
+"gamma"
+],
+"552": [
+"218b4c518af1",
+"gamma"
+]
+}
+},
+"Creatures/Mario/3 Stars/Beldam.psd": {
+"icc": [
+0.0,
+373966
+],
+"text": {
+"546": [
+"f09799e7adca",
+"gamma"
+],
+"547": [
+"8dedddcaca8d",
+"gamma"
+],
+"548": [
+"6e2e0c97e434",
+"gamma"
+],
+"549": [
+"c7b89f6d806d",
+"gamma"
+],
+"550": [
+"9ef46c8bdb53",
+"gamma"
+],
+"552": [
+"4e9e804cd56f",
+"gamma"
+]
+}
+},
+"Creatures/Mario/3 Stars/Bobbery.psd": {
+"icc": [
+0.0,
+327283
+],
+"text": {
+"417": [
+"d1d5df6bcecb",
+"gamma"
+],
+"418": [
+"64d2b9694c3d",
+"gamma"
+],
+"419": [
+"d54a26965a09",
+"gamma"
+],
+"420": [
+"72a8ddd6d6c5",
+"gamma"
+],
+"421": [
+"6dc030059551",
+"gamma"
+],
+"422": [
+"714e27fb029c",
+"gamma"
+]
+}
+},
+"Creatures/Mario/3 Stars/Flurrie.psd": {
+"icc": [
+0.0,
+400725
+],
+"text": {
+"546": [
+"eeb97a58179d",
+"gamma"
+],
+"547": [
+"8dedddcaca8d",
+"gamma"
+],
+"548": [
+"6e2e0c97e434",
+"gamma"
+],
+"549": [
+"c7b89f6d806d",
+"gamma"
+],
+"550": [
+"9ef46c8bdb53",
+"gamma"
+],
+"552": [
+"ae3792ba18f5",
+"gamma"
+]
+}
+},
+"Creatures/Mario/3 Stars/King_Bob-omb.psd": {
+"icc": [
+0.0,
+1151316
+],
+"text": {
+"417": [
+"1e1c3c99139d",
+"gamma"
+],
+"418": [
+"64d2b9694c3d",
+"gamma"
+],
+"419": [
+"7a7c92b06732",
+"gamma"
+],
+"420": [
+"8637605bc37b",
+"gamma"
+],
+"421": [
+"6dc030059551",
+"gamma"
+],
+"422": [
+"64c757682bad",
+"gamma"
+]
+}
+},
+"Creatures/Mario/3 Stars/Lord_Crump.psd": {
+"icc": [
+0.0,
+361735
+],
+"text": {
+"546": [
+"99e6fa0cc934",
+"gamma"
+],
+"547": [
+"972517914bab",
+"gamma"
+],
+"548": [
+"7c09c48273df",
+"gamma"
+],
+"549": [
+"a4c8249e9bcd",
+"gamma"
+],
+"550": [
+"976a28e6bbd2",
+"gamma"
+],
+"552": [
+"7a5848b6198d",
+"gamma"
+]
+}
+},
+"Creatures/Mario/3 Stars/Marilyn.psd": {
+"icc": [
+0.0,
+389236
+],
+"text": {
+"546": [
+"b7395ac906c7",
+"gamma"
+],
+"552": [
+"e0481747eeb5",
+"gamma"
+],
+"950": [
+"8dedddcaca8d",
+"gamma"
+],
+"951": [
+"40b54f3da0f9",
+"gamma"
+],
+"952": [
+"c7b89f6d806d",
+"gamma"
+],
+"953": [
+"9ef46c8bdb53",
+"gamma"
+]
+}
+},
+"Creatures/Mario/3 Stars/Raw_Cock.psd": {
+"icc": [
+0.0,
+409190
+],
+"text": {
+"417": [
+"00eb9c458185",
+"gamma"
+],
+"418": [
+"64d2b9694c3d",
+"gamma"
+],
+"419": [
+"7a7c92b06732",
+"gamma"
+],
+"420": [
+"8637605bc37b",
+"gamma"
+],
+"421": [
+"6dc030059551",
+"gamma"
+],
+"422": [
+"8bc0c2302948",
+"gamma"
+]
+}
+},
+"Creatures/Mario/3 Stars/Sniffle_Thwomp.psd": {
+"icc": [
+0.0,
+119477
+],
+"text": {
+"546": [
+"435d3d70555a",
+"gamma"
+],
+"547": [
+"8dedddcaca8d",
+"gamma"
+],
+"548": [
+"40b54f3da0f9",
+"gamma"
+],
+"549": [
+"c7b89f6d806d",
+"gamma"
+],
+"550": [
+"9ef46c8bdb53",
+"gamma"
+],
+"552": [
+"85ce9b6a7cfb",
+"gamma"
+]
+}
+},
+"Creatures/Mario/3 Stars/Tutankoopa.psd": {
+"icc": [
+0.0,
+498518
+],
+"text": {
+"546": [
+"ed4ab5beb65b",
+"gamma"
+],
+"547": [
+"74a3262a9962",
+"gamma"
+],
+"548": [
+"2eae5c48afeb",
+"gamma"
+],
+"549": [
+"ad69fe2dc7df",
+"gamma"
+],
+"550": [
+"6a2351e49de4",
+"gamma"
+],
+"552": [
+"179feb8b7375",
+"gamma"
+]
+}
+},
+"Creatures/Mario/3 Stars/Vivian.psd": {
+"icc": [
+0.0,
+315751
+],
+"text": {
+"417": [
+"cf032452e21b",
+"gamma"
+],
+"418": [
+"64d2b9694c3d",
+"gamma"
+],
+"419": [
+"7a7c92b06732",
+"gamma"
+],
+"420": [
+"8637605bc37b",
+"gamma"
+],
+"421": [
+"6dc030059551",
+"gamma"
+],
+"422": [
+"65fa2633d413",
+"gamma"
+]
+}
+},
+"Creatures/Mario/4 Stars/Cortez.psd": {
+"icc": [
+0.0,
+561762
+],
+"text": {
+"2065": [
+"47f1b4b290e5",
+"gamma"
+],
+"2066": [
+"7609177d4e4f",
+"gamma"
+],
+"2067": [
+"ba97e5167281",
+"gamma"
+],
+"2068": [
+"5052c715fe42",
+"gamma"
+],
+"417": [
+"8609d98672b1",
+"gamma"
+],
+"422": [
+"82293c9401e4",
+"gamma"
+]
+}
+},
+"Creatures/Mario/4 Stars/Crystal_King.psd": {
+"icc": [
+0.0,
+197545
+],
+"text": {
+"546": [
+"be70bf75950a",
+"gamma"
+],
+"547": [
+"7ced8d0c4746",
+"gamma"
+],
+"548": [
+"822a26bf70e8",
+"gamma"
+],
+"549": [
+"f0ba2b6cc1ce",
+"gamma"
+],
+"550": [
+"668ba2b3056d",
+"gamma"
+],
+"552": [
+"90f23c2b6dc0",
+"gamma"
+]
+}
+},
+"Creatures/Mario/4 Stars/DooPliss.psd": {
+"icc": [
+0.0,
+252763
+],
+"text": {
+"2339": [
+"acc24abd0eff",
+"gamma"
+],
+"417": [
+"033e9b5188c6",
+"gamma"
+],
+"418": [
+"7ced8d0c4746",
+"gamma"
+],
+"419": [
+"822a26bf70e8",
+"gamma"
+],
+"420": [
+"f0ba2b6cc1ce",
+"gamma"
+],
+"421": [
+"668ba2b3056d",
+"gamma"
+],
+"422": [
+"d2b09c34e90e",
+"gamma"
+]
+}
+},
+"Creatures/Mario/4 Stars/Fawful.psd": {
+"icc": [
+0.0001,
+1375813
+],
+"text": {
+"417": [
+"4ffd03983c3b",
+"gamma"
+],
+"418": [
+"4e42557bbf07",
+"gamma"
+],
+"419": [
+"787ef649b68b",
+"gamma"
+],
+"420": [
+"a4ac7a1a54ab",
+"gamma"
+],
+"421": [
+"b414befde962",
+"gamma"
+],
+"422": [
+"d20ff34d808d",
+"gamma"
+]
+}
+},
+"Creatures/Mario/4 Stars/Macho_Grubba.psd": {
+"icc": [
+0.0,
+787712
+],
+"text": {
+"417": [
+"ba7f2c658a85",
+"gamma"
+],
+"418": [
+"4e42557bbf07",
+"gamma"
+],
+"419": [
+"787ef649b68b",
+"gamma"
+],
+"420": [
+"a4ac7a1a54ab",
+"gamma"
+],
+"421": [
+"b414befde962",
+"gamma"
+],
+"422": [
+"d57df238d5a5",
+"gamma"
+]
+}
+},
+"Creatures/Mario/4 Stars/Sir_Grodus.psd": {
+"icc": [
+0.0,
+461185
+],
+"text": {
+"417": [
+"a8c39208aa8e",
+"gamma"
+],
+"418": [
+"4e42557bbf07",
+"gamma"
+],
+"419": [
+"787ef649b68b",
+"gamma"
+],
+"420": [
+"a4ac7a1a54ab",
+"gamma"
+],
+"421": [
+"b414befde962",
+"gamma"
+],
+"422": [
+"25e07200e72e",
+"gamma"
+]
+}
+},
+"Creatures/Mario/4 Stars/Smorg.psd": {
+"icc": [
+0.0,
+140110
+],
+"text": {
+"417": [
+"6aca222a9d1b",
+"gamma"
+],
+"418": [
+"7ced8d0c4746",
+"gamma"
+],
+"419": [
+"7f97da974a81",
+"gamma"
+],
+"420": [
+"ba97e5167281",
+"gamma"
+],
+"421": [
+"12dd8776f1f2",
+"gamma"
+],
+"422": [
+"848cc43d1bd7",
+"gamma"
+]
+}
+},
+"Creatures/Mario/5 Stars/The_Master.psd": {
+"icc": [
+0.0,
+894715
+],
+"text": {
+"215": [
+"582967ddf6c5",
+"gamma"
+],
+"37": [
+"7ced8d0c4746",
+"gamma"
+],
+"95": [
+"822a26bf70e8",
+"gamma"
+],
+"96": [
+"f0ba2b6cc1ce",
+"gamma"
+],
+"97": [
+"668ba2b3056d",
+"gamma"
+]
+}
+},
+"Creatures/Monkey D Folder/2 Stars/Mol_D_Truffy.psd": {
+"icc": [
+0.0,
+693242
+],
+"text": {
+"3899": [
+"00be4cdfec2e",
+"gamma"
+],
+"418": [
+"05cf0591fbba",
+"gamma"
+],
+"419": [
+"fd23a9049996",
+"gamma"
+],
+"420": [
+"9ffe14c80d82",
+"gamma"
+],
+"421": [
+"f3109f93b2b8",
+"gamma"
+],
+"422": [
+"488e23c1469b",
+"gamma"
+]
+}
+},
+"Creatures/Monkey D Folder/2 Stars/Monkey_D_Pression.psd": {
+"icc": [
+0.0,
+239508
+],
+"text": {
+"3590": [
+"17370da65f8a",
+"gamma"
+],
+"417": [
+"995fb2d88492",
+"gamma"
+],
+"418": [
+"2f42212ba16f",
+"gamma"
+],
+"419": [
+"7a39e4e58ba9",
+"gamma"
+],
+"420": [
+"da9ced362fec",
+"gamma"
+],
+"421": [
+"d15e1ed4a42f",
+"gamma"
+],
+"422": [
+"1fa87d8a3454",
+"gamma"
+]
+}
+},
+"Creatures/Monkey D Folder/2 Stars/Whippy_D_Cream.psd": {
+"icc": [
+0.0,
+382490
+],
+"text": {
+"417": [
+"923a123c8c5f",
+"gamma"
+],
+"418": [
+"cf5275da6aee",
+"gamma"
+],
+"419": [
+"54e621e076eb",
+"gamma"
+],
+"420": [
+"b65106ecb5bd",
+"gamma"
+],
+"421": [
+"3853701f47c0",
+"gamma"
+],
+"422": [
+"58b92882f54a",
+"gamma"
+]
+}
+},
+"Creatures/Monkey D Folder/3 Stars/Monkey_D_Letion.psd": {
+"icc": [
+0.0,
+86119
+],
+"text": {
+"3590": [
+"eee85ecd96fc",
+"gamma"
+],
+"417": [
+"c55d6b2a6315",
+"gamma"
+],
+"418": [
+"2f42212ba16f",
+"gamma"
+],
+"419": [
+"7a39e4e58ba9",
+"gamma"
+],
+"420": [
+"da9ced362fec",
+"gamma"
+],
+"421": [
+"d15e1ed4a42f",
+"gamma"
+],
+"422": [
+"7a74dbdaef72",
+"gamma"
+]
+}
+},
+"Creatures/Monkey D Folder/3 Stars/Pan_D_Luffy.psd": {
+"icc": [
+0.0,
+1017667
+],
+"text": {
+"3899": [
+"05dcd32956c6",
+"gamma"
+],
+"418": [
+"05cf0591fbba",
+"gamma"
+],
+"419": [
+"fd23a9049996",
+"gamma"
+],
+"420": [
+"9ffe14c80d82",
+"gamma"
+],
+"421": [
+"f3109f93b2b8",
+"gamma"
+],
+"422": [
+"783ca56fc3c8",
+"gamma"
+]
+}
+},
+"Creatures/Monkey D Folder/3 Stars/Wokey_D_pronouns.psd": {
+"icc": [
+0.0,
+793928
+],
+"text": {
+"417": [
+"33ab7ddd1bea",
+"gamma"
+],
+"418": [
+"866bcd2f65c7",
+"gamma"
+],
+"419": [
+"6e6fa98a78ce",
+"gamma"
+],
+"420": [
+"e6af4f4e64f4",
+"gamma"
+],
+"421": [
+"80f525eb58ec",
+"gamma"
+],
+"422": [
+"57c42bff13af",
+"gamma"
+]
+}
+},
+"Creatures/Monkey D Folder/4 Stars/Funky_D_Luffy.psd": {
+"icc": [
+0.0001,
+320354
+],
+"text": {
+"417": [
+"b1309fc0599e",
+"gamma"
+],
+"418": [
+"2f42212ba16f",
+"gamma"
+],
+"419": [
+"7a39e4e58ba9",
+"gamma"
+],
+"420": [
+"da9ced362fec",
+"gamma"
+],
+"421": [
+"d15e1ed4a42f",
+"gamma"
+],
+"422": [
+"255f8f720847",
+"gamma"
+]
+}
+},
+"Creatures/Monkey D Folder/4 Stars/Monkey_D_Goofy.psd": {
+"icc": [
+0.0,
+983573
+],
+"text": {
+"417": [
+"ae853c174a66",
+"gamma"
+],
+"418": [
+"2f42212ba16f",
+"gamma"
+],
+"419": [
+"7a39e4e58ba9",
+"gamma"
+],
+"420": [
+"da9ced362fec",
+"gamma"
+],
+"421": [
+"d15e1ed4a42f",
+"gamma"
+],
+"422": [
+"c6b1668913b9",
+"gamma"
+]
+}
+},
+"Creatures/Monkey D Folder/4 Stars/Monkey_D_Vour.psd": {
+"icc": [
+0.0,
+218353
+],
+"text": {
+"417": [
+"225dc462828f",
+"gamma"
+],
+"418": [
+"2f42212ba16f",
+"gamma"
+],
+"419": [
+"7a39e4e58ba9",
+"gamma"
+],
+"420": [
+"da9ced362fec",
+"gamma"
+],
+"421": [
+"d15e1ed4a42f",
+"gamma"
+],
+"422": [
+"32e7307845f9",
+"gamma"
+]
+}
+},
+"Creatures/Omori/2 Stars/The_Maverick.psd": {
+"icc": [
+0.0,
+1476717
+],
+"text": {
+"417": [
+"07788c1f67ee",
+"gamma"
+],
+"418": [
+"4fa756f5e529",
+"gamma"
+],
+"419": [
+"0ff5aacf7871",
+"gamma"
+],
+"420": [
+"b1a4ccbae6f0",
+"gamma"
+],
+"421": [
+"fbd1e03c2dfb",
+"gamma"
+],
+"422": [
+"4eb386a24159",
+"gamma"
+]
+}
+},
+"Creatures/Omori/3 Stars/Captain_Spaceboy.psd": {
+"icc": [
+0.0,
+1075439
+],
+"text": {
+"417": [
+"c1ff2939042c",
+"gamma"
+],
+"418": [
+"4fa756f5e529",
+"gamma"
+],
+"419": [
+"0ff5aacf7871",
+"gamma"
+],
+"420": [
+"b1a4ccbae6f0",
+"gamma"
+],
+"421": [
+"fbd1e03c2dfb",
+"gamma"
+],
+"422": [
+"f630041de78c",
+"gamma"
+]
+}
+},
+"Creatures/Omori/3 Stars/Kel.psd": {
+"icc": [
+0.0,
+1885356
+],
+"text": {
+"26": [
+"9dc141ae3599",
+"gamma"
+],
+"362": [
+"8cc2d5e3a45a",
+"gamma"
+],
+"37": [
+"ae29edc0b505",
+"straight"
+],
+"95": [
+"5eeb47e949bd",
+"straight"
+],
+"96": [
+"95a39d7966e0",
+"straight"
+],
+"97": [
+"5b3a4094e6ea",
+"straight"
+]
+}
+},
+"Creatures/Omori/3 Stars/Mr_Jawsum.psd": {
+"icc": [
+0.0,
+1317947
+],
+"text": {
+"26": [
+"2e608b80e563",
+"gamma"
+],
+"313": [
+"24dc34817d0a",
+"gamma"
+],
+"37": [
+"285b88bf4203",
+"gamma"
+],
+"95": [
+"720976273877",
+"gamma"
+],
+"96": [
+"4a6d51c55bf5",
+"gamma"
+],
+"97": [
+"027abd685984",
+"gamma"
+]
+}
+},
+"Creatures/Omori/3 Stars/Nefarious_Chip.psd": {
+"icc": [
+0.0,
+1406589
+],
+"text": {
+"417": [
+"f44ca3ab26d8",
+"gamma"
+],
+"418": [
+"4fa756f5e529",
+"gamma"
+],
+"419": [
+"0ff5aacf7871",
+"gamma"
+],
+"420": [
+"b1a4ccbae6f0",
+"gamma"
+],
+"421": [
+"fbd1e03c2dfb",
+"gamma"
+],
+"422": [
+"c5b282661456",
+"gamma"
+]
+}
+},
+"Creatures/Omori/3 Stars/Papa_Chip.psd": {
+"icc": [
+0.0,
+1164076
+],
+"text": {
+"417": [
+"f36e9a9e1b52",
+"gamma"
+],
+"418": [
+"4fa756f5e529",
+"gamma"
+],
+"419": [
+"0ff5aacf7871",
+"gamma"
+],
+"420": [
+"b1a4ccbae6f0",
+"gamma"
+],
+"421": [
+"fbd1e03c2dfb",
+"gamma"
+],
+"422": [
+"8c4fd3b61edf",
+"gamma"
+]
+}
+},
+"Creatures/Omori/3 Stars/SOMETHING.psd": {
+"icc": [
+0.0,
+41018
+],
+"text": {
+"1418": [
+"b23cc650d912",
+"gamma"
+],
+"1419": [
+"3793c5efa7a7",
+"gamma"
+],
+"417": [
+"b127bf1fa78d",
+"gamma"
+],
+"418": [
+"57bd4494378b",
+"gamma"
+],
+"419": [
+"bfb3e6f82bb3",
+"gamma"
+],
+"420": [
+"0550aa39cdbd",
+"gamma"
+],
+"421": [
+"53bb06d3744b",
+"gamma"
+],
+"422": [
+"a4e5ad6ad833",
+"gamma"
+]
+}
+},
+"Creatures/Omori/3 Stars/Shattered_Omori.psd": {
+"icc": [
+0.0,
+9306
+],
+"text": {
+"417": [
+"9efcb896432b",
+"gamma"
+],
+"418": [
+"29c9e99dce99",
+"gamma"
+],
+"419": [
+"ff9745f6a306",
+"gamma"
+],
+"420": [
+"32ee67789766",
+"gamma"
+],
+"421": [
+"9a9c1f22032b",
+"gamma"
+],
+"422": [
+"da9ab0ef0e54",
+"gamma"
+]
+}
+},
+"Creatures/Omori/3 Stars/Snow_Angel.psd": {
+"icc": [
+0.0,
+851777
+],
+"text": {
+"417": [
+"7e92cc4b4c51",
+"gamma"
+],
+"418": [
+"0b49abf5b8f7",
+"gamma"
+],
+"419": [
+"eb59668aa642",
+"gamma"
+],
+"420": [
+"a250d4155165",
+"gamma"
+],
+"421": [
+"a51aadd16ddb",
+"gamma"
+],
+"422": [
+"f90a63680c50",
+"gamma"
+]
+}
+},
+"Creatures/Omori/3 Stars/Sweetheart.psd": {
+"icc": [
+0.0,
+546634
+],
+"text": {
+"417": [
+"73bba900716a",
+"gamma"
+],
+"418": [
+"8a755d482a65",
+"gamma"
+],
+"419": [
+"9143465af5d5",
+"gamma"
+],
+"420": [
+"025115f82253",
+"gamma"
+],
+"421": [
+"7a6c3401ca4c",
+"gamma"
+],
+"422": [
+"7a859e3d2a8c",
+"gamma"
+]
+}
+},
+"Creatures/Omori/4 Stars/Acrophobia.psd": {
+"icc": [
+0.0,
+150659
+],
+"text": {
+"417": [
+"9a542aced3ad",
+"gamma"
+],
+"418": [
+"57bd4494378b",
+"gamma"
+],
+"419": [
+"bfb3e6f82bb3",
+"gamma"
+],
+"420": [
+"0550aa39cdbd",
+"gamma"
+],
+"421": [
+"53bb06d3744b",
+"gamma"
+],
+"422": [
+"76f30b78dd79",
+"gamma"
+]
+}
+},
+"Creatures/Omori/4 Stars/Arachnophobia.psd": {
+"icc": [
+0.0,
+170415
+],
+"text": {
+"417": [
+"3080593e1ae5",
+"gamma"
+],
+"418": [
+"57bd4494378b",
+"gamma"
+],
+"419": [
+"bfb3e6f82bb3",
+"gamma"
+],
+"420": [
+"0550aa39cdbd",
+"gamma"
+],
+"421": [
+"53bb06d3744b",
+"gamma"
+],
+"422": [
+"9eaaa54b27d1",
+"gamma"
+]
+}
+},
+"Creatures/Omori/4 Stars/Mari.psd": {
+"icc": [
+0.0,
+928104
+],
+"text": {
+"26": [
+"5f2e20448642",
+"gamma"
+],
+"320": [
+"fd16ae49855a",
+"gamma"
+],
+"37": [
+"739e6a15ef2a",
+"gamma"
+],
+"95": [
+"16b6e30b2bea",
+"gamma"
+],
+"96": [
+"bc5886cbc781",
+"gamma"
+],
+"97": [
+"b2a5af419164",
+"gamma"
+]
+}
+},
+"Creatures/Omori/4 Stars/Stranger.psd": {
+"icc": [
+0.0,
+3055
+],
+"text": {
+"417": [
+"071af7096fe7",
+"gamma"
+],
+"418": [
+"57bd4494378b",
+"gamma"
+],
+"419": [
+"bfb3e6f82bb3",
+"gamma"
+],
+"420": [
+"0550aa39cdbd",
+"gamma"
+],
+"421": [
+"53bb06d3744b",
+"gamma"
+],
+"422": [
+"bc310280e9d7",
+"gamma"
+]
+}
+},
+"Creatures/Omori/4 Stars/Thalassophobia.psd": {
+"icc": [
+0.0,
+104389
+],
+"text": {
+"417": [
+"f7749da00721",
+"gamma"
+],
+"418": [
+"57bd4494378b",
+"gamma"
+],
+"419": [
+"bfb3e6f82bb3",
+"gamma"
+],
+"420": [
+"0550aa39cdbd",
+"gamma"
+],
+"421": [
+"53bb06d3744b",
+"gamma"
+],
+"422": [
+"62e0235765fe",
+"gamma"
+]
+}
+},
+"Creatures/Omori/4 Stars/Unbread_Twins.psd": {
+"icc": [
+0.0,
+1147502
+],
+"text": {
+"417": [
+"464d4035766a",
+"gamma"
+],
+"418": [
+"4fa756f5e529",
+"gamma"
+],
+"419": [
+"0ff5aacf7871",
+"gamma"
+],
+"420": [
+"b1a4ccbae6f0",
+"gamma"
+],
+"421": [
+"fbd1e03c2dfb",
+"gamma"
+],
+"422": [
+"532c7687678a",
+"gamma"
+]
+}
+},
+"Creatures/Omori/5 Stars/ABBI.psd": {
+"icc": [
+0.0,
+4958
+],
+"text": {
+"417": [
+"105b797a74ff",
+"gamma"
+],
+"418": [
+"57bd4494378b",
+"gamma"
+],
+"419": [
+"bfb3e6f82bb3",
+"gamma"
+],
+"420": [
+"0550aa39cdbd",
+"gamma"
+],
+"421": [
+"53bb06d3744b",
+"gamma"
+]
+}
+},
+"Creatures/Omori/5 Stars/Humphrey.psd": {
+"icc": [
+0.0,
+790218
+],
+"text": {
+"417": [
+"d7cb04a5155c",
+"gamma"
+],
+"418": [
+"4fa756f5e529",
+"gamma"
+],
+"419": [
+"0ff5aacf7871",
+"gamma"
+],
+"420": [
+"b1a4ccbae6f0",
+"gamma"
+],
+"421": [
+"fbd1e03c2dfb",
+"gamma"
+],
+"422": [
+"ba845a47bde5",
+"gamma"
+]
+}
+},
+"Creatures/Omori/5 Stars/The_Big_Yellow_Cat.psd": {
+"icc": [
+0.0,
+1414783
+],
+"text": {
+"1346": [
+"2b0f4b3e3894",
+"gamma"
+],
+"1347": [
+"84fe30bdd673",
+"gamma"
+],
+"1348": [
+"f53716c2f8c7",
+"gamma"
+],
+"417": [
+"1c5894d14fc9",
+"gamma"
+],
+"418": [
+"4fa756f5e529",
+"gamma"
+],
+"419": [
+"0ff5aacf7871",
+"gamma"
+],
+"420": [
+"b1a4ccbae6f0",
+"gamma"
+],
+"421": [
+"fbd1e03c2dfb",
+"gamma"
+],
+"422": [
+"b7f5047f9064",
+"gamma"
+]
+}
+},
+"Creatures/Omori/5 Stars/omori.psd": {
+"icc": [
+0.0,
+386034
+],
+"text": {
+"417": [
+"8dfdb3c459b1",
+"gamma"
+],
+"418": [
+"a3ed09466a0c",
+"gamma"
+],
+"419": [
+"c8a63cf973ab",
+"gamma"
+],
+"420": [
+"ba77d96933f6",
+"gamma"
+],
+"421": [
+"22bcd8299a1d",
+"gamma"
+],
+"422": [
+"57755b26194e",
+"gamma"
+]
+}
+},
+"Creatures/Other/2 Stars/Auto_Croissant.psd": {
+"icc": [
+0.0,
+178115
+],
+"text": {
+"3569": [
+"3bafcb1ff037",
+"gamma"
+],
+"417": [
+"4c1a4993d543",
+"gamma"
+],
+"418": [
+"51aea8c9c1ce",
+"gamma"
+],
+"419": [
+"2310c11ee8ff",
+"gamma"
+],
+"420": [
+"e47f0380db5a",
+"gamma"
+],
+"421": [
+"9b1adc233b93",
+"gamma"
+],
+"422": [
+"ab5244103e52",
+"gamma"
+]
+}
+},
+"Creatures/Other/2 Stars/Barry_The_Barrel.psd": {
+"icc": [
+0.0,
+207719
+],
+"text": {
+"215": [
+"50168de402e2",
+"gamma"
+],
+"303": [
+"a4590b1ed9ab",
+"gamma"
+],
+"37": [
+"8a2b33e30b78",
+"gamma"
+],
+"95": [
+"e0a197ad6bca",
+"gamma"
+],
+"96": [
+"12c52bcccf79",
+"gamma"
+],
+"97": [
+"25c597640a67",
+"gamma"
+]
+}
+},
+"Creatures/Other/2 Stars/Future_Niiue.psd": {
+"icc": [
+0.0,
+52111
+],
+"text": {
+"1610": [
+"1fa3934e76ea",
+"gamma"
+],
+"417": [
+"6baba2848a83",
+"gamma"
+],
+"418": [
+"8b8ed66ab7f5",
+"gamma"
+],
+"419": [
+"4bdc9173156d",
+"gamma"
+],
+"420": [
+"04dcc81ebb59",
+"gamma"
+],
+"421": [
+"348eed12b6e6",
+"gamma"
+],
+"422": [
+"2fc304675b32",
+"gamma"
+]
+}
+},
+"Creatures/Other/2 Stars/Igor_Robotowski.psd": {
+"icc": [
+0.0,
+1087823
+],
+"text": {
+"417": [
+"15636bb8df6b",
+"gamma"
+],
+"418": [
+"2abaca4a2e93",
+"gamma"
+],
+"419": [
+"e3ed4237c4f9",
+"gamma"
+],
+"420": [
+"ed605ad83e43",
+"gamma"
+],
+"421": [
+"17782815362c",
+"gamma"
+],
+"422": [
+"3fccf030149a",
+"gamma"
+]
+}
+},
+"Creatures/Other/2 Stars/Little_Guy.psd": {
+"icc": [
+0.0,
+83530
+],
+"text": {
+"3729": [
+"42b7f17861e0",
+"gamma"
+],
+"3737": [
+"8ab2ca59b255",
+"gamma"
+],
+"3742": [
+"e2082962245f",
+"gamma"
+],
+"3745": [
+"acdce208c5d5",
+"gamma"
+],
+"3861": [
+"6957cea9e160",
+"gamma"
+],
+"422": [
+"ccfcce91f265",
+"gamma"
+]
+}
+},
+"Creatures/Other/2 Stars/Slugcat.psd": {
+"icc": [
+0.0,
+82087
+],
+"text": {
+"417": [
+"bad362437d19",
+"gamma"
+],
+"418": [
+"a4e51c075159",
+"gamma"
+],
+"419": [
+"3814cf9c6f81",
+"gamma"
+],
+"420": [
+"9177dfa42d01",
+"gamma"
+],
+"421": [
+"90ee5b04285a",
+"gamma"
+],
+"422": [
+"e4c6c27321e9",
+"gamma"
+]
+}
+},
+"Creatures/Other/2 Stars/Stotch.psd": {
+"icc": [
+0.0,
+64417
+],
+"text": {
+"417": [
+"43ca9b497e1e",
+"gamma"
+],
+"418": [
+"593d36a9817e",
+"gamma"
+],
+"419": [
+"292f12902a7f",
+"gamma"
+],
+"420": [
+"1c65d3bdc433",
+"gamma"
+],
+"421": [
+"bde928084728",
+"gamma"
+],
+"422": [
+"b84f1e22c048",
+"gamma"
+]
+}
+},
+"Creatures/Other/2 Stars/Stubborn_King.psd": {
+"icc": [
+0.0,
+800296
+],
+"text": {
+"417": [
+"b32c69010b08",
+"gamma"
+],
+"418": [
+"3c7de3d43249",
+"gamma"
+],
+"419": [
+"48d40214a29b",
+"gamma"
+],
+"420": [
+"bf9f80de9033",
+"gamma"
+],
+"421": [
+"3b023e2b361c",
+"gamma"
+],
+"422": [
+"6dbdf95a2b65",
+"gamma"
+]
+}
+},
+"Creatures/Other/3 Stars/Elmadan.psd": {
+"icc": [
+0.0,
+73288
+],
+"text": {
+"417": [
+"08071c21d34f",
+"gamma"
+],
+"418": [
+"58ffcc829964",
+"gamma"
+],
+"419": [
+"b60956a664d7",
+"gamma"
+],
+"420": [
+"07492f0d4971",
+"gamma"
+],
+"421": [
+"054316fd8d87",
+"gamma"
+],
+"422": [
+"c15001f72e18",
+"gamma"
+]
+}
+},
+"Creatures/Other/3 Stars/Empress Bulblax.psd": {
+"icc": [
+0.0029,
+1286437
+],
+"text": {
+"4063": [
+"6a6d2a4c4c73",
+"gamma"
+],
+"4064": [
+"98d866700ddb",
+"gamma"
+],
+"4065": [
+"8bbbbe317f70",
+"gamma"
+],
+"4066": [
+"46cbf5a93074",
+"gamma"
+],
+"4067": [
+"388a17f0b13f",
+"gamma"
+],
+"418": [
+"4810326eb94c",
+"gamma"
+],
+"419": [
+"81cda1363972",
+"gamma"
+],
+"420": [
+"0bab573bbff1",
+"gamma"
+],
+"421": [
+"fce0ae665f75",
+"gamma"
+],
+"422": [
+"7ba39090579e",
+"gamma"
+]
+}
+},
+"Creatures/Other/3 Stars/Grimora.psd": {
+"icc": [
+0.0,
+11135
+],
+"text": {
+"417": [
+"264bcb1afb02",
+"gamma"
+],
+"418": [
+"2056e265cd73",
+"gamma"
+],
+"419": [
+"fc38fa084314",
+"gamma"
+],
+"420": [
+"95b04f21bc5f",
+"gamma"
+],
+"421": [
+"e72234c7259b",
+"gamma"
+],
+"422": [
+"97c6ef2e5aae",
+"gamma"
+]
+}
+},
+"Creatures/Other/3 Stars/John_Ward.psd": {
+"icc": [
+0.0,
+386739
+],
+"text": {
+"417": [
+"5901e69fe620",
+"gamma"
+],
+"418": [
+"2987204928a6",
+"gamma"
+],
+"419": [
+"1c54e2945f8d",
+"gamma"
+],
+"420": [
+"c38be2086f96",
+"gamma"
+],
+"421": [
+"0234025e3348",
+"gamma"
+],
+"422": [
+"8fc6d8387bdd",
+"gamma"
+]
+}
+},
+"Creatures/Other/3 Stars/King_Harkinian.psd": {
+"icc": [
+0.0,
+1289108
+],
+"text": {
+"417": [
+"50db1e9b3ca8",
+"gamma"
+],
+"418": [
+"c7e33ae0fe10",
+"gamma"
+],
+"419": [
+"dc98147a8f75",
+"gamma"
+],
+"420": [
+"1faba830d667",
+"gamma"
+],
+"421": [
+"5424019bec12",
+"gamma"
+],
+"422": [
+"45d7886a059e",
+"gamma"
+]
+}
+},
+"Creatures/Other/3 Stars/Niko.psd": {
+"icc": [
+0.0,
+480193
+],
+"text": {
+"417": [
+"ad2faffa8442",
+"gamma"
+],
+"418": [
+"2c8bb4fb2f9f",
+"gamma"
+],
+"419": [
+"7db468c63b05",
+"gamma"
+],
+"420": [
+"223db9fe2a94",
+"gamma"
+],
+"421": [
+"d003eeb54196",
+"gamma"
+],
+"422": [
+"55d0f6b26bff",
+"gamma"
+]
+}
+},
+"Creatures/Other/3 Stars/Overseer.psd": {
+"icc": [
+0.0,
+33106
+],
+"text": {
+"417": [
+"67482332b10f",
+"gamma"
+],
+"418": [
+"31744064012b",
+"gamma"
+],
+"419": [
+"6cc22b12771d",
+"gamma"
+],
+"420": [
+"080529207a3e",
+"gamma"
+],
+"421": [
+"6a9104e3bf39",
+"gamma"
+],
+"422": [
+"decdd0bba0fe",
+"gamma"
+]
+}
+},
+"Creatures/Other/3 Stars/Pizza.psd": {
+"icc": [
+0.0,
+350837
+],
+"text": {
+"417": [
+"06dc29257e5f",
+"gamma"
+],
+"418": [
+"e7615109853d",
+"gamma"
+],
+"419": [
+"2f741ca25f18",
+"gamma"
+],
+"420": [
+"73ff10ceb9c5",
+"gamma"
+],
+"421": [
+"f81a36cf3d52",
+"gamma"
+],
+"422": [
+"b474ef3f7157",
+"gamma"
+]
+}
+},
+"Creatures/Other/3 Stars/Puzzled_Cat.psd": {
+"icc": [
+0.0,
+61484
+],
+"text": {
+"417": [
+"9dc58e6b949b",
+"gamma"
+],
+"418": [
+"2dfb7a72dda5",
+"gamma"
+],
+"419": [
+"901630952c9b",
+"gamma"
+],
+"420": [
+"d5ee150f4565",
+"gamma"
+],
+"421": [
+"79112d264cbe",
+"gamma"
+],
+"422": [
+"ca972f99e309",
+"gamma"
+]
+}
+},
+"Creatures/Other/3 Stars/Stay.psd": {
+"icc": [
+0.0,
+220
+],
+"text": {
+"417": [
+"3f9a5631f3da",
+"gamma"
+],
+"418": [
+"afaf92a3102e",
+"gamma"
+],
+"419": [
+"3cb137eb0408",
+"gamma"
+],
+"420": [
+"b194737600ef",
+"gamma"
+],
+"421": [
+"9acdfd68c1f0",
+"gamma"
+],
+"422": [
+"3b8c45e4ec78",
+"gamma"
+]
+}
+},
+"Creatures/Other/3 Stars/Supreme_Jeh'Oul.psd": {
+"icc": [
+0.0,
+797871
+],
+"text": {
+"417": [
+"0b0152bfc926",
+"gamma"
+],
+"418": [
+"eeac0b28e3c2",
+"gamma"
+],
+"419": [
+"c05cbceb5041",
+"gamma"
+],
+"420": [
+"4f063c5fa2f9",
+"gamma"
+],
+"421": [
+"6347bac7e426",
+"gamma"
+],
+"422": [
+"15242b5d8081",
+"gamma"
+]
+}
+},
+"Creatures/Other/3 Stars/The_Last_Cabbage_Merchant.psd": {
+"icc": [
+0.0,
+76980
+],
+"text": {
+"3554": [
+"23a4f7a787f9",
+"gamma"
+],
+"3555": [
+"4096be4758bd",
+"gamma"
+],
+"3559": [
+"199c9b1cfe92",
+"gamma"
+],
+"3560": [
+"3d2e4d4f345a",
+"gamma"
+],
+"3562": [
+"a20c6f511d52",
+"gamma"
+],
+"3650": [
+"4c2fe74c8190",
+"gamma"
+],
+"422": [
+"1839f69e3e64",
+"gamma"
+]
+}
+},
+"Creatures/Other/3 Stars/The_Patients.psd": {
+"icc": [
+0.0,
+6575
+],
+"text": {
+"417": [
+"b550581050c7",
+"gamma"
+],
+"418": [
+"37c48906409b",
+"gamma"
+],
+"419": [
+"ad3b9c475688",
+"gamma"
+],
+"420": [
+"81bf94982d1c",
+"gamma"
+],
+"421": [
+"2844329bc15a",
+"gamma"
+],
+"422": [
+"7752becd2ef5",
+"gamma"
+]
+}
+},
+"Creatures/Other/4 Stars/Astr_Meiana.psd": {
+"icc": [
+0.0,
+19012
+],
+"text": {
+"417": [
+"3edf1e2515a9",
+"gamma"
+],
+"418": [
+"1fd017f6731f",
+"gamma"
+],
+"419": [
+"2933f86d1bd5",
+"gamma"
+],
+"420": [
+"d7ddbbef1cb6",
+"gamma"
+],
+"421": [
+"b34559fe4bac",
+"gamma"
+],
+"422": [
+"88fba0e37b32",
+"gamma"
+]
+}
+},
+"Creatures/Other/4 Stars/Katarina.psd": {
+"icc": [
+0.0,
+567604
+],
+"text": {
+"417": [
+"fb9047f12739",
+"gamma"
+],
+"418": [
+"1715ef91951d",
+"gamma"
+],
+"419": [
+"b58346daae7a",
+"gamma"
+],
+"420": [
+"ce34b30df9bd",
+"gamma"
+],
+"421": [
+"c72568cf08e2",
+"gamma"
+],
+"422": [
+"f7853320c112",
+"gamma"
+]
+}
+},
+"Creatures/Other/4 Stars/Miles_Edgeworth.psd": {
+"icc": [
+0.0,
+191903
+],
+"text": {
+"417": [
+"cbd539b18fb9",
+"gamma"
+],
+"418": [
+"3171ed404e52",
+"gamma"
+],
+"419": [
+"91ccee88803b",
+"gamma"
+],
+"420": [
+"dd1184200fe7",
+"gamma"
+],
+"421": [
+"471b7666e7f2",
+"gamma"
+],
+"422": [
+"0166dece0497",
+"gamma"
+]
+}
+},
+"Creatures/Other/4 Stars/Militron.psd": {
+"icc": [
+0.0,
+1166574
+],
+"text": {
+"417": [
+"9648d284b8dc",
+"gamma"
+],
+"418": [
+"edb8df348ccb",
+"gamma"
+],
+"419": [
+"dc98147a8f75",
+"gamma"
+],
+"420": [
+"1faba830d667",
+"gamma"
+],
+"421": [
+"5424019bec12",
+"gamma"
+],
+"422": [
+"a194a0ee74cb",
+"gamma"
+]
+}
+},
+"Creatures/Other/4 Stars/Morshu.psd": {
+"icc": [
+0.0,
+437278
+],
+"text": {
+"417": [
+"cc4b9234f888",
+"gamma"
+],
+"418": [
+"edb8df348ccb",
+"gamma"
+],
+"419": [
+"dc98147a8f75",
+"gamma"
+],
+"420": [
+"1faba830d667",
+"gamma"
+],
+"421": [
+"5424019bec12",
+"gamma"
+],
+"422": [
+"9b571cb7f527",
+"gamma"
+]
+}
+},
+"Creatures/Other/4 Stars/Mr_Krabs.psd": {
+"icc": [
+0.0,
+1066743
+],
+"text": {
+"417": [
+"a4fa79b47d4c",
+"gamma"
+],
+"418": [
+"d762acefaa92",
+"gamma"
+],
+"419": [
+"8e35aeec7c50",
+"gamma"
+],
+"420": [
+"b35375ced7f3",
+"gamma"
+],
+"421": [
+"d1e1c063f9b9",
+"gamma"
+],
+"422": [
+"eb4feab6d49c",
+"gamma"
+]
+}
+},
+"Creatures/Other/4 Stars/Nasus.psd": {
+"icc": [
+0.0,
+469595
+],
+"text": {
+"417": [
+"1ada5bd09a0f",
+"gamma"
+],
+"418": [
+"489be5e3f500",
+"gamma"
+],
+"419": [
+"2c4ca89be2d8",
+"gamma"
+],
+"420": [
+"b8575daa7aba",
+"gamma"
+],
+"421": [
+"c30d67b5579b",
+"gamma"
+],
+"422": [
+"098dbba94127",
+"gamma"
+]
+}
+},
+"Creatures/Other/4 Stars/Quote.psd": {
+"icc": [
+0.0,
+177536
+],
+"text": {
+"3781": [
+"cfa59aeebc20",
+"gamma"
+],
+"3782": [
+"07ab05499095",
+"gamma"
+],
+"3783": [
+"3136b5908e82",
+"gamma"
+],
+"417": [
+"412fd9088d9e",
+"gamma"
+],
+"418": [
+"1c65c14e4b65",
+"gamma"
+],
+"422": [
+"34bcf10f68e8",
+"gamma"
+]
+}
+},
+"Creatures/Other/4 Stars/Sonic.psd": {
+"icc": [
+0.0,
+1030359
+],
+"text": {
+"417": [
+"46abc62c77ae",
+"gamma"
+],
+"418": [
+"32aaebc11087",
+"gamma"
+],
+"419": [
+"33495297a24a",
+"gamma"
+],
+"420": [
+"7789b1f9edbc",
+"gamma"
+],
+"421": [
+"b7cf9b922f25",
+"gamma"
+]
+}
+},
+"Creatures/Other/4 Stars/Tai_Lung.psd": {
+"icc": [
+1.0,
+416858
+],
+"text": {
+"417": [
+"fdb4801410c9",
+"gamma"
+]
+}
+},
+"Creatures/Other/4 Stars/The_Kingchin.psd": {
+"icc": [
+0.0,
+17690
+],
+"text": {
+"417": [
+"9723d0d7f933",
+"gamma"
+],
+"418": [
+"0e495c9430d9",
+"gamma"
+],
+"419": [
+"3886d17427bd",
+"gamma"
+],
+"420": [
+"4bfde8d836c4",
+"gamma"
+],
+"421": [
+"e82be20e5147",
+"gamma"
+],
+"422": [
+"e7599e577602",
+"gamma"
+]
+}
+},
+"Creatures/Other/5 Stars/Alex_YIIK.psd": {
+"icc": [
+0.0,
+143951
+],
+"text": {
+"417": [
+"35c6e841c1ab",
+"gamma"
+],
+"418": [
+"7924750e79dd",
+"gamma"
+],
+"419": [
+"c92d7f05b5d8",
+"gamma"
+],
+"420": [
+"a8f97da5e88d",
+"gamma"
+],
+"421": [
+"b7bef0f9f86a",
+"gamma"
+],
+"422": [
+"be6e71656ef6",
+"gamma"
+]
+}
+},
+"Creatures/Other/5 Stars/Baba.psd": {
+"icc": [
+0.0,
+607756
+],
+"text": {
+"3249": [
+"8fc5124272b2",
+"straight"
+],
+"3250": [
+"8fc5124272b2",
+"straight"
+],
+"3256": [
+"8fc5124272b2",
+"straight"
+],
+"3262": [
+"8fc5124272b2",
+"straight"
+],
+"417": [
+"e8a952b7abc5",
+"gamma"
+]
+}
+},
+"Creatures/Other/5 Stars/Bobberlington.psd": {
+"icc": [
+0.0,
+635358
+],
+"text": {
+"3178": [
+"03295baf0c77",
+"gamma"
+],
+"418": [
+"c37a75799a2f",
+"gamma"
+],
+"419": [
+"d9848a1cc6bf",
+"gamma"
+],
+"420": [
+"09909d5842c6",
+"gamma"
+],
+"421": [
+"85a6f247fa36",
+"gamma"
+],
+"422": [
+"41d6a1eccb55",
+"gamma"
+]
+}
+},
+"Creatures/Other/5 Stars/Croissant.psd": {
+"icc": [
+0.0,
+295620
+],
+"text": {
+"2669": [
+"3b5bd78d4836",
+"gamma"
+],
+"417": [
+"54568bdb6135",
+"gamma"
+],
+"418": [
+"b0cf0266e116",
+"gamma"
+],
+"419": [
+"d4bfa0f5dbaa",
+"gamma"
+],
+"420": [
+"a85a2808d0a5",
+"gamma"
+],
+"421": [
+"979f9c674313",
+"gamma"
+],
+"422": [
+"38fb6ac26779",
+"gamma"
+]
+}
+},
+"Creatures/Other/5 Stars/Doctor_Zomboss.psd": {
+"icc": [
+0.0,
+416020
+],
+"text": {
+"1459": [
+"e49db790888e",
+"gamma"
+],
+"417": [
+"98d953b9b56c",
+"gamma"
+],
+"418": [
+"72fad278759e",
+"gamma"
+],
+"419": [
+"272b8a43716f",
+"gamma"
+],
+"420": [
+"ae17138b8007",
+"gamma"
+],
+"421": [
+"29c787ea607f",
+"gamma"
+],
+"422": [
+"681dfb25c43d",
+"gamma"
+]
+}
+},
+"Creatures/Other/5 Stars/Gandhi.psd": {
+"icc": [
+0.0,
+563990
+],
+"text": {
+"417": [
+"82d7ec7c26ee",
+"gamma"
+],
+"418": [
+"8069707fc171",
+"gamma"
+],
+"419": [
+"670ccd5488ef",
+"gamma"
+],
+"420": [
+"972aafc031f1",
+"gamma"
+],
+"421": [
+"17012652dec3",
+"gamma"
+],
+"422": [
+"f985ada56809",
+"gamma"
+]
+}
+},
+"Creatures/Other/5 Stars/Koro-Sensei.psd": {
+"icc": [
+0.0,
+309404
+],
+"text": {
+"417": [
+"aff0b62dfc5e",
+"gamma"
+],
+"418": [
+"a5a46fcf71b1",
+"gamma"
+],
+"419": [
+"2dfdb7e6e304",
+"gamma"
+],
+"420": [
+"b2cf987ed136",
+"gamma"
+],
+"421": [
+"0c84b1260ac0",
+"gamma"
+],
+"422": [
+"7de2c67116b8",
+"gamma"
+]
+}
+},
+"Creatures/Other/5 Stars/Kyle.psd": {
+"icc": [
+0.0,
+1406296
+],
+"text": {
+"417": [
+"26f8df59b239",
+"gamma"
+],
+"418": [
+"829b2ae1ac22",
+"gamma"
+],
+"419": [
+"3730c2c4c23c",
+"gamma"
+],
+"420": [
+"23034d32b972",
+"gamma"
+],
+"421": [
+"17bfa996ba63",
+"gamma"
+],
+"422": [
+"cf97d9d459e9",
+"gamma"
+]
+}
+},
+"Creatures/Other/5 Stars/Leshy.psd": {
+"icc": [
+0.0,
+313604
+],
+"text": {
+"417": [
+"31850b77b647",
+"gamma"
+],
+"418": [
+"474336cbdf7b",
+"gamma"
+],
+"419": [
+"c55f78462e04",
+"gamma"
+],
+"420": [
+"9433e5ed9ac5",
+"gamma"
+],
+"421": [
+"b3ddc32ab782",
+"gamma"
+],
+"422": [
+"f3db05af1234",
+"gamma"
+]
+}
+},
+"Creatures/Other/5 Stars/Michael.psd": {
+"icc": [
+0.0,
+122713
+],
+"text": {
+"3178": [
+"88b3e57985c9",
+"gamma"
+],
+"418": [
+"90bc1d25652c",
+"gamma"
+],
+"419": [
+"a1f3ccd2e6c0",
+"gamma"
+],
+"420": [
+"ac24f9da364d",
+"gamma"
+],
+"421": [
+"485df02c0e07",
+"gamma"
+],
+"422": [
+"0b2099dd6f5b",
+"gamma"
+]
+}
+},
+"Creatures/Other/5 Stars/Niiue.psd": {
+"icc": [
+0.0,
+648235
+],
+"text": {
+"1600": [
+"8ce04c281d3f",
+"gamma"
+],
+"417": [
+"bf8847d0f86b",
+"gamma"
+],
+"418": [
+"8b8ed66ab7f5",
+"gamma"
+],
+"419": [
+"4bdc9173156d",
+"gamma"
+],
+"420": [
+"04dcc81ebb59",
+"gamma"
+],
+"421": [
+"348eed12b6e6",
+"gamma"
+],
+"422": [
+"6f6ba76e6505",
+"gamma"
+]
+}
+},
+"Creatures/Other/5 Stars/The_Forbidden_One.psd": {
+"icc": [
+0.0,
+8337
+],
+"text": {
+"3178": [
+"4437e0d0f0db",
+"gamma"
+],
+"418": [
+"7ced8d0c4746",
+"gamma"
+],
+"419": [
+"822a26bf70e8",
+"gamma"
+],
+"420": [
+"f0ba2b6cc1ce",
+"gamma"
+],
+"421": [
+"668ba2b3056d",
+"gamma"
+],
+"422": [
+"88224444b07b",
+"gamma"
+]
+}
+},
+"Creatures/Other/5 Stars/The_Queen.psd": {
+"icc": [
+0.0,
+6215
+],
+"text": {
+"417": [
+"4afb61c5a42f",
+"gamma"
+],
+"418": [
+"7fe11f150782",
+"gamma"
+],
+"419": [
+"fb171c5ba946",
+"gamma"
+],
+"420": [
+"e7f0eb57ad32",
+"gamma"
+],
+"421": [
+"660a8e7083a9",
+"gamma"
+],
+"422": [
+"56daeabff966",
+"gamma"
+]
+}
+},
+"Creatures/Other/5 Stars/The_Thin_Man.psd": {
+"icc": [
+0.0,
+81304
+],
+"text": {
+"417": [
+"21cf9a883c32",
+"gamma"
+],
+"418": [
+"0a45318d3f48",
+"gamma"
+],
+"419": [
+"b195bdcc18b1",
+"gamma"
+],
+"420": [
+"a6504ad8ab85",
+"gamma"
+],
+"421": [
+"7e748ba991bf",
+"gamma"
+],
+"422": [
+"a0daa19b071f",
+"gamma"
+]
+}
+},
+"Creatures/Other/5 Stars/Tyler.psd": {
+"icc": [
+0.0,
+234848
+],
+"text": {
+"417": [
+"512ab6789923",
+"gamma"
+],
+"418": [
+"049c36ba497b",
+"gamma"
+],
+"419": [
+"27ad8d860078",
+"gamma"
+],
+"420": [
+"927769489ad9",
+"gamma"
+],
+"421": [
+"81af6920aead",
+"gamma"
+]
+}
+},
+"Creatures/Other/5 Stars/Z!!!!!.psd": {
+"icc": [
+0.0,
+1061663
+],
+"text": {
+"4088": [
+"72cd111a1327",
+"gamma"
+],
+"417": [
+"86ead6a7675f",
+"gamma"
+],
+"418": [
+"0f013062a2e1",
+"gamma"
+],
+"419": [
+"c532f8c7a349",
+"gamma"
+],
+"420": [
+"f99f361d9830",
+"gamma"
+],
+"421": [
+"8b2d413a0c63",
+"gamma"
+]
+}
+},
+"Creatures/Pandas/2 Stars/Assault_Panda.psd": {
+"icc": [
+0.0,
+43055
+],
+"text": {
+"417": [
+"ca93ba4001bc",
+"gamma"
+],
+"418": [
+"fa82ac5e5c60",
+"gamma"
+],
+"419": [
+"4fa05be30aca",
+"gamma"
+],
+"420": [
+"86e3983949a8",
+"gamma"
+],
+"421": [
+"60bc0ba1eec1",
+"gamma"
+],
+"422": [
+"4608c72017ac",
+"gamma"
+]
+}
+},
+"Creatures/Pandas/2 Stars/Minecraft_Panda.psd": {
+"icc": [
+0.0,
+859047
+],
+"text": {
+"417": [
+"370f8f7f8f5e",
+"gamma"
+],
+"418": [
+"ecdfad8f5d74",
+"gamma"
+],
+"419": [
+"e63ea0d61faf",
+"gamma"
+],
+"420": [
+"b9ff61019beb",
+"gamma"
+],
+"421": [
+"e4884d3b6d6b",
+"gamma"
+]
+}
+},
+"Creatures/Pandas/2 Stars/Panda.psd": {
+"icc": [
+0.0,
+440304
+]
+},
+"Creatures/Pandas/2 Stars/Pandanoko.psd": {
+"icc": [
+0.0,
+676495
+],
+"text": {
+"417": [
+"a35bbfb5095b",
+"gamma"
+],
+"418": [
+"561029531f84",
+"gamma"
+],
+"419": [
+"4a87ecef62a1",
+"gamma"
+],
+"420": [
+"5ca6833a86e9",
+"gamma"
+],
+"421": [
+"22156207c488",
+"gamma"
+]
+}
+},
+"Creatures/Pandas/2 Stars/Peter_Panda.psd": {
+"icc": [
+0.0,
+452484
+],
+"text": {
+"1172": [
+"d7c377baf23b",
+"gamma"
+],
+"418": [
+"9d27ffc28fef",
+"gamma"
+],
+"419": [
+"68677d98b01a",
+"gamma"
+],
+"420": [
+"05f0741ce15d",
+"gamma"
+],
+"421": [
+"52f4d6d14091",
+"gamma"
+],
+"422": [
+"f84297697d17",
+"gamma"
+]
+}
+},
+"Creatures/Pandas/2 Stars/YIIK_Panda.psd": {
+"icc": [
+0.0,
+162649
+],
+"text": {
+"417": [
+"2a93417b7258",
+"gamma"
+],
+"418": [
+"8e886d3f306d",
+"gamma"
+],
+"419": [
+"cf6c7eaec851",
+"gamma"
+],
+"420": [
+"579f8f508b44",
+"gamma"
+],
+"421": [
+"3d7ea84a4f55",
+"gamma"
+],
+"422": [
+"b66e6d5a09f7",
+"gamma"
+]
+}
+},
+"Creatures/Pandas/2 Stars/Zompanda.psd": {
+"icc": [
+0.0,
+25009
+],
+"text": {
+"1172": [
+"fc2a48881061",
+"gamma"
+],
+"418": [
+"ece2d0066678",
+"gamma"
+],
+"419": [
+"2a0bbbbb338e",
+"gamma"
+],
+"420": [
+"f0d91542945a",
+"gamma"
+],
+"421": [
+"18dca99ac11a",
+"gamma"
+],
+"422": [
+"4b8b420082be",
+"gamma"
+]
+}
+},
+"Creatures/Pandas/3 Stars/Defcon_Panda.psd": {
+"icc": [
+0.0,
+697704
+],
+"text": {
+"1258": [
+"cbc48976c147",
+"gamma"
+],
+"1259": [
+"b30b72922cb3",
+"gamma"
+],
+"1260": [
+"0226ee44ca8a",
+"gamma"
+],
+"1261": [
+"0adcef11cc35",
+"gamma"
+],
+"1263": [
+"1e7019b24136",
+"gamma"
+],
+"422": [
+"bf0b6f5cde2d",
+"gamma"
+]
+}
+},
+"Creatures/Pandas/3 Stars/P.A.N.D.A._Mk_A.psd": {
+"icc": [
+0.0,
+38111
+],
+"text": {
+"1172": [
+"893f150fbdd2",
+"gamma"
+],
+"418": [
+"cbc48976c147",
+"gamma"
+],
+"419": [
+"b30b72922cb3",
+"gamma"
+],
+"420": [
+"0226ee44ca8a",
+"gamma"
+],
+"421": [
+"0adcef11cc35",
+"gamma"
+],
+"422": [
+"b42881a8d00e",
+"gamma"
+]
+}
+},
+"Creatures/Pandas/3 Stars/P.A.N.D.A._Mk_F.psd": {
+"icc": [
+0.0,
+78236
+],
+"text": {
+"1172": [
+"f5f9a095912d",
+"gamma"
+],
+"418": [
+"cbc48976c147",
+"gamma"
+],
+"419": [
+"b30b72922cb3",
+"gamma"
+],
+"420": [
+"0226ee44ca8a",
+"gamma"
+],
+"421": [
+"0adcef11cc35",
+"gamma"
+],
+"422": [
+"2197d0c87fe8",
+"gamma"
+]
+}
+},
+"Creatures/Pandas/3 Stars/P.A.N.D.A._Mk_T.psd": {
+"icc": [
+0.0,
+28556
+],
+"text": {
+"1172": [
+"20e53c73a62e",
+"gamma"
+],
+"418": [
+"cbc48976c147",
+"gamma"
+],
+"419": [
+"b30b72922cb3",
+"gamma"
+],
+"420": [
+"0226ee44ca8a",
+"gamma"
+],
+"421": [
+"0adcef11cc35",
+"gamma"
+],
+"422": [
+"6969dd4ac115",
+"gamma"
+]
+}
+},
+"Creatures/Pandas/3 Stars/Pandabal.psd": {
+"icc": [
+0.0,
+54932
+],
+"text": {
+"1172": [
+"a54289ea70d0",
+"gamma"
+],
+"418": [
+"57fddf5a62f4",
+"gamma"
+],
+"419": [
+"00a9b40e95b9",
+"gamma"
+],
+"420": [
+"1603c951814d",
+"gamma"
+],
+"421": [
+"5935a1727b4e",
+"gamma"
+],
+"422": [
+"3585d3672eff",
+"gamma"
+]
+}
+},
+"Creatures/Pandas/3 Stars/Panseida.psd": {
+"icc": [
+0.0,
+464310
+],
+"text": {
+"1172": [
+"921876f3bf28",
+"gamma"
+],
+"418": [
+"f8188ab23b24",
+"gamma"
+],
+"419": [
+"0e97ef91a6ad",
+"gamma"
+],
+"420": [
+"4b58bab4d735",
+"gamma"
+],
+"421": [
+"604f2c037d2e",
+"gamma"
+],
+"422": [
+"d655ace1821c",
+"gamma"
+]
+}
+},
+"Creatures/Pandas/3 Stars/Project_P.A.N.D.A.psd": {
+"icc": [
+0.0,
+256274
+],
+"text": {
+"1172": [
+"048cc290f43a",
+"gamma"
+],
+"418": [
+"cbc48976c147",
+"gamma"
+],
+"419": [
+"b30b72922cb3",
+"gamma"
+],
+"420": [
+"0226ee44ca8a",
+"gamma"
+],
+"421": [
+"0adcef11cc35",
+"gamma"
+],
+"422": [
+"bd3bbd9f6030",
+"gamma"
+]
+}
+},
+"Creatures/Pandas/3 Stars/Shield_Master_Pi.psd": {
+"icc": [
+0.0006,
+194174
+],
+"text": {
+"1172": [
+"c0d2b9c244e6",
+"gamma"
+],
+"1484": [
+"a271f46534d9",
+"gamma"
+],
+"419": [
+"0e97ef91a6ad",
+"gamma"
+],
+"420": [
+"4b58bab4d735",
+"gamma"
+],
+"421": [
+"604f2c037d2e",
+"gamma"
+],
+"422": [
+"b716471d6cf5",
+"gamma"
+]
+}
+},
+"Creatures/Pandas/3 Stars/Sumo_Panda.psd": {
+"icc": [
+0.0,
+54458
+],
+"text": {
+"1172": [
+"cc567ccef94f",
+"gamma"
+],
+"418": [
+"40d860f2dff3",
+"gamma"
+],
+"419": [
+"3dcd26cd57c3",
+"gamma"
+],
+"420": [
+"1d56ac946147",
+"gamma"
+],
+"421": [
+"7481d3e7c2ea",
+"gamma"
+],
+"422": [
+"4ecbe6fbd34b",
+"gamma"
+]
+}
+},
+"Creatures/Pandas/4 Stars/Groda.psd": {
+"icc": [
+0.0001,
+50420
+],
+"text": {
+"1172": [
+"c410fcd65c52",
+"gamma"
+],
+"418": [
+"7ced8d0c4746",
+"gamma"
+],
+"419": [
+"822a26bf70e8",
+"gamma"
+],
+"420": [
+"f0ba2b6cc1ce",
+"gamma"
+],
+"421": [
+"668ba2b3056d",
+"gamma"
+],
+"422": [
+"b008d5acafb7",
+"gamma"
+]
+}
+},
+"Creatures/Pandas/4 Stars/Pandevourer.psd": {
+"icc": [
+0.0,
+341560
+],
+"text": {
+"1172": [
+"5560fe1a7661",
+"gamma"
+],
+"418": [
+"f8188ab23b24",
+"gamma"
+],
+"419": [
+"0e97ef91a6ad",
+"gamma"
+],
+"420": [
+"4b58bab4d735",
+"gamma"
+],
+"421": [
+"604f2c037d2e",
+"gamma"
+],
+"422": [
+"7425f22b13e2",
+"gamma"
+]
+}
+},
+"Creatures/Pandas/4 Stars/Po.psd": {
+"icc": [
+0.0,
+1672177
+],
+"text": {
+"215": [
+"91ee14cf894d",
+"gamma"
+],
+"303": [
+"d87967a484e7",
+"gamma"
+],
+"37": [
+"11018bb73390",
+"gamma"
+],
+"95": [
+"ae3220883cd8",
+"gamma"
+],
+"96": [
+"d29b26f47820",
+"gamma"
+],
+"97": [
+"cda2645ea2d5",
+"gamma"
+]
+}
+},
+"Creatures/Pandas/5 Stars/Pandora.psd": {
+"icc": [
+0.0,
+561726
+],
+"text": {
+"1172": [
+"c1a6b5ad5a0c",
+"gamma"
+],
+"418": [
+"f8188ab23b24",
+"gamma"
+],
+"419": [
+"0e97ef91a6ad",
+"gamma"
+],
+"420": [
+"4b58bab4d735",
+"gamma"
+],
+"421": [
+"604f2c037d2e",
+"gamma"
+],
+"422": [
+"2f779af8bcb2",
+"gamma"
+]
+}
+},
+"Creatures/R.E.P.O/2 Stars/Apex_Predator.psd": {
+"icc": [
+0.0,
+474123
+],
+"text": {
+"3839": [
+"c803135ef8bb",
+"gamma"
+],
+"3840": [
+"0ef3bfb8dead",
+"gamma"
+],
+"3841": [
+"69ba9f9d89ff",
+"gamma"
+],
+"417": [
+"d31026c652c8",
+"gamma"
+],
+"418": [
+"c90b930ff692",
+"gamma"
+],
+"419": [
+"24478531368d",
+"gamma"
+],
+"420": [
+"ba96d840c59d",
+"gamma"
+],
+"421": [
+"a15228a9de6e",
+"gamma"
+],
+"422": [
+"b915869a74b5",
+"gamma"
+]
+}
+},
+"Creatures/ROTMG/4 Stars/Oryx_the_Exalted_God.psd": {
+"icc": [
+0.0,
+368475
+],
+"text": {
+"3291": [
+"dd7840b77fe6",
+"gamma"
+],
+"417": [
+"226a632d6be9",
+"gamma"
+],
+"418": [
+"b63b1e18cb89",
+"gamma"
+],
+"419": [
+"29ae9352ad7d",
+"gamma"
+],
+"420": [
+"f4165154f133",
+"gamma"
+],
+"421": [
+"5432c018b4a2",
+"gamma"
+],
+"422": [
+"1c2b182004cb",
+"gamma"
+]
+}
+},
+"Creatures/ROTMG/5 Stars/Azamoth_the_Forgotten_King.psd": {
+"icc": [
+0.0,
+217127
+],
+"text": {
+"3291": [
+"a7f3c564ef1a",
+"gamma"
+],
+"417": [
+"2b8b1cbb8eda",
+"gamma"
+],
+"418": [
+"1f7168ace583",
+"gamma"
+],
+"419": [
+"b1377e8980e1",
+"gamma"
+],
+"420": [
+"ef890f6e4ea5",
+"gamma"
+],
+"421": [
+"b16128c6695c",
+"gamma"
+],
+"422": [
+"4533dbd46d7a",
+"gamma"
+]
+}
+},
+"Creatures/Souls/3 Stars/The_Abyss_Watchers.psd": {
+"icc": [
+0.0,
+67081
+],
+"text": {
+"417": [
+"59c2bf8021b4",
+"gamma"
+],
+"418": [
+"1514c5e27289",
+"gamma"
+],
+"419": [
+"01d8ac9f6130",
+"gamma"
+],
+"420": [
+"8d0052dd79c8",
+"gamma"
+],
+"421": [
+"1d858e8c371a",
+"gamma"
+],
+"422": [
+"5cc9fe3200b8",
+"gamma"
+]
+}
+},
+"Creatures/Souls/4 Stars/Godskin_Noble.psd": {
+"icc": [
+0.0,
+172973
+],
+"text": {
+"417": [
+"f0a02d27bcb4",
+"gamma"
+],
+"418": [
+"9f2cf993b66b",
+"gamma"
+],
+"419": [
+"24bc9042ea04",
+"gamma"
+],
+"420": [
+"f05953461faa",
+"gamma"
+],
+"421": [
+"4944aac98085",
+"gamma"
+],
+"422": [
+"ee401735e74d",
+"gamma"
+]
+}
+},
+"Creatures/Souls/4 Stars/Pontiff_Sulyvahn.psd": {
+"icc": [
+0.0,
+140945
+],
+"text": {
+"417": [
+"e4f017b3b0af",
+"gamma"
+],
+"418": [
+"c5ff01852cf0",
+"gamma"
+],
+"419": [
+"01d8ac9f6130",
+"gamma"
+],
+"420": [
+"8d0052dd79c8",
+"gamma"
+],
+"421": [
+"1d858e8c371a",
+"gamma"
+],
+"422": [
+"16bba7fa5b53",
+"gamma"
+]
+}
+},
+"Creatures/Souls/5 Stars/Lothric.psd": {
+"icc": [
+0.0,
+184667
+],
+"text": {
+"215": [
+"63cdcd064147",
+"gamma"
+],
+"37": [
+"e06e87da69cf",
+"gamma"
+],
+"513": [
+"bea062f244b4",
+"gamma"
+],
+"95": [
+"884c4ef1db77",
+"gamma"
+],
+"96": [
+"a1b26fe8ed92",
+"gamma"
+],
+"97": [
+"e07713f30488",
+"gamma"
+]
+}
+},
+"Creatures/Undertale/3 Stars/BergenTRUCK.psd": {
+"icc": [
+0.0,
+244118
+],
+"text": {
+"417": [
+"27a854e27a7e",
+"gamma"
+],
+"418": [
+"426b308b7bf0",
+"gamma"
+],
+"419": [
+"4ddf49ad210d",
+"gamma"
+],
+"420": [
+"decc8fbbf02a",
+"gamma"
+],
+"421": [
+"a6638c6cc7dd",
+"gamma"
+],
+"422": [
+"9eb1359d5c07",
+"gamma"
+]
+}
+},
+"Creatures/Undertale/3 Stars/Martlet.psd": {
+"icc": [
+0.0,
+588976
+],
+"text": {
+"417": [
+"dce8970da6f4",
+"gamma"
+],
+"418": [
+"b0f5d3bfbbe4",
+"gamma"
+],
+"419": [
+"d05ad2a3020b",
+"gamma"
+],
+"420": [
+"9137309aa277",
+"gamma"
+],
+"421": [
+"ceedd9954dcd",
+"gamma"
+],
+"422": [
+"5ad754a4173e",
+"gamma"
+]
+}
+},
+"Creatures/Undertale/3 Stars/Papyrus.psd": {
+"icc": [
+0.0,
+37925
+],
+"text": {
+"215": [
+"d798e2471ad0",
+"gamma"
+],
+"303": [
+"ed81219f90a4",
+"gamma"
+],
+"37": [
+"7c47c0c18abb",
+"gamma"
+],
+"95": [
+"28431ea50874",
+"gamma"
+],
+"96": [
+"c40051f3d239",
+"gamma"
+],
+"97": [
+"04a4027d8b17",
+"gamma"
+]
+}
+},
+"Creatures/Undertale/4 Stars/Jevil.psd": {
+"icc": [
+0.0,
+1073417
+],
+"text": {
+"417": [
+"5eb0bf2e9122",
+"gamma"
+],
+"418": [
+"413325097ef2",
+"gamma"
+],
+"419": [
+"542ac7bdbee2",
+"gamma"
+],
+"420": [
+"f2cfe1574434",
+"gamma"
+],
+"421": [
+"af41c7f21190",
+"gamma"
+],
+"422": [
+"9734831785aa",
+"gamma"
+]
+}
+},
+"Creatures/Undertale/4 Stars/Mettaton.psd": {
+"icc": [
+0.0,
+471982
+],
+"text": {
+"215": [
+"af619f246570",
+"gamma"
+],
+"303": [
+"4d91d103d14b",
+"gamma"
+],
+"37": [
+"db0af3b4f930",
+"gamma"
+],
+"95": [
+"b94599c1404d",
+"gamma"
+],
+"96": [
+"b94a6e03236b",
+"gamma"
+],
+"97": [
+"f0a7109ca821",
+"gamma"
+]
+}
+},
+"Creatures/Undertale/4 Stars/Toriel.psd": {
+"icc": [
+0.0,
+207131
+],
+"text": {
+"215": [
+"51f74a178d3e",
+"gamma"
+],
+"303": [
+"42e38e7949a3",
+"gamma"
+],
+"37": [
+"db0af3b4f930",
+"gamma"
+],
+"95": [
+"b94599c1404d",
+"gamma"
+],
+"96": [
+"b94a6e03236b",
+"gamma"
+],
+"97": [
+"f0a7109ca821",
+"gamma"
+]
+}
+},
+"Creatures/Undertale/4 Stars/Undyne.psd": {
+"icc": [
+0.0,
+438660
+],
+"text": {
+"215": [
+"d9b2b5a55249",
+"gamma"
+],
+"303": [
+"8c2ef0b38799",
+"gamma"
+],
+"37": [
+"db0af3b4f930",
+"gamma"
+],
+"95": [
+"b94599c1404d",
+"gamma"
+],
+"96": [
+"b94a6e03236b",
+"gamma"
+],
+"97": [
+"f0a7109ca821",
+"gamma"
+]
+}
+},
+"Creatures/Undertale/5 Stars/Sans.psd": {
+"icc": [
+0.0,
+841094
+],
+"text": {
+"215": [
+"95d1a8cafa9c",
+"gamma"
+],
+"303": [
+"9741dc95f304",
+"gamma"
+],
+"37": [
+"d499c7e09f9b",
+"gamma"
+],
+"95": [
+"acf270dd64c0",
+"gamma"
+],
+"96": [
+"f9a5b69ec99d",
+"gamma"
+],
+"97": [
+"402bce6ced6e",
+"gamma"
+]
+}
+},
+"Creatures/Undertale/5 Stars/Spamton_Neo.psd": {
+"icc": [
+0.0,
+218413
+],
+"text": {
+"3435": [
+"ceedd9954dcd",
+"gamma"
+],
+"3436": [
+"d05ad2a3020b",
+"gamma"
+],
+"3437": [
+"9137309aa277",
+"gamma"
+],
+"3438": [
+"b0f5d3bfbbe4",
+"gamma"
+],
+"3440": [
+"6fa4bd123c9b",
+"gamma"
+],
+"417": [
+"83f7307dde6a",
+"gamma"
+]
+}
+},
+"Creatures/Undertale/5 Stars/Zenith_Martlet.psd": {
+"icc": [
+0.0,
+879929
+],
+"text": {
+"417": [
+"39d1308cd56d",
+"gamma"
+],
+"418": [
+"b0f5d3bfbbe4",
+"gamma"
+],
+"419": [
+"d05ad2a3020b",
+"gamma"
+],
+"420": [
+"9137309aa277",
+"gamma"
+],
+"421": [
+"ceedd9954dcd",
+"gamma"
+],
+"422": [
+"944bc8d83e9d",
+"gamma"
+]
+}
+},
+"Creatures/World Of Warcraft/3 Stars/Leeroy_Jenkins.psd": {
+"icc": [
+0.0002,
+871272
+],
+"text": {
+"1034": [
+"3a4b35e05acb",
+"gamma"
+],
+"417": [
+"b1de181ecb30",
+"gamma"
+],
+"418": [
+"867d5b89f670",
+"gamma"
+],
+"419": [
+"46da5ee121fa",
+"gamma"
+],
+"420": [
+"e1ce1df906e3",
+"gamma"
+],
+"421": [
+"576d05261bd7",
+"gamma"
+],
+"422": [
+"4d7cf437c765",
+"gamma"
+]
+}
+},
+"Creatures/World Of Warcraft/4 Stars/Kalecgos.psd": {
+"icc": [
+0.0001,
+371929
+],
+"text": {
+"417": [
+"60257e98927b",
+"gamma"
+],
+"418": [
+"7d37dc028a4d",
+"gamma"
+],
+"419": [
+"1533559ab684",
+"gamma"
+],
+"420": [
+"e1ce1df906e3",
+"gamma"
+],
+"421": [
+"576d05261bd7",
+"gamma"
+],
+"422": [
+"fef6843b0d91",
+"gamma"
+]
+}
+},
+"Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd": {
+"icc": [
+0.0,
+375848
+],
+"text": {
+"215": [
+"c5e2f64fbcb1",
+"gamma"
+],
+"37": [
+"c05579278db9",
+"gamma"
+],
+"405": [
+"b3085fa1307c",
+"gamma"
+],
+"406": [
+"4c0501c7744e",
+"gamma"
+],
+"526": [
+"cf9f9d1a3320",
+"gamma"
+],
+"527": [
+"d5575be5a91a",
+"gamma"
+],
+"530": [
+"7b82e54178ed",
+"gamma"
+],
+"95": [
+"936b2e24b7e4",
+"gamma"
+],
+"96": [
+"48b637a65df8",
+"gamma"
+],
+"97": [
+"92da51b96d59",
+"gamma"
+]
+}
+},
+"Creatures/World Of Warcraft/4 Stars/Warcraftian_Druid.psd": {
+"icc": [
+0.0,
+268392
+],
+"text": {
+"1034": [
+"70e63940b65b",
+"gamma"
+],
+"1247": [
+"555700788bd0",
+"gamma"
+],
+"417": [
+"4c6ce77fd617",
+"gamma"
+],
+"418": [
+"867d5b89f670",
+"gamma"
+],
+"419": [
+"46da5ee121fa",
+"gamma"
+],
+"420": [
+"e1ce1df906e3",
+"gamma"
+],
+"421": [
+"576d05261bd7",
+"gamma"
+],
+"422": [
+"df04abd03f9a",
+"gamma"
+]
+}
+},
+"Creatures/World Of Warcraft/4 Stars/Warcraftian_Hunter.psd": {
+"icc": [
+0.0,
+380248
+],
+"text": {
+"1034": [
+"36762d2abd42",
+"gamma"
+],
+"417": [
+"1fd4069de7ec",
+"gamma"
+],
+"418": [
+"867d5b89f670",
+"gamma"
+],
+"419": [
+"46da5ee121fa",
+"gamma"
+],
+"420": [
+"e1ce1df906e3",
+"gamma"
+],
+"421": [
+"576d05261bd7",
+"gamma"
+],
+"422": [
+"df04abd03f9a",
+"gamma"
+]
+}
+},
+"Creatures/World Of Warcraft/4 Stars/Warcraftian_Mage.psd": {
+"icc": [
+0.0004,
+793494
+],
+"text": {
+"417": [
+"e7664ad893e7",
+"gamma"
+],
+"418": [
+"867d5b89f670",
+"gamma"
+],
+"419": [
+"46da5ee121fa",
+"gamma"
+],
+"420": [
+"e1ce1df906e3",
+"gamma"
+],
+"421": [
+"576d05261bd7",
+"gamma"
+],
+"422": [
+"a2ace51f834d",
+"gamma"
+]
+}
+},
+"Creatures/World Of Warcraft/4 Stars/Warcraftian_Paladin.psd": {
+"icc": [
+0.0,
+122157
+],
+"text": {
+"1034": [
+"00defdcd5ece",
+"gamma"
+],
+"417": [
+"6c339ca7dfd9",
+"gamma"
+],
+"418": [
+"867d5b89f670",
+"gamma"
+],
+"419": [
+"46da5ee121fa",
+"gamma"
+],
+"420": [
+"e1ce1df906e3",
+"gamma"
+],
+"421": [
+"576d05261bd7",
+"gamma"
+],
+"422": [
+"df04abd03f9a",
+"gamma"
+]
+}
+},
+"Creatures/World Of Warcraft/4 Stars/Warcraftian_Priest.psd": {
+"icc": [
+0.0,
+132854
+],
+"text": {
+"1034": [
+"778bc0173cd6",
+"gamma"
+],
+"417": [
+"b9470b1c7efa",
+"gamma"
+],
+"418": [
+"867d5b89f670",
+"gamma"
+],
+"419": [
+"46da5ee121fa",
+"gamma"
+],
+"420": [
+"e1ce1df906e3",
+"gamma"
+],
+"421": [
+"576d05261bd7",
+"gamma"
+],
+"422": [
+"df04abd03f9a",
+"gamma"
+]
+}
+},
+"Creatures/World Of Warcraft/4 Stars/Warcraftian_Rogue.psd": {
+"icc": [
+0.0,
+225302
+],
+"text": {
+"1034": [
+"450d662b5211",
+"gamma"
+],
+"417": [
+"e29af5d6284f",
+"gamma"
+],
+"418": [
+"867d5b89f670",
+"gamma"
+],
+"419": [
+"46da5ee121fa",
+"gamma"
+],
+"420": [
+"e1ce1df906e3",
+"gamma"
+],
+"421": [
+"576d05261bd7",
+"gamma"
+],
+"422": [
+"df04abd03f9a",
+"gamma"
+]
+}
+},
+"Creatures/World Of Warcraft/4 Stars/Warcraftian_Shaman.psd": {
+"icc": [
+0.0,
+156162
+],
+"text": {
+"1034": [
+"377e253e3dfd",
+"gamma"
+],
+"417": [
+"911c63828b31",
+"gamma"
+],
+"418": [
+"867d5b89f670",
+"gamma"
+],
+"419": [
+"46da5ee121fa",
+"gamma"
+],
+"420": [
+"e1ce1df906e3",
+"gamma"
+],
+"421": [
+"576d05261bd7",
+"gamma"
+],
+"422": [
+"df04abd03f9a",
+"gamma"
+]
+}
+},
+"Creatures/World Of Warcraft/4 Stars/Warcraftian_Warlock.psd": {
+"icc": [
+0.0,
+33844
+],
+"text": {
+"417": [
+"b2ad1202f744",
+"gamma"
+],
+"418": [
+"867d5b89f670",
+"gamma"
+],
+"419": [
+"46da5ee121fa",
+"gamma"
+],
+"420": [
+"e1ce1df906e3",
+"gamma"
+],
+"421": [
+"576d05261bd7",
+"gamma"
+],
+"422": [
+"e34ebe6e4a07",
+"gamma"
+]
+}
+},
+"Creatures/World Of Warcraft/4 Stars/Warcraftian_Warrior.psd": {
+"icc": [
+0.0001,
+886932
+],
+"text": {
+"417": [
+"057f9aa265c5",
+"gamma"
+],
+"418": [
+"867d5b89f670",
+"gamma"
+],
+"419": [
+"46da5ee121fa",
+"gamma"
+],
+"420": [
+"e1ce1df906e3",
+"gamma"
+],
+"421": [
+"576d05261bd7",
+"gamma"
+],
+"422": [
+"886ee1ce5812",
+"gamma"
+]
+}
+},
+"Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd": {
+"icc": [
+0.0,
+470492
+],
+"text": {
+"417": [
+"b539071aa5cd",
+"gamma"
+],
+"418": [
+"867d5b89f670",
+"gamma"
+],
+"419": [
+"46da5ee121fa",
+"gamma"
+],
+"420": [
+"e1ce1df906e3",
+"gamma"
+],
+"421": [
+"576d05261bd7",
+"gamma"
+],
+"422": [
+"d8b9a2cf71bf",
+"gamma"
+]
+}
+},
+"Field/1 Stars/Bench.psd": {
+"text": {
+"320": [
+"51448348fbd0",
+"gamma"
+],
+"327": [
+"c08c1fc0437c",
+"gamma"
+]
+}
+},
+"Field/1 Stars/Cloud_Soiree.psd": {
+"text": {
+"320": [
+"907c317ade87",
+"gamma"
+],
+"327": [
+"8509b8006e20",
+"gamma"
+]
+}
+},
+"Field/1 Stars/Forgotten_Crossroads.psd": {
+"text": {
+"2018": [
+"b33c7c04a7b6",
+"gamma"
+],
+"327": [
+"4ee55641716d",
+"gamma"
+]
+}
+},
+"Field/1 Stars/Keelhaul Key.psd": {
+"text": {
+"320": [
+"b436c47b24f1",
+"gamma"
+],
+"327": [
+"76d175c34c10",
+"gamma"
+]
+}
+},
+"Field/1 Stars/Pandora's_Gym.psd": {
+"text": {
+"320": [
+"5f45a57c6f08",
+"gamma"
+],
+"327": [
+"477af133798d",
+"gamma"
+]
+}
+},
+"Field/1 Stars/Resting_Grounds.psd": {
+"text": {
+"1954": [
+"765c5a48b3b0",
+"gamma"
+],
+"1955": [
+"fe1e0c325547",
+"gamma"
+]
+}
+},
+"Field/1 Stars/Rogueport.psd": {
+"text": {
+"320": [
+"993ee8b542dc",
+"gamma"
+],
+"327": [
+"ed5b0d9b80dc",
+"gamma"
+]
+}
+},
+"Field/1 Stars/The_Freezer.psd": {
+"text": {
+"320": [
+"f4f6bb51c199",
+"gamma"
+],
+"327": [
+"ccd7806d823d",
+"gamma"
+]
+}
+},
+"Field/1 Stars/The_Ringed_City.psd": {
+"text": {
+"320": [
+"d0ec99ed7745",
+"gamma"
+],
+"327": [
+"5abec4f6f166",
+"gamma"
+]
+}
+},
+"Field/2 Stars/Asteroid_Field.psd": {
+"text": {
+"320": [
+"6e41a88e8720",
+"gamma"
+],
+"327": [
+"4db77b0614ad",
+"gamma"
+]
+}
+},
+"Field/2 Stars/Boggly_Woods.psd": {
+"text": {
+"1622": [
+"8b80e32a5a46",
+"gamma"
+],
+"320": [
+"b5141789b77f",
+"gamma"
+]
+}
+},
+"Field/2 Stars/Crystal_Peak.psd": {
+"text": {
+"1938": [
+"56a373ad1c2b",
+"gamma"
+],
+"320": [
+"1b19afdaebb1",
+"gamma"
+]
+}
+},
+"Field/2 Stars/Dimension_D.psd": {
+"text": {
+"320": [
+"d6a315c2c7c5",
+"gamma"
+],
+"327": [
+"4dd5530e1b86",
+"gamma"
+]
+}
+},
+"Field/2 Stars/E._Gadd's_Garage.psd": {
+"text": {
+"320": [
+"77f78498f611",
+"gamma"
+]
+}
+},
+"Field/2 Stars/Fahr_Outpost.psd": {
+"text": {
+"320": [
+"1cd18b151e81",
+"gamma"
+],
+"327": [
+"adcf0c8bbcb6",
+"gamma"
+]
+}
+},
+"Field/2 Stars/Fog_Canyon.psd": {
+"text": {
+"2007": [
+"3c9b4eb81793",
+"gamma"
+],
+"320": [
+"def154712d46",
+"gamma"
+]
+}
+},
+"Field/2 Stars/Forsaken_City.psd": {
+"text": {
+"1592": [
+"7c05cba7808d",
+"gamma"
+],
+"320": [
+"cc477f0cd117",
+"gamma"
+]
+}
+},
+"Field/2 Stars/Greenpath.psd": {
+"text": {
+"1969": [
+"79905f8c1730",
+"gamma"
+],
+"1970": [
+"5bb920cdcd48",
+"gamma"
+]
+}
+},
+"Field/2 Stars/Hooktail_Castle.psd": {
+"text": {
+"1606": [
+"4ed74593ebbc",
+"gamma"
+],
+"1607": [
+"08c57bc98570",
+"gamma"
+]
+}
+},
+"Field/2 Stars/Irithyll.psd": {
+"text": {
+"320": [
+"9f72aa1513e4",
+"gamma"
+],
+"327": [
+"12393fef9fef",
+"gamma"
+]
+}
+},
+"Field/2 Stars/Soul_Sanctum.psd": {
+"text": {
+"1935": [
+"e5985b243d63",
+"gamma"
+],
+"1936": [
+"e84a9ea1168e",
+"gamma"
+]
+}
+},
+"Field/2 Stars/Stingy's_Floor_And_Ceiling.psd": {
+"text": {
+"320": [
+"2cc07713318f",
+"gamma"
+],
+"327": [
+"16f2de24792b",
+"gamma"
+]
+}
+},
+"Field/2 Stars/The_Core.psd": {
+"text": {
+"320": [
+"3157d6d6fa13",
+"gamma"
+],
+"327": [
+"8ec7ada7fc05",
+"gamma"
+]
+}
+},
+"Field/2 Stars/The_Farlands.psd": {
+"text": {
+"320": [
+"83e33ddde4a2",
+"gamma"
+],
+"327": [
+"217032fce70c",
+"gamma"
+]
+}
+},
+"Field/2 Stars/Trick_Room.psd": {
+"text": {
+"320": [
+"f1e64d430283",
+"gamma"
+],
+"327": [
+"0df069d5bfc6",
+"gamma"
+]
+}
+},
+"Field/2 Stars/Twilit_Woods.psd": {
+"text": {
+"320": [
+"d2859d33e473",
+"gamma"
+],
+"327": [
+"4f3a3a3f86a2",
+"gamma"
+]
+}
+},
+"Field/2 Stars/Utica_Stock_Exchange.psd": {
+"text": {
+"320": [
+"126f02628525",
+"gamma"
+],
+"327": [
+"c8555f06f3a5",
+"gamma"
+]
+}
+},
+"Field/3 Stars/Colosseum_of_Fools.psd": {
+"text": {
+"1946": [
+"30a74599ab52",
+"gamma"
+],
+"1947": [
+"0cef668dc748",
+"gamma"
+]
+}
+},
+"Field/3 Stars/Deepnest.psd": {
+"text": {
+"320": [
+"eba8f9879b03",
+"gamma"
+],
+"327": [
+"341983993f0e",
+"gamma"
+]
+}
+},
+"Field/3 Stars/Elemental_World.psd": {
+"text": {
+"320": [
+"8d1f9d3d3e9e",
+"gamma"
+],
+"327": [
+"102435884aef",
+"gamma"
+]
+}
+},
+"Field/3 Stars/Excess Express.psd": {
+"text": {
+"320": [
+"ee46f08a867d",
+"gamma"
+],
+"327": [
+"861401d1e9c5",
+"gamma"
+]
+}
+},
+"Field/3 Stars/Glitz_Pit.psd": {
+"text": {
+"320": [
+"330469dcd6c3",
+"gamma"
+],
+"327": [
+"907dccbbe483",
+"gamma"
+]
+}
+},
+"Field/3 Stars/Infected_Crossroads.psd": {
+"text": {
+"2002": [
+"8b35bc13872f",
+"gamma"
+],
+"2006": [
+"15b1e3629705",
+"gamma"
+]
+}
+},
+"Field/3 Stars/Nebulous_Precipice.psd": {
+"text": {
+"320": [
+"5a5950087556",
+"gamma"
+],
+"327": [
+"28d295ca4d0a",
+"gamma"
+]
+}
+},
+"Field/3 Stars/Rock_Bottom.psd": {
+"text": {
+"320": [
+"50803244ee23",
+"gamma"
+],
+"327": [
+"53465528704e",
+"gamma"
+]
+}
+},
+"Field/3 Stars/The_Krusty_Krab.psd": {
+"text": {
+"320": [
+"aabcecb71656",
+"gamma"
+],
+"327": [
+"e2eab709bc95",
+"gamma"
+]
+}
+},
+"Field/3 Stars/The_Plaguelands.psd": {
+"text": {
+"320": [
+"53188bd29a58",
+"gamma"
+],
+"327": [
+"007c58d2740a",
+"gamma"
+]
+}
+},
+"Field/3 Stars/The_Spire.psd": {
+"text": {
+"320": [
+"e108ed825681",
+"gamma"
+],
+"327": [
+"d8ca5410db05",
+"gamma"
+]
+}
+},
+"Field/3 Stars/White_Space.psd": {
+"text": {
+"320": [
+"3082e6bd2e6e",
+"gamma"
+],
+"327": [
+"bf2435432755",
+"gamma"
+]
+}
+},
+"Field/4 Stars/Cave_Of_The_Past.psd": {
+"text": {
+"320": [
+"30e7acf68aee",
+"gamma"
+],
+"327": [
+"4812c56226bd",
+"gamma"
+]
+}
+},
+"Field/4 Stars/Dark_Bramble.psd": {
+"text": {
+"320": [
+"c9caeb8bc2ba",
+"gamma"
+],
+"327": [
+"8486d090f78b",
+"gamma"
+]
+}
+},
+"Field/4 Stars/Error_Room.psd": {
+"text": {
+"320": [
+"3c5a36827107",
+"gamma"
+],
+"327": [
+"1bb063c0748d",
+"gamma"
+]
+}
+},
+"Field/4 Stars/Hot_Spring.psd": {
+"text": {
+"1980": [
+"20d865889bcb",
+"gamma"
+],
+"320": [
+"b2c90534a2f0",
+"gamma"
+]
+}
+},
+"Field/4 Stars/Palace_of_Shadow.psd": {
+"text": {
+"320": [
+"4b4a4cb93755",
+"gamma"
+],
+"327": [
+"5fbd8a6b1fb0",
+"gamma"
+]
+}
+},
+"Field/4 Stars/The_Gates_of_Ahn'Qiraj.psd": {
+"text": {
+"2213": [
+"6f1377c8a6e2",
+"gamma"
+],
+"320": [
+"a111490a114e",
+"gamma"
+],
+"327": [
+"66b820a71180",
+"gamma"
+]
+}
+},
+"Field/4 Stars/The_Hive.psd": {
+"text": {
+"320": [
+"1af205395edf",
+"gamma"
+],
+"327": [
+"04933c32c95d",
+"gamma"
+]
+}
+},
+"Field/4 Stars/The_Maelstrom.psd": {
+"text": {
+"320": [
+"7753264d3c45",
+"gamma"
+],
+"327": [
+"22beb785289f",
+"gamma"
+]
+}
+},
+"Field/4 Stars/The_Panda_Future.psd": {
+"text": {
+"320": [
+"a60407528201",
+"gamma"
+],
+"327": [
+"0cf47abb7f2e",
+"gamma"
+]
+}
+},
+"Field/4 Stars/The_Structure.psd": {
+"text": {
+"320": [
+"863b5a42b1d0",
+"gamma"
+],
+"327": [
+"574604331c08",
+"gamma"
+]
+}
+},
+"Items/Active/2 Stars/Clock.psd": {
+"text": {
+"1112": [
+"ea9aeb6a2927",
+"gamma"
+],
+"1113": [
+"833c5d915844",
+"gamma"
+],
+"320": [
+"d1b462d9674d",
+"gamma"
+],
+"327": [
+"a7c69b651817",
+"gamma"
+]
+}
+},
+"Items/Active/2 Stars/Dirty_Bed.psd": {
+"text": {
+"320": [
+"5d1b9de35f75",
+"gamma"
+],
+"327": [
+"d581c3e04c3d",
+"gamma"
+],
+"843": [
+"b1dc4679099b",
+"gamma"
+],
+"844": [
+"f4cdf3a3d753",
+"gamma"
+]
+}
+},
+"Items/Active/3 Stars/Ancient_Altar.psd": {
+"text": {
+"320": [
+"173ba7cdcefd",
+"gamma"
+],
+"327": [
+"9c3219e65d53",
+"gamma"
+],
+"843": [
+"e7140095fb05",
+"gamma"
+],
+"844": [
+"acbb9a63f85a",
+"gamma"
+]
+}
+},
+"Items/Active/3 Stars/Black_Light_Bulb.psd": {
+"text": {
+"320": [
+"2610c319a623",
+"gamma"
+],
+"327": [
+"e16834081974",
+"gamma"
+],
+"843": [
+"8b5c584f77ca",
+"gamma"
+],
+"844": [
+"1eb578041795",
+"gamma"
+]
+}
+},
+"Items/Active/3 Stars/Blank_Card.psd": {
+"text": {
+"320": [
+"11b86cd930eb",
+"gamma"
+],
+"327": [
+"1d91cb6ca34b",
+"gamma"
+],
+"843": [
+"b1dc4679099b",
+"gamma"
+],
+"844": [
+"f4cdf3a3d753",
+"gamma"
+]
+}
+},
+"Items/Active/3 Stars/Star_Cannon.psd": {
+"text": {
+"320": [
+"ce7b986c25e4",
+"gamma"
+],
+"327": [
+"6da1791a0d30",
+"gamma"
+],
+"843": [
+"ec617c1faed0",
+"gamma"
+],
+"844": [
+"d609d4f0350f",
+"gamma"
+]
+}
+},
+"Items/Active/3 Stars/The Orb of Confusion.psd": {
+"text": {
+"320": [
+"272bb0562647",
+"gamma"
+],
+"327": [
+"10c5edea6bc8",
+"gamma"
+],
+"843": [
+"884c8eca4905",
+"gamma"
+],
+"844": [
+"4f06fd679877",
+"gamma"
+]
+}
+},
+"Items/Active/4 Stars/Blockade.psd": {
+"text": {
+"320": [
+"058289671ace",
+"gamma"
+],
+"327": [
+"3539b1f2c97e",
+"gamma"
+],
+"843": [
+"e7140095fb05",
+"gamma"
+],
+"844": [
+"acbb9a63f85a",
+"gamma"
+]
+}
+},
+"Items/Active/4 Stars/Pandamonium.psd": {
+"text": {
+"320": [
+"d4b00cf61aa6",
+"gamma"
+],
+"327": [
+"8f721e4fd0f1",
+"gamma"
+],
+"843": [
+"5e71d50c70eb",
+"gamma"
+],
+"844": [
+"db425d6d248c",
+"gamma"
+]
+}
+},
+"Items/Attack/1 Stars/Bleach.psd": {
+"text": {
+"320": [
+"63ecb74967ac",
+"gamma"
+],
+"327": [
+"5ee6e2627cc6",
+"gamma"
+]
+}
+},
+"Items/Attack/1 Stars/Mighty_Pebble.psd": {
+"text": {
+"320": [
+"fb13e03625ba",
+"gamma"
+],
+"327": [
+"e232d51d7264",
+"gamma"
+]
+}
+},
+"Items/Attack/2 Stars/Bomb.psd": {
+"text": {
+"320": [
+"1aee5e241a5e",
+"gamma"
+],
+"327": [
+"b7f20f3a748f",
+"gamma"
+]
+}
+},
+"Items/Attack/2 Stars/Firebomb.psd": {
+"text": {
+"10": [
+"81dbef6cb317",
+"gamma"
+],
+"92": [
+"f1182205df6f",
+"gamma"
+]
+}
+},
+"Items/Attack/2 Stars/Ice_Bomb.psd": {
+"text": {
+"320": [
+"5d2accb531ee",
+"gamma"
+],
+"327": [
+"f51edb9070be",
+"gamma"
+]
+}
+},
+"Items/Attack/2 Stars/Pie.psd": {
+"text": {
+"320": [
+"aa26a373b583",
+"gamma"
+],
+"327": [
+"988e90072c99",
+"gamma"
+]
+}
+},
+"Items/Attack/2 Stars/Zess_Dynamite.psd": {
+"text": {
+"320": [
+"4e8868be3c71",
+"gamma"
+],
+"327": [
+"28e2de803f19",
+"gamma"
+]
+}
+},
+"Items/Attack/3 Stars/Big_Bomb.psd": {
+"text": {
+"320": [
+"bbce3250f9a0",
+"gamma"
+],
+"327": [
+"4e85e2cc407f",
+"gamma"
+]
+}
+},
+"Items/Attack/3 Stars/Blood_Bomb.psd": {
+"text": {
+"320": [
+"2e14b52f3c82",
+"gamma"
+],
+"327": [
+"35495d366860",
+"gamma"
+]
+}
+},
+"Items/Attack/3 Stars/Burly_Bomb.psd": {
+"text": {
+"320": [
+"e504d13d4252",
+"gamma"
+],
+"327": [
+"84cdc9c8093b",
+"gamma"
+]
+}
+},
+"Items/Attack/3 Stars/Fireball.psd": {
+"text": {
+"320": [
+"493cb7c79f3f",
+"gamma"
+],
+"327": [
+"52cce39e87fe",
+"gamma"
+]
+}
+},
+"Items/Attack/3 Stars/Lightning_Bolt.psd": {
+"text": {
+"320": [
+"ec781fc31ea5",
+"gamma"
+],
+"327": [
+"2d5714e5bd3e",
+"gamma"
+]
+}
+},
+"Items/Attack/3 Stars/POW_Block.psd": {
+"text": {
+"320": [
+"75174252e0a6",
+"gamma"
+],
+"327": [
+"4b258499f8e2",
+"gamma"
+]
+}
+},
+"Items/Attack/3 Stars/Shooting_Star.psd": {
+"text": {
+"320": [
+"a31fb6940d10",
+"gamma"
+],
+"327": [
+"dab88cd2f4fd",
+"gamma"
+]
+}
+},
+"Items/Attack/4 Stars/Dynamite.psd": {
+"text": {
+"320": [
+"43ab240d4c8f",
+"gamma"
+],
+"327": [
+"7b765fca8062",
+"gamma"
+]
+}
+},
+"Items/Attack/4 Stars/Golden_Bomb.psd": {
+"text": {
+"320": [
+"3bb43b0c38eb",
+"gamma"
+],
+"327": [
+"42124d302f33",
+"gamma"
+]
+}
+},
+"Items/Counter/1 Stars/Poison_Trap.psd": {
+"text": {
+"320": [
+"44f6fda63933",
+"gamma"
+],
+"327": [
+"3283a9c23e58",
+"gamma"
+]
+}
+},
+"Items/Counter/1 Stars/Wooden_Spikes.psd": {
+"text": {
+"320": [
+"159815abd866",
+"gamma"
+],
+"327": [
+"005a53c317eb",
+"gamma"
+]
+}
+},
+"Items/Counter/2 Stars/Stone_Spikes.psd": {
+"text": {
+"320": [
+"784dd373a4db",
+"gamma"
+],
+"327": [
+"deacb876cae2",
+"gamma"
+]
+}
+},
+"Items/Counter/3 Stars/Crystal_Spikes.psd": {
+"text": {
+"320": [
+"cf16abf4ef98",
+"gamma"
+],
+"327": [
+"adae503023fc",
+"gamma"
+]
+}
+},
+"Items/Counter/3 Stars/Flame_Trap.psd": {
+"text": {
+"320": [
+"22d45f251e3f",
+"gamma"
+],
+"327": [
+"21cfd16f41f3",
+"gamma"
+]
+}
+},
+"Items/Counter/3 Stars/Iron_Spikes.psd": {
+"text": {
+"320": [
+"9dbf5fb676b2",
+"gamma"
+],
+"327": [
+"aa9b30ae9abd",
+"gamma"
+]
+}
+},
+"Items/Counter/3 Stars/Spiky_Ball_Trap.psd": {
+"text": {
+"320": [
+"6c22cee7fd83",
+"gamma"
+],
+"327": [
+"f3e3971bc8f9",
+"gamma"
+]
+}
+},
+"Items/Counter/3 Stars/You_are_going_DOWN_you_Sputnik!.psd": {
+"text": {
+"320": [
+"c9450448ef1a",
+"gamma"
+],
+"327": [
+"5bc0afc684e5",
+"gamma"
+]
+}
+},
+"Items/Counter/4 Stars/Return_To_Sender.psd": {
+"text": {
+"1443": [
+"f0d8a4af77d7",
+"gamma"
+],
+"1455": [
+"efd310a37667",
+"gamma"
+],
+"1456": [
+"0737746c5ea6",
+"gamma"
+],
+"1458": [
+"007d3546212f",
+"gamma"
+],
+"320": [
+"73a4c65a78d0",
+"gamma"
+],
+"327": [
+"9cc303c3782d",
+"gamma"
+]
+}
+},
+"Items/Deploy/1 Stars/Poison_Circle.psd": {
+"text": {
+"320": [
+"e1277c760f4a",
+"gamma"
+],
+"327": [
+"015bf6c68503",
+"gamma"
+]
+}
+},
+"Items/Deploy/2 Stars/Ominous_Red_Circle.psd": {
+"text": {
+"320": [
+"b0b7df512df6",
+"gamma"
+],
+"327": [
+"ca5f640386a8",
+"gamma"
+]
+}
+},
+"Items/Deploy/2 Stars/Pananda Peel.psd": {
+"text": {
+"320": [
+"bafa4bb87d0f",
+"gamma"
+],
+"327": [
+"1aaf19ba4af7",
+"gamma"
+]
+}
+},
+"Items/Equip/1 Stars/Boko_Club.psd": {
+"text": {
+"320": [
+"8a9d4065b570",
+"gamma"
+],
+"327": [
+"4fb96d24d4f7",
+"gamma"
+]
+}
+},
+"Items/Equip/1 Stars/Bone's Loans.psd": {
+"text": {
+"320": [
+"759e10eed82b",
+"gamma"
+],
+"327": [
+"35c26b1a56ce",
+"gamma"
+]
+}
+},
+"Items/Equip/1 Stars/Copper_Sword.psd": {
+"text": {
+"320": [
+"2a32b880f92d",
+"gamma"
+],
+"327": [
+"e8e2a30a8221",
+"gamma"
+]
+}
+},
+"Items/Equip/1 Stars/GrubSong.psd": {
+"text": {
+"320": [
+"493f16066314",
+"gamma"
+],
+"327": [
+"a0820e29083a",
+"gamma"
+]
+}
+},
+"Items/Equip/1 Stars/Lazy_Worm.psd": {
+"text": {
+"320": [
+"09e0229b902a",
+"gamma"
+],
+"327": [
+"a7b2823ed108",
+"gamma"
+]
+}
+},
+"Items/Equip/1 Stars/Leaf_Shield.psd": {
+"text": {
+"320": [
+"5f0ecb3ac608",
+"gamma"
+],
+"327": [
+"90486c049770",
+"gamma"
+]
+}
+},
+"Items/Equip/1 Stars/Pillow.psd": {
+"text": {
+"320": [
+"c47aa64cb543",
+"gamma"
+],
+"327": [
+"e0fbed4f6f39",
+"gamma"
+]
+}
+},
+"Items/Equip/1 Stars/Shellphone.psd": {
+"text": {
+"320": [
+"24d2b35867fe",
+"gamma"
+],
+"327": [
+"3c43c3de4e3f",
+"gamma"
+]
+}
+},
+"Items/Equip/1 Stars/Steady_Body.psd": {
+"text": {
+"320": [
+"3d62a36a7267",
+"gamma"
+],
+"327": [
+"2aa2683cbc5a",
+"gamma"
+]
+}
+},
+"Items/Equip/2 Stars/Basic_Shield.psd": {
+"text": {
+"10": [
+"189b170a679b",
+"gamma"
+],
+"92": [
+"1de530e27fde",
+"gamma"
+]
+}
+},
+"Items/Equip/2 Stars/Berserk!.psd": {
+"text": {
+"320": [
+"6d65f2a9a174",
+"gamma"
+],
+"327": [
+"b7d97bfc7c8d",
+"gamma"
+]
+}
+},
+"Items/Equip/2 Stars/Charge.psd": {
+"text": {
+"320": [
+"06fa26116862",
+"gamma"
+],
+"327": [
+"1287f7289d52",
+"gamma"
+]
+}
+},
+"Items/Equip/2 Stars/Danger_Badges.psd": {
+"text": {
+"320": [
+"8fcc89d1fa90",
+"gamma"
+],
+"327": [
+"49e565dc071d",
+"gamma"
+]
+}
+},
+"Items/Equip/2 Stars/Dead_Orchid_Children.psd": {
+"text": {
+"320": [
+"22b9e510492f",
+"gamma"
+],
+"327": [
+"b9070f251ea3",
+"gamma"
+]
+}
+},
+"Items/Equip/2 Stars/Door_Shield.psd": {
+"text": {
+"10": [
+"627ebb71ac2d",
+"gamma"
+],
+"92": [
+"d26799e9f7fa",
+"gamma"
+]
+}
+},
+"Items/Equip/2 Stars/Eden's_Soul.psd": {
+"text": {
+"320": [
+"18d5b13ce6e2",
+"gamma"
+],
+"327": [
+"a4b295b4395d",
+"gamma"
+]
+}
+},
+"Items/Equip/2 Stars/Fire_Staff.psd": {
+"text": {
+"320": [
+"064703b19cb2",
+"gamma"
+],
+"327": [
+"1bf9cf960628",
+"gamma"
+]
+}
+},
+"Items/Equip/2 Stars/Glowing_Womb.psd": {
+"text": {
+"320": [
+"a0e434a3b53e",
+"gamma"
+],
+"327": [
+"1196b0fcf1d9",
+"gamma"
+]
+}
+},
+"Items/Equip/2 Stars/Heavy_Blow.psd": {
+"text": {
+"320": [
+"87eab8ce5604",
+"gamma"
+],
+"327": [
+"219884d987fb",
+"gamma"
+]
+}
+},
+"Items/Equip/2 Stars/Holy_Card.psd": {
+"text": {
+"320": [
+"f047a641dc4f",
+"gamma"
+]
+}
+},
+"Items/Equip/2 Stars/Ice_Staff.psd": {
+"text": {
+"320": [
+"d15184997b79",
+"gamma"
+],
+"327": [
+"537bd6a149c7",
+"gamma"
+]
+}
+},
+"Items/Equip/2 Stars/Iron_Sword.psd": {
+"text": {
+"320": [
+"ed7c7074cd99",
+"gamma"
+],
+"327": [
+"8e6a9cfae545",
+"gamma"
+]
+}
+},
+"Items/Equip/2 Stars/Man_Serpent_Shield.psd": {
+"text": {
+"320": [
+"17f9dd915c29",
+"gamma"
+]
+}
+},
+"Items/Equip/2 Stars/Spiralhorn_Shield.psd": {
+"text": {
+"320": [
+"13eb06849eba",
+"gamma"
+],
+"327": [
+"7fec5b249d07",
+"gamma"
+]
+}
+},
+"Items/Equip/2 Stars/Thorns_Of_Agony.psd": {
+"text": {
+"320": [
+"3d63f08d2f15",
+"gamma"
+],
+"327": [
+"ffea57103887",
+"gamma"
+]
+}
+},
+"Items/Equip/2 Stars/Tomorrow_I'll.psd": {
+"text": {
+"320": [
+"5769d26335b3",
+"gamma"
+],
+"327": [
+"c72d6e21afbc",
+"gamma"
+]
+}
+},
+"Items/Equip/3 Stars/Adrenaline.psd": {
+"text": {
+"320": [
+"f76be15a0ceb",
+"gamma"
+],
+"327": [
+"93c14907ffa5",
+"gamma"
+]
+}
+},
+"Items/Equip/3 Stars/Charm_Of_The_Vampire.psd": {
+"text": {
+"320": [
+"dbb817892cf1",
+"gamma"
+],
+"327": [
+"5951dcd66d88",
+"gamma"
+]
+}
+},
+"Items/Equip/3 Stars/Dark_Sword.psd": {
+"text": {
+"320": [
+"57b01dd46ea1",
+"gamma"
+],
+"327": [
+"3989db576fbf",
+"gamma"
+]
+}
+},
+"Items/Equip/3 Stars/Dashmaster.psd": {
+"text": {
+"320": [
+"20f0403d23c3",
+"gamma"
+],
+"327": [
+"85e966b5844e",
+"gamma"
+]
+}
+},
+"Items/Equip/3 Stars/Deep_Focus.psd": {
+"text": {
+"320": [
+"8bf468f78d98",
+"gamma"
+],
+"327": [
+"7aee7cc72438",
+"gamma"
+]
+}
+},
+"Items/Equip/3 Stars/Flameblade.psd": {
+"text": {
+"320": [
+"e21af120bcd1",
+"gamma"
+],
+"327": [
+"78ba9c9f9f46",
+"gamma"
+]
+}
+},
+"Items/Equip/3 Stars/Fragile_Heart.psd": {
+"text": {
+"320": [
+"f633e28a9f13",
+"gamma"
+],
+"327": [
+"75e940fe8dee",
+"gamma"
+]
+}
+},
+"Items/Equip/3 Stars/Fragile_Strength.psd": {
+"text": {
+"320": [
+"98004de87b5c",
+"gamma"
+],
+"327": [
+"6ba36b19f20c",
+"gamma"
+]
+}
+},
+"Items/Equip/3 Stars/Hiveblood.psd": {
+"text": {
+"320": [
+"2881e9b8112a",
+"gamma"
+],
+"327": [
+"7ffab10c13c3",
+"gamma"
+]
+}
+},
+"Items/Equip/3 Stars/Inner_Eye.psd": {
+"text": {
+"320": [
+"a84dda4dc853",
+"gamma"
+],
+"327": [
+"5d027fee2c71",
+"gamma"
+]
+}
+},
+"Items/Equip/3 Stars/Maggy's_Bow.psd": {
+"text": {
+"320": [
+"d2e1ca7d928e",
+"gamma"
+],
+"327": [
+"ebea99bdae02",
+"gamma"
+]
+}
+},
+"Items/Equip/3 Stars/Magic_Hammer.psd": {
+"text": {
+"320": [
+"34d67d197fd2",
+"gamma"
+],
+"327": [
+"3e67d41ea13d",
+"gamma"
+]
+}
+},
+"Items/Equip/3 Stars/Mechanical_Shield.psd": {
+"text": {
+"320": [
+"f7c00e9db387",
+"gamma"
+],
+"327": [
+"286329a46d7f",
+"gamma"
+]
+}
+},
+"Items/Equip/3 Stars/Metal_Shield.psd": {
+"text": {
+"10": [
+"370d374eefb3",
+"gamma"
+],
+"92": [
+"805f1dcc51ad",
+"gamma"
+]
+}
+},
+"Items/Equip/3 Stars/Newspaper.psd": {
+"text": {
+"320": [
+"3edadcb68e1f",
+"gamma"
+],
+"327": [
+"0ba800873c4f",
+"gamma"
+]
+}
+},
+"Items/Equip/3 Stars/Piko_Piko_Hammer.psd": {
+"text": {
+"320": [
+"6d7a80e5b8cf",
+"gamma"
+],
+"327": [
+"5c51fe9069d6",
+"gamma"
+]
+}
+},
+"Items/Equip/3 Stars/Poison_Shiv.psd": {
+"text": {
+"320": [
+"b93907dc31be",
+"gamma"
+],
+"327": [
+"9c75b42028c9",
+"gamma"
+]
+}
+},
+"Items/Equip/3 Stars/Quick_Slash.psd": {
+"text": {
+"320": [
+"a48e93d6845d",
+"gamma"
+],
+"327": [
+"c0dab489c77b",
+"gamma"
+]
+}
+},
+"Items/Equip/3 Stars/Shield_of_the_Guilty.psd": {
+"text": {
+"320": [
+"f2b0f09284eb",
+"gamma"
+],
+"327": [
+"65f20d36bc69",
+"gamma"
+]
+}
+},
+"Items/Equip/3 Stars/Shiny_Knife.psd": {
+"text": {
+"320": [
+"b09839293001",
+"gamma"
+],
+"327": [
+"153bcdf8e6d0",
+"gamma"
+]
+}
+},
+"Items/Equip/3 Stars/Stalwart_Shell.psd": {
+"text": {
+"320": [
+"86573f7fa58b",
+"gamma"
+],
+"327": [
+"0daaa9ad71bd",
+"gamma"
+]
+}
+},
+"Items/Equip/3 Stars/Titanium_Sword.psd": {
+"text": {
+"320": [
+"40d6a86cc51c",
+"gamma"
+],
+"327": [
+"41cafc5d0d2c",
+"gamma"
+]
+}
+},
+"Items/Equip/3 Stars/steam_sale.psd": {
+"text": {
+"320": [
+"a1d30f2b1f11",
+"gamma"
+],
+"327": [
+"154dbe3d8c91",
+"gamma"
+]
+}
+},
+"Items/Equip/4 Stars/Binge_Eater.psd": {
+"text": {
+"320": [
+"75584531512e",
+"gamma"
+],
+"327": [
+"55c0fb44c285",
+"gamma"
+]
+}
+},
+"Items/Equip/4 Stars/Blasphemous Blade.psd": {
+"text": {
+"320": [
+"c1321ea76dc4",
+"gamma"
+],
+"327": [
+"2494f9d7dd9b",
+"gamma"
+]
+}
+},
+"Items/Equip/4 Stars/Dad's_Ring.psd": {
+"text": {
+"320": [
+"9c794d89b14d",
+"gamma"
+],
+"327": [
+"8714d8f6cf87",
+"gamma"
+]
+}
+},
+"Items/Equip/4 Stars/Dark_Ritual.psd": {
+"text": {
+"320": [
+"75ab8dd7957a",
+"gamma"
+],
+"327": [
+"5aa171dff555",
+"gamma"
+]
+}
+},
+"Items/Equip/4 Stars/Godhead.psd": {
+"text": {
+"320": [
+"5177812f3977",
+"gamma"
+],
+"327": [
+"7c2d6a61ee85",
+"gamma"
+]
+}
+},
+"Items/Equip/4 Stars/Holy_Blade.psd": {
+"text": {
+"320": [
+"fefdd0e43294",
+"gamma"
+],
+"327": [
+"6f1efd8e7abd",
+"gamma"
+]
+}
+},
+"Items/Equip/4 Stars/Holy_Mantle.psd": {
+"text": {
+"320": [
+"80eceec76036",
+"gamma"
+],
+"327": [
+"bdd19b44a65e",
+"gamma"
+]
+}
+},
+"Items/Equip/4 Stars/Kingsoul.psd": {
+"text": {
+"327": [
+"14f5757789cf",
+"gamma"
+],
+"970": [
+"0463103e0f36",
+"gamma"
+]
+}
+},
+"Items/Equip/4 Stars/Magic_Shield.psd": {
+"text": {
+"10": [
+"423bf1f481a6",
+"gamma"
+],
+"92": [
+"890104c5f509",
+"gamma"
+]
+}
+},
+"Items/Equip/4 Stars/Mom's_Knife.psd": {
+"text": {
+"320": [
+"f745dbf09bbb",
+"gamma"
+],
+"327": [
+"85ff5f0d62c1",
+"gamma"
+]
+}
+},
+"Items/Equip/4 Stars/Nuclear_Proliferation.psd": {
+"text": {
+"320": [
+"f0ef630b1815",
+"gamma"
+],
+"327": [
+"b0d411b8f12e",
+"gamma"
+]
+}
+},
+"Items/Equip/4 Stars/Sacred_Heart.psd": {
+"text": {
+"320": [
+"dffcdcad9327",
+"gamma"
+],
+"327": [
+"5d6ca3666bb2",
+"gamma"
+]
+}
+},
+"Items/Equip/4 Stars/Shield_of_Ogmur.psd": {
+"text": {
+"1897": [
+"7bd2f4eee2d8",
+"gamma"
+],
+"320": [
+"f69a8e62469b",
+"gamma"
+],
+"327": [
+"085769a0d3b0",
+"gamma"
+]
+}
+},
+"Items/Equip/4 Stars/Sword_of_Aeons.psd": {
+"text": {
+"320": [
+"645d27ac1949",
+"gamma"
+],
+"327": [
+"d15de811afaa",
+"gamma"
+]
+}
+},
+"Items/Equip/4 Stars/Thunderfury_Blessed_Blade_of_the_Windseeker.psd": {
+"text": {
+"1973": [
+"9e2f32966cdb",
+"gamma"
+],
+"1974": [
+"4c16e5557c91",
+"gamma"
+],
+"320": [
+"3668a4968779",
+"gamma"
+],
+"327": [
+"3a909de3ffa2",
+"gamma"
+]
+}
+},
+"Items/Equip/4 Stars/Time_Riddle.psd": {
+"text": {
+"320": [
+"a41e68dc7e66",
+"gamma"
+],
+"327": [
+"e3972ef915bd",
+"gamma"
+]
+}
+},
+"Items/Heal/1 Stars/Bolts_and_Screws.psd": {
+"text": {
+"320": [
+"088296824f37",
+"gamma"
+],
+"939": [
+"7d1f47771c33",
+"gamma"
+]
+}
+},
+"Items/Heal/1 Stars/Candy_Corn.psd": {
+"text": {
+"320": [
+"149eabf6d4be",
+"gamma"
+],
+"939": [
+"822041a204b8",
+"gamma"
+]
+}
+},
+"Items/Heal/1 Stars/Ingredient_Desert_Limes.psd": {
+"text": {
+"320": [
+"5c075111dfc6",
+"gamma"
+],
+"327": [
+"246d8fbfb553",
+"gamma"
+]
+}
+},
+"Items/Heal/1 Stars/Monster_Meat.psd": {
+"text": {
+"1006": [
+"ab058b9541a6",
+"gamma"
+],
+"320": [
+"32f6c746c362",
+"gamma"
+]
+}
+},
+"Items/Heal/1 Stars/Potato.psd": {
+"text": {
+"320": [
+"709d2476d1f6",
+"gamma"
+],
+"327": [
+"d286f9ca4f6a",
+"gamma"
+]
+}
+},
+"Items/Heal/1 Stars/Tomato.psd": {
+"text": {
+"320": [
+"8e5c481b2d61",
+"gamma"
+],
+"327": [
+"e6e8f26c6534",
+"gamma"
+]
+}
+},
+"Items/Heal/2 Stars/A_Snack.psd": {
+"text": {
+"320": [
+"92172ed75217",
+"gamma"
+],
+"327": [
+"2a6e10706ab2",
+"gamma"
+]
+}
+},
+"Items/Heal/2 Stars/All_Purpose_Medical_Kit.psd": {
+"text": {
+"320": [
+"a97056769273",
+"gamma"
+],
+"939": [
+"eb6f54d63284",
+"gamma"
+]
+}
+},
+"Items/Heal/2 Stars/Cake_Mix.psd": {
+"text": {
+"320": [
+"c1143a122e27",
+"gamma"
+],
+"327": [
+"d3c06d076d53",
+"gamma"
+],
+"958": [
+"5ae2b818d7af",
+"gamma"
+]
+}
+},
+"Items/Heal/2 Stars/Grapes.psd": {
+"text": {
+"320": [
+"59a849b3f604",
+"gamma"
+],
+"939": [
+"b93302985476",
+"gamma"
+]
+}
+},
+"Items/Heal/2 Stars/Ingredient_Gnome_Berries.psd": {
+"text": {
+"320": [
+"e22ce13bd061",
+"gamma"
+],
+"327": [
+"98461eed5c9b",
+"gamma"
+]
+}
+},
+"Items/Heal/2 Stars/Ingredient_Icy_Sugar_Cubes.psd": {
+"text": {
+"320": [
+"89b0b128e98f",
+"gamma"
+],
+"327": [
+"eae67b828117",
+"gamma"
+]
+}
+},
+"Items/Heal/2 Stars/Ingredient_Pineapple_Mint.psd": {
+"text": {
+"320": [
+"fe6d4f6a2468",
+"gamma"
+],
+"327": [
+"571d9441b1f5",
+"gamma"
+]
+}
+},
+"Items/Heal/2 Stars/Mushroom.psd": {
+"text": {
+"320": [
+"6b75ffce379f",
+"gamma"
+],
+"327": [
+"6844a65837c6",
+"gamma"
+]
+}
+},
+"Items/Heal/2 Stars/Pep_Drink.psd": {
+"text": {
+"320": [
+"9dcd4d7b729f",
+"gamma"
+],
+"939": [
+"1a89283daba7",
+"gamma"
+]
+}
+},
+"Items/Heal/2 Stars/Pepperoni_Pizza.psd": {
+"text": {
+"320": [
+"4ae1ee848dda",
+"gamma"
+],
+"939": [
+"cf63256a2283",
+"gamma"
+]
+}
+},
+"Items/Heal/2 Stars/Regeneration_Potion.psd": {
+"text": {
+"320": [
+"33663720d5e8",
+"gamma"
+],
+"939": [
+"02c48f9b5b3a",
+"gamma"
+]
+}
+},
+"Items/Heal/2 Stars/Sandwich_of_Rejects.psd": {
+"text": {
+"320": [
+"a2855964ef7d",
+"gamma"
+],
+"327": [
+"8fc6a352e0e5",
+"gamma"
+]
+}
+},
+"Items/Heal/2 Stars/Snow_Bunny.psd": {
+"text": {
+"1006": [
+"4ebc53e813d5",
+"gamma"
+],
+"320": [
+"325ce9c753b9",
+"gamma"
+]
+}
+},
+"Items/Heal/2 Stars/Strawberry_Shortcake.psd": {
+"text": {
+"320": [
+"97e346c49164",
+"gamma"
+],
+"939": [
+"8f06dfd0685a",
+"gamma"
+]
+}
+},
+"Items/Heal/2 Stars/The_Chicken.psd": {
+"text": {
+"320": [
+"d0501e093bd3",
+"gamma"
+],
+"939": [
+"d86af3f5b57a",
+"gamma"
+]
+}
+},
+"Items/Heal/2 Stars/Thunder_Thighs.psd": {
+"text": {
+"1025": [
+"575eb2a916b2",
+"gamma"
+],
+"320": [
+"6a3a8e28a2b8",
+"gamma"
+]
+}
+},
+"Items/Heal/2 Stars/Watermelon.psd": {
+"text": {
+"1046": [
+"879da5bdf2ac",
+"gamma"
+],
+"320": [
+"18df872e545a",
+"gamma"
+]
+}
+},
+"Items/Heal/3 Stars/Bucket_Of_Lard.psd": {
+"text": {
+"320": [
+"cddf537926b7",
+"gamma"
+],
+"327": [
+"6e6b32106814",
+"gamma"
+]
+}
+},
+"Items/Heal/3 Stars/Dumplings.psd": {
+"text": {
+"320": [
+"7bb1ea44ce39",
+"gamma"
+],
+"939": [
+"d79792d65107",
+"gamma"
+]
+}
+},
+"Items/Heal/3 Stars/Feast.psd": {
+"text": {
+"320": [
+"3c6720f1e03a",
+"gamma"
+],
+"939": [
+"5126fdfa7a93",
+"gamma"
+]
+}
+},
+"Items/Heal/3 Stars/Hadal_Stew.psd": {
+"text": {
+"320": [
+"7d17206b6206",
+"gamma"
+],
+"327": [
+"427f5d1bb9d9",
+"gamma"
+]
+}
+},
+"Items/Heal/3 Stars/Healing_Ritual.psd": {
+"text": {
+"320": [
+"26db6b022382",
+"gamma"
+],
+"327": [
+"c652e7972939",
+"gamma"
+]
+}
+},
+"Items/Heal/3 Stars/Ingredient_Distillery_Dough.psd": {
+"text": {
+"320": [
+"bf694026c90a",
+"gamma"
+],
+"327": [
+"91ebe83eb01a",
+"gamma"
+]
+}
+},
+"Items/Heal/3 Stars/Life_Shroom.psd": {
+"text": {
+"320": [
+"3823b6c0c4aa",
+"gamma"
+],
+"327": [
+"dfdeaa1e2bff",
+"gamma"
+]
+}
+},
+"Items/Heal/3 Stars/Maxim_Tomato.psd": {
+"text": {
+"320": [
+"ae43938689f2",
+"gamma"
+],
+"939": [
+"510c699ed1a0",
+"gamma"
+]
+}
+},
+"Items/Heal/3 Stars/Squash_Candy.psd": {
+"text": {
+"320": [
+"f2213976e04d",
+"gamma"
+],
+"327": [
+"87fea519362b",
+"gamma"
+]
+}
+},
+"Items/Heal/3 Stars/Super_Shroom.psd": {
+"text": {
+"320": [
+"c42a782a26f1",
+"gamma"
+],
+"327": [
+"8cc1e7975bc4",
+"gamma"
+]
+}
+},
+"Items/Heal/3 Stars/Wand_of_Obesity.psd": {
+"text": {
+"320": [
+"f4edf11b201a",
+"gamma"
+],
+"939": [
+"3fd15ad446c2",
+"gamma"
+]
+}
+},
+"Items/Heal/4 Stars/Zess_Deluxe.psd": {
+"text": {
+"320": [
+"a1972e4e90bf",
+"straight"
+],
+"327": [
+"3c7a947e8f91",
+"gamma"
+]
+}
+},
+"Items/Infliction/1 Stars/Smoke_Bomb.psd": {
+"text": {
+"320": [
+"78f813dbeb8e",
+"gamma"
+],
+"327": [
+"cb5ff45fe64b",
+"gamma"
+]
+}
+},
+"Items/Infliction/2 Stars/Bag_of_Evil.psd": {
+"text": {
+"320": [
+"743acf1615e7",
+"gamma"
+],
+"939": [
+"0f207de15f39",
+"gamma"
+]
+}
+},
+"Items/Infliction/2 Stars/Mr_Softener.psd": {
+"text": {
+"320": [
+"f956f19cf9c5",
+"gamma"
+],
+"327": [
+"90ce288c9455",
+"gamma"
+]
+}
+},
+"Items/Infliction/3 Stars/Flower_Of_Decay.psd": {
+"text": {
+"320": [
+"362652a2f836",
+"gamma"
+],
+"327": [
+"a3ea8e25eac8",
+"gamma"
+]
+}
+},
+"Items/Infliction/3 Stars/Freeze_Spell.psd": {
+"text": {
+"320": [
+"8ee309ef80b7",
+"gamma"
+],
+"327": [
+"116a6b780a3f",
+"gamma"
+]
+}
+},
+"Items/Infliction/3 Stars/Ice_Storm.psd": {
+"text": {
+"320": [
+"62cf28b99011",
+"gamma"
+],
+"327": [
+"4940626c2926",
+"gamma"
+]
+}
+},
+"Items/Infliction/3 Stars/Mystery_Gift.psd": {
+"text": {
+"320": [
+"c809899f5461",
+"gamma"
+],
+"327": [
+"53e4d521be47",
+"gamma"
+]
+}
+},
+"Items/Infliction/4 Stars/Crimson_Flag.psd": {
+"text": {
+"320": [
+"acc00b46ef0c",
+"gamma"
+],
+"327": [
+"5a3272ebfdf6",
+"gamma"
+]
+}
+},
+"Items/Infliction/4 Stars/Pandora's_Box.psd": {
+"text": {
+"320": [
+"cf648af8cad3",
+"gamma"
+],
+"327": [
+"f746180a1771",
+"gamma"
+]
+}
+},
+"Items/Infliction/4 Stars/Standstill.psd": {
+"text": {
+"320": [
+"9b06e39ce6e9",
+"gamma"
+],
+"327": [
+"b8a614875cd7",
+"gamma"
+]
+}
+},
+"Items/Negation/2 Stars/Metronome.psd": {
+"text": {
+"320": [
+"c947f8c6de22",
+"gamma"
+],
+"327": [
+"1a00266259a0",
+"gamma"
+]
+}
+},
+"Items/Negation/2 Stars/Stopwatch.psd": {
+"text": {
+"320": [
+"41d181530179",
+"gamma"
+],
+"327": [
+"0c31aef743e4",
+"straight"
+]
+}
+},
+"Items/Negation/3 Stars/Ancient_Stopwatch.psd": {
+"text": {
+"320": [
+"2f0d8f8af351",
+"gamma"
+],
+"327": [
+"7f3382f7dfd6",
+"gamma"
+]
+}
+},
+"Items/Negation/3 Stars/Impassable_Obstruction.psd": {
+"text": {
+"320": [
+"7119c2104bac",
+"gamma"
+],
+"327": [
+"9d37360d80c3",
+"gamma"
+]
+}
+},
+"Items/Negation/4 Stars/Golden_Metronome.psd": {
+"text": {
+"320": [
+"ebb6902e68a5",
+"gamma"
+],
+"327": [
+"250b40f3b18c",
+"gamma"
+]
+}
+},
+"Items/Support/1 Stars/Back In Time Juice.psd": {
+"text": {
+"320": [
+"d85f9fbf798e",
+"gamma"
+],
+"327": [
+"8b86b0d34732",
+"gamma"
+]
+}
+},
+"Items/Support/1 Stars/Consolation_Prize.psd": {
+"text": {
+"320": [
+"96fa42d17c68",
+"gamma"
+],
+"327": [
+"45e2f313e303",
+"gamma"
+]
+}
+},
+"Items/Support/1 Stars/Dr_Robotnik's_Roboticizer.psd": {
+"text": {
+"320": [
+"3b0eb53e6a79",
+"gamma"
+],
+"327": [
+"fbcf703c0e2b",
+"gamma"
+]
+}
+},
+"Items/Support/2 Stars/Bag_of_Good.psd": {
+"text": {
+"320": [
+"62132f92df1a",
+"gamma"
+],
+"939": [
+"8d1138113bc2",
+"gamma"
+]
+}
+},
+"Items/Support/2 Stars/Cancer.psd": {
+"text": {
+"320": [
+"7abd75fffff4",
+"gamma"
+],
+"327": [
+"ed1d7b671f35",
+"gamma"
+]
+}
+},
+"Items/Support/2 Stars/Erasure.psd": {
+"text": {
+"320": [
+"dae894902bf5",
+"gamma"
+],
+"327": [
+"4e149662658a",
+"gamma"
+]
+}
+},
+"Items/Support/2 Stars/Gasoline.psd": {
+"text": {
+"320": [
+"982cd49d0ab6",
+"gamma"
+],
+"327": [
+"aa0ea3ca3e6e",
+"gamma"
+]
+}
+},
+"Items/Support/2 Stars/Gust_of_Wind.psd": {
+"text": {
+"320": [
+"0b464b5e573a",
+"gamma"
+],
+"327": [
+"121575b3fbc4",
+"gamma"
+]
+}
+},
+"Items/Support/2 Stars/NME_Stock.psd": {
+"text": {
+"320": [
+"74a8de5bebda",
+"gamma"
+],
+"327": [
+"83847d7bc814",
+"gamma"
+]
+}
+},
+"Items/Support/2 Stars/Reverse_Mushroom.psd": {
+"text": {
+"320": [
+"9ad63fd7324e",
+"gamma"
+],
+"327": [
+"1b683e433a29",
+"gamma"
+]
+}
+},
+"Items/Support/2 Stars/Spice.psd": {
+"text": {
+"320": [
+"f53566ca5b2b",
+"gamma"
+],
+"327": [
+"5390eed076af",
+"gamma"
+]
+}
+},
+"Items/Support/2 Stars/Spicy_Spray.psd": {
+"text": {
+"10": [
+"d785dd48e2fa",
+"straight"
+],
+"92": [
+"51f43114b242",
+"gamma"
+]
+}
+},
+"Items/Support/2 Stars/The_Hydrant.psd": {
+"text": {
+"320": [
+"b2c2e06e3f14",
+"gamma"
+],
+"327": [
+"4ebdb7fda0b3",
+"gamma"
+]
+}
+},
+"Items/Support/2 Stars/Volt_Shroom.psd": {
+"text": {
+"320": [
+"edd204975a01",
+"gamma"
+],
+"327": [
+"56292c4b8d05",
+"gamma"
+]
+}
+},
+"Items/Support/3 Stars/Blood_Ritual.psd": {
+"text": {
+"320": [
+"eb39711d37bd",
+"gamma"
+],
+"327": [
+"58fe1efe8a84",
+"gamma"
+]
+}
+},
+"Items/Support/3 Stars/Blue_Marker.psd": {
+"text": {
+"320": [
+"48f45d48c04e",
+"gamma"
+],
+"327": [
+"c99793735878",
+"gamma"
+]
+}
+},
+"Items/Support/3 Stars/Credit_Card.psd": {
+"text": {
+"1078": [
+"d8ed64b3dce6",
+"gamma"
+],
+"320": [
+"2835d8d3e5ff",
+"gamma"
+],
+"327": [
+"bb52d8c7c811",
+"gamma"
+]
+}
+},
+"Items/Support/3 Stars/Energy_Ritual.psd": {
+"text": {
+"320": [
+"c14981192e0e",
+"gamma"
+],
+"327": [
+"c762c3e05a00",
+"gamma"
+]
+}
+},
+"Items/Support/3 Stars/Forget_Me_Now.psd": {
+"text": {
+"320": [
+"3154e35d22ac",
+"gamma"
+],
+"327": [
+"bd58a7ad512b",
+"gamma"
+]
+}
+},
+"Items/Support/3 Stars/Halo.psd": {
+"text": {
+"320": [
+"243f57e3046a",
+"gamma"
+],
+"327": [
+"fe96bf63e503",
+"gamma"
+]
+}
+},
+"Items/Support/3 Stars/Life_Link.psd": {
+"text": {
+"320": [
+"0e20e0917dfa",
+"gamma"
+],
+"327": [
+"8f8333724e88",
+"gamma"
+]
+}
+},
+"Items/Support/3 Stars/Portal.psd": {
+"text": {
+"320": [
+"0958b95342c0",
+"gamma"
+],
+"327": [
+"e5b7e08a79c8",
+"gamma"
+]
+}
+},
+"Items/Support/3 Stars/Reflection.psd": {
+"text": {
+"320": [
+"594da061d157",
+"gamma"
+],
+"327": [
+"4c95acc1219d",
+"gamma"
+]
+}
+},
+"Items/Support/3 Stars/Scapular.psd": {
+"text": {
+"320": [
+"5ca88649461f",
+"gamma"
+],
+"327": [
+"0adb3dff6ed2",
+"gamma"
+]
+}
+},
+"Items/Support/3 Stars/Second_Wind.psd": {
+"text": {
+"320": [
+"f51b7a27d12f",
+"gamma"
+],
+"327": [
+"0bd52cfee72f",
+"gamma"
+]
+}
+},
+"Items/Support/3 Stars/Shia_Surprise!.psd": {
+"text": {
+"320": [
+"4081d06f4e23",
+"gamma"
+]
+}
+},
+"Items/Support/4 Stars/Amazing_Mirror.psd": {
+"text": {
+"320": [
+"838caa4c47e2",
+"gamma"
+],
+"327": [
+"eb8602789fbb",
+"gamma"
+]
+}
+},
+"Items/Support/4 Stars/Flip.psd": {
+"text": {
+"320": [
+"bc17b100de3e",
+"gamma"
+],
+"327": [
+"042f246089a5",
+"gamma"
+]
+}
+},
+"Items/Support/4 Stars/Mimic.psd": {
+"text": {
+"1004": [
+"1a0334ae6ea0",
+"gamma"
+],
+"327": [
+"cc2f7c97d019",
+"gamma"
+]
+}
+},
+"Items/Support/4 Stars/Pile_Of_Swords.psd": {
+"text": {
+"320": [
+"de20015957f8",
+"gamma"
+],
+"327": [
+"be07b35a1714",
+"gamma"
+]
+}
+},
+"MDW/Templates/2_Creature_Template.psd": {
+"text": {
+"416": [
+"7bf76cdb82d6",
+"gamma"
+],
+"417": [
+"47745422491a",
+"gamma"
+],
+"418": [
+"630d14944c45",
+"gamma"
+],
+"419": [
+"edf185d3c34a",
+"gamma"
+],
+"420": [
+"9a8ad32c1935",
+"gamma"
+],
+"421": [
+"6adf224cc88e",
+"gamma"
+],
+"422": [
+"b9512358f085",
+"gamma"
+]
+}
+},
+"MDW/Templates/3_Creature_Template.psd": {
+"text": {
+"416": [
+"3bdea1fce4f3",
+"gamma"
+],
+"417": [
+"319f57a75504",
+"gamma"
+],
+"418": [
+"630d14944c45",
+"gamma"
+],
+"419": [
+"edf185d3c34a",
+"gamma"
+],
+"420": [
+"9a8ad32c1935",
+"gamma"
+],
+"421": [
+"6adf224cc88e",
+"gamma"
+],
+"422": [
+"acd0740fa195",
+"gamma"
+]
+}
+},
+"MDW/Templates/ActiveItem_Template.psd": {
+"text": {
+"320": [
+"2c43f4ebd97e",
+"gamma"
+],
+"327": [
+"7f8b0f834d5b",
+"gamma"
+],
+"843": [
+"20e3e9169f34",
+"gamma"
+],
+"844": [
+"4e4c0566be67",
+"gamma"
+]
+}
+},
+"MDW/Templates/Creature_Template.psd": {
+"text": {
+"417": [
+"86c1aac10a16",
+"gamma"
+],
+"418": [
+"2cf9a2888e14",
+"gamma"
+],
+"419": [
+"85139d6dd6e3",
+"gamma"
+],
+"420": [
+"0cbb4445713c",
+"gamma"
+],
+"421": [
+"dbd031ed47ae",
+"gamma"
+],
+"422": [
+"4b5033448354",
+"gamma"
+]
+}
+},
+"MDW/Templates/Item_Template.psd": {
+"text": {
+"320": [
+"4825c3a151f5",
+"gamma"
+],
+"327": [
+"107eb2f789e6",
+"gamma"
+]
+}
+},
+"MDW/Templates/Raid_Boss_Template.psd": {
+"text": {
+"2667": [
+"7893b982ca5b",
+"gamma"
+],
+"2673": [
+"aac18ad3e714",
+"gamma"
+],
+"2674": [
+"9e81a629ac13",
+"gamma"
+],
+"416": [
+"af0df9d00ba4",
+"gamma"
+],
+"417": [
+"65f27b041014",
+"gamma"
+],
+"418": [
+"4c7a1faf90eb",
+"gamma"
+],
+"419": [
+"09fe02bf42b8",
+"gamma"
+],
+"420": [
+"a8904fbf4d1a",
+"gamma"
+],
+"421": [
+"85cc8433edaf",
+"gamma"
+],
+"422": [
+"4cdea918c8ce",
+"gamma"
+]
+}
+},
+"MDW/Templates/Status_Effect_Template.psd": {
+"text": {
+"19": [
+"9c76fd229ee5",
+"gamma"
+],
+"23": [
+"e0c8ea9e17a3",
+"gamma"
+]
+}
+},
+"MDW/Unfinished/6 Stars/Bill_Cipher.psd": {
+"icc": [
+0.0004,
+2761442
+],
+"text": {
+"3193": [
+"1d4bb38fb891",
+"gamma"
+],
+"3733": [
+"87d5f0494eff",
+"gamma"
+],
+"3964": [
+"e48fb2575a51",
+"gamma"
+],
+"3965": [
+"e71d0b4dbfb0",
+"gamma"
+],
+"3966": [
+"13526977f556",
+"gamma"
+],
+"418": [
+"ba4d848e9a7f",
+"gamma"
+],
+"419": [
+"58277225ddc1",
+"gamma"
+],
+"420": [
+"169d7692ed1a",
+"gamma"
+],
+"421": [
+"bedb95eec8ed",
+"gamma"
+],
+"422": [
+"cdb5bc8f94da",
+"gamma"
+]
+}
+},
+"MDW/Unfinished/6 Stars/Giegue.psd": {
+"icc": [
+1.0,
+545889
+],
+"text": {
+"2674": [
+"b9bf1723ab8f",
+"gamma"
+],
+"3704": [
+"da1c37f24598",
+"gamma"
+],
+"3705": [
+"aff4be5b602c",
+"gamma"
+],
+"417": [
+"7528a7584fab",
+"gamma"
+],
+"422": [
+"2966ea872a14",
+"gamma"
+]
+}
+},
+"MDW/Unfinished/6 Stars/Giegue_Old.psd": {
+"icc": [
+1.0,
+245174
+],
+"text": {
+"418": [
+"8b8ed66ab7f5",
+"gamma"
+],
+"419": [
+"4bdc9173156d",
+"gamma"
+],
+"420": [
+"04dcc81ebb59",
+"gamma"
+],
+"421": [
+"348eed12b6e6",
+"gamma"
+],
+"422": [
+"192340658811",
+"gamma"
+]
+}
+},
+"MDW/Unfinished/6 Stars/Insanity_Wisp.psd": {
+"icc": [
+1.0,
+17774
+],
+"text": {
+"417": [
+"2dc8c08928f0",
+"gamma"
+],
+"418": [
+"8b8ed66ab7f5",
+"gamma"
+],
+"419": [
+"4bdc9173156d",
+"gamma"
+],
+"420": [
+"04dcc81ebb59",
+"gamma"
+],
+"421": [
+"348eed12b6e6",
+"gamma"
+],
+"422": [
+"192340658811",
+"gamma"
+]
+}
+},
+"MDW/Unfinished/6 Stars/Magolor_Soul.psd": {
+"icc": [
+1.0,
+228985
+],
+"text": {
+"3193": [
+"e3014b1edd75",
+"gamma"
+],
+"3467": [
+"938d2af314be",
+"gamma"
+],
+"3468": [
+"22ef83d66433",
+"gamma"
+],
+"418": [
+"d4c56eb4e235",
+"gamma"
+],
+"419": [
+"4b5047471dfe",
+"gamma"
+],
+"420": [
+"e858be94964a",
+"gamma"
+],
+"421": [
+"125f508052fa",
+"gamma"
+]
+}
+},
+"MDW/Unfinished/6 Stars/Marx's_Wrath.psd": {
+"icc": [
+1.0,
+1461102
+],
+"text": {
+"3193": [
+"498016f1478d",
+"gamma"
+],
+"418": [
+"d4c56eb4e235",
+"gamma"
+],
+"419": [
+"4b5047471dfe",
+"gamma"
+],
+"420": [
+"e858be94964a",
+"gamma"
+],
+"421": [
+"125f508052fa",
+"gamma"
+],
+"422": [
+"7ebbfd247bba",
+"gamma"
+]
+}
+},
+"MDW/Unfinished/6 Stars/Marx_Soul.psd": {
+"icc": [
+0.9889,
+2407488
+],
+"text": {
+"3193": [
+"fe61e023ceb9",
+"gamma"
+],
+"3472": [
+"9b3c39f89786",
+"gamma"
+],
+"3531": [
+"7483c723c3a4",
+"gamma"
+],
+"3532": [
+"8c2467b04120",
+"gamma"
+],
+"3533": [
+"3fc400a1b292",
+"gamma"
+],
+"418": [
+"d4c56eb4e235",
+"gamma"
+],
+"419": [
+"4b5047471dfe",
+"gamma"
+],
+"420": [
+"e858be94964a",
+"gamma"
+],
+"421": [
+"125f508052fa",
+"gamma"
+]
+}
+},
+"MDW/Unfinished/6 Stars/Oryx_The_Mad_God.psd": {
+"icc": [
+0.0,
+499700
+],
+"text": {
+"3894": [
+"bca98a5541ff",
+"gamma"
+],
+"416": [
+"f1819523b947",
+"gamma"
+],
+"418": [
+"2a5b8522dc3e",
+"gamma"
+],
+"419": [
+"dd5852d42aa0",
+"gamma"
+],
+"420": [
+"23ebff017532",
+"gamma"
+],
+"421": [
+"7848b7faac33",
+"gamma"
+],
+"422": [
+"efacd8e023fc",
+"gamma"
+]
+}
+},
+"MDW/Unfinished/6 Stars/Pandeity.psd": {
+"icc": [
+0.0,
+29890
+],
+"text": {
+"3255": [
+"e4b8b4debb05",
+"gamma"
+],
+"3256": [
+"ee0f25d39969",
+"gamma"
+],
+"417": [
+"16b34c354b5a",
+"gamma"
+],
+"418": [
+"93ce18455771",
+"gamma"
+],
+"419": [
+"6a33e0ad8c8f",
+"gamma"
+],
+"420": [
+"a378eb0f91fc",
+"gamma"
+],
+"421": [
+"212fd6f0ae97",
+"gamma"
+],
+"422": [
+"c27687e03e25",
+"gamma"
+]
+}
+},
+"MDW/Unfinished/6 Stars/Star_Dream_Nova.psd": {
+"icc": [
+0.0,
+922089
+],
+"text": {
+"3726": [
+"4b9c89f87c18",
+"gamma"
+],
+"3728": [
+"3e6e37e72dfa",
+"gamma"
+],
+"3729": [
+"5e4ddee03b13",
+"gamma"
+],
+"3730": [
+"9fd21a3be2a3",
+"gamma"
+],
+"3731": [
+"3d3d11867335",
+"gamma"
+],
+"3733": [
+"d6edcc39bf3e",
+"gamma"
+]
+}
+},
+"MDW/Unfinished/6 Stars/The_One_Who_Rhymes.psd": {
+"icc": [
+0.0002,
+642636
+],
+"text": {
+"3193": [
+"4a978da350bc",
+"gamma"
+],
+"3769": [
+"4a978da350bc",
+"gamma"
+],
+"3770": [
+"4a978da350bc",
+"gamma"
+],
+"3771": [
+"816ed8350d47",
+"gamma"
+],
+"3772": [
+"7085f356b612",
+"gamma"
+],
+"416": [
+"e23b39dbf481",
+"gamma"
+]
+}
+},
+"MDW/Unfinished/6 Stars/The_One_Who_Rhymes2.psd": {
+"icc": [
+0.0002,
+548899
+],
+"text": {
+"3193": [
+"4a978da350bc",
+"gamma"
+],
+"3769": [
+"4a978da350bc",
+"gamma"
+],
+"3770": [
+"4a978da350bc",
+"gamma"
+],
+"3771": [
+"816ed8350d47",
+"gamma"
+],
+"3772": [
+"7085f356b612",
+"gamma"
+],
+"416": [
+"e23b39dbf481",
+"gamma"
+]
+}
+},
+"MDW/Unfinished/6 Stars/Zero_Two's_Revenge.psd": {
+"icc": [
+1.0,
+850047
+],
+"text": {
+"3193": [
+"c6c9b020c8d0",
+"gamma"
+],
+"418": [
+"d4c56eb4e235",
+"gamma"
+],
+"419": [
+"4b5047471dfe",
+"gamma"
+],
+"420": [
+"e858be94964a",
+"gamma"
+],
+"421": [
+"125f508052fa",
+"gamma"
+],
+"422": [
+"222762c8b0af",
+"gamma"
+]
+}
+},
+"MDW/Unfinished/Overridden.psd": {
+"icc": [
+0.0,
+171859
+],
+"text": {
+"19": [
+"606611f243f4",
+"gamma"
+],
+"88": [
+"607189046069",
+"gamma"
+]
+}
+},
+"MDW/Unfinished/Puppeteered.psd": {
+"icc": [
+0.0,
+343058
+],
+"text": {
+"112": [
+"bb6f50d0aa26",
+"gamma"
+],
+"19": [
+"5d7ae508e667",
+"gamma"
+]
+}
+},
+"MDW/Unfinished/Tylord.psd": {
+"icc": [
+1.0,
+33157
+],
+"text": {
+"417": [
+"50d8b444bb50",
+"gamma"
+],
+"418": [
+"c5ff01852cf0",
+"gamma"
+],
+"419": [
+"01d8ac9f6130",
+"gamma"
+],
+"420": [
+"8d0052dd79c8",
+"gamma"
+],
+"421": [
+"1d858e8c371a",
+"gamma"
+],
+"422": [
+"bae986252d74",
+"gamma"
+]
+}
+},
+"MDW/Unfinished/Uncle_Frank_and_Cousin_Louie_and_Bob_and_Joe_and_Walter_and_Bill_and_Jim_and_Ed_and_Bernie_and_Steve.psd": {
+"icc": [
+1.0,
+187624
+],
+"text": {
+"417": [
+"397b8b627758",
+"gamma"
+],
+"418": [
+"acc0079e4f8c",
+"gamma"
+],
+"419": [
+"ea75f3fc67dd",
+"gamma"
+],
+"420": [
+"884507c79881",
+"gamma"
+],
+"421": [
+"5cc2b527890b",
+"gamma"
+],
+"422": [
+"e9fae0ab37dd",
+"gamma"
+]
+}
+},
+"N.M.E/Black Hole.psd": {
+"text": {
+"320": [
+"85d757c8f890",
+"gamma"
+],
+"327": [
+"5a7a7b165c6c",
+"gamma"
+]
+}
+},
+"N.M.E/Bubble.psd": {
+"text": {
+"10": [
+"e7a1e5bd5a1b",
+"gamma"
+],
+"21": [
+"c21925d792e6",
+"gamma"
+]
+}
+},
+"N.M.E/Crock_Pot.psd": {
+"text": {
+"1618": [
+"83f07b1d697b",
+"gamma"
+],
+"327": [
+"75f464b6d1a8",
+"gamma"
+],
+"843": [
+"88a4a8aa672e",
+"gamma"
+],
+"844": [
+"780f7e727e89",
+"gamma"
+]
+}
+},
+"N.M.E/Double_Pain.psd": {
+"text": {
+"320": [
+"c42192436a64",
+"gamma"
+],
+"327": [
+"21f5592f9a2f",
+"gamma"
+]
+}
+},
+"N.M.E/Duel_Flag.psd": {
+"text": {
+"320": [
+"708d70a7cda7",
+"gamma"
+],
+"327": [
+"8a92b7a22768",
+"gamma"
+]
+}
+},
+"N.M.E/Electric_Dart.psd": {
+"text": {
+"1004": [
+"a74fef83030c",
+"gamma"
+],
+"327": [
+"0d676b18fd10",
+"gamma"
+]
+}
+},
+"N.M.E/How_To_Jump.psd": {
+"text": {
+"320": [
+"5d1de0d68249",
+"gamma"
+],
+"327": [
+"f1753334e73c",
+"gamma"
+]
+}
+},
+"N.M.E/Jera.psd": {
+"text": {
+"320": [
+"3defa8745349",
+"gamma"
+],
+"327": [
+"f2fd4833d92e",
+"gamma"
+]
+}
+},
+"N.M.E/Metronome_Lite.psd": {
+"text": {
+"320": [
+"18aa938e9a5d",
+"gamma"
+],
+"327": [
+"67ea8efa7727",
+"gamma"
+]
+}
+},
+"N.M.E/Michael's_Blessing.psd": {
+"text": {
+"320": [
+"08368efa07a6",
+"gamma"
+],
+"327": [
+"153684691cc4",
+"gamma"
+]
+}
+},
+"N.M.E/Minion_Dematerializer.psd": {
+"text": {
+"320": [
+"df39673d8cc6",
+"gamma"
+],
+"327": [
+"181593686cb5",
+"gamma"
+]
+}
+},
+"N.M.E/Paintbrush.psd": {
+"text": {
+"320": [
+"6501adedc24c",
+"gamma"
+],
+"327": [
+"3be3033059e5",
+"gamma"
+]
+}
+},
+"N.M.E/Remote_Detonator.psd": {
+"text": {
+"320": [
+"4057b27d5d29",
+"gamma"
+],
+"327": [
+"3e25fde3ef2d",
+"gamma"
+]
+}
+},
+"N.M.E/Rope.psd": {
+"text": {
+"320": [
+"771ee9abdd0a",
+"gamma"
+],
+"327": [
+"c8a7d0fc570d",
+"gamma"
+]
+}
+},
+"N.M.E/Sigil_of_Divinity.psd": {
+"text": {
+"320": [
+"2b1e60ffce82",
+"gamma"
+],
+"327": [
+"e0729c69a719",
+"gamma"
+]
+}
+},
+"N.M.E/Staff_of_Purity.psd": {
+"text": {
+"320": [
+"17cce7e4838c",
+"gamma"
+],
+"327": [
+"a827d66be961",
+"gamma"
+]
+}
+},
+"N.M.E/Star_Jar.psd": {
+"text": {
+"320": [
+"afd96fbba8c7",
+"gamma"
+],
+"327": [
+"cd9ae1b36205",
+"gamma"
+],
+"843": [
+"6f673fb9e076",
+"gamma"
+],
+"844": [
+"9533b5e9c8cf",
+"gamma"
+]
+}
+},
+"N.M.E/Star_Scraper.psd": {
+"text": {
+"320": [
+"b56689d8ba7f",
+"gamma"
+],
+"327": [
+"4b9adcbb76d9",
+"gamma"
+]
+}
+},
+"N.M.E/Termination_Shock.psd": {
+"text": {
+"320": [
+"62d4fcc3afe7",
+"gamma"
+],
+"327": [
+"164e3ddefb8e",
+"gamma"
+],
+"843": [
+"8328bb7272f2",
+"gamma"
+],
+"844": [
+"a77b28e61b21",
+"gamma"
+]
+}
+},
+"N.M.E/The_Bagel.psd": {
+"text": {
+"1977": [
+"3b678c3a93f6",
+"gamma"
+],
+"320": [
+"7ca9d704ea94",
+"gamma"
+],
+"327": [
+"872656211478",
+"gamma"
+]
+}
+},
+"N.M.E/The_Bank.psd": {
+"text": {
+"1547": [
+"e41b398c389a",
+"gamma"
+],
+"327": [
+"ac89662d07f6",
+"gamma"
+],
+"843": [
+"fb591bee6c0d",
+"gamma"
+],
+"844": [
+"b03562d0324b",
+"gamma"
+]
+}
+},
+"N.M.E/The_Claw.psd": {
+"text": {
+"320": [
+"ade829a1330e",
+"gamma"
+],
+"327": [
+"116a6695bc2a",
+"gamma"
+],
+"843": [
+"25d7997f97fe",
+"gamma"
+],
+"844": [
+"b2d978bac48a",
+"gamma"
+]
+}
+},
+"N.M.E/The_Evil,_Fricked_Up_Cursed_Idol.psd": {
+"text": {
+"1975": [
+"850caa214fc1",
+"gamma"
+],
+"2111": [
+"406cb54b3b12",
+"gamma"
+],
+"327": [
+"93bcf76cb351",
+"gamma"
+]
+}
+},
+"N.M.E/Whacka_Bump.psd": {
+"text": {
+"320": [
+"e9cae4c9758a",
+"gamma"
+],
+"327": [
+"b9d1a82eaba0",
+"gamma"
+]
+}
+},
+"N.M.E/chuckya.psd": {
+"text": {
+"320": [
+"05efe908ec1a",
+"gamma"
+],
+"327": [
+"303cdd5dcd4f",
+"gamma"
+]
+}
+}
+}
