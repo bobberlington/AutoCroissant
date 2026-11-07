@@ -9368,29 +9368,12 @@ def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.
 # ========================
 # Save
 # ========================
-COLOUR_PLANES = {ColorMode.RGB: 3, ColorMode.CMYK: 4, ColorMode.GRAYSCALE: 1, ColorMode.LAB: 3}
-
-
 def strip(psd: PSDImage) -> bool:
-    """
-    The merged image dropped in place as Photoshop 2023 writes it with Maximize Compatibility off (proofs P3: the colour
-    planes white and RLE, extra channels kept, VersionInfo's hasRealMergedData off, the thumbnail kept); the fork's
-    strip_merged() where it has one. True when there was one; a PSD without VersionInfo keeps its image.
-    """
-    if not psd.has_preview() or psd.image_resources.get_data(Resource.VERSION_INFO) is None:
+    """The merged image dropped in place as Photoshop 2023 writes it with Maximize Compatibility off (the fork's
+    strip_merged, proofs P3); True when there was one."""
+    if not psd.has_preview():
         return False
-    if hasattr(psd, "strip_merged"):
-        psd.strip_merged()
-        return True
-    from psd_tools.constants import Compression
-    record = psd._record
-    header = record.header
-    n = COLOUR_PLANES.get(header.color_mode, 3)
-    extra = list(record.image_data.get_data(header))[n:] if header.channels > n else []
-    white = b"\xff" * (header.width * header.height * (header.depth // 8))
-    record.image_data.compression = Compression.RLE
-    record.image_data.set_data([white] * n + extra, header)
-    psd.image_resources.get_data(Resource.VERSION_INFO).has_composite = False
+    psd.strip_merged()
     return True
 
 
