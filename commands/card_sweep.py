@@ -314,6 +314,8 @@ def run(clone: str, kind: str, out_dir: str, ref: str = "main", cards: str = "",
         raise ValueError("--whole is for badges or tags alone")
     if (batch or record or held_ref or catalogue or reuse) and kinds != [NORMALISE]:
         raise ValueError("--batch, --record, --held-ref, --catalogue and --reuse are for normalise alone")
+    if bool(held_ref) != bool(held_base):       # without the base, a card pushed meanwhile would take the held blob
+        raise ValueError("--held-ref and --held-base go together")
     source = Source(clone)
     commit = source.commit(ref)
     if not commit:
@@ -362,14 +364,14 @@ def _held_versions(source: Source, tree: dict, jobs: list, held_ref: str, held_b
     if not held_ref:
         return jobs, {}
     theirs = source.tree(source.commit(held_ref) or held_ref)
-    base = source.tree(source.commit(held_base) or held_base) if held_base else {}
+    start = source.tree(source.commit(held_base) or held_base)
     out, held = [], {}
     for job in jobs:
         mine = theirs.get(job.psd, ("", ""))[1]
         if not mine or mine == job.psd_new:
             out.append(job)
             continue
-        if base and base.get(job.psd, ("", ""))[1] != job.psd_new:
+        if start.get(job.psd, ("", ""))[1] != job.psd_new:
             held[job.psd] = "moved"
             out.append(job)
             continue
