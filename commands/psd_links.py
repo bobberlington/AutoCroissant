@@ -1285,7 +1285,7 @@ def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARD
         if not changed:
             continue
         buf = BytesIO()
-        save_psd(new, buf, update_preview=False)    # stripped (A1): the export below reads the saved PSD
+        save_psd(new, buf)                      # stripped (A1): the export below reads the saved PSD
         files = {rel: buf.getvalue()}
         if moved and main:
             if any(tree[p] not in blobs for p in pngs):     # C5: the PSD lands only with its PNGs
