@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 from sys import executable
 
@@ -986,10 +987,11 @@ def test_workflow_shape(clone):
     assert "--fonts" not in steps_by_name["Check"]["run"]                     # R7 is the font check's
     names = [s.get("name") for s in job["steps"]]
     assert names.index("Start") < names.index("No push run in its window") < names.index("Check") \
-        < names.index("Comment on the commit") < names.index("Plan for the post job")
+        < names.index("Plan for the post job") < names.index("Fixes to land") < names.index("Decided") < names.index("Comment on the commit")
     plan = job["steps"][names.index("Plan for the post job")]
     assert plan["id"] == "plan" and plan["if"] == "always() && steps.check.outcome == 'success'"
-    hand = job["steps"][names.index("Plan for the post job") + 1]
+    assert job["steps"][names.index("Decided")]["if"] == "always()"             # Card sync's wait ends on it, whatever the check did
+    hand = job["steps"][names.index("Comment on the commit") + 1]
     assert hand["uses"].startswith("actions/upload-artifact") and hand["with"]["name"] == "card-guards" and hand["if"] == "always() && env.MODE != 'off'"
     post_names = [s.get("name") for s in post["steps"]]
     take = post["steps"][1]
@@ -1072,8 +1074,11 @@ elif args[:2] == ["run", "list"]:
 elif args[0] == "api":
     method = args[args.index("--method") + 1] if "--method" in args else "GET"
     path = next(a for a in args[1:] if a.startswith("repos/"))
-    if path.endswith("/jobs"):                  # the attempt's jobs: FAKE_JOBS, the API's {"jobs": [...]}
-        out = jq(json.loads(os.environ.get("FAKE_JOBS", '{"jobs": []}')))
+    if path.endswith("/jobs"):                  # the attempt's jobs: FAKE_JOBS, the API's {"jobs": [...]}; FAKE_JOBS_LATER from look FAKE_LOOKS on
+        late = sum("/jobs --jq" in line for line in db["log"]) > int(os.environ.get("FAKE_LOOKS", "1000"))
+        out = jq(json.loads(os.environ["FAKE_JOBS_LATER"] if late else os.environ.get("FAKE_JOBS", '{"jobs": []}')))
+    elif "/runs?" in path:                      # a workflow's runs: FAKE_GUARD_RUNS
+        out = jq(json.loads(os.environ["FAKE_GUARD_RUNS"]))
     elif path.endswith("/artifacts"):
         marked = path.split("/")[-2] in os.environ.get("FAKE_MARKED", "").split(",")
         out = jq({"artifacts": [{"name": "card-guards"}] + ([{"name": os.environ["STREAK"]}] if marked else [])})
@@ -1377,6 +1382,46 @@ def test_workflow_lowercases_card_guards(clone, tmp_path):
         assert done.returncode == 0 and f"MODE={mode}" in github_env.read_text().splitlines(), done.stderr
     land = steps["Land"]
     assert '[ "$MODE" = report ] && args+=(--dry-run)' in land["run"]
+
+
+def test_card_syncs_wait_ends_at_decided(clone, tmp_path):
+    """Card sync's "Guards' fixes" against a fake gh: the wait ends at the check job's Decided step or, failing that, its end
+    (never at another job's), and the hold rule then reads Fixes to land. It looks every 3 s, the run every 5th look."""
+    yaml = pytest.importorskip("yaml")
+    if not shutil.which("jq"):
+        pytest.skip("no jq")
+    doc = yaml.safe_load((_workflow(clone).parent / "card-sync.yml").read_text(encoding="utf-8"))
+    guards = doc["jobs"]["quiet"]["steps"][0]
+    assert guards["name"] == "Guards' fixes" and guards["env"]["DECIDED"] == "Decided"
+    bin_dir = _fake_tools(tmp_path)
+    naps = tmp_path / "sleeps.txt"
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    state = tmp_path / "gh.json"
+    env = {"PATH": f"{bin_dir}:{os.environ['PATH']}", "FAKE_STATE": str(state), "FAKE_SLEPT": str(naps), "GITHUB_REPOSITORY": "o/cards", "SHA": "a" * 40,
+           "GITHUB_OUTPUT": str(tmp_path / "out"), "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "GITHUB_SERVER_URL": "https://x",
+           "FAKE_GUARD_RUNS": json.dumps({"workflow_runs": [{"id": 7, "status": "in_progress", "created_at": now}]}),
+           **{k: guards["env"][k] for k in ("FIXES", "DECIDED", "FOLLOW")}}
+
+    def jobs(status="in_progress", decided="completed", fixes="skipped", name="check"):
+        steps = [{"name": "Fixes to land", "status": "completed", "conclusion": fixes}]
+        steps += [{"name": "Decided", "status": decided, "conclusion": "success" if decided == "completed" else None}] if decided else []
+        return json.dumps({"jobs": [{"name": name, "status": status, "steps": steps}]})
+
+    for answer, later, sleeps, held in ((jobs(), None, 0, False),
+                                        (jobs(fixes="success"), None, 0, True),
+                                        (jobs("completed", decided=None), None, 0, False),            # a run from before Decided
+                                        (jobs(decided="pending"), jobs(fixes="success"), 7, True),
+                                        (jobs(name="checks"), jobs(), 2, False)):                     # the wrong job's step: not it
+        state.unlink(missing_ok=True)
+        naps.write_text("")
+        done, outputs = _shell(guards, {**env, "FAKE_JOBS": answer, **({"FAKE_JOBS_LATER": later, "FAKE_LOOKS": str(sleeps)} if later else {})})
+        assert done.returncode == 0, done.stderr
+        assert naps.read_text().split() == ["3"] * sleeps and ("run" in outputs) is held, (answer, outputs)
+    runs = [line for line in json.loads(state.read_text())["log"] if "/runs?" in line]
+    assert len(runs) == 1                                                       # the first read only: 2 looks, none the 5th
+    state.unlink()
+    done, _ = _shell(guards, {**env, "FAKE_JOBS": jobs(decided="pending"), "FAKE_JOBS_LATER": jobs(), "FAKE_LOOKS": "11"})
+    assert done.returncode == 0 and sum("/runs?" in line for line in json.loads(state.read_text())["log"]) == 3    # looks 5 and 10
 
 
 def test_workflow_lints(clone):
