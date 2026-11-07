@@ -10,6 +10,7 @@ import json
 from math import cos, pi, sin
 from pathlib import Path
 from shutil import copy
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -331,6 +332,15 @@ def test_gate_size_floor(tmp_path):
     new.write_bytes(bytes(1001 + pe.SIZE_FLOOR))
     with pytest.raises(pe.Refused):
         pe.gate_size(str(old), str(new))
+
+
+def test_texts_take_every_picture():
+    """A Snack's pictures plan the same stars: every picture's title is clear of them, on any view."""
+    class Text(SimpleNamespace):
+        def is_visible(self):
+            return self.visible
+    one, two = (Text(name=f"Name #{n}", kind="type", visible=n == 1, parent=None) for n in (1, 2))
+    assert pe._texts(SimpleNamespace(descendants=lambda: [one, two])) == [one, two] and not two.visible
 
 
 @icons

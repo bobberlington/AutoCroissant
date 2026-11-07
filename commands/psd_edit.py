@@ -5645,9 +5645,13 @@ def _moved_inks(unit: _Unit, dx: int, dy: int) -> list:
 
 
 def _texts(psd: PSDImage) -> list:
-    """The text stars and icons keep clear of: none in the images group (picture)."""
-    return [layer for layer in psd.descendants() if _is_text_layer(layer) and layer.is_visible()
-            and not any(owner.name.strip().lower() == "images" for owner in layer_parents(layer))]
+    """The text stars and icons keep clear of: on any of the card's pictures, none in the images group (picture)."""
+    pictures, out = variants_of(psd), {}
+    for n in [None, *pictures] if len(pictures) > 1 else [None]:
+        with variant_view(psd, n):
+            out.update({id(layer): layer for layer in psd.descendants() if _is_text_layer(layer) and layer.is_visible()
+                        and not any(owner.name.strip().lower() == "images" for owner in layer_parents(layer))})
+    return list(out.values())
 
 
 def _copy_name(unit: _Unit, container, taken: set) -> str:
