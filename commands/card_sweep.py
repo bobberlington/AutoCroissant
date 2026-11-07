@@ -65,7 +65,6 @@ NORMALISE = "normalise"
 MDW_ROOTS = ("MDW/Unfinished/", "MDW/Templates/")   # normalise's scope past the cards, in this order (batch T)
 BATCHES = 16                                    # --batch k: the k-th of 16 runs of the cards (catalogue order), ~48
 DRAWN_TOL = 2                                   # K1: a pixel past this many levels is a change (owner: near identical)
-TEXT_NOTE = "The {name} text still has subscript or superscript in it: set it to normal text in Photoshop."
 _worker: dict = {}
 
 
@@ -211,13 +210,12 @@ def _normalise_card(job, out: dict) -> dict:
         facts = psd_edit.look_facts(pushed, pngs.get(job.png))
         before = {path: png_export.png_check(pushed, image) for path, image in pngs.items()}
         fixed = standards.fix(data, job.psd, [], _worker["work"], _worker["parser"], _worker["fonts"], only=NORMALISE)
-        out.update(facts=facts, png_check={basename(p): m.get("ok") for p, m in before.items()},
-                   left=list(fixed.left), notes=[TEXT_NOTE.format(name=why.split(":")[0]) for why in fixed.left])
+        out.update(facts=facts, png_check={basename(p): m.get("ok") for p, m in before.items()}, left=list(fixed.left),
+                   notes=list(fixed.notes))
         if not fixed.normalised:
             return {**out, "state": "refused" if fixed.pixel_left else "skip",
                     "why": "; ".join(why for _, why in fixed.pixel_left)}
         out["layers"], out["redraws"] = fixed.normalised, fixed.redrawn.get(NORMALISE, [])
-        out["notes"] += fixed.notes
         after = psd_edit.use_record(png_export.open_psd(fixed.data), job.psd, facts)
         psd_edit.use_record(pushed, job.psd, facts)
         out["out"] = blob_sha(fixed.data)

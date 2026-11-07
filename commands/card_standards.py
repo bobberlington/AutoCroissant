@@ -2507,13 +2507,15 @@ def _fit_box(layer, fonts) -> None:
                               pixels=False)
 
 
+NORMAL_NOTE = "The {name} text still has subscript or superscript in it: set it to normal text in Photoshop."   # note
 LINK_BLOCKS = frozenset(bytes(tag) for tag in (Tag.LINKED_LAYER1, Tag.LINKED_LAYER2, Tag.LINKED_LAYER3,
                                                Tag.LINKED_LAYER_EXTERNAL))   # the smart objects' documents
 
 
 class Normalised(list):
     """normalise()'s names, and what else it did: files (repo path -> bytes; None deletes it), the layers it drew
-    again (a link's raster redrawn: the PNG follows), the layers it left and why, hand notes."""
+    again (a link's raster redrawn: the PNG follows), what it left and why (plan.json), hand notes (one plain sentence
+    each)."""
 
     def __init__(self, *args):
         super().__init__(*args)
@@ -2569,9 +2571,10 @@ def normalise(path: str, out_path: str, fonts, rel: str = "") -> Normalised:
     texts = [layer for layer in texts if layer.layer_id not in failed]
     done = Normalised(layer.name.strip() for layer in texts)
     done.left = [f"{name}: {why}" for name, why in failed.values()]
+    done.notes = [NORMAL_NOTE.format(name=name) for name, _ in failed.values()]
     held = getattr(fonts, "held", None)
-    if held is not None:
-        done += held(psd, rel)
+    bars = held(psd, rel) if held is not None else []
+    done += bars
     links, linked = _links(), Normalised()
     if links is not None:
         linked = links.link(psd, rel, fonts)
@@ -2587,7 +2590,7 @@ def normalise(path: str, out_path: str, fonts, rel: str = "") -> Normalised:
     psd_edit.save_psd(psd, out_path)
     _normal_gate(path, out_path, {psd_edit._record_index(layer) for layer in texts},
                  [psd_edit.story_index(layer) for layer in texts if psd_edit.story_index(layer) is not None],
-                 bool(linked or held))
+                 bool(linked or bars))
     return done
 
 
