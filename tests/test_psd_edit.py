@@ -446,6 +446,7 @@ def test_creature_bars(clone, parser, tmp_path):
     assert pe.classify(card, {"creatures": card["card"]["creatures"]}, new).redundant == ["creatures"]
     site = lambda *wanted: pe.classify(card, {"creatures": list(wanted)}, new).site["creatures"]
     assert "one value, not [8, 9]" in site({"hp": 8}, {"hp": 9}) and "up to 20" in site({}, {"def": 21})
+    assert "no value" in site({"def": None}, {})
     assert "bar per creature" in site({}, {}, {})
 
 

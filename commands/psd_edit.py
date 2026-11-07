@@ -2141,8 +2141,13 @@ def _classify_creatures(out: Classification, card: dict, wanted: list, stats: di
         bars = [row[0][0].layer_id if len(row) == 1 else -n - 1 for n, row in enumerate(rows)]
         asked = {bars[0]: {stats[stat]}} if stat in stats else {}
         for n, one in enumerate(wanted):
-            value = one.get(stat)
-            if value is not None and value != printed[n].get(stat) and not (n == 0 and stat in stats):
+            if stat not in one or (n == 0 and stat in stats):
+                continue
+            value = one[stat]
+            if value is None and printed[n].get(stat) is not None:
+                out.site["creatures"] = f"creatures: {stat}: a bar can't show no value"
+                return
+            if value is not None and value != printed[n].get(stat):
                 asked.setdefault(bars[n], set()).add(value)
         top = comp_top(psd, stat)
         for bar, values in asked.items():
