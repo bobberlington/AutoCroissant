@@ -2432,10 +2432,14 @@ def to_normal(layer, fonts, widen: bool = False) -> Optional[str]:
     Returns:
         Why the conversion fails (the layer is left converted: the caller opens the PSD again without it), or None
     """
-    from psd_tools.composite.text import layout
+    from psd_tools.composite.text import font_names, layout
     edits = script_plan(layer)
     if not edits:
         return None
+    model = _runs(layer)
+    lost = [name for name in font_names(layer) if model.shape == 1 and fonts.find(name) is None]
+    if lost:                                    # d would be a stand-in face's
+        return f"its font {lost[0]} is missing"
     layer.sync_story()
     model = _runs(layer)
     before, was = psd_edit.glyph_places(layer, fonts), layout.layout(model, fonts)
@@ -2548,7 +2552,8 @@ def _layout_fonts(fonts, layer):
 def normalise(path: str, out_path: str, fonts, rel: str = "") -> Normalised:
     """
     The big pass's rewrite, in one save (owner 2026-11-07): the held cards' bars lined up (fonts.held(psd, rel), the
-    sweep's alone), sub and superscript text set normal (to_normal; widened boxes: fonts.widen, layer ids), the
+    sweep's alone), sub and superscript text set normal (to_normal; widened boxes: fonts.widen, layer ids; none with
+    fonts.keep_text, the reason: the sweep's fallback), the
     pictures linked (the link step, _links()), the merged image stripped (psd_edit.save_psd). Gated: the converted
     layers' records changed in TySh alone, the stories by gate_stories, every other layer as it was (but the link
     step's), no smart-object document left without a layer.
@@ -2556,9 +2561,12 @@ def normalise(path: str, out_path: str, fonts, rel: str = "") -> Normalised:
     Returns:
         Normalised; empty when there was nothing to do (nothing written)
     """
-    widen = set(getattr(fonts, "widen", ()))
+    widen, kept = set(getattr(fonts, "widen", ())), getattr(fonts, "keep_text", "")
     psd, failed = PSDImage.open(path), {}
     texts = script_layers(psd)
+    if kept:                                    # 5.2 step 9: the text left as it is (kept: why)
+        failed = {layer.layer_id: (layer.name.strip(), kept) for layer in texts}
+        texts = []
     for layer in texts:
         why = to_normal(layer, _layout_fonts(fonts, layer), layer.layer_id in widen)
         if why:
@@ -2571,7 +2579,9 @@ def normalise(path: str, out_path: str, fonts, rel: str = "") -> Normalised:
     texts = [layer for layer in texts if layer.layer_id not in failed]
     done = Normalised(layer.name.strip() for layer in texts)
     done.left = [f"{name}: {why}" for name, why in failed.values()]
-    done.notes = [NORMAL_NOTE.format(name=name) for name, _ in failed.values()]
+    names = list(dict.fromkeys(name for name, _ in failed.values()))
+    done.notes = [NORMAL_NOTE.format(name=", ".join(names[:-1]) + " and " + names[-1] if len(names) > 1 else names[0])
+                  ] if names else []                # one sentence a card (owner 11-07)
     held = getattr(fonts, "held", None)
     bars = held(psd, rel) if held is not None else []
     done += bars
@@ -2668,6 +2678,8 @@ def _pixel_fixes(folder: str, base: str, current: str, rel: str, parser: Optiona
             else:
                 names = apply(current, out, fonts)
             if not names:
+                if apply is normalise:          # nothing written: what it left still says so
+                    result.left, result.notes = list(names.left), result.notes + list(names.notes)
                 continue
             data = _gated(current, out, rel, parser, reads, sized=False)
         except Exception as error:              # best effort, never told: plan.json says why
