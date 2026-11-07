@@ -60,7 +60,7 @@ def test_mismatches():
     record = {"style": "new", "reads": {"hp": [read(5)], "def": [read(3)], "atk": [read(None, None) | {"could": None}], "spd": [read(4, [4, 7])]}}
     data = {"stats": {"hp": 5, "defense": 1, "attack": 2, "speed": 7}}
     assert cc.mismatches(record, data) == ["The DEF bar shows 3 but the data says 1."]
-    assert cc.mismatches(record, data, ["def"]) == []
+    assert cc.mismatches(record, data, ["def"]) == [] and cc.mismatches(record, data, {"def": 1}) == []   # website only, pending
     assert cc.mismatches({**record, "style": "custom"}, data) == []
     many = {"style": "custom", "reads": {"hp": [read(5), read(6)]}}
     assert cc.mismatches(many, {"creatures": [{"hp": 5}, {"hp": 4}]}) == ["Creature 2's HP bar shows 6 but the data says 4."]
@@ -83,9 +83,26 @@ def test_refresh_clears():
     assert checks["cards"]["abcd1234ffff"]["hand"] is None and checks["cleared"] == {rel: "00000000"}
     cc.refresh(checks, snapshot, stats, edits)
     assert checks["cleared"] == {rel: "00000000"}
+    record = checks["cards"].pop("abcd1234ffff")
+    cc.refresh(checks, snapshot, stats, edits)                  # a new PSD not read yet: still gone
+    assert checks["cleared"] == {rel: "00000000"}
+    checks["cards"]["abcd1234ffff"] = record
     edits = CardEdits.parse(json.dumps({"cards": {"A": {"flags": {"hand": "y", "psd": "abcd1234"}}}}))
     cc.refresh(checks, snapshot, stats, edits)
     assert checks["cleared"] == {}
+
+
+def test_still_and_swapped(monkeypatch):
+    """A bar a bake left as it was, though the others moved; a swap by the printed labels, equal values too."""
+    psd = SimpleNamespace(width=100)
+    boxes = {"hp": [(0, 0, 100, 10)], "def": [(0, 10, 100, 20)], "atk": [(0, 20, 100, 30)], "spd": [(0, 30, 300, 40)]}
+    monkeypatch.setattr(cc, "bar_boxes", lambda psd: boxes)
+    monkeypatch.setattr(cc, "by_label", lambda psd, found: {**found, "def": found["atk"], "atk": found["def"]})
+    moved = np.zeros((40, 100), bool)
+    assert cc._still(psd, moved) == ["hp", "def", "atk", "spd"]
+    moved[:20] = True
+    assert cc._still(psd, moved) == ["def"]                     # by its row; spd past the canvas has no say
+    assert cc.swapped(psd) == ["def", "atk"]
 
 
 def test_art_over_darks(monkeypatch):

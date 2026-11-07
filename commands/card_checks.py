@@ -41,7 +41,7 @@ import commands.psd_edit as psd_edit
 from commands.card_bake import Card, Snapshot, local_snapshot, psd_fields, vocabulary
 from commands.card_db import CHECKS_JSON, STATS_JSON
 from commands.card_edits import CardAuthors, CardEdits
-from commands.card_models import card_name
+from commands.card_models import RAID_STARS, card_name
 from commands.card_preview import outcome, resolve
 from commands.card_standards import _bar_art
 from commands.github_api import token_from_env
@@ -86,7 +86,8 @@ WHAT = {"name": "A new title", "adding a star": "Adding a star", "removing a sta
 TITLE_NOTE = "The title is part of the picture: a new title has to be drawn in Photoshop."
 OLD_NOTE = "Its stat bars are old-style digit rows: put them on the new bars in Photoshop."
 CREATURES_NOTE = "Several creatures: the website changes the first one's bars, the others are changed in Photoshop."
-NO_CHANGE_NOTE = "A stat edit bakes but changes nothing on the card: change its stats in Photoshop."
+NO_CHANGE_NOTE = "{} edits bake but change nothing on the card: change them in Photoshop."
+SWAP_NOTE = "The {} bars are on each other's rows: a stat edit moves the wrong bar, put them back in Photoshop."
 BRIGHT_NOTE = "Its shown digits brighten the cells, so a stat edit turns the bars dark: change its stats in Photoshop."
 CUSTOM_NOTES = {"icons": "Its stat bars are separate icons with gaps, not the template's cells.",
                 "pictures": "Its stat bars are pictures, not the template's cells.",
@@ -143,7 +144,7 @@ def read_row(row: np.ndarray) -> dict:
     near = [k + 1 for k, step in enumerate(both) if step >= STEP_NEAR * strongest]
     low = _clear(bottom)
     if low is not None and top[low - 1] < HALF_ROW * bottom[low - 1]:
-        return {"best": 10 + low, "could": sorted({low, 10 + low, *near})}     # own art can hide a step from the top half
+        return {"best": 10 + low, "could": sorted({low, 10 + low, *near, *(10 + k for k in near)})}   # own art can hide a step
     best = _clear(both)
     return {"best": best, "could": near} if best is not None else {"best": None, "could": None}
 
@@ -197,19 +198,31 @@ def by_label(psd: PSDImage, boxes: dict) -> dict:
     return {stat: [rows[n]] for n, stat in enumerate(sorted(STAT_ORDER, key=labels.get))}
 
 
+def swapped(psd: PSDImage) -> list:
+    """The stats whose bar lies on another's row by the printed labels: equal values show nothing, an edit moves the wrong bar."""
+    boxes = bar_boxes(psd)
+    rows = by_label(psd, boxes)
+    return [stat for stat in STAT_ORDER if rows[stat] != boxes[stat]]
+
+
+def _cut(pixels: np.ndarray, box: tuple, width: int) -> Optional[np.ndarray]:
+    """A bar's part of a picture of a PSD this wide; None past the canvas."""
+    scale = pixels.shape[1] / width
+    x0, y0, x1, y1 = (int(v * scale) for v in box)
+    return pixels[y0:y1, x0:x1] if 0 <= x0 < x1 <= pixels.shape[1] and 0 <= y0 < y1 <= pixels.shape[0] else None
+
+
 def read_picture(psd: PSDImage, image: Image.Image) -> dict:
     """{stat: [{"best", "could"} of each bar, top to bottom]} off the card's picture; a bar past the canvas has no say."""
     pixels = np.asarray(image.convert("RGB"))
-    scale = pixels.shape[1] / psd.width
     out, rows = {}, []
     for stat, boxes in by_label(psd, bar_boxes(psd)).items():
         out[stat] = []
         for box in boxes:
-            x0, y0, x1, y1 = (int(v * scale) for v in box)
-            if x0 < 0 or y0 < 0 or x1 > pixels.shape[1] or y1 > pixels.shape[0] or x1 <= x0 or y1 <= y0:
+            row = _cut(pixels, box, psd.width)
+            if row is None:
                 out[stat].append({"best": None, "could": None})
                 continue
-            row = pixels[y0:y1, x0:x1]
             out[stat].append(read_row(row))
             rows.append((row, out[stat][-1]))
     _tell_flats(rows)
@@ -237,16 +250,18 @@ def mismatches(record: dict, data: dict, site=()) -> list:
     Args:
         record: check_card()'s
         data: The card in stats.json
-        site: Its website-only fields: their values differ from the picture on purpose
+        site: Its Card Edits fields: a website-only value differs from the picture on purpose, a pending one until it bakes
     """
     reads = record.get("reads") or {}
     if record.get("style") == "custom" and any(row["best"] is None for rows in reads.values() for row in rows):
+        return []
+    if (data.get("stars") or 0) >= RAID_STARS:  # its bars run to 40 in rows of their own
         return []
     stats, creatures = data.get("stats") or {}, data.get("creatures") or []
     out = []
     for stat in STAT_ORDER:
         values = [one.get(DATA_STATS[stat]) for one in creatures] if creatures else [stats.get(DATA_STATS[stat])]
-        if stat in site or not reads.get(stat):
+        if stat in site or "creatures" in site or not reads.get(stat):
             continue
         for n, (row, value) in enumerate(_pairs(reads[stat], values)):
             if value is None or value < 0 or row["could"] is None or value in row["could"]:
@@ -363,16 +378,19 @@ def _note(what: str, reason: str) -> str:
 
 
 def _real_bake(ctx: Context, rel: str, fields: dict, png: Optional[np.ndarray] = None) -> tuple:
-    """A real bake on a temp copy: (state, reason, pixels changed against png)."""
+    """A real bake on a temp copy: (state, reason, the pixels changed against png). One that broke raises: never clean,
+    the next run checks the card again."""
     work = mkdtemp(prefix="card-checks_", dir=environ.get(card_bake.WORK_ENV) or None)
     try:
         card = resolve(ctx.snapshot, rel, fields)
         card_bake.bake_card(ctx.snapshot, card, ctx.parser, ctx.fonts, ctx.chart, work)
         state, _, reason, _ = outcome(card)
+        if state == "error":
+            raise RuntimeError(reason)
         moved = None
         if png is not None and card.baked is not None:
             baked = np.asarray(Image.open(card.baked.png_path).convert("RGB"), np.int16)
-            moved = int((np.abs(baked - png).max(-1) > PIXEL_MOVED).sum()) if baked.shape == png.shape else None
+            moved = np.abs(baked - png).max(-1) > PIXEL_MOVED if baked.shape == png.shape else None
         return state, reason, moved
     finally:
         rmtree(work, ignore_errors=True)
@@ -395,9 +413,17 @@ def _art_over_darks(psd: PSDImage) -> bool:
     return any(layer.is_visible() and layer.name.strip().lower() != "lines" for layer in above)
 
 
+def _still(psd: PSDImage, moved: np.ndarray) -> list:
+    """The stats a bake left as they were: every one when nothing moved; a bar past the canvas has no say."""
+    if not moved.any():
+        return list(STAT_ORDER)
+    rows = {stat: [_cut(moved, box, psd.width) for box in boxes] for stat, boxes in by_label(psd, bar_boxes(psd)).items()}
+    return [stat for stat in STAT_ORDER if rows[stat] and all(row is not None and not row.any() for row in rows[stat])]
+
+
 def _stat_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str, image: Optional[Image.Image]) -> list:
     """Stat edits that cannot bake: new bars by their state (their bakes draw: measured on every card) unless art lies
-    over them; those and digit rows by a real bake of all four, one down and one up, which must move pixels."""
+    over them; those and digit rows by a real bake of all four, one down and one up, which must move each bar."""
     card = parsed["card"]
     have = {stat: card.get(stat) for stat in STAT_ORDER if isinstance(card.get(stat), int) and card.get(stat) >= 0}
     if len(have) < len(STAT_ORDER) or not style:
@@ -417,8 +443,10 @@ def _stat_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str,
         state, reason, moved = _real_bake(ctx, rel, fields, png)
         if state == "refused":
             return [_note("stats", reason)]
-        if state == "baked" and moved == 0:
-            return [NO_CHANGE_NOTE]
+        still = _still(psd, moved) if state == "baked" and moved is not None else []
+        if still:
+            names = "Stat" if len(still) == len(STAT_ORDER) else " and ".join(STAT_NAMES[stat] for stat in still)
+            return [NO_CHANGE_NOTE.format(names)]
     return []
 
 
@@ -516,6 +544,9 @@ def check_card(ctx: Context, rel: str) -> dict:
     notes = [OLD_NOTE] if style == "old" else []
     if style == "custom" and creatures:
         notes.append(CREATURES_NOTE)
+    wrong = swapped(psd) if style else []
+    if wrong:
+        notes.append(SWAP_NOTE.format(" and ".join(STAT_NAMES[stat] for stat in wrong)))
     reads = read_picture(psd, image) if style and image is not None and len(variants_of(psd)) < 2 else {}
     notes += edit_notes(ctx, rel, psd, parsed, style, image)
     return {"card": card_name(rel), "png": snapshot.sha(png_rel)[:8] if png_rel else "", "style": style, "reads": reads,
@@ -574,14 +605,15 @@ def refresh(checks: dict, snapshot: Snapshot, stats: dict, edits: CardEdits) -> 
     blobs = {snapshot.sha(rel): key for key, rel in snapshot.psds.items()}
     checks["cards"] = {sha: record for sha, record in checks["cards"].items() if sha in blobs}
     for sha, record in checks["cards"].items():
-        record.update(flags(record, cards.get(sha), edits.site(blobs[sha])))
-    cleared = {}
+        record.update(flags(record, cards.get(sha), edits.cards.get(blobs[sha]) or {}))
+    was, cleared = checks.get("cleared") or {}, {}
     for key, entry in edits.cards.items():
         mark, rel = (entry.get("flags") or {}).get("psd"), snapshot.psds.get(key)
-        record = checks["cards"].get(snapshot.sha(rel)) if rel and mark else None
-        if record is None or snapshot.sha(rel).startswith(mark):
+        if not mark or not rel:
             continue
-        if (not record["hand"] and not record["bars"]) or (checks.get("cleared") or {}).get(rel) == mark:
+        record = checks["cards"].get(snapshot.sha(rel))
+        clean = record is not None and not record["hand"] and not record["bars"] and not snapshot.sha(rel).startswith(mark)
+        if clean or was.get(rel) == mark:
             cleared[rel] = mark                 # gone stays gone though the checks speak again; a new flag starts over
     checks["cleared"] = cleared
 
@@ -695,6 +727,7 @@ __all__ = [
     'read_row',
     'refresh',
     'run',
+    'swapped',
     'text_of',
     'to_check',
 ]
