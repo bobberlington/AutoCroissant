@@ -4,6 +4,7 @@ placed from any depth and from absolute URLs (with the guards' housekeeping), an
 file with two users.
     ~/.venvs/ac-py314-fork/bin/python -m pytest -q tests/test_psd_links.py
 """
+import json
 import subprocess
 from io import BytesIO
 
@@ -169,10 +170,10 @@ def test_links_placed_from_any_depth_and_url():
     assert pl.restore(10, [("old", 4), ("last", 10)]) == "last" and pl.restore(10, [("last", 9)]) is None
 
 
-def test_redraw_linked_one_file_two_users(tmp_path):
+def test_redraw_linked_one_file_two_users(tmp_path, capsys):
     """One MDW/Linked file, two users at two depths and scales (one PNG named in another case). A lossless re-save: their
     sizes and contentIDs only, no raster, no PNG. A pixel edit: both drawn again (the stored mode, bicubic), their PNGs
-    re-exported to the new drawing."""
+    re-exported to the new drawing; card-sync.yml's due and redraw command lines see both."""
     repo = tmp_path / "cards"
     git = lambda *a: subprocess.run(["git", "-C", str(repo), *a], check=True, capture_output=True, text=True).stdout
     repo.mkdir()
@@ -224,6 +225,15 @@ def test_redraw_linked_one_file_two_users(tmp_path):
     edit = art.copy()
     ImageDraw.Draw(edit).rectangle((10, 30, 40, 50), fill=(250, 250, 0, 255))
     pixels = commit(edit, 6)
+    db, report = tmp_path / "db", tmp_path / "linked"
+    db.mkdir()
+    (db / "links.json").write_text(json.dumps(known))
+    capsys.readouterr()
+    assert pl.main(["due", "--repo", "o/cards", "--head", "HEAD", "--clone", str(repo), "--db", str(db)]) == 0
+    assert capsys.readouterr().out == "2\n"
+    assert pl.main(["redraw", "--repo", "o/cards", "--head", "HEAD", "--local", str(repo), "--db", str(db), "--out", str(report),
+                    "--deadline", "0", "--bytes", "1000000000", "--dry-run"]) == 0
+    assert json.loads((report / "redraw.json").read_text())["cards"] == sorted(users)
     done = pl.redraw_linked(str(repo), known, fetch=False)
     assert sorted(done.files) == sorted([*users, *pngs.values()]) and not done.notes
     for rel, (x, y, s) in users.items():

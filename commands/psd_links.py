@@ -24,6 +24,8 @@ SmartObject.link_target), never from the filesystem.
     python -m commands.psd_links catalogue --clone DIR --ref SHA --out FILE [--held LIST --held-ref REF --held-base SHA]
                                            [--recheck catalogue.json] [--history CLONE]
     python -m commands.psd_links redraw --checkout DIR --links FILE [--head SHA] [--cards N] [--bytes N] [--until SECONDS]
+                                        [--out DIR]   (card-sync.yml: --local, --db, --deadline)
+    python -m commands.psd_links due --clone DIR --db DIR [--head SHA]       prints how many PSDs are due
 
 Classes (assign): 1 the bytes of a Types file; 2 its ink pixels (raster kept, placed by place_trim); 3 that file drawn
 again (an older version of it, or a star or type icon named like it in its row); 4 the bytes of an MDW/Linked file; 5 a
@@ -1279,6 +1281,25 @@ def _pictures(tree: dict, rel: str) -> tuple:
     return main, sorted(numbered)
 
 
+def due_count(clone: str, links: dict, head: str = "HEAD") -> int:
+    """Card sync's Linked due: how many PSDs redraw_linked would draw again (C1), from the clone's trees and links.json
+    alone (nothing fetched: a file whose size neither knows counts its users as due)."""
+    tree = _tree_at(clone, head)
+    records, seen = records_of(links)
+    linked = {link["path"] for record in records.values() for link in record.get("links") or [] if link.get("path")}
+    sizes = {path: (seen.get(path) or {}).get(tree[path]) for path in linked if path in tree}
+    unknown = [path for path, size in sizes.items() if size is None]
+    if unknown:
+        check = run_process(["git", "-C", clone, "cat-file", "--batch-check"], input="".join(f"{tree[p]}\n" for p in unknown),
+                            capture_output=True, text=True, env={**environ, "GIT_NO_LAZY_FETCH": "1"})
+        known = {parts[0]: int(parts[2]) for parts in map(str.split, check.stdout.splitlines()) if len(parts) == 3}
+        sizes.update({path: known[tree[path]] for path in unknown if tree[path] in known})
+    due = set(due_links(records, tree, sizes))
+    due |= {rel for rel, record in records.items() if not record.get("error") and tree.get(rel) == record.get("blob")
+            and any(link.get("path") in sizes and sizes[link["path"]] is None for link in record.get("links") or [])}
+    return len(due)
+
+
 def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARDS_CAP, budget: int = 1 << 30,
                   until: float = 0.0, pushed=(), fetch: bool = True) -> Redrawn:
     """
@@ -1459,15 +1480,23 @@ def main(args: Optional[list] = None) -> int:
     cat.add_argument("--out", required=True, help="catalogue.json")
     cat.add_argument("--workers", type=int, default=4)
     red = sub_.add_parser("redraw", help="Card sync: PSDs whose linked files changed drawn again (C1-C6)")
-    red.add_argument("--checkout", required=True, help="the card repo's checkout (blobless is enough)")
-    red.add_argument("--links", required=True, help="db/links.json")
+    red.add_argument("--checkout", "--local", required=True, help="the card repo's checkout (blobless is enough)")
+    red.add_argument("--links", default="", help="db/links.json")
+    red.add_argument("--db", default="", help="the data's db folder (its links.json), for --links")
+    red.add_argument("--repo", default="", help="the card repo (card-sync.yml's; blobs come from the checkout's origin)")
     red.add_argument("--head", default="HEAD", help="the commit to read the PSDs at and commit R on")
     red.add_argument("--cards", type=int, default=CARDS_CAP, help="PSDs at most")
     red.add_argument("--bytes", type=int, default=1 << 30, help="bytes written at most")
-    red.add_argument("--until", type=float, default=0.0, help="epoch seconds: no PSD started past it")
+    red.add_argument("--until", "--deadline", type=float, default=0.0, help="epoch seconds: no PSD started past it")
+    red.add_argument("--out", default="", help="a folder for redraw.json (due: the PSDs still due)")
     red.add_argument("--pushed", default="", help="a file of PSD paths pushed in this range")
     red.add_argument("--dry-run", action="store_true", help="commit nothing")
     red.add_argument("--output", default="", help="append redraw_due= and redrawn= here (GITHUB_OUTPUT)")
+    due = sub_.add_parser("due", help="Card sync's Linked due: prints how many PSDs a redraw would draw again")
+    due.add_argument("--clone", required=True, help="the card repo's checkout (its trees; nothing fetched)")
+    due.add_argument("--db", required=True, help="the data's db folder (its links.json)")
+    due.add_argument("--head", default="HEAD", help="the commit to read")
+    due.add_argument("--repo", default="", help="card-sync.yml's (unused)")
     opts = parser.parse_args(args)
     if opts.command == "catalogue" and opts.held and not (opts.held_ref and opts.held_base):
         parser.error("--held needs --held-ref and --held-base (PLAN 5.3: a held card pushed meanwhile is read at --ref)")
@@ -1498,8 +1527,13 @@ def main(args: Optional[list] = None) -> int:
             dump(out, fh, indent=0, sort_keys=True)
         print(dumps({"psds": len(out["psds"]), "files": len(out["files"]), "errors": len(out["errors"]), **_counts(out)}))
         return 1 if out["errors"] else 0
-    with open(opts.links, encoding="utf-8") as fh:
+    if opts.command == "redraw" and not (opts.links or opts.db):
+        parser.error("redraw needs --links or --db")
+    with open(getattr(opts, "links", "") or posixpath_join(opts.db, "links.json"), encoding="utf-8") as fh:
         links = load(fh)
+    if opts.command == "due":
+        print(due_count(opts.clone, links, opts.head))
+        return 0
     pushed = ()
     if opts.pushed:
         with open(opts.pushed, encoding="utf-8") as fh:
@@ -1523,6 +1557,11 @@ def main(args: Optional[list] = None) -> int:
     if opts.output:
         with open(opts.output, "a", encoding="utf-8") as fh:
             fh.write(f"redraw_due={'true' if found.due else 'false'}\nredrawn={dumps(found.cards)}\n")
+    if opts.out:
+        makedirs(opts.out, exist_ok=True)
+        with open(posixpath_join(opts.out, "redraw.json"), "w", encoding="utf-8") as fh:
+            dump({"due": len(found.due), "cards": found.cards, "left": found.due, "commit": commit, "notes": found.notes},
+                 fh, indent=1)
     return 0
 
 
