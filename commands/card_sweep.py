@@ -18,6 +18,7 @@ landing can leave out a card whose PSD or PNG moved since (never over a newer PS
     python -m commands.card_sweep run --kind alt-template ... [--template <psd>]   (cards onto the template: its layer-comp bars in
                                       place of exposure digit rows; the template: the file given, else the ref's)
     python -m commands.card_sweep run --kind normalise ... [--batch 3/16 | --batch T] [--record <json>] [--held-ref <ref>]
+                                      [--widen <json>: {PSD path: [layer id]}, the box layers K2 saw re-break]
                                       (the big pass, 2026-11-07: card_standards.normalise in one rewrite per PSD, the
                                       cards, then MDW/Unfinished and MDW/Templates (batch T); checked by the drawing
                                       check (K1: every picture drawn alike, else the PNGs re-exported), the parse (K3)
@@ -73,7 +74,7 @@ _worker: dict = {}
 # ========================
 def _init(clone: str, tree: dict, kind: str, work: str, chained: Optional[dict] = None, whole: bool = False,
           earlier: tuple = (), template: str = "", catalogue: Optional[dict] = None, held: str = "",
-          reuse: Optional[dict] = None) -> None:
+          reuse: Optional[dict] = None, widen: Optional[dict] = None) -> None:
     source = Source(clone)
     if chained:                                 # blobs an earlier pass wrote: {sha: file}
         stored = source.blob
@@ -95,7 +96,7 @@ def _init(clone: str, tree: dict, kind: str, work: str, chained: Optional[dict] 
             replace(fh.name, template)
         fonts.template = template
     _worker.update(source=source, context=context, parser=vocab.parser(), kind=kind, work=work, whole=whole, fonts=fonts,
-                   reuse=reuse or {})
+                   reuse=reuse or {}, widen=widen or {})
 
 
 def _read(path: str) -> bytes:
@@ -224,10 +225,10 @@ def _png_ok(psd, image, path: str, main: str) -> bool:
         return png_export.png_check(psd, image).get("ok") is True
 
 
-def _keeping_text(fonts, why: str):
-    """The worker's fonts, normalise told to leave the text as it is (keep_text: why)."""
+def _fonts_with(fonts, **attrs):
+    """The worker's fonts with what normalise reads off them for one card (widen: layer ids; keep_text: why)."""
     kept = partial(fonts.func, *fonts.args, **fonts.keywords)
-    kept.__dict__.update(fonts.__dict__, keep_text=why)
+    kept.__dict__.update(fonts.__dict__, **attrs)
     return kept
 
 
@@ -251,10 +252,13 @@ def _normalise_card(job, out: dict) -> dict:
         saved = psd_edit.saved_view(pushed)     # the stored image shows that picture alone
         out.update(facts=facts, png_check={basename(p): _png_ok(pushed, image, p, job.png) for p, image in pngs.items()
                                            if _picture(pushed, p, job.png) in (None, saved)})
-        done = _normalised(job, dict(out), data, pushed, pngs, facts, _worker["fonts"])
+        fonts = _worker["fonts"]
+        if job.psd in _worker["widen"]:         # K2's redo: these box layers take the box-width rule
+            fonts = _fonts_with(fonts, widen=_worker["widen"][job.psd])
+        done = _normalised(job, dict(out), data, pushed, pngs, facts, fonts)
         if done["state"] == "refused" and standards.script_layers(pushed):
             again = _normalised(job, dict(out), data, pushed, pngs, facts,
-                                _keeping_text(_worker["fonts"], f"left as it is ({done['why']})"))
+                                _fonts_with(fonts, keep_text=f"left as it is ({done['why']})"))
             if again["state"] == "fixed":
                 return again
         return done
@@ -264,7 +268,7 @@ def _normalise_card(job, out: dict) -> dict:
 
 
 def _normalised(job, out: dict, data: bytes, pushed, pngs: dict, facts: dict, fonts) -> dict:
-    """_normalise_card's rewrite and checks with these fonts (the worker's, or _keeping_text's)."""
+    """_normalise_card's rewrite and checks with these fonts (the worker's, or _fonts_with's)."""
     source = _worker["source"]
     fixed = standards.fix(data, job.psd, [], _worker["work"], _worker["parser"], fonts, only=NORMALISE)
     out.update(left=list(fixed.left), notes=list(fixed.notes))
@@ -351,14 +355,16 @@ def kinds_of(text: str) -> list:
 
 def run(clone: str, kind: str, out_dir: str, ref: str = "main", cards: str = "", plan_path: str = "",
         workers: int = WORKERS, whole: bool = False, template: str = "", batch: str = "", record: str = "",
-        held_ref: str = "", held_base: str = "", held: str = "", catalogue: str = "", reuse: str = "") -> list:
+        held_ref: str = "", held_base: str = "", held: str = "", catalogue: str = "", reuse: str = "",
+        widen: str = "") -> list:
     """
     Sweep the clone's ref, one pass per kind: one kind's files written into out_dir, several kinds' into
     out_dir/<kind>, each later pass on the earlier passes' files; each plan to plan_path (one kind) or beside out_dir.
     normalise alone: batch (normalise_jobs), record (write_record), held_ref and held_base (a held card unmoved on ref
     since held_base is swept from held_ref's version; held: their bar documents' folder, H2), catalogue (the link
     step's file, psd_links.catalogue: built or checked again before the pool), reuse (an earlier plan, S-dry's: K1's
-    verdict kept for a PSD whose output is the same blob, at the same clean AC and fork commits).
+    verdict kept for a PSD whose output is the same blob, at the same clean AC and fork commits), widen (a file of
+    {PSD path: [layer id]}: those box layers take the box-width rule, K2's redo).
 
     Returns:
         The plans: [{"kind", "ref", "commit", "fixed": [...], "refused": [...], "errors": [...], "skipped": n}]
@@ -366,8 +372,8 @@ def run(clone: str, kind: str, out_dir: str, ref: str = "main", cards: str = "",
     kinds = kinds_of(kind)
     if whole and kinds not in (["badges"], ["tags"]):
         raise ValueError("--whole is for badges or tags alone")
-    if (batch or record or held_ref or catalogue or reuse) and kinds != [NORMALISE]:
-        raise ValueError("--batch, --record, --held-ref, --catalogue and --reuse are for normalise alone")
+    if (batch or record or held_ref or catalogue or reuse or widen) and kinds != [NORMALISE]:
+        raise ValueError("--batch, --record, --held-ref, --catalogue, --reuse and --widen are for normalise alone")
     if bool(held_ref) != bool(held_base):       # without the base, a card pushed meanwhile would take the held blob
         raise ValueError("--held-ref and --held-base go together")
     source = Source(clone)
@@ -386,15 +392,18 @@ def run(clone: str, kind: str, out_dir: str, ref: str = "main", cards: str = "",
         plan = {"kind": kind, "ref": ref, "commit": commit, "fixed": [], "refused": [], "errors": [], "skipped": 0}
         try:
             earlier = tuple(earlier_fonts(source, commit, tree, work)) if kind in EARLIER_KINDS else ()
-            found, seen = None, {}
+            found, seen, boxes = None, {}, {}
             if kind == NORMALISE:
                 jobs, plan["held"] = _held_versions(source, tree, jobs, held_ref, held_base)
                 links = standards._links()
                 found = links.catalogue(source, tree, jobs, catalogue) if links and hasattr(links, "catalogue") else None
                 plan["commits"] = code_commits()
                 seen = _reused(reuse, plan["commits"])
+                if widen:
+                    with open(widen, encoding="utf-8") as fh:
+                        boxes = load(fh)
             _sweep(plan, jobs, clone, tree, kind, work, target, workers, chained, whole, earlier, template, found, held,
-                   seen)
+                   seen, boxes)
         finally:
             rmtree(work, ignore_errors=True)
         for entry in plan["fixed"]:             # the next pass reads these
@@ -474,10 +483,11 @@ def _reused(path: str, commits: dict) -> dict:
 
 def _sweep(plan: dict, jobs: list, clone: str, tree: dict, kind: str, work: str, out_dir: str, workers: int,
            chained: Optional[dict] = None, whole: bool = False, earlier: tuple = (), template: str = "",
-           catalogue: Optional[dict] = None, held: str = "", reuse: Optional[dict] = None) -> None:
+           catalogue: Optional[dict] = None, held: str = "", reuse: Optional[dict] = None,
+           widen: Optional[dict] = None) -> None:
     with ProcessPoolExecutor(max(1, min(workers, WORKERS, cpu_count() or 1)), initializer=_init,
                              initargs=(clone, tree, kind, work, chained, whole, earlier, template, catalogue,
-                                       held, reuse)) as pool:
+                                       held, reuse, widen)) as pool:
         for done in pool.map(sweep_card, jobs, chunksize=4 if kind != NORMALISE else 1):
             state = done.pop("state")
             if state == "skip":
@@ -546,6 +556,7 @@ def main(args: Optional[list] = None) -> int:
     one.add_argument("--held", default="", help="normalise: the held cards' bar documents (H2)")
     one.add_argument("--catalogue", default="", help="normalise: the link step's catalogue file")
     one.add_argument("--reuse", default="", help="normalise: an earlier plan whose K1 verdicts hold for the same output")
+    one.add_argument("--widen", default="", help="normalise: {PSD path: [layer id]} that take the box-width rule (K2)")
     held = sub.add_parser("moved", help="the planned cards whose files moved since")
     held.add_argument("--plan", required=True)
     held.add_argument("--clone", required=True)
@@ -556,7 +567,8 @@ def main(args: Optional[list] = None) -> int:
             print(path)
         return 0
     plans = run(opts.clone, opts.kind, opts.out, opts.ref, opts.cards, opts.plan, opts.workers, opts.whole, opts.template,
-                opts.batch, opts.record, opts.held_ref, opts.held_base, opts.held, opts.catalogue, opts.reuse)
+                opts.batch, opts.record, opts.held_ref, opts.held_base, opts.held, opts.catalogue, opts.reuse,
+                opts.widen)
     print("\n".join(summary(plan) for plan in plans))
     return 1 if any(plan["errors"] for plan in plans) else 0
 
