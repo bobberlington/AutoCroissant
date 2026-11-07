@@ -430,7 +430,7 @@ def test_a_link_rewritten_is_no_layer_change(clone, tmp_path):
     layer._record.tagged_blocks.get_data(Tag.SMART_OBJECT_LAYER_DATA2).data[b"frameCount"] = Integer(2)
     layer.smart_object._data.filesize += 1
     out = tmp_path / "linked.psd"
-    psd_edit.save_psd(new, str(out), update_preview=False)
+    psd_edit.save_psd(new, str(out))
     assert pe.changed_layers(old, PSDImage.open(str(out))) == (None, 0)
 
 

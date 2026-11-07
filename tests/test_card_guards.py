@@ -228,8 +228,8 @@ def test_check_end_to_end(cards, tmp_path, monkeypatch):
     assert by["Kept"]["told"] == [] and by["Kept"]["notes"] == ["Kept.png was deleted; the PSD stays"]
     assert (out / "crops" / FOLDER / "Snack.diff.png").exists()
     summary = json.loads((out / "summary.json").read_text())
-    assert summary == {"after": bot, "cards": 8, "told": summary["told"], "comment": 6, "writes": 4, "normalise": 0,
-                       "errors": 0, "card_errors": 0} and summary["told"] >= 1
+    assert summary == {"after": bot, "cards": 8, "told": summary["told"], "comment": 6, "writes": 8, "normalise": 4,
+                       "errors": 0, "card_errors": 0} and summary["told"] >= 1     # 4 merged images stripped later (Q2)
     assert by["Bread"]["told"] == [] and not by["Bread"]["issues"]      # R3: no Ability layer is the developer's layout
     assert not by["Dropped"]["writes"] and not by["Dropped"]["export"]
     report = (out / "report.md").read_text()
@@ -459,6 +459,7 @@ def _links_module(monkeypatch, unused=(), duplicates=None, links=None) -> list:
     fake.restore = lambda size, history: None
     fake.relink = lambda psd, uuid, rel, path, size, blob: relinked.append((rel, path))
     monkeypatch.setitem(sys.modules, "commands.psd_links", fake)
+    monkeypatch.setattr(sys.modules["commands"], "psd_links", fake, raising=False)   # `from commands import psd_links`
     return relinked
 
 
