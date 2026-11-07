@@ -43,7 +43,7 @@ The problem cards: the website's Needs handling (automatic flags, `commands/card
   file (osascript is blocked), dialogs off, only documents we opened. It draws with the fonts installed here: MDW's
   stoogedings (the ring build), Futura-Bold, Lucida Grande Bold, Rockwell Bold, Elephant Italic, Myriad Arabic and
   Roboto Black are in `~/Library/Fonts`; keep stoogedings.ttf identical to main's.
-- No guides or checklists for the owner: problem lists are a CSV plus its `.md` (memory `no-guides-csv-only`).
+- No guides or checklists for the owner. Problem cards are the website's hand and bars flags (owner 11-07; the CSV is gone).
 - The TTS save's global script is `TTS/Global.lua` (+ `Global.xml`); never edit the save by hand except as a deliberate
   edit (then move drift.py's BASELINE). No Lua patterns (MoonSharp). Test a Lua change with
   `~/.venvs/tts-checks/bin/python TTS/checks/lua_mock.py "TTS/Impossibility Simulator.json" TTS/Global.lua`; the whole
@@ -70,7 +70,7 @@ The problem cards: the website's Needs handling (automatic flags, `commands/card
 
 - [ ] Check `MDW/Templates/Raid_Boss_Template.psd` (20-cell split bars, 0-40; built unattended). Raid bosses
       (6+ stars, `card_models.RAID_STARS`) have no stat limit; their bars bake up to 40.
-- [ ] Manual pass on the cards not on the Alt template (problem list section 2: hand-drawn bars, several creatures).
+- [ ] Manual pass on the cards in the website's Needs handling (hand-drawn bars, several creatures; each with its note).
 - [ ] Tell card makers about the new templates (the Alt ones took the old paths on 11-07; the bot reads both kinds of bars).
 - [ ] Post the card makers' ring font note and re-upload the TTS Workshop item (from 11-05, still open).
 
@@ -242,6 +242,8 @@ Miracle Matter's form pictures and the 5 card-art inline pictures. The jetson's 
 
 | File | What is left |
 |---|---|
+| `CARD_CREATOR.md` | In-browser card creator: designed, not queued |
+| `SIMULATOR.md` | Simulator against the AI or by the numbers: designed, not scheduled |
 
 ## Not chosen
 

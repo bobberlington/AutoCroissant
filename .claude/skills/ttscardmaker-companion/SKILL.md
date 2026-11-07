@@ -578,7 +578,14 @@ Cards moved by `card_sweep run --kind alt-template` (card_standards.alt_template
 plus three steps where its render moves at most 24 levels: bar art as the template's vector shapes, "Stat Txt" renamed
 "Stat Text and Name" with the Name layers inside, the art and ability clip bases as the template's shapes. Text drop
 shadows stay. Sweep only: the guards never convert, and old bars pushed later are not reported (owner).
-Not converted, on the owner's problem list: hand-drawn or custom bars (a manual pass) and several-creature cards.
+Not converted: hand-drawn or custom bars and several-creature cards; they carry the website's hand or bars flag
+(automatic, `commands/card_checks.py`; the problem-cards CSV is gone since 2026-11-07).
+**Fixes 2026-11-07** (card_standards): the printed digit row picks each bar's row, not the art's name (18 cards had
+Defense and Attack swapped); a row drawn as two halves (`atk top` + `atk bottom`) takes their union; each bar's dark
+matches the old digit's see-through look (`alt_dark`: plain ones near 67% stay at it). A resized bar draws nearest
+when its art is hard-edged (`psd_edit.hard_edged`, `stored_mode`; this Mac's Photoshop redraws them nearest), else bicubic.
+Since 2026-11-07 (Croissant) `Creature_Template.psd` links its stars, types and art (`Types/`, `MDW/Linked/`); its stat
+bars stay embedded.
 Igor Roballtowski has the bars only (the renderer shifts its pattern overlay on any change).
 
 **Photoshop:** a psd-tools save that keeps an embedded smart-object document no layer uses won't open ("program
