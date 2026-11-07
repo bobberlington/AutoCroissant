@@ -5626,7 +5626,9 @@ def _blocked(psd: PSDImage, inks: list, core: tuple, others: list) -> Optional[s
         return "runs off the canvas"
     for other in others:
         theirs = _ink(other)
-        if theirs is not None and any(_inks_touch(mine, theirs) for mine in inks):
+        if theirs is None or (other.kind != "type" and theirs[1].sum() > ICON_FRAME * psd.width * psd.height):
+            continue                            # a fill or art filed with the stars (Kyle's) is neither
+        if any(_inks_touch(mine, theirs) for mine in inks):
             return f"would touch {other.name!r}"
     return None
 
