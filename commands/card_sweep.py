@@ -88,7 +88,7 @@ def _init(clone: str, tree: dict, kind: str, work: str, chained: Optional[dict] 
         fonts.catalogue = catalogue             # card_standards.normalise's link step (psd_links.link)
         if catalogue:
             fonts.links = LinkContext({path: sha for path, (_, sha) in tree.items()}, catalogue, source.blob)
-        if held:                                # H2: the held cards' bars lined up (psd_links.held_bars)
+        if held:                                # H2: the held cards' bars lined up (_held_bars)
             fonts.held = partial(_held_bars, folder=held)
     if kind == "alt template":                      # the template's bars: the given file, else the ref's
         if not template and standards.ALT_TEMPLATE in tree:
@@ -106,10 +106,79 @@ def _read(path: str) -> bytes:
         return fh.read()
 
 
+HELD_NOTE = "Its stat bars changed since they were measured ({why}), so they do not line up with its own cells: " \
+            "line them up in Photoshop."
+
+
 def _held_bars(psd, rel: str, folder: str) -> list:
-    """H2's hook: psd_links.held_bars(psd, rel, folder) -> the bars lined up; [] until it lands."""
-    links = standards._links()
-    return links.held_bars(psd, rel, folder) if links is not None and hasattr(links, "held_bars") else []
+    """
+    H2 (PLAN 5.3): a held card's layer-comp bars take its own bar documents (folder/<stem>/donor.psd, built in
+    Photoshop, comps 0-20 cut on its cells; folder/spec.json, what H1 measured), in place: the embedded document and
+    placement, the comp set to the card's value, the pixels drawn by comp_render; the bar records keep the rest. Bars
+    not the measured ones: unchanged, a hand note (notes). No spec for the card: [].
+    """
+    from copy import deepcopy
+    from psd_tools import PSDImage
+    from psd_tools.api._resources import ResourceTransfer
+    from psd_tools.api.layers import TypeLayer
+    from psd_tools.constants import Tag
+    from psd_tools.psd.descriptor import Integer
+    from psd_tools.psd.tagged_blocks import TaggedBlocks
+    from commands.psd_regions import comp_bars, comp_names, comp_value, placed_data
+    out = standards.Normalised()
+    stem = basename(rel).rsplit(".", 1)[0]
+    with open(join(folder, "spec.json"), encoding="utf-8") as fh:
+        card = load(fh).get(stem)
+    if card is None:
+        return out
+    found = {layer.layer_id: (stat, layer, value, box) for stat, rows in comp_bars(psd).items()
+             for layer, value, box in rows}
+    doc = PSDImage.open(join(folder, stem, "donor.psd"))
+    donor = {layer.name: layer for layer in doc if layer.kind == "smartobject"}
+    tags_of = (Tag.SMART_OBJECT_LAYER_DATA1, Tag.SMART_OBJECT_LAYER_DATA2, Tag.PLACED_LAYER1, Tag.PLACED_LAYER2)
+    plan, why = [], "" if len(found) == len(card["bars"]) else f"{len(found)} bars, measured {len(card['bars'])}"
+    for bar in card["bars"]:                    # every check first: a mismatch leaves the card as it was
+        got, source = found.get(bar["layer_id"]), donor.get(bar["layer"])
+        box = list(got[3]) if got else []
+        if why or got is None or (got[0], got[1].name, box) != (bar["stat"], bar["layer"], bar["box"]) \
+                or got[2] is None or source is None:
+            why = why or f"{bar['layer']} is not the bar measured"
+            break
+        ids = {int(name): cid for cid, name in comp_names(placed_data(source)).items()}
+        tags = [tag for tag in tags_of if tag in source.tagged_blocks]
+        corners = [round(v) for v in placed_data(source)[b"Trnf"]]
+        if got[2] not in ids or {t for t in tags_of if t in got[1].tagged_blocks} != set(tags) or \
+                corners != [box[0], box[1], box[2], box[1], box[2], box[3], box[0], box[3]]:
+            why = f"{bar['layer']} has no bar document of its own for {got[2]}"
+            break
+        plan.append((got[1], got[2], ids[got[2]], source, tags))
+    if why:
+        out.notes.append(HELD_NOTE.format(why=why))
+        return out
+    before = standards._orphan_links(psd)
+    transfer = ResourceTransfer(psd)
+    for layer, value, cid, source, tags in plan:
+        blocks = TaggedBlocks()
+        for tag in tags:
+            blocks[tag] = deepcopy(source.tagged_blocks[tag])
+        transfer.add_blocks(doc, blocks)
+        for tag in tags:
+            layer.tagged_blocks[tag] = blocks[tag]
+        layer.__dict__.pop("_smart_object", None)   # the fork caches the old document
+        if comp_value(layer) != value:
+            placed_data(layer)[b"comp"] = Integer(cid)
+        rgba, where = psd_edit.comp_render(layer, value)
+        TypeLayer._store_raster(layer, rgba if rgba is not None else np.zeros((0, 0, 4), np.float32),
+                                where if rgba is not None else (0, 0, 0, 0))
+        layer._invalidate_bbox()
+        out.append(f"{layer.name} {value}: its own cells")
+    gone = standards._orphan_links(psd) - before    # the old shared document, once no layer uses it
+    for tag in (Tag.LINKED_LAYER1, Tag.LINKED_LAYER2, Tag.LINKED_LAYER3):
+        items = psd.tagged_blocks.get_data(tag) if psd.tagged_blocks else None
+        if items:
+            items[:] = [item for item in items if str(item.uuid).strip("\x00") not in gone]
+    psd.mark_updated()
+    return out
 
 
 def _codes(issues: list) -> set:
@@ -305,7 +374,9 @@ def _normalised(job, out: dict, data: bytes, pushed, pngs: dict, facts: dict, fo
     elif not drawn["same"] and drawn["px"] < 0:
         return {**out, "state": "refused", "why": "the drawing changed size"}
     links = standards._links()
-    problems = links.check(after, job.psd, files, source.checked) if links and hasattr(links, "check") else []
+    ctx = getattr(_worker["fonts"], "links", None)
+    problems = links.check(after, job.psd, files, source.checked, ctx.read if ctx else None, pushed) \
+        if links else []
     if problems:
         return {**out, "state": "refused", "why": "links: " + "; ".join(problems)}
     out["pngs"] = sorted(made)                  # the card's PNGs written (the link step's files aside)

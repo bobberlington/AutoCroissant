@@ -17,6 +17,7 @@ SmartObject.link_target), never from the filesystem.
     links_of(psd, rel, tree) -> [Link]               a PSD's links as repo paths, repair() making them canonical
     link_issues(psd, rel, tree) -> [str]             what its links need (needs_normalise's cheap test)
     needs(psd) / link(psd, rel, fonts) -> Step       card_standards.normalise's link step (fonts.links: the rows, files)
+    check(psd, rel, files, tree, read) -> [str]      K4 on one rewritten PSD (card_sweep)
     catalogue(source, tree, jobs, path) -> dict      card_sweep's catalogue file, checked against its jobs' blobs
     unused / duplicates / restore / repair           the guards' housekeeping (G2-G4)
     redraw_linked(...) -> Redrawn                    Card sync: a changed linked file drawn again in its users (C1-C6)
@@ -970,6 +971,34 @@ def link_issues(psd: PSDImage, rel: str, tree) -> list:
             out.append(f"repair: {link.name}")
     out += [f"orphan: {uid}" for uid in sorted(set(known) - used)]
     return list(dict.fromkeys(out))
+
+
+def check(psd: PSDImage, rel: str, files: dict, tree, read: Optional[Callable[[str], Optional[bytes]]] = None,
+          old: Optional[PSDImage] = None) -> list:
+    """
+    K4 on one rewritten PSD (card_sweep): every link placed in tree plus files (the PSD's new files) and canonical, its
+    size the file's (read: repo path -> bytes; a link old already had at that size is left due, 5.2 step 4), contentIDs
+    unique, no item without a layer, no linked bar, and every new MDW/Linked file in files linked by it.
+
+    Returns:
+        The problems, one line each ([] passes)
+    """
+    paths = set(tree) | {path for path, data in files.items() if data is not None}
+    out = [found for found in link_issues(psd, rel, paths) if not found.startswith("embedded: ")]
+    links = links_of(psd, rel, paths)
+    seen: dict = {}
+    due = {(link.path, link.size) for link in links_of(old, rel, paths)} if old is not None else set()
+    for link in links:
+        if link.content:
+            seen.setdefault(link.content, []).append(link.name)
+        data = files.get(link.path) if link.path in files else read(link.path) if read and link.path else None
+        if data is not None and len(data) != link.size and (link.path, link.size) not in due:
+            out.append(f"size: {link.name} {link.size}, file {len(data)}")
+    out += [f"contentID shared: {', '.join(names)}" for names in seen.values() if len(names) > 1]
+    used = {link.path for link in links}
+    out += [f"unlinked file: {path}" for path, data in files.items()
+            if data is not None and path.startswith(LINKED_DIR + "/") and path not in used]
+    return out
 
 
 # ========================

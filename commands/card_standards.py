@@ -2587,6 +2587,7 @@ def normalise(path: str, out_path: str, fonts, rel: str = "") -> Normalised:
     held = getattr(fonts, "held", None)
     bars = held(psd, rel) if held is not None else []
     done += bars
+    done.notes += getattr(bars, "notes", [])
     links, linked = _links(), Normalised()
     if links is not None:
         linked = links.link(psd, rel, fonts)
