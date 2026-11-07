@@ -801,3 +801,16 @@ def test_normalise_sets_text_normal_and_strips(clone, tmp_path):
     new.save(buf, update_preview=False)
     again = cs.fix(buf.getvalue(), BALLOON_BOY, [], str(tmp_path / "again"), None, fonts, only="normalise")
     assert again.data == b"" and again.normalised == []
+
+
+def test_a_widened_box_passes_the_gates(clone, tmp_path):
+    """K2's redo (fonts.widen, layer ids): Toy Bonnie's Ability box narrowed into its slack (proofs P1 c02: 396 to 394
+    pt), its own Txt2 frame with it, through normalise's gates."""
+    from psd_tools.composite.text.model import TextModel
+    from helpers import _card
+    rel = "Creatures/Fnaf/3 Stars/Toy_Bonnie.psd"
+    fonts = lambda names: str(clone / "MDW" / "Fonts")     # noqa: E731
+    fonts.widen = [321]
+    done = cs.normalise(_card(clone, rel)[0], str(tmp_path / "out.psd"), fonts, rel)
+    layer = next(x for x in PSDImage.open(tmp_path / "out.psd").descendants() if x.layer_id == 321)
+    assert "Ability" in done and not done.left and round(TextModel.from_layer(layer).box[2], 3) == 394.0

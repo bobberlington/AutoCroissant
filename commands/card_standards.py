@@ -2553,10 +2553,10 @@ def normalise(path: str, out_path: str, fonts, rel: str = "") -> Normalised:
     """
     The big pass's rewrite, in one save (owner 2026-11-07): the held cards' bars lined up (fonts.held(psd, rel), the
     sweep's alone), sub and superscript text set normal (to_normal; widened boxes: fonts.widen, layer ids; none with
-    fonts.keep_text, the reason: the sweep's fallback), the
-    pictures linked (the link step, _links()), the merged image stripped (psd_edit.save_psd). Gated: the converted
-    layers' records changed in TySh alone, the stories by gate_stories, every other layer as it was (but the link
-    step's), no smart-object document left without a layer.
+    fonts.keep_text, the reason: the sweep's fallback), the pictures linked (the link step, _links()), the merged image
+    stripped (psd_edit.save_psd). Gated: the converted layers' records changed in TySh alone, the stories by
+    gate_stories (a widened box's own frames too), every other layer as it was (but the link step's), no smart-object
+    document left without a layer.
 
     Returns:
         Normalised; empty when there was nothing to do (nothing written)
@@ -2598,16 +2598,18 @@ def normalise(path: str, out_path: str, fonts, rel: str = "") -> Normalised:
     if not done:
         return done
     psd_edit.save_psd(psd, out_path)
+    stories = {layer.layer_id: psd_edit.story_index(layer) for layer in texts}
     _normal_gate(path, out_path, {psd_edit._record_index(layer) for layer in texts},
-                 [psd_edit.story_index(layer) for layer in texts if psd_edit.story_index(layer) is not None],
-                 bool(linked or bars))
+                 [i for i in stories.values() if i is not None], bool(linked or bars),
+                 [i for lid, i in stories.items() if lid in widen and i is not None])
     return done
 
 
-def _normal_gate(path: str, out_path: str, texts: set, stories: list, others: bool) -> None:
+def _normal_gate(path: str, out_path: str, texts: set, stories: list, others: bool, boxes: list = ()) -> None:
     """normalise()'s gate: the text records changed in TySh alone, every other record as it was unless the link or
     held-bar steps ran (others: theirs are checked by the pass's own links check), the document but its merged image,
-    the stories (gate_stories, the link blocks free when others), no orphaned smart-object document; Refused("bytes")."""
+    the stories (gate_stories, the link blocks free when others; boxes: the widened stories, their frames free), no
+    orphaned smart-object document; Refused("bytes")."""
     old_records, new_records = psd_edit.layer_records(path), psd_edit.layer_records(out_path)
     if len(old_records) != len(new_records):
         raise Refused("bytes", "layer count changed")
@@ -2625,7 +2627,7 @@ def _normal_gate(path: str, out_path: str, texts: set, stories: list, others: bo
     part = psd_edit.changed_part(before, after, ("header", "color_mode_data", "image_resources"))
     if part:
         raise Refused("bytes", f"{part} changed")
-    psd_edit.gate_stories(before, after, stories, also=LINK_BLOCKS if others else frozenset())
+    psd_edit.gate_stories(before, after, stories, also=LINK_BLOCKS if others else frozenset(), frames=boxes)
     if _orphan_links(after) - _orphan_links(before):    # Photoshop 2023 won't open a file holding them
         raise Refused("bytes", "a smart object's document is left with no layer using it")
 

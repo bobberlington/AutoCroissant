@@ -8751,7 +8751,7 @@ def _story_font_name(entry, spelling: int) -> str:
 
 
 def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), added=(), filters: bool = False,
-                 also: frozenset = frozenset()) -> list:
+                 also: frozenset = frozenset(), frames=()) -> list:
     """
     Photoshop reads a type layer's text from its Txt2 story and rebuilds the layer's TySh from it on save, so an edit
     to TySh alone is undone the first time the card is opened (2026-10-22: B.F.B. went back to B.F.B). Every type
@@ -8770,6 +8770,7 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), add
             stories and their own frames taken out
         filters: the FEid block is gate_filters' (a bake's: smart-filtered stars moved or copied, S1)
         also: Other document blocks (keys) that may change: the link step's (card_standards.normalise)
+        frames: TextIndex of each edited layer whose box was resized (set_text_box): its own Txt2 frames may change
 
     Returns:
         The changed stories' indices (the new card's), sorted; raises Refused("bytes")
@@ -8829,6 +8830,10 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), add
         trimmed = _story_fonts(root_b)
         while len(trimmed) > len(faces_a):
             trimmed.pop()
+    if frames:                                  # the resized boxes' own frames left out of both
+        root_a, root_b = _frames_out(root_a, frames), _frames_out(root_b, frames)
+        objects_a, objects_b = _story_list(root_a)[0], _story_list(root_b)[0]
+        items_a, items_b = _story_list(root_a)[2], _story_list(root_b)[2]
     rest = [[(str(key), _raw(value)) for key, value in root.items() if value is not objects]
             + [(str(key), _raw(value)) for key, value in objects.items() if value is not items]
             for root, objects, items in ((root_a, objects_a, items_a), (root_b, objects_b, items_b))]
@@ -9818,6 +9823,20 @@ def _drop_story(psd: PSDImage, index: int) -> list:
             at.value = int(at.value) - 1
             moved.append(layer)
     return moved
+
+
+def _frames_out(root, indices):
+    """A copy of a Txt2 root with the frames only these stories use blanked (gate_stories' frames)."""
+    from psd_tools.api import text_edit
+    from psd_tools.psd import engine_data
+    root = deepcopy(root)
+    keys, items = _story_keys(root)
+    own = {i for index in indices for i in text_edit._frame_refs(items[index], keys)}
+    shared = {i for k, story in enumerate(items) if k not in set(indices) for i in text_edit._frame_refs(story, keys)}
+    frames = text_edit._resource_items(root, keys, keys.frame_set)
+    for i in own - shared:
+        frames[i] = engine_data.Dict()
+    return root
 
 
 def _drop_story_in(root, keys, items, index: int) -> None:
