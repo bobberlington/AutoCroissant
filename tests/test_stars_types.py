@@ -28,7 +28,7 @@ SPRINGTRAP = "Auxiliary/Minions/Springtrap.psd"         # two stars over three: 
 CLAW = "N.M.E/The_Claw.psd"                             # one star over a pair: a fourth makes two rows of two
 FREEZER = "Field/1 Stars/The_Freezer.psd"               # a field card: its "1 Stars" folder sets the stars
 MORPHO = "Auxiliary/Creatures/Morpho_Knight.psd"        # Fire over Undead: dropping Fire moves Undead up
-MAGNUM = "Auxiliary/Items/Magnum_Opus.psd"              # its field type is a frame round the card
+MAGNUM = "Auxiliary/Items/Magnum_Opus.psd"              # its field type: a small icon in a card-sized smart object
 ABIGAIL = "Auxiliary/Minions/Abigail.psd"               # a row of two icons running into the title: a third goes under
 
 icons = pytest.mark.skipif(not pe.icon_engine(), reason="the fork's layer copy API (Layer.duplicate, PixelLayer.fromarray)")
@@ -614,8 +614,7 @@ def test_a_first_type_icon_on_the_title_bakes_flagged(clone, parser, tmp_path):
 def test_real_type_rows(clone, parser, tmp_path):
     morpho = _plan(parser, _clone_card(clone, MORPHO, tmp_path)[0], MORPHO, "types", ["undead"])
     assert [layer.name for layer in morpho.hide] == ["Fire"] and [layer.name for layer, _, _ in morpho.moves] == ["Undead", "Gradient Map 2"]
-    with pytest.raises(pe.Refused, match="'field' is a frame round the card, not an icon to take off"):
-        _plan(parser, _clone_card(clone, MAGNUM, tmp_path)[0], MAGNUM, "types", ["active"])
+    assert [layer.name for layer in _plan(parser, _clone_card(clone, MAGNUM, tmp_path)[0], MAGNUM, "types", ["active"]).hide] == ["field"]
     freezer = _clone_card(clone, FREEZER, tmp_path)
     _, baked = _bake(parser, freezer, {"types": ["field", "ice"]}, tmp_path, FREEZER, str(clone / "Types"))
     assert sorted(baked.reparse["card"]["types"]) == ["field", "ice"]

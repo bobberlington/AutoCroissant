@@ -144,7 +144,7 @@ KERN_FEATURE = "11"      # a numbered story run's kerning: 0 off, else on (TySh'
 STAR_FOLDER = r"\s*(\d+)\s*stars?\s*"           # a count's own folder in a Stars group: "5 stars", "1 star" (the templates)
 LAYOUT_TOL = 0.12           # a star or icon sits on a layout's spot within this share of its size
 LAYOUT_TOL_MIN = 6          # px, at least
-ICON_FRAME = 0.1            # a type layer over more of the canvas is a frame (Magnum Opus's field), not an icon
+ICON_FRAME = 0.1            # ink over more of the canvas is a frame or a fill, not an icon or a star
 ICON_GAP = 22               # px between an icon and the one under it on a 1200-wide card (Item_Template: Attack, NME)
 ICON_TOUCH = 0.05           # a moved, shown or made type icon may ink over this share of another's (the cards'
 #   own rows: 158 of 161 rows of two or more touch nowhere, Pandora's pandas 5.5%; 2026-10-26)
@@ -6850,12 +6850,13 @@ def type_row(psd: PSDImage, parser: PSDParser, card: str = "") -> tuple:
 
 
 def _icon_reason(psd: PSDImage, layer) -> Optional[str]:
-    """Why a header type layer is no icon the bake moves or hides (a group, a frame round the card, text); None."""
+    """Why a header type layer is no icon the bake moves or hides (a group, a frame round the card, text); None. By
+    ink: a card-sized smart object can hold a small icon (Godskin Apostle's)."""
     if layer.is_group():
         return "a group"
     if layer.kind not in ("pixel", "smartobject"):
         return f"a {layer.kind} layer"
-    x0, y0, x1, y1 = layer.bbox
+    x0, y0, x1, y1 = _core(layer) or layer.bbox
     if (x1 - x0) * (y1 - y0) > ICON_FRAME * psd.width * psd.height:
         return "a frame round the card"
     return None
