@@ -13,6 +13,7 @@ from psd_tools.constants import BlendMode, Compression, Tag
 
 import commands.psd_diff as pdf
 from conftest import at_rev
+from helpers import BALLOON_BOY, normalised
 
 # ========================
 # Configuration
@@ -128,3 +129,9 @@ def test_smart_filters_renumbered_by_a_save_say_nothing(clone):
         "Ability text: '(1PGT)' -> '(1GCD)'"]
     assert "tumblr_nguxntKncE1u258ivo1_500 smart filters changed" in pdf.changes(
         *_pair(clone, "91fcda38", "56a79f4f", "Items/Heal/2 Stars/Pep_Drink.psd"))
+
+
+def test_a_normalised_card_has_no_changes(clone, tmp_path):
+    """Big pass: normal text from sub and superscript, every glyph where it was, and no merged image: no Changes line."""
+    old, new, _, fonts = normalised(clone, BALLOON_BOY, tmp_path)
+    assert pdf.changes(old, new, fonts=fonts) == []

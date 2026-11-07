@@ -18,10 +18,14 @@ silent, owner 2026-10-25) run on every card, in this order: badges laid out at o
 advance moved: relay_badges'), badges and icons fitted to their text (fit_badges: a badge's pill 1.35 times
 the text's capital height, its middle on the capitals' middle, even when that rewraps the text; an FX layer on words
 that moved is cut again) and badges under an overlay set one-colour (one_colour_badges); each redraws only the changed
-glyphs and the guards re-export the PNG.
+glyphs and the guards re-export the PNG. Every save strips the merged image (Maximize Compatibility off, owner
+2026-11-07: psd_edit.save_psd). The big pass's normalise (card_sweep alone until the guards land its files, G1): sub and
+superscript text set normal at the same size and place (to_normal), the pictures linked (the link step, psd_links),
+the merged image stripped, in one gated save.
 
     check(psd, rel, context, old=None, added=False) -> [Issue]
     fix(data, rel, issues, work, parser=None, fonts=None, only=None) -> Fixed   the fixes, gated (one PSD's new bytes)
+    normalise(path, out_path, fonts, rel) -> Normalised           the big pass's rewrite (fix(only="normalise"))
     composer_layers(psd) -> [layer]                               the card text layers set Every-line (R8)
     redraw(path, out_path, names, fonts) -> [name]                the rewrapped layers drawn again (R8)
     BADGE_TAGS, WAIVED                                            the badge vocabulary and the owner's class waivers
@@ -49,8 +53,8 @@ from commands.font_check import _get, _value, layer_fonts
 from commands.psd_edit import BADGE_KEYS, BADGE_TAGS, ICON_FONT, Refused, badge_spans, badge_tags
 from commands.psd_parser import (EFFECT_LAYER_TAG, ICON_FONT_PREFIX, TAG, CardValidator, PSDParser, base_name, layer_tag,
                                  variant_view, variants_of)
-from commands.psd_regions import (STATS as STAT_PATTERNS, bar_box, clip, comp_bars, comp_stat, comp_value, fx_pad,
-                                  overlay_words, stat_rows, union_box)
+from commands.psd_regions import (STATS as STAT_PATTERNS, bar_box, clip, comp_bars, comp_stat, comp_value, overlay_words,
+                                  stat_rows, union_box)
 
 # ========================
 # Configuration
@@ -125,6 +129,9 @@ class Fixed:
     pixel_left: list = field(default_factory=list)  # (kind, why) a pixel fix not made (plan.json only)
     notes: list = field(default_factory=list)   # what a pixel fix did that a reader should look at (plan.json only)
     stale_glyphs: list = field(default_factory=list)    # layers old glyphs found in another font build (told)
+    normalised: list = field(default_factory=list)  # normalise: what it did (silent; its redrawn layers in redrawn)
+    files: dict = field(default_factory=dict)   # normalise: other files it writes (repo path -> bytes; None deletes)
+    left: list = field(default_factory=list)    # normalise: what it left as it was, and why (plan.json only)
 
 
 # ========================
@@ -309,7 +316,7 @@ def single_line(path: str, out_path: str, fonts: Optional[Callable[[list], Optio
     for key, (props, name) in _composer_values(psd, records).items():
         if key in flipped:
             props[name].value = False
-    psd_edit.save_psd(psd, out_path, update_preview=False)
+    psd_edit.save_psd(psd, out_path)
     new = PSDImage.open(out_path)
     if any(psd_edit._record_index(layer) in records for layer in composer_layers(new)):
         raise Refused("bytes", "a layer is still Every-line")
@@ -329,52 +336,24 @@ def single_line(path: str, out_path: str, fonts: Optional[Callable[[list], Optio
 
 def redraw(path: str, out_path: str, names: list, fonts: Callable[[list], Optional[str]]) -> list:
     """
-    R8: the named text layers (lines that rewrap Single-line) drawn again whole by the fork, and the stored preview
-    patched over them (merge_preview), so the guards' export can follow (png_export.export); gated: only those records'
-    pixels, rectangle and TySh and the preview change.
+    R8: the named text layers (lines that rewrap Single-line) drawn again whole by the fork and saved stripped
+    (psd_edit.save_psd), so the guards' export can follow (png_export.export); gated: only those records' pixels,
+    rectangle and TySh change.
 
     Args:
         fonts: single_line()'s
 
     Returns:
-        The layer names redrawn; raises Refused("bytes") or ("unsupported-card": no preview to patch)
+        The layer names redrawn; raises Refused("bytes")
     """
-    import numpy as np
-    before, psd = PSDImage.open(path), PSDImage.open(path)
-    preview = psd_edit.stored_preview(before)
-    if preview is None:
-        raise Refused("unsupported-card", "no stored preview to patch")
+    psd = PSDImage.open(path)
     layers = [layer for layer in _visible_texts(psd) if layer.name.strip() in names]
     if not layers:
         return []
-    boxes = []
     for layer in layers:
-        old = layer.bbox
         layer.rasterize(fonts=psd_edit.font_map(fonts(layer_fonts(layer)), layer))
-        pad = fx_pad(layer) + LINE_PAD
-        boxes += [(x0 - pad, y0 - pad, x1 + pad, y1 + pad) for x0, y0, x1, y1 in (old, layer.bbox) if x1 > x0 and y1 > y0]
-    region = clip((min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes),
-                   max(b[3] for b in boxes)), psd.width, psd.height)
-    was, now = psd_edit.render_pair(before, region, False)[1], psd_edit.render_pair(psd, region, False)[1]
-    moved = np.asarray(was.convert("RGBA")) != np.asarray(now.convert("RGBA"))
-    psd_edit.save_psd(psd, out_path, preview=psd_edit.merge_preview(preview, [(moved.any(axis=2), now, region)]))
-    records = {psd_edit._record_index(layer) for layer in layers}
-    old_records, new_records = psd_edit.layer_records(path), psd_edit.layer_records(out_path)
-    if len(old_records) != len(new_records):
-        raise Refused("bytes", "layer count changed")
-    for i, (a, b) in enumerate(zip(old_records, new_records)):
-        if i not in records:
-            if a != b:
-                raise Refused("bytes", "a layer record changed beyond the redrawn text")
-        elif {k for k in a if a[k] != b[k]} - {"channels", "rect", "blocks"} or \
-                [k for (k, x), (_, y) in zip(a["blocks"], b["blocks"]) if x != y and k != b"TySh"]:
-            raise Refused("bytes", f"{a['name']}: changed beyond its pixels")
-    new = PSDImage.open(out_path)
-    for part in ("header", "color_mode_data", "image_resources"):
-        if psd_edit._raw(getattr(before._record, part)) != psd_edit._raw(getattr(new._record, part)):
-            raise Refused("bytes", f"{part} changed")
-    if psd_edit._document_blocks(before) != psd_edit._document_blocks(new):
-        raise Refused("bytes", "document blocks changed")
+    psd_edit.save_psd(psd, out_path)
+    _only_pixels(path, out_path, {psd_edit._record_index(layer) for layer in layers})
     return [layer.name.strip() for layer in layers]
 
 
@@ -863,10 +842,10 @@ def _records_except_names(path: str) -> list:
 
 
 def _same_document(old: PSDImage, new: PSDImage) -> Optional[str]:
-    """The part of the document other than the layer records that changed, or None."""
-    for part in ("header", "color_mode_data", "image_resources", "image_data"):
-        if psd_edit._raw(getattr(old._record, part)) != psd_edit._raw(getattr(new._record, part)):
-            return part
+    """The part of the document other than the layer records that changed (the merged image's strip is none), or None."""
+    part = psd_edit.changed_part(old, new)
+    if part:
+        return part
     if psd_edit._document_blocks(old) != psd_edit._document_blocks(new):
         return "document blocks"
     return None
@@ -892,7 +871,7 @@ def _renamed(psd: PSDImage, path: str, out_path: str, renames: list) -> list:
     for layer, target in renames:
         indices.add(next(i for i, record in enumerate(records) if record is layer._record))
         layer.name = target
-    psd_edit.save_psd(psd, out_path, update_preview=False)
+    psd_edit.save_psd(psd, out_path)
     old_records, new_records = psd_edit.layer_records(path), psd_edit.layer_records(out_path)
     if len(old_records) != len(new_records):
         raise Refused("bytes", "layer count changed")
@@ -973,8 +952,10 @@ def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[P
 def _gated(base: str, path: str, rel: str, parser: Optional[PSDParser], reads: Optional[Callable] = None,
            sized: bool = True) -> bytes:
     """A fixed PSD's bytes through the size and the reparse gates (reads: what the fix makes of the old parse; sized
-    False: a pixel fix, its bytes proven by _only_pixels, the preview re-encoded); raises Refused."""
-    if sized and abs(getsize(path) - getsize(base)) > SIZE_MAX * getsize(base):
+    False: a pixel fix, its bytes proven by _only_pixels; the merged image's strip left out of the size: body_sizes);
+    raises Refused."""
+    was, now = psd_edit.body_sizes(base, path)
+    if sized and abs(now - was) > SIZE_MAX * was:
         raise Refused("size", f"PSD {getsize(base)} -> {getsize(path)} bytes")
     if parser is not None:
         before, after = psd_edit.parse_card(parser, base, rel), psd_edit.parse_card(parser, path, rel)
@@ -1195,21 +1176,10 @@ def old_glyphs(layer, fonts) -> list:
     return drawn[4] if drawn else []
 
 
-def _save_patched(before: PSDImage, psd: PSDImage, boxes: list, out_path: str) -> None:
-    """psd saved with its stored preview patched where the boxes' render changed (redraw's way)."""
-    import numpy as np
-    preview = psd_edit.stored_preview(before)
-    if preview is None:
-        raise Refused("unsupported-card", "no stored preview to patch")
-    region = clip(union_box(boxes), psd.width, psd.height)
-    was, now = psd_edit.render_pair(before, region, False)[1], psd_edit.render_pair(psd, region, False)[1]
-    moved = np.asarray(was.convert("RGBA")) != np.asarray(now.convert("RGBA"))
-    psd_edit.save_psd(psd, out_path, preview=psd_edit.merge_preview(preview, [(moved.any(axis=2), now, region)]))
-
-
 def _only_pixels(path: str, out_path: str, records: set, stories: Optional[list] = None, fonts: tuple = ()) -> None:
     """Gate: only these records' pixels, rectangle and TySh changed, and (stories) only these Txt2 stories and the faces
-    added at the end of its FontSet (fonts), else the document is the old bytes but its preview; raises Refused("bytes")."""
+    added at the end of its FontSet (fonts), else the document is the old bytes but its merged image (stripped:
+    psd_edit.changed_part); raises Refused("bytes")."""
     old_records, new_records = psd_edit.layer_records(path), psd_edit.layer_records(out_path)
     if len(old_records) != len(new_records):
         raise Refused("bytes", "layer count changed")
@@ -1221,19 +1191,14 @@ def _only_pixels(path: str, out_path: str, records: set, stories: Optional[list]
                 [k for (k, x), (_, y) in zip(a["blocks"], b["blocks"]) if x != y and k != b"TySh"]:
             raise Refused("bytes", f"{a['name']}: changed beyond its pixels")
     before, new = PSDImage.open(path), PSDImage.open(out_path)
-    for part in ("header", "color_mode_data", "image_resources"):
-        if psd_edit._raw(getattr(before._record, part)) != psd_edit._raw(getattr(new._record, part)):
-            raise Refused("bytes", f"{part} changed")
+    part = psd_edit.changed_part(before, new, ("header", "color_mode_data", "image_resources"))
+    if part:
+        raise Refused("bytes", f"{part} changed")
     if stories is None:
         if psd_edit._document_blocks(before) != psd_edit._document_blocks(new):
             raise Refused("bytes", "document blocks changed")
     else:
         psd_edit.gate_stories(before, new, stories, fonts=fonts)
-
-
-def _padded(layer, old: tuple) -> list:
-    pad = fx_pad(layer) + LINE_PAD
-    return [(x0 - pad, y0 - pad, x1 + pad, y1 + pad) for x0, y0, x1, y1 in (old, tuple(layer.bbox)) if x1 > x0 and y1 > y0]
 
 
 def _by_glyph(layer, report, whole: bool = False) -> None:
@@ -1254,14 +1219,14 @@ def straighten(path: str, out_path: str, fonts: Optional[Callable[[list], Option
         The layer names changed; raises Refused or the engine's errors
     """
     from psd_tools.composite.text import capture
-    before, psd = PSDImage.open(path), PSDImage.open(path)
+    psd = PSDImage.open(path)
     layers = curly_layers(psd)
     if not layers:
         return []
-    boxes, stories = [], []
+    stories = []
     for layer in layers:
         found = _fonts_of(layer, fonts)
-        old, keep = tuple(layer.bbox), capture(layer, found)
+        keep = capture(layer, found)
         if psd_edit.story_index(layer) is not None:
             stories.append(psd_edit.story_index(layer))
         text = layer.text
@@ -1269,8 +1234,7 @@ def straighten(path: str, out_path: str, fonts: Optional[Callable[[list], Option
             text = text[:at] + "'" + text[at + 1:]
             layer.set_text(text, keep="runs")
         _by_glyph(layer, layer.rasterize(fonts=found, keep=keep, unit=psd_edit.SPLICE_UNIT))
-        boxes += _padded(layer, old)
-    _save_patched(before, psd, boxes or [(0, 0, 1, 1)], out_path)
+    psd_edit.save_psd(psd, out_path)
     _only_pixels(path, out_path, {psd_edit._record_index(layer) for layer in layers}, stories)
     if curly_layers(PSDImage.open(out_path)):
         raise Refused("bytes", "a curly apostrophe is left")
@@ -1296,8 +1260,8 @@ def redraw_old_glyphs(path: str, out_path: str, fonts: Optional[Callable[[list],
     from dataclasses import replace
     from psd_tools.composite.text import capture
     earlier = tuple(getattr(fonts, "earlier", ()))
-    before, psd = PSDImage.open(path), PSDImage.open(path)
-    boxes, records, names = [], set(), []
+    psd = PSDImage.open(path)
+    records, names = set(), []
     for layer in icon_layers(psd):
         found = _fonts_of(layer, fonts)
         drawn = _drawn_old(layer, found)
@@ -1305,7 +1269,7 @@ def redraw_old_glyphs(path: str, out_path: str, fonts: Optional[Callable[[list],
         if not stale:
             continue
         psd_edit.follow_kerning(psd, layer)     # B12: drawn as Photoshop kerns it (the story)
-        keep, old = capture(layer, found), tuple(layer.bbox)
+        keep = capture(layer, found)
         moved = {gid for way in laid_advances(layer, found, earlier) for gid in way}
         relaid = any(keep.layout.glyphs[i].gid in moved for i in stale)
         if seen is not None and _another_build(layer, found, earlier, drawn, relaid):
@@ -1316,12 +1280,11 @@ def redraw_old_glyphs(path: str, out_path: str, fonts: Optional[Callable[[list],
         glyphs = tuple(replace(g, fill=STALE_FILL) if i in stale else g for i, g in enumerate(keep.layout.glyphs))
         _by_glyph(layer, layer.rasterize(fonts=found, keep=replace(keep, layout=replace(keep.layout, glyphs=glyphs)),
                                          unit="glyph"))
-        boxes += _padded(layer, old)
         records.add(psd_edit._record_index(layer))
         names.append(layer.name.strip())
     if not names:
         return []
-    _save_patched(before, psd, boxes, out_path)
+    psd_edit.save_psd(psd, out_path)
     _only_pixels(path, out_path, records)
     return names
 
@@ -1448,14 +1411,14 @@ def fit_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Option
         The layer names fitted; raises Refused or the engine's errors
     """
     from psd_tools.composite.text import capture
-    before, psd = PSDImage.open(path), PSDImage.open(path)
-    boxes, done, cuts = [], [], set()           # done: (record, layer name, story, faces, spans)
+    psd = PSDImage.open(path)
+    done, cuts = [], set()                      # done: (record, layer name, story, faces, spans)
     for layer, wants in badge_plan(psd, fonts):
         name, faces = layer.name.strip(), psd_edit.font_map(fonts(layer_fonts(layer)), layer)
         psd_edit.follow_kerning(psd, layer)
         whole_ok = whole and _ink_off(layer, faces) <= WHOLE_OFF
         lines = _lines(layer, faces) if whole_ok else None
-        old, keep, placed = tuple(layer.bbox), capture(layer, faces), _placed(layer, faces)
+        keep, placed = capture(layer, faces), _placed(layer, faces)
         off = psd_edit._ink_off_canvas(layer, psd.width, psd.height)
         _set(layer, wants)
         now = _placed(layer, faces)
@@ -1464,15 +1427,13 @@ def fit_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Option
         if "overflow" in report.warnings or psd_edit.below_box(keep, report.lines) or \
                 (not off and psd_edit._ink_off_canvas(layer, psd.width, psd.height)):
             raise Refused("overflow", f"{name}: resizing its badges pushes text out of its box")
-        boxes += _padded(layer, old)
-        for fx, was in _recut_fx(psd, layer, {i for i in placed if now.get(i) != placed[i]}, faces):
-            boxes += _padded(fx, was)
+        for fx, _ in _recut_fx(psd, layer, {i for i in placed if now.get(i) != placed[i]}, faces):
             cuts.add(psd_edit._record_index(fx))
         done.append((psd_edit._record_index(layer), name, psd_edit.story_index(layer), faces,
                      {(fit["start"], fit["end"]): "FontSize" in keys for fit, keys in wants}))
     if not done:
         return []
-    _save_patched(before, psd, boxes, out_path)
+    psd_edit.save_psd(psd, out_path)
     _only_pixels(path, out_path, {record for record, *_ in done} | cuts,
                  [story for _, _, story, *_ in done if story is not None])
     layers = {psd_edit._record_index(layer): layer for layer in PSDImage.open(out_path).descendants() if layer.kind == "type"}
@@ -1522,22 +1483,21 @@ def one_colour_badges(path: str, out_path: str, fonts: Optional[Callable[[list],
         The layer names changed; raises Refused or the engine's errors
     """
     from psd_tools.composite.text import capture
-    before, psd = PSDImage.open(path), PSDImage.open(path)
-    boxes, records, stories, names = [], set(), [], []
+    psd = PSDImage.open(path)
+    records, stories, names = set(), [], []
     for layer in salt_layers(psd):
         found = _fonts_of(layer, fonts)
         psd_edit.follow_kerning(psd, layer)
-        keep, old = capture(layer, found), tuple(layer.bbox)
+        keep = capture(layer, found)
         psd_edit.set_alternates(layer, _salt_spans(layer), [])
         _by_glyph(layer, layer.rasterize(fonts=found, keep=keep, unit=psd_edit.SPLICE_UNIT))
-        boxes += _padded(layer, old)
         records.add(psd_edit._record_index(layer))
         if psd_edit.story_index(layer) is not None:
             stories.append(psd_edit.story_index(layer))
         names.append(layer.name.strip())
     if not names:
         return []
-    _save_patched(before, psd, boxes, out_path)
+    psd_edit.save_psd(psd, out_path)
     _only_pixels(path, out_path, records, stories)
     if salt_layers(PSDImage.open(out_path)):
         raise Refused("bytes", "a badge is left without its one-colour shape")
@@ -1560,14 +1520,14 @@ def tags_to_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Op
         The layer names changed; raises Refused or the engine's errors
     """
     from psd_tools.composite.text import capture
-    before, psd = PSDImage.open(path), PSDImage.open(path)
-    boxes, records, stories, names, added = [], set(), [], [], []
+    psd = PSDImage.open(path)
+    records, stories, names, added = set(), [], [], []
     for layer in tag_layers(psd):
         spans, name = plain_tags(layer), layer.name.strip()
         faces = psd_edit.font_map(fonts(layer_fonts(layer)), layer)
         whole_ok = whole and _ink_off(layer, faces) <= WHOLE_OFF
         psd_edit.follow_kerning(psd, layer)
-        old, keep, placed = tuple(layer.bbox), capture(layer, faces), _placed(layer, faces)
+        keep, placed = capture(layer, faces), _placed(layer, faces)
         off = psd_edit._ink_off_canvas(layer, psd.width, psd.height)
         look = psd_edit.icon_style(layer, True, None)
         if look is None:                        # no badge or token on the layer: at the text's own style
@@ -1589,9 +1549,7 @@ def tags_to_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Op
         if "overflow" in report.warnings or psd_edit.below_box(keep, report.lines) or \
                 (not off and psd_edit._ink_off_canvas(layer, psd.width, psd.height)):
             raise Refused("overflow", f"{name}: its badges push text out of its box")
-        boxes += _padded(layer, old)
-        for fx, was in _recut_fx(psd, layer, {i for i in placed if now.get(i) != placed[i]}, faces):
-            boxes += _padded(fx, was)
+        for fx, _ in _recut_fx(psd, layer, {i for i in placed if now.get(i) != placed[i]}, faces):
             records.add(psd_edit._record_index(fx))
         records.add(psd_edit._record_index(layer))
         if psd_edit.story_index(layer) is not None:
@@ -1599,7 +1557,7 @@ def tags_to_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Op
         names.append(name)
     if not names:
         return []
-    _save_patched(before, psd, boxes, out_path)
+    psd_edit.save_psd(psd, out_path)
     _only_pixels(path, out_path, records, stories, tuple(dict.fromkeys(added)))
     if tag_layers(PSDImage.open(out_path)):
         raise Refused("bytes", "a timing tag is left outside the badge font")
@@ -1841,15 +1799,15 @@ def relay_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Opti
     from dataclasses import replace
     from psd_tools.composite.text import capture
     earlier = tuple(getattr(fonts, "earlier", ()))
-    before, psd = PSDImage.open(path), PSDImage.open(path)
-    boxes, records, names = [], set(), Relaid()
+    psd = PSDImage.open(path)
+    records, names = set(), Relaid()
     for record, faces, plan in _laid_plans(path, fonts, earlier):
         layer = next(layer for layer in icon_layers(psd) if psd_edit._record_index(layer) == record)
         psd_edit.follow_kerning(psd, layer)
         laid, marks, share = plan
         name, keep = layer.name.strip(), capture(layer, laid)
         glyphs = tuple(replace(g, fill=STALE_FILL) if i in marks else g for i, g in enumerate(keep.layout.glyphs))
-        old, placed, now = tuple(layer.bbox), _placed(layer, laid), _placed(layer, faces)
+        placed, now = _placed(layer, laid), _placed(layer, faces)
         off, inked = psd_edit._ink_off_canvas(layer, psd.width, psd.height), _ink_box(layer)
         report = layer.rasterize(fonts=faces, keep=replace(keep, layout=replace(keep.layout, glyphs=glyphs)),
                                  unit=psd_edit.SPLICE_UNIT)
@@ -1871,15 +1829,13 @@ def relay_badges(path: str, out_path: str, fonts: Optional[Callable[[list], Opti
         names.notes += [f"{name}: its line breaks hang on a hair (they change in a box {RAZOR:.1%} narrower or wider)"] * bool(hair)
         names.notes += _reflow_notes(name, keep.layout.lines, report.lines, inked, _ink_box(layer), psd.width, psd.height,
                                      keep.model, (reach, _glow_reach(layer)), getattr(fonts, "cards", None))
-        boxes += _padded(layer, old)
-        for fx, was in _recut_fx(psd, layer, {i for i in placed if now.get(i) != placed[i]}, faces):
-            boxes += _padded(fx, was)
+        for fx, _ in _recut_fx(psd, layer, {i for i in placed if now.get(i) != placed[i]}, faces):
             records.add(psd_edit._record_index(fx))
         records.add(psd_edit._record_index(layer))
         names.append(name)
     if not names:
         return []
-    _save_patched(before, psd, boxes, out_path)
+    psd_edit.save_psd(psd, out_path)
     _only_pixels(path, out_path, records)
     try:
         left = _laid_plans(out_path, fonts, earlier)
@@ -2341,23 +2297,19 @@ def alt_template(path: str, out_path: str, fonts) -> list:
         trial = PSDImage.open(path)
         if step(trial, tmpl) and (np.abs(np.asarray(trial.composite().convert("RGB"), np.int16) - base).max() <= ALT_STEP_OFF):
             steps.append(step)
-    boxes = [box for _, box, _ in found[1].values()]
-    stats = next((l for l in psd if l.is_group() and l.name.strip() == "Stats Bars"), None)
-    if _alt_shapes in steps and stats is not None:
-        boxes.append(tuple(stats.bbox))
     names = _alt_darks(psd, tmpl, found)
     for step in steps:
         names += step(psd, tmpl)
-    _save_patched(PSDImage.open(path), psd, [union_box(boxes)], out_path)   # the other steps render the same
+    psd_edit.save_psd(psd, out_path)
     _alt_gate(path, out_path)
     return names
 
 
 def _orphan_links(psd: PSDImage) -> set:
-    """The embedded smart-object documents (linked layer uuids) no layer of psd uses."""
+    """The smart-object documents, embedded or linked (lnkE), no layer of psd uses."""
     used = {str(layer.smart_object.unique_id).strip("\x00") for layer in psd.descendants() if layer.kind == "smartobject"}
     links = set()
-    for tag in (Tag.LINKED_LAYER1, Tag.LINKED_LAYER2, Tag.LINKED_LAYER3):
+    for tag in (Tag.LINKED_LAYER1, Tag.LINKED_LAYER2, Tag.LINKED_LAYER3, Tag.LINKED_LAYER_EXTERNAL):
         links |= {str(item.uuid).strip("\x00") for item in (psd.tagged_blocks.get_data(tag) or [])} \
             if psd.tagged_blocks and tag in psd.tagged_blocks else set()
     return links - used
@@ -2390,6 +2342,296 @@ def _alt_gate(path: str, out_path: str) -> None:
             raise Refused("bytes", f"{layer.name!r} changed beyond the conversion")
 
 
+# ========================
+# Normalise (the big pass, owner 2026-11-07): sub and superscript text to normal, the pictures linked, no merged image
+# ========================
+SCRIPT_RATIOS = {1: ("SuperscriptSize", "SuperscriptPosition"),   # FontBaseline: the ResourceDict's size and position
+                 2: ("SubscriptSize", "SubscriptPosition")}
+SCRIPT_DEFAULT = (0.583, 0.333)  # a ResourceDict without them: Photoshop's size and position
+AUTO_LEADING = 1.2          # a paragraph's AutoLeading when its sheets set none
+BOX_LO, BOX_HI, BOX_TIGHT = 0.003, 0.018, 1.02   # the box-width rule (a redo): room past the widest line and before
+                                                 # the next word; a box this tight keeps its width
+
+
+def _v(value):
+    return getattr(value, "value", value)
+
+
+def _runs(layer):
+    from psd_tools.composite.text.model import TextModel
+    return TextModel.from_layer(layer)
+
+
+def script_layers(psd: PSDImage) -> list:
+    """The type layers holding a sub or superscript run."""
+    out = []
+    for layer in psd.descendants():
+        if layer.kind != "type":
+            continue
+        try:
+            if any(run.end > run.start and run.style.baseline in SCRIPT_RATIOS for run in _runs(layer).runs):
+                out.append(layer)
+        except Exception:                       # unreadable runs: left alone
+            continue
+    return out
+
+
+def _leading_ratio(layer) -> Callable[[int], float]:
+    """A character index -> its paragraph's AutoLeading ratio."""
+    from bisect import bisect_right
+    from psd_tools.api import text_edit
+    engine, resources = layer.engine_dict, layer.resource_dict
+    try:
+        sheet = resources["ParagraphSheetSet"][int(_v(resources.get("TheNormalParagraphSheet", 0)))]["Properties"]
+        base = float(_v(sheet.get("AutoLeading", AUTO_LEADING)))
+    except Exception:
+        base = AUTO_LEADING
+    runs = engine.get("ParagraphRun", {})
+    ends, values, unit = [], [], 0
+    for item, n in zip(runs.get("RunArray", []), runs.get("RunLengthArray", [])):
+        unit += int(_v(n))
+        ends.append(unit)
+        values.append(float(_v(item.get("ParagraphSheet", {}).get("Properties", {}).get("AutoLeading", base))))
+    units = text_edit.utf16_prefix(text_edit._editor_text(layer))
+    return lambda i: values[min(bisect_right(ends, units[i]), len(values) - 1)] if values else base
+
+
+def script_plan(layer) -> list:
+    """
+    [(start, end, style keys)] that set each sub or superscript run normal at the same size on screen and the same
+    place (proofs/subscript.py): FontSize S*k, FontBaseline 0, Leading fixed at the line pitch it had, BaselineShift
+    less sign*p*S*VerticalScale (sign +1 sub, -1 super), k and p the layer's Sub- or SuperscriptSize and Position.
+    Tracking, kerning and HorizontalScale are per drawn em: unchanged.
+    """
+    resources, ratio, out = layer.resource_dict, _leading_ratio(layer), []
+    for run in _runs(layer).runs:
+        style = run.style
+        if run.end <= run.start or style.baseline not in SCRIPT_RATIOS:
+            continue
+        k, p = (float(_v(resources.get(key, default)))
+                for key, default in zip(SCRIPT_RATIOS[style.baseline], SCRIPT_DEFAULT))
+        sign = 1.0 if style.baseline == 2 else -1.0
+        leading = ratio(run.start) * style.size if style.auto_leading else style.leading
+        shift = style.baseline_shift - sign * p * style.size * style.vertical_scale
+        out.append((run.start, run.end, {"FontBaseline": 0, "FontSize": style.size * k, "AutoLeading": False,
+                                         "Leading": leading, "BaselineShift": shift}))
+    return out
+
+
+def to_normal(layer, fonts, widen: bool = False) -> Optional[str]:
+    """
+    One layer's sub and superscript runs set normal in place (TySh and the Txt2 story, its stale story synced first;
+    the stored pixels stay). Box text also rises by d, how far its first baseline moves when those runs shrink (it sits
+    one ascent of the line's largest run below the box top), on every run; widen: the box-width rule too (a redo, when
+    Photoshop re-breaks the converted box). Checked: the fork lays every glyph where it was (psd_edit.GLYPH_TOL; proofs
+    P1: 225 of 225 layers).
+
+    Args:
+        fonts: The fork's FontMap (psd_edit.layout_fonts)
+
+    Returns:
+        Why the conversion fails (the layer is left converted: the caller opens the PSD again without it), or None
+    """
+    from psd_tools.composite.text import font_names, layout
+    edits = script_plan(layer)
+    if not edits:
+        return None
+    model = _runs(layer)
+    lost = [name for name in font_names(layer) if model.shape == 1 and fonts.find(name) is None]
+    if lost:                                    # d would be a stand-in face's
+        return f"its font {lost[0]} is missing"
+    layer.sync_story()
+    model = _runs(layer)
+    before, was = psd_edit.glyph_places(layer, fonts), layout.layout(model, fonts)
+    for start, end, keys in edits:
+        layer.set_span_style(start, end, **keys)
+    if model.shape == 1:
+        now = layout.layout(_runs(layer), fonts)
+        rise = was.lines[0].y - now.lines[0].y if was.lines and now.lines else 0.0
+        if abs(rise) > 1e-9:
+            for run in _runs(layer).runs:
+                if run.end > run.start:
+                    layer.set_span_style(run.start, run.end, BaselineShift=run.style.baseline_shift - rise)
+        if widen:
+            _fit_box(layer, fonts)
+    moved = not psd_edit.same_places(before, psd_edit.glyph_places(layer, fonts), psd_edit.GLYPH_TOL)
+    return "its glyphs would move" if moved else None
+
+
+def _slack(layer, fonts) -> Optional[tuple]:
+    """(lo, hi): the fork breaks the box's lines the same for any width in [lo, hi) (lo the widest line, hi the
+    narrowest line plus its next word); None for a line it compresses or breaks inside a word, or no box."""
+    from psd_tools.composite.text.compose import break_lines
+    from psd_tools.composite.text.layout import frame, pieces
+    from psd_tools.composite.text.shape import shape_piece
+    model = _runs(layer)
+    box = frame(model)
+    if model.shape != 1 or box is None:
+        return None
+    text, lo, hi, aligned = model.text, 0.0, float("inf"), set()
+    for piece in pieces(model):
+        paragraph = model.paragraphs[piece.paragraph]
+        shaped = shape_piece(text, piece.start, piece.end, model.runs, fonts, sub_size=model.sub_size,
+                             tab_width=paragraph.tab_width)
+        lines = break_lines(text, piece.start, piece.end, shaped.measure, sorted(shaped.space_adv), box[2],
+                            paragraph.justification, None)
+        for k, line in enumerate(lines):
+            if line.decision in ("compress", "break"):
+                return None
+            if line.end > line.start:
+                aligned.add(paragraph.justification)
+                lo = max(lo, shaped.measure(line.start, line.end))
+            if line.decision == "fit" and k + 1 < len(lines):
+                j = lines[k + 1].start
+                while j < lines[k + 1].end and text[j] not in " \t":
+                    j += 1
+                hi = min(hi, shaped.measure(line.start, j))
+    return (lo, hi, aligned) if lo and hi != float("inf") else None
+
+
+def _fit_box(layer, fonts) -> None:
+    """The box-width rule (proofs P1, a redo only): a box width W' in the slack, max(lo (1 + BOX_LO), min(W,
+    hi / (1 + BOX_HI))), W kept when hi / lo < BOX_TIGHT; whole px, the side the paragraphs align to kept. Rotated or
+    offset boxes and mixed alignment keep theirs."""
+    found = _slack(layer, fonts)
+    model = _runs(layer)
+    xx, xy, yx, _, _, _ = model.transform
+    if found is None or abs(xy) > 1e-6 or abs(yx) > 1e-6 or any(abs(v) > 1e-6 for v in model.box[:2]):
+        return
+    lo, hi, aligned = found
+    if len(aligned) != 1 or not aligned <= {0, 1, 2} or hi / lo < BOX_TIGHT:
+        return
+    _, _, width, height = model.box
+    side = next(iter(aligned))
+    step = 2 if side == 2 else 1                 # centred: a px each side
+    n = round((width - max(lo * (1 + BOX_LO), min(width, hi / (1 + BOX_HI)))) * xx / step)
+    if n:
+        x0, y0 = model.transform[4] + {0: 0, 1: n * step, 2: n}[side], model.transform[5]
+        psd_edit.set_text_box(layer, (x0, y0, x0 + (width - n * step / xx) * xx, y0 + height * model.transform[3]),
+                              pixels=False)
+
+
+NORMAL_NOTE = "The {name} text still has subscript or superscript in it: set it to normal text in Photoshop."   # note
+LINK_BLOCKS = frozenset(bytes(tag) for tag in (Tag.LINKED_LAYER1, Tag.LINKED_LAYER2, Tag.LINKED_LAYER3,
+                                               Tag.LINKED_LAYER_EXTERNAL))   # the smart objects' documents
+
+
+class Normalised(list):
+    """normalise()'s names, and what else it did: files (repo path -> bytes; None deletes it), the layers it drew
+    again (a link's raster redrawn: the PNG follows), what it left and why (plan.json), hand notes (one plain sentence
+    each)."""
+
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.files, self.redraws, self.left, self.notes = {}, [], [], []
+
+
+def _links():
+    """commands.psd_links, the link step (big pass A4): needs(psd) -> [what to link or repair]; link(psd, rel, fonts)
+    -> Normalised, linking in place. None until it is in the tree: normalise sets text normal and strips alone."""
+    try:
+        from commands import psd_links
+    except ImportError:
+        return None
+    return psd_links if hasattr(psd_links, "needs") and hasattr(psd_links, "link") else None
+
+
+def needs_normalise(psd: PSDImage) -> list:
+    """What normalise() would change: the sub and superscript type layers, the PSD itself for its merged image, and
+    the link step's finds (an embedded picture, a link needing repair, a linked stat bar)."""
+    links = _links()
+    return [*script_layers(psd), *([psd] if psd.has_preview() else []), *(links.needs(psd) if links else [])]
+
+
+def _layout_fonts(fonts, layer):
+    """psd_edit.layout_fonts over the layer's faces' folder (fonts gives it), else the environment's."""
+    found = fonts(layer_fonts(layer)) if callable(fonts) else ""
+    return psd_edit.layout_fonts(found or "")
+
+
+def normalise(path: str, out_path: str, fonts, rel: str = "") -> Normalised:
+    """
+    The big pass's rewrite, in one save (owner 2026-11-07): the held cards' bars lined up (fonts.held(psd, rel), the
+    sweep's alone), sub and superscript text set normal (to_normal; widened boxes: fonts.widen, layer ids; none with
+    fonts.keep_text, the reason: the sweep's fallback), the pictures linked (the link step, _links()), the merged image
+    stripped (psd_edit.save_psd). Gated: the converted layers' records changed in TySh alone, the stories by
+    gate_stories (a widened box's own frames too), every other layer as it was (but the link step's), no smart-object
+    document left without a layer.
+
+    Returns:
+        Normalised; empty when there was nothing to do (nothing written)
+    """
+    widen, kept = set(getattr(fonts, "widen", ())), getattr(fonts, "keep_text", "")
+    psd, failed = PSDImage.open(path), {}
+    texts = script_layers(psd)
+    if kept:                                    # 5.2 step 9: the text left as it is (kept: why)
+        failed = {layer.layer_id: (layer.name.strip(), kept) for layer in texts}
+        texts = []
+    for layer in texts:
+        why = to_normal(layer, _layout_fonts(fonts, layer), layer.layer_id in widen)
+        if why:
+            failed[layer.layer_id] = (layer.name.strip(), why)
+    if failed:                                  # opened again: the layers that would move stay as they are
+        psd = PSDImage.open(path)
+        texts = [layer for layer in script_layers(psd) if layer.layer_id not in failed]
+        for layer in texts:
+            to_normal(layer, _layout_fonts(fonts, layer), layer.layer_id in widen)
+    texts = [layer for layer in texts if layer.layer_id not in failed]
+    done = Normalised(layer.name.strip() for layer in texts)
+    done.left = [f"{name}: {why}" for name, why in failed.values()]
+    names = list(dict.fromkeys(name for name, _ in failed.values()))
+    done.notes = [NORMAL_NOTE.format(name=", ".join(names[:-1]) + " and " + names[-1] if len(names) > 1 else names[0])
+                  ] if names else []                # one sentence a card (owner 11-07)
+    held = getattr(fonts, "held", None)
+    bars = held(psd, rel) if held is not None else []
+    done += bars
+    links, linked = _links(), Normalised()
+    if links is not None:
+        linked = links.link(psd, rel, fonts)
+        done += linked
+        done.files.update(linked.files)
+        done.redraws += linked.redraws
+        done.left += linked.left
+        done.notes += linked.notes
+    if psd.has_preview():
+        done.append("merged image")
+    if not done:
+        return done
+    psd_edit.save_psd(psd, out_path)
+    stories = {layer.layer_id: psd_edit.story_index(layer) for layer in texts}
+    _normal_gate(path, out_path, {psd_edit._record_index(layer) for layer in texts},
+                 [i for i in stories.values() if i is not None], bool(linked or bars),
+                 [i for lid, i in stories.items() if lid in widen and i is not None])
+    return done
+
+
+def _normal_gate(path: str, out_path: str, texts: set, stories: list, others: bool, boxes: list = ()) -> None:
+    """normalise()'s gate: the text records changed in TySh alone, every other record as it was unless the link or
+    held-bar steps ran (others: theirs are checked by the pass's own links check), the document but its merged image,
+    the stories (gate_stories, the link blocks free when others; boxes: the widened stories, their frames free), no
+    orphaned smart-object document; Refused("bytes")."""
+    old_records, new_records = psd_edit.layer_records(path), psd_edit.layer_records(out_path)
+    if len(old_records) != len(new_records):
+        raise Refused("bytes", "layer count changed")
+    for i, (a, b) in enumerate(zip(old_records, new_records)):
+        if a == b:
+            continue
+        if i not in texts:
+            if others:
+                continue
+            raise Refused("bytes", f"{a['name']}: changed beyond normal text")
+        if {k for k in a if a[k] != b[k]} - {"blocks"} or \
+                [k for (k, x), (_, y) in zip(a["blocks"], b["blocks"]) if x != y and k != b"TySh"]:
+            raise Refused("bytes", f"{a['name']}: changed beyond its text's style")
+    before, after = PSDImage.open(path), PSDImage.open(out_path)
+    part = psd_edit.changed_part(before, after, ("header", "color_mode_data", "image_resources"))
+    if part:
+        raise Refused("bytes", f"{part} changed")
+    psd_edit.gate_stories(before, after, stories, also=LINK_BLOCKS if others else frozenset(), frames=boxes)
+    if _orphan_links(after) - _orphan_links(before):    # Photoshop 2023 won't open a file holding them
+        raise Refused("bytes", "a smart object's document is left with no layer using it")
+
+
 PIXEL_FIXES = {     # kind -> (finds(psd) -> [layer], fix(path, out_path, fonts) -> [layer name], the parse it makes or None)
     "badge widths": (icon_layers, relay_badges, None),   # first: straighten and old glyphs lay out at the current widths
     "apostrophes": (curly_layers, straighten, straight_parse),
@@ -2398,13 +2640,16 @@ PIXEL_FIXES = {     # kind -> (finds(psd) -> [layer], fix(path, out_path, fonts)
     "overlay badges": (salt_layers, one_colour_badges, None),
     "tags": (tag_layers, tags_to_badges, None),
     "alt template": (alt_bar_rows, alt_template, None),
+    "normalise": (needs_normalise, normalise, None),     # last: linked pictures, normal text, no merged image (silent)
 }
-SWEEP_ONLY = {"alt template"}   # run by card_sweep alone, never by the push guards (owner's call, 2026-11-06)
+SWEEP_ONLY = {"alt template", "normalise"}   # run by card_sweep alone, never by the push guards (owner's call,
+#   2026-11-06); normalise until the guards land its files silently (big pass G1: then out of this set)
 PIXEL_LINES = {"badge widths": "badges laid out again at their new widths", "apostrophes": "straight apostrophes",
                "old glyphs": "old icon font glyphs redrawn",
                "badges": "badges and icons fitted to their text",
                "overlay badges": "badges under an overlay in one colour", "tags": "timing tags and costs set as badges",
-               "alt template": "the template's stat bars, bar shapes, text layout and clip shapes"}
+               "alt template": "the template's stat bars, bar shapes, text layout and clip shapes",
+               "normalise": "pictures linked, text set normal, no merged image"}
 
 
 def pixel_kinds(psd, kinds: tuple = ()) -> tuple:
@@ -2430,15 +2675,25 @@ def _pixel_fixes(folder: str, base: str, current: str, rel: str, parser: Optiona
                 names = apply(current, out, fonts, whole=True)
             elif apply is redraw_old_glyphs:    # its stale layers kept before any refusal (told)
                 names = apply(current, out, fonts, seen=result.stale_glyphs)
+            elif apply is normalise:
+                names = apply(current, out, fonts, rel)
             else:
                 names = apply(current, out, fonts)
             if not names:
+                if apply is normalise:          # nothing written: what it left still says so
+                    result.left, result.notes = list(names.left), result.notes + list(names.notes)
                 continue
             data = _gated(current, out, rel, parser, reads, sized=False)
         except Exception as error:              # best effort, never told: plan.json says why
             result.pixel_left.append((kind, f"{type(error).__name__}: {error}"))
             continue
-        result.redrawn[kind], result.data, current = names, data, out
+        if apply is normalise:                  # the PNG follows its redrawn layers alone (a link's new raster)
+            result.normalised, result.files, result.left = list(names), dict(names.files), list(names.left)
+            if names.redraws:
+                result.redrawn[kind] = list(names.redraws)
+        else:
+            result.redrawn[kind] = names
+        result.data, current = data, out
         result.notes += getattr(names, "notes", [])
     if result.redrawn and not result.rewrapped:
         if not plain:
@@ -2476,6 +2731,9 @@ __all__ = [
     'laid_advances',
     'laid_plan',
     'mark_new',
+    'needs_normalise',
+    'normalise',
+    'Normalised',
     'miscased_names',
     'old_glyphs',
     'one_colour_badges',
@@ -2484,6 +2742,8 @@ __all__ = [
     'PIXEL_LINES',
     'pixel_kinds',
     'salt_layers',
+    'script_layers',
+    'script_plan',
     'tag_layers',
     'tags_to_badges',
     'rename',
@@ -2496,4 +2756,5 @@ __all__ = [
     'single_line',
     'straighten',
     'title_problem',
+    'to_normal',
 ]

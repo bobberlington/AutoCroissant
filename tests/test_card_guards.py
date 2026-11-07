@@ -316,7 +316,7 @@ def test_a_burst_without_a_stored_image_is_made_against_the_anchor(cards, tmp_pa
     data = cg.check(str(root), two, one, mode="on", out=str(out), workers=1)
     (entry,) = data["cards"]
     assert not entry["error"], entry["error"]
-    assert entry["export"]["outcome"] == "re-exported" and entry["export"]["unchecked"] == pe.UNCHECKED
+    assert entry["export"]["outcome"] == "re-exported" and entry["export"]["unchecked"] == ""      # told nothing
     assert any("an earlier push changed the PSD without its PNG" in note for note in entry["notes"])
     (write,) = entry["writes"]
     made = Image.open(out / write["file"])
@@ -678,42 +678,43 @@ def test_a_png_kept_beside_a_psd_without_a_stored_image_is_told():
     assert cg._export_dict(pe.Export("current", numbers={"kept": 33}))["unchecked"] == ""      # checked: never kept
 
 
-def test_a_png_made_without_a_stored_image_is_told_not_refused(tmp_path, monkeypatch):
-    """Owner, 2026-10-24 (G2 rendered anyway): a PSD saved without Maximize Compatibility gets the bot's PNG, and the post
-    says "no stored image to cross-check" instead of refusing (report mode beside the PNG it would make); the comment's
-    guard-1 line says so. The line is withdrawn, as a refusal is, when the author pushed the PNG in the window (the
-    bot's write is dropped), and when the write did not land it is the "PNG not made" line alone."""
+def test_a_png_made_without_a_stored_image_tells_nothing(tmp_path, monkeypatch):
+    """Owner, 2026-10-24 (G2 rendered anyway) and 2026-11-07 (Maximize Compatibility off is the rule): a PSD with no
+    stored image gets the bot's PNG and nothing is told for it, nor in the comment's guard-1 line (report mode: the PNG
+    it would make). Drawn as another picture than the PSD was saved showing, that is told (PICTURE), and withdrawn, as a
+    refusal is, when the author pushed the PNG in the window, or replaced by the "PNG not made" line when the write did
+    not land."""
     found = pe.Export("re-exported", changed_px=5, unchecked=True)
     exported = cg._export_dict(found)
-    assert exported["unchecked"] == pe.UNCHECKED and "no stored image to cross-check" in pe.UNCHECKED
-    assert cg._export_dict(pe.Export("current", unchecked=True))["unchecked"] == ""
+    assert exported["unchecked"] == "" and cg._export_dict(pe.Export("current", unchecked=True))["unchecked"] == ""
     restyled = cg._export_dict(pe.Export("current", unchecked=True, numbers={"restyled": ["the Header text"]}))
     assert restyled["unchecked"] == pe.RESTYLED.format(what="the Header text")
+    assert "stored image" not in restyled["unchecked"]
     assert cg._guard1_line({"export": restyled, "case": "stale"}) == restyled["unchecked"]
     job = cg.Job("X/Snack.psd", "stale", png="X/Snack.png")
     result = cg.Result(job, export=exported, writes=[{"path": "X/Snack.png", "kind": "png"}])
-    assert result.told("on") == [pe.UNCHECKED]
-    assert result.told("report") == [pe.UNCHECKED, "PNG not exported with the PSD: export it in Photoshop"]
+    assert result.told("on") == []
+    assert result.told("report") == ["PNG not exported with the PSD: export it in Photoshop"]
     line = cg._guard1_line({"export": {**exported, "numbers": {}, "icc": "as stored"}, "case": "stale"})
-    assert line.startswith("PNG re-exported by the bot's render of the PSD (") and "no stored image to cross-check" in line
+    assert line.startswith("PNG re-exported by the bot's render of the PSD (") and "stored image" not in line
     beside = cg._guard1_line({"export": {**exported, "numbers": {"png_vs_render": {"bad_pct": 51.9}}, "icc": "as stored",
                                          "misses": []}, "case": "beside"})
     assert "old PSD" not in beside and "made with a pixel difference" not in beside    # the author's change, no miss
     # default 2026-10-24, owner to confirm: the new PSD drawn against its PNG is plan.json's number alone, not posted
     assert "51.90" not in beside and "the new PSD drawn against its PNG" not in beside
-    drawn = cg._export_dict(pe.Export("re-exported", changed_px=5, unchecked=True,
-                                      numbers={"png_vs_render": {"bad_pct": 51.9}}))
-    assert drawn["numbers"]["png_vs_render"]["bad_pct"] == 51.9
 
+    picture = cg._export_dict(pe.Export("re-exported", changed_px=5, unchecked=True,
+                                        numbers={"picture": {"drawn": 1, "saved": 2}}))
+    told = picture["unchecked"]
+    assert told == pe.PICTURE.format(drawn=1, saved="picture 2")
     out = tmp_path / "plan"
-    snack = _entry("Snack", export=dict(exported, numbers={}), told=[pe.UNCHECKED])
+    snack = _entry("Snack", export=dict(picture, numbers={}), told=[told])
     _write(out, snack, "X/Snack.png", "png", b"png", "re-exported")
     plan = _full_plan(tmp_path, [snack])
     hub = FakeHub({"X/Snack.psd": ("100644", "s1"), "X/Snack.png": ("100644", "p1")})
     hub.install(monkeypatch)
     report = cg.land(plan)
-    assert report["sha"] and report["told"] == {"X/Snack.psd": [pe.UNCHECKED]}
-    assert cg.finish(plan, report)["content"].startswith(f"Alice pushed Snack: {pe.UNCHECKED}.")
+    assert report["sha"] and report["told"] == {"X/Snack.psd": [told]}
     FakeHub({"X/Snack.psd": ("100644", "s1"), "X/Snack.png": ("100644", "author's")}).install(monkeypatch)
     assert cg.land(plan)["told"] == {"X/Snack.psd": []}                     # the author pushed the PNG: nothing to tell
     hub.install(monkeypatch)
@@ -1457,8 +1458,8 @@ def test_pixel_fixes_are_said_only_in_the_commit(tmp_path, monkeypatch):
     from types import SimpleNamespace
     fixed = SimpleNamespace(data=b"straight", plain=b"pushed", rewrapped=[], redrawn={"apostrophes": ["Name"]})
     found = pe.Export("re-exported", image=object(), data=b"png2", changed_px=35)
-    monkeypatch.setattr(cg.png_export, "open_psd", lambda data: data)
-    monkeypatch.setattr(cg.png_export, "export", lambda old, new, png, numbered: found)
+    monkeypatch.setattr(cg.png_export, "open_psd", lambda data, rel="": data)
+    monkeypatch.setattr(cg.png_export, "export", lambda old, new, png, numbered, **kw: found)
     result = cg.Result(cg.Job("X/A.psd", "pair", png="X/A.png"))
     assert cg._rewrapped_pngs(str(tmp_path), result, b"pushed", fixed, {"X/A.png": "image"})
     assert [(w["kind"], w["silent"], w["line"]) for w in result.writes] == [
@@ -1502,8 +1503,8 @@ def test_a_rewrap_redraw_follows_into_the_png_unsaid(tmp_path, monkeypatch):
     from types import SimpleNamespace
     fixed = SimpleNamespace(data=b"drawn", plain=b"plain", rewrapped=["Ability"])
     found = pe.Export("re-exported", image=object(), data=b"png2", changed_px=12)
-    monkeypatch.setattr(cg.png_export, "open_psd", lambda data: data)
-    monkeypatch.setattr(cg.png_export, "export", lambda old, new, png, numbered: found)
+    monkeypatch.setattr(cg.png_export, "open_psd", lambda data, rel="": data)
+    monkeypatch.setattr(cg.png_export, "export", lambda old, new, png, numbered, **kw: found)
     result = cg.Result(cg.Job("X/A.psd", "pair", png="X/A.png"))
     result.writes.append({"path": "X/A.png", "kind": "recompress", "line": "recompressed", "file": "f", "sha": "s"})
     assert cg._rewrapped_pngs(str(tmp_path), result, b"pushed", fixed, {"X/A.png": "image"})

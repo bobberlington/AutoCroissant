@@ -14,6 +14,7 @@ from contextlib import ExitStack, contextmanager, nullcontext
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
+from json import load
 from difflib import SequenceMatcher
 from hashlib import blake2b
 from inspect import signature
@@ -21,12 +22,13 @@ from itertools import combinations, product, zip_longest
 from io import BytesIO
 from math import comb, hypot
 from os import environ
-from os.path import basename, getsize, join
+from os.path import abspath, basename, dirname, getsize, join
 from re import IGNORECASE, compile as re_compile, escape, fullmatch, search, sub
-from struct import pack
+from struct import pack, unpack
 from time import perf_counter
 from typing import Optional
 from uuid import NAMESPACE_URL, uuid4, uuid5
+from weakref import WeakKeyDictionary
 
 import numpy as np
 from PIL import Image
@@ -78,9 +80,10 @@ COPY_SEEN = 1               # a copy of the title or ability shows when leaving 
 ICC_MOVED = 4               # the ICC vote (score_cards.py): pixels the profile's conversion moves this far in a channel
 ICC_RAW_VOTE = 0.65         # share of them nearer the unconverted values: the PNG was exported raw
 ICC_MIN_PX = 1000           # fewer moved pixels: no evidence, converted
-# How type layers' edges blend, tried in order by baseline(): the fork reads each layer's off the PSD's preview; a
-# PNG exported in another Photoshop session than the preview's may show them all in the text gamma, or all straight.
-# Under "preview" the edited layers are pinned to the gamma (text_kwargs()): the old preview does not show them
+# How type layers' edges blend, tried in order by baseline(): the fork reads each layer's off the PSD's preview (with
+# none, the render record's: look_kwargs()); a PNG exported in another Photoshop session than the preview's may show
+# them all in the text gamma, or all straight. Under "preview" the edited layers are pinned to the gamma
+# (text_kwargs()): the old preview does not show them
 TEXT_BLENDS = {"preview": {}, "gamma": {"text_preview": False}, "straight": {"text_gamma": None}}
 SIZE_TOLERANCE = 0.2        # a saved PSD stays within 20% of the old blob
 SIZE_FLOOR = 262144         # or this many bytes: one icon on a small PSD (Poorly Drawn Cabbage)
@@ -109,6 +112,7 @@ HARD_COLOURS = 256          # its colours at most
 HARD_SMALL = 128            # px: its pixels show at this size; a larger one must be blocky
 HARD_BLOCKY = 0.5           # the share of its neighbouring pixels that match
 HARD_CLEAR = 4              # stored_mode, image_mode: times closer one mode must redraw the stored pixels
+GLYPH_TOL = 0.0001          # a restyled text layer's glyphs within this of where they were draw nothing new (canvas px)
 FIT_PX, FIT_PCT = 2.0, 3.0  # and shift a badge or icon whose middle is off by more than both: px, % of the text's em
 FIT_SKIP = ("glow", "no_over", "space")     # icon-font glyphs that are no icon's body (halos, the red sign, spacers)
 ASPECT_TOL = 0.02           # unstretch: a typed icon's x over y scale may be this far off 1 (designers': 678 of 682 at 1.0)
@@ -7606,7 +7610,7 @@ def index_icons(edit: Edit, before: dict, after: dict) -> None:
 def render_all(psd: PSDImage) -> np.ndarray:
     """The whole card rendered from its layers (no ICC, no preview), uint8 RGBA: gate_outside's before and after."""
     return np.asarray(psd.composite(viewport=(0, 0, psd.width, psd.height), ignore_preview=True,
-                                    apply_icc=False).convert("RGBA"))
+                                    apply_icc=False, **look_kwargs(psd)).convert("RGBA"))
 
 
 def edit_copy(psd: PSDImage, raw: bytes) -> PSDImage:
@@ -7625,6 +7629,41 @@ def edit_copy(psd: PSDImage, raw: bytes) -> PSDImage:
             layer.visible = like.visible
     _share_preview(psd, new)
     return new
+
+
+@lru_cache(maxsize=4)
+def layout_fonts(fonts_dir: str = ""):
+    """The fork's FontMap for glyph_places: MDW/Fonts (a face no file holds drawn in the stand-in), else the
+    environment's fonts."""
+    from psd_tools.composite.text import FontMap, default_font_map
+    return FontMap(dirs=[fonts_dir], policy="substitute") if fonts_dir else default_font_map("substitute")
+
+
+def glyph_places(layer, fonts) -> list:
+    """The fork's layout of a type layer: (glyph id, x, y, em width, em height) per glyph, origins in canvas px."""
+    from psd_tools.composite.text import layout
+    from psd_tools.composite.text.model import TextModel
+    model = TextModel.from_layer(layer)
+    xx, xy, yx, yy, tx, ty = model.transform
+    return [(g.gid, tx + xx * g.x + yx * g.y, ty + xy * g.x + yy * g.y, g.em_w, g.em_h)
+            for g in layout.layout(model, fonts).glyphs]
+
+
+def same_glyphs(a, b, fonts=None) -> bool:
+    """Two versions of a type layer laid out alike by the fork (GLYPH_TOL) in the faces fonts gives (names -> MDW/Fonts:
+    card_guards.Source.fonts_for), else the environment's; False when it cannot lay them out."""
+    try:
+        from psd_tools.composite.text import font_names
+        faces = layout_fonts((fonts(font_names(b)) if fonts else "") or "")
+        return same_places(glyph_places(a, faces), glyph_places(b, faces), GLYPH_TOL)
+    except Exception:                           # no layout: not alike
+        return False
+
+
+def same_places(a: list, b: list, tol: float) -> bool:
+    """Two glyph_places() the same glyphs, each within tol (px and em)."""
+    return len(a) == len(b) and all(p[0] == q[0] and max(abs(x - y) for x, y in zip(p[1:], q[1:])) <= tol
+                                    for p, q in zip(a, b))
 
 
 def render_cache():
@@ -7840,8 +7879,8 @@ def gate_dirty(old: PSDImage, new: PSDImage, edits: list) -> np.ndarray:
     if box is not None:
         x0, y0, x1, y1 = box
         flags = dict(viewport=box, ignore_preview=True, apply_icc=False)
-        shown[y0:y1, x0:x1] = before = np.asarray(old.composite(**flags).convert("RGBA"))
-        after = np.asarray(new.composite(**flags).convert("RGBA"))
+        shown[y0:y1, x0:x1] = before = np.asarray(old.composite(**flags, **look_kwargs(old)).convert("RGBA"))
+        after = np.asarray(new.composite(**flags, **look_kwargs(new)).convert("RGBA"))
         diff = np.zeros((h, w), bool)
         diff[y0:y1, x0:x1] = (before != after).any(axis=2)
     if environ.get(DIRTY_VERIFY) == "1":
@@ -7911,6 +7950,103 @@ def foreign_profile(psd: PSDImage) -> Optional[bytes]:
     return None if "srgb" in description.lower() else data
 
 
+# The render record (A16): each card's look read off its stored image while it had one, for its renders after the strip
+RENDER_RECORD = join(dirname(abspath(__file__)), "render_record.json")   # {PSD path: facts}; shipped in AC
+_LOOKS: "WeakKeyDictionary" = WeakKeyDictionary()   # an open PSD -> its facts (use_record)
+
+
+@lru_cache(maxsize=1)
+def render_record() -> dict:
+    """{PSD path: {"icc": icc_vote(), "text": {layer id: [raster_key(), "straight" or "gamma"]}}}; {} without the file."""
+    try:
+        with open(RENDER_RECORD, encoding="utf-8") as fh:
+            return load(fh)
+    except FileNotFoundError:
+        return {}
+
+
+@lru_cache(maxsize=1)
+def _record_names() -> dict:
+    """{file name: PSD path} of the record's paths whose file name no other has (a card moved by a stars edit)."""
+    seen = Counter(basename(path) for path in render_record())
+    return {basename(path): path for path in render_record() if seen[basename(path)] == 1}
+
+
+def use_record(psd: PSDImage, rel: str, facts: Optional[dict] = None) -> PSDImage:
+    """psd renders with rel's facts from the render record (its file name's when rel is not in it), or the facts given
+    (look_facts' before the strip), while it has no stored image; psd."""
+    record = render_record()
+    facts = facts or record.get(rel) or record.get(_record_names().get(basename(rel or ""), ""))
+    if facts:
+        _LOOKS[psd] = facts
+    return psd
+
+
+def raster_key(layer) -> str:
+    """A short digest of a layer's stored pixels: a text fact holds while Photoshop's raster does."""
+    digest = blake2b(digest_size=6)
+    for channel in layer._channels:
+        digest.update(channel.data)
+    return digest.hexdigest()
+
+
+def look_kwargs(psd: PSDImage) -> dict:
+    """psd.composite()'s layer_text_gamma from the render record for a PSD with no stored image: each type layer whose
+    raster is the recorded one straight or in the gamma as Photoshop drew it; {} with a stored image or no facts."""
+    facts = _LOOKS.get(psd, {}).get("text")
+    if not facts or psd.has_preview():
+        return {}
+    gamma = signature(psd.composite).parameters["text_gamma"].default
+    pins = {}
+    for layer in psd.descendants():
+        fact = facts.get(str(layer.layer_id)) if layer.kind == "type" else None
+        if fact and fact[0] == raster_key(layer):
+            pins[layer.layer_id] = None if fact[1] == "straight" else gamma
+    return {"layer_text_gamma": pins} if pins else {}
+
+
+def text_choices(psd: PSDImage) -> dict:
+    """{layer id: "straight" or "gamma"} as the fork's render of the whole card blends each drawn type layer off the
+    stored preview (its _TextBlend decisions: the first pass's, with the layers its last pass settled straight); {}
+    without a stored preview."""
+    if _text_reference(psd) is None:
+        return {}
+    from importlib import import_module
+    fork = import_module("psd_tools.composite.composite")
+    made, real = [], fork._PassCache
+
+    def capture(*args, **kwargs):
+        made.append(real(*args, **kwargs))
+        return made[-1]
+    fork._PassCache = capture
+    try:
+        psd.composite(ignore_preview=True, apply_icc=False)
+    finally:
+        fork._PassCache = real
+    passes = [cache.text for cache in made if cache.text.reference is not None]
+    if not passes:
+        return {}
+    chosen = (passes[2] if len(passes) > 2 else passes[0]).chosen
+    return {layer.layer_id: "straight" if chosen[id(layer)] else "gamma" for layer in psd.descendants()
+            if layer.kind == "type" and id(layer) in chosen}
+
+
+def look_facts(psd: PSDImage, png: Optional[Image.Image] = None) -> dict:
+    """The render record's facts read off psd's stored image (before its strip): {"icc": icc_vote against png, "text":
+    {layer id: [raster_key(), text_choices()]}}, each only when found; {} without a stored image."""
+    if not psd.has_preview():
+        return {}
+    facts: dict = {}
+    vote = icc_vote(psd, png) if png is not None else None
+    if vote is not None:
+        facts["icc"] = [round(vote[0], 4), vote[1]]
+    layers = {layer.layer_id: layer for layer in psd.descendants() if layer.kind == "type"}
+    text = {str(lid): [raster_key(layers[lid]), how] for lid, how in sorted(text_choices(psd).items())}
+    if text:
+        facts["text"] = text
+    return facts
+
+
 def _text_reference(psd: PSDImage) -> Optional[np.ndarray]:
     """The fork's read of psd's stored preview for text blends (kept with psd until the preview changes); None without
     the fork, a stored 8-bit RGB preview or a read."""
@@ -7924,7 +8060,10 @@ def _text_reference(psd: PSDImage) -> Optional[np.ndarray]:
 
 
 def _share_preview(psd: PSDImage, copy: PSDImage) -> None:
-    """copy, opened from psd's bytes (edit_copy), takes psd's stored preview as the fork read it: one decode a card."""
+    """copy, opened from psd's bytes (edit_copy), takes psd's stored preview as the fork read it (one decode a card)
+    and its render record facts (use_record)."""
+    if psd in _LOOKS:
+        _LOOKS[copy] = _LOOKS[psd]
     reference = _text_reference(psd)
     if reference is None:
         return
@@ -7937,7 +8076,7 @@ def _share_preview(psd: PSDImage, copy: PSDImage) -> None:
 def preview_image(psd: PSDImage) -> Optional[Image.Image]:
     """
     psd.topil(apply_icc=False) from the fork's kept read (_text_reference: the same values on every 8-bit RGB card,
-    swept 2026-10-25), so icc_vote, stored_preview and the renders decode the stored preview once; a copy of it.
+    swept 2026-10-25), so icc_vote and the renders decode the stored preview once; a copy of it.
     """
     reference = _text_reference(psd)
     if reference is not None:
@@ -7955,13 +8094,20 @@ def icc_vote(psd: PSDImage, png: Image.Image) -> Optional[tuple]:
         png: Its official PNG
 
     Returns:
-        (vote, moved pixels); None without a foreign profile or a stored preview, or when the preview is not RGB(A) of the
-        PNG's size
+        (vote, moved pixels); without a stored preview the render record's (use_record), else None; None without a
+        foreign profile, or when the preview is not RGB(A) of the PNG's size
     """
     profile = foreign_profile(psd)
-    if profile is None or not psd.has_preview():
+    if profile is None:
         return None
-    preview = preview_image(psd)
+    if not psd.has_preview():
+        vote = _LOOKS.get(psd, {}).get("icc")
+        return tuple(vote) if vote else None
+    return _vote(preview_image(psd), png, profile)
+
+
+def _vote(preview: Optional[Image.Image], png: Image.Image, profile: bytes) -> Optional[tuple]:
+    """icc_vote's count over an image in the PSD's own values (its stored preview, or a render of it)."""
     if preview is None or preview.mode not in ("RGB", "RGBA") or preview.size != png.size:
         return None
     raw, conv = _flat(preview)[..., :3].astype(np.int16), _flat(post_process(preview, None, profile))[..., :3].astype(np.int16)
@@ -7984,9 +8130,14 @@ def export_icc(psd: PSDImage, png: Image.Image) -> bool:
         png: Its official PNG
 
     Returns:
-        False for a raw export; True otherwise (no foreign profile, no preview, no evidence)
+        False for a raw export; True otherwise (no foreign profile, no evidence). With neither a stored preview nor a
+        render record vote, the vote is over the fork's render of the card in the preview's place
     """
     vote = icc_vote(psd, png)
+    profile = foreign_profile(psd)
+    if vote is None and profile is not None and not psd.has_preview():
+        drawn = psd.composite(ignore_preview=True, apply_icc=False, **look_kwargs(psd))
+        vote = _vote(drawn, png, profile)
     return vote is None or vote[1] < ICC_MIN_PX or vote[0] < ICC_RAW_VOTE
 
 
@@ -7998,8 +8149,9 @@ def text_blends(psd: PSDImage) -> list:
 
 def text_kwargs(psd: PSDImage, text: str, edited: tuple = ()) -> dict:
     """
-    psd.composite()'s keywords for a TEXT_BLENDS key. Under "preview" the edited type layers are pinned to the text
-    gamma: the preview still shows their old text, and Photoshop blends a layer it redraws in the gamma.
+    psd.composite()'s keywords for a TEXT_BLENDS key. "preview" blends as the stored preview shows, or with none as the
+    render record says (look_kwargs); the edited type layers are pinned to the text gamma: the preview still shows their
+    old text, and Photoshop blends a layer it redraws in the gamma.
 
     Args:
         psd: The card
@@ -8009,10 +8161,11 @@ def text_kwargs(psd: PSDImage, text: str, edited: tuple = ()) -> dict:
     Returns:
         The keywords
     """
-    kwargs = dict(TEXT_BLENDS[text])
+    kwargs = dict(TEXT_BLENDS[text], **(look_kwargs(psd) if text == "preview" else {}))
     parameters = signature(psd.composite).parameters
     if text == "preview" and edited and "layer_text_gamma" in parameters:
-        kwargs["layer_text_gamma"] = dict.fromkeys(edited, parameters["text_gamma"].default)
+        kwargs["layer_text_gamma"] = {**kwargs.get("layer_text_gamma", {}),
+                                      **dict.fromkeys(edited, parameters["text_gamma"].default)}
     return kwargs
 
 
@@ -8034,29 +8187,9 @@ def render_region(psd: PSDImage, region: tuple, icc: bool = True, text: str = "p
     return psd.composite(viewport=region, ignore_preview=True, apply_icc=icc, **text_kwargs(psd, text, edited))
 
 
-def render_pair(psd: PSDImage, region: tuple, icc: bool = True, text: str = "preview", edited: tuple = ()) -> tuple:
-    """
-    One render of the region, as render_region() returns it and in the PSD's own values (what its preview stores).
-
-    Args:
-        psd: The card
-        region: Canvas bbox to render
-        icc: render_region()'s
-        text: render_region()'s
-        edited: render_region()'s
-
-    Returns:
-        (render, raw): raw before the embedded profile's sRGB conversion; the same image without a profile or icc
-    """
-    raw = psd.composite(viewport=region, ignore_preview=True, apply_icc=False, **text_kwargs(psd, text, edited))
-    if not icc or Resource.ICC_PROFILE not in psd.image_resources:
-        return raw, raw
-    return post_process(raw, None, psd.image_resources.get_data(Resource.ICC_PROFILE)), raw
-
-
 def crop_pair(psd: PSDImage, full: Optional[np.ndarray], region: tuple, icc: bool = True) -> Optional[tuple]:
     """
-    render_pair() of the region under "preview", nothing edited, cut from render_all() of the card (the same pixels:
+    (render, raw) of the region under "preview", nothing edited, cut from render_all() of the card (the same pixels:
     review 2026-10-24), None without it or when the region leaves the canvas.
     """
     x0, y0, x1, y1 = region
@@ -8167,43 +8300,6 @@ def merge_png(png: Image.Image, base: Image.Image, render: Image.Image, region: 
     return Image.fromarray(out).convert(png.mode), changed
 
 
-def stored_preview(psd: PSDImage) -> Optional[Image.Image]:
-    """
-    The PSD's flattened preview in its own values, for merge_preview() and save_psd().
-
-    Args:
-        psd: The card before the edit
-
-    Returns:
-        RGB or RGBA; None (save() regenerates it) without a preview, past 8-bit RGB, or under stock psd-tools (no
-        save(preview=))
-    """
-    if "preview" not in signature(psd.save).parameters or psd.color_mode != ColorMode.RGB or psd.depth != 8:
-        return None
-    if not psd.has_preview():
-        return None
-    image = preview_image(psd)
-    return image if image is not None and image.mode in ("RGB", "RGBA") else None
-
-
-def merge_preview(preview: Image.Image, patches: list) -> Image.Image:
-    """
-    merge_png() for the PSD's own preview: the pixels it replaced take the raw render (render_pair()).
-
-    Args:
-        preview: stored_preview()
-        patches: (merge_png()'s mask, raw render, region) per edit
-
-    Returns:
-        The preview, its mode kept (an RGB one takes the raw render over white)
-    """
-    out = np.array(preview.convert("RGBA"))
-    for changed, raw, (x0, y0, x1, y1) in patches:
-        after = _flat(raw) if preview.mode == "RGB" else np.asarray(raw.convert("RGBA"))
-        out[y0:y1, x0:x1][changed] = after[changed]
-    return Image.fromarray(out).convert(preview.mode)
-
-
 def artifacts(png: Image.Image, merged: Image.Image, region: tuple) -> dict:
     """
     Before, after and an amplified diff crop of the region (the --dry-run artifacts).
@@ -8253,9 +8349,17 @@ def gate_region(png: Image.Image, merged: Image.Image, region: tuple) -> int:
     return int(diff.sum())
 
 
-def gate_size(old_path: str, new_path: str) -> None:
-    """The saved PSD stays within SIZE_TOLERANCE of the old one or SIZE_FLOOR bytes; else Refused("size")."""
+def body_sizes(old_path: str, new_path: str) -> tuple:
+    """(old, new) file sizes, both without their image data section when new stripped old's merged image (strip())."""
     old, new = getsize(old_path), getsize(new_path)
+    (a, b, merged), (c, d, kept) = _image_section(old_path), _image_section(new_path)
+    return (old - (b - a), new - (d - c)) if merged and not kept else (old, new)
+
+
+def gate_size(old_path: str, new_path: str) -> None:
+    """The saved PSD stays within SIZE_TOLERANCE of the old one or SIZE_FLOOR bytes, the old merged image left out of
+    both when the save stripped it (a card's first strip: body_sizes); else Refused("size")."""
+    old, new = body_sizes(old_path, new_path)
     if abs(new - old) > max(SIZE_TOLERANCE * old, SIZE_FLOOR):
         raise Refused("size", f"PSD {old} -> {new} bytes")
 
@@ -8705,7 +8809,7 @@ def _story_font_name(entry, spelling: int) -> str:
 
 
 def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), added=(), filters: bool = False,
-                 links=()) -> list:
+                 links=(), also: frozenset = frozenset(), frames=()) -> list:
     """
     Photoshop reads a type layer's text from its Txt2 story and rebuilds the layer's TySh from it on save, so an edit
     to TySh alone is undone the first time the card is opened (2026-10-22: B.F.B. went back to B.F.B). Every type
@@ -8724,6 +8828,8 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), add
             stories and their own frames taken out
         filters: the FEid block is gate_filters' (a bake's: smart-filtered stars moved or copied, S1)
         links: uuids of the links the edits added (made type icons): lnkE is the old items and those, appended
+        also: Other document blocks (keys) that may change: the link step's (card_standards.normalise)
+        frames: TextIndex of each edited layer whose box was resized (set_text_box): its own Txt2 frames may change
 
     Returns:
         The changed stories' indices (the new card's), sorted; raises Refused("bytes")
@@ -8732,7 +8838,8 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), add
     txt2, lnke = bytes(Tag.TEXT_ENGINE_DATA), bytes(Tag.LINKED_LAYER_EXTERNAL)
     moved = sorted(key.decode("latin-1") for key in set(before) | set(after)
                    if (key != txt2 or (key in before) != (key in after)) and before.get(key) != after.get(key)
-                   and not (filters and key in FILTER_KEYS) and not (key == lnke and _links_added(old, new, links)))
+                   and not (filters and key in FILTER_KEYS) and key not in also
+                   and not (key == lnke and _links_added(old, new, links)))
     if moved:
         raise Refused("bytes", f"document blocks changed: {', '.join(moved)}")
     stale = stale_stories(new)
@@ -8783,6 +8890,10 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), add
         trimmed = _story_fonts(root_b)
         while len(trimmed) > len(faces_a):
             trimmed.pop()
+    if frames:                                  # the resized boxes' own frames left out of both
+        root_a, root_b = _frames_out(root_a, frames), _frames_out(root_b, frames)
+        objects_a, objects_b = _story_list(root_a)[0], _story_list(root_b)[0]
+        items_a, items_b = _story_list(root_a)[2], _story_list(root_b)[2]
     rest = [[(str(key), _raw(value)) for key, value in root.items() if value is not objects]
             + [(str(key), _raw(value)) for key, value in objects.items() if value is not items]
             for root, objects, items in ((root_a, objects_a, items_a), (root_b, objects_b, items_b))]
@@ -9322,30 +9433,64 @@ def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.
 # ========================
 # Save
 # ========================
-def save_psd(psd: PSDImage, path: str, update_preview: bool = True, preview: Optional[Image.Image] = None) -> None:
-    """
-    Write the PSD.
+def strip(psd: PSDImage) -> bool:
+    """The merged image dropped in place as Photoshop 2023 writes it with Maximize Compatibility off (the fork's
+    strip_merged, proofs P3); True when there was one."""
+    if not psd.has_preview():
+        return False
+    psd.strip_merged()
+    return True
 
-    Args:
-        psd: The edited card
-        path: Where it goes
-        update_preview: Store a current flattened preview (decision 2: always, from the driver); False keeps the
-            stale one (the fork-only tests)
-        preview: merge_preview()'s image, stored as it is; None regenerates it from the layers (a full composite)
+
+def _image_section(path: str) -> tuple:
+    """(start, end, merged) of a PSD file's image data section, read off the sections' lengths and VersionInfo (nothing
+    decoded); merged: it holds a real merged image."""
+    with open(path, "rb") as fh:
+        head = fh.read(26)
+        if len(head) < 26 or head[:4] != b"8BPS":
+            return 0, 0, False
+        psb = unpack(">H", head[4:6])[0] == 2
+        fh.seek(unpack(">I", fh.read(4))[0], 1)             # colour mode data
+        resources = fh.read(unpack(">I", fh.read(4))[0])
+        size = unpack(">Q" if psb else ">I", fh.read(8 if psb else 4))[0]
+        start = fh.seek(size, 1)
+        end = fh.seek(0, 2)
+    i, merged = 0, True
+    while i + 12 <= len(resources):
+        rid = unpack(">H", resources[i + 4:i + 6])[0]
+        name = resources[i + 6]
+        i += 6 + name + 1 + ((name + 1) & 1)
+        length = unpack(">I", resources[i:i + 4])[0]
+        if rid == Resource.VERSION_INFO.value and length >= 5:
+            merged = bool(resources[i + 8])
+        i += 4 + length + (length & 1)
+    return start, max(end, start), merged
+
+
+def changed_part(old: PSDImage, new: PSDImage, parts: tuple = ("header", "color_mode_data", "image_resources",
+                                                                "image_data")) -> Optional[str]:
     """
-    if update_preview and preview is not None:
-        psd.save(path, preview=preview)
-    elif update_preview:
-        psd.save(path)
-    elif "update_preview" in signature(psd.save).parameters:
-        psd.save(path, update_preview=False)
-    else:                                       # the fork's save(): its private flag is what triggers the preview
-        updated = psd._updated
-        psd._updated = False
-        try:
-            psd.save(path)
-        finally:
-            psd._updated = updated
+    The first of the document's parts outside its layers that new changed, or None. A stripped merged image (strip()) is
+    no change: new's image data is not compared, and its resources are compared with old's hasRealMergedData off.
+    """
+    stripped = old.has_preview() and not new.has_preview()
+    for part in parts:
+        if part == "image_data" and not new.has_preview():
+            continue
+        was = getattr(old._record, part)
+        if part == "image_resources" and stripped and was.get_data(Resource.VERSION_INFO) is not None:
+            was = deepcopy(was)
+            was.get_data(Resource.VERSION_INFO).has_composite = False
+        if _raw(was) != _raw(getattr(new._record, part)):
+            return part
+    return None
+
+
+def save_psd(psd: PSDImage, path) -> None:
+    """Write the PSD with no merged image (Maximize Compatibility off, owner 2026-11-07): strip(), then saved without a
+    regenerated preview."""
+    strip(psd)
+    psd.save(path, update_preview=False)
 
 
 def save_png(image: Image.Image, path: str, like: Image.Image) -> None:
@@ -9370,9 +9515,9 @@ def save_png(image: Image.Image, path: str, like: Image.Image) -> None:
 # Per-card driver (section 5 steps 3-9)
 # ========================
 def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict, parser: PSDParser, out_dir: str,
-               fonts_dir: str, chart: Optional[dict] = None, update_preview: bool = True,
-               types_dir: Optional[str] = None, psd: Optional[PSDImage] = None, view: Optional[int] = None,
-               template: Optional[tuple] = None, ability_from: Optional[tuple] = None, title_anchor: int = 0) -> Baked:
+               fonts_dir: str, chart: Optional[dict] = None, types_dir: Optional[str] = None,
+               psd: Optional[PSDImage] = None, view: Optional[int] = None, template: Optional[tuple] = None,
+               ability_from: Optional[tuple] = None, title_anchor: int = 0) -> Baked:
     """
     _apply_jobs, as picture `view` of a card with variant tags shows it (variant(): its edits, renders, merge onto
     that picture's PNG png_path and its content gates; parsed is that picture's parse), the saved PSD keeping its own
@@ -9382,19 +9527,19 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
     """
     hold = ExitStack()
     try:
-        return _apply_jobs(psd_path, png_path, rel, jobs, parsed, parser, out_dir, fonts_dir, chart, update_preview,
-                           types_dir, psd, view, hold, template, ability_from, title_anchor)
+        return _apply_jobs(psd_path, png_path, rel, jobs, parsed, parser, out_dir, fonts_dir, chart, types_dir, psd,
+                           view, hold, template, ability_from, title_anchor)
     finally:
         hold.close()
 
 
 def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict, parser: PSDParser, out_dir: str,
-                fonts_dir: str, chart: Optional[dict] = None, update_preview: bool = True,
-                types_dir: Optional[str] = None, psd: Optional[PSDImage] = None, view: Optional[int] = None,
-                hold: Optional[ExitStack] = None, template: Optional[tuple] = None,
+                fonts_dir: str, chart: Optional[dict] = None, types_dir: Optional[str] = None,
+                psd: Optional[PSDImage] = None, view: Optional[int] = None, hold: Optional[ExitStack] = None,
+                template: Optional[tuple] = None,
                 ability_from: Optional[tuple] = None, title_anchor: int = 0) -> Baked:
     """
-    Apply a card's jobs, render the changed region, delta-merge the PNG, save and run every gate.
+    Apply a card's jobs, render the changed region, delta-merge the PNG, save (stripped: save_psd) and run every gate.
 
     Args:
         psd_path: The card's PSD (never written)
@@ -9406,7 +9551,6 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
         out_dir: Where the new PSD and PNG go (same file names)
         fonts_dir: MDW/Fonts
         chart: status_fills() for ability edits
-        update_preview: save_psd(); the preview is the old one with the merge's pixels when the fork can store it
         types_dir: The card repo's Types/ folder (its PNGs), for a types edit that makes an icon
         psd: psd_path already open (card_bake's parse and classify share it), never changed: the edit goes on a copy
             (edit_copy: opened again from psd_path's bytes); None: opened here. Each PSD file is opened once per bake,
@@ -9420,7 +9564,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     start = perf_counter()
     with open(psd_path, "rb") as fh:
         raw = fh.read()
-    old = psd if psd is not None else PSDImage.open(BytesIO(raw))
+    old = use_record(psd if psd is not None else PSDImage.open(BytesIO(raw)), rel)
     new, old_records = edit_copy(old, raw), layer_records(old)     # the copy: a second open of the same bytes
     hold = ExitStack() if hold is None else hold
     hold.enter_context(variant(old, view))      # picture `view`'s eye flags until the save
@@ -9507,8 +9651,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     region = changed_region(edits, new)
 
     # region per edited field (section 5 step 3): the parity bar is measured over the pixels that edit can reach
-    merged, parity, changed_pixels, patches, whole = png, {}, 0, [], {}
-    preview = stored_preview(old) if update_preview else None
+    merged, parity, changed_pixels, whole = png, {}, 0, {}
     icc = export_icc(old, png)
     edited = edited_ids(edits)
     timings["baseline"] = timings["render"] = 0.0
@@ -9528,10 +9671,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
         timings["baseline"] += perf_counter() - start
         start = perf_counter()
         with cache:     # a region's first pinned pass (its key: the region and the pins): gate_idempotence's resumes it
-            if preview is None:
-                render = render_region(new, edit.region, icc, text, edited)
-            else:
-                render, raw = render_pair(new, edit.region, icc, text, edited)
+            render = render_region(new, edit.region, icc, text, edited)
         timings["render"] += perf_counter() - start
         merged, replaced = merge_png(merged, base, render, edit.region)
         own = own_pixels(replaced, edit.region, [other.region for other in edits if other is not edit and other.region])
@@ -9539,22 +9679,19 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
             raise Refused("parity", "%s: the render shows no change, baseline bad %.2f%% mean %.2f max %d"
                           % (edit.field, parity[edit.field]["bad_pct"], parity[edit.field]["mean"], parity[edit.field]["max"]),
                           edit.field if edit.field in ICON_FIELDS else None)
-        if preview is not None:
-            patches.append((replaced, raw, edit.region))
         changed_pixels += int(replaced.sum())
-    if preview is not None:
-        preview = merge_preview(preview, patches)
     gate_shape(png, merged, new)
     gate_region(png, merged, region)     # merge_png writes only inside the regions: the gate restates its contract
 
     new_psd, new_png = join(out_dir, basename(psd_path)), join(out_dir, basename(png_path))
     start = perf_counter()
     hold.close()                                # the saved card keeps its own eye flags
-    save_psd(new, new_psd, update_preview, preview)
+    save_psd(new, new_psd)
     timings["save"] = perf_counter() - start
     save_png(merged, new_png, png)
     gate_size(psd_path, new_psd)
-    reopened = PSDImage.open(new_psd)          # the saved PSD's one open: every gate after reads it
+    reopened = use_record(PSDImage.open(new_psd), rel, _LOOKS.get(new))   # the saved PSD's one open: every gate
+    #                                           after reads it, drawn with the facts the merge was (it has no stored image)
     records, flag_bytes, block_bytes = gate_bytes(old_records, reopened, edits)
     hold.enter_context(variant(reopened, view))     # the read-back and re-render as picture `view`
 
@@ -9748,6 +9885,20 @@ def _drop_story(psd: PSDImage, index: int) -> list:
             at.value = int(at.value) - 1
             moved.append(layer)
     return moved
+
+
+def _frames_out(root, indices):
+    """A copy of a Txt2 root with the frames only these stories use blanked (gate_stories' frames)."""
+    from psd_tools.api import text_edit
+    from psd_tools.psd import engine_data
+    root = deepcopy(root)
+    keys, items = _story_keys(root)
+    own = {i for index in indices for i in text_edit._frame_refs(items[index], keys)}
+    shared = {i for k, story in enumerate(items) if k not in set(indices) for i in text_edit._frame_refs(story, keys)}
+    frames = text_edit._resource_items(root, keys, keys.frame_set)
+    for i in own - shared:
+        frames[i] = engine_data.Dict()
+    return root
 
 
 def _drop_story_in(root, keys, items, index: int) -> None:
@@ -9991,12 +10142,12 @@ def set_text_font(layer, font: str, size: float, leading: float) -> None:
     layer.set_span_style(0, len(layer.text), **keys)
 
 
-def set_text_box(layer, box: tuple) -> None:
+def set_text_box(layer, box: tuple, pixels: bool = True) -> None:
     """
     A paragraph type layer's box moved and sized to box (x0, y0, x1, y1, canvas px; the transform's scale kept): the
-    TySh transform and the record (its pixels and fxrp follow), BoxBounds, the TySh bounds, and the Txt2 frame's Bezier
-    (its points scaled, Photoshop's order kept) and its frame and region strikes, which must agree (+ability, §4.7).
-    Point text, or a Txt2 in named keys, raises Refused.
+    TySh transform and the record (its pixels and fxrp follow, unless pixels is False: the glyphs stay), BoxBounds, the
+    TySh bounds, and the Txt2 frame's Bezier (its points scaled, Photoshop's order kept) and its frame and region
+    strikes, which must agree (+ability, §4.7). Point text, or a Txt2 in named keys, raises Refused.
     """
     from psd_tools.api import text_edit
     from psd_tools.psd import engine_data
@@ -10011,7 +10162,8 @@ def set_text_box(layer, box: tuple) -> None:
     was = [float(v) for v in child["Cookie"]["Photoshop"]["BoxBounds"]]
     sx, sy = w / ((was[2] - was[0]) or 1.0), h / ((was[3] - was[1]) or 1.0)
     layer._data.transform = (xx, xy, yx, yy, tx + dx, ty + dy)
-    layer.left, layer.top = layer.left + dx, layer.top + dy           # the fork carries fxrp along
+    if pixels:
+        layer.left, layer.top = layer.left + dx, layer.top + dy       # the fork carries fxrp along
     child["Cookie"]["Photoshop"]["BoxBounds"] = engine_data.List([f(0), f(0), f(w), f(h)])
     bounds = layer._data.text_data[b"bounds"]
     for key, value in ((b"Rght", w), (b"Btom", h)):
@@ -10225,7 +10377,9 @@ __all__ = [
     'gate_region',
     'gate_reparse',
     'gate_shape',
+    'body_sizes',
     'gate_size',
+    'glyph_places',
     'gate_status_words',
     'gate_stories',
     'edit_parts',
@@ -10252,9 +10406,12 @@ __all__ = [
     'new_fx',
     'no_glyph',
     'layer_records',
+    'layout_fonts',
+    'look_facts',
+    'look_kwargs',
+    'changed_part',
     'lettered_icons',
     'merge_png',
-    'merge_preview',
     'whole_redraw',
     'name_layer',
     'normalize_ability',
@@ -10273,12 +10430,18 @@ __all__ = [
     'shown_name',
     'splice_text',
     'splices',
-    'render_pair',
+    'render_record',
     'render_region',
+    'raster_key',
     'run_fills',
     'save_png',
     'same_types',
     'save_psd',
+    'same_glyphs',
+    'same_places',
+    'strip',
+    'text_choices',
+    'use_record',
     'set_icons',
     'set_creatures',
     'set_stat',
@@ -10294,7 +10457,6 @@ __all__ = [
     'stylistic_alternates',
     'status_fills',
     'status_spans',
-    'stored_preview',
     'stories',
     'story_index',
     'story_style_drift',

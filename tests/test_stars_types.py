@@ -120,7 +120,7 @@ def _bake(parser, paths, jobs, tmp_path, rel=REL, types_dir=None):
     out = tmp_path / "new"
     out.mkdir(exist_ok=True)
     return parsed, pe.apply_jobs(psd, png, rel, jobs, parsed, parser, str(out), str(tmp_path / "no-fonts"),
-                                 update_preview=False, types_dir=types_dir)
+                                 types_dir=types_dir)
 
 
 def _plan(parser, path, rel, field, value):
@@ -705,7 +705,7 @@ def test_lane3_star_layouts(clone, parser, tmp_path):
     out = tmp_path / "new"
     out.mkdir(exist_ok=True)
     baked = pe.apply_jobs(*paths, "Creatures/Other/2 Stars/Grimora.psd", {"stars": 2}, parsed, parser, str(out),
-                          str(tmp_path / "no-fonts"), update_preview=False)
+                          str(tmp_path / "no-fonts"))
     assert baked.reparse["card"]["stars"] == 2 and baked.icons["stars"] == "a centred row"
     saved = PSDImage.open(baked.psd_path)
     shown = sorted(pe.PSDParser._core_box(layer) for layer in saved.descendants()

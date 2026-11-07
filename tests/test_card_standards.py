@@ -16,6 +16,7 @@ import commands.card_standards as cs
 import commands.psd_edit as psd_edit
 from commands.card_check import clone_vocabulary
 from conftest import RING, at_rev, story_sync
+from helpers import BALLOON_BOY, normalised
 
 # ========================
 # Configuration
@@ -125,7 +126,7 @@ def test_r1_tolerates_spaces_in_the_ability_name(clone):
 
 
 def _saved(psd, path) -> PSDImage:
-    psd_edit.save_psd(psd, str(path), update_preview=False)
+    psd.save(str(path), update_preview=False)
     return PSDImage.open(str(path))
 
 
@@ -159,7 +160,7 @@ def test_r11_rename_changes_only_the_names(clone, context, tmp_path, monkeypatch
     edited = _open(clone, MINI_DOOMER)
     psd_edit.name_layer(edited).name = "NAME"
     pushed = tmp_path / "pushed.psd"
-    psd_edit.save_psd(edited, str(pushed), update_preview=False)
+    edited.save(str(pushed), update_preview=False)
     issues = cs.check(PSDImage.open(str(pushed)), MINI_DOOMER, context)
     (rule,) = [i for i in issues if i.code == "R11"]
     assert rule.fix and rule.items == ("'NAME' -> 'Name'",) and rule not in cs.reported(issues)
@@ -170,7 +171,7 @@ def test_r11_rename_changes_only_the_names(clone, context, tmp_path, monkeypatch
     out.write_bytes(fixed.data)
     reopened = PSDImage.open(str(out))
     assert cs.inexact_names(reopened) == [] and psd_edit.name_layer(reopened).name == "Name"
-    assert reopened._record.image_data.data == PSDImage.open(str(pushed))._record.image_data.data   # the composite kept
+    assert not reopened.has_preview()                   # saved stripped (Maximize Compatibility off, owner 2026-11-07)
     assert cs.rename(str(out), str(tmp_path / "again.psd")) == []                                  # idempotent
 
 
@@ -181,7 +182,7 @@ def test_r11_refused_when_the_rename_changes_the_bots_reading(clone, context, tm
     edited = _open(clone, MINI_DOOMER)
     psd_edit.ability_layer(edited).name = "ability "
     pushed = tmp_path / "pushed.psd"
-    psd_edit.save_psd(edited, str(pushed), update_preview=False)
+    edited.save(str(pushed), update_preview=False)
     issues = cs.check(PSDImage.open(str(pushed)), MINI_DOOMER, context)
     fixed = cs.fix(pushed.read_bytes(), MINI_DOOMER, issues, str(tmp_path / "work"), clone_vocabulary(str(clone)).parser())
     assert fixed.data == b"" and fixed.applied == [] and [code for code, _ in fixed.refused] == ["R11"]
@@ -192,12 +193,12 @@ def test_r11_gate_refuses_any_other_change(clone, tmp_path, monkeypatch):
     edited = _open(clone, MINI_DOOMER)
     psd_edit.ability_layer(edited).name = "ability"
     pushed = tmp_path / "pushed.psd"
-    psd_edit.save_psd(edited, str(pushed), update_preview=False)
+    edited.save(str(pushed), update_preview=False)
     real = psd_edit.save_psd
 
-    def sneaky(psd, path, update_preview=True, preview=None):
+    def sneaky(psd, path):
         psd_edit.name_layer(psd).visible = False            # a flag byte beyond the rename
-        real(psd, path, update_preview=update_preview, preview=preview)
+        real(psd, path)
     monkeypatch.setattr(psd_edit, "save_psd", sneaky)
     with pytest.raises(psd_edit.Refused, match="beyond its name"):
         cs.rename(str(pushed), str(tmp_path / "out.psd"))
@@ -258,12 +259,16 @@ def test_composer_set_single_line(clone, tmp_path, monkeypatch):
     data = at_rev(clone, EVERY_LINE, rel)
     assert not any(issue.code == "R8" for issue in cs.check(PSDImage.open(BytesIO(data)), rel, cs.Context()))
     fixed = cs.fix(data, rel, [], str(tmp_path / "work"))
-    assert fixed.composer == ["Name"] and fixed.applied == [] and len(fixed.data) == len(data)
+    (tmp_path / "old.psd").write_bytes(data)
+    (tmp_path / "new.psd").write_bytes(fixed.data)
+    sizes = psd_edit.body_sizes(str(tmp_path / "old.psd"), str(tmp_path / "new.psd"))   # flags flipped; saved stripped
+    assert fixed.composer == ["Name"] and fixed.applied == [] and sizes[0] == sizes[1]
     old, new = PSDImage.open(BytesIO(data)), PSDImage.open(BytesIO(fixed.data))
     assert cs.composer_layers(new) == [] and psd_edit.read_name(new) == psd_edit.read_name(old)
     name = [next(layer for layer in psd.descendants() if layer.name == "Name") for psd in (old, new)]
     assert cs.every_line(name[0]) and not cs.every_line(name[1])
-    assert name[0].topil().tobytes() == name[1].topil().tobytes() and old.composite().tobytes() == new.composite().tobytes()
+    drawn = [psd.composite(ignore_preview=True).tobytes() for psd in (old, new)]
+    assert name[0].topil().tobytes() == name[1].topil().tobytes() and drawn[0] == drawn[1]
     fonts = clone / "MDW" / "Fonts"
     if fonts.is_dir():                          # the fork lays it out alike (it reads no composer)
         from psd_tools.composite.text import render
@@ -274,7 +279,7 @@ def test_composer_set_single_line(clone, tmp_path, monkeypatch):
         records = {psd_edit._record_index(ability)}
         for props, key in cs._composer_values(new, records).values():
             props[key].value = True
-        psd_edit.save_psd(new, str(tmp_path / "box.psd"), update_preview=False)
+        new.save(str(tmp_path / "box.psd"), update_preview=False)
         assert cs.single_line(str(tmp_path / "box.psd"), str(tmp_path / "out.psd"), lambda names: str(fonts)) == (["Ability"], [], [])
         monkeypatch.setattr(cs, "LINE_IOU", 1.01)
         names, moves, left = cs.single_line(str(tmp_path / "box.psd"), str(tmp_path / "out2.psd"), lambda names: str(fonts))
@@ -295,7 +300,7 @@ def test_composer_set_single_line(clone, tmp_path, monkeypatch):
                 records.add(psd_edit._record_index(layer))
         for props, key in cs._composer_values(new, records).values():
             props[key].value = True
-        psd_edit.save_psd(new, str(tmp_path / "both.psd"), update_preview=False)
+        new.save(str(tmp_path / "both.psd"), update_preview=False)
         with open(tmp_path / "both.psd", "rb") as fh:
             fixed = cs.fix(fh.read(), rel, [], str(tmp_path / "work2"), None, lambda names: str(fonts))
         assert sorted(fixed.composer) == ["Ability", "Name"] and fixed.composer_left == [("Ability", "TextRenderError: glyph")]
@@ -357,7 +362,7 @@ def test_old_icon_glyph_redrawn_alone(clone, tmp_path):
     rgba[box] = (0.0, 0.6, 0.0, 1.0)                        # a flat green pill: no badge of the current font
     layer._store_raster(rgba, before.bbox)
     old = tmp_path / "old.psd"
-    psd_edit.save_psd(psd, str(old), update_preview=False)
+    psd.save(str(old), update_preview=False)
     assert cs.old_glyphs(psd_edit.ability_layer(PSDImage.open(str(old))), found) == [index]
     assert cs.redraw_old_glyphs(str(old), str(tmp_path / "new.psd"), fonts) == ["Ability"]
     after = capture(psd_edit.ability_layer(PSDImage.open(str(tmp_path / "new.psd"))), found)
@@ -447,7 +452,7 @@ def test_old_glyph_redrawn_kerned_as_the_story(clone, tmp_path, monkeypatch):
     rgba[y0 - by + 3:y1 - by - 3, x0 - bx + 3:x1 - bx - 3] = (0.0, 0.6, 0.0, 1.0)     # an older font's pill
     layer._store_raster(rgba, before.bbox)
     old = tmp_path / "old.psd"
-    psd_edit.save_psd(psd, str(old), update_preview=False)
+    psd.save(str(old), update_preview=False)
     fixed = cs.fix(old.read_bytes(), rel, [], str(tmp_path / "work"), None, fonts, only="old glyphs")
     assert fixed.redrawn == {"old glyphs": ["Ability"]} and fixed.pixel_left == []
     new = PSDImage.open(BytesIO(fixed.data))
@@ -732,7 +737,7 @@ def _typed_curly(data: bytes, fonts, path, earlier=()) -> bytes:
     keep = capture(layer, laid)
     layer.set_text(layer.text.replace("creature's", "creature’s"), keep="runs")
     layer.rasterize(fonts=laid, keep=keep, unit=psd_edit.SPLICE_UNIT)
-    psd_edit.save_psd(psd, str(path), update_preview=False)
+    psd.save(str(path), update_preview=False)
     return path.read_bytes()
 
 
@@ -772,3 +777,40 @@ def test_text_off_the_card(clone, context):
     assert again.waived and not again.new
     clean = "Auxiliary/Minions/PoD01Red_Bloon.psd"
     assert not [i for i in cs.check(PSDImage.open(clone / clean), clean, context, added=True) if i.code == "R15"]
+
+
+# ========================
+# Normalise (the big pass, owner 2026-11-07)
+# ========================
+def test_normalise_sets_text_normal_and_strips(clone, tmp_path):
+    """Balloon Boy's sub and superscript runs set normal and its merged image stripped in one gated rewrite (the parse
+    the same: fix's reparse gate): every glyph where it was, every type layer's box, the fork's drawing the same pixels;
+    a second normalise has nothing to do."""
+    import numpy as np
+    old, new, _, fonts = normalised(clone, BALLOON_BOY, tmp_path)
+    assert cs.script_layers(old) and old.has_preview() and not cs.script_layers(new) and not new.has_preview()
+    assert "normalise" in cs.SWEEP_ONLY and not cs.pixel_kinds(old)        # the guards' side waits for G1
+    faces = psd_edit.layout_fonts(fonts([]))
+    for a, b in zip(old.descendants(), new.descendants()):
+        if a.kind == "type":
+            assert psd_edit.same_places(psd_edit.glyph_places(a, faces), psd_edit.glyph_places(b, faces),
+                                        psd_edit.GLYPH_TOL) and a.bbox == b.bbox, a.name
+    draw = lambda psd: np.asarray(psd.composite(ignore_preview=True, apply_icc=False, text_preview=False))
+    assert np.array_equal(draw(old), draw(new))
+    buf = BytesIO()
+    new.save(buf, update_preview=False)
+    again = cs.fix(buf.getvalue(), BALLOON_BOY, [], str(tmp_path / "again"), None, fonts, only="normalise")
+    assert again.data == b"" and again.normalised == []
+
+
+def test_a_widened_box_passes_the_gates(clone, tmp_path):
+    """K2's redo (fonts.widen, layer ids): Toy Bonnie's Ability box narrowed into its slack (proofs P1 c02: 396 to 394
+    pt), its own Txt2 frame with it, through normalise's gates."""
+    from psd_tools.composite.text.model import TextModel
+    from helpers import _card
+    rel = "Creatures/Fnaf/3 Stars/Toy_Bonnie.psd"
+    fonts = lambda names: str(clone / "MDW" / "Fonts")     # noqa: E731
+    fonts.widen = [321]
+    done = cs.normalise(_card(clone, rel)[0], str(tmp_path / "out.psd"), fonts, rel)
+    layer = next(x for x in PSDImage.open(tmp_path / "out.psd").descendants() if x.layer_id == 321)
+    assert "Ability" in done and not done.left and round(TextModel.from_layer(layer).box[2], 3) == 394.0

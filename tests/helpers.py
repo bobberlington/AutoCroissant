@@ -565,6 +565,26 @@ def _card(clone, rel: str) -> tuple:
     return str(path), str(png)
 
 
+BALLOON_BOY = "Creatures/Fnaf/3 Stars/Balloon_Boy.psd"   # superscript and subscript runs (the 7 FNAF cards')
+
+
+def normalised(clone, rel: str, tmp_path) -> tuple:
+    """(old PSD, new PSD, PNG, fonts): the card through card_standards' normalise (the big pass), parse gated."""
+    import commands.card_standards as cs
+    from commands.card_check import clone_vocabulary
+    path, png = _card(clone, rel)
+    fonts_dir = clone / "MDW" / "Fonts"
+    if not fonts_dir.is_dir():
+        pytest.skip("no MDW/Fonts in the clone")
+    fonts = lambda names: str(fonts_dir)
+    data = Path(path).read_bytes()
+    fixed = cs.fix(data, rel, [], str(tmp_path / "work"), clone_vocabulary(str(clone)).parser(), fonts, only="normalise")
+    assert fixed.pixel_left == [] and fixed.normalised and not fixed.redrawn, fixed.pixel_left
+    image = Image.open(png)
+    image.load()
+    return PSDImage.open(BytesIO(data)), PSDImage.open(BytesIO(fixed.data)), image, fonts
+
+
 def stale_copy(clone, rel: str, title: str, tmp_path) -> tuple:
     """A pre-fix bake's PSD: the title set in TySh alone (the fork's set_text, then the old story put back)."""
     psd = PSDImage.open(_card(clone, rel)[0])
@@ -575,5 +595,5 @@ def stale_copy(clone, rel: str, title: str, tmp_path) -> tuple:
     layer.set_text(title)
     items[index] = old
     path = tmp_path / Path(rel).name
-    pe.save_psd(psd, str(path), update_preview=False)
+    psd.save(str(path), update_preview=False)
     return str(path), index

@@ -108,3 +108,27 @@ def test_earlier_eras_past_more_font_changes(clone, tmp_path, monkeypatch):
     assert [blob_sha(path) for path in earlier_fonts(source, head, tree, str(tmp_path / "one"))] == eras[:1]
     monkeypatch.setattr(card_guards, "EARLIER_WALK", 3)      # the ring and the two after it
     assert earlier_fonts(source, head, tree, str(tmp_path / "short")) == []
+
+
+def test_held_cards_unmoved_since_the_base_take_the_held_version():
+    """Big pass 5.3: every held card still at the base is swept from the held branch; one pushed meanwhile keeps its own
+    version (owner 11-07); --held-ref needs --held-base."""
+    import commands.card_sweep as cw
+    from commands.card_guards import Job
+
+    class Trees:
+        trees = {"held": {"A.psd": ("100644", "a2"), "B.psd": ("100644", "b2"), "C.psd": ("100644", "c2")},
+                 "base": {"A.psd": ("100644", "a1"), "B.psd": ("100644", "b1"), "C.psd": ("100644", "c1")}}
+
+        def commit(self, ref):
+            return ref
+
+        def tree(self, ref):
+            return self.trees[ref]
+
+    jobs = [Job("A.psd", "whole", "", "a1"), Job("B.psd", "whole", "", "b1"), Job("C.psd", "whole", "", "c3")]
+    out, held = cw._held_versions(Trees(), {}, jobs, "held", "base")
+    assert held == {"A.psd": "held", "B.psd": "held", "C.psd": "moved"}
+    assert [job.psd_new for job in out] == ["a2", "b2", "c3"] and out[1].base == {"B.psd": "b1"}
+    with pytest.raises(ValueError, match="together"):
+        cw.run("", "normalise", "", held_ref="held")
