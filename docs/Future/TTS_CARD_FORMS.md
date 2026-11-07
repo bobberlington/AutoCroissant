@@ -1,6 +1,8 @@
 # TTS card forms
 
-**Status:** idea from the owner, 2026-11-07. Nothing built. Stage 0's test decides whether it goes ahead.
+**Status:** idea from the owner, 2026-11-07. Stage 0 passed in TTS (owner, 2026-11-07): a three-state Pix switched with 1-3 on the
+table and in a hand, and kept its states through a deck, a bag, a counter and moves. The test save had no real Card details; the
+owner wants Card details per form (Stage 3).
 
 ## Goal
 
@@ -69,10 +71,17 @@ have a home.
   Pix can switch too.
 - **Finding a card:** "Find a card" and every lookup keyed by PNG path must treat all of a card's forms as that card.
 
-## Stage 3: Card details
+## Stage 3: Card details per form (owner, 2026-11-07)
 
-`data/tts.json` is keyed by PNG path, so each form's path maps to the same entry. The panel shows the combined picture, the
-ability, every form's stats from `creatures`, and which form is showing. Data is already there: Pix has 3 entries in `creatures`.
+The panel follows the form that shows: its picture, name, stats and its own ability lines, the lines every form shares, and a small
+button per other form that switches the panel (not the card) to that form.
+
+- **Data:** each form needs its own entry. A variant picture per form gives one for free: a variant keeps its own parse (name, text,
+  stats) and counts once as "duplicate of" picture 1, and `data/tts.json` is keyed by PNG path, so a form's state finds its entry.
+  The shared lines are the text every form's parse has in common.
+- **Global.lua:** `showDetails` reads the entry of the object's current face (its state's PNG path), and the other forms' entries
+  through the card's states (`getStates()`).
+- **Website:** unchanged; picture 1 stays the card's main picture.
 
 ## Fallback
 
