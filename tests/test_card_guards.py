@@ -910,7 +910,7 @@ SYNC = "workflow run card-sync.yml -f dry_run=false -f bake=pending"   # Follow 
 
 
 def _guard_steps(clone) -> tuple:
-    """card-guards.yml's three jobs read as one: (doc, every named step by name, the jobs' env merged: TOLD, STREAK)."""
+    """card-guards.yml's jobs read as one: (doc, every named step by name, the jobs' env merged: TOLD, STREAK)."""
     yaml = pytest.importorskip("yaml")
     doc = yaml.safe_load(_workflow(clone).read_text(encoding="utf-8"))
     jobs = doc["jobs"].values()
@@ -922,9 +922,9 @@ def test_workflow_shape(clone):
     """card-guards.yml: push on PSDs, PNGs and fonts, the guards behind CARD_GUARDS (the card and font checks always,
     2026-10-25), dry dispatches by default, a run per push, the sparse list = SPARSE_FILES, requirements-cards.txt's
     install (the fork's one pin) in both jobs that run the guards, as the other card workflows have it (one cache entry),
-    secrets by name only, no ping, no fonts for the guards' own check (R7 is the font check's). Three jobs (2026-10-24):
-    check (ends after the comment), post (at once since 2026-11-03: no environment, no quiet window; only with something
-    to land or tell), finish (card errors, the alert)."""
+    secrets by name only, no ping, no fonts for the guards' own check (R7 is the font check's). The jobs: check (ends
+    after the comment), checks (a push's two checks beside it, 2026-11-07), post (at once since 2026-11-03: no environment,
+    no quiet window; only with something to land or tell), finish (card errors, the alert)."""
     path = _workflow(clone)
     text = path.read_text(encoding="utf-8")
     doc, steps_by_name, env = _guard_steps(clone)
@@ -934,13 +934,23 @@ def test_workflow_shape(clone):
     assert inputs["dry_run"]["default"] is True and inputs["all"]["default"] is False and set(inputs) == {"dry_run", "sha", "cards", "all"}
     assert doc["concurrency"]["group"] == ("${{ github.event_name == 'push' && format('card-guards-{0}', github.sha) || "
                                            "format('card-guards-{0}', github.run_id) }}") and doc["concurrency"]["cancel-in-progress"] is False
-    assert list(doc["jobs"]) == ["check", "post", "finish", "caches"]          # caches: prunes old wheel and font entries
-    job, post, finish = doc["jobs"]["check"], doc["jobs"]["post"], doc["jobs"]["finish"]
+    assert list(doc["jobs"]) == ["check", "checks", "post", "finish", "caches"]  # caches: prunes old wheel and font entries
+    job, checks, post, finish = (doc["jobs"][name] for name in ("check", "checks", "post", "finish"))
     assert "if" not in job and steps_by_name["Check"]["if"] == "env.MODE != 'off'"     # the checks run whatever MODE says
     assert job["env"]["MODE"] == ("${{ github.event_name == 'push' && (vars.CARD_GUARDS || 'off') || "
                                   "((inputs.dry_run || inputs.all) && 'dry' || 'on') }}")
     # no quiet window (owner 2026-11-03): the post job takes no environment and Land waits for nothing
-    assert post["needs"] == "check" and finish["needs"] == ["check", "post"]
+    assert post["needs"] == "check" and finish["needs"] == ["check", "checks", "post"]
+    # beside check, whatever MODE says; a dispatch's stay in check, so `all` reads each PSD once
+    assert "needs" not in checks and checks["if"] == "github.event_name == 'push'" and "env" not in checks
+    here = "(github.event_name == 'push') == (github.job == 'checks')"
+    assert steps_by_name["Card check"]["if"] == here and steps_by_name["Font check"]["if"].startswith(here + " && ")
+    assert steps_by_name["Card check"]["run"] == steps_by_name["Font check"]["run"]     # one script, by $CHECK
+    named = [s.get("name") for s in checks["steps"] if s.get("name")]
+    assert named == ["Pushed blobs", "Card check", "Font check", "Tell the checks"]
+    assert "Tell the checks" not in [s.get("name") for s in job["steps"]]
+    fonts = [next(s for s in one["steps"] if s.get("id") == "font-cache") for one in (job, checks)]
+    assert fonts[0]["with"] == fonts[1]["with"] and fonts[1]["uses"].startswith("actions/cache/restore@")   # one saver
     assert "environment" not in post
     assert post["if"] == ("!cancelled() && needs.check.outputs.checked == 'success' && needs.check.outputs.land == 'true' && "
                           "(needs.check.outputs.mode == 'report' || needs.check.outputs.mode == 'on')")
@@ -955,13 +965,13 @@ def test_workflow_shape(clone):
     assert post["outputs"] == {"posted": "${{ steps.tell.outputs.posted }}"}
     assert post["env"]["MODE"] == "${{ needs.check.outputs.mode }}"
     assert post["env"]["TOLD"] == job["env"]["TOLD"] == finish["env"]["TOLD"]
-    for one in (job, post):
+    for one in (job, checks, post):
         bot = next(s for s in one["steps"] if s.get("with", {}).get("repository") == "bobberlington/AutoCroissant")
         assert bot["with"]["sparse-checkout"].split() == ["/" + f for f in cg.SPARSE_FILES]
-        assert bot["with"].get("ref") == (None if one is job else "${{ needs.check.outputs.bot_sha }}")   # plan and land: one bot
+        assert bot["with"].get("ref") == ("${{ needs.check.outputs.bot_sha }}" if one is post else None)   # plan and land: one bot
     sha = next(s for s in job["steps"] if s.get("id") == "bot")
     assert sha["run"] == 'echo "sha=$(git -C bot rev-parse HEAD)" >> "$GITHUB_OUTPUT"'
-    for one in (job, post, finish):                                            # a copied step runs twice unseen
+    for one in (job, checks, post, finish):                                    # a copied step runs twice unseen
         named = [s["name"] for s in one["steps"] if s.get("name")]
         assert len(named) == len(set(named)), named
     cards = next(s for s in job["steps"] if s.get("uses", "").startswith("actions/checkout") and "repository" not in s.get("with", {}))
@@ -1002,10 +1012,11 @@ def test_workflow_shape(clone):
     alert = steps["Tell Discord the run failed"]
     # a re-run of a push already told (the comment's mark) never alerts: "one post per push"
     assert alert["if"] == ("(failure() || contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')) && "
-                           "github.event_name == 'push' && needs.post.outputs.posted != 'true' && needs.check.outputs.told != 'true'")
+                           "github.event_name == 'push' && (needs.checks.result != 'success' || "
+                           "(needs.post.outputs.posted != 'true' && needs.check.outputs.told != 'true'))")
     assert alert["env"]["WEBHOOK"] == "${{ secrets.DISCORD_STANDARDS_WEBHOOK }}" and "allowed_mentions: {parse: []}" in alert["run"]
-    assert alert["env"]["RESULTS"] == "${{ needs.check.result }} ${{ needs.post.result }}"
-    assert '{"check": 40, "post": %d}' % post["timeout-minutes"] in alert["run"]       # a push's check job (the `all` dispatch: 150)
+    assert alert["env"]["RESULTS"] == "${{ needs.check.result }} ${{ needs.checks.result }} ${{ needs.post.result }}"
+    assert '{"check": 40, "checks": %d, "post": %d}' % (checks["timeout-minutes"], post["timeout-minutes"]) in alert["run"]  # a push's (`all`: 150)
     # the streak's mark: an artifact left only when the alert told (or stayed quiet in a told streak)
     streak = finish["steps"][-1]
     assert streak["uses"].startswith("actions/upload-artifact") and streak["if"] == "always() && steps.alert.outputs.streak == 'true'"
@@ -1195,6 +1206,28 @@ def test_workflow_failure_streak_counts_told_runs_only(clone, tmp_path):
             "content": f"Card guards: the push by Alice {what} (the next failures stay quiet until a push run succeeds or "
                        "posts its issues). "
                        "https://github.com/o/cards/actions/runs/7", "allowed_mentions": {"parse": []}, "flags": 4}
+
+
+def test_workflow_alert_tells_a_timeout_from_a_cancel(clone, tmp_path):
+    """Every job is in the alert's limits: one missing reads as timed out, so a cancel by hand would tell Discord."""
+    pytest.importorskip("yaml")
+    if not shutil.which("jq"):
+        pytest.skip("no jq")
+    doc, steps, jenv = _guard_steps(clone)
+    posts = tmp_path / "posts.txt"
+    env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "OUT": str(tmp_path), "GITHUB_REPOSITORY": "o/cards",
+           "WEBHOOK": "https://discord.invalid/hook", "FAKE_STATE": str(tmp_path / "gh.json"), "FAKE_POSTS": str(posts),
+           "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "STREAK": jenv["STREAK"], "RUNNER_TEMP": str(tmp_path / "runner"),
+           "GITHUB_RUN_ID": "7", "GITHUB_RUN_ATTEMPT": "1", "GITHUB_ACTOR": "Alice", "CHECKED": "failure", "FAKE_RUNS": "[]",
+           "RUN": "https://github.com/o/cards/actions/runs/7", "TOLD": jenv["TOLD"], "GITHUB_SHA": "f" * 40,
+           "RESULTS": "success cancelled skipped"}
+    def cancelled(minutes):
+        return json.dumps({"jobs": [{"name": "checks", "conclusion": "cancelled", "started_at": "2026-11-07T10:00:00Z",
+                                     "completed_at": f"2026-11-07T10:{minutes:02}:00Z"}]})
+    for minutes, sent in ((1, 0), (39, 1)):
+        posts.write_text("")
+        _run_steps(steps, ["Tell Discord the run failed"], {**env, "FAKE_JOBS": cancelled(minutes)}, {})
+        assert len(posts.read_text().splitlines()) == sent, minutes
 
 
 def _fake_tools(tmp_path) -> Path:

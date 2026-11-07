@@ -293,7 +293,7 @@ a card's visible type layers ask for and which of them `MDW/Fonts` in the card r
 ignored; a font counts as present only when a face has exactly its PostScript name (no aliases or loose matches since
 2026-10-23, owner). It reports and never rejects: a missing font is a message to a person, not a revert.
 
-- **Automatic: the Font check step of TTSCardMaker's `card-guards.yml` check job** (font-check.yml until 2026-10-25;
+- **Automatic: the Font check step of TTSCardMaker's `card-guards.yml` `checks` job (a dispatch: its check job)** (font-check.yml until 2026-10-25;
   ttscardmaker-companion §3). On a push to main that changes a PSD or `MDW/Fonts/`, whatever `CARD_GUARDS` says, it uses
   the fonts folder (cached by its tree sha) and the guards' bot checkout (`card_guards.SPARSE_FILES`, the card packages from
   the shared wheel cache), reads the push's PSDs by blob sha
@@ -323,7 +323,7 @@ and `ABILITY_EXCLUSIONS`. The second push-guard rule (docs/Campaigns/CARD_STANDA
 rejects: exit 0 always; an unreadable PSD, a PSD under `MDW/` or `Markers/` (no card) or a failed API call (a 5xx after the retries, no
 network, a truncated tree) is one error line.
 
-- **Automatic: the Card check step of TTSCardMaker's `card-guards.yml` check job** (card-check.yml until 2026-10-25, which
+- **Automatic: the Card check step of TTSCardMaker's `card-guards.yml` `checks` job (a dispatch: its check job)** (card-check.yml until 2026-10-25, which
   also ran on `Types/` and `site/Card Edits.json` pushes and so checked nothing there). On a push to main that changes a PSD,
   whatever `CARD_GUARDS` says, it runs from the guards' bot checkout and the shared wheel cache, and reads the push's PSDs by blob sha (`--repo --before --after`, `font_check.pushed_files`); `Types/`, the icon manifest and
   the edits file come from the tree at the pushed commit (`font_check.tree_blobs`). The markdown goes to the job summary; when a card has
