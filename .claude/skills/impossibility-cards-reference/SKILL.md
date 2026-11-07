@@ -542,7 +542,7 @@ in build_site.py and `FROM` in edit.js). "psd": `name`, `stars`, `types`, `hp`/`
 on the card image, so the edit pipeline (docs/EDIT_PIPELINE_DESIGN.md §3) bakes them into the PSD and PNG and the
 website shows "PSD pending" until then (`name` only when it differs from the printed title the parser reads into
 `display_name`; since 2026-10-21 a baked or already-printed name is dropped from the file like any other field). "folder": `type`, `subtype`, `series` come from the card's path. "database": `subseries`, `note`, `aliases`,
-`dup_of`, `hidden`, `problems_ok`, `allow_high_stats`, `creatures`, `art`, `ability_art` live in the file alone (`creatures` overrides the
+`dup_of`, `hidden`, `problems_ok`, `allow_high_stats`, `creatures`, `art`, `ability_art`, `flags` live in the file alone (`creatures` overrides the
 parser's per-creature rows but is baked nowhere). Whatever the kind, `apply()` saves the pre-edit value in
 `parsed_values` so dropping the edit restores it — the PSD's value, the folder's, or `False`/`None` for the
 database-only ones (unless Discord's retired `/update_metadata` had set them). The pipeline's verdict rides beside `_by`/`_at` as `_psd`

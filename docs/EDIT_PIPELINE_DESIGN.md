@@ -120,7 +120,7 @@ One table, three consumers: `CardEdits.KIND` (new, beside `TYPES`/`ATTRS`/`FIXED
 | `types` | PSD (icon layers or font tokens) | header type icons hidden, moved, shown from the card's own hidden layer or made from `Types/<name>.png` (below); a token row refused for that field | field removed |
 | `creatures` | database-only (`CardEdits.KIND`; the per-creature rows of Pix, Tainted Lazarus, Twin Emperors stay hand-edited) | never touched; a stat edit beside it is refused (creature 1 sets the stats) | stays |
 | `type` `subtype` `series` | folder | never touched | stay |
-| `subseries` `note` `aliases` `dup_of` `hidden` `problems_ok` `allow_high_stats` | database-only | never touched; `_by`/`_at` kept | stay |
+| `subseries` `note` `aliases` `dup_of` `hidden` `problems_ok` `allow_high_stats` `flags` | database-only | never touched; `_by`/`_at` kept | stay |
 
 **Website only (2026-10-25, owner).** An entry's `_site` lists card-image fields whose value differs from the printed
 card on purpose (`"Mini Doomer": {"name": "Tiny Doomer", "_site": ["name"]}`, set by the editor's "Website only" box).

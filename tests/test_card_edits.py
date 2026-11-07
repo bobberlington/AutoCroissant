@@ -39,6 +39,8 @@ VALID_CASES = [
     ("art", "https://x.com/a", True), ("art", None, True), ("art", "x" * 500, True), ("art", "x" * 501, False),
     ("ability_art", "Kirby Super Star", True), ("ability_art", 5, False), ("ability_art", ["a"], False),
     ("art", ["a", "b"], True), ("art", ["x" * 501], False), ("art", ["a", 5], False),
+    ("flags", {"hand": "why", "bars": ""}, True), ("flags", {"hand": "x" * 301}, False), ("flags", {"other": ""}, False),
+    ("flags", {"bars": None}, False), ("flags", {}, False), ("flags", None, False), ("flags", ["hand"], False),
 ]
 
 
@@ -113,11 +115,11 @@ def test_creatures_edit_undone_brings_back_the_stats():
 KINDS = [("name", "psd"), ("stars", "psd"), ("types", "psd"), ("hp", "psd"), ("def", "psd"), ("atk", "psd"), ("spd", "psd"),
          ("ability", "psd"), ("type", "folder"), ("subtype", "folder"), ("series", "folder"), ("subseries", "database"),
          ("note", "database"), ("art", "database"), ("aliases", "database"), ("dup_of", "database"), ("hidden", "database"),
-         ("problems_ok", "database"), ("allow_high_stats", "database"), ("creatures", "database")]
+         ("problems_ok", "database"), ("allow_high_stats", "database"), ("creatures", "database"), ("flags", "database")]
 SAMPLE = {"name": "Foo Prime", "stars": 3, "types": ["ice"], "hp": 7, "def": 7, "atk": 7, "spd": 7, "ability": "New.", "type": "item",
           "subtype": "heal", "series": "Mario", "subseries": "Paper Mario", "note": "n", "art": ["https://a"],
           "aliases": ["f"], "dup_of": "Bar", "hidden": True,
-          "problems_ok": True, "allow_high_stats": True,
+          "problems_ok": True, "allow_high_stats": True, "flags": {"hand": "why"},
           "creatures": [{"hp": None, "def": 2, "atk": 3, "spd": 4}, {"hp": 5, "def": 6, "atk": 7, "spd": 8}]}   # creature 1 = the card's stats
 PSD_VALUES = {"name": None, "stars": 2, "types": ["fire"], "hp": None, "def": 2, "atk": 3, "spd": 4, "ability": ""}   # what _card(stars=2) read
 FOLDER_VALUES = {"type": "creature", "subtype": None, "series": "mario"}

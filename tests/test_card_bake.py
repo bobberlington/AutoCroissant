@@ -140,6 +140,8 @@ def test_rewrite_entry_rules():
     assert cb.rewrite_entry({"hp": 8, "_by": "w", "_at": AT, "_psd": verdict}, ["hp"]) is None       # the entry goes whole
     assert cb.rewrite_entry({"hp": 8, "_by": "w"}, ["hp"], verdict, keep=True) == {"_psd": verdict}   # a flagged bake's verdict stays
     assert cb.rewrite_entry({"name": "X", "hp": 8, "_by": "w"}, ["hp"], None) == {"name": "X", "_by": "w"}   # name stays
+    assert cb.rewrite_entry({"hp": 8, "flags": {"hand": ""}, "_by": "w"}, ["hp"]) == {"flags": {"hand": ""}, "_by": "w"}   # flags outlive a bake
+    assert cb.psd_fields({"flags": {"hand": "why"}}) == {}                     # and never make one
     assert cb.rewrite_entry({"_psd": verdict, "hp": 8}, (), None) == {"hp": 8}                       # None removes _psd
     text = cb.dump_edits({"about": ABOUT, "cards": {"Mini_Doomer": {"hp": 8, "note": "n"}, "Other": {"hp": 1}}})
     assert cb.rewrite_edits(text, "mini doomer", ["hp"]) == cb.dump_edits({"about": ABOUT, "cards": {"Mini_Doomer": {"note": "n"}, "Other": {"hp": 1}}})
