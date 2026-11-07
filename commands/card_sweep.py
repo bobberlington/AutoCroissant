@@ -179,9 +179,9 @@ def _drawings(psd) -> list:
     return out
 
 
-def drawing_check(old, new) -> dict:
-    """K1: old and new drawn alike, every picture: {"px": pixels past DRAWN_TOL, "max", "same": no pixel past it, and
-    every type layer's box as it was}."""
+def drawing_check(old, new, fonts=None) -> dict:
+    """K1: old and new drawn alike, every picture: {"px": pixels past DRAWN_TOL, "max", "same": no pixel past it,
+    every type layer's box as it was and no text moved ("text": the layers that did)}."""
     a, b = _drawings(old), _drawings(new)
     if len(a) != len(b) or any(x.shape != y.shape for x, y in zip(a, b)):
         return {"px": -1, "max": 255, "same": False}
@@ -189,7 +189,46 @@ def drawing_check(old, new) -> dict:
     boxes = [{layer.layer_id: tuple(layer.bbox) for layer in psd.descendants() if layer.kind == "type"}
              for psd in (old, new)]
     px, top = sum(int((d > DRAWN_TOL).sum()) for d in diffs), max(int(d.max()) for d in diffs)
-    return {"px": px, "max": top, "same": not px and boxes[0] == boxes[1]}
+    moved = _moved_text(old, new, fonts)
+    return {"px": px, "max": top, "same": not px and boxes[0] == boxes[1] and not moved,
+            **({"text": moved} if moved else {})}
+
+
+def _moved_text(old, new, fonts) -> list:
+    """K1's text: the layers that held sub or superscript whose glyphs the fork lays out elsewhere in new."""
+    after = {layer.layer_id: layer for layer in new.descendants() if layer.kind == "type"}
+    out = []
+    for layer in standards.script_layers(old):
+        try:
+            faces = standards._layout_fonts(fonts, layer)
+            same = layer.layer_id in after and psd_edit.same_places(
+                psd_edit.glyph_places(layer, faces), psd_edit.glyph_places(after[layer.layer_id], faces),
+                psd_edit.GLYPH_TOL)
+        except Exception:                       # no layout: moved
+            same = False
+        if not same:
+            out.append(layer.name.strip())
+    return out
+
+
+def _picture(psd, path: str, main: str) -> Optional[int]:
+    """The picture a tagged PSD's PNG shows (main: 1, NameN.png: N), else None (as saved)."""
+    tags = psd_edit.variants_of(psd)
+    n = 1 if path == main else png_export.picture_number(path)
+    return n if len(tags) > 1 and n in tags else None
+
+
+def _png_ok(psd, image, path: str, main: str) -> bool:
+    """png_check (R10) of a PNG against the picture it shows."""
+    with psd_edit.variant(psd, _picture(psd, path, main)):
+        return png_export.png_check(psd, image).get("ok") is True
+
+
+def _keeping_text(fonts, why: str):
+    """The worker's fonts, normalise told to leave the text as it is (keep_text: why)."""
+    kept = partial(fonts.func, *fonts.args, **fonts.keywords)
+    kept.__dict__.update(fonts.__dict__, keep_text=why)
+    return kept
 
 
 def _normalise_card(job, out: dict) -> dict:
@@ -197,7 +236,8 @@ def _normalise_card(job, out: dict) -> dict:
     One PSD through the big pass (section 5.2): its look read off the stored image (psd_edit.look_facts), the rewrite
     (card_standards.normalise through fix: the parse gated, K3), the drawing check (K1); past it the PNGs re-exported
     (png_export.export, render-based) and checked (png_check); the link step's check (K4: psd_links.check). The PNG
-    check against the stored image before is kept (png_check), never a refusal. Hand notes for what it left.
+    check against the stored image before is kept (png_check), never a refusal. Refused, it is done again with its text
+    left as it is (5.2 step 9). Hand notes for what it left.
     """
     source = _worker["source"]
     try:
@@ -208,45 +248,59 @@ def _normalise_card(job, out: dict) -> dict:
         pngs = {path: png_export.open_png(source.blob(sha)) for path, sha in
                 ({job.png: job.png_new, **job.numbered} if job.png else {}).items()}
         facts = psd_edit.look_facts(pushed, pngs.get(job.png))
-        before = {path: png_export.png_check(pushed, image) for path, image in pngs.items()}
-        fixed = standards.fix(data, job.psd, [], _worker["work"], _worker["parser"], _worker["fonts"], only=NORMALISE)
-        out.update(facts=facts, png_check={basename(p): m.get("ok") for p, m in before.items()}, left=list(fixed.left),
-                   notes=list(fixed.notes))
-        if not fixed.normalised:
-            return {**out, "state": "refused" if fixed.pixel_left else "skip",
-                    "why": "; ".join(why for _, why in fixed.pixel_left)}
-        out["layers"], out["redraws"] = fixed.normalised, fixed.redrawn.get(NORMALISE, [])
-        after = psd_edit.use_record(png_export.open_psd(fixed.data), job.psd, facts)
-        psd_edit.use_record(pushed, job.psd, facts)
-        out["out"] = blob_sha(fixed.data)
-        seen = _worker["reuse"].get(job.psd, {})
-        drawn = out["k1"] = seen["k1"] if seen.get("out") == out["out"] else drawing_check(pushed, after)
-        files = {job.psd: fixed.data, **fixed.files}
-        if not drawn["same"] and job.png:       # past near identical: the PNGs drawn again from the new PSD
-            found = png_export.export(pushed, after, pngs[job.png], {p: i for p, i in pngs.items() if p != job.png},
-                                      job.png, _worker["fonts"])
-            if found.outcome == "refused" or any(not d for d, _ in found.numbered.values()):
-                why = found.why or next((why for d, why in found.numbered.values() if not d), "")
-                return {**out, "state": "refused", "why": f"PNG not made: {why}"}
-            if found.outcome == "re-exported":
-                files[job.png] = found.data
-                files.update({path: d for path, (d, _) in found.numbered.items() if d})
-                out["changed_px"] = found.changed_px
-            for path in pngs:
-                image = png_export.open_png(files[path]) if path in files else pngs[path]
-                if png_export.png_check(after, image).get("ok") is not True:
-                    return {**out, "state": "refused", "why": f"{basename(path)} misses the new PSD (parity)"}
-        elif not drawn["same"] and drawn["px"] < 0:
-            return {**out, "state": "refused", "why": "the drawing changed size"}
-        links = standards._links()
-        problems = links.check(after, job.psd, files, source.checked) if links and hasattr(links, "check") else []
-        if problems:
-            return {**out, "state": "refused", "why": "links: " + "; ".join(problems)}
-        out["pngs"] = sorted(p for p in files if p.lower().endswith(".png"))
-        return {**out, "state": "fixed", "files": files}
+        saved = psd_edit.saved_view(pushed)     # the stored image shows that picture alone
+        out.update(facts=facts, png_check={basename(p): _png_ok(pushed, image, p, job.png) for p, image in pngs.items()
+                                           if _picture(pushed, p, job.png) in (None, saved)})
+        done = _normalised(job, dict(out), data, pushed, pngs, facts, _worker["fonts"])
+        if done["state"] == "refused" and standards.script_layers(pushed):
+            again = _normalised(job, dict(out), data, pushed, pngs, facts,
+                                _keeping_text(_worker["fonts"], f"left as it is ({done['why']})"))
+            if again["state"] == "fixed":
+                return again
+        return done
     except Exception as error:                  # one card never stops the sweep
         print(format_exc(), file=stderr)
         return {**out, "state": "error", "why": f"{type(error).__name__}: {error}"}
+
+
+def _normalised(job, out: dict, data: bytes, pushed, pngs: dict, facts: dict, fonts) -> dict:
+    """_normalise_card's rewrite and checks with these fonts (the worker's, or _keeping_text's)."""
+    source = _worker["source"]
+    fixed = standards.fix(data, job.psd, [], _worker["work"], _worker["parser"], fonts, only=NORMALISE)
+    out.update(left=list(fixed.left), notes=list(fixed.notes))
+    if not fixed.normalised:
+        return {**out, "state": "refused" if fixed.pixel_left or fixed.notes else "skip",
+                "why": "; ".join([why for _, why in fixed.pixel_left] + fixed.left)}
+    out["layers"], out["redraws"] = fixed.normalised, fixed.redrawn.get(NORMALISE, [])
+    after = psd_edit.use_record(png_export.open_psd(fixed.data), job.psd, facts)
+    psd_edit.use_record(pushed, job.psd, facts)
+    out["out"] = blob_sha(fixed.data)
+    seen = _worker["reuse"].get(job.psd, {})
+    drawn = out["k1"] = seen["k1"] if seen.get("out") == out["out"] else drawing_check(pushed, after, fonts)
+    if drawn.get("text"):
+        return {**out, "state": "refused", "why": "text moved: " + ", ".join(drawn["text"])}
+    files = {job.psd: fixed.data, **fixed.files}
+    if not drawn["same"] and job.png:           # past near identical: the PNGs drawn again from the new PSD
+        found = png_export.export(pushed, after, pngs[job.png], {p: i for p, i in pngs.items() if p != job.png},
+                                  job.png, fonts)
+        if found.outcome == "refused" or any(d == b"" for d, _ in found.numbered.values()):
+            why = found.why or next((why for d, why in found.numbered.values() if d == b""), "")
+            return {**out, "state": "refused", "why": f"PNG not made: {why}"}
+        if found.outcome == "re-exported":
+            files[job.png], out["changed_px"] = found.data, found.changed_px
+        files.update({path: d for path, (d, _) in found.numbered.items() if d})   # a picture redrawn alone too
+        for path in sorted(set(pngs) | {p for p in files if p != job.png and p.lower().endswith(".png")}):
+            image = png_export.open_png(files[path]) if path in files else pngs[path]
+            if not _png_ok(after, image, path, job.png):
+                return {**out, "state": "refused", "why": f"{basename(path)} misses the new PSD (parity)"}
+    elif not drawn["same"] and drawn["px"] < 0:
+        return {**out, "state": "refused", "why": "the drawing changed size"}
+    links = standards._links()
+    problems = links.check(after, job.psd, files, source.checked) if links and hasattr(links, "check") else []
+    if problems:
+        return {**out, "state": "refused", "why": "links: " + "; ".join(problems)}
+    out["pngs"] = sorted(p for p in files if p.lower().endswith(".png"))
+    return {**out, "state": "fixed", "files": files}
 
 
 def normalise_jobs(tree: dict, names: Optional[set], batch: str = "") -> list:
