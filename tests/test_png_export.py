@@ -417,6 +417,23 @@ def test_a_new_card_is_rendered_and_cross_checked(tmp_path, monkeypatch):
     assert refused.gate == "G6" and refused.why.startswith("PNG not made: the bot's drawing of the new PSD")
 
 
+def test_a_link_rewritten_is_no_layer_change(clone, tmp_path):
+    """The pass's linking rewrites a smart object's SoLE (as Photoshop rewrites SoLd on a save) and the document's lnk
+    items, never its pixels: no changed layer, so guard 1 draws nothing for a converted card."""
+    from psd_tools.constants import Tag
+    from psd_tools.psd.descriptor import Integer
+    path = clone / "Auxiliary/Creatures/Militron_(No_Armor).psd"
+    if not path.exists():
+        pytest.skip("no Militron (No Armor)")
+    old, new = PSDImage.open(str(path)), PSDImage.open(str(path))
+    layer = next(each for each in new.descendants() if each.kind == "smartobject" and each.smart_object.kind == "external")
+    layer._record.tagged_blocks.get_data(Tag.SMART_OBJECT_LAYER_DATA2).data[b"frameCount"] = Integer(2)
+    layer.smart_object._data.filesize += 1
+    out = tmp_path / "linked.psd"
+    psd_edit.save_psd(new, str(out), update_preview=False)
+    assert pe.changed_layers(old, PSDImage.open(str(out))) == (None, 0)
+
+
 def test_png_check(tmp_path):
     """R10 against the stored image within the bar; without one (Maximize Compatibility off) against the fork's render
     at the parity floor."""
