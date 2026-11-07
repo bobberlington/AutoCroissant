@@ -1177,7 +1177,7 @@ def _refuse(result: Export, why: str, gate: str) -> Export:
 
 
 def miss_notes(found: Export) -> list:
-    """The note per measure that missed the bar under the floor (as the bake's psd_edit.miss_notes): "made with a pixel
+    """The note per measure that missed the bar under the floor: "made with a pixel
     difference (the old PSD drawn against the old PNG): bad 1.35%, mean 1.00, max 79" (Defcon Panda)."""
     return ["made with a pixel difference (%s): bad %.2f%%, mean %.2f, max %d"
             % (MISSED.get(key, f"{key} against the PSD's own image"), m["bad_pct"], m["mean"], m["max"])

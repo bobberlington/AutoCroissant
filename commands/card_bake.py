@@ -1598,10 +1598,8 @@ def _card_line(card: Card, dry_run: bool) -> str:
     if card.baked:
         parity = "; ".join("%s %.2f%% bad, mean %.2f" % (f, m["bad_pct"], m["mean"]) for f, m in card.baked.parity.items())
         line += f"; parity {parity}{_misses(card)}; {card.baked.flag_bytes} flag bytes, {card.baked.changed_pixels} pixels"
-        if card.baked.fx:
-            line += f"; FX layers: {', '.join(card.baked.fx)}"
         line += _fx_notes(card)
-        icons = [f"{f}: {how}" for f, how in getattr(card.baked, "icons", {}).items() if how]
+        icons = psd_edit.real_notes([f"{f}: {how}" for f, how in getattr(card.baked, "icons", {}).items() if how])
         if icons:
             line += f"; {'; '.join(icons)}"
     elif card.partial:
