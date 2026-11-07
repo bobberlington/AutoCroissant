@@ -55,7 +55,7 @@ from global_config import CARD_REPO, EDITS_PATH, ICON_MANIFEST_PATH, TYPES_DIR
 SPARSE_FILES = ("commands/card_checks.py", "commands/card_bake.py", "commands/card_db.py", "commands/card_edits.py",
                 "commands/card_models.py", "commands/card_preview.py", "commands/card_preview_branch.py",
                 "commands/card_standards.py", "commands/font_check.py", "commands/git_commit.py", "commands/github_api.py",
-                "commands/png_export.py", "commands/psd_edit.py", "commands/psd_parser.py", "commands/psd_parts.py",
+                "commands/png_export.py", "commands/psd_edit.py", "commands/psd_links.py", "commands/psd_parser.py", "commands/psd_parts.py",
                 "commands/psd_regions.py", "commands/repo_history.py", "commands/rulebook.py", "commands/text_align.py",
                 "commands/txt2_repair.py", "commands/ability_place.py", "commands/ability_index.json", "global_config.py",
                 "requirements-cards.txt")         # card-checks.yml's bot checkout

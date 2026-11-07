@@ -485,7 +485,8 @@ def test_hard_edged(tmp_path):
     assert not pe.hard_edged(shaded)
     icon = tmp_path / "Art.png"
     Image.fromarray(art).save(icon)
-    image, _, _ = pe._icon_image(str(icon), (0, 0, 100, 100))
+    image, _, _, quad = pe._icon_image(str(icon), (0, 0, 100, 100))
+    assert quad == [-50, -50, 150, -50, 150, 150, -50, 150]          # the whole file, where a link to it draws these pixels
     assert set(np.asarray(image)[..., 3].ravel()) == {255}
     assert len(np.unique(np.asarray(image).reshape(-1, 4), axis=0)) == 1
 

@@ -396,7 +396,10 @@ def test_a_made_icon_takes_the_cards_profile(clone, tmp_path):
 
 @icons
 def test_types_add_from_types_png_and_close_up(parser, tmp_path):
-    """Add Water under a lone Fire (made from Types/, fitted to Fire's box); drop the first of two and the row closes up."""
+    """Add Water under a lone Fire (made from Types/, fitted to Fire's box, a smart object linking it: Q4); drop the
+    first of two and the row closes up."""
+    from psd_tools.api.links import LINK_DATE
+    from commands.psd_links import links_of
     types_dir = _types_dir(tmp_path)
     paths = _fixture(tmp_path, types=(("Fire", (30, 30)),))
     _, baked = _bake(parser, paths, {"types": ["fire", "water"]}, tmp_path, types_dir=types_dir)
@@ -404,7 +407,12 @@ def test_types_add_from_types_png_and_close_up(parser, tmp_path):
     saved = PSDImage.open(baked.psd_path)
     water = next(layer for layer in saved.descendants() if layer.name == "water")
     fire = pe._core(next(layer for layer in saved.descendants() if layer.name == "Fire"))
-    assert water.kind == "pixel" and water.parent.name == "Types"
+    assert water.kind == "smartobject" and water.parent.name == "Types"
+    link = links_of(saved, REL, ["Types/water.png"])[0]
+    item = water.smart_object._data
+    assert (link.path, link.size, link.canonical, item.timestamp) == ("Types/water.png", Path(types_dir, "water.png").stat().st_size,
+                                                                      True, LINK_DATE)
+    assert item.linked_file[b"relPath"].value.rstrip("\x00") == "../../Types/water.png"
     x0, y0, x1, y1 = water.bbox                                        # fitted into Fire's core, centred under it
     assert x1 - x0 == fire[2] - fire[0] and y1 - y0 < fire[3] - fire[1]
     assert abs((x0 + x1) - (fire[0] + fire[2])) <= 1 and abs((y0 + y1) / 2 - (fire[1] + fire[3]) / 2 - (fire[3] - fire[1] + 22)) <= 1

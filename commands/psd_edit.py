@@ -46,11 +46,13 @@ from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_
                                  title_text, token_variant, variant_view, variants_of)
 from commands.psd_parser import in_header, star_leaf, star_pieces, star_sets
 from commands import psd_parts
+from commands.psd_links import corners_of, decode, draw, file_type, link_pixels
 from commands.psd_parts import lyid_index, raw_sha
 from commands.text_align import (BREAKS as TEXT_BREAKS, blocks as text_blocks, moves as text_moves,
                                  opcodes as text_opcodes, segments as text_segments)
 from commands.psd_regions import (STATS as STAT_PATTERNS, _ancestors, badge_layers, bar_box, clip, comp_bars, comp_creature,
                                   comp_names, comp_row, comp_value, fx_pad, overlay_words, placed_data, stat_rows, union_box)
+from global_config import TYPES_DIR
 
 # ========================
 # Configuration
@@ -106,7 +108,7 @@ HARD_SOFT = 0.005           # hard_edged: the share of a picture's pixels with i
 HARD_COLOURS = 256          # its colours at most
 HARD_SMALL = 128            # px: its pixels show at this size; a larger one must be blocky
 HARD_BLOCKY = 0.5           # the share of its neighbouring pixels that match
-HARD_CLEAR = 4              # stored_mode: times closer one mode must redraw the stored pixels
+HARD_CLEAR = 4              # stored_mode, image_mode: times closer one mode must redraw the stored pixels
 FIT_PX, FIT_PCT = 2.0, 3.0  # and shift a badge or icon whose middle is off by more than both: px, % of the text's em
 FIT_SKIP = ("glow", "no_over", "space")     # icon-font glyphs that are no icon's body (halos, the red sign, spacers)
 ASPECT_TOL = 0.02           # unstretch: a typed icon's x over y scale may be this far off 1 (designers': 678 of 682 at 1.0)
@@ -3264,6 +3266,39 @@ def stored_mode(layer) -> Optional[int]:
     own = plane(stored[..., 3], box)
     near, cubic = (float(np.abs(plane(rgba[..., 3], where) - own).sum()) for rgba, where in drawn.values())
     return Image.NEAREST if near * HARD_CLEAR < cubic else Image.BICUBIC if cubic * HARD_CLEAR < near else None
+
+
+def image_mode(layer, image: np.ndarray, drawn: Optional[np.ndarray] = None) -> int:
+    """
+    The resampling a placed picture (any image smart object; a bar's is stored_mode) is drawn again with, per object
+    as comp_render's: the mode its stored pixels show, when one mode redraws `drawn` (the picture they were drawn from:
+    by default the embedded one) on the layer's quad HARD_CLEAR times closer in alpha than every other; else nearest
+    for pixel art or a flat shape (hard_edged(image)); else bicubic (Photoshop's default; 227 of 740 pictures show no
+    mode, ../resize/evid.json).
+    """
+    stored = layer.numpy()
+    if drawn is None and layer.smart_object.kind == "data":
+        data = layer.smart_object.data
+        drawn = decode(data, file_type(data, layer.smart_object.filename))
+    corners = corners_of(layer)
+    errors = {}
+    if drawn is not None and stored is not None and stored.shape[2] >= 4 and len(corners) == 8:
+        box = tuple(layer.bbox)
+        for mode in (Image.NEAREST, Image.BILINEAR, Image.BICUBIC):
+            rgba, where = draw(drawn, corners, mode)
+            if rgba is None:
+                errors = {}
+                break
+            area = union_box([box, where])
+            plane = np.zeros((area[3] - area[1], area[2] - area[0]), np.float32)
+            plane[where[1] - area[1]:where[3] - area[1], where[0] - area[0]:where[2] - area[0]] = rgba[..., 3]
+            plane[box[1] - area[1]:box[3] - area[1], box[0] - area[0]:box[2] - area[0]] -= stored[..., 3]
+            errors[mode] = float(np.abs(plane).sum())
+    if errors:
+        best = min(errors, key=errors.get)
+        if all(errors[best] * HARD_CLEAR < error for mode, error in errors.items() if mode != best):
+            return best
+    return Image.NEAREST if hard_edged(image) else Image.BICUBIC
 
 
 def comp_render(layer, value: int, mode: Optional[int] = None) -> tuple:
@@ -7122,7 +7157,7 @@ def _grid_clear(psd: PSDImage, plan: IconPlan, kept: list, others: list, types_d
         if types_dir is None:
             return False
         try:
-            image, left, top = _icon_image(_icon_png(types_dir, stem), box)
+            image, left, top, _ = _icon_image(_icon_png(types_dir, stem), box)
         except Refused:
             return False
         ink = ((left, top, left + image.width, top + image.height), np.asarray(image)[..., 3] / 255 > INK_ALPHA)
@@ -7331,28 +7366,37 @@ def _icon_png(types_dir: str, stem: str) -> str:
 
 
 def _icon_image(path: str, box: tuple) -> tuple:
-    """A Types/ PNG fitted into the box (its opaque part, aspect kept, centred; hard_edged: nearest): (RGBA image, left, top)."""
+    """
+    A Types/ PNG fitted into the box (its opaque part, aspect kept, centred; hard_edged: nearest): (RGBA image, left,
+    top, the whole file's quad: where a smart object linking it draws those pixels).
+    """
     image = Image.open(path).convert("RGBA")
     solid = image.getchannel("A").point(lambda a: 255 if a >= 128 else 0).getbbox()
     if solid is None:
         raise Refused("unsupported-card", f"types: {basename(path)} draws nothing", "types")
+    full = image.size
     image = image.crop(solid)
     scale = min((box[2] - box[0]) / image.width, (box[3] - box[1]) / image.height)
     width, height = max(1, round(image.width * scale)), max(1, round(image.height * scale))
     mode = Image.NEAREST if hard_edged(np.asarray(image)) else Image.LANCZOS
+    sx, sy = width / image.width, height / image.height
     image = image.convert("RGBa").resize((width, height), mode).convert("RGBA")
     cx, cy = _centre(box)
-    return image, round(cx - width / 2), round(cy - height / 2)
+    left, top = round(cx - width / 2), round(cy - height / 2)
+    x0, y0 = left - solid[0] * sx, top - solid[1] * sy
+    x1, y1 = x0 + full[0] * sx, y0 + full[1] * sy
+    return image, left, top, [x0, y0, x1, y0, x1, y1, x0, y1]
 
 
-def _make_icon(psd: PSDImage, types_dir: str, stem: str, box: tuple, reference):
+def _make_icon(psd: PSDImage, types_dir: str, stem: str, box: tuple, reference, rel: str = ""):
     """
-    A pixel layer of the Types/ icon fitted into the box (_icon_image), the reference's effects, blending and opacity
-    copied, directly above the reference.
+    A smart object linking the Types/ icon (psd_links.link_pixels; owner Q4, 2026-11-07), its pixels fitted into the
+    box (_icon_image), the reference's effects, blending and opacity copied, directly above the reference. rel: the
+    card's repo path (the link's relPath); "" makes a pixel layer.
     """
     from psd_tools.api.layers import PixelLayer
     path = _icon_png(types_dir, stem)
-    image, left, top = _icon_image(path, box)
+    image, left, top, quad = _icon_image(path, box)
     profile, source = foreign_profile(psd), image.info.get("icc_profile")      # field.png: Adobe RGB
     if profile is not None or source:           # the PNG's profile (else sRGB) into the card's, as Photoshop places it
         from PIL import ImageCms
@@ -7366,6 +7410,9 @@ def _make_icon(psd: PSDImage, types_dir: str, stem: str, box: tuple, reference):
     layer.copy_effects_from(reference)
     layer.blend_mode, layer.opacity = reference.blend_mode, reference.opacity
     _issue_id(psd, layer)
+    if rel:
+        with open(path, "rb") as fh:
+            layer = link_pixels(layer, rel, f"{TYPES_DIR}/{basename(path)}", fh.read(), quad)
     if getattr(reference, "_psd", psd) is not psd:  # a template's icon: the card's types group, else the top
         parent = _types_group(psd)
         layer.move_to(parent, index=len(parent) - (1 if layer.parent is parent else 0))   # the top of it
@@ -7455,10 +7502,11 @@ def record_map(psd: PSDImage) -> dict:
     return {id(record): i for i, record in enumerate(records)}
 
 
-def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None) -> Edit:
+def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None, rel: str = "") -> Edit:
     """
     Apply a plan_stars() or plan_types() plan to the open card (the same file it was planned on): hide, show, move,
-    copy and make layers. Record indices come later (index_icons), once every edit is in.
+    copy and make layers (a made type icon links its Types/ file from rel, the card's repo path: _make_icon). Record
+    indices come later (index_icons), once every edit is in.
 
     Returns:
         Edit over the layers it touched, its region their old and new boxes padded by their effects; raises Refused
@@ -7491,7 +7539,7 @@ def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None) ->
     for stem, box, reference in plan.icons:
         if types_dir is None:
             raise Refused("unsupported-card", "types: no Types/ icons to make one from", "types")
-        layer = _make_icon(psd, types_dir, stem, box, reference)
+        layer = _make_icon(psd, types_dir, stem, box, reference, rel)
         others = [other for other in texts + stars if other is not layer]
         blocked = _blocked(psd, [_ink(layer)], _core(layer) or tuple(layer.bbox), others)
         if blocked and plan.first and blocked.startswith("would touch"):    # the template's spot: baked, told (rulings)
@@ -8616,6 +8664,16 @@ def gate_filters(old: PSDImage, new: PSDImage, edits: list) -> None:
         raise Refused("bytes", "FEid items out of their layers' file order")
 
 
+def _links_added(old: PSDImage, new: PSDImage, uuids) -> bool:
+    """new's lnkE items are old's, byte for byte, then exactly the items uuids."""
+    def items(psd):
+        blocks = psd._record.layer_and_mask_information.tagged_blocks
+        return list(blocks.get_data(Tag.LINKED_LAYER_EXTERNAL) or []) if Tag.LINKED_LAYER_EXTERNAL in blocks else []
+    was, now = items(old), items(new)
+    return bool(uuids) and [item.tobytes() for item in was] == [item.tobytes() for item in now[:len(was)]] and \
+        [str(item.uuid).strip("\x00") for item in now[len(was):]] == list(uuids)
+
+
 def _document_blocks(psd: PSDImage) -> dict:
     return {bytes(key): block.tobytes() for key, block in (psd._record.layer_and_mask_information.tagged_blocks or {}).items()}
 
@@ -8646,7 +8704,8 @@ def _story_font_name(entry, spelling: int) -> str:
     return str(getattr(entry, "value", entry))
 
 
-def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), added=(), filters: bool = False) -> list:
+def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), added=(), filters: bool = False,
+                 links=()) -> list:
     """
     Photoshop reads a type layer's text from its Txt2 story and rebuilds the layer's TySh from it on save, so an edit
     to TySh alone is undone the first time the card is opened (2026-10-22: B.F.B. went back to B.F.B). Every type
@@ -8664,15 +8723,16 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), add
         added: TextIndex of each added layer in the new card (Edit.added_stories): the new card is compared with those
             stories and their own frames taken out
         filters: the FEid block is gate_filters' (a bake's: smart-filtered stars moved or copied, S1)
+        links: uuids of the links the edits added (made type icons): lnkE is the old items and those, appended
 
     Returns:
         The changed stories' indices (the new card's), sorted; raises Refused("bytes")
     """
     before, after = _document_blocks(old), _document_blocks(new)
-    txt2 = bytes(Tag.TEXT_ENGINE_DATA)
+    txt2, lnke = bytes(Tag.TEXT_ENGINE_DATA), bytes(Tag.LINKED_LAYER_EXTERNAL)
     moved = sorted(key.decode("latin-1") for key in set(before) | set(after)
                    if (key != txt2 or (key in before) != (key in after)) and before.get(key) != after.get(key)
-                   and not (filters and key in FILTER_KEYS))
+                   and not (filters and key in FILTER_KEYS) and not (key == lnke and _links_added(old, new, links)))
     if moved:
         raise Refused("bytes", f"document blocks changed: {', '.join(moved)}")
     stale = stale_stories(new)
@@ -9399,7 +9459,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
                     with cache:
                         first = shown = render_all(old)
                 timings["outside"] = timings.get("outside", 0.0) + perf_counter() - start
-                edit = set_icons(new, plan, types_dir)
+                edit = set_icons(new, plan, types_dir, rel)
                 start = perf_counter()
                 with cache:
                     shown = gate_outside(shown, new, edit)      # nothing else changes
@@ -9503,7 +9563,9 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     gate_stories(old, reopened, stories | repaired,
                  [face for edit in edits for face in edit.fonts],
                  [index for edit in edits for index in edit.removed_stories],
-                 [index for edit in edits for index in edit.added_stories], filters=True)
+                 [index for edit in edits for index in edit.added_stories], filters=True,
+                 links=[done[1].smart_object.unique_id for edit in edits if edit.icons is not None
+                        for done in edit.icons.done if done[0] == "made" and done[1].kind == "smartobject"])
     gate_filters(old, reopened, edits)
     reparse = gate_reparse(parser, parsed, new_psd, rel, jobs, reopened, edits, flags)
     if "parts" in jobs:
