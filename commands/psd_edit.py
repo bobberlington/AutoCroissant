@@ -9625,7 +9625,8 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     timings["save"] = perf_counter() - start
     save_png(merged, new_png, png)
     gate_size(psd_path, new_psd)
-    reopened = PSDImage.open(new_psd)          # the saved PSD's one open: every gate after reads it
+    reopened = use_record(PSDImage.open(new_psd), rel, _LOOKS.get(new))   # the saved PSD's one open: every gate
+    #                                           after reads it, drawn with the facts the merge was (it has no stored image)
     records, flag_bytes, block_bytes = gate_bytes(old_records, reopened, edits)
     hold.enter_context(variant(reopened, view))     # the read-back and re-render as picture `view`
 
