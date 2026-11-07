@@ -371,6 +371,30 @@ def test_a_new_icon_goes_above_the_clip_chain_and_takes_it(parser, clone, tmp_pa
 
 
 @icons
+def test_a_made_icon_takes_the_cards_profile(clone, tmp_path):
+    """As Photoshop places one: stored converted into Abigail's 'Display' profile (the export gives Types/' colours back),
+    as it is on an sRGB card, and from a PNG's own profile (field.png's Adobe RGB)."""
+    from io import BytesIO
+    from PIL import ImageCms
+    from psd_tools.api.pil_io import post_process
+    types_dir = _types_dir(tmp_path)
+    with Image.open(clone / "Types/field.png") as png:
+        adobe = png.info["icc_profile"]
+    _icon((230, 80, 20), (200, 160)).save(Path(types_dir) / "field.png", icc_profile=adobe)
+    field = ImageCms.profileToProfile(Image.new("RGB", (1, 1), (230, 80, 20)), ImageCms.ImageCmsProfile(BytesIO(adobe)),
+                                      ImageCms.createProfile("sRGB")).getpixel((0, 0))
+    for psd in (PSDImage.open(_clone_card(clone, ABIGAIL, tmp_path)[0]), PSDImage.open(_fixture(tmp_path)[0])):
+        reference = next(layer for layer in psd.descendants() if layer.name in ("Undead", "Fire"))
+        profile = pe.foreign_profile(psd)
+        for stem, colour in (("fire", (230, 80, 20)), ("field", field)):
+            stored = pe._make_icon(psd, types_dir, stem, (20, 400, 220, 560), reference).topil(apply_icc=False).convert("RGB")
+            shown = post_process(stored, None, profile) if profile else stored
+            centre = stored.width // 2, stored.height // 2
+            assert (stored.getpixel(centre) != colour) is (profile is not None), stem
+            assert max(abs(a - b) for a, b in zip(shown.getpixel(centre), colour)) <= 1, (stem, shown.getpixel(centre), colour)
+
+
+@icons
 def test_types_add_from_types_png_and_close_up(parser, tmp_path):
     """Add Water under a lone Fire (made from Types/, fitted to Fire's box); drop the first of two and the row closes up."""
     types_dir = _types_dir(tmp_path)

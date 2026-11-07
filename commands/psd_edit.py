@@ -7236,6 +7236,13 @@ def _make_icon(psd: PSDImage, types_dir: str, stem: str, box: tuple, reference):
     from psd_tools.api.layers import PixelLayer
     path = _icon_png(types_dir, stem)
     image, left, top = _icon_image(path, box)
+    profile, source = foreign_profile(psd), image.info.get("icc_profile")      # field.png: Adobe RGB
+    if profile is not None or source:           # the PNG's profile (else sRGB) into the card's, as Photoshop places it
+        from PIL import ImageCms
+        def cms(data): return ImageCms.ImageCmsProfile(BytesIO(data)) if data else ImageCms.createProfile("sRGB")
+        alpha = image.getchannel("A")
+        image = ImageCms.profileToProfile(image.convert("RGB"), cms(source), cms(profile), outputMode="RGB")
+        image.putalpha(alpha)
     name = basename(path)[:len(basename(path)) - 4]
     layer = PixelLayer.fromarray(np.asarray(image), psd, name=name, top=top, left=left)
     layer.name = name
