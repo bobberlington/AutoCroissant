@@ -818,6 +818,9 @@ def link_card(psd: PSDImage, rel: str, entries: list, read: Callable[[str], Opti
             continue
         item = known[uid][1]
         data, kind, layers = item.data or b"", entry["ext"], _layers_of(psd, uid)
+        if git_blob(data) != entry["blob"]:     # a stale catalogue: classes are of other bytes
+            out.left.append((uid, "its picture changed since the catalogue"))
+            continue
         path = entry["target"]
         if uid in copies and cls in (INK, REDRAW):
             cls, path = NEW, entry.get("fallback")
@@ -827,8 +830,14 @@ def link_card(psd: PSDImage, rel: str, entries: list, read: Callable[[str], Opti
         if target is None:
             out.left.append((uid, f"{path} is missing"))
             continue
+        if cls in (BYTES, LINKED, NEW) and git_blob(target) != entry["blob"]:
+            out.left.append((uid, f"{path} changed since the catalogue"))   # no new size over an old raster (5.1)
+            continue
         if cls in (INK, REDRAW):
             old, new = decode(data, kind), decode(target, file_type(target, path))
+            if cls == INK and old is not None and new is not None and ink_key(old) != ink_key(new):
+                out.left.append((uid, f"{path} changed since the catalogue"))
+                continue
             quads = [_trim_corners(layer, old, new, 1) if cls == INK else _fit_corners(layer, old, new) for layer in layers]
             why = next((why for layer in layers for why in [why_not_redrawn(layer) if cls == REDRAW else
                                                             "a warp" if warped(layer) else None] if why), None)
