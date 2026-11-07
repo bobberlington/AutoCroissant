@@ -231,4 +231,4 @@ def test_redraw_linked_one_file_two_users(tmp_path):
         assert tuple(new[1].bbox) == box and np.abs(new[1].numpy() - want).max() <= 1 / 255 and new[1].smart_object.filesize == len(pixels)
         render = np.asarray(new.composite(ignore_preview=True).convert("RGB"), np.int16)
         png = np.asarray(Image.open(BytesIO(done.files[rel[:-4] + ".png"])).convert("RGB"), np.int16)
-        assert np.abs(png - render).max() <= pl.PIXEL_TOL
+        assert np.abs(png - render).max() <= png_export.TOL

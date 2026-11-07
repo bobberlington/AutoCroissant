@@ -13,7 +13,7 @@ SmartObject.link_target), never from the filesystem.
     link_pixels(layer, rel, path, data, corners)     a pixel layer made a smart object linking a Types/ file (Q4)
     place_trim(corners, old, new, old_box, new_box)  a file's quad when its ink moved (Croissant's trims, name matches)
     draw(rgba, corners, mode) -> (rgba, box)         a picture drawn on its quad as Photoshop places it
-    redraw(layer, rgba, corners, size, mode)         a placed layer's pixels drawn again from a file
+    redraw(layer, rgba, corners, mode)               a placed layer's pixels drawn again from a file
     links_of(psd, rel, tree) -> [Link]               a PSD's links as repo paths, repair() making them canonical
     link_issues(psd, rel, tree) -> [str]             what its links need (needs_normalise's cheap test)
     unused / duplicates / restore / repair           the guards' housekeeping (G2-G4)
@@ -44,14 +44,14 @@ from uuid import NAMESPACE_URL, uuid5
 import numpy as np
 from PIL import Image
 from psd_tools import PSDImage
-from psd_tools.api.links import LINK_DATE, comp_info, content_descriptor, link_content_id, linked_file, place
+from psd_tools.api.links import FILETYPES, LINK_DATE, comp_info, content_descriptor, link_content_id, linked_file, place
 from psd_tools.constants import LinkedLayerType, Tag
 from psd_tools.psd.descriptor import Descriptor, DescriptorBlock, Double, Enumerated, Integer, List, String, UnitFloat
 from psd_tools.psd.linked_layer import LinkedLayer, LinkedLayers
 from psd_tools.psd.tagged_blocks import SmartObjectLayerData, TaggedBlock
 from psd_tools.terminology import Unit
 
-from commands.psd_regions import badge_layers, comp_names, placed_data
+from commands.psd_regions import _ancestors, badge_layers, comp_names, placed_data
 from global_config import STARS_DIR, TYPES_DIR
 
 # ========================
@@ -63,14 +63,11 @@ NAME_MAX = 119                  # a new file's name, characters (under 120)
 UNSAFE = re_compile(r'[\\/:*?"<>|\x00-\x1f\x7f]')
 MAGIC = ((b"\x89PNG", "png"), (b"\xff\xd8\xff", "jpg"), (b"GIF8", "gif"), (b"8BPS\x00\x01", "psd"),
          (b"8BPS\x00\x02", "psb"), (b"II*\x00", "tif"), (b"MM\x00*", "tif"), (b"%PDF", "pdf"))
-FILETYPE = {"png": b"png ", "jpg": b"JPEG", "gif": b"GIFf", "webp": b"WEBP", "psd": b"8BPS", "psb": b"8BPB",
-            "tif": b"TIFF", "pdf": b"PDF "}
 RASTER = ("png", "jpg", "gif", "webp")      # decoded by PIL; psd and psb by the fork's composite
 BYTES, INK, REDRAW, LINKED, NEW = 1, 2, 3, 4, 5
 CLASSES = {BYTES: "bytes", INK: "ink", REDRAW: "redraw", LINKED: "linked", NEW: "new"}
 MESH_TOL = 0.01                 # px: a warpCustom mesh this close to its quad's grid is no warp
 QUAD_TOL = 0.01                 # px: corners this close make an upright rectangle
-PIXEL_TOL = 2                   # levels: a redraw within this of the PNG keeps it (the drawing check's "near identical")
 NOT_IN_REPO = "Links {name}, which is not in the repo: push that file."
 NOT_REDRAWN = "{layer} links {name}, changed since: Card sync could not draw it again ({why}); update it in Photoshop."
 REDRAW_SUBJECT = "Card sync: linked pictures redrawn"
@@ -162,12 +159,9 @@ def _bar(placed) -> bool:
     return bool(names) and all(name.isdigit() for name in names.values())
 
 
-def _ancestors(layer) -> list:
-    out, parent = [], layer.parent
-    while parent is not None and not isinstance(parent, PSDImage):
-        out.append(parent.name)
-        parent = parent.parent
-    return out[::-1]
+def _path(layer) -> str:
+    """The groups a layer sits in, outermost first ("Stars/5 stars")."""
+    return "/".join(group.name for group in reversed(list(_ancestors(layer))))
 
 
 def _items_of(psd: PSDImage) -> dict:
@@ -416,7 +410,7 @@ def relink(psd: PSDImage, uuid: str, rel: str, path: str, size: int, blob: str, 
 def _new_item(uuid: str, rel: str, path: str, data: bytes) -> LinkedLayer:
     """A new lnkE item linking path, as the fork's SmartObject.link writes one (link_pixels: no embedded item to turn)."""
     return LinkedLayer(kind=LinkedLayerType.EXTERNAL, version=8, uuid=uuid, filename=basename(path) + "\x00",
-                       filetype=FILETYPE.get(file_type(data, path), b"\x00\x00\x00\x00"), creator=b"\x00\x00\x00\x00",
+                       filetype=FILETYPES.get(file_type(data, path), b"\x00\x00\x00\x00"), creator=b"\x00\x00\x00\x00",
                        filesize=len(data), open_file=comp_info(), linked_file=linked_file(path, rel, basename(path)),
                        timestamp=LINK_DATE, data=b"", child_id="\x00", mod_time=0.0, lock_state=0,
                        content_descriptor=content_descriptor(link_content_id(git_blob(data), rel, uuid)))
@@ -598,7 +592,7 @@ def items(psd: PSDImage, vocab=()) -> list:
             bars.add(uid)
             continue
         entry = out.setdefault(uid, {"uuid": uid, "layers": []})
-        entry["layers"].append({"name": layer.name, "id": layer.layer_id, "path": "/".join(_ancestors(layer)),
+        entry["layers"].append({"name": layer.name, "id": layer.layer_id, "path": _path(layer),
                                 "visible": layer.is_visible(), "row": id(layer) in rows})
     for uid in list(out):
         if uid in bars:                         # one item, a bar and a picture: it stays embedded with the bar
@@ -625,7 +619,7 @@ def items(psd: PSDImage, vocab=()) -> list:
         own = layer.numpy()
         key = ink_key(np.clip(np.round(own * 255), 0, 255).astype(np.uint8)) if own is not None and own.shape[2] >= 4 else None
         if key is not None:
-            pixels.append({"pixel": layer.layer_id, "name": layer.name, "path": "/".join(_ancestors(layer)), "key": key})
+            pixels.append({"pixel": layer.layer_id, "name": layer.name, "path": _path(layer), "key": key})
     return list(out.values()) + pixels
 
 
@@ -676,7 +670,7 @@ def assign(psds: list, types: TypesIndex, linked: dict, kept: Optional[dict] = N
             if entry["kind"] == "external":
                 rows.append({**entry, "class": None, "target": None})
                 continue
-            if not entry.get("ext") or entry["ext"] not in FILETYPE:
+            if not entry.get("ext") or entry["ext"] not in FILETYPES:
                 rows.append({**entry, "class": None, "target": None, "why": f"no picture type ({entry.get('ext')!r})"})
                 continue
             key = tuple(entry["key"]) if entry.get("key") else None
@@ -735,9 +729,9 @@ def _layers_of(psd: PSDImage, uuid: str) -> list:
     return [layer for layer in psd.descendants() if layer.kind == "smartobject" and _uid(layer) == uuid]
 
 
-def _trim_corners(layer, data: bytes, kind: str, target: bytes, alpha: int) -> Optional[list]:
-    """place_trim's quad for one layer moving from its embedded picture to the target file (ink boxes at alpha)."""
-    old, new = decode(data, kind), decode(target, file_type(target))
+def _trim_corners(layer, old: Optional[np.ndarray], new: Optional[np.ndarray], alpha: int) -> Optional[list]:
+    """place_trim's quad for one layer moving from its embedded picture (old) to the target file (new), ink boxes at
+    alpha."""
     if old is None or new is None:
         return None
     ob, nb = ink_box(old, alpha), ink_box(new, alpha)
@@ -754,15 +748,14 @@ def _trim_corners(layer, data: bytes, kind: str, target: bytes, alpha: int) -> O
     return place_trim(corners, sizes, (float(new.shape[1]), float(new.shape[0])), ob, nb)
 
 
-def _fit_corners(layer, data: bytes, kind: str, target: bytes) -> Optional[list]:
+def _fit_corners(layer, old: Optional[np.ndarray], rgba: Optional[np.ndarray]) -> Optional[list]:
     """
     Class 3's quad: the target's ink box onto the old picture's, at alpha > 0 (an older version of the same art: P2's
     Infliction) or at INK_ALPHA (other art: faint alpha moved P2's Equip.png by 20 px), whichever draws nearer the
     layer's stored alpha (bicubic).
     """
     stored = layer.numpy()
-    rgba = decode(target, file_type(target))
-    quads = [q for q in (_trim_corners(layer, data, kind, target, a) for a in (1, INK_ALPHA)) if q is not None]
+    quads = [q for q in (_trim_corners(layer, old, rgba, a) for a in (1, INK_ALPHA)) if q is not None]
     if len(quads) < 2 or stored is None or stored.shape[2] < 4 or rgba is None:
         return quads[-1] if quads else None
     box = tuple(layer.bbox)
@@ -826,7 +819,7 @@ def link_card(psd: PSDImage, rel: str, entries: list, read: Callable[[str], Opti
         item = known[uid][1]
         data, kind, layers = item.data or b"", entry["ext"], _layers_of(psd, uid)
         path = entry["target"]
-        if uid in copies and cls in (BYTES, INK, REDRAW):
+        if uid in copies and cls in (INK, REDRAW):
             cls, path = NEW, entry.get("fallback")
         target = read(path) if path else None
         if cls in (LINKED, NEW) and target is None and path and git_blob(data) == entry["blob"]:
@@ -835,8 +828,8 @@ def link_card(psd: PSDImage, rel: str, entries: list, read: Callable[[str], Opti
             out.left.append((uid, f"{path} is missing"))
             continue
         if cls in (INK, REDRAW):
-            quads = [_trim_corners(layer, data, kind, target, 1) if cls == INK else _fit_corners(layer, data, kind, target)
-                     for layer in layers]
+            old, new = decode(data, kind), decode(target, file_type(target, path))
+            quads = [_trim_corners(layer, old, new, 1) if cls == INK else _fit_corners(layer, old, new) for layer in layers]
             why = next((why for layer in layers for why in [why_not_redrawn(layer) if cls == REDRAW else
                                                             "a warp" if warped(layer) else None] if why), None)
             if None in quads or why:
@@ -848,12 +841,11 @@ def link_card(psd: PSDImage, rel: str, entries: list, read: Callable[[str], Opti
                 out.copies.append(uid)
             pixels = None
             if quads is not None:
-                new = decode(target, file_type(target, path))
                 pixels = (new.shape[1], new.shape[0])
+                drawn = picture(psd, target, file_type(target, path)) if cls == REDRAW else None
                 for layer, corners in zip(layers, quads):
                     if cls == REDRAW:
-                        drawn = picture(psd, target, file_type(target, path))
-                        redraw(layer, drawn, corners, image_mode(layer, drawn, decode(data, kind)))
+                        redraw(layer, drawn, corners, image_mode(layer, drawn, old))
                         out.redrawn.append(layer.name)
                 quads = {tuple(corners_of(layer)): corners for layer, corners in zip(layers, quads)}
         else:
@@ -951,7 +943,7 @@ def link_issues(psd: PSDImage, rel: str, tree) -> list:
             continue
         bar = _bar(placed_data(layer))
         if item.kind == LinkedLayerType.DATA and not bar and file_type(item.data[:16] if item.data else b"",
-                                                                       _text(item.filename)) in FILETYPE:
+                                                                       _text(item.filename)) in FILETYPES:
             out.append(f"embedded: {layer.name}")
         elif item.kind == LinkedLayerType.EXTERNAL and bar:
             out.append(f"linked bar: {layer.name}")
