@@ -37,6 +37,7 @@ from os import environ, makedirs
 from posixpath import basename, dirname, join as posixpath_join, splitext
 from re import IGNORECASE, compile as re_compile, sub
 from subprocess import PIPE, Popen, run as run_process
+from threading import Thread
 from time import time
 from typing import Callable, Optional
 from uuid import NAMESPACE_URL, uuid5
@@ -1153,8 +1154,12 @@ def _git_bytes(clone: str, blobs: list) -> dict:
     proc = Popen(["git", "-C", clone, "cat-file", "--batch"], stdin=PIPE, stdout=PIPE,
                  env={**environ, "GIT_NO_LAZY_FETCH": "1"})
     out = {}
-    proc.stdin.write("".join(f"{b}\n" for b in blobs).encode())
-    proc.stdin.close()
+
+    def feed():                                 # beside the reads: a long list would fill both pipes
+        proc.stdin.write("".join(f"{b}\n" for b in blobs).encode())
+        proc.stdin.close()
+    writer = Thread(target=feed, daemon=True)
+    writer.start()
     for blob in blobs:
         head = proc.stdout.readline().split()
         if len(head) < 3 or head[1] != b"blob":
@@ -1162,6 +1167,7 @@ def _git_bytes(clone: str, blobs: list) -> dict:
         data = proc.stdout.read(int(head[2]))
         proc.stdout.read(1)
         out[blob] = data
+    writer.join()
     proc.wait()
     return out
 
