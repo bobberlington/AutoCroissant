@@ -33,7 +33,7 @@ from commands.psd_edit import (
 )
 from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, PARSER_VERSION, PSDParser
 from commands.psd_parts import card_parts
-from commands.psd_regions import STATS, badge_layers, comp_bars, overlay_words, stat_rows
+from commands.psd_regions import STATS, badge_layers, comp_bars, comp_creature, comp_row, overlay_words, stat_rows
 
 # ========================
 # Configuration
@@ -221,15 +221,15 @@ def _drawn_bar(psd: PSDImage, key: str) -> bool:
 
 def _stats(psd: PSDImage) -> dict:
     """
-    Per stat: "template" (one digit row of exposure layers, or the Alt template's layer-comp bar), "two-row" (several),
-    "pixel" (drawn cells or bars), "other", "none".
+    Per stat: "template" (one digit row of exposure layers, or a layer-comp bar), "creatures" (a layer-comp bar per
+    creature), "two-row" (several digit rows), "pixel" (drawn cells or bars), "other", "none".
     """
     rows, comps = stat_rows(psd), comp_bars(psd)
     out = {}
     for key in STATS:
         found = rows.get(key) or []
-        if not found and len(comps[key]) == 1:
-            out[key] = "template"
+        if not found and comps[key]:
+            out[key] = "template" if len(comps[key]) == 1 else "creatures"
             continue
         if not found:
             out[key] = "pixel" if _drawn_bar(psd, key) else "none"
@@ -243,6 +243,14 @@ def _stats(psd: PSDImage) -> dict:
         else:
             out[key] = "other"
     return out
+
+
+def _creature_bars(psd: PSDImage) -> Optional[dict]:
+    """A card with a layer-comp bar per creature: their count, and the stats on a shown shared bar; else None."""
+    count = max((comp_creature(bar[0]) for bars in comp_bars(psd).values() for bar in bars), default=0)
+    if not count:
+        return None
+    return {"count": count, "shared": [key for key in STATS if any(not comp_creature(bar[0]) for bar in comp_row(psd, key))]}
 
 
 def _fx(layers: list) -> list:
@@ -475,6 +483,9 @@ def _gather(psd: PSDImage, rel: str, name: str, index: Optional[FontIndex], voca
     record["smart_objects"] = _guard(_smart_objects, layers)
     record["icons"] = _guard(_icons, psd, texts, vocab)
     record["stats"] = _guard(_stats, psd)
+    bars = _guard(_creature_bars, psd)
+    if bars:
+        record["creature_bars"] = bars
     record["fx"] = _guard(_fx, layers)
     record["overlays"] = _guard(_overlays, psd, texts)
     record["template"] = _guard(_template, psd, texts, name, record["stats"], record["icons"], record["overlays"])

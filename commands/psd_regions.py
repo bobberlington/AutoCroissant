@@ -168,9 +168,9 @@ def comp_names(placed) -> dict:
 
 def comp_value(layer) -> Optional[int]:
     """
-    A layer-comp stat bar's value (the Alt template, MDW/Templates/Alt_Creature_Template.psd): a smart object whose
-    layer comps are all named by numbers ("0".."10"); the stat is the chosen comp's name (SoLd "comp", what Photoshop's
-    Properties panel sets). None for other layers and for no comp applied (-1).
+    A layer-comp stat bar's value (MDW/Templates/Creature_Template.psd): a smart object whose layer comps are all named
+    by numbers ("0".."20"); the stat is the chosen comp's name (SoLd "comp", what Photoshop's Properties panel sets). None
+    for other layers and for no comp applied (-1).
     """
     placed = placed_data(layer)
     if placed is None:
@@ -210,6 +210,21 @@ def comp_bars(psd: PSDImage) -> dict:
                round(max(corners[1::2]))) if len(corners) == 8 else tuple(layer.bbox)
         out[key].append((layer, comp_value(layer), box))
     return out
+
+
+def comp_creature(layer) -> int:
+    """The creature a layer-comp bar draws: its group "Creature n"; 0: shared, or a card of one."""
+    found = fullmatch(r"\s*creature\s+(\d+)\s*", getattr(layer.parent, "name", "") or "", IGNORECASE)
+    return int(found.group(1)) if found else 0
+
+
+def comp_row(psd: PSDImage, stat: str, creature: int = 1) -> list:
+    """comp_bars' bars a creature's stat edit sets: the one bar, else its own shown one, else the shown shared one."""
+    bars = comp_bars(psd)[stat]
+    if len(bars) < 2:
+        return bars
+    shown = [bar for bar in bars if bar[0].is_visible()]
+    return [bar for bar in shown if comp_creature(bar[0]) == creature] or [bar for bar in shown if not comp_creature(bar[0])]
 
 
 def bar_box(psd: PSDImage, stat: str, box: tuple, labels: Optional[dict] = None) -> tuple:
@@ -266,7 +281,7 @@ def regions(psd: PSDImage, vocab=(), pad: bool = True) -> dict:
     found["stat_labels"] += [_box(layer, width, height, pad) for layer in texts
                              if layer.name.strip().lower() in STAT_LABELS]
 
-    # stats: one bbox per bar row. 1) the digit layers' mask union, or a layer-comp bar's placement (the Alt template);
+    # stats: one bbox per bar row. 1) the digit layers' mask union, or a layer-comp bar's placement;
     # 2) visible leaves of a group named like the stat under a *bar*/*stat* group (Isaac hearts, custom bars); 3) a layer
     # named like the stat (+ "bar") inside "Bars"; 4) bars painted into the art: the template row centred on the stat label
     rows, comps = stat_rows(psd), comp_bars(psd)
@@ -407,7 +422,9 @@ __all__ = [
     'badge_layers',
     'clip',
     'comp_bars',
+    'comp_creature',
     'comp_names',
+    'comp_row',
     'comp_stat',
     'comp_value',
     'fx_pad',

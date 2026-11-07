@@ -11,7 +11,7 @@ It writes <out>/result.json always (a bad input, a refusal and a runner error to
 PNG the bake would commit, recompressed losslessly where oxipng is installed), preview.webp (WEBP_WIDTH wide, the
 card view's width) and before.webp (the card's official PNG made the same way: the site's Diff compares like with like).
 The edit is the card's Card Edits.json entry as it would be published (any of its fields; the PSD-kind ones are baked,
-`creatures` gates the stats as in the bake, `_`-keys are ignored); result.json's `edit` is it exactly as sent, without
+`_`-keys are ignored); result.json's `edit` is it exactly as sent, without
 the `_`-keys. Exit 0, 2 for a bad input, 1 for any other error (result.json's `transient`: try again). Every dispatched
 value printed goes through clean().
 No Discord or config imports; SPARSE_FILES is what card-preview.yml checks out: the import closure and

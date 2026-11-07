@@ -118,7 +118,7 @@ One table, three consumers: `CardEdits.KIND` (new, beside `TYPES`/`ATTRS`/`FIXED
 | `name` | PSD + database **when the value differs from the printed title** (the fresh parse's `display_name`, else the file name), else database-only | `set_text` + `rasterize` on the one layer the parser reads the title from (`PSDParser.title_layers`: `Text/Name`, else a `Name` layer in the title region, else a layer under `Text` named after the card, else one named after it elsewhere in the title region, letters and digits alike: the status effects' top-level titles; 2026-10-23; else the one visible text layer in the title region named after its own text, as Photoshop names a new layer: Papyrus's `Text/The Great Papyrus`, Sans's `Text/snas.`; several such, Knight Lost A Lot's stacked words, read as none, and a rule page's heading never counts; 2026-10-23, owner: which layer holds the title is the developers' freedom). A bake into such a layer renames it after the new title, as Photoshop renames a layer it named (`Edit.renamed`; `gate_bytes` allows exactly that name), so the parser still reads it; refuse none, several (an epithet), a title split over layers or printed again by another layer that shows (Doctor Zomboss's copy under the art does not) (unless the value is already what the bot shows: redundant) | **field removed** (since 2026-10-21 the bot reads the title into `display_name`; the 21 redundant names drop at the first live bake) |
 | `stars` | PSD + folder (creatures, items, fields: the `N Stars` folder wins; minions, aux items, N.M.E.: star layers) | star layers shown, hidden, moved or copied in the one `Stars` group (below); folder-starred cards refused for that field (a move: S9) | field removed |
 | `types` | PSD (icon layers or font tokens) | header type icons hidden, moved, shown from the card's own hidden layer or made from `Types/<name>.png` (below); a token row refused for that field | field removed |
-| `creatures` | database-only (`CardEdits.KIND`; the per-creature rows of Pix, Tainted Lazarus, Twin Emperors stay hand-edited) | never touched; a stat edit beside it is refused (creature 1 sets the stats) | stays |
+| `creatures` | PSD on a bar per creature (the 2 and 3 creature templates, since 2026-11-07), else website only: Pix, Tainted Lazarus, Twin Emperors and any list the bars can't print go to `_site` | each creature's comp bar set (`set_creatures`), a shared bar once, moving every creature on it | field removed (website only: stays) |
 | `type` `subtype` `series` | folder | never touched | stay |
 | `subseries` `note` `aliases` `dup_of` `hidden` `problems_ok` `allow_high_stats` | database-only | never touched; `_by`/`_at` kept | stay |
 
@@ -1039,8 +1039,7 @@ reminder's cadence (daily `/update_stats` at 5AM).
 
 ## 9. Website: pending, baked, refused
 
-- `build_site.py`: `PSD_FIELDS = {name, stars, types, hp, def, atk, spd, ability}` (no `creatures`: database-only, section 3;
-  `edit.js FROM` :22 marks it "PSD" today and S1 changes that to no entry, so the editor stops calling it a PSD field); per
+- `build_site.py`: `PSD_FIELDS = {name, stars, types, hp, def, atk, spd, ability, creatures}` (`creatures`: section 3); per
   entry `pending` = the set PSD fields `psd_edit.classify` would try (a name against the bot's title, else the file name, via
   `title_text`, only for `parser_version` >= 2 pickles; an ability via `normalize_ability`); duplicates copy the original's but
   `name`. Since 2026-10-21 (TTSCardMaker 98337b7) a name to bake shows "PSD pending"; refusals are not predicted (site NOTES §5). The site shows the bot's title instead of the file name (the stem stays a searchable alias). Pass `_psd` into meta beside `_by`/`_at` (:393) -> `psd` on the entry.

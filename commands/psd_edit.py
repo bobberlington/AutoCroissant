@@ -49,8 +49,8 @@ from commands import psd_parts
 from commands.psd_parts import lyid_index, raw_sha
 from commands.text_align import (BREAKS as TEXT_BREAKS, blocks as text_blocks, moves as text_moves,
                                  opcodes as text_opcodes, segments as text_segments)
-from commands.psd_regions import (STATS as STAT_PATTERNS, _ancestors, badge_layers, bar_box, clip, comp_bars, comp_names,
-                                  fx_pad, overlay_words, placed_data, stat_rows, union_box)
+from commands.psd_regions import (STATS as STAT_PATTERNS, _ancestors, badge_layers, bar_box, clip, comp_bars, comp_creature,
+                                  comp_names, comp_row, fx_pad, overlay_words, placed_data, stat_rows, union_box)
 
 # ========================
 # Configuration
@@ -2019,7 +2019,7 @@ def _two_rows(card: dict, psd: Optional[PSDImage], stat: str) -> bool:
 
 
 def comp_top(psd: Optional[PSDImage], stat: str) -> Optional[int]:
-    """The highest layer comp of the stat's layer-comp bars (the Alt template); None without a PSD or such a bar."""
+    """The highest layer comp of the stat's layer-comp bars; None without a PSD or such a bar."""
     names = [name for layer, _, _ in (comp_bars(psd)[stat] if psd is not None else [])
              for name in comp_names(placed_data(layer)).values()]
     return max(map(int, names)) if names else None
@@ -2030,7 +2030,7 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
     """
     Sort a card's edits: PSD-kind fields whose value differs from the fresh parse are jobs, equal ones redundant.
     A stat above 10 is a job only on a two-row card (idea 13), above 20 never; on a layer-comp bar, up to its top comp
-    (comp_top). Stars and types are jobs when the card's
+    (comp_top). `creatures` bakes on a bar per creature (_classify_creatures). Stars and types are jobs when the card's
     layout is one plan_stars / plan_types knows; their refusals carry the field (the card's other fields still bake).
 
     Args:
@@ -2050,8 +2050,10 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
     for name, value in edits.items():
         if name == "parts" or name in derived:
             continue
-        if KIND.get(name, "database") != "psd" or value is None:
+        if KIND.get(name, "database") != "psd" or value is None or (name == "creatures" and psd is None):
             out.other.append(name)
+        elif name == "creatures":
+            _classify_creatures(out, card, value, {k: edits[k] for k in STAT_FIELDS if edits.get(k) is not None}, psd)
         elif name in ICON_FIELDS:
             if card.get(name) == value or (name == "types" and same_types(parser, card.get("types"), value)):
                 out.redundant.append(name)
@@ -2079,7 +2081,7 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
             top = comp_top(psd, name)
             if card.get(name) == value:
                 out.redundant.append(name)
-            elif top is not None:               # the Alt template: what its layer comps show (0-20, raid boss 0-40)
+            elif top is not None:               # what its layer comps show (0-20, raid boss 0-40)
                 if value > top:
                     out.site[name] = f"{name} {value}: the bar's layer comps show up to {top}"
                 else:
@@ -2116,6 +2118,46 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
                 except Refused as refused:
                     out.refusals.append(refused.refusal)
     return out
+
+
+def _classify_creatures(out: Classification, card: dict, wanted: list, stats: dict, psd: PSDImage) -> None:
+    """
+    classify()'s `creatures`: what the list changes on the card's bars, as the job [{stat: value} per creature]. A shared
+    bar has one value, and every creature on it takes the one asked. What the bars can't print is website only.
+
+    Args:
+        card: The parse's card
+        wanted: The entry's list
+        stats: The entry's stat fields: creature 1's, over the list (CardEdits.apply), their own jobs
+        psd: The open card
+    """
+    printed = card.get("creatures") or []
+    if len(wanted) != len(printed) or not any(comp_creature(bar[0]) for bars in comp_bars(psd).values() for bar in bars):
+        out.site["creatures"] = "creatures: each creature's stats print only on a bar per creature"
+        return
+    job = [{} for _ in printed]
+    for stat in STAT_FIELDS:
+        rows = [comp_row(psd, stat, n + 1) for n in range(len(printed))]
+        bars = [row[0][0].layer_id if len(row) == 1 else -n - 1 for n, row in enumerate(rows)]
+        asked = {bars[0]: {stats[stat]}} if stat in stats else {}
+        for n, one in enumerate(wanted):
+            value = one.get(stat)
+            if value is not None and value != printed[n].get(stat) and not (n == 0 and stat in stats):
+                asked.setdefault(bars[n], set()).add(value)
+        top = comp_top(psd, stat)
+        for bar, values in asked.items():
+            if len(values) > 1:
+                out.site["creatures"] = f"creatures: {stat}: a shared bar shows one value, not {sorted(values)}"
+                return
+            if top is None or max(values) > top:
+                out.site["creatures"] = f"creatures: {stat} {max(values)}: the bar's layer comps show up to {top}"
+                return
+            if stat not in stats or bar != bars[0]:
+                job = [{**one, stat: min(values)} if bars[n] == bar else one for n, one in enumerate(job)]
+    if any(job):
+        out.jobs["creatures"] = job
+    else:
+        out.redundant.append("creatures")
 
 
 def _classify_parts(out: Classification, parsed: dict, edits: dict, psd: Optional[PSDImage],
@@ -3182,7 +3224,7 @@ def _offset(state: dict, key: bytes) -> tuple:
 
 def comp_render(layer, value: int) -> tuple:
     """
-    A layer-comp stat bar (the Alt template's) drawn at comp `value` as Photoshop draws it (equal to its stored renders at
+    A layer-comp stat bar drawn at comp `value` as Photoshop draws it (equal to its stored renders at
     every comp, 0-20, 2026-11-06): each embedded layer that comp shows, bottom to top in normal blending, a shape as its
     vector mask in its fill colour, a pixel layer as its pixels, each through its pixel mask moved to that comp's offset;
     placed on its transform's rectangle (resized: resampled bicubic).
@@ -3288,24 +3330,25 @@ def place_bar(layer, box: tuple) -> None:
     layer._psd.mark_updated()
 
 
-def set_comp(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
+def set_comp(psd: PSDImage, parsed: dict, stat: str, value: int, creature: int = 1) -> Edit:
     """
-    A stat on the Alt template's layer-comp bar: its chosen comp (SoLd "comp") set to the comp named str(value) and its
-    pixels drawn again (comp_render), as Photoshop's Properties panel does (it also gives the instance a new "placed"
+    A stat on a creature's layer-comp bar (comp_row): its chosen comp (SoLd "comp") set to the comp named str(value) and
+    its pixels drawn again (comp_render), as Photoshop's Properties panel does (it also gives the instance a new "placed"
     ID); nothing else changes (gate_bytes, _comp_record).
 
     Returns:
-        Edit over the bar (Edit.comps); raises Refused for several bars, a hidden or comp-less one, a value it has no
+        Edit over the bar (Edit.comps); raises Refused for no one bar, a hidden or comp-less one, a value it has no
         comp for (stat>10) and a bar comp_render cannot draw
     """
-    bars = comp_bars(psd)[stat]
+    bars = comp_row(psd, stat, creature)
     if len(bars) != 1:
         raise Refused("unsupported-card", f"{stat}: {len(bars)} layer-comp bars")
     layer, old, box = bars[0]
     if old is None or not layer.is_visible():
         raise Refused("unsupported-card", f"{stat}: {layer.name!r} shows no layer comp: set it in Photoshop")
-    if parsed["card"].get(stat) != old:
-        raise Refused("unsupported-card", f"{stat}: the parser reads {parsed['card'].get(stat)}, the bar shows {old}")
+    read = parsed["card"] if creature == 1 else parsed["card"]["creatures"][creature - 1]
+    if read.get(stat) != old:
+        raise Refused("unsupported-card", f"{stat}: the parser reads {read.get(stat)}, the bar shows {old}")
     if value < 0:
         raise ValueError(f"{stat} {value}: not a stat")
     placed = placed_data(layer)
@@ -3321,6 +3364,31 @@ def set_comp(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
     TypeLayer._store_raster(layer, rgba if rgba is not None else np.zeros((0, 0, 4), np.float32), where)
     layer._invalidate_bbox()
     return Edit(stat, old, value, [layer], [_record_index(layer)], region, comps=[_record_index(layer)])
+
+
+def set_creatures(psd: PSDImage, parsed: dict, changes: list) -> Edit:
+    """
+    A `creatures` job (_classify_creatures): each creature's changed stats on its bar, a shared bar set once.
+
+    Args:
+        psd: The open card (edited in place)
+        parsed: parse_card() of the card before the edit
+        changes: [{stat: value} per creature]
+
+    Returns:
+        One Edit over the bars, old as changes with the printed values; raises what set_comp does
+    """
+    done, edits = set(), []
+    for n, stats in enumerate(changes, 1):
+        for stat, value in stats.items():
+            bars = comp_row(psd, stat, n)
+            if not bars or bars[0][0].layer_id not in done:
+                edits.append(set_comp(psd, parsed, stat, value, n))
+                done.add(edits[-1].layers[0].layer_id)
+    old = [{stat: one.get(stat) for stat in stats} for one, stats in zip(parsed["card"]["creatures"], changes)]
+    records = [index for edit in edits for index in edit.comps]
+    return Edit("creatures", old, changes, [layer for edit in edits for layer in edit.layers], records,
+                union_box([edit.region for edit in edits]), comps=records)
 
 
 def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
@@ -3350,7 +3418,7 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
         canvas and ambiguous effects (unsupported-card), values the rows cannot show (stat>10) and unreadable effect
         stacks (parity)
     """
-    if comp_bars(psd)[stat]:                    # the Alt template: one smart object, its layer comp the value
+    if comp_bars(psd)[stat]:                    # one smart object, its layer comp the value
         return set_comp(psd, parsed, stat, value)
     split = split_rows(psd, stat)
     if split is not None:                       # two half rows over the old one (the two-row rule)
@@ -3409,7 +3477,7 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
 # ========================
 # Layout support: the card makers' own stat bars (docs/Finished/session-2026-10-25/LAYOUT_SUPPORT.md)
 # ========================
-BAR_EDGES = (360, 435, 518, 605, 686, 764, 847, 928, 1009, 1086, 1173)   # Creature_Template's digit masks: where cell
+BAR_EDGES = (360, 435, 518, 605, 686, 764, 847, 928, 1009, 1086, 1173)   # the old template's digit masks: where cell
 #   k starts; its bar's end
 EDGE_TOL = 0.4              # a layer's edge sits on the value's cell edge within this share of a cell
 CELL_SHARE = 0.25           # a bar layer narrower than this share of its bar draws one cell
@@ -8674,8 +8742,11 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
     expected.pop("problem", None)
     got.pop("problem", None)
     stats = {name: value for name, value in jobs.items() if name in STAT_FIELDS}
-    if stats and expected.get("creatures") and got.get("creatures") and len(got["creatures"]) == len(expected["creatures"]):
-        expected["creatures"] = _creatures_after(expected["creatures"], got["creatures"], stats)
+    listed = jobs.get("creatures") or []
+    if (stats or listed) and expected.get("creatures") and got.get("creatures") \
+            and len(got["creatures"]) == len(expected["creatures"]):
+        expected["creatures"] = _creatures_after(expected["creatures"], got["creatures"], stats, listed)
+        expected.update(listed[0] if listed else {})
     if "stars" in jobs and star_folder(expected.get("path") or "") and got.get("path") == rel:
         expected["path"] = rel                  # moved into its new "N Stars" folder
     different = sorted(key for key in set(expected) | set(got) if expected.get(key) != got.get(key))
@@ -8705,11 +8776,12 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
     return new
 
 
-def _creatures_after(before: list, after: list, stats: dict) -> list:
+def _creatures_after(before: list, after: list, stats: dict, listed=()) -> list:
     """
     The creatures a stat edit should leave (gate_reparse): creature 1 takes the edited values (its rows: bar_rows); another
     creature keeps its stats, but an edited one it shared with creature 1 (Pix's one HP mask, Twin Emperors' shared
-    health) may follow it. Returns before with those changes, so any other difference still fails the read-back.
+    health) may follow it; listed: a `creatures` job's values. Returns before with those changes, so any other difference
+    still fails the read-back.
     """
     out = [dict(creature) for creature in before]
     for stat, value in stats.items():
@@ -8717,6 +8789,8 @@ def _creatures_after(before: list, after: list, stats: dict) -> list:
         for k in range(1, len(out)):
             if before[k].get(stat) == before[0].get(stat) and after[k].get(stat) == value:
                 out[k][stat] = value
+    for creature, changes in zip(out, listed):
+        creature.update(changes)
     return out
 
 
@@ -9254,7 +9328,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     cache, first = render_cache(), None
     before, edits = record_map(new), []
     for name, value in sorted(jobs.items(),
-                              key=lambda job: (job[0] not in ICON_FIELDS, job[0] in STAT_FIELDS, job[0] == "name")):
+                              key=lambda job: (job[0] not in ICON_FIELDS, job[0] in (*STAT_FIELDS, "creatures"), job[0] == "name")):
         if name in ICON_FIELDS:
             try:
                 plan = plan_stars(new, parsed, value, parser, moving=True, split=True) if name == "stars" \
@@ -9276,6 +9350,8 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
             edits.append(edit)
         elif name in STAT_FIELDS:
             edits.append(set_stat(new, parsed, name, value))
+        elif name == "creatures":
+            edits.append(set_creatures(new, parsed, value))
         elif name == "ability" and _lone_part(new) is None:     # copies or a relaid layer: as its one box (§3)
             record = card_parts(old, rel, _card_name(parsed), parser)
             found = record.get("ability") or []
@@ -10081,6 +10157,7 @@ __all__ = [
     'same_types',
     'save_psd',
     'set_icons',
+    'set_creatures',
     'set_stat',
     'stale_stories',
     'stat_value',

@@ -27,7 +27,7 @@ from psd_tools.psd import engine_data
 import commands.psd_edit as pe
 from commands import ability_place
 from commands.card_models import card_name
-from commands.psd_regions import PAINT_ORDER, badge_layers, clip, comp_bars, fx_pad, regions, stat_rows
+from commands.psd_regions import PAINT_ORDER, badge_layers, clip, comp_bars, comp_row, fx_pad, regions, stat_rows
 from conftest import (BADGED, PLAIN_DOOMER, at_rev, no_lazy, colour_glyphs, fork_reason, painted,
                       saves_preview, story_sync as _story_sync, text_engine as _text_engine)
 from helpers import MINI_DOOMER, _card, _typo_fix, stale_copy
@@ -409,6 +409,44 @@ def test_alt_template_bars(clone, parser, tmp_path):
         pe.set_stat(new, card, "hp", 11)
     plan = pe.classify(card, {"hp": 9, "def": 11}, new)          # up to the bar's top comp; past it website only
     assert plan.jobs == {"hp": 9} and plan.site == {"def": "def 11: the bar's layer comps show up to 10"}
+
+
+TWO_CREATURES = "03aa189be7367cf39388ba3a1a7bad2c812261d6"    # MDW/Templates/2_Creature_Template.psd's blob: all at "5"
+
+
+@text_engine
+def test_creature_bars(clone, parser, tmp_path):
+    """The 2 creature template: a bar per creature reads exactly, the `creatures` field bakes every creature, the shared
+    HP bar moves both; what the bars can't print is website only."""
+    from commands.psd_details import _creature_bars, _stats
+    try:
+        data = run(["git", "-C", str(clone), "cat-file", "blob", TWO_CREATURES], capture_output=True, check=True, env=no_lazy()).stdout
+    except CalledProcessError:
+        pytest.skip("the clone lacks the 2 creature template")
+    path, rel = tmp_path / "Two.psd", "Creatures/Other/5 Stars/Two.psd"
+    path.write_bytes(data)
+    psd = PSDImage.open(str(path))
+    parsed = pe.parse_card(parser, str(path), rel, psd)
+    five = dict.fromkeys(pe.STAT_FIELDS, 5)
+    assert parsed["card"]["creatures"] == [five, five] and not parsed["card"].get("problem")
+    assert _stats(psd)["def"] == "creatures" and _creature_bars(psd) == {"count": 2, "shared": ["hp"]}
+    assert comp_row(psd, "hp", 2)[0][0].name == "Shared Health" and comp_row(psd, "def", 2)[0][0].parent.name == "Creature 2"
+    plan = pe.classify(parsed, {"atk": 2, "creatures": [{**five, "atk": 2}, {**five, "hp": 7, "def": 13}]}, psd)
+    assert plan.jobs == {"atk": 2, "creatures": [{"hp": 7}, {"hp": 7, "def": 13}]}
+    edits = [pe.set_stat(psd, parsed, "atk", 2), pe.set_creatures(psd, parsed, plan.jobs["creatures"])]
+    assert edits[1].old == [{"hp": 5}, {"hp": 5, "def": 5}]
+    saved = str(tmp_path / "new.psd")
+    pe.save_psd(psd, saved, update_preview=False)
+    assert sorted(name for _, name, _ in pe.gate_bytes(str(path), saved, edits)[0]) == ["Attack", "Defense", "Shared Health"]
+    new = PSDImage.open(saved)
+    card = pe.parse_card(parser, saved, rel, new)
+    assert card["card"]["creatures"] == [{**five, "hp": 7, "atk": 2}, {**five, "hp": 7, "def": 13}] and card["card"]["hp"] == 7
+    assert pe._creatures_after(parsed["card"]["creatures"], card["card"]["creatures"], {"atk": 2}, plan.jobs["creatures"]) \
+        == card["card"]["creatures"]
+    assert pe.classify(card, {"creatures": card["card"]["creatures"]}, new).redundant == ["creatures"]
+    site = lambda *wanted: pe.classify(card, {"creatures": list(wanted)}, new).site["creatures"]
+    assert "one value, not [8, 9]" in site({"hp": 8}, {"hp": 9}) and "up to 20" in site({}, {"def": 21})
+    assert "bar per creature" in site({}, {}, {})
 
 
 @text_engine
