@@ -150,8 +150,10 @@ class CardEdits:
             return all(isinstance(x, str) and len(x) <= ART_MAX for x in (value if name == "art" and isinstance(value, list) else [value]))
         if kind is list:
             return isinstance(value, list) and all(isinstance(x, str) for x in value)
-        if name == "flags":                     # {"hand": "reason", "bars": ""}
-            return isinstance(value, dict) and bool(value) and all(k in FLAGS and isinstance(v, str) and len(v) <= FLAG_MAX for k, v in value.items())
+        if name == "flags":                     # {"hand": "reason", "bars": "", "psd": the PSD blob it was set on}
+            return isinstance(value, dict) and any(k in FLAGS for k in value) and all(
+                bool(HEX8.match(v)) if k == "psd" and isinstance(v, str) else k in FLAGS and isinstance(v, str) and len(v) <= FLAG_MAX
+                for k, v in value.items())
         if name == "parts":
             return valid_parts(value)
         return isinstance(value, kind)
