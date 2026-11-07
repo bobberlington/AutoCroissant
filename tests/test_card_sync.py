@@ -37,6 +37,7 @@ class FakeGitHub:
         self.post_replies: list = []            # Reply per POST, in order
         self.on_post = None                     # called after each POST (a run appears)
         self.compare = {"ahead_by": 0, "files": []}
+        self.compare_reply = None               # a Reply for the compare instead of self.compare
         self.runs_reply = None                  # a Reply for the run list instead of self.runs
         self.jobs: dict = {}                    # run id -> the jobs lists GET returns, one per look (the last repeats);
                                                 # else a dispatched run's Card data job follows its states
@@ -75,7 +76,7 @@ class FakeGitHub:
             return Reply(200, body=self.look("run", run_id, self.states[run_id]))
         if "/compare/" in url:
             self.calls.append(("compare", url.rsplit("/compare/", 1)[1]))
-            return Reply(200, body=self.compare)
+            return self.compare_reply or Reply(200, body=self.compare)
         raise AssertionError(f"unexpected GET {url}")
 
     def look(self, kind: str, run_id: int, answers: list):
@@ -416,6 +417,16 @@ def test_a_refused_token_is_said_never_shown(github, tmp_path):
     github.post_replies.append(Reply(403, body={"message": "Resource not accessible by personal access token"}))
     cs.update(ME, cards="A")
     assert "GitHub refused ACTIONS_TOKEN (HTTP 403)" in _said()[0] and all(TOKEN not in s for s in _said())
+
+
+@pytest.mark.parametrize("status, ahead", [(422, True), (404, False)])
+def test_a_failed_compare_keeps_the_lanes_notes(github, status, ahead):
+    github.compare_reply = Reply(status)
+    github.runs = [_run(7)]
+    github.jobs[7] = [[_job(cs.DATA_JOB, conclusion="failure"), _job(cs.MAIN_JOB)]]
+    lines = cs.notes({"card_commit": "c0ffee"})
+    assert len(lines) == 1 + ahead and "last card data build failed" in lines[-1]
+    assert ("not in the data yet" in lines[0]) == ahead
 
 
 def test_one_followed_run_at_a_time(github, tmp_path):

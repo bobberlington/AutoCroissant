@@ -162,7 +162,11 @@ def _main_ahead(repository: str, base: Optional[str]) -> bool:
     """Whether the card repo's branch has card input commits after the data's card_commit (one compare request)."""
     if not base:
         return False
-    data = _json(api_url(repository, f"compare/{base}...{CARD_BRANCH}"), HEADERS)
+    reply = get_with_retry(api_url(repository, f"compare/{base}...{CARD_BRANCH}"), headers=HEADERS)
+    if reply.status_code == 422:                     # GitHub gave up on the diff: 40 or so PSDs changed
+        return True
+    reply.raise_for_status()
+    data = reply.json()
     return bool(data.get("ahead_by")) and any(card_input(f.get("filename", "")) for f in data.get("files") or [])
 
 
@@ -209,10 +213,14 @@ def notes(manifest: dict, repository: str = CARD_REPO) -> list:
                      + " last version until the PSD is fixed.")
     try:
         runs = [r for r in _runs(repository) if r.get("display_title") in (RUN_NAME, RETRY_NAME)]
-        ahead = _main_ahead(repository, manifest.get("card_commit"))
     except (RequestException, ValueError) as e:      # advice only: the sync itself worked
         print(f"Card sync status not read: {e}")
         return lines
+    try:
+        ahead = _main_ahead(repository, manifest.get("card_commit"))
+    except (RequestException, ValueError) as e:      # the lanes below still count
+        print(f"Card repo compare not read: {e}")
+        ahead = False
     if ahead:
         going = next((r for r in runs if r.get("status") != "completed"), None)
         lines.append("The card repo has card changes not in the data yet: "

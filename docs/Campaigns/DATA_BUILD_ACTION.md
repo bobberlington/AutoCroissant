@@ -958,7 +958,8 @@ github_api reads it inside a try/except and takes the token from the environment
 - **The reply** counts changed, new and archived cards against the database the bot held (several runs between two syncs
   count together; duplicates left out), and `output_problematic_cards` shows `manifest.problems` only when new data loaded
   (the problems of the last run only). The status lines cost two requests (the run list, a compare of `card_commit` with
-  main, on card input paths only).
+  main, on card input paths only). A 422 from the compare (GitHub gave up on a big diff) counts as changes not built yet;
+  any other failed compare drops that line only, so the lanes' failure lines still show.
 - **Reminders are quiet:** a reminder's plain `/update_stats` replies to the console only, unless the sync fails or new data
   has problem cards, so the 30-minute reminder posts nothing on a normal day.
 - **Dispatches** pass `dry_run=false` explicitly (so they are live before and after card-sync.yml's default flips) and
