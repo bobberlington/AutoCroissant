@@ -15,6 +15,7 @@ SmartObject.link_target), never from the filesystem.
     draw(rgba, corners, mode) -> (rgba, box)         a picture drawn on its quad as Photoshop places it
     redraw(layer, rgba, corners, size, mode)         a placed layer's pixels drawn again from a file
     links_of(psd, rel, tree) -> [Link]               a PSD's links as repo paths, repair() making them canonical
+    link_issues(psd, rel, tree) -> [str]             what its links need (needs_normalise's cheap test)
     unused / duplicates / restore / repair           the guards' housekeeping (G2-G4)
     redraw_linked(...) -> Redrawn                    Card sync: a changed linked file drawn again in its users (C1-C6)
 
@@ -928,6 +929,39 @@ def repair(psd: PSDImage, rel: str, tree) -> tuple:
             _layer_of(psd, link.uuid).smart_object.relink(link.path, psd_path=rel)
             done.append(link.name)
     return done, notes
+
+
+def link_issues(psd: PSDImage, rel: str, tree) -> list:
+    """
+    What a PSD's links need (the cheap test of A5's needs_normalise and the guards' plan step; nothing decoded): an
+    embedded picture that is no stat bar, a linked stat bar (it goes back to embedded), a link to re-date or rewrite
+    (repair), a link the repo lacks (a hand note), an lnk item no layer uses.
+
+    Returns:
+        ["embedded: <layer>", "linked bar: <layer>", "repair: <file>", "missing: <file>", "orphan: <uuid>"]
+    """
+    known, used, out = _items_of(psd), set(), []
+    for layer in psd.descendants():
+        if layer.kind != "smartobject":
+            continue
+        uid = _uid(layer)
+        used.add(uid)
+        item = known.get(uid, (None, None))[1]
+        if item is None:
+            continue
+        bar = _bar(placed_data(layer))
+        if item.kind == LinkedLayerType.DATA and not bar and file_type(item.data[:16] if item.data else b"",
+                                                                       _text(item.filename)) in FILETYPE:
+            out.append(f"embedded: {layer.name}")
+        elif item.kind == LinkedLayerType.EXTERNAL and bar:
+            out.append(f"linked bar: {layer.name}")
+    for link in links_of(psd, rel, tree):
+        if link.path is None:
+            out.append(f"missing: {link.name}")
+        elif not link.canonical:
+            out.append(f"repair: {link.name}")
+    out += [f"orphan: {uid}" for uid in sorted(set(known) - used)]
+    return list(dict.fromkeys(out))
 
 
 # ========================

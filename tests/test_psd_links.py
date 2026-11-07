@@ -98,6 +98,8 @@ def test_trim_map_on_star_of_beth(clone):
     psd = PSDImage.open(clone / rel)
     before = {layer.layer_id: (pl.corners_of(layer), [c.data for c in layer._channels]) for layer in psd.descendants()
               if layer.name == "Isaac"}
+    assert pl.link_issues(psd, rel, files) == ["embedded: The_Queen_bg", "embedded: Delta_sprite", "embedded: Isaac",
+                                               "embedded: Offensive_Minion"]
     catalogue = pl.assign([(rel, pl.items(psd, types.vocab()))], types, {})
     pl.fallback_names(catalogue, {})
     rows = catalogue["psds"][rel]
@@ -118,7 +120,7 @@ def test_trim_map_on_star_of_beth(clone):
         assert box_a == box_b and np.abs(a - b).max() <= 1 / 255                       # the same ink, the same place
     tree = set(files) | set(done.files) | {"MDW/Linked/x"}
     links = pl.links_of(psd, rel, tree)
-    assert len(links) == 7 and all(link.canonical and link.path for link in links)
+    assert len(links) == 7 and all(link.canonical and link.path for link in links) and not pl.link_issues(psd, rel, tree)
     assert not set(pl._items_of(psd)) - {pl._uid(layer) for layer in psd.descendants() if layer.kind == "smartobject"}
 
 
