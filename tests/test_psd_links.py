@@ -6,7 +6,6 @@ file with two users.
 """
 import subprocess
 from io import BytesIO
-from pathlib import Path
 
 import numpy as np
 import pytest
