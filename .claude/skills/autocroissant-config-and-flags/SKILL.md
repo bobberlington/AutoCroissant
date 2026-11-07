@@ -475,10 +475,11 @@ timer; before, the environment `card-sync-quiet`'s wait timer held it 30 minutes
 | `card_standards.OLD_GLYPH_BAD`, `EARLIER_FIT`, `EARLIER_GAIN` | `0.40`, `= OLD_GLYPH_BAD`, `0.03` | an icon glyph is drawn old past this share of its ink off the current font's render, or when an earlier font's render fits it within EARLIER_FIT and better by EARLIER_GAIN (2026-11-04: the Roboto labels) |
 | `card_standards.DRAWN_ODD`, `LAID_OFF`, `RAZOR`, `EDGE_NEAR` | `0.30`, `0.15`, `0.001`, `24` px | badge widths: a moved glyph this far off that no known font draws is refused; a layer's ink its old layout may have off its pixels; breaks that change in a box this share narrower or wider hang on a hair (refused when the last line would drop below the box); ink this near a canvas edge (and nearer than before) is noted |
 | `card_sweep.WORKERS`, `EARLIER_KINDS` | `4`, `("badge widths", "old glyphs")` | the sweep's process pool at most; the kinds that read the earlier icon fonts (ttscardmaker-companion §1.10) |
+| `card_sweep.DRAWN_TOL`, `BATCHES` | `2`, `16` | normalise (big pass, 2026-11-07): K1's near identical (no pixel past 2 levels, else the PNGs re-exported); `--batch k` is the k-th of 16 runs of the cards |
+| `psd_edit.RENDER_RECORD`, `GLYPH_TOL` | `commands/render_record.json`, `0.0001` | each card's ICC vote and text blends read off its stored image before the strip (A16); a restyled text's glyphs this near (canvas px) draw nothing new |
 | `png_export.TOL` | `2` | the difference a pixel may show and still be unchanged (ICC rounding) |
 | `png_export.BESIDE_CUT` | `8` | a new PSD pushed beside its PNG counts as current within this many levels (owner, 2026-10-23) |
-| `png_export.UNCHECKED` | "no stored image to cross-check the bot's PNG against: save the PSD with Maximize Compatibility on" | told for a PNG the guards made from a PSD with no stored composite (G2 rendered anyway, owner 2026-10-24, branch work/py314) |
-| `png_export.KEPT` | "PNG kept as it is: the PSD has no stored image, and the bot's drawing differs from the PNG in only {px:,} px, ..." | told for a PNG kept beside a new PSD with no stored composite, at most `png_export.KEPT_PX` (300) px past BESIDE_CUT of the render, else redrawn (default 2026-10-24, owner to confirm; branch work/py314) |
+| `png_export.KEPT` | "PNG kept as it is: the bot's drawing differs from the PNG in only {px:,} px, ..." | told for a PNG kept beside a new PSD with no stored composite, at most `png_export.KEPT_PX` (300) px past BESIDE_CUT of the render, else redrawn (default 2026-10-24, owner to confirm; branch work/py314) |
 
 ### commands/card_preview.py (2026-10-23; not compiled; TTSCardMaker's card-preview.yml only; design section 16)
 

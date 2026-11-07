@@ -485,7 +485,8 @@ template layout was dropped by the owner on 2026-10-23), one commit comment, one
 both right after the check since 2026-11-03 (owner: no wait; the post job takes no environment; `RECENT`, `QUIET_MARGIN` and `--quiet-from` removed 2026-11-04); until then after a 30-minute quiet window from the push (since 2026-10-24; from the push, not the check's end, since 2026-10-25, P-1:
 the post job waits in the TTSCardMaker environment `card-guards-quiet`'s 25-minute timer, counted from the check's end, and
 Land sleeps out the rest; no runner sleeps; a PSD saved without
-Maximize Compatibility gets its PNG anyway, told "no stored image to cross-check"; docs/Campaigns/PUSH_GUARDS.md section 20). Since the owner's ruling of 2026-10-23 the bot's drawing refuses only past 25% bad;
+Maximize Compatibility gets its PNG anyway, nothing told since 2026-11-07 (every save strips the merged image, the
+render record keeps each card's look: psd_edit.use_record); docs/Campaigns/PUSH_GUARDS.md section 20). Since the owner's ruling of 2026-10-23 the bot's drawing refuses only past 25% bad;
 a smaller miss is made and told in the comment and the bot commit ("made with a pixel difference ..."). On the 34
 replayed commits the PNG is made on 29 and refused on 5 (PUSH_GUARDS.md sections 17 and 18). The comment and the post
 carry each card's semantic PSD diff (`psd_diff`, 0a34292): "{login} pushed {card}{changes} with these issues: ...", the
