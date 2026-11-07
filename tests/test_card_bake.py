@@ -523,8 +523,8 @@ def test_font_verdict_is_retried_when_the_fonts_change(github, monkeypatch):
     assert cb.pending() == ["Mini Doomer"]
 
 
-def test_pixel_miss_bakes_with_a_note(github, monkeypatch):
-    """A box past the parity bar, under the floor, bakes (owner, 2026-10-23): the commit note and the report say so."""
+def test_pixel_miss_bakes(github, monkeypatch):
+    """A box past the parity bar, under the floor, bakes (owner, 2026-10-23); no soft note in the commit (owner, 2026-11-07)."""
     files = github.files_at(github.head)
     files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 8, "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
@@ -541,9 +541,8 @@ def test_pixel_miss_bakes_with_a_note(github, monkeypatch):
     monkeypatch.setattr(pe, "apply_jobs", apply_jobs)
     monkeypatch.setattr(pe, "artifacts", lambda *args: {})
     text, commits = cb.run()
-    note = "hp baked with a pixel difference: bad 1.97%, mean 1.60, max 217"
-    assert len(commits) == 1 and github.commits[commits[0]]["message"] == f"Card edits: 1 baked\n\n- Mini Doomer: hp 5 -> 8; {note}\n\nEdit-by: web"
-    assert f"parity hp 1.97% bad, mean 1.60; {note}; 2 flag bytes" in text.split("## Baked (1)", 1)[1]
+    assert len(commits) == 1 and github.commits[commits[0]]["message"] == "Card edits: 1 baked\n\n- Mini Doomer: hp 5 -> 8\n\nEdit-by: web"
+    assert "parity hp 1.97% bad, mean 1.60; 2 flag bytes" in text.split("## Baked (1)", 1)[1]
     assert "Mini Doomer" not in _edits_at(github)["cards"]                  # baked: the entry goes whole
 
 

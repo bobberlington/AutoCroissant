@@ -988,6 +988,7 @@ def verdict_of(verdicts: Optional[dict], key: str) -> Optional[dict]:
 
 
 MOVED = r"name: moved ([+-]\d+) px to stay on the card"
+ANCHOR = "title_moved"                          # a baked verdict's: the px its bake moved the title on
 
 
 def title_anchor(verdict: Optional[dict], psd_sha: str) -> int:
@@ -995,7 +996,9 @@ def title_anchor(verdict: Optional[dict], psd_sha: str) -> int:
     if not (isinstance(verdict, dict) and verdict.get("state") == "baked" and psd_sha
             and verdict.get("psd") == psd_sha[:8]):
         return 0
-    found = findall(MOVED, str(verdict.get("reason", "")))
+    if isinstance(verdict.get(ANCHOR), int):
+        return verdict[ANCHOR]
+    found = findall(MOVED, str(verdict.get("reason", "")))     # a verdict from before the soft notes went
     return int(found[len(found) - 1]) if found else 0
 
 
@@ -1017,18 +1020,14 @@ def final(snapshot: Snapshot, card: Card, verdicts: Optional[dict] = None) -> bo
 
 
 def _misses(card: Card) -> str:
-    """
-    '; name baked with a pixel difference: bad 1.97%, mean 1.60, max 217' (psd_edit.miss_notes), and
-    '; stars not baked: unsupported-card: stars: ...' per stars or types edit refused beside the bake; "" for none.
-    """
-    notes = psd_edit.miss_notes(card.baked) if card.baked else []
-    return "".join(f"; {note}" for note in notes + [f"{r.field} not baked: {r.code}: {r.why}" for r in card.partial])
+    """'; stars not baked: unsupported-card: stars: ...' per stars or types edit refused beside the bake; "" for none."""
+    return "".join(f"; {r.field} not baked: {r.code}: {r.why}" for r in card.partial)
 
 
 def _fx_notes(card: Card) -> str:
     """'; Ability FX: Blazing deleted: its words left the ability' per FX layer an ability bake deleted, renamed or cut
     again (BUG 2), for the commit line and the website's verdict as for the report; "" for none."""
-    return "".join(f"; {note}" for note in (getattr(card.baked, "fx_notes", None) or []))
+    return "".join(f"; {note}" for note in psd_edit.real_notes(getattr(card.baked, "fx_notes", None) or []))
 
 
 def _describe(card: Card) -> str:
@@ -1372,6 +1371,9 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                                 "validator": card.baked.reparse["validator"], "fx": card.baked.fx}, indent=1, ensure_ascii=False))
             card.verdict = {"state": "baked", "for": card.jobs, "psd": card.new_psd_sha[:8],
                             "reason": _describe(card) + _fx_notes(card), "at": _now()}
+            moved = findall(MOVED, " ".join(getattr(card.baked, "fx_notes", None) or []))
+            if moved:
+                card.verdict[ANCHOR] = int(moved[len(moved) - 1])
         _relocate(card, folder)
         card.dropped = [f for f in list(card.jobs) + card.redundant if f != "parts"]   # a baked or printed name goes too
         if card.partial:                        # what stays in the file: refused on the PSD this commit leaves; FX notes told

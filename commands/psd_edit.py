@@ -7896,7 +7896,7 @@ def baseline(psd: PSDImage, png: Image.Image, region: tuple, icc: bool = True,
 
     Returns:
         (render, measurement); the measurement's "text" is the first text_blends() key whose render is within the
-        bar, else the preview blend's (a miss of the bar bakes, told: miss_notes; apply_jobs refuses a miss whose edit
+        bar, else the preview blend's (a miss of the bar bakes; apply_jobs refuses a miss whose edit
         renders no change). Raises Refused("parity") past PARITY_FLOOR only.
     """
     first = None
@@ -7932,25 +7932,16 @@ def whole_redraw(old: PSDImage, raw: bytes, edit: Edit, png: Image.Image, fonts_
     return _measure(render_region(copy, edit.region, icc, text, tuple(ids)), png.crop(edit.region))
 
 
-def miss_notes(baked) -> list:
-    """
-    The note per edited box that missed the parity bar under the floor (owner, 2026-10-23): "name baked with a pixel
-    difference: bad 1.97%, mean 1.60, max 217"; the re-render's numbers when only it missed; and per text the engine
-    redrew whole whose old text so drawn misses it (whole_redraw): "ability redrawn whole, its lines laid out again:
-    bad 15.73%, mean 28.28, max 255".
-    """
-    out = []
-    for name, measured in baked.parity.items():
-        again = getattr(baked, "rerender", {}).get(name)
-        miss = measured if not _within_bar(measured) else again if again and not _within_bar(again) else None
-        if miss:
-            out.append("%s baked with a pixel difference%s: bad %.2f%%, mean %.2f, max %d" % (
-                name, "" if miss is measured else " (re-render)", miss["bad_pct"], miss["mean"], miss["max"]))
-    for name, measured in getattr(baked, "whole", {}).items():
-        if not _within_bar(measured):
-            out.append("%s redrawn whole, its lines laid out again: bad %.2f%%, mean %.2f, max %d" % (
-                name, measured["bad_pct"], measured["mean"], measured["max"]))
-    return out
+# The soft notes (owner 2026-11-07: non-issues): a bake's own remarks on a card that baked, told nowhere
+SOFT_NOTE = re_compile(r"^overflow: |, the face its pixels show|^types: .*spot.*: check it$"
+                       r"|^stars: .* \(the card.s own layout does not go on to \d+\)$|^stars: .* drew \d+ in one layer: split"
+                       r"|^[a-z]+: cell \d+ of |^[a-z]+: cells by place|^validator: SEVERAL CREATURES|deleted: the edit changes"
+                       r"|^unsupported-card: ability: .* under the Ability|: also printed by ")
+
+
+def real_notes(notes: list) -> list:
+    """A bake's notes without the soft ones."""
+    return [note for note in notes if not SOFT_NOTE.search(str(note))]
 
 
 def own_pixels(replaced: np.ndarray, region: tuple, others: list) -> np.ndarray:
@@ -10056,7 +10047,6 @@ __all__ = [
     'lettered_icons',
     'merge_png',
     'merge_preview',
-    'miss_notes',
     'whole_redraw',
     'name_layer',
     'normalize_ability',
@@ -10068,6 +10058,7 @@ __all__ = [
     'plan_stars',
     'plan_types',
     'read_name',
+    'real_notes',
     'record_map',
     'render_all',
     'render_cache',

@@ -224,10 +224,9 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
 3. **Baseline parity.** Open with the fork; region per edited field (section 6); `psd.composite(viewport=region,
    ignore_preview=True)` vs the official PNG crop. The bar: bad pixels (|diff| > 24, `score_cards.py THRESH`) <= 0.5%
    and mean abs <= 2.0 (Mini_Doomer row: mean 0.62, max 2; 1.0 until the user raised it on 2026-10-22, section 7 idea 12).
-   **Since 2026-10-23 a miss of the bar bakes and is told** (the owner: "let's not refuse bakes for failing the pixel check
-   anymore. rather, we should improve psd-tools and fix these as we come across them"): the report's card line and the
-   commit note say, per edited box, `name baked with a pixel difference: bad 1.97%, mean 1.60, max 217`
-   (`psd_edit.miss_notes`). Gate `parity` is now only the safety floor: more than 25% of the region's pixels past 24
+   **Since 2026-10-23 a miss of the bar bakes** (the owner: "let's not refuse bakes for failing the pixel check
+   anymore. rather, we should improve psd-tools and fix these as we come across them"; told until 2026-11-07, when the
+   soft notes went: `psd_edit.SOFT_NOTE`). Gate `parity` is now only the safety floor: more than 25% of the region's pixels past 24
    (`PARITY_FLOOR`) is a broken render, refused before anything is written. So is a box that misses the bar and whose
    merge replaces no pixel (`<field>: the render shows no change`, review 2026-10-23): the fork drew nothing new there,
    so the PSD would carry the edit and the PNG the old card. Only the replaced pixels no other edit's region reaches count
@@ -1251,7 +1250,7 @@ result.json (`v` 1):
 | `fields` | `{field: baked \| redundant \| refused \| error}` per PSD-kind field (a refused stars edit beside a baked hp) |
 | `reason` | the bake's own words: `hp 5 -> 8`, `stat>10: hp 25: above 20`, `already on the card: hp`, `input: not a valid hp: '8'`, `blob: blob 1a2b3c4d hashes to ...` |
 | `changes` | `[{field, old, new}]` of a bake |
-| `notes` | pixel misses (`miss_notes`), FX layers, FX notes (work/fx-rebuild's `fx_notes` once merged), icon layouts, validator problems of the new card, stars/types not baked, fields already on the card |
+| `notes` | the bake's notes but the soft ones (`psd_edit.real_notes`): FX notes, icon layouts, validator problems of the new card, stars/types not baked, fields already on the card |
 | `parity`, `region` | `{field: {bad_pct, mean, max}}`; the edited box `[x0, y0, x1, y1]` on the full-size card |
 | `image`, `files`, `size`, `webp_size`, `bytes`, `recompressed` | `baked` / `refused` / null; `{webp, before}` on the branch (`{png, webp, before}` in the out dir); pixel sizes; file sizes |
 | `runner`, `run`, `took_s`, `at` | psd-tools version, text engine, story sync, fonts present; the Actions run URL; seconds; UTC time |
