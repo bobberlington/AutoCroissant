@@ -1004,10 +1004,11 @@ SPARSE_FILES = ("commands/card_data.py", "commands/card_history.py", "commands/c
                 "commands/card_models.py", "commands/card_edits.py", "commands/psd_parser.py", "commands/psd_details.py",
                 "commands/psd_parts.py", "commands/text_align.py", "commands/psd_regions.py", "commands/font_check.py", "commands/github_api.py", "global_config.py",
                 "requirements-cards.txt",
-                "commands/card_bake.py", "commands/psd_edit.py", "commands/psd_links.py", "commands/png_export.py", "commands/git_commit.py",
+                "commands/card_bake.py", "commands/psd_edit.py", "commands/png_export.py", "commands/git_commit.py",
                 "commands/repo_history.py", "commands/tts_save.py",
                 "commands/ability_place.py", "commands/ability_index.json",
-                "commands/rulebook.py", "commands/rulebook_pages.py")
+                "commands/rulebook.py", "commands/rulebook_pages.py",
+                "commands/psd_links.py", "commands/render_record.json")
 BOT_REPO = "bobberlington/AutoCroissant"
 BUDGET = 400                                                      # REST downloads per run (two runs an hour: 800 of 1,000)
 RATE_FLOOR = 150                                                  # no more REST downloads under this many requests left
