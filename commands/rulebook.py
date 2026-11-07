@@ -22,6 +22,7 @@ INLINE = (                                          # markup -> words, in order 
     (regex(r"\[([^\[\]]+)\]\((?:https?:|#|mailto:)[^)]*\)"), r"\1"), (regex(r"\*\*\*(.+?)\*\*\*"), r"\1"),
     (regex(r"\*\*(.+?)\*\*"), r"\1"), (regex(r"\*([^*\s](?:[^*]*[^*\s])?)\*"), r"\1"), (regex(r"\\([\\*\[\]{}()!_`|])"), r"\1"))
 ATTRS = regex(r"\s*\{[^{}]*\}$")                    # a heading's or a picture's {.class key=value}
+WEB_ONLY = regex(r"\{[^{}]*\.web\b[^{}]*\}\s*$")     # a chapter's "# Title {.web}": on the website only (owner 2026-11-07)
 
 
 # ========================
@@ -46,12 +47,14 @@ def plain_text(source: str) -> str:
 
 
 def chapter(path: str, source: str) -> Optional[dict]:
-    """A chapter file as {id, num, title, file, text}; None for a file not named NN-slug.md (README.md...)."""
+    """A chapter file as {id, num, title, file, text}; None for a file not named NN-slug.md (README.md...) or a {.web} one."""
     name = path.rsplit("/", 1)[-1]
     m = CHAPTER_FILE.match(name)
     if not m:
         return None
     heads = [line[2:] for line in source.replace("\r\n", "\n").split("\n") if line.startswith("# ")]
+    if heads and WEB_ONLY.search(heads[0]):
+        return None
     title = ATTRS.sub("", heads[0]).strip() if heads else m.group(2).replace("-", " ").title()
     return {"id": m.group(2), "num": m.group(1), "title": title, "file": name, "text": plain_text(source)}
 

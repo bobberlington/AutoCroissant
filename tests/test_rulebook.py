@@ -35,7 +35,8 @@ def test_plain_text_and_chapters():
     assert rulebook.plain_text(CHAPTER).split("\n") == [
         "Stats", "", "HEALTH", "", "- Each bar is 2 HP; see “ATTACKING”.", "", "“Evil Quote!”", "", "Mushroom -> Life Shroom", "",
         "±0% | -25%", "1 | 0.5", "", "1) Uses the bunny [such as (BOGT)]."]
-    found = rulebook.chapters({"site/rulebook/07-stats.md": CHAPTER, "site/rulebook/README.md": "# no", "site/x/01-a.md": "# no"})
+    found = rulebook.chapters({"site/rulebook/07-stats.md": CHAPTER, "site/rulebook/README.md": "# no", "site/x/01-a.md": "# no",
+                               "site/rulebook/24-font.md": "# Font {.web}\n\nWords.\n"})
     assert [(c["id"], c["num"], c["title"], c["file"]) for c in found] == [("stats", "07", "Stats", "07-stats.md")]
     assert rulebook.label(found[0]) == "7. Stats" and rulebook.label({"num": "00", "title": "Table of Contents"}) == "Table of Contents"
     text = rulebook.rulebook_text(found)
