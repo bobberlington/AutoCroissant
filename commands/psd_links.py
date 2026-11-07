@@ -16,6 +16,8 @@ SmartObject.link_target), never from the filesystem.
     redraw(layer, rgba, corners, mode)               a placed layer's pixels drawn again from a file
     links_of(psd, rel, tree) -> [Link]               a PSD's links as repo paths, repair() making them canonical
     link_issues(psd, rel, tree) -> [str]             what its links need (needs_normalise's cheap test)
+    needs(psd) / link(psd, rel, fonts) -> Step       card_standards.normalise's link step (fonts.links: the rows, files)
+    catalogue(source, tree, jobs, path) -> dict      card_sweep's catalogue file, checked against its jobs' blobs
     unused / duplicates / restore / repair           the guards' housekeeping (G2-G4)
     redraw_linked(...) -> Redrawn                    Card sync: a changed linked file drawn again in its users (C1-C6)
 
@@ -966,6 +968,64 @@ def link_issues(psd: PSDImage, rel: str, tree) -> list:
             out.append(f"repair: {link.name}")
     out += [f"orphan: {uid}" for uid in sorted(set(known) - used)]
     return list(dict.fromkeys(out))
+
+
+# ========================
+# The normalise fix's link step (card_standards.needs_normalise, normalise)
+# ========================
+NEEDS = ("embedded: ", "repair: ")      # the link_issues link() acts on (a linked bar, a missing file, an orphan: notes)
+
+
+class Step(list):
+    """link()'s result as card_standards.normalise reads it: the layers linked or repaired, then files, redraws, left
+    ("layer: why") and hand notes."""
+
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.files, self.redraws, self.left, self.notes = {}, [], [], []
+
+
+def needs(psd: PSDImage) -> list:
+    """What link() would do: an embedded picture, a link to make canonical (judged from psd.repo_path, which the
+    readers set; without it, embedded pictures alone)."""
+    rel = getattr(psd, "repo_path", "")
+    return [found for found in link_issues(psd, rel, None) if found.startswith(NEEDS if rel else NEEDS[:1])]
+
+
+def catalogue(source, tree: dict, jobs: list, path: str) -> Optional[dict]:
+    """card_sweep's catalogue: the file the catalogue command wrote (none: nothing linked). Every job's PSD it lists
+    must be at the job's blob (the per-batch re-check: --recheck), else ValueError."""
+    if not path:
+        return None
+    with open(path, encoding="utf-8") as fh:
+        found = load(fh)
+    blobs = found.get("blobs") or {}
+    stale = [job.psd for job in jobs if job.psd in found["psds"] and blobs.get(job.psd) != job.psd_new]
+    if stale:
+        raise ValueError(f"{path}: {len(stale)} PSDs moved since it was made ({stale[0]} first): run catalogue --recheck")
+    return found
+
+
+def link(psd: PSDImage, rel: str, fonts) -> Step:
+    """
+    normalise's link step: link_card over the PSD's catalogue rows from fonts.links (card_guards.LinkContext: entries,
+    read, tree, redraw; the guards' and the sweep's), class 3 as exact copies when it says redraw is off. Without
+    fonts.links, nothing linked.
+    """
+    ctx, out = getattr(fonts, "links", None), Step()
+    if ctx is None:
+        return out
+    entries = ctx.entries(rel)
+    copies = frozenset() if ctx.redraw else frozenset(e["uuid"] for e in entries if e.get("class") == REDRAW)
+    done = link_card(psd, rel, entries, ctx.read, ctx.first(rel), copies, set(ctx.tree))
+    named = {}
+    for layer in psd.descendants():
+        named.setdefault(_uid(layer) if layer.kind == "smartobject" else None, []).append(layer.name)
+        named.setdefault(layer.layer_id, []).append(layer.name)
+    out += [name for key, _, _ in done.linked for name in named.get(key, [])] + done.repaired
+    out.files, out.redraws, out.notes = dict(done.files), list(done.redrawn), list(done.notes)
+    out.left = [f"{(named.get(key) or [key])[0]}: {why}" for key, why in done.left]
+    return out
 
 
 # ========================

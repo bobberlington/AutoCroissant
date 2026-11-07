@@ -54,7 +54,7 @@ import commands.card_standards as standards
 import commands.png_export as png_export
 import commands.psd_edit as psd_edit
 from commands.card_edits import CardAuthors
-from commands.card_guards import Job, Source, build_context, card_name, earlier_fonts, whole_tree_jobs
+from commands.card_guards import Job, LinkContext, Source, build_context, card_name, earlier_fonts, whole_tree_jobs
 from commands.github_api import blob_sha
 
 # ========================
@@ -86,6 +86,8 @@ def _init(clone: str, tree: dict, kind: str, work: str, chained: Optional[dict] 
     fonts.cards = context.cards                 # relay_badges' notes: a break inside a card's name
     if kind == NORMALISE:                       # the other lanes' pieces (big pass), each optional until it lands
         fonts.catalogue = catalogue             # card_standards.normalise's link step (psd_links.link)
+        if catalogue:
+            fonts.links = LinkContext({path: sha for path, (_, sha) in tree.items()}, catalogue, source.blob)
         if held:                                # H2: the held cards' bars lined up (psd_links.held_bars)
             fonts.held = partial(_held_bars, folder=held)
     if kind == "alt template":                      # the template's bars: the given file, else the ref's
@@ -244,6 +246,7 @@ def _normalise_card(job, out: dict) -> dict:
     try:
         data = source.blob(job.psd_new)
         pushed = png_export.open_psd(data)
+        pushed.repo_path = job.psd              # the link step judges its links from here
         if not standards.needs_normalise(pushed):
             return out
         pngs = {path: png_export.open_png(source.blob(sha)) for path, sha in
