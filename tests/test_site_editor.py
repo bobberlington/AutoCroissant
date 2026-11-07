@@ -93,6 +93,21 @@ const vocab = palette.typeVocab(icons), names = list => list.map(e => e.name);
 """
 
 
+@pytest.mark.skipif("readToggles" not in (ASSETS / "palette.js").read_text(encoding="utf-8"), reason="a site before picking a type twice")
+def test_a_type_picked_twice(tmp_path):
+    """A press goes once, twice, off; the All fields toggles read a card's duplicate back, so it is no edit."""
+    out = node(tmp_path, ICONS + """
+const t = palette.toggleType, one = t([], "fire"), two = t(one, "fire");
+const toggle = (type, on, count) => ({ dataset: count ? { type, count } : { type }, classList: { contains: () => on } });
+const box = { querySelectorAll: () => [toggle("water", false), toggle("panda", true, "2"), toggle("fire", true)] };
+process.stdout.write(JSON.stringify({ one, two, off: t(two, "fire"), read: palette.readToggles(box), words: palette.typesWords(["fire", "panda", "panda"]),
+  chip: palette.chipsHtml(vocab.slice(2, 3), ["fire", "fire"]) }));
+""")
+    assert out["one"] == ["fire"] and out["two"] == ["fire", "fire"] and out["off"] == []
+    assert out["read"] == ["fire", "panda", "panda"] and out["words"] == "3 types: fire, panda ×2"
+    assert 'data-count="2"' in out["chip"]
+
+
 def test_the_type_palette_vocabulary_and_search(tmp_path):
     """The types only (no star icons), one entry per icon with its aliases; the token picker's ranking: an exact name
     or alias, a name prefix, an alias prefix, then (2+ letters) inside a name or alias; one letter matches prefixes only."""
