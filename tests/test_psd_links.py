@@ -13,6 +13,7 @@ import pytest
 from PIL import Image, ImageDraw
 from psd_tools import PSDImage
 from psd_tools.api.layers import PixelLayer
+from psd_tools.api.links import link_content_id
 
 import commands.png_export as png_export
 import commands.psd_links as pl
@@ -122,26 +123,35 @@ def test_trim_map_on_star_of_beth(clone):
 
 
 def test_links_placed_from_any_depth_and_url():
-    """relPath from the PSD's folder at 1, 2 and 3 folders deep; absolute file:// URLs cut at /TTSCardMaker/ (Militron's
-    Windows one, Tomorrow I'll's Mac one), case-blind; a climb above the root is unplaced. The guards' housekeeping:
-    unused files, duplicates, a restore."""
+    """links_of places a link from its PSD's folder 1, 2 and 3 deep, and from absolute forms cut at /TTSCardMaker/
+    (Militron's Windows file:// URL, Tomorrow I'll's Mac one, a Windows path), case-blind; repair() makes each canonical
+    and leaves its size; a link no rule places is a hand note. The guards' housekeeping: unused files, duplicates, a
+    restore."""
     tree = ["Types/Fire.png", "Types/Stars/star.png", "MDW/Linked/cain.jpeg"]
-
-    def item(**strings):
-        made = pl.external_item("u", "x.png", "png", 1, "Field/A.psd", "Types/Fire.png", "b")
-        for key, value in strings.items():
-            made.linked_file[key.encode()] = type(made.linked_file[b"relPath"])(value + "\x00")
-        return made
-    for rel, up in (("Field/A.psd", "../"), ("Items/Heal/B.psd", "../../"), ("Creatures/Kirby/3 Stars/C.psd", "../../../")):
-        assert pl.link_target(item(relPath=up + "Types/fire.png", fullPath="", originalPath=""), rel, tree) == "Types/Fire.png"
-        assert pl.canonical(rel, "Types/Fire.png")["relPath"] == up + "Types/Fire.png"
-    assert pl.link_target(item(relPath="../../../../Types/Fire.png", fullPath="", originalPath=""), "Field/A.psd", tree) is None
-    militron = "file:///C//Users/Zoey/Documents/GitHub/TTSCardMaker/Types/Stars/star.png"
-    assert pl.link_target(item(relPath=militron, fullPath="", originalPath=""), "Field/A.psd", tree) == "Types/Stars/star.png"
-    tomorrow = "file:////Users/michaelsrouji/Desktop/ttscardmaker/MDW/Linked/CAIN.jpeg"
-    assert pl.link_target(item(relPath="gone.png", fullPath=tomorrow, originalPath=""), "Field/A.psd", tree) == "MDW/Linked/cain.jpeg"
-    windows = r"A:\Chris\Documents\GitHub\TTSCardMaker\Types\Fire.png"
-    assert pl.link_target(item(relPath="", fullPath="", originalPath=windows), "Field/A.psd", tree) == "Types/Fire.png"
+    fire = _png(Image.new("RGBA", (20, 20), (230, 80, 20, 255)))
+    forms = {"relPath": None, "fullPath": "file:///C//Users/Zoey/Documents/GitHub/TTSCardMaker/Types/fire.png",
+             "originalPath": r"A:\Chris\Documents\GitHub\TTSCardMaker\Types\Fire.png"}
+    for rel in ("Field/A.psd", "Items/Heal/B.psd", "Creatures/Kirby/3 Stars/C.psd"):
+        psd = PSDImage.new("RGB", (40, 40))
+        layer = PixelLayer.fromarray(np.full((20, 20, 4), (230, 80, 20, 255), np.uint8), psd, name="Fire")
+        made = pl.link_pixels(layer, rel, "Types/Fire.png", fire, [0, 0, 20, 0, 20, 20, 0, 20])
+        strings = made.smart_object._data.linked_file
+        assert pl.links_of(psd, rel, tree)[0].canonical and pl._text(strings[b"relPath"]) == "../" * rel.count("/") + "Types/Fire.png"
+        for key, value in forms.items():                    # one string left at a time, the others blank
+            strings = made.smart_object._data.linked_file
+            for other in forms:
+                strings[other.encode()] = type(strings[b"relPath"])((value if other == key else "") + "\x00") if value \
+                    else type(strings[b"relPath"])(("../" * rel.count("/") + "types/FIRE.png" if other == key else "") + "\x00")
+            made.smart_object._data.filesize = 7
+            assert [(link.path, link.canonical) for link in pl.links_of(psd, rel, tree)] == [("Types/Fire.png", False)]
+            assert pl.repair(psd, rel, tree) == (["Fire.png"], [])
+            link = pl.links_of(psd, rel, tree)[0]
+            assert link.canonical and link.size == 7
+        strings = made.smart_object._data.linked_file
+        strings[b"relPath"] = type(strings[b"relPath"])("../" * (rel.count("/") + 1) + "Types/Fire.png\x00")
+        strings[b"fullPath"] = strings[b"originalPath"] = type(strings[b"relPath"])("C:/Users/x/Fire.png\x00")
+        assert pl.links_of(psd, rel, tree)[0].path is None                   # a climb above the root places nowhere
+        assert pl.repair(psd, rel, tree) == ([], ["Links Fire.png, which is not in the repo: push that file."])
 
     links = {"Field/A.psd": {"blob": "a", "links": [{"path": "MDW/Linked/x.png"}, {"path": "MDW/Linked/inner.psb"}]},
              "MDW/Linked/inner.psb": {"blob": "p", "links": [{"path": None, "name": "Kept.PNG"}]},
@@ -203,7 +213,8 @@ def test_redraw_linked_one_file_two_users(tmp_path):
         old, new = PSDImage.open(repo / rel), PSDImage.open(BytesIO(done.files[rel]))
         assert [c.data for c in old[1]._channels] == [c.data for c in new[1]._channels]
         assert new[1].smart_object.filesize == len(lossless)
-        assert pl.links_of(new, rel, ["MDW/Linked/art.png"])[0].content == pl.content_id(pl.git_blob(lossless), rel, new[1].smart_object.unique_id)
+        assert pl.links_of(new, rel, ["MDW/Linked/art.png"])[0].content == link_content_id(pl.git_blob(lossless), rel,
+                                                                                           new[1].smart_object.unique_id)
         (repo / rel).write_bytes(done.files[rel])
     git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qam", "R")
     known = links_json(known["files"]["MDW/Linked/art.png"])                    # the data job after R

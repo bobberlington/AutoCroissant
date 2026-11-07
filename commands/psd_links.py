@@ -1,9 +1,10 @@
 """
 Linked pictures (the big pass, owner 2026-11-07): every picture smart object that is no stat bar links a file in the
 card repo, stars and type icons Types/ (Types/Stars/), every other picture MDW/Linked/ ("<Card> - <layer>.<ext>", flat; a
-file several PSDs share is named after the first). Each link carries the file's size and one fixed date (DATE), as
-Photoshop 2023 writes it (lnkE v8), so Photoshop finds every link up to date and keeps the stored pixels; stat bars stay
-embedded. A link is read as repo-path strings only (link_target), never from the filesystem.
+file several PSDs share is named after the first). Each link carries the file's size and one fixed date (the fork's
+LINK_DATE), as Photoshop 2023 writes it (lnkE v8: the fork's SmartObject.link), so Photoshop finds every link up to date
+and keeps the stored pixels; stat bars stay embedded. A link is read as repo-path strings only (the fork's
+SmartObject.link_target), never from the filesystem.
 
     TypesIndex(files, history)                       Types/ files by git blob, ink pixels and stem; older blobs
     items(psd, vocab) -> [dict]                      a PSD's picture items (the catalogue's worker)
@@ -13,12 +14,12 @@ embedded. A link is read as repo-path strings only (link_target), never from the
     place_trim(corners, old, new, old_box, new_box)  a file's quad when its ink moved (Croissant's trims, name matches)
     draw(rgba, corners, mode) -> (rgba, box)         a picture drawn on its quad as Photoshop places it
     redraw(layer, rgba, corners, size, mode)         a placed layer's pixels drawn again from a file
-    links_of(psd, rel, tree) -> [Link]               a PSD's links as repo paths
+    links_of(psd, rel, tree) -> [Link]               a PSD's links as repo paths, repair() making them canonical
     unused / duplicates / restore / repair           the guards' housekeeping (G2-G4)
     redraw_linked(...) -> Redrawn                    Card sync: a changed linked file drawn again in its users (C1-C6)
 
     python -m commands.psd_links catalogue --clone DIR --ref SHA --out FILE [--held LIST --held-ref REF]
-    python -m commands.psd_links redraw --checkout DIR --links FILE [--head SHA] [--cards N] [--bytes N] [--until EPOCH]
+    python -m commands.psd_links redraw --checkout DIR --links FILE [--head SHA] [--cards N] [--bytes N] [--until SECONDS]
 
 Classes (assign): 1 the bytes of a Types file; 2 its ink pixels (raster kept, placed by place_trim); 3 that file drawn
 again (an older version of it, or a star or type icon named like it in its row); 4 the bytes of an MDW/Linked file; 5 a
@@ -26,13 +27,12 @@ new MDW/Linked file. Light imports: card-guards.yml and card-sync.yml check this
 No Discord, network or config.
 """
 from argparse import ArgumentParser
-from calendar import timegm
 from dataclasses import dataclass, field
 from hashlib import sha1
 from io import BytesIO
 from json import dump, dumps, load
 from os import environ, makedirs
-from posixpath import basename, dirname, normpath, relpath, splitext
+from posixpath import basename, dirname, splitext
 from re import IGNORECASE, compile as re_compile, sub
 from subprocess import PIPE, Popen, run as run_process
 from time import time
@@ -42,6 +42,7 @@ from uuid import NAMESPACE_URL, uuid5
 import numpy as np
 from PIL import Image
 from psd_tools import PSDImage
+from psd_tools.api.links import LINK_DATE, comp_info, content_descriptor, link_content_id, linked_file, place
 from psd_tools.constants import LinkedLayerType, Tag
 from psd_tools.psd.descriptor import Descriptor, DescriptorBlock, Double, Enumerated, Integer, List, String, UnitFloat
 from psd_tools.psd.linked_layer import LinkedLayer, LinkedLayers
@@ -54,11 +55,7 @@ from global_config import STARS_DIR, TYPES_DIR
 # ========================
 # Configuration
 # ========================
-DATE = (2000, 1, 1, 0, 0, 0.0)  # every link's date, UTC (owner 11-07): Photoshop flags a link changed when date or size differ
-EPOCH = timegm(DATE[:5] + (0,))
 LINKED_DIR = "MDW/Linked"
-REPO = "/TTSCardMaker/"         # a link's fullPath and originalPath: REPO + its repo path (PLAN R9)
-ITEM_VERSION = 8                # lnkE as Photoshop 2023 writes it (Croissant's Creature_Template)
 INK_ALPHA = 32                  # place_trim: ink boxes over this alpha (P2: faint alpha moved Equip.png by 20 px)
 NAME_MAX = 119                  # a new file's name, characters (under 120)
 UNSAFE = re_compile(r'[\\/:*?"<>|\x00-\x1f\x7f]')
@@ -85,12 +82,6 @@ CARDS_CAP = 60                  # Card sync redraws at most this many PSDs a run
 def git_blob(data: bytes) -> str:
     """The git blob sha of bytes."""
     return sha1(b"blob %d\x00" % len(data) + data).hexdigest()
-
-
-def content_id(blob: str, psd: str, uuid: str) -> str:
-    """A link's contentID: from the file's blob, the PSD's repo path and the item, so a re-sweep writes the same bytes and
-    db/links.json tells which version of the file the raster was drawn from (card_data's `drawn`)."""
-    return str(uuid5(NAMESPACE_URL, f"{blob}|{psd}|{uuid}"))
 
 
 def file_type(data: bytes, filename: str = "") -> str:
@@ -372,49 +363,77 @@ def picture(psd: PSDImage, data: bytes, kind: str) -> Optional[np.ndarray]:
     return in_document(psd, rgba, profile)
 
 
-def _set_quad(layer, corners: list, size: tuple) -> None:
-    """A placed layer's Trnf, nonAffineTransform and Sz (the file's pixels), its warp left as it is (P2's records)."""
-    placed = placed_data(layer)
-    for name in (b"Trnf", b"nonAffineTransform"):
-        if name in placed:
-            placed[name] = List([Double(float(c)) for c in corners])
-    placed[b"Sz  "][b"Wdth"] = Double(float(size[0]))
-    placed[b"Sz  "][b"Hght"] = Double(float(size[1]))
-    layer._psd.mark_updated()
-
-
 def redraw(layer, rgba: np.ndarray, corners: list, mode: int) -> tuple:
     """
     A placed layer's pixels drawn again from a file (rgba: its pixels in the card's colours) on corners at mode, its
-    mask and effects kept; Trnf and Sz set to the file. Returns the canvas box drawn (old and new pixels' union).
+    mask and effects kept (the link's Trnf and Sz are written by SmartObject.link or relink). Returns the canvas box
+    drawn (old and new pixels' union).
     """
     from psd_tools.api.layers import TypeLayer      # the fork's raster writer: channels and rect, the record kept
     before = tuple(layer.bbox)
     out, box = draw(rgba, corners, mode)
     TypeLayer._store_raster(layer, out if out is not None else np.zeros((0, 0, 4), np.float32), box)
     layer._invalidate_bbox()
-    _set_quad(layer, corners, (rgba.shape[1], rgba.shape[0]))
     boxes = [b for b in (before, box) if b[2] > b[0] and b[3] > b[1]]
     return (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)) \
         if boxes else (0, 0, 0, 0)
 
 
 # ========================
-# Link records
+# Link records (the fork's SmartObject.link, relink and psd_tools.api.links)
 # ========================
 def canonical(rel: str, path: str) -> dict:
-    """A link's path strings: relPath from the PSD's folder, fullPath = originalPath = REPO + the repo path."""
-    return {"relPath": relpath(path, dirname(rel) or "."), "fullPath": REPO + path, "originalPath": REPO + path}
+    """A link's path strings as the fork writes them: relPath from the PSD's folder, fullPath = originalPath =
+    LINK_ROOT + the repo path."""
+    made = linked_file(path, rel, basename(path))
+    return {key: _text(made[key.encode()]) for key in ("relPath", "fullPath", "originalPath")}
 
 
-def _linked_file(name: str, rel: str, path: str) -> DescriptorBlock:
-    strings = canonical(rel, path)
-    out = DescriptorBlock(name="\x00", classID=b"ExternalFileLink")
-    out[b"descVersion"] = Integer(2)
-    out[b"Nm  "] = String(name + "\x00")
-    for key in ("fullPath", "originalPath", "relPath"):
-        out[key.encode()] = String(strings[key] + "\x00")
-    return out
+def _layer_of(psd: PSDImage, uuid: str):
+    return next(layer for layer in psd.descendants() if layer.kind == "smartobject" and _uid(layer) == uuid)
+
+
+def link_item(psd: PSDImage, uuid: str, rel: str, path: str, data: bytes, quads: Optional[dict] = None,
+              pixels: Optional[tuple] = None) -> None:
+    """An embedded item made a link to path (a repo file of these bytes) by the fork (SmartObject.link): every layer
+    sharing it follows; quads: {old corners: new corners} per layer, pixels the file's (width, height) when not the
+    embedded file's."""
+    corners = (lambda old: quads[tuple(old)]) if quads else None
+    _layer_of(psd, uuid).smart_object.link(path, len(data), blob=git_blob(data), psd_path=rel, pixels=pixels,
+                                           corners=corners)
+
+
+def relink(psd: PSDImage, uuid: str, rel: str, path: str, size: int, blob: str, quads: Optional[dict] = None,
+           pixels: Optional[tuple] = None) -> None:
+    """A link pointed at a file (G3's duplicate merge) or given its new size (Card sync): strings, size, contentID,
+    and per layer its new corners (quads) and Sz (pixels)."""
+    corners = (lambda old: quads[tuple(old)]) if quads else None
+    _layer_of(psd, uuid).smart_object.relink(path, size, blob=blob, psd_path=rel, pixels=pixels, corners=corners)
+
+
+def _new_item(uuid: str, rel: str, path: str, data: bytes) -> LinkedLayer:
+    """A new lnkE item linking path, as the fork's SmartObject.link writes one (link_pixels: no embedded item to turn)."""
+    return LinkedLayer(kind=LinkedLayerType.EXTERNAL, version=8, uuid=uuid, filename=basename(path) + "\x00",
+                       filetype=FILETYPE.get(file_type(data, path), b"\x00\x00\x00\x00"), creator=b"\x00\x00\x00\x00",
+                       filesize=len(data), open_file=comp_info(), linked_file=linked_file(path, rel, basename(path)),
+                       timestamp=LINK_DATE, data=b"", child_id="\x00", mod_time=0.0, lock_state=0,
+                       content_descriptor=content_descriptor(link_content_id(git_blob(data), rel, uuid)))
+
+
+def _add_item(psd: PSDImage, item: LinkedLayer) -> None:
+    """item appended to the document's lnkE (a new lnkE after the last lnk2/lnk3 block, where Photoshop writes it)."""
+    blocks = psd._record.layer_and_mask_information.tagged_blocks
+    if Tag.LINKED_LAYER_EXTERNAL in blocks:
+        blocks.get_data(Tag.LINKED_LAYER_EXTERNAL).append(item)
+        return
+    lists = (Tag.LINKED_LAYER1, Tag.LINKED_LAYER2, Tag.LINKED_LAYER3)
+    items = list(blocks.items())
+    at = max((i + 1 for i, (key, _) in enumerate(items) if key in lists), default=len(items))
+    items.insert(at, (Tag.LINKED_LAYER_EXTERNAL, TaggedBlock(signature=b"8BIM", key=Tag.LINKED_LAYER_EXTERNAL,
+                                                            data=LinkedLayers([item]))))
+    blocks.clear()
+    for key, value in items:
+        blocks[key] = value
 
 
 def _block(items: dict, name: str = "\x00", cls: bytes = b"null", block: bool = True):
@@ -422,79 +441,6 @@ def _block(items: dict, name: str = "\x00", cls: bytes = b"null", block: bool = 
     for key, value in items.items():
         out[key] = value
     return out
-
-
-def _comp_info() -> Descriptor:
-    return _block({b"compID": Integer(-1), b"originalCompID": Integer(-1)}, block=False)
-
-
-def external_item(uuid: str, name: str, kind: str, size: int, rel: str, path: str, blob: str,
-                  open_file=None) -> LinkedLayer:
-    """An lnkE item as Photoshop 2023 writes a link (v8): the file's name, size and repo paths, DATE, a contentID."""
-    return LinkedLayer(kind=LinkedLayerType.EXTERNAL, version=ITEM_VERSION, uuid=uuid, filename=name + "\x00",
-                       filetype=FILETYPE.get(kind, b"\x00\x00\x00\x00"), creator=b"\x00\x00\x00\x00", filesize=size,
-                       open_file=open_file if open_file is not None else _block({b"compInfo": _comp_info()}),
-                       linked_file=_linked_file(name, rel, path), timestamp=DATE, data=b"", child_id="\x00",
-                       mod_time=0.0, lock_state=0,
-                       content_descriptor=_block({b"contentID": String(content_id(blob, rel, uuid) + "\x00")}))
-
-
-def _place_items(psd: PSDImage, drop: set, add: list) -> None:
-    """The document's lnk items: drop's uuids gone, add appended to lnkE (where it was, else after lnk2/lnk3)."""
-    blocks = psd._record.layer_and_mask_information.tagged_blocks
-    lists = (Tag.LINKED_LAYER1, Tag.LINKED_LAYER2, Tag.LINKED_LAYER3, Tag.LINKED_LAYER_EXTERNAL)
-    out, at, ext = [], None, []
-    for key, value in list(blocks.items()):
-        if key in lists:
-            keep = [item for item in value.data if _text(item.uuid) not in drop]
-            if key == Tag.LINKED_LAYER_EXTERNAL:
-                ext, at = keep, len(out)
-                continue
-            if keep:
-                out.append((key, TaggedBlock(signature=value.signature, key=key, data=LinkedLayers(keep))))
-            at = len(out) if Tag.LINKED_LAYER_EXTERNAL not in blocks else at
-        else:
-            out.append((key, value))
-    ext += list(add)
-    if ext:
-        out.insert(at if at is not None else len(out), (Tag.LINKED_LAYER_EXTERNAL, TaggedBlock(
-            signature=b"8BIM", key=Tag.LINKED_LAYER_EXTERNAL, data=LinkedLayers(ext))))
-    blocks.clear()
-    for key, value in out:
-        blocks[key] = value
-    psd.mark_updated()
-
-
-def _soLE(layer) -> None:
-    """A layer's SoLd made SoLE (the same descriptor), its PlLd dropped: Photoshop 2023 writes no PlLd for a link."""
-    blocks = layer._record.tagged_blocks
-    items = list(blocks.items())
-    blocks.clear()
-    for key, value in items:
-        if key in (Tag.PLACED_LAYER1, Tag.PLACED_LAYER2):
-            continue
-        if key == Tag.SMART_OBJECT_LAYER_DATA1:
-            key = Tag.SMART_OBJECT_LAYER_DATA2
-            value = TaggedBlock(signature=value.signature, key=key, data=value.data)
-        blocks[key] = value
-
-
-def link_item(psd: PSDImage, uuid: str, rel: str, path: str, data: bytes, kind: str = "") -> LinkedLayer:
-    """
-    An embedded item (lnk2/lnk3) made a link to path (a repo file of these bytes), as Photoshop 2023 writes one: the
-    same uuid, so every layer using it keeps its Idnt; each user's SoLd becomes SoLE, PlLd goes, the embedded data goes.
-    An lnkE item already there is rewritten (repair): its size stays. Returns the new item.
-    """
-    tag, item = _items_of(psd)[uuid]
-    kind = kind or file_type(data, path)
-    size = len(data) if tag != Tag.LINKED_LAYER_EXTERNAL else item.filesize
-    new = external_item(uuid, basename(path), kind, size, rel, path, git_blob(data), item.open_file)
-    _place_items(psd, {uuid}, [new])
-    for layer in psd.descendants():
-        if layer.kind == "smartobject" and _uid(layer) == uuid:
-            _soLE(layer)
-            layer.__dict__.pop("_smart_object", None)
-    return new
 
 
 def _placed_block(uuid: str, placed: str, corners: list, size: tuple) -> DescriptorBlock:
@@ -513,7 +459,8 @@ def _placed_block(uuid: str, placed: str, corners: list, size: tuple) -> Descrip
                    b"Trnf": List([Double(float(c)) for c in corners]),
                    b"nonAffineTransform": List([Double(float(c)) for c in corners]), b"warp": warp,
                    b"Sz  ": _block({b"Wdth": Double(w), b"Hght": Double(h)}, cls=b"Pnt ", block=False),
-                   b"Rslt": UnitFloat(unit=Unit.Density, value=72.0), b"comp": Integer(-1), b"compInfo": _comp_info(),
+                   b"Rslt": UnitFloat(unit=Unit.Density, value=72.0), b"comp": Integer(-1),
+                   b"compInfo": _block({b"compID": Integer(-1), b"originalCompID": Integer(-1)}, block=False),
                    b"ClMg": _block({b"placedLayerOCIOConversion": Enumerated(typeID=b"placedLayerOCIOConversion",
                                                                              enum=b"placedLayerOCIOConvertEmbedded")},
                                    cls=b"ClMg", block=False)})
@@ -540,8 +487,7 @@ def link_pixels(layer, rel: str, path: str, data: bytes, corners: list, salt: st
         signature=b"8BIM", key=Tag.SMART_OBJECT_LAYER_DATA2,
         data=SmartObjectLayerData(kind=b"soLD", version=4, data=_placed_block(uuid, placed, corners,
                                                                               (rgba.shape[1], rgba.shape[0]))))
-    _place_items(psd, set(), [external_item(uuid, basename(path), file_type(data, path), len(data), rel, path,
-                                            git_blob(data))])
+    _add_item(psd, _new_item(uuid, rel, path, data))
     made = SmartObjectLayer(parent, record, layer._channels)
     parent._layers[parent._layers.index(layer)] = made
     psd.mark_updated()
@@ -886,21 +832,22 @@ def link_card(psd: PSDImage, rel: str, entries: list, read: Callable[[str], Opti
                     continue
                 cls, target, quads = NEW, (read(path) or data), None
                 out.copies.append(uid)
+            pixels = None
             if quads is not None:
                 new = decode(target, file_type(target, path))
-                size = (new.shape[1], new.shape[0])
+                pixels = (new.shape[1], new.shape[0])
                 for layer, corners in zip(layers, quads):
                     if cls == REDRAW:
                         drawn = picture(psd, target, file_type(target, path))
-                        mode = image_mode(layer, drawn, decode(data, kind))
-                        redraw(layer, drawn, corners, mode)
+                        redraw(layer, drawn, corners, image_mode(layer, drawn, decode(data, kind)))
                         out.redrawn.append(layer.name)
-                    else:
-                        _set_quad(layer, corners, size)
+                quads = {tuple(corners_of(layer)): corners for layer, corners in zip(layers, quads)}
+        else:
+            quads = pixels = None
         if cls in (LINKED, NEW) and path.startswith(LINKED_DIR + "/") and read(path) is None:
-            if first is None or path in first:
+            if first is None or path in first or uid in out.copies:
                 out.files[path] = target
-        link_item(psd, uid, rel, path, target)
+        link_item(psd, uid, rel, path, target, quads, pixels)
         out.linked.append((uid, cls, path))
     known = set(tree) if tree is not None else _tree_of(read, psd, rel)
     out.repaired, notes = repair(psd, rel, known | {path for _, _, path in out.linked})
@@ -909,44 +856,15 @@ def link_card(psd: PSDImage, rel: str, entries: list, read: Callable[[str], Opti
 
 
 def _tree_of(read: Callable[[str], Optional[bytes]], psd: PSDImage, rel: str) -> set:
-    """The repo paths a PSD's existing links could name, those read() has."""
+    """The repo paths a PSD's existing links name (placed with no tree: the first repo path each names), those read()
+    has."""
     out = set()
     for _, item in _items_of(psd).values():
-        if item.kind != LinkedLayerType.EXTERNAL:
-            continue
-        for candidate in _candidates(item, rel):
-            if read(candidate) is not None:
-                out.add(candidate)
+        if item.kind == LinkedLayerType.EXTERNAL:
+            path = place(item.linked_file, rel)
+            if path is not None and read(path) is not None:
+                out.add(path)
     return out
-
-
-# ========================
-# Reading links (PLAN F1's strings)
-# ========================
-def _candidates(item, rel: str) -> list:
-    """The repo paths a link's strings name: relPath against the PSD's folder (never above the root), then fullPath and
-    originalPath cut at the last /TTSCardMaker/ (any case, file:// URLs and Windows paths too)."""
-    strings = {_text(k): _text(v) for k, v in (item.linked_file or {}).items()}
-    out = []
-    for key in ("relPath", "fullPath", "originalPath"):
-        value = strings.get(key, "").replace("\\", "/")
-        if not value:
-            continue
-        if key == "relPath" and not value.startswith(("/", "file:")) and ":" not in value[:3]:
-            joined = normpath(f"{dirname(rel)}/{value}" if dirname(rel) else value)
-            if not joined.startswith("../") and joined != "..":
-                out.append(joined)
-            continue
-        at = value.lower().rfind(REPO.lower())
-        if at >= 0:
-            out.append(normpath(value[at + len(REPO):]))
-    return list(dict.fromkeys(out))
-
-
-def link_target(item, rel: str, tree) -> Optional[str]:
-    """The repo path a link names (as the tree spells it; case-blind, as Photoshop is), None when it cannot be placed."""
-    lower = {path.lower(): path for path in tree}
-    return next((lower[c.lower()] for c in _candidates(item, rel) if c.lower() in lower), None)
 
 
 @dataclass
@@ -956,25 +874,26 @@ class Link:
     path: Optional[str]                 # the repo path, None when it cannot be placed
     name: str                           # the file name it records
     size: int                           # the size it records
-    content: str                        # its contentID
-    canonical: bool                     # date DATE and strings canonical(rel, path)
+    content: str                        # its contentID ("" when Photoshop made it)
+    canonical: bool                     # LINK_DATE, its file's name and the fork's strings (canonical())
     layers: list = field(default_factory=list)
 
 
 def links_of(psd: PSDImage, rel: str, tree) -> list:
-    """A PSD's links as repo paths (link_target), every lnkE item a layer uses."""
+    """A PSD's links as repo paths (the fork's links.place: relPath from rel's folder, then the absolute forms cut at
+    /TTSCardMaker/, case-blind against tree), every lnkE item a layer uses."""
     used = {}
     for layer in psd.descendants():
         if layer.kind == "smartobject":
             used.setdefault(_uid(layer), []).append(layer.name)
     out = []
-    for uid, (tag, item) in _items_of(psd).items():
+    for uid, (_, item) in _items_of(psd).items():
         if item.kind != LinkedLayerType.EXTERNAL or uid not in used:
             continue
-        path = link_target(item, rel, tree)
+        path = place(item.linked_file, rel, tree)
         strings = {_text(k): _text(v) for k, v in (item.linked_file or {}).items()}
-        good = path is not None and tuple(item.timestamp or ()) == DATE and \
-            all(strings.get(k) == v for k, v in canonical(rel, path).items())
+        good = path is not None and tuple(item.timestamp or ()) == LINK_DATE and _text(item.filename) == basename(path) \
+            and all(strings.get(k) == v for k, v in canonical(rel, path).items())
         content = _text((item.content_descriptor or {}).get(b"contentID", ""))
         out.append(Link(uid, path, _text(item.filename), int(item.filesize), content, good, used[uid]))
     return out
@@ -982,8 +901,8 @@ def links_of(psd: PSDImage, rel: str, tree) -> list:
 
 def repair(psd: PSDImage, rel: str, tree) -> tuple:
     """
-    Every link's date set to DATE and its strings canonical (relPath from the PSD's folder, fullPath = originalPath =
-    REPO + its repo path), its name the file's; the size never (a size off the file's means a redraw is due: Card sync).
+    Every link's strings, name and date made canonical (the fork's SmartObject.relink with no size: a size off the
+    file's means a redraw is due, Card sync's C1).
 
     Returns:
         ([repaired file names], [hand notes for links the repo lacks])
@@ -992,26 +911,10 @@ def repair(psd: PSDImage, rel: str, tree) -> tuple:
     for link in links_of(psd, rel, tree):
         if link.path is None:
             notes.append(NOT_IN_REPO.format(name=link.name))
-            continue
-        if link.canonical:
-            continue
-        _, item = _items_of(psd)[link.uuid]
-        item.linked_file = _linked_file(basename(link.path), rel, link.path)
-        item.filename = basename(link.path) + "\x00"
-        item.timestamp = DATE
-        psd.mark_updated()
-        done.append(link.name)
+        elif not link.canonical:
+            _layer_of(psd, link.uuid).smart_object.relink(link.path, psd_path=rel)
+            done.append(link.name)
     return done, notes
-
-
-def relink(psd: PSDImage, uuid: str, rel: str, path: str, size: int, blob: str) -> None:
-    """A link pointed at another file (G3's duplicate merge) or given a new size (Card sync): strings, size, contentID."""
-    _, item = _items_of(psd)[uuid]
-    item.linked_file = _linked_file(basename(path), rel, path)
-    item.filename = basename(path) + "\x00"
-    item.filesize, item.timestamp = int(size), DATE
-    item.content_descriptor = _block({b"contentID": String(content_id(blob, rel, uuid) + "\x00")})
-    psd.mark_updated()
 
 
 # ========================
@@ -1143,7 +1046,7 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
         new = read_blob(blob)
         if new is None:
             continue
-        ours = next((b for b in [blob, *known] if content_id(b, rel, link.uuid) == link.content), None)
+        ours = next((b for b in [blob, *known] if link_content_id(b, rel, link.uuid) == link.content), None)
         if link.size == len(new) and (ours is None or ours == blob):
             continue
         old_blob = ours or next((b for b, size in known.items() if size == link.size and b != blob), None)
@@ -1163,18 +1066,19 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
             notes.append(NOT_REDRAWN.format(layer=layers[0].name, name=basename(link.path), why=why))
             continue
         drawn = picture(psd, new, kind) if not same and not trim else None
+        quads = {}
         for layer in layers:
             corners, (w0, h0) = corners_of(layer), _size_of(layer)
             if same:
-                _set_quad(layer, corners, size)
+                quads[tuple(corners)] = corners
             elif trim:
-                _set_quad(layer, place_trim(corners, (w0, h0), size, ink_box(old_rgba), ink_box(new_rgba)), size)
+                quads[tuple(corners)] = place_trim(corners, (w0, h0), size, ink_box(old_rgba), ink_box(new_rgba))
             else:
                 dx, dy = (size[0] - w0) / 2, (size[1] - h0) / 2
-                quad = place_trim(corners, (w0, h0), size, (0, 0, w0, h0), (dx, dy, dx + w0, dy + h0))
+                quads[tuple(corners)] = quad = place_trim(corners, (w0, h0), size, (0, 0, w0, h0), (dx, dy, dx + w0, dy + h0))
                 redraw(layer, drawn, quad, image_mode(layer, drawn, old_rgba))
                 pixels = True
-        relink(psd, link.uuid, rel, link.path, len(new), blob)
+        relink(psd, link.uuid, rel, link.path, len(new), blob, quads, size)
         changed = True
     return changed, pixels, notes
 
