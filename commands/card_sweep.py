@@ -283,7 +283,7 @@ def _normalised(job, out: dict, data: bytes, pushed, pngs: dict, facts: dict, fo
     drawn = out["k1"] = seen["k1"] if seen.get("out") == out["out"] else drawing_check(pushed, after, fonts)
     if drawn.get("text"):
         return {**out, "state": "refused", "why": "text moved: " + ", ".join(drawn["text"])}
-    files = {job.psd: fixed.data, **fixed.files}
+    files, made = {job.psd: fixed.data, **fixed.files}, []
     if not drawn["same"] and job.png:           # past near identical: the PNGs drawn again from the new PSD
         found = png_export.export(pushed, after, pngs[job.png], {p: i for p, i in pngs.items() if p != job.png},
                                   job.png, fonts)
@@ -292,8 +292,10 @@ def _normalised(job, out: dict, data: bytes, pushed, pngs: dict, facts: dict, fo
             return {**out, "state": "refused", "why": f"PNG not made: {why}"}
         if found.outcome == "re-exported":
             files[job.png], out["changed_px"] = found.data, found.changed_px
-        files.update({path: d for path, (d, _) in found.numbered.items() if d})   # a picture redrawn alone too
-        for path in sorted(set(pngs) | {p for p in files if p != job.png and p.lower().endswith(".png")}):
+            made.append(job.png)
+        made += [path for path, (d, _) in found.numbered.items() if d]     # a picture redrawn alone too
+        files.update({path: found.numbered[path][0] for path in made if path != job.png})
+        for path in sorted(set(pngs) | set(made)):
             image = png_export.open_png(files[path]) if path in files else pngs[path]
             if not _png_ok(after, image, path, job.png):
                 return {**out, "state": "refused", "why": f"{basename(path)} misses the new PSD (parity)"}
@@ -303,7 +305,7 @@ def _normalised(job, out: dict, data: bytes, pushed, pngs: dict, facts: dict, fo
     problems = links.check(after, job.psd, files, source.checked) if links and hasattr(links, "check") else []
     if problems:
         return {**out, "state": "refused", "why": "links: " + "; ".join(problems)}
-    out["pngs"] = sorted(p for p in files if p.lower().endswith(".png"))
+    out["pngs"] = sorted(made)                  # the card's PNGs written (the link step's files aside)
     return {**out, "state": "fixed", "files": files}
 
 
