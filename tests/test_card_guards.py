@@ -316,7 +316,7 @@ def test_a_burst_without_a_stored_image_is_made_against_the_anchor(cards, tmp_pa
     data = cg.check(str(root), two, one, mode="on", out=str(out), workers=1)
     (entry,) = data["cards"]
     assert not entry["error"], entry["error"]
-    assert entry["export"]["outcome"] == "re-exported" and entry["export"]["unchecked"] == pe.UNCHECKED
+    assert entry["export"]["outcome"] == "re-exported" and entry["export"]["unchecked"] is True
     assert any("an earlier push changed the PSD without its PNG" in note for note in entry["notes"])
     (write,) = entry["writes"]
     made = Image.open(out / write["file"])
@@ -664,65 +664,31 @@ def test_a_png_pushed_in_another_case_counts(tmp_path, monkeypatch):
     assert report["after"]["X/Bar.psd"] == ["Bar.png was pushed since: the refusal is withdrawn"]
 
 
-def test_a_png_kept_beside_a_psd_without_a_stored_image_is_told():
-    """Default 2026-10-24, owner to confirm: a new PSD with no stored image beside a PNG at most KEPT_PX px past
-    BESIDE_CUT of the fork's render keeps the PNG (png_export's numbers["kept"]); the post tells it (KEPT, with the px past the cut) on Discord
-    and as the comment's guard-1 line, nothing written."""
-    exported = cg._export_dict(pe.Export("current", unchecked=True, numbers={"kept": 33, "png_vs_render": {"max": 17}}))
-    line = pe.KEPT.format(px=33)
-    assert exported["unchecked"] == line and line.startswith("PNG kept as it is: ") and " 33 px" in line
-    job = cg.Job("X/Snack.psd", "beside", png="X/Snack.png")
-    result = cg.Result(job, export=exported)
-    assert result.told("on") == [line] and result.told("report") == [line]
-    assert cg._guard1_line({"export": exported, "case": "beside"}) == line
-    assert cg._export_dict(pe.Export("current", numbers={"kept": 33}))["unchecked"] == ""      # checked: never kept
-
-
-def test_a_png_made_without_a_stored_image_is_told_not_refused(tmp_path, monkeypatch):
-    """Owner, 2026-10-24 (G2 rendered anyway): a PSD saved without Maximize Compatibility gets the bot's PNG, and the post
-    says "no stored image to cross-check" instead of refusing (report mode beside the PNG it would make); the comment's
-    guard-1 line says so. The line is withdrawn, as a refusal is, when the author pushed the PNG in the window (the
-    bot's write is dropped), and when the write did not land it is the "PNG not made" line alone."""
-    found = pe.Export("re-exported", changed_px=5, unchecked=True)
+def test_nothing_is_told_for_a_png_made_or_kept_without_a_stored_image(tmp_path, monkeypatch):
+    """Owner 2026-11-07: every card lacks a stored image after the pass, so a PNG the bot makes or keeps without one is
+    no issue: nothing told, on Discord or in the comment (the old UNCHECKED, KEPT, RESTYLED and PICTURE lines); the
+    numbers stay in plan.json."""
+    found = pe.Export("re-exported", changed_px=5, unchecked=True, numbers={"picture": {"drawn": 1, "saved": 2}})
     exported = cg._export_dict(found)
-    assert exported["unchecked"] == pe.UNCHECKED and "no stored image to cross-check" in pe.UNCHECKED
-    assert cg._export_dict(pe.Export("current", unchecked=True))["unchecked"] == ""
-    restyled = cg._export_dict(pe.Export("current", unchecked=True, numbers={"restyled": ["the Header text"]}))
-    assert restyled["unchecked"] == pe.RESTYLED.format(what="the Header text")
-    assert cg._guard1_line({"export": restyled, "case": "stale"}) == restyled["unchecked"]
+    assert exported["unchecked"] is True
     job = cg.Job("X/Snack.psd", "stale", png="X/Snack.png")
     result = cg.Result(job, export=exported, writes=[{"path": "X/Snack.png", "kind": "png"}])
-    assert result.told("on") == [pe.UNCHECKED]
-    assert result.told("report") == [pe.UNCHECKED, "PNG not exported with the PSD: export it in Photoshop"]
+    assert result.told("on") == []
+    assert result.told("report") == ["PNG not exported with the PSD: export it in Photoshop"]
+    assert cg._drawn_as(found) == "its picture 1"
     line = cg._guard1_line({"export": {**exported, "numbers": {}, "icc": "as stored"}, "case": "stale"})
-    assert line.startswith("PNG re-exported by the bot's render of the PSD (") and "no stored image to cross-check" in line
-    beside = cg._guard1_line({"export": {**exported, "numbers": {"png_vs_render": {"bad_pct": 51.9}}, "icc": "as stored",
-                                         "misses": []}, "case": "beside"})
-    assert "old PSD" not in beside and "made with a pixel difference" not in beside    # the author's change, no miss
-    # default 2026-10-24, owner to confirm: the new PSD drawn against its PNG is plan.json's number alone, not posted
-    assert "51.90" not in beside and "the new PSD drawn against its PNG" not in beside
-    drawn = cg._export_dict(pe.Export("re-exported", changed_px=5, unchecked=True,
-                                      numbers={"png_vs_render": {"bad_pct": 51.9}}))
-    assert drawn["numbers"]["png_vs_render"]["bad_pct"] == 51.9
-
+    assert line.startswith("PNG re-exported by the bot's render of the PSD (") and "stored image" not in line
+    for numbers in ({"kept": 33}, {"restyled": ["the Header text"]}):
+        kept = cg._export_dict(pe.Export("current", unchecked=True, numbers=numbers))
+        assert cg.Result(cg.Job("X/Snack.psd", "beside", png="X/Snack.png"), export=kept).told("on") == []
+        assert cg._guard1_line({"export": kept, "case": "beside"}) == "PNG still current (the push moved no pixel of the card)"
     out = tmp_path / "plan"
-    snack = _entry("Snack", export=dict(exported, numbers={}), told=[pe.UNCHECKED])
+    snack = _entry("Snack", export=dict(exported, numbers={}), told=[])
     _write(out, snack, "X/Snack.png", "png", b"png", "re-exported")
     plan = _full_plan(tmp_path, [snack])
-    hub = FakeHub({"X/Snack.psd": ("100644", "s1"), "X/Snack.png": ("100644", "p1")})
-    hub.install(monkeypatch)
+    FakeHub({"X/Snack.psd": ("100644", "s1"), "X/Snack.png": ("100644", "p1")}).install(monkeypatch)
     report = cg.land(plan)
-    assert report["sha"] and report["told"] == {"X/Snack.psd": [pe.UNCHECKED]}
-    assert cg.finish(plan, report)["content"].startswith(f"Alice pushed Snack: {pe.UNCHECKED}.")
-    FakeHub({"X/Snack.psd": ("100644", "s1"), "X/Snack.png": ("100644", "author's")}).install(monkeypatch)
-    assert cg.land(plan)["told"] == {"X/Snack.psd": []}                     # the author pushed the PNG: nothing to tell
-    hub.install(monkeypatch)
-
-    def down(*args, **kwargs):
-        raise gc.Transient("the API is down")
-    monkeypatch.setattr(cg, "commit_files", down)
-    assert cg.land(plan)["told"] == {"X/Snack.psd": ["PNG not made: the bot's commit failed; export it in Photoshop"]}
-
+    assert report["sha"] and report["told"] == {"X/Snack.psd": []} and cg.finish(plan, report) == {}
 
 def test_land_local_commits_in_the_clone(cards, tmp_path):
     root, base, alice, bot = cards

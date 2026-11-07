@@ -1,8 +1,8 @@
 """
 The push guards (docs/Campaigns/PUSH_GUARDS.md): TTSCardMaker's card-guards.yml runs this on every push to main. Guard 1
 (png_export) gives a card PSD pushed without its PNG the PNG the bake would make (the fork's render of the changed layers,
-merged into the old PNG; Photoshop's stored composite only cross-checks, and a PSD without one gets the PNG under the
-bake's own gates, told "no stored image to cross-check"); guard 2 (card_standards) checks the pushed PSDs against the card
+merged into the old PNG; Photoshop's stored composite only cross-checks, and a PSD without one, every card since the
+11-07 pass, gets the PNG under the bake's own gates); guard 2 (card_standards) checks the pushed PSDs against the card
 standards (missing fonts are the font check's alone) and fixes only the 0-pixel classes; the Single-line Composer (R8) it
 always sets unsaid, box text that rewraps redrawn and its PNG re-exported: only the bot commit's message names it
 (owner, 2026-10-25); so are the pixel fixes (card_standards.PIXEL_FIXES, in order: badges laid out again at their new
@@ -185,8 +185,6 @@ class Result:
         out = []
         if self.export.get("outcome") == "refused":
             out.append(self.export["why"])
-        if self.export.get("unchecked"):        # G2 rendered anyway (owner, 2026-10-24): told instead of refused
-            out.append(self.export["unchecked"])
         out += [why for why, _ in self.export.get("numbered_refused", [])]
         if mode == "report":
             out += [would_make(self.job.case, self.job.png, w) for w in self.writes if w["kind"] == "png" and not w.get("silent")]
@@ -650,13 +648,12 @@ def _recompress(out: str, result: Result, path: str, read: Callable[[], bytes]) 
 
 
 def _export_dict(found) -> dict:
-    """An Export as plan.json keeps it; "unchecked" is the line told for a PNG made with no stored image (G2), or for one
-    kept (KEPT beside such a PSD, RESTYLED over one)."""
+    """An Export as plan.json keeps it ("unchecked": no stored image to cross-check, G2; never told)."""
     return {"outcome": found.outcome, "why": found.why, "gate": found.gate, "changed_px": found.changed_px,
             "box": list(found.box) if found.box else None, "icc": found.icc, "writer": found.writer,
             "vote": list(found.vote) if found.vote else None, "numbers": found.numbers,
             "misses": png_export.miss_notes(found),
-            "unchecked": png_export.unchecked_line(found)}
+            "unchecked": found.unchecked}
 
 
 def _r10_line(job: Job, measured: dict) -> str:
@@ -848,8 +845,7 @@ def stale_left(fixed, redrawn: dict) -> list:
 
 def _drawn_as(found) -> str:
     """What guard 1's main PNG is a render of: a tagged PSD saved showing another picture is drawn as picture 1."""
-    picture = found.numbers.get("picture")
-    return f"its picture 1 ({png_export.unchecked_line(found)})" if picture else "the PSD"
+    return "its picture 1" if found.numbers.get("picture") else "the PSD"
 
 
 def _rewrapped_pngs(out: str, result: Result, pushed, fixed, shown: dict) -> bool:
@@ -955,8 +951,6 @@ def _guard1_line(entry: dict, mode: str = "on") -> str:
         return ""
     if outcome == "current" and "png_ahead" in found.get("numbers", {}):
         return "PNG already shows the pushed PSD (exported before the PSD was pushed): nothing to make"
-    if outcome == "current" and found.get("unchecked"):
-        return found["unchecked"]
     if outcome == "current":
         return "PNG still current (the push moved no pixel of the card)"
     if outcome == "refused":
@@ -975,8 +969,6 @@ def _guard1_line(entry: dict, mode: str = "on") -> str:
                      f"mean {numbers['cross'].get('mean', 0):.2f}")
     if found.get("writer") in ("photoshop", "tool"):
         parts.append("saved by Photoshop" if found["writer"] == "photoshop" else "not saved by Photoshop")
-    if found.get("unchecked"):
-        parts.append("no stored image to cross-check (saved without Maximize Compatibility)")
     verb = "made" if entry["case"] == "new" else "re-exported"
     misses = "".join(f"; {note}" for note in found.get("misses", []))
     return f"PNG{would} {verb} by the bot's render of the PSD ({'; '.join(parts)}){switch}{misses}"
@@ -1395,8 +1387,7 @@ def after_window(data: dict, landed: dict, tip: Optional[Snapshot], bot_moved: f
     PNG refusal, or in report mode a PNG the bot would make, whose PNG was pushed since; plus the writes that did not land
     and were not replaced by the author (the bot's commit failed, a later push touched the card). A write the branch
     already holds (a re-run) is not told, nor any write when a re-run could not read the branch (an earlier attempt may
-    have landed it). A numbered PNG's refusal (G8) is withdrawn as the main PNG's is, and so is the line of a PNG made with
-    no stored image (G2) whose PNG was pushed since or did not land.
+    have landed it). A numbered PNG's refusal (G8) is withdrawn as the main PNG's is.
 
     Args:
         bot_moved: The PSDs whose last change on the branch is a bot commit's
@@ -1443,10 +1434,6 @@ def after_window(data: dict, landed: dict, tip: Optional[Snapshot], bot_moved: f
         for write in entry.get("writes", []):   # R1's tags set as badges by the bot: not told once that write stands
             if write.get("settles") and _fix_stands(entry, write, landed, here):
                 lines = [line for line in lines if line not in write["settles"]]
-        unchecked = export.get("unchecked")
-        if unchecked in lines and png and (any(line.startswith("PNG not made: ") for line in lines)
-                                           or (here and not _holds(entry, png, here(png)))):
-            lines.remove(unchecked)             # no bot PNG stands: the author's, or none
         told[psd], after[psd] = list(dict.fromkeys(lines)), notes
     return told, after
 

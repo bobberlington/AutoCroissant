@@ -5,12 +5,11 @@ bake would make (owner, 2026-10-22). The fork renders the changed layers' box of
 renders) and the old PNG takes the new render's pixels where it differs from the old one (psd_edit.merge_png), gated as
 the bake is (the
 baseline's parity, shape, region). Photoshop's stored composite is never written: it is only a cross-check that can
-refuse (the old PNG outside the change, the drawn change against Photoshop's own image). A PSD saved without one (no
-Maximize Compatibility, G2) gets its PNG anyway (owner, 2026-10-24) under the bake's own gates alone: the baseline,
+refuse (the old PNG outside the change, the drawn change against Photoshop's own image). A PSD without one (Maximize
+Compatibility off: every card since the 11-07 pass, G2) gets its PNG under the bake's own gates alone: the baseline,
 every text the parser reads differently (its record changed) drawn with a change, the merge's shape and region; the
-Export is `unchecked` and the guards tell "no stored image to cross-check". Beside its PNG with at most KEPT_PX px past
-BESIDE_CUT it keeps the PNG, told (KEPT; default 2026-10-24, owner to confirm). A refusal is data (an Export with
-outcome "refused" and the line card makers read).
+Export is `unchecked`, never told (owner 2026-11-07: soft notes are no issue). Beside its PNG with at most KEPT_PX px
+past BESIDE_CUT it keeps the PNG. A refusal is data (an Export with outcome "refused" and the line card makers read).
 As the bake (owner, 2026-10-23), the bot's drawing refuses only past psd_edit.PARITY_FLOOR; a miss of the bar under it is
 written and told (Export.misses). A card drawn whole (new, or beside its PNG) is held to the floor per text and stat
 box too, and a text box drawn blank refuses (the bake's blank render). A stale old PNG
@@ -21,7 +20,7 @@ draw those.
                                                              PSD beside an existing PNG
     shows(png, psd, other) -> bool                           the PNG shows psd rather than other (G2's burst anchor)
     export_new(new_psd) -> Export                            a new PSD with no PNG (5.5)
-    png_check(psd, png) -> dict                              R10: a PNG against its PSD's composite
+    png_check(psd, png) -> dict                              R10: a PNG against its PSD (its stored image, else the render)
     changed_layers(old, new) -> (box, n)                     the layer records that really changed
     photoshop_saved(old, new) -> bool                        a new xmpMM:InstanceID and a later xmp:MetadataDate
     recompress(data, minimum, floor) -> bytes or None        the PNG losslessly smaller (oxipng, checked), or None
@@ -64,21 +63,12 @@ from commands.psd_regions import fx_pad, stat_rows
 # ========================
 TOL = 2                                         # |diff| a pixel may show and still be unchanged (ICC rounding)
 BESIDE_CUT = 8                                  # new PSD beside its PNG: within this, the PNG is current (owner)
-KEPT_PX = 300                                   # G2 beside: px past BESIDE_CUT up to which the PNG is kept, told (fork noise)
-VOLATILE = (b"shmd", b"SoLd", b"PlLd", b"TySh", b"lnsr")   # blocks Photoshop rewrites on every save (2.2)
+KEPT_PX = 300                                   # G2 beside: px past BESIDE_CUT up to which the PNG is kept (fork noise)
+VOLATILE = (b"shmd", b"SoLd", b"SoLE", b"PlLd", b"TySh", b"lnsr")   # rewritten by every save (2.2) or by linking
 DILATE = 8                                      # px around a numbered PNG's toggled area (5.4)
 FX_EXTRA = 2                                    # px beyond fx_pad around a changed layer
 OUTCOMES = ("re-exported", "current", "refused", "error")
 EXPORT = "export it in Photoshop"               # every refusal ends so (owner, 2026-10-22)
-UNCHECKED = "no stored image to cross-check the bot's PNG against: save the PSD with Maximize Compatibility on"   # told
-NO_IMAGE = "the PSD has no stored image"
-PICTURE = ("drawn as picture {drawn}, the PSD being saved showing {saved}, so not cross-checked against its own "
-           "image")   # told: a tagged PSD's Name.png (§7)
-PICTURE_KEPT = "the PSD was saved showing {saved}, so the bot drew picture {drawn} unchecked"
-KEPT = ("PNG kept as it is: the PSD has no stored image, and the bot's drawing differs from the PNG in only {px:,} px, "
-        "which may be its own drawing noise; if the PNG is out of date, " + EXPORT)   # told
-RESTYLED = ("PNG kept as it is: the PSD has no stored image, and the bot draws no change for {what}, which the push "
-            "changed; if the PNG is out of date, " + EXPORT)   # told
 G2_PROFILE = "PNG not made: the PSD's colour profile changed, and it has no stored image to check the bot's drawing; " + EXPORT
 G2_BLANK = "PNG not made: the bot draws nothing for {what} (and the PSD has no stored image to check it against); " + EXPORT
 G2_MODE = "PNG not made: the PSD is not 8-bit RGB, so the bot cannot check its drawing; " + EXPORT
@@ -88,8 +78,7 @@ G6_BASE = ("PNG not made: the bot cannot draw this part of the card as its old P
            "differ); " + EXPORT)
 G6 = "PNG not made: the bot's drawing of your change does not match the PSD's own image ({bad:.1f}% of pixels); " + EXPORT
 G6_UNSEEN = "PNG not made: the PSD's own image changed where the bot sees no layer change; " + EXPORT
-G6_STALE = ("PNG not made: the PSD's stored image no longer shows its layers (it was not saved by Photoshop); save it in "
-            "Photoshop with Maximize Compatibility, or " + EXPORT)
+G6_STALE = "PNG not made: the PSD's stored image no longer shows its layers (it was not saved by Photoshop); " + EXPORT
 G6_NEW = "PNG not made: the bot's drawing of the new PSD does not match its own image ({bad:.1f}% of pixels); " + EXPORT
 G6_BOX = "PNG not made: the bot's drawing of {what} does not match the PSD's own image ({bad:.1f}% of pixels there); " + EXPORT
 G6_BLANK = "PNG not made: the bot draws nothing for {what}, which the PSD's own image shows; " + EXPORT
@@ -125,7 +114,7 @@ class Export:
     numbers: dict = field(default_factory=dict) # the gates' measures
     misses: dict = field(default_factory=dict)  # "baseline" / "cross" / a box: a measure past the bar, under the floor (told)
     numbered: dict = field(default_factory=dict)   # numbered PNG path -> (bytes, "") or (b"", refusal line)
-    unchecked: bool = False                     # no stored composite (G2): the bake's own gates alone, nothing cross-checked
+    unchecked: bool = False                     # no stored composite (G2): the bake's own gates alone (never told)
     pictures: list = field(default_factory=list)   # the variant tags' pictures made as their own (render_picture)
 
 
@@ -1007,7 +996,7 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
     compared with Photoshop's own; the bake's gates stand. With an old PSD: the changed layers' box rendered for both,
     each text _rereads() finds drawn with a change (else G2_BLANK), the baseline (the old PSD drawn against the old PNG:
     past the floor G6, a miss told), the delta merge, the shape and region gates (G7). A new PSD beside its PNG:
-    the whole card rendered; the PNG is current with no pixel past BESIDE_CUT, kept (told) up to KEPT_PX past it, else it
+    the whole card rendered; the PNG is current with no pixel past BESIDE_CUT, kept up to KEPT_PX past it, else it
     takes the render past the cut, every text drawn (_texts_drawn; no baseline, so no pixel refusal). A PNG pushed before
     its PSD is current (png_ahead): over F nearer the new render than the old, within the bar of the new render, or
     not past the floor of it with the old render past the bar (a change the fork draws a few levels off: Pandamonium's
@@ -1019,8 +1008,8 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
     ICC mode: the old pair's vote; with no stored image to vote, a foreign profile is drawn both ways and voted against
     the old PNG as icc_vote votes, over the box, else the whole card (_render_voted: the 21 raw exports). A text
     _rereads() finds under the art (_covered) needs no change. Refused when the colour profile changed (G2_PROFILE: no
-    layer record shows it). Nothing drawn moved but a type layer's TySh (a style edit, Dogma's case): the PNG kept, told
-    (RESTYLED: Photoshop may have redrawn it, 22_Negation).
+    layer record shows it). Nothing drawn moved but a type layer's TySh (a style edit, Dogma's case, or the pass's
+    subscript conversion): the PNG kept (numbers["restyled"]).
     """
     result = Export("current", unchecked=True)
     if old is None:
@@ -1085,30 +1074,6 @@ def _restyled(old: PSDImage, new: PSDImage) -> list:
             if (before[key][1] or after[key][1]) and before[key][2] != after[key][2]]
 
 
-def unchecked_line(found: Export) -> str:
-    """The line told for a G2 export (no stored image): UNCHECKED for a PNG made, KEPT or RESTYLED for one kept."""
-    if not found.unchecked:
-        return ""
-    picture = found.numbers.get("picture")
-    if found.outcome == "re-exported":
-        return PICTURE.format(**_picture_words(picture)) if picture else UNCHECKED
-    if found.outcome != "current":
-        return ""
-    line = ""
-    if "kept" in found.numbers:
-        line = KEPT.format(px=found.numbers["kept"])
-    restyled = found.numbers.get("restyled")
-    if restyled and not line:
-        what = restyled[0] + (f" and {len(restyled) - 1} more" if len(restyled) > 1 else "")
-        line = RESTYLED.format(what=what)
-    return line.replace(NO_IMAGE, PICTURE_KEPT.format(**_picture_words(picture))) if line and picture else line
-
-
-def _picture_words(picture: dict) -> dict:
-    saved = picture.get("saved")
-    return {"drawn": picture["drawn"], "saved": f"picture {saved}" if saved else "no single picture"}
-
-
 def shows(png: Image.Image, psd: PSDImage, other: PSDImage) -> bool:
     """
     Whether the PNG shows psd rather than other (G2's burst anchor against the PSD before the push): both drawn over
@@ -1140,7 +1105,7 @@ def _shows(png: Image.Image, psd: PSDImage, other: PSDImage) -> bool:
 def _beside_unchecked(new: PSDImage, old_png: Image.Image, result: Export, numbered: Optional[dict]) -> Export:
     """_unchecked for a new PSD beside an existing PNG. No old PSD, so no baseline: the render of the whole card against
     the PNG (png_vs_render) holds the author's change too, so it only finds where the PNG takes the render; it is never a
-    drawing miss and never refuses. Up to KEPT_PX px past BESIDE_CUT the PNG is kept (numbers["kept"], told). The gate is
+    drawing miss and never refuses. Up to KEPT_PX px past BESIDE_CUT the PNG is kept (numbers["kept"]). The gate is
     every text drawn (_texts_drawn). ICC mode voted over the renders (_render_voted)."""
     result.vote = psd_edit.icc_vote(new, old_png)
     box = (0, 0, new.width, new.height)
@@ -1153,7 +1118,7 @@ def _beside_unchecked(new: PSDImage, old_png: Image.Image, result: Export, numbe
         result.numbers["png_ahead"] = {"card": result.numbers["png_vs_render"]}
         return result
     moved = diff > BESIDE_CUT
-    # default 2026-10-24, owner to confirm: a few hundred px, the fork's noise, kept and told (KEPT); past it redrawn
+    # default 2026-10-24: a few hundred px, the fork's noise, kept; past it redrawn
     # (the replayed stale edits, 1,684 px and up, land within the bar of the author's export)
     if int(moved.sum()) <= KEPT_PX:
         result.numbers["kept"] = int(moved.sum())
@@ -1242,14 +1207,24 @@ def export_new(new: PSDImage) -> Export:
 
 def png_check(psd: PSDImage, png: Image.Image) -> dict:
     """
-    R10: the PNG against its PSD's composite, converted as voted (icc_vote over this pair).
+    R10: the PNG against its PSD's composite, converted as voted (icc_vote over this pair), within the bar. A PSD with no
+    stored image (Maximize Compatibility off): the fork's render of the whole card (as G2 votes it), not past the parity
+    floor ("rendered": True).
 
     Returns:
-        {"ok": bool or None (no composite to compare), "icc", "bad_pct", "mean", "max", "px"}
+        {"ok": bool or None (another size, not 8-bit RGB), "icc", "bad_pct", "mean", "max", "px"}
     """
+    if png.size != (psd.width, psd.height):
+        return {"ok": None, "why": "another size"}
     composed = composite(psd)
-    if composed is None or composed.size != png.size:
-        return {"ok": None, "why": "no stored composite" if composed is None else "another size"}
+    if composed is None:
+        if _no_composite(psd) is not None:
+            return {"ok": None, "why": "not 8-bit RGB"}
+        scratch = Export("current")
+        icc, render = _render_voted(psd, (0, 0, psd.width, psd.height), psd_edit.export_icc(psd, png),
+                                    psd_edit.icc_vote(psd, png), png, scratch)
+        measured = _stats(_diff(like_mode(render, png.mode), png))
+        return {"ok": not psd_edit._past_floor(measured), "icc": icc_mode(psd, icc), "rendered": True, **measured}
     icc = psd_edit.export_icc(psd, png)
     measured = _stats(_diff(like_mode(convert(psd, composed, icc), png.mode), png))
     return {"ok": _within(measured), "icc": icc_mode(psd, icc), **measured}
@@ -1271,11 +1246,9 @@ def open_psd(data: bytes) -> PSDImage:
 __all__ = [
     'DILATE',
     'Export',
-    'KEPT',
     'KEPT_PX',
     'OUTCOMES',
     'TOL',
-    'UNCHECKED',
     'VOLATILE',
     'changed_layers',
     'composite',

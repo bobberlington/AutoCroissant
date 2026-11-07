@@ -429,6 +429,12 @@ def test_a_failed_compare_keeps_the_lanes_notes(github, status, ahead):
     assert ("not in the data yet" in lines[0]) == ahead
 
 
+def test_a_linked_picture_is_card_input():
+    """MDW/Linked, any extension, is card input (Card sync redraws the cards linking it); MDW's other files are not."""
+    assert all(cs.card_input(f"MDW/Linked/Delta - bg.{ext}") for ext in ("jpeg", "webp", "psb", "gif", "png"))
+    assert not cs.card_input("MDW/Old Rules/notes.txt")
+
+
 def test_one_followed_run_at_a_time(github, tmp_path):
     github.publish({"A": _card("A")}, defaultdict(list), tmp_path)
     assert cs._run_lock.acquire(blocking=False)

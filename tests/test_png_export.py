@@ -92,7 +92,7 @@ def test_no_visible_change_is_current(tmp_path):
 def test_g2_renders_anyway_with_the_bakes_own_gates(tmp_path):
     """Owner, 2026-10-24: a PSD saved without Maximize Compatibility (no stored image) gets its PNG anyway: the fork's
     render merged as always, under the bake's own gates (the baseline, the shape and region), nothing cross-checked
-    ("cross" never measured), unchecked so the guards tell it. A push that moved nothing is current; a new card is made
+    ("cross" never measured), unchecked (never told). A push that moved nothing is current; a new card is made
     whole; a new PSD beside its PNG is current within the bar of the render, else redrawn where it differs."""
     old = fixture_psd(tmp_path, card(), "old")
     new = fixture_psd(tmp_path, card(colour=(0, 255, 0)), "new")
@@ -256,9 +256,9 @@ def test_a_new_psd_beside_its_own_png_is_current(tmp_path, monkeypatch):
     assert (found.outcome, found.numbers["composite_px"], found.data) == ("current", 25, b"")
 
 
-def test_g2_keeps_a_png_beside_up_to_kept_px_and_tells(tmp_path, monkeypatch):
-    """Default 2026-10-24, owner to confirm: with no stored image, a PNG at most KEPT_PX px past BESIDE_CUT of the fork's
-    whole-card render (its own noise beside a current PNG) is kept and told (numbers["kept"], KEPT), never redrawn; past
+def test_g2_keeps_a_png_beside_up_to_kept_px(tmp_path, monkeypatch):
+    """Default 2026-10-24: with no stored image, a PNG at most KEPT_PX px past BESIDE_CUT of the fork's
+    whole-card render (its own noise beside a current PNG) is kept (numbers["kept"]), never redrawn; past
     KEPT_PX it is redrawn where it differs past the cut, within the bar or not (review of 2026-10-24: the whole-card bar
     kept real edits of up to 13,496 px stale)."""
     new = fixture_psd(tmp_path, card(size=(300, 400)), "new")
@@ -418,10 +418,16 @@ def test_a_new_card_is_rendered_and_cross_checked(tmp_path, monkeypatch):
 
 
 def test_png_check(tmp_path):
+    """R10 against the stored image within the bar; without one (Maximize Compatibility off) against the fork's render
+    at the parity floor."""
     psd = fixture_psd(tmp_path, card(), "a")
     assert pe.png_check(psd, card())["ok"] is True
     assert pe.png_check(psd, card(colour=(255, 255, 255), box=(0, 0, 59, 60)))["ok"] is False
     assert pe.png_check(psd, card(size=(10, 10)))["ok"] is None
+    psd.has_preview = lambda: False
+    drawn = pe.png_check(psd, card())
+    assert drawn["ok"] is True and drawn["rendered"] and drawn["bad_pct"] == 0
+    assert pe.png_check(psd, card(colour=(255, 255, 255), box=(0, 0, 59, 60)))["ok"] is False
 
 
 # ========================

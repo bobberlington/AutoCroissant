@@ -5,7 +5,10 @@ text: 'White CLot' -> 'White Clot'", "added Ability FX: Blazing", "Ability box w
 Layers pair by layer id (Photoshop keeps it across saves and renames), else by path. Photoshop's re-save noise is left out:
 the blocks it rewrites on every save (shmd, lnsr, SoLd/PlLd ids, the legacy lrFX, ...), the re-rendered pixels of type,
 smart object, shape and fill layers (their text, content, transform and paths are compared instead), groups opened or
-closed in the Layers panel, and float jitter in text boxes and transforms. Report only: nothing here gates a push.
+closed in the Layers panel, and float jitter in text boxes and transforms. A linked smart object's content is its path
+(never its file, size or date); a smart object's content or transform, and a text's sub/superscript set to normal, count
+only when the layer's own pixels moved (the 11-07 pass: pictures linked, trims placed, sub/superscript converted, the
+pixels kept). Report only: nothing here gates a push.
 
     changes(old, new, codepoints) -> [str]      one phrase per change, the most telling first
     line(phrases, limit) -> str                  the phrases joined, cut to limit ("and N more")
@@ -35,6 +38,7 @@ NOISE = {b"shmd", b"lnsr", b"lyvr", b"cinf", b"lspf", b"lclr", b"fxrp", b"lrFX",
 # (rewritten by every save, or read elsewhere: lyid pairs, luni names)
 FILTER_NOISE = {b"filterID", b"validAtPosition"}   # smart filter ids and cache flag, renumbered by a save
 SEEN = {b"TySh", b"lfx2", b"lfxs", b"lmfx", b"SoLd", b"SoLE", b"lsct", b"iOpa", b"vmsk", b"vsms"}   # read by meaning
+SCRIPT = {"FontBaseline", "FontSize", "BaselineShift", "Leading", "AutoLeading"}   # what sub/superscript to normal sets
 BLENDING = {b"clbl": 1, b"infx": 0, b"knko": 0, b"brst": [], b"tsly": 1}     # blending options, defaults
 OWN_PIXELS = ("pixel",)                         # kinds whose channels are the art
 PX = 1.0                                        # px a box or origin must move to count
@@ -81,7 +85,8 @@ class Facts:
     pixels: str = ""                            # the art's channels (pixel layers)
     mask: str = ""                              # the user mask (rect, defaults and channel)
     vector: str = ""                            # the vector mask or shape path
-    content: str = ""                           # a smart object's file
+    content: str = ""                           # a smart object's file (a link: its path)
+    raster: str = ""                            # a type or smart object layer's own pixels (they count only with a change)
     transform: tuple = ()                       # a smart object's corners
     filters: str = ""                           # a smart object's smart filters
     text: Optional[str] = None
@@ -259,8 +264,17 @@ def _effects(layer) -> tuple:
     return out, bool(data.get(b"masterFXSwitch", True))
 
 
+def _link(item) -> str:
+    """A linked file's fact: its relative path as stored (else its name), never the file, its size or its date."""
+    found = getattr(item, "linked_file", None)
+    value = found.get(b"relPath", "") if found is not None and hasattr(found, "get") else ""
+    path = str(getattr(value, "value", value) or "").rstrip("\x00")
+    return "link:" + (path or str(getattr(item, "filename", "") or "").rstrip("\x00")).replace("\\", "/").lower()
+
+
 def _smart(layer, facts: Facts) -> None:
-    """A smart object's content (its embedded or linked file), corners and smart filters; its pixels are a render."""
+    """A smart object's content (its embedded file, or a linked file's path), corners and smart filters; its pixels are
+    a render."""
     data = None
     for key in (b"SoLd", b"SoLE"):
         data = _data(layer, key)
@@ -274,8 +288,9 @@ def _smart(layer, facts: Facts) -> None:
     filters = descriptor.get(b"filterFX")
     facts.filters = _digest(_without(plain(filters), FILTER_NOISE)) if filters is not None else ""
     try:
-        facts.content = _digest(layer.smart_object.data)
-    except Exception:                           # a missing link: the descriptor stands for it
+        item = layer.smart_object
+        facts.content = _link(item._data) if item.kind == "external" else _digest(item.data)
+    except Exception:                           # no item: the descriptor stands for it
         facts.content = _digest(plain(descriptor.get(b"Idnt")))
 
 
@@ -325,6 +340,8 @@ def facts_of(psd: PSDImage) -> dict:
             _type_facts(layer, facts)
         elif layer.kind == "smartobject":
             _smart(layer, facts)
+        if layer.kind in ("type", "smartobject"):
+            facts.raster = _channels(layer, False)
         facts.effects, facts.effects_on = _effects(layer)
         facts.blending = tuple(_blend_option(blocks, key, default) for key, default in BLENDING.items())
         for key in blocks.keys():
@@ -473,10 +490,13 @@ def _compare(a: Facts, b: Facts, codepoints: Optional[dict], quiet=()) -> list:
             out.append((TEXT, "{} text: " + change))
         elif a.text != b.text:
             out.append((TEXT, "{} " + _unseen(a.text, b.text)))
-        style = _style_change(a, b, codepoints, quiet)
+        converted = _converted(a, b)
+        style = _style_change(a, b, codepoints, (*quiet, *SCRIPT) if converted else quiet)
         if style:
             out.append((LOOK, "{} " + style))
-        if a.box and b.box:
+        if converted:                           # the conversion's box fit (proofs P1's box rule): the pixels kept
+            pass
+        elif a.box and b.box:
             dw, dh = b.box[0] - a.box[0], b.box[1] - a.box[1]
             if abs(dw) >= PX:
                 out.append((GEOMETRY, "{} box " + ("widened" if dw > 0 else "narrowed") + f" {abs(dw):.0f} px"))
@@ -485,14 +505,15 @@ def _compare(a: Facts, b: Facts, codepoints: Optional[dict], quiet=()) -> list:
         elif bool(a.box) != bool(b.box):
             out.append((GEOMETRY, "{} " + ("now box text" if b.box else "now point text")))
         dx, dy = b.origin[0] - a.origin[0], b.origin[1] - a.origin[1]
-        if abs(dx) >= PX or abs(dy) >= PX:
+        if (abs(dx) >= PX or abs(dy) >= PX) and not converted:
             out.append((GEOMETRY, "{} moved " + f"{dx:+.0f},{dy:+.0f} px"))
         if any(abs(x - y) >= 0.005 for x, y in zip(a.scale, b.scale)):
             out.append((GEOMETRY, "{} scaled " + f"{abs(a.scale[1]) * 100:.0f}% -> {abs(b.scale[1]) * 100:.0f}%"))
     elif a.kind == "smartobject" and b.kind == "smartobject":
-        if a.transform != b.transform and a.transform and b.transform:
+        drawn = _redrawn(a, b)
+        if a.transform != b.transform and a.transform and b.transform and drawn:
             out.append((GEOMETRY, "{} " + _moved(_corners(a.transform), _corners(b.transform))))
-        if a.content != b.content:
+        if a.content != b.content and drawn:
             out.append((CONTENT, "{} smart object content changed"))
         if a.filters != b.filters:
             out.append((CONTENT, "{} smart filters changed"))
@@ -541,6 +562,20 @@ def _same(a: Facts, b: Facts, differ: bool, mask: bool) -> bool:
         return one.size == two.size and one.mode == two.mode and one.tobytes() == two.tobytes()
     except Exception:                           # cannot decode: the encoded channels decide
         return False
+
+
+def _redrawn(a: Facts, b: Facts) -> bool:
+    """A type or smart object layer's own pixels moved (its rect, or its decoded channels)."""
+    return a.rect != b.rect or not _same(a, b, a.raster != b.raster, False)
+
+
+def _converted(a: Facts, b: Facts) -> bool:
+    """Sub or superscript set to normal with the pixels kept: the same text and pixels, a run made normal, none made sub
+    or superscript."""
+    if a.text != b.text or _redrawn(a, b):
+        return False
+    pairs = [(style_a.get("FontBaseline") or 0, style_b.get("FontBaseline") or 0) for (style_a, _), (style_b, _) in zip(a.chars, b.chars)]
+    return any(x and not y for x, y in pairs) and all(not y or x == y for x, y in pairs)
 
 
 def _corners(transform: tuple) -> tuple:
