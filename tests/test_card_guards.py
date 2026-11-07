@@ -228,7 +228,7 @@ def test_check_end_to_end(cards, tmp_path, monkeypatch):
     assert by["Kept"]["told"] == [] and by["Kept"]["notes"] == ["Kept.png was deleted; the PSD stays"]
     assert (out / "crops" / FOLDER / "Snack.diff.png").exists()
     summary = json.loads((out / "summary.json").read_text())
-    assert summary == {"after": bot, "cards": 8, "told": summary["told"], "comment": 6, "writes": 4, "convert": 0,
+    assert summary == {"after": bot, "cards": 8, "told": summary["told"], "comment": 6, "writes": 4, "normalise": 0,
                        "errors": 0, "card_errors": 0} and summary["told"] >= 1
     assert by["Bread"]["told"] == [] and not by["Bread"]["issues"]      # R3: no Ability layer is the developer's layout
     assert not by["Dropped"]["writes"] and not by["Dropped"]["export"]
@@ -492,11 +492,11 @@ def test_a_later_push_is_converted_silently(cards, tmp_path, monkeypatch):
     data = cg.check(str(root), head, bot, mode="on", out=str(out), workers=1, convert="later")
     by = {Path(e["psd"]).name: e for e in data["cards"]}
     assert by["Snack.psd"]["convert"] == [cg.NORMALISE] and by["Item_Template.psd"]["case"] == "convert"
-    assert data["summary"]["convert"] == 2 and data["summary"]["writes"] >= 3 and not converted
+    assert data["summary"]["normalise"] == 2 and data["summary"]["writes"] >= 3 and not converted
     assert "Item_Template" not in data["markdown"] and data["discord"] == {}
     plan = str(out / "plan.json")
     after = cg.convert(plan, str(root), workers=1)
-    assert sorted(converted) == [f"{FOLDER}/Snack.psd", "MDW/Templates/Item_Template.psd"] and after["summary"]["convert"] == 0
+    assert sorted(converted) == [f"{FOLDER}/Snack.psd", "MDW/Templates/Item_Template.psd"] and after["summary"]["normalise"] == 0
     snack = {w["path"]: w for w in next(e for e in after["cards"] if e["psd"].endswith("Snack.psd"))["writes"]}
     assert snack[f"{FOLDER}/Snack.psd"]["silent"] and snack[f"{FOLDER}/Snack.psd"]["pixels"] == [cg.NORMALISE]
     assert snack["MDW/Linked/Snack - art.png"]["kind"] == "file" and snack["MDW/Linked/Snack - art.png"]["silent"]
