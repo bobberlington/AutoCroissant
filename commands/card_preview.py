@@ -16,19 +16,20 @@ The edit is the card's Card Edits.json entry as it would be published (any of it
 the `_`-keys. Exit 0, 2 for a bad input, 1 for any other error (result.json's `transient`: try again). Every dispatched
 value printed goes through clean().
 No Discord or config imports; SPARSE_FILES is what card-preview.yml checks out: the import closure and
-requirements-cards.txt.
+requirements-cards.txt. card-preview.yml starts it beside the font restore: it waits in ready() (WAIT_ENV).
 """
 from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor, wait
+from importlib import import_module
 from io import BytesIO
 from json import dumps, loads
-from os import environ, makedirs, remove, replace
+from os import environ, makedirs, pathsep, remove, replace
 from os.path import abspath, basename, exists, expanduser, getsize, isfile, join
 from re import fullmatch
 from shutil import move, rmtree
 from sys import argv, stderr
 from tempfile import mkdtemp
-from time import perf_counter
+from time import perf_counter, sleep
 from traceback import format_exc
 from typing import Optional
 
@@ -60,6 +61,9 @@ WEBP_WIDTH, WEBP_QUALITY = 720, 75              # the card view's width; WebP (t
 RETRY = card_bake.TRANSIENT + ("blob",)         # try again: the bake's own, and a blob that failed its hash (a download's)
 RESULT_V = 2                                    # result.json's "v": 2 adds variant and parts (PARTS_EDITOR.md §5, I4)
 PNG_LEVEL = 1                                   # preview.png's zlib level: never published, the same pixels, a fast save
+WAIT_ENV = "CARD_PREVIEW_WAIT"                  # files card-preview.yml makes once the reads and fonts are in (pathsep)
+WAIT_S = 420                                    # then try again
+WARM = ("scipy.ndimage", "PIL.ImageCms")        # every bake's lazy imports (not scipy.interpolate: few bakes use it)
 
 
 # ========================
@@ -157,6 +161,25 @@ def picture_of(snapshot: Snapshot, key: str) -> Optional[tuple]:
         if number and CardAuthors.key(card_name(path)) == key and (number.group(1) + ".psd").lower() == original.lower():
             return original, int(number.group(2))
     return None
+
+
+def ready() -> None:
+    """Started beside the font restore (card-preview.yml): the bake's lazy imports, then a wait for WAIT_ENV's files.
+    Nothing before it reads the fonts or the records. No WAIT_ENV: at once."""
+    marks = [mark for mark in environ.get(WAIT_ENV, "").split(pathsep) if mark]
+    if not marks:
+        return
+    for name in WARM:
+        try:
+            import_module(name)
+        except ImportError:                     # the bake says so
+            pass
+    Image.init()
+    deadline = perf_counter() + WAIT_S
+    while not all(exists(mark) for mark in marks):
+        if perf_counter() > deadline:
+            raise Transient(f"the setup was not done in {WAIT_S} s")
+        sleep(0.05)
 
 
 # ========================
@@ -334,6 +357,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
         snapshot = local_snapshot(repository, clone, head) if clone else snapshot_at(repository, head or ref_head(repository))
         result["base"].update(repo=repository, commit=snapshot.head)
         one = resolve(snapshot, card, fields)
+        ready()                                 # the reads and fonts are in
         snapshot.prefetch(blobs_of(snapshot, one))    # side by side
         png_rel = snapshot.png_for(one.rel)[0] if one.rel else ""
         if one.view is not None:                # the picture's own PNG
@@ -474,6 +498,7 @@ __all__ = [
     'notes_of',
     'outcome',
     'preview',
+    'ready',
     'render',
     'resolve',
     'write_images',
