@@ -39,6 +39,8 @@ BLOCK_HOPPER = ("923fdc6d0d874beac87904c5fc68f76737ebaf74", "23f5cd1787d1d8d9247
 CLOT_WHITE = ("09dbfff123941024fe7632dc0109d583f655de24", "497eda88775b84cc2ff53e88699a402f7a71b67c",
               "16c15a759a0a361dcbbe3849218b6f35662703d7", "044b16a8a185ee7c402eb864c33233df21157f41")   # d8163103
 ABIGAIL = ("2b68e6a182b67d38e9b7720c035cbdc4f3ab42db", "f7fe63fa4cef78833d18c5e321d40644e7c22a35")    # 'Display' profile
+CORRUPTION = ("0a25307b51c751e800405b79a6c311b6e5701187", "20912da57554852a51e8a436599da05fba38d323",
+              "47b02882ed2f48a1b3f1e596392064f1014cf2cb")   # 99594156: its title layer renamed only
 MINI_DOOMER = "Auxiliary/Minions/Mini_Doomer"
 SHIELD = "e48fd9f26568f711f80d0688a33e41016d7469a4"     # Items/Equip/3 Stars/Shield_of_the_Guilty.psd (TTSCardMaker 3a268cad)
 FREEZER = "8505c4f00a5eda92a48a6966749b214989657caa"    # Field/1 Stars/The_Freezer.psd (91fcda38)
@@ -432,6 +434,18 @@ def test_a_link_rewritten_is_no_layer_change(clone, tmp_path):
     out = tmp_path / "linked.psd"
     psd_edit.save_psd(new, str(out))
     assert pe.changed_layers(old, PSDImage.open(str(out))) == (None, 0)
+
+
+@fork
+def test_a_renamed_title_moves_no_pixel(clone):
+    """A rename draws nothing: no changed layer, the title not pinned to the gamma (its record says straight), the PNG
+    kept (99594156's guards re-exported Corruption, 10a1de86)."""
+    facts = {"icc": [0.0, 915372], "text": {"19": ["3515dc313d64", "straight"], "85": ["de2f6caebd3e", "gamma"]}}
+    old, new = (psd_edit.use_record(pe.open_psd(blob(clone, sha)), "", facts) for sha in CORRUPTION[:2])
+    assert [{layer.layer_id: layer.name for layer in psd.descendants()}[19] for psd in (old, new)] == ["Corruption", "Name"]
+    assert pe.changed_layers(old, new) == (None, 0) and pe._edited(old, new) == ()
+    found = pe.export(old, new, pe.open_png(blob(clone, CORRUPTION[2])))
+    assert (found.outcome, found.changed_px, found.data) == ("current", 0, b"")
 
 
 def test_png_check(tmp_path):
