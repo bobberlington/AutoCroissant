@@ -71,7 +71,7 @@ AUTO_FIX = ("R9",)                              # what the bot fixes: the owner'
                                                 # sync)", 2026-10-22; R11 is told until the owner adds it
 SIZE_MAX = 0.01                                 # a fixed PSD stays within 1% of the pushed one
 COMPOSER_LAYERS = ("ability", "name", "health", "attack", "defense", "speed")   # R8: visible ones set Single-line
-TXT2_COMPOSER = "29"                            # Txt2's EveryLineComposer (Photoshop CC's numbered keys)
+TXT2_COMPOSER = psd_edit.COMPOSER_KEY           # Txt2's EveryLineComposer (Photoshop CC's numbered keys)
 LINE_IOU = 0.9                                  # R8 box text: a line rewraps under it (each line's ink, the fork's
                                                 # Single-line layout vs the stored; matches 0.94-1.0, a moved word 0.04-0.34)
 LINE_PAD = 2                                    # px around a line's box
@@ -196,17 +196,8 @@ def _on(value) -> bool:
     return bool(getattr(value, "value", value))
 
 
-def _story_props(psd: PSDImage, index: Optional[int]) -> list:
-    """The paragraph properties of Txt2 story index (Photoshop CC's numbered keys); [] without it."""
-    root = psd_edit._txt2(psd)
-    if root is None or index is None:
-        return []
-    _, _, items, model, _, spelling = psd_edit._story_list(root)
-    if spelling:
-        raise Refused("unsupported-card", "a Txt2 block with named keys")
-    if not 0 <= index < len(items):
-        return []
-    return [run["0"]["0"]["5"] for run in items[index][model]["5"]["0"]]
+_story_props = psd_edit.story_paragraphs
+_point_text = psd_edit.point_text
 
 
 def _composer_values(psd: PSDImage, records: set) -> dict:
@@ -229,24 +220,20 @@ def _composer_values(psd: PSDImage, records: set) -> dict:
 
 
 def composer_layers(psd: PSDImage) -> list:
-    """R8: the visible card text layers (COMPOSER_LAYERS) set with the Every-line Composer, in TySh or their Txt2 story."""
+    """R8: the visible card text layers (COMPOSER_LAYERS) set with the Every-line Composer, in TySh or their Txt2 story
+    (box text without the story's key too: psd_edit.unset_composer)."""
     out = []
     for layer in _visible_texts(psd):
         if layer.name.strip().lower() not in COMPOSER_LAYERS:
             continue
         try:
             story = _story_props(psd, psd_edit.story_index(layer))
+            unset = bool(psd_edit.unset_composer(psd, layer))
         except (Refused, KeyError, TypeError, AttributeError):
-            story = []
-        if every_line(layer) or any(_on(props.get(TXT2_COMPOSER, False)) for props in story):
+            story, unset = [], False
+        if every_line(layer) or unset or any(_on(props.get(TXT2_COMPOSER, False)) for props in story):
             out.append(layer)
     return out
-
-
-def _point_text(layer) -> bool:
-    """No box: a line ends only at a return, whatever the composer."""
-    shapes = layer._engine_data["EngineDict"]["Rendered"]["Shapes"]["Children"]
-    return all(int(_on(shape["Cookie"]["Photoshop"]["ShapeType"])) == 0 for shape in shapes)
 
 
 def _ink(rgba, bbox, shape: tuple):
@@ -290,9 +277,9 @@ def reflow(layer, shape: tuple, fonts_dir: Optional[str]) -> Optional[str]:
 
 def single_line(path: str, out_path: str, fonts: Optional[Callable[[list], Optional[str]]] = None) -> tuple:
     """
-    R8: set every composer_layers Single-line (TySh and the Txt2 story) and save without a new preview; gated: set back,
-    every layer record and document block is the old bytes. Each box text layer's lines are measured (reflow) for
-    redraw().
+    R8: set every composer_layers Single-line (TySh and the Txt2 story, the story's key written where box text has
+    none) and save without a new preview; gated: set back and the written keys taken out, every layer record and
+    document block is the old bytes. Each box text layer's lines are measured (reflow) for redraw().
 
     Args:
         fonts: Gives MDW/Fonts for a box text layer's faces (PostScript names); "" when they can't be had
@@ -320,16 +307,20 @@ def single_line(path: str, out_path: str, fonts: Optional[Callable[[list], Optio
     for key, (props, name) in _composer_values(psd, records).items():
         if key in flipped:
             props[name].value = False
+    written = [("Txt2", psd_edit.story_index(layer), run) for layer in chosen for run in psd_edit.set_single_line(psd, layer)]
     psd_edit.save_psd(psd, out_path)
     new = PSDImage.open(out_path)
     if any(psd_edit._record_index(layer) in records for layer in composer_layers(new)):
         raise Refused("bytes", "a layer is still Every-line")
     values = _composer_values(new, records)
-    if set(flipped) - set(values):
+    if set(flipped + written) - set(values):
         raise Refused("bytes", "a composer value went missing")
     for key in flipped:
         props, name = values[key]
         props[name].value = True
+    for key in written:
+        props, name = values[key]
+        del props[name]
     if psd_edit.layer_records(path) != psd_edit.layer_records(new):
         raise Refused("bytes", "a layer record changed beyond its composer")
     part = _same_document(PSDImage.open(path), new)

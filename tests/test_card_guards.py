@@ -993,7 +993,8 @@ def test_replay_of_the_stale_png_push(clone, tmp_path):
     data = cg.check(str(clone), "07589cc7", "38c55bd3", out=str(tmp_path / "out"), workers=1, cards={"god tamer"})
     by = {c["card"]: c for c in data["cards"]}
     assert list(by) == ["God Tamer"] and by["God Tamer"]["export"].get("outcome") == "current"
-    assert all(w["kind"] == "recompress" for c in data["cards"] for w in c["writes"])    # nothing re-exported
+    assert all(w["kind"] == "recompress" or w["composer"] and w["silent"] and not w["pixels"]    # nothing re-exported;
+               for c in data["cards"] for w in c["writes"])                                     # R8's key written unsaid
     assert by["God Tamer"]["changes"] == ["added Star group", "Group 2 renamed 'Stars'", "Star/Delicate Flower moved into Star"]
     assert data["discord"] == {}            # God Tamer's one issue was R3's layout, dropped by the owner (2026-10-23)
 

@@ -281,6 +281,15 @@ def test_composer_set_single_line(clone, tmp_path, monkeypatch):
             props[key].value = True
         new.save(str(tmp_path / "box.psd"), update_preview=False)
         assert cs.single_line(str(tmp_path / "box.psd"), str(tmp_path / "out.psd"), lambda names: str(fonts)) == (["Ability"], [], [])
+        bare = PSDImage.open(str(tmp_path / "box.psd"))     # no story key: Photoshop's Every-line; written
+        for (block, _, _), (props, key) in cs._composer_values(bare, records).items():
+            if block == "Txt2":
+                del props[key]
+            else:
+                props[key].value = False
+        bare.save(str(tmp_path / "bare.psd"), update_preview=False)
+        assert cs.single_line(str(tmp_path / "bare.psd"), str(tmp_path / "out1.psd"), lambda names: str(fonts)) == (["Ability"], [], [])
+        assert cs.composer_layers(PSDImage.open(str(tmp_path / "out1.psd"))) == []
         monkeypatch.setattr(cs, "LINE_IOU", 1.01)
         names, moves, left = cs.single_line(str(tmp_path / "box.psd"), str(tmp_path / "out2.psd"), lambda names: str(fonts))
         assert names == ["Ability"] and moves[0][0] == "Ability" and "would move" in moves[0][1] and left == []
