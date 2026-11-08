@@ -611,7 +611,8 @@ def test_a_heavy_commit_links_the_cards_history(tmp_path):
 def test_tts_details_for_the_save(bs):
     """data/tts.json (owner 10-30, the TTS hover strip and details): types' meanings from the chapters (an icon heading's
     section to the page break, a "[token]:" line, a line ending in tokens; secret text, "(See: ...)" and non-icons left
-    out), tags as text.js reads them, the statuses an ability names, cards by PNG path, hidden cards left out."""
+    out), tags as text.js reads them, the statuses an ability names, cards by PNG path, hidden cards left out; the name's and
+    ability's colours as the card page paints them (nc, ac)."""
     chapters = [{"id": "creature-types", "num": "20", "title": "Creature Types", "source":
                  "# Creature Types\n## FIRE {icon=fire}\nImmune to [[Burning]] (See: [“X”](#/rules/x))\n## WIND {icon=wind}\nSwap.\n"},
                 {"id": "item-types", "num": "14", "title": "Item Types", "source":
@@ -648,6 +649,15 @@ def test_tts_details_for_the_save(bs):
         "a": "(1cd) Inflict 2T burning. (3CD) fire again. (OD) Burning! Starts with 2 Dark Tentacles and a Secret. Deals piercing damage; negates.",
         "t": ["fire", "offensiveminion"], "g": ["1CD", "3CD", "OD"], "x": ["Burning"], "m": ["Aux/Dark_Tentacle.png"], "r": ["damage-types", "negation"], "by": "Bob"}
     assert "x" not in got["cards"]["Aux/Burning.png"] and got["chapters"]["minions"] == {"num": "15", "title": "Minions"}
+    if not hasattr(bs, "tts_colors"):                   # before TC's TTS colours land
+        return
+    hot, text = cards[0], cards[0]["ability"]          # the card page's colours on n and a: the card's own (past an icon's
+    at = text.index                                    # word), an edit's phrase but not a status word, too dark: plain
+    hot["ink"] = {"name": [[4, 7, "#ffd21f"]], "ability": [[at("again"), at("again") + 5, "#00ff00"], [at(" a S") + 1, at(" a S") + 2, "#00ffff"],
+                                                         [at("Secret"), at("Secret") + 6, "#202020"]]}
+    hot["colors"] = [{"field": "ability", "phrase": "Burning", "color": "#ff0000"}]
+    got = bs.tts_details(cards, chapters, icons, bs.tag_meanings(chapters))["cards"]["Creatures/Hot_Guy.png"]
+    assert got["nc"] == [["Guy", "#ffd21f"]] and got["ac"] == [["burning", "#ff0000"], ["again", "#00ff00"], ["a", "#00ffff", 5]]
 
 
 def test_badge_font_preloaded_where_badges_show(bs):

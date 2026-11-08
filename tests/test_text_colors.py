@@ -57,10 +57,11 @@ def test_field_rules_and_file():
 @site
 def test_menu_logic(tmp_path):
     """The phrase a selection names (whole words, "#n" when it repeats), the list a pick leaves, the runs drawn (over the
-    card's own colours), the plain words, and the file edit.js writes."""
+    card's own colours, on the card page and the mock-up), the plain words, and the file edit.js writes."""
     script = tmp_path / "probe.mjs"
     script.write_text(f"""const T = await import({json.dumps((ASSETS / 'textcolor.js').as_uri())});
 const E = await import({json.dumps((ASSETS / 'edit.js').as_uri())});
+const M = await import({json.dumps((ASSETS / 'mockup.js').as_uri())});
 const t = "Inflict Burning. Burning foes take +1 DEF.";
 const at = w => [t.indexOf(w), t.indexOf(w) + w.length];
 const second = t.indexOf("Burning", 10);
@@ -84,6 +85,12 @@ const out = {{
     return {{ base, name: T.inkOf(c, "name"), drawn: T.colorRanges(c.ability, [{{ field: "ability", phrase: "now", color: "#ffffff" }}], "ability", null, base),
       at: T.colorAt(null, "ability", c.ability, 8, 15, null, base), cut: T.inkOf(c, "ability", "Inflict Freezing right now."),
       low: T.paintHtml("ab", [{{ start: 0, end: 1, color: "#ffff00" }}, {{ start: 1, end: 2, color: "#202020" }}]) }};
+  }})() : null,
+  mock: M.baseInk ? (() => {{                     // the mock-up keeps them as the card page does: the field's, a part's share
+    const c = {{ ability: "Inflict Burning now.\\nGain 2 HP.", ink: {{ ability: [[8, 15, "#ff7a1a"], [26, 30, "#00ff00"]] }} }}, now = "Inflict Burning now.\\nGain 3 HP.";
+    T.anchorInks([c]);
+    return {{ drawn: M.colourize(M.tokenize(now, {{}}), now, null, "ability", null, M.baseInk(c, "ability", now)).flat(2).filter(p => p.color).map(p => [p.text, p.color]),
+      part: M.baseInk(c, "ability", "Gain 3 HP.", "Gain 2 HP.") }};
   }})() : null,
 }};
 process.stdout.write(JSON.stringify(out));
@@ -113,6 +120,8 @@ process.stdout.write(JSON.stringify(out));
     assert ink["base"] == [{"start": 8, "end": 15, "color": "#ff7a1a"}, {"start": 22, "end": 25, "color": "#0060ff"}] and ink["name"] is None
     assert ink["drawn"] == [{"start": 8, "end": 15, "color": "#ff7a1a"}, {"start": 22, "end": 25, "color": "#ffffff"}] and ink["at"] == "#ff7a1a"
     assert ink["low"] == '<span class="tc lo-l" style="color:#ffff00">a</span><span class="tc lo-d" style="color:#202020">b</span>'
+    if out["mock"] is not None:                         # an edit cuts into "2": "HP" keeps its colour, "3" none
+        assert out["mock"] == {"drawn": [["Burning", "#ff7a1a"], ["HP", "#00ff00"]], "part": [{"start": 6, "end": 9, "color": "#00ff00"}]}
 
 
 @pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")
