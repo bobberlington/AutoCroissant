@@ -851,10 +851,15 @@ def test_status_words_in_the_chart_colours(clone, context, tmp_path):
 
 
 def test_status_words_leave_prose_alone(clone, context):
-    """Lowercase uses are prose ("the imprisoned creature", Sans' all-lowercase "smeckeldorfed"), and a card in the chart's
-    colours has nothing to do: no write. No chart, no such fix."""
+    """Lowercase uses are prose ("the imprisoned creature", Sans' all-lowercase "smeckeldorfed"), off the chart or not,
+    and a card in the chart's colours has nothing to do: no write. No chart, no such fix."""
     for rel in ("Creatures/Kirby/4 Stars/grand_doomer.psd", "Creatures/Undertale/5 Stars/Sans.psd"):
         psd = PSDImage.open(clone / rel)
-        assert cs.status_texts(psd) and cs.status_plan(psd, context.chart) == []
+        assert cs.status_plan(psd, context.chart) == []
+        low = [(layer, a, b) for layer in cs.status_texts(psd)
+               for a, b, _ in psd_edit.status_spans(layer.text, context.chart, []) if layer.text[a].islower()]
+        for layer, a, b in low:                 # white, off the chart: still prose
+            layer.set_span_style(a, b, fill=(1.0, 1.0, 1.0))
+        assert low and cs.status_plan(psd, context.chart) == []
     psd = PSDImage.open(clone / "Creatures/Pandas/3 Stars/Panseida.psd")
     assert cs.status_plan(psd, context.chart) and "status words" not in cs.pixel_kinds(psd)
