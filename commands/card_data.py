@@ -1455,8 +1455,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     links_before = read_links(db_dir)
     links = links_before
     from commands.psd_edit import merge_records, set_records
-    kept = read_records(db_dir)
-    render, spot = merge_records(*kept, records or [])
+    render, spot = merge_records(*read_records(db_dir), records or [])
     set_records(render, spot)                                 # this build's parses read them (psd_details' type spots)
     if not stats and not empty:
         raise ValueError(f"{db_dir} holds no cards: give --empty to start new card data")
