@@ -67,6 +67,7 @@ STAT_FIELDS = ("hp", "def", "atk", "spd")
 TEXT_FIELDS = ("name", "ability")
 ICON_FIELDS = ("stars", "types")                # printed as icons; refused per field, never for the card (owner, 2026-10-23)
 PARTIAL_FIELDS = ICON_FIELDS + ("colors",)      # refused alone while the card's other fields bake (a colour: each its own)
+STATUS_KEPT = "{!r} is a status word, which keeps the chart's colour"   # plan_colors (owner 2026-11-07)
 KIND = CardEdits.KIND
 STAT_MAX = 10                                   # one bar row shows 0-10; Top + Bottom rows show 11-20 (idea 13)
 DIGITS = tuple(str(n) for n in range(10))
@@ -2040,7 +2041,7 @@ def comp_top(psd: Optional[PSDImage], stat: str) -> Optional[int]:
 
 
 def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: Optional[PSDParser] = None,
-             template: Optional[tuple] = None) -> Classification:
+             template: Optional[tuple] = None, chart: Optional[dict] = None) -> Classification:
     """
     Sort a card's edits: PSD-kind fields whose value differs from the fresh parse are jobs, equal ones redundant.
     A stat above 10 is a job only on a two-row card (idea 13), above 20 never; on a layer-comp bar, up to its top comp
@@ -2132,11 +2133,11 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
                 except Refused as refused:
                     out.refusals.append(refused.refusal)
     if edits.get("colors"):
-        _classify_colors(out, parsed, edits, psd)
+        _classify_colors(out, parsed, edits, psd, chart)
     return out
 
 
-def _classify_colors(out: Classification, parsed: dict, edits: dict, psd: Optional[PSDImage]) -> None:
+def _classify_colors(out: Classification, parsed: dict, edits: dict, psd: Optional[PSDImage], chart=None) -> None:
     """
     classify()'s `colors` (plan_colors): the colours to bake are the job, each refused one a refusal of the field (its
     reason; the card's other fields and colours still bake); with none to bake, the field is redundant when one was.
@@ -2147,7 +2148,7 @@ def _classify_colors(out: Classification, parsed: dict, edits: dict, psd: Option
         return
     parted = {job.get("field") for job in (out.jobs.get("parts") or {}).values() if isinstance(job, dict)}
     retyped = {f: edits.get(f) or "" for f in COLOR_PRINTED if f in out.jobs or f in parted}
-    out.colors = plan_colors(psd, edits["colors"], _card_name(parsed), retyped)
+    out.colors = plan_colors(psd, edits["colors"], _card_name(parsed), retyped, chart)
     if any(how == "baked" for _, how in out.colors):    # the redundant ones too: they paint in the colours' order
         out.jobs["colors"] = [one for one, how in out.colors if how in ("baked", "redundant")]
     elif any(how == "redundant" for _, how in out.colors):
@@ -5633,21 +5634,33 @@ def _fx_words(psd: PSDImage, layer) -> list:
     return [(a, b, fx.name) for fx in fx_layers(psd, layer) for a, b in phrase_ranges(layer.text, fx_phrases(layer, fx))]
 
 
-def _painted(layer, a: int, b: int, fx: list) -> list:
+def _painted(layer, a: int, b: int, fx: list, kept=frozenset()) -> list:
     """The str indices a colour paints in layer.text[a:b]: not the icon font's (badges and icons keep their colours), not
-    an FX layer's words (its pixels show)."""
+    an FX layer's words (its pixels show), not kept's (status_letters)."""
     icons = _char_styles(layer)[1]
-    return [i for i in range(a, b) if not icons[i] and not any(s <= i < e for s, e, _ in fx)]
+    return [i for i in range(a, b) if not icons[i] and i not in kept and not any(s <= i < e for s, e, _ in fx)]
 
 
-def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] = None) -> list:
+def status_letters(text: str, chart: Optional[dict], icons=()) -> set:
+    """The str indices of the text's capitalised chart status words (status_spans): they keep the chart's colour, as the
+    guards set them (owner 2026-11-07; card_standards.status_plan's rule on work/statuswords, mirrored)."""
+    return {i for a, b, _ in status_spans(text, chart or {}, list(icons)) if text[a].isupper() for i in range(a, b)}
+
+
+def _status_kept(layer, field: str, chart: Optional[dict]) -> set:
+    """status_letters of an Ability layer (titles have none)."""
+    return status_letters(layer.text, chart, icon_spans(layer)) if field == "ability" and chart else set()
+
+
+def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] = None, chart: Optional[dict] = None) -> list:
     """
     classify()'s `colors`: each colour's outcome, [(colour, "baked" | "redundant" | why not)] in the entry's order.
     Found on the card's layers (color_spans): redundant when every letter it is the last to paint (color_order) has
     that colour already, or none is left to it; a phrase an effect layer cuts (its own pixels show) or an overlay word
     layer prints is refused, as one of badges and icons alone. retyped: the fields a text edit of the entry sets
     ({field: its new text}): found in that text, baked (the bake finds it again once the text is set). The note's
-    colours are the website's alone: left out.
+    colours are the website's alone: left out. chart: status_fills(); the Ability's capitalised status words keep its
+    colours (a phrase of them alone refused).
     """
     out, overlays, final, painted = {}, None, {}, {}
     ordered = color_order([one for one in value if one.get("field") in COLOR_PRINTED])
@@ -5658,7 +5671,10 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
             words, nth = _numbered(phrase) if phrase else ("", 0)
             some, own = _matches(retyped[field] or "", words) if phrase else ([], [])
             hits = (own or some)[nth - 1:nth] if nth else own or some
-            out[k] = "baked" if hits or not phrase else f"{words!r} is not in the new {what}"
+            kept = status_letters(retyped[field] or "", chart) if field == "ability" else set()
+            alone = hits and all(i in kept or retyped[field][i].isspace() for a, b in hits for i in range(a, b))
+            out[k] = (STATUS_KEPT.format(phrase) if alone else "baked") if hits or not phrase \
+                else f"{words!r} is not in the new {what}"
             continue
         spans, why = color_spans(color_layers(psd, field, card), one)
         if field == "name" and (why or not spans) and title_in_picture(psd, card):
@@ -5672,10 +5688,13 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
         cut = [name for layer, a, b in spans for s, e, name in _fx_words(psd, layer) if s < b and a < e] \
             if phrase and not why else []
         why = why or (f"{phrase!r} is drawn by its effect layer {cut[0]!r}, which keeps its own pixels" if cut else "")
-        mine = [(layer, i) for layer, a, b in spans for i in _painted(layer, a, b, _fx_words(psd, layer))] if not why else []
+        mine = [(layer, i) for layer, a, b in spans for i in _painted(layer, a, b, _fx_words(psd, layer), _status_kept(layer, field, chart))] \
+            if not why else []
+        if not why and not mine and phrase and [(layer, i) for layer, a, b in spans for i in _painted(layer, a, b, [])]:
+            why = STATUS_KEPT.format(phrase)
         if not why and not mine:
             why = (f"{phrase!r} is only badges or icons, which keep their own colours" if phrase
-                   else "only badges, icons or effect layers' words, which keep their own colours")
+                   else "only badges, icons, effect layers' or status words, which keep their own colours")
         over = {_painted_over(layer) for layer, _ in mine}
         if not why and None not in over:        # nothing would show on the card image
             why = f"{sorted(over)[0]} paints over the {what}'s colours: recolour it in Photoshop"
@@ -5736,7 +5755,7 @@ def color_views(psd: PSDImage, value: list, card: str, numbers: list) -> set:
     return {n for n in numbers if any(shown_in(layer, n) for layer in layers)}
 
 
-def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "") -> Edit:
+def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart: Optional[dict] = None) -> Edit:
     """
     Recolour what a `colors` job names, found again on the card as its earlier edits left it (color_spans): each colour's
     letters take it in the runs (set_span_style splits them, the Txt2 story with them; whole fields first, then
@@ -5762,13 +5781,15 @@ def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "") -> Ed
     layers, records, stories, boxes = [], [], [], []
     for layer, which, spans in jobs.values():
         what = "title" if which == "name" else "ability"
-        fx, paint = _fx_words(psd, layer), {}
+        fx, paint, status = _fx_words(psd, layer), {}, _status_kept(layer, which, chart)
         kept = sorted({name for a, b, _ in spans for s, e, name in fx if s < b and a < e})
         if kept:
             notes.append(f"colors: {what}: the words of {', '.join(kept)} keep their look (the effect layer's own pixels)")
+        if any(a <= i < b for a, b, _ in spans for i in status):
+            notes.append(f"colors: {what}: status words keep the chart's colour")
         for a, b, one in spans:
             fill = _fill(one["color"])
-            for c, d in _stretches(_painted(layer, a, b, fx)):
+            for c, d in _stretches(_painted(layer, a, b, fx, status)):
                 layer.set_span_style(c, d, fill=fill)
                 paint.update(dict.fromkeys(range(c, d), fill))
         try:
@@ -9707,7 +9728,8 @@ def _gate_fx_layers(psd: PSDImage, edit: Edit, fonts, layer=None) -> None:
 
 
 def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.Image, edits: list,
-                     icc: bool = True, texts: Optional[dict] = None, parser: Optional[PSDParser] = None) -> dict:
+                     icc: bool = True, texts: Optional[dict] = None, parser: Optional[PSDParser] = None,
+                     chart: Optional[dict] = None) -> dict:
     """
     Nothing left to bake on the new PSD, and each edit's region re-rendered from it is not broken against the merged PNG
     (PARITY_FLOOR; a miss of the bar is told: the delta merge keeps Photoshop's pixels where the render matched the baseline).
@@ -9725,7 +9747,7 @@ def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.
     Returns:
         {field: region measurement}
     """
-    again = classify(new_parsed, jobs, psd, parser)
+    again = classify(new_parsed, jobs, psd, parser, chart=chart)
     left = sorted(set(again.jobs) | {r.field for r in again.refusals if r.field})
     if left:
         raise Refused("idempotence", "still to bake: " + ", ".join(left), left[0] if set(left) <= set(PARTIAL_FIELDS) else None)
@@ -9944,7 +9966,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
             edits += set_parts(new, value, record, fonts_dir, chart, _card_name(parsed), parser, old,
                                ability_from, rel, title_anchor)
         elif name == "colors":                  # last: on the text the edits above set
-            edits.append(set_colors(new, value, fonts_dir, _card_name(parsed)))
+            edits.append(set_colors(new, value, fonts_dir, _card_name(parsed), chart))
         else:
             raise Refused("unsupported-card", f"{name}: not yet")
     others = [edit for edit in edits if edit.field not in ICON_FIELDS and (edit.layers or edit.removed)]
@@ -10028,7 +10050,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     start = perf_counter()
     with cache:     # its keys hash the saved records: a layer the save changed is rendered again
         rerender = gate_idempotence(reparse, jobs, reopened, merged, edits, icc,
-                                    {field: m["text"] for field, m in parity.items()}, parser)
+                                    {field: m["text"] for field, m in parity.items()}, parser, chart)
     timings["idempotence"] = perf_counter() - start
     return Baked(jobs, edits, region, parity, changed_pixels, records, flag_bytes, new_psd, new_png, reparse, timings,
                  block_bytes, [name for edit in edits for name in edit.fx_names

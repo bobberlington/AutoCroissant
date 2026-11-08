@@ -1199,7 +1199,7 @@ def _message(cards: list) -> str:
     return "\n\n".join(part for part in (f"{SUBJECT}: " + ", ".join(counts), "\n".join(lines), "\n".join(trailers)) if part)
 
 
-def _printed_already(snapshot: Snapshot, card: Card, parser, folder: str) -> bool:
+def _printed_already(snapshot: Snapshot, card: Card, parser, folder: str, chart=None) -> bool:
     """
     The redundancy check before the duplicate and no-PNG gates: when the PSD already prints every PSD-kind value of the
     entry (NME Stock's name), the values are dropped like any redundant field (no PNG is needed for that) and the
@@ -1209,7 +1209,7 @@ def _printed_already(snapshot: Snapshot, card: Card, parser, folder: str) -> boo
     snapshot.fetch(card.psd_sha, old_psd)
     psd = PSDImage.open(old_psd)                # one open for the parse and classify
     parsed = psd_edit.parse_card(parser, old_psd, card.rel, psd)
-    classified = psd_edit.classify(parsed, card.fields, psd, parser)
+    classified = psd_edit.classify(parsed, card.fields, psd, parser, chart=chart() if chart and "colors" in card.fields else None)
     if classified.jobs or classified.refusals or not classified.redundant:
         return False
     card.redundant = list(classified.redundant)
@@ -1273,7 +1273,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         card.png, duplicates = snapshot.png_for(card.rel)
         if not card.png or duplicates:
             card.pngs = snapshot.pngs_key(card.rel, card.key)
-            if _printed_already(snapshot, card, parser, folder):    # nothing to bake: dropped though no PNG can be
+            if _printed_already(snapshot, card, parser, folder, chart):    # nothing to bake: dropped though no PNG can be
                 if card.rename:                 # its files still take the name
                     _rename_printed(snapshot, card, folder, duplicates, claimed)
                 return
@@ -1298,7 +1298,8 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         psd = PSDImage.open(old_psd)            # one open for the parse, classify and apply_jobs (it edits a copy)
         parsed = psd_edit.parse_card(parser, old_psd, card.rel, psd)
         template = first_type_spot(snapshot, work, card, parsed, psd, parser) if "types" in card.fields else None
-        classified = psd_edit.classify(parsed, card.fields, psd, parser, template)
+        classified = psd_edit.classify(parsed, card.fields, psd, parser, template,
+                                       chart() if "colors" in card.fields else None)   # status words keep its colours
         card.jobs, card.redundant = dict(classified.jobs), [f for f in classified.redundant if f != "parts"]
         card.site = dict(classified.site)       # the picture's title, a stat past its rows: website only (owner 10-26)
         card.parts = classified.parts
@@ -1345,8 +1346,8 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                 raise Transient("this runner's psd-tools predates the pin's glow halos: reinstall it")
             if any(f in psd_edit.ICON_FIELDS for f in card.jobs) and not psd_edit.icon_engine():
                 raise Transient("this runner's psd-tools cannot copy or make layers (the fork's duplicate and fromarray)")
-            colors = chart() if {"ability", "parts"} & set(bake) else None
-            if {"ability", "parts"} & set(bake) and colors is None:
+            colors = chart() if {"ability", "parts", "colors"} & set(bake) else None
+            if {"ability", "parts", "colors"} & set(bake) and colors is None:
                 raise Transient(f"no status chart ({psd_edit.STATUS_CHART}) in the tree")
             new_dir = join(folder, "new")
             makedirs(new_dir, exist_ok=True)

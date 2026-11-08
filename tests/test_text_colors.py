@@ -125,3 +125,27 @@ def test_colour_bake_on_a_real_card(clone, tmp_path):
     assert pe.stale_stories(saved) == [] and baked.reparse["card"] == parsed["card"]
     again = pe.classify(baked.reparse, {"colors": got.jobs["colors"]}, saved, parser)
     assert again.jobs == {} and again.redundant == ["colors"]
+
+
+@pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")
+def test_status_words_keep_the_chart(clone, tmp_path):
+    """Capitalised chart status words keep the chart's colour (the guards' rule, owner 2026-11-07): a whole-field colour
+    leaves them, a phrase of them alone is refused; prose ("burning") is no status word."""
+    from commands.psd_edit import offline_parser
+    chart = pe.status_fills(PSDImage.open(str(clone / pe.STATUS_CHART)))
+    text = "Inflict 2T Burning. burning prose."
+    assert pe.status_letters(text, chart) == set(range(11, 18))
+    vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
+    parser = offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
+    rel = "Auxiliary/Minions/Sigma.psd"
+    psd_path, png = _card(clone, rel)
+    psd = PSDImage.open(psd_path)
+    parsed = pe.parse_card(parser, psd_path, rel, psd)
+    edits = {"colors": [{"field": "ability", "color": "#ffd21f"}, {"field": "ability", "phrase": "Hardened", "color": "#ff0000"}]}
+    got = pe.classify(parsed, edits, psd, parser, chart=chart)
+    assert got.jobs == {"colors": edits["colors"][:1]} and "status word" in got.refusals[0].why
+    before = {pe._hex(f) for s, e, f in pe.run_fills(pe.ability_layer(psd)) if "Hardened" in pe.ability_layer(psd).text[s:e]}
+    baked = pe.apply_jobs(psd_path, png, rel, got.jobs, parsed, parser, str(tmp_path), str(clone / pe.FONTS_DIR), chart, psd=psd)
+    layer = pe.ability_layer(PSDImage.open(baked.psd_path))
+    fills = {layer.text[s:e].strip(): pe._hex(f) for s, e, f in pe.run_fills(layer) if layer.text[s:e].strip()}
+    assert fills.get("Hardened") in before and "#ffd21f" in fills.values() and "status words" in " ".join(baked.fx_notes)
