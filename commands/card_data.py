@@ -828,7 +828,7 @@ class CardBuild:
 def read_links(db_dir: str) -> dict:
     """db/links.json (PLAN A10's shape, psd_links reads it): {PSD path: {"blob", "links": [{"path", "name", "size",
     "drawn"}]} or {"blob", "error"}, "files": {Types/ or MDW/Linked path: {blob: size or None}}, "pixels": {MDW/Linked
-    blob: its decoded pixels' sha1}}; "files" and "pixels" empty without one."""
+    blob: its decoded pixels' sha1, None when unreadable}}; "files" and "pixels" empty without one."""
     path = path_join(db_dir, LINKS_JSON)
     data = {}
     if isfile(path):
@@ -971,7 +971,7 @@ def gather_links(build: "GitBuild", before: dict) -> dict:
     if not files:
         files = _history(build.checkout, build.head)
     linked = [path for path in build.sizes if linked_file(path)]
-    sizes = _sizes(build, linked)
+    sizes = _sizes(build, [p for p in linked if files.get(p, {}).get(build.shas[p]) is None])   # stored sizes kept
     for path in linked:
         blobs = files.setdefault(path, {})
         blobs[build.shas[path]] = sizes.get(path, blobs.get(build.shas[path]))
@@ -1016,10 +1016,13 @@ def gather_links(build: "GitBuild", before: dict) -> dict:
             store = build._store(sha)
             if not store:
                 continue
+            done = run(["git", "-C", store, "cat-file", "blob", sha], capture_output=True, env={**environ, **NO_LAZY})
+            if done.returncode:
+                continue
             try:
-                pixels[sha] = pixel_hash(run(["git", "-C", store, "cat-file", "blob", sha], capture_output=True,
-                                             env={**environ, **NO_LAZY}).stdout, path)
-            except Exception as e:                  # no look-alike test for it
+                pixels[sha] = pixel_hash(done.stdout, path)
+            except Exception as e:                  # no look-alike test for it; None: not read again
+                pixels[sha] = None
                 print(f"{path}: pixels not read ({e})")
     return {**psds, "files": files, "pixels": pixels}
 

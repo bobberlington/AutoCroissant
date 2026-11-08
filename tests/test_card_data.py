@@ -688,9 +688,10 @@ def test_artwork_sources_are_each_entrys_own(cards):
     assert edited() == had
 
 
-def test_links_gather_every_psd_and_the_linked_files(cards, clone):
+def test_links_gather_every_psd_and_the_linked_files(cards, clone, monkeypatch):
     """db/links.json (the 11-07 pass): a card's links from its parse, an MDW PSD's read when its blob moves (an unreadable
-    one recorded as an error: the guards then delete nothing), the linked files' blobs with their sizes."""
+    one recorded as an error: the guards then delete nothing), the linked files' blobs with their sizes; a stored size
+    and an unreadable picture are not read again."""
     rel = "Auxiliary/Creatures/Militron_(No_Armor).psd"
     if not (clone / rel).exists():
         pytest.skip("no Militron (No Armor)")
@@ -708,7 +709,16 @@ def test_links_gather_every_psd_and_the_linked_files(cards, clone):
     assert links["MDW/Templates/Linked_Template.psd"]["links"] == [link]
     assert "error" in links["MDW/Unfinished/Broken.psd"] and links[DOOMER]["links"] == []
     assert links["files"]["Types/unknown.png"] == {blob_sha_bytes(b"unknown"): 7}
-    assert links["files"]["MDW/Linked/a - b.png"] == {blob_sha_bytes(b"not a png"): 9} and links["pixels"] == {}
+    assert links["files"]["MDW/Linked/a - b.png"] == {blob_sha_bytes(b"not a png"): 9}
+    assert links["pixels"] == {blob_sha_bytes(b"not a png"): None}
+    asked, sizes, read = [], cd._sizes, []
+    monkeypatch.setattr(cd, "_sizes", lambda build, paths: asked.extend(paths) or sizes(build, paths))
+    monkeypatch.setattr(cd, "pixel_hash", lambda data, path: read.append(path))
+    put(cards.repo, "Types/new.png", b"new")
+    commit(cards.repo, "bob", 3000)
+    assert _build(cards)[0] == cd.EXIT_OK
+    assert asked == ["Types/new.png"] and read == []
+    assert cd.read_links(str(cards.db))["files"]["Types/new.png"] == {blob_sha_bytes(b"new"): 3}
 
 
 def test_records_seed_merge_and_follow_a_move(cards, monkeypatch, tmp_path):
