@@ -210,8 +210,8 @@ Action). repo_traverser.py (the legacy /update_stats, with `_tree_etags`/`_file_
 
 | Constant | Value | Meaning |
 |---|---|---|
-| `DOWNLOAD_WORKERS` (2026-10-20) | `4` | PSDs the build fetches ahead of parsing |
-| `AHEAD` (2026-10-23) | `8` | PSDs fetched and not yet parsed, at most (open PSDs, temp files) |
+| `DOWNLOAD_WORKERS` (2026-10-20) | `4` | PSDs the build fetches and parses at a time (parse in the workers since 2026-11-08) |
+| `AHEAD` (2026-10-23) | `8` | PSDs read and not yet kept by the main thread, at most |
 | `RANGE_READS` (2026-10-23, github_api.py) | `True` | read a PSD by range requests at the tree's commit when psd-tools can (lazy open, fork feat/lazy-records), in the build and `card_check --after`; whole download otherwise and on any failure |
 | `RANGE_REFUSALS` (2026-10-23) | `3` | PSDs whose range read gets a 4xx, a 5xx or no connection before the run downloads the rest whole (one odd PSD leaves range reads on) |
 | `TITLE_REGION_RATIO` (2026-10-20) | `0.12` | the title region: text layers above this share of the card height are title candidates (`title_layers`); hidden ones name nothing since 2026-10-25 (`alt_names` no longer set) |
