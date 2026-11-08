@@ -167,6 +167,26 @@ out([P.starsKept(none, 3), P.starsKept({{ units: [{{}}], refused: {{ "*": "the '
     assert "website only until it's drawn in Photoshop" in note and "HP 12 shows on the website only: the card's old-style bars" in note
 
 
+@needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "paintComp"), reason="no paintComp in mockup.js")
+def test_comp_bar_past_10(tmp_path):
+    """A layer-comp bar's 4 -> 13 as its comps draw it: the top half all lit, the bottom half lit to 3, a soft line in the
+    borders' colour between the halves lit in both; 10 -> 20 lit everywhere with the line across."""
+    out = node(tmp_path, """
+const W = 120, H = 20, row = { box: [10, 2, 110, 18], cells: 10 };
+const bar = from => { const d = new Uint8ClampedArray(W * H * 4);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const c = Math.floor((x - 10) / 10), edge = x % 10 === 0 || x % 10 === 9 || y === 2 || y === 17;
+    const v = x < 10 || x >= 110 || y < 2 || y >= 18 ? [0, 0, 255] : edge ? [0, 0, 0] : c < from ? [200, 200, 0] : [40, 40, 0];
+    d.set([...v, 255], (y * W + x) * 4); }
+  return d; };
+const at = (d, y) => Array.from({ length: 10 }, (_, c) => d[(y * W + 15 + 10 * c) * 4]);
+const a = bar(4), b = bar(10); m.paintComp(a, W, H, row, 4, 13); m.paintComp(b, W, H, row, 10, 20);
+out([at(a, 5), at(a, 14), at(a, 10), at(b, 14), at(b, 10)]);""")
+    top, bottom, line, full, across = out
+    assert top == [200] * 10 and bottom == [200] * 3 + [40] * 7
+    assert line == [60] * 3 + [40] * 7 and full == [200] * 10 and across == [60] * 10
+
+
 # ---- the build's web fonts (build_site.py)
 @pytest.fixture(scope="module")
 def bs():
