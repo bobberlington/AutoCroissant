@@ -45,7 +45,7 @@ from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_
                                  TITLE_REGION_RATIO, TYPE_REGION_RATIO, BoundingBox, CardValidator, IconVocabulary,
                                  MutableValue, PSDParser,
                                  StatTracker, base_name, layer_tag, name_key, named_after_text, stars_from_psd,
-                                 title_text, token_variant, variant_view, variants_of)
+                                 shown_in, title_text, token_variant, variant_view, variants_of)
 from commands.psd_parser import in_header, star_leaf, star_pieces, star_sets
 from commands import psd_parts
 from commands.psd_links import corners_of, decode, draw, file_type, link_pixels
@@ -5569,11 +5569,13 @@ def color_order(value: list) -> list:
 
 
 def color_layers(psd: PSDImage, field: str, card: str) -> list:
-    """The text layers printing a field, in reading order: the title's parts (one split over layers too), the Ability's."""
+    """The text layers printing a field, in reading order: the title's parts (one split over layers too), the Ability's;
+    as picture 1 shows them (the entry's picture: every picture's bake recolours the same layers)."""
     texts = [layer for layer in psd.descendants() if _is_text_layer(layer) and EFFECT_LAYER_TAG not in layer.name]
-    if field == "name":
-        return PSDParser.title_parts(psd, texts, card.replace("_", " "))[0]
-    return PSDParser.ability_parts(texts)[0]
+    with variant_view(psd, 1 if len(variants_of(psd)) > 1 else None):
+        if field == "name":
+            return PSDParser.title_parts(psd, texts, card.replace("_", " "))[0]
+        return PSDParser.ability_parts(texts)[0]
 
 
 def _painted_over(layer) -> Optional[str]:
@@ -5726,6 +5728,12 @@ def recolour(layer, paint: dict, fonts) -> bool:
     layer._invalidate_bbox()
     layer._psd.mark_updated()
     return True
+
+
+def color_views(psd: PSDImage, value: list, card: str, numbers: list) -> set:
+    """The pictures a `colors` job shows in: those showing a layer it recolours."""
+    layers = [layer for one in value for layer, _, _ in color_spans(color_layers(psd, one["field"], card), one)[0]]
+    return {n for n in numbers if any(shown_in(layer, n) for layer in layers)}
 
 
 def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "") -> Edit:

@@ -919,11 +919,15 @@ def pictures_of(psd, card: Card, duplicates: list) -> dict:
     return {1: card.png, **{n: found[n] for n in numbers if n != 1}}
 
 
-def _views(card: Card, record: dict, numbers: list, jobs: Optional[dict] = None) -> list:
-    """The pictures an edit shows in (§4.9): a part's (None: every one) and its followers'; any other field, every one."""
+def _views(card: Card, record: dict, numbers: list, jobs: Optional[dict] = None, psd=None) -> list:
+    """The pictures an edit shows in (§4.9): a part's (None: every one) and its followers'; colours, those showing
+    their layers; any other field, every one."""
     every, out = set(numbers), set()
     found = psd_edit.record_parts(record)
     for name, value in (card.jobs if jobs is None else jobs).items():
+        if name == "colors" and psd is not None:
+            out |= psd_edit.color_views(psd, value, card.name, numbers)
+            continue
         if name != "parts":
             out |= every
             continue
@@ -963,7 +967,7 @@ def bake_pictures(card: Card, psd, parsed: dict, parser, folder: str, fonts_dir:
             raise Refused("unsupported-card", f"{name}: its layers differ by picture: edit it in Photoshop", name)
     record = psd_edit.card_parts(psd, card.rel, card.name, parser) if "parts" in jobs else {}
     saved = psd_edit.saved_view(psd)
-    views = sorted(_views(card, record, numbers, jobs), key=lambda n: n != saved)
+    views = sorted(_views(card, record, numbers, jobs, psd), key=lambda n: n != saved)
     if not views:
         raise Refused("unsupported-card", "the edit shows in no picture")
     card.views, first = {}, None
