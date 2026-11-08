@@ -1204,6 +1204,52 @@ def test_workflow_shape(clone):
     assert post["steps"].index(records) < post["steps"].index(follow) and records["with"]["path"].endswith("/records.json")
 
 
+
+def test_oxipng_cli_rides_in_the_venv(clone, tmp_path):
+    """cards-python's oxipng step: a miss fetches the CLI into the venv in every job, a hit fetches nothing, PATH only
+    when asked; a fetch that fails fails a job that asks, else leaves the venv unsaved."""
+    import hashlib
+    import tarfile
+    from helpers import FORK_ACTION
+    yaml = pytest.importorskip("yaml")
+    action = yaml.safe_load((_workflow(clone).parents[2] / FORK_ACTION).read_text(encoding="utf-8"))
+    step = next(s for s in action["runs"]["steps"] if s.get("id") == "oxipng")
+    member = f"oxipng-{step['env']['VERSION']}-x86_64-unknown-linux-musl/oxipng"
+    tgz, shim = tmp_path / "ox.tar.gz", tmp_path / "shim"
+    with tarfile.open(tgz, "w:gz") as tar:
+        info, body = tarfile.TarInfo(member), b"#!/bin/sh\necho oxipng\n"
+        info.size, info.mode = len(body), 0o755
+        tar.addfile(info, BytesIO(body))
+    shim.mkdir()
+    (shim / "curl").write_text('#!/bin/sh\necho "$@" >> "$CURLS"\n[ -z "$FAIL" ] || exit 22\n'
+                               'while [ "$1" != -o ]; do shift; done; cp "$TGZ" "$2"\n')
+    (shim / "sha256sum").write_text(f"#!{executable}\nimport hashlib, sys\nsha, path = sys.stdin.read().split()\n"
+                                    "sys.exit(hashlib.sha256(open(path, 'rb').read()).hexdigest() != sha)\n")
+    for one in shim.iterdir():
+        one.chmod(0o755)
+    venv = tmp_path / "venv"
+
+    def run(want, fail="", sha=hashlib.sha256(tgz.read_bytes()).hexdigest()):
+        files = {k: tmp_path / k for k in ("out", "path", "curls")}
+        for f in files.values():
+            f.write_text("")
+        env = {**os.environ, "PATH": f"{shim}{os.pathsep}{os.environ['PATH']}", "RUNNER_OS": "Linux", "RUNNER_ARCH": "X64",
+               "RUNNER_TEMP": str(tmp_path), "VERSION": step["env"]["VERSION"], "SHA256": sha, "ASSET": "1", "TOKEN": "t",
+               "BIN": str(venv / ".oxipng"), "WANT": want, "FAIL": fail, "TGZ": str(tgz), "CURLS": str(files["curls"]),
+               "GITHUB_OUTPUT": str(files["out"]), "GITHUB_PATH": str(files["path"])}
+        done = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", step["run"]], env=env,
+                              capture_output=True, text=True, timeout=60)
+        return done.returncode, len(files["curls"].read_text().splitlines()), files["path"].read_text(), files["out"].read_text()
+
+    assert run("false") == (0, 1, "", "")                                  # a data job's miss: fetched, off PATH
+    assert (venv / ".oxipng" / "oxipng").is_file()
+    assert run("true", fail="1") == (0, 0, f"{venv / '.oxipng'}\n", "")   # a hit: no network
+    shutil.rmtree(venv)
+    assert run("false", fail="1") == (0, 2, "", "unsaved=true\n")          # both links down: the entry waits
+    assert not (venv / ".oxipng").exists()
+    assert run("true", sha="0" * 64)[:2] == (1, 1)                        # a bad file fails a job that writes PNGs
+
+
 FAKE_GH = r"""#!/usr/bin/env python3
 import json, os, subprocess, sys
 state = os.environ["FAKE_STATE"]

@@ -237,12 +237,14 @@ FORK_PYTHON = "3.14"                                                    # every 
 
 FORK_WHEELS = "~/.cache/card-wheels"
 
-OXIPNG_VERSION = "10.2.1"                                               # the CLI the Actions download (SMALLER_PNG_PUSHES.md)
+OXIPNG_VERSION = "10.2.1"                                               # the CLI in the venv entry (SMALLER_PNG_PUSHES.md)
+
+OXIPNG_JOBS = {"card-guards.yml": {"check", "post"}, "card-sync.yml": {"main"}, "card-preview.yml": set()}   # write PNGs
 
 FORK_KEY = ("card-wheels-${{ steps.reqs.outputs.sha }}-${{ runner.os }}-${{ runner.arch }}"
             "-py${{ steps.reqs.outputs.minor }}")                       # one entry for all, any 3.14.x
 FORK_VENV_KEY = ("card-venv-${{ steps.reqs.outputs.sha }}-${{ runner.os }}-${{ runner.arch }}"
-                 "-py${{ steps.python.outputs.python-version }}")        # its interpreter's path: the patch version
+                 "-py${{ steps.python.outputs.python-version }}-ox" + OXIPNG_VERSION)   # the patch version; the CLI in it
 
 BY_NAME = "sed 's/ @ [^;]*//' bot/requirements-cards.txt > \"$RUNNER_TEMP/cards.txt\""
 
@@ -274,7 +276,7 @@ def fork_action(workflows) -> str:
     """
     yaml = pytest.importorskip("yaml")
     steps = yaml.safe_load((workflows.parent.parent / FORK_ACTION).read_text(encoding="utf-8"))["runs"]["steps"]
-    python, reqs, env, check, restore, uv, install, save, save_env, path, oxipng = steps
+    python, reqs, env, check, restore, uv, install, save, oxipng, save_env, path = steps
     assert reqs["id"] == "reqs" and "sha256sum" in reqs["run"] and 'echo "minor=' in reqs["run"]   # the key: requirement lines, comments stripped
     assert python["uses"].startswith("actions/setup-python@") and python["id"] == "python"
     assert python["with"] == {"python-version": FORK_PYTHON}                   # no pip cache
@@ -291,10 +293,11 @@ def fork_action(workflows) -> str:
     assert run.index(BY_NAME) < run.index('uv pip install -q --no-index -f ~/.cache/card-wheels -r "$RUNNER_TEMP/cards.txt"')
     assert save["uses"].startswith("actions/cache/save@") and save["if"].startswith(f"{missed} && steps.wheels.outputs.cache-hit != 'true'")
     assert save["with"] == {"path": FORK_WHEELS, "key": "${{ steps.wheels.outputs.cache-primary-key }}"}
-    assert save_env["uses"].startswith("actions/cache/save@") and save_env["if"].startswith(missed)
+    assert save_env["uses"].startswith("actions/cache/save@") and save_env["if"] == f"{missed} && steps.oxipng.outputs.unsaved != 'true'"
     assert save_env["with"] == {"path": env["with"]["path"], "key": "${{ steps.env.outputs.cache-primary-key }}"}
     assert 'echo "$VENV/bin" >> "$GITHUB_PATH"' in path["run"] and '"$VENV/bin/python" -m "commands.$module" --help' in path["run"]
-    assert oxipng["if"] == "inputs.oxipng == 'true'" and oxipng["env"]["VERSION"] == OXIPNG_VERSION    # the CLI, pinned
+    assert oxipng["if"] == f"{missed} || inputs.oxipng == 'true'" and oxipng["env"]["VERSION"] == OXIPNG_VERSION   # every miss: one entry
+    assert oxipng["env"]["BIN"] == "${{ steps.reqs.outputs.venv }}/.oxipng" and oxipng["id"] == "oxipng"      # off PATH unless asked
     assert re.fullmatch(r"[0-9a-f]{64}", oxipng["env"]["SHA256"]) and "sha256sum -c" in oxipng["run"]
     assert oxipng["run"].index("sha256sum -c") < oxipng["run"].index("tar ") < oxipng["run"].index("GITHUB_PATH")
     with TemporaryDirectory() as tmp:          # the copy pip installs, made by the step's own sed
@@ -310,7 +313,7 @@ def fork_install(path) -> str:
     """
     A workflow's install of requirements-cards.txt (the psd-tools fork's one pin): every job that installs uses the shared
     setup (fork_action) after a bot checkout bringing the file; no pin of the workflow's own, no other install
-    (card-preview skips the oxipng CLI: it would recompress a PNG it never publishes).
+    (the oxipng CLI on PATH only in the jobs that write PNGs, OXIPNG_JOBS).
 
     Returns:
         The cache key.
@@ -321,7 +324,7 @@ def fork_install(path) -> str:
     assert not re.search(r"pip install", text), f"{path.name}: no install of its own"
     yaml = pytest.importorskip("yaml")
     installs = 0
-    for job in yaml.safe_load(text)["jobs"].values():
+    for name, job in yaml.safe_load(text)["jobs"].items():
         steps = job.get("steps", [])
         setups = [i for i, s in enumerate(steps) if _uses_setup(s)]
         if not setups:
@@ -330,7 +333,9 @@ def fork_install(path) -> str:
         bot = [i for i, s in enumerate(steps) if s.get("with", {}).get("repository") in ("bobberlington/AutoCroissant", "${{ env.BOT_REPO }}")
                and "/requirements-cards.txt" in s["with"]["sparse-checkout"].split()]
         assert len(bot) == 1 and bot[0] < setups[0], f"{path.name}: the bot checkout brings requirements-cards.txt first"
-        assert ((steps[setups[0]].get("with") or {}).get("oxipng") == "false") == (path.name == "card-preview.yml")
+        want = (steps[setups[0]].get("with") or {}).get("oxipng", "true")
+        on = re.fullmatch(r"\$\{\{ github\.job (==|!=) '(\w+)' \}\}", want)
+        assert (want == "true" or bool(on) and (on[1] == "==") == (on[2] == name)) == (name in OXIPNG_JOBS[path.name]), name
     assert installs, f"{path.name}: installs requirements-cards.txt"
     return fork_action(path.parent)
 
