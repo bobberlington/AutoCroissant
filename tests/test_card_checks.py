@@ -126,7 +126,7 @@ def test_to_check_and_file():
     """No result, or a new PNG: checked; --all, a shard; the file reads back."""
     tree = {"A.psd": ("", "11111111aa"), "A.png": ("", "22222222bb"), "B.psd": ("", "33333333cc")}
     snapshot = SimpleNamespace(psds={"a": "A.psd", "b": "B.psd"}, sha=lambda path: tree[path][1],
-                               png_for=lambda rel: ("A.png" if rel == "A.psd" else "", []))
+                               png_for=lambda rel: ("A.png" if rel == "A.psd" else "", []), dup_pictures=dict)
     checks = {"version": 1, "cards": {"11111111aa": {"png": "22222222"}, "33333333cc": {"png": ""}}, "cleared": {}}
     assert cc.to_check(snapshot, checks) == []
     assert cc.to_check(snapshot, checks, True) == ["A.psd", "B.psd"]

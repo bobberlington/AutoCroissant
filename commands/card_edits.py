@@ -12,7 +12,7 @@ from re import compile as re_compile, fullmatch, sub
 from typing import Optional
 from unicodedata import combining, normalize
 
-from commands.card_models import CardInfo, CardStats
+from commands.card_models import CardInfo, CardStats, card_name
 
 # ========================
 # Configuration
@@ -469,6 +469,39 @@ def _collate(key: str) -> list:
     return out
 
 
+NO_CARD_FOLDERS = ("MDW", "Markers", "Types", "site", "TTS")    # no card PNG lives under these (card_data's duplicates)
+
+
+def dup_pictures(paths, cards: Optional[dict]) -> dict:
+    """
+    {original PSD path: [PNG paths]}: the picture-only duplicates (owner 11-07) that are no numbered picture of a PSD
+    (NameN.png beside Name.psd: card_bake's png_for): a card PNG with no PSD of its own whose Card Edits.json entry names
+    its original in dup_of (Stubborn_Queen.png), the original a PSD in paths (by card key).
+
+    Args:
+        paths: The tree's paths
+        cards: Card Edits.json's "cards"
+    """
+    lower = {path.lower() for path in paths}
+    psds = {CardAuthors.key(card_name(path)): path for path in paths if path.lower().endswith(".psd")
+            and not any(folder in NO_CARD_FOLDERS for folder in path.split("/"))}
+    entries = {CardAuthors.key(key): value for key, value in (cards or {}).items() if isinstance(value, dict)}
+    out: dict = {}
+    for path in sorted(paths):
+        stem = path[:len(path) - 4]
+        if (not path.lower().endswith(".png") or "/" not in path or any(f in NO_CARD_FOLDERS for f in path.split("/"))
+                or (stem + ".psd").lower() in lower):
+            continue
+        number = fullmatch(r"(.+?)(\d+)", stem)
+        if number and (number.group(1) + ".psd").lower() in lower:
+            continue                            # a numbered picture: its PSD's own (png_for)
+        target = (entries.get(CardAuthors.key(card_name(path))) or {}).get("dup_of")
+        original = psds.get(CardAuthors.key(target)) if isinstance(target, str) else None
+        if original:
+            out.setdefault(original, []).append(path)
+    return out
+
+
 def dump_edits(data: dict) -> str:
     """
     Card Edits.json as edit.js editsFile writes it: the other top-level keys first, cards sorted, one line per card.
@@ -523,6 +556,7 @@ __all__ = [
     'SITE',
     'as_parsed',
     'dump_edits',
+    'dup_pictures',
     'dump_ratings',
     'valid_colors',
     'valid_parts',

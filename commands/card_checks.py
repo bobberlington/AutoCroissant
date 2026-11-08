@@ -39,6 +39,7 @@ from PIL import Image
 from psd_tools import PSDImage
 
 import commands.card_bake as card_bake
+import commands.png_export as png_export
 import commands.psd_edit as psd_edit
 from commands.card_bake import Card, Snapshot, local_snapshot, psd_fields, vocabulary
 from commands.card_db import CHECKS_JSON, STATS_JSON
@@ -94,6 +95,7 @@ NO_CHANGE_NOTE = "{} {} bake but change nothing on the card: change them in Phot
 SWAP_NOTE = "The {} bars are on each other's rows: a stat edit moves the wrong bar, put them back in Photoshop."
 BRIGHT_NOTE = "Its shown digits brighten the cells, so a stat edit turns the bars dark: change its stats in Photoshop."
 LINKS_JSON = "links.json"                   # the card data's db/: every PSD's links (card_data.gather_links)
+DUP_NOTE = "{name} is drawn apart from this PSD: when the card changes, export it in Photoshop."
 LINK_MISSING = "Links {name}, which is not in the repo: push that file."
 LINK_ALIKE = "Links {name}, which looks the same as {kept}: link {kept} instead."
 LINK_STUCK = "{layer} links {name}, changed since: Card sync could not draw it again ({why}); update it in Photoshop."
@@ -560,7 +562,10 @@ def check_card(ctx: Context, rel: str) -> dict:
         notes.append(SWAP_NOTE.format(" and ".join(STAT_NAMES[stat] for stat in wrong)))
     reads = read_picture(psd, image) if style and image is not None and len(variants_of(psd)) < 2 else {}
     notes += edit_notes(ctx, rel, psd, parsed, style, image)
-    return {"card": card_name(rel), "png": snapshot.sha(png_rel)[:8] if png_rel else "", "style": style, "reads": reads,
+    for path in snapshot.dup_pictures().get(rel, []) if image is not None else ():   # nothing redraws these (owner 11-07)
+        if png_export.drawn_apart(psd, image, png_export.open_png(snapshot.fetch(snapshot.sha(path)))):
+            notes.append(DUP_NOTE.format(name=basename(path)))
+    return {"card": card_name(rel), "png": png_key(snapshot, rel), "style": style, "reads": reads,
             "notes": notes, "bars": CUSTOM_NOTES[why] if style == "custom" else None,
             "unredrawable": unredrawable(psd, rel, snapshot.tree)}
 
@@ -651,14 +656,20 @@ def text_of(checks: dict) -> str:
             f'"cards": {{\n{cards}\n}}}}\n')
 
 
+def png_key(snapshot: Snapshot, rel: str) -> str:
+    """A record's "png": its PNG's blob (8 hex digits), its picture-only duplicates' after it; a change checks it again."""
+    png = snapshot.png_for(rel)[0]
+    return ",".join([snapshot.sha(png)[:8] if png else ""]
+                    + [snapshot.sha(path)[:8] for path in snapshot.dup_pictures().get(rel, [])])
+
+
 def to_check(snapshot: Snapshot, checks: dict, everything: bool = False, only=(), shard: tuple = (0, 1)) -> list:
-    """The card PSDs to check: no result for the blob, or for its PNG; only: card keys."""
+    """The card PSDs to check: no result for the blob, or for its PNG (and duplicates); only: card keys."""
     out = []
     for key, rel in sorted(snapshot.psds.items(), key=lambda item: item[1]):
         sha = snapshot.sha(rel)
-        png = snapshot.png_for(rel)[0]
         record = checks["cards"].get(sha)
-        stale = record is None or record.get("png") != (snapshot.sha(png)[:8] if png else "")
+        stale = record is None or record.get("png") != png_key(snapshot, rel)
         if (key in only if only else everything or stale) and int(sha[:8], 16) % shard[1] == shard[0]:
             out.append(rel)
     return out
@@ -666,7 +677,7 @@ def to_check(snapshot: Snapshot, checks: dict, everything: bool = False, only=()
 
 def blobs_of(snapshot: Snapshot, rels: list) -> list:
     """The blobs check_card reads: the PSDs and PNGs, and what every card shares (one fetch, no REST read a card)."""
-    pngs = [snapshot.png_for(rel)[0] for rel in rels]
+    pngs = [snapshot.png_for(rel)[0] for rel in rels] + [p for rel in rels for p in snapshot.dup_pictures().get(rel, [])]
     shared = [path for path in snapshot.tree if path in (psd_edit.STATUS_CHART, ICON_MANIFEST_PATH)
               or path.startswith(psd_edit.TEMPLATES_DIR + "/") or path.lower() in {f"{TYPES_DIR}/{t}.png".lower() for t in TYPE_TRIES}]
     return [snapshot.sha(path) for path in rels + [png for png in pngs if png] + (shared if rels else [])]
@@ -808,6 +819,7 @@ __all__ = [
     'look_alikes',
     'main',
     'mismatches',
+    'png_key',
     'read_picture',
     'read_row',
     'refresh',

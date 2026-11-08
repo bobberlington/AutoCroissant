@@ -57,6 +57,7 @@ from psd_tools.constants import ColorMode, Resource, Tag
 
 import commands.psd_edit as psd_edit
 from commands.psd_edit import Refused
+from commands.psd_parser import TITLE_REGION_RATIO, layer_tag
 from commands.psd_regions import fx_pad, stat_rows
 
 # ========================
@@ -1182,6 +1183,44 @@ def delta_transfer(old_base: Image.Image, new_base: Image.Image, numbered: Image
     return encode(image, numbered), ""
 
 
+def follow(old_main: Image.Image, new_main: Image.Image, dups: dict) -> dict:
+    """
+    A PSD's picture-only duplicates (card_edits.dup_pictures; owner 11-07: silent) after its main PNG changed: each takes
+    the change as G8's delta transfer does; one whose own drawing the change touches (drawn apart from the PSD:
+    card_checks flags it) stays as it is.
+
+    Args:
+        dups: {path: opened PNG}
+
+    Returns:
+        {path: PNG bytes} of the duplicates that changed
+    """
+    if old_main.size != new_main.size:
+        return {}
+    moved = _diff(new_main, old_main) > TOL
+    if not moved.any():
+        return {}
+    out = {}
+    for path, image in sorted(dups.items()):
+        data, _ = delta_transfer(old_main, new_main, image, moved, path)
+        if data:
+            out[path] = data
+    return out
+
+
+def drawn_apart(psd: PSDImage, main: Image.Image, dup: Image.Image) -> bool:
+    """A picture-only duplicate that differs from its card's picture past TOL outside the PSD's title-region text and
+    tagged layers (DILATE around): drawn by hand, so follow() never changes it."""
+    if dup.size != main.size:
+        return True
+    keep = np.zeros((main.height, main.width), bool)
+    for layer in psd.descendants():
+        if (layer.kind == "type" and layer.bbox[1] < psd.height * TITLE_REGION_RATIO) or layer_tag(layer.name)[1]:
+            x0, y0, x1, y1 = (max(0, int(v)) for v in layer.bbox)
+            keep[y0:y1, x0:x1] = True
+    return bool(((_diff(dup, main) > TOL) & ~dilate(keep, DILATE)).any())
+
+
 def export_new(new: PSDImage) -> Export:
     """
     Guard 1 on a new PSD with no PNG (5.5): the fork renders the whole card, converted (Export As' default), RGBA when it
@@ -1270,6 +1309,8 @@ __all__ = [
     'composite',
     'convert',
     'delta_transfer',
+    'drawn_apart',
+    'follow',
     'dilate',
     'encode',
     'EXPORT',
