@@ -7,8 +7,9 @@ rewraps is redrawn (the guards re-export its PNG). R3 and R4 keep only
 the real issues (several visible Ability layers, or a hidden one with words the parser reads nowhere; a hidden or
 rasterized Name layer the title can't be read from): the template layout they also checked was dropped by the owner on
 2026-10-23.
-Since the parts editor (PARTS_EDITOR.md §7) R3's several Ability layers and R4's several title layers are notes ("not
-standardized yet"), R11 also suggests names for the parts not named Name or Ability, R12 checks variant tags and R13
+Since the parts editor (PARTS_EDITOR.md §7) R3's several Ability layers are a note ("not standardized yet"); a title
+split over several layers is standard (owner 2026-11-08: every part named Name, read in reading order). R11 also
+suggests names for the parts not named Name or Ability, R12 checks variant tags and R13
 duplicate layer ids. R14 (owner 2026-10-30) reports card names typed in another letter case (report only); R15 the
 ability's or title's text run off the card's edge (report only; existing cards waived as R4).
 R9 (Txt2 stories) is fixed by the fork with byte gates, the rest is reported. R11's rename (exact layer names) is built
@@ -480,15 +481,10 @@ def title_problem(psd: PSDImage, card: str) -> Optional[str]:
 
 
 def rule_name(psd: PSDImage, card: str) -> Optional[Issue]:
-    """R4: the title is not left in a hidden or rasterized Name layer (no title read); a title over several layers is a
-    note (each a box on the website)."""
+    """R4: the title is not left in a hidden or rasterized Name layer (no title read). A title split over several
+    layers is the standard's too (owner 2026-11-08: every part named Name; R11 names the others)."""
     why = title_problem(psd, card)
     if why is None:
-        texts = [layer for layer in psd.descendants() if psd_edit._is_text_layer(layer)]
-        titles = PSDParser.title_parts(psd, texts, card.replace("_", " "))[0]
-        if len(titles) > 1:
-            return Issue("R4", f"not standardized yet: {len(titles)} title layers (a box each on the website)",
-                         (f"{len(titles)} title layers",))
         return None
     return Issue("R4", {"hidden name layer": "the Name layer is hidden",
                         "rasterized name layer": "the Name layer is rasterized"}[why], (why,))
@@ -552,12 +548,38 @@ def rule_part_names(psd: PSDImage, card: str) -> Optional[Issue]:
     texts = [layer for layer in psd.descendants() if psd_edit._is_text_layer(layer)]
     titles = PSDParser.title_parts(psd, texts, card.replace("_", " "))[0]
     abilities = PSDParser.ability_parts(texts)[0]
-    pairs = tuple(f"{layer.name!r} -> {target!r}" for layers, target in ((titles, "Name"), (abilities, "Ability"))
-                  for layer in layers if base_name(layer).strip().lower() != target.lower())
+    tagged = lambda layer, target: target + (layer.name[len(base_name(layer)):] if layer_tag(layer.name)[1] else "")
+    pairs = tuple(f"{layer.name!r} -> {tagged(layer, target)!r}" for layers, target in ((titles, "Name"), (abilities, "Ability"))
+                  for layer in layers if base_name(layer).strip().lower() != target.lower())   # case: rule_names'
     if not pairs:
         return None
     return Issue("R11", f"{'a part is' if len(pairs) == 1 else 'parts are'} not named so (the website labels "
                         f"{'it' if len(pairs) == 1 else 'them'}): rename {', '.join(pairs)}", pairs, discord=False)
+
+
+def title_renames(psd: PSDImage, card: str) -> list:
+    """R11's title renames (owner 2026-11-08: a split title's parts all named Name): [(layer, name)] for each title
+    part (PSDParser.title_parts, in every picture) not named Name, its variant tag kept, and the FX layers on it."""
+    texts = [layer for layer in psd.descendants() if psd_edit._is_text_layer(layer) and EFFECT_LAYER_TAG not in layer.name]
+    pictures = variants_of(psd)
+    found: dict = {}
+    for n in (pictures if len(pictures) > 1 else [None]):
+        with variant_view(psd, n):
+            for layer in PSDParser.title_parts(psd, texts, card.replace("_", " "))[0]:
+                base, tags = layer_tag(layer.name)
+                if base.strip() != "Name" and id(layer) not in found:
+                    found[id(layer)] = (layer, "Name" + (layer.name[len(base):] if tags is not None else ""))
+    out = list(found.values())
+    for layer, target in list(out):             # its FX layers, as the parser pairs them
+        for fx in psd_edit.fx_layers(psd, layer):
+            out.append((fx, target + EFFECT_LAYER_TAG + fx.name.partition(EFFECT_LAYER_TAG)[2]))
+    return out
+
+
+def rename_titles(path: str, out_path: str, card: str) -> list:
+    """title_renames saved without a new preview; gated as rename(): only the renamed records' names change."""
+    psd = PSDImage.open(path)
+    return _renamed(psd, path, out_path, title_renames(psd, card))
 
 
 def rule_variants(psd: PSDImage, rel: str, pngs: Optional[frozenset]) -> list:
@@ -2927,6 +2949,7 @@ __all__ = [
     'tag_layers',
     'tags_to_badges',
     'rename',
+    'rename_titles',
     'reported',
     'redraw',
     'redraw_old_glyphs',
@@ -2940,5 +2963,6 @@ __all__ = [
     'status_words',
     'straighten',
     'title_problem',
+    'title_renames',
     'to_normal',
 ]

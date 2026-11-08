@@ -837,13 +837,46 @@ def test_title_layer_is_the_one_the_parser_reads(clone, parser):
     assert pe.classify(parsed, {"name": "Wham Bam Bones"}, bone).jobs == {"name": "Wham Bam Bones"}
     virus = PSDImage.open(_card(clone, VIRUS)[0])
     assert pe.name_layer(virus).parent is virus and pe.read_name(virus) == "Computer Virus appears!"
-    for rel, why in ((AZAMOTH_KING, "2 title layers"), (CANNON, "the title is split over several layers")):
+    for rel, why in ((AZAMOTH_KING, "the title is split over 2 layers: edit each box on the website"),
+                     (CANNON, "the title is split over several layers: edit each box on the website")):
         psd = PSDImage.open(_card(clone, rel)[0])
         with pytest.raises(pe.Refused, match=why) as refused:
             pe.name_layer(psd, card_name(rel))
         assert refused.value.code == "unsupported-card" and pe.read_name(psd, card_name(rel)) is None
         parsed = pe.parse_card(parser, _card(clone, rel)[0], rel)
         assert [r.why for r in pe.classify(parsed, {"name": "Azamoth"}, psd).refusals] == [why]
+
+
+def test_a_split_titles_parts_named_name(clone, parser, tmp_path):
+    """The split-title convention (owner 2026-11-08): every part named Name, read in reading order, lower lines stacked
+    under the title region too (Knight Lost A Lot's 'A' and 'Lot'). Renamed so, a card reads as before, no standards note
+    is left and a whole-name edit refuses plainly (each part has its box); a hidden extra title is never a part."""
+    import commands.card_standards as cs
+    for rel, pairs in ((CANNON, ["'Eradicator' -> 'Name'", "'Royal' -> 'Name'"]),
+                       (KNIGHT, ["'Knight' -> 'Name'", "'Lost' -> 'Name'", "'A' -> 'Name'", "'Lot' -> 'Name'"])):
+        old, new = _card(clone, rel)[0], str(tmp_path / Path(rel).name)
+        before = PSDImage.open(old)
+        texts = [layer for layer in before.descendants() if layer.kind == "type"]
+        parts = [layer.layer_id for layer in pe.PSDParser.title_parts(before, texts, card_name(rel))[0]]
+        assert cs.rule_part_names(before, Path(rel).stem) is not None
+        assert cs.rename_titles(old, new, Path(rel).stem) == pairs
+        after = PSDImage.open(new)
+        texts = [layer for layer in after.descendants() if layer.kind == "type"]
+        assert [layer.layer_id for layer in pe.PSDParser.title_parts(after, texts, card_name(rel))[0]] == parts
+        assert {layer.name for layer in pe.PSDParser.title_layers(after, texts, card_name(rel))} == {"Name"}
+        assert pe.parse_card(parser, new, rel)["card"] == pe.parse_card(parser, old, rel)["card"]
+        assert cs.rule_part_names(after, Path(rel).stem) is None and cs.rule_name(after, Path(rel).stem) is None
+        with pytest.raises(pe.Refused, match=f"split over {len(parts)} layers: edit each box on the website"):
+            pe.name_layer(after, card_name(rel))
+        assert cs.rename_titles(new, str(tmp_path / "again.psd"), Path(rel).stem) == []
+    psd = PSDImage.open(new)                                                # a box edit running into the next part refuses
+    record = pe.card_parts(psd, rel, card_name(rel), parser)
+    first = record["title"][0]
+    with pytest.raises(pe.Refused, match=r"title part 1/4 .* would run into 'Lost', another part of the title"):
+        pe.set_parts(psd, {str(first["id"]): {"text": "Knight\nKnight\nKnight"}}, record, str(clone / pe.FONTS_DIR),
+                     card=card_name(rel), parser=parser, original=PSDImage.open(new))
+    king = PSDImage.open(_card(clone, "Creatures/Other/2 Stars/Stubborn_King.psd")[0])
+    assert cs.title_renames(king, "Stubborn_King") == []                   # its hidden 'Name copy' stays as it is
 
 
 def test_a_title_named_after_the_card_outside_text(clone, parser):
@@ -911,7 +944,7 @@ def test_the_title_outside_text_is_the_single_visible_candidate():
     assert found(_Fake("Mr Jawsum", 20), _Fake("Text", kind="group", children=[_Fake("Name", 30)])) == ["Text/Name"]
     assert found(_Fake("Mr Jawsum", 20), _Fake("Text", kind="group", children=[_Fake("Mr Jawsum", 600)])) == ["Text/Mr Jawsum"]
     two = _Fake("", kind="group", children=[_Fake("Mr Jawsum", 20), _Fake("Group", kind="group", children=[_Fake("Mr. Jawsum", 40)])])
-    with pytest.raises(pe.Refused, match="2 title layers"):
+    with pytest.raises(pe.Refused, match="split over 2 layers"):
         pe.name_layer(two, "Mr Jawsum")
     assert pe.read_name(two, "Mr Jawsum") is None
 
@@ -947,7 +980,7 @@ def test_a_title_named_after_its_own_text(clone, parser):
     parsed = pe.parse_card(parser, psd_path, KNIGHT)
     assert parsed["card"].get("display_name") is None and pe.shown_name(parsed) == "Knight Lost A Lot"
     assert [r.why for r in pe.classify(parsed, {"name": "Knight Lost A Lot"}, PSDImage.open(psd_path)).refusals] == []
-    assert [r.why for r in pe.classify(parsed, {"name": "Knight Lost"}, PSDImage.open(psd_path)).refusals] == ["4 title layers"]
+    assert [r.why for r in pe.classify(parsed, {"name": "Knight Lost"}, PSDImage.open(psd_path)).refusals] == ["the title is split over 4 layers: edit each box on the website"]
 
 
 def test_own_text_is_the_last_rule():
@@ -965,7 +998,7 @@ def test_own_text_is_the_last_rule():
     assert found(_Fake("snas.", 20), _Fake("Text", kind="group", children=[_Fake("Name", 30, text="Sans")])) == ["Text/Name"]
     assert found(_Fake("snas.", 20), _Fake("Sans", 40, text="the skeleton")) == ["Sans"]      # named after the card first
     stacked = _Fake("", kind="group", children=[_Fake("Text", kind="group", children=[_Fake("Knight", 20), _Fake("Lost", 60)])])
-    with pytest.raises(pe.Refused, match="2 title layers"):                     # rule P reads both (one box each)
+    with pytest.raises(pe.Refused, match="split over 2 layers"):                # rule P reads both (one box each)
         pe.name_layer(stacked, "Knight Lost A Lot")
 
 

@@ -84,7 +84,7 @@ TYPE_TRIES = ("fire", "water", "ice")       # a type to add: the first a card la
 MAX_STARS = 7                               # the census's: a star added up to here
 SMALL_PSD = 3_000_000                       # bytes: under this a type edit bakes for real (3 cards)
 ANY_KIND = [(kind, "") for kind in psd_edit.TEMPLATES] + [("item", "Items/Active/")]  # template_for's every file
-WHOLE_FIELD = r"edit each box on the website|^\d+ title layers|title is split over several layers|title is printed again by"
+WHOLE_FIELD = r"edit each box on the website|title is printed again by"     # a box per layer takes the edit
 WHAT = {"name": "A new title", "adding a star": "Adding a star", "removing a star": "Taking off a star",
         "adding a type": "Adding a type", "removing a type": "Taking off a type", "stats": "Stat edits"}
 # the notes

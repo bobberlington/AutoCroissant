@@ -751,7 +751,9 @@ class PSDParser:
     @staticmethod
     def title_layers(psd: PSDImage, text_layers: list, name: str) -> list:
         """
-        The visible text layers _printed_title reads: Text/Name, else the Name layers in the title region, else the
+        The visible text layers _printed_title reads: Text/Name (a split title: every part named Name, read in reading
+        order; past the title region too, a copy's words aside; in Text's groups those in the title region and those
+        stacked under them, as rule P's lines), else the Name layers in the title region, else the
         layers under Text named after the card, else those elsewhere in the title region (a status effect's top-level
         title), else the one layer in the title region named after its own text (named_after_text: Sans's 'snas.';
         several are stacked words, Knight Lost A Lot's, and read as none); of several, those in the title region; with
@@ -771,8 +773,12 @@ class PSDParser:
         under_text = [layer for layer in text_group if layer.is_visible() and layer.kind == "type"] if text_group is not None else []
         key = name_key(name)
         found = [layer for layer in under_text if base_name(layer).strip() == "Name"]
+        if found:                               # a split title's parts in Text's groups too (Leeroy Jenkins)
+            found = [layer for layer in text_group.descendants() if layer.kind == "type" and layer.is_visible()
+                     and base_name(layer).strip() == "Name" and (layer.parent is text_group or layer.bbox[1] < top)]
         if not found:
             found = [layer for layer in text_layers if base_name(layer).strip() == "Name" and layer.is_visible() and layer.bbox[1] < top]
+        parts = bool(found)                     # Name layers: a split title's parts
         if not found and key:
             found = [layer for layer in under_text if name_key(base_name(layer)) == key]
         if not found and key:
@@ -783,7 +789,19 @@ class PSDParser:
                    and named_after_text(layer)]
             found = own if len(own) == 1 else []
         if len(found) > 1:
-            found = [layer for layer in found if layer.bbox[1] < top]
+            kept = [layer for layer in found if layer.bbox[1] < top]
+            if kept and parts and text_group is not None:   # Text's own Name parts past the region, copies aside
+                words = {PSDParser.words(layer.text) for layer in kept}     # (Knight Lost A Lot's 'A' and 'Lot')
+                kept += [layer for layer in found if layer.bbox[1] >= top and layer.parent is text_group
+                         and PSDParser.words(layer.text) not in words]
+            found = [layer for layer in found if any(layer is one for one in kept)]
+        if found and parts:                     # and the parts stacked under them (in Text's groups)
+            named = [layer for layer in text_layers if layer.kind == "type" and layer.is_visible()
+                     and base_name(layer).strip() == "Name"]
+            grown = PSDParser._stacked(found, named)
+            if len(grown) > len(found):
+                ids = {id(layer) for layer in grown}
+                found = [layer for layer in psd.descendants() if id(layer) in ids]
         if not found and text_group is not None:
             found = PSDParser._titles_by_place(text_group, text_layers, top)
         return found
@@ -810,7 +828,13 @@ class PSDParser:
         texts = [layer for layer in text_layers if id(layer) in inside and layer.kind == "type" and layer.is_visible()
                  and EFFECT_LAYER_TAG not in layer.name and base_name(layer).strip().lower() != "ability"
                  and (layer.text or "").strip()]
-        found = [layer for layer in texts if layer.bbox[1] < top]
+        return PSDParser.reading(PSDParser._stacked([layer for layer in texts if layer.bbox[1] < top], texts))
+
+    @staticmethod
+    def _stacked(found: list, texts: list) -> list:
+        """found and the texts stacked under them (same face and size, overlapping across, within TITLE_STACK of a
+        line's height), in the order found."""
+        found = list(found)
         grew = bool(found)
         while grew:
             grew = False
@@ -825,7 +849,7 @@ class PSDParser:
                         found.append(layer)
                         grew = True
                         break
-        return PSDParser.reading(found)
+        return found
 
     @staticmethod
     def split_title(psd: PSDImage, found: list, title: str, name: str) -> bool:

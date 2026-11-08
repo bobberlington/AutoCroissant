@@ -672,10 +672,10 @@ def name_layer(psd: PSDImage, card: str = ""):
     if not found:
         raise Refused("unsupported-card", _no_title(psd))
     if len(found) > 1:
-        raise Refused("unsupported-card", f"{len(found)} title layers")
+        raise Refused("unsupported-card", f"{SPLIT_TITLE} over {len(found)} layers: edit each box on the website")
     joined, whole = "".join(title_text(found[0].text).lower().split()), "".join(card.lower().split())
     if PSDParser.split_title(psd, found, title_text(found[0].text), card) or PSDParser._named_pieces(psd, found, joined, whole, card):
-        raise Refused("unsupported-card", "the title is split over several layers")
+        raise Refused("unsupported-card", f"{SPLIT_TITLE} over several layers: edit each box on the website")
     copy = _copy(psd, found[0])
     if copy is not None:
         raise Refused("unsupported-card", f"the title is printed again by {copy!r}")
@@ -683,6 +683,7 @@ def name_layer(psd: PSDImage, card: str = ""):
 
 
 PICTURE_TITLE = "the title is part of the picture"     # classify(): a name edit there is website only (owner 2026-10-26)
+SPLIT_TITLE = "the title is split"      # name_layer(): a whole-name edit on one; the website edits each part's box
 
 
 def title_in_picture(psd: PSDImage, card: str = "") -> bool:
@@ -10543,6 +10544,9 @@ def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Op
             if copies:
                 notes.append(f"{which}: also printed by {', '.join(c.name for c in copies)}: "
                              f"{'they follow' if len(copies) > 1 else 'it follows'}")
+        if which == "name" and todo and len(joined["title"]) > 1:
+            split_title_check(psd, joined["title"], jobs, index, was_index,
+                              {layer.layer_id: edit.notes for layer, edit, copy in edits if not copy})
         if which == "name" and todo:            # a watermark of the joined title follows it
             old_title = " ".join(title_text(p["text"]) for p in joined["title"])
             new_title = " ".join(title_text(jobs[str(p["id"])]["text"]) if str(p["id"]) in jobs else title_text(p["text"])
@@ -10710,6 +10714,57 @@ def add_ability(psd: PSDImage, text: str, template: PSDImage, name: str, fonts_d
     out.added, out.added_stories = [_record_index(layer)], [story]
     out.fonts = list(dict.fromkeys(faces()[len(before):] + out.fonts))
     return out
+
+
+SPLIT_SHAPE = re_compile(r"runs onto \d+ lines|runs off the canvas|a line of it moves below the title")
+
+
+def split_title_check(psd: PSDImage, parts: list, jobs: dict, index: dict, was_index: dict, notes: dict) -> None:
+    """
+    A split title's box edits bake right or refuse plainly (owner 2026-11-08): among the parts one picture shows
+    together, an edited part may not run into another (more ink shared than before), onto more lines than typed, off the
+    card, nor change their reading order.
+
+    Args:
+        psd: The card, its title parts set
+        parts: card_parts()' title parts
+        jobs: plan_parts().jobs
+        index, was_index: lyid_index() of psd and of the card as opened
+        notes: {layer id: its Edit's notes}
+
+    Raises:
+        Refused("unsupported-card", field "parts"), naming the part
+    """
+    shape = (psd.height, psd.width)
+    kept = [p for p in parts if not jobs.get(str(p["id"]), {}).get("delete") and p["id"] in index]
+    pictures = sorted({n for p in kept for n in p.get("variants") or ()}) or [None]
+    ink = lambda layer: _on_canvas(layer, shape)[..., 3] > INK_ALPHA * 255
+    now, was = {}, {}
+
+    def refuse(p, group: list, why: str) -> None:
+        text = title_text(index[p["id"]].text)
+        raise Refused("unsupported-card", f"name: title part {group.index(p) + 1}/{len(group)} ({text[:30]!r}) {why}: "
+                                          "shorten it, or change the title in Photoshop", "parts")
+    for n in pictures:
+        group = [p for p in kept if p.get("variants") is None or n in p["variants"]]
+        edited = [p for p in group if str(p["id"]) in jobs]
+        if len(group) < 2 or not edited:
+            continue
+        for p in edited:
+            for note in notes.get(p["id"], []):
+                if SPLIT_SHAPE.search(note):
+                    refuse(p, group, "would run off the card" if "canvas" in note else "would break onto another line")
+        for p in group:
+            if p["id"] not in now:
+                now[p["id"]] = ink(index[p["id"]])
+                was[p["id"]] = ink(was_index[p["id"]]) if p["id"] in was_index else now[p["id"]]
+        for p in edited:
+            for q in group:
+                if q is not p and int((now[p["id"]] & now[q["id"]]).sum()) > int((was[p["id"]] & was[q["id"]]).sum()):
+                    refuse(p, group, f"would run into {title_text(index[q['id']].text)[:30]!r}, another part of the title")
+        order = lambda found: [layer.layer_id for layer in PSDParser.reading([found[p["id"]] for p in group])]
+        if all(p["id"] in was_index for p in group) and order(index) != order(was_index):
+            refuse(edited[0], group, "would put the title's parts in another order")
 
 
 def _typed_lines(note: str, typed: int) -> bool:
