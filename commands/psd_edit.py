@@ -155,6 +155,7 @@ STORY_MIRROR = {"Font": 0, "FontSize": 1, "FauxBold": 2, "FauxItalic": 3, "AutoL
                 "HorizontalScale": 6, "VerticalScale": 7, "Tracking": 8, "BaselineShift": 9, "FillColor": 53,
                 "StrokeColor": 54}   # TySh StyleSheetData keys a story run holds too, with Photoshop CC's feature number
 KERN_FEATURE = "11"      # a numbered story run's kerning: 0 off, else on (TySh's AutoKerning; B12)
+COMPOSER_KEY = "29"      # a numbered story paragraph's EveryLineComposer: Photoshop 2023 sets box text without it Every-line
 STAR_FOLDER = r"\s*(\d+)\s*stars?\s*"           # a count's own folder in a Stars group: "5 stars", "1 star" (the templates)
 LAYOUT_TOL = 0.12           # a star or icon sits on a layout's spot within this share of its size
 LAYOUT_TOL_MIN = 6          # px, at least
@@ -784,6 +785,45 @@ def story_index(layer) -> Optional[int]:
     """The type layer's TextIndex: its story's index in Txt2."""
     index = layer._data.text_data.get(b"TextIndex")
     return None if index is None else int(getattr(index, "value", index))
+
+
+def story_paragraphs(psd: PSDImage, index: Optional[int]) -> list:
+    """The paragraph properties of Txt2 story index (Photoshop CC's numbered keys); [] without it."""
+    root = _txt2(psd)
+    if root is None or index is None:
+        return []
+    _, _, items, model, _, spelling = _story_list(root)
+    if spelling:
+        raise Refused("unsupported-card", "a Txt2 block with named keys")
+    if not 0 <= index < len(items):
+        return []
+    return [run["0"]["0"]["5"] for run in items[index][model]["5"]["0"]]
+
+
+def point_text(layer) -> bool:
+    """No box: a line ends only at a return, whatever the composer."""
+    shapes = layer._engine_data["EngineDict"]["Rendered"]["Shapes"]["Children"]
+    return all(int(getattr(shape["Cookie"]["Photoshop"]["ShapeType"], "value",
+                           shape["Cookie"]["Photoshop"]["ShapeType"])) == 0 for shape in shapes)
+
+
+def unset_composer(psd: PSDImage, layer) -> list:
+    """(run, properties) of box text's story paragraphs without COMPOSER_KEY (Photoshop lays them out Every-line)."""
+    try:
+        paragraphs = [] if point_text(layer) else story_paragraphs(psd, story_index(layer))
+    except Refused:                             # named keys: none known
+        return []
+    return [(run, props) for run, props in enumerate(paragraphs) if COMPOSER_KEY not in props]
+
+
+def set_single_line(psd: PSDImage, layer) -> list:
+    """COMPOSER_KEY False where unset_composer finds none, as the fork lays it out; the runs set."""
+    from psd_tools.psd import engine_data
+    missing = unset_composer(psd, layer)
+    for _, props in missing:
+        if COMPOSER_KEY not in props:           # paragraphs may share one
+            props[engine_data.Property(COMPOSER_KEY)] = engine_data.Bool(False)
+    return [run for run, _ in missing]
 
 
 def stale_stories(psd: PSDImage) -> list:
@@ -5585,6 +5625,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     region = union_box([_pad(box, pad, psd) for box, pad in reach])
     if own:                                     # else the parser would no longer find the title
         layer.name = collapse(text)
+    set_single_line(psd, layer)                 # Photoshop lays it out as drawn
     return Edit(which, old_text, text, [layer], [_record_index(layer)], region, story=story, band=band,
                 hidden=[_record_index(overlay) for overlay in hide],
                 fx=[(fx.name, {bytes(key): fx.tagged_blocks[key].tobytes() for key in EFFECT_BLOCKS if key in fx.tagged_blocks})

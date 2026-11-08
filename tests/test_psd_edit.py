@@ -1373,12 +1373,15 @@ def test_ability_edit_colours_a_status_word(clone, parser, chart, tmp_path):
     parsed, baked = _bake(clone, parser, MINI_DOOMER, {"ability": old + " Inflict Poison."}, tmp_path, chart, paths=paths)
     assert [(name, fields) for _, name, fields in baked.records] == [("Ability", TEXT_RECORD)]
     assert pe.normalize_ability(baked.reparse["card"]["ability"]) == pe.normalize_ability(old + " Inflict Poison.")
-    layer = pe.ability_layer(PSDImage.open(baked.psd_path))
+    after = PSDImage.open(baked.psd_path)
+    layer = pe.ability_layer(after)
     text = layer.text
     start = text.index("Poison")
     fills = [fill for s, e, fill in pe.run_fills(layer) if s <= start < e]
     assert fills == [chart["poison"].fill] and chart["poison"].styled is False
     assert baked.region[1] < 1815 and baked.region[3] > 2245                 # the ability box plus the Text group's halo
+    before = PSDImage.open(paths[0])                # no composer key: written Single-line, through every gate
+    assert pe.unset_composer(before, pe.ability_layer(before)) and pe.unset_composer(after, layer) == []
 
 
 def test_fx_kind_names_how_each_fx_layer_is_made_again(chart):
