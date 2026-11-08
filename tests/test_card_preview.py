@@ -15,6 +15,7 @@ clone; a real bake needs the fork's renderer:
 import json
 import re
 import shutil
+from ast import parse as ast_parse
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from os import environ
@@ -245,9 +246,16 @@ def test_the_rest_blob_path(cards, tmp_path, monkeypatch):
 def test_the_early_reads_are_the_previews(cards, tmp_path, monkeypatch):
     """card_preview_reads (card-preview.yml's Reads step: the standard library alone) takes what the preview reads first
     (a key, a PSD path in another case, a numbered picture's parts, an MDW PSD, an unknown card) and writes the blobs into
-    a blobless clone, where the bake reads them; a record it cannot read is left out."""
+    a blobless clone, where the bake reads them; a record it cannot read is left out. It and its imports run on 3.12."""
     assert (early.EXCLUDE_FOLDERS, early.STATUS_CHART, early.RECORDS) == (cb.EXCLUDE_FOLDERS, pe.STATUS_CHART, (pe.RENDER_RECORD, pe.SPOT_RECORD))
-    assert run_process([executable, "-S", "-m", "commands.card_preview_reads", "--help"], cwd=str(REPO), capture_output=True).returncode == 0
+    for python in filter(None, (executable, shutil.which("python3.12"))):     # the runner's python3: 3.12 (ubuntu-24.04)
+        assert run_process([python, "-S", "-m", "commands.card_preview_reads", "--help"], cwd=str(REPO), capture_output=True).returncode == 0, python
+    found = run_process([executable, "-S", "-c", "import sys, commands.card_preview_reads; print(*[getattr(m, '__file__', None) or '' for m in list(sys.modules.values())], sep='\\n')"],
+                        cwd=str(REPO), capture_output=True, text=True, check=True).stdout.splitlines()
+    closure = [Path(f) for f in found if f.startswith(f"{REPO}/")]
+    assert REPO / "commands" / "card_preview_reads.py" in closure and len(closure) > 1, closure
+    for path in closure:                                                        # 3.12's grammar, with or without a 3.12
+        ast_parse(path.read_text(encoding="utf-8"), str(path), feature_version=(3, 12))
     snapshot = cb.local_snapshot(cb.CARD_REPO, str(cards.repo))
     snapshot.tree[pe.STATUS_CHART] = ("100644", "0" * 40)                         # read for an ability or parts edit
     tree = {path: sha for path, (_, sha) in snapshot.tree.items()}
