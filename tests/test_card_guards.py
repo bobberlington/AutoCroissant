@@ -1089,9 +1089,9 @@ def test_workflow_shape(clone):
     """card-guards.yml: push on PSDs, PNGs and fonts, the guards behind CARD_GUARDS (the card and font checks always,
     2026-10-25), dry dispatches by default, a run per push, the sparse list = SPARSE_FILES, requirements-cards.txt's
     install (the fork's one pin) in both jobs that run the guards, as the other card workflows have it (one cache entry),
-    secrets by name only, no ping, no fonts for the guards' own check (R7 is the font check's). The jobs: check (ends
-    after the comment), checks (a push's two checks beside it, 2026-11-07), post (at once since 2026-11-03: no environment,
-    no quiet window; only with something to land or tell), finish (card errors, the alert)."""
+    secrets by name only, no ping, no fonts for the guards' own check (R7 is the font check's). The jobs: check (lands,
+    then ends after the comment), checks (a push's two checks beside it, 2026-11-07), post (at once since 2026-11-03: no
+    environment, no quiet window, no setup; only with something to land or tell), finish (card errors, the alert)."""
     path = _workflow(clone)
     text = path.read_text(encoding="utf-8")
     doc, steps_by_name, env = _guard_steps(clone)
@@ -1107,7 +1107,7 @@ def test_workflow_shape(clone):
     assert "if" not in job and steps_by_name["Check"]["if"] == "env.MODE != 'off'"     # the checks run whatever MODE says
     assert job["env"]["MODE"] == ("${{ github.event_name == 'push' && (vars.CARD_GUARDS || 'off') || "
                                   "((inputs.dry_run || inputs.all) && 'dry' || 'on') }}")
-    # no quiet window (owner 2026-11-03): the post job takes no environment and Land waits for nothing
+    # no quiet window (owner 2026-11-03): the post job takes no environment and Land (the check job's) waits for nothing
     assert post["needs"] == "check" and finish["needs"] == ["check", "checks", "post"]
     # beside check, whatever MODE says; a dispatch's stay in check, so `all` reads each PSD once
     assert "needs" not in checks and checks["if"] == "github.event_name == 'push'" and "env" not in checks
@@ -1123,29 +1123,28 @@ def test_workflow_shape(clone):
     assert post["if"] == ("!cancelled() && needs.check.outputs.checked == 'success' && needs.check.outputs.land == 'true' && "
                           "(needs.check.outputs.mode == 'report' || needs.check.outputs.mode == 'on')")
     assert finish["if"] == "always() && needs.check.outputs.mode != 'off'"       # nothing when the guards are off
-    assert job["timeout-minutes"] == "${{ inputs.all && 150 || 40 }}" and post["timeout-minutes"] == 30
+    assert job["timeout-minutes"] == "${{ inputs.all && 150 || 60 }}" and post["timeout-minutes"] == 10
+    assert job["permissions"] == {"contents": "write", "actions": "write"}           # Land's commit, Start Card sync
     assert "environment" not in job and "environment" not in finish
     assert {k: v for k, v in job["outputs"].items() if k != "saved"} == {"mode": "${{ steps.start.outputs.mode }}",
                               "started": "${{ steps.start.outputs.started }}", "checked": "${{ steps.check.outcome }}",
                               "comment": "${{ steps.comment.outputs.id }}", "told": "${{ steps.comment.outputs.told }}",
                               "land": "${{ steps.plan.outputs.land }}", "card_errors": "${{ steps.plan.outputs.card_errors }}",
-                              "bot_sha": "${{ steps.bot.outputs.sha }}", "fixes": "${{ steps.plan.outputs.fixes }}"}
+                              "fixes": "${{ steps.plan.outputs.fixes }}", "early": "${{ steps.early.outputs.started }}",
+                              "land_ran": "${{ steps.land.outputs.ran }}", "land_sha": "${{ steps.land.outputs.sha }}",
+                              "land_already": "${{ steps.land.outputs.already }}"}
     assert post["outputs"] == {"posted": "${{ steps.tell.outputs.posted }}"}
     assert post["env"]["MODE"] == "${{ needs.check.outputs.mode }}"
     assert post["env"]["TOLD"] == job["env"]["TOLD"] == finish["env"]["TOLD"]
-    for one in (job, checks, post):
+    for one in (job, checks):
         bot = next(s for s in one["steps"] if s.get("with", {}).get("repository") == "bobberlington/AutoCroissant")
-        assert bot["with"]["sparse-checkout"].split() == ["/" + f for f in cg.SPARSE_FILES]
-        assert bot["with"].get("ref") == ("${{ needs.check.outputs.bot_sha }}" if one is post else None)   # plan and land: one bot
-    sha = next(s for s in job["steps"] if s.get("id") == "bot")
-    assert sha["run"] == 'echo "sha=$(git -C bot rev-parse HEAD)" >> "$GITHUB_OUTPUT"'
+        assert bot["with"]["sparse-checkout"].split() == ["/" + f for f in cg.SPARSE_FILES] and "ref" not in bot["with"]
+    assert not [s for s in post["steps"] if "uses" in s and "artifact" not in s["uses"]]     # no checkout, no setup
     for one in (job, checks, post, finish):                                    # a copied step runs twice unseen
         named = [s["name"] for s in one["steps"] if s.get("name")]
         assert len(named) == len(set(named)), named
     cards = next(s for s in job["steps"] if s.get("uses", "").startswith("actions/checkout") and "repository" not in s.get("with", {}))
     assert cards["with"]["filter"] == "blob:none" and cards["with"]["fetch-depth"] == 0
-    assert [s["with"]["sparse-checkout"].split() for s in post["steps"] + finish["steps"]
-            if s.get("uses", "").startswith("actions/checkout") and "repository" not in s.get("with", {})] == [["/.github/actions/"]]   # the shared setup only
     assert post["env"]["GH_REPO"] == "${{ github.repository }}"               # gh workflow run without the card repo
     from helpers import FORK_KEY, FORK_WORKFLOWS, fork_install
     others = [path.parent / name for name in FORK_WORKFLOWS if name != "card-guards.yml" and (path.parent / name).is_file()]
@@ -1155,7 +1154,9 @@ def test_workflow_shape(clone):
     names = [s.get("name") for s in job["steps"]]
     assert names.index("Start") < names.index("No push run in its window") < names.index("Check") \
         < names.index("Plan for the post job") < names.index("Fixes to land") < names.index("Decided") \
-        < names.index("Types for the conversion") < names.index("Normalise") < names.index("Comment on the commit")
+        < names.index("Types for the conversion") < names.index("Normalise") < names.index("Land") < names.index("Landed") \
+        < names.index("Comment on the commit")
+    assert names.index("Start Card sync") == names.index("Fixes to land") + 1               # Card sync sets up while the guards land
     types, normalise = steps_by_name["Types for the conversion"], steps_by_name["Normalise"]     # after Decided: Card sync waits for neither
     assert types["env"] == {"GIT_NO_LAZY_FETCH": "0"} and "sparse.expectFilesOutsideOfPatterns true" in types["run"]
     assert normalise["if"] == "${{ !cancelled() && steps.types.outcome == 'success' }}" and normalise["continue-on-error"] is True
@@ -1165,15 +1166,15 @@ def test_workflow_shape(clone):
     assert job["steps"][names.index("Decided")]["if"] == "always()"             # Card sync's wait ends on it, whatever the check did
     hand = job["steps"][names.index("Comment on the commit") + 1]
     assert hand["uses"].startswith("actions/upload-artifact") and hand["with"]["name"] == "card-guards" and hand["if"] == "always() && env.MODE != 'off'"
+    assert job["steps"][names.index("Landed")]["if"] == "always()"             # a follow-up's wait ends on it, landed or not
     post_names = [s.get("name") for s in post["steps"]]
-    take = post["steps"][2]
+    take = post["steps"][1]
     assert take["uses"].startswith("actions/download-artifact@") and take["with"] == {"name": "card-guards", "path": "${{ runner.temp }}/guards"}
-    assert post_names.index("Start Card sync") == 0 and post_names.index("Work dir") < post_names.index("Told before") \
-        < post_names.index("Land") < post_names.index("Follow up") < post_names.index("Tell Discord")
-    early = steps_by_name["Start Card sync"]                # with fixes, Card sync sets up while Land runs (its lanes wait for it)
-    assert early["if"] == "needs.check.outputs.fixes == 'true'" and early["continue-on-error"] is True
-    assert '-f "guards=$GITHUB_RUN_ID"' in early["run"] and SYNC in early["run"].replace('"', "")
-    assert steps_by_name["Follow up"]["env"]["EARLY"] == "${{ steps.early.outputs.started }}"
+    assert post_names == ["Work dir", None, "Told before", "Follow up", "Tell Discord"]
+    early = steps_by_name["Start Card sync"]                # with fixes, Card sync sets up while the guards land (its lanes wait for Landed)
+    assert early["if"] == "${{ !cancelled() && steps.plan.outputs.fixes == 'true' }}" and early["continue-on-error"] is True
+    assert '-f "guards=$GITHUB_RUN_ID"' in early["run"] and SYNC in early["run"].replace('"', "") and early["env"]["GH_REPO"]
+    assert steps_by_name["Follow up"]["env"]["EARLY"] == "${{ needs.check.outputs.early }}"
     assert [s.get("name") for s in finish["steps"] if s.get("name")] == ["Fail on card errors", "Tell Discord the run failed"]
     steps = steps_by_name
     tell = steps["Tell Discord"]
@@ -1182,9 +1183,9 @@ def test_workflow_shape(clone):
     assert steps["Told before"]["env"]["CHECK_TOLD"] == "${{ needs.check.outputs.told }}" and "if" not in steps["Told before"]
     assert '"$WEBHOOK"' in tell["run"] and "echo \"$WEBHOOK" not in text and "set -x" not in text
     land = steps["Land"]
-    # Land never waits on the Comment step's success (a failed comment must not drop the writes): the post job runs
-    # whatever the check job's result, once Check passed
-    assert "if" not in land and "--dry-run" in land["run"]
+    # Land goes before the Comment step (a failed comment cannot drop the writes), only with something to land or tell
+    assert land["if"] == "${{ !cancelled() && steps.plan.outputs.land == 'true' && (env.MODE == 'report' || env.MODE == 'on') }}"
+    assert "--dry-run" in land["run"] and "steps.check.outcome == 'success'" in steps["Comment on the commit"]["if"]
     assert "discord.json" not in tell["run"].replace("discord-final.json", "")      # never check's early post
     assert steps["Fail on card errors"]["env"]["ERRORS"] == "${{ needs.check.outputs.card_errors }}"
     alert = steps["Tell Discord the run failed"]
@@ -1194,7 +1195,8 @@ def test_workflow_shape(clone):
                            "(needs.post.outputs.posted != 'true' && needs.check.outputs.told != 'true'))")
     assert alert["env"]["WEBHOOK"] == "${{ secrets.DISCORD_STANDARDS_WEBHOOK }}" and "allowed_mentions: {parse: []}" in alert["run"]
     assert alert["env"]["RESULTS"] == "${{ needs.check.result }} ${{ needs.checks.result }} ${{ needs.post.result }}"
-    assert '{"check": 40, "checks": %d, "post": %d}' % (checks["timeout-minutes"], post["timeout-minutes"]) in alert["run"]  # a push's (`all`: 150)
+    assert '{"check": 60, "checks": %d, "post": %d}' % (checks["timeout-minutes"], post["timeout-minutes"]) in alert["run"]  # a push's (`all`: 150)
+    assert ">= %d ))" % (60 * 60 - 120) in alert["run"]                       # no job list: the check's own
     # the streak's mark: an artifact left only when the alert told (or stayed quiet in a told streak)
     streak = finish["steps"][-1]
     assert streak["uses"].startswith("actions/upload-artifact") and streak["if"] == "always() && steps.alert.outputs.streak == 'true'"
@@ -1209,19 +1211,20 @@ def test_workflow_shape(clone):
     assert check["env"]["AUTHOR"] == "${{ github.event_name == 'push' && github.actor || '' }}"   # never the dispatcher
     # a job's env may read only github, inputs, matrix, needs, secrets, strategy and vars: GitHub rejects the whole file
     assert not any("runner." in str(value) for one in (job, post, finish) for value in one["env"].values())
-    assert 'OUT=$RUNNER_TEMP/guards' in job["steps"][0]["run"] and 'OUT=$RUNNER_TEMP/guards' in post["steps"][1]["run"]
+    assert 'OUT=$RUNNER_TEMP/guards' in job["steps"][0]["run"] and 'OUT=$RUNNER_TEMP/guards' in post["steps"][0]["run"]
     follow = steps["Follow up"]
     assert "report-landed.md" in follow["run"] \
-        and follow["if"] == "always() && (steps.land.outputs.ran == 'true' || needs.check.outputs.fixes == 'true')"
+        and follow["if"] == "always() && (needs.check.outputs.land_ran == 'true' || needs.check.outputs.fixes == 'true')"
     assert follow["id"] == "follow" and tell["env"]["REFRESH"] == "${{ steps.follow.outputs.refresh }}"
     assert follow["env"]["TOLD_BEFORE"] == "${{ steps.told.outputs.told }}"
     # a re-run uploads again: the earlier attempt's artifact of the same name is replaced, not a 409
     uploads = [s for s in job["steps"] + post["steps"] + finish["steps"] if s.get("uses", "").startswith("actions/upload-artifact")]
-    assert len(uploads) == 5 and all(s["with"]["overwrite"] is True for s in uploads)
-    events = next(s for s in post["steps"] if s.get("with", {}).get("name") == "guard-events")      # Card sync reads it
-    assert post["steps"].index(events) < post["steps"].index(follow) and events["if"] == "always() && steps.land.outputs.sha != ''"
-    records = next(s for s in post["steps"] if s.get("with", {}).get("name") == "guard-records")    # Card sync merges it
-    assert post["steps"].index(records) < post["steps"].index(follow) and records["with"]["path"].endswith("/records.json")
+    assert len(uploads) == 4 and all(s["with"]["overwrite"] is True for s in uploads)
+    landed = job["steps"].index(steps["Landed"])                               # a follow-up's wait reads both before it
+    events = next(s for s in job["steps"] if s.get("with", {}).get("name") == "guard-events")       # Card sync reads it
+    assert job["steps"].index(steps["Land"]) < job["steps"].index(events) < landed and events["if"] == "always() && steps.land.outputs.sha != ''"
+    records = next(s for s in job["steps"] if s.get("with", {}).get("name") == "guard-records")     # Card sync merges it
+    assert job["steps"].index(records) < landed and records["with"]["path"].endswith("/records.json")
 
 
 
@@ -1489,7 +1492,7 @@ exit "${FAKE_LAND_STATUS:-0}"
 
 
 def test_workflow_land_and_a_rerun_after_a_landing(clone, tmp_path):
-    """The post job (its Land) runs only with something to tell in report mode, as its writes are told, never made; on
+    """Land (the check job's) runs only with something to tell in report mode, as its writes are told, never made; on
     mode for a write too: the check job's plan says land=true. A re-run or a dispatch passes --rerun (an unread branch tells no write as not made), and the
     step hands on the sha and the count already on the branch. Follow up starts the card sync after a
     commit, and again on a re-run that finds the writes landed (the first attempt's may not have started), not in report
@@ -1707,8 +1710,8 @@ def test_card_syncs_wait_ends_at_decided(clone, tmp_path):
 
 
 def test_card_syncs_follow_up_waits_for_land(clone, tmp_path):
-    """A follow-up (input guards, started first by the guards' post job): both lanes set up, then "Guards' fixes" waits
-    until that run's post job reaches Follow up or ends (never another job's step), holds nothing, then Newest."""
+    """A follow-up (input guards, started by the guards' check job before Land): both lanes set up, then "Guards' fixes"
+    waits until that run's check job reaches Landed or ends (never another job's step), holds nothing, then Newest."""
     yaml = pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
@@ -1716,22 +1719,23 @@ def test_card_syncs_follow_up_waits_for_land(clone, tmp_path):
     for job, at, fonts in (("data", 4, []), ("main", 3, ["Fonts first", None, "Fonts first (cache miss)"])):   # data: Site build start; main: fonts
         names = [s.get("name") for s in doc["jobs"][job]["steps"]]
         assert names[at:at + 3 + len(fonts)] == ["Python environment", *fonts, "Guards' fixes", "Newest"], (job, names)
-    assert doc[True]["workflow_dispatch"]["inputs"]["guards"]["default"] == ""       # the post job's run id
+    assert doc[True]["workflow_dispatch"]["inputs"]["guards"]["default"] == ""       # the guards' run id
     guards = next(s for s in doc["jobs"]["data"]["steps"] if s.get("name") == "Guards' fixes")
     naps = tmp_path / "sleeps.txt"
     env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "FAKE_STATE": str(tmp_path / "gh.json"), "FAKE_SLEPT": str(naps),
            "GITHUB_REPOSITORY": "o/cards", "RUN": "7", "SHA": "", "GITHUB_OUTPUT": str(tmp_path / "out"),
            "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "GITHUB_SERVER_URL": "https://x",
-           **{k: guards["env"][k] for k in ("FOLLOW", "POST")}}
+           "LANDED": guards["env"]["LANDED"]}
+    assert "LANDED" in guards["run"] and "POST" not in guards["env"]
 
-    def jobs(*pairs, name="post", status="in_progress"):
+    def jobs(*pairs, name="check", status="in_progress"):
         return json.dumps({"jobs": [{"name": name, "status": status, "steps": [{"name": n, "status": st} for n, st in pairs]}]})
 
-    land, follow = ("Land", "completed"), ("Follow up", "in_progress")
-    for answer, later, looks in ((jobs(land, follow), None, 0),
-                                 (jobs(("Land", "in_progress"), ("Follow up", "queued")), jobs(land, follow), 4),
+    land, landed = ("Land", "completed"), ("Landed", "in_progress")
+    for answer, later, looks in ((jobs(land, landed), None, 0),
+                                 (jobs(("Land", "in_progress"), ("Landed", "queued")), jobs(land, landed), 4),
                                  (jobs(("Land", "completed"), status="completed"), None, 0),          # cancelled or failed before it
-                                 (jobs(land, follow, name="checks"), jobs(land, ("Follow up", "completed")), 2)):   # not its job
+                                 (jobs(land, landed, name="post"), jobs(land, ("Landed", "completed")), 2)):   # not its job
         (tmp_path / "gh.json").unlink(missing_ok=True)
         naps.write_text("")
         done, outputs = _shell(guards, {**env, "FAKE_JOBS": answer, **({"FAKE_JOBS_LATER": later, "FAKE_LOOKS": str(looks)} if later else {})})

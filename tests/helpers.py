@@ -239,7 +239,7 @@ FORK_WHEELS = "~/.cache/card-wheels"
 
 OXIPNG_VERSION = "10.2.1"                                               # the CLI in the venv entry (SMALLER_PNG_PUSHES.md)
 
-OXIPNG_JOBS = {"card-guards.yml": {"check", "post"}, "card-sync.yml": {"main"}, "card-preview.yml": set()}   # write PNGs
+OXIPNG_JOBS = {"card-guards.yml": {"check"}, "card-sync.yml": {"main"}, "card-preview.yml": set()}   # write PNGs
 
 FORK_KEY = ("card-wheels-${{ steps.reqs.outputs.sha }}-${{ runner.os }}-${{ runner.arch }}"
             "-py${{ steps.reqs.outputs.minor }}")                       # one entry for all, any 3.14.x
