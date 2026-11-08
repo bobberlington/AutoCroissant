@@ -39,7 +39,7 @@ from psd_tools.constants import BlendMode, ColorMode, Resource, Tag
 from psd_tools.psd.base import ListElement
 from psd_tools.psd.descriptor import Bool, Integer, String
 
-from commands.card_edits import ADD_ABILITY, CardEdits
+from commands.card_edits import ADD_ABILITY, COLOR_PRINTED, CardEdits, color_text
 from commands.card_models import CardInfo, StatsDatabase, straight
 from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_PREFIX, ICON_SCAN_PATTERN,
                                  TITLE_REGION_RATIO, TYPE_REGION_RATIO, BoundingBox, CardValidator, IconVocabulary,
@@ -66,6 +66,7 @@ CODES = ("duplicate", "unsupported-card", "stat>10", "blob", "parity", "styled-w
 STAT_FIELDS = ("hp", "def", "atk", "spd")
 TEXT_FIELDS = ("name", "ability")
 ICON_FIELDS = ("stars", "types")                # printed as icons; refused per field, never for the card (owner, 2026-10-23)
+PARTIAL_FIELDS = ICON_FIELDS + ("colors",)      # refused alone while the card's other fields bake (a colour: each its own)
 KIND = CardEdits.KIND
 STAT_MAX = 10                                   # one bar row shows 0-10; Top + Bottom rows show 11-20 (idea 13)
 DIGITS = tuple(str(n) for n in range(10))
@@ -242,6 +243,7 @@ class Classification:
     site: dict = field(default_factory=dict)        # field -> why: website only, as the card image can't print it (a
     #   title that is part of the picture, a stat past what its bar rows print; owner 2026-10-26): the bake adds it to _site
     parts: Optional["PartsPlan"] = None             # the entry's `parts` sorted (plan_parts), when it has them
+    colors: list = field(default_factory=list)      # plan_colors(): [(colour, outcome)] of the entry's `colors`
 
 
 @dataclass
@@ -2060,7 +2062,7 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
     out = Classification()
     derived = _classify_parts(out, parsed, edits, psd, parser)
     for name, value in edits.items():
-        if name == "parts" or name in derived:
+        if name in ("parts", "colors") or name in derived:
             continue
         if KIND.get(name, "database") != "psd" or value is None or (name == "creatures" and psd is None):
             out.other.append(name)
@@ -2129,7 +2131,29 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
                     out.jobs[name] = value
                 except Refused as refused:
                     out.refusals.append(refused.refusal)
+    if edits.get("colors"):
+        _classify_colors(out, parsed, edits, psd)
     return out
+
+
+def _classify_colors(out: Classification, parsed: dict, edits: dict, psd: Optional[PSDImage]) -> None:
+    """
+    classify()'s `colors` (plan_colors): the colours to bake are the job, each refused one a refusal of the field (its
+    reason; the card's other fields and colours still bake); with none to bake, the field is redundant when one was.
+    A colour on a field a text edit of the entry sets is found in its new text.
+    """
+    if psd is None:
+        out.refusals.append(Refusal("unsupported-card", "colors: no PSD to find the text layers in", "colors"))
+        return
+    parted = {job.get("field") for job in (out.jobs.get("parts") or {}).values() if isinstance(job, dict)}
+    retyped = {f: edits.get(f) or "" for f in COLOR_PRINTED if f in out.jobs or f in parted}
+    out.colors = plan_colors(psd, edits["colors"], _card_name(parsed), retyped)
+    if any(how == "baked" for _, how in out.colors):    # the redundant ones too: they paint in the colours' order
+        out.jobs["colors"] = [one for one, how in out.colors if how in ("baked", "redundant")]
+    elif any(how == "redundant" for _, how in out.colors):
+        out.redundant.append("colors")
+    out.refusals += [Refusal("unsupported-card", f"colors: {color_text(one)}: {how}", "colors")
+                     for one, how in out.colors if how not in ("baked", "redundant")]
 
 
 def _classify_creatures(out: Classification, card: dict, wanted: list, stats: dict, psd: PSDImage) -> None:
@@ -5524,6 +5548,216 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                 dropped=dropped, rebuilt=[(_record_index(fx), old, fx.name) for fx, old in rebuilt],
                 fx_names=fx_names, notes=notes + flags, held=held, fonts=faces,
                 renamed=layer.name if own else None, whole=spliced is None or bool(spliced.fallback))
+
+
+# ========================
+# Text colours (Card Edits.json `colors`, owner 2026-11-07)
+# ========================
+def _hex(fill) -> Optional[str]:
+    """"#rrggbb" of an RGB 0..1 fill (the website's), None for none."""
+    return None if fill is None else "#%02x%02x%02x" % tuple(max(0, min(255, int(round(float(v) * 255)))) for v in fill[-3:])
+
+
+def _fill(color: str) -> tuple:
+    """An "#rrggbb" colour as the engine's RGB 0..1."""
+    return tuple(int(color[i:i + 2], 16) / 255 for i in (1, 3, 5))
+
+
+def color_order(value: list) -> list:
+    """The colours in the order they paint: whole fields first, then phrases as listed (a phrase wins over its field)."""
+    return sorted(value, key=lambda one: bool(one.get("phrase")))
+
+
+def color_layers(psd: PSDImage, field: str, card: str) -> list:
+    """The text layers printing a field, in reading order: the title's parts (one split over layers too), the Ability's."""
+    texts = [layer for layer in psd.descendants() if _is_text_layer(layer) and EFFECT_LAYER_TAG not in layer.name]
+    if field == "name":
+        return PSDParser.title_parts(psd, texts, card.replace("_", " "))[0]
+    return PSDParser.ability_parts(texts)[0]
+
+
+def color_spans(layers: list, one: dict) -> tuple:
+    """
+    Where a colour paints: ([(layer, start, end)], why not). A phrase matches as the effect layers' (phrase_ranges: any
+    case, any blanks between its words, whole words when it occurs as one, "word#n" the nth), counted over the layers in
+    reading order; no phrase: every layer whole. why: "" when found.
+    """
+    what = "title" if one["field"] == "name" else "ability"
+    if not layers:
+        return [], f"no {what} text layer"
+    phrase = one.get("phrase")
+    if not phrase:
+        return [(layer, 0, len(layer.text)) for layer in layers], ""
+    words, nth = _numbered(phrase)
+    found, whole = [], []
+    for layer in layers:
+        some, own = _matches(layer.text, words)
+        found += [(layer, a, b) for a, b in some]
+        whole += [(layer, a, b) for a, b in own]
+    hits = whole or found
+    hits = hits[nth - 1:nth] if nth else hits
+    if hits:
+        return hits, ""
+    return [], (f"there is no {_nth(nth)} {words!r} in the {what}" if nth and found else f"{words!r} is not in the {what}")
+
+
+def _nth(k: int) -> str:
+    return {1: "1st", 2: "2nd", 3: "3rd"}.get(k, f"{k}th")
+
+
+def _fx_words(psd: PSDImage, layer) -> list:
+    """[(start, end, FX layer name)]: the layer's words an Ability FX layer cuts (its own pixels, drawn over them)."""
+    if EFFECT_LAYER_TAG in layer.name:
+        return []
+    return [(a, b, fx.name) for fx in fx_layers(psd, layer) for a, b in phrase_ranges(layer.text, fx_phrases(layer, fx))]
+
+
+def _painted(layer, a: int, b: int, fx: list) -> list:
+    """The str indices a colour paints in layer.text[a:b]: not the icon font's (badges and icons keep their colours), not
+    an FX layer's words (its pixels show)."""
+    icons = _char_styles(layer)[1]
+    return [i for i in range(a, b) if not icons[i] and not any(s <= i < e for s, e, _ in fx)]
+
+
+def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] = None) -> list:
+    """
+    classify()'s `colors`: each colour's outcome, [(colour, "baked" | "redundant" | why not)] in the entry's order.
+    Found on the card's layers (color_spans): redundant when every letter it is the last to paint (color_order) has
+    that colour already, or none is left to it; a phrase an effect layer cuts (its own pixels show) or an overlay word
+    layer prints is refused, as one of badges and icons alone. retyped: the fields a text edit of the entry sets
+    ({field: its new text}): found in that text, baked (the bake finds it again once the text is set). The note's
+    colours are the website's alone: left out.
+    """
+    out, overlays, final, painted = {}, None, {}, {}
+    ordered = color_order([one for one in value if one.get("field") in COLOR_PRINTED])
+    for k, one in enumerate(ordered):
+        field, phrase = one["field"], one.get("phrase")
+        what = "title" if field == "name" else "ability"
+        if retyped and field in retyped:      # found in the new text (the bake looks again once it is set)
+            words, nth = _numbered(phrase) if phrase else ("", 0)
+            some, own = _matches(retyped[field] or "", words) if phrase else ([], [])
+            hits = (own or some)[nth - 1:nth] if nth else own or some
+            out[k] = "baked" if hits or not phrase else f"{words!r} is not in the new {what}"
+            continue
+        spans, why = color_spans(color_layers(psd, field, card), one)
+        if field == "name" and (why or not spans) and title_in_picture(psd, card):
+            why = PICTURE_TITLE                  # the website's alone, as a name edit there (owner 2026-10-26)
+        if not why and phrase and field == "ability":
+            if overlays is None:
+                overlays = overlay_words(psd)
+            words = collapse(_numbered(phrase)[0]).lower()
+            over = next((layer.name for layer in overlays if collapse(layer.text).lower() == words), None)
+            why = f"{phrase!r} is printed by its own text layer {over!r} over the ability" if over is not None else ""
+        cut = [name for layer, a, b in spans for s, e, name in _fx_words(psd, layer) if s < b and a < e] \
+            if phrase and not why else []
+        why = why or (f"{phrase!r} is drawn by its effect layer {cut[0]!r}, which keeps its own pixels" if cut else "")
+        mine = [(layer, i) for layer, a, b in spans for i in _painted(layer, a, b, _fx_words(psd, layer))] if not why else []
+        if not why and not mine:
+            why = (f"{phrase!r} is only badges or icons, which keep their own colours" if phrase
+                   else "only badges, icons or effect layers' words, which keep their own colours")
+        if why:
+            out[k] = why
+            continue
+        for layer, i in mine:
+            painted[id(layer)] = layer
+            final[(id(layer), i)] = k
+    fills = {key: _char_styles(layer)[0] for key, layer in painted.items()}
+    for k, one in enumerate(ordered):
+        if k not in out:
+            last = [(key, i) for (key, i), by in final.items() if by == k]
+            out[k] = "baked" if any(_hex(fills[key][i]) != one["color"] for key, i in last) else "redundant"
+    found = {id(one): how for k, one in enumerate(ordered) for how in [out[k]]}
+    return [(one, found[id(one)]) for one in value if id(one) in found]
+
+
+def recolour(layer, paint: dict, fonts) -> bool:
+    """
+    The layer's stored raster recoloured where its glyphs of the str indices in paint are ({index: RGB 0..1}): each
+    inked pixel takes the colour of the glyph nearest it (text_geometry's ink boxes, _nearest), its alpha kept, so the
+    letters stay where Photoshop drew them (a redraw would lay them out again: Leeroy Jenkins' JENKINS 2 px wider). The
+    story's strikes go as a redraw's do (Photoshop composes the story at open). False when no pixel changed.
+    """
+    from psd_tools.api import text_edit
+    from psd_tools.composite.text.geometry import text_geometry
+    from psd_tools.composite.text.verify import stored_raster
+    rgba, bbox = stored_raster(layer)
+    if rgba is None:
+        return False
+    glyphs = [glyph for glyph in text_geometry(layer, fonts)["glyphs"] if glyph["ink"]]
+    x0, y0 = bbox[0], bbox[1]
+    mask = np.zeros((bbox[3], bbox[2]), bool)
+    mask[y0:, x0:] = rgba[..., 3] > 0
+    ys, xs, nearest = _nearest(glyphs, mask)
+    out, changed = rgba.copy(), False
+    for k, glyph in enumerate(glyphs):
+        fill = paint.get(glyph["i"])
+        if fill is None:
+            continue
+        hit = nearest == k
+        if hit.any():
+            out[ys[hit] - y0, xs[hit] - x0, :3] = np.asarray(fill, np.float32)
+            changed = True
+    if not changed or np.array_equal(out, rgba):
+        return False
+    layer._store_raster(out, bbox)
+    text_edit.drop_strikes(layer, [str(font["Name"].value) for font in layer.resource_dict["FontSet"]])
+    layer._invalidate_bbox()
+    layer._psd.mark_updated()
+    return True
+
+
+def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "") -> Edit:
+    """
+    Recolour what a `colors` job names, found again on the card as its earlier edits left it (color_spans): each colour's
+    letters take it in the runs (set_span_style splits them, the Txt2 story with them; whole fields first, then
+    phrases), the icon font's badges and icons and an Ability FX layer's words keeping theirs, and in the stored raster
+    (recolour: the letters stay where Photoshop drew them). Fonts, sizes, effects and the composer are untouched.
+
+    Returns:
+        One Edit ("colors", over every layer it set: gate_bytes reads it as a text edit, gate_stories lets their stories
+        change). Told: an overlay on a layer that paints over its colours (one_colour), a copy printing it again, words an
+        effect layer keeps. Raises Refused(field "colors") for a colour no longer found (the other fields still bake)
+    """
+    from psd_tools.composite.text import MissingFontError
+    if not story_sync():
+        raise ImportError("this psd-tools fork's set_text leaves the Txt2 story stale (no TypeLayer.sync_story)")
+    jobs, notes = {}, []
+    for one in color_order(value):
+        spans, why = color_spans(color_layers(psd, one["field"], card), one)
+        if why:
+            raise Refused("unsupported-card", f"colors: {color_text(one)}: {why}", "colors")
+        for layer, a, b in spans:
+            jobs.setdefault(layer.layer_id, (layer, one["field"], []))[2].append((a, b, one))
+    fonts = font_map(fonts_dir)
+    layers, records, stories, boxes = [], [], [], []
+    for layer, which, spans in jobs.values():
+        what = "title" if which == "name" else "ability"
+        fx, paint = _fx_words(psd, layer), {}
+        kept = sorted({name for a, b, _ in spans for s, e, name in fx if s < b and a < e})
+        if kept:
+            notes.append(f"colors: {what}: the words of {', '.join(kept)} keep their look (the effect layer's own pixels)")
+        for a, b, one in spans:
+            fill = _fill(one["color"])
+            for c, d in _stretches(_painted(layer, a, b, fx)):
+                layer.set_span_style(c, d, fill=fill)
+                paint.update(dict.fromkeys(range(c, d), fill))
+        try:
+            recolour(layer, paint, fonts)
+        except MissingFontError as error:
+            raise Refused("font", str(error))
+        if one_colour(layer):
+            notes.append(f"colors: {what}: {_tinted(layer) or 'an overlay'} paints over its colours")
+        copies = _copies(psd, layer, [other for other, _, _ in jobs.values()])
+        if copies:
+            notes.append(f"colors: {what}: also printed by {copies[0].name!r}, which keeps its colours")
+        layers.append(layer)
+        records.append(_record_index(layer))
+        stories.append(story_index(layer))
+        boxes.append(_pad(tuple(layer.bbox), fx_pad(layer), psd))
+    if not layers:
+        return Edit("colors", value, value, [], [], None)
+    return Edit("colors", value, value, layers, records, union_box(boxes), story=stories[0], stories=stories[1:],
+                band=union_box([tuple(layer.bbox) for layer in layers]), notes=notes)
 
 
 # ========================
@@ -9464,7 +9698,7 @@ def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.
     again = classify(new_parsed, jobs, psd, parser)
     left = sorted(set(again.jobs) | {r.field for r in again.refusals if r.field})
     if left:
-        raise Refused("idempotence", "still to bake: " + ", ".join(left), left[0] if set(left) <= set(ICON_FIELDS) else None)
+        raise Refused("idempotence", "still to bake: " + ", ".join(left), left[0] if set(left) <= set(PARTIAL_FIELDS) else None)
     out = {}
     edited = edited_ids(edits)
     for edit in edits:
@@ -9473,7 +9707,7 @@ def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.
         if _past_floor(measured):
             raise Refused("idempotence", "%s re-render bad %.2f%% mean %.2f: past the %g%% floor"
                           % (edit.field, measured["bad_pct"], measured["mean"], PARITY_FLOOR),
-                          edit.field if edit.field in ICON_FIELDS else None)
+                          edit.field if edit.field in PARTIAL_FIELDS else None)
         out[edit.field] = measured
     return out
 
@@ -9640,8 +9874,8 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     # RenderCache, and without a stars or types edit only inside the dirty box (gate_dirty)
     cache, first = render_cache(), None
     before, edits = record_map(new), []
-    for name, value in sorted(jobs.items(),
-                              key=lambda job: (job[0] not in ICON_FIELDS, job[0] in (*STAT_FIELDS, "creatures"), job[0] == "name")):
+    for name, value in sorted(jobs.items(), key=lambda job: (job[0] == "colors", job[0] not in ICON_FIELDS,
+                                                             job[0] in (*STAT_FIELDS, "creatures"), job[0] == "name")):
         if name in ICON_FIELDS:
             try:
                 plan = plan_stars(new, parsed, value, parser, moving=True, split=True) if name == "stars" \
@@ -9679,6 +9913,8 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
             record = card_parts(old, rel, _card_name(parsed), parser)
             edits += set_parts(new, value, record, fonts_dir, chart, _card_name(parsed), parser, old,
                                ability_from, rel, title_anchor)
+        elif name == "colors":                  # last: on the text the edits above set
+            edits.append(set_colors(new, value, fonts_dir, _card_name(parsed)))
         else:
             raise Refused("unsupported-card", f"{name}: not yet")
     others = [edit for edit in edits if edit.field not in ICON_FIELDS and (edit.layers or edit.removed)]
@@ -9708,7 +9944,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
         try:
             base, parity[edit.field] = baseline(old, png, edit.region, icc, first)
         except Refused as refused:
-            refused.field = edit.field if edit.field in ICON_FIELDS else None
+            refused.field = edit.field if edit.field in PARTIAL_FIELDS else None
             raise
         text = parity[edit.field]["text"]
         if edit.whole:                          # every line laid out again: told, refused past the floor
@@ -9726,7 +9962,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
         if not own.any() and not _within_bar(parity[edit.field]):     # a blank render: the PNG would keep the old one
             raise Refused("parity", "%s: the render shows no change, baseline bad %.2f%% mean %.2f max %d"
                           % (edit.field, parity[edit.field]["bad_pct"], parity[edit.field]["mean"], parity[edit.field]["max"]),
-                          edit.field if edit.field in ICON_FIELDS else None)
+                          edit.field if edit.field in PARTIAL_FIELDS else None)
         changed_pixels += int(replaced.sum())
     gate_shape(png, merged, new)
     gate_region(png, merged, region)     # merge_png writes only inside the regions: the gate restates its contract
@@ -9744,7 +9980,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     hold.enter_context(variant(reopened, view))     # the read-back and re-render as picture `view`
 
     start = perf_counter()
-    stories = {story for edit in edits if edit.field in TEXT_FIELDS for story in [edit.story, *edit.stories]}
+    stories = {story for edit in edits if edit.field in (*TEXT_FIELDS, "colors") for story in [edit.story, *edit.stories]}
     gate_stories(old, reopened, stories | repaired,
                  [face for edit in edits for face in edit.fonts],
                  [index for edit in edits for index in edit.removed_stories],
@@ -10362,6 +10598,7 @@ __all__ = [
     'OK_FONTS',
     'Refusal',
     'Refused',
+    'PARTIAL_FIELDS',
     'STATUS_CHART',
     'STORY_KEYS',
     'STORY_MIRROR',

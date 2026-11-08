@@ -38,7 +38,7 @@ import commands.card_bake as card_bake
 import commands.png_export as png_export
 import commands.psd_edit as psd_edit
 from commands.card_bake import Card, Snapshot, Transient, local_snapshot, psd_fields, snapshot_at, vocabulary
-from commands.card_edits import CardAuthors, CardEdits
+from commands.card_edits import CardAuthors, CardEdits, color_text
 from commands.card_models import card_name
 from commands.card_preview_branch import BEFORE, MAX_CARD, PNG, REQUEST, RESULT, WEBP, blank, clean, stamp
 from commands.git_commit import ref_head
@@ -207,7 +207,9 @@ def changes_of(edits: list) -> list:
     deleted layer's new is "")."""
     out = []
     for e in edits:
-        if isinstance(e.old, dict) and isinstance(e.new, dict):
+        if e.field == "colors":                 # in plain words: "Ability: 'Burning' coloured #ff7a1a"
+            out.append({"field": "colors", "old": "", "new": _plain("; ".join(color_text(one) for one in e.new))})
+        elif isinstance(e.old, dict) and isinstance(e.new, dict):
             out += [{"field": e.field, "old": _plain(e.old.get(key)), "new": _plain(e.new.get(key) or "")}
                     for key in e.old]
         else:

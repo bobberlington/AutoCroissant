@@ -66,7 +66,8 @@ from requests import RequestException
 import commands.github_api as github_api
 import commands.png_export as png_export
 import commands.psd_edit as psd_edit
-from commands.card_edits import ORDER, RENAME, SITE, CardAuthors, CardDates, CardEdits, CardRatings, dump_edits
+from commands.card_edits import (COLOR_PRINTED, ORDER, RENAME, SITE, CardAuthors, CardDates, CardEdits, CardRatings,
+                                 color_text, dump_edits)
 from commands.card_models import RENAMED, card_name, file_stem
 from commands.git_commit import (API_TIMEOUT, AUTHOR, COMMIT_TRIES, GIT_TIMEOUT, NO_LAZY, Transient, api, checkout_head, commit_files,
                                  commit_info, git, local_commit, plural, ref_head)
@@ -150,6 +151,9 @@ class Card:
     renames: dict = field(default_factory=dict) # that rename: old path -> new file name (plan_rename; after any move)
     renamed: str = ""                           # the card's new name
     relocated: dict = field(default_factory=dict)   # the commit's moves and renames: old path -> new path
+    colors: list = field(default_factory=list)  # its `colors` sorted (psd_edit.plan_colors): [(colour, outcome)]
+    colors_done: list = field(default_factory=list)  # the `colors` the commit takes out (baked, or printed already)
+    colors_kept: list = field(default_factory=list)  # the printed ones refused: they stay, with the verdict
 
 
 @dataclass
@@ -371,7 +375,7 @@ def _save(path: str, data: bytes) -> None:
 # Card Edits.json (the edit.js editsFile port: dump_edits is card_edits')
 # ========================
 def rewrite_entry(entry: dict, drop=(), psd: Optional[dict] = None, keep: bool = False,
-                  part_drop=(), creature=None, site=()) -> Optional[dict]:
+                  part_drop=(), creature=None, site=(), colors_done=()) -> Optional[dict]:
     """
     One card's entry as the pipeline leaves it: the dropped fields gone, "_psd" replaced (None removes it), fields
     in ORDER, then the other keys in their order ("_psd" where it was, else last), "_by", "_at" (edit.js editsFile's
@@ -389,12 +393,16 @@ def rewrite_entry(entry: dict, drop=(), psd: Optional[dict] = None, keep: bool =
             dropped stat would leave the list's old value showing; owner 2026-10-26)
         site: Fields that are website only from now on (classify's site: the card image can't print them), added to
             `_site` (CardEdits.SITE_FIELDS' order)
+        colors_done: Colours to take out of `colors` (baked, printed already); the field goes with its last one
 
     Returns:
         The entry, or None when no field is left and no kept verdict: the entry goes whole, its _-keys with it
         (section 5 step 10)
     """
     entry, drop = dict(entry), list(drop)
+    if colors_done and isinstance(entry.get("colors"), list):
+        entry["colors"] = [one for one in entry["colors"] if one not in colors_done]
+        drop += [] if entry["colors"] else ["colors"]
     if isinstance(creature, dict):
         creature = [creature]
     if creature and any(creature) and isinstance(entry.get("creatures"), list) \
@@ -428,7 +436,7 @@ def rewrite_entry(entry: dict, drop=(), psd: Optional[dict] = None, keep: bool =
 
 
 def rewrite_edits(text: str, name: str, drop=(), psd: Optional[dict] = None, keep: bool = False,
-                  part_drop=(), creature=None, site=()) -> Optional[str]:
+                  part_drop=(), creature=None, site=(), colors_done=()) -> Optional[str]:
     """
     Card Edits.json with one card's entry rewritten (matched like edit.js: keys compared as CardAuthors.key).
 
@@ -450,7 +458,7 @@ def rewrite_edits(text: str, name: str, drop=(), psd: Optional[dict] = None, kee
     key = next((k for k in cards if CardAuthors.key(k) == CardAuthors.key(name)), None)
     if key is None or not isinstance(cards[key], dict):
         return None
-    entry = rewrite_entry(cards[key], drop, psd, keep, part_drop, creature, site)
+    entry = rewrite_entry(cards[key], drop, psd, keep, part_drop, creature, site, colors_done)
     if entry == cards[key]:
         return None
     if entry is None:
@@ -462,8 +470,12 @@ def rewrite_edits(text: str, name: str, drop=(), psd: Optional[dict] = None, kee
 
 def psd_fields(fields: dict, site=()) -> dict:
     """The PSD-kind fields of an entry with a value (the job key, section 5), but its website-only ones (`_site`, and
-    their part edits; a website-only stat on every creature): never baked."""
+    their part edits; a website-only stat on every creature; the note's colours): never baked."""
     out = {k: v for k, v in fields.items() if KIND.get(k) == "psd" and v is not None and k not in site}
+    if isinstance(out.get("colors"), list):
+        out["colors"] = [one for one in out["colors"] if isinstance(one, dict) and one.get("field") in COLOR_PRINTED]
+        if not out["colors"]:
+            del out["colors"]
     if site and out.get("creatures"):
         out["creatures"] = [{k: v for k, v in one.items() if k not in site} for one in out["creatures"]]
     if site and isinstance(out.get("parts"), dict):
@@ -1050,6 +1062,8 @@ def _describe(card: Card) -> str:
             parts += _describe_parts(card)
         elif name == "ability":
             parts.append("ability")
+        elif name == "colors":
+            parts += [color_text(one) for one, how in card.colors if how == "baked"] or ["colors"]
         elif name == "types":
             parts.append(f"types {', '.join(old) if old else 'none'} -> {', '.join(value)}" if old is not None
                          else f"types -> {', '.join(value)}")
@@ -1196,7 +1210,8 @@ def _printed_already(snapshot: Snapshot, card: Card, parser, folder: str) -> boo
         return False
     card.redundant = list(classified.redundant)
     card.expect = {card.rel: card.psd_sha, **({card.png: snapshot.sha(card.png)} if card.png else {})}
-    card.dropped = list(card.redundant)
+    card.colors_done = [one for one, how in classified.colors if how == "redundant"]
+    card.dropped = [f for f in card.redundant if f != "colors"]
     return True
 
 
@@ -1283,7 +1298,8 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         card.jobs, card.redundant = dict(classified.jobs), [f for f in classified.redundant if f != "parts"]
         card.site = dict(classified.site)       # the picture's title, a stat past its rows: website only (owner 10-26)
         card.parts = classified.parts
-        card.partial = [r for r in classified.refusals if r.field in psd_edit.ICON_FIELDS]
+        card.partial = [r for r in classified.refusals if r.field in psd_edit.PARTIAL_FIELDS]
+        card.colors = classified.colors
         settled = _parts_settled(card)          # redundant or skipped boxes: out of the entry, baked or not
         if len(card.partial) < len(classified.refusals) or (card.partial and not card.jobs and not card.redundant
                                                             and not settled):
@@ -1315,7 +1331,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
             bake.pop("name", None)
             card.redundant = [f for f in card.redundant if f != "name"]
         if bake:
-            texty = psd_edit.TEXT_FIELDS + ("parts",)
+            texty = psd_edit.TEXT_FIELDS + ("parts", "colors")
             if any(f in texty for f in card.jobs) and not psd_edit.text_engine():
                 raise Transient("this runner has no text engine (psd-tools[text])")
             if any(f in texty for f in card.jobs) and not psd_edit.story_sync():
@@ -1389,9 +1405,13 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
             if moved:
                 card.verdict[ANCHOR] = int(moved[len(moved) - 1])
         _relocate(card, folder)
-        card.dropped = [f for f in list(card.jobs) + card.redundant if f != "parts"]   # a baked or printed name goes too
+        card.dropped = [f for f in list(card.jobs) + card.redundant if f not in ("parts", "colors")]   # a baked or printed name goes too
+        done = ("baked", "redundant") if "colors" in card.jobs and card.baked is not None else ("redundant",)
+        card.colors_done = [one for one, how in card.colors if how in done]
+        card.colors_kept = [one for one in card.fields.get("colors") or [] if one not in card.colors_done]
         if card.partial:                        # what stays in the file: refused on the PSD this commit leaves; FX notes told
-            card.verdict = {"state": "refused", "for": {r.field: card.fields[r.field] for r in card.partial},
+            card.verdict = {"state": "refused", "for": {r.field: card.colors_kept if r.field == "colors" else card.fields[r.field]
+                                                        for r in card.partial},
                             "psd": (card.new_psd_sha or card.psd_sha)[:8], "rules": RULES,
                             "reason": "; ".join(f"{r.code}: {r.why}" for r in card.partial) + _fx_notes(card), "at": _now()}
         _part_verdict(card)                     # per layer: the boxes leave the entry, skipped ones told
@@ -1559,13 +1579,14 @@ def share_of(card: Card) -> Optional[Share]:
                 raise Refused("edit-changed", f"the edit changed on {CARD_BRANCH} meanwhile: not touched")
             return rewrite_edits(text, card.name, site=card.site)
         return Share(card, {}, {}, site_only)
-    if not card.dropped and not card.part_drop and not card.site:
+    if not card.dropped and not card.part_drop and not card.site and not card.colors_done:
         return None
 
     def drop(text: str) -> Optional[str]:
         if _wanted_at(text, card.name) != card.fields:
             raise Refused("edit-changed", f"the edit changed on {CARD_BRANCH} meanwhile: not touched")
-        out = rewrite_edits(text, card.name, card.dropped, None, False, card.part_drop, _creature_one(card), card.site)
+        out = rewrite_edits(text, card.name, card.dropped, None, False, card.part_drop, _creature_one(card), card.site,
+                            card.colors_done)
         gone = _gone_fields(card)
         for n, png in sorted(card.pictures.items()):    # the other pictures' entries: their derived name/ability
             if n != 1 and gone:
@@ -1642,7 +1663,7 @@ def records(report: Report, edits: CardEdits, verdicts: Optional[dict]) -> tuple
         if not card.included:
             continue
         entry = rewrite_entry(edits.cards.get(card.key, {}), card.dropped, card.verdict, _kept(card), card.part_drop,
-                              _creature_one(card), card.site)
+                              _creature_one(card), card.site, card.colors_done)
         now = (entry or {}).get("_psd")
         if card.renamed:                        # the verdict goes with the card to its new name
             if before is not None:
@@ -1732,7 +1753,7 @@ def _card_line(card: Card, dry_run: bool) -> str:
         line += f"; website only: {'; '.join(card.site.values())}"
     if card.commit:
         line += f"; committed `{card.commit[:8]}`"
-    elif (not card.refusal or card.included) and (card.dropped or card.baked or card.site):
+    elif (not card.refusal or card.included) and (card.dropped or card.colors_done or card.baked or card.site):
         line += "; not committed (dry run)" if dry_run else "; nothing to commit"
     if card.note:
         line += f"; {card.note}"

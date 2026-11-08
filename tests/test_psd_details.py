@@ -64,7 +64,8 @@ def test_record_shape_and_size(records, clone):
         assert record["fonts"] and all(e["supplied"] is True for e in record["fonts"].values())
         fonts = {font: [layer.rsplit("/", 1)[-1] for layer in e["layers"]] for font, e in record["fonts"].items()}
         assert fonts == psd_fonts(str(clone / rel))                                # the same rule as the font check
-        assert all(set(t) == {"layer", "id", "box", "text", "font", "size", "color", "visible"} for t in record["text"])
+        assert all(set(t) - {"colors"} == {"layer", "id", "box", "text", "font", "size", "color", "visible"} for t in record["text"])
+        assert all(t["color"] in t.get("colors", [t["color"]]) for t in record["text"] if t["color"])     # every run's colour
         assert all(len(t["text"]) <= pd.TEXT_CHARS and (t["color"] is None or len(t["color"]) == 7) for t in record["text"])
         assert all(isinstance(v, list) and v for v in record["effects"].values())
         assert record["icons"] == "mixed"                                           # image types, badge runs

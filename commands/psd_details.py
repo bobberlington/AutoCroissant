@@ -176,8 +176,12 @@ def _text(texts: list) -> list:
             font, size, colour = _style(layer)
         except Exception:                       # engine data psd-tools can't read
             font, size, colour = None, None, None
+        try:                                    # every run's colour, in order (the website's colour palette)
+            colours = list(dict.fromkeys(psd_edit._hex(fill) for _, _, fill in psd_edit.run_fills(layer) if fill))
+        except Exception:
+            colours = []
         out.append({"layer": layer_path(layer), "id": layer.layer_id, "box": _ints(layer.bbox), "text": text, "font": font,
-                    "size": size, "color": colour, "visible": layer.is_visible()})
+                    "size": size, "color": colour, "visible": layer.is_visible(), **({"colors": colours} if colours else {})})
     return out
 
 

@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from json import dumps as json_dumps, loads as json_loads
 from math import floor
-from re import compile as re_compile, sub
+from re import compile as re_compile, fullmatch, sub
 from typing import Optional
 from unicodedata import combining, normalize
 
@@ -19,7 +19,7 @@ from commands.card_models import CardInfo, CardStats
 # ========================
 # edit.js FIELDS, in order: how an entry lists its fields
 ORDER = ("name", "type", "subtype", "series", "subseries", "stars", "types", "hp", "def", "atk", "spd", "ability",
-         "parts", "note", "art", "ability_art", "aliases", "dup_of", "hidden", "problems_ok", "allow_high_stats", "creatures",
+         "parts", "colors", "note", "art", "ability_art", "aliases", "dup_of", "hidden", "problems_ok", "allow_high_stats", "creatures",
          "flags")
 # what localeCompare(…, {sensitivity: "base"}) puts before digits and letters, in CLDR root order
 PUNCTUATION = "_-,;:!?.'\"()[]{}@*/\\&#%`^+<=>|~$"
@@ -34,6 +34,40 @@ ART_FIELDS = ("art", "ability_art")             # artwork sources: art a list (o
 ART_MAX = 500                                   # characters a source (art.js ART_MAX, build_site ART_MAX)
 FLAGS = ("hand", "bars")                        # what a card needs from a developer, each with a reason or "" (flags.js CARD_FLAGS, build_site FLAGS)
 FLAG_MAX = 300                                  # characters a reason (flags.js, build_site)
+# text colours: [{"field", "phrase"?, "color"}], a phrase as the effect layers' ("word#n"; none: the whole field)
+COLOR_FIELDS = ("name", "ability", "note")      # textcolor.js FIELDS, build_site COLOR_FIELDS; the note's never bake
+COLOR_PRINTED = ("name", "ability")             # the card image's
+COLOR = re_compile(r"^#[0-9a-f]{6}\Z")
+COLORS_MAX, PHRASE_MAX = 64, 200
+
+
+def valid_colors(value) -> bool:
+    """A `colors` edit: a list of {field, color "#rrggbb", phrase?}, one per field and phrase (build_site.valid_colors)."""
+    if not isinstance(value, list) or not value or len(value) > COLORS_MAX:
+        return False
+    seen = set()
+    for one in value:
+        if not isinstance(one, dict) or set(one) - {"field", "phrase", "color"} or one.get("field") not in COLOR_FIELDS \
+                or not isinstance(one.get("color"), str) or not COLOR.match(one["color"]):
+            return False
+        phrase = one.get("phrase")
+        if "phrase" in one and not (isinstance(phrase, str) and phrase.strip() == phrase and 0 < len(phrase) <= PHRASE_MAX):
+            return False
+        if (one["field"], phrase) in seen:
+            return False
+        seen.add((one["field"], phrase))
+    return True
+
+
+def color_text(one: dict) -> str:
+    """"Ability: 'Burning' coloured #ff7a1a", "Ability: 'Burning' (2nd) coloured ...", "Name coloured #ffffff": one colour
+    in plain words (textcolor.js colorText)."""
+    phrase, nth = one.get("phrase"), ""
+    numbered = phrase and fullmatch(r"(.*\S)#(\d+)", phrase)
+    if numbered:
+        n = int(numbered.group(2))
+        phrase, nth = numbered.group(1), f" ({n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')})"
+    return one["field"].capitalize() + (f": '{phrase}'{nth}" if phrase else "") + f" coloured {one['color']}"
 
 
 def art_list(art, ability_art=None) -> list:
@@ -108,7 +142,7 @@ class CardEdits:
     TYPES = {"name": str, "type": str, "subtype": str, "series": str, "subseries": str, "stars": int, "types": list,
              "hp": int, "def": int, "atk": int, "spd": int, "ability": str, "note": str, "art": list, "ability_art": str,
              "aliases": list, "dup_of": str, "hidden": bool, "problems_ok": bool, "allow_high_stats": bool, "creatures": list,
-             "parts": dict, "flags": dict}
+             "parts": dict, "flags": dict, "colors": list}
     NULLABLE = {"subtype", "series", "subseries", "stars", "hp", "def", "atk", "spd", "art", "ability_art"}
     ATTRS = {"name": "display_name", "type": "card_type", "subtype": "subtype", "series": "series", "subseries": "subseries",
              "stars": "stars", "types": "types", "ability": "ability", "note": "note", "art": "art", "ability_art": "ability_art",
@@ -124,8 +158,8 @@ class CardEdits:
             "parts": "psd", "type": "folder", "subtype": "folder", "series": "folder",
             "subseries": "database", "note": "database", "art": "database", "ability_art": "database", "aliases": "database",
             "dup_of": "database", "hidden": "database", "problems_ok": "database", "allow_high_stats": "database",
-            "creatures": "psd", "flags": "database"}     # creatures: printed on a bar per creature; else website only (psd_edit.classify)
-    SITE_FIELDS = ("name", "stars", "types", "hp", "def", "atk", "spd", "ability", "creatures")    # what `_site` may name (edit.js SITE)
+            "creatures": "psd", "flags": "database", "colors": "psd"}     # creatures: printed on a bar per creature; else website only (psd_edit.classify)
+    SITE_FIELDS = ("name", "stars", "types", "hp", "def", "atk", "spd", "ability", "creatures", "colors")    # what `_site` may name (edit.js SITE)
 
     @classmethod
     def answered(cls, fields: dict) -> tuple:
@@ -148,6 +182,8 @@ class CardEdits:
                 for k, v in c.items()) for c in value)
         if name in ART_FIELDS:                  # a source, or (art) a list of them
             return all(isinstance(x, str) and len(x) <= ART_MAX for x in (value if name == "art" and isinstance(value, list) else [value]))
+        if name == "colors":
+            return valid_colors(value)
         if kind is list:
             return isinstance(value, list) and all(isinstance(x, str) for x in value)
         if name == "flags":                     # {"hand": "reason", "bars": "", "psd": the PSD blob it was set on}
@@ -474,9 +510,12 @@ __all__ = [
     'ADD_ABILITY',
     'ART_FIELDS',
     'ART_MAX',
+    'COLOR_FIELDS',
+    'COLOR_PRINTED',
     'FLAGS',
     'FLAG_MAX',
     'art_list',
+    'color_text',
     'fold_art',
     'ORDER',
     'PUNCTUATION',
@@ -485,5 +524,6 @@ __all__ = [
     'as_parsed',
     'dump_edits',
     'dump_ratings',
+    'valid_colors',
     'valid_parts',
 ]
