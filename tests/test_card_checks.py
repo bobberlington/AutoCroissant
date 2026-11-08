@@ -135,6 +135,66 @@ def test_to_check_and_file():
     assert json.loads(cc.text_of(checks))["cards"] == checks["cards"]
 
 
+def test_blobs_of_in_reading_order():
+    """The chart, manifest and type PNGs first, then each card's PSD, PNG and duplicates together, the templates last."""
+    paths = ["MDW/Templates/T.psd", "A.psd", "A.png", "A2.png", "B.psd", "Types/Fire.png", "Types/Dark.png",
+             cc.psd_edit.STATUS_CHART, cc.ICON_MANIFEST_PATH]
+    tree = {path: ("", path) for path in paths}
+    snapshot = SimpleNamespace(tree=tree, sha=lambda path: path, dup_pictures=lambda: {"A.psd": ["A2.png"]},
+                               png_for=lambda rel: ("A.png" if rel == "A.psd" else "", []))
+    assert cc.blobs_of(snapshot, ["A.psd", "B.psd"]) == ["Types/Fire.png", cc.psd_edit.STATUS_CHART, cc.ICON_MANIFEST_PATH,
+                                                        "A.psd", "A.png", "A2.png", "B.psd", "MDW/Templates/T.psd"]
+    assert cc.blobs_of(snapshot, []) == []
+
+
+def test_workflow_checks_cards_as_their_blobs_land(tmp_path):
+    """card-checks.yml: Fetch them returns at once (the fetch in the background); one shard's Check starts with
+    CARD_BLOBS_PENDING, `all` and long lists wait for the whole fetch; Fetched counts, and stops a fetch Check outlived."""
+    yaml = pytest.importorskip("yaml")
+    workflow = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github/workflows/card-checks.yml"
+    if not workflow.is_file() or not shutil.which("timeout"):
+        pytest.skip("no card-checks.yml or no timeout (coreutils)")
+    steps = {s.get("name"): s["run"] for s in yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"]["check"]["steps"]
+             if s.get("run")}
+    head = steps["Check"].split("mapfile")[0] + 'echo "pending=${CARD_BLOBS_PENDING:-}"'    # before the bot runs
+    git = lambda *args: subprocess.run(["git", *args], capture_output=True, text=True, check=True).stdout
+    work, origin = tmp_path / "work", tmp_path / "origin.git"
+    work.mkdir()
+    git("-C", str(work), "init", "-q", "-b", "main")
+    for name in "abc":
+        (work / name).write_bytes(name.encode() * 4096)
+    git("-C", str(work), "add", "-A")
+    git("-C", str(work), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "x")
+    git("clone", "-q", "--bare", str(work), str(origin))
+    git("-C", str(origin), "config", "uploadpack.allowFilter", "true")
+    git("-C", str(origin), "config", "uploadpack.allowAnySHA1InWant", "true")
+    blobs = git("-C", str(work), "rev-parse", "HEAD:a", "HEAD:b", "HEAD:c")
+
+    def job(n, wait):
+        repo, temp = tmp_path / f"clone{n}", tmp_path / f"temp{n}"
+        temp.mkdir()
+        git("clone", "-q", "--filter=blob:none", "--no-checkout", f"file://{origin}", str(repo))
+        git("-C", str(repo), "config", "remote.origin.uploadpack", f"sleep {wait}; git-upload-pack")    # GitHub's time
+        (temp / "blobs.txt").write_text(blobs)
+        env = {"PATH": environ["PATH"], "HOME": environ.get("HOME", ""), "RUNNER_TEMP": str(temp), "GIT_NO_LAZY_FETCH": "1"}
+
+        def step(script, **more):
+            return subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", script], cwd=repo,
+                                  env={**env, **more}, capture_output=True, text=True, timeout=30)
+        assert step(steps["Fetch them"]).returncode == 0 and not (temp / "blobs.txt.done").exists()
+        return temp, step
+    temp, step = job(0, 2)
+    assert step(head, ALL="false", N="3").stdout.split()[-1] == f"pending={temp / 'blobs.txt'}"
+    assert not (temp / "blobs.txt.done").exists()
+    for all_, n in (("false", "201"), ("true", "3")):               # the whole fetch first, no list
+        assert step(head, ALL=all_, N=n).stdout.split()[-1] == "pending=" and (temp / "blobs.txt.done").exists()
+    done = step(steps["Fetched"])
+    assert done.returncode == 0 and "3 of 3 blobs in the clone" in done.stdout, (done.stdout, done.stderr)
+    temp, step = job(1, 20)
+    done = step(steps["Fetched"])
+    assert done.returncode == 0 and "the fetch stopped" in done.stdout, (done.stdout, done.stderr)
+
+
 def test_soft_notes():
     """The old list's "bakes with flag" kinds are told nowhere; real problems and layouts stay."""
     soft = ["overflow: name reaches the stars or type icons", "overflow: name: moved +12 px to stay on the card",

@@ -679,11 +679,15 @@ def to_check(snapshot: Snapshot, checks: dict, everything: bool = False, only=()
 
 
 def blobs_of(snapshot: Snapshot, rels: list) -> list:
-    """The blobs check_card reads: the PSDs and PNGs, and what every card shares (one fetch, no REST read a card)."""
-    pngs = [snapshot.png_for(rel)[0] for rel in rels] + [p for rel in rels for p in snapshot.dup_pictures().get(rel, [])]
-    shared = [path for path in snapshot.tree if path in (psd_edit.STATUS_CHART, ICON_MANIFEST_PATH)
-              or path.startswith(psd_edit.TEMPLATES_DIR + "/") or path.lower() in {f"{TYPES_DIR}/{t}.png".lower() for t in TYPE_TRIES}]
-    return [snapshot.sha(path) for path in rels + [png for png in pngs if png] + (shared if rels else [])]
+    """The blobs check_card reads (one fetch, no REST read a card), in the order it reads them: the chart, manifest and
+    type PNGs, then each card's PSD, PNG and duplicates, the templates last (first_type_spot alone, rarely)."""
+    if not rels:
+        return []
+    types = {f"{TYPES_DIR}/{t}.png".lower() for t in TYPE_TRIES}
+    first = [path for path in snapshot.tree if path in (psd_edit.STATUS_CHART, ICON_MANIFEST_PATH) or path.lower() in types]
+    cards = [path for rel in rels for path in [rel, snapshot.png_for(rel)[0], *snapshot.dup_pictures().get(rel, [])] if path]
+    last = [path for path in snapshot.tree if path.startswith(psd_edit.TEMPLATES_DIR + "/")]
+    return list(dict.fromkeys(snapshot.sha(path) for path in first + cards + last))
 
 
 def refresh(checks: dict, snapshot: Snapshot, stats: dict, edits: CardEdits, links: Optional[dict] = None) -> None:
