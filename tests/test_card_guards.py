@@ -1237,6 +1237,8 @@ elif args[0] == "api":
         out = jq(json.loads(os.environ["FAKE_JOBS_LATER"] if late else os.environ.get("FAKE_JOBS", '{"jobs": []}')))
     elif "/runs?" in path:                      # a workflow's runs: FAKE_GUARD_RUNS
         out = jq(json.loads(os.environ["FAKE_GUARD_RUNS"]))
+    elif "/git/trees/" in path:                 # the PSD sizes: FAKE_TREE
+        out = os.environ["FAKE_TREE"]
     elif path.endswith("/artifacts"):
         marked = path.split("/")[-2] in os.environ.get("FAKE_MARKED", "").split(",")
         out = jq({"artifacts": [{"name": "card-guards"}] + ([{"name": os.environ["STREAK"]}] if marked else [])})
@@ -1645,7 +1647,7 @@ def test_card_syncs_follow_up_waits_for_land(clone, tmp_path):
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc = yaml.safe_load((_workflow(clone).parent / "card-sync.yml").read_text(encoding="utf-8"))
-    for job, at in (("data", 3), ("main", 3)):
+    for job, at in (("data", 4), ("main", 3)):
         names = [s.get("name") for s in doc["jobs"][job]["steps"]]
         assert names[at:at + 3] == ["Python environment", "Guards' fixes", "Newest"], (job, names)
     assert doc[True]["workflow_dispatch"]["inputs"]["guards"]["default"] == ""       # the post job's run id
@@ -1669,6 +1671,120 @@ def test_card_syncs_follow_up_waits_for_land(clone, tmp_path):
         done, outputs = _shell(guards, {**env, "FAKE_JOBS": answer, **({"FAKE_JOBS_LATER": later, "FAKE_LOOKS": str(looks)} if later else {})})
         assert done.returncode == 0 and "run" not in outputs and naps.read_text().split() == ["3"] * looks, (answer, done.stderr)
         assert not any("card-guards.yml/runs" in line for line in json.loads((tmp_path / "gh.json").read_text())["log"])
+
+
+def test_site_build_starts_with_the_data_job(clone, tmp_path):
+    """A push's data job, a guards' follow-up and the after job dispatch the site build first, named by run and job; their
+    Site build dispatches again only when that run is missing, ended, or past its 20-minute Data wait (or unread)."""
+    yaml = pytest.importorskip("yaml")
+    if not shutil.which("jq"):
+        pytest.skip("no jq")
+    workflows = _workflow(clone).parent
+    sync = yaml.safe_load((workflows / "card-sync.yml").read_text(encoding="utf-8"))
+    site = yaml.safe_load((workflows / "site.yml").read_text(encoding="utf-8"))
+    steps = sync["jobs"]["data"]["steps"]
+    start, build = steps[0], next(s for s in steps if s.get("name") == "Site build")
+    assert sync["jobs"]["after"]["steps"] is steps and start["name"] == "Site build start"
+    assert start["if"] == "env.DRY_RUN != 'true' && (github.event_name == 'push' || inputs.guards || github.job == 'after')"
+    assert site["run-name"] == "${{ inputs.after && format('Card browser (after {0} {1})', inputs.after, inputs.job) || '' }}"
+    assert build["env"]["EARLY"] == "Card browser (after ${{ github.run_id }} ${{ github.job }})"
+    names = [s.get("name") or s.get("id") or s.get("uses") for s in site["jobs"]["build"]["steps"]]
+    assert names.index("og-before") + 1 == names.index("Data wait") == names.index("Setup wait") - 2   # then the data checkout
+    wait = site["jobs"]["build"]["steps"][names.index("Data wait")]
+    assert wait["env"]["JOB"] == "${{ inputs.job == 'after' && 'Card data after the bake' || 'Card data' }}"
+    assert (sync["jobs"]["data"]["name"], sync["jobs"]["after"]["name"]) == ("Card data", "Card data after the bake")
+    assert wait["env"]["COMMIT"] in [s.get("name") for s in steps] and site["jobs"]["build"]["permissions"]["actions"] == "read"
+    state, temp = tmp_path / "gh.json", tmp_path / "temp"
+    temp.mkdir()
+    env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "FAKE_STATE": str(state), "GITHUB_REPOSITORY": "o/cards",
+           "GITHUB_RUN_ID": "9", "GITHUB_JOB": "data", "RUNNER_TEMP": str(temp), "GITHUB_OUTPUT": str(tmp_path / "out"),
+           "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "EARLY": "Card browser (after 9 data)"}
+    log = lambda: json.loads(state.read_text())["log"] if state.exists() else []
+    done, _ = _shell(start, env)
+    for _ in range(100):
+        if (temp / "site-start").exists():
+            break
+        subprocess.run(["/bin/sleep", "0.05"])
+    assert done.returncode == 0 and log() == ["workflow run site.yml --ref main -R o/cards -f after=9 -f job=data"]
+    now = int(datetime.now(timezone.utc).timestamp())
+    runs = lambda *rows: json.dumps({"workflow_runs": [{"display_title": t, "status": st} for t, st in rows]})
+    for at, listed, fail, again in ((now - 30, runs(("Card browser (after 9 data)", "in_progress")), "", False),
+                                    (now - 30, runs(("Card browser", "in_progress"), ("Card browser (after 9 data)", "pending")), "", False),
+                                    (now - 30, runs(("Card browser (after 9 after)", "in_progress"), ("Card browser (after 9 data)", "completed")), "", True),
+                                    (now - 30, runs(("Card browser (after 8 data)", "in_progress")), "", True),       # not found
+                                    (now - 30, runs(("Card browser (after 9 data)", "in_progress")), "/runs?", True),  # not read
+                                    (now - 1200, runs(("Card browser (after 9 data)", "in_progress")), "", True),     # past its wait
+                                    (None, runs(), "", True)):                                                     # never started
+        state.unlink(missing_ok=True)
+        (temp / "site-start").unlink(missing_ok=True)
+        if at:
+            (temp / "site-start").write_text(f"{at}\n")
+        done, _ = _shell(build, {**env, "FAKE_GUARD_RUNS": listed, "FAKE_FAIL": fail})
+        dispatched = [c for c in log() if c.startswith("workflow run")]
+        assert done.returncode == 0 and dispatched == (["workflow run site.yml --ref main -R o/cards"] if again else []), (at, listed, log())
+        assert sum("/runs?" in c for c in log()) == (at == now - 30)
+
+
+def test_site_data_wait(clone, tmp_path):
+    """site.yml's Data wait: 3 s looks until the named Card sync job's Commit data is done or the job ended (never another
+    job's step), then main's head again; a PSD changed since: the PSD sizes again (the older kept when unread)."""
+    yaml = pytest.importorskip("yaml")
+    if not shutil.which("jq") or not shutil.which("git"):
+        pytest.skip("no jq or git")
+    site = yaml.safe_load((_workflow(clone).parent / "site.yml").read_text(encoding="utf-8"))
+    wait = next(s for s in site["jobs"]["build"]["steps"] if s.get("name") == "Data wait")
+    origin, work, temp, naps = tmp_path / "origin", tmp_path / "work", tmp_path / "temp", tmp_path / "sleeps.txt"
+    git = lambda *a: subprocess.run(["git", "-C", str(origin), "-c", "user.name=A", "-c", "user.email=a@x", *a],
+                                    check=True, capture_output=True, text=True)
+    subprocess.run(["git", "init", "-q", "-b", "main", str(origin)], check=True)
+
+    def push(name, data):
+        (origin / name).write_bytes(data)
+        git("add", "-A")
+        git("commit", "-qm", name)
+
+    push("A.psd", b"1")
+    subprocess.run(["git", "clone", "-q", str(origin), str(work)], check=True)
+    (temp / "setup").mkdir(parents=True)
+    (temp / "setup" / "sizes.code").write_text("0\n")
+    (temp / "tree.json").write_text("old")
+    env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "FAKE_STATE": str(tmp_path / "gh.json"), "FAKE_SLEPT": str(naps),
+           "GITHUB_REPOSITORY": "o/cards", "GITHUB_SERVER_URL": "https://x", "GITHUB_OUTPUT": str(tmp_path / "out"),
+           "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "RUNNER_TEMP": str(temp), "RUN": "7", "JOB": "Card data",
+           "COMMIT": wait["env"]["COMMIT"], "FAKE_TREE": "new"}
+
+    def jobs(commit, name="Card data", status="in_progress"):
+        return json.dumps({"jobs": [{"name": name, "status": status, "steps": [{"name": "Commit data", "status": commit}]}]})
+
+    def run(answer, later=None, looks=0, **more):
+        (tmp_path / "gh.json").unlink(missing_ok=True)
+        naps.write_text("")
+        done, _ = _shell(wait, {**env, "FAKE_JOBS": answer, **({"FAKE_JOBS_LATER": later, "FAKE_LOOKS": str(looks)} if later else {}),
+                                **more}, cwd=work)
+        for _ in range(100):                                              # the PSD sizes' read, in the background
+            if (temp / "setup" / "sizes.code").exists():
+                break
+            subprocess.run(["/bin/sleep", "0.05"])
+        assert done.returncode == 0 and naps.read_text().split() == ["3"] * looks, (answer, done.stderr)
+        calls = json.loads((tmp_path / "gh.json").read_text())["log"]
+        return [c for c in calls if "/git/trees/" in c]
+
+    assert not run(jobs("completed"))
+    assert not run(jobs("pending"), jobs("completed"), 3)
+    assert not run(jobs("completed", name="Card data after the bake"), jobs("completed"), 2)    # another job's step
+    assert not run(jobs("pending", status="completed"))                                          # ended before it
+    push("B.png", b"2")                                                   # main moved, no PSD: the sizes stand
+    assert not run(jobs("completed")) and (temp / "tree.json").read_text() == "old"
+    (temp / "setup" / "sizes.code").write_text("1\n")
+    push("A.psd", b"3")
+    head = git("rev-parse", "HEAD").stdout.strip()
+    assert run(jobs("completed")) == [f"api repos/o/cards/git/trees/{head}?recursive=1"]
+    assert subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip() == head
+    assert (temp / "tree.json").read_text().strip() == "new" and (temp / "setup" / "sizes.code").read_text().strip() == "0"
+    (temp / "tree.json").write_text("older")
+    push("A.psd", b"4")
+    assert run(jobs("completed"), FAKE_FAIL="/git/trees/") and (temp / "tree.json").read_text() == "older"
+    assert (temp / "setup" / "sizes.code").read_text().strip() == "0" and "not read" in (temp / "setup" / "sizes.log").read_text()
 
 
 def test_card_syncs_lane_sets_up_before_its_guards(clone, tmp_path):
