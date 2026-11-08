@@ -5664,23 +5664,44 @@ def color_layers(psd: PSDImage, field: str, card: str) -> list:
         return PSDParser.ability_parts(texts)[0]
 
 
-def _painted_over(layer) -> Optional[str]:
-    """What hides a text layer's own colours, its own or a group's: an opaque Normal Color, Gradient or Pattern Overlay
-    ("its Gradient Overlay"), or a fill at 0; None when they show."""
+def _hiding(node) -> list:
+    """[(effect, kind)]: the node's enabled opaque Normal Color, Gradient and Pattern Overlays."""
     from psd_tools.api.effects import ColorOverlay, GradientOverlay, PatternOverlay
     kinds = {ColorOverlay: "Color Overlay", GradientOverlay: "Gradient Overlay", PatternOverlay: "Pattern Overlay"}
+    effects = node.effects
+    return [(effect, kind) for effect in (effects if effects.enabled else ()) for cls, kind in kinds.items()
+            if isinstance(effect, cls) and effect.enabled and float(effect.opacity) >= 100 and effect.blend_mode == BlendMode.NORMAL]
+
+
+def _painted_over(layer, own: bool = True) -> Optional[str]:
+    """What hides a text layer's own colours, its own or a group's: an opaque Normal Color, Gradient or Pattern Overlay
+    ("its Gradient Overlay"), or a fill at 0; None when they show. own False: not its own overlays (_overlay_off's)."""
     node = layer
     while node is not None and getattr(node, "kind", "psdimage") != "psdimage":
         whose = "its" if node is layer else f"its group {node.name!r}'s"
         if node is layer and getattr(node, "fill_opacity", 255) == 0:
             return f"{whose} fill at 0%"
-        effects = node.effects
-        for effect in effects if effects.enabled else ():
-            kind = next((name for cls, name in kinds.items() if isinstance(effect, cls)), None)
-            if kind and effect.enabled and float(effect.opacity) >= 100 and effect.blend_mode == BlendMode.NORMAL:
-                return f"{whose} {kind}"
+        hiding = _hiding(node) if own or node is not layer else []
+        if hiding:
+            return f"{whose} {hiding[0][1]}"
         node = node.parent
     return None
+
+
+def _unveils(layer) -> bool:
+    """Whether turning the layer's own overlays off shows its colours (nothing else hides them)."""
+    return bool(_hiding(layer)) and _painted_over(layer, own=False) is None
+
+
+def _overlay_off(layer) -> str:
+    """A whole title's colour (owner 2026-10-24: no refusing): its own overlays off when that shows it; the first's kind, or ""."""
+    if not _unveils(layer):
+        return ""
+    hiding = _hiding(layer)
+    for effect, _ in hiding:
+        effect.descriptor[b"enab"] = Bool(False)
+    layer._psd.mark_updated()
+    return hiding[0][1]
 
 
 def color_spans(layers: list, one: dict) -> tuple:
@@ -5745,9 +5766,10 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
     layer prints is refused, as one of badges and icons alone. retyped: the fields a text edit of the entry sets
     ({field: its new text}): found in that text, baked (the bake finds it again once the text is set). The note's
     colours are the website's alone: left out. chart: status_fills(); the Ability's capitalised status words keep its
-    colours (a phrase of them alone refused).
+    colours (a phrase of them alone refused). A whole title's colour turns its layers' own overlays off (set_colors):
+    not refused for them, nor its phrases after it, and baked even in the colour it has.
     """
-    out, overlays, final, painted = {}, None, {}, {}
+    out, overlays, final, painted, lit, unveil = {}, None, {}, {}, set(), set()
     ordered = color_order([one for one in value if one.get("field") in COLOR_PRINTED])
     for k, one in enumerate(ordered):
         field, phrase = one["field"], one.get("phrase")
@@ -5780,12 +5802,15 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
         if not why and not mine:
             why = (f"{phrase!r} is only badges or icons, which keep their own colours" if phrase
                    else "only badges, icons, effect layers' or status words, which keep their own colours")
-        over = {_painted_over(layer) for layer, _ in mine}
+        whole = field == "name" and not phrase      # its own overlays go off (set_colors)
+        over = {_painted_over(layer, not whole and id(layer) not in lit) for layer, _ in mine}
         if not why and None not in over:        # nothing would show on the card image
             why = f"{sorted(over)[0]} paints over the {what}'s colours: recolour it in Photoshop"
         if why:
             out[k] = why
             continue
+        unveil |= {k} if whole and any(_unveils(layer) for layer, _, _ in spans) else set()
+        lit |= {id(layer) for layer, _, _ in spans if whole}
         for layer, i in mine:
             painted[id(layer)] = layer
             final[(id(layer), i)] = k
@@ -5793,7 +5818,7 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
     for k, one in enumerate(ordered):
         if k not in out:
             last = [(key, i) for (key, i), by in final.items() if by == k]
-            out[k] = "baked" if any(_hex(fills[key][i]) != one["color"] for key, i in last) else "redundant"
+            out[k] = "baked" if k in unveil or any(_hex(fills[key][i]) != one["color"] for key, i in last) else "redundant"
     found = {id(one): how for k, one in enumerate(ordered) for how in [out[k]]}
     return [(one, found[id(one)]) for one in value if id(one) in found]
 
@@ -5849,8 +5874,9 @@ def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart
 
     Returns:
         One Edit ("colors", over every layer it set: gate_bytes reads it as a text edit, gate_stories lets their stories
-        change). Told: an overlay on a layer that paints over its colours (one_colour), a copy printing it again, words an
-        effect layer keeps. Raises Refused(field "colors") for a colour no longer found (the other fields still bake)
+        change). Told: an overlay on a layer that paints over its colours (one_colour), a title's own turned off for a
+        whole title's colour (_overlay_off), a copy printing it again, words an effect layer keeps. Raises
+        Refused(field "colors") for a colour no longer found (the other fields still bake)
     """
     from psd_tools.composite.text import MissingFontError
     if not story_sync():
@@ -5872,6 +5898,9 @@ def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart
             notes.append(f"colors: {what}: the words of {', '.join(kept)} keep their look (the effect layer's own pixels)")
         if any(a <= i < b for a, b, _ in spans for i in status):
             notes.append(f"colors: {what}: status words keep the chart's colour")
+        off = _overlay_off(layer) if which == "name" and any(not one.get("phrase") for _, _, one in spans) else ""
+        if off:
+            notes.append(f"colors: title: its {off} is off for the colour")
         for a, b, one in spans:
             fill = _fill(one["color"])
             for c, d in _stretches(_painted(layer, a, b, fx, status)):

@@ -177,3 +177,28 @@ def test_status_words_keep_the_chart(clone, tmp_path):
     layer = pe.ability_layer(PSDImage.open(baked.psd_path))
     fills = {layer.text[s:e].strip(): pe._hex(f) for s, e, f in pe.run_fills(layer) if layer.text[s:e].strip()}
     assert fills.get("Hardened") in before and "#ffd21f" in fills.values() and "status words" in " ".join(baked.fx_notes)
+
+
+@pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")
+def test_title_overlay_goes_off(clone, tmp_path):
+    """A whole title's colour turns the title's own Gradient Overlay off and bakes (white too, its fill's); its phrase
+    after it bakes; a phrase alone stays refused."""
+    from commands.psd_edit import offline_parser
+    vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
+    parser = offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
+    rel = "Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd"
+    psd_path, png = _card(clone, rel)
+    psd = PSDImage.open(psd_path)
+    parsed = pe.parse_card(parser, psd_path, rel, psd)
+    bam = {"field": "name", "phrase": "Bam", "color": "#00bfff"}
+    alone = pe.classify(parsed, {"colors": [bam]}, psd, parser)
+    assert not alone.jobs and "Gradient Overlay paints over" in alone.refusals[0].why
+    assert pe.plan_colors(psd, [{"field": "name", "color": "#ffffff"}], "Wham Bam Bone")[0][1] == "baked"
+    edits = {"colors": [{"field": "name", "color": "#ff2200"}, bam]}
+    got = pe.classify(parsed, edits, psd, parser)
+    assert got.jobs == edits and not got.refusals
+    baked = pe.apply_jobs(psd_path, png, rel, got.jobs, parsed, parser, str(tmp_path), str(clone / pe.FONTS_DIR), psd=psd)
+    assert "colors: title: its Gradient Overlay is off for the colour" in baked.fx_notes
+    saved = PSDImage.open(baked.psd_path)
+    layer = pe.color_layers(saved, "name", "Wham Bam Bone")[0]
+    assert pe._painted_over(layer) is None and {pe._hex(f) for *_, f in pe.run_fills(layer)} >= {"#ff2200", "#00bfff"}
