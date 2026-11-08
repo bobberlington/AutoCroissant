@@ -282,19 +282,21 @@ def _dated(root, work, stem, image, when):
     return _git(root, "rev-parse", "HEAD")
 
 
-@pytest.mark.parametrize("first, made", [("2026-10-22T10:00:00Z", True), ("2026-10-22T06:00:00Z", False)])
+@pytest.mark.parametrize("first, made", [("2099-10-22T10:00:00Z", True), ("2099-10-22T06:00:00Z", False)])
 def test_a_burst_of_psd_pushes_still_gets_its_png(cards, tmp_path, first, made):
     """Two PSD pushes 10 minutes apart, no PNG: the first run is superseded, so the second checks against the PSD as of
     the PNG's last change (the base): outside both changes the PNG still matches, and the PNG is made. Four hours apart,
-    no anchor: G5 refuses as before."""
+    no anchor: G5 refuses as before (anchor not even asked: one history walk found nothing in its window)."""
     root, base, alice, bot = cards
     work = tmp_path / "burst"
     work.mkdir()
     one = _dated(root, work, "Bread", card(base=(30, 200, 30)), first)             # the Base layer: everywhere
-    two = _dated(root, work, "Bread", card(base=(30, 200, 30), colour=(0, 255, 0)), "2026-10-22T10:10:00Z")   # the square
-    source = cg.Source(str(root))
+    two = _dated(root, work, "Bread", card(base=(30, 200, 30), colour=(0, 255, 0)), "2099-10-22T10:10:00Z")   # the square
+    source, asked = cg.Source(str(root)), []
+    anchor = source.anchor
+    source.anchor = lambda *args: asked.append(args) or anchor(*args)
     (job,) = cg.plan_jobs(source, one, two, "actor")[0]
-    assert job.case == "stale" and bool(job.psd_anchor) is made
+    assert job.case == "stale" and bool(job.psd_anchor) is made and len(asked) == made
     if made:
         assert job.psd_anchor == source.tree(alice)[f"{FOLDER}/Bread.psd"][1] and job.anchor_commit == alice
     data = cg.check(str(root), two, one, mode="on", out=str(tmp_path / "out"), workers=1)

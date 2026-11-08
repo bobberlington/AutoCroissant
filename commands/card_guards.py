@@ -423,6 +423,25 @@ class Source:
             return "", ""
         return blob, last
 
+    def recent(self, before: str, after: str, paths: list, window: timedelta = ANCHOR_WINDOW) -> Optional[set]:
+        """The paths (lower case) a commit up to before changed within window of after, in one walk (every parent, a
+        merge against each): anchor's rule, so the rest have no anchor. A path git reads as a pattern is always in; None
+        when unread (anchor asks each)."""
+        if before == EMPTY_TREE:
+            return set()
+        try:
+            now = int(self.git("log", "-1", "--format=%ct", after).strip())
+            raw = self.git("log", "--full-history", "-m", "--no-renames", "--name-only", "-z", "--format=%x1e%ct",
+                           before, "--", *paths)
+            out = {p.lower() for p in paths if p.startswith(":") or any(c in p for c in "*?[\\")}
+            for chunk in raw.split("\x1e"):
+                stamp, _, rest = chunk.partition("\0")
+                if stamp.strip() and now - int(stamp) <= window.total_seconds():
+                    out.update(p.strip("\n").lower() for p in rest.split("\0"))
+        except (Transient, ValueError):
+            return None
+        return out
+
     def blob(self, sha: str) -> bytes:
         """A blob by sha, verified; raises Refused("blob")."""
         return fetch_verified(self.repository, sha, "", self.clone)
@@ -516,6 +535,7 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
     def pushed(path: str) -> dict:
         return {p: pngs[p].new for p in snapshot.png_for(path)[1] if p in pngs and pngs[p].status in "AM"}
 
+    stale: list = []                            # (job, PSD blob before): anchored after the loop
     for change in psds:
         if change.path in renamed_old:
             continue
@@ -546,7 +566,7 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
             job.base_png = pngs[png].old if pngs[png].status == "M" else ""
         elif png and change.status == "M":
             job.case, job.png, job.png_old, job.numbered = "stale", png, tree[png][1], numbered(change.path)
-            job.psd_anchor, job.anchor_commit = source.anchor(png, change.path, before, after, change.old)
+            stale.append((job, change.old))
         elif png:
             job.case, job.png, job.png_old, job.numbered = "beside", png, tree[png][1], numbered(change.path)
         elif _key(change.path) in png_deleted:      # the author deleted the PNG: the standards only
@@ -555,6 +575,10 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
         else:
             job.case, job.png = "new", splitext(change.path)[0] + ".png"
         jobs.append(job)
+    recent = source.recent(before, after, [job.psd for job, _ in stale]) if stale else set()
+    for job, old in stale:                      # anchor's git calls only where a commit is in its window
+        if recent is None or job.psd.lower() in recent:
+            job.psd_anchor, job.anchor_commit = source.anchor(job.png, job.psd, before, after, old)
     pushed_psds = {c.path for c in psds}
     psd_by_key: dict = {}                       # stems matched in any case (L12), so one key can hold several PSDs
     for p in tree:
