@@ -10,6 +10,7 @@ No Discord or config; psd_edit and psd_details are imported where used (psd_edit
 from hashlib import sha1
 from io import BytesIO
 from os.path import isfile, join
+from threading import Lock
 from typing import Callable, Optional
 
 from psd_tools import PSDImage
@@ -75,6 +76,7 @@ class Templates:
     def __init__(self, open_rel: Callable[[str], Optional[PSDImage]]):
         self.open_rel = open_rel
         self.cache: dict = {}
+        self._lock = Lock()                     # the data build's download workers share one: each template read once
 
     @classmethod
     def from_dir(cls, root: str) -> "Templates":
@@ -92,6 +94,12 @@ class Templates:
     def facts(self, stem: str, vocab) -> Optional[dict]:
         if stem in self.cache:
             return self.cache[stem]
+        with self._lock:
+            if stem not in self.cache:
+                self.cache[stem] = self._facts(stem, vocab)
+            return self.cache[stem]
+
+    def _facts(self, stem: str, vocab) -> Optional[dict]:
         rel = f"{TEMPLATE_DIR}/{stem}.psd"
         try:
             psd = self.open_rel(rel)
@@ -113,7 +121,6 @@ class Templates:
                 header = None
             facts = {"file": rel, "ability": ability,
                      "types": {"spot": header["row"][0]["box"]} if header and header.get("row") else None}
-        self.cache[stem] = facts
         return facts
 
 
