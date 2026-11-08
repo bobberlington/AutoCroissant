@@ -1146,10 +1146,14 @@ def test_workflow_shape(clone):
     hand = job["steps"][names.index("Comment on the commit") + 1]
     assert hand["uses"].startswith("actions/upload-artifact") and hand["with"]["name"] == "card-guards" and hand["if"] == "always() && env.MODE != 'off'"
     post_names = [s.get("name") for s in post["steps"]]
-    take = post["steps"][1]
+    take = post["steps"][2]
     assert take["uses"].startswith("actions/download-artifact@") and take["with"] == {"name": "card-guards", "path": "${{ runner.temp }}/guards"}
-    assert post_names.index("Work dir") < post_names.index("Told before") < post_names.index("Land") < post_names.index("Follow up") \
-        < post_names.index("Tell Discord")
+    assert post_names.index("Start Card sync") == 0 and post_names.index("Work dir") < post_names.index("Told before") \
+        < post_names.index("Land") < post_names.index("Follow up") < post_names.index("Tell Discord")
+    early = steps_by_name["Start Card sync"]                # with fixes, Card sync sets up while Land runs (its lanes wait for it)
+    assert early["if"] == "needs.check.outputs.fixes == 'true'" and early["continue-on-error"] is True
+    assert '-f "guards=$GITHUB_RUN_ID"' in early["run"] and SYNC in early["run"].replace('"', "")
+    assert steps_by_name["Follow up"]["env"]["EARLY"] == "${{ steps.early.outputs.started }}"
     assert [s.get("name") for s in finish["steps"] if s.get("name")] == ["Fail on card errors", "Tell Discord the run failed"]
     steps = steps_by_name
     tell = steps["Tell Discord"]
@@ -1185,7 +1189,7 @@ def test_workflow_shape(clone):
     assert check["env"]["AUTHOR"] == "${{ github.event_name == 'push' && github.actor || '' }}"   # never the dispatcher
     # a job's env may read only github, inputs, matrix, needs, secrets, strategy and vars: GitHub rejects the whole file
     assert not any("runner." in str(value) for one in (job, post, finish) for value in one["env"].values())
-    assert 'OUT=$RUNNER_TEMP/guards' in job["steps"][0]["run"] and 'OUT=$RUNNER_TEMP/guards' in post["steps"][0]["run"]
+    assert 'OUT=$RUNNER_TEMP/guards' in job["steps"][0]["run"] and 'OUT=$RUNNER_TEMP/guards' in post["steps"][1]["run"]
     follow = steps["Follow up"]
     assert "report-landed.md" in follow["run"] \
         and follow["if"] == "always() && (steps.land.outputs.ran == 'true' || needs.check.outputs.fixes == 'true')"
@@ -1472,6 +1476,10 @@ def test_workflow_land_and_a_rerun_after_a_landing(clone, tmp_path):
         log = [c for c in json.loads(state.read_text())["log"] if c.startswith("workflow run")]
         assert done.returncode == 0 and log == ([SYNC] if started else []), \
             (mode, attempt, sha, already, fixes, log)
+    state.write_text(json.dumps({"comments": {}, "next": 101, "log": []}))     # Start Card sync did: none again
+    done, _ = _shell(steps["Follow up"], {**env, "MODE": "on", "GITHUB_RUN_ATTEMPT": "1", "SHA": "c" * 40, "ALREADY": "", "COMMENT": "",
+                                          "TOLD_BEFORE": "", "FIXES": "true", "LAND_RAN": "true", "EARLY": "true"})
+    assert done.returncode == 0 and not [c for c in json.loads(state.read_text())["log"] if c.startswith("workflow run")]
 
 
 def test_land_commits_only_an_on_plan(tmp_path, capsys):
@@ -1628,6 +1636,39 @@ def test_card_syncs_wait_ends_at_decided(clone, tmp_path):
     state.unlink()
     done, _ = _shell(guards, {**env, "FAKE_JOBS": jobs(decided="pending"), "FAKE_JOBS_LATER": jobs(), "FAKE_LOOKS": "11"})
     assert done.returncode == 0 and sum("/runs?" in line for line in json.loads(state.read_text())["log"]) == 3    # looks 5 and 10
+
+
+def test_card_syncs_follow_up_waits_for_land(clone, tmp_path):
+    """A follow-up (input guards, started first by the guards' post job): both lanes set up, then "Guards' fixes" waits
+    until that run's post job reaches Follow up or ends (never another job's step), holds nothing, then Newest."""
+    yaml = pytest.importorskip("yaml")
+    if not shutil.which("jq"):
+        pytest.skip("no jq")
+    doc = yaml.safe_load((_workflow(clone).parent / "card-sync.yml").read_text(encoding="utf-8"))
+    for job, at in (("data", 3), ("main", 3)):
+        names = [s.get("name") for s in doc["jobs"][job]["steps"]]
+        assert names[at:at + 3] == ["Python environment", "Guards' fixes", "Newest"], (job, names)
+    assert doc[True]["workflow_dispatch"]["inputs"]["guards"]["default"] == ""       # the post job's run id
+    guards = next(s for s in doc["jobs"]["data"]["steps"] if s.get("name") == "Guards' fixes")
+    naps = tmp_path / "sleeps.txt"
+    env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "FAKE_STATE": str(tmp_path / "gh.json"), "FAKE_SLEPT": str(naps),
+           "GITHUB_REPOSITORY": "o/cards", "RUN": "7", "SHA": "", "GITHUB_OUTPUT": str(tmp_path / "out"),
+           "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "GITHUB_SERVER_URL": "https://x",
+           **{k: guards["env"][k] for k in ("FOLLOW", "POST")}}
+
+    def jobs(*pairs, name="post", status="in_progress"):
+        return json.dumps({"jobs": [{"name": name, "status": status, "steps": [{"name": n, "status": st} for n, st in pairs]}]})
+
+    land, follow = ("Land", "completed"), ("Follow up", "in_progress")
+    for answer, later, looks in ((jobs(land, follow), None, 0),
+                                 (jobs(("Land", "in_progress"), ("Follow up", "queued")), jobs(land, follow), 4),
+                                 (jobs(("Land", "completed"), status="completed"), None, 0),          # cancelled or failed before it
+                                 (jobs(land, follow, name="checks"), jobs(land, ("Follow up", "completed")), 2)):   # not its job
+        (tmp_path / "gh.json").unlink(missing_ok=True)
+        naps.write_text("")
+        done, outputs = _shell(guards, {**env, "FAKE_JOBS": answer, **({"FAKE_JOBS_LATER": later, "FAKE_LOOKS": str(looks)} if later else {})})
+        assert done.returncode == 0 and "run" not in outputs and naps.read_text().split() == ["3"] * looks, (answer, done.stderr)
+        assert not any("card-guards.yml/runs" in line for line in json.loads((tmp_path / "gh.json").read_text())["log"])
 
 
 def test_card_syncs_lane_sets_up_before_its_guards(clone, tmp_path):
