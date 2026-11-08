@@ -83,6 +83,7 @@ PIXEL_MOVED = 24                            # a pixel counts as changed past thi
 TYPE_TRIES = ("fire", "water", "ice")       # a type to add: the first a card lacks
 MAX_STARS = 7                               # the census's: a star added up to here
 SMALL_PSD = 3_000_000                       # bytes: under this a type edit bakes for real (3 cards)
+ANY_KIND = [(kind, "") for kind in psd_edit.TEMPLATES] + [("item", "Items/Active/")]  # template_for's every file
 WHOLE_FIELD = r"edit each box on the website|^\d+ title layers|title is split over several layers|title is printed again by"
 WHAT = {"name": "A new title", "adding a star": "Adding a star", "removing a star": "Taking off a star",
         "adding a type": "Adding a type", "removing a type": "Taking off a type", "stats": "Stat edits"}
@@ -652,6 +653,12 @@ def load(path: str) -> dict:
         return json_load(fh)
 
 
+def stats_of(db: str) -> dict:
+    """db/stats.json's cards."""
+    with open(join(db, STATS_JSON), encoding="utf-8") as fh:
+        return json_load(fh)["cards"]
+
+
 def text_of(checks: dict) -> str:
     """The file's text, one record a line."""
     cards = ",\n".join(f"{dumps(sha)}: {dumps(checks['cards'][sha], ensure_ascii=False, sort_keys=True)}" for sha in sorted(checks["cards"]))
@@ -678,15 +685,26 @@ def to_check(snapshot: Snapshot, checks: dict, everything: bool = False, only=()
     return out
 
 
-def blobs_of(snapshot: Snapshot, rels: list) -> list:
+def _templates(rel: str, records: Optional[list]) -> set:
+    """The templates check_card can open for a card (first_type_spot): its kind's when its record lists no types, none
+    when it does, every kind's with no record."""
+    kinds = ANY_KIND if records is None else [(card.get("card_type"), rel) for card in records if not card.get("types")]
+    return {psd_edit.template_for(kind, path) for kind, path in kinds} - {None}
+
+
+def blobs_of(snapshot: Snapshot, rels: list, stats: dict) -> list:
     """The blobs check_card reads (one fetch, no REST read a card), in the order it reads them: the chart, manifest and
-    type PNGs, then each card's PSD, PNG and duplicates, the templates last (first_type_spot alone, rarely)."""
+    type PNGs, then each card's PSD, PNG and duplicates, the templates it can open last (stats: stats.json's cards)."""
     if not rels:
         return []
+    records: dict = {}
+    for card in stats.values():
+        records.setdefault(card.get("path"), []).append(card)
+    templates = set().union(*(_templates(rel, records.get(rel)) for rel in rels))
     types = {f"{TYPES_DIR}/{t}.png".lower() for t in TYPE_TRIES}
     first = [path for path in snapshot.tree if path in (psd_edit.STATUS_CHART, ICON_MANIFEST_PATH) or path.lower() in types]
     cards = [path for rel in rels for path in [rel, snapshot.png_for(rel)[0], *snapshot.dup_pictures().get(rel, [])] if path]
-    last = [path for path in snapshot.tree if path.startswith(psd_edit.TEMPLATES_DIR + "/")]
+    last = [path for path in snapshot.tree if path in templates]
     return list(dict.fromkeys(snapshot.sha(path) for path in first + cards + last))
 
 
@@ -785,8 +803,7 @@ def main(args: Optional[list] = None) -> int:
             with open(result, encoding="utf-8") as fh:
                 checks["cards"].update({sha: {k: v for k, v in record.items() if k != "seconds"}
                                         for sha, record in loads(fh.read()).items()})
-        with open(join(options.db, STATS_JSON), encoding="utf-8") as fh:
-            stats = json_load(fh)["cards"]
+        stats = stats_of(options.db)
         text = snapshot.fetch(snapshot.sha(EDITS_PATH)).decode("utf-8") if EDITS_PATH in snapshot.tree else "{}"
         links = {}
         if exists(join(options.db, LINKS_JSON)):
@@ -800,7 +817,7 @@ def main(args: Optional[list] = None) -> int:
         return 0
     rels = to_check(snapshot, checks, options.all, only, shard)
     if options.action == "list":
-        print("\n".join(blobs_of(snapshot, rels)))
+        print("\n".join(blobs_of(snapshot, rels, stats_of(options.db))))
     else:
         run(rels, options.repo, options.clone, options.head, options.workers, options.minutes, options.out)
     return 0
