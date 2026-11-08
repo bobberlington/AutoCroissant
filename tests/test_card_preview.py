@@ -16,6 +16,7 @@ runner would (bash) against those repos, a failed install too; the preview's bot
 import json
 import re
 import shutil
+import threading
 from ast import parse as ast_parse
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
@@ -136,11 +137,14 @@ def test_a_stat_edit_bakes_the_bakes_pixels(cards, tmp_path, monkeypatch):
     monkeypatch.setattr(cb, "_follow_dups", lambda *a, _f=cb._follow_dups: seen.append("dups") or _f(*a))
     monkeypatch.setattr(pe, "artifacts", lambda *a, _f=pe.artifacts: seen.append("crops") or _f(*a))
     monkeypatch.setattr(cp, "_small_of", lambda image, path, _f=cp._small_of: seen.append(path) or _f(image, path))
+    olds = []                                                               # gate_dirty's old box: its own thread
+    monkeypatch.setattr(pe, "_cached", lambda *a, _f=pe._cached: olds.append(threading.current_thread().name) or _f(*a))
     before = _state(cards.repo)
     code, result, out = _preview(cards, tmp_path, {"hp": 8, "note": "checked", "_by": "web"})
     assert code == 0 and _state(cards.repo) == before
     made = {Path(p).name: Path(p).parent for p in seen}                     # the WebPs alone: no duplicates or crops
     assert len(seen) == 2 and made[cp.BEFORE].parent == tmp_path / "runner" and (pe.PNG_LEVEL, pe.ON_MERGED) == (6, None)
+    assert len(olds) == 1 and olds[0].startswith("old") and not pe.OLD_BESIDE
     assert Path(DOOMER_PNG).name + ".webp" in made                          # preview.webp from the merge, beside the gates
     assert list((tmp_path / "runner").iterdir()) == []                         # the work dir is removed
     assert (result["state"], result["reason"], result["fields"], result["transient"]) == ("baked", "hp 5 -> 8", {"hp": "baked"}, False)

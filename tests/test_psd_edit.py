@@ -627,9 +627,10 @@ def test_layout_bars_follow_the_card(clone, parser, rel, stat, value, note):
     assert all(spec is not None for _, spec in edit.bar)
 
 
-def test_dirty_box_bounds_the_untouched_gate(clone, parser):
+def test_dirty_box_bounds_the_untouched_gate(clone, parser, monkeypatch):
     """K-1: gate_dirty renders only dirty_box(old, new) and the regions (none on an untouched copy, inside the canvas on
-    a stat edit, checked whole by PSD_DIRTY_VERIFY), the whole canvas on a reorder."""
+    a stat edit, checked whole by PSD_DIRTY_VERIFY; old's box in a thread of its own the same), the whole canvas on a
+    reorder."""
     path = _card(clone, MINI_DOOMER)[0]
     old, raw = PSDImage.open(path), Path(path).read_bytes()
     new = pe.edit_copy(old, raw)
@@ -638,7 +639,9 @@ def test_dirty_box_bounds_the_untouched_gate(clone, parser):
     edit = pe.set_stat(new, pe.parse_card(parser, path, MINI_DOOMER, old), "hp", 8)
     box, whole = pe.dirty_box(old, new), (0, 0, old.width, old.height)
     assert box and box != whole and environ["PSD_DIRTY_VERIFY"] == "1"
-    pe.gate_dirty(old, new, [edit])
+    shown = pe.gate_dirty(old, new, [edit])
+    monkeypatch.setattr(pe, "OLD_BESIDE", True)
+    assert np.array_equal(pe.gate_dirty(old, new, [edit]), shown)
     new = pe.edit_copy(old, raw)
     new[0].move_to(new, index=1)
     assert pe.dirty_box(old, new) == whole

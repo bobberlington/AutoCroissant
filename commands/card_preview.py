@@ -415,7 +415,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
                     snapshot.fetch(snapshot.sha(psd_edit.STATUS_CHART), path)
                     colors.append(psd_edit.status_fills(PSDImage.open(path)))
             return colors[0]
-        psd_edit.PNG_LEVEL, psd_edit.ON_MERGED = PNG_LEVEL, _beside(made)
+        psd_edit.PNG_LEVEL, psd_edit.ON_MERGED, psd_edit.OLD_BESIDE = PNG_LEVEL, _beside(made), True
         card_bake.bake_card(snapshot, one, parser, fonts, chart, work, lean=True)    # what only a commit uses: skipped
         state, transient, reason, outcomes = outcome(one)
         result.update(state=state, transient=transient, reason=reason, fields=outcomes, notes=notes_of(one))
@@ -448,7 +448,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
                       reason=f"error: {type(error).__name__}: {error}", traceback=format_exc().strip().splitlines()[-1])
     finally:
         wait([f for pair in made.values() for f in pair] + ([early] if early is not None else []))
-        psd_edit.PNG_LEVEL, psd_edit.ON_MERGED = level, None
+        psd_edit.PNG_LEVEL, psd_edit.ON_MERGED, psd_edit.OLD_BESIDE = level, None, False
         rmtree(work, ignore_errors=True)
     result["took_s"] = round(perf_counter() - started, 1)
     result["at"] = stamp()

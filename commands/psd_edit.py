@@ -10,6 +10,7 @@ data. A content problem never refuses (owner 2026-10-24): it bakes best-effort, 
 rendered, so the module loads under stock psd-tools.
 """
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, wait
 from contextlib import ExitStack, contextmanager, nullcontext
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
@@ -90,6 +91,7 @@ ICC_MIN_PX = 1000           # fewer moved pixels: no evidence, converted
 TEXT_BLENDS = {"preview": {}, "gamma": {"text_preview": False}, "straight": {"text_gamma": None}}
 PNG_LEVEL = 6               # save_png's zlib level (PIL's default; a preview's PNG, never published: 1)
 ON_MERGED = None            # a preview's: (merged, path, like) -> a Future of save_png, made beside the gates
+OLD_BESIDE = False          # a preview's: gate_dirty draws old's box in a thread beside new's (Card sync's pool: serial)
 SIZE_TOLERANCE = 0.2        # a saved PSD stays within 20% of the old blob
 SIZE_FLOOR = 262144         # or this many bytes: one icon on a small PSD (Poorly Drawn Cabbage)
 OK_FONTS = ("exact", "system")                  # how a font may resolve; loose or substituted faces refuse
@@ -8785,8 +8787,9 @@ def dirty_box(old: PSDImage, new: PSDImage) -> Optional[tuple]:
 def gate_dirty(old: PSDImage, new: PSDImage, edits: list, keep: Optional[dict] = None) -> np.ndarray:
     """
     gate_untouched over the edits' regions and dirty_box(old, new) only: the card rendered there before and after
-    (in the bake's RenderCache), not whole twice. With PSD_DIRTY_VERIFY=1 both are rendered whole too and any
-    difference (a pixel changed outside the box, a box render unlike the whole one's) raises RuntimeError.
+    (in the bake's RenderCache; under OLD_BESIDE before in a thread and cache of its own), not whole twice. With
+    PSD_DIRTY_VERIFY=1 both are rendered whole too and any difference (a pixel changed outside the box, a box render
+    unlike the whole one's) raises RuntimeError.
 
     Args:
         keep: apply_jobs' dict: new is drawn as the merge draws it (text_kwargs "preview", the edits' layers pinned)
@@ -8804,8 +8807,19 @@ def gate_dirty(old: PSDImage, new: PSDImage, edits: list, keep: Optional[dict] =
     if box is not None:
         x0, y0, x1, y1 = box
         flags = dict(viewport=box, ignore_preview=True, apply_icc=False)
-        shown[y0:y1, x0:x1] = before = np.asarray(old.composite(**flags, **look_kwargs(old)).convert("RGBA"))
-        after = np.asarray(new.composite(**flags, **pins).convert("RGBA"))
+        drawn = lambda psd, kw: np.asarray(psd.composite(**flags, **kw).convert("RGBA"))
+        if OLD_BESIDE:                          # the fork's RenderCache is one thread's: old's gets its own
+            pool = ThreadPoolExecutor(1, thread_name_prefix="old")
+            ahead = pool.submit(_cached, drawn, old, look_kwargs(old))
+            pool.shutdown(wait=False)
+            try:
+                after = drawn(new, pins)
+            finally:
+                wait([ahead])
+            before = ahead.result()
+        else:
+            before, after = drawn(old, look_kwargs(old)), drawn(new, pins)
+        shown[y0:y1, x0:x1] = before
         if keep is not None:
             keep.update(box=box, after=after, edited=edited_ids(edits))
         diff = np.zeros((h, w), bool)
@@ -8822,6 +8836,12 @@ def gate_dirty(old: PSDImage, new: PSDImage, edits: list, keep: Optional[dict] =
             raise Refused("region", "%s: the card changes %d pixels outside the edited boxes"
                           % (", ".join(edit.field for edit in edits), outside))
     return shown
+
+
+def _cached(call, *args):
+    """call(*args) in a RenderCache of its own (another thread's)."""
+    with render_cache():
+        return call(*args)
 
 
 def _verify_dirty(old: PSDImage, new: PSDImage, box: Optional[tuple], shown: np.ndarray,
