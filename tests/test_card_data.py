@@ -37,7 +37,8 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
         shutil.copy(REPO / rel, bot / rel)
     flags = {"card_data": {"--repo", "--checkout", "--head", "--blobs", "--db", "--empty", "--full", "--cards",
                            "--allow-archive", "--restore", "--budget", "--run", "--builder-ref", "--summary", "--message",
-                           "--dry-run", "--baked", "--own", "--rewrite", "--verdicts", "--events", "--guard-events", "--help"},
+                           "--dry-run", "--baked", "--own", "--rewrite", "--verdicts", "--events", "--guard-events", "--records",
+                           "--help"},
              "card_bake": None, "tts_save": {"--names", "--help"}, "rulebook_pages": {"--site", "--wait", "--help"}}
     for cli, expected in flags.items():
         done = run_process([executable, "-m", f"commands.{cli}", "--help"], cwd=bot, capture_output=True, text=True, timeout=120)
@@ -708,3 +709,27 @@ def test_links_gather_every_psd_and_the_linked_files(cards, clone):
     assert "error" in links["MDW/Unfinished/Broken.psd"] and links[DOOMER]["links"] == []
     assert links["files"]["Types/unknown.png"] == {blob_sha_bytes(b"unknown"): 7}
     assert links["files"]["MDW/Linked/a - b.png"] == {blob_sha_bytes(b"not a png"): 9} and links["pixels"] == {}
+
+
+def test_records_seed_merge_and_follow_a_move(cards, monkeypatch, tmp_path):
+    """The render and spot records live in db/ (owner 11-07): seeded from AC's copies, the guards', the bake's and the
+    redraw's records merged in order (a later fact wins, an earlier text fact stays), a moved card's following its name."""
+    import commands.psd_edit as pe
+    seed = tmp_path / "seed"
+    seed.mkdir()
+    (seed / "render_record.json").write_text(json.dumps({FREEZER: {"icc": [0.9, 40], "text": {"1": ["a", "gamma"]}}}))
+    monkeypatch.setattr(pe, "RECORDS_SEED", str(seed))
+    monkeypatch.setattr(pe, "_RECORDS", {})
+    docs = tmp_path / "records.json"
+    docs.write_text(json.dumps([{"render": {FREEZER: {"text": {"2": ["b", "straight"]}}}, "spot": {DOOMER: {"7": {"core": [1, 2, 3, 4]}}}},
+                                {"render": {FREEZER: {"icc": [0.1, 50]}}}]))
+    assert _build(cards, "--empty", "--records", str(docs))[0] == cd.EXIT_OK
+    render, spot = cd.read_records(str(cards.db))
+    assert render == {FREEZER: {"icc": [0.1, 50], "text": {"1": ["a", "gamma"], "2": ["b", "straight"]}}}
+    assert spot == {DOOMER: {"7": {"core": [1, 2, 3, 4]}}} and pe.spot_record() == spot     # this build read them too
+    (cards.repo / "Field/2 Stars").mkdir()
+    git(cards.repo, "mv", FREEZER, "Field/2 Stars/The_Freezer.psd")
+    commit(cards.repo, "dave", 2000)
+    monkeypatch.setattr(cd, "ARCHIVE_MIN", 0)
+    assert _build(cards)[0] == cd.EXIT_OK
+    assert set(cd.read_records(str(cards.db))[0]) == {"Field/2 Stars/The_Freezer.psd"}

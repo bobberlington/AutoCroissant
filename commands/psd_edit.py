@@ -22,7 +22,7 @@ from itertools import combinations, product, zip_longest
 from io import BytesIO
 from math import comb, hypot
 from os import environ
-from os.path import abspath, basename, dirname, getsize, join
+from os.path import abspath, basename, dirname, getsize, isfile, join
 from re import IGNORECASE, compile as re_compile, escape, fullmatch, search, sub
 from struct import pack, unpack
 from time import perf_counter
@@ -5843,18 +5843,42 @@ def _core(layer) -> Optional[tuple]:
     return union_box([PSDParser._core_box(leaf) for leaf in _drawn(layer)])
 
 
-# The spot record (owner 11-07): icons the big pass redrew, their pre-pass ink cores (new icons go where they went)
-SPOT_RECORD = join(dirname(abspath(__file__)), "spot_record.json")     # {PSD path: {layer id: entry}}; shipped in AC
+# The records (owner 11-07): kept on the card data's branch (db/, Card sync's data commit); AC's copies only seed it
+RECORDS_DIR = "CARD_RECORDS_DIR"        # env: the data's db/ folder; unset, or a file it lacks: AC's seed copy
+SPOT_RECORD = "spot_record.json"        # {PSD path: {layer id: entry}}: icons a redraw moved, their earlier ink cores
+RENDER_RECORD = "render_record.json"    # {PSD path: facts}: each card's look read off its stored image before the strip
+RECORDS_SEED = dirname(abspath(__file__))   # AC's copies (they go once the data has them: then {})
+_RECORDS: dict = {}                     # file name -> its record, read once
 
 
-@lru_cache(maxsize=1)
+def record_file(name: str) -> str:
+    """Where a record is read: the data's db/ (RECORDS_DIR) when it holds it, else AC's seed beside this module."""
+    folder = environ.get(RECORDS_DIR, "")
+    found = join(folder, name) if folder else ""
+    return found if found and isfile(found) else join(RECORDS_SEED, name)
+
+
+def _record(name: str) -> dict:
+    if name not in _RECORDS:
+        try:
+            with open(record_file(name), encoding="utf-8") as fh:
+                _RECORDS[name] = load(fh)
+        except FileNotFoundError:
+            _RECORDS[name] = {}
+    return _RECORDS[name]
+
+
+def set_records(render: Optional[dict] = None, spot: Optional[dict] = None) -> None:
+    """Use these records from now on (the data build's merged ones); None keeps that one."""
+    for name, found in ((RENDER_RECORD, render), (SPOT_RECORD, spot)):
+        if found is not None:
+            _RECORDS[name] = found
+    _record_names.cache_clear()
+
+
 def spot_record() -> dict:
     """{PSD path: {layer id: {"link", "trnf", "content", "core"}}}; {} without the file."""
-    try:
-        with open(SPOT_RECORD, encoding="utf-8") as fh:
-            return load(fh)
-    except FileNotFoundError:
-        return {}
+    return _record(SPOT_RECORD)
 
 
 def spot_key(layer, rel: str) -> Optional[dict]:
@@ -5872,16 +5896,18 @@ def spot_key(layer, rel: str) -> Optional[dict]:
 
 def _icon_core(layer, rel: str) -> tuple:
     """A header type icon's core for its spots: the spot record's while its key holds, else its ink core."""
-    entry = spot_record().get(rel, {}).get(str(layer.layer_id))
+    record = spot_record()
+    entry = (record.get(rel) or record.get(_record_names(SPOT_RECORD).get(basename(rel or ""), "")) or {}).get(
+        str(layer.layer_id))
     if entry and spot_key(layer, rel) == {key: entry[key] for key in ("link", "trnf", "content")}:
         return tuple(entry["core"])
     return _core(layer) or tuple(layer.bbox)
 
 
 def spot_entries(before: PSDImage, after: PSDImage, parser: PSDParser, rel: str, name: str = "") -> dict:
-    """One PSD's spot record entries: each header type icon the pass left linked whose ink core moved, its core from
-    before (the PSD before the pass); {layer id: entry}."""
-    was = {layer.layer_id: _core(layer) or tuple(layer.bbox) for _, layer in type_row(before, parser, name)[0]}
+    """One PSD's spot record entries: each header type icon left linked whose ink core moved, its core from before (the
+    PSD before a pass, a conversion or a link redraw; a core the record already holds carries on); {layer id: entry}."""
+    was = {layer.layer_id: _icon_core(layer, rel) for _, layer in type_row(before, parser, name)[0]}
     out = {}
     for _, layer in type_row(after, parser, name)[0]:
         key, core = spot_key(layer, rel), was.get(layer.layer_id)
@@ -8284,25 +8310,19 @@ def foreign_profile(psd: PSDImage) -> Optional[bytes]:
 
 
 # The render record (A16): each card's look read off its stored image while it had one, for its renders after the strip
-RENDER_RECORD = join(dirname(abspath(__file__)), "render_record.json")   # {PSD path: facts}; shipped in AC
 _LOOKS: "WeakKeyDictionary" = WeakKeyDictionary()   # an open PSD -> its facts (use_record)
 
 
-@lru_cache(maxsize=1)
 def render_record() -> dict:
     """{PSD path: {"icc": icc_vote(), "text": {layer id: [raster_key(), "straight" or "gamma"]}}}; {} without the file."""
-    try:
-        with open(RENDER_RECORD, encoding="utf-8") as fh:
-            return load(fh)
-    except FileNotFoundError:
-        return {}
+    return _record(RENDER_RECORD)
 
 
-@lru_cache(maxsize=1)
-def _record_names() -> dict:
+@lru_cache(maxsize=2)
+def _record_names(name: str = RENDER_RECORD) -> dict:
     """{file name: PSD path} of the record's paths whose file name no other has (a card moved by a stars edit)."""
-    seen = Counter(basename(path) for path in render_record())
-    return {basename(path): path for path in render_record() if seen[basename(path)] == 1}
+    seen = Counter(basename(path) for path in _record(name))
+    return {basename(path): path for path in _record(name) if seen[basename(path)] == 1}
 
 
 def use_record(psd: PSDImage, rel: str, facts: Optional[dict] = None) -> PSDImage:
@@ -8378,6 +8398,42 @@ def look_facts(psd: PSDImage, png: Optional[Image.Image] = None) -> dict:
     if text:
         facts["text"] = text
     return facts
+
+
+def records_of(before: PSDImage, after: Optional[PSDImage], rel: str, parser: Optional[PSDParser] = None,
+               png: Optional[Image.Image] = None, name: str = "") -> dict:
+    """What a rewrite of before (a conversion, a bake, a link redraw) hands the records: its look facts while it still
+    has a stored image (look_facts), and its icons' earlier cores when after moved them (spot_entries; needs a parser);
+    {"render": {rel: facts}, "spot": {rel: entries}}, each only when found."""
+    out: dict = {}
+    facts = look_facts(before, png) if before.has_preview() else {}
+    if facts:
+        out["render"] = {rel: facts}
+    entries = spot_entries(before, after, parser, rel, name) if after is not None and parser is not None else {}
+    if entries:
+        out["spot"] = {rel: entries}
+    return out
+
+
+def merge_records(render: dict, spot: dict, docs: list, paths=()) -> tuple:
+    """(render, spot) with each doc's records on top, in order (records_of's form): a later card's facts and entries win
+    key by key, a text fact or an entry no later doc names is kept. A path gone from paths (the tree's PSDs) moves to
+    the one PSD there with its file name and no record (a stars edit's move); none: kept as it is."""
+    render, spot = {k: dict(v) for k, v in render.items()}, {k: dict(v) for k, v in spot.items()}
+    for doc in docs:
+        for rel, facts in (doc.get("render") or {}).items():
+            old = render.get(rel) or {}
+            render[rel] = {**old, **facts, **({"text": {**old.get("text", {}), **facts["text"]}} if "text" in facts else {})}
+        for rel, entries in (doc.get("spot") or {}).items():
+            spot[rel] = {**spot.get(rel, {}), **entries}
+    if paths:
+        names = Counter(basename(path) for path in paths)
+        for record in (render, spot):
+            for rel in [rel for rel in record if rel not in paths]:
+                to = next((path for path in paths if basename(path) == basename(rel)), "")
+                if to and names[basename(rel)] == 1 and to not in record:
+                    record[to] = record.pop(rel)
+    return render, spot
 
 
 def _text_reference(psd: PSDImage) -> Optional[np.ndarray]:
@@ -10772,6 +10828,10 @@ __all__ = [
     'spot_key',
     'spot_record',
     'render_record',
+    'record_file',
+    'records_of',
+    'merge_records',
+    'set_records',
     'render_region',
     'raster_key',
     'run_fills',

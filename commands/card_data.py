@@ -50,6 +50,8 @@ REAL_DATES = 946684800.0                                          # 2000-01-01 U
 LINKS_JSON = "links.json"                                         # db/: every PSD's links (Card sync's redraw, the guards' files,
                                                                   # the card checks' notes); not in the manifest: no bot reads it
 LINK_KEYS = ("files", "pixels")                                  # links.json's keys beside the PSD paths
+RECORDS = ("render_record.json", "spot_record.json")              # db/: the renders' look facts and the icons' earlier cores
+                                                                  # (psd_edit.RENDER_RECORD, SPOT_RECORD); not in the manifest
 LINKED_DIR = "MDW/Linked"                                         # the cards' linked pictures (the 11-07 pass)
 LINK_HOLDERS = (".psd", ".psb")                                   # files whose links count: MDW/Linked's .psb documents link too
 FETCH_CHUNK, FETCH_POOL = 8, 4                                    # blobs a git fetch, fetches at a time (the guards' Pushed blobs)
@@ -781,6 +783,25 @@ def links_text(data: dict) -> str:
     return json_dumps(data, ensure_ascii=False, indent=1, sort_keys=True) + "\n"
 
 
+def read_records(db_dir: str) -> tuple:
+    """(render record, spot record) of db/, each seeded from AC's copy (psd_edit's folder) while db/ lacks it."""
+    from commands import psd_edit
+    out = []
+    for name in RECORDS:
+        found = path_join(db_dir, name)
+        path = found if isfile(found) else path_join(psd_edit.RECORDS_SEED, name)
+        try:
+            with open(path, encoding="utf-8") as fh:
+                out.append(json_loads(fh.read()))
+        except FileNotFoundError:
+            out.append({})
+    return tuple(out)
+
+
+def records_text(record: dict) -> str:
+    return json_dumps(record, indent=0, sort_keys=True) + "\n"
+
+
 def linked_file(path: str) -> bool:
     """A file cards link: Types/ (stars and types) or MDW/Linked (every other picture)."""
     return path.startswith((f"{TYPES_DIR}/", f"{LINKED_DIR}/"))
@@ -1392,7 +1413,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
           full: bool = False, cards: str = "", allow_archive: bool = False, budget: int = BUDGET, run_url: str = "",
           dry_run: bool = False, restore: str = "", builder_ref: str = "",
           baked: bool = False, own: str = "", verdicts: Optional[dict] = None, side: Optional[list] = None,
-          guard_docs: Optional[list] = None) -> Outcome:
+          guard_docs: Optional[list] = None, records: Optional[list] = None) -> Outcome:
     """
     One build (design section 7.1): db/ before, the tree and index from git, the
     changed PSDs (and last run's held ones), authors, edits, duplicates, the archive dated from git, the versions, the
@@ -1418,6 +1439,8 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         verdicts: The bake's verdicts for db/verdicts.json ({key: verdict, or None to remove}; card_db.merge_verdicts)
         side: The bake's events (baked, bake-refused), each with its commit (M) when it has one
         guard_docs: The guards' guard-events.json files ({"commit", "push", "events"}): their events, by that commit
+        records: What the guards, the bake and the link redraw read off PSDs before rewriting them (psd_edit.records_of,
+            oldest first): merged into db/'s render and spot records (seeded from AC's copies)
 
     Returns:
         The Outcome (code 0 written or nothing to do, 2 a gate refused, 1 files not fetched)
@@ -1431,6 +1454,10 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     stats, old, details, manifest_before = read_db(db_dir)
     links_before = read_links(db_dir)
     links = links_before
+    from commands.psd_edit import merge_records, set_records
+    kept = read_records(db_dir)
+    render, spot = merge_records(*kept, records or [])
+    set_records(render, spot)                                 # this build's parses read them (psd_details' type spots)
     if not stats and not empty:
         raise ValueError(f"{db_dir} holds no cards: give --empty to start new card data")
     pending_before = (manifest_before.get("pending") or {}) if not restore else {}
@@ -1481,6 +1508,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         keep = set(run_build.shas.values()) | {c.archived["blob"] for c in db.archived().values() if c.archived.get("blob")}
         keep |= {c.blob_sha for c in db.stats.values() if getattr(c, "blob_sha", None)}
         psd_details.prune(details, keep)
+        render, spot = merge_records(render, spot, [], {p for p in run_build.shas if p.lower().endswith(".psd")})
     else:
         gone, impossible = [], []
     if run_build.lost:                                    # a 5xx or rate limit: red, nothing written, the next run retries
@@ -1592,11 +1620,14 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
                  and stats_text(db.stats) == _text(db_dir, "stats.json") and old_stats_text(db.old_stats) == _text(db_dir, "old_stats.json")
                  and psd_details.text_of(details) == _text(db_dir, "psd_details.json")
                  and links_text(links) == links_text(read_links(db_dir))
+                 and all(records_text(r) == _text(db_dir, n) for n, r in zip(RECORDS, (render, spot)))
                  and book in (None, _text(db_dir, "rulebook.json")))
     if unchanged:
         return out
     write_db(db_dir, db.stats, db.old_stats, psd_details.text_of(details), out.manifest, book)
     write_text(path_join(db_dir, LINKS_JSON), links_text(links))
+    for name, record in zip(RECORDS, (render, spot)):
+        write_text(path_join(db_dir, name), records_text(record))
     if numbered:
         changelog.append_events(db_dir, numbered)
     problems = check_db(db_dir)
@@ -1826,6 +1857,8 @@ def main(argv: Optional[list] = None) -> int:
                                                                         "null}}) merged into db/verdicts.json")
     parser.add_argument("--events", default="", metavar="FILE", help="the bake's events (a JSON list), each with its commit")
     parser.add_argument("--guard-events", default="", metavar="FILE", help="the guards' guard-events.json files (a JSON list)")
+    parser.add_argument("--records", default="", metavar="FILE", help="records read off PSDs before a rewrite (a JSON list of "
+                                                                       "{\"render\", \"spot\"}, oldest first) for db/")
     parser.add_argument("--rewrite", nargs=2, metavar=("B", "M"), help="no build: db/'s references to the bake commit B "
                                                                         "become main commit M (after the main push)")
     args = parser.parse_args(argv)
@@ -1840,10 +1873,11 @@ def main(argv: Optional[list] = None) -> int:
         verdicts = (_json_file(args.verdicts).get("cards") or {}) if args.verdicts else None
         side = _json_file(args.events) if args.events else []
         docs = _json_file(args.guard_events) if args.guard_events else []
+        found = _json_file(args.records) if args.records else []
         out = build(args.repo, args.checkout, args.db, args.head, args.blobs, args.empty, args.full, args.cards,
                     args.allow_archive, args.budget, args.run, args.dry_run, args.restore, args.builder_ref,
                     args.baked, args.own, verdicts, side.get("events", []) if isinstance(side, dict) else side,
-                    docs if isinstance(docs, list) else [docs])
+                    docs if isinstance(docs, list) else [docs], found if isinstance(found, list) else [found])
     except (CalledProcessError, OSError, ValueError, RequestException) as e:
         print(f"Card data build failed: {e}")
         return EXIT_ERROR
@@ -1887,6 +1921,8 @@ __all__ = [
     'mark_sweeps',
     'pixel_hash',
     'read_links',
+    'read_records',
+    'records_text',
     'pushes',
     'rewrite_commit',
     'side_events',
