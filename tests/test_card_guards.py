@@ -659,6 +659,25 @@ def test_land_refuses_a_tampered_file(tmp_path, monkeypatch):
     assert report["told"]["X/A.psd"] == ["PNG not made: the bot's commit failed; export it in Photoshop"]
 
 
+def test_land_by_git_past_the_bytes(tmp_path, monkeypatch):
+    """Past GIT_LAND_BYTES one git push, else the API; a broken git falls back to the API."""
+    plan = _plan(tmp_path, [("A", "X/A.png", b"aaaa", {"X/A.psd": "s1"})])
+    hub = FakeHub({"X/A.psd": ("100644", "s1")})
+    hub.install(monkeypatch)
+    pushed = []
+    monkeypatch.setattr(cg, "git_commit", lambda repo, head, files, text: pushed.append(sorted(files)) or "g" * 40)
+    monkeypatch.setattr(cg, "GIT_LAND_BYTES", 3)
+    assert cg.land(plan)["sha"] == "g" * 40 and pushed == [["X/A.png"]] and not hub.commits
+    monkeypatch.setattr(cg, "GIT_LAND_BYTES", 4)
+    assert cg.land(plan)["sha"] == "c" * 40 and len(pushed) == 1
+
+    def broken(*args):
+        raise gc.Transient("git push failed")
+    monkeypatch.setattr(cg, "GIT_LAND_BYTES", 3)
+    monkeypatch.setattr(cg, "git_commit", broken)
+    assert cg.land(plan)["sha"] == "c" * 40 and len(hub.commits) == 2
+
+
 def _entry(name, psd_blob="s1", png_blob="p1", **extra):
     """A plan card with every key markdown reads (no writes)."""
     entry = {"card": name, "psd": f"X/{name}.psd", "case": "stale", "png": f"X/{name}.png", "login": "Alice",

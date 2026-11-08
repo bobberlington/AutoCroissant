@@ -27,8 +27,9 @@ MDW/Unfinished PSD with an embedded picture, sub or superscript text, a merged i
 by card_standards' normalise fix (G1; `normalise`, after the check's Decided, or in the check with --convert now), a
 renamed PSD whose folder depth changed has its links repaired (G4); MDW/Linked files no PSD links are deleted (G2,
 db/links.json on the data branch), a pushed one with another's bytes merged into it (G3), a link to a deleted one put
-back (G4); one landing (git past GIT_LAND files). A font pushed to MDW/Fonts whose tables share data (Photoshop 2023
-sets no type in it) lands with every table its own copy, the same bytes (font_check.split_tables; silent).
+back (G4); one landing (git past GIT_LAND files or GIT_LAND_BYTES). A font pushed to MDW/Fonts whose tables share
+data (Photoshop 2023 sets no type in it) lands with every table its own copy, the same bytes (font_check.split_tables;
+silent).
 
 A landed commit's changelog events (guard-png: a PNG re-made or recompressed; guard-fix: a fix the guards landed; the
 Single-line Composer none) go to guard-events.json beside the plan, which card-guards.yml uploads and Card sync's data
@@ -131,6 +132,7 @@ CONVERT_MINUTES = 20                            # no conversion starts past this
 LINKS = "db/links.json"                         # the data branch's links (card_data.gather_links): G2-G4's index
 LINKED_DIR = "MDW/Linked/"
 GIT_LAND = 40                                   # files past which land commits by git (git_commit: no blob upload each)
+GIT_LAND_BYTES = 32 << 20                       # or bytes: one push beats base64 POSTs (6 PSDs, 115 MB: 23 s by REST)
 _worker: dict = {}
 _advances: dict = {}                            # icon font blob sha -> {glyph name: advance} (earlier_fonts)
 
@@ -2182,8 +2184,15 @@ def land(plan_path: str, repository: str = "", dry_run: bool = False, local: str
                 report["sha"] = local_commit(local, tip.head, payload, text)
                 break
             modes = {path: tip.tree[path][0] for path in payload if path in tip.tree}
-            sha = (git_commit(repository, tip.head, payload, text) if len(payload) > GIT_LAND else   # no upload cap
-                   commit_files(repository, tip.head, tip.info["tree"]["sha"], modes, payload, text, uploaded))
+            by_git = len(payload) > GIT_LAND or sum(len(data) for data in payload.values() if data) > GIT_LAND_BYTES
+            if by_git:
+                try:
+                    sha = git_commit(repository, tip.head, payload, text)        # no upload cap
+                except Transient as error:          # git broke: the API lands it
+                    print(f"git land failed, by the API: {error}", file=stderr)
+                    by_git = False
+            if not by_git:
+                sha = commit_files(repository, tip.head, tip.info["tree"]["sha"], modes, payload, text, uploaded)
             if sha:
                 report["sha"] = sha
                 break
