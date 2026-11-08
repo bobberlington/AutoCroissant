@@ -271,6 +271,11 @@ def _small(data: bytes, path: str) -> list:
     """A PNG's bytes as a WEBP_WIDTH wide WebP at WEBP_QUALITY; returns its size."""
     image = Image.open(BytesIO(data))
     image.load()
+    return _small_of(image, path)
+
+
+def _small_of(image: Image.Image, path: str) -> list:
+    """_small's WebP of an image in memory; returns its size."""
     small = image.convert("RGBA" if image.mode in ("RGBA", "LA", "P") else "RGB")
     small.thumbnail((WEBP_WIDTH, WEBP_WIDTH * 3), Image.LANCZOS)
     small.save(path, "WEBP", quality=WEBP_QUALITY, method=4)
@@ -293,12 +298,25 @@ def _before(snapshot: Snapshot, png_rel: str, path: str):
     return future
 
 
-def write_images(png_path: str, out: str, before: str = "", early=None) -> dict:
+def _beside(made: dict):
+    """psd_edit.ON_MERGED for a preview: the merged PNG's save and its WebP (at path + ".webp") in two threads beside
+    the gates, made[path] = (webp, png) futures; a retry's waits for the earlier pair first."""
+    def hook(merged: Image.Image, path: str, like: Image.Image):
+        wait(made.get(path, ()))
+        merged.load()                           # both threads only read it
+        pool = ThreadPoolExecutor(2, thread_name_prefix="merged")
+        made[path] = pool.submit(_small_of, merged, path + ".webp"), pool.submit(psd_edit.save_png, merged, path, like)
+        pool.shutdown(wait=False)
+        return made[path][1]
+    return hook
+
+
+def write_images(png_path: str, out: str, before: str = "", early=None, webp=None) -> dict:
     """
     preview.png (losslessly recompressed when that is smaller: png_export.recompress, the same pixels and chunks),
     preview.webp (WEBP_WIDTH wide at WEBP_QUALITY: the card view's width) and, from the official PNG `before`,
     before.webp made the same way (the site's Diff: one codec on both sides, so unchanged pixels match); `early` is
-    _before()'s, taken when it made one.
+    _before()'s and `webp` _beside()'s, taken when they made one.
 
     Returns:
         result.json's files, size and webp_size
@@ -311,7 +329,14 @@ def write_images(png_path: str, out: str, before: str = "", early=None) -> dict:
     with Image.open(BytesIO(data)) as image:
         size = list(image.size)
     files, sizes = {"png": PNG, "webp": WEBP}, {"png": len(smaller or data)}
-    webp_size = _small(data, join(out, WEBP))
+    try:
+        webp_size = webp.result() if webp is not None else None
+    except Exception:                           # noqa: BLE001 - made here instead
+        webp_size = None
+    if webp_size:
+        move(png_path + ".webp", join(out, WEBP))
+    else:
+        webp_size = _small(data, join(out, WEBP))
     sizes["webp"] = getsize(join(out, WEBP))
     if before and isfile(before):
         try:
@@ -354,7 +379,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
     result = blank(request, card)
     result.update(v=RESULT_V, variant=None, parts={})
     work = mkdtemp(prefix="card-preview_", dir=environ.get(card_bake.WORK_ENV) or None)
-    early, level = None, psd_edit.PNG_LEVEL
+    early, level, made = None, psd_edit.PNG_LEVEL, {}
     try:
         if not REQUEST.fullmatch(request or ""):
             raise BadInput("the request must be 8-64 of A-Z a-z 0-9 -")
@@ -390,7 +415,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
                     snapshot.fetch(snapshot.sha(psd_edit.STATUS_CHART), path)
                     colors.append(psd_edit.status_fills(PSDImage.open(path)))
             return colors[0]
-        psd_edit.PNG_LEVEL = PNG_LEVEL
+        psd_edit.PNG_LEVEL, psd_edit.ON_MERGED = PNG_LEVEL, _beside(made)
         card_bake.bake_card(snapshot, one, parser, fonts, chart, work, lean=True)    # what only a commit uses: skipped
         state, transient, reason, outcomes = outcome(one)
         result.update(state=state, transient=transient, reason=reason, fields=outcomes, notes=notes_of(one))
@@ -402,14 +427,16 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
             result["parity"] = {f: {k: round(float(v), 3) for k, v in m.items() if k in ("bad_pct", "mean", "max")}
                                 for f, m in one.baked.parity.items()}
             result["region"] = _plain(one.baked.region)
+        wait([f for pair in made.values() for f in pair])     # a refusal after the merge: its PNG too
         folder = join(work, one.name.replace("/", "_"))
         shown = png_rel if one.view is not None else one.png
         rendered = join(folder, "new", basename(shown)) if shown else ""
         official = join(folder, "old", basename(shown)) if shown else ""    # bake_card's fetch of the card's PNG
         if state == "baked" and (one.baked is not None or isfile(official)):    # a move alone: the card as it is
-            result.update(image="baked", **write_images(one.baked.png_path if one.baked else official, out, official, early))
+            png = one.baked.png_path if one.baked else official
+            result.update(image="baked", **write_images(png, out, official, early, made.get(png, (None,))[0]))
         elif state == "refused" and rendered and isfile(rendered):    # a gate after the save: what the render got
-            result.update(image="refused", **write_images(rendered, out, official, early))
+            result.update(image="refused", **write_images(rendered, out, official, early, made.get(rendered, (None,))[0]))
     except BadInput as error:
         result.update(state="error", transient=False, reason=f"input: {error}")
     except Transient as error:
@@ -420,9 +447,8 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
         result.update(state="error", transient=isinstance(error, (RequestException, ImportError, OSError)),
                       reason=f"error: {type(error).__name__}: {error}", traceback=format_exc().strip().splitlines()[-1])
     finally:
-        psd_edit.PNG_LEVEL = level
-        if early is not None:
-            wait([early])
+        wait([f for pair in made.values() for f in pair] + ([early] if early is not None else []))
+        psd_edit.PNG_LEVEL, psd_edit.ON_MERGED = level, None
         rmtree(work, ignore_errors=True)
     result["took_s"] = round(perf_counter() - started, 1)
     result["at"] = stamp()

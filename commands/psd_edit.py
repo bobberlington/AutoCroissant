@@ -89,6 +89,7 @@ ICC_MIN_PX = 1000           # fewer moved pixels: no evidence, converted
 # (text_kwargs()): the old preview does not show them
 TEXT_BLENDS = {"preview": {}, "gamma": {"text_preview": False}, "straight": {"text_gamma": None}}
 PNG_LEVEL = 6               # save_png's zlib level (PIL's default; a preview's PNG, never published: 1)
+ON_MERGED = None            # a preview's: (merged, path, like) -> a Future of save_png, made beside the gates
 SIZE_TOLERANCE = 0.2        # a saved PSD stays within 20% of the old blob
 SIZE_FLOOR = 262144         # or this many bytes: one icon on a small PSD (Poorly Drawn Cabbage)
 OK_FONTS = ("exact", "system")                  # how a font may resolve; loose or substituted faces refuse
@@ -10685,11 +10686,13 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     gate_region(png, merged, region)     # merge_png writes only inside the regions: the gate restates its contract
 
     new_psd, new_png = join(out_dir, basename(psd_path)), join(out_dir, basename(png_path))
+    saving = ON_MERGED(merged, new_png, png) if ON_MERGED is not None else None
     start = perf_counter()
     hold.close()                                # the saved card keeps its own eye flags
     save_psd(new, new_psd)
     timings["save"] = perf_counter() - start
-    save_png(merged, new_png, png)
+    if saving is None:
+        save_png(merged, new_png, png)
     gate_size(psd_path, new_psd)
     reopened = use_record(PSDImage.open(new_psd), rel, _LOOKS.get(new))   # the saved PSD's one open: every gate
     #                                           after reads it, drawn with the facts the merge was (it has no stored image)
@@ -10717,6 +10720,8 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
         rerender = gate_idempotence(reparse, jobs, reopened, merged, edits, icc,
                                     {field: m["text"] for field, m in parity.items()}, parser, chart, kept)
     timings["idempotence"] = perf_counter() - start
+    if saving is not None:
+        saving.result()
     return Baked(jobs, edits, region, parity, changed_pixels, records, flag_bytes, new_psd, new_png, reparse, timings,
                  block_bytes, [name for edit in edits for name in edit.fx_names
                                if name in {n for n, _ in edit.fx} | {n for _, _, n in edit.rebuilt}],

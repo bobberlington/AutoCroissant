@@ -135,12 +135,13 @@ def test_a_stat_edit_bakes_the_bakes_pixels(cards, tmp_path, monkeypatch):
     seen = []
     monkeypatch.setattr(cb, "_follow_dups", lambda *a, _f=cb._follow_dups: seen.append("dups") or _f(*a))
     monkeypatch.setattr(pe, "artifacts", lambda *a, _f=pe.artifacts: seen.append("crops") or _f(*a))
-    monkeypatch.setattr(cp, "_small", lambda data, path, _f=cp._small: seen.append(path) or _f(data, path))
+    monkeypatch.setattr(cp, "_small_of", lambda image, path, _f=cp._small_of: seen.append(path) or _f(image, path))
     before = _state(cards.repo)
     code, result, out = _preview(cards, tmp_path, {"hp": 8, "note": "checked", "_by": "web"})
     assert code == 0 and _state(cards.repo) == before
-    made = {Path(p).name: Path(p).parent for p in seen}                     # _small's alone: no duplicates or crops
-    assert len(seen) == 2 and made[cp.WEBP] == out and made[cp.BEFORE].parent == tmp_path / "runner" and pe.PNG_LEVEL == 6
+    made = {Path(p).name: Path(p).parent for p in seen}                     # the WebPs alone: no duplicates or crops
+    assert len(seen) == 2 and made[cp.BEFORE].parent == tmp_path / "runner" and (pe.PNG_LEVEL, pe.ON_MERGED) == (6, None)
+    assert Path(DOOMER_PNG).name + ".webp" in made                          # preview.webp from the merge, beside the gates
     assert list((tmp_path / "runner").iterdir()) == []                         # the work dir is removed
     assert (result["state"], result["reason"], result["fields"], result["transient"]) == ("baked", "hp 5 -> 8", {"hp": "baked"}, False)
     assert result["request"] == REQUEST and result["card"] == "Mini Doomer" and result["path"] == DOOMER and result["png"] == DOOMER_PNG
@@ -151,6 +152,8 @@ def test_a_stat_edit_bakes_the_bakes_pixels(cards, tmp_path, monkeypatch):
     assert len(result["region"]) == 4 and result["runner"]["text_engine"] is True and result["at"].endswith("Z")
     webp = Image.open(out / cp.WEBP)
     assert webp.format == "WEBP" and webp.width == cp.WEBP_WIDTH and list(webp.size) == result["webp_size"]
+    cp._small((out / cp.PNG).read_bytes(), str(tmp_path / "again.webp"))   # as made from preview.png
+    assert (tmp_path / "again.webp").read_bytes() == (out / cp.WEBP).read_bytes()
     with Image.open(out / cp.BEFORE) as before:                                # the official PNG, made the same way (the Diff's)
         assert before.format == "WEBP" and before.size == webp.size and result["bytes"]["before"] == (out / cp.BEFORE).stat().st_size
         cp._small(cards.files[DOOMER_PNG], str(tmp_path / "official.webp"))
