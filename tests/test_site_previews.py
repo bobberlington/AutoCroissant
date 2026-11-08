@@ -92,6 +92,38 @@ out([p.discard(store, "req-00002"), p.discard(store, "req-00003"), html(e("req-1
     assert 'data-pv="discard"' not in running and "Discard this preview" in baked
 
 
+brisk = pytest.mark.skipif(not has(PREVIEW_JS, "POLL_BRISK"), reason="no 1 s checks in preview.js")
+
+
+@needs_js
+@brisk
+def test_dispatch_first_and_brisk_checks(tmp_path):
+    """Start sends the dispatch at once; only its 404 asks for the workflow, to word it. Checks: none before 17 s, every
+    second until a minute while at most 3 wait, else every 3 s, then 10 s past 2 minutes."""
+    out = node(tmp_path, """
+const mem = new Map();
+Object.assign(globalThis, { localStorage: { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, v), removeItem: k => mem.delete(k) },
+  window: { addEventListener() {} }, setTimeout: () => 0 });
+const run = async replies => {
+  const calls = [];
+  const github = async (path, o = {}) => { calls.push(`${o.method || "GET"} ${path.split("/").pop()}`); const s = replies.shift(); if (s) throw Object.assign(new Error(`GitHub ${s}: Not Found`), { status: s }); return null; };
+  mem.clear();
+  const pv = p.createPreviews({ S: { data: { repo: "o/r" }, byId: new Map() }, editor: { me: { login: "ed" }, github, scopes: "repo", psdOf: () => ({}) }, toast() {}, badges() {} });
+  await pv.start({ id: "c", key: "c", name: "C" }, { hp: 8 });
+  const e = pv.entries("c")[0];
+  return [calls, e.state, e.error || ""];
+};
+const at = ages => p.pollDelay({ c: ages.map((a, i) => ({ request: `r${i}`, at: 1e6 - a, state: "running" })) }, 1e6);
+out([await run([0]), await run([404, 404]), await run([404, 0]), await run([401]),
+  [at([5000]), at([17000]), at([59000]), at([60000]), at([1000, 2000, 30000]), at([1000, 2000, 3000, 30000]), at([130000])]]);""")
+    ok, missing, scope, expired, delays = out
+    assert ok == [["POST dispatches"], "running", ""]
+    assert missing[0] == ["POST dispatches", "GET card-preview.yml"] and "isn't set up" in missing[2]
+    assert scope[0] == ["POST dispatches", "GET card-preview.yml"] and "can't start Actions" in scope[2]
+    assert expired[0] == ["POST dispatches"] and "sign in again" in expired[2]
+    assert delays == [12000, 1000, 1000, 3000, 1000, 3000, 10000]
+
+
 @needs_js
 def test_tokens_wrap_and_fit(tmp_path):
     """[fire] is an icon (":no" crossed out), an unknown bracket stays text, no break inside "[ice].", a blank line is an
