@@ -4,8 +4,9 @@ temp copy, against a local card repo made from the clone's Mini Doomer (the --cl
 written; a blobless clone for the REST blob path), and its publication on the previews branch of a bare repo standing in
 for GitHub, through a blobless depth-1 clone (the Action's checkout): a baked stat edit (the same pixels as card_bake's
 dry run), a refused edit (with and without a render), a redundant edit, a stars edit refused beside a baked stat, the
-creatures and duplicate gates, bad inputs, dispatched values kept off the runner's command lines, a runner error and a
-bad blob, the early reads, fonts and records that come after the wait; one commit per publish, a re-run, the rewrites by age and count, a moved head and a moved lease, a warm read, the publisher
+creatures and duplicate gates, bad inputs, a name or ability its parts hold, dispatched values kept off the runner's
+command lines, a runner error and a bad blob, the early reads, fonts and records that come after the wait; one commit
+per publish, a re-run, the rewrites by age and count, a moved head and a moved lease, a warm read, the publisher
 on the standard library alone. Then card-preview.yml: its shape, no trigger elsewhere on the branch, the Action-shaped
 copies of both SPARSE_FILES, and its two jobs' Validate, Reads, Start, Go, Preview, hand-over and Publish steps run as the
 runner would (bash) against those repos, a failed install too; the preview's bot clone. The workflows come from $AC_SITE_SRC
@@ -23,6 +24,7 @@ from os.path import expanduser
 from pathlib import Path
 from subprocess import run as run_process
 from sys import executable
+from types import SimpleNamespace
 
 import pytest
 
@@ -202,6 +204,16 @@ def test_bad_input_is_an_error_to_fix_not_to_retry(cards, tmp_path):
         assert code == 2 and result["state"] == "error" and result["transient"] is False and result["reason"].startswith(why)
         assert result["request"] == (client_id if cp.REQUEST.fullmatch(client_id) else None) and result["image"] is None
 
+
+def test_a_name_or_ability_in_the_parts_takes_their_outcome():
+    """The parts carry the name or ability they hold (never a job of its own): not 'refused' beside 'parts baked'."""
+    part = lambda f: {"field": f, "text": "t", "was": "w", "sha": "0" * 8, "psd": "0" * 8, "layer": "L"}
+    edit = {"name": "A II", "ability": "Heal 3.", "hp": 5, "parts": {"19": part("name"), "23": part("ability")}}
+    card = cb.Card("A", "a", edit, jobs={"parts": {}}, redundant=["hp"])
+    card.baked = SimpleNamespace(jobs={"parts": {}}, edits=[])
+    assert cp.outcome(card)[3] == {"name": "baked", "ability": "baked", "hp": "redundant", "parts": "baked"}
+    card.baked, card.refusal = None, pe.Refusal("unsupported-card", "no")
+    assert cp.outcome(card)[3] == {"name": "refused", "ability": "refused", "hp": "redundant", "parts": "refused"}
 
 def test_dispatched_values_never_start_a_log_line(cards, tmp_path, capsys):
     """The runner reads a line starting `::` as a command: a card or an edit key with a newline is printed escaped, on
