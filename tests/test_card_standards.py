@@ -819,35 +819,30 @@ def test_a_widened_box_passes_the_gates(clone, tmp_path):
 
 @pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
 def test_status_words_in_the_chart_colours(clone, context, tmp_path):
-    """Owner 2026-11-07: a capitalised status word off the chart takes its colour (Pananda Peel's Withering, its FX layer
-    cut again in its own style) and a styled one with no FX layer gets the chart's (Credit Card's Frozen), by the bake's
-    steps; the parse the same; a second run finds nothing."""
+    """Owner 2026-11-07: a capitalised status word off the chart takes its colour and its FX layers the chart's style
+    (Standstill's two Frozen In Time, cut again), and a styled one with no FX layer gets the chart's (Credit Card's
+    Frozen), by the bake's steps; the parse the same; a second run finds nothing."""
     fonts = _fonts(clone)
     fonts.chart = context.chart
     parser = clone_vocabulary(str(clone)).parser()
-    peel, card = "Items/Deploy/2 Stars/Pananda Peel.psd", "Items/Support/3 Stars/Credit_Card.psd"
-    for rel, names in ((peel, ["Ability"]), (card, ["Ability", "Ability FX: Frozen"])):
+    blocks = lambda layer: {key: layer.tagged_blocks[key].tobytes() for key in psd_edit.EFFECT_BLOCKS    # noqa: E731
+                            if key in layer.tagged_blocks}
+    standstill = ["Ability", "Ability FX: Frozen In Time#1", "Ability FX: Frozen In Time#2"]
+    for rel, names, status in (("Items/Infliction/4 Stars/Standstill.psd", standstill, "frozen in time"),
+                               ("Items/Support/3 Stars/Credit_Card.psd", ["Ability", "Ability FX: Frozen"], "frozen")):
         data = (clone / rel).read_bytes()
         fixed = cs.fix(data, rel, [], str(tmp_path / "work"), parser, fonts, only="status words")
         assert fixed.redrawn == {"status words": names} and fixed.pixel_left == [], fixed.pixel_left
-        old, new = PSDImage.open(BytesIO(data)), PSDImage.open(BytesIO(fixed.data))
+        new = PSDImage.open(BytesIO(fixed.data))
         assert cs.status_plan(new, context.chart) == []
         assert not cs.pixel_kinds(fixed.data, ("status words",), rel, context.chart)
         ability = cs.ability_layers(new)[0]
         fills = psd_edit._char_styles(ability)[0]
-        for a, b, status in psd_edit.status_spans(ability.text, context.chart, []):
-            assert all(cs._chart_fill(fills[i], status.fill) for i in range(a, b)), ability.text[a:b]
-        fx = {layer.name: layer for layer in psd_edit.fx_layers(new, ability)}
-        was = {layer.name: layer for layer in psd_edit.fx_layers(old, cs.ability_layers(old)[0])}
-        blocks = lambda layer: {key: layer.tagged_blocks[key].tobytes() for key in psd_edit.EFFECT_BLOCKS     # noqa: E731
-                                if key in layer.tagged_blocks}
-        if rel == peel:                         # cut again: its own style kept (q6)
-            assert set(fx) == set(was) == {"Ability FX: Withering"}
-            assert blocks(fx["Ability FX: Withering"]) == blocks(was["Ability FX: Withering"])
-        else:
-            assert not was and set(fx) == {"Ability FX: Frozen"}
-            chart = {key: block.tobytes() for key, block in context.chart["frozen"].blocks.items()}
-            assert blocks(fx["Ability FX: Frozen"]) == chart
+        for a, b, word in psd_edit.status_word_spans(ability.text, context.chart, []):
+            assert all(cs._chart_fill(fills[i], word.fill) for i in range(a, b)), ability.text[a:b]
+        chart = {key: block.tobytes() for key, block in context.chart[status].blocks.items()}
+        assert [fx.name for fx in psd_edit.fx_layers(new, ability)] == names[1:]
+        assert all(blocks(fx) == chart for fx in psd_edit.fx_layers(new, ability))
 
 
 def test_status_words_leave_prose_alone(clone, context):

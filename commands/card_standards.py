@@ -2669,18 +2669,19 @@ def _chart_fill(fill, want) -> bool:
 
 def status_plan(psd: PSDImage, chart: Optional[dict]) -> list:
     """
-    [(layer, spans, fresh)] per status_texts layer with work: spans, its capitalised chart status words (the bake's
-    psd_edit.status_spans, longest name first; a lowercase use is prose) whose letters are off the chart's fill
-    (STATUS_LEVELS); fresh, the styled ones no FX layer holds whole (psd_edit.new_fx, the bake's names). Left alone: a
-    word an overlay word layer prints (R5's), a layer with an FX layer that is no pixel layer (the bake refuses it), a
-    word partly under another FX layer (new_fx's told case). No chart: [].
+    [(layer, spans, fresh, restyle)] per status_texts layer with work: spans, its chart status words (the bake's
+    psd_edit.status_word_spans: capitalised, longest name first) whose letters are off the chart's fill (STATUS_LEVELS);
+    fresh, the styled ones no FX layer holds whole (psd_edit.new_fx, the bake's names); restyle, [(FX layer, status)]
+    on a chart status word whose style draws otherwise (psd_edit.chart_style, owner 2026-11-07). Left alone: a word an
+    overlay word layer prints (R5's), a layer with an FX layer that is no pixel layer (the bake refuses it), a word
+    partly under another FX layer (new_fx's told case). No chart: [].
     """
     if not chart:
         return []
     out, printed = [], None
     for layer in status_texts(psd):
         text = layer.text or ""
-        spans = [span for span in psd_edit.status_spans(text, chart, psd_edit.icon_spans(layer)) if text[span[0]].isupper()]
+        spans = psd_edit.status_word_spans(text, chart, psd_edit.icon_spans(layer))
         if not spans:
             continue
         if printed is None:
@@ -2694,27 +2695,30 @@ def status_plan(psd: PSDImage, chart: Optional[dict]) -> list:
                if not all(_chart_fill(fills[i], status.fill) for i in range(a, b) if text[i] not in BLANKS)]
         held = [span for fx in fxs for span in psd_edit.phrase_ranges(text, psd_edit.fx_phrases(layer, fx))]
         fresh = psd_edit.new_fx(text, [span for span in spans if span[2].styled], held, lambda code, why: None)
-        if off or fresh:
-            out.append((layer, off, fresh))
+        restyle = [(fx, status) for fx in fxs for status in [psd_edit.chart_style(layer, fx, text, spans)]
+                   if status and psd_edit._style_key(fx.tagged_blocks) != psd_edit._style_key(status.blocks)]
+        if off or fresh or restyle:
+            out.append((layer, off, fresh, restyle))
     return out
 
 
 def status_word_layers(psd: PSDImage) -> list:
     """status_plan's layers, the chart from psd.status_chart (pixel_kinds sets it)."""
-    return [layer for layer, _, _ in status_plan(psd, getattr(psd, "status_chart", None))]
+    return [layer for layer, *_ in status_plan(psd, getattr(psd, "status_chart", None))]
 
 
 def status_words(path: str, out_path: str, fonts) -> list:
     """
     Status words (owner 2026-11-07), the PIXEL_FIXES kind, by the bake's own ability-edit steps (set_text_layer): each
     status_plan word off the chart set in the chart's fill (the chart always wins), its glyphs redrawn (a splice), an FX
-    layer on it cut again in place (_recut_fx: Update all, its own style kept, owner q6); each styled one no FX layer
-    holds gets one (psd_edit._regenerate_fx: Effect Layers.jsx's name and place, the chart's effect blocks). fonts.chart:
+    layer on it cut again in place (_recut_fx: Update all); each styled one no FX layer holds gets one
+    (psd_edit._regenerate_fx: Effect Layers.jsx's name and place, the chart's effect blocks); an FX layer on one takes
+    the chart's style (psd_edit.restyle_fx, owner 2026-11-07; another phrase's keeps its own, q6). fonts.chart:
     psd_edit.status_fills of the chart. Gated (_status_gate), then checked: nothing left to do, every status FX layer
     on its own words (gate_status_words).
 
     Returns:
-        The text layers' names, the FX layers made after them; raises Refused or the engine's errors
+        The text layers' names, then the FX layers made or restyled; raises Refused or the engine's errors
     """
     from psd_tools.composite.text import capture
     chart = getattr(fonts, "chart", None)
@@ -2723,7 +2727,7 @@ def status_words(path: str, out_path: str, fonts) -> list:
     if not plan:
         return []
     engine, done, stories = psd_edit._fx_engine(), [], []
-    for layer, spans, fresh in plan:
+    for layer, spans, fresh, restyle in plan:
         faces, cut, made = _fonts_of(layer, fonts), [], []
         if spans:
             psd_edit.follow_kerning(psd, layer)
@@ -2737,13 +2741,15 @@ def status_words(path: str, out_path: str, fonts) -> list:
                 stories.append(psd_edit.story_index(layer))
         if fresh:
             made = psd_edit._regenerate_fx(psd, layer, layer.text, fresh, faces, engine)
-        done.append((layer, bool(spans), cut, made))
+        styled = [(fx, psd_edit.restyle_fx(fx, status)) for fx, status in restyle]
+        done.append((layer, bool(spans), cut, made, styled))
     edits = [psd_edit.Edit("ability", layer.text, layer.text, [layer], [psd_edit._record_index(layer)] if set_ else [],
                            None, fx=[(fx.name, {bytes(key): fx.tagged_blocks[key].tobytes()
                                                 for key in psd_edit.EFFECT_BLOCKS if key in fx.tagged_blocks})
                                      for fx in made],
-                           rebuilt=[(psd_edit._record_index(fx), fx.name, fx.name) for fx in cut])
-             for layer, set_, cut, made in done]
+                           rebuilt=[(psd_edit._record_index(fx), fx.name, fx.name) for fx in cut],
+                           restyled=[(psd_edit._record_index(fx), blocks) for fx, blocks in styled])
+             for layer, set_, cut, made, styled in done]
     psd_edit.save_psd(psd, out_path)
     _status_gate(path, out_path, edits, stories)
     after = PSDImage.open(out_path)
@@ -2751,7 +2757,8 @@ def status_words(path: str, out_path: str, fonts) -> list:
         raise Refused("bytes", "a status word is left off the chart")
     for layer in status_texts(after):
         psd_edit.gate_status_words(after, chart, layer)
-    return [layer.name.strip() for layer, *_ in done] + [fx.name for *_, made in done for fx in made]
+    return [layer.name.strip() for layer, *_ in done] + [fx.name for *_, made, styled in done
+                                                         for fx in made + [fx for fx, _ in styled]]
 
 
 def _status_gate(path: str, out_path: str, edits: list, stories: list) -> None:
