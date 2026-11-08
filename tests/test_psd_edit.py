@@ -2177,6 +2177,23 @@ def test_new_text_past_its_design_is_told(clone, parser, chart):
 
 
 @text_edit
+def test_an_ability_off_the_card_moves_up(clone, parser, chart, tmp_path):
+    """11-08: an added line no size fits (fit_below) ran off the card's bottom, unseen (46 cards). The Ability moves up
+    until its last line ends where the old one did, TySh and raster together, through every gate."""
+    rel = "Auxiliary/Items/Krabby_Patty.psd"
+    old = PSDImage.open(_card(clone, rel)[0])
+    text = pe.normalize_ability(pe.parse_card(parser, _card(clone, rel)[0], rel)["card"]["ability"]) + "\nDraw a card."
+    parsed, baked = _bake(clone, parser, rel, {"ability": text}, tmp_path, chart)
+    new = PSDImage.open(baked.psd_path)
+    up = int(search(r"ability: moved up (\d+) px to stay on the card", " ".join(baked.fx_notes)).group(1))
+    a, b = pe.ability_layer(old), pe.ability_layer(new)
+    assert up > 0 and b._data.transform[5] == a._data.transform[5] - up
+    assert not pe._ink_off_canvas(b, new.width, new.height)
+    assert np.nonzero(_ink(b, new).any(axis=1))[0].max() == np.nonzero(_ink(a, old).any(axis=1))[0].max()
+    assert pe.normalize_ability(baked.reparse["card"]["ability"]) == pe.normalize_ability(text)
+
+
+@text_edit
 @pytest.mark.skipif(not (_text_engine() and pe.tab_stops()), reason="the fork lays no tab stops")
 def test_tab_stops_bake(clone, parser, chart, tmp_path):
     """Owner 2026-10-24 ("tab stops should be supported"): the fork lays tabs to Photoshop's stops. The website shows

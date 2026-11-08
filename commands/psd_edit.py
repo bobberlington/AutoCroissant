@@ -325,6 +325,7 @@ class Edit:
     band: Optional[tuple] = None  # canvas bbox of the text pixels redrawn (a splice: its changed glyphs); None: none
     renamed: Optional[str] = None  # a title layer named after its text: its new name, the new title (as Photoshop does)
     whole: bool = False     # the engine redrew every glyph (no splice, or it fell back): the lines it left laid out again
+    lifted: int = 0         # px an Ability edit moved its layer up (lift)
     icons: Optional["IconPlan"] = None  # a stars or types edit's plan (index_icons() fills the four lists below)
     toggled: list = field(default_factory=list)  # record indices of the layers it showed or hid: one flag byte each
     shifted: list = field(default_factory=list)  # (record index, old record index, dx, dy): a layer it moved
@@ -5484,16 +5485,49 @@ def back_on(psd: PSDImage, layer) -> int:
     edge = _stroke_reach(layer)                 # its outline on the card too, when it fits
     edge = edge if x1 - x0 + 2 * edge <= psd.width else 0
     dx = edge - x0 if x0 < edge else psd.width - edge - x1
-    xx, xy, yx, yy, tx, ty = layer._data.transform
-    layer._data.transform = (xx, xy, yx, yy, tx + dx, ty)
-    layer.left = layer.left + dx
+    nudge(layer, dx, 0)
     return dx
+
+
+def lift(psd: PSDImage, layer, before: np.ndarray) -> int:
+    """
+    An Ability whose new ink runs off the card's bottom (no size fits it: fit_below) moved up until its last line ends
+    where the old text's did: back_on's rule for the bottom (a box's Txt2 frame is relative to the transform). Not past
+    the top, nor a layer that clips, is clipped to, or has a mask.
+
+    Returns:
+        The px moved (0: not moved)
+    """
+    alpha = _alpha(layer)
+    if alpha is None or not alpha.size or layer.clipping or _clip_chain(layer) or layer.has_mask() \
+            or layer.has_vector_mask():
+        return 0
+    rows = np.nonzero((alpha > INK_ALPHA).any(axis=1))[0]
+    old = np.nonzero((before[..., 3] > INK_ALPHA * 255).any(axis=1))[0]
+    if not rows.size or not old.size:
+        return 0
+    y0, y1 = layer.bbox[1] + int(rows[0]), layer.bbox[1] + int(rows[len(rows) - 1]) + 1
+    dy = y1 - int(old[len(old) - 1]) - 1
+    if y1 <= psd.height or dy <= 0 or y0 < dy:
+        return 0
+    nudge(layer, 0, -dy)
+    return dy
+
+
+def nudge(layer, dx: int, dy: int) -> None:
+    """A type layer moved: its TySh position and its raster together (Photoshop keeps its place in TySh alone)."""
+    xx, xy, yx, yy, tx, ty = layer._data.transform
+    layer._data.transform = (xx, xy, yx, yy, tx + dx, ty + dy)
+    if dx:
+        layer.left = layer.left + dx
+    if dy:
+        layer.top = layer.top + dy
 
 
 def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: Optional[dict] = None,
                    card: str = "", parser: Optional[PSDParser] = None,
                    original: Optional[PSDImage] = None, layer=None, beside=(), copy: bool = False,
-                   area: Optional[tuple] = None, anchor: int = 0) -> Edit:
+                   area: Optional[tuple] = None, anchor: int = 0, up: int = 0) -> Edit:
     """
     Replace the name or the ability text, keeping the runs, and rasterize it with the text engine: only the changed
     glyphs when the fork splices (splices(), SPLICE_UNIT), Photoshop's raster staying on the rest. A title layer found
@@ -5522,6 +5556,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
             nothing was printed before (its placeholder is no old text)
         anchor: px an earlier bake moved this title to keep it on the card (R4, its verdict): moved back first, so a
             shorter title sits where the card maker put it and a move is always counted from there
+        up: A copy's: px its Ability moved up (lift), which it follows
 
     Returns:
         Edit with the engine's report. Content problems bake best-effort and are told in Edit.notes as "<code>: <field>:
@@ -5794,6 +5829,12 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
             report = again or report
             if scale < 1:
                 flag("overflow", f"ability: set at {round(scale * 100)}% of its size to stay on its panel")
+            elif not off_before:                # no size fits: up, to stay on the card
+                up = lift(psd, layer, room)
+                if up:
+                    flags.append(f"overflow: ability: moved up {up} px to stay on the card")
+        elif up:
+            nudge(layer, 0, -up)
     except MissingFontError as error:
         raise Refused("font", str(error))
     loose = sorted(name for name, (how, _) in report.fonts.items() if how not in OK_FONTS)
@@ -5810,9 +5851,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         flag("font", f"{which}: colour glyphs (the icon font) drawn in one colour")
     anchor = anchor if which == "name" else 0
     if anchor:                                  # where the card maker put it, before an earlier bake's move
-        xx, xy, yx, yy, tx, ty = layer._data.transform
-        layer._data.transform = (xx, xy, yx, yy, tx - anchor, ty)
-        layer.left = layer.left - anchor
+        nudge(layer, -anchor, 0)
     moved = back_on(psd, layer) if which == "name" and not off_before else 0
     if moved:                                   # a title running off the card shifts back on (R4, owner 2026-10-26)
         flags.append(f"overflow: name: moved {moved:+d} px to stay on the card")
@@ -5820,7 +5859,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         flags.append(f"name: back where the card maker put it ({-anchor:+d} px)")
     bbox = tuple(layer.bbox)
     spliced = getattr(report, "splice", None)
-    band = bbox if spliced is None or spliced.fallback or moved or anchor else spliced.zone
+    band = bbox if spliced is None or spliced.fallback or moved or anchor or up else spliced.zone
     if not off_before and _ink_off_canvas(layer, psd.width, psd.height):
         flag("overflow", f"{which} runs off the canvas")
     halos = None if halo_before is None else (_effect_ink(psd, layer), halo_before)
@@ -5876,7 +5915,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                 dropped=dropped, rebuilt=[(_record_index(fx), old, fx.name) for fx, old in rebuilt],
                 restyled=[(_record_index(fx), blocks) for fx, blocks in restyled],
                 fx_names=fx_names, notes=notes + flags, held=held, fonts=faces,
-                renamed=layer.name if own else None, whole=spliced is None or bool(spliced.fallback))
+                renamed=layer.name if own else None, whole=spliced is None or bool(spliced.fallback), lifted=up)
 
 
 # ========================
@@ -11018,9 +11057,9 @@ def set_parts(psd: PSDImage, jobs: dict, record: dict, fonts_dir: str, chart: Op
             own = fx_layers(psd, layer)
             for copy in copies:
                 again = _part_raw(copy.text, part["text"], text)
-                if again != copy.text:
+                if again != copy.text or edit.lifted:
                     done = set_text_layer(psd, which, again, fonts_dir, None, card, parser, original,
-                                          layer=copy, beside=[layer, *own], copy=True)
+                                          layer=copy, beside=[layer, *own], copy=True, up=edit.lifted)
                     done.story = first_story(copy)
                     done.notes = [f"{note} (its copy {copy.name[:24]!r})" for note in done.notes if note not in edit.notes]
                     edits.append((copy, done, True))
