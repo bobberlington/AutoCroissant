@@ -1716,3 +1716,10 @@ def test_pool_size(monkeypatch):
     assert (cg.pool_size(12), cg.pool_size(3)) == (4, 3)
     monkeypatch.setattr(cg, "cpu_count", lambda: 2)
     assert cg.pool_size(12) == 2
+
+
+def test_status_words_make_no_changelog_event():
+    """Owner 11-07: the status words fix lands in the guards' commit silently, no guard-event for it or its PNG."""
+    psd = {"kind": "psd", "path": "a.psd", "pixels": ["status words"], "shown": ""}
+    png = {"kind": "png", "path": "a.png", "silent": True, "line": "re-exported"}
+    assert cg.events_of({"card": "A"}, psd, [psd, png]) == cg.events_of({"card": "A"}, png, [psd, png]) == []

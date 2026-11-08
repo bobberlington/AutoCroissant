@@ -815,3 +815,46 @@ def test_a_widened_box_passes_the_gates(clone, tmp_path):
     done = cs.normalise(_card(clone, rel)[0], str(tmp_path / "out.psd"), fonts, rel)
     layer = next(x for x in PSDImage.open(tmp_path / "out.psd").descendants() if x.layer_id == 321)
     assert "Ability" in done and not done.left and round(TextModel.from_layer(layer).box[2], 3) == 394.0
+
+
+@pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
+def test_status_words_in_the_chart_colours(clone, context, tmp_path):
+    """Owner 2026-11-07: a capitalised status word off the chart takes its colour (Pananda Peel's Withering, its FX layer
+    cut again in its own style) and a styled one with no FX layer gets the chart's (Credit Card's Frozen), by the bake's
+    steps; the parse the same; a second run finds nothing."""
+    fonts = _fonts(clone)
+    fonts.chart = context.chart
+    parser = clone_vocabulary(str(clone)).parser()
+    peel, card = "Items/Deploy/2 Stars/Pananda Peel.psd", "Items/Support/3 Stars/Credit_Card.psd"
+    for rel, names in ((peel, ["Ability"]), (card, ["Ability", "Ability FX: Frozen"])):
+        data = (clone / rel).read_bytes()
+        fixed = cs.fix(data, rel, [], str(tmp_path / "work"), parser, fonts, only="status words")
+        assert fixed.redrawn == {"status words": names} and fixed.pixel_left == [], fixed.pixel_left
+        old, new = PSDImage.open(BytesIO(data)), PSDImage.open(BytesIO(fixed.data))
+        assert cs.status_plan(new, context.chart) == []
+        assert not cs.pixel_kinds(fixed.data, ("status words",), rel, context.chart)
+        ability = cs.ability_layers(new)[0]
+        fills = psd_edit._char_styles(ability)[0]
+        for a, b, status in psd_edit.status_spans(ability.text, context.chart, []):
+            assert all(cs._chart_fill(fills[i], status.fill) for i in range(a, b)), ability.text[a:b]
+        fx = {layer.name: layer for layer in psd_edit.fx_layers(new, ability)}
+        was = {layer.name: layer for layer in psd_edit.fx_layers(old, cs.ability_layers(old)[0])}
+        blocks = lambda layer: {key: layer.tagged_blocks[key].tobytes() for key in psd_edit.EFFECT_BLOCKS     # noqa: E731
+                                if key in layer.tagged_blocks}
+        if rel == peel:                         # cut again: its own style kept (q6)
+            assert set(fx) == set(was) == {"Ability FX: Withering"}
+            assert blocks(fx["Ability FX: Withering"]) == blocks(was["Ability FX: Withering"])
+        else:
+            assert not was and set(fx) == {"Ability FX: Frozen"}
+            chart = {key: block.tobytes() for key, block in context.chart["frozen"].blocks.items()}
+            assert blocks(fx["Ability FX: Frozen"]) == chart
+
+
+def test_status_words_leave_prose_alone(clone, context):
+    """Lowercase uses are prose ("the imprisoned creature", Sans' all-lowercase "smeckeldorfed"), and a card in the chart's
+    colours has nothing to do: no write. No chart, no such fix."""
+    for rel in ("Creatures/Kirby/4 Stars/grand_doomer.psd", "Creatures/Undertale/5 Stars/Sans.psd"):
+        psd = PSDImage.open(clone / rel)
+        assert cs.status_texts(psd) and cs.status_plan(psd, context.chart) == []
+    psd = PSDImage.open(clone / "Creatures/Pandas/3 Stars/Panseida.psd")
+    assert cs.status_plan(psd, context.chart) and "status words" not in cs.pixel_kinds(psd)

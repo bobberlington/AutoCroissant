@@ -17,11 +17,12 @@ silent, owner 2026-10-25) run on every card, in this order: badges laid out at o
 (relay_badges), straight apostrophes, icon font glyphs Photoshop drew with an older font drawn again (never one whose
 advance moved: relay_badges'), badges and icons fitted to their text (fit_badges: a badge's pill 1.35 times
 the text's capital height, its middle on the capitals' middle, even when that rewraps the text; an FX layer on words
-that moved is cut again) and badges under an overlay set one-colour (one_colour_badges); each redraws only the changed
-glyphs and the guards re-export the PNG. Every save strips the merged image (Maximize Compatibility off, owner
-2026-11-07: psd_edit.save_psd). The big pass's normalise (card_sweep alone until the guards land its files, G1): sub and
-superscript text set normal at the same size and place (to_normal), the pictures linked (the link step, psd_links),
-the merged image stripped, in one gated save.
+that moved is cut again), badges under an overlay set one-colour (one_colour_badges), timing tags set as badges and
+capitalised status words in the chart's colours with their FX layers (status_words, owner 2026-11-07, the bake's own
+steps); each redraws only the changed glyphs and the guards re-export the PNG. Every save strips the merged image
+(Maximize Compatibility off, owner 2026-11-07: psd_edit.save_psd). The big pass's normalise (card_sweep alone until the
+guards land its files, G1): sub and superscript text set normal at the same size and place (to_normal), the pictures
+linked (the link step, psd_links), the merged image stripped, in one gated save.
 
     check(psd, rel, context, old=None, added=False) -> [Issue]
     fix(data, rel, issues, work, parser=None, fonts=None, only=None) -> Fixed   the fixes, gated (one PSD's new bytes)
@@ -32,6 +33,8 @@ the merged image stripped, in one gated save.
 
 No Discord, network or config.
 """
+from collections import Counter
+from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import lru_cache
 from io import BytesIO
@@ -44,7 +47,7 @@ from typing import Callable, Optional
 
 import numpy as np
 from psd_tools import PSDImage
-from psd_tools.constants import BlendMode, Tag
+from psd_tools.constants import BlendMode, Resource, Tag
 
 import commands.psd_edit as psd_edit
 from commands.card_edits import CardAuthors
@@ -984,7 +987,8 @@ def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDPars
         issues: check()'s issues
         work: A folder for the temporary files
         parser: The offline parser for gate_reparse (skipped without)
-        fonts: Gives MDW/Fonts for R8's box text (single_line) and the pixel fixes
+        fonts: Gives MDW/Fonts for R8's box text (single_line) and the pixel fixes; fonts.chart: the status chart's
+            fills (status words)
         only: One PIXEL_FIXES kind alone (a sweep: card_sweep), no other fix
         whole: fit_badges may redraw a layer whole (a sweep's --whole)
         skip: PIXEL_FIXES kinds left out (the guards convert in a step of their own)
@@ -995,7 +999,8 @@ def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDPars
     result = Fixed()
     wanted = [] if only else [issue for issue in issues if issue.fix and not issue.waived]
     composer = not only and _every_line_in(data)
-    pixels = tuple(kind for kind in pixel_kinds(data, (only,) if only else (), rel) if kind not in skip)
+    pixels = tuple(kind for kind in pixel_kinds(data, (only,) if only else (), rel, getattr(fonts, "chart", None))
+                   if kind not in skip)
     if not (wanted or composer or pixels):
         return result
     makedirs(work, exist_ok=True)
@@ -1946,7 +1951,6 @@ def _split_terms(model, was, now, cards: Optional[tuple] = None) -> list:
     """New breaks of a re-layout (not in its old layout) that cut a term: right after a count, a word next; inside
     a run of up to TERM_WORDS words coloured unlike the layer's main colour ('Fire' / 'Totem'); or inside a card's
     name (cards: Context.cards; 'Mini' / 'Drill.', however coloured): [(before, after)]. model: its text and runs."""
-    from collections import Counter
     lines = [line for line in now if line.drawn and line.text.strip()]
     old, out = {line.start for line in was if line.drawn}, []
     names = _name_index(cards)[0] if cards and model is not None else None
@@ -2638,6 +2642,162 @@ def _normal_gate(path: str, out_path: str, texts: set, stories: list, others: bo
         raise Refused("bytes", "a smart object's document is left with no layer using it")
 
 
+# ========================
+# Status words (owner 2026-11-07: the chart's colour and FX layer, silent, on every push)
+# ========================
+NOTE_LAYER = re_compile(r"notes?(?: copy(?: \d+)?)?", IGNORECASE)    # a note text layer's name (MDW's "Note copy 3")
+STATUS_LEVELS = 1           # a status word's fill this many levels (of 255) off the chart's still matches it
+BLANKS = " \t\r\x03"
+
+
+def status_texts(psd: PSDImage) -> list:
+    """The text layers status words are set in: the Ability's (ability_layers: every picture) and the visible note
+    layers; never a title or stat label."""
+    out = ability_layers(psd)
+    pictures = variants_of(psd)
+    for n in (pictures if len(pictures) > 1 else [None]):
+        with variant_view(psd, n):
+            out += [layer for layer in psd.descendants() if psd_edit._is_text_layer(layer) and layer.is_visible()
+                    and EFFECT_LAYER_TAG not in layer.name and NOTE_LAYER.fullmatch(base_name(layer).strip())
+                    and layer not in out]
+    return out
+
+
+def _chart_fill(fill, want) -> bool:
+    return fill is not None and max(abs(round(a * 255) - round(b * 255)) for a, b in zip(fill, want)) <= STATUS_LEVELS
+
+
+def status_plan(psd: PSDImage, chart: Optional[dict]) -> list:
+    """
+    [(layer, spans, fresh)] per status_texts layer with work: spans, its capitalised chart status words (the bake's
+    psd_edit.status_spans, longest name first; a lowercase use is prose) whose letters are off the chart's fill
+    (STATUS_LEVELS); fresh, the styled ones no FX layer holds whole (psd_edit.new_fx, the bake's names). Left alone: a
+    word an overlay word layer prints (R5's), a layer with an FX layer that is no pixel layer (the bake refuses it), a
+    word partly under another FX layer (new_fx's told case). No chart: [].
+    """
+    if not chart:
+        return []
+    out, printed = [], None
+    for layer in status_texts(psd):
+        text = layer.text or ""
+        spans = [span for span in psd_edit.status_spans(text, chart, psd_edit.icon_spans(layer)) if text[span[0]].isupper()]
+        if not spans:
+            continue
+        if printed is None:
+            printed = {psd_edit.collapse(word.text).lower() for word in overlay_words(psd)}
+        spans = [span for span in spans if span[2].name.lower() not in printed]
+        fxs = psd_edit.fx_layers(psd, layer)
+        if not spans or any(fx.kind != "pixel" for fx in fxs):
+            continue
+        fills = psd_edit._char_styles(layer)[0]
+        off = [(a, b, status) for a, b, status in spans
+               if not all(_chart_fill(fills[i], status.fill) for i in range(a, b) if text[i] not in BLANKS)]
+        held = [span for fx in fxs for span in psd_edit.phrase_ranges(text, psd_edit.fx_phrases(layer, fx))]
+        fresh = psd_edit.new_fx(text, [span for span in spans if span[2].styled], held, lambda code, why: None)
+        if off or fresh:
+            out.append((layer, off, fresh))
+    return out
+
+
+def status_word_layers(psd: PSDImage) -> list:
+    """status_plan's layers, the chart from psd.status_chart (pixel_kinds sets it)."""
+    return [layer for layer, _, _ in status_plan(psd, getattr(psd, "status_chart", None))]
+
+
+def status_words(path: str, out_path: str, fonts) -> list:
+    """
+    Status words (owner 2026-11-07), the PIXEL_FIXES kind, by the bake's own ability-edit steps (set_text_layer): each
+    status_plan word off the chart set in the chart's fill (the chart always wins), its glyphs redrawn (a splice), an FX
+    layer on it cut again in place (_recut_fx: Update all, its own style kept, owner q6); each styled one no FX layer
+    holds gets one (psd_edit._regenerate_fx: Effect Layers.jsx's name and place, the chart's effect blocks). fonts.chart:
+    psd_edit.status_fills of the chart. Gated (_status_gate), then checked: nothing left to do, every status FX layer
+    on its own words (gate_status_words).
+
+    Returns:
+        The text layers' names, the FX layers made after them; raises Refused or the engine's errors
+    """
+    from psd_tools.composite.text import capture
+    chart = getattr(fonts, "chart", None)
+    psd = PSDImage.open(path)
+    plan = status_plan(psd, chart)
+    if not plan:
+        return []
+    engine, done, stories = psd_edit._fx_engine(), [], []
+    for layer, spans, fresh in plan:
+        faces, cut, made = _fonts_of(layer, fonts), [], []
+        if spans:
+            psd_edit.follow_kerning(psd, layer)
+            keep = capture(layer, faces)
+            for a, b, status in spans:
+                layer.set_span_style(a, b, fill=status.fill)
+            _by_glyph(layer, layer.rasterize(fonts=faces, keep=keep, unit=psd_edit.SPLICE_UNIT))
+            offset = engine[0].from_layer(layer).text.find(layer.text)
+            cut = [fx for fx, _ in _recut_fx(psd, layer, {i + offset for a, b, _ in spans for i in range(a, b)}, faces)]
+            if psd_edit.story_index(layer) is not None:
+                stories.append(psd_edit.story_index(layer))
+        if fresh:
+            made = psd_edit._regenerate_fx(psd, layer, layer.text, fresh, faces, engine)
+        done.append((layer, bool(spans), cut, made))
+    edits = [psd_edit.Edit("ability", layer.text, layer.text, [layer], [psd_edit._record_index(layer)] if set_ else [],
+                           None, fx=[(fx.name, {bytes(key): fx.tagged_blocks[key].tobytes()
+                                                for key in psd_edit.EFFECT_BLOCKS if key in fx.tagged_blocks})
+                                     for fx in made],
+                           rebuilt=[(psd_edit._record_index(fx), fx.name, fx.name) for fx in cut])
+             for layer, set_, cut, made in done]
+    psd_edit.save_psd(psd, out_path)
+    _status_gate(path, out_path, edits, stories)
+    after = PSDImage.open(out_path)
+    if status_plan(after, chart):
+        raise Refused("bytes", "a status word is left off the chart")
+    for layer in status_texts(after):
+        psd_edit.gate_status_words(after, chart, layer)
+    return [layer.name.strip() for layer, *_ in done] + [fx.name for *_, made in done for fx in made]
+
+
+def _status_gate(path: str, out_path: str, edits: list, stories: list) -> None:
+    """status_words' gate: the records as the bake's gate_bytes allows its Edits (the FX layers made or cut again), a
+    recoloured text record changed in its pixels and TySh alone, its story alone (gate_stories), the document as it was
+    but what a made FX layer moves (ADDED_RESOURCES); Refused("bytes")."""
+    old, new = psd_edit.layer_records(path), psd_edit.layer_records(out_path)
+    psd_edit.gate_bytes(old, new, edits)
+    made, pairs = Counter(name for edit in edits for name, _ in edit.fx), {}
+    for j, record in enumerate(new):            # new index -> old, the made FX records taken out
+        if made[record["name"]]:
+            made[record["name"]] -= 1
+        else:
+            pairs[j] = len(pairs)
+    for index in {index for edit in edits for index in edit.records}:
+        a, b = old[pairs[index]], new[index]
+        tysh = bytes(Tag.TYPE_TOOL_OBJECT_SETTING)
+        if a["name"] != b["name"] or {k for k in a if a[k] != b[k]} - {"channels", "rect", "blocks"} or \
+                [k for (k, x), (_, y) in zip(a["blocks"], b["blocks"]) if x != y and k != tysh]:
+            raise Refused("bytes", f"{a['name']}: changed beyond its text's fill")
+    before, after = PSDImage.open(path), PSDImage.open(out_path)
+    part = psd_edit.changed_part(before, after, ("header", "color_mode_data"))
+    added = any(edit.fx for edit in edits)
+    if part or _resources(before, after.has_preview(), added) != _resources(after, after.has_preview(), added):
+        raise Refused("bytes", f"{part or 'image_resources'} changed")
+    psd_edit.gate_stories(before, after, stories)
+
+
+ADDED_RESOURCES = (Resource.IDS_SEED_NUMBER, Resource.LAYER_STATE_INFO, Resource.LAYER_GROUP_INFO,
+                   Resource.LAYER_GROUPS_ENABLED_ID)    # a layer added moves the id seed and the per-record lists (the fork)
+
+
+def _resources(psd: PSDImage, preview: bool, added: bool) -> list:
+    """The image resources, with no preview the merged image flag off (save_psd strips it); added: an FX layer made,
+    ADDED_RESOURCES left out."""
+    out = []
+    for key, value in psd._record.image_resources.items():
+        if added and key in ADDED_RESOURCES:
+            continue
+        if key == Resource.VERSION_INFO and not preview:
+            value = deepcopy(value)
+            value.data.has_composite = False
+        out.append((key, psd_edit._raw(value)))
+    return out
+
+
 PIXEL_FIXES = {     # kind -> (finds(psd) -> [layer], fix(path, out_path, fonts) -> [layer name], the parse it makes or None)
     "badge widths": (icon_layers, relay_badges, None),   # first: straighten and old glyphs lay out at the current widths
     "apostrophes": (curly_layers, straighten, straight_parse),
@@ -2645,6 +2805,7 @@ PIXEL_FIXES = {     # kind -> (finds(psd) -> [layer], fix(path, out_path, fonts)
     "badges": (icon_layers, fit_badges, None),
     "overlay badges": (salt_layers, one_colour_badges, None),
     "tags": (tag_layers, tags_to_badges, None),
+    "status words": (status_word_layers, status_words, None),   # after the layout fixes: FX cut from the final text
     "alt template": (alt_bar_rows, alt_template, None),
     "normalise": (needs_normalise, normalise, None),     # last: linked pictures, normal text, no merged image (silent)
 }
@@ -2654,17 +2815,20 @@ PIXEL_LINES = {"badge widths": "badges laid out again at their new widths", "apo
                "old glyphs": "old icon font glyphs redrawn",
                "badges": "badges and icons fitted to their text",
                "overlay badges": "badges under an overlay in one colour", "tags": "timing tags and costs set as badges",
+               "status words": "status words in the chart's colours and effects",
                "alt template": "the template's stat bars, bar shapes, text layout and clip shapes",
                "normalise": "pictures linked, text set normal, no merged image"}
 
 
-def pixel_kinds(psd, kinds: tuple = (), rel: str = "") -> tuple:
+def pixel_kinds(psd, kinds: tuple = (), rel: str = "", chart: Optional[dict] = None) -> tuple:
     """The pixel fix kinds (all but SWEEP_ONLY by default) whose layers the PSD (open, or its bytes) has; rel: its repo
-    path (the link step judges its links from there)."""
+    path (the link step judges its links from there); chart: the status chart's fills (status words; none: no such
+    kind)."""
     try:
         psd = PSDImage.open(BytesIO(psd)) if isinstance(psd, bytes) else psd
         if rel:
             psd.repo_path = rel
+        psd.status_chart = chart
         default = tuple(kind for kind in PIXEL_FIXES if kind not in SWEEP_ONLY)
         return tuple(kind for kind in kinds or default if PIXEL_FIXES[kind][0](psd))
     except Exception:                           # unreadable: nothing to fix
@@ -2763,6 +2927,10 @@ __all__ = [
     'reflow',
     'run_fonts',
     'single_line',
+    'status_plan',
+    'status_texts',
+    'status_word_layers',
+    'status_words',
     'straighten',
     'title_problem',
     'to_normal',

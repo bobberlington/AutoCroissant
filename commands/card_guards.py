@@ -6,7 +6,8 @@ merged into the old PNG; Photoshop's stored composite only cross-checks, and a P
 standards (missing fonts are the font check's alone) and fixes only the 0-pixel classes; the Single-line Composer (R8) it
 always sets unsaid, box text that rewraps redrawn and its PNG re-exported: only the bot commit's message names it
 (owner, 2026-10-25); so are the pixel fixes (card_standards.PIXEL_FIXES, in order: badges laid out again at their new
-widths, straight apostrophes, old icon font glyphs, badges fitted, timing tags set as badges: R1 then untold),
+widths, straight apostrophes, old icon font glyphs, badges fitted, timing tags set as badges: R1 then untold, status
+words in the chart's colours and effects: no changelog event either, owner 11-07),
 the PNG re-exported the same way; badges drawn with another build of the icon font that the PSD keeps are told
 (owner 2026-11-04: OLD_FONT). One report per push: the job
 summary and commit comment (report.md), one Discord post for the standards channel (discord.json: no mentions, no
@@ -121,7 +122,7 @@ OLD_FONT = ("old stoogedings font: pull, reinstall MDW/Fonts/stoogedings.ttf, re
             "Type > Update All Text Layers, save and push")
 NORMALISE = "normalise"                         # the 11-07 pass's fix (card_standards): linked pictures, normal text, no
                                                 # merged image; the guards run it on every later push, silent (G1)
-QUIET_PIXELS = (NORMALISE,)                     # pixel fixes that make no guard-event (owner 11-07)
+QUIET_PIXELS = (NORMALISE, "status words")     # pixel fixes that make no guard-event (owner 11-07)
 CONVERT_ROOTS = ("MDW/Templates/", "MDW/Unfinished/")   # PSDs converted and nothing else (Q3)
 CONVERTS = ("now", "later", "off")              # check's --convert: in the check, in the normalise step (after Decided), never
 CONVERT_MINUTES = 20                            # no conversion starts past this; the rest stay as pushed (their next push)
@@ -851,7 +852,8 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
             result.notes.append((f"{basename(job.png)} could not be checked against the PSD ({measured.get('why')})", False))
     if job.case == "pair" and old is not None and job.base_png:
         _pair_pictures(source, job, result, old, new, out, shown, faces)
-    pixels = tuple(kind for kind in standards.pixel_kinds(new) if kind != NORMALISE) if job.case != "png-only" else ()
+    pixels = tuple(kind for kind in standards.pixel_kinds(new, chart=context.chart) if kind != NORMALISE) \
+        if job.case != "png-only" else ()
     if job.case != "png-only":                  # converted after the check (convert_plan), SWEEP_ONLY or not
         result.convert = list(standards.pixel_kinds(new, (NORMALISE,)))
     if job.case == "png-only":
@@ -865,6 +867,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
         fonts = partial(source.fonts_for)
         fonts.earlier = earlier                 # card_standards.relay_badges, redraw_old_glyphs
         fonts.cards = context.cards             # relay_badges' notes: a break inside a card's name
+        fonts.chart = context.chart             # status words
         fixed = standards.fix(new_bytes, job.psd, issues, join(out, "work"), parser, fonts, skip=(NORMALISE,))
         result.fixed, result.composer, result.composer_left = fixed.applied, fixed.composer, fixed.composer_left
         result.pixel_left = list(fixed.pixel_left)

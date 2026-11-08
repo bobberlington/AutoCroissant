@@ -85,6 +85,7 @@ def _init(clone: str, tree: dict, kind: str, work: str, chained: Optional[dict] 
     fonts = partial(source.fonts_for)
     fonts.earlier = earlier                     # card_standards.relay_badges, redraw_old_glyphs
     fonts.cards = context.cards                 # relay_badges' notes: a break inside a card's name
+    fonts.chart = context.chart                 # status words
     if kind == NORMALISE:                       # the other lanes' pieces (big pass), each optional until it lands
         fonts.catalogue = catalogue             # card_standards.normalise's link step (psd_links.link)
         if catalogue:
@@ -203,7 +204,7 @@ def sweep_card(job) -> dict:
     try:
         data = source.blob(job.psd_new)
         pushed = png_export.open_psd(data)
-        if not standards.pixel_kinds(pushed, (kind,)):
+        if not standards.pixel_kinds(pushed, (kind,), chart=_worker["context"].chart):
             return out
         fixed = standards.fix(data, job.psd, [], _worker["work"], _worker["parser"], _worker["fonts"], only=kind,
                               whole=_worker.get("whole", False))
