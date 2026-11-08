@@ -222,6 +222,21 @@ out([E.capsError(virus, virus, "spd", 6), E.capsError(virus, virus, "spd", 5), E
                    "The bake would refuse DEF 5: creature 2's DEF row has room for 4 pictures."]
 
 
+@needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "first = null"), reason="no template type spot in mockup.js")
+def test_first_type_at_the_template(tmp_path):
+    """A card with no type icon takes one new type at Creature_Template's spot, as plan_types does; two at once, a
+    token row or no spot: boxed."""
+    out = node(tmp_path, """
+const spot = m.TEMPLATES.tall.first.map((v, i) => Math.round(v * (i % 2 ? 2400 : 1200)));
+out([spot, m.typePlan(null, [], ["fire"], spot), m.typePlan(null, [], ["fire", "water"], spot).boxed,
+  m.typePlan({ tokens: true, refused: "tokens" }, [], ["fire"], spot).boxed, m.typePlan(null, [], ["fire"]).boxed]);""")
+    spot, one, *boxed = out
+    assert spot == [62, 27, 175, 183]   # template_icon on main's Creature_Template (11-08)
+    assert one == {"erase": [], "draw": [{"name": "fire", "core": spot}], "refused": None, "boxed": False}
+    assert boxed == [True, True, True]
+
+
 # ---- the build's web fonts (build_site.py)
 @pytest.fixture(scope="module")
 def bs():
