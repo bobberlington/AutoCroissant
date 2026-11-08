@@ -136,14 +136,14 @@ def test_to_check_and_file():
 
 
 def test_blobs_of_in_reading_order():
-    """The chart and manifest first, then each card's PSD, PNG and duplicates together, the templates last."""
+    """The chart, manifest and templates first, then each card's PSD, PNG and duplicates together."""
     paths = ["MDW/Templates/Creature_Template.psd", "A.psd", "A.png", "A2.png", "B.psd", "Types/Fire.png", "Types/Dark.png",
              cc.psd_edit.STATUS_CHART, cc.ICON_MANIFEST_PATH]
     tree = {path: ("", path) for path in paths}
     snapshot = SimpleNamespace(tree=tree, sha=lambda path: path, dup_pictures=lambda: {"A.psd": ["A2.png"]},
                                png_for=lambda rel: ("A.png" if rel == "A.psd" else "", []))
     assert cc.blobs_of(snapshot, ["A.psd", "B.psd"], {}) == [cc.psd_edit.STATUS_CHART, cc.ICON_MANIFEST_PATH,
-                                                            "A.psd", "A.png", "A2.png", "B.psd", "MDW/Templates/Creature_Template.psd"]
+                                                            "MDW/Templates/Creature_Template.psd", "A.psd", "A.png", "A2.png", "B.psd"]
 
 
 def test_workflow_checks_cards_as_their_blobs_land(tmp_path):
@@ -185,7 +185,7 @@ def test_workflow_checks_cards_as_their_blobs_land(tmp_path):
     temp, step = job(0, 2)
     assert step(head, ALL="false", N="3").stdout.split()[-1] == f"pending={temp / 'blobs.txt'}"
     assert not (temp / "blobs.txt.done").exists()
-    for all_, n in (("false", "201"), ("true", "3")):               # the whole fetch first, no list
+    for all_, n in (("false", "1001"), ("true", "3")):               # the whole fetch first, no list
         assert step(head, ALL=all_, N=n).stdout.split()[-1] == "pending=" and (temp / "blobs.txt.done").exists()
     done = step(steps["Fetched"])
     assert done.returncode == 0 and "3 of 3 blobs in the clone" in done.stdout, (done.stdout, done.stderr)

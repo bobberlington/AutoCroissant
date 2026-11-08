@@ -690,8 +690,9 @@ def _templates(rel: str, records: Optional[list]) -> set:
 
 
 def blobs_of(snapshot: Snapshot, rels: list, stats: dict) -> list:
-    """The blobs check_card reads (one fetch, no REST read a card), in the order it reads them: the chart, manifest and
-    type PNGs, then each card's PSD, PNG and duplicates, the templates it can open last (stats: stats.json's cards)."""
+    """The blobs check_card reads (one fetch, no REST read a card), shared first: the chart, manifest and the templates it
+    can open (a card read as it lands waits for none at the end), then each card's PSD, PNG and duplicates (stats:
+    stats.json's cards)."""
     if not rels:
         return []
     records: dict = {}
@@ -699,9 +700,9 @@ def blobs_of(snapshot: Snapshot, rels: list, stats: dict) -> list:
         records.setdefault(card.get("path"), []).append(card)
     templates = set().union(*(_templates(rel, records.get(rel)) for rel in rels))
     first = [path for path in snapshot.tree if path in (psd_edit.STATUS_CHART, ICON_MANIFEST_PATH)]
+    first += [path for path in snapshot.tree if path in templates]
     cards = [path for rel in rels for path in [rel, snapshot.png_for(rel)[0], *snapshot.dup_pictures().get(rel, [])] if path]
-    last = [path for path in snapshot.tree if path in templates]
-    return list(dict.fromkeys(snapshot.sha(path) for path in first + cards + last))
+    return list(dict.fromkeys(snapshot.sha(path) for path in first + cards))
 
 
 def refresh(checks: dict, snapshot: Snapshot, stats: dict, edits: CardEdits, links: Optional[dict] = None) -> None:
