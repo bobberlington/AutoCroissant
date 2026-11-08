@@ -1170,9 +1170,11 @@ def test_workflow_shape(clone):
     assert follow["env"]["TOLD_BEFORE"] == "${{ steps.told.outputs.told }}"
     # a re-run uploads again: the earlier attempt's artifact of the same name is replaced, not a 409
     uploads = [s for s in job["steps"] + post["steps"] + finish["steps"] if s.get("uses", "").startswith("actions/upload-artifact")]
-    assert len(uploads) == 4 and all(s["with"]["overwrite"] is True for s in uploads)
+    assert len(uploads) == 5 and all(s["with"]["overwrite"] is True for s in uploads)
     events = next(s for s in post["steps"] if s.get("with", {}).get("name") == "guard-events")      # Card sync reads it
     assert post["steps"].index(events) < post["steps"].index(follow) and events["if"] == "always() && steps.land.outputs.sha != ''"
+    records = next(s for s in post["steps"] if s.get("with", {}).get("name") == "guard-records")    # Card sync merges it
+    assert post["steps"].index(records) < post["steps"].index(follow) and records["with"]["path"].endswith("/records.json")
 
 
 FAKE_GH = r"""#!/usr/bin/env python3
