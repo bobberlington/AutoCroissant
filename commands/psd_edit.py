@@ -87,6 +87,7 @@ ICC_MIN_PX = 1000           # fewer moved pixels: no evidence, converted
 # them all in the text gamma, or all straight. Under "preview" the edited layers are pinned to the gamma
 # (text_kwargs()): the old preview does not show them
 TEXT_BLENDS = {"preview": {}, "gamma": {"text_preview": False}, "straight": {"text_gamma": None}}
+PNG_LEVEL = 6               # save_png's zlib level (PIL's default; a preview's PNG, never published: 1)
 SIZE_TOLERANCE = 0.2        # a saved PSD stays within 20% of the old blob
 SIZE_FLOOR = 262144         # or this many bytes: one icon on a small PSD (Poorly Drawn Cabbage)
 OK_FONTS = ("exact", "system")                  # how a font may resolve; loose or substituted faces refuse
@@ -10091,7 +10092,7 @@ def save_png(image: Image.Image, path: str, like: Image.Image) -> None:
     if like.info.get("chromaticity"):
         chunks.add(b"cHRM", b"".join(pack(">I", int(round(v * 100000))) for v in like.info["chromaticity"]))
     keep = {key: like.info[key] for key in ("icc_profile", "dpi") if like.info.get(key)}
-    image.save(path, "PNG", pnginfo=chunks, **keep)
+    image.save(path, "PNG", pnginfo=chunks, compress_level=PNG_LEVEL, **keep)
 
 
 # ========================

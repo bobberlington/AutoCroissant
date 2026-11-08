@@ -8,8 +8,9 @@ result on TTSCardMaker's orphan branch `previews` (card-preview.yml's second job
                                     [--request <id>] [--repo <owner/name>] [--head <sha>]
 
 It writes <out>/result.json always (a bad input, a refusal and a runner error too), and with an image preview.png (the
-PNG the bake would commit, recompressed losslessly where oxipng is installed), preview.webp (WEBP_WIDTH wide, the
-card view's width) and before.webp (the card's official PNG made the same way: the site's Diff compares like with like).
+pixels the bake would commit, saved at PNG_LEVEL and recompressed losslessly where oxipng is installed), preview.webp
+(WEBP_WIDTH wide, the card view's width) and before.webp (the card's official PNG made the same way, beside the bake:
+the site's Diff compares like with like). The bake is lean: no duplicate PNGs or artifact crops.
 The edit is the card's Card Edits.json entry as it would be published (any of its fields; the PSD-kind ones are baked,
 `_`-keys are ignored); result.json's `edit` is it exactly as sent, without
 the `_`-keys. Exit 0, 2 for a bad input, 1 for any other error (result.json's `transient`: try again). Every dispatched
@@ -18,12 +19,13 @@ No Discord or config imports; SPARSE_FILES is what card-preview.yml checks out: 
 requirements-cards.txt.
 """
 from argparse import ArgumentParser
+from concurrent.futures import ThreadPoolExecutor, wait
 from io import BytesIO
 from json import dumps, loads
 from os import environ, makedirs, remove, replace
 from os.path import abspath, basename, exists, expanduser, getsize, isfile, join
 from re import fullmatch
-from shutil import rmtree
+from shutil import move, rmtree
 from sys import argv, stderr
 from tempfile import mkdtemp
 from time import perf_counter
@@ -57,6 +59,7 @@ MAX_EDIT = 16384                                # bytes of edit JSON (an ability
 WEBP_WIDTH, WEBP_QUALITY = 720, 75              # the card view's width; WebP (the previews contract), the site's thumbs are AVIF
 RETRY = card_bake.TRANSIENT + ("blob",)         # try again: the bake's own, and a blob that failed its hash (a download's)
 RESULT_V = 2                                    # result.json's "v": 2 adds variant and parts (PARTS_EDITOR.md §5, I4)
+PNG_LEVEL = 1                                   # preview.png's zlib level: never published, the same pixels, a fast save
 
 
 # ========================
@@ -243,11 +246,28 @@ def _small(data: bytes, path: str) -> list:
     return list(small.size)
 
 
-def write_images(png_path: str, out: str, before: str = "") -> dict:
+def _before(snapshot: Snapshot, png_rel: str, path: str):
+    """before.webp at path from the official PNG's prefetched blob, in its own thread beside the bake: a Future of path,
+    or None when the blob is not prefetched."""
+    ahead = snapshot.ahead(png_rel) if png_rel else None
+    if ahead is None:
+        return None
+
+    def made() -> str:
+        _small(ahead.result(), path)
+        return path
+    one = ThreadPoolExecutor(1, thread_name_prefix="before")
+    future = one.submit(made)
+    one.shutdown(wait=False)
+    return future
+
+
+def write_images(png_path: str, out: str, before: str = "", early=None) -> dict:
     """
     preview.png (losslessly recompressed when that is smaller: png_export.recompress, the same pixels and chunks),
     preview.webp (WEBP_WIDTH wide at WEBP_QUALITY: the card view's width) and, from the official PNG `before`,
-    before.webp made the same way (the site's Diff: one codec on both sides, so unchanged pixels match).
+    before.webp made the same way (the site's Diff: one codec on both sides, so unchanged pixels match); `early` is
+    _before()'s, taken when it made one.
 
     Returns:
         result.json's files, size and webp_size
@@ -263,8 +283,15 @@ def write_images(png_path: str, out: str, before: str = "") -> dict:
     webp_size = _small(data, join(out, WEBP))
     sizes["webp"] = getsize(join(out, WEBP))
     if before and isfile(before):
-        with open(before, "rb") as fh:
-            _small(fh.read(), join(out, BEFORE))
+        try:
+            made = early.result() if early is not None else ""
+        except Exception:                       # noqa: BLE001 - made here instead
+            made = ""
+        if made:
+            move(made, join(out, BEFORE))
+        else:
+            with open(before, "rb") as fh:
+                _small(fh.read(), join(out, BEFORE))
         files["before"], sizes["before"] = BEFORE, getsize(join(out, BEFORE))
     return {"files": files, "size": size, "webp_size": webp_size, "bytes": sizes, "recompressed": smaller is not None}
 
@@ -296,6 +323,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
     result = blank(request, card)
     result.update(v=RESULT_V, variant=None, parts={})
     work = mkdtemp(prefix="card-preview_", dir=environ.get(card_bake.WORK_ENV) or None)
+    early, level = None, psd_edit.PNG_LEVEL
     try:
         if not REQUEST.fullmatch(request or ""):
             raise BadInput("the request must be 8-64 of A-Z a-z 0-9 -")
@@ -312,6 +340,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
             png_rel = next((p for p in snapshot.png_for(one.rel)[1] if picture_of(snapshot, CardAuthors.key(card_name(p)))
                             == (one.rel, one.view)), png_rel)
             result["variant"] = one.view
+        early = _before(snapshot, png_rel, join(work, BEFORE))
         result.update(card=card_name(png_rel) if one.view is not None and png_rel else one.name, path=one.rel, png=png_rel)
         result["base"].update(psd_blob=one.psd_sha, png_blob=snapshot.sha(png_rel) if png_rel else "")
         fonts = card_bake._fonts_dir(snapshot)  # the bake's: PSD_TOOLS_FONT_DIRS, else the checkout's MDW/Fonts
@@ -329,7 +358,8 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
                     snapshot.fetch(snapshot.sha(psd_edit.STATUS_CHART), path)
                     colors.append(psd_edit.status_fills(PSDImage.open(path)))
             return colors[0]
-        card_bake.bake_card(snapshot, one, parser, fonts, chart, work)
+        psd_edit.PNG_LEVEL = PNG_LEVEL
+        card_bake.bake_card(snapshot, one, parser, fonts, chart, work, lean=True)    # what only a commit uses: skipped
         state, transient, reason, outcomes = outcome(one)
         result.update(state=state, transient=transient, reason=reason, fields=outcomes, notes=notes_of(one))
         if one.traceback:
@@ -345,9 +375,9 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
         rendered = join(folder, "new", basename(shown)) if shown else ""
         official = join(folder, "old", basename(shown)) if shown else ""    # bake_card's fetch of the card's PNG
         if state == "baked" and (one.baked is not None or isfile(official)):    # a move alone: the card as it is
-            result.update(image="baked", **write_images(one.baked.png_path if one.baked else official, out, official))
+            result.update(image="baked", **write_images(one.baked.png_path if one.baked else official, out, official, early))
         elif state == "refused" and rendered and isfile(rendered):    # a gate after the save: what the render got
-            result.update(image="refused", **write_images(rendered, out, official))
+            result.update(image="refused", **write_images(rendered, out, official, early))
     except BadInput as error:
         result.update(state="error", transient=False, reason=f"input: {error}")
     except Transient as error:
@@ -358,6 +388,9 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
         result.update(state="error", transient=isinstance(error, (RequestException, ImportError, OSError)),
                       reason=f"error: {type(error).__name__}: {error}", traceback=format_exc().strip().splitlines()[-1])
     finally:
+        psd_edit.PNG_LEVEL = level
+        if early is not None:
+            wait([early])
         rmtree(work, ignore_errors=True)
     result["took_s"] = round(perf_counter() - started, 1)
     result["at"] = stamp()

@@ -489,6 +489,7 @@ timer; before, the environment `card-sync-quiet`'s wait timer held it 30 minutes
 | `MAX_EDIT` | 16384 bytes | the edit's JSON; past it: an input error |
 | `WEBP_WIDTH`, `WEBP_QUALITY` | 720, 75 | preview.webp: the card view's width (the site's own thumbs are AVIF since 2026-10-24) |
 | `RETRY` | card_bake's `TRANSIENT` + `blob` | refusal codes reported as `error`, `transient` (try again) |
+| `PNG_LEVEL` | 1 | preview.png's zlib level, set on `psd_edit.PNG_LEVEL` (6, the commit's) for the bake: never published, same pixels |
 
 ### commands/card_preview_branch.py (2026-10-23; not compiled; standard library only; the publish job of card-preview.yml)
 

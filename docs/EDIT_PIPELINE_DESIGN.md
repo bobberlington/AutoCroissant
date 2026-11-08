@@ -1232,9 +1232,10 @@ separators as escapes, one line each. result.json, the index row and the commit 
 clipped to `MAX_CARD` (200). The repo is public, so a preview is too: the dispatch's inputs in the Actions tab, the
 result on the branch; the site says so before an editor's first press.
 
-**Output** (`--out`; the publish job then publishes it): `result.json` always, `preview.png` (the PNG the bake would
-commit, losslessly recompressed by `png_export.recompress` where oxipng is installed; the workflow leaves
-the oxipng CLI out (~4 s a preview for nothing) and does not publish the PNG, `--png` publishes it)
+**Output** (`--out`; the publish job then publishes it): `result.json` always, `preview.png` (the pixels the bake would
+commit, saved at zlib level 1 (`card_preview.PNG_LEVEL`) and losslessly recompressed by `png_export.recompress` where
+oxipng is installed; the workflow leaves the oxipng CLI out (~4 s a preview for nothing) and does not publish the PNG,
+`--png` publishes it; the preview's bake skips the duplicate PNGs and artifact crops only a commit uses)
 and `preview.webp` (720 px wide, WebP quality 75, method 4) when an image was rendered, with `before.webp`: the card's
 official PNG made the same way, for the site's Diff (one codec on both sides, so unchanged pixels match; the site's
 thumbs are AVIF since 2026-10-24).

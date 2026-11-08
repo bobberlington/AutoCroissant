@@ -122,13 +122,20 @@ def _preview(cards, tmp_path, edit, card="Mini Doomer", request=REQUEST, name="o
 # The preview
 # ========================
 @fork
-def test_a_stat_edit_bakes_the_bakes_pixels(cards, tmp_path):
+def test_a_stat_edit_bakes_the_bakes_pixels(cards, tmp_path, monkeypatch):
     """hp 5 -> 8: baked, the PNG the bake's dry run makes (the same pixels), recompressed losslessly, a 720 px WebP; the
-    base is the commit and the blobs it read; the card repo is untouched and nothing is left in the runner's temp."""
+    base is the commit and the blobs it read; the card repo is untouched and nothing is left in the runner's temp. The
+    preview skips what only a commit uses (duplicates, artifact crops) and makes before.webp beside the bake."""
     from PIL import Image
+    seen = []
+    monkeypatch.setattr(cb, "_follow_dups", lambda *a, _f=cb._follow_dups: seen.append("dups") or _f(*a))
+    monkeypatch.setattr(pe, "artifacts", lambda *a, _f=pe.artifacts: seen.append("crops") or _f(*a))
+    monkeypatch.setattr(cp, "_small", lambda data, path, _f=cp._small: seen.append(path) or _f(data, path))
     before = _state(cards.repo)
     code, result, out = _preview(cards, tmp_path, {"hp": 8, "note": "checked", "_by": "web"})
     assert code == 0 and _state(cards.repo) == before
+    made = {Path(p).name: Path(p).parent for p in seen}                     # _small's alone: no duplicates or crops
+    assert len(seen) == 2 and made[cp.WEBP] == out and made[cp.BEFORE].parent == tmp_path / "runner" and pe.PNG_LEVEL == 6
     assert list((tmp_path / "runner").iterdir()) == []                         # the work dir is removed
     assert (result["state"], result["reason"], result["fields"], result["transient"]) == ("baked", "hp 5 -> 8", {"hp": "baked"}, False)
     assert result["request"] == REQUEST and result["card"] == "Mini Doomer" and result["path"] == DOOMER and result["png"] == DOOMER_PNG
@@ -149,7 +156,7 @@ def test_a_stat_edit_bakes_the_bakes_pixels(cards, tmp_path):
     (cards.repo / cb.EDITS_PATH).write_bytes(cb.dump_edits({"cards": {"Mini Doomer": {"hp": 8}}}).encode())
     _commit(cards.repo, "Website edit: Mini Doomer")
     report = cb.run_report(dry_run=True, card="Mini Doomer", local=str(cards.repo))
-    assert [c.name for c in report.cards if c.baked] == ["Mini Doomer"]
+    assert [c.name for c in report.cards if c.baked] == ["Mini Doomer"] and {"dups", "crops"} <= set(seen)
     bake = Image.open(report.cards[0].baked.png_path)
     ours = Image.open(out / cp.PNG)
     assert ours.mode == bake.mode and ours.tobytes() == bake.tobytes()
