@@ -1191,7 +1191,9 @@ contract below (also in TTSCardMaker `site/NOTES.md` section 19 and the ttscardm
 `request`; one concurrency group per request) has two jobs. The **preview** job (`contents: read`, 11 minutes) runs
 AutoCroissant `commands/card_preview.py` (uncompiled; import closure `card_preview.SPARSE_FILES`, which its bot checkout
 lists; card-edits.yml's pip install, fork pin and all) and hands result.json, preview.webp and before.webp over as an artifact (one
-day; the full-size PNG ends with the runner). The **publish** job (`contents: write`, 3 minutes; it runs when the
+day; the full-size PNG ends with the runner). Its Reads step first starts `commands/card_preview_reads.py` in the background (the runner's
+python3, stdlib only): the data's render and spot records, and the card's manifest, PSD, PNG and status chart into the
+checkout's object store, while the setup runs; Preview waits for it (20 s at most, then reads what it lacks itself). The **publish** job (`contents: write`, 3 minutes; it runs when the
 preview failed or timed out too, not for a bad request) runs `commands/card_preview_branch.py` with the runner's own
 python3: the standard library and git only (import closure `card_preview_branch.SPARSE_FILES`), no setup-python or pip.
 

@@ -5,9 +5,9 @@ written; a blobless clone for the REST blob path), and its publication on the pr
 for GitHub, through a blobless depth-1 clone (the Action's checkout): a baked stat edit (the same pixels as card_bake's
 dry run), a refused edit (with and without a render), a redundant edit, a stars edit refused beside a baked stat, the
 creatures and duplicate gates, bad inputs, dispatched values kept off the runner's command lines, a runner error and a
-bad blob; one commit per publish, a re-run, the rewrites by age and count, a moved head and a moved lease, a warm read, the publisher
+bad blob, the early reads; one commit per publish, a re-run, the rewrites by age and count, a moved head and a moved lease, a warm read, the publisher
 on the standard library alone. Then card-preview.yml: its shape, no trigger elsewhere on the branch, the Action-shaped
-copies of both SPARSE_FILES, and its two jobs' Validate, Preview, hand-over and Publish steps run as the runner would
+copies of both SPARSE_FILES, and its two jobs' Validate, Reads, Preview, hand-over and Publish steps run as the runner would
 (bash) against those repos, a failed install too. The workflows come from $AC_SITE_SRC (a TTSCardMaker checkout) or the
 clone; a real bake needs the fork's renderer:
     AUTOCROISSANT_LOCAL_DIR=~/Desktop/TTSCardMaker AC_SITE_SRC=<TTSCardMaker checkout> <fork python> -m pytest -q tests/test_card_preview.py
@@ -28,6 +28,7 @@ pytest.importorskip("requests", reason="card_bake imports requests (absent from 
 import commands.card_bake as cb  # noqa: E402
 import commands.card_preview as cp  # noqa: E402
 import commands.card_preview_branch as br  # noqa: E402
+import commands.card_preview_reads as early  # noqa: E402
 import commands.github_api as github_api  # noqa: E402
 import commands.psd_edit as pe  # noqa: E402
 from conftest import CLONE, REPO, blob_sha_bytes as _sha, fork_reason, text_engine as _text_engine  # noqa: E402
@@ -240,6 +241,40 @@ def test_the_rest_blob_path(cards, tmp_path, monkeypatch):
         assert result["reason"].startswith(f"blob: blob {_sha(cards.files[path])[:8]} hashes to "), result["reason"]
 
 
+def test_the_early_reads_are_the_previews(cards, tmp_path, monkeypatch):
+    """card_preview_reads (card-preview.yml's Reads step: the standard library alone) takes what the preview reads first
+    (a key, a PSD path in another case, a numbered picture's parts, an MDW PSD, an unknown card) and writes the blobs into
+    a blobless clone, where the bake reads them; a record it cannot read is left out."""
+    assert (early.EXCLUDE_FOLDERS, early.STATUS_CHART, early.RECORDS) == (cb.EXCLUDE_FOLDERS, pe.STATUS_CHART, (pe.RENDER_RECORD, pe.SPOT_RECORD))
+    assert run_process([executable, "-S", "-m", "commands.card_preview_reads", "--help"], cwd=str(REPO), capture_output=True).returncode == 0
+    snapshot = cb.local_snapshot(cb.CARD_REPO, str(cards.repo))
+    snapshot.tree[pe.STATUS_CHART] = ("100644", "0" * 40)                         # read for an ability or parts edit
+    tree = {path: sha for path, (_, sha) in snapshot.tree.items()}
+    for card, fields in (("Mini Doomer", {"hp": 8}), (DOOMER.upper(), {"ability": "x"}), ("Mini Doomer", {"ability": None, "hp": 8}),
+                         ("A Snack2", {"parts": {"1": {}}}), (MDW_DOOMER, {"hp": 8}), ("Nobody", {"hp": 8})):
+        try:
+            want = [p for p in cp.blobs_of(snapshot, cp.resolve(snapshot, card, fields)) if p in tree]
+        except cp.BadInput:
+            want = []
+        assert early.paths_of(tree, card, fields) == want, card
+    blobless = tmp_path / "blobless"
+    _git(tmp_path, "clone", "-q", "--no-checkout", "--filter=blob:none", f"file://{cards.repo}", str(blobless))
+
+    def get(url):
+        if "/contents/db/" in url:
+            if pe.SPOT_RECORD in url:
+                raise OSError("down")
+            return b'{"x": {}}'
+        return run_process(["git", "-C", str(cards.repo), "cat-file", "blob", url.rsplit("/", 1)[1]], capture_output=True, check=True).stdout
+    monkeypatch.setattr(early, "_get", get)
+    done = early.reads("Mini Doomer", {"hp": 8}, str(blobless), cb.CARD_REPO, cards.head, str(tmp_path / "records"))
+    assert sorted(done) == sorted([cb.ICON_MANIFEST_PATH, DOOMER, DOOMER_PNG, f"db/{pe.RENDER_RECORD}", f"db/{pe.SPOT_RECORD}"])
+    assert [done[p][1] for p in (cb.ICON_MANIFEST_PATH, DOOMER, DOOMER_PNG)] == ["ok"] * 3 and done[f"db/{pe.SPOT_RECORD}"][1] == "OSError: down"
+    assert sorted(p.name for p in (tmp_path / "records").iterdir()) == [pe.RENDER_RECORD]
+    for path in (cb.ICON_MANIFEST_PATH, DOOMER, DOOMER_PNG):
+        assert cb._local_blob(str(blobless), _sha(cards.files[path])) == cards.files[path]
+
+
 # ========================
 # The previews branch
 # ========================
@@ -435,7 +470,10 @@ def test_workflow_shape():
     assert set(re.findall(r"secrets\.(\w+)", text)) == {"GITHUB_TOKEN"} and "secrets" not in str(publish)
     assert "discord" not in text.lower().replace("no discord", "")
     names = [s.get("name") for s in preview["steps"]]
-    assert names.index("Validate") < names.index("Preview") < names.index("Hand over") == len(names) - 1
+    assert names.index("Validate") < names.index("Reads") < names.index("Preview") < names.index("Hand over") == len(names) - 1
+    reads = step(preview, "Reads")["run"]                                         # in the background; Preview waits for it
+    assert reads.lstrip().startswith("{ python3 -S -m commands.card_preview_reads ") and reads.rstrip().endswith("&")
+    assert "reads.done" in reads and "reads.done" in step(preview, "Preview")["run"]
     hand = step(preview, "Hand over")
     assert hand["if"] == "${{ !cancelled() && steps.validate.outcome == 'success' }}" and hand["uses"].startswith("actions/upload-artifact@")
     assert hand["with"]["path"].strip().splitlines() == ["${{ runner.temp }}/preview/" + f for f in (br.RESULT, br.WEBP, br.BEFORE)]   # not the PNG
@@ -511,7 +549,7 @@ def _run_jobs(text: str, inputs: dict, workspaces: dict, bots: dict, tmp_path: P
 
     runner = tmp_path / name / "preview"
     runner.mkdir(parents=True)
-    for step_name in ("Validate", "Preview"):
+    for step_name in ("Validate", "Reads", "Preview"):
         skipped = any(codes.values())
         codes[step_name] = None if skipped else run_step("preview", steps["preview"][step_name], runner)
     hand = steps["preview"]["Hand over"]
@@ -554,7 +592,7 @@ def test_the_jobs_steps_run_here(cards, remote, clone, tmp_path):
     main = _git(remote.bare, "rev-parse", "main").strip()
 
     codes = _run_jobs(text, {"card": "Mini Doomer", "edit": '{"hp": 8}', "request": REQUEST}, workspaces, bots, tmp_path, "run1")
-    assert codes == {"Validate": 0, "Preview": 0, "Take over": 0, "Publish": 0}
+    assert codes == {"Validate": 0, "Reads": 0, "Preview": 0, "Take over": 0, "Publish": 0}
     files = _branch(remote.bare)
     result = json.loads(files[f"previews/{REQUEST}/{br.RESULT}"])
     assert (result["state"], result["reason"], result["base"]["commit"]) == ("baked", "hp 5 -> 8", main)
@@ -566,7 +604,7 @@ def test_the_jobs_steps_run_here(cards, remote, clone, tmp_path):
 
     before = _git(remote.bare, "rev-parse", "previews").strip()
     codes = _run_jobs(text, {"card": "Mini Doomer", "edit": '{"hp": 8}', "request": "x; rm -rf /"}, workspaces, bots, tmp_path, "run4")
-    assert codes == {"Validate": 1, "Preview": None}
+    assert codes == {"Validate": 1, "Reads": None, "Preview": None}
     assert _git(remote.bare, "rev-parse", "previews").strip() == before and _git(remote.bare, "rev-parse", "main").strip() == main
     assert sorted(_index(remote.bare)) == [REQUEST]
 
