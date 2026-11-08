@@ -2177,6 +2177,33 @@ def test_new_text_past_its_design_is_told(clone, parser, chart):
 
 
 @text_edit
+def test_ink_checks_look_at_the_text_alone(clone, parser, chart, monkeypatch):
+    """11-08: ink_beyond and inks_over build their masks on _ink_box, not the whole canvas: every verdict and px count
+    as the whole canvas's (Deep Focus' lines past its old text, then pushed past each edge of the canvas)."""
+    real, box, seen = pe.ink_beyond, pe._ink_box, []
+
+    def both(psd, layer, before, halos=None, title=False):
+        got = real(psd, layer, before, halos, title)
+        monkeypatch.setattr(pe, "_ink_box", lambda psd, layer, before, pad=0: (0, 0, psd.width, psd.height))
+        assert got == real(psd, layer, before, halos, title)
+        monkeypatch.setattr(pe, "_ink_box", box)
+        seen.append(got)
+        return got
+    monkeypatch.setattr(pe, "ink_beyond", both)
+    rel = "Items/Equip/3 Stars/Deep_Focus.psd"
+    psd = PSDImage.open(_card(clone, rel)[0])
+    layer = pe.ability_layer(psd)
+    before = pe._on_canvas(layer, (psd.height, psd.width))
+    old = pe.normalize_ability(pe.parse_card(parser, _card(clone, rel)[0], rel)["card"]["ability"])
+    pe.set_text_layer(psd, "ability", old + " Gain 1 HP and draw a card." * 6, str(clone / pe.FONTS_DIR), chart, parser=parser)
+    for dx, dy in ((0, psd.height + 40 - layer.bbox[3]), (-30 - layer.bbox[0], 0), (psd.width + 30 - layer.bbox[2], -30 - layer.bbox[1])):
+        pe.nudge(layer, dx, dy)
+        for blank in (False, True):
+            both(psd, layer, np.zeros_like(before) if blank else before, title=blank)
+    assert len(seen) >= 7 and all(search(r"\(\d+ px", got) for got in seen)
+
+
+@text_edit
 def test_an_ability_off_the_card_moves_up(clone, parser, chart, tmp_path):
     """11-08: an added line no size fits (fit_below) ran off the card's bottom, unseen (46 cards). The Ability moves up
     until its last line ends where the old one did, TySh and raster together, through every gate."""

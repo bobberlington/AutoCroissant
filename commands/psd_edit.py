@@ -4947,6 +4947,22 @@ def covered_ink(psd: PSDImage, layer, before: np.ndarray, skip: list, halos: Opt
     return None
 
 
+def _ink_box(psd: PSDImage, layer, before: np.ndarray, pad: int = 0) -> Optional[tuple]:
+    """
+    The canvas box (x0, y0, x1, y1) holding all of the layer's pixels and before's ink past INK_ALPHA, padded by pad
+    and clipped to the canvas; None when both are blank. The ink checks' masks are 0 past it: they look only there.
+    """
+    boxes = [clip(tuple(layer.bbox), psd.width, psd.height)]
+    alpha = before[..., 3]
+    rows = np.flatnonzero(alpha.max(axis=1) > INK_ALPHA * 255)
+    if len(rows):
+        y0, y1 = int(rows[0]), int(rows[len(rows) - 1]) + 1
+        cols = np.flatnonzero(alpha[y0:y1].max(axis=0) > INK_ALPHA * 255)
+        boxes.append((int(cols[0]), y0, int(cols[len(cols) - 1]) + 1, y1))
+    box = union_box([b for b in boxes if b[2] > b[0] and b[3] > b[1]])
+    return None if box is None else _pad(box, pad, psd)
+
+
 def inks_over(psd: PSDImage, layer, before: np.ndarray, halos: Optional[tuple] = None) -> Optional[str]:
     """
     What a title's new ink would print over: a visible layer drawn below it (earlier in paint order; no group, no
@@ -4964,16 +4980,19 @@ def inks_over(psd: PSDImage, layer, before: np.ndarray, halos: Optional[tuple] =
     Returns:
         Why, or None
     """
-    shape = (psd.height, psd.width)
-    after = _on_canvas(layer, shape)
-    ink = (after[..., 3] > INK_ALPHA * 255) & (after != before).any(axis=2)
-    was = before[..., 3] > INK_ALPHA * 255
+    win = (0, 0, psd.width, psd.height) if halos is not None else _ink_box(psd, layer, before)
+    if win is None:
+        return None
+    ox, oy, wx, wy = win
+    after, near = _on_canvas(layer, (psd.height, psd.width), win), before[oy:wy, ox:wx]
+    ink = (after[..., 3] > INK_ALPHA * 255) & (after != near).any(axis=2)
+    was = near[..., 3] > INK_ALPHA * 255
     if halos is not None:
         ink |= _changed_ink(*halos)
     if not ink.any():
         return None
     ys, xs = (ink | was).nonzero()
-    box = (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
+    box = (int(xs.min()) + ox, int(ys.min()) + oy, int(xs.max()) + 1 + ox, int(ys.max()) + 1 + oy)
     order = list(psd.descendants())
     below = order[:next(i for i, other in enumerate(order) if other._record is layer._record)]
     for other in below:
@@ -4981,14 +5000,14 @@ def inks_over(psd: PSDImage, layer, before: np.ndarray, halos: Optional[tuple] =
             continue
         reach = _pad(tuple(other.bbox), fx_pad(other), psd)
         x0, y0, x1, y1 = max(reach[0], box[0]), max(reach[1], box[1]), min(reach[2], box[2]), min(reach[3], box[3])
-        if x1 <= x0 or y1 <= y0 or not ink[y0:y1, x0:x1].any():
+        if x1 <= x0 or y1 <= y0 or not ink[y0 - oy:y1 - oy, x0 - ox:x1 - ox].any():
             continue
         alone = other.composite(viewport=(x0, y0, x1, y1), apply_icc=False)
         if alone is None:
             continue
         drawn = np.asarray(alone.convert("RGBA"))[..., 3] > INK_ALPHA * 255
-        over = int((ink[y0:y1, x0:x1] & drawn).sum())
-        if over and not (was[y0:y1, x0:x1] & drawn).any():
+        over = int((ink[y0 - oy:y1 - oy, x0 - ox:x1 - ox] & drawn).sum())
+        if over and not (was[y0 - oy:y1 - oy, x0 - ox:x1 - ox] & drawn).any():
             return f"it would print over {other.name!r} below it ({over} px)"
     return None
 
@@ -5052,21 +5071,25 @@ def ink_beyond(psd: PSDImage, layer, before: np.ndarray, halos: Optional[tuple] 
         Why, or None
     """
     pad, levels, margin, least = BEYOND
-    shape = (psd.height, psd.width)
-    after = _on_canvas(layer, shape)
-    was = before[..., 3] > INK_ALPHA * 255
-    ink = (after[..., 3] > INK_ALPHA * 255) & (after != before).any(axis=2)
+    win = _ink_box(psd, layer, before, pad)
+    if win is None:
+        return inks_over(psd, layer, before, halos) if title else None
+    ox, oy, wx, wy = win
+    after, near = _on_canvas(layer, (psd.height, psd.width), win), before[oy:wy, ox:wx]
+    was = near[..., 3] > INK_ALPHA * 255
+    ink = (after[..., 3] > INK_ALPHA * 255) & (after != near).any(axis=2)
     if not was.any() or not ink.any():
         return inks_over(psd, layer, before, halos) if title else None
     ys, xs = was.nonzero()
-    old = (max(int(xs.min()) - pad, 0), max(int(ys.min()) - pad, 0), int(xs.max()) + 1 + pad, int(ys.max()) + 1 + pad)
+    old = (max(int(xs.min()) + ox - pad, 0), max(int(ys.min()) + oy - pad, 0), int(xs.max()) + ox + 1 + pad,
+           int(ys.max()) + oy + 1 + pad)
     fresh = ink.copy()
-    fresh[old[1]:old[3], old[0]:old[2]] = False
+    fresh[old[1] - oy:old[3] - oy, old[0] - ox:old[2] - ox] = False
     if not fresh.any():
         return inks_over(psd, layer, before, halos)
     ys, xs = fresh.nonzero()
-    x0, y0 = min(old[0], int(xs.min())), min(old[1], int(ys.min()))
-    x1, y1 = min(max(old[2], int(xs.max()) + 1), psd.width), min(max(old[3], int(ys.max()) + 1), psd.height)
+    x0, y0 = min(old[0], int(xs.min()) + ox), min(old[1], int(ys.min()) + oy)
+    x1, y1 = min(max(old[2], int(xs.max()) + 1 + ox), psd.width), min(max(old[3], int(ys.max()) + 1 + oy), psd.height)
     order = list(psd.descendants())
     below = {id(other._record) for other in order[:next(i for i, other in enumerate(order) if other._record is layer._record)]}
     backdrop = _flat(psd.composite(viewport=(x0, y0, x1, y1), ignore_preview=True, apply_icc=False,
@@ -5076,7 +5099,7 @@ def ink_beyond(psd: PSDImage, layer, before: np.ndarray, halos: Optional[tuple] 
     under = luma[old[1] - y0:old[3] - y0, old[0] - x0:old[2] - x0]
     median = float(np.median(under))
     bar = max(levels, float(np.percentile(np.abs(under - median), 95)) + margin)
-    detail = fresh[y0:y1, x0:x1] & (np.abs(luma - median) > bar)
+    detail = fresh[y0 - oy:y1 - oy, x0 - ox:x1 - ox] & (np.abs(luma - median) > bar)
     count = int(detail.sum())
     if count < least:
         return inks_over(psd, layer, before, halos)
@@ -10033,14 +10056,15 @@ def _set_layers(psd: PSDImage, edit: Edit) -> list:
     return [(part, ids[layer_id], copy) for layer_id, part, copy in edit.parts]
 
 
-def _on_canvas(layer, shape: tuple) -> np.ndarray:
-    """The layer's stored RGBA (8-bit values) on a canvas of shape (H, W)."""
-    out = np.zeros((*shape, 4), np.uint8)
-    x0, y0, x1, y1 = clip(layer.bbox, shape[1], shape[0])
+def _on_canvas(layer, shape: tuple, box: Optional[tuple] = None) -> np.ndarray:
+    """The layer's stored RGBA (8-bit values) on a canvas of shape (H, W), or on its box (x0, y0, x1, y1) alone."""
+    ox, oy, wx, wy = box or (0, 0, shape[1], shape[0])
+    out = np.zeros((wy - oy, wx - ox, 4), np.uint8)
+    x0, y0, x1, y1 = clip_to(tuple(layer.bbox), (ox, oy, wx, wy)) or (0, 0, 0, 0)
     if x1 > x0 and y1 > y0:
         lx, ly = layer.bbox[:2]
         rgba = np.concatenate([layer.numpy("color"), layer.numpy("shape")], axis=2)[y0 - ly:y1 - ly, x0 - lx:x1 - lx]
-        out[y0:y1, x0:x1] = np.rint(rgba * 255)
+        out[y0 - oy:y1 - oy, x0 - ox:x1 - ox] = np.rint(rgba * 255)
     return out
 
 
