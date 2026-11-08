@@ -282,3 +282,17 @@ def test_normalise_links_through_its_link_step(clone, tmp_path):
     by_blob.update({pl.git_blob(data): data for data in done.files.values()})
     again = cs.normalise(str(out), str(tmp_path / "again.psd"), SimpleNamespace(links=LinkContext(tree, catalogue, by_blob.get)), rel)
     assert list(again) == [] and not (tmp_path / "again.psd").exists()
+
+
+def test_tree_at_non_ascii_paths(tmp_path):
+    """_tree_at reads paths git would quote (Cyrillic, an em dash) as they are."""
+    repo = tmp_path / "cards"
+    git = lambda *a: subprocess.run(["git", "-C", str(repo), *a], check=True, capture_output=True, text=True).stdout
+    (repo / "MDW/Linked").mkdir(parents=True)
+    git("init", "-q")
+    names = ["MDW/Linked/A - Игры.jpg", "MDW/Linked/B - —Pngtree—.png", "MDW/Linked/plain.png"]
+    for name in names:
+        (repo / name).write_bytes(name.encode())
+    git("add", "-A")
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base")
+    assert sorted(pl._tree_at(str(repo), "HEAD")) == sorted(names)

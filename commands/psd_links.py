@@ -1293,10 +1293,10 @@ def fetch_blobs(clone: str, blobs: list) -> None:
 
 def _tree_at(clone: str, head: str) -> dict:
     """{repo path: blob} at head (trees only: nothing fetched)."""
-    listing = run_process(["git", "-C", clone, "ls-tree", "-r", head], capture_output=True, text=True, check=True,
-                          env={**environ, "GIT_NO_LAZY_FETCH": "1"})
+    listing = run_process(["git", "-C", clone, "ls-tree", "-r", "-z", head], capture_output=True, text=True, check=True,
+                          env={**environ, "GIT_NO_LAZY_FETCH": "1"})    # -z: non-ASCII paths unquoted
     tree = {}
-    for line in listing.stdout.splitlines():
+    for line in listing.stdout.split("\0"):
         meta, _, path = line.partition("\t")
         parts = meta.split()
         if len(parts) == 3 and parts[1] == "blob":
