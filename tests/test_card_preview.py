@@ -452,12 +452,14 @@ def test_publish_on_a_warm_read(remote, tmp_path, monkeypatch):
 # ========================
 # card-preview.yml
 # ========================
-def _workflow() -> tuple:
+def _workflow(reads: bool = True) -> tuple:
     path = WORKFLOWS / "card-preview.yml"
     if not path.is_file():
         pytest.skip(f"no {path} (set AC_SITE_SRC to a TTSCardMaker checkout with it)")
     yaml = pytest.importorskip("yaml")
     text = path.read_text(encoding="utf-8")
+    if reads and "card_preview_reads" not in text:      # main's until the card repo's push lands
+        pytest.skip(f"{path} has no Reads step yet")
     return text, yaml.safe_load(text)
 
 
@@ -534,7 +536,7 @@ def test_workflow_shape():
 def test_no_workflow_runs_on_the_previews_branch():
     """Every push trigger in the card repo is main's alone, none fires on a branch's creation or deletion, and none
     follows another workflow's run or checks."""
-    _workflow()
+    _workflow(reads=False)
     yaml = pytest.importorskip("yaml")
     for path in sorted(WORKFLOWS.glob("*.yml")):
         on = yaml.safe_load(path.read_text(encoding="utf-8"))[True]
