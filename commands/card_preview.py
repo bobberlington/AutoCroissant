@@ -23,11 +23,11 @@ from concurrent.futures import ThreadPoolExecutor, wait
 from importlib import import_module
 from io import BytesIO
 from json import dumps, loads
-from os import environ, makedirs, pathsep, remove, replace
+from os import _exit, environ, makedirs, pathsep, remove, replace
 from os.path import abspath, basename, exists, expanduser, getsize, isfile, join
 from re import fullmatch
 from shutil import move, rmtree
-from sys import argv, stderr
+from sys import argv, stderr, stdout
 from tempfile import mkdtemp
 from time import perf_counter, sleep
 from traceback import format_exc
@@ -514,7 +514,10 @@ def main(args: Optional[list] = None) -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    code = main()
+    stdout.flush()
+    stderr.flush()
+    _exit(code)                                 # no teardown of the bake's objects: the hand-over waits on the exit
 
 
 # ========================
