@@ -8796,6 +8796,12 @@ def gate_size(old_path: str, new_path: str) -> None:
         raise Refused("size", f"PSD {old} -> {new} bytes")
 
 
+def _fx_bytes(key, block) -> bytes:
+    """A block's bytes, an effects block's at version 0: save_psd's repair is no change to the gates."""
+    raw = block.tobytes()
+    return raw[:12] + bytes(4) + raw[16:] if key in EFFECT_BLOCKS[:3] and len(raw) >= 16 else raw
+
+
 def layer_records(path) -> list:
     """
     Each layer record's identity-free fingerprint: name, flags, rect, channels (id, length, pixel digest), mask, blend
@@ -8818,7 +8824,8 @@ def layer_records(path) -> list:
                                       for channel, part in zip_longest(record.channel_info, data)),
                     "mask": mask.tobytes() if mask is not None else b"",
                     "blend": (record.blend_mode, record.opacity, record.clipping),
-                    "blocks": tuple((bytes(key), block.tobytes()) for key, block in (record.tagged_blocks or {}).items()),
+                    "blocks": tuple((bytes(key), _fx_bytes(key, block))
+                                    for key, block in (record.tagged_blocks or {}).items()),
                     **(_mask_parts(mask) if mask is not None else {})})
     return out
 
@@ -9929,9 +9936,34 @@ def changed_part(old: PSDImage, new: PSDImage, parts: tuple = ("header", "color_
     return None
 
 
+def _fx_version(data) -> int:
+    """An effects block's version, parsed or kept as raw bytes."""
+    if isinstance(data, (bytes, bytearray)):
+        return unpack(">I", data[:4])[0] if len(data) >= 4 else 0
+    return getattr(data, "version", 0)
+
+
+def unreadable_effects(psd: PSDImage) -> list:
+    """Layers whose effects block (lfx2, lmfx, lfxs) is not at Photoshop's version 0: Photoshop 2023 cannot read their
+    effects ("Problems were encountered reading layers"; psd-tools' set_data wrote 1, 2026-11-08)."""
+    return [layer for layer in psd.descendants()
+            if any(_fx_version(layer.tagged_blocks[key].data) for key in EFFECT_BLOCKS[:3]
+                   if key in layer.tagged_blocks)]
+
+
 def save_psd(psd: PSDImage, path) -> None:
     """Write the PSD with no merged image (Maximize Compatibility off, owner 2026-11-07): strip(), then saved without a
-    regenerated preview."""
+    regenerated preview. Effects blocks are written at Photoshop's version (unreadable_effects; layer_records ignores
+    the repair)."""
+    for layer in unreadable_effects(psd):
+        for key in EFFECT_BLOCKS[:3]:
+            block = layer.tagged_blocks[key] if key in layer.tagged_blocks else None
+            if block is None or not _fx_version(block.data):
+                continue
+            if isinstance(block.data, (bytes, bytearray)):
+                block.data = bytes(4) + bytes(block.data[4:])
+            else:
+                block.data.version = 0
     strip(psd)
     psd.save(path, update_preview=False)
 

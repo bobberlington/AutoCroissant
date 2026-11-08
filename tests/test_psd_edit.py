@@ -1879,6 +1879,18 @@ def test_a_glow_disc_on_a_stat_bar_is_flagged(clone, parser, chart, monkeypatch)
 MIASMA = "Auxiliary/Minions/Miasma.psd"   # its merged image a third of the file
 
 
+def test_save_psd_writes_effects_photoshop_reads(clone, tmp_path):
+    """An effects block at version 1 (psd-tools' set_data, 11-08): Photoshop 2023 cannot read it; save_psd writes 0."""
+    psd = PSDImage.open(_card(clone, GASOLINE)[0])
+    layer = next(one for one in psd.descendants() if Tag.OBJECT_BASED_EFFECTS_LAYER_INFO in one.tagged_blocks)
+    layer.tagged_blocks[Tag.OBJECT_BASED_EFFECTS_LAYER_INFO].data.version = 1
+    assert pe.unreadable_effects(psd) == [layer]
+    old = pe.layer_records(psd)
+    pe.save_psd(psd, str(tmp_path / "fx.psd"))
+    assert pe.unreadable_effects(PSDImage.open(tmp_path / "fx.psd")) == []
+    pe.gate_bytes(old, str(tmp_path / "fx.psd"), [])          # the repair is no change to the gates
+
+
 def test_a_first_strip_passes_the_size_gate(clone, tmp_path):
     """A2: a card's first strip may shrink it past SIZE_TOLERANCE (its old merged image left out of both); a save cut
     short by as much still refuses."""

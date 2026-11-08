@@ -98,6 +98,7 @@ DUP_NOTE = "{name} is drawn apart from this PSD: when the card changes, export i
 LINK_MISSING = "Links {name}, which is not in the repo: push that file."
 LINK_ALIKE = "Links {name}, which looks the same as {kept}: link {kept} instead."
 LINK_STUCK = "{layer} links {name}, changed since: Card sync could not draw it again ({why}); update it in Photoshop."
+FX_NOTE = "Photoshop 2023 cannot read the effects of {layers} and drops them on opening: set them again in Photoshop."
 CUSTOM_NOTES = {"icons": "Its stat bars are separate icons with gaps, not the template's cells.",
                 "pictures": "Its stat bars are pictures, not the template's cells.",
                 "shape": "Its stat bars have their own shape, not the template's cells.",
@@ -559,6 +560,9 @@ def check_card(ctx: Context, rel: str) -> dict:
     wrong = swapped(psd) if style else []
     if wrong:
         notes.append(SWAP_NOTE.format(" and ".join(STAT_NAMES[stat] for stat in wrong)))
+    unread = list(dict.fromkeys(layer.name.strip() for layer in psd_edit.unreadable_effects(psd)))
+    if unread:
+        notes.append(FX_NOTE.format(layers=", ".join(unread)))
     reads = read_picture(psd, image) if style and image is not None and len(variants_of(psd)) < 2 else {}
     notes += edit_notes(ctx, rel, psd, parsed, style, image)
     for path in snapshot.dup_pictures().get(rel, []) if image is not None else ():   # nothing redraws these (owner 11-07)
