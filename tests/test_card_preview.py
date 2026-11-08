@@ -5,10 +5,10 @@ written; a blobless clone for the REST blob path), and its publication on the pr
 for GitHub, through a blobless depth-1 clone (the Action's checkout): a baked stat edit (the same pixels as card_bake's
 dry run), a refused edit (with and without a render), a redundant edit, a stars edit refused beside a baked stat, the
 creatures and duplicate gates, bad inputs, dispatched values kept off the runner's command lines, a runner error and a
-bad blob, the early reads; one commit per publish, a re-run, the rewrites by age and count, a moved head and a moved lease, a warm read, the publisher
+bad blob, the early reads, fonts and records that come after the wait; one commit per publish, a re-run, the rewrites by age and count, a moved head and a moved lease, a warm read, the publisher
 on the standard library alone. Then card-preview.yml: its shape, no trigger elsewhere on the branch, the Action-shaped
-copies of both SPARSE_FILES, and its two jobs' Validate, Reads, Preview, hand-over and Publish steps run as the runner would
-(bash) against those repos, a failed install too. The workflows come from $AC_SITE_SRC (a TTSCardMaker checkout) or the
+copies of both SPARSE_FILES, and its two jobs' Validate, Reads, Start, Go, Preview, hand-over and Publish steps run as the
+runner would (bash) against those repos, a failed install too. The workflows come from $AC_SITE_SRC (a TTSCardMaker checkout) or the
 clone; a real bake needs the fork's renderer:
     AUTOCROISSANT_LOCAL_DIR=~/Desktop/TTSCardMaker AC_SITE_SRC=<TTSCardMaker checkout> <fork python> -m pytest -q tests/test_card_preview.py
 """
@@ -16,6 +16,7 @@ import json
 import re
 import shutil
 from datetime import datetime, timedelta, timezone
+from functools import lru_cache
 from os import environ
 from os.path import expanduser
 from pathlib import Path
@@ -275,6 +276,39 @@ def test_the_early_reads_are_the_previews(cards, tmp_path, monkeypatch):
         assert cb._local_blob(str(blobless), _sha(cards.files[path])) == cards.files[path]
 
 
+@fork
+def test_fonts_and_records_after_the_wait(cards, clone, tmp_path, monkeypatch):
+    """card-preview.yml starts the preview while the fonts restore and the reads run: nothing before ready()'s wait
+    (WAIT_ENV's file) reads the fonts or the records, so ones that appear only then give the same preview (a name edit:
+    drawn in MDW/Fonts alone, as on the runner)."""
+    from psd_tools.composite.text import fonts as engine_fonts
+    monkeypatch.setattr(engine_fonts, "platform_font_dirs", lambda: [])     # MDW/Fonts alone, as on the runner
+    _, now, out = _preview(cards, tmp_path, {"name": "Maxi Doomer"}, name="now")
+    late, record = tmp_path / "late", {"Elsewhere/A_Card.psd": {}}
+    monkeypatch.setenv(cb.FONT_DIRS_ENV, str(late / "fonts"))
+    monkeypatch.setenv(pe.RECORDS_DIR, str(late / "records"))
+    monkeypatch.setenv(cp.WAIT_ENV, str(late / "go"))
+    monkeypatch.setattr(pe, "_RECORDS", {})
+    monkeypatch.setattr(pe, "_record_names", lru_cache(maxsize=2)(pe._record_names.__wrapped__))
+    waits = []
+
+    def arrive(seconds):                        # the setup ends: the records and fonts, then the go file
+        if not waits:
+            assert pe._RECORDS == {}
+            (late / "records").mkdir(parents=True)
+            (late / "records" / pe.RENDER_RECORD).write_text(json.dumps(record))
+            (late / "fonts").symlink_to(clone / pe.FONTS_DIR)
+            (late / "go").touch()
+        waits.append(seconds)
+    monkeypatch.setattr(cp, "sleep", arrive)
+    code, result, late_out = _preview(cards, tmp_path, {"name": "Maxi Doomer"}, name="late")
+    assert code == 0 and waits and pe._RECORDS[pe.RENDER_RECORD] == record and result["runner"]["fonts"] is True
+    same = ("state", "reason", "fields", "notes", "changes", "parity", "region", "image", "files", "size")
+    assert {k: result.get(k) for k in same} == {k: now.get(k) for k in same} and now["state"] == "baked"
+    for name in (cp.PNG, cp.WEBP, cp.BEFORE):
+        assert (late_out / name).read_bytes() == (out / name).read_bytes(), name
+
+
 # ========================
 # The previews branch
 # ========================
@@ -433,8 +467,9 @@ def test_workflow_shape():
     requirements-cards.txt, but not pyoxipng, and its cache entry) hands its out dir to the publish job (contents: write,
     actions: read; card_preview_branch.SPARSE_FILES; Python 3.14 without site-packages, no pip; no --png), which starts
     beside it and waits for the hand-over (Take over and Publish only then), 15 minutes at most;
-    no secret but GITHUB_TOKEN (the Preview step's REST reads), no Discord, and no input expanded inside a shell script
-    (only in env)."""
+    no secret but GITHUB_TOKEN (the preview's REST reads), no Discord, and no input expanded inside a shell script
+    (only in env). The preview starts in the background before the fonts restore (Start, bounded by timeout) and waits
+    for Go's file (after the font steps and the reads); Preview joins it: its summary and exit code."""
     text, doc = _workflow()
     on = doc[True]
     assert list(on) == ["workflow_dispatch"]
@@ -470,10 +505,17 @@ def test_workflow_shape():
     assert set(re.findall(r"secrets\.(\w+)", text)) == {"GITHUB_TOKEN"} and "secrets" not in str(publish)
     assert "discord" not in text.lower().replace("no discord", "")
     names = [s.get("name") for s in preview["steps"]]
-    assert names.index("Validate") < names.index("Reads") < names.index("Preview") < names.index("Hand over") == len(names) - 1
-    reads = step(preview, "Reads")["run"]                                         # in the background; Preview waits for it
+    assert names.index("Validate") < names.index("Reads") < names.index("Start") < names.index("Go") < names.index("Preview") < names.index("Hand over") == len(names) - 1
+    fonts = [i for i, s in enumerate(preview["steps"]) if "MDW/Fonts" in str(s.get("run", "")) + str(s.get("with", ""))]
+    assert names.index("Start") < min(fonts) and max(fonts) < names.index("Go")      # the preview starts before the fonts
+    reads = step(preview, "Reads")["run"]                                         # in the background; Go waits for it
     assert reads.lstrip().startswith("{ python3 -S -m commands.card_preview_reads ") and reads.rstrip().endswith("&")
-    assert "reads.done" in reads and "reads.done" in step(preview, "Preview")["run"]
+    go = step(preview, "Go")
+    assert "reads.done" in reads and "reads.done" in go["run"] and go["run"].rstrip().endswith('touch "$RUNNER_TEMP/go"')
+    start, shown = step(preview, "Start"), step(preview, "Preview")
+    assert "CARD_PREVIEW_WAIT=$RUNNER_TEMP/go" in start["run"] and cp.WAIT_ENV == "CARD_PREVIEW_WAIT"
+    assert "timeout 480 python -m commands.card_preview " in start["run"] and start["run"].rstrip().endswith("&")
+    assert "preview.code" in start["run"] and "preview.code" in shown["run"] and 'tee -a "$GITHUB_STEP_SUMMARY"' in shown["run"]
     hand = step(preview, "Hand over")
     assert hand["if"] == "${{ !cancelled() && steps.validate.outcome == 'success' }}" and hand["uses"].startswith("actions/upload-artifact@")
     assert hand["with"]["path"].strip().splitlines() == ["${{ runner.temp }}/preview/" + f for f in (br.RESULT, br.WEBP, br.BEFORE)]   # not the PNG
@@ -483,9 +525,8 @@ def test_workflow_shape():
     assert take["with"] == {"name": hand["with"]["name"], "path": "${{ runner.temp }}/preview"}
     run = step(publish, "Publish")["run"]
     assert run.startswith("python -S -m commands.card_preview_branch ") and "--png" not in run and '"$RUNNER_TEMP/preview"' in run
-    shown = step(preview, "Preview")
-    assert shown["env"]["CARD"] == "${{ inputs.card }}" and '--card="$CARD"' in shown["run"] and '"$RUNNER_TEMP/preview"' in shown["run"]
-    assert shown["env"]["PSD_TOOLS_FONT_DIRS"] == "${{ github.workspace }}/MDW/Fonts"
+    assert start["env"]["CARD"] == "${{ inputs.card }}" and '--card="$CARD"' in start["run"] and '"$RUNNER_TEMP/preview"' in start["run"]
+    assert start["env"]["PSD_TOOLS_FONT_DIRS"] == "${{ github.workspace }}/MDW/Fonts"
     font_cache = next(s for s in preview["steps"] if s.get("id") == "font-cache")
     assert font_cache["with"]["key"] == "card-fonts-${{ steps.fonts.outputs.sha }}"      # card-sync.yml's cache
 
@@ -517,7 +558,7 @@ def _expand(value: str, inputs: dict, workspace: Path) -> str:
 def _run_jobs(text: str, inputs: dict, workspaces: dict, bots: dict, tmp_path: Path, name: str) -> dict:
     """
     The workflow's two jobs as the runner runs them (bash -e -o pipefail; each job its own workspace, RUNNER_TEMP, env and
-    outputs). The preview job: Validate, then Preview, then the
+    outputs). The preview job: Validate, Reads, Start, Go (the fonts already in) and Preview, then the
     hand-over when its `if` holds (a copy of its listed files that exist, as upload-artifact with if-no-files-found:
     ignore). The publish
     job when the preview job's `ok` output is "true": the take-over (the copy back; continue-on-error) and Publish (its
@@ -549,7 +590,7 @@ def _run_jobs(text: str, inputs: dict, workspaces: dict, bots: dict, tmp_path: P
 
     runner = tmp_path / name / "preview"
     runner.mkdir(parents=True)
-    for step_name in ("Validate", "Reads", "Preview"):
+    for step_name in ("Validate", "Reads", "Start", "Go", "Preview"):
         skipped = any(codes.values())
         codes[step_name] = None if skipped else run_step("preview", steps["preview"][step_name], runner)
     hand = steps["preview"]["Hand over"]
@@ -592,7 +633,7 @@ def test_the_jobs_steps_run_here(cards, remote, clone, tmp_path):
     main = _git(remote.bare, "rev-parse", "main").strip()
 
     codes = _run_jobs(text, {"card": "Mini Doomer", "edit": '{"hp": 8}', "request": REQUEST}, workspaces, bots, tmp_path, "run1")
-    assert codes == {"Validate": 0, "Reads": 0, "Preview": 0, "Take over": 0, "Publish": 0}
+    assert codes == {"Validate": 0, "Reads": 0, "Start": 0, "Go": 0, "Preview": 0, "Take over": 0, "Publish": 0}
     files = _branch(remote.bare)
     result = json.loads(files[f"previews/{REQUEST}/{br.RESULT}"])
     assert (result["state"], result["reason"], result["base"]["commit"]) == ("baked", "hp 5 -> 8", main)
@@ -604,7 +645,7 @@ def test_the_jobs_steps_run_here(cards, remote, clone, tmp_path):
 
     before = _git(remote.bare, "rev-parse", "previews").strip()
     codes = _run_jobs(text, {"card": "Mini Doomer", "edit": '{"hp": 8}', "request": "x; rm -rf /"}, workspaces, bots, tmp_path, "run4")
-    assert codes == {"Validate": 1, "Reads": None, "Preview": None}
+    assert codes == {"Validate": 1, "Reads": None, "Start": None, "Go": None, "Preview": None}
     assert _git(remote.bare, "rev-parse", "previews").strip() == before and _git(remote.bare, "rev-parse", "main").strip() == main
     assert sorted(_index(remote.bare)) == [REQUEST]
 
