@@ -5576,6 +5576,25 @@ def color_layers(psd: PSDImage, field: str, card: str) -> list:
     return PSDParser.ability_parts(texts)[0]
 
 
+def _painted_over(layer) -> Optional[str]:
+    """What hides a text layer's own colours, its own or a group's: an opaque Normal Color, Gradient or Pattern Overlay
+    ("its Gradient Overlay"), or a fill at 0; None when they show."""
+    from psd_tools.api.effects import ColorOverlay, GradientOverlay, PatternOverlay
+    kinds = {ColorOverlay: "Color Overlay", GradientOverlay: "Gradient Overlay", PatternOverlay: "Pattern Overlay"}
+    node = layer
+    while node is not None and getattr(node, "kind", "psdimage") != "psdimage":
+        whose = "its" if node is layer else f"its group {node.name!r}'s"
+        if node is layer and getattr(node, "fill_opacity", 255) == 0:
+            return f"{whose} fill at 0%"
+        effects = node.effects
+        for effect in effects if effects.enabled else ():
+            kind = next((name for cls, name in kinds.items() if isinstance(effect, cls)), None)
+            if kind and effect.enabled and float(effect.opacity) >= 100 and effect.blend_mode == BlendMode.NORMAL:
+                return f"{whose} {kind}"
+        node = node.parent
+    return None
+
+
 def color_spans(layers: list, one: dict) -> tuple:
     """
     Where a colour paints: ([(layer, start, end)], why not). A phrase matches as the effect layers' (phrase_ranges: any
@@ -5655,6 +5674,9 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
         if not why and not mine:
             why = (f"{phrase!r} is only badges or icons, which keep their own colours" if phrase
                    else "only badges, icons or effect layers' words, which keep their own colours")
+        over = {_painted_over(layer) for layer, _ in mine}
+        if not why and None not in over:        # nothing would show on the card image
+            why = f"{sorted(over)[0]} paints over the {what}'s colours: recolour it in Photoshop"
         if why:
             out[k] = why
             continue
