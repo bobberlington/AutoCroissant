@@ -5360,8 +5360,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
             lo, hi = _word_bounds(text, start, end)     # a deletion widens only into a word it cut (Gasoline's kept "If"
             start = start if cut and not LETTER.match(cut[0]) else lo           # after a deleted line took its colour)
             end = end if cut and not LETTER.match(cut[-1]) else hi
-            spans = status_spans(text, chart, drawn)
-            words = [span for span in spans if text[span[0]].isupper()]     # status_word_spans: lowercase is prose
+            words = status_word_spans(text, chart, drawn)
             styled = [span for span in words if span[2].styled]
             plans = plan_fx(layer, old_fx, chart)
             kept = kept_chars(old_text, text)
@@ -5686,9 +5685,9 @@ def _painted(layer, a: int, b: int, fx: list, kept=frozenset()) -> list:
 
 
 def status_letters(text: str, chart: Optional[dict], icons=()) -> set:
-    """The str indices of the text's capitalised chart status words (status_spans): they keep the chart's colour, as the
-    guards set them (owner 2026-11-07; card_standards.status_plan's rule on work/statuswords, mirrored)."""
-    return {i for a, b, _ in status_spans(text, chart or {}, list(icons)) if text[a].isupper() for i in range(a, b)}
+    """The str indices of the text's capitalised chart status words (status_word_spans): they keep the chart's colour,
+    as the guards set them (owner 2026-11-07)."""
+    return {i for a, b, _ in status_word_spans(text, chart or {}, list(icons)) for i in range(a, b)}
 
 
 def _status_kept(layer, field: str, chart: Optional[dict]) -> set:
