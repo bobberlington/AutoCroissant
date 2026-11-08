@@ -23,11 +23,12 @@ import pytest
 from PIL import Image, ImageDraw
 
 import commands.card_guards as cg
+import commands.font_check as fc
 import commands.git_commit as gc
 import commands.png_export as pe
 from commands.github_api import blob_sha
 from conftest import CLONE
-from helpers import art, card, fixture_psd, photoshop_png
+from helpers import art, build_font, card, fixture_psd, photoshop_png, sharing
 
 
 # ========================
@@ -555,6 +556,27 @@ def test_unused_and_duplicate_linked_files_go_in_one_silent_commit(cards, tmp_pa
     names = _git(root, "ls-tree", "-r", "--name-only", report["sha"]).splitlines()
     assert "MDW/Linked/kept.png" in names and "MDW/Linked/dup.png" not in names and "MDW/Linked/old.png" not in names
     assert "2 linked files deleted" in _git(root, "log", "-1", "--format=%s", report["sha"])
+
+
+def test_a_font_sharing_table_data_lands_with_its_own_copies(cards, tmp_path):
+    """A font pushed to MDW/Fonts whose tables share data (Photoshop 2023 sets no type in it) lands with every table its
+    own copy, silent: no card, Discord, comment or changelog event. A sound font and one in a subfolder stay as pushed."""
+    root, base, alice, bot = cards
+    raw = Path(build_font(str(tmp_path / "f.ttf"), "Shared-Regular", "Shared", "Regular")).read_bytes()
+    bad, fixed = sharing(raw, b"Xtra", b"glyf"), fc.split_tables(sharing(raw, b"Xtra", b"glyf"))
+    (root / "MDW/Fonts/sub").mkdir(parents=True)
+    for rel, data in {"MDW/Fonts/Shared.ttf": bad, "MDW/Fonts/Sound.ttf": raw, "MDW/Fonts/sub/Deep.ttf": bad}.items():
+        (root / rel).write_bytes(data)
+    head = _commit(root, "fonts", author="Alice")
+    out = tmp_path / "out"
+    data = cg.check(str(root), head, bot, author="alice", mode="on", out=str(out), workers=1)
+    assert [(w["path"], w["kind"], w["sha"]) for w in data["fonts"]["writes"]] == [("MDW/Fonts/Shared.ttf", "font", blob_sha(fixed))]
+    assert data["cards"] == [] and data["summary"]["writes"] == 1 and data["summary"]["comment"] == 0 and data["discord"] == {}
+    report = cg.land(str(out / "plan.json"), local=str(root))
+    assert report["sha"] and report["landed"] == [] and report["events"] == []
+    assert _git(root, "rev-parse", f"{report['sha']}:MDW/Fonts/Shared.ttf") == blob_sha(fixed)
+    assert _git(root, "log", "-1", "--format=%s", report["sha"]) == f"Card guards: 1 font repaired (push {head[:8]})"
+    assert cg.check(str(root), report["sha"], head, mode="on", out=str(tmp_path / "again"), workers=1)["fonts"]["writes"] == []
 
 
 # ========================

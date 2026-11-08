@@ -27,7 +27,8 @@ MDW/Unfinished PSD with an embedded picture, sub or superscript text, a merged i
 by card_standards' normalise fix (G1; `normalise`, after the check's Decided, or in the check with --convert now), a
 renamed PSD whose folder depth changed has its links repaired (G4); MDW/Linked files no PSD links are deleted (G2,
 db/links.json on the data branch), a pushed one with another's bytes merged into it (G3), a link to a deleted one put
-back (G4); one landing (git past GIT_LAND files).
+back (G4); one landing (git past GIT_LAND files). A font pushed to MDW/Fonts whose tables share data (Photoshop 2023
+sets no type in it) lands with every table its own copy, the same bytes (font_check.split_tables; silent).
 
 A landed commit's changelog events (guard-png: a PNG re-made or recompressed; guard-fix: a fix the guards landed; the
 Single-line Composer none) go to guard-events.json beside the plan, which card-guards.yml uploads and Card sync's data
@@ -68,7 +69,7 @@ import commands.psd_edit as psd_edit
 from commands.card_bake import PREFETCH_WORKERS, Snapshot, fetch_verified, local_snapshot, snapshot_at
 from commands.card_check import vocabulary
 from commands.card_edits import CardAuthors, dup_pictures
-from commands.font_check import face_names, is_card_psd, tree_fonts
+from commands.font_check import face_names, is_card_psd, shared_tables, split_tables, tree_fonts
 from commands.git_commit import (AUTHOR, COMMIT_TRIES, NO_LAZY, Transient, api, commit_files, git, git_commit, local_commit,
                                  plural, ref_head, token)
 from commands.github_api import blob_sha, token_from_env
@@ -1345,6 +1346,32 @@ def housekeeping(data: dict, source: Source, tree: dict, out: str, index: Option
     return entry
 
 
+def font_fixes(source: Source, pushed: list, author: str, head: str, out: str) -> dict:
+    """
+    plan.json's "fonts" entry, silent: each font the push added or changed ([Change]) at the top of MDW/Fonts whose
+    tables share data (font_check.shared_tables) given its own copies (split_tables), resting on the pushed blob. One
+    not read or not split stays as pushed.
+    """
+    entry = {"card": "", "psd": "", "case": "fonts", "login": author, "commit": head, "writes": [], "expect": {},
+             "notes": [], "told": []}
+    for change in pushed:
+        if not tree_fonts({change.path: change.new}):
+            continue
+        try:
+            raw = source.blob(change.new)
+            shared = shared_tables(raw)
+            fixed = split_tables(raw) if shared else None
+        except Exception:                       # unread: as pushed
+            print(format_exc(), file=stderr)
+            continue
+        if fixed and not shared_tables(fixed):
+            entry["expect"][change.path] = change.new
+            entry["writes"].append({"path": change.path, "kind": "font", "file": _save(out, change.path, fixed),
+                                    "sha": blob_sha(fixed), "silent": True,
+                                    "line": "tables given their own data (" + ", ".join("/".join(p) for p in shared) + ")"})
+    return entry
+
+
 def convert_plan(data: dict, source: Source, out: str, minutes: float = CONVERT_MINUTES, workers: int = 0,
                  deadline: float = 0.0) -> dict:
     """
@@ -1475,7 +1502,7 @@ def _unsaid(data: dict, landed: dict) -> dict:
     if not silent:
         return landed
     included = landed.get("included")
-    cards = (list(dict.fromkeys(card for card, path in included if (card, path) not in silent)) if included is not None
+    cards = (list(dict.fromkeys(card for card, path in included if card and (card, path) not in silent)) if included is not None
              else landed.get("landed", []))
     return {**landed, "landed": cards, "dropped": [d for d in landed.get("dropped", []) if (d[0], d[2]) not in silent],
             "already": [a for a in landed.get("already", []) if tuple(a) not in silent]}
@@ -1737,7 +1764,9 @@ def check(clone: str, after: str, before: str = "", repository: str = "", author
             results = [run_job(source, job, context, parser, out, mode, earlier) for job in jobs]
         data = plan(results, repository, base, head, mode)
         follow_dups(data, source, out)
-        data["pushed_paths"] = [] if whole_tree else [c.path for c in source.diff(base, head) if c.status in "AM"]
+        pushed = [] if whole_tree else [c for c in source.diff(base, head) if c.status in "AM"]
+        data["pushed_paths"] = [c.path for c in pushed]
+        data["fonts"] = font_fixes(source, [] if cards else [c for c in pushed if c.path not in skipped], author, head, out)
         if whole_tree or convert == "off":
             for entry in data["cards"]:
                 entry["convert"] = []
@@ -1802,7 +1831,8 @@ def summary(data: dict, errors: list) -> dict:
     pending = sum(1 for c in cards if c.get("convert") and "converted" not in c)    # --convert later: the normalise step's
     return {"after": data["after"], "cards": len(cards), "told": sum(1 for c in cards if c["told"]),
             "comment": sum(1 for c in cards if _for_comment(c)),
-            "writes": sum(len(c["writes"]) for c in cards) + len((data.get("linked") or {}).get("writes", [])) + pending,
+            "writes": sum(len(c["writes"]) for c in cards) + pending
+            + sum(len((data.get(key) or {}).get("writes", [])) for key in ("linked", "fonts")),
             "normalise": pending, "errors": len(errors), "card_errors": sum(1 for c in cards if c["error"])}
 
 
@@ -1824,6 +1854,7 @@ def message(landed: list, after: str) -> str:
     smaller = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "recompress")
     added = len({w["path"] for entry in landed for w in entry["writes"] if w["kind"] == "file"})    # users share one
     deleted = len({w["path"] for entry in landed for w in entry["writes"] if w["kind"] == "delete"})
+    fonts = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "font")
     pixels = [kind for entry in landed for w in entry["writes"] if w["kind"] == "psd" for kind in w.get("pixels", ())]
     silent = [f"{standards.PIXEL_LINES.get(kind, kind)} on {plural(pixels.count(kind), 'card')}"
               for kind in dict.fromkeys(pixels)]          # the pixel fixes: said here alone, as the composer
@@ -1833,7 +1864,8 @@ def message(landed: list, after: str) -> str:
                                          *silent,
                                          plural(smaller, "PNG") + " recompressed" if smaller else "",
                                          plural(added, "linked file") + " added" if added else "",
-                                         plural(deleted, "linked file") + " deleted" if deleted else "") if part)
+                                         plural(deleted, "linked file") + " deleted" if deleted else "",
+                                         plural(fonts, "font") + " repaired" if fonts else "") if part)
     lines = [f"{w['path']}: {w['line']} ({entry['login']}, {(entry['commit'] or after)[:8]})"
              for entry in landed for w in entry["writes"]]
     trailers = sorted(f"{RECOMPRESSED}: {w['path']}" for entry in landed for w in entry["writes"] if w["kind"] == "recompress")
@@ -1847,7 +1879,7 @@ def _rests_on(entry: dict, write: dict) -> list:
     recompressions rest on them)."""
     if write["kind"] == "psd":
         return [write["path"]]
-    if write["kind"] in ("file", "delete"):     # a linked file with the card whose conversion makes or frees it
+    if write["kind"] in ("file", "delete", "font"):     # a linked file with the card whose conversion makes or frees it; a font
         return [write["path"]] + ([entry["psd"]] if entry.get("psd") else [])
     pushed = set(entry.get("pushed", ()))
     return [write["path"]] if write["kind"] == "recompress" else sorted(p for p in entry["expect"] if p not in pushed)
@@ -2006,7 +2038,7 @@ def events_of(entry: dict, write: dict, drawn: list) -> list:
     (owner, 2026-10-25). drawn: the card's writes as they landed (_drawn: a redraw's plain has no pixel fix).
     """
     base = {"card": entry["card"], "path": write["path"]}
-    if write["kind"] in ("file", "delete") or write.get("dup"):     # the linked files, the duplicates: silent
+    if write["kind"] in ("file", "delete", "font") or write.get("dup"):     # linked files, fonts, duplicates: silent
         return []
     if write["kind"] == "recompress":
         return [{"kind": "guard-png", **base, "line": "recompressed losslessly"}]
@@ -2041,7 +2073,8 @@ def land(plan_path: str, repository: str = "", dry_run: bool = False, local: str
     with open(plan_path, encoding="utf-8") as fh:
         data = load(fh)
     repository = repository or data.get("repo") or ("" if local else CARD_REPO)
-    entries = [entry for entry in data["cards"] + [data.get("linked") or {}] if entry.get("writes")]   # + G2-G4's
+    entries = [entry for entry in data["cards"] + [data.get("linked") or {}, data.get("fonts") or {}]
+               if entry.get("writes")]  # + G2-G4's, the fonts'
     report = {"sha": "", "landed": [], "included": [], "dropped": [], "already": [], "error": "", "told": {}, "after": {},
               "dry": dry_run, "unread": False, "events": []}
     if not entries and not any(entry.get("told") for entry in data["cards"]):

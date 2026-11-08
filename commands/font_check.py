@@ -13,6 +13,7 @@ psd_details.json instead (card_sync.fonts_text, details_report here).
     markdown(report), discord_payload(report) -> the job summary / commit comment and the webhook body
     local_fonts() -> the fonts dir: PSD_TOOLS_FONT_DIRS, else the checkout's MDW/Fonts
     save_names(dir, path), load_names(path) -> a fonts dir's index as a small JSON file (NAMES_ENV)
+    shared_tables(data), split_tables(data) -> a font's records on the same bytes, the font with each its own copy
 
 A notification tool, never a gate: findings exit 0, nothing is reverted or rejected. --repo mode reads the PSDs the push
 changed (before..after through the compare API, or --clone's diff-tree when GitHub can't list them; --whole-tree: every
@@ -29,6 +30,7 @@ from json import dump, load as json_load
 from os import cpu_count, environ, pathsep, walk
 from os.path import basename, expanduser, isdir, join, relpath, splitext
 from re import sub
+from struct import error as StructError, pack_into, unpack_from
 from subprocess import run
 from typing import Optional
 
@@ -58,6 +60,7 @@ COMMITS_PAGE = 250                          # the compare API lists at most this
 POOL_MIN = 8                                # --all parses this many PSDs or more in a process pool (half the cores)
 POOL_CHUNK = 4                              # PSDs per pool task
 NAMES_ENV = "CARD_FONT_NAMES"               # a save_names() file: the details' index without the fonts (card-sync's data job)
+SFNT_SUM = 0xB1B0AFBA                       # what head.checkSumAdjustment makes a whole font file sum to
 
 
 # ========================
@@ -112,6 +115,69 @@ class FontIndex:
     def supplies(self, name: str) -> bool:
         """A face has exactly this PostScript name."""
         return name in self.names
+
+
+# ========================
+# Tables sharing data
+# ========================
+def _directory(data: bytes, at: int = 0) -> list:
+    """(tag, checksum, offset, length) of each table record of the face whose offset table is at at."""
+    return [unpack_from(">4sIII", data, at + 12 + 16 * i) for i in range(unpack_from(">H", data, at + 4)[0])]
+
+
+def shared_tables(data: bytes) -> list:
+    """
+    The tag pairs of one face whose records point at the very same bytes (a .ttc's faces each alone: tables shared
+    across faces are the format's), sorted; [] for a file that is not a font. Photoshop 2023 sets no type in such a font
+    (EarthboundZero's bdat and bloc on EBDT's and EBLC's, TC ce778210): split_tables cures it. A record over part of
+    another's bytes (Goudy-Bold's glyf, too long) is no such case: Photoshop sets it, and draws its split copy 3 pixels
+    differently.
+    """
+    try:
+        faces = unpack_from(f">{unpack_from('>I', data, 8)[0]}I", data, 12) if data[:4] == b"ttcf" else (0,)
+        found = set()
+        for at in faces:
+            seen: dict = {}
+            for tag, _, offset, length in _directory(data, at):
+                if length and (offset, length) in seen:
+                    found.add(tuple(sorted((seen[offset, length], tag.decode("latin-1")))))
+                seen.setdefault((offset, length), tag.decode("latin-1"))
+        return sorted(found)
+    except StructError:
+        return []
+
+
+def _sum(data: bytes) -> int:
+    """The sfnt checksum: big-endian uint32s, zero-padded."""
+    data += b"\0" * (-len(data) % 4)
+    return sum(unpack_from(f">{len(data) // 4}I", data)) & 0xFFFFFFFF
+
+
+def split_tables(data: bytes) -> Optional[bytes]:
+    """
+    The font with every table its own copy of its bytes, in their order, each 4-byte aligned, the record checksums and
+    head's checkSumAdjustment computed again; nothing else changes (EarthboundZero's repair, byte for byte). None for a
+    collection, a table past the file's end or a tag twice.
+    """
+    if data[:4] == b"ttcf":
+        return None
+    records = _directory(data)
+    tables = {tag: data[offset:offset + length] for tag, _, offset, length in records}
+    if len(tables) < len(records) or any(offset + length > len(data) for _, _, offset, length in records):
+        return None
+    if len(tables.get(b"head", b"")) >= 12:
+        tables[b"head"] = tables[b"head"][:8] + bytes(4) + tables[b"head"][12:]
+    out, at = bytearray(data[:12 + 16 * len(records)]), {}
+    for tag, _, offset, _ in sorted(records, key=lambda record: (record[2], record[0])):
+        out += bytes(-len(out) % 4)
+        at[tag] = len(out)
+        out += tables[tag]
+    out += bytes(-len(out) % 4)
+    for i, (tag, _, _, length) in enumerate(records):
+        pack_into(">4sIII", out, 12 + 16 * i, tag, _sum(tables[tag]), at[tag], length)
+    if len(tables.get(b"head", b"")) >= 12:
+        pack_into(">I", out, at[b"head"] + 8, (SFNT_SUM - _sum(bytes(out))) & 0xFFFFFFFF)
+    return bytes(out)
 
 
 # ========================

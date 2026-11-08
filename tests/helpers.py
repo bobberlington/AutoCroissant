@@ -5,6 +5,7 @@ import json
 import os
 import re
 import shutil
+import struct
 import subprocess
 from copy import deepcopy
 from functools import lru_cache
@@ -363,6 +364,50 @@ class ChecksGitHub:
 
     def blob_calls(self) -> int:
         return sum("/git/blobs/" in u for u in self.calls)
+
+
+def build_font(path: str, ps: str, family: str, style: str, cff: bool = False) -> str:
+    """A fixture font (the fork's tests/psd_tools/composite/text/conftest.py recipe, cut down)."""
+    from fontTools import fontBuilder
+    names = [".notdef", "space", "A"]
+    fb = fontBuilder.FontBuilder(1000, isTTF=not cff)
+    fb.setupGlyphOrder(names)
+    fb.setupCharacterMap({32: "space", 65: "A"})
+    if cff:
+        from fontTools.pens.t2CharStringPen import T2CharStringPen
+        charstrings = {}
+        for g in names:
+            pen = T2CharStringPen(500, None)
+            if g == "A":
+                pen.moveTo((0, 0)), pen.lineTo((0, 700)), pen.lineTo((500, 700)), pen.lineTo((500, 0)), pen.closePath()
+            charstrings[g] = pen.getCharString()
+        fb.setupCFF(ps, {"FullName": ps}, charstrings, {})
+    else:
+        from fontTools.pens.ttGlyphPen import TTGlyphPen
+        glyphs = {}
+        for g in names:
+            pen = TTGlyphPen(None)
+            if g == "A":
+                pen.moveTo((0, 0)), pen.lineTo((0, 700)), pen.lineTo((500, 700)), pen.lineTo((500, 0)), pen.closePath()
+            glyphs[g] = pen.glyph()
+        fb.setupGlyf(glyphs)
+    fb.setupHorizontalMetrics({g: (500, 0) for g in names})
+    fb.setupHorizontalHeader(ascent=800, descent=-200)
+    fb.setupNameTable({"familyName": family, "styleName": style, "psName": ps})
+    fb.setupOS2(sTypoAscender=800, sTypoDescender=-200, usWinAscent=800, usWinDescent=200)
+    fb.setupPost()
+    fb.save(path)
+    return path
+
+
+def sharing(raw: bytes, tag: bytes, of: bytes) -> bytes:
+    """A font's bytes with one more record, tag, on of's table data (EarthboundZero's bdat on EBDT's, TC ce778210)."""
+    count = struct.unpack(">H", raw[4:6])[0]
+    records = [list(struct.unpack(">4sIII", raw[12 + 16 * i:28 + 16 * i])) for i in range(count)]
+    records = sorted(records + [[tag, *next(r for r in records if r[0] == of)[1:]]])
+    head = bytearray(raw[:12])
+    struct.pack_into(">H", head, 4, count + 1)
+    return bytes(head) + b"".join(struct.pack(">4sIII", t, c, o + 16, n) for t, c, o, n in records) + raw[12 + 16 * count:]
 
 
 # ========================

@@ -1585,3 +1585,14 @@ Land sleeps only what is left of the 30 minutes from the push (`--quiet-from`), 
 4. Watch the first runs: a cold wheel build (card-preview's 5-minute step), card-sync's one venv, then (after step 3) a
    push's post job waiting in the environment.
 
+
+## 21. Fonts whose tables share data (2026-11-08)
+
+Photoshop 2023 sets no type in a TrueType font with two table records on the very same bytes (EarthboundZero's bdat and
+bloc on EBDT's and EBLC's: the 11 cards it could not save, TC ce778210; Fourside, Onett and Twoson the same). A font the
+push adds or changes at the top of `MDW/Fonts` with such records (`font_check.shared_tables`) lands in the guards' one
+commit with every table its own copy (`split_tables`: each table's bytes as they were, 4-byte aligned, the record
+checksums and head's checkSumAdjustment computed again; names untouched): plan.json's `fonts` entry, a `font` write
+resting on the pushed blob, silent (no comment, Discord or changelog event; the commit says "N fonts repaired"). Left as
+pushed: a collection (.ttc: faces may share tables there) and a record over only part of another's bytes (Goudy-Bold's
+glyf, too long: Photoshop sets it, and its split copy draws 3 pixels up to 17 levels apart, so it stays).

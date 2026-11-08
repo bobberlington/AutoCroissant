@@ -16,7 +16,7 @@ from conftest import Reply, at_rev, blob_sha_bytes as _sha, smallest
 
 fontBuilder = pytest.importorskip("fontTools.fontBuilder")
 from fontTools.ttLib import TTCollection, TTFont  # noqa: E402
-from helpers import ChecksGitHub as FakeGitHub, commit, git, put  # noqa: E402,F401
+from helpers import ChecksGitHub as FakeGitHub, build_font, commit, git, put, sharing  # noqa: E402,F401
 
 BABA = "Creatures/Other/5 Stars/Baba.psd"                  # BabaUI on four visible digit layers and the hidden Name
 BABA_REV = "3a268cad"                                       # Baba as this test was written, from the clone's history
@@ -26,40 +26,8 @@ FONTS = ["BabaUI", "AdobeInvisFont", "MyriadPro-Regular"]   # a card's usual Fon
 
 
 # ========================
-# Fixture fonts (the fork's tests/psd_tools/composite/text/conftest.py recipe, cut down)
+# Fixture fonts (helpers.build_font)
 # ========================
-def build_font(path: str, ps: str, family: str, style: str, cff: bool = False) -> str:
-    names = [".notdef", "space", "A"]
-    fb = fontBuilder.FontBuilder(1000, isTTF=not cff)
-    fb.setupGlyphOrder(names)
-    fb.setupCharacterMap({32: "space", 65: "A"})
-    if cff:
-        from fontTools.pens.t2CharStringPen import T2CharStringPen
-        charstrings = {}
-        for g in names:
-            pen = T2CharStringPen(500, None)
-            if g == "A":
-                pen.moveTo((0, 0)), pen.lineTo((0, 700)), pen.lineTo((500, 700)), pen.lineTo((500, 0)), pen.closePath()
-            charstrings[g] = pen.getCharString()
-        fb.setupCFF(ps, {"FullName": ps}, charstrings, {})
-    else:
-        from fontTools.pens.ttGlyphPen import TTGlyphPen
-        glyphs = {}
-        for g in names:
-            pen = TTGlyphPen(None)
-            if g == "A":
-                pen.moveTo((0, 0)), pen.lineTo((0, 700)), pen.lineTo((500, 700)), pen.lineTo((500, 0)), pen.closePath()
-            glyphs[g] = pen.glyph()
-        fb.setupGlyf(glyphs)
-    fb.setupHorizontalMetrics({g: (500, 0) for g in names})
-    fb.setupHorizontalHeader(ascent=800, descent=-200)
-    fb.setupNameTable({"familyName": family, "styleName": style, "psName": ps})
-    fb.setupOS2(sTypoAscender=800, sTypoDescender=-200, usWinAscent=800, usWinDescent=200)
-    fb.setupPost()
-    fb.save(path)
-    return path
-
-
 @pytest.fixture(scope="session")
 def fonts_dir(tmp_path_factory):
     """A TrueType, a CFF, a two-face .ttc, a text file and a subfolder (which stays out, like stoogedings-src/)."""
@@ -104,6 +72,32 @@ def test_face_names_and_fallbacks(fonts_dir):
     buf = BytesIO()
     font.save(buf)
     assert fc.face_names(buf.getvalue()) == ["FullNameHere"]                    # ID 4 before ID 1, as FreeType reports it
+
+
+def test_tables_sharing_data_get_their_own_copies(fonts_dir):
+    """EarthboundZero's flaw (Photoshop 2023 set no type in it, TC ce778210): two records on one table's bytes. Each table
+    gets its own copy, every table's bytes and the names as they were, the sums right; a .ttc's faces may share."""
+    raw = (fonts_dir / "PsdToolsFixture-TT.ttf").read_bytes()
+    bad = sharing(raw, b"Xtra", b"glyf")
+    assert fc.shared_tables(raw) == [] and fc.shared_tables(bad) == [("Xtra", "glyf")]
+    longer = bytearray(raw)                     # glyf's record past its bytes, over the next table's (Goudy-Bold's)
+    at = next(12 + 16 * i for i in range(int.from_bytes(raw[4:6])) if raw[12 + 16 * i:16 + 16 * i] == b"glyf")
+    longer[at + 12:at + 16] = (int.from_bytes(raw[at + 12:at + 16]) + 8).to_bytes(4)
+    assert fc.shared_tables(bytes(longer)) == []
+    fixed = fc.split_tables(bad)
+    assert fc.shared_tables(fixed) == [] and fc.split_tables(fixed) == fixed and fc._sum(fixed) == fc.SFNT_SUM
+    old, new = TTFont(BytesIO(bad)), TTFont(BytesIO(fixed), checkChecksums=2)
+
+    def body(font, tag):
+        data = font.reader[tag]
+        return data[:8] + data[12:] if tag == "head" else data
+    assert sorted(new.reader.keys()) == sorted(old.reader.keys())
+    assert all(body(new, tag) == body(old, tag) for tag in old.reader.keys())
+    assert fc.face_names(fixed) == ["PsdToolsFixture-TT"]
+    pair = BytesIO()
+    TTCollection(str(fonts_dir / "Pair.ttc")).save(pair, shareTables=True)
+    assert fc.shared_tables(pair.getvalue()) == [] and fc.split_tables(pair.getvalue()) is None
+    assert fc.shared_tables(b"not a font") == []
 
 
 # ========================
