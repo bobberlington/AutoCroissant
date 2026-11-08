@@ -58,8 +58,10 @@ from sys import stderr
 from tempfile import TemporaryDirectory
 from time import time
 from traceback import format_exc
+from types import SimpleNamespace
 from typing import Callable, Optional
 
+from psd_tools.api.links import RepoTree
 from requests.exceptions import RequestException
 
 import commands.card_standards as standards
@@ -204,6 +206,7 @@ class Result:
     convert: list = field(default_factory=list) # what the normalise fix finds (convert_plan converts it, silent)
     shown: dict = field(default_factory=dict)   # PNG path -> {"file"} or {"blob"}: the PNGs that show the PSD as checked
     shows: str = "pushed"                       # which PSD they show: "pushed", or "fixed" (guard 2 redrew and they follow)
+    links: dict = field(default_factory=dict)   # the PSD as it lands: what housekeeping reads of it (_links)
     error: str = ""
 
     @property
@@ -441,6 +444,12 @@ class Source:
         except (Transient, ValueError):
             return None
         return out
+
+    def paths(self):
+        """The checked tree's paths, blind to case (psd_tools' RepoTree), built once."""
+        if getattr(self, "_paths", (None,))[0] is not self.checked:
+            self._paths = (self.checked, RepoTree(self.checked))
+        return self._paths[1]
 
     def blob(self, sha: str) -> bytes:
         """A blob by sha, verified; raises Refused("blob")."""
@@ -739,6 +748,22 @@ def added(job: Job) -> bool:
     return job.case in ("new", "beside") or (job.case in ("pair", "psd-only") and not job.psd_old)
 
 
+def _links(source: Source, psd, rel: str, sha: str) -> dict:
+    """What housekeeping reads of a PSD (opened, or its bytes; blob sha), in the pool: its links (psd_links.links_of)
+    and its links to an MDW/Linked file missing at after (psd_regions.linked_items: G4's restore); {} unread."""
+    from commands import psd_links
+    from commands.psd_regions import linked_items
+    try:
+        psd, paths = png_export.open_psd(psd) if isinstance(psd, bytes) else psd, source.paths()
+        links = [{"path": link.path, "name": link.name} for link in psd_links.links_of(psd, rel, paths)]
+        return {"sha": sha, "links": links,
+                "restore": [{"path": item["path"], "size": item["size"]} for item in linked_items(psd, rel, paths)
+                            if (item["path"] or "").startswith(LINKED_DIR) and item["path"] not in source.checked]}
+    except Exception:                           # never stops the card
+        print(format_exc(), file=stderr)
+        return {}
+
+
 def run_job(source: Source, job: Job, context, parser, out: str, mode: str, earlier: tuple = ()) -> Result:
     """
     Both guards on one card; never raises (an error is the result's error line).
@@ -792,6 +817,8 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
     new_bytes = source.blob(job.psd_new)
     new = png_export.open_psd(new_bytes, job.psd)
     new.repo_path = job.psd                     # the link step places and judges its links from here
+    if job.case not in ("png-only", "whole"):   # a PSD write below reads its own
+        result.links = _links(source, new, job.psd, job.psd_new)
     if job.case == "convert":
         result.convert = list(standards.pixel_kinds(new, (NORMALISE,)))
         return
@@ -916,6 +943,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
                 write["plain"] = {"file": _save(out, job.psd + ".plain", fixed.plain), "sha": blob_sha(fixed.plain),
                                   "line": "; ".join(fixed.applied + composer), "pixels": []}   # no redraw: no pixel fix
             result.writes.append(write)
+            result.links = _links(source, data, job.psd, write["sha"])
         if stale_left(fixed, result.redrawn):
             result.notes.append((OLD_FONT, True))
     if result.convert:                          # what the conversion's PNGs start from
@@ -1115,6 +1143,13 @@ def links_index(source: Source) -> Optional[dict]:
         return None
 
 
+def _checked_links(entry: Optional[dict], tree: dict) -> Optional[dict]:
+    """A pushed card's links as its check read them (Result.links), when they are of the PSD as it lands."""
+    write = next((w for w in (entry or {}).get("writes", []) if w["kind"] == "psd" and w["path"] == entry["psd"]), None)
+    found = (entry or {}).get("links")
+    return found if found and found["sha"] == (write["sha"] if write is not None else tree[entry["psd"]]) else None
+
+
 def _final(out: str, entry: dict, source: Source, tree: dict) -> bytes:
     """A pushed PSD as it lands: its planned PSD write, else its blob at after."""
     write = next((w for w in entry.get("writes", []) if w["kind"] == "psd" and w["path"] == entry["psd"]), None)
@@ -1286,16 +1321,22 @@ def housekeeping(data: dict, source: Source, tree: dict, out: str, index: Option
     pushed_linked = [p for p in data.get("pushed_paths", []) if p.startswith(LINKED_DIR)]
     cards = {e["psd"]: e for e in data["cards"] if e.get("psd") in tree}
     finals: dict = {}
+    pooled: dict = {}                           # pushed PSDs whose links the check read (not read again here)
     for path in data.get("pushed_paths", []):
         if _link_holder(path) and path in tree:
+            if found := _checked_links(cards.get(path), tree):
+                pooled[path] = found
+                continue
             try:
                 finals[path] = _final(out, cards[path], source, tree) if path in cards else source.blob(tree[path])
             except Exception:                   # unread: its links unknown, nothing deleted
                 print(format_exc(), file=stderr)
                 return entry
-    paths = set(tree)
+    paths = RepoTree(tree)
     entry["holders"] = _holders(tree.items())   # land drops the deletions once any PSD moved (it may link them)
-    read = [(rel, psd_links.links_of(png_export.open_psd(raw), rel, paths)) for rel, raw in sorted(finals.items())]
+    read = sorted([(rel, psd_links.links_of(png_export.open_psd(raw), rel, paths)) for rel, raw in finals.items()]
+                  + [(rel, [SimpleNamespace(**link) for link in found["links"]]) for rel, found in pooled.items()],
+                  key=lambda pair: pair[0])
     direct = dict(read)
     records = psd_links.records_of(index)[0] if index is not None else {}
     known = index is not None and all(rel in direct or ((records.get(rel) or {}).get("blob") == blob
@@ -1328,7 +1369,8 @@ def housekeeping(data: dict, source: Source, tree: dict, out: str, index: Option
             continue
         if deadline and time() > deadline:      # the rest do not fit the time: their files stay (harmless)
             break
-        psd = png_export.open_psd(finals.get(rel) or source.blob(tree[rel]))
+        psd = png_export.open_psd(finals.get(rel) or (_final(out, cards[rel], source, tree) if rel in pooled
+                                                       else source.blob(tree[rel])))
         for link in psd_links.links_of(psd, rel, paths):
             if link.path in mine:
                 psd_links.relink(psd, link.uuid, rel, dups[link.path], link.size, tree[dups[link.path]])
@@ -1352,8 +1394,9 @@ def housekeeping(data: dict, source: Source, tree: dict, out: str, index: Option
                                 "line": f"the same file as {kept}"})
     from commands.psd_regions import linked_items
     made = {w["path"] for e in data["cards"] for w in e.get("writes", []) if w["kind"] == "file"}
-    for rel, raw in sorted(finals.items()):
-        for item in linked_items(png_export.open_psd(raw), rel, paths):
+    for rel in sorted({*finals, *pooled}):
+        items = pooled[rel]["restore"] if rel in pooled else linked_items(png_export.open_psd(finals[rel]), rel, paths)
+        for item in items:
             path = item["path"] or ""
             if not path.startswith(LINKED_DIR) or path in tree or path in entry["expect"] or path in made:
                 continue                        # a conversion's new file is written by its card
@@ -1462,7 +1505,7 @@ def plan(results: list, repository: str, before: str, after: str, mode: str) -> 
                  "composer": result.composer, "composer_left": result.composer_left,
                  "redrawn": result.redrawn, "pixel_left": result.pixel_left, "pixel_notes": result.pixel_notes,
                  "convert": result.convert, "shown": result.shown, "shows": result.shows,
-                 "dups": result.job.dups, "base_png": result.job.base_png}
+                 "dups": result.job.dups, "base_png": result.job.base_png, "links": result.links}
         cards.append(entry)
     return {"repo": repository, "before": before, "after": after, "mode": mode, "checked_at": _now().isoformat(),
             "cards": cards}

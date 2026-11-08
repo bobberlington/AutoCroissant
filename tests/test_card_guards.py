@@ -466,6 +466,24 @@ def _links_module(monkeypatch, unused=(), duplicates=None, links=None) -> list:
     return relinked
 
 
+def test_housekeeping_reads_no_pushed_psd_its_check_read(cards, tmp_path, monkeypatch):
+    """A pushed PSD's links come from its check (read in the pool): housekeeping does not read the PSD again."""
+    root, base, alice, bot = cards
+    rel = f"{FOLDER}/Snack.psd"
+    _psd(root, tmp_path / "psds", rel, card(colour=(0, 0, 200)))
+    head = _commit(root, "Alice again", author="Alice")
+    _links_module(monkeypatch, links={rel: ["MDW/Linked/art.png"]})
+    monkeypatch.setitem(cg.standards.PIXEL_FIXES, cg.NORMALISE, (lambda psd: [], None, None))   # nothing to convert
+    fake, inside, reads, seen = sys.modules["commands.psd_links"], [], [], []
+    links_of, housekeeping = fake.links_of, cg.housekeeping
+    fake.links_of = lambda psd, path, tree: reads.append(bool(inside)) or links_of(psd, path, tree)
+    fake.unused = lambda index, tree, pushed=(), read=(): seen.extend((r, [l.path for l in found]) for r, found in read) or []
+    monkeypatch.setattr(cg, "housekeeping", lambda *args, **kw: inside.append(1) or housekeeping(*args, **kw))
+    monkeypatch.setattr(cg, "links_index", lambda source: {})
+    cg.check(str(root), head, bot, out=str(tmp_path / "out"), workers=1)
+    assert inside and reads and not any(reads) and seen == [(rel, ["MDW/Linked/art.png"])]
+
+
 def test_a_later_push_is_converted_silently(cards, tmp_path, monkeypatch):
     """G1 (owner 11-07): a card and a template pushed with what the normalise fix finds are converted after the check
     (--convert later: summary.json counts them, so Card sync's wait ends at Decided), the card on top of guard 1's PNG
