@@ -5886,11 +5886,11 @@ def _core(layer) -> Optional[tuple]:
     return union_box([PSDParser._core_box(leaf) for leaf in _drawn(layer)])
 
 
-# The records (owner 11-07): kept on the card data's branch (db/, Card sync's data commit); AC's copies only seed it
-RECORDS_DIR = "CARD_RECORDS_DIR"        # env: the data's db/ folder; unset, or a file it lacks: AC's seed copy
+# The records (owner 11-07): kept on the card data's branch (db/, Card sync's data commit)
+RECORDS_DIR = "CARD_RECORDS_DIR"        # env: the data's db/ folder; unset, or a file it lacks: a seed copy, else {}
 SPOT_RECORD = "spot_record.json"        # {PSD path: {layer id: entry}}: icons a redraw moved, their earlier ink cores
 RENDER_RECORD = "render_record.json"    # {PSD path: facts}: each card's look read off its stored image before the strip
-RECORDS_SEED = dirname(abspath(__file__))   # AC's copies (they go once the data has them: then {})
+RECORDS_SEED = dirname(abspath(__file__))   # a seed copy's folder (AC's went 11-08: {})
 _RECORDS: dict = {}                     # file name -> its record, read once
 
 

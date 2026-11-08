@@ -84,8 +84,7 @@ SPARSE_FILES = ("commands/card_guards.py", "commands/png_export.py", "commands/c
                 "commands/github_api.py", "commands/git_commit.py", "commands/repo_history.py", "global_config.py",
                 "requirements-cards.txt",
                 "commands/ability_place.py", "commands/ability_index.json",
-                "commands/psd_links.py", "commands/render_record.json",
-                "commands/spot_record.json")
+                "commands/psd_links.py")
 SUBJECT = "Card guards"                         # the bot commit: "Card guards: 2 PNGs re-exported, 1 PSD fixed (push 7cb4c867)"
 TRAILER = "Guarded-push"                        # the push the commit guards
 RECOMPRESSED = "Recompressed"                   # a trailer per PNG only recompressed: no image version (build_site)

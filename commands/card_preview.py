@@ -52,8 +52,7 @@ SPARSE_FILES = ("commands/card_preview.py", "commands/card_preview_branch.py", "
                 "commands/psd_edit.py", "commands/psd_regions.py", "commands/psd_parser.py", "commands/psd_parts.py", "commands/text_align.py", "commands/card_models.py",
                 "commands/card_edits.py", "commands/png_export.py", "commands/github_api.py", "commands/git_commit.py",
                 "commands/repo_history.py", "global_config.py", "requirements-cards.txt",
-                "commands/psd_links.py", "commands/render_record.json",
-                "commands/spot_record.json")
+                "commands/psd_links.py")
 MAX_EDIT = 16384                                # bytes of edit JSON (an ability is a few hundred)
 WEBP_WIDTH, WEBP_QUALITY = 720, 75              # the card view's width; WebP (the previews contract), the site's thumbs are AVIF
 RETRY = card_bake.TRANSIENT + ("blob",)         # try again: the bake's own, and a blob that failed its hash (a download's)

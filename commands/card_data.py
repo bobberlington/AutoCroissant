@@ -784,7 +784,7 @@ def links_text(data: dict) -> str:
 
 
 def read_records(db_dir: str) -> tuple:
-    """(render record, spot record) of db/, each seeded from AC's copy (psd_edit's folder) while db/ lacks it."""
+    """(render record, spot record) of db/; one db/ lacks: psd_edit's seed copy (none since 11-08), else {}."""
     from commands import psd_edit
     out = []
     for name in RECORDS:
@@ -1029,8 +1029,7 @@ SPARSE_FILES = ("commands/card_data.py", "commands/card_history.py", "commands/c
                 "commands/repo_history.py", "commands/tts_save.py",
                 "commands/ability_place.py", "commands/ability_index.json",
                 "commands/rulebook.py", "commands/rulebook_pages.py",
-                "commands/psd_links.py", "commands/render_record.json",
-                "commands/spot_record.json")
+                "commands/psd_links.py")
 BOT_REPO = "bobberlington/AutoCroissant"
 BUDGET = 400                                                      # REST downloads per run (two runs an hour: 800 of 1,000)
 RATE_FLOOR = 150                                                  # no more REST downloads under this many requests left
@@ -1440,7 +1439,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         side: The bake's events (baked, bake-refused), each with its commit (M) when it has one
         guard_docs: The guards' guard-events.json files ({"commit", "push", "events"}): their events, by that commit
         records: What the guards, the bake and the link redraw read off PSDs before rewriting them (psd_edit.records_of,
-            oldest first): merged into db/'s render and spot records (seeded from AC's copies)
+            oldest first): merged into db/'s render and spot records
 
     Returns:
         The Outcome (code 0 written or nothing to do, 2 a gate refused, 1 files not fetched)
