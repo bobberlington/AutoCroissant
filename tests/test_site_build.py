@@ -664,3 +664,43 @@ def test_badge_font_preloaded_where_badges_show(bs):
     """A card page preloads the badge font when its text draws a badge (text.js's tags and costs, any case), not otherwise."""
     assert all(map(bs.has_badges, ["(1cd) Hit.", "(-1/1GCD) Wait.", "Pay (2 points).", "(Action) Swap.", "(0.5 SP)"]))
     assert not any(map(bs.has_badges, ["Deal 2 (x) damage.", "(Actions) twice", "x(2 points)", "Plain text."]))
+
+
+def test_site_workflow_sets_up_in_the_background(tmp_path):
+    """site.yml's Setup start returns at once, uv, npm and the PSD sizes running on (their output not held); Setup wait,
+    before the build, prints each one's log and fails on uv or npm, only warns on the sizes (3 tries)."""
+    yaml = pytest.importorskip("yaml")
+    path = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "site.yml"
+    if not path.is_file():
+        pytest.skip(f"no {path}")
+    steps = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["build"]["steps"]
+    names = [s.get("name") or s.get("id") or s.get("uses") for s in steps]
+    assert names.index("Setup start") < names.index("pages") < names.index("Setup wait") == names.index("build") - 1
+    start, wait = (steps[names.index(n)]["run"] for n in ("Setup start", "Setup wait"))
+    bin_ = tmp_path / "bin"
+    bin_.mkdir()
+    call = 'echo "$0 $*" >> "$RUNNER_TEMP/calls"; /bin/sleep "${DELAY:-0}"; '
+    for name, body in {"uv": call + 'echo "uv said"; exit "${UV_CODE:-0}"', "npm": call + 'echo "npm said"; exit "${NPM_CODE:-0}"',
+                       "gh": call + 'echo \'{"tree": []}\'; exit "${GH_CODE:-0}"', "git": "echo 0123abcd",
+                       "sleep": "exec /bin/sleep 0.01"}.items():
+        (bin_ / name).write_text(f"#!/bin/sh\n{body}\n")
+        (bin_ / name).chmod(0o755)
+    shell = lambda run, env: subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", run], env=env,
+                                            capture_output=True, text=True, timeout=30)
+    for n, (codes, failed, warns) in enumerate((({"DELAY": "0.5"}, "", False), ({"GH_CODE": "1"}, "", True),
+                                                ({"UV_CODE": "2", "NPM_CODE": "3"}, " uv npm", False))):
+        temp = tmp_path / f"t{n}"
+        temp.mkdir()
+        env = {"PATH": f"{bin_}:/usr/bin:/bin", "HOME": str(tmp_path), "RUNNER_TEMP": str(temp), "GITHUB_REPOSITORY": "o/r", **codes}
+        done = shell(start, env)
+        assert done.returncode == 0 and not (n == 0 and list((temp / "setup").glob("*.code"))), done.stderr   # not waited for
+        done = shell(wait, env)
+        out = done.stdout
+        assert (done.returncode != 0) == bool(failed) and ("::error::" in out) == bool(failed), (out, done.stderr)
+        assert not failed or f"::error::failed:{failed}" in out
+        assert ("::warning::PSD sizes failed" in out) == warns and "uv said" in out and "npm said" in out
+        assert out.index(f"::group::uv (exit {codes.get('UV_CODE', 0)})") < out.index(f"::group::npm (exit {codes.get('NPM_CODE', 0)})")
+        calls = (temp / "calls").read_text().splitlines()
+        assert sum("/gh api repos/o/r/git/trees/0123abcd?recursive=1" in c for c in calls) == (3 if warns else 1)
+        assert any("/uv pip install -q -r site/build/requirements.txt" in c for c in calls)
+        assert (temp / "tree.json").read_text().strip() == '{"tree": []}'
