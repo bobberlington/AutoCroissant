@@ -263,6 +263,13 @@ def _uses_setup(step) -> bool:
     return step.get("uses") == "./" + FORK_ACTION.rsplit("/", 1)[0]
 
 
+def bot_files(job: dict, step: dict) -> list:
+    """A checkout's sparse-checkout lines (`${{ env.X }}`: the job's X)."""
+    listed = step["with"]["sparse-checkout"]
+    named = re.fullmatch(r"\$\{\{ env\.(\w+) \}\}", listed.strip())
+    return (job["env"][named.group(1)] if named else listed).split()
+
+
 def fork_action(workflows) -> str:
     """
     The card workflows' one setup (.github/actions/cards-python): Python 3.14; a venv cached whole by requirements-cards.txt's
@@ -331,7 +338,7 @@ def fork_install(path) -> str:
             continue
         installs += 1
         bot = [i for i, s in enumerate(steps) if s.get("with", {}).get("repository") in ("bobberlington/AutoCroissant", "${{ env.BOT_REPO }}")
-               and "/requirements-cards.txt" in s["with"]["sparse-checkout"].split()]
+               and "/requirements-cards.txt" in bot_files(job, s)]
         assert len(bot) == 1 and bot[0] < setups[0], f"{path.name}: the bot checkout brings requirements-cards.txt first"
         want = (steps[setups[0]].get("with") or {}).get("oxipng", "true")
         on = re.fullmatch(r"\$\{\{ github\.job (==|!=) '(\w+)' \}\}", want)

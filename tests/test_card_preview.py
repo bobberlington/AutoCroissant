@@ -8,8 +8,8 @@ creatures and duplicate gates, bad inputs, dispatched values kept off the runner
 bad blob, the early reads, fonts and records that come after the wait; one commit per publish, a re-run, the rewrites by age and count, a moved head and a moved lease, a warm read, the publisher
 on the standard library alone. Then card-preview.yml: its shape, no trigger elsewhere on the branch, the Action-shaped
 copies of both SPARSE_FILES, and its two jobs' Validate, Reads, Start, Go, Preview, hand-over and Publish steps run as the
-runner would (bash) against those repos, a failed install too. The workflows come from $AC_SITE_SRC (a TTSCardMaker checkout) or the
-clone; a real bake needs the fork's renderer:
+runner would (bash) against those repos, a failed install too; the preview's bot clone. The workflows come from $AC_SITE_SRC
+(a TTSCardMaker checkout) or the clone; a real bake needs the fork's renderer:
     AUTOCROISSANT_LOCAL_DIR=~/Desktop/TTSCardMaker AC_SITE_SRC=<TTSCardMaker checkout> <fork python> -m pytest -q tests/test_card_preview.py
 """
 import json
@@ -35,7 +35,7 @@ import commands.github_api as github_api  # noqa: E402
 import commands.psd_edit as pe  # noqa: E402
 from conftest import CLONE, REPO, blob_sha_bytes as _sha, fork_reason, text_engine as _text_engine  # noqa: E402
 from golden_cards import VOCAB  # noqa: E402
-from helpers import fork_install  # noqa: E402
+from helpers import bot_files, fork_install  # noqa: E402
 
 DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
 DOOMER_PNG = "Auxiliary/Minions/Mini_Doomer.png"
@@ -505,8 +505,8 @@ def test_workflow_shape():
     def step(job, name):
         return next(s for s in job["steps"] if s.get("name") == name)
     for job, files in ((preview, cp.SPARSE_FILES), (publish, br.SPARSE_FILES)):
-        bot = next(s for s in job["steps"] if s.get("with", {}).get("repository") == "bobberlington/AutoCroissant")
-        assert bot["with"]["sparse-checkout"].split() == ["/" + f for f in files]
+        bot = next(s for s in job["steps"] if s.get("with", {}).get("repository") in ("bobberlington/AutoCroissant", "${{ env.BOT_REPO }}"))
+        assert bot_files(job, bot) == ["/" + f for f in files]
         cards = next(s for s in job["steps"] if s.get("uses", "").startswith("actions/checkout") and "repository" not in s.get("with", {}))
         assert cards["with"]["filter"] == "blob:none" and "fetch-depth" not in cards["with"]
         assert cards["with"]["sparse-checkout"].split() == ["/.github/"]
@@ -516,6 +516,10 @@ def test_workflow_shape():
     assert set(re.findall(r"secrets\.(\w+)", text)) == {"GITHUB_TOKEN"} and "secrets" not in str(publish)
     assert "discord" not in text.lower().replace("no discord", "")
     names = [s.get("name") for s in preview["steps"]]
+    assert preview["env"]["BOT_REPO"] == "bobberlington/AutoCroissant" and names.index("Clone") == 0     # the bot beside the cards
+    fallback = next(i for i, s in enumerate(preview["steps"]) if s.get("with", {}).get("repository") == "${{ env.BOT_REPO }}")
+    assert preview["steps"][fallback]["if"] == "steps.bot.outputs.ok != 'true'" and step(preview, "Bot")["id"] == "bot"
+    assert names.index("Bot") + 1 == fallback < names.index("Reads") and step(preview, "Clone")["run"].rstrip().endswith("&")
     assert names.index("Validate") < names.index("Reads") < names.index("Start") < names.index("Go") < names.index("Preview") < names.index("Hand over") == len(names) - 1
     fonts = [i for i, s in enumerate(preview["steps"]) if "MDW/Fonts" in str(s.get("run", "")) + str(s.get("with", ""))]
     assert names.index("Start") < min(fonts) and max(fonts) < names.index("Go")      # the preview starts before the fonts
@@ -540,6 +544,37 @@ def test_workflow_shape():
     assert start["env"]["PSD_TOOLS_FONT_DIRS"] == "${{ github.workspace }}/MDW/Fonts"
     font_cache = next(s for s in preview["steps"] if s.get("id") == "font-cache")
     assert font_cache["with"]["key"] == "card-fonts-${{ steps.fonts.outputs.sha }}"      # card-sync.yml's cache
+
+
+def test_the_bot_clone_runs_here(tmp_path):
+    """The preview's Clone and Bot steps against a stand-in GitHub (file://): BOT_FILES alone in bot/, no header saved;
+    a failed clone leaves no bot/ (the checkout after it brings one)."""
+    _, doc = _workflow()
+    job = doc["jobs"]["preview"]
+    steps = {s.get("name"): s for s in job["steps"]}
+    seed = tmp_path / "seed"
+    for rel in cp.SPARSE_FILES + ("config.py",):
+        (seed / rel).parent.mkdir(parents=True, exist_ok=True)
+        (seed / rel).write_text(rel)
+    _git(seed, "init", "-q", "-b", "main")
+    _commit(seed)
+    server = tmp_path / "github"
+    _git(tmp_path, "clone", "-q", "--bare", str(seed), str(server / job["env"]["BOT_REPO"]))
+    for name, repo in (("ok", job["env"]["BOT_REPO"]), ("failed", "nobody/none")):
+        workspace, runner = tmp_path / name / "ws", tmp_path / name / "temp"
+        workspace.mkdir(parents=True)
+        runner.mkdir()
+        env = {"PATH": environ["PATH"], "HOME": environ.get("HOME", ""), "GIT_CONFIG_GLOBAL": "/dev/null", "RUNNER_TEMP": str(runner),
+               "GITHUB_OUTPUT": str(runner / "output"), "GITHUB_SERVER_URL": f"file://{server}", "BOT_REPO": repo,
+               "BOT_FILES": job["env"]["BOT_FILES"], "TOKEN": "t0ken"}
+        done = [run_process(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", steps[step]["run"]], env=env,
+                            cwd=str(workspace), capture_output=True, text=True, timeout=60) for step in ("Clone", "Bot")]
+        assert [d.returncode for d in done] == [0, 0] and "::add-mask::" in done[0].stdout
+        ok = (runner / "output").is_file() and "ok=true" in (runner / "output").read_text()
+        assert ok == (name == "ok") == (workspace / "bot").is_dir() and ("::warning::" in done[1].stdout) != ok
+    bot = tmp_path / "ok" / "ws" / "bot"
+    assert sorted(str(p.relative_to(bot)) for p in bot.rglob("*") if p.is_file() and ".git" not in p.parts) == sorted(cp.SPARSE_FILES)
+    assert "extraheader" not in (bot / ".git" / "config").read_text()
 
 
 def test_no_workflow_runs_on_the_previews_branch():

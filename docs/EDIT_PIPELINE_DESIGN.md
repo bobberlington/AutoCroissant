@@ -1189,8 +1189,8 @@ contract below (also in TTSCardMaker `site/NOTES.md` section 19 and the ttscardm
 
 **What runs.** TTSCardMaker `.github/workflows/card-preview.yml` (workflow_dispatch only; inputs `card`, `edit`,
 `request`; one concurrency group per request) has two jobs. The **preview** job (`contents: read`, 11 minutes) runs
-AutoCroissant `commands/card_preview.py` (uncompiled; import closure `card_preview.SPARSE_FILES`, which its bot checkout
-lists; card-edits.yml's pip install, fork pin and all) and hands result.json, preview.webp and before.webp over as an artifact (one
+AutoCroissant `commands/card_preview.py` (uncompiled; import closure `card_preview.SPARSE_FILES`, the job's BOT_FILES:
+cloned in the background beside the card checkout since 2026-11-08, checked out if that fails; card-edits.yml's pip install, fork pin and all) and hands result.json, preview.webp and before.webp over as an artifact (one
 day; the full-size PNG ends with the runner). Its Reads step first starts `commands/card_preview_reads.py` in the background (the runner's
 python3, stdlib only): the data's render and spot records, and the card's manifest, PSD, PNG and status chart into the
 checkout's object store, while the setup runs. Start then runs card_preview in the background while the fonts restore: it waits in `ready()` for Go's file, touched once the fonts are in and the reads done (20 s at most, then it reads what they lack itself); Preview joins it (its summary and exit code). The **publish** job (`contents: write`, 3 minutes; it runs when the
