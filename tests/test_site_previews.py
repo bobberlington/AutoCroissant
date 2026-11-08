@@ -187,6 +187,23 @@ out([at(a, 5), at(a, 14), at(a, 10), at(b, 14), at(b, 10)]);""")
     assert line == [60] * 3 + [40] * 7 and full == [200] * 10 and across == [60] * 10
 
 
+@needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "wide: true"), reason="no wide-font titles in mockup.js")
+def test_wide_font_title(tmp_path):
+    """A one-line title 2.3 times as wide as its height says (a wide font) is found on the second pass, not boxed; at 3.3
+    it stays boxed."""
+    out = node(tmp_path, """
+const W = 400, H = 60, paras = m.tokenize("Rapier"), measure = (s, z) => s.length * z * 0.5, area = { box: [0, 0, W, H], seed: null };
+const title = ink => { const L = new Uint8Array(W * H);
+  for (let y = 20; y < 40; y++) for (let x = 100; x < 100 + ink; x++) L[y * W + x] = x % 4 < 2 ? 255 : 0;   // letters 20 px high
+  const hit = m.bestBlock(L, W, H, area, paras, measure, { name: true }), b = m.textBlocks(L, W, H, area.box, { join: 1.2, span: 2 })[0];
+  return [m.calibrate(b, paras, measure, { exact: true }).ok, hit && +hit.cal.k.toFixed(2), hit && hit.b.box]; };
+out([title(146), title(208)]);""")
+    (first, k, box), (_, wider, _) = out
+    assert first is False and 2.2 < k < 2.4 and box == [99, 19, 246, 41]
+    assert wider is None
+
+
 # ---- the build's web fonts (build_site.py)
 @pytest.fixture(scope="module")
 def bs():
