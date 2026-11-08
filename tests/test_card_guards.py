@@ -1647,9 +1647,9 @@ def test_card_syncs_follow_up_waits_for_land(clone, tmp_path):
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc = yaml.safe_load((_workflow(clone).parent / "card-sync.yml").read_text(encoding="utf-8"))
-    for job, at in (("data", 4), ("main", 3)):
+    for job, at, fonts in (("data", 4, []), ("main", 3, ["Fonts first", None, "Fonts first (cache miss)"])):   # data: Site build start; main: fonts
         names = [s.get("name") for s in doc["jobs"][job]["steps"]]
-        assert names[at:at + 3] == ["Python environment", "Guards' fixes", "Newest"], (job, names)
+        assert names[at:at + 3 + len(fonts)] == ["Python environment", *fonts, "Guards' fixes", "Newest"], (job, names)
     assert doc[True]["workflow_dispatch"]["inputs"]["guards"]["default"] == ""       # the post job's run id
     guards = next(s for s in doc["jobs"]["data"]["steps"] if s.get("name") == "Guards' fixes")
     naps = tmp_path / "sleeps.txt"
@@ -1798,7 +1798,8 @@ def test_card_syncs_lane_sets_up_before_its_guards(clone, tmp_path):
     main = doc["jobs"]["main"]
     assert "quiet" not in doc["jobs"] and main["needs"] == "timer"
     steps = {s.get("name"): s for s in main["steps"]}
-    assert [s.get("name") for s in main["steps"]][3:7] == ["Python environment", "Guards' fixes", "Newest", "Gate"]
+    assert [s.get("name") for s in main["steps"]][3:10] == ["Python environment", "Fonts first", None, "Fonts first (cache miss)",
+                                                           "Guards' fixes", "Newest", "Gate"]
     assert steps["Gate"]["if"] == "${{ !steps.guards.outputs.run }}" and "steps.gate.outcome == 'success'" in steps["Leftover edits"]["if"]
     bin_dir = _fake_tools(tmp_path)
     state, posts = tmp_path / "gh.json", tmp_path / "posts.jsonl"
