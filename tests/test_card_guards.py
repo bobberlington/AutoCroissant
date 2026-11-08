@@ -1094,7 +1094,7 @@ def test_workflow_shape(clone):
     assert steps_by_name["Card check"]["if"] == here and steps_by_name["Font check"]["if"].startswith(here + " && ")
     assert steps_by_name["Card check"]["run"] == steps_by_name["Font check"]["run"]     # one script, by $CHECK
     named = [s.get("name") for s in checks["steps"] if s.get("name")]
-    assert named == ["Pushed blobs", "Card check", "Font check", "Tell the checks"]
+    assert named == ["Pushed blobs start", "Pushed blobs", "Card check", "Font check", "Tell the checks"]
     assert "Tell the checks" not in [s.get("name") for s in job["steps"]]
     fonts = [next(s for s in one["steps"] if s.get("id") == "font-cache") for one in (job, checks)]
     assert fonts[0]["with"] == fonts[1]["with"] and fonts[1]["uses"].startswith("actions/cache/restore@")   # one saver
@@ -1516,6 +1516,41 @@ def test_workflow_refuses_a_landing_dispatch_while_a_push_run_waits(clone, tmp_p
         assert done.returncode == code, (sha, pushes, done.stdout, done.stderr)
         if code:
             assert "is still in its quiet window" in done.stdout
+
+
+def test_workflow_fetches_pushed_blobs_in_the_background(clone, tmp_path):
+    """Pushed blobs start, right after the card checkout, fetches the push's blobs in the background and returns at once
+    (its output not held); Pushed blobs waits and counts. A fetch that fails: the REST warning and a failed step."""
+    pytest.importorskip("yaml")
+    if not shutil.which("timeout"):
+        pytest.skip("no timeout (coreutils)")
+    doc, steps, _ = _guard_steps(clone)
+    check = [s.get("name") or s.get("uses") for s in doc["jobs"]["check"]["steps"]]
+    assert check[1:3] == ["actions/checkout@v7", "Pushed blobs start"]
+    work, origin = tmp_path / "work", tmp_path / "origin.git"
+    work.mkdir()
+    _git(work, "init", "-q", "-b", "main")
+    shas = []
+    for side in "ab":
+        for name in ("A.psd", "A.png", "B.psd"):
+            (work / name).write_bytes(os.urandom(4096))
+        shas.append(_commit(work, side))
+    subprocess.run(["git", "clone", "-q", "--bare", str(work), str(origin)], check=True)
+    _git(origin, "config", "uploadpack.allowFilter", "true")
+    _git(origin, "config", "uploadpack.allowAnySHA1InWant", "true")
+    for n, (url, code, said) in enumerate(((origin, 0, "6 of 6 pushed blobs in the clone"),
+                                           (tmp_path / "gone.git", 1, "::warning::0 of 6 pushed blobs fetched: the rest by REST"))):
+        repo, temp = tmp_path / f"clone{n}", tmp_path / f"temp{n}"
+        temp.mkdir()
+        subprocess.run(["git", "clone", "-q", "--filter=blob:none", "--no-checkout", f"file://{origin}", str(repo)], check=True)
+        _git(repo, "remote", "set-url", "origin", f"file://{url}")
+        _git(repo, "config", "remote.origin.uploadpack", "sleep 1; git-upload-pack")      # GitHub's time
+        env = {"PATH": os.environ["PATH"], "HOME": os.environ.get("HOME", ""), "RUNNER_TEMP": str(temp), "BEFORE": shas[0],
+               "GITHUB_SHA": shas[1], "GITHUB_OUTPUT": str(temp / "output")}
+        done, _ = _shell(steps["Pushed blobs start"], env, cwd=repo)
+        assert done.returncode == 0 and not (temp / "blobs.done").exists(), (done.stdout, done.stderr)
+        done, _ = _shell(steps["Pushed blobs"], env, cwd=repo)
+        assert (done.returncode != 0) == bool(code) and said in " ".join(done.stdout.split()), (done.stdout, done.stderr)
 
 
 def test_workflow_lowercases_card_guards(clone, tmp_path):
