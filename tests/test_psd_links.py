@@ -296,3 +296,107 @@ def test_tree_at_non_ascii_paths(tmp_path):
     git("add", "-A")
     git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "base")
     assert sorted(pl._tree_at(str(repo), "HEAD")) == sorted(names)
+
+
+BLAZING = "Auxiliary/Status Effects/Debuffs/2 Stars/Blazing"     # [fire] in its Ability, a Stroke on it
+
+
+def test_icon_glyphs_redrawn_after_a_font_commit(clone, tmp_path, monkeypatch):
+    """The stoogedings workflow's font commit (icon_fire's picture recoloured): Card sync's redraw finds the card set in
+    it, a bot rewrite since aside, splices that glyph alone and re-exports its PNG (Card-sweep: glyphs); its own commit
+    ends it. A refusal is a hand flag at the PSD's blob that keeps it from being due; a person's save ends it too."""
+    import base64
+    import os
+    import re
+    from fontTools.ttLib import TTFont
+    from psd_tools.composite.text import capture
+    from psd_tools.composite.text.splice import _glyph_box
+    import commands.card_standards as cs
+    from commands import psd_glyphs
+    from commands.font_check import layer_fonts
+    from commands.psd_details import layer_path
+    from commands.psd_edit import Refused, save_psd
+    from conftest import CARDS_REV, at_rev, story_sync
+    if not story_sync():
+        pytest.skip("needs the fork's text engine")
+    rel, png, font = BLAZING + ".psd", BLAZING + ".png", psd_glyphs.FONT_FILE
+    repo, fonts = tmp_path / "cards", tmp_path / "fonts"
+    git = lambda *a, who="t": subprocess.run(["git", "-C", str(repo), "-c", f"user.name={who}", "-c", "user.email=t@t", *a],
+                                             check=True, capture_output=True, text=True).stdout
+    for path in (rel, png, font):
+        (repo / path).parent.mkdir(parents=True, exist_ok=True)
+        (repo / path).write_bytes(at_rev(clone, CARDS_REV, path))
+    (repo / "site").mkdir()
+    (repo / "site/Card Edits.json").write_text('{\n  "cards": {}\n}\n')
+    git("init", "-q")
+    git("add", "-A")
+    git("commit", "-qm", "base")
+    psd = PSDImage.open(repo / rel)
+    texts = [layer for layer in psd.descendants() if layer.kind == "type"]
+    details = {"cards": {pl._tree_at(str(repo), "HEAD")[rel]: {"path": rel, "text": [
+        {"layer": layer_path(t), "visible": t.is_visible(), "text": t.text} for t in texts],
+        "fonts": {f: {"layers": [layer_path(t) for t in texts if f in layer_fonts(t)]} for t in texts for f in layer_fonts(t)}}}}
+    old = TTFont(repo / font)                               # icon_fire's picture, colours inverted
+    gid = old.getGlyphOrder().index("icon_fire")
+    doc = next(d for d in old["SVG "].docList if d.startGlyphID <= gid <= d.endGlyphID)
+    head, data = re.search(r'(href="data:image/png;base64,)([^"]+)', doc.data).groups()
+    picture = Image.open(BytesIO(base64.b64decode(data))).convert("RGBA")
+    pixels = np.asarray(picture).copy()
+    pixels[..., :3] = 255 - pixels[..., :3]
+    doc.data = doc.data.replace(head + data, head + base64.b64encode(_png(Image.fromarray(pixels))).decode())
+    old.save(repo / font)
+    git("commit", "-qam", "Font: stoogedings rebuilt for fire.png", who=psd_glyphs.BOT)
+    psd[0].name += " x"                                     # a bot rewrite since: its text pixels kept
+    save_psd(psd, str(repo / rel))
+    git("commit", "-qam", "Card sync: 1 card baked", who=psd_glyphs.BOT)
+    fonts.mkdir()
+    for name in os.listdir(clone / "MDW" / "Fonts"):
+        if name.lower().endswith((".ttf", ".otf", ".ttc")) and name != "stoogedings.ttf":
+            (fonts / name).symlink_to(clone / "MDW" / "Fonts" / name)
+    (fonts / "stoogedings.ttf").write_bytes((repo / font).read_bytes())
+    tree = pl._tree_at(str(repo), "HEAD")
+    assert psd_glyphs.font_commits(str(repo)) == [git("rev-parse", "HEAD~1").strip()]
+    assert list(psd_glyphs.due(str(repo), "HEAD", tree, details, fetch=False)) == [rel]
+
+    found = pl.redraw_linked(str(repo), {"files": {}}, details=details, fonts_dir=str(fonts), fetch=False)
+    assert found.glyphs == [rel] and sorted(found.files) == [png, rel] and not found.flagged and not found.notes
+    assert pl.redraw_message(found).startswith("Card sync: icon glyphs redrawn\n") and pl.redraw_message(found).endswith("\nCard-sweep: glyphs")
+    new = PSDImage.open(BytesIO(found.files[rel]))
+    layer = cs.icon_layers(new)[0]
+    cap = capture(layer, cs._fonts_of(layer, lambda names: str(fonts)))
+    x0, y0, x1, y1 = next(_glyph_box(g, cap.model.transform, 8) for g in cap.layout.glyphs        # 8: its Stroke
+                          if cs._icon_face(g.face) and g.face.hb.get_glyph_name(g.gid) == "icon_fire")
+    before = np.asarray(Image.open(repo / png).convert("RGB"), np.int16)
+    after = Image.open(BytesIO(found.files[png]))
+    moved = np.abs(np.asarray(after.convert("RGB"), np.int16) - before).max(axis=2) > png_export.TOL
+    inside = np.zeros(moved.shape, bool)
+    inside[y0:y1, x0:x1] = True
+    assert moved.sum() > 1000 and not (moved & ~inside).any()
+    assert png_export.png_check(new, after)["ok"] is True
+
+    flagged = pl.redraw_linked(str(repo), {"files": {}}, details=details, fonts_dir=str(fonts), fetch=False,
+                               cards=0)             # capped: still due, nothing written
+    assert flagged.due == [rel] and not flagged.files
+    monkeypatch.setattr(psd_glyphs, "redraw", lambda *a: (_ for _ in ()).throw(Refused("unsupported-card", "Ability lays out otherwise")))
+    refused = pl.redraw_linked(str(repo), {"files": {}}, details=details, fonts_dir=str(fonts), fetch=False)
+    edits = refused.files.pop("site/Card Edits.json")
+    assert not refused.files and refused.flagged == {rel: psd_glyphs.NOTE.format(why="Ability lays out otherwise")}
+    assert json.loads(edits)["cards"]["Blazing"]["flags"] == {"hand": refused.flagged[rel], "psd": tree[rel][:8]}
+    assert psd_glyphs.due(str(repo), "HEAD", tree, details, edits, fetch=False) == {}
+    theirs = json.dumps({"cards": {"Blazing": {"flags": {"hand": "x. " * 99, "psd": tree[rel][:8]}}}})
+    hand = json.loads(psd_glyphs.flag(theirs, rel, tree[rel], refused.flagged[rel]))["cards"]["Blazing"]["flags"]["hand"]
+    assert hand.startswith(refused.flagged[rel]) and len(hand) <= 300                # a person's long reason: ours kept
+
+    for path, data in found.files.items():                  # its own commit, then a person's save: not due
+        (repo / path).write_bytes(data)
+    git("commit", "-qam", pl.redraw_message(found), who=psd_glyphs.BOT)
+    assert psd_glyphs.due(str(repo), "HEAD", pl._tree_at(str(repo), "HEAD"), details, fetch=False) == {}
+    git("reset", "-q", "--hard", "HEAD~1")
+    psd[0].name += "y"
+    save_psd(psd, str(repo / rel))
+    git("commit", "-qam", "Blazing: saved")
+    assert psd_glyphs.due(str(repo), "HEAD", pl._tree_at(str(repo), "HEAD"), details, fetch=False) == {}
+    git("reset", "-q", "--hard", "HEAD~1")                  # a person's move alone: still due, at its new path
+    git("mv", str(repo / rel), str(repo / "Blazing.psd"))
+    git("commit", "-qm", "Blazing: moved")
+    assert list(psd_glyphs.due(str(repo), "HEAD", pl._tree_at(str(repo), "HEAD"), details, fetch=False)) == ["Blazing.psd"]

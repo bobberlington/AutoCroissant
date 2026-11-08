@@ -47,7 +47,7 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
         if expected is not None:
             assert set(re.findall(r"--[a-z-]+", done.stdout)) == expected
     code = ("import sys, commands.card_data, commands.card_history, commands.card_db, commands.changelog, commands.psd_details, "
-            "commands.card_bake, commands.tts_save, commands.ability_place, commands.rulebook_pages; "
+            "commands.card_bake, commands.tts_save, commands.ability_place, commands.rulebook_pages, commands.psd_glyphs; "
             "print(sorted(m for m in ('config', 'discord', 'pandas', 'github', 'commands.psd_analyzer', "
             "'commands.query_card', 'commands.utils', 'commands.type_emojis') if m in sys.modules)); "
             "print(sorted(m for m in sys.modules if m.startswith('commands.') or m == 'global_config'))")
