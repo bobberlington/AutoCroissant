@@ -509,9 +509,8 @@ def edit_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str, 
         elif plan(what, {"stars": value}):
             try:
                 psd_edit.plan_stars(psd, parsed, value, ctx.parser, moving=True)
-            except psd_edit.Refused as refusal:
-                if not psd_edit.star_folder(rel):           # in a star folder the card moves all the same
-                    refused(what, refusal.refusal)
+            except psd_edit.Refused as refusal:     # in a star folder it moves, its printed stars kept: by hand too
+                refused(what, refusal.refusal)
     try:
         plan("name", {"name": (psd_edit.shown_name(parsed) or one.name) + " II"})
         count, printed = card.get("stars"), list(card.get("types") or [])
