@@ -5165,7 +5165,7 @@ def below_box(keep, lines, added: bool = False) -> bool:
     return below(lines) > (0 if added else below(keep.layout.lines))
 
 
-def fit_below(psd: PSDImage, layer, before: np.ndarray, fonts, draw, off_before: bool = True) -> tuple:
+def fit_below(psd: PSDImage, layer, before: np.ndarray, fonts, draw, off_before: bool = True, check=None) -> tuple:
     """
     An Ability whose new text prints past its old text onto the design below it (ink_beyond: Autopsy Report's third
     line under its panel) or off the canvas (Soul Sanctum's wrapped line) set smaller until it doesn't, no lower than
@@ -5181,12 +5181,14 @@ def fit_below(psd: PSDImage, layer, before: np.ndarray, fonts, draw, off_before:
         fonts: font_map()
         draw: Rasterizes the layer as set_text_layer did (its splice); returns the engine's report
         off_before: It inked off the canvas before the edit (then that is no reason)
+        check: ink_beyond(psd, layer, before) (set_text_layer's, which keeps the last verdict)
 
     Returns:
         (scale, report): (1.0, None) when it was left as it was
     """
+    check = check or (lambda: ink_beyond(psd, layer, before))
     off = not off_before and _ink_off_canvas(layer, psd.width, psd.height)
-    if "\t" in layer.text or not off and ink_beyond(psd, layer, before) is None:
+    if "\t" in layer.text or not off and check() is None:
         return 1.0, None
     from psd_tools.api import text_edit
     text = layer.text
@@ -5214,7 +5216,7 @@ def fit_below(psd: PSDImage, layer, before: np.ndarray, fonts, draw, off_before:
 
     def fits() -> bool:                         # no lower than the old text (ink_beyond lets a few px onto the design)
         ink = (_on_canvas(layer, (psd.height, psd.width))[..., 3] > INK_ALPHA * 255).any(axis=1).nonzero()[0]
-        return (not len(ink) or int(ink.max()) + 1 <= floor) and ink_beyond(psd, layer, before) is None \
+        return (not len(ink) or int(ink.max()) + 1 <= floor) and check() is None \
             and (off_before or not _ink_off_canvas(layer, psd.width, psd.height))
     for scale in (FIT_STEP ** k for k in range(1, 99)):    # the largest that fits: a box's first line rises as it
         if scale < FIT_MIN:                                 # shrinks, so a smaller size can print past the top
@@ -5846,10 +5848,17 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
 
     def draw():
         return layer.rasterize(fonts=fonts, keep=before, unit=SPLICE_UNIT) if before else layer.rasterize(fonts=fonts)
+    seen = {}
+
+    def check() -> Optional[str]:               # kept until the layer's pixels or a layer's box or visibility change
+        key = (raster_key(layer), [(id(other._record), other.visible, tuple(other.bbox)) for other in psd.descendants()])
+        if not seen or seen["key"] != key:
+            seen.update(key=key, verdict=ink_beyond(psd, layer, room))
+        return seen["verdict"]
     try:
         report = draw()
         if which == "ability" and not copy:     # onto the design below or off the canvas: smaller (the preview's fit)
-            scale, again = fit_below(psd, layer, room, fonts, draw, off_before)
+            scale, again = fit_below(psd, layer, room, fonts, draw, off_before, check)
             report = again or report
             if scale < 1:
                 flag("overflow", f"ability: set at {round(scale * 100)}% of its size to stay on its panel")
@@ -5915,7 +5924,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     reach += [(tuple(fx.bbox), fx_pad(fx)) for fx in old_fx] + [(tuple(overlay.bbox), fx_pad(overlay)) for overlay in hide]
     for overlay in hide:
         overlay.visible = False
-    beyond = ink_beyond(psd, layer, room) if which == "ability" and not copy else None
+    beyond = check() if which == "ability" and not copy else None
     rebuilt, dropped, covered, notes, restyled = (_rebuild_fx(psd, layer, text, plans, band, kept, fonts, engine, targets,
                                                           words) if plans else ([], [], [], [], []))
     if beyond:                                  # told, not refused (owner 2026-10-23: refuse only gross breakage)
