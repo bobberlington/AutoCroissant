@@ -1597,8 +1597,8 @@ def test_card_syncs_wait_ends_at_decided(clone, tmp_path):
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc = yaml.safe_load((_workflow(clone).parent / "card-sync.yml").read_text(encoding="utf-8"))
-    guards = doc["jobs"]["quiet"]["steps"][0]
-    assert guards["name"] == "Guards' fixes" and guards["env"]["DECIDED"] == "Decided"
+    guards = next(s for s in doc["jobs"]["main"]["steps"] if s.get("name") == "Guards' fixes")
+    assert guards["env"]["DECIDED"] == "Decided"
     bin_dir = _fake_tools(tmp_path)
     naps = tmp_path / "sleeps.txt"
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -1629,6 +1629,61 @@ def test_card_syncs_wait_ends_at_decided(clone, tmp_path):
     done, _ = _shell(guards, {**env, "FAKE_JOBS": jobs(decided="pending"), "FAKE_JOBS_LATER": jobs(), "FAKE_LOOKS": "11"})
     assert done.returncode == 0 and sum("/runs?" in line for line in json.loads(state.read_text())["log"]) == 3    # looks 5 and 10
 
+
+def test_card_syncs_lane_sets_up_before_its_guards(clone, tmp_path):
+    """Card sync's main lane sets up (checkouts, Python), waits for this push's guards, takes main's and the data's heads
+    again, then gates (no Gate when the guards hold it). A push rides along on a lane queued or in that wait; the
+    schedule's gate and the failure streak pass over a held lane."""
+    yaml = pytest.importorskip("yaml")
+    if not shutil.which("jq") or not shutil.which("git"):
+        pytest.skip("no jq or git")
+    doc = yaml.safe_load((_workflow(clone).parent / "card-sync.yml").read_text(encoding="utf-8"))
+    main = doc["jobs"]["main"]
+    assert "quiet" not in doc["jobs"] and main["needs"] == "timer"
+    steps = {s.get("name"): s for s in main["steps"]}
+    assert [s.get("name") for s in main["steps"]][3:7] == ["Python environment", "Guards' fixes", "Newest", "Gate"]
+    assert steps["Gate"]["if"] == "${{ !steps.guards.outputs.run }}" and "steps.gate.outcome == 'success'" in steps["Leftover edits"]["if"]
+    bin_dir = _fake_tools(tmp_path)
+    state, posts = tmp_path / "gh.json", tmp_path / "posts.jsonl"
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    env = {"PATH": f"{bin_dir}:{os.environ['PATH']}", "FAKE_STATE": str(state), "FAKE_POSTS": str(posts), "GITHUB_REPOSITORY": "o/cards",
+           "GITHUB_RUN_ID": "9", "GITHUB_JOB": "main", "GITHUB_OUTPUT": str(tmp_path / "out"), "GITHUB_ENV": str(tmp_path / "env"),
+           "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "GITHUB_SERVER_URL": "https://x", "RUN_URL": "https://x/run"}
+
+    def lane(status="completed", conclusion="success", *steps_):
+        return {"name": "Bake and save", "status": status, "conclusion": conclusion,
+                "steps": [{"name": n, "status": "completed" if c else "in_progress", "conclusion": c} for n, c in steps_]}
+    other = next(s for s in doc["jobs"]["timer"]["steps"] if s["name"] == "Another timer")
+    for job, rides in ((lane("queued", None), True), (lane("in_progress", None, ("Guards' fixes", None)), True),
+                       (lane("in_progress", None, ("Guards' fixes", "success"), ("Gate", None)), False),
+                       (lane(), False), ({"name": "Quiet window", "status": "in_progress", "steps": []}, False)):
+        state.unlink(missing_ok=True)
+        done, out = _shell(other, {**env, **other["env"], "FAKE_RUNS": json.dumps([{"databaseId": 5, "status": "in_progress", "createdAt": now}]),
+                                   "FAKE_JOBS": json.dumps({"jobs": [job]})})
+        assert done.returncode == 0 and (out.get("run") == "5") is rides, (job, done.stderr)
+    held, went = lane("completed", "success", ("Gate", "skipped")), lane("completed", "success", ("Gate", "success"))
+    repo = tmp_path / "cards"                   # the schedule's gate: the held push's head is not a synced one
+    git = ["git", "-C", str(repo), "-c", "user.name=Alice", "-c", "user.email=a@x"]
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    for name in ("A.psd", "B.psd"):
+        (repo / name).write_bytes(name.encode())
+        subprocess.run([*git, "add", name], check=True)
+        subprocess.run([*git, "commit", "-qm", name], check=True)
+    heads = subprocess.run([*git, "rev-list", "HEAD"], capture_output=True, text=True, check=True).stdout.split()
+    state.unlink(missing_ok=True)
+    gate = steps["Gate"]
+    done, out = _shell(gate, {**env, **{k: v for k, v in gate["env"].items() if "${{" not in str(v)}, "GITHUB_EVENT_NAME": "schedule",
+                              "DRY_RUN": "false", "FAKE_LOOKS": "1", "FAKE_JOBS": json.dumps({"jobs": [held]}), "FAKE_JOBS_LATER": json.dumps({"jobs": [went]}),
+                              "FAKE_RUNS": json.dumps([{"databaseId": 2, "headSha": heads[0], "displayTitle": "Card sync"},
+                                                       {"databaseId": 1, "headSha": heads[1], "displayTitle": "Card sync"}])}, cwd=repo)
+    assert done.returncode == 0 and out["go"] == "true", done.stdout + done.stderr
+    assert f"card inputs changed in 1 commits since {heads[1][:8]}" in done.stdout
+    tell = steps["Tell Discord"]                # the streak: the held lane between is passed over, so no second post
+    state.unlink(missing_ok=True)
+    done, _ = _shell(tell, {**env, "WEBHOOK": "https://hook", "FAKE_LOOKS": "2", "FAKE_JOBS": json.dumps({"jobs": [held]}),
+                            "FAKE_JOBS_LATER": json.dumps({"jobs": [lane("completed", "failure", ("Gate", "success"))]}),
+                            "FAKE_RUNS": json.dumps([{"databaseId": 8, "displayTitle": "Card sync"}, {"databaseId": 7, "displayTitle": "Card sync"}])})
+    assert done.returncode == 0 and "failed in the last live run where it ran too" in done.stdout and not posts.exists(), done.stdout
 
 def test_workflow_lints(clone):
     """actionlint (when installed) accepts card-guards.yml: a file GitHub rejects fails every run, pushes included."""
