@@ -304,6 +304,20 @@ def test_stars_fewer_hide_the_last_and_more_show_hidden_first(parser, tmp_path):
 
 
 @icons
+def test_stars_copy_a_shown_star_and_a_folder_card_reads_back_its_drawn_stars(parser, tmp_path):
+    """A hidden star shown, then one copied: the copy's source is a star shown now (a hidden one's copy stays hidden).
+    A folder card's reparse reads its folder, so the gate counts the stars drawn."""
+    paths = _fixture(tmp_path, hidden=((1025, 125),))
+    _, baked = _bake(parser, paths, {"stars": 4}, tmp_path)
+    assert baked.reparse["card"]["stars"] == 4
+    assert all(layer.visible for layer in PSDImage.open(baked.psd_path).descendants() if layer.name.startswith("Star"))
+    rel, moved = "Items/Heal/2 Stars/Fixture.psd", "Items/Heal/3 Stars/Fixture.psd"
+    parsed = pe.parse_card(parser, paths[0], rel)
+    with pytest.raises(pe.Refused, match="stars: the card draws 2, not 3"):     # moved, not redrawn
+        pe.gate_reparse(parser, parsed, paths[0], moved, {"stars": 3}, PSDImage.open(paths[0]))
+
+
+@icons
 def test_stars_refuse_per_field(parser, tmp_path):
     paths = _fixture(tmp_path, stars=((1080, 20), (970, 20), (1080, 300)))      # an L: its short row grows (layout support)
     plan = _plan(parser, paths[0], REL, "stars", 4)

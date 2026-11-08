@@ -18,7 +18,7 @@ import textwrap
 from concurrent.futures import Future
 from concurrent.futures.process import BrokenProcessPool
 from datetime import timedelta
-from io import StringIO
+from io import BytesIO, StringIO
 from os import environ
 from os.path import expanduser
 from pathlib import Path
@@ -1061,7 +1061,9 @@ def test_a_tagged_psd_bakes_each_picture_it_shows_in(github, clone, tmp_path):
 
 def test_a_stars_edit_moves_a_card_starred_by_its_folder(github):
     """§11 case 8: The Freezer's stars 1 -> 3 move its PSD and PNG into "Field/3 Stars" (created, told): one commit adds
-    them there and deletes them here; its printed star (no Stars group) is not redrawn, told; the verdict says where."""
+    them there and deletes them here; its printed star (a 'Patrick Star', no Stars group) is copied twice; the verdict
+    says where."""
+    from psd_tools import PSDImage
     files = github.files_at(github.head)
     moved = {path: path.replace("1 Stars", "3 Stars") for path in (FREEZER, FREEZER[:-4] + ".png")}
     files[cb.EDITS_PATH] = _edits({"The Freezer": {"stars": 3, "_by": "web", "_at": AT}})
@@ -1070,11 +1072,14 @@ def test_a_stars_edit_moves_a_card_starred_by_its_folder(github):
     assert len(commits) == 1, text
     message = github.commits[commits[0]]["message"]
     assert message.startswith("Card edits: 1 baked\n\n- The Freezer: stars 1 -> 3 (moved to 3 Stars; created the folder "
-                              "'Field/3 Stars'; the printed stars are not redrawn: "), message
+                              "'Field/3 Stars')\n"), message
     after = github.files_at(github.head)
-    assert all(old not in after and after[new] == files[old] for old, new in moved.items())   # the same bytes, moved
+    assert all(old not in after and after[new] != files[old] for old, new in moved.items())   # moved and redrawn
+    drawn = PSDImage.open(BytesIO(after[moved[FREEZER]])).descendants()
+    assert sorted(layer.name for layer in drawn if "Patrick Star" in layer.name and layer.is_visible()) == [
+        "Patrick Star", "Patrick Star copy", "Patrick Star copy 2"]
     verdict = _verdict("The Freezer")
-    assert verdict["moved"] == "Field/3 Stars" and verdict["psd"] == _sha(files[FREEZER])[:8]
+    assert verdict["moved"] == "Field/3 Stars" and verdict["psd"] == _sha(after[moved[FREEZER]])[:8]
 
 
 @fork_text

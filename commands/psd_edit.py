@@ -6613,9 +6613,9 @@ def _header_star_tokens(psd: PSDImage, parser: PSDParser, name: str = "") -> int
     return count
 
 
-def _loose_units(psd: PSDImage, groups: list, named: bool, types) -> tuple:
+def _loose_units(psd: PSDImage, groups: list, named: bool, types, stars=()) -> tuple:
     """(shown, hidden) stars of a card whose stars are no one group's: several Stars groups (Paint Warrior), or layers
-    named star in any group (Nasty Patty, Shell Shield)."""
+    named star or after a star icon (stars: star_names()) in any group (Nasty Patty, Shell Shield, Warpstars)."""
     if not named:
         shown, hidden = [], []
         for group in groups:
@@ -6624,8 +6624,9 @@ def _loose_units(psd: PSDImage, groups: list, named: bool, types) -> tuple:
         return shown, hidden
     out: dict = {True: [], False: []}
     by_parent: dict = {}
+    icons = {id(layer) for layer in PSDParser.outside_stars(psd, (), stars)}
     for layer in psd.descendants():
-        if _named_star(layer) and all(p.visible for p in _ancestors(layer)) and star_leaf(layer):
+        if (_named_star(layer) or id(layer) in icons) and all(p.visible for p in _ancestors(layer)) and star_leaf(layer):
             by_parent.setdefault(id(layer.parent), []).append(layer)
     for layers in by_parent.values():
         for on in (True, False):
@@ -7230,8 +7231,9 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
     types = parser.all_types if parser is not None else ()
     stars = parser.star_names() if parser is not None else ()
     groups = [group for group in PSDParser._star_groups(psd) if _star_count(group, {}, {}, {}, types)]
-    named = not groups and not PSDParser._star_groups(psd) and stars_from_psd(rel)   # the parser's fallback: layers
-    #   named "... Star ..." (only where it counts them: a folder card's are its art, not redrawn)
+    # the parser's fallback (layers named "... Star ..." or after a star icon); a folder card's when they add up
+    named = not groups and (not PSDParser._star_groups(psd) if stars_from_psd(rel)
+                            else bool(old) and _named_total(psd, stars=stars) == old)
     if not groups and not named:
         refuse('no group named "Stars" draws them')
     total = _named_total(psd, stars=stars) if named else _stars_total(psd, types=types, stars=stars)
@@ -7244,11 +7246,10 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         if second is None or below != old or len(second[1]) != below or any(unit.count != 1 for unit in second[1]):
             refuse(f"the card draws {below} more below its middle, not one second creature's {old}")
         groups = [group for group in groups if group is not second[0]]
-    outside = [layer for layer in PSDParser.outside_stars(psd, PSDParser._star_groups(psd), stars)
-               if not (named and _named_star(layer))]
+    outside = [] if named else PSDParser.outside_stars(psd, PSDParser._star_groups(psd), stars)
     plan = IconPlan("stars", old, value)
     if named or len(groups) > 1:                # Nasty Patty's Patrick Stars, Paint Warrior's two Stars groups
-        shown, hidden = _loose_units(psd, groups, named, types)
+        shown, hidden = _loose_units(psd, groups, named, types, stars)
         if not shown:
             refuse('no group named "Stars" draws them')
         container = shown[len(shown) - 1].layers[0].parent
@@ -7396,9 +7397,10 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
                 how = "hidden stars shown"
         if len(shown) < count:
             order = _reading(shown, size[1], True)
-            source = max((unit for unit in order if unit.layers[0].parent is container), default=order[len(order) - 1],
+            now = [unit for unit in order if all(layer.visible for layer in unit.layers)] or order  # a copy keeps its flag
+            source = max((unit for unit in now if unit.layers[0].parent is container), default=now[len(now) - 1],
                          key=lambda unit: max(container.index(layer) for layer in unit.layers
-                                              if layer.parent is container))   # the last star layer
+                                              if layer.parent is container))   # the last star layer shown now
             first, back = None, backdrop(order)
             more = _more_layouts(order, size, count, psd, None if below else back, clear)   # a row on its banner last
             if centred:                     # the centred row once the hidden stars shown are in it
@@ -9477,9 +9479,9 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), add
 def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs: dict, psd: PSDImage, edits=(),
                  notes: Optional[list] = None) -> dict:
     """
-    Re-parse the new PSD: the old parse with exactly the edited fields replaced (the stars read back as the edit, the
-    types as its icons in any order: a miss names the field), no new problems (a stat above 10
-    reads STATS TOO HIGH by design when it sits on Top and Bottom rows; no EFFECT LAYER problem: the validator's
+    Re-parse the new PSD: the old parse with exactly the edited fields replaced (the stars read back as the edit, a
+    folder card's as drawn too; the types as its icons in any order: a miss names the field), no new problems (a stat
+    above 10 reads STATS TOO HIGH by design when it sits on Top and Bottom rows; no EFFECT LAYER problem: the validator's
     coverage check is the FX layers' gate), one digit per edited row, the title read back for a name edit, and an
     ability edit's FX layers back as declared: its FX layers' names in order, the ones it made visible, styled, directly
     above the ability's top-level group (_top), no overlay word layer showing (gate_fx measures what they cover).
@@ -9550,6 +9552,12 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
         expected.update(listed[0] if listed else {})
     if "stars" in jobs and star_folder(expected.get("path") or "") and got.get("path") == rel:
         expected["path"] = rel                  # moved into its new "N Stars" folder
+    if "stars" in jobs and star_folder(rel):    # the folder reads back as the edit: count the redrawn stars
+        types, stars = parser.all_types, parser.star_names()
+        counted = any(_star_count(group, {}, {}, {}, types) for group in PSDParser._star_groups(psd))
+        drawn = _stars_total(psd, types=types, stars=stars) if counted else _named_total(psd, stars=stars)
+        if drawn != jobs["stars"]:
+            raise Refused("reparse", f"stars: the card draws {drawn}, not {jobs['stars']}", "stars")
     different = sorted(key for key in set(expected) | set(got) if expected.get(key) != got.get(key))
     if different:
         raise Refused("reparse", "fields differ from the expected parse: " + ", ".join(

@@ -121,8 +121,7 @@ def test_text_layers_and_template(records):
 def test_header_boxes(records, clone):
     """The mock-up's header: Mini Doomer's two stars in reading order, rows of two past them, no count refused; its three
     type icons in slot order with spots carrying the row on (a second row for eight); a folder card's counts planned as
-    its move (card_bake's) and a card without a Stars group (the bake's refusal alone: the mock-up leaves its printed
-    stars)."""
+    its move (card_bake's), a card without a Stars group too (no units: the mock-up boxes them)."""
     stars, types = records[DOOMER]["header"]["stars"], records[DOOMER]["header"]["types"]
     assert [u["core"] for u in stars["units"]] == [[1049, 13, 1164, 115], [936, 15, 1051, 117]] and stars["icon"] == "warpstar"
     assert stars["at"]["2"] == [[1106, 64], [994, 66]] and stars["at"]["3"] == [[1106, 64], [994, 66], [1050, 167]]
@@ -139,7 +138,7 @@ def test_header_boxes(records, clone):
     assert lich["stars"]["refused"] == {} and sorted(lich["stars"]["at"], key=int) == [str(n) for n in range(1, 11)]
     assert lich["stars"]["at"]["6"][4:] == [[1130, 317], [998, 317]] and [t["name"] for t in lich["types"]["row"]] == ["undead", "ice"]
     freezer = pd.gather(str(clone / FREEZER), FREEZER, "The Freezer", None, vocab)["header"]
-    assert freezer["stars"] == {"units": [], "icon": None, "at": {}, "refused": {"*": 'no group named "Stars" draws them'}}
+    assert freezer["stars"] is None                     # no Stars group: its Patrick Star is redrawn, as Nasty Patty's
     assert [t["name"] for t in freezer["types"]["row"]] == ["field"]
     assert freezer["types"]["spots"]["2"] == [[7, 226, 136, 418]]                    # under a lone icon (Item_Template's column)
 
