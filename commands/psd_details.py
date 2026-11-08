@@ -1,8 +1,8 @@
 """
 The PSD facts behind the website's card "Details" dropdown: fonts, text layers, effects, smart objects, canvas, type-icon
 style, stat-row encoding, status-word layers, template deviations, the header's star and type icon boxes (where the bake
-would put them: the website mock-up's, psd_edit's geometry), a compact layer tree and the editor's parts (psd_parts,
-VERSION 2). One record per card PSD,
+would put them: the website mock-up's, psd_edit's geometry), a compact layer tree, the editor's parts (psd_parts,
+VERSION 2) and each type layer's colour runs (VERSION 3). One record per card PSD,
 keyed by its git blob sha, in the card data's db/psd_details.json (the Card sync Action's build).
 
 gather(psd, rel, name, index, vocab) -> the record: pure, never raises for a card (a failed section is a short
@@ -38,8 +38,8 @@ from commands.psd_regions import STATS, badge_layers, comp_bars, comp_creature, 
 # ========================
 # Configuration
 # ========================
-VERSION = 2                                 # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3)
-TEXT_CHARS = 200                            # text kept per type layer
+VERSION = 3                                 # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"
+TEXT_CHARS = 2000                           # text kept per type layer (whole: the website lines its colours up with the card's)
 TREE_CHILDREN = 80                          # children kept per group
 TREE_DEPTH = 8                              # groups nested deeper show one "more" entry
 MORE = ["…", "more", True]             # the tree's cut marker
@@ -91,9 +91,34 @@ def layer_path(layer) -> str:
     return "/".join(reversed([layer.name, *(owner.name for owner in _ancestors(layer))]))
 
 
-def _clean(text: str) -> str:
-    """Photoshop's line ends and byte-order mark out, clipped to TEXT_CHARS."""
-    return (text or "").replace("﻿", "").replace("\r", "\n").replace("\x03", "\n")[:TEXT_CHARS]
+def _cleaned(text: str) -> tuple:
+    """(text with Photoshop's line ends and byte-order mark out, each index of text's place in it: len(text) + 1 entries)."""
+    out, at = [], []
+    for ch in text or "":
+        at.append(len(out))
+        if ch != "\ufeff":
+            out.append("\n" if ch in "\r\x03" else ch)
+    at.append(len(out))
+    return "".join(out), at
+
+
+def _runs(fills: list, text: str, at: list, colours: list) -> list:
+    """[[start, end, k]] over text (_cleaned's), k into colours: runs without a fill out, a blank run joins the one
+    before, neighbours of one colour merged; [] for one colour."""
+    out = []
+    for start, end, fill in fills:
+        if fill is None:
+            continue
+        a, b = at[min(start, len(at) - 1)], at[min(end, len(at) - 1)]
+        if b <= a:
+            continue
+        k = colours.index(psd_edit._hex(fill))
+        if out and out[-1][1] == a and (out[-1][2] == k or not text[a:b].strip()):
+            out[-1][1] = b
+        else:
+            out.append([a, b, k])
+    out = [[a, min(b, TEXT_CHARS), k] for a, b, k in out if a < TEXT_CHARS]
+    return out if len({k for _, _, k in out}) > 1 else []
 
 
 def _colour(values) -> Optional[str]:
@@ -165,23 +190,27 @@ def _fonts(texts: list, index: Optional[FontIndex]) -> dict:
 
 
 def _text(texts: list) -> list:
-    """Every type layer, visible or not, in tree order; a style psd-tools can't read leaves font, size and colour null."""
+    """Every type layer, visible or not, in tree order; a style psd-tools can't read leaves font, size and colour null.
+    A layer of several colours has "runs" (_runs)."""
     out = []
     for layer in texts:
         try:
-            text = _clean(layer.text)
+            text, at = _cleaned(layer.text)
         except Exception:                       # text data psd-tools can't read
-            text = None
+            text, at = None, None
         try:
             font, size, colour = _style(layer)
         except Exception:                       # engine data psd-tools can't read
             font, size, colour = None, None, None
-        try:                                    # every run's colour, in order (the website's colour palette)
-            colours = list(dict.fromkeys(psd_edit._hex(fill) for _, _, fill in psd_edit.run_fills(layer) if fill))
+        try:                                    # every run's colour, in order (the website's colour palette), and where
+            fills = psd_edit.run_fills(layer)
+            colours = list(dict.fromkeys(psd_edit._hex(fill) for _, _, fill in fills if fill))
+            runs = _runs(fills, text, at, colours) if text is not None and len(colours) > 1 else []
         except Exception:
-            colours = []
-        out.append({"layer": layer_path(layer), "id": layer.layer_id, "box": _ints(layer.bbox), "text": text, "font": font,
-                    "size": size, "color": colour, "visible": layer.is_visible(), **({"colors": colours} if colours else {})})
+            colours, runs = [], []
+        out.append({"layer": layer_path(layer), "id": layer.layer_id, "box": _ints(layer.bbox), "text": text and text[:TEXT_CHARS],
+                    "font": font, "size": size, "color": colour, "visible": layer.is_visible(),
+                    **({"colors": colours} if colours else {}), **({"runs": runs} if runs else {})})
     return out
 
 

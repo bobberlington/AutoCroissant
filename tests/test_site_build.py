@@ -460,6 +460,47 @@ def test_parser_notes_answered_as_the_bot_does(bs):
         assert card["problems"] == left, fields
 
 
+def test_card_inks_line_the_psds_colours_up(bs):
+    """cards.json `ink` (owner 11-07/08): the title's and Ability's accents on the card's text as the parser made it (line
+    breaks, a type token injected); each layer's main ink and colours near it left out, so a one-colour title or black
+    text gains none; a word edited away leaves no stray letters; badges and icons unpainted."""
+    if not hasattr(bs, "card_inks"):
+        pytest.skip("before TC's card colours land")
+    layer = lambda i, text, colors, runs=None: {"layer": "Text/L", "id": i, "text": text, "color": colors[0], "visible": True,
+                                                "colors": colors, **({"runs": runs} if runs else {})}
+    rec = lambda path, title, ability: {"path": path, "at": "1", "text": [title, ability], "parts": {"title": [{"id": 1}], "ability": [{"id": 2}]}}
+    pain = rec("A.psd", layer(1, "Double\nPain", ["#ffffff", "#cf0000"], [[0, 7, 0], [7, 11, 1]]),
+               layer(2, "(1CD) Inflict 2T Burning.\nGain [fire] +1 ATK.", ["#ffffff", "#ff7a1a", "#eeeeee", "#00ff00"],
+                     [[0, 17, 0], [17, 24, 1], [24, 26, 0], [26, 31, 2], [31, 37, 0], [37, 45, 3]]))
+    shown = "(1CD) Inflict 2T Burning. Gain [fire] +1 ATK. [undead]"
+    assert bs.card_inks({"name": "Double Pain", "ability": shown}, pain) == {"name": [[7, 11, "#cf0000"]], "ability": [[17, 24, "#ff7a1a"], [38, 45, "#00ff00"]]}
+    assert bs.card_inks({"name": "Double Pain", "ability": shown.replace("Burning", "Freezing")}, pain)["ability"] == [[39, 46, "#00ff00"]]
+    cards = [{"id": "a", "key": "A", "name": "Double Pain", "ability": shown, "psd": "A.psd"},
+             {"id": "s", "key": "S", "name": "Springtrap", "ability": "Draw a card.", "psd": "S.psd"}]
+    plain = rec("S.psd", layer(1, "Springtrap", ["#d4a416"]), layer(2, "Draw a card.", ["#000000"]))
+    bs.join_details(cards, {"b1": pain, "b2": plain}, {"A.psd": "b1", "S.psd": "b2"})
+    assert cards[0]["ink"]["ability"][0] == [17, 24, "#ff7a1a"] and "ink" not in cards[1]
+
+
+def test_card_inks_on_a_real_card(bs, clone):
+    """Tainted Lazarus: its two Ability layers' runs on the parsed ability (joined, [undead] injected): the status words in
+    their colours, the injected token none, the white title none."""
+    if not hasattr(bs, "card_inks"):
+        pytest.skip("before TC's card colours land")
+    import commands.psd_details as pd
+    import commands.psd_edit as pe
+    from psd_tools import PSDImage
+    vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
+    parser = pe.offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
+    rel = "Creatures/Isaac/3 Stars/Tainted_Lazarus.psd"
+    psd = PSDImage.open(str(clone / rel))
+    ability = parser.parse(psd, rel).ability
+    ink = bs.card_inks({"name": "Tainted Lazarus", "ability": ability}, pd.gather(psd, rel, "Tainted Lazarus", None, vocab["all_types"], parser))
+    words = {ability[a:b]: c for a, b, c in ink["ability"]}
+    assert list(ink) == ["ability"] and words["Blindness"] == "#f9f2c2" and words["Afraid"] == "#0060ff"
+    assert ability.endswith(" [undead]") and max(b for _, b, _ in ink["ability"]) <= len(ability) - len(" [undead]")
+
+
 def test_font_filter_data_is_the_details_fonts(bs):
     """data/cardfonts.json (owner 10-25, the grid's Font filter): a card's fonts are its Details record's, a variant picture
     its PSD's, a PNG-only duplicate (no record) and an unreadable fonts section none; names by use, then name."""

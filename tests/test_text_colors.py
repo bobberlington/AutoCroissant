@@ -56,8 +56,8 @@ def test_field_rules_and_file():
 
 @site
 def test_menu_logic(tmp_path):
-    """The phrase a selection names (whole words, "#n" when it repeats), the list a pick leaves, the runs drawn, the
-    plain words, and the file edit.js writes."""
+    """The phrase a selection names (whole words, "#n" when it repeats), the list a pick leaves, the runs drawn (over the
+    card's own colours), the plain words, and the file edit.js writes."""
     script = tmp_path / "probe.mjs"
     script.write_text(f"""const T = await import({json.dumps((ASSETS / 'textcolor.js').as_uri())});
 const E = await import({json.dumps((ASSETS / 'edit.js').as_uri())});
@@ -77,6 +77,14 @@ const out = {{
   note: E.describeItems({{ set: {{ colors: [{{ field: "note", color: "#000000" }}] }}, unset: [] }}, {{}}).map(x => x.psd),
   status: T.statusSpans("Inflict 2T Burning. burning prose.", ["Burning"]),
   kept: T.colorRanges("Inflict 2T Burning. burning prose.", [{{ field: "ability", color: "#ffd21f" }}], "ability", ["Burning"]),
+  ink: T.inkOf ? (() => {{                         // the card's own colours under the edits; an edit keeps the unchanged ends'
+    const c = {{ name: "Ant", ability: "Inflict Burning now.", ink: {{ ability: [[8, 15, "#ff7a1a"], [16, 19, "#0060ff"]] }} }};
+    T.anchorInks([c]); c.ability = "Inflict Burning right now.";
+    const base = T.inkOf(c, "ability");
+    return {{ base, name: T.inkOf(c, "name"), drawn: T.colorRanges(c.ability, [{{ field: "ability", phrase: "now", color: "#ffffff" }}], "ability", null, base),
+      at: T.colorAt(null, "ability", c.ability, 8, 15, null, base), cut: T.inkOf(c, "ability", "Inflict Freezing right now."),
+      low: T.paintHtml("ab", [{{ start: 0, end: 1, color: "#ffff00" }}, {{ start: 1, end: 2, color: "#202020" }}]) }};
+  }})() : null,
 }};
 process.stdout.write(JSON.stringify(out));
 """, encoding="utf-8")
@@ -98,6 +106,13 @@ process.stdout.write(JSON.stringify(out));
     assert out["lines"] == [["Ability: 'Burning' (2nd) coloured #ff7a1a", True]] and out["note"] == [False]
     assert out["status"] == [[11, 18]]                  # psd_edit.status_letters' (test_status_words_keep_the_chart)
     assert not any(r["start"] < 18 and 11 < r["end"] for r in out["kept"]) and any(r["start"] <= 20 < r["end"] for r in out["kept"])
+    ink = out["ink"]
+    if ink is None:                                     # before TC's card colours land
+        return
+    assert ink["cut"] == [{"start": 23, "end": 26, "color": "#0060ff"}]                 # no stray letters of an edited word
+    assert ink["base"] == [{"start": 8, "end": 15, "color": "#ff7a1a"}, {"start": 22, "end": 25, "color": "#0060ff"}] and ink["name"] is None
+    assert ink["drawn"] == [{"start": 8, "end": 15, "color": "#ff7a1a"}, {"start": 22, "end": 25, "color": "#ffffff"}] and ink["at"] == "#ff7a1a"
+    assert ink["low"] == '<span class="tc lo-l" style="color:#ffff00">a</span><span class="tc lo-d" style="color:#202020">b</span>'
 
 
 @pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")

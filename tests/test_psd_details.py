@@ -64,7 +64,7 @@ def test_record_shape_and_size(records, clone):
         assert record["fonts"] and all(e["supplied"] is True for e in record["fonts"].values())
         fonts = {font: [layer.rsplit("/", 1)[-1] for layer in e["layers"]] for font, e in record["fonts"].items()}
         assert fonts == psd_fonts(str(clone / rel))                                # the same rule as the font check
-        assert all(set(t) - {"colors"} == {"layer", "id", "box", "text", "font", "size", "color", "visible"} for t in record["text"])
+        assert all(set(t) - {"colors", "runs"} == {"layer", "id", "box", "text", "font", "size", "color", "visible"} for t in record["text"])
         assert all(t["color"] in t.get("colors", [t["color"]]) for t in record["text"] if t["color"])     # every run's colour
         assert all(len(t["text"]) <= pd.TEXT_CHARS and (t["color"] is None or len(t["color"]) == 7) for t in record["text"])
         assert all(isinstance(v, list) and v for v in record["effects"].values())
@@ -99,6 +99,11 @@ def test_text_layers_and_template(records):
     assert cannon["overlays"] == [] and cannon["fx"] == ["Ability FX: Blazing"] and cannon["template"]["deviations"] == ["icons as images"]
     assert cannon["effects"]["Ability FX: Blazing"] == ["OuterGlow"] and set(cannon["fonts"]["stoogedings-Regular"]["layers"]) == {"Text/Ability"}
     assert cannon["effects"]["Stars/stars"] == ["GradientOverlay", "BevelEmboss"]
+    runs = next(t for t in cannon["text"] if t["layer"] == "Text/Ability")             # VERSION 3: where each colour is
+    words = {runs["text"][a:b].strip(): runs["colors"][k] for a, b, k in runs["runs"]}
+    assert words["Blazing"] == "#ff2a1a" and words["Afraid"] == "#0060ff" and runs["text"].endswith("in that slot.")
+    assert all(a < b <= c for (a, b, _), (c, _, _) in zip(runs["runs"], runs["runs"][1:]))
+    assert "runs" not in ability                                                       # one colour
     virus = records[VIRUS]
     hidden = next(t for t in virus["text"] if t["layer"].startswith("Alternate/"))
     assert hidden["visible"] is False and "\n" in hidden["text"] and hidden["color"] == "#01c102"
@@ -144,6 +149,17 @@ def test_gather_without_an_index_leaves_supplied_null(clone):
     assert {e["supplied"] for e in record["fonts"].values()} == {None}
     pd.mark_supplied(record, FontIndex())
     assert {e["supplied"] for e in record["fonts"].values()} == {False}
+
+
+def test_runs_over_the_cleaned_text():
+    """Runs move past a byte-order mark, a blank run joins the one before, one colour shows none."""
+    red, white, blue = (1, 0, 0), (1, 1, 1), (0, 0, 1)
+    text, at = pd._cleaned("\ufeffHot\rcold")
+    assert text == "Hot\ncold" and at == [0, 0, 1, 2, 3, 4, 5, 6, 7, 8]
+    colours = ["#ff0000", "#ffffff", "#0000ff"]
+    assert pd._runs([(0, 4, red), (4, 5, white), (5, 9, blue)], text, at, colours) == [[0, 4, 0], [4, 8, 2]]
+    assert pd._runs([(0, 4, red), (4, 5, white), (5, 9, red)], text, at, colours) == []           # a blank joins: one colour
+    assert pd._runs([(0, 1, white), (1, 9, red)], " Hot cold", list(range(10)), colours) == [[0, 1, 1], [1, 9, 0]]
 
 
 def test_gather_never_raises_for_a_broken_card():
@@ -194,11 +210,11 @@ def test_text_load_prune_round_trip(tmp_path):
     text = pd.text_of(cards)
     path.write_text(text, encoding="utf-8")
     lines = text.splitlines()
-    assert lines[0] == '{"version": 2, "cards": {' and lines[1].startswith('"' + "a" * 40 + '": {"path":"Items/A.psd"') and lines[2].endswith("}")
+    assert lines[0] == '{"version": %d, "cards": {' % pd.VERSION and lines[1].startswith('"' + "a" * 40 + '": {"path":"Items/A.psd"') and lines[2].endswith("}")
     assert lines[3] == "}}" and "é" in text and json.loads(text)["cards"] == cards
     assert pd.load(str(path)) == cards
     assert pd.prune(cards, {"a" * 40}) == 1 and set(cards) == {"a" * 40} and pd.prune(cards, {"a" * 40}) == 0
-    assert json.loads(pd.text_of({})) == {"version": 2, "cards": {}}
+    assert json.loads(pd.text_of({})) == {"version": pd.VERSION, "cards": {}}
 
 
 def test_load_tolerates_a_missing_or_odd_file(tmp_path, capsys):
