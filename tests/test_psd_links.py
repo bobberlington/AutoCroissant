@@ -125,11 +125,14 @@ def test_trim_map_on_star_of_beth(clone):
 
 
 def test_update_snaps_like_photoshop():
-    """S0 (11-07): Photoshop's Update of Delta's background resized to 922x518 placed it at 153,37-2977,1623."""
+    """S0 (11-07): Photoshop's Update of Delta's background resized to 922x518 placed it at 153,37-2977,1623.
+    S2 (11-08): Dragon Mount's Warpstar at 1.2x: corner and size rounded apart (round the centre gave top 101)."""
     assert pl.snapped([153.188, 36.5, 2976.812, 36.5, 2976.812, 1622.875, 153.188, 1622.875]) == \
         [153, 37, 2977, 37, 2977, 1623, 153, 1623]
     assert pl.snapped([60.473, 1738.007, 1208.498, 1738.007, 1208.498, 2382.993, 60.473, 2382.993]) == \
         [60, 1738, 1208, 1738, 1208, 2383, 60, 2383]
+    assert pl.snapped([999.955, 100.459, 1150.533, 100.459, 1150.533, 234.775, 999.955, 234.775]) == \
+        [1000, 100, 1151, 100, 1151, 234, 1000, 234]
 
 
 def test_links_placed_from_any_depth_and_url():
@@ -180,13 +183,14 @@ def test_links_placed_from_any_depth_and_url():
 
 def test_redraw_linked_one_file_two_users(tmp_path, capsys):
     """One MDW/Linked file, two users at two depths and scales (one PNG named in another case). A lossless re-save: their
-    sizes and contentIDs only, no raster, no PNG. A pixel edit: both drawn again (the stored mode, bicubic), their PNGs
-    re-exported to the new drawing; card-sync.yml's due and redraw command lines see both."""
+    sizes and contentIDs only, no raster, no PNG. A pixel edit: both drawn again (the stored mode, bicubic) on their own
+    quads (same size: no snap), their PNGs re-exported to the new drawing; card-sync.yml's due and redraw command lines
+    see both."""
     repo = tmp_path / "cards"
     git = lambda *a: subprocess.run(["git", "-C", str(repo), *a], check=True, capture_output=True, text=True).stdout
     repo.mkdir()
     git("init", "-q")
-    art, users = _art(), {"Creatures/X/3 Stars/A.psd": (40, 60, 2.0), "Items/B.psd": (300, 200, 1.5)}
+    art, users = _art(), {"Creatures/X/3 Stars/A.psd": (40.4, 60.3, 2.0), "Items/B.psd": (300, 200, 1.5)}
     pngs = {"Creatures/X/3 Stars/A.psd": "Creatures/X/3 Stars/A.png", "Items/B.psd": "Items/b.png"}
     data = _png(art, 9)
     (repo / "MDW/Linked").mkdir(parents=True)
