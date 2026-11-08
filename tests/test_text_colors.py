@@ -43,7 +43,7 @@ def test_field_rules_and_file():
     assert entry == {"colors": good[2:], "_by": "web"} and rewrite_entry({"colors": good[:1]}, colors_done=good[:1]) is None
     assert color_text(BURNING) == "Ability: 'Burning' coloured #ff7a1a" and color_text(good[1]) == "Name coloured #ffffff"
     spec = importlib.util.spec_from_file_location("site_build_colors", SITE / "build" / "build_site.py")
-    if spec and Path(spec.origin).is_file():
+    if spec and Path(spec.origin).is_file() and "def valid_colors" in Path(spec.origin).read_text(encoding="utf-8"):   # TC landed
         bs = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(bs)
         assert all(bs.valid_colors(v) == CardEdits.valid("colors", v) for v in (good, [], [dict(BURNING), dict(BURNING)]))
@@ -75,6 +75,8 @@ const out = {{
   file: E.editsFile(JSON.stringify({{ cards: {{}} }}), [{{ key: "X", set: {{ note: "n", colors: list }}, unset: [] }}], "T", "web"),
   lines: E.describeItems({{ set: {{ colors: list }}, unset: [] }}, {{}}).map(x => [x.text, x.psd]),
   note: E.describeItems({{ set: {{ colors: [{{ field: "note", color: "#000000" }}] }}, unset: [] }}, {{}}).map(x => x.psd),
+  status: T.statusSpans("Inflict 2T Burning. burning prose.", ["Burning"]),
+  kept: T.colorRanges("Inflict 2T Burning. burning prose.", [{{ field: "ability", color: "#ffd21f" }}], "ability", ["Burning"]),
 }};
 process.stdout.write(JSON.stringify(out));
 """, encoding="utf-8")
@@ -94,6 +96,8 @@ process.stdout.write(JSON.stringify(out));
     entry = json.loads(out["file"])["cards"]["X"]
     assert list(entry) == ["colors", "note", "_by", "_at"] and out["file"] == dump_edits(json.loads(out["file"]))
     assert out["lines"] == [["Ability: 'Burning' (2nd) coloured #ff7a1a", True]] and out["note"] == [False]
+    assert out["status"] == [[11, 18]]                  # psd_edit.status_letters' (test_status_words_keep_the_chart)
+    assert not any(r["start"] < 18 and 11 < r["end"] for r in out["kept"]) and any(r["start"] <= 20 < r["end"] for r in out["kept"])
 
 
 @pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")
