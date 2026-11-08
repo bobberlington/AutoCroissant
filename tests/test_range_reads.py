@@ -1,9 +1,9 @@
 """Range reads: a card PSD opened by HTTP range requests (psd-tools' lazy open) parses as the whole file does; a broken
 range read marks the PSD failed, so the caller reads it whole. card_check reads ranges at the push, the build at its head
-(or a bake commit's parent). Also the parse from an open PSD and the bound on fetches ahead of the parse."""
+(or a bake commit's parent). Also the parse from an open PSD and the download workers' parse (AHEAD)."""
 import hashlib
 import json
-import time
+import threading
 from types import SimpleNamespace
 from urllib.parse import unquote
 
@@ -191,31 +191,31 @@ def test_a_wrong_range_after_the_open_marks_the_psd_failed(psds, monkeypatch, an
 # ========================
 # Without the fork
 # ========================
-def test_fetches_run_at_most_AHEAD_before_the_parse(cards, monkeypatch):
-    monkeypatch.setattr(cd, "AHEAD", 1)
-    events = []
-    fetch, parse = cd.GitBuild._fetch_psd, cd.CardBuild._parse
+def test_psds_are_read_in_the_workers_and_kept_at_most_AHEAD_ahead(cards, monkeypatch):
+    monkeypatch.setattr(cd, "AHEAD", 2)
+    events, waited, freezer = [], [], threading.Event()
+    read = cd.CardBuild._read
 
-    def fetching(self, path, sha):
-        events.append(("fetch", path))
-        return fetch(self, path, sha)
-
-    def parsing(self, source, path, name, sha):
-        events.append(("parse", path))
+    def reading(self, source, path, name, sha):
+        events.append(("read", path))
         if path == DOOMER:
-            time.sleep(0.5)                                        # the first card's parse is slow
-        card = parse(self, source, path, name, sha)
-        events.append(("parsed", path))
-        return card
+            waited.append(freezer.wait(10))                        # FREEZER is read meanwhile, by another worker
+        found = read(self, source, path, name, sha)
+        if path == FREEZER:
+            freezer.set()
+        events.append(("done", path))
+        return found
 
-    monkeypatch.setattr(cd.GitBuild, "_fetch_psd", fetching)
-    monkeypatch.setattr(cd.CardBuild, "_parse", parsing)
+    monkeypatch.setattr(cd.CardBuild, "_read", reading)
     third = "Items/Anubisath_Guardian.psd"
     helpers.put(cards.repo, third, cards.psds[OTHER])
     helpers.commit(cards.repo, "alice", 1100)
     assert helpers._build(cards, "--empty")[0] == cd.EXIT_OK
-    assert [p for kind, p in events if kind == "fetch"] == [DOOMER, FREEZER, third]
-    assert events.index(("fetch", third)) > events.index(("parsed", DOOMER))
+    assert waited == [True]
+    assert events.index(("read", third)) > events.index(("done", DOOMER))
+    stats = helpers._read(cards)[0]
+    assert _strip(stats["Mini Doomer"].to_dict()) == _strip(_golden(DOOMER))
+    assert _strip(stats["The Freezer"].to_dict()) == _strip(_golden(FREEZER))
 
 
 # ========================

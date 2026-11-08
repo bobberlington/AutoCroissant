@@ -40,8 +40,8 @@ from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, P
 # ========================
 UPDATE_RATE = 25
 STRAIGHT_KEYS = ("name", "ability", "note")                     # parsed_values' printed text
-DOWNLOAD_WORKERS = 4                                              # PSDs downloaded ahead of parsing
-AHEAD = 2 * DOWNLOAD_WORKERS                                      # PSDs fetched and not yet parsed, at most (memory, temp files)
+DOWNLOAD_WORKERS = 4                                              # PSDs fetched and parsed at a time
+AHEAD = 2 * DOWNLOAD_WORKERS                                      # PSDs read and not yet kept, at most (memory)
 RANGE_REFUSALS = 3                                                # PSDs refused range reads (HTTP error, no connection): off
                                                                   # trying them (github_api.RANGE_READS: the off switch)
 EXCLUDE_FOLDERS = ["Markers", "MDW"]
@@ -60,6 +60,17 @@ FETCH_CHUNK, FETCH_POOL = 8, 4                                    # blobs a git 
 # ========================
 # The build
 # ========================
+@dataclass
+class Read:
+    """One PSD's parse in a download worker, kept on the build in todo order (CardBuild._keep)."""
+    card: Optional[CardInfo] = None             # None: read it whole (range reads failed), or error
+    variants: Optional[list] = None             # its variants 2..N (CardInfo each), None without tags
+    details: Optional[dict] = None
+    links: Optional[dict] = None
+    fetched: Optional[int] = None               # bytes by range reads
+    error: Optional[Exception] = None           # what the parse raised
+
+
 class CardBuild:
     """
     One build over the card repo: the parse, its details and the REST blob source (_blob, _repo_text, _download).
@@ -478,45 +489,46 @@ class CardBuild:
         todo, num_old = self._todo(response, force_update)
 
         self.raw_ref = self._raw_ref() if todo and range_reads() else ""
+        if todo:
+            self._shared()
         pool = ThreadPoolExecutor(DOWNLOAD_WORKERS)
         queue, ahead = iter(todo), deque()
 
-        def top_up() -> None:                           # keep AHEAD fetches going
+        def top_up() -> None:                           # keep AHEAD reads going
             while len(ahead) < AHEAD:
                 item = next(queue, None)
                 if item is None:
                     return
-                ahead.append((item, pool.submit(self._fetch_psd, item[0], item[2])))
+                ahead.append((item, pool.submit(self._fetch_read, *item)))
 
         try:
             top_up()
-            while ahead:
-                (path, name, sha), fetched = ahead.popleft()
-                source = fetched.result()
+            while ahead:                                # kept in todo order
+                (path, name, sha), task = ahead.popleft()
+                read = task.result()
                 top_up()
-                if source is None:
+                if read is None:
                     self._not_fetched(path, name)
                     continue
                 try:
                     timestamp, author = self._get_remote_timestamp(path, name)
                 except Exception as e:                          # no date: the card waits
-                    self._release(source)
                     self._not_looked_up(path, name, e)
                     continue
                 try:
-                    card = self._parse(source, path, name, sha)
+                    card = self._keep(read, path, name, sha)
                     if card is None:                            # range reads failed: the whole file decides
-                        self._release(source)
                         source = self._download(path, sha)
                         if source is None:
                             self._not_fetched(path, name)
                             continue
-                        card = self._parse(source, path, name, sha)
+                        try:
+                            card = self._parse(source, path, name, sha)
+                        finally:
+                            self._release(source)
                 except Exception as e:                          # one bad PSD: its card keeps its data, the run goes on
                     self._unreadable(path, name, sha, e)
                     continue
-                finally:
-                    self._release(source)
                 old = self.db.stats.get(name)
                 if old is None or getattr(old, "blob_sha", None) != sha:
                     self.new_blobs.setdefault(sha, name)
@@ -547,12 +559,9 @@ class CardBuild:
                 if num_updated % UPDATE_RATE == 0:
                     self.progress(num_updated)
         finally:
-            for _, fetched in ahead:
-                fetched.cancel()
-            pool.shutdown(wait=True)
-            for _, fetched in ahead:                            # open PSDs and temp files left by an error
-                if fetched.done() and not fetched.cancelled() and fetched.exception() is None:
-                    self._release(fetched.result())
+            for _, task in ahead:
+                task.cancel()
+            pool.shutdown(wait=True)                            # each task closes its own PSD
 
         if self.ranged:
             print(f"{len(self.ranged)} PSDs read by range requests at {self.raw_ref[:8]}: "
@@ -582,15 +591,15 @@ class CardBuild:
                 if problems:
                     problematic.append((path, variant, problems))
 
-    def _parse_psd(self, psd: PSDImage, path: str, name: str, existing: Optional[CardInfo]) -> CardInfo:
+    def _parse_psd(self, psd: PSDImage, path: str, name: str, existing: Optional[CardInfo]) -> tuple:
         """
-        The card; a PSD with variant tags (PARTS_EDITOR.md §9) is parsed once per picture: variant 1 is the card,
-        variants 2..N wait in variant_cards (named after their PNG: "A Snack2"). A picture without its PNG in the tree is
-        a problem on its card.
+        (the card, its variants or None); a PSD with variant tags (PARTS_EDITOR.md §9) is parsed once per picture:
+        variant 1 is the card, variants 2..N wait in variant_cards once kept (named after their PNG: "A Snack2"). A
+        picture without its PNG in the tree is a problem on its card.
         """
         pictures = variants_of(psd)
         if len(pictures) < 2:
-            return self.parser.parse(psd, path, existing)
+            return (self.parser.parse(psd, path, existing), None)
         card = self.parser.parse(psd, path, existing, variant=1)
         cards = [card]
         for n in pictures[1:]:
@@ -603,8 +612,7 @@ class CardBuild:
         for n, each in zip(pictures, cards):
             if self.shas and f"{folder}{stem}{'' if n == 1 else n}.png" not in self.shas:
                 each.problems.append(f"VARIANT {n} HAS NO PNG")
-        self.variant_cards[name] = cards[1:]
-        return card
+        return (card, cards[1:])
 
     def _file_bytes(self, path: str) -> Optional[bytes]:
         """A repo file's bytes by its tree blob (the templates); None when not in the tree or not fetched."""
@@ -641,33 +649,83 @@ class CardBuild:
         elif source and isfile(source):
             remove(source)
 
+    def _shared(self) -> None:
+        """The parse's lazy shared objects, made before the download workers share them."""
+        from commands import psd_details
+        from commands.psd_parts import Templates
+        if self.templates is None:
+            self.templates = Templates.from_blobs(self._file_bytes)
+        try:
+            if self._repo_tree is None:
+                from psd_tools.api.links import RepoTree
+                self._repo_tree = RepoTree(self.sizes)
+        except ImportError:                             # _linked records it, PSD by PSD
+            pass
+        try:
+            psd_details._icon_parser(self.db.all_types)
+        except Exception:                               # the details say so, card by card
+            pass
+
+    def _fetch_read(self, path: str, name: str, sha: str) -> Optional["Read"]:
+        """A download worker's PSD: fetched, read (_read) and closed; None when not fetched."""
+        source = self._fetch_psd(path, sha)
+        if source is None:
+            return None
+        try:
+            return self._read(source, path, name, sha)
+        finally:
+            self._release(source)
+
     def _parse(self, source, path: str, name: str, sha: str) -> Optional[CardInfo]:
+        """The card from one open of the PSD, its details, links and variants kept (_read, _keep); raises what the
+        parse raised."""
+        return self._keep(self._read(source, path, name, sha), path, name, sha)
+
+    def _read(self, source, path: str, name: str, sha: str) -> "Read":
         """
-        The card and its details from one open of the PSD. None for a RemotePSD that raised or whose reads broke: the
-        caller reads the whole file instead, so a failed range read never changes a result (a lazy open checks only the
-        payloads it reads).
+        The card, its variants, details and links from one open of the PSD, set on nothing (a download worker's).
+        No card for a RemotePSD that raised or whose reads broke: the caller reads the whole file instead, so a failed
+        range read never changes a result (a lazy open checks only the payloads it reads).
         """
         existing = self.db.stats.get(self.renamed_from.get(name, ""))
+        read = Read()
         if isinstance(source, RemotePSD):
             try:
-                card = self._parse_psd(source.psd, path, name, existing)
+                card, variants = self._parse_psd(source.psd, path, name, existing)
                 details = self._details(source.psd, path, name, card)
-                self.links[path] = self._linked(source.psd, path, sha)
+                read.links = self._linked(source.psd, path, sha)
             except Exception as e:
                 print(f"{path}: range reads failed ({e}); downloading it whole")
-                return None
+                return read
             if source.failed:
                 print(f"{path}: a range read failed; downloading it whole")
-                return None
-            self.ranged.append(source.fetched)
-        else:
+                return read
+            read.card, read.variants, read.details, read.fetched = card, variants, details, source.fetched
+            return read
+        try:
             psd = PSDImage.open(source)
-            self.links[path] = self._linked(psd, path, sha)     # before the parse: one it refuses still has its links
-            card = self._parse_psd(psd, path, name, existing)
-            details = self._details(psd, path, name, card)
-        if details is not None:
-            self.details[sha] = details
-        return card
+            read.links = self._linked(psd, path, sha)           # before the parse: one it refuses still has its links
+            read.card, read.variants = self._parse_psd(psd, path, name, existing)
+            read.details = self._details(psd, path, name, read.card)
+        except Exception as e:
+            read.card, read.error = None, e
+        return read
+
+    def _keep(self, read: "Read", path: str, name: str, sha: str) -> Optional[CardInfo]:
+        """A read's links, details, variants and range bytes on the build; its card (None: read it whole). Raises the
+        parse's error."""
+        if read.links is not None:
+            self.links[path] = read.links
+        if read.error is not None:
+            raise read.error
+        if read.card is not None:
+            if read.variants is not None:
+                self.variant_cards[name] = read.variants
+            if read.details is not None:
+                self.details[sha] = read.details
+            if read.fetched is not None:
+                self.ranged.append(read.fetched)
+        return read.card
 
     def _not_fetched(self, path: str, name: str) -> None:
         """A PSD without a file: held back (GitBuild's budget, read next run) or failed (retried next run)."""
