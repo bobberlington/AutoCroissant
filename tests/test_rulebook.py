@@ -1,6 +1,8 @@
 """The rulebook written on the website (owner 2026-10-29): its chapters as plain text for db/rulebook.json, its TTS PDF
 printed again only when a page's pixels change, and the save's Rulebooks bag holding the PDF."""
 import json
+import os
+import subprocess
 import types
 from io import BytesIO
 
@@ -69,9 +71,33 @@ def test_pdf_printed_only_when_a_page_changes(tmp_path):
     assert book["pages"][1]["t"] == "STATS HP DEF" and "t" not in book["pages"][0]                   # each page's text: the save's search
     rulebook_pages.write_pages(str(folder), shots, pdf, "k1")                       # draw's key, for the next run's skip
     assert rulebook_pages.read_pages(str(tmp_path))["key"] == "k1" and len(printed) == 3
-    assert not rulebook_pages.write_pages(str(folder), shots, pdf, "k2")["printed"]  # a new key, the same pixels: the print's key stays
+    assert not rulebook_pages.write_pages(str(folder), shots, pdf, "k2")["printed"]  # a new key, the same pixels, the website behind: the print's key stays
     assert rulebook_pages.read_pages(str(tmp_path))["key"] == "k1" and len(printed) == 3
+    assert not rulebook_pages.write_pages(str(folder), shots, pdf, "k2", settled=True)["printed"]   # the website caught up: the new key
+    assert rulebook_pages.read_pages(str(tmp_path))["key"] == "k2" and len(printed) == 3
     assert rulebook_pages.key("<sheets>", str(tmp_path)) == rulebook_pages.key("<sheets>", str(tmp_path)) != rulebook_pages.key("<sheet>", str(tmp_path))
+
+
+def test_site_settled_by_its_build(tmp_path, monkeypatch):
+    """The key is kept without a print only when the website's build (the main commit dated cards.json's source) has
+    HEAD's rulebook pictures and fonts and MDW/Fonts; a later commit elsewhere doesn't hold it back."""
+    def commit(when, rel):
+        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / rel).write_text(when)
+        env = {**os.environ, "GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when}
+        for args in (["add", "-A"], ["-c", "core.hooksPath=/dev/null", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", rel]):
+            subprocess.run(["git", "-C", str(tmp_path), *args], check=True, capture_output=True, env=env)
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    commit("2026-11-08T05:00:00+00:00", "Items/a.png")
+    commit("2026-11-08T05:41:00+00:00", "MDW/Fonts/a.ttf")
+    commit("2026-11-08T07:00:00+00:00", "Items/b.png")
+    built = {}
+    monkeypatch.setattr(rulebook_pages, "urlopen", lambda request, timeout: BytesIO(json.dumps(built).encode()))
+    for source, branch, settled in (("2026-11-07T21:41:00-08:00", "main", True), ("2026-11-08T07:00:00+00:00", "main", True),
+                                    ("2026-11-08T05:00:00+00:00", "main", False), ("2026-11-08T06:00:00+00:00", "main", False),
+                                    ("2026-11-08T07:00:00+00:00", "work", False), ("", "main", False)):
+        built.update(source=source, branch=branch)
+        assert rulebook_pages.site_settled("https://site", str(tmp_path)) is settled, source
 
 
 def _card(guid, path, nick, deck_id):

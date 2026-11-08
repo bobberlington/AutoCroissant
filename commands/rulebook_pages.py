@@ -12,11 +12,13 @@ The website must show the checkout's chapters (the page lists the chapters it wa
 to SITE_WAIT for its build of them (data/rules.json, polled without Chrome), else nothing changes and the next run draws
 them. Headless Chrome ($CHROME, else the first of CHROMES on PATH) over its DevTools pipe; no
 package beyond Pillow. Each page is screenshot and hashed: the PDF is printed again only when a hash changed (a PDF's
-bytes carry its print time), so an unchanged rulebook keeps its file and its pinned link. Other files in the folder are
-left alone. Exit 1 when the pages could not be drawn (nothing changed then).
+bytes carry its print time), so an unchanged rulebook keeps its file and its pinned link. pages.json's key skips the
+screenshots when nothing they draw changed. Other files in the folder are left alone. Exit 1 when the pages could not be
+drawn (nothing changed then).
 """
 from argparse import ArgumentParser
 from base64 import b64decode, b64encode
+from datetime import datetime
 from io import BytesIO
 from json import dumps, loads
 from os import close, environ, listdir, makedirs, pipe, read, write
@@ -283,11 +285,11 @@ def read_pages(checkout: str) -> dict:
     return data if isinstance(data, dict) and isinstance(data.get("pages"), list) else {}
 
 
-def write_pages(folder: str, shots: list, pdf_maker, key: str = "") -> dict:
+def write_pages(folder: str, shots: list, pdf_maker, key: str = "", settled: bool = False) -> dict:
     """
     pages.json and the PDF into folder: the PDF printed (pdf_maker(), bytes) when a page's hash changed, the list changed or the
-    PDF is missing; key (draw's) kept for the next run only when the PDF was printed (else the last print's stays: what
-    a late picture or font changes is screenshot again).
+    PDF is missing; key (draw's) kept for the next run when the PDF was printed or, the pages as they were, when settled
+    (site_settled()); else the last print's stays: what a late picture or font changes is screenshot again.
 
     Returns:
         {"pages": n, "changed": [page names], "printed": bool}
@@ -312,7 +314,7 @@ def write_pages(folder: str, shots: list, pdf_maker, key: str = "") -> dict:
         with open(pdf, "wb") as fh:
             fh.write(data)
         out["printed"] = True
-    k = key if out["printed"] else old.get("key", "")
+    k = key if out["printed"] or (settled and key) else old.get("key", "")
     text = dumps({"about": ABOUT, "pdf": PDF_FILE, **({"key": k} if k else {}), "pages": pages}, ensure_ascii=False, indent=1) + "\n"
     if text != (open(listing, encoding="utf-8").read() if isfile(listing) else None):
         with open(listing, "w", encoding="utf-8") as fh:
@@ -330,6 +332,28 @@ def site_chapters(site: str) -> dict:
                 if isinstance(c, dict) and CHAPTER_FILE.match(c.get("file") or "") and isinstance(c.get("source"), str)}
     except (OSError, ValueError):
         return {}
+
+
+def site_settled(site: str, checkout: str) -> bool:
+    """Whether the website was built from a main commit with HEAD's UNSTAMPED and FONTS_DIR trees (its cards.json's
+    source: the built commit's date), so its pages show them; False when unreadable or no such commit."""
+    def git(*args) -> str:
+        got = run_process(["git", "-C", checkout, *args], stdout=PIPE, stderr=DEVNULL, timeout=30)
+        if got.returncode:
+            raise OSError(f"git {args[0]} failed")
+        return got.stdout.decode()
+    try:
+        with urlopen(Request(f"{site.rstrip('/')}/data/cards.json?t={int(time())}", headers={"User-Agent": "rulebook-pages"}),
+                     timeout=30) as reply:
+            built = loads(reply.read())
+        if built.get("branch") != "main":
+            return False
+        at = int(datetime.fromisoformat(built["source"]).timestamp())
+        builds = git("rev-list", f"--min-age={at}", f"--max-age={at}", "HEAD").split()   # that date's commits
+        parts = lambda rev: git("ls-tree", rev, "--", *UNSTAMPED, FONTS_DIR)
+        return bool(builds) and all(parts(rev) == parts("HEAD") for rev in builds)
+    except (OSError, ValueError, KeyError, TypeError, AttributeError, TimeoutExpired):
+        return False
 
 
 def wait_for_site(site: str, mine: dict, wait: float) -> bool:
@@ -367,6 +391,7 @@ def update_pages(checkout: str, site: str = SITE_URL, exe: str = "", wait: float
         wait_for_site(site, mine, wait)
     old = read_pages(checkout)
     known = old.get("key", "") if isfile(join(checkout, RULEBOOK_PAGES, PDF_FILE)) else ""
+    settled = site_settled(site, checkout)              # before the draw: the website drawn is that build or a later one
     theirs, shots, printer, drawn = draw(site, exe, lambda text: key(text, checkout), known, book_fonts(checkout))
     try:
         if theirs != mine:
@@ -374,11 +399,12 @@ def update_pages(checkout: str, site: str = SITE_URL, exe: str = "", wait: float
                     "differ); left as it is, the next run prints it.")
         if shots is None:
             return f"Rulebook PDF: {len(old['pages'])} pages, as they were (nothing they draw changed)."
-        done = write_pages(join(checkout, RULEBOOK_PAGES), shots, printer.pdf, drawn)
+        done = write_pages(join(checkout, RULEBOOK_PAGES), shots, printer.pdf, drawn, settled)
     finally:
         printer.close()
     if not done["printed"]:
-        return f"Rulebook PDF: {done['pages']} pages, as they were."
+        kept = f"key {drawn[:8]} kept" if settled else "the website lags main's rulebook fonts or pictures: key not kept"
+        return f"Rulebook PDF: {done['pages']} pages, as they were ({kept})."
     size = getsize(join(checkout, RULEBOOK_PAGES, PDF_FILE))
     what = f"{len(done['changed'])} pages changed" if done["changed"] and len(done["changed"]) < done["pages"] else "printed"
     return f"Rulebook PDF: {done['pages']} pages, {what} ({size / 1e6:.1f} MB)."
