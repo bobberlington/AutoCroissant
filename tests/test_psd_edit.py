@@ -314,6 +314,12 @@ def test_gate_bytes_keeps_a_rebuilt_fx_records_style(monkeypatch):
     files["new"][1] = {**_record(frozen, blocks=own), "blend": (0, 200, 0)}
     with pytest.raises(pe.Refused, match="changed blend"):
         pe.gate_bytes("old", "new", [edit])
+    files["new"][1] = _record(frozen, blocks=[(b"lfx2", b"chart-glow"), (b"luni", b"Frozen")])    # a chart status word's
+    styled = pe.Edit("ability", "a", "b", [], [0], None, restyled=[(1, {b"lfx2": b"chart-glow"})])   # (owner 2026-11-07)
+    assert pe.gate_bytes("old", "new", [styled])[0] == [(1, frozen, ["blocks"])]
+    styled.restyled = [(1, {b"lfx2": b"other-glow"})]
+    with pytest.raises(pe.Refused, match="effect blocks not the chart's"):
+        pe.gate_bytes("old", "new", [styled])
 
 
 def test_classify_table():
@@ -1431,7 +1437,8 @@ def test_own_style_fx_layers_are_made_again_in_their_style(clone, parser, chart,
     """Owner 2026-10-23: FX layers in no chart status's style are rebuilt in their own style, as the others (the 2026-10-21
     refusal went). Morpho Knight's Burning, +2/4/6 ATK and Smoldering strokes bake an appended sentence through every
     gate: each record kept whole or cut again (rect and channels), its style bytes unchanged, no new layer; its old badge
-    layer goes (its words fall in a badge). Without the chart the card still refuses (its FX words can't be told apart)."""
+    layer goes (its words fall in a badge). Its Blazing, a styled chart status, takes the chart's style (owner
+    2026-11-07). Without the chart the card still refuses (its FX words can't be told apart)."""
     paths = _at(clone, tmp_path, BADGED, MORPHO)
     psd_path = paths[0]
     psd = PSDImage.open(psd_path)
@@ -1443,11 +1450,16 @@ def test_own_style_fx_layers_are_made_again_in_their_style(clone, parser, chart,
     old = pe.normalize_ability(pe.parse_card(parser, psd_path, MORPHO)["card"]["ability"])
     parsed, baked = _bake(clone, parser, MORPHO, {"ability": old + " Die."}, _dir(tmp_path, "bake"), chart, paths=paths)
     edit, = baked.edits
-    badge, words = fx[0], fx[1:]
+    badge, words, blazing = fx[0], fx[1:], "Ability FX: Blazing"
     assert edit.fx_names == words and edit.fx == [] and edit.dropped == [badge] and baked.block_bytes == 0
     for name in words:
-        assert _style(baked.psd_path, name) == _style(psd_path, name)
-    assert all(fields in (["channels", "rect"], ["channels"]) for _, name, fields in baked.records if name in words)   # salt font: the box stays
+        if name != blazing:
+            assert _style(baked.psd_path, name) == _style(psd_path, name)
+    chart_blocks = {bytes(key): block.tobytes() for key, block in chart["blazing"].blocks.items()}
+    assert [blocks for _, blocks in edit.restyled] == [chart_blocks]
+    assert {k: v for k, v in _style(baked.psd_path, blazing)[2] if k in chart_blocks} == chart_blocks
+    assert all(fields in (["channels", "rect"], ["channels"]) for _, name, fields in baked.records
+               if name in words and name != blazing)    # salt font: the box stays
     assert (badge, ["removed"]) in [(name, fields) for _, name, fields in baked.records]
 
 
@@ -2068,6 +2080,9 @@ def test_styled_status_word_gets_an_fx_layer(clone, chart, tmp_path):
     edit = pe.set_text_layer(psd, "ability", "Inflict Poison.", fonts, chart)
     assert pe.fx_layers(psd, pe.ability_layer(psd)) == [] and edit.fx == [] and edit.dropped == ["Ability FX: Blazing"]
     assert len(list(psd.descendants())) == count
+    edit = pe.set_text_layer(psd, "ability", "Inflict blazing.", fonts, chart)     # lowercase: prose (owner 2026-11-07)
+    assert pe.fx_layers(psd, pe.ability_layer(psd)) == [] and edit.fx == []
+    assert red not in [fill for _, fill in _fills(pe.ability_layer(psd))]
 
 
 PALACE = "Field/4 Stars/Palace_of_Shadow.psd"   # 'Ability FX: +2 DEF': a Stroke alone over its words' own blue

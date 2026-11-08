@@ -308,7 +308,9 @@ class Edit:
     fx: list = field(default_factory=list)      # (name, {block key: bytes}) per FX layer made above its group, bottom to top
     dropped: list = field(default_factory=list)  # names of the FX layers deleted (their words left the text)
     rebuilt: list = field(default_factory=list)  # (record index, old name, name): an FX layer cut again in place, its own
-    #   style kept (Effect Layers.jsx's Update all; owner q6)
+    #   style kept (Effect Layers.jsx's Update all; owner q6) but on a chart status word (restyled)
+    restyled: list = field(default_factory=list)  # (record index, {block key: bytes}): an FX layer on a chart status word
+    #   given the chart's style (owner 2026-11-07)
     fx_names: list = field(default_factory=list)  # the text layer's FX layers after the edit, bottom to top
     notes: list = field(default_factory=list)   # for the report: FX layers deleted, renamed or cut again; ink_beyond's
     held: list = field(default_factory=list)    # (FX layer name, [(start, end)]): a "styled" or "own" layer's kept words,
@@ -1067,6 +1069,7 @@ def _renumber(edit: Edit, ids: list, now: dict) -> None:
     edit.records = [now[ids[i]] for i in edit.records]
     edit.hidden = [now[ids[i]] for i in edit.hidden]
     edit.rebuilt = [(now[ids[i]], was, name) for i, was, name in edit.rebuilt]
+    edit.restyled = [(now[ids[i]], blocks) for i, blocks in edit.restyled]
 
 
 def icon_font(layer) -> Optional[str]:
@@ -1627,6 +1630,12 @@ def status_spans(text: str, chart: dict, icons: list) -> list:
             if not any(match.start() < end and start < match.end() for start, end, _ in taken):
                 taken.append((match.start(), match.end(), chart[key]))
     return sorted((span for span in taken if span[2] is not None), key=lambda span: span[0])
+
+
+def status_word_spans(text: str, chart: dict, icons: list) -> list:
+    """status_spans() whose first letter is a capital: the words that take the status look, a lowercase use ("an empty
+    slot") being prose (owner 2026-11-07)."""
+    return [span for span in status_spans(text, chart, icons) if text[span[0]].isupper()]
 
 
 def icon_spans(layer) -> list:
@@ -2382,6 +2391,29 @@ def fx_kind(fx, base, chart: Optional[dict]) -> str:
     return "styled" if key and any(key == _style_key(status.blocks) for status in styled) else "own"
 
 
+def chart_style(base, fx, text: str, words: list):
+    """The styled chart status whose style an FX layer takes (owner 2026-11-07, over q6 for chart status words): the one
+    status of the status words (status_word_spans of text) its phrases hold whole; None for another phrase (its own
+    style) or words of several statuses."""
+    ranges = phrase_ranges(text, fx_phrases(base, fx))
+    held = {status.name: status for a, b, status in words if status.styled and any(c <= a and b <= d for c, d in ranges)}
+    return next(iter(held.values())) if len(held) == 1 else None
+
+
+def restyle_fx(fx, status) -> Optional[dict]:
+    """The chart's effect blocks on an FX layer whose style draws otherwise (_style_key): {block key: bytes} as set (the
+    Edit's restyled), else None."""
+    if _style_key(fx.tagged_blocks) == _style_key(status.blocks):
+        return None
+    for key in EFFECT_BLOCKS:
+        if key in fx.tagged_blocks and key not in status.blocks:
+            del fx.tagged_blocks[key]
+    for key, block in status.blocks.items():
+        fx.tagged_blocks[key] = deepcopy(block)
+    fx._psd.mark_updated()
+    return {bytes(key): block.tobytes() for key, block in status.blocks.items()}
+
+
 def plan_fx(base, old_fx: list, chart: dict) -> list:
     """The FxPlans of a text layer's FX layers, before its text changes (fx_kind() of each is not "")."""
     fills, text = _char_styles(base)[0], base.text
@@ -2447,7 +2479,7 @@ def follow_fx(plan: FxPlan, text: str, kept: list, spans: list = ()) -> list:
         plan: plan_fx()
         text: The text to set
         kept: kept_chars() of the old text and text
-        spans: status_spans() over text (for a "status" layer)
+        spans: status_word_spans() over text (for a "status" layer)
 
     Returns:
         [(phrase, its name now or None when it left, its ranges in text, those holding characters kept from its old
@@ -2700,7 +2732,7 @@ def _left(left: list, every: bool = False) -> list:
 
 
 def _rebuild_fx(psd: PSDImage, layer, text: str, plans: list, band: Optional[tuple], kept: list, fonts,
-                engine: tuple, targets: list) -> tuple:
+                engine: tuple, targets: list, words: list = ()) -> tuple:
     """
     Effect Layers.jsx's Update all after an ability edit: each FX layer cut again in place from the new raster under its
     phrases' key (follow_fx: phrase_ranges over the new text, so a phrase that occurs more often is cut on every
@@ -2709,7 +2741,8 @@ def _rebuild_fx(psd: PSDImage, layer, text: str, plans: list, band: Optional[tup
     (_kept) unless it holds pixels its words' cut does not (_holds: a badge an older JSX leaked into it, cut again
     clean). A phrase that left the text leaves the name (the parser flags a name the text lacks; a renumbered one is
     renamed); a layer with none left is deleted. Every layer keeps its own style, the chart's
-    or not (owner q6, unattended call 2026-10-23): only a new one takes the chart's (_regenerate_fx); a typed word that
+    or not (owner q6, unattended call 2026-10-23), but one on a chart status word (chart_style of words, owner
+    2026-11-07) takes the chart's (restyle_fx), as a new one does (_regenerate_fx); a typed word that
     joins a layer whose style is no chart status's for it (FxPlan.own_style) is told ("moved to" it when none of the
     layer's old words stayed: Doctor Zomboss's Blazing swapped with Frostbite).
 
@@ -2723,10 +2756,11 @@ def _rebuild_fx(psd: PSDImage, layer, text: str, plans: list, band: Optional[tup
         fonts: The FontMap used
         engine: _fx_engine()
         targets: follow_fx() per plan
+        words: status_word_spans() over text
 
     Returns:
-        (rebuilt [(layer, old name)], deleted names, the str ranges of text the layers cover, report notes); raises
-        Refused("styled-word") for words with no pixels
+        (rebuilt [(layer, old name)], deleted names, the str ranges of text the layers cover, report notes, restyled
+        [(layer, its chart blocks)]); raises Refused("styled-word") for words with no pixels
     """
     model = engine[0].from_layer(layer)
     offset = model.text.find(text)
@@ -2778,7 +2812,13 @@ def _rebuild_fx(psd: PSDImage, layer, text: str, plans: list, band: Optional[tup
             notes.append(f"{name} {'also covers' if stays else 'moved to'} the typed {', '.join(map(repr, joined))}, "
                          f"in its own style")
         rebuilt.append((fx, old))
-    return rebuilt, deleted, covered, notes
+    alive, restyled = {id(fx) for fx in fx_layers(psd, layer)}, []
+    for fx in [plan.layer for plan in plans if id(plan.layer) in alive]:
+        status = chart_style(layer, fx, text, words)
+        blocks = restyle_fx(fx, status) if status else None
+        if blocks:
+            restyled.append((fx, blocks))
+    return rebuilt, deleted, covered, notes, restyled
 
 
 def new_fx(text: str, styled: list, covered: list, flag=None) -> list:
@@ -5221,11 +5261,13 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     or token the edit types is set in the icon font at the card's own badge or token style (icon_style; owner
     2026-10-23), on a card with none at the text's own style (ICON_FONT added, Edit.fonts), with ligatures on and a
     LAYERED one (:sticker, :no) at tracking 0 (tracking split its glyphs apart), the layer's own spellings
-    of the icons it kept staying (keep_tokens: "[dark:sticker]", where the website sends "[dark]"); then every status
-    word in the text takes its swatch (the chart is the authority, an off-swatch word is normalized). The "<Ability> FX:
+    of the icons it kept staying (keep_tokens: "[dark:sticker]", where the website sends "[dark]"); then every
+    capitalised status word in the text takes its swatch (status_word_spans: a lowercase one is prose, owner 2026-11-07;
+    the chart is the authority, an off-swatch word is normalized). The "<Ability> FX:
     ..." layers are then made again as Effect Layers.jsx's Update all makes them (BUG 2, _rebuild_fx): each cut in place
-    from the new raster over its phrases' new places, its record, place and own style kept (owner q6: never restyled to
-    the chart's); a phrase gone from the text leaves the name, a layer with none left goes; a "styled" or "own" layer
+    from the new raster over its phrases' new places, its record, place and own style kept (owner q6), but one on a
+    chart status word takes the chart's style (owner 2026-11-07: restyle_fx); a phrase gone from the text leaves the
+    name, a layer with none left goes; a "styled" or "own" layer
     stays on its own words (follow_fx: Goofy's "1#1" renumbered, or deleted, told, when its name would reach another
     "1" or when the edit changes its words, "+2 DEF" made "+3 DEF"), a
     "status" layer on its status's own words (a numbered one on its own word, renumbered: Standstill's "Frozen In
@@ -5275,7 +5317,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     start = min(start, end)                     # identical text: the engine's range sits past the end
     if start == end:                            # a deletion: the window that keeps the kept characters' runs
         start = end = deletion_start(old_text, text, start)
-    spans, badges, styled, old_fx, hide, plans, targets, kept, engine = [], [], [], [], [], [], [], [], None
+    spans, words, badges, styled, old_fx, hide, plans, targets, kept, engine = [], [], [], [], [], [], [], [], [], None
     if which == "name":     # point text has no box: the title must stay on the canvas and off the badges it clears today
         stars, icons, _ = badge_layers(psd, getattr(parser, "all_types", ()))   # root type icons (Fool Eater's)
         badges = [badge for badge in stars + icons if not _touches(layer, badge)]
@@ -5319,7 +5361,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
             start = start if cut and not LETTER.match(cut[0]) else lo           # after a deleted line took its colour)
             end = end if cut and not LETTER.match(cut[-1]) else hi
             spans = status_spans(text, chart, drawn)
-            styled = [span for span in spans if span[2].styled]
+            words = [span for span in spans if text[span[0]].isupper()]     # status_word_spans: lowercase is prose
+            styled = [span for span in words if span[2].styled]
             plans = plan_fx(layer, old_fx, chart)
             kept = kept_chars(old_text, text)
             for plan in plans:                  # a layer whose style can't follow goes: its words print without it
@@ -5327,7 +5370,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                 try:
                     if lost:                    # what they cover can't be told ("Frozen #2": no JSX phrase)
                         raise Refused("styled-word", f"its phrases are not in the ability: {', '.join(lost)}")
-                    targets.append(follow_fx(plan, text, kept, spans))
+                    targets.append(follow_fx(plan, text, kept, words))
                 except Refused as refused:
                     why = refused.why.removeprefix(f"{plan.layer.name}: ").removesuffix("; edit in Photoshop")
                     targets.append([(phrase, None, [], [], why) for phrase, _ in plan.found])
@@ -5448,9 +5491,9 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     stray = [c for i, c in enumerate(text) if now[i] and i not in glyphs and c not in blank and i not in plain]
     if stray:           # letters the icon font draws plainly: typed in place of a badge, or "(1GCD)" made "(GCD)"
         flag("unsupported-card", f"{''.join(stray)!r} set in the icon font, which draws no badge or icon of it")
-    for span_start, span_end, color in spans:
+    for span_start, span_end, color in words:
         layer.set_span_style(span_start, span_end, fill=color.fill)
-    status = {i for span_start, span_end, _ in spans for i in range(span_start, span_end)}
+    status = {i for span_start, span_end, _ in words for i in range(span_start, span_end)}
     for plan, target in zip(plans, targets):    # typed into a styled phrase's words, or a copy joining it: its colour
         for a, b, joined in [(*span, span not in anchored) for _, _, now, anchored, _ in target for span in now]:
             if plan.fill is not None and (joined or a < end and start < b):    # (8308103f); a status word keeps the
@@ -5527,8 +5570,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     for overlay in hide:
         overlay.visible = False
     beyond = ink_beyond(psd, layer, room) if which == "ability" and not copy else None
-    rebuilt, dropped, covered, notes = (_rebuild_fx(psd, layer, text, plans, band, kept, fonts, engine, targets)
-                                        if plans else ([], [], [], []))
+    rebuilt, dropped, covered, notes, restyled = (_rebuild_fx(psd, layer, text, plans, band, kept, fonts, engine, targets,
+                                                          words) if plans else ([], [], [], [], []))
     if beyond:                                  # told, not refused (owner 2026-10-23: refuse only gross breakage)
         notes = [*notes, f"ability: {beyond}; check the card"]
     held = held_words(plans, kept, fx_layers(psd, layer) if plans else [])
@@ -5547,6 +5590,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                 fx=[(fx.name, {bytes(key): fx.tagged_blocks[key].tobytes() for key in EFFECT_BLOCKS if key in fx.tagged_blocks})
                     for fx in made],
                 dropped=dropped, rebuilt=[(_record_index(fx), old, fx.name) for fx, old in rebuilt],
+                restyled=[(_record_index(fx), blocks) for fx, blocks in restyled],
                 fx_names=fx_names, notes=notes + flags, held=held, fonts=faces,
                 renamed=layer.name if own else None, whole=spliced is None or bool(spliced.fallback))
 
@@ -8863,11 +8907,12 @@ def _pixel_record(record: dict) -> bool:
     return bool(ids) and ids[0] == -1 and ids[1:] == list(range(len(ids) - 1))
 
 
-def _fx_rebuilt(a: dict, b: dict, old: str, name: str) -> Optional[str]:
+def _fx_rebuilt(a: dict, b: dict, old: str, name: str, styled: Optional[dict] = None) -> Optional[str]:
     """
     Why record b is not record a's FX layer cut again in place (Edit.rebuilt), or None: a pixel record, its name the
     declared one, its blocks a's byte for byte but its unicode name when renamed: its own style, no effect block changed
-    (owner q6; rect and channels may differ, nothing else: gate_bytes).
+    (owner q6; rect and channels may differ, nothing else: gate_bytes); styled (Edit.restyled: a chart status word's),
+    its effect blocks exactly those.
     """
     if a["name"] != old or b["name"] != name:
         return f"name {a['name']!r} -> {b['name']!r}"
@@ -8875,6 +8920,11 @@ def _fx_rebuilt(a: dict, b: dict, old: str, name: str) -> Optional[str]:
         return "not a pixel record"
     before, after = dict(a["blocks"]), dict(b["blocks"])
     may = {bytes(Tag.UNICODE_LAYER_NAME)} if old != name else set()
+    if styled is not None:
+        effects = {bytes(key) for key in EFFECT_BLOCKS}
+        if {key: data for key, data in after.items() if key in effects} != styled:
+            return "effect blocks not the chart's"
+        may |= effects
     changed = sorted(key.decode("latin-1") for key in set(before) | set(after) if before.get(key) != after.get(key)
                      and key not in may)
     return f"blocks {', '.join(changed)}" if changed else None
@@ -8916,10 +8966,13 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
         for index, _, name in edit.rebuilt:
             allowed[index] = ("fx", ALLOWED_RECORD_FIELDS["fx"])
             names[index] = name                 # a rebuilt FX layer's declared name (_fx_rebuilt checks it too)
+        for index, _ in edit.restyled:          # given the chart's style (cut again or not)
+            allowed[index] = ("fx", ALLOWED_RECORD_FIELDS["fx"])
     for edit in edits:
         for index in edit.comps:                # a layer-comp bar: its rect, pixels and SoLd block (_comp_record)
             allowed[index] = ("comp", ALLOWED_RECORD_FIELDS["comp"])
     rebuilt = {index: spec for edit in edits for index, *spec in edit.rebuilt}
+    restyled = {index: blocks for edit in edits for index, blocks in edit.restyled}
     toggles = {index for edit in edits for index in edit.toggled}
     allowed.update({index: ("toggle", ALLOWED_RECORD_FIELDS["toggle"]) for index in toggles})
     moved = {index: (source, dx, dy) for edit in edits for index, source, dx, dy in edit.shifted}
@@ -9011,7 +9064,7 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
                     raise Refused("bytes", f"{kind} {a['name']!r} changed {differing} flag bytes", owner.get(j))
                 flag_bytes += differing
             if kind == "fx":
-                why = _fx_rebuilt(a, b, *rebuilt[j])
+                why = _fx_rebuilt(a, b, *rebuilt.get(j, (a["name"], a["name"])), restyled.get(j))
                 if why:
                     raise Refused("bytes", f"FX layer {j} {a['name']!r} is not the declared rebuild: {why}")
             if kind == "comp":
@@ -9538,9 +9591,9 @@ def gate_status_words(psd: PSDImage, chart: dict, layer=None) -> None:
     Each styled status word of the Ability (status_spans) is held whole by one of its FX layers (phrase_ranges of its
     name): its status's layer on exactly that word, or another phrase around it (Clot Gold's "1 Become Back Money"); and
     a status's layer lies on its status's own words only, not the "Frozen" of "Frozen In Time" or of "Unfrozen".
-    Independent of follow_fx and new_fx. Returns a note per styled status word no FX layer holds (it prints in the
-    chart's fill alone: new_fx told why); raises Refused("reparse") naming the layer. layer: one of several (None: the
-    Ability).
+    Independent of follow_fx and new_fx. Returns a note per capitalised styled status word no FX layer holds (it prints
+    in the chart's fill alone: new_fx told why; a lowercase one is prose); raises Refused("reparse") naming the layer.
+    layer: one of several (None: the Ability).
     """
     layer = ability_layer(psd) if layer is None else layer
     text, found = layer.text, fx_layers(psd, layer)
@@ -9553,8 +9606,9 @@ def gate_status_words(psd: PSDImage, chart: dict, layer=None) -> None:
                 raise Refused("reparse", f"{fx.name!r} covers {_word_at(text, (a, b), spans)!r}, no "
                                          f"{chart[status].name} of its own")
     return [f"styled-word: ability: {text[a:b]!r} has no FX layer of its own" for a, b, status in sorted(words)
-            if not any((a, b) in ranges if mine == status else not mine and any(c <= a and b <= d for c, d in ranges)
-                       for mine, ranges, _ in held)]
+            if text[a].isupper() and not any((a, b) in ranges if mine == status else
+                                             not mine and any(c <= a and b <= d for c, d in ranges)
+                                             for mine, ranges, _ in held)]
 
 
 def gate_fx_colours(psd: PSDImage, old: PSDImage, chart: dict, layer=None, was=None) -> None:
@@ -10346,6 +10400,7 @@ def _combine(which: str, edits: list, subs: list, psd: PSDImage, olds: dict, new
                 fx=[fx for _, edit, _ in edits for fx in edit.fx],
                 dropped=[name for _, edit, _ in edits for name in edit.dropped],
                 rebuilt=[spec for _, edit, _ in edits for spec in edit.rebuilt],
+                restyled=[spec for _, edit, _ in edits for spec in edit.restyled],
                 fx_names=[name for _, edit, _ in edits for name in edit.fx_names],
                 notes=[note for _, edit, _ in edits for note in edit.notes] + list(notes),
                 held=[held for _, edit, _ in edits for held in edit.held],
@@ -10858,6 +10913,7 @@ __all__ = [
     'stylistic_alternates',
     'status_fills',
     'status_spans',
+    'status_word_spans',
     'stories',
     'story_index',
     'story_style_drift',
