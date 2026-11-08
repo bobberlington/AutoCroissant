@@ -5688,13 +5688,41 @@ def _painted_over(layer, own: bool = True) -> Optional[str]:
     return None
 
 
+def _solid_overlay(layer) -> Optional[tuple]:
+    """The RGB 0..1 of the layer's lone opaque Normal Color Overlay (its only enabled overlay, nothing above hides it,
+    full fill, every icon-font glyph a one-colour badge): a phrase's colour turns it off and gives its colour to every
+    other letter and badge (the same look)."""
+    from psd_tools.api.effects import ColorOverlay, GradientOverlay, PatternOverlay
+    effects = layer.effects
+    overlays = [e for e in (effects if effects.enabled else ()) if e.enabled and isinstance(e, (ColorOverlay, GradientOverlay, PatternOverlay))]
+    hiding = _hiding(layer)
+    if len(overlays) != 1 or len(hiding) != 1 or hiding[0][1] != "Color Overlay" or _painted_over(layer, own=False) \
+            or getattr(layer, "fill_opacity", 255) < 255:
+        return None
+    text, salted = layer.text, _salted(layer)
+    if any(icon and i not in salted and not text[i].isspace() for i, icon in enumerate(_char_styles(layer)[1])):
+        return None                             # a colour icon would show its colours
+    color = hiding[0][0].descriptor.get(b"Clr ")
+    keys = (b"Rd  ", b"Grn ", b"Bl  ")
+    if color is None or any(k not in color for k in keys):
+        return None
+    return tuple(max(0.0, min(1.0, float(getattr(color[k], "value", color[k])) / 255)) for k in keys)
+
+
+def _salted(layer) -> set:
+    """The str indices in the icon font's Stylistic Alternates: one-colour badges, coloured as letters."""
+    icons = _char_styles(layer)[1]
+    return {i for a, b in (stylistic_alternates(layer) or ()) for i in range(a, b) if i < len(icons) and icons[i]}
+
+
 def _unveils(layer) -> bool:
     """Whether turning the layer's own overlays off shows its colours (nothing else hides them)."""
     return bool(_hiding(layer)) and _painted_over(layer, own=False) is None
 
 
 def _overlay_off(layer) -> str:
-    """A whole title's colour (owner 2026-10-24: no refusing): its own overlays off when that shows it; the first's kind, or ""."""
+    """A whole field's colour (owner 2026-10-24: no refusing), or a phrase's under _solid_overlay: its own overlays off
+    when that shows it; the first's kind, or ""."""
     if not _unveils(layer):
         return ""
     hiding = _hiding(layer)
@@ -5766,8 +5794,9 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
     layer prints is refused, as one of badges and icons alone. retyped: the fields a text edit of the entry sets
     ({field: its new text}): found in that text, baked (the bake finds it again once the text is set). The note's
     colours are the website's alone: left out. chart: status_fills(); the Ability's capitalised status words keep its
-    colours (a phrase of them alone refused). A whole title's colour turns its layers' own overlays off (set_colors):
-    not refused for them, nor its phrases after it, and baked even in the colour it has.
+    colours (a phrase of them alone refused). A whole field's colour turns its layers' own overlays off (set_colors),
+    as a phrase's does a lone Color Overlay (_solid_overlay): not refused for them, nor its phrases after it, and baked
+    even in the colour it has.
     """
     out, overlays, final, painted, lit, unveil = {}, None, {}, {}, set(), set()
     ordered = color_order([one for one in value if one.get("field") in COLOR_PRINTED])
@@ -5802,15 +5831,16 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
         if not why and not mine:
             why = (f"{phrase!r} is only badges or icons, which keep their own colours" if phrase
                    else "only badges, icons, effect layers' or status words, which keep their own colours")
-        whole = field == "name" and not phrase      # its own overlays go off (set_colors)
-        over = {_painted_over(layer, not whole and id(layer) not in lit) for layer, _ in mine}
+        whole = not phrase                          # its own overlays go off (set_colors)
+        solid = {id(layer) for layer, _, _ in spans if _solid_overlay(layer)} if phrase and not why else set()
+        over = {_painted_over(layer, not whole and id(layer) not in lit | solid) for layer, _ in mine}
         if not why and None not in over:        # nothing would show on the card image
             why = f"{sorted(over)[0]} paints over the {what}'s colours: recolour it in Photoshop"
         if why:
             out[k] = why
             continue
-        unveil |= {k} if whole and any(_unveils(layer) for layer, _, _ in spans) else set()
-        lit |= {id(layer) for layer, _, _ in spans if whole}
+        unveil |= {k} if (whole or solid) and any(_unveils(layer) for layer, _, _ in spans) else set()
+        lit |= {id(layer) for layer, _, _ in spans if whole} | solid
         for layer, i in mine:
             painted[id(layer)] = layer
             final[(id(layer), i)] = k
@@ -5874,8 +5904,9 @@ def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart
 
     Returns:
         One Edit ("colors", over every layer it set: gate_bytes reads it as a text edit, gate_stories lets their stories
-        change). Told: an overlay on a layer that paints over its colours (one_colour), a title's own turned off for a
-        whole title's colour (_overlay_off), a copy printing it again, words an effect layer keeps. Raises
+        change). Told: an overlay on a layer that paints over its colours (one_colour), the layer's own turned off for a
+        whole field's colour or a phrase's under a lone Color Overlay (_overlay_off; that one's colour then goes to the
+        rest, its one-colour badges too), a copy printing it again, words an effect layer keeps. Raises
         Refused(field "colors") for a colour no longer found (the other fields still bake)
     """
     from psd_tools.composite.text import MissingFontError
@@ -5893,17 +5924,22 @@ def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart
     for layer, which, spans in jobs.values():
         what = "title" if which == "name" else "ability"
         fx, paint, status = _fx_words(psd, layer), {}, _status_kept(layer, which, chart)
+        whole = any(not one.get("phrase") for _, _, one in spans)
+        base = None if whole else _solid_overlay(layer)
+        off = _overlay_off(layer) if whole or base else ""
+        salted = _salted(layer) if off else set()       # its badges, coloured as the overlay did
+        todo = ([(0, len(layer.text), None)] if base and off else []) + spans
         kept = sorted({name for a, b, _ in spans for s, e, name in fx if s < b and a < e})
         if kept:
             notes.append(f"colors: {what}: the words of {', '.join(kept)} keep their look (the effect layer's own pixels)")
-        if any(a <= i < b for a, b, _ in spans for i in status):
+        if any(a <= i < b for a, b, _ in todo for i in status):
             notes.append(f"colors: {what}: status words keep the chart's colour")
-        off = _overlay_off(layer) if which == "name" and any(not one.get("phrase") for _, _, one in spans) else ""
         if off:
-            notes.append(f"colors: title: its {off} is off for the colour")
-        for a, b, one in spans:
-            fill = _fill(one["color"])
-            for c, d in _stretches(_painted(layer, a, b, fx, status)):
+            notes.append(f"colors: {what}: its {off} is off for the colour")
+        for a, b, one in todo:
+            fill, phrase = (base, None) if one is None else (_fill(one["color"]), one.get("phrase"))
+            got = _painted(layer, a, b, fx, status) + ([] if phrase else [i for i in range(a, b) if i in salted])
+            for c, d in _stretches(sorted(got)):
                 layer.set_span_style(c, d, fill=fill)
                 paint.update(dict.fromkeys(range(c, d), fill))
         try:

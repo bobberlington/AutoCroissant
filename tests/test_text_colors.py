@@ -215,3 +215,29 @@ def test_title_overlay_goes_off(clone, tmp_path):
     saved = PSDImage.open(baked.psd_path)
     layer = pe.color_layers(saved, "name", "Wham Bam Bone")[0]
     assert pe._painted_over(layer) is None and {pe._hex(f) for *_, f in pe.run_fills(layer)} >= {"#ff2200", "#00bfff"}
+
+
+@pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")
+def test_ability_overlay_goes_off(clone, tmp_path):
+    """Cat's phrase under its lone Color Overlay: the overlay off, the rest in its colour; Mini Doomer's whole Ability
+    turns its Gradient off, its one-colour badges coloured too; a phrase under that Gradient stays refused."""
+    from commands.psd_edit import offline_parser
+    vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
+    parser = offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
+    for rel, edit, kind in (("Auxiliary/Minions/Cat.psd", {"field": "ability", "phrase": "attack", "color": "#ff2200"}, "Color"),
+                            ("Auxiliary/Minions/Mini_Doomer.psd", {"field": "ability", "color": "#ff2200"}, "Gradient")):
+        psd_path, png = _card(clone, rel)
+        psd = PSDImage.open(psd_path)
+        parsed = pe.parse_card(parser, psd_path, rel, psd)
+        rest = pe._hex(pe._solid_overlay(pe.ability_layer(psd)) or (1, 0x22 / 255, 0))
+        got = pe.classify(parsed, {"colors": [edit]}, psd, parser)
+        assert got.jobs == {"colors": [edit]} and not got.refusals
+        (tmp_path / kind).mkdir()
+        baked = pe.apply_jobs(psd_path, png, rel, got.jobs, parsed, parser, str(tmp_path / kind), str(clone / pe.FONTS_DIR), psd=psd)
+        assert f"colors: ability: its {kind} Overlay is off for the colour" in baked.fx_notes
+        layer = pe.ability_layer(PSDImage.open(baked.psd_path))
+        fills = {layer.text[s:e]: pe._hex(f) for s, e, f in pe.run_fills(layer)}
+        assert pe._painted_over(layer) is None and set(fills.values()) == {"#ff2200", rest}
+        assert all(fills[t] == "#ff2200" for t in fills if "(" in t), fills       # Mini Doomer's (BOT)
+    word = {"field": "ability", "phrase": "stats", "color": "#00bfff"}
+    assert "Gradient Overlay paints over" in pe.classify(parsed, {"colors": [word]}, psd, parser).refusals[0].why
