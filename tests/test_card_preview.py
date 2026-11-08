@@ -206,14 +206,18 @@ def test_bad_input_is_an_error_to_fix_not_to_retry(cards, tmp_path):
 
 
 def test_a_name_or_ability_in_the_parts_takes_their_outcome():
-    """The parts carry the name or ability they hold (never a job of its own): not 'refused' beside 'parts baked'."""
+    """The parts carry the name or ability they hold (never a job of its own): not 'refused' beside 'parts baked'; a
+    field whose own boxes were skipped is not baked."""
     part = lambda f: {"field": f, "text": "t", "was": "w", "sha": "0" * 8, "psd": "0" * 8, "layer": "L"}
     edit = {"name": "A II", "ability": "Heal 3.", "hp": 5, "parts": {"19": part("name"), "23": part("ability")}}
     card = cb.Card("A", "a", edit, jobs={"parts": {}}, redundant=["hp"])
-    card.baked = SimpleNamespace(jobs={"parts": {}}, edits=[])
+    card.baked, card.verdict = SimpleNamespace(jobs={"parts": {}}, edits=[]), {"parts": {"19": "baked", "23": "baked"}}
     assert cp.outcome(card)[3] == {"name": "baked", "ability": "baked", "hp": "redundant", "parts": "baked"}
+    card.verdict["parts"]["23"] = "skipped"
+    assert cp.outcome(card)[3] == {"name": "baked", "ability": "refused", "hp": "redundant", "parts": "baked"}
     card.baked, card.refusal = None, pe.Refusal("unsupported-card", "no")
     assert cp.outcome(card)[3] == {"name": "refused", "ability": "refused", "hp": "redundant", "parts": "refused"}
+
 
 def test_dispatched_values_never_start_a_log_line(cards, tmp_path, capsys):
     """The runner reads a line starting `::` as a command: a card or an edit key with a newline is printed escaped, on

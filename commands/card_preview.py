@@ -204,7 +204,7 @@ def outcome(card: Card) -> tuple:
 
     Returns:
         (state, transient, reason, {field: baked | redundant | refused | error}); a name or ability the parts hold
-        takes the parts' outcome
+        takes the parts' outcome, but not baked when none of its own boxes baked
     """
     baked = set(card.baked.jobs) if card.baked is not None and card.refusal is None else set()
     if card.moved_to and card.refusal is None:     # a stars move alone (printed stars not redrawn) bakes too
@@ -225,8 +225,13 @@ def outcome(card: Card) -> tuple:
         state, reason = "error", "error: the bake did nothing with the edit"
     other = "error" if state == "error" else "refused"
     fields = {f: "baked" if f in baked else "redundant" if f in card.redundant else other for f in card.fields}
-    for f in {p.get("field") for p in (card.fields.get("parts") or {}).values() if isinstance(p, dict)} & set(fields):
-        fields[f] = fields["parts"]             # a name or ability its boxes hold: theirs
+    layers, held = (card.verdict or {}).get("parts") or {}, {}
+    for key, part in (card.fields.get("parts") or {}).items():     # a name or ability its boxes hold: theirs
+        if isinstance(part, dict) and part.get("field") in fields:
+            held.setdefault(part["field"], set()).add(layers.get(key))
+    for f, hows in held.items():                # none of its own boxes baked (skipped): not baked
+        fields[f] = fields["parts"] if fields["parts"] != "baked" or hows & {"baked", "deleted"} \
+            else "redundant" if hows == {"redundant"} else other
     return state, transient, reason, fields
 
 
