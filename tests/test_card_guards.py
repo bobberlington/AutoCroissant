@@ -1518,15 +1518,21 @@ def test_workflow_refuses_a_landing_dispatch_while_a_push_run_waits(clone, tmp_p
             assert "is still in its quiet window" in done.stdout
 
 
-def test_workflow_fetches_pushed_blobs_in_the_background(clone, tmp_path):
+def test_workflow_fetches_pushed_blobs_in_the_background(clone, tmp_path, monkeypatch):
     """Pushed blobs start, right after the card checkout, fetches the push's blobs in the background and returns at once
-    (its output not held); Pushed blobs waits and counts. A fetch that fails: the REST warning and a failed step."""
+    (its output not held); Check starts at once and waits for each listed blob (CARD_BLOBS_PENDING); Pushed blobs, after
+    Decided, waits and counts. A fetch that fails: those blobs by REST, the warning and a failed step."""
+    import commands.card_bake as cb
     pytest.importorskip("yaml")
     if not shutil.which("timeout"):
         pytest.skip("no timeout (coreutils)")
     doc, steps, _ = _guard_steps(clone)
     check = [s.get("name") or s.get("uses") for s in doc["jobs"]["check"]["steps"]]
     assert check[1:3] == ["actions/checkout@v7", "Pushed blobs start"]
+    assert check.index("Pushed blobs") == check.index("Decided") + 1 and steps["Check"]["env"][cb.PENDING_ENV] == "${{ runner.temp }}/blobs"
+    rest = []
+    monkeypatch.setattr(cb.github_api, "fetch_verified", lambda repo, sha, timeout: rest.append(sha) or subprocess.run(
+        ["git", "-C", str(origin), "cat-file", "blob", sha], capture_output=True, check=True).stdout)
     work, origin = tmp_path / "work", tmp_path / "origin.git"
     work.mkdir()
     _git(work, "init", "-q", "-b", "main")
@@ -1549,8 +1555,19 @@ def test_workflow_fetches_pushed_blobs_in_the_background(clone, tmp_path):
                "GITHUB_SHA": shas[1], "GITHUB_OUTPUT": str(temp / "output")}
         done, _ = _shell(steps["Pushed blobs start"], env, cwd=repo)
         assert done.returncode == 0 and not (temp / "blobs.done").exists(), (done.stdout, done.stderr)
+        monkeypatch.setenv(cb.PENDING_ENV, str(temp / "blobs"))
+        listed = (temp / "blobs").read_text().split()
+        rest.clear()
+        assert [blob_sha(cb.fetch_verified("o/r", sha, local=str(repo))) for sha in listed] == listed
+        assert len(rest) == (len(listed) if code else 0)            # waited for, from the clone; a failed fetch: REST
         done, _ = _shell(steps["Pushed blobs"], env, cwd=repo)
         assert (done.returncode != 0) == bool(code) and said in " ".join(done.stdout.split()), (done.stdout, done.stderr)
+    os.utime(temp / "blobs", (0, 0))                                # no .done: the cap ends the wait (a new process)
+    (temp / "blobs.done").unlink()
+    monkeypatch.setattr(cb, "_listed", {})
+    assert cb._pending_blob(str(repo), listed[0]) is None
+    monkeypatch.delenv(cb.PENDING_ENV)                              # the bake: no list, no wait
+    assert cb._pending_blob(str(repo), listed[0]) is None
 
 
 def test_workflow_lowercases_card_guards(clone, tmp_path):

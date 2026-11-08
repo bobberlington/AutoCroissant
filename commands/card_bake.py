@@ -50,12 +50,12 @@ from datetime import datetime, timedelta, timezone
 from hashlib import sha1
 from json import dumps, loads
 from os import cpu_count, environ, getpid, makedirs, pathsep, remove, replace
-from os.path import abspath, basename, dirname, exists, expanduser, isdir, join, splitext
+from os.path import abspath, basename, dirname, exists, expanduser, getmtime, isdir, join, splitext
 from re import IGNORECASE, escape, findall, fullmatch
 from subprocess import CalledProcessError, TimeoutExpired, run as run_process
 from sys import stderr
 from tempfile import mkdtemp
-from time import perf_counter
+from time import perf_counter, sleep, time
 from traceback import format_exc
 from typing import Callable, Optional
 
@@ -99,6 +99,8 @@ KIND = CardEdits.KIND
 BOT_BY = AUTHOR["name"]                         # the bot's _by (changelog.BOT)
 PREFETCH_WORKERS = 4                            # blob downloads at once (Snapshot.prefetch)
 POOL_MIN = 3                                    # cards due before a runner bakes them side by side (pool_size)
+PENDING_ENV = "CARD_BLOBS_PENDING"              # card-guards.yml's fetch list while it fetches (<list>.done: it ended)
+PENDING_POLL, PENDING_CAP = 0.2, 300            # s: a listed blob looked for; the fetch's cap from the list's write
 
 
 # ========================
@@ -349,6 +351,32 @@ def local_snapshot(repository: str, clone: str, head: str = "") -> Snapshot:
     return Snapshot(repository, head, info, tree, clone)
 
 
+_listed: dict = {}                              # PENDING_ENV's list -> (its shas, the wait's end): read once
+
+
+def _pending_blob(clone: str, sha: str) -> Optional[bytes]:
+    """A blob the guards' background fetch is bringing (PENDING_ENV's list): looked for every PENDING_POLL s until it
+    lands or the fetch ends (<list>.done, or PENDING_CAP); None when not listed or not brought."""
+    path = environ.get(PENDING_ENV, "")
+    if not path:
+        return None
+    if path not in _listed:
+        try:
+            with open(path, encoding="ascii") as fh:
+                _listed[path] = frozenset(fh.read().split()), getmtime(path) + PENDING_CAP
+        except OSError:
+            _listed[path] = frozenset(), 0.0
+    shas, end = _listed[path]
+    if sha not in shas:
+        return None
+    while True:
+        ended = exists(f"{path}.done") or time() >= end     # before the look: the last pack is seen
+        data = _local_blob(clone, sha)
+        if data is not None or ended:
+            return data
+        sleep(PENDING_POLL)
+
+
 def fetch_verified(repository: str, sha: str, path: str = "", local: str = "") -> bytes:
     """
     A blob's bytes by sha, checked against the tree (gate blob) and written to path when given.
@@ -357,12 +385,14 @@ def fetch_verified(repository: str, sha: str, path: str = "", local: str = "") -
         repository: owner/name of the card repo
         sha: The blob sha the tree lists
         path: Where to write the bytes ("" keeps them in memory only)
-        local: A clone whose object store is read first (never a lazy fetch)
+        local: A clone whose object store is read first (never a lazy fetch); a blob in PENDING_ENV's list is waited for
 
     Returns:
         The bytes; raises Refused("blob") when they don't hash to sha
     """
     data = _local_blob(local, sha) if local else None
+    if data is None and local:
+        data = _pending_blob(local, sha)
     if data is not None and blob_sha(data) != sha:
         raise Refused("blob", f"blob {sha[:8]} hashes to {blob_sha(data)[:8]} in {local}")
     if data is None:
