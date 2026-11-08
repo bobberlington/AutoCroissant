@@ -2280,6 +2280,27 @@ def test_a_blank_render_under_the_floor_is_refused(clone, parser, tmp_path, monk
     assert not list(tmp_path.iterdir())
 
 
+@text_edit
+def test_a_text_edit_is_drawn_once(clone, parser, tmp_path, monkeypatch):
+    """The merge and the re-render cut their regions from gate_dirty's render (no render_region): the same bytes and
+    measurements as drawing each region."""
+    old = pe.parse_card(parser, _card(clone, SHIELD)[0], SHIELD)["card"]["ability"]
+    jobs = {"ability": old[:len(old) - 1] + ("!" if old[len(old) - 1] != "!" else ".")}
+    drawn, draw, crop = [], pe.render_region, pe.crop_pair
+    monkeypatch.setattr(pe, "render_region", lambda *args, **kwargs: drawn.append(args[1]) or draw(*args, **kwargs))
+    baked = []
+    for name in ("cut", "drawn"):
+        (tmp_path / name).mkdir()
+        baked.append(_bake(clone, parser, SHIELD, jobs, tmp_path / name)[1])
+        assert len(drawn) == (0 if name == "cut" else 2)
+        monkeypatch.setattr(pe, "crop_pair", lambda psd, full, region, icc=True, at=None:
+                            None if at else crop(psd, full, region, icc))
+    cut, whole = baked
+    assert Path(cut.png_path).read_bytes() == Path(whole.png_path).read_bytes()
+    assert Path(cut.psd_path).read_bytes() == Path(whole.psd_path).read_bytes()
+    assert cut.parity == whole.parity and cut.rerender == whole.rerender
+
+
 @text_engine
 def test_baseline_falls_back_when_the_png_disagrees_with_the_preview(clone, tmp_path):
     """Shell_Shock's Ability before its re-save (MISMATCHED_SHOCK): its preview shows the edge straight, its PNG (another

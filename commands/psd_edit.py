@@ -8373,11 +8373,15 @@ def dirty_box(old: PSDImage, new: PSDImage) -> Optional[tuple]:
     return box and clip_to(box, (0, 0, w, h))
 
 
-def gate_dirty(old: PSDImage, new: PSDImage, edits: list) -> np.ndarray:
+def gate_dirty(old: PSDImage, new: PSDImage, edits: list, keep: Optional[dict] = None) -> np.ndarray:
     """
     gate_untouched over the edits' regions and dirty_box(old, new) only: the card rendered there before and after
     (in the bake's RenderCache), not whole twice. With PSD_DIRTY_VERIFY=1 both are rendered whole too and any
     difference (a pixel changed outside the box, a box render unlike the whole one's) raises RuntimeError.
+
+    Args:
+        keep: apply_jobs' dict: new is drawn as the merge draws it (text_kwargs "preview", the edits' layers pinned)
+            and its box, that render and the ids go in it (the merge and gate_idempotence cut their regions from them)
 
     Returns:
         A canvas-sized render_all(old) valid inside the box only (baseline's crop_pair reads the regions, inside it);
@@ -8387,15 +8391,18 @@ def gate_dirty(old: PSDImage, new: PSDImage, edits: list) -> np.ndarray:
     box = union_box([clip_to(edit.region, (0, 0, w, h)) for edit in edits if edit.region] + [dirty_box(old, new)])
     shown = np.zeros((h, w, 4), np.uint8)
     diff = after = None
+    pins = look_kwargs(new) if keep is None else text_kwargs(new, "preview", edited_ids(edits))
     if box is not None:
         x0, y0, x1, y1 = box
         flags = dict(viewport=box, ignore_preview=True, apply_icc=False)
         shown[y0:y1, x0:x1] = before = np.asarray(old.composite(**flags, **look_kwargs(old)).convert("RGBA"))
-        after = np.asarray(new.composite(**flags, **look_kwargs(new)).convert("RGBA"))
+        after = np.asarray(new.composite(**flags, **pins).convert("RGBA"))
+        if keep is not None:
+            keep.update(box=box, after=after, edited=edited_ids(edits))
         diff = np.zeros((h, w), bool)
         diff[y0:y1, x0:x1] = (before != after).any(axis=2)
     if environ.get(DIRTY_VERIFY) == "1":
-        _verify_dirty(old, new, box, shown, after)
+        _verify_dirty(old, new, box, shown, after, pins)
     if diff is not None:
         for edit in edits:
             if edit.region:
@@ -8409,15 +8416,18 @@ def gate_dirty(old: PSDImage, new: PSDImage, edits: list) -> np.ndarray:
 
 
 def _verify_dirty(old: PSDImage, new: PSDImage, box: Optional[tuple], shown: np.ndarray,
-                  after: Optional[np.ndarray]) -> None:
-    """PSD_DIRTY_VERIFY: the whole renders (no cache) equal gate_dirty's inside the box and each other outside it."""
+                  after: Optional[np.ndarray], pins: dict) -> None:
+    """PSD_DIRTY_VERIFY: the whole renders (no cache; new with gate_dirty's pins) equal gate_dirty's inside the box and
+    each other outside it."""
     try:
         from psd_tools.composite.rcache import RenderCache
         uncached = RenderCache(max_bytes=0)     # stores nothing: every pass rendered again
     except ImportError:
         uncached = nullcontext()
     with uncached:
-        before, whole = render_all(old), render_all(new)
+        before = render_all(old)
+        whole = np.asarray(new.composite(viewport=(0, 0, new.width, new.height), ignore_preview=True, apply_icc=False,
+                                         **pins).convert("RGBA"))
     x0, y0, x1, y1 = box or (0, 0, 0, 0)
     outside = (before != whole).any(axis=2)
     outside[y0:y1, x0:x1] = False
@@ -8728,15 +8738,17 @@ def render_region(psd: PSDImage, region: tuple, icc: bool = True, text: str = "p
     return psd.composite(viewport=region, ignore_preview=True, apply_icc=icc, **text_kwargs(psd, text, edited))
 
 
-def crop_pair(psd: PSDImage, full: Optional[np.ndarray], region: tuple, icc: bool = True) -> Optional[tuple]:
+def crop_pair(psd: PSDImage, full: Optional[np.ndarray], region: tuple, icc: bool = True,
+              at: Optional[tuple] = None) -> Optional[tuple]:
     """
     (render, raw) of the region under "preview", nothing edited, cut from render_all() of the card (the same pixels:
-    review 2026-10-24), None without it or when the region leaves the canvas.
+    review 2026-10-24), or from a render over box `at` (gate_dirty's keep); None without it or when the region leaves it.
     """
     x0, y0, x1, y1 = region
-    if full is None or x0 < 0 or y0 < 0 or x1 > psd.width or y1 > psd.height or x1 <= x0 or y1 <= y0:
+    ax0, ay0, ax1, ay1 = at or (0, 0, psd.width, psd.height)
+    if full is None or x0 < ax0 or y0 < ay0 or x1 > ax1 or y1 > ay1 or x1 <= x0 or y1 <= y0:
         return None
-    raw = Image.fromarray(np.ascontiguousarray(full[y0:y1, x0:x1]), "RGBA")
+    raw = Image.fromarray(np.ascontiguousarray(full[y0 - ay0:y1 - ay0, x0 - ax0:x1 - ax0]), "RGBA")
     if not icc or Resource.ICC_PROFILE not in psd.image_resources:
         return raw, raw
     return post_process(raw, None, psd.image_resources.get_data(Resource.ICC_PROFILE)), raw
@@ -9954,7 +9966,7 @@ def _gate_fx_layers(psd: PSDImage, edit: Edit, fonts, layer=None) -> None:
 
 def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.Image, edits: list,
                      icc: bool = True, texts: Optional[dict] = None, parser: Optional[PSDParser] = None,
-                     chart: Optional[dict] = None) -> dict:
+                     chart: Optional[dict] = None, kept: Optional[dict] = None) -> dict:
     """
     Nothing left to bake on the new PSD, and each edit's region re-rendered from it is not broken against the merged PNG
     (PARITY_FLOOR; a miss of the bar is told: the delta merge keeps Photoshop's pixels where the render matched the baseline).
@@ -9968,6 +9980,7 @@ def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.
         icc: render_region()'s
         texts: {field: render_region() text}; "preview" for a field not in it
         parser: offline_parser(), to read a types edit back (classify)
+        kept: gate_dirty's keep: psd drawn once over its box, as it was (its pass resumed), each "preview" region cut
 
     Returns:
         {field: region measurement}
@@ -9976,11 +9989,16 @@ def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.
     left = sorted(set(again.jobs) | {r.field for r in again.refusals if r.field})
     if left:
         raise Refused("idempotence", "still to bake: " + ", ".join(left), left[0] if set(left) <= set(PARTIAL_FIELDS) else None)
-    out = {}
+    out, drawn = {}, None
     edited = edited_ids(edits)
+    box = kept.get("box") if kept and kept.get("edited") == edited else None
     for edit in edits:
         text = (texts or {}).get(edit.field, "preview")
-        measured = _measure(render_region(psd, edit.region, icc, text, edited), merged.crop(edit.region))
+        if box and text == "preview" and drawn is None:
+            drawn = np.asarray(psd.composite(viewport=box, ignore_preview=True, apply_icc=False,
+                                             **text_kwargs(psd, text, edited)).convert("RGBA"))
+        cut = crop_pair(psd, drawn, edit.region, icc, box) if text == "preview" else None
+        measured = _measure(cut[0] if cut else render_region(psd, edit.region, icc, text, edited), merged.crop(edit.region))
         if _past_floor(measured):
             raise Refused("idempotence", "%s re-render bad %.2f%% mean %.2f: past the %g%% floor"
                           % (edit.field, measured["bad_pct"], measured["mean"], PARITY_FLOOR),
@@ -10222,9 +10240,10 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     others = [edit for edit in edits if edit.field not in ICON_FIELDS and (edit.layers or edit.removed)]
     start = perf_counter()
     dirty = bool(others) and not any(edit.field in ICON_FIELDS for edit in edits)   # renders the dirty box only
+    kept: dict = {}
     if dirty:
         with cache:
-            first = gate_dirty(old, new, others)   # valid inside the regions only (baseline's crop_pair)
+            first = gate_dirty(old, new, others, kept)     # valid inside the regions only (baseline's crop_pair)
     elif others:
         with cache:
             gate_untouched(shown, new, others)
@@ -10256,8 +10275,13 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
                               % (edit.field, measured["bad_pct"], measured["mean"], measured["max"], PARITY_FLOOR))
         timings["baseline"] += perf_counter() - start
         start = perf_counter()
-        with cache:     # a region's first pinned pass (its key: the region and the pins): gate_idempotence's resumes it
-            render = render_region(new, edit.region, icc, text, edited)
+        cut = crop_pair(new, kept.get("after"), edit.region, icc, kept.get("box")) \
+            if text == "preview" and kept.get("edited") == edited else None    # drawn by gate_dirty already
+        if cut:
+            render = cut[0]
+        else:
+            with cache:     # a region's first pinned pass (its key: the region and the pins): gate_idempotence's resumes it
+                render = render_region(new, edit.region, icc, text, edited)
         timings["render"] += perf_counter() - start
         merged, replaced = merge_png(merged, base, render, edit.region)
         own = own_pixels(replaced, edit.region, [other.region for other in edits if other is not edit and other.region])
@@ -10300,7 +10324,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     start = perf_counter()
     with cache:     # its keys hash the saved records: a layer the save changed is rendered again
         rerender = gate_idempotence(reparse, jobs, reopened, merged, edits, icc,
-                                    {field: m["text"] for field, m in parity.items()}, parser, chart)
+                                    {field: m["text"] for field, m in parity.items()}, parser, chart, kept)
     timings["idempotence"] = perf_counter() - start
     return Baked(jobs, edits, region, parity, changed_pixels, records, flag_bytes, new_psd, new_png, reparse, timings,
                  block_bytes, [name for edit in edits for name in edit.fx_names
