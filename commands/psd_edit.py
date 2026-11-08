@@ -8229,6 +8229,7 @@ def _effect_margin(layer) -> tuple:
     if not effects or not effects.enabled:
         return 0, False
     from psd_tools.api.effects import BevelEmboss, GradientOverlay, PatternOverlay, Stroke
+    from psd_tools.constants import StrokeFillType
     margin, reads = 0, False
     for effect in effects:
         if not effect.enabled:
@@ -8236,7 +8237,7 @@ def _effect_margin(layer) -> tuple:
         reach = float(getattr(effect, "size", 0) or 0) + float(getattr(effect, "distance", 0) or 0)
         margin = max(margin, int(2 * reach) + DIRTY_SLACK)
         reads = reads or isinstance(effect, (GradientOverlay, PatternOverlay, BevelEmboss)) \
-            or (isinstance(effect, Stroke) and "SolidColor" not in str(effect.fill_type))
+            or (isinstance(effect, Stroke) and effect.fill_type != StrokeFillType.SOLID_COLOR)
     return margin, reads
 
 

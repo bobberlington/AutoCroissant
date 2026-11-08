@@ -606,6 +606,7 @@ def test_dirty_box_bounds_the_untouched_gate(clone, parser):
     old, raw = PSDImage.open(path), Path(path).read_bytes()
     new = pe.edit_copy(old, raw)
     assert pe.dirty_box(old, new) is None
+    assert pe._effect_margin(next(l for l in old if l.name == "Text")) == (18, False)    # a solid stroke reads no box
     edit = pe.set_stat(new, pe.parse_card(parser, path, MINI_DOOMER, old), "hp", 8)
     box, whole = pe.dirty_box(old, new), (0, 0, old.width, old.height)
     assert box and box != whole and environ["PSD_DIRTY_VERIFY"] == "1"
