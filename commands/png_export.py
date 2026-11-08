@@ -66,7 +66,7 @@ from commands.psd_regions import fx_pad, stat_rows
 TOL = 2                                         # |diff| a pixel may show and still be unchanged (ICC rounding)
 BESIDE_CUT = 8                                  # new PSD beside its PNG: within this, the PNG is current (owner)
 KEPT_PX = 300                                   # G2 beside: px past BESIDE_CUT up to which the PNG is kept (fork noise)
-VOLATILE = (b"shmd", b"SoLd", b"SoLE", b"PlLd", b"TySh", b"lnsr")   # rewritten by every save (2.2) or by linking
+VOLATILE = (b"shmd", b"SoLd", b"SoLE", b"PlLd", b"TySh", b"lnsr", b"luni")   # rewritten by saves or linking; luni: a name
 DILATE = 8                                      # px around a numbered PNG's toggled area (5.4)
 FX_EXTRA = 2                                    # px beyond fx_pad around a changed layer
 OUTCOMES = ("re-exported", "current", "refused", "error")
