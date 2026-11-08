@@ -220,6 +220,10 @@ class Snapshot:
             _save(path, data)
         return data
 
+    def ahead(self, path: str):
+        """A path's prefetched download (a Future of its bytes; fetch still takes it), or None."""
+        return self._ahead.get(self.tree[path][1]) if path in self.tree else None
+
     def prefetch(self, paths) -> None:
         """Start these paths' blobs downloading side by side (fetch takes each once); "" or a path not in the tree is
         skipped."""
@@ -1289,7 +1293,7 @@ def _smaller(path: str) -> bytes:
 
 
 def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Callable[[], Optional[dict]], work: str,
-              claimed: frozenset = frozenset()) -> None:
+              claimed: frozenset = frozenset(), lean: bool = False) -> None:
     """
     Section 5 for one card up to the commit: the duplicate and blob gates, classify, apply with every gate.
     Fills the Card in place (its files, expect, verdict and dropped fields for land); a Refused becomes its refusal,
@@ -1303,6 +1307,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         chart: Returns status_fills() of the status chart, or None when the tree has none (fetched once)
         work: The run's work dir (the card's artifacts go in a folder named after it)
         claimed: Card keys the run's earlier cards rename to (plan_rename)
+        lean: A preview's: no duplicate PNGs, artifact crops or parse.json
     """
     started = perf_counter()
     folder = join(work, card.name.replace("/", "_"))
@@ -1443,13 +1448,14 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                 for n, baked in card.views.items():
                     card.files[card.pictures[n]] = _smaller(baked.png_path)
                 old_png = join(folder, "old", basename(card.pictures[next(iter(card.views))]))
-            _follow_dups(snapshot, card, folder)
-            crops = psd_edit.artifacts(Image.open(old_png), Image.open(card.baked.png_path), card.baked.region)
-            for name, image in crops.items():
-                image.save(join(folder, f"{name}.png"))
-            with open(join(folder, "parse.json"), "w", encoding="utf-8") as fh:
-                fh.write(dumps({"old": parsed["card"], "new": card.baked.reparse["card"], "jobs": card.jobs,
-                                "validator": card.baked.reparse["validator"], "fx": card.baked.fx}, indent=1, ensure_ascii=False))
+            if not lean:
+                _follow_dups(snapshot, card, folder)
+                crops = psd_edit.artifacts(Image.open(old_png), Image.open(card.baked.png_path), card.baked.region)
+                for name, image in crops.items():
+                    image.save(join(folder, f"{name}.png"))
+                with open(join(folder, "parse.json"), "w", encoding="utf-8") as fh:
+                    fh.write(dumps({"old": parsed["card"], "new": card.baked.reparse["card"], "jobs": card.jobs,
+                                    "validator": card.baked.reparse["validator"], "fx": card.baked.fx}, indent=1, ensure_ascii=False))
             card.verdict = {"state": "baked", "for": card.jobs, "psd": card.new_psd_sha[:8],
                             "reason": _describe(card) + _fx_notes(card), "at": _now()}
             moved = findall(MOVED, " ".join(getattr(card.baked, "fx_notes", None) or []))
