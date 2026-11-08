@@ -67,7 +67,7 @@ import commands.github_api as github_api
 import commands.png_export as png_export
 import commands.psd_edit as psd_edit
 from commands.card_edits import (COLOR_PRINTED, ORDER, RENAME, SITE, CardAuthors, CardDates, CardEdits, CardRatings,
-                                 color_text, dump_edits)
+                                 color_text, dump_edits, dup_pictures)
 from commands.card_models import RENAMED, card_name, file_stem
 from commands.git_commit import (API_TIMEOUT, AUTHOR, COMMIT_TRIES, GIT_TIMEOUT, NO_LAZY, Transient, api, checkout_head, commit_files,
                                  commit_info, git, local_commit, plural, ref_head)
@@ -92,6 +92,7 @@ EXCLUDE_FOLDERS = ("Markers", "MDW")            # not cards (card_data.EXCLUDE_F
 WORK_ENV = "RUNNER_TEMP"                        # the Action's temp dir; the work dir is card-bake/ in it
 WORK_NAME = "card-bake"
 VERDICTS_OUT = "verdicts.json"                  # in the work dir: {"schema", "cards": no main commit needed, "landed": with it}
+RECORDS_OUT = "records.json"                    # in the work dir: the baked PSDs' look facts before the strip (a list)
 EVENTS_OUT = "bake-events.json"                 # in the work dir: {"events": [...], "landed": [...]} (changelog kinds)
 FIELDS = frozenset(CardEdits.TYPES)            # ORDER (edit.js FIELDS) and PUNCTUATION live in card_edits
 KIND = CardEdits.KIND
@@ -154,6 +155,7 @@ class Card:
     colors: list = field(default_factory=list)  # its `colors` sorted (psd_edit.plan_colors): [(colour, outcome)]
     colors_done: list = field(default_factory=list)  # the `colors` the commit takes out (baked, or printed already)
     colors_kept: list = field(default_factory=list)  # the printed ones refused: they stay, with the verdict
+    records: dict = field(default_factory=dict)     # psd_edit.records_of before the bake strips it: the data's records
 
 
 @dataclass
@@ -248,6 +250,17 @@ class Snapshot:
                 if number and (number.group(1) + ".psd").lower() in self.lower:
                     return number.group(1) + ".psd"
         return ""
+
+    def dup_pictures(self) -> dict:
+        """card_edits.dup_pictures of the tree: {PSD path: [picture-only duplicates]}; Card Edits.json read once."""
+        if "_dups" not in self.__dict__:
+            try:
+                cards = loads(self.fetch(self.sha(self.edits_path))).get("cards") if self.edits_path else None
+            except Exception:                   # unread: no duplicate follows this run
+                print(format_exc(), file=stderr)
+                cards = None
+            self._dups = dup_pictures(list(self.tree), cards)
+        return self._dups
 
     def png_for(self, rel: str) -> tuple:
         """
@@ -1336,6 +1349,8 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
             bake.pop("name", None)
             card.redundant = [f for f in card.redundant if f != "name"]
         if bake:
+            if psd.has_preview():               # its look before the save strips the stored image (the render record)
+                card.records = psd_edit.records_of(psd, None, card.rel, png=Image.open(old_png))
             texty = psd_edit.TEXT_FIELDS + ("parts", "colors")
             if any(f in texty for f in card.jobs) and not psd_edit.text_engine():
                 raise Transient("this runner has no text engine (psd-tools[text])")
@@ -1398,6 +1413,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                 for n, baked in card.views.items():
                     card.files[card.pictures[n]] = _smaller(baked.png_path)
                 old_png = join(folder, "old", basename(card.pictures[next(iter(card.views))]))
+            _follow_dups(snapshot, card, folder)
             crops = psd_edit.artifacts(Image.open(old_png), Image.open(card.baked.png_path), card.baked.region)
             for name, image in crops.items():
                 image.save(join(folder, f"{name}.png"))
@@ -1432,6 +1448,19 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         card.traceback = format_exc()
     finally:
         card.seconds = perf_counter() - started
+
+
+def _follow_dups(snapshot: Snapshot, card: Card, folder: str) -> None:
+    """The card's picture-only duplicates take its PNG's change in the same commit (png_export.follow, owner 11-07,
+    silent); one drawn apart from the PSD stays as it is (card_checks flags it)."""
+    dups = [path for path in snapshot.dup_pictures().get(card.rel, []) if path not in card.files]
+    if not dups or not card.files.get(card.png):
+        return
+    old = Image.open(join(folder, "old", basename(card.png)))
+    made = png_export.follow(old, png_export.open_png(card.files[card.png]),
+                             {path: png_export.open_png(snapshot.fetch(snapshot.sha(path))) for path in dups})
+    for path, data in made.items():
+        card.files[path], card.expect[path] = data, snapshot.sha(path)
 
 
 def status_chart(snapshot: Snapshot, work: str) -> Callable[[], Optional[dict]]:
@@ -1683,7 +1712,8 @@ def records(report: Report, edits: CardEdits, verdicts: Optional[dict]) -> tuple
                           "reason": _describe(card) + _misses(card) + _fx_notes(card), "pngs": pngs})
     doc = {"schema": 1, "cards": cards, "landed": landed}
     told = {"events": events, "landed": baked}
-    for name, data in ((VERDICTS_OUT, doc), (EVENTS_OUT, told)):
+    found = [card.records for card in report.cards if card.records and card.included]
+    for name, data in ((VERDICTS_OUT, doc), (EVENTS_OUT, told), (RECORDS_OUT, found)):
         with open(join(report.work, name), "w", encoding="utf-8") as fh:
             fh.write(dumps(data, ensure_ascii=False, indent=1, sort_keys=True) + "\n")
     return doc, told
@@ -1861,7 +1891,7 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
     started = perf_counter()
     token_from_env()                            # the Action has no config.py: github_api's fetches take the token from the environment
     work = _work_dir()
-    for name in (VERDICTS_OUT, EVENTS_OUT):    # a reused work dir: no earlier run's records
+    for name in (VERDICTS_OUT, EVENTS_OUT, RECORDS_OUT):    # a reused work dir: no earlier run's records
         if exists(join(work, name)):
             remove(join(work, name))
     local = abspath(expanduser(local)) if local else ""

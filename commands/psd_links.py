@@ -37,7 +37,7 @@ from argparse import ArgumentParser
 from dataclasses import dataclass, field
 from hashlib import sha1
 from io import BytesIO
-from json import dump, dumps, load
+from json import dump, dumps, load, loads
 from math import floor
 from os import environ, makedirs
 from os.path import expanduser, isdir
@@ -60,7 +60,7 @@ from psd_tools.psd.tagged_blocks import SmartObjectLayerData, TaggedBlock
 from psd_tools.terminology import Unit
 
 from commands.psd_regions import _ancestors, badge_layers, comp_names, placed_data
-from global_config import HISTORY_CLONE, STARS_DIR, TYPES_DIR
+from global_config import EDITS_PATH, HISTORY_CLONE, STARS_DIR, TYPES_DIR
 
 # ========================
 # Configuration
@@ -1152,6 +1152,7 @@ class Redrawn:
     due: list = field(default_factory=list)         # PSD paths still due (capped or skipped): Leftover work chains
     notes: dict = field(default_factory=dict)       # {PSD path: [hand note]} layers left as they are
     lines: list = field(default_factory=list)       # the report
+    records: list = field(default_factory=list)     # psd_edit.records_of per PSD written: the data's records
 
 
 def due_links(links: dict, tree: dict, sizes: dict) -> dict:
@@ -1357,8 +1358,14 @@ def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARD
         Redrawn (the files of commit R on head; nothing is committed here)
     """
     import commands.png_export as png_export
-    from commands.psd_edit import save_psd
+    from commands.psd_edit import offline_parser, records_of as rewrite_records, save_psd, use_record
     tree = _tree_at(clone, head)
+    stems = {d: sorted(splitext(basename(p))[0].lower().replace(" ", "_") for p in tree
+                       if dirname(p) == d and p.lower().endswith(".png")) for d in (TYPES_DIR, STARS_DIR)}
+    parser = offline_parser(stems[TYPES_DIR], stems[STARS_DIR], None)     # the type rows (records_of's spots)
+    from commands.card_edits import dup_pictures
+    edits = _git_bytes(clone, [tree[EDITS_PATH]]).get(tree[EDITS_PATH]) if EDITS_PATH in tree else None
+    dups = dup_pictures(list(tree), loads(edits).get("cards") if edits else None)   # they follow their PNG (silent)
     records, seen = records_of(links)
     linked = sorted({link["path"] for record in records.values() for link in record.get("links") or [] if link.get("path")})
     sizes = {path: (seen.get(path) or {}).get(tree[path]) for path in linked if path in tree}
@@ -1399,7 +1406,7 @@ def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARD
                 blobs.update(_git_bytes(clone, [blob]))
             return blobs.get(blob)
         raw = blobs[tree[rel]]
-        old, new = PSDImage.open(BytesIO(raw)), PSDImage.open(BytesIO(raw))
+        old, new = use_record(PSDImage.open(BytesIO(raw)), rel), PSDImage.open(BytesIO(raw))
         changed, moved, notes = redraw_psd(new, rel, tree, read_blob, seen)
         if notes:
             out.notes[rel] = notes
@@ -1408,23 +1415,31 @@ def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARD
         buf = BytesIO()
         save_psd(new, buf)                      # stripped (A1): the export below reads the saved PSD
         files = {rel: buf.getvalue()}
+        png = png_export.open_png(blobs[tree[main]]) if main and tree[main] in blobs else None
+        found = rewrite_records(old, PSDImage.open(BytesIO(files[rel])), rel, parser, png, basename(rel)[:len(basename(rel)) - 4])
+        after = use_record(PSDImage.open(BytesIO(files[rel])), rel, (found.get("render") or {}).get(rel))
         if moved and main:
             if any(tree[p] not in blobs for p in pngs):     # C5: the PSD lands only with its PNGs
                 out.due.append(rel)
                 continue
             numbered = {p: png_export.open_png(blobs[tree[p]]) for p in numbered_pngs}
-            found = png_export.export(old, PSDImage.open(BytesIO(files[rel])), png_export.open_png(blobs[tree[main]]),
-                                      numbered, main)
-            refused = [why for data, why in (found.numbered or {}).values() if data == b""]
-            if found.outcome not in ("re-exported", "current") or refused:
+            found_png = png_export.export(old, after, png, numbered, main)
+            refused = [why for data, why in (found_png.numbered or {}).values() if data == b""]
+            if found_png.outcome not in ("re-exported", "current") or refused:
                 out.notes.setdefault(rel, []).append(
-                    f"Its pictures could not be drawn again ({found.why or (refused or [found.outcome])[0]}): export them in Photoshop.")
+                    f"Its pictures could not be drawn again ({found_png.why or (refused or [found_png.outcome])[0]}): export them in Photoshop.")
                 continue
-            if found.outcome == "re-exported":
-                files[main] = found.data
-            files.update({path: data for path, (data, _) in (found.numbered or {}).items() if data})
+            if found_png.outcome == "re-exported":
+                files[main] = found_png.data
+                followers = [p for p in dups.get(rel, []) if p in tree]
+                wanted = _git_bytes(clone, [tree[p] for p in followers]) if followers else {}
+                files.update(png_export.follow(png, found_png.image, {p: png_export.open_png(wanted[tree[p]])
+                                                                       for p in followers if tree[p] in wanted}))
+            files.update({path: data for path, (data, _) in (found_png.numbered or {}).items() if data})
         out.files.update(files)
         out.cards.append(rel)
+        if found:
+            out.records.append(found)
         written += sum(len(data) for data in files.values())
         out.lines.append(f"- {rel}" + (f" (+ {', '.join(sorted(basename(p) for p in files if p != rel))})"
                                        if len(files) > 1 else ""))
@@ -1602,6 +1617,9 @@ def main(args: Optional[list] = None) -> int:
         with open(posixpath_join(opts.out, "redraw.json"), "w", encoding="utf-8") as fh:
             dump({"due": len(found.due), "cards": found.cards, "left": found.due, "commit": commit, "notes": found.notes},
                  fh, indent=1)
+        if commit:                              # card-sync.yml's Bake records hands them to the data (card_data --records)
+            with open(posixpath_join(opts.out, "records.json"), "w", encoding="utf-8") as fh:
+                dump(found.records, fh)
     return 0
 
 

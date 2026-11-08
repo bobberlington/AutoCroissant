@@ -921,6 +921,41 @@ def test_a_psd_fix_lands_beside_its_pushed_png(cards, tmp_path):
                                  "line": "R11 fixed; straight apostrophes"}]
 
 
+def test_a_duplicate_follows_its_psd_silently_and_records_land(cards, tmp_path):
+    """Owner 11-07: a picture-only duplicate (dup_of) takes its card's change in the guards' landing, silent; one drawn
+    apart from the PSD stays. A landed write hands what it read before the strip to records.json (card_data --records)."""
+    root, base, alice, bot = cards
+    work = tmp_path / "psds"
+    green = (root / FOLDER / "Bread.png").read_bytes()
+    (root / FOLDER / "Bread_Copy.png").write_bytes(green)                     # the card's own picture under another name
+    _png(root, f"{FOLDER}/Bread_Other.png", card(colour=(255, 255, 0), base=(0, 0, 0)))    # drawn apart
+    (root / "site").mkdir()
+    (root / "site/Card Edits.json").write_text(json.dumps({"cards": {"Bread Copy": {"dup_of": "Bread"},
+                                                                     "Bread Other": {"dup_of": "Bread"}}}))
+    start = _commit(root, "duplicates")
+    blue = card(colour=(0, 0, 255), box=(30, 40, 50, 60))
+    _psd(root, work, f"{FOLDER}/Bread.psd", blue)
+    _png(root, f"{FOLDER}/Bread.png", blue)
+    pair = _commit(root, "Bread again", author="Alice")
+    out = tmp_path / "out"
+    cg.check(str(root), pair, start, mode="on", out=str(out), workers=1)
+    plan = json.loads((out / "plan.json").read_text())
+    (bread,) = [c for c in plan["cards"] if c["card"] == "Bread"]
+    (write,) = [w for w in bread["writes"] if w.get("dup")]
+    assert write["path"] == f"{FOLDER}/Bread_Copy.png" and write["silent"] and cg.events_of(bread, write, [write]) == []
+    assert Image.open(out / write["file"]).convert("RGB").tobytes() == blue.convert("RGB").tobytes()
+    fixed = b"the converted PSD"                                            # land only moves bytes
+    (out / "fixed.psd").write_bytes(fixed)
+    bread["writes"].append({"path": bread["psd"], "file": "fixed.psd", "sha": blob_sha(fixed), "kind": "psd", "line": "",
+                            "shown": "", "silent": True, "pixels": ["normalise"]})
+    bread["records"] = {"render": {bread["psd"]: {"icc": [0.0, 0]}}}
+    (out / "plan.json").write_text(json.dumps(plan))
+    landed = cg.land(str(out / "plan.json"), local=str(root))
+    assert landed["sha"] and f"{FOLDER}/Bread_Copy.png" in _git(root, "show", "--name-only", "--format=", landed["sha"])
+    cg.finish(str(out / "plan.json"), landed)
+    assert json.loads((out / "records.json").read_text()) == [bread["records"]]
+
+
 # ========================
 # The real push of 2026-10-22 15:18 (the clone, read-only)
 # ========================

@@ -66,13 +66,13 @@ import commands.psd_diff as psd_diff
 import commands.psd_edit as psd_edit
 from commands.card_bake import PREFETCH_WORKERS, Snapshot, fetch_verified, local_snapshot, snapshot_at
 from commands.card_check import vocabulary
-from commands.card_edits import CardAuthors
+from commands.card_edits import CardAuthors, dup_pictures
 from commands.font_check import face_names, is_card_psd, tree_fonts
 from commands.git_commit import (AUTHOR, COMMIT_TRIES, NO_LAZY, Transient, api, commit_files, git, git_commit, local_commit,
                                  plural, ref_head, token)
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_edit import Refused
-from global_config import CARD_REPO, FONT_DIRS_ENV, ICON_MANIFEST_PATH, STARS_DIR, TYPES_DIR
+from global_config import CARD_REPO, EDITS_PATH, FONT_DIRS_ENV, ICON_MANIFEST_PATH, STARS_DIR, TYPES_DIR
 
 # ========================
 # Configuration
@@ -111,6 +111,8 @@ ICON_FONT_FILE = f"{psd_edit.FONTS_DIR}/stoogedings.ttf"
 EARLIER_FONTS = 4                               # badge widths: the icon font's earlier eras at most (earlier_fonts)
 EARLIER_WALK = 40                               # versions of its history earlier_fonts reads at most (10 by 2026-11-05)
 GUARD_EVENTS = "guard-events.json"              # beside the plan: the landed commit's changelog events
+GUARD_RECORDS = "records.json"                  # beside the plan: what the landed PSD writes read before the strip, for
+                                                # the data's records (card-guards.yml's guard-records; card_data --records)
 REDRAW = "; re-exported for "                   # _rewrapped_pngs' line on a guard 1 PNG (the composer's rewrap): not told
 QUIET_KEYS = ("EveryLineComposer",)            # fixed unsaid (owner, 2026-10-25): never in the changes either
 TELL_PNG_MISMATCH = False                       # R10 and "current but outside the bar" on Discord too (beyond the owner's
@@ -175,6 +177,8 @@ class Job:
     left: str = ""                              # rename: the old PNG, still at its old path
     pushed: dict = field(default_factory=dict)  # numbered PNG path -> blob the push brought (recompressed only)
     convert: bool = False                       # rename: its links repaired too (its folder depth changed, G4)
+    dups: dict = field(default_factory=dict)    # picture-only duplicate path -> blob at after (card_edits.dup_pictures)
+    base_png: str = ""                          # pair: the PNG's blob before the push (its pictures follow from it)
     login: str = NOBODY
     commit: str = ""                            # the last writer's commit (the Discord link)
 
@@ -501,6 +505,13 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
     def numbered(path: str) -> dict:
         return {p: tree[p][1] for p in snapshot.png_for(path)[1] if p not in pngs and p in tree}
 
+    try:                                        # picture-only duplicates follow their PSD's PNG (owner 11-07, silent)
+        edits = loads(source.blob(tree[EDITS_PATH][1])).get("cards") if EDITS_PATH in tree else None
+    except Exception:                           # unread: they stay as they are this push
+        print(format_exc(), file=stderr)
+        edits = None
+    dups = {psd: {p: tree[p][1] for p in found if p not in pngs} for psd, found in dup_pictures(list(tree), edits).items()}
+
     def pushed(path: str) -> dict:
         return {p: pngs[p].new for p in snapshot.png_for(path)[1] if p in pngs and pngs[p].status in "AM"}
 
@@ -528,8 +539,10 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
             elif moved:
                 jobs.append(Job(change.path, "convert", "", change.new, login=login, commit=commit))
             continue
+        job.dups = dups.get(change.path, {})
         if png and png in pngs and pngs[png].status in "AM":
             job.case, job.png, job.png_new, job.numbered = "pair", png, pngs[png].new, numbered(change.path)
+            job.base_png = pngs[png].old if pngs[png].status == "M" else ""
         elif png and change.status == "M":
             job.case, job.png, job.png_old, job.numbered = "stale", png, tree[png][1], numbered(change.path)
             job.psd_anchor, job.anchor_commit = source.anchor(png, change.path, before, after, change.old)
@@ -836,6 +849,8 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
             shown[job.png] = png
         if measured.get("ok") is None:
             result.notes.append((f"{basename(job.png)} could not be checked against the PSD ({measured.get('why')})", False))
+    if job.case == "pair" and old is not None and job.base_png:
+        _pair_pictures(source, job, result, old, new, out, shown, faces)
     pixels = tuple(kind for kind in standards.pixel_kinds(new) if kind != NORMALISE) if job.case != "png-only" else ()
     if job.case != "png-only":                  # converted after the check (convert_plan), SWEEP_ONLY or not
         result.convert = list(standards.pixel_kinds(new, (NORMALISE,)))
@@ -881,6 +896,63 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
             write = next((w for w in result.writes if w["path"] == path and w["kind"] == "png"), None)
             result.shown[path] = {"file": write["file"]} if write else {"blob": source.checked.get(path, ("", ""))[1]}
         result.shows = "fixed" if any(w.get("composer") for w in result.writes if w["kind"] == "png") else "pushed"
+
+
+def _pair_pictures(source: Source, job: Job, result: Result, old, new, out: str, shown: dict, faces=None) -> None:
+    """A PSD pushed with its PNG but not its numbered pictures (owner 11-07, silent): each drawn again as its picture (a
+    tagged PSD's: png_export.render_picture) or taking the PNG's change (follow); one that refuses stays as it is."""
+    left = {path: sha for path, sha in job.numbered.items() if path not in job.pushed}
+    if not left:
+        return
+    tags = set(psd_edit.variants_of(new))
+    base, pushed = (png_export.open_png(source.blob(sha)) for sha in (job.base_png, job.png_new))
+    for path, sha in sorted(left.items()):
+        image = png_export.open_png(source.blob(sha))
+        n = png_export.picture_number(path)
+        if len(tags) > 1 and n in tags:
+            data, _ = png_export.render_picture(old, new, image, n, faces)
+        else:
+            data = png_export.follow(base, pushed, {path: image}).get(path, b"")
+        if data:
+            result.writes.append({"path": path, "file": _save(out, path, data), "sha": blob_sha(data), "kind": "png",
+                                  "line": "follows the PSD (its picture)", "silent": True, "dup": True})
+            shown[path] = png_export.open_png(data)
+        elif data is None:                      # it shows the pushed PSD already
+            shown[path] = image
+
+
+def follow_dups(data: dict, source: Source, out: str) -> None:
+    """
+    Each card's picture-only duplicates (Job.dups) after its PNG's final write, or after the PNG its pair push brought:
+    png_export.follow from the PNG they were drawn with (at after, or before a pair push), silent writes in the same
+    landing; one drawn apart from the PSD stays as it is (card_checks flags it). Again after the conversions (their PNG
+    writes come later). Edits data in place.
+    """
+    for entry in data["cards"]:
+        if not entry.get("dups") or not entry.get("png"):
+            continue
+        entry["writes"] = [w for w in entry["writes"] if not (w.get("dup") and w["path"] in entry["dups"])]
+        write = next((w for w in entry["writes"] if w["kind"] == "png" and w["path"] == entry["png"] and w.get("file")), None)
+        try:
+            if write is not None:
+                with open(join(out, write["file"]), "rb") as fh:
+                    final = png_export.open_png(fh.read())
+            elif entry["case"] == "pair" and entry.get("base_png"):
+                final = png_export.open_png(source.blob(entry["expect"][entry["png"]]))
+            else:
+                continue
+            base = entry.get("base_png") if entry["case"] == "pair" else entry["expect"].get(entry["png"])
+            if not base:
+                continue
+            made = png_export.follow(png_export.open_png(source.blob(base)), final,
+                                     {path: png_export.open_png(source.blob(sha)) for path, sha in entry["dups"].items()})
+        except Exception:                       # best effort: the duplicates stay as they are
+            print(format_exc(), file=stderr)
+            continue
+        for path, raw in sorted(made.items()):
+            entry["expect"][path] = entry["dups"][path]
+            entry["writes"].append({"path": path, "file": _save(out, path, raw), "sha": blob_sha(raw), "kind": "png",
+                                    "line": f"follows {basename(entry['png'])} (a duplicate)", "silent": True, "dup": True})
 
 
 def stale_left(fixed, redrawn: dict) -> list:
@@ -1072,40 +1144,56 @@ def _shown_images(out: str, source: Source, entry: dict) -> dict:
 
 def _convert_one(source: Source, entry: dict, ctx: LinkContext, parser, out: str, deadline: float) -> dict:
     """One PSD's normalise (card_standards.fix, only normalise) on top of the check's write; a class 3 redraw takes its
-    PNGs along (png_export.export over the PNGs the check found showing the PSD), else it is redone as exact copies."""
+    PNGs along (png_export.export over the PNGs the check found showing the PSD), else it is redone as exact copies.
+    "records": what the pushed PSD hands the data's records before the strip (psd_edit.records_of), even when the time
+    ran out (the check's own write strips it too)."""
+    tree, rel = ctx.tree, entry["psd"]
+    shown = _shown_images(out, source, entry) if entry.get("png") in entry.get("shown", {}) else {}
+    pushed = png_export.open_psd(source.blob(tree[rel]), rel)
+    facts = psd_edit.look_facts(pushed, shown.get(entry.get("png"))) if pushed.has_preview() else {}
+
+    def done(result: dict) -> dict:
+        found = {"render": {rel: facts}} if facts else {}
+        if "psd" in result and parser is not None:  # icons the conversion redrew: their cores before it
+            spots = psd_edit.spot_entries(pushed, png_export.open_psd(result["psd"]), parser, rel,
+                                          basename(rel)[:len(basename(rel)) - 4])
+            found.update({"spot": {rel: spots}} if spots else {})
+        return {**result, "records": found} if found else result
     if time() > deadline:
-        return {"left": "not converted: the guards' time ran out (its next push converts it)"}
-    tree = ctx.tree
+        return done({"left": "not converted: the guards' time ran out (its next push converts it)"})
     base = _final(out, entry, source, tree)
     fonts = partial(source.fonts_for)
     fonts.links = ctx
-    shown = _shown_images(out, source, entry) if entry.get("png") in entry.get("shown", {}) else {}
     for redraw in (True, False):
         ctx.redraw = redraw
-        fixed = standards.fix(base, entry["psd"], [], join(out, "work"), parser, fonts, only=NORMALISE)
+        fixed = standards.fix(base, rel, [], join(out, "work"), parser, fonts, only=NORMALISE)
         if not fixed.data:
-            return {"left": "; ".join(why for _, why in fixed.pixel_left) or "nothing to convert"}
+            return done({"left": "; ".join(why for _, why in fixed.pixel_left) or "nothing to convert"})
         redraws = list(fixed.redrawn.get(NORMALISE) or ())     # card_standards: the layers drawn again
         if not redraws:
-            return {"psd": fixed.data, "files": dict(fixed.files), "pngs": {}, "left": list(fixed.left)}
+            return done({"psd": fixed.data, "files": dict(fixed.files), "pngs": {}, "left": list(fixed.left)})
         if not shown:                           # no PNG shows it (templates, Unfinished): nothing follows
-            if entry.get("png") or is_card_psd(entry["psd"]):
+            if entry.get("png") or is_card_psd(rel):
                 continue                        # a card's PNG not followed here (a rename): exact copies
-            return {"psd": fixed.data, "files": dict(fixed.files), "pngs": {}, "left": list(fixed.left)}
-        start = png_export.open_psd(base if entry.get("shows") == "fixed" else source.blob(tree[entry["psd"]]), entry["psd"])
+            return done({"psd": fixed.data, "files": dict(fixed.files), "pngs": {}, "left": list(fixed.left)})
+        start = psd_edit.use_record(png_export.open_psd(base if entry.get("shows") == "fixed" else source.blob(tree[rel])),
+                                    rel, facts or None)
         numbered = {path: image for path, image in shown.items() if path != entry["png"]}
-        found = png_export.export(start, png_export.open_psd(fixed.data, entry["psd"]), shown[entry["png"]], numbered)
+        found = png_export.export(start, psd_edit.use_record(png_export.open_psd(fixed.data), rel, facts or None),
+                                  shown[entry["png"]], numbered)
         if found.outcome == "refused" or any(data == b"" for data, _ in found.numbered.values()):
             continue                            # the redraw cannot reach its PNGs: exact copies instead
         pngs = {entry["png"]: found.data} if found.outcome == "re-exported" else {}
         pngs.update({path: data for path, (data, _) in found.numbered.items() if data})
-        return {"psd": fixed.data, "files": dict(fixed.files), "pngs": pngs, "left": list(fixed.left), "base": base}
-    return {"left": "not converted: its redrawn pictures' PNGs could not follow"}
+        return done({"psd": fixed.data, "files": dict(fixed.files), "pngs": pngs, "left": list(fixed.left), "base": base})
+    return done({"left": "not converted: its redrawn pictures' PNGs could not follow"})
 
 
 def _merge(out: str, entry: dict, done: dict, tree: dict) -> None:
     """A conversion into the card's writes: its PSD write (the check's carries it), its new files, its PNGs; silent."""
     entry["converted"] = "psd" in done
+    if done.get("records"):                     # land hands them to the data with the PSD write (records.json)
+        entry["records"] = done["records"]
     if done.get("left"):
         entry.setdefault("convert_left", []).extend([done["left"]] if isinstance(done["left"], str) else done["left"])
     if "psd" not in done:
@@ -1287,6 +1375,7 @@ def convert_plan(data: dict, source: Source, out: str, minutes: float = CONVERT_
                     done.append({"left": f"not converted ({type(error).__name__}: {error})"})
         for entry, result in zip(entries, done):
             _merge(out, entry, result, tree)
+        follow_dups(data, source, out)          # a conversion's PNG write: its duplicates follow it instead
     try:
         data["linked"] = housekeeping(data, source, tree, out, index, deadline)
     except Exception:                           # best effort: nothing deleted or merged this run
@@ -1319,7 +1408,8 @@ def plan(results: list, repository: str, before: str, after: str, mode: str) -> 
                  "changes": result.changes, "expect": _expect(result.job), "pushed": sorted(result.job.pushed),
                  "composer": result.composer, "composer_left": result.composer_left,
                  "redrawn": result.redrawn, "pixel_left": result.pixel_left, "pixel_notes": result.pixel_notes,
-                 "convert": result.convert, "shown": result.shown, "shows": result.shows}
+                 "convert": result.convert, "shown": result.shown, "shows": result.shows,
+                 "dups": result.job.dups, "base_png": result.job.base_png}
         cards.append(entry)
     return {"repo": repository, "before": before, "after": after, "mode": mode, "checked_at": _now().isoformat(),
             "cards": cards}
@@ -1644,6 +1734,7 @@ def check(clone: str, after: str, before: str = "", repository: str = "", author
             parser = vocab.parser() if vocab is not None else None
             results = [run_job(source, job, context, parser, out, mode, earlier) for job in jobs]
         data = plan(results, repository, base, head, mode)
+        follow_dups(data, source, out)
         data["pushed_paths"] = [] if whole_tree else [c.path for c in source.diff(base, head) if c.status in "AM"]
         if whole_tree or convert == "off":
             for entry in data["cards"]:
@@ -1913,7 +2004,7 @@ def events_of(entry: dict, write: dict, drawn: list) -> list:
     (owner, 2026-10-25). drawn: the card's writes as they landed (_drawn: a redraw's plain has no pixel fix).
     """
     base = {"card": entry["card"], "path": write["path"]}
-    if write["kind"] in ("file", "delete"):     # the linked files: silent (G1-G4)
+    if write["kind"] in ("file", "delete") or write.get("dup"):     # the linked files, the duplicates: silent
         return []
     if write["kind"] == "recompress":
         return [{"kind": "guard-png", **base, "line": "recompressed losslessly"}]
@@ -2008,13 +2099,16 @@ def land(plan_path: str, repository: str = "", dry_run: bool = False, local: str
                               and not _holds(entry, entry["psd"], here(entry["psd"]))
                               and _bot_changed(repository, local, tip.head, entry["psd"]))
     report["told"], report["after"] = after_window(data, report, tip, bot_moved)
+    landed = {tuple(pair) for pair in report["included"]} if report["sha"] else set()
+    report["records"] = [entry["records"] for entry in data["cards"]
+                         if entry.get("records") and (entry["card"], entry["psd"]) in landed]
     return report
 
 
 def finish(plan_path: str, landed: dict) -> dict:
     """land's files beside the plan: landed.json, report-landed.md (the comment's new body), discord-final.json (the
     one post, as after_window settled it) and, for a landed commit, guard-events.json ({"schema", "commit", "push",
-    "events"}). Returns the post."""
+    "events"}) and records.json (its PSD writes' records, a list). Returns the post."""
     out_dir = dirname(plan_path)
     with open(plan_path, encoding="utf-8") as fh:
         data = load(fh)
@@ -2023,6 +2117,9 @@ def finish(plan_path: str, landed: dict) -> dict:
     if landed.get("sha"):
         with open(join(out_dir, GUARD_EVENTS), "w", encoding="utf-8") as fh:
             dump({"schema": 1, "commit": landed["sha"], "push": data.get("after"), "events": landed.get("events", [])}, fh)
+    if landed.get("sha") and landed.get("records"):
+        with open(join(out_dir, GUARD_RECORDS), "w", encoding="utf-8") as fh:
+            dump(landed["records"], fh)
     with open(join(out_dir, "report-landed.md"), "w", encoding="utf-8") as fh:
         fh.write(landed_markdown(data, landed))
     told = landed.get("told", {})
