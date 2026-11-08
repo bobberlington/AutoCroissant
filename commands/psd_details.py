@@ -28,9 +28,9 @@ from psd_tools.constants import Resource
 import commands.psd_edit as psd_edit
 from commands.font_check import NAMES_ENV, FontIndex, dir_fonts, layer_fonts, load_names, local_fonts, tree_fonts
 from commands.psd_edit import (
-    STAR_FOLDER, Refused, _Unit, _icon_core, _icon_reason, _icon_spots, _median_size, _merge_twins, _moved_box,
-    _outside_units, _reading, _star_count, _star_layouts, _star_units, _stars_total, _texts, offline_parser, plan_stars,
-    type_row,
+    STAR_FOLDER, Refused, _Unit, _icon_core, _icon_reason, _icon_spots, _loose_units, _median_size, _merge_twins,
+    _moved_box, _outside_units, _reading, _star_count, _star_layouts, _star_units, _stars_total, _texts, offline_parser,
+    plan_stars, type_row,
 )
 from commands.psd_parser import EFFECT_LAYER_TAG, ICON_FONT_PREFIX, PARSER_VERSION, PSDParser
 from commands.psd_parts import card_parts
@@ -383,19 +383,34 @@ def _why(refused: Refused) -> str:
     return sub(r"^stars: |\s*\([^)]*\bledger [A-Z]\d+\)", "", refused.why)
 
 
-def _kept_stars(psd: PSDImage, rel: str, parser: PSDParser) -> Optional[dict]:
-    """A header without units: each count the bake refuses as card_bake plans it (moving), its printed stars kept; None
-    when it plans one (Paint Warrior's two groups)."""
-    total = _stars_total(psd, types=parser.all_types, stars=parser.star_names())
+def _copied(order: list, container) -> Optional[str]:
+    """The star icon the bake copies: plan_stars' source, the last star layer in container, else the last star read."""
+    source = max((unit for unit in order if unit.layers[0].parent is container), default=order[len(order) - 1],
+                 key=lambda unit: max(container.index(layer) for layer in unit.layers if layer.parent is container))
+    return sub(r"\s+copy(\s+\d+)?$", "", source.layers[len(source.layers) - 1].name).strip().lower() or None
+
+
+def _kept_stars(psd: PSDImage, rel: str, parser: PSDParser) -> dict:
+    """A header without one Stars group drawing them: the stars the bake lays out loose (plan_stars' _loose_units:
+    layers named star, several groups; R2, R3), each count's centres (its plan's, moving) and the counts it refuses."""
+    types, stars = parser.all_types, parser.star_names()
+    total = _stars_total(psd, types=types, stars=stars)
     parsed = {"card": {"stars": total, "path": rel, "type": ""}, "info": None}
-    refused = {}
+    at, refused = {}, {}
     for n in range(1, HEADER_STARS + 1):
         try:
-            plan_stars(psd, parsed, n, parser, moving=True)
-            return None
+            at[str(n)] = [_ints(centre) for centre in plan_stars(psd, parsed, n, parser, moving=True).centres]
         except Refused as e:
             refused[str(n)] = _why(e)
-    return {"units": [], "icon": None, "at": {}, "refused": {"*": refused["1"]} if len(set(refused.values())) == 1 else refused}
+    groups = [group for group in PSDParser._star_groups(psd) if _star_count(group, {}, {}, {}, types)]
+    outside = _outside_units(PSDParser.outside_stars(psd, PSDParser._star_groups(psd), stars)) if groups else []
+    loose = _loose_units(psd, groups, not groups, types, stars)[0] if at else []
+    shown = _merge_twins(loose + outside) if loose else []
+    order = _reading(shown, _median_size(shown)[1], True) if shown else []
+    if len(refused) == HEADER_STARS and len(set(refused.values())) == 1:
+        refused = {"*": refused["1"]}
+    return {"units": [{"core": _ints(unit.core), "box": _ints(unit.box)} for unit in order],
+            "icon": _copied(order, loose[len(loose) - 1].layers[0].parent) if order else None, "at": at, "refused": refused}
 
 
 def _star_header(psd: PSDImage, rel: str, vocab, parser: Optional[PSDParser] = None) -> Optional[dict]:
@@ -403,9 +418,9 @@ def _star_header(psd: PSDImage, rel: str, vocab, parser: Optional[PSDParser] = N
     The shown stars ({core, box}, reading order), the star layer the bake copies, each count's centres (the bake's plan,
     a move on a folder card as card_bake's; else the layout's: first n, then _star_layouts) and the counts the bake
     refuses ("*": all, for one reason).
-    Without exactly one Stars group drawing them: no units, the bake's refusals (_kept_stars), or None when it plans
-    some count. parser: the build's (its Types/Stars names count the stars outside the group, as the bake's does:
-    Massive Moss Charger's 'Hk star'); None: one from vocab.
+    Without exactly one Stars group drawing them: the bake's loose stars and plans (_kept_stars). parser: the build's
+    (its Types/Stars names count the stars outside the group, as the bake's does: Massive Moss Charger's 'Hk star');
+    None: one from vocab.
     """
     parser = parser or _icon_parser(vocab)
     types = parser.all_types
@@ -421,8 +436,6 @@ def _star_header(psd: PSDImage, rel: str, vocab, parser: Optional[PSDParser] = N
     size = _median_size(shown)
     order = _reading(shown, size[1], True)
     plain = len(order) == total and all(unit.count == 1 for unit in order)     # one unit per star: the layout's spots hold
-    source = max((unit for unit in order if unit.layers[0].parent is container), default=order[len(order) - 1],
-                 key=lambda unit: max(container.index(layer) for layer in unit.layers if layer.parent is container))
     parsed = {"card": {"stars": total, "path": rel, "type": ""}, "info": None}
     at, refused = {}, {}
     for n in range(1, HEADER_STARS + 1):
@@ -440,7 +453,7 @@ def _star_header(psd: PSDImage, rel: str, vocab, parser: Optional[PSDParser] = N
     if len(refused) == HEADER_STARS and len(set(refused.values())) == 1:
         refused = {"*": refused["1"]}
     return {"units": [{"core": _ints(unit.core), "box": _ints(unit.box)} for unit in order],
-            "icon": sub(r"\s+copy(\s+\d+)?$", "", source.layers[len(source.layers) - 1].name).strip().lower() or None,
+            "icon": _copied(order, container),
             "at": at, "refused": refused}
 
 

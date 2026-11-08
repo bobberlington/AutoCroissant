@@ -74,7 +74,7 @@ def test_record_shape_and_size(records, clone):
         assert set(record["stats"]) == {"hp", "def", "atk", "spd"}
         assert all(len(e) == (4 if e[1] == "group" else 3) and isinstance(e[2], bool) for e in record["tree"])
     assert _size(records[DOOMER]) < 10_000 and _size(records[CANNON]) < 10_000     # parts: ~1.5 KB more
-    assert _size(records[LAZARUS]) < 20_000                                         # 234 layers, 93 with effects
+    assert _size(records[LAZARUS]) < 21_000                                         # 234 layers, 93 with effects; loose stars
     caps = {rel: record.get("stat_caps") for rel, record in records.items()}     # VERSION 4: own displays (old rows then)
     assert caps[LAZARUS] == dict.fromkeys(("hp", "def", "atk", "spd"), [10, 10]) and caps[VIRUS] is None
     assert caps[CANNON] == {"hp": [10], "def": [10], "atk": [20], "spd": [10]}                  # Top and Bottom rows: 20
@@ -126,7 +126,7 @@ def test_text_layers_and_template(records):
 def test_header_boxes(records, clone):
     """The mock-up's header: Mini Doomer's two stars in reading order, rows of two past them, no count refused; its three
     type icons in slot order with spots carrying the row on (a second row for eight); a folder card's counts planned as
-    its move (card_bake's), a card without a Stars group too (no units: the mock-up boxes them)."""
+    its move (card_bake's), a card without a Stars group too (its loose stars: The Freezer's Patrick Star)."""
     stars, types = records[DOOMER]["header"]["stars"], records[DOOMER]["header"]["types"]
     assert [u["core"] for u in stars["units"]] == [[1049, 13, 1164, 115], [936, 15, 1051, 117]] and stars["icon"] == "warpstar"
     assert stars["at"]["2"] == [[1106, 64], [994, 66]] and stars["at"]["3"] == [[1106, 64], [994, 66], [1050, 167]]
@@ -143,7 +143,9 @@ def test_header_boxes(records, clone):
     assert lich["stars"]["refused"] == {} and sorted(lich["stars"]["at"], key=int) == [str(n) for n in range(1, 11)]
     assert lich["stars"]["at"]["6"][4:] == [[1130, 317], [998, 317]] and [t["name"] for t in lich["types"]["row"]] == ["undead", "ice"]
     freezer = pd.gather(str(clone / FREEZER), FREEZER, "The Freezer", None, vocab)["header"]
-    assert freezer["stars"] is None                     # no Stars group: its Patrick Star is redrawn, as Nasty Patty's
+    stars = freezer["stars"]                            # no Stars group: its Patrick Star, laid out loose as the bake's
+    assert [u["core"] for u in stars["units"]] == [[1061, 31, 1189, 198]] and stars["icon"] == "patrick star"
+    assert stars["at"]["2"] == [[1125, 114], [1125, 282]] and sorted(stars["refused"], key=int) == ["6", "7", "8", "9", "10"]
     assert [t["name"] for t in freezer["types"]["row"]] == ["field"]
     assert freezer["types"]["spots"]["2"] == [[7, 226, 136, 418]]                    # under a lone icon (Item_Template's column)
 
