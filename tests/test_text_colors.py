@@ -10,6 +10,7 @@ from os import environ
 from os.path import expanduser
 from pathlib import Path
 from subprocess import run as run_process
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -78,6 +79,12 @@ const out = {{
   note: E.describeItems({{ set: {{ colors: [{{ field: "note", color: "#000000" }}] }}, unset: [] }}, {{}}).map(x => x.psd),
   status: T.statusSpans("Inflict 2T Burning. burning prose.", ["Burning"]),
   kept: T.colorRanges("Inflict 2T Burning. burning prose.", [{{ field: "ability", color: "#ffd21f" }}], "ability", ["Burning"]),
+  parts: T.layerColors ? (() => {{                 // a field over several layers: "word#n" counted across them
+    const texts = ["New fire.", "Bonfire.", "Fire foes."], ones = [{{ field: "ability", phrase: "fire#2", color: "#ff0000" }}, {{ field: "ability", phrase: "fire", color: "#ff0000" }}];
+    const rec = {{ parts: {{ title: [{{ id: 1, text: "Ant" }}], ability: [{{ id: 5, text: "fire", variants: [2] }}, {{ id: 2, text: "Old." }}, {{ id: 3, text: texts[1] }}, {{ id: 4, text: texts[2] }}] }} }};
+    return {{ spans: ones.map(one => texts.map((t, i) => (T.layerColors(texts, i, [one], "ability") || []).flatMap(c => T.spansOf(t, c) || []))),
+      jobs: M.partJobs(rec, {{ 2: {{ text: texts[0] }} }}, {{ colors: [ones[0], {{ field: "name", color: "#00ff00" }}] }}).map(j => [j.id, j.text === j.old, j.colors]) }};
+  }})() : null,
   ink: T.inkOf ? (() => {{                         // the card's own colours under the edits; an edit keeps the unchanged ends'
     const c = {{ name: "Ant", ability: "Inflict Burning now.", ink: {{ ability: [[8, 15, "#ff7a1a"], [16, 19, "#0060ff"]] }} }};
     T.anchorInks([c]); c.ability = "Inflict Burning right now.";
@@ -113,6 +120,12 @@ process.stdout.write(JSON.stringify(out));
     assert out["lines"] == [["Ability: 'Burning' (2nd) coloured #ff7a1a", True]] and out["note"] == [False]
     assert out["status"] == [[11, 18]]                  # psd_edit.status_letters' (test_status_words_keep_the_chart)
     assert not any(r["start"] < 18 and 11 < r["end"] for r in out["kept"]) and any(r["start"] <= 20 < r["end"] for r in out["kept"])
+    if out["parts"] is not None:                       # as color_spans counts; unchanged layers the colours reach redrawn
+        layers = [SimpleNamespace(text=t) for t in ("New fire.", "Bonfire.", "Fire foes.")]
+        assert out["parts"]["spans"] == [[[[a, b] for x, a, b in pe.color_spans(layers, {"field": "ability", "phrase": phrase})[0] if x is layer]
+                                          for layer in layers] for phrase in ("fire#2", "fire")]
+        assert out["parts"]["jobs"] == [["1", True, [{"field": "name", "color": "#00ff00"}]], ["2", False, None],
+                                        ["4", True, [{"field": "ability", "phrase": "fire#1", "color": "#ff0000"}]]]
     ink = out["ink"]
     if ink is None:                                     # before TC's card colours land
         return
