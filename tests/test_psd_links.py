@@ -19,6 +19,7 @@ import commands.png_export as png_export
 import commands.psd_links as pl
 
 DELTA = "Auxiliary/Minions/Delta.psd"            # three Star of beth items (Croissant trimmed the file, 11-07)
+FREEZER = "Field/1 Stars/The_Freezer.psd"        # an embedded PSB holding a gradient fill (before the big pass)
 
 
 def _png(image: Image.Image, level: int = 6) -> bytes:
@@ -286,6 +287,18 @@ def test_normalise_links_through_its_link_step(clone, tmp_path):
     by_blob.update({pl.git_blob(data): data for data in done.files.values()})
     again = cs.normalise(str(out), str(tmp_path / "again.psd"), SimpleNamespace(links=LinkContext(tree, catalogue, by_blob.get)), rel)
     assert list(again) == [] and not (tmp_path / "again.psd").exists()
+
+
+def test_fills_stay_embedded(clone):
+    """A smart object holding a fill, an adjustment or a gradient effect stays embedded (owner 11-08): no item, no need;
+    the card's other pictures still link."""
+    if not (clone / FREEZER).exists():
+        pytest.skip(f"{FREEZER} not in the clone")
+    psd = PSDImage.open(clone / FREEZER)
+    psd.repo_path = FREEZER
+    found = pl.needs(psd)
+    assert "embedded: Gradient Fill 1" not in found and "embedded: Patrick Star" in found
+    assert "Gradient Fill 1" not in {layer["name"] for item in pl.items(psd) for layer in item.get("layers", [])}
 
 
 def test_tree_at_non_ascii_paths(tmp_path):

@@ -1,13 +1,15 @@
 """
 Linked pictures (the big pass, owner 2026-11-07): every picture smart object that is no stat bar links a file in the
 card repo, stars and type icons Types/ (Types/Stars/), every other picture MDW/Linked/ ("<Card> - <layer>.<ext>", flat; a
-file several PSDs share is named after the first). Each link carries the file's size and one fixed date (the fork's
+file several PSDs share is named after the first), except one holding a fill, an adjustment or a gradient effect
+(kept_embedded, owner 2026-11-08). Each link carries the file's size and one fixed date (the fork's
 LINK_DATE), as Photoshop 2023 writes it (lnkE v8: the fork's SmartObject.link), so Photoshop finds every link up to date
 and keeps the stored pixels; stat bars stay embedded. A link is read as repo-path strings only (the fork's
 SmartObject.link_target), never from the filesystem.
 
     TypesIndex(files, history)                       Types/ files by git blob, ink pixels and stem; older blobs
     items(psd, vocab) -> [dict]                      a PSD's picture items (the catalogue's worker)
+    kept_embedded(data) -> bool                      contents edited inside: they stay embedded
     assign(psds, types, linked) -> dict              every item's class and target (PLAN 5.1), new files named
     link_card(psd, rel, entries, read) -> Linked     one PSD's pictures linked in place (5.2 step 4)
     link_pixels(layer, rel, path, data, corners)     a pixel layer made a smart object linking a Types/ file (Q4)
@@ -53,8 +55,10 @@ from uuid import NAMESPACE_URL, uuid5
 import numpy as np
 from PIL import Image
 from psd_tools import PSDImage
+from psd_tools.api.effects import GradientOverlay, Stroke
+from psd_tools.api.layers import AdjustmentLayer, FillLayer
 from psd_tools.api.links import FILETYPES, LINK_DATE, comp_info, content_descriptor, link_content_id, linked_file, place
-from psd_tools.constants import LinkedLayerType, Tag
+from psd_tools.constants import LinkedLayerType, StrokeFillType, Tag
 from psd_tools.psd.descriptor import Descriptor, DescriptorBlock, Double, Enumerated, Integer, List, String, UnitFloat
 from psd_tools.psd.linked_layer import LinkedLayer, LinkedLayers
 from psd_tools.psd.tagged_blocks import SmartObjectLayerData, TaggedBlock
@@ -82,6 +86,8 @@ NOT_REDRAWN = "{layer} links {name}, changed since: Card sync could not draw it 
 REDRAW_SUBJECT = "Card sync: linked pictures redrawn"
 SWEEP_TRAILER = "Card-sweep: linked"
 GLYPHS_TRAILER = "Card-sweep: glyphs"           # psd_glyphs: icon glyphs drawn again in the same commit
+EDITED_KEYS = (b"SoCo", b"GdFl", b"PtFl", b"brit", b"levl", b"curv", b"expA", b"vibA", b"hue ", b"hue2",  # fill and
+               b"blnc", b"blwh", b"phfl", b"mixr", b"clrL", b"nvrt", b"post", b"thrs", b"selc", b"grdm")  # adjustments
 CARDS_CAP = 60                  # Card sync redraws at most this many PSDs a run (C6; M7 sets it)
 
 
@@ -167,6 +173,23 @@ def _bar(placed) -> bool:
     """A stat bar: a smart object whose layer comps are all numbers (psd_regions.comp_bars' test). It stays embedded."""
     names = comp_names(placed) if placed is not None else {}
     return bool(names) and all(name.isdigit() for name in names.values())
+
+
+def kept_embedded(data: bytes) -> bool:
+    """Contents a person edits inside (owner 2026-11-08): a PSD or PSB holding a fill or adjustment layer, or a gradient
+    overlay or stroke, at any depth. Parsed only when one of their keys is in the bytes."""
+    if data[:4] != b"8BPS" or not (b"GrFl" in data or any(b"8BIM" + key in data for key in EDITED_KEYS)):
+        return False
+    try:
+        psd = PSDImage.open(BytesIO(data))
+        if any(isinstance(layer, (FillLayer, AdjustmentLayer)) or any(
+                isinstance(fx, GradientOverlay) or isinstance(fx, Stroke) and fx.fill_type == StrokeFillType.GRADIENT
+                for fx in layer.effects) for layer in psd.descendants()):
+            return True
+        nested = [item.data or b"" for _, item in _items_of(psd).values() if item.kind == LinkedLayerType.DATA]
+    except Exception:                       # unreadable contents: linked as any picture
+        return False
+    return any(kept_embedded(one) for one in nested)
 
 
 def _path(layer) -> str:
@@ -624,7 +647,7 @@ def items(psd: PSDImage, vocab=()) -> list:
             entry.update(kind="external", size=item.filesize, blob=None, key=None, ext=file_type(b"", entry["file"]),
                          links={_text(k): _text(v) for k, v in item.linked_file.items() if _text(k).endswith("Path")})
             continue
-        if item.kind != LinkedLayerType.DATA:
+        if item.kind != LinkedLayerType.DATA or kept_embedded(item.data or b""):
             del out[uid]
             continue
         data = item.data or b""
@@ -955,8 +978,8 @@ def repair(psd: PSDImage, rel: str, tree) -> tuple:
 def link_issues(psd: PSDImage, rel: str, tree) -> list:
     """
     What a PSD's links need (the cheap test of A5's needs_normalise and the guards' plan step; nothing decoded): an
-    embedded picture that is no stat bar, a linked stat bar (it goes back to embedded), a link to re-date or rewrite
-    (repair), a link the repo lacks (a hand note), an lnk item no layer uses.
+    embedded picture that is no stat bar nor kept_embedded, a linked stat bar (it goes back to embedded), a link to
+    re-date or rewrite (repair), a link the repo lacks (a hand note), an lnk item no layer uses.
 
     Returns:
         ["embedded: <layer>", "linked bar: <layer>", "repair: <file>", "missing: <file>", "orphan: <uuid>"]
@@ -972,7 +995,8 @@ def link_issues(psd: PSDImage, rel: str, tree) -> list:
             continue
         bar = _bar(placed_data(layer))
         if item.kind == LinkedLayerType.DATA and uid not in bars and file_type(item.data[:16] if item.data else b"",
-                                                                               _text(item.filename)) in FILETYPES:
+                                                                               _text(item.filename)) in FILETYPES \
+                and not kept_embedded(item.data or b""):
             out.append(f"embedded: {layer.name}")
         elif item.kind == LinkedLayerType.EXTERNAL and bar:
             out.append(f"linked bar: {layer.name}")
