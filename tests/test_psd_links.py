@@ -258,6 +258,53 @@ def test_redraw_linked_one_file_two_users(tmp_path, capsys):
         assert np.abs(png - render).max() <= png_export.TOL
 
 
+COPPER = "Items/Equip/1 Stars/Copper_Sword.psd"     # its art under one Gaussian Blur smart filter (6.6 px)
+
+
+def test_gaussian_blur_redrawn(clone):
+    """A lone Gaussian Blur is drawn again: Copper Sword's art from its own picture lands near Photoshop's pixels (not
+    without the blur), its FEid source is the new picture unblurred; a painted filter mask refuses. blurred(): no halo
+    on a side at the canvas's edge."""
+    from psd_tools.compression import compress, decompress
+    if not (clone / COPPER).exists():
+        pytest.skip(f"{COPPER} not in the clone")
+    psd = PSDImage.open(clone / COPPER)
+    layer = next(layer for layer in psd.descendants() if layer.kind == "smartobject" and pl._filtered(layer))
+    assert pl.blur_radius(layer) == 6.6 and pl.why_not_redrawn(layer) is None
+    mask, data = layer.smart_object.filter_item.extra, layer.smart_object.filter_item.extra.data
+    top, left, bottom, right = mask.rectangle
+    painted = np.full((bottom - top, right - left), 255, np.uint8)
+    painted[:50, :50] = 0
+    mask.data = compress(painted.tobytes(), mask.compression, right - left, bottom - top, 8, 2)
+    assert pl.why_not_redrawn(layer) == "smart filters"
+    mask.data = data
+
+    def canvas(rgba, box):
+        out = np.zeros((psd.height, psd.width, 4), np.float32)
+        x0, y0, x1, y1 = max(box[0], 0), max(box[1], 0), min(box[2], psd.width), min(box[3], psd.height)
+        part = rgba[y0 - box[1]:y1 - box[1], x0 - box[0]:x1 - box[0]]
+        out[y0:y1, x0:x1] = np.dstack([part[..., :3] * part[..., 3:], part[..., 3]])
+        return out
+    stored = canvas(layer.numpy(), layer.bbox)
+    picture = pl.picture(psd, layer.smart_object.data, "jpg")
+    plain, box = pl.draw(picture, pl.corners_of(layer), Image.BICUBIC)
+    pl.redraw(layer, picture, pl.corners_of(layer), Image.BICUBIC)
+    error = lambda rgba, where: np.abs(canvas(rgba, where) - stored).mean() * 255
+    assert error(layer.numpy(), layer.bbox) < 1 and error(plain, box) > 3          # 0.65 and 3.95 levels
+    saved = BytesIO()
+    psd.save(saved)
+    again = PSDImage.open(BytesIO(saved.getvalue()))
+    item = next(one for one in again.descendants() if one.name == layer.name).smart_object.filter_item
+    top, left, bottom, right = item.rectangle
+    source = np.dstack([np.frombuffer(decompress(item.channels[k].data, item.channels[k].compression, right - left,
+                                                 bottom - top, 8, 2), np.uint8).reshape(bottom - top, right - left)
+                        for k in (0, 1, 2, -1)])
+    assert (left, top, right, bottom) == box and np.abs(source / 255 - plain).max() <= 1 / 255
+
+    out, where = pl.blurred(np.ones((20, 20, 4), np.float32), (0, 10, 20, 30), 2.0, (100, 100))
+    assert where == (0, 3, 27, 37) and out[17, 0, 3] == 1 and out[0, 0, 3] < 0.01
+
+
 def test_normalise_links_through_its_link_step(clone, tmp_path):
     """card_standards.normalise's link step (needs, link) on Delta through a LinkContext, as the guards and the sweep pass
     it: text normal, pictures linked, new files beside it, no merged image; a second normalise writes nothing."""
