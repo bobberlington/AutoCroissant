@@ -48,7 +48,7 @@ from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_
                                  MutableValue, PSDParser,
                                  StatTracker, base_name, layer_tag, name_key, named_after_text, stars_from_psd,
                                  shown_in, title_text, token_variant, variant_view, variants_of)
-from commands.psd_parser import in_header, star_leaf, star_pieces, star_sets
+from commands.psd_parser import AUX_ITEM_TYPES, in_header, star_leaf, star_pieces, star_sets
 from commands import psd_parts
 from commands.psd_links import corners_of, decode, draw, file_type, link_pixels
 from commands.psd_parts import lyid_index, raw_sha
@@ -6899,9 +6899,10 @@ def _star_layouts(order: list, size: tuple, count: int) -> list:
     return out
 
 
-def _stars_blocked(psd: PSDImage, moves: list, clear: list, below: bool = False) -> Optional[str]:
+def _stars_blocked(psd: PSDImage, moves: list, clear: list, below: bool = False, textures: bool = True) -> Optional[str]:
     """Why stars cannot move or be copied by [(unit, dx, dy)]: a layer that cannot move or is clipped, _blocked, or a
-    spot below the midline (no count reads it; below: a second creature's star over it)."""
+    spot below the midline (no count reads it; below: a second creature's star over it); textures: off a texture
+    clipped onto its group too."""
     for unit, dx, dy in moves:
         why = next((w for w in (_shiftable(layer) for layer in unit.layers) if w), None)
         if why:
@@ -6914,7 +6915,7 @@ def _stars_blocked(psd: PSDImage, moves: list, clear: list, below: bool = False)
         if in_header(_moved_box(unit.core, dx, dy), psd.height) == below:     # the count reads no star there
             return f"a star at {tuple(int(v) for v in _moved_box(unit.core, dx, dy))} would sit " + \
                 ("above" if below else "below") + " the card's middle"
-    for unit, dx, dy in moves:                  # off a texture clipped onto its group, a star prints bare
+    for unit, dx, dy in moves if textures else ():     # off a texture clipped onto its group, a star prints bare
         box = _moved_box(unit.core, dx, dy)
         for texture in _textures(unit):
             ink = _ink(texture)
@@ -7571,9 +7572,11 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
       one centred under or over them (the templates; the odd one moves aside when a pair fills its row, and back to
       the middle when one goes), a row or column carried on, a zigzag carried on, a lone star's column, then
       _more_layouts'. A row centred on the card stays centred at its pitch (Grimora's). A new or moved star must stay
-      on the canvas, off the text and type icons, under a texture clipped onto its group, and add exactly one to what
-      the parser counts. When no layout fits, the first that fits stepped down (_drops: its new stars, else all it moves
-      and adds; owner 11-08, told); a refusal gives the reason of the layout that came closest.
+      on the canvas, off the text and type icons, and add exactly one to what the parser counts; it should stay under
+      a texture clipped onto its group, on its backdrop and out from under art. When no layout fits, the first that
+      fits stepped down (_drops: its new stars, else all it moves and adds); else the first that fits on the canvas
+      off the text and icons alone, at its spot or stepped down (owner 11-08: a developer fixes its look; both told);
+      a refusal gives the reason of the layout that came closest.
     - star-icon layers outside the group (Nosk's 'Hk star') are stars of the layout (R2); a star drawn twice on one
       spot is one star (R3: Tainted Eden, Living Bread); one layer drawing several is split into masked copies first
       (R4: split_stars; Grimora, Dimension D); a second creature's stars upside down below the midline (Tainted
@@ -7605,9 +7608,10 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
     types = parser.all_types if parser is not None else ()
     stars = parser.star_names() if parser is not None else ()
     groups = [group for group in PSDParser._star_groups(psd) if _star_count(group, {}, {}, {}, types)]
-    # the parser's fallback (layers named "... Star ..." or after a star icon); a folder card's when they add up
-    named = not groups and (not PSDParser._star_groups(psd) if stars_from_psd(rel)
-                            else bool(old) and _named_total(psd, stars=stars) == old)
+    # the parser's fallback (layers named "... Star ..." or after a star icon); a folder card's, or one beside an empty
+    # Stars group (Double Pain's), when they add up
+    named = not groups and ((stars_from_psd(rel) and not PSDParser._star_groups(psd))
+                            or bool(old) and _named_total(psd, stars=stars) == old)
     if not groups and not named:
         refuse('no group named "Stars" draws them')
     total = _named_total(psd, stars=stars) if named else _stars_total(psd, types=types, stars=stars)
@@ -7700,12 +7704,13 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         size = _median_size(shown)
         counted = (lambda show_: PSDParser.stars_below(psd, types, stars, show_)) if below else total_of
 
-        def failed(moves: list) -> tuple:
-            """(why, how far its checks got: 0 not placed, 1 under art), else (None, 2): the deciding reason's rank."""
-            why = _stars_blocked(psd, _as_drawn(moves), clear, below)
+        def failed(moves: list, soft: bool = True) -> tuple:
+            """(why, how far its checks got: 0 not placed, 1 under art), else (None, 2): the deciding reason's rank.
+            soft False: where it fits alone (on the canvas, off the text and icons), art and textures aside."""
+            why = _stars_blocked(psd, _as_drawn(moves), clear, below, soft)
             if why:
                 return why, 0
-            why = _covered(psd, _as_drawn(moves), mine, inks)                       # not under the art (MMC's moss)
+            why = _covered(psd, _as_drawn(moves), mine, inks) if soft else None     # not under the art (MMC's moss)
             return (why, 1) if why else (None, 2)
         blocked = lambda moves: failed(moves)[0]
         backdrop = lambda units: _backdrop(psd, [_drawn_as(unit) for unit in units])
@@ -7715,17 +7720,17 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
             flagged = {id(unit) for unit, _, _ in _shaded(psd, [_drawn_as(unit) for unit in kept], _as_drawn(moves))}
             return [move for move in moves if id(_drawn_as(move[0])) in flagged]
 
-        def lowered(order: list, moves: list, copies: list, under: list, back) -> Optional[tuple]:
+        def lowered(order: list, moves: list, copies: list, under: list, back, soft: bool = True) -> Optional[tuple]:
             """
             A layout that does not fit, stepped down (_drops): its new stars one by one, else every star it moves or
-            adds together, until failed and off_back pass and no star sits on another. Returns (moves, copies, px, what
-            was lowered) or None.
+            adds together, until failed and off_back pass (soft False: failed's hard checks alone) and no star sits on
+            another. Returns (moves, copies, px, what was lowered) or None.
             """
             moved = {id(unit) for unit, _, _ in moves + under}
             stay = [unit.core for unit in order if id(unit) not in moved]
             apart = lambda box, boxes: all(_covers(box, b) <= OVERLAP and _covers(b, box) <= OVERLAP for b in boxes)
-            fits = lambda moves_, copies_: failed(moves_ + [copy[:3] for copy in copies_])[0] is None \
-                and off_back(back, moves_, copies_) is None
+            fits = lambda moves_, copies_: failed(moves_ + [copy[:3] for copy in copies_], soft)[0] is None \
+                and (not soft or off_back(back, moves_, copies_) is None)
             if copies and fits(moves, []):
                 taken, out = stay + [_moved_box(unit.core, dx, dy) for unit, dx, dy in moves], []
                 for unit, dx, dy, name in copies:
@@ -7744,7 +7749,7 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
             for d in _drops(psd, max(boxes, key=lambda box: box[3])) if boxes else ():
                 down, new = [(u, dx, dy + d) for u, dx, dy in moves], [(u, dx, dy + d, n) for u, dx, dy, n in copies]
                 if all(apart(_moved_box(box, 0, d), stay) for box in boxes) and fits(down, new) \
-                        and not shaded(order, down):
+                        and not (soft and shaded(order, down)):
                     return down, new, d, "the stars" if moves else "the new stars"
             return None
         centred = _centred_row(shown, size, psd.width)
@@ -7817,7 +7822,10 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
                 layouts = _star_layouts(order, size, count) + more
             backs = (back, None) if back is not None and len(order) == 1 else (back,)   # a lone star's, while a layout keeps it
             places: dict = {}
-            for low, back, j in product((False, True), backs, range(len(layouts))):
+            every = lambda moves, copies: moves + [(unit, dx, dy) for unit, dx, dy, _ in copies]
+            for mode, back, j in product(("spot", "lower", "fit"), backs, range(len(layouts))):
+                if mode == "fit" and back is not backs[0]:
+                    continue                    # backdrops aside: each layout once
                 name, spots = layouts[j]
                 if j not in places:
                     moves, free = _place(order, spots, size)
@@ -7827,14 +7835,16 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
                     places[j] = moves, under, [(source, round(spot[0] - source.centre[0]),
                                                 round(spot[1] - source.centre[1]), "") for spot in free]
                 moves, under, copies = places[j]
-                if low:                         # owner 11-08: no layout fits: one stepped down until it does
-                    found = None if below else lowered(order, moves, copies, under, back)
-                    if found is None:
+                soft, drop = mode != "fit", 0   # fit: none clear of the art, the first that fits alone (owner 11-08)
+                if mode == "lower" or (mode == "fit" and failed(every(moves, copies), False)[0]):
+                    found = None if below else lowered(order, moves, copies, under, back, soft)   # owner 11-08: down
+                    if found is None:                                                               # until it fits
                         continue
                     moves, copies, drop, what = found
-                why, far = failed(moves + [(unit, dx, dy) for unit, dx, dy, _ in copies])
-                why = why or off_back(back, moves, copies)
+                why, far = failed(every(moves, copies), soft)
+                why = why or (off_back(back, moves, copies) if soft else None)
                 if why is None:
+                    art = None if soft else failed(every(moves, copies))[0] or off_back(back, moves, copies)
                     plan.moves += _as_drawn(moves)
                     copies = _as_drawn(copies)
                     how = name
@@ -7843,12 +7853,14 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
                     show.update({id(layer): False for layer in gone})
                     if name in RELAID:
                         plan.notes.append(f"stars: {name} (the card's own layout does not go on to {count})")
-                    if low:
+                    if drop:
                         plan.notes.append(f"stars: {what} placed {drop} px lower to fit: check it")
+                    if art:
+                        plan.notes.append(f"stars: placed where they fit, though {art}: check it")
                     shown = [unit for unit in shown if not any(unit is one for one, _, _ in under)]
                     break
-                if not low and (first is None or far > first[0]):   # the deciding reason: the layout whose checks
-                    first = (far, why)                              # got furthest
+                if mode == "spot" and (first is None or far > first[0]):   # the deciding reason: the layout whose
+                    first = (far, why)                                      # checks got furthest
             else:
                 refuse(first[1] if first else f"{len(order)} stars laid out as no row, column or rows of two")
         return how, shown, copies, size
@@ -9987,6 +9999,9 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
             expected[name] = value
         elif name == "types":                   # in any order: the parser lists them in layer order
             expected[name] = got.get(name) if same_types(parser, got.get(name), value) else value
+            if expected.get("type") == "aux item":     # its icon is its item type (72b4876): the icons left's
+                kinds = [AUX_ITEM_TYPES[t] for t in (canonical_type(parser, t) for t in value) if t in AUX_ITEM_TYPES]
+                expected["subtype"] = got.get("subtype") if got.get("subtype") in kinds else (kinds or [None])[0]
         elif name == "ability":                 # a typed token as the parser reads it in the icon font ([Fire] -> [fire]);
             expected["ability"], got["ability"] = (normalize_ability(canonical_tokens(text, parser.icons, chars))
                                                    for text, chars in ((value, True), (got.get("ability"), False)))
