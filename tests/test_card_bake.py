@@ -811,6 +811,7 @@ def test_a_card_refused_after_its_stars_names_both_refusals(github, monkeypatch)
     def outside(before, psd, edit):
         raise pe.Refused("region", f"{edit.field}: the card changes 9 pixels outside the edited box", edit.field)
     monkeypatch.setattr(pe, "gate_outside", outside)
+    monkeypatch.setattr(pe, "gate_dirty", lambda old, new, edits, keep=None, icon=False: outside(None, new, edits[0]))
     monkeypatch.setattr(pe, "render_all", lambda psd: None)    # no render: the whole-card gates pass
     monkeypatch.setattr(pe, "gate_untouched", lambda before, psd, edits: None)
     monkeypatch.setattr(pe, "set_stat", lambda *a: (_ for _ in ()).throw(pe.Refused("unsupported-card", "hp: no stat row")))
