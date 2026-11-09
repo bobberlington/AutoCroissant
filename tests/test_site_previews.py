@@ -150,6 +150,29 @@ out([m.steadyPitch(L([10, 41, 71, 105])), m.steadyPitch(L([10, 40, 70, 130, 160]
     assert out[0] == pytest.approx(95 / 3) and out[1:] == [30, 0]
 
 
+@needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "mainInk"), reason="no mainInk in mockup.js")
+def test_the_records_fill(tmp_path):
+    """The record's main ink fills when the text shows it (white letters with a black outline on parchment stay white;
+    one just above a mid background takes the light outline; orange below it keeps its black one); else the pixels'
+    guess. Main ink: half the letters or more (near ones count), none under an overlay."""
+    out = node(tmp_path, """
+const px = (c, n) => Array(n).fill([(c[0] * 77 + c[1] * 150 + c[2] * 29) >> 8, ...c]), bg = [230, 210, 170], g = [100, 100, 100];
+const text = (fill, n, b = bg, o = [0, 0, 0]) => [...px(fill, n), ...px(o, 30), ...px(b, 20)], tan = [190, 160, 121], or = [211, 124, 1];
+const t = (colors, runs) => ({ layer: "Text/Ability", text: "Deal 3 Burn.", colors, runs });
+const two = t(["#ffffff", "#ff0000"], [[0, 7, 0], [7, 12, 1]]), W = "#ffffff", R = "#ff0000", B = "#0000ff";
+out([m.textColours(text([255, 255, 255], 50), bg), m.textColours(text([255, 255, 255], 50), bg, [255, 255, 255]),
+  m.textColours(text([255, 255, 255], 50), bg, [0, 0, 255]), m.textColours(text([120, 120, 120], 50, g, [250, 250, 250]), g, [120, 120, 120]),
+  m.textColours([...text(or, 50, tan), ...px([240, 230, 210], 15)], tan, or),
+  m.mainInk({}, two), m.mainInk({ effects: { Text: ["ColorOverlay"] } }, two), m.mainInk({}, { layer: "Name", text: "X", color: "#102030" }),
+  m.mainInk({}, t([W, R, B], [[0, 4, 0], [4, 8, 1], [8, 12, 2]])), m.mainInk({}, t([W, "#f0f0f0", R], [[0, 4, 0], [4, 8, 1], [8, 12, 2]]))]);""")
+    guess, white, unseen, light, orange, ink, over, one, split, near = out
+    assert guess == {"fill": [0, 0, 0], "stroke": [255, 255, 255]} == unseen   # today's guess: black letters
+    assert white == {"fill": [255, 255, 255], "stroke": [0, 0, 0]} and light == {"fill": [120, 120, 120], "stroke": [250, 250, 250]}
+    assert orange == {"fill": [211, 124, 1], "stroke": [0, 0, 0]}
+    assert ink == near == [255, 255, 255] and over is None and one == [16, 32, 48] and split is None
+
+
 kept = pytest.mark.skipif(not has(MOCKUP_JS, "statSite"), reason="no statSite in mockup.js")
 
 
