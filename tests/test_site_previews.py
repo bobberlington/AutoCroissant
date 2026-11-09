@@ -140,6 +140,18 @@ out([lines, fitted.lines.length * fitted.size * m.LINE <= 40.5, fitted.size < 20
 
 
 @needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "pointLayout"), reason="no pointLayout in mockup.js")
+def test_point_text_keeps_its_lines(tmp_path):
+    """Point text (the status effects' Ability: px, no frame) never wraps: a paragraph a line at its size; smaller by
+    0.94 only while a line runs off the card's sides, down to 40%."""
+    out = node(tmp_path, """
+const measure = (s, z) => s.length * z * 0.5, paras = m.tokenize("-2 ATK\\nCan't affect anyone. Lasts 2 turns.");
+const r = reach => { const x = m.pointLayout(paras, 20, reach, measure); return [+x.size.toFixed(2), x.lines.map(l => Math.round(l.w))]; };
+out([r(1000), r(300), r(10)]);""")
+    assert out == [[20, [60, 350]], [16.61, [50, 291]], [7.91, [24, 138]]]
+
+
+@needs_js
 @pytest.mark.skipif(not has(MOCKUP_JS, "steadyPitch"), reason="no steadyPitch in mockup.js")
 def test_old_line_pitch(tmp_path):
     """The old lines' pitch: the mean of their gaps near the median, not the least (a capital moves a line's middle); a
