@@ -25,13 +25,20 @@ steps); each redraws only the changed glyphs and the guards re-export the PNG. E
 guards land its files, G1): sub and superscript text set normal at the same size and place (to_normal), the pictures
 linked (the link step, psd_links), the merged image stripped, in one gated save. Clean (owner 2026-11-09, cards
 only, silent): hidden star and type icon layers, hidden pictures that are an exact copy of a visible layer, and data
-that draws nothing deleted, when every picture and the parse stay the same.
+that draws nothing deleted, when every picture and the parse stay the same. After clean, before the composer, the
+folders as the templates' (standard_folders, owner 2026-11-09, silent): names, colours, order, loose layers and extra
+folders in their folder (Overlay Text and Overlay where Text or images would change their look), hidden Curves and
+nested star and type folders gone, at the first FOLDER_LEVELS level whose card renders and reads as before
+(folders_gate); no PNG follows. The sweep also isolates folders with adjustments clipped to them (isolate; the guards
+do not).
 
     check(psd, rel, context, old=None, added=False) -> [Issue]
     fix(data, rel, issues, work, parser=None, fonts=None, only=None) -> Fixed   the fixes, gated (one PSD's new bytes)
     normalise(path, out_path, fonts, rel) -> Normalised           the big pass's rewrite (fix(only="normalise"))
     composer_layers(psd) -> [layer]                               the card text layers set Every-line (R8)
     redraw(path, out_path, names, fonts) -> [name]                the rewrapped layers drawn again (R8)
+    standard_folders(path, out_path, fonts, rel, parser) -> Foldered  the templates' folders, gated
+    folder_issues(psd, rel) -> [str]                             what keeps the folders off the templates'
     BADGE_TAGS, WAIVED                                            the badge vocabulary and the owner's class waivers
 
 No Discord, network or config.
@@ -41,7 +48,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import lru_cache
 from io import BytesIO
-from os import makedirs
+from os import makedirs, remove, replace as move_file
 from os.path import basename, getsize, join
 from re import DOTALL, IGNORECASE, compile as re_compile, escape, fullmatch, search, sub
 from shutil import rmtree
@@ -50,7 +57,7 @@ from typing import Callable, Optional
 
 import numpy as np
 from psd_tools import PSDImage
-from psd_tools.constants import BlendMode, Resource, Tag
+from psd_tools.constants import BlendMode, Resource, SheetColorType, Tag
 
 import commands.psd_edit as psd_edit
 from commands.card_edits import CardAuthors
@@ -58,7 +65,7 @@ from commands.card_models import APOSTROPHE, straight
 from commands.font_check import _get, _value, layer_fonts
 from commands.psd_edit import BADGE_KEYS, BADGE_TAGS, ICON_FONT, Refused, badge_spans, badge_tags
 from commands.psd_parser import (EFFECT_LAYER_TAG, ICON_FONT_PREFIX, TAG, CardValidator, PSDParser, base_name, layer_tag,
-                                 variant_view, variants_of)
+                                 shown_in, variant_view, variants_of)
 from commands.psd_regions import (STATS as STAT_PATTERNS, bar_box, clip, comp_bars, comp_stat, comp_value, overlay_words,
                                   stat_rows, union_box)
 
@@ -139,6 +146,7 @@ class Fixed:
     files: dict = field(default_factory=dict)   # normalise: other files it writes (repo path -> bytes; None deletes)
     left: list = field(default_factory=list)    # normalise: what it left as it was, and why (plan.json only)
     cleaned: list = field(default_factory=list) # clean: what it deleted (silent; every picture the same: no PNG)
+    folders: list = field(default_factory=list) # standard_folders: what it did (silent, no pixel changes)
 
 
 # ========================
@@ -906,6 +914,13 @@ def _renamed(psd: PSDImage, path: str, out_path: str, renames: list) -> list:
     return [f"{a['name']!r} -> {b['name']!r}" for i, (a, b) in enumerate(zip(old_records, new_records)) if i in indices]
 
 
+def _folders_in(data: bytes, rel: str) -> bool:
+    try:
+        return bool(folder_issues(PSDImage.open(BytesIO(data)), rel))
+    except Exception:                           # unreadable: nothing to arrange
+        return False
+
+
 def _every_line_in(data: bytes) -> bool:
     try:
         return bool(composer_layers(PSDImage.open(BytesIO(data))))
@@ -915,12 +930,35 @@ def _every_line_in(data: bytes) -> bool:
 
 def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[PSDParser], result: Fixed,
             fonts: Optional[Callable[[list], Optional[str]]] = None, composer: bool = True, pixels: tuple = (),
-            whole: bool = False) -> None:
-    """fix()'s work in its own temporary folder."""
+            whole: bool = False, folders: bool = False) -> None:
+    """fix()'s work in its own temporary folder: clean, then the folders (each gated on its own, silent), the fixable
+    issues, the composer and the pixel fixes over them."""
     from commands.txt2_repair import repair
-    base = join(folder, "pushed.psd")
+    pushed = base = join(folder, "pushed.psd")
     with open(base, "wb") as fh:
         fh.write(data)
+    if "clean" in pixels:                       # first: what follows works on what stays (owner 11-09)
+        out = join(folder, "clean.psd")
+        try:
+            names = clean(base, out, fonts, rel)
+            if names:
+                _gated(base, out, rel, parser, None, sized=False)
+                base, result.cleaned = out, list(names)
+        except Exception as error:              # best effort, never told: plan.json says why
+            result.pixel_left.append(("clean", f"{type(error).__name__}: {error}"))
+        pixels = tuple(kind for kind in pixels if kind != "clean")
+    if folders:                                 # the templates' folders (owner 11-09): silent, no PNG
+        out = join(folder, "folders.psd")
+        try:
+            done = standard_folders(base, out, fonts, rel, parser, isolated=False)
+        except Exception as error:              # best effort, never told
+            result.pixel_left.append(("folders", f"{type(error).__name__}: {error}"))
+        else:
+            if done:
+                base, result.folders = out, list(done)
+    if base != pushed:
+        with open(base, "rb") as fh:
+            result.data = fh.read()
     current, codes = base, []
     for issue in sorted(wanted, key=lambda i: FIXABLE.index(i.code)):
         out = join(folder, f"{issue.code}.psd")
@@ -953,8 +991,13 @@ def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[P
         except Refused as refused:
             result.refused += [(code, str(refused)) for code in codes if code != "R8"]
             result.composer_left += [(name, str(refused)) for name in result.composer]
-            result.applied, result.composer, result.data = [], [], b""
-            current, moves = base, []           # the pixel fixes go on the pushed PSD
+            result.applied, result.composer = [], []
+            if base == pushed:
+                result.data = b""
+            else:
+                with open(base, "rb") as fh:
+                    result.data = fh.read()
+            current, moves = base, []           # the pixel fixes go on the pushed PSD (cleaned, its folders)
     if moves:
         drawn = join(folder, "R8-redrawn.psd")
         try:                                    # the lines that rewrap drawn again: the guards re-export the PNG
@@ -991,7 +1034,8 @@ def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDPars
         fonts: Optional[Callable[[list], Optional[str]]] = None, only: Optional[str] = None, whole: bool = False,
         skip: tuple = ()) -> Fixed:
     """
-    The fixable issues of one PSD (R11 renames, then R9 story syncs), each gated, then R8's Single-line Composer
+    The fixable issues of one PSD (R11 renames, then R9 story syncs), each gated, the folders (standard_folders,
+    with a parser; skip "folders" to leave them), then R8's Single-line Composer
     (single_line: never told, a refusal left in composer_left); then the size and the reparse gates over the result. A
     refusal leaves that fix out (and reports it). Box text that rewraps is
     redrawn (redraw, gated again: data, the result without it in plain), then the pixel fixes (PIXEL_FIXES, each gated;
@@ -1017,12 +1061,13 @@ def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDPars
     composer = not only and _every_line_in(data)
     pixels = tuple(kind for kind in pixel_kinds(data, (only,) if only else (), rel, getattr(fonts, "chart", None),
                                                  getattr(fonts, "links", None)) if kind not in skip)
-    if not (wanted or composer or pixels):
+    folders = not only and parser is not None and "folders" not in skip and _folders_in(data, rel)
+    if not (wanted or composer or pixels or folders):
         return result
     makedirs(work, exist_ok=True)
     folder = mkdtemp(prefix="fix-", dir=work)   # one per call: cards of one key in two folders never share a file
     try:
-        _fix_in(folder, data, rel, wanted, parser, result, fonts, composer, pixels, whole)
+        _fix_in(folder, data, rel, wanted, parser, result, fonts, composer, pixels, whole, folders)
     finally:
         rmtree(folder, ignore_errors=True)
     return result
@@ -3105,9 +3150,7 @@ def _pixel_fixes(folder: str, base: str, current: str, rel: str, parser: Optiona
         except Exception as error:              # best effort, never told: plan.json says why
             result.pixel_left.append((kind, f"{type(error).__name__}: {error}"))
             continue
-        if apply is clean:                      # every picture the same: no PNG follows
-            result.cleaned = list(names)
-        elif apply is normalise:                # the PNG follows its redrawn layers alone (a link's new raster)
+        if apply is normalise:                # the PNG follows its redrawn layers alone (a link's new raster)
             result.normalised, result.files, result.left = list(names), dict(names.files), list(names.left)
             if names.redraws:
                 result.redrawn[kind] = list(names.redraws)
@@ -3120,6 +3163,868 @@ def _pixel_fixes(folder: str, base: str, current: str, rel: str, parser: Optiona
             with open(base, "rb") as fh:
                 plain = fh.read()
         result.plain = plain
+
+
+# ========================
+# Folders (owner 2026-11-09): every card's and template's folders as the templates' (names, colours, order; loose
+# layers and extra folders in their folder by role; text kept off a styled Text in Overlay Text, art drawn over other
+# folders in Overlay; hidden Curves gone; nested star and type folders flattened; adjustments clipped to a folder
+# moved into it, the folder isolated), only where every picture renders and the bot reads the card as before
+# (folders_gate); silent, as the composer
+# ========================
+_C = SheetColorType
+FOLDER_TYPES = {"creature": "Creature Types", "aux creature": "Creature Types", "minion": "Creature Types",
+                "item": "Item Types", "aux item": "Item Types", "field": "Item Types", "nme": "Item Types",
+                "status": "Status Effect Symbols"}  # the templates' type folder per class
+FOLDER_TEMPLATES = {"Creature_Template": "Creature Types", "2_Creature_Template": "Creature Types",
+                    "3_Creature_Template": "Creature Types", "Raid_Boss_Template": "Creature Types",
+                    "Item_Template": "Item Types", "ActiveItem_Template": "Item Types",
+                    "Status_Effect_Template": "Status Effect Symbols"}   # MDW/Templates' own (owner 2026-11-09)
+FOLDER_ORDER = ("images", "stars", "types", "bars", "text", "overlay text", "overlay")   # bottom to top (Overlay: where
+                                                # its art keeps the picture, above what it was drawn over)
+FOLDER_NAMES = {"images": "images", "stars": "Stars", "bars": "Stats Bars", "text": "Text", "overlay text": "Overlay Text",
+                "overlay": "Overlay"}
+FOLDER_COLOURS = {"images": _C.BLUE, "stars": _C.YELLOW, "types": _C.GREEN, "bars": _C.ORANGE, "text": _C.RED,
+                  "overlay text": _C.RED, "overlay": _C.BLUE}
+SUB_COLOURS = {"stars": _C.YELLOW, "types": _C.GREEN}           # their subfolders'
+BAR_PARTS = (("bars", "Bars", _C.SEAFOAM), ("darks", "Darks", _C.GRAY), ("lines", "Lines", _C.VIOLET))  # bottom to top
+STAT_TEXT = ("Stat Text and Name", _C.BLUE)
+FOLDER_ROLES = (("bars", re_compile(r"(stats?|star) ?bars?( blocks)?|bars?|darks?|lines?")),   # Star Bars: Minecraft Panda's
+                ("overlay text", re_compile(r"overlay text")), ("overlay", re_compile(r"overlays?")),
+                ("text", re_compile(r"text|stat ?txt|stat text and name|names?|ability txt")),
+                ("types", re_compile(r".*\btypes?|tyoes|status effect symbols|field")),
+                ("stars", re_compile(r".*\bstars?\b.*|\d+ ?stars?")),
+                ("images", re_compile(r"images?")))
+MAIN_FOLDER = {"images": re_compile(r"images?"), "stars": re_compile(r"stars?"),
+               "types": re_compile(r"(creature |item )?types?|tyoes|status effect symbols"),
+               "bars": re_compile(r"(stats?|star) ?bars?"), "text": re_compile(r"text"),
+               "overlay text": re_compile(r"overlay text"), "overlay": re_compile(r"overlays?")}
+GENERIC = re_compile(r"group( \d+)?|new group|layer \d+")   # Photoshop's own names: named by what they hold
+NESTED = {"stars": re_compile(r"stars?"), "types": re_compile(r"(creature |item )?types?")}   # a redundant nest
+BAR_LEAF = re_compile(r"(hp|health|def|defen[cs]e|atk|attack|spd|speed)( ?(bars?|top|bottom|dark|lines?))?")
+STAT_WORDS = {"health", "defense", "attack", "speed"}
+ADJUSTMENTS = frozenset(("curves", "exposure", "levels", "huesaturation", "colorbalance", "vibrance", "gradientmap",
+                         "brightnesscontrast", "blackandwhite", "channelmixer", "invert", "photofilter", "posterize",
+                         "threshold", "selectivecolor", "colorlookup"))
+FOLDER_TOL = 2              # levels (of 255) a picture's pixel may move in the fork's render
+FOLDER_LEVELS = ("template", "plain", "kept", "names", "bare", "colours")   # tried in order (arrange)
+
+
+def _key(name: str) -> str:
+    return sub(r"\s+", " ", sub(r"\s+copy(\s+\d+)?$", "", layer_tag(name)[0].strip(), flags=IGNORECASE)).lower()
+
+
+def folder_kind(rel: str) -> Optional[str]:
+    """The card's or template's type folder name (FOLDER_TYPES, FOLDER_TEMPLATES); None for any other PSD."""
+    if rel.startswith("MDW/Templates/") and rel.count("/") == 2:
+        return FOLDER_TEMPLATES.get(basename(rel)[:len(basename(rel)) - 4])
+    return FOLDER_TYPES.get(kind_of(rel))
+
+
+def _plain(layer) -> bool:
+    """A folder its layers draw the same without: shown, pass-through, 100%, no mask, effects, clip or tag."""
+    return (layer.is_group() and layer.visible and layer.blend_mode == BlendMode.PASS_THROUGH and layer.opacity == 255
+            and layer.fill_opacity == 255 and not layer.has_mask() and not layer.has_vector_mask()
+            and not layer.has_effects() and not layer.clipping and layer_tag(layer.name)[1] is None)
+
+
+def _leaf_role(layer, types, stars, bars: bool = False) -> str:
+    """text, adjust, bars, types, stars or art (bars: inside Stats Bars, where a bar's names come first)."""
+    name = _key(layer.name)
+    if layer.kind == "type" or EFFECT_LAYER_TAG in layer.name:
+        return "text"
+    if layer.kind in ADJUSTMENTS:
+        return "adjust"
+    if bars and (comp_value(layer) is not None or BAR_LEAF.fullmatch(name) or name.isdigit()
+                 or any(word in name for word in ("line", "dark", "light"))):
+        return "bars"
+    if name in types:
+        return "types"
+    if sub(r"[^a-z0-9]+", "", name) in stars or "star" in sub(r"[^a-z]+", " ", name).split():
+        return "stars"
+    if comp_value(layer) is not None or BAR_LEAF.fullmatch(name):
+        return "bars"
+    return "art"
+
+
+def _content_role(group, types, stars, bars: bool = False) -> Optional[str]:
+    """A folder's role by its layers: text, bars, types or stars (art beside them), images (art), adjust or empty;
+    None when mixed."""
+    roles = {_leaf_role(layer, types, stars, bars) for layer in group.descendants() if not layer.is_group()}
+    if not roles:
+        return "empty"
+    named = roles - {"adjust", "art"}
+    if not named:
+        return "images" if "art" in roles else "adjust"
+    if len(named) > 1 or (named == {"text"} and "art" in roles):
+        return None
+    return named.pop()
+
+
+def _group_role(group, types, stars) -> Optional[str]:
+    """A top-level folder's role: its name's (FOLDER_ROLES) when its layers agree, else its layers'."""
+    key, found = _key(group.name), _content_role(group, types, stars)
+    named = next((role for role, pattern in FOLDER_ROLES if pattern.fullmatch(key)), None)
+    if named is None:
+        return found
+    if MAIN_FOLDER[named].fullmatch(key):       # a role's own folder, whatever it holds
+        return named
+    if found in (named, "images", "adjust", "empty") or (named == "bars" and _content_role(group, types, stars, True) == "bars"):
+        return named
+    return None
+
+
+def _units(group) -> list:
+    """The folder's layers bottom to top as units: a base and the layers clipped to it (an orphan clip alone)."""
+    out = []
+    for layer in group:
+        if layer.clipping and out:
+            out[len(out) - 1].append(layer)
+        else:
+            out.append([layer])
+    return out
+
+
+def _is_empty(layer) -> bool:
+    return layer.is_group() and not any(not child.is_group() for child in layer.descendants())
+
+
+def _new_folder(parent, name: str, colour, index: int):
+    """A pass-through folder made in parent at index, with a layer id of its own."""
+    from psd_tools.api.layers import Group, _issue_layer_ids
+    psd = parent if isinstance(parent, PSDImage) else parent._psd
+    group = Group.new(parent=parent, name=name)
+    group.blend_mode = BlendMode.PASS_THROUGH
+    psd.image_resources[Resource.IDS_SEED_NUMBER] = _issue_layer_ids(
+        psd, [layer for layer in psd.descendants() if layer is not group], [group])
+    group.sheet_color = colour
+    group.move_to(parent, index=index)
+    return group
+
+
+def _place(units: list, parent) -> None:
+    """parent's layers as units say, bottom to top (each unit's layers in the document already)."""
+    i = 0
+    for unit in units:
+        for layer in unit:
+            if not (layer.parent is parent and list(parent).index(layer) == i):
+                layer.move_to(parent, index=i)
+            i += 1
+
+
+def _name_colour(layer, name: Optional[str], colour, done: list, counts: Counter) -> None:
+    if name is not None and layer.name != name and layer_tag(layer.name)[1] is None:
+        done.append(f"{layer.name!r} named {name!r}")
+        counts["types renamed" if name in FOLDER_TYPES.values() else "renamed"] += 1
+        layer.name = name
+    if colour is not None and layer.sheet_color != colour:
+        layer.sheet_color = colour
+        done.append(f"{layer.name!r} {colour.name.lower()}")
+        counts["coloured"] += 1
+
+
+def hidden_curves(psd: PSDImage) -> list:
+    """Curves layers turned off and shown in no picture, that no layer clips to (owner 2026-11-09)."""
+    pictures = variants_of(psd)
+    out = []
+    for layer in psd.descendants():
+        if layer.kind != "curves" or layer.visible or any(shown_in(layer, n) for n in pictures):
+            continue
+        above = layer.next_sibling()
+        if layer.clipping or above is None or not above.clipping:
+            out.append(layer)
+    return out
+
+
+def _unwrap(folder, child, done: list, counts: Counter, what: str) -> bool:
+    """child's layers into folder in its place, child gone; False where a clip would change."""
+    kids, inner = list(folder), list(child)
+    i = kids.index(child)
+    above = kids[i + 1] if i + 1 < len(kids) else None
+    if (inner and inner[0].clipping) or (above is not None and above.clipping):
+        return False
+    for j, layer in enumerate(inner):
+        layer.move_to(folder, index=i + j)
+    folder.remove(child)
+    done.append(f"{what} {child.name!r} flattened")
+    counts[what] += 1
+    return True
+
+
+def _draws(layer) -> bool:
+    return layer.visible and layer.kind not in ADJUSTMENTS and (layer.is_group() or layer.has_pixels())
+
+
+def _flatten(folder, role: str, types, stars, done: list, counts: Counter) -> None:
+    """A redundant nest into folder, in its place, and again inside: a plain folder named after the role or by
+    Photoshop (Stars/stars, Stars/Group 1, Types/types); in Stars only one that is all Stars draws (one star in a group
+    of its own is a unit the bake copies whole: kept)."""
+    changed = True
+    while changed:
+        changed = False
+        for child in list(folder):
+            key = _key(child.name)
+            if (child.is_group() and _plain(child) and (NESTED[role].fullmatch(key) or GENERIC.fullmatch(key))
+                    and (role == "types" or not any(_draws(other) for other in folder if other is not child))
+                    and _content_role(child, types, stars) in (role, "images", "adjust")
+                    and _unwrap(folder, child, done, counts, f"nested {role} folder")):
+                changed = True
+                break
+
+
+def _bar_part(unit) -> Optional[str]:
+    """A Stats Bars unit's subfolder: bars, darks, lines or None."""
+    base = unit[0]
+    key = _key(base.name)
+    if base.is_group():
+        for part in ("bars", "darks", "lines"):
+            if key in (part, part[:len(part) - 1]):
+                return part
+        leaves = [layer for layer in base.descendants() if not layer.is_group()]
+        if leaves and all("line" in _key(layer.name) for layer in leaves):
+            return "lines"
+        if any(comp_value(l) is not None or _key(l.name).isdigit() or l.kind == "exposure" for l in base.descendants()):
+            return "darks" if BAR_LEAF.fullmatch(key) or "dark" in key else None
+        if BAR_LEAF.fullmatch(key):
+            return "bars"
+        return "bars" if base.visible and _content_role(base, (), (), True) in ("bars", "images") else None
+    if "line" in key:
+        return "lines"
+    if comp_value(base) is not None or key.isdigit() or base.kind == "exposure":
+        return "darks"
+    return "bars" if base.kind in ("pixel", "shape", "smartobject") else None     # the bars' own art
+
+
+def _inside_bars(folder, level: str, done: list, counts: Counter) -> None:
+    """Stats Bars' layers into Bars, Darks and Lines (template level), named and coloured."""
+    if level not in ("bare", "colours"):
+        units = _units(folder)
+        parts = [_bar_part(unit) for unit in units]
+        made = {}
+        for part, name, colour in BAR_PARTS:
+            members = [unit for unit, found in zip(units, parts) if found == part]
+            if not members:
+                continue
+            k = next((i for i, u in enumerate(members) if len(u) == 1 and u[0].is_group()
+                      and _key(u[0].name) in (part, part[:len(part) - 1])), None)
+            if k is not None and level != "template" and not _plain(members[k][0]) and len(members) > 1:
+                continue                        # into a part with its own look: kept apart
+            if k is None:
+                made[part] = [_new_folder(folder, name, colour, list(folder).index(members[0][0]))]
+                content = members
+                done.append(f"{name} folder made")
+                counts["folders made"] += 1
+            else:
+                made[part] = members[k]
+                content = members[:k] + [[layer] for layer in members[k][0]] + members[k + 1:]
+            moved = [u for u in members if u is not made[part]]
+            for u in moved:
+                counts["extra folders" if u[0].is_group() else "loose layers"] += 1
+                done.append(f"{u[0].name!r} into {name}")
+            _place(content, made[part][0])
+        final, last, rest = [], None, []
+        for unit, part in zip(units, parts):    # a unit of none stays above the part under it
+            if part is None:
+                rest.append((last, unit))
+            else:
+                last = part
+        for part in (None, "bars", "darks", "lines"):
+            if part in made:
+                final.append(made[part])
+            final += [unit for after, unit in rest if after == part]
+        _place(final, folder)
+    for child in folder:
+        part = next((p for p in BAR_PARTS if child.is_group() and _key(child.name) in (p[0], p[0][:len(p[0]) - 1])), None)
+        if part is not None:
+            _name_colour(child, part[1] if level != "colours" else None, part[2], done, counts)
+
+
+def _inside_text(folder, level: str, types, stars, done: list, counts: Counter) -> None:
+    """Text's own: the stat labels and Name in Stat Text and Name (template level), Photoshop-named text folders
+    flattened."""
+    labels = [layer for layer in folder.descendants() if layer.kind == "type" and _key(layer.name) in STAT_WORDS]
+    groups = [group for group in folder if group.is_group()]
+    stat = next((g for g in groups if _key(g.name) in ("stat text and name", "stat txt", "stat text")), None)
+    if stat is None and labels:
+        stat = next((g for g in groups if GENERIC.fullmatch(_key(g.name)) and _content_role(g, types, stars) == "text"
+                     and any(l.kind == "type" and _key(l.name) in STAT_WORDS for l in g.descendants())), None)
+    for group in groups if level != "colours" else ():
+        if (group is not stat and GENERIC.fullmatch(_key(group.name)) and _plain(group)
+                and _content_role(group, types, stars) == "text"):
+            _unwrap(folder, group, done, counts, "text folder")
+    if stat is None and labels and level not in ("bare", "colours"):
+        first = next((l for l in folder if l.kind == "type" and _key(l.name) in STAT_WORDS | {"name"}), None)
+        if first is not None:
+            stat = _new_folder(folder, STAT_TEXT[0], STAT_TEXT[1], list(folder).index(first))
+            done.append(f"{STAT_TEXT[0]} folder made")
+            counts["folders made"] += 1
+    if stat is None:
+        return
+    _name_colour(stat, STAT_TEXT[0] if level != "colours" else None, STAT_TEXT[1], done, counts)
+    if level in ("bare", "colours") or not labels or (level != "template" and not _plain(stat)):
+        return
+    for unit in _units(folder):                 # a label or Name with what clips to it
+        if unit[0].kind == "type" and not unit[0].clipping and _key(unit[0].name) in STAT_WORDS | {"name"}:
+            for layer in unit:
+                layer.move_to(stat)
+            done.append(f"{unit[0].name!r} into {STAT_TEXT[0]}")
+            counts["loose layers"] += 1
+
+
+def _inside(folder, role: str, level: str, types, stars, done: list, counts: Counter) -> None:
+    """A role folder's own standard: its subfolders' names, colours and nests."""
+    if role in NESTED and level != "colours":
+        _flatten(folder, role, types, stars, done, counts)
+    if role == "bars":
+        _inside_bars(folder, level, done, counts)
+    elif role == "text":
+        _inside_text(folder, level, types, stars, done, counts)
+    for child in list(folder):
+        if not child.is_group() or layer_tag(child.name)[1] is not None:
+            continue
+        key = _key(child.name)
+        if level == "colours":                  # colours alone
+            if role in SUB_COLOURS and _content_role(child, types, stars) in (role, "images", "adjust", "empty"):
+                _name_colour(child, None, SUB_COLOURS[role], done, counts)
+        elif _is_empty(child) and (GENERIC.fullmatch(key) or (role in NESTED and NESTED[role].fullmatch(key))):
+            folder.remove(child)
+            done.append(f"empty folder {child.name!r} deleted")
+            counts["empty folders"] += 1
+        elif role in SUB_COLOURS and _content_role(child, types, stars) in (role, "images", "adjust", "empty"):
+            drawn = [l for l in child.descendants() if not l.is_group() and _draws(l)]
+            name = None
+            if GENERIC.fullmatch(key) and drawn:    # one icon's folder: named after it (a type's never as the type)
+                name = sub(r"\s+copy(\s+\d+)?$", "", layer_tag(drawn[len(drawn) - 1].name)[0].strip(), flags=IGNORECASE)
+                name = f"{name} icon" if role == "types" else name
+            _name_colour(child, name, SUB_COLOURS[role], done, counts)
+        elif role == "images" and GENERIC.fullmatch(key):
+            _name_colour(child, "Adjustments" if _content_role(child, types, stars) == "adjust" else "Art", None, done, counts)
+
+
+def _mains(units: list, roles: list, names: dict) -> dict:
+    """role -> the unit of its own folder (named as the template's, else after the role)."""
+    mains = {}
+    for role in FOLDER_ORDER:
+        mine = [u for u, r in zip(units, roles) if r == role and u[0].is_group()]
+        main = next((u for u in mine if u[0].name == names[role]), None) or \
+            next((u for u in mine if MAIN_FOLDER[role].fullmatch(_key(u[0].name))), None)
+        if main is not None:
+            mains[role] = main
+    return mains
+
+
+def _extract(psd: PSDImage, types, stars, done: list, counts: Counter) -> None:
+    """A folder of another kind at the top or bottom of a plain role folder (a card's Text inside Item Types) out
+    beside it, in the same place in the stack."""
+    for folder in [layer for layer in psd if layer.is_group()]:
+        named = next((role for role, pattern in MAIN_FOLDER.items() if pattern.fullmatch(_key(folder.name))), None)
+        if named is None or not _plain(folder):
+            continue
+        for top in (True, False):
+            while len(folder) > 1:
+                kids = list(folder)
+                child = kids[len(kids) - 1] if top else kids[0]
+                found = _content_role(child, types, stars) if child.is_group() else None
+                if (found in (None, named, "images", "adjust", "empty") or child.clipping
+                        or (not top and kids[1].clipping)):
+                    break
+                at = list(psd).index(folder)
+                child.move_to(psd, index=at + 1 if top else at)
+                done.append(f"{child.name!r} out of {folder.name!r}")
+                counts["folders out of another kind's"] += 1
+
+
+def _boxes(unit) -> list:
+    """The drawn boxes of a unit's shown layers, their effects' reach added; None for an adjustment (it changes what
+    lies under it everywhere)."""
+    from commands.psd_regions import fx_pad
+    out = []
+    for layer in unit:
+        leaves = [layer] if not layer.is_group() else [l for l in layer.descendants() if not l.is_group()]
+        for leaf in leaves:
+            if not leaf.is_visible():
+                continue
+            if leaf.kind in ADJUSTMENTS:
+                return None
+            x0, y0, x1, y1 = leaf.bbox
+            pad = fx_pad(leaf)
+            if x1 > x0 and y1 > y0:
+                out.append((x0 - pad, y0 - pad, x1 + pad, y1 + pad))
+    return out
+
+
+def _crosses(unit, others: list) -> bool:
+    """Whether moving unit past others can change the picture: their drawings meet, or one is an adjustment."""
+    mine = _boxes(unit)
+    if mine is None:
+        return True
+    for other in others:
+        theirs = _boxes(other)
+        if theirs is None:
+            return True
+        if any(a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3] for a in mine for b in theirs):
+            return True
+    return False
+
+
+def _overlays(units: list, roles: list, mains: dict) -> None:
+    """Text when Text has a look of its own (effects, a mask, another blend) to Overlay Text; art drawn over another
+    role's layers to Overlay (owner 2026-11-09): roles changed in place."""
+    text = mains.get("text")
+    if text is not None and not _plain(text[0]):
+        for i, unit in enumerate(units):
+            if roles[i] == "text" and unit is not text:
+                roles[i] = "overlay text"
+    images = mains.get("images")
+    at = next((i for i, unit in enumerate(units) if unit is images), None)
+    if at is None:
+        at = next((i for i, role in enumerate(roles) if role == "images"), None)
+    if at is None:
+        return
+    lo = hi = at
+    while lo > 0 and roles[lo - 1] in ("images", "adjust", "empty"):
+        lo -= 1
+    while hi + 1 < len(roles) and roles[hi + 1] in ("images", "adjust", "empty"):
+        hi += 1
+    for i, role in enumerate(roles):
+        if role == "images" and not lo <= i <= hi and units[i] is not images:
+            crossed = units[hi + 1:i] if i > hi else units[i + 1:lo]
+            if _crosses(units[i], crossed):
+                roles[i] = "overlay"
+
+
+def arrange(psd: PSDImage, rel: str, types, stars, level: str = "template") -> tuple:
+    """
+    The card's folders as the templates' (FOLDER_ORDER, FOLDER_NAMES, FOLDER_COLOURS), in place.
+
+    Args:
+        psd: The open card (changed)
+        rel: Its repo path (its class names the type folder)
+        types: Types/ names (lowercase); stars: PSDParser.star_names()
+        level: template (every role's layers in its folder, the folders in the templates' order); plain (only a
+            role's layers next to its folder folded in, none into a folder with effects, a mask or another blend, the
+            folders in the templates' order); kept (as plain, the folders where they are); names (no layer out of its
+            folder); bare (names, colours, deletions and nests alone); colours (colours and hidden Curves alone)
+
+    Returns:
+        (what it did, Counter of the owner's counts)
+    """
+    done, counts = [], Counter()
+    type_name = folder_kind(rel)
+    if type_name is None:
+        return done, counts
+    names = {**FOLDER_NAMES, "types": type_name}
+    for layer in hidden_curves(psd):
+        layer.parent.remove(layer)
+        done.append(f"hidden {layer.name!r} deleted")
+        counts["hidden curves"] += 1
+    if level in ("template", "plain"):
+        _extract(psd, types, stars, done, counts)
+    units, roles = [], []
+    for unit in _units(psd):
+        base = unit[0]
+        if base.clipping:                       # an orphan clip stays
+            role = None
+        elif base.is_group():
+            role = "empty" if _is_empty(base) else _group_role(base, types, stars)
+        else:
+            role = {"art": "images"}.get(_leaf_role(base, types, stars), _leaf_role(base, types, stars))
+        key = _key(base.name)
+        if (role == "empty" and len(unit) == 1 and level != "colours"
+                and (GENERIC.fullmatch(key) or any(p.fullmatch(key) for _, p in FOLDER_ROLES))):
+            psd.remove(base)                    # an empty folder named by Photoshop or after a role
+            done.append(f"empty folder {base.name!r} deleted")
+            counts["empty folders"] += 1
+            continue
+        units.append(unit)
+        roles.append(role)
+    mains = _mains(units, roles, names)
+    if level not in ("names", "bare", "colours"):
+        _overlays(units, roles, mains)
+    owner = []                                  # a unit of no role goes with the one under it (else over it; an
+                                                # orphan clip stays at the bottom)
+    for i, role in enumerate(roles):
+        below = next((roles[j] for j in range(i - 1, -1, -1) if roles[j] in FOLDER_ORDER), None)
+        above = next((roles[j] for j in range(i + 1, len(roles)) if roles[j] in FOLDER_ORDER), None)
+        owner.append(role if role in FOLDER_ORDER else None if units[i][0].clipping else below or above)
+    folds = [role in FOLDER_ORDER or role in ("adjust", "empty") for role in roles]
+    mains = _mains(units, roles, names)
+    folders = {}
+    if level not in ("names", "bare", "colours"):
+        plan = {role: [] for role in FOLDER_ORDER}
+        loose = []                              # [index, owner, unit] at the top level
+        for i, (unit, role) in enumerate(zip(units, owner)):
+            main = mains.get(role)
+            if role is None or not folds[i] or (level != "template" and main is not None and unit is not main
+                                                  and not _plain(main[0])):
+                loose.append((i, role, unit))
+            else:
+                plan[role].append((i, unit))
+        if level != "template":                 # a role's run next to its folder (or its first unit) alone
+            for role, members in plan.items():
+                if not members:
+                    continue
+                at = next((k for k, (_, u) in enumerate(members) if u is mains.get(role)), 0)
+                lo = hi = at
+                while lo > 0 and members[lo - 1][0] == members[lo][0] - 1:
+                    lo -= 1
+                while hi + 1 < len(members) and members[hi + 1][0] == members[hi][0] + 1:
+                    hi += 1
+                loose += [(i, role, u) for k, (i, u) in enumerate(members) if not lo <= k <= hi]
+                plan[role] = members[lo:hi + 1]
+        for role in FOLDER_ORDER:
+            members = plan[role]
+            if not members:
+                continue
+            main = mains.get(role)
+            k = next((k for k, (_, u) in enumerate(members) if u is main), None)
+            if k is None:
+                folder = _new_folder(psd, names[role], FOLDER_COLOURS[role], list(psd).index(members[0][1][0]))
+                done.append(f"{names[role]} folder made")
+                counts["folders made"] += 1
+                content = [u for _, u in members]
+                folders[role] = (members[0][0], [folder])
+            else:
+                folder = main[0]
+                content = [u for _, u in members[:k]] + [[layer] for layer in folder] + [u for _, u in members[k + 1:]]
+                folders[role] = (members[0][0], [folder, *main[1:]])    # what clips to the folder stays on it
+            for _, u in members:
+                if u is not main:
+                    done.append(f"{u[0].name!r} into {names[role]}")
+                    counts["extra folders" if u[0].is_group() else "loose layers"] += 1
+            _place(content, folder)
+        if level in ("template", "plain"):
+            order = [None, *(role for role in FOLDER_ORDER if role != "overlay")]
+            if "overlay" in folders:            # over the highest role its layers lay over
+                first = folders["overlay"][0]
+                under = [owner[j] for j in range(first) if owner[j] not in (None, "overlay")]
+                order.insert(order.index(max(under, key=FOLDER_ORDER.index)) + 1 if under else 1, "overlay")
+            final = []
+            for role in order:
+                if role in folders:
+                    final.append(folders[role][1])
+                final += [u for _, o, u in sorted(loose, key=lambda t: t[0]) if o == role]
+        else:                                   # every folder where its run began
+            items = [(at, unit) for at, unit in folders.values()] + [(i, u) for i, _, u in loose]
+            final = [unit for _, unit in sorted(items, key=lambda t: t[0])]
+        _place(final, psd)
+    for role in FOLDER_ORDER:
+        folder = folders[role][1][0] if role in folders else mains[role][0] if role in mains else None
+        if folder is None:
+            continue
+        _name_colour(folder, names[role] if level != "colours" else None, FOLDER_COLOURS[role], done, counts)
+        _inside(folder, role, level, types, stars, done, counts)
+    return done, counts
+
+
+def folder_issues(psd: PSDImage, rel: str) -> list:
+    """What keeps the card's folders off the templates', in plain words ([]: standard)."""
+    type_name = folder_kind(rel)
+    if type_name is None:
+        return []
+    names = {**FOLDER_NAMES, "types": type_name}
+    want = {names[role]: role for role in FOLDER_ORDER}
+    out, seen = [], []
+    for layer in psd:
+        role = want.get(layer.name) if layer.is_group() else None
+        if role is None:
+            out.append(f"{layer.name!r} at the top level")
+            continue
+        if layer.sheet_color != FOLDER_COLOURS[role]:
+            out.append(f"{layer.name!r} not {FOLDER_COLOURS[role].name.lower()}")
+        if role in seen:
+            out.append(f"two {layer.name!r} folders")
+        seen.append(role)
+        out += [f"{child.name!r} in {layer.name!r}" for child in _odd_children(layer, role)]
+    ordered = [role for role in seen if role != "overlay"]  # Overlay: over what its art lies over
+    if ordered != sorted(ordered, key=FOLDER_ORDER.index):
+        out.append("folders out of the templates' order")
+    out += [f"hidden {layer.name!r}" for layer in hidden_curves(psd)]
+    return out
+
+
+def _odd_children(folder, role: str) -> list:
+    """A role folder's layers off its template."""
+    kids = list(folder)
+    if role == "bars":
+        parts = {name: colour for _, name, colour in BAR_PARTS}
+        found = [k.name for k in kids if k.is_group() and k.name in parts]
+        out = [k for k in kids if not (k.is_group() and k.name in parts) or k.sheet_color != parts[k.name]]
+        return out + ([folder] if found != sorted(found, key=list(parts).index) else [])
+    if role == "text":
+        out = [k for k in kids if k.is_group() and (GENERIC.fullmatch(_key(k.name))
+                                                     or (k.name == STAT_TEXT[0] and k.sheet_color != STAT_TEXT[1]))]
+        if any(layer.kind == "type" and _key(layer.name) in STAT_WORDS for layer in folder.descendants()):
+            out += [k for k in kids if k.kind == "type" and _key(k.name) in STAT_WORDS | {"name"}]
+        return out
+    if role in SUB_COLOURS:
+        return [k for k in kids if k.is_group() and (k.sheet_color != SUB_COLOURS[role] or GENERIC.fullmatch(_key(k.name))
+                or (_plain(k) and NESTED[role].fullmatch(_key(k.name)) and not any(_draws(o) for o in kids if o is not k)))]
+    return [k for k in kids if k.is_group() and GENERIC.fullmatch(_key(k.name))]
+
+
+class Foldered(list):
+    """standard_folders' lines, with the level that held (FOLDER_LEVELS), the owner's counts, what the folders still
+    lack (folder_issues) and each level refused and why."""
+
+    def __init__(self, lines=(), level: str = "", counts=None, left=(), tried=()):
+        super().__init__(lines)
+        self.level, self.counts, self.left, self.tried = level, Counter(counts or {}), list(left), list(tried)
+
+
+def _sorted_lists(value):
+    """A read with its lists of names or records in one order (folders reorder the walk)."""
+    if isinstance(value, dict):
+        return {k: _sorted_lists(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        items = [_sorted_lists(v) for v in value]
+        if items and all(isinstance(v, (dict, str)) for v in items):
+            return sorted(items, key=repr)
+        return items
+    return value
+
+
+def folder_reads(psd: PSDImage, rel: str, parser: PSDParser) -> dict:
+    """What folders_gate compares: every picture's render (the fork's) and parse and the details record
+    (psd_details.gather, its time and tree aside, each layer path read as its layer's id); the regions (unpadded) as
+    a note alone (owner 2026-11-09: the website's regions may change where nothing else does)."""
+    import commands.psd_details as psd_details
+    import commands.psd_parts as psd_parts
+    from commands.psd_regions import regions
+    tags = variants_of(psd)
+    renders, parses = [], []
+    for n in tags if len(tags) > 1 else [None]:
+        with psd_edit.variant(psd, n):
+            drawn = psd.composite(ignore_preview=True, apply_icc=False, text_preview=False)
+            renders.append(np.asarray(drawn.convert("RGBA"), np.int16))
+        card = parser.parse(psd, rel, variant=n)
+        parses.append({"card": card.to_dict(), "alt": card.alt_names, "problems": CardValidator.validate(card)})
+    stem, paths = basename(rel), (psd_details.layer_path, psd_parts.layer_path)
+    psd_details.layer_path = psd_parts.layer_path = lambda layer: f"#{layer.layer_id}"     # a folder moves no id
+    try:
+        record = psd_details.gather(psd, rel, stem[:len(stem) - 4], None, parser.all_types, parser)
+    finally:
+        psd_details.layer_path, psd_parts.layer_path = paths
+    record = {k: v for k, v in record.items() if k not in ("at", "tree")}
+    return {"renders": renders, "parses": parses, "regions": _sorted_lists(regions(psd, parser.all_types, pad=False)),
+            "details": _sorted_lists(record)}
+
+
+def _by_id(psd: PSDImage) -> dict:
+    records = psd_edit.layer_records(psd)
+    out = {}
+    for layer in psd.descendants():
+        out.setdefault(layer.layer_id, []).append((records[psd_edit._record_index(layer)], layer))
+    return out
+
+
+def folders_gate(path: str, out_path: str, rel: str, parser: PSDParser, base: Optional[dict] = None,
+                 allow: Optional[dict] = None, tol: int = FOLDER_TOL) -> dict:
+    """
+    Gate: every layer's record as it was (a folder's name and colour aside; allow: layer id -> the record parts that
+    may change too, an isolated folder's blend and the clips moved into it), gone only a hidden Curves layer or a
+    folder whose layers stay, new only plain folders, no smart object's data left unused; every picture renders
+    within tol and the bot reads the card the same (folder_reads: the parse and the details; the website's regions
+    may change). Raises Refused; returns base's reads (made when None).
+    """
+    allow = allow or {}
+    before, after = PSDImage.open(path), PSDImage.open(out_path)
+    if _orphan_links(after) - _orphan_links(before):
+        raise Refused("bytes", "a smart object's embedded document is left with no layer using it")
+    old, new = _by_id(before), _by_id(after)
+    for lid, items in old.items():
+        if lid not in new:
+            for _, layer in items:
+                if not ((layer.kind == "curves" and not layer.visible) or layer.is_group()):
+                    raise Refused("bytes", f"{layer.name!r} went missing")
+            continue
+        if len(items) != len(new[lid]):
+            raise Refused("bytes", f"layer id {lid} changed count")
+        for (a, layer), (b, _) in zip(items, new[lid]):
+            if a == b:
+                continue
+            keys = {k for k in a if a[k] != b[k]}
+            blocks = {key for key, raw in set(a["blocks"]) ^ set(b["blocks"])}
+            more = allow.get(lid, set())
+            names = {bytes(Tag.UNICODE_LAYER_NAME), bytes(Tag.SHEET_COLOR_SETTING)} if layer.is_group() else set()
+            if not (keys <= ({"name", "blocks"} if layer.is_group() else set()) | more
+                    and blocks <= names | ({bytes(Tag.SECTION_DIVIDER_SETTING)} if "blocks" in more else set())):
+                raise Refused("bytes", f"{layer.name!r} changed beyond its folder")
+    for lid, items in new.items():
+        if lid not in old and not all(_plain(layer) for _, layer in items):
+            raise Refused("bytes", f"{items[0][1].name!r} is new and not a plain folder")
+    gone = [layer for lid, items in old.items() if lid not in new for _, layer in items if layer.is_group()]
+    for group in gone:
+        if any(child.layer_id not in new for child in group.descendants() if not child.is_group() and child.kind != "curves"):
+            raise Refused("bytes", f"{group.name!r} went missing with its layers")
+    base = base if base is not None else folder_reads(before, rel, parser)
+    now = folder_reads(after, rel, parser)
+    if len(base["renders"]) != len(now["renders"]):
+        raise Refused("render", "the pictures changed")
+    for n, (a, b) in enumerate(zip(base["renders"], now["renders"]), 1):
+        if a.shape != b.shape or int(np.abs(a - b).max()) > tol:
+            off = int((np.abs(a - b).max(axis=2) > tol).sum()) if a.shape == b.shape else -1
+            raise Refused("render", f"picture {n} draws differently ({off} px)")
+    gone_ids = {str(lid) for lid in old if lid not in new}
+    renamed = {_icon_key(items[0][1].name): _icon_key(new[lid][0][1].name) for lid, items in old.items()
+               if lid in new and items[0][1].is_group() and items[0][1].name != new[lid][0][1].name}
+    for key in ("parses", "details"):
+        was = _folder_details(base[key], now[key], gone_ids, renamed) if key == "details" else base[key]
+        if was != now[key]:
+            raise Refused("reparse", f"the bot reads the card differently ({key})")
+    return base
+
+
+def _icon_key(name: str) -> str:
+    return sub(r"\s+copy(\s+\d+)?$", "", name).strip().lower()     # psd_details._copied's
+
+
+def _without(value, ids: set):
+    """A details read without the layers gone (ids: layer ids as text; a read's "#1,2" keeps the others)."""
+    def kept(text):
+        if not (isinstance(text, str) and fullmatch(r"#\d+(,\d+)*", text)):
+            return text
+        left = [n for n in text[1:].split(",") if n not in ids]
+        return "#" + ",".join(left) if left else None
+    if isinstance(value, dict):
+        return {kept(k): _without(v, ids) for k, v in value.items() if kept(k) is not None}
+    if isinstance(value, list):
+        return [_without(kept(v), ids) for v in value if kept(v) is not None]
+    return value
+
+
+def _folder_details(was: dict, now: dict, ids: set, renamed: dict) -> dict:
+    """The details read before, as the folders may change it: layers gone, the bake's star icon named by its renamed
+    folder, the Ability layer no longer outside Text."""
+    was = _without(was, ids)
+    header = was.get("header")
+    if isinstance(header, dict) and isinstance(header.get("stars"), dict) and header["stars"].get("icon") in renamed:
+        header["stars"] = {**header["stars"], "icon": renamed[header["stars"]["icon"]]}
+    template, after = was.get("template"), now.get("template")
+    if isinstance(template, dict) and isinstance(after, dict):
+        gone = set(template.get("deviations", ())) - set(after.get("deviations", ()))
+        if gone <= {"ability layer outside Text"}:
+            template["deviations"] = after.get("deviations")
+    return was
+
+
+def standard_folders(path: str, out_path: str, fonts=None, rel: str = "", parser: Optional[PSDParser] = None,
+                     base: Optional[dict] = None, isolated: bool = True) -> Foldered:
+    """
+    The card's folders as the templates' (arrange), at the first FOLDER_LEVELS level folders_gate lets through, then
+    the adjustments clipped to a folder moved into it (isolate, gated on its own; isolated False: not, the guards'
+    call: the owner wants each proven in Photoshop), written to out_path; nothing ([]) where the folders are standard,
+    the card is no card or nothing holds (Foldered.tried says why). fonts is unused. base: the card's folder_reads.
+    """
+    result = Foldered()
+    if parser is None or folder_kind(rel) is None:
+        return result
+    types, stars = frozenset(parser.all_types), parser.star_names()
+    left = folder_issues(PSDImage.open(path), rel)
+    if not left:
+        return result
+    found = None
+    for level in FOLDER_LEVELS:
+        psd = PSDImage.open(path)
+        done, counts = arrange(psd, rel, types, stars, level)
+        if not done:
+            result.tried.append((level, "nothing to change"))
+            continue
+        psd_edit.save_psd(psd, out_path)
+        try:
+            base = folders_gate(path, out_path, rel, parser, base)
+        except Refused as error:
+            result.tried.append((level, str(error)))
+            continue
+        except Exception as error:              # a read the fork can't make: refused the same
+            result.tried.append((level, f"{type(error).__name__}: {error}"))
+            continue
+        found = Foldered(done, level, counts, [], result.tried)
+        break
+    found = found or Foldered(tried=result.tried)
+    if isolated:
+        _isolated(path, out_path, rel, parser, base, found)
+    if not found:
+        return Foldered(left=left, tried=found.tried)
+    found.left = folder_issues(PSDImage.open(out_path), rel)
+    return found
+
+
+def isolate(psd: PSDImage, done: list, counts: Counter) -> dict:
+    """The adjustments clipped to a top-level folder moved into it, on top, and the folder set to Normal (its layers
+    alone adjusted, as the clip did; owner 2026-11-09); {layer id: the record parts it changes} for folders_gate."""
+    allow = {}
+    standard = set(FOLDER_NAMES.values()) | set(FOLDER_TYPES.values())
+    for unit in _units(psd):
+        folder, clips = unit[0], unit[1:]
+        if (not clips or not folder.is_group() or folder.name not in standard or not all(c.kind in ADJUSTMENTS for c in clips)
+                or folder.blend_mode not in (BlendMode.PASS_THROUGH, BlendMode.NORMAL)):
+            continue
+        for layer in clips:
+            layer.move_to(folder)
+            layer.clipping = False
+            allow[layer.layer_id] = {"blend"}
+            done.append(f"{layer.name!r} into {folder.name} (was clipped to it)")
+        if folder.blend_mode == BlendMode.PASS_THROUGH:
+            folder.blend_mode = BlendMode.NORMAL
+            allow[folder.layer_id] = {"blend", "blocks"}
+        counts["clipped adjustments in"] += len(clips)
+        counts["folders isolated"] += 1
+    for folder in [layer for layer in psd if layer.is_group() and layer.name in ("Stars", *FOLDER_TYPES.values())]:
+        _nest_isolated(folder, allow, done, counts)
+    return allow
+
+
+def _nest_isolated(folder, allow: dict, done: list, counts: Counter) -> None:
+    """A redundant nest that adjustments clip to (Stars/stars under a Color Balance), all the folder draws: the
+    adjustments onto the folder's top, the folder set to Normal, the nest flattened (isolate's)."""
+    if folder.blend_mode not in (BlendMode.PASS_THROUGH, BlendMode.NORMAL):
+        return
+    for unit in _units(folder):
+        nest, clips = unit[0], unit[1:]
+        role = "stars" if folder.name == "Stars" else "types"
+        if (not clips or not nest.is_group() or not _plain(nest) or not all(c.kind in ADJUSTMENTS for c in clips)
+                or not (NESTED[role].fullmatch(_key(nest.name)) or GENERIC.fullmatch(_key(nest.name)))
+                or any(_draws(other) for other in folder if other is not nest and other not in clips)
+                or (len(nest) and list(nest)[0].clipping)):
+            continue
+        for layer in clips:
+            layer.move_to(folder)
+            layer.clipping = False
+            allow[layer.layer_id] = {"blend"}
+        if folder.blend_mode == BlendMode.PASS_THROUGH:
+            folder.blend_mode = BlendMode.NORMAL
+            allow[folder.layer_id] = {"blend", "blocks"}
+        i = list(folder).index(nest)
+        for j, layer in enumerate(list(nest)):
+            layer.move_to(folder, index=i + j)
+        folder.remove(nest)
+        done.append(f"nested {role} folder {nest.name!r} flattened, {len(clips)} adjustment(s) on it onto {folder.name}")
+        counts[f"nested {role} folder"] += 1
+        counts["folders isolated"] += 1
+        return
+
+
+def _isolated(path: str, out_path: str, rel: str, parser: PSDParser, base: Optional[dict], found: Foldered) -> None:
+    """standard_folders' second step: isolate() over its result (or the card), gated on its own; found grows."""
+    current = out_path if found else path
+    psd = PSDImage.open(current)
+    done, counts = [], Counter()
+    allow = isolate(psd, done, counts)
+    if not allow:
+        return
+    trial = out_path + ".isolated"
+    psd_edit.save_psd(psd, trial)
+    try:
+        folders_gate(path, trial, rel, parser, base, allow)
+    except Exception as error:                  # Refused or a read the fork can't make: the clips stay
+        found.tried.append(("isolate", f"{error}"))
+        remove(trial)
+        return
+    move_file(trial, out_path)
+    found.extend(done)
+    found.counts.update(counts)
+    found.level = found.level or "isolate"
 
 
 # ========================
@@ -3148,6 +4053,10 @@ __all__ = [
     'every_line',
     'fit_badges',
     'fix',
+    'folder_issues',
+    'folder_kind',
+    'Foldered',
+    'folders_gate',
     'icon_layers',
     'inexact_names',
     'kind_of',
@@ -3169,6 +4078,8 @@ __all__ = [
     'script_plan',
     'tag_layers',
     'tags_to_badges',
+    'arrange',
+    'hidden_curves',
     'rename',
     'rename_titles',
     'reported',
@@ -3178,6 +4089,7 @@ __all__ = [
     'reflow',
     'run_fonts',
     'single_line',
+    'standard_folders',
     'status_plan',
     'status_texts',
     'status_word_layers',

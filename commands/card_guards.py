@@ -9,7 +9,8 @@ always sets unsaid, box text that rewraps redrawn and its PNG re-exported: only 
 icons and exact copies deleted and data that draws nothing removed, every picture and the parse the same, no PNG (owner
 11-09); badges laid out again at their new widths, straight apostrophes, old icon font glyphs, badges fitted, timing tags set as badges: R1 then untold, status
 words in the chart's colours and effects: no changelog event either, owner 11-07),
-the PNG re-exported the same way; badges drawn with another build of the icon font that the PSD keeps are told
+the PNG re-exported the same way; and the folders as the templates' (card_standards.standard_folders, owner 11-09:
+only where nothing else changes, no PNG); badges drawn with another build of the icon font that the PSD keeps are told
 (owner 2026-11-04: OLD_FONT). One report per push: the job
 summary and commit comment (report.md), one Discord post for the standards channel (discord.json: no mentions, no
 previews), and a plan of the writes (plan.json) that `land` commits once, right after the check. Each card pushed
@@ -128,6 +129,7 @@ OLD_FONT = ("old stoogedings font: pull, reinstall MDW/Fonts/stoogedings.ttf, re
 NORMALISE = "normalise"                         # the 11-07 pass's fix (card_standards): linked pictures, normal text, no
                                                 # merged image; the guards run it on every later push, silent (G1)
 QUIET_PIXELS = (NORMALISE, "status words")     # pixel fixes that make no guard-event (owner 11-07)
+FOLDERS = "folders as the templates'"           # card_standards.standard_folders: said in the commit message alone
 CONVERT_ROOTS = ("MDW/Templates/", "MDW/Unfinished/")   # PSDs converted and nothing else (Q3)
 CONVERTS = ("now", "later", "off")              # check's --convert: in the check, in the normalise step (after Decided), never
 CONVERT_MINUTES = 20                            # no conversion starts past this; the rest stay as pushed (their next push)
@@ -915,7 +917,8 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
     told = {id(issue) for issue in standards.reported(issues)}
     result.issues = [{**issue.as_dict(), "line": issue.line(), "told": id(issue) in told, "discord": issue.discord}
                      for issue in issues]
-    if any(issue.fix and not issue.waived for issue in issues) or standards.composer_layers(new) or pixels:
+    if (any(issue.fix and not issue.waived for issue in issues) or standards.composer_layers(new) or pixels
+            or standards.folder_issues(new, job.psd)):
         fonts = partial(source.fonts_for)
         fonts.earlier = earlier                 # card_standards.relay_badges, redraw_old_glyphs
         fonts.cards = context.cards             # relay_badges' notes: a break inside a card's name
@@ -932,19 +935,22 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
             file = _save(out, job.psd, data)
             said = "; ".join(fixed.applied)     # what the comment and the post may say: never the composer
             composer = [f"Single-line Composer ({', '.join(fixed.composer)})"] if fixed.composer else []
+            composer += [FOLDERS] if fixed.folders else []
             result.redrawn = dict(fixed.redrawn) if redrawn else {}
             result.pixel_notes = list(fixed.notes) if result.redrawn else []
             silent = [f"{standards.PIXEL_LINES[kind]} ({', '.join(names)})" for kind, names in result.redrawn.items()]
-            cleaned = fixed.cleaned if data == fixed.data else []      # clean (owner 11-09): silent, no PNG
-            silent += [f"{standards.PIXEL_LINES['clean']} ({', '.join(cleaned)})"] if cleaned else []
+            cleaned = fixed.cleaned                 # clean (owner 11-09): silent, no PNG; in plain too (first)
+            composer = ([f"{standards.PIXEL_LINES['clean']} ({', '.join(cleaned)})"] if cleaned else []) + composer
             write = {"path": job.psd, "file": file, "sha": blob_sha(data), "kind": "psd",
                      "line": "; ".join(fixed.applied + composer + silent), "shown": said, "silent": not said,
-                     "composer": bool(fixed.composer), "pixels": sorted(result.redrawn) + (["clean"] if cleaned else [])}
+                     "composer": bool(fixed.composer), "folders": bool(fixed.folders),
+                     "pixels": sorted(result.redrawn) + (["clean"] if cleaned else [])}
             if "tags" in result.redrawn:        # R1 is told only if this write doesn't land with its tags (after_window)
                 write["settles"] = [issue["line"] for issue in result.issues if issue["code"] == "R1" and issue["told"]]
             if redrawn:                         # land swaps in plain when the redraw's PNGs do not land
                 write["plain"] = {"file": _save(out, job.psd + ".plain", fixed.plain), "sha": blob_sha(fixed.plain),
-                                  "line": "; ".join(fixed.applied + composer), "pixels": []}   # no redraw: no pixel fix
+                                  "line": "; ".join(fixed.applied + composer),
+                                  "pixels": ["clean"] if cleaned else []}   # no redraw: no pixel fix but clean
             result.writes.append(write)
             result.links = _links(source, data, job.psd, write["sha"])
         if stale_left(fixed, result.redrawn):
@@ -1977,6 +1983,7 @@ def message(landed: list, after: str) -> str:
     pngs = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "png")
     psds = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "psd" and not w.get("silent"))
     composer = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "psd" and w.get("composer"))
+    folders = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "psd" and w.get("folders"))
     smaller = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "recompress")
     added = len({w["path"] for entry in landed for w in entry["writes"] if w["kind"] == "file"})    # users share one
     deleted = len({w["path"] for entry in landed for w in entry["writes"] if w["kind"] == "delete"})
@@ -1987,6 +1994,7 @@ def message(landed: list, after: str) -> str:
     counts = ", ".join(part for part in (plural(pngs, "PNG") + " re-exported" if pngs else "",
                                          plural(psds, "PSD") + " fixed" if psds else "",
                                          "Single-line Composer on " + plural(composer, "card") if composer else "",
+                                         f"{FOLDERS} on " + plural(folders, "card") if folders else "",
                                          *silent,
                                          plural(smaller, "PNG") + " recompressed" if smaller else "",
                                          plural(added, "linked file") + " added" if added else "",

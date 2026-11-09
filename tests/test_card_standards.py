@@ -16,7 +16,7 @@ import commands.card_standards as cs
 import commands.psd_edit as psd_edit
 from commands.card_check import clone_vocabulary
 from conftest import RING, at_rev, story_sync
-from helpers import BALLOON_BOY, normalised
+from helpers import BALLOON_BOY, _card, normalised
 
 # ========================
 # Configuration
@@ -945,3 +945,57 @@ def test_clean_on_a_real_card(clone, tmp_path):
     assert fixed.data and not fixed.redrawn and fixed.pixel_left == [], fixed.pixel_left
     assert {"Delicate Flower copy 2", "Layer 1 copy"} <= set(fixed.cleaned)
     assert len(fixed.data) < len(data)
+
+
+def test_folders_as_the_templates(clone, tmp_path):
+    """Abyss Watcher's folders as the templates' (owner 11-09): its adjustments' Group 1 into images (named by what it
+    holds), Lines into Stats Bars, Types named Creature Types, every folder coloured, in the templates' order; drawn
+    and read as before (folders_gate); a second run has nothing to do."""
+    rel = "Auxiliary/Minions/Abyss_Watcher.psd"
+    parser = clone_vocabulary(str(clone)).parser()
+    done = cs.standard_folders(_card(clone, rel)[0], str(tmp_path / "out.psd"), None, rel, parser)
+    psd = PSDImage.open(tmp_path / "out.psd")
+    assert done.level == "template" and not done.left and done.counts["types renamed"] == 1
+    assert [(g.name, g.sheet_color.name) for g in psd] == [
+        ("images", "BLUE"), ("Stars", "YELLOW"), ("Creature Types", "GREEN"), ("Stats Bars", "ORANGE"), ("Text", "RED")]
+    assert [g.name for g in psd[3]][-1] == "Lines" and "Adjustments" in [g.name for g in psd[0]]
+    assert not cs.standard_folders(str(tmp_path / "out.psd"), str(tmp_path / "again.psd"), None, rel, parser)
+    fixed = cs.fix(open(_card(clone, rel)[0], "rb").read(), rel, [], str(tmp_path / "work"), parser)     # the guards'
+    assert fixed.folders == list(done) and fixed.data and not fixed.redrawn
+
+
+def test_folders_overlay_text_and_art(clone, tmp_path):
+    """Shadow Miner (owner 11-09): its Ability, under a Text folder with a stroke and shadow, into Overlay Text over
+    Text; 'Layer 8', drawn over the header, into Overlay at the top; its hidden Curves layers gone; the picture the
+    same."""
+    rel = "Auxiliary/Minions/Shadow_Miner.psd"
+    parser = clone_vocabulary(str(clone)).parser()
+    path = _card(clone, rel)[0]
+    assert len(cs.hidden_curves(PSDImage.open(path))) == 2
+    done = cs.standard_folders(path, str(tmp_path / "out.psd"), None, rel, parser)
+    psd = PSDImage.open(tmp_path / "out.psd")
+    assert done.level == "template" and not done.left and not cs.hidden_curves(psd)
+    assert [g.name for g in psd][-3:] == ["Text", "Overlay Text", "Overlay"] and [l.name for l in psd[-1]] == ["Layer 8"]
+
+
+def test_folders_isolate_a_clipped_adjustment(clone, tmp_path):
+    """Mettaton EX's Gradient Map clipped to its stars folder: moved into Stars, Stars set Normal, every picture the
+    same (folders_gate, its blend and clip allowed)."""
+    rel = "Auxiliary/Creatures/Mettaton_EX.psd"
+    parser = clone_vocabulary(str(clone)).parser()
+    done = cs.standard_folders(_card(clone, rel)[0], str(tmp_path / "out.psd"), None, rel, parser)
+    stars = next(g for g in PSDImage.open(tmp_path / "out.psd") if g.name == "Stars")
+    assert done.counts["folders isolated"] >= 1 and stars.blend_mode.name == "NORMAL"
+    assert any(l.kind == "gradientmap" and not l.clipping for l in stars)
+
+
+def test_folders_may_move_the_website_regions(clone, tmp_path):
+    """Kel's top-level 'star' named Stars (owner 11-09): the website's regions then read its stars alone (not the sky
+    art named '...stars...'), the picture and the parse the same: let through."""
+    from commands.psd_regions import regions
+    rel = "Creatures/Omori/3 Stars/Kel.psd"
+    parser = clone_vocabulary(str(clone)).parser()
+    path = _card(clone, rel)[0]
+    done = cs.standard_folders(path, str(tmp_path / "out.psd"), None, rel, parser)
+    before, after = (regions(PSDImage.open(p), parser.all_types)["stars"] for p in (path, tmp_path / "out.psd"))
+    assert "'star' named 'Stars'" in done and len(after) < len(before)
