@@ -528,10 +528,10 @@ def test_star_counter_on_real_cards(clone, parser, tmp_path):
 @icons
 def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
     """A dice 5 at 4 loses its middle (Nightmare, Kyle's 2 over 3); a moved star under a shadow is copied on top
-    instead (Flower of Decay); a new star with no spot on the banner the stars sit on goes where it fits, told (Thunder
-    Thighs, owner 11-08); the website's
-    header lays out the stars outside the group as the bake does (Massive Moss Charger), whose fifth steps down clear
-    of the moss (owner 11-08); Tyler's six, laid out again off the canvas, step down together."""
+    instead (Flower of Decay); with no room on the banner the stars sit on, a new star goes off it, told (Thunder
+    Thighs; owner 11-08); the website's header lays out the stars outside the group as the bake does (Massive Moss
+    Charger), whose fifth steps down clear of the moss (owner 11-08); Tyler's six, laid out again off the canvas, step
+    down together."""
     import commands.psd_details as pd
     for rel, gone in (("Creatures/Kirby/5 Stars/Nightmare.psd", "Warpstar copy 4"), ("Creatures/Other/5 Stars/Kyle.psd", "middle")):
         plan = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 4, parser, moving=True)
@@ -542,8 +542,8 @@ def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
     assert len(plan.copies) == 2
     rel = "Items/Heal/2 Stars/Thunder_Thighs.psd"            # no room on its banner either (Remote Detonator's: below)
     thighs = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 3, parser, moving=True)
-    assert thighs.how == "rows of two" and len(thighs.copies) == 1 and thighs.notes[-1].startswith(
-        "stars: placed where they fit, though a star at") and "'Layer 13' under the stars" in thighs.notes[-1]
+    assert thighs.how == "rows of two" and len(thighs.copies) == 1 and thighs.notes == [
+        "stars: placed off 'Layer 13' under them: check it"]
     rel = "Auxiliary/Minions/Massive_Moss_Charger.psd"
     psd = PSDImage.open(_clone_card(clone, rel, tmp_path)[0])
     header = pd._star_header(psd, rel, tuple(parser.all_types), parser)

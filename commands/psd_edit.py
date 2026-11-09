@@ -7634,9 +7634,9 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
       _more_layouts'. A row centred on the card stays centred at its pitch (Grimora's). A new or moved star must stay
       on the canvas, off the text and type icons, and add exactly one to what the parser counts; it should stay under
       a texture clipped onto its group, on its backdrop and out from under art. When no layout fits, the first that
-      fits stepped down (_drops: its new stars, else all it moves and adds); else the first that fits on the canvas
-      off the text and icons alone, at its spot or stepped down (owner 11-08: a developer fixes its look; both told);
-      a refusal gives the reason of the layout that came closest.
+      fits stepped down (_drops: its new stars, else all it moves and adds), then both off the banner they sit on
+      (_backdrop); else the first that fits on the canvas off the text and icons alone, at its spot or stepped down
+      (owner 11-08: a developer fixes its look; all told); a refusal gives the reason of the layout that came closest.
     - star-icon layers outside the group (Nosk's 'Hk star') are stars of the layout (R2); a star drawn twice on one
       spot is one star (R3: Tainted Eden, Living Bread); one layer drawing several is split into masked copies first
       (R4: split_stars; Grimora, Dimension D); a second creature's stars upside down below the midline (Tainted
@@ -7881,11 +7881,13 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
             else:
                 layouts = _star_layouts(order, size, count) + more
             backs = (back, None) if back is not None and len(order) == 1 else (back,)   # a lone star's, while a layout keeps it
+            banner, stages = back, list(product(("spot", "lower"), backs))
+            if back is not None and len(order) > 1:     # owner 11-08: else off its banner, told
+                stages += [("spot", None), ("lower", None)]
+            stages.append(("fit", banner))              # else where they fit alone, art aside (owner 11-08), told
             places: dict = {}
             every = lambda moves, copies: moves + [(unit, dx, dy) for unit, dx, dy, _ in copies]
-            for mode, back, j in product(("spot", "lower", "fit"), backs, range(len(layouts))):
-                if mode == "fit" and back is not backs[0]:
-                    continue                    # backdrops aside: each layout once
+            for (mode, back), j in product(stages, range(len(layouts))):
                 name, spots = layouts[j]
                 if j not in places:
                     moves, free = _place(order, spots, size)
@@ -7917,6 +7919,8 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
                         plan.notes.append(f"stars: {what} placed {drop} px lower to fit: check it")
                     if art:
                         plan.notes.append(f"stars: placed where they fit, though {art}: check it")
+                    if back is None and banner is not None and len(order) > 1:
+                        plan.notes.append(f"stars: placed off {banner[0].name!r} under them: check it")
                     shown = [unit for unit in shown if not any(unit is one for one, _, _ in under)]
                     break
                 if mode == "spot" and (first is None or far > first[0]):   # the deciding reason: the layout whose
