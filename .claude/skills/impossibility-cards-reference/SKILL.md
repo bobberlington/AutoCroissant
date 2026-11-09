@@ -684,7 +684,8 @@ both to the repo root (gitignored). The card exports' rulebook-entry filter was 
 `git_files`: lowercase png filename → repo path, built from one GitHub trees API call
 (`populate_files` :130). It indexes EVERY `.png` in TTSCardMaker — including `Types/` icons,
 `MDW/Assets/Markers`, and MDW card backs; `EXCLUDE_FOLDERS` applies only to stats traversal, not
-here. So `/query panda` can legitimately return a type icon.
+here. So `/query panda` can legitimately return a type icon (an exact name only: guesses pick among `card_keys`,
+the keys of PNGs outside MDW/ and Types/, since 2026-11-09).
 
 Lookup (`lookup` :613, 2026-10-24) normalizes to `name.replace(' ', '_').lower() + '.png'`, then: an exact key
 (file names, printed titles, Card Edits.json names and aliases); else a renamed card's old name (`_renamed`, built by
@@ -694,7 +695,9 @@ Lookup (`lookup` :613, 2026-10-24) normalizes to `name.replace(' ', '_').lower()
 "luigi" used to find Light): first a name starting with the text, or with a word that does (3+ letters; the shortest;
 a plain key before its folder-prefixed twins), then difflib `get_close_matches` above `match_ratio` (default 0.6,
 `DEFAULT_MATCH_RATIO` query_card.py:34; runtime-settable via `/set_ratio`, resets on restart — see
-autocroissant-config-and-flags). `/query as_of` guesses the same way over current and archived names, and says so.
+autocroissant-config-and-flags). `/query as_of` guesses the same way over card and archived names, and says so.
+A text with no exact or renamed hit that is a rulebook chapter's title (case and spaces ignored) gets that chapter's
+link instead of a guess ("**15. Minions** is a rulebook chapter: SITE_URL/#/rules/minions"; logs `Search chapter:`).
 Card-name options autocomplete from `name_choices`: `choices` (cards, titles, aliases, old names).
 main.py's `on_interaction` logs one console line per slash command (option values only for searches).
 
