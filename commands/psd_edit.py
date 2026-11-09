@@ -302,6 +302,7 @@ class IconPlan:
     notes: list = field(default_factory=list)    # told with the bake: the card's layout changed (stars laid out again)
     pulled: list = field(default_factory=list)   # plan_types(): icons pulled back onto the card (_close_row, S3)
     row: list = field(default_factory=list)      # plan_types(): the row's icons that show, kept or shown (clear of made ones)
+    textures: list = field(default_factory=list) # plan_stars(): textures clipped onto the stars' group that follow them
 
 
 @dataclass
@@ -6959,10 +6960,11 @@ def _star_layouts(order: list, size: tuple, count: int) -> list:
     return out
 
 
-def _stars_blocked(psd: PSDImage, moves: list, clear: list, below: bool = False, textures: bool = True) -> Optional[str]:
+def _stars_blocked(psd: PSDImage, moves: list, clear: list, below: bool = False, textures: bool = True,
+                   follow: tuple = ()) -> Optional[str]:
     """Why stars cannot move or be copied by [(unit, dx, dy)]: a layer that cannot move or is clipped, _blocked, or a
     spot below the midline (no count reads it; below: a second creature's star over it); textures: off a texture
-    clipped onto its group too."""
+    clipped onto its group too, but one in follow (_followed: it is copied over them)."""
     for unit, dx, dy in moves:
         why = next((w for w in (_shiftable(layer) for layer in unit.layers) if w), None)
         if why:
@@ -6978,6 +6980,8 @@ def _stars_blocked(psd: PSDImage, moves: list, clear: list, below: bool = False,
     for unit, dx, dy in moves if textures else ():     # off a texture clipped onto its group, a star prints bare
         box = _moved_box(unit.core, dx, dy)
         for texture in _textures(unit):
+            if any(texture is one for one in follow):
+                continue
             ink = _ink(texture)
             if ink is not None and _ink_share(ink, box) < TEXTURE_KEEP:
                 return f"a star at {tuple(int(v) for v in box)} would leave {texture.name!r}, clipped onto its group"
@@ -6994,6 +6998,83 @@ def _textures(unit: _Unit) -> list:
                 if above.visible and above.kind in TEXTURE_KINDS and b[2] > b[0] and b[3] > b[1]:
                     found[id(above)] = above
     return list(found.values())
+
+
+def _followed(shown: list) -> list:
+    """The textures clipped onto the stars' group that follow them (owner 11-09: Yin Yarn's yarn): a plain pixel layer
+    (no effects or mask, full fill) inking TEXTURE_KEEP of every shown star's core in the group it clips onto."""
+    out: list = []
+    for unit in shown:
+        for texture in _textures(_drawn_as(unit)):
+            if any(texture is one for one in out) or texture.kind != "pixel" or texture.fill_opacity != 255 \
+                    or texture.has_mask() or texture.has_vector_mask() or _enabled_effects(texture):
+                continue
+            base, ink = _clip_base(texture), _ink(texture)
+            mine = [one for one in map(_drawn_as, shown)
+                    if any(base is up for layer in one.layers for up in _ancestors(layer))]
+            if ink is not None and mine and all(_ink_share(ink, one.core) >= TEXTURE_KEEP for one in mine):
+                out.append(texture)
+    return out
+
+
+def _texture_copies(psd: PSDImage, plan: IconPlan) -> list:
+    """
+    Each texture plan_stars found following the stars (plan.textures) copied over the stars set_icons copied, moved or
+    showed that it no longer covers (TEXTURE_KEEP of their ink): a pixel layer clipped above it (adjustments over it
+    stay over), its opacity and blending, the texture as it lies on the nearest star it covers (one of that size
+    first), the same place relative to the star; never where the texture or an earlier copy draws. Returns them.
+    """
+    from psd_tools.api.layers import PixelLayer
+    moved = [done[2] for done in plan.done if done[0] == "copy"] + [layer for layer, _, _ in plan.moves] + plan.show
+    leaves = lambda layers: list({id(leaf): leaf for layer in layers for leaf in [layer, *(layer.descendants()
+                                  if layer.is_group() else ())] if not leaf.is_group() and not leaf.clipping
+                                  and leaf.is_visible() and leaf.has_pixels()}.values())
+    made: list = []
+    for texture in plan.textures:
+        base, ink = _clip_base(texture), _ink(texture)
+        if base is None or ink is None:
+            continue
+        under = lambda leaf: (lambda mine: mine is not None and mine[1].any()
+                              and _ink_overlap(mine, ink) >= TEXTURE_KEEP * mine[1].sum())(_ink(leaf))
+        mine = [leaf for leaf in leaves(moved) if any(base is up for up in _ancestors(leaf))]
+        bare = [leaf for leaf in mine if not under(leaf)]
+        refs = [leaf for leaf in leaves([base]) if under(leaf)]
+        if not bare or not refs:
+            continue
+        pixels = np.asarray(texture.topil().convert("RGBA"))
+        taken = np.zeros((psd.height, psd.width), bool)
+        tx0, ty0 = texture.left, texture.top
+        h, w = pixels.shape[:2]
+        cx0, cy0, cx1, cy1 = max(tx0, 0), max(ty0, 0), min(tx0 + w, psd.width), min(ty0 + h, psd.height)
+        if cx1 > cx0 and cy1 > cy0:
+            taken[cy0:cy1, cx0:cx1] = pixels[cy0 - ty0:cy1 - ty0, cx0 - tx0:cx1 - tx0, 3] > 0
+        for leaf in bare:
+            same = [ref for ref in refs if (ref.width, ref.height) == (leaf.width, leaf.height)] or refs
+            ref = min(same, key=lambda one: hypot(one.left + one.width / 2 - leaf.left - leaf.width / 2,
+                                                  one.top + one.height / 2 - leaf.top - leaf.height / 2))
+            dx, dy = leaf.left - ref.left, leaf.top - ref.top
+            x0, y0, x1, y1 = _pad(tuple(leaf.bbox), _reach(leaf), psd)
+            if x1 <= x0 or y1 <= y0:
+                continue
+            ys, xs = np.mgrid[y0:y1, x0:x1]
+            u, v = xs - dx - tx0, ys - dy - ty0     # the texture's pixel over the same spot of the reference
+            inside = (u >= 0) & (v >= 0) & (u < w) & (v < h)
+            patch = np.zeros((y1 - y0, x1 - x0, 4), np.uint8)
+            patch[inside] = pixels[v[inside], u[inside]]
+            patch[taken[y0:y1, x0:x1]] = 0
+            if not patch[..., 3].any():
+                continue
+            taken[y0:y1, x0:x1] |= patch[..., 3] > 0
+            name = f"{texture.name} copy" + (f" {len(made) + 1}" if made else "")
+            layer = PixelLayer.fromarray(patch, psd, name=name, top=y0, left=x0)
+            layer.name = name
+            layer.blend_mode, layer.opacity = texture.blend_mode, texture.opacity
+            _issue_id(psd, layer)
+            parent = texture.parent
+            layer.move_to(parent, index=parent.index(texture) + 1 + sum(1 for one in made if one[0] is texture))
+            layer.clipping = True
+            made.append((texture, layer))
+    return [layer for _, layer in made]
 
 
 RELAID = ("rows of two, laid out again", "a V's point as a pair", "a row on its banner")  # _more_layouts': told
@@ -7631,12 +7712,13 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
       the last star layer at the layout's spacing (_star_layouts, the first that stays clear): rows of two with an odd
       one centred under or over them (the templates; the odd one moves aside when a pair fills its row, and back to
       the middle when one goes), a row or column carried on, a zigzag carried on, a lone star's column, then
-      _more_layouts'. A row centred on the card stays centred at its pitch (Grimora's). A new or moved star must stay
-      on the canvas, off the text and type icons, and add exactly one to what the parser counts; it should stay under
-      a texture clipped onto its group, on its backdrop and out from under art. When no layout fits, the first that
-      fits stepped down (_drops: its new stars, else all it moves and adds), then both off the banner they sit on
-      (_backdrop); else the first that fits on the canvas off the text and icons alone, at its spot or stepped down
-      (owner 11-08: a developer fixes its look; all told); a refusal gives the reason of the layout that came closest.
+      _more_layouts'. A row centred on the card stays centred at its pitch (Grimora's). A new or moved star must stay on
+      the canvas, off the text and type icons, and add exactly one to what the parser counts; it should stay under a
+      texture clipped onto its group (but one that follows them: _followed, copied by set_icons), on its backdrop and
+      out from under art. When no layout fits, the first that fits stepped down (_drops: its new stars, else all it
+      moves and adds), then both off the banner they sit on (_backdrop); else the first that fits on the canvas off the
+      text and icons alone, at its spot or stepped down (owner 11-08: a developer fixes its look; all told); a refusal
+      gives the reason of the layout that came closest.
     - star-icon layers outside the group (Nosk's 'Hk star') are stars of the layout (R2); a star drawn twice on one
       spot is one star (R3: Tainted Eden, Living Bread); one layer drawing several is split into masked copies first
       (R4: split_stars; Grimora, Dimension D); a second creature's stars upside down below the midline (Tainted
@@ -7743,6 +7825,7 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         return plan
     several = len({id(unit.layers[0].parent) for unit in shown + hidden}) > 1
     shown, hidden = _merge_twins(shown), _merge_twins(hidden)       # R3: a star drawn twice on one spot is one
+    follow = _followed(shown)                   # a texture on their group that set_icons copies over them
     count = len(shown) + value - total
     if count < 1:
         refuse(f"{container.name!r} draws {len(shown)}: the other {total - len(shown)} are elsewhere")
@@ -7767,7 +7850,7 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         def failed(moves: list, soft: bool = True) -> tuple:
             """(why, how far its checks got: 0 not placed, 1 under art), else (None, 2): the deciding reason's rank.
             soft False: where it fits alone (on the canvas, off the text and icons), art and textures aside."""
-            why = _stars_blocked(psd, _as_drawn(moves), clear, below, soft)
+            why = _stars_blocked(psd, _as_drawn(moves), clear, below, soft, follow)
             if why:
                 return why, 0
             why = _covered(psd, _as_drawn(moves), mine, inks) if soft else None     # not under the art (MMC's moss)
@@ -7975,6 +8058,7 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
             one = unit if len(parents) == 1 else _Unit([layer for layer in unit.layers if layer.parent is parent], unit.core)
             out.append((one, dx, dy, _copy_name(one, parent, taken)))
     plan.copies = out
+    plan.textures = follow
     return plan
 
 
@@ -8526,8 +8610,9 @@ def record_map(psd: PSDImage) -> dict:
 def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None, rel: str = "") -> Edit:
     """
     Apply a plan_stars() or plan_types() plan to the open card (the same file it was planned on): hide, show, move,
-    copy and make layers (a made type icon links its Types/ file from rel, the card's repo path: _make_icon). Record
-    indices come later (index_icons), once every edit is in.
+    copy and make layers (a made type icon links its Types/ file from rel, the card's repo path: _make_icon; a texture
+    that follows the stars copied over those it left: _texture_copies). Record indices come later (index_icons), once
+    every edit is in.
 
     Returns:
         Edit over the layers it touched, its region their old and new boxes padded by their effects; raises Refused
@@ -8556,6 +8641,9 @@ def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None, re
     for layer, dx, dy in plan.moves:
         _shift(layer, dx, dy, True)
         boxes.append((_extent(layer), layer))
+    for layer in _texture_copies(psd, plan):    # a texture on the stars' group follows them (owner 11-09)
+        plan.done.append(("made", layer, {}))
+        boxes.append((tuple(layer.bbox), layer))
     stars, texts = badge_layers(psd)[0], _texts(psd)
     touching, made = [], []
     for stem, box, reference in plan.icons:

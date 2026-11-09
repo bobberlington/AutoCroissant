@@ -593,11 +593,10 @@ def _centres(plan) -> list:
 @icons
 def test_star_cases_of_10_26(clone, parser, tmp_path):
     """Leshy's half-opaque shadows are no stars (5, not 3); its 4 hides the bottom-left drop (the middle one would bare
-    its neighbour's shadow) and its 1 keeps it (the top-right's shadow would show). Yin Yarn's 6 cannot keep the yarn
-    clipped onto its group anywhere: laid out where they fit, told (owner 11-08); Paint Warrior's new two step down
-    onto its paint. A die's five keeps its faces (Yin Yarn, Nightmare: 1 the middle, 2 and 3 a diagonal). Bolts and
-    Screws' gear is no banner: a column. Remote Detonator's row is centred and tightened on its banner; Crowned
-    Magolor's V point becomes a pair."""
+    its neighbour's shadow) and its 1 keeps it (the top-right's shadow would show). Yin Yarn's yarn clipped onto its
+    group follows its 6 (owner 11-09: no note); Paint Warrior's new two step down onto its paint. A die's five keeps its
+    faces (Yin Yarn, Nightmare: 1 the middle, 2 and 3 a diagonal). Bolts and Screws' gear is no banner: a column. Remote
+    Detonator's row is centred and tightened on its banner; Crowned Magolor's V point becomes a pair."""
     leshy = "Creatures/Other/5 Stars/Leshy.psd"
     psd, parsed = _renamed(parser, clone, leshy, tmp_path)
     assert parser._count_stars(psd) == 5
@@ -605,8 +604,8 @@ def test_star_cases_of_10_26(clone, parser, tmp_path):
     assert _centres(pe.plan_stars(psd, parsed, 1, parser, moving=True)) == [(912, 209)]
     yarn = "Creatures/Kirby/5 Stars/Yin_Yarn.psd"
     psd, parsed = _renamed(parser, clone, yarn, tmp_path)
-    assert pe.plan_stars(psd, parsed, 6, parser, moving=True).notes[-1].endswith(
-        "would leave 'Layer 6', clipped onto its group: check it")
+    six = pe.plan_stars(psd, parsed, 6, parser, moving=True)
+    assert [t.name for t in six.textures] == ["Layer 6"] and not any("Layer 6" in note for note in six.notes)
     assert _centres(pe.plan_stars(psd, parsed, 2, parser, moving=True)) == [(1137, 108), (1024, 205)]   # a diagonal
     paint = "Auxiliary/Minions/Paint_Warrior.psd"
     assert pe.plan_stars(*_open(parser, clone, paint, tmp_path), 4, parser).notes == [
@@ -629,6 +628,29 @@ def test_star_cases_of_10_26(clone, parser, tmp_path):
     assert magolor.how == "a V's point as a pair" and [(dx, dy) for _, dx, dy in magolor.moves] == [(55, 12)]
     assert len(magolor.copies) == 1 and _centres(magolor)[4:] == [(252, 326), (142, 326)]
     assert magolor.notes == ["stars: a V's point as a pair (the card's own layout does not go on to 6)"]
+
+
+@icons
+def test_a_texture_on_the_stars_follows_them(clone, parser, tmp_path):
+    """Yin Yarn's 6 (owner 11-09): its yarn 'Layer 6', clipped onto Stars, copied over the moved and the new star where
+    it no longer lies, clipped right above it under Color Balance 2; they print as the originals beside them."""
+    psd, parsed = _renamed(parser, clone, "Creatures/Kirby/5 Stars/Yin_Yarn.psd", tmp_path)
+    plan = pe.plan_stars(psd, parsed, 6, parser, moving=True, split=True)
+    edit = pe.set_icons(psd, plan)
+    made = [done[1] for done in plan.done if done[0] == "made"]
+    top = list(psd)
+    at = next(i for i, layer in enumerate(top) if layer.name == "Layer 6")
+    assert top[at + 1:at + 4] == made + [top[at + 3]] and top[at + 3].name == "Color Balance 2"
+    assert all(layer.clipping and layer.opacity == top[at].opacity for layer in made)
+    assert all(pe.union_box([edit.region, tuple(layer.bbox)]) == edit.region for layer in made)
+    shown = pe.render_all(psd).astype(int)
+    stars = {layer.name: layer for layer in psd.descendants() if "warpstar" in layer.name}
+    for new, old in (("old warpstar copy 4", "old warpstar copy 3"), ("old warpstar copy 5", "old warpstar copy 2")):
+        a, b = stars[new], stars[old]
+        core = np.asarray(a.topil().convert("RGBA"))[..., 3] == 255
+        h, w = core.shape
+        diff = np.abs(shown[a.top:a.top + h, a.left:a.left + w] - shown[b.top:b.top + h, b.left:b.left + w]).max(-1)
+        assert diff[core].mean() < 1
 
 
 def _open(parser, clone, rel, tmp_path) -> tuple:
