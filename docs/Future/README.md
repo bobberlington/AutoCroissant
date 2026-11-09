@@ -7,6 +7,8 @@ verification, open questions only if real). The order is the plan's queue
 - `CARD_CREATOR.md`: an in-browser card creator, a template copy baked by the Actions (owner, 11-07; not queued).
 - `SIMULATOR.md`: a simulator only against the AI or by the numbers (owner, 11-07; not scheduled). Where it differs
   from `docs/Campaigns/SIMULATOR_CAMPAIGN.md`, it wins.
+- `CARD_TIMELINE.md`: every card's timeline from the team's Discord up to its first git commit, read off the cards, public on
+  an orphan `history` branch (owner, 11-08; mining waits until the task starts).
 - `TTS_CARD_FORMS.md`: a card's forms as one TTS object switched by number keys, Card details showing them all (owner, 11-07;
   Stage 0 test save made).
 
