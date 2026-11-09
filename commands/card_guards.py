@@ -752,15 +752,12 @@ def added(job: Job) -> bool:
 
 def _links(source: Source, psd, rel: str, sha: str) -> dict:
     """What housekeeping reads of a PSD (opened, or its bytes; blob sha), in the pool: its links (psd_links.links_of)
-    and its links to an MDW/Linked file missing at after (psd_regions.linked_items: G4's restore); {} unread."""
+    and its links to an MDW/Linked file missing at after (_missing: G4's restore); {} unread."""
     from commands import psd_links
-    from commands.psd_regions import linked_items
     try:
         psd, paths = png_export.open_psd(psd) if isinstance(psd, bytes) else psd, source.paths()
         links = [{"path": link.path, "name": link.name} for link in psd_links.links_of(psd, rel, paths)]
-        return {"sha": sha, "links": links,
-                "restore": [{"path": item["path"], "size": item["size"]} for item in linked_items(psd, rel, paths)
-                            if (item["path"] or "").startswith(LINKED_DIR) and item["path"] not in source.checked]}
+        return {"sha": sha, "links": links, "restore": _missing(psd, rel, paths)}
     except Exception:                           # never stops the card
         print(format_exc(), file=stderr)
         return {}
@@ -1128,6 +1125,45 @@ def _link_holder(path: str) -> bool:
     return path.lower().endswith((".psd", ".psb"))
 
 
+def _links_to(link: dict, path: str) -> bool:
+    """A link ({"path", "name"}) to path, blind to case; one no rule places by its file name (unused's rule)."""
+    if link.get("path"):
+        return link["path"].lower() == path.lower()
+    return basename(link.get("name") or "").lower() == basename(path).lower()
+
+
+def _restorable(path: str) -> bool:
+    """A file PSDs link: MDW/Linked or Types (G4b puts it back when a push deletes it while still linked)."""
+    return path.startswith((LINKED_DIR, TYPES_DIR + "/"))
+
+
+def _restored(gone: dict, links: dict, records: dict, paths, made: set) -> dict:
+    """
+    G4b: {path: (blob before the push, PSDs linking it)} of the files the push deleted (gone: {path: blob}) that a PSD
+    still links (links: {PSD: [{"path", "name"}]}, the pushed ones as read), a restored PSB's records counted too. Never
+    one back in any letter case, or one a conversion writes (made).
+    """
+    holders, out = dict(links), {}
+    gone = {path: blob for path, blob in gone.items() if blob and path not in paths and path not in made}
+    while True:
+        more = {path: [rel for rel, found in holders.items() if any(_links_to(link, path) for link in found)]
+                for path in gone if path not in out}
+        more = {path: users for path, users in more.items() if users}
+        if not more:
+            return out
+        out.update({path: (gone[path], len(users)) for path, users in more.items()})
+        holders.update({path: (records.get(path) or {}).get("links") or [] for path in more if _link_holder(path)})
+
+
+def _missing(psd, rel: str, paths) -> list:
+    """G4's candidates: [{"path", "size"}] of a PSD's links to MDW/Linked that place nowhere in the tree (paths), each
+    at the path the link names (placed without the tree)."""
+    from commands.psd_regions import linked_items
+    placed = {item["uuid"] for item in linked_items(psd, rel, paths) if item["path"]}
+    return [{"path": item["path"], "size": item["size"]} for item in linked_items(psd, rel)
+            if item["uuid"] not in placed and (item["path"] or "").startswith(LINKED_DIR)]
+
+
 def _holders(pairs) -> str:
     """A digest of a tree's PSDs and PSBs ((path, blob) pairs): what a linked-file deletion was decided on."""
     return blob_sha("\n".join(sorted(f"{path}\t{blob}" for path, blob in pairs if _link_holder(path))).encode())
@@ -1316,7 +1352,9 @@ def housekeeping(data: dict, source: Source, tree: dict, out: str, index: Option
     MDW/Linked files no PSD links deleted (nothing while any PSD's links are unknown); a pushed MDW/Linked file with the
     bytes of another merged into it (every user relinked, no pixel changed; within the time budget, else both stay); a
     link to an MDW/Linked file missing at after restored from history when its last blob has the link's size (a file
-    pushed ahead of its PSD and deleted meanwhile, R13).
+    pushed ahead of its PSD and deleted meanwhile, R13); first, an MDW/Linked or Types file the push deleted put back at
+    its blob before the push while any PSD still links it (G4b, _restored: the pushed PSDs as read, the rest by their
+    records at any blob; a restored PSB's links stay used, and no duplicate is merged beside it).
     """
     from commands import psd_links
     entry = {"card": "", "psd": "", "case": "linked", "login": SUBJECT, "commit": data["after"], "writes": [],
@@ -1348,16 +1386,27 @@ def housekeeping(data: dict, source: Source, tree: dict, out: str, index: Option
     links = {rel: [{"path": link.path, "name": link.name} for link in found] for rel, found in direct.items()}
     links.update({rel: record.get("links") or [] for rel, record in records.items()
                   if rel not in direct and isinstance(record, dict) and rel in tree})
+    made = {w["path"] for e in data["cards"] for w in e.get("writes", []) if w["kind"] == "file"}
+    restored = _restored(data.get("deleted_linked") or {}, links, records, paths, made)
     unplaced = {basename(link.get("name") or "").lower() for found in links.values() for link in found if not link.get("path")}
     dups = {dup: kept for dup, kept in psd_links.duplicates(tree, pushed_linked).items()
-            if basename(dup).lower() not in unplaced} if known else {}
-    for path in psd_links.unused(index, tree, pushed_linked, read) if index is not None else ():
-        if path in dups.values():               # G3 points its duplicate's users at it
+            if basename(dup).lower() not in unplaced} if known and not any(map(_link_holder, restored)) else {}
+    for path, (old, count) in sorted(restored.items()):
+        try:
+            raw_file = source.blob(old)
+        except (Transient, Refused):
+            continue
+        entry["expect"][path] = ""
+        entry["writes"].append({"path": path, "kind": "file", "file": _save(out, path, raw_file), "sha": old,
+                                "silent": True, "line": f"restored: still linked by {plural(count, 'PSD')}"})
+    back = {**tree, **{path: old for path, (old, _) in restored.items()}}    # a restored PSB's links stay used
+    for path in psd_links.unused(index, back, pushed_linked, read) if index is not None else ():
+        if path in dups.values() or path in restored:   # G3 points its duplicate's users at it
             continue
         entry["expect"][path] = tree[path]
         entry["writes"].append({"path": path, "kind": "delete", "file": None, "sha": None, "silent": True,
                                 "line": "unused linked file deleted"})
-    deleted = {w["path"] for w in entry["writes"]}
+    deleted = {w["path"] for w in entry["writes"] if w["kind"] == "delete"}
     users: dict = {}                            # PSD -> the duplicates it links
     for rel, found in links.items():
         for link in found:
@@ -1395,10 +1444,8 @@ def housekeeping(data: dict, source: Source, tree: dict, out: str, index: Option
         entry["expect"][dup] = tree[dup]
         entry["writes"].append({"path": dup, "kind": "delete", "file": None, "sha": None, "silent": True,
                                 "line": f"the same file as {kept}"})
-    from commands.psd_regions import linked_items
-    made = {w["path"] for e in data["cards"] for w in e.get("writes", []) if w["kind"] == "file"}
     for rel in sorted({*finals, *pooled}):
-        items = pooled[rel]["restore"] if rel in pooled else linked_items(png_export.open_psd(finals[rel]), rel, paths)
+        items = pooled[rel]["restore"] if rel in pooled else _missing(png_export.open_psd(finals[rel]), rel, paths)
         for item in items:
             path = item["path"] or ""
             if not path.startswith(LINKED_DIR) or path in tree or path in entry["expect"] or path in made:
@@ -1834,8 +1881,10 @@ def check(clone: str, after: str, before: str = "", repository: str = "", author
             results = [run_job(source, job, context, parser, out, mode, earlier) for job in jobs]
         data = plan(results, repository, base, head, mode)
         follow_dups(data, source, out)
-        pushed = [] if whole_tree else [c for c in source.diff(base, head) if c.status in "AM"]
+        changed = [] if whole_tree else source.diff(base, head)
+        pushed = [c for c in changed if c.status in "AM"]
         data["pushed_paths"] = [c.path for c in pushed]
+        data["deleted_linked"] = {c.path: c.old for c in changed if c.status == "D" and _restorable(c.path)}   # G4b
         data["fonts"] = font_fixes(source, [] if cards else [c for c in pushed if c.path not in skipped], author, head, out)
         if whole_tree or convert == "off":
             for entry in data["cards"]:

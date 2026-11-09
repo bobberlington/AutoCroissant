@@ -578,6 +578,53 @@ def test_unused_and_duplicate_linked_files_go_in_one_silent_commit(cards, tmp_pa
     assert "2 linked files deleted" in _git(root, "log", "-1", "--format=%s", report["sha"])
 
 
+def test_a_deleted_file_still_linked_is_put_back_silently(cards, tmp_path, monkeypatch):
+    """G4b (11-08, the Daco_35508 push): an MDW/Linked file the push deleted while a PSD outside it still links it (its
+    record, even at another blob) comes back at its blob before the push, silent; one only the pushed PSD linked (it
+    dropped the link; its stale record still names it) stays deleted. G4 places a missing link without the tree."""
+    import numpy as np
+    from psd_tools import PSDImage
+    from psd_tools.api.layers import PixelLayer
+    import commands.psd_links as pl
+    root, base, alice, bot = cards
+    snack = f"{FOLDER}/Snack.psd"
+    raw = BytesIO()
+    card(size=(20, 20)).save(raw, "PNG")
+    psd = PSDImage.new("RGB", (40, 40))
+    pl.link_pixels(PixelLayer.fromarray(np.full((20, 20, 4), 255, np.uint8), psd, name="art"), snack,
+                   "MDW/Linked/gone.png", raw.getvalue(), [0, 0, 20, 0, 20, 20, 0, 20])
+    assert cg._missing(psd, snack, cg.RepoTree([])) == [{"path": "MDW/Linked/gone.png", "size": len(raw.getvalue())}]
+    assert cg._missing(psd, snack, cg.RepoTree(["MDW/Linked/Gone.png"])) == []
+    gone = {"MDW/Linked/a.psb": "1", "MDW/Linked/b.png": "2", "MDW/Linked/c.png": "3"}     # a by name, b by a's record
+    records = {"MDW/Linked/a.psb": {"blob": "1", "links": [{"path": "MDW/Linked/b.png", "name": "b.png"}]}}
+    assert cg._restored(gone, {"X.psd": [{"path": None, "name": "A.PSB"}]}, records, cg.RepoTree([]), set()) == \
+        {"MDW/Linked/a.psb": ("1", 1), "MDW/Linked/b.png": ("2", 1)}
+    (root / "MDW/Linked").mkdir(parents=True, exist_ok=True)
+    for name in ("shared", "own"):
+        (root / f"MDW/Linked/{name}.png").write_bytes(name.encode())
+    start = _commit(root, "files", author="Alice")
+    for name in ("shared", "own"):
+        (root / f"MDW/Linked/{name}.png").unlink()
+    _psd(root, tmp_path / "psds", snack, card(colour=(0, 0, 200)))
+    head = _commit(root, "picture removed", author="Alice")
+    _links_module(monkeypatch)                  # Snack as read: no links
+    monkeypatch.setitem(cg.standards.PIXEL_FIXES, cg.NORMALISE, (lambda psd: [], None, None))
+    index = {rel: {"blob": "older", "links": []} for rel in cg.Source(str(root)).tree(head) if rel.endswith(".psd")}
+    index[snack]["links"] = [{"path": "MDW/Linked/own.png", "name": "own.png"}]
+    index[f"{FOLDER}/Bread.psd"]["links"] = [{"path": "MDW/Linked/shared.png", "name": "shared.png"}]
+    monkeypatch.setattr(cg, "links_index", lambda source: index)
+    out = tmp_path / "out"
+    data = cg.check(str(root), head, start, mode="on", out=str(out), workers=1)
+    assert [(w["path"], w["kind"], w["silent"], w["line"]) for w in data["linked"]["writes"]] == \
+        [("MDW/Linked/shared.png", "file", True, "restored: still linked by 1 PSD")]
+    assert "shared.png" not in data["markdown"] and "shared.png" not in json.dumps(data["discord"])
+    report = cg.land(str(out / "plan.json"), local=str(root))
+    assert _git(root, "show", f"{report['sha']}:MDW/Linked/shared.png") == "shared"
+    assert all(e["path"] != "MDW/Linked/shared.png" for e in report["events"])
+    assert "MDW/Linked/own.png" not in _git(root, "ls-tree", "-r", "--name-only", report["sha"]).splitlines()
+    assert "1 linked file added" in _git(root, "log", "-1", "--format=%s", report["sha"])
+
+
 def test_a_font_sharing_table_data_lands_with_its_own_copies(cards, tmp_path):
     """A font pushed to MDW/Fonts whose tables share data (Photoshop 2023 sets no type in it) lands with every table its
     own copy, silent: no card, Discord, comment or changelog event. A sound font and one in a subfolder stay as pushed."""
