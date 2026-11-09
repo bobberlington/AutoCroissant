@@ -109,12 +109,13 @@ since 2026-10-20.
   than 5% more of its ink hidden than now): Massive Moss Charger's fifth, under the moss, is refused; Acrophobia's
   fifth goes beside the second row, not onto the cliff. Since 2026-10-26 (the star cases): a hide may not bare a kept
   star's shadow strip (`_bares`: Leshy's 4 and 1); a moved or new star keeps 90% of its core under a texture clipped
-  onto its group (`_textures`: Yin Yarn's 6 and Paint Warrior's 4-6 refused); a backdrop is a banner only when plain
-  round the stars (`_plain_banner`: Bolts and Screws' gear is art, its column bakes); a row on its banner is centred
-  there and tightened down to 0.85 of a star's width, tried last (`_banner_row`: Remote Detonator 3, How To Jump 2,
-  Computer Virus 4; told); a die's five keeps the die's faces at 1-3 (`DICE_FACES`: the middle, a diagonal, the diagonal
-  through the middle); a V's point becomes a touching pair at one more (`_funnel`: Crowned Magolor 6; told); a refusal
-  gives the reason of the layout that came closest.
+  onto its group (`_textures`: Paint Warrior's 4-6; since 2026-11-09 a plain pixel texture over every star follows them
+  instead, copied over each new or moved star it leaves: `_followed`, `_texture_copies`, Yin Yarn's yarn); a backdrop is
+  a banner only when plain round the stars (`_plain_banner`: Bolts and Screws' gear is art, its column bakes); a row on
+  its banner is centred there and tightened down to 0.85 of a star's width, tried last (`_banner_row`: Remote Detonator
+  3, How To Jump 2, Computer Virus 4; told); a die's five keeps the die's faces at 1-3 (`DICE_FACES`: the middle, a
+  diagonal, the diagonal through the middle); a V's point becomes a touching pair at one more (`_funnel`: Crowned
+  Magolor 6; told); a refusal gives the reason of the layout that came closest.
 - **Fallback:** with no such group, visible layers whose name has the word "star" ("Patrick Star", "Emerald_Star",
   not "starfish") are counted the same way.
 - **Zero stars** gives the persisted problem `NO STARS FOUND (put the star layers in a group named "Stars")`. On
