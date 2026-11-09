@@ -1731,6 +1731,13 @@ def test_workflow_fetches_pushed_blobs_in_the_background(clone, tmp_path, monkey
         assert len(rest) == (len(listed) if code else 0)            # waited for, from the clone; a failed fetch: REST
         done, _ = _shell(steps["Pushed blobs"], env, cwd=repo)
         assert (done.returncode != 0) == bool(code) and said in " ".join(done.stdout.split()), (done.stdout, done.stderr)
+    rest.clear()                                                    # the two checks, a blob not fetched: one REST read
+    fetch = gh.fetch_blob
+    monkeypatch.setattr(gh, "fetch_blob", lambda *a, **k: subprocess.run(["/bin/sleep", "0.5"]) and fetch(*a, **k))
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(2) as pool:
+        assert {blob_sha(d) for d in pool.map(lambda _: gh.fetch_verified("o/r", listed[-1], clone=str(repo)), "ab")} == {
+            listed[-1]} and rest == [listed[-1]]
     os.utime(temp / "blobs", (0, 0))                                # no .done: the cap ends the wait (a new process)
     (temp / "blobs.done").unlink()
     monkeypatch.setattr(gh, "_listed", {})

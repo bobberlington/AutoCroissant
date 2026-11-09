@@ -13,6 +13,10 @@ from time import sleep, time
 from urllib.parse import quote
 
 try:
+    from fcntl import LOCK_EX, flock                # the two checks side by side: one REST read of a blob
+except ImportError:                                 # Windows: no claim
+    flock = None
+try:
     import config
 except ImportError:                                 # standalone use (python -m commands.tts_save) without config.py
     config = None
@@ -171,21 +175,44 @@ def pending_blob(clone: str, sha: str):
         sleep(PENDING_POLL)
 
 
+def _claim(sha: str):
+    """With PENDING_ENV: a lock on sha's REST read (held until closed), so the other check waits and reads the clone;
+    None without it."""
+    path = environ.get(PENDING_ENV, "")
+    if not path or flock is None:
+        return None
+    try:
+        held = open(f"{path}.{sha}.lock", "a")
+    except OSError:
+        return None
+    flock(held, LOCK_EX)
+    return held
+
+
 def fetch_verified(repository: str, sha: str, timeout: int = 30, clone: str = "") -> bytes:
     """A blob's bytes by sha, checked against it; raises ValueError when they don't hash to sha. With clone: its object
     store first (a blob in PENDING_ENV's list waited for), and a fetched blob is kept there (the next reader of that
-    clone does not download it again)."""
+    clone does not download it again; with PENDING_ENV one reader at a time)."""
     data = _git_blob(clone, "cat-file", "blob", sha) if clone else None
     if data is None and clone:
         data = pending_blob(clone, sha)
     if data is not None and blob_sha(data) == sha:
         return data
-    data = fetch_blob(repository, sha, timeout=timeout).content
-    if blob_sha(data) != sha:
-        raise ValueError(f"blob {sha[:8]} hashes to {blob_sha(data)[:8]}")
-    if clone:
-        _git_blob(clone, "hash-object", "-w", "--stdin", data=data)
-    return data
+    claim = _claim(sha) if clone else None
+    try:
+        if claim:
+            data = _git_blob(clone, "cat-file", "blob", sha)            # the other check read it meanwhile
+            if data is not None and blob_sha(data) == sha:
+                return data
+        data = fetch_blob(repository, sha, timeout=timeout).content
+        if blob_sha(data) != sha:
+            raise ValueError(f"blob {sha[:8]} hashes to {blob_sha(data)[:8]}")
+        if clone:
+            _git_blob(clone, "hash-object", "-w", "--stdin", data=data)
+        return data
+    finally:
+        if claim:
+            claim.close()
 
 
 def blob_text(repository: str, sha: str, timeout: int = 30) -> str:
