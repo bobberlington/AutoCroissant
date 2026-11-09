@@ -349,6 +349,29 @@ def test_carried_follows_renames(tmp_path, monkeypatch):
     assert repo.carried("0" * 40) is None
 
 
+def test_last_seen_newest_holder(tmp_path):
+    """Gone paths -> the newest commit that had them, blob then: past a merge dropping a file main redrew (TREESAME to
+    its other parent) and a file deleted twice; one at the head is the head's, one never there is left out."""
+    git = lambda *a: run(["git", "-C", str(tmp_path), *a], check=True, capture_output=True).stdout.decode().strip()
+    put = lambda name, data: ((tmp_path / name).write_bytes(data), git("add", name))
+    blob = lambda data: run(["git", "hash-object", "--stdin"], input=data, capture_output=True).stdout.decode().strip()
+    git("init", "-q", "-b", tts.CARD_BRANCH)
+    git("config", "user.email", "t@t"), git("config", "user.name", "t")
+    put("P.png", b"p1"), put("Q.png", b"q1"), put("K.png", b"k"), git("commit", "-q", "-m", "base")
+    git("checkout", "-q", "-b", "side"), git("rm", "-q", "P.png"), git("commit", "-q", "-m", "side drops P")
+    git("checkout", "-q", tts.CARD_BRANCH), put("P.png", b"p2"), git("commit", "-q", "-m", "P redrawn")
+    redrawn = git("rev-parse", "HEAD")
+    merge = git("commit-tree", "side^{tree}", "-p", "HEAD", "-p", "side", "-m", "merge")
+    git("reset", "-q", "--hard", merge), git("rm", "-q", "Q.png"), git("commit", "-q", "-m", "Q gone")
+    put("Q.png", b"q2"), git("commit", "-q", "-m", "Q back")
+    back = git("rev-parse", "HEAD")
+    git("rm", "-q", "Q.png"), git("commit", "-q", "-m", "Q gone again")
+    repo = object.__new__(tts._Repo)
+    repo.clone = str(tmp_path)
+    assert repo.last_seen(["K.png", "Never.png", "P.png", "Q.png"]) == {
+        "K.png": (git("rev-parse", "HEAD"), blob(b"k")), "P.png": (redrawn, blob(b"p2")), "Q.png": (back, blob(b"q2"))}
+
+
 def test_update_leaves_team_fields(save, repo, tmp_path, monkeypatch):
     """An existing card's Description (role tags too), GMNotes, Memo, Tags and scripts stay, repo links in them too."""
     card = save["ObjectStates"][0]["ContainedObjects"][0]

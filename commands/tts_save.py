@@ -33,7 +33,7 @@ from requests import get
 from commands.card_edits import CardAuthors
 from commands.card_models import RENAMED, card_name as _stem, rename_trailer
 from commands.git_commit import git as _git, plural as _plural
-from commands.repo_history import pinned_ref, refresh
+from commands.repo_history import batch_env, pinned_ref, refresh
 from commands.rulebook_pages import PAGES_JSON, PDF_FILE, read_pages
 from global_config import (CARD_BRANCH, CARD_REPO, EDITS_PATH, HISTORY_CLONE, LOCAL_DIR_LOC, RAW_BASE, RULEBOOK_PAGES, RULES_PATH,
                            SITE_URL, TTS_SAVE_PATH)
@@ -316,18 +316,34 @@ class _Repo:
         return path if len(seen) > 1 and path in self.tree else None
 
     def last_seen(self, paths: list) -> dict:
-        """Paths gone from main -> (newest commit that still had them, blob then), walking main's trees."""
+        """Paths gone from main -> (newest commit that still had them, blob then). That commit is main's head or a parent
+        a later commit deleted the path from: one rev-list of the commits touching the paths, one diff-tree of them."""
         found = {}
         if not paths or not exists(self.clone):
             return found
         try:
-            left = set(paths)
-            for commit in _git(self.clone, "rev-list", "--topo-order", CARD_BRANCH).decode().split():
-                if not left:
-                    break
-                for path, blob in _ls_tree(self.clone, commit, sorted(left)).items():
-                    found[path] = (commit, blob)
-                    left.discard(path)
+            rows = [r.split() for r in _git(self.clone, "rev-list", "--topo-order", "--parents", CARD_BRANCH).decode().splitlines()]
+            rank = {r[0]: i for i, r in enumerate(rows)}
+            found = {p: (rows[0][0], b) for p, b in _ls_tree(self.clone, rows[0][0], sorted(set(paths))).items()}
+            left = sorted(set(paths) - set(found))
+            if not left:
+                return found
+            env = batch_env(self.clone, GIT_NO_LAZY_FETCH="1", GIT_LITERAL_PATHSPECS="1")    # trees only
+            pairs = [(x, p) for x in _git(self.clone, "rev-list", "--full-history", CARD_BRANCH, "--", *left,
+                                          env=env).decode().split() for p in rows[rank[x]][1:]]
+            out = _git(self.clone, "diff-tree", "--stdin", "--always", "-r", "--no-renames", "-z", "--", *left, env=env,
+                       stdin="".join(f"{x} {p}\n" for x, p in pairs).encode()).decode("utf-8").split("\0")
+            k, i, want = -1, 0, set(left)
+            while i < len(out):
+                if out[i].startswith(":"):                  # ":old_mode new_mode old_blob new_blob status", the path
+                    meta, path, parent = out[i][1:].split(" "), out[i + 1], pairs[k][1]
+                    if path in want and meta[1] == "000000" and meta[0] not in ("000000", "160000") and \
+                            (path not in found or rank[parent] < rank[found[path][0]]):
+                        found[path] = (parent, meta[2])
+                    i += 2
+                    continue
+                k += bool(out[i])                           # a header: the next pair
+                i += 1
         except CalledProcessError:
             pass
         return found
