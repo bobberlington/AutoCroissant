@@ -234,6 +234,20 @@ out([title(146), title(208)]);""")
 
 
 @needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "px = 0, wrap = 0"), reason="no set-size pass in mockup.js")
+def test_tight_leading_at_set_size(tmp_path):
+    """Three lines set tighter than their size says: not found by their pitch; at the record's px (20) and frame width
+    (100) found at that size; a frame where they wrap to two lines, or a px they do not fill, stays boxed."""
+    out = node(tmp_path, """
+const W = 400, H = 120, paras = m.tokenize("abcd efgh ijkl mnop qrst uvwx"), measure = (s, z) => s.length * z * 0.5, area = { box: [0, 0, W, H], seed: null };
+const L = new Uint8Array(W * H);
+for (let i = 0; i < 3; i++) for (let y = 40 + 16 * i; y < 47 + 16 * i; y++) for (let x = 155; x < 245; x++) L[y * W + x] = x % 4 < 2 ? 255 : 0;
+const hit = o => { const h = m.bestBlock(L, W, H, area, paras, measure, o); return h && [h.cal.size, +h.cal.k.toFixed(2), h.cal.nPred]; };
+out([hit({}), hit({ px: 20, wrap: 100 }), hit({ px: 20, wrap: 150 }), hit({ px: 30, wrap: 100 })]);""")
+    assert out == [None, [20, 0.93, 3], None, None]
+
+
+@needs_js
 @pytest.mark.skipif(not has(MOCKUP_JS, "titleLayout"), reason="no titleLayout in mockup.js")
 def test_title_keeps_its_size(tmp_path):
     """A longer title stays at its size (psd_edit never shrinks one): point text on its lines, a box's wrapped at its
