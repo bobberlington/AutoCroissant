@@ -1316,7 +1316,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
             if n != 1:
                 snapshot.fetch(snapshot.sha(png), join(folder, "old", basename(png)))
 
-        psd = PSDImage.open(old_psd)            # one open for the parse, classify and apply_jobs (it edits a copy)
+        psd = psd_edit.frozen(PSDImage.open(old_psd))   # one open for the parse, classify and apply_jobs (it edits a copy)
         parsed = psd_edit.parse_card(parser, old_psd, card.rel, psd)
         template = first_type_spot(snapshot, work, card, parsed, psd, parser) if "types" in card.fields else None
         classified = psd_edit.classify(parsed, card.fields, psd, parser, template,

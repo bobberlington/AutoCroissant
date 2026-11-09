@@ -11058,7 +11058,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     if saving is None:
         save_png(merged, new_png, png)
     gate_size(psd_path, new_psd)
-    reopened = use_record(PSDImage.open(new_psd), rel, _LOOKS.get(new))   # the saved PSD's one open: every gate
+    reopened = frozen(use_record(PSDImage.open(new_psd), rel, _LOOKS.get(new)))   # the saved PSD's one open: every gate
     #                                           after reads it, drawn with the facts the merge was (it has no stored image)
     records, flag_bytes, block_bytes = gate_bytes(old_records, reopened, edits)
     hold.enter_context(variant(reopened, view))     # the read-back and re-render as picture `view`
@@ -11146,9 +11146,25 @@ def _lone_part(psd: PSDImage):
         return None
 
 
+_PARTS: "WeakKeyDictionary" = WeakKeyDictionary()   # a frozen PSD -> {(rel, name, id(parser)): (parser, card_parts)}
+
+
+def frozen(psd: PSDImage) -> PSDImage:
+    """psd, which the bake only reads (the card as opened, the saved one read back): its card_parts kept; psd."""
+    _PARTS.setdefault(psd, {})
+    return psd
+
+
 def card_parts(psd: PSDImage, rel: str, name: str, parser: Optional[PSDParser]) -> dict:
-    """The details record's `parts` (§2.3) over every variant: psd_parts.card_parts, a bare parser when none."""
-    return psd_parts.card_parts(psd, rel, name, parser or _bare_parser())
+    """The details record's `parts` (§2.3) over every variant: psd_parts.card_parts, a bare parser when none; once
+    per frozen PSD (a copy each call)."""
+    kept, key = _PARTS.get(psd), (rel, name, id(parser))
+    if kept is not None and key in kept:
+        return deepcopy(kept[key][1])
+    out = psd_parts.card_parts(psd, rel, name, parser or _bare_parser())
+    if kept is not None:
+        kept[key] = (parser, deepcopy(out))     # the parser held: its id stays its own
+    return out
 
 
 def record_parts(record: dict) -> dict:
@@ -11791,6 +11807,7 @@ __all__ = [
     'collapse',
     'export_icc',
     'foreign_profile',
+    'frozen',
     'fx_label',
     'fx_layers',
     'FxPlan',
