@@ -169,6 +169,29 @@ def test_colour_bake_on_a_real_card(clone, tmp_path):
 
 
 @pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")
+def test_colour_on_a_raster_off_the_card(clone, tmp_path):
+    """PoD05 Lead Bloon's Ability raster starts left of the card: a word's colour bakes, the letters unmoved."""
+    from commands.psd_edit import offline_parser
+    from psd_tools.composite.text.verify import stored_raster
+    vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
+    parser = offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
+    rel = "Auxiliary/Minions/PoD05Lead_Bloon.psd"
+    psd_path, png = _card(clone, rel)
+    psd = PSDImage.open(psd_path)
+    rgba, bbox = stored_raster(pe.ability_layer(psd))
+    assert bbox[0] < 0
+    parsed = pe.parse_card(parser, psd_path, rel, psd)
+    edit = {"field": "ability", "phrase": "intercept", "color": "#ff2200"}
+    got = pe.classify(parsed, {"colors": [edit]}, psd, parser)
+    assert got.jobs == {"colors": [edit]} and not got.refusals
+    baked = pe.apply_jobs(psd_path, png, rel, got.jobs, parsed, parser, str(tmp_path), str(clone / pe.FONTS_DIR), psd=psd)
+    out, box = stored_raster(pe.ability_layer(PSDImage.open(baked.psd_path)))
+    assert box == bbox and np.array_equal(out[..., 3], rgba[..., 3])               # not moved
+    red = (out[..., 3] > 0.9) & (np.abs(out[..., :3] - np.array([1, 0x22 / 255, 0])).max(axis=2) < 0.01)
+    assert red.sum() > 100
+
+
+@pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")
 def test_status_words_keep_the_chart(clone, tmp_path):
     """Capitalised chart status words keep the chart's colour (the guards' rule, owner 2026-11-07): a whole-field colour
     leaves them, a phrase of them alone is refused; prose ("burning") is no status word."""
