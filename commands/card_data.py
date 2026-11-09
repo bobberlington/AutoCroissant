@@ -10,19 +10,22 @@ docs/Campaigns/DATA_BUILD_ACTION.md (sections 7 and 13).
 """
 from argparse import ArgumentParser
 from collections import deque
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from hashlib import sha1
 from io import BytesIO
 from json import dumps as json_dumps, loads as json_loads
+from multiprocessing import get_context
 from os import environ, fdopen, remove, walk
 from os.path import abspath, basename, dirname, isfile, join as path_join, splitext
+from pickle import dumps as pickle_dumps, loads as pickle_loads
 from subprocess import CalledProcessError, run
 from sys import version_info
 from tempfile import mkstemp
-from threading import Lock
+from threading import Lock, active_count, local
 from typing import Callable, Optional
 
 from psd_tools import PSDImage
@@ -31,7 +34,7 @@ from requests.exceptions import RequestException
 from global_config import (AUTHORS_PATH, CARD_BRANCH, CREATED_PATH, EDITS_PATH, ICON_MANIFEST_PATH, RULEBOOK_DIR, RULEBOOK_SRC, RULES_PATH,
                            STARS_DIR, TYPES_DIR)
 from commands.card_edits import CardAuthors, CardDates, CardEdits
-from commands import rulebook
+from commands import github_api, rulebook
 from commands.card_models import CardInfo, StatsDatabase, card_name, duplicate_png, straight, straighten_card
 from commands.github_api import HEADERS, RangeError, RemotePSD, api_url, blob_text, fetch_blob, get_with_retry, range_reads
 from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser, variants_of
@@ -70,6 +73,34 @@ class Read:
     links: Optional[dict] = None
     fetched: Optional[int] = None               # bytes by range reads
     error: Optional[Exception] = None           # what the parse raised
+
+
+_BUILD: Optional["CardBuild"] = None            # a forked download worker's build (the parent's, copied at the fork)
+
+
+def _forks() -> bool:
+    """Download workers as forked processes (one parse per core, not one GIL): on a GitHub runner with no other thread
+    alive; elsewhere threads (macOS forks crash in its system libraries)."""
+    return environ.get("GITHUB_ACTIONS") == "true" and active_count() == 1
+
+
+def _fork_init() -> None:
+    """A forked worker's own requests Sessions: never the parent's sockets."""
+    github_api._local = local()
+
+
+def _fork_read(path: str, name: str, sha: str, given: dict) -> tuple:
+    """_fetch_read in a forked worker with the parent's worker fields (CardBuild._given): (the Read or None, those fields
+    after). An error that would not come back through pickle comes back as a RuntimeError of its text."""
+    vars(_BUILD).update(given)
+    read = _BUILD._fetch_read(path, name, sha)
+    if read is not None and read.error is not None:
+        try:
+            pickle_loads(pickle_dumps(read.error))
+        except Exception:
+            read.error = RuntimeError(str(read.error))
+    print(end="", flush=True)                   # its lines in the log as it goes (a pipe buffers them)
+    return (read, {key: getattr(_BUILD, key) for key in given})
 
 
 class CardBuild:
@@ -492,21 +523,60 @@ class CardBuild:
         self.raw_ref = self._raw_ref() if todo and range_reads() else ""
         if todo:
             self._shared()
-        pool = ThreadPoolExecutor(DOWNLOAD_WORKERS)
+        global _BUILD
+        forked = bool(todo) and _forks()                # after _shared: the workers start with it built
+        if forked:
+            _BUILD = self
+            pool = ProcessPoolExecutor(min(DOWNLOAD_WORKERS, len(todo)), mp_context=get_context("fork"),
+                                       initializer=_fork_init)
+        else:
+            pool = ThreadPoolExecutor(DOWNLOAD_WORKERS)
         queue, ahead = iter(todo), deque()
+
+        def submit(item: tuple):
+            return pool.submit(_fork_read, *item, self._given()) if forked else pool.submit(self._fetch_read, *item)
+
+        def threads(error: Exception) -> None:          # the forked workers broke: the rest in threads
+            nonlocal pool, forked
+            print(f"Forked reads stopped ({error!r}); the rest in threads")
+            pool.shutdown(wait=False, cancel_futures=True)
+            pool, forked = ThreadPoolExecutor(DOWNLOAD_WORKERS), False
+            for _ in range(len(ahead)):
+                item, _task = ahead.popleft()
+                ahead.append((item, submit(item)))
 
         def top_up() -> None:                           # keep AHEAD reads going
             while len(ahead) < AHEAD:
                 item = next(queue, None)
                 if item is None:
                     return
-                ahead.append((item, pool.submit(self._fetch_read, *item)))
+                try:
+                    task = submit(item)
+                except (BrokenProcessPool, OSError) as e:
+                    if not forked:
+                        raise
+                    threads(e)
+                    task = submit(item)
+                ahead.append((item, task))
+
+        def result(item: tuple, task):
+            if not forked:
+                return task.result()
+            try:
+                read, back = task.result()
+            except Exception as e:                      # a worker died, or its Read would not pickle: read here
+                if isinstance(e, BrokenProcessPool):
+                    threads(e)
+                return self._fetch_read(*item)
+            self._taken(back)
+            return read
 
         try:
             top_up()
             while ahead:                                # kept in todo order
-                (path, name, sha), task = ahead.popleft()
-                read = task.result()
+                item, task = ahead.popleft()
+                path, name, sha = item
+                read = result(item, task)
                 top_up()
                 if read is None:
                     self._not_fetched(path, name)
@@ -563,6 +633,7 @@ class CardBuild:
             for _, task in ahead:
                 task.cancel()
             pool.shutdown(wait=True)                            # each task closes its own PSD
+            _BUILD = None
 
         if self.ranged:
             print(f"{len(self.ranged)} PSDs read by range requests at {self.raw_ref[:8]}: "
@@ -636,11 +707,26 @@ class CardBuild:
                 return RemotePSD(self.repository, self.raw_ref, path, self.sizes.get(path))
             except Exception as e:                              # the whole file decides
                 if isinstance(e, RequestException) or (isinstance(e, RangeError) and e.status >= 400):
-                    self.refused.append(path)                   # one odd PSD (a 416 when empty) leaves them on
-                    if len(self.refused) >= RANGE_REFUSALS:     # e.g. a commit not on GitHub, raw down (each PSD
-                        self.raw_ref = ""                       # tried 3 times): whole downloads from now on
+                    self._refuse(path)
                 print(f"{path}: range reads failed ({e}); downloading it whole")
         return self._download(path, sha)
+
+    def _refuse(self, path: str) -> None:
+        """A PSD refused range reads; RANGE_REFUSALS of them turn them off (e.g. a commit not on GitHub, raw down: each
+        PSD tried 3 times): whole downloads from then on. One odd PSD (a 416 when empty) leaves them on."""
+        self.refused.append(path)
+        if len(self.refused) >= RANGE_REFUSALS:
+            self.raw_ref = ""
+
+    def _given(self) -> dict:
+        """The fields download workers write, as a forked one starts a PSD with them (raw_ref: a switch-off reaches
+        later PSDs)."""
+        return {"raw_ref": self.raw_ref, "refused": []}
+
+    def _taken(self, back: dict) -> None:
+        """A forked worker's fields after its PSD (_given's), applied here: its range refusals."""
+        for path in back["refused"]:
+            self._refuse(path)
 
     @staticmethod
     def _release(source) -> None:
@@ -1223,6 +1309,14 @@ class GitBuild(CardBuild):
                 self.rest += 1
             kept.append((path, name, sha))
         return (kept, num_old)
+
+    def _given(self) -> dict:
+        return {**super()._given(), "_rate_low": self._rate_low, "_rate_held": set()}
+
+    def _taken(self, back: dict) -> None:
+        super()._taken(back)
+        self._rate_low = self._rate_low or back["_rate_low"]
+        self._rate_held |= back["_rate_held"]
 
     def _hold(self, path: str, name: str) -> None:
         self.stale.append(path)
