@@ -12,8 +12,8 @@ Usage (run from anywhere; repo root is derived from this file's location):
                 preservation behaves exactly like a real build (default: parse fresh)
 
 Notes:
-  * Requires config.py to exist in the repo root (the bot module import chain
-    reads it). No network calls are made and nothing is saved.
+  * No config.py needed (card_check's import chain reads none). No network
+    calls are made and nothing is saved.
   * The repo-relative path is computed here with relpath against the
     TTSCardMaker clone root, which gives the same repo-relative paths that
     the build stores from the git tree (the archived local traversal on
@@ -57,9 +57,9 @@ def main() -> int:
               f"classification (which is folder-based) will be UNKNOWN.")
         relative_path = psd_path.name
 
-    from commands.card_data import CardBuild
-    from commands.psd_analyzer import StatsDatabase
-    from commands.psd_parser import CardValidator, PSDParser
+    from commands.card_check import clone_vocabulary
+    from commands.card_models import StatsDatabase
+    from commands.psd_parser import CardValidator, IconVocabulary, PSDParser
 
     db = StatsDatabase()  # fresh, empty: no preservation effects
     if "--with-db" in sys.argv:
@@ -67,13 +67,13 @@ def main() -> int:
         db.stats, db.old_stats, _, _ = read_db(CARD_DATA_DIR, details=False)
         print(f"(loaded {CARD_DATA_DIR}/: {len(db.stats)} cards -- author/series preservation active)")
 
-    traverser = CardBuild(db)
-    traverser._populate_types_from_local(str(clone_root))
+    vocab = clone_vocabulary(str(clone_root))   # Types/, Types/Stars/ and the font's manifest, as the build reads them
+    db.all_types = list(vocab.all_types)
     print(f"known types ({len(db.all_types)}): {sorted(db.all_types)}")
     print(f"relative path: {relative_path}")
     print("-" * 80)
 
-    parser = PSDParser(db.all_types, db, traverser._icons_from_local(str(clone_root)))
+    parser = PSDParser(db.all_types, db, IconVocabulary.build(db.all_types, vocab.stars, vocab.manifest))
     card = parser.parse(str(psd_path), relative_path)
     problems = CardValidator.validate(card)
 

@@ -47,7 +47,7 @@ Glossary (used throughout):
 | token | Since 2026-10-19: a `[name]` typed in the stoogedings font, read directly by the parser — no gap needed (impossibility-cards-reference §4.1) |
 | midline | `card_mid_y = height * TYPE_REGION_RATIO(0.5)` (psd_parser.py:24, 411). Icons above it = creature-type tags (`card.types`); below it = candidates for inline injection into ability text |
 | injection | Replacing gaps with ` [typename] ` line by line (`_inject_type_names`, psd_parser.py:1007) |
-| leftover-append | When kept icons outnumber gaps, the extras are appended to the last line (psd_parser.py:1045) |
+| leftover-append | When kept icons outnumber gaps, the extras are appended to the last line (psd_parser.py:1045); since 2026-11-09 only icons within 80 px of an Ability layer's box are kept (`_in_span`, the first bbox-anchored step) |
 | sweep | One `update_stats()` traversal (GitHub trees API; the local dir walk is archived) that reparses changed cards |
 | sandbox | A scratch copy of this repo + pickles where sweeps may write; see autocroissant-validation-and-qa |
 | golden card | A card whose full expected parse is pinned in this skill and byte-checked after every change |
@@ -237,15 +237,12 @@ autocroissant-build-and-env, run `python3 setup.py clean`.)
 python3 - <<'EOF' 2>&1 | grep -v "Git token\|Trying to open\|Loaded existing"
 import sys; sys.path.insert(0, '.')
 from os.path import expanduser
-from commands.card_data import CardBuild
+from commands.card_check import clone_vocabulary
 from commands.card_db import read_cards
-from commands.psd_analyzer import stats_db, PSDParser, StatsDatabase
+from commands.psd_analyzer import stats_db
 clone = expanduser('~/Desktop/TTSCardMaker')
 stats_db.stats, stats_db.old_stats = read_cards('origin/data', clone)
-fresh = StatsDatabase()
-build = CardBuild(fresh)
-build._populate_types_from_local(clone)
-parser = PSDParser(fresh.all_types, fresh, build._icons_from_local(clone))
+parser = clone_vocabulary(clone).parser()       # fresh: an empty database (2026-11-09; _icons_from_local went 11-06)
 goldens = [
     ('Mini Doomer',   'Auxiliary/Minions/Mini_Doomer.psd'),
     ('The Freezer',   'Field/1 Stars/The_Freezer.psd'),

@@ -12,13 +12,8 @@ _parser = None
 
 def _init():
     global _parser
-    from commands.card_data import CardBuild
-    from commands.psd_analyzer import StatsDatabase
-    from commands.psd_parser import PSDParser
-    db = StatsDatabase()
-    tr = CardBuild(db)
-    tr._populate_types_from_local(str(CLONE))
-    _parser = PSDParser(db.all_types, db, tr._icons_from_local(str(CLONE)))
+    from commands.card_check import clone_vocabulary
+    _parser = clone_vocabulary(str(CLONE)).parser()
 
 def one(path):
     from commands.psd_parser import CardValidator

@@ -9,10 +9,10 @@ midline/prune decisions, the 3+ space gaps, and the final injected text.
 Usage:
     python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/gap_trace.py <path/to/card.psd>
 
-Requires config.py in the repo root. Read-only; nothing is saved.
+Read-only; nothing is saved (no config.py needed).
 
 MAINTENANCE NOTE: the extraction loop below deliberately re-drives the REAL
-PSDParser methods (_process_layer, _sort_by_position, _prune_type_bboxes,
+PSDParser methods (_process_layer, _sort_by_position, _prune_type_bboxes, _in_span,
 _process_abilities, which injects the types) instead of copying their logic, but the orchestration
 mirrors PSDParser._extract_from_layers (effect layers set aside, hidden Ability
 layers read last). If _extract_from_layers changes shape
@@ -51,22 +51,19 @@ def main() -> int:
     except ValueError:
         relative_path = psd_path.name
 
-    from commands.psd_analyzer import CardInfo, CardType, StatsDatabase
-    from commands.card_data import CardBuild
+    from commands.card_check import clone_vocabulary
+    from commands.card_models import CardInfo, CardType
     from commands.psd_parser import (
         EFFECT_LAYER_TAG,
+        ICON_SPAN_PAD,
         TYPE_REGION_RATIO,
         CardClassifier,
         MutableValue,
-        PSDParser,
         StatTrackers,
         stars_from_psd,
     )
 
-    db = StatsDatabase()
-    traverser = CardBuild(db)
-    traverser._populate_types_from_local(str(clone_root))
-    parser = PSDParser(db.all_types, db, traverser._icons_from_local(str(clone_root)))   # stoogedings vocabulary
+    parser = clone_vocabulary(str(clone_root)).parser()     # Types/, Types/Stars/ and the stoogedings manifest
 
     psd = PSDImage.open(str(psd_path))
     card_mid_y = int(psd.height * TYPE_REGION_RATIO)
@@ -103,7 +100,7 @@ def main() -> int:
 
     print(f"\n[2] ability text layers found: {len(abilities)}")
     for text, bbox in abilities:
-        print(f"    at (x={bbox.x}, y={bbox.y}): {text!r}")
+        print(f"    at (x={bbox.x}, y={bbox.y}..{bbox.bottom}): {text!r}")
 
     sorted_abilities = parser._sort_by_position(abilities)
     joined = "\n".join(text.strip("'\"\n") for text, _ in sorted_abilities)
@@ -121,6 +118,10 @@ def main() -> int:
         print(f"    prune threshold = max(last_y//3={last_y // 3}, card_mid_y={card_mid_y})")
     dropped = [t for t in sorted_bboxes if t not in pruned]
     print(f"    kept after prune: {[t for t, _ in pruned]}   dropped: {[t for t, _ in dropped]}")
+    spanned = parser._in_span(pruned, [bbox for _, bbox in abilities])
+    print(f"    in an Ability layer's span (+-{ICON_SPAN_PAD} px): {[t for t, _ in spanned]}   "
+          f"dropped: {[t for t, b in pruned if (t, b) not in spanned]}")
+    pruned = spanned
 
     n_gaps = sum(len(parser._gap_pattern.findall(line)) for line in joined.splitlines())
     print(f"\n[5] gap count = {n_gaps} vs kept types = {len(pruned)}"

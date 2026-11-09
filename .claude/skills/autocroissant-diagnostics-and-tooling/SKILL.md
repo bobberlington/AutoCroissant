@@ -73,10 +73,9 @@ What these tools do NOT answer: whether a measured value is *acceptable*
   inspect_pickle reads the repo root's `card_data/` by default; diff_stats's relative arguments resolve against the
   shell's cwd.
   `dump_psd_layers.py` imports only `sys` + psd-tools: no repo-root logic, no `config.py` needed.
-- `parse_one.py` and `gap_trace.py` need `config.py` present in the repo root (secret;
-  the bot module import chain reads it). Without it the import chain fails. `diff_stats.py` and
-  `inspect_pickle.py` need none since 2026-10-23 (they import only `commands.card_db` and `card_models`), so
-  the Mac's plain `python3` runs them.
+- No script needs `config.py`: `parse_one.py` and `gap_trace.py` import `commands.card_check`, `card_models` and
+  `psd_parser` (no config in that chain) since 2026-11-09, `diff_stats.py` and `inspect_pickle.py` only
+  `commands.card_db` and `card_models` since 2026-10-23. parse_one and gap_trace need psd-tools (the fork venv).
 - `parse_one.py` and `gap_trace.py` additionally need the TTSCardMaker clone at
   `~/Desktop/TTSCardMaker` (`LOCAL_DIR_LOC`, global_config.py:5) — both for the PSD itself and
   to populate the known-types list from the clone's `Types/` folder.
@@ -204,11 +203,12 @@ validator problems: NONE
   did it from 2026-10-19 until local mode was archived on 2026-10-20 (now on branch `archive/local-update-stats`).
   Before that fix local mode computed it wrong (the removeprefix bug, autocroissant-failure-archaeology
   Entry 1). It matches the repo-relative paths `/update_stats` stores from the GitHub tree.
-- **Icon font (2026-10-20).** parse_one.py and gap_trace.py pass
-  `traverser._icons_from_local(clone_root)` to `PSDParser`, so the stoogedings vocabulary (Types/ and
-  Types/Stars/ names, manifest aliases and codepoints) matches what `/update_stats` builds from the
-  GitHub tree (`_icons_from_response`), and cards typed in the font parse as in production. These two
-  `*_from_local` helpers stayed when local mode was archived, for these scripts; they live on `card_data.CardBuild` (the traverser's body since 2026-10-22; repo_traverser.py was deleted 2026-10-25). gap_trace.py calls `_process_layer`, whose signature did
+- **Icon font (2026-10-20).** parse_one.py, gap_trace.py and parse_all_ns.py build the vocabulary with
+  `commands.card_check.clone_vocabulary(clone_root)` (since 2026-11-09; `CardBuild._icons_from_local`, which they
+  called before, was deleted 2026-11-06 in 3bf99d74 and they crashed until then), so the stoogedings vocabulary
+  (Types/ and Types/Stars/ names, manifest aliases and codepoints) matches what the build reads from the
+  GitHub tree (`_icons_from_response`; card_check's `vocabulary` reads paths the same way), and cards typed in the
+  font parse as in production. gap_trace.py calls `_process_layer`, whose signature did
   not change with the icon-font work.
 - Field lines — `CardInfo.to_dict()` output. Empty fields are OMITTED (to_dict drops
   ability/stars/subtype/series/types/author/problems when empty and stats when invalid), so a
@@ -230,7 +230,7 @@ empty DB: no preservation, so Mini Doomer fresh shows neither field, while
 Rule of thumb: use **fresh** to test pure extraction; use **`--with-db`** when comparing
 field-for-field against the stored entry (otherwise author/series will look like regressions).
 
-**Failure modes**: needs `config.py` in the repo root; needs the clone at `~/Desktop/TTSCardMaker`;
+**Failure modes**: needs the clone at `~/Desktop/TTSCardMaker`;
 relative argv paths fail (resolve against repo root); a PSD outside the clone prints a WARNING
 and classifies as UNKNOWN (classification is folder-based).
 
@@ -297,6 +297,12 @@ pick another icon-layer card (`psd_details.json`'s `icons` field `images` or `mi
 token case: `[2]` one layer at y=1767 reading "Minions inherit [undead].", `[3]` no GAP, `[4]` 0 icons, kept []
 dropped [], `[5]` 0 vs 0 (match), `[6]` the same final text as before the batch.
 
+Since 2026-11-09 `[2]` prints each layer's span (`y=top..bottom`) and `[4]` adds the span step (`_in_span`): an icon
+more than `ICON_SPAN_PAD` (80 px) above or below every Ability layer is dropped before injection. Tainted Lazarus
+(TTSCardMaker ea2fee7b; the only card with a below-midline icon image then) shows `[2]` y=912..1199 and
+y=1255..1382, `[4]` undead at (x=1006, y=2242), kept after prune ['undead'], in span [] dropped ['undead'] (its
+creature 2's header icon), `[5]` 0 vs 0 (match); before, `[5]` was a MISMATCH and `[6]` ended "Afraid. [undead]".
+
 **Interpretation guide, section by section**:
 
 | Section | What to check |
@@ -305,7 +311,7 @@ dropped [], `[5]` 0 vs 0 (match), `[6]` the same final text as before the batch.
 | [1] | Types that ended up as creature types instead of inline candidates. An icon "missing" from injection is often sitting above the midline. |
 | [2] | Multiple text layers? `_sort_by_position` orders them top-to-bottom, then left-to-right with 40px row grouping — a mis-ordered join scrambles which line each gap is on. |
 | [3] | The `<GAP:n>` markers are the injection slots, per line. Whitespace is load-bearing: never "clean up" multiple spaces in card text (incident 3bbaa2b). |
-| [4] | The prune step. An icon dropped here (listed under `dropped:`) was judged too high; an icon kept that shouldn't be usually means the PSD has a stray icon layer below midline. |
+| [4] | The prune step. An icon dropped here (listed under `dropped:`) was judged too high; an icon kept that shouldn't be usually means the PSD has a stray icon layer below midline. Then the span step: an icon outside every Ability layer's span (80 px margin) is dropped too. |
 | [5] | The count comparison. `(match)` is what you want. On MISMATCH the script prints an explicit warning that leftovers append to the last line. |
 | [6] | Byte-exact final text — compare against the stored entry (`inspect_pickle.py "Name"`). |
 
@@ -316,7 +322,7 @@ dropped [], `[5]` 0 vs 0 (match), `[6]` the same final text as before the batch.
 it fed "Ability FX: ..." pixel layers to `_process_layer` and hardcoded the folders). If that method changes shape,
 update gap_trace to match; the one-line check is to compare against that method's body.
 
-**Failure modes**: needs `config.py` and the clone at `~/Desktop/TTSCardMaker`; same
+**Failure modes**: needs the clone at `~/Desktop/TTSCardMaker`; same
 relative-path caveat as parse_one (no explicit warning branch here — a PSD outside the clone
 just classifies from a `../...`-style path, i.e. garbage; keep inputs inside the clone).
 
@@ -765,7 +771,7 @@ grep -n "EFFECT_LAYER_TAG\|stars_from_psd" .claude/skills/autocroissant-diagnost
 grep -n "def _process_layer" commands/psd_parser.py                 # gap_trace calls it; signature unchanged by the 2026-10-19 icon work
 grep -n "Preserve author and series" commands/psd_parser.py         # parse_one --with-db semantics
 git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py   # the 2026-10-19 local-path fix; local mode archived 2026-10-20
-grep -n "_icons_from_local" .claude/skills/autocroissant-diagnostics-and-tooling/scripts/*.py   # parse_one.py and gap_trace.py load the icon vocabulary (2026-10-20)
+grep -n "clone_vocabulary" .claude/skills/autocroissant-diagnostics-and-tooling/scripts/*.py   # parse_one.py and gap_trace.py load the icon vocabulary (2026-11-09)
 grep -n "LOCAL_DIR_LOC" global_config.py                           # "~/Desktop/TTSCardMaker" (line 5)
 grep -n "def to_dict" commands/card_models.py                      # field-omission behavior in output
 ```
@@ -799,3 +805,5 @@ row and Workflow 1; the gate snapshots go to `~/Documents/Tools/wt/scratch/head/
 2026-10-25 (clean, work/clean): diff_stats.py and inspect_pickle.py read db/ JSON only (the pickle sides and card_db's unpickler removed); the line-ref rewriters deleted; tests/test_diagnostics.py runs both scripts on db/ JSON.
 
 2026-11-05 (ring badges): the fork venv's pin is `cards-20261104` (1258fcbd).
+
+2026-11-09 (cardsdata r1-3): parse_one.py, gap_trace.py and parse_all_ns.py build the vocabulary with `card_check.clone_vocabulary` (they crashed on the `_icons_from_local` that 3bf99d74 deleted on 11-06) and need no config.py; gap_trace prints the Ability span step.

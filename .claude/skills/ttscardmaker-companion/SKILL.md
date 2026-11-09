@@ -324,7 +324,7 @@ Do this after any change to Types/ or Types/Stars/, or to aliases or tint modes:
 5. In TTSCardMaker, commit the PNG(s), `stoogedings.ttf` and `stoogedings.json` together (the script's docstring
    says to). After that, the bot side needs no code change. The parser reads the manifest from GitHub on each
    `/update_stats` (`_icons_from_response` via `_repo_text`, re-downloaded only when its blob changes; the offline
-   diagnostics scripts read the clone's copy with `_icons_from_local`). The next `/update_stats` uploads emojis for new icons
+   diagnostics scripts read the clone's copy with `card_check.clone_vocabulary`). The next `/update_stats` uploads emojis for new icons
    (so do startup and `/sync_emojis`).
 
 ### 1.5 How it is built, and the renderer facts behind the design
