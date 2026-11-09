@@ -234,6 +234,20 @@ out([title(146), title(208)]);""")
 
 
 @needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "titleLayout"), reason="no titleLayout in mockup.js")
+def test_title_keeps_its_size(tmp_path):
+    """A longer title stays at its size (psd_edit never shrinks one): point text on its lines, a box's wrapped at its
+    width and told past its line count; one off the card's side shifts back on (back_on), not one wider than the card."""
+    out = node(tmp_path, """
+const measure = (s, z) => s.length * z * 0.5, at = (x0, x1, n = 1) => ({ lines: Array.from({ length: n }, (_, i) => [x0, 20 + 50 * i, x1, 60 + 50 * i]), box: [x0, 20, x1, 10 + 50 * n] });
+const t = (text, n0, found) => { const r = m.titleLayout(m.tokenize(text), n0, found, 200, 20, measure, 1000); return [r.size, r.lines.length, r.over, Math.round(r.dx)]; };
+const long = "A much longer card name";
+out([t(long, 1, at(400, 600)), t(long, 1, at(420, 580, 2)), t(long + " that runs on and on and on", 1, at(420, 580, 2)),
+  t("Royal Eradicator", 2, at(420, 580, 2)), t("Royal\\nEradicator II", 1, at(400, 600)), t("A long name", 1, at(940, 990)), t("x".repeat(120), 1, at(400, 600))]);""")
+    assert out == [[20, 1, False, 0], [20, 2, False, 0], [20, 3, True, 0], [20, 1, False, 0], [20, 2, False, 0], [20, 1, False, -20], [20, 1, False, 0]]
+
+
+@needs_js
 @pytest.mark.skipif(not has(ASSETS / "edit.js", "capsError"), reason="no stat caps in edit.js")
 def test_stat_caps_refused_as_typed(tmp_path):
     """A card's own display (owner 2026-11-08): a value past it is told as typed (edit.js capsError, cards.json statCaps),
