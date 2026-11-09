@@ -103,7 +103,7 @@ def main() -> int:
         print(f"    at (x={bbox.x}, y={bbox.y}..{bbox.bottom}): {text!r}")
 
     sorted_abilities = parser._sort_by_position(abilities)
-    joined = "\n".join(text.strip("'\"\n") for text, _ in sorted_abilities)
+    joined = "\n".join(text.strip("\n") for text, _ in sorted_abilities)
     print("\n[3] joined ability text with gaps marked (3+ spaces = injection slots):")
     print(visualize_gaps(joined, parser._gap_pattern))
 

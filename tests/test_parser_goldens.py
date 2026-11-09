@@ -98,10 +98,10 @@ def test_one_line_label_beside_a_part():
     from commands.psd_analyzer import StatsDatabase
     from commands.psd_parser import BoundingBox, PSDParser
     p = PSDParser([], StatsDatabase())
-    texts = [("'Vek'nilash:\n'", BoundingBox(18, 1951)), ("'            Immune.\n(2CD) Hit.\n'", BoundingBox(231, 1958)),
-             ("'Vek'lor:\n'", BoundingBox(159, 2157)), ("'Attacks inflict 2T1 Enfeebled.\n'", BoundingBox(364, 2165))]
+    texts = [("Vek'nilash:\n", BoundingBox(18, 1951)), ("            Immune.\n(2CD) Hit.\n", BoundingBox(231, 1958)),
+             ("Vek'lor:\n", BoundingBox(159, 2157)), ("Attacks inflict 2T1 Enfeebled.\n", BoundingBox(364, 2165))]
     assert p._process_abilities(texts, [], 1200) == "Vek'nilash: Immune.\n(2CD) Hit.\nVek'lor: Attacks inflict 2T1 Enfeebled."
-    texts = [("'Vek'lor:'", BoundingBox(159, 2100)), ("'Hit.'", BoundingBox(364, 2165))]
+    texts = [("Vek'lor:", BoundingBox(159, 2100)), ("Hit.", BoundingBox(364, 2165))]
     assert p._process_abilities(texts, [], 1200) == "Vek'lor:\nHit."
 
 
@@ -122,26 +122,29 @@ def test_lowercase_part_continues_the_line():
     from commands.psd_analyzer import StatsDatabase
     from commands.psd_parser import BoundingBox, PSDParser
     p = PSDParser(["fire"], StatsDatabase())
-    texts = [("'Cannot attack.\n'", BoundingBox(357, 1780)), ("'\n\n \n \n\nWhen next to it, this counts as'", BoundingBox(52, 2248)),
-             ("'\n\n \n \n\n\nbeing in its slot.'", BoundingBox(72, 2326))]
+    texts = [("Cannot attack.\n", BoundingBox(357, 1780)), ("\n\n \n \n\nWhen next to it, this counts as", BoundingBox(52, 2248)),
+             ("\n\n \n \n\n\nbeing in its slot.", BoundingBox(72, 2326))]
     assert p._process_abilities(texts, [], 1200) == "Cannot attack.\nWhen next to it, this counts as being in its slot."
-    texts = [("'(1GCD) Assume a form:'", BoundingBox(19, 1762)), ("'\n    Fire: 5/5/8/7'", BoundingBox(121, 1901)),
-             ("'\n    \n    Earth: 5/8/6/5\n   '", BoundingBox(124, 1969))]
+    texts = [("(1GCD) Assume a form:", BoundingBox(19, 1762)), ("\n    Fire: 5/5/8/7", BoundingBox(121, 1901)),
+             ("\n    \n    Earth: 5/8/6/5\n   ", BoundingBox(124, 1969))]
     assert p._process_abilities(texts, [], 1200) == "(1GCD) Assume a form:\nFire: 5/5/8/7\nEarth: 5/8/6/5"
 
 
-def test_text_with_both_quotes_parses_without_backslash():
-    """str() of an engine string is its repr, which escapes ' as \\' when the text also holds a ": the parse unescapes it
-    (the old rule page 03 Setting Up's "they're")."""
+def test_text_keeps_its_quotes():
+    """The parse reads the text itself, not its repr: no \\' (the old rule page 03 Setting Up's "they're") and a quote
+    opening or closing the ability stays (Flip's "Invert", 11-09)."""
     from psd_tools.psd.engine_data import String
     from commands.psd_analyzer import CardInfo, StatsDatabase
     from commands.psd_parser import MutableValue, PSDParser
     layer = types.SimpleNamespace(name="Ability", engine_dict={"Editor": {"Text": String('They\'re "in" now\r')}}, resource_dict={},
                                   bbox=(0, 2000, 100, 2100), is_visible=lambda: True)
+    p, found = PSDParser([], StatsDatabase()), []
+    p._process_text_layer(layer, CardInfo(name="Card", card_type="item"), MutableValue(0), found, False, 1200)
+    assert p._process_abilities(found, [], 1200) == 'They\'re "in" now'
+    layer.engine_dict["Editor"]["Text"] = String('"Invert" a stat.\r')
     found = []
-    PSDParser([], StatsDatabase())._process_text_layer(layer, CardInfo(name="Card", card_type="item"), MutableValue(0), found,
-                                                       False, 1200)
-    assert found[0][0].strip("'\"\n") == 'They\'re "in" now' and "\\" not in found[0][0]
+    p._process_text_layer(layer, CardInfo(name="Card", card_type="item"), MutableValue(0), found, False, 1200)
+    assert p._process_abilities(found, [], 1200) == '"Invert" a stat.'
 
 
 def test_header_font_icons_give_an_aux_items_type():

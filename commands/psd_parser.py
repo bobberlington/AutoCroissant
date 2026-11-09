@@ -1056,7 +1056,6 @@ class PSDParser:
         self._flag_misplaced_tokens(engine_text.value, icon_spans, card)
         if icon_spans:
             text, icons = self._read_icon_tokens(engine_text.value, icon_spans, card)
-            layer_text = repr(text)  # str() of the engine string is its repr, so the cleanup below is unchanged
             if not is_ability and not title and layer.is_visible() and layer.bbox[1] < card_mid_y:
                 for name, kind in icons:
                     if kind == "type":
@@ -1066,15 +1065,8 @@ class PSDParser:
                     elif kind == "star" and get_stars_from_psd:
                         num_stars.value += 1
         else:
-            layer_text = str(engine_text)
-        layer_text = (layer_text
-            .replace('\\r', '\n')
-            .replace('\\n', '\n')
-            .replace('\\t', ' ')
-            .replace('\\x03', '\n')
-            .replace('\\ufeff', '')
-            .replace("\\'", "'")     # repr's escape when the text holds both quotes
-            .rstrip())
+            text = engine_text.value
+        layer_text = text.replace('\r', '\n').replace('\t', ' ').replace('\x03', '\n').replace('\ufeff', '')
 
         if is_ability:
             abilities.append((layer_text, BoundingBox(layer.bbox[0], layer.bbox[1], layer.bbox[3])))
@@ -1492,11 +1484,11 @@ class PSDParser:
         if ability_text:
             type_bboxes = self._prune_type_bboxes(self._sort_by_position(type_bboxes), card_mid_y)
             type_bboxes = self._in_span(type_bboxes, [bbox for _, bbox in abilities])
-            ability_text = self._inject_type_names(ability_text.rstrip(' \'"'), type_bboxes)
+            ability_text = self._inject_type_names(ability_text.rstrip(' '), type_bboxes)
             ability_text = sub(r'(?m)^[^\S\n]{3,}(?=\S)', '', ability_text)     # a line's unfilled gap: layout padding
             ability_text = sub(r'(?m)^[^\S\n]+\n', '', ability_text)        # a line of blanks: padding too
             ability_text = sub(r'\s+([:;,\.\?!])', r'\1', ability_text)
-        return ability_text.strip(' \'"\n')
+        return ability_text.strip(' \n')
 
     @staticmethod
     def _labels(rows: list[list[tuple[str, BoundingBox]]]) -> list[str]:
@@ -1507,9 +1499,9 @@ class PSDParser:
         texts: list[str] = []
         for row in rows:
             for n, (text, _) in enumerate(row):
-                last = texts[len(texts) - 1].strip(' \'"\n') if n else ""
+                last = texts[len(texts) - 1].strip(' \n') if n else ""
                 if last and '\n' not in last:
-                    texts[len(texts) - 1] = last + ' ' + text.strip('\'"\n').lstrip()
+                    texts[len(texts) - 1] = last + ' ' + text.strip('\n').lstrip()
                 else:
                     texts.append(text)
         return texts
@@ -1520,9 +1512,9 @@ class PSDParser:
         Ability layers' texts, one per line. A layer starting in lowercase continues the line before it: the layers lay
         one text out again line by line (Bulborb Larva), each read without its padding.
         """
-        if not any(text.strip(' \'"\n')[:1].islower() for text in texts[1:]):
-            return '\n'.join(text.strip('\'"\n') for text in texts)
-        parts = [text.strip(' \'"\n') for text in texts]
+        if not any(text.strip(' \n')[:1].islower() for text in texts[1:]):
+            return '\n'.join(text.strip('\n') for text in texts)
+        parts = [text.strip(' \n') for text in texts]
         return parts[0] + ''.join((' ' if part[:1].islower() else '\n') + part for part in parts[1:])
 
     def _process_stats(self, card: CardInfo, stat_trackers: StatTrackers) -> None:
