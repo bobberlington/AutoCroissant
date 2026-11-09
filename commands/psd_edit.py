@@ -314,7 +314,7 @@ class Edit:
     records: list           # their layer record indices (gate bytes)
     region: Optional[tuple]  # padded canvas bbox the edit can reach
     moves: list = field(default_factory=list)   # (record from, record to or None, block key): effect blocks moved or cleared
-    hidden: list = field(default_factory=list)  # record indices of the overlay word layers an ability edit hid
+    hidden: list = field(default_factory=list)  # record indices of the overlay word layers or clipped layers hidden
     fx: list = field(default_factory=list)      # (name, {block key: bytes}) per FX layer made above its group, bottom to top
     dropped: list = field(default_factory=list)  # names of the FX layers deleted (their words left the text)
     rebuilt: list = field(default_factory=list)  # (record index, old name, name): an FX layer cut again in place, its own
@@ -6043,14 +6043,34 @@ def _hiding(node) -> list:
             if isinstance(effect, cls) and effect.enabled and float(effect.opacity) >= 100 and effect.blend_mode == BlendMode.NORMAL]
 
 
+def _opaque(one) -> bool:
+    """A layer that hides what it is clipped onto: Normal, opaque (Paint Bomb's at 73% does not)."""
+    return one.blend_mode == BlendMode.NORMAL and one.opacity >= 250 and getattr(one, "fill_opacity", 255) >= 250
+
+
+def _clipped_over(layer) -> list:
+    """The shown layers clipped onto a text layer when one of them hides its letters (_opaque: the Totems' fire,
+    Paintbrush's rainbow), else []."""
+    chain = [one for one in _clip_chain(layer) if one.visible]
+    return chain if any(map(_opaque, chain)) else []
+
+
+def _clip_text(chain: list) -> str:
+    return f"clipped layer {next(one for one in chain if _opaque(one)).name!r}"
+
+
 def _painted_over(layer, own: bool = True) -> Optional[str]:
     """What hides a text layer's own colours, its own or a group's: an opaque Normal Color, Gradient or Pattern Overlay
-    ("its Gradient Overlay"), or a fill at 0; None when they show. own False: not its own overlays (_overlay_off's)."""
+    ("its Gradient Overlay"), a layer clipped onto it, or a fill at 0; None when they show. own False: not its own
+    overlays or clipped layers (_overlay_off's)."""
     node = layer
     while node is not None and getattr(node, "kind", "psdimage") != "psdimage":
         whose = "its" if node is layer else f"its group {node.name!r}'s"
         if node is layer and getattr(node, "fill_opacity", 255) == 0:
             return f"{whose} fill at 0%"
+        clipped = _clipped_over(layer) if node is layer and own else []
+        if clipped:
+            return f"its {_clip_text(clipped)}"
         hiding = _hiding(node) if own or node is not layer else []
         if hiding:
             return f"{whose} {hiding[0][1]}"
@@ -6067,7 +6087,7 @@ def _solid_overlay(layer) -> Optional[tuple]:
     overlays = [e for e in (effects if effects.enabled else ()) if e.enabled and isinstance(e, (ColorOverlay, GradientOverlay, PatternOverlay))]
     hiding = _hiding(layer)
     if len(overlays) != 1 or len(hiding) != 1 or hiding[0][1] != "Color Overlay" or _painted_over(layer, own=False) \
-            or getattr(layer, "fill_opacity", 255) < 255:
+            or getattr(layer, "fill_opacity", 255) < 255 or _clipped_over(layer):
         return None
     text, salted = layer.text, _salted(layer)
     if any(icon and i not in salted and not text[i].isspace() for i, icon in enumerate(_char_styles(layer)[1])):
@@ -6086,20 +6106,23 @@ def _salted(layer) -> set:
 
 
 def _unveils(layer) -> bool:
-    """Whether turning the layer's own overlays off shows its colours (nothing else hides them)."""
-    return bool(_hiding(layer)) and _painted_over(layer, own=False) is None
+    """Whether turning the layer's own overlays off and hiding its clipped layers shows its colours (nothing else hides
+    them)."""
+    return bool(_hiding(layer) or _clipped_over(layer)) and _painted_over(layer, own=False) is None
 
 
 def _overlay_off(layer) -> str:
     """A whole field's colour (owner 2026-10-24: no refusing), or a phrase's under _solid_overlay: its own overlays off
-    when that shows it; the first's kind, or ""."""
+    when that shows it, the layers clipped onto it hidden (Edit.hidden); the first's kind, or ""."""
     if not _unveils(layer):
         return ""
-    hiding = _hiding(layer)
+    hiding, clipped = _hiding(layer), _clipped_over(layer)
     for effect, _ in hiding:
         effect.descriptor[b"enab"] = Bool(False)
+    for one in clipped:
+        one.visible = False
     layer._psd.mark_updated()
-    return hiding[0][1]
+    return hiding[0][1] if hiding else _clip_text(clipped)
 
 
 def color_spans(layers: list, one: dict) -> tuple:
@@ -6166,9 +6189,9 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
     ({field: its new text}): found in that text, baked (the bake finds it again once the text is set) unless an overlay
     paints over the layers it lands in (boxes: the parts job's {str(layer id): new text}). The note's
     colours are the website's alone: left out. chart: status_fills(); the Ability's capitalised status words keep its
-    colours (a phrase of them alone refused). A whole field's colour turns its layers' own overlays off (set_colors),
-    as a phrase's does a lone Color Overlay (_solid_overlay): not refused for them, nor its phrases after it, and baked
-    even in the colour it has.
+    colours (a phrase of them alone refused). A whole field's colour turns its layers' own overlays off and hides the
+    layers clipped onto them (set_colors), as a phrase's does a lone Color Overlay (_solid_overlay): not refused for
+    them, nor its phrases after it, and baked even in the colour it has.
     """
     out, overlays, final, painted, lit, unveil = {}, None, {}, {}, set(), set()
     ordered = color_order([one for one in value if one.get("field") in COLOR_PRINTED])
@@ -6293,7 +6316,7 @@ def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart
     from psd_tools.composite.text import MissingFontError
     if not story_sync():
         raise ImportError("this psd-tools fork's set_text leaves the Txt2 story stale (no TypeLayer.sync_story)")
-    jobs, notes = {}, []
+    jobs, notes, hidden = {}, [], []
     for one in color_order(value):
         spans, why = color_spans(color_layers(psd, one["field"], card), one)
         if why:
@@ -6307,7 +6330,9 @@ def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart
         fx, paint, status = _fx_words(psd, layer), {}, _status_kept(layer, which, chart)
         whole = any(not one.get("phrase") for _, _, one in spans)
         base = None if whole else _solid_overlay(layer)
+        clipped = _clipped_over(layer)
         off = _overlay_off(layer) if whole or base else ""
+        hidden += [_record_index(one) for one in clipped if not one.visible]       # _overlay_off hid them
         salted = _salted(layer) if off else set()       # its badges, coloured as the overlay did
         todo = ([(0, len(layer.text), None)] if base and off else []) + spans
         kept = sorted({name for a, b, _ in spans for s, e, name in fx if s < b and a < e})
@@ -6339,7 +6364,7 @@ def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart
     if not layers:
         return Edit("colors", value, value, [], [], None)
     return Edit("colors", value, value, layers, records, union_box(boxes), story=stories[0], stories=stories[1:],
-                band=union_box([tuple(layer.bbox) for layer in layers]), notes=notes)
+                band=union_box([tuple(layer.bbox) for layer in layers]), notes=notes, hidden=hidden)
 
 
 # ========================
