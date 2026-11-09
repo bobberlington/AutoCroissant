@@ -1150,6 +1150,7 @@ def test_workflow_shape(clone):
                               "comment": "${{ steps.comment.outputs.id }}", "told": "${{ steps.comment.outputs.told }}",
                               "land": "${{ steps.plan.outputs.land }}", "card_errors": "${{ steps.plan.outputs.card_errors }}",
                               "fixes": "${{ steps.plan.outputs.fixes }}", "early": "${{ steps.early.outputs.started }}",
+                              "early_run": "${{ steps.early.outputs.run }}",
                               "land_ran": "${{ steps.land.outputs.ran }}", "land_sha": "${{ steps.land.outputs.sha }}",
                               "land_already": "${{ steps.land.outputs.already }}"}
     assert post["outputs"] == {"posted": "${{ steps.tell.outputs.posted }}"}
@@ -1190,10 +1191,13 @@ def test_workflow_shape(clone):
     take = post["steps"][1]
     assert take["uses"].startswith("actions/download-artifact@") and take["with"] == {"name": "card-guards", "path": "${{ runner.temp }}/guards"}
     assert post_names == ["Work dir", None, "Told before", "Follow up", "Tell Discord"]
-    early = steps_by_name["Start Card sync"]                # with fixes, Card sync sets up while the guards land (its lanes wait for Landed)
-    assert early["if"] == "${{ !cancelled() && steps.plan.outputs.fixes == 'true' }}" and early["continue-on-error"] is True
-    assert '-f "guards=$GITHUB_RUN_ID"' in early["run"] and SYNC in early["run"].replace('"', "") and early["env"]["GH_REPO"]
+    early = steps_by_name["Start Card sync"]    # with fixes and no Normalise, Card sync sets up while the guards land (its lanes wait for Landed)
+    assert early["if"] == "${{ !cancelled() && steps.plan.outputs.fixes == 'true' && steps.plan.outputs.normalise == 0 }}"
+    assert early["continue-on-error"] is True and early["env"]["GH_REPO"] and "-F return_run_details=true" in early["run"]
+    assert '-f "inputs[guards]=$GITHUB_RUN_ID"' in early["run"] and "card-sync.yml/dispatches" in early["run"]
+    assert all(f'-f "inputs[{k}]={v}"' in early["run"] for k, v in (("dry_run", "false"), ("bake", "pending")))   # as SYNC's
     assert steps_by_name["Follow up"]["env"]["EARLY"] == "${{ needs.check.outputs.early }}"
+    assert steps_by_name["Follow up"]["env"]["EARLY_RUN"] == "${{ needs.check.outputs.early_run }}"
     assert [s.get("name") for s in finish["steps"] if s.get("name")] == ["Fail on card errors", "Tell Discord the run failed"]
     steps = steps_by_name
     tell = steps["Tell Discord"]
@@ -1566,10 +1570,18 @@ def test_workflow_land_and_a_rerun_after_a_landing(clone, tmp_path):
         log = [c for c in json.loads(state.read_text())["log"] if c.startswith("workflow run")]
         assert done.returncode == 0 and log == ([SYNC] if started else []), \
             (mode, attempt, sha, already, fixes, log)
-    state.write_text(json.dumps({"comments": {}, "next": 101, "log": []}))     # Start Card sync did: none again
-    done, _ = _shell(steps["Follow up"], {**env, "MODE": "on", "GITHUB_RUN_ATTEMPT": "1", "SHA": "c" * 40, "ALREADY": "", "COMMENT": "",
-                                          "TOLD_BEFORE": "", "FIXES": "true", "LAND_RAN": "true", "EARLY": "true"})
-    assert done.returncode == 0 and not [c for c in json.loads(state.read_text())["log"] if c.startswith("workflow run")]
+    lane = lambda name, conclusion=None: {"name": name, "status": "completed" if conclusion else "queued", "conclusion": conclusion}  # noqa: E731
+    for run, jobs, again in (("5", [lane("Card data"), lane("Bake and save")], False),     # Start Card sync did: none again
+                             ("5", [lane("Card data", "success"), lane("Bake and save", "cancelled")], True),   # a newer run took its place
+                             ("5", [lane("Card data", "cancelled"), lane("Bake and save")], True),
+                             ("", [], True)):                                             # no run id: one more
+        state.write_text(json.dumps({"comments": {}, "next": 101, "log": []}))
+        done, _ = _shell(steps["Follow up"], {**env, "MODE": "on", "GITHUB_RUN_ATTEMPT": "1", "SHA": "c" * 40, "ALREADY": "", "COMMENT": "",
+                                              "TOLD_BEFORE": "", "FIXES": "true", "LAND_RAN": "true", "EARLY": "true", "EARLY_RUN": run,
+                                              "FAKE_JOBS": json.dumps({"jobs": jobs})})
+        log = json.loads(state.read_text())["log"]
+        assert done.returncode == 0 and [c for c in log if c.startswith("workflow run")] == ([SYNC] if again else []), (run, jobs, log)
+        assert any(c.startswith(f"api repos/o/cards/actions/runs/{run}/jobs") for c in log) is bool(run)
 
 
 def test_land_commits_only_an_on_plan(tmp_path, capsys):
