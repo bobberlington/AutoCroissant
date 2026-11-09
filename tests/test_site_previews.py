@@ -188,6 +188,24 @@ out([at(a, 5), at(a, 14), at(a, 10), at(b, 14), at(b, 10)]);""")
 
 
 @needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "paintLit"), reason="no paintLit in mockup.js")
+def test_stat_from_0_lit_from_other_rows(tmp_path):
+    """DEF 0 -> 5 between HP 1 and ATK 4: each cell copied from the nearest row lit there (HP's rounded end into cell 0),
+    else HP's rounded end's flat right half; borders and the cells past 5 untouched."""
+    out = node(tmp_path, """
+const W = 120, H = 60, rows = [0, 1, 2].map(i => ({ box: [10, 2 + 20 * i, 110, 18 + 20 * i], cells: 10 })), d = new Uint8ClampedArray(W * H * 4);
+for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const r = Math.floor(y / 20), c = Math.floor((x - 10) / 10);
+  const edge = x < 10 || x >= 110 || y % 20 < 3 || y % 20 >= 17 || x % 10 === 0 || x % 10 === 9;
+  const v = edge ? [0, 0, 0] : r === 0 && c === 0 ? [x % 10 < 5 ? 150 : 200, 0, 0] : r === 2 && c < 4 ? [0, 60, 0] : [40, 40, 40];   // HP's rounded end, ATK lit to 4
+  d.set([...v, 255], (y * W + x) * 4); }
+m.paintLit(d, W, H, rows[1], [{ row: rows[0], v: 1 }, { row: rows[2], v: 4 }], 5);
+const at = x => [d[(30 * W + x) * 4], d[(30 * W + x) * 4 + 1]];
+out([Array.from({ length: 10 }, (_, c) => [...at(12 + 10 * c), at(17 + 10 * c)[0]]), at(20)]);""")
+    cells, border = out
+    assert cells == [[150, 0, 200]] + [[0, 60, 0]] * 3 + [[200, 0, 200]] + [[40, 40, 40]] * 5 and border == [0, 0]
+
+
+@needs_js
 @pytest.mark.skipif(not has(MOCKUP_JS, "wide: true"), reason="no wide-font titles in mockup.js")
 def test_wide_font_title(tmp_path):
     """A one-line title 2.3 times as wide as its height says (a wide font) is found on the second pass, not boxed; at 3.3
