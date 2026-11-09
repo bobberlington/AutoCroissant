@@ -58,8 +58,8 @@ def records(clone, index):
 # ========================
 def test_record_shape_and_size(records, clone):
     for rel, record in records.items():
-        assert tuple(k for k in record if k != "creature_bars") == KEYS and record["path"] == rel and record["name"] == _name(rel) \
-            and record["parser"] == pd.PARSER_VERSION
+        assert tuple(k for k in record if k not in ("creature_bars", "stat_caps")) == KEYS and record["path"] == rel \
+            and record["name"] == _name(rel) and record["parser"] == pd.PARSER_VERSION
         assert record.get("creature_bars") == ({"count": 2, "shared": []} if rel == LAZARUS else None)   # a row per creature
         assert not any(isinstance(v, str) and v.startswith("error") for v in record.values())
         assert record["canvas"] == {"w": 1200, "h": 2400, "mode": "RGB", "depth": 8, "icc": "Display"}
@@ -75,6 +75,9 @@ def test_record_shape_and_size(records, clone):
         assert all(len(e) == (4 if e[1] == "group" else 3) and isinstance(e[2], bool) for e in record["tree"])
     assert _size(records[DOOMER]) < 10_000 and _size(records[CANNON]) < 10_000     # parts: ~1.5 KB more
     assert _size(records[LAZARUS]) < 20_000                                         # 234 layers, 93 with effects
+    caps = {rel: record.get("stat_caps") for rel, record in records.items()}     # VERSION 4: own displays (old rows then)
+    assert caps[LAZARUS] == dict.fromkeys(("hp", "def", "atk", "spd"), [10, 10]) and caps[VIRUS] is None
+    assert caps[CANNON] == {"hp": [10], "def": [10], "atk": [20], "spd": [10]}                  # Top and Bottom rows: 20
 
 
 def test_effects_switch_off_marks_every_effect_off(clone):

@@ -168,9 +168,10 @@ def test_a_stat_edit_bakes_the_bakes_pixels(cards, tmp_path, monkeypatch):
 
 
 def test_a_refused_edit_writes_its_reason_and_no_image(cards, tmp_path):
-    """Refused; the edit echoed exactly as sent (a cleared stat's null too: the site compares it)."""
+    """Refused (old digit rows: past 10, owner 2026-11-08); the edit echoed exactly as sent (a cleared stat's null too: the
+    site compares it)."""
     code, result, out = _preview(cards, tmp_path, {"hp": 25, "def": None})
-    assert code == 0 and (result["state"], result["reason"]) == ("refused", "website only: hp 25: the bar's rows print up to 20")
+    assert code == 0 and (result["state"], result["reason"]) == ("refused", "unsupported-card: hp 25: its bars show up to 10")
     assert result["edit"] == {"hp": 25, "def": None}
     assert result["fields"] == {"hp": "refused"} and result["image"] is None and result["files"] == {}
     assert not (out / cp.PNG).exists() and not (out / cp.WEBP).exists() and not (out / cp.BEFORE).exists()

@@ -2116,13 +2116,14 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
     card = parsed["card"]
     out = Classification()
     derived = _classify_parts(out, parsed, edits, psd, parser)
+    caps = stat_caps(psd) if psd is not None and any(edits.get(k) is not None for k in (*STAT_FIELDS, "creatures")) else None
     for name, value in edits.items():
         if name in ("parts", "colors") or name in derived:
             continue
         if KIND.get(name, "database") != "psd" or value is None or (name == "creatures" and psd is None):
             out.other.append(name)
         elif name == "creatures":
-            _classify_creatures(out, card, value, {k: edits[k] for k in STAT_FIELDS if edits.get(k) is not None}, psd)
+            _classify_creatures(out, card, value, {k: edits[k] for k in STAT_FIELDS if edits.get(k) is not None}, psd, caps)
         elif name in ICON_FIELDS:
             if card.get(name) == value or (name == "types" and same_types(parser, card.get("types"), value)):
                 out.redundant.append(name)
@@ -2150,6 +2151,8 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
             top = comp_top(psd, name)
             if card.get(name) == value:
                 out.redundant.append(name)
+            elif caps and value > caps[name][0]:    # its own display: refused, never website only (owner 2026-11-08)
+                out.refusals.append(Refusal("unsupported-card", cap_why(name, value, caps[name][0]), name))
             elif top is not None:               # what its layer comps show (0-20, raid boss 0-40)
                 if value > top:
                     out.site[name] = f"{name} {value}: the bar's layer comps show up to {top}"
@@ -2211,23 +2214,32 @@ def _classify_colors(out: Classification, parsed: dict, edits: dict, psd: Option
                      for one, how in out.colors if how not in ("baked", "redundant")]
 
 
-def _classify_creatures(out: Classification, card: dict, wanted: list, stats: dict, psd: PSDImage) -> None:
+def _classify_creatures(out: Classification, card: dict, wanted: list, stats: dict, psd: PSDImage,
+                        caps: Optional[dict] = None) -> None:
     """
     classify()'s `creatures`: what the list changes on the card's bars, as the job [{stat: value} per creature]: a
     layer-comp bar per creature, or digit rows per creature (several_rows: each creature's own, creature_bar). A shared
-    bar has one value, and every creature on it takes the one asked. What the bars can't print is website only.
+    bar has one value, and every creature on it takes the one asked. What the bars can't print is website only, but
+    past a card's own display (caps: stat_caps) refused.
 
     Args:
         card: The parse's card
         wanted: The entry's list
         stats: The entry's stat fields: creature 1's, over the list (CardEdits.apply), their own jobs
         psd: The open card
+        caps: stat_caps(psd)
     """
     printed = card.get("creatures") or []
     comps = any(comp_creature(bar[0]) for bars in comp_bars(psd).values() for bar in bars)
     if len(wanted) != len(printed) or not (comps or several_rows(psd)):
         out.site["creatures"] = "creatures: each creature's stats print only on a bar per creature"
         return
+    for n, one in enumerate(wanted):
+        for stat in STAT_FIELDS if caps else ():
+            value, cap = one.get(stat), caps[stat][n] if n < len(caps[stat]) else STAT_MAX
+            if not (n == 0 and stat in stats) and isinstance(value, int) and value != printed[n].get(stat) and value > cap:
+                out.refusals.append(Refusal("unsupported-card", f"creatures: {cap_why(stat, value, cap, n + 1)}", "creatures"))
+                return
     job = [{} for _ in printed]
     for stat in STAT_FIELDS:
         bars = [creature_bar(psd, stat, n + 1) for n in range(len(printed))]
@@ -3095,6 +3107,67 @@ def several_rows(psd: PSDImage) -> bool:
     """A card the parser reads as several creatures off its digit rows (_still_creatures): Pix's rows "1" to "3", Tainted
     Lazarus's blocks; not Sonic's two SPD rows."""
     return _still_creatures(psd, None)
+
+
+ART_FILL = 0.9              # bar art filling less of its box is separate icons (the template's fills 0.977)
+
+
+def art_fill(psd: PSDImage, box: tuple) -> Optional[float]:
+    """The share of a bar's box the visible art under its Bars group fills; None without such art."""
+    groups = [g for g in psd.descendants() if g.is_group() and g.name.strip() == "Bars"] \
+        or [g for g in psd.descendants() if g.is_group() and "bar" in g.name.lower()]
+    x0, y0, x1, y1 = box
+    mask = np.zeros((max(1, y1 - y0), max(1, x1 - x0)), bool)
+    for layer in groups[0].descendants() if groups else ():
+        if layer.is_group() or not layer.is_visible() or layer.bbox[3] <= y0 or layer.bbox[1] >= y1 \
+                or layer.bbox[2] <= x0 or layer.bbox[0] >= x1:
+            continue
+        image = layer.topil() if layer.kind in ("pixel", "smartobject") else None
+        if image is None:
+            return 1.0                          # a shape or a fill: whole
+        alpha = np.asarray(image.convert("RGBA"))[..., 3] > 128
+        lx, ly = layer.bbox[0], layer.bbox[1]
+        ax0, ay0, ax1, ay1 = max(x0, lx), max(y0, ly), min(x1, lx + alpha.shape[1]), min(y1, ly + alpha.shape[0])
+        if ax1 > ax0 and ay1 > ay0:
+            mask[ay0 - y0:ay1 - y0, ax0 - x0:ax1 - x0] |= alpha[ay0 - ly:ay1 - ly, ax0 - lx:ax1 - lx]
+    return float(mask.mean()) if mask.any() else None
+
+
+def stat_caps(psd: PSDImage) -> Optional[dict]:
+    """
+    {stat: [the most each creature's display shows]} on a card whose stats are not on the template's layer-comp bars
+    (separate icons, pictures, own shapes, digit rows): 10, less where a counted row has room for fewer, 20 on Top and
+    Bottom rows (owner 2026-11-08: more is refused when typed); None on the template's bars, an item's rows or no bars.
+    """
+    comps = comp_bars(psd)
+    if any(comps.values()):
+        fills = [art_fill(psd, tuple(box)) for bars in comps.values() for _, _, box in bars]
+        if not any(fill is not None and fill < ART_FILL for fill in fills):
+            return None
+        count = max((comp_creature(bar[0]) for bars in comps.values() for bar in bars), default=0) or 1
+        return {stat: [STAT_MAX] * count for stat in STAT_FIELDS}
+    rows = stat_rows(psd)
+    if not all(rows.values()):
+        return None
+    count = max((n for found in rows.values() for n in creature_of(found).values()), default=1) if several_rows(psd) else 1
+    count = max(count, 1)
+    out = {}
+    for stat in STAT_FIELDS:
+        out[stat] = []
+        for n in range(1, count + 1):
+            found = bar_rows(psd, stat, n)[0]
+            room = count_room(psd, found[0][0]) if len(found) == 1 else None
+            top = 2 * STAT_MAX if count == 1 and _two_rows({}, psd, stat) else STAT_MAX
+            out[stat].append(top if room is None else min(top, room))
+    return out
+
+
+def cap_why(stat: str, value: int, cap: int, creature: int = 0) -> str:
+    """A stat past stat_caps' cap, in words (the bake's refusal; the website says the same)."""
+    whose = f"creature {creature}'s" if creature else "its"
+    if cap >= STAT_MAX:
+        return f"{stat} {value}: {whose} bars show up to {cap}"
+    return f"{stat} {value}: {whose} {stat.upper()} row has room for {cap} pictures"
 
 
 def _held_template(psd: PSDImage, stat: str, rows: list, refused: Refused) -> Refused:
@@ -4478,6 +4551,28 @@ def _count_room(group, by: dict) -> tuple:
     return pitch, max(layer.bbox[2] for found in alike for layer in found.values())
 
 
+def _count_box(by: dict, k: int, pitch: float) -> tuple:
+    """(dx, box) of picture k copied from a counted row's last one along its pitch."""
+    last = by[max(by)]
+    dx = round(by[1].bbox[0] + (k - 1) * pitch - last.bbox[0])
+    return dx, (last.bbox[0] + dx, last.bbox[1], last.bbox[2] + dx, last.bbox[3])
+
+
+def count_room(psd: PSDImage, group) -> Optional[int]:
+    """The most pictures a counted row shows (plan_count's reach, up to 20); None for no counted row."""
+    by = counted_row(group)
+    if by is None:
+        return None
+    room = max(by)
+    pitch, edge = _count_room(group, by)
+    while pitch is not None and room < 2 * STAT_MAX:
+        _, box = _count_box(by, room + 1, pitch)
+        if box[2] > edge + 1 or clip(box, psd.width, psd.height) != box:
+            break
+        room += 1
+    return room
+
+
 def plan_count(psd: PSDImage, group, stat: str, old: int, value: int) -> Optional[BarPlan]:
     """
     A stat drawn as pictures counted, no empty cells (Computer Virus's squares): a counted_row whose pictures 1..old
@@ -4495,15 +4590,15 @@ def plan_count(psd: PSDImage, group, stat: str, old: int, value: int) -> Optiona
     plan.hide = [by[k] for k in range(value + 1, old + 1)]
     plan.show = [by[k] for k in range(old + 1, value + 1) if k in by]
     last = max(by)
-    pitch, edge = _count_room(group, by) if value > last else (None, None)
+    pitch = _count_room(group, by)[0] if value > last else None
     if value > last and pitch is None:
         raise Refused("unsupported-card", f"{stat} {value}: {group.name!r} has one picture, no step to place more by")
+    room = count_room(psd, group)
+    if value > room:
+        raise Refused("unsupported-card", f"{stat} {value}: {group.name!r} has room for {room} pictures (add hidden "
+                                          "ones where more go)")
     for n, k in enumerate(range(last + 1, value + 1)):
-        dx = round(by[1].bbox[0] + (k - 1) * pitch - by[last].bbox[0])
-        box = (by[last].bbox[0] + dx, by[last].bbox[1], by[last].bbox[2] + dx, by[last].bbox[3])
-        if box[2] > edge + 1 or clip(box, psd.width, psd.height) != box:
-            raise Refused("unsupported-card", f"{stat} {value}: {group.name!r} has room for {k - 1} pictures (add hidden "
-                                              "ones where more go)")
+        dx, box = _count_box(by, k, pitch)
         plan.copies.append((by[last], group, len(by) + n, dx, 0, str(k)))
         plan.box = union_box([plan.box, box])
     if plan.copies:
@@ -11244,6 +11339,7 @@ __all__ = [
     'STAT_FIELDS',
     'SAME_RUN',
     'STAT_MAX',
+    'ART_FILL',
     'STYLE_KEYS',
     'StatusColor',
     'TEXT_BLENDS',
@@ -11276,6 +11372,9 @@ __all__ = [
     'changed_region',
     'classify',
     'comp_top',
+    'count_room',
+    'art_fill',
+    'cap_why',
     'covered_ink',
     'crop_pair',
     'ink_beyond',
@@ -11378,6 +11477,7 @@ __all__ = [
     'creature_bar',
     'creature_stats',
     'several_rows',
+    'stat_caps',
     'set_stat',
     'stale_stories',
     'stat_value',

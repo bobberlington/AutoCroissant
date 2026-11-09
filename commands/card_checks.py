@@ -78,7 +78,6 @@ STEP_CLEAR = 1.8                            # a step reads when it beats every o
 STEP_NEAR = 0.6                             # an edge this close to the strongest could be the value too
 HALF_ROW = 0.4                              # a step in the bottom half alone: the top half shows under this share of it
 LIT_GAP = 10.0                              # lit and empty cells this far apart (L) tell a flat row's state
-ART_FILL = 0.9                              # bar art filling less of its box is separate icons (the template's fills 0.977)
 PIXEL_MOVED = 24                            # a pixel counts as changed past this many levels (the census's)
 # the edits
 MAX_STARS = 7                               # the census's: a star added up to here
@@ -284,27 +283,6 @@ def mismatches(record: dict, data: dict, site=()) -> list:
 # ========================
 # The bars' style
 # ========================
-def _art_fill(psd: PSDImage, box: tuple) -> Optional[float]:
-    """The share of a bar's box the visible art under its Bars group fills; None without such art."""
-    groups = [g for g in psd.descendants() if g.is_group() and g.name.strip() == "Bars"] \
-        or [g for g in psd.descendants() if g.is_group() and "bar" in g.name.lower()]
-    x0, y0, x1, y1 = box
-    mask = np.zeros((max(1, y1 - y0), max(1, x1 - x0)), bool)
-    for layer in groups[0].descendants() if groups else ():
-        if layer.is_group() or not layer.is_visible() or layer.bbox[3] <= y0 or layer.bbox[1] >= y1 \
-                or layer.bbox[2] <= x0 or layer.bbox[0] >= x1:
-            continue
-        image = layer.topil() if layer.kind in ("pixel", "smartobject") else None
-        if image is None:
-            return 1.0                          # a shape or a fill: whole
-        alpha = np.asarray(image.convert("RGBA"))[..., 3] > 128
-        lx, ly = layer.bbox[0], layer.bbox[1]
-        ax0, ay0, ax1, ay1 = max(x0, lx), max(y0, ly), min(x1, lx + alpha.shape[1]), min(y1, ly + alpha.shape[0])
-        if ax1 > ax0 and ay1 > ay0:
-            mask[ay0 - y0:ay1 - y0, ax0 - x0:ax1 - x0] |= alpha[ay0 - ly:ay1 - ly, ax0 - lx:ax1 - lx]
-    return float(mask.mean()) if mask.any() else None
-
-
 def _digits(rows: dict) -> list:
     """Every digit layer of the rows."""
     return [layer for found in rows.values() for group, _, _ in found for layer in group
@@ -326,8 +304,8 @@ def bar_style(psd: PSDImage, creatures: Optional[list]) -> tuple:
     """
     comps = comp_bars(psd)
     if any(comps.values()):
-        fills = [_art_fill(psd, tuple(box)) for bars in comps.values() for _, _, box in bars]
-        return ("custom", "icons") if any(fill is not None and fill < ART_FILL for fill in fills) else ("new", "")
+        fills = [psd_edit.art_fill(psd, tuple(box)) for bars in comps.values() for _, _, box in bars]
+        return ("custom", "icons") if any(fill is not None and fill < psd_edit.ART_FILL for fill in fills) else ("new", "")
     rows = stat_rows(psd)
     if not any(rows.values()):
         return "", ""
@@ -454,11 +432,13 @@ def _stat_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str,
     if any(one.is_visible() and one.exposure > 0 for one in exposures) and any(not one.is_visible() and one.exposure < 0 for one in exposures):
         return [BRIGHT_NOTE]
     png = np.asarray(image.convert("RGB"), np.int16) if image is not None else None
-    down, up = (lambda value: value - 1 if value > 0 else value + 1), (lambda value: value + 1 if value < 10 else value - 1)
+    caps = psd_edit.stat_caps(psd) or {}        # a raise past a display's room is refused when typed: never a note
+    cap = lambda stat, n=1: caps[stat][n - 1] if caps and n <= len(caps[stat]) else psd_edit.STAT_MAX
+    down, up = (lambda value, top: value - 1 if value > 0 else value + 1), (lambda value, top: value + 1 if value < top else value - 1)
     for what, step in (("edits", down), ("raises", up)):
-        fields = {stat: step(value) for stat, value in have.items()}
+        fields = {stat: step(value, cap(stat)) for stat, value in have.items()}
         if own:                                 # creature 1's and the shared bars as fields, the others' own a step too
-            fields["creatures"] = [{stat: fields[stat] if (n, stat) not in own else step(one[stat])
+            fields["creatures"] = [{stat: fields[stat] if (n, stat) not in own else step(one[stat], cap(stat, n))
                                     if isinstance(one.get(stat), int) and one[stat] >= 0 else one.get(stat)
                                     for stat in STAT_ORDER} for n, one in enumerate(creatures, 1)]
         state, reason, moved = _real_bake(ctx, rel, fields, png)

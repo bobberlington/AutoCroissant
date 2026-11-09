@@ -271,7 +271,10 @@ cards (rows named "1", "2", … or a repeated stat block: Pix, Twin Emperors, Ta
 `card.creatures` (CardStats each; `stats` = creature 1) and the note "SEVERAL CREATURES". An empty row reads creature 1's
 value only when creature 1's shown digit reaches over it (Pix's tall HP mask), else 10 (Twin Emperors' 2nd DEF, since
 2026-11-08; it read 4 before). Since 2026-11-08 every creature's rows bake too (`creatures`, `psd_edit.set_creatures` ->
-`set_stat(creature=n)` on `bar_rows(psd, stat, n)`), and the details record their `creature_bars`. A stat past 10 (two bar rows: the canonical encoding is a top row 10 plus a
+`set_stat(creature=n)` on `bar_rows(psd, stat, n)`), and the details record their `creature_bars`. A card whose stats
+are not on the template's layer-comp bars (own icons, pictures, shapes, digit rows) has `psd_edit.stat_caps`: 10 per
+creature, a counted row's room (Computer Virus: HP 5, DEF 4, ATK 6, SPD 5), 20 on Top and Bottom rows; more is refused
+when typed on the website and by the bake, never a hand note (owner 2026-11-08; details `stat_caps`). A stat past 10 (two bar rows: the canonical encoding is a top row 10 plus a
 bottom row N-10) is the problem "STATS TOO HIGH" unless the card's Card Edits.json entry sets `allow_high_stats` (Sonic spd 20,
 Royal Eradicator Main Cannon atk 12; `EXCESSIVE_STAT_EXCLUSIONS` went on 2026-10-21). A digit-named group that holds digit layers is a row,
 not a value (Sonic's rows "2" and "1" once added 3 speed), and an empty one is skipped (Twin

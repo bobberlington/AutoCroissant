@@ -395,7 +395,7 @@ It runs from card-guards.yml's check job since 2026-10-25 (card-check.yml before
 
 | Constant | Value | Meaning |
 |---|---|---|
-| `VERSION` | `3` | the details file's `"version"` (2: `parts`; 3: type layers' colour `runs`) |
+| `VERSION` | `4` | the details file's `"version"` (2: `parts`; 3: type layers' colour `runs`; 4: `stat_caps`) |
 | `TEXT_CHARS` | `2000` | characters of text kept per type layer |
 | `TREE_CHILDREN`, `TREE_DEPTH` | `80`, `8` | the compact layer tree's caps; past them one `MORE` entry (`["…", "more", true]`) |
 | `DRAWN` | `("pixel", "smartobject", "shape")` | digit-named layers of these kinds are drawn bar cells (stat encoding `pixel`); exposure-style adjustments are `template` / `two-row` |

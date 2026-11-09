@@ -122,6 +122,21 @@ def test_art_over_darks(monkeypatch):
     assert not cc._art_over_darks(None)
 
 
+def test_raises_stop_at_the_display(monkeypatch):
+    """A stat raise stays within the card's own display (Computer Virus's rows: more is refused when typed, owner
+    2026-11-08, never a note): a stat at its room steps down; creature 2's own row by its own room."""
+    monkeypatch.setattr(cc.psd_edit, "stat_caps", lambda psd: {"hp": [5, 5], "def": [4, 4], "atk": [6, 6], "spd": [5, 5]})
+    monkeypatch.setattr(cc.psd_edit, "creature_bar", lambda psd, stat, n: (stat, n))
+    monkeypatch.setattr(cc, "stat_rows", lambda psd: {})
+    baked = []
+    monkeypatch.setattr(cc, "_real_bake", lambda ctx, rel, fields, png: (baked.append(fields), ("baked", "", None))[1])
+    first, second = {"hp": 2, "def": 4, "atk": 3, "spd": 5}, {"hp": 3, "def": 2, "atk": 6, "spd": 5}
+    assert cc._stat_notes(None, "C.psd", None, {"card": {**first, "creatures": [first, second]}}, "custom", None) == []
+    up = baked[1]
+    assert {k: up[k] for k in first} == {"hp": 3, "def": 3, "atk": 4, "spd": 4}
+    assert up["creatures"] == [{"hp": 3, "def": 3, "atk": 4, "spd": 4}, {"hp": 4, "def": 3, "atk": 5, "spd": 4}]
+
+
 def test_to_check_and_file():
     """No result, or a new PNG: checked; --all, a shard; the file reads back."""
     tree = {"A.psd": ("", "11111111aa"), "A.png": ("", "22222222bb"), "B.psd": ("", "33333333cc")}

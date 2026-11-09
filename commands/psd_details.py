@@ -2,7 +2,8 @@
 The PSD facts behind the website's card "Details" dropdown: fonts, text layers, effects, smart objects, canvas, type-icon
 style, stat-row encoding, status-word layers, template deviations, the header's star and type icon boxes (where the bake
 would put them: the website mock-up's, psd_edit's geometry), a compact layer tree, the editor's parts (psd_parts,
-VERSION 2) and each type layer's colour runs (VERSION 3). One record per card PSD,
+VERSION 2), each type layer's colour runs (VERSION 3) and the most a card's own stat display shows (stat_caps, VERSION
+4: the website refuses more). One record per card PSD,
 keyed by its git blob sha, in the card data's db/psd_details.json (the Card sync Action's build).
 
 gather(psd, rel, name, index, vocab) -> the record: pure, never raises for a card (a failed section is a short
@@ -38,7 +39,7 @@ from commands.psd_regions import STATS, badge_layers, comp_bars, comp_creature, 
 # ========================
 # Configuration
 # ========================
-VERSION = 3                                 # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"
+VERSION = 4                                 # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"
 TEXT_CHARS = 2000                           # text kept per type layer (whole: the website lines its colours up with the card's)
 TREE_CHILDREN = 80                          # children kept per group
 TREE_DEPTH = 8                              # groups nested deeper show one "more" entry
@@ -547,6 +548,9 @@ def _gather(psd: PSDImage, rel: str, name: str, index: Optional[FontIndex], voca
     bars = _guard(_creature_bars, psd)
     if bars:
         record["creature_bars"] = bars
+    caps = _guard(psd_edit.stat_caps, psd)      # {stat: [per creature]}: a card's own display (not the template's bars)
+    if caps:
+        record["stat_caps"] = caps
     record["fx"] = _guard(_fx, layers)
     record["overlays"] = _guard(_overlays, psd, texts)
     record["template"] = _guard(_template, psd, texts, name, record["stats"], record["icons"], record["overlays"])

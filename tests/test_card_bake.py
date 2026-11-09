@@ -240,17 +240,17 @@ def test_dry_run_commits_nothing(github, tmp_path):
 
 def test_creature_one_bakes_and_website_only_fields(github):
     """The card's stats are creature 1's (owner 2026-10-26): its hp bakes and the entry's creatures list takes it for
-    creature 1 (else the list's old value would show again), the others' stay; a stat past the bar's one row and a list on
-    bars not one per creature are website only: they stay in the entry, added to `_site`, no verdict."""
+    creature 1 (else the list's old value would show again), the others' stay; a list on bars not one per creature is
+    website only: it stays in the entry, added to `_site`, no verdict (old rows refuse a stat past 10: owner 2026-11-08)."""
     files = github.files_at(github.head)
-    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 6, "atk": 12, "creatures": [{"hp": 7, "def": 1, "atk": 1, "spd": 1},
-                                                                                    {"hp": 2, "def": 2, "atk": 2, "spd": 2}],
+    files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 6, "creatures": [{"hp": 7, "def": 1, "atk": 1, "spd": 1},
+                                                                          {"hp": 2, "def": 2, "atk": 2, "spd": 2}],
                                                    "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
     text, commits = cb.run(card="Mini Doomer")
     entry = _edits_at(github)["cards"]["Mini Doomer"]
-    assert len(commits) == 1 and "hp" not in entry and entry["atk"] == 12 and entry["_site"] == ["atk", "creatures"]
-    assert [c["hp"] for c in entry["creatures"]] == [6, 2] and "website only: atk 12" in text
+    assert len(commits) == 1 and "hp" not in entry and entry["_site"] == ["creatures"]
+    assert [c["hp"] for c in entry["creatures"]] == [6, 2] and "website only: creatures" in text
 
 
 def _freezer_site(github):

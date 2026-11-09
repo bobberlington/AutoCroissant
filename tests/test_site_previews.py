@@ -204,6 +204,24 @@ out([title(146), title(208)]);""")
     assert wider is None
 
 
+@needs_js
+@pytest.mark.skipif(not has(ASSETS / "edit.js", "capsError"), reason="no stat caps in edit.js")
+def test_stat_caps_refused_as_typed(tmp_path):
+    """A card's own display (owner 2026-11-08): a value past it is told as typed (edit.js capsError, cards.json statCaps),
+    one as published passes, the template's bars have none; the bake's refusal reads plainly in the preview."""
+    out = node(tmp_path, f"""
+const E = await import({json.dumps((ASSETS / "edit.js").as_uri())});
+const virus = {{ name: "Computer Virus", hp: 2, spd: 5, creatures: [{{ hp: 2, spd: 5 }}, {{ hp: 3, spd: 5 }}, {{ hp: 3, spd: 5 }}],
+  statCaps: {{ hp: [5, 5, 5], spd: [5, 5, 5] }} }}, letion = {{ name: "Monkey D Letion", hp: 8, statCaps: {{ hp: [10] }} }};
+out([E.capsError(virus, virus, "spd", 6), E.capsError(virus, virus, "spd", 5), E.capsError(virus, virus, "creatures", [{{ hp: 2 }}, {{ hp: 6 }}, {{ hp: 3 }}]),
+  E.capsError(letion, letion, "hp", 11), E.capsError({{ name: "Sonic", hp: 7 }}, {{ hp: 7 }}, "hp", 15), E.statCap(virus, "hp", 4),
+  p.plainReason("unsupported-card: creatures: def 5: creature 2's DEF row has room for 4 pictures")]);""")
+    assert out == ["Computer Virus's SPD row (creature 1) holds 5 pictures: 6 won't fit", "",
+                   "Computer Virus's HP row (creature 2) holds 5 pictures: 6 won't fit",
+                   "Monkey D Letion's stat bars show up to 10: HP 11 won't fit", "", 10,
+                   "The bake would refuse DEF 5: creature 2's DEF row has room for 4 pictures."]
+
+
 # ---- the build's web fonts (build_site.py)
 @pytest.fixture(scope="module")
 def bs():

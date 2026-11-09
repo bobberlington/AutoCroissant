@@ -658,18 +658,20 @@ def test_layout_bars_refuse_what_they_lack(clone, parser):
             pe.set_stat(psd, pe.parse_card(parser, _card(clone, rel)[0], rel, psd), stat, value)
 
 
-def _counted_card(hidden: int = 0) -> PSDImage:
-    """Two forms' HP as squares counted (Computer Virus's): row "1" shows 3 (and `hidden` more), row "2" shows 5."""
+def _counted_card(hidden: int = 0, stats=("hp",)) -> PSDImage:
+    """Two forms' stats as squares counted (Computer Virus's): row "1" shows 3 (and `hidden` more), row "2" shows 5."""
     from psd_tools.api.layers import PixelLayer
-    psd = PSDImage.new("RGB", (400, 200))
-    psd.append(PixelLayer.frompil(Image.new("RGB", (400, 200), (20, 20, 60)), psd, "Back"))
-    hp = psd.create_group(name="Stats Bars").create_group(name="hp")
-    for row, (shown, top) in enumerate(((3, 40), (5, 100)), 1):
-        squares = []
-        for k in range(1, shown + (hidden if row == 1 else 0) + 1):
-            squares.append(PixelLayer.frompil(Image.new("RGB", (30, 30), (0, 200, 0)), psd, str(k), top=top, left=20 + 50 * (k - 1)))
-            squares[-1].visible = k <= shown
-        hp.create_group(squares, name=str(row))
+    psd = PSDImage.new("RGB", (400, 200 * len(stats)))
+    psd.append(PixelLayer.frompil(Image.new("RGB", psd.size, (20, 20, 60)), psd, "Back"))
+    bars = psd.create_group(name="Stats Bars")
+    for at, stat in enumerate(stats):
+        group = bars.create_group(name=stat)
+        for row, (shown, top) in enumerate(((3, 40 + 200 * at), (5, 100 + 200 * at)), 1):
+            squares = []
+            for k in range(1, shown + (hidden if row == 1 else 0) + 1):
+                squares.append(PixelLayer.frompil(Image.new("RGB", (30, 30), (0, 200, 0)), psd, str(k), top=top, left=20 + 50 * (k - 1)))
+                squares[-1].visible = k <= shown
+            group.create_group(squares, name=str(row))
     return psd
 
 
@@ -686,6 +688,21 @@ def test_counted_pictures_follow_the_value():
     for value, why in ((0, "would show no picture"), (6, "has room for 5 pictures")):
         with pytest.raises(pe.Refused, match=why):
             pe.set_stat(_counted_card(), {"card": {"hp": 3}}, "hp", value)
+
+
+def test_own_displays_cap_the_edit():
+    """A card's own display (owner 2026-11-08): each creature's counted row caps its stat at its room, and classify
+    refuses past it (never website only); other own bars cap at 10."""
+    psd = _counted_card(stats=pe.STAT_FIELDS)
+    assert pe.count_room(psd, next(g for g, _, _ in stat_rows(psd)["hp"] if g.name == "1")) == 5
+    assert pe.stat_caps(psd) == {stat: [5, 5] for stat in pe.STAT_FIELDS}
+    first, second = dict.fromkeys(pe.STAT_FIELDS, 3), dict.fromkeys(pe.STAT_FIELDS, 5)
+    parsed = {"card": {**first, "creatures": [first, second]}}
+    out = pe.classify(parsed, {"hp": 6, "atk": 5}, psd)
+    assert out.jobs == {"atk": 5} and not out.site and [r.why for r in out.refusals] == ["hp 6: its HP row has room for 5 pictures"]
+    out = pe.classify(parsed, {"creatures": [first, {**second, "def": 6}]}, psd)
+    assert [r.why for r in out.refusals] == ["creatures: def 6: creature 2's DEF row has room for 5 pictures"]
+    assert pe.cap_why("spd", 11, 10) == "spd 11: its bars show up to 10"
 
 
 def test_layout_bars_bake_what_was_added(clone, parser, tmp_path):
@@ -1167,8 +1184,8 @@ def test_royal_eradicator_two_row_atk(clone, parser, tmp_path):
     assert pe.stat_value([top, bottom]) == 12 and sorted(top.digits) == sorted(bottom.digits) == sorted(pe.DIGITS)
     assert pe.classify(parsed, {"atk": 15}, psd).jobs == pe.classify(parsed, {"atk": 15}).jobs == {"atk": 15}
     assert pe.classify(parsed, {"atk": 12}, psd).redundant == ["atk"] and pe.classify(parsed, {"atk": 7}).jobs == {"atk": 7}
-    assert pe.classify(parsed, {"atk": 21, "hp": 11}, psd).site == {"atk": "atk 21: the bar's rows print up to 20",
-                                                                   "hp": "hp 11: the bar's one row prints up to 10"}
+    assert [r.why for r in pe.classify(parsed, {"atk": 21, "hp": 11}, psd).refusals] == [   # old bars: refused (owner 11-08)
+        "atk 21: its bars show up to 20", "hp 11: its bars show up to 10"]
     for value, shows, names in ((7, ([7], [0]), ["7", "0", "2"]), (15, ([], [5]), ["5", "2"]), (10, ([], [0]), ["0", "2"])):
         psd = PSDImage.open(path)
         edit = pe.set_stat(psd, parsed, "atk", value)
