@@ -292,6 +292,20 @@ out([title(146), title(208)]);""")
 
 
 @needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "joins = ["), reason="no title set-size pass in mockup.js")
+def test_title_at_set_size(tmp_path):
+    """Letters a quarter em high and a wide word space: by its ink one word fits; at the record's px (40), words joined
+    up to 4 line heights, the whole title; not joined, or a px it does not fill (20): none."""
+    out = node(tmp_path, """
+const W = 400, H = 60, paras = m.tokenize("Gold Clot"), measure = (s, z) => s.length * z * 0.5, area = { box: [0, 0, W, H], seed: null };
+const L = new Uint8Array(W * H);
+for (let y = 20; y < 30; y++) for (const [a, b] of [[100, 175], [205, 280]]) for (let x = a; x < b; x++) L[y * W + x] = x % 4 < 2 ? 255 : 0;
+const hit = o => { const h = m.bestBlock(L, W, H, area, paras, measure, { name: true, ...o }); return h && [h.b.box, Math.round(h.cal.size)]; };
+out([hit({}), hit({ wide: true, px: 40, joins: [1.2, 4] }), hit({ wide: true, px: 40 }), hit({ wide: true, px: 20, joins: [1.2, 4] })]);""")
+    assert out == [[[99, 19, 174, 31], 17], [[99, 19, 278, 31], 40], None, None]
+
+
+@needs_js
 @pytest.mark.skipif(not has(MOCKUP_JS, "px = 0, wrap = 0"), reason="no set-size pass in mockup.js")
 def test_tight_leading_at_set_size(tmp_path):
     """Three lines set tighter than their size says: not found by their pitch; at the record's px (20) and frame width
