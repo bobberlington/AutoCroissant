@@ -94,7 +94,6 @@ WAIVED = {                                      # the owner's class waivers (sec
     "R3": {"cards": {"lit bob-omb", "tainted lazarus", "miracle matter", "twin emperors", "warcraftian druid", "pix",
                      "bulborb larva", "butterfly", "empress bulblax", "apex predator"},     # relaid in pieces (11-09)
            "why": "several-Ability and multi-creature cards stay deviations (question 2, 2026-10-21)"},
-    "R3 excluded": {"why": "in the parser's ABILITY_EXCLUSIONS: prints no ability (2026-10-23)"},
     "R4": {"why": "existing Name layers are left as they are (owner, 2026-10-22); new cards and regressions are reported"},
     "R5": {"why": "overlay words with no chart style stay (decision 2026-10-21, L7)"},
     "R15": {"why": "text already off the card's edge is left as it is (as R4); new cards and regressions are reported"},
@@ -810,9 +809,6 @@ def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = N
     run("R2", rule_icons, psd, context.types)
     if kind in SCOPE:
         run("R3", rule_ability, psd)
-        ability = out[len(out) - 1]
-        if ability is not None and ability.code == "R3" and key in {CardAuthors.key(n) for n in CardValidator.ABILITY_EXCLUSIONS}:
-            ability.waived = WAIVED["R3 excluded"]["why"]
         run("R4", rule_name, psd, card)
         name = out[len(out) - 1]
         if name is not None and name.code == "R4" and not added:

@@ -1610,30 +1610,6 @@ class PSDParser:
 
 class CardValidator:
     """Validates card information for problems."""
-    ABILITY_EXCLUSIONS: set[str] = {        # card_standards' R3 waiver (cards need no ability since 10-25)
-        "Crystal Bits",
-        "Bugzzy",
-        "Electro Probe",
-        "Galacta Warrior",
-        "God Tamer",
-        "Mini Bee",
-        "Paint Warrior",
-        "PoD01Red Bloon",
-        "Sabre",
-        "Shadow Duelist",         # prints no ability (its Ability layer is hidden)
-        "Sword Knight",
-        "Tentacle",
-        "Whelp",
-        "Warrior Dee",
-        "The Master",
-        "Panda",
-        "Chomp",
-        "Abyss Watcher",
-        "Anubisath Guardian",     # three minions with an empty Ability layer (user, 2026-10-21)
-        "Qiraji Soldier",
-        "Silithid",
-    }
-
     @staticmethod
     def validate(card: CardInfo) -> list[str]:
         """

@@ -15,7 +15,7 @@ CARDS = CERTIFIED + (
     "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd",           # atk 10 + 2; title in 3 layers
     "Items/Heal/2 Stars/A_Snack.psd",                                   # hidden titles of 2 duplicates: no alt_names
     "Auxiliary/Minions/Anubisath_Guardian.psd",                         # empty ability; card_data's edited Mini Doomer
-    "Auxiliary/Minions/God_Tamer.psd",                                  # 5 stars in a Stars group (none until 2026-10-22), ability excluded
+    "Auxiliary/Minions/God_Tamer.psd",                                  # 5 stars in a Stars group (none until 2026-10-22), empty ability
     "Auxiliary/Status Effects/Debuffs/1 Stars/Poison.psd",              # status-effect folder
     "N.M.E/Termination_Shock.psd",                                      # star count (STAR_CORE_ALPHA)
 )

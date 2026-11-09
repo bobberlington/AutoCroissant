@@ -28,7 +28,7 @@ STALE_TXT2 = "d81631039734ba3c90683a68ced5de20f65304a3"   # Clot White's title s
 CASES = (   # card, rules told to the author, rules waived (the 6e50c3ee whole-tree run)
     ("Items/Active/2 Stars/Dirty_Bed.psd", {"R1"}, set()),
     ("Creatures/Kirby/3 Stars/Skullord.psd", {"R1", "R5"}, set()),   # its Ability outside Text and title in Stat Txt: layout; a plain (2 points)
-    ("Auxiliary/Minions/Shadow_Duelist.psd", set(), {"R3"}),      # its Ability layer hidden; waived: in ABILITY_EXCLUSIONS
+    ("Auxiliary/Minions/Shadow_Duelist.psd", {"R3"}, set()),      # its Ability layer hidden (deleted on 11-09)
     ("Auxiliary/Minions/Abyss_Watcher.psd", set(), set()),        # hidden and empty: no ability
     ("Creatures/Other/4 Stars/Sonic.psd", set(), {"R4"}),          # hidden Name, the title a pixel layer
     ("Auxiliary/Items/Nasty_Patty.psd", {"R6"}, set()),
