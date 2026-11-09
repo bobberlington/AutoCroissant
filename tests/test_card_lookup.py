@@ -58,6 +58,7 @@ RENAMED = {                                             # archived name -> (rena
     "Old Gone": ("Long Gone", None),                    # renamed to a card that left too
 }
 ALIASES = {"sans": ["snas."]}                           # Card Edits.json names, keyed as that file (lowercase)
+NOT_CARDS = ["Types/Panda.png", "MDW/Linked/Nebula_Star - NebulaStar.png", "MDW/Old Rules/Very Old Rulebook/13_Minions.png"]
 
 
 @pytest.fixture
@@ -72,8 +73,8 @@ def repo(monkeypatch):
     monkeypatch.setattr(qc, "get", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("offline")))    # no website ids
     repo = qc.CardRepository()
     repo._edit_names = ("sha", ALIASES)
-    tree = {"tree": [{"path": p, "sha": "s"} for p, _ in CARDS.values()] + [{"path": "Types/Panda.png", "sha": "s"},
-                                                                             {"path": qc.EDITS_PATH, "sha": "sha"}]}
+    paths = [p for p, _ in CARDS.values()] + NOT_CARDS + [qc.EDITS_PATH]
+    tree = {"tree": [{"path": p, "sha": "sha" if p == qc.EDITS_PATH else "s"} for p in paths]}
     repo._fetch_tree = lambda name: (tree, "", 200, "")
     repo.populate_files()
     repo.get_card_url = lambda key: f"https://img/{key}"
@@ -155,3 +156,15 @@ def test_autocomplete(repo):
     assert ("snas. (Sans)", "snas.") in repo.name_choices("sna")
     assert len(repo.name_choices("")) == 25 and len(repo.name_choices("o")) == 25
 
+
+def test_guesses_cards_only(repo, monkeypatch):
+    """Guesses pick cards, not linked art or old pages (exact names still find them); a chapter's title, its chapter."""
+    monkeypatch.setattr(cm.stats_db, "rulebook", [{"id": "minions", "num": "15", "title": "Minions", "text": ""}])
+    assert repo.lookup("NebulaStar")[0:2] == ("nebula_star.png", GUESS)       # not the linked art's "_-_nebulastar"
+    assert qc.history_match("NebulaStar") == ("nebula_star.png", "Nebula Star")
+    assert repo.lookup("13 minions")[0:2] == ("13_minions.png", EXACT)
+    for query in ("minions", " MINIONS "):
+        utils.dispatch_queue.clear()
+        qc.query_name(utils.make_simple_fake_interaction(1), query)
+        assert [kw["content"] for _, kw in utils.dispatch_queue] == [
+            f"**15. Minions** is a rulebook chapter: {qc.SITE_URL}/#/rules/minions"], query

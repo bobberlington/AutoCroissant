@@ -55,8 +55,9 @@ MAX_CONTENT = 2000                                       # Discord's message len
 SNIPPET = 200                                            # /query_rulebook: a longer line is cut around the match
 AS_OF_EDITS_NOTE = ("Database edits (website, Discord) are versions of their own only since late October "
                     "2026: an older version shows those it had when it was replaced.")
-REGISTRY = ("git_files", "blobs", "ambiguous_names", "_spaced", "_edits", "_edit_names", "_edits_text", "_renamed",
-            "choices", "site_ids", "_site_etag")         # what populate_files builds aside and swaps in
+REGISTRY = ("git_files", "card_keys", "blobs", "ambiguous_names", "_spaced", "_edits", "_edit_names", "_edits_text",
+            "_renamed", "choices", "site_ids", "_site_etag")    # what populate_files builds aside and swaps in
+NOT_CARDS = ("MDW/", "Types/")                           # icons, old pages, linked files: found by exact name only
 TREE_VERSION = 1                                         # CARD_TREE_JSON's layout
 
 
@@ -112,6 +113,7 @@ class CardRepository:
 
     def __post_init__(self):
         self.git_files: dict[str, str] = {}
+        self.card_keys: list[str] = []                   # git_files keys of card PNGs: what guesses pick from
         self.blobs: dict[str, str] = {}                  # png path -> blob sha, for commit-pinned links
         self.site_ids: dict[str, tuple[str, str]] = {}   # png file name -> (website card id, embed color)
         self._tree: Optional[dict] = None                # last tree, reused while GitHub says 304
@@ -132,11 +134,6 @@ class CardRepository:
         self._fuzzy_lock = Lock()                        # the matchers are shared: one search at a time
         self._indexes: tuple = ()                        # closest()'s _NameIndex for the last two key lists
         self._hay: tuple = (None, "", None)             # (cards_dff, Card Edits.json sha, haystack) for text terms
-
-    @property
-    def git_filenames(self) -> list[str]:
-        """Get list of all git filenames."""
-        return list(self.git_files.keys())
 
     def populate_files(self, repository: Optional[str] = None) -> int:
         """
@@ -178,6 +175,7 @@ class CardRepository:
         # Add Card Edits.json's names and aliases to the registry
         new._populate_edit_names()
         new._populate_titles()
+        new.card_keys = [k for k, p in new.git_files.items() if not p.startswith(NOT_CARDS)]
         new._populate_renames()
         if site:
             new._populate_site_ids()
@@ -713,7 +711,7 @@ class CardRepository:
         renamed = self._renamed.get(key)
         if renamed:
             return (renamed[0], "renamed", renamed[1])
-        found = self.closest(key, self.git_filenames)
+        found = self.closest(key, self.card_keys)
         return (found, "guess", "") if found else (None, "", "")
 
     def closest(self, key: str, keys: list) -> Optional[str]:
@@ -794,6 +792,11 @@ def query_name(interaction: Interaction, query: str, as_of: Optional[str] = None
         return
 
     closest, how, old = card_repo.lookup(query)
+    chapter = _chapter(query) if how not in ("exact", "renamed") else None
+    if chapter:                                         # a chapter's title, not a card's: the chapter, not a guess
+        print(f"Search chapter: /query {query!r} -> {chapter_label(chapter)}")
+        queue_message(interaction, f"**{chapter_label(chapter)}** is a rulebook chapter: {SITE_URL}/#/rules/{chapter['id']}")
+        return
     if not closest:
         print(f"Search miss: /query {query!r}")         # misses that could become aliases
         queue_message(interaction, "No card found!")
@@ -805,6 +808,12 @@ def query_name(interaction: Interaction, query: str, as_of: Optional[str] = None
         print(f"Search guess: /query {query!r} -> {_label(closest)}")
         note = f"Closest match: **{_label(closest)}**"
     _post_card(interaction, closest, note=note)
+
+
+def _chapter(query: str) -> Optional[dict]:
+    """The rulebook chapter titled query (case and spaces ignored), or None."""
+    text = "".join(query.lower().split())
+    return next((c for c in stats_db.rulebook if "".join(c["title"].lower().split()) == text), None) if text else None
 
 
 def _label(key: str) -> str:
@@ -953,7 +962,7 @@ def _history_lookup(query: str) -> Optional[tuple]:
         return (None, archived[key], False)              # an alias or another card's PNG claims the archived name
     guess = key not in card_repo.git_files and key not in archived
     if guess:
-        key = card_repo.closest(key, card_repo.git_filenames + list(archived))     # /query's guess
+        key = card_repo.closest(key, card_repo.card_keys + list(archived))     # /query's guess
         if not key:
             return None
     if key in card_repo.git_files:
