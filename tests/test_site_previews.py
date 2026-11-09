@@ -337,6 +337,23 @@ out([row.box, moved && moved.box, m.isBar(L, W, H, row.box), m.isBar(small, W, H
     assert none == [None, None, None]
 
 
+@needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "layerBlock"), reason="no layerBlock in mockup.js")
+def test_layer_block_takes_its_own_lines(tmp_path):
+    """One layer's Ability: a bigger header and a short last line in its own box join the found block (erased, the new
+    text from the header down); the same header above the box stays."""
+    out = node(tmp_path, """
+const W = 400, H = 200, L = new Uint8Array(W * H), lines = [[100, 80, 300, 94], [100, 100, 300, 114], [100, 120, 300, 134]];
+const ink = (x0, y0, x1, y1) => { for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) L[y * W + x] = x % 4 < 2 ? 255 : 0; };
+[[100, 52, 220, 70], [100, 140, 160, 154], ...lines].forEach(l => ink(...l));
+const b = { lines, box: [100, 80, 300, 134], align: "left", pitch: 20 };
+const r = own => { const { found, strays } = m.layerBlock(L, W, H, b, own, 14); return [strays.length, found.box, found.lines.length, found === b]; };
+out([r([90, 50, 310, 160]), r([90, 76, 310, 160]), r([90, 76, 310, 136])]);""")
+    both, below, none = out
+    assert both == [2, [92, 51, 300, 155], 5, False] and below[0] == 1 and below[1][1] == 80
+    assert none == [0, [100, 80, 300, 134], 3, True]
+
+
 # ---- the build's web fonts (build_site.py)
 @pytest.fixture(scope="module")
 def bs():
