@@ -10,7 +10,7 @@ def old_fuzzy(q):
 def new_fuzzy(q):
     return list(card_repo._fuzzy_labels(q))
 def old_name(q):
-    m = get_close_matches(card_repo._normalize_card_name(q), card_repo.git_filenames, n=1, cutoff=card_repo.match_ratio); return m[0] if m else None
+    m = get_close_matches(card_repo._normalize_card_name(q), list(card_repo.git_files), n=1, cutoff=card_repo.match_ratio); return m[0] if m else None
 def best(f, q, reps=5):
     t = None
     for _ in range(reps):
