@@ -1344,8 +1344,10 @@ def test_oxipng_cli_rides_in_the_venv(clone, tmp_path):
 
 
 FAKE_GH = r"""#!/usr/bin/env python3
-import json, os, subprocess, sys
+import fcntl, json, os, subprocess, sys
 state = os.environ["FAKE_STATE"]
+lock = open(state + ".lock", "w")
+fcntl.flock(lock, fcntl.LOCK_EX)   # calls run side by side: one at a time here
 db = json.load(open(state)) if os.path.exists(state) else {"comments": {}, "next": 100, "log": []}
 args = sys.argv[1:]
 db["log"].append(" ".join(args))
@@ -1875,8 +1877,9 @@ def test_card_syncs_follow_up_waits_for_land(clone, tmp_path):
 
 
 def test_site_build_starts_with_the_data_job(clone, tmp_path):
-    """A push's data job, a guards' follow-up and the after job dispatch the site build first, named by run and job; their
-    Site build dispatches again only when that run is missing, ended, or past its 20-minute Data wait (or unread)."""
+    """A push's data job, a guards' follow-up and the after job dispatch the site build and the card checks first, named
+    by run and job; their Site build and Card checks dispatch again only when that run is missing, ended, or past its
+    20-minute Data wait (or unread)."""
     yaml = pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
@@ -1884,11 +1887,14 @@ def test_site_build_starts_with_the_data_job(clone, tmp_path):
     sync = yaml.safe_load((workflows / "card-sync.yml").read_text(encoding="utf-8"))
     site = yaml.safe_load((workflows / "site.yml").read_text(encoding="utf-8"))
     steps = sync["jobs"]["data"]["steps"]
-    start, build = steps[0], next(s for s in steps if s.get("name") == "Site build")
+    checks = yaml.safe_load((workflows / "card-checks.yml").read_text(encoding="utf-8"))
+    start, build, late = steps[0], *(next(s for s in steps if s.get("name") == n) for n in ("Site build", "Card checks"))
     assert sync["jobs"]["after"]["steps"] is steps and start["name"] == "Site build start"
     assert start["if"] == "env.DRY_RUN != 'true' && (github.event_name == 'push' || inputs.guards || github.job == 'after')"
     assert site["run-name"] == "${{ inputs.after && format('Card browser (after {0} {1})', inputs.after, inputs.job) || '' }}"
     assert build["env"]["EARLY"] == "Card browser (after ${{ github.run_id }} ${{ github.job }})"
+    assert checks["run-name"].startswith("${{ inputs.after && format('Card checks (after {0} {1})', inputs.after, inputs.job) || ")
+    assert late["env"]["EARLY"] == "Card checks (after ${{ github.run_id }} ${{ github.job }})"
     names = [s.get("name") or s.get("id") or s.get("uses") for s in site["jobs"]["build"]["steps"]]
     assert names.index("og-before") + 1 == names.index("Data wait") == names.index("Setup wait") - 2   # then the data checkout
     wait = site["jobs"]["build"]["steps"][names.index("Data wait")]
@@ -1903,27 +1909,32 @@ def test_site_build_starts_with_the_data_job(clone, tmp_path):
     log = lambda: json.loads(state.read_text())["log"] if state.exists() else []
     done, _ = _shell(start, env)
     for _ in range(100):
-        if (temp / "site-start").exists():
+        if (temp / "site-start").exists() and (temp / "card-checks-start").exists():
             break
         subprocess.run(["/bin/sleep", "0.05"])
-    assert done.returncode == 0 and log() == ["workflow run site.yml --ref main -R o/cards -f after=9 -f job=data"]
+    assert done.returncode == 0 and sorted(log()) == [f"workflow run {w}.yml --ref main -R o/cards -f after=9 -f job=data"
+                                                      for w in ("card-checks", "site")]
     now = int(datetime.now(timezone.utc).timestamp())
     runs = lambda *rows: json.dumps({"workflow_runs": [{"display_title": t, "status": st} for t, st in rows]})
-    for at, listed, fail, again in ((now - 30, runs(("Card browser (after 9 data)", "in_progress")), "", False),
-                                    (now - 30, runs(("Card browser", "in_progress"), ("Card browser (after 9 data)", "pending")), "", False),
-                                    (now - 30, runs(("Card browser (after 9 after)", "in_progress"), ("Card browser (after 9 data)", "completed")), "", True),
-                                    (now - 30, runs(("Card browser (after 8 data)", "in_progress")), "", True),       # not found
-                                    (now - 30, runs(("Card browser (after 9 data)", "in_progress")), "/runs?", True),  # not read
-                                    (now - 1200, runs(("Card browser (after 9 data)", "in_progress")), "", True),     # past its wait
-                                    (None, runs(), "", True)):                                                     # never started
-        state.unlink(missing_ok=True)
-        (temp / "site-start").unlink(missing_ok=True)
-        if at:
-            (temp / "site-start").write_text(f"{at}\n")
-        done, _ = _shell(build, {**env, "FAKE_GUARD_RUNS": listed, "FAKE_FAIL": fail})
-        dispatched = [c for c in log() if c.startswith("workflow run")]
-        assert done.returncode == 0 and dispatched == (["workflow run site.yml --ref main -R o/cards"] if again else []), (at, listed, log())
-        assert sum("/runs?" in c for c in log()) == (at == now - 30)
+    for step, title, file, again_ in ((build, "Card browser", "site-start", "workflow run site.yml --ref main -R o/cards"),
+                                      (late, "Card checks", "card-checks-start",
+                                       "workflow run card-checks.yml --ref main -R o/cards -f after=9 -f job=data")):
+        for at, listed, fail, again in ((now - 30, runs(("T (after 9 data)", "in_progress")), "", False),
+                                        (now - 30, runs(("T", "in_progress"), ("T (after 9 data)", "pending")), "", False),
+                                        (now - 30, runs(("T (after 9 after)", "in_progress"), ("T (after 9 data)", "completed")), "", True),
+                                        (now - 30, runs(("T (after 8 data)", "in_progress")), "", True),       # not found
+                                        (now - 30, runs(("T (after 9 data)", "in_progress")), "/runs?", True),  # not read
+                                        (now - 1200, runs(("T (after 9 data)", "in_progress")), "", True),     # past its wait
+                                        (None, runs(), "", True)):                                          # never started
+            state.unlink(missing_ok=True)
+            (temp / file).unlink(missing_ok=True)
+            if at:
+                (temp / file).write_text(f"{at}\n")
+            done, _ = _shell(step, {**env, "EARLY": f"{title} (after 9 data)", "FAKE_GUARD_RUNS": listed.replace('"T', f'"{title}'),
+                                    "FAKE_FAIL": fail})
+            dispatched = [c for c in log() if c.startswith("workflow run")]
+            assert done.returncode == 0 and dispatched == ([again_] if again else []), (title, at, listed, log())
+            assert sum("/runs?" in c for c in log()) == (at == now - 30)
 
 
 def test_site_data_wait(clone, tmp_path):
@@ -1986,6 +1997,73 @@ def test_site_data_wait(clone, tmp_path):
     push("A.psd", b"4")
     assert run(jobs("completed"), FAKE_FAIL="/git/trees/") and (temp / "tree.json").read_text() == "older"
     assert (temp / "setup" / "sizes.code").read_text().strip() == "0" and "not read" in (temp / "setup" / "sizes.log").read_text()
+
+
+def test_checks_data_wait(clone, tmp_path):
+    """card-checks.yml's early run: fonts restored, then site.yml's Data wait, then main's and the data's heads (the
+    sparse files fetched); a fonts change in the wait: the outdated restore removed and the new fonts checked out."""
+    yaml = pytest.importorskip("yaml")
+    if not shutil.which("jq") or not shutil.which("git"):
+        pytest.skip("no jq or git")
+    workflows = _workflow(clone).parent
+    job = yaml.safe_load((workflows / "card-checks.yml").read_text(encoding="utf-8"))["jobs"]["check"]
+    site = yaml.safe_load((workflows / "site.yml").read_text(encoding="utf-8"))["jobs"]["build"]["steps"]
+    names = [s.get("name") or s.get("id") or s.get("uses") for s in job["steps"]]
+    step = {n: s for n, s in zip(names, job["steps"])}
+    assert names.index("Python environment") + 4 == names.index("Data wait") == names.index("To check") - 1
+    assert step["fonts-first-cache"]["uses"].startswith("actions/cache/restore@") and step["font-cache"]["if"].endswith("&& !inputs.after")
+    loop = lambda run: run.split("if [ \"$SECONDS\" -ge")[0]                 # noqa: E731
+    assert loop(step["Data wait"]["run"]) == loop(next(s for s in site if s.get("name") == "Data wait")["run"])
+    origin, work = tmp_path / "origin", tmp_path / "work"
+    git = lambda cwd, *a: subprocess.run(["git", "-C", str(cwd), "-c", "user.name=A", "-c", "user.email=a@x", *a],  # noqa: E731
+                                         check=True, capture_output=True, text=True).stdout.strip()
+
+    def commit(branch, files):
+        git(origin, "symbolic-ref", "HEAD", f"refs/heads/{branch}")
+        git(origin, "reset", "-q", "--hard")
+        for name, text in files.items():
+            (origin / name).parent.mkdir(parents=True, exist_ok=True)
+            (origin / name).write_text(text)
+        git(origin, "add", "-A")
+        git(origin, "commit", "-qm", branch)
+    subprocess.run(["git", "init", "-q", "-b", "main", str(origin)], check=True)
+    git(origin, "config", "uploadpack.allowFilter", "true")
+    git(origin, "config", "uploadpack.allowAnySHA1InWant", "true")
+    commit("main", {"site/Card Edits.json": "1", "MDW/Fonts/a.ttf": "old", "A.psd": "1"})
+    git(origin, "branch", "data")
+    commit("data", {"db/stats.json": "1"})
+    url = f"file://{origin}"
+    git(tmp_path, "clone", "-q", "--filter=blob:none", "--depth", "1", "--no-checkout", "-b", "main", url, str(work))
+    git(work, "sparse-checkout", "set", "--no-cone", "/site/Card Edits.json")
+    git(work, "checkout", "-q", "main")
+    git(tmp_path, "clone", "-q", "--depth", "1", "-b", "data", url, str(work / "carddata"))
+    naps = tmp_path / "sleeps.txt"
+    naps.write_text("")
+    env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "FAKE_STATE": str(tmp_path / "gh.json"), "FAKE_SLEPT": str(naps),
+           "GITHUB_REPOSITORY": "o/cards", "GITHUB_SERVER_URL": "https://x", "GITHUB_OUTPUT": str(tmp_path / "out"),
+           "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "GIT_NO_LAZY_FETCH": "1"}
+    run = lambda name, **more: _shell(step[name], {**env, **{k: v for k, v in step[name].get("env", {}).items() if "${{" not in v},  # noqa: E731
+                                                  **more}, cwd=work)
+    jobs = lambda status: json.dumps({"jobs": [{"name": "Card data", "status": "in_progress",  # noqa: E731
+                                                "steps": [{"name": "Commit data", "status": status}]}]})
+    done, first = run("Fonts first")
+    (work / "MDW/Fonts").mkdir(parents=True)
+    (work / "MDW/Fonts/a.ttf").write_text("old")                       # the cache's restore
+    for fonts in ("old", "new"):
+        commit("main", {"site/Card Edits.json": fonts, "MDW/Fonts/a.ttf": fonts, "A.psd": fonts})
+        commit("data", {"db/stats.json": fonts})
+        naps.write_text("")
+        (tmp_path / "gh.json").unlink(missing_ok=True)
+        done, _ = run("Data wait", RUN="7", JOB="Card data", FAKE_JOBS=jobs("in_progress"), FAKE_JOBS_LATER=jobs("completed"), FAKE_LOOKS="2")
+        assert done.returncode == 0 and naps.read_text().split() == ["3", "3"], done.stderr
+        assert git(work, "rev-parse", "HEAD") == git(origin, "rev-parse", "main") and (work / "site/Card Edits.json").read_text() == fonts
+        assert git(work / "carddata", "rev-parse", "HEAD") == git(origin, "rev-parse", "data")
+        assert (work / "MDW/Fonts/a.ttf").read_text() == "old"           # a restore: outside the patterns, kept
+        done, tree = run("Fonts tree")
+        if tree["sha"] != first["sha"]:                                   # Fonts (cache miss)'s if
+            done, _ = run("Fonts (cache miss)")
+        assert done.returncode == 0 and (tree["sha"] == first["sha"]) == (fonts == "old"), done.stderr
+        assert (work / "MDW/Fonts/a.ttf").read_text() == fonts
 
 
 def test_card_syncs_lane_sets_up_before_its_guards(clone, tmp_path):
