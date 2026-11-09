@@ -311,8 +311,8 @@ def test_the_early_reads_are_the_previews(cards, tmp_path, monkeypatch):
 @fork
 def test_fonts_and_records_after_the_wait(cards, clone, tmp_path, monkeypatch):
     """card-preview.yml starts the preview while the fonts restore and the reads run: nothing before ready()'s wait
-    (WAIT_ENV's file) reads the fonts or the records, so ones that appear only then give the same preview (a name edit:
-    drawn in MDW/Fonts alone, as on the runner)."""
+    (READS_ENV's file) reads the records, nor before the first font's (WAIT_ENV's) the fonts, so ones that appear only
+    then give the same preview (a name edit: drawn in MDW/Fonts alone, as on the runner)."""
     from psd_tools.composite.text import fonts as engine_fonts
     monkeypatch.setattr(engine_fonts, "platform_font_dirs", lambda: [])     # MDW/Fonts alone, as on the runner
     _, now, out = _preview(cards, tmp_path, {"name": "Maxi Doomer"}, name="now")
@@ -320,21 +320,26 @@ def test_fonts_and_records_after_the_wait(cards, clone, tmp_path, monkeypatch):
     monkeypatch.setenv(cb.FONT_DIRS_ENV, str(late / "fonts"))
     monkeypatch.setenv(pe.RECORDS_DIR, str(late / "records"))
     monkeypatch.setenv(cp.WAIT_ENV, str(late / "go"))
+    monkeypatch.setenv(cp.READS_ENV, str(late / "reads.done"))
     monkeypatch.setattr(pe, "_RECORDS", {})
     monkeypatch.setattr(pe, "_record_names", lru_cache(maxsize=2)(pe._record_names.__wrapped__))
     waits = []
 
-    def arrive(seconds):                        # the setup ends: the records and fonts, then the go file
+    def arrive(seconds):                        # the reads end, then (at the first font) the fonts and the go file
         if not waits:
-            assert pe._RECORDS == {}
+            assert pe._RECORDS == {} and pe.FONTS_WAIT is None
             (late / "records").mkdir(parents=True)
             (late / "records" / pe.RENDER_RECORD).write_text(json.dumps(record))
+            (late / "reads.done").touch()
+        elif len(waits) == 1:
+            assert pe.FONTS_WAIT is not None
             (late / "fonts").symlink_to(clone / pe.FONTS_DIR)
             (late / "go").touch()
         waits.append(seconds)
     monkeypatch.setattr(cp, "sleep", arrive)
     code, result, late_out = _preview(cards, tmp_path, {"name": "Maxi Doomer"}, name="late")
-    assert code == 0 and waits and pe._RECORDS[pe.RENDER_RECORD] == record and result["runner"]["fonts"] is True
+    assert code == 0 and len(waits) == 2 and pe._RECORDS[pe.RENDER_RECORD] == record and result["runner"]["fonts"] is True
+    assert pe.FONTS_WAIT is None
     same = ("state", "reason", "fields", "notes", "changes", "parity", "region", "image", "files", "size")
     assert {k: result.get(k) for k in same} == {k: now.get(k) for k in same} and now["state"] == "baked"
     for name in (cp.PNG, cp.WEBP, cp.BEFORE):
@@ -552,6 +557,7 @@ def test_workflow_shape():
     assert "reads.done" in reads and "reads.done" in go["run"] and go["run"].rstrip().endswith('touch "$RUNNER_TEMP/go"')
     start, shown = step(preview, "Start"), step(preview, "Preview")
     assert "CARD_PREVIEW_WAIT=$RUNNER_TEMP/go" in start["run"] and cp.WAIT_ENV == "CARD_PREVIEW_WAIT"
+    assert "CARD_PREVIEW_READS=$RUNNER_TEMP/reads.done" in start["run"] and cp.READS_ENV == "CARD_PREVIEW_READS"
     assert "timeout 480 python -m commands.card_preview " in start["run"] and start["run"].rstrip().endswith("&")
     assert "preview.code" in start["run"] and "preview.code" in shown["run"] and 'tee -a "$GITHUB_STEP_SUMMARY"' in shown["run"]
     hand = step(preview, "Hand over")
