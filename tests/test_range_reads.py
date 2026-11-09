@@ -3,6 +3,7 @@ range read marks the PSD failed, so the caller reads it whole. card_check reads 
 (or a bake commit's parent). Also the parse from an open PSD and the download workers' parse (AHEAD)."""
 import hashlib
 import json
+import os
 import threading
 from types import SimpleNamespace
 from urllib.parse import unquote
@@ -216,6 +217,35 @@ def test_psds_are_read_in_the_workers_and_kept_at_most_AHEAD_ahead(cards, monkey
     stats = helpers._read(cards)[0]
     assert _strip(stats["Mini Doomer"].to_dict()) == _strip(_golden(DOOMER))
     assert _strip(stats["The Freezer"].to_dict()) == _strip(_golden(FREEZER))
+
+
+def test_forked_workers_read_as_threads_do(cards, monkeypatch):
+    """A runner's forked workers: each PSD's Read comes back (pickled) as a thread's."""
+    reads, fetch, keep = {}, cd.CardBuild._fetch_read, cd.CardBuild._keep
+
+    def fetched(self, path, name, sha):
+        read = fetch(self, path, name, sha)
+        read.pid = os.getpid()
+        return read
+
+    def kept(self, read, path, name, sha):
+        pid = vars(read).pop("pid")
+        reads[path] = (pid != os.getpid(), read.card, read.variants, {**read.details, "at": ""}, read.links, read.error)
+        return keep(self, read, path, name, sha)
+
+    monkeypatch.setattr(cd.CardBuild, "_fetch_read", fetched)
+    monkeypatch.setattr(cd.CardBuild, "_keep", kept)
+    monkeypatch.setenv("no_proxy", "*")                           # macOS: no proxy lookup in a fork
+    found = []
+    for forked in (False, True):
+        monkeypatch.setattr(cd, "_forks", lambda: forked)
+        cards.db = cards.tmp / f"data{forked}" / "db"
+        cards.db.mkdir(parents=True)
+        reads.clear()
+        assert helpers._build(cards, "--empty")[0] == cd.EXIT_OK
+        found.append(dict(reads))
+    assert {p: r[0] for p, r in found[1].items()} == {DOOMER: True, FREEZER: True}
+    assert {p: r[1:] for p, r in found[0].items()} == {p: r[1:] for p, r in found[1].items()}
 
 
 # ========================
