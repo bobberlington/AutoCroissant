@@ -511,6 +511,10 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
 
 Region = union(old layer bbox, new layer bbox, `layer.mask.bbox` of every toggled digit; the digits' own bbox is 0x0) +
 `psd_regions.fx_pad` (outside strokes on the layer and its ancestors + max(shadow distance + size, glow size)), clipped to the canvas.
+Since 2026-11-09 a plain text layer spliced in place takes its splice zone instead of the bbox union (`Edit.lines`: no
+fallback, not moved, lifted or anchored, no FX layers or hidden overlay words, nothing clipped to it, no bbox-reading
+effect on a group above it nor on itself when its bbox moved, not drawn straight before; not an added Ability), and
+`gate_dirty`'s `dirty_box` counts it as that zone plus its effects' reach while its look is unchanged (`_same_look`).
 Measured: a toggle's diff stays inside the digits' mask union ((360,1200,1173,1284) for Mini_Doomer's hp row); a name edit's
 diff is the bbox union padded by exactly the `Text` group's 7 px Stroke. Render that viewport with `psd.composite(viewport=...)`
 (baseline `ignore_preview=True`; after an edit `is_updated()` bypasses the preview), paste it over the official PNG, leave every
