@@ -102,3 +102,22 @@ def test_a_snack_tagged_per_picture(clone, psd_parser):
         assert np.abs(small(render) - small(Image.open(png).convert("RGB"))).mean() < 0.1, n     # 0-255, at 300 px
     assert titles == {1: "A snack", 2: "Breakfast", 3: "Supper"}
     assert [layer.visible for layer in psd.descendants() if layer.layer_id in (1015, 1022, 1024)] == [True, False, False]
+
+
+def test_card_parts_once_per_frozen_psd(monkeypatch):
+    """A frozen PSD (the bake's read-only opens) runs psd_parts.card_parts once per (rel, name, parser), each call its
+    own copy; any other PSD every time."""
+    from commands import psd_edit as pe
+    runs = []
+    monkeypatch.setattr(psd_parts, "card_parts", lambda psd, rel, name, p: runs.append(rel) or {"title": [{"text": "A"}]})
+
+    class Card:
+        pass
+    kept, plain, p = pe.frozen(Card()), Card(), object()
+    pe.card_parts(kept, "a.psd", "A", p)["title"][0]["text"] = "B"
+    pe.card_parts(kept, "a.psd", "A", p)["title"].clear()
+    assert pe.card_parts(kept, "a.psd", "A", p) == {"title": [{"text": "A"}]}
+    pe.card_parts(kept, "b.psd", "A", p)
+    pe.card_parts(plain, "a.psd", "A", p)
+    pe.card_parts(plain, "a.psd", "A", p)
+    assert runs == ["a.psd", "b.psd", "a.psd", "a.psd"]
