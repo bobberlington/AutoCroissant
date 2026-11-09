@@ -1012,8 +1012,8 @@ def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDPars
     result = Fixed()
     wanted = [] if only else [issue for issue in issues if issue.fix and not issue.waived]
     composer = not only and _every_line_in(data)
-    pixels = tuple(kind for kind in pixel_kinds(data, (only,) if only else (), rel, getattr(fonts, "chart", None))
-                   if kind not in skip)
+    pixels = tuple(kind for kind in pixel_kinds(data, (only,) if only else (), rel, getattr(fonts, "chart", None),
+                                                 getattr(fonts, "links", None)) if kind not in skip)
     if not (wanted or composer or pixels):
         return result
     makedirs(work, exist_ok=True)
@@ -2840,14 +2840,16 @@ PIXEL_LINES = {"badge widths": "badges laid out again at their new widths", "apo
                "normalise": "pictures linked, text set normal, no merged image"}
 
 
-def pixel_kinds(psd, kinds: tuple = (), rel: str = "", chart: Optional[dict] = None) -> tuple:
+def pixel_kinds(psd, kinds: tuple = (), rel: str = "", chart: Optional[dict] = None, links=None) -> tuple:
     """The pixel fix kinds (all but SWEEP_ONLY by default) whose layers the PSD (open, or its bytes) has; rel: its repo
     path (the link step judges its links from there); chart: the status chart's fills (status words; none: no such
-    kind)."""
+    kind); links: the link step's context (fonts.links: its read judges each link's Rslt)."""
     try:
         psd = PSDImage.open(BytesIO(psd)) if isinstance(psd, bytes) else psd
         if rel:
             psd.repo_path = rel
+        if links is not None and hasattr(_links(), "ppis_of"):
+            psd.link_ppi = _links().ppis_of(links.read, getattr(links, "ppis", None))
         psd.status_chart = chart
         default = tuple(kind for kind in PIXEL_FIXES if kind not in SWEEP_ONLY)
         return tuple(kind for kind in kinds or default if PIXEL_FIXES[kind][0](psd))

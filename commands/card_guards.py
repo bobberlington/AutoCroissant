@@ -1104,6 +1104,7 @@ class LinkContext:
     read_blob: Callable                         # blob sha -> bytes (Source.blob)
     files: dict = field(default_factory=dict)   # {new path: bytes} written by this run's first users
     redraw: bool = True                         # False: class 3 taken as exact copies (its PNG could not follow)
+    ppis: dict = field(default_factory=dict)    # {repo path: ppi} read once (psd_links.ppis_of: each link's Rslt)
 
     def entries(self, rel: str) -> list:
         return self.catalogue.get("psds", {}).get(rel, [])

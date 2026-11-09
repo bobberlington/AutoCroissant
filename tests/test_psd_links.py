@@ -182,6 +182,38 @@ def test_links_placed_from_any_depth_and_url():
     assert pl.restore(10, [("old", 4), ("last", 10)]) == "last" and pl.restore(10, [("last", 9)]) is None
 
 
+def test_rslt_is_the_files_ppi():
+    """A link stores its file's ppi as Photoshop reads it (r9: a 72 made Update shrink Wind to 24%): pHYs rounded, a
+    JPEG's Photoshop ResolutionInfo over JFIF (Fawful: 2.54, JFIF 3), 72 with none; link_pixels writes it, repair()
+    mends another, link_issues and needs() see it only with ppis."""
+    icon = Image.new("RGBA", (20, 20), (90, 200, 250, 255))
+    saved = {}
+    for dpi in (300, 96, None):
+        out = BytesIO()
+        icon.save(out, "PNG", **({"dpi": (dpi, dpi)} if dpi else {}))
+        saved[dpi] = out.getvalue()
+    assert [pl.ppi(saved[d], "x.png") for d in (300, 96, None)] == [300.0, 96.0, 72.0]
+    out = BytesIO()
+    icon.convert("RGB").save(out, "JPEG", dpi=(3, 3))
+    res = b"8BIM\x03\xed\x00\x00\x00\x00\x00\x10" + b"\x00\x02\x8a\x3d\x00\x01\x00\x02" * 2
+    irb = b"Photoshop 3.0\x00" + b"8BIM\x04\x04\x00\x00\x00\x00\x00\x03abc\x00" + res
+    jpeg = out.getvalue()[:2] + b"\xff\xed" + (len(irb) + 2).to_bytes(2, "big") + irb + out.getvalue()[2:]
+    assert pl.ppi(jpeg, "x.jpg") == 0x28a3d / 65536 and pl.ppi(out.getvalue(), "x.jpg") == 3.0
+
+    rel, tree = "Items/A.psd", ["Types/Wind.png"]
+    psd = PSDImage.new("RGB", (40, 40))
+    layer = PixelLayer.fromarray(np.full((20, 20, 4), (90, 200, 250, 255), np.uint8), psd, name="Wind")
+    made = pl.link_pixels(layer, rel, "Types/Wind.png", saved[300], [0, 0, 20, 0, 20, 20, 0, 20])
+    assert pl.placed_ppi(made) == 300.0
+    pl.set_ppi([made], 72.0)
+    ppis = pl.ppis_of({"Types/Wind.png": saved[300]}.get)
+    assert pl.link_issues(psd, rel, tree) == [] and pl.link_issues(psd, rel, tree, ppis) == ["repair: Wind.png"]
+    psd.repo_path, psd.link_ppi = rel, ppis
+    assert pl.needs(psd) == ["repair: Wind.png"]
+    assert pl.repair(psd, rel, tree, ppis) == (["Wind.png"], []) and pl.placed_ppi(made) == 300.0
+    assert pl.needs(psd) == [] and pl.repair(psd, rel, tree, ppis) == ([], [])
+
+
 def test_redraw_linked_one_file_two_users(tmp_path, capsys):
     """One MDW/Linked file, two users at two depths and scales (one PNG named in another case). A lossless re-save: their
     sizes and contentIDs only, no raster, no PNG. A pixel edit: both drawn again (the stored mode, bicubic) on their own

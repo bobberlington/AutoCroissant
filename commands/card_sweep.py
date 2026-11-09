@@ -318,6 +318,10 @@ def _normalise_card(job, out: dict) -> dict:
         data = source.blob(job.psd_new)
         pushed = png_export.open_psd(data)
         pushed.repo_path = job.psd              # the link step judges its links from here
+        ctx = getattr(_worker["fonts"], "links", None)
+        if ctx is not None:                     # and their Rslt from the files
+            from commands.psd_links import ppis_of
+            pushed.link_ppi = ppis_of(ctx.read, ctx.ppis)
         if not standards.needs_normalise(pushed):
             return out
         pngs = {path: png_export.open_png(source.blob(sha)) for path, sha in

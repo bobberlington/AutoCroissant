@@ -13,6 +13,7 @@ SmartObject.link_target), never from the filesystem.
     assign(psds, types, linked) -> dict              every item's class and target (PLAN 5.1), new files named
     link_card(psd, rel, entries, read) -> Linked     one PSD's pictures linked in place (5.2 step 4)
     link_pixels(layer, rel, path, data, corners)     a pixel layer made a smart object linking a Types/ file (Q4)
+    ppi(data, path) / set_ppi(layers, value)         a file's resolution as Photoshop reads it, the Rslt a link stores
     place_trim(corners, old, new, old_box, new_box)  a file's quad when its ink moved (Croissant's trims, name matches)
     draw(rgba, corners, mode) -> (rgba, box)         a picture drawn on its quad as Photoshop places it
     redraw(layer, rgba, corners, mode)               a placed layer's pixels drawn again (a lone Gaussian Blur too)
@@ -81,6 +82,7 @@ BYTES, INK, REDRAW, LINKED, NEW = 1, 2, 3, 4, 5
 CLASSES = {BYTES: "bytes", INK: "ink", REDRAW: "redraw", LINKED: "linked", NEW: "new"}
 MESH_TOL = 0.01                 # px: a warpCustom mesh this close to its quad's grid is no warp
 QUAD_TOL = 0.01                 # px: corners this close make an upright rectangle
+PPI_TOL = 0.01                  # a stored Rslt this close to its file's ppi is right
 NOT_IN_REPO = "Links {name}, which is not in the repo: push that file."
 NOT_REDRAWN = "{layer} links {name}, changed since: Card sync could not draw it again ({why}); update it in Photoshop."
 REDRAW_SUBJECT = "Card sync: linked pictures redrawn"
@@ -520,6 +522,7 @@ def link_item(psd: PSDImage, uuid: str, rel: str, path: str, data: bytes, quads:
     corners = (lambda old: quads[tuple(old)]) if quads else None
     _layer_of(psd, uuid).smart_object.link(path, len(data), blob=git_blob(data), psd_path=rel, pixels=pixels,
                                            corners=corners)
+    set_ppi(_layers_of(psd, uuid), ppi(data, path))     # not the embedded copy's: Update would resize it
 
 
 def relink(psd: PSDImage, uuid: str, rel: str, path: str, size: int, blob: str, quads: Optional[dict] = None,
@@ -562,7 +565,66 @@ def _block(items: dict, name: str = "\x00", cls: bytes = b"null", block: bool = 
     return out
 
 
-def _placed_block(uuid: str, placed: str, corners: list, size: tuple) -> DescriptorBlock:
+def _irb_ppi(blocks: bytes) -> Optional[float]:
+    """ResolutionInfo's hRes (16.16) in Photoshop's 8BIM resource blocks, None without it."""
+    at = 0
+    while at + 12 <= len(blocks) and blocks[at:at + 4] == b"8BIM":
+        key, name = int.from_bytes(blocks[at + 4:at + 6], "big"), blocks[at + 6]
+        at += 6 + (name + 2 & ~1)
+        size = int.from_bytes(blocks[at:at + 4], "big")
+        if key == 0x03ED and size >= 4:
+            return int.from_bytes(blocks[at + 4:at + 8], "big") / 65536
+        at += 4 + (size + 1 & ~1)
+    return None
+
+
+def ppi(data: bytes, path: str = "") -> float:
+    """
+    A file's resolution as Photoshop reads it into a placed layer's Rslt (Update and Relink keep the layer's size only
+    when they match): a PNG's pHYs (per metre, rounded), a PSD's or PSB's ResolutionInfo, a JPEG's Photoshop
+    ResolutionInfo, else its JFIF or EXIF density; 72 when it has none.
+    """
+    kind, found = file_type(data, path), None
+    try:
+        if kind == "png":
+            at = 8
+            while at + 12 <= len(data) and data[at + 4:at + 8] not in (b"pHYs", b"IDAT", b"IEND"):
+                at += 12 + int.from_bytes(data[at:at + 4], "big")
+            if data[at + 4:at + 8] == b"pHYs" and data[at + 16] == 1:
+                found = round(int.from_bytes(data[at + 8:at + 12], "big") * 0.0254)
+        elif kind in ("psd", "psb"):
+            at = 30 + int.from_bytes(data[26:30], "big")
+            found = _irb_ppi(data[at + 4:at + 4 + int.from_bytes(data[at:at + 4], "big")])
+        elif kind == "jpg":
+            at = 2
+            while found is None and at + 4 <= len(data) and data[at] == 0xFF and data[at + 1] not in (0xDA, 0xD9):
+                size = int.from_bytes(data[at + 2:at + 4], "big")
+                if data[at + 1] == 0xED and data[at + 4:at + 18] == b"Photoshop 3.0\x00":
+                    found = _irb_ppi(data[at + 18:at + 2 + size])
+                at += 2 + size
+        if found is None and kind not in ("png", "psd", "psb"):
+            with Image.open(BytesIO(data)) as image:
+                found = (image.info.get("dpi") or (0,))[0]
+    except Exception:
+        found = None
+    return float(found) if found and found > 0 else 72.0
+
+
+def placed_ppi(layer) -> Optional[float]:
+    """A placed layer's stored Rslt, None without one."""
+    found = (placed_data(layer) or {}).get(b"Rslt")
+    return float(found.value) if found is not None else None
+
+
+def set_ppi(layers, value: float) -> None:
+    """Each placed layer's Rslt set to its file's resolution (ppi)."""
+    for layer in layers:
+        placed = placed_data(layer)
+        if placed is not None:
+            placed[b"Rslt"] = UnitFloat(unit=Unit.Density, value=float(value))
+
+
+def _placed_block(uuid: str, placed: str, corners: list, size: tuple, resolution: float = 72.0) -> DescriptorBlock:
     """A new linked layer's SoLE descriptor (Photoshop 2023's for a placed PNG, no warp)."""
     w, h = (float(v) for v in size)
     frames = lambda: _block({b"numerator": Integer(0), b"denominator": Integer(600)}, block=False)
@@ -578,7 +640,7 @@ def _placed_block(uuid: str, placed: str, corners: list, size: tuple) -> Descrip
                    b"Trnf": List([Double(float(c)) for c in corners]),
                    b"nonAffineTransform": List([Double(float(c)) for c in corners]), b"warp": warp,
                    b"Sz  ": _block({b"Wdth": Double(w), b"Hght": Double(h)}, cls=b"Pnt ", block=False),
-                   b"Rslt": UnitFloat(unit=Unit.Density, value=72.0), b"comp": Integer(-1),
+                   b"Rslt": UnitFloat(unit=Unit.Density, value=float(resolution)), b"comp": Integer(-1),
                    b"compInfo": _block({b"compID": Integer(-1), b"originalCompID": Integer(-1)}, block=False),
                    b"ClMg": _block({b"placedLayerOCIOConversion": Enumerated(typeID=b"placedLayerOCIOConversion",
                                                                              enum=b"placedLayerOCIOConvertEmbedded")},
@@ -605,7 +667,8 @@ def link_pixels(layer, rel: str, path: str, data: bytes, corners: list, salt: st
     record.tagged_blocks[Tag.SMART_OBJECT_LAYER_DATA2] = TaggedBlock(
         signature=b"8BIM", key=Tag.SMART_OBJECT_LAYER_DATA2,
         data=SmartObjectLayerData(kind=b"soLD", version=4, data=_placed_block(uuid, placed, corners,
-                                                                              (rgba.shape[1], rgba.shape[0]))))
+                                                                              (rgba.shape[1], rgba.shape[0]),
+                                                                              ppi(data, path))))
     _add_item(psd, _new_item(uuid, rel, path, data))
     made = SmartObjectLayer(parent, record, layer._channels)
     parent._layers[parent._layers.index(layer)] = made
@@ -897,7 +960,8 @@ def _fit_corners(layer, old: Optional[np.ndarray], rgba: Optional[np.ndarray]) -
 
 
 def link_card(psd: PSDImage, rel: str, entries: list, read: Callable[[str], Optional[bytes]],
-              first: Optional[set] = None, copies: frozenset = frozenset(), tree: Optional[set] = None) -> Linked:
+              first: Optional[set] = None, copies: frozenset = frozenset(), tree: Optional[set] = None,
+              ppis: Optional[Callable[[str], Optional[float]]] = None) -> Linked:
     """
     One PSD's pictures linked in place by its catalogue entries (assign), its stat bars left embedded:
     classes 1, 4 and 5 keep the raster; 2 takes place_trim's quad and keeps it; 3 is drawn again from the Types file
@@ -913,6 +977,7 @@ def link_card(psd: PSDImage, rel: str, entries: list, read: Callable[[str], Opti
         first: The new files this PSD is the first user of (it writes them); None: every new file it uses
         copies: uuids to take as exact copies (5.2 step 9's redo)
         tree: Repo paths at the base (links_of, for existing links); None: placed by read()
+        ppis: repo path -> its file's ppi (repair's Rslt); None: ppis_of(read)
 
     Returns:
         Linked
@@ -989,7 +1054,7 @@ def link_card(psd: PSDImage, rel: str, entries: list, read: Callable[[str], Opti
         link_item(psd, uid, rel, path, target, quads, pixels)
         out.linked.append((uid, cls, path))
     known = set(tree) if tree is not None else _tree_of(read, psd, rel)
-    out.repaired, notes = repair(psd, rel, known | {path for _, _, path in out.linked})
+    out.repaired, notes = repair(psd, rel, known | {path for _, _, path in out.linked}, ppis or ppis_of(read))
     out.notes += notes
     return out
 
@@ -1038,10 +1103,37 @@ def links_of(psd: PSDImage, rel: str, tree) -> list:
     return out
 
 
-def repair(psd: PSDImage, rel: str, tree) -> tuple:
+def ppis_of(read: Callable[[str], Optional[bytes]], seen: Optional[dict] = None) -> Callable[[str], Optional[float]]:
+    """repo path -> its file's ppi through read (None: read lacks it or fails), each path read once (seen: a cache
+    shared by the readers of one tree, LinkContext.ppis)."""
+    seen = {} if seen is None else seen
+
+    def find(path: str) -> Optional[float]:
+        if path not in seen:
+            try:
+                data = read(path)
+            except Exception:                   # unread: its Rslt is not judged
+                data = None
+            seen[path] = ppi(data, path) if data is not None else None
+        return seen[path]
+    return find
+
+
+def ppi_off(psd: PSDImage, link: Link, ppis: Optional[Callable[[str], Optional[float]]]) -> Optional[float]:
+    """The file's ppi when one of the link's layers stores another Rslt (Photoshop's Update and Relink would resize
+    it), else None."""
+    want = ppis(link.path) if ppis is not None and link.path else None
+    if want is None:
+        return None
+    stored = [placed_ppi(layer) for layer in _layers_of(psd, link.uuid)]
+    return want if any(value is not None and abs(value - want) > PPI_TOL for value in stored) else None
+
+
+def repair(psd: PSDImage, rel: str, tree, ppis: Optional[Callable[[str], Optional[float]]] = None) -> tuple:
     """
     Every link's strings, name and date made canonical (the fork's SmartObject.relink with no size: a size off the
-    file's means a redraw is due, Card sync's C1).
+    file's means a redraw is due, Card sync's C1); with ppis (repo path -> its file's ppi), every layer's Rslt its
+    file's (ppi_off).
 
     Returns:
         ([repaired file names], [hand notes for links the repo lacks])
@@ -1050,20 +1142,26 @@ def repair(psd: PSDImage, rel: str, tree) -> tuple:
     for link in links_of(psd, rel, tree):
         if link.path is None:
             notes.append(NOT_IN_REPO.format(name=link.name))
-        elif not link.canonical:
+            continue
+        want = ppi_off(psd, link, ppis)
+        if not link.canonical:
             _layer_of(psd, link.uuid).smart_object.relink(link.path, psd_path=rel)
+        if want is not None:
+            set_ppi(_layers_of(psd, link.uuid), want)
+        if not link.canonical or want is not None:
             done.append(link.name)
     return done, notes
 
 
-def link_issues(psd: PSDImage, rel: str, tree) -> list:
+def link_issues(psd: PSDImage, rel: str, tree, ppis: Optional[Callable[[str], Optional[float]]] = None) -> list:
     """
     What a PSD's links need (the cheap test of A5's needs_normalise and the guards' plan step; nothing decoded): an
     embedded picture that is no stat bar nor kept_embedded, a linked stat bar (it goes back to embedded), a link to
     re-date or rewrite (repair), a link the repo lacks (a hand note), an lnk item no layer uses.
 
     Returns:
-        ["embedded: <layer>", "linked bar: <layer>", "repair: <file>", "missing: <file>", "orphan: <uuid>"]
+        ["embedded: <layer>", "linked bar: <layer>", "repair: <file>", "missing: <file>", "orphan: <uuid>"]; with ppis
+        (repo path -> its file's ppi), a layer storing another Rslt is a repair too (ppi_off)
     """
     known, used, out = _items_of(psd), set(), []
     placed = [layer for layer in psd.descendants() if layer.kind == "smartobject"]
@@ -1084,7 +1182,7 @@ def link_issues(psd: PSDImage, rel: str, tree) -> list:
     for link in links_of(psd, rel, tree):
         if link.path is None:
             out.append(f"missing: {link.name}")
-        elif not link.canonical:
+        elif not link.canonical or ppi_off(psd, link, ppis) is not None:
             out.append(f"repair: {link.name}")
     out += [f"orphan: {uid}" for uid in sorted(set(known) - used)]
     return list(dict.fromkeys(out))
@@ -1094,14 +1192,15 @@ def check(psd: PSDImage, rel: str, files: dict, tree, read: Optional[Callable[[s
           old: Optional[PSDImage] = None) -> list:
     """
     K4 on one rewritten PSD (card_sweep): every link placed in tree plus files (the PSD's new files) and canonical, its
-    size the file's (read: repo path -> bytes; a link old already had at that size is left due, 5.2 step 4), contentIDs
-    unique, no item without a layer, no linked bar, and every new MDW/Linked file in files linked by it.
+    Rslt and size the file's (read: repo path -> bytes; a link old already had at that size is left due, 5.2 step 4),
+    contentIDs unique, no item without a layer, no linked bar, and every new MDW/Linked file in files linked by it.
 
     Returns:
         The problems, one line each ([] passes)
     """
     paths = set(tree) | {path for path, data in files.items() if data is not None}
-    out = [found for found in link_issues(psd, rel, paths) if not found.startswith("embedded: ")]
+    ppis = ppis_of(lambda path: files.get(path) if path in files else read(path) if read else None)
+    out = [found for found in link_issues(psd, rel, paths, ppis) if not found.startswith("embedded: ")]
     links = links_of(psd, rel, paths)
     seen: dict = {}
     due = {(link.path, link.size) for link in links_of(old, rel, paths)} if old is not None else set()
@@ -1135,9 +1234,10 @@ class Step(list):
 
 def needs(psd: PSDImage) -> list:
     """What link() would do: an embedded picture, a link to make canonical (judged from psd.repo_path, which the
-    readers set; without it, embedded pictures alone)."""
+    readers set; without it, embedded pictures alone), its Rslt judged too when they set psd.link_ppi (ppis_of)."""
     rel = getattr(psd, "repo_path", "")
-    return [found for found in link_issues(psd, rel, None) if found.startswith(NEEDS if rel else NEEDS[:1])]
+    found = link_issues(psd, rel, None, getattr(psd, "link_ppi", None))
+    return [one for one in found if one.startswith(NEEDS if rel else NEEDS[:1])]
 
 
 def catalogue(source, tree: dict, jobs: list, path: str) -> Optional[dict]:
@@ -1165,7 +1265,8 @@ def link(psd: PSDImage, rel: str, fonts) -> Step:
         return out
     entries = ctx.entries(rel)
     copies = frozenset() if ctx.redraw else frozenset(e["uuid"] for e in entries if e.get("class") == REDRAW)
-    done = link_card(psd, rel, entries, ctx.read, ctx.first(rel), copies, set(ctx.tree))
+    done = link_card(psd, rel, entries, ctx.read, ctx.first(rel), copies, set(ctx.tree),
+                     ppis_of(ctx.read, getattr(ctx, "ppis", None)))
     named = {}
     for layer in psd.descendants():
         named.setdefault(_uid(layer) if layer.kind == "smartobject" else None, []).append(layer.name)
@@ -1358,6 +1459,7 @@ def redraw_psd(psd: PSDImage, rel: str, tree: dict, read_blob: Callable[[str], O
                 redraw(layer, drawn, quad, image_mode(layer, drawn, old_rgba))
                 pixels = True
         relink(psd, link.uuid, rel, link.path, len(new), blob, quads, size)
+        set_ppi(layers, ppi(new, link.path))    # Photoshop's Update keeps the quad only at the file's ppi
         changed = True
     return changed, pixels, notes
 
