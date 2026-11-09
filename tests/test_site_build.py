@@ -678,8 +678,8 @@ def test_a_heavy_commit_links_the_cards_history(tmp_path):
 def test_tts_details_for_the_save(bs):
     """data/tts.json (owner 10-30, the TTS hover strip and details): types' meanings from the chapters (an icon heading's
     section to the page break, a "[token]:" line, a line ending in tokens; secret text, "(See: ...)" and non-icons left
-    out), tags as text.js reads them, the statuses an ability names, cards by PNG path, hidden cards left out; the name's and
-    ability's colours as the card page paints them (nc, ac)."""
+    out), tags as text.js reads them, the statuses an ability names, cards by PNG path, hidden cards left out, only the stats
+    a card has (an active item: HP and DEF); the name's and ability's colours as the card page paints them (nc, ac)."""
     chapters = [{"id": "creature-types", "num": "20", "title": "Creature Types", "source":
                  "# Creature Types\n## FIRE {icon=fire}\nImmune to [[Burning]] (See: [“X”](#/rules/x))\n## WIND {icon=wind}\nSwap.\n"},
                 {"id": "item-types", "num": "14", "title": "Item Types", "source":
@@ -697,7 +697,8 @@ def test_tts_details_for_the_save(bs):
              {"name": "Dark Tentacle", "type": "minion", "png": "Aux/Dark_Tentacle.png", "ability": ""},
              {"name": "Gate", "type": "field", "png": "Field/Gate.png", "ability": "(3CD) summon a dark tentacle, then stay."},
              {"name": "Stay", "type": "creature", "png": "Creatures/Stay.png", "ability": ""},
-             {"name": "Mirror Knight", "type": "creature", "png": "Creatures/Mirror_Knight.png", "ability": "(OD) Summon another Mirror Knight."}]
+             {"name": "Mirror Knight", "type": "creature", "png": "Creatures/Mirror_Knight.png", "ability": "(OD) Summon another Mirror Knight."},
+             {"name": "Totem", "type": "item", "subtype": "active", "png": "Items/Totem.png", "hp": 2, "def": 0, "ability": ""}]
     got = bs.tts_details(cards, chapters, icons, bs.tag_meanings(chapters))
     assert got["types"] == {"fire": {"n": "Fire", "x": "Immune to Burning", "c": "creature-types"},
                             "wind": {"n": "Wind", "x": "Swap.", "c": "creature-types"},
@@ -708,7 +709,8 @@ def test_tts_details_for_the_save(bs):
                            "OD": {"g": "trigger", "m": "On death"}}
     assert got["statuses"] == {"Burning": {"x": "3 DMG, can't affect fire", "k": "debuff", "p": "Aux/Burning.png"}}
     assert set(got["cards"]) == {"Creatures/Hot_Guy.png", "Aux/Burning.png", "Aux/Dark_Tentacle.png", "Field/Gate.png", "Creatures/Stay.png",
-                                 "Creatures/Mirror_Knight.png"}
+                                 "Creatures/Mirror_Knight.png", "Items/Totem.png"}
+    assert got["cards"]["Items/Totem.png"]["s"] == "HP 2 DEF 0"
     assert got["cards"]["Creatures/Mirror_Knight.png"]["m"] == ["Creatures/Mirror_Knight.png"]   # a card naming itself spawns itself (owner 10-30)
     assert got["cards"]["Field/Gate.png"]["m"] == ["Aux/Dark_Tentacle.png"]   # as text.js links: a lowercase minion after its verb
     assert got["cards"]["Creatures/Hot_Guy.png"] == {
