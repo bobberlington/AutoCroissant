@@ -105,7 +105,7 @@ icon layer at (269, 1207) — below the midline, sitting in the gap after "Frien
 PSD 1200x1800; TYPE_REGION_RATIO=0.5 -> card_mid_y=900
 [1] creature-types collected ABOVE midline: ['field']
 [2] ability text layers found: 1
-    at (x=26, y=1229): "'Friendly     gain +0.5 DEF and +1 SPD.\n(1GCD) Put a darkness counter ...'"
+    at (x=26, y=1229): 'Friendly     gain +0.5 DEF and +1 SPD.\n(1GCD) Put a darkness counter ...'
 [3] Friendly<GAP:5>gain +0.5 DEF and +1 SPD. ...
 [4] type icons BELOW midline (candidate inline types): 1
     darkmatter      at (x=269, y=1207)

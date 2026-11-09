@@ -264,7 +264,7 @@ relative path: Field/3 Stars/Nebulous_Precipice.psd
         ^- these go to card.types; they are NOT injection candidates
 
 [2] ability text layers found: 1
-    at (x=26, y=1229): "'Friendly     gain +0.5 DEF and +1 SPD.\n(1GCD) Put a darkness counter ...'"
+    at (x=26, y=1229): 'Friendly     gain +0.5 DEF and +1 SPD.\n(1GCD) Put a darkness counter ...'
         ^- raw text + bbox of each text layer, pre-cleanup
 
 [3] joined ability text with gaps marked (3+ spaces = injection slots):

@@ -195,21 +195,20 @@ sense.
 ### 3.2 Ability text
 
 A text layer contributes ability text iff its name (lowercased) is `"ability"` (on a rulebook page every text
-layer did, until that rule-page parsing was removed 2026-11-04). The raw string is `str(layer.engine_dict["Editor"]["Text"])` — a
-repr-like string wrapped in quotes, with literal escape sequences. Cleanup (psd_parser.py:786-792):
+layer did, until that rule-page parsing was removed 2026-11-04). The parser reads the text itself,
+`layer.engine_dict["Editor"]["Text"].value` (its `str()` is a repr: until 2026-11-09 the parser read that and stripped
+the wrapping quotes, which also dropped Flip's opening `"`). Cleanup (`_process_text_layer`):
 
-| Raw sequence | Becomes | Why |
+| Character | Becomes | Why |
 |---|---|---|
 | `\r` | `\n` | Photoshop line breaks are CR |
-| `\n` | `\n` | normalize |
 | `\t` | one space | tabs |
 | `\x03` | `\n` | ETX control char Photoshop emits for some breaks |
 | `\ufeff` (BOM char) | removed | byte-order mark (BOM) |
-| trailing whitespace | `.rstrip()` | |
 
 Multiple ability text layers are sorted by position (3.5's row sort) and
-joined with `\n`; the wrapping `'`/`"` quotes are stripped during the join and at the end
-(`_process_abilities`, psd_parser.py:1151-1162). Since 2026-10-25 (owner) cards need no ability; `NO ABILITY LAYER`
+joined with `\n`; blanks and line breaks at their ends are stripped during the join and at the end
+(`_process_abilities`). Quotes the card prints stay. Since 2026-10-25 (owner) cards need no ability; `NO ABILITY LAYER`
 (a rule page with no text) went with the rule-page parsing (removed 2026-11-04).
 
 ### 3.3 Card-type icons and the midline
@@ -385,8 +384,7 @@ For layers that do use the font, `_read_icon_tokens` rewrites what's in it:
   `[x:no]`, because it means "non-x".
 - Private-use characters inserted from the Glyphs panel become `[name]`, and `★` becomes `[star]`.
 
-The result is passed through `repr()`, since `str()` of a psd-tools engine string *is* its repr, and then the
-usual cleanup runs.
+The usual cleanup (3.2) then runs on the result.
 
 Visible non-ability text in the font that sits above the midline is treated as a header:
 - Type tokens are appended to `card.types`.
