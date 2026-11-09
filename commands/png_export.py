@@ -497,18 +497,24 @@ def fingerprints(psd: PSDImage) -> dict:
         return {}
     out = {}
     for i, (record, channels) in enumerate(zip(info.layer_records, info.channel_image_data)):
-        digest = hashlib.sha1(repr((record.left, record.top, record.right, record.bottom, record.blend_mode,
-                                    record.opacity, record.clipping, record.flags.tobytes())).encode())
-        digest.update(record.mask_data.tobytes() if record.mask_data is not None else b"")
-        digest.update(record.blending_ranges.tobytes() if record.blending_ranges is not None else b"")
-        for key, block in (record.tagged_blocks or {}).items():
-            if bytes(key) not in VOLATILE:
-                digest.update(bytes(key) + block.tobytes())
-        for channel in channels:
-            digest.update(channel.tobytes())
         lid = _layer_id(record)
-        out[lid if lid is not None else f"#{i}"] = (digest.hexdigest(), (record.left, record.top, record.right, record.bottom))
+        out[lid if lid is not None else f"#{i}"] = (record_print(record, channels),
+                                                    (record.left, record.top, record.right, record.bottom))
     return out
+
+
+def record_print(record, channels, kept: tuple = ()) -> str:
+    """sha1 of a layer record and its channel data, the VOLATILE blocks but kept's left out (fingerprints)."""
+    digest = hashlib.sha1(repr((record.left, record.top, record.right, record.bottom, record.blend_mode,
+                                record.opacity, record.clipping, record.flags.tobytes())).encode())
+    digest.update(record.mask_data.tobytes() if record.mask_data is not None else b"")
+    digest.update(record.blending_ranges.tobytes() if record.blending_ranges is not None else b"")
+    for key, block in (record.tagged_blocks or {}).items():
+        if bytes(key) not in VOLATILE or bytes(key) in kept:
+            digest.update(bytes(key) + block.tobytes())
+    for channel in channels:
+        digest.update(channel.tobytes())
+    return digest.hexdigest()
 
 
 def _changed_ids(before: dict, after: dict) -> set:
@@ -1334,6 +1340,7 @@ __all__ = [
     'export_new',
     'miss_notes',
     'fingerprints',
+    'record_print',
     'optimize',
     'like_mode',
     'open_png',

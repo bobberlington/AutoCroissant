@@ -2436,6 +2436,34 @@ def test_an_old_font_save_is_told():
     assert f"- {cg.OLD_FONT}" in text and "became" not in text
 
 
+def test_kept_icon_layers_skip_their_layouts(cards, tmp_path, monkeypatch):
+    """ICON_LAYOUTS are left out only when the push kept every icon layer byte for byte and the icon font is the one the
+    PSD was last changed with; a changed icon layer, or a changed icon font, runs all three."""
+    root, base, alice, bot = cards
+    rel, psds = f"{FOLDER}/Snack.psd", tmp_path / "psds"
+    font = root / cg.ICON_FONT_FILE
+    font.parent.mkdir(parents=True, exist_ok=True)
+    font.write_bytes(b"font 1")
+    _commit(root, "font", author="Alice")
+    _psd(root, psds, rel, card(colour=(0, 0, 200)))
+    before = _commit(root, "Snack with font 1", author="Alice")
+    _psd(root, psds, rel, card(colour=(0, 200, 0)))     # the Square layer changes, Base stays
+    head = _commit(root, "Snack again", author="Alice")
+    _git(root, "checkout", "-q", "-b", "font", before)
+    _psd(root, psds, rel, card(colour=(0, 200, 0)))
+    font.write_bytes(b"font 2")
+    refont = _commit(root, "Snack and a new font", author="Alice")
+    icons, skips = ["Base"], []
+    monkeypatch.setattr(cg.standards, "icon_layers", lambda psd: [l for l in psd.descendants() if l.name in icons])
+    monkeypatch.setattr(cg.standards, "pixel_kinds", lambda psd, kinds=(), *a, **k: () if kinds else
+                        (*cg.ICON_LAYOUTS, "status words"))
+    monkeypatch.setattr(cg.standards, "fix", lambda *a, skip=(), **k: skips.append(skip) or cg.standards.Fixed())
+    for after, shown in ((head, "Base"), (head, "Square"), (refont, "Base")):
+        icons[:] = [shown]
+        cg.check(str(root), after, before, out=str(tmp_path / f"out-{len(skips)}"), workers=1, convert="off")
+    assert skips == [(cg.NORMALISE, *cg.ICON_LAYOUTS), (cg.NORMALISE,), (cg.NORMALISE,)]
+
+
 def test_a_rewrap_redraw_follows_into_the_png_unsaid(tmp_path, monkeypatch):
     """R8 always switches; box text that rewraps is redrawn and its PNG re-exported through guard 1's export, unsaid (a
     guard 1 write takes the new pixels, the pushed PNG's recompression gives way); a refused export, or no PNG that shows

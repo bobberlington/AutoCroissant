@@ -119,6 +119,8 @@ ICON_FONT_FILE = f"{psd_edit.FONTS_DIR}/stoogedings.ttf"
 EARLIER_FONTS = 4                               # badge widths: the icon font's earlier eras at most (earlier_fonts)
 EARLIER_WALK = 40                               # versions of its history earlier_fonts reads at most (10 by 2026-11-05)
 EARLIER_ENV = "CARD_EARLIER_FONTS"              # card-guards.yml's Earlier fonts folder: <blob sha> files (_font_blob)
+ICON_LAYOUTS = ("badge widths", "old glyphs", "badges")   # skipped when the icon layers and font are as last
+                                                # checked (_layouts_kept)
 GUARD_EVENTS = "guard-events.json"              # beside the plan: the landed commit's changelog events
 GUARD_RECORDS = "records.json"                  # beside the plan: what the landed PSD writes read before the strip, for
                                                 # the data's records (card-guards.yml's guard-records; card_data --records)
@@ -192,6 +194,7 @@ class Job:
     convert: bool = False                       # rename: its links repaired too (its folder depth changed, G4)
     dups: dict = field(default_factory=dict)    # picture-only duplicate path -> blob at after (card_edits.dup_pictures)
     base_png: str = ""                          # pair: the PNG's blob before the push (its pictures follow from it)
+    font_kept: bool = False                     # its last change before the push had this icon font (Source.font_kept)
     login: str = NOBODY
     commit: str = ""                            # the last writer's commit (the Discord link)
 
@@ -455,6 +458,31 @@ class Source:
             return None
         return out
 
+    def font_kept(self, before: str, after: str, olds: dict) -> set:
+        """The paths of olds ({path: blob at before}) whose last change up to before left that blob in a tree with
+        after's icon font: one walk from the font's last change up to after, one rev-parse; empty when unread."""
+        if before == EMPTY_TREE or not olds:
+            return set()
+        try:
+            last = self.git("log", "-1", "--format=%H", after, "--", ICON_FONT_FILE).strip()
+            if not last:
+                return set()
+            raw = self.git("log", "--no-renames", "--format=%x1e%H", "--name-only", "-z", f"{last}..{before}", "--",
+                           *(f":(literal){path}" for path in olds))
+            changed: dict = {}                  # path -> its newest commit in the walk
+            for chunk in raw.split("\x1e"):
+                head, _, rest = chunk.partition("\0")
+                for path in rest.lstrip("\n").split("\0"):
+                    changed.setdefault(path.strip("\n"), head.strip())
+            pairs = [(path, sha) for path, sha in changed.items() if path in olds]
+            asked = [f"{after}:{ICON_FONT_FILE}"] + [f"{sha}:{x}" for path, sha in pairs for x in (ICON_FONT_FILE, path)]
+            found = self.git("rev-parse", *asked).split()
+        except Transient:
+            return set()
+        if len(found) != len(asked):
+            return set()
+        return {path for i, (path, _) in enumerate(pairs) if found[1 + 2 * i] == found[0] and found[2 + 2 * i] == olds[path]}
+
     def paths(self):
         """The checked tree's paths, blind to case (psd_tools' RepoTree), built once."""
         if getattr(self, "_paths", (None,))[0] is not self.checked:
@@ -636,6 +664,10 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
         jobs.append(Job(change.path, "convert", change.old, change.new, login=login, commit=commit))
     if cards:
         jobs = [job for job in jobs if CardAuthors.key(card_name(job.psd)) in cards]
+    olds = {job.psd: job.psd_old for job in jobs if job.case in ("stale", "pair", "psd-only") and job.psd_old}
+    kept = source.font_kept(before, after, olds) if olds else set()
+    for job in jobs:
+        job.font_kept = job.psd in kept and job.psd_old == olds.get(job.psd)
     return sorted(jobs, key=lambda job: job.psd), skipped, notes, tree
 
 
@@ -820,6 +852,22 @@ def added(job: Job) -> bool:
     return job.case in ("new", "beside") or (job.case in ("pair", "psd-only") and not job.psd_old)
 
 
+def _icon_prints(psd) -> dict:
+    """{layer id: record_print with TySh} of the icon layers; None when two share an id."""
+    layers = standards.icon_layers(psd)
+    out = {layer.layer_id: png_export.record_print(layer._record, layer._channels, (b"TySh",)) for layer in layers}
+    return out if len(out) == len(layers) else None
+
+
+def _layouts_kept(job: Job, old, new) -> bool:
+    """ICON_LAYOUTS left out: the push kept every icon layer (one of old's, byte for byte but its name) and the
+    icon font is the one old was last changed with (the guards laid them out then)."""
+    if not job.font_kept or old is None:
+        return False
+    now, before = _icon_prints(new), _icon_prints(old)
+    return now is not None and before is not None and all(before.get(key) == value for key, value in now.items())
+
+
 def _links(source: Source, psd, rel: str, sha: str) -> dict:
     """What housekeeping reads of a PSD (opened, or its bytes; blob sha), in the pool: its links (psd_links.links_of)
     and its links to an MDW/Linked file missing at after (_missing: G4's restore); {} unread."""
@@ -975,7 +1023,8 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
             result.notes.append((f"{basename(job.png)} could not be checked against the PSD ({measured.get('why')})", False))
     if job.case == "pair" and old is not None and job.base_png:
         _pair_pictures(source, job, result, old, new, out, shown, faces)
-    pixels = tuple(kind for kind in standards.pixel_kinds(new, rel=job.psd, chart=context.chart) if kind != NORMALISE) \
+    skip = (NORMALISE, *ICON_LAYOUTS) if _layouts_kept(job, old, new) else (NORMALISE,)
+    pixels = tuple(kind for kind in standards.pixel_kinds(new, rel=job.psd, chart=context.chart) if kind not in skip) \
         if job.case != "png-only" else ()
     if job.case != "png-only":                  # converted after the check (convert_plan), SWEEP_ONLY or not
         result.convert = list(standards.pixel_kinds(new, (NORMALISE,)))
@@ -992,7 +1041,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
         fonts.earlier = earlier                 # card_standards.relay_badges, redraw_old_glyphs
         fonts.cards = context.cards             # relay_badges' notes: a break inside a card's name
         fonts.chart = context.chart             # status words
-        fixed = standards.fix(new_bytes, job.psd, issues, join(out, "work"), parser, fonts, skip=(NORMALISE,))
+        fixed = standards.fix(new_bytes, job.psd, issues, join(out, "work"), parser, fonts, skip=skip)
         result.fixed, result.composer, result.composer_left = fixed.applied, fixed.composer, fixed.composer_left
         result.pixel_left = list(fixed.pixel_left)
         lines = {issue.code: issue.line() for issue in issues if issue.fix}
