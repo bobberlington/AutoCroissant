@@ -115,6 +115,7 @@ CARD_ROOTS = ("Auxiliary/", "Creatures/", "Field/", "Items/", "N.M.E/")   # wher
 ICON_FONT_FILE = f"{psd_edit.FONTS_DIR}/stoogedings.ttf"
 EARLIER_FONTS = 4                               # badge widths: the icon font's earlier eras at most (earlier_fonts)
 EARLIER_WALK = 40                               # versions of its history earlier_fonts reads at most (10 by 2026-11-05)
+EARLIER_ENV = "CARD_EARLIER_FONTS"              # card-guards.yml's Earlier fonts folder: <blob sha> files (_font_blob)
 GUARD_EVENTS = "guard-events.json"              # beside the plan: the landed commit's changelog events
 GUARD_RECORDS = "records.json"                  # beside the plan: what the landed PSD writes read before the strip, for
                                                 # the data's records (card-guards.yml's guard-records; card_data --records)
@@ -1771,15 +1772,18 @@ def font_advances(data: bytes) -> dict:
             if (name := font.get_glyph_name(gid))}
 
 
-def _font_blob(source: Source, sha: str) -> bytes:
-    """An icon font blob: the clone's own file first when it is that blob (the Action's cached MDW/Fonts)."""
-    try:
-        with open(join(source.clone, ICON_FONT_FILE), "rb") as fh:
-            data = fh.read()
+def _font_blob(source: Source, sha: str, own: bool = True) -> bytes:
+    """An icon font blob: EARLIER_ENV's file, with own the clone's file (the Action's cached MDW/Fonts), when it is that
+    blob; else source.blob."""
+    folder = environ.get(EARLIER_ENV, "")
+    for path in ([join(folder, sha)] if folder else []) + ([join(source.clone, ICON_FONT_FILE)] if own else []):
+        try:
+            with open(path, "rb") as fh:
+                data = fh.read()
+        except OSError:
+            continue
         if blob_sha(data) == sha:
             return data
-    except OSError:
-        pass
     return source.blob(sha)
 
 
@@ -1814,7 +1818,7 @@ def earlier_fonts(source: Source, commit: str, tree: dict, folder: str) -> list:
             seen.add(sha)
             walk.append(sha)
     with ThreadPoolExecutor(PREFETCH_WORKERS) as pool:
-        reads = pool.map(source.blob, [sha for sha in walk if sha not in _advances])     # in walk's order
+        reads = pool.map(partial(_font_blob, source, own=False), [sha for sha in walk if sha not in _advances])
         for sha in walk:
             if len(kept) == EARLIER_FONTS:
                 reads.close()                   # the reads not begun stay unread
@@ -1828,7 +1832,7 @@ def earlier_fonts(source: Source, commit: str, tree: dict, folder: str) -> list:
             kept.append(sha)
             files.append(join(folder, f"stoogedings-{sha[:12]}.earlier"))
             with open(files[-1], "wb") as fh:
-                fh.write(source.blob(sha) if data is None else data)
+                fh.write(_font_blob(source, sha, False) if data is None else data)
     return files
 
 

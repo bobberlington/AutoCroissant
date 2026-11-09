@@ -1728,6 +1728,57 @@ def test_workflow_fetches_pushed_blobs_in_the_background(clone, tmp_path, monkey
     assert cb._pending_blob(str(repo), listed[0]) is None
 
 
+FAKE_RAW = r"""#!/bin/sh
+cat > "$FAKE_ARGS.config"
+echo "$*" >> "$FAKE_ARGS"
+while [ $# -gt 0 ]; do case "$1" in -o) out=$2; shift;; https://*) url=$1;; esac; shift; done
+rest=${url#https://raw.githubusercontent.com/o/cards/}
+git -C "$FAKE_REPO" cat-file blob "${rest%%/*}:${rest#*/}" > "$out"
+"""
+
+
+def test_workflow_fetches_earlier_icon_fonts_in_the_background(clone, tmp_path, monkeypatch):
+    """Earlier fonts start lists the icon font's past versions (not the current one) and fetches them by commit in the
+    background, the token off the command line; Check's earlier_fonts reads them there (CARD_EARLIER_FONTS), no API."""
+    pytest.importorskip("yaml")
+    if not shutil.which("timeout"):
+        pytest.skip("no timeout (coreutils)")
+    _, steps, _ = _guard_steps(clone)
+    repo, temp, bin_dir = tmp_path / "repo", tmp_path / "temp", tmp_path / "bin"
+    for folder in (repo, temp, bin_dir):
+        folder.mkdir()
+    (bin_dir / "curl").write_text(FAKE_RAW)
+    (bin_dir / "curl").chmod(0o755)
+    _git(repo, "init", "-q", "-b", "main")
+    (repo / cg.ICON_FONT_FILE).parent.mkdir(parents=True)
+    shas = []
+    for n in range(3):
+        (repo / cg.ICON_FONT_FILE).write_bytes(b"%d" % n)
+        head = _commit(repo, f"font {n}")
+        shas.append(blob_sha(b"%d" % n))
+    env = {"PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": os.environ.get("HOME", ""), "RUNNER_TEMP": str(temp),
+           "AFTER": head, "GITHUB_REPOSITORY": "o/cards", "GH_TOKEN": "s3cret", "GITHUB_ENV": str(temp / "env"),
+           "GITHUB_OUTPUT": str(temp / "output"), "FAKE_REPO": str(repo), "FAKE_ARGS": str(tmp_path / "args")}
+    done, _ = _shell(steps["Earlier fonts start"], env, cwd=repo)
+    folder = temp / "earlier-fonts"
+    assert done.returncode == 0 and (temp / "env").read_text() == f"{cg.EARLIER_ENV}={folder}\n", done.stderr
+    assert [line.split()[1] for line in (folder / "list").read_text().splitlines()] == shas[1::-1]
+    wait = f'until [ -f "{folder / shas[0]}" ] && [ -f "{folder / shas[1]}" ]; do sleep 0.1; done'
+    subprocess.run(["timeout", "10", "sh", "-c", wait], check=True)
+    assert "s3cret" not in (tmp_path / "args").read_text() and "s3cret" in (tmp_path / "args.config").read_text()
+
+    class NoApi(cg.Source):
+        def blob(self, sha):
+            raise AssertionError(sha)
+    monkeypatch.setenv(cg.EARLIER_ENV, str(folder))
+    monkeypatch.setattr(cg, "font_advances", lambda data: {"glyph": int(data) + 1})
+    monkeypatch.setattr(cg, "_advances", {})
+    out = tmp_path / "out"
+    out.mkdir()
+    files = cg.earlier_fonts(NoApi(str(repo)), head, cg.Source(str(repo)).tree(head), str(out))
+    assert [Path(path).read_bytes() for path in files] == [b"1", b"0"]
+
+
 def test_workflow_lowercases_card_guards(clone, tmp_path):
     """The job's `if` matches CARD_GUARDS in any case ("On"), the shell does not: Start lowercases MODE for every later
     step (Land's --dry-run test is exact; `land` would also refuse a report plan without it)."""
