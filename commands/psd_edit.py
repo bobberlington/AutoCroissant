@@ -332,6 +332,7 @@ class Edit:
     band: Optional[tuple] = None  # canvas bbox of the text pixels redrawn (a splice: its changed glyphs); None: none
     renamed: Optional[str] = None  # a title layer named after its text: its new name, the new title (as Photoshop does)
     whole: bool = False     # the engine redrew every glyph (no splice, or it fell back): the lines it left laid out again
+    lines: Optional[tuple] = None  # a plain layer spliced in place: the splice zone, the only pixels it changes
     lifted: int = 0         # px an Ability edit moved its layer up (lift)
     icons: Optional["IconPlan"] = None  # a stars or types edit's plan (index_icons() fills the four lists below)
     toggled: list = field(default_factory=list)  # record indices of the layers it showed or hid: one flag byte each
@@ -5703,6 +5704,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         layer = name_layer(psd, card)
     follow_kerning(psd, layer)                  # drawn kerned as Photoshop shows it (B12)
     old_text, old_bbox, story = layer.text, tuple(layer.bbox), story_index(layer)
+    gamma = _drew_gamma(psd, layer)             # as the edited layer is drawn (text_kwargs): its kept glyphs stay
     own = which == "name" and own_text_title(layer, card)
     flags = []
 
@@ -5995,6 +5997,13 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     if twice:                                   # two layers' words renumbered onto one name
         raise Refused("unsupported-card", f"two FX layers would be named {', '.join(twice)}; edit in Photoshop")
     reach += [(tuple(fx.bbox), fx_pad(fx)) for fx in made + [fx for fx, _ in rebuilt]]
+    plain = not (old_fx or hide or plans or made or rebuilt or dropped or restyled or _clip_chain(layer)
+                 or (_effect_margin(layer)[1] and bbox != old_bbox)
+                 or any(_effect_margin(owner)[1] for owner in _ancestors(layer)))
+    lines = band if spliced is not None and not spliced.fallback and band and not (moved or anchor or up) \
+        and area is None and gamma and plain else None
+    if lines:                                   # its other glyphs keep their pixels
+        reach[0] = (lines, fx_pad(layer))
     region = union_box([_pad(box, pad, psd) for box, pad in reach])
     if own:                                     # else the parser would no longer find the title
         layer.name = collapse(text)
@@ -6006,7 +6015,8 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                 dropped=dropped, rebuilt=[(_record_index(fx), old, fx.name) for fx, old in rebuilt],
                 restyled=[(_record_index(fx), blocks) for fx, blocks in restyled],
                 fx_names=fx_names, notes=notes + flags, held=held, fonts=faces,
-                renamed=layer.name if own else None, whole=spliced is None or bool(spliced.fallback), lifted=up)
+                renamed=layer.name if own else None, whole=spliced is None or bool(spliced.fallback), lifted=up,
+                lines=lines)
 
 
 # ========================
@@ -8980,18 +8990,31 @@ def _effect_margin(layer) -> tuple:
 
 
 class _DirtyDoc:
-    """One side's fork pass state: layer keys (rcache) and change boxes (composite._PassCache)."""
-    def __init__(self):
+    """One side's fork pass state: layer keys (rcache) and change boxes (composite._PassCache); new's: the lines."""
+    def __init__(self, lines: Optional[dict] = None):
         from importlib import import_module
         from psd_tools.composite import rcache
         self.composite, self.rcache = import_module("psd_tools.composite.composite"), rcache   # the module, not the function
-        self.cache, self.keys = self.composite._PassCache(), {}
+        self.cache, self.keys, self.lines = self.composite._PassCache(), {}, lines or {}
 
     def key(self, layer) -> bytes:
         return self.rcache.layer_key(layer, self.keys)
 
     def change(self, layer) -> tuple:
         return self.composite._change_bbox(layer, self.cache)
+
+
+def _same_look(old, new) -> bool:
+    """Type layers alike but their pixels: opacity, blend, clipping, eye, fill, mask, own effects; none of those
+    reading the bbox when it moved."""
+    if old.kind != "type" or new.kind != "type":
+        return False
+    blocks = lambda l: [l.tagged_blocks[k].tobytes() if l.tagged_blocks is not None and k in l.tagged_blocks else None
+                        for k in EFFECT_BLOCKS]
+    mask = lambda l: None if l._record.mask_data is None else tuple(
+        getattr(l._record.mask_data, k) for k in ("left", "top", "right", "bottom", "flags", "background_color"))
+    look = lambda l: (l.opacity, l.blend_mode, l.clipping, l.visible, getattr(l, "fill_opacity", 255), mask(l), blocks(l))
+    return look(old) == look(new) and not (_effect_margin(new)[1] and tuple(old.bbox) != tuple(new.bbox))
 
 
 def _children_box(do: _DirtyDoc, dn: _DirtyDoc, old, new):
@@ -9019,6 +9042,10 @@ def _children_box(do: _DirtyDoc, dn: _DirtyDoc, old, new):
             if inner == FULL:
                 return FULL
             box = _join(box, inner)
+        elif lid in dn.lines and o is not None and n is not None and _same_look(o, n):     # its lines alone
+            margin, (x0, y0, x1, y1) = _effect_margin(n)[0], dn.lines[lid]
+            box = _join(box, (max(x0 - margin, 0), max(y0 - margin, 0), min(x1 + margin, n._psd.width),
+                              min(y1 + margin, n._psd.height)))
         else:
             box = _join(_join(box, o is not None and do.change(o) or None), n is not None and dn.change(n) or None)
     for seq, indices, doc in ((oc, touched[0], do), (nc, touched[1], dn)):
@@ -9071,12 +9098,13 @@ def _links_grown(old: PSDImage, new: PSDImage) -> bool:
     return a == b and not was - now
 
 
-def dirty_box(old: PSDImage, new: PSDImage) -> Optional[tuple]:
+def dirty_box(old: PSDImage, new: PSDImage, lines: Optional[dict] = None) -> Optional[tuple]:
     """
     Every pixel where new (an edited copy of old) can render unlike old, from the layer records: layers matched by id
     per group, an unchanged subtree skipped, a changed one's fork change box (_change_bbox) plus its clip layers', a
     group's effect reach. The whole canvas on a reorder, a document-level change (but links added: _links_grown), an
-    external link, or when the walk fails (an older fork; raised under PSD_DIRTY_VERIFY).
+    external link, or when the walk fails (an older fork; raised under PSD_DIRTY_VERIFY). lines: {layer id: Edit.lines}
+    (_lines): such a type layer, its look the same (_same_look), counts as its lines and its effects' reach.
 
     Returns:
         The bbox on the canvas, None when nothing differs
@@ -9087,7 +9115,7 @@ def dirty_box(old: PSDImage, new: PSDImage) -> Optional[tuple]:
         key = rcache.doc_key(old)
         if key is None or (old.width, old.height) != (w, h) or (key != rcache.doc_key(new) and not _links_grown(old, new)):
             return (0, 0, w, h)
-        box = _children_box(_DirtyDoc(), _DirtyDoc(), old, new)
+        box = _children_box(_DirtyDoc(), _DirtyDoc(lines), old, new)
     except Exception:
         if environ.get(DIRTY_VERIFY) == "1":
             raise
@@ -9115,7 +9143,8 @@ def gate_dirty(old: PSDImage, new: PSDImage, edits: list, keep: Optional[dict] =
         raises Refused("region") as gate_untouched does
     """
     w, h = new.width, new.height
-    box = union_box([clip_to(edit.region, (0, 0, w, h)) for edit in edits if edit.region] + [dirty_box(old, new)])
+    box = union_box([clip_to(edit.region, (0, 0, w, h)) for edit in edits if edit.region]
+                    + [dirty_box(old, new, _lines(edits))])
     shown = np.zeros((h, w, 4), np.uint8)
     diff = after = None
     pins = look_kwargs(new) if keep is None else text_kwargs(new, "preview", edited_ids(edits))
@@ -9154,6 +9183,17 @@ def gate_dirty(old: PSDImage, new: PSDImage, edits: list, keep: Optional[dict] =
             raise Refused("region", "%s: the card changes %d pixels outside the edited boxes"
                           % (", ".join(edit.field for edit in edits), outside))
     return shown
+
+
+def _lines(edits: list) -> dict:
+    """{layer id: Edit.lines} of the text layers one edit alone set in place (a colours edit after it draws more)."""
+    seen = Counter(layer.layer_id for edit in edits for layer in edit.layers)
+    out = {}
+    for edit in edits:
+        for lid, one, _ in edit.parts if edit.several else [(layer.layer_id, edit, False) for layer in edit.layers[:1]]:
+            if one.lines and seen[lid] == 1:
+                out[lid] = one.lines
+    return out
 
 
 def _cached(call, *args):
@@ -9265,6 +9305,15 @@ def look_kwargs(psd: PSDImage) -> dict:
         if fact and fact[0] == raster_key(layer):
             pins[layer.layer_id] = None if fact[1] == "straight" else gamma
     return {"layer_text_gamma": pins} if pins else {}
+
+
+def _drew_gamma(psd: PSDImage, layer) -> bool:
+    """look_kwargs draws the layer in the text gamma, as text_kwargs pins an edited one (no stored image, no straight
+    fact on its raster)."""
+    if psd.has_preview():
+        return False
+    fact = (_LOOKS.get(psd, {}).get("text") or {}).get(str(layer.layer_id))
+    return not (fact and fact[0] == raster_key(layer) and fact[1] == "straight")
 
 
 def text_choices(psd: PSDImage) -> dict:
