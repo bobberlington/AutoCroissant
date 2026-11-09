@@ -162,6 +162,8 @@ LAYOUT_TOL = 0.12           # a star or icon sits on a layout's spot within this
 LAYOUT_TOL_MIN = 6          # px, at least
 ICON_FRAME = 0.1            # ink over more of the canvas is a frame or a fill, not an icon or a star
 ICON_GAP = 22               # px between an icon and the one under it on a 1200-wide card (Item_Template: Attack, NME)
+LOWER_STEP = 0.1            # a blocked added star or icon steps down this share of its height at a time (_drops)
+LOWER_MIN = 4               # px, at least
 ICON_TOUCH = 0.05           # a moved, shown or made type icon may ink over this share of another's (the cards'
 #   own rows: 158 of 161 rows of two or more touch nowhere, Pandora's pandas 5.5%; 2026-10-26)
 CARD_WIDTH = 1200
@@ -6289,12 +6291,40 @@ def _blocked(psd: PSDImage, inks: list, core: tuple, others: list) -> Optional[s
     slack = _tol(max(core[2] - core[0], core[3] - core[1]))     # the cards' own icons pass the edge a little
     if core[0] < -slack or core[1] < -slack or core[2] > psd.width + slack or core[3] > psd.height + slack:
         return "runs off the canvas"
+    reach = union_box([(b[0], b[1], b[0] + solid.shape[1], b[1] + solid.shape[0]) for b, solid in filter(None, inks)])
     for other in others:
+        b = tuple(other.bbox)
+        if reach is None or b[2] <= reach[0] or b[0] >= reach[2] or b[3] <= reach[1] or b[1] >= reach[3]:
+            continue                            # no ink of its can meet mine: not read
         theirs = _ink(other)
         if theirs is None or (other.kind != "type" and theirs[1].sum() > ICON_FRAME * psd.width * psd.height):
             continue                            # a fill or art filed with the stars (Kyle's) is neither
         if any(_inks_touch(mine, theirs) for mine in inks):
             return f"would touch {other.name!r}"
+    return None
+
+
+def _drops(psd: PSDImage, core: tuple) -> range:
+    """
+    The px an added star or type icon whose spot is blocked steps down, in turn (owner 11-08: down until it fits):
+    LOWER_STEP of its height at a time, its centre kept above the card's middle (no star or type is read below it) and
+    its core above the Ability text under it.
+    """
+    step = max(LOWER_MIN, round(LOWER_STEP * (core[3] - core[1])))
+    last = min([TYPE_REGION_RATIO * psd.height - (core[1] + core[3]) / 2] +
+               [layer.bbox[1] - core[3] for layer in psd.descendants() if _is_text_layer(layer) and layer.is_visible()
+                and base_name(layer).strip().lower() == "ability" and layer.bbox[1] >= core[3]])
+    return range(step, int(last) + 1, step)
+
+
+def _lowered(psd: PSDImage, inks: list, core: tuple, others: list, icons: list) -> Optional[int]:
+    """The px an added type icon (inks, core: at its spot) steps down to fit (_drops): clear of others (_blocked) and
+    of the row's icons (inks) past ICON_TOUCH; None when it fits nowhere."""
+    for d in _drops(psd, core):
+        mine = [(_moved_box(box, 0, d), solid) for box, solid in inks]
+        if _blocked(psd, mine, _moved_box(core, 0, d), others) is None and not any(
+                _ink_overlap(a, b) > ICON_TOUCH * min(a[1].sum(), b[1].sum()) for a in mine for b in icons):
+            return d
     return None
 
 
@@ -7199,7 +7229,8 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
       the middle when one goes), a row or column carried on, a zigzag carried on, a lone star's column, then
       _more_layouts'. A row centred on the card stays centred at its pitch (Grimora's). A new or moved star must stay
       on the canvas, off the text and type icons, under a texture clipped onto its group, and add exactly one to what
-      the parser counts; a refusal gives the reason of the layout that came closest.
+      the parser counts. When no layout fits, the first that fits stepped down (_drops: its new stars, else all it moves
+      and adds; owner 11-08, told); a refusal gives the reason of the layout that came closest.
     - star-icon layers outside the group (Nosk's 'Hk star') are stars of the layout (R2); a star drawn twice on one
       spot is one star (R3: Tainted Eden, Living Bread); one layer drawing several is split into masked copies first
       (R4: split_stars; Grimora, Dimension D); a second creature's stars upside down below the midline (Tainted
@@ -7340,6 +7371,39 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         def shaded(kept: list, moves: list) -> list:
             flagged = {id(unit) for unit, _, _ in _shaded(psd, [_drawn_as(unit) for unit in kept], _as_drawn(moves))}
             return [move for move in moves if id(_drawn_as(move[0])) in flagged]
+
+        def lowered(order: list, moves: list, copies: list, under: list, back) -> Optional[tuple]:
+            """
+            A layout that does not fit, stepped down (_drops): its new stars one by one, else every star it moves or
+            adds together, until failed and off_back pass and no star sits on another. Returns (moves, copies, px, what
+            was lowered) or None.
+            """
+            moved = {id(unit) for unit, _, _ in moves + under}
+            stay = [unit.core for unit in order if id(unit) not in moved]
+            apart = lambda box, boxes: all(_covers(box, b) <= OVERLAP and _covers(b, box) <= OVERLAP for b in boxes)
+            fits = lambda moves_, copies_: failed(moves_ + [copy[:3] for copy in copies_])[0] is None \
+                and off_back(back, moves_, copies_) is None
+            if copies and fits(moves, []):
+                taken, out = stay + [_moved_box(unit.core, dx, dy) for unit, dx, dy in moves], []
+                for unit, dx, dy, name in copies:
+                    box = _moved_box(unit.core, dx, dy)
+                    d = next((d for d in (0, *_drops(psd, box)) if apart(_moved_box(box, 0, d), taken)
+                              and fits([], [(unit, dx, dy + d, name)])), None)
+                    if d is None:
+                        break
+                    taken.append(_moved_box(box, 0, d))
+                    out.append((unit, dx, dy + d, name))
+                else:
+                    drop = max(dy - old[2] for (_, _, dy, _), old in zip(out, copies))
+                    if drop:
+                        return moves, out, drop, "the new star" + ("s" if len(out) > 1 else "")
+            boxes = [_moved_box(unit.core, dx, dy) for unit, dx, dy, *_ in moves + copies]
+            for d in _drops(psd, max(boxes, key=lambda box: box[3])) if boxes else ():
+                down, new = [(u, dx, dy + d) for u, dx, dy in moves], [(u, dx, dy + d, n) for u, dx, dy, n in copies]
+                if all(apart(_moved_box(box, 0, d), stay) for box in boxes) and fits(down, new) \
+                        and not shaded(order, down):
+                    return down, new, d, "the stars" if moves else "the new stars"
+            return None
         centred = _centred_row(shown, size, psd.width)
         how, copies = "", []
         if count < len(shown):              # fewer: hide the last in reading order (or the first, when that leaves a
@@ -7409,12 +7473,22 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
             else:
                 layouts = _star_layouts(order, size, count) + more
             backs = (back, None) if back is not None and len(order) == 1 else (back,)   # a lone star's, while a layout keeps it
-            for back, (name, spots) in product(backs, layouts):
-                moves, free = _place(order, spots, size)
-                under = [move for move in shaded(order, moves) if move[0] is not source]
-                moves = [move for move in moves if move not in under]       # under a shadow: hidden, a copy (on top)
-                free += [(unit.centre[0] + dx, unit.centre[1] + dy) for unit, dx, dy in under]
-                copies = [(source, round(spot[0] - source.centre[0]), round(spot[1] - source.centre[1]), "") for spot in free]
+            places: dict = {}
+            for low, back, j in product((False, True), backs, range(len(layouts))):
+                name, spots = layouts[j]
+                if j not in places:
+                    moves, free = _place(order, spots, size)
+                    under = [move for move in shaded(order, moves) if move[0] is not source]
+                    moves = [move for move in moves if move not in under]   # under a shadow: hidden, a copy (on top)
+                    free += [(unit.centre[0] + dx, unit.centre[1] + dy) for unit, dx, dy in under]
+                    places[j] = moves, under, [(source, round(spot[0] - source.centre[0]),
+                                                round(spot[1] - source.centre[1]), "") for spot in free]
+                moves, under, copies = places[j]
+                if low:                         # owner 11-08: no layout fits: one stepped down until it does
+                    found = None if below else lowered(order, moves, copies, under, back)
+                    if found is None:
+                        continue
+                    moves, copies, drop, what = found
                 why, far = failed(moves + [(unit, dx, dy) for unit, dx, dy, _ in copies])
                 why = why or off_back(back, moves, copies)
                 if why is None:
@@ -7426,10 +7500,12 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
                     show.update({id(layer): False for layer in gone})
                     if name in RELAID:
                         plan.notes.append(f"stars: {name} (the card's own layout does not go on to {count})")
+                    if low:
+                        plan.notes.append(f"stars: {what} placed {drop} px lower to fit: check it")
                     shown = [unit for unit in shown if not any(unit is one for one, _, _ in under)]
                     break
-                if first is None or far > first[0]:     # the deciding reason: the layout whose checks got furthest
-                    first = (far, why)
+                if not low and (first is None or far > first[0]):   # the deciding reason: the layout whose checks
+                    first = (far, why)                              # got furthest
             else:
                 refuse(first[1] if first else f"{len(order)} stars laid out as no row, column or rows of two")
         return how, shown, copies, size
@@ -7711,7 +7787,7 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
     clear of the title (_icon_spots); a header of two rows takes them as a grid when nothing touches (_grid). Refused per
     field: a token row ([fire] in header text), a removed type drawn as a frame or group, no icon to line a new one up
     with, a type with no Types/ icon, a layer that cannot move, or an icon that would run off the canvas, onto the text
-    or stars, or over another icon.
+    or stars, or over another icon, where an added one stepped down fits nowhere (_lowered; owner 11-08, told).
 
     Args:
         psd: The open card (not changed)
@@ -7838,7 +7914,17 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
         if blocked and first and blocked.startswith("would touch"):     # the template's spot: baked, told (rulings)
             plan.notes.append(f"types: {layer.name!r} at {first}'s spot {blocked.replace('would touch', 'touches')}: check it")
         elif blocked:
-            refuse(f"{layer.name!r} at {tuple(int(v) for v in _moved_box(unit.core, dx, dy))} {blocked}")
+            drop = None
+            if any(layer is one for one in plan.show):      # an added icon steps down until it fits (owner 11-08)
+                shifts = {id(one): (mx, my) for one, mx, my in plan.moves}
+                icons = [(_moved_box(ink[0], *shifts.get(id(one), (0, 0))), ink[1])
+                         for one in [unit.layers[0] for unit in kept] + plan.show if one is not layer
+                         for ink in [_ink(one)] if ink is not None]
+                drop = _lowered(psd, _moved_inks(unit, dx, dy), _moved_box(unit.core, dx, dy), others, icons)
+            if drop is None:
+                refuse(f"{layer.name!r} at {tuple(int(v) for v in _moved_box(unit.core, dx, dy))} {blocked}")
+            plan.moves[k] = (layer, dx, dy + drop)
+            plan.notes.append(f"types: the {layer.name!r} icon placed {drop} px lower to fit: check it")
     plan.row = [unit.layers[0] for unit in kept] + list(plan.show)
     shifts = {id(layer): (dx, dy) for layer, dx, dy in plan.moves}
     finals = [(layer, _ink(layer)) for layer in plan.row] if shifts else []
@@ -8026,7 +8112,8 @@ def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None, re
 
     Returns:
         Edit over the layers it touched, its region their old and new boxes padded by their effects; raises Refused
-        (field set) for a type icon that lands on the text or stars (at the template's spot: baked, flagged)
+        (field set) for a type icon that lands on the text or stars (at the template's spot: baked, flagged), a made
+        one first stepped down until it fits (_lowered, told)
     """
     boxes = [(_extent(layer), layer) for layer in plan.hide + plan.show]
     boxes += [(_extent(layer), layer) for layer, _, _ in plan.moves]
@@ -8057,12 +8144,20 @@ def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None, re
             raise Refused("unsupported-card", "types: no Types/ icons to make one from", "types")
         layer = _make_icon(psd, types_dir, stem, box, reference, rel)
         others = [other for other in texts + stars if other is not layer]
-        blocked = _blocked(psd, [_ink(layer)], _core(layer) or tuple(layer.bbox), others)
+        mine = _ink(layer)
+        blocked = _blocked(psd, [mine], _core(layer) or tuple(layer.bbox), others)
+        icons = [ink for ink in (_ink(other) for other in plan.row + made) if ink is not None]
         if blocked and plan.first and blocked.startswith("would touch"):    # the template's spot: baked, told (rulings)
             touching.append(f"types: the {layer.name!r} icon at {plan.first}'s spot "
                             f"{blocked.replace('would touch', 'touches')}: check it")
-        elif blocked:
-            raise Refused("unsupported-card", f"types: the {layer.name!r} icon {blocked}", "types")
+        elif blocked or mine is not None and any(_ink_overlap(mine, ink) > ICON_TOUCH * min(mine[1].sum(), ink[1].sum())
+                                                 for ink in icons):
+            drop = _lowered(psd, [mine], _core(layer) or tuple(layer.bbox), others, icons)   # owner 11-08: down to fit
+            if drop:
+                _shift(layer, 0, drop, True)
+                touching.append(f"types: the {layer.name!r} icon placed {drop} px lower to fit: check it")
+            elif blocked:
+                raise Refused("unsupported-card", f"types: the {layer.name!r} icon {blocked}", "types")
         mine = _ink(layer)
         for other in plan.row + made:           # clear of the row's other icons
             theirs = _ink(other)

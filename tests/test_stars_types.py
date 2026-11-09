@@ -529,8 +529,8 @@ def test_star_counter_on_real_cards(clone, parser, tmp_path):
 def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
     """A dice 5 at 4 loses its middle (Nightmare, Kyle's 2 over 3); a moved star under a shadow is copied on top
     instead (Flower of Decay); a new star off the banner the stars sit on refuses (Thunder Thighs); the website's
-    header lays out the stars outside the group as the bake does (Massive Moss Charger), whose fifth would sit under the
-    moss (refused)."""
+    header lays out the stars outside the group as the bake does (Massive Moss Charger), whose fifth steps down clear
+    of the moss (owner 11-08); Tyler's six, laid out again off the canvas, step down together."""
     import commands.psd_details as pd
     for rel, gone in (("Creatures/Kirby/5 Stars/Nightmare.psd", "Warpstar copy 4"), ("Creatures/Other/5 Stars/Kyle.psd", "middle")):
         plan = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 4, parser, moving=True)
@@ -547,7 +547,10 @@ def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
     header = pd._star_header(psd, rel, tuple(parser.all_types), parser)
     assert parser._count_stars(psd) == 4 and len(header["units"]) == 4 and len(header["at"]["5"]) == 5   # the two
     #   outside are stars of the column
-    assert "would sit under 'Massive_Moss_Charger'" in header["refused"]["5"]
+    assert "5" not in header["refused"] and header["at"]["5"][4][1] == 1054      # 539 px under its spot, past the moss
+    tyler = "Creatures/Other/5 Stars/Tyler.psd"             # its six laid out again run off the top: all go down
+    assert pe.plan_stars(*_open(parser, clone, tyler, tmp_path), 6, parser, moving=True).notes[1:] == [
+        "stars: the stars placed 20 px lower to fit: check it"]
 
 
 def _renamed(parser, clone, rel, tmp_path) -> tuple:
@@ -567,10 +570,10 @@ def _centres(plan) -> list:
 def test_star_cases_of_10_26(clone, parser, tmp_path):
     """Leshy's half-opaque shadows are no stars (5, not 3); its 4 hides the bottom-left drop (the middle one would bare
     its neighbour's shadow) and its 1 keeps it (the top-right's shadow would show). Yin Yarn's 6 would leave the yarn
-    clipped onto its group, as Paint Warrior's 4 its paint (both refused). A die's five keeps its faces (Yin Yarn,
-    Nightmare: 1 the middle, 2 and 3 a diagonal). Bolts and Screws' gear is no banner: a column. A refusal tells the
-    layout that came closest (Thunder Thighs: off its banner, not its first layout's title). Remote Detonator's row
-    is centred and tightened on its banner; Crowned Magolor's V point becomes a pair."""
+    clipped onto its group (refused); Paint Warrior's new two step down onto its paint (owner 11-08). A die's five
+    keeps its faces (Yin Yarn, Nightmare: 1 the middle, 2 and 3 a diagonal). Bolts and Screws' gear is no banner: a
+    column. A refusal tells the layout that came closest (Thunder Thighs: off its banner, not its first layout's
+    title). Remote Detonator's row is centred and tightened on its banner; Crowned Magolor's V point becomes a pair."""
     leshy = "Creatures/Other/5 Stars/Leshy.psd"
     psd, parsed = _renamed(parser, clone, leshy, tmp_path)
     assert parser._count_stars(psd) == 5
@@ -582,8 +585,8 @@ def test_star_cases_of_10_26(clone, parser, tmp_path):
         pe.plan_stars(psd, parsed, 6, parser, moving=True)
     assert _centres(pe.plan_stars(psd, parsed, 2, parser, moving=True)) == [(1137, 108), (1024, 205)]   # a diagonal
     paint = "Auxiliary/Minions/Paint_Warrior.psd"
-    with pytest.raises(pe.Refused, match="would leave 'pngwing.com copy 2', clipped onto its group"):
-        pe.plan_stars(*_open(parser, clone, paint, tmp_path), 4, parser)
+    assert pe.plan_stars(*_open(parser, clone, paint, tmp_path), 4, parser).notes == [
+        "stars: the new stars placed 80 px lower to fit: check it"]
     psd, parsed = _open(parser, clone, "Creatures/Kirby/5 Stars/Nightmare.psd", tmp_path)
     assert _centres(pe.plan_stars(psd, parsed, 1, parser, moving=True)) == [(1048, 118)]             # the middle
     assert _centres(pe.plan_stars(psd, parsed, 3, parser, moving=True)) == [(1104, 70), (1048, 118), (992, 174)]
@@ -807,7 +810,7 @@ def test_type_rows_carried_on_and_pulled_back(clone, parser, tmp_path):
     """Masher's 2 over 1 takes a fourth icon as a grid (owner 10-26): 'dark' under the shell, the new one under the
     gears; without Types/ to check the made icon, or where the grid touches (Mosling's Wind, Electric Dart's new icon),
     beside the third at the top row's pitch (S2). Removing Sword's first icon pulls the next back onto the card; a
-    made icon over a pulled-back one is refused (Nasus)."""
+    made icon over a pulled-back one steps down clear of it (Nasus, owner 11-08)."""
     types = str(clone / "Types")
     masher = "Auxiliary/Minions/Masher.psd"
     value = ["machine", "dark", "defensive_minion", "fire"]
@@ -832,8 +835,7 @@ def test_type_rows_carried_on_and_pulled_back(clone, parser, tmp_path):
     nasus = "Creatures/Other/4 Stars/Nasus.psd"
     psd, parsed = _open(parser, clone, nasus, tmp_path)
     plan = pe.plan_types(psd, parsed, ["undead", "water"], parser)
-    with pytest.raises(pe.Refused, match="'Undead' runs off the canvas; pulled back onto it, would cover the 'water'"):
-        pe.set_icons(psd, plan, types)
+    assert pe.set_icons(psd, plan, types).notes == ["types: the 'water' icon placed 100 px lower to fit: check it"]
 
 
 @icons
@@ -857,14 +859,18 @@ def test_a_closed_row_makes_room(clone, parser, tmp_path):
 
 
 @icons
-def test_a_made_icon_over_a_kept_one_is_refused(parser, tmp_path):
-    """Fire and Water ink over each other; Ice made in Fire's spot would cover Water: refused (it was baked)."""
+def test_a_blocked_new_icon_steps_down(parser, tmp_path):
+    """Owner 11-08: a new star or type icon whose spot is blocked steps down a tenth of its height at a time until it
+    fits, its centre above the card's middle and its core above the Ability text (_drops; MMC's, Paint Warrior's and
+    Nasus's above). Fire and Water ink over each other; Ice made in Fire's spot would cover Water: it goes under it."""
+    assert list(pe._drops(SimpleNamespace(height=2400, descendants=lambda: []), (0, 1000, 100, 1100))) == \
+        list(range(10, 151, 10))
     paths = _fixture(tmp_path, types=(("Fire", (30, 30)), ("Water", (100, 30))))
     psd, parsed = PSDImage.open(paths[0]), pe.parse_card(parser, paths[0], REL)
     plan = pe.plan_types(psd, parsed, ["ice", "water"], parser)
     assert [layer.name for layer in plan.hide] == ["Fire"] and not plan.moves
-    with pytest.raises(pe.Refused, match="the 'ice' icon would cover 'Water'"):
-        pe.set_icons(psd, plan, _types_dir(tmp_path))
+    edit = pe.set_icons(psd, plan, _types_dir(tmp_path))
+    assert edit.notes == ["types: the 'ice' icon placed 72 px lower to fit: check it"]
 
 
 @icons
