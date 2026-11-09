@@ -553,15 +553,17 @@ def test_workflow_shape():
     assert preview["env"]["BOT_REPO"] == "bobberlington/AutoCroissant" and names.index("Clone") == 0     # the bot beside the cards
     fallback = next(i for i, s in enumerate(preview["steps"]) if s.get("with", {}).get("repository") == "${{ env.BOT_REPO }}")
     assert preview["steps"][fallback]["if"] == "steps.bot.outputs.ok != 'true'" and step(preview, "Bot")["id"] == "bot"
-    assert names.index("Bot") + 1 == fallback < names.index("Reads") and step(preview, "Clone")["run"].rstrip().endswith("&")
-    assert names.index("Validate") < names.index("Reads") < names.index("Start") < names.index("Go") < names.index("Preview") < names.index("Hand over") == len(names) - 1
     ids = [s.get("id") for s in preview["steps"]]
+    assert names.index("Reads") < ids.index("venv-hit") < names.index("Bot") == fallback - 1 and step(preview, "Clone")["run"].rstrip().endswith("&")
+    assert names.index("Validate") < names.index("Reads") < names.index("Start") < names.index("Go") < names.index("Preview") < names.index("Hand over") == len(names) - 1
     assert ids.index("venv-ok") + 1 == names.index("Cards") == ids.index("setup") - 1    # the card repo before cards-python
     fonts = [i for i, s in enumerate(preview["steps"]) if "MDW/Fonts" in str(s.get("run", "")) + str(s.get("with", ""))]
     assert names.index("Start") < min(fonts) and max(fonts) < names.index("Go")      # the preview starts before the fonts
     reads = step(preview, "Reads")["run"]                                         # in the background; Go waits for it
-    assert reads.lstrip().startswith("{ until ") and "cards.code" in reads.splitlines()[0] and reads.rstrip().endswith("&")
-    assert reads.splitlines()[1].lstrip().startswith("python3 -S -m commands.card_preview_reads ")    # once the card repo is in
+    lines = reads.splitlines()
+    assert lines[0].startswith("{ until ") and "bot.code" in lines[0] and "cards.trees" in lines[1] and reads.rstrip().endswith("&")
+    assert lines[3].lstrip().startswith("cd bot && python3 -S -m commands.card_preview_reads ")    # once the bot and trees are in
+    assert "working-directory" not in step(preview, "Reads")                     # before bot/ is
     go = step(preview, "Go")
     assert "reads.done" in reads and "reads.done" in go["run"] and go["run"].rstrip().endswith('touch "$RUNNER_TEMP/go"')
     start, shown = step(preview, "Start"), step(preview, "Preview")
@@ -585,9 +587,10 @@ def test_workflow_shape():
 
 
 def test_the_bot_clone_runs_here(tmp_path):
-    """The preview's Clone, Bot and Cards steps against a stand-in GitHub (file://): BOT_FILES alone in bot/, the card
-    repo at GITHUB_SHA in the workspace (depth 1, blobless, .github/ alone), no header saved; a failed bot clone leaves no
-    bot/ (the checkout after it brings one); a failed card fetch (a stale .git here) is fetched again, bot/ kept."""
+    """The preview's Clone, Bot and Cards steps against a stand-in GitHub (file://): BOT_FILES alone in bot/, its
+    requirements-cards.txt read through the API (bot.reqs), the card repo at GITHUB_SHA in the workspace (depth 1,
+    blobless, .github/ alone; its trees marked), no header saved; a failed bot clone leaves no bot/ (the checkout after
+    it brings one); a failed card fetch (a stale .git here) is fetched again, bot/ kept."""
     _, doc = _workflow()
     job = doc["jobs"]["preview"]
     steps = {s.get("name"): s for s in job["steps"]}
@@ -601,6 +604,9 @@ def test_the_bot_clone_runs_here(tmp_path):
         heads[repo] = _commit(seed)
         _git(tmp_path, "clone", "-q", "--bare", str(seed), str(server / repo))
         _git(server / repo, "config", "uploadpack.allowFilter", "true")
+    read = server / "api" / "repos" / job["env"]["BOT_REPO"] / "contents" / "requirements-cards.txt"
+    read.parent.mkdir(parents=True)
+    read.write_text("read\n")
     for name, repo in (("ok", job["env"]["BOT_REPO"]), ("stale", job["env"]["BOT_REPO"]), ("failed", "nobody/none")):
         workspace, runner = tmp_path / name / "ws", tmp_path / name / "temp"
         workspace.mkdir(parents=True)
@@ -610,6 +616,7 @@ def test_the_bot_clone_runs_here(tmp_path):
             _git(workspace, "remote", "add", "origin", f"file://{tmp_path}/nowhere")
         env = {"PATH": environ["PATH"], "HOME": environ.get("HOME", ""), "GIT_CONFIG_GLOBAL": "/dev/null", "RUNNER_TEMP": str(runner),
                "GITHUB_OUTPUT": str(runner / "output"), "GITHUB_SERVER_URL": f"file://{server}", "BOT_REPO": repo,
+               "GITHUB_API_URL": f"file://{server}/api",
                "BOT_FILES": job["env"]["BOT_FILES"], "TOKEN": "t0ken", "GITHUB_WORKSPACE": str(workspace),
                "GITHUB_REPOSITORY": cb.CARD_REPO, "GITHUB_SHA": heads[cb.CARD_REPO]}
         done = [run_process(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", steps[step]["run"]], env=env,
@@ -618,6 +625,8 @@ def test_the_bot_clone_runs_here(tmp_path):
         ok = (runner / "output").is_file() and "ok=true" in (runner / "output").read_text()
         assert ok == (name != "failed") == (workspace / "bot").is_dir() and ("::warning::" in done[1].stdout) != ok
         assert ("::warning::" in done[2].stdout) == (name == "stale") and (runner / "cards.code").read_text().strip() == "0"
+        assert (runner / "cards.trees").exists() == (name != "stale") and (runner / "reqs.done").exists()
+        assert ((runner / "bot.reqs").read_text() if (runner / "bot.reqs").exists() else None) == ("read\n" if name != "failed" else None)
         assert _git(workspace, "rev-parse", "HEAD").strip() == heads[cb.CARD_REPO]
         assert sorted(str(p.relative_to(workspace)) for p in workspace.rglob("*") if p.is_file() and p.parts[len(workspace.parts)] not in (".git", "bot")) == [".github/x.yml"]
         assert _git(workspace, "config", "remote.origin.promisor").strip() == "true" and (workspace / ".git" / "shallow").is_file()
@@ -629,8 +638,9 @@ def test_the_bot_clone_runs_here(tmp_path):
 
 def test_the_venv_restores_as_cards_python_does(tmp_path):
     """The preview's own venv restore: cards-python's key (setup-python's pick, the image's newest 3.14.x), path and
-    check; a passed check puts the venv first with setup-python's LD_LIBRARY_PATH, a failed one deletes it; cards-python
-    runs only when it did not pass."""
+    check, the key from Clone's read of requirements-cards.txt (bot.reqs) or else the clone's; a passed check puts the
+    venv first with setup-python's LD_LIBRARY_PATH, a failed one deletes it, as does a clone whose file gives another
+    sha; cards-python runs only when it did not pass."""
     _, doc = _workflow()
     steps = doc["jobs"]["preview"]["steps"]
     ids = [s.get("id") for s in steps]
@@ -640,7 +650,7 @@ def test_the_venv_restores_as_cards_python_does(tmp_path):
     action = yaml.safe_load((WORKFLOWS.parent / "actions" / "cards-python" / "action.yml").read_text(encoding="utf-8"))
     own = {s["id"]: s for s in action["runs"]["steps"] if "id" in s}
     venv, hit, ok, setup = (steps[ids.index(i)] for i in ("venv", "venv-hit", "venv-ok", "setup"))
-    assert ids.index("venv") + 1 == ids.index("venv-hit") == ids.index("venv-ok") - 1 == ids.index("setup") - 3    # Cards between
+    assert ids.index("venv") + 1 == ids.index("venv-hit") < ids.index("bot") < ids.index("venv-ok") == ids.index("setup") - 2    # Cards between
     assert setup["if"] == "steps.venv-ok.outputs.ok != 'true'" and "venv" not in setup["with"]
     assert own["reqs"]["env"]["VENV"] == "${{ inputs.venv || format('{0}/venv', runner.temp) }}"
     assert hit["uses"] == own["env"]["uses"] and hit["with"] == {"path": "${{ runner.temp }}/venv", "key": "${{ steps.venv.outputs.key }}"}
@@ -656,6 +666,7 @@ def test_the_venv_restores_as_cards_python_does(tmp_path):
         return dict(line.split("=", 1) for line in path.read_text().splitlines()) if path.exists() else {}
     (tmp_path / "bot").mkdir()
     shutil.copy(REPO / "requirements-cards.txt", tmp_path / "bot")
+    (tmp_path / "bot.code").write_text("0\n")                                  # no read: the clone's file
     cache = tmp_path / "cache"
     runner = {"RUNNER_TOOL_CACHE": str(cache), "RUNNER_OS": "Linux", "RUNNER_ARCH": "X64", "RUNNER_TEMP": str(tmp_path)}
     bash(venv["run"], tmp_path, **runner, GITHUB_OUTPUT=str(tmp_path / "none"))
@@ -667,20 +678,29 @@ def test_the_venv_restores_as_cards_python_does(tmp_path):
     key = FORK_VENV_KEY.replace("${{ steps.reqs.outputs.sha }}", outputs(tmp_path / "reqs")["sha"]).replace("${{ runner.os }}", "Linux")
     key = key.replace("${{ runner.arch }}", "X64").replace("${{ steps.python.outputs.python-version }}", "3.14.10")
     assert own["env"]["with"]["key"] == FORK_VENV_KEY
-    assert outputs(tmp_path / "keys") == {"key": key, "lib": f"{cache}/Python/3.14.10/x64/lib"}
+    sha = outputs(tmp_path / "reqs")["sha"]
+    assert outputs(tmp_path / "keys") == {"key": key, "lib": f"{cache}/Python/3.14.10/x64/lib", "sha": sha}
+    (tmp_path / "bot.code").unlink()                                            # Clone's read, the clone not in yet
+    (tmp_path / "reqs.done").touch()
+    for name, text in (("read", "# read\n" + (REPO / "requirements-cards.txt").read_text()), ("other", "other\n")):
+        (tmp_path / "bot.reqs").write_text(text)
+        bash(venv["run"], tmp_path, **runner, GITHUB_OUTPUT=str(tmp_path / name))
+    assert outputs(tmp_path / "read") == outputs(tmp_path / "keys") != outputs(tmp_path / "other")    # comments don't count
     python = tmp_path / "venv" / "bin" / "python"
     python.parent.mkdir(parents=True)
-    for code in (0, 1):
+    for code, given in ((0, sha), (1, sha), (0, "moved")):                     # moved: AC main after the read
+        python.parent.mkdir(parents=True, exist_ok=True)
         python.write_text(f'#!/bin/sh\n[ "$LD_LIBRARY_PATH" = /lib314:/old ] || exit 9\nexit {code}\n')
         python.chmod(0o755)
-        files = {k: tmp_path / f"{k}{code}" for k in ("GITHUB_ENV", "GITHUB_PATH", "GITHUB_OUTPUT")}
-        bash(ok["run"], tmp_path, **runner, LIB="/lib314", LD_LIBRARY_PATH="/old", **{k: str(v) for k, v in files.items()})
-        if code == 0:
+        files = {k: tmp_path / f"{k}{code}{given[:5]}" for k in ("GITHUB_ENV", "GITHUB_PATH", "GITHUB_OUTPUT")}
+        bash(ok["run"], tmp_path, **runner, LIB="/lib314", LD_LIBRARY_PATH="/old", SHA=given, **{k: str(v) for k, v in files.items()})
+        if code == 0 and given == sha:
             assert outputs(files["GITHUB_OUTPUT"]) == {"ok": "true"} and outputs(files["GITHUB_ENV"]) == {"LD_LIBRARY_PATH": "/lib314:/old"}
             assert files["GITHUB_PATH"].read_text() == f"{tmp_path}/venv/bin\n"
         else:
             assert not files["GITHUB_OUTPUT"].exists() and not (tmp_path / "venv").exists()
-    assert ok["env"] == {"LIB": "${{ steps.venv.outputs.lib }}"} and ok["if"] == "steps.venv-hit.outputs.cache-hit == 'true'"
+    assert ok["env"] == {"LIB": "${{ steps.venv.outputs.lib }}", "SHA": "${{ steps.venv.outputs.sha }}"}
+    assert ok["if"] == "steps.venv-hit.outputs.cache-hit == 'true'"
 
 
 def test_no_workflow_runs_on_the_previews_branch():
@@ -743,6 +763,9 @@ def _run_jobs(text: str, inputs: dict, workspaces: dict, bots: dict, tmp_path: P
     runner = tmp_path / name / "preview"
     runner.mkdir(parents=True)
     (runner / "cards.code").write_text("0\n")         # Clone's card fetch: the workspace is the card repo
+    (runner / "bot.code").write_text("0\n")           # and its bot clone, in bot/
+    if not (workspaces["preview"] / "bot").exists():
+        (workspaces["preview"] / "bot").symlink_to(bots["preview"])
     for step_name in ("Validate", "Reads", "Start", "Go", "Preview"):
         skipped = any(codes.values())
         codes[step_name] = None if skipped else run_step("preview", steps["preview"][step_name], runner)
