@@ -87,7 +87,8 @@ LINE_PAD = 2                                    # px around a line's box
 NAME_BLOCK = bytes(Tag.UNICODE_LAYER_NAME)      # luni
 WAIVED = {                                      # the owner's class waivers (section 6.2): rule -> what and why
     "R2": {"cards": {"tainted lazarus"}, "why": "its header icon (2026-10-22)"},
-    "R3": {"cards": {"lit bob-omb", "tainted lazarus", "miracle matter", "twin emperors", "warcraftian druid", "pix"},
+    "R3": {"cards": {"lit bob-omb", "tainted lazarus", "miracle matter", "twin emperors", "warcraftian druid", "pix",
+                     "bulborb larva", "butterfly", "empress bulblax", "apex predator"},     # relaid in pieces (11-09)
            "why": "several-Ability and multi-creature cards stay deviations (question 2, 2026-10-21)"},
     "R3 excluded": {"why": "in the parser's ABILITY_EXCLUSIONS: prints no ability (2026-10-23)"},
     "R4": {"why": "existing Name layers are left as they are (owner, 2026-10-22); new cards and regressions are reported"},

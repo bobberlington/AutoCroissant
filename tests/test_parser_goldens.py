@@ -92,6 +92,20 @@ def test_unfilled_line_gaps_are_padding():
         == "[fire] Burn.\nThen."
 
 
+def test_lowercase_part_continues_the_line():
+    """Parts laying one text out line by line (Apex Predator, 11-09): a lowercase start continues the line before it,
+    each part without its padding. With none, the old join (Miracle Matter keeps its blank lines)."""
+    from commands.psd_analyzer import StatsDatabase
+    from commands.psd_parser import BoundingBox, PSDParser
+    p = PSDParser(["fire"], StatsDatabase())
+    texts = [("'Cannot attack.\n'", BoundingBox(357, 1780)), ("'\n\n \n \n\nWhen next to it, this counts as'", BoundingBox(52, 2248)),
+             ("'\n\n \n \n\n\nbeing in its slot.'", BoundingBox(72, 2326))]
+    assert p._process_abilities(texts, [], 1200) == "Cannot attack.\nWhen next to it, this counts as being in its slot."
+    texts = [("'(1GCD) Assume a form:'", BoundingBox(19, 1762)), ("'\n    Fire: 5/5/8/7'", BoundingBox(121, 1901)),
+             ("'\n    \n    Earth: 5/8/6/5\n   '", BoundingBox(124, 1969))]
+    assert p._process_abilities(texts, [], 1200) == "(1GCD) Assume a form:\nFire: 5/5/8/7\n    \nEarth: 5/8/6/5"
+
+
 def test_text_with_both_quotes_parses_without_backslash():
     """str() of an engine string is its repr, which escapes ' as \\' when the text also holds a ": the parse unescapes it
     (the old rule page 03 Setting Up's "they're")."""

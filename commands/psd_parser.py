@@ -700,8 +700,8 @@ class PSDParser:
 
         if abilities:
             card.ability = self._process_abilities(abilities, type_bboxes, card_mid_y)
-        elif hidden_abilities:
-            card.ability = ""                   # its Ability layer is hidden and its words printed nowhere
+        else:
+            card.ability = ""                   # no Ability printed (none, hidden or empty)
         ids = [layer.layer_id for layer in psd.descendants() if layer.layer_id >= 0]     # -1: none stored
         if len(set(ids)) < len(ids):
             card.problems.append("DUPLICATE LAYER IDS")
@@ -1082,8 +1082,8 @@ class PSDParser:
     def _relaid(hidden, text_layers: list) -> bool:
         """
         Whether a hidden Ability layer's words are printed: the visible text layers over it, in reading order, say
-        exactly them (Butterfly, Bulborb Larva, Empress Bulblax, Apex Predator lay their ability out again in pieces).
-        Shadow Duelist prints none of its hidden text: not its ability.
+        exactly them (Butterfly, Bulborb Larva, Empress Bulblax, Apex Predator, until their pieces are named Ability:
+        _join_parts). Shadow Duelist prints none of its hidden text: not its ability.
         """
         pieces = PSDParser._pieces(hidden, text_layers)
         words = " ".join((layer.text or "") for layer in pieces).replace("\x03", " ").replace("\ufeff", "").split()
@@ -1485,7 +1485,7 @@ class PSDParser:
                            type_bboxes: list[tuple[str, BoundingBox]], card_mid_y: int) -> Optional[str]:
         """Process and combine ability texts."""
         abilities = self._sort_by_position(abilities)
-        ability_text = '\n'.join(text.strip('\'"\n') for text, _ in abilities)
+        ability_text = self._join_parts([text for text, _ in abilities])
 
         if ability_text:
             type_bboxes = self._prune_type_bboxes(self._sort_by_position(type_bboxes), card_mid_y)
@@ -1493,6 +1493,17 @@ class PSDParser:
             ability_text = sub(r'(?m)^[^\S\n]{3,}(?=\S)', '', ability_text)     # a line's unfilled gap: layout padding
             ability_text = sub(r'\s+([:;,\.\?!])', r'\1', ability_text)
         return ability_text.strip(' \'"\n')
+
+    @staticmethod
+    def _join_parts(texts: list) -> str:
+        """
+        Ability layers' texts, one per line. A layer starting in lowercase continues the line before it: the layers lay
+        one text out again line by line (Bulborb Larva), each read without its padding.
+        """
+        if not any(text.strip(' \'"\n')[:1].islower() for text in texts[1:]):
+            return '\n'.join(text.strip('\'"\n') for text in texts)
+        parts = [text.strip(' \'"\n') for text in texts]
+        return parts[0] + ''.join((' ' if part[:1].islower() else '\n') + part for part in parts[1:])
 
     def _process_stats(self, card: CardInfo, stat_trackers: StatTrackers) -> None:
         """Process stat values."""
