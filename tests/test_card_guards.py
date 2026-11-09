@@ -958,6 +958,7 @@ def test_land_local_commits_in_the_clone(cards, tmp_path):
 # ========================
 # Lossless recompression (owner, 2026-10-23)
 # ========================
+@pytest.mark.oxipng
 @pytest.mark.skipif(pe.tool() is None, reason="needs the oxipng CLI (as card-guards.yml installs) or pyoxipng")
 def test_pushed_pngs_are_recompressed_in_the_bot_commit(cards, tmp_path):
     """A PNG the push brought (a pair's; a numbered one pushed alone) that a lossless recompression makes more than 10%

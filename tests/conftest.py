@@ -96,6 +96,7 @@ except ImportError:
 
 def pytest_configure(config):
     config.addinivalue_line("filterwarnings", "ignore::DeprecationWarning:discord")
+    config.addinivalue_line("markers", "oxipng: runs the real oxipng (no_oxipng's stub off)")
 
 
 # ========================
@@ -360,6 +361,15 @@ def offline(monkeypatch, tmp_path):
     yield
     for queue in queues:
         queue.clear()
+
+
+@pytest.fixture(autouse=True)
+def no_oxipng(request, monkeypatch):
+    """png_export.optimize gives None (the no-oxipng path: PNGs kept as exported) unless the test is marked oxipng:
+    about 0.7 s a PNG. Child processes still run the real one."""
+    png_export = sys.modules.get("commands.png_export")
+    if png_export and not request.node.get_closest_marker("oxipng"):
+        monkeypatch.setattr(png_export, "optimize", lambda data: None)
 
 
 @pytest.fixture(scope="session")

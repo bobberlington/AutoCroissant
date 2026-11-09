@@ -730,9 +730,14 @@ def test_select_and_snapshot(github):
 
 
 @fork
-def test_bake_hp_lands_psd_png_and_file(github, tmp_path):
-    """One stat bake end to end: PSD + PNG + the file in one commit, the verdict beside the fields that stay."""
+@pytest.mark.oxipng
+def test_bake_hp_lands_psd_png_and_file(github, tmp_path, monkeypatch):
+    """One stat bake end to end: PSD + PNG + the file in one commit, the verdict beside the fields that stay; the PNG
+    recompressed by the real oxipng (_smaller)."""
     from psd_tools import PSDImage
+    import commands.png_export as png_export
+    made = []
+    monkeypatch.setattr(png_export, "recompress", lambda *a, _f=png_export.recompress: made.append(_f(*a)) or made[-1])
     files = github.files_at(github.head)
     files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 8, "note": "checked", "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
@@ -741,6 +746,7 @@ def test_bake_hp_lands_psd_png_and_file(github, tmp_path):
     after = github.files_at(github.head)
     changed = sorted(p for p in after if after[p] != files.get(p))
     assert changed == [DOOMER[:len(DOOMER) - 4] + ".png", DOOMER, cb.EDITS_PATH]
+    assert after[changed[0]] in made or png_export.tool() is None             # _smaller's file committed
     data = json.loads(after[cb.EDITS_PATH].decode("utf-8"))
     verdict = _verdict("Mini Doomer")                       # the entry keeps a field: its verdict stays (on data)
     assert data["cards"]["Mini Doomer"] == {"note": "checked", "_by": "web", "_at": AT}

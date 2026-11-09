@@ -471,6 +471,7 @@ def test_png_check(tmp_path):
 oxipng = pytest.mark.skipif(pe.tool() is None, reason="needs the oxipng CLI (as the card Actions install) or pyoxipng")
 
 
+@pytest.mark.oxipng
 @oxipng
 @pytest.mark.parametrize("opaque, icc", [(True, "sRGB"), (False, "sRGB"), (True, "photoshop")])
 def test_recompress_keeps_the_image_and_its_colour_chunks(opaque, icc):
@@ -498,6 +499,7 @@ def test_recompress_keeps_the_image_and_its_colour_chunks(opaque, icc):
     assert pe.recompress(out, pe.RECOMPRESS_MIN) is None                  # done once: nothing more to save
 
 
+@pytest.mark.oxipng
 @oxipng
 def test_same_png_tells_a_changed_pixel_or_chunk():
     data = photoshop_png(art())
@@ -518,6 +520,7 @@ def test_same_png_tells_a_changed_pixel_or_chunk():
     assert not pe.same_png(data, b"not a png")
 
 
+@pytest.mark.oxipng
 def test_recompress_leaves_16_bit_and_runs_without_oxipng(monkeypatch):
     import io
     buf = io.BytesIO()
