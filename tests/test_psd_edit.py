@@ -1589,6 +1589,34 @@ def test_fx_gates_refuse_a_wrong_cut(clone, parser, chart, tmp_path):
 
 
 @text_edit
+def test_a_stale_fx_layer_is_cut_again(clone, parser, chart, tmp_path):
+    """Owner 2026-11-08: Marx's 'Ability FX: Glued' kept an older raster's edges after its Ability was re-laid (3550 of
+    Glued's 3602 px). An edit that leaves Glued alone cuts it again from the Ability's own pixels and bakes."""
+    psd_path, png_path = _card(clone, MARX)
+    psd = PSDImage.open(psd_path)
+    fx, = pe.fx_layers(psd, pe.ability_layer(psd))
+    rgba = np.concatenate([fx.numpy("color"), fx.numpy("shape")], axis=2).astype(np.float32)
+    rgba[rgba[..., 3] < 0.75] = 0.0             # its edges as another anti-aliasing left them
+    pe._fx_engine()[6](fx, rgba, tuple(fx.bbox))
+    card = tmp_path / "card"
+    card.mkdir()
+    psd.save(str(card / "Marx.psd"))
+    (card / "Marx.png").write_bytes(Path(png_path).read_bytes())
+    paths = (str(card / "Marx.psd"), str(card / "Marx.png"))
+    old = pe.parse_card(parser, paths[0], MARX)["card"]["ability"]
+    at = old.rindex("until")
+    parsed, baked = _bake(clone, parser, MARX, {"ability": old[:at] + "test" + old[at + 5:]}, tmp_path, chart, paths=paths)
+    saved = PSDImage.open(baked.psd_path)
+    layer = pe.ability_layer(saved)
+    fx, = pe.fx_layers(saved, layer)
+    canvas = (saved.height, saved.width)
+    ours, base = pe._on_canvas(fx, canvas), pe._on_canvas(layer, canvas)
+    held = ours[..., 3] > 0
+    assert held.sum() > 3500 and np.array_equal(ours[held], base[held])
+    assert "Ability FX: Glued" in [name for _, name, _ in baked.records] and not baked.fx_notes
+
+
+@text_edit
 def test_a_typed_badge_takes_the_alternates_under_an_overlay(clone, parser, chart, tmp_path):
     """Owner 2026-10-23: a timing tag typed anywhere is set in the stoogedings badge font, at the card's own badge style,
     sized and shifted to its text (owner 2026-10-25: the pill 1.35 times the capital height, its middle on theirs; Mini

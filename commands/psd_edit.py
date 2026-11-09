@@ -2783,8 +2783,9 @@ def _rebuild_fx(psd: PSDImage, layer, text: str, plans: list, band: Optional[tup
     occurrence; a "styled" or "own" layer's stays on its words, a "status" layer's on its status's own words), its record kept
     (name, flags, opacity, fill, blending, clipping, id, place, style): only its pixels change. A layer whose words were not redrawn keeps its record whole
     (_kept) unless it holds pixels its words' cut does not (_holds: a badge an older JSX leaked into it, cut again
-    clean). A phrase that left the text leaves the name (the parser flags a name the text lacks; a renumbered one is
-    renamed); a layer with none left is deleted. Every layer keeps its own style, the chart's
+    clean) or covers less than FX_COVER of their ink (_fx_cover: its words re-laid in Photoshop since it was cut,
+    Marx's Glued; cut again). A phrase that left the text leaves the name (the parser flags a name the text lacks; a
+    renumbered one is renamed); a layer with none left is deleted. Every layer keeps its own style, the chart's
     or not (owner q6, unattended call 2026-10-23), but one on a chart status word (chart_style of words, owner
     2026-11-07) takes the chart's (restyle_fx), as a new one does (_regenerate_fx); a typed word that
     joins a layer whose style is no chart status's for it (FxPlan.own_style) is told ("moved to" it when none of the
@@ -2806,12 +2807,13 @@ def _rebuild_fx(psd: PSDImage, layer, text: str, plans: list, band: Optional[tup
         (rebuilt [(layer, old name)], deleted names, the str ranges of text the layers cover, report notes, restyled
         [(layer, its chart blocks)]); raises Refused("styled-word") for words with no pixels
     """
+    from psd_tools.composite.text.geometry import text_geometry
     model = engine[0].from_layer(layer)
     offset = model.text.find(text)
     if offset < 0:
         raise Refused("styled-word", "the engine's text differs from the layer's")
     color, shape = layer.numpy("color"), layer.numpy("shape")      # None for a blank text: every layer deleted below
-    icons, glyphs = _char_styles(layer)[1], None
+    icons, glyphs, geometry, ink = _char_styles(layer)[1], None, None, None
     rebuilt, deleted, covered, notes = [], [], [], []
     for plan, target in zip(plans, targets):
         fx, old = plan.layer, plan.layer.name
@@ -2840,9 +2842,15 @@ def _rebuild_fx(psd: PSDImage, layer, text: str, plans: list, band: Optional[tup
             raise Refused("styled-word", f"{old}: its words have no pixels")
         name = old if names == plan.phrases else layer.name + FX_TAG + FX_SEP.join(names)
         if name == old and _kept(plan, ranges, band, kept):
-            if _holds(fx, mask, layer):
-                continue
-            notes.append(f"{old} cut again: it held pixels outside its words")
+            if not _holds(fx, mask, layer):
+                notes.append(f"{old} cut again: it held pixels outside its words")
+            else:
+                if geometry is None:
+                    geometry = text_geometry(layer, fonts)
+                    ink = _on_canvas(layer, (psd.height, psd.width))[..., 3] > INK_ALPHA * 255
+                _, got, want = _fx_cover(layer, fx, geometry, ink)
+                if got >= FX_COVER * want:
+                    continue                    # else on its words' old pixels (Marx's Glued): cut again, silently
         engine[6](fx, cut[0], cut[1])
         fx._invalidate_bbox()
         if name != old:
@@ -10036,8 +10044,6 @@ def _gate_fx_layers(psd: PSDImage, edit: Edit, fonts, layer=None) -> None:
     from psd_tools.composite.text.geometry import text_geometry
     layer = ability_layer(psd) if layer is None else layer
     geometry = text_geometry(layer, fonts)
-    glyphs = [glyph for glyph in geometry["glyphs"] if glyph["ink"]]
-    icon = [glyph["font"].lower().startswith(ICON_FONT_PREFIX) for glyph in glyphs]
     shape = (psd.height, psd.width)
     base = _on_canvas(layer, shape)
     ink = base[..., 3] > INK_ALPHA * 255
@@ -10049,22 +10055,33 @@ def _gate_fx_layers(psd: PSDImage, edit: Edit, fonts, layer=None) -> None:
         if lost:
             raise Refused("reparse", f"{name!r} left its words {', '.join(map(repr, lost))}")
     for fx in fx_layers(psd, layer):
-        ranges = phrase_ranges(geometry["text"], fx_phrases(layer, fx))
-        mine = [k for k, glyph in enumerate(glyphs) if any(a <= glyph["i"] < b for a, b in ranges)]
-        need = [glyphs[k] for k in mine if not icon[k]]
-        others = [glyph for k, glyph in enumerate(glyphs) if k not in mine]
+        mine, got, want = _fx_cover(layer, fx, geometry, ink)
         ours = _on_canvas(fx, shape)
-        drawn = ours[..., 3] > INK_ALPHA * 255
-        stray = int(((ours[..., 3] > 0) & ~_boxes([glyphs[k] for k in mine], FX_BOX_PAD, shape)).sum())   # faint ones too
+        stray = int(((ours[..., 3] > 0) & ~_boxes(mine, FX_BOX_PAD, shape)).sum())   # faint ones too
         if stray:
             raise Refused("reparse", f"{fx.name!r} inks {stray} px outside its words' glyph boxes")
-        want = ink & _boxes(need, 0, shape) & ~_boxes(others, 1, shape)
-        if (drawn & want).sum() < FX_COVER * want.sum():
-            raise Refused("reparse", f"{fx.name!r} covers {int((drawn & want).sum())} of its words' {int(want.sum())} px")
+        if got < FX_COVER * want:
+            raise Refused("reparse", f"{fx.name!r} covers {got} of its words' {want} px")
         if fx.name in cut:
             held = ours[..., 3] > 0
             if not np.array_equal(ours[held], base[held]):
                 raise Refused("reparse", f"{fx.name!r} is not the Ability's own pixels")
+
+
+def _fx_cover(layer, fx, geometry: dict, ink: np.ndarray) -> tuple:
+    """
+    (its phrases' glyphs, px of their own ink an FX layer covers past INK_ALPHA, those px): gate_fx's FX_COVER measure.
+    Their own ink: ink (the text layer's past INK_ALPHA, on the canvas) in the ink boxes of its phrases' glyphs
+    (text_geometry; the icon font's left out) that no other glyph's box, grown a pixel, reaches.
+    """
+    glyphs = [glyph for glyph in geometry["glyphs"] if glyph["ink"]]
+    ranges = phrase_ranges(geometry["text"], fx_phrases(layer, fx))
+    mine = [k for k, glyph in enumerate(glyphs) if any(a <= glyph["i"] < b for a, b in ranges)]
+    need = [glyphs[k] for k in mine if not glyphs[k]["font"].lower().startswith(ICON_FONT_PREFIX)]
+    others = [glyph for k, glyph in enumerate(glyphs) if k not in mine]
+    want = ink & _boxes(need, 0, ink.shape) & ~_boxes(others, 1, ink.shape)
+    drawn = _on_canvas(fx, ink.shape)[..., 3] > INK_ALPHA * 255
+    return [glyphs[k] for k in mine], int((drawn & want).sum()), int(want.sum())
 
 
 def gate_idempotence(new_parsed: dict, jobs: dict, psd: PSDImage, merged: Image.Image, edits: list,
