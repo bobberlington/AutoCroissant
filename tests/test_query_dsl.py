@@ -45,6 +45,8 @@ QUERIES = [                                              # query, the cards foun
     ("atack>3", ERROR), ("total~5", ERROR), ("hp>=x", ERROR), ("type>3", ERROR),
     ("type!=creature", ERROR),
     ('"atack>3"', set()),
+    ("can\u2019t", {"Burning"}), ("\u201cdeal 2\u201d", {"Kirby"}),        # a phone's curly quotes
+    ("series==\u201ckirby\u201d & \u201cdie\u201d", {"Meta Knight"}),
 ]
 
 
@@ -107,5 +109,12 @@ def test_rulebook_lines(monkeypatch):
     utils.dispatch_queue.clear()
     assert len(sent) == 1 and "links" in sent[0]
     assert sent[0]["content"].startswith("'turn' is on 7 lines of 4 rulebook chapters:\n\n**08 Global Turn**\n- THE GLOBAL **TURN**")
-    repo.rulebook_dff = DataFrame({"ability": ["During a turn.\nAll during it.", "The ring (1CD)."]}, index=["A", "B"])
+    repo.rulebook_dff = DataFrame({"ability": ["During a turn.\nAll during it.", "The ring (1CD).", "It's \u201cfree\u201d."]},
+                                  index=["A", "B", "C"])
     assert [n for n, _ in qc.rulebook_lines(repo.rulebook_search_engine("ring"), "ring")] == ["B", "A"]   # word starts first
+    for text in ("it\u2019s", "\u201cfree\u201d"):                 # a curly apostrophe found; curly quotes as printed
+        qc.query_rulebook(utils.make_simple_fake_interaction(1), text)
+    sent = [kw["content"] for _, kw in utils.dispatch_queue]
+    utils.dispatch_queue.clear()
+    assert sent == ["'it's' is on 1 line of 1 rulebook chapter:\n\n**C**\n- **It's** \u201cfree\u201d.",
+                    "'\u201cfree\u201d' is on 1 line of 1 rulebook chapter:\n\n**C**\n- It's **\u201cfree\u201d**."]

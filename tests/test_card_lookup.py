@@ -157,6 +157,14 @@ def test_autocomplete(repo):
     assert len(repo.name_choices("")) == 25 and len(repo.name_choices("o")) == 25
 
 
+def test_curly_apostrophes(repo):
+    """A phone's curly apostrophes find the straight ones of the names: /query, as_of and the autocomplete."""
+    for query in ("Tomorrow I\u2019ll", "tomorrow i\u2018ll"):
+        assert repo.lookup(query)[0:2] == ("tomorrow_i'll.png", EXACT), query
+        assert qc.history_match(query) == ("tomorrow_i'll.png", "Tomorrow I'll"), query
+    assert repo.name_choices("tomorrow i\u2019") == repo.name_choices("tomorrow i'") != []
+
+
 def test_guesses_cards_only(repo, monkeypatch):
     """Guesses pick cards, not linked art or old pages (exact names still find them); a chapter's title, its chapter."""
     monkeypatch.setattr(cm.stats_db, "rulebook", [{"id": "minions", "num": "15", "title": "Minions", "text": ""}])

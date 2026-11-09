@@ -24,7 +24,7 @@ from global_config import CARD_REPO, CARD_TREE_JSON, EDITS_PATH, SITE_URL, TIMEZ
 from commands.card_edits import CardAuthors, art_list
 from commands.card_db import write_text
 from commands.card_history import start as version_start
-from commands.card_models import stats_db
+from commands.card_models import stats_db, straight
 from commands.github_api import blob_text, fetch_tree
 from commands.repo_history import commit_before, pinned_ref, raw_url, raw_url_at
 from commands.rulebook import label as chapter_label
@@ -59,6 +59,13 @@ REGISTRY = ("git_files", "card_keys", "blobs", "ambiguous_names", "_spaced", "_e
             "_renamed", "choices", "site_ids", "_site_etag")    # what populate_files builds aside and swaps in
 NOT_CARDS = ("MDW/", "Types/")                           # icons, old pages, linked files: found by exact name only
 TREE_VERSION = 1                                         # CARD_TREE_JSON's layout
+
+
+def typed(text: str, quotes: bool = False) -> str:
+    """text with straight apostrophes, as the data's (straight): phones type curly ones; quotes: straight double quotes
+    too (/query_ability's syntax; the rulebook prints curly ones)."""
+    text = straight(text).replace("\u2018", "'")
+    return text.replace("\u201c", '"').replace("\u201d", '"') if quotes else text
 
 
 class QueryError(ValueError):
@@ -451,7 +458,7 @@ class CardRepository:
         Returns:
             DataFrame of matching cards
         """
-        ability = ability.strip()
+        ability = typed(ability, quotes=True).strip()
 
         # Handle OR queries
         queries = self._split_unquoted(ability, "|")
@@ -628,7 +635,7 @@ class CardRepository:
         Returns:
             Up to 25 (shown, value): names starting with it, then with a word that does, then holding it
         """
-        text = " ".join(current.lower().replace("_", " ").split())
+        text = " ".join(typed(current).lower().replace("_", " ").split())
         choices = self.choices                                   # one read: a rebuild swaps it whole
         if not text:
             return [(c[1], c[2]) for c in choices[:25]]
@@ -688,7 +695,7 @@ class CardRepository:
 
     def _normalize_card_name(self, query: str) -> str:
         """Normalize card name for searching."""
-        card = query.replace(" ", "_").lower()
+        card = typed(query).replace(" ", "_").lower()
         return card if card.endswith(".png") else f"{card}.png"
 
     def _find_closest_match(self, query: str) -> Optional[str]:
@@ -1106,7 +1113,7 @@ def query_ability(interaction: Interaction,
     found = f"Found {total_results} results for '{ability}'!"
     shown = [basename(index) for index in results.index[:results_to_show]]   # index: the card's name
     done = f"Displayed {results_to_show} of {total_results} results for '{ability}'."
-    links = [("All results on the website", f"{SITE_URL}/#/cards?q={quote(ability.strip())}")]
+    links = [("All results on the website", f"{SITE_URL}/#/cards?q={quote(typed(ability, quotes=True).strip())}")]
     if len(shown) > 1:
         post_grids(interaction, shown, found, done, links)
         return
@@ -1194,7 +1201,7 @@ def query_rulebook(interaction: Interaction,
     if card_repo.rulebook_dff.empty:
         queue_message(interaction, "No card data yet, or no rulebook chapters. Run `/update_stats` first.")
         return
-    text = " ".join(search_text.split())
+    text = " ".join(typed(search_text).split())
     if not text:
         queue_message(interaction, "Give a word or phrase to search the rulebook for.")
         return
