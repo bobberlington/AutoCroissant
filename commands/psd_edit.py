@@ -9031,12 +9031,35 @@ def _group_box(do: _DirtyDoc, dn: _DirtyDoc, old, new):
     return inner
 
 
+_LINK_TAGS = ("LINKED_LAYER1", "LINKED_LAYER2", "LINKED_LAYER3", "LINKED_LAYER_EXTERNAL")
+
+
+def _links_grown(old: PSDImage, new: PSDImage) -> bool:
+    """rcache.doc_key's records alike but the linked files, every old link item still in new byte for byte: a link no
+    old layer names changes no old layer's render (a types edit's Types/ link)."""
+    from collections import Counter
+    from psd_tools.composite import rcache
+    from psd_tools.constants import Tag
+    links = {getattr(Tag, name) for name in _LINK_TAGS}
+
+    def parts(psd):
+        version, blocks = psd._record.header.version, psd.tagged_blocks or {}
+        raw = lambda record: rcache._record_bytes(record, version)
+        same = [raw(psd._record.header), raw(psd._record.color_mode_data), repr(psd._max_alloc_bytes)]
+        same += [raw(psd.image_resources[r]) if r in psd.image_resources else None for r in rcache._DOCUMENT_RESOURCES]
+        same += [raw(blocks[t]) if t in blocks else None for t in rcache._DOCUMENT_BLOCKS if t not in links]
+        return same, Counter((t, raw(item)) for t in rcache._DOCUMENT_BLOCKS if t in links and t in blocks
+                             for item in blocks[t].data)
+    (a, was), (b, now) = parts(old), parts(new)
+    return a == b and not was - now
+
+
 def dirty_box(old: PSDImage, new: PSDImage) -> Optional[tuple]:
     """
     Every pixel where new (an edited copy of old) can render unlike old, from the layer records: layers matched by id
     per group, an unchanged subtree skipped, a changed one's fork change box (_change_bbox) plus its clip layers', a
-    group's effect reach. The whole canvas on a reorder, a document-level change, an external link, or when the walk
-    fails (an older fork; raised under PSD_DIRTY_VERIFY).
+    group's effect reach. The whole canvas on a reorder, a document-level change (but links added: _links_grown), an
+    external link, or when the walk fails (an older fork; raised under PSD_DIRTY_VERIFY).
 
     Returns:
         The bbox on the canvas, None when nothing differs
@@ -9045,7 +9068,7 @@ def dirty_box(old: PSDImage, new: PSDImage) -> Optional[tuple]:
     try:
         from psd_tools.composite import rcache
         key = rcache.doc_key(old)
-        if key is None or key != rcache.doc_key(new) or (old.width, old.height) != (w, h):
+        if key is None or (old.width, old.height) != (w, h) or (key != rcache.doc_key(new) and not _links_grown(old, new)):
             return (0, 0, w, h)
         box = _children_box(_DirtyDoc(), _DirtyDoc(), old, new)
     except Exception:
@@ -9057,7 +9080,8 @@ def dirty_box(old: PSDImage, new: PSDImage) -> Optional[tuple]:
     return box and clip_to(box, (0, 0, w, h))
 
 
-def gate_dirty(old: PSDImage, new: PSDImage, edits: list, keep: Optional[dict] = None) -> np.ndarray:
+def gate_dirty(old: PSDImage, new: PSDImage, edits: list, keep: Optional[dict] = None,
+               icon: bool = False) -> np.ndarray:
     """
     gate_untouched over the edits' regions and dirty_box(old, new) only: the card rendered there before and after
     (in the bake's RenderCache; under OLD_BESIDE before in a thread and cache of its own), not whole twice. With
@@ -9067,6 +9091,7 @@ def gate_dirty(old: PSDImage, new: PSDImage, edits: list, keep: Optional[dict] =
     Args:
         keep: apply_jobs' dict: new is drawn as the merge draws it (text_kwargs "preview", the edits' layers pinned)
             and its box, that render and the ids go in it (the merge and gate_idempotence cut their regions from them)
+        icon: edits is a card's lone stars or types edit: refused as gate_outside refuses it (its field)
 
     Returns:
         A canvas-sized render_all(old) valid inside the box only (baseline's crop_pair reads the regions, inside it);
@@ -9105,6 +9130,9 @@ def gate_dirty(old: PSDImage, new: PSDImage, edits: list, keep: Optional[dict] =
                 x0, y0, x1, y1 = edit.region
                 diff[max(y0, 0):max(y1, 0), max(x0, 0):max(x1, 0)] = False
         outside = int(diff.sum())
+        if outside and icon:
+            raise Refused("region", f"{edits[0].field}: the card changes {outside} pixels outside the edited box",
+                          edits[0].field)
         if outside:
             raise Refused("region", "%s: the card changes %d pixels outside the edited boxes"
                           % (", ".join(edit.field for edit in edits), outside))
@@ -10914,8 +10942,10 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     # stars and types first (a title edit then clears the new stars), text next, the ability first: its FX records shift
     # the record indices of the digits and of a Name above them (Fire Staff's); the icon edits' indices are read once
     # all are in (index_icons). The card is rendered whole only once an edit is made (a refused one costs none), in one
-    # RenderCache (the caller's when open), and without a stars or types edit only inside the dirty box (gate_dirty)
+    # RenderCache (the caller's when open), and without a stars or types edit or with a lone one only inside the dirty
+    # box (gate_dirty)
     cache, first = render_cache(shared=True), None
+    lone = len(jobs) == 1 and next(iter(jobs)) in ICON_FIELDS
     before, edits = record_map(new), []
     for name, value in sorted(jobs.items(), key=lambda job: (job[0] == "colors", job[0] not in ICON_FIELDS,
                                                              job[0] in (*STAT_FIELDS, "creatures"), job[0] == "name")):
@@ -10924,14 +10954,17 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
                 plan = plan_stars(new, parsed, value, parser, moving=True, split=True) if name == "stars" \
                     else plan_types(new, parsed, value, parser, template, types_dir)
                 start = perf_counter()
-                if first is None:
+                if first is None and not lone:
                     with cache:
                         first = shown = render_all(old)
                 timings["outside"] = timings.get("outside", 0.0) + perf_counter() - start
                 edit = set_icons(new, plan, types_dir, rel)
                 start = perf_counter()
                 with cache:
-                    shown = gate_outside(shown, new, edit)      # nothing else changes
+                    if lone:                            # old and new inside its dirty box only
+                        first = gate_dirty(old, new, [edit], icon=True)
+                    else:
+                        shown = gate_outside(shown, new, edit)      # nothing else changes
                 timings["outside"] = timings.get("outside", 0.0) + perf_counter() - start
             except Refused:
                 raise
