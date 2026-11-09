@@ -761,6 +761,19 @@ def test_an_auxiliary_items_type_is_its_first_item_type_icon(clone, parser):
     assert {rel: parser.parse(str(clone / rel), rel).subtype for rel in want} == want
 
 
+@icons
+def test_an_auxiliary_items_type_follows_a_type_edit(parser, tmp_path):
+    """Refused after the bake until 11-09 (reparse: subtype): swapping the item-type icon bakes and the item type
+    follows it; dropping it leaves none."""
+    types_dir = _types_dir(tmp_path)
+    _icon((200, 200, 40), (200, 160)).save(Path(types_dir, "active.png"))
+    paths = _fixture(tmp_path, types=(("Fragile Equip", (30, 30)), ("Fire", (30, 200))))
+    assert pe.parse_card(parser, paths[0], REL)["card"]["subtype"] == "equip"
+    for value, subtype in ((["active", "fire"], "active"), (["fire"], None)):
+        _, baked = _bake(parser, paths, {"types": value}, tmp_path, types_dir=types_dir)
+        assert baked.reparse["card"].get("subtype") == subtype and sorted(baked.reparse["card"]["types"]) == value
+
+
 
 @icons
 def test_icons_and_stars_go_by_ink(clone, parser, tmp_path):
