@@ -2070,6 +2070,18 @@ def test_the_render_record_draws_as_the_stored_image(clone):
         == pe.export_icc(psd, Image.open(png))
 
 
+@text_engine
+def test_a_straight_bake_draws_its_edited_text_in_the_gamma():
+    """Photoshop draws a type layer it redraws in the text gamma on a card exported straight too (Wooden_Spikes'
+    title: 577 px off its export): "straight" pins the edited layers as "preview" does; "gamma" draws all in it."""
+    psd = PSDImage.new("RGB", (4, 4))
+    gamma = pe.text_kwargs(psd, "preview", (7,))["layer_text_gamma"][7]
+    assert gamma is not None
+    assert pe.text_kwargs(psd, "straight", (7,)) == {"text_gamma": None, "layer_text_gamma": {7: gamma}}
+    assert pe.text_kwargs(psd, "straight") == {"text_gamma": None}
+    assert pe.text_kwargs(psd, "gamma", (7,)) == {"text_preview": False}
+
+
 def test_the_edit_copy_renders_as_the_card(clone):
     """K-3/K-5: apply_jobs edits the card opened again from its bytes (a deepcopy lost Lorian's smart filters, review
     2026-10-24), with the card's eye flags, sharing its one stored-preview read (icc_vote, renders)."""
