@@ -91,7 +91,7 @@ def test_no_visible_change_is_current(tmp_path):
     assert found.outcome == "current" and found.changed_px == 0 and not found.data
 
 
-def test_g2_renders_anyway_with_the_bakes_own_gates(tmp_path):
+def test_g2_renders_anyway_with_the_bakes_own_gates(tmp_path, monkeypatch):
     """Owner, 2026-10-24: a PSD saved without Maximize Compatibility (no stored image) gets its PNG anyway: the fork's
     render merged as always, under the bake's own gates (the baseline, the shape and region), nothing cross-checked
     ("cross" never measured), unchecked (never told). A push that moved nothing is current; a new card is made
@@ -99,7 +99,10 @@ def test_g2_renders_anyway_with_the_bakes_own_gates(tmp_path):
     old = fixture_psd(tmp_path, card(), "old")
     new = fixture_psd(tmp_path, card(colour=(0, 255, 0)), "new")
     new.has_preview = lambda: False
+    calls = []
+    monkeypatch.setattr(pe, "fingerprints", lambda psd, real=pe.fingerprints: calls.append(psd) or real(psd))
     found = pe.export(old, new, card())
+    assert len(calls) == 2                      # once a call: changed_layers, _rereads and _edited share them
     assert (found.outcome, found.gate, found.unchecked, found.changed_px) == ("re-exported", "", True, 21 * 21)
     assert found.numbers["baseline"]["bad_pct"] == 0 and "cross" not in found.numbers and found.numbers["reread"] == []
     assert np.asarray(pe.open_png(found.data)).tolist() == np.asarray(card(colour=(0, 255, 0))).tolist()
@@ -141,7 +144,8 @@ def test_g2_refuses_a_change_the_render_does_not_show(tmp_path, monkeypatch):
     new = fixture_psd(tmp_path, card(colour=(0, 255, 0)), "new")
     new.has_preview = lambda: False
     def reads(box, name="Square"):
-        return lambda a, b: [("the Ability text", box, b, next(l for l in b.descendants() if l.name == name))]
+        return lambda a, b, prints=None: [("the Ability text", box, b,
+                                           next(l for l in b.descendants() if l.name == name))]
     monkeypatch.setattr(pe, "_rereads", reads((40, 60, 50, 70)))                 # nothing moved there, nothing above
     refused = pe.export(old, new, card())
     assert (refused.outcome, refused.gate, refused.data) == ("refused", "G2", b"")
@@ -154,7 +158,7 @@ def test_g2_refuses_a_change_the_render_does_not_show(tmp_path, monkeypatch):
     monkeypatch.setattr(pe, "_rereads", reads((12, 12, 20, 20), "Base"))
     covered = pe.export(old, same, card())
     assert (covered.outcome, covered.gate) == ("current", "") and all(l.visible for l in same.descendants())
-    monkeypatch.setattr(pe, "_rereads", lambda a, b: [])
+    monkeypatch.setattr(pe, "_rereads", lambda a, b, prints=None: [])
     _rows_off(monkeypatch, 10)
     broken = pe.export(old, new, card())
     assert (broken.outcome, broken.gate) == ("refused", "G6") and broken.why.startswith("PNG not made: the bot cannot draw")

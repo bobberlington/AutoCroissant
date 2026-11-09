@@ -521,14 +521,17 @@ def _changed_ids(before: dict, after: dict) -> set:
     return {key for key in set(before) | set(after) if before.get(key, (None,))[0] != after.get(key, (None,))[0]}
 
 
-def changed_layers(old: PSDImage, new: PSDImage) -> tuple:
+def changed_layers(old: PSDImage, new: PSDImage, prints: Optional[tuple] = None) -> tuple:
     """
     The union box of the layer records that differ (each padded by its effects' reach, in both PSDs), and how many.
+
+    Args:
+        prints: (fingerprints(old), fingerprints(new)) when made already (one _unchecked call)
 
     Returns:
         (box or None when no record changed, number of changed records)
     """
-    before, after = fingerprints(old), fingerprints(new)
+    before, after = prints or (fingerprints(old), fingerprints(new))
     ids = _changed_ids(before, after)
     if not ids:
         return None, 0
@@ -617,9 +620,10 @@ def _render(psd: PSDImage, box: tuple, icc: bool, numbers: dict, text: str = "pr
     return image
 
 
-def _edited(old: PSDImage, new: PSDImage) -> tuple:
-    """Layer IDs of new's type layers whose record changed (Photoshop redraws them, in the text gamma)."""
-    records = _changed_ids(fingerprints(old), fingerprints(new))
+def _edited(old: PSDImage, new: PSDImage, prints: Optional[tuple] = None) -> tuple:
+    """Layer IDs of new's type layers whose record changed (Photoshop redraws them, in the text gamma; prints:
+    changed_layers')."""
+    records = _changed_ids(*(prints or (fingerprints(old), fingerprints(new))))
     return tuple(sorted(key for key in _type_layers(new) if key in records))
 
 
@@ -932,12 +936,15 @@ def _type_layers(psd: PSDImage) -> dict:
     return out
 
 
-def _rereads(old: PSDImage, new: PSDImage) -> list:
+def _rereads(old: PSDImage, new: PSDImage, prints: Optional[tuple] = None) -> list:
     """
     What the parser reads differently in the pushed PSD that must draw a change (the bake's read-back, here for a push):
     each type layer whose drawn text changed (new, edited, shown or hidden) and whose record changed past the VOLATILE
     blocks. A text edit in TySh alone (Dogma's title case under an all-caps style) draws nothing new; stat rows are left
     out, their digits read from marker layers that draw nothing (The Thin Man's 'Atk Dark/8' hidden, review 2026-10-24).
+
+    Args:
+        prints: changed_layers'
 
     Returns:
         [(what, box, psd, layer)], the box padded as changed_layers pads, clipped to the canvas: the layer drawn in new,
@@ -945,7 +952,7 @@ def _rereads(old: PSDImage, new: PSDImage) -> list:
     """
     out = []
     before, after = _type_layers(old), _type_layers(new)
-    prints = fingerprints(old), fingerprints(new)
+    prints = prints or (fingerprints(old), fingerprints(new))
     records = _changed_ids(*prints)
     for key in sorted(set(before) | set(after)):
         was, now = before.get(key), after.get(key)
@@ -1033,14 +1040,15 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
     result.vote = psd_edit.icc_vote(old, old_png)
     icc = psd_edit.export_icc(old, old_png)
     result.writer = "photoshop" if photoshop_saved(old, new) else "tool"
-    region, records = changed_layers(old, new)
+    prints = fingerprints(old), fingerprints(new)      # once a call, never kept: a picture context changes them
+    region, records = changed_layers(old, new, prints)
     region = region if region and region[2] > region[0] and region[3] > region[1] else None
-    changed = _rereads(old, new)
+    changed = _rereads(old, new, prints)
     result.numbers.update(records=records, region=list(region) if region else None, reread=[what for what, *_ in changed])
     moved = np.zeros((new.height, new.width), bool)
     if region:                                  # no vote: the old PSD drawn both ways against the old PNG
         icc, base = _render_voted(old, region, icc, result.vote, old_png.crop(region), result, old_png)
-        render = _render_like(new, old, region, icc, result.numbers, _edited(old, new))
+        render = _render_like(new, old, region, icc, result.numbers, _edited(old, new, prints))
         moved[region[1]:region[3], region[0]:region[2]] = _diff(render, base) > TOL
     result.icc = icc_mode(new, icc)
     result.changed_px, result.box = int(moved.sum()), _bbox(moved)
