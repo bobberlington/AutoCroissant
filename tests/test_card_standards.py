@@ -935,6 +935,17 @@ def test_clean_deletes_hidden_stars_types_and_copies(tmp_path):
     assert cs.clean(str(out), str(tmp_path / "again.psd"), rel="Auxiliary/Minions/Fixture.psd") == []
 
 
+def test_ancestors_lookbehind_keeps_matches():
+    """ANCESTORS' (?<!\\s) (linear over Photoshop's XMP padding) cuts what the old pattern cut."""
+    import re
+    old = re.compile(rb"\s*<photoshop:DocumentAncestors>.*?</photoshop:DocumentAncestors>", re.DOTALL)
+    block = b"<photoshop:DocumentAncestors>\n <rdf:Bag><rdf:li>x</rdf:li></rdf:Bag>\n</photoshop:DocumentAncestors>"
+    pad = b" \n" * 1000
+    for xmp in (b"<x>" + pad + block + b"\n " + block + b"</x>" + pad, block + pad + block, b"<x>\n" + pad + b"</x>"):
+        assert cs.ANCESTORS.sub(b"", xmp) == old.sub(b"", xmp)
+    assert cs.ANCESTORS.sub(b"", b"<x>" + pad + block + b"</x>") == b"<x></x>"
+
+
 def test_clean_on_a_real_card(clone, tmp_path):
     """Kingsoul (11-09 pass): its hidden Delicate Flower star and the hidden copy of its art go; parse and picture as
     they were (fix's gates)."""

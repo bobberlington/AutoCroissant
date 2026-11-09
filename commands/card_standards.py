@@ -2874,7 +2874,7 @@ CLEAN_ICON = 0.03           # share of the card: a star or type icon is smaller 
 STAR_GROUP = re_compile(r"\bstars?\b", IGNORECASE)
 TYPE_GROUP = re_compile(r"types", IGNORECASE)
 STAT_GROUP = re_compile(r"\b(hp|health|def|defen[cs]e|atk|attack|spd|speed|darks?|lit|stats?|bars?)\b", IGNORECASE)
-ANCESTORS = re_compile(rb"\s*<photoshop:DocumentAncestors>.*?</photoshop:DocumentAncestors>", DOTALL)
+ANCESTORS = re_compile(rb"(?<!\s)\s*<photoshop:DocumentAncestors>.*?</photoshop:DocumentAncestors>", DOTALL)  # (?<!\s): linear
 PATTERN_TAGS = (Tag.PATTERNS1, Tag.PATTERNS2, Tag.PATTERNS3)
 FX_TAGS = (Tag.FILTER_EFFECTS1, Tag.FILTER_EFFECTS2, Tag.FILTER_EFFECTS3)
 
