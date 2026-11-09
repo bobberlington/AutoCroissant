@@ -1075,7 +1075,7 @@ def project(old: str, new: str, raw: str, brk: str = "\r") -> str:
     Returns:
         The layer's new text (\\r breaks)
     """
-    at = _align(old, raw)
+    at, end = _align(old, raw), len(raw.rstrip(PAD))
     for tag, i1, i2, j1, j2 in reversed(_opcodes(old, new)):
         if tag == "equal":
             continue
@@ -1085,7 +1085,7 @@ def project(old: str, new: str, raw: str, brk: str = "\r") -> str:
         else:
             lo = next((at[i] + 1 for i in range(i1 - 1, -1, -1) if i in at), None)
             if lo is None:
-                lo = next((at[i] for i in range(i2, len(old)) if i in at), len(raw.rstrip(PAD)))
+                lo = next((at[i] for i in range(i2, len(old)) if i in at), end)
             hi = lo
         raw = raw[:lo] + new[j1:j2].replace("\n", brk) + raw[hi:]
     return raw

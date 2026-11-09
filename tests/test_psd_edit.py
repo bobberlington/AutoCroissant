@@ -2673,6 +2673,11 @@ def test_project_keeps_a_layers_padding():
     """A box's edit put back over its layer keeps the layer's blank ends and indent (project)."""
     assert pe.project("Deal 7 DMG.", "Deal 9 DMG.", "\r    Deal 7 DMG.\r   ") == "\r    Deal 9 DMG.\r   "
 
+
+def test_project_fills_an_empty_box_in_order():
+    """Lines typed into an empty box keep their order."""
+    assert pe.project("", "A\nB", "") == "A\rB"
+
 WATCHER = "Auxiliary/Minions/Abyss_Watcher.psd"                  # no ability part (a hidden empty Ability)
 
 
