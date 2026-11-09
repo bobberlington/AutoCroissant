@@ -1832,7 +1832,8 @@ git -C "$FAKE_REPO" cat-file blob "${rest%%/*}:${rest#*/}" > "$out"
 
 def test_workflow_fetches_earlier_icon_fonts_in_the_background(clone, tmp_path, monkeypatch):
     """Earlier fonts start lists the icon font's past versions (not the current one) and fetches them by commit in the
-    background, the token off the command line; Check's earlier_fonts reads them there (CARD_EARLIER_FONTS), no API."""
+    background, the token off the command line; Check's earlier_fonts reads them there (CARD_EARLIER_FONTS), no API; one
+    missing, or not its blob, by the API."""
     pytest.importorskip("yaml")
     if not shutil.which("timeout"):
         pytest.skip("no timeout (coreutils)")
@@ -1870,6 +1871,15 @@ def test_workflow_fetches_earlier_icon_fonts_in_the_background(clone, tmp_path, 
     out.mkdir()
     files = cg.earlier_fonts(NoApi(str(repo)), head, cg.Source(str(repo)).tree(head), str(out))
     assert [Path(path).read_bytes() for path in files] == [b"1", b"0"]
+    (folder / shas[1]).write_bytes(b"9")
+    (folder / shas[0]).unlink()
+    read, source = [], cg.Source(str(repo))
+    blob = source.blob
+    source.blob = lambda sha: read.append(sha) or blob(sha)
+    monkeypatch.setattr(cg, "_advances", {})
+    (tmp_path / "again").mkdir()
+    files = cg.earlier_fonts(source, head, source.tree(head), str(tmp_path / "again"))
+    assert [Path(path).read_bytes() for path in files] == [b"1", b"0"] and sorted(read) == sorted(shas[:2])
 
 
 def test_workflow_lowercases_card_guards(clone, tmp_path):

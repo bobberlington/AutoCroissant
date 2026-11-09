@@ -82,30 +82,6 @@ def test_earlier_fonts_read_side_by_side(tmp_path, monkeypatch):
         earlier_fonts(source, "head", tree, str(tmp_path))
 
 
-def test_earlier_fonts_read_the_fetched_folder_first(tmp_path, monkeypatch):
-    """card-guards.yml's fetched versions (EARLIER_ENV) are read before the API; a file that is not its blob is not."""
-    from commands.github_api import blob_sha as sha_of
-    datas = [b"1", b"2", b"3"]
-    shas, read = [sha_of(data) for data in datas], []
-
-    class History(Source):
-        def git(self, *args):
-            return " ".join(shas) if args[0] == "log" else args[1].split(":")[0]
-
-        def blob(self, sha):
-            read.append(sha)
-            return datas[shas.index(sha)]
-
-    (tmp_path / "fetched").mkdir()
-    (tmp_path / "fetched" / shas[0]).write_bytes(datas[0])
-    (tmp_path / "fetched" / shas[1]).write_bytes(b"9")
-    monkeypatch.setenv(card_guards.EARLIER_ENV, str(tmp_path / "fetched"))
-    monkeypatch.setattr(card_guards, "font_advances", lambda data: {"glyph": int(data[:1])})
-    monkeypatch.setattr(card_guards, "_advances", {"now": {"glyph": 0}})
-    files = earlier_fonts(History(str(tmp_path)), "head", {ICON_FONT_FILE: ("100644", "now")}, str(tmp_path))
-    assert [open(path, "rb").read() for path in files] == datas and sorted(read) == sorted(shas[1:])
-
-
 def test_earlier_eras_past_more_font_changes(clone, tmp_path, monkeypatch):
     """Three font changes past the ring that keep its advances (the last 3 versions would all be the ring's era): the
     walk still finds the pre-ring eras; it stops at EARLIER_WALK versions and EARLIER_FONTS eras."""
