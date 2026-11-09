@@ -139,6 +139,17 @@ out([lines, fitted.lines.length * fitted.size * m.LINE <= 40.5, fitted.size < 20
     assert out[1] is True and out[2] is True and out[3] == 1
 
 
+@needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "steadyPitch"), reason="no steadyPitch in mockup.js")
+def test_old_line_pitch(tmp_path):
+    """The old lines' pitch: the mean of their gaps near the median, not the least (a capital moves a line's middle); a
+    paragraph's gap left out; one line: none."""
+    out = node(tmp_path, """
+const L = mids => mids.map(c => [0, c - 8, 100, c + 8]);
+out([m.steadyPitch(L([10, 41, 71, 105])), m.steadyPitch(L([10, 40, 70, 130, 160])), m.steadyPitch(L([10]))]);""")
+    assert out[0] == pytest.approx(95 / 3) and out[1:] == [30, 0]
+
+
 kept = pytest.mark.skipif(not has(MOCKUP_JS, "statSite"), reason="no statSite in mockup.js")
 
 
