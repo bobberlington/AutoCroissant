@@ -503,7 +503,8 @@ wants to eliminate (see autocroissant-research-frontier; the campaign to shrink 
 autocroissant-psd-extraction-campaign). `EXCESSIVE_STAT_EXCLUSIONS` (5 names) was deleted on 2026-10-21: since 2026-11-06 a stat is STATS TOO
 HIGH only above 20 (`card_models.STAT_LIMIT`, owner; 10 before), and `allow_high_stats` in Card Edits.json allows more; a raid
 boss (6 or more stars, `card_models.RAID_STARS`: the 6-star raid bosses in `MDW/Unfinished/6 Stars/`) has no limit. Since 2026-10-25 (cards need no ability) the validator
-no longer reads `ABILITY_EXCLUSIONS`: it is card_standards' R3 waiver (card_standards.py:638). Verbatim, psd_parser.py:1271-1293:
+no longer reads `ABILITY_EXCLUSIONS`; card_standards' R3 waiver was its last reader, and the list went on 2026-11-09
+(no live card had a hidden Ability layer left). What it held:
 
 - `ABILITY_EXCLUSIONS` (21, allowed to have no ability text): Crystal Bits, Bugzzy, Electro Probe,
   Galacta Warrior, God Tamer, Mini Bee, Paint Warrior, PoD01Red Bloon, Sabre, Shadow Duelist,
@@ -511,11 +512,10 @@ no longer reads `ABILITY_EXCLUSIONS`: it is card_standards' R3 waiver (card_stan
   2026-10-21 (user) the three minions with an empty Ability layer: Anubisath Guardian, Qiraji Soldier, Silithid.
 - **Shadow Duelist is not stale** (BUGS D3): its PNG prints no ability, and its hidden `Ability` layer ("Heals the
   creature this is summoned on by 2 HP at the end of its turn.") is laid out nowhere, so since 2026-10-22 (owner: hidden
-  Ability layers don't count, only what is printed) it parses to an empty ability and the entry keeps the validator
-  quiet. A hidden `Ability` layer counts only when visible text layers over it print exactly its words (the four
+  Ability layers don't count, only what is printed) it parses to an empty ability (its hidden
+  layer deleted on 2026-11-09). A hidden `Ability` layer counts only when visible text layers over it print exactly its words (the four
   relaid-out cards of §4.2); the 7 cards with only a hidden one on 2026-10-22: those four keep their text, Shadow
-  Duelist, Abyss Watcher and Warrior Dee (all excluded) parse to "". `tests/test_parser_goldens.py::test_shadow_duelist_exclusion`
-  pins the PSD (skips when it changes upstream); `tests/test_rulebook_hidden.py` the rule.
+  Duelist, Abyss Watcher and Warrior Dee (all excluded) parse to "". `tests/test_rulebook_hidden.py` pins the rule.
 
 ## 6. Data schemas: CardInfo and the card data
 

@@ -298,7 +298,7 @@ Recovered via `git log --diff-filter=D --name-only`. For each: what it was, why 
 
 - **Symptom**: long messages with multiple ``` code blocks split mid-fence, breaking Discord rendering; then splitting crashed outright.
 - **Root cause & fixes**: old `split_long_message` only handled a message that both started AND ended with a single fence. **e21b986** (2026-01-18) rewrote it with an `in_code` fence-tracking loop — but also removed the `max_length` default, breaking callers that passed no argument. **d699b3f** (2026-01-26) restored `max_length: int = BREAK_LEN`.
-- **Status**: fixed; current `split_long_message` at utils.py:248, BREAK_LEN=1950 (utils.py:19). (e21b986 also introduced `ABILITY_EXCLUSIONS`, psd_parser.py:1271 on 2026-10-25; since that day only card_standards' R3 waiver: cards need no ability.)
+- **Status**: fixed; current `split_long_message` at utils.py:248, BREAK_LEN=1950 (utils.py:19). (e21b986 also introduced `ABILITY_EXCLUSIONS`, psd_parser.py:1271 on 2026-10-25; since that day only card_standards' R3 waiver: cards need no ability; deleted 2026-11-09.)
 
 ### 8.2 Deploy items / card.types clobber + force_update born
 

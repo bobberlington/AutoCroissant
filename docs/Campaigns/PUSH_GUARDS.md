@@ -442,7 +442,8 @@ four PoD minions); `txt2_repair --check` over all 904 PSDs at `b2168617`: 0 stal
 **6.2 Waivers.**
 - **Class waivers** are the owner's decisions, kept in code (`card_standards.WAIVED`), each with its date and ledger entry:
   - Q2: several-Ability and multi-creature cards (R3);
-  - cards in the parser's `ABILITY_EXCLUSIONS` (R3: Shadow_Duelist prints no ability; unattended, 2026-10-23);
+  - cards in the parser's `ABILITY_EXCLUSIONS` (R3: Shadow_Duelist prints no ability; unattended, 2026-10-23; gone
+    2026-11-09 with the list: no live card has a hidden Ability layer left);
   - Tainted_Lazarus's header icon;
   - the 16 chart-less overlays;
   - "leave the Name layers" (R4 existing).

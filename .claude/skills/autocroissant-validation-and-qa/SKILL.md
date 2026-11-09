@@ -51,7 +51,7 @@ read-only and safe; `config.py` holds secrets — never print or commit it.
 | 1c | **Offline pytest suite** (added 2026-10-20; cut and run with pytest-xdist 2026-10-25) | `~/.venvs/ac-py314-fork/bin/python -m pytest -q -n auto tests` (`-n auto` is capped at 6 workers in conftest.py, `AC_TEST_WORKERS=N` raises it on a quiet Mac; `-n 0` runs one test serially; no network, no config.py needed, never writes the reminder store; the fork venv runs the bake tests, which skip elsewhere) | 2026-11-06: 694 collected, 693 passed, 1 skipped (111 s; the Alt template's test). 2026-11-05: 689 collected (AutoCroissant 3641756). 2026-10-25 evening: 594 passed with the card pin (112 s). After the cut: **553 collected**, 553 passed, 0 skipped, 66 s wall at load ~25 (1,563 collected and 348 s before the cut); 1346 collected on 2026-10-23 | 10 parser goldens in `tests/goldens/` (the 3 certified ones and 6 parser paths, plus Anubisath Guardian for the card data build; the two rule-page goldens removed 2026-11-04 with the rule-page parsing; since 2026-10-25 every real-card test reads the card repo at one commit, `conftest.CARDS_REV`, from a pinned repo on the clone's objects (`~/.cache/autocroissant-tests/`), so card pushes never move a test; to move the pin change CARDS_REV, then `tests/make_goldens.py`, only after an accepted parser change or a reviewed upstream edit), the card data build's gates G1-G6 and history, the bake, guard and export gates, one happy path per command, the dispatch/edit loops and help coverage (`test_robustness.py`), and the website's tests (`tests/test_site_*.py`; 15 smoke tests, one per site piece, on 2026-10-25). The icon font's tests read TTSCardMaker at `conftest.RING` (0ade8c3d since 2026-11-04, the ring font; re-pin there when the badges change: `test_card_standards`, `test_card_sweep`), and `tests/test_badge_parity.py` keeps the font's, text.js's and mockup.js's badges in step (ttscardmaker-companion §1.2). Run it before every push (autocroissant-change-control class (a)). **Not a parser gate on its own:** 10 goldens cover part of the parser, so any change to the parser or a card module (`psd_parser.py`, `psd_analyzer.py`, `card_models.py`, `card_edits.py`, `card_data.py`, `card_history.py`) still needs 1b (until Irithyll, 16_The_Field and Termination_Shock were added, `row_threshold` 40->60 and `STAR_CORE_ALPHA` 0.5->0.2 changed 16 of 813 cards and passed the suite) |
 | 2 | **diff_stats deltas on a full build** | scratch full build, then `diff_stats.py <the data before> <scratch db>` (history included: old_stats.json beside each) | the pickles' HEAD vs working on 2026-10-23: `818/818, added 0 removed 0 modified 0, exit 0` | Whole-database impact. Every added/removed/modified line must have an explanation; "removed" rows you didn't intend and mass path/type changes are corruption signatures |
 | 3 | **Validator problem-card count** (must not increase) | stored surface: `inspect_pickle.py --problems` (card_data/, or `--db`); full surface: re-validation one-liner (section 2) | 2026-10-23: pickled **0**; full validation **exactly 1** (Computer Virus, listed in section 2). 2026-07-11: 1 and 5 | Extraction quality did not regress anywhere the validator can see |
-| 4 | **Exclusion-list size** | count `CardValidator.ABILITY_EXCLUSIONS` (`EXCESSIVE_STAT_EXCLUSIONS` was deleted on 2026-10-21: a stat above 20 (10 until 2026-11-06) is `STATS TOO HIGH` unless the card's Card Edits.json entry sets `allow_high_stats`, as Sonic's and Royal Eradicator Main Cannon's do) | **21** ABILITY_EXCLUSIONS (psd_parser.py:1056 on 2026-10-23; 18 until e4e0a58 added the three WoW minions on 2026-10-21), no stat list | Shrinking them is progress toward "perfect extraction" (owner doctrine); growing them is new registered debt |
+| 4 | **Exclusion-list size** | count the per-card lists in code (`ABILITY_EXCLUSIONS` was deleted on 2026-11-09, `EXCESSIVE_STAT_EXCLUSIONS` on 2026-10-21: a stat above 20 (10 until 2026-11-06) is `STATS TOO HIGH` unless the card's Card Edits.json entry sets `allow_high_stats`, as Sonic's and Royal Eradicator Main Cannon's do) | **0**: ABILITY_EXCLUSIONS went on 2026-11-09 (21 names; 18 until e4e0a58 added the three WoW minions on 2026-10-21), no stat list | Shrinking them is progress toward "perfect extraction" (owner doctrine); growing them is new registered debt |
 | 5 | **Eyeballing Discord output** | run a command, look at the message | none | Weakest. Catches only gross breakage; never sufficient alone. Acceptable as a final smoke check AFTER 1–4 pass, never as a substitute |
 
 If evidence levels conflict, the stronger level wins. A change that "looks great" in
@@ -112,11 +112,11 @@ cards to the sweep's output, so a validator change shows there first (autocroiss
 So a sweep's printed problem list = Channel A + Channel B; the pickle stores only Channel A.
 
 **One side effect to know:** `validate()` MUTATES `card.problems` — it removes
-`NO ABILITY LAYER` when the card is in `ABILITY_EXCLUSIONS` (psd_parser.py:1111-1114).
+`NO ABILITY LAYER` (older data's; cards need no ability since 2026-10-25).
 And `validate()` only runs during a sweep when `output_problematic=True`
 (card_data.py:669-670). Consequence: a sweep run with `output_problematic=False`
-would leave `NO ABILITY LAYER` in the pickled problems of the 21 excluded cards,
-inflating the Channel-A count by up to 21 with zero real regression. **Always sweep with
+would leave older records' `NO ABILITY LAYER` in the stored problems,
+inflating the Channel-A count with zero real regression. **Always sweep with
 `output_problematic=True` (the default) when measuring.**
 
 Certified baselines (re-measured 2026-10-23 at PICKLE a7c310e; 2026-07-11 values in brackets):
@@ -392,8 +392,8 @@ lowercase detail after a colon — existing vocabulary: `UNKNOWN TYPE`,
 `ABILITY TEXT NOT FOUND`, `HP NOT FOUND`, `STATS TOO HIGH`, `NO ABILITY LAYER`,
 `MISSPELT TYPE: tornado`. Match it.
 
-**Exclusion-set etiquette.** `ABILITY_EXCLUSIONS` (21 names since 2026-10-21) exists to silence TRUE positives — cards that
-legitimately have no ability text (`EXCESSIVE_STAT_EXCLUSIONS` went on 2026-10-21: a stat above 20 (10 until 2026-11-06) is allowed per card
+**Exclusion-set etiquette.** No per-card list is left (`ABILITY_EXCLUSIONS`, 21 names, went on 2026-11-09). Such a list
+only ever silenced TRUE positives — cards that legitimately have no ability text (`EXCESSIVE_STAT_EXCLUSIONS` went on 2026-10-21: a stat above 20 (10 until 2026-11-06) is allowed per card
 by `allow_high_stats` in Card Edits.json, data rather than code). Adding a name requires a stated
 reason (commit message at minimum: which card, why it's legitimate) and is **registered
 debt** against the owner's perfect-extraction goal (zero per-card exclusion lists).
@@ -430,7 +430,7 @@ Any ONE of the following, with no accepted explanation, means the change is reje
   unexplained `old_stats` version growth beyond 354 names / 446 versions (a7c310e). The one explained exception: the
   first run after the 2026-10-23 deploy recovers history from the bot's PICKLE commits (its `History: N versions
   recovered ...` line; about 1,155 versions / 670 names expected; autocroissant-change-control, pickle gate), and the one-time `Backfill: ...` line after it (about +95 versions, +32 names; docs/NEXT_SESSION_PLAN.md step 1b);
-- any exclusion-list growth (ABILITY_EXCLUSIONS > 21; no stat list exists since 2026-10-21).
+- any per-card exclusion list coming back (none since 2026-11-09; no stat list since 2026-10-21).
 
 The corresponding improvements (goldens fixed toward intended values, problem counts
 down, exclusion lists shorter) are how progress is measured — update the baselines in
@@ -466,8 +466,7 @@ re-verification below disagrees with this file, the repo wins; update this file
 | Volatile fact | Re-verify with (cwd = repo root) |
 |---|---|
 | `update_stats` signature (force_update=False; cards=""; no local options since 2026-10-20; repo_traverser.py gone 2026-10-25) | `grep -n -A4 "def update_stats" commands/card_sync.py main.py` |
-| Exclusion-list size (21; no stat list) | `~/.venvs/ac-py314-fork/bin/python -c "import sys; sys.path.insert(0,'.'); from commands.psd_analyzer import CardValidator as V; print(len(V.ABILITY_EXCLUSIONS), hasattr(V, 'EXCESSIVE_STAT_EXCLUSIONS'))"` (21 False) |
-| Exclusion-list definition & line (1056) (2026-10-23) | `grep -n "ABILITY_EXCLUSIONS: set" commands/psd_parser.py` |
+| No exclusion lists (2026-11-09) | `~/.venvs/ac-py314-fork/bin/python -c "import sys; sys.path.insert(0,'.'); from commands.psd_parser import CardValidator as V; print(hasattr(V, 'ABILITY_EXCLUSIONS'), hasattr(V, 'EXCESSIVE_STAT_EXCLUSIONS'))"` (False False) |
 | `PARSER_VERSION` (4) and its stamp, re-parse (psd_parser.py:24, :452; card_data.py:144) (2026-10-25) | `grep -n "PARSER_VERSION" commands/psd_parser.py commands/card_data.py commands/card_models.py` |
 | Printed title read into `display_name` (psd_parser.py:409, `_printed_title` :422) (2026-10-21) | `grep -n "_printed_title\|^def title_text" commands/psd_parser.py` |
 | Parse-time problem sites (404, 486; icon problems 593-625) (2026-10-20) | `grep -n "card.problems.append\|_add_problem(card" commands/psd_parser.py` |

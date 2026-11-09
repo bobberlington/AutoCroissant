@@ -232,7 +232,6 @@ Action). repo_traverser.py (the legacy /update_stats, with `_tree_etags`/`_file_
 | `EFFECT_LAYER_TAG` (2026-10-20) | `" FX: "` | marks an effect layer (`Ability FX: Blazing`, made by TTSCardMaker `MDW/Scripts/Effect Layers.jsx`). Such layers are skipped by the walk and checked afterwards. Semantics: impossibility-cards-reference §4.2 |
 | `EFFECT_COVERAGE_MIN` (2026-10-20) | `0.95` | minimum share of an effect layer's opaque pixels that must sit on its text layer's pixels; below it the card gets `EFFECT LAYER OUT OF DATE` (fresh layers score 1.0, a stale test scored 0.268) |
 | `PARSER_VERSION` (2026-10-21) | `4` (psd_parser.py:24; 3 and 4 on 2026-10-25: a PSD's pictures, then the census fixes) | stamped on every parsed card (`CardInfo.parser_version`); the Card sync build re-parses a card whose stamp differs, once (card_data.py:144), and retries a PSD that failed under another version (:909). Bump it when a parser change must reach the stored cards: the next run reads every PSD (~812) |
-| `CardValidator.ABILITY_EXCLUSIONS` | 21 card names (psd_parser.py:1056-1078) | cards allowed to have no ability layer |
 
 ### the card data build: commands/card_data.py (2026-10-22; docs/Campaigns/DATA_BUILD_ACTION.md)
 
@@ -690,7 +689,7 @@ table with its command before quoting it in the future.
 | lacks_admin gate list + the ungated /restart_bot | `grep -n "lacks_admin" main.py` then read each hit's enclosing `@tree.command`; `grep -n -A2 'name="restart_bot"' main.py` |
 | lacks_admin polarity | `grep -n -A2 "def lacks_admin" commands/utils.py` |
 | card-module constants (psd_analyzer split 2026-10-20; moved 2026-10-22) | `grep -n "^UPDATE_RATE\|^EXCLUDE_FOLDERS\|_WORKERS =" commands/card_data.py`; build constants: `grep -n "^BUDGET\|^RATE_FLOOR\|^MIN_CARDS\|^ARCHIVE_\|^REPARSE_MAX\|^QUALITY_\|^DETAILS_SHARE" commands/card_data.py`; `grep -n "TYPE_REGION_RATIO\|MISSPELT_CARD_TYPES\|^ICON_\|^EFFECT_\|STAR_CORE" commands/psd_parser.py`; `grep -n "EXPORTED_\|COLUMN_ORDER" commands/psd_analyzer.py`; repo paths: `grep -n "CARD_\|_BASE\|_DIR\|_PATH" global_config.py` |
-| Exclusion set size/location; PARSER_VERSION | `grep -n "ABILITY_EXCLUSIONS\|^PARSER_VERSION" commands/psd_parser.py` |
+| PARSER_VERSION | `grep -n "^PARSER_VERSION" commands/psd_parser.py` |
 | UPDATE_RATE cadence usage | `grep -n "% UPDATE_RATE" commands/card_data.py` |
 | query_card defaults | `grep -n "DEFAULT_REPOSITORY\|DEFAULT_MATCH_RATIO" commands/query_card.py` |
 | BREAK_LEN | `grep -n "BREAK_LEN = " commands/utils.py` |

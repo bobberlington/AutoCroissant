@@ -9,9 +9,9 @@ This is the executable campaign for the project's hardest live problem (owner-st
 extracting ability text, type icons, and stats from the ~904 card PSDs in `~/Desktop/TTSCardMaker`.
 
 **The goal ("perfect extraction")**: 100% correct ability/type/stat extraction, with **zero
-per-card exclusion lists**. Today the parser is good but propped up by 21 hardcoded card names
-(`ABILITY_EXCLUSIONS`; the 5 `EXCESSIVE_STAT_EXCLUSIONS` went on 2026-10-21, replaced by the website's per-card
-`allow_high_stats`). The traversal bug that made local-mode
+per-card exclusion lists**. None is left: the 21 hardcoded names of `ABILITY_EXCLUSIONS` went on 2026-11-09 (its
+last reader, the guards' R3 waiver, had no card left to waive) and the 5 `EXCESSIVE_STAT_EXCLUSIONS` on 2026-10-21,
+replaced by the website's per-card `allow_high_stats`. The traversal bug that made local-mode
 `/update_stats` dangerous was fixed on 2026-10-19 (Phase 0). The campaign removes the remaining
 props without breaking the ~812 PSDs that parse correctly today (818 cards with the alt-art rows, 2026-10-23).
 
@@ -61,6 +61,7 @@ This table IS the campaign's progress record.
 |---|---|---|---|---|---|---|---|---|
 | 2026-07-11 | 813 | 1 | 5 | 18 | 5 | 20 | 10 | 3/3 |
 | 2026-10-23 | 818 | 0 | 1 | 21 | — | 20 | 10 | 3/3 |
+| 2026-11-09 | 776 | 0 | 0 | 0 | — | 21 | 4 | 10/10 |
 | (target) | tracks TTSCardMaker | true content errors only | == stored problems | 0 | 0 | tracked, explained | legit layouts only | N/N, N growing |
 
 The 2026-10-23 row: measured at PICKLE a7c310e with `~/.venvs/ac-py314-fork` (Gates 1c-1e). ABILITY_EXCLUSIONS went
@@ -68,6 +69,13 @@ The 2026-10-23 row: measured at PICKLE a7c310e with `~/.venvs/ac-py314-fork` (Ga
 Qiraji Soldier, Silithid): registered debt, the exclusion treadmill this campaign exists to stop. The stat list is
 gone (`allow_high_stats` in Card Edits.json since 2026-10-21). Goldens are 3/3 all-True with or without the icon
 vocabulary. Inventory: 818 cards (812 PSDs plus 6 alt-art duplicate rows), item 188, field 49, newest Clot White.
+
+The 2026-11-09 row: db/stats.json on the data branch (6e5aa2ae), AC fa3a152e. ABILITY_EXCLUSIONS 21 -> 0: the
+validator stopped reading it on 2026-10-25 (cards need no ability), and after the 11-09 hidden-layer clean-up no live
+card has a hidden Ability layer, so the guards' R3 waiver changed nothing (`card_standards.check` on all 768 live
+PSDs at TC ea2fee7b: identical with and without it). The 21 empty abilities are exactly its 21 names. Re-validation
+0 (Computer Virus has stat rows since 11-08); residual gaps 4 (Michael's Blessing, Miracle Matter, Pile Of Swords,
+Warcraftian Hunter); goldens 10/10 (`tests/test_parser_goldens.py`).
 
 Metric definitions (verified 2026-07-11; counts updated 2026-10-23):
 
@@ -210,16 +218,17 @@ python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pic
 **EXPECTED (2026-10-23):** no lines (0 stored problems). On 2026-07-11 exactly one:
 `20 Creature Types [Auxiliary/Rulebook/20_Creature_Types.psd]: ['MISSPELT TYPE: tornado']` (a rule page; rule pages aren't cards since 2026-10-30)
 
-### Gate 1c — Exclusion-list sizes (the numbers this campaign exists to drive to zero)
+### Gate 1c — Exclusion lists (driven to zero: none left since 2026-11-09)
 
 ```bash
-awk '/ABILITY_EXCLUSIONS: set/{f=1;next} f&&/}/{exit} f&&/",/{n++} END{print "ABILITY_EXCLUSIONS:", n}' commands/psd_parser.py
+git grep -c "_EXCLUSIONS" -- commands/
 ```
 
-**EXPECTED (2026-10-23):** `ABILITY_EXCLUSIONS: 21` (18 until e4e0a58 on 2026-10-21; the stat list no longer exists).
+**EXPECTED (2026-11-09):** nothing but `commands/card_history.py:1` (a comment on the old stat list). `ABILITY_EXCLUSIONS`
+held 21 names until 2026-11-09 (18 until e4e0a58 on 2026-10-21); the stat list went on 2026-10-21.
 (Cross-check that imports agree with source, with the fork venv:
-`~/.venvs/ac-py314-fork/bin/python -c "import sys; sys.path.insert(0,'.'); from commands.psd_analyzer import CardValidator as V; print(len(V.ABILITY_EXCLUSIONS))"`
-→ `21`. If source and import disagree, a stale compiled `.so` is shadowing the `.py` — see
+`~/.venvs/ac-py314-fork/bin/python -c "import sys; sys.path.insert(0,'.'); from commands.psd_parser import CardValidator as V; print(hasattr(V, 'ABILITY_EXCLUSIONS'))"`
+→ `False`. If source and import disagree, a stale compiled `.so` is shadowing the `.py` — see
 autocroissant-build-and-env, run `python3 setup.py clean`.)
 
 ### Gate 1d — Golden parses, byte-checked against the card data
@@ -508,8 +517,8 @@ cannot currently say "blank on purpose" without a hardcoded name.
 
 | Target | Finding | Action |
 |---|---|---|
-| Shadow Duelist | In ABILITY_EXCLUSIONS with text from its hidden Ability layer (`Heals the creature this is summoned on by 2 HP...`); the PNG prints no ability | Done 2026-10-22: only printed text counts (hidden Ability layers only when relaid, `_relaid`), so it parses to "" and the entry stays (live). Method A: 812 PSDs, 1 difference (this card) |
-| Crystal Bits, Panda + 15 more empty-ability exclusions | Blank `Ability` layer (`'\r'`, bbox (0,0,0,0)); Panda additionally has full stats 6/2/7/3 | Genuinely blank. Re-certify individually, or take the structural candidate below |
+| Shadow Duelist | In ABILITY_EXCLUSIONS with text from its hidden Ability layer (`Heals the creature this is summoned on by 2 HP...`); the PNG prints no ability | Done 2026-10-22: only printed text counts (hidden Ability layers only when relaid, `_relaid`), so it parses to "" and the entry stays (live). Method A: 812 PSDs, 1 difference (this card). 2026-11-09: its hidden layer deleted and the list gone |
+| Crystal Bits, Panda + 15 more empty-ability exclusions | Blank `Ability` layer (`'\r'`, bbox (0,0,0,0)); Panda additionally has full stats 6/2/7/3 | Genuinely blank. Done 2026-11-09: blank is no problem (since 2026-10-25) and the list is gone |
 | Anubisath Guardian, Qiraji Soldier, Silithid | Same blank pattern (verified on Silithid); NOT in the list until 2026-10-21, so they fired `ABILITY TEXT NOT FOUND` in every force-sweep report | Added to ABILITY_EXCLUSIONS in e4e0a58 (2026-10-21): the exclusion treadmill live, 3 names of registered debt (18 → 21). The structural candidate below removes them with the rest |
 | Computer Virus | Creature with ability but hp/def/atk/spd all -1 → fired 4 NOT FOUND problems per force sweep; since 2026-10-26 one parse-time `NO STATS FOUND` (all four stats or a `creatures` edit answer it) | The owner adds its stat bars (ruling 2026-10-26) |
 | The 5 EXCESSIVE_STAT_EXCLUSIONS (DONE 2026-10-21) | Cards whose summed stat digits exceed 10 | The list is gone: a stat above 20 (10 until 2026-11-06) is STATS TOO HIGH unless the card's Card Edits.json entry sets `allow_high_stats` (Sonic spd 20, Royal Eradicator Main Cannon atk 12: data, not code); the canonical encoding above 10 is a top row 10 plus a bottom row N-10 |
@@ -525,6 +534,7 @@ metric. (On 2026-07-11 the prediction was 18 → 0 and re-validation 5 → 2.) *
 text emptied) goes silent. Mitigation is measurement, not a name list: the scoreboard tracks the
 empty-ability count, and diff_stats flags any card whose ability transitions non-empty → empty at
 sweep time — a reviewer gate in Phase 4. Route through change-control like everything else.
+**Done:** the validator took the rule on 2026-10-25 (cards need no ability); the list went on 2026-11-09 (21 → 0).
 
 ---
 
@@ -617,7 +627,7 @@ documented in autocroissant-failure-archaeology).
   inject :838, leftover-append :876-880, punctuation cleanup :778, `not card.ability` :937:
   `grep -n "_gap_pattern\|TYPE_REGION_RATIO\|card_mid_y = int\|_prune_type_bboxes\|_inject_type_names\|not card.ability" commands/psd_parser.py`
   and for the cleanup line `grep -n "ability_text = sub" commands/psd_parser.py`
-- Exclusion size 21 (2026-10-23; 18 + 5 on 2026-07-11): the one awk command in Gate 1c.
+- Exclusion lists none (2026-11-09; 21 on 2026-10-23; 18 + 5 on 2026-07-11): the one grep in Gate 1c.
 - Scoreboard 818 cards / 0 stored problems / distribution / newest card: Gate 1a command.
 - Scoreboard 1 re-validation / 10 residual-gap / 20 empty: Gate 1e command (fork venv).
 - Goldens 3/3 byte-equal: Gate 1d command. Per-card golden output:
@@ -664,3 +674,6 @@ is a token card since TTSCardMaker 1c24dd48); psd_parser.py glossary lines re-po
 2026-10-25 (step 10): the promotion step and the force_update citation follow the card data build (no pickles, no repo_traverser).
 
 2026-11-01 (chapters): the residual-gap list says its four rule pages are not cards.
+
+2026-11-09 (exclusions): ABILITY_EXCLUSIONS deleted (21 → 0; the guards' R3 waiver was its last reader, with no card
+left to waive); goal paragraph, a 2026-11-09 scoreboard row, Gate 1c, the target table and the structural candidate.

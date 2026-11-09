@@ -205,7 +205,8 @@ From `~/Documents/Tools/wt/scratch/opt-round3/plan.json`, `opt-round4/plan.json`
 - [ ] Card Authors.txt still credits the 48 old rule pages (kept; card_data no longer warns about them).
 - [ ] `docs/BUGS_AND_IMPROVEMENTS.md`: live checks V1 (`/sync_emojis refresh:True`) and V4 (`/query Raw Kawk`,
       `/query Black Clot`) still open. D6 (icon-font adoption) is ongoing.
-- [ ] `psd_parser` ABILITY_EXCLUSIONS still holds 21 names (only the guards' R3 waiver reads it); target 0.
+- [x] `psd_parser` ABILITY_EXCLUSIONS gone (11-09, 21 -> 0): no live card has a hidden Ability layer left, so the
+      guards' R3 waiver had nothing to waive.
 - [ ] Idea 14's orphaned-FX validator was never built; the bake already deletes such layers when it edits a card.
 - [ ] Stars still refused: Thunder Thighs 3, Consolation Prize, Bubble, Forsaken City and The Core (option B, shrinking
       every star to fit the banner, is the larger fix); Forgotten Crossroads 3-6 and Spiky Ball Trap 5-6 wrongly act as
