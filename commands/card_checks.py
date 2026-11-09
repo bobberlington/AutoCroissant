@@ -13,7 +13,8 @@ Nothing here blocks or tells anyone.
 
 list prints the blobs to check (PSDs without a result, their PNGs; a PNG pushed alone counts); run checks them; save puts
 the results in db/, drops PSDs gone from the tree, words every record's notes against the data (a website-only fix clears
-without a push) and marks the people's flags that went. Exit 0, also for what it flags. No Discord or config imports.
+without a push) and marks the people's flags that went (a sweep's change keeps them: db/changelog). Exit 0, also for what
+it flags. No Discord or config imports.
 
 Which edits are tried (a real bake is 25 s; the whole list of 13 kinds of edit, 4 minutes a card, would be 50 hours a
 tree): the plans alone for titles, stars and taking off a type, a made icon on a copy (adding a type is not tried: the
@@ -24,6 +25,7 @@ art (their pixels too; every creature's), a type on a very small PSD. A bake tha
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from glob import glob
 from io import BytesIO
 from json import dumps, load as json_load, loads
 from os import environ
@@ -92,6 +94,7 @@ NO_CHANGE_NOTE = "{} {} bake but change nothing on the card: change them in Phot
 SWAP_NOTE = "The {} bars are on each other's rows: a stat edit moves the wrong bar, put them back in Photoshop."
 BRIGHT_NOTE = "Its shown digits brighten the cells, so a stat edit turns the bars dark: change its stats in Photoshop."
 LINKS_JSON = "links.json"                   # the card data's db/: every PSD's links (card_data.gather_links)
+CHANGELOG = "changelog"                     # db/changelog/*.jsonl (changelog.CHANGELOG_DIR)
 DUP_NOTE = "{name} is drawn apart from this PSD: when the card changes, export it in Photoshop."
 LINK_MISSING = "Links {name}, which is not in the repo: push that file."
 LINK_ALIKE = "Links {name}, which looks the same as {kept}: link {kept} instead."
@@ -637,6 +640,30 @@ def load(path: str) -> dict:
         return json_load(fh)
 
 
+def psd_steps(db: str) -> dict:
+    """db/changelog's PSD changes by path, in order: [(old blob, new blob, a sweep's)] (art and changed events; sweep:
+    card_data.mark_sweeps)."""
+    found = []
+    for path in sorted(glob(join(db, CHANGELOG, "*.jsonl"))):
+        with open(path, encoding="utf-8") as fh:
+            found += [e for e in map(loads, filter(str.strip, fh)) if e.get("kind") in ("art", "changed")]
+    steps: dict = {}
+    for e in sorted(found, key=lambda e: e.get("seq", 0)):
+        blob = e.get("blob") or ()
+        if len(blob) == 2 and all(blob) and e.get("path"):
+            steps.setdefault(e["path"], []).append((blob[0], blob[1], bool(e.get("sweep"))))
+    return steps
+
+
+def by_person(steps: list, mark: str) -> bool:
+    """A change no sweep made since the PSD blob mark (psd_steps' for its path): after the last step onto the mark, else
+    from the first off it; none known: False (unknown never clears)."""
+    onto = [n for n, (_, new, _) in enumerate(steps) if new.startswith(mark)]
+    off = [n for n, (old, _, _) in enumerate(steps) if old.startswith(mark)]
+    start = onto[-1] + 1 if onto else off[0] if off else len(steps)
+    return any(not sweep for _, _, sweep in steps[start:])
+
+
 def stats_of(db: str) -> dict:
     """db/stats.json's cards."""
     with open(join(db, STATS_JSON), encoding="utf-8") as fh:
@@ -692,10 +719,11 @@ def blobs_of(snapshot: Snapshot, rels: list, stats: dict) -> list:
     return list(dict.fromkeys(snapshot.sha(path) for path in first + cards))
 
 
-def refresh(checks: dict, snapshot: Snapshot, stats: dict, edits: CardEdits, links: Optional[dict] = None) -> None:
+def refresh(checks: dict, snapshot: Snapshot, stats: dict, edits: CardEdits, links: Optional[dict] = None,
+            steps: Optional[dict] = None) -> None:
     """Every record's "hand" and "bars" against the data and the links (db/links.json: a pushed file clears its note),
     the records of PSDs gone from the tree out, and the people's flags that went: set on another PSD than the card's,
-    whose checks are clean (build_site leaves them out)."""
+    changed since by more than sweeps (steps: psd_steps), whose checks are clean (build_site leaves them out)."""
     cards = {card.get("blob_sha"): card for card in stats.values() if card.get("blob_sha")}
     blobs = {snapshot.sha(rel): key for key, rel in snapshot.psds.items()}
     checks["cards"] = {sha: record for sha, record in checks["cards"].items() if sha in blobs}
@@ -711,7 +739,8 @@ def refresh(checks: dict, snapshot: Snapshot, stats: dict, edits: CardEdits, lin
         if not mark or not rel:
             continue
         record = checks["cards"].get(snapshot.sha(rel))
-        clean = record is not None and not record["hand"] and not record["bars"] and not snapshot.sha(rel).startswith(mark)
+        clean = (record is not None and not record["hand"] and not record["bars"] and not snapshot.sha(rel).startswith(mark)
+                 and by_person((steps or {}).get(rel, []), mark))
         if clean or was.get(rel) == mark:
             cleared[rel] = mark                 # gone stays gone though the checks speak again; a new flag starts over
     checks["cleared"] = cleared
@@ -793,7 +822,7 @@ def main(args: Optional[list] = None) -> int:
         if exists(join(options.db, LINKS_JSON)):
             with open(join(options.db, LINKS_JSON), encoding="utf-8") as fh:
                 links = json_load(fh)
-        refresh(checks, snapshot, stats, CardEdits.parse(text), links)
+        refresh(checks, snapshot, stats, CardEdits.parse(text), links, psd_steps(options.db))
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(text_of(checks))
         print(f"{len(checks['cards'])} records, {sum(1 for r in checks['cards'].values() if r.get('hand'))} hand, "
@@ -818,6 +847,7 @@ __all__ = [
     'SPARSE_FILES',
     'VERSION',
     'blobs_of',
+    'by_person',
     'check_card',
     'context',
     'edit_notes',
@@ -828,6 +858,7 @@ __all__ = [
     'main',
     'mismatches',
     'png_key',
+    'psd_steps',
     'read_picture',
     'read_row',
     'refresh',

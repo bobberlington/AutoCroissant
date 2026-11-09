@@ -79,10 +79,13 @@ def test_refresh_clears():
     checks = {"cards": {"abcd1234ffff": {"style": "new", "reads": {"def": [read]}, "notes": [], "bars": None}, "gone": {}}, "cleared": {}}
     stats = {"A": {"blob_sha": "abcd1234ffff", "stats": {"defense": 8}}}
     edits = CardEdits.parse(json.dumps({"cards": {"A": {"flags": {"hand": "x", "psd": "00000000"}}}}))
-    cc.refresh(checks, snapshot, stats, edits)
+    steps = {rel: [("00000000ffff", "abcd1234ffff", False)]}
+    cc.refresh(checks, snapshot, stats, edits, steps=steps)
     assert list(checks["cards"]) == ["abcd1234ffff"] and checks["cards"]["abcd1234ffff"]["hand"].startswith("The DEF bar")
     assert checks["cleared"] == {}
     cc.refresh(checks, snapshot, {"A": {"blob_sha": "abcd1234ffff", "stats": {"defense": 2}}}, edits)
+    assert checks["cleared"] == {}                              # no changelog: unknown never clears
+    cc.refresh(checks, snapshot, {"A": {"blob_sha": "abcd1234ffff", "stats": {"defense": 2}}}, edits, steps=steps)
     assert checks["cards"]["abcd1234ffff"]["hand"] is None and checks["cleared"] == {rel: "00000000"}
     cc.refresh(checks, snapshot, stats, edits)
     assert checks["cleared"] == {rel: "00000000"}
@@ -93,6 +96,27 @@ def test_refresh_clears():
     edits = CardEdits.parse(json.dumps({"cards": {"A": {"flags": {"hand": "y", "psd": "abcd1234"}}}}))
     cc.refresh(checks, snapshot, stats, edits)
     assert checks["cleared"] == {}
+
+
+def test_sweeps_keep_flags(tmp_path):
+    """A person's flag stays through sweeps (db/changelog's "sweep") and an unknown chain; a person's push clears it."""
+    rel, mark = "Creatures/A.psd", "11111111"
+    log = tmp_path / "changelog"
+    log.mkdir()
+    event = lambda seq, old, new, sweep=None: json.dumps({"seq": seq, "kind": "art", "path": rel, "blob": [old, new],
+                                                           **({"sweep": sweep} if sweep else {})})
+    (log / "2026-11.jsonl").write_text("\n".join([event(1, "0" * 40, mark + "f" * 32), event(2, mark + "f" * 32, "2" * 40, "x"),
+                                                  event(3, "2" * 40, "3" * 40, "y")]) + "\n", encoding="utf-8")
+    steps = cc.psd_steps(str(tmp_path))
+    assert not cc.by_person(steps[rel], mark) and not cc.by_person([], mark) and not cc.by_person(steps[rel][2:], mark)
+    assert cc.by_person(steps[rel] + [("3" * 40, "4" * 40, False)], mark)
+    snapshot = SimpleNamespace(psds={"a": rel}, sha=lambda path: "4" * 40)
+    checks = {"cards": {"4" * 40: {"style": "new", "reads": {}, "notes": [], "bars": None}}, "cleared": {}}
+    edits = CardEdits.parse(json.dumps({"cards": {"A": {"flags": {"hand": "x", "psd": mark}}}}))
+    cc.refresh(checks, snapshot, {}, edits, steps={rel: steps[rel] + [("3" * 40, "4" * 40, True)]})
+    assert checks["cleared"] == {}
+    cc.refresh(checks, snapshot, {}, edits, steps={rel: steps[rel] + [("3" * 40, "4" * 40, False)]})
+    assert checks["cleared"] == {rel: mark}
 
 
 def test_still_and_swapped(monkeypatch):
