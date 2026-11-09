@@ -2609,6 +2609,27 @@ def test_a_title_drawn_in_another_font_is_set_in_that_face(clone, parser, chart,
     assert {run.style.font for run in TextModel.from_layer(title).runs} == {"OMORI_GAME"}
 
 
+@text_engine
+def test_font_map_shared_while_the_fonts_stand(clone, tmp_path, monkeypatch):
+    """One FontMap per fonts dir while its files stand; a font added makes a new one. With FONT_DIRS_ENV starting with
+    the dir it is walked once, the index the same."""
+    from shutil import copy
+    from psd_tools.composite.text import FontMap
+    fonts = tmp_path / "fonts"
+    fonts.mkdir()
+    copy(clone / pe.FONTS_DIR / "Box.ttf", fonts)
+    monkeypatch.delenv(pe.FONT_DIRS_ENV, raising=False)
+    first = pe.font_map(str(fonts))
+    before = dict(first._user_index().exact)
+    assert pe.font_map(str(fonts)) is first and len(before) == 1
+    copy(clone / pe.FONTS_DIR / "Minecrafter.ttf", fonts)
+    again = pe.font_map(str(fonts))
+    assert again is not first and len(again._user_index().exact) == 2
+    monkeypatch.setenv(pe.FONT_DIRS_ENV, str(fonts))
+    once = pe.font_map(str(fonts))
+    assert once.dirs == (str(fonts),) and once._user_index().exact == FontMap(dirs=[str(fonts)])._user_index().exact
+
+
 @text_edit
 def test_bake_repairs_a_stale_story(clone, parser, tmp_path):
     """A pre-fix bake's PSD has its stale Txt2 stories synced (commands.txt2_repair.sync_stories), told, whatever the

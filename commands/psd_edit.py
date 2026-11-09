@@ -22,7 +22,7 @@ from inspect import signature
 from itertools import combinations, product, zip_longest
 from io import BytesIO
 from math import comb, hypot
-from os import environ
+from os import environ, pathsep, scandir
 from os.path import abspath, basename, dirname, getsize, isfile, join
 from re import IGNORECASE, compile as re_compile, escape, fullmatch, search, sub
 from struct import pack, unpack
@@ -57,7 +57,7 @@ from commands.text_align import (BREAKS as TEXT_BREAKS, blocks as text_blocks, m
 from commands.psd_regions import (STATS as STAT_PATTERNS, _ancestors, badge_layers, bar_box, clip, comp_bars, comp_creature,
                                   comp_names, comp_row, comp_value, digit_span, fx_pad, overlay_words, placed_data,
                                   reaches_over, stat_rows, union_box)
-from global_config import TYPES_DIR
+from global_config import FONT_DIRS_ENV, TYPES_DIR
 
 # ========================
 # Configuration
@@ -5381,11 +5381,37 @@ def fonts_in() -> None:
         FONTS_WAIT()
 
 
+def _own_dirs(fonts_dir: str) -> list:
+    """[fonts_dir], or [] when FONT_DIRS_ENV starts with it: the FontMap reads that too (one walk, the same index)."""
+    return [] if environ.get(FONT_DIRS_ENV, "").split(pathsep)[0] == fonts_dir else [fonts_dir]
+
+
 def _fonts(fonts_dir: str, aliases: Optional[dict] = None):
-    """Every FontMap over fonts_dir, made once FONTS_WAIT says the fonts are in."""
+    """Every FontMap over fonts_dir, made once the fonts are in (fonts_in). Without aliases: one per process while the
+    fonts dirs' files stand (name, size, mtime)."""
     from psd_tools.composite.text import FontMap
     fonts_in()
-    return FontMap(dirs=[fonts_dir], policy="substitute", **({"aliases": aliases} if aliases else {}))
+    if aliases:
+        return FontMap(dirs=_own_dirs(fonts_dir), policy="substitute", aliases=aliases)
+    env = environ.get(FONT_DIRS_ENV, "")
+    return _shared_fonts(fonts_dir, env, _files_state(fonts_dir, *env.split(pathsep)))
+
+
+def _files_state(*dirs: str) -> tuple:
+    out = []
+    for folder in dict.fromkeys(filter(None, dirs)):
+        try:
+            with scandir(folder) as found:
+                out.append(tuple(sorted((e.name, s.st_size, s.st_mtime_ns) for e in found for s in [e.stat()])))
+        except OSError:
+            out.append(None)
+    return tuple(out)
+
+
+@lru_cache(maxsize=4)
+def _shared_fonts(fonts_dir: str, env: str, state: tuple):
+    from psd_tools.composite.text import FontMap
+    return FontMap(dirs=_own_dirs(fonts_dir), policy="substitute")
 
 
 FACE_IOU_MIN = 0.8          # a sibling face redraws a layer's saved pixels this alike to be the face they show (the four
