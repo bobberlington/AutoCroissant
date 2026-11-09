@@ -27,10 +27,10 @@ linked (the link step, psd_links), the merged image stripped, in one gated save.
 only, silent): hidden star and type icon layers, hidden pictures that are an exact copy of a visible layer, and data
 that draws nothing deleted, when every picture and the parse stay the same. After clean, before the composer, the
 folders as the templates' (standard_folders, owner 2026-11-09, silent): names, colours, order, loose layers and extra
-folders in their folder (Overlay Text and Overlay where Text or images would change their look), hidden Curves and
-nested star and type folders gone, at the first FOLDER_LEVELS level whose card renders and reads as before
-(folders_gate); no PNG follows. The sweep also isolates folders with adjustments clipped to them (isolate; the guards
-do not).
+folders in their folder (Overlay Text and Overlay where Text, Stat Text and Name or images would change their look),
+hidden Curves and nested star and type folders gone, at the first FOLDER_LEVELS level whose card renders and reads as
+before (folders_gate); no PNG follows. The sweep also isolates folders with adjustments clipped to them (isolate; the
+guards do not).
 
     check(psd, rel, context, old=None, added=False) -> [Issue]
     fix(data, rel, issues, work, parser=None, fonts=None, only=None) -> Fixed   the fixes, gated (one PSD's new bytes)
@@ -3172,10 +3172,10 @@ def _pixel_fixes(folder: str, base: str, current: str, rel: str, parser: Optiona
 
 # ========================
 # Folders (owner 2026-11-09): every card's and template's folders as the templates' (names, colours, order; loose
-# layers and extra folders in their folder by role; text kept off a styled Text in Overlay Text, art drawn over other
-# folders in Overlay; hidden Curves gone; nested star and type folders flattened; adjustments clipped to a folder
-# moved into it, the folder isolated), only where every picture renders and the bot reads the card as before
-# (folders_gate); silent, as the composer
+# layers and extra folders in their folder by role; text kept off a styled Text or Stat Text and Name in Overlay Text,
+# art drawn over other folders in Overlay; hidden Curves gone; nested star and type folders flattened; adjustments
+# clipped to a folder moved into it, the folder isolated), only where every picture renders and the bot reads the card
+# as before (folders_gate); silent, as the composer
 # ========================
 _C = SheetColorType
 FOLDER_TYPES = {"creature": "Creature Types", "aux creature": "Creature Types", "minion": "Creature Types",
@@ -3456,15 +3456,30 @@ def _inside_bars(folder, level: str, done: list, counts: Counter) -> None:
             _name_colour(child, part[1] if level != "colours" else None, part[2], done, counts)
 
 
+def _stat_folder(folder, types, stars):
+    """Text's Stat Text and Name (by its names, else a Photoshop-named folder of labels), or None."""
+    groups = [group for group in folder if group.is_group()]
+    stat = next((g for g in groups if _key(g.name) in ("stat text and name", "stat txt", "stat text")), None)
+    if stat is None and any(l.kind == "type" and _key(l.name) in STAT_WORDS for l in folder.descendants()):
+        stat = next((g for g in groups if GENERIC.fullmatch(_key(g.name)) and _content_role(g, types, stars) == "text"
+                     and any(l.kind == "type" and _key(l.name) in STAT_WORDS for l in g.descendants())), None)
+    return stat
+
+
+def _stat_units(folder) -> list:
+    """Text's loose labels and Names, each with what clips to it (_inside_text moves these into Stat Text and Name)."""
+    if not any(l.kind == "type" and _key(l.name) in STAT_WORDS for l in folder.descendants()):
+        return []
+    return [unit for unit in _units(folder)
+            if unit[0].kind == "type" and not unit[0].clipping and _key(unit[0].name) in STAT_WORDS | {"name"}]
+
+
 def _inside_text(folder, level: str, types, stars, done: list, counts: Counter) -> None:
     """Text's own: the stat labels and Name in Stat Text and Name (template level), Photoshop-named text folders
     flattened."""
     labels = [layer for layer in folder.descendants() if layer.kind == "type" and _key(layer.name) in STAT_WORDS]
     groups = [group for group in folder if group.is_group()]
-    stat = next((g for g in groups if _key(g.name) in ("stat text and name", "stat txt", "stat text")), None)
-    if stat is None and labels:
-        stat = next((g for g in groups if GENERIC.fullmatch(_key(g.name)) and _content_role(g, types, stars) == "text"
-                     and any(l.kind == "type" and _key(l.name) in STAT_WORDS for l in g.descendants())), None)
+    stat = _stat_folder(folder, types, stars)
     for group in groups if level != "colours" else ():
         if (group is not stat and GENERIC.fullmatch(_key(group.name)) and _plain(group)
                 and _content_role(group, types, stars) == "text"):
@@ -3480,12 +3495,11 @@ def _inside_text(folder, level: str, types, stars, done: list, counts: Counter) 
     _name_colour(stat, STAT_TEXT[0] if level != "colours" else None, STAT_TEXT[1], done, counts)
     if level in ("bare", "colours") or not labels or (level != "template" and not _plain(stat)):
         return
-    for unit in _units(folder):                 # a label or Name with what clips to it
-        if unit[0].kind == "type" and not unit[0].clipping and _key(unit[0].name) in STAT_WORDS | {"name"}:
-            for layer in unit:
-                layer.move_to(stat)
-            done.append(f"{unit[0].name!r} into {STAT_TEXT[0]}")
-            counts["loose layers"] += 1
+    for unit in _stat_units(folder):            # a label or Name with what clips to it
+        for layer in unit:
+            layer.move_to(stat)
+        done.append(f"{unit[0].name!r} into {STAT_TEXT[0]}")
+        counts["loose layers"] += 1
 
 
 def _inside(folder, role: str, level: str, types, stars, done: list, counts: Counter) -> None:
@@ -3611,6 +3625,24 @@ def _overlays(units: list, roles: list, mains: dict) -> None:
                 roles[i] = "overlay"
 
 
+def _off_stat(psd: PSDImage, units: list, roles: list, mains: dict, types, stars) -> None:
+    """Text's loose labels and Names, with what clips to them, out over a plain Text into Overlay Text when Stat Text
+    and Name has a look of its own (owner 2026-11-09: their look stays); units and roles grow."""
+    text = mains.get("text")
+    stat = _stat_folder(text[0], types, stars) if text is not None else None
+    moving = _stat_units(text[0]) if stat is not None and not _plain(stat) else []
+    if not moving or not _plain(text[0]) or len(text) > 1:
+        return
+    at = next(i for i, unit in enumerate(units) if unit is text) + 1
+    top = text[0]
+    for unit in moving:
+        for layer in unit:                      # over Text, in their order
+            layer.move_to(psd, index=list(psd).index(top) + 1)
+            top = layer
+    units[at:at] = moving
+    roles[at:at] = ["overlay text"] * len(moving)
+
+
 def arrange(psd: PSDImage, rel: str, types, stars, level: str = "template", proven: bool = True) -> tuple:
     """
     The card's folders as the templates' (FOLDER_ORDER, FOLDER_NAMES, FOLDER_COLOURS), in place.
@@ -3660,6 +3692,8 @@ def arrange(psd: PSDImage, rel: str, types, stars, level: str = "template", prov
     mains = _mains(units, roles, names)
     if level not in ("names", "bare", "colours"):
         _overlays(units, roles, mains)
+    if level == "template":
+        _off_stat(psd, units, roles, mains, types, stars)
     owner = []                                  # a unit of no role goes with the one under it (else over it; an
                                                 # orphan clip stays at the bottom)
     for i, role in enumerate(roles):

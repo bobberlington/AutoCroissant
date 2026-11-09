@@ -1000,6 +1000,18 @@ def test_folders_overlay_text_and_art(clone, tmp_path):
     assert [g.name for g in psd][-3:] == ["Text", "Overlay Text", "Overlay"] and [l.name for l in psd[-1]] == ["Layer 8"]
 
 
+def test_folders_name_off_a_styled_stat_folder(clone, tmp_path):
+    """Butterfly (owner 11-09): its Name, loose in a plain Text beside a Stat Txt with a stroke and glow, into Overlay
+    Text over Text, not into that folder; template level, the picture the same; a second run has nothing to do."""
+    rel = "Creatures/Kirby/5 Stars/Butterfly.psd"
+    parser = clone_vocabulary(str(clone)).parser()
+    done = cs.standard_folders(_card(clone, rel)[0], str(tmp_path / "out.psd"), None, rel, parser)
+    psd = PSDImage.open(tmp_path / "out.psd")
+    assert done.level == "template" and not done.left and "'Name' into Overlay Text" in done
+    assert [g.name for g in psd][-2:] == ["Text", "Overlay Text"] and [l.name for l in psd[-1]] == ["Name"]
+    assert not cs.standard_folders(str(tmp_path / "out.psd"), str(tmp_path / "again.psd"), None, rel, parser)
+
+
 def test_folders_isolate_a_clipped_adjustment(clone, tmp_path):
     """Mettaton EX's Gradient Map clipped to its stars folder: moved into Stars, Stars set Normal, every picture the
     same (folders_gate, its blend and clip allowed)."""
