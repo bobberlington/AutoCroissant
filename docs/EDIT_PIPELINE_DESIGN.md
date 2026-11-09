@@ -711,7 +711,9 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   looking at them. One open per PSD per bake: `parse_card(psd=)`, card_bake shares its open of the old PSD with the
   parse, `classify` and `apply_jobs(psd=)`, which edits a copy (a `deepcopy` until 2026-10-25; since K-3 the old PSD's
   bytes opened again, `edit_copy(old, raw)`: 69 -> 20 ms on the filtered cards) and reads the old records first;
-  `gate_bytes`, `gate_reparse` and the FX gates read the one reopened saved PSD. Dry census, every gate,
+  `gate_bytes`, `gate_reparse` and the FX gates read the one reopened saved PSD. Both opens are `frozen()` (since
+  2026-11-09): `card_parts` runs once on each, a copy per call, not 5 times a parts bake (its `_shows` composites
+  cost 0.5-2.6 s a run on the 7 cards with a shown copy of a text layer). Dry census, every gate,
   copies of TTSCardMaker main, fork `cards-20261023c` (`~/Documents/Tools/wt/scratch/bug2-p3/`: `p2/`,
   `h/runs/`, `rev3/`): phase 2's runs b 42 of 48, c 62 of 85, regress 234 of 258 (14 n/a), each result as before; the
   68 cards' no-op and " Die." bakes pixel-identical to the tip before this (136 of 136). The review's cases (322 bakes):
