@@ -87,8 +87,8 @@ ICC_RAW_VOTE = 0.65         # share of them nearer the unconverted values: the P
 ICC_MIN_PX = 1000           # fewer moved pixels: no evidence, converted
 # How type layers' edges blend, tried in order by baseline(): the fork reads each layer's off the PSD's preview (with
 # none, the render record's: look_kwargs()); a PNG exported in another Photoshop session than the preview's may show
-# them all in the text gamma, or all straight. Under "preview" the edited layers are pinned to the gamma
-# (text_kwargs()): the old preview does not show them
+# them all in the text gamma, or all straight. Under "preview" and "straight" the edited layers are pinned to the gamma
+# (text_kwargs()): Photoshop redraws them in it
 TEXT_BLENDS = {"preview": {}, "gamma": {"text_preview": False}, "straight": {"text_gamma": None}}
 PNG_LEVEL = 6               # save_png's zlib level (PIL's default; a preview's PNG, never published: 1)
 ON_MERGED = None            # a preview's: (merged, path, like) -> a Future of save_png, made beside the gates
@@ -9234,8 +9234,8 @@ def text_blends(psd: PSDImage) -> list:
 def text_kwargs(psd: PSDImage, text: str, edited: tuple = ()) -> dict:
     """
     psd.composite()'s keywords for a TEXT_BLENDS key. "preview" blends as the stored preview shows, or with none as the
-    render record says (look_kwargs); the edited type layers are pinned to the text gamma: the preview still shows their
-    old text, and Photoshop blends a layer it redraws in the gamma.
+    render record says (look_kwargs); under every key but "gamma" (all in it) the edited type layers are pinned to the
+    text gamma: Photoshop blends a layer it redraws in the gamma, on a straight card too (Wooden_Spikes).
 
     Args:
         psd: The card
@@ -9247,7 +9247,7 @@ def text_kwargs(psd: PSDImage, text: str, edited: tuple = ()) -> dict:
     """
     kwargs = dict(TEXT_BLENDS[text], **(look_kwargs(psd) if text == "preview" else {}))
     parameters = signature(psd.composite).parameters
-    if text == "preview" and edited and "layer_text_gamma" in parameters:
+    if text != "gamma" and edited and "layer_text_gamma" in parameters:
         kwargs["layer_text_gamma"] = {**kwargs.get("layer_text_gamma", {}),
                                       **dict.fromkeys(edited, parameters["text_gamma"].default)}
     return kwargs
