@@ -206,6 +206,10 @@ def test_title_overlay_goes_off(clone, tmp_path):
     bam = {"field": "name", "phrase": "Bam", "color": "#00bfff"}
     alone = pe.classify(parsed, {"colors": [bam]}, psd, parser)
     assert not alone.jobs and "Gradient Overlay paints over" in alone.refusals[0].why
+    typed = {"field": "name", "phrase": "Boom", "color": "#00bfff"}     # a word the entry types: refused before the bake
+    assert "Gradient Overlay paints over" in pe.plan_colors(psd, [typed], "Wham Bam Bone", {"name": "Wham Boom Bone"})[0][1]
+    assert pe.plan_colors(psd, [{"field": "name", "color": "#ff2200"}, typed], "Wham Bam Bone",
+                          {"name": "Wham Boom Bone"})[1][1] == "baked"
     assert pe.plan_colors(psd, [{"field": "name", "color": "#ffffff"}], "Wham Bam Bone")[0][1] == "baked"
     edits = {"colors": [{"field": "name", "color": "#ff2200"}, bam]}
     got = pe.classify(parsed, edits, psd, parser)

@@ -2209,7 +2209,8 @@ def _classify_colors(out: Classification, parsed: dict, edits: dict, psd: Option
         return
     parted = {job.get("field") for job in (out.jobs.get("parts") or {}).values() if isinstance(job, dict)}
     retyped = {f: edits.get(f) or "" for f in COLOR_PRINTED if f in out.jobs or f in parted}
-    out.colors = plan_colors(psd, edits["colors"], _card_name(parsed), retyped, chart)
+    boxes = {key: job.get("text") or "" for key, job in (out.jobs.get("parts") or {}).items() if isinstance(job, dict)}
+    out.colors = plan_colors(psd, edits["colors"], _card_name(parsed), retyped, chart, boxes)
     if any(how == "baked" for _, how in out.colors):    # the redundant ones too: they paint in the colours' order
         out.jobs["colors"] = [one for one, how in out.colors if how in ("baked", "redundant")]
     elif any(how == "redundant" for _, how in out.colors):
@@ -6103,13 +6104,15 @@ def _status_kept(layer, field: str, chart: Optional[dict]) -> set:
     return status_letters(layer.text, chart, icon_spans(layer)) if field == "ability" and chart else set()
 
 
-def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] = None, chart: Optional[dict] = None) -> list:
+def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] = None, chart: Optional[dict] = None,
+                boxes: Optional[dict] = None) -> list:
     """
     classify()'s `colors`: each colour's outcome, [(colour, "baked" | "redundant" | why not)] in the entry's order.
     Found on the card's layers (color_spans): redundant when every letter it is the last to paint (color_order) has
     that colour already, or none is left to it; a phrase an effect layer cuts (its own pixels show) or an overlay word
     layer prints is refused, as one of badges and icons alone. retyped: the fields a text edit of the entry sets
-    ({field: its new text}): found in that text, baked (the bake finds it again once the text is set). The note's
+    ({field: its new text}): found in that text, baked (the bake finds it again once the text is set) unless an overlay
+    paints over the layers it lands in (boxes: the parts job's {str(layer id): new text}). The note's
     colours are the website's alone: left out. chart: status_fills(); the Ability's capitalised status words keep its
     colours (a phrase of them alone refused). A whole field's colour turns its layers' own overlays off (set_colors),
     as a phrase's does a lone Color Overlay (_solid_overlay): not refused for them, nor its phrases after it, and baked
@@ -6128,6 +6131,17 @@ def plan_colors(psd: PSDImage, value: list, card: str, retyped: Optional[dict] =
             alone = hits and all(i in kept or retyped[field][i].isspace() for a, b in hits for i in range(a, b))
             out[k] = (STATUS_KEPT.format(phrase) if alone else "baked") if hits or not phrase \
                 else f"{words!r} is not in the new {what}"
+            into = []
+            if out[k] == "baked":               # the rule below, on the layers it lands in
+                layers = color_layers(psd, field, card)
+                new = {id(layer): (boxes or {}).get(str(layer.layer_id), retyped[field] if len(layers) == 1 else layer.text)
+                       for layer in layers}
+                into = [layer for layer in layers if not phrase or _matches(new[id(layer)] or "", words)[0]]
+            over = {_painted_over(layer, bool(phrase) and id(layer) not in lit and not _solid_overlay(layer)) for layer in into}
+            if into and None not in over:
+                out[k] = f"{sorted(over)[0]} paints over the {what}'s colours: recolour it in Photoshop"
+            elif into and not phrase:           # its own overlays go off (set_colors)
+                lit |= {id(layer) for layer in into}
             continue
         spans, why = color_spans(color_layers(psd, field, card), one)
         if field == "name" and (why or not spans) and title_in_picture(psd, card):
