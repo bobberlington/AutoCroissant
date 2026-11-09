@@ -245,6 +245,30 @@ def test_title_overlay_goes_off(clone, tmp_path):
 
 
 @pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")
+def test_clipped_title_layer_hidden(clone, tmp_path):
+    """Cake Mix's cake clipped onto its title: a phrase alone refused with the reason; a whole title's colour hides the
+    cake and bakes, its phrase after it too."""
+    from commands.psd_edit import offline_parser
+    vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
+    parser = offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
+    rel = "Items/Heal/2 Stars/Cake_Mix.psd"
+    psd_path, png = _card(clone, rel)
+    psd = PSDImage.open(psd_path)
+    parsed = pe.parse_card(parser, psd_path, rel, psd)
+    mix = {"field": "name", "phrase": "Mix", "color": "#00bfff"}
+    alone = pe.classify(parsed, {"colors": [mix]}, psd, parser)
+    assert not alone.jobs and "its clipped layer 'HD-wallpaper-cake-colores-food-wall' paints over" in alone.refusals[0].why
+    edits = {"colors": [{"field": "name", "color": "#ff2200"}, mix]}
+    got = pe.classify(parsed, edits, psd, parser)
+    assert got.jobs == edits and not got.refusals
+    baked = pe.apply_jobs(psd_path, png, rel, got.jobs, parsed, parser, str(tmp_path), str(clone / pe.FONTS_DIR), psd=psd)
+    assert any("clipped layer" in note for note in baked.fx_notes)
+    layer = pe.color_layers(PSDImage.open(baked.psd_path), "name", "Cake Mix")[0]
+    assert not any(one.visible for one in pe._clip_chain(layer)) and pe._painted_over(layer) is None
+    assert {pe._hex(f) for *_, f in pe.run_fills(layer)} >= {"#ff2200", "#00bfff"}
+
+
+@pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")
 def test_ability_overlay_goes_off(clone, tmp_path):
     """Cat's phrase under its lone Color Overlay: the overlay off, the rest in its colour; Mini Doomer's whole Ability
     turns its Gradient off, its one-colour badges coloured too; a phrase under that Gradient stays refused."""
