@@ -492,6 +492,8 @@ Character panel menu > OpenType > Stylistic Alternates). The text stays as typed
   the goldens of Mini Doomer, Wham Bam Bone and Black Light Bulb need a blob re-pin (`tests/make_goldens.py`).
 - The website's mock-up draws the same shapes when the details record shows such an overlay (`mockup.js oneColour`;
   `psd_details` marks every effect " (off)" when the layer's Effects switch is off: Springtrap, The Puppet).
+  Under an enabled Gradient Overlay (`gradientOn`) its letters take the old ones' colours top to bottom (`erase`'s
+  `shades`, 8 bands; 11-09); a colour from the edit or the card still wins, as in the bake.
 - `MDW/Scripts/Effect Layers.jsx`: Add and Update all refuse a phrase that takes in a badge or icon (no new badge
   layers; Update all lists an old one as failed).
 - Landing order: (1) fork: fast-forward `main` to `badgealt` (c17e0734), tag `cards-20261025b`, push both; (2)
