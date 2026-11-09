@@ -1464,6 +1464,31 @@ def test_ability_edit_colours_a_status_word(clone, parser, chart, tmp_path):
     assert pe.unset_composer(before, pe.ability_layer(before)) and pe.unset_composer(after, layer) == []
 
 
+def test_a_plain_line_edit_draws_its_lines_only(clone, parser, chart, tmp_path, monkeypatch):
+    """A plain Ability spliced in place on a card with no stored image (since the big pass): its region and the
+    untouched gate's box are its changed glyphs' (Edit.lines) plus the effects' reach, the whole renders agreeing
+    (PSD_DIRTY_VERIFY); its box moved under its own Gradient Overlay, the whole box as before."""
+    paths = _plain(clone, tmp_path)
+    psd, bare = PSDImage.open(paths[0]), tmp_path / "bare"
+    psd.strip_merged()
+    bare.mkdir()
+    psd.save(bare / Path(paths[0]).name)
+    (bare / Path(paths[1]).name).write_bytes(Path(paths[1]).read_bytes())
+    paths = tuple(str(bare / Path(path).name) for path in paths)
+    old = pe.parse_card(parser, paths[0], MINI_DOOMER)["card"]["ability"]
+    boxes, dirty = [], pe.dirty_box
+    monkeypatch.setattr(pe, "dirty_box", lambda a, b, lines=None: boxes.append(dirty(a, b, lines)) or boxes[-1])
+    regions = []
+    for n, text in enumerate((old.replace("-2", "-1"), old + " Inflict Poison.")):
+        (tmp_path / str(n)).mkdir()
+        (edit,) = _bake(clone, parser, MINI_DOOMER, {"ability": text}, tmp_path / str(n), chart, paths=paths)[1].edits
+        regions.append((edit.lines, edit.region, boxes[-1]))
+    (lines, region, box), (none, whole, _) = regions
+    assert lines == (683, 1903, 734, 1972) and region == (670, 1890, 747, 1985)     # fx_pad 13
+    assert box == (661, 1881, 756, 1994)                                           # its 4 and the Text group's 18
+    assert none is None and whole == (7, 1802, 1177, 2258)
+
+
 def test_fx_kind_names_how_each_fx_layer_is_made_again(chart):
     """BUG 2: an ability edit makes every FX layer again, each keeping its own style (owner q6): a styled chart status, another word under a chart status's style (Monkey D Goofy's "1#1" under Become Back
     Money's gradient), and since 2026-10-23 one in a style no chart status has, or none ("own": Smoldering's stroke,

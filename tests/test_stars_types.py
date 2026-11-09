@@ -793,7 +793,8 @@ def test_real_type_rows(clone, parser, tmp_path, monkeypatch):
     assert [layer.name for layer in morpho.hide] == ["Fire"] and [layer.name for layer, _, _ in morpho.moves] == ["Undead", "Gradient Map 2"]
     assert [layer.name for layer in _plan(parser, _clone_card(clone, MAGNUM, tmp_path)[0], MAGNUM, "types", ["active"]).hide] == ["field"]
     freezer, boxes, dirty = _clone_card(clone, FREEZER, tmp_path), [], pe.dirty_box
-    monkeypatch.setattr(pe, "dirty_box", lambda old, new: boxes.append((dirty(old, new), old.width * old.height)) or boxes[-1][0])
+    monkeypatch.setattr(pe, "dirty_box", lambda old, new, lines=None: boxes.append((dirty(old, new, lines), old.width * old.height))
+                        or boxes[-1][0])
     _, baked = _bake(parser, freezer, {"types": ["field", "ice"]}, tmp_path, FREEZER, str(clone / "Types"))
     assert sorted(baked.reparse["card"]["types"]) == ["field", "ice"]
     (box, canvas), = boxes          # a lone types edit with its new Types/ link: its box rendered, not the card twice
