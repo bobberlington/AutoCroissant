@@ -2215,8 +2215,8 @@ def test_card_syncs_lane_sets_up_before_its_guards(clone, tmp_path):
 
 def test_the_bot_clone_and_records_run_here(clone, tmp_path):
     """check's Bot start and Bot against a stand-in GitHub (file://, a fake gh): SPARSE_FILES alone in bot/, no header
-    saved; the records read beside it (one not read: a warning), CARD_RECORDS_DIR at once. checks reads no records; a
-    failed clone leaves no bot/ (the checkout after it brings one)."""
+    saved; the records read beside it (one not read in 3 tries: a warning), CARD_RECORDS_DIR at once. checks reads no
+    records; a failed clone leaves no bot/ (the checkout after it brings one)."""
     pytest.importorskip("yaml")
     if not shutil.which("jq") or not shutil.which("timeout"):
         pytest.skip("no jq or timeout")
@@ -2229,7 +2229,8 @@ def test_the_bot_clone_and_records_run_here(clone, tmp_path):
     _commit(seed, "bot")
     _git(tmp_path, "clone", "-q", "--bare", str(seed), str(server / steps["Bot start"]["env"]["BOT_REPO"]))
     bin_dir.mkdir()
-    (bin_dir / "gh").write_text('#!/bin/sh\ncase "$*" in *render_record*) echo \'{"a": 1}\';; *) exit 1;; esac\n')
+    (bin_dir / "gh").write_text('#!/bin/sh\necho "$*" >> "$RUNNER_TEMP/gh.log"\n'
+                                'case "$*" in *render_record*) echo \'{"a": 1}\';; *) exit 1;; esac\n')
     (bin_dir / "gh").chmod(0o755)
     for name, job, url in (("ok", "check", f"file://{server}"), ("failed", "checks", f"file://{tmp_path}/none")):
         workspace, runner = tmp_path / name / "ws", tmp_path / name / "temp"
@@ -2248,6 +2249,8 @@ def test_the_bot_clone_and_records_run_here(clone, tmp_path):
         assert later.get("CARD_RECORDS_DIR") == (str(runner / "records") if job == "check" else None)
         assert ("::warning::db/spot_record.json not read" in done.stdout) == (job == "check")
     assert [p.name for p in (tmp_path / "ok" / "temp" / "records").iterdir()] == ["render_record.json"]
+    asked = (tmp_path / "ok" / "temp" / "gh.log").read_text()
+    assert (asked.count("render_record"), asked.count("spot_record")) == (1, 3) and not (tmp_path / "failed" / "temp" / "gh.log").exists()
     bot = tmp_path / "ok" / "ws" / "bot"
     assert sorted(str(p.relative_to(bot)) for p in bot.rglob("*") if p.is_file() and ".git" not in p.parts) == sorted(cg.SPARSE_FILES)
     assert "extraheader" not in (bot / ".git" / "config").read_text()
