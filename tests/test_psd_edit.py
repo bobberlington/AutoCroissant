@@ -220,6 +220,7 @@ def test_normalize_ability_matches_the_parser():
     site = "Has stats -2.\n(BOT) Die."
     assert pe.normalize_ability(layer) == pe.normalize_ability(site) == "Has stats -2.\n(BOT) Die."
     assert pe.normalize_ability("﻿\"Gain\t1 \nhp .\"\n") == "Gain 1 \nhp." and pe.normalize_ability("") == ""
+    assert pe.normalize_ability("A\n  \nB") == "A\nB"           # a line of blanks: psd_parser._process_abilities
     assert not pe._part_same("+100% Lifesteal .", "+100% Lifesteal.", None)     # a part's own characters count
     assert not pe._part_same('"Hi"', "Hi", None) and pe._part_same("a\r\tb ", "a\n b", None)
     assert pe.collapse(" Shooting\rStar ") == "Shooting Star" and pe.collapse(None) == ""

@@ -1485,16 +1485,34 @@ class PSDParser:
     def _process_abilities(self, abilities: list[tuple[str, BoundingBox]],
                            type_bboxes: list[tuple[str, BoundingBox]], card_mid_y: int) -> Optional[str]:
         """Process and combine ability texts."""
-        abilities = self._sort_by_position(abilities)
-        ability_text = self._join_parts([text for text, _ in abilities])
+        rows = self._rows(abilities)
+        abilities = [item for row in rows for item in row]
+        ability_text = self._join_parts(self._labels(rows))
 
         if ability_text:
             type_bboxes = self._prune_type_bboxes(self._sort_by_position(type_bboxes), card_mid_y)
             type_bboxes = self._in_span(type_bboxes, [bbox for _, bbox in abilities])
             ability_text = self._inject_type_names(ability_text.rstrip(' \'"'), type_bboxes)
             ability_text = sub(r'(?m)^[^\S\n]{3,}(?=\S)', '', ability_text)     # a line's unfilled gap: layout padding
+            ability_text = sub(r'(?m)^[^\S\n]+\n', '', ability_text)        # a line of blanks: padding too
             ability_text = sub(r'\s+([:;,\.\?!])', r'\1', ability_text)
         return ability_text.strip(' \'"\n')
+
+    @staticmethod
+    def _labels(rows: list[list[tuple[str, BoundingBox]]]) -> list[str]:
+        """
+        The layers' texts in reading order; a one-line layer with another after it in its row is that one's label, on
+        its first line (Twin Emperors' "Vek'nilash:").
+        """
+        texts: list[str] = []
+        for row in rows:
+            for n, (text, _) in enumerate(row):
+                last = texts[len(texts) - 1].strip(' \'"\n') if n else ""
+                if last and '\n' not in last:
+                    texts[len(texts) - 1] = last + ' ' + text.strip('\'"\n').lstrip()
+                else:
+                    texts.append(text)
+        return texts
 
     @staticmethod
     def _join_parts(texts: list) -> str:
@@ -1527,10 +1545,15 @@ class PSDParser:
             card.stats = deepcopy(creatures[0])
 
     @staticmethod
-    def _sort_by_position(items: list[tuple[str, BoundingBox]], row_threshold: int = 40) -> list[tuple[str, BoundingBox]]:
+    def _sort_by_position(items: list[tuple[str, BoundingBox]]) -> list[tuple[str, BoundingBox]]:
         """Sort items top-to-bottom, then left-to-right, grouping items into visual rows."""
+        return [item for row in PSDParser._rows(items) for item in row]
+
+    @staticmethod
+    def _rows(items: list[tuple[str, BoundingBox]], row_threshold: int = 40) -> list[list[tuple[str, BoundingBox]]]:
+        """_sort_by_position's rows: items within row_threshold px in y of a row's top one, each left to right."""
         if not items:
-            return items
+            return []
 
         # Sort primarily by Y
         items = sorted(items, key=lambda i: i[1].y)
@@ -1551,9 +1574,7 @@ class PSDParser:
         # Sort each row left-to-right
         for row in rows:
             row.sort(key=lambda i: i[1].x)
-
-        # Flatten rows
-        return [item for row in rows for item in row]
+        return rows
 
     @staticmethod
     def _prune_type_bboxes(bboxes: list[tuple[str, BoundingBox]], card_mid_y: int) -> list[tuple[str, BoundingBox]]:

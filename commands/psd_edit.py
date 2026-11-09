@@ -553,12 +553,13 @@ def normalize_ability(text: Optional[str]) -> str:
 
     Returns:
         What the parser returns for a layer holding the text (psd_parser._extract_text_layer, _process_abilities):
-        breaks as \\n, tabs as spaces, no space before punctuation, quotes and blank ends stripped
+        breaks as \\n, tabs as spaces, no lines of blanks, no space before punctuation, quotes and blank ends stripped
     """
     text = (text or "").replace("\r\n", "\n").replace("\r", "\n").replace("\t", " ").replace("\x03", "\n")
     text = straight(text).replace("﻿", "").rstrip()    # apostrophes compare straight (owner, 2026-10-25)
     text = text.strip("'\"\n").rstrip(" '\"")
     if text:
+        text = sub(r"(?m)^[^\S\n]+\n", "", text)
         text = sub(r"\s+([:;,\.\?!])", r"\1", text)
     return text.strip(" '\"\n")
 

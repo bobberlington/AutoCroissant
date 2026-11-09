@@ -92,6 +92,19 @@ def test_unfilled_line_gaps_are_padding():
         == "[fire] Burn.\nThen."
 
 
+def test_one_line_label_beside_a_part():
+    """A one-line part with another in its row labels that one's first line (Twin Emperors' "Vek'nilash:" at y 1951,
+    its body at 1958, 11-09); a label a row above stays on its own line."""
+    from commands.psd_analyzer import StatsDatabase
+    from commands.psd_parser import BoundingBox, PSDParser
+    p = PSDParser([], StatsDatabase())
+    texts = [("'Vek'nilash:\n'", BoundingBox(18, 1951)), ("'            Immune.\n(2CD) Hit.\n'", BoundingBox(231, 1958)),
+             ("'Vek'lor:\n'", BoundingBox(159, 2157)), ("'Attacks inflict 2T1 Enfeebled.\n'", BoundingBox(364, 2165))]
+    assert p._process_abilities(texts, [], 1200) == "Vek'nilash: Immune.\n(2CD) Hit.\nVek'lor: Attacks inflict 2T1 Enfeebled."
+    texts = [("'Vek'lor:'", BoundingBox(159, 2100)), ("'Hit.'", BoundingBox(364, 2165))]
+    assert p._process_abilities(texts, [], 1200) == "Vek'lor:\nHit."
+
+
 def test_leftover_icon_only_in_ability_span():
     """A type icon with no gap left is appended only within a line of an Ability layer's box: Tainted Lazarus's
     creature 2 header icon (y 2242, its Ability boxes end at 1382) is no ability's (11-09)."""
@@ -105,7 +118,7 @@ def test_leftover_icon_only_in_ability_span():
 
 def test_lowercase_part_continues_the_line():
     """Parts laying one text out line by line (Apex Predator, 11-09): a lowercase start continues the line before it,
-    each part without its padding. With none, the old join (Miracle Matter keeps its blank lines)."""
+    each part without its padding. With none, the old join (Miracle Matter's lines of blanks go: padding)."""
     from commands.psd_analyzer import StatsDatabase
     from commands.psd_parser import BoundingBox, PSDParser
     p = PSDParser(["fire"], StatsDatabase())
@@ -114,7 +127,7 @@ def test_lowercase_part_continues_the_line():
     assert p._process_abilities(texts, [], 1200) == "Cannot attack.\nWhen next to it, this counts as being in its slot."
     texts = [("'(1GCD) Assume a form:'", BoundingBox(19, 1762)), ("'\n    Fire: 5/5/8/7'", BoundingBox(121, 1901)),
              ("'\n    \n    Earth: 5/8/6/5\n   '", BoundingBox(124, 1969))]
-    assert p._process_abilities(texts, [], 1200) == "(1GCD) Assume a form:\nFire: 5/5/8/7\n    \nEarth: 5/8/6/5"
+    assert p._process_abilities(texts, [], 1200) == "(1GCD) Assume a form:\nFire: 5/5/8/7\nEarth: 5/8/6/5"
 
 
 def test_text_with_both_quotes_parses_without_backslash():
