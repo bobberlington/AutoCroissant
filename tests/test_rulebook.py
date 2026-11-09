@@ -100,6 +100,57 @@ def test_site_settled_by_its_build(tmp_path, monkeypatch):
         assert rulebook_pages.site_settled("https://site", str(tmp_path)) is settled, source
 
 
+def _seen(**cards):
+    rules = {"chapters": [{"file": "01-a.md", "source": "# A\n![[Mushroom]] and [[Panda|the panda]]\n"}], "images": {"cover": [1, 2, "s1"]}}
+    data = {"icons": {"fire": {"file": "icons/fire.1.webp"}}, "iconVariants": {}, "tagMeanings": {}, "thumbs": {"360": "t1"},
+            "cards": [{"id": "mushroom", "name": "Mushroom", "img": "m1"}, {"id": "panda", "name": "Panda", "img": "p1"},
+                      {"id": "kirby", "name": "Kirby", "img": "k1", "hp": 3}]}
+    for name, fields in cards.items():
+        next(c for c in data["cards"] if c["id"] == name).update(fields)
+    return {"page": "pg", "index": '<link href="assets/app.js?v=a1"><style>.rb{}</style><meta name="build" content="d1">',
+            "rules": json.dumps(rules).encode(), "cards": data}
+
+
+def test_pre_key_and_the_skip(tmp_path, monkeypatch):
+    """The pre-key follows what the print view reads (code, chapters, the named cards' pictures, every card's name), not
+    the data stamp or other cards' pictures; kept beside the key, it skips Chrome when PRE_SKIP (shadow: Chrome looks and
+    a key change warns; --full looks in any case)."""
+    pre = lambda seen: rulebook_pages.pre_key(seen, ["t"], [], "/no/chrome")
+    base = pre(_seen())
+    same = _seen(kirby={"img": "k2", "hp": 4}, panda={"img": "p2"})            # a picture only linked, another card
+    same["index"] = same["index"].replace("d1", "d2")
+    assert pre(same) == base
+    for seen in (_seen(mushroom={"img": "m2"}), _seen(kirby={"name": "Kirbo"}), dict(_seen(), index='<link href="assets/app.js?v=a2">')):
+        assert pre(seen) != base
+    assert rulebook_pages.pre_key(_seen(), ["u"], [], "/no/chrome") != base
+    (tmp_path / "site" / "rulebook").mkdir(parents=True)
+    (tmp_path / "site" / "rulebook" / "01-a.md").write_text("# A\n![[Mushroom]] and [[Panda|the panda]]\n", encoding="utf-8")
+    folder = tmp_path / "TTS" / "Rulebook"
+    folder.mkdir(parents=True)
+    shots = [({"name": "Cover", "num": ""}, _png("white"))]
+    rulebook_pages.write_pages(str(folder), shots, lambda: b"%PDF", "k1")
+    monkeypatch.setattr(rulebook_pages, "site_inputs", lambda site: _seen())
+    monkeypatch.setattr(rulebook_pages, "site_settled", lambda site, checkout, built=None: True)
+    drawn = {"key": "k1", "n": 0}
+
+    def draw(site, exe, key_of, known, fonts):
+        drawn["n"] += 1
+        new = drawn["key"] != known
+        return ({"01-a.md": "# A\n![[Mushroom]] and [[Panda|the panda]]\n"}, shots if new else None,
+                rulebook_pages.Printer(lambda: b"%PDF", lambda: None), drawn["key"], "pg")
+    monkeypatch.setattr(rulebook_pages, "draw", draw)
+    run = lambda **kw: rulebook_pages.update_pages(str(tmp_path), exe="/no/chrome", **kw)
+    mine = rulebook_pages.pre_key(_seen(), rulebook_pages._trees(str(tmp_path)), [], "/no/chrome")
+    assert "pre-key held" not in run() and rulebook_pages.read_pages(str(tmp_path))["pre"] == mine            # stored with the key
+    assert "pre-key held" in run() and drawn["n"] == 2                                                         # shadow: Chrome looks
+    monkeypatch.setattr(rulebook_pages, "PRE_SKIP", True)
+    assert "Chrome not started" in run() and drawn["n"] == 2
+    assert "pre-key held" in run(full=True) and drawn["n"] == 3
+    monkeypatch.setattr(rulebook_pages, "PRE_SKIP", False)
+    drawn["key"] = "k2"                                                                                           # an input pre misses
+    assert "::warning::" in run() and rulebook_pages.read_pages(str(tmp_path))["key"] == "k2"
+
+
 def _card(guid, path, nick, deck_id):
     url = f"{tts_save.RAW}abc1234/{path}"
     return {"GUID": guid, "Name": "CardCustom", "Nickname": nick, "Description": "theirs", "CardID": deck_id * 100,

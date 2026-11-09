@@ -13,8 +13,9 @@ to SITE_WAIT for its build of them (data/rules.json, polled without Chrome), els
 them. Headless Chrome ($CHROME, else the first of CHROMES on PATH) over its DevTools pipe; no
 package beyond Pillow. Each page is screenshot and hashed: the PDF is printed again only when a hash changed (a PDF's
 bytes carry its print time), so an unchanged rulebook keeps its file and its pinned link. pages.json's key skips the
-screenshots when nothing they draw changed. Other files in the folder are left alone. Exit 1 when the pages could not be
-drawn (nothing changed then).
+screenshots when nothing they draw changed; its pre-key (pre_key: what the page reads, fetched without Chrome) skips
+Chrome too when the website, the fonts and Chrome are as at the last kept key (PRE_SKIP; --full: Chrome looks in any case).
+Other files in the folder are left alone. Exit 1 when the pages could not be drawn (nothing changed then).
 """
 from argparse import ArgumentParser
 from base64 import b64decode, b64encode
@@ -25,6 +26,7 @@ from os import close, environ, listdir, makedirs, pipe, read, write
 from hashlib import sha256
 from os.path import getsize, isdir, isfile, join
 from platform import system
+from re import DOTALL, compile as regex
 from select import select
 from shutil import rmtree, which
 from subprocess import DEVNULL, PIPE, Popen, TimeoutExpired, run as run_process
@@ -77,6 +79,13 @@ FONT_JS = """for (const [b64, family, weight, style] of %s)
 SITE_WAIT = 8 * 60                             # for the website's build of the checkout's chapters (Card sync goes at once; its step's limit is 10)
 SITE_POLL = 20                                 # seconds between looks at its data/rules.json
 CALL_SECONDS = 60                              # one DevTools call
+# the pre-key (pre_key()): what the print view reads, fetched without Chrome; pages.json's "pre", kept with the key
+PRE_SKIP = False                               # shadow (2026-11-09): Chrome looks anyway; a pre-key that held while the key changed warns
+PAGE_STAMP = regex(r'<meta name="page" content="([^"]*)"')   # build_site: index.html's stamp (build.txt's 2nd line)
+ASSET_URL = regex(r"assets/[\w.-]+(?:\?v=\w+)?")              # the page's code: bundle, chunks, style sheet (stamped URLs)
+INLINE_CSS = regex(r"<style\b[^>]*>(.*?)</style>", DOTALL)     # style.css, inlined
+CARD_REF = regex(r"(!?)\[\[([^\][|\n]+)(?:\|[^\]\n]*)?\]\]")      # rulebook.js INLINE: ![[Card]] a picture, [[Card]] a link
+LOOSE = regex(r"[\W_]+")                                      # coarser than app.js norm(): the named cards and any look-alike
 ABOUT = ("The rulebook's TTS PDF, printed from the website's #/rules/print by AutoCroissant commands/rulebook_pages.py "
          "(Card sync); the chapters are site/rulebook. sha: each page's pixels (the PDF is printed again when one changes). "
          "tts_save puts the PDF in the save's Rulebooks bag.")
@@ -172,7 +181,8 @@ def draw(site: str, exe: str, key_of=None, known: str = "", fonts: Optional[list
 
     Returns:
         ({file: source} of the chapters the website cut them from, [(sheet entry, PNG bytes)] in book order, or None when
-        the key is known's, a Printer: its pdf() prints the PDF, its close() quits Chrome (call it in any case), the key)
+        the key is known's, a Printer: its pdf() prints the PDF, its close() quits Chrome (call it in any case), the key,
+        the page's stamp)
     """
     chrome = Chrome(exe)
     try:
@@ -205,8 +215,9 @@ def draw(site: str, exe: str, key_of=None, known: str = "", fonts: Optional[list
         if len(boxes) != len(listed["sheets"]):
             raise RuntimeError(f"{len(boxes)} pages on the website, {len(listed['sheets'])} listed")
         key = key_of(run(KEY_JS)) if key_of else ""
+        page = run('document.querySelector(\'meta[name="page"]\')?.content || ""')
         if key and key == known:                             # nothing they draw changed: no screenshots
-            return dict(listed["chapters"]), None, Printer(None, chrome.close), key
+            return dict(listed["chapters"]), None, Printer(None, chrome.close), key, page
         texts = run('[...document.querySelectorAll(".rb-sheets .rb-sheet")].map(e => e.innerText.replace(/\\s+/g, " ").trim())')
         for entry, text in zip(listed["sheets"], texts or []):
             entry["text"] = text                             # the TTS save's search (Global.lua)
@@ -229,7 +240,7 @@ def draw(site: str, exe: str, key_of=None, known: str = "", fonts: Optional[list
             except RuntimeError:                       # an older Chrome without the outline: plain
                 got = chrome.call("Page.printToPDF", {k: v for k, v in params.items() if not k.startswith("generate")}, session, seconds=240)
             return b64decode(got["data"])
-        return dict(listed["chapters"]), shots, Printer(pdf, chrome.close), key
+        return dict(listed["chapters"]), shots, Printer(pdf, chrome.close), key, page
     except BaseException:
         chrome.close()
         raise
@@ -256,8 +267,8 @@ def chapter_sources(checkout: str) -> dict:
     return found
 
 
-def key(drawn: str, checkout: str) -> str:
-    """The print's key: what the pages draw (KEY_JS's text) and the UNSTAMPED and FONTS_DIR git trees in the checkout."""
+def _trees(checkout: str) -> list:
+    """The UNSTAMPED and FONTS_DIR git trees at the checkout's HEAD ("" for one it lacks)."""
     trees = []
     for path in (*UNSTAMPED, FONTS_DIR):
         try:
@@ -265,7 +276,40 @@ def key(drawn: str, checkout: str) -> str:
             trees.append(got.stdout.decode().strip() if got.returncode == 0 else "")
         except (OSError, TimeoutExpired):
             trees.append("")
-    return sha256("\n".join([drawn, *trees]).encode("utf-8")).hexdigest()
+    return trees
+
+
+def key(drawn: str, checkout: str, trees: Optional[list] = None) -> str:
+    """The print's key: what the pages draw (KEY_JS's text) and the UNSTAMPED and FONTS_DIR git trees in the checkout
+    (trees: _trees()'s, else read)."""
+    return sha256("\n".join([drawn, *(_trees(checkout) if trees is None else trees)]).encode("utf-8")).hexdigest()
+
+
+def pre_key(seen: dict, trees: list, fonts: list, exe: str) -> str:
+    """
+    What the print view reads (site_inputs()'s seen), Chrome not started: index.html's code (its stamped asset URLs and
+    inline style sheets), data/rules.json, from data/cards.json the icons, iconVariants, tagMeanings and thumbs, every
+    card's name and key in order (app.js cardByName, text.js's renderer) and the id, name and picture of the cards the
+    chapters name (any look-alike too); the UNSTAMPED and FONTS_DIR trees (_trees()), the book fonts (book_fonts()) and
+    Chrome's version.
+    """
+    data, index = seen["cards"], seen["index"]
+    cards = [c for c in data.get("cards") or [] if isinstance(c, dict)]
+    loose = lambda s: LOOSE.sub("", str(s or "").casefold())
+    named = {}                                     # loose name: shown as a picture
+    for chapter in loads(seen["rules"]).get("chapters") or []:
+        for m in CARD_REF.finditer(str(chapter.get("source") or "") if isinstance(chapter, dict) else ""):
+            named[loose(m.group(2))] = named.get(loose(m.group(2))) or bool(m.group(1))
+    refs = [[c.get("id"), c.get("name"), c.get("img") if any(named.get(loose(k)) for k in (c.get("name"), c.get("key"))) else ""]
+            for c in cards if any(loose(k) in named for k in (c.get("name"), c.get("key")))]
+    try:
+        chrome = run_process([exe, "--version"], stdout=PIPE, stderr=DEVNULL, timeout=30).stdout.decode(errors="replace").strip()
+    except (OSError, TimeoutExpired):
+        chrome = ""
+    parts = ["pre 1", KEY_JS, sorted(set(ASSET_URL.findall(index))), INLINE_CSS.findall(index), sha256(seen["rules"]).hexdigest(),
+             {k: data.get(k) for k in ("icons", "iconVariants", "tagMeanings", "thumbs")},
+             [[c.get("name"), c.get("key")] for c in cards], refs, trees, sha256(dumps(fonts).encode()).hexdigest(), chrome]
+    return sha256(dumps(parts, ensure_ascii=False, sort_keys=True).encode("utf-8")).hexdigest()
 
 
 def page_sha(png: bytes) -> str:
@@ -285,11 +329,12 @@ def read_pages(checkout: str) -> dict:
     return data if isinstance(data, dict) and isinstance(data.get("pages"), list) else {}
 
 
-def write_pages(folder: str, shots: list, pdf_maker, key: str = "", settled: bool = False) -> dict:
+def write_pages(folder: str, shots: list, pdf_maker, key: str = "", settled: bool = False, pre: str = "") -> dict:
     """
     pages.json and the PDF into folder: the PDF printed (pdf_maker(), bytes) when a page's hash changed, the list changed or the
     PDF is missing; key (draw's) kept for the next run when the PDF was printed or, the pages as they were, when settled
-    (site_settled()); else the last print's stays: what a late picture or font changes is screenshot again.
+    (site_settled()); else the last print's stays: what a late picture or font changes is screenshot again. pre (pre_key()
+    of the build drawn) goes with a kept key; the last one stays with the last key.
 
     Returns:
         {"pages": n, "changed": [page names], "printed": bool}
@@ -315,37 +360,67 @@ def write_pages(folder: str, shots: list, pdf_maker, key: str = "", settled: boo
             fh.write(data)
         out["printed"] = True
     k = key if out["printed"] or (settled and key) else old.get("key", "")
-    text = dumps({"about": ABOUT, "pdf": PDF_FILE, **({"key": k} if k else {}), "pages": pages}, ensure_ascii=False, indent=1) + "\n"
-    if text != (open(listing, encoding="utf-8").read() if isfile(listing) else None):
-        with open(listing, "w", encoding="utf-8") as fh:
-            fh.write(text)
+    p = pre if pre and k == key else old.get("pre", "") if k == old.get("key", "") else ""
+    _put_listing(listing, {"about": ABOUT, "pdf": PDF_FILE, "key": k, "pre": p, "pages": pages})
     return out
+
+
+def _put_listing(path: str, data: dict) -> None:
+    """pages.json (about, pdf, key and pre when set, pages), written only when its text changed."""
+    text = dumps({k: data[k] for k in ("about", "pdf", "key", "pre", "pages") if data.get(k) not in (None, "")},
+                 ensure_ascii=False, indent=1) + "\n"
+    if text != (open(path, encoding="utf-8").read() if isfile(path) else None):
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(text)
+
+
+def _get(site: str, path: str) -> bytes:
+    """A website file, past the CDN's copy."""
+    with urlopen(Request(f"{site.rstrip('/')}/{path}?t={int(time())}", headers={"User-Agent": "rulebook-pages"}), timeout=30) as reply:
+        return reply.read()
+
+
+def _chapters(raw: bytes) -> dict:
+    """{file: source} of a data/rules.json's chapters."""
+    return {c["file"]: c["source"].replace("\r\n", "\n") for c in loads(raw).get("chapters") or []
+            if isinstance(c, dict) and CHAPTER_FILE.match(c.get("file") or "") and isinstance(c.get("source"), str)}
 
 
 def site_chapters(site: str) -> dict:
     """{file: source} of the chapters the website shows (its data/rules.json, past the CDN's copy), {} when unreadable."""
     try:
-        with urlopen(Request(f"{site.rstrip('/')}/data/rules.json?t={int(time())}", headers={"User-Agent": "rulebook-pages"}),
-                     timeout=30) as reply:
-            data = loads(reply.read())
-        return {c["file"]: c["source"].replace("\r\n", "\n") for c in data.get("chapters") or []
-                if isinstance(c, dict) and CHAPTER_FILE.match(c.get("file") or "") and isinstance(c.get("source"), str)}
+        return _chapters(_get(site, "data/rules.json"))
     except (OSError, ValueError):
         return {}
 
 
-def site_settled(site: str, checkout: str) -> bool:
+def site_inputs(site: str) -> Optional[dict]:
+    """What pre_key() reads, of one build: {"page": index.html's stamp, "index": its text, "rules": data/rules.json's
+    bytes, "cards": data/cards.json}; None when unreadable or a deploy came between (build.txt's stamp after them)."""
+    try:
+        index = _get(site, "index.html").decode("utf-8")
+        rules, cards = _get(site, "data/rules.json"), loads(_get(site, "data/cards.json"))
+        _chapters(rules)
+        after = _get(site, "build.txt").decode("utf-8").split()
+    except (OSError, ValueError, AttributeError):
+        return None
+    page = PAGE_STAMP.search(index)
+    if not page or not isinstance(cards, dict) or after[1:2] != [page.group(1)]:
+        return None
+    return {"page": page.group(1), "index": index, "rules": rules, "cards": cards}
+
+
+def site_settled(site: str, checkout: str, built: Optional[dict] = None) -> bool:
     """Whether the website was built from a main commit with HEAD's UNSTAMPED and FONTS_DIR trees (its cards.json's
-    source: the built commit's date), so its pages show them; False when unreadable or no such commit."""
+    source: the built commit's date; built: that cards.json, else fetched), so its pages show them; False when
+    unreadable or no such commit."""
     def git(*args) -> str:
         got = run_process(["git", "-C", checkout, *args], stdout=PIPE, stderr=DEVNULL, timeout=30)
         if got.returncode:
             raise OSError(f"git {args[0]} failed")
         return got.stdout.decode()
     try:
-        with urlopen(Request(f"{site.rstrip('/')}/data/cards.json?t={int(time())}", headers={"User-Agent": "rulebook-pages"}),
-                     timeout=30) as reply:
-            built = loads(reply.read())
+        built = built or loads(_get(site, "data/cards.json"))
         if built.get("branch") != "main":
             return False
         at = int(datetime.fromisoformat(built["source"]).timestamp())
@@ -370,13 +445,14 @@ def wait_for_site(site: str, mine: dict, wait: float) -> bool:
 # ========================
 # Public API Functions
 # ========================
-def update_pages(checkout: str, site: str = SITE_URL, exe: str = "", wait: float = 0) -> str:
+def update_pages(checkout: str, site: str = SITE_URL, exe: str = "", wait: float = 0, full: bool = False) -> str:
     """
     The TTS pages brought to the website's rulebook, when the website shows the checkout's chapters (waiting up to wait
-    seconds for its build of them).
+    seconds for its build of them). Chrome is not started when pages.json's pre is the website's pre_key(), it shows
+    the chapters and is settled, and the PDF is there (PRE_SKIP; full: Chrome looks in any case).
 
     Returns:
-        The report (one line)
+        The report (one line; then a ::warning:: line when the pre-key held but the key changed)
 
     Raises:
         RuntimeError, TimeoutError, OSError: the pages could not be drawn (nothing written)
@@ -387,27 +463,39 @@ def update_pages(checkout: str, site: str = SITE_URL, exe: str = "", wait: float
     mine = chapter_sources(checkout)
     if not mine:
         return f"Rulebook pages: no chapters in {RULEBOOK_SRC}; pages left as they are."
-    if wait:
+    seen = site_inputs(site)                            # before the draw (as settled): the website drawn is that build or a later one
+    if wait and (not seen or _chapters(seen["rules"]) != mine):
         wait_for_site(site, mine, wait)
-    old = read_pages(checkout)
-    known = old.get("key", "") if isfile(join(checkout, RULEBOOK_PAGES, PDF_FILE)) else ""
-    settled = site_settled(site, checkout)              # before the draw: the website drawn is that build or a later one
-    theirs, shots, printer, drawn = draw(site, exe, lambda text: key(text, checkout), known, book_fonts(checkout))
+        seen = site_inputs(site)
+    folder, old, fonts, trees = join(checkout, RULEBOOK_PAGES), read_pages(checkout), book_fonts(checkout), _trees(checkout)
+    has_pdf = isfile(join(folder, PDF_FILE))
+    known = old.get("key", "") if has_pdf else ""
+    settled = site_settled(site, checkout, seen and seen["cards"])
+    pre = pre_key(seen, trees, fonts, exe) if seen and settled else ""
+    held = bool(pre) and has_pdf and pre == old.get("pre") and _chapters(seen["rules"]) == mine
+    if held and PRE_SKIP and not full:
+        return f"Rulebook PDF: {len(old['pages'])} pages, as they were (nothing they read changed: Chrome not started)."
+    theirs, shots, printer, drawn, page = draw(site, exe, lambda text: key(text, checkout, trees), known, fonts)
+    pre = pre if seen and page == seen["page"] else ""  # pre kept only for the build Chrome drew
     try:
         if theirs != mine:
             return (f"Rulebook PDF: the website doesn't show main's chapters yet ({len(set(theirs.items()) ^ set(mine.items()))} "
                     "differ); left as it is, the next run prints it.")
+        warn = ("\n::warning::Rulebook PDF: the pre-key held but the pages' key changed: pre_key misses an input."
+                if held and pre and drawn != known else "")
         if shots is None:
-            return f"Rulebook PDF: {len(old['pages'])} pages, as they were (nothing they draw changed)."
-        done = write_pages(join(checkout, RULEBOOK_PAGES), shots, printer.pdf, drawn, settled)
+            if pre and pre != old.get("pre"):
+                _put_listing(join(folder, PAGES_JSON), {**old, "pre": pre})
+            return f"Rulebook PDF: {len(old['pages'])} pages, as they were (nothing they draw changed{'; pre-key held' if held else ''})."
+        done = write_pages(folder, shots, printer.pdf, drawn, settled, pre)
     finally:
         printer.close()
     if not done["printed"]:
         kept = f"key {drawn[:8]} kept" if settled else "the website lags main's rulebook fonts or pictures: key not kept"
-        return f"Rulebook PDF: {done['pages']} pages, as they were ({kept})."
-    size = getsize(join(checkout, RULEBOOK_PAGES, PDF_FILE))
+        return f"Rulebook PDF: {done['pages']} pages, as they were ({kept}).{warn}"
+    size = getsize(join(folder, PDF_FILE))
     what = f"{len(done['changed'])} pages changed" if done["changed"] and len(done["changed"]) < done["pages"] else "printed"
-    return f"Rulebook PDF: {done['pages']} pages, {what} ({size / 1e6:.1f} MB)."
+    return f"Rulebook PDF: {done['pages']} pages, {what} ({size / 1e6:.1f} MB).{warn}"
 
 
 def main(args: Optional[list] = None) -> int:
@@ -416,9 +504,10 @@ def main(args: Optional[list] = None) -> int:
     parser.add_argument("checkout", help="the card repo's checkout (its site/rulebook; the PDF goes to TTS/Rulebook)")
     parser.add_argument("--site", default=SITE_URL, help="the website (default: the card browser)")
     parser.add_argument("--wait", type=float, default=SITE_WAIT, help="seconds to wait for the website to show the chapters")
+    parser.add_argument("--full", action="store_true", help="Chrome looks even when the pre-key held (the schedule's run)")
     options = parser.parse_args(args)
     try:
-        print(update_pages(options.checkout, options.site, wait=options.wait))
+        print(update_pages(options.checkout, options.site, wait=options.wait, full=options.full))
     except (RuntimeError, TimeoutError, OSError, ValueError, KeyError) as e:
         print(f"Rulebook PDF not printed: {e}")
         return 1
