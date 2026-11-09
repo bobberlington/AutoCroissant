@@ -1371,6 +1371,73 @@ def test_oxipng_cli_rides_in_the_venv(clone, tmp_path):
     assert run("true", sha="0" * 64)[:2] == (1, 1)                        # a bad file fails a job that writes PNGs
 
 
+def test_venv_first_is_cards_pythons_hit(clone, tmp_path):
+    """cards-venv: cards-python's venv key (setup-python's pick, the image's newest 3.14.x), path and check; a hit puts
+    it on PATH as cards-python does (the CLI when asked), with setup-python's LD_LIBRARY_PATH, and runs help; anything
+    else (no 3.14, a miss, a failed check, no CLI) runs cards-python with the same inputs."""
+    from helpers import FORK_ACTION, FORK_VENV_KEY, VENV_ACTION
+    yaml = pytest.importorskip("yaml")
+    root = _workflow(clone).parents[2]
+    if not (root / VENV_ACTION).is_file():
+        pytest.skip("no cards-venv yet")
+    first = yaml.safe_load((root / VENV_ACTION).read_text(encoding="utf-8"))
+    full = yaml.safe_load((root / FORK_ACTION).read_text(encoding="utf-8"))
+    steps, own = ({s["id"]: s for s in a["runs"]["steps"] if "id" in s} for a in (first, full))
+    defaults = [{k: v["default"] for k, v in a["inputs"].items()} for a in (first, full)]
+    assert list(steps) == ["key", "env", "hit", "full"] and defaults[0] == defaults[1]
+    assert steps["full"] == {"id": "full", "if": "steps.hit.outputs.ok != 'true'", "uses": "./" + FORK_ACTION.rsplit("/", 1)[0],
+                             "with": {k: f"${{{{ inputs.{k} }}}}" for k in full["inputs"]}}
+    assert first["outputs"]["wheels"]["value"] == "${{ steps.full.outputs.wheels }}" and set(first["outputs"]) == set(full["outputs"])
+    assert steps["key"]["env"]["VENV"] == own["reqs"]["env"]["VENV"] and steps["env"]["uses"] == own["env"]["uses"]
+    assert steps["env"]["with"] == {"path": "${{ steps.key.outputs.venv }}", "key": "${{ steps.key.outputs.key }}"}
+    check = re.compile(r"-c '[^']*'")
+    assert check.findall(steps["hit"]["run"]) == check.findall(own["check"]["run"])
+
+    def bash(script, **env):
+        files = {k: tmp_path / k for k in ("GITHUB_OUTPUT", "GITHUB_ENV", "GITHUB_PATH")}
+        for f in files.values():
+            f.write_text("")
+        done = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", script], cwd=tmp_path, timeout=30,
+                              env={"PATH": os.environ["PATH"], **runner, **{k: str(v) for k, v in files.items()}, **env})
+        assert done.returncode == 0
+        out, set_env = (dict(line.split("=", 1) for line in files[k].read_text().splitlines()) for k in ("GITHUB_OUTPUT", "GITHUB_ENV"))
+        return out, set_env, files["GITHUB_PATH"].read_text().splitlines()
+    (tmp_path / "bot").mkdir()
+    shutil.copy(REPO / "requirements-cards.txt", tmp_path / "bot")
+    cache, venv = tmp_path / "cache", tmp_path / "venv"
+    runner = {"RUNNER_TOOL_CACHE": str(cache), "RUNNER_OS": "Linux", "RUNNER_ARCH": "X64", "RUNNER_TEMP": str(tmp_path)}
+    assert bash(steps["key"]["run"], VENV=str(venv))[0] == {"venv": str(venv)}            # no 3.14: cards-python
+    for v in ("3.13.9", "3.14.2", "3.14.9", "3.14.10", "3.14.11-rc.1"):
+        (cache / "Python" / v / "x64").mkdir(parents=True)
+    out = bash(steps["key"]["run"], VENV=str(venv))[0]
+    sha = bash(own["reqs"]["run"], VENV="")[0]["sha"]
+    key = FORK_VENV_KEY.replace("${{ steps.reqs.outputs.sha }}", sha).replace("${{ runner.os }}", "Linux").replace("${{ runner.arch }}", "X64")
+    assert out == {"venv": str(venv), "key": key.replace("${{ steps.python.outputs.python-version }}", "3.14.10"),
+                   "lib": f"{cache}/Python/3.14.10/x64/lib"}
+    (venv / "bin").mkdir(parents=True)
+    (venv / "bin" / "python").write_text('#!/bin/sh\n[ "$LD_LIBRARY_PATH" = /lib314:/old ] || exit 9\necho "$*" >> "$CALLS"\n'
+                                         '[ "$1" != -c ] || exit "$CHECK"\n')
+    (venv / "bin" / "python").chmod(0o755)
+    calls = tmp_path / "calls"
+
+    def hit(check=0, want="true", own_venv="", cli=True):
+        shutil.rmtree(venv / ".oxipng", ignore_errors=True)
+        if cli:
+            (venv / ".oxipng").mkdir()
+            (venv / ".oxipng" / "oxipng").write_text("#!/bin/sh\necho oxipng 10.2.1\n")
+            (venv / ".oxipng" / "oxipng").chmod(0o755)
+        calls.write_text("")
+        got = bash(steps["hit"]["run"], VENV=str(venv), LIB="/lib314", LD_LIBRARY_PATH="/old", OWN=own_venv, WANT=want,
+                   HELP="card_guards font_check", CHECK=str(check), CALLS=str(calls))
+        return got, [line.split()[:2] for line in calls.read_text().splitlines()]
+    helped = [["-c", "import"], ["-m", "commands.card_guards"], ["-m", "commands.font_check"]]
+    assert hit() == (({"ok": "true"}, {"LD_LIBRARY_PATH": "/lib314:/old"}, [f"{venv}/.oxipng", f"{venv}/bin"]), helped)
+    assert hit(want="false", own_venv=str(venv)) == (({"ok": "true"}, {"LD_LIBRARY_PATH": "/lib314:/old"}, []), helped)
+    assert hit(check=1) == (({}, {}, []), helped[:1])                          # cards-python checks it again
+    assert hit(cli=False) == (({}, {}, []), helped[:1])                        # cards-python fetches it
+    assert hit(want="false", cli=False)[0][0] == {"ok": "true"}               # a data job needs no CLI
+
+
 FAKE_GH = r"""#!/usr/bin/env python3
 import fcntl, json, os, subprocess, sys
 state = os.environ["FAKE_STATE"]

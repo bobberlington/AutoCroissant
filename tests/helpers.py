@@ -233,6 +233,8 @@ FORK_WORKFLOWS = ("card-guards.yml", "card-sync.yml", "card-preview.yml")   # in
 
 FORK_ACTION = ".github/actions/cards-python/action.yml"                 # their one setup (2026-10-25)
 
+VENV_ACTION = ".github/actions/cards-venv/action.yml"                   # its venv hit first, else it (2026-11-09)
+
 FORK_PYTHON = "3.14"                                                    # every Action (owner, 2026-10-24)
 
 FORK_WHEELS = "~/.cache/card-wheels"
@@ -260,7 +262,7 @@ def card_pin() -> str:
 
 
 def _uses_setup(step) -> bool:
-    return step.get("uses") == "./" + FORK_ACTION.rsplit("/", 1)[0]
+    return step.get("uses") in ["./" + a.rsplit("/", 1)[0] for a in (FORK_ACTION, VENV_ACTION)]
 
 
 def bot_files(job: dict, step: dict) -> list:
