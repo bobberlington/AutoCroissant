@@ -6,8 +6,8 @@ merged into the old PNG; Photoshop's stored composite only cross-checks, and a P
 standards (missing fonts are the font check's alone) and fixes only the 0-pixel classes; the Single-line Composer (R8) it
 always sets unsaid, box text that rewraps redrawn and its PNG re-exported: only the bot commit's message names it
 (owner, 2026-10-25); so are the pixel fixes (card_standards.PIXEL_FIXES, in order: clean, on cards: hidden stars, type
-icons and exact copies deleted and data that draws nothing removed, every picture and the parse the same, no PNG (owner
-11-09); badges laid out again at their new widths, straight apostrophes, old icon font glyphs, badges fitted, timing tags set as badges: R1 then untold, status
+icons, exact copies and leftovers deleted and data that draws nothing removed, every picture and the parse the same, no
+PNG (owner 11-09; a hidden picture's linked file another PSD shows: hidden_of, db/links.json's holders read); badges laid out again at their new widths, straight apostrophes, old icon font glyphs, badges fitted, timing tags set as badges: R1 then untold, status
 words in the chart's colours and effects: no changelog event either, owner 11-07),
 the PNG re-exported the same way; and the folders as the templates' (card_standards.standard_folders, owner 11-09:
 only where nothing else changes, no PNG); badges drawn with another build of the icon font that the PSD keeps are told
@@ -139,6 +139,9 @@ CONVERTS = ("now", "later", "off")              # check's --convert: in the chec
 CONVERT_MINUTES = 20                            # no conversion starts past this; the rest stay as pushed (their next push)
 LINKS = "db/links.json"                         # the data branch's links (card_data.gather_links): G2-G4's index
 LINKED_DIR = "MDW/Linked/"
+ART_ROOTS = ("MDW/Templates/", "MDW/Unfinished/", "MDW/Assets/", "MDW/Croissant's Special Folder/")   # with the cards:
+                                                # the PSDs whose shown pictures make a card's hidden copy go (clean)
+ART_READS = 3                                   # those PSDs read a card at most (clean's Hidden.elsewhere)
 GIT_LAND = 40                                   # files past which land commits by git (git_commit: no blob upload each)
 GIT_LAND_BYTES = 32 << 20                       # or bytes: one push beats base64 POSTs (6 PSDs, 115 MB: 23 s by REST)
 _worker: dict = {}
@@ -708,8 +711,50 @@ def build_context(source: Source, tree: dict, errors: Optional[list] = None) -> 
             errors.append(f"{psd_edit.STATUS_CHART}: {error}")
     context = standards.Context(frozenset(vocab.all_types), chart, psd_edit.story_sync(),
                                 frozenset(path.lower() for path in tree if path.lower().endswith(".png")),   # R12's pictures
-                                shown_cards(source, errors))
+                                shown_cards(source, errors), art_holders(links_index(source), tree))
     return context, vocab
+
+
+def art_holders(index: Optional[dict], tree: dict) -> Optional[dict]:
+    """{linked file, lowercased: ((PSD path, blob), ...)} of the PSDs in scope (cards, ART_ROOTS) whose db/links.json
+    record is of their blob at after: where a pushed card's hidden copy may show (Context.art); None without the index."""
+    if not index:
+        return None
+    out: dict = {}
+    for path, record in index.items():
+        if (not isinstance(record, dict) or not (is_card_psd(path) or path.startswith(ART_ROOTS))
+                or path not in tree or tree[path][1] != record.get("blob")):
+            continue
+        for link in record.get("links") or ():
+            if link.get("path"):
+                out.setdefault(link["path"].lower(), set()).add((path, record["blob"]))
+    return {key: tuple(sorted(found)) for key, found in out.items()}
+
+
+def hidden_of(source: Source, job: Job, psd, context) -> Optional[standards.Hidden]:
+    """clean's leftovers on a pushed card (card_standards.Hidden): the linked files of its hidden pictures another PSD
+    shows (ART_READS at most of those Context.art says link them, read at after), none at all with picture-only
+    duplicates; None off a card."""
+    if not is_card_psd(job.psd):
+        return None
+    if job.dups:
+        return standards.Hidden(dups=True)
+    wanted = standards.hidden_links(psd, job.psd) if context.art else set()
+    found, read = set(), {}
+    for path in sorted(wanted):
+        for other, sha in context.art.get(path, ()):
+            if path in found or other == job.psd:
+                continue
+            if other not in read:
+                if len(read) >= ART_READS:
+                    break
+                try:
+                    read[other] = standards.shown_links(png_export.open_psd(source.blob(sha), other), other)
+                except Exception:               # unread: not shown there
+                    print(format_exc(), file=stderr)
+                    read[other] = set()
+            found |= read[other] & wanted
+    return standards.Hidden(frozenset(found))
 
 
 def shown_cards(source: Source, errors: list) -> Optional[tuple]:
@@ -1024,8 +1069,9 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
     if job.case == "pair" and old is not None and job.base_png:
         _pair_pictures(source, job, result, old, new, out, shown, faces)
     skip = (NORMALISE, *ICON_LAYOUTS) if _layouts_kept(job, old, new) else (NORMALISE,)
-    pixels = tuple(kind for kind in standards.pixel_kinds(new, rel=job.psd, chart=context.chart) if kind not in skip) \
-        if job.case != "png-only" else ()
+    hidden = hidden_of(source, job, new, context) if job.case not in ("png-only", "whole") else None
+    pixels = tuple(kind for kind in standards.pixel_kinds(new, rel=job.psd, chart=context.chart, hidden=hidden)
+                   if kind not in skip) if job.case != "png-only" else ()
     if job.case != "png-only":                  # converted after the check (convert_plan), SWEEP_ONLY or not
         result.convert = list(standards.pixel_kinds(new, (NORMALISE,)))
     if job.case == "png-only":
@@ -1036,11 +1082,12 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
     result.issues = [{**issue.as_dict(), "line": issue.line(), "told": id(issue) in told, "discord": issue.discord}
                      for issue in issues]
     if (any(issue.fix and not issue.waived for issue in issues) or standards.composer_layers(new) or pixels
-            or standards.folder_issues(new, job.psd)):
+            or standards.folder_issues(new, job.psd, parser)):
         fonts = partial(source.fonts_for)
         fonts.earlier = earlier                 # card_standards.relay_badges, redraw_old_glyphs
         fonts.cards = context.cards             # relay_badges' notes: a break inside a card's name
         fonts.chart = context.chart             # status words
+        fonts.hidden = hidden                   # clean's leftovers
         fixed = standards.fix(new_bytes, job.psd, issues, join(out, "work"), parser, fonts, skip=skip)
         result.fixed, result.composer, result.composer_left = fixed.applied, fixed.composer, fixed.composer_left
         result.pixel_left = list(fixed.pixel_left)

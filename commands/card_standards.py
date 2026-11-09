@@ -25,11 +25,15 @@ steps); each redraws only the changed glyphs and the guards re-export the PNG. E
 guards land its files, G1): sub and superscript text set normal at the same size and place (to_normal), the pictures
 linked (the link step, psd_links), the merged image stripped, in one gated save. Clean (owner 2026-11-09, cards
 only, silent): hidden star and type icon layers, hidden pictures that are an exact copy of a visible layer, and data
-that draws nothing deleted, when every picture and the parse stay the same. After clean, before the composer, the
-folders as the templates' (standard_folders, owner 2026-11-09, silent): names, colours, order, loose layers and extra
-folders in their folder (Overlay Text and Overlay where Text, Stat Text and Name or images would change their look),
-hidden Curves and nested star and type folders gone, at the first FOLDER_LEVELS level whose card renders and reads as
-before (folders_gate); no PNG follows. The sweep also isolates folders with adjustments clipped to them (isolate; the
+that draws nothing deleted, when every picture and the parse stay the same; with the guards' Hidden the hidden
+leftovers too (_leftovers: adjustments and fills, 'Line if needed' and 'LINE' shapes, title copies and old words, empty
+layers and groups, pictures shown on the card or linked files another PSD shows; never Ability text, stat digits, a
+card with picture-only duplicates, nor a layer clipped onto a pass-through group: CLIP_PASS_THROUGH). After clean,
+before the composer, the folders as the templates' (standard_folders, owner 2026-11-09, silent): names, colours,
+order (an order alone too), loose layers and extra folders in their folder (Overlay Text and Overlay where Text, Stat
+Text and Name or images would change their look), hidden Curves and nested star and type folders gone, at the first
+FOLDER_LEVELS level whose card renders and reads as before (folders_gate), then linked icons in the middle of images
+into their folder (mid_icons, gated alone; star icons that are art stay, untold: art_icons); no PNG follows. The sweep also isolates folders with adjustments clipped to them (isolate; the
 guards do not).
 
     check(psd, rel, context, old=None, added=False) -> [Issue]
@@ -38,7 +42,7 @@ guards do not).
     composer_layers(psd) -> [layer]                               the card text layers set Every-line (R8)
     redraw(path, out_path, names, fonts) -> [name]                the rewrapped layers drawn again (R8)
     standard_folders(path, out_path, fonts, rel, parser) -> Foldered  the templates' folders, gated
-    folder_issues(psd, rel) -> [str]                             what keeps the folders off the templates'
+    folder_issues(psd, rel, parser) -> [str]                     what keeps the folders off the templates'
     BADGE_TAGS, WAIVED                                            the badge vocabulary and the owner's class waivers
 
 No Discord, network or config.
@@ -49,7 +53,7 @@ from dataclasses import dataclass, field
 from functools import lru_cache
 from io import BytesIO
 from os import makedirs, remove, replace as move_file
-from os.path import basename, getsize, join
+from os.path import basename, getsize, join, splitext
 from re import DOTALL, IGNORECASE, compile as re_compile, escape, fullmatch, search, sub
 from shutil import rmtree
 from tempfile import mkdtemp
@@ -65,7 +69,7 @@ from commands.card_models import APOSTROPHE, straight
 from commands.font_check import _get, _value, layer_fonts
 from commands.psd_edit import BADGE_KEYS, BADGE_TAGS, ICON_FONT, Refused, badge_spans, badge_tags
 from commands.psd_parser import (EFFECT_LAYER_TAG, ICON_FONT_PREFIX, TAG, CardValidator, PSDParser, base_name, layer_tag,
-                                 shown_in, variant_view, variants_of)
+                                 shown_in, star_icon_name, variant_view, variants_of)
 from commands.psd_regions import (STATS as STAT_PATTERNS, bar_box, clip, comp_bars, comp_stat, comp_value, overlay_words,
                                   stat_rows, union_box)
 
@@ -127,6 +131,8 @@ class Context:
     story_sync: bool = False                    # the fork can sync Txt2 stories (R9 is a fix, else a report)
     pngs: Optional[frozenset] = None            # the tree's PNG paths, lowercased (R12's pictures); None: not checked
     cards: Optional[tuple] = None               # ((title, key, kind), ...) of the shown cards (R14); None: not checked
+    art: Optional[dict] = None                  # {linked file, lowercased: ((PSD path, blob), ...)} of the PSDs linking it
+                                                # (db/links.json): where clean's hidden copies may show; None: unknown
 
 
 @dataclass
@@ -915,9 +921,9 @@ def _renamed(psd: PSDImage, path: str, out_path: str, renames: list) -> list:
     return [f"{a['name']!r} -> {b['name']!r}" for i, (a, b) in enumerate(zip(old_records, new_records)) if i in indices]
 
 
-def _folders_in(data: bytes, rel: str) -> bool:
+def _folders_in(data: bytes, rel: str, parser: Optional[PSDParser] = None) -> bool:
     try:
-        return bool(folder_issues(PSDImage.open(BytesIO(data)), rel))
+        return bool(folder_issues(PSDImage.open(BytesIO(data)), rel, parser))
     except Exception:                           # unreadable: nothing to arrange
         return False
 
@@ -1061,8 +1067,9 @@ def fix(data: bytes, rel: str, issues: list, work: str, parser: Optional[PSDPars
     wanted = [] if only else [issue for issue in issues if issue.fix and not issue.waived]
     composer = not only and _every_line_in(data)
     pixels = tuple(kind for kind in pixel_kinds(data, (only,) if only else (), rel, getattr(fonts, "chart", None),
-                                                 getattr(fonts, "links", None)) if kind not in skip)
-    folders = not only and parser is not None and "folders" not in skip and _folders_in(data, rel)
+                                                 getattr(fonts, "links", None), getattr(fonts, "hidden", None))
+                   if kind not in skip)
+    folders = not only and parser is not None and "folders" not in skip and _folders_in(data, rel, parser)
     if not (wanted or composer or pixels or folders):
         return result
     makedirs(work, exist_ok=True)
@@ -2877,6 +2884,23 @@ STAT_GROUP = re_compile(r"\b(hp|health|def|defen[cs]e|atk|attack|spd|speed|darks
 ANCESTORS = re_compile(rb"(?<!\s)\s*<photoshop:DocumentAncestors>.*?</photoshop:DocumentAncestors>", DOTALL)  # (?<!\s): linear
 PATTERN_TAGS = (Tag.PATTERNS1, Tag.PATTERNS2, Tag.PATTERNS3)
 FX_TAGS = (Tag.FILTER_EFFECTS1, Tag.FILTER_EFFECTS2, Tag.FILTER_EFFECTS3)
+LEFT_FILLS = frozenset(("solidcolorfill", "gradientfill", "patternfill"))
+LEFT_LINES = frozenset(("line if needed", "line"))     # hidden shapes that go, by name (owner 2026-11-09)
+LEFT_STAT = re_compile(r"\d{1,2}|hp|health|def|defen[cs]e|atk|attack|spd|speed|darks?|lit|stats?( bars?)?|bars?|stat txt"
+                       r"|.*\b(dark|lit)\b.*", IGNORECASE)     # stat bars and digits: kept (the parser reads them)
+LEFT_WORDS = 60             # characters: a hidden text layer longer is an Ability copy (kept)
+LEFT_TITLE = 0.12           # share of the card's height: hidden text above it is a title copy
+CLIP_PASS_THROUGH = True    # fork gap: Photoshop isolates a pass-through group while anything clips onto it, hidden
+                            # too, the fork does not (Matterling): no hidden layer clipped onto one goes. False once
+                            # the fork matches.
+
+
+@dataclass(frozen=True)
+class Hidden:
+    """clean's leftovers (owner 2026-11-09, the guards'): the linked files (lowercased repo paths) another PSD in scope
+    shows, and dups: the card has picture-only duplicates, drawn from its hidden layers (no leftover goes)."""
+    elsewhere: frozenset = frozenset()
+    dups: bool = False
 
 
 def _shown_anywhere(psd: PSDImage) -> set:
@@ -2951,16 +2975,172 @@ def _layer_ink(layer):
     return _links().ink_key(np.clip(np.round(rgba * 255), 0, 255).astype(np.uint8))
 
 
-def clean_plan(psd: PSDImage) -> list:
+def _art_key(layer, rel: str) -> Optional[str]:
+    """A picture's content: its linked file (lowercased repo path), its embedded document's blob or its pixel channels'
+    sha1; None without one."""
+    from hashlib import sha1
+    if layer.kind == "smartobject":
+        try:
+            found = layer.smart_object
+            if found.kind == "external":
+                target = found.link_target(rel or None)
+                return "file:" + target.lower() if target else None
+            data = found.data if found.kind == "data" else None
+        except (ValueError, KeyError, AttributeError, NotImplementedError):
+            return None
+        return "blob:" + sha1(b"blob %d\0" % len(data) + data).hexdigest() if data else None
+    if layer.kind != "pixel" or layer.bbox[2] <= layer.bbox[0]:
+        return None
+    digest = sha1(repr(tuple(layer.size)).encode())
+    for info, channel in zip(layer._record.channel_info, layer._channels):
+        if int(info.id) in (-1, 0, 1, 2):
+            digest.update(b"%d:%d:" % (int(info.id), int(channel.compression)) + (channel.data or b""))
+    return "px:" + digest.hexdigest()
+
+
+def _kept(layer) -> bool:
+    """A hidden leaf no leftover rule takes: a stat bar, digit or stat group's layer, an FX layer, a star or type icon."""
+    return (comp_value(layer) is not None or bool(LEFT_STAT.fullmatch(_key(layer.name))) or EFFECT_LAYER_TAG in layer.name
+            or bool(search(r"\bFX\b", layer.name)) or any(STAT_GROUP.search(group) for group in _groups(layer))
+            or bool(_link_kind(layer)))
+
+
+def hidden_links(psd: PSDImage, rel: str = "") -> set:
+    """The linked files (lowercased repo paths, Types/ aside) of the hidden pictures a leftover rule may take: where the
+    guards look for them on other PSDs (Hidden.elsewhere)."""
+    shown = _shown_anywhere(psd)
+    keys = {_art_key(layer, rel or getattr(psd, "repo_path", "")) for layer in psd.descendants()
+            if layer.kind == "smartobject" and id(layer) not in shown and not _kept(layer)}
+    return {key[5:] for key in keys if key and key.startswith("file:") and not key.startswith("file:types/")}
+
+
+def shown_links(psd: PSDImage, rel: str) -> set:
+    """The linked files (lowercased repo paths) some picture of the PSD at rel shows."""
+    shown = _shown_anywhere(psd)
+    keys = {_art_key(layer, rel) for layer in psd.descendants() if layer.kind == "smartobject" and id(layer) in shown}
+    return {key[5:] for key in keys if key and key.startswith("file:")}
+
+
+def _leftover(layer, psd: PSDImage, keys: set, hidden: Hidden) -> Optional[str]:
+    """Why a hidden leaf goes (owner 2026-11-09), None to keep it: an adjustment or fill, a 'Line if needed' or 'LINE'
+    shape, a name or title copy or old words (never Ability text, a note or digits), an empty layer, a picture shown on
+    the card (keys) or a linked one another PSD shows; never a stat bar, digit, FX layer or star or type icon."""
+    name = _key(layer.name)
+    if _kept(layer):
+        return None
+    if layer.kind == "type":
+        try:
+            text = sub(r"\s+", " ", str(layer.text or "").replace("\x03", " ")).strip()
+        except Exception:                       # unreadable text: kept
+            return None
+        if "abilit" in name or NOTE_LAYER.fullmatch(base_name(layer).strip()) or len(text) > LEFT_WORDS \
+                or fullmatch(r"[\d\s]+", text):
+            return None
+        if not text:
+            return "an empty text layer"
+        return "a title copy" if search(r"name|title", name) or layer.bbox[1] < LEFT_TITLE * psd.height else "old words"
+    if layer.kind in ADJUSTMENTS or layer.kind in LEFT_FILLS:
+        return "an adjustment or fill"
+    if layer.kind == "shape":
+        return "a line shape" if name in LEFT_LINES else None
+    if layer.kind not in ("pixel", "smartobject"):
+        return None
+    if layer.bbox[2] <= layer.bbox[0] or layer.bbox[3] <= layer.bbox[1]:
+        return "an empty layer"
+    key = _art_key(layer, getattr(psd, "repo_path", "") or "")
+    if key is None:
+        return None
+    if key in keys:
+        return "a copy shown on the card"
+    return "a copy shown on another PSD" if key.startswith("file:") and key[5:] in hidden.elsewhere else None
+
+
+def _clip_base(layer):
+    """The layer a clipping layer clips onto (None for an orphan clip)."""
+    siblings = list(layer.parent)
+    return next((one for one in reversed(siblings[:siblings.index(layer)]) if not one.clipping), None)
+
+
+def _clips(layer) -> list:
+    """The clipping layers right above a base, a group's too."""
+    if layer.clipping:
+        return []
+    siblings = list(layer.parent)
+    out = []
+    for above in siblings[siblings.index(layer) + 1:]:
+        if not above.clipping:
+            break
+        out.append(above)
+    return out
+
+
+def _isolating(layer) -> bool:
+    """CLIP_PASS_THROUGH: a hidden clipping layer on a pass-through group (Photoshop draws that group otherwise without it)."""
+    if not (CLIP_PASS_THROUGH and layer.clipping):
+        return False
+    base = _clip_base(layer)
+    return base is not None and base.is_group() and base.blend_mode == BlendMode.PASS_THROUGH
+
+
+def _leftovers(psd: PSDImage, shown: set, taken: set, hidden: Hidden) -> list:
+    """
+    The hidden leftovers' deletions [(layer, why)] (owner 2026-11-09): each top hidden node whose leaves all go (a
+    group: an empty one too); a clipping layer alone (never on a pass-through group: _isolating); a base only with
+    everything clipped onto it hidden and going too, never one something shown clips onto.
+    """
+    if hidden.dups:
+        return []
+    rel = getattr(psd, "repo_path", "") or ""
+    tops = [layer for layer in psd.descendants() if id(layer) not in shown and id(layer) not in taken
+            and (isinstance(layer.parent, PSDImage) or id(layer.parent) in shown)]
+    if not tops:
+        return []
+    pictures = any(one.kind in ("pixel", "smartobject") for layer in tops
+                   for one in ([layer] + (list(layer.descendants()) if layer.is_group() else [])))
+    keys = {key for key in (_art_key(layer, rel) for layer in psd.descendants()
+                            if id(layer) in shown and layer.kind in ("pixel", "smartobject")) if key} if pictures else set()
+    reasons: dict = {}
+
+    def why(node) -> Optional[str]:
+        if id(node) not in reasons:
+            if id(node) in taken:
+                reasons[id(node)] = "taken"
+            elif node.is_group():
+                leaves = [one for one in node.descendants() if not one.is_group()]
+                reasons[id(node)] = "an empty group" if not leaves else "hidden leftovers" if all(
+                    id(one) in taken or _leftover(one, psd, keys, hidden) for one in leaves) else None
+            else:
+                reasons[id(node)] = _leftover(node, psd, keys, hidden)
+        return reasons[id(node)]
+    out, going = [], set()
+    for layer in [one for one in tops if not one.clipping] + [one for one in tops if one.clipping]:
+        if id(layer) in going or not why(layer):
+            continue
+        if layer.clipping:
+            base = _clip_base(layer)
+            if not _isolating(layer) and (base is None or id(base) not in going):
+                out.append((layer, why(layer)))
+                going.add(id(layer))
+            continue
+        clips = _clips(layer)
+        if any(id(one) in shown for one in clips) or not all(why(one) for one in clips):
+            continue
+        out += [(layer, why(layer))] + [(one, "clipped onto it") for one in clips if id(one) not in taken]
+        going |= {id(layer)} | {id(one) for one in clips}
+    return out
+
+
+def clean_plan(psd: PSDImage, hidden: Optional[Hidden] = None) -> list:
     """
     clean()'s deletions on a card: [(layer, why)]. A node no picture shows: a group of star or type icons alone, a star
     or type icon leaf (with the clipping layers on it), a picture that is a visible layer's exact copy (the same pixels
-    anywhere on the card, owner 2026-11-09); never a stat bar or a layer some variant shows.
+    anywhere on the card, owner 2026-11-09), with hidden the leftovers (_leftovers); never a stat bar or a layer some
+    variant shows, nor a layer clipped onto a pass-through group (_isolating).
     """
     shown = _shown_anywhere(psd)
-    hidden = [layer for layer in psd.descendants() if id(layer) not in shown]
+    unseen = [layer for layer in psd.descendants() if id(layer) not in shown]
     out, taken = [], set()
-    for layer in hidden:
+    for layer in unseen:
         if id(layer) in taken:
             continue
         if layer.is_group():
@@ -2977,7 +3157,7 @@ def clean_plan(psd: PSDImage) -> list:
             taken |= {id(layer)} | {id(one) for one in clipped}
     visible = [layer for layer in psd.descendants() if layer.kind in ("pixel", "smartobject") and layer.is_visible()]
     keys: dict = {}
-    for layer in hidden:
+    for layer in unseen:
         if id(layer) in taken or layer.kind not in ("pixel", "smartobject") or _clipped_on(layer) \
                 or comp_value(layer) is not None or any(STAT_GROUP.search(name) for name in _groups(layer)):
             continue
@@ -2993,7 +3173,12 @@ def clean_plan(psd: PSDImage) -> list:
                 out.append((layer, f"a copy of {other.name!r}"))
                 taken.add(id(layer))
                 break
-    return out
+    if hidden is not None:
+        out += _leftovers(psd, shown, taken, hidden)
+    going = {id(layer) for layer, _ in out}
+    out = [(layer, why) for layer, why in out if not _isolating(layer) or id(_clip_base(layer)) in going]
+    planned = {id(layer) for layer, _ in out if layer.is_group()}
+    return [(layer, why) for layer, why in out if not any(id(group) in planned for group in _ancestors_of(layer))]
 
 
 def _dead(psd: PSDImage, data: bytes, apply: bool = False) -> dict:
@@ -3044,28 +3229,31 @@ def _dead(psd: PSDImage, data: bytes, apply: bool = False) -> dict:
 
 
 def clean_layers(psd: PSDImage) -> list:
-    """clean()'s finds on a card (psd.repo_path; templates and other files never): its deletions, and the PSD itself when
-    it holds pixel sources (XMP ancestors go only with something else)."""
+    """clean()'s finds on a card (psd.repo_path; templates and other files never; psd.clean_hidden: the leftovers'
+    Hidden): its deletions, and the PSD itself when it holds pixel sources (XMP ancestors go only with something else)."""
     from commands.font_check import is_card_psd
     if not is_card_psd(getattr(psd, "repo_path", "") or ""):
         return []
-    return [layer for layer, _ in clean_plan(psd)] + ([psd] if set(_dead(psd, b"")) - {"XMP ancestors"} else [])
+    plan = clean_plan(psd, getattr(psd, "clean_hidden", None))
+    return [layer for layer, _ in plan] + ([psd] if set(_dead(psd, b"")) - {"XMP ancestors"} else [])
 
 
-def clean(path: str, out_path: str, fonts=None, rel: str = "") -> list:
-    """
-    Clean (owner 2026-11-09): clean_plan's layers deleted (no smart-object document left without a layer) and _dead's
-    data removed, in one save; every picture (the saved one and each variant's) drawn the same to the pixel, else
-    Refused("pixels"). Returns what went: layer names, then the data's kinds ([]: nothing written).
-    """
-    with open(path, "rb") as fh:
-        data = fh.read()
+def _remove(psd: PSDImage, layer) -> None:
+    """A layer deleted, a group's text layers first (their Txt2 stories go with them)."""
+    if layer.is_group():
+        for one in [one for one in layer.descendants() if one.kind == "type"]:
+            psd_edit.remove_layer(psd, one)
+    psd_edit.remove_layer(psd, layer)
+
+
+def _cleaned(data: bytes, out_path: str, rel: str, hidden: Optional[Hidden]) -> list:
+    """clean's one try: clean_plan(hidden) and _dead in one save, gated (Refused)."""
     psd = PSDImage.open(BytesIO(data))
     psd.repo_path = rel
-    plan = clean_plan(psd)
+    plan = clean_plan(psd, hidden)
     orphans = _orphan_links(psd)
     for layer, _ in plan:
-        psd_edit.remove_layer(psd, layer)
+        _remove(psd, layer)
     gone = _orphan_links(psd) - orphans
     for tag in (Tag.LINKED_LAYER1, Tag.LINKED_LAYER2, Tag.LINKED_LAYER3, Tag.LINKED_LAYER_EXTERNAL):
         items = psd.tagged_blocks.get_data(tag) if psd.tagged_blocks and tag in psd.tagged_blocks else None
@@ -3090,6 +3278,24 @@ def clean(path: str, out_path: str, fonts=None, rel: str = "") -> list:
     return [layer.name for layer, _ in plan] + list(dead)
 
 
+def clean(path: str, out_path: str, fonts=None, rel: str = "") -> list:
+    """
+    Clean (owner 2026-11-09): clean_plan's layers deleted (no smart-object document left without a layer) and _dead's
+    data removed, in one save; every picture (the saved one and each variant's) drawn the same to the pixel, else
+    Refused("pixels"). fonts.hidden (Hidden, the guards'): the leftovers too, left out again when they refuse. Returns
+    what went: layer names, then the data's kinds ([]: nothing written).
+    """
+    with open(path, "rb") as fh:
+        data = fh.read()
+    hidden = getattr(fonts, "hidden", None)
+    try:
+        return _cleaned(data, out_path, rel, hidden)
+    except Refused:
+        if hidden is None:
+            raise
+    return _cleaned(data, out_path, rel, None)
+
+
 PIXEL_FIXES = {     # kind -> (finds(psd) -> [layer], fix(path, out_path, fonts) -> [layer name], the parse it makes or None)
     "clean": (clean_layers, clean, None),      # first: the other fixes work on what stays
     "badge widths": (icon_layers, relay_badges, None),   # first: straighten and old glyphs lay out at the current widths
@@ -3104,7 +3310,7 @@ PIXEL_FIXES = {     # kind -> (finds(psd) -> [layer], fix(path, out_path, fonts)
 }
 SWEEP_ONLY = {"alt template", "normalise"}   # run by card_sweep alone, never by the push guards (owner's call,
 #   2026-11-06); normalise until the guards land its files silently (big pass G1: then out of this set)
-PIXEL_LINES = {"clean": "hidden stars, type icons and copies deleted, data that draws nothing removed",
+PIXEL_LINES = {"clean": "hidden stars, type icons, copies and leftovers deleted, data that draws nothing removed",
                "badge widths": "badges laid out again at their new widths", "apostrophes": "straight apostrophes",
                "old glyphs": "old icon font glyphs redrawn",
                "badges": "badges and icons fitted to their text",
@@ -3114,17 +3320,19 @@ PIXEL_LINES = {"clean": "hidden stars, type icons and copies deleted, data that 
                "normalise": "pictures linked, text set normal, no merged image"}
 
 
-def pixel_kinds(psd, kinds: tuple = (), rel: str = "", chart: Optional[dict] = None, links=None) -> tuple:
+def pixel_kinds(psd, kinds: tuple = (), rel: str = "", chart: Optional[dict] = None, links=None,
+                hidden: Optional[Hidden] = None) -> tuple:
     """The pixel fix kinds (all but SWEEP_ONLY by default) whose layers the PSD (open, or its bytes) has; rel: its repo
     path (the link step judges its links from there); chart: the status chart's fills (status words; none: no such
-    kind); links: the link step's context (fonts.links: its read judges each link's Rslt)."""
+    kind); links: the link step's context (fonts.links: its read judges each link's Rslt); hidden: clean's leftovers
+    (fonts.hidden)."""
     try:
         psd = PSDImage.open(BytesIO(psd)) if isinstance(psd, bytes) else psd
         if rel:
             psd.repo_path = rel
         if links is not None and hasattr(_links(), "ppis_of"):
             psd.link_ppi = _links().ppis_of(links.read, getattr(links, "ppis", None))
-        psd.status_chart = chart
+        psd.status_chart, psd.clean_hidden = chart, hidden
         default = tuple(kind for kind in PIXEL_FIXES if kind not in SWEEP_ONLY)
         return tuple(kind for kind in kinds or default if PIXEL_FIXES[kind][0](psd))
     except Exception:                           # unreadable: nothing to fix
@@ -3312,14 +3520,16 @@ def _new_folder(parent, name: str, colour, index: int):
     return group
 
 
-def _place(units: list, parent) -> None:
-    """parent's layers as units say, bottom to top (each unit's layers in the document already)."""
-    i = 0
+def _place(units: list, parent) -> bool:
+    """parent's layers as units say, bottom to top (each unit's layers in the document already); whether one moved."""
+    i, moved = 0, False
     for unit in units:
         for layer in unit:
             if not (layer.parent is parent and list(parent).index(layer) == i):
                 layer.move_to(parent, index=i)
+                moved = True
             i += 1
+    return moved
 
 
 def _name_colour(layer, name: Optional[str], colour, done: list, counts: Counter) -> None:
@@ -3451,7 +3661,9 @@ def _inside_bars(folder, level: str, done: list, counts: Counter) -> None:
             if part in made:
                 final.append(made[part])
             final += [unit for after, unit in rest if after == part]
-        _place(final, folder)
+        if _place(final, folder):               # an order alone is a change too
+            done.append(f"{folder.name!r} parts in the templates' order")
+            counts["reordered"] += 1
     for child in folder:
         part = next((p for p in BAR_PARTS if child.is_group() and _key(child.name) in (p[0], p[0][:len(p[0]) - 1])), None)
         if part is not None:
@@ -3546,7 +3758,7 @@ def _mains(units: list, roles: list, names: dict) -> dict:
     return mains
 
 
-def _extract(psd: PSDImage, types, stars, done: list, counts: Counter) -> None:
+def _extract(psd: PSDImage, types, stars, done: list, counts: Counter, art: frozenset = frozenset()) -> None:
     """A folder of another kind, or a star or type icon (_leaf_role: Joel Miller's linked stars in images), at the top
     or bottom of a plain role folder (a card's Text inside Item Types) out beside it, in the same place in the stack."""
     for folder in [layer for layer in psd if layer.is_group()]:
@@ -3558,8 +3770,10 @@ def _extract(psd: PSDImage, types, stars, done: list, counts: Counter) -> None:
                 kids = list(folder)
                 child = kids[len(kids) - 1] if top else kids[0]
                 found = _content_role(child, types, stars) if child.is_group() else \
-                    next((role for role in ("stars", "types") if _leaf_role(child, types, stars) == role), None)
+                    next((role for role in ("stars", "types") if _leaf_role(child, types, stars) == role
+                          and child.layer_id not in art), None)
                 if (found in (None, named, "images", "adjust", "empty") or child.clipping
+                        or (named == "overlay text" and found == "text")    # its own: no out and back in
                         or (not top and kids[1].clipping)):
                     break
                 at = list(psd).index(folder)
@@ -3665,7 +3879,8 @@ def _around_stat(text, stat, moving: list, done: list, counts: Counter) -> None:
     stat.name = "Stat Text"
 
 
-def arrange(psd: PSDImage, rel: str, types, stars, level: str = "template", proven: bool = True) -> tuple:
+def arrange(psd: PSDImage, rel: str, types, stars, level: str = "template", proven: bool = True,
+            art: frozenset = frozenset()) -> tuple:
     """
     The card's folders as the templates' (FOLDER_ORDER, FOLDER_NAMES, FOLDER_COLOURS), in place.
 
@@ -3678,6 +3893,7 @@ def arrange(psd: PSDImage, rel: str, types, stars, level: str = "template", prov
             folders in the templates' order); kept (as plain, the folders where they are); names (no layer out of its
             folder); bare (names, colours, deletions and nests alone); colours (colours and hidden Curves alone)
         proven: hidden Curves clipped to a folder go too (hidden_curves' on_groups: a sweep proven in Photoshop)
+        art: layer ids of star icons that are art (art_icons): they stay where they are
 
     Returns:
         (what it did, Counter of the owner's counts)
@@ -3692,7 +3908,7 @@ def arrange(psd: PSDImage, rel: str, types, stars, level: str = "template", prov
         done.append(f"hidden {layer.name!r} deleted")
         counts["hidden curves"] += 1
     if level in ("template", "plain"):
-        _extract(psd, types, stars, done, counts)
+        _extract(psd, types, stars, done, counts, art)
     units, roles = [], []
     for unit in _units(psd):
         base = unit[0]
@@ -3782,7 +3998,9 @@ def arrange(psd: PSDImage, rel: str, types, stars, level: str = "template", prov
         else:                                   # every folder where its run began
             items = [(at, unit) for at, unit in folders.values()] + [(i, u) for i, _, u in loose]
             final = [unit for _, unit in sorted(items, key=lambda t: t[0])]
-        _place(final, psd)
+        if _place(final, psd):                  # an order alone is a change too (The Farlands)
+            done.append("folders in the templates' order")
+            counts["reordered"] += 1
     for role in FOLDER_ORDER:
         folder = folders[role][1][0] if role in folders else mains[role][0] if role in mains else None
         if folder is None:
@@ -3792,11 +4010,16 @@ def arrange(psd: PSDImage, rel: str, types, stars, level: str = "template", prov
     return done, counts
 
 
-def folder_issues(psd: PSDImage, rel: str) -> list:
-    """What keeps the card's folders off the templates', in plain words ([]: standard)."""
+def folder_issues(psd: PSDImage, rel: str, parser: Optional[PSDParser] = None, art: Optional[frozenset] = None) -> list:
+    """What keeps the card's folders off the templates', in plain words ([]: standard); a star icon that is art (art:
+    their layer ids, else art_icons with a parser) is none."""
     type_name = folder_kind(rel)
     if type_name is None:
         return []
+    if not getattr(psd, "repo_path", None):
+        psd.repo_path = rel
+    if art is None:
+        art = art_icons(psd, rel, parser) if parser is not None else frozenset()
     names = {**FOLDER_NAMES, "types": type_name}
     want = {names[role]: role for role in FOLDER_ORDER}
     out, seen = [], []
@@ -3810,7 +4033,7 @@ def folder_issues(psd: PSDImage, rel: str) -> list:
         if role in seen:
             out.append(f"two {layer.name!r} folders")
         seen.append(role)
-        out += [f"{child.name!r} in {layer.name!r}" for child in _odd_children(layer, role)]
+        out += [f"{child.name!r} in {layer.name!r}" for child in _odd_children(layer, role, art)]
     ordered = [role for role in seen if role != "overlay"]  # Overlay: over what its art lies over
     if ordered != sorted(ordered, key=FOLDER_ORDER.index):
         out.append("folders out of the templates' order")
@@ -3818,8 +4041,8 @@ def folder_issues(psd: PSDImage, rel: str) -> list:
     return out
 
 
-def _odd_children(folder, role: str) -> list:
-    """A role folder's layers off its template."""
+def _odd_children(folder, role: str, art: frozenset = frozenset()) -> list:
+    """A role folder's layers off its template (art: layer ids of star icons that are art, none)."""
     kids = list(folder)
     if role == "bars":
         parts = {name: colour for _, name, colour in BAR_PARTS}
@@ -3836,7 +4059,8 @@ def _odd_children(folder, role: str) -> list:
         return [k for k in kids if k.is_group() and (k.sheet_color != SUB_COLOURS[role] or GENERIC.fullmatch(_key(k.name))
                 or (_plain(k) and NESTED[role].fullmatch(_key(k.name)) and not any(_draws(o) for o in kids if o is not k)))]
     return [k for k in kids if (k.is_group() and GENERIC.fullmatch(_key(k.name)))
-            or (role == "images" and not k.clipping and _link_kind(k))]     # a linked star or type icon in images
+            or (role == "images" and not k.clipping and _link_kind(k) and k.layer_id not in art)]   # a linked star
+                                                # or type icon in images
 
 
 class Foldered(list):
@@ -3895,13 +4119,14 @@ def _by_id(psd: PSDImage) -> dict:
 
 
 def folders_gate(path: str, out_path: str, rel: str, parser: PSDParser, base: Optional[dict] = None,
-                 allow: Optional[dict] = None, tol: int = FOLDER_TOL) -> dict:
+                 allow: Optional[dict] = None, tol: int = FOLDER_TOL, spots: bool = False) -> dict:
     """
     Gate: every layer's record as it was (a folder's name and colour aside; allow: layer id -> the record parts that
     may change too, an isolated folder's blend and the clips moved into it), gone only a hidden Curves layer or a
     folder whose layers stay, new only plain folders, no smart object's data left unused; every picture renders
     within tol and the bot reads the card the same (folder_reads: the parse and the details; the website's regions
-    may change). Raises Refused; returns base's reads (made when None).
+    may change; spots: the bake's star and type spots too, which follow the stars filed in Stars). Raises Refused;
+    returns base's reads (made when None).
     """
     allow = allow or {}
     before, after = PSDImage.open(path), PSDImage.open(out_path)
@@ -3946,9 +4171,22 @@ def folders_gate(path: str, out_path: str, rel: str, parser: PSDParser, base: Op
                if lid in new and items[0][1].is_group() and items[0][1].name != new[lid][0][1].name}
     for key in ("parses", "details"):
         was = _folder_details(base[key], now[key], gone_ids, renamed) if key == "details" else base[key]
-        if was != now[key]:
+        found = now[key]
+        if spots and key == "details":
+            was, found = _no_spots(was), _no_spots(found)
+        if was != found:
             raise Refused("reparse", f"the bot reads the card differently ({key})")
     return base
+
+
+def _no_spots(details):
+    """A details read without the header's star and type spots (where the bake would add them)."""
+    header = details.get("header") if isinstance(details, dict) else None
+    if not isinstance(header, dict):
+        return details
+    header = {k: ({kk: vv for kk, vv in v.items() if kk not in ("at", "spots")} if isinstance(v, dict) else v)
+              for k, v in header.items()}
+    return {**details, "header": header}
 
 
 def _icon_key(name: str) -> str:
@@ -4001,13 +4239,16 @@ def standard_folders(path: str, out_path: str, fonts=None, rel: str = "", parser
     if parser is None or folder_kind(rel) is None:
         return result
     types, stars = frozenset(parser.all_types), parser.star_names()
-    left = folder_issues(PSDImage.open(path), rel)
+    card = PSDImage.open(path)
+    card.repo_path = rel
+    art = art_icons(card, rel, parser)
+    left = folder_issues(card, rel, parser, art)
     if not left:
         return result
     found = None
     for level in FOLDER_LEVELS:
         psd = PSDImage.open(path)
-        done, counts = arrange(psd, rel, types, stars, level, isolated)
+        done, counts = arrange(psd, rel, types, stars, level, isolated, art)
         if not done:
             result.tried.append((level, "nothing to change"))
             continue
@@ -4023,12 +4264,173 @@ def standard_folders(path: str, out_path: str, fonts=None, rel: str = "", parser
         found = Foldered(done, level, counts, [], result.tried)
         break
     found = found or Foldered(tried=result.tried)
+    if _loose_icons(card)[1]:
+        _icons(path, out_path, rel, parser, base, found, art)
     if isolated:
         _isolated(path, out_path, rel, parser, base, found)
     if not found:
         return Foldered(left=left, tried=found.tried)
-    found.left = folder_issues(PSDImage.open(out_path), rel)
+    found.left = folder_issues(PSDImage.open(out_path), rel, parser, art)
     return found
+
+
+def _alpha(unit, box: tuple) -> np.ndarray:
+    """A unit drawn alone inside box (x0, y0, x1, y1): its alpha (0-255), its base's effects in, its clips inside it."""
+    out = np.zeros((box[3] - box[1], box[2] - box[0]), np.uint16)
+    for layer in unit[:1]:
+        if layer.is_visible():
+            image = layer.composite(viewport=box, apply_icc=False)
+            if image is not None:
+                out = np.maximum(out, np.asarray(image.convert("RGBA"))[..., 3])
+    return out
+
+
+def _meets(unit, others: list):
+    """The first unit of others whose ink meets unit's (an adjustment always does), else None."""
+    mine = _boxes(unit[:1])
+    for other in others:
+        theirs = _boxes(other[:1])
+        if mine is None or theirs is None:
+            return other
+        for a in mine:
+            for b in theirs:
+                box = (max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3]))
+                if box[0] < box[2] and box[1] < box[3] and ((_alpha(unit, box) > 0) & (_alpha(other, box) > 0)).any():
+                    return other
+    return None
+
+
+def _icon_folder(psd: PSDImage, role: str, name: str, images) -> tuple:
+    """(role's top-level folder or None, the index a new one goes at: over the highest lower role's folder)."""
+    units = _units(psd)
+    folder = next((u[0] for u in units if u[0].is_group() and u[0].name == name), None)
+    if folder is not None:
+        return folder, None
+    names = {FOLDER_NAMES.get(r) for r in FOLDER_ORDER[:FOLDER_ORDER.index(role)]} | {images.name}
+    at = 0
+    for unit in units:
+        if unit[0].is_group() and unit[0].name in names:
+            at = list(psd).index(unit[len(unit) - 1]) + 1
+    return None, at
+
+
+def _file_icon(psd: PSDImage, unit: list, kind: str, images, filled: dict, done: list, counts: Counter) -> None:
+    """An icon's unit to the bottom of Stars or the type folder kind (made when missing), over the ones filed before
+    (filled: folder id -> how many)."""
+    role = _link_kind(unit[0]) + "s"
+    name = FOLDER_NAMES["stars"] if role == "stars" else kind
+    folder, at = _icon_folder(psd, role, name, images)
+    if folder is None:
+        folder = _new_folder(psd, name, FOLDER_COLOURS[role], at)
+        done.append(f"{name} folder made")
+        counts["folders made"] += 1
+    n = filled.get(id(folder), 0)
+    for layer in unit:
+        layer.move_to(folder, index=n)
+        n += 1
+    filled[id(folder)] = n
+    done.append(f"{unit[0].name!r} out of {images.name!r} into {name}")
+    counts["icons out of images"] += 1
+
+
+def _loose_icons(psd: PSDImage) -> tuple:
+    """(images, its linked star and type icons' units) at the top level ((None, []) without images)."""
+    images = next((layer for layer in psd if layer.is_group() and layer.name == FOLDER_NAMES["images"]), None)
+    if images is None:
+        return None, []
+    return images, [u for u in _units(images) if not u[0].is_group() and not u[0].clipping and _link_kind(u[0])]
+
+
+def art_icons(psd: PSDImage, rel: str, parser: PSDParser) -> frozenset:
+    """Layer ids of the linked star icons in images that are the card's art: filed in Stars alone (on a copy), the
+    parser reads the card otherwise (Hero Cap's two 'Mother' stars: 3 stars, not 1; owner 2026-11-09). They stay put,
+    untold."""
+    kind = folder_kind(rel)
+    images, units = _loose_icons(psd)
+    stars = [u for u in units if _link_kind(u[0]) == "star"]
+    if kind is None or not stars:
+        return frozenset()
+    buffer = BytesIO()
+    psd.save(buffer)
+    data = buffer.getvalue()
+
+    def read(card) -> tuple:
+        found = parser.parse(card, rel)
+        return found.to_dict(), found.alt_names, CardValidator.validate(found)
+    was, out = read(PSDImage.open(BytesIO(data))), set()
+    for unit in stars:
+        trial = PSDImage.open(BytesIO(data))
+        trial.repo_path = rel
+        ids = [layer.layer_id for layer in unit]
+        layers = {layer.layer_id: layer for layer in trial.descendants()}
+        where = next(layer for layer in trial if layer.is_group() and layer.name == images.name)
+        _file_icon(trial, [layers[i] for i in ids], kind, where, {}, [], Counter())
+        if read(trial) != was:
+            out.add(unit[0].layer_id)
+    return frozenset(out)
+
+
+def mid_icons(psd: PSDImage, rel: str, types=(), stars=None, done: Optional[list] = None,
+              counts: Optional[Counter] = None, art: frozenset = frozenset()) -> list:
+    """
+    Linked star and type icons (Types/Stars, Types) loose in images, with what clips to them, to the bottom of Stars or
+    the card's type folder (made as the templates' when missing), bottom to top (owner 2026-11-09), in place. One stays
+    when it is art (art: their layer ids), its folder or images is not plain, or ink it crosses meets its own (or an
+    adjustment). Returns why each one stayed; done and counts grow.
+    """
+    done, counts = done if done is not None else [], counts if counts is not None else Counter()
+    kind = folder_kind(rel)
+    images, picks = _loose_icons(psd)
+    if kind is None or not picks:
+        return []
+    if not _plain(images) or len(next(u for u in _units(psd) if u[0] is images)) > 1:
+        return [f"icons left in {images.name!r}: the folder is not plain"]
+    left, filled = [], {}
+    for unit in picks:
+        icon = unit[0]
+        if icon.layer_id in art:
+            continue
+        role = _link_kind(icon) + "s"
+        name = FOLDER_NAMES["stars"] if role == "stars" else kind
+        folder, at = _icon_folder(psd, role, name, images)
+        if folder is not None and (not _plain(folder) or len(next(u for u in _units(psd) if u[0] is folder)) > 1):
+            left.append(f"{icon.name!r} left in {images.name!r}: {name!r} is not plain")
+            continue
+        above = _units(images)
+        above = above[next(i for i, u in enumerate(above) if u[0] is icon) + 1:]
+        top = _units(psd)
+        first = next(i for i, u in enumerate(top) if u[0] is images) + 1
+        last = next(i for i, u in enumerate(top) if u[0] is folder) if folder is not None else \
+            next((i for i, u in enumerate(top) if list(psd).index(u[0]) >= at), len(top))
+        blocker = _meets(unit, above + top[first:last])
+        if blocker is not None:
+            left.append(f"{icon.name!r} left in {images.name!r}: {blocker[0].name!r} draws over it")
+            continue
+        _file_icon(psd, unit, kind, images, filled, done, counts)
+    return left
+
+
+def _icons(path: str, out_path: str, rel: str, parser: PSDParser, base: Optional[dict], found: Foldered,
+           art: frozenset) -> None:
+    """standard_folders' icon step: mid_icons over its result (or the card), gated on its own; found grows."""
+    psd = PSDImage.open(out_path if found else path)
+    psd.repo_path = rel
+    done, counts = [], Counter()
+    mid_icons(psd, rel, frozenset(parser.all_types), parser.star_names(), done, counts, art)
+    if not done:
+        return
+    trial = out_path + ".icons"
+    psd_edit.save_psd(psd, trial)
+    try:
+        folders_gate(path, trial, rel, parser, base, spots=True)
+    except Exception as error:                  # Refused or a read the fork can't make: the icons stay
+        found.tried.append(("icons", f"{error}"))
+        remove(trial)
+        return
+    move_file(trial, out_path)
+    found.extend(done)
+    found.counts.update(counts)
+    found.level = found.level or "icons"
 
 
 def isolate(psd: PSDImage, done: list, counts: Counter) -> dict:

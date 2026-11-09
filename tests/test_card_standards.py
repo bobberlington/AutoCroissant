@@ -959,6 +959,57 @@ def test_clean_on_a_real_card(clone, tmp_path):
     assert len(fixed.data) < len(data)
 
 
+def test_clean_hidden_leftovers(clone, tmp_path, monkeypatch):
+    """Owner 2026-11-09 (the guards' Hidden): Machine Gun's hidden 'Line if needed' and the Exposure and Vibrance clipped
+    onto its hidden 'Basic Item background' go, that art itself stays (only other PSDs show it); the parse and picture
+    as they were. Matterling's hidden Curves clipped onto its pass-through Stars and Types stay (CLIP_PASS_THROUGH);
+    a card with picture-only duplicates keeps all."""
+    rel = "Auxiliary/Items/Machine_Gun.psd"
+    path = _card(clone, rel)[0]
+    psd = PSDImage.open(path)
+    psd.repo_path = rel
+    plan = {layer.name: why for layer, why in cs.clean_plan(psd, cs.Hidden())}
+    assert plan == {"Line if needed": "a line shape", "Exposure 1 copy": "an adjustment or fill",
+                    "Vibrance 1": "an adjustment or fill"}, plan
+    assert not cs.clean_plan(psd, cs.Hidden(dups=True)) and not cs.clean_plan(psd)
+    fixed = cs.fix(open(path, "rb").read(), rel, [], str(tmp_path / "work"), clone_vocabulary(str(clone)).parser(),
+                   SimpleNamespace(hidden=cs.Hidden()), only="clean")
+    assert sorted(fixed.cleaned)[:3] == ["Exposure 1 copy", "Line if needed", "Vibrance 1"] and not fixed.pixel_left
+    rel = "Auxiliary/Minions/Matterling.psd"
+    psd = PSDImage.open(_card(clone, rel)[0])
+    psd.repo_path = rel
+    assert not [layer for layer, _ in cs.clean_plan(psd, cs.Hidden()) if layer.kind == "curves"]
+    monkeypatch.setattr(cs, "CLIP_PASS_THROUGH", False)
+    assert {"Curves [Stars]", "Curves [Types]"} <= {layer.name for layer, _ in cs.clean_plan(psd, cs.Hidden())}
+
+
+def _linked_icons(monkeypatch):
+    from psd_tools.api.smart_object import SmartObject
+    links = {"Starstorm.png": "Types/Stars/Starstorm.png", "Offensive_Minion.png": "Types/Offensive_Minion.png"}
+    monkeypatch.setattr(SmartObject, "link_target",     # the pin's are embedded: linked as on TC main
+                        lambda self, *args, **kwargs: links.get(self.filename))
+
+
+def test_folders_mid_images_icons(clone, tmp_path, monkeypatch):
+    """Owner 2026-11-09: Armored Squit's linked type icon in the middle of images, crossing no ink, into Creature
+    Types, parse and picture the same; Hero Cap's two 'Mother' stars there are art (in Stars the parser would count 3
+    stars, not 1): not told, not moved."""
+    _linked_icons(monkeypatch)
+    parser = clone_vocabulary(str(clone)).parser()
+    rel = "Auxiliary/Minions/Armored_Squit.psd"
+    path = _card(clone, rel)[0]
+    assert "'Offensive_Minion' in 'images'" in cs.folder_issues(PSDImage.open(path), rel, parser)
+    done = cs.standard_folders(path, str(tmp_path / "out.psd"), None, rel, parser)
+    types = next(g for g in PSDImage.open(tmp_path / "out.psd") if g.name == "Creature Types")
+    assert "'Offensive_Minion' out of 'images' into Creature Types" in done and not done.left
+    assert [layer.name for layer in types][0] == "Offensive_Minion"
+    rel = "Auxiliary/Items/Hero_Cap.psd"
+    path = _card(clone, rel)[0]
+    assert not [line for line in cs.folder_issues(PSDImage.open(path), rel, parser) if "Mother" in line]
+    done = cs.standard_folders(path, str(tmp_path / "hero.psd"), None, rel, parser)
+    assert not [line for line in done if "Mother" in line]
+
+
 def test_folders_as_the_templates(clone, tmp_path):
     """Abyss Watcher's folders as the templates' (owner 11-09): its adjustments' Group 1 into images (named by what it
     holds), Lines into Stats Bars, Types named Creature Types, every folder coloured, in the templates' order; drawn
@@ -974,6 +1025,11 @@ def test_folders_as_the_templates(clone, tmp_path):
     assert not cs.standard_folders(str(tmp_path / "out.psd"), str(tmp_path / "again.psd"), None, rel, parser)
     fixed = cs.fix(open(_card(clone, rel)[0], "rb").read(), rel, [], str(tmp_path / "work"), parser)     # the guards'
     assert fixed.folders == list(done) and fixed.data and not fixed.redrawn
+    psd[2].move_to(psd, index=1)                # Creature Types under Stars: the order alone (The Farlands' gap)
+    psd.save(str(tmp_path / "order.psd"))
+    assert cs.folder_issues(PSDImage.open(tmp_path / "order.psd"), rel) == ["folders out of the templates' order"]
+    done = cs.standard_folders(str(tmp_path / "order.psd"), str(tmp_path / "ordered.psd"), None, rel, parser)
+    assert list(done) == ["folders in the templates' order"] and not done.left
 
 
 def test_folders_file_linked_stars(clone, tmp_path, monkeypatch):

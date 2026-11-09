@@ -466,6 +466,28 @@ def _links_module(monkeypatch, unused=(), duplicates=None, links=None) -> list:
     return relinked
 
 
+def test_hidden_copies_shown_on_other_psds(monkeypatch):
+    """clean's leftovers (owner 11-09): db/links.json's PSDs in scope, at their blob, hold each linked file; a pushed
+    card's hidden picture another of them shows is a copy (read at after); a card with picture-only duplicates keeps
+    every leftover."""
+    links = [{"path": "MDW/Linked/X.png"}]
+    index = {"files": {}, "pixels": {}, "Items/A.psd": {"blob": "a1", "links": links},
+             "Items/B.psd": {"blob": "old", "links": links}, "MDW/Old Rules/C.psd": {"blob": "c1", "links": links},
+             "MDW/Templates/T.psd": {"blob": "t1", "links": [{"path": "MDW/Linked/Y.png"}]}}
+    tree = {"Items/A.psd": ("100644", "a1"), "Items/B.psd": ("100644", "b2"), "MDW/Old Rules/C.psd": ("100644", "c1"),
+            "MDW/Templates/T.psd": ("100644", "t1")}
+    art = cg.art_holders(index, tree)
+    assert art == {"mdw/linked/x.png": (("Items/A.psd", "a1"),), "mdw/linked/y.png": (("MDW/Templates/T.psd", "t1"),)}
+    context = SimpleNamespace(art=art)
+    assert cg.hidden_of(None, cg.Job("Items/P.psd", "psd-only", dups={"Items/Q.png": "q"}), None, context).dups
+    monkeypatch.setattr(cg.standards, "hidden_links", lambda psd, rel: {"mdw/linked/x.png", "mdw/linked/z.png"})
+    monkeypatch.setattr(cg.standards, "shown_links", lambda psd, rel: {"mdw/linked/x.png"})
+    monkeypatch.setattr(cg.png_export, "open_psd", lambda data, rel=None: None)
+    found = cg.hidden_of(SimpleNamespace(blob=lambda sha: b""), cg.Job("Items/P.psd", "psd-only"), None, context)
+    assert found.elsewhere == {"mdw/linked/x.png"} and not found.dups
+    assert cg.hidden_of(None, cg.Job("MDW/Templates/T.psd", "psd-only"), None, context) is None
+
+
 def test_housekeeping_reads_no_pushed_psd_its_check_read(cards, tmp_path, monkeypatch):
     """A pushed PSD's links come from its check (read in the pool): housekeeping does not read the PSD again."""
     root, base, alice, bot = cards
