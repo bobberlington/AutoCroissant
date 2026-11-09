@@ -959,11 +959,11 @@ def test_clean_on_a_real_card(clone, tmp_path):
     assert len(fixed.data) < len(data)
 
 
-def test_clean_hidden_leftovers(clone, tmp_path, monkeypatch):
+def test_clean_hidden_leftovers(clone, tmp_path):
     """Owner 2026-11-09 (the guards' Hidden): Machine Gun's hidden 'Line if needed' and the Exposure and Vibrance clipped
     onto its hidden 'Basic Item background' go, that art itself stays (only other PSDs show it); the parse and picture
-    as they were. Matterling's hidden Curves clipped onto its pass-through Stars and Types stay (CLIP_PASS_THROUGH);
-    a card with picture-only duplicates keeps all."""
+    as they were. Matterling's hidden Curves clipped onto its pass-through Stars and Types stay (Photoshop draws such a
+    group as styled); a card with picture-only duplicates keeps all."""
     rel = "Auxiliary/Items/Machine_Gun.psd"
     path = _card(clone, rel)[0]
     psd = PSDImage.open(path)
@@ -979,8 +979,6 @@ def test_clean_hidden_leftovers(clone, tmp_path, monkeypatch):
     psd = PSDImage.open(_card(clone, rel)[0])
     psd.repo_path = rel
     assert not [layer for layer, _ in cs.clean_plan(psd, cs.Hidden()) if layer.kind == "curves"]
-    monkeypatch.setattr(cs, "CLIP_PASS_THROUGH", False)
-    assert {"Curves [Stars]", "Curves [Types]"} <= {layer.name for layer, _ in cs.clean_plan(psd, cs.Hidden())}
 
 
 def _linked_icons(monkeypatch):

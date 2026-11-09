@@ -28,7 +28,7 @@ only, silent): hidden star and type icon layers, hidden pictures that are an exa
 that draws nothing deleted, when every picture and the parse stay the same; with the guards' Hidden the hidden
 leftovers too (_leftovers: adjustments and fills, 'Line if needed' and 'LINE' shapes, title copies and old words, empty
 layers and groups, pictures shown on the card or linked files another PSD shows; never Ability text, stat digits, a
-card with picture-only duplicates, nor a layer clipped onto a pass-through group: CLIP_PASS_THROUGH). After clean,
+card with picture-only duplicates, nor a layer clipped onto a pass-through group: _isolating). After clean,
 before the composer, the folders as the templates' (standard_folders, owner 2026-11-09, silent): names, colours,
 order (an order alone too), loose layers and extra folders in their folder (Overlay Text and Overlay where Text, Stat
 Text and Name or images would change their look), hidden Curves and nested star and type folders gone, at the first
@@ -2890,9 +2890,6 @@ LEFT_STAT = re_compile(r"\d{1,2}|hp|health|def|defen[cs]e|atk|attack|spd|speed|d
                        r"|.*\b(dark|lit)\b.*", IGNORECASE)     # stat bars and digits: kept (the parser reads them)
 LEFT_WORDS = 60             # characters: a hidden text layer longer is an Ability copy (kept)
 LEFT_TITLE = 0.12           # share of the card's height: hidden text above it is a title copy
-CLIP_PASS_THROUGH = True    # fork gap: Photoshop isolates a pass-through group while anything clips onto it, hidden
-                            # too, the fork does not (Matterling): no hidden layer clipped onto one goes. False once
-                            # the fork matches.
 
 
 @dataclass(frozen=True)
@@ -3075,8 +3072,9 @@ def _clips(layer) -> list:
 
 
 def _isolating(layer) -> bool:
-    """CLIP_PASS_THROUGH: a hidden clipping layer on a pass-through group (Photoshop draws that group otherwise without it)."""
-    if not (CLIP_PASS_THROUGH and layer.clipping):
+    """A clipping layer on a pass-through group: never deleted, hidden too (Photoshop draws a pass-through group anything
+    clips onto as a styled one: without the clip it draws differently; Matterling, The Puppet)."""
+    if not layer.clipping:
         return False
     base = _clip_base(layer)
     return base is not None and base.is_group() and base.blend_mode == BlendMode.PASS_THROUGH
@@ -3086,7 +3084,7 @@ def _leftovers(psd: PSDImage, shown: set, taken: set, hidden: Hidden) -> list:
     """
     The hidden leftovers' deletions [(layer, why)] (owner 2026-11-09): each top hidden node whose leaves all go (a
     group: an empty one too); a clipping layer alone (never on a pass-through group: _isolating); a base only with
-    everything clipped onto it hidden and going too, never one something shown clips onto.
+    everything clipped onto it hidden and going too, never one something shown or kept clips onto.
     """
     if hidden.dups:
         return []
@@ -3123,7 +3121,7 @@ def _leftovers(psd: PSDImage, shown: set, taken: set, hidden: Hidden) -> list:
                 going.add(id(layer))
             continue
         clips = _clips(layer)
-        if any(id(one) in shown for one in clips) or not all(why(one) for one in clips):
+        if any(id(one) in shown or _isolating(one) or not why(one) for one in clips):
             continue
         out += [(layer, why(layer))] + [(one, "clipped onto it") for one in clips if id(one) not in taken]
         going |= {id(layer)} | {id(one) for one in clips}
@@ -3175,8 +3173,9 @@ def clean_plan(psd: PSDImage, hidden: Optional[Hidden] = None) -> list:
                 break
     if hidden is not None:
         out += _leftovers(psd, shown, taken, hidden)
+    out = [(layer, why) for layer, why in out if not _isolating(layer)]
     going = {id(layer) for layer, _ in out}
-    out = [(layer, why) for layer, why in out if not _isolating(layer) or id(_clip_base(layer)) in going]
+    out = [(layer, why) for layer, why in out if all(id(one) in going for one in _clips(layer))]  # a base with its clips
     planned = {id(layer) for layer, _ in out if layer.is_group()}
     return [(layer, why) for layer, why in out if not any(id(group) in planned for group in _ancestors_of(layer))]
 
