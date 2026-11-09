@@ -66,7 +66,8 @@ def test_record_shape_and_size(records, clone):
         assert record["fonts"] and all(e["supplied"] is True for e in record["fonts"].values())
         fonts = {font: [layer.rsplit("/", 1)[-1] for layer in e["layers"]] for font, e in record["fonts"].items()}
         assert fonts == psd_fonts(str(clone / rel))                                # the same rule as the font check
-        assert all(set(t) - {"colors", "runs"} == {"layer", "id", "box", "text", "font", "size", "color", "visible"} for t in record["text"])
+        assert all(set(t) - {"colors", "runs", "frame", "hx", "track"} == {"layer", "id", "box", "text", "font", "size", "color", "visible", "px"}
+                   for t in record["text"])
         assert all(t["color"] in t.get("colors", [t["color"]]) for t in record["text"] if t["color"])     # every run's colour
         assert all(len(t["text"]) <= pd.TEXT_CHARS and (t["color"] is None or len(t["color"]) == 7) for t in record["text"])
         assert all(isinstance(v, list) and v for v in record["effects"].values())
@@ -78,6 +79,18 @@ def test_record_shape_and_size(records, clone):
     caps = {rel: record.get("stat_caps") for rel, record in records.items()}     # VERSION 4: own displays (old rows then)
     assert caps[LAZARUS] == dict.fromkeys(("hp", "def", "atk", "spd"), [10, 10]) and caps[VIRUS] is None
     assert caps[CANNON] == {"hp": [10], "def": [10], "atk": [20], "spd": [10]}                  # Top and Bottom rows: 20
+
+
+def test_how_text_is_set(clone):
+    """The mock-up's wrap (VERSION 5): Wendy's Ability is set 2.34 times wider than tall, Isma's tracked -20."""
+    from psd_tools import PSDImage
+    got = {}
+    for rel, lid in (("Creatures/DST/3 Stars/Wendy.psd", 417), ("Creatures/Hollow Knight/4 Stars/Isma.psd", 417)):
+        if not (clone / rel).exists():
+            pytest.skip(f"{rel} not in the clone")
+        got[rel.rsplit("/", 1)[1]] = pd._set(next(x for x in PSDImage.open(str(clone / rel)).descendants() if x.layer_id == lid))
+    assert got["Wendy.psd"] == {"frame": [2, 1704, 1202, 2314], "px": 88.04, "hx": 2.336}
+    assert got["Isma.psd"] == {"frame": [-1, 1763, 1201, 2486], "px": 73.92, "track": -20.0}     # a 0.1 degree turn: still set
 
 
 def test_effects_switch_off_marks_every_effect_off(clone):
@@ -109,6 +122,8 @@ def test_text_layers_and_template(records):
     assert words["Blazing"] == "#ff2a1a" and words["Afraid"] == "#0060ff" and runs["text"].endswith("in that slot.")
     assert all(a < b <= c for (a, b, _), (c, _, _) in zip(runs["runs"], runs["runs"][1:]))
     assert "runs" not in ability                                                       # one colour
+    name = next(t for t in doomer["text"] if t["layer"] == doomer["template"]["name_layer"])
+    assert ability["frame"] == [0, 1721, 1185, 2376] and ability["px"] == 150.0 and "frame" not in name   # 50 pt by 3; point text
     virus = records[VIRUS]
     hidden = next(t for t in virus["text"] if t["layer"].startswith("Alternate/"))
     assert hidden["visible"] is False and "\n" in hidden["text"] and hidden["color"] == "#01c102"

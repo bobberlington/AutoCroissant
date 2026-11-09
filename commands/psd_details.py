@@ -2,8 +2,8 @@
 The PSD facts behind the website's card "Details" dropdown: fonts, text layers, effects, smart objects, canvas, type-icon
 style, stat-row encoding, status-word layers, template deviations, the header's star and type icon boxes (where the bake
 would put them: the website mock-up's, psd_edit's geometry), a compact layer tree, the editor's parts (psd_parts,
-VERSION 2), each type layer's colour runs (VERSION 3) and the most a card's own stat display shows (stat_caps, VERSION
-4: the website refuses more). One record per card PSD,
+VERSION 2), each type layer's colour runs (VERSION 3), the most a card's own stat display shows (stat_caps, VERSION
+4: the website refuses more) and how each type layer is set (frame, px, hx, track: VERSION 5). One record per card PSD,
 keyed by its git blob sha, in the card data's db/psd_details.json (the Card sync Action's build).
 
 gather(psd, rel, name, index, vocab) -> the record: pure, never raises for a card (a failed section is a short
@@ -13,9 +13,11 @@ font_check.local_fonts: PSD_TOOLS_FONT_DIRS, else the checkout's MDW/Fonts), the
 (records gathered without one, or before MDW/Fonts changed). No Discord or config imports; stock psd-tools. Pillow's ImageCms
 names the ICC profile when it is built in.
 """
+from collections import Counter
 from datetime import datetime, timezone
 from io import BytesIO
 from json import dumps, load as json_load
+from math import hypot
 from os import PathLike, environ
 from os.path import isdir
 from re import IGNORECASE, fullmatch, search, sub
@@ -39,7 +41,7 @@ from commands.psd_regions import STATS, badge_layers, comp_bars, comp_creature, 
 # ========================
 # Configuration
 # ========================
-VERSION = 4                                 # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"
+VERSION = 5                                 # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"; 5: "frame", "px"
 TEXT_CHARS = 2000                           # text kept per type layer (whole: the website lines its colours up with the card's)
 TREE_CHILDREN = 80                          # children kept per group
 TREE_DEPTH = 8                              # groups nested deeper show one "more" entry
@@ -190,9 +192,39 @@ def _fonts(texts: list, index: Optional[FontIndex]) -> dict:
     return out
 
 
+def _set(layer) -> dict:
+    """How a type layer is set, in canvas px (the mock-up's wrap): box text's "frame"; "px", the height most of its letters
+    outside the icon font are set at; their width over height ("hx") and tracking ("track") when not 1 and 0. {} when
+    rotated."""
+    from psd_tools.composite.text.layout import frame
+    from psd_tools.composite.text.model import TextModel
+    model = TextModel.from_layer(layer)
+    xx, xy, yx, yy, tx, ty = model.transform
+    sx, sy = hypot(xx, xy), hypot(yx, yy)
+    if not sx or not sy or abs(xy) > 0.01 * sx or abs(yx) > 0.01 * sy:
+        return {}
+    out, letters = {}, Counter()
+    box = frame(model)
+    if box is not None:
+        left, top, width, height = box
+        corners = [(x, y) for x in (left, left + width) for y in (top, top + height)]
+        xs, ys = [xx * x + yx * y + tx for x, y in corners], [xy * x + yy * y + ty for x, y in corners]
+        out["frame"] = _ints((min(xs), min(ys), max(xs), max(ys)))
+    for run in model.runs:
+        s = run.style
+        if not str(s.font).lower().startswith(ICON_FONT_PREFIX):
+            letters[(s.size, s.vertical_scale, s.horizontal_scale, s.tracking)] += sum(not c.isspace() for c in model.text[run.start:run.end])
+    if letters and letters.most_common(1)[0][1]:
+        size, v, h, track = letters.most_common(1)[0][0]
+        hx = round(sx * h / (sy * v), 3) if v else 1
+        out["px"] = round(size * sy * v, 2)
+        out.update({**({"hx": hx} if hx != 1 else {}), **({"track": round(track, 1)} if round(track, 1) else {})})
+    return out
+
+
 def _text(texts: list) -> list:
     """Every type layer, visible or not, in tree order; a style psd-tools can't read leaves font, size and colour null.
-    A layer of several colours has "runs" (_runs)."""
+    A layer of several colours has "runs" (_runs); how it is set: _set's keys."""
     out = []
     for layer in texts:
         try:
@@ -212,6 +244,10 @@ def _text(texts: list) -> list:
         out.append({"layer": layer_path(layer), "id": layer.layer_id, "box": _ints(layer.bbox), "text": text and text[:TEXT_CHARS],
                     "font": font, "size": size, "color": colour, "visible": layer.is_visible(),
                     **({"colors": colours} if colours else {}), **({"runs": runs} if runs else {})})
+        try:
+            out[-1].update(_set(layer))
+        except Exception:                       # engine data psd-tools can't read: the mock-up's own guess
+            pass
     return out
 
 
