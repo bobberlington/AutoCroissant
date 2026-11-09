@@ -1736,6 +1736,89 @@ def test_workflow_fetches_pushed_blobs_in_the_background(clone, tmp_path, monkey
     assert gh.pending_blob(str(repo), listed[0]) is None
 
 
+def test_workflow_fetches_the_checks_other_reads(clone, tmp_path):
+    """In `check` Pushed blobs start lists what Check would read by REST: first the edits, the manifest, the chart, the
+    card data and its links, then with each pushed card PSD (not deleted, not MDW/) the head's PNG and numbered PNGs.
+    A fetch takes whole lines up to 8 blobs (a file's two sides together); `checks` lists the diff alone, 8 a fetch."""
+    pytest.importorskip("yaml")
+    if not shutil.which("timeout"):
+        pytest.skip("no timeout (coreutils)")
+    _, steps, _ = _guard_steps(clone)
+    work, origin, temp = tmp_path / "work", tmp_path / "origin.git", tmp_path / "temp"
+    work.mkdir()
+    _git(work, "init", "-q", "-b", "main")
+
+    def put(*paths):
+        for rel in paths:
+            (work / rel).parent.mkdir(parents=True, exist_ok=True)
+            (work / rel).write_bytes(os.urandom(64))
+    put("Cards/A.psd", "Cards/A.png", "Cards/a2.png", "Cards/A9x.png", "Cards/B.psd", "Cards/B.png", "Cards/D.psd",
+        "Cards/D.png", "Cards/E.png", "MDW/T.psd", "MDW/T.png", cg.EDITS_PATH, cg.ICON_MANIFEST_PATH, cg.psd_edit.STATUS_CHART)
+    before = _commit(work, "base")
+    _git(work, "checkout", "-q", "-b", "data")
+    put(cg.DATA_STATS, cg.LINKS)
+    _commit(work, "data")
+    _git(work, "checkout", "-q", "main")
+    put("Cards/A.psd", "Cards/B.psd", "Cards/B.png", "Cards/E.psd", "MDW/T.psd")
+    (work / "Cards/D.psd").unlink()
+    after = _commit(work, "push")
+    subprocess.run(["git", "clone", "-q", "--bare", str(work), str(origin)], check=True)
+    _git(origin, "config", "uploadpack.allowFilter", "true")
+    _git(origin, "config", "uploadpack.allowAnySHA1InWant", "true")
+    repo = tmp_path / "clone"
+    subprocess.run(["git", "clone", "-q", "--filter=blob:none", "--no-checkout", f"file://{origin}", str(repo)], check=True)
+
+    def at(rev, rel):
+        return _git(work, "rev-parse", f"{rev}:{rel}")
+    a, b = (at(before, "Cards/A.psd"), at(after, "Cards/A.psd")), (at(before, "Cards/B.psd"), at(after, "Cards/B.psd"))
+    png, t = (at(before, "Cards/B.png"), at(after, "Cards/B.png")), (at(before, "MDW/T.psd"), at(after, "MDW/T.psd"))
+    context = [at(after, cg.EDITS_PATH), at(after, cg.ICON_MANIFEST_PATH), at(after, cg.psd_edit.STATUS_CHART),
+               at("data", cg.DATA_STATS), at("data", cg.LINKS)]
+    cards = [[*a, at(after, "Cards/A.png"), at(after, "Cards/a2.png")], [*png], [*b], [at(before, "Cards/D.psd")],
+             [at(after, "Cards/E.psd"), at(after, "Cards/E.png")], [*t]]
+    for job, lines in (("check", [context, cards[0] + cards[1] + cards[2], cards[3] + cards[4] + cards[5]]),
+                       ("checks", [[*a, *png, *b, *cards[3], cards[4][0]], [*t]])):
+        shutil.rmtree(temp, ignore_errors=True)
+        temp.mkdir()
+        env = {"PATH": os.environ["PATH"], "HOME": os.environ.get("HOME", ""), "RUNNER_TEMP": str(temp), "BEFORE": before,
+               "GITHUB_SHA": after, "GITHUB_JOB": job, "GITHUB_OUTPUT": str(temp / "output")}
+        done, _ = _shell(steps["Pushed blobs start"], env, cwd=repo)
+        assert done.returncode == 0, (done.stdout, done.stderr)
+        assert [line.split() for line in (temp / "blobs.fetch").read_text().splitlines()] == lines, job
+        assert (temp / "blobs").read_text().split() == [sha for line in lines for sha in line]
+        subprocess.run(["timeout", "30", "sh", "-c", f'until [ -s "{temp}/blobs.done" ]; do sleep 0.1; done'], check=True)
+        found = _git(repo, "cat-file", "--batch-check", "--batch-all-objects")
+        assert (temp / "blobs.done").read_text().strip() == "0" and all(sha in found for line in lines for sha in line)
+
+
+def test_workflow_reads_the_records_in_the_background(clone, tmp_path):
+    """Records start returns at once; each record lands whole or not at all, and Check waits for both reads (its log
+    shows a failed one's warning) before the guards start."""
+    pytest.importorskip("yaml")
+    if not shutil.which("timeout") or not shutil.which("jq"):
+        pytest.skip("no timeout (coreutils) or jq")
+    _, steps, _ = _guard_steps(clone)
+    bin_dir, temp = tmp_path / "bin", tmp_path / "temp"
+    bin_dir.mkdir()
+    temp.mkdir()
+    (bin_dir / "gh").write_text('#!/bin/sh\nsleep 1\ncase "$*" in *render_record*) echo \'{"a": 1}\';; *) exit 1;; esac\n')
+    (bin_dir / "python").write_text('#!/bin/sh\nls "$CARD_RECORDS_DIR" > "$FAKE_SEEN"\n')
+    for tool in ("gh", "python"):
+        (bin_dir / tool).chmod(0o755)
+    env = {"PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": os.environ.get("HOME", ""), "RUNNER_TEMP": str(temp),
+           "GITHUB_REPOSITORY": "o/cards", "GITHUB_ENV": str(temp / "env"), "GITHUB_OUTPUT": str(temp / "output")}
+    started = datetime.now()
+    done, _ = _shell(steps["Records start"], env)
+    assert done.returncode == 0 and (datetime.now() - started).total_seconds() < 1, done.stderr
+    folder = temp / "records"
+    assert (temp / "env").read_text() == f"CARD_RECORDS_DIR={folder}\n" and not list(folder.glob("*.json"))
+    env.update(CARD_RECORDS_DIR=str(folder), FAKE_SEEN=str(tmp_path / "seen"), OUT=str(temp / "guards"), MODE="dry",
+               GITHUB_SHA="a" * 40, GITHUB_WORKSPACE="/w", GITHUB_STEP_SUMMARY=str(temp / "summary"))
+    done, _ = _shell(steps["Check"], env)
+    assert done.returncode == 0 and (tmp_path / "seen").read_text().split() == ["render_record.json"], done.stderr
+    assert "::warning::db/spot_record.json not read from the data branch" in done.stdout
+
+
 def test_workflow_runs_the_two_checks_side_by_side(clone, tmp_path):
     """checks' Card and font checks: the font check in the background, each to its own report.md, both in the summary
     in order once both end; no fonts, no font check; one that breaks: the other still reports, a warning, exit 1."""
