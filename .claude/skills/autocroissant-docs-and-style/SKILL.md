@@ -1,6 +1,6 @@
 ---
 name: autocroissant-docs-and-style
-description: Load this skill whenever the task touches AutoCroissant's documentation or code conventions — trigger phrases include "help text", "/help", "update the docs", "describe strings", "app_commands.describe", "docstring", "style", "conventions", "house style", "new module", "module layout", "add a file to commands/", "section banners", "__all__", "import style", "writing a skill", "new skill", "update a skill", "provenance", or "the docs are wrong / out of date". The docs of record here are (1) the command dictionaries in commands/help.py (user-facing /help; five categories), (2) the @app_commands.describe strings in main.py (Discord UI hints), and (3) this .claude/skills/ library itself; this skill owns their formats, the keep-them-in-sync checklist, the doc-vs-code drift audit (help.py documents all 46 registered commands as of 2026-10-25; the /pull hard-reset claim was fixed), the house code style (module skeleton with `# ====` banners, from-imports, x[len(x)-1] in cythonized files, queue_* discipline, Args/Returns docstrings), ready-to-copy templates for a help.py entry, a new module, and a SKILL.md, and the rules for maintaining skill frontmatter, provenance sections, and the one-home-per-fact ownership map (17 skills on main, including ttscardmaker-companion for the TTSCardMaker side and impossibility-simulator-rules for the game rules; the AI skill is on branch archive/ai-generation).
+description: AutoCroissant's docs of record and house code style. Use for /help text in commands/help.py, app_commands.describe strings, keeping both in sync with the commands, docstrings, module layout and section banners, import style, a new module in commands/, and writing or updating a skill (SKILL.md template, frontmatter, provenance, which skill owns which fact).
 ---
 
 # AutoCroissant docs and style
@@ -357,6 +357,7 @@ don't take effect"), command names (/update_stats), file names
 (stats.pkl), and error strings. Then one dense sentence of what the
 skill contains. A vague description ("helpful information about X") means the
 skill never loads and might as well not exist.
+Length: 250-450 characters (every agent's listing pays for it): a one-sentence purpose, then "Use for:" and the triggers; no history, dates or counts.
 
 ### 7.2 Provenance and maintenance sections
 
