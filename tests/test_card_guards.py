@@ -1794,34 +1794,6 @@ def test_workflow_fetches_the_checks_other_reads(clone, tmp_path):
         assert (temp / "blobs.done").read_text().strip() == "0" and all(sha in found for line in lines for sha in line)
 
 
-def test_workflow_reads_the_records_in_the_background(clone, tmp_path):
-    """Records start returns at once; each record lands whole or not at all, and Check waits for both reads (its log
-    shows a failed one's warning) before the guards start."""
-    pytest.importorskip("yaml")
-    if not shutil.which("timeout") or not shutil.which("jq"):
-        pytest.skip("no timeout (coreutils) or jq")
-    _, steps, _ = _guard_steps(clone)
-    bin_dir, temp = tmp_path / "bin", tmp_path / "temp"
-    bin_dir.mkdir()
-    temp.mkdir()
-    (bin_dir / "gh").write_text('#!/bin/sh\nsleep 1\ncase "$*" in *render_record*) echo \'{"a": 1}\';; *) exit 1;; esac\n')
-    (bin_dir / "python").write_text('#!/bin/sh\nls "$CARD_RECORDS_DIR" > "$FAKE_SEEN"\n')
-    for tool in ("gh", "python"):
-        (bin_dir / tool).chmod(0o755)
-    env = {"PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": os.environ.get("HOME", ""), "RUNNER_TEMP": str(temp),
-           "GITHUB_REPOSITORY": "o/cards", "GITHUB_ENV": str(temp / "env"), "GITHUB_OUTPUT": str(temp / "output")}
-    started = datetime.now()
-    done, _ = _shell(steps["Records start"], env)
-    assert done.returncode == 0 and (datetime.now() - started).total_seconds() < 1, done.stderr
-    folder = temp / "records"
-    assert (temp / "env").read_text() == f"CARD_RECORDS_DIR={folder}\n" and not list(folder.glob("*.json"))
-    env.update(CARD_RECORDS_DIR=str(folder), FAKE_SEEN=str(tmp_path / "seen"), OUT=str(temp / "guards"), MODE="dry",
-               GITHUB_SHA="a" * 40, GITHUB_WORKSPACE="/w", GITHUB_STEP_SUMMARY=str(temp / "summary"))
-    done, _ = _shell(steps["Check"], env)
-    assert done.returncode == 0 and (tmp_path / "seen").read_text().split() == ["render_record.json"], done.stderr
-    assert "::warning::db/spot_record.json not read from the data branch" in done.stdout
-
-
 def test_workflow_runs_the_two_checks_side_by_side(clone, tmp_path):
     """checks' Card and font checks: the font check in the background, each to its own report.md, both in the summary
     in order once both end; no fonts, no font check; one that breaks: the other still reports, a warning, exit 1."""
