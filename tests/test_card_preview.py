@@ -9,7 +9,7 @@ command lines, a runner error and a bad blob, the early reads, fonts and records
 per publish, a re-run, the rewrites by age and count, a moved head and a moved lease, a warm read, the publisher
 on the standard library alone. Then card-preview.yml: its shape, no trigger elsewhere on the branch, the Action-shaped
 copies of both SPARSE_FILES, and its two jobs' Validate, Reads, Start, Go, Preview, hand-over and Publish steps run as the
-runner would (bash) against those repos, a failed install too; the preview's bot clone. The workflows come from $AC_SITE_SRC
+runner would (bash) against those repos, a failed install too; the preview's bot clone and card fetch. The workflows come from $AC_SITE_SRC
 (a TTSCardMaker checkout) or the clone; a real bake needs the fork's renderer:
     AUTOCROISSANT_LOCAL_DIR=~/Desktop/TTSCardMaker AC_SITE_SRC=<TTSCardMaker checkout> <fork python> -m pytest -q tests/test_card_preview.py
 """
@@ -535,9 +535,15 @@ def test_workflow_shape():
     for job, files in ((preview, cp.SPARSE_FILES), (publish, br.SPARSE_FILES)):
         bot = next(s for s in job["steps"] if s.get("with", {}).get("repository") in ("bobberlington/AutoCroissant", "${{ env.BOT_REPO }}"))
         assert bot_files(job, bot) == ["/" + f for f in files]
-        cards = next(s for s in job["steps"] if s.get("uses", "").startswith("actions/checkout") and "repository" not in s.get("with", {}))
-        assert cards["with"]["filter"] == "blob:none" and "fetch-depth" not in cards["with"]
-        assert cards["with"]["sparse-checkout"].split() == ["/.github/"]
+        cards = [s for s in job["steps"] if s.get("uses", "").startswith("actions/checkout") and "repository" not in s.get("with", {})]
+        assert len(cards) == (job is publish)                                     # the preview fetches its own (Clone)
+        for card in cards:
+            assert card["with"]["filter"] == "blob:none" and "fetch-depth" not in card["with"]
+            assert card["with"]["sparse-checkout"].split() == ["/.github/"]
+    fetch = 'git fetch -q --depth 1 --filter=blob:none --no-tags origin "$GITHUB_SHA"'
+    for name in ("Clone", "Cards"):
+        run = next(s for s in preview["steps"] if s.get("name") == name)["run"]
+        assert fetch in run and "sparse-checkout set --no-cone /.github/" in run and "--detach FETCH_HEAD" in run
     fork_install(WORKFLOWS / "card-preview.yml")                                  # the fork from its cached wheels
     assert not [s for s in publish["steps"] if "pip " in s.get("run", "")]
     assert [s["with"] for s in publish["steps"] if "setup-python" in s.get("uses", "")] == [{"python-version": "3.14"}]
@@ -549,10 +555,13 @@ def test_workflow_shape():
     assert preview["steps"][fallback]["if"] == "steps.bot.outputs.ok != 'true'" and step(preview, "Bot")["id"] == "bot"
     assert names.index("Bot") + 1 == fallback < names.index("Reads") and step(preview, "Clone")["run"].rstrip().endswith("&")
     assert names.index("Validate") < names.index("Reads") < names.index("Start") < names.index("Go") < names.index("Preview") < names.index("Hand over") == len(names) - 1
+    ids = [s.get("id") for s in preview["steps"]]
+    assert ids.index("venv-ok") + 1 == names.index("Cards") == ids.index("setup") - 1    # the card repo before cards-python
     fonts = [i for i, s in enumerate(preview["steps"]) if "MDW/Fonts" in str(s.get("run", "")) + str(s.get("with", ""))]
     assert names.index("Start") < min(fonts) and max(fonts) < names.index("Go")      # the preview starts before the fonts
     reads = step(preview, "Reads")["run"]                                         # in the background; Go waits for it
-    assert reads.lstrip().startswith("{ python3 -S -m commands.card_preview_reads ") and reads.rstrip().endswith("&")
+    assert reads.lstrip().startswith("{ until ") and "cards.code" in reads.splitlines()[0] and reads.rstrip().endswith("&")
+    assert reads.splitlines()[1].lstrip().startswith("python3 -S -m commands.card_preview_reads ")    # once the card repo is in
     go = step(preview, "Go")
     assert "reads.done" in reads and "reads.done" in go["run"] and go["run"].rstrip().endswith('touch "$RUNNER_TEMP/go"')
     start, shown = step(preview, "Start"), step(preview, "Preview")
@@ -576,32 +585,44 @@ def test_workflow_shape():
 
 
 def test_the_bot_clone_runs_here(tmp_path):
-    """The preview's Clone and Bot steps against a stand-in GitHub (file://): BOT_FILES alone in bot/, no header saved;
-    a failed clone leaves no bot/ (the checkout after it brings one)."""
+    """The preview's Clone, Bot and Cards steps against a stand-in GitHub (file://): BOT_FILES alone in bot/, the card
+    repo at GITHUB_SHA in the workspace (depth 1, blobless, .github/ alone), no header saved; a failed bot clone leaves no
+    bot/ (the checkout after it brings one); a failed card fetch (a stale .git here) is fetched again, bot/ kept."""
     _, doc = _workflow()
     job = doc["jobs"]["preview"]
     steps = {s.get("name"): s for s in job["steps"]}
-    seed = tmp_path / "seed"
-    for rel in cp.SPARSE_FILES + ("config.py",):
-        (seed / rel).parent.mkdir(parents=True, exist_ok=True)
-        (seed / rel).write_text(rel)
-    _git(seed, "init", "-q", "-b", "main")
-    _commit(seed)
-    server = tmp_path / "github"
-    _git(tmp_path, "clone", "-q", "--bare", str(seed), str(server / job["env"]["BOT_REPO"]))
-    for name, repo in (("ok", job["env"]["BOT_REPO"]), ("failed", "nobody/none")):
+    server, heads = tmp_path / "github", {}
+    for repo, files in ((job["env"]["BOT_REPO"], cp.SPARSE_FILES + ("config.py",)), (cb.CARD_REPO, (".github/x.yml", "MDW/Fonts/f.ttf"))):
+        seed = tmp_path / "seed" / repo
+        for rel in files:
+            (seed / rel).parent.mkdir(parents=True, exist_ok=True)
+            (seed / rel).write_text(rel)
+        _git(seed, "init", "-q", "-b", "main")
+        heads[repo] = _commit(seed)
+        _git(tmp_path, "clone", "-q", "--bare", str(seed), str(server / repo))
+        _git(server / repo, "config", "uploadpack.allowFilter", "true")
+    for name, repo in (("ok", job["env"]["BOT_REPO"]), ("stale", job["env"]["BOT_REPO"]), ("failed", "nobody/none")):
         workspace, runner = tmp_path / name / "ws", tmp_path / name / "temp"
         workspace.mkdir(parents=True)
         runner.mkdir()
+        if name == "stale":
+            _git(workspace, "init", "-q")
+            _git(workspace, "remote", "add", "origin", f"file://{tmp_path}/nowhere")
         env = {"PATH": environ["PATH"], "HOME": environ.get("HOME", ""), "GIT_CONFIG_GLOBAL": "/dev/null", "RUNNER_TEMP": str(runner),
                "GITHUB_OUTPUT": str(runner / "output"), "GITHUB_SERVER_URL": f"file://{server}", "BOT_REPO": repo,
-               "BOT_FILES": job["env"]["BOT_FILES"], "TOKEN": "t0ken"}
+               "BOT_FILES": job["env"]["BOT_FILES"], "TOKEN": "t0ken", "GITHUB_WORKSPACE": str(workspace),
+               "GITHUB_REPOSITORY": cb.CARD_REPO, "GITHUB_SHA": heads[cb.CARD_REPO]}
         done = [run_process(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", steps[step]["run"]], env=env,
-                            cwd=str(workspace), capture_output=True, text=True, timeout=60) for step in ("Clone", "Bot")]
-        assert [d.returncode for d in done] == [0, 0] and "::add-mask::" in done[0].stdout
+                            cwd=str(workspace), capture_output=True, text=True, timeout=60) for step in ("Clone", "Bot", "Cards")]
+        assert [d.returncode for d in done] == [0, 0, 0] and "::add-mask::" in done[0].stdout
         ok = (runner / "output").is_file() and "ok=true" in (runner / "output").read_text()
-        assert ok == (name == "ok") == (workspace / "bot").is_dir() and ("::warning::" in done[1].stdout) != ok
-    bot = tmp_path / "ok" / "ws" / "bot"
+        assert ok == (name != "failed") == (workspace / "bot").is_dir() and ("::warning::" in done[1].stdout) != ok
+        assert ("::warning::" in done[2].stdout) == (name == "stale") and (runner / "cards.code").read_text().strip() == "0"
+        assert _git(workspace, "rev-parse", "HEAD").strip() == heads[cb.CARD_REPO]
+        assert sorted(str(p.relative_to(workspace)) for p in workspace.rglob("*") if p.is_file() and p.parts[len(workspace.parts)] not in (".git", "bot")) == [".github/x.yml"]
+        assert _git(workspace, "config", "remote.origin.promisor").strip() == "true" and (workspace / ".git" / "shallow").is_file()
+        assert "extraheader" not in (workspace / ".git" / "config").read_text()
+    bot = tmp_path / "stale" / "ws" / "bot"
     assert sorted(str(p.relative_to(bot)) for p in bot.rglob("*") if p.is_file() and ".git" not in p.parts) == sorted(cp.SPARSE_FILES)
     assert "extraheader" not in (bot / ".git" / "config").read_text()
 
@@ -619,7 +640,7 @@ def test_the_venv_restores_as_cards_python_does(tmp_path):
     action = yaml.safe_load((WORKFLOWS.parent / "actions" / "cards-python" / "action.yml").read_text(encoding="utf-8"))
     own = {s["id"]: s for s in action["runs"]["steps"] if "id" in s}
     venv, hit, ok, setup = (steps[ids.index(i)] for i in ("venv", "venv-hit", "venv-ok", "setup"))
-    assert ids.index("venv") + 1 == ids.index("venv-hit") == ids.index("venv-ok") - 1 == ids.index("setup") - 2
+    assert ids.index("venv") + 1 == ids.index("venv-hit") == ids.index("venv-ok") - 1 == ids.index("setup") - 3    # Cards between
     assert setup["if"] == "steps.venv-ok.outputs.ok != 'true'" and "venv" not in setup["with"]
     assert own["reqs"]["env"]["VENV"] == "${{ inputs.venv || format('{0}/venv', runner.temp) }}"
     assert hit["uses"] == own["env"]["uses"] and hit["with"] == {"path": "${{ runner.temp }}/venv", "key": "${{ steps.venv.outputs.key }}"}
@@ -721,6 +742,7 @@ def _run_jobs(text: str, inputs: dict, workspaces: dict, bots: dict, tmp_path: P
 
     runner = tmp_path / name / "preview"
     runner.mkdir(parents=True)
+    (runner / "cards.code").write_text("0\n")         # Clone's card fetch: the workspace is the card repo
     for step_name in ("Validate", "Reads", "Start", "Go", "Preview"):
         skipped = any(codes.values())
         codes[step_name] = None if skipped else run_step("preview", steps["preview"][step_name], runner)
