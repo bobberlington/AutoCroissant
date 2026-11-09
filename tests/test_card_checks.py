@@ -194,6 +194,52 @@ def test_workflow_checks_cards_as_their_blobs_land(tmp_path):
     assert done.returncode == 0 and "the fetch stopped" in done.stdout, (done.stdout, done.stderr)
 
 
+def test_workflow_site_build_on_shown_flags(tmp_path):
+    """card-checks.yml's Commit: any change is pushed to data; site=true only when what build_site.py shows changed (hand
+    and bars by blob, cleared), not for new records without a flag or fields it never reads."""
+    yaml = pytest.importorskip("yaml")
+    workflow = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github/workflows/card-checks.yml"
+    if not workflow.is_file() or not shutil.which("jq"):
+        pytest.skip("no card-checks.yml or no jq")
+    steps = yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"]["check"]["steps"]
+    script = next(s for s in steps if s.get("id") == "commit")["run"]
+    site = next(s for s in steps if s.get("name") == "Site build")
+    assert site["if"] == "${{ !cancelled() && steps.commit.outputs.site == 'true' }}"
+    env = {"PATH": environ["PATH"], "HOME": str(tmp_path), "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"}
+    git = lambda *args: subprocess.run(["git", *args], capture_output=True, text=True, check=True, env=env).stdout.strip()
+    data, origin = tmp_path / "carddata", tmp_path / "origin.git"
+    git("init", "-q", "--bare", str(origin))
+    git("init", "-q", "-b", "data", str(data))
+    git("-C", str(data), "remote", "add", "origin", str(origin))
+    db = data / "db/card_checks.json"
+    db.parent.mkdir()
+    checks = {"version": 1, "cards": {"a" * 40: {"card": "A", "hand": None, "bars": "Special bars.", "reads": {}, "notes": []}},
+              "cleared": {}}
+    db.write_text(json.dumps(checks), encoding="utf-8")
+    git("-C", str(data), "add", "-A")
+    git("-C", str(data), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "x")
+    git("-C", str(data), "push", "-q", "origin", "HEAD:refs/heads/data")
+
+    def commit(change):
+        change(checks)
+        db.write_text(json.dumps(checks), encoding="utf-8")
+        out = tmp_path / "out"
+        out.write_text("")
+        run = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", script], cwd=data,
+                             env={**env, "GITHUB_OUTPUT": str(out)}, capture_output=True, text=True, timeout=30)
+        assert run.returncode == 0, (run.stdout, run.stderr)
+        assert git("-C", str(origin), "rev-parse", "data") == git("-C", str(data), "rev-parse", "HEAD")
+        return out.read_text().split()
+    new = {"card": "B", "hand": None, "bars": None, "reads": {"hp": []}, "png": "1234abcd", "notes": [], "unredrawable": {}}
+    assert commit(lambda c: c["cards"].update({"b" * 40: new})) == []                   # a new record, no flag
+    assert commit(lambda c: c["cards"]["a" * 40].update(reads={"atk": []}, notes=["x"], style="new")) == []
+    assert commit(lambda c: c["cards"]["b" * 40].update(hand="Bars read 5, data 6.")) == ["site=true"]
+    assert commit(lambda c: c["cards"]["a" * 40].update(bars="Bars.")) == ["site=true"]
+    assert commit(lambda c: c["cleared"].update({"B.psd": "1234abcd"})) == ["site=true"]
+    head = git("-C", str(data), "rev-parse", "HEAD")
+    assert commit(lambda c: None) == [] and git("-C", str(data), "rev-parse", "HEAD") == head    # nothing to commit
+
+
 def test_blobs_of_templates():
     """A template only where first_type_spot can open one: a record with no types, its kind's; no record, every kind's."""
     shared = ["MDW/Croissant's Special Folder/Satus Effect Colors.psd", "MDW/Fonts/stoogedings-src/stoogedings.json"]
