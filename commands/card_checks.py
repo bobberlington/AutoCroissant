@@ -470,11 +470,14 @@ def edit_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str, 
     one = Card(card_name(rel), CardAuthors.key(card_name(rel)), {}, rel, ctx.snapshot.sha(rel))
     work = mkdtemp(prefix="card-checks_", dir=environ.get(card_bake.WORK_ENV) or None)
     pictures = len(variants_of(psd)) > 1
-    notes = []
+    notes, probe = [], {}
+
+    def say(what: str, reason: str) -> str:     # the type tried is no type of the card's: never named
+        return _note(what, reason.replace(f"the {probe[what]!r} icon", "a new type icon") if what in probe else reason)
 
     def refused(what: str, refusal) -> None:
         if not search(WHOLE_FIELD, refusal.why, IGNORECASE):
-            notes.append(_note(what, f"{refusal.code}: {refusal.why}"))
+            notes.append(say(what, f"{refusal.code}: {refusal.why}"))
 
     def plan(what: str, fields: dict, template=None) -> bool:
         found = psd_edit.classify(parsed, fields, psd, ctx.parser, template)
@@ -491,7 +494,7 @@ def edit_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str, 
         if len(raw) < SMALL_PSD:                # a made icon can pass gate_size's share: only the bake's save tells
             state, reason, _ = _real_bake(ctx, rel, {"types": value})
             if state == "refused":
-                notes.append(_note(what, reason))
+                notes.append(say(what, reason))
             return
         try:                                    # a made icon's ink shows once it is made: on a copy, no render
             icons = card_bake.types_icons(ctx.snapshot, work, ctx.parser, value, card.get("types"))
@@ -520,7 +523,8 @@ def edit_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str, 
             if count > 1:
                 stars("removing a star", count - 1)
         template = card_bake.first_type_spot(ctx.snapshot, work, one, parsed, psd, ctx.parser)
-        types("adding a type", printed + [next(t for t in TYPE_TRIES if t not in printed)], template)
+        probe["adding a type"] = next(t for t in TYPE_TRIES if t not in printed)
+        types("adding a type", printed + [probe["adding a type"]], template)
         if printed:
             types("removing a type", printed[1:], template)
         if any(EFFECT_LAYER_TAG in layer.name for layer in psd.descendants()):
