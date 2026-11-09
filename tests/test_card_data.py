@@ -3,6 +3,7 @@ on a temporary git repo of golden PSDs (new, changed, moved, archived, an unread
 import json
 from collections import defaultdict
 import os
+from pathlib import Path
 import re
 import shutil
 import subprocess
@@ -16,9 +17,9 @@ import commands.card_data as cd
 import commands.card_db as cdb
 import commands.card_models as cm
 import commands.changelog as cl
-from conftest import REPO, blob_sha_bytes
+from conftest import CLONE, REPO, blob_sha_bytes
 from golden_cards import golden_file
-from helpers import (DOOMER, FREEZER, OTHER, _build, _read, cards, cards_template, commit, git, git_bytes,  # noqa: F401
+from helpers import (DOOMER, FREEZER, OTHER, _build, _read, bot_files, cards, cards_template, commit, git, git_bytes,  # noqa: F401
                      put)
 
 BROKEN = b"8BPS" + b"\0" * 30
@@ -61,6 +62,63 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
     from helpers import ALLOWED_IMPORTS, third_party_imports
     extra = third_party_imports("import commands.card_data, commands.card_history, commands.changelog, commands.psd_details", bot)
     assert not extra - ALLOWED_IMPORTS, f"requirements-cards.txt installs none of these: {sorted(extra - ALLOWED_IMPORTS)}"
+
+
+def test_card_sync_clones_the_builder_and_the_data(tmp_path):
+    """card-sync.yml: BOT_FILES (the data, main and after jobs' one list) is SPARSE_FILES. Its Clones start and Bot and
+    data run against a stand-in GitHub (file://): the builder at a sha, BOT_FILES alone; the data branch with its push
+    header kept for carddata/ alone; a failed clone leaves its folder to the checkout after it."""
+    yaml = pytest.importorskip("yaml")
+    path = Path(os.path.expanduser(os.environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "card-sync.yml"
+    if not path.is_file() or not shutil.which("timeout"):
+        pytest.skip(f"no {path} or no timeout")
+    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    jobs = doc["jobs"]
+    steps = {s.get("name") or s.get("with", {}).get("path"): s for s in jobs["data"]["steps"]}
+    assert jobs["data"]["env"]["BOT_FILES"].split() == ["/" + f for f in cd.SPARSE_FILES]
+    assert jobs["main"]["env"]["BOT_FILES"] == jobs["after"]["env"]["BOT_FILES"] == jobs["data"]["env"]["BOT_FILES"]
+    assert bot_files(jobs["data"], steps["bot"]) == ["/" + f for f in cd.SPARSE_FILES]
+    assert (steps["bot"]["if"], steps["carddata"]["if"]) == ("steps.clones.outputs.bot != 'true'", "steps.clones.outputs.carddata != 'true'")
+    for job in ("data", "main"):                     # main's checkout empties the workspace: the clones start before it
+        at = [s.get("name") or s.get("with", {}).get("path") or s.get("uses") for s in jobs[job]["steps"]]
+        assert at.index("Clones start") < at.index("actions/checkout@v7") < at.index("Bot and data") == at.index("bot") - 1
+    server, seed = tmp_path / "github", tmp_path / "seed"
+    for rel in cd.SPARSE_FILES + ("config.py",):
+        (seed / rel).parent.mkdir(parents=True, exist_ok=True)
+        (seed / rel).write_text(rel)
+    git(tmp_path, "init", "-q", "-b", "main", str(seed))
+    sha = commit(seed, "Base", 1)
+    (seed / "global_config.py").write_text("later")
+    commit(seed, "Base", 2)                              # BUILDER_REF is the first: a sha, not the branch's head
+    data = tmp_path / "data"
+    (data / "db").mkdir(parents=True)
+    (data / "db" / "stats.json").write_text("{}")
+    git(tmp_path, "init", "-q", "-b", "data", str(data))
+    commit(data, "AutoCroissant", 1)
+    for repo, src in (("bobberlington/AutoCroissant", seed), ("o/cards", data)):
+        git(tmp_path, "clone", "-q", "--bare", str(src), str(server / repo))
+        git(server / repo, "config", "uploadpack.allowAnySHA1InWant", "true")
+    for name, ref in (("ok", sha), ("failed", "nope")):
+        workspace, runner = tmp_path / name / "ws", tmp_path / name / "temp"
+        workspace.mkdir(parents=True)
+        runner.mkdir()
+        env = {"PATH": os.environ["PATH"], "HOME": os.environ.get("HOME", ""), "GIT_CONFIG_GLOBAL": "/dev/null",
+               "RUNNER_TEMP": str(runner), "GITHUB_OUTPUT": str(runner / "output"), "GITHUB_WORKSPACE": str(workspace),
+               "GITHUB_SERVER_URL": f"file://{server}", "GITHUB_REPOSITORY": "o/cards", "BOT_REPO": "bobberlington/AutoCroissant",
+               "BUILDER_REF": ref, "BOT_FILES": jobs["data"]["env"]["BOT_FILES"], "TOKEN": "t0ken"}
+        done = [run_process(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", steps[step]["run"]], env=env,
+                            cwd=str(workspace), capture_output=True, text=True, timeout=60) for step in ("Clones start", "Bot and data")]
+        assert [d.returncode for d in done] == [0, 0] and "::add-mask::" in done[0].stdout, done[1].stdout
+        output = (runner / "output").read_text() if (runner / "output").is_file() else ""
+        assert ("bot=true" in output) == (name == "ok") == (workspace / "bot").is_dir() and "carddata=true" in output
+        assert ("::warning::the bot clone failed" in done[1].stdout) != (name == "ok")
+    bot, carddata = tmp_path / "ok" / "ws" / "bot", tmp_path / "ok" / "ws" / "carddata"
+    assert sorted(str(p.relative_to(bot)) for p in bot.rglob("*") if p.is_file() and ".git" not in p.parts) == sorted(cd.SPARSE_FILES)
+    assert git(bot, "rev-parse", "HEAD").strip() == sha and (bot / "global_config.py").read_text() == "global_config.py"
+    assert "extraheader" not in (bot / ".git" / "config").read_text()
+    header = git(carddata, "config", "--get-urlmatch", "http.extraheader", f"file://{server}/o/cards").strip()
+    assert header.startswith("AUTHORIZATION: basic ") and "t0ken" not in header        # Commit data's push: the token's
+    assert git(carddata, "rev-parse", "--abbrev-ref", "HEAD").strip() == "data" and (carddata / "db" / "stats.json").is_file()
 
 
 def _requirements(name: str) -> list:

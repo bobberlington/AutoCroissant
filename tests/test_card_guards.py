@@ -28,7 +28,7 @@ import commands.git_commit as gc
 import commands.png_export as pe
 from commands.github_api import blob_sha
 from conftest import CLONE
-from helpers import art, build_font, card, fixture_psd, photoshop_png, sharing
+from helpers import art, bot_files, build_font, card, fixture_psd, photoshop_png, sharing
 
 
 # ========================
@@ -1176,12 +1176,12 @@ def test_workflow_shape(clone):
     # no quiet window (owner 2026-11-03): the post job takes no environment and Land (the check job's) waits for nothing
     assert post["needs"] == "check" and finish["needs"] == ["check", "checks", "post"]
     # beside check, whatever MODE says; a dispatch's stay in check, so `all` reads each PSD once
-    assert "needs" not in checks and checks["if"] == "github.event_name == 'push'" and "env" not in checks
+    assert "needs" not in checks and checks["if"] == "github.event_name == 'push'" and checks["env"] == {"BOT_FILES": job["env"]["BOT_FILES"]}
     here = "github.event_name != 'push'"                                      # a dispatch's, in check; a push's in checks
     assert steps_by_name["Card check"]["if"] == here and steps_by_name["Font check"]["if"].startswith(here + " && ")
     assert steps_by_name["Card check"]["run"] == steps_by_name["Font check"]["run"]     # one script, by $CHECK
     named = [s.get("name") for s in checks["steps"] if s.get("name")]
-    assert named == ["Pushed blobs start", "Card and font checks", "Pushed blobs", "Tell the checks"]
+    assert named == ["Bot start", "Pushed blobs start", "Bot", "Card and font checks", "Pushed blobs", "Tell the checks"]
     assert "Tell the checks" not in [s.get("name") for s in job["steps"]]
     fonts = [next(s for s in one["steps"] if s.get("id") == "font-cache") for one in (job, checks)]
     assert fonts[0]["with"] == fonts[1]["with"] and fonts[1]["uses"].startswith("actions/cache/restore@")   # one saver
@@ -1203,9 +1203,12 @@ def test_workflow_shape(clone):
     assert post["outputs"] == {"posted": "${{ steps.tell.outputs.posted }}"}
     assert post["env"]["MODE"] == "${{ needs.check.outputs.mode }}"
     assert post["env"]["TOLD"] == job["env"]["TOLD"] == finish["env"]["TOLD"]
-    for one in (job, checks):
+    for one in (job, checks):                                                  # cloned beside the card checkout, else checked out
         bot = next(s for s in one["steps"] if s.get("with", {}).get("repository") == "bobberlington/AutoCroissant")
-        assert bot["with"]["sparse-checkout"].split() == ["/" + f for f in cg.SPARSE_FILES] and "ref" not in bot["with"]
+        assert bot_files(one, bot) == ["/" + f for f in cg.SPARSE_FILES] and "ref" not in bot["with"]
+        at = [s.get("name") or s.get("uses") for s in one["steps"]]
+        assert at.index("Bot start") < at.index("actions/checkout@v7") < at.index("Bot") == one["steps"].index(bot) - 1
+        assert bot["if"] == "steps.bot.outputs.ok != 'true'"
     assert not [s for s in post["steps"] if "uses" in s and "artifact" not in s["uses"]]     # no checkout, no setup
     for one in (job, checks, post, finish):                                    # a copied step runs twice unseen
         named = [s["name"] for s in one["steps"] if s.get("name")]
@@ -1691,7 +1694,7 @@ def test_workflow_fetches_pushed_blobs_in_the_background(clone, tmp_path, monkey
     doc, steps, _ = _guard_steps(clone)
     for job, wait in (("check", "Decided"), ("checks", "Card and font checks")):
         names = [s.get("name") or s.get("uses") for s in doc["jobs"][job]["steps"]]
-        assert names[names.index("Pushed blobs start") - 1] == "actions/checkout@v7" and names.index("Pushed blobs start") < 3
+        assert names[names.index("Pushed blobs start") - 1] == "actions/checkout@v7" and names.index("Pushed blobs start") < 4
         assert names.index("Pushed blobs") == names.index(wait) + 1 and steps[wait if job == "checks" else "Check"]["env"][
             gh.PENDING_ENV] == "${{ runner.temp }}/blobs"
     rest = []
@@ -1963,8 +1966,8 @@ def test_card_syncs_follow_up_waits_for_land(clone, tmp_path):
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc = yaml.safe_load((_workflow(clone).parent / "card-sync.yml").read_text(encoding="utf-8"))
-    for job, at, fonts, history in (("data", 5, [], ["History wait"]),        # data: Site build start, History start
-                                    ("main", 3, ["Fonts first", None, "Fonts first (cache miss)"], [])):
+    for job, at, fonts, history in (("data", 7, [], ["History wait"]),        # data: Site build start, History start
+                                    ("main", 5, ["Fonts first", None, "Fonts first (cache miss)"], [])):
         names = [s.get("name") for s in doc["jobs"][job]["steps"]]
         want = ["Python environment", *fonts, "Guards' fixes", *history, "Newest"]
         assert names[at:at + len(want)] == want, (job, names)
@@ -2193,7 +2196,7 @@ def test_card_syncs_lane_sets_up_before_its_guards(clone, tmp_path):
     main = doc["jobs"]["main"]
     assert "quiet" not in doc["jobs"] and main["needs"] == "timer"
     steps = {s.get("name"): s for s in main["steps"]}
-    assert [s.get("name") for s in main["steps"]][3:10] == ["Python environment", "Fonts first", None, "Fonts first (cache miss)",
+    assert [s.get("name") for s in main["steps"]][5:12] == ["Python environment", "Fonts first", None, "Fonts first (cache miss)",
                                                            "Guards' fixes", "Newest", "Gate"]
     assert steps["Gate"]["if"] == "${{ !steps.guards.outputs.run }}" and "steps.gate.outcome == 'success'" in steps["Leftover edits"]["if"]
     bin_dir = _fake_tools(tmp_path)
@@ -2237,6 +2240,46 @@ def test_card_syncs_lane_sets_up_before_its_guards(clone, tmp_path):
                             "FAKE_JOBS_LATER": json.dumps({"jobs": [lane("completed", "failure", ("Gate", "success"))]}),
                             "FAKE_RUNS": json.dumps([{"databaseId": 8, "displayTitle": "Card sync"}, {"databaseId": 7, "displayTitle": "Card sync"}])})
     assert done.returncode == 0 and "failed in the last live run where it ran too" in done.stdout and not posts.exists(), done.stdout
+
+def test_the_bot_clone_and_records_run_here(clone, tmp_path):
+    """check's Bot start and Bot against a stand-in GitHub (file://, a fake gh): SPARSE_FILES alone in bot/, no header
+    saved; the records read beside it (one not read: a warning), CARD_RECORDS_DIR at once. checks reads no records; a
+    failed clone leaves no bot/ (the checkout after it brings one)."""
+    pytest.importorskip("yaml")
+    if not shutil.which("jq") or not shutil.which("timeout"):
+        pytest.skip("no jq or timeout")
+    doc, steps, jenv = _guard_steps(clone)
+    seed, server, bin_dir = tmp_path / "seed", tmp_path / "github", tmp_path / "bin"
+    for rel in cg.SPARSE_FILES + ("config.py",):
+        (seed / rel).parent.mkdir(parents=True, exist_ok=True)
+        (seed / rel).write_text(rel)
+    subprocess.run(["git", "init", "-q", "-b", "main", str(seed)], check=True)
+    _commit(seed, "bot")
+    _git(tmp_path, "clone", "-q", "--bare", str(seed), str(server / steps["Bot start"]["env"]["BOT_REPO"]))
+    bin_dir.mkdir()
+    (bin_dir / "gh").write_text('#!/bin/sh\ncase "$*" in *render_record*) echo \'{"a": 1}\';; *) exit 1;; esac\n')
+    (bin_dir / "gh").chmod(0o755)
+    for name, job, url in (("ok", "check", f"file://{server}"), ("failed", "checks", f"file://{tmp_path}/none")):
+        workspace, runner = tmp_path / name / "ws", tmp_path / name / "temp"
+        workspace.mkdir(parents=True)
+        runner.mkdir()
+        env = {"PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": os.environ.get("HOME", ""), "GIT_CONFIG_GLOBAL": "/dev/null",
+               "RUNNER_TEMP": str(runner), "GITHUB_OUTPUT": str(runner / "output"), "GITHUB_ENV": str(runner / "env"),
+               "GITHUB_SERVER_URL": url, "GITHUB_REPOSITORY": "o/cards", "GITHUB_JOB": job, "GH_TOKEN": "t0ken",
+               "BOT_REPO": steps["Bot start"]["env"]["BOT_REPO"], "BOT_FILES": jenv["BOT_FILES"]}
+        started, _ = _shell(steps["Bot start"], env, cwd=workspace)
+        later = dict(line.split("=", 1) for line in (runner / "env").read_text().splitlines()) if (runner / "env").is_file() else {}
+        done, outputs = _shell(steps["Bot"], {**env, **later}, cwd=workspace)
+        assert started.returncode == done.returncode == 0 and "::add-mask::" in started.stdout, done.stdout
+        assert (outputs.get("ok") == "true") == (name == "ok") == (workspace / "bot").is_dir()
+        assert ("::warning::the bot's clone failed" in done.stdout) != (name == "ok")
+        assert later.get("CARD_RECORDS_DIR") == (str(runner / "records") if job == "check" else None)
+        assert ("::warning::db/spot_record.json not read" in done.stdout) == (job == "check")
+    assert [p.name for p in (tmp_path / "ok" / "temp" / "records").iterdir()] == ["render_record.json"]
+    bot = tmp_path / "ok" / "ws" / "bot"
+    assert sorted(str(p.relative_to(bot)) for p in bot.rglob("*") if p.is_file() and ".git" not in p.parts) == sorted(cg.SPARSE_FILES)
+    assert "extraheader" not in (bot / ".git" / "config").read_text()
+
 
 def test_workflow_lints(clone):
     """actionlint (when installed) accepts card-guards.yml: a file GitHub rejects fails every run, pushes included."""
