@@ -93,6 +93,7 @@ TEXT_BLENDS = {"preview": {}, "gamma": {"text_preview": False}, "straight": {"te
 PNG_LEVEL = 6               # save_png's zlib level (PIL's default; a preview's PNG, never published: 1)
 ON_MERGED = None            # a preview's: (merged, path, like) -> a Future of save_png, made beside the gates
 OLD_BESIDE = False          # a preview's: gate_dirty draws old's box in a thread beside new's (Card sync's pool: serial)
+FONTS_WAIT = None           # a preview's: returns once MDW/Fonts is in (it restores beside the bake); called before any FontMap
 SIZE_TOLERANCE = 0.2        # a saved PSD stays within 20% of the old blob
 SIZE_FLOOR = 262144         # or this many bytes: one icon on a small PSD (Poorly Drawn Cabbage)
 OK_FONTS = ("exact", "system")                  # how a font may resolve; loose or substituted faces refuse
@@ -5370,8 +5371,20 @@ def font_map(fonts_dir: str, layer=None):
     layer, its named faces are drawn in the faces its pixels show (shown_faces: Dull Knife's title names OMORI_GAME2,
     Photoshop drew OMORI_GAME), for redrawing that layer alone (R3, owner 2026-10-26).
     """
-    from psd_tools.composite.text import FontMap
     aliases = shown_faces(layer, fonts_dir) if layer is not None else {}
+    return _fonts(fonts_dir, aliases)
+
+
+def fonts_in() -> None:
+    """Returns once the fonts are in (FONTS_WAIT's wait; none: at once)."""
+    if FONTS_WAIT is not None:
+        FONTS_WAIT()
+
+
+def _fonts(fonts_dir: str, aliases: Optional[dict] = None):
+    """Every FontMap over fonts_dir, made once FONTS_WAIT says the fonts are in."""
+    from psd_tools.composite.text import FontMap
+    fonts_in()
     return FontMap(dirs=[fonts_dir], policy="substitute", **({"aliases": aliases} if aliases else {}))
 
 
@@ -5383,8 +5396,7 @@ _SHOWN: dict = {}           # shown_faces' answers: (layer id, text, bbox, faces
 @lru_cache(maxsize=4)
 def _font_faces(fonts_dir: str) -> tuple:
     """The PostScript names MDW/Fonts holds (the FontMap's exact index)."""
-    from psd_tools.composite.text import FontMap
-    return tuple(sorted(FontMap(dirs=[fonts_dir], policy="substitute")._indexes()[0].exact))
+    return tuple(sorted(_fonts(fonts_dir)._indexes()[0].exact))
 
 
 def _face_stem(name: str) -> str:
@@ -5417,7 +5429,7 @@ def shown_faces(layer, fonts_dir: str, shape: Optional[tuple] = None) -> dict:
     (drawn_in_font) and a face of the same stem in MDW/Fonts draws them (FACE_IOU_MIN). Photoshop drew the four Omori
     titles in OMORI_GAME's sibling. {} otherwise; only faces with a sibling are tried, so most layers cost nothing.
     """
-    from psd_tools.composite.text import FontMap, MissingFontError
+    from psd_tools.composite.text import MissingFontError
     if not _is_text_layer(layer) or not fonts_dir:
         return {}
     try:
@@ -5436,8 +5448,8 @@ def shown_faces(layer, fonts_dir: str, shape: Optional[tuple] = None) -> dict:
     if key not in _SHOWN:
         out = {}
         try:
-            if _face_iou(layer, FontMap(dirs=[fonts_dir], policy="substitute"), shape) < FONT_IOU_MIN:
-                tried = [(_face_iou(layer, FontMap(dirs=[fonts_dir], policy="substitute", aliases={name: face}), shape),
+            if _face_iou(layer, _fonts(fonts_dir), shape) < FONT_IOU_MIN:
+                tried = [(_face_iou(layer, _fonts(fonts_dir, {name: face}), shape),
                           name, face) for name, found in siblings.items() for face in found]
                 best = max(tried)
                 out = {best[1]: best[2]} if best[0] >= FACE_IOU_MIN else {}
@@ -5452,8 +5464,7 @@ def set_faces(layer, shown: dict, fonts_dir: str) -> list:
     The layer's runs in a named face set in the face its pixels show (shown_faces), the face added to its FontSets (the
     layer's and Txt2's), so the PSD names what it shows (owner 2026-10-26). Returns the faces added.
     """
-    from psd_tools.composite.text import FontMap
-    index = FontMap(dirs=[fonts_dir], policy="substitute")._indexes()[0].exact
+    index = _fonts(fonts_dir)._indexes()[0].exact
     added = []
     names = lambda: [str(font["Name"].value) for font in layer.resource_dict["FontSet"]]
     run_fonts = lambda: [names()[int(run["StyleSheet"]["StyleSheetData"]["Font"])]
@@ -8597,8 +8608,11 @@ def edit_copy(psd: PSDImage, raw: bytes) -> PSDImage:
 def layout_fonts(fonts_dir: str = ""):
     """The fork's FontMap for glyph_places: MDW/Fonts (a face no file holds drawn in the stand-in), else the
     environment's fonts."""
-    from psd_tools.composite.text import FontMap, default_font_map
-    return FontMap(dirs=[fonts_dir], policy="substitute") if fonts_dir else default_font_map("substitute")
+    from psd_tools.composite.text import default_font_map
+    if fonts_dir:
+        return _fonts(fonts_dir)
+    fonts_in()                                  # the environment's: PSD_TOOLS_FONT_DIRS
+    return default_font_map("substitute")
 
 
 def glyph_places(layer, fonts) -> list:
@@ -11571,6 +11585,7 @@ __all__ = [
     'no_glyph',
     'layer_records',
     'layout_fonts',
+    'fonts_in',
     'look_facts',
     'look_kwargs',
     'changed_part',

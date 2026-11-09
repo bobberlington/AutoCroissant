@@ -16,7 +16,8 @@ The edit is the card's Card Edits.json entry as it would be published (any of it
 the `_`-keys. Exit 0, 2 for a bad input, 1 for any other error (result.json's `transient`: try again). Every dispatched
 value printed goes through clean().
 No Discord or config imports; SPARSE_FILES is what card-preview.yml checks out: the import closure and
-requirements-cards.txt. card-preview.yml starts it beside the font restore: it waits in ready() (WAIT_ENV).
+requirements-cards.txt. card-preview.yml starts it beside the font restore: it waits in ready() for the reads
+(READS_ENV), its first font for the fonts (WAIT_ENV).
 """
 from argparse import ArgumentParser
 from concurrent.futures import ThreadPoolExecutor, wait
@@ -62,6 +63,7 @@ RETRY = card_bake.TRANSIENT + ("blob",)         # try again: the bake's own, and
 RESULT_V = 2                                    # result.json's "v": 2 adds variant and parts (PARTS_EDITOR.md §5, I4)
 PNG_LEVEL = 1                                   # preview.png's zlib level: never published, the same pixels, a fast save
 WAIT_ENV = "CARD_PREVIEW_WAIT"                  # files card-preview.yml makes once the reads and fonts are in (pathsep)
+READS_ENV = "CARD_PREVIEW_READS"                # its files once the reads are in: the bake goes on up to its first font
 WAIT_S = 420                                    # then try again
 WARM = ("scipy.ndimage", "PIL.ImageCms")        # every bake's lazy imports (not scipy.interpolate: few bakes use it)
 
@@ -163,10 +165,23 @@ def picture_of(snapshot: Snapshot, key: str) -> Optional[tuple]:
     return None
 
 
+def _marks(env: str) -> list:
+    return [mark for mark in environ.get(env, "").split(pathsep) if mark]
+
+
+def _wait(deadline: float, *sets: list) -> None:
+    """Until every file of one of the sets exists; Transient past the deadline."""
+    while not any(all(exists(mark) for mark in marks) for marks in sets):
+        if perf_counter() > deadline:
+            raise Transient(f"the setup was not done in {WAIT_S} s")
+        sleep(0.05)
+
+
 def ready() -> None:
-    """Started beside the font restore (card-preview.yml): the bake's lazy imports, then a wait for WAIT_ENV's files.
-    Nothing before it reads the fonts or the records. No WAIT_ENV: at once."""
-    marks = [mark for mark in environ.get(WAIT_ENV, "").split(pathsep) if mark]
+    """Started beside the font restore (card-preview.yml): the bake's lazy imports, then a wait for READS_ENV's files
+    or WAIT_ENV's; the first font waits for WAIT_ENV's (psd_edit.FONTS_WAIT). Nothing before it reads the records.
+    No WAIT_ENV: at once."""
+    marks = _marks(WAIT_ENV)
     if not marks:
         return
     for name in WARM:
@@ -176,10 +191,8 @@ def ready() -> None:
             pass
     Image.init()
     deadline = perf_counter() + WAIT_S
-    while not all(exists(mark) for mark in marks):
-        if perf_counter() > deadline:
-            raise Transient(f"the setup was not done in {WAIT_S} s")
-        sleep(0.05)
+    _wait(deadline, _marks(READS_ENV) or marks, marks)
+    psd_edit.FONTS_WAIT = lambda: _wait(deadline, marks)
 
 
 # ========================
@@ -390,7 +403,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
         snapshot = local_snapshot(repository, clone, head) if clone else snapshot_at(repository, head or ref_head(repository))
         result["base"].update(repo=repository, commit=snapshot.head)
         one = resolve(snapshot, card, fields)
-        ready()                                 # the reads and fonts are in
+        ready()                                 # the reads are in (the fonts: at the first font)
         snapshot.prefetch(blobs_of(snapshot, one))    # side by side
         png_rel = snapshot.png_for(one.rel)[0] if one.rel else ""
         if one.view is not None:                # the picture's own PNG
@@ -402,7 +415,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
         result["base"].update(psd_blob=one.psd_sha, png_blob=snapshot.sha(png_rel) if png_rel else "")
         fonts = card_bake._fonts_dir(snapshot)  # the bake's: PSD_TOOLS_FONT_DIRS, else the checkout's MDW/Fonts
         result["runner"] = {"psd_tools": card_bake.PSD_TOOLS_VERSION, "text_engine": psd_edit.text_engine(),
-                            "story_sync": psd_edit.story_sync(), "fonts": exists(fonts)}
+                            "story_sync": psd_edit.story_sync()}
         parser = vocabulary(snapshot)
         colors: list = []
 
@@ -417,6 +430,8 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
             return colors[0]
         psd_edit.PNG_LEVEL, psd_edit.ON_MERGED, psd_edit.OLD_BESIDE = PNG_LEVEL, _beside(made), True
         card_bake.bake_card(snapshot, one, parser, fonts, chart, work, lean=True)    # what only a commit uses: skipped
+        psd_edit.fonts_in()                     # a bake that read none
+        result["runner"]["fonts"] = exists(fonts)
         state, transient, reason, outcomes = outcome(one)
         result.update(state=state, transient=transient, reason=reason, fields=outcomes, notes=notes_of(one))
         if one.traceback:
@@ -448,7 +463,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
                       reason=f"error: {type(error).__name__}: {error}", traceback=format_exc().strip().splitlines()[-1])
     finally:
         wait([f for pair in made.values() for f in pair] + ([early] if early is not None else []))
-        psd_edit.PNG_LEVEL, psd_edit.ON_MERGED, psd_edit.OLD_BESIDE = level, None, False
+        psd_edit.PNG_LEVEL, psd_edit.ON_MERGED, psd_edit.OLD_BESIDE, psd_edit.FONTS_WAIT = level, None, False, None
         rmtree(work, ignore_errors=True)
     result["took_s"] = round(perf_counter() - started, 1)
     result["at"] = stamp()
