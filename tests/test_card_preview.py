@@ -38,7 +38,7 @@ import commands.github_api as github_api  # noqa: E402
 import commands.psd_edit as pe  # noqa: E402
 from conftest import CLONE, REPO, blob_sha_bytes as _sha, fork_reason, text_engine as _text_engine  # noqa: E402
 from golden_cards import VOCAB  # noqa: E402
-from helpers import bot_files, fork_install  # noqa: E402
+from helpers import FORK_VENV_KEY, bot_files, fork_install  # noqa: E402
 
 DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
 DOOMER_PNG = "Auxiliary/Minions/Mini_Doomer.png"
@@ -598,6 +598,62 @@ def test_the_bot_clone_runs_here(tmp_path):
     bot = tmp_path / "ok" / "ws" / "bot"
     assert sorted(str(p.relative_to(bot)) for p in bot.rglob("*") if p.is_file() and ".git" not in p.parts) == sorted(cp.SPARSE_FILES)
     assert "extraheader" not in (bot / ".git" / "config").read_text()
+
+
+def test_the_venv_restores_as_cards_python_does(tmp_path):
+    """The preview's own venv restore: cards-python's key (setup-python's pick, the image's newest 3.14.x), path and
+    check; a passed check puts the venv first with setup-python's LD_LIBRARY_PATH, a failed one deletes it; cards-python
+    runs only when it did not pass."""
+    _, doc = _workflow()
+    steps = doc["jobs"]["preview"]["steps"]
+    ids = [s.get("id") for s in steps]
+    if "venv" not in ids:
+        pytest.skip("no inline venv restore yet")
+    yaml = pytest.importorskip("yaml")
+    action = yaml.safe_load((WORKFLOWS.parent / "actions" / "cards-python" / "action.yml").read_text(encoding="utf-8"))
+    own = {s["id"]: s for s in action["runs"]["steps"] if "id" in s}
+    venv, hit, ok, setup = (steps[ids.index(i)] for i in ("venv", "venv-hit", "venv-ok", "setup"))
+    assert ids.index("venv") + 1 == ids.index("venv-hit") == ids.index("venv-ok") - 1 == ids.index("setup") - 2
+    assert setup["if"] == "steps.venv-ok.outputs.ok != 'true'" and "venv" not in setup["with"]
+    assert own["reqs"]["env"]["VENV"] == "${{ inputs.venv || format('{0}/venv', runner.temp) }}"
+    assert hit["uses"] == own["env"]["uses"] and hit["with"] == {"path": "${{ runner.temp }}/venv", "key": "${{ steps.venv.outputs.key }}"}
+    check = re.compile(r"-c '[^']*'")
+    assert check.findall(ok["run"]) == check.findall(own["check"]["run"])
+
+    def bash(script, cwd, **env):
+        done = run_process(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", script], cwd=str(cwd), timeout=30,
+                           capture_output=True, text=True, env={"PATH": environ["PATH"], **env})
+        assert done.returncode == 0, done.stderr
+
+    def outputs(path):
+        return dict(line.split("=", 1) for line in path.read_text().splitlines()) if path.exists() else {}
+    (tmp_path / "bot").mkdir()
+    shutil.copy(REPO / "requirements-cards.txt", tmp_path / "bot")
+    cache = tmp_path / "cache"
+    runner = {"RUNNER_TOOL_CACHE": str(cache), "RUNNER_OS": "Linux", "RUNNER_ARCH": "X64", "RUNNER_TEMP": str(tmp_path)}
+    bash(venv["run"], tmp_path, **runner, GITHUB_OUTPUT=str(tmp_path / "none"))
+    assert outputs(tmp_path / "none") == {}                                     # no 3.14: cards-python
+    for v in ("3.13.9", "3.14.2", "3.14.9", "3.14.10", "3.14.11-rc.1"):
+        (cache / "Python" / v / "x64").mkdir(parents=True)
+    bash(venv["run"], tmp_path, **runner, GITHUB_OUTPUT=str(tmp_path / "keys"))
+    bash(own["reqs"]["run"], tmp_path, **runner, VENV="", GITHUB_OUTPUT=str(tmp_path / "reqs"))
+    key = FORK_VENV_KEY.replace("${{ steps.reqs.outputs.sha }}", outputs(tmp_path / "reqs")["sha"]).replace("${{ runner.os }}", "Linux")
+    key = key.replace("${{ runner.arch }}", "X64").replace("${{ steps.python.outputs.python-version }}", "3.14.10")
+    assert own["env"]["with"]["key"] == FORK_VENV_KEY
+    assert outputs(tmp_path / "keys") == {"key": key, "lib": f"{cache}/Python/3.14.10/x64/lib"}
+    python = tmp_path / "venv" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    for code in (0, 1):
+        python.write_text(f'#!/bin/sh\n[ "$LD_LIBRARY_PATH" = /lib314:/old ] || exit 9\nexit {code}\n')
+        python.chmod(0o755)
+        files = {k: tmp_path / f"{k}{code}" for k in ("GITHUB_ENV", "GITHUB_PATH", "GITHUB_OUTPUT")}
+        bash(ok["run"], tmp_path, **runner, LIB="/lib314", LD_LIBRARY_PATH="/old", **{k: str(v) for k, v in files.items()})
+        if code == 0:
+            assert outputs(files["GITHUB_OUTPUT"]) == {"ok": "true"} and outputs(files["GITHUB_ENV"]) == {"LD_LIBRARY_PATH": "/lib314:/old"}
+            assert files["GITHUB_PATH"].read_text() == f"{tmp_path}/venv/bin\n"
+        else:
+            assert not files["GITHUB_OUTPUT"].exists() and not (tmp_path / "venv").exists()
+    assert ok["env"] == {"LIB": "${{ steps.venv.outputs.lib }}"} and ok["if"] == "steps.venv-hit.outputs.cache-hit == 'true'"
 
 
 def test_no_workflow_runs_on_the_previews_branch():
