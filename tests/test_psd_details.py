@@ -145,7 +145,8 @@ def test_header_boxes(records, clone):
     freezer = pd.gather(str(clone / FREEZER), FREEZER, "The Freezer", None, vocab)["header"]
     stars = freezer["stars"]                            # no Stars group: its Patrick Star, laid out loose as the bake's
     assert [u["core"] for u in stars["units"]] == [[1061, 31, 1189, 198]] and stars["icon"] == "patrick star"
-    assert stars["at"]["2"] == [[1125, 114], [1125, 282]] and sorted(stars["refused"], key=int) == ["6", "7", "8", "9", "10"]
+    assert stars["at"]["2"] == [[1125, 114], [1125, 282]] and stars["refused"] == {}     # past 5: stepped down (eef1b6b)
+    assert stars["at"]["6"][:2] == [[1125, 114], [997, 182]] and len(stars["at"]["10"]) == 10
     assert [t["name"] for t in freezer["types"]["row"]] == ["field"]
     assert freezer["types"]["spots"]["2"] == [[7, 226, 136, 418]]                    # under a lone icon (Item_Template's column)
 
