@@ -50,12 +50,26 @@ def test_many_cards_come_as_grids(repo):
     out, kwargs = _search(repo, 25)
     assert len(out) == 2 and [kw["file"].filename for kw in kwargs] == ["cards-1.jpg", "cards-2.jpg"]
     first, last = out[0].split("\n"), out[1].split("\n")
-    assert first[0] == "Found 25 results for 'Fire'!" and len(first) == 21
+    assert first[0] == "Found 25 results for 'Fire'!" and len(first) == 21     # A-Z as text: Card 0, 1, 10..19, 2, ...
     assert first[1] == "**1.** [Card 0](<https://site/c/card_0.png/>)" and first[2] == "**2.** Card 1"   # no page: name
-    assert last[0].startswith("**21.** [Card 20]") and last[5] == "Displayed 25 of 25 results for 'Fire'."
+    assert last[0].startswith("**21.** [Card 5]") and last[5] == "Displayed 25 of 25 results for 'Fire'."
     assert "links" in kwargs[1] and "links" not in kwargs[0]
     grid = Image.open(BytesIO(kwargs[0]["file"].fp.read()))
     assert grid.format == "JPEG" and grid.width == 4 * 308 + 8                          # 4 columns of 300 px cards
+
+
+def test_grids_go_as_the_website(repo, monkeypatch):
+    """Printed titles, the card named like the query first, then A-Z; pictures still found by file name."""
+    import commands.card_grid as cg
+    seen = []
+    monkeypatch.setattr(cg, "grids", lambda cards: seen.extend(cards) or [b"jpg"])
+    repo.git_files = {"ant_queen.png": "Items/Ant_Queen.png"}
+    repo.ability_search_engine = lambda ability: DataFrame(
+        {"ability": ["fire"] * 3, "display_name": ["Zap", None, "Fire Ant"]}, index=["Bolt", "apple", "Ant Queen"])
+    qc.query_ability(utils.make_simple_fake_interaction(1), "fire-ANT")
+    assert [(caption, url) for caption, url, _ in seen] == [
+        ("1. Fire Ant", "https://img/Ant_Queen.png"), ("2. apple", None), ("3. Zap", None)]
+    assert utils.dispatch_queue[0][1]["content"].split("\n")[1:4] == ["**1.** Fire Ant", "**2.** apple", "**3.** Zap"]
 
 
 def test_grid_caches_only_pinned_pictures(repo, monkeypatch):

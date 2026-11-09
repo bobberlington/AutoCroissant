@@ -59,6 +59,7 @@ REGISTRY = ("git_files", "card_keys", "blobs", "ambiguous_names", "_spaced", "_e
             "_renamed", "choices", "site_ids", "_site_etag")    # what populate_files builds aside and swaps in
 NOT_CARDS = ("MDW/", "Types/")                           # icons, old pages, linked files: found by exact name only
 TREE_VERSION = 1                                         # CARD_TREE_JSON's layout
+WEB_NORM = compile(r"[\s_\-.'\u2019]+")                    # what the website's norm() drops (site/assets/text.js)
 
 
 def typed(text: str, quotes: bool = False) -> str:
@@ -1111,11 +1112,12 @@ def query_ability(interaction: Interaction,
     results_to_show = total_results if limit < 0 else min(limit, total_results)
 
     found = f"Found {total_results} results for '{ability}'!"
-    shown = [basename(index) for index in results.index[:results_to_show]]   # index: the card's name
+    rows = _site_order(results, ability)[:results_to_show]
+    shown = [name for name, _ in rows]
     done = f"Displayed {results_to_show} of {total_results} results for '{ability}'."
     links = [("All results on the website", f"{SITE_URL}/#/cards?q={quote(typed(ability, quotes=True).strip())}")]
     if len(shown) > 1:
-        post_grids(interaction, shown, found, done, links)
+        post_grids(interaction, shown, found, done, links, labels=[title for _, title in rows])
         return
 
     queue_message(interaction, found)
@@ -1124,23 +1126,42 @@ def query_ability(interaction: Interaction,
     queue_message(interaction, done, links=links)
 
 
-def post_grids(interaction: Interaction, names: list, first: str, last: str, links: Optional[list] = None) -> None:
+def _site_order(results: DataFrame, query: str) -> list:
+    """(name, printed title) per result, in the website's order: a card whose title, name or website name/alias is the
+    query first (search.js exactFirst), then A-Z by title (grid.js nameKey)."""
+    norm = lambda text: WEB_NORM.sub("", text.lower())
+    query = typed(query, quotes=True).strip()
+    query = norm(query[1:-1] if len(query) > 1 and query[0] == query[-1] == '"' else query)
+    titles, edits = results.get("display_name", [None] * len(results)), card_repo._edit_names[1]
+    rows = []
+    for label, title in zip(results.index, titles):
+        name = basename(label)                           # index: the card's name
+        title = title if isinstance(title, str) and title else name
+        spellings = (title, name, *edits.get(CardAuthors.key(name), ()))      # Card Edits names and aliases
+        rows.append((not (query and query in map(norm, spellings)), title.lower(), title, name))
+    rows.sort()
+    return [(name, title) for _, _, title, name in rows]
+
+
+def post_grids(interaction: Interaction, names: list, first: str, last: str, links: Optional[list] = None,
+               labels: Optional[list] = None) -> None:
     """
     Many cards as grid images (card_grid), one per message with its cards listed (number, name, website page): one
     message per PER_GRID cards instead of one per card. first heads the first message, last ends the last (with links).
+    labels: what each card is listed as (its printed title), else its name.
     """
     from commands.card_grid import PER_GRID, grids, prune
 
     cards, lines = [], []
-    for number, name in enumerate(names, 1):
+    for number, (name, label) in enumerate(zip(names, labels or names), 1):
         key = card_repo._normalize_card_name(name)
         path = card_repo.git_files.get(key) or card_repo.git_files.get(key.replace("_", " "))
         page = card_repo.site_url(key)
         blob = card_repo.blobs.get(path, "") if path else ""
         if blob and not pinned_ref(card_repo.repository, path, blob):
             blob = ""                                    # a branch link can lag (CDN): fetched, not cached
-        cards.append((f"{number}. {name}", card_repo.get_card_url(name) if path else None, blob))
-        shown = escape_markdown(name).replace("[", "(").replace("]", ")")
+        cards.append((f"{number}. {label}", card_repo.get_card_url(name) if path else None, blob))
+        shown = escape_markdown(label).replace("[", "(").replace("]", ")")
         lines.append(f"**{number}.** [{shown}](<{page}>)" if page else f"**{number}.** {shown}")
     for at, image in enumerate(grids(cards)):
         text = "\n".join(lines[at * PER_GRID:(at + 1) * PER_GRID])
