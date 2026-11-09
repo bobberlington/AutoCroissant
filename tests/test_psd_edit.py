@@ -439,7 +439,7 @@ def test_creature_bars(clone, parser, tmp_path):
     assert comp_row(psd, "hp", 2)[0][0].name == "Shared Health" and comp_row(psd, "def", 2)[0][0].parent.name == "Creature 2"
     plan = pe.classify(parsed, {"atk": 2, "creatures": [{**five, "atk": 2}, {**five, "hp": 7, "def": 13}]}, psd)
     assert plan.jobs == {"atk": 2, "creatures": [{"hp": 7}, {"hp": 7, "def": 13}]}
-    edits = [pe.set_stat(psd, parsed, "atk", 2), pe.set_creatures(psd, parsed, plan.jobs["creatures"])]
+    edits = [pe.set_stat(psd, parsed, "atk", 2), *pe.set_creatures(psd, parsed, plan.jobs["creatures"])]
     assert edits[1].old == [{"hp": 5}, {"hp": 5, "def": 5}]
     saved = str(tmp_path / "new.psd")
     psd.save(saved, update_preview=False)
@@ -454,6 +454,34 @@ def test_creature_bars(clone, parser, tmp_path):
     assert "one value, not [8, 9]" in site({"hp": 8}, {"hp": 9}) and "up to 20" in site({}, {"def": 21})
     assert "no value" in site({"def": None}, {})
     assert "bar per creature" in site({}, {}, {})
+
+
+@text_engine
+def test_creature_rows(clone, parser, tmp_path):
+    """Digit rows per creature (Pix): creatures 2 and 3 bake on their own rows, a change on the shared HP mask moves all
+    three; an empty row of creature 2's beside creature 1's is a full bar (Twin Emperors' DEF, 4 before 2026-11-08)."""
+    from commands.psd_details import _creature_bars
+    rel = "Creatures/Kirby/3 Stars/Pix.psd"
+    path, _ = _card(clone, rel)
+    psd = PSDImage.open(path)
+    parsed = pe.parse_card(parser, path, rel, psd)
+    was = parsed["card"]["creatures"]
+    wanted = [was[0], {**was[1], "def": was[1]["def"] - 1}, {**was[2], "atk": was[2]["atk"] - 1, "spd": 10}]
+    plan = pe.classify(parsed, {"creatures": wanted}, psd)
+    assert plan.jobs == {"creatures": [{}, {"def": wanted[1]["def"]}, {"atk": wanted[2]["atk"], "spd": 10}]}
+    assert pe.classify(parsed, {"creatures": [was[0], {**was[1], "hp": 3}, was[2]]}, psd).jobs == \
+        {"creatures": [{"hp": 3}] * 3} and _creature_bars(psd) == {"count": 3, "shared": ["hp"]}
+    edits = pe.set_creatures(psd, parsed, plan.jobs["creatures"])
+    saved = str(tmp_path / "new.psd")
+    psd.save(saved, update_preview=False)
+    pe.gate_bytes(path, saved, edits)
+    card = pe.parse_card(parser, saved, rel, PSDImage.open(saved))["card"]
+    assert card["creatures"] == wanted and card["def"] == was[0]["def"] and {e.field for e in edits} == {"creatures"}
+    rel = "Creatures/World Of Warcraft/4 Stars/Twin_Emperors.psd"
+    path, _ = _card(clone, rel)
+    psd = PSDImage.open(path)
+    assert pe.parse_card(parser, path, rel, psd)["card"]["creatures"][1]["def"] == 10
+    assert [group.name for group, _, _ in pe.bar_rows(psd, "def", 2)[0]] == ["2"] and _creature_bars(psd)["shared"] == ["hp"]
 
 
 @text_engine

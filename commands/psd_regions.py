@@ -91,6 +91,20 @@ def union_box(boxes):
     return (min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes))
 
 
+def digit_span(layer) -> Optional[tuple]:
+    """(y0, y1) a bar digit layer acts on: its mask's (the template's exposures), else its pixels'; None for neither."""
+    if layer.has_mask() and layer.mask.bbox[3] > layer.mask.bbox[1]:
+        return layer.mask.bbox[1], layer.mask.bbox[3]
+    return (layer.bbox[1], layer.bbox[3]) if layer.bbox[3] > layer.bbox[1] else None
+
+
+def reaches_over(spans: list, bands: list) -> bool:
+    """Whether creature 1's shown digits (spans, (y0, y1) each) cover the middle of each of another creature's empty rows
+    (bands; None: no place, covered): one tall mask over them all (Pix's HP), not a row of its own showing none (Twin
+    Emperors' creature 2 DEF: a full bar)."""
+    return all(band is None or any(a <= (band[0] + band[1]) / 2 <= b for a, b in spans) for band in bands)
+
+
 def _leaves(group):
     for layer in group.descendants():
         if not layer.is_group() and layer.is_visible() and layer.bbox[2] > layer.bbox[0]:
@@ -459,10 +473,12 @@ __all__ = [
     'comp_row',
     'comp_stat',
     'comp_value',
+    'digit_span',
     'fx_pad',
     'linked_items',
     'placed_data',
     'overlay_words',
+    'reaches_over',
     'regions',
     'stat_rows',
     'union_box',

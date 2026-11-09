@@ -15,7 +15,7 @@ from re import IGNORECASE, compile as re_compile, fullmatch, sub
 from typing import Any, Optional, Union
 
 from commands.card_models import RAID_STARS, CardInfo, CardStats, CardType, StatsDatabase, card_name
-from commands.psd_regions import comp_creature, comp_stat, comp_value
+from commands.psd_regions import comp_creature, comp_stat, comp_value, digit_span, reaches_over
 
 getLogger("psd_tools").setLevel(CRITICAL)
 
@@ -314,6 +314,8 @@ class BarRow:
     block: str = ""                              # stat block name: "hp", "def dark"
     outer: int = 0                               # id of the group around the block
     items: list = field(default_factory=list)    # visible (digit, layer kind)
+    band: list = field(default_factory=list)     # [y0, y1] its digits act on (psd_regions.digit_span)
+    spans: list = field(default_factory=list)    # (y0, y1) of each visible digit
 
 
 @dataclass
@@ -393,7 +395,8 @@ class StatTrackers:
     def creatures(self) -> Optional[list]:
         """
         Each creature's stats on a multi-creature card, else None. A stat only creature 1 has a value for is
-        shared (Pix's HP); an empty row next to filled ones is a full bar (10). Uncertain: check on the website.
+        shared when its digits reach over the others' rows (Pix's HP); an empty row next to filled ones, or beside creature
+        1's (Twin Emperors' DEF), is a full bar (10). Uncertain: check on the website.
         """
         split = {key: getattr(self, key).by_creature() for key in ("hp", "defense", "attack", "speed")}
         filled = lambda rows: [r for r in rows if r.items]
@@ -411,8 +414,9 @@ class StatTrackers:
                     values[key] = tracker.total(filled(s[i]))
                 elif filled(s.get(0, [])):
                     values[key] = tracker.total(filled(s[0]))          # a shared row ("shared health")
-                elif filled(s.get(1, [])) and not others:
-                    values[key] = tracker.total(filled(s[1]))          # only creature 1 drawn: shared
+                elif filled(s.get(1, [])) and not others and reaches_over(
+                        [span for row in filled(s[1]) for span in row.spans], [row.band or None for row in s.get(i, [])]):
+                    values[key] = tracker.total(filled(s[1]))          # only creature 1 drawn, over its rows: shared
                 else:
                     values[key] = 10 if tracker.found else -1
             out.append(CardStats(**values))
@@ -1311,8 +1315,13 @@ class PSDParser:
                 block = getattr(parent, "parent", None)
                 row = tracker.rows.setdefault(id(parent), BarRow(id(block), base_name(parent), getattr(block, "name", "") or "",
                                                                  id(getattr(block, "parent", None))))
+                span = digit_span(layer)
+                if span is not None:
+                    row.band = [min(row.band[0], span[0]), max(row.band[1], span[1])] if row.band else list(span)
                 if layer.is_visible():
                     row.items.append((int(digits), layer.kind))
+                    if span is not None:
+                        row.spans.append(span)
                 break
 
     def _count_stars(self, psd: PSDImage) -> int:

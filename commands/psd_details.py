@@ -279,11 +279,16 @@ def _stats(psd: PSDImage) -> dict:
 
 
 def _creature_bars(psd: PSDImage) -> Optional[dict]:
-    """A card with a layer-comp bar per creature: their count, and the stats on a shown shared bar; else None."""
+    """A card with a layer-comp bar per creature: their count, and the stats on a shown shared bar; digit rows per creature
+    (psd_edit.several_rows): their count, and the stats every creature reads off creature 1's bar; else None."""
     count = max((comp_creature(bar[0]) for bars in comp_bars(psd).values() for bar in bars), default=0)
-    if not count:
+    if count:
+        return {"count": count, "shared": [key for key in STATS if any(not comp_creature(bar[0]) for bar in comp_row(psd, key))]}
+    if not psd_edit.several_rows(psd):
         return None
-    return {"count": count, "shared": [key for key in STATS if any(not comp_creature(bar[0]) for bar in comp_row(psd, key))]}
+    count = max(n for rows in stat_rows(psd).values() if rows for n in psd_edit.creature_of(rows).values())
+    return {"count": count, "shared": [key for key in STATS if all(psd_edit.creature_bar(psd, key, n) == psd_edit.creature_bar(
+        psd, key, 1) for n in range(2, count + 1))]}
 
 
 def _fx(layers: list) -> list:

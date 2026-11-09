@@ -19,7 +19,7 @@ Which edits are tried (a real bake is 25 s; the whole list of 13 kinds of edit, 
 tree): the plans alone for titles, stars and taking off a type, a made icon on a copy (adding a type is not tried: the
 website tells when someone tries it, owner 2026-11-08); a real bake only where a plan cannot tell:
 stars on a card with variant pictures, the ability on a card with FX layers, the stats on digit rows or new bars under
-art (their pixels too), a type on a very small PSD. A bake that breaks leaves no record: the next run tries again.
+art (their pixels too; every creature's), a type on a very small PSD. A bake that breaks leaves no record: the next run tries again.
 """
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -89,7 +89,6 @@ WHAT = {"name": "A new title", "adding a star": "Adding a star", "removing a sta
         "removing a type": "Taking off a type", "stats": "Stat edits"}
 # the notes
 OLD_NOTE = "Its stat bars are old-style digit rows: put them on the new bars in Photoshop."
-CREATURES_NOTE = "Several creatures: the website changes the first one's bars, the others are changed in Photoshop."
 NO_CHANGE_NOTE = "{} {} bake but change nothing on the card: change them in Photoshop."
 SWAP_NOTE = "The {} bars are on each other's rows: a stat edit moves the wrong bar, put them back in Photoshop."
 BRIGHT_NOTE = "Its shown digits brighten the cells, so a stat edit turns the bars dark: change its stats in Photoshop."
@@ -436,11 +435,15 @@ def _still(psd: PSDImage, moved: np.ndarray, style: str) -> list:
 
 def _stat_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str, image: Optional[Image.Image]) -> list:
     """Stat edits that cannot bake: new bars by their state (their bakes draw: measured on every card) unless art lies
-    over them; those and digit rows by a real bake of all four, one down and one up, which must move pixels (new bars: each)."""
+    over them; those and digit rows by a real bake of all four, one down and one up, which must move pixels (new bars: each);
+    on a card of several creatures every creature's in the same bakes, a bar it shares with creature 1 moving with it."""
     card = parsed["card"]
     have = {stat: card.get(stat) for stat in STAT_ORDER if isinstance(card.get(stat), int) and card.get(stat) >= 0}
     if len(have) < len(STAT_ORDER) or not style:
         return []
+    creatures = card.get("creatures") or []
+    own = {(n, stat) for n in range(2, len(creatures) + 1) for stat in STAT_ORDER
+           if psd_edit.creature_bar(psd, stat, n) != psd_edit.creature_bar(psd, stat, 1)}
     if style == "new":
         for stat, bars in comp_bars(psd).items():
             if len(bars) == 1 and (bars[0][1] is None or not bars[0][0].is_visible()):
@@ -451,8 +454,13 @@ def _stat_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str,
     if any(one.is_visible() and one.exposure > 0 for one in exposures) and any(not one.is_visible() and one.exposure < 0 for one in exposures):
         return [BRIGHT_NOTE]
     png = np.asarray(image.convert("RGB"), np.int16) if image is not None else None
-    for what, fields in (("edits", {stat: value - 1 if value > 0 else value + 1 for stat, value in have.items()}),
-                         ("raises", {stat: value + 1 if value < 10 else value - 1 for stat, value in have.items()})):
+    down, up = (lambda value: value - 1 if value > 0 else value + 1), (lambda value: value + 1 if value < 10 else value - 1)
+    for what, step in (("edits", down), ("raises", up)):
+        fields = {stat: step(value) for stat, value in have.items()}
+        if own:                                 # creature 1's and the shared bars as fields, the others' own a step too
+            fields["creatures"] = [{stat: fields[stat] if (n, stat) not in own else step(one[stat])
+                                    if isinstance(one.get(stat), int) and one[stat] >= 0 else one.get(stat)
+                                    for stat in STAT_ORDER} for n, one in enumerate(creatures, 1)]
         state, reason, moved = _real_bake(ctx, rel, fields, png)
         if state == "refused":
             return [_note("stats", reason)]
@@ -551,8 +559,6 @@ def check_card(ctx: Context, rel: str) -> dict:
     creatures = parsed["card"].get("creatures")
     style, why = bar_style(psd, creatures)
     notes = [OLD_NOTE] if style == "old" else []
-    if style == "custom" and creatures:
-        notes.append(CREATURES_NOTE)
     wrong = swapped(psd) if style else []
     if wrong:
         notes.append(SWAP_NOTE.format(" and ".join(STAT_NAMES[stat] for stat in wrong)))

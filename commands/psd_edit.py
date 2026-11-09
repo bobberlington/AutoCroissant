@@ -53,7 +53,8 @@ from commands.psd_parts import lyid_index, raw_sha
 from commands.text_align import (BREAKS as TEXT_BREAKS, blocks as text_blocks, moves as text_moves,
                                  opcodes as text_opcodes, segments as text_segments)
 from commands.psd_regions import (STATS as STAT_PATTERNS, _ancestors, badge_layers, bar_box, clip, comp_bars, comp_creature,
-                                  comp_names, comp_row, comp_value, fx_pad, overlay_words, placed_data, stat_rows, union_box)
+                                  comp_names, comp_row, comp_value, digit_span, fx_pad, overlay_words, placed_data,
+                                  reaches_over, stat_rows, union_box)
 from global_config import TYPES_DIR
 
 # ========================
@@ -2212,7 +2213,8 @@ def _classify_colors(out: Classification, parsed: dict, edits: dict, psd: Option
 
 def _classify_creatures(out: Classification, card: dict, wanted: list, stats: dict, psd: PSDImage) -> None:
     """
-    classify()'s `creatures`: what the list changes on the card's bars, as the job [{stat: value} per creature]. A shared
+    classify()'s `creatures`: what the list changes on the card's bars, as the job [{stat: value} per creature]: a
+    layer-comp bar per creature, or digit rows per creature (several_rows: each creature's own, creature_bar). A shared
     bar has one value, and every creature on it takes the one asked. What the bars can't print is website only.
 
     Args:
@@ -2222,13 +2224,14 @@ def _classify_creatures(out: Classification, card: dict, wanted: list, stats: di
         psd: The open card
     """
     printed = card.get("creatures") or []
-    if len(wanted) != len(printed) or not any(comp_creature(bar[0]) for bars in comp_bars(psd).values() for bar in bars):
+    comps = any(comp_creature(bar[0]) for bars in comp_bars(psd).values() for bar in bars)
+    if len(wanted) != len(printed) or not (comps or several_rows(psd)):
         out.site["creatures"] = "creatures: each creature's stats print only on a bar per creature"
         return
     job = [{} for _ in printed]
     for stat in STAT_FIELDS:
-        rows = [comp_row(psd, stat, n + 1) for n in range(len(printed))]
-        bars = [row[0][0].layer_id if len(row) == 1 else -n - 1 for n, row in enumerate(rows)]
+        bars = [creature_bar(psd, stat, n + 1) for n in range(len(printed))]
+        bars = [-n - 1 if bar is None else bar for n, bar in enumerate(bars)]   # no one bar: set_stat says why
         asked = {bars[0]: {stats[stat]}} if stat in stats else {}
         for n, one in enumerate(wanted):
             if stat not in one or (n == 0 and stat in stats):
@@ -2239,13 +2242,15 @@ def _classify_creatures(out: Classification, card: dict, wanted: list, stats: di
                 return
             if value is not None and value != printed[n].get(stat):
                 asked.setdefault(bars[n], set()).add(value)
-        top = comp_top(psd, stat)
+        top = comp_top(psd, stat) if comp_bars(psd)[stat] else STAT_MAX
         for bar, values in asked.items():
             if len(values) > 1:
                 out.site["creatures"] = f"creatures: {stat}: a shared bar shows one value, not {sorted(values)}"
                 return
             if top is None or max(values) > top:
-                out.site["creatures"] = f"creatures: {stat} {max(values)}: the bar's layer comps show up to {top}"
+                out.site["creatures"] = (f"creatures: {stat} {max(values)}: the bar's layer comps show up to {top}"
+                                         if comp_bars(psd)[stat] else f"creatures: {stat} {max(values)}: a creature's "
+                                         f"row prints up to {STAT_MAX}")
                 return
             if stat not in stats or bar != bars[0]:
                 job = [{**one, stat: min(values)} if bars[n] == bar else one for n, one in enumerate(job)]
@@ -3027,12 +3032,12 @@ def creature_of(rows: list) -> dict:
     return out
 
 
-def bar_rows(psd: PSDImage, stat: str) -> tuple:
+def bar_rows(psd: PSDImage, stat: str, creature: int = 1) -> tuple:
     """
     The rows a stat edit changes: stat_rows(), but on a stat drawn by several rows the card's own (R1, R3; owner
-    2026-10-26): creature 1's rows on a card of several creatures (the card's stats are creature 1's; the others' are
-    the website's), else the shared ones; then a row showing no digit left out when another shows one (the parser
-    skips it: Ze'mer's hidden template row under its flowers, Pix's empty HP rows under the one shared mask).
+    2026-10-26): the creature's rows on a card of several creatures (_creature_rows; the card's stats are creature 1's),
+    else the shared ones; then a row showing no digit left out when another shows one (the parser skips it: Ze'mer's
+    hidden template row under its flowers, Pix's empty HP rows under the one shared mask).
 
     Returns:
         (rows, picked): picked when the stat has several rows and these were chosen from them
@@ -3041,11 +3046,55 @@ def bar_rows(psd: PSDImage, stat: str) -> tuple:
     if len(rows) < 2:
         return rows, False
     index = creature_of(rows)
-    if len({index[id(group)] for group, _, _ in rows} - {0}) > 1:      # several creatures: creature 1's, else shared
-        mine = [row for row in rows if index[id(row[0])] == 1]
-        rows = mine if any(shown for _, shown, _ in mine) else [row for row in rows if index[id(row[0])] == 0] or mine
+    if len({index[id(group)] for group, _, _ in rows} - {0}) > 1:      # several creatures: the creature's, else shared
+        rows = _creature_rows(rows, index, creature)
     live = [row for row in rows if row[1]]
     return (live if live else rows), True
+
+
+def _creature_rows(rows: list, index: dict, creature: int) -> list:
+    """
+    The rows of one stat a creature's value is read off, as the parser reads them (StatTrackers.creatures): its own when
+    one shows a digit, else the shared ones; another creature's empty rows read creature 1's when only those show and
+    they reach over its rows (Pix's tall HP mask), else its own (none shown: a full bar). [] for none.
+    """
+    of = lambda n: [row for row in rows if index[id(row[0])] == n]
+    shows = lambda found: any(shown for _, shown, _ in found)
+    mine, shared = of(creature), of(0)
+    if shows(mine):
+        return mine
+    if creature == 1:
+        return shared or mine
+    if shows(shared):
+        return shared
+    ones = of(1)
+    spans = lambda group, shown: [span for layer in group if not layer.is_group() and base_name(layer).strip().isdigit()
+                                  and (layer.is_visible() or not shown) for span in [digit_span(layer)] if span]
+    band = lambda found: (min(a for a, _ in found), max(b for _, b in found)) if found else None
+    if shows(ones) and not any(shown for group, shown, _ in rows if index[id(group)] > 1) and reaches_over(
+            [span for group, _, _ in ones for span in spans(group, True)], [band(spans(group, False)) for group, _, _ in mine]):
+        return ones
+    return mine
+
+
+def creature_stats(parsed: dict, creature: int = 1) -> dict:
+    """The stats a creature's edit starts from: the card's (creature 1's), else its entry in the parse's creatures."""
+    return parsed["card"] if creature == 1 else parsed["card"]["creatures"][creature - 1]
+
+
+def creature_bar(psd: PSDImage, stat: str, creature: int) -> Optional[tuple]:
+    """What a creature's stat edit sets, alike for the creatures sharing it: its layer-comp bar (comp_row), else its rows
+    (bar_rows); None for no one bar."""
+    if comp_bars(psd)[stat]:
+        bars = comp_row(psd, stat, creature)
+        return ("comp", bars[0][0].layer_id) if len(bars) == 1 else None
+    return tuple(sorted(id(group) for group, _, _ in bar_rows(psd, stat, creature)[0])) or None
+
+
+def several_rows(psd: PSDImage) -> bool:
+    """A card the parser reads as several creatures off its digit rows (_still_creatures): Pix's rows "1" to "3", Tainted
+    Lazarus's blocks; not Sonic's two SPD rows."""
+    return _still_creatures(psd, None)
 
 
 def _held_template(psd: PSDImage, stat: str, rows: list, refused: Refused) -> Refused:
@@ -3066,7 +3115,7 @@ def _held_template(psd: PSDImage, stat: str, rows: list, refused: Refused) -> Re
     return refused
 
 
-def template_rows(psd: PSDImage, stat: str) -> list:
+def template_rows(psd: PSDImage, stat: str, creature: int = 1) -> list:
     """
     The template bar rows of a stat: one "<Stat> Dark" group holding the ten masked exposure digits 0-9, or (idea 13,
     Royal Eradicator Main Cannon's layout) a "<Stat> Dark" group holding two such rows named Top and Bottom, Top also
@@ -3077,6 +3126,7 @@ def template_rows(psd: PSDImage, stat: str) -> list:
     Args:
         psd: An open card
         stat: hp, def, atk or spd
+        creature: Whose rows on a card of several creatures (bar_rows)
 
     Returns:
         [row] or [Top, Bottom]; raises Refused("unsupported-card") for any other row shape
@@ -3094,7 +3144,7 @@ def template_rows(psd: PSDImage, stat: str) -> list:
         if top.marker is None:
             raise Refused("unsupported-card", f"{stat}: Top row without its 10 marker (the parser would read Bottom alone)")
         return [top, bottom]
-    picked, _ = bar_rows(psd, stat)
+    picked, _ = bar_rows(psd, stat, creature)
     if len(picked) == 1:
         row = _row(picked[0][0], stat, False)
         heights = sorted(_where(layer)[3] - _where(layer)[1] for layer in row.digits.values())
@@ -3172,9 +3222,9 @@ def _split_reads(split: SplitRows) -> int:
 def _still_creatures(psd: PSDImage, emptied) -> bool:
     """Whether the parser still reads several creatures once the row `emptied` shows no digit (StatTracker.creatures: at
     least two stats with two creatures' rows showing one; Twin Emperors' ATK at 10 would leave one)."""
-    many = 0
+    many, found = 0, stat_rows(psd)
     for key in STAT_FIELDS:
-        rows = stat_rows(psd)[key]
+        rows = found[key]
         index = creature_of(rows)
         filled = {index[id(group)] for group, shown, _ in rows if shown and group is not emptied} - {0}
         many += len(filled) >= 2
@@ -3551,7 +3601,7 @@ def set_comp(psd: PSDImage, parsed: dict, stat: str, value: int, creature: int =
     layer, old, box = bars[0]
     if old is None or not layer.is_visible():
         raise Refused("unsupported-card", f"{stat}: {layer.name!r} shows no layer comp: set it in Photoshop")
-    read = parsed["card"] if creature == 1 else parsed["card"]["creatures"][creature - 1]
+    read = creature_stats(parsed, creature)
     if read.get(stat) != old:
         raise Refused("unsupported-card", f"{stat}: the parser reads {read.get(stat)}, the bar shows {old}")
     if value < 0:
@@ -3571,9 +3621,10 @@ def set_comp(psd: PSDImage, parsed: dict, stat: str, value: int, creature: int =
     return Edit(stat, old, value, [layer], [_record_index(layer)], region, comps=[_record_index(layer)])
 
 
-def set_creatures(psd: PSDImage, parsed: dict, changes: list) -> Edit:
+def set_creatures(psd: PSDImage, parsed: dict, changes: list) -> list:
     """
-    A `creatures` job (_classify_creatures): each creature's changed stats on its bar, a shared bar set once.
+    A `creatures` job (_classify_creatures): each creature's changed stats on its bar (creature_bar, found before any
+    is set), a shared bar set once: layer-comp bars by set_comp, digit rows by set_stat on the creature's rows.
 
     Args:
         psd: The open card (edited in place)
@@ -3581,22 +3632,36 @@ def set_creatures(psd: PSDImage, parsed: dict, changes: list) -> Edit:
         changes: [{stat: value} per creature]
 
     Returns:
-        One Edit over the bars, old as changes with the printed values; raises what set_comp does
+        [Edit]: one over the layer-comp bars, one per digit-row bar; each old as changes with the printed values, field
+        "creatures"; raises what set_comp and set_stat do (another creature's naming it)
     """
-    done, edits = set(), []
+    keys = {(n, stat): creature_bar(psd, stat, n) for n, stats in enumerate(changes, 1) for stat in stats}
+    done, comps, rows = set(), [], []
     for n, stats in enumerate(changes, 1):
         for stat, value in stats.items():
-            bars = comp_row(psd, stat, n)
-            if not bars or bars[0][0].layer_id not in done:
-                edits.append(set_comp(psd, parsed, stat, value, n))
-                done.add(edits[-1].layers[0].layer_id)
+            key = keys[(n, stat)]
+            if key is not None and key in done:
+                continue
+            done.add(key)
+            if comp_bars(psd)[stat]:
+                comps.append(set_comp(psd, parsed, stat, value, n))
+                continue
+            try:
+                rows.append(set_stat(psd, parsed, stat, value, n))
+            except Refused as refused:
+                if n == 1:
+                    raise
+                raise Refused(refused.code, f"creature {n}'s {refused.why}", refused.field) from refused
     old = [{stat: one.get(stat) for stat in stats} for one, stats in zip(parsed["card"]["creatures"], changes)]
-    records = [index for edit in edits for index in edit.comps]
-    return Edit("creatures", old, changes, [layer for edit in edits for layer in edit.layers], records,
-                union_box([edit.region for edit in edits]), comps=records)
+    records = [index for edit in comps for index in edit.comps]
+    out = [Edit("creatures", old, changes, [layer for edit in comps for layer in edit.layers], records,
+                union_box([edit.region for edit in comps]), comps=records)] if comps else []
+    for edit in rows:
+        edit.field, edit.old, edit.new = "creatures", old, changes
+    return out + rows
 
 
-def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
+def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int, creature: int = 1) -> Edit:
     """
     Toggle a stat: the digit str(value) visible in "<Stat> Dark", the other nine hidden, 10 = none. On a two-row card
     (idea 13) Top shows the value and Bottom 0 up to 10, then Top none and Bottom value - 10 (20: none in both rows,
@@ -3617,6 +3682,7 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
         parsed: parse_card() of the card before the edit
         stat: hp, def, atk or spd
         value: 0-10 (one row) or 0-20 (two rows)
+        creature: Whose bar on a card of several creatures (set_creatures): its own rows, or the ones it shares
 
     Returns:
         Edit over the toggled digits; raises Refused for other row shapes, a digit mask (or the whole bar) off the
@@ -3624,14 +3690,14 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
         stacks (parity)
     """
     if comp_bars(psd)[stat]:                    # one smart object, its layer comp the value
-        return set_comp(psd, parsed, stat, value)
+        return set_comp(psd, parsed, stat, value, creature)
     split = split_rows(psd, stat)
     if split is not None:                       # two half rows over the old one (the two-row rule)
         return set_split(psd, parsed, stat, value, split)
     try:
-        rows = template_rows(psd, stat)
+        rows = template_rows(psd, stat, creature)
     except Refused as refused:                  # the card maker's own bar (layout support)
-        return set_bar(psd, parsed, stat, value, refused)
+        return set_bar(psd, parsed, stat, value, refused, creature)
     for row in rows:                            # Green_Mage: masks below the canvas, the cells drawn as pixels
         boxes = {name: _where(layer) for name, layer in row.digits.items()}
         off = sorted(name for name, box in boxes.items() if _off_canvas(box, psd))
@@ -3642,9 +3708,9 @@ def set_stat(psd: PSDImage, parsed: dict, stat: str, value: int) -> Edit:
             raise Refused("unsupported-card", f"{stat}: {what} outside the card (digit masks "
                                               f"{union_box([boxes[name] for name in off])} on the {psd.width}x{psd.height} "
                                               "canvas): a toggle would change nothing on the card")
-    old = stat_value(rows)
-    if parsed["card"].get(stat) != old:
-        raise Refused("unsupported-card", f"{stat}: the parser reads {parsed['card'].get(stat)}, the row shows {old}")
+    old, read = stat_value(rows), creature_stats(parsed, creature)
+    if read.get(stat) != old:
+        raise Refused("unsupported-card", f"{stat}: the parser reads {read.get(stat)}, the row shows {old}")
     if value == STAT_MAX and len(rows) == 1 and len(stat_rows(psd)[stat]) > 1 and str(STAT_MAX) not in rows[0].digits \
             and len(parsed["card"].get("creatures") or []) > 1 and not _still_creatures(psd, rows[0].group):
         raise Refused("unsupported-card", f"{stat} 10: {rows[0].group.name!r} would show no digit, and the parser would "
@@ -3745,7 +3811,7 @@ def _missing_digit(row: TemplateRow, stat: str, target: int) -> str:
     return f"{stat}: {row.group.name!r} had no digit {target}: its {low} moved there and renamed {target}"
 
 
-def set_bar(psd: PSDImage, parsed: dict, stat: str, value: int, why: Refused) -> Edit:
+def set_bar(psd: PSDImage, parsed: dict, stat: str, value: int, why: Refused, creature: int = 1) -> Edit:
     """
     A stat on a bar the card maker drew their own way (plan_bar), the edit following their layout.
 
@@ -3755,12 +3821,13 @@ def set_bar(psd: PSDImage, parsed: dict, stat: str, value: int, why: Refused) ->
         stat: hp, def, atk or spd
         value: 0-10
         why: template_rows()'s refusal, raised again when the bar is none plan_bar knows
+        creature: Whose rows (bar_rows)
 
     Returns:
         Edit, its changes declared per layer (Edit.bar); raises Refused
     """
-    rows, picked = bar_rows(psd, stat)
-    old = parsed["card"].get(stat)
+    rows, picked = bar_rows(psd, stat, creature)
+    old = creature_stats(parsed, creature).get(stat)
     if not rows or not isinstance(old, int):
         raise why
     if value < 0:
@@ -9256,7 +9323,7 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
     added = {name: blocks for edit in edits for name, blocks in edit.fx}
     allowed, names = {}, {}
     for edit in edits:
-        kind = "stat" if edit.field in STAT_FIELDS else "text"
+        kind = "stat" if edit.field in (*STAT_FIELDS, "creatures") else "text"
         for index in edit.records:
             allowed[index] = (kind, ALLOWED_RECORD_FIELDS[kind] | ({"name"} if edit.renamed else set()))
             names[index] = edit.renamed
@@ -9380,11 +9447,11 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
         raise Refused("bytes", "an FX layer, star copy, type icon, ability or deleted layer declared removed or added "
                                "is not")
     hidden = {index for edit in edits for index in edit.hidden}
-    toggled = {index for edit in edits if edit.field in STAT_FIELDS for index in edit.records}
+    toggled = {index for edit in edits if edit.field in (*STAT_FIELDS, "creatures") for index in edit.records}
     if (toggled | hidden | toggles) - {index for index, _, fields in changed if fields != ["removed"]}:
         raise Refused("bytes", "a toggled digit, hidden overlay or shown or hidden star or icon did not change")
     # effect blocks on the toggled digits: exactly the declared moves, byte for byte
-    moves = [move for edit in edits if edit.field in STAT_FIELDS for move in edit.moves]
+    moves = [move for edit in edits if edit.field in (*STAT_FIELDS, "creatures") for move in edit.moves]
     blocks_of = lambda records, index: dict(records[index]["blocks"])
     left = {(src, key): blocks_of(old, old_of[src]).get(key) for src, _, key in moves}
     landed = {(dst, key): blocks_of(old, old_of[src]).get(key) for src, dst, key in moves if dst is not None}
@@ -10408,7 +10475,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
         elif name in STAT_FIELDS:
             edits.append(set_stat(new, parsed, name, value))
         elif name == "creatures":
-            edits.append(set_creatures(new, parsed, value))
+            edits += set_creatures(new, parsed, value)
         elif name == "ability" and _lone_part(new) is None:     # copies or a relaid layer: as its one box (§3)
             record = card_parts(old, rel, _card_name(parsed), parser)
             found = record.get("ability") or []
@@ -11308,6 +11375,9 @@ __all__ = [
     'use_record',
     'set_icons',
     'set_creatures',
+    'creature_bar',
+    'creature_stats',
+    'several_rows',
     'set_stat',
     'stale_stories',
     'stat_value',

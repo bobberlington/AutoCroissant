@@ -267,9 +267,11 @@ The VISIBLE digit layers are grouped by bar row (their parent group) and each ro
   every creature); the details call them "creatures" and record `creature_bars`.
 
 Rows add up, so stats can pass 10 (Royal Eradicator Main Cannon's attack is 10 + 2). Multi-creature
-cards (rows named "1", "2", … or a repeated stat block: Pix, Twin Emperors, Tainted Lazarus) get
-`card.creatures` (CardStats each; `stats` = creature 1) and the note "SEVERAL CREATURES" (a guess:
-Twin Emperors' 2nd DEF read 4, the card shows 10). Fix them with the website's per-creature edit (all three done 2026-10-21 in Card Edits.json). A stat past 10 (two bar rows: the canonical encoding is a top row 10 plus a
+cards (rows named "1", "2", … or a repeated stat block: Pix, Twin Emperors, Tainted Lazarus, Computer Virus) get
+`card.creatures` (CardStats each; `stats` = creature 1) and the note "SEVERAL CREATURES". An empty row reads creature 1's
+value only when creature 1's shown digit reaches over it (Pix's tall HP mask), else 10 (Twin Emperors' 2nd DEF, since
+2026-11-08; it read 4 before). Since 2026-11-08 every creature's rows bake too (`creatures`, `psd_edit.set_creatures` ->
+`set_stat(creature=n)` on `bar_rows(psd, stat, n)`), and the details record their `creature_bars`. A stat past 10 (two bar rows: the canonical encoding is a top row 10 plus a
 bottom row N-10) is the problem "STATS TOO HIGH" unless the card's Card Edits.json entry sets `allow_high_stats` (Sonic spd 20,
 Royal Eradicator Main Cannon atk 12; `EXCESSIVE_STAT_EXCLUSIONS` went on 2026-10-21). A digit-named group that holds digit layers is a row,
 not a value (Sonic's rows "2" and "1" once added 3 speed), and an empty one is skipped (Twin

@@ -58,7 +58,9 @@ def records(clone, index):
 # ========================
 def test_record_shape_and_size(records, clone):
     for rel, record in records.items():
-        assert tuple(record) == KEYS and record["path"] == rel and record["name"] == _name(rel) and record["parser"] == pd.PARSER_VERSION
+        assert tuple(k for k in record if k != "creature_bars") == KEYS and record["path"] == rel and record["name"] == _name(rel) \
+            and record["parser"] == pd.PARSER_VERSION
+        assert record.get("creature_bars") == ({"count": 2, "shared": []} if rel == LAZARUS else None)   # a row per creature
         assert not any(isinstance(v, str) and v.startswith("error") for v in record.values())
         assert record["canvas"] == {"w": 1200, "h": 2400, "mode": "RGB", "depth": 8, "icc": "Display"}
         assert record["fonts"] and all(e["supplied"] is True for e in record["fonts"].values())
