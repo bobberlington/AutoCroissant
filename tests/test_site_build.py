@@ -9,11 +9,13 @@ build_site.py from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips wi
 """
 import copy
 import importlib.util
+import io
 import json
 import re
 import shutil
 import subprocess
 import sys
+import tarfile
 import time
 from collections import defaultdict
 from datetime import datetime
@@ -711,34 +713,48 @@ def test_badge_font_preloaded_where_badges_show(bs):
 
 def test_site_workflow_sets_up_in_the_background(tmp_path):
     """site.yml's Setup start returns at once, uv, npm and the PSD sizes running on (their output not held); Setup wait,
-    before the build, prints each one's log and fails on uv or npm, only warns on the sizes (3 tries). An early build's
-    Images start runs once uv is in; Setup wait stops it, prints its log, only warns on a failure (none started: no wait)."""
+    before the build, prints each one's log and fails on uv or npm, only warns on the sizes (3 tries). uv is fetched there
+    (no setup-uv), else from the GitHub release, else pip installs. An early build's Images start runs once uv is in;
+    Setup wait stops it, prints its log, only warns on a failure (none started: no wait)."""
     yaml = pytest.importorskip("yaml")
     path = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "site.yml"
     if not path.is_file():
         pytest.skip(f"no {path}")
     steps = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["build"]["steps"]
     names = [s.get("name") or s.get("id") or s.get("uses") for s in steps]
-    assert names.index("Setup start") < names.index("pages") < names.index("Setup wait") == names.index("build") - 1
+    assert names.index("py") < names.index("python") < names.index("Setup start") < names.index("Setup wait") == names.index("build") - 1
+    assert steps[names.index("python")]["if"] == "steps.py.outputs.python == ''"
+    gone = ("actions/configure-pages", "astral-sh/setup-uv", "actions/upload-pages-artifact")    # never downloaded
+    assert not [s for s in steps if s.get("uses", "").split("@")[0] in gone]
     assert names.index("cache-before") < names.index("Images start") < names.index("Data wait")
     assert steps[names.index("Images start")]["if"] == "inputs.after"
     start, images, wait = (steps[names.index(n)]["run"] for n in ("Setup start", "Images start", "Setup wait"))
     bin_ = tmp_path / "bin"
     bin_.mkdir()
     call = 'echo "$0 $*" >> "$RUNNER_TEMP/calls"; /bin/sleep "${DELAY:-0}"; '
-    for name, body in {"uv": call + 'echo "uv said"; exit "${UV_CODE:-0}"', "npm": call + 'echo "npm said"; exit "${NPM_CODE:-0}"',
+    curl = ('echo "$0 $*" >> "$RUNNER_TEMP/calls"\ncase "$*" in *releases.astral.sh*) [ -z "$ASTRAL_CODE" ] || exit "$ASTRAL_CODE";; esac\n'
+            'while [ $# -gt 1 ]; do [ "$1" != -o ] || out=$2; shift; done\ncp "$TARBALL" "$out"')
+    for name, body in {"npm": call + 'echo "npm said"; exit "${NPM_CODE:-0}"', "curl": curl,
                        "gh": call + 'echo \'{"tree": []}\'; exit "${GH_CODE:-0}"', "git": "echo 0123abcd",
                        "python": call + 'until [ -e "$4" ]; do /bin/sleep 0.01; done; echo "python said"',     # till stopped
+                       "sha256sum": 'cat > /dev/null; exit "${SHA_CODE:-0}"', "pip-python": call + 'echo "pip said"',
                        "sleep": "exec /bin/sleep 0.01"}.items():
         (bin_ / name).write_text(f"#!/bin/sh\n{body}\n")
         (bin_ / name).chmod(0o755)
+    uv = f"#!/bin/sh\n{call}echo \"uv said\"; exit \"${{UV_CODE:-0}}\"\n".encode()
+    with tarfile.open(tmp_path / "uv.tar.gz", "w:gz") as tar:      # the release's layout
+        info = tarfile.TarInfo("uv-x86_64-unknown-linux-gnu/uv")
+        info.size, info.mode = len(uv), 0o755
+        tar.addfile(info, io.BytesIO(uv))
     shell = lambda run, env: subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", run], env=env,
                                             capture_output=True, text=True, timeout=30)
-    for n, (codes, failed, warns) in enumerate((({"DELAY": "0.5"}, "", False), ({"GH_CODE": "1"}, "", True),
-                                                ({"UV_CODE": "2", "NPM_CODE": "3"}, " uv npm", False))):
+    # 1: a wrong checksum from both: pip. 2: the mirror down: the GitHub release
+    for n, (codes, failed, warns) in enumerate((({"DELAY": "0.5"}, "", False), ({"GH_CODE": "1", "SHA_CODE": "1"}, "", True),
+                                                ({"UV_CODE": "2", "NPM_CODE": "3", "ASTRAL_CODE": "22"}, " uv npm", False))):
         temp = tmp_path / f"t{n}"
         temp.mkdir()
-        env = {"PATH": f"{bin_}:/usr/bin:/bin", "HOME": str(tmp_path), "RUNNER_TEMP": str(temp), "GITHUB_REPOSITORY": "o/r", **codes}
+        env = {"PATH": f"{bin_}:/usr/bin:/bin", "HOME": str(tmp_path), "RUNNER_TEMP": str(temp), "GITHUB_REPOSITORY": "o/r",
+               "TARBALL": str(tmp_path / "uv.tar.gz"), "UV_PYTHON": str(bin_ / "pip-python"), **codes}
         done = shell(start, env)
         assert done.returncode == 0 and not (n == 0 and list((temp / "setup").glob("*.code"))), done.stderr   # not waited for
         assert n == 1 or shell(images, env).returncode == 0         # 1: not an early build
@@ -750,13 +766,39 @@ def test_site_workflow_sets_up_in_the_background(tmp_path):
         out = done.stdout
         assert (done.returncode != 0) == bool(failed) and ("::error::" in out) == bool(failed), (out, done.stderr)
         assert not failed or f"::error::failed:{failed}" in out
-        assert ("::warning::PSD sizes failed" in out) == warns and "uv said" in out and "npm said" in out
+        assert ("::warning::PSD sizes failed" in out) == warns and ("pip said" if n == 1 else "uv said") in out and "npm said" in out
+        assert ("::warning::uv not fetched" in out) == (n == 1)
         assert out.index(f"::group::uv (exit {codes.get('UV_CODE', 0)})") < out.index(f"::group::npm (exit {codes.get('NPM_CODE', 0)})")
         calls = (temp / "calls").read_text().splitlines()
         assert sum("/gh api repos/o/r/git/trees/0123abcd?recursive=1" in c for c in calls) == (3 if warns else 1)
-        assert any("/uv pip install -q -r site/build/requirements.txt" in c for c in calls)
+        assert any(("/pip-python -m pip" if n == 1 else "/uv/uv pip") + " install -q -r site/build/requirements.txt" in c for c in calls)
+        hosts = [c.split()[-1].split("/")[2] for c in calls if c.split()[0].endswith("/curl")]
+        assert hosts == ["releases.astral.sh"] + ["github.com"] * (n > 0)
         assert (temp / "tree.json").read_text().strip() == '{"tree": []}'
         early = {0: "0", 2: "uv"}.get(n)
         assert ("::group::images" in out) == bool(early) and ("::warning::early images failed" in out) == (n == 2)
         assert not early or f"::group::images (exit {early})" in out and ("python said" in out) == (n == 0)
         assert sum(f"build_site.py --images 0123abcd {temp}/setup/images.stop" in c for c in calls) == (n == 0)
+
+
+def test_site_workflow_python_from_the_tool_cache(tmp_path):
+    """site.yml's py step puts the image's newest 3.14.x on PATH with its lib, as setup-python does; none: nothing (setup-python)."""
+    yaml = pytest.importorskip("yaml")
+    path = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "site.yml"
+    if not path.is_file():
+        pytest.skip(f"no {path}")
+    run = next(s for s in yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["build"]["steps"] if s.get("id") == "py")["run"]
+    for n, have in enumerate((["3.13.9/x64", "3.14.2/x64", "3.14.10/x64", "3.14.11/x64-freethreaded", "3.15.0/x64"], ["3.13.9/x64"])):
+        cache, out = tmp_path / f"c{n}", tmp_path / f"o{n}"
+        for v in have:
+            (cache / "Python" / v / "bin").mkdir(parents=True)
+            (cache / "Python" / v / "bin" / "python").touch(mode=0o755)
+        out.mkdir()
+        files = {k: out / k for k in ("GITHUB_PATH", "GITHUB_ENV", "GITHUB_OUTPUT")}
+        env = {"PATH": "/usr/bin:/bin", "RUNNER_TOOL_CACHE": str(cache), "LD_LIBRARY_PATH": "/old", **{k: str(f) for k, f in files.items()}}
+        done = subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", run], env=env, capture_output=True, text=True)
+        got = {k: f.read_text() if f.exists() else "" for k, f in files.items()}
+        py = cache / "Python" / "3.14.10" / "x64"
+        assert done.returncode == 0 and got == ({"GITHUB_PATH": f"{py}/bin\n", "GITHUB_ENV": f"LD_LIBRARY_PATH={py}/lib:/old\n",
+                                                 "GITHUB_OUTPUT": f"python={py}/bin/python\n"} if n == 0 else
+                                                dict.fromkeys(files, "")), (done.stderr, got)
