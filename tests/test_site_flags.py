@@ -55,7 +55,8 @@ def test_build_carries_flags_never_pending(tmp_path, monkeypatch):
 
 
 def test_build_merges_automatic_flags(tmp_path):
-    """The checks' notes beside a person's flag; a person's flag that went is left out, a newer one stays."""
+    """The checks' notes beside a person's flag; a person's flag that went is left out, a newer one stays; a PSD not checked
+    yet takes its card's last record."""
     spec = importlib.util.spec_from_file_location("site_build_flags", SITE / "build" / "build_site.py")
     bs = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(bs)
@@ -68,6 +69,9 @@ def test_build_merges_automatic_flags(tmp_path):
     bs.merge_flags(card, None, cleared)
     assert card == {"psd": "A.psd", "flags": {"bars": "", "psd": "11111111"}}
     assert bs.load_checks(str(tmp_path / "none")) == ({}, {})
+    checks = {"old": {"card": "A B", "hand": "note"}, "c1": {"card": "C"}, "c2": {"card": "C"}}
+    at = (("new", "X/A_B.psd"), ("new", "X/A_C.psd"), ("new", "X/C.psd"), ("c1", "X/C.psd"))  # pushed, renamed, a shared name, its own
+    assert [bs.check_of(checks, *a) for a in at] == [checks["old"], None, None, checks["c1"]]
 
 
 def test_search_lines_and_file(tmp_path):

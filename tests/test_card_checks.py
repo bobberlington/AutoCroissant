@@ -211,7 +211,7 @@ def test_workflow_checks_cards_as_their_blobs_land(tmp_path):
 
 def test_workflow_site_build_on_shown_flags(tmp_path):
     """card-checks.yml's Commit: any change is pushed to data; site=true only when what build_site.py shows changed (hand
-    and bars by blob, cleared), not for new records without a flag or fields it never reads."""
+    and bars by card, cleared), not for new records without a flag, fields it never reads or a pushed card's same flags."""
     yaml = pytest.importorskip("yaml")
     workflow = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github/workflows/card-checks.yml"
     if not workflow.is_file() or not shutil.which("jq"):
@@ -250,6 +250,8 @@ def test_workflow_site_build_on_shown_flags(tmp_path):
     assert commit(lambda c: c["cards"]["a" * 40].update(reads={"atk": []}, notes=["x"], style="new")) == []
     assert commit(lambda c: c["cards"]["b" * 40].update(hand="Bars read 5, data 6.")) == ["site=true"]
     assert commit(lambda c: c["cards"]["a" * 40].update(bars="Bars.")) == ["site=true"]
+    assert commit(lambda c: c["cards"].update({"c" * 40: c["cards"].pop("a" * 40)})) == []         # A pushed, same flags
+    assert commit(lambda c: c["cards"].update({"d" * 40: {**c["cards"].pop("c" * 40), "bars": None}})) == ["site=true"]
     assert commit(lambda c: c["cleared"].update({"B.psd": "1234abcd"})) == ["site=true"]
     head = git("-C", str(data), "rev-parse", "HEAD")
     assert commit(lambda c: None) == [] and git("-C", str(data), "rev-parse", "HEAD") == head    # nothing to commit
