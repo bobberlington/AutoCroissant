@@ -489,7 +489,7 @@ def test_publish_on_a_warm_read(remote, tmp_path, monkeypatch):
 # ========================
 # card-preview.yml
 # ========================
-def _workflow(reads: bool = True) -> tuple:
+def _workflow(reads: bool = True, clone: bool = False) -> tuple:
     path = WORKFLOWS / "card-preview.yml"
     if not path.is_file():
         pytest.skip(f"no {path} (set AC_SITE_SRC to a TTSCardMaker checkout with it)")
@@ -497,6 +497,8 @@ def _workflow(reads: bool = True) -> tuple:
     text = path.read_text(encoding="utf-8")
     if reads and "card_preview_reads" not in text:      # main's until the card repo's push lands
         pytest.skip(f"{path} has no Reads step yet")
+    if clone and not ("cards.trees" in text and "bot.reqs" in text):     # the same
+        pytest.skip(f"{path} has no card fetch or venv key in Clone yet")
     return text, yaml.safe_load(text)
 
 
@@ -509,7 +511,7 @@ def test_workflow_shape():
     no secret but GITHUB_TOKEN (the preview's REST reads), no Discord, and no input expanded inside a shell script
     (only in env). The preview starts in the background before the fonts restore (Start, bounded by timeout) and waits
     for Go's file (after the font steps and the reads); Preview joins it: its summary and exit code."""
-    text, doc = _workflow()
+    text, doc = _workflow(clone=True)
     on = doc[True]
     assert list(on) == ["workflow_dispatch"]
     inputs = on["workflow_dispatch"]["inputs"]
@@ -591,7 +593,7 @@ def test_the_bot_clone_runs_here(tmp_path):
     requirements-cards.txt read through the API (bot.reqs), the card repo at GITHUB_SHA in the workspace (depth 1,
     blobless, .github/ alone; its trees marked), no header saved; a failed bot clone leaves no bot/ (the checkout after
     it brings one); a failed card fetch (a stale .git here) is fetched again, bot/ kept."""
-    _, doc = _workflow()
+    _, doc = _workflow(clone=True)
     job = doc["jobs"]["preview"]
     steps = {s.get("name"): s for s in job["steps"]}
     server, heads = tmp_path / "github", {}
@@ -641,7 +643,7 @@ def test_the_venv_restores_as_cards_python_does(tmp_path):
     check, the key from Clone's read of requirements-cards.txt (bot.reqs; awaited after a failed clone) or else the
     clone's; a passed check puts the venv first with setup-python's LD_LIBRARY_PATH, a failed one deletes it, as does
     a clone whose file gives another sha; cards-python runs only when it did not pass."""
-    _, doc = _workflow()
+    _, doc = _workflow(clone=True)
     steps = doc["jobs"]["preview"]["steps"]
     ids = [s.get("id") for s in steps]
     if "venv" not in ids:

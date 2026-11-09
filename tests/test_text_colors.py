@@ -300,8 +300,8 @@ def test_mockup_refuses_as_the_bake(clone, tmp_path):
     """mockup.js paintedOver, on the cards' details records, names what plan_colors refuses as painted over, in its words:
     a phrase under the title's or Ability's Gradient; not a whole field's, a phrase after one, or one under a lone Color Overlay.
     A retyped title or Ability box: the same, in the new text."""
-    if "export function paintedOver" not in (ASSETS / "mockup.js").read_text(encoding="utf-8"):
-        pytest.skip("mockup.js has no paintedOver yet")
+    if "export function paintedOver(rec, colors, typed = [], edit" not in (ASSETS / "mockup.js").read_text(encoding="utf-8"):
+        pytest.skip("mockup.js has no retyped paintedOver yet")
     from commands import psd_details as pd
     from commands.psd_edit import offline_parser
     vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
