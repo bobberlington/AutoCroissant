@@ -23,7 +23,9 @@ capitalised status words in the chart's colours with their FX layers (status_wor
 steps); each redraws only the changed glyphs and the guards re-export the PNG. Every save strips the merged image
 (Maximize Compatibility off, owner 2026-11-07: psd_edit.save_psd). The big pass's normalise (card_sweep alone until the
 guards land its files, G1): sub and superscript text set normal at the same size and place (to_normal), the pictures
-linked (the link step, psd_links), the merged image stripped, in one gated save.
+linked (the link step, psd_links), the merged image stripped, in one gated save. Clean (owner 2026-11-09, cards
+only, silent): hidden star and type icon layers, hidden pictures that are an exact copy of a visible layer, and data
+that draws nothing deleted, when every picture and the parse stay the same.
 
     check(psd, rel, context, old=None, added=False) -> [Issue]
     fix(data, rel, issues, work, parser=None, fonts=None, only=None) -> Fixed   the fixes, gated (one PSD's new bytes)
@@ -41,7 +43,7 @@ from functools import lru_cache
 from io import BytesIO
 from os import makedirs
 from os.path import basename, getsize, join
-from re import IGNORECASE, compile as re_compile, escape, fullmatch, search
+from re import DOTALL, IGNORECASE, compile as re_compile, escape, fullmatch, search, sub
 from shutil import rmtree
 from tempfile import mkdtemp
 from typing import Callable, Optional
@@ -136,6 +138,7 @@ class Fixed:
     normalised: list = field(default_factory=list)  # normalise: what it did (silent; its redrawn layers in redrawn)
     files: dict = field(default_factory=dict)   # normalise: other files it writes (repo path -> bytes; None deletes)
     left: list = field(default_factory=list)    # normalise: what it left as it was, and why (plan.json only)
+    cleaned: list = field(default_factory=list) # clean: what it deleted (silent; every picture the same: no PNG)
 
 
 # ========================
@@ -2818,7 +2821,226 @@ def _resources(psd: PSDImage, preview: bool, added: bool) -> list:
     return out
 
 
+# ========================
+# Clean (owner 2026-11-09): hidden leftovers and data that draws nothing, on cards; every picture and the parse the same
+# ========================
+CLEAN_ICON = 0.03           # share of the card: a star or type icon is smaller (a 100 px icon is 0.5%)
+STAR_GROUP = re_compile(r"\bstars?\b", IGNORECASE)
+TYPE_GROUP = re_compile(r"types", IGNORECASE)
+STAT_GROUP = re_compile(r"\b(hp|health|def|defen[cs]e|atk|attack|spd|speed|darks?|lit|stats?|bars?)\b", IGNORECASE)
+ANCESTORS = re_compile(rb"\s*<photoshop:DocumentAncestors>.*?</photoshop:DocumentAncestors>", DOTALL)
+PATTERN_TAGS = (Tag.PATTERNS1, Tag.PATTERNS2, Tag.PATTERNS3)
+FX_TAGS = (Tag.FILTER_EFFECTS1, Tag.FILTER_EFFECTS2, Tag.FILTER_EFFECTS3)
+
+
+def _shown_anywhere(psd: PSDImage) -> set:
+    """ids of the nodes some picture shows (the saved one or a variant's)."""
+    found = {id(layer) for layer in psd.descendants() if layer.is_visible()}
+    for n in variants_of(psd):
+        with variant_view(psd, n):
+            found |= {id(layer) for layer in psd.descendants() if layer.is_visible()}
+    return found
+
+
+def _groups(layer) -> list:
+    out, parent = [], layer.parent
+    while parent is not None and not isinstance(parent, PSDImage):
+        out.append(parent.name)
+        parent = parent.parent
+    return out
+
+
+def _clean_kind(layer, psd: PSDImage) -> Optional[str]:
+    """"star" or "type" for a star or type icon leaf: linked to Types/Stars or Types, or an icon-sized picture in a Stars
+    or Types group or named a star; never a stat bar or a layer in a stat group (Star Bars' cells)."""
+    if layer.is_group() or layer.kind not in ("pixel", "smartobject", "shape") or comp_value(layer) is not None:
+        return None
+    groups = _groups(layer)
+    if any(STAT_GROUP.search(name) for name in groups):
+        return None
+    if layer.kind == "smartobject":
+        try:
+            target = layer.smart_object.link_target(getattr(psd, "repo_path", "") or None) or ""
+        except (ValueError, KeyError, AttributeError):
+            target = ""
+        if target.startswith("Types/Stars/"):
+            return "star"
+        if target.startswith("Types/"):
+            return "type"
+    box = layer.bbox
+    if box[2] <= box[0] or (box[2] - box[0]) * (box[3] - box[1]) > CLEAN_ICON * psd.width * psd.height:
+        return None
+    if any(TYPE_GROUP.search(name) for name in groups):
+        return "type"
+    if any(STAR_GROUP.search(name) for name in groups) or "star" in sub(r"[^a-z]+", " ", base_name(layer).lower()).split():
+        return "star"
+    return None
+
+
+def _clipped_on(layer) -> list:
+    """The clipping layers right above a base layer in its group (they draw nothing once it is hidden)."""
+    if layer.is_group() or layer.clipping:
+        return []
+    siblings = list(layer.parent)
+    out = []
+    for above in siblings[siblings.index(layer) + 1:]:
+        if not above.clipping:
+            break
+        out.append(above)
+    return out
+
+
+def _layer_ink(layer):
+    """psd_links.ink_key of a layer's own pixels (clean's copies), None without any."""
+    rgba = layer.numpy()
+    if rgba is None or not rgba.size:
+        return None
+    if rgba.shape[2] == 3:
+        rgba = np.dstack([rgba, np.ones(rgba.shape[:2], rgba.dtype)])
+    return _links().ink_key(np.clip(np.round(rgba * 255), 0, 255).astype(np.uint8))
+
+
+def clean_plan(psd: PSDImage) -> list:
+    """
+    clean()'s deletions on a card: [(layer, why)]. A node no picture shows: a group of star or type icons alone, a star
+    or type icon leaf (with the clipping layers on it), a picture that is a visible layer's exact copy (the same pixels
+    anywhere on the card, owner 2026-11-09); never a stat bar or a layer some variant shows.
+    """
+    shown = _shown_anywhere(psd)
+    hidden = [layer for layer in psd.descendants() if id(layer) not in shown]
+    out, taken = [], set()
+    for layer in hidden:
+        if id(layer) in taken:
+            continue
+        if layer.is_group():
+            leaves = [one for one in layer.descendants() if not one.is_group()]
+            kinds = [_clean_kind(one, psd) for one in leaves]
+            if leaves and any(kinds) and all(kind or (one.clipping and one.kind != "type") for kind, one in zip(kinds, leaves)):
+                out.append((layer, "hidden stars or type icons"))
+                taken |= {id(layer)} | {id(one) for one in layer.descendants()}
+            continue
+        kind = _clean_kind(layer, psd)
+        if kind:
+            clipped = _clipped_on(layer)
+            out += [(layer, f"hidden {kind}")] + [(one, "clipped onto it") for one in clipped]
+            taken |= {id(layer)} | {id(one) for one in clipped}
+    visible = [layer for layer in psd.descendants() if layer.kind in ("pixel", "smartobject") and layer.is_visible()]
+    keys: dict = {}
+    for layer in hidden:
+        if id(layer) in taken or layer.kind not in ("pixel", "smartobject") or _clipped_on(layer) \
+                or comp_value(layer) is not None or any(STAT_GROUP.search(name) for name in _groups(layer)):
+            continue
+        ink = _layer_ink(layer)
+        if ink is None:
+            continue
+        for other in visible:
+            if (other.bbox[2] - other.bbox[0]) < ink[0] or (other.bbox[3] - other.bbox[1]) < ink[1]:
+                continue
+            if id(other) not in keys:
+                keys[id(other)] = _layer_ink(other)
+            if keys[id(other)] == ink:
+                out.append((layer, f"a copy of {other.name!r}"))
+                taken.add(id(layer))
+                break
+    return out
+
+
+def _dead(psd: PSDImage, data: bytes, apply: bool = False) -> dict:
+    """Data that draws nothing, {kind: bytes}: pixel sources (PxSD, a layer's PxSc: video frames), XMP
+    DocumentAncestors, and (data: the file's bytes) patterns and filter-effect items nothing else in the file names;
+    apply: removed."""
+    def written(block) -> bytes:
+        out = BytesIO()
+        block.write(out)
+        return out.getvalue()
+
+    def named(blob: bytes, key: str) -> int:
+        return blob.count(key.encode("ascii", "ignore")) + blob.count(key.encode("utf-16-be"))
+    found: dict = {}
+    blocks = psd._record.layer_and_mask_information.tagged_blocks
+    if blocks is not None and Tag.PIXEL_SOURCE_DATA2 in blocks:
+        found["pixel source"] = len(written(blocks[Tag.PIXEL_SOURCE_DATA2]))
+        if apply:
+            del blocks[Tag.PIXEL_SOURCE_DATA2]
+    for layer in psd.descendants():
+        tagged = layer._record.tagged_blocks
+        if tagged is not None and Tag.PIXEL_SOURCE_DATA1 in tagged:
+            found["layer pixel sources"] = found.get("layer pixel sources", 0) + len(written(tagged[Tag.PIXEL_SOURCE_DATA1]))
+            if apply:
+                del tagged[Tag.PIXEL_SOURCE_DATA1]
+    for tags, kind, ident in ((PATTERN_TAGS, "patterns", "pattern_id"), (FX_TAGS, "filter effects", "uuid")):
+        for tag in tags if data else ():
+            items = blocks.get_data(tag) if blocks is not None and tag in blocks else None
+            unused = []
+            for item in items or []:
+                key, own = str(getattr(item, ident, "") or "").strip("\x00"), written(item)
+                if key and named(data, key) <= named(own, key):
+                    unused.append(item)
+                    found[kind] = found.get(kind, 0) + len(own)
+            if apply and unused:
+                items[:] = [item for item in items if item not in unused]
+    resources = psd._record.image_resources
+    if resources is not None and Resource.XMP_METADATA in resources:
+        xmp = resources[Resource.XMP_METADATA]
+        trimmed = ANCESTORS.sub(b"", xmp.data)
+        if len(trimmed) < len(xmp.data):
+            found["XMP ancestors"] = len(xmp.data) - len(trimmed)
+            if apply:
+                xmp.data = trimmed
+    if apply and found:
+        psd.mark_updated()
+    return found
+
+
+def clean_layers(psd: PSDImage) -> list:
+    """clean()'s finds on a card (psd.repo_path; templates and other files never): its deletions, and the PSD itself when
+    it holds pixel sources (XMP ancestors go only with something else)."""
+    from commands.font_check import is_card_psd
+    if not is_card_psd(getattr(psd, "repo_path", "") or ""):
+        return []
+    return [layer for layer, _ in clean_plan(psd)] + ([psd] if set(_dead(psd, b"")) - {"XMP ancestors"} else [])
+
+
+def clean(path: str, out_path: str, fonts=None, rel: str = "") -> list:
+    """
+    Clean (owner 2026-11-09): clean_plan's layers deleted (no smart-object document left without a layer) and _dead's
+    data removed, in one save; every picture (the saved one and each variant's) drawn the same to the pixel, else
+    Refused("pixels"). Returns what went: layer names, then the data's kinds ([]: nothing written).
+    """
+    with open(path, "rb") as fh:
+        data = fh.read()
+    psd = PSDImage.open(BytesIO(data))
+    psd.repo_path = rel
+    plan = clean_plan(psd)
+    orphans = _orphan_links(psd)
+    for layer, _ in plan:
+        psd_edit.remove_layer(psd, layer)
+    gone = _orphan_links(psd) - orphans
+    for tag in (Tag.LINKED_LAYER1, Tag.LINKED_LAYER2, Tag.LINKED_LAYER3, Tag.LINKED_LAYER_EXTERNAL):
+        items = psd.tagged_blocks.get_data(tag) if psd.tagged_blocks and tag in psd.tagged_blocks else None
+        if items:
+            items[:] = [item for item in items if str(item.uuid).strip("\x00") not in gone]
+    dead = _dead(psd, data, apply=True)
+    if not plan and not set(dead) - {"XMP ancestors"}:
+        return []
+    psd.mark_updated()
+    psd_edit.save_psd(psd, out_path)
+    old, new = psd_edit.use_record(PSDImage.open(BytesIO(data)), rel), psd_edit.use_record(PSDImage.open(out_path), rel)
+    if _orphan_links(new):
+        raise Refused("bytes", "a smart object's document is left with no layer using it")
+    pictures = variants_of(old)
+    for n in [None] + (pictures if len(pictures) > 1 else []):
+        with variant_view(old, n), variant_view(new, n):
+            box = (0, 0, old.width, old.height)
+            a = np.asarray(psd_edit.render_region(old, box, False).convert("RGBA"))
+            b = np.asarray(psd_edit.render_region(new, box, False).convert("RGBA"))
+        if not np.array_equal(a, b):
+            raise Refused("pixels", f"picture {n or 1} would change")
+    return [layer.name for layer, _ in plan] + list(dead)
+
+
 PIXEL_FIXES = {     # kind -> (finds(psd) -> [layer], fix(path, out_path, fonts) -> [layer name], the parse it makes or None)
+    "clean": (clean_layers, clean, None),      # first: the other fixes work on what stays
     "badge widths": (icon_layers, relay_badges, None),   # first: straighten and old glyphs lay out at the current widths
     "apostrophes": (curly_layers, straighten, straight_parse),
     "old glyphs": (icon_layers, redraw_old_glyphs, None),
@@ -2831,7 +3053,8 @@ PIXEL_FIXES = {     # kind -> (finds(psd) -> [layer], fix(path, out_path, fonts)
 }
 SWEEP_ONLY = {"alt template", "normalise"}   # run by card_sweep alone, never by the push guards (owner's call,
 #   2026-11-06); normalise until the guards land its files silently (big pass G1: then out of this set)
-PIXEL_LINES = {"badge widths": "badges laid out again at their new widths", "apostrophes": "straight apostrophes",
+PIXEL_LINES = {"clean": "hidden stars, type icons and copies deleted, data that draws nothing removed",
+               "badge widths": "badges laid out again at their new widths", "apostrophes": "straight apostrophes",
                "old glyphs": "old icon font glyphs redrawn",
                "badges": "badges and icons fitted to their text",
                "overlay badges": "badges under an overlay in one colour", "tags": "timing tags and costs set as badges",
@@ -2870,7 +3093,7 @@ def _pixel_fixes(folder: str, base: str, current: str, rel: str, parser: Optiona
                 names = apply(current, out, fonts, whole=True)
             elif apply is redraw_old_glyphs:    # its stale layers kept before any refusal (told)
                 names = apply(current, out, fonts, seen=result.stale_glyphs)
-            elif apply is normalise:
+            elif apply in (normalise, clean):
                 names = apply(current, out, fonts, rel)
             else:
                 names = apply(current, out, fonts)
@@ -2882,7 +3105,9 @@ def _pixel_fixes(folder: str, base: str, current: str, rel: str, parser: Optiona
         except Exception as error:              # best effort, never told: plan.json says why
             result.pixel_left.append((kind, f"{type(error).__name__}: {error}"))
             continue
-        if apply is normalise:                  # the PNG follows its redrawn layers alone (a link's new raster)
+        if apply is clean:                      # every picture the same: no PNG follows
+            result.cleaned = list(names)
+        elif apply is normalise:                # the PNG follows its redrawn layers alone (a link's new raster)
             result.normalised, result.files, result.left = list(names), dict(names.files), list(names.left)
             if names.redraws:
                 result.redrawn[kind] = list(names.redraws)
@@ -2914,6 +3139,9 @@ __all__ = [
     'badge_tags',
     'card_key',
     'check',
+    'clean',
+    'clean_layers',
+    'clean_plan',
     'badge_plan',
     'composer_layers',
     'curly_layers',

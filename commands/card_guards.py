@@ -5,8 +5,9 @@ merged into the old PNG; Photoshop's stored composite only cross-checks, and a P
 11-07 pass, gets the PNG under the bake's own gates, nothing told); guard 2 (card_standards) checks the pushed PSDs against the card
 standards (missing fonts are the font check's alone) and fixes only the 0-pixel classes; the Single-line Composer (R8) it
 always sets unsaid, box text that rewraps redrawn and its PNG re-exported: only the bot commit's message names it
-(owner, 2026-10-25); so are the pixel fixes (card_standards.PIXEL_FIXES, in order: badges laid out again at their new
-widths, straight apostrophes, old icon font glyphs, badges fitted, timing tags set as badges: R1 then untold, status
+(owner, 2026-10-25); so are the pixel fixes (card_standards.PIXEL_FIXES, in order: clean, on cards: hidden stars, type
+icons and exact copies deleted and data that draws nothing removed, every picture and the parse the same, no PNG (owner
+11-09); badges laid out again at their new widths, straight apostrophes, old icon font glyphs, badges fitted, timing tags set as badges: R1 then untold, status
 words in the chart's colours and effects: no changelog event either, owner 11-07),
 the PNG re-exported the same way; badges drawn with another build of the icon font that the PSD keeps are told
 (owner 2026-11-04: OLD_FONT). One report per push: the job
@@ -902,7 +903,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
             result.notes.append((f"{basename(job.png)} could not be checked against the PSD ({measured.get('why')})", False))
     if job.case == "pair" and old is not None and job.base_png:
         _pair_pictures(source, job, result, old, new, out, shown, faces)
-    pixels = tuple(kind for kind in standards.pixel_kinds(new, chart=context.chart) if kind != NORMALISE) \
+    pixels = tuple(kind for kind in standards.pixel_kinds(new, rel=job.psd, chart=context.chart) if kind != NORMALISE) \
         if job.case != "png-only" else ()
     if job.case != "png-only":                  # converted after the check (convert_plan), SWEEP_ONLY or not
         result.convert = list(standards.pixel_kinds(new, (NORMALISE,)))
@@ -933,9 +934,11 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
             result.redrawn = dict(fixed.redrawn) if redrawn else {}
             result.pixel_notes = list(fixed.notes) if result.redrawn else []
             silent = [f"{standards.PIXEL_LINES[kind]} ({', '.join(names)})" for kind, names in result.redrawn.items()]
+            cleaned = fixed.cleaned if data == fixed.data else []      # clean (owner 11-09): silent, no PNG
+            silent += [f"{standards.PIXEL_LINES['clean']} ({', '.join(cleaned)})"] if cleaned else []
             write = {"path": job.psd, "file": file, "sha": blob_sha(data), "kind": "psd",
                      "line": "; ".join(fixed.applied + composer + silent), "shown": said, "silent": not said,
-                     "composer": bool(fixed.composer), "pixels": sorted(result.redrawn)}
+                     "composer": bool(fixed.composer), "pixels": sorted(result.redrawn) + (["clean"] if cleaned else [])}
             if "tags" in result.redrawn:        # R1 is told only if this write doesn't land with its tags (after_window)
                 write["settles"] = [issue["line"] for issue in result.issues if issue["code"] == "R1" and issue["told"]]
             if redrawn:                         # land swaps in plain when the redraw's PNGs do not land

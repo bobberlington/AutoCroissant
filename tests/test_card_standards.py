@@ -867,3 +867,61 @@ def test_status_words_leave_prose_alone(clone, context):
         assert low and cs.status_plan(psd, context.chart) == []
     psd = PSDImage.open(clone / "Creatures/Pandas/3 Stars/Panseida.psd")
     assert cs.status_plan(psd, context.chart) and "status words" not in cs.pixel_kinds(psd)
+
+
+def _clean_fixture(path) -> None:
+    """A 600x800 card: art, a Stars and a Types group with hidden spares, a hidden copy of the art, other hidden art, a
+    stat row's hidden cell and a picture only variant 2 shows."""
+    import numpy as np
+    from psd_tools.api.layers import PixelLayer
+    psd = PSDImage.new("RGB", (600, 800), color=(90, 90, 90))
+    art = np.zeros((300, 400, 4), np.uint8)
+    art[..., 0] = np.linspace(20, 230, 400)[None, :].astype(np.uint8)
+    art[..., 1], art[..., 3] = 120, 255
+    icon = np.zeros((40, 40, 4), np.uint8)
+    icon[8:32, 8:32] = (240, 200, 30, 255)
+
+    def add(group, array, name, left, top, shown=True):
+        layer = PixelLayer.fromarray(array, psd, name=name, top=top, left=left)
+        group.append(layer)
+        layer.visible = shown
+    add(psd, art, "Art", 100, 200)
+    add(psd, art, "Art copy", 50, 150, False)                         # the same pixels elsewhere: a copy
+    add(psd, art[:, ::-1].copy(), "Old art", 100, 200, False)           # other pixels: kept
+    add(psd, art, "Art #2", 100, 200, False)                            # variant 2 shows it: kept
+    stars, types, hp = psd.create_group(name="Stars"), psd.create_group(name="Types"), psd.create_group(name="HP")
+    add(stars, icon, "Star", 540, 10)
+    add(stars, icon, "Star copy", 500, 10, False)
+    add(types, icon[..., [2, 1, 0, 3]].copy(), "fire", 10, 10)
+    add(types, icon, "water", 60, 10, False)
+    add(hp, icon, "3", 300, 600, False)                                 # a stat row's cell: kept
+    psd.save(str(path))
+
+
+def test_clean_deletes_hidden_stars_types_and_copies(tmp_path):
+    """Owner 2026-11-09: on a card, hidden stars, type icons and exact copies of a visible layer go, every picture drawn
+    the same; other hidden art, stat cells and a variant's picture stay; templates are never cleaned."""
+    path, out = tmp_path / "Fixture.psd", tmp_path / "out.psd"
+    _clean_fixture(path)
+    psd = PSDImage.open(str(path))
+    psd.repo_path = "Auxiliary/Minions/Fixture.psd"
+    assert sorted(layer.name for layer, _ in cs.clean_plan(psd)) == ["Art copy", "Star copy", "water"]
+    assert "clean" in cs.pixel_kinds(PSDImage.open(str(path)), ("clean",), "Auxiliary/Minions/Fixture.psd")
+    assert not cs.pixel_kinds(PSDImage.open(str(path)), ("clean",), "MDW/Templates/Fixture.psd")
+    assert sorted(cs.clean(str(path), str(out), rel="Auxiliary/Minions/Fixture.psd")) == ["Art copy", "Star copy", "water"]
+    left = {layer.name for layer in PSDImage.open(str(out)).descendants()}
+    assert {"Old art", "Art #2", "3", "Star", "fire"} <= left and not {"Art copy", "Star copy", "water"} & left
+    assert cs.clean(str(out), str(tmp_path / "again.psd"), rel="Auxiliary/Minions/Fixture.psd") == []
+
+
+def test_clean_on_a_real_card(clone, tmp_path):
+    """Kingsoul (11-09 pass): its hidden Delicate Flower star and the hidden copy of its art go; parse and picture as
+    they were (fix's gates)."""
+    rel = "Items/Equip/4 Stars/Kingsoul.psd"
+    if not (clone / rel).exists():
+        pytest.skip(f"{rel} not in the clone")
+    data = (clone / rel).read_bytes()
+    fixed = cs.fix(data, rel, [], str(tmp_path / "work"), clone_vocabulary(str(clone)).parser(), only="clean")
+    assert fixed.data and not fixed.redrawn and fixed.pixel_left == [], fixed.pixel_left
+    assert {"Delicate Flower copy 2", "Layer 1 copy"} <= set(fixed.cleaned)
+    assert len(fixed.data) < len(data)
