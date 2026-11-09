@@ -20,7 +20,7 @@ import time
 from collections import defaultdict
 from datetime import datetime
 from html import unescape as html_unescape
-from os import environ
+from os import environ, killpg
 from os.path import expanduser
 from pathlib import Path
 
@@ -802,3 +802,60 @@ def test_site_workflow_python_from_the_tool_cache(tmp_path):
         assert done.returncode == 0 and got == ({"GITHUB_PATH": f"{py}/bin\n", "GITHUB_ENV": f"LD_LIBRARY_PATH={py}/lib:/old\n",
                                                  "GITHUB_OUTPUT": f"python={py}/bin/python\n"} if n == 0 else
                                                 dict.fromkeys(files, "")), (done.stderr, got)
+
+
+def test_site_watch_ends_a_cancelled_deploy(tmp_path):
+    """site.yml's watch: a deploy syncing files while a newer main build waits is cancelled and deploy-pages' node ended
+    by its PID (another action's node, an earlier PID, left), so cut hands on (newer: no retry). A failed cancel: none."""
+    yaml = pytest.importorskip("yaml")
+    path = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "site.yml"
+    pgrep, setsid = shutil.which("pgrep"), shutil.which("setsid")          # no setsid on macOS: a stand-in
+    if not path.is_file() or not pgrep:
+        pytest.skip(f"no {path} or pgrep")
+    steps = {s.get("id"): s for s in yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["build"]["steps"]}
+    assert "-ge 120 ]" in steps["watch"]["run"]
+    watch, cut = steps["watch"]["run"].replace("-ge 120 ]", "-ge 0 ]"), steps["cut"]["run"]      # 2 min syncing: at once
+    bin_ = tmp_path / "bin"
+    bin_.mkdir()
+    for name, body in {"gh": 'case "$*" in *cancel*) exit "$CANCEL";; *runs*) echo 7;; *) echo syncing_files;; esac',
+                       "sleep": "exec /bin/sleep 0.02",
+                       "pgrep": f'{pgrep} "$@" | grep -Fx -f "$MINE"',            # this test's processes only
+                       "setsid": f'exec {setsid} "$@"' if setsid else
+                       f"exec {sys.executable} -c 'import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' \"$@\""}.items():
+        (bin_ / name).write_text(f"#!/bin/sh\n{body}\n")
+        (bin_ / name).chmod(0o755)
+    node = lambda action: subprocess.Popen(["sh", "-c", 'trap "exit 1" TERM; while :; do /bin/sleep 0.02; done',   # exits 1
+                                            str(tmp_path / "_actions" / "actions" / action / "dist" / "index.js")])  # as the runner's
+    shell = lambda run, env: subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", run], env=env,
+                                            capture_output=True, text=True, timeout=30)
+    for n, cancel in enumerate(("0", "22")):
+        temp = tmp_path / f"t{n}"
+        temp.mkdir()
+        other, deploy = node("upload-artifact/v7"), node("deploy-pages/v5")
+        try:
+            (temp / "mine").write_text(f"{other.pid}\n{deploy.pid}\n")
+            env = {"PATH": f"{bin_}:/usr/bin:/bin", "RUNNER_TEMP": str(temp), "GITHUB_REPOSITORY": "o/r", "GITHUB_SHA": "abc",
+                   "GITHUB_RUN_ID": "5", "MINE": str(temp / "mine"), "CANCEL": cancel}
+            assert shell(watch, env).returncode == 0
+            for _ in range(500):
+                if "waits:" in ((temp / "watch.log").read_text() if (temp / "watch.log").exists() else ""):
+                    break
+                time.sleep(0.02)
+            try:
+                deploy.wait(timeout=10 if n == 0 else 0.5)
+            except subprocess.TimeoutExpired:
+                pass
+            assert deploy.returncode == (1 if n == 0 else None) and other.poll() is None, (temp / "watch.log").read_text()
+            done = shell(cut, {**env, "FAILED": str(n == 0).lower(), "GITHUB_OUTPUT": str(temp / "out"),
+                               "GITHUB_STEP_SUMMARY": str(temp / "summary")})
+            out = (temp / "out").read_text() if (temp / "out").exists() else ""
+            assert done.returncode == 0 and ("newer=true" in out) == (n == 0), done.stdout
+            assert ("deploy cancelled" if n == 0 else "cancel failed") in done.stdout
+        finally:
+            for p in (other, deploy):
+                p.kill()
+                p.wait()
+            try:                                                                  # a watch still looping
+                killpg(int((temp / "watch.pid").read_text()), 9)
+            except (OSError, ValueError):
+                pass
