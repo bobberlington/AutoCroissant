@@ -173,6 +173,29 @@ out([m.textColours(text([255, 255, 255], 50), bg), m.textColours(text([255, 255,
     assert ink == near == [255, 255, 255] and over is None and one == [16, 32, 48] and split == [0, 0, 255]
 
 
+@needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "gradientOn"), reason="no gradient overlay shades in mockup.js")
+def test_gradient_overlay_shades(tmp_path):
+    """Under an enabled Gradient Overlay (the layer's or a group's) erase reads the old letters' colours top to bottom,
+    past the background and the black outline; without one: no shades, the same colours."""
+    out = node(tmp_path, """
+const W = 200, H = 100, data = new Uint8ClampedArray(W * H * 4);
+for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+  const t = (y - 30) / 40, k = x % 12, ink = x >= 40 && x < 160 && y >= 30 && y < 70 && k < 5;
+  data.set([...(!ink ? [128, 128, 128] : k === 0 || k === 4 ? [0, 0, 0] : [255 * (1 - t), 0, 255 * t]), 255], (y * W + x) * 4);
+}
+const run = profile => m.erase(Uint8ClampedArray.from(data), W, H, [20, 20, 180, 80], { lines: [[40, 30, 160, 70]], reach: 2, cell: 8, edge: 25, profile });
+const fx = { effects: { Text: ["GradientOverlay"], Off: ["GradientOverlay (off)"], Name: ["ColorOverlay"] } };
+out([run(true), run(false), ["Text/Ability", "Off/Ability", "Name", ""].map(p => m.gradientOn(fx, p)), m.oneColour(fx, "Name")]);""")
+    shaded, flat, on, one = out
+    s = shaded.pop("shades")
+    assert s["top"] == 30 and s["bottom"] == 70 and len(s["stops"]) == 8
+    (r0, _, b0), (r1, _, b1) = s["stops"][0][1], s["stops"][-1][1]
+    assert r0 > 200 > 50 > b0 and b1 > 200 > 50 > r1   # red at the top, blue at the bottom: not the grey, not the outline
+    assert flat.pop("shades") is None and flat == shaded and shaded["stroke"] == [0, 0, 0]
+    assert on == [True, False, False, False] and one is True
+
+
 kept = pytest.mark.skipif(not has(MOCKUP_JS, "statSite"), reason="no statSite in mockup.js")
 
 
