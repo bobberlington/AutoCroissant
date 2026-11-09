@@ -268,3 +268,41 @@ def test_a_baked_build_reads_ranges_at_the_bake_commits_parent(cards, monkeypatc
     assert helpers._build(cards, "--head", baked, "--baked", "--full")[0] == cd.EXIT_OK
     assert served and set(served) == {(cards.first, FREEZER)}      # B's own PSD came from the clone
     assert _strip(helpers._read(cards)[0]["The Freezer"].to_dict()) == _strip(_golden(FREEZER))
+
+
+@needs_ranges
+def test_other_psds_links_read_in_the_workers_as_one_at_a_time(cards, clone, monkeypatch):
+    """gather_links reads MDW PSDs and .psb files by ranges in the download workers: links.json as one worker gives."""
+    rel = "Auxiliary/Creatures/Militron_(No_Armor).psd"
+    if not (clone / rel).exists():
+        pytest.skip("no Militron (No Armor)")
+    linked = (clone / rel).read_bytes()
+    others = {"MDW/Assets/A.psd": linked, "MDW/Linked/B - c.psb": cards.psds[DOOMER],
+              "MDW/Templates/C.psd": cards.psds[FREEZER], "MDW/Unfinished/D.psd": linked}
+    for path, data in others.items():
+        helpers.put(cards.repo, path, data)
+    helpers.put(cards.repo, "Types/unknown.png", b"unknown")
+    helpers.commit(cards.repo, "bob", 2000)
+    _hide(monkeypatch, {_sha(data) for data in others.values()})
+    monkeypatch.setattr(ga, "get", _raw_from_git(cards.repo, []))
+    monkeypatch.setattr(cd.CardBuild, "_download", lambda self, path, sha: pytest.fail(f"{path} downloaded whole"))
+    linked_of, waited, second = cd.CardBuild._linked, [], threading.Event()
+
+    def reading(self, psd, path, sha):
+        if cd.DOWNLOAD_WORKERS > 1 and path == "MDW/Assets/A.psd":
+            waited.append(second.wait(10))                       # B is read meanwhile, by another worker
+        if cd.DOWNLOAD_WORKERS > 1 and path == "MDW/Linked/B - c.psb":
+            second.set()
+        return linked_of(self, psd, path, sha)
+
+    monkeypatch.setattr(cd.CardBuild, "_linked", reading)
+    found = []
+    for workers in (1, 4):
+        monkeypatch.setattr(cd, "DOWNLOAD_WORKERS", workers)
+        cards.db = cards.tmp / f"data{workers}" / "db"
+        cards.db.mkdir(parents=True)
+        assert helpers._build(cards, "--empty")[0] == cd.EXIT_OK
+        found.append(cd.read_links(str(cards.db)))
+    assert waited == [True] and found[0] == found[1]
+    assert {path: len(found[1][path].get("links", [])) for path in others} == {
+        "MDW/Assets/A.psd": 1, "MDW/Linked/B - c.psb": 0, "MDW/Templates/C.psd": 0, "MDW/Unfinished/D.psd": 1}

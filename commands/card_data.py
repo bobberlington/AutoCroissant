@@ -22,6 +22,7 @@ from os.path import abspath, basename, dirname, isfile, join as path_join, split
 from subprocess import CalledProcessError, run
 from sys import version_info
 from tempfile import mkstemp
+from threading import Lock
 from typing import Callable, Optional
 
 from psd_tools import PSDImage
@@ -655,15 +656,19 @@ class CardBuild:
         from commands.psd_parts import Templates
         if self.templates is None:
             self.templates = Templates.from_blobs(self._file_bytes)
+        self._make_repo_tree()
+        try:
+            psd_details._icon_parser(self.db.all_types)
+        except Exception:                               # the details say so, card by card
+            pass
+
+    def _make_repo_tree(self) -> None:
+        """_repo_tree, made once before workers share it."""
         try:
             if self._repo_tree is None:
                 from psd_tools.api.links import RepoTree
                 self._repo_tree = RepoTree(self.sizes)
         except ImportError:                             # _linked records it, PSD by PSD
-            pass
-        try:
-            psd_details._icon_parser(self.db.all_types)
-        except Exception:                               # the details say so, card by card
             pass
 
     def _fetch_read(self, path: str, name: str, sha: str) -> Optional["Read"]:
@@ -962,9 +967,9 @@ def pixel_hash(data: bytes, path: str) -> str:
 def gather_links(build: "GitBuild", before: dict) -> dict:
     """
     db/links.json after this run: every PSD and .psb of the tree (cards from this run's parse, the others read when
-    their blob moved: range reads, else the local store, else REST within the budget; a card not parsed since its blob
-    moved has no record, so the guards delete nothing), the linked files' blobs (append-only; seeded once from Types/
-    history, sizes unknown) and the pixels of MDW/Linked's (batched git fetches).
+    their blob moved, DOWNLOAD_WORKERS at a time: range reads, else the local store, else REST within the budget; a
+    card not parsed since its blob moved has no record, so the guards delete nothing), the linked files' blobs
+    (append-only; seeded once from Types/ history, sizes unknown) and the pixels of MDW/Linked's (batched git fetches).
     """
     files = {path: dict(blobs) for path, blobs in before["files"].items()}
     kept_psds = {path: record for path, record in before.items() if path not in LINK_KEYS}
@@ -989,25 +994,42 @@ def gather_links(build: "GitBuild", before: dict) -> dict:
             unread.append(path)
     if unread and range_reads() and not build.raw_ref:
         build.raw_ref = build._raw_ref()
-    for path in unread:
-        sha = build.shas[path]
-        if not build._store(sha) and not build.raw_ref:
+    todo = []
+    for path in unread:                             # the budget in path order, before the workers
+        if not build._store(build.shas[path]) and not build.raw_ref:
             if build.rest >= build.budget:
                 continue                            # unknown this run: read on a later one
             build.rest += 1
+        todo.append(path)
+    ranged, lock = bool(build.raw_ref), Lock()
+    if todo:
+        build._make_repo_tree()
+
+    def read(path: str) -> Optional[dict]:         # a download worker's record; None: not read this run
+        sha = build.shas[path]
+        if ranged and not build.raw_ref and not build._store(sha):
+            with lock:                              # range reads went off meanwhile: whole, within the budget
+                if build.rest >= build.budget:
+                    return None
+                build.rest += 1
         source = build._fetch_psd(path, sha)
         if source is None:
-            continue
+            return None
         try:
             psd = source.psd if isinstance(source, RemotePSD) else PSDImage.open(source)
             found = build._linked(psd, path, sha)
             if isinstance(source, RemotePSD) and source.failed:
-                continue
-            psds[path] = _link_record(found, path, files)
+                return None
+            return _link_record(found, path, files)
         except Exception as e:                      # unreadable: recorded, the guards' deletions held
-            psds[path] = {"blob": sha, "error": f"{type(e).__name__}: {e}"[:200]}
+            return {"blob": sha, "error": f"{type(e).__name__}: {e}"[:200]}
         finally:
             build._release(source)
+
+    with ThreadPoolExecutor(DOWNLOAD_WORKERS) as pool:
+        for path, record in zip(todo, pool.map(read, todo)):
+            if record is not None:
+                psds[path] = record
     pixels = {blob: found for blob, found in before["pixels"].items()}
     wanted = {build.shas[p]: p for p in linked if p.startswith(f"{LINKED_DIR}/") and build.shas[p] not in pixels}
     if wanted:
