@@ -80,8 +80,8 @@ def test_orphaned_effect_layer():
 
 
 def test_unfilled_line_gaps_are_padding():
-    """A line's leading gap that no type fills is layout padding (Twin Emperors' body beside its label, Warcraftian
-    Druid's "Bear:" line): gone. A gap a type fills, and one inside a line, stay as before."""
+    """A line's leading gap that no type fills is layout padding (a body a row below its label, Warcraftian Druid's
+    "Bear:" line): gone. A gap a type fills, and one inside a line, stay as before."""
     from commands.psd_analyzer import StatsDatabase
     from commands.psd_parser import BoundingBox, PSDParser
     p = PSDParser(["fire"], StatsDatabase())

@@ -295,9 +295,11 @@ nothing; its printed cells are pixel layers), so its stored ATK is 10 while the 
 ### 3.5 Position sorting (shared by text layers and icons)
 
 `_sort_by_position` (psd_parser.py:1185-1211): sort by bbox top `y`; group into visual rows where
-`|y − first_in_row.y| <= 40` px (`row_threshold=40`); sort each row left-to-right by `x`; flatten.
-This is reading order — top-to-bottom, then left-to-right — and it determines both multi-text-layer
-join order and type-icon injection order.
+`|y − first_in_row.y| <= 40` px (`row_threshold=40`); sort each row left-to-right by `x`; flatten
+(`_rows` keeps the rows). This is reading order — top-to-bottom, then left-to-right — and it determines
+both multi-text-layer join order and type-icon injection order. A one-line Ability layer with another
+after it in its row is that one's label, joined on its first line with one space (Twin Emperors'
+"Vek'nilash:", 11-09); lines of only blanks are dropped (Miracle Matter).
 
 ## 4. The type-injection algorithm (the hardest live problem)
 
