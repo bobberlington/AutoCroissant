@@ -16,7 +16,8 @@ summary and commit comment (report.md), one Discord post for the standards chann
 previews), and a plan of the writes (plan.json) that `land` commits once, right after the check. Each card pushed
 over an older PSD carries what changed inside it (psd_diff: "added Ability FX: Blazing", "Name text: 'a' -> 'b'").
 Every card PNG the push brought is recompressed losslessly in that commit (owner, 2026-10-23; png_export.recompress,
-the same pixels) when that saves more than 10% and 64 KiB (our thresholds), and so is every PNG the bot writes.
+the same pixels) when that saves more than 10% and 64 KiB (our thresholds), and so is every PNG the bot writes; a
+pushed one in a process of its own, beside the rest of the check (_overlap).
 
     python -m commands.card_guards check --clone <dir> --after <sha> [--before <sha>] [--repo <owner/name>] [--author <login>]
                                          [--cards <names>] [--whole-tree] [--mode dry|report|on] [--convert now|later|off]
@@ -48,6 +49,7 @@ and font checks' too, run in its check job) and requirements-cards.txt.
 """
 from argparse import ArgumentParser
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from functools import partial
@@ -62,7 +64,7 @@ from tempfile import TemporaryDirectory
 from time import time
 from traceback import format_exc
 from types import SimpleNamespace
-from typing import Callable, Optional
+from typing import Callable, Iterator, Optional
 
 from psd_tools.api.links import RepoTree
 from requests.exceptions import RequestException
@@ -138,6 +140,8 @@ LINKED_DIR = "MDW/Linked/"
 GIT_LAND = 40                                   # files past which land commits by git (git_commit: no blob upload each)
 GIT_LAND_BYTES = 32 << 20                       # or bytes: one push beats base64 POSTs (6 PSDs, 115 MB: 23 s by REST)
 _worker: dict = {}
+_early: dict = {}                               # pushed PNG blob sha -> its recompression's Future (_overlap)
+_waiting: list = []                             # _recompress's entries left to _collect
 _advances: dict = {}                            # icon font blob sha -> {glyph name: advance} (earlier_fonts)
 
 
@@ -717,20 +721,82 @@ def _size(n: int) -> str:
     return f"{n / 1e6:.1f} MB" if n >= 1e6 else f"{n / 1e3:.0f} KB"
 
 
-def _recompress(out: str, result: Result, path: str, read: Callable[[], bytes]) -> None:
+def _recompress(out: str, result: Result, path: str, read: Callable[[], bytes], sha: str = "") -> None:
     """A PNG the push brought (read() gives it), recompressed losslessly (owner, 2026-10-23) when more than RECOMPRESS_MIN
     and RECOMPRESS_BYTES smaller (our thresholds): a write of its own kind, resting on that PNG alone and never told on
-    Discord. A failure is a comment note, never the card's error (which Discord would tell)."""
+    Discord. A failure is a comment note, never the card's error (which Discord would tell). One _overlap started (its
+    blob sha) is left to _collect, which puts it where it goes here."""
+    if sha in _early:
+        _waiting.append((result, len(result.writes), len(result.notes), out, path, read, _early[sha]))
+        return
+    write, note = _made(out, path, read)
+    result.writes += [write] if write else []
+    result.notes += [note] if note else []
+
+
+def _made(out: str, path: str, read: Callable[[], bytes], early=None) -> tuple:
+    """_recompress's (write, note), either None: early's (size, file) when its process gave them, else made here."""
+    done = None
+    if early is not None:
+        try:
+            done = early.result()
+        except Exception:                       # a failed or broken process: inline, as before
+            print(format_exc(), file=stderr)
     try:
-        data = read()
-        smaller = png_export.recompress(data, png_export.RECOMPRESS_MIN, png_export.RECOMPRESS_BYTES)
+        if done is None:
+            data = read()
+            done = len(data), png_export.recompress(data, png_export.RECOMPRESS_MIN, png_export.RECOMPRESS_BYTES)
     except Exception as error:                  # it only saves bytes: the card goes on
         print(format_exc(), file=stderr)
-        result.notes.append((f"{basename(path)} not recompressed ({type(error).__name__}: {error})", False))
-        return
-    if smaller is not None:
-        result.writes.append({"path": path, "file": _save(out, path, smaller), "sha": blob_sha(smaller), "kind": "recompress",
-                              "line": f"recompressed losslessly ({_size(len(data))} -> {_size(len(smaller))}, the same pixels)"})
+        return None, (f"{basename(path)} not recompressed ({type(error).__name__}: {error})", False)
+    size, smaller = done
+    if smaller is None:
+        return None, None
+    return {"path": path, "file": _save(out, path, smaller), "sha": blob_sha(smaller), "kind": "recompress",
+            "line": f"recompressed losslessly ({_size(size)} -> {_size(len(smaller))}, the same pixels)"}, None
+
+
+def _collect() -> None:
+    """The recompressions _recompress left waiting, each at the place it would have taken (last first: the order holds)."""
+    waiting, _waiting[:] = list(_waiting), []
+    for result, at, noted, out, path, read, early in reversed(waiting):
+        write, note = _made(out, path, read, early)
+        if write:
+            result.writes.insert(at, write)
+        if note:
+            result.notes.insert(noted, note)
+
+
+def _recompressed(clone: str, repository: str, sha: str) -> tuple:
+    """_overlap's process: a pushed PNG's size and png_export.recompress's file (None: not worth it)."""
+    data = Source(clone, repository).blob(sha)
+    return len(data), png_export.recompress(data, png_export.RECOMPRESS_MIN, png_export.RECOMPRESS_BYTES)
+
+
+def _pngs(job: Job) -> list:
+    """The blobs _run recompresses, in its order: the numbered PNGs the push brought, then the pushed PNG (R10)."""
+    return [job.pushed[path] for path in sorted(job.pushed)] + (
+        [job.png_new] if job.case in ("pair", "png-only") and job.png_new else [])
+
+
+@contextmanager
+def _overlap(source: Source, jobs) -> Iterator[None]:
+    """The jobs' pushed PNGs recompressed in one process of their own (_pngs), started now: oxipng runs beside the rest
+    of the check (a thread gains nothing: pyoxipng holds the GIL). The same writes in the same order; a start that fails
+    leaves them inline."""
+    shas, pool = list(dict.fromkeys(sha for job in jobs for sha in _pngs(job))), None
+    try:
+        pool = ProcessPoolExecutor(1, initializer=token_from_env) if shas else None
+        for sha in shas:
+            _early[sha] = pool.submit(_recompressed, source.clone, source.repository, sha)
+    except Exception:                           # inline, as before
+        print(format_exc(), file=stderr)
+    try:
+        yield
+    finally:
+        _early.clear()
+        if pool is not None:
+            pool.shutdown(cancel_futures=True)
 
 
 def _export_dict(found) -> dict:
@@ -782,7 +848,10 @@ def run_job(source: Source, job: Job, context, parser, out: str, mode: str, earl
     """
     result = Result(job)
     try:
-        _run(source, job, context, parser, out, result, earlier)
+        try:
+            _run(source, job, context, parser, out, result, earlier)
+        finally:
+            _collect()                          # _overlap's recompressions, in their places
     except Exception as error:                  # one bad card never stops the others
         result.error = f"{type(error).__name__}: {error}"
         result.notes.append((f"error: {result.error}", False))
@@ -792,7 +861,7 @@ def run_job(source: Source, job: Job, context, parser, out: str, mode: str, earl
 
 def _run(source: Source, job: Job, context, parser, out: str, result: Result, earlier: tuple = ()) -> None:
     for path, sha in sorted(job.pushed.items()):
-        _recompress(out, result, path, partial(source.blob, sha))
+        _recompress(out, result, path, partial(source.blob, sha), sha)
     if job.case == "numbered":
         return
     if job.case == "deleted":
@@ -896,7 +965,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
     if job.case in ("pair", "png-only", "whole") and job.png_new:
         data = source.blob(job.png_new)
         if job.case != "whole":
-            _recompress(out, result, job.png, lambda: data)
+            _recompress(out, result, job.png, lambda: data, job.png_new)
         png = png_export.open_png(data)
         measured = png_export.png_check(new, png)
         result.r10 = {**measured, "line": _r10_line(job, measured) if measured.get("ok") is False else ""}
@@ -929,6 +998,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
         lines = {issue.code: issue.line() for issue in issues if issue.fix}
         result.fix_refused = [(lines.get(code, code), why) for code, why in fixed.refused]
         redraws = bool(fixed.rewrapped or fixed.redrawn)
+        _collect()                              # before the redraw drops a re-exported PNG's recompression
         redrawn = bool(fixed.data) and redraws and _rewrapped_pngs(out, result, new, fixed, shown, faces)
         data = fixed.plain if redraws and not redrawn else fixed.data
         if data and data != new_bytes:
@@ -1091,8 +1161,9 @@ def _init_worker(clone: str, repository: str, context, vocab, tree: dict, fonts:
 
 
 def _pooled(item: tuple) -> Result:
-    job, out, mode = item
-    return run_job(_worker["source"], job, _worker["context"], _worker["parser"], out, mode, _worker["earlier"])
+    job, out, mode, early = item
+    with _overlap(_worker["source"], [job] if early else ()):
+        return run_job(_worker["source"], job, _worker["context"], _worker["parser"], out, mode, _worker["earlier"])
 
 
 # ========================
@@ -1875,20 +1946,22 @@ def check(clone: str, after: str, before: str = "", repository: str = "", author
         jobs, skipped, more, tree = plan_jobs(source, base, head, author, cards)
         notes += more
     source.checked = tree
-    context, vocab = build_context(source, tree, errors) if jobs else (standards.Context(), None)
-    with TemporaryDirectory(prefix="guard-fonts-") as fonts:          # R8's fetched font files, the earlier icon fonts
-        source.fonts, earlier = fonts, ()
+    least = 2 if environ.get("GITHUB_ACTIONS") == "true" else POOL_MIN
+    pooled = len(jobs) >= least and workers != 1
+    early = workers != 1 and len(jobs) < (cpu_count() or 1)       # a core to spare: the pushed PNGs beside (_overlap)
+    with _overlap(source, jobs if early and not pooled else ()), TemporaryDirectory(prefix="guard-fonts-") as fonts:
+        context, vocab = build_context(source, tree, errors) if jobs else (standards.Context(), None)
+        source.fonts, earlier = fonts, ()       # R8's fetched font files, the earlier icon fonts
         if jobs and repository:                 # badge widths: read once for every worker
             try:
                 earlier = tuple(earlier_fonts(source, head, tree, fonts))
             except (Transient, RequestException, Refused):    # best effort: Photoshop's layouts alone
                 print(format_exc(), file=stderr)
-        least = 2 if environ.get("GITHUB_ACTIONS") == "true" else POOL_MIN
-        if len(jobs) >= least and workers != 1:
+        if pooled:
             count = workers or pool_size(len(jobs))
             with ProcessPoolExecutor(count, initializer=_init_worker,
                                      initargs=(clone, repository, context, vocab, tree, fonts, earlier)) as pool:
-                results = list(pool.map(_pooled, [(job, out, mode) for job in jobs], chunksize=1))
+                results = list(pool.map(_pooled, [(job, out, mode, early) for job in jobs], chunksize=1))
         else:
             parser = vocab.parser() if vocab is not None else None
             results = [run_job(source, job, context, parser, out, mode, earlier) for job in jobs]

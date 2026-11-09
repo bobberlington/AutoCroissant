@@ -975,6 +975,31 @@ def test_pushed_pngs_are_recompressed_in_the_bot_commit(cards, tmp_path):
     assert "- Fat.png would be recompressed losslessly (" in (tmp_path / "report" / "report.md").read_text()
 
 
+@pytest.mark.skipif(pe.tool() is None, reason="needs the oxipng CLI (as card-guards.yml installs) or pyoxipng")
+def test_recompressions_beside_the_check_write_the_same(cards, tmp_path, monkeypatch):
+    """The pushed PNGs recompressed in a process of their own (_overlap) beside the rest of the check: the same writes,
+    in the same order, as one by one (workers=1)."""
+    root, base, alice, bot = cards
+    work = tmp_path / "psds"
+    big = art("RGB", (300, 450))
+    fixture_psd(work, big, "Fat")
+    push = _plumb(root, {f"{FOLDER}/Fat.psd": (work / "Fat.psd").read_bytes(), f"{FOLDER}/Fat.png": photoshop_png(big),
+                         f"{FOLDER}/Fat2.png": photoshop_png(art("RGB", (320, 450))),
+                         f"{FOLDER}/Snack2.png": photoshop_png(art("RGB", (300, 470)))}, "Photoshop exports")
+    early, made = [], cg._made
+
+    def spy(out, path, read, future=None):
+        early.append(future is not None and future.exception() is None)
+        return made(out, path, read, future)
+    monkeypatch.setattr(cg, "_made", spy)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)        # in this process: fewer cards than POOL_MIN
+    writes = [[(c["card"], [(w["path"], w["kind"], w["sha"], w["line"]) for w in c["writes"]]) for c in
+               cg.check(str(root), push, bot, mode="on", out=str(tmp_path / str(n)), workers=n)["cards"]] for n in (1, 0)]
+    assert writes[0] == writes[1] and early == [False] * 3 + [True] * 3
+    assert [(card, [Path(path).name for path, *_ in found]) for card, found in writes[1]] == [
+        ("Fat", ["Fat2.png", "Fat.png"]), ("Snack", ["Snack2.png"])]
+
+
 def test_a_recompression_rests_on_its_png_and_is_never_told(tmp_path, monkeypatch):
     """A recompressed PNG rests on that PNG alone (a later push of the PSD does not drop it) and is never told on
     Discord: not in report mode ("export it in Photoshop" is for a PNG not made), not when it did not land."""
