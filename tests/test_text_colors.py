@@ -252,6 +252,28 @@ def test_title_overlay_goes_off(clone, tmp_path):
 
 
 @pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")
+def test_split_title_part_overlay_goes_off(clone, tmp_path):
+    """Crowned Magolor's title on two layers, each with its Gradient Overlay: a colour on all of one turns only that one's
+    off and bakes; the other keeps its gradient; part of a word stays refused."""
+    from commands.psd_edit import offline_parser
+    vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
+    parser = offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
+    rel = "Creatures/Kirby/5 Stars/Crowned_Magolor.psd"
+    psd_path, png = _card(clone, rel)
+    psd = PSDImage.open(psd_path)
+    parsed = pe.parse_card(parser, psd_path, rel, psd)
+    part = {"field": "name", "phrase": "Magolor", "color": "#ff2200"}
+    assert "Gradient Overlay paints over" in pe.plan_colors(psd, [{**part, "phrase": "Mag"}], "Crowned Magolor")[0][1]
+    got = pe.classify(parsed, {"colors": [part]}, psd, parser)
+    assert got.jobs == {"colors": [part]} and not got.refusals
+    baked = pe.apply_jobs(psd_path, png, rel, got.jobs, parsed, parser, str(tmp_path), str(clone / pe.FONTS_DIR), psd=psd)
+    assert "colors: title: its Gradient Overlay is off for the colour" in baked.fx_notes
+    crowned, magolor = pe.color_layers(PSDImage.open(baked.psd_path), "name", "Crowned Magolor")
+    assert pe._painted_over(magolor) is None and "#ff2200" in {pe._hex(f) for *_, f in pe.run_fills(magolor)}
+    assert pe._painted_over(crowned) == "its Gradient Overlay"
+
+
+@pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")
 def test_clipped_title_layer_hidden(clone, tmp_path):
     """Cake Mix's cake clipped onto its title: a phrase alone refused with the reason; a whole title's colour hides the
     cake and bakes, its phrase after it too."""
@@ -305,8 +327,8 @@ def test_ability_overlay_goes_off(clone, tmp_path):
 @pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")
 def test_mockup_refuses_as_the_bake(clone, tmp_path):
     """mockup.js paintedOver, on the cards' details records, names what plan_colors refuses as painted over, in its words:
-    a phrase under the title's or Ability's Gradient; not a whole field's, a phrase after one, or one under a lone Color Overlay.
-    A retyped title or Ability box: the same, in the new text."""
+    a phrase under the title's or Ability's Gradient; not a whole field's, a phrase after one, one under a lone Color
+    Overlay, or one on all of a title part (and a phrase after it). A retyped title or Ability box: the same, in the new text."""
     if "export function paintedOver(rec, colors, typed = [], edit" not in (ASSETS / "mockup.js").read_text(encoding="utf-8"):
         pytest.skip("mockup.js has no retyped paintedOver yet")
     from commands import psd_details as pd
@@ -318,7 +340,9 @@ def test_mockup_refuses_as_the_bake(clone, tmp_path):
     now = "Has stats equal to the base stats -2 of the creature that summoned it now.\n(BOT) Destroy this creature."
     cases = {"Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd": [[bam], [name], [name, bam], ([bam], {"name": "Wham Bam Bone II"})],
              "Auxiliary/Minions/Mini_Doomer.psd": [[stats], [ability, stats], ([stats], {"ability": now, "parts": {"2068": {"text": now}}})],
-             "Auxiliary/Minions/Cat.psd": [[{**ability, "phrase": "attack"}]]}
+             "Auxiliary/Minions/Cat.psd": [[{**ability, "phrase": "attack"}]],
+             "Creatures/Kirby/5 Stars/Crowned_Magolor.psd": [[{**name, "phrase": "Magolor"}], [{**name, "phrase": "Crown"}],
+                                                             [{**name, "phrase": "Magolor"}, {**name, "phrase": "Mag"}]]}
     jobs, want = [], []
     for rel, sets in cases.items():
         psd, card = PSDImage.open(_card(clone, rel)[0]), Path(rel).stem.replace("_", " ")
@@ -332,4 +356,4 @@ def test_mockup_refuses_as_the_bake(clone, tmp_path):
 const jobs = JSON.parse((await import("fs")).readFileSync({json.dumps(str(tmp_path / 'jobs.json'))}, "utf8"));
 process.stdout.write(JSON.stringify(jobs.map(j => M.paintedOver(j.rec, j.colors, j.typed, j.edit).map(n => [n.one, n.why]))));""", encoding="utf-8")
     got = json.loads(run_process(["node", str(tmp_path / "over.mjs")], capture_output=True, text=True, check=True).stdout)
-    assert got == want and [len(w) for w in want] == [1, 0, 0, 1, 1, 0, 1, 0], (got, want)
+    assert got == want and [len(w) for w in want] == [1, 0, 0, 1, 1, 0, 1, 0, 0, 1, 0], (got, want)
