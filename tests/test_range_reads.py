@@ -6,6 +6,7 @@ import json
 import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 from urllib.parse import unquote
 
@@ -256,6 +257,27 @@ def test_forked_workers_read_as_threads_do(cards, monkeypatch, capsys):
     assert capsys.readouterr().out.count("Forked reads stopped (TimeoutError()); the rest in threads") == 1
 
 
+@needs_ranges
+def test_forked_range_reads_take_RANGED_WORKERS_whole_downloads_DOWNLOAD_WORKERS(cards, monkeypatch):
+    sizes = []
+
+    class Pool(ThreadPoolExecutor):                                 # the fork's pool, in threads
+        def __init__(self, workers, mp_context=None, initializer=None):
+            sizes.append(workers)
+            super().__init__(workers)
+
+    monkeypatch.setattr(cd, "ProcessPoolExecutor", Pool)
+    monkeypatch.setattr(cd, "_forks", lambda: True)
+    monkeypatch.setattr(cd, "RANGED_WORKERS", 2)
+    monkeypatch.setattr(cd, "DOWNLOAD_WORKERS", 1)
+    for ranged in (True, False):
+        monkeypatch.setattr(ga, "RANGE_READS", ranged)
+        cards.db = cards.tmp / f"data{ranged}" / "db"
+        cards.db.mkdir(parents=True)
+        assert helpers._build(cards, "--empty")[0] == cd.EXIT_OK
+    assert sizes == [2, 1]
+
+
 # ========================
 # The build (GitBuild on a blobless clone)
 # ========================
@@ -337,6 +359,7 @@ def test_other_psds_links_read_in_the_workers_as_one_at_a_time(cards, clone, mon
     found = []
     for workers in (1, 4):
         monkeypatch.setattr(cd, "DOWNLOAD_WORKERS", workers)
+        monkeypatch.setattr(cd, "RANGED_WORKERS", workers)
         cards.db = cards.tmp / f"data{workers}" / "db"
         cards.db.mkdir(parents=True)
         assert helpers._build(cards, "--empty")[0] == cd.EXIT_OK

@@ -45,7 +45,9 @@ from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, P
 UPDATE_RATE = 25
 STRAIGHT_KEYS = ("name", "ability", "note")                     # parsed_values' printed text
 DOWNLOAD_WORKERS = 4                                              # PSDs fetched and parsed at a time
+RANGED_WORKERS = 8                                                # by range reads on a runner (a read mostly waits)
 AHEAD = 2 * DOWNLOAD_WORKERS                                      # PSDs read and not yet kept, at most (memory)
+RANGED_AHEAD = 2 * RANGED_WORKERS
 FORK_WAIT = 300                                                   # s for a forked worker's PSD: past it, threads
 RANGE_REFUSALS = 3                                                # PSDs refused range reads (HTTP error, no connection): off
                                                                   # trying them (github_api.RANGE_READS: the off switch)
@@ -532,8 +534,8 @@ class CardBuild:
         forked = bool(todo) and _forks()                # after _shared: the workers start with it built
         if forked:
             _BUILD = self
-            pool = ProcessPoolExecutor(min(DOWNLOAD_WORKERS, len(todo)), mp_context=get_context("fork"),
-                                       initializer=_fork_init)
+            workers = RANGED_WORKERS if self.raw_ref else DOWNLOAD_WORKERS
+            pool = ProcessPoolExecutor(min(workers, len(todo)), mp_context=get_context("fork"), initializer=_fork_init)
         else:
             pool = ThreadPoolExecutor(DOWNLOAD_WORKERS)
         queue, ahead = iter(todo), deque()
@@ -550,8 +552,8 @@ class CardBuild:
                 item, _task = ahead.popleft()
                 ahead.append((item, submit(item)))
 
-        def top_up() -> None:                           # keep AHEAD reads going
-            while len(ahead) < AHEAD:
+        def top_up() -> None:                           # keep AHEAD reads going (RANGED_AHEAD forked by ranges)
+            while len(ahead) < (RANGED_AHEAD if forked and self.raw_ref else AHEAD):
                 item = next(queue, None)
                 if item is None:
                     return
@@ -1097,9 +1099,10 @@ def pixel_hash(data: bytes, path: str) -> str:
 def gather_links(build: "GitBuild", before: dict) -> dict:
     """
     db/links.json after this run: every PSD and .psb of the tree (cards from this run's parse, the others read when
-    their blob moved, DOWNLOAD_WORKERS at a time: range reads, else the local store, else REST within the budget; a
-    card not parsed since its blob moved has no record, so the guards delete nothing), the linked files' blobs
-    (append-only; seeded once from Types/ history, sizes unknown) and the pixels of MDW/Linked's (batched git fetches).
+    their blob moved, DOWNLOAD_WORKERS at a time, RANGED_WORKERS by ranges on a runner: range reads, else the local store,
+    else REST within the budget; a card not parsed since its blob moved has no record, so the guards delete nothing), the
+    linked files' blobs (append-only; seeded once from Types/ history, sizes unknown) and the pixels of MDW/Linked's
+    (batched git fetches).
     """
     files = {path: dict(blobs) for path, blobs in before["files"].items()}
     kept_psds = {path: record for path, record in before.items() if path not in LINK_KEYS}
@@ -1156,7 +1159,8 @@ def gather_links(build: "GitBuild", before: dict) -> dict:
         finally:
             build._release(source)
 
-    with ThreadPoolExecutor(DOWNLOAD_WORKERS) as pool:
+    runner = ranged and environ.get("GITHUB_ACTIONS") == "true"
+    with ThreadPoolExecutor(RANGED_WORKERS if runner else DOWNLOAD_WORKERS) as pool:
         for path, record in zip(todo, pool.map(read, todo)):
             if record is not None:
                 psds[path] = record
@@ -2186,6 +2190,7 @@ __all__ = [
     'EXIT_GATE',
     'EXIT_OK',
     'PROGRESS',
+    'RANGED_WORKERS',
     'SPARSE_FILES',
     'UPDATE_RATE',
     'CardBuild',
