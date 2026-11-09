@@ -630,6 +630,36 @@ def test_layout_bars_refuse_what_they_lack(clone, parser):
             pe.set_stat(psd, pe.parse_card(parser, _card(clone, rel)[0], rel, psd), stat, value)
 
 
+def _counted_card(hidden: int = 0) -> PSDImage:
+    """Two forms' HP as squares counted (Computer Virus's): row "1" shows 3 (and `hidden` more), row "2" shows 5."""
+    from psd_tools.api.layers import PixelLayer
+    psd = PSDImage.new("RGB", (400, 200))
+    psd.append(PixelLayer.frompil(Image.new("RGB", (400, 200), (20, 20, 60)), psd, "Back"))
+    hp = psd.create_group(name="Stats Bars").create_group(name="hp")
+    for row, (shown, top) in enumerate(((3, 40), (5, 100)), 1):
+        squares = []
+        for k in range(1, shown + (hidden if row == 1 else 0) + 1):
+            squares.append(PixelLayer.frompil(Image.new("RGB", (30, 30), (0, 200, 0)), psd, str(k), top=top, left=20 + 50 * (k - 1)))
+            squares[-1].visible = k <= shown
+        hp.create_group(squares, name=str(row))
+    return psd
+
+
+def test_counted_pictures_follow_the_value():
+    """A row of pictures counted: down hides, up shows its hidden ones, then copies along the pitch as far as the stat's
+    rows reach; 0 and past that reach refuse."""
+    for hidden, value, shown, copied in ((0, 2, 2, 0), (1, 4, 4, 0), (0, 5, 5, 2)):
+        psd = _counted_card(hidden)
+        edit = pe.set_stat(psd, {"card": {"hp": 3}}, "hp", value)
+        row = next(g for g, _, _ in stat_rows(psd)["hp"] if g.name == "1")
+        assert pe._row_reads(row) == value and sum(layer.visible for layer in row) == shown
+        assert len(edit.icons.done if edit.icons else []) == copied and edit.region
+        assert [layer.bbox[0] for layer in row if layer.visible] == [20 + 50 * k for k in range(shown)]
+    for value, why in ((0, "would show no picture"), (6, "has room for 5 pictures")):
+        with pytest.raises(pe.Refused, match=why):
+            pe.set_stat(_counted_card(), {"card": {"hp": 3}}, "hp", value)
+
+
 def test_layout_bars_bake_what_was_added(clone, parser, tmp_path):
     """With those added (BARS_FIX) both bake and come home as drawn: Clot Black's cells past its dark strip in the
     region, 1 -> 0 -> 2 reading 2 (not 3: the old value's name dropped); Minecraft Panda's 0, then 3 (review 2026-10-26:

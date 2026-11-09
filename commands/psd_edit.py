@@ -3786,7 +3786,9 @@ def set_bar(psd: PSDImage, parsed: dict, stat: str, value: int, why: Refused) ->
                 except Refused as cells:
                     if pair is not None and cells.why == none_shows(stat, value, pair[0]):   # the clearer reason
                         raise cells
-                    raise _held_template(psd, stat, rows, strict) if picked else strict
+                    plan = plan_count(psd, rows[0][0], stat, old, value)
+                    if plan is None:
+                        raise _held_template(psd, stat, rows, strict) if picked else strict
     layers = list(dict.fromkeys([*plan.show, *plan.hide, *(layer for layer, _ in plan.names),
                                  *(layer for layer, _ in plan.moves),
                                  *(layer for layer, _ in plan.styles), *(layer for layer, *_ in plan.remasks)]))
@@ -3814,7 +3816,8 @@ def set_bar(psd: PSDImage, parsed: dict, stat: str, value: int, why: Refused) ->
             icons.done.append(("copy", source, copy, dx, dy))
             before.append(_where(copy))
     bases = [base for layer in layers for base in [_clip_base(layer)] if base is not None]
-    reach = max([fx_pad(layer) for layer in layers + bases] + [0])
+    copies = [done[2] for done in icons.done] if icons is not None else []
+    reach = max([fx_pad(layer) for layer in layers + bases + copies] + [0])     # a copy's effects too
     # where a layer acts: its own box, inside what it clips to (an exposure clipped to a bar) and the bar's rows
     within = lambda layer: union_box([plan.box] + [tuple(base.bbox) for base in [_clip_base(layer)] if base is not None]
                                      + ([_where(layer)] if picked else []))     # a mask over several rows (Pix's HP)
@@ -3828,7 +3831,6 @@ def set_bar(psd: PSDImage, parsed: dict, stat: str, value: int, why: Refused) ->
     remasked = {id(layer) for layer, *_ in plan.remasks}
     specs = [(layer, _bar_spec(layer, snaps[id(layer)], id(layer) in remasked)) for layer in layers]
     touched = [(layer, spec) for layer, spec in specs if spec is not None]
-    copies = [done[2] for done in icons.done] if icons is not None else []
     return Edit(stat, old, value, [layer for layer, _ in touched] + copies, [], _pad(region, reach, psd) if region else None,
                 notes=plan.notes, bar=[(_record_index(layer), spec) for layer, spec in touched], icons=icons)
 
@@ -4371,6 +4373,74 @@ def plan_bar(psd: PSDImage, group, stat: str, old: int, value: int, why: Refused
         raise Refused("unsupported-card", f"{stat} {value}: the parser would read {_row_reads(group, names, shown)} "
                                           f"off {group.name!r}")
     plan.how = ", ".join(hows)
+    return plan
+
+
+COUNT_TOL = 0.15            # a counted row's pictures: sizes and steps within this share of each other
+
+
+def counted_row(group) -> Optional[dict]:
+    """{k: layer} of a row of pictures counted: pixel layers alone, named 1..n by place, one size, on one line at one
+    pitch; None else."""
+    layers = list(group)
+    if not layers or any(layer.is_group() or layer.kind != "pixel" or not base_name(layer).strip().isdigit()
+                         for layer in layers):
+        return None
+    by = {int(base_name(layer)): layer for layer in layers}
+    if sorted(by) != list(range(1, len(layers) + 1)):
+        return None
+    w, h = by[1].bbox[2] - by[1].bbox[0], by[1].bbox[3] - by[1].bbox[1]
+    mid = lambda layer: (layer.bbox[1] + layer.bbox[3]) / 2
+    if w <= 0 or any(abs(layer.bbox[2] - layer.bbox[0] - w) > COUNT_TOL * w or abs(layer.bbox[3] - layer.bbox[1] - h)
+                     > COUNT_TOL * h or abs(mid(layer) - mid(by[1])) > COUNT_TOL * h for layer in layers):
+        return None
+    steps = [by[k + 1].bbox[0] - by[k].bbox[0] for k in range(1, len(by))]
+    if steps and (min(steps) <= w or max(steps) - min(steps) > COUNT_TOL * min(steps)):
+        return None
+    return by
+
+
+def _count_room(group, by: dict) -> tuple:
+    """(pitch, right edge) of a counted row: its own pitch, else a sibling counted row's of its size; the edge its
+    stat's counted rows of that size reach, shown or hidden (a copy goes no further)."""
+    rows = [by] + [found for g in group.parent if g is not group and g.is_group() for found in [counted_row(g)] if found]
+    width = by[1].bbox[2] - by[1].bbox[0]
+    alike = [found for found in rows if abs(found[1].bbox[2] - found[1].bbox[0] - width) <= COUNT_TOL * width]
+    pitch = next(((found[len(found)].bbox[0] - found[1].bbox[0]) / (len(found) - 1) for found in alike if len(found) > 1),
+                 None)
+    return pitch, max(layer.bbox[2] for found in alike for layer in found.values())
+
+
+def plan_count(psd: PSDImage, group, stat: str, old: int, value: int) -> Optional[BarPlan]:
+    """
+    A stat drawn as pictures counted, no empty cells (Computer Virus's squares): a counted_row whose pictures 1..old
+    show and none past them, as the parser reads it. The edit hides those past the value, shows hidden ones up to it and
+    copies the last one along the row's pitch where it has none, as far as the stat's rows reach (hidden pictures mark
+    the room). None when the row is no such row.
+    """
+    by = counted_row(group)
+    if by is None or sorted(k for k, layer in by.items() if layer.visible) != list(range(1, old + 1)):
+        return None
+    if value < 1:
+        raise Refused("unsupported-card", f"{stat} {value}: {group.name!r} would show no picture, and a row showing none "
+                                          "has no value to read")
+    plan = BarPlan("pictures counted", union_box([tuple(layer.bbox) for layer in by.values()]))
+    plan.hide = [by[k] for k in range(value + 1, old + 1)]
+    plan.show = [by[k] for k in range(old + 1, value + 1) if k in by]
+    last = max(by)
+    pitch, edge = _count_room(group, by) if value > last else (None, None)
+    if value > last and pitch is None:
+        raise Refused("unsupported-card", f"{stat} {value}: {group.name!r} has one picture, no step to place more by")
+    for n, k in enumerate(range(last + 1, value + 1)):
+        dx = round(by[1].bbox[0] + (k - 1) * pitch - by[last].bbox[0])
+        box = (by[last].bbox[0] + dx, by[last].bbox[1], by[last].bbox[2] + dx, by[last].bbox[3])
+        if box[2] > edge + 1 or clip(box, psd.width, psd.height) != box:
+            raise Refused("unsupported-card", f"{stat} {value}: {group.name!r} has room for {k - 1} pictures (add hidden "
+                                              "ones where more go)")
+        plan.copies.append((by[last], group, len(by) + n, dx, 0, str(k)))
+        plan.box = union_box([plan.box, box])
+    if plan.copies:
+        plan.notes.append(f"{stat}: {group.name!r} had {last} pictures: {len(plan.copies)} copied along the row")
     return plan
 
 

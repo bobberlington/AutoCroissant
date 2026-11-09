@@ -559,7 +559,9 @@ def check_card(ctx: Context, rel: str) -> dict:
     unread = list(dict.fromkeys(layer.name.strip() for layer in psd_edit.unreadable_effects(psd)))
     if unread:
         notes.append(FX_NOTE.format(layers=", ".join(unread)))
-    reads = read_picture(psd, image) if style and image is not None and len(variants_of(psd)) < 2 else {}
+    rows = [group for found in stat_rows(psd).values() for group, _, _ in found]
+    counted = bool(rows) and all(psd_edit.counted_row(group) for group in rows)     # the picture is the data
+    reads = read_picture(psd, image) if style and image is not None and not counted and len(variants_of(psd)) < 2 else {}
     notes += edit_notes(ctx, rel, psd, parsed, style, image)
     for path in snapshot.dup_pictures().get(rel, []) if image is not None else ():   # nothing redraws these (owner 11-07)
         if png_export.drawn_apart(psd, image, png_export.open_png(snapshot.fetch(snapshot.sha(path)))):
