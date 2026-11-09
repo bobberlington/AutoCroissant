@@ -3323,16 +3323,25 @@ def _name_colour(layer, name: Optional[str], colour, done: list, counts: Counter
         counts["coloured"] += 1
 
 
-def hidden_curves(psd: PSDImage) -> list:
-    """Curves layers turned off and shown in no picture, that no layer clips to (owner 2026-11-09)."""
+def hidden_curves(psd: PSDImage, on_groups: bool = True) -> list:
+    """Curves layers turned off and shown in no picture, that no layer clips to (owner 2026-11-09); on_groups False:
+    not one clipped to a folder (Photoshop composites a folder something clips to on its own, hidden or not: Matterling's
+    header moved 16 levels without its hidden Curves; only a Photoshop-proven sweep takes those)."""
     pictures = variants_of(psd)
     out = []
     for layer in psd.descendants():
         if layer.kind != "curves" or layer.visible or any(shown_in(layer, n) for n in pictures):
             continue
         above = layer.next_sibling()
-        if layer.clipping or above is None or not above.clipping:
-            out.append(layer)
+        if not layer.clipping and above is not None and above.clipping:
+            continue
+        if layer.clipping and not on_groups:
+            kids = list(layer.parent)
+            i = kids.index(layer)
+            base = next((kids[j] for j in range(i - 1, -1, -1) if not kids[j].clipping), None)
+            if base is not None and base.is_group():
+                continue
+        out.append(layer)
     return out
 
 
@@ -3593,7 +3602,7 @@ def _overlays(units: list, roles: list, mains: dict) -> None:
                 roles[i] = "overlay"
 
 
-def arrange(psd: PSDImage, rel: str, types, stars, level: str = "template") -> tuple:
+def arrange(psd: PSDImage, rel: str, types, stars, level: str = "template", proven: bool = True) -> tuple:
     """
     The card's folders as the templates' (FOLDER_ORDER, FOLDER_NAMES, FOLDER_COLOURS), in place.
 
@@ -3605,6 +3614,7 @@ def arrange(psd: PSDImage, rel: str, types, stars, level: str = "template") -> t
             role's layers next to its folder folded in, none into a folder with effects, a mask or another blend, the
             folders in the templates' order); kept (as plain, the folders where they are); names (no layer out of its
             folder); bare (names, colours, deletions and nests alone); colours (colours and hidden Curves alone)
+        proven: hidden Curves clipped to a folder go too (hidden_curves' on_groups: a sweep proven in Photoshop)
 
     Returns:
         (what it did, Counter of the owner's counts)
@@ -3614,7 +3624,7 @@ def arrange(psd: PSDImage, rel: str, types, stars, level: str = "template") -> t
     if type_name is None:
         return done, counts
     names = {**FOLDER_NAMES, "types": type_name}
-    for layer in hidden_curves(psd):
+    for layer in hidden_curves(psd, proven):
         layer.parent.remove(layer)
         done.append(f"hidden {layer.name!r} deleted")
         counts["hidden curves"] += 1
@@ -3912,8 +3922,8 @@ def standard_folders(path: str, out_path: str, fonts=None, rel: str = "", parser
                      base: Optional[dict] = None, isolated: bool = True) -> Foldered:
     """
     The card's folders as the templates' (arrange), at the first FOLDER_LEVELS level folders_gate lets through, then
-    the adjustments clipped to a folder moved into it (isolate, gated on its own; isolated False: not, the guards'
-    call: the owner wants each proven in Photoshop), written to out_path; nothing ([]) where the folders are standard,
+    the adjustments clipped to a folder moved into it (isolate, gated on its own; isolated False: not, nor hidden Curves
+    clipped to a folder deleted, the guards' call: the owner wants each proven in Photoshop), written to out_path; nothing ([]) where the folders are standard,
     the card is no card or nothing holds (Foldered.tried says why). fonts is unused. base: the card's folder_reads.
     """
     result = Foldered()
@@ -3926,7 +3936,7 @@ def standard_folders(path: str, out_path: str, fonts=None, rel: str = "", parser
     found = None
     for level in FOLDER_LEVELS:
         psd = PSDImage.open(path)
-        done, counts = arrange(psd, rel, types, stars, level)
+        done, counts = arrange(psd, rel, types, stars, level, isolated)
         if not done:
             result.tried.append((level, "nothing to change"))
             continue
