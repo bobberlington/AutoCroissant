@@ -162,8 +162,9 @@ def test_blobs_of_in_reading_order():
 
 
 def test_workflow_checks_cards_as_their_blobs_land(tmp_path):
-    """card-checks.yml: Fetch them returns at once (the fetch in the background); one shard's Check starts with
-    CARD_BLOBS_PENDING, `all` and long lists wait for the whole fetch; Fetched counts, and stops a fetch Check outlived."""
+    """card-checks.yml: Shared blobs fetches the chart early; Fetch them leaves it out and returns at once (the fetch in
+    the background); one shard's Check starts with CARD_BLOBS_PENDING, `all` and long lists wait for the whole fetch;
+    Fetched counts, and stops the fetches Check outlived."""
     yaml = pytest.importorskip("yaml")
     workflow = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github/workflows/card-checks.yml"
     if not workflow.is_file() or not shutil.which("timeout"):
@@ -175,14 +176,15 @@ def test_workflow_checks_cards_as_their_blobs_land(tmp_path):
     work, origin = tmp_path / "work", tmp_path / "origin.git"
     work.mkdir()
     git("-C", str(work), "init", "-q", "-b", "main")
-    for name in "abc":
+    for name in ("a", "b", cc.psd_edit.STATUS_CHART):
+        (work / name).parent.mkdir(parents=True, exist_ok=True)
         (work / name).write_bytes(name.encode() * 4096)
     git("-C", str(work), "add", "-A")
     git("-C", str(work), "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "x")
     git("clone", "-q", "--bare", str(work), str(origin))
     git("-C", str(origin), "config", "uploadpack.allowFilter", "true")
     git("-C", str(origin), "config", "uploadpack.allowAnySHA1InWant", "true")
-    blobs = git("-C", str(work), "rev-parse", "HEAD:a", "HEAD:b", "HEAD:c")
+    blobs = git("-C", str(work), "rev-parse", f"HEAD:{cc.psd_edit.STATUS_CHART}", "HEAD:a", "HEAD:b")
 
     def job(n, wait):
         repo, temp = tmp_path / f"clone{n}", tmp_path / f"temp{n}"
@@ -195,9 +197,13 @@ def test_workflow_checks_cards_as_their_blobs_land(tmp_path):
         def step(script, **more):
             return subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", script], cwd=repo,
                                   env={**env, **more}, capture_output=True, text=True, timeout=30)
+        assert step(steps["Shared blobs"]).stdout.split()[1] == "1"
+        if wait < 10:                                               # landed before To check
+            step('until [ -s "$RUNNER_TEMP/shared.txt.done" ]; do sleep 0.1; done')
         assert step(steps["Fetch them"]).returncode == 0 and not (temp / "blobs.txt.done").exists()
         return temp, step
     temp, step = job(0, 2)
+    assert (temp / "blobs.txt.fetch").read_text().split() == blobs.split()[1:]
     assert step(head, ALL="false", N="3").stdout.split()[-1] == f"pending={temp / 'blobs.txt'}"
     assert not (temp / "blobs.txt.done").exists()
     for all_, n in (("false", "1001"), ("true", "3")):               # the whole fetch first, no list
