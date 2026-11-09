@@ -565,6 +565,29 @@ def test_overhang_card_body(bs, tmp_path):
     assert bs.card_body(tmp_path / "solid.png") is None
 
 
+def test_early_images_are_the_builds(bs, repo, tmp_path, monkeypatch, capsys):
+    """An early build's Images start (build_site.py --images <commit> <stop>): the card PNGs' images at that commit with
+    their meta, not MDW's or Types'; none once stop exists. The build then makes no new file."""
+    root, out, stop = repo["root"], tmp_path / "out", tmp_path / "stop"
+    for other in ("MDW/Assets/back.png", "Types/fire.png"):
+        _png(root / other, 99)
+    at, _ = _commit(root, "Assets", 1_790_000_000)
+    monkeypatch.setattr(bs, "REPO", str(root))
+    monkeypatch.setattr(bs, "CACHE", str(out / ".cache"))
+    stop.touch()
+    bs.early_images(at, str(stop))
+    assert not list((out / ".cache/img").iterdir())
+    stop.unlink()
+    bs.early_images(at, str(stop))
+    pngs = {p: s for p, s in bs.repo_tree(at).items() if p.endswith(".png")}
+    cards = {s for p, s in pngs.items() if p.startswith(("Creatures/", "Items/"))}
+    assert len(pngs) == 5 and len(cards) == 3 and set(bs.load_image_meta()) == cards
+    assert {n for s in cards for n in bs.image_names(s).values()} == {p.name for p in (out / ".cache/img").iterdir()}
+    capsys.readouterr()
+    _build(bs, monkeypatch, repo, out)
+    assert "images: 3 cards, 0 new files" in capsys.readouterr().out
+
+
 def test_guards_name_rule_matches_the_site(bs):
     """AutoCroissant's R14 (card_standards.miscased_names) and build_site.name_links share text.js's rule of which words
     name a card: on the same text, R14's names are the links typed in another case."""
@@ -688,7 +711,8 @@ def test_badge_font_preloaded_where_badges_show(bs):
 
 def test_site_workflow_sets_up_in_the_background(tmp_path):
     """site.yml's Setup start returns at once, uv, npm and the PSD sizes running on (their output not held); Setup wait,
-    before the build, prints each one's log and fails on uv or npm, only warns on the sizes (3 tries)."""
+    before the build, prints each one's log and fails on uv or npm, only warns on the sizes (3 tries). An early build's
+    Images start runs once uv is in; Setup wait stops it, prints its log, only warns on a failure (none started: no wait)."""
     yaml = pytest.importorskip("yaml")
     path = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "site.yml"
     if not path.is_file():
@@ -696,12 +720,15 @@ def test_site_workflow_sets_up_in_the_background(tmp_path):
     steps = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["build"]["steps"]
     names = [s.get("name") or s.get("id") or s.get("uses") for s in steps]
     assert names.index("Setup start") < names.index("pages") < names.index("Setup wait") == names.index("build") - 1
-    start, wait = (steps[names.index(n)]["run"] for n in ("Setup start", "Setup wait"))
+    assert names.index("cache-before") < names.index("Images start") < names.index("Data wait")
+    assert steps[names.index("Images start")]["if"] == "inputs.after"
+    start, images, wait = (steps[names.index(n)]["run"] for n in ("Setup start", "Images start", "Setup wait"))
     bin_ = tmp_path / "bin"
     bin_.mkdir()
     call = 'echo "$0 $*" >> "$RUNNER_TEMP/calls"; /bin/sleep "${DELAY:-0}"; '
     for name, body in {"uv": call + 'echo "uv said"; exit "${UV_CODE:-0}"', "npm": call + 'echo "npm said"; exit "${NPM_CODE:-0}"',
                        "gh": call + 'echo \'{"tree": []}\'; exit "${GH_CODE:-0}"', "git": "echo 0123abcd",
+                       "python": call + 'until [ -e "$4" ]; do /bin/sleep 0.01; done; echo "python said"',     # till stopped
                        "sleep": "exec /bin/sleep 0.01"}.items():
         (bin_ / name).write_text(f"#!/bin/sh\n{body}\n")
         (bin_ / name).chmod(0o755)
@@ -714,6 +741,11 @@ def test_site_workflow_sets_up_in_the_background(tmp_path):
         env = {"PATH": f"{bin_}:/usr/bin:/bin", "HOME": str(tmp_path), "RUNNER_TEMP": str(temp), "GITHUB_REPOSITORY": "o/r", **codes}
         done = shell(start, env)
         assert done.returncode == 0 and not (n == 0 and list((temp / "setup").glob("*.code"))), done.stderr   # not waited for
+        assert n == 1 or shell(images, env).returncode == 0         # 1: not an early build
+        for _ in range(1000 if n == 0 else 0):                       # 0: Setup wait once it runs (else never started)
+            if (temp / "calls").exists() and "--images" in (temp / "calls").read_text():
+                break
+            time.sleep(0.01)
         done = shell(wait, env)
         out = done.stdout
         assert (done.returncode != 0) == bool(failed) and ("::error::" in out) == bool(failed), (out, done.stderr)
@@ -724,3 +756,7 @@ def test_site_workflow_sets_up_in_the_background(tmp_path):
         assert sum("/gh api repos/o/r/git/trees/0123abcd?recursive=1" in c for c in calls) == (3 if warns else 1)
         assert any("/uv pip install -q -r site/build/requirements.txt" in c for c in calls)
         assert (temp / "tree.json").read_text().strip() == '{"tree": []}'
+        early = {0: "0", 2: "uv"}.get(n)
+        assert ("::group::images" in out) == bool(early) and ("::warning::early images failed" in out) == (n == 2)
+        assert not early or f"::group::images (exit {early})" in out and ("python said" in out) == (n == 0)
+        assert sum(f"build_site.py --images 0123abcd {temp}/setup/images.stop" in c for c in calls) == (n == 0)
