@@ -324,6 +324,8 @@ Algorithm:
    `last_y // 3 < card_mid_y` for any on-canvas layer, so the prune is currently a NO-OP; it bit
    when the region rule was "top 400px" (changed 2026-01-30 — history in
    autocroissant-failure-archaeology). Keep it in mind if `TYPE_REGION_RATIO` ever changes.
+   Then icons more than `ICON_SPAN_PAD` (80 px) above or below every Ability layer's box are dropped
+   (`_in_span`, 2026-11-09: Tainted Lazarus's creature 2 header icon no longer ends its ability as `[undead]`).
 3. Split the ability into lines (each rstripped of `' \n` then `\n` re-appended). For each line,
    in order, while unconsumed types remain: find all `\s{3,}` gaps; replace gap i with
    ` [next_type] ` (text before the gap rstripped, after lstripped, line lstripped). Lines without

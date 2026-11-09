@@ -527,8 +527,8 @@ def test_card_inks_line_the_psds_colours_up(bs):
 
 
 def test_card_inks_on_a_real_card(bs, clone):
-    """Tainted Lazarus: its two Ability layers' runs on the parsed ability (joined, [undead] injected): the status words in
-    their colours, the injected token none, the white title none."""
+    """Tainted Lazarus: its two Ability layers' runs on the parsed ability (joined; no [undead] since 11-09, its creature 2
+    header icon): the status words in their colours, the white title none."""
     if not hasattr(bs, "card_inks"):
         pytest.skip("before TC's card colours land")
     import commands.psd_details as pd
@@ -542,7 +542,7 @@ def test_card_inks_on_a_real_card(bs, clone):
     ink = bs.card_inks({"name": "Tainted Lazarus", "ability": ability}, pd.gather(psd, rel, "Tainted Lazarus", None, vocab["all_types"], parser))
     words = {ability[a:b]: c for a, b, c in ink["ability"]}
     assert list(ink) == ["ability"] and words["Blindness"] == "#f9f2c2" and words["Afraid"] == "#0060ff"
-    assert ability.endswith(" [undead]") and max(b for _, b, _ in ink["ability"]) <= len(ability) - len(" [undead]")
+    assert ability.endswith("1T Afraid.") and max(b for _, b, _ in ink["ability"]) <= len(ability)
 
 
 def test_font_filter_data_is_the_details_fonts(bs):

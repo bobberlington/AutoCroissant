@@ -24,6 +24,7 @@ getLogger("psd_tools").setLevel(CRITICAL)
 # ========================
 PARSER_VERSION = 7                # bump when every stored card must be re-parsed (the build re-parses older stamps)
 TYPE_REGION_RATIO = 0.5
+ICON_SPAN_PAD = 80                # px: a type icon this near an Ability layer's box is in its text (a line)
 MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']
 STAT_KINDS = (CardType.CREATURE.value, CardType.MINION.value, "creatures")  # with stat bars ("creatures": Auxiliary/Creatures)
 NO_STATS = "NO STATS FOUND"       # a stored problem (the website's Parser notes): no bar read (card_edits.FIXED_BY_ALL)
@@ -431,6 +432,7 @@ class BoundingBox:
     """Represents a bounding box with coordinates."""
     x: int
     y: int
+    bottom: Optional[int] = None    # an Ability layer's: its type icons lie in its span (_in_span)
 
     @classmethod
     def from_tuple(cls, coords: tuple[int, int]) -> 'BoundingBox':
@@ -1075,8 +1077,7 @@ class PSDParser:
             .rstrip())
 
         if is_ability:
-            bbox = BoundingBox.from_tuple(layer.bbox[:2])
-            abilities.append((layer_text, bbox))
+            abilities.append((layer_text, BoundingBox(layer.bbox[0], layer.bbox[1], layer.bbox[3])))
 
     @staticmethod
     def _relaid(hidden, text_layers: list) -> bool:
@@ -1489,6 +1490,7 @@ class PSDParser:
 
         if ability_text:
             type_bboxes = self._prune_type_bboxes(self._sort_by_position(type_bboxes), card_mid_y)
+            type_bboxes = self._in_span(type_bboxes, [bbox for _, bbox in abilities])
             ability_text = self._inject_type_names(ability_text.rstrip(' \'"'), type_bboxes)
             ability_text = sub(r'(?m)^[^\S\n]{3,}(?=\S)', '', ability_text)     # a line's unfilled gap: layout padding
             ability_text = sub(r'\s+([:;,\.\?!])', r'\1', ability_text)
@@ -1560,6 +1562,17 @@ class PSDParser:
             return bboxes
         max_height = max(bboxes[len(bboxes) - 1][1].y // 3, card_mid_y)
         return [bbox for bbox in bboxes if bbox[1].y >= max_height]
+
+    @staticmethod
+    def _in_span(bboxes: list[tuple[str, BoundingBox]], boxes: list[BoundingBox]) -> list[tuple[str, BoundingBox]]:
+        """
+        Type icons within a line (ICON_SPAN_PAD) of an Ability layer's span: an icon elsewhere is no ability's (Tainted
+        Lazarus's creature 2 header icon). Every icon when a box has no bottom (given by its top only).
+        """
+        if not boxes or any(box.bottom is None for box in boxes):
+            return bboxes
+        return [(name, bbox) for name, bbox in bboxes
+                if any(box.y - ICON_SPAN_PAD <= bbox.y <= box.bottom + ICON_SPAN_PAD for box in boxes)]
 
     def _inject_type_names(self, ability: str, type_bboxes: list[tuple[str, BoundingBox]]) -> str:
         if not ability or not type_bboxes:

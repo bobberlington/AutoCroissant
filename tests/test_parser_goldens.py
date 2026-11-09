@@ -92,6 +92,17 @@ def test_unfilled_line_gaps_are_padding():
         == "[fire] Burn.\nThen."
 
 
+def test_leftover_icon_only_in_ability_span():
+    """A type icon with no gap left is appended only within a line of an Ability layer's box: Tainted Lazarus's
+    creature 2 header icon (y 2242, its Ability boxes end at 1382) is no ability's (11-09)."""
+    from commands.psd_analyzer import StatsDatabase
+    from commands.psd_parser import BoundingBox, PSDParser
+    p = PSDParser(["undead"], StatsDatabase())
+    texts = [("Attacks inflict 1T Afraid.\n", BoundingBox(12, 1255, 1382))]
+    assert p._process_abilities(texts, [("undead", BoundingBox(1006, 2242))], 1200) == "Attacks inflict 1T Afraid."
+    assert p._process_abilities(texts, [("undead", BoundingBox(900, 1300))], 1200) == "Attacks inflict 1T Afraid. [undead]"
+
+
 def test_lowercase_part_continues_the_line():
     """Parts laying one text out line by line (Apex Predator, 11-09): a lowercase start continues the line before it,
     each part without its padding. With none, the old join (Miracle Matter keeps its blank lines)."""
