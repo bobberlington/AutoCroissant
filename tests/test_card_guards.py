@@ -1177,11 +1177,11 @@ def test_workflow_shape(clone):
     assert post["needs"] == "check" and finish["needs"] == ["check", "checks", "post"]
     # beside check, whatever MODE says; a dispatch's stay in check, so `all` reads each PSD once
     assert "needs" not in checks and checks["if"] == "github.event_name == 'push'" and "env" not in checks
-    here = "(github.event_name == 'push') == (github.job == 'checks')"
+    here = "github.event_name != 'push'"                                      # a dispatch's, in check; a push's in checks
     assert steps_by_name["Card check"]["if"] == here and steps_by_name["Font check"]["if"].startswith(here + " && ")
     assert steps_by_name["Card check"]["run"] == steps_by_name["Font check"]["run"]     # one script, by $CHECK
     named = [s.get("name") for s in checks["steps"] if s.get("name")]
-    assert named == ["Pushed blobs start", "Pushed blobs", "Card check", "Font check", "Tell the checks"]
+    assert named == ["Pushed blobs start", "Card and font checks", "Pushed blobs", "Tell the checks"]
     assert "Tell the checks" not in [s.get("name") for s in job["steps"]]
     fonts = [next(s for s in one["steps"] if s.get("id") == "font-cache") for one in (job, checks)]
     assert fonts[0]["with"] == fonts[1]["with"] and fonts[1]["uses"].startswith("actions/cache/restore@")   # one saver
@@ -1680,19 +1680,23 @@ def test_workflow_refuses_a_landing_dispatch_while_a_push_run_waits(clone, tmp_p
 
 def test_workflow_fetches_pushed_blobs_in_the_background(clone, tmp_path, monkeypatch):
     """Pushed blobs start, right after the card checkout, fetches the push's blobs in the background and returns at once
-    (its output not held); Check starts at once and waits for each listed blob (CARD_BLOBS_PENDING); Pushed blobs, after
-    Decided, waits and counts. A fetch that fails: those blobs by REST, the warning and a failed step."""
+    (its output not held); Check and the two checks start at once and wait for each listed blob (CARD_BLOBS_PENDING);
+    Pushed blobs, after Decided and after the two checks, waits and counts. A fetch that fails: those blobs by REST, the
+    warning and a failed step."""
     import commands.card_bake as cb
+    import commands.github_api as gh
     pytest.importorskip("yaml")
     if not shutil.which("timeout"):
         pytest.skip("no timeout (coreutils)")
     doc, steps, _ = _guard_steps(clone)
-    check = [s.get("name") or s.get("uses") for s in doc["jobs"]["check"]["steps"]]
-    assert check[1:3] == ["actions/checkout@v7", "Pushed blobs start"]
-    assert check.index("Pushed blobs") == check.index("Decided") + 1 and steps["Check"]["env"][cb.PENDING_ENV] == "${{ runner.temp }}/blobs"
+    for job, wait in (("check", "Decided"), ("checks", "Card and font checks")):
+        names = [s.get("name") or s.get("uses") for s in doc["jobs"][job]["steps"]]
+        assert names[names.index("Pushed blobs start") - 1] == "actions/checkout@v7" and names.index("Pushed blobs start") < 3
+        assert names.index("Pushed blobs") == names.index(wait) + 1 and steps[wait if job == "checks" else "Check"]["env"][
+            gh.PENDING_ENV] == "${{ runner.temp }}/blobs"
     rest = []
-    monkeypatch.setattr(cb.github_api, "fetch_verified", lambda repo, sha, timeout: rest.append(sha) or subprocess.run(
-        ["git", "-C", str(origin), "cat-file", "blob", sha], capture_output=True, check=True).stdout)
+    monkeypatch.setattr(gh, "fetch_blob", lambda repo, sha, timeout: rest.append(sha) or SimpleNamespace(content=subprocess.run(
+        ["git", "-C", str(origin), "cat-file", "blob", sha], capture_output=True, check=True).stdout))
     work, origin = tmp_path / "work", tmp_path / "origin.git"
     work.mkdir()
     _git(work, "init", "-q", "-b", "main")
@@ -1715,19 +1719,48 @@ def test_workflow_fetches_pushed_blobs_in_the_background(clone, tmp_path, monkey
                "GITHUB_SHA": shas[1], "GITHUB_OUTPUT": str(temp / "output")}
         done, _ = _shell(steps["Pushed blobs start"], env, cwd=repo)
         assert done.returncode == 0 and not (temp / "blobs.done").exists(), (done.stdout, done.stderr)
-        monkeypatch.setenv(cb.PENDING_ENV, str(temp / "blobs"))
+        monkeypatch.setenv(gh.PENDING_ENV, str(temp / "blobs"))
         listed = (temp / "blobs").read_text().split()
         rest.clear()
-        assert [blob_sha(cb.fetch_verified("o/r", sha, local=str(repo))) for sha in listed] == listed
+        read = (lambda sha: gh.fetch_verified("o/r", sha, clone=str(repo)),      # the checks (a REST read is kept)
+                lambda sha: cb.fetch_verified("o/r", sha, local=str(repo)))[n]   # the guards
+        assert [blob_sha(read(sha)) for sha in listed] == listed
         assert len(rest) == (len(listed) if code else 0)            # waited for, from the clone; a failed fetch: REST
         done, _ = _shell(steps["Pushed blobs"], env, cwd=repo)
         assert (done.returncode != 0) == bool(code) and said in " ".join(done.stdout.split()), (done.stdout, done.stderr)
     os.utime(temp / "blobs", (0, 0))                                # no .done: the cap ends the wait (a new process)
     (temp / "blobs.done").unlink()
-    monkeypatch.setattr(cb, "_listed", {})
-    assert cb._pending_blob(str(repo), listed[0]) is None
-    monkeypatch.delenv(cb.PENDING_ENV)                              # the bake: no list, no wait
-    assert cb._pending_blob(str(repo), listed[0]) is None
+    monkeypatch.setattr(gh, "_listed", {})
+    assert gh.pending_blob(str(repo), listed[0]) is None
+    monkeypatch.delenv(gh.PENDING_ENV)                              # the bake and the bot: no list, no wait
+    assert gh.pending_blob(str(repo), listed[0]) is None
+
+
+def test_workflow_runs_the_two_checks_side_by_side(clone, tmp_path):
+    """checks' Card and font checks: the font check in the background, each to its own report.md, both in the summary
+    in order once both end; no fonts, no font check; one that breaks: the other still reports, a warning, exit 1."""
+    pytest.importorskip("yaml")
+    _, steps, _ = _guard_steps(clone)
+    fake = tmp_path / "bin" / "python"
+    fake.parent.mkdir()
+    fake.write_text('#!/bin/sh\necho "start $2 $*" >> "$FAKE_ARGS"\n[ "$2" = commands.card_check ] && sleep 0.5\n'
+                    'echo "end $2" >> "$FAKE_ARGS"\necho "$2"\n[ "$2" != "$FAKE_BREAK" ]\n')
+    fake.chmod(0o755)
+    for n, (fonts, broken, said) in enumerate((("true", "", ["commands.card_check", "commands.font_check"]),
+                                               ("false", "", ["commands.card_check"]),
+                                               ("true", "commands.font_check", ["commands.card_check", "commands.font_check"]))):
+        summary, args = tmp_path / f"summary{n}", tmp_path / f"args{n}"
+        env = {"PATH": f"{fake.parent}:{os.environ['PATH']}", "RUNNER_TEMP": str(tmp_path / f"t{n}"),
+               "GITHUB_STEP_SUMMARY": str(summary), "GITHUB_OUTPUT": str(tmp_path / "out"), "GITHUB_REPOSITORY": "o/cards",
+               "GITHUB_WORKSPACE": "/w", "GITHUB_SHA": "a" * 40, "BEFORE": "b" * 40, "AUTHOR": "maker", "FONTS": fonts,
+               "FAKE_ARGS": str(args), "FAKE_BREAK": broken}
+        done, _ = _shell(steps["Card and font checks"], env)
+        assert done.returncode == bool(broken) and summary.read_text().split() == said, (done.stdout, done.stderr)
+        assert ("font-check" in done.stdout) == bool(broken)
+        lines = args.read_text().splitlines()
+        assert [line for line in lines if line.startswith("end")] == ["end " + c for c in said[::-1]]   # side by side
+        assert all(f"--before {'b' * 40}" in line and "--author maker" in line and ("--fonts" in line) == ("font" in line.split()[1])
+                   for line in lines if line.startswith("start"))
 
 
 FAKE_RAW = r"""#!/bin/sh

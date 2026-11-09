@@ -3,12 +3,13 @@ range reads of a PSD at a commit (RemotePSD), and the retry policy."""
 from hashlib import sha1
 from http.cookiejar import DefaultCookiePolicy
 from os import environ
+from os.path import exists, getmtime
 from re import compile as re_compile
 from requests import Session
 from requests.exceptions import RequestException
 from subprocess import TimeoutExpired, run
 from threading import local
-from time import sleep
+from time import sleep, time
 from urllib.parse import quote
 
 try:
@@ -27,11 +28,14 @@ RETRY_WAITS = (1, 2)                                # seconds between the 3 trie
 CONTENT_RANGE = re_compile(r"bytes (\d+)-(\d+)/(\d+)")   # a 206 reply's Content-Range
 RANGE_READS = True                                  # read card PSDs by range requests when psd-tools can (the data build,
                                                     # card_check --after); False: whole downloads
+PENDING_ENV = "CARD_BLOBS_PENDING"                  # card-guards.yml's fetch list while it fetches (<list>.done: it ended)
+PENDING_POLL, PENDING_CAP = 0.2, 300                # s: a listed blob looked for; the fetch's cap from the list's write
 
 # ========================
 # Global State
 # ========================
 _local = local()                                    # one requests.Session per thread, never shared
+_listed: dict = {}                                  # PENDING_ENV's list -> (its shas, the wait's end): read once
 
 
 # ========================
@@ -144,10 +148,36 @@ def _git_blob(clone: str, *args: str, data: bytes = None):
     return done.stdout if done.returncode == 0 else None
 
 
+def pending_blob(clone: str, sha: str):
+    """A blob the guards' background fetch is bringing (PENDING_ENV's list): looked for every PENDING_POLL s until it
+    lands or the fetch ends (<list>.done, or PENDING_CAP); None when not listed or not brought."""
+    path = environ.get(PENDING_ENV, "")
+    if not path:
+        return None
+    if path not in _listed:
+        try:
+            with open(path, encoding="ascii") as fh:
+                _listed[path] = frozenset(fh.read().split()), getmtime(path) + PENDING_CAP
+        except OSError:
+            _listed[path] = frozenset(), 0.0
+    shas, end = _listed[path]
+    if sha not in shas:
+        return None
+    while True:
+        ended = exists(f"{path}.done") or time() >= end     # before the look: the last pack is seen
+        data = _git_blob(clone, "cat-file", "blob", sha)
+        if data is not None or ended:
+            return data
+        sleep(PENDING_POLL)
+
+
 def fetch_verified(repository: str, sha: str, timeout: int = 30, clone: str = "") -> bytes:
     """A blob's bytes by sha, checked against it; raises ValueError when they don't hash to sha. With clone: its object
-    store first, and a fetched blob is kept there (the next reader of that clone does not download it again)."""
+    store first (a blob in PENDING_ENV's list waited for), and a fetched blob is kept there (the next reader of that
+    clone does not download it again)."""
     data = _git_blob(clone, "cat-file", "blob", sha) if clone else None
+    if data is None and clone:
+        data = pending_blob(clone, sha)
     if data is not None and blob_sha(data) == sha:
         return data
     data = fetch_blob(repository, sha, timeout=timeout).content
@@ -266,6 +296,7 @@ __all__ = [
     'fetch_verified',
     'get',
     'get_with_retry',
+    'pending_blob',
     'print_token_status',
     'range_reads',
     'raw_url',
