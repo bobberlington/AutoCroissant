@@ -104,3 +104,19 @@ def test_text_with_both_quotes_parses_without_backslash():
     PSDParser([], StatsDatabase())._process_text_layer(layer, CardInfo(name="Card", card_type="item"), MutableValue(0), found,
                                                        False, 1200)
     assert found[0][0].strip("'\"\n") == 'They\'re "in" now' and "\\" not in found[0][0]
+
+
+def test_header_font_icons_give_an_aux_items_type():
+    """Icons typed in the stoogedings font in the header are header icons too (_process_text_layer's header): of two
+    item-type icons in one text layer the first typed is the item type."""
+    from psd_tools.psd.engine_data import String
+    from commands.psd_analyzer import CardInfo, StatsDatabase
+    from commands.psd_parser import MutableValue, PSDParser
+    p = PSDParser([], StatsDatabase())
+    p._icon_font_spans, p._flag_misplaced_tokens = (lambda layer, text: [(0, 1)]), (lambda *a: None)
+    p._read_icon_tokens = lambda text, spans, card: ("[deploy][fire][food]", [("deploy", "type"), ("fire", "type"), ("food", "type")])
+    layer = types.SimpleNamespace(name="Types", engine_dict={"Editor": {"Text": String("x")}}, resource_dict={},
+                                  bbox=(10, 20, 300, 120), is_visible=lambda: True)
+    card, header = CardInfo(name="Card", card_type="aux item"), []
+    p._process_text_layer(layer, card, MutableValue(0), [], False, 1200, header=header)
+    assert card.types == [n for n, _ in header] == ["deploy", "fire", "food"] and PSDParser._aux_item_type(header) == "deploy"

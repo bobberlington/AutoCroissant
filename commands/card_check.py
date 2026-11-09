@@ -11,7 +11,7 @@ summary, commit comment and a Discord message in the standards channel at once, 
     markdown(report), discord_payload(report) -> the job summary / commit comment and the webhook body
 
 The notes equal /update_stats' for the same PSD, Types/ names and site/Card Edits.json: the parser's own (NO STARS FOUND,
-NO STATS FOUND, MISSPELT TYPE, SEVERAL CREATURES ...) and CardValidator's (HP NOT FOUND, STATS TOO HIGH ...), after
+NO STATS FOUND, MISSPELT TYPE ...) and CardValidator's (HP NOT FOUND, STATS TOO HIGH ...), after
 the card's website edits (problems_ok, allow_high_stats, creatures ...); a PSD with variant tags: each picture's ("A Snack2:
 ..."). A notification, never a
 gate: findings exit 0, an unreadable PSD or a failed API call is one error line. The repo path classifies a card, so
@@ -47,7 +47,6 @@ from global_config import EDITS_PATH, ICON_MANIFEST_PATH, STARS_DIR, TYPES_DIR
 LINE = "{name} pushed {card}: {notes}."                                          # the Discord line per card
 SHORT = (                                   # a note's start -> what to do, as short as it goes (owner 2026-11-06)
     ("NO STATS FOUND", "no stat bars"), ("NO STARS FOUND", 'no stars (group them in "Stars")'),
-    ("SEVERAL CREATURES", "several creatures: set each one's stats on the website"),
     ("NO ABILITY LAYER", "no Ability layer"), ("ABILITY TEXT NOT FOUND", "no ability text"),
     ("UNKNOWN TYPE", "unknown card kind (check its folder)"), ("STATS TOO HIGH", "a stat over 20"),
     ("HP NOT FOUND", "no HP bar"), ("DEF NOT FOUND", "no DEF bar"), ("ATK NOT FOUND", "no ATK bar"),

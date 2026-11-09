@@ -49,6 +49,10 @@ STAR_ICON_SHARE = 1 / 36.0        # a star-icon layer outside the Stars groups: 
 TITLE_STACK = 0.6                 # rule P: a title line under another, within this share of its height
 # folders whose stars are counted on the card (elsewhere the folder says them); Auxiliary/Creatures print 2-5 too
 STARS_FROM_PSD = ("Auxiliary/Items", "Auxiliary/Minions", "Auxiliary/Creatures", "N.M.E")
+# an auxiliary item's item type: its item-type icon, named as the Items/ folders (owner 11-08; Field its own)
+AUX_ITEM_TYPES = {"equip": "equip", "fragile equip": "equip", "food": "heal", "active": "active", "attack": "attack",
+                  "infliction": "infliction", "deploy": "deploy", "support": "support", "counter": "counter",
+                  "negation": "negation", "field": "field"}
 # a variant tag: a layer or group named "... #2" (" #2,3") shows only in those pictures (PARTS_EDITOR.md §9)
 TAG = re_compile(r"^(.*\S) #(\d{1,2}(?:,\d{1,2})*)$")
 LINE_PAD = re_compile(r"(?m)^[^\S\n]{3,}(?=\S)")             # a line's leading layout padding
@@ -390,7 +394,6 @@ class StatTrackers:
     defense: StatTracker = field(default_factory=StatTracker)
     attack: StatTracker = field(default_factory=StatTracker)
     speed: StatTracker = field(default_factory=StatTracker)
-    comps: bool = False                          # layer-comp bars: each creature read as drawn
 
     def creatures(self) -> Optional[list]:
         """
@@ -670,6 +673,7 @@ class PSDParser:
         effect_layers = []
         text_layers = []
         hidden_abilities = []
+        header: list = []                       # the header's type icons (name, layer); a font icon's: its text layer
         titles = self.title_layers(psd, [layer for layer in psd.descendants() if layer.kind == "type"
                                          and EFFECT_LAYER_TAG not in layer.name], card.name)
         for layer in psd.descendants():
@@ -684,13 +688,15 @@ class PSDParser:
             self._process_layer(
                 layer, card, num_stars,
                 stat_trackers, type_bboxes, abilities,
-                get_stars_from_psd, card_mid_y, titles)
+                get_stars_from_psd, card_mid_y, titles, header)
         for layer in hidden_abilities:
             self._process_text_layer(layer, card, num_stars, abilities, get_stars_from_psd, card_mid_y,
                                      self._relaid(layer, text_layers))
         for layer in effect_layers:
             self._check_effect_layer(layer, text_layers, card)
         card.display_name = self._printed_title(psd, text_layers, card.name)
+        if card.card_type == CardType.AUX_ITEM.value:
+            card.subtype = self._aux_item_type(header)
 
         if abilities:
             card.ability = self._process_abilities(abilities, type_bboxes, card_mid_y)
@@ -1001,12 +1007,12 @@ class PSDParser:
     def _process_layer(self, layer, card: CardInfo,
                        num_stars: MutableValue, stat_trackers: StatTrackers,
                        type_bboxes: list, abilities: list,
-                       get_stars_from_psd: bool, card_mid_y: int, titles=()) -> None:
-        """Process a single PSD layer (titles: title_layers(), whose icons are no header's)."""
+                       get_stars_from_psd: bool, card_mid_y: int, titles=(), header: Optional[list] = None) -> None:
+        """Process a single PSD layer (titles: title_layers(), whose icons are no header's; header: its type icons)."""
         # Text layers
         if layer.kind == "type":
             self._process_text_layer(layer, card, num_stars, abilities, get_stars_from_psd, card_mid_y,
-                                     title=any(layer is title for title in titles))
+                                     title=any(layer is title for title in titles), header=header)
 
         # Stat layers
         elif self._is_stat_layer(layer):
@@ -1017,6 +1023,8 @@ class PSDParser:
             bbox = BoundingBox.from_tuple(layer.bbox[:2])
             if bbox.y < card_mid_y:
                 card.types.append(base_name(layer).lower())
+                if header is not None:
+                    header.append((base_name(layer).lower(), layer))
             else:
                 type_bboxes.append((base_name(layer).lower(), bbox))
 
@@ -1030,7 +1038,7 @@ class PSDParser:
 
     def _process_text_layer(self, layer, card: CardInfo, num_stars: MutableValue, abilities: list,
                             get_stars_from_psd: bool, card_mid_y: int, relaid: bool = False,
-                            title: bool = False) -> None:
+                            title: bool = False, header: Optional[list] = None) -> None:
         """
         Process text layer. A hidden Ability layer is the ability only when relaid (_relaid): only printed text counts.
 
@@ -1051,6 +1059,8 @@ class PSDParser:
                 for name, kind in icons:
                     if kind == "type":
                         card.types.append(name)
+                        if header is not None:
+                            header.append((name, layer))
                     elif kind == "star" and get_stars_from_psd:
                         num_stars.value += 1
         else:
@@ -1274,7 +1284,7 @@ class PSDParser:
             tracker = {"hp": stat_trackers.hp, "def": stat_trackers.defense, "atk": stat_trackers.attack,
                        "spd": stat_trackers.speed}.get(key)
             if tracker is not None:
-                tracker.found = stat_trackers.comps = True
+                tracker.found = True
                 parent = layer.parent
                 row = tracker.rows.setdefault(id(layer), BarRow(id(parent), str(comp_creature(layer) or base_name(layer)),
                                                                 getattr(parent, "name", "") or "",
@@ -1442,6 +1452,18 @@ class PSDParser:
                 loose += star_pieces(layer)
         return count + len(star_sets(loose))
 
+    @classmethod
+    def _aux_item_type(cls, icons: list) -> Optional[str]:
+        """
+        An auxiliary item's item type (AUX_ITEM_TYPES) from its header's type icons; of several, the first in reading
+        order of their drawn pixels (left-most; a stack's top one). None without one.
+        """
+        found = [(AUX_ITEM_TYPES[name], layer) for name, layer in icons if name in AUX_ITEM_TYPES]
+        if len(found) < 2:
+            return found[0][0] if found else None
+        spots = [(kind, BoundingBox.from_tuple(cls._core_box(layer)[:2])) for kind, layer in found]
+        return cls._sort_by_position(spots)[0][0]
+
     @staticmethod
     def _core_box(layer) -> tuple:
         """Bounding box of the layer's mostly opaque pixels, its pixel mask applied (its whole box if they can't be read)."""
@@ -1490,8 +1512,6 @@ class PSDParser:
         if creatures:
             card.creatures = creatures
             card.stats = deepcopy(creatures[0])
-            if not stat_trackers.comps:
-                card.problems.append("SEVERAL CREATURES: check each one's stats on the website")
 
     @staticmethod
     def _sort_by_position(items: list[tuple[str, BoundingBox]], row_threshold: int = 40) -> list[tuple[str, BoundingBox]]:

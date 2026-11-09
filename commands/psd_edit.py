@@ -9250,7 +9250,7 @@ def whole_redraw(old: PSDImage, raw: bytes, edit: Edit, png: Image.Image, fonts_
 # The soft notes (owner 2026-11-07: non-issues): a bake's own remarks on a card that baked, told nowhere
 SOFT_NOTE = re_compile(r"^overflow: |, the face its pixels show|^types: .*spot.*: check it$"
                        r"|^stars: .* \(the card.s own layout does not go on to \d+\)$|^stars: .* drew \d+ in one layer: split"
-                       r"|^[a-z]+: cell \d+ of |^[a-z]+: cells by place|^validator: SEVERAL CREATURES|deleted: the edit changes"
+                       r"|^[a-z]+: cell \d+ of |^[a-z]+: cells by place|deleted: the edit changes"
                        r"|^unsupported-card: ability: .* under the Ability|: also printed by ")
 
 

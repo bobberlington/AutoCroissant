@@ -27,9 +27,6 @@
   "def": 4,
   "hp": 6,
   "path": "Creatures/Kirby/3 Stars/Pix.psd",
-  "problem": [
-   "SEVERAL CREATURES: check each one's stats on the website"
-  ],
   "series": "kirby",
   "spd": 8,
   "stars": 3,
@@ -41,7 +38,5 @@
   ]
  },
  "path": "Creatures/Kirby/3 Stars/Pix.psd",
- "validator": [
-  "SEVERAL CREATURES: check each one's stats on the website"
- ]
+ "validator": []
 }

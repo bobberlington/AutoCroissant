@@ -730,6 +730,15 @@ def test_real_type_rows(clone, parser, tmp_path):
     assert stem == "fire" and box[0] == core[0] and box[1] > core[3]       # under the row's first icon, not by the title
 
 
+def test_an_auxiliary_items_type_is_its_first_item_type_icon(clone, parser):
+    """Owner 11-08: an auxiliary item's item type is its icon's, as the Items/ folders name them (Fragile Equip: equip,
+    Field its own); of two, the first by drawn pixels: Magnum Opus's field (a card-sized smart object) right of active,
+    Salt's infliction under its food."""
+    want = {MAGNUM: "active", "Auxiliary/Items/Salt.psd": "heal", "Auxiliary/Items/Party!.psd": "field",
+            "Auxiliary/Items/Snake.psd": "equip"}
+    assert {rel: parser.parse(str(clone / rel), rel).subtype for rel in want} == want
+
+
 
 @icons
 def test_icons_and_stars_go_by_ink(clone, parser, tmp_path):

@@ -53,11 +53,16 @@ live folder tree.
 | `Creatures/<Series>/<N Stars>/x.psd` | `creature` | `series` = `<Series>`.lower(); hp/def/atk/spd seeded −1 | leaf folder name |
 | `N.M.E/x.psd` | `nme` | — | PSD star layers |
 | `Auxiliary/Minions/x.psd` | `minion` | hp/def/atk/spd seeded −1 | PSD star layers |
-| `Auxiliary/Items/x.psd` | `aux item` | — | PSD star layers |
+| `Auxiliary/Items/x.psd` | `aux item` | `subtype` from its header's item-type icon (2026-11-08, below) | PSD star layers |
 | `Auxiliary/Status Effects/Debuffs/<N Stars>/x.psd` | `debuff` | — | leaf folder name |
 | `Auxiliary/Status Effects/Buffs/x.psd` | `buff` | — | none |
 | `Auxiliary/<AnythingElse>/x.psd` (fall-through) | literal leaf folder, lowercased | — | none |
 | anything else | `unknown` | — | none |
+
+An auxiliary item's `subtype` (owner 2026-11-08) is its header's item-type icon named as the `Items/` folders
+(`psd_parser.AUX_ITEM_TYPES`: Equip and Fragile Equip -> equip, Food -> heal, Active, Attack, Infliction, Deploy, Support,
+Counter, Negation as named, Field -> `field`, an item type of its own); of two icons the first in reading order of their
+drawn pixels (`PSDParser._aux_item_type`: Magnum Opus active, Salt heal).
 
 `subseries` (2026-10-20) never comes from the folder or the PSD: only Card Edits.json sets it (the website; `/update_metadata` until 2026-10-25), and a
 re-parse keeps it like `author` and `series` (§6).
@@ -262,13 +267,14 @@ The VISIBLE digit layers are grouped by bar row (their parent group) and each ro
   `Raid_Boss_Template.psd` has the same bars on 20 cells, comps "0".."40" (ttscardmaker-companion §1.11).
   `2_Creature_Template.psd` and `3_Creature_Template.psd` (2026-11-07): a bar per creature and stat in
   `Darks > Creature n` (`psd_regions.comp_creature`), comps "0".."20" on every bar, and `Shared Health` in `Darks`, read by
-  every creature whose own HP bar is hidden (shown on the 2 creature template, hidden on the 3). These read exactly, so no
-  SEVERAL CREATURES note, and every creature bakes (the `creatures` field, `psd_edit.set_creatures`; a shared bar moves
+  every creature whose own HP bar is hidden (shown on the 2 creature template, hidden on the 3). These read exactly, and
+  every creature bakes (the `creatures` field, `psd_edit.set_creatures`; a shared bar moves
   every creature); the details call them "creatures" and record `creature_bars`.
 
 Rows add up, so stats can pass 10 (Royal Eradicator Main Cannon's attack is 10 + 2). Multi-creature
 cards (rows named "1", "2", … or a repeated stat block: Pix, Twin Emperors, Tainted Lazarus, Computer Virus) get
-`card.creatures` (CardStats each; `stats` = creature 1) and the note "SEVERAL CREATURES". An empty row reads creature 1's
+`card.creatures` (CardStats each; `stats` = creature 1); the note "SEVERAL CREATURES" went 2026-11-08 (every creature
+bakes). An empty row reads creature 1's
 value only when creature 1's shown digit reaches over it (Pix's tall HP mask), else 10 (Twin Emperors' 2nd DEF, since
 2026-11-08; it read 4 before). Since 2026-11-08 every creature's rows bake too (`creatures`, `psd_edit.set_creatures` ->
 `set_stat(creature=n)` on `bar_rows(psd, stat, n)`), and the details record their `creature_bars`. A card whose stats

@@ -18,7 +18,6 @@ from conftest import Reply, blob_sha_bytes as _sha, no_lazy, smallest
 from helpers import ChecksGitHub as FakeGitHub
 
 NO_STARS = 'NO STARS FOUND (put the star layers in a group named "Stars")'
-SEVERAL = "SEVERAL CREATURES: check each one's stats on the website"
 NO_STATS = "NO STATS FOUND: no HP, DEF, ATK or SPD bars read on this creature"
 OLD = {                                         # the clone's last versions with notes (fixed by these commits' children)
     "N.M.E/Bubble.psd": ("dc37f4adf5309ff0ebacadfbd2f2e07001eec3a5^", [NO_STARS]),          # L14 star groups
@@ -129,8 +128,8 @@ def test_card_notes_apply_the_edits_then_validate(fake_cards, tmp_path):
     assert cc.card_notes(parser, None, str(psd), rel) == ["HP NOT FOUND"]
     assert cc.card_notes(parser, cc.CardEdits.parse(edits({"A": {"hp": 5}})), str(psd), rel) == []
     assert cc.card_notes(parser, cc.CardEdits.parse(edits({"a": {"problems_ok": True}})), str(psd), rel) == []
-    fake_cards[b"a"] = lambda r: creature(r, 7, 4, 5, 6, problems=[SEVERAL])
-    assert cc.card_notes(parser, None, str(psd), rel) == [SEVERAL]
+    fake_cards[b"a"] = lambda r: creature(r, 7, 4, 5, 6, problems=[NO_STATS])
+    assert cc.card_notes(parser, None, str(psd), rel) == [NO_STATS]
     two = edits({"A": {"creatures": [{"hp": 7, "def": 4, "atk": 5, "spd": 6}, {"hp": 1, "def": 1, "atk": 1, "spd": 1}]}})
     assert cc.card_notes(parser, cc.CardEdits.parse(two), str(psd), rel) == []
     fake_cards[b"a"] = lambda r: creature(r, 7, 4, 12, 6)
@@ -181,7 +180,7 @@ def test_cli_psd_mode(clone, tmp_path, capsys):
 
 
 def test_cli_all_mode_with_the_edits(clone, tmp_path, capsys):
-    """Five real cards (one from the clone's history) in a tmp checkout: the edits file answers two of their notes; MDW/, Markers/ and .git/ are skipped."""
+    """Five real cards (one from the clone's history) in a tmp checkout: the edits file answers Computer Virus's note; MDW/, Markers/ and .git/ are skipped."""
     root = tmp_path / "repo"
     cards = ["Auxiliary/Minions/God_Tamer.psd", "Creatures/Kirby/3 Stars/Computer_Virus.psd", "Creatures/Kirby/3 Stars/Pix.psd",
              "Auxiliary/Minions/Mini_Doomer.psd",
@@ -193,8 +192,7 @@ def test_cli_all_mode_with_the_edits(clone, tmp_path, capsys):
         else:
             (root / rel).symlink_to(clone / rel)
     names = [p.name for p in (clone / "Types").iterdir() if p.is_file() and not p.name.startswith(".")]
-    text = edits({"Computer Virus": {"problems_ok": True},
-                  "Pix": {"creatures": [{"hp": 3, "def": 3, "atk": 3, "spd": 3}] * 3}})
+    text = edits({"Computer Virus": {"problems_ok": True}})
     fake_root(root, {"MDW/Templates/Creature_Template.psd": b"", "Auxiliary/Markers/M.psd": b"", ".git/x.psd": b"", "Items/note.txt": b""},
               types=names, edits_text=text)
     assert cc.card_psds(str(root)) == [(rel, str(root / rel)) for rel in sorted(cards)]
@@ -208,8 +206,7 @@ def test_cli_all_mode_with_the_edits(clone, tmp_path, capsys):
     report = cc.check_checkout(str(root))
     assert {c.path: c.notes for c in report.cards} == {
         "Auxiliary/Minions/God_Tamer.psd": [NO_STARS],
-        "Creatures/Kirby/3 Stars/Computer_Virus.psd": [NO_STATS],
-        "Creatures/Kirby/3 Stars/Pix.psd": [SEVERAL]}
+        "Creatures/Kirby/3 Stars/Computer_Virus.psd": [NO_STATS]}
 
 
 def test_check_checkout_pool_matches_sequential(clone, tmp_path, monkeypatch):

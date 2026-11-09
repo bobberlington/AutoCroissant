@@ -316,8 +316,8 @@ ignored; a font counts as present only when a face has exactly its PostScript na
 
 commands/card_check.py (uncompiled; imports psd_parser, card_models, card_edits, font_check, github_api and global_config, nothing with
 Discord or config; the guards' `card_guards.SPARSE_FILES` holds that closure) tells what the bot's parser and validator note about a card
-PSD: the lines /update_stats prints for it (`NO STARS FOUND`, `MISSPELT TYPE`, `SEVERAL CREATURES`, `NO STATS FOUND`, `HP/DEF/ATK/SPD NOT
-FOUND`, `STATS TOO HIGH`, `ABILITY TEXT NOT FOUND`, `UNKNOWN TYPE`; the parser's own, the first four and `NO ABILITY LAYER`, are also the website's Parser
+PSD: the lines /update_stats prints for it (`NO STARS FOUND`, `MISSPELT TYPE`, `NO STATS FOUND`, `HP/DEF/ATK/SPD NOT
+FOUND`, `STATS TOO HIGH`, `ABILITY TEXT NOT FOUND`, `UNKNOWN TYPE`; the parser's own, the first three and `NO ABILITY LAYER`, are also the website's Parser
 notes, the validator's are printed only), after the card's `site/Card Edits.json` entry (`problems_ok`, `allow_high_stats`, `creatures` ...)
 and `ABILITY_EXCLUSIONS`. The second push-guard rule (docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md section 5). It reports and never
 rejects: exit 0 always; an unreadable PSD, a PSD under `MDW/` or `Markers/` (no card) or a failed API call (a 5xx after the retries, no
@@ -340,7 +340,7 @@ network, a truncated tree) is one error line.
   the 813 PSDs of the clone in 14.6 s wall on the Mac on 2026-10-21, 0 errors, exactly the seven cards below),
   `--repo OWNER/NAME --after <sha> [--before <sha>] [--whole-tree]`, `--json <out>`, `--discord <out>`. On the clone at e4e0a58 the notes
   are Bubble and God Tamer `NO STARS FOUND`, 20 Creature Types `MISSPELT TYPE: tornado`, Tainted Lazarus, Pix and Twin Emperors
-  `SEVERAL CREATURES`, Computer Virus `HP/DEF/ATK/SPD NOT FOUND` (since 2026-10-26 one parse-time `NO STATS FOUND` instead, stored at its
+  `SEVERAL CREATURES` (gone 2026-11-08: every creature bakes), Computer Virus `HP/DEF/ATK/SPD NOT FOUND` (since 2026-10-26 one parse-time `NO STATS FOUND` instead, stored at its
   next re-parse; all four stats or a `creatures` edit answer it); Anubisath Guardian, Qiraji Soldier, Silithid, Mini Doomer and Royal
   Eradicator Main Cannon (`allow_high_stats`) are clean (`tests/test_card_check.py` pins these). On TTSCardMaker 07589cc7
   (2026-10-22) only Computer Virus has notes (812 PSDs); the test reads the three fixed cards' old versions from the clone's history.

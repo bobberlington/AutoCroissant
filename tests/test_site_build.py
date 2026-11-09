@@ -293,6 +293,26 @@ def test_a_renamed_card_goes_on_and_its_old_page_redirects(bs, repo, tmp_path, m
     assert out["users.json"]["users"][0]["favourite"] == out["decks.json"]["decks"][0]["cards"][0] == "new-alpha"
 
 
+def test_the_morgue_is_its_own_list(bs, repo, tmp_path, monkeypatch):
+    """Owner 11-08: MDW/The Morgue's cards (a PSD with its PNG; the card back is none) are cards.json morgue, picture
+    only, kind and stars from the archive row that moved them there, with a share page; never a live card, the game
+    text or the TTS details."""
+    if not hasattr(bs, "morgue_cards"):
+        pytest.skip("the site has no Morgue yet")
+    root = repo["root"]
+    _png(root / "MDW/The Morgue/White_Palace.png", 90)
+    _png(root / "MDW/The Morgue/cardback.png", 95)
+    _commit(root, "Morgue pictures", 1_780_000_000 + 4 * DAY)
+    out = _build(bs, monkeypatch, repo, tmp_path / "a")
+    data, dist = out["cards.json"], tmp_path / "a" / "dist"
+    (palace,) = data["morgue"]
+    assert {k: palace[k] for k in ("id", "name", "type", "stars", "png", "morgue")} == {
+        "id": "white-palace", "name": "White Palace", "type": "field", "stars": 2, "png": "MDW/The Morgue/White_Palace.png",
+        "morgue": True} and palace["img"] and palace["retired"] == repo["t"][2]
+    assert "White Palace" not in _by_name(data["cards"]) and (dist / "c" / "white-palace" / "index.html").exists()
+    assert "White Palace" not in (dist / "game.txt").read_text(encoding="utf-8") + json.dumps(out["tts.json"])
+
+
 def test_archived_author_and_created_precedence(bs):
     """author: Card Authors.txt's credit > the tag's (backfill) > the last version's, shown through [people]; created:
     the last version's created date, else the Pacific day of its oldest version (its version record's start)."""
@@ -446,7 +466,7 @@ def test_website_only_fields(bs, tmp_path, monkeypatch):
 
 def test_parser_notes_answered_as_the_bot_does(bs):
     """build_site's FIXED_BY and FIXED_BY_ALL are card_edits': NO STATS FOUND stays until all four stats or creatures are
-    edited, so the Parse problems filter keeps a card with a stat still unread (B3, 2026-10-26)."""
+    edited, so a card with a stat still unread keeps its note (B3, 2026-10-26)."""
     from commands.card_edits import CardEdits
     from commands.psd_parser import NO_STATS
     assert (bs.FIXED_BY, bs.FIXED_BY_ALL) == (CardEdits.FIXED_BY, CardEdits.FIXED_BY_ALL)
