@@ -56,6 +56,20 @@ def test_flat_rows_by_the_others():
     assert [read["best"] for _, read in rows] == [4, 10, 0] and rows[1][1]["could"] == [10, 20]
 
 
+def test_split_row():
+    """A busy row of textured cells (Kyle's, Michael's) reads by its cells' lightness; noise and fading paint (Paint
+    Warrior's 5 that splits best at 2) read nothing."""
+    rng = np.random.default_rng(2)
+    row, fade = np.zeros((84, 813, 3), np.uint8), np.zeros((84, 813, 3), np.uint8)
+    for n, grey in enumerate((135, 110, 52, 50, 78, 9, 14, 7, 5, 30)):
+        row[:, cc.TEMPLATE_CELLS[n]:cc.TEMPLATE_CELLS[n + 1]] = rng.integers(140, 256, 3)
+        fade[:, cc.TEMPLATE_CELLS[n]:cc.TEMPLATE_CELLS[n + 1]] = grey
+    row[:, cc.TEMPLATE_CELLS[7]:] //= 3                         # the darks over cells 8-10
+    assert cc.read_row(row)["could"] is None and cc.split_row(row) == {"best": 7, "could": [7, 17]}
+    assert cc.split_row(np.random.default_rng(1).integers(0, 255, (84, 813, 3)).astype(np.uint8)) is None
+    assert cc.read_row(fade)["could"] is None and cc.split_row(fade) is None
+
+
 def test_mismatches():
     """The note names the bar; a value the bar could show says nothing; a custom card speaks only when every bar reads;
     a website-only value differs on purpose; creatures by bar."""

@@ -80,6 +80,7 @@ STEP_CLEAR = 1.8                            # a step reads when it beats every o
 STEP_NEAR = 0.6                             # an edge this close to the strongest could be the value too
 HALF_ROW = 0.4                              # a step in the bottom half alone: the top half shows under this share of it
 LIT_GAP = 10.0                              # lit and empty cells this far apart (L) tell a flat row's state
+SPLIT_MIN = 10.0                            # L a busy template row's lit cells all beat its dark ones by (split_row)
 PIXEL_MOVED = 24                            # a pixel counts as changed past this many levels (the census's)
 # the edits
 MAX_STARS = 7                               # the census's: a star added up to here
@@ -184,6 +185,18 @@ def _tell_flats(rows: list) -> None:
             read.update(best=10 if full else 0, could=[10, 20] if full else [0])
 
 
+def split_row(row: np.ndarray) -> Optional[dict]:
+    """
+    A busy row (textured cells: Kyle, Michael, Gandhi) by its cells' lightness: the count whose lit cells all beat the
+    rest by SPLIT_MIN, STEP_CLEAR times any other count's (could: 10 more too, as read_row's); else None (fading paint).
+    """
+    cells = [_lightness(row, n, n + 1) for n in range(10)]
+    (top, best), (second, _) = sorted(((min(cells[:k]) - max(cells[k:]), k) for k in range(1, 10)), reverse=True)[:2]
+    if top < SPLIT_MIN or top < STEP_CLEAR * second:
+        return None
+    return {"best": best, "could": [best, 10 + best]}
+
+
 def bar_boxes(psd: PSDImage) -> dict:
     """{stat: [each bar's box, top to bottom]}: the layer-comp bars, else the digit rows."""
     found = {stat: [tuple(box) for _, _, box in bars] for stat, bars in comp_bars(psd).items()}
@@ -223,8 +236,11 @@ def _cut(pixels: np.ndarray, box: tuple, width: int) -> Optional[np.ndarray]:
     return pixels[y0:y1, x0:x1] if 0 <= x0 < x1 <= pixels.shape[1] and 0 <= y0 < y1 <= pixels.shape[0] else None
 
 
-def read_picture(psd: PSDImage, image: Image.Image) -> dict:
-    """{stat: [{"best", "could"} of each bar, top to bottom]} off the card's picture; a bar past the canvas has no say."""
+def read_picture(psd: PSDImage, image: Image.Image, cells: bool = False) -> dict:
+    """
+    {stat: [{"best", "could"} of each bar, top to bottom]} off the card's picture; a bar past the canvas has no say.
+    cells: the template's bars, a busy row read by its cells (split_row).
+    """
     pixels = np.asarray(image.convert("RGB"))
     out, rows = {}, []
     for stat, boxes in by_label(psd, bar_boxes(psd)).items():
@@ -237,6 +253,9 @@ def read_picture(psd: PSDImage, image: Image.Image) -> dict:
             out[stat].append(read_row(row))
             rows.append((row, out[stat][-1]))
     _tell_flats(rows)
+    for row, read in rows if cells else ():
+        if read["could"] is None:
+            read.update(split_row(row) or {})
     return out
 
 
@@ -551,7 +570,8 @@ def check_card(ctx: Context, rel: str) -> dict:
         notes.append(FX_NOTE.format(layers=", ".join(unread)))
     rows = [group for found in stat_rows(psd).values() for group, _, _ in found]
     counted = bool(rows) and all(psd_edit.counted_row(group) for group in rows)     # the picture is the data
-    reads = read_picture(psd, image) if style and image is not None and not counted and len(variants_of(psd)) < 2 else {}
+    reads = read_picture(psd, image, cells=style == "new") \
+        if style and image is not None and not counted and len(variants_of(psd)) < 2 else {}
     notes += edit_notes(ctx, rel, psd, parsed, style, image)
     for path in snapshot.dup_pictures().get(rel, []) if image is not None else ():   # nothing redraws these (owner 11-07)
         if png_export.drawn_apart(psd, image, png_export.open_png(snapshot.fetch(snapshot.sha(path)))):
