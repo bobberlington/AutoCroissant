@@ -6251,9 +6251,7 @@ def recolour(layer, paint: dict, fonts) -> bool:
         return False
     glyphs = [glyph for glyph in text_geometry(layer, fonts)["glyphs"] if glyph["ink"]]
     x0, y0 = bbox[0], bbox[1]
-    mask = np.zeros((bbox[3], bbox[2]), bool)
-    mask[y0:, x0:] = rgba[..., 3] > 0
-    ys, xs, nearest = _nearest(glyphs, mask)
+    ys, xs, nearest = _nearest(glyphs, rgba[..., 3] > 0, (x0, y0))     # the raster may start off the canvas
     out, changed = rgba.copy(), False
     for k, glyph in enumerate(glyphs):
         fill = paint.get(glyph["i"])
@@ -10214,9 +10212,11 @@ def _colour_ink(layer, fonts, shape: tuple) -> np.ndarray:
     return np.where(same, red[..., 3], 0.0)
 
 
-def _nearest(glyphs: list, mask: np.ndarray) -> tuple:
-    """(ys, xs, k): the mask's pixels and, per pixel, the index into glyphs of the one whose ink box is nearest."""
+def _nearest(glyphs: list, mask: np.ndarray, origin: tuple = (0, 0)) -> tuple:
+    """(ys, xs, k): the mask's pixels on the canvas (its top left at origin) and, per pixel, the index into glyphs of the
+    one whose ink box is nearest."""
     ys, xs = mask.nonzero()
+    ys, xs = ys + origin[1], xs + origin[0]
     if not glyphs or not len(xs):
         return ys, xs, np.zeros(len(xs), int)
     box = np.array([glyph["ink"] for glyph in glyphs], float)
