@@ -366,6 +366,9 @@ def test_gate_outside_refuses_a_change_beyond_the_region(tmp_path):
     with pytest.raises(pe.Refused, match="stars: the card changes") as refused:
         pe.gate_outside(before, new, pe.Edit("stars", 2, 3, [], [], (950, 0, 1200, 300)))
     assert refused.value.code == "region" and refused.value.field == "stars"
+    with pytest.raises(pe.Refused) as boxed:        # a lone one, in its dirty box: the same refusal
+        pe.gate_dirty(old, new, [pe.Edit("stars", 2, 3, [], [], (950, 0, 1200, 300))], icon=True)
+    assert boxed.value.refusal == refused.value.refusal
     after = pe.gate_outside(before, new, pe.Edit("types", [], [], [], [], (480, 880, 620, 1020)))
     assert (after != before).any() and (after == pe.render_all(new)).all()
 
@@ -785,13 +788,16 @@ def test_a_redrawn_icon_keeps_its_spots(clone, parser, tmp_path, monkeypatch):
 
 
 @icons
-def test_real_type_rows(clone, parser, tmp_path):
+def test_real_type_rows(clone, parser, tmp_path, monkeypatch):
     morpho = _plan(parser, _clone_card(clone, MORPHO, tmp_path)[0], MORPHO, "types", ["undead"])
     assert [layer.name for layer in morpho.hide] == ["Fire"] and [layer.name for layer, _, _ in morpho.moves] == ["Undead", "Gradient Map 2"]
     assert [layer.name for layer in _plan(parser, _clone_card(clone, MAGNUM, tmp_path)[0], MAGNUM, "types", ["active"]).hide] == ["field"]
-    freezer = _clone_card(clone, FREEZER, tmp_path)
+    freezer, boxes, dirty = _clone_card(clone, FREEZER, tmp_path), [], pe.dirty_box
+    monkeypatch.setattr(pe, "dirty_box", lambda old, new: boxes.append((dirty(old, new), old.width * old.height)) or boxes[-1][0])
     _, baked = _bake(parser, freezer, {"types": ["field", "ice"]}, tmp_path, FREEZER, str(clone / "Types"))
     assert sorted(baked.reparse["card"]["types"]) == ["field", "ice"]
+    (box, canvas), = boxes          # a lone types edit with its new Types/ link: its box rendered, not the card twice
+    assert (box[2] - box[0]) * (box[3] - box[1]) < canvas / 10
     abigail = _plan(parser, _clone_card(clone, ABIGAIL, tmp_path)[0], ABIGAIL, "types", ["undead", "defensive_minion", "fire"])
     (stem, box, reference), = abigail.icons
     shield = next(layer for layer in PSDImage.open(_clone_card(clone, ABIGAIL, tmp_path)[0]).descendants()
