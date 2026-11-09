@@ -931,35 +931,13 @@ def _every_line_in(data: bytes) -> bool:
 def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[PSDParser], result: Fixed,
             fonts: Optional[Callable[[list], Optional[str]]] = None, composer: bool = True, pixels: tuple = (),
             whole: bool = False, folders: bool = False) -> None:
-    """fix()'s work in its own temporary folder: clean, then the folders (each gated on its own, silent), the fixable
-    issues, the composer and the pixel fixes over them."""
+    """fix()'s work in its own temporary folder: the fixable issues (gated together), clean, then the folders (each
+    gated on its own, silent), then the composer and the pixel fixes over them."""
     from commands.txt2_repair import repair
-    pushed = base = join(folder, "pushed.psd")
-    with open(base, "wb") as fh:
+    pushed = join(folder, "pushed.psd")
+    with open(pushed, "wb") as fh:
         fh.write(data)
-    if "clean" in pixels:                       # first: what follows works on what stays (owner 11-09)
-        out = join(folder, "clean.psd")
-        try:
-            names = clean(base, out, fonts, rel)
-            if names:
-                _gated(base, out, rel, parser, None, sized=False)
-                base, result.cleaned = out, list(names)
-        except Exception as error:              # best effort, never told: plan.json says why
-            result.pixel_left.append(("clean", f"{type(error).__name__}: {error}"))
-        pixels = tuple(kind for kind in pixels if kind != "clean")
-    if folders:                                 # the templates' folders (owner 11-09): silent, no PNG
-        out = join(folder, "folders.psd")
-        try:
-            done = standard_folders(base, out, fonts, rel, parser, isolated=False)
-        except Exception as error:              # best effort, never told
-            result.pixel_left.append(("folders", f"{type(error).__name__}: {error}"))
-        else:
-            if done:
-                base, result.folders = out, list(done)
-    if base != pushed:
-        with open(base, "rb") as fh:
-            result.data = fh.read()
-    current, codes = base, []
+    current, codes = pushed, []
     for issue in sorted(wanted, key=lambda i: FIXABLE.index(i.code)):
         out = join(folder, f"{issue.code}.psd")
         try:
@@ -976,6 +954,37 @@ def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[P
         current = out
         codes.append(issue.code)
         result.applied.append(issue.line())
+    if current != pushed:
+        try:
+            result.data = _gated(pushed, current, rel, parser)
+        except Refused as refused:
+            result.refused += [(code, str(refused)) for code in codes]
+            result.applied, current = [], pushed
+    base = current                              # what the composer and the pixel fixes start from
+    if "clean" in pixels:                       # first of the silent ones: what follows works on what stays (11-09)
+        out = join(folder, "clean.psd")
+        try:
+            names = clean(base, out, fonts, rel)
+            if names:
+                result.data = _gated(base, out, rel, parser, None, sized=False)
+                base, result.cleaned = out, list(names)
+        except Exception as error:              # best effort, never told: plan.json says why
+            result.pixel_left.append(("clean", f"{type(error).__name__}: {error}"))
+        pixels = tuple(kind for kind in pixels if kind != "clean")
+    if folders:                                 # the templates' folders (owner 11-09): silent, no PNG
+        out = join(folder, "folders.psd")
+        try:
+            done = standard_folders(base, out, fonts, rel, parser, isolated=False)
+        except Exception as error:              # best effort, never told
+            result.pixel_left.append(("folders", f"{type(error).__name__}: {error}"))
+        else:
+            try:                                # and the size gate: a folder adds a few records
+                if done:
+                    result.data = _gated(base, out, rel, parser)
+                    base, result.folders = out, list(done)
+            except Refused as refused:
+                result.pixel_left.append(("folders", str(refused)))
+    current = base
     out, moves = join(folder, "R8.psd"), []
     if composer:
         try:
@@ -984,20 +993,11 @@ def _fix_in(folder: str, data: bytes, rel: str, wanted: list, parser: Optional[P
             result.composer_left = [("", f"{type(error).__name__}: {error}")]
     if result.composer:
         current = out
-        codes.append("R8")
-    if current != base:
         try:
             result.data = _gated(base, current, rel, parser)
         except Refused as refused:
-            result.refused += [(code, str(refused)) for code in codes if code != "R8"]
             result.composer_left += [(name, str(refused)) for name in result.composer]
-            result.applied, result.composer = [], []
-            if base == pushed:
-                result.data = b""
-            else:
-                with open(base, "rb") as fh:
-                    result.data = fh.read()
-            current, moves = base, []           # the pixel fixes go on the pushed PSD (cleaned, its folders)
+            result.composer, current, moves = [], base, []      # the pixel fixes go on what stood
     if moves:
         drawn = join(folder, "R8-redrawn.psd")
         try:                                    # the lines that rewrap drawn again: the guards re-export the PNG

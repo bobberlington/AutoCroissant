@@ -205,7 +205,8 @@ def test_r11_refused_when_the_rename_changes_the_bots_reading(clone, context, tm
     edited.save(str(pushed), update_preview=False)
     issues = cs.check(PSDImage.open(str(pushed)), MINI_DOOMER, context)
     fixed = cs.fix(pushed.read_bytes(), MINI_DOOMER, issues, str(tmp_path / "work"), clone_vocabulary(str(clone)).parser())
-    assert fixed.data == b"" and fixed.applied == [] and [code for code, _ in fixed.refused] == ["R11"]
+    assert fixed.applied == [] and [code for code, _ in fixed.refused] == ["R11"]
+    assert fixed.data == b"" or fixed.folders           # the folders stand on their own gate
     assert "reparse" in fixed.refused[0][1]
 
 
