@@ -88,7 +88,6 @@ WHOLE_FIELD = r"edit each box on the website|title is printed again by"     # a 
 WHAT = {"name": "A new title", "adding a star": "Adding a star", "removing a star": "Taking off a star",
         "adding a type": "Adding a type", "removing a type": "Taking off a type", "stats": "Stat edits"}
 # the notes
-TITLE_NOTE = "The title is part of the picture: a new title has to be drawn in Photoshop."
 OLD_NOTE = "Its stat bars are old-style digit rows: put them on the new bars in Photoshop."
 CREATURES_NOTE = "Several creatures: the website changes the first one's bars, the others are changed in Photoshop."
 NO_CHANGE_NOTE = "{} {} bake but change nothing on the card: change them in Photoshop."
@@ -483,8 +482,6 @@ def edit_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str, 
         found = psd_edit.classify(parsed, fields, psd, ctx.parser, template)
         for refusal in found.refusals:
             refused(what, refusal)
-        if psd_edit.PICTURE_TITLE in found.site.values():
-            notes.append(TITLE_NOTE)
         return bool(found.jobs)
 
     def types(what: str, value: list, template) -> None:
