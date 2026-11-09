@@ -965,6 +965,27 @@ def test_folders_as_the_templates(clone, tmp_path):
     assert fixed.folders == list(done) and fixed.data and not fixed.redrawn
 
 
+def test_folders_file_linked_stars(clone, tmp_path, monkeypatch):
+    """Joel Miller's stars, smart objects linked to Types/Stars named 'top right' (TC 11-09: filed in images): out of
+    images into Stars, drawn and parsed the same, the bake's stars now found (folders_gate); a star then adds."""
+    from psd_tools.api.smart_object import SmartObject
+    monkeypatch.setattr(SmartObject, "link_target",     # the pin's are embedded: linked as on TC main
+                        lambda self, *args, **kwargs: "Types/Stars/star.png" if self.filename == "star.png" else None)
+    rel = "Creatures/Lisa/3 Stars/Joel_Miller.psd"
+    parser = clone_vocabulary(str(clone)).parser()
+    psd = PSDImage.open(_card(clone, rel)[0])
+    for layer in [layer for layer in psd if layer.name.startswith("top right")]:
+        layer.move_to(psd[0])
+    psd.save(str(tmp_path / "in.psd"))
+    assert "'top right' in 'images'" in cs.folder_issues(PSDImage.open(tmp_path / "in.psd"), rel)
+    done = cs.standard_folders(str(tmp_path / "in.psd"), str(tmp_path / "out.psd"), None, rel, parser)
+    out = PSDImage.open(tmp_path / "out.psd")
+    stars = next(group for group in out if group.name == "Stars")
+    assert done.level == "template" and not done.left
+    assert [layer.name for layer in stars] == ["top right", "top right copy", "top right copy 2"]
+    assert psd_edit.plan_stars(out, psd_edit.parse_card(parser, rel, rel, out), 4, parser, moving=True).copies
+
+
 def test_folders_overlay_text_and_art(clone, tmp_path):
     """Shadow Miner (owner 11-09): its Ability, under a Text folder with a stroke and shadow, into Overlay Text over
     Text; 'Layer 8', drawn over the header, into Overlay at the top; its hidden Curves layers gone; the picture the

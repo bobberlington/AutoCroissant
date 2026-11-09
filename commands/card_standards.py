@@ -2895,6 +2895,17 @@ def _groups(layer) -> list:
     return out
 
 
+def _link_kind(layer) -> Optional[str]:
+    """"star" or "type" for a smart object linked to Types/Stars or Types (judged from its document's repo_path)."""
+    if layer.is_group() or layer.kind != "smartobject":
+        return None
+    try:
+        target = layer.smart_object.link_target(getattr(layer._psd, "repo_path", "") or None) or ""
+    except (ValueError, KeyError, AttributeError):
+        return None
+    return "star" if target.startswith("Types/Stars/") else "type" if target.startswith("Types/") else None
+
+
 def _clean_kind(layer, psd: PSDImage) -> Optional[str]:
     """"star" or "type" for a star or type icon leaf: linked to Types/Stars or Types, or an icon-sized picture in a Stars
     or Types group or named a star; never a stat bar or a layer in a stat group (Star Bars' cells)."""
@@ -2903,15 +2914,9 @@ def _clean_kind(layer, psd: PSDImage) -> Optional[str]:
     groups = _groups(layer)
     if any(STAT_GROUP.search(name) for name in groups):
         return None
-    if layer.kind == "smartobject":
-        try:
-            target = layer.smart_object.link_target(getattr(psd, "repo_path", "") or None) or ""
-        except (ValueError, KeyError, AttributeError):
-            target = ""
-        if target.startswith("Types/Stars/"):
-            return "star"
-        if target.startswith("Types/"):
-            return "type"
+    linked = _link_kind(layer)
+    if linked:
+        return linked
     box = layer.bbox
     if box[2] <= box[0] or (box[2] - box[0]) * (box[3] - box[1]) > CLEAN_ICON * psd.width * psd.height:
         return None
@@ -3242,6 +3247,9 @@ def _leaf_role(layer, types, stars, bars: bool = False) -> str:
         return "types"
     if sub(r"[^a-z0-9]+", "", name) in stars or "star" in sub(r"[^a-z]+", " ", name).split():
         return "stars"
+    linked = _link_kind(layer)                  # linked to Types/Stars or Types, whatever its name (Joel Miller's)
+    if linked:
+        return linked + "s"
     if comp_value(layer) is not None or BAR_LEAF.fullmatch(name):
         return "bars"
     return "art"
@@ -3523,8 +3531,8 @@ def _mains(units: list, roles: list, names: dict) -> dict:
 
 
 def _extract(psd: PSDImage, types, stars, done: list, counts: Counter) -> None:
-    """A folder of another kind at the top or bottom of a plain role folder (a card's Text inside Item Types) out
-    beside it, in the same place in the stack."""
+    """A folder of another kind, or a star or type icon (_leaf_role: Joel Miller's linked stars in images), at the top
+    or bottom of a plain role folder (a card's Text inside Item Types) out beside it, in the same place in the stack."""
     for folder in [layer for layer in psd if layer.is_group()]:
         named = next((role for role, pattern in MAIN_FOLDER.items() if pattern.fullmatch(_key(folder.name))), None)
         if named is None or not _plain(folder):
@@ -3533,7 +3541,8 @@ def _extract(psd: PSDImage, types, stars, done: list, counts: Counter) -> None:
             while len(folder) > 1:
                 kids = list(folder)
                 child = kids[len(kids) - 1] if top else kids[0]
-                found = _content_role(child, types, stars) if child.is_group() else None
+                found = _content_role(child, types, stars) if child.is_group() else \
+                    next((role for role in ("stars", "types") if _leaf_role(child, types, stars) == role), None)
                 if (found in (None, named, "images", "adjust", "empty") or child.clipping
                         or (not top and kids[1].clipping)):
                     break
@@ -3770,7 +3779,8 @@ def _odd_children(folder, role: str) -> list:
     if role in SUB_COLOURS:
         return [k for k in kids if k.is_group() and (k.sheet_color != SUB_COLOURS[role] or GENERIC.fullmatch(_key(k.name))
                 or (_plain(k) and NESTED[role].fullmatch(_key(k.name)) and not any(_draws(o) for o in kids if o is not k)))]
-    return [k for k in kids if k.is_group() and GENERIC.fullmatch(_key(k.name))]
+    return [k for k in kids if (k.is_group() and GENERIC.fullmatch(_key(k.name)))
+            or (role == "images" and not k.clipping and _link_kind(k))]     # a linked star or type icon in images
 
 
 class Foldered(list):
@@ -3905,11 +3915,16 @@ def _without(value, ids: set):
 
 def _folder_details(was: dict, now: dict, ids: set, renamed: dict) -> dict:
     """The details read before, as the folders may change it: layers gone, the bake's star icon named by its renamed
-    folder, the Ability layer no longer outside Text."""
+    folder, stars the bake found none of before now found (filed in Stars: Joel Miller's), the Ability layer no longer
+    outside Text."""
     was = _without(was, ids)
     header = was.get("header")
     if isinstance(header, dict) and isinstance(header.get("stars"), dict) and header["stars"].get("icon") in renamed:
         header["stars"] = {**header["stars"], "icon": renamed[header["stars"]["icon"]]}
+    found = (now.get("header") or {}).get("stars") if isinstance(now.get("header"), dict) else None
+    if isinstance(header, dict) and isinstance(header.get("stars"), dict) and not header["stars"].get("units") \
+            and isinstance(found, dict) and found.get("units"):
+        header["stars"] = found
     template, after = was.get("template"), now.get("template")
     if isinstance(template, dict) and isinstance(after, dict):
         gone = set(template.get("deviations", ())) - set(after.get("deviations", ()))
