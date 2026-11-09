@@ -99,6 +99,11 @@ const out = {{
     return {{ drawn: M.colourize(M.tokenize(now, {{}}), now, null, "ability", null, M.baseInk(c, "ability", now)).flat(2).filter(p => p.color).map(p => [p.text, p.color]),
       part: M.baseInk(c, "ability", "Gain 3 HP.", "Gain 2 HP.") }};
   }})() : null,
+  chart: M.colourize.toString().includes("fills") ? (() => {{   // capitalised status words in the chart's, over all
+    const t = "Inflict Burning. burning foes.";
+    return M.colourize(M.tokenize(t, {{}}), t, [{{ field: "ability", color: "#ffffff" }}], "ability", ["Burning"], [{{ start: 8, end: 15, color: "#123456" }}], null, {{ burning: "#ff7a1a" }})
+      .flat(2).filter(p => p.color).map(p => [p.text, p.color]);
+  }})() : null,
 }};
 process.stdout.write(JSON.stringify(out));
 """, encoding="utf-8")
@@ -135,6 +140,8 @@ process.stdout.write(JSON.stringify(out));
     assert ink["low"] == '<span class="tc lo-l" style="color:#ffff00">a</span><span class="tc lo-d" style="color:#202020">b</span>'
     if out["mock"] is not None:                         # an edit cuts into "2": "HP" keeps its colour, "3" none
         assert out["mock"] == {"drawn": [["Burning", "#ff7a1a"], ["HP", "#00ff00"]], "part": [{"start": 6, "end": 9, "color": "#00ff00"}]}
+    if out["chart"] is not None:                        # as psd_edit's status words; lowercase stays the field's
+        assert out["chart"] == [["Inflict", "#ffffff"], ["Burning", "#ff7a1a"], [".", "#ffffff"], ["burning", "#ffffff"], ["foes.", "#ffffff"]]
 
 
 @pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")
