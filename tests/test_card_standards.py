@@ -1012,6 +1012,20 @@ def test_folders_name_off_a_styled_stat_folder(clone, tmp_path):
     assert not cs.standard_folders(str(tmp_path / "out.psd"), str(tmp_path / "again.psd"), None, rel, parser)
 
 
+def test_folders_name_under_a_styled_text(clone, tmp_path):
+    """Mega Titan (owner 11-09): its Name, loose in a Text with a stroke and shadow beside a Stat Txt with a stroke,
+    keeps Text's look: a plain Stat Text and Name made around that folder (named Stat Text), the Name beside it;
+    template level, the picture the same; a second run has nothing to do."""
+    rel = "Creatures/Kirby/3 Stars/Mega_Titan.psd"
+    parser = clone_vocabulary(str(clone)).parser()
+    done = cs.standard_folders(_card(clone, rel)[0], str(tmp_path / "out.psd"), None, rel, parser)
+    text = next(g for g in PSDImage.open(tmp_path / "out.psd") if g.name == "Text")
+    stat = next(g for g in text if g.name == "Stat Text and Name")
+    assert done.level == "template" and not done.left and "'Stat Txt' named 'Stat Text' in it" in done
+    assert cs._plain(stat) and [l.name for l in stat] == ["Stat Text", "Name"] and stat[0].has_effects()
+    assert not cs.standard_folders(str(tmp_path / "out.psd"), str(tmp_path / "again.psd"), None, rel, parser)
+
+
 def test_folders_isolate_a_clipped_adjustment(clone, tmp_path):
     """Mettaton EX's Gradient Map clipped to its stars folder: moved into Stars, Stars set Normal, every picture the
     same (folders_gate, its blend and clip allowed)."""

@@ -3173,9 +3173,10 @@ def _pixel_fixes(folder: str, base: str, current: str, rel: str, parser: Optiona
 # ========================
 # Folders (owner 2026-11-09): every card's and template's folders as the templates' (names, colours, order; loose
 # layers and extra folders in their folder by role; text kept off a styled Text or Stat Text and Name in Overlay Text,
-# art drawn over other folders in Overlay; hidden Curves gone; nested star and type folders flattened; adjustments
-# clipped to a folder moved into it, the folder isolated), only where every picture renders and the bot reads the card
-# as before (folders_gate); silent, as the composer
+# or under a styled Text in a plain Stat Text and Name around the styled one; art drawn over other folders in Overlay;
+# hidden Curves gone; nested star and type folders flattened; adjustments clipped to a folder moved into it, the folder
+# isolated), only where every picture renders and the bot reads the card as before (folders_gate); silent, as the
+# composer
 # ========================
 _C = SheetColorType
 FOLDER_TYPES = {"creature": "Creature Types", "aux creature": "Creature Types", "minion": "Creature Types",
@@ -3625,13 +3626,17 @@ def _overlays(units: list, roles: list, mains: dict) -> None:
                 roles[i] = "overlay"
 
 
-def _off_stat(psd: PSDImage, units: list, roles: list, mains: dict, types, stars) -> None:
+def _off_stat(psd: PSDImage, units: list, roles: list, mains: dict, types, stars, done: list, counts: Counter) -> None:
     """Text's loose labels and Names, with what clips to them, out over a plain Text into Overlay Text when Stat Text
-    and Name has a look of its own (owner 2026-11-09: their look stays); units and roles grow."""
+    and Name has a look of its own (owner 2026-11-09: their look stays); units and roles grow. Under a Text with a look
+    of its own (theirs too): _around_stat."""
     text = mains.get("text")
     stat = _stat_folder(text[0], types, stars) if text is not None else None
     moving = _stat_units(text[0]) if stat is not None and not _plain(stat) else []
-    if not moving or not _plain(text[0]) or len(text) > 1:
+    if not moving:
+        return
+    if not _plain(text[0]) or len(text) > 1:
+        _around_stat(text[0], stat, moving, done, counts)
         return
     at = next(i for i, unit in enumerate(units) if unit is text) + 1
     top = text[0]
@@ -3641,6 +3646,22 @@ def _off_stat(psd: PSDImage, units: list, roles: list, mains: dict, types, stars
             top = layer
     units[at:at] = moving
     roles[at:at] = ["overlay text"] * len(moving)
+
+
+def _around_stat(text, stat, moving: list, done: list, counts: Counter) -> None:
+    """A plain Stat Text and Name made around Text's styled one (named Stat Text), the labels and Names beside it, in
+    their order."""
+    kids = list(text)
+    own = next(unit for unit in _units(text) if unit[0] is stat)
+    below = [unit for unit in moving if kids.index(unit[0]) < kids.index(stat)]
+    above = [unit for unit in moving if kids.index(unit[0]) > kids.index(stat)]
+    _place(below + [own] + above, _new_folder(text, STAT_TEXT[0], STAT_TEXT[1], kids.index(stat)))
+    done.append(f"{STAT_TEXT[0]} folder made")
+    done += [f"{unit[0].name!r} into {STAT_TEXT[0]}" for unit in moving]
+    done.append(f"{stat.name!r} named 'Stat Text' in it")
+    counts["folders made"] += 1
+    counts["loose layers"] += len(moving)
+    stat.name = "Stat Text"
 
 
 def arrange(psd: PSDImage, rel: str, types, stars, level: str = "template", proven: bool = True) -> tuple:
@@ -3693,7 +3714,7 @@ def arrange(psd: PSDImage, rel: str, types, stars, level: str = "template", prov
     if level not in ("names", "bare", "colours"):
         _overlays(units, roles, mains)
     if level == "template":
-        _off_stat(psd, units, roles, mains, types, stars)
+        _off_stat(psd, units, roles, mains, types, stars, done, counts)
     owner = []                                  # a unit of no role goes with the one under it (else over it; an
                                                 # orphan clip stays at the bottom)
     for i, role in enumerate(roles):
