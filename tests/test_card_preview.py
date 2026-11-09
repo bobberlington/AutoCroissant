@@ -638,9 +638,9 @@ def test_the_bot_clone_runs_here(tmp_path):
 
 def test_the_venv_restores_as_cards_python_does(tmp_path):
     """The preview's own venv restore: cards-python's key (setup-python's pick, the image's newest 3.14.x), path and
-    check, the key from Clone's read of requirements-cards.txt (bot.reqs) or else the clone's; a passed check puts the
-    venv first with setup-python's LD_LIBRARY_PATH, a failed one deletes it, as does a clone whose file gives another
-    sha; cards-python runs only when it did not pass."""
+    check, the key from Clone's read of requirements-cards.txt (bot.reqs; awaited after a failed clone) or else the
+    clone's; a passed check puts the venv first with setup-python's LD_LIBRARY_PATH, a failed one deletes it, as does
+    a clone whose file gives another sha; cards-python runs only when it did not pass."""
     _, doc = _workflow()
     steps = doc["jobs"]["preview"]["steps"]
     ids = [s.get("id") for s in steps]
@@ -686,6 +686,13 @@ def test_the_venv_restores_as_cards_python_does(tmp_path):
         (tmp_path / "bot.reqs").write_text(text)
         bash(venv["run"], tmp_path, **runner, GITHUB_OUTPUT=str(tmp_path / name))
     assert outputs(tmp_path / "read") == outputs(tmp_path / "keys") != outputs(tmp_path / "other")    # comments don't count
+    failed = tmp_path / "failed"                                                # a failed clone: the read, once in
+    failed.mkdir()
+    (failed / "bot.code").write_text("128\n")
+    (failed / "read").write_text((REPO / "requirements-cards.txt").read_text())
+    bash("(sleep 0.5; mv read bot.reqs; touch reqs.done) & " + venv["run"], failed, **{**runner, "RUNNER_TEMP": str(failed)},
+         GITHUB_OUTPUT=str(failed / "out"))
+    assert outputs(failed / "out") == outputs(tmp_path / "keys")
     python = tmp_path / "venv" / "bin" / "python"
     python.parent.mkdir(parents=True)
     for code, given in ((0, sha), (1, sha), (0, "moved")):                     # moved: AC main after the read
