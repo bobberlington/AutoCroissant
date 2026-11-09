@@ -57,6 +57,8 @@ CARD_SYNC = "Card sync"                                  # the push of the run's
 GUARDS = "Card guards"                                   # the push of a guards commit (card_guards.SUBJECT): never posted
 SWEEP_TRAILER = "Card-sweep"                             # a trailer: a hand-committed sweep of the guards' fixes
 SWEPT = ("art", "changed")                               # a sweep commit's own events of these kinds are silent ("sweep")
+MINOR = "minor"                                          # an event's key: "picture" (an art change under png_changes.VISIBLE)
+                                                         # or "text" (formatting only): no post, folded on the Changes page
 GITHUB = "https://github.com/"
 MESSAGES_MAX = 20                                        # per run; the rest wait for the next one (the cursor)
 EMBEDS_MAX = 10                                          # Discord: embeds per message
@@ -172,6 +174,23 @@ def classify(changes: dict) -> dict:
         nerfs += less
     verdict = "mixed" if buffs and nerfs else "buff" if buffs else "nerf" if nerfs else None
     return {"verdict": verdict, "buffs": buffs, "nerfs": nerfs}
+
+
+TOKEN = re_compile(r"\[([0-9A-Za-z_ ]+)(?::[0-9A-Za-z_]+)?\]")   # an icon token ([fire], [light:tint]): its word
+PUNCTUATION = re_compile(r"[.,;:!?\"\u201c\u201d\u2026()\[\]{}]|(?<=[^\W\d_])[-\u2010\u2011\u2013\u2014](?=[^\W\d_])")
+
+
+def text_key(text: Optional[str]) -> str:
+    """An ability as its words: icon tokens as their word, letter case, punctuation (a dash between letters too),
+    apostrophes and spacing (line breaks too) left out (build_site text_key)."""
+    words = TOKEN.sub(lambda m: m.group(1), text or "").casefold()
+    return "".join(PUNCTUATION.sub("", words).replace("'", "").replace("\u2019", "").replace("\u2018", "").replace("_", "").split())
+
+
+def formatting_only(old: Optional[str], new: Optional[str]) -> bool:
+    """Two abilities that differ only in spacing, line breaks, punctuation, letter case or an icon token for its word
+    (owner 11-09: not a change of the card)."""
+    return (old or "") != (new or "") and text_key(old) == text_key(new)
 
 
 # ========================
@@ -566,10 +585,10 @@ def payload(group: list, site: str = SITE_URL, ids: Optional[dict] = None, repos
 
 
 def silent(event: dict) -> bool:
-    """An event no Discord post shows: a guard event, any event of a guards commit's push (owner, 2026-10-25), or a
-    sweep's own art or text change (its "sweep", card_data.mark_sweeps)."""
+    """An event no Discord post shows: a guard event, any event of a guards commit's push (owner, 2026-10-25), a
+    sweep's own art or text change (its "sweep", card_data.mark_sweeps), or a minor one (card_data.mark_minor)."""
     return event["kind"] in SILENT or (event.get("push") or {}).get("by") == GUARDS \
-        or (event["kind"] in SWEPT and bool(event.get("sweep")))
+        or (event["kind"] in SWEPT and bool(event.get("sweep"))) or bool(event.get(MINOR))
 
 
 def messages(pending: list, site: str = SITE_URL, ids: Optional[dict] = None, repository: str = "",
@@ -648,6 +667,7 @@ __all__ = [
     'CARD_SYNC',
     'FIELDS',
     'GUARDS',
+    'MINOR',
     'SWEEP_TRAILER',
     'SWEPT',
     'KINDS',
@@ -662,6 +682,7 @@ __all__ = [
     'events',
     'field_changes',
     'fields_of',
+    'formatting_only',
     'is_rulebook',
     'link_of',
     'main',
@@ -677,6 +698,7 @@ __all__ = [
     'size',
     'split_changes',
     'tags_of',
+    'text_key',
 ]
 
 

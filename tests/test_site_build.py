@@ -162,6 +162,28 @@ def test_the_current_text_is_dated_from_its_start(bs, repo, tmp_path, monkeypatc
     assert "since" not in _by_name(out["cards.json"]["cards"])["Watermelon"]      # its text started at its last commit
 
 
+def test_minor_picture_changes_fold_and_updated_follows_real_changes(bs, repo, tmp_path, monkeypatch):
+    """Owner 11-09. Alpha's c3 picture changed under the share that shows (db/png_changes.json) with no data change: its
+    row folds (versions.json minor), and its "updated" goes back to its text change at c2 (since goes with it). An older
+    text that differs only in formatting is one text with the one before it (history.json); the data keeps both."""
+    if not hasattr(bs, "load_png_changes"):
+        pytest.skip("the site has no picture changes yet")
+    (c1, c2, c3), (t1, t2, t3) = repo["commits"], repo["t"]
+    blob = lambda c: subprocess.run(["git", "-C", str(repo["root"]), "rev-parse", f"{c}:{ALPHA}.png"], capture_output=True,
+                                    text=True, check=True).stdout.strip()
+    stats, old, details, _ = cdb.read_db(str(repo["db"]))
+    old["Alpha"].append(_card("Alpha", f"{ALPHA}.psd", "old  text", t1 + DAY // 2))       # spacing, case, a full stop
+    old["Alpha"][1].parser_version = 2
+    cdb.write_db(str(repo["db"]), stats, old, json.dumps({"version": 1, "cards": details}), {"card_commit": c3})
+    (repo["db"] / "png_changes.json").write_text(json.dumps({"rule": bs.PNG_RULE, "pairs": {
+        f"{blob(c2)}..{blob(c3)}": [bs.PNG_VISIBLE / 4, bs.PNG_RULE]}}), encoding="utf-8")
+    out = _build(bs, monkeypatch, repo, tmp_path / "a")
+    alpha = _by_name(out["cards.json"]["cards"])["Alpha"]
+    assert out["versions.json"]["minor"] == {alpha["id"]: [0]} and (alpha["iv"], alpha["ivm"]) == (3, 1)
+    assert alpha["ts"] == t2 and "since" not in alpha
+    assert out["history.json"][alpha["id"]] == [{"ts": t1, "ability": "old  text"}]
+
+
 def test_psd_sizes_come_by_blob_and_a_duplicate_has_its_psds(bs, repo, tmp_path, monkeypatch):
     """PSD_TREE (site.yml's trees API reply) sizes each card by its PSD's blob at HEAD: Watermelon2 (a numbered PNG of
     Watermelon's PSD) gets Watermelon's; a blob the reply doesn't list gets none."""

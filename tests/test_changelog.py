@@ -246,6 +246,18 @@ def test_every_kind_posts_alone():
     assert body["embeds"][0]["description"] == "**Rollback**\nCard data restored from f00dfeed"
 
 
+def test_minor_events_post_nothing():
+    """Owner 11-09: formatting is spacing, line breaks, punctuation, case or an icon token for its word, never a number,
+    sign or word; a minor event (card_data.mark_minor) is silent, alone or beside a posted one."""
+    assert cl.formatting_only("Deal 2 [fire] damage.", "deal 2  fire\ndamage") and cl.formatting_only("Can\u2019t (PF)", "can't PF")
+    assert not any(cl.formatting_only(a, b) for a, b in (("Gain +1 ATK", "Gain -1 ATK"), ("(1CD) Hit", "(2CD) Hit"),
+                                                         ("Hit", "Hit"), ("Heal 2", "Heal 3")))
+    minor = {"kind": "art", "card": "B", "minor": "picture"}
+    assert cl.silent(minor) and cl.messages(cl.number([minor], 0, at=T), "https://site")[0]["body"] is None
+    out = cl.messages(cl.number([{"kind": "art", "card": "A"}, minor], 0, at=T), "https://site")
+    assert out[0]["body"]["embeds"][0]["title"].endswith(": 1 new art")
+
+
 def test_bake_and_guard_events():
     """The bake's events ride their push's post; the guards' (and every event of a guards commit's push) never post:
     a group of them alone is a message without a body, so the cursor still moves past it (owner, 2026-10-25)."""

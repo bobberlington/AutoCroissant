@@ -40,7 +40,8 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
                            "--allow-archive", "--restore", "--budget", "--run", "--builder-ref", "--summary", "--message",
                            "--dry-run", "--baked", "--own", "--rewrite", "--verdicts", "--events", "--guard-events", "--records",
                            "--help"},
-             "card_bake": None, "tts_save": {"--names", "--help"}, "rulebook_pages": {"--site", "--wait", "--full", "--help"}}
+             "card_bake": None, "tts_save": {"--names", "--help"}, "rulebook_pages": {"--site", "--wait", "--full", "--help"},
+             "png_changes": {"--help"}}
     for cli, expected in flags.items():
         done = run_process([executable, "-m", f"commands.{cli}", "--help"], cwd=bot, capture_output=True, text=True, timeout=120)
         assert done.returncode == 0, done.stderr
@@ -48,6 +49,7 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
         if expected is not None:
             assert set(re.findall(r"--[a-z-]+", done.stdout)) == expected
     code = ("import sys, commands.card_data, commands.card_history, commands.card_db, commands.changelog, commands.psd_details, "
+            "commands.png_changes, "
             "commands.card_bake, commands.tts_save, commands.ability_place, commands.rulebook_pages, commands.psd_glyphs; "
             "print(sorted(m for m in ('config', 'discord', 'pandas', 'github', 'commands.psd_analyzer', "
             "'commands.query_card', 'commands.utils', 'commands.type_emojis') if m in sys.modules)); "

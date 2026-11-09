@@ -34,7 +34,7 @@ from requests.exceptions import RequestException
 from global_config import (AUTHORS_PATH, CARD_BRANCH, CREATED_PATH, EDITS_PATH, ICON_MANIFEST_PATH, RULEBOOK_DIR, RULEBOOK_SRC, RULES_PATH,
                            STARS_DIR, TYPES_DIR)
 from commands.card_edits import CardAuthors, CardDates, CardEdits
-from commands import github_api, rulebook
+from commands import github_api, png_changes, rulebook
 from commands.card_models import CardInfo, StatsDatabase, card_name, duplicate_png, straight, straighten_card
 from commands.github_api import HEADERS, RangeError, RemotePSD, api_url, blob_text, fetch_blob, get_with_retry, range_reads
 from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser, variants_of
@@ -1192,6 +1192,7 @@ def can_prune(build: CardBuild) -> bool:
 # and the save's
 # (tests/test_card_data.py runs --help on the three CLIs with exactly this list)
 SPARSE_FILES = ("commands/card_data.py", "commands/card_history.py", "commands/card_db.py", "commands/changelog.py",
+                "commands/png_changes.py",
                 "commands/card_models.py", "commands/card_edits.py", "commands/psd_parser.py", "commands/psd_details.py",
                 "commands/psd_parts.py", "commands/text_align.py", "commands/psd_regions.py", "commands/font_check.py", "commands/github_api.py", "global_config.py",
                 "requirements-cards.txt",
@@ -1704,6 +1705,15 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     guards = _guard_commits(checkout, base, run_build.head) | {d.get("commit") for d in guard_docs or [] if d.get("commit")}
     new_events = [e for e in new_events if not (e["kind"] == "art" and e.get("commit") in guards)]   # the guards' events say them
     mark_sweeps(checkout, new_events)                     # a sweep's own art and text changes: silent, still on the website
+    pictures, measured = png_changes.read_record(db_dir), ""
+    if not restore:                                       # the run's picture changes measured (owner 11-09)
+        shown = picture_pairs(new_events, index, run_build.shas, db.stats)
+        pairs = list(shown.values()) + pictures["pending"] + (png_changes.card_pairs(checkout, run_build.head, base) if base else [])
+        done, left = png_changes.measure(checkout, pairs, pictures, limit=png_changes.RUN_MAX)
+        pictures["pending"] = left                        # the next run's first
+        if done or left:
+            measured = f"Picture changes: {done} measured" + (f", {len(left)} for the next run" if left else "")
+        mark_minor(new_events, shown, pictures)
     new_events += side_events(db.stats, db.archived(), side, guard_docs)
     if restore:
         new_events = [{"kind": "restore", "card": "", "restored_from": restore}]
@@ -1751,7 +1761,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     posted = changelog.read_posted(db_dir)
     numbered = changelog.number(new_events, max((e.get("seq", 0) for e in changelog.read_events(db_dir)), default=0),
                                 posted.get("seq", 0), build=run_url or None, card_commit=run_build.head)
-    out.lines = [_plain_line(e) for e in numbered]
+    out.lines = [_plain_line(e) for e in numbered] + ([measured] if measured else [])
     out.manifest = {
         "built_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "run": run_url or None,
         "card_repo": repository, "card_commit": run_build.head, "card_commit_at": run_build.at, "main_commit": None,
@@ -1797,6 +1807,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
                  and psd_details.text_of(details) == _text(db_dir, "psd_details.json")
                  and links_text(links) == links_text(read_links(db_dir))
                  and all(records_text(r) == _text(db_dir, n) for n, r in zip(RECORDS, (render, spot)))
+                 and png_changes.record_text(pictures) == _text(db_dir, png_changes.RECORD)
                  and book in (None, _text(db_dir, "rulebook.json")))
     if unchanged:
         return out
@@ -1804,6 +1815,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     write_text(path_join(db_dir, LINKS_JSON), links_text(links))
     for name, record in zip(RECORDS, (render, spot)):
         write_text(path_join(db_dir, name), records_text(record))
+    png_changes.write_record(db_dir, pictures)
     if numbered:
         changelog.append_events(db_dir, numbered)
     problems = check_db(db_dir)
@@ -1853,6 +1865,49 @@ def mark_sweeps(checkout: str, new_events: list) -> None:
         for event in mine:
             if before.get(event["path"]) == event["blob"][0]:
                 event["sweep"] = kinds[sha]
+
+
+def picture_pairs(new_events: list, index, shas: dict, stats: dict) -> dict:
+    """{id(event): (PNG blob before, PNG blob now)} of each art and changed event: the card's PNG at the commit that put
+    the event's old PSD blob there (index.at_path), and in the tree now; left out when either is unknown."""
+    lower = {path.lower(): path for path in shas}
+    out = {}
+    for event in new_events:
+        blobs = event.get("blob") or ()
+        if event["kind"] not in ("art", "changed") or len(blobs) != 2 or not all(blobs) or not event.get("path"):
+            continue
+        card = stats.get(event["card"])
+        variant = getattr(card, "variant", None) if card is not None else None
+        stem = lambda psd: (duplicate_png(card)[:-4] if isinstance(variant, int) and variant > 1 and psd == card.path
+                            else splitext(psd)[0])
+        old_psd = event.get("from_path") or event["path"]
+        put = next((c for c, blob in index.at_path.get(old_psd, ()) if blob == blobs[0]), None)
+        old_png = lower.get(f"{stem(old_psd)}.png".lower()) or f"{stem(old_psd)}.png"
+        new_png = lower.get(f"{stem(event['path'])}.png".lower())
+        if put is None or new_png is None:
+            continue
+        before = next((blob for c, blob in index.at_path.get(old_png) or index.at_path.get(new_png, ()) if c.order >= put.order), None)
+        if before:
+            out[id(event)] = (before, shas[new_png])
+    return out
+
+
+def mark_minor(new_events: list, shown: dict, record: dict) -> None:
+    """
+    Gives "minor" (changelog.MINOR) to an art event whose picture changed under png_changes.VISIBLE ("picture"), and to
+    a changed or edited event whose only change is the ability's formatting (changelog.formatting_only; a changed one's
+    picture under VISIBLE too: "text"). Minor events post nothing; the Changes page folds them (owner 11-09).
+    """
+    from commands.changelog import MINOR, formatting_only
+    for event in new_events:
+        pair = shown.get(id(event))
+        still = pair is not None and not png_changes.visible(record, *pair)
+        fields = event.get("fields") or {}
+        if event["kind"] == "art" and still:
+            event[MINOR] = "picture"
+        elif event["kind"] in ("changed", "edited") and fields and set(fields) <= {"ability", "tags"} \
+                and formatting_only(*(fields.get("ability") or ("", ""))) and (event["kind"] == "edited" or still):
+            event[MINOR] = "text"
 
 
 def side_events(stats: dict, archived: dict, side: Optional[list], guard_docs: Optional[list]) -> list:
@@ -1964,6 +2019,11 @@ def _json_file(path: str):
 
 def _plain_line(event: dict) -> str:
     """One event for the commit message and the job summary."""
+    line = _event_line(event)
+    return f"{line} (minor: {event['minor']})" if event.get("minor") else line
+
+
+def _event_line(event: dict) -> str:
     kind, name = event["kind"], event.get("card") or ""
     if kind in ("changed", "edited", "reparse", "authors"):
         fields = ", ".join(k for k in (event.get("fields") or {}) if k != "tags")
