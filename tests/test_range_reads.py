@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import threading
+import time
 from types import SimpleNamespace
 from urllib.parse import unquote
 
@@ -219,11 +220,15 @@ def test_psds_are_read_in_the_workers_and_kept_at_most_AHEAD_ahead(cards, monkey
     assert _strip(stats["The Freezer"].to_dict()) == _strip(_golden(FREEZER))
 
 
-def test_forked_workers_read_as_threads_do(cards, monkeypatch):
-    """A runner's forked workers: each PSD's Read comes back (pickled) as a thread's."""
-    reads, fetch, keep = {}, cd.CardBuild._fetch_read, cd.CardBuild._keep
+def test_forked_workers_read_as_threads_do(cards, monkeypatch, capsys):
+    """A runner's forked workers: each PSD's Read comes back (pickled) as a thread's; one that hangs past FORK_WAIT is
+    killed and its PSD read here."""
+    reads, fetch, keep, parent = {}, cd.CardBuild._fetch_read, cd.CardBuild._keep, os.getpid()
+    hang = []
 
     def fetched(self, path, name, sha):
+        if path in hang and os.getpid() != parent:
+            time.sleep(60)
         read = fetch(self, path, name, sha)
         read.pid = os.getpid()
         return read
@@ -236,16 +241,19 @@ def test_forked_workers_read_as_threads_do(cards, monkeypatch):
     monkeypatch.setattr(cd.CardBuild, "_fetch_read", fetched)
     monkeypatch.setattr(cd.CardBuild, "_keep", kept)
     monkeypatch.setenv("no_proxy", "*")                           # macOS: no proxy lookup in a fork
+    monkeypatch.setattr(cd, "FORK_WAIT", 2)
     found = []
-    for forked in (False, True):
+    for forked, hung in ((False, []), (True, []), (True, [FREEZER])):
+        hang[:] = hung
         monkeypatch.setattr(cd, "_forks", lambda: forked)
-        cards.db = cards.tmp / f"data{forked}" / "db"
+        cards.db = cards.tmp / f"data{forked}{len(hung)}" / "db"
         cards.db.mkdir(parents=True)
         reads.clear()
         assert helpers._build(cards, "--empty")[0] == cd.EXIT_OK
         found.append(dict(reads))
-    assert {p: r[0] for p, r in found[1].items()} == {DOOMER: True, FREEZER: True}
-    assert {p: r[1:] for p, r in found[0].items()} == {p: r[1:] for p, r in found[1].items()}
+    assert {p: r[0] for p, r in found[1].items()} == {DOOMER: True, FREEZER: True} and not found[2][FREEZER][0]
+    assert {p: r[1:] for p, r in found[0].items()} == {p: r[1:] for p, r in found[1].items()} == {p: r[1:] for p, r in found[2].items()}
+    assert capsys.readouterr().out.count("Forked reads stopped (TimeoutError()); the rest in threads") == 1
 
 
 # ========================

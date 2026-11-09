@@ -46,6 +46,7 @@ UPDATE_RATE = 25
 STRAIGHT_KEYS = ("name", "ability", "note")                     # parsed_values' printed text
 DOWNLOAD_WORKERS = 4                                              # PSDs fetched and parsed at a time
 AHEAD = 2 * DOWNLOAD_WORKERS                                      # PSDs read and not yet kept, at most (memory)
+FORK_WAIT = 300                                                   # s for a forked worker's PSD: past it, threads
 RANGE_REFUSALS = 3                                                # PSDs refused range reads (HTTP error, no connection): off
                                                                   # trying them (github_api.RANGE_READS: the off switch)
 EXCLUDE_FOLDERS = ["Markers", "MDW"]
@@ -536,10 +537,10 @@ class CardBuild:
         def submit(item: tuple):
             return pool.submit(_fork_read, *item, self._given()) if forked else pool.submit(self._fetch_read, *item)
 
-        def threads(error: Exception) -> None:          # the forked workers broke: the rest in threads
+        def threads(error: Exception) -> None:          # the forked workers broke or hung: the rest in threads
             nonlocal pool, forked
             print(f"Forked reads stopped ({error!r}); the rest in threads")
-            pool.shutdown(wait=False, cancel_futures=True)
+            pool.kill_workers()
             pool, forked = ThreadPoolExecutor(DOWNLOAD_WORKERS), False
             for _ in range(len(ahead)):
                 item, _task = ahead.popleft()
@@ -563,9 +564,9 @@ class CardBuild:
             if not forked:
                 return task.result()
             try:
-                read, back = task.result()
-            except Exception as e:                      # a worker died, or its Read would not pickle: read here
-                if isinstance(e, BrokenProcessPool):
+                read, back = task.result(FORK_WAIT)
+            except Exception as e:                      # a worker died or hung, or its Read would not pickle: read here
+                if isinstance(e, (BrokenProcessPool, TimeoutError)):
                     threads(e)
                 return self._fetch_read(*item)
             self._taken(back)
