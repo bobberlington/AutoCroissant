@@ -48,7 +48,8 @@ def _strip(psd: PSDImage) -> PSDImage:
 
 def test_names_and_classes():
     """New files: "<PSD stem> - <layer>.<ext>", safe, unique case-folded, under 120 characters. The classes in order:
-    Types bytes, ink, an older version, a name in its row (else a new file), an existing file's bytes; first user names."""
+    Types bytes, ink, an older version, a name in its row or a name that looks close anywhere, the icon at another size
+    under another name (else a new file: a big picture merely named "fire"), an existing file's bytes; first user names."""
     taken = {"delta - bg.png"}
     assert pl.file_name("Delta", "bg", "png", taken) == "Delta - bg (2).png"
     assert pl.file_name("Delta", 'a/b:c*?"<>|\x01. ', "jpg", taken) == "Delta - a_b_c_______.jpg"
@@ -62,15 +63,18 @@ def test_names_and_classes():
     trimmed = fire.crop(fire.getbbox())
     files = {"Types/fire.png": _png(trimmed), "Types/Stars/star.png": _png(star)}
     types = pl.TypesIndex(files, {pl.git_blob(_png(old_fire)): "Types/fire.png"})
-    art = _png(_art())
+    art, scene = _png(_art()), _png(_art().transpose(Image.Transpose.ROTATE_90))
+    big_fire = Image.new("RGBA", (200, 200), (0, 0, 0, 0))
+    ImageDraw.Draw(big_fire).ellipse((20, 20, 180, 180), fill=(230, 80, 20, 255))
 
     def entry(data, name, row=False):
         rgba = np.asarray(Image.open(BytesIO(data)).convert("RGBA"))
         return {"uuid": name + str(row), "kind": "data", "blob": pl.git_blob(data), "ext": "png", "file": "", "size": len(data),
-                "key": pl.ink_key(rgba), "layers": [{"name": name, "row": row}]}
+                "key": pl.ink_key(rgba), "look": pl.look_of(rgba), "layers": [{"name": name, "row": row}]}
     psds = [("Items/A.psd", [entry(files["Types/Stars/star.png"], "Star"), entry(_png(fire), "fire"),
                              entry(_png(old_fire), "Fire"), entry(_png(star.resize((20, 20))), "star", True),
-                             entry(_png(star.resize((20, 20))), "star"), entry(art, "Art")]),
+                             entry(_png(star.resize((20, 20))), "star"), entry(art, "Art"), entry(scene, "fire"),
+                             entry(_png(big_fire), "blaze")]),
             ("Items/B.psd", [entry(art, "Other"), entry(_png(Image.new("RGBA", (5, 5), (1, 2, 3, 255))), "cain")])]
     linked = {"MDW/Linked/cain.jpeg": pl.git_blob(_png(Image.new("RGBA", (5, 5), (1, 2, 3, 255))))}
     found = pl.assign(psds, types, linked)
@@ -78,11 +82,15 @@ def test_names_and_classes():
     rows = found["psds"]
     assert [(r["class"], r["target"]) for r in rows["Items/A.psd"]] == [
         (pl.BYTES, "Types/Stars/star.png"), (pl.INK, "Types/fire.png"), (pl.REDRAW, "Types/fire.png"),
-        (pl.REDRAW, "Types/Stars/star.png"), (pl.NEW, "MDW/Linked/A - star.png"), (pl.NEW, "MDW/Linked/A - Art.png")]
+        (pl.REDRAW, "Types/Stars/star.png"), (pl.REDRAW, "Types/Stars/star.png"), (pl.NEW, "MDW/Linked/A - Art.png"),
+        (pl.NEW, "MDW/Linked/A - fire.png"), (pl.REDRAW, "Types/fire.png")]
     assert [(r["class"], r["target"]) for r in rows["Items/B.psd"]] == [(pl.LINKED, "MDW/Linked/A - Art.png"),
                                                                        (pl.LINKED, "MDW/Linked/cain.jpeg")]
-    assert rows["Items/A.psd"][3]["fallback"] == "MDW/Linked/A - star.png"     # its exact copy dedupes onto row 5's file
+    assert rows["Items/A.psd"][3]["fallback"] == rows["Items/A.psd"][4]["fallback"] == "MDW/Linked/A - star.png"
     assert found["files"]["MDW/Linked/A - Art.png"]["first"] == "Items/A.psd"
+    lookalike = np.asarray(big_fire.resize((60, 60)).convert("RGBA")).copy()
+    lookalike[..., :3] = (200, 110, 40)                     # the shape, other colours: resembles only, no name
+    assert types.match("x", None, ["ember"], False, pl.look_of(lookalike)) is None
 
 
 def test_trim_map_on_star_of_beth(clone):

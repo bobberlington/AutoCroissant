@@ -33,13 +33,15 @@ SmartObject.link_target), never from the filesystem.
     python -m commands.psd_links due --clone DIR --db DIR [--head SHA]       prints how many PSDs are due
 
 Classes (assign): 1 the bytes of a Types file; 2 its ink pixels (raster kept, placed by place_trim); 3 that file drawn
-again (an older version of it, or a star or type icon named like it in its row); 4 the bytes of an MDW/Linked file; 5 a
+again, anywhere on the PSD (owner 2026-11-09): an older version of it, its ink at another size (look_of), a picture
+named like it that looks close, or a star or type icon named like it in its row; 4 the bytes of an MDW/Linked file; 5 a
 new MDW/Linked file. Light imports: card-guards.yml and card-sync.yml check this file out with the card modules.
 No Discord, network or config.
 """
 from argparse import ArgumentParser
 from dataclasses import dataclass, field
 from hashlib import sha1
+from base64 import b64decode, b64encode
 from io import BytesIO
 from json import dump, dumps, load, loads
 from math import floor
@@ -91,6 +93,10 @@ GLYPHS_TRAILER = "Card-sweep: glyphs"           # psd_glyphs: icon glyphs drawn 
 EDITED_KEYS = (b"SoCo", b"GdFl", b"PtFl", b"brit", b"levl", b"curv", b"expA", b"vibA", b"hue ", b"hue2",  # fill and
                b"blnc", b"blwh", b"phfl", b"mixr", b"clrL", b"nvrt", b"post", b"thrs", b"selc", b"grdm")  # adjustments
 CARDS_CAP = 60                  # Card sync redraws at most this many PSDs a run (C6; M7 sets it)
+LOOK = 32                       # look_of: ink box at INK_ALPHA, premultiplied, area-resized to LOOK x LOOK
+LOOK_SAME = 8.0                 # mean level apart: a Types icon at another size, no name needed (renamed copies <= 5.7)
+LOOK_APART = 0.6                # ...and this share of the next Types file's (Lord Crump's sparkle: 1.8 vs 6.3)
+LOOK_NAMED = 16.0               # named like a Types file: this close (an old Equip.png 12.8; other art 18.5 and up)
 
 
 # ========================
@@ -144,6 +150,22 @@ def ink_key(rgba: Optional[np.ndarray]) -> Optional[tuple]:
     crop = rgba[box[1]:box[3], box[0]:box[2]].copy()
     crop[crop[..., 3] == 0] = 0
     return crop.shape[1], crop.shape[0], sha1(crop.tobytes()).hexdigest()
+
+
+def look_of(rgba: Optional[np.ndarray]) -> Optional[str]:
+    """A picture's look, size apart (TypesIndex.match): its ink box at INK_ALPHA premultiplied, area-resized to LOOK x
+    LOOK, as base64 (the catalogue's "look"); None without ink."""
+    box = ink_box(rgba, INK_ALPHA) if rgba is not None and rgba.ndim == 3 and rgba.shape[2] == 4 else None
+    if box is None:
+        return None
+    crop = rgba[box[1]:box[3], box[0]:box[2]].astype(np.float32)
+    crop[..., :3] *= crop[..., 3:] / 255.0
+    image = Image.fromarray(np.round(crop).astype(np.uint8), "RGBA").resize((LOOK, LOOK), Image.BOX)
+    return b64encode(np.asarray(image).tobytes()).decode()
+
+
+def _look(text: str) -> np.ndarray:
+    return np.frombuffer(b64decode(text), np.uint8).astype(np.float32)
 
 
 def stem_key(name: str) -> str:
@@ -696,11 +718,12 @@ def pixel_corners(layer, rgba: np.ndarray) -> Optional[list]:
 # ========================
 class TypesIndex:
     """
-    Types/ and Types/Stars/ files: by git blob, by ink pixels (ink_key), by name (stem_key, png first); older blobs of
-    a path that still exists (history: {blob: path}, from `git log --raw -- Types/` or db/links.json's `files`).
+    Types/ and Types/Stars/ files: by git blob, by ink pixels (ink_key), by name (stem_key, png first), by look
+    (look_of); older blobs of a path that still exists (history: {blob: path}, from `git log --raw -- Types/` or
+    db/links.json's `files`).
     """
     def __init__(self, files: dict, history: Optional[dict] = None):
-        self.data, self.blob, self.pixels, self.inks = {}, {}, {}, {}
+        self.data, self.blob, self.pixels, self.inks, self.looks = {}, {}, {}, {}, {}
         self.by_blob, self.by_ink, self.by_name = {}, {}, {}
         for path in sorted(files, key=lambda p: (not p.lower().endswith(".png"), p)):
             if dirname(path) not in (TYPES_DIR, STARS_DIR) or basename(path).startswith("."):
@@ -712,6 +735,9 @@ class TypesIndex:
             self.data[path], self.blob[path] = data, git_blob(data)
             self.pixels[path] = (rgba.shape[1], rgba.shape[0])
             self.inks[path] = (ink_box(rgba), ink_box(rgba, INK_ALPHA))
+            look = look_of(rgba)
+            if look is not None:
+                self.looks[path] = _look(look)
             self.by_blob.setdefault(self.blob[path], path)
             key = ink_key(rgba)
             if key is not None:
@@ -725,21 +751,33 @@ class TypesIndex:
         """Type icon names (lowercase Types/ stems), psd_regions.badge_layers' vocab."""
         return sorted({splitext(basename(p))[0].lower() for p in self.data if dirname(p) == TYPES_DIR})
 
-    def match(self, blob: str, key: Optional[tuple], names: list, rows: bool) -> Optional[tuple]:
-        """(class, Types path) for a picture by its git blob, ink key and names (rows: every layer showing it sits in a
-        star or type row), else None."""
+    def match(self, blob: str, key: Optional[tuple], names: list, rows: bool, look: Optional[str] = None) -> Optional[tuple]:
+        """
+        (class, Types path) for a picture by its git blob, ink key, names and look (look_of), wherever it sits (owner
+        2026-11-09), else None. A name alone counts only when every layer showing it sits in a star or type row (rows);
+        elsewhere it needs a close look (LOOK_NAMED: a big art picture named "fire" is no fire icon). With no name, a
+        look within LOOK_SAME and well clear of every other Types file is that icon at another size.
+        """
         if blob in self.by_blob:
             return BYTES, self.by_blob[blob]
         if key is not None and key in self.by_ink:
             return INK, self.by_ink[key]
         if blob in self.older:
             return REDRAW, self.older[blob]
-        if rows:
-            for name in names:
-                path = self.by_name.get(stem_key(name))
-                if path is not None and self.inks[path][1] is not None:
-                    return REDRAW, path
-        return None
+        named = [path for path in (self.by_name.get(stem_key(name)) for name in names)
+                 if path is not None and self.inks[path][1] is not None]
+        if named and rows:
+            return REDRAW, named[0]
+        if look is None or not self.looks:
+            return None
+        mine = _look(look)
+        apart = {path: float(np.abs(mine - their).mean()) for path, their in self.looks.items()}
+        close = next((path for path in named if apart.get(path, LOOK_NAMED + 1) <= LOOK_NAMED), None)
+        if close is not None:
+            return REDRAW, close
+        ranked = sorted(apart, key=apart.get)
+        best, near = ranked[0], apart[ranked[1]] if len(ranked) > 1 else float("inf")
+        return (REDRAW, best) if apart[best] <= LOOK_SAME and apart[best] <= LOOK_APART * near else None
 
 
 def types_history(clone: str) -> dict:
@@ -761,8 +799,8 @@ def items(psd: PSDImage, vocab=()) -> list:
     first layer, and each plain pixel layer in a star or type row (psd_regions.badge_layers: the header's).
 
     Returns:
-        [{"uuid", "kind" (data / external), "blob", "ext", "size", "file", "key" (ink_key or None), "links" (an
-        external item's path strings), "layers": [{"name", "id", "path", "visible", "row"}]}] then
+        [{"uuid", "kind" (data / external), "blob", "ext", "size", "file", "key" (ink_key or None), "look" (look_of or
+        None), "links" (an external item's path strings), "layers": [{"name", "id", "path", "visible", "row"}]}] then
         [{"pixel": layer id, "name", "path", "key"}]
     """
     stars, icons, _ = badge_layers(psd, vocab)
@@ -796,8 +834,8 @@ def items(psd: PSDImage, vocab=()) -> list:
             continue
         data = item.data or b""
         ext = file_type(data, entry["file"])
-        entry.update(kind="data", size=len(data), blob=git_blob(data), ext=ext,
-                     key=ink_key(decode(data, ext)) if ext in RASTER else None)
+        rgba = decode(data, ext) if ext in RASTER else None
+        entry.update(kind="data", size=len(data), blob=git_blob(data), ext=ext, key=ink_key(rgba), look=look_of(rgba))
     pixels = []
     for layer in stars + icons:
         if layer.kind != "pixel":
@@ -813,7 +851,7 @@ def assign(psds: list, types: TypesIndex, linked: dict, kept: Optional[dict] = N
     """
     Every item's class and target in catalogue order (PLAN 5.1: cards by repo path, then MDW/Unfinished, then
     MDW/Templates; "first user" is first in it). An item takes the most cautious class its layers allow: a name-only
-    match needs every layer in a star or type row. New MDW/Linked files are named after their first user (file_name);
+    match needs every layer in a star or type row, elsewhere a close look too (TypesIndex.match). New MDW/Linked files are named after their first user (file_name);
     fallback_names then gives a class 2 or 3 item the name its exact copy would take (5.2 step 9).
 
     Args:
@@ -861,7 +899,7 @@ def assign(psds: list, types: TypesIndex, linked: dict, kept: Optional[dict] = N
                 continue
             key = tuple(entry["key"]) if entry.get("key") else None
             names = [layer["name"] for layer in entry["layers"]] + [entry["file"]]
-            hit = types.match(entry["blob"], key, names, all(layer["row"] for layer in entry["layers"]))
+            hit = types.match(entry["blob"], key, names, all(layer["row"] for layer in entry["layers"]), entry.get("look"))
             if hit is not None:
                 entry.update({"class": hit[0], "target": hit[1]})
             else:
