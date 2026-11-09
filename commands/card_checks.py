@@ -365,12 +365,12 @@ def _note(what: str, reason: str) -> str:
 
 
 def _real_bake(ctx: Context, rel: str, fields: dict, png: Optional[np.ndarray] = None) -> tuple:
-    """A real bake on a temp copy: (state, reason, the pixels changed against png). One that broke raises: never clean,
-    the next run checks the card again."""
+    """A real bake on a temp copy, lean as a preview's: (state, reason, the pixels changed against png). One that broke
+    raises: never clean, the next run checks the card again."""
     work = mkdtemp(prefix="card-checks_", dir=environ.get(card_bake.WORK_ENV) or None)
     try:
         card = resolve(ctx.snapshot, rel, fields)
-        card_bake.bake_card(ctx.snapshot, card, ctx.parser, ctx.fonts, ctx.chart, work)
+        card_bake.bake_card(ctx.snapshot, card, ctx.parser, ctx.fonts, ctx.chart, work, lean=True)
         state, _, reason, _ = outcome(card)
         if state == "error":
             raise RuntimeError(reason)
@@ -435,19 +435,20 @@ def _stat_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str,
     caps = psd_edit.stat_caps(psd) or {}        # a raise past a display's room is refused when typed: never a note
     cap = lambda stat, n=1: caps[stat][n - 1] if caps and n <= len(caps[stat]) else psd_edit.STAT_MAX
     down, up = (lambda value, top: value - 1 if value > 0 else value + 1), (lambda value, top: value + 1 if value < top else value - 1)
-    for what, step in (("edits", down), ("raises", up)):
-        fields = {stat: step(value, cap(stat)) for stat, value in have.items()}
-        if own:                                 # creature 1's and the shared bars as fields, the others' own a step too
-            fields["creatures"] = [{stat: fields[stat] if (n, stat) not in own else step(one[stat], cap(stat, n))
-                                    if isinstance(one.get(stat), int) and one[stat] >= 0 else one.get(stat)
-                                    for stat in STAT_ORDER} for n, one in enumerate(creatures, 1)]
-        state, reason, moved = _real_bake(ctx, rel, fields, png)
-        if state == "refused":
-            return [_note("stats", reason)]
-        still = _still(psd, moved, style) if state == "baked" and moved is not None else []
-        if still:
-            names = "Stat" if len(still) == len(STAT_ORDER) else " and ".join(STAT_NAMES[stat] for stat in still)
-            return [NO_CHANGE_NOTE.format(names, what)]
+    with psd_edit.render_cache():               # one for both bakes: the second reuses the passes they share
+        for what, step in (("edits", down), ("raises", up)):
+            fields = {stat: step(value, cap(stat)) for stat, value in have.items()}
+            if own:                             # creature 1's and the shared bars as fields, the others' own a step too
+                fields["creatures"] = [{stat: fields[stat] if (n, stat) not in own else step(one[stat], cap(stat, n))
+                                        if isinstance(one.get(stat), int) and one[stat] >= 0 else one.get(stat)
+                                        for stat in STAT_ORDER} for n, one in enumerate(creatures, 1)]
+            state, reason, moved = _real_bake(ctx, rel, fields, png)
+            if state == "refused":
+                return [_note("stats", reason)]
+            still = _still(psd, moved, style) if state == "baked" and moved is not None else []
+            if still:
+                names = "Stat" if len(still) == len(STAT_ORDER) else " and ".join(STAT_NAMES[stat] for stat in still)
+                return [NO_CHANGE_NOTE.format(names, what)]
     return []
 
 

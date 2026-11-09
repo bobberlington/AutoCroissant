@@ -8783,16 +8783,17 @@ def same_places(a: list, b: list, tol: float) -> bool:
                                     for p, q in zip(a, b))
 
 
-def render_cache():
+def render_cache(shared: bool = False):
     """
     One bake's psd-tools RenderCache (the fork's psd_tools.composite.rcache: the card's renders before and after its
     edits share every layer the edits leave alone; keys hash what a layer is, never id()), else a no-op context.
+    shared: this thread's open one when there is one (card_checks' two stat bakes of a card).
     """
     try:
-        from psd_tools.composite.rcache import RenderCache
+        from psd_tools.composite import rcache
     except ImportError:
         return nullcontext()
-    return RenderCache()
+    return (shared and rcache.active()) or rcache.RenderCache()
 
 
 def gate_outside(before: np.ndarray, psd: PSDImage, edit: Edit) -> np.ndarray:
@@ -10837,8 +10838,8 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     # stars and types first (a title edit then clears the new stars), text next, the ability first: its FX records shift
     # the record indices of the digits and of a Name above them (Fire Staff's); the icon edits' indices are read once
     # all are in (index_icons). The card is rendered whole only once an edit is made (a refused one costs none), in one
-    # RenderCache, and without a stars or types edit only inside the dirty box (gate_dirty)
-    cache, first = render_cache(), None
+    # RenderCache (the caller's when open), and without a stars or types edit only inside the dirty box (gate_dirty)
+    cache, first = render_cache(shared=True), None
     before, edits = record_map(new), []
     for name, value in sorted(jobs.items(), key=lambda job: (job[0] == "colors", job[0] not in ICON_FIELDS,
                                                              job[0] in (*STAT_FIELDS, "creatures"), job[0] == "name")):
