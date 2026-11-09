@@ -74,6 +74,26 @@ def test_badge_tags_are_the_fonts_glyphs():
                      for n, w in (t.split(" ", 1) for t in psd_edit.COST_TAGS)} and len(costs) == 310
 
 
+def test_glyph_boxes_drawn_when_asked():
+    """badge_fits' glyph boxes: only the asked gids drawn, each as a full BoundsPen draw; past the font, the default."""
+    from fontTools.pens.boundsPen import BoundsPen
+    from fontTools.ttLib import TTFont
+    from conftest import CLONE
+    font = CLONE / "MDW/Fonts/stoogedings.ttf"
+    if not font.exists():
+        pytest.skip("no stoogedings.ttf")
+    full = TTFont(str(font), lazy=True)
+    glyphs, order = full.getGlyphSet(), full.getGlyphOrder()
+    picks = [next(g for g, n in enumerate(order) if n.startswith(p)) for p in ("badge_", "icon_")] + [len(order) - 1]
+    boxes = psd_edit._GlyphBoxes(str(font))
+    for gid in picks:
+        pen = BoundsPen(glyphs)
+        glyphs[order[gid]].draw(pen)
+        assert boxes.get(gid, (None, None)) == (order[gid], pen.bounds)
+    assert set(boxes.boxes) == set(picks)
+    assert boxes.get(-1, (None, None)) == boxes.get(len(order), (None, None)) == (None, None)
+
+
 def test_kinds_and_keys():
     assert [cs.kind_of(p) for p in ("Auxiliary/Creatures/X.psd", "Auxiliary/Items/X.psd",
                                      "Auxiliary/Minions/X.psd", "Auxiliary/Status Effects/Buffs/1 Stars/X.psd", "N.M.E/X.psd",

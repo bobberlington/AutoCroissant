@@ -26,6 +26,7 @@ from os import environ
 from os.path import abspath, basename, dirname, getsize, isfile, join
 from re import IGNORECASE, compile as re_compile, escape, fullmatch, search, sub
 from struct import pack, unpack
+from threading import Lock
 from time import perf_counter
 from typing import Optional
 from uuid import NAMESPACE_URL, uuid4, uuid5
@@ -1415,18 +1416,32 @@ def cap_of(path: str, index: int = 0) -> tuple:
     return upem, cap, cap / 2
 
 
+class _GlyphBoxes:
+    """gid -> (glyph name, (xmin, ymin, xmax, ymax) or None) of the icon font, each drawn when first asked."""
+
+    def __init__(self, path: str):
+        from fontTools.pens.boundsPen import BoundsPen
+        from fontTools.ttLib import TTFont
+        font = TTFont(path, lazy=True)
+        self.glyphs, self.order = font.getGlyphSet(), font.getGlyphOrder()
+        self.pen, self.lock, self.boxes = BoundsPen, Lock(), {}
+        font.close()                            # the outlines are read: no file held open
+
+    def get(self, gid: int, default=None):
+        with self.lock:
+            if gid not in self.boxes:
+                if not 0 <= gid < len(self.order):
+                    return default
+                pen = self.pen(self.glyphs)
+                self.glyphs[self.order[gid]].draw(pen)
+                self.boxes[gid] = (self.order[gid], pen.bounds)
+            return self.boxes[gid]
+
+
 @lru_cache(maxsize=None)
-def _glyph_boxes(path: str) -> dict:
-    """gid -> (glyph name, (xmin, ymin, xmax, ymax) or None) of the icon font."""
-    from fontTools.pens.boundsPen import BoundsPen
-    from fontTools.ttLib import TTFont
-    font = TTFont(path, lazy=True)
-    glyphs, out = font.getGlyphSet(), {}
-    for gid, name in enumerate(font.getGlyphOrder()):
-        pen = BoundsPen(glyphs)
-        glyphs[name].draw(pen)
-        out[gid] = (name, pen.bounds)
-    return out
+def _glyph_boxes(path: str) -> _GlyphBoxes:
+    """The icon font's _GlyphBoxes, one per process."""
+    return _GlyphBoxes(path)
 
 
 def _drop(style, model) -> float:
