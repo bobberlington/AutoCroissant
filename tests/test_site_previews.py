@@ -255,6 +255,26 @@ out([spot, m.typePlan(null, [], ["fire"], spot), m.typePlan(null, [], ["fire", "
     assert boxed == [True, True, True]
 
 
+@needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "labelRow"), reason="no labelRow in mockup.js")
+def test_stat_row_at_its_label(tmp_path):
+    """A template row with no bar moves to its stat's visible label (x span and height kept) when the card's bar is
+    there; a hidden label, none, or cells of another size (a bar a quarter cell aside too): no row."""
+    out = node(tmp_path, """
+const W = 600, H = 1200, row = m.barRows("tall", W, H, { hp: 3 }, null)[0], [x0, , x1] = row.box;
+const rec = text => ({ canvas: { w: 1200, h: 2400 }, text }), label = { text: "Health ", visible: true, box: [50, 1660, 320, 1730] };
+const bar = cw => { const L = new Uint8Array(W * H);
+  for (let y = 822; y < 870; y++) for (let x = 0; x < W; x++) L[y * W + x] = x < x0 || x >= x0 + 10 * cw ? 255 : (x - x0) % cw < 2 ? 20 : 200;
+  return L; }, L = bar((x1 - x0) / 10);   // 10 cells at y 822-870
+const moved = m.labelRow(L, W, H, rec([{ text: "Speed", box: [50, 300, 300, 360] }, { ...label, text: "Health", visible: false }, label]), row);
+const small = bar((x1 - x0) / 12.5);   // cells 0.8 as wide: a bar to isBar there, and a quarter cell aside
+out([row.box, moved && moved.box, m.isBar(L, W, H, row.box), m.isBar(small, W, H, moved.box), m.labelRow(small, W, H, rec([label]), row),
+  m.labelRow(L, W, H, rec([{ ...label, visible: false }]), row), m.labelRow(L, W, H, { text: [] }, row)]);""")
+    tpl, moved, at_tpl, small_bar, *none = out
+    assert moved == [tpl[0], 826.5, tpl[2], 868.5] and tpl[3] - tpl[1] == 42 and at_tpl is False and small_bar is True
+    assert none == [None, None, None]
+
+
 # ---- the build's web fonts (build_site.py)
 @pytest.fixture(scope="module")
 def bs():
