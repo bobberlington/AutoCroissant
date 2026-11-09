@@ -136,13 +136,13 @@ def test_to_check_and_file():
 
 
 def test_blobs_of_in_reading_order():
-    """The chart, manifest and type PNGs first, then each card's PSD, PNG and duplicates together, the templates last."""
+    """The chart and manifest first, then each card's PSD, PNG and duplicates together, the templates last."""
     paths = ["MDW/Templates/Creature_Template.psd", "A.psd", "A.png", "A2.png", "B.psd", "Types/Fire.png", "Types/Dark.png",
              cc.psd_edit.STATUS_CHART, cc.ICON_MANIFEST_PATH]
     tree = {path: ("", path) for path in paths}
     snapshot = SimpleNamespace(tree=tree, sha=lambda path: path, dup_pictures=lambda: {"A.psd": ["A2.png"]},
                                png_for=lambda rel: ("A.png" if rel == "A.psd" else "", []))
-    assert cc.blobs_of(snapshot, ["A.psd", "B.psd"], {}) == ["Types/Fire.png", cc.psd_edit.STATUS_CHART, cc.ICON_MANIFEST_PATH,
+    assert cc.blobs_of(snapshot, ["A.psd", "B.psd"], {}) == [cc.psd_edit.STATUS_CHART, cc.ICON_MANIFEST_PATH,
                                                             "A.psd", "A.png", "A2.png", "B.psd", "MDW/Templates/Creature_Template.psd"]
 
 
@@ -196,11 +196,10 @@ def test_workflow_checks_cards_as_their_blobs_land(tmp_path):
 
 def test_blobs_of_templates():
     """A template only where first_type_spot can open one: a record with no types, its kind's; no record, every kind's."""
-    shared = ["MDW/Croissant's Special Folder/Satus Effect Colors.psd", "MDW/Fonts/stoogedings-src/stoogedings.json",
-              "Types/Fire.png", "Types/water.png", "Types/ice.png"]
+    shared = ["MDW/Croissant's Special Folder/Satus Effect Colors.psd", "MDW/Fonts/stoogedings-src/stoogedings.json"]
     stems = ("Creature", "2_Creature", "Item", "ActiveItem", "Status_Effect", "Raid_Boss")
     cards = ["C/A.psd", "C/B.psd", "Items/Active/D.psd", "C/E.psd"]
-    tree = {path: ("", path) for path in shared + [f"MDW/Templates/{s}_Template.psd" for s in stems] + cards + ["Types/x.png"]}
+    tree = {path: ("", path) for path in shared + [f"MDW/Templates/{s}_Template.psd" for s in stems] + cards + ["Types/x.png", "Types/Fire.png"]}
     snapshot = SimpleNamespace(tree=tree, sha=lambda path: path, png_for=lambda rel: ("", []), dup_pictures=dict)
     stats = {"A": {"path": "C/A.psd", "card_type": "creature", "types": ["fire"]},
              "B": {"path": "C/B.psd", "card_type": "minion", "types": []},

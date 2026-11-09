@@ -16,7 +16,8 @@ the results in db/, drops PSDs gone from the tree, words every record's notes ag
 without a push) and marks the people's flags that went. Exit 0, also for what it flags. No Discord or config imports.
 
 Which edits are tried (a real bake is 25 s; the whole list of 13 kinds of edit, 4 minutes a card, would be 50 hours a
-tree): the plans alone for titles, stars and types, a made icon on a copy; a real bake only where a plan cannot tell:
+tree): the plans alone for titles, stars and taking off a type, a made icon on a copy (adding a type is not tried: the
+website tells when someone tries it, owner 2026-11-08); a real bake only where a plan cannot tell:
 stars on a card with variant pictures, the ability on a card with FX layers, the stats on digit rows or new bars under
 art (their pixels too), a type on a very small PSD. A bake that breaks leaves no record: the next run tries again.
 """
@@ -50,7 +51,7 @@ from commands.card_standards import _bar_art
 from commands.github_api import token_from_env
 from commands.psd_parser import EFFECT_LAYER_TAG, variants_of
 from commands.psd_regions import STATS, bar_box, comp_bars, linked_items, placed_data, stat_rows
-from global_config import CARD_REPO, EDITS_PATH, ICON_MANIFEST_PATH, TYPES_DIR
+from global_config import CARD_REPO, EDITS_PATH, ICON_MANIFEST_PATH
 
 # ========================
 # Configuration
@@ -80,13 +81,12 @@ LIT_GAP = 10.0                              # lit and empty cells this far apart
 ART_FILL = 0.9                              # bar art filling less of its box is separate icons (the template's fills 0.977)
 PIXEL_MOVED = 24                            # a pixel counts as changed past this many levels (the census's)
 # the edits
-TYPE_TRIES = ("fire", "water", "ice")       # a type to add: the first a card lacks
 MAX_STARS = 7                               # the census's: a star added up to here
 SMALL_PSD = 3_000_000                       # bytes: under this a type edit bakes for real (3 cards)
 ANY_KIND = [(kind, "") for kind in psd_edit.TEMPLATES] + [("item", "Items/Active/")]  # template_for's every file
 WHOLE_FIELD = r"edit each box on the website|title is printed again by"     # a box per layer takes the edit
 WHAT = {"name": "A new title", "adding a star": "Adding a star", "removing a star": "Taking off a star",
-        "adding a type": "Adding a type", "removing a type": "Taking off a type", "stats": "Stat edits"}
+        "removing a type": "Taking off a type", "stats": "Stat edits"}
 # the notes
 OLD_NOTE = "Its stat bars are old-style digit rows: put them on the new bars in Photoshop."
 CREATURES_NOTE = "Several creatures: the website changes the first one's bars, the others are changed in Photoshop."
@@ -469,14 +469,11 @@ def edit_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str, 
     one = Card(card_name(rel), CardAuthors.key(card_name(rel)), {}, rel, ctx.snapshot.sha(rel))
     work = mkdtemp(prefix="card-checks_", dir=environ.get(card_bake.WORK_ENV) or None)
     pictures = len(variants_of(psd)) > 1
-    notes, probe = [], {}
-
-    def say(what: str, reason: str) -> str:     # the type tried is no type of the card's: never named
-        return _note(what, reason.replace(f"the {probe[what]!r} icon", "a new type icon") if what in probe else reason)
+    notes = []
 
     def refused(what: str, refusal) -> None:
         if not search(WHOLE_FIELD, refusal.why, IGNORECASE):
-            notes.append(say(what, f"{refusal.code}: {refusal.why}"))
+            notes.append(_note(what, f"{refusal.code}: {refusal.why}"))
 
     def plan(what: str, fields: dict, template=None) -> bool:
         found = psd_edit.classify(parsed, fields, psd, ctx.parser, template)
@@ -491,7 +488,7 @@ def edit_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str, 
         if len(raw) < SMALL_PSD:                # a made icon can pass gate_size's share: only the bake's save tells
             state, reason, _ = _real_bake(ctx, rel, {"types": value})
             if state == "refused":
-                notes.append(say(what, reason))
+                notes.append(_note(what, reason))
             return
         try:                                    # a made icon's ink shows once it is made: on a copy, no render
             icons = card_bake.types_icons(ctx.snapshot, work, ctx.parser, value, card.get("types"))
@@ -520,8 +517,6 @@ def edit_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str, 
             if count > 1:
                 stars("removing a star", count - 1)
         template = card_bake.first_type_spot(ctx.snapshot, work, one, parsed, psd, ctx.parser)
-        probe["adding a type"] = next(t for t in TYPE_TRIES if t not in printed)
-        types("adding a type", printed + [probe["adding a type"]], template)
         if printed:
             types("removing a type", printed[1:], template)
         if any(EFFECT_LAYER_TAG in layer.name for layer in psd.descendants()):
@@ -701,8 +696,7 @@ def blobs_of(snapshot: Snapshot, rels: list, stats: dict) -> list:
     for card in stats.values():
         records.setdefault(card.get("path"), []).append(card)
     templates = set().union(*(_templates(rel, records.get(rel)) for rel in rels))
-    types = {f"{TYPES_DIR}/{t}.png".lower() for t in TYPE_TRIES}
-    first = [path for path in snapshot.tree if path in (psd_edit.STATUS_CHART, ICON_MANIFEST_PATH) or path.lower() in types]
+    first = [path for path in snapshot.tree if path in (psd_edit.STATUS_CHART, ICON_MANIFEST_PATH)]
     cards = [path for rel in rels for path in [rel, snapshot.png_for(rel)[0], *snapshot.dup_pictures().get(rel, [])] if path]
     last = [path for path in snapshot.tree if path in templates]
     return list(dict.fromkeys(snapshot.sha(path) for path in first + cards + last))
