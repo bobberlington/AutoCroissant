@@ -251,7 +251,8 @@ def test_ability_overlay_goes_off(clone, tmp_path):
 @pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")
 def test_mockup_refuses_as_the_bake(clone, tmp_path):
     """mockup.js paintedOver, on the cards' details records, names what plan_colors refuses as painted over, in its words:
-    a phrase under the title's or Ability's Gradient; not a whole field's, a phrase after one, or one under a lone Color Overlay."""
+    a phrase under the title's or Ability's Gradient; not a whole field's, a phrase after one, or one under a lone Color Overlay.
+    A retyped title or Ability box: the same, in the new text."""
     if "export function paintedOver" not in (ASSETS / "mockup.js").read_text(encoding="utf-8"):
         pytest.skip("mockup.js has no paintedOver yet")
     from commands import psd_details as pd
@@ -259,18 +260,22 @@ def test_mockup_refuses_as_the_bake(clone, tmp_path):
     vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
     parser = offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
     name, ability = {"field": "name", "color": "#ff2200"}, {"field": "ability", "color": "#ff2200"}
-    cases = {"Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd": [[{**name, "phrase": "Bam"}], [name], [name, {**name, "phrase": "Bam"}]],
-             "Auxiliary/Minions/Mini_Doomer.psd": [[{**ability, "phrase": "stats"}], [ability, {**ability, "phrase": "stats"}]],
+    bam, stats = {**name, "phrase": "Bam"}, {**ability, "phrase": "stats"}
+    now = "Has stats equal to the base stats -2 of the creature that summoned it now.\n(BOT) Destroy this creature."
+    cases = {"Creatures/Kirby/4 Stars/Wham_Bam_Bone.psd": [[bam], [name], [name, bam], ([bam], {"name": "Wham Bam Bone II"})],
+             "Auxiliary/Minions/Mini_Doomer.psd": [[stats], [ability, stats], ([stats], {"ability": now, "parts": {"2068": {"text": now}}})],
              "Auxiliary/Minions/Cat.psd": [[{**ability, "phrase": "attack"}]]}
     jobs, want = [], []
     for rel, sets in cases.items():
         psd, card = PSDImage.open(_card(clone, rel)[0]), Path(rel).stem.replace("_", " ")
         record = pd.gather(psd, rel, card, None, vocab["all_types"], parser)
-        jobs += [{"rec": record, "colors": colors} for colors in sets]
-        want += [[[one, how] for one, how in pe.plan_colors(psd, colors, card) if "paints over" in how] for colors in sets]
+        for colors, edit in (s if isinstance(s, tuple) else (s, {}) for s in sets):
+            typed, boxes = {f: edit[f] for f in ("name", "ability") if f in edit}, {k: v["text"] for k, v in edit.get("parts", {}).items()}
+            jobs.append({"rec": record, "colors": colors, "typed": list(typed), "edit": edit})
+            want.append([[one, how] for one, how in pe.plan_colors(psd, colors, card, typed, None, boxes) if "paints over" in how])
     (tmp_path / "jobs.json").write_text(json.dumps(jobs), encoding="utf-8")
     (tmp_path / "over.mjs").write_text(f"""const M = await import({json.dumps((ASSETS / 'mockup.js').as_uri())});
 const jobs = JSON.parse((await import("fs")).readFileSync({json.dumps(str(tmp_path / 'jobs.json'))}, "utf8"));
-process.stdout.write(JSON.stringify(jobs.map(j => M.paintedOver(j.rec, j.colors).map(n => [n.one, n.why]))));""", encoding="utf-8")
+process.stdout.write(JSON.stringify(jobs.map(j => M.paintedOver(j.rec, j.colors, j.typed, j.edit).map(n => [n.one, n.why]))));""", encoding="utf-8")
     got = json.loads(run_process(["node", str(tmp_path / "over.mjs")], capture_output=True, text=True, check=True).stdout)
-    assert got == want and [len(w) for w in want] == [1, 0, 0, 1, 0, 0], (got, want)
+    assert got == want and [len(w) for w in want] == [1, 0, 0, 1, 1, 0, 1, 0], (got, want)
