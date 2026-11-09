@@ -154,7 +154,8 @@ that would touch anything. A star or icon must stay on the card, off the text an
 stars (icons; the row's own icons in a Stars group are no stars), no moved, shown or made icon may ink over 5% of
 another's (`ICON_TOUCH`), and the parser must count exactly the edit. Gates on top of the usual ones: `gate_outside` renders the
 whole card before and after each stars or types edit (no ICC, no preview) and refuses a pixel changed outside the
-edit's region (a star's clipped Curves left on another layer is how it showed up on Mini Doomer); `gate_bytes` takes a
+edit's region (a star's clipped Curves left on another layer is how it showed up on Mini Doomer; since 2026-11-09 a
+card's lone stars or types edit renders only `dirty_box(old, new)` and its region, `gate_dirty`'s, the same refusal); `gate_bytes` takes a
 copy only as its source's record moved (new id and name), a moved layer only with its rect and mask moved and its
 transform and anchor blocks changed, a made icon only as a pixel record with the reference's effect blocks; the
 re-parse reads the stars back and the types in any order.
@@ -737,7 +738,7 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   the title and text in the PSD, not the PNG), and `gate_untouched` renders the whole card around the text edits: any
   pixel outside their regions refuses `region` (about 5 s a render; since 2026-10-25, K-1, without a stars or types
   edit `gate_dirty` renders only `dirty_box(old, new)` and the regions, the whole canvas on a reorder or a document-level
-  change; `PSD_DIRTY_VERIFY=1`, on in the tests, renders whole too and raises on any difference). `_tinted` counts visible layers clipped to the
+  change, links added aside (`_links_grown`: a types edit's Types/ link); `PSD_DIRTY_VERIFY=1`, on in the tests, renders whole too and raises on any difference). `_tinted` counts visible layers clipped to the
   Ability or a group above it (an adjustment or fill; a drawn layer over its box: Pizza's Multiply `Layer 12`), so a
   typed badge or token there refuses. `unshaped_icons` counts a layer without the icon font too, so the 10 plain cards
   that print tags as body text (Papyrus' `(1CD)`) take typed badges and tokens again. Tests:
