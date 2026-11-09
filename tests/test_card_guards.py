@@ -1238,8 +1238,8 @@ def test_workflow_shape(clone):
     take = post["steps"][1]
     assert take["uses"].startswith("actions/download-artifact@") and take["with"] == {"name": "card-guards", "path": "${{ runner.temp }}/guards"}
     assert post_names == ["Work dir", None, "Told before", "Follow up", "Tell Discord"]
-    early = steps_by_name["Start Card sync"]    # with fixes and no Normalise, Card sync sets up while the guards land (its lanes wait for Landed)
-    assert early["if"] == "${{ !cancelled() && steps.plan.outputs.fixes == 'true' && steps.plan.outputs.normalise == 0 }}"
+    early = steps_by_name["Start Card sync"]    # with fixes and 25 PSDs or fewer to convert, Card sync sets up while the guards land (its lanes wait for Landed)
+    assert early["if"] == "${{ !cancelled() && steps.plan.outputs.fixes == 'true' && steps.plan.outputs.normalise <= 25 }}"
     assert early["continue-on-error"] is True and early["env"]["GH_REPO"] and "-F return_run_details=true" in early["run"]
     assert '-f "inputs[guards]=$GITHUB_RUN_ID"' in early["run"] and "card-sync.yml/dispatches" in early["run"]
     assert all(f'-f "inputs[{k}]={v}"' in early["run"] for k, v in (("dry_run", "false"), ("bake", "pending")))   # as SYNC's
