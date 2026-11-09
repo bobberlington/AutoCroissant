@@ -69,6 +69,12 @@ def typed(text: str, quotes: bool = False) -> str:
     return text.replace("\u201c", '"').replace("\u201d", '"') if quotes else text
 
 
+def _pairs(text: str) -> set:
+    """search.js suggest()'s letter pairs: the text lowercased, a space at each end."""
+    text = f" {text.lower()} "
+    return {text[i:i + 2] for i in range(len(text) - 1)}
+
+
 class QueryError(ValueError):
     """A /query_ability query that can't run; the message says why (an unknown field, a bad value)."""
 
@@ -517,6 +523,23 @@ class CardRepository:
                 if matcher.quick_ratio() > cut and matcher.ratio() > cut:   # quick_ratio bounds ratio
                     keep.append(label)
         return Index(keep, dtype=frame.index.dtype)
+
+    def suggest(self, query: str, n: int = 5) -> list:
+        """The website's "did you mean" (search.js suggest): up to n (name, title) of its cards (duplicates too, not
+        hidden ones) whose printed title, else name, shares query's letter pairs by over 0.35 (Dice), best first."""
+        wanted, found = _pairs(query), []
+        try:
+            cards = list(stats_db.stats.items())
+        except RuntimeError:                                     # /update_stats writing meanwhile
+            return []
+        for name, card in cards:
+            title = getattr(card, "display_name", None) or name
+            got = _pairs(title)
+            score = 2 * len(wanted & got) / (len(wanted) + len(got))
+            if score > 0.35 and not getattr(card, "hidden", False):     # ties: the website's order (plain duplicates last)
+                last = bool(getattr(card, "duplicate_of", None) and not getattr(card, "variant_of", None))
+                found.append((-score, last, name.lower(), name, title))
+        return [(name, title) for *_, name, title in sorted(found)[:n]]
 
     def rulebook_search_engine(self, search_text: str) -> DataFrame:
         """
@@ -1111,11 +1134,21 @@ def query_ability(interaction: Interaction,
     total_results = len(results)
     results_to_show = total_results if limit < 0 else min(limit, total_results)
 
+    text = typed(ability, quotes=True).strip()
+    links = [("All results on the website", f"{SITE_URL}/#/cards?q={quote(text)}")]
+    if not total_results:                                # one reply: the website's "did you mean", each a Card page
+        names = []
+        for label, title in card_repo.suggest(text):
+            page, title = card_repo.site_url(card_repo._key_of(label) or ""), escape_markdown(title)
+            names.append(f"[{title.replace('[', '(').replace(']', ')')}](<{page}>)" if page else title)
+        more = f"\nDid you mean: {', '.join(names)}?" if names else ""
+        queue_message(interaction, f"No cards match '{ability}'.{more}", links=links)
+        return
+
     found = f"Found {total_results} results for '{ability}'!"
     rows = _site_order(results, ability)[:results_to_show]
     shown = [name for name, _ in rows]
     done = f"Displayed {results_to_show} of {total_results} results for '{ability}'."
-    links = [("All results on the website", f"{SITE_URL}/#/cards?q={quote(typed(ability, quotes=True).strip())}")]
     if len(shown) > 1:
         post_grids(interaction, shown, found, done, links, labels=[title for _, title in rows])
         return

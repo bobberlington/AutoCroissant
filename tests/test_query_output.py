@@ -44,6 +44,17 @@ def test_one_card_is_its_image_link(repo):
     assert "links" in kwargs[2]
 
 
+def test_nothing_found_is_one_reply_with_the_websites_guesses(repo, monkeypatch):
+    """No results: one message with the website's "did you mean" (search.js suggest), each a Card page if it has one."""
+    monkeypatch.setattr(qc, "stats_db", SimpleNamespace(stats={"Water": _card("Water"), "Firefly": _card("Firefly"),
+        "Fire Ant": _card("Fire Ant"), "Fire": SimpleNamespace(display_name="Fire", hidden=True)}))
+    repo.git_files = {"fire_ant.png": "Creatures/Fire_Ant.png"}
+    repo.site_url = lambda key: f"https://site/c/{key[:-4]}/" if key else None
+    out, kwargs = _search(repo, 0)
+    assert out == ["No cards match 'Fire'.\nDid you mean: [Fire Ant](<https://site/c/fire_ant/>), Firefly?"]
+    assert "links" in kwargs[0]
+
+
 def test_many_cards_come_as_grids(repo):
     """25 cards: two messages, each one grid image and its cards' list; the header and footer ride along."""
     repo.site_url = lambda key: None if key == "card_1.png" else f"https://site/c/{key}/"
