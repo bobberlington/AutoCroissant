@@ -7306,6 +7306,7 @@ TEXTURE_KEEP = 0.9          # a moved or new star keeps this share of its core u
 TEXTURE_KINDS = ("pixel", "smartobject", "shape")
 PLAIN_LEVELS = 16           # a backdrop's pixels within this of their median colour (each channel, 0-255)...
 PLAIN_SHARE = 0.45          # ...this share of them round the stars: a banner, not art (Bolts and Screws' gear)
+BANNER_EDGES = 2            # a backdrop whose ink reaches this many canvas edges is the card's background, no banner
 BANNER_GAP = 6              # px a row on its banner keeps from the text's ink and the banner's end
 BANNER_FULL = 0.9           # a banner's column counts where it inks this share of the stars' middle half
 BANNER_TEXT_GAP = 8         # px at least between the text and the row (else the stars' own gap)
@@ -7739,7 +7740,9 @@ def _ink_share(ink: tuple, box: tuple) -> float:
 def _backdrop(psd: PSDImage, shown: list) -> Optional[tuple]:
     """
     (layer, ink) of what the stars sit on: the smallest drawn layer behind them, under half the canvas, whose ink holds
-    BACKDROP_SHARE of every shown star's core (Remote Detonator's paper banner), if plain there (_plain_banner); None.
+    BACKDROP_SHARE of every shown star's core (Remote Detonator's paper banner), if plain there (_plain_banner) and
+    drawn on the card (its ink reaching under BANNER_EDGES of the canvas's edges: Spiky Ball Trap's brick wall and
+    Forgotten Crossroads' gradient are background); None.
     """
     layers = list(psd.descendants())
     at = {id(layer): i for i, layer in enumerate(layers)}
@@ -7755,8 +7758,19 @@ def _backdrop(psd: PSDImage, shown: list) -> Optional[tuple]:
     for _, layer in sorted(found, key=lambda one: one[0]):
         ink = _ink(layer)
         if ink is not None and all(_ink_share(ink, unit.core) >= BACKDROP_SHARE for unit in shown):
-            return (layer, ink) if _plain_banner(layer, shown) else None   # art (a gear) is no banner
+            banner = _plain_banner(layer, shown) and _canvas_edges(psd, ink) < BANNER_EDGES
+            return (layer, ink) if banner else None     # art (a gear) or the background is no banner
     return None
+
+
+def _canvas_edges(psd: PSDImage, ink: tuple) -> int:
+    """How many of the canvas's edges an ink ((bbox, solid), _ink) reaches or runs past."""
+    (x, y, _, _), solid = ink
+    rows, cols = np.flatnonzero(solid.any(axis=1)), np.flatnonzero(solid.any(axis=0))
+    if not rows.size:
+        return 0
+    return int(x + cols[0] <= 0) + int(y + rows[0] <= 0) + int(x + cols[len(cols) - 1] + 1 >= psd.width) + \
+        int(y + rows[len(rows) - 1] + 1 >= psd.height)
 
 
 def _plain_banner(layer, shown: list) -> bool:

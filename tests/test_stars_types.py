@@ -599,7 +599,9 @@ def test_star_cases_of_10_26(clone, parser, tmp_path):
     its neighbour's shadow) and its 1 keeps it (the top-right's shadow would show). Yin Yarn's yarn clipped onto its
     group follows its 6 (owner 11-09: no note); Paint Warrior's paint follows its 4 too (rows of two). A die's five
     keeps its faces (Yin Yarn, Nightmare: 1 the middle, 2 and 3 a diagonal). Bolts and Screws' gear is no banner: a
-    column. Remote Detonator's row is centred and tightened on its banner; Crowned Magolor's V point becomes a pair."""
+    column; nor Spiky Ball Trap's brick wall, the card's background (it reaches the canvas's top and right): its 5 lays
+    out rows of two, not stepped down. Remote Detonator's row is centred and tightened on its banner; Crowned Magolor's V
+    point becomes a pair."""
     leshy = "Creatures/Other/5 Stars/Leshy.psd"
     psd, parsed = _renamed(parser, clone, leshy, tmp_path)
     assert parser._count_stars(psd) == 5
@@ -619,6 +621,9 @@ def test_star_cases_of_10_26(clone, parser, tmp_path):
     bolts = pe.plan_stars(*_open(parser, clone, "Items/Heal/1 Stars/Bolts_and_Screws.psd", tmp_path), 2, parser,
                           moving=True)
     assert bolts.how == "a column" and [(dx, dy) for _, dx, dy, _ in bolts.copies] == [(0, 130)]
+    spiky = pe.plan_stars(*_open(parser, clone, "Items/Counter/3 Stars/Spiky_Ball_Trap.psd", tmp_path), 5, parser,
+                          moving=True)
+    assert spiky.how == "rows of two, laid out again" and len(spiky.notes) == 1          # no step down, no banner note
     prize = pe.plan_stars(*_open(parser, clone, "Items/Support/1 Stars/Consolation_Prize.psd", tmp_path), 2, parser,
                           moving=True)
     assert prize.how == "a column"                                      # a lone star's banner binds last
