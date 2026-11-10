@@ -71,6 +71,7 @@ from psd_tools.api.links import RepoTree
 from requests.exceptions import RequestException
 
 import commands.card_standards as standards
+import commands.status_font  # noqa: F401  standards' "status font" kind (imported where used): in SPARSE_FILES
 import commands.png_export as png_export
 import commands.psd_diff as psd_diff
 import commands.psd_edit as psd_edit
@@ -93,7 +94,7 @@ SPARSE_FILES = ("commands/card_guards.py", "commands/png_export.py", "commands/c
                 "commands/github_api.py", "commands/git_commit.py", "commands/repo_history.py", "global_config.py",
                 "requirements-cards.txt",
                 "commands/ability_place.py", "commands/ability_index.json",
-                "commands/psd_links.py")
+                "commands/psd_links.py", "commands/status_font.py")
 SUBJECT = "Card guards"                         # the bot commit: "Card guards: 2 PNGs re-exported, 1 PSD fixed (push 7cb4c867)"
 TRAILER = "Guarded-push"                        # the push the commit guards
 RECOMPRESSED = "Recompressed"                   # a trailer per PNG only recompressed: no image version (build_site)
