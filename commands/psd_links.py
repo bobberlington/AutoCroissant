@@ -1630,6 +1630,7 @@ def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARD
     """
     import commands.png_export as png_export
     from commands.psd_edit import offline_parser, records_of as rewrite_records, save_psd, use_record
+    from commands.psd_parser import picture_numbers
     tree = _tree_at(clone, head)
     stems = {d: sorted(splitext(basename(p))[0].lower().replace(" ", "_") for p in tree
                        if dirname(p) == d and p.lower().endswith(".png")) for d in (TYPES_DIR, STARS_DIR)}
@@ -1658,7 +1659,8 @@ def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARD
             out.due += order[n:]
             break
         main, numbered_pngs = _pictures(tree, rel)
-        pngs = ([main] if main else []) + numbered_pngs
+        mine = [p for p in dups.get(rel, []) if p in tree]     # its picture-only duplicates
+        pngs = ([main] if main else []) + numbered_pngs + mine
         wanted = [tree[rel]] + [tree[p] for p in pngs] + [blob for _, blob in due.get(rel, [])]
         for link, blob in due.get(rel, []):     # C3: the blob each was drawn from, else the file's blobs of its size
             drawn = link.get("drawn")
@@ -1707,7 +1709,8 @@ def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARD
             if any(tree[p] not in blobs for p in pngs):     # C5: the PSD lands only with its PNGs
                 out.due.append(rel)
                 continue
-            numbered = {p: png_export.open_png(blobs[tree[p]]) for p in numbered_pngs}
+            pictured = picture_numbers(after, numbered_pngs + mine)   # a duplicate it draws: a picture (owner 11-09)
+            numbered = {p: png_export.open_png(blobs[tree[p]]) for p in numbered_pngs + [p for p in mine if p in pictured]}
             found_png = png_export.export(old, after, png, numbered, main)
             refused = [why for data, why in (found_png.numbered or {}).values() if data == b""]
             if found_png.outcome not in ("re-exported", "current") or refused:
@@ -1719,10 +1722,8 @@ def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARD
                 continue
             if found_png.outcome == "re-exported":
                 files[main] = found_png.data
-                followers = [p for p in dups.get(rel, []) if p in tree]
-                wanted = _git_bytes(clone, [tree[p] for p in followers]) if followers else {}
-                files.update(png_export.follow(png, found_png.image, {p: png_export.open_png(wanted[tree[p]])
-                                                                       for p in followers if tree[p] in wanted}))
+                files.update(png_export.follow(png, found_png.image, {p: png_export.open_png(blobs[tree[p]])
+                                                                       for p in mine if p not in pictured}))
             files.update({path: data for path, (data, _) in (found_png.numbered or {}).items() if data})
         out.files.update(files)
         out.cards.append(rel)

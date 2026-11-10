@@ -1697,6 +1697,40 @@ class CardValidator:
         return problems
 
 
+def picture_numbers(psd: PSDImage, paths) -> dict:
+    """
+    {PNG path: n}: the tagged PSD's picture each PNG is (§9). NameN.png: N. A picture-only duplicate (Gust_of_Trees.png,
+    owner 11-09): the tag no NameN.png has whose printed title is its card name, one to one. {} untagged.
+    """
+    tags = variants_of(psd)
+    if len(tags) < 2:
+        return {}
+    out, rest = {}, []
+    for path in paths:
+        number = fullmatch(r"(?is).*?(\d{1,2})\.png", path)
+        if number and int(number.group(1)) in tags[1:]:
+            out[path] = int(number.group(1))
+        else:
+            rest.append(path)
+    free = [n for n in tags[1:] if n not in out.values()]
+    if not rest or not free:
+        return out
+    texts = [layer for layer in psd.descendants() if layer.kind == "type" and EFFECT_LAYER_TAG not in layer.name]
+    titles = {}
+    for n in [1] + free:
+        with variant_view(psd, n):
+            found = PSDParser.reading(PSDParser.title_layers(psd, texts, ""))
+            titles[n] = name_key(" ".join(title_text(layer.text) for layer in found))
+    keys = {path: name_key(card_name(path)) for path in rest}
+    for n in free:
+        if not titles[n] or titles[n] == titles[1] or list(titles.values()).count(titles[n]) > 1:
+            continue
+        matched = [path for path, key in keys.items() if key == titles[n]]
+        if len(matched) == 1:
+            out[matched[0]] = n
+    return out
+
+
 # ========================
 # Module Exports
 # ========================
@@ -1718,6 +1752,7 @@ __all__ = [
     'base_name',
     'layer_tag',
     'named_after_text',
+    'picture_numbers',
     'shown_in',
     'stars_from_psd',
     'title_text',

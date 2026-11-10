@@ -69,7 +69,7 @@ from commands.card_models import APOSTROPHE, straight
 from commands.font_check import _get, _value, layer_fonts
 from commands.psd_edit import BADGE_KEYS, BADGE_TAGS, ICON_FONT, Refused, badge_spans, badge_tags
 from commands.psd_parser import (EFFECT_LAYER_TAG, ICON_FONT_PREFIX, TAG, CardValidator, PSDParser, base_name, layer_tag,
-                                 shown_in, star_icon_name, variant_view, variants_of)
+                                 picture_numbers, shown_in, star_icon_name, variant_view, variants_of)
 from commands.psd_regions import (STATS as STAT_PATTERNS, bar_box, clip, comp_bars, comp_stat, comp_value, overlay_words,
                                   stat_rows, union_box)
 
@@ -612,6 +612,9 @@ def rule_variants(psd: PSDImage, rel: str, pngs: Optional[frozenset]) -> list:
     if pngs is not None:
         stem = rel[:len(rel) - 4]
         have = [n for n in variants_of(psd) if f"{stem}{'' if n == 1 else n}.png".lower() in pngs]
+        folder = stem[:stem.rfind("/") + 1].lower()
+        others = [p for p in pngs if p.startswith(folder) and "/" not in p[len(folder):] and not p[len(p) - 5].isdigit()]
+        have += sorted(set(picture_numbers(psd, others).values()) - set(have))   # a drawn duplicate's (owner 11-09)
         missing = tuple(f"{basename(stem)}{'' if n == 1 else n}.png" for n in variants_of(psd) if n and n not in have)
         if missing:
             out.append(Issue("R12", f"tagged pictures without their PNG: {_list(missing)}", missing))

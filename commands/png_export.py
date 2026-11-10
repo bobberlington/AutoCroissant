@@ -57,7 +57,7 @@ from psd_tools.constants import ColorMode, Resource, Tag
 
 import commands.psd_edit as psd_edit
 from commands.psd_edit import Refused
-from commands.psd_parser import TITLE_REGION_RATIO, layer_tag
+from commands.psd_parser import TITLE_REGION_RATIO, layer_tag, picture_numbers
 from commands.psd_regions import fx_pad, stat_rows
 
 # ========================
@@ -708,14 +708,14 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
            main: str = "", fonts: Optional[Callable] = None) -> Export:
     """
     _export, and on a PSD with variant tags (PARTS_EDITOR.md §7) each tagged picture's own PNG made as the bake makes
-    it (render_picture: drawn as that picture, the bake's gates; the stored image shows the saved picture only), a
-    tagged picture without its PNG beside main (NameN.png) rendered whole (new_picture). Numbered PNGs of no tag keep
+    it (render_picture: drawn as that picture, the bake's gates; the stored image shows the saved picture only; a
+    picture-only duplicate in numbered is the picture psd_parser.picture_numbers says), a tagged picture without its PNG
+    beside main (NameN.png) rendered whole (new_picture). Numbered PNGs of no tag keep
     G8's delta transfer. Export.numbered: path -> (bytes, "") written, (None, "") unchanged, (b"", why) refused.
     fonts: gives MDW/Fonts for faces (card_guards.Source.fonts_for): _restyled lays out the restyled text in them.
     """
     tags = set(psd_edit.variants_of(new))
-    tagged = {path: n for path in (numbered or {}) for n in [picture_number(path)] if n in tags and n != 1} \
-        if len(tags) > 1 else {}
+    tagged = picture_numbers(new, list(numbered or {}))     # a drawn duplicate's own name too (owner 11-09)
     rest = {p: i for p, i in (numbered or {}).items() if p not in tagged}
     if len(tags) > 1 and not _saved_as_one(old, new):   # Name.png is picture 1, whatever the PSD was saved showing
         found = _as_picture(old, new, old_png, rest, 1, fonts)

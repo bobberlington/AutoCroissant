@@ -51,7 +51,7 @@ from commands.card_models import RAID_STARS, card_name
 from commands.card_preview import outcome, resolve
 from commands.card_standards import _bar_art
 from commands.github_api import token_from_env
-from commands.psd_parser import EFFECT_LAYER_TAG, variants_of
+from commands.psd_parser import EFFECT_LAYER_TAG, picture_numbers, variant_view, variants_of
 from commands.psd_regions import STATS, bar_box, comp_bars, linked_items, placed_data, stat_rows
 from global_config import CARD_REPO, EDITS_PATH, ICON_MANIFEST_PATH
 
@@ -621,11 +621,14 @@ def check_card(ctx: Context, rel: str) -> dict:
         notes.append(FX_NOTE.format(layers=", ".join(unread)))
     rows = [group for found in stat_rows(psd).values() for group, _, _ in found]
     counted = bool(rows) and all(psd_edit.counted_row(group) for group in rows)     # the picture is the data
-    reads = read_picture(psd, image, cells=style in ("new", "few")) \
-        if style and image is not None and not counted and len(variants_of(psd)) < 2 else {}
+    with variant_view(psd, 1):                  # a tagged PSD: Name.png is picture 1
+        reads = read_picture(psd, image, cells=style in ("new", "few")) \
+            if style and image is not None and not counted else {}
     notes += edit_notes(ctx, rel, psd, parsed, style, image)
-    for path in snapshot.dup_pictures().get(rel, []) if image is not None else ():   # nothing redraws these (owner 11-07)
-        if png_export.drawn_apart(psd, image, png_export.open_png(snapshot.fetch(snapshot.sha(path)))):
+    dups = snapshot.dup_pictures().get(rel, []) if image is not None else []
+    drawn = picture_numbers(psd, [*snapshot.png_for(rel)[1], *dups]) if dups else {}    # a picture: drawn (owner 11-09)
+    for path in dups:                           # nothing redraws the others (owner 11-07)
+        if path not in drawn and png_export.drawn_apart(psd, image, png_export.open_png(snapshot.fetch(snapshot.sha(path)))):
             notes.append(DUP_NOTE.format(name=basename(path)))
     return {"card": card_name(rel), "png": png_key(snapshot, rel), "style": style, "reads": reads,
             "notes": notes, "bars": CUSTOM_NOTES[why] if style == "custom" else None,

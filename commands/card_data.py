@@ -33,11 +33,11 @@ from requests.exceptions import RequestException
 
 from global_config import (AUTHORS_PATH, CARD_BRANCH, CREATED_PATH, EDITS_PATH, ICON_MANIFEST_PATH, RULEBOOK_DIR, RULEBOOK_SRC, RULES_PATH,
                            STARS_DIR, TYPES_DIR)
-from commands.card_edits import CardAuthors, CardDates, CardEdits
+from commands.card_edits import CardAuthors, CardDates, CardEdits, dup_pictures
 from commands import github_api, png_changes, rulebook
 from commands.card_models import CardInfo, StatsDatabase, card_name, duplicate_png, straight, straighten_card
 from commands.github_api import HEADERS, RangeError, RemotePSD, api_url, blob_text, fetch_blob, get_with_retry, range_reads
-from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser, variants_of
+from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser, picture_numbers, variants_of
 
 # ========================
 # Configuration
@@ -148,6 +148,7 @@ class CardBuild:
         self.new_blobs: dict = {}                # blob sha -> name, for cards new or changed this run (a rename's new name)
         self.reparsed: dict = {}                 # name -> (its card before, path, blob) of each card parsed (the history)
         self.variant_cards: dict = {}            # name -> its PSD's variants 2..N parsed this run (CardInfo each)
+        self.dup_pngs: dict = {}                 # PSD path -> its picture-only duplicates' PNGs (card_edits.dup_pictures)
         self.templates = None                    # psd_parts.Templates over this tree (the parts' template facts)
         self.links: dict = {}                    # PSD path -> its link record read this run (_linked; gather_links)
         self._repo_tree = None                   # psd_tools' RepoTree of the tree's files (links placed blind to case)
@@ -232,6 +233,7 @@ class CardBuild:
         self.parser = PSDParser(self.db.all_types, self.db, self._icons_from_response(resp, repository))
 
         self.edits = self._edits_from_response(resp, repository)
+        self.dup_pngs = self._dup_pngs()                # before the parse's workers fork
         problems, num_changed = self._process_files_from_response(resp, repository, output_problematic, force_update)
         authors = self._authors_from_response(resp, repository)
         self.changed += self._apply_authors(authors)
@@ -666,16 +668,38 @@ class CardBuild:
                 if problems:
                     problematic.append((path, variant, problems))
 
+    def _dup_pngs(self) -> dict:
+        """card_edits.dup_pictures of the tree; Card Edits.json unread: the stats' duplicates whose PNG is in the tree."""
+        if not self.edits_unread:
+            return dup_pictures(list(self.shas), self.edits.cards if self.edits is not None else None)
+        out: dict = {}
+        for card in self.db.stats.values():
+            original = self.db.stats.get(getattr(card, "duplicate_of", None) or "")
+            if original is not None and original.path and not getattr(card, "variant_of", None) \
+                    and duplicate_png(card) in self.shas:
+                out.setdefault(original.path, []).append(duplicate_png(card))
+        return out
+
     def _parse_psd(self, psd: PSDImage, path: str, name: str, existing: Optional[CardInfo]) -> tuple:
         """
         (the card, its variants or None); a PSD with variant tags (PARTS_EDITOR.md §9) is parsed once per picture:
         variant 1 is the card, variants 2..N wait in variant_cards once kept (named after their PNG: "A Snack2"). A
-        picture without its PNG in the tree is a problem on its card.
+        picture without its PNG in the tree is a problem on its card. A picture a picture-only duplicate's PNG is
+        (picture_numbers: Gust_of_Trees.png, owner 11-09) is no variant: the duplicate stays _sync_duplicates' copy.
         """
         pictures = variants_of(psd)
         if len(pictures) < 2:
             return (self.parser.parse(psd, path, existing), None)
+        dups = self.dup_pngs.get(path, [])
+        if dups:
+            folder, stem = path[:path.rfind("/") + 1], splitext(basename(path))[0]
+            drawn = picture_numbers(psd, [f"{folder}{stem}{n}.png" for n in pictures[1:]
+                                          if f"{folder}{stem}{n}.png" in self.shas] + dups)
+            apart = {n for png, n in drawn.items() if png in dups}
+            pictures = [n for n in pictures if n not in apart]
         card = self.parser.parse(psd, path, existing, variant=1)
+        if len(pictures) < 2:
+            return (card, None)
         cards = [card]
         for n in pictures[1:]:
             own = f"{name}{n}"

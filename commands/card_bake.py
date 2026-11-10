@@ -73,7 +73,7 @@ from commands.git_commit import (API_TIMEOUT, AUTHOR, COMMIT_TRIES, GIT_TIMEOUT,
                                  commit_info, git, local_commit, plural, ref_head)
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_edit import Refusal, Refused
-from commands.psd_parser import shown_in
+from commands.psd_parser import picture_numbers, shown_in
 from global_config import (AUTHORS_PATH, CARD_BRANCH, CARD_REPO, CREATED_PATH, EDITS_PATH, FONT_DIRS_ENV,
                            ICON_MANIFEST_PATH, LOCAL_DIR_LOC, RATINGS_PATH, RULES_PATH, STARS_DIR, TYPES_DIR)
 
@@ -255,11 +255,13 @@ class Snapshot:
                     return number.group(1) + ".psd"
         return ""
 
-    def dup_pictures(self) -> dict:
-        """card_edits.dup_pictures of the tree: {PSD path: [picture-only duplicates]}; Card Edits.json read once."""
+    def dup_pictures(self, cards: Optional[dict] = None) -> dict:
+        """card_edits.dup_pictures of the tree: {PSD path: [picture-only duplicates]}; Card Edits.json read once (cards:
+        its "cards", read already)."""
         if "_dups" not in self.__dict__:
             try:
-                cards = loads(self.fetch(self.sha(self.edits_path))).get("cards") if self.edits_path else None
+                if cards is None:
+                    cards = loads(self.fetch(self.sha(self.edits_path))).get("cards") if self.edits_path else None
             except Exception:                   # unread: no duplicate follows this run
                 print(format_exc(), file=stderr)
                 cards = None
@@ -735,7 +737,8 @@ def plan_rename(snapshot: Snapshot, card: Card, claimed: frozenset = frozenset()
         return
     files = {card.rel: stem + card.rel[len(card.rel) - 4:]}
     for n, png in [(1, card.png)] * bool(card.png) + [(n, p) for n, p in sorted(card.pictures.items()) if n != 1]:
-        files[png] = stem + ("" if n == 1 else str(n)) + png[len(png) - 4:]
+        if n == 1 or fullmatch(escape(old_stem) + r"\d+", basename(png)[:len(basename(png)) - 4], IGNORECASE):
+            files[png] = stem + ("" if n == 1 else str(n)) + png[len(png) - 4:]   # a drawn duplicate keeps its name
     keys = {CardAuthors.key(card_name(new)) for new in files.values()}
     if keys & claimed:
         raise Refused("unsupported-card", f"name: another card of this run takes the name {name!r}: the files can't take it", "name")
@@ -922,9 +925,10 @@ def card_template(snapshot: Snapshot, work: str, card: Card, parsed: dict) -> Op
     return cache[path], basename(path)[:len(basename(path)) - 4]
 
 
-def pictures_of(psd, card: Card, duplicates: list) -> dict:
+def pictures_of(psd, card: Card, duplicates: list, dups=()) -> dict:
     """
-    The pictures of a PSD with variant tags: {n: PNG repo path}, NameN.png for each tag n (§9); {} for an untagged PSD.
+    The pictures of a PSD with variant tags: {n: PNG repo path}, NameN.png for each tag n (§9), a picture-only duplicate
+    (dups) for the tag picture_numbers gives it (Gust_of_Trees.png, owner 11-09); {} for an untagged PSD.
     Raises Refused("unsupported-card") for a tag without its PNG.
     """
     numbers = psd_edit.variants_of(psd)
@@ -933,6 +937,7 @@ def pictures_of(psd, card: Card, duplicates: list) -> dict:
     stem = basename(card.rel[:len(card.rel) - 4])
     found = {int(m.group(1)): path for path in duplicates
              for m in [fullmatch(escape(stem) + r"(\d+)", basename(path)[:len(basename(path)) - 4], IGNORECASE)] if m}
+    found.update({n: path for path, n in picture_numbers(psd, [*duplicates, *dups]).items() if path in dups})
     missing = [n for n in numbers if n != 1 and n not in found]
     if missing:
         raise Refused("unsupported-card", f"picture {missing[0]} has no PNG ({stem}{missing[0]}.png): export it")
@@ -1300,9 +1305,14 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                 return
         if not card.png:
             raise Refused("unsupported-card", NO_PNG)
-        if duplicates:                          # a PSD with variant tags bakes each picture (§4.9); untagged, refused
-            card.pictures = pictures_of(PSDImage.open(join(folder, "old", basename(card.rel))), card, duplicates)
-            if not card.pictures:
+        dups = snapshot.dup_pictures().get(card.rel, [])
+        if duplicates or dups:                  # a PSD with variant tags bakes each picture (§4.9); untagged, refused
+            if not duplicates:                  # _printed_already fetched it otherwise
+                snapshot.fetch(card.psd_sha, join(folder, "old", basename(card.rel)))
+            tagged = PSDImage.open(join(folder, "old", basename(card.rel)))
+            if duplicates or picture_numbers(tagged, dups):     # a drawn duplicate's picture (owner 11-09)
+                card.pictures = pictures_of(tagged, card, duplicates, dups)
+            if not card.pictures and duplicates:
                 raise Refused("duplicate", "numbered PNGs share the PSD: " + ", ".join(basename(p) for p in duplicates)
                               + " (tag the variant layers: PARTS_EDITOR.md §9)")
         if card.view is not None and card.view not in (card.pictures or {1: card.png}):
@@ -1462,7 +1472,8 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
 def _follow_dups(snapshot: Snapshot, card: Card, folder: str) -> None:
     """The card's picture-only duplicates take its PNG's change in the same commit (png_export.follow, owner 11-07,
     silent); one drawn apart from the PSD stays as it is (card_checks flags it)."""
-    dups = [path for path in snapshot.dup_pictures().get(card.rel, []) if path not in card.files]
+    dups = [path for path in snapshot.dup_pictures().get(card.rel, [])
+            if path not in card.files and path not in card.pictures.values()]   # a picture is drawn, never follows
     if not dups or not card.files.get(card.png):
         return
     old = Image.open(join(folder, "old", basename(card.png)))
@@ -1928,6 +1939,7 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
             edits = None
             report.note = f"{snapshot.edits_path} isn't JSON: {error}"
         if edits is not None:
+            snapshot.dup_pictures(edits.cards)  # its duplicates from this read (bake_card's pictures)
             known = load_verdicts(verdicts)
             cards = select(edits, snapshot, card)
             for one in cards:

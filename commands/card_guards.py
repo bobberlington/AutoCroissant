@@ -84,6 +84,7 @@ from commands.git_commit import (AUTHOR, COMMIT_TRIES, NO_LAZY, Transient, api, 
                                  plural, ref_head, token)
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_edit import Refused
+from commands.psd_parser import picture_numbers
 from global_config import CARD_REPO, EDITS_PATH, FONT_DIRS_ENV, ICON_MANIFEST_PATH, STARS_DIR, TYPES_DIR
 
 # ========================
@@ -199,6 +200,7 @@ class Job:
     pushed: dict = field(default_factory=dict)  # numbered PNG path -> blob the push brought (recompressed only)
     convert: bool = False                       # rename: its links repaired too (its folder depth changed, G4)
     dups: dict = field(default_factory=dict)    # picture-only duplicate path -> blob at after (card_edits.dup_pictures)
+    dups_pushed: dict = field(default_factory=dict)     # of those, the ones the push brought -> that blob
     base_png: str = ""                          # pair: the PNG's blob before the push (its pictures follow from it)
     font_kept: bool = False                     # its last change before the push had this icon font (Source.font_kept)
     login: str = NOBODY
@@ -583,7 +585,10 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
     except Exception:                           # unread: they stay as they are this push
         print(format_exc(), file=stderr)
         edits = None
-    dups = {psd: {p: tree[p][1] for p in found if p not in pngs} for psd, found in dup_pictures(list(tree), edits).items()}
+    every_dup = dup_pictures(list(tree), edits)
+    dups = {psd: {p: tree[p][1] for p in found if p not in pngs} for psd, found in every_dup.items()}
+    dups_pushed = {psd: {p: pngs[p].new for p in found if p in pngs and pngs[p].status in "AM"} for psd, found in every_dup.items()}
+    dup_pngs = {p for found in every_dup.values() for p in found}
 
     def pushed(path: str) -> dict:
         return {p: pngs[p].new for p in snapshot.png_for(path)[1] if p in pngs and pngs[p].status in "AM"}
@@ -613,7 +618,7 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
             elif moved:
                 jobs.append(Job(change.path, "convert", "", change.new, login=login, commit=commit))
             continue
-        job.dups = dups.get(change.path, {})
+        job.dups, job.dups_pushed = dups.get(change.path, {}), dups_pushed.get(change.path, {})
         if png and png in pngs and pngs[png].status in "AM":
             job.case, job.png, job.png_new, job.numbered = "pair", png, pngs[png].new, numbered(change.path)
             job.base_png = pngs[png].old if pngs[png].status == "M" else ""
@@ -645,7 +650,8 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
             continue
         psd = (exact or found or [None])[0]
         if psd is None or psd in pushed_psds:
-            if psd is None and change.status in "AM" and not snapshot.duplicate_of(CardAuthors.key(card_name(path))):
+            if psd is None and change.status in "AM" and not snapshot.duplicate_of(CardAuthors.key(card_name(path))) \
+                    and path not in dup_pngs:   # a picture-only duplicate: its PSD is its dup_of's
                 if not any(p for p in pushed_psds if _key(p) == _key(path)):
                     notes.append(f"`{path}` has no PSD beside it")
             continue
@@ -985,6 +991,10 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
     new_bytes = source.blob(job.psd_new)
     new = png_export.open_psd(new_bytes, job.psd)
     new.repo_path = job.psd                     # the link step places and judges its links from here
+    drawn = picture_numbers(new, [*job.numbered, *job.dups, *job.dups_pushed]) if job.dups or job.dups_pushed else {}
+    for path in drawn:                          # a picture-only duplicate the PSD draws: a picture of it (owner 11-09)
+        if path in job.dups or path in job.dups_pushed:
+            job.numbered[path] = job.dups.pop(path, None) or job.dups_pushed.pop(path)
     if job.case not in ("png-only", "whole"):   # a PSD write below reads its own
         result.links = _links(source, new, job.psd, job.psd_new)
     if job.case == "convert":
@@ -1036,7 +1046,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
             refused = []
             for path, (data, why) in sorted(found.numbered.items()):
                 if data:
-                    tagged = path not in numbered or png_export.picture_number(path) in found.pictures
+                    tagged = path not in numbered or path in drawn or png_export.picture_number(path) in found.pictures
                     result.writes.append({"path": path, "file": _save(out, path, data), "sha": blob_sha(data), "kind": "png",
                                           "line": "made by the bot's render of its picture (variant tags)" if tagged
                                           else "updated with the same change (delta transfer)"})
@@ -1138,10 +1148,11 @@ def _pair_pictures(source: Source, job: Job, result: Result, old, new, out: str,
     if not left:
         return
     tags = set(psd_edit.variants_of(new))
+    numbers = picture_numbers(new, [*job.numbered, *job.pushed])   # a drawn duplicate's too
     base, pushed = (png_export.open_png(source.blob(sha)) for sha in (job.base_png, job.png_new))
     for path, sha in sorted(left.items()):
         image = png_export.open_png(source.blob(sha))
-        n = png_export.picture_number(path)
+        n = numbers.get(path)
         if len(tags) > 1 and n in tags:
             data, _ = png_export.render_picture(old, new, image, n, faces)
         else:
