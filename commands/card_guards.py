@@ -197,7 +197,7 @@ class Job:
     psd_anchor: str = ""                        # stale: the PSD as of its PNG's last change, when a burst's earlier push
     anchor_commit: str = ""                     # changed the PSD without the PNG (G5's second try); that commit
     left: str = ""                              # rename: the old PNG, still at its old path
-    pushed: dict = field(default_factory=dict)  # numbered PNG path -> blob the push brought (recompressed only)
+    pushed: dict = field(default_factory=dict)  # numbered or drawn dup PNG -> blob the push brought (recompressed only)
     convert: bool = False                       # rename: its links repaired too (its folder depth changed, G4)
     dups: dict = field(default_factory=dict)    # picture-only duplicate path -> blob at after (card_edits.dup_pictures)
     dups_pushed: dict = field(default_factory=dict)     # of those, the ones the push brought -> that blob
@@ -991,10 +991,14 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
     new_bytes = source.blob(job.psd_new)
     new = png_export.open_psd(new_bytes, job.psd)
     new.repo_path = job.psd                     # the link step places and judges its links from here
-    drawn = picture_numbers(new, [*job.numbered, *job.dups, *job.dups_pushed]) if job.dups or job.dups_pushed else {}
+    drawn = picture_numbers(new, [*job.numbered, *job.pushed, *job.dups, *job.dups_pushed]) \
+        if job.dups or job.dups_pushed else {}
     for path in drawn:                          # a picture-only duplicate the PSD draws: a picture of it (owner 11-09)
-        if path in job.dups or path in job.dups_pushed:
-            job.numbered[path] = job.dups.pop(path, None) or job.dups_pushed.pop(path)
+        if path in job.dups:
+            job.numbered[path] = job.dups.pop(path)
+        elif path in job.dups_pushed:           # the push's: kept as a pushed NameN.png is
+            job.pushed[path] = job.dups_pushed.pop(path)
+            _recompress(out, result, path, partial(source.blob, job.pushed[path]), job.pushed[path])
     if job.case not in ("png-only", "whole"):   # a PSD write below reads its own
         result.links = _links(source, new, job.psd, job.psd_new)
     if job.case == "convert":
@@ -1009,7 +1013,8 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
     if job.case in ("stale", "beside"):
         old_png = png_export.open_png(source.blob(job.png_old))
         numbered = {path: png_export.open_png(source.blob(sha)) for path, sha in job.numbered.items()}
-        found = png_export.export(old if job.case == "stale" else None, new, old_png, numbered, job.png, faces)
+        found = png_export.export(old if job.case == "stale" else None, new, old_png, numbered, job.png, faces,
+                                  list(job.pushed))
         # a burst: when the old PNG shows the anchor rather than the old PSD (not a PNG pushed before its PSD), the
         # anchored verdict, a refusal too (a small push-1 change hides under G5's bar, review 2026-10-24); else, checked,
         # a G5/G6 refusal retried, the anchored export kept unless it refuses
@@ -1017,7 +1022,7 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
             anchor = png_export.open_psd(source.blob(job.psd_anchor), job.psd)
             matched = png_export.shows(old_png, anchor, old)
             if matched or (not found.unchecked and found.outcome == "refused" and found.gate in ("G5", "G6")):
-                anchored = png_export.export(anchor, new, old_png, numbered, job.png, faces)
+                anchored = png_export.export(anchor, new, old_png, numbered, job.png, faces, list(job.pushed))
                 if matched or anchored.outcome != "refused":   # the PNG matched the PSD before the burst
                     found = anchored
                     result.notes.append((f"checked against the PSD as of {basename(job.png)}'s last change "

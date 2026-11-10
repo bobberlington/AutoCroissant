@@ -705,7 +705,7 @@ def _composite_moved(old: PSDImage, new: PSDImage, before: Optional[Image.Image]
 # Public API Functions
 # ========================
 def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbered: Optional[dict] = None,
-           main: str = "", fonts: Optional[Callable] = None) -> Export:
+           main: str = "", fonts: Optional[Callable] = None, kept=()) -> Export:
     """
     _export, and on a PSD with variant tags (PARTS_EDITOR.md §7) each tagged picture's own PNG made as the bake makes
     it (render_picture: drawn as that picture, the bake's gates; the stored image shows the saved picture only; a
@@ -713,9 +713,11 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
     beside main (NameN.png) rendered whole (new_picture). Numbered PNGs of no tag keep
     G8's delta transfer. Export.numbered: path -> (bytes, "") written, (None, "") unchanged, (b"", why) refused.
     fonts: gives MDW/Fonts for faces (card_guards.Source.fonts_for): _restyled lays out the restyled text in them.
+    kept: picture PNG paths a push brought (kept as pushed): no PNG made for their tags.
     """
     tags = set(psd_edit.variants_of(new))
-    tagged = picture_numbers(new, list(numbered or {}))     # a drawn duplicate's own name too (owner 11-09)
+    tagged = picture_numbers(new, [*(numbered or {}), *kept])   # a drawn duplicate's own name too (owner 11-09)
+    held = {tagged.pop(path) for path in kept if path in tagged}
     rest = {p: i for p, i in (numbered or {}).items() if p not in tagged}
     if len(tags) > 1 and not _saved_as_one(old, new):   # Name.png is picture 1, whatever the PSD was saved showing
         found = _as_picture(old, new, old_png, rest, 1, fonts)
@@ -725,7 +727,7 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
         found.numbered[path] = render_picture(old, new, numbered[path], n, fonts)
     if main and len(tags) > 1:
         stem = main[:len(main) - 4]
-        for n in sorted(tags - {1} - set(tagged.values())):
+        for n in sorted(tags - {1} - set(tagged.values()) - held):
             found.numbered[f"{stem}{n}.png"] = new_picture(new, n)
     found.pictures = sorted(tags - {1}) if len(tags) > 1 else []
     return found
