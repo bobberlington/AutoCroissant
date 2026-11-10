@@ -451,6 +451,31 @@ out([r("abcd efgh ijkl", 0, null), r("abcd efgh ijkl", 100, [95, 0, 400, 0]), r(
     assert out == [[[[200, 260]], "center", 20], [[[200, 230], [230, 260]], "left", 20], [[[200, 230], [230, 260]], "center", 20]]
 
 
+@needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "bakeInk"), reason="no bakeInk in mockup.js")
+def test_edited_words_take_the_bakes_colours(tmp_path):
+    """As psd_edit edit_styles: a changed word takes the commonest colour of what it replaces (Bobberlington's part
+    'Generate' -> 'Draw' stays blue; Supreme Jeh'Oul's red words around its green 'Poison'); typed-in text its run's,
+    or the main ink between two colours; past INK_CELLS none (inkOf stands in)."""
+    out = node(tmp_path, """
+const R = "#ff0000", G = "#66f24f", B = "#29a3e9", O = "#ff6c19";
+const runs = (t, ws) => ws.map(([w, c]) => [t.indexOf(w), t.indexOf(w) + w.length, c]);
+const show = (t, r) => r && r.map(x => [t.slice(x.start, x.end), x.color]);
+const bob = "(1CD) Inflict 2T Burn.\\n(OD) Generate a Gasoline and Bomb.", part = "(OD) Draw a Gasoline and Bomb.";
+const jeh = "(1CD) Deploy a Poison Circle on any slot.", now = "(1CD) Create a Poison Circle on a slot of your choice.";
+const ink = (t, ws) => ({ ability: t, ink: { ability: runs(t, ws) } });
+const typed = (was, ws, t) => show(t, m.baseInk(ink(was, ws), "ability", t));
+out([show(part, m.baseInk(ink(bob, [["Inflict 2T Burn.", O], ["Generate a Gasoline and Bomb.", B]]), "ability", part, "(OD) Generate a Gasoline and Bomb.")),
+  show(now, m.baseInk(ink(jeh, [["Deploy a", R], ["Poison", G], ["Circle on any slot.", R]]), "ability", now)),
+  typed("Deal 3 damage.", [["3 damage", R]], "Deal 3 big damage."), typed("Burn Freeze.", [["Burn", O], ["Freeze", B]], "Burn or Freeze."),
+  m.bakeInk("a".repeat(800), [{ start: 0, end: 1, color: R }], "b".repeat(800))]);""")
+    R, G, B = "#ff0000", "#66f24f", "#29a3e9"
+    assert out[0] == [["Draw a Gasoline and Bomb.", B]]
+    assert out[1] == [["Create a", R], ["Poison", G], ["Circle on a slot of your choice.", R]]
+    assert out[2] == [["3 big damage", R]] and out[3] == [["Burn", "#ff6c19"], ["Freeze", B]]
+    assert out[4] is None
+
+
 # ---- the build's web fonts (build_site.py)
 @pytest.fixture(scope="module")
 def bs():

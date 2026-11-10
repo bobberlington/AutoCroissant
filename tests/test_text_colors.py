@@ -97,7 +97,7 @@ const out = {{
     const c = {{ ability: "Inflict Burning now.\\nGain 2 HP.", ink: {{ ability: [[8, 15, "#ff7a1a"], [26, 30, "#00ff00"]] }} }}, now = "Inflict Burning now.\\nGain 3 HP.";
     T.anchorInks([c]);
     return {{ drawn: M.colourize(M.tokenize(now, {{}}), now, null, "ability", null, M.baseInk(c, "ability", now)).flat(2).filter(p => p.color).map(p => [p.text, p.color]),
-      part: M.baseInk(c, "ability", "Gain 3 HP.", "Gain 2 HP.") }};
+      part: M.baseInk(c, "ability", "Gain 3 HP.", "Gain 2 HP."), bake: !!M.bakeInk }};
   }})() : null,
   chart: M.colourize.toString().includes("fills") ? (() => {{   // capitalised status words in the chart's, over all
     const t = "Inflict Burning. burning foes.";
@@ -138,8 +138,10 @@ process.stdout.write(JSON.stringify(out));
     assert ink["base"] == [{"start": 8, "end": 15, "color": "#ff7a1a"}, {"start": 22, "end": 25, "color": "#0060ff"}] and ink["name"] is None
     assert ink["drawn"] == [{"start": 8, "end": 15, "color": "#ff7a1a"}, {"start": 22, "end": 25, "color": "#ffffff"}] and ink["at"] == "#ff7a1a"
     assert ink["low"] == '<span class="tc lo-l" style="color:#ffff00">a</span><span class="tc lo-d" style="color:#202020">b</span>'
-    if out["mock"] is not None:                         # an edit cuts into "2": "HP" keeps its colour, "3" none
-        assert out["mock"] == {"drawn": [["Burning", "#ff7a1a"], ["HP", "#00ff00"]], "part": [{"start": 6, "end": 9, "color": "#00ff00"}]}
+    if out["mock"] is not None:                         # as the bake: "3" takes the "2"'s colour (bakeInk); before it none
+        three = out["mock"].pop("bake")
+        assert out["mock"] == {"drawn": [["Burning", "#ff7a1a"], *[[w, "#00ff00"] for w in (["3", "HP"] if three else ["HP"])]],
+                               "part": [{"start": 5 if three else 6, "end": 9, "color": "#00ff00"}]}
     if out["chart"] is not None:                        # as psd_edit's status words; lowercase stays the field's
         assert out["chart"] == [["Inflict", "#ffffff"], ["Burning", "#ff7a1a"], [".", "#ffffff"], ["burning", "#ffffff"], ["foes.", "#ffffff"]]
 
