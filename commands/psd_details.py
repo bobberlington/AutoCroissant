@@ -3,8 +3,9 @@ The PSD facts behind the website's card "Details" dropdown: fonts, text layers, 
 style, stat-row encoding, status-word layers, template deviations, the header's star and type icon boxes (where the bake
 would put them: the website mock-up's, psd_edit's geometry), a compact layer tree, the editor's parts (psd_parts,
 VERSION 2), each type layer's colour runs (VERSION 3), the most a card's own stat display shows (stat_caps, VERSION
-4: the website refuses more) and how each type layer is set (frame, px, hx, track: VERSION 5; lf, badges: VERSION 6). One
-record per card PSD, keyed by its git blob sha, in the card data's db/psd_details.json (the Card sync Action's build).
+4: the website refuses more) and how each type layer is set (frame, px, hx, track: VERSION 5; lf, badges, just: VERSION
+6). One record per card PSD, keyed by its git blob sha, in the card data's db/psd_details.json (the Card sync Action's
+build).
 
 gather(psd, rel, name, index, vocab) -> the record: pure, never raises for a card (a failed section is a short
 "error: ..." string). load, text_of (the file's text), prune(cards, shas) to the tree. The build
@@ -41,7 +42,7 @@ from commands.psd_regions import STATS, badge_layers, comp_bars, comp_creature, 
 # ========================
 # Configuration
 # ========================
-VERSION = 6                                 # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"; 5: "frame", "px"; 6: "lf", "badges"
+VERSION = 6                                 # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"; 5: "frame", "px"; 6: "lf", "badges", "just"
 TEXT_CHARS = 2000                           # text kept per type layer (whole: the website lines its colours up with the card's)
 TREE_CHILDREN = 80                          # children kept per group
 TREE_DEPTH = 8                              # groups nested deeper show one "more" entry
@@ -196,7 +197,8 @@ def _set(layer, font: Optional[str] = None) -> dict:
     """How a type layer is set, in canvas px (the mock-up's wrap): box text's "frame"; "px", the height most of its letters
     outside the icon font are set at; their width over height ("hx") and tracking ("track") when not 1 and 0; "lf", the
     font most of them are set in, when not font; "badges", [em, track] per badge span (psd_edit.badge_spans; null when
-    not in the icon font), em its size over the letters'. {} when rotated."""
+    not in the icon font), em its size over the letters'; "just", 0 or 1 when every paragraph is left or right set. {}
+    when rotated."""
     from psd_tools.composite.text.layout import frame
     from psd_tools.composite.text.model import TextModel
     model = TextModel.from_layer(layer)
@@ -205,6 +207,9 @@ def _set(layer, font: Optional[str] = None) -> dict:
     if not sx or not sy or abs(xy) > 0.01 * sx or abs(yx) > 0.01 * sy:
         return {}
     out, letters, faces = {}, Counter(), Counter()
+    ways = {p.justification for p in model.paragraphs if model.text[p.start:p.end].strip()}
+    if ways in ({0}, {1}):
+        out["just"] = ways.pop()                # left or right set (none: centred, justified or mixed)
     box = frame(model)
     if box is not None:
         left, top, width, height = box

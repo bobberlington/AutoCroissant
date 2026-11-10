@@ -66,7 +66,7 @@ def test_record_shape_and_size(records, clone):
         assert record["fonts"] and all(e["supplied"] is True for e in record["fonts"].values())
         fonts = {font: [layer.rsplit("/", 1)[-1] for layer in e["layers"]] for font, e in record["fonts"].items()}
         assert fonts == psd_fonts(str(clone / rel))                                # the same rule as the font check
-        assert all(set(t) - {"colors", "runs", "frame", "hx", "track", "lf", "badges"} == {"layer", "id", "box", "text", "font", "size", "color", "visible", "px"}
+        assert all(set(t) - {"colors", "runs", "frame", "hx", "track", "lf", "badges", "just"} == {"layer", "id", "box", "text", "font", "size", "color", "visible", "px"}
                    for t in record["text"])
         assert all(t["color"] in t.get("colors", [t["color"]]) for t in record["text"] if t["color"])     # every run's colour
         assert all(len(t["text"]) <= pd.TEXT_CHARS and (t["color"] is None or len(t["color"]) == 7) for t in record["text"])
@@ -129,10 +129,12 @@ def test_text_layers_and_template(records):
     assert "runs" not in ability                                                       # one colour
     name = next(t for t in doomer["text"] if t["layer"] == doomer["template"]["name_layer"])
     assert ability["frame"] == [0, 1721, 1185, 2376] and ability["px"] == 150.0 and "frame" not in name   # 50 pt by 3; point text
+    assert "just" not in name                                                          # centred
     virus = records[VIRUS]
     hidden = next(t for t in virus["text"] if t["layer"].startswith("Alternate/"))
     assert hidden["visible"] is False and "\n" in hidden["text"] and hidden["color"] == "#01c102"
     assert virus["template"]["name_layer"] == "Name" and "no title layer" not in virus["template"]["deviations"]
+    assert next(t for t in virus["text"] if t["layer"] == "Name")["just"] == 0         # VERSION 6: left set
     assert virus["overlays"] == [] and "overlay word layers" not in virus["template"]["deviations"]   # L7 (739c7abb)
     assert virus["fx"] == ["Names/Ability FX: 3rd: Magician", "Names/Ability FX: 2nd: Puppet", "Names/Ability FX: 1st: Slime"]
     lazarus = records[LAZARUS]
