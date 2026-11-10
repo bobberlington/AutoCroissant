@@ -77,6 +77,13 @@ PSDs at TC ea2fee7b: identical with and without it). The 21 empty abilities are 
 0 (Computer Virus has stat rows since 11-08); residual gaps 4 (Michael's Blessing, Miracle Matter, Pile Of Swords,
 Warcraftian Hunter); goldens 10/10 (`tests/test_parser_goldens.py`).
 
+Round 8 (2026-11-09, TC f8f8417a): a fresh parse of the 768 live PSDs has 0 errors and 0 problems and differs from
+db/stats.json only on the 4 cards of the accepted re-parse (Tainted Lazarus, Miracle Matter, Twin Emperors, Flip).
+After it, residual gaps go 4 -> 3 (Michael's Blessing, Pile Of Swords, Warcraftian Hunter: layout gaps). The 21 empty
+abilities are blank on the card too. OCR of the PNGs (macOS Vision, 763 cards) in both directions finds only art text
+and badge noise. Dry for code: no parser rule. Latent only: `_inject_type_names` still strips a line-ending
+apostrophe (`rstrip(" '\n")`, cdfecea7); no Ability line in live, MDW/Unfinished or Morgue PSDs ends in one.
+
 Metric definitions (verified 2026-07-11; counts updated 2026-10-23):
 
 - **Stored problem cards**: entries in stats.pkl whose `problem` field is non-empty. Today 0 (20_Creature_Types has a
@@ -571,6 +578,7 @@ These were all tried. Re-proposing one without new evidence wastes a campaign cy
 | "Clean up" `x[len(x)-1]` into `x[-1]` in commands/psd_analyzer.py | `dd800bc` (2026-01-30) changed `bboxes[-1]` → `bboxes[len(bboxes)-1]`; the negative-indexing ban dates from cythonization `f7c915c` | This file compiles with Cython `wraparound=False`; negative indices are undefined in compiled form. The idiom is deliberate (autocroissant-change-control non-negotiables) |
 | Trust commit messages over diffs | `dd800bc` is titled just "Update psd_analyzer.py" yet carries the wraparound fix; `081b1fd` is titled "fix bug..." yet also silently deleted the mismatch validator | Always `git show <hash> -- commands/psd_analyzer.py` and read the hunks. History messages in this repo are sometimes jokes or vague |
 | Hand-edit stats.pkl to "fix" one card | The cca0aaf → eb9aa84 bad-pickle commit/revert (2025-11-10) is what mistrusted pickle surgery earns | Edit the card on the website (Card Edits.json). And know its semantics, below |
+| Read a header type from a smart object linked to `Types/<x>`, whatever its layer is named (or strip " copy" from layer names) | Round 8 census (2026-11-09, TC f8f8417a): on 768 live PSDs it matches 22 visible layers on 8 cards, all art or part of one icon: Paintbrush's 14 paint splashes (Creature Types, Item Types), the `debuff copy` arrow inside the debuffupgrade icon (Burning, Chilled, Frostbite, Sickness, Smoldering), Elemental World's field icon (`rock copy`, `light copy`), Bomb's 748x947 Attack-icon art. Stripping " copy" matches the same layers less Bomb's (21 on 7) | It adds wrong types to 7 cards (Bomb has attack already) and fixes none. A link says which picture a layer shows, not that it is a type icon |
 | Rename or delete a Types/ icon PNG to "fix" a type name | Not an incident yet; the 2026-10-19 icon-font work made it a cross-repo hazard | Image-layer type names, font tokens, the font manifest (which keeps old entries), emoji names and the website all key off the file stem. Add an alias instead (ttscardmaker-companion §1.7) |
 
 **Manual entries vs the next sweep:** a card edit on the website is one commit to `site/Card Edits.json` (author: a
@@ -674,3 +682,5 @@ is a token card since TTSCardMaker 1c24dd48); psd_parser.py glossary lines re-po
 
 2026-11-09 (exclusions): ABILITY_EXCLUSIONS deleted (21 → 0; the guards' R3 waiver was its last reader, with no card
 left to waive); goal paragraph, a 2026-11-09 scoreboard row, Gate 1c, the target table and the structural candidate.
+
+2026-11-09 (round 8): a round-8 note under the scoreboard (lens dry for code) and the Types/-link wrong path.
