@@ -51,6 +51,7 @@ from collections import Counter
 from copy import deepcopy
 from dataclasses import dataclass, field
 from functools import lru_cache
+from hashlib import sha1
 from io import BytesIO
 from os import makedirs, remove, replace as move_file
 from os.path import basename, getsize, join, splitext
@@ -2993,7 +2994,6 @@ def _layer_ink(layer):
 def _art_key(layer, rel: str) -> Optional[str]:
     """A picture's content: its linked file (lowercased repo path), its embedded document's blob or its pixel channels'
     sha1; None without one."""
-    from hashlib import sha1
     if layer.kind == "smartobject":
         try:
             found = layer.smart_object
@@ -4138,14 +4138,15 @@ def _by_id(psd: PSDImage) -> dict:
 
 
 def folders_gate(path: str, out_path: str, rel: str, parser: PSDParser, base: Optional[dict] = None,
-                 allow: Optional[dict] = None, tol: int = FOLDER_TOL, spots: bool = False) -> dict:
+                 allow: Optional[dict] = None, tol: int = FOLDER_TOL, spots: bool = False,
+                 memo: Optional[dict] = None) -> dict:
     """
     Gate: every layer's record as it was (a folder's name and colour aside; allow: layer id -> the record parts that
     may change too, an isolated folder's blend and the clips moved into it), gone only a hidden Curves layer or a
     folder whose layers stay, new only plain folders, no smart object's data left unused; every picture renders
     within tol and the bot reads the card the same (folder_reads: the parse and the details; the website's regions
     may change; spots: the bake's star and type spots too, which follow the stars filed in Stars). Raises Refused;
-    returns base's reads (made when None).
+    returns base's reads (made when None; memo["base"] keeps them, a refusal too).
     """
     allow = allow or {}
     before, after = PSDImage.open(path), PSDImage.open(out_path)
@@ -4178,6 +4179,8 @@ def folders_gate(path: str, out_path: str, rel: str, parser: PSDParser, base: Op
         if any(child.layer_id not in new for child in group.descendants() if not child.is_group() and child.kind != "curves"):
             raise Refused("bytes", f"{group.name!r} went missing with its layers")
     base = base if base is not None else folder_reads(before, rel, parser)
+    if memo is not None:
+        memo["base"] = base
     now = folder_reads(after, rel, parser)
     if len(base["renders"]) != len(now["renders"]):
         raise Refused("render", "the pictures changed")
@@ -4264,7 +4267,7 @@ def standard_folders(path: str, out_path: str, fonts=None, rel: str = "", parser
     left = folder_issues(card, rel, parser, art)
     if not left:
         return result
-    found = None
+    found, memo, refused = None, {"base": base}, {}     # the card read once; a refused file's sha1 -> why
     for level in FOLDER_LEVELS:
         psd = PSDImage.open(path)
         done, counts = arrange(psd, rel, types, stars, level, isolated, art)
@@ -4272,17 +4275,22 @@ def standard_folders(path: str, out_path: str, fonts=None, rel: str = "", parser
             result.tried.append((level, "nothing to change"))
             continue
         psd_edit.save_psd(psd, out_path)
+        with open(out_path, "rb") as fh:
+            made = sha1(fh.read()).digest()
+        if made in refused:                     # the same file as a level refused: the same refusal
+            result.tried.append((level, refused[made]))
+            continue
         try:
-            base = folders_gate(path, out_path, rel, parser, base)
+            folders_gate(path, out_path, rel, parser, memo["base"], memo=memo)
         except Refused as error:
-            result.tried.append((level, str(error)))
+            result.tried.append((level, refused.setdefault(made, str(error))))
             continue
         except Exception as error:              # a read the fork can't make: refused the same
-            result.tried.append((level, f"{type(error).__name__}: {error}"))
+            result.tried.append((level, refused.setdefault(made, f"{type(error).__name__}: {error}")))
             continue
         found = Foldered(done, level, counts, [], result.tried)
         break
-    found = found or Foldered(tried=result.tried)
+    found, base = found or Foldered(tried=result.tried), memo["base"]
     if _loose_icons(card)[1]:
         _icons(path, out_path, rel, parser, base, found, art)
     if isolated:
