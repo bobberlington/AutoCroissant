@@ -8393,52 +8393,61 @@ def _fits(core: tuple, spot: tuple) -> bool:
     return abs(mine - theirs) <= 2 * LAYOUT_TOL * theirs
 
 
-def _close_row(psd: PSDImage, slots: list, holders: list, height: float, others: list) -> tuple:
+def _close_row(psd: PSDImage, slots: list, spots: list, holders: list, height: float, others: list,
+               made: Optional[dict] = None) -> tuple:
     """
-    The kept icons' moves once the row closes (owner 10-26): holders[i] (None: a new icon's) takes slots[i]'s spot,
+    The row once it closes (owner 10-26): holders[i] (a kept icon's unit, or an added one's: its own hidden layer, or
+    one made from Types/, its ink at its spot in made) takes spots[i] (the slots' cores, then the spots past them),
     centred on it as before (pulled back onto the card at the row's inset), else after the icon before it in its row
     at the card's gap there, else just clear of it: the first clear of the text, the stars and the icons placed. An
     icon in its own spot stays when nothing moved before it in its row or no icon placed touches it there.
 
     Returns:
-        (moves, the layers pulled back onto the card)
+        ((dx, dy) per holder, the indices of those pulled back onto the card)
     """
+    made = made or {}
     row_of = {id(unit): r for r, row in enumerate(_rows(slots, height, False)) for unit in row}
+    rows = [row_of[id(slots[j])] if j < len(slots) else None for j in range(len(spots))]
+    for j in range(len(slots), len(spots)):     # past the row: in its row while level with the spot before
+        level = j > 0 and abs(_centre(spots[j])[1] - _centre(spots[j - 1])[1]) <= height / 2
+        rows[j] = rows[j - 1] if level else -j
     inset = max(0, min(unit.core[0] for unit in slots))
-    moves, pulled, placed, inks = [], [], [], []
+    inks_of = lambda unit, dx, dy: [(_moved_box(box, dx, dy), solid) for box, solid in made[id(unit)]] \
+        if id(unit) in made else _moved_inks(unit, dx, dy)
+    shifts, pulled, placed, inks = [], [], [], []
     for j, unit in enumerate(holders):
-        slot = slots[j]
-        same = j > 0 and row_of[id(slot)] == row_of[id(slots[j - 1])]
-        own = _moved_inks(unit, 0, 0) if unit is slot else []
-        if unit is None or (unit is slot and (not same or tuple(placed[j - 1][::2]) == tuple(slots[j - 1].core[::2])
+        spot, slot = tuple(spots[j]), slots[j] if j < len(slots) else None
+        same = j > 0 and rows[j] == rows[j - 1]
+        own = inks_of(unit, 0, 0) if unit is slot else []
+        if unit is None or (unit is slot and (not same or tuple(placed[j - 1][::2]) == tuple(spots[j - 1][::2])
                                               or not any(_inks_touch(a, b) for a in own for b in inks))):
-            placed.append(tuple(slot.core))
+            placed.append(spot)
             inks += own
+            shifts.append((0, 0))
             continue
         w, h = unit.size
-        sx, sy = _centre(slot.core)
+        sx, sy = _centre(spot)
         xs = [sx - w / 2]
         if same:
             right = placed[j - 1][2]
-            xs += [right + slot.core[0] - slots[j - 1].core[2], right]
+            xs += [right + spot[0] - spots[j - 1][2], right]
         pull = lambda x: inset if x < -_tol(max(w, h)) else x
         for x in xs:
             dx, dy = round(pull(x) - unit.core[0]), round(sy - h / 2 - unit.core[1])
-            mine = _moved_inks(unit, dx, dy)
+            mine = inks_of(unit, dx, dy)
             if _blocked(psd, mine, _moved_box(unit.core, dx, dy), others) is None and \
                     not any(_inks_touch(a, b) for a in mine for b in inks):
                 break
-        else:                                   # none clear: centred (refused later if it touches)
+        else:                                   # none clear: centred (refused, or an added one stepped down, later)
             x = xs[0]
             dx, dy = round(pull(x) - unit.core[0]), round(sy - h / 2 - unit.core[1])
-            mine = _moved_inks(unit, dx, dy)
+            mine = inks_of(unit, dx, dy)
         placed.append(_moved_box(unit.core, dx, dy))
         inks += mine
-        if dx or dy:
-            moves.append((unit.layers[0], dx, dy))
-            if pull(x) != x:
-                pulled.append(unit.layers[0])
-    return moves, pulled
+        shifts.append((dx, dy))
+        if (dx or dy) and pull(x) != x:
+            pulled.append(j)
+    return shifts, pulled
 
 
 def _grid(slots: list, height: float, extra: int) -> Optional[tuple]:
@@ -8513,7 +8522,8 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
     the icons the edit keeps stay where they are, a removed one hides, and the row closes up: a kept icon past the new
     end moves into the first free spot, centre on centre, and the icons after it slide just clear of it (_close_row);
     a new icon takes the next free spot, from the card's own hidden layer of that type (the templates keep one per
-    type) or made from its Types/ PNG, fitted to the spot and styled like the icon it replaces (else the row's last).
+    type) or made from its Types/ PNG, fitted to the spot and styled like the icon it replaces (else the row's last);
+    with icons removed too it goes through the same closing (_close_row; a made one's ink needs types_dir).
     Spots past the last icon carry the row on at its spacing, or go under a lone icon (Item_Template's column), or wrap
     clear of the title (_icon_spots); a header of two rows takes them as a grid when nothing touches (_grid). Refused per
     field: a token row ([fire] in header text), a removed type drawn as a frame or group, no icon to line a new one up
@@ -8592,14 +8602,12 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
     row_ids = {id(layer) for _, layer in images}       # the row's own icons are no stars (Pike Beam)
     stars = [layer for layer in badge_layers(psd, parser.all_types)[0] if id(layer) not in row_ids]
     texts = _texts(psd)
-    if plan.moves:                              # the icons after a moved one make room (owner 10-26)
-        plan.moves, plan.pulled = _close_row(psd, slots, [holder.get(i) for i in range(count)], size[1], texts + stars)
     library = [layer for layer in psd.descendants() if not layer.is_group() and not layer.visible
                and layer.kind in ("pixel", "smartobject") and layer.name.lower() in parser.all_types and layer.has_pixels()
                and all(parent.visible for parent in layer_parents(layer)) and not _in_stars(layer)]
 
-    def add(spots: list) -> None:               # the new icons into the free spots
-        shelf = list(library)
+    def picks(spots: list) -> list:             # the new icons: (spot index, own hidden layer or None, stem, reference)
+        shelf, out = list(library), []
         for name, i in zip(added, free):
             spot = spots[i]
             replaced = slots[i] if i < len(slots) and slots[i] in removed else None
@@ -8608,15 +8616,42 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
                         and _fits(_core(layer) or tuple(layer.bbox), spot)), None)
             if own is not None:
                 shelf.remove(own)
-                core = _core(own) or tuple(own.bbox)
-                (cx, cy), (sx, sy) = _centre(core), _centre(spot)
-                plan.show.append(own)
-                plan.moves.append((own, round(sx - cx), round(sy - cy)))
+                out.append((i, own, None, reference))
                 continue
             stem = next((t for t in parser.all_types if canonical_type(parser, t) == name), None)
             if stem is None:
                 refuse(f"no Types/ icon for {name!r}")
-            plan.icons.append((stem, spot, reference))
+            out.append((i, None, stem, reference))
+        return out
+
+    def add(spots: list, closed: Optional[dict] = None) -> None:     # the new icons into the free spots (closed: their
+        for i, own, stem, reference in picks(spots):                 # moves, or a made one's shift, as the row closed)
+            if own is not None:
+                (cx, cy), (sx, sy) = _centre(_core(own) or tuple(own.bbox)), _centre(spots[i])
+                plan.show.append(own)
+                plan.moves.append((own, *(closed or {}).get(i, (round(sx - cx), round(sy - cy)))))
+            else:
+                plan.icons.append((stem, _moved_box(spots[i], *(closed or {}).get(i, (0, 0))), reference))
+    closing = None
+    if plan.moves or (removed and added):       # the icons after a moved, removed or added one make room (owner 10-26),
+        new, made = {}, {}                      # the added ones through the same rule
+        for i, own, stem, _ in picks(spots):
+            if own is not None:
+                new[i] = _Unit([own], _core(own) or tuple(own.bbox))
+                continue
+            box, inks = tuple(spots[i]), []
+            if types_dir is not None:           # its ink as made (none to read without Types/: it keeps its spot)
+                image, left, top, _ = _icon_image(_icon_png(types_dir, stem), spots[i])
+                box = (left, top, left + image.width, top + image.height)
+                inks = [(box, np.asarray(image)[..., 3] / 255 > INK_ALPHA)]
+            new[i] = _Unit([], box)
+            made[id(new[i])] = inks
+        holders = [holder.get(i) or new.get(i) for i in range(count)]
+        shifts, pulled = _close_row(psd, slots, spots, holders, size[1], texts + stars, made)
+        plan.moves = [(unit.layers[0], dx, dy) for unit, (dx, dy) in zip(holders, shifts)
+                      if unit in kept and (dx or dy)]
+        plan.pulled = [holders[j].layers[0] for j in pulled if holders[j].layers]
+        closing = {i: shifts[i] for i in new}
     grid = _grid(slots, size[1], len(added)) if added and not removed and not first else None
     if grid:                                    # else (or touching) today's spots
         plan.moves = [(unit.layers[0], dx, 0) for unit, dx in grid[0]]
@@ -8625,7 +8660,7 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
             plan.moves, plan.show, plan.icons = [], [], []
             grid = None
     if not grid:
-        add(spots)
+        add(spots, closing)
     inset = (max(0, min(u.core[0] for u in slots)), max(0, min(u.core[1] for u in slots)),
              max(0, min(psd.width - u.core[2] for u in slots))) if slots else (0, 0, 0)
     for k, (layer, dx, dy) in enumerate(list(plan.moves)):

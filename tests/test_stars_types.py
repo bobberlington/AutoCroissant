@@ -31,6 +31,7 @@ FREEZER = "Field/1 Stars/The_Freezer.psd"               # a field card: its "1 S
 MORPHO = "Auxiliary/Creatures/Morpho_Knight.psd"        # Fire over Undead: dropping Fire moves Undead up
 MAGNUM = "Auxiliary/Items/Magnum_Opus.psd"              # its field type: a small icon in a card-sized smart object
 ABIGAIL = "Auxiliary/Minions/Abigail.psd"               # a row of two icons running into the title: a third goes under
+NASUS = "Creatures/Other/4 Stars/Nasus.psd"             # Fire, Light and a wide Undead (the row closes up)
 
 icons = pytest.mark.skipif(not pe.icon_engine(), reason="the fork's layer copy API (Layer.duplicate, PixelLayer.fromarray)")
 
@@ -804,6 +805,9 @@ def test_real_type_rows(clone, parser, tmp_path, monkeypatch):
     assert sorted(baked.reparse["card"]["types"]) == ["field", "ice"]
     (box, canvas), = boxes          # a lone types edit with its new Types/ link: its box rendered, not the card twice
     assert (box[2] - box[0]) * (box[3] - box[1]) < canvas / 10
+    nasus = _clone_card(clone, NASUS, tmp_path)     # its wide Undead takes Fire's spot: the new Water closes up beside it
+    _, baked = _bake(parser, nasus, {"types": ["undead", "water"]}, tmp_path, NASUS, str(clone / "Types"))
+    assert sorted(baked.reparse["card"]["types"]) == ["undead", "water"] and not [n for e in baked.edits for n in e.notes]
     abigail = _plan(parser, _clone_card(clone, ABIGAIL, tmp_path)[0], ABIGAIL, "types", ["undead", "defensive_minion", "fire"])
     (stem, box, reference), = abigail.icons
     shield = next(layer for layer in PSDImage.open(_clone_card(clone, ABIGAIL, tmp_path)[0]).descendants()
