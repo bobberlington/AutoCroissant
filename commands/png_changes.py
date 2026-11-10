@@ -31,7 +31,7 @@ TOLERANCE = 2                # a pixel visibly changed: a channel (colour over b
                              # 255 (the owner's "near identical" bar, 11-07), ...
 PATCH = 7                    # ... inside a PATCH x PATCH square of such pixels (re-drawn text strokes, outlines and
                              # badge rims are no changed area; calibration 11-09)
-VISIBLE = 0.02               # share of the card's pixels (alpha in either picture): a visible change (build_site PNG_VISIBLE;
+VISIBLE = 0.05               # share of the card's pixels (alpha in either picture): a visible change (build_site PNG_VISIBLE;
                              # owner 11-09 "about 5%": the Alt template's bars are 2-7% of a card)
 RECORD = "png_changes.json"
 BATCH = 30                   # pairs whose blobs one scratch store holds
