@@ -160,14 +160,18 @@ Worked example to imitate: the `/update_stats` block in main.py (its options are
    the 10 modules listed in `INCLUDE_FILES` (setup.py:21-33); new files are uncompiled
    by default (`type_emojis`, `repo_history`, `github_api`, `tts_save`, `git_commit`, `font_check`, `card_check`, `psd_details`, the edit pipeline's `psd_edit`, `psd_regions` and `card_bake`, the card data build's `card_data`, `card_history`, `card_db` and `changelog`, the cutover's `card_sync`, the creation dates' `card_dates` (`discord_edits` until 2026-10-25), the push guards' `card_guards`, `png_export`, `card_standards` and `psd_diff`, `txt2_repair`, and `card_grid` (/query_ability's grids, 2026-10-25; 2026-10-22/23: the jetson runs the same pure Python as the Action; tests/test_card_data.py and test_card_guards.py check they stay out) are deliberately left out; the four
    modules split out of psd_analyzer on 2026-10-20 were added so the moved code keeps its compiled semantics). TTSCardMaker's Actions
-   sparse-check out bot modules by path (card-guards.yml: its list is `card_guards.SPARSE_FILES`, 18 files including `psd_edit`,
+   sparse-check out bot modules by path (card-guards.yml: its list is `card_guards.SPARSE_FILES`, 25 entries on 2026-11-10 including `psd_edit`,
    `card_bake`, `txt2_repair`, `png_export`, `psd_diff` and the card and font checks it runs since 2026-10-25; card-sync.yml, the live bake, build and save since the cutover
    2026-10-24, checks out `card_data.SPARSE_FILES`, whose test runs `--help` on the build, the bake and the save with
    exactly that list), so renaming or moving one of those files, or adding an import to one, breaks an Action; the lists
    have a test that copies exactly it and runs `--help` (tests/test_card_bake.py, test_card_guards.py, which also runs the
    two checks' `--help` from it and checks card-guards.yml's list is `card_guards.SPARSE_FILES`, and test_card_data.py;
    card-edits.yml and tts-save.yml, deleted at the cutover, and card-check.yml and font-check.yml, folded into the guards on
-   2026-10-25, had lists of their own). If you add yours to INCLUDE_FILES, both bounds checks and wraparound
+   2026-10-25, had lists of their own). A module imported only inside a function must still be in `SPARSE_FILES` and in
+   TC card-guards.yml's `BOT_FILES` (the same order); card_guards imports such modules at the top (`status_font`,
+   `psd_details`, `# noqa: F401`) so `test_action_shaped_copy` enforces it. 2026-11-09: `psd_details.py` was missing, and
+   `standard_folders` counts every exception as a refusal, so the folders fix never ran on GitHub (AC 7735f28d, TC
+   4fa6f6a4). If you add yours to INCLUDE_FILES, both bounds checks and wraparound
    are on since 2026-10-23 (setup.py:38-39), but still write `x[len(x)-1]` there (rule 1); the Cython 3.3 rules still
    apply: it rejects re-annotating a variable that is already declared (declare it once; the management.py incident,
    autocroissant-failure-archaeology Entry 10.5), and type hints coerce (see "looks safe but isn't"). Compile-check rules: autocroissant-build-and-env §5. Do not add modules that use `execv`/dynamic
@@ -307,6 +311,7 @@ and update this file.
 | diff_stats.py gate exists and documents its exit codes | `head -20 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py` |
 | Commit count / current head (date-stamp anchor) | `git rev-list --count HEAD` ; `git log --oneline -1` |
 | Atomic writes of the card data copy | `grep -n "^def write_text\|^def write_bytes" commands/card_db.py` |
+| The guards' sparse list (25 entries on 2026-11-10) and its top-level imports of lazy modules | `grep -n -A6 "^SPARSE_FILES" commands/card_guards.py`; `grep -n "noqa: F401" commands/card_guards.py` (status_font, psd_details) |
 
 2026-10-21: atomic locked pickle saves (B10) added to class (b) and the pickle discipline; `*.pkl.tmp` row; line numbers re-pointed.
 
@@ -342,3 +347,5 @@ main.py, update_bot.py, help.py, psd_parser.py and card_models.py citation re-po
 2026-10-25 (wrap-up): the class (a) row's `PARSER_VERSION` citation re-pointed (:24, version 4).
 
 2026-11-09 (forum votes): `forum_votes.json` and its temp file in the never-commit table (.gitignore 95-96).
+
+2026-11-10 (sparse list): step 5 counts 25 entries and adds the lazy-import rule (psd_details, AC 7735f28d); a provenance row for it.
