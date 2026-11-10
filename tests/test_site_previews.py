@@ -367,6 +367,27 @@ out([spot, m.typePlan(null, [], ["fire"], spot), m.typePlan(null, [], ["fire", "
 
 
 @needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "fitLook"), reason="no icon looks in mockup.js")
+def test_type_icons_in_the_cards_colours(tmp_path):
+    """A shown type row recoloured by a Gradient Map or Curves (the look the bake copies onto a new icon) gives the map
+    that reads it; stock colours (or near them), the icon's own art or too few pixels: none (the stock icon is drawn)."""
+    out = node(tmp_path, """
+const W = 24, icon = f => { const d = new Uint8ClampedArray(W * W * 4); for (let i = 0; i < W * W; i++) { const x = i % W, y = (i / W) | 0; d.set([...f(x, y), x < 3 || y < 3 ? 0 : 255], i * 4); } return d; };
+const st = icon((x, y) => [x * 11, y * 11, (x + y) * 5]), row = [st, icon((x, y) => [255 - y * 9, x * 10, 128])];   // two icons
+let s = 7; const art = () => [0, 0, 0].map(() => (s = (s * 16807) % 2147483647) % 256);
+const as = (d, fn) => { const th = d.slice(); for (let i = 0; i < d.length; i += 4) th.set(d[i + 3] ? fn(d[i], d[i + 1], d[i + 2]) : art(), i); return th; };   // card art around the icon
+const gmap = (r, g, b) => { const t = (0.299 * r + 0.587 * g + 0.114 * b) / 255; return [255 * t, 30 + 200 * t, 20]; };
+const curves = (r, g, b) => [255 - r, g / 2, b + 80];
+const fit = fn => m.fitLook(row.map(d => [d, as(d, fn)]));
+const err = (look, fn) => { let e = 0, n = 0; for (let i = 0; i < st.length; i += 4) if (st[i + 3]) { const a = m.lookMap(look, st[i], st[i + 1], st[i + 2]), b = fn(st[i], st[i + 1], st[i + 2]).map(v => Math.min(255, v)); e += a.reduce((t, v, k) => t + Math.abs(v - b[k]), 0) / 3; n++; } return e / n; };
+const g = fit(gmap), c = fit(curves);
+out([Object.keys(g), err(g, gmap), Object.keys(c), err(c, curves), fit((r, g, b) => [r, g, b]), fit((r, g, b) => [r + 20, g + 20, b + 20]), fit(art), m.fitLook([[st.slice(3 * W * 4, 5 * W * 4), as(st.slice(3 * W * 4, 5 * W * 4), gmap)]])]);   // 42 opaque pixels""")
+    luma, luma_err, chan, chan_err, *none = out
+    assert luma == ["luma"] and luma_err < 3 and chan == ["chan"] and chan_err < 3
+    assert none == [None, None, None, None]
+
+
+@needs_js
 @pytest.mark.skipif(not has(MOCKUP_JS, "labelRow"), reason="no labelRow in mockup.js")
 def test_stat_row_at_its_label(tmp_path):
     """A template row with no bar moves to its stat's visible label (x span and height kept) when the card's bar is
