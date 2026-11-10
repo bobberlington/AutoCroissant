@@ -471,21 +471,20 @@ banned ones, obviously)."
 | Group | Banned (reason) |
 |---|---|
 | 5 star creatures (8) | The Radiance (creature/ability copying), Marx (antifun), Baba (too easy to build combos, too powerful of a counter), The Puppet (reliance on RNG), Gandhi (reliance on RNG), Chef Saltbaker (too powerful of a counter), Michael (creature/ability copying), Leshy (creature/ability copying) |
-| 4 star creatures (8) | Old Foxy, Acrophobia, Tainted Keeper (too difficult to counter and/or requires being countered), Fawful (antifun), DooPliss (creature/ability copying), Stranger (overcentralization, antifun), Buzzo, Green Mage (too easy to build combos) |
-| 3 star creatures (9) | Leeroy Jenkins (too powerful of a counter), Shield Master Pi, Tainted Bethany (too easy to build combos), Something, Master Hand (antifun), Dark Matter Swordsman, Taranza, Holo defense API (creature/ability copying), Stay (antifun, too powerful of a counter) |
+| 4 star creatures (9) | Old Foxy, Acrophobia, Tainted Keeper (too difficult to counter and/or requires being countered), Fawful (antifun), DooPliss (creature/ability copying), Stranger (overcentralization, antifun), Buzzo, Green Mage, Tainted Bethany (too easy to build combos) |
+| 3 star creatures (8) | Leeroy Jenkins (too powerful of a counter), Shield Master Pi (too easy to build combos), Something, Master Hand (antifun), Dark Matter Swordsman, Taranza, Holo defense API (creature/ability copying), Stay (antifun, too powerful of a counter) |
 | 2 star creatures (4) | Peter Panda, Koops (too easy to build combos), Barry The Barrel (reliance on RNG), Auto Croissant (extremely dangerous) |
 | 4 star items (8) | Amazing Mirror (creature/ability copying), The Wall (By Ech) (too easy to build combos), Golden Metronome (antifun, too powerful of a counter), Mimic, Flip (too easy to build combos), Magic Shield (antifun), Time Riddle (too easy to build combos, creature/ability copying), Standstill (antifun, too powerful of a counter) |
 | 3 star items (8) | Stalwart Shell, Reflection, Blank Card, Credit Card, Wand of Obesity (too easy to build combos), Scapular, Life Link, Forget Me Now (too easy to build combos, too powerful of a counter) |
-| 2 star items (3) | Tomorrow I'll (too easy to build combos, too powerful of a counter), Gust of Wind (too powerful of a counter), Berserk (too easy to build combos) |
-| 1 star items (1) | NME stock (simply too strong) |
+| 2 star items (4) | Tomorrow I'll (too easy to build combos, too powerful of a counter), Gust of Wind (too powerful of a counter), Berserk (too easy to build combos), NME stock (simply too strong) |
 | Field Cards (4) | The Bank, E. Gadd's Garage, Error room (too easy to build combos), Cave of the Past (too powerful of a counter) |
 
 All 53 resolve to a card on the website, with the 2026-10-21 names and with the fresh printed titles (build_site.py's
 letters-and-digits match on name, file name and aliases). Mismatches between the list and the card data: "The Wall (By
 Ech)" is the card Blockade (Items/Active/4 Stars; printed title "The Wall By Ech", aliases "the wall", "Blockade");
-"Leeroy Jenkins" prints as "LEEROOOOOOOOY JENKINS"; "Berserk" is "Berserk!"; Tainted Bethany is a 4★ creature
-(listed under 3 star); NME Stock™ is a 2★ Support item (listed under 1 star items); The Bank is an N.M.E. item (2★,
-listed under Field Cards); Cave Of The Past and Error Room are 4★ field cards (so already outside the ≤3★ field rule).
+"Leeroy Jenkins" prints as "LEEROOOOOOOOY JENKINS"; "Berserk" is "Berserk!"; The Bank is an N.M.E. item (2★, listed
+under Field Cards, an N.M.E. card since 2025-03-01: left, a game call); Tainted Bethany (4★ since 2025-02-21) and NME
+Stock™ (2★ since 2025-02-24) moved to their stars' groups in 2026-11 (they sat under 3 star creatures and 1 star items); Cave Of The Past and Error Room are 4★ field cards (so already outside the ≤3★ field rule).
 
 ## 6. The rulebook
 

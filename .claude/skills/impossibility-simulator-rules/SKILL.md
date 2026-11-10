@@ -68,12 +68,11 @@ of "newer or recently changed cards that require more playtesting", mixed with "
 stated (Known gaps). **Constructed** is defined only in `~/Desktop/TTSCardMaker/site/Constructed Ban List.txt`: "choose
 whatever cards you want out of the entire deck for your hand", "You may also only have one of each item in your hand", and
 each player may pick "one 3 star or lower field card to be active in the shop at the start of the game". It bans 53 cards
-(creatures 8/8/9/4 for 5★–2★, items 8/8/3/1 for 4★–1★, 4 in its group "Field Cards") for "creature/ability copying",
+(creatures 8/9/8/4 for 5★–2★, items 8/8/4 for 4★–2★, 4 in its group "Field Cards") for "creature/ability copying",
 "antifun", "reliance on RNG", "too easy to build combos", "too powerful of a counter". The website's deck builder
 (`site/assets/deck.js`) enforces the same counts (`HAND`), one of each card, no banned card, and an optional field card with
 `FIELD_MAX_STARS = 3`; only creatures and items fill slots. List-vs-data mismatches: the deck builder's one-copy rule covers
-creatures too, where the list says only "one of each item"; Tainted Bethany is 4★ (listed 3★), NME Stock 2★ (listed 1★), The
-Bank is an N.M.E. item (listed under Field Cards), Cave of the Past and Error Room are 4★ field cards. Names: "The Wall (By
+creatures too, where the list says only "one of each item"; The Bank is an N.M.E. item (listed under Field Cards), Cave of the Past and Error Room are 4★ field cards. Names: "The Wall (By
 Ech)" is Blockade.psd, printed title "The Wall By Ech"; "Leeroy Jenkins" prints as "LEEROOOOOOOOY JENKINS"; "Berserk" is "Berserk!".
 
 ## 3. Turn structure and every timing tag
