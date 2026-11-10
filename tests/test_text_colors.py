@@ -222,6 +222,27 @@ def test_status_words_keep_the_chart(clone, tmp_path):
     assert fills.get("Hardened") in before and "#ffd21f" in fills.values() and "status words" in " ".join(baked.fx_notes)
 
 
+def test_status_colours_record(clone, tmp_path):
+    """Card sync's status colours (db/status_colors.json, the mock-up's): each chart status as it prints, a gradient
+    one in its mean colour, read once per chart blob; the site ships them (build_site.status_colors)."""
+    from commands import card_data
+    path = clone / pe.STATUS_CHART
+    reads = []
+    run_build = SimpleNamespace(shas={pe.STATUS_CHART: "c" * 40}, _file_bytes=lambda p: reads.append(p) or path.read_bytes())
+    record = card_data.status_colors(run_build, {})
+    chart, colors = pe.status_fills(PSDImage.open(str(path))), record["colors"]
+    assert record["blob"] == "c" * 40 and {name.lower() for name in colors} == set(chart)
+    assert pe._hex(chart["become back money"].fill) == "#ffffff" and colors["Become Back Money"] == "#d8982f"   # its gradient
+    assert colors["Thickened"] == pe._hex(chart["thickened"].fill) and colors["Burning"] == pe._hex(chart["burning"].fill)
+    assert card_data.status_colors(run_build, record) is record and len(reads) == 1
+    spec = importlib.util.spec_from_file_location("site_build_status", SITE / "build" / "build_site.py")
+    if spec and Path(spec.origin).is_file() and "def status_colors" in Path(spec.origin).read_text(encoding="utf-8"):   # TC landed
+        bs = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(bs)
+        (tmp_path / card_data.STATUS_COLORS).write_text(card_data.records_text({**record, "colors": {**colors, "X": "red"}}))
+        assert bs.status_colors(str(tmp_path)) == colors and bs.status_colors(str(tmp_path / "none")) == {}
+
+
 @pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")
 def test_title_overlay_goes_off(clone, tmp_path):
     """A whole title's colour turns the title's own Gradient Overlay off and bakes (white too, its fill's); its phrase
