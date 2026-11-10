@@ -572,7 +572,7 @@ database-only ones (unless Discord's retired `/update_metadata` had set them). T
 website computes it from the values; `CardEdits.meta`); `parse()`
 keeps every `_`-key out of `cards`. `aliases` is read by `CardEdits.names()` for name lookups, never by `apply()`;
 `dup_of` makes a card PNG with no PSD (Stubborn_Queen.png, Gust_of_Trees.png) a duplicate of the named card in the bot
-too (`card_data.duplicate_pngs`, 2026-10-23, build_site's rule; since the 5 multi-picture PSDs were tagged, 10-25, a numbered PNG is a variant picture, which is a duplicate of picture 1 since 2026-10-25 ~21:10 (owner), above); on a card with its own PSD that is no variant picture the bot ignores it. The website's edit sets the same field by hand;
+too (`card_data.duplicate_pngs`, 2026-10-23, build_site's rule; since the 5 multi-picture PSDs were tagged, 10-25, a numbered PNG is a variant picture, which is a duplicate of picture 1 since 2026-10-25 ~21:10 (owner), above); on a card with its own PSD that is no variant picture the bot ignores it. Since 2026-11-09 (owner) such a PNG can be a tagged picture of its original's PSD under its own name (`psd_parser.picture_numbers`: the tag no NameN.png has whose printed title is the PNG's card name): the bake, the guards and Card sync draw it as that picture, its record stays the duplicate copy and it is never flagged drawn apart. The website's edit sets the same field by hand;
 a PSD re-parse keeps it with author and series (psd_parser.py:455-461) and a Card Edits.json value wins again at the
 next `/update_stats`.
 
