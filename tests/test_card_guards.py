@@ -2277,7 +2277,8 @@ def test_site_build_starts_with_the_data_job(clone, tmp_path):
 def test_site_data_wait(clone, tmp_path):
     """site.yml's Data wait: 3 s looks until the named Card sync job's Commit data is done or the job ended (never another
     job's step), then main's head again; a PSD changed since: the PSD sizes again (the older kept when unread). The data's
-    head beside it (Setup start's clone): none when the clone failed (checked out later), a failed fetch fails."""
+    head beside it (Setup start's clone): none when the clone failed (checked out later); 3 failed fetches: checked out
+    later too."""
     yaml = pytest.importorskip("yaml")
     if not shutil.which("jq") or not shutil.which("git"):
         pytest.skip("no jq or git")
@@ -2354,8 +2355,10 @@ def test_site_data_wait(clone, tmp_path):
     assert run(jobs("completed"), FAKE_FAIL="/git/trees/") and (temp / "tree.json").read_text() == "older"
     assert (temp / "setup" / "sizes.code").read_text().strip() == "0" and "not read" in (temp / "setup" / "sizes.log").read_text()
     subprocess.run(["git", "-C", str(card), "remote", "set-url", "origin", str(tmp_path / "gone")], check=True)
+    naps.write_text("")
     done, _ = _shell(wait, {**env, "FAKE_JOBS": jobs("completed")}, cwd=work)
-    assert done.returncode == 1 and "::error::data not fetched again" in done.stdout
+    assert done.returncode == 0 and "::warning::data not fetched again (3 tries): checked out" in done.stdout, done.stderr
+    assert not card.exists() and (temp / "setup" / "data.code").read_text().strip() == "1" and naps.read_text().split() == ["10", "15"]
 
 
 def test_checks_data_wait(clone, tmp_path):
