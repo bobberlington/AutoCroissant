@@ -738,6 +738,35 @@ def test_layout_bars_bake_what_was_added(clone, parser, tmp_path):
         assert np.abs(render(psd) - render(start)).max() <= 2, rel
 
 
+CLOT_GOLD, GOLD_SPARES = "Auxiliary/Minions/Clot_Gold.psd", "e29ab18c"    # TTSCardMaker: two spare HP series (E2)
+
+
+def test_a_series_hidden_in_every_cell_never_shows(clone, parser, tmp_path):
+    """E2: Clot Gold's HP cells carry two spare pictures hidden in every cell: 2 -> 5 lights the gold hearts alone, and
+    2 -> 0 -> 2 and 2 -> 10 -> 3 come back with each cell's own lit and dark pictures (at 0 the lit series is the one
+    another row shows, at 10 the dark)."""
+    path = tmp_path / "Clot_Gold.psd"
+    path.write_bytes(at_rev(clone, GOLD_SPARES, CLOT_GOLD))
+
+    def cells(psd) -> list:
+        group = stat_rows(psd)["hp"][0][0]
+        found = pe._cells(group, pe._bar_box(psd, group, "hp", pe._bar_layer(psd, group, "hp")))
+        return [[layer.visible for layer in sorted(cell, key=group.index)] for cell in found]
+    lit, dark = [False, False, False, True], [False, False, True, False]
+    assert cells(PSDImage.open(str(path))) == [lit] * 2 + [dark] * 8
+    psd = PSDImage.open(str(path))
+    pe.set_stat(psd, pe.parse_card(parser, str(path), CLOT_GOLD, psd), "hp", 5)
+    assert cells(psd) == [lit] * 5 + [dark] * 5
+    for chain, want in (((0, 2), 2), ((10, 3), 3)):
+        at = str(path)
+        for k, value in enumerate(chain):
+            out = str(tmp_path / f"gold_{chain[0]}_{k}.psd")
+            _, psd, parsed = _edit_saved(parser, at, CLOT_GOLD, "hp", value, out)
+            assert parsed["card"]["hp"] == value
+            at = out
+        assert cells(psd) == [lit] * want + [dark] * (10 - want), chain
+
+
 def test_numbered_cells_bake(clone, parser, tmp_path):
     """Skeleton Mate's and Grimora's bars, painted into the art until TTSCardMaker 80466bbe (numbered cells 1-10, lit over
     dark): every stat's edit bakes and reads back."""

@@ -4339,31 +4339,66 @@ def _edge_elements(psd: PSDImage, stat: str, box: tuple, edges: list, old: int, 
     return out
 
 
-def _roles(cells: list, old: int) -> dict:
+def _roles(cells: list, old: int, elsewhere=None) -> dict:
     """
-    id(layer) -> "lit", "dark" or "base" for a row of cells shown and hidden: per layer series (the n-th layer of each
-    cell, bottom to top) when every cell has as many: shown up to the value (lit), past it (dark) or always (base: the
-    Clots' dark hearts under the lit ones); else per layer, by whether it shows on its side of the value.
+    id(layer) -> "lit", "dark", "base" or "spare" for a row of cells shown and hidden: per layer series (the n-th layer
+    of each cell, bottom to top) when every cell has as many: shown up to the value (lit), past it (dark) or always
+    (base: the Clots' dark hearts under the lit ones); else per layer, by whether it shows on its side of the value.
+
+    A series hidden in every cell is spare art, never shown (Clot Gold's HP; E2), save at 0 (10) with no other series
+    lit (dark): then it is that side, the ones whose picture another bar row shows (elsewhere(layer)), else the topmost.
     """
     out = {}
     sizes = {len(cell) for cell in cells}
     if len(sizes) == 1 and sizes.pop() > 1:
         ordered = [sorted(cell, key=lambda layer: layer.parent.index(layer)) for cell in cells]
+        hidden = [n for n in range(len(ordered[0])) if not any(cell[n].visible for cell in ordered)]
         for n in range(len(ordered[0])):         # a cell or two off the pattern (Clot White's dark 7 under its lit 7)
             shown = [cell[n].visible for cell in ordered]
             lit = sum(on == (k <= old) for k, on in enumerate(shown, 1))
             dark = sum(on == (k > old) for k, on in enumerate(shown, 1))
             role = "lit" if lit >= 8 and lit > dark else "dark" if dark >= 8 and dark > lit else "base" if all(shown) else None
-            if role is None:
+            if role is None and n not in hidden:
                 break
             out.update({id(cell[n]): role for cell in ordered})
         else:
+            side = "lit" if old == 0 else "dark" if old == STAT_MAX else None
+            keep, first = [], ordered[0]
+            if side and hidden and not any(out[id(first[n])] == side for n in range(len(first)) if n not in hidden):
+                keep = [n for n in hidden if elsewhere is not None and elsewhere(first[n])] or [hidden[len(hidden) - 1]]
+            for n in hidden:
+                out.update({id(cell[n]): side if n in keep else "spare" for cell in ordered})
             return out
         out = {}
     for k, cell in enumerate(cells, 1):
         for layer in cell:
             out[id(layer)] = "lit" if layer.visible == (k <= old) else "dark"
     return out
+
+
+def _elsewhere(psd: PSDImage, cells: list):
+    """Whether a layer's picture shows on another bar row of the card: a visible layer of the same smart object source,
+    or of the same pixels (_roles)."""
+    mine = {id(layer) for cell in cells for layer in cell}
+    shown: list = []
+
+    def same(a, b) -> bool:
+        if a.kind != b.kind:
+            return False
+        if a.kind == "smartobject":
+            return a.smart_object.unique_id == b.smart_object.unique_id
+        if a.kind != "pixel" or (a.width, a.height) != (b.width, b.height):
+            return False
+        x, y = a.numpy(), b.numpy()
+        return x is not None and y is not None and np.array_equal(x, y)
+
+    def shows(layer) -> bool:
+        if not shown:                           # read once, when asked
+            shown.append([one for stat in STAT_FIELDS for group, _, _ in stat_rows(psd)[stat] if group.is_group()
+                          for one in group.descendants()
+                          if id(one) not in mine and not one.is_group() and one.is_visible()])
+        return any(same(layer, other) for other in shown[0])
+    return shows
 
 
 def _mask_start(layer) -> int:
@@ -4517,7 +4552,7 @@ def plan_bar(psd: PSDImage, group, stat: str, old: int, value: int, why: Refused
     toggled = cells is not None and (strip or any(not layer.visible for cell in cells for layer in cell))
     if toggled:
         hows.append("cells shown and hidden")
-        roles = _roles(cells, old)
+        roles = _roles(cells, old, _elsewhere(psd, cells))
         under = [layer for container in (group, group.parent) if container is not None and not isinstance(container, PSDImage)
                  for layer in container if not layer.is_group() and layer.is_visible() and layer.kind in DRAWN_LAYER_KINDS
                  and all(layer is not one for cell in cells for one in cell)
