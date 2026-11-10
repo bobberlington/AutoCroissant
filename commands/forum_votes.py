@@ -8,7 +8,8 @@ Closed, then locks and archives the post.
 An async worker like type_emojis: Discord is awaited on the event loop, the JSON written in a thread. main runs
 run_pass every PASS_MINUTES and post_created on on_thread_create; /forum_votes shows or sets the settings. FORUM_JSON
 (gitignored, per machine) holds the settings and the parts done per post, so a restart never repeats one; the ping and
-the note also look for a bot's message in the post first (a lost file). A post a person locks waits until unlocked.
+the note also look for a bot's message in the post first, the forward and the winner message in the results channel (a
+lost file, a restart mid-close). A post a person locks waits until unlocked.
 
     python -m commands.forum_votes test --minutes N    a test post, closed N minutes later (REST only, no ping)
 
@@ -25,6 +26,7 @@ from signal import SIGHUP, SIGTERM
 from traceback import format_exc
 from typing import Optional
 
+from aiohttp import ClientError
 from discord import AllowedMentions, ChannelType, Forbidden, HTTPException, Interaction, NotFound, Object
 from discord.utils import escape_markdown, snowflake_time
 
@@ -40,9 +42,10 @@ CLOSE_AFTER = timedelta(days=7)             # voting closes
 OPEN, SOON, CLOSED = "Open", "Closing Soon", "Closed"   # forum tags, matched by name in any case
 UP, DOWN, ABSTAIN = "👍", "👎", "abstain"    # the reactions (:abstain: is a custom emoji, found by name)
 MAX_TAGS = 5                                # Discord's limit of tags on a post
-HISTORY = 50                                # recent messages searched for the bot's own ping or note
+HISTORY = 50                                # recent messages searched for a bot's ping, note, forward or winner
 STARTER_WAIT = 2                            # s: a new post's first message can lag its thread
 UNKNOWN_CHANNEL = 10003                     # Discord's error code: the post was deleted
+ARCHIVED = 50083                            # Discord's error code: the post is archived (the next pass opens it)
 PING_WORDS = "please vote on this change"
 NOTE_WORDS = "Voting is closed."
 TEST_TITLE = "Test: proposals bot"
@@ -136,6 +139,13 @@ def _has(forum, thread, name: str) -> bool:
     return any(t.id in ids and t.name.casefold() == name.casefold() for t in forum.available_tags)
 
 
+def _passing(e: Exception) -> bool:
+    """A failure that may pass (a 5xx, 401, 408, 429, an archived post, the network); any other is for good."""
+    if isinstance(e, HTTPException):
+        return e.status >= 500 or e.status in (401, 408, 429) or e.code == ARCHIVED
+    return isinstance(e, (OSError, ClientError))
+
+
 def _custom_name(emoji) -> str:
     """A custom emoji's name, lowercased ("" for a plain one)."""
     return (getattr(emoji, "name", "") or "").casefold() if getattr(emoji, "id", None) else ""
@@ -164,7 +174,7 @@ def outcome(top: list, votes: int) -> dict:
 
 
 def _outcome(post: Post) -> dict:
-    return post.entry.get("outcome") or outcome([], 0)
+    return post.entry.get("outcome") or {"text": "The votes could not be read.", "forward": False}
 
 
 def _is_test(post: Post) -> bool:
@@ -286,9 +296,9 @@ async def _no_save() -> None:
 # ========================
 async def _part(post: Post, name: str, action, final: bool = False) -> None:
     """
-    Run one part of a step unless done. Refused (Forbidden) or missing (a deleted message, an unknown emoji): logged
-    once and recorded as done. Any other failure: logged once and Retry (the next pass goes on), unless final (logged,
-    never repeated: the forward and the winner message).
+    Run one part of a step unless done. A failure that may pass: logged once and Retry (the next pass goes on), unless
+    final (the forward and the winner message: never repeated). Any other (refused, missing, a 4xx such as the reaction
+    limit): logged once and recorded as done, so the later parts go on.
     """
     if name in post.done:
         return
@@ -298,7 +308,7 @@ async def _part(post: Post, name: str, action, final: bool = False) -> None:
         if isinstance(e, NotFound) and e.code == UNKNOWN_CHANNEL and not final:
             raise Gone() from e
         _log_once((post.thread.id, name), f"post {post.thread.id}: {name} failed: {type(e).__name__}: {e}")
-        if not final and not isinstance(e, (Forbidden, NotFound)):
+        if not final and _passing(e):
             raise Retry() from e
     post.done.append(name)
     await post.save()
@@ -346,11 +356,16 @@ async def _find_abstain(client, guild):
 
 async def _react(post: Post) -> None:
     """👍 👎 :abstain: on the post's first message (one the bot already added is a no-op)."""
-    if post.thread.archived:                    # no reactions in an archived post
-        post.thread = await post.thread.edit(archived=False) or post.thread
     abstain = await _find_abstain(post.client, post.thread.guild)
     emojis = [UP, DOWN] + ([abstain] if abstain else [])
     message = post.thread.get_partial_message(post.thread.id)   # a forum post's first message has the post's id
+    if post.thread.archived:                    # no reactions in an archived post: opened only if some are missing
+        mine = {str(r.emoji) for r in (await post.thread.fetch_message(post.thread.id)).reactions if r.me}
+        emojis = [e for e in emojis if str(e) not in mine]
+        if not emojis:
+            post.did.append("reactions: already there")
+            return
+        post.thread = await post.thread.edit(archived=False) or post.thread
     try:
         await message.add_reaction(emojis[0])
     except NotFound as e:
@@ -363,17 +378,23 @@ async def _react(post: Post) -> None:
     post.did.append(f"reactions: {' '.join(str(e) for e in emojis)}")
 
 
-async def _said(post: Post, words: str) -> bool:
-    """A bot (this one, or another identity running the votes) already posted these words in the post: never twice."""
+async def _sent(post: Post, channel, match, unread=Forbidden) -> bool:
+    """
+    A bot (this one, or another identity running the votes) already sent a message there that matches: never twice.
+    unread: the errors reading the history that leave it to the record.
+    """
     me = post.client.user.id
     try:
-        async for message in post.thread.history(limit=HISTORY):
-            bot = message.author.id == me or getattr(message.author, "bot", False)
-            if bot and words in (message.content or ""):
+        async for message in channel.history(limit=HISTORY):
+            if (message.author.id == me or getattr(message.author, "bot", False)) and match(message):
                 return True
-    except Forbidden:
-        pass                                    # no history to read: the record decides
+    except unread:
+        pass
     return False
+
+
+async def _said(post: Post, words: str) -> bool:
+    return await _sent(post, post.thread, lambda message: words in (message.content or ""))
 
 
 def _check_mention(post: Post, role_id: int) -> None:
@@ -404,15 +425,9 @@ async def _ping(post: Post, role_id: int, close_at: datetime) -> None:
 
 
 async def _count(post: Post) -> None:
-    """The outcome, kept in the record so a resumed close says the same."""
-    try:
-        reactions = (await post.thread.fetch_message(post.thread.id)).reactions
-        post.entry["outcome"] = outcome(*tally(reactions))
-    except (Forbidden, NotFound) as e:
-        if isinstance(e, NotFound) and e.code == UNKNOWN_CHANNEL:
-            raise
-        _log_once((post.thread.id, "count"), f"post {post.thread.id}: its first message can't be read: {e}")
-        post.entry["outcome"] = {"text": "The votes could not be read.", "forward": False}
+    """The outcome, kept in the record so a resumed close says the same (unread for good: "could not be read")."""
+    reactions = (await post.thread.fetch_message(post.thread.id)).reactions
+    post.entry["outcome"] = outcome(*tally(reactions))
     post.did.append(f"outcome: {post.entry['outcome']['text']}")
 
 
@@ -426,12 +441,20 @@ async def _note(post: Post) -> None:
 
 async def _forward(post: Post, results_id: int) -> None:
     channel = await _channel(post.client, results_id)
+    if await _sent(post, channel, lambda message: getattr(message.reference, "message_id", None) == post.thread.id,
+                   HTTPException):            # unread: forwarded (a double is rarer than a lost forward)
+        post.did.append("forward: already there")
+        return
     post.sent["forward"] = await post.thread.get_partial_message(post.thread.id).forward(channel)
     post.did.append(f"forwarded to {results_id}")
 
 
 async def _announce(post: Post, results_id: int) -> None:
     channel = await _channel(post.client, results_id)
+    if await _sent(post, channel, lambda message: post.thread.jump_url in (message.content or "").split(),
+                   HTTPException):
+        post.did.append("winner message: already there")
+        return
     post.sent["winner"] = await channel.send(
         f"**{escape_markdown(post.thread.name)}**: {_outcome(post)['text']} {post.thread.jump_url}",
         allowed_mentions=NO_MENTIONS)
@@ -532,14 +555,18 @@ async def _advance(client, forum, key: str, entry: dict, thread=None) -> None:
         _log_once((int(key), "read"), f"post {key} can't be read: {e}")
 
 
-async def _open_posts(forum) -> list:
-    """The forum's posts not locked: the active ones (the gateway's) and the archived ones (asked of Discord)."""
-    found = list(forum.threads)
+async def _open_posts(forum) -> tuple:
+    """
+    (the forum's posts not locked, all read): the active ones (the gateway's) and the archived ones (asked of Discord;
+    a failure is logged once and the listing asked again next pass).
+    """
+    found, whole = list(forum.threads), True
     try:
         found += [t async for t in forum.archived_threads(limit=None) if not t.locked]
-    except HTTPException as e:
-        _log_once(("archived", forum.id), f"the forum {forum.id}'s archived posts can't be read: {e}")
-    return list({t.id: t for t in found}.values())
+    except (HTTPException, OSError, ClientError) as e:
+        _log_once(("archived", forum.id), f"the forum {forum.id}'s archived posts can't be read (again next pass): {e}")
+        whole = False
+    return list({t.id: t for t in found}.values()), whole
 
 
 async def _pass(client) -> None:
@@ -550,8 +577,8 @@ async def _pass(client) -> None:
     if forum is None:
         return
     if _scanned != forum.id:                    # the start, turned on, or another forum: every open post
-        found = await _open_posts(forum)
-        _scanned = forum.id
+        found, whole = await _open_posts(forum)
+        _scanned = forum.id if whole else None
     else:
         found = list(forum.threads)             # a post made while the bot was away
     threads = {str(t.id): t for t in sorted(found, key=_created) if _include(forum, t)}

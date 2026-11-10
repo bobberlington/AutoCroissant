@@ -48,7 +48,7 @@ class Reaction:
 class Message:
     def __init__(self, channel, content, author=BOT, **extra):
         self.id, self.channel, self.content = next(_ids), channel, content
-        self.author = SimpleNamespace(id=author, bot=author != PERSON)
+        self.author, self.reference = SimpleNamespace(id=author, bot=author != PERSON), None
         self.__dict__.update(extra)
 
 
@@ -74,7 +74,7 @@ class Starter:
             found.count += n
 
     async def forward(self, channel):
-        return await channel.send(content=None, forwarded=self.thread.id)
+        return await channel.send(content=None, forwarded=self.thread.id, reference=SimpleNamespace(message_id=self.id))
 
 
 class Thread:
@@ -170,6 +170,10 @@ class Channel:
     async def send(self, content=None, allowed_mentions=None, **extra):
         self.sent.append(Message(self, content, allowed_mentions=allowed_mentions, **extra))
         return self.sent[len(self.sent) - 1]
+
+    async def history(self, limit=100):
+        for message in list(reversed(self.sent))[:limit]:
+            yield message
 
 
 class Client:
@@ -334,6 +338,8 @@ def test_existing_posts_on_enable_overdue_steps_in_order(clock):
     locked = Thread(forum, T0 - timedelta(days=2), archived=True, locked=True)
     closed = Thread(forum, T0 - timedelta(days=2), tags=("Closed",), archived=True)
     held = Thread(forum, T0 - timedelta(days=3), locked=True)
+    reacted = Thread(forum, T0 - timedelta(days=1), tags=("Open",), archived=True)   # nothing to add: left archived
+    reacted.starter.reactions = [Reaction(e, 1, True) for e in ("👍", "👎", Emoji(77, "abstain"))]
     inter = SimpleNamespace(channel_id=5)
 
     async def go():
@@ -349,7 +355,8 @@ def test_existing_posts_on_enable_overdue_steps_in_order(clock):
     assert old.locked and old.tags == ["Closed"] and len(client.results.sent) == 2
     assert sleeping.tags == ["Cards", "Open"] and not sleeping.archived and len(sleeping.starter.reactions) == 3
     assert not any(t.edits or t.starter.reactions or t.messages for t in (locked, closed, held))
-    assert set(saved()["posts"]) == {str(old.id), str(sleeping.id), str(held.id)}   # held: waits while locked
+    assert reacted.archived and not reacted.edits and len(reacted.starter.reactions) == 3
+    assert set(saved()["posts"]) == {str(old.id), str(sleeping.id), str(held.id), str(reacted.id)}   # held waits
     assert saved()["settings"] == {"enabled": True}
 
 
@@ -435,6 +442,52 @@ def test_failed_forward_logged_once_and_the_close_goes_on(clock, capsys):
     out = capsys.readouterr().out
     assert out.count(f"post {post.id}: forward failed") == 1 and out.count(f"post {post.id}: winner failed") == 1
     assert post.tags == ["Closed"] and post.locked and post.archived and len(post.messages) == 2
+
+
+def test_a_failed_listing_or_a_lasting_4xx_never_stalls_a_post(clock, capsys):
+    forum = Forum()
+    client = Client(forum)
+    asleep, full = Thread(forum, T0 - timedelta(hours=1), archived=True), Thread(forum, T0)
+    listing, fail = forum.archived_threads, [True]
+
+    async def flaky(limit=None):                        # the archived posts can't be listed at the start
+        if fail:
+            fail.clear()
+            raise _error(HTTPException, 503, 0, "Service Unavailable")
+        async for thread in listing(limit=limit):
+            yield thread
+
+    async def limit_reached(emoji):                     # 20 reactions already: refused for good
+        raise _error(HTTPException, 400, 30010, "Maximum number of reactions (20)")
+    forum.archived_threads, full.starter.add_reaction = flaky, limit_reached
+    passes(client, T0, T0 + timedelta(minutes=5), DAY6, DAY7, now=clock)
+    assert asleep.tags == ["Closed"] and len(asleep.starter.reactions) == 3 and len(asleep.messages) == 2
+    assert contents(full) == [f"<@&{ROLE}> please vote on this change. Voting closes in 24 hours.",
+                              "Voting is closed. No votes."] and full.tags == ["Closed"] and full.locked
+    out = capsys.readouterr().out
+    assert out.count("archived posts can't be read") == 1 and out.count(f"post {full.id}: reactions failed") == 1
+
+
+def test_a_restart_mid_close_never_forwards_twice(clock, monkeypatch):
+    forum = Forum()
+    client = Client(forum)
+    post = Thread(forum, T0)
+    passes(client, T0, DAY6, now=clock)
+    post.starter.vote("👍", 3)
+    send, sends = client.results.send, count(1)
+
+    async def restarts_after(*args, **kwargs):          # Discord took it, then a restart before the record
+        await send(*args, **kwargs)
+        if next(sends) <= 2:
+            raise asyncio.CancelledError
+    client.results.send = restarts_after
+    for when in (DAY7, DAY7 + timedelta(minutes=5)):
+        with pytest.raises(asyncio.CancelledError):
+            passes(client, when, now=clock)
+        restart(monkeypatch)
+    passes(client, DAY7 + timedelta(minutes=10), now=clock)
+    assert [m.forwarded for m in client.results.sent[:1]] == [post.id] and len(client.results.sent) == 2
+    assert contents(post)[1:] == ["Voting is closed. Most votes: 👍 (3)."] and post.locked and post.tags == ["Closed"]
 
 
 def test_settings_persisted_and_checked(clock, monkeypatch):

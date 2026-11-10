@@ -542,7 +542,7 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 |---|---|---|---|
 | `reminder.json` | /set_reminder, /reminders, every firing (schema_version 2, `ReminderStore` in analytics.py) | repo root | NO (gitignored) — per-machine; production's copy is committed to `backup/reminder.json` (§9). Edit by hand only with the bot stopped |
 | `reminder.json.tmp` | every reminder save (written, fsynced, then renamed over reminder.json) | repo root, normally gone within milliseconds | NO (gitignored). If a hard kill leaves one behind, delete it |
-| `forum_votes.json` (+ `.tmp`) | /forum_votes and every step of the proposal forum (commands/forum_votes.py) | repo root | NO (gitignored) — per-machine, not backed up; a lost one costs no repeat ping or note (the bot looks for its own message in the post first) |
+| `forum_votes.json` (+ `.tmp`) | /forum_votes and every step of the proposal forum (commands/forum_votes.py) | repo root | NO (gitignored) — per-machine, not backed up; a lost one costs no repeat ping, note or forward (the bot looks for its own message in the post, or in the results channel, first) |
 | `repo_history.json` | startup and every /update_stats (commands/repo_history.py; a failed refresh retries on the next one) | repo root; its bare clone at `~/Documents/TTSCardMaker-history.git` | NO (gitignored) — per-machine, rebuilt from the clone if deleted |
 | `stats.csv` / `stats.txt` | /export_cards (`as_csv` picks which) | repo root | NO (gitignored via `*.csv`/`*.txt`) |
 | `rules.txt` | /export_rulebook | repo root | NO (gitignored) |
@@ -753,8 +753,11 @@ commands/forum_votes.py (uncompiled), owner's spec 2026-11-09. In the watched fo
 Steps already due run at once, in order (an old post found open is pinged, then closed). A post deleted, or given Closed
 or locked and archived by a person, is dropped; a post a person only locks waits (no step runs) until it is unlocked,
 then its overdue steps run. Each part is recorded in `forum_votes.json` when done, so a restart repeats nothing; a
-refused part (Missing Permissions) is logged once (`Forum votes: post N: lock failed: Forbidden ...`) and not retried;
-any other failure is retried next pass (5 minutes). A failed forward is logged and the close goes on.
+part Discord refuses for good (Missing Permissions, or another 4xx such as the 20-reactions limit) is logged once
+(`Forum votes: post N: lock failed: Forbidden ...`) and skipped, so the later steps still run; a server error, rate
+limit or network failure is retried next pass (5 minutes). A failed forward is logged and the close goes on; the
+forward and the winner message are sent once (after a restart mid-close the bot finds them in the results channel's
+last 50 messages). A failed listing of the forum's archived posts at a start is asked again every pass until it works.
 
 - `/forum_votes` (admin): no options show the state; `enabled`, `forum`, `role`, `results` (IDs or mentions) change it.
 - Live test (the jetson, in the bot's checkout and venv; REST only, so it never clashes with the running bot; no role
@@ -765,9 +768,9 @@ any other failure is retried next pass (5 minutes). A failed forward is logged a
   ssh, SIGTERM), it posts "The test stopped early." and closes, locks and archives the post. The running bot opens the
   post too (harmless), never pings it (its own post by that title), closes one left open (a SIGKILL) on day 7 without a
   forward, and drops it once locked and archived.
-- One bot identity per server: a second identity running the votes (the Mac's Waxwell) skips a ping or note any bot
-  already posted, but adds its own 👍 👎 :abstain:, which the other identity counts as votes (only the counting bot's own
-  reaction is taken off). Turn it off there before its first start: `forum_votes.json` holding
+- One bot identity per server: a second identity running the votes (the Mac's Waxwell) skips a ping, note, forward or
+  winner message any bot already sent, but adds its own 👍 👎 :abstain:, which the other identity counts as votes (only
+  the counting bot's own reaction is taken off). Turn it off there before its first start: `forum_votes.json` holding
   `{"schema": "autocroissant.forum-votes", "settings": {"enabled": false}, "posts": {}}`.
 
 ## When NOT to use this skill

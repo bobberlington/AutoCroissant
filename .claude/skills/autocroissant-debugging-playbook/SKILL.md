@@ -246,6 +246,8 @@ part (`journalctl -u autocroissant | grep "Forum votes"` on the jetson).
 |---|---|---|---|
 | New posts get no tag or reactions | `/forum_votes`: on? the right forum? | Off, another forum, or the forum is not visible ("the forum N can't be read") | `/forum_votes enabled:True forum:<#id>` |
 | "post N: open tag failed: Forbidden" (or closing tag, closed tags, lock) | The bot's role in the forum | No Manage Threads there (tags on others' posts, lock, archive) | Grant it; parts refused before stay skipped (recorded done) |
+| "post N: reactions failed: HTTPException: 400 ... (error code: 30010)" (or another 4xx) | The post's first message | Discord refused for good (here: 20 different reactions already) | None needed: that part is skipped, the ping and the close still run |
+| "the forum N's archived posts can't be read (again next pass)" | The bot's Read Message History in the forum; Discord's status | A refusal or a Discord outage at the start | Asked again every pass; the archived open posts are included once it works |
 | "the forum N has no tag \"Closing Soon\"" | The forum's tags (any case) | The tag is missing; never made by the bot | Add the tag in the forum's settings |
 | No :abstain: reaction, "no :abstain: emoji ..." | The server's emojis and the bot's application emojis | No emoji named abstain | Add one; the next post gets it |
 | The ping showed but nobody was notified, "the role N can't be pinged" | The role's "Allow anyone to @mention" | Role not mentionable and the bot lacks Mention All Roles | Either setting |

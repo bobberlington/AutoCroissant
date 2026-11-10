@@ -447,7 +447,7 @@ autocroissant-run-and-operate §9.
 | `OPEN`, `SOON`, `CLOSED` | `"Open"`, `"Closing Soon"`, `"Closed"` | forum tags, matched by name in any case; a missing one is logged once, never made |
 | `UP`, `DOWN`, `ABSTAIN` | 👍, 👎, `"abstain"` | the reactions; :abstain: is found by name in the server's emojis, else the bot's application emojis; it never counts |
 | `MAX_TAGS` | `5` | Discord's tags per post: removals first, then the add or a logged skip |
-| `HISTORY` | `50` | recent messages searched for a bot's ping or note (this one's or another identity's) before posting one |
+| `HISTORY` | `50` | recent messages searched for a bot's ping or note in the post, and its forward or winner message in the results channel (this one's or another identity's), before sending one |
 | `TEST_TITLE`, `TEST_STOPPED` | `"Test: proposals bot"`, `"The test stopped early."` | the live test's post title (the bot's own post by that title is never pinged and is closed without a forward) and its note when stopped early |
 
 ### commands/card_sync.py (2026-10-22; not compiled; the bot's card data)
