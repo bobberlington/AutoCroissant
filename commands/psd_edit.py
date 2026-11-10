@@ -30,7 +30,7 @@ from struct import pack, unpack
 from threading import Lock
 from time import perf_counter
 from typing import Optional
-from uuid import NAMESPACE_URL, uuid4, uuid5
+from uuid import NAMESPACE_URL, uuid5
 from weakref import WeakKeyDictionary
 
 import numpy as np
@@ -3779,11 +3779,22 @@ def set_comp(psd: PSDImage, parsed: dict, stat: str, value: int, creature: int =
     reach = fx_pad(layer)
     region = _pad(union_box([box, tuple(layer.bbox) if layer.bbox[2] > layer.bbox[0] else None]), reach, psd)
     placed[b"comp"] = Integer(ids[value])
-    placed[b"placed"] = String(f"{uuid4()}\x00")
+    placed[b"placed"] = String(f"{_comp_placed(layer, placed, stat, value)}\x00")
     from psd_tools.api.layers import TypeLayer     # the fork's raster writer: channels and rect, the record kept
     TypeLayer._store_raster(layer, rgba if rgba is not None else np.zeros((0, 0, 4), np.float32), where)
     layer._invalidate_bbox()
     return Edit(stat, old, value, [layer], [_record_index(layer)], region, comps=[_record_index(layer)])
+
+
+def _comp_placed(layer, placed, stat: str, value: int) -> str:
+    """set_comp's new placed ID: from the old one, the stat and value, not at random, so every picture's bake of a
+    tagged PSD makes the same layers (bake_pictures' check; Stubborn King); one the card holds is skipped."""
+    old = str(placed[b"placed"].value).rstrip("\x00") if b"placed" in placed else ""
+    taken = {str(data[b"placed"].value).rstrip("\x00") for other in layer._psd.descendants() for data in _placed(other)}
+    n = 0
+    while (made := str(uuid5(NAMESPACE_URL, f"{old}|{stat}|{value}|{n}"))) in taken:
+        n += 1
+    return made
 
 
 def set_creatures(psd: PSDImage, parsed: dict, changes: list) -> list:

@@ -73,7 +73,7 @@ from commands.git_commit import (API_TIMEOUT, AUTHOR, COMMIT_TRIES, GIT_TIMEOUT,
                                  commit_info, git, local_commit, plural, ref_head)
 from commands.github_api import blob_sha, token_from_env
 from commands.psd_edit import Refusal, Refused
-from commands.psd_parser import picture_numbers, shown_in
+from commands.psd_parser import name_key, picture_numbers, shown_in
 from global_config import (AUTHORS_PATH, CARD_BRANCH, CARD_REPO, CREATED_PATH, EDITS_PATH, FONT_DIRS_ENV,
                            ICON_MANIFEST_PATH, LOCAL_DIR_LOC, RATINGS_PATH, RULES_PATH, STARS_DIR, TYPES_DIR)
 
@@ -944,14 +944,18 @@ def pictures_of(psd, card: Card, duplicates: list, dups=()) -> dict:
     return {1: card.png, **{n: found[n] for n in numbers if n != 1}}
 
 
-def _views(card: Card, record: dict, numbers: list, jobs: Optional[dict] = None, psd=None) -> list:
+def _views(card: Card, record: dict, numbers: list, jobs: Optional[dict] = None, psd=None,
+           titles: Optional[dict] = None) -> list:
     """The pictures an edit shows in (§4.9): a part's (None: every one) and its followers'; colours, those showing
-    their layers; any other field, every one."""
+    their layers; the name, those printing picture 1's title (titles: {n: printed name}); any other field, every one."""
     every, out = set(numbers), set()
     found = psd_edit.record_parts(record)
     for name, value in (card.jobs if jobs is None else jobs).items():
         if name == "colors" and psd is not None:
             out |= psd_edit.color_views(psd, value, card.name, numbers)
+            continue
+        if name == "name" and titles:           # a picture with its own title (Stubborn Queen's) keeps it
+            out |= {n for n in numbers if name_key(titles.get(n) or "") == name_key(titles.get(1) or "")}
             continue
         if name != "parts":
             out |= every
@@ -976,25 +980,30 @@ def bake_pictures(card: Card, psd, parsed: dict, parser, folder: str, fonts_dir:
     """
     A tagged PSD's bake (§4.9): one apply_jobs per picture the edit shows in, each as that picture (psd_edit.variant)
     onto its own PNG, the saved picture's first (its run writes the PSD); every run's PSD must
-    hold the same layer records. A stars, types or stat edit whose value differs by picture is impossible.
+    hold the same layer records. A stars, types or stat edit whose value differs by picture is impossible; a name edit
+    with another field showing in a picture of its own title bakes alone, next run (OWN_TITLE).
 
     Returns:
         The first run's Baked (card.views: every picture's)
     """
     old_psd = join(folder, "old", basename(card.rel))
     jobs, numbers = card.jobs if jobs is None else jobs, sorted(card.pictures)
-    parses = {}
+    parses, titles = {}, {}
     for n in numbers:
         with psd_edit.variant(psd, n):
             parses[n] = psd_edit.parse_card(parser, old_psd, card.rel, psd)
+            titles[n] = psd_edit.read_name(psd, psd_edit._card_name(parses[n])) if "name" in jobs else None
     for name in jobs:
         if name in psd_edit.ICON_FIELDS + psd_edit.STAT_FIELDS and len({repr(parses[n]["card"].get(name)) for n in numbers}) > 1:
             raise Refused("unsupported-card", f"{name}: its layers differ by picture: edit it in Photoshop", name)
     record = psd_edit.card_parts(psd, card.rel, card.name, parser) if "parts" in jobs else {}
     saved = psd_edit.saved_view(psd)
-    views = sorted(_views(card, record, numbers, jobs, psd), key=lambda n: n != saved)
+    views = sorted(_views(card, record, numbers, jobs, psd, titles), key=lambda n: n != saved)
     if not views:
         raise Refused("unsupported-card", "the edit shows in no picture")
+    own = [n for n in views if "name" in jobs and n not in _views(card, record, numbers, {"name": jobs["name"]}, psd, titles)]
+    if own:                                     # its run would retitle that picture: the name waits for the next run
+        raise Refused("unsupported-card", OWN_TITLE.format(n=own[0]), "name")
     card.views, first = {}, None
     for n in views:
         out = join(folder, "new" if first is None else f"new{n}")
@@ -1040,6 +1049,7 @@ def verdict_of(verdicts: Optional[dict], key: str) -> Optional[dict]:
 
 
 MOVED = r"name: moved ([+-]\d+) px to stay on the card"
+OWN_TITLE = "name: picture {n} prints its own title: the name bakes alone next run"     # never final (bake_pictures)
 ANCHOR = "title_moved"                          # a baked verdict's: the px its bake moved the title on
 
 
@@ -1065,7 +1075,7 @@ def final(snapshot: Snapshot, card: Card, verdicts: Optional[dict] = None) -> bo
             and verdict.get("psd") == card.psd_sha[:8] and str(verdict.get("rules", "")) >= RULES):
         return False
     reason = str(verdict.get("reason", ""))
-    if reason.startswith("font:") and verdict.get("fonts") != snapshot.fonts_key():
+    if reason.startswith("font:") and verdict.get("fonts") != snapshot.fonts_key() or OWN_TITLE.split("}")[1] in reason:
         return False
     return not ((reason.startswith("duplicate:") or reason == f"unsupported-card: {NO_PNG}")
                 and verdict.get("pngs") != snapshot.pngs_key(card.rel, card.key))
@@ -1306,10 +1316,12 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         if not card.png:
             raise Refused("unsupported-card", NO_PNG)
         dups = snapshot.dup_pictures().get(card.rel, [])
+        old_psd, fetched = join(folder, "old", basename(card.rel)), bool(duplicates)    # _printed_already's fetch
         if duplicates or dups:                  # a PSD with variant tags bakes each picture (§4.9); untagged, refused
-            if not duplicates:                  # _printed_already fetched it otherwise
-                snapshot.fetch(card.psd_sha, join(folder, "old", basename(card.rel)))
-            tagged = PSDImage.open(join(folder, "old", basename(card.rel)))
+            if not fetched:
+                snapshot.fetch(card.psd_sha, old_psd)
+                fetched = True
+            tagged = PSDImage.open(old_psd)
             if duplicates or picture_numbers(tagged, dups):     # a drawn duplicate's picture (owner 11-09)
                 card.pictures = pictures_of(tagged, card, duplicates, dups)
             if not card.pictures and duplicates:
@@ -1318,9 +1330,10 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         if card.view is not None and card.view not in (card.pictures or {1: card.png}):
             raise Refused("unsupported-card", f"no picture {card.view}")
         card.png_sha = snapshot.sha(card.png)
-        old_psd, old_png = join(folder, "old", basename(card.rel)), join(folder, "old", basename(card.png))
+        old_png = join(folder, "old", basename(card.png))
         snapshot.prefetch([card.png] + [png for n, png in card.pictures.items() if n != 1])   # beside the PSD
-        snapshot.fetch(card.psd_sha, old_psd)
+        if not fetched:
+            snapshot.fetch(card.psd_sha, old_psd)
         snapshot.fetch(card.png_sha, old_png)
         for n, png in card.pictures.items():
             if n != 1:
