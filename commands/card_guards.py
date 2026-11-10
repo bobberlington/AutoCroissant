@@ -8,7 +8,8 @@ always sets unsaid, box text that rewraps redrawn and its PNG re-exported: only 
 (owner, 2026-10-25); so are the pixel fixes (card_standards.PIXEL_FIXES, in order: clean, on cards: hidden stars, type
 icons, exact copies and leftovers deleted and data that draws nothing removed, every picture and the parse the same, no
 PNG (owner 11-09; a hidden picture's linked file another PSD shows: hidden_of, db/links.json's holders read); badges laid out again at their new widths, straight apostrophes, old icon font glyphs, badges fitted, timing tags set as badges: R1 then untold, status
-words in the chart's colours and effects: no changelog event either, owner 11-07),
+words in the chart's colours and effects and status cards in Krabby Patty: no changelog event either, owner 11-07,
+11-09),
 the PNG re-exported the same way; and the folders as the templates' (card_standards.standard_folders, owner 11-09:
 only where nothing else changes, no PNG); badges drawn with another build of the icon font that the PSD keeps are told
 (owner 2026-11-04: OLD_FONT). One report per push: the job
@@ -132,7 +133,7 @@ OLD_FONT = ("old stoogedings font: pull, reinstall MDW/Fonts/stoogedings.ttf, re
             "Type > Update All Text Layers, save and push")
 NORMALISE = "normalise"                         # the 11-07 pass's fix (card_standards): linked pictures, normal text, no
                                                 # merged image; the guards run it on every later push, silent (G1)
-QUIET_PIXELS = (NORMALISE, "status words")     # pixel fixes that make no guard-event (owner 11-07)
+QUIET_PIXELS = (NORMALISE, "status words", "status font")   # pixel fixes that make no guard-event (owner 11-07, 11-09)
 FOLDERS = "folders as the templates'"           # card_standards.standard_folders: said in the commit message alone
 CONVERT_ROOTS = ("MDW/Templates/", "MDW/Unfinished/")   # PSDs converted and nothing else (Q3)
 CONVERTS = ("now", "later", "off")              # check's --convert: in the check, in the normalise step (after Decided), never

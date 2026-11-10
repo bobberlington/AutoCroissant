@@ -2581,7 +2581,8 @@ def test_pool_size(monkeypatch):
 
 
 def test_status_words_make_no_changelog_event():
-    """Owner 11-07: the status words fix lands in the guards' commit silently, no guard-event for it or its PNG."""
-    psd = {"kind": "psd", "path": "a.psd", "pixels": ["status words"], "shown": ""}
+    """Owner 11-07, 11-09: the status words and status font fixes land in the guards' commit silently, no guard-event
+    for them or their PNG."""
+    psd = {"kind": "psd", "path": "a.psd", "pixels": ["status font", "status words"], "shown": ""}
     png = {"kind": "png", "path": "a.png", "silent": True, "line": "re-exported"}
     assert cg.events_of({"card": "A"}, psd, [psd, png]) == cg.events_of({"card": "A"}, png, [psd, png]) == []

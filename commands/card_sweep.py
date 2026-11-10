@@ -204,7 +204,7 @@ def sweep_card(job) -> dict:
     try:
         data = source.blob(job.psd_new)
         pushed = png_export.open_psd(data)
-        if not standards.pixel_kinds(pushed, (kind,), chart=_worker["context"].chart):
+        if not standards.pixel_kinds(pushed, (kind,), job.psd, _worker["context"].chart):
             return out
         fixed = standards.fix(data, job.psd, [], _worker["work"], _worker["parser"], _worker["fonts"], only=kind,
                               whole=_worker.get("whole", False))
