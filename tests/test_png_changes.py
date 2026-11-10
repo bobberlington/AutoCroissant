@@ -57,9 +57,10 @@ def _blob(repo, rev, path):
                           check=True).stdout.strip()
 
 
-def test_pairs_the_record_and_a_resumed_run(tmp_path):
+def test_pairs_the_record_and_a_resumed_run(tmp_path, monkeypatch):
     """A modified PNG and one moved and changed (same file name) are pairs; an exact move and the bot's recompression
-    (its Recompressed trailer) are not. A run measures what the record lacks; the next run nothing more."""
+    (its Recompressed trailer) are not. A run measures what the record lacks (beside: a child process; it failed: here);
+    the next run nothing more."""
     repo = tmp_path / "repo"
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
     one, two = repo / "Creatures/A/1 Stars/One.png", repo / "Items/B.png"
@@ -87,8 +88,20 @@ def test_pairs_the_record_and_a_resumed_run(tmp_path):
     assert pc.card_pairs(str(repo), "HEAD", "HEAD~1") == []
     record = pc.read_record(str(tmp_path))
     assert pc.visible(record, *pairs[0])                             # not measured: shows
-    done, left = pc.measure(str(repo), pairs, record, log=lambda _: None)
+    done, left = pc.Beside(str(repo), pairs, record).join(record, log=lambda _: None)
     assert (done, left) == (2, []) and all(pc.share_of(record, *p) == 1.0 for p in pairs)
+    capped = pc.read_record(str(tmp_path))                          # its limit spent: the run's event pair still first
+    assert pc.Beside(str(repo), pairs, capped, limit=1).join(capped, [pairs[1]], log=lambda _: None) == (2, [])
+    failed, unforked = pc.read_record(str(tmp_path)), pc.read_record(str(tmp_path))
+    monkeypatch.setattr(pc, "executable", "false")
+    assert pc.Beside(str(repo), pairs, failed).join(failed, log=lambda _: None) == (2, []) and failed == record
+
+    def no_fork(args, real=pc.Popen, **kwargs):                     # the child alone: its readers still start
+        if args[0] == pc.executable:
+            raise BlockingIOError(35, "Resource temporarily unavailable")
+        return real(args, **kwargs)
+    monkeypatch.setattr(pc, "Popen", no_fork)
+    assert pc.Beside(str(repo), pairs, unforked).join(unforked, log=lambda _: None) == (2, []) and unforked == record
     pc.write_record(str(tmp_path), record)
     again = pc.read_record(str(tmp_path))
     assert pc.measure(str(repo), pairs, again, log=lambda _: None) == (0, []) and again == record

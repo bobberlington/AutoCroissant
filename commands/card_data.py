@@ -1695,6 +1695,13 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     db.stats, db.old_stats = stats, old
     run_build = GitBuild(db, checkout, head, blobs=blobs, budget=budget)
     index = run_build.index
+    base = manifest_before.get("card_commit")
+    if base and run(["git", "-C", checkout, "cat-file", "-e", f"{base}^{{commit}}"], capture_output=True).returncode != 0:
+        base = None
+    pictures, measured = png_changes.read_record(db_dir), ""
+    beside = None if restore else png_changes.Beside(     # the run's picture changes (owner 11-09), beside the PSD reads
+        checkout, pictures["pending"] + (png_changes.card_pairs(checkout, run_build.head, base) if base else []), pictures,
+        limit=png_changes.RUN_MAX)
     restored_manifest: dict = {}
     if restore:
         db.stats, db.old_stats, details, restored_manifest = _restore(db_dir, restore)
@@ -1739,6 +1746,8 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     else:
         gone, impossible = [], []
     if run_build.lost:                                    # a 5xx or rate limit: red, nothing written, the next run retries
+        if beside is not None:
+            beside.stop()
         out.code = EXIT_ERROR
         out.errors.append(f"not fetched: {', '.join(run_build.lost[:10])}" + (", ..." if len(run_build.lost) > 10 else ""))
         return out
@@ -1749,17 +1758,12 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     file_commits = {"edited": edits.sha if edits else None, "authors": authors.sha if authors else None}
     new_events = changelog.events(before, db.stats, archived_before, db.archived(), run_build.reparsed,
                                   {n: m for n, m in edits_by.items() if m.get("_by")}, index, file_commits)   # card changes only
-    base = manifest_before.get("card_commit")
-    if base and run(["git", "-C", checkout, "cat-file", "-e", f"{base}^{{commit}}"], capture_output=True).returncode != 0:
-        base = None
     guards = _guard_commits(checkout, base, run_build.head) | {d.get("commit") for d in guard_docs or [] if d.get("commit")}
     new_events = [e for e in new_events if not (e["kind"] == "art" and e.get("commit") in guards)]   # the guards' events say them
     mark_sweeps(checkout, new_events)                     # a sweep's own art and text changes: silent, still on the website
-    pictures, measured = png_changes.read_record(db_dir), ""
-    if not restore:                                       # the run's picture changes measured (owner 11-09)
+    if beside is not None:
         shown = picture_pairs(new_events, index, run_build.shas, db.stats)
-        pairs = list(shown.values()) + pictures["pending"] + (png_changes.card_pairs(checkout, run_build.head, base) if base else [])
-        done, left = png_changes.measure(checkout, pairs, pictures, limit=png_changes.RUN_MAX)
+        done, left = beside.join(pictures, list(shown.values()))   # the event pairs it did not cover: first
         pictures["pending"] = left                        # the next run's first
         if done or left:
             measured = f"Picture changes: {done} measured" + (f", {len(left)} for the next run" if left else "")

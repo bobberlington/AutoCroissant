@@ -4,8 +4,9 @@ change of a card's PNG (its blob before and after), the share of the card's pixe
 website lists an image version at VISIBLE or more (or with a data change) and folds the rest as minor; a changelog art
 event under it is minor (no Discord post). A pair the record lacks counts as visible (owner 11-09).
 
-Card sync measures the changes its run brings (card_data.build); the backfill measures history's, in batches that are
-fetched into scratch stores and dropped (never the whole history on disk), and resumes where the record stops.
+Card sync measures the changes its run brings (card_data.build, in a child process beside its PSD reads: Beside); the
+backfill measures history's, in batches that are fetched into scratch stores and dropped (never the whole history on
+disk), and resumes where the record stops.
 
 CLI: python -m commands.png_changes backfill --checkout <clone with main's history> --db <db dir> [--minutes N]
 """
@@ -15,12 +16,14 @@ from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from json import dumps, loads
 from os import environ, replace
-from os.path import basename, isfile, join, splitext
+from os.path import abspath, basename, dirname, isfile, join, splitext
 from re import sub
-from subprocess import PIPE, Popen, run
+from subprocess import DEVNULL, PIPE, STDOUT, Popen, TimeoutExpired, run
+from sys import executable
 from tempfile import TemporaryDirectory
 from time import time
 from typing import Optional
+from weakref import finalize
 
 from commands.card_models import RENAMED, rename_trailer      # stdlib only: the backfill's sparse copy is this and it
 
@@ -38,11 +41,14 @@ RECORD = "png_changes.json"
 BATCH = 30                   # pairs whose blobs one scratch store holds
 FETCHES = 4                  # batches fetched at a time, ahead of the one compared (the guards' FETCH_POOL)
 WORKERS = 4                  # pictures compared at a time
-RUN_MAX = 300                # pairs a Card sync run measures; the rest wait for the next run or the backfill
+JOIN_WAIT = 600              # s card_data waits for Beside at most (then measured in the build, as before)
+RUN_MAX = 300                # pairs a Card sync run measures beside its PSD reads, and of its own events after
+                             # them; the rest wait for the next run or the backfill
 EXIT_LEFT = 3                # backfill: pairs left when the time ran out
 NO_LAZY = {"GIT_NO_LAZY_FETCH": "1"}
 BOT = "AutoCroissant"        # git_commit.AUTHOR: its Recompressed trailers name PNGs with the same pixels
 RECOMPRESSED = "Recompressed"
+ROOT = dirname(dirname(abspath(__file__)))    # Beside's child: python -m commands.png_changes here
 CARD_PLACES = ("Creatures/", "Items/", "Field/", "N.M.E/", "Auxiliary/", "Auxillary/", "MDW/The Morgue/",
                "MDW/Unfinished/")    # card PNGs, and where a card's picture went and came back from
 
@@ -310,6 +316,85 @@ def measure(checkout: str, pairs: list, record: dict, limit: Optional[int] = Non
     return done, left
 
 
+def _stop(proc: Popen) -> None:
+    if proc.poll() is None:
+        proc.kill()
+        proc.wait()
+
+
+class Beside:
+    """
+    measure() in a child process (python -m commands.png_changes measure), started before card_data's PSD reads and
+    joined after them; a thread would turn the build's forked parsers off (card_data._forks). Nothing to measure: no
+    process.
+    """
+    def __init__(self, checkout: str, pairs: list, record: dict, limit: Optional[int] = None):
+        self.checkout, self.limit = checkout, limit
+        self.todo = [p for p in dict.fromkeys(map(tuple, pairs)) if not _measured(record, p)]
+        self.proc = self._end = self.tmp = None
+        self.why = ""
+        if not self.todo:
+            return
+        try:
+            self.tmp = TemporaryDirectory(prefix="png-beside-")
+            given, self.out, self.log = (join(self.tmp.name, n) for n in ("pairs.json", "out.json", "log.txt"))
+            with open(given, "w", encoding="utf-8") as fh:
+                fh.write(dumps([list(p) for p in self.todo]))
+            args = [executable, "-m", "commands.png_changes", "measure", "--checkout", abspath(checkout), "--pairs",
+                    given, "--out", self.out]
+            with open(self.log, "wb") as fh:
+                self.proc = Popen(args + (["--limit", str(limit)] if limit is not None else []), cwd=ROOT,
+                                  stdin=DEVNULL, stdout=fh, stderr=STDOUT)
+        except OSError as exc:                              # no fork (EAGAIN) or no disk: join measures them here
+            self.why = f"not started beside the PSD reads ({exc.__class__.__name__})"
+            if self.tmp is not None:
+                self.tmp.cleanup()
+            return
+        self._end = finalize(self, _stop, self.proc)        # the build stopped early: so does it
+
+    def stop(self) -> None:
+        if self._end is not None:
+            self._end()
+
+    def join(self, record: dict, more: list = (), timeout: float = JOIN_WAIT, log=print) -> tuple:
+        """
+        Its measures into the record (timeout s waited at most), then the pairs of `more` (the run's own events) it did
+        not cover measured here, first and with the whole limit, and its own after them when it failed, did not start
+        or ran out of time (as before it ran beside).
+
+        Returns:
+            (pairs measured, pairs left), as measure()
+        """
+        got, own = None, []
+        if self.proc is not None:
+            waited = time()
+            try:
+                self.proc.wait(timeout)
+            except TimeoutExpired:
+                pass
+            self.stop()
+            with open(self.log, encoding="utf-8", errors="replace") as fh:
+                for line in fh.read().splitlines():
+                    log(line)
+            if self.proc.returncode == 0 and isfile(self.out):
+                with open(self.out, encoding="utf-8") as fh:
+                    got = loads(fh.read())
+                record["pairs"].update(got["pairs"])
+                log(f"png changes: {got['done']} measured beside the PSD reads in {got['seconds']:.1f} s, "
+                    f"{time() - waited:.1f} s waited for")
+            else:
+                own = self.todo
+                log(f"png changes: not measured beside the PSD reads (exit {self.proc.returncode}): measured here")
+            self.tmp.cleanup()
+        elif self.todo:
+            own = self.todo
+            log(f"png changes: {self.why}: measured here")
+        done, left = (got["done"], [tuple(p) for p in got["left"]]) if got else (0, [])
+        more_done, more_left = measure(self.checkout, list(more) + own, record, limit=self.limit, log=log)
+        left = [p for p in dict.fromkeys(left + more_left) if not _measured(record, p)]
+        return done + more_done, left
+
+
 # ========================
 # CLI
 # ========================
@@ -321,7 +406,21 @@ def main(argv: Optional[list] = None) -> int:
     back.add_argument("--db", required=True)
     back.add_argument("--head", default="HEAD")
     back.add_argument("--minutes", type=float, default=0, help="stop after this long (0: no limit); exit 3 with pairs left")
+    side = sub_parsers.add_parser("measure", help="measure the pairs of a JSON file (card_data's Beside)")
+    side.add_argument("--checkout", required=True)
+    side.add_argument("--pairs", required=True, help="a JSON file: [[old blob, new blob], ...]")
+    side.add_argument("--out", required=True, help="written when done: {done, left, pairs, seconds}")
+    side.add_argument("--limit", type=int)
     args = parser.parse_args(argv)
+    if args.command == "measure":
+        with open(args.pairs, encoding="utf-8") as fh:
+            pairs = loads(fh.read())
+        record, began = {"rule": RULE, "pairs": {}, "pending": []}, time()
+        done, left = measure(args.checkout, pairs, record, limit=args.limit)
+        with open(args.out + ".tmp", "w", encoding="utf-8") as fh:
+            fh.write(dumps({"done": done, "left": [list(p) for p in left], "pairs": record["pairs"], "seconds": time() - began}))
+        replace(args.out + ".tmp", args.out)
+        return 0
     record = read_record(args.db)
     pairs = card_pairs(args.checkout, args.head)
     deadline = time() + args.minutes * 60 if args.minutes else None
@@ -338,6 +437,7 @@ def main(argv: Optional[list] = None) -> int:
 # Module Exports
 # ========================
 __all__ = [
+    'Beside',
     'RECORD',
     'RULE',
     'RUN_MAX',

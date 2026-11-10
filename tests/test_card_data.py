@@ -530,6 +530,45 @@ def test_events_carry_their_push(cards, monkeypatch):
     assert cdb.read_verdicts(str(cards.db)) == {"mini doomer": refused} and cdb.check_db(str(cards.db)) == []
 
 
+def test_pictures_measured_beside_the_psd_reads(cards, monkeypatch):
+    """The run's PNG pairs: a child process started before the PSD reads (no thread: the forked reads stay on), joined
+    before the minor marks."""
+    import io
+    from threading import active_count
+    from PIL import Image
+    import commands.png_changes as pc
+
+    def png(shade):
+        out = io.BytesIO()
+        Image.new("RGBA", (40, 40), (shade, 9, 9, 255)).save(out, "PNG")
+        return out.getvalue()
+    put(cards.repo, "Auxiliary/Minions/Mini_Doomer.png", png(10))
+    commit(cards.repo, "bob", 2000)
+    _build(cards, "--empty")
+    put(cards.repo, "Auxiliary/Minions/Mini_Doomer.png", png(200))
+    commit(cards.repo, "bob", 2100)
+    pair, threads, seen = pc.card_pairs(str(cards.repo), "HEAD", "HEAD~1")[0], active_count(), []
+    started, reads, minor = pc.Beside.__init__, cd.GitBuild.traverse_remote, cd.mark_minor
+
+    def beside(self, *args, **kwargs):
+        seen.append("beside")
+        started(self, *args, **kwargs)
+
+    def traverse(self, *args):
+        seen.append(("reads", active_count()))
+        return reads(self, *args)
+
+    def mark(events, shown, record):
+        seen.append(("minor", pc.share_of(record, *pair)))
+        minor(events, shown, record)
+    monkeypatch.setattr(pc.Beside, "__init__", beside)
+    monkeypatch.setattr(cd.GitBuild, "traverse_remote", traverse)
+    monkeypatch.setattr(cd, "mark_minor", mark)
+    assert _build(cards)[0] == cd.EXIT_OK
+    assert seen == ["beside", ("reads", threads), ("minor", 1.0)]
+    assert pc.share_of(pc.read_record(str(cards.db)), *pair) == 1.0
+
+
 def test_sweep_events_are_silent_in_any_push(tmp_path):
     """A Card-sweep trailer silences its commit's own art and text changes only: not the other commits of its push (one
     listed push, the fallback, or a later build holding its card), not a card it adds, not a card an earlier commit
