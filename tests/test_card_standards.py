@@ -1067,6 +1067,17 @@ def test_folders_file_linked_stars(clone, tmp_path, monkeypatch):
     assert psd_edit.plan_stars(out, psd_edit.parse_card(parser, rel, rel, out), 4, parser, moving=True).copies
 
 
+def test_folders_refusals_read_once(clone, tmp_path, monkeypatch):
+    """Smoke Bomb: five levels refused, four the very file of the first: the card read once, that file gated once."""
+    rel = "Items/Infliction/1 Stars/Smoke_Bomb.psd"
+    parser = clone_vocabulary(str(clone)).parser()
+    reads, real = [], cs.folder_reads
+    monkeypatch.setattr(cs, "folder_reads", lambda *args: reads.append(args) or real(*args))
+    done = cs.standard_folders(_card(clone, rel)[0], str(tmp_path / "out.psd"), None, rel, parser, isolated=False)
+    why = [line for _, line in done.tried]
+    assert not done and why.count(why[0]) == 5 and why[0].startswith("reparse") and len(reads) == 2
+
+
 def test_folders_overlay_text_and_art(clone, tmp_path):
     """Shadow Miner (owner 11-09): its Ability, under a Text folder with a stroke and shadow, into Overlay Text over
     Text; 'Layer 8', drawn over the header, into Overlay at the top; its hidden Curves layers gone; the picture the
