@@ -762,7 +762,7 @@ gotcha-4 unknown-field error; `series==mario & subseries~door` is the website's 
 5. `type==creature` misses the 7 plural-"creatures" cards (section 2); use `type~creature`.
 6. Numeric compares drop NaN rows, i.e. only cards that HAVE the stat participate.
 7. Bare-text search runs a fuzzy pass only when no card has the text (since 2026-11-09):
-   `SequenceMatcher(None, query, whole_ability).ratio() > match_ratio` (`_fuzzy_labels`, query_card.py:508), for an
+   `SequenceMatcher(None, query, whole_ability).ratio() > match_ratio` (`_fuzzy_labels`, query_card.py:510), for an
    ability pasted with a typo. It compares against the ENTIRE ability, but 129 abilities are 40 characters or less, so
    when it always ran it padded short queries too (`+1 atk` also found Enfeebled's `-1 atk`; 164 of 518 common
    phrases got cards without the text). Now the results are the website's on 515 of those 518.
