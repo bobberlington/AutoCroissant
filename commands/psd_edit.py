@@ -1663,6 +1663,14 @@ def status_fills(chart: PSDImage) -> dict:
         {status name lowercased: StatusColor}; fills are the engine's 0..1 values
     """
     out = {}
+    for name, layer, fill in _status_layers(chart):
+        blocks = {key: layer.tagged_blocks[key] for key in EFFECT_BLOCKS if key in layer.tagged_blocks}
+        out[name.lower()] = StatusColor(name, fill, bool(_enabled_effects(layer)), blocks)
+    return out
+
+
+def _status_layers(chart: PSDImage):
+    """(name, text layer, first fill) of each status in the chart's Buffs and Debuffs groups."""
     for group in chart:
         if not group.is_group() or group.name.strip() not in ("Buffs", "Debuffs"):
             continue
@@ -1672,8 +1680,40 @@ def status_fills(chart: PSDImage) -> dict:
             name = collapse(layer.text)
             fills = [fill for _, _, fill in run_fills(layer) if fill]
             if name and fills:
-                blocks = {key: layer.tagged_blocks[key] for key in EFFECT_BLOCKS if key in layer.tagged_blocks}
-                out[name.lower()] = StatusColor(name, fills[0], bool(_enabled_effects(layer)), blocks)
+                yield name, layer, fills[0]
+
+
+def status_inks(chart: PSDImage) -> dict:
+    """
+    {status name: "#rrggbb"}: the colour each chart status prints in (the site's mock-up; Card sync's record). Its fill,
+    under its enabled Normal Gradient then Color Overlays at their opacity, a gradient as its mean colour.
+    """
+    from psd_tools.api.effects import ColorOverlay, GradientOverlay
+    from psd_tools.composite import paint
+    out = {}
+    for name, layer, fill in _status_layers(chart):
+        ink = np.array(fill[-3:], np.float64)
+        effects = list(layer.effects) if layer.effects.enabled else []
+        for kind in (GradientOverlay, ColorOverlay):            # Photoshop paints a Color Overlay over a Gradient one
+            for effect in effects:
+                if not (isinstance(effect, kind) and effect.enabled and effect.blend_mode == BlendMode.NORMAL):
+                    continue
+                alpha = float(effect.opacity) / 100
+                if kind is ColorOverlay:
+                    rgb = [effect.color.get(key) for key in (b"Rd  ", b"Grn ", b"Bl  ")]
+                    if None in rgb:                             # not an RGB colour
+                        continue
+                    color = np.array([float(value) / 255 for value in rgb])
+                else:
+                    ramp, ramp_alpha = paint._make_gradient_color(ColorMode.RGB, effect.gradient,
+                                                                  paint._gradient_method(effect.descriptor))
+                    if ramp is None:
+                        continue
+                    along = np.linspace(0.0, 1.0, 256)
+                    color = np.asarray(ramp(along), np.float64).reshape(-1, 3).mean(0)
+                    alpha *= float(np.mean(ramp_alpha(along))) if ramp_alpha is not None else 1.0
+                ink = ink * (1 - alpha) + color * alpha
+        out[name] = _hex(ink)
     return out
 
 

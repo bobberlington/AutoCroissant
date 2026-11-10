@@ -57,6 +57,8 @@ LINKS_JSON = "links.json"                                         # db/: every P
 LINK_KEYS = ("files", "pixels")                                  # links.json's keys beside the PSD paths
 RECORDS = ("render_record.json", "spot_record.json")              # db/: the renders' look facts and the icons' earlier cores
                                                                   # (psd_edit.RENDER_RECORD, SPOT_RECORD); not in the manifest
+STATUS_COLORS = "status_colors.json"                              # db/: each chart status's printed colour (the site's
+                                                                  # mock-up); not in the manifest
 LINKED_DIR = "MDW/Linked"                                         # the cards' linked pictures (the 11-07 pass)
 LINK_HOLDERS = (".psd", ".psb")                                   # files whose links count: MDW/Linked's .psb documents link too
 FETCH_CHUNK, FETCH_POOL = 8, 4                                    # blobs a git fetch, fetches at a time (the guards' Pushed blobs)
@@ -952,6 +954,23 @@ def records_text(record: dict) -> str:
     return json_dumps(record, indent=0, sort_keys=True) + "\n"
 
 
+def status_colors(run_build, before: dict) -> dict:
+    """db/status_colors.json at the build's head: {"blob": the status chart's, "colors": psd_edit.status_inks}; the
+    chart read again only when its blob changed, before kept when it can't be read."""
+    from commands import psd_edit
+    sha = run_build.shas.get(psd_edit.STATUS_CHART)
+    if sha == before.get("blob"):
+        return before
+    if sha is None:
+        return {"blob": None, "colors": {}}
+    data = run_build._file_bytes(psd_edit.STATUS_CHART)
+    try:
+        return {"blob": sha, "colors": psd_edit.status_inks(PSDImage.open(BytesIO(data)))}
+    except Exception as e:                                # not fetched or unreadable: the next build tries again
+        print(f"{psd_edit.STATUS_CHART}: status colours not read ({type(e).__name__}: {e})")
+        return before
+
+
 def linked_file(path: str) -> bool:
     """A file cards link: Types/ (stars and types) or MDW/Linked (every other picture)."""
     return path.startswith((f"{TYPES_DIR}/", f"{LINKED_DIR}/"))
@@ -1632,6 +1651,8 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     stats, old, details, manifest_before = read_db(db_dir)
     links_before = read_links(db_dir)
     links = links_before
+    colors_before = json_loads(_text(db_dir, STATUS_COLORS) or "{}")
+    colors = colors_before
     from commands.psd_edit import merge_records, set_records
     render, spot = merge_records(*read_records(db_dir), records or [])
     set_records(render, spot)                                 # this build's parses read them (psd_details' type spots)
@@ -1677,6 +1698,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         edits, authors = run_build.file_commit(EDITS_PATH), run_build.file_commit(AUTHORS_PATH)
         record_versions(before, archived_before, db, run_build.reparsed, run_build.restored, index, edits, authors)
         links = gather_links(run_build, links_before)
+        colors = status_colors(run_build, colors_before)
         run_build.duplicate_versions()
         db.drop_stale_archives()
         impossible = unknown_values(db.stats, db.old_stats)        # a replaced misparse's values: unknown in history
@@ -1807,13 +1829,13 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
                  and psd_details.text_of(details) == _text(db_dir, "psd_details.json")
                  and links_text(links) == links_text(read_links(db_dir))
                  and all(records_text(r) == _text(db_dir, n) for n, r in zip(RECORDS, (render, spot)))
-                 and png_changes.record_text(pictures) == _text(db_dir, png_changes.RECORD)
+                 and png_changes.record_text(pictures) == _text(db_dir, png_changes.RECORD) and colors == colors_before
                  and book in (None, _text(db_dir, "rulebook.json")))
     if unchanged:
         return out
     write_db(db_dir, db.stats, db.old_stats, psd_details.text_of(details), out.manifest, book)
     write_text(path_join(db_dir, LINKS_JSON), links_text(links))
-    for name, record in zip(RECORDS, (render, spot)):
+    for name, record in zip(RECORDS + (STATUS_COLORS,), (render, spot, colors)):
         write_text(path_join(db_dir, name), records_text(record))
     png_changes.write_record(db_dir, pictures)
     if numbered:
