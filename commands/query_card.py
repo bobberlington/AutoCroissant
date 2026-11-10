@@ -403,6 +403,8 @@ class CardRepository:
             names = self._edit_names[1]
             return Series([" ".join(names.get(CardAuthors.key(str(label)), [])) for label in df.index], index=df.index,
                           dtype=object)
+        if column == "types" and column in df:           # space-joined, as the website
+            return df["types"].map(lambda v: " ".join(v) if isinstance(v, (list, tuple)) and v else None)
         return df[column] if column in df else None
 
     def _haystack(self) -> Series:

@@ -39,6 +39,7 @@ QUERIES = [                                              # query, the cards foun
     ("stars<=2", {"Fire Bomb", "Panda Shield", "Burning"}),
     ("fire", {"Fire Bomb", "Burning"}), ("dedede", {"King Dedede"}), ("mk", {"Meta Knight"}),
     ("sans.", {"sans."}), ("name~knight", {"Meta Knight"}), ("types~wind", {"Kirby"}),
+    ("types==wind", {"Kirby"}),
     ("buckler", {"Panda Shield"}), ("alias~mk", {"Meta Knight"}), ("aliases==buckler", {"Panda Shield"}),
     ("display_name~sans", {"sans."}),  # any column of the bot's
     ("+1 atk", {"Power Ring"}), ("+1 atk to every friendly minon.", {"Power Ring"}),   # near text only when none has it
