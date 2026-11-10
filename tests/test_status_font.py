@@ -1,4 +1,4 @@
-"""Status font (owner 2026-11-09): scope, the grown glow, the guards' kind."""
+"""Status font (owner 2026-11-09): scope, the grown glow, a title with no style, the guards' kind."""
 import commands.card_standards as cs
 import commands.status_font as sf
 
@@ -24,3 +24,11 @@ def test_kind_runs_before_status_words():
     kinds = list(cs.PIXEL_FIXES)
     assert kinds.index("tags") < kinds.index("status font") < kinds.index("status words")
     assert "status font" in cs.PIXEL_LINES and "status font" not in cs.SWEEP_ONLY
+
+
+def test_title_with_no_style_takes_the_charts():
+    from types import SimpleNamespace as NS
+    glow = {b"enab": True, b"present": True, b"blur": 18.0}
+    status = NS(blocks={sf.LFX2: NS(data={b"masterFXSwitch": True, b"OrGl": glow})})
+    block, legacy, kinds, whole = sf._effects(NS(tagged_blocks={}), status)
+    assert whole and block.data == status.blocks[sf.LFX2].data and legacy is None and kinds == ["OrGl"]

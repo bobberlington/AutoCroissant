@@ -98,18 +98,30 @@ def _grow(item, by: int) -> None:
         item[b"Ckmt"].value = p
 
 
+def _strokes(data) -> bool:
+    """An enabled Stroke in a lfx2 descriptor."""
+    return any(_on(i) for key in (b"FrFX", b"frameFXMulti") if key in data for i in _items(data[key]))
+
+
 def _effects(layer, status, chart_stroke: bool = False):
-    """The title's effect blocks as the chart makes them: (lfx2 copy, lrFX copy or None, [types taken]), or None when
-    the layer or the chart has no lfx2 or the chart enables nothing to take. Each type the chart's layer enables replaces
-    the title's own of that type (in the title's key order; one it lacks added before numModifyingFX); the Stroke stays
-    the title's unless chart_stroke; a glow or shadow cast from the glyphs grows by the title's stroke past the chart's
-    (grown), so it shows past it as on the chart. lrFX: the chart's enabled entries (sized as lfx2's)."""
+    """The title's effect blocks as the chart makes them: (lfx2, lrFX or None, [types taken], whole), or None when the
+    chart has no lfx2 or enables nothing to take. A title with no style drawn (no lfx2, its master switch off) takes the
+    chart's blocks whole, as its status words do (whole). Else each type the chart's layer enables replaces the title's
+    own of that type (in the title's key order; one it lacks added before numModifyingFX); the title's own Stroke stays
+    unless chart_stroke; a glow or shadow cast from the glyphs grows by the title's stroke past the chart's (grown), so
+    it shows past it as on the chart. lrFX: the chart's enabled entries (sized as lfx2's)."""
     mine, theirs = layer.tagged_blocks.get(LFX2), status.blocks.get(LFX2)
-    if mine is None or theirs is None:
+    if theirs is None:
         return None
     b = theirs.data
     take = {kind: keys for kind, keys in _types(b).items() if any(_on(i) for k in keys for i in _items(b[k]))}
-    if not chart_stroke:
+    if not take:
+        return None
+    if mine is None or not mine.data.get(b"masterFXSwitch", True):
+        legacy = status.blocks.get(LRFX)
+        legacy = deepcopy(legacy) if legacy is not None else None
+        return deepcopy(theirs), legacy, sorted(k.decode() for k in take), True
+    if not chart_stroke and _strokes(mine.data):
         take.pop(b"FrFX", None)
     if not take:
         return None
@@ -155,7 +167,7 @@ def _effects(layer, status, chart_stroke: bool = False):
                 legacy.data[key] = item
     else:
         legacy = None
-    return block, legacy, sorted(k.decode() for k in take)
+    return block, legacy, sorted(k.decode() for k in take), False
 
 
 def _effects_off(layer, status, chart_stroke: bool = False):
@@ -169,7 +181,13 @@ def _effects_off(layer, status, chart_stroke: bool = False):
 
 
 def _set_effects(layer, made) -> None:
-    block, legacy, _ = made
+    block, legacy, _, whole = made
+    if whole:                               # an existing block replaced where it stands, a new one added
+        layer.tagged_blocks[LFX2] = block
+        if legacy is not None:
+            layer.tagged_blocks[LRFX] = legacy
+        layer._psd.mark_updated()
+        return
     mine = layer.tagged_blocks.get(LFX2).data
     mine.clear()
     for key, value in block.data.items():
@@ -254,8 +272,10 @@ class _Fit:
     def __init__(self, psd, layer, keep, header, distance=None):
         self.psd, self.layer, self.keep, self.header, self.distance = psd, layer, keep, header, distance
         self.reach = psd_edit._stroke_reach(layer)
-        old = margins(_ink_box(layer), psd.width, psd.height, self.reach)
+        box = _ink_box(layer)
+        old = margins(box, psd.width, psd.height, self.reach)
         self.need = None if old is None else tuple(min(m, EDGE) for m in old)
+        self.centre = (box[0] + box[2]) / 2 if box is not None and _lopsided(layer) else None
         self.hit = self._hit() if header is not None else 0
         self.gap = min(self._gap(), EDGE) if header is not None else None
 
@@ -312,6 +332,31 @@ def _size_runs(layer) -> list:
     return out
 
 
+def _lopsided(layer) -> bool:
+    """Point text not centred (left or right justified): it grows from one side, the line off its place."""
+    if not psd_edit.point_text(layer):
+        return False
+    engine, resources = layer.engine_dict, layer.resource_dict
+    try:
+        normal = resources["ParagraphSheetSet"][int(_num(resources["TheNormalParagraphSheet"]))]["Properties"]
+    except (KeyError, IndexError, TypeError, ValueError):
+        normal = {}
+    return any(int(_num(item["ParagraphSheet"]["Properties"].get("Justification", normal.get("Justification", 0)))) != 2
+               for item in engine["ParagraphRun"]["RunArray"])
+
+
+def _lay(layer, fonts, centre):
+    """The layer rasterized; point text not centred moved across (TySh and raster, whole px) so its ink keeps its old
+    centre, then rasterized again there."""
+    report = layer.rasterize(fonts=fonts)
+    box = _ink_box(layer) if centre is not None else None
+    dx = round(centre - (box[0] + box[2]) / 2) if box is not None else 0
+    if dx:
+        psd_edit.nudge(layer, dx, 0)
+        report = layer.rasterize(fonts=fonts)
+    return report
+
+
 def _badges(layer, fonts) -> int:
     """The layer's badges and icons fitted to its text as the guards fit them (badge_fits, badge_wants)."""
     wants = [(fit, keys) for fit in psd_edit.badge_fits(layer, fonts) for keys in [psd_edit.badge_wants(fit)] if keys]
@@ -322,12 +367,12 @@ def _badges(layer, fonts) -> int:
 
 def fit(psd, layer, fonts, keep, header, distance=None) -> tuple:
     """The layer's badges fitted and it rasterized as it stands, or at the largest scale (FIT_STEP grain, down to
-    FIT_MIN) that fits (_Fit), its badges fitted again at that size. Returns (scale, badges fitted, report); raises
-    Refused."""
+    FIT_MIN) that fits (_Fit), its badges fitted again at that size; point text not centred kept on its old centre
+    (_lay). Returns (scale, badges fitted, report); raises Refused."""
     check = _Fit(psd, layer, keep, header, distance)
     fitted = _badges(layer, fonts)
     runs = _size_runs(layer)
-    report = layer.rasterize(fonts=fonts)
+    report = _lay(layer, fonts, check.centre)
     first = check.why(report)
     if first is None:
         return 1.0, fitted, report
@@ -340,7 +385,7 @@ def fit(psd, layer, fonts, keep, header, distance=None) -> tuple:
             if b > a and keys:
                 layer.set_span_style(a, b, **{key: round(value * scale, 2) for key, value in keys.items()})
         fitted = _badges(layer, fonts)
-        report = layer.rasterize(fonts=fonts)
+        report = _lay(layer, fonts, check.centre)
         if check.why(report) is None:
             return scale, fitted, report
         k += 1
@@ -454,8 +499,8 @@ def restyle(psd, rel: str, chart: dict, fonts_dir: str, chart_stroke: bool = Fal
 
 
 def gate(old_path: str, new_path: str, rel: str, chart: dict) -> None:
-    """restyle's gate: the same records; a visible text record changed in its rect, channels and TySh alone (the title
-    also its lfx2 and lrFX), an FX layer in its rect and channels; the document as it was but the edited layers' Txt2
+    """restyle's gate: the same records; a visible text record changed in its rect, channels, TySh and fxrp alone (moved:
+    _lay; the title also its lfx2 and lrFX), an FX layer in its rect and channels; the document as it was but the edited layers' Txt2
     stories (gate_stories, Krabby Patty added). Raises Refused("bytes")."""
     a, b = psd_edit.layer_records(old_path), psd_edit.layer_records(new_path)
     if len(a) != len(b):
@@ -465,16 +510,20 @@ def gate(old_path: str, new_path: str, rel: str, chart: dict) -> None:
     titles = {psd_edit._record_index(layer) for layer in status_of(before, rel, chart)[0]}
     edited = {psd_edit._record_index(layer) for layer in texts}
     fxs = {psd_edit._record_index(layer) for layer in before.descendants() if EFFECT_LAYER_TAG in layer.name}
-    tysh, fx_blocks = bytes(Tag.TYPE_TOOL_OBJECT_SETTING), {bytes(LFX2), bytes(LRFX)}
+    text_blocks = {bytes(Tag.TYPE_TOOL_OBJECT_SETTING), bytes(Tag.REFERENCE_POINT)}
+    fx_blocks = {bytes(LFX2), bytes(LRFX)}
     for i, (x, y) in enumerate(zip(a, b)):
         if x == y:
             continue
         keys = {k for k in x if x[k] != y[k]}
-        if [k for k, _ in x["blocks"]] != [k for k, _ in y["blocks"]]:
+        allowed = text_blocks | (fx_blocks if i in titles else set()) if i in edited else set()
+        had = {k for k, _ in x["blocks"]}
+        kept, added = [entry for entry in y["blocks"] if entry[0] in had], [k for k, _ in y["blocks"] if k not in had]
+        if [k for k, _ in kept] != [k for k, _ in x["blocks"]] or set(added) - (fx_blocks & allowed) \
+                or len(added) != len(set(added)):         # a title may gain lfx2 and lrFX (a title with no style)
             raise Refused("bytes", f"{x['name']}: its blocks changed")
-        blocks = {k for (k, v), (_, w) in zip(x["blocks"], y["blocks"]) if v != w}
+        blocks = {k for (k, v), (_, w) in zip(x["blocks"], kept) if v != w} | set(added)
         if i in edited:
-            allowed = {tysh} | (fx_blocks if i in titles else set())
             if keys - {"rect", "channels", "blocks"} or blocks - allowed:
                 raise Refused("bytes", f"{x['name']}: changed beyond its text and effects")
         elif i in fxs:
