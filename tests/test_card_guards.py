@@ -1113,6 +1113,34 @@ def test_a_duplicate_follows_its_psd_silently_and_records_land(cards, tmp_path):
     assert json.loads((out / "records.json").read_text()) == [bread["records"]]
 
 
+def test_a_drawn_duplicate_is_its_psds_picture(cards, clone, tmp_path):
+    """Owner 11-09: tags pushed on a PSD whose picture 2 is a duplicate's PNG (Breakfast.png, dup_of A Snack: as
+    Gust_of_Trees.png) make no A_Snack2.png: picture 2 is drawn onto the duplicate's PNG (current here), never followed."""
+    from psd_tools import PSDImage
+    sys.path.insert(0, str(Path(__file__).parent / "fixtures" / "parts"))
+    from make_fixtures import CARDS
+    root, base, alice, bot = cards
+    rel, _, tags = CARDS["a_snack_tagged"]
+    stem, dup = rel[:-4], f"{FOLDER}/Breakfast.png"
+    for path, src in ((rel, rel), (stem + ".png", stem + ".png"), (dup, stem + "2.png"), (stem + "3.png", stem + "3.png")):
+        shutil.copy(clone / src, root / path)
+    (root / "site").mkdir()
+    (root / "site/Card Edits.json").write_text(json.dumps({"cards": {"Breakfast": {"dup_of": "A Snack"}}}))
+    start = _commit(root, "A Snack")
+    psd = PSDImage.open(str(root / rel))
+    for layer in psd.descendants():
+        if layer.layer_id in tags:
+            layer.name = tags[layer.layer_id]
+    psd.save(str(root / rel))
+    pushed = _commit(root, "A Snack tagged", author="Alice")
+    out = tmp_path / "out"
+    cg.check(str(root), pushed, start, mode="on", out=str(out), workers=1)
+    (snack,) = [c for c in json.loads((out / "plan.json").read_text())["cards"] if c["card"] == "A Snack"]
+    assert snack["dups"] == {} and dup in snack["expect"] and snack["export"]["outcome"] == "current", snack["export"]
+    assert [w["path"] for w in snack["writes"] if w["kind"] == "png"] == [] and not snack["export"]["numbered_refused"]
+    assert not [i for i in snack["issues"] if i["code"] == "R12"], snack["issues"]
+
+
 # ========================
 # The real push of 2026-10-22 15:18 (the clone, read-only)
 # ========================

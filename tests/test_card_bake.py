@@ -1066,6 +1066,40 @@ def test_a_tagged_psd_bakes_each_picture_it_shows_in(github, clone, tmp_path):
     assert {k: layer.visible for k, layer in new.items()} == {k: layer.visible for k, layer in saved.items()}
 
 
+@fork_text
+def test_a_drawn_duplicate_bakes_as_its_picture(github, clone, tmp_path):
+    """Owner 11-09: picture 2 kept under a duplicate's own name (Breakfast.png, dup_of A Snack: as Gust_of_Trees.png) is
+    picture 2: the shared Ability writes it as such, no A_Snack2.png made; its entry stays."""
+    import sys
+    from psd_tools import PSDImage
+    sys.path.insert(0, str(Path(__file__).parent / "fixtures" / "parts"))
+    from make_fixtures import CARDS
+    rel, _, tags = CARDS["a_snack_tagged"]
+    if not (clone / pe.STATUS_CHART).exists():
+        pytest.skip("no status chart")
+    psd = PSDImage.open(str(clone / rel))
+    for layer in psd.descendants():
+        if layer.layer_id in tags:
+            layer.name = tags[layer.layer_id]
+    psd.save(str(tmp_path / "A_Snack.psd"))
+    stem, dup = rel[:-4], rel.rsplit("/", 1)[0] + "/Breakfast.png"
+    files = github.files_at(github.head)
+    files.pop(stem + "2.png", None)
+    files.update({rel: (tmp_path / "A_Snack.psd").read_bytes(), pe.STATUS_CHART: (clone / pe.STATUS_CHART).read_bytes(),
+                  stem + ".png": (clone / (stem + ".png")).read_bytes(), dup: (clone / (stem + "2.png")).read_bytes(),
+                  stem + "3.png": (clone / (stem + "3.png")).read_bytes()})
+    ability = json.loads((Path(__file__).parent / "fixtures" / "parts" / "card_edits.parts.json").read_text("utf-8")) \
+        ["cards"]["A Snack"]["parts"]["320"]
+    files[cb.EDITS_PATH] = _edits({"Breakfast": {"dup_of": "A Snack"},
+                                   "A Snack": {"ability": ability["text"], "parts": {"320": ability}, "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: A Snack")
+    text, commits = cb.run()
+    assert len(commits) == 1, text
+    after = github.files_at(github.head)
+    assert sorted(p for p in after if after[p] != files.get(p)) == sorted([rel, cb.EDITS_PATH, stem + ".png", dup, stem + "3.png"]), text
+    assert _edits_at(github)["cards"] == {"Breakfast": {"dup_of": "A Snack"}} and stem + "2.png" not in after
+
+
 def test_a_stars_edit_moves_a_card_starred_by_its_folder(github):
     """§11 case 8: The Freezer's stars 1 -> 3 move its PSD and PNG into "Field/3 Stars" (created, told): one commit adds
     them there and deletes them here; its printed star (a 'Patrick Star', no Stars group) is copied twice; the verdict

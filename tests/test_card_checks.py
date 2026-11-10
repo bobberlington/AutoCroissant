@@ -143,6 +143,39 @@ def test_refresh_clears():
     assert checks["cleared"] == {}
 
 
+def test_a_drawn_duplicate_is_no_flag(clone, monkeypatch):
+    """Owner 11-09: a picture-only duplicate (dup_of) its PSD's variant tags draw (picture 2 titled as it: Gust of Trees)
+    is no "drawn apart" flag, never measured (Regeneration Potion's clipped adjustment misreads); untagged, it is."""
+    import sys
+    from hashlib import sha1
+    from io import BytesIO
+    from psd_tools import PSDImage
+    from commands.card_bake import Snapshot
+    from commands.psd_edit import _bare_parser
+    sys.path.insert(0, str(Path(__file__).parent / "fixtures" / "parts"))
+    from make_fixtures import CARDS
+    rel, _, tags = CARDS["a_snack_tagged"]
+    stem = rel[:-4]
+    psd = PSDImage.open(str(clone / rel))
+    for layer in psd.descendants():
+        if layer.layer_id in tags:
+            layer.name = tags[layer.layer_id]
+    tagged = BytesIO()
+    psd.save(tagged)
+    files = {stem + ".png": (clone / (stem + ".png")).read_bytes(), stem + "3.png": (clone / (stem + "3.png")).read_bytes(),
+             rel.rsplit("/", 1)[0] + "/Breakfast.png": (clone / (stem + "2.png")).read_bytes(),
+             cc.EDITS_PATH: json.dumps({"cards": {"Breakfast": {"dup_of": "A Snack"}}}).encode()}
+    monkeypatch.setattr(cc, "edit_notes", lambda *args: [])     # the edits' bakes: test_card_bake's
+    monkeypatch.setattr(cc.png_export, "drawn_apart", lambda *args: True)  # a drawn picture is never measured
+    sha = lambda data: sha1(b"blob %d\0" % len(data) + data).hexdigest()
+    for data, flagged in (((clone / rel).read_bytes(), True), (tagged.getvalue(), False)):
+        found = {rel: data, **files}
+        snapshot = Snapshot("", "", {}, {path: ("100644", sha(blob)) for path, blob in found.items()})
+        snapshot.fetch = {sha(blob): blob for blob in found.values()}.get
+        record = cc.check_card(cc.Context(snapshot, _bare_parser(), ""), rel)
+        assert (cc.DUP_NOTE.format(name="Breakfast.png") in record["notes"]) is flagged, record["notes"]
+
+
 def test_sweeps_keep_flags(tmp_path):
     """A person's flag stays through sweeps (db/changelog's "sweep") and an unknown chain; a person's push clears it."""
     rel, mark = "Creatures/A.psd", "11111111"
