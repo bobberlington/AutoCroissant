@@ -162,14 +162,19 @@ def read_row(row: np.ndarray) -> dict:
     return {"best": best, "could": near} if best is not None else {"best": None, "could": None}
 
 
-def _lightness(row: np.ndarray, first: int = 0, last: int = 10, trim: float = 0.0) -> float:
-    """The mean L of a row's cells first..last-1, its middle band; trim: this share of their width off each side."""
+def _colour(row: np.ndarray, first: int = 0, last: int = 10, trim: float = 0.0) -> np.ndarray:
+    """The mean Lab of a row's cells first..last-1, its middle band; trim: this share of their width off each side."""
     height, width = row.shape[:2]
     scale = width / TEMPLATE_CELLS[-1]
     left, right = TEMPLATE_CELLS[first] * scale, TEMPLATE_CELLS[last] * scale
     cut = (right - left) * trim
     part = row[int(height * TOP_BAND[0]):int(height * BOTTOM_BAND[1]), int(left + cut):int(right - cut)]
-    return float(_lab(part.reshape(-1, 3).mean(0))[0])
+    return _lab(part.reshape(-1, 3).mean(0))
+
+
+def _lightness(row: np.ndarray, first: int = 0, last: int = 10, trim: float = 0.0) -> float:
+    """_colour's L."""
+    return float(_colour(row, first, last, trim)[0])
 
 
 def _middles(row: np.ndarray) -> list:
@@ -202,6 +207,19 @@ def split_row(row: np.ndarray) -> Optional[dict]:
     if top < SPLIT_MIN or top < STEP_CLEAR * second:
         return None
     return {"best": best, "could": [best, 10 + best]}
+
+
+def colour_row(row: np.ndarray) -> Optional[dict]:
+    """
+    An open row by its cells' colours (lit and empty of one lightness: PoD04Zebra Bloon's art, Dirty Bed's hearts): the
+    count whose nearest lit and empty cells are SPLIT_MIN farther apart than any two on one side (one at most); else None.
+    """
+    cells = np.array([_colour(row, n, n + 1, CELL_TRIM) for n in range(10)])
+    apart = np.linalg.norm(cells[:, None] - cells[None], axis=-1)
+    for k in range(1, 10):
+        if apart[:k, k:].min() - max(apart[:k, :k].max(), apart[k:, k:].max()) >= SPLIT_MIN:
+            return {"best": k, "could": [k, 10 + k]}
+    return None
 
 
 def _tell_busy(rows: list) -> None:
@@ -267,7 +285,7 @@ def _cut(pixels: np.ndarray, box: tuple, width: int) -> Optional[np.ndarray]:
 def read_picture(psd: PSDImage, image: Image.Image, cells: bool = False) -> dict:
     """
     {stat: [{"best", "could"} of each bar, top to bottom]} off the card's picture; a bar past the canvas has no say.
-    cells: the template's bars, a busy row read by its cells (split_row, then _tell_busy).
+    cells: the template's bars, a busy row read by its cells (split_row, _tell_busy, then colour_row).
     """
     pixels = np.asarray(image.convert("RGB"))
     out, rows = {}, []
@@ -286,6 +304,9 @@ def read_picture(psd: PSDImage, image: Image.Image, cells: bool = False) -> dict
             if read["could"] is None:
                 read.update(split_row(row) or {})
         _tell_busy(rows)
+        for row, read in rows:
+            if read["could"] is None:
+                read.update(colour_row(row) or {})
     return out
 
 
@@ -600,7 +621,7 @@ def check_card(ctx: Context, rel: str) -> dict:
         notes.append(FX_NOTE.format(layers=", ".join(unread)))
     rows = [group for found in stat_rows(psd).values() for group, _, _ in found]
     counted = bool(rows) and all(psd_edit.counted_row(group) for group in rows)     # the picture is the data
-    reads = read_picture(psd, image, cells=style == "new") \
+    reads = read_picture(psd, image, cells=style in ("new", "few")) \
         if style and image is not None and not counted and len(variants_of(psd)) < 2 else {}
     notes += edit_notes(ctx, rel, psd, parsed, style, image)
     for path in snapshot.dup_pictures().get(rel, []) if image is not None else ():   # nothing redraws these (owner 11-07)

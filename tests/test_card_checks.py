@@ -91,6 +91,16 @@ def test_busy_rows():
     assert [read["could"] for _, read in rows] == [[4], [10, 20], [0], None]
 
 
+def test_colour_row():
+    """Lit and empty cells of one lightness (zebra art on green: PoD04Zebra Bloon) read by colour; noise: nothing."""
+    row = cell_row(*[(60, 150, 60)] * 10)
+    stripes = (np.arange(cc.TEMPLATE_CELLS[3]) // 24) % 2 == 0
+    row[:, :cc.TEMPLATE_CELLS[3]] = np.where(stripes[:, None], 255, 0)
+    assert cc.read_row(row)["could"] is None and cc.split_row(row) is None
+    assert cc.colour_row(row) == {"best": 3, "could": [3, 13]}
+    assert cc.colour_row(np.random.default_rng(1).integers(0, 255, (84, 813, 3)).astype(np.uint8)) is None
+
+
 def test_mismatches():
     """The note names the bar; a value the bar could show says nothing; a custom card speaks only when every bar reads;
     a website-only value differs on purpose; creatures by bar."""
