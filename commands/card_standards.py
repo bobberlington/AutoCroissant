@@ -2826,6 +2826,25 @@ def status_words(path: str, out_path: str, fonts) -> list:
                                                          for fx in made + [fx for fx, _ in styled]]
 
 
+def status_font_layers(psd: PSDImage) -> list:
+    """status_font.plan's layers, the repo path and the chart from psd.repo_path and psd.status_chart (pixel_kinds)."""
+    from commands import status_font as sf
+    return sf.plan(psd, getattr(psd, "repo_path", ""), getattr(psd, "status_chart", None))
+
+
+def restyle_status(path: str, out_path: str, fonts, rel: str) -> list:
+    """Status font (owner 2026-11-09), the PIXEL_FIXES kind: status_font.fix (fonts.chart: the status chart's fills).
+
+    Returns:
+        The text layers' names; raises Refused or the engine's errors
+    """
+    from commands import status_font as sf
+    folder = fonts([sf.KP, ICON_FONT]) if fonts else ""
+    if not folder:
+        raise Refused("unsupported-card", "no fonts to draw Krabby Patty")
+    return sf.fix(path, out_path, folder, getattr(fonts, "chart", None), rel)
+
+
 def _status_gate(path: str, out_path: str, edits: list, stories: list) -> None:
     """status_words' gate: the records as the bake's gate_bytes allows its Edits (the FX layers made or cut again), a
     recoloured text record changed in its pixels and TySh alone, its story alone (gate_stories), the document as it was
@@ -3299,6 +3318,7 @@ PIXEL_FIXES = {     # kind -> (finds(psd) -> [layer], fix(path, out_path, fonts)
     "badges": (icon_layers, fit_badges, None),
     "overlay badges": (salt_layers, one_colour_badges, None),
     "tags": (tag_layers, tags_to_badges, None),
+    "status font": (status_font_layers, restyle_status, None),  # before status words: they cut FX from its text
     "status words": (status_word_layers, status_words, None),   # after the layout fixes: FX cut from the final text
     "alt template": (alt_bar_rows, alt_template, None),
     "normalise": (needs_normalise, normalise, None),     # last: linked pictures, normal text, no merged image (silent)
@@ -3310,6 +3330,7 @@ PIXEL_LINES = {"clean": "hidden stars, type icons, copies and leftovers deleted,
                "old glyphs": "old icon font glyphs redrawn",
                "badges": "badges and icons fitted to their text",
                "overlay badges": "badges under an overlay in one colour", "tags": "timing tags and costs set as badges",
+               "status font": "status card text in Krabby Patty, its title in the chart's colour and effects",
                "status words": "status words in the chart's colours and effects",
                "alt template": "the template's stat bars, bar shapes, text layout and clip shapes",
                "normalise": "pictures linked, text set normal, no merged image"}
@@ -3347,7 +3368,7 @@ def _pixel_fixes(folder: str, base: str, current: str, rel: str, parser: Optiona
                 names = apply(current, out, fonts, whole=True)
             elif apply is redraw_old_glyphs:    # its stale layers kept before any refusal (told)
                 names = apply(current, out, fonts, seen=result.stale_glyphs)
-            elif apply in (normalise, clean):
+            elif apply in (normalise, clean, restyle_status):
                 names = apply(current, out, fonts, rel)
             else:
                 names = apply(current, out, fonts)
