@@ -141,6 +141,7 @@ QUIET_KEYS = ("EveryLineComposer",)            # fixed unsaid (owner, 2026-10-25
 OLDER_PNGS = 5                                  # R10 went back: the PNG's earlier versions read at most (_went_back)
 OLDER_MATCH = 0.1                               # share of the area an earlier version may still differ over and show it
 PUT_BACK_REACH = 32                             # px _put_back follows a went-back change past the rule's area
+SKIP_REACH = 8                                  # px past the PSD's change a PNG that skipped it may change (_skipped)
 TELL_PNG_MISMATCH = False                       # R10 and "current but outside the bar" on Discord too (beyond the owner's
                                                 # two rules: the commit comment only until the owner asks)
 OLD_FONT = ("old stoogedings font: pull, reinstall MDW/Fonts/stoogedings.ttf, restart Photoshop, "   # told (owner 2026-11-04)
@@ -295,6 +296,8 @@ def would_make(case: str, png: str, write: dict) -> str:
         return "PNG not renamed with the PSD: rename it too"
     if write.get("back"):
         return "the PNG shows an earlier picture of the card: export it again in Photoshop"
+    if write.get("skipped"):
+        return "the PNG does not show the PSD's change: export it again in Photoshop"
     return "PNG not exported with the PSD: export it in Photoshop"
 
 
@@ -1129,6 +1132,8 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
             result.notes.append((f"{basename(job.png)} could not be checked against the PSD ({measured.get('why')})", False))
         if "render" in kept and job.case != "whole":
             _went_back(source, job, result, png, kept["render"], out, shown, old, new, faces)
+        if job.case == "pair" and old is not None and job.base_png and "back" not in result.r10:
+            _skipped(source, job, result, png, old, new, out, shown, faces)
     if job.case == "pair" and old is not None and job.base_png:
         _pair_pictures(source, job, result, old, new, out, shown, faces)
     skip = (NORMALISE, *ICON_LAYOUTS) if _layouts_kept(job, old, new) else (NORMALISE,)
@@ -1268,11 +1273,50 @@ def _went_back(source: Source, job: Job, result: Result, png, render, out: str, 
         image = _put_back(png, prev, area)
         data = png_export.encode(image, png)
     result.r10["line"] = f"{name} went back to an earlier picture (`{older[:8]}`, {px:,} px): made again"
-    _collect()                                  # the pushed PNG's recompression gives way
+    _made_again(out, job, result, data, f"made again: it went back to an earlier picture ({px:,} px)", "back")
+    shown[job.png] = image
+
+
+def _made_again(out: str, job: Job, result: Result, data: bytes, line: str, why: str) -> None:
+    """R10's write of job's PNG made again (why: the write's key, back or skipped); its recompression gives way."""
+    _collect()
     result.writes = [w for w in result.writes if not (w["path"] == job.png and w["kind"] == "recompress")]
     result.writes.append({"path": job.png, "file": _save(out, job.png, data), "sha": blob_sha(data), "kind": "png",
-                          "line": f"made again: it went back to an earlier picture ({px:,} px)", "back": True})
-    shown[job.png] = image
+                          "line": line, why: True})
+
+
+def _skipped(source: Source, job: Job, result: Result, png, old, new, out: str, shown: dict, faces=None) -> None:
+    """
+    R10, a PSD pushed with a PNG that skips its change (11-10, stored image or not): guard 1's export of the PSD's
+    change onto the PNG before shows where the change moves it (png_changes' rule); a pushed PNG that did not change
+    there and is past the bar of the export there skipped it. Changed nowhere else (SKIP_REACH px past the export's
+    change), it is made again as the export, silent; else, or no export made, it stays as pushed (the comment says it).
+    """
+    prev = png_export.open_png(source.blob(job.base_png))
+    if png.mode not in ("RGB", "RGBA") or prev.size != png.size:
+        return
+    try:
+        found = png_export.export(old, new, prev, None, "", faces)
+    except Exception:                           # best effort: R10 stands as checked
+        print(format_exc(), file=stderr)
+        return
+    if found.outcome != "re-exported":         # nothing drawn moved, the PNG before shows it, or refused
+        return
+    made, pushed, before = _rgba(found.image), _rgba(png), _rgba(prev)
+    changed = changed_area(pushed, before)
+    area = changed_area(made, before) & ~changed
+    if not area.any() or psd_edit._within_bar(png_export._stats(png_export._diff(png, found.image)[area])):
+        return
+    px, name = int(area.sum()), basename(job.png)
+    result.r10.update(ok=False, skipped={"px": px, "box": list(png_export._bbox(area))})
+    if (changed & ~png_export.dilate(png_export._diff(found.image, prev) > png_export.TOL, SKIP_REACH)).any():
+        result.r10["line"] = f"{name} does not show the PSD's change ({px:,} px) and changed elsewhere: kept as pushed"
+        return
+    result.r10["line"] = f"{name} does not show the PSD's change ({px:,} px): made again"
+    _made_again(out, job, result, found.data, f"made again: it did not show the PSD's change ({px:,} px)"
+                + "".join(f"; {note}" for note in png_export.miss_notes(found)), "skipped")
+    _crops(out, job.png, png, found.image, found.box)
+    shown[job.png] = found.image
 
 
 def _pair_pictures(source: Source, job: Job, result: Result, old, new, out: str, shown: dict, faces=None) -> None:
@@ -1284,7 +1328,8 @@ def _pair_pictures(source: Source, job: Job, result: Result, old, new, out: str,
     tags = set(psd_edit.variants_of(new))
     numbers = picture_numbers(new, [*job.numbered, *job.pushed])   # a drawn duplicate's too
     base = png_export.open_png(source.blob(job.base_png))
-    pushed = shown[job.png] if any(w.get("back") for w in result.writes) else png_export.open_png(source.blob(job.png_new))
+    remade = any(w.get("back") or w.get("skipped") for w in result.writes)
+    pushed = shown[job.png] if remade else png_export.open_png(source.blob(job.png_new))
     for path, sha in sorted(left.items()):
         image = png_export.open_png(source.blob(sha))
         n = numbers.get(path)

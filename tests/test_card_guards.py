@@ -343,6 +343,37 @@ def test_a_png_back_to_an_earlier_picture_is_put_back(cards, tmp_path, monkeypat
     assert int(pe._diff(Image.open(tmp_path / "pair" / write["file"]), card(base=(30, 200, 30), colour=(0, 255, 0))).max()) == 0
 
 
+def test_a_png_that_skips_its_psds_change_is_made_again(cards, tmp_path, monkeypatch):
+    """R10, a PSD pushed with a PNG that skips its change (11-10: under the parity floor, as Pizza's colour fix):
+    Bread's square recoloured, its PNG pushed as the PNG before in another blob. Guard 1's export onto the PNG before
+    lands, silent; the PNG that shows the change passes; one changed elsewhere too stays as pushed (a stored image: no
+    went-back), the comment saying it."""
+    root, base, alice, bot = cards
+    monkeypatch.setattr(cg.png_export, "composite", lambda psd: None)        # saved without Maximize Compatibility
+    teal = card(colour=(0, 128, 128))
+    _psd(root, tmp_path / "psds", f"{FOLDER}/Bread.psd", teal)
+    green = Image.open(root / FOLDER / "Bread.png")
+    green.save(root / FOLDER / "Bread.png", compress_level=1)              # the same pixels, another blob
+    skipped = _commit(root, "square recoloured, PNG before", author="Alice")
+    out = tmp_path / "out"
+    data = cg.check(str(root), skipped, bot, mode="on", out=str(out), workers=1)
+    (entry,) = data["cards"]
+    (write,) = [w for w in entry["writes"] if w["kind"] == "png"]
+    assert entry["case"] == "pair" and write["skipped"] and entry["r10"]["skipped"]["px"] == 21 * 21
+    assert entry["told"] == [] and data["discord"] == {} and "made again" in entry["r10"]["line"]
+    assert int(pe._diff(Image.open(out / write["file"]), teal).max()) == 0
+    elsewhere = card(colour=(0, 255, 0))
+    ImageDraw.Draw(elsewhere).rectangle((40, 60, 55, 85), fill=(0, 0, 0))
+    for png, kept in ((teal, False), (elsewhere, True)):
+        if kept:
+            monkeypatch.undo()
+        _png(root, f"{FOLDER}/Bread.png", png)
+        after = _commit(root, f"PNG {kept}", author="Alice")
+        (entry,) = cg.check(str(root), after, bot, mode="on", out=str(tmp_path / f"o{kept}"), workers=1)["cards"]
+        assert not [w for w in entry["writes"] if w["kind"] == "png"] and entry["told"] == []
+        assert ("skipped" in entry["r10"]) is kept and ("kept as pushed" in entry["r10"]["line"]) is kept
+
+
 def test_a_burst_without_a_stored_image_is_made_against_the_anchor(cards, tmp_path, monkeypatch):
     """G2 has no G5 to refuse, so over push 1's PSD run 2 drew push 2's square alone and called the PNG current: push
     1's Base was left out (review of 2026-10-24, Niko). A G2 export takes the burst anchor: both changes drawn."""
