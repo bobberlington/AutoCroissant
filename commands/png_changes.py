@@ -8,7 +8,7 @@ Card sync measures the changes its run brings (card_data.build, in a child proce
 backfill measures history's, in batches that are fetched into scratch stores and dropped (never the whole history on
 disk), and resumes where the record stops.
 
-CLI: python -m commands.png_changes backfill --checkout <clone with main's history> --db <db dir> [--minutes N]
+CLI: python -m commands.png_changes backfill --checkout <clone with main's history> --db <db dir> [--minutes N] [--events]
 """
 from argparse import ArgumentParser
 from collections import deque
@@ -410,6 +410,8 @@ def main(argv: Optional[list] = None) -> int:
     back.add_argument("--db", required=True)
     back.add_argument("--head", default="HEAD")
     back.add_argument("--minutes", type=float, default=0, help="stop after this long (0: no limit); exit 3 with pairs left")
+    back.add_argument("--events", action="store_true", help="also db/changelog's past events: their pairs first, then "
+                      "marked minor as Card sync marks new ones (psd-tools: card_data)")
     side = sub_parsers.add_parser("measure", help="measure the pairs of a JSON file (card_data's Beside)")
     side.add_argument("--checkout", required=True)
     side.add_argument("--pairs", required=True, help="a JSON file: [[old blob, new blob], ...]")
@@ -426,14 +428,20 @@ def main(argv: Optional[list] = None) -> int:
         replace(args.out + ".tmp", args.out)
         return 0
     record = read_record(args.db)
+    events, shown = [], {}
+    if args.events:
+        from commands.card_data import mark_past, past_pairs
+        events, shown = past_pairs(args.checkout, args.db, args.head)
     pairs = card_pairs(args.checkout, args.head)
     deadline = time() + args.minutes * 60 if args.minutes else None
     done, left = 0, []
     try:
-        done, left = measure(args.checkout, pairs, record, deadline=deadline)
+        done, left = measure(args.checkout, list(shown.values()) + pairs, record, deadline=deadline)
     finally:
         write_record(args.db, record)                   # what was measured stays, whatever stopped the run
     print(f"png changes: {len(pairs)} pairs in history, {done} measured now, {len(left)} left, {len(record['pairs'])} recorded.")
+    if args.events:
+        print(f"past events: {mark_past(args.db, events, shown, record)} of {len(events)} unmarked marked minor.")
     return EXIT_LEFT if left else 0
 
 

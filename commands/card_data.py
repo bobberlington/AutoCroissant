@@ -1961,6 +1961,59 @@ def mark_minor(new_events: list, shown: dict, record: dict) -> None:
             event[MINOR] = "text"
 
 
+class _AsOf:
+    """An index's at_path (its get) as a past build saw it: the puts no newer than its head (Commit.order or more)."""
+    def __init__(self, at_path: dict, order: int):
+        self.source, self.order = at_path, order
+
+    def get(self, path, default=None):
+        return [(c, blob) for c, blob in self.source.get(path, ()) if c.order >= self.order] or default
+
+
+def past_pairs(checkout: str, db_dir: str, head: str = "HEAD") -> tuple:
+    """
+    db/changelog's art, changed and edited events with no "minor" (from before mark_minor) and picture_pairs of them,
+    each at its own build's head (card_commit): the index as of then and that commit's PNGs (png_changes backfill --events).
+
+    Returns:
+        (those events, {id(event): (PNG blob before, PNG blob then)})
+    """
+    from types import SimpleNamespace
+    from commands import changelog
+    from commands.card_db import parse_stats
+    from commands.card_history import GitIndex
+    events = [e for e in changelog.read_events(db_dir)
+              if e["kind"] in ("art", "changed", "edited") and changelog.MINOR not in e]
+    with open(path_join(db_dir, "stats.json"), encoding="utf-8") as fh:
+        stats = parse_stats(fh.read())
+    index, shown = GitIndex.from_git(checkout, head), {}
+    by_commit: dict = {}
+    for event in events:
+        if event["kind"] != "edited" and event.get("card_commit"):
+            by_commit.setdefault(event["card_commit"], []).append(event)
+    for sha, mine in by_commit.items():
+        try:                                              # its newest PSD or PNG commit: where the index stood
+            last = index.by_sha.get(_git(checkout, "log", "-1", "--format=%H", sha, "--", "*.psd", "*.png").strip())
+            tree = {e["path"]: e["sha"] for e in ls_tree(checkout, sha)["tree"] if e["type"] == "blob"}
+        except CalledProcessError:
+            continue
+        if last is not None:
+            shown.update(picture_pairs(mine, SimpleNamespace(at_path=_AsOf(index.at_path, last.order)), tree, stats))
+    return events, shown
+
+
+def mark_past(db_dir: str, events: list, shown: dict, record: dict) -> int:
+    """mark_minor on past_pairs' events, their month files rewritten in place (every seq and the posted cursor kept).
+    Returns the events marked."""
+    from commands import changelog
+    mark_minor(events, shown, record)
+    marks = {e["seq"]: e[changelog.MINOR] for e in events if e.get(changelog.MINOR)}
+    if marks:
+        changelog.rewrite_events(db_dir, lambda e: {**e, changelog.MINOR: marks[e["seq"]]}
+                                 if e.get("seq") in marks and changelog.MINOR not in e else e)
+    return len(marks)
+
+
 def side_events(stats: dict, archived: dict, side: Optional[list], guard_docs: Optional[list]) -> list:
     """
     The bake's and the guards' events as the changelog's: kind, card, the card's title, kind of card, stars and path
@@ -2206,7 +2259,9 @@ __all__ = [
     'gather_links',
     'linked_file',
     'links_text',
+    'mark_past',
     'mark_sweeps',
+    'past_pairs',
     'pixel_hash',
     'read_links',
     'read_records',

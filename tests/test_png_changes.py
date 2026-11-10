@@ -2,6 +2,7 @@
 PNG change pairs git gives (the website's), the record Card sync and the backfill keep (resumable, a missing pair
 visible), and card_data's minor art and text events."""
 import io
+import json
 import subprocess
 from os import environ
 from types import SimpleNamespace
@@ -130,3 +131,39 @@ def test_minor_art_and_text_events():
         e.pop("minor", None)
     mark_minor(events, shown, record)
     assert [e.get("minor") for e in events] == [None, None, "text", None]
+
+
+def test_past_events_marked_at_their_build(tmp_path):
+    """backfill --events: past art events with no mark, each paired at its own build's head (a later PNG change is not
+    theirs): a PNG byte-identical or measured under VISIBLE is minor, one at VISIBLE or more is not; seqs, the other
+    events' lines and the posted cursor stay."""
+    from commands.card_db import stats_text
+    repo, db = tmp_path / "repo", tmp_path / "db"
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / "C").mkdir()
+    for name in "ABD":
+        (repo / f"C/{name}.psd").write_bytes(name.encode())
+        (repo / f"C/{name}.png").write_bytes(_png(_card(100)))
+    _commit(repo, "Cards")
+    small = _card(100)
+    small[10:30, 10:30, 0] = 110                                     # 4% of the card
+    for name, picture in (("A", None), ("B", small), ("D", _card(160))):
+        (repo / f"C/{name}.psd").write_bytes(name.encode() * 2)
+        if picture is not None:
+            (repo / f"C/{name}.png").write_bytes(_png(picture))
+    build = _commit(repo, "Art")
+    (repo / "C/A.png").write_bytes(_png(_card(30)))                  # after that build: not its event's
+    _commit(repo, "Later")
+    (db / "changelog").mkdir(parents=True)
+    (db / "stats.json").write_text(stats_text({}))
+    lines = [json.dumps({"kind": "art", "card": n, "path": f"C/{n}.psd", "seq": i + 1, "card_commit": build,
+                         "blob": [_blob(repo, "HEAD~2", f"C/{n}.psd"), _blob(repo, build, f"C/{n}.psd")]}, sort_keys=True)
+             for i, n in enumerate("ABD")] + [json.dumps({"kind": "edited", "card": "B", "seq": 4}, sort_keys=True)]
+    (db / "changelog/2026-11.jsonl").write_text("".join(f"{line}\n" for line in lines))
+    (db / "changelog/posted.json").write_text('{"seq": 4, "push": null}\n')
+    assert pc.main(["backfill", "--checkout", str(repo), "--db", str(db), "--events"]) == 0
+    events = [json.loads(line) for line in (db / "changelog/2026-11.jsonl").read_text().splitlines()]
+    assert [(e["seq"], e.get("minor")) for e in events] == [(1, "picture"), (2, "picture"), (3, None), (4, None)]
+    assert (db / "changelog/2026-11.jsonl").read_text().splitlines()[2:] == lines[2:]
+    assert (db / "changelog/posted.json").read_text() == '{"seq": 4, "push": null}\n'
+    assert sorted(v[0] for v in pc.read_record(str(db))["pairs"].values()) == [0.04, 1.0]     # A: the same blob
