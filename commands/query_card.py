@@ -535,7 +535,7 @@ class CardRepository:
         for name, card in cards:
             title = getattr(card, "display_name", None) or name
             got = _pairs(title)
-            score = 2 * len(wanted & got) / (len(wanted) + len(got))
+            score = 2.0 * len(wanted & got) / (len(wanted) + len(got))   # 2.0: compiled, ints divide as C ints
             if score > 0.35 and not getattr(card, "hidden", False):     # ties: the website's order (plain duplicates last)
                 last = bool(getattr(card, "duplicate_of", None) and not getattr(card, "variant_of", None))
                 found.append((-score, last, name.lower(), name, title))
