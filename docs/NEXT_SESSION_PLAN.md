@@ -10,8 +10,8 @@ cards, the proposal forum); earlier `session-2026-11-06/`.
 
 ## Order (owner, 11-10 ~05:20)
 
-1. **Research rounds again, at once**: psd-tools (fork, `~/Documents/Tools/wt/psd-1107` on `work/research-1107` =
-   `cards-20261110`), Actions + bake, card data + website. Rounds run until dry (two rounds in a row with nothing new),
+1. **Research rounds again, at once**: psd-tools (fork, a new worktree off fork main = `cards-20261110`; the old
+   research worktree is gone), Actions + bake, card data + website. Rounds run until dry (two rounds in a row with nothing new),
    no caps; one ship every 4-5 rounds under the locks.
 2. **Every unfinished task** in "Waiting from this session" below (first: ship AC/TC `work/actions-1108` with its two
    fixes, and check the first card workflow run on the new fork pin), then the Developer list's open bugs.
@@ -19,9 +19,16 @@ cards, the proposal forum); earlier `session-2026-11-06/`.
 
 ## Waiting from this session
 
-- [ ] **First card workflow run on the new fork pin** (`cards-20261110`): its cards-python setup misses the wheel cache and
-      builds the fork on the runner (proven on ubuntu-latest x86_64 11-10 with a one-off workflow). Check it goes green;
-      if not, revert AC cff351a4's requirements-cards.txt line and redeploy.
+- [ ] **FIRST: restore the AC tests' old card blobs.** The test cache (`~/.cache/autocroissant-tests`) was deleted at the
+      wrap-up and the fresh clone lacks some pinned blobs it hid, so the AC suite fails (134 failed, 83 errors on 11-10)
+      until they are back: run `bash ~/Documents/Tools/wt/scratch/s1109/wrap/fetchblobs.sh` (runs the suite, batch-fetches
+      from GitHub every pinned blob the tests report missing, repeats; one batched fetch per pass, never lazy). Done when
+      the suite is 925 passed, 1 skipped (esbuild).
+
+- [x] First card workflow run on the new fork pin: Card sync 42830695509 built and cached the fork's wheels and venv on the
+      runner, green. A Card checks run that missed the cache at the same moment failed: pip clones the fork blobless and
+      the job's `GIT_NO_LAZY_FETCH=1` broke its checkout; fixed in TC f80772da (`env -u GIT_NO_LAZY_FETCH pip wheel` in
+      cards-python), proven only at the next cache miss (the next re-pin): check it then.
 
 - [ ] **AC + TC `work/actions-1108`** (rounds 21-25, not on main): its ship was refused three times on 11-10. Fix
       before landing: (a) TC 704baadb "Site build: each deploy under a commit of its own" was never tried against real
@@ -29,8 +36,8 @@ cards, the proposal forum); earlier `session-2026-11-06/`.
       out); (b) TC 4236cbb3's data re-fetch after the wait gets one try and fails the build: retry it 3 times like
       actions/checkout did. The rest (AC d5534c00 range-read workers, 17780f89 + TC aad1c358 guards' Check beside the
       fonts restore, a778792a folders read once, f43ffe48 + 3006c795 picture changes fetched ahead, TC 2b8e1479 each
-      lane checks only its CLIs) passed its checks. AC branch in the AC clone; the TC commits are in the bundle
-      `~/Documents/Tools/wt/scratch/s1109/wrap/tc-actions-1108.bundle` (the Desktop TC clone was replaced).
+      lane checks only its CLIs) passed its checks. Both sides are bundles now: AC `~/Documents/Tools/wt/scratch/s1109/wrap/ac-actions-1108.bundle`, TC
+      `tc-actions-1108.bundle` beside it (`git fetch <bundle> work/actions-1108:work/actions-1108`).
 - [ ] The Card browser deploy timed out twice on 11-09 (deploy-pages stuck in "syncing_files", runs 42622998192,
       42753587574); the next push redeployed. If it repeats, that is (a) above's motivation.
 - [ ] Guards gap (11-10 skeptic): a push that puts back only an old PNG (e.g. the black-stroke Despair PNG) passes R10
@@ -51,11 +58,8 @@ cards, the proposal forum); earlier `session-2026-11-06/`.
       its name, but both print it mid-card (Overlay Text / Group 2): the flag text is wrong, the data is right.
 - [ ] **psd round 15's TC card change (r15-3, the r6-0 strikes sweep):** lists in
       `~/Documents/Tools/wt/scratch/s1107/fork/r15-3/` and `r15-3-adv/`, waiting for one rewrite per card.
-- [ ] Card data ship's optional dispatches (agents may not start runs): `gh workflow run card-sync.yml -R
-      MichaelJSr/TTSCardMaker --ref main -f cards="Flip,Miracle Matter,Paint Warrior,Tainted Lazarus,Twin Emperors" -f
-      bake=none` (one changelog post: "The parser re-read 4 cards"), and `gh workflow run card-checks.yml ... -f
-      cards="Blank Card,Bobberlington,Claw,Dirty Bed,Dogma,Frog,Gandhi,Kyle,Leshy,Miasma,Michael,Nailsage Sly,PoD04Zebra
-      Bloon,Smorg,Warcraftian Shaman,Yin Yarn,Zero Override"` (bar reads). Owner's call.
+- [x] Card data ship's dispatches (owner 11-10): Card sync re-read the abilities (data 45e8268b, "4 reparse"); the 17-card
+      Card checks re-read was re-dispatched as run 42833874576 after the first one hit the wheel bug: check it is green.
 
 ## Standing rules
 
@@ -113,16 +117,17 @@ cards, the proposal forum); earlier `session-2026-11-06/`.
 ## State (2026-11-10 ~05:00, all pushed)
 
 - AutoCroissant main cff351a4 (+ the wrap-up docs), deployed on the jetson (47 commands; fork @170a3fce). Fork pin
-  `cards-20261110` = 170a3fce (fork main; `work/research-1107` = main in worktree `~/Documents/Tools/wt/psd-1107` for
-  the next rounds; harness `~/Documents/Tools/wt/scratch/s1107/fork/`, its ROUNDS.md has the release entry).
+  `cards-20261110` = 170a3fce (fork main; the fork clone `~/Documents/Tools/psd-tools` has only main and its tags; harness `~/Documents/Tools/wt/scratch/s1107/fork/`, its ROUNDS.md has the release entry).
 - TTSCardMaker main 581b61c1; data 28e57faf at the wrap-up (moves with Card sync). The Desktop clone was replaced on
   11-10 (old clone's unlanded branches: `scratch/s1109/wrap/tc-actions-1108.bundle`, `tc-unlanded-1110.bundle`).
-- Worktrees: AC `~/Documents/Tools/wt/actions-1108` (`work/actions-1108`, unshipped). No other work/* branches in AC, TC
-  or the fork; GitHub has only main, data, previews (TC) and the archive/* branches.
+- No worktrees or work/* branches in AC, TC or the fork (unshipped work is in the bundles above); GitHub has only main, data, previews (TC) and the archive/* branches.
 - The proposal forum module runs on the jetson (forum 1569539619471499324): the first real day-6 ping is due about
   2026-11-16 02:33 UTC (post 1569540573461745755); check the journal for "Forum votes:" lines then.
 
 ## Owner (from 11-06, still open)
+
+- [ ] The TTS Saves folder copy (`~/Library/Tabletop Simulator/Saves/Impossibility Simulator.json`) is from 11-06; copy
+      main's save when you want (owner 11-10: leave it for now).
 
 - [ ] Check `MDW/Templates/Raid_Boss_Template.psd` (20-cell split bars, 0-40; built unattended). Raid bosses
       (6+ stars, `card_models.RAID_STARS`) have no stat limit; their bars bake up to 40.
