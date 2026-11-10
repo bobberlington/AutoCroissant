@@ -40,12 +40,13 @@ PALACE = "Field/4 Stars/White_Palace.psd"
 
 
 @pytest.fixture(scope="module")
-def bs():
+def bs(tmp_path_factory):
     if not BUILD_SITE.is_file():
         pytest.skip(f"no card repo build_site at {BUILD_SITE}")
     spec = importlib.util.spec_from_file_location("site_build_site", BUILD_SITE)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    module.covers = tmp_path_factory.mktemp("covers")      # the cover's AVIF copies, made once per worker
     return module
 
 
@@ -135,6 +136,9 @@ def _build(bs, monkeypatch, repo, out, data_dir=None):
     monkeypatch.setattr(bs, "HISTORY_REPO", str(repo["root"]))
     for name, sub in (("DIST", "dist"), ("CACHE", ".cache"), ("OG_CACHE", ".og-cache")):
         monkeypatch.setattr(bs, name, str(out / sub))
+    (out / ".cache").mkdir(parents=True, exist_ok=True)
+    if not (out / ".cache" / "cover").exists():
+        (out / ".cache" / "cover").symlink_to(bs.covers, target_is_directory=True)
     monkeypatch.setattr(bs, "CARD_DATA_DIR", str(repo["db"]) if data_dir is None else data_dir)
     monkeypatch.setattr(bs, "MIN_CARDS", 1)
 
