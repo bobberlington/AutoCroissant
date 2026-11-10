@@ -179,6 +179,20 @@ def test_own_pixels():
     assert pe.own_pixels(replaced, region, [(0, 0, 200, 200)]).sum() == 5   # covered: every replaced pixel counts
 
 
+def test_pixel_compares_match_numpy():
+    """The fast compares give the old expressions' answers: whole canvases, window slices, RGB, partly see-through."""
+    rng = np.random.default_rng(7)
+    a = rng.integers(0, 256, (30, 40, 4), np.uint8)
+    b = a.copy()
+    b[rng.random((30, 40)) < 0.3, rng.integers(0, 4)] ^= 1
+    for x, y in ((a, b), (a[3:20, 5:31], b[3:20, 5:31]), (a[::2, ::3], b[::2, ::3]), (a[..., :3], b[..., :3])):
+        assert np.array_equal(pe._px_differ(x, y), (x != y).any(axis=2))
+    for mode in ("RGBA", "RGB"):
+        x, y = Image.fromarray(a).convert(mode), Image.fromarray(b[::-1].copy()).convert(mode)
+        old = np.abs(pe._flat(x).astype(np.int16) - pe._flat(y).astype(np.int16)).max(axis=2)
+        assert np.array_equal(pe._px_diff(x, y), old) and pe._px_diff(x, y).dtype == np.uint8
+
+
 def test_below_box(monkeypatch):
     """A new last line with letters below the box is found (Photoshop hides it: Croissant); an empty or undrawn one never
     (Sumo Panda), nor one the old layout had below already; an added Ability's placeholder lines count as none; point

@@ -122,14 +122,9 @@ class Export:
 # ========================
 # Pixels
 # ========================
-def _flat(image: Image.Image) -> np.ndarray:
-    """int16 (H, W, 4) over white (psd_edit._flat)."""
-    return psd_edit._flat(image).astype(np.int16)
-
-
 def _diff(a: Image.Image, b: Image.Image) -> np.ndarray:
     """Per-pixel max |a - b| over the channels, both over white."""
-    return np.abs(_flat(a) - _flat(b)).max(axis=2)
+    return psd_edit._px_diff(a, b).astype(np.int16)
 
 
 def _stats(diff: np.ndarray) -> dict:

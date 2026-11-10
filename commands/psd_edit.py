@@ -18,7 +18,7 @@ from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from json import load
 from difflib import SequenceMatcher
-from hashlib import blake2b
+from hashlib import blake2b, sha1
 from inspect import signature
 from itertools import combinations, product, zip_longest
 from io import BytesIO
@@ -489,9 +489,37 @@ def _flat(image: Image.Image) -> np.ndarray:
     return a
 
 
+def _px_differ(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """(a != b).any(axis=2) for (H, W, 4) uint8 canvases: one 32-bit compare per pixel."""
+    if a.dtype == b.dtype == np.uint8 and a.shape == b.shape and a.shape[-1:] == (4,) \
+            and a.strides[-1] == b.strides[-1] == 1:
+        return a.view(np.uint32)[..., 0] != b.view(np.uint32)[..., 0]
+    return (a != b).any(axis=2)
+
+
+def _px_max(d: np.ndarray) -> np.ndarray:
+    """d.max(axis=2) as channel maxima (numpy's last-axis reduce is slow)."""
+    out = d[..., 0].copy()
+    for c in range(1, d.shape[2]):
+        np.maximum(out, d[..., c], out=out)
+    return out
+
+
+def _absdiff(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """|a - b| of two uint8 arrays, in uint8."""
+    return np.maximum(a, b) - np.minimum(a, b)
+
+
+def _px_diff(a: Image.Image, b: Image.Image) -> np.ndarray:
+    """Per-pixel max |a - b| over the channels, both over white (uint8); two RGB images as they are."""
+    if a.mode == b.mode == "RGB":
+        return _px_max(_absdiff(np.asarray(a), np.asarray(b)))
+    return _px_max(_absdiff(_flat(a), _flat(b)))
+
+
 def _measure(a: Image.Image, b: Image.Image) -> dict:
     """bad_pct, mean and max of |a - b| (over white, alpha included)."""
-    diff = np.abs(_flat(a).astype(np.int16) - _flat(b).astype(np.int16)).max(axis=2)
+    diff = _px_diff(a, b)
     return {"bad_pct": float((diff > PARITY_THRESH).mean() * 100), "mean": float(diff.mean()), "max": int(diff.max())}
 
 
@@ -5004,7 +5032,7 @@ def covered_ink(psd: PSDImage, layer, before: np.ndarray, skip: list, halos: Opt
     shape = (psd.height, psd.width)
     after = _on_canvas(layer, shape)
     now = after[..., 3] > INK_ALPHA * 255
-    ink = now & (after != before).any(axis=2)
+    ink = now & _px_differ(after, before)
     was = before[..., 3] > INK_ALPHA * 255
     grown, shared = None, set()
     if halos is not None:
@@ -5091,7 +5119,7 @@ def inks_over(psd: PSDImage, layer, before: np.ndarray, halos: Optional[tuple] =
         return None
     ox, oy, wx, wy = win
     after, near = _on_canvas(layer, (psd.height, psd.width), win), before[oy:wy, ox:wx]
-    ink = (after[..., 3] > INK_ALPHA * 255) & (after != near).any(axis=2)
+    ink = (after[..., 3] > INK_ALPHA * 255) & _px_differ(after, near)
     was = near[..., 3] > INK_ALPHA * 255
     if halos is not None:
         ink |= _changed_ink(*halos)
@@ -5183,7 +5211,7 @@ def ink_beyond(psd: PSDImage, layer, before: np.ndarray, halos: Optional[tuple] 
     ox, oy, wx, wy = win
     after, near = _on_canvas(layer, (psd.height, psd.width), win), before[oy:wy, ox:wx]
     was = near[..., 3] > INK_ALPHA * 255
-    ink = (after[..., 3] > INK_ALPHA * 255) & (after != near).any(axis=2)
+    ink = (after[..., 3] > INK_ALPHA * 255) & _px_differ(after, near)
     if not was.any() or not ink.any():
         return inks_over(psd, layer, before, halos) if title else None
     ys, xs = was.nonzero()
@@ -5371,7 +5399,7 @@ def _scoped(layer) -> set:
 
 def _changed_ink(after: np.ndarray, before: np.ndarray) -> np.ndarray:
     """Pixels past INK_ALPHA in after that differ from before (two _effect_ink() canvases)."""
-    return (after[..., 3] > INK_ALPHA * 255) & (after != before).any(axis=2)
+    return (after[..., 3] > INK_ALPHA * 255) & _px_differ(after, before)
 
 
 def _title_lines(geometry: dict) -> list:
@@ -9209,7 +9237,7 @@ def gate_outside(before: np.ndarray, psd: PSDImage, edit: Edit) -> np.ndarray:
         render_all() now (the next edit's before); raises Refused("region", field: the edit's) for any pixel outside
     """
     after = render_all(psd)
-    diff = (before != after).any(axis=2)
+    diff = _px_differ(before, after)
     if edit.region:
         x0, y0, x1, y1 = edit.region
         diff[y0:y1, x0:x1] = False
@@ -9235,7 +9263,7 @@ def gate_untouched(before: np.ndarray, psd: PSDImage, edits: list) -> None:
         None; raises Refused("region") for any pixel outside every region
     """
     after = render_all(psd)
-    diff = (before != after).any(axis=2)
+    diff = _px_differ(before, after)
     for edit in edits:
         if edit.region:
             x0, y0, x1, y1 = edit.region
@@ -9462,7 +9490,7 @@ def gate_dirty(old: PSDImage, new: PSDImage, edits: list, keep: Optional[dict] =
         if keep is not None:
             keep.update(box=box, after=after, edited=edited_ids(edits))
         diff = np.zeros((h, w), bool)
-        diff[y0:y1, x0:x1] = (before != after).any(axis=2)
+        diff[y0:y1, x0:x1] = _px_differ(before, after)
     if environ.get(DIRTY_VERIFY) == "1":
         _verify_dirty(old, new, box, shown, after, pins)
     if diff is not None:
@@ -9507,7 +9535,7 @@ def _verify_dirty(old: PSDImage, new: PSDImage, box: Optional[tuple], shown: np.
         whole = np.asarray(new.composite(viewport=(0, 0, new.width, new.height), ignore_preview=True, apply_icc=False,
                                          **pins).convert("RGBA"))
     x0, y0, x1, y1 = box or (0, 0, 0, 0)
-    outside = (before != whole).any(axis=2)
+    outside = _px_differ(before, whole)
     outside[y0:y1, x0:x1] = False
     if outside.any():
         raise RuntimeError(f"dirty box {box}: {int(outside.sum())} pixels changed outside it")
@@ -9931,7 +9959,7 @@ def merge_png(png: Image.Image, base: Image.Image, render: Image.Image, region: 
     x0, y0, x1, y1 = region
     out = np.array(png.convert("RGBA"))
     after = np.asarray(render.convert("RGBA"))
-    changed = (np.asarray(base.convert("RGBA")) != after).any(axis=2)
+    changed = _px_differ(np.asarray(base.convert("RGBA")), after)
     patch = out[y0:y1, x0:x1]
     patch[changed] = after[changed]
     return Image.fromarray(out).convert(png.mode), changed
@@ -9977,7 +10005,7 @@ def gate_region(png: Image.Image, merged: Image.Image, region: tuple) -> int:
     Returns:
         How many pixels differ; raises Refused("region") for any outside
     """
-    diff = (np.asarray(png.convert("RGBA")) != np.asarray(merged.convert("RGBA"))).any(axis=2)
+    diff = _px_differ(np.asarray(png.convert("RGBA")), np.asarray(merged.convert("RGBA")))
     inside = np.zeros_like(diff)
     inside[region[1]:region[3], region[0]:region[2]] = True
     outside = int((diff & ~inside).sum())
@@ -10045,10 +10073,13 @@ def _comp_record(a: dict, b: dict) -> Optional[str]:
 
 
 def _digest(channel) -> bytes:
-    """A channel's compression and data, hashed: a same-length change to a layer's pixels shows."""
+    """A channel's compression and data, hashed (sha1: hardware on arm64 and x86): a same-length change to a layer's
+    pixels shows. Compared within a run only."""
     if channel is None:
         return b""
-    return blake2b(pack(">H", channel.compression.value) + channel.data, digest_size=16).digest()
+    digest = sha1(pack(">H", channel.compression.value))
+    digest.update(channel.data)
+    return digest.digest()
 
 
 MASK_RECT = ("top", "left", "bottom", "right", "real_top", "real_left", "real_bottom", "real_right")
