@@ -2245,7 +2245,7 @@ def test_card_syncs_follow_up_waits_for_land(clone, tmp_path):
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc = yaml.safe_load((_workflow(clone).parent / "card-sync.yml").read_text(encoding="utf-8"))
-    for job, at, fonts, history in (("data", 7, [], ["History wait"]),        # data: Site build start, History start
+    for job, at, fonts, history in (("data", 8, [], ["History wait"]),        # data: Site build start, History start, join
                                     ("main", 5, ["Fonts first", None, "Fonts first (cache miss)"], [])):
         names = [s.get("name") for s in doc["jobs"][job]["steps"]]
         want = ["Python environment", *fonts, "Guards' fixes", *history, "Newest"]

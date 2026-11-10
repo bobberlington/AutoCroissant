@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
 from subprocess import run as run_process
 from sys import executable
 
@@ -121,6 +122,54 @@ def test_card_sync_clones_the_builder_and_the_data(tmp_path):
     header = git(carddata, "config", "--get-urlmatch", "http.extraheader", f"file://{server}/o/cards").strip()
     assert header.startswith("AUTHORIZATION: basic ") and "t0ken" not in header        # Commit data's push: the token's
     assert git(carddata, "rev-parse", "--abbrev-ref", "HEAD").strip() == "data" and (carddata / "db" / "stats.json").is_file()
+
+
+def test_card_sync_history_joins_the_early_fetch(tmp_path):
+    """card-sync.yml's data job against a stand-in GitHub: History start fetches main's history beside the depth-1
+    checkout, History join adds it there (no config written); main moved between the two, or that fetch failed: from
+    GitHub. History wait then finds the checkout whole."""
+    yaml = pytest.importorskip("yaml")
+    path = Path(os.path.expanduser(os.environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "card-sync.yml"
+    if not path.is_file():
+        pytest.skip(f"no {path}")
+    steps = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["data"]["steps"]
+    at = [s.get("name") or s.get("uses") for s in steps]
+    order = ["Clones start", "History start", "actions/checkout@v7", "History join", "History wait"]
+    assert [at.index(x) for x in order] == sorted(at.index(x) for x in order)
+    named = {s.get("name"): s.get("run") for s in steps}
+    seed, server = tmp_path / "seed", tmp_path / "github" / "o" / "cards"
+    git(tmp_path, "init", "-q", "-b", "main", str(seed))
+    for k in range(3):
+        (seed / "f.txt").write_text(str(k))
+        commit(seed, "Base", k + 1)
+    git(tmp_path, "clone", "-q", "--bare", str(seed), str(server))
+    git(server, "config", "uploadpack.allowFilter", "true")
+    for case in ("joined", "moved", "failed"):
+        runner, ws = tmp_path / case / "temp", tmp_path / case / "ws"
+        runner.mkdir(parents=True)
+        (runner / "carddata-credentials.config").write_text("")
+        env = {"PATH": os.environ["PATH"], "HOME": os.environ.get("HOME", ""), "GIT_CONFIG_GLOBAL": "/dev/null", "RUNNER_TEMP": str(runner),
+               "GITHUB_SERVER_URL": f"file://{tmp_path / 'github'}", "GITHUB_REPOSITORY": "o/none" if case == "failed" else "o/cards"}
+
+        def step(name, cwd=ws):
+            return run_process(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", named[name]], env=env, cwd=str(cwd),
+                               capture_output=True, text=True, timeout=60)
+        assert step("History start", runner).returncode == 0
+        for _ in range(600):
+            if (runner / "history-fetch.code").is_file():
+                break
+            time.sleep(0.05)
+        if case == "moved":
+            (seed / "f.txt").write_text("moved")
+            commit(seed, "Base", 9)
+            git(seed, "push", "-q", str(server), "main")
+        git(tmp_path, "clone", "-q", "--no-checkout", "--depth", "1", "--filter=blob:none", f"file://{server}", str(ws))   # the checkout's
+        config = (ws / ".git" / "config").read_text()
+        done = [step(name) for name in ("History join", "History wait")]
+        assert [d.returncode for d in done] == [0, 0] and git(ws, "rev-parse", "--is-shallow-repository").strip() == "false", done[1].stdout
+        assert git(ws, "rev-list", "--count", "HEAD").strip() == ("3" if case == "joined" else "4")   # 4 from moved on
+        assert ("History join: joined" if case == "joined" else "History join: from GitHub") in done[1].stdout
+        assert (ws / ".git" / "config").read_text() == config and "::warning::" not in done[1].stdout
 
 
 def _requirements(name: str) -> list:
