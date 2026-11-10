@@ -8,17 +8,20 @@ Closed, then locks and archives the post.
 An async worker like type_emojis: Discord is awaited on the event loop, the JSON written in a thread. main runs
 run_pass every PASS_MINUTES and post_created on on_thread_create; /forum_votes shows or sets the settings. FORUM_JSON
 (gitignored, per machine) holds the settings and the parts done per post, so a restart never repeats one; the ping and
-the note also look for the bot's own message in the post first (a lost file, another machine).
+the note also look for a bot's message in the post first (a lost file). A post a person locks waits until unlocked.
 
     python -m commands.forum_votes test --minutes N    a test post, closed N minutes later (REST only, no ping)
+
+The bot never pings its own test post and closes one left open without a forward.
 """
 from argparse import ArgumentParser
-from asyncio import Lock, run, sleep, to_thread
+from asyncio import CancelledError, Lock, current_task, get_running_loop, run, sleep, to_thread
 from datetime import datetime, timedelta, timezone
 from json import dumps, loads
 from os import fsync, remove, replace
 from os.path import exists
 from re import compile as re_compile
+from signal import SIGHUP, SIGTERM
 from traceback import format_exc
 from typing import Optional
 
@@ -43,6 +46,7 @@ UNKNOWN_CHANNEL = 10003                     # Discord's error code: the post was
 PING_WORDS = "please vote on this change"
 NOTE_WORDS = "Voting is closed."
 TEST_TITLE = "Test: proposals bot"
+TEST_STOPPED = "The test stopped early."
 SCHEMA = "autocroissant.forum-votes"
 SKIN_TONES = dict.fromkeys([0xFE0F, *range(0x1F3FB, 0x1F400)])   # 👎🏽 counts as 👎 for the forward rule
 MENTION = re_compile(r"<?[#@&!]*(\d{15,22})>?")                 # an ID, <#channel> or <@&role>
@@ -161,6 +165,11 @@ def outcome(top: list, votes: int) -> dict:
 
 def _outcome(post: Post) -> dict:
     return post.entry.get("outcome") or outcome([], 0)
+
+
+def _is_test(post: Post) -> bool:
+    """The live test's post: the bot's own, by its title."""
+    return post.thread.name == TEST_TITLE and getattr(post.thread, "owner_id", None) == post.client.user.id
 
 
 def _due(entry: dict, now: datetime) -> list:
@@ -355,11 +364,12 @@ async def _react(post: Post) -> None:
 
 
 async def _said(post: Post, words: str) -> bool:
-    """The bot already posted these words in the post: never twice."""
+    """A bot (this one, or another identity running the votes) already posted these words in the post: never twice."""
     me = post.client.user.id
     try:
         async for message in post.thread.history(limit=HISTORY):
-            if message.author.id == me and words in (message.content or ""):
+            bot = message.author.id == me or getattr(message.author, "bot", False)
+            if bot and words in (message.content or ""):
                 return True
     except Forbidden:
         pass                                    # no history to read: the record decides
@@ -378,6 +388,9 @@ def _check_mention(post: Post, role_id: int) -> None:
 
 
 async def _ping(post: Post, role_id: int, close_at: datetime) -> None:
+    if _is_test(post):                          # a test post left open: never a ping
+        post.did.append("ping: skipped (test post)")
+        return
     if await _said(post, PING_WORDS):
         post.did.append("ping: already there")
         return
@@ -445,11 +458,14 @@ async def ping_post(post: Post, role_id: int, close_at: datetime) -> None:
     await _part(post, "closing tag", lambda: _retag(post, add=SOON))
 
 
-async def close_post(post: Post, results_id: int) -> None:
-    """Day 7: count, note, forward a won post with its winner message, swap the tags for Closed, lock and archive."""
+async def close_post(post: Post, results_id: int, forward: bool = True) -> None:
+    """
+    Day 7: count, note, forward a won post with its winner message, swap the tags for Closed, lock and archive.
+    forward=False: no forward (the schedule closing the bot's own test post).
+    """
     await _part(post, "count", lambda: _count(post))
     await _part(post, "note", lambda: _note(post))
-    if _outcome(post)["forward"]:
+    if forward and _outcome(post)["forward"]:
         await _part(post, "forward", lambda: _forward(post, results_id), final=True)
         await _part(post, "winner", lambda: _announce(post, results_id), final=True)
     await _part(post, "closed tags", lambda: _retag(post, add=CLOSED, drop=(OPEN, SOON)))
@@ -460,24 +476,25 @@ async def close_post(post: Post, results_id: int) -> None:
 # Scheduler
 # ========================
 def _include(forum, thread) -> bool:
-    """Record a post not seen yet if it is open (not locked, no Closed). True if recorded."""
+    """Record a post not seen yet if it is open (no Closed; archived and locked is closed). True if recorded."""
     key = str(thread.id)
-    if key in _posts or getattr(thread, "parent_id", None) != forum.id or thread.locked or _has(forum, thread, CLOSED):
+    if key in _posts or getattr(thread, "parent_id", None) != forum.id or (thread.locked and thread.archived) \
+            or _has(forum, thread, CLOSED):
         return False
     _posts[key] = _record(thread, forum)
     return True
 
 
-def _dropped(forum, thread, entry: dict) -> bool:
-    """Locked, or given Closed before the bot's note (by a person): off the schedule."""
-    if thread.locked:
-        entry["end"] = "closed" if "lock" in entry["done"] else "locked by hand"
-    elif "note" not in entry["done"] and _has(forum, thread, CLOSED):
-        entry["end"] = "closed by hand"
-    else:
-        return False
-    print(f"Forum votes: post {thread.id} {entry['end']}: dropped")
-    return True
+def _held(forum, thread, entry: dict) -> str:
+    """Before the bot's note: "wait" (locked by a person, still open) or why a person closed it ("": go on)."""
+    if "note" in entry["done"]:                 # the bot's own close under way
+        return ""
+    closed = _has(forum, thread, CLOSED)
+    if thread.locked and (thread.archived or closed):
+        return "closed and locked by hand"
+    if closed:
+        return "closed by hand"
+    return "wait" if thread.locked else ""
 
 
 async def _advance(client, forum, key: str, entry: dict, thread=None) -> None:
@@ -488,7 +505,13 @@ async def _advance(client, forum, key: str, entry: dict, thread=None) -> None:
     try:
         if thread is None:
             thread = await _channel(client, int(key))
-        if _dropped(forum, thread, entry):
+        held = _held(forum, thread, entry)
+        if held == "wait":
+            _log_once((thread.id, "held"), f"post {thread.id} is locked: its steps wait until it is unlocked")
+            return
+        if held:
+            entry["end"] = held
+            print(f"Forum votes: post {thread.id} {held}: dropped")
             await _save()
             return
         post = Post(client, forum, thread, entry, _save)
@@ -496,7 +519,7 @@ async def _advance(client, forum, key: str, entry: dict, thread=None) -> None:
         if "ping" in due:
             await ping_post(post, setting("role"), datetime.fromisoformat(entry["created"]) + CLOSE_AFTER)
         if "close" in due:
-            await close_post(post, setting("results"))
+            await close_post(post, setting("results"), forward=not _is_test(post))
             entry["end"] = "closed"
             await _save()
     except (Gone, NotFound):
@@ -632,10 +655,31 @@ async def forum_votes(interaction: Interaction, client, enabled: Optional[bool] 
     queue_message(interaction, status_text(), allowed_mentions=NO_MENTIONS)
 
 
+async def _stopped(post: Post) -> None:
+    """The test stopped before its close: its post gets a short note, Closed, a lock and archived (each tried)."""
+    if "lock" in post.done:
+        return
+
+    async def fresh():
+        post.thread = await post.client.fetch_channel(post.thread.id)
+    failed = []
+    for name, action in (("read", fresh), ("note", lambda: post.thread.send(TEST_STOPPED, allowed_mentions=NO_MENTIONS)),
+                         ("closed tags", lambda: _retag(post, add=CLOSED, drop=(OPEN, SOON))), ("lock", lambda: _shut(post))):
+        try:
+            await action()
+        except Exception as e:
+            failed.append(f"{name}: {type(e).__name__}: {e}")
+    try:
+        print(f"Test post {post.thread.id} stopped early: " + ("; ".join(failed) or "closed, locked and archived"))
+    except OSError:
+        pass                                    # the terminal is gone (a dropped ssh)
+
+
 async def live_test(client, minutes: float) -> Post:
     """
     The live test: a post in the watched forum, opened, then closed `minutes` later with the bot's own steps (no
     ping, nothing recorded). The running bot opens it too (no harm: the steps are idempotent; locked, it is dropped).
+    Stopped early (an error, Ctrl-C, SIGHUP or SIGTERM), the post is closed at once.
     """
     await to_thread(_read)
     forum = await _forum(client)
@@ -645,15 +689,19 @@ async def live_test(client, minutes: float) -> Post:
     span = f"{minutes:g} minute{'' if minutes == 1 else 's'}"
     made = await forum.create_thread(name=TEST_TITLE, applied_tags=tags, allowed_mentions=NO_MENTIONS,
                                      content=f"This is a test of the proposals bot and closes in {span}.")
-    print(f"Test post {made.thread.id} (first message {made.message.id}): {made.thread.jump_url}")
     post = Post(client, forum, made.thread, _record(made.thread, forum), _no_save)
-    await open_post(post)
-    print(f"Opened: {'; '.join(post.did) or 'nothing to do'}")
-    print(f"Closing in {span}...")
-    await sleep(minutes * 60)
-    post.did = []
-    post.thread = await client.fetch_channel(made.thread.id)
-    await close_post(post, setting("results"))
+    try:
+        print(f"Test post {made.thread.id} (first message {made.message.id}): {made.thread.jump_url}")
+        await open_post(post)
+        print(f"Opened: {'; '.join(post.did) or 'nothing to do'}")
+        print(f"Closing in {span}...")
+        await sleep(minutes * 60)
+        post.did = []
+        post.thread = await client.fetch_channel(made.thread.id)
+        await close_post(post, setting("results"))
+    except BaseException:
+        await _stopped(post)
+        raise
     print(f"Closed: {'; '.join(post.did)}")
     print(f"Outcome: {_outcome(post)['text']} Forwarded: {'yes' if _outcome(post)['forward'] else 'no'}")
     for part, message in post.sent.items():
@@ -664,11 +712,14 @@ async def live_test(client, minutes: float) -> Post:
 async def _cli_test(minutes: float) -> None:
     from discord import Client, Intents
     from config import TOKEN
+    loop, task = get_running_loop(), current_task()
+    for signal in (SIGHUP, SIGTERM):            # a dropped ssh or a SIGTERM: the test post is still closed
+        loop.add_signal_handler(signal, task.cancel)
     async with Client(intents=Intents.none()) as client:
         await client.login(TOKEN)               # REST only: no gateway, so the running bot is not disturbed
         try:
             await live_test(client, minutes)
-        except (Gone, Retry):
+        except (CancelledError, Gone, Retry):
             raise SystemExit("Forum votes: the test stopped (see above).")
 
 

@@ -14,7 +14,7 @@ import commands.utils as utils
 from global_config import FORUM_JSON
 
 T0 = datetime(2026, 11, 1, 12, tzinfo=timezone.utc)
-BOT, PERSON = 99, 7
+BOT, PERSON, OTHER_BOT = 99, 7, 98
 FORUM, ROLE, RESULTS, OTHER = 1569539619471499324, 546427268751294475, 1087579710428565526, 1087579710428565999
 DAY6, DAY7 = T0 + timedelta(days=6, minutes=1), T0 + timedelta(days=7, minutes=1)
 _ids = count(1000)
@@ -47,7 +47,8 @@ class Reaction:
 
 class Message:
     def __init__(self, channel, content, author=BOT, **extra):
-        self.id, self.channel, self.content, self.author = next(_ids), channel, content, SimpleNamespace(id=author)
+        self.id, self.channel, self.content = next(_ids), channel, content
+        self.author = SimpleNamespace(id=author, bot=author != PERSON)
         self.__dict__.update(extra)
 
 
@@ -77,8 +78,8 @@ class Starter:
 
 
 class Thread:
-    def __init__(self, forum, created, tags=(), name="Bigger hands", archived=False, locked=False):
-        self.id, self.parent_id, self.forum, self.guild = next(_ids), forum.id, forum, forum.guild
+    def __init__(self, forum, created, tags=(), name="Bigger hands", archived=False, locked=False, owner=PERSON):
+        self.id, self.parent_id, self.forum, self.guild, self.owner_id = next(_ids), forum.id, forum, forum.guild, owner
         self.created_at, self.name, self.archived, self.locked = created, name, archived, locked
         self.applied_tags = [forum.tag(n) for n in tags]
         self.jump_url = f"https://discord.com/channels/1/{self.id}"
@@ -155,7 +156,7 @@ class Forum:
             yield thread
 
     async def create_thread(self, name, content, applied_tags=(), allowed_mentions=None):
-        thread = Thread(self, T0, name=name)
+        thread = Thread(self, T0, name=name, owner=BOT)
         thread.applied_tags, thread.starter.content = list(applied_tags), content
         return SimpleNamespace(thread=thread, message=thread.starter)
 
@@ -276,8 +277,10 @@ def test_tally_any_emoji_minus_the_bots_abstain_ignored(votes, text, forward):
 def test_day6_pings_once_and_tags_across_restarts(clock, monkeypatch):
     forum = Forum()
     client = Client(forum)
-    post = Thread(forum, T0)
+    post, other = Thread(forum, T0), Thread(forum, T0)
+    other.messages.append(Message(other, f"<@&{ROLE}> please vote on this change.", author=OTHER_BOT))
     passes(client, T0, DAY6, DAY6 + timedelta(minutes=5), now=clock)
+    assert len(other.messages) == 1 and other.tags == ["Open", "Closing Soon"]   # another bot's ping: none from us
     ping = post.messages[0]
     assert contents(post) == [f"<@&{ROLE}> please vote on this change. Voting closes in 24 hours."]
     mentions = ping.allowed_mentions
@@ -346,7 +349,8 @@ def test_existing_posts_on_enable_overdue_steps_in_order(clock):
     assert old.locked and old.tags == ["Closed"] and len(client.results.sent) == 2
     assert sleeping.tags == ["Cards", "Open"] and not sleeping.archived and len(sleeping.starter.reactions) == 3
     assert not any(t.edits or t.starter.reactions or t.messages for t in (locked, closed, held))
-    assert set(saved()["posts"]) == {str(old.id), str(sleeping.id)} and saved()["settings"] == {"enabled": True}
+    assert set(saved()["posts"]) == {str(old.id), str(sleeping.id), str(held.id)}   # held: waits while locked
+    assert saved()["settings"] == {"enabled": True}
 
 
 def test_missing_tags_and_the_five_tag_limit(clock, capsys):
@@ -382,20 +386,26 @@ def test_five_tags_skip_closing_soon_then_make_room_for_closed(clock, capsys):
     assert post.tags == ["Idea", "Cards", "Rules", "Other", "Closed"] and post.locked
 
 
-def test_deleted_locked_or_closed_by_hand_dropped(clock, capsys):
+def test_deleted_or_closed_by_hand_dropped_a_lock_waits(clock, capsys):
     forum = Forum()
     client = Client(forum)
-    gone, locked, closed = Thread(forum, T0), Thread(forum, T0), Thread(forum, T0)
+    gone, shut, closed, paused = Thread(forum, T0), Thread(forum, T0), Thread(forum, T0), Thread(forum, T0)
     passes(client, T0, now=clock)
     gone.deleted = True
     forum.threads.remove(gone)
-    locked.locked = True
+    shut.locked = paused.locked = True
+    shut._archive(True)
     closed.applied_tags = [forum.tag("Closed")]
     passes(client, DAY6, DAY7, now=clock)
-    assert not locked.messages and not closed.messages and closed.tags == ["Closed"] and not closed.locked
+    assert not shut.messages and not closed.messages and closed.tags == ["Closed"] and not closed.locked
+    assert not paused.messages and paused.tags == ["Open"]                  # a person's lock: its steps wait
     posts = saved()["posts"]
-    assert str(gone.id) not in posts and posts[str(locked.id)]["end"] == "locked by hand"
-    assert posts[str(closed.id)]["end"] == "closed by hand"
+    assert str(gone.id) not in posts and posts[str(shut.id)]["end"] == "closed and locked by hand"
+    assert posts[str(closed.id)]["end"] == "closed by hand" and not posts[str(paused.id)]["end"]
+    paused.locked = False
+    passes(client, DAY7 + timedelta(minutes=5), now=clock)                 # unlocked: overdue steps in order
+    assert contents(paused) == [f"<@&{ROLE}> please vote on this change. Voting closes now.",
+                                "Voting is closed. No votes."] and paused.locked and paused.tags == ["Closed"]
 
 
 def test_missing_permissions_logged_once_no_retry_loop(clock, capsys):
@@ -473,3 +483,27 @@ def test_live_test_cli_flow(clock, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert f"Test post {thread.id}" in out and "Outcome: Most votes: 👍 (3). Forwarded: yes" in out
     assert not exists(FORUM_JSON)
+
+
+def test_test_post_stopped_or_left_open_never_pinged(clock, monkeypatch):
+    forum = Forum()
+    client = Client(forum)
+
+    async def hang_up(seconds):                          # SIGHUP during the wait
+        raise asyncio.CancelledError
+    monkeypatch.setattr(fv, "sleep", hang_up)
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(fv.live_test(client, 10))
+    stopped = forum.archived[0]
+    assert contents(stopped) == ["The test stopped early."] and stopped.tags == ["Closed"] and stopped.locked
+    left = Thread(forum, T0, name=fv.TEST_TITLE, owner=BOT)  # a killed test: its post left open
+    left.starter.vote("👍", 2)
+
+    async def bot_sees():
+        await fv.post_created(client, stopped)
+        await fv.post_created(client, left)
+    asyncio.run(bot_sees())
+    passes(client, DAY6, DAY7, now=clock)
+    assert contents(stopped) == ["The test stopped early."]
+    assert contents(left) == ["Voting is closed. Most votes: 👍 (2)."] and left.locked and left.tags == ["Closed"]
+    assert client.results.sent == []

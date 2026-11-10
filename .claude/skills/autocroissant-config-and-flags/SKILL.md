@@ -178,7 +178,7 @@ went with the pickle seed on 2026-10-25. Modules also read a few environment var
 | `SITE_URL` (2026-10-20) | `"https://michaeljsr.github.io/TTSCardMaker"` | the card browser: `/website`, `/query` Card page buttons, search links, the site's `data/cards.json` (main.py, query_card.py) |
 | `REMIND_JSON` (2026-10-24) | `"reminder.json"` | the reminder store (GITIGNORED, per machine; schema_version 2) |
 | `FORUM_JSON` (2026-11-09) | `"forum_votes.json"` | the proposal forum's settings (what /forum_votes set) and the parts done per post (GITIGNORED, per machine; not backed up). Unreadable: the votes are off that session and the file is left untouched |
-| `FORUM_VOTES_ON`, `FORUM_ID`, `FORUM_ROLE_ID`, `FORUM_RESULTS_ID` (2026-11-09) | `True`, `1569539619471499324`, `546427268751294475`, `1087579710428565526` | the defaults of commands/forum_votes.py: on, the forum of proposals, the role asked to vote on day 6, the results channel won posts are forwarded to; `/forum_votes` overrides each, saved in `FORUM_JSON` |
+| `FORUM_VOTES_ON`, `FORUM_ID`, `FORUM_ROLE_ID`, `FORUM_RESULTS_ID` (2026-11-09) | `True`, `1569539619471499324`, `546427268751294475`, `1087579710428565526` | the defaults of commands/forum_votes.py: on, the forum of proposals, the role asked to vote on day 6, the results channel won posts are forwarded to; `/forum_votes` overrides each, saved in `FORUM_JSON`. On by default for every bot identity: a second one in the same server (the Mac's Waxwell) must be turned off in its own `FORUM_JSON` (run-and-operate §13) |
 | `HISTORY_JSON` (2026-10-20) | `"repo_history.json"` | repo path -> (blob, commit that last changed it), written by commands/repo_history.py; gitignored, rebuilt from the clone |
 | `FONT_DIRS_ENV` (2026-10-21) | `"PSD_TOOLS_FONT_DIRS"` | the name of the environment variable whose first entry overrides the fonts dir (card_bake, font_check) |
 | `CREATED_PATH` (2026-10-22, 6fe7a90) | `"site/Card Creation Dates.json"` | when each card was made (written by `python -m commands.card_dates created`); read on every /update_stats (`CardDates`) |
@@ -447,7 +447,8 @@ autocroissant-run-and-operate §9.
 | `OPEN`, `SOON`, `CLOSED` | `"Open"`, `"Closing Soon"`, `"Closed"` | forum tags, matched by name in any case; a missing one is logged once, never made |
 | `UP`, `DOWN`, `ABSTAIN` | 👍, 👎, `"abstain"` | the reactions; :abstain: is found by name in the server's emojis, else the bot's application emojis; it never counts |
 | `MAX_TAGS` | `5` | Discord's tags per post: removals first, then the add or a logged skip |
-| `HISTORY` | `50` | recent messages searched for the bot's own ping or note before posting one |
+| `HISTORY` | `50` | recent messages searched for a bot's ping or note (this one's or another identity's) before posting one |
+| `TEST_TITLE`, `TEST_STOPPED` | `"Test: proposals bot"`, `"The test stopped early."` | the live test's post title (the bot's own post by that title is never pinged and is closed without a forward) and its note when stopped early |
 
 ### commands/card_sync.py (2026-10-22; not compiled; the bot's card data)
 

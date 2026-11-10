@@ -746,20 +746,29 @@ commands/forum_votes.py (uncompiled), owner's spec 2026-11-09. In the watched fo
 
 | When | What the bot does |
 |---|---|
-| a post is made (`on_thread_create`), or found open at a start / when turned on / another forum set (active posts, and archived ones not locked and without Closed) | the tag Open if missing; 👍 👎 :abstain: on the first message |
+| a post is made (`on_thread_create`), or found open at a start / when turned on / another forum set (active posts without Closed, and archived ones not locked and without Closed) | the tag Open if missing; 👍 👎 :abstain: on the first message |
 | 6 days after the post was made | "<@&role> please vote on this change. Voting closes in 24 hours." (the hours left; "now" when overdue; that role only may ping); tag Closing Soon |
 | 7 days | "Voting is closed. Most votes: 👍 (5)." (any emoji, the bot's own vote and :abstain: not counted; ties all named; "No votes."); a winner that is not 👎 (and does not tie with 👎) is forwarded to the results channel (default 1087579710428565526) with "**title**: Most votes: ... link"; Open and Closing Soon off, Closed on; locked and archived |
 
-Steps already due run at once, in order (an old post found open is pinged, then closed). A post deleted, locked, or given
-Closed by a person is dropped. Each part is recorded in `forum_votes.json` when done, so a restart repeats nothing; a
+Steps already due run at once, in order (an old post found open is pinged, then closed). A post deleted, or given Closed
+or locked and archived by a person, is dropped; a post a person only locks waits (no step runs) until it is unlocked,
+then its overdue steps run. Each part is recorded in `forum_votes.json` when done, so a restart repeats nothing; a
 refused part (Missing Permissions) is logged once (`Forum votes: post N: lock failed: Forbidden ...`) and not retried;
 any other failure is retried next pass (5 minutes). A failed forward is logged and the close goes on.
 
 - `/forum_votes` (admin): no options show the state; `enabled`, `forum`, `role`, `results` (IDs or mentions) change it.
 - Live test (the jetson, in the bot's checkout and venv; REST only, so it never clashes with the running bot; no role
-  ping; nothing recorded): `cd ~/Documents/AutoCroissant && ~/venvs/autocroissant/bin/python -m commands.forum_votes test --minutes 5`. It posts
-  "Test: proposals bot", opens it, waits, closes it with the bot's own functions and prints the thread, message ids and
-  the outcome. The running bot opens the post too (harmless) and drops it once locked.
+  ping; nothing recorded): `cd ~/Documents/AutoCroissant && SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+  ~/venvs/autocroissant/bin/python -m commands.forum_votes test --minutes 5` (one line; without the certificate file the
+  login fails before any post is made). It posts "Test: proposals bot", opens it, waits, closes it with the bot's own
+  functions and prints the thread, message ids and the outcome. Stopped early (an error, Ctrl-C, SIGHUP from a dropped
+  ssh, SIGTERM), it posts "The test stopped early." and closes, locks and archives the post. The running bot opens the
+  post too (harmless), never pings it (its own post by that title), closes one left open (a SIGKILL) on day 7 without a
+  forward, and drops it once locked and archived.
+- One bot identity per server: a second identity running the votes (the Mac's Waxwell) skips a ping or note any bot
+  already posted, but adds its own 👍 👎 :abstain:, which the other identity counts as votes (only the counting bot's own
+  reaction is taken off). Turn it off there before its first start: `forum_votes.json` holding
+  `{"schema": "autocroissant.forum-votes", "settings": {"enabled": false}, "posts": {}}`.
 
 ## When NOT to use this skill
 
