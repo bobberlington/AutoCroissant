@@ -5,11 +5,12 @@ website lists an image version at VISIBLE or more (or with a data change) and fo
 event under it is minor (no Discord post). A pair the record lacks counts as visible (owner 11-09).
 
 Card sync measures the changes its run brings (card_data.build); the backfill measures history's, in batches that are
-fetched into a scratch store and dropped (never the whole history on disk), and resumes where the record stops.
+fetched into scratch stores and dropped (never the whole history on disk), and resumes where the record stops.
 
 CLI: python -m commands.png_changes backfill --checkout <clone with main's history> --db <db dir> [--minutes N]
 """
 from argparse import ArgumentParser
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from json import dumps, loads
@@ -35,6 +36,7 @@ VISIBLE = 0.05               # share of the card's pixels (alpha in either pictu
                              # owner 11-09 "about 5%": the Alt template's bars are 2-7% of a card)
 RECORD = "png_changes.json"
 BATCH = 30                   # pairs whose blobs one scratch store holds
+FETCHES = 4                  # batches fetched at a time, ahead of the one compared (the guards' FETCH_POOL)
 WORKERS = 4                  # pictures compared at a time
 RUN_MAX = 300                # pairs a Card sync run measures; the rest wait for the next run or the backfill
 EXIT_LEFT = 3                # backfill: pairs left when the time ran out
@@ -236,8 +238,8 @@ def measure(checkout: str, pairs: list, record: dict, limit: Optional[int] = Non
             log=print) -> tuple:
     """
     Measure the pairs the record lacks (or has by another RULE), BATCH at a time: blobs from the checkout's store, else
-    fetched into a scratch store dropped after its batch. A picture that can't be read is recorded None (visible, not
-    tried again); one not fetched stays unmeasured.
+    fetched into a scratch store dropped after its batch (FETCHES batches ahead). A picture that can't be read is
+    recorded None (visible, not tried again); one not fetched stays unmeasured.
 
     Returns:
         (pairs measured, pairs left: over limit, past deadline or not fetched)
@@ -245,26 +247,41 @@ def measure(checkout: str, pairs: list, record: dict, limit: Optional[int] = Non
     todo = [p for p in dict.fromkeys(map(tuple, pairs)) if not _measured(record, p)]
     left = todo[limit:] if limit is not None else []
     todo = todo[:limit] if limit is not None else todo
+    if not todo:
+        return 0, left
     done, missed = 0, 0
+    chunks = iter([todo[i:i + BATCH] for i in range(0, len(todo), BATCH)])
+    ahead = deque()
+    fetches = ThreadPoolExecutor(FETCHES)
+
+    def start(chunk: list) -> tuple:
+        shas = sorted({b for p in chunk for b in p})
+        here = _have(checkout, shas)
+        tmp = TemporaryDirectory(prefix="png-changes-")
+        store = join(tmp.name, "store.git")
+        task = fetches.submit(_fetch, checkout, store, [s for s in shas if s not in here]) if len(here) < len(shas) else None
+        return chunk, shas, here, tmp, store, task
+
     local_reader = _Reader(checkout)
     try:
         for i in range(0, len(todo), BATCH):
             if deadline is not None and time() > deadline:
                 left = todo[i:] + left
                 break
-            chunk = todo[i:i + BATCH]
-            shas = sorted({b for p in chunk for b in p})
-            here = _have(checkout, shas)
-            with TemporaryDirectory(prefix="png-changes-") as tmp:
-                store = join(tmp, "store.git")
-                if len(here) < len(shas):
-                    _fetch(checkout, store, [s for s in shas if s not in here])
+            while len(ahead) < FETCHES and (following := next(chunks, None)) is not None:
+                ahead.append(start(following))
+            chunk, shas, here, tmp, store, task = ahead.popleft()
+            try:
+                if task is not None:
+                    task.result()
                 fetched = _Reader(store) if isfile(join(store, "HEAD")) else None
                 try:
                     data = {s: local_reader.read(s) if s in here else fetched.read(s) if fetched else None for s in shas}
                 finally:
                     if fetched is not None:
                         fetched.close()
+            finally:
+                tmp.cleanup()
 
             def one(pair):
                 a, b = data.get(pair[0]), data.get(pair[1])
@@ -286,6 +303,9 @@ def measure(checkout: str, pairs: list, record: dict, limit: Optional[int] = Non
             data.clear()
             log(f"png changes: {done} measured, {missed} not fetched, {len(todo) - i - len(chunk)} to go in this run")
     finally:
+        fetches.shutdown(cancel_futures=True)
+        for *_, tmp, _store, _task in ahead:
+            tmp.cleanup()
         local_reader.close()
     return done, left
 
