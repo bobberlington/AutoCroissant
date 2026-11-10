@@ -12,6 +12,7 @@ rendered, so the module loads under stock psd-tools.
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, wait
 from contextlib import ExitStack, contextmanager, nullcontext
+from contextvars import Context
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from functools import lru_cache
@@ -9130,7 +9131,7 @@ def gate_dirty(old: PSDImage, new: PSDImage, edits: list, keep: Optional[dict] =
                icon: bool = False) -> np.ndarray:
     """
     gate_untouched over the edits' regions and dirty_box(old, new) only: the card rendered there before and after
-    (in the bake's RenderCache; under OLD_BESIDE before in a thread and cache of its own), not whole twice. With
+    (in the bake's RenderCache; under OLD_BESIDE before in a thread of its own, uncached), not whole twice. With
     PSD_DIRTY_VERIFY=1 both are rendered whole too and any difference (a pixel changed outside the box, a box render
     unlike the whole one's) raises RuntimeError.
 
@@ -9153,9 +9154,9 @@ def gate_dirty(old: PSDImage, new: PSDImage, edits: list, keep: Optional[dict] =
         x0, y0, x1, y1 = box
         flags = dict(viewport=box, ignore_preview=True, apply_icc=False)
         drawn = lambda psd, kw: np.asarray(psd.composite(**flags, **kw).convert("RGBA"))
-        if OLD_BESIDE:                          # the fork's RenderCache is one thread's: old's gets its own
+        if OLD_BESIDE:                          # a RenderCache is one thread's: old's draws with none: one pass
             pool = ThreadPoolExecutor(1, thread_name_prefix="old")
-            ahead = pool.submit(_cached, drawn, old, look_kwargs(old))
+            ahead = pool.submit(_uncached, drawn, old, look_kwargs(old))
             pool.shutdown(wait=False)
             try:
                 after = drawn(new, pins)
@@ -9197,10 +9198,10 @@ def _lines(edits: list) -> dict:
     return out
 
 
-def _cached(call, *args):
-    """call(*args) in a RenderCache of its own (another thread's)."""
-    with render_cache():
-        return call(*args)
+def _uncached(call, *args):
+    """call(*args) with no RenderCache (another thread's lone pass reuses nothing), in an empty context: a thread that
+    inherits its starter's (free-threaded builds) must not share the bake's cache."""
+    return Context().run(call, *args)
 
 
 def _verify_dirty(old: PSDImage, new: PSDImage, box: Optional[tuple], shown: np.ndarray,

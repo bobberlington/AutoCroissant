@@ -138,7 +138,7 @@ def test_a_stat_edit_bakes_the_bakes_pixels(cards, tmp_path, monkeypatch):
     monkeypatch.setattr(pe, "artifacts", lambda *a, _f=pe.artifacts: seen.append("crops") or _f(*a))
     monkeypatch.setattr(cp, "_small_of", lambda image, path, _f=cp._small_of: seen.append(path) or _f(image, path))
     olds = []                                                               # gate_dirty's old box: its own thread
-    monkeypatch.setattr(pe, "_cached", lambda *a, _f=pe._cached: olds.append(threading.current_thread().name) or _f(*a))
+    monkeypatch.setattr(pe, "_uncached", lambda *a, _f=pe._uncached: olds.append(threading.current_thread().name) or _f(*a))
     before = _state(cards.repo)
     code, result, out = _preview(cards, tmp_path, {"hp": 8, "note": "checked", "_by": "web"})
     assert code == 0 and _state(cards.repo) == before
