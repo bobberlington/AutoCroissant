@@ -315,6 +315,7 @@ def test_a_renamed_card_goes_on_and_its_old_page_redirects(bs, repo, tmp_path, m
     page = (tmp_path / "a" / "dist" / "c" / "alpha" / "index.html").read_text(encoding="utf-8")
     assert 'http-equiv="refresh" content="0; url=../new-alpha/"' in page and (tmp_path / "a" / "dist" / "c" / "new-alpha" / "index.html").exists()
     alpha = _by_name(out["cards.json"]["cards"])["New Alpha"]
+    assert alpha["was"] == ["Alpha"]                                              # its old name finds it
     assert out["history.json"][alpha["id"]] == [{"ts": repo["t"][0], "ability": "Old text."}]
     assert len(out["versions.json"]["cards"][alpha["id"]]) == 4                      # c1, c2, c3 and the rename
     assert out["cards.json"]["moved"] == {"alpha": alpha["id"]} == {"alpha": "new-alpha"}
