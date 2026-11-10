@@ -629,6 +629,9 @@ def ring_fonts(clone, tmp_path_factory):
     return fonts, earlier
 
 
+DIGITS = ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine")
+
+
 def _ability(data: bytes):
     return next(layer for layer in PSDImage.open(BytesIO(data)).descendants()
                 if layer.kind == "type" and layer.name.strip() == "Ability")
@@ -752,6 +755,70 @@ def test_old_glyphs_told_only_from_another_build(monkeypatch):
         raise psd_edit.Refused("unsupported-card", "Ability: at its old badge widths the fork's layout is 44% off")
     monkeypatch.setattr(cs, "laid_plan", refused)
     assert not cs._another_build(None, None, (), drawn, True)
+    for older in (True, False):                 # a font explains it: told only for an older icon font build
+        monkeypatch.setattr(cs, "laid_plan", lambda layer, faces, earlier: cs.Whole("why", None, older))
+        assert cs._another_build(None, None, (), drawn, True) is older
+
+
+def test_badge_widths_relaid_whole_when_a_font_explains_it(clone, tmp_path, ring_fonts):
+    """Owner 2026-11-10: a re-lay refused because Photoshop drew the layer with an older icon font build (Isma) or with
+    another file of a text font's name (Koro-Sensei's Mac save: macOS's Futura, 2.5-3.5% wider than MDW/Fonts') lands,
+    the layer laid out again whole in the current fonts; nothing is left to re-lay after. A layout no font explains
+    (Wendy at the ring) is still refused."""
+    _, earlier = ring_fonts
+    for rel, why in (("Creatures/Hollow Knight/4 Stars/Isma.psd", "an older stoogedings build"),
+                     ("Creatures/Other/5 Stars/Koro-Sensei.psd", "Futura-Bold drawn"),
+                     ("Creatures/DST/3 Stars/Wendy.psd", None)):
+        fixed = cs.fix(at_rev(clone, RING, rel), rel, [], str(tmp_path / "work"), None, earlier, only="badge widths")
+        if why is None:
+            assert not fixed.redrawn and "off its pixels" in fixed.pixel_left[0][1]
+            continue
+        assert fixed.redrawn == {"badge widths": ["Ability"]} and fixed.pixel_left == [], (rel, fixed.pixel_left)
+        assert any(why in note and "laid out again whole" in note for note in fixed.notes), fixed.notes
+        new = _ability(fixed.data)
+        faces = psd_edit.font_map(earlier([]), new)
+        assert cs.laid_plan(new, faces, earlier.earlier) is None and cs.old_glyphs(new, faces) == []
+
+
+@pytest.mark.parametrize("wider, told", [
+    (lambda glyph: 1.0825, r"Futura-Bold drawn ([\d.]+)% wider"),     # macOS's Rockwell Bold against MDW/Fonts'
+    (lambda glyph: 1.034 if glyph == "space" else 1.033 if glyph in DIGITS else 1.0,   # Lucida Grande Bold's
+     r"Futura-Bold drawn with some glyphs at other widths \(' ' ([\d.]+)% wider")])
+def test_any_splice_relaid_whole_in_a_wider_file_of_its_font(clone, tmp_path, monkeypatch, wider, told):
+    """Owner 2026-11-10 (any font substitution): Koro-Sensei's Ability (plain timing tags) drawn in a Futura-Bold 8.25%
+    wider (macOS's Rockwell Bold against MDW/Fonts'), or with only its space 3.4% and digits 3.3% wider (macOS's Lucida
+    Grande Bold): the tags fix's splice can't take it, so it is laid out again whole in MDW/Fonts' file, its width found
+    (no older icon font: never the old-font note); after, the current fonts draw it (no cause). With manual or Optical
+    kerning (the fork draws neither) no font explains it."""
+    from re import search
+    from fontTools.ttLib import TTFont
+    from psd_tools.api import text_edit
+    from psd_tools.psd import engine_data
+    rel, fonts = "Creatures/Other/5 Stars/Koro-Sensei.psd", _fonts(clone)
+    mdw, wide = Path(fonts([])), tmp_path / "wide"
+    wide.mkdir()
+    font = TTFont(mdw / "Futura-Bold.otf")
+    for glyph, (advance, lsb) in list(font["hmtx"].metrics.items()):
+        font["hmtx"].metrics[glyph] = (round(advance * wider(glyph)), lsb)
+    font.save(wide / "Futura-Bold.otf")
+    psd = PSDImage.open(clone / rel)
+    layer = next(layer for layer in psd.descendants() if layer.kind == "type" and layer.name.strip() == "Ability")
+    layer.rasterize(fonts=psd_edit.font_map(str(wide), layer))
+    psd_edit.save_psd(psd, str(tmp_path / "mac.psd"))
+    fixed = cs.fix((tmp_path / "mac.psd").read_bytes(), rel, [], str(tmp_path / "work"), None, fonts, only="tags")
+    assert fixed.redrawn == {"tags": ["Ability"]} and fixed.pixel_left == [], fixed.pixel_left
+    [note] = [note for note in fixed.notes if "laid out again whole" in note]
+    found = search(told, note)
+    assert "older" not in note and found and abs(float(found[1]) / 100 + 1 - wider("space")) <= 0.01, note
+    new = _ability(fixed.data)
+    assert cs.rule_tags(PSDImage.open(BytesIO(fixed.data))) is None
+    assert cs.font_cause(new, psd_edit.font_map(str(mdw), new)) is None
+    mac = _ability((tmp_path / "mac.psd").read_bytes())
+    mac.engine_dict["StyleRun"]["RunArray"][0]["StyleSheet"]["StyleSheetData"]["Kerning"] = engine_data.Integer(40)
+    assert cs.font_cause(mac, psd_edit.font_map(str(mdw), mac)) is None
+    monkeypatch.setattr(text_edit, "kerning_methods", lambda layer: ((0, 1, 2),))
+    mac = _ability((tmp_path / "mac.psd").read_bytes())
+    assert cs.font_cause(mac, psd_edit.font_map(str(mdw), mac)) is None
 
 
 def test_old_glyphs_refuse_a_moved_advance(clone, tmp_path, ring_fonts):

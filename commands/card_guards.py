@@ -12,10 +12,11 @@ words in the chart's colours and effects and status cards in Krabby Patty: no ch
 11-09),
 the PNG re-exported the same way; and the folders as the templates' (card_standards.standard_folders, owner 11-09:
 only where nothing else changes, no PNG); badges drawn with another build of the icon font that the PSD keeps are told
-(owner 2026-11-04: OLD_FONT). One report per push: the job
-summary and commit comment (report.md), one Discord post for the standards channel (discord.json: no mentions, no
-previews), and a plan of the writes (plan.json) that `land` commits once, right after the check. Each card pushed
-over an older PSD carries what changed inside it (psd_diff: "added Ability FX: Blazing", "Name text: 'a' -> 'b'").
+(owner 2026-11-04: OLD_FONT; a re-lay a font explains lands instead, owner 2026-11-10: card_standards.font_cause).
+One report per push: the job summary and commit comment (report.md), one Discord post for the standards channel
+(discord.json: no mentions, no previews), and a plan of the writes (plan.json) that `land` commits once, right after
+the check. Each card pushed over an older PSD carries what changed inside it (psd_diff: "added Ability FX: Blazing",
+"Name text: 'a' -> 'b'").
 Every card PNG the push brought is recompressed losslessly in that commit (owner, 2026-10-23; png_export.recompress,
 the same pixels) when that saves more than 10% and 64 KiB (our thresholds), and so is every PNG the bot writes; a
 pushed one in a process of its own, beside the rest of the check (_overlap).

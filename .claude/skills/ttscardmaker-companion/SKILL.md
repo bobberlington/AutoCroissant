@@ -236,7 +236,17 @@ breaks hang on a hair, a line gains or holds one word, a new break cuts a count 
 term or a card's name (`fonts.cards`: Context.cards), or ink comes within `EDGE_NEAR` and nearer on a side (with its
 outline's and glow's distance); the notes of a fix that lands go in plan.json's `pixel_notes` (per card, plan.json
 alone); the guards run it on every push. `old glyphs` refuses a glyph whose advance moved (never a half-ringed
-splice).
+splice). Font-explained re-lays (owner 2026-11-10: "any font substitution"): where `laid_plan` or any pixel fix's
+splice (`_spliced`: badge widths, apostrophes, old glyphs, badges, overlay badges, tags, status words) would refuse and
+`card_standards.font_cause` finds a font that draws the layer as stored (an earlier icon font era that lays it out or
+draws a badge otherwise, or text faces up to `FONT_WIDTHS` wider or narrower: another file of their name, as macOS's
+Futura on Koro-Sensei; each glyph within `FONT_DRIFT` along its line, the median within `FONT_FIT`; else some glyphs at
+their own widths, `_glyphs_of`, as macOS's Lucida Grande files whose space, digits and a few marks alone differ; today's
+icon font tried first, so the old-font note only follows an older build), the layer is laid out again whole in the current
+fonts, checked as a re-lay (box, edge, badges alone, razor), silent; a layout no font explains is still refused (Wendy
+at the ring, text 3% larger than its pixels), and so is a layer with manual or Optical kerning (the fork draws
+neither; `_kerned`). Text whose tracking alone differs from its pixels (or set 3% smaller) reads as a width (never
+from a Photoshop save: it redraws on every change).
 Old-font note (A1, owner 2026-11-04; the one pixel-fix refusal that is told): a layer drawn with another build of the
 icon font that the PSD keeps so (refused, a splice that fell back, or a PNG that couldn't follow:
 `card_guards.stale_left`) gets `card_guards.OLD_FONT` in the post: "old stoogedings font: pull, reinstall MDW/Fonts/stoogedings.ttf, restart Photoshop, Type > Update All Text Layers, save and push".
