@@ -426,6 +426,23 @@ out([row.box, moved && moved.box, m.isBar(L, W, H, row.box), m.isBar(small, W, H
 
 
 @needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "rowShows"), reason="no rowShows in mockup.js")
+def test_drawn_bar_row_shows_its_value(tmp_path):
+    """Drawn ("pixel") bars get rows; a row is drawn on only when its first v cells are all lighter, or all darker, than
+    the rest by 8 or more (0 or full can't tell); a row whose cells say another value isn't."""
+    out = node(tmp_path, """
+const W = 100, H = 20, row = { k: "hp", box: [0, 0, 100, 20], cells: 10 };
+const cells = m => { const L = new Uint8Array(W * H); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) L[y * W + x] = m[Math.floor(x / 10)]; return L; };
+const lit = cells([90, 90, 90, 30, 30, 30, 30, 30, 30, 30]), dim = cells([100, 100, 100, 140, 140, 140, 140, 140, 140, 140]);
+const odd = cells([11, 81, 37, 29, 38, 39, 41, 45, 54, 68]), near = cells([40, 40, 40, 34, 34, 34, 34, 34, 34, 34]);
+const rows = rec => m.barRows("tall", 600, 1200, { hp: 3, def: 1 }, { stats: rec }).length;
+out([m.rowShows(lit, W, H, row, 3), m.rowShows(dim, W, H, row, 3), m.rowShows(lit, W, H, row, 4), m.rowShows(lit, W, H, row, 2),
+  m.rowShows(odd, W, H, row, 3), m.rowShows(near, W, H, row, 3), m.rowShows(lit, W, H, row, 0),
+  rows({ hp: "pixel", def: "template" }), rows({ hp: "pixel", def: "two-row" })]);""")
+    assert out == [True, True, False, False, False, False, True, 2, 0]
+
+
+@needs_js
 @pytest.mark.skipif(not has(MOCKUP_JS, "layerBlock"), reason="no layerBlock in mockup.js")
 def test_layer_block_takes_its_own_lines(tmp_path):
     """One layer's Ability: a bigger header and a short last line in its own box join the found block (erased, the new
