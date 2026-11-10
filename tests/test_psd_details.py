@@ -66,7 +66,7 @@ def test_record_shape_and_size(records, clone):
         assert record["fonts"] and all(e["supplied"] is True for e in record["fonts"].values())
         fonts = {font: [layer.rsplit("/", 1)[-1] for layer in e["layers"]] for font, e in record["fonts"].items()}
         assert fonts == psd_fonts(str(clone / rel))                                # the same rule as the font check
-        assert all(set(t) - {"colors", "runs", "frame", "hx", "track"} == {"layer", "id", "box", "text", "font", "size", "color", "visible", "px"}
+        assert all(set(t) - {"colors", "runs", "frame", "hx", "track", "lf", "badges"} == {"layer", "id", "box", "text", "font", "size", "color", "visible", "px"}
                    for t in record["text"])
         assert all(t["color"] in t.get("colors", [t["color"]]) for t in record["text"] if t["color"])     # every run's colour
         assert all(len(t["text"]) <= pd.TEXT_CHARS and (t["color"] is None or len(t["color"]) == 7) for t in record["text"])
@@ -82,15 +82,20 @@ def test_record_shape_and_size(records, clone):
 
 
 def test_how_text_is_set(clone):
-    """The mock-up's wrap (VERSION 5): Wendy's Ability is set 2.34 times wider than tall, Isma's tracked -20."""
+    """The mock-up's wrap (VERSION 5): Wendy's Ability is set 2.34 times wider than tall, Isma's tracked -20. VERSION 6:
+    each badge's [em, track] (null: not in the icon font; Wendy's 1CD tracked 418), Chef Saltbaker's letters' font."""
     from psd_tools import PSDImage
     got = {}
-    for rel, lid in (("Creatures/DST/3 Stars/Wendy.psd", 417), ("Creatures/Hollow Knight/4 Stars/Isma.psd", 417)):
+    for rel, lid in (("Creatures/DST/3 Stars/Wendy.psd", 417), ("Creatures/Hollow Knight/4 Stars/Isma.psd", 417),
+                     ("Creatures/Cuphead/5 Stars/Chef_Saltbaker.psd", 417)):
         if not (clone / rel).exists():
             pytest.skip(f"{rel} not in the clone")
-        got[rel.rsplit("/", 1)[1]] = pd._set(next(x for x in PSDImage.open(str(clone / rel)).descendants() if x.layer_id == lid))
-    assert got["Wendy.psd"] == {"frame": [2, 1704, 1202, 2314], "px": 88.04, "hx": 2.336}
-    assert got["Isma.psd"] == {"frame": [-1, 1763, 1201, 2486], "px": 73.92, "track": -20.0}     # a 0.1 degree turn: still set
+        layer = next(x for x in PSDImage.open(str(clone / rel)).descendants() if x.layer_id == lid)
+        got[rel.rsplit("/", 1)[1]] = pd._set(layer, pd._style(layer)[0])
+    assert got["Wendy.psd"] == {"frame": [2, 1704, 1202, 2314], "px": 88.04, "hx": 2.336, "badges": [[1.0, 418], None]}
+    assert got["Isma.psd"] == {"frame": [-1, 1763, 1201, 2486], "px": 73.92, "track": -20.0,     # a 0.1 degree turn: still set
+                               "badges": [[0.814, 0], [0.814, 345], None, [0.814, 0]]}
+    assert got["Chef_Saltbaker.psd"]["lf"] == "CupheadMemphis-Medium"                # first run MyriadPro-Regular
 
 
 def test_effects_switch_off_marks_every_effect_off(clone):

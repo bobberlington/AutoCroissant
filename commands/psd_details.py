@@ -3,8 +3,8 @@ The PSD facts behind the website's card "Details" dropdown: fonts, text layers, 
 style, stat-row encoding, status-word layers, template deviations, the header's star and type icon boxes (where the bake
 would put them: the website mock-up's, psd_edit's geometry), a compact layer tree, the editor's parts (psd_parts,
 VERSION 2), each type layer's colour runs (VERSION 3), the most a card's own stat display shows (stat_caps, VERSION
-4: the website refuses more) and how each type layer is set (frame, px, hx, track: VERSION 5). One record per card PSD,
-keyed by its git blob sha, in the card data's db/psd_details.json (the Card sync Action's build).
+4: the website refuses more) and how each type layer is set (frame, px, hx, track: VERSION 5; lf, badges: VERSION 6). One
+record per card PSD, keyed by its git blob sha, in the card data's db/psd_details.json (the Card sync Action's build).
 
 gather(psd, rel, name, index, vocab) -> the record: pure, never raises for a card (a failed section is a short
 "error: ..." string). load, text_of (the file's text), prune(cards, shas) to the tree. The build
@@ -41,7 +41,7 @@ from commands.psd_regions import STATS, badge_layers, comp_bars, comp_creature, 
 # ========================
 # Configuration
 # ========================
-VERSION = 5                                 # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"; 5: "frame", "px"
+VERSION = 6                                 # the file's "version"; 2: records have "parts" (PARTS_EDITOR.md §2.3); 3: "runs"; 4: "stat_caps"; 5: "frame", "px"; 6: "lf", "badges"
 TEXT_CHARS = 2000                           # text kept per type layer (whole: the website lines its colours up with the card's)
 TREE_CHILDREN = 80                          # children kept per group
 TREE_DEPTH = 8                              # groups nested deeper show one "more" entry
@@ -192,10 +192,11 @@ def _fonts(texts: list, index: Optional[FontIndex]) -> dict:
     return out
 
 
-def _set(layer) -> dict:
+def _set(layer, font: Optional[str] = None) -> dict:
     """How a type layer is set, in canvas px (the mock-up's wrap): box text's "frame"; "px", the height most of its letters
-    outside the icon font are set at; their width over height ("hx") and tracking ("track") when not 1 and 0. {} when
-    rotated."""
+    outside the icon font are set at; their width over height ("hx") and tracking ("track") when not 1 and 0; "lf", the
+    font most of them are set in, when not font; "badges", [em, track] per badge span (psd_edit.badge_spans; null when
+    not in the icon font), em its size over the letters'. {} when rotated."""
     from psd_tools.composite.text.layout import frame
     from psd_tools.composite.text.model import TextModel
     model = TextModel.from_layer(layer)
@@ -203,22 +204,36 @@ def _set(layer) -> dict:
     sx, sy = hypot(xx, xy), hypot(yx, yy)
     if not sx or not sy or abs(xy) > 0.01 * sx or abs(yx) > 0.01 * sy:
         return {}
-    out, letters = {}, Counter()
+    out, letters, faces = {}, Counter(), Counter()
     box = frame(model)
     if box is not None:
         left, top, width, height = box
         corners = [(x, y) for x in (left, left + width) for y in (top, top + height)]
         xs, ys = [xx * x + yx * y + tx for x, y in corners], [xy * x + yy * y + ty for x, y in corners]
         out["frame"] = _ints((min(xs), min(ys), max(xs), max(ys)))
+    icon = lambda s: str(s.font).lower().startswith(ICON_FONT_PREFIX)
     for run in model.runs:
         s = run.style
-        if not str(s.font).lower().startswith(ICON_FONT_PREFIX):
-            letters[(s.size, s.vertical_scale, s.horizontal_scale, s.tracking)] += sum(not c.isspace() for c in model.text[run.start:run.end])
+        if not icon(s):
+            n = sum(not c.isspace() for c in model.text[run.start:run.end])
+            letters[(s.size, s.vertical_scale, s.horizontal_scale, s.tracking)] += n
+            faces[str(s.font)] += n
     if letters and letters.most_common(1)[0][1]:
         size, v, h, track = letters.most_common(1)[0][0]
         hx = round(sx * h / (sy * v), 3) if v else 1
         out["px"] = round(size * sy * v, 2)
         out.update({**({"hx": hx} if hx != 1 else {}), **({"track": round(track, 1)} if round(track, 1) else {})})
+        lf = faces.most_common(1)[0][0]
+        if lf != font:
+            out["lf"] = lf
+        badges = []
+        for a, b in psd_edit.badge_spans(model.text):
+            styles = [r.style for r in model.runs if r.start < b and a < r.end]
+            s = styles[0] if styles else None
+            badges.append([round(s.size * s.vertical_scale / (size * v), 3), round(s.tracking)]
+                          if s is not None and size * v and all(icon(x) for x in styles) else None)
+        if any(badges):
+            out["badges"] = badges
     return out
 
 
@@ -245,7 +260,7 @@ def _text(texts: list) -> list:
                     "font": font, "size": size, "color": colour, "visible": layer.is_visible(),
                     **({"colors": colours} if colours else {}), **({"runs": runs} if runs else {})})
         try:
-            out[-1].update(_set(layer))
+            out[-1].update(_set(layer, font))
         except Exception:                       # engine data psd-tools can't read: the mock-up's own guess
             pass
     return out
