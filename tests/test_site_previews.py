@@ -476,6 +476,22 @@ out([show(part, m.baseInk(ink(bob, [["Inflict 2T Burn.", O], ["Generate a Gasoli
     assert out[4] is None
 
 
+@needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "badgeLooks"), reason="no badgeLooks in mockup.js")
+def test_badges_keep_their_size_and_tracking(tmp_path):
+    """As the bake (psd_details badges: [em, track] per old badge): a kept or edited badge keeps the size and tracking of
+    the old one giving it most letters; a typed one is fitted, tracked as the layer's badges at their commonest size;
+    badges the record doesn't match: tracked only. A kept pill is PILL_EM x em, its tracking after it."""
+    out = node(tmp_path, """
+const B = [[1, 500], [1, 500], [1.3, 0]], old = "(1CD) Deal 2.\\n(2CD) Draw.\\n(4 points) Heal.";
+const w = l => +m.layout([[[{ badge: "1CD", group: "turn", ...l }]]], Infinity, 10, (s, z) => s.length * z * 0.5)[0].w.toFixed(1);
+out([m.badgeLooks("(2U) (1CD) Deal 2.\\n(2CD) Draw.\\n(4 points) Heal.", old, B), m.badgeLooks("(3CD) Deal 3.\\n(4 points) Heal.", old, B),
+  m.badgeLooks("(1CD) x", "(1CD) (2U) x", B), w({}), w({ tk: 500 }), w({ bem: 1.3, tk: 100 })]);""")
+    kept, fit = {"bem": 1, "tk": 500}, {"bem": 1.3, "tk": 0}
+    assert out[0] == [{"tk": 500}, kept, kept, fit] and out[1] == [kept, fit] and out[2] == [{"tk": 500}]
+    assert out[3:] == [20.9, 25.9, 28.6]            # + 500/1000 of the fitted pill's em; 1.3 em, + 100/1000 of it
+
+
 # ---- the build's web fonts (build_site.py)
 @pytest.fixture(scope="module")
 def bs():
