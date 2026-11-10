@@ -932,7 +932,7 @@ def story_style_drift(psd: PSDImage, kerning: bool = True) -> list:
                     break
             if why:
                 break
-        kerned = _kerning(layer, model, keys, spelling) if kerning and not why else None
+        kerned = _kerning(layer, model, keys, spelling, root) if kerning and not why else None
         drift = [(u, t, k) for u, (t, k, pair) in enumerate(kerned or []) if pair and k is not None and t != k]
         if drift:
             u, t, k = drift[0]
@@ -942,11 +942,31 @@ def story_style_drift(psd: PSDImage, kerning: bool = True) -> list:
     return out
 
 
-def _kerning(layer, model, keys: dict, spelling: int) -> Optional[list]:
+def _sheet_kerning(root, sheet) -> Optional[bool]:
+    """A numbered Txt2 style sheet's kerning, else its parents' (Normal last); None when none sets it."""
+    try:
+        sheets = root["0"]["5"]["0"]
+    except (KeyError, TypeError):
+        return None
+    seen = set()
+    while sheet is not None and 0 <= int(sheet) < len(sheets) and int(sheet) not in seen:
+        seen.add(int(sheet))
+        data = sheets[int(sheet)]["0"]
+        features = data.get("6")
+        value = features.get(KERN_FEATURE) if hasattr(features, "get") else None
+        if value is not None:
+            return bool(getattr(value, "value", value))
+        sheet = getattr(data.get("5"), "value", data.get("5"))
+    return None
+
+
+def _kerning(layer, model, keys: dict, spelling: int, root) -> Optional[list]:
     """
-    Per UTF-16 unit of a type layer's text: (TySh's AutoKerning, its Txt2 story's kerning or None when the story run
-    leaves it out, whether the unit ends a pair: no paragraph's first). Photoshop kerns as the story says, the engine as
-    TySh does. None for a story with named keys (no kerning feature known).
+    Per UTF-16 unit of a type layer's text: (TySh's AutoKerning, its Txt2 story's kerning or None when neither the
+    story run nor its style sheets set it, whether the unit ends a pair: no paragraph's first). A run leaving it out
+    takes its sheet's (_sheet_kerning; Normal kerns): a paragraph's first letter, often unkerned in TySh, passes that
+    to text typed before it, which Photoshop kerns (Gulka re-wrapped). Photoshop kerns as the story says, the engine
+    as TySh does. None for a story with named keys (no kerning feature known).
     """
     if spelling:
         return None
@@ -970,11 +990,17 @@ def _kerning(layer, model, keys: dict, spelling: int) -> Optional[list]:
         for u in range(a, min(b, len(chars))):
             tysh[u] = default if value is None else bool(getattr(value, "value", value))
     story = [None] * len(chars)
-    for a, b, data in _style_spans([(int(run[keys["length"]].value), _dig(run[keys["data"]], keys["features"]))
-                                    for run in _dig(model, keys["runs"])]):
+    runs = list(_dig(model, keys["runs"]))
+    spans = _style_spans([(int(run[keys["length"]].value), _dig(run[keys["data"]], keys["features"])) for run in runs])
+    for (a, b, data), run in zip(spans, runs):
         value = data.get(KERN_FEATURE)
+        if value is None:                       # left to its style sheet
+            sheet = _dig(run[keys["data"]], keys["features"][:1]).get("5")
+            kern = _sheet_kerning(root, getattr(sheet, "value", sheet))
+        else:
+            kern = bool(getattr(value, "value", value))
         for u in range(a, min(b, len(chars))):
-            story[u] = None if value is None else bool(getattr(value, "value", value))
+            story[u] = kern
     return [(tysh[u], story[u], u > 0 and chars[u - 1] not in "\r\x03" and not second[u])
             for u in range(len(chars))]
 
@@ -993,7 +1019,7 @@ def follow_kerning(psd: PSDImage, layer) -> bool:
     if not 0 <= index < len(items) or str(items[index][model_key][text_key].value) != \
             str(layer.engine_dict["Editor"]["Text"].value):
         return False
-    kerned = _kerning(layer, items[index][model_key], STORY_STYLE_KEYS[spelling], spelling) or []
+    kerned = _kerning(layer, items[index][model_key], STORY_STYLE_KEYS[spelling], spelling, root) or []
     wrong = [(u, k) for u, (t, k, _) in enumerate(kerned) if k is not None and t != k]
     if not wrong:
         return False
