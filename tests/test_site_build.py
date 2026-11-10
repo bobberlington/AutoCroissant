@@ -393,8 +393,8 @@ def test_contributions_json_has_person_stats(bs, repo, tmp_path, monkeypatch):
 
 def test_index_carries_the_first_screen(bs, repo, tmp_path, monkeypatch):
     """index.html's pre-written grid: the cards in Name order as links to their pages, checked against grid.js in node;
-    a difference fails the build. A card's page carries its dialog's picture, the one it preloads, and openCard's close
-    button (card_frame)."""
+    a difference fails the build. A card's page carries its dialog's picture, the one it preloads, openCard's close
+    button (card_frame) and style.css inline, as index.html; other share pages link it."""
     if not shutil.which("node"):
         pytest.skip("no node")
     out = _build(bs, monkeypatch, repo, tmp_path / "a")
@@ -407,7 +407,10 @@ def test_index_carries_the_first_screen(bs, repo, tmp_path, monkeypatch):
     app = (BUILD_SITE.parents[1] / "assets" / "app.js").read_text(encoding="utf-8")
     close = re.search(r'aria-label="\$\{esc\(c\.name\)\}">\s*(<button [^>]*>✕</button>)\s*<div class="detail">', app)[1]
     assert f'{close}<div class="detail">' in card                # a phone's close row: the picture stays put
-    assert (bs.BADGE_FONT in card) == bs.has_badges(next(c for c in out["cards.json"]["cards"] if c["id"] == "alpha").get("ability") or "")
+    assert (f'href="{bs.BADGE_FONT}"' in card) == bs.has_badges(next(c for c in out["cards.json"]["cards"] if c["id"] == "alpha").get("ability") or "")
+    css = lambda p: re.findall(r'<style>.*?</style>|<link rel="stylesheet"[^>]*>', p, re.S)
+    assert css(card) == css(page) and css(page)[0].startswith("<style>")
+    assert css((tmp_path / "a" / "dist" / "d" / "index.html").read_text(encoding="utf-8"))[0].startswith("<link")
     monkeypatch.setattr(bs, "tile_html", lambda c, eager, icons: f'<a class="tile" href="c/{c["id"]}/">')
     with pytest.raises(SystemExit, match="differs from grid.js"):
         _build(bs, monkeypatch, repo, tmp_path / "b")
@@ -459,7 +462,7 @@ def test_editor_stats_and_people_load_on_first_use(bs, repo, tmp_path, monkeypat
 
 
 def test_inlined_css_urls(bs):
-    """index.html inlines style.css: its relative url()s, relative to assets/, now to the page (../rulebook/... left the site)."""
+    """index.html and card pages inline style.css: its relative url()s, relative to assets/, now to the page (../rulebook/... left the site)."""
     page = bs.inline_css('<link rel="stylesheet" href="assets/style.css?v=1">',
                          'a{src:url("../rulebook/x.woff2")}b{background:url(data:image/png;base64,AA)}c{background:url(i.png)}')
     assert page == '<style>a{src:url("rulebook/x.woff2")}b{background:url(data:image/png;base64,AA)}c{background:url(assets/i.png)}</style>'
