@@ -998,6 +998,7 @@ def test_pushed_pngs_are_recompressed_in_the_bot_commit(cards, tmp_path):
     assert "- Fat.png would be recompressed losslessly (" in (tmp_path / "report" / "report.md").read_text()
 
 
+@pytest.mark.oxipng
 @pytest.mark.skipif(pe.tool() is None, reason="needs the oxipng CLI (as card-guards.yml installs) or pyoxipng")
 def test_recompressions_beside_the_check_write_the_same(cards, tmp_path, monkeypatch):
     """The pushed PNGs recompressed in a process of their own (_overlap) beside the rest of the check: the same writes,
