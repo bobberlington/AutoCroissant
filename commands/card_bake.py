@@ -981,7 +981,8 @@ def bake_pictures(card: Card, psd, parsed: dict, parser, folder: str, fonts_dir:
     A tagged PSD's bake (§4.9): one apply_jobs per picture the edit shows in, each as that picture (psd_edit.variant)
     onto its own PNG, the saved picture's first (its run writes the PSD); every run's PSD must
     hold the same layer records. A stars, types or stat edit whose value differs by picture is impossible; a name edit
-    with another field showing in a picture of its own title bakes alone, next run (OWN_TITLE).
+    with another field showing in a picture of its own title bakes alone (OWN_TITLE): next run, or now if the rest is
+    refused (bake_card).
 
     Returns:
         The first run's Baked (card.views: every picture's)
@@ -1402,6 +1403,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
             target = card.moves.get(card.rel, card.rel) if "stars" in bake else card.rel
             added = card_template(snapshot, work, card, parsed) \
                 if psd_edit.ADD_ABILITY in psd_edit.parts_jobs(card.jobs) else None
+            aside = None                        # a name OWN_TITLE set aside: [refusal, value, renames, renamed]
             while True:                         # a stars or types refusal leaves the card's other fields to bake
                 try:
                     if card.pictures:
@@ -1414,20 +1416,33 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                                                          title_anchor=card.title_anchor)
                     break
                 except Refused as refused:
-                    if refused.field not in card.jobs or (len(card.jobs) == 1 and not card.redundant):
+                    if aside is None and refused.field == "name" and OWN_TITLE.split("}")[1] in refused.why:
+                        aside = [refused.refusal, card.jobs.pop("name"), card.renames, card.renamed]
+                        bake.pop("name", None)
+                        card.renames, card.renamed = {}, ""
+                        continue
+                    if not aside and (refused.field not in card.jobs or (len(card.jobs) == 1 and not card.redundant)):
                         if not card.partial:
                             raise
                         earlier, card.partial = card.partial, []    # the card's reason names them too
                         raise Refused(refused.code, "; ".join([refused.why] + [f"{r.code}: {r.why}" for r in earlier])) from refused
-                    card.partial.append(refused.refusal)
-                    del card.jobs[refused.field]
-                    bake.pop(refused.field, None)
-                    if refused.field == "stars":    # not baked: not moved either
-                        card.moves, card.moved_to, card.move_notes = {}, "", []
-                    if refused.field == "name":     # not baked: not renamed either
-                        card.renames, card.renamed = {}, ""
+                    for one in [refused.field] if refused.field in card.jobs else list(card.jobs):
+                        card.partial.append(Refusal(refused.code, refused.why, one))
+                        del card.jobs[one]
+                        bake.pop(one, None)
+                        if one == "stars":      # not baked: not moved either
+                            card.moves, card.moved_to, card.move_notes = {}, "", []
+                        if one == "name":       # not baked: not renamed either
+                            card.renames, card.renamed = {}, ""
+                    if not bake and aside:      # the rest refused: the name bakes alone now
+                        card.jobs["name"] = bake["name"] = aside[1]
+                        card.renames, card.renamed = aside[2], aside[3]
+                        aside = False
+                        continue
                     if not bake:
                         break
+            if aside:                           # the rest baked: the name alone next run (never final)
+                card.partial.append(aside[0])
         if card.baked is not None:
             titled = "name" in card.jobs or any(isinstance(part, dict) and part.get("field") == "name"
                                                 for part in (card.jobs.get("parts") or {}).values())
@@ -1466,7 +1481,8 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
             card.verdict = {"state": "refused", "for": {r.field: card.colors_kept if r.field == "colors" else card.fields[r.field]
                                                         for r in card.partial},
                             "psd": (card.new_psd_sha or card.psd_sha)[:8], "rules": RULES,
-                            "reason": "; ".join(f"{r.code}: {r.why}" for r in card.partial) + _fx_notes(card), "at": _now()}
+                            "reason": "; ".join(dict.fromkeys(f"{r.code}: {r.why}" for r in card.partial))
+                                      + _fx_notes(card), "at": _now()}
         _part_verdict(card)                     # per layer: the boxes leave the entry, skipped ones told
     except Refused as refused:
         card.refusal = refused.refusal
