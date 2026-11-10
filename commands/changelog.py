@@ -108,7 +108,7 @@ def fields_of(card: CardInfo) -> dict:
 
 def field_changes(old: CardInfo, new: CardInfo) -> dict:
     """{field: [old, new]} for each changelog field that differs (FIELDS order); not a field either reading could not
-    know (card_history.unknown: the name before parser 2 read titles, a field its parse failed on), nor a series the
+    know (card_history.unknown: the name and types before parser 2, a field its parse failed on), nor a series the
     2026-10-20 split moved under a parent (same_series)."""
     a, b = fields_of(old), fields_of(new)
     skip = {UNKNOWN_FIELD.get(key, key) for key in unknown(old) | unknown(new)}

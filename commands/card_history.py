@@ -251,10 +251,13 @@ def data_of(card: CardInfo) -> dict:
 
 
 def unknown(card: CardInfo) -> set:
-    """Fields a reading could not know: the title before parser 2 (it read none), a field its parse failed on."""
+    """Fields a reading could not know: the title before parser 2 (it read none) and its types (it missed and mistook
+    icons), a field its parse failed on."""
     found = set()
-    if getattr(card, "parser_version", None) is None and not getattr(card, "display_name", None):
-        found.add("display_name")
+    if getattr(card, "parser_version", None) is None:
+        found.add("types")
+        if not getattr(card, "display_name", None):
+            found.add("display_name")
     for problem in getattr(card, "problems", None) or []:
         found.update(key for prefix, key in UNKNOWN_IF if str(problem).startswith(prefix))
     return found

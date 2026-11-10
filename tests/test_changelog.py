@@ -53,11 +53,11 @@ def test_field_changes_list_the_data_fields():
 
 
 def test_field_changes_skip_what_a_reading_could_not_know():
-    """No phantom steps: a name before parser 2 read titles (Mol D Truffy), a series the 2026-10-20 split moved under
-    a parent (Bob-ulk; the same subseries in another series is a step), stars a parse could not find (Bubble), an
-    empty ability's two forms, a retired icon's name."""
-    early = _card(parser_version=None, display_name=None)
-    assert cl.field_changes(early, _card(display_name="Mol D. A")) == {}
+    """No phantom steps: a name or types before parser 2 (Mol D Truffy; Dumplings' tomato read as panda), a series the
+    2026-10-20 split moved under a parent (Bob-ulk; the same subseries in another series is a step), stars a parse
+    could not find (Bubble), an empty ability's two forms, a retired icon's name."""
+    early = _card(parser_version=None, display_name=None, types=["panda"])
+    assert cl.field_changes(early, _card(display_name="Mol D. A", types=["food"])) == {}
     assert list(cl.field_changes(early, _card(display_name="Mol D. A", stars=4))) == ["stars"]
     mario = _card(series="Mario", subseries="Paper Mario")
     assert cl.field_changes(_card(series="Paper Mario"), mario) == {}
