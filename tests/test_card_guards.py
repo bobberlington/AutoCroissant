@@ -2186,7 +2186,7 @@ def test_site_build_starts_with_the_data_job(clone, tmp_path):
     assert checks["run-name"].startswith("${{ inputs.after && format('Card checks (after {0} {1})', inputs.after, inputs.job) || ")
     assert late["env"]["EARLY"] == "Card checks (after ${{ github.run_id }} ${{ github.job }})"
     names = [s.get("name") or s.get("id") or s.get("uses") for s in site["jobs"]["build"]["steps"]]
-    assert names.index("og-before") + 1 == names.index("Data wait") == names.index("Setup wait") - 2   # then the data checkout
+    assert names.index("og-before") + 1 == names.index("Data wait") == names.index("Setup wait") - 1
     wait = site["jobs"]["build"]["steps"][names.index("Data wait")]
     assert wait["env"]["JOB"] == "${{ inputs.job == 'after' && 'Card data after the bake' || 'Card data' }}"
     assert (sync["jobs"]["data"]["name"], sync["jobs"]["after"]["name"]) == ("Card data", "Card data after the bake")
@@ -2229,7 +2229,8 @@ def test_site_build_starts_with_the_data_job(clone, tmp_path):
 
 def test_site_data_wait(clone, tmp_path):
     """site.yml's Data wait: 3 s looks until the named Card sync job's Commit data is done or the job ended (never another
-    job's step), then main's head again; a PSD changed since: the PSD sizes again (the older kept when unread)."""
+    job's step), then main's head again; a PSD changed since: the PSD sizes again (the older kept when unread). The data's
+    head beside it (Setup start's clone): none when the clone failed (checked out later), a failed fetch fails."""
     yaml = pytest.importorskip("yaml")
     if not shutil.which("jq") or not shutil.which("git"):
         pytest.skip("no jq or git")
@@ -2247,7 +2248,19 @@ def test_site_data_wait(clone, tmp_path):
 
     push("A.psd", b"1")
     subprocess.run(["git", "clone", "-q", str(origin), str(work)], check=True)
+    dorigin, card = tmp_path / "dataorigin", work / "carddata"
+    subprocess.run(["git", "init", "-q", "-b", "data", str(dorigin)], check=True)
+    rev = lambda repo: subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+
+    def data(text):                                                       # Card sync's data commit
+        (dorigin / "stats.json").write_text(text)
+        for a in (("add", "-A"), ("commit", "-qm", text)):
+            subprocess.run(["git", "-C", str(dorigin), "-c", "user.name=A", "-c", "user.email=a@x", *a], check=True, capture_output=True)
+
+    data("1")
+    subprocess.run(["git", "clone", "-q", "--depth", "1", "-b", "data", f"file://{dorigin}", str(card)], check=True)
     (temp / "setup").mkdir(parents=True)
+    (temp / "setup" / "data.code").write_text("0\n")
     (temp / "setup" / "sizes.code").write_text("0\n")
     (temp / "tree.json").write_text("old")
     env = {"PATH": f"{_fake_tools(tmp_path)}:{os.environ['PATH']}", "FAKE_STATE": str(tmp_path / "gh.json"), "FAKE_SLEPT": str(naps),
@@ -2276,7 +2289,13 @@ def test_site_data_wait(clone, tmp_path):
     assert not run(jobs("completed", name="Card data after the bake"), jobs("completed"), 2)    # another job's step
     assert not run(jobs("pending", status="completed"))                                          # ended before it
     push("B.png", b"2")                                                   # main moved, no PSD: the sizes stand
+    data("2")
     assert not run(jobs("completed")) and (temp / "tree.json").read_text() == "old"
+    assert rev(card) == rev(dorigin) and (card / "stats.json").read_text() == "2"
+    (temp / "setup" / "data.code").write_text("128\n")                    # the clone failed: not fetched
+    data("3")
+    assert not run(jobs("completed")) and (card / "stats.json").read_text() == "2"
+    (temp / "setup" / "data.code").write_text("0\n")
     (temp / "setup" / "sizes.code").write_text("1\n")
     push("A.psd", b"3")
     head = git("rev-parse", "HEAD").stdout.strip()
@@ -2287,6 +2306,9 @@ def test_site_data_wait(clone, tmp_path):
     push("A.psd", b"4")
     assert run(jobs("completed"), FAKE_FAIL="/git/trees/") and (temp / "tree.json").read_text() == "older"
     assert (temp / "setup" / "sizes.code").read_text().strip() == "0" and "not read" in (temp / "setup" / "sizes.log").read_text()
+    subprocess.run(["git", "-C", str(card), "remote", "set-url", "origin", str(tmp_path / "gone")], check=True)
+    done, _ = _shell(wait, {**env, "FAKE_JOBS": jobs("completed")}, cwd=work)
+    assert done.returncode == 1 and "::error::data not fetched again" in done.stdout
 
 
 def test_checks_data_wait(clone, tmp_path):

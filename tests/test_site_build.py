@@ -750,8 +750,9 @@ def test_badge_font_preloaded_where_badges_show(bs):
 
 
 def test_site_workflow_sets_up_in_the_background(tmp_path):
-    """site.yml's Setup start returns at once, uv, npm and the PSD sizes running on (their output not held); Setup wait,
-    before the build, prints each one's log and fails on uv or npm, only warns on the sizes (3 tries). uv is fetched there
+    """site.yml's Setup start returns at once, uv, npm, the PSD sizes and the data clone running on (their output not held);
+    Setup wait prints each one's log and fails on uv or npm, only warns on the sizes (3 tries); a failed data clone: the
+    data checked out between it and the build. uv is fetched there
     (no setup-uv), else from the GitHub release, else pip installs. An early build's Images start runs once uv is in;
     Setup wait stops it, prints its log, only warns on a failure (none started: no wait)."""
     yaml = pytest.importorskip("yaml")
@@ -760,7 +761,10 @@ def test_site_workflow_sets_up_in_the_background(tmp_path):
         pytest.skip(f"no {path}")
     steps = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["build"]["steps"]
     names = [s.get("name") or s.get("id") or s.get("uses") for s in steps]
-    assert names.index("py") < names.index("python") < names.index("Setup start") < names.index("Setup wait") == names.index("build") - 1
+    assert names.index("py") < names.index("python") < names.index("Setup start") < names.index("Setup wait") == names.index("build") - 2
+    fallback = steps[names.index("build") - 1]
+    assert fallback["if"] == "steps.setup.outputs.data != 'true'"
+    assert fallback["with"] == {"ref": "data", "path": "carddata", "fetch-depth": 1}
     assert steps[names.index("python")]["if"] == "steps.py.outputs.python == ''"
     gone = ("actions/configure-pages", "astral-sh/setup-uv", "actions/upload-pages-artifact")    # never downloaded
     assert not [s for s in steps if s.get("uses", "").split("@")[0] in gone]
@@ -773,7 +777,9 @@ def test_site_workflow_sets_up_in_the_background(tmp_path):
     curl = ('echo "$0 $*" >> "$RUNNER_TEMP/calls"\ncase "$*" in *releases.astral.sh*) [ -z "$ASTRAL_CODE" ] || exit "$ASTRAL_CODE";; esac\n'
             'while [ $# -gt 1 ]; do [ "$1" != -o ] || out=$2; shift; done\ncp "$TARBALL" "$out"')
     for name, body in {"npm": call + 'echo "npm said"; exit "${NPM_CODE:-0}"', "curl": curl,
-                       "gh": call + 'echo \'{"tree": []}\'; exit "${GH_CODE:-0}"', "git": "echo 0123abcd",
+                       "gh": call + 'echo \'{"tree": []}\'; exit "${GH_CODE:-0}"', "timeout": 'shift; exec "$@"',
+                       "git": 'case "$1" in clone) ' + call + '[ "$GIT_CONFIG_KEY_0" = http.extraheader ] || exit 9; '
+                              'exit "${CLONE_CODE:-0}";; esac\necho 0123abcd',
                        "python": call + 'until [ -e "$4" ]; do /bin/sleep 0.01; done; echo "python said"',     # till stopped
                        "sha256sum": 'cat > /dev/null; exit "${SHA_CODE:-0}"', "pip-python": call + 'echo "pip said"',
                        "sleep": "exec /bin/sleep 0.01"}.items():
@@ -788,11 +794,13 @@ def test_site_workflow_sets_up_in_the_background(tmp_path):
                                             capture_output=True, text=True, timeout=30)
     # 1: a wrong checksum from both: pip. 2: the mirror down: the GitHub release
     for n, (codes, failed, warns) in enumerate((({"DELAY": "0.5"}, "", False), ({"GH_CODE": "1", "SHA_CODE": "1"}, "", True),
-                                                ({"UV_CODE": "2", "NPM_CODE": "3", "ASTRAL_CODE": "22"}, " uv npm", False))):
+                                                ({"UV_CODE": "2", "NPM_CODE": "3", "ASTRAL_CODE": "22", "CLONE_CODE": "128"}, " uv npm", False))):
         temp = tmp_path / f"t{n}"
         temp.mkdir()
+        (temp / "out").write_text("")
         env = {"PATH": f"{bin_}:/usr/bin:/bin", "HOME": str(tmp_path), "RUNNER_TEMP": str(temp), "GITHUB_REPOSITORY": "o/r",
-               "TARBALL": str(tmp_path / "uv.tar.gz"), "UV_PYTHON": str(bin_ / "pip-python"), **codes}
+               "GITHUB_SERVER_URL": "https://x", "GITHUB_OUTPUT": str(temp / "out"), "TARBALL": str(tmp_path / "uv.tar.gz"),
+               "UV_PYTHON": str(bin_ / "pip-python"), **codes}
         done = shell(start, env)
         assert done.returncode == 0 and not (n == 0 and list((temp / "setup").glob("*.code"))), done.stderr   # not waited for
         assert n == 1 or shell(images, env).returncode == 0         # 1: not an early build
@@ -817,6 +825,8 @@ def test_site_workflow_sets_up_in_the_background(tmp_path):
         assert ("::group::images" in out) == bool(early) and ("::warning::early images failed" in out) == (n == 2)
         assert not early or f"::group::images (exit {early})" in out and ("python said" in out) == (n == 0)
         assert sum(f"build_site.py --images 0123abcd {temp}/setup/images.stop" in c for c in calls) == (n == 0)
+        assert sum("/git clone -q --depth 1 --no-tags --single-branch --branch data https://x/o/r carddata" in c for c in calls) == 1
+        assert ((temp / "out").read_text() == "data=true\n") == (n != 2) and ("::warning::the data clone failed" in out) == (n == 2)
 
 
 def test_site_workflow_python_from_the_tool_cache(tmp_path):
