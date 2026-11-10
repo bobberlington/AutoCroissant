@@ -458,7 +458,7 @@ tests/test_badge_parity.py):
 - **Strokes swallow it.** A layer or group Stroke outlines every bit of a halo's alpha, and 652 of 765 cards stroke
   their `Text` group. On Nebulous_Precipice (7 px black stroke) `[darkmatter:glow]` became a black disc with a thin
   white ring, nothing like the old icon layer's white glow, so the card was held (2026-10-23;
-  `~/std-work-1022/glow/`, `review/three_way.png`). `:glow` suits unstroked text; the std driver's token gate fails a
+  `~/std-work-1022/glow/`, `review/three_way.png`; that folder was deleted 2026-11-10). `:glow` suits unstroked text; the std driver's token gate fails a
   glow token in a stroked layer.
 - `[thunderfury blessed blade of the starseeker:darkglow]` has 52 characters inside the brackets, the longest token:
   `ICON_SCAN_PATTERN`, `psd_edit.TOKEN`, `type_emojis.TOKEN_PATTERN` and the site's `text.js` read 1-52 since

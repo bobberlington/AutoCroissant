@@ -39,9 +39,9 @@ cards, the proposal forum); earlier `session-2026-11-06/`.
       have no `Card-sweep` trailer: check whether Card sync posted them as New art (Discord changelog), nothing to undo.
 - [ ] **Card fixes the research rounds proposed (not applied; one rewrite per card, `Card-sweep:` trailer, Photoshop open
       test):** Clot Gold: delete the 20 spare hidden HP layers (hp children 0-19, copies shown on Clot Blood/Black) and
-      prune its unused link record 'Clot_Black - 0.webp' (8 -> 7); a built copy is
-      `~/Documents/Tools/wt/scratch/s1109/cardsdata-r5-dq/clot/fixed/Clot_Gold.psd`, recipe
-      `cardsdata-r2-quality/py/clot_fix.py`: rebuild from the current blob. It fixes E2's symptom (a website HP edit at
+      prune its unused link record 'Clot_Black - 0.webp' (8 -> 7); the round's built copy and
+      recipe went with the lane's scratch; an earlier recipe is `~/Documents/Tools/wt/scratch/layouts/bars/tools/clot_fix.py`
+      (delete `Stats Bars/Bars/hp` children 0-19, prune the unused link record): rebuild from the current blob. It fixes E2's symptom (a website HP edit at
       HP <= 2 lights the spares); E2 itself (psd_edit._roles: a series hidden in every cell counts as lit) is bake ground.
       Typos (website ability edits are enough): Duel Flag "the the opposing slot"; Z!!!!! "imediately"; Flip
       "subracting"; Ancient Fuelweaver and Crock Pot "::" before a list. Optional: Water Totem's Name has a U+0010
@@ -159,6 +159,11 @@ cards, the proposal forum); earlier `session-2026-11-06/`.
 
 ## Open owner decisions
 
+- [ ] **A developer's old TTSCardMaker clone from before the history wipe** (owner 11-10): GitHub's history starts at
+      2023-11-05 ("init" commits). If they send the folder (zipped as is, `.git` included; no pull/fetch/gc first, GitHub
+      Desktop closed), recover what it holds in a scratch copy (`git log --all`, `git reflog`, `git fsck --lost-found`).
+      Publish only with the owner's OK: an `archive/history-before-2023-11` branch, or a separate archive repo if old PSD
+      versions make it too big; it would also feed the card timelines.
 - [ ] **Futura on Macs.** MDW's Futura-Bold differs from macOS's own Futura in every glyph (macOS's 2.8% wider);
       Photoshop draws with macOS's unless MDW's is installed, and the guards then refuse its re-lays (Koro-Sensei). No
       swap helps (Jost 89%, League Spartan 90%, macOS's 69% off; MDW's fits). Keep MDW's file (recommended); should
