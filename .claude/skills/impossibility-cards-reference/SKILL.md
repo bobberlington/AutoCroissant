@@ -741,9 +741,9 @@ is later (`CardDates.created`, the website's rule); it is in `/export_cards` and
 `site/Card Ratings.json`: card ratings (`python -m commands.tts_ratings`); never read by the bot.
 
 Fields (`NUMBER_FIELDS`, `TEXT_FIELDS`): numbers hp, def, atk, spd, stars, total (the four stats added; missing ones
-count 0, no stats at all: no total). Text: type, subtype, series, subseries, author, types (stringified list, so
-`types~undead` works), name (printed title, else the name), alias (alias/aliases: Card Edits.json names and aliases,
-joined), ability, path, created. Any other cards_dff column still works (`display_name~clot`, `timestamp>5`).
+count 0, no stats at all: no total). Text: type, subtype, series, subseries, author, types (space-joined as the
+website: `types==fire`, `types~undead`, `types==wind offensive_minion`), name (printed title, else the name), alias
+(alias/aliases: Card Edits.json names and aliases, joined), ability, path, created. Any other cards_dff column still works (`display_name~clot`, `timestamp>5`).
 Synonyms (`SYNONYMS`): damage/DMG, defense/DEF, speed/SPD, health/HP find each other in text terms. `prep_dataframes`
 adds the `subseries` column even when no card has one, so `subseries==x` is a real (empty) filter, not the
 gotcha-4 unknown-field error; `series==mario & subseries~door` is the website's own example.
