@@ -2091,8 +2091,8 @@ def test_workflow_fetches_earlier_icon_fonts_in_the_background(clone, tmp_path, 
     monkeypatch.setenv(cg.EARLIER_ENV, str(folder))
     monkeypatch.setenv(cg.FONTS_READY_ENV, str(tmp_path / "never"))         # the restore not in: never waited for
     monkeypatch.setattr(cg, "FONTS_READY_S", 0)
-    monkeypatch.setattr(cg, "font_advances", lambda data: {"glyph": int(data) + 1})
-    monkeypatch.setattr(cg, "_advances", {})
+    monkeypatch.setattr(cg, "font_glyphs", lambda data: {"glyph": int(data) + 1})
+    monkeypatch.setattr(cg, "_glyphs", {})
     out = tmp_path / "out"
     out.mkdir()
     files = cg.earlier_fonts(NoApi(str(repo)), head, cg.Source(str(repo)).tree(head), str(out))
@@ -2102,7 +2102,7 @@ def test_workflow_fetches_earlier_icon_fonts_in_the_background(clone, tmp_path, 
     read, source = [], cg.Source(str(repo))
     blob = source.blob
     source.blob = lambda sha: read.append(sha) or blob(sha)
-    monkeypatch.setattr(cg, "_advances", {})
+    monkeypatch.setattr(cg, "_glyphs", {})
     (tmp_path / "again").mkdir()
     files = cg.earlier_fonts(source, head, source.tree(head), str(tmp_path / "again"))
     assert [Path(path).read_bytes() for path in files] == [b"1", b"0"] and sorted(read) == sorted(shas[:2])

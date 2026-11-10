@@ -54,11 +54,14 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from functools import partial
+from gzip import decompress as gzip_decompress
+from hashlib import blake2b
 from io import BytesIO
 from json import dump, load, loads
 from os import cpu_count, environ, getpid, listdir, makedirs, pathsep, replace
 from os.path import basename, dirname, exists, isdir, join, splitext
 from re import fullmatch, sub
+from struct import unpack
 from subprocess import CalledProcessError, TimeoutExpired
 from sys import stderr
 from tempfile import TemporaryDirectory
@@ -123,8 +126,8 @@ FONT_FILES_EACH = 4                             # R8: font files tried a face, l
 FONT_FETCH_MAX = 12                             # R8: font files a run (a worker) fetches at most, a request each
 CARD_ROOTS = ("Auxiliary/", "Creatures/", "Field/", "Items/", "N.M.E/")   # where card PNGs live (Types/ icons are not cards)
 ICON_FONT_FILE = f"{psd_edit.FONTS_DIR}/stoogedings.ttf"
-EARLIER_FONTS = 4                               # badge widths: the icon font's earlier eras at most (earlier_fonts)
-EARLIER_WALK = 40                               # versions of its history earlier_fonts reads at most (10 by 2026-11-05)
+EARLIER_WALK = 40                               # badge widths: versions of the icon font's history earlier_fonts reads at
+                                                # most, every era of them kept (10 versions, 5 eras by 2026-11-10)
 EARLIER_ENV = "CARD_EARLIER_FONTS"              # card-guards.yml's Earlier fonts folder: <blob sha> files (_font_blob)
 FONTS_READY_ENV = "CARD_FONTS_READY"            # card-guards.yml's mark: MDW/Fonts restored (a push's Check starts beside it)
 FONTS_READY_S = 600                             # fonts_ready's wait at most
@@ -159,7 +162,7 @@ GIT_LAND_BYTES = 32 << 20                       # or bytes: one push beats base6
 _worker: dict = {}
 _early: dict = {}                               # pushed PNG blob sha -> its recompression's Future (_overlap)
 _waiting: list = []                             # _recompress's entries left to _collect
-_advances: dict = {}                            # icon font blob sha -> {glyph name: advance} (earlier_fonts)
+_glyphs: dict = {}                              # icon font blob sha -> font_glyphs (earlier_fonts)
 
 
 # ========================
@@ -2084,13 +2087,42 @@ def discord_payload(data: dict, repository: str) -> dict:
 # ========================
 # check
 # ========================
-def font_advances(data: bytes) -> dict:
-    """{glyph name: advance in font units} of a font file's bytes."""
+def font_glyphs(data: bytes) -> dict:
+    """{glyph name: (advance in font units, drawing)} of a font file's bytes: the drawing its SVG document's digest with
+    glyph ids as names (ids shift when icons are added), else its glyf outline's."""
     import uharfbuzz as hb
     face = hb.Face(hb.Blob(data))
     font = hb.Font(face)
-    return {name: font.get_glyph_h_advance(gid) for gid in range(face.glyph_count)
-            if (name := font.get_glyph_name(gid))}
+    names = [font.get_glyph_name(gid) or str(gid) for gid in range(face.glyph_count)]
+    drawn = {**_outlines(face), **_svg_drawings(face, names)}
+    return {name: (font.get_glyph_h_advance(gid), drawn.get(gid, "")) for gid, name in enumerate(names)}
+
+
+def _svg_drawings(face, names: list) -> dict:
+    """{glyph id: digest of its SVG document, glyph ids named}; {} without an SVG table."""
+    raw = face.reference_table("SVG ").data
+    if len(raw) < 10:
+        return {}
+    index, out = int.from_bytes(raw[2:6], "big"), {}
+    named = lambda m: b'id="' + (names[int(m.group(1))].encode() if int(m.group(1)) < len(names) else m.group(1)) + b'"'
+    for i in range(int.from_bytes(raw[index:index + 2], "big")):
+        first, last, offset, length = unpack(">HHLL", raw[index + 2 + 12 * i:index + 14 + 12 * i])
+        doc = raw[index + offset:index + offset + length]
+        doc = gzip_decompress(doc) if doc[:2] == b"\x1f\x8b" else doc
+        digest = blake2b(sub(rb'id="glyph(\d+)"', named, doc), digest_size=8).hexdigest()
+        out.update(dict.fromkeys(range(first, last + 1), digest))
+    return out
+
+
+def _outlines(face) -> dict:
+    """{glyph id: digest of its glyf outline}; {} without a glyf table."""
+    glyf, loca, head = (face.reference_table(tag).data for tag in ("glyf", "loca", "head"))
+    count, wide = face.glyph_count + 1, len(head) > 51 and head[50:52] == b"\0\1"
+    if not glyf or len(loca) < count * (4 if wide else 2):
+        return {}
+    offs = unpack(f">{count}{'L' if wide else 'H'}", loca[:count * (4 if wide else 2)])
+    step = 1 if wide else 2
+    return {gid: blake2b(glyf[offs[gid] * step:offs[gid + 1] * step], digest_size=8).hexdigest() for gid in range(count - 1)}
 
 
 def _file_blob(path: str, sha: str) -> Optional[bytes]:
@@ -2114,8 +2146,8 @@ def _font_blob(source: Source, sha: str, own: bool = True) -> bytes:
     return source.blob(sha) if data is None else data
 
 
-def _laid_alike(older: dict, newer: dict, names: dict) -> bool:
-    """Whether newer has every glyph of older that names (the current font's) has, at the same advance."""
+def _alike(older: dict, newer: dict, names: dict) -> bool:
+    """Whether newer has every glyph of older that names (the current font's) has, laid out and drawn alike."""
     return all(newer.get(name) == advance for name, advance in older.items() if name in names)
 
 
@@ -2123,17 +2155,17 @@ def earlier_fonts(source: Source, commit: str, tree: dict, folder: str) -> list:
     """
     The icon font's earlier eras before the one commit's tree holds, from its history, newest first, written into folder
     (named .earlier: a FontMap over folder never takes one for the current font): each era's newest version, an era
-    being the versions a newer one lays out alike (_laid_alike: an icon added keeps the era, an advance changed ends
-    it), none the current font's. EARLIER_FONTS at most, from the EARLIER_WALK newest versions, each read once a
-    process (_advances), PREFETCH_WORKERS at a time. The advances a raster drawn before may show (badge widths). Raises
-    Transient, the API's errors or Refused("blob").
+    being the versions a newer one lays out and draws alike (_alike: an icon added keeps the era, an advance or a drawing
+    changed ends it), none the current font's. Every era of the EARLIER_WALK newest versions, each read once a process
+    (_glyphs), PREFETCH_WORKERS at a time. The advances and drawings a raster drawn before may show (badge widths).
+    Raises Transient, the API's errors or Refused("blob").
     """
     now = tree.get(ICON_FONT_FILE, ("", ""))[1]
     if not now:
         return []
-    if now not in _advances:
-        _advances[now] = font_advances(_font_blob(source, now))
-    current, kept, seen, files, walk = _advances[now], [], {now}, [], []
+    if now not in _glyphs:
+        _glyphs[now] = font_glyphs(_font_blob(source, now))
+    current, kept, seen, files, walk = _glyphs[now], [], {now}, [], []
     for line in source.git("log", "--format=%H", commit, "--", ICON_FONT_FILE).split():
         if len(seen) > EARLIER_WALK:
             break
@@ -2145,16 +2177,13 @@ def earlier_fonts(source: Source, commit: str, tree: dict, folder: str) -> list:
             seen.add(sha)
             walk.append(sha)
     with ThreadPoolExecutor(PREFETCH_WORKERS) as pool:
-        reads = pool.map(partial(_font_blob, source, own=False), [sha for sha in walk if sha not in _advances])
+        reads = pool.map(partial(_font_blob, source, own=False), [sha for sha in walk if sha not in _glyphs])
         for sha in walk:
-            if len(kept) == EARLIER_FONTS:
-                reads.close()                   # the reads not begun stay unread
-                break
             data = None
-            if sha not in _advances:
+            if sha not in _glyphs:
                 data = next(reads)
-                _advances[sha] = font_advances(data)
-            if any(_laid_alike(_advances[sha], newer, current) for newer in [current] + [_advances[k] for k in kept]):
+                _glyphs[sha] = font_glyphs(data)
+            if any(_alike(_glyphs[sha], newer, current) for newer in [current] + [_glyphs[k] for k in kept]):
                 continue
             kept.append(sha)
             files.append(join(folder, f"stoogedings-{sha[:12]}.earlier"))
@@ -2727,7 +2756,6 @@ __all__ = [
     'housekeeping',
     'links_index',
     'Change',
-    'EARLIER_FONTS',
     'EARLIER_WALK',
     'FONTS_READY_ENV',
     'ICON_FONT_FILE',
@@ -2751,7 +2779,7 @@ __all__ = [
     'after_window',
     'events_of',
     'finish',
-    'font_advances',
+    'font_glyphs',
     'fonts_ready',
     'land',
     'landed_markdown',

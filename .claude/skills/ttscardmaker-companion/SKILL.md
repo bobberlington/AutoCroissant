@@ -219,8 +219,8 @@ Badge widths (2026-11-04: the cooldown ring makes every cooldown badge wider): t
 (`card_standards.relay_badges`, first of the pixel fixes: `apostrophes` and `old glyphs` lay out at the current
 widths) re-lays a layer whose pixels show its icon font glyphs at other advances (Photoshop's, from the Txt2 view's
 glyph strikes; also the icon font's earlier eras from the ref's history (a version whose shared glyphs' advances all
-match a kept one is skipped; `EARLIER_FONTS` 4 eras, `EARLIER_WALK` 40 versions read; since 11-05, before that the last
-3 versions, which missed the glow era), `card_guards.earlier_fonts`, which the
+match a kept one, laid out and drawn alike, is skipped; every era of the `EARLIER_WALK` 40 newest versions since 11-10 (4 eras
+at most from 11-05, before that the last 3 versions, which missed the glow era)), `card_guards.earlier_fonts`, which the
 guards read once a push, best effort and only with `--repo` (the Actions pass it; a local `card_guards check` without
 it reads none and may judge a card otherwise), and a sweep reads too), a glyph counting as drawn old when it is off
 the current font's render past `OLD_GLYPH_BAD` or (2026-11-04, the Roboto labels: a badge whose letters alone changed)
