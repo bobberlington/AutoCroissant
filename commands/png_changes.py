@@ -123,17 +123,21 @@ def _squares(mask, k: int):
     return c[k:k + h, k:k + w] - c[:h, k:k + w] - c[k:k + h, :w] + c[:h, :w]
 
 
-def changed_share(old: bytes, new: bytes) -> float:
-    """The share of the card's pixels (alpha in either) visibly changed: colour over black or alpha moved by more than
-    TOLERANCE in a channel, inside a PATCH x PATCH square of such pixels (a morphological opening); 1.0 when the size
-    changed."""
+def changed_area(a, b):
+    """The visibly changed pixels of two RGBA uint16 pictures of one size (bool): colour over black or alpha moved by
+    more than TOLERANCE in a channel, inside a PATCH x PATCH square of such pixels (a morphological opening)."""
     from numpy import abs as np_abs, int16
+    ca, cb = (a[..., :3] * a[..., 3:] // 255).astype(int16), (b[..., :3] * b[..., 3:] // 255).astype(int16)
+    moved = (np_abs(ca - cb).max(axis=2) > TOLERANCE) | (np_abs(a[..., 3].astype(int16) - b[..., 3].astype(int16)) > TOLERANCE)
+    return _squares(_squares(moved, PATCH) == PATCH * PATCH, PATCH) > 0
+
+
+def changed_share(old: bytes, new: bytes) -> float:
+    """The share of the card's pixels (alpha in either) visibly changed (changed_area); 1.0 when the size changed."""
     a, b = _pixels(old), _pixels(new)
     if a.shape != b.shape:
         return 1.0
-    ca, cb = (a[..., :3] * a[..., 3:] // 255).astype(int16), (b[..., :3] * b[..., 3:] // 255).astype(int16)
-    moved = (np_abs(ca - cb).max(axis=2) > TOLERANCE) | (np_abs(a[..., 3].astype(int16) - b[..., 3].astype(int16)) > TOLERANCE)
-    area = _squares(_squares(moved, PATCH) == PATCH * PATCH, PATCH) > 0
+    area = changed_area(a, b)
     card = (a[..., 3] > 0) | (b[..., 3] > 0)
     n = int(card.sum())
     return round(float((area & card).sum()) / n, 5) if n else 0.0
@@ -445,6 +449,7 @@ __all__ = [
     'TOLERANCE',
     'VISIBLE',
     'card_pairs',
+    'changed_area',
     'changed_share',
     'key',
     'main',

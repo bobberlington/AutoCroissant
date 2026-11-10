@@ -1272,11 +1272,11 @@ def export_new(new: PSDImage) -> Export:
     return result
 
 
-def png_check(psd: PSDImage, png: Image.Image) -> dict:
+def png_check(psd: PSDImage, png: Image.Image, keep: Optional[dict] = None) -> dict:
     """
     R10: the PNG against its PSD's composite, converted as voted (icc_vote over this pair), within the bar. A PSD with no
     stored image (Maximize Compatibility off): the fork's render of the whole card (its render record's blends and vote,
-    else voted over the renders: _render_voted), not past the parity floor ("rendered": True).
+    else voted over the renders: _render_voted), not past the parity floor ("rendered": True); keep["render"] gets it.
 
     Returns:
         {"ok": bool or None (another size, not 8-bit RGB), "icc", "bad_pct", "mean", "max", "px"}
@@ -1290,7 +1290,10 @@ def png_check(psd: PSDImage, png: Image.Image) -> dict:
         scratch = Export("current")
         icc, render = _render_voted(psd, (0, 0, psd.width, psd.height), psd_edit.export_icc(psd, png),
                                     psd_edit.icc_vote(psd, png), png, scratch, png)
-        measured = _stats(_diff(like_mode(render, png.mode), png))
+        render = like_mode(render, png.mode)
+        if keep is not None:
+            keep["render"] = render
+        measured = _stats(_diff(render, png))
         return {"ok": not psd_edit._past_floor(measured), "icc": icc_mode(psd, icc), "rendered": True, **measured}
     if composed.size != png.size:
         return {"ok": None, "why": "another size"}

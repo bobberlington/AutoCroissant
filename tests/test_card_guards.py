@@ -310,6 +310,39 @@ def test_a_burst_of_psd_pushes_still_gets_its_png(cards, tmp_path, first, made):
         assert entry["export"]["gate"] == "G5" and entry["told"][0].startswith("PNG not made: the PSD and its old PNG already")
 
 
+def test_a_png_back_to_an_earlier_picture_is_put_back(cards, tmp_path, monkeypatch):
+    """R10 with no stored image (11-10, Despair's black stroke): Bread's old blue PNG pushed alone over its green PSD and
+    PNG passed the parity floor. The PNG before goes back, silent (a guard-png event, nothing told); a PNG of no earlier
+    picture stays as pushed, the comment alone saying it; pushed with a PSD change, guard 1 makes it from the PNG before."""
+    root, base, alice, bot = cards
+    monkeypatch.setattr(cg.png_export, "composite", lambda psd: None)        # saved without Maximize Compatibility
+    green = _git(root, "rev-parse", f"{bot}:{FOLDER}/Bread.png")
+    shutil.copy(root / FOLDER / "Snack.png", root / FOLDER / "Bread.png")
+    back = _commit(root, "old PNG back", author="Alice")
+    out = tmp_path / "out"
+    data = cg.check(str(root), back, bot, mode="on", out=str(out), workers=1)
+    (entry,) = data["cards"]
+    assert entry["case"] == "png-only" and entry["r10"]["back"]["px"] == 21 * 21 and entry["told"] == []
+    assert [(w["kind"], w["sha"]) for w in entry["writes"]] == [("png", green)] and data["discord"] == {}
+    report = cg.land(str(out / "plan.json"), local=str(root))
+    assert _git(root, "rev-parse", f"{report['sha']}:{FOLDER}/Bread.png") == green
+    assert [(e["kind"], e["path"]) for e in report["events"]] == [("guard-png", f"{FOLDER}/Bread.png")]
+    (root / FOLDER / "Bread.png").write_bytes(photoshop_png(card(colour=(255, 0, 0))))
+    red = _commit(root, "a new picture", author="Alice")
+    (entry,) = cg.check(str(root), red, report["sha"], mode="on", out=str(tmp_path / "red"), workers=1)["cards"]
+    assert entry["r10"]["back"]["older"] == "" and "kept as pushed" in entry["r10"]["line"]
+    assert not [w for w in entry["writes"] if w["kind"] == "png"] and entry["told"] == []
+    _git(root, "checkout", "-q", report["sha"])                            # with its PSD: the PSD's change made again
+    (tmp_path / "w").mkdir()
+    _psd(root, tmp_path / "w", f"{FOLDER}/Bread.psd", card(base=(30, 200, 30), colour=(0, 255, 0)))
+    shutil.copy(root / FOLDER / "Snack.png", root / FOLDER / "Bread.png")
+    pair = _commit(root, "base recoloured, old PNG", author="Alice")
+    (entry,) = cg.check(str(root), pair, report["sha"], mode="on", out=str(tmp_path / "pair"), workers=1)["cards"]
+    (write,) = [w for w in entry["writes"] if w["kind"] == "png"]
+    assert entry["case"] == "pair" and write["back"] and entry["told"] == []
+    assert int(pe._diff(Image.open(tmp_path / "pair" / write["file"]), card(base=(30, 200, 30), colour=(0, 255, 0))).max()) == 0
+
+
 def test_a_burst_without_a_stored_image_is_made_against_the_anchor(cards, tmp_path, monkeypatch):
     """G2 has no G5 to refuse, so over push 1's PSD run 2 drew push 2's square alone and called the PNG current: push
     1's Base was left out (review of 2026-10-24, Niko). A G2 export takes the burst anchor: both changes drawn."""

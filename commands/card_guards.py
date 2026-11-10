@@ -67,6 +67,8 @@ from traceback import format_exc
 from types import SimpleNamespace
 from typing import Callable, Iterator, Optional
 
+import numpy as np
+from PIL import Image
 from psd_tools.api.links import RepoTree
 from requests.exceptions import RequestException
 
@@ -83,6 +85,7 @@ from commands.font_check import face_names, is_card_psd, shared_tables, split_ta
 from commands.git_commit import (AUTHOR, COMMIT_TRIES, NO_LAZY, Transient, api, commit_files, git, git_commit, local_commit,
                                  plural, ref_head, token)
 from commands.github_api import blob_sha, token_from_env
+from commands.png_changes import changed_area
 from commands.psd_edit import Refused
 from commands.psd_parser import picture_numbers
 from global_config import CARD_REPO, EDITS_PATH, FONT_DIRS_ENV, ICON_MANIFEST_PATH, STARS_DIR, TYPES_DIR
@@ -96,7 +99,7 @@ SPARSE_FILES = ("commands/card_guards.py", "commands/png_export.py", "commands/c
                 "commands/github_api.py", "commands/git_commit.py", "commands/repo_history.py", "global_config.py",
                 "requirements-cards.txt",
                 "commands/ability_place.py", "commands/ability_index.json",
-                "commands/psd_links.py", "commands/status_font.py", "commands/psd_details.py")
+                "commands/psd_links.py", "commands/status_font.py", "commands/psd_details.py", "commands/png_changes.py")
 SUBJECT = "Card guards"                         # the bot commit: "Card guards: 2 PNGs re-exported, 1 PSD fixed (push 7cb4c867)"
 TRAILER = "Guarded-push"                        # the push the commit guards
 RECOMPRESSED = "Recompressed"                   # a trailer per PNG only recompressed: no image version (build_site)
@@ -132,6 +135,9 @@ GUARD_RECORDS = "records.json"                  # beside the plan: what the land
                                                 # the data's records (card-guards.yml's guard-records; card_data --records)
 REDRAW = "; re-exported for "                   # _rewrapped_pngs' line on a guard 1 PNG (the composer's rewrap): not told
 QUIET_KEYS = ("EveryLineComposer",)            # fixed unsaid (owner, 2026-10-25): never in the changes either
+OLDER_PNGS = 5                                  # R10 went back: the PNG's earlier versions read at most (_went_back)
+OLDER_MATCH = 0.1                               # share of the area an earlier version may still differ over and show it
+PUT_BACK_REACH = 32                             # px _put_back follows a went-back change past the rule's area
 TELL_PNG_MISMATCH = False                       # R10 and "current but outside the bar" on Discord too (beyond the owner's
                                                 # two rules: the commit comment only until the owner asks)
 OLD_FONT = ("old stoogedings font: pull, reinstall MDW/Fonts/stoogedings.ttf, restart Photoshop, "   # told (owner 2026-11-04)
@@ -205,6 +211,7 @@ class Job:
     dups_pushed: dict = field(default_factory=dict)     # of those, the ones the push brought -> that blob
     base_png: str = ""                          # pair: the PNG's blob before the push (its pictures follow from it)
     font_kept: bool = False                     # its last change before the push had this icon font (Source.font_kept)
+    before: str = ""                            # the push's before (R10's earlier PNGs: Source.older_pngs)
     login: str = NOBODY
     commit: str = ""                            # the last writer's commit (the Discord link)
 
@@ -283,6 +290,8 @@ def would_make(case: str, png: str, write: dict) -> str:
         return "no PNG pushed with the new PSD: export it in Photoshop"
     if case == "rename":
         return "PNG not renamed with the PSD: rename it too"
+    if write.get("back"):
+        return "the PNG shows an earlier picture of the card: export it again in Photoshop"
     return "PNG not exported with the PSD: export it in Photoshop"
 
 
@@ -483,6 +492,18 @@ class Source:
         except (Transient, ValueError):
             return None
         return out
+
+    def older_pngs(self, png: str, before: str, most: int = OLDER_PNGS) -> list:
+        """The blobs png held before each of its last most changes up to before, newest first (trees only); [] unread."""
+        if not before or before == EMPTY_TREE:
+            return []
+        try:
+            raw = self.git("log", "--no-renames", "--raw", "--no-abbrev", "--format=", f"-{most}", before, "--",
+                           f":(literal){png}")
+        except Transient:
+            return []
+        fields = [line.split("\t", 1)[0].split() for line in raw.splitlines() if line.startswith(":")]
+        return list(dict.fromkeys(f[2] for f in fields if len(f) >= 5 and set(f[2]) != {"0"}))
 
     def font_kept(self, before: str, after: str, olds: dict) -> set:
         """The paths of olds ({path: blob at before}) whose last change up to before left that blob in a tree with
@@ -698,6 +719,7 @@ def plan_jobs(source: Source, before: str, after: str, author: str, cards: Optio
     kept = source.font_kept(before, after, olds) if olds else set()
     for job in jobs:
         job.font_kept = job.psd in kept and job.psd_old == olds.get(job.psd)
+        job.before = before
     return sorted(jobs, key=lambda job: job.psd), skipped, notes, tree
 
 
@@ -1095,13 +1117,15 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
         data = source.blob(job.png_new)
         if job.case != "whole":
             _recompress(out, result, job.png, lambda: data, job.png_new)
-        png = png_export.open_png(data)
-        measured = png_export.png_check(new, png)
+        png, kept = png_export.open_png(data), {}
+        measured = png_export.png_check(new, png, kept)
         result.r10 = {**measured, "line": _r10_line(job, measured) if measured.get("ok") is False else ""}
         if measured.get("ok"):
             shown[job.png] = png
         if measured.get("ok") is None:
             result.notes.append((f"{basename(job.png)} could not be checked against the PSD ({measured.get('why')})", False))
+        if "render" in kept and job.case != "whole":
+            _went_back(source, job, result, png, kept["render"], out, shown, old, new, faces)
     if job.case == "pair" and old is not None and job.base_png:
         _pair_pictures(source, job, result, old, new, out, shown, faces)
     skip = (NORMALISE, *ICON_LAYOUTS) if _layouts_kept(job, old, new) else (NORMALISE,)
@@ -1164,6 +1188,90 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
         result.shows = "fixed" if any(w.get("composer") for w in result.writes if w["kind"] == "png") else "pushed"
 
 
+def _rgba(image) -> np.ndarray:
+    return np.asarray(image.convert("RGBA"), dtype=np.uint16)
+
+
+def _back_area(png, prev, render) -> Optional[np.ndarray]:
+    """Where a pushed PNG left the PSD's render and the PNG before it showed it: visibly changed against both
+    (png_changes' rule), the PNG before not against the render; there past the parity floor against the render, the PNG
+    before within the bar. None when nowhere (or another size)."""
+    if not png.size == prev.size == render.size:
+        return None
+    pushed, drawn = _rgba(png), _rgba(render)
+    area = changed_area(pushed, drawn)
+    if not area.any():
+        return None
+    before = _rgba(prev)
+    area &= changed_area(pushed, before) & ~changed_area(before, drawn)
+    if not area.any() or not psd_edit._past_floor(png_export._stats(png_export._diff(png, render)[area])) \
+            or not psd_edit._within_bar(png_export._stats(png_export._diff(prev, render)[area])):
+        return None
+    return area
+
+
+def _shows_older(png, area: np.ndarray, older) -> bool:
+    """png shows an earlier PNG over area: visibly different from it (png_changes' rule) over at most OLDER_MATCH."""
+    return older.size == png.size and int((changed_area(_rgba(png), _rgba(older)) & area).sum()) <= OLDER_MATCH * int(area.sum())
+
+
+def _put_back(png, prev, area: np.ndarray):
+    """png taking prev's pixels over area and what it reaches through their raw difference, PUT_BACK_REACH px at most
+    (the rule's opening drops a change's edge and thin parts)."""
+    moved = (png_export._diff(png, prev) > png_export.TOL) | area
+    grown = area
+    for _ in range(PUT_BACK_REACH):
+        more = png_export.dilate(grown, 1) & moved
+        if (more == grown).all():
+            break
+        grown = more
+    image = np.where(grown[..., None], np.asarray(png_export.like_mode(prev, png.mode)), np.asarray(png))
+    return Image.fromarray(image.astype(np.uint8), png.mode)
+
+
+def _went_back(source: Source, job: Job, result: Result, png, render, out: str, shown: dict, old=None, new=None,
+               faces=None) -> None:
+    """
+    R10 with no stored image (11-10): a pushed PNG that went back to an earlier picture where the PNG before it showed the
+    PSD (_back_area), as one of the PNG's last OLDER_PNGS versions shows it there, is made again as a stale PNG's
+    re-export, silent: alone, the PNG before taken back there (_put_back; all of it when that was its one change);
+    with its PSD (a pair), guard 1's export of the PSD's change onto the PNG before. Shown by none, or the export
+    refused, it stays as pushed (the comment says it).
+    """
+    prev_sha = job.png_old if job.case == "png-only" else job.base_png
+    if not prev_sha or png.mode not in ("RGB", "RGBA"):
+        return
+    prev = png_export.open_png(source.blob(prev_sha))
+    area = _back_area(png, prev, render)
+    if area is None:
+        return
+    px, name = int(area.sum()), basename(job.png)
+    older = next((sha for sha in source.older_pngs(job.png, job.before)
+                  if _shows_older(png, area, png_export.open_png(source.blob(sha)))), "")
+    result.r10.update(ok=False, back={"px": px, "box": list(png_export._bbox(area)), "older": older})
+    if not older:
+        result.r10["line"] = f"{name} differs from the PSD where the PNG before it showed the PSD ({px:,} px): kept as pushed"
+        return
+    if job.case == "pair":
+        found = png_export.export(old, new, prev, None, "", faces) if old is not None else None
+        if found is None or found.outcome == "refused":
+            why = found.why if found is not None else "no PSD before the push"
+            result.r10["line"] = f"{name} went back to an earlier picture (`{older[:8]}`, {px:,} px); not made again: {why}"
+            return
+        image, data = (found.image, found.data) if found.outcome == "re-exported" else (prev, source.blob(prev_sha))
+    elif not (changed_area(_rgba(png), _rgba(prev)) & ~area).any():
+        image, data = prev, source.blob(prev_sha)       # its one visible change went back: the PNG before, as it was
+    else:
+        image = _put_back(png, prev, area)
+        data = png_export.encode(image, png)
+    result.r10["line"] = f"{name} went back to an earlier picture (`{older[:8]}`, {px:,} px): made again"
+    _collect()                                  # the pushed PNG's recompression gives way
+    result.writes = [w for w in result.writes if not (w["path"] == job.png and w["kind"] == "recompress")]
+    result.writes.append({"path": job.png, "file": _save(out, job.png, data), "sha": blob_sha(data), "kind": "png",
+                          "line": f"made again: it went back to an earlier picture ({px:,} px)", "back": True})
+    shown[job.png] = image
+
+
 def _pair_pictures(source: Source, job: Job, result: Result, old, new, out: str, shown: dict, faces=None) -> None:
     """A PSD pushed with its PNG but not its numbered pictures (owner 11-07, silent): each drawn again as its picture (a
     tagged PSD's: png_export.render_picture) or taking the PNG's change (follow); one that refuses stays as it is."""
@@ -1172,7 +1280,8 @@ def _pair_pictures(source: Source, job: Job, result: Result, old, new, out: str,
         return
     tags = set(psd_edit.variants_of(new))
     numbers = picture_numbers(new, [*job.numbered, *job.pushed])   # a drawn duplicate's too
-    base, pushed = (png_export.open_png(source.blob(sha)) for sha in (job.base_png, job.png_new))
+    base = png_export.open_png(source.blob(job.base_png))
+    pushed = shown[job.png] if any(w.get("back") for w in result.writes) else png_export.open_png(source.blob(job.png_new))
     for path, sha in sorted(left.items()):
         image = png_export.open_png(source.blob(sha))
         n = numbers.get(path)
