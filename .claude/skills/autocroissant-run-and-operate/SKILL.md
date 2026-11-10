@@ -748,27 +748,27 @@ commands/forum_votes.py (uncompiled), owner's spec 2026-11-09. In the watched fo
 |---|---|
 | a post is made (`on_thread_create`), or found open at a start / when turned on / another forum set (active posts without Closed, and archived ones not locked and without Closed) | the tag Open if missing; 👍 👎 :abstain: on the first message |
 | 6 days after the post was made | "<@&role> please vote on this change. Voting closes in 24 hours." (the hours left; "now" when overdue; that role only may ping); tag Closing Soon |
-| 7 days | "Voting is closed. Most votes: 👍 (5)." (any emoji, the bot's own vote and :abstain: not counted; ties all named; "No votes."); a winner that is not 👎 (and does not tie with 👎) is forwarded to the results channel (default 1087579710428565526) with "**title**: Most votes: ... link"; Open and Closing Soon off, Closed on; locked and archived |
+| 7 days | "Voting is closed. Most votes: 👍 (5)." (any emoji, the bot's own vote and :abstain: not counted; ties all named; "No votes."); a winner that is not 👎 (and does not tie with 👎) gets one message in the results channel (default 1087579710428565526): "Most votes: 👍 (5). <post link>" and the proposal's first message quoted below it (cut to 2,000 characters; no forward since owner 11-09: the link shows the title); Open and Closing Soon off, Closed on; locked and archived |
 
 Steps already due run at once, in order (an old post found open is pinged, then closed). A post deleted, or given Closed
 or locked and archived by a person, is dropped; a post a person only locks waits (no step runs) until it is unlocked,
 then its overdue steps run. Each part is recorded in `forum_votes.json` when done, so a restart repeats nothing; a
 part Discord refuses for good (Missing Permissions, or another 4xx such as the 20-reactions limit) is logged once
 (`Forum votes: post N: lock failed: Forbidden ...`) and skipped, so the later steps still run; a server error, rate
-limit or network failure is retried next pass (5 minutes). A failed forward is logged and the close goes on; the
-forward and the winner message are sent once (after a restart mid-close the bot finds them in the results channel's
+limit or network failure is retried next pass (5 minutes). A failed winner message is logged and the close goes on; the
+winner message is sent once (after a restart mid-close the bot finds them in the results channel's
 last 50 messages). A failed listing of the forum's archived posts at a start is asked again every pass until it works.
 
 - `/forum_votes` (admin): no options show the state; `enabled`, `forum`, `role`, `results` (IDs or mentions) change it.
 - Live test (the jetson, in the bot's checkout and venv; REST only, so it never clashes with the running bot; no role
   ping; nothing recorded): `cd ~/Documents/AutoCroissant && SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
   ~/venvs/autocroissant/bin/python -m commands.forum_votes test --minutes 5` (one line; without the certificate file the
-  login fails before any post is made). It posts "Test: proposals bot", opens it, waits, closes it with the bot's own
+  login fails before any post is made). It posts "Test post", opens it, waits, closes it with the bot's own
   functions and prints the thread, message ids and the outcome. Stopped early (an error, Ctrl-C, SIGHUP from a dropped
   ssh, SIGTERM), it posts "The test stopped early." and closes, locks and archives the post. The running bot opens the
   post too (harmless), never pings it (its own post by that title), closes one left open (a SIGKILL) on day 7 without a
-  forward, and drops it once locked and archived.
-- One bot identity per server: a second identity running the votes (the Mac's Waxwell) skips a ping, note, forward or
+  winner message, and drops it once locked and archived.
+- One bot identity per server: a second identity running the votes (the Mac's Waxwell) skips a ping, note or
   winner message any bot already sent, but adds its own 👍 👎 :abstain:, which the other identity counts as votes (only
   the counting bot's own reaction is taken off). Turn it off there before its first start: `forum_votes.json` holding
   `{"schema": "autocroissant.forum-votes", "settings": {"enabled": false}, "posts": {}}`.

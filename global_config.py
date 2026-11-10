@@ -41,4 +41,4 @@ FORUM_JSON      = "forum_votes.json"           # its settings and the steps done
 FORUM_VOTES_ON  = True
 FORUM_ID        = 1569539619471499324          # the forum of proposed changes
 FORUM_ROLE_ID   = 546427268751294475           # asked to vote on day 6
-FORUM_RESULTS_ID = 1087579710428565526         # won posts are forwarded here
+FORUM_RESULTS_ID = 1087579710428565526         # a won post's winner message goes here

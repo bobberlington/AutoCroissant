@@ -1,19 +1,19 @@
 """
 The proposal forum's votes (owner 2026-11-09). In the watched forum every post gets the tag Open and the
 reactions 👍 👎 :abstain: when it is made (or found open); 6 days later the bot asks the role to vote and adds
-Closing Soon; at 7 days it posts the outcome (the reaction with the most votes, :abstain: aside), forwards a won post
-to the results channel with a winner message (never when 👎 is among the top, or nobody voted), swaps the tags for
-Closed, then locks and archives the post.
+Closing Soon; at 7 days it posts the outcome (the reaction with the most votes, :abstain: aside), sends a won post's
+outcome, link and proposal text (its first message, quoted) to the results channel (never when 👎 is among the top, or
+nobody voted), swaps the tags for Closed, then locks and archives the post.
 
 An async worker like type_emojis: Discord is awaited on the event loop, the JSON written in a thread. main runs
 run_pass every PASS_MINUTES and post_created on on_thread_create; /forum_votes shows or sets the settings. FORUM_JSON
 (gitignored, per machine) holds the settings and the parts done per post, so a restart never repeats one; the ping and
-the note also look for a bot's message in the post first, the forward and the winner message in the results channel (a
+the note also look for a bot's message in the post first, the winner message in the results channel (a
 lost file, a restart mid-close). A post a person locks waits until unlocked.
 
     python -m commands.forum_votes test --minutes N    a test post, closed N minutes later (REST only, no ping)
 
-The bot never pings its own test post and closes one left open without a forward.
+The bot never pings its own test post and closes one left open without a winner message.
 """
 from argparse import ArgumentParser
 from asyncio import CancelledError, Lock, current_task, get_running_loop, run, sleep, to_thread
@@ -28,7 +28,7 @@ from typing import Optional
 
 from aiohttp import ClientError
 from discord import AllowedMentions, ChannelType, Forbidden, HTTPException, Interaction, NotFound, Object
-from discord.utils import escape_markdown, snowflake_time
+from discord.utils import snowflake_time
 
 from global_config import FORUM_ID, FORUM_JSON, FORUM_RESULTS_ID, FORUM_ROLE_ID, FORUM_VOTES_ON
 from commands.utils import queue_command, queue_message
@@ -42,22 +42,23 @@ CLOSE_AFTER = timedelta(days=7)             # voting closes
 OPEN, SOON, CLOSED = "Open", "Closing Soon", "Closed"   # forum tags, matched by name in any case
 UP, DOWN, ABSTAIN = "👍", "👎", "abstain"    # the reactions (:abstain: is a custom emoji, found by name)
 MAX_TAGS = 5                                # Discord's limit of tags on a post
-HISTORY = 50                                # recent messages searched for a bot's ping, note, forward or winner
+HISTORY = 50                                # recent messages searched for a bot's ping, note or winner message
+LIMIT = 1900                                # characters: under Discord's 2,000 per message (emoji may count double)
 STARTER_WAIT = 2                            # s: a new post's first message can lag its thread
 UNKNOWN_CHANNEL = 10003                     # Discord's error code: the post was deleted
 ARCHIVED = 50083                            # Discord's error code: the post is archived (the next pass opens it)
 PING_WORDS = "please vote on this change"
 NOTE_WORDS = "Voting is closed."
-TEST_TITLE = "Test: proposals bot"
+TEST_TITLE = "Test post"
 TEST_STOPPED = "The test stopped early."
 SCHEMA = "autocroissant.forum-votes"
-SKIN_TONES = dict.fromkeys([0xFE0F, *range(0x1F3FB, 0x1F400)])   # 👎🏽 counts as 👎 for the forward rule
+SKIN_TONES = dict.fromkeys([0xFE0F, *range(0x1F3FB, 0x1F400)])   # 👎🏽 counts as 👎 for the results rule
 MENTION = re_compile(r"<?[#@&!]*(\d{15,22})>?")                 # an ID, <#channel> or <@&role>
 NO_MENTIONS = AllowedMentions.none()
 DEFAULTS = {"enabled": FORUM_VOTES_ON, "forum": FORUM_ID, "role": FORUM_ROLE_ID, "results": FORUM_RESULTS_ID}
 STEPS = {"open": ("open tag", "reactions"),                     # a step's parts, in order (recorded when done)
          "ping": ("ping", "closing tag"),
-         "close": ("count", "note", "forward", "winner", "closed tags", "lock")}
+         "close": ("count", "note", "winner", "closed tags", "lock")}
 
 # ========================
 # Global State
@@ -165,16 +166,17 @@ def tally(reactions) -> tuple:
 def outcome(top: list, votes: int) -> dict:
     """The close's words, and whether the post goes to the results channel (a winner, 👎 not among the top)."""
     if not top:
-        return {"text": "No votes.", "forward": False}
+        return {"text": "No votes.", "announce": False}
     if len(top) == 1:
         text = f"Most votes: {top[0]} ({votes})."
     else:
         text = f"Most votes: {', '.join(top[:len(top) - 1])} and {top[len(top) - 1]}, tied ({votes} each)."
-    return {"text": text, "forward": not any(_is_down(emoji) for emoji in top)}
+    return {"text": text, "announce": not any(_is_down(emoji) for emoji in top)}
 
 
 def _outcome(post: Post) -> dict:
-    return post.entry.get("outcome") or {"text": "The votes could not be read.", "forward": False}
+    found = post.entry.get("outcome") or {"text": "The votes could not be read.", "announce": False}
+    return {"text": found["text"], "announce": found.get("announce", found.get("forward", False))}   # forward: before 11-09
 
 
 def _is_test(post: Post) -> bool:
@@ -297,7 +299,7 @@ async def _no_save() -> None:
 async def _part(post: Post, name: str, action, final: bool = False) -> None:
     """
     Run one part of a step unless done. A failure that may pass: logged once and Retry (the next pass goes on), unless
-    final (the forward and the winner message: never repeated). Any other (refused, missing, a 4xx such as the reaction
+    final (the winner message: never repeated). Any other (refused, missing, a 4xx such as the reaction
     limit): logged once and recorded as done, so the later parts go on.
     """
     if name in post.done:
@@ -439,26 +441,33 @@ async def _note(post: Post) -> None:
     post.did.append("note")
 
 
-async def _forward(post: Post, results_id: int) -> None:
-    channel = await _channel(post.client, results_id)
-    if await _sent(post, channel, lambda message: getattr(message.reference, "message_id", None) == post.thread.id,
-                   HTTPException):            # unread: forwarded (a double is rarer than a lost forward)
-        post.did.append("forward: already there")
-        return
-    post.sent["forward"] = await post.thread.get_partial_message(post.thread.id).forward(channel)
-    post.did.append(f"forwarded to {results_id}")
+def winner_text(outcome_text: str, link: str, proposal: str) -> str:
+    """The results channel's message: the outcome and the post's link (Discord shows its title), then the proposal's
+    text quoted, cut under Discord's 2,000 characters."""
+    head = f"{outcome_text} {link}"
+    lines = proposal.strip().splitlines()
+    if not lines:
+        return head
+    quoted = "\n".join("> " + line for line in lines)
+    room = LIMIT - len(head) - 1
+    if len(quoted) > room:
+        quoted = quoted[:room - 1].rstrip() + "…"
+    return f"{head}\n{quoted}"
 
 
 async def _announce(post: Post, results_id: int) -> None:
     channel = await _channel(post.client, results_id)
     if await _sent(post, channel, lambda message: post.thread.jump_url in (message.content or "").split(),
-                   HTTPException):
+                   HTTPException):            # unread: sent (a double is rarer than a lost winner message)
         post.did.append("winner message: already there")
         return
-    post.sent["winner"] = await channel.send(
-        f"**{escape_markdown(post.thread.name)}**: {_outcome(post)['text']} {post.thread.jump_url}",
-        allowed_mentions=NO_MENTIONS)
-    post.did.append("winner message")
+    try:
+        proposal = (await post.thread.fetch_message(post.thread.id)).content or ""
+    except NotFound:                            # the first message deleted: the outcome and link alone
+        proposal = ""
+    post.sent["winner"] = await channel.send(winner_text(_outcome(post)["text"], post.thread.jump_url, proposal),
+                                             allowed_mentions=NO_MENTIONS)
+    post.did.append(f"winner message to {results_id}")
 
 
 async def _shut(post: Post) -> None:
@@ -481,15 +490,14 @@ async def ping_post(post: Post, role_id: int, close_at: datetime) -> None:
     await _part(post, "closing tag", lambda: _retag(post, add=SOON))
 
 
-async def close_post(post: Post, results_id: int, forward: bool = True) -> None:
+async def close_post(post: Post, results_id: int, announce: bool = True) -> None:
     """
-    Day 7: count, note, forward a won post with its winner message, swap the tags for Closed, lock and archive.
-    forward=False: no forward (the schedule closing the bot's own test post).
+    Day 7: count, note, a won post's winner message (outcome, link, proposal text), swap the tags for Closed, lock and
+    archive. announce=False: no winner message (the schedule closing the bot's own test post).
     """
     await _part(post, "count", lambda: _count(post))
     await _part(post, "note", lambda: _note(post))
-    if forward and _outcome(post)["forward"]:
-        await _part(post, "forward", lambda: _forward(post, results_id), final=True)
+    if announce and _outcome(post)["announce"]:
         await _part(post, "winner", lambda: _announce(post, results_id), final=True)
     await _part(post, "closed tags", lambda: _retag(post, add=CLOSED, drop=(OPEN, SOON)))
     await _part(post, "lock", lambda: _shut(post))
@@ -542,7 +550,7 @@ async def _advance(client, forum, key: str, entry: dict, thread=None) -> None:
         if "ping" in due:
             await ping_post(post, setting("role"), datetime.fromisoformat(entry["created"]) + CLOSE_AFTER)
         if "close" in due:
-            await close_post(post, setting("results"), forward=not _is_test(post))
+            await close_post(post, setting("results"), announce=not _is_test(post))
             entry["end"] = "closed"
             await _save()
     except (Gone, NotFound):
@@ -715,7 +723,7 @@ async def live_test(client, minutes: float) -> Post:
     tags = [t for t in [_tag(forum, OPEN)] if t] if getattr(getattr(forum, "flags", None), "require_tag", False) else []
     span = f"{minutes:g} minute{'' if minutes == 1 else 's'}"
     made = await forum.create_thread(name=TEST_TITLE, applied_tags=tags, allowed_mentions=NO_MENTIONS,
-                                     content=f"This is a test of the proposals bot and closes in {span}.")
+                                     content=f"This is a test and closes in {span}.")
     post = Post(client, forum, made.thread, _record(made.thread, forum), _no_save)
     try:
         print(f"Test post {made.thread.id} (first message {made.message.id}): {made.thread.jump_url}")
@@ -730,7 +738,7 @@ async def live_test(client, minutes: float) -> Post:
         await _stopped(post)
         raise
     print(f"Closed: {'; '.join(post.did)}")
-    print(f"Outcome: {_outcome(post)['text']} Forwarded: {'yes' if _outcome(post)['forward'] else 'no'}")
+    print(f"Outcome: {_outcome(post)['text']} Winner message: {'yes' if _outcome(post)['announce'] else 'no'}")
     for part, message in post.sent.items():
         print(f"  {part}: message {message.id} in {message.channel.id}")
     return post

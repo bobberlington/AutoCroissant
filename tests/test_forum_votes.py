@@ -53,7 +53,7 @@ class Message:
 
 
 class Starter:
-    """A post's first message: its reactions, adding one, forwarding it."""
+    """A post's first message: its reactions, adding one."""
     def __init__(self, thread, content):
         self.thread, self.id, self.content, self.reactions = thread, thread.id, content, []
 
@@ -72,9 +72,6 @@ class Starter:
             self.reactions.append(Reaction(emoji, n))
         else:
             found.count += n
-
-    async def forward(self, channel):
-        return await channel.send(content=None, forwarded=self.thread.id, reference=SimpleNamespace(message_id=self.id))
 
 
 class Thread:
@@ -264,7 +261,7 @@ def test_new_post_opened_other_forum_and_off_ignored(clock):
     assert saved()["posts"][str(post.id)]["done"] == ["open tag", "reactions"] and set(saved()["posts"]) == {str(post.id)}
 
 
-@pytest.mark.parametrize("votes, text, forward", [
+@pytest.mark.parametrize("votes, text, announce", [
     ([("👍", 6, True), ("👎", 2, True), (Emoji(77, "abstain"), 9, True)], "Most votes: 👍 (5).", True),
     ([("👍", 1, True), ("👎", 1, True), (Emoji(77, "Abstain"), 4, True)], "No votes.", False),
     ([("👍", 3, True), ("👎", 5, True)], "Most votes: 👎 (4).", False),
@@ -274,8 +271,17 @@ def test_new_post_opened_other_forum_and_off_ignored(clock):
     ([("👍", 2, True), ("👎🏽", 4, False)], "Most votes: 👎🏽 (4).", False),
     ([("👍", 1, True), (Emoji(5, "yes"), 3, False)], "Most votes: <:yes:5> (3).", True),
 ])
-def test_tally_any_emoji_minus_the_bots_abstain_ignored(votes, text, forward):
-    assert fv.outcome(*fv.tally([Reaction(e, n, me) for e, n, me in votes])) == {"text": text, "forward": forward}
+def test_tally_any_emoji_minus_the_bots_abstain_ignored(votes, text, announce):
+    assert fv.outcome(*fv.tally([Reaction(e, n, me) for e, n, me in votes])) == {"text": text, "announce": announce}
+
+
+def test_winner_text_quotes_the_proposal_within_discords_limit():
+    link = "https://discord.com/channels/1/2"
+    assert fv.winner_text("Most votes: 👍 (2).", link, "") == f"Most votes: 👍 (2). {link}"
+    assert fv.winner_text("Most votes: 👍 (2).", link, "Bigger hands\n\nfor all\n") == \
+        f"Most votes: 👍 (2). {link}\n> Bigger hands\n> \n> for all"
+    long = fv.winner_text("Most votes: 👍 (2).", link, "word " * 1000)
+    assert len(long) <= fv.LIMIT and long.endswith("…") and long.startswith(f"Most votes: 👍 (2). {link}\n> word")
 
 
 def test_day6_pings_once_and_tags_across_restarts(clock, monkeypatch):
@@ -301,14 +307,14 @@ def test_day6_pings_once_and_tags_across_restarts(clock, monkeypatch):
     assert len(post.messages) == 1 and post.tags == ["Open", "Closing Soon"]
 
 
-@pytest.mark.parametrize("votes, note, forwarded", [
+@pytest.mark.parametrize("votes, note, announced", [
     ([("👍", 4), (Emoji(77, "abstain"), 6)], "Voting is closed. Most votes: 👍 (4).", True),
     ([("👎", 4), ("👍", 3)], "Voting is closed. Most votes: 👎 (4).", False),
     ([("👎", 2), ("👍", 2)], "Voting is closed. Most votes: 👍 and 👎, tied (2 each).", False),
     ([(Emoji(77, "abstain"), 3)], "Voting is closed. No votes.", False),
     ([(Emoji(5, "yes"), 2), ("👍", 2)], "Voting is closed. Most votes: 👍 and <:yes:5>, tied (2 each).", True),
 ])
-def test_day7_notes_forwards_a_winner_swaps_tags_locks(clock, votes, note, forwarded):
+def test_day7_notes_announces_a_winner_swaps_tags_locks(clock, votes, note, announced):
     forum = Forum()
     client = Client(forum)
     post = Thread(forum, T0, tags=("Idea",))
@@ -319,11 +325,10 @@ def test_day7_notes_forwards_a_winner_swaps_tags_locks(clock, votes, note, forwa
     assert contents(post) == [contents(post)[0], note]
     assert post.tags == ["Idea", "Closed"] and post.locked and post.archived
     results = client.results.sent
-    if forwarded:
+    if announced:
         top = note.split("Most votes: ")[1]
-        assert [m.forwarded for m in results[:1]] == [post.id] and len(results) == 2
-        assert results[1].content == f"**Bigger hands**: Most votes: {top} {post.jump_url}"
-        assert results[1].allowed_mentions.roles is False
+        assert [m.content for m in results] == [f"Most votes: {top} {post.jump_url}\n> Please change this."]
+        assert results[0].allowed_mentions.roles is False
     else:
         assert results == []
     assert saved()["posts"][str(post.id)]["end"] == "closed"
@@ -352,7 +357,7 @@ def test_existing_posts_on_enable_overdue_steps_in_order(clock):
     asyncio.run(go())
     assert contents(old) == [f"<@&{ROLE}> please vote on this change. Voting closes now.",
                              "Voting is closed. Most votes: 👍 (2)."]
-    assert old.locked and old.tags == ["Closed"] and len(client.results.sent) == 2
+    assert old.locked and old.tags == ["Closed"] and len(client.results.sent) == 1
     assert sleeping.tags == ["Cards", "Open"] and not sleeping.archived and len(sleeping.starter.reactions) == 3
     assert not any(t.edits or t.starter.reactions or t.messages for t in (locked, closed, held))
     assert reacted.archived and not reacted.edits and len(reacted.starter.reactions) == 3
@@ -428,7 +433,7 @@ def test_missing_permissions_logged_once_no_retry_loop(clock, capsys):
     assert saved()["posts"][str(post.id)]["end"] == "closed"
 
 
-def test_failed_forward_logged_once_and_the_close_goes_on(clock, capsys):
+def test_failed_winner_message_logged_once_and_the_close_goes_on(clock, capsys):
     forum = Forum()
     client = Client(forum)
     post = Thread(forum, T0)
@@ -440,7 +445,7 @@ def test_failed_forward_logged_once_and_the_close_goes_on(clock, capsys):
     client.results.send = fail
     passes(client, DAY7, DAY7 + timedelta(minutes=5), now=clock)
     out = capsys.readouterr().out
-    assert out.count(f"post {post.id}: forward failed") == 1 and out.count(f"post {post.id}: winner failed") == 1
+    assert out.count(f"post {post.id}: winner failed") == 1 and "forward" not in out
     assert post.tags == ["Closed"] and post.locked and post.archived and len(post.messages) == 2
 
 
@@ -468,7 +473,7 @@ def test_a_failed_listing_or_a_lasting_4xx_never_stalls_a_post(clock, capsys):
     assert out.count("archived posts can't be read") == 1 and out.count(f"post {full.id}: reactions failed") == 1
 
 
-def test_a_restart_mid_close_never_forwards_twice(clock, monkeypatch):
+def test_a_restart_mid_close_never_sends_twice(clock, monkeypatch):
     forum = Forum()
     client = Client(forum)
     post = Thread(forum, T0)
@@ -478,15 +483,15 @@ def test_a_restart_mid_close_never_forwards_twice(clock, monkeypatch):
 
     async def restarts_after(*args, **kwargs):          # Discord took it, then a restart before the record
         await send(*args, **kwargs)
-        if next(sends) <= 2:
+        if next(sends) <= 1:
             raise asyncio.CancelledError
     client.results.send = restarts_after
-    for when in (DAY7, DAY7 + timedelta(minutes=5)):
+    for when in (DAY7,):
         with pytest.raises(asyncio.CancelledError):
             passes(client, when, now=clock)
         restart(monkeypatch)
     passes(client, DAY7 + timedelta(minutes=10), now=clock)
-    assert [m.forwarded for m in client.results.sent[:1]] == [post.id] and len(client.results.sent) == 2
+    assert [m.content for m in client.results.sent] == [f"Most votes: 👍 (3). {post.jump_url}\n> Please change this."]
     assert contents(post)[1:] == ["Voting is closed. Most votes: 👍 (3)."] and post.locked and post.tags == ["Closed"]
 
 
@@ -530,11 +535,11 @@ def test_live_test_cli_flow(clock, monkeypatch, capsys):
     thread = post.thread
     assert thread.name == fv.TEST_TITLE and thread.starter.content.endswith("closes in 2 minutes.")
     assert contents(thread) == ["Voting is closed. Most votes: 👍 (3)."] and thread.tags == ["Closed"] and thread.locked
-    winner = f"**Test: proposals bot**: Most votes: 👍 (3). {thread.jump_url}"
-    assert [m.content for m in client.results.sent] == [None, winner]
+    winner = f"Most votes: 👍 (3). {thread.jump_url}\n> This is a test and closes in 2 minutes."
+    assert [m.content for m in client.results.sent] == [winner] and "proposals bot" not in winner
     assert not any("<@&" in (m.content or "") for m in thread.messages + client.results.sent)
     out = capsys.readouterr().out
-    assert f"Test post {thread.id}" in out and "Outcome: Most votes: 👍 (3). Forwarded: yes" in out
+    assert f"Test post {thread.id}" in out and "Outcome: Most votes: 👍 (3). Winner message: yes" in out
     assert not exists(FORUM_JSON)
 
 

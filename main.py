@@ -704,7 +704,7 @@ forum_votes = to_thread(forum_votes)
     enabled="Turn the votes on or off. Default = unchanged.",
     forum="The forum of proposals: its ID or #mention. Default = unchanged.",
     role="The role asked to vote on day 6: its ID or @mention. Default = unchanged.",
-    results="Where won posts are forwarded: a channel ID or #mention. Default = unchanged.",
+    results="Where a won post's winner message goes: a channel ID or #mention. Default = unchanged.",
 )
 async def slash_forum_votes(interaction: Interaction,
                             enabled: Optional[bool] = None,
