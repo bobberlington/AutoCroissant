@@ -283,6 +283,18 @@ def test_a_version_commit_follows_renames_and_refuses_doubt(bs):
     assert [a.version_commit(x, None, lin) for x in (v(40, None), v(5, "x"), None)] == [None] * 3
 
 
+def test_types_before_parser_2_are_no_change(bs):
+    """Parser 1 missed and mistook type icons (Dumplings' tomato read as panda): a type swap from such a reading is no
+    change row (analytics.change) and no real change (real_change); the shown card (no parser_version) is parsed."""
+    a = bs.analytics
+    v = lambda types, pv: bs.stand_in(bs.CardInfo, {"types": types, "parser_version": pv, "ability": "Heal 2.", "timestamp": 1.0})
+    legacy, parsed = v(["panda"], None), v(["food"], 7)
+    assert a.change(legacy, parsed, []) == {} and not bs.real_change(legacy, parsed)
+    assert bs.real_change(parsed, v(["fire"], 7))
+    shown = a.shown({"types": ["fire"], "ability": "Heal 2."}, parsed)
+    assert a.change(parsed, shown, []) == {"types": {"add": ["fire"], "drop": ["food"]}}
+
+
 def test_a_renamed_card_goes_on_and_its_old_page_redirects(bs, repo, tmp_path, monkeypatch):
     """The bake renames and redraws Alpha as New Alpha in one commit (its Renamed trailers): the card's image versions
     and text history go on as one card, and c/alpha/ sends its links on to c/new-alpha/; a profile's pick, a published
