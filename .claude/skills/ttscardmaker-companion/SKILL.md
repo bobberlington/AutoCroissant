@@ -6,8 +6,8 @@ description: "The TTSCardMaker side (~/Desktop/TTSCardMaker) that AutoCroissant 
 # TTSCardMaker companion: icon font, card website, fonts, Photoshop automation
 
 AutoCroissant (the Discord bot) reads card PSDs from **TTSCardMaker** (`MichaelJSr/TTSCardMaker`, cloned at
-`~/Desktop/TTSCardMaker`; a blobless partial clone that is also shallow, so `git log` there shows only recent
-history; use GitHub, or `git fetch --unshallow --filter=blob:none`, for older commits). On 2026-10-19 three things
+`~/Desktop/TTSCardMaker`; a blobless partial clone with full history since its fresh clone on 2026-11-10; it was
+shallow before; every git call there with `GIT_NO_LAZY_FETCH=1`). On 2026-10-19 three things
 were added on the TTSCardMaker side that the bot now depends on or feeds: the **stoogedings** icon font, a static **card-browser website**, and a
 **missing-fonts audit**. Photoshop scripting recipes were worked out along the way. This skill is their operational
 home. Committed and pushed to TTSCardMaker `main`: 54278c1 (stoogedings font + `stoogedings-src/`, Effect Layers

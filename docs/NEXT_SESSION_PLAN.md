@@ -1,13 +1,60 @@
-# Next session plan (after 2026-11-06)
+# Next session plan (after 2026-11-10)
 
 ## Where to start
 
-Start in `~/Desktop/AutoCroissant`. Read memories `resource-limits`, `secrets-never-printed`, `ttscardmaker-integration`,
-`alt-template-layer-comp-bars` (the 11-06 rulings), `photoshop-orphan-linked-data`, `lean-tests-and-verification`,
-`no-guides-csv-only`, `edits-two-kinds`, `jetson-server`, `persistent-work-paths`, `agent-model-preference`,
-`rulebook-on-website`, `discord-pending-updates`. What landed: `docs/Finished/session-2026-11-06/README.md` (TTS deck
-buttons, the Alt template and its rollout, stats to 20); earlier `session-2026-11-03-05/`, `-11-01/`, `-10-30c/`.
-The problem cards: the website's Needs handling (automatic flags, `commands/card_checks.py`).
+Start in `~/Desktop/AutoCroissant`. Read memories `resource-limits`, `secrets-never-printed`, `maintenance-pushes-silent`,
+`photoshop-no-interrupt`, `never-pkill-shell-snapshot`, `owner-decisions-2026-11-09` (and `-11-07`),
+`ttscardmaker-integration`, `jetson-server`, `persistent-work-paths`, `agent-model-preference`. What landed:
+`docs/Finished/session-2026-11-07-10/README.md` (linked pictures, automatic flags, clean cards, card history, status
+cards, the proposal forum); earlier `session-2026-11-06/`.
+
+## Order (owner, 11-09 ~19:45)
+
+1. **Research rounds again, at once**: psd-tools (fork, `~/Documents/Tools/wt/psd-1107` after the release), Actions +
+   bake, card data + website. Rounds run until dry (two rounds in a row with nothing new), no caps; one ship every 4-5
+   rounds under the locks. First: ship AC/TC `work/actions-1108` (below).
+2. **Card timelines from Discord**: `docs/Future/CARD_TIMELINE.md` (plan written 11-08).
+3. **Open bugs and follow-ups**: the Developer list below.
+
+## Waiting from this session
+
+- [ ] **First card workflow run on the new fork pin** (`cards-20261110`): its cards-python setup misses the wheel cache and
+      builds the fork on the runner (proven on ubuntu-latest x86_64 11-10 with a one-off workflow). Check it goes green;
+      if not, revert AC cff351a4's requirements-cards.txt line and redeploy.
+
+- [ ] **AC + TC `work/actions-1108`** (rounds 21-25, not on main): its ship was refused three times on 11-10. Fix
+      before landing: (a) TC 704baadb "Site build: each deploy under a commit of its own" was never tried against real
+      Pages: TRY 2 should fall back to GITHUB_SHA when Pages refuses a version commit (or hold 704baadb and AC a89266d1
+      out); (b) TC 4236cbb3's data re-fetch after the wait gets one try and fails the build: retry it 3 times like
+      actions/checkout did. The rest (AC d5534c00 range-read workers, 17780f89 + TC aad1c358 guards' Check beside the
+      fonts restore, a778792a folders read once, f43ffe48 + 3006c795 picture changes fetched ahead, TC 2b8e1479 each
+      lane checks only its CLIs) passed its checks. AC branch in the AC clone; the TC commits are in the bundle
+      `~/Documents/Tools/wt/scratch/s1109/wrap/tc-actions-1108.bundle` (the Desktop TC clone was replaced).
+- [ ] The Card browser deploy timed out twice on 11-09 (deploy-pages stuck in "syncing_files", runs 42622998192,
+      42753587574); the next push redeployed. If it repeats, that is (a) above's motivation.
+- [ ] Guards gap (11-10 skeptic): a push that puts back only an old PNG (e.g. the black-stroke Despair PNG) passes R10
+      when the PSD has no stored image (parity floor only).
+- [ ] The 11-08 Single-line batches and some 11-08 card fixes (TC 66efec76, 2ae8384c, 12bc1331, ac57d748, 380b856e)
+      have no `Card-sweep` trailer: check whether Card sync posted them as New art (Discord changelog), nothing to undo.
+- [ ] **Card fixes the research rounds proposed (not applied; one rewrite per card, `Card-sweep:` trailer, Photoshop open
+      test):** Clot Gold: delete the 20 spare hidden HP layers (hp children 0-19, copies shown on Clot Blood/Black) and
+      prune its unused link record 'Clot_Black - 0.webp' (8 -> 7); a built copy is
+      `~/Documents/Tools/wt/scratch/s1109/cardsdata-r5-dq/clot/fixed/Clot_Gold.psd`, recipe
+      `cardsdata-r2-quality/py/clot_fix.py`: rebuild from the current blob. It fixes E2's symptom (a website HP edit at
+      HP <= 2 lights the spares); E2 itself (psd_edit._roles: a series hidden in every cell counts as lit) is bake ground.
+      Typos (website ability edits are enough): Duel Flag "the the opposing slot"; Z!!!!! "imediately"; Flip
+      "subracting"; Ancient Fuelweaver and Crock Pot "::" before a list. Optional: Water Totem's Name has a U+0010
+      (only if Photoshop draws it the same without); Wigfrid's watermark reads "Wigfrig" (fold into a planned rewrite);
+      Bulborb Larva has no minion role icon (card maker; optional hand flag); Man-Serpent's Shield website name vs its
+      text title (sheet first). Grey Prince Zote's and The Last Cabbage Merchant's hand flags say the card doesn't print
+      its name, but both print it mid-card (Overlay Text / Group 2): the flag text is wrong, the data is right.
+- [ ] **psd round 15's TC card change (r15-3, the r6-0 strikes sweep):** lists in
+      `~/Documents/Tools/wt/scratch/s1107/fork/r15-3/` and `r15-3-adv/`, waiting for one rewrite per card.
+- [ ] Card data ship's optional dispatches (agents may not start runs): `gh workflow run card-sync.yml -R
+      MichaelJSr/TTSCardMaker --ref main -f cards="Flip,Miracle Matter,Paint Warrior,Tainted Lazarus,Twin Emperors" -f
+      bake=none` (one changelog post: "The parser re-read 4 cards"), and `gh workflow run card-checks.yml ... -f
+      cards="Blank Card,Bobberlington,Claw,Dirty Bed,Dogma,Frog,Gandhi,Kyle,Leshy,Miasma,Michael,Nailsage Sly,PoD04Zebra
+      Bloon,Smorg,Warcraftian Shaman,Yin Yarn,Zero Override"` (bar reads). Owner's call.
 
 ## Standing rules
 
@@ -18,14 +65,14 @@ The problem cards: the website's Needs handling (automatic flags, `commands/card
 - Deploy with the `jetson-deploy` skill: push main and deploy in one sitting.
 - Tests: `AUTOCROISSANT_LOCAL_DIR=~/Desktop/TTSCardMaker AC_SITE_SRC=<tc tree>
   ESBUILD=~/Documents/Tools/wt/scratch/esbuild/node_modules/.bin/esbuild ~/.venvs/ac-py314-fork/bin/python -m pytest
-  -n auto -q -p no:cacheprovider tests` (693 on 11-05, about 2.5 minutes at `-n 4`; they read old card blobs from the clone, skipping when missing). Never
+  -n auto -q -p no:cacheprovider tests` (925 on 11-10, about 1.5 minutes at `-n 6`; they read old card blobs from the clone, skipping when missing: the fresh clone has them). Never
   with `GIT_NO_LAZY_FETCH=1` exported (10 tests' own fixture repos then fail; conftest sets it for the clone). Targeted
   files unless a full run is needed.
 - Resource limits (memory `resource-limits`): never a partial (`blob:none`) clone of the local card repo; xdist at
   most 6; one full suite at a time (`~/Documents/Tools/wt/scratch/suite-wait.sh`); at most 2 workflows; process pools
   at most 4; the git watchdog (`~/Documents/Tools/wt/scratch/git-watchdog.sh`) under Monitor during long unattended
   work; no repack or gc of the big clones while agents run.
-- The Desktop TTSCardMaker clone is blobless from GitHub: every git call with `GIT_NO_LAZY_FETCH=1`, never a fetch of
+- The Desktop TTSCardMaker clone is blobless from GitHub (fresh on 11-10, full history, no longer shallow): every git call with `GIT_NO_LAZY_FETCH=1`, never a fetch of
   many blobs; `git write-tree` needs `--missing-ok` there. Refresh TC's local `origin/data` with
   `git fetch origin +data:refs/remotes/origin/data` (or check `git ls-remote origin data`) before reading it.
 - zsh arrays start at 1 and zsh doesn't split unquoted variables: loops over arrays under `bash -c`. `gh run list -c`
@@ -51,22 +98,30 @@ The problem cards: the website's Needs handling (automatic flags, `commands/card
   TTS/checks/run_all.py` (24 checks, about 4 minutes).
 - "Rebuild the save now" (owner, per request only): cancel Card sync's waiting run, then `gh workflow run card-sync.yml
   --ref main -f bake=pending`; first check that the site deploy holding any rulebook change has finished.
+- Every scripted TC commit that changes card PSDs or PNGs carries `Card-sweep: <kind>` (memory `maintenance-pushes-silent`).
+- Push locks: `mkdir ~/Documents/Tools/wt/scratch/s1107/ac-push.lock` / `tc-push.lock` / `ps.lock` (rmdir after); a TC
+  push holds its lock until every run it started has finished (`~/Documents/Tools/wt/scratch/s1108/watch_runs.sh`).
+- Photoshop: `open -g`, the alert watcher (`scratch/s1107/cstar/`), nothing left open (memory `photoshop-no-interrupt`).
+- Processes: kill exact PIDs only (never `pkill -f` a shell path); stop what you start; never print other apps' command
+  lines or environments. While the owner plays: lower load (memory `resource-limits`, 11-09 note).
+- Workflows: never resume a multi-lane workflow with edited caps (memory `workflow-resume-multilane`). Multi-step shell:
+  a `set -euo pipefail` bash script, not a zsh one-liner (zsh: no word splitting; `$C:r` eats `:refs`).
+- AC tests that read TC's workflows or site from a stale checkout: point `AC_SITE_SRC` and `CARD_GUARDS_YML` at a shallow
+  sparse clone of TC main (`.github`, `site`, `TTS/Global.lua`, `Global.xml`, `decks.json`).
 
-## State (2026-11-06, all pushed)
+## State (2026-11-10 ~05:00, all pushed)
 
-- AutoCroissant main: dc9f674 (stats past 10 bake on the Alt template; raid bosses no limit) plus the wrap-up docs,
-  deployed on the jetson. Fork pin `cards-20261104` (unchanged).
-- TTSCardMaker main d460db0e (the stat slider past 10; 4406bd0c the raid boss template). The Alt template rollout: c79cc4a2 (with the 0-20 template),
-  c63597c3, bd8745fc, 117664d7, f4b2f573, d1a8e80c, d65536ba, 23865bd8, each followed by Card sync's TTS save commit;
-  every run green. The Desktop clone is on d460db0e, clean, its fetch-duplicate packs removed.
-- No worktrees or work/* branches in either repo (AC keeps its three archive/* branches).
+- AutoCroissant main cff351a4 (+ the wrap-up docs), deployed on the jetson (47 commands; fork @170a3fce). Fork pin
+  `cards-20261110` = 170a3fce (fork main; `work/research-1107` = main in worktree `~/Documents/Tools/wt/psd-1107` for
+  the next rounds; harness `~/Documents/Tools/wt/scratch/s1107/fork/`, its ROUNDS.md has the release entry).
+- TTSCardMaker main 581b61c1; data 28e57faf at the wrap-up (moves with Card sync). The Desktop clone was replaced on
+  11-10 (old clone's unlanded branches: `scratch/s1109/wrap/tc-actions-1108.bundle`, `tc-unlanded-1110.bundle`).
+- Worktrees: AC `~/Documents/Tools/wt/actions-1108` (`work/actions-1108`, unshipped). No other work/* branches in AC, TC
+  or the fork; GitHub has only main, data, previews (TC) and the archive/* branches.
+- The proposal forum module runs on the jetson (forum 1569539619471499324): the first real day-6 ping is due about
+  2026-11-16 02:33 UTC (post 1569540573461745755); check the journal for "Forum votes:" lines then.
 
-- Data: moves with Card sync (`git ls-remote origin data`). Drift baseline befdf769 (37dcf02a: the deck buttons).
-- The TTS Saves folder copy: re-copy the pushed save after the 11-06 deck buttons if not done (owner copies it).
-- Discord `pending-updates`: the 8 card messages of 11-01 (see 11-05's list in git history of this file).
-- OJWikibot: the jetson runs 8ed817f; nothing changed this session.
-
-## Owner (11-06)
+## Owner (from 11-06, still open)
 
 - [ ] Check `MDW/Templates/Raid_Boss_Template.psd` (20-cell split bars, 0-40; built unattended). Raid bosses
       (6+ stars, `card_models.RAID_STARS`) have no stat limit; their bars bake up to 40.
@@ -178,8 +233,6 @@ From `~/Documents/Tools/wt/scratch/opt-round3/plan.json`, `opt-round4/plan.json`
 - [ ] Font builds look the same to a card maker (name ID 5, uniqueID, fontRevision, head.modified): only the file size
       tells a stale stoogedings (round 2 automation gap; AG3, a build id in the version name, was dropped as a separate
       commit: put it in the next font build if wanted).
-- [ ] PNG-only duplicates (Stubborn Queen) get no guards job and aren't re-exported when the original's PSD changes
-      (round 2 automation gap; the ring rollout moved it by hand).
 - [ ] The mock-up's erase memo (round 3 W1, ~25 ms on long texts, editors only): its collision with the ring
       mockup.js work is gone (the key needs bfam; a fresh measure must set `.label`).
 - [ ] Rulebook PDF waits for its pictured cards (round 2 A12, part a only; optional: push order covers it today).
@@ -198,8 +251,6 @@ From `~/Documents/Tools/wt/scratch/opt-round3/plan.json`, `opt-round4/plan.json`
 
 ### Older items
 
-- [ ] The website's global Escape closes an open dialog even while typing in it (app.js keydown): the rulebook editor
-      keeps the draft, but it is surprising.
 - [ ] Editor ideas offered, not chosen: replace a picture by dropping a file on it, Ctrl/Cmd+D duplicate, a diff before
       Publish, a zoom control for the to-scale preview. Deck sheets for TTS: not recommended.
 - [ ] Card Authors.txt still credits the 48 old rule pages (kept; card_data no longer warns about them).
@@ -223,7 +274,7 @@ From `~/Documents/Tools/wt/scratch/opt-round3/plan.json`, `opt-round4/plan.json`
       Mac still uses it), the older-fork checks (retire the `ac-py314-psd125` venv first), the `alt_names` field, Card
       Edits.json's `aliases_moved` key, the `inspect_pickle.py` name.
 - [ ] Fork, low priority: a tracking change breaks kerning (Quick Slash, Ominous Red Circle), tracked badge ligatures,
-      Photoshop's underline box (Golden Metronome). `cards-20261104` now scales tracking with the horizontal scale.
+      Photoshop's underline box (Golden Metronome: round 6's underline placement is in `cards-20261110`; re-check). The fork scales tracking with the horizontal scale since `cards-20261104`.
 - [ ] OJWikibot: `ojwiki_helpers.py:263-268` optional mwparserfromhell fallback; the backup search misses `Backup:
       pending.json`; O-6; read All_Cards_Event once for a lone "===Permanent Rotation===" heading; check the 10-21
       mixer gap in backup/history/mixers.json against that day's wiki page.
