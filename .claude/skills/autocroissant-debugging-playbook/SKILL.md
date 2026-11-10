@@ -224,7 +224,7 @@ logs to stdout; most reminder problems are visible there first.
 
 ## 10. Type emojis (/sync_emojis, added 2026-10-19)
 
-Untested against live Discord as of 2026-10-19 (docs/BUGS_AND_IMPROVEMENTS.md V1). Operations:
+Live on the jetson since 2026-10-20 (`refresh:True` checked offline 2026-11-10). Operations:
 **autocroissant-run-and-operate** §11.
 
 | Symptom | First check | Likely cause | Fix / pointer |

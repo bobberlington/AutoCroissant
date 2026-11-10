@@ -600,7 +600,7 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   on a changed tree, upload or replace emojis whose blob changed (with `_no` variants) and delete the ones whose icon
   is gone; `update_stats` queues it when `traverser.tree is not None`. Then the reminder was removed with
   `/remove_reminder reminder_id:f590a57e`.
-- **Status**: fixed in e13d754. `/sync_emojis refresh:True` is still the manual full re-upload (V1).
+- **Status**: fixed in e13d754. `/sync_emojis refresh:True` is still the manual full re-upload (checked offline 2026-11-10).
 
 ### 10.19 TTS save kept current by the bot (was Task 2, 2026-10-20)
 

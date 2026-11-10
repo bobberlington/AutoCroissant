@@ -704,8 +704,8 @@ text instead of a code block, because code blocks don't render emojis.
   pixels and centered; small pixel art is enlarged nearest-neighbor so it stays crisp; `_no` adds a red ring
   and slash in the same red as the font's `:no`. The font side of these names: ttscardmaker-companion.
 - **Requires discord.py 2.5+** (application-emoji API; `requirements.txt` says `discord.py>=2.5`).
-- **Not yet run against live Discord** (offline fake-client test only, docs/BUGS_AND_IMPROVEMENTS.md V1). On the
-  first live start, check the terminal line above, then run `/query_rulebook` on a chapter with icons.
+- Startup and /update_stats syncs run live on the jetson. `refresh:True` was checked offline on 2026-11-10 (the real
+  code and icons, a fake client with Discord's emoji rules): 126 re-uploaded, none refused.
 
 ## 12. The bot reads Card sync's data
 

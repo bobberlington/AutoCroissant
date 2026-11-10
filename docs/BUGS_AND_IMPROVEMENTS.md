@@ -1,6 +1,6 @@
 # AutoCroissant — Known Bugs and Future Improvements
 
-Compiled 2026-07-11 from a full repo audit; revised 2026-10-19, 2026-10-20, 2026-10-21, 2026-10-23, 2026-10-25 (twice) and 2026-10-30. Detail, evidence and procedures
+Compiled 2026-07-11 from a full repo audit; revised 2026-10-19, 2026-10-20, 2026-10-21, 2026-10-23, 2026-10-25 (twice), 2026-10-30 and 2026-11-10. Detail, evidence and procedures
 live in the skill library under `.claude/skills/`; each entry points at its owner (`ttscardmaker-companion`
 covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes route through
 `autocroissant-change-control`. When an entry is fixed or retired, move its story to
@@ -52,6 +52,9 @@ covers TTSCardMaker: icon font, website, fonts, Photoshop scripting). Fixes rout
   `normalize_ability` strips (Deepnest, Blasphemous Blade); an Ability past its panel is set smaller to fit (Autopsy Report).
 - 2026-10-30: D4, the old_stats balloon: its duplicates are removed by `card_data.clean_history` on every data build
   (the pickles went 10-25; Entry 3).
+- 2026-11-10: V1 and V4 verified offline (the command code on that day's `data` dcd98225 and card tree, Discord faked).
+  V1 `/sync_emojis refresh:True`: 126 icons re-uploaded, none refused by Discord's name and size rules; the jetson's
+  emoji map matched the icons. V4: `/query Raw Kawk` and `/query Black Clot` match exactly (printed titles).
 
 ---
 
@@ -72,12 +75,9 @@ None open (2026-10-25: B12 and the plan's three bake bugs fixed, archaeology 10.
 
 None open (2026-10-20). C1-C3, C5, C6, C12 and C14 are retired above.
 
-### 1.5 Pending live verification (as of 2026-10-19)
+### 1.5 Pending live verification
 
-| # | Item | What was verified | What is still missing | Detail owner |
-|---|------|-------------------|-----------------------|--------------|
-| V1 | Startup emoji sync | Live on the jetson 2026-10-20: "126 icons ..., 0 uploaded, 126 ready" | `/sync_emojis refresh:True` not run live yet | `autocroissant-run-and-operate` §11 |
-| V4 | `/query` name lookup: Card Edits.json names and aliases never joined the registry (the lookup used a mixed-case key against lowercase keys, since f2013eb); fixed 2026-10-21 in `query_card._add_lookup`, which now also adds printed titles (`_populate_titles`) | Tests `test_website_names_join_the_name_lookup`, `test_titles_join_the_name_lookup` | `/query Raw Kawk`, `/query Black Clot` (after the re-parse) on the live bot | `autocroissant-run-and-operate` §7 |
+None open (2026-11-10).
 
 ### 1.6 Companion repo (TTSCardMaker) items that affect the bot
 
