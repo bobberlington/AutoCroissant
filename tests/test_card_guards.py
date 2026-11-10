@@ -2020,9 +2020,9 @@ git -C "$FAKE_REPO" cat-file blob "${rest%%/*}:${rest#*/}" > "$out"
 
 
 def test_workflow_fetches_earlier_icon_fonts_in_the_background(clone, tmp_path, monkeypatch):
-    """Earlier fonts start lists the icon font's past versions (not the current one) and fetches them by commit in the
-    background, the token off the command line; Check's earlier_fonts reads them there (CARD_EARLIER_FONTS), no API; one
-    missing, or not its blob, by the API."""
+    """Earlier fonts start lists the icon font, current first, then its past versions and fetches them by commit in the
+    background, the token off the command line; Check's earlier_fonts reads them there (CARD_EARLIER_FONTS), no API and
+    no wait for the fonts restore; one missing, or not its blob, by the API."""
     pytest.importorskip("yaml")
     if not shutil.which("timeout"):
         pytest.skip("no timeout (coreutils)")
@@ -2045,8 +2045,10 @@ def test_workflow_fetches_earlier_icon_fonts_in_the_background(clone, tmp_path, 
     done, _ = _shell(steps["Earlier fonts start"], env, cwd=repo)
     folder = temp / "earlier-fonts"
     assert done.returncode == 0 and (temp / "env").read_text() == f"{cg.EARLIER_ENV}={folder}\n", done.stderr
-    assert [line.split()[1] for line in (folder / "list").read_text().splitlines()] == shas[1::-1]
-    wait = f'until [ -f "{folder / shas[0]}" ] && [ -f "{folder / shas[1]}" ]; do sleep 0.1; done'
+    listed = [line.split() for line in (folder / "list").read_text().splitlines()]
+    assert [sha for _, sha in listed] == shas[::-1] and listed[0][0] == head
+    wait = " && ".join(f'[ -f "{folder / sha}" ]' for sha in shas)
+    wait = f'until {wait}; do sleep 0.1; done'
     subprocess.run(["timeout", "10", "sh", "-c", wait], check=True)
     assert "s3cret" not in (tmp_path / "args").read_text() and "s3cret" in (tmp_path / "args.config").read_text()
 
@@ -2054,6 +2056,8 @@ def test_workflow_fetches_earlier_icon_fonts_in_the_background(clone, tmp_path, 
         def blob(self, sha):
             raise AssertionError(sha)
     monkeypatch.setenv(cg.EARLIER_ENV, str(folder))
+    monkeypatch.setenv(cg.FONTS_READY_ENV, str(tmp_path / "never"))         # the restore not in: never waited for
+    monkeypatch.setattr(cg, "FONTS_READY_S", 0)
     monkeypatch.setattr(cg, "font_advances", lambda data: {"glyph": int(data) + 1})
     monkeypatch.setattr(cg, "_advances", {})
     out = tmp_path / "out"
@@ -2069,6 +2073,49 @@ def test_workflow_fetches_earlier_icon_fonts_in_the_background(clone, tmp_path, 
     (tmp_path / "again").mkdir()
     files = cg.earlier_fonts(source, head, source.tree(head), str(tmp_path / "again"))
     assert [Path(path).read_bytes() for path in files] == [b"1", b"0"] and sorted(read) == sorted(shas[:2])
+
+
+def test_a_pushs_check_starts_beside_the_fonts_restore(clone, tmp_path, monkeypatch):
+    """A push's Check starts right after cards-venv; Check then waits and carries its output (stdout to the summary) and
+    exit code over; a dispatch's runs at Check. Its font reads wait for Fonts ready's mark (fonts_for, FONTS_WAIT)."""
+    import threading
+    import time
+    import commands.psd_edit as psd_edit
+    doc, steps, _ = _guard_steps(clone)
+    names = [s.get("name") or s.get("id") for s in doc["jobs"]["check"]["steps"]]
+    start, check = steps["Check start"], steps["Check"]
+    assert names.index("Check start") == names.index("setup") + 1 and names.index("Fonts ready") == names.index("fonts-miss") + 1
+    assert start["if"] == "github.event_name == 'push' && env.MODE != 'off'" and steps["Fonts ready"]["if"] == "always()"
+    assert start["env"][cg.FONTS_READY_ENV] == "${{ runner.temp }}/fonts.ready" and cg.FONTS_READY_ENV not in check["env"]
+    fake = tmp_path / "bin" / "python"
+    fake.parent.mkdir()
+    fake.write_text('#!/bin/sh\necho "$*" > "$FAKE_ARGS"\nsleep 0.3\necho report\necho warn >&2\nexit "$FAKE_EXIT"\n')
+    fake.chmod(0o755)
+    for n, (event, code) in enumerate((("push", 3), ("push", 0), ("dispatch", 1))):
+        temp, summary = tmp_path / f"t{n}", tmp_path / f"summary{n}"
+        temp.mkdir()
+        env = {"PATH": f"{fake.parent}:{os.environ['PATH']}", "RUNNER_TEMP": str(temp), "GITHUB_STEP_SUMMARY": str(summary),
+               "GITHUB_OUTPUT": str(temp / "out"), "GITHUB_WORKSPACE": "/w", "GITHUB_REPOSITORY": "o/cards", "OUT": "/o",
+               "GITHUB_SHA": "a" * 40, "MODE": "on", "BEFORE": "b" * 40, "AUTHOR": "maker", "FAKE_ARGS": str(tmp_path / "args"),
+               "FAKE_EXIT": str(code)}
+        if event == "push":
+            done, _ = _shell(start, env)
+            assert done.returncode == 0 and not summary.exists(), done.stderr
+        done, _ = _shell(check, env)
+        assert (done.returncode, done.stdout, done.stderr.strip(), summary.read_text()) == (code, "report\n", "warn", "report\n")
+        assert (tmp_path / "args").read_text().split() == ["-m", "commands.card_guards", "check", "--clone", "/w", "--repo",
+            "o/cards", "--after", "a" * 40, "--out", "/o", "--mode", "on", "--author", "maker", "--before", "b" * 40]
+    root, mark = tmp_path / "clone", tmp_path / "fonts.ready"
+    (root / psd_edit.FONTS_DIR).mkdir(parents=True)
+    (root / psd_edit.FONTS_DIR / "a.ttf").write_bytes(b"x")
+    monkeypatch.setenv(cg.FONTS_READY_ENV, str(mark))
+    monkeypatch.setattr(psd_edit, "FONTS_WAIT", None)
+    cg.wait_fonts()
+    assert psd_edit.FONTS_WAIT is cg.fonts_ready
+    timer, began = threading.Timer(0.3, mark.touch), time.monotonic()
+    timer.start()
+    assert cg.Source(str(root)).fonts_for(["A"]) == str(root / psd_edit.FONTS_DIR) and time.monotonic() - began >= 0.25
+    timer.join()
 
 
 def test_workflow_lowercases_card_guards(clone, tmp_path):

@@ -57,12 +57,12 @@ from functools import partial
 from io import BytesIO
 from json import dump, load, loads
 from os import cpu_count, environ, getpid, listdir, makedirs, pathsep, replace
-from os.path import basename, dirname, isdir, join, splitext
+from os.path import basename, dirname, exists, isdir, join, splitext
 from re import fullmatch, sub
 from subprocess import CalledProcessError, TimeoutExpired
 from sys import stderr
 from tempfile import TemporaryDirectory
-from time import time
+from time import sleep, time
 from traceback import format_exc
 from types import SimpleNamespace
 from typing import Callable, Iterator, Optional
@@ -123,6 +123,8 @@ ICON_FONT_FILE = f"{psd_edit.FONTS_DIR}/stoogedings.ttf"
 EARLIER_FONTS = 4                               # badge widths: the icon font's earlier eras at most (earlier_fonts)
 EARLIER_WALK = 40                               # versions of its history earlier_fonts reads at most (10 by 2026-11-05)
 EARLIER_ENV = "CARD_EARLIER_FONTS"              # card-guards.yml's Earlier fonts folder: <blob sha> files (_font_blob)
+FONTS_READY_ENV = "CARD_FONTS_READY"            # card-guards.yml's mark: MDW/Fonts restored (a push's Check starts beside it)
+FONTS_READY_S = 600                             # fonts_ready's wait at most
 ICON_LAYOUTS = ("badge widths", "old glyphs", "badges")   # skipped when the icon layers and font are as last
                                                 # checked (_layouts_kept)
 GUARD_EVENTS = "guard-events.json"              # beside the plan: the landed commit's changelog events
@@ -313,6 +315,21 @@ def font_files(name: str, files: dict) -> list:
     return found[:FONT_FILES_EACH]
 
 
+def fonts_ready() -> None:
+    """Returns once FONTS_READY_ENV's mark exists (unset: at once); Transient past FONTS_READY_S."""
+    mark, end = environ.get(FONTS_READY_ENV, ""), time() + FONTS_READY_S
+    while mark and not exists(mark):
+        if time() > end:
+            raise Transient(f"the fonts were not in after {FONTS_READY_S} s")
+        sleep(0.05)
+
+
+def wait_fonts() -> None:
+    """With FONTS_READY_ENV, every FontMap waits for the fonts too (psd_edit.FONTS_WAIT: card_standards' own calls)."""
+    if environ.get(FONTS_READY_ENV):
+        psd_edit.FONTS_WAIT = fonts_ready
+
+
 class Source:
     """Trees and history from a local clone (never a lazy fetch), blobs from it or the API."""
 
@@ -327,10 +344,11 @@ class Source:
     def fonts_for(self, names: list) -> str:
         """MDW/Fonts for R8's box text in the faces names (PostScript): FONT_DIRS_ENV's, the clone's, else self.fonts
         with only the files those names look to be in (font_files; FONT_FETCH_MAX a run), from the checked tree; "" when
-        a face can't be had (the layer stays Every-line)."""
+        a face can't be had (the layer stays Every-line). The clone's once in (fonts_ready)."""
         checkout = join(self.clone, psd_edit.FONTS_DIR)
         if environ.get(FONT_DIRS_ENV):
             return environ[FONT_DIRS_ENV].split(pathsep)[0]
+        fonts_ready()
         if isdir(checkout) and listdir(checkout):
             return checkout
         if not (self.fonts and self.checked):
@@ -1270,6 +1288,7 @@ def changes(old, new, parser, fonts=None) -> list:
 
 def _init_worker(clone: str, repository: str, context, vocab, tree: dict, fonts: str, earlier: tuple = ()) -> None:
     token_from_env()        # a spawned worker (macOS; forkserver on 3.14) starts without main()'s header
+    wait_fonts()
     source = Source(clone, repository, fonts)
     source.checked = tree
     _worker.update(source=source, context=context, parser=vocab.parser(), earlier=tuple(earlier))
@@ -1527,6 +1546,7 @@ def _merge(out: str, entry: dict, done: dict, tree: dict) -> None:
 
 def _init_convert(clone: str, repository: str, ctx: LinkContext, vocab, tree: dict, fonts: str) -> None:
     token_from_env()
+    wait_fonts()
     source = Source(clone, repository, fonts)
     source.checked = tree
     ctx.read_blob = source.blob
@@ -1964,19 +1984,25 @@ def font_advances(data: bytes) -> dict:
             if (name := font.get_glyph_name(gid))}
 
 
+def _file_blob(path: str, sha: str) -> Optional[bytes]:
+    """path's bytes when they are blob sha, else None."""
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read()
+    except OSError:
+        return None
+    return data if blob_sha(data) == sha else None
+
+
 def _font_blob(source: Source, sha: str, own: bool = True) -> bytes:
-    """An icon font blob: EARLIER_ENV's file, with own the clone's file (the Action's cached MDW/Fonts), when it is that
-    blob; else source.blob."""
+    """An icon font blob: EARLIER_ENV's file, with own the clone's file (the Action's cached MDW/Fonts, once in:
+    fonts_ready), when it is that blob; else source.blob."""
     folder = environ.get(EARLIER_ENV, "")
-    for path in ([join(folder, sha)] if folder else []) + ([join(source.clone, ICON_FONT_FILE)] if own else []):
-        try:
-            with open(path, "rb") as fh:
-                data = fh.read()
-        except OSError:
-            continue
-        if blob_sha(data) == sha:
-            return data
-    return source.blob(sha)
+    data = _file_blob(join(folder, sha), sha) if folder else None
+    if data is None and own:
+        fonts_ready()
+        data = _file_blob(join(source.clone, ICON_FONT_FILE), sha)
+    return source.blob(sha) if data is None else data
 
 
 def _laid_alike(older: dict, newer: dict, names: dict) -> bool:
@@ -2048,6 +2074,7 @@ def check(clone: str, after: str, before: str = "", repository: str = "", author
         plan.json's data (with "markdown" and "discord")
     """
     makedirs(out, exist_ok=True)
+    wait_fonts()
     source = Source(clone, repository)
     errors: list = []
     if whole_tree:
@@ -2593,6 +2620,7 @@ __all__ = [
     'Change',
     'EARLIER_FONTS',
     'EARLIER_WALK',
+    'FONTS_READY_ENV',
     'ICON_FONT_FILE',
     'Head',
     'Job',
@@ -2615,6 +2643,7 @@ __all__ = [
     'events_of',
     'finish',
     'font_advances',
+    'fonts_ready',
     'land',
     'landed_markdown',
     'main',
