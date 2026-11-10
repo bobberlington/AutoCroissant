@@ -1390,7 +1390,7 @@ def test_workflow_shape(clone):
         named = [s["name"] for s in one["steps"] if s.get("name")]
         assert len(named) == len(set(named)), named
     cards = next(s for s in job["steps"] if s.get("uses", "").startswith("actions/checkout") and "repository" not in s.get("with", {}))
-    assert cards["with"]["filter"] == "blob:none" and cards["with"]["fetch-depth"] == 0
+    assert cards["with"]["filter"] == "blob:none" and cards["with"]["fetch-depth"] == 1     # History brings the rest
     assert post["env"]["GH_REPO"] == "${{ github.repository }}"               # gh workflow run without the card repo
     from helpers import FORK_KEY, FORK_WORKFLOWS, fork_install
     others = [path.parent / name for name in FORK_WORKFLOWS if name != "card-guards.yml" and (path.parent / name).is_file()]
@@ -1965,6 +1965,7 @@ def test_workflow_fetches_pushed_blobs_in_the_background(clone, tmp_path, monkey
                "GITHUB_SHA": shas[1], "GITHUB_OUTPUT": str(temp / "output")}
         done, _ = _shell(steps["Pushed blobs start"], env, cwd=repo)
         assert done.returncode == 0 and not (temp / "blobs.done").exists(), (done.stdout, done.stderr)
+        _until(temp / "blobs.ready")
         monkeypatch.setenv(gh.PENDING_ENV, str(temp / "blobs"))
         listed = (temp / "blobs").read_text().split()
         rest.clear()
@@ -1987,6 +1988,11 @@ def test_workflow_fetches_pushed_blobs_in_the_background(clone, tmp_path, monkey
     assert gh.pending_blob(str(repo), listed[0]) is None
     monkeypatch.delenv(gh.PENDING_ENV)                              # the bake and the bot: no list, no wait
     assert gh.pending_blob(str(repo), listed[0]) is None
+
+
+def _until(path, seconds=30):
+    """Waits for a background step's mark."""
+    subprocess.run(["timeout", str(seconds), "sh", "-c", f'until [ -e "{path}" ]; do sleep 0.05; done'], check=True)
 
 
 def test_workflow_fetches_the_checks_other_reads(clone, tmp_path):
@@ -2037,11 +2043,76 @@ def test_workflow_fetches_the_checks_other_reads(clone, tmp_path):
                "GITHUB_SHA": after, "GITHUB_JOB": job, "GITHUB_OUTPUT": str(temp / "output")}
         done, _ = _shell(steps["Pushed blobs start"], env, cwd=repo)
         assert done.returncode == 0, (done.stdout, done.stderr)
+        _until(temp / "blobs.ready")
         assert [line.split() for line in (temp / "blobs.fetch").read_text().splitlines()] == lines, job
         assert (temp / "blobs").read_text().split() == [sha for line in lines for sha in line]
         subprocess.run(["timeout", "30", "sh", "-c", f'until [ -s "{temp}/blobs.done" ]; do sleep 0.1; done'], check=True)
         found = _git(repo, "cat-file", "--batch-check", "--batch-all-objects")
         assert (temp / "blobs.done").read_text().strip() == "0" and all(sha in found for line in lines for sha in line)
+
+
+def test_workflow_joins_the_history_in_the_background(clone, tmp_path):
+    """The checkout is depth 1; in check Bot start fetches main's and the data branch's history (blobless) into
+    history.git, Pushed blobs start the push's first head and the data branch, History start joins them locally (no
+    remote left in the config) and History lets Check run on a complete clone only: GitHub's history when that failed,
+    else an error. A dispatch (no first head) takes the data branch from history.git."""
+    pytest.importorskip("yaml")
+    if not shutil.which("timeout"):
+        pytest.skip("no timeout (coreutils)")
+    _, steps, _ = _guard_steps(clone)
+    work, origin, bin_dir = tmp_path / "work", tmp_path / "origin.git", tmp_path / "bin"
+    for folder in (work, bin_dir):
+        folder.mkdir()
+    (bin_dir / "gh").write_text("#!/bin/sh\necho '{}'\n")          # Bot start's records
+    (bin_dir / "gh").chmod(0o755)
+    _git(work, "init", "-q", "-b", "main")
+    heads = []
+    for n in range(3):
+        (work / "A.psd").write_bytes(os.urandom(64))
+        heads.append(_commit(work, f"c{n}"))
+    _git(work, "checkout", "-q", "--orphan", "data")
+    _git(work, "rm", "-rq", "--cached", ".")
+    (work / "A.psd").unlink()
+    (work / "db").mkdir()
+    (work / "db" / "stats.json").write_text("{}")
+    data = _commit(work, "data")
+    _git(work, "checkout", "-q", "-f", "main")
+    subprocess.run(["git", "clone", "-q", "--bare", str(work), str(origin)], check=True)
+    for key in ("uploadpack.allowFilter", "uploadpack.allowAnySHA1InWant"):
+        _git(origin, "config", key, "true")
+    for n, case in enumerate(("push", "dispatch", "fallback", "failed")):
+        repo, temp = tmp_path / f"clone{n}", tmp_path / f"temp{n}"
+        temp.mkdir()
+        subprocess.run(["git", "clone", "-q", "--depth", "1", "--filter=blob:none", "--no-checkout", f"file://{origin}",
+                        str(repo)], check=True)
+        _git(repo, "config", "remote.origin.fetch", "+refs/heads/*:refs/remotes/origin/*")     # as actions/checkout
+        env = {"PATH": f"{bin_dir}:{os.environ['PATH']}", "HOME": os.environ.get("HOME", ""), "RUNNER_TEMP": str(temp),
+               "GITHUB_SHA": heads[2], "BEFORE": heads[1], "GITHUB_JOB": "check", "GITHUB_OUTPUT": str(temp / "output"),
+               "GITHUB_ENV": str(temp / "env"), "GITHUB_SERVER_URL": f"file://{tmp_path}", "GITHUB_REPOSITORY": "origin.git",
+               "BOT_REPO": "gone/bot", "GH_TOKEN": "t"}
+        if case in ("push", "dispatch"):
+            assert _shell(steps["Bot start"], env, cwd=repo)[0].returncode == 0
+            _until(temp / "history.git.code")
+        else:
+            (temp / "history.git.code").write_text("128\n")
+        if case == "push":
+            assert _shell(steps["Pushed blobs start"], env, cwd=repo)[0].returncode == 0
+        if case == "failed":
+            _git(repo, "remote", "set-url", "origin", f"file://{tmp_path}/gone.git")
+        assert _shell(steps["History start"], env, cwd=repo)[0].returncode == 0
+        done, _ = _shell(steps["History"], env, cwd=repo)
+        shallow = _git(repo, "rev-parse", "--is-shallow-repository")
+        if case == "failed":
+            assert done.returncode == 1 and "::error::the card repo's history did not come" in done.stdout and shallow == "true"
+            continue
+        assert done.returncode == 0 and shallow == "false", (case, done.stdout, done.stderr)
+        assert _git(repo, "rev-list", "--count", heads[2]) == "3" and _git(repo, "rev-parse", "origin/data") == data
+        assert ("history fetched again" in done.stdout) == (case == "fallback")
+        assert {line.split()[0] for line in _git(repo, "config", "--get-regexp", r"^remote\.").splitlines()} == {
+            "remote.origin.url", "remote.origin.fetch", "remote.origin.promisor", "remote.origin.partialclonefilter"}
+        if case == "push":
+            _until(temp / "blobs.done")
+            assert _git(repo, "cat-file", "-t", _git(work, "rev-parse", f"{heads[1]}:A.psd")) == "blob"
 
 
 def test_workflow_runs_the_two_checks_side_by_side(clone, tmp_path):
@@ -2145,7 +2216,8 @@ def test_a_pushs_check_starts_beside_the_fonts_restore(clone, tmp_path, monkeypa
     doc, steps, _ = _guard_steps(clone)
     names = [s.get("name") or s.get("id") for s in doc["jobs"]["check"]["steps"]]
     start, check = steps["Check start"], steps["Check"]
-    assert names.index("Check start") == names.index("setup") + 1 and names.index("Fonts ready") == names.index("fonts-miss") + 1
+    assert names[names.index("setup") + 1:names.index("Check start")] == ["History", "Earlier fonts start", "No push run in its window"]
+    assert names.index("Fonts ready") == names.index("fonts-miss") + 1
     assert start["if"] == "github.event_name == 'push' && env.MODE != 'off'" and steps["Fonts ready"]["if"] == "always()"
     assert start["env"][cg.FONTS_READY_ENV] == "${{ runner.temp }}/fonts.ready" and cg.FONTS_READY_ENV not in check["env"]
     fake = tmp_path / "bin" / "python"

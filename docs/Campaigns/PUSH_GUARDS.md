@@ -720,7 +720,8 @@ jobs:                    # three since 2026-10-24 (section 20): no runner sleeps
     steps:
       - name: Start                                     # QUIET_FROM (a re-run's: the push), OUT, MODE lowercased; outputs too
       - uses: actions/checkout@v7                       # trees only: the diff, the pairing, no blobs
-        with: {fetch-depth: 0, filter: "blob:none", sparse-checkout: "/.github/", sparse-checkout-cone-mode: false}
+        with: {fetch-depth: 1, filter: "blob:none", sparse-checkout: "/.github/", sparse-checkout-cone-mode: false}
+        # since 2026-11-10: depth 1; Bot start fetches the history beside it, History start joins it (History waits)
       - name: No push run in its window                 # a dispatch with dry_run off: refused while a push run of the commit (or a later one) is unfinished
       - uses: actions/checkout@v7                       # card_guards.SPARSE_FILES (requirements-cards.txt among them)
         with: {repository: bobberlington/AutoCroissant, path: bot, sparse-checkout-cone-mode: false, sparse-checkout: "..."}
