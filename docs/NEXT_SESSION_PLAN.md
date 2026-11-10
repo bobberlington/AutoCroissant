@@ -214,8 +214,11 @@ From `~/Documents/Tools/wt/scratch/opt-round3/plan.json`, `opt-round4/plan.json`
 - [ ] Types: in an edit that removes and adds at once, the added icons keep today's free spot instead of going through
       the closing loop.
 - [ ] Stat bars: Clot Gold's spare hidden HP layers still shown at low values (E2 in
-      `~/Documents/Tools/wt/scratch/layouts/bars/DESIGN.md`).
-- [ ] Corruption and Dumplings: the 10-26 font sweep left them out (a PNG bar; a Txt2 reorder).
+      `~/Documents/Tools/wt/scratch/layouts/bars/DESIGN.md`). Card fix ready (11-09, from blob 864952b3): the 20 spare
+      layers deleted, picture and parse identical (`~/Documents/Tools/wt/scratch/s1109/cardsdata-r5-dq/clot/fixed/`).
+      The bake rule (a series hidden in every cell is never shown) stays open.
+- [x] Corruption and Dumplings, left out of the 10-26 font sweep: done by later passes (checked 11-09). Both Abilities
+      set their icons in stoogedings, no stale Txt2 story, PNGs current.
 - [ ] Kept on purpose until their condition holds: the pyoxipng fallback (until `brew install oxipng` everywhere; the
       Mac still uses it), the older-fork checks (retire the `ac-py314-psd125` venv first), the `alt_names` field, Card
       Edits.json's `aliases_moved` key, the `inspect_pickle.py` name.
