@@ -8,13 +8,14 @@ Start in `~/Desktop/AutoCroissant`. Read memories `resource-limits`, `secrets-ne
 `docs/Finished/session-2026-11-07-10/README.md` (linked pictures, automatic flags, clean cards, card history, status
 cards, the proposal forum); earlier `session-2026-11-06/`.
 
-## Order (owner, 11-09 ~19:45)
+## Order (owner, 11-10 ~05:20)
 
-1. **Research rounds again, at once**: psd-tools (fork, `~/Documents/Tools/wt/psd-1107` after the release), Actions +
-   bake, card data + website. Rounds run until dry (two rounds in a row with nothing new), no caps; one ship every 4-5
-   rounds under the locks. First: ship AC/TC `work/actions-1108` (below).
-2. **Card timelines from Discord**: `docs/Future/CARD_TIMELINE.md` (plan written 11-08).
-3. **Open bugs and follow-ups**: the Developer list below.
+1. **Research rounds again, at once**: psd-tools (fork, `~/Documents/Tools/wt/psd-1107` on `work/research-1107` =
+   `cards-20261110`), Actions + bake, card data + website. Rounds run until dry (two rounds in a row with nothing new),
+   no caps; one ship every 4-5 rounds under the locks.
+2. **Every unfinished task** in "Waiting from this session" below (first: ship AC/TC `work/actions-1108` with its two
+   fixes, and check the first card workflow run on the new fork pin), then the Developer list's open bugs.
+3. **Card timelines from Discord** (`docs/Future/CARD_TIMELINE.md`): only when the owner asks.
 
 ## Waiting from this session
 
