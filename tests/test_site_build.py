@@ -687,7 +687,8 @@ def test_tts_details_for_the_save(bs):
     """data/tts.json (owner 10-30, the TTS hover strip and details): types' meanings from the chapters (an icon heading's
     section to the page break, a "[token]:" line, a line ending in tokens; secret text, "(See: ...)" and non-icons left
     out), tags as text.js reads them, the statuses an ability names, cards by PNG path, hidden cards left out, only the stats
-    a card has (an active item: HP and DEF); the name's and ability's colours as the card page paints them (nc, ac)."""
+    a card has (an active item: HP and DEF); a [field] card's Field Cards first in r; the name's and ability's colours as
+    the card page paints them (nc, ac)."""
     chapters = [{"id": "creature-types", "num": "20", "title": "Creature Types", "source":
                  "# Creature Types\n## FIRE {icon=fire}\nImmune to [[Burning]] (See: [“X”](#/rules/x))\n## WIND {icon=wind}\nSwap.\n"},
                 {"id": "item-types", "num": "14", "title": "Item Types", "source":
@@ -696,14 +697,15 @@ def test_tts_details_for_the_save(bs):
                 {"id": "status-effects", "num": "19", "title": "Status Effects", "source": "One instance only. [debuff] [nothere]\n"},
                 {"id": "timing-tags", "num": "23", "title": "Timing Tags", "source": "| Tag | Meaning |\n|---|---|\n| (XCD) | Wait X turn(s) |\n"},
                 {"id": "damage-types", "num": "21", "title": "Damage Types", "source": "## PIERCING\nIgnores DEF.\n"},
-                {"id": "negation", "num": "22", "title": "Negation", "source": "## NEGATION\nTaken out of play.\n"}]
+                {"id": "negation", "num": "22", "title": "Negation", "source": "## NEGATION\nTaken out of play.\n"},
+                {"id": "field-cards", "num": "18", "title": "Field Cards", "source": "## PLAYING\nOne at a time.\n"}]
     icons = {k: {} for k in ("fire", "wind", "support", "offensiveminion", "debuff")}
     cards = [{"name": "Hot Guy", "type": "creature", "types": ["fire", "offensive_minion"], "png": "Creatures/Hot_Guy.png", "stars": 3,
               "hp": 5, "def": 1, "atk": 2, "spd": 3, "ability": "(1cd) Inflict 2T burning. (3CD) [fire] again. (OD) Burning! Starts with 2 Dark Tentacles and a Secret. Deals 2 CDMG; negates.", "author": "Bob"},
              {"name": "Burning", "type": "debuff", "types": ["debuff"], "png": "Aux/Burning.png", "ability": "3 DMG, can't affect [fire]"},
              {"name": "Secret", "type": "item", "png": "Items/Secret.png", "hidden": True, "ability": "Burning"},
              {"name": "Dark Tentacle", "type": "minion", "png": "Aux/Dark_Tentacle.png", "ability": ""},
-             {"name": "Gate", "type": "field", "png": "Field/Gate.png", "ability": "(3CD) summon a dark tentacle, then stay."},
+             {"name": "Gate", "type": "field", "types": ["field"], "png": "Field/Gate.png", "ability": "(3CD) summon a dark tentacle, then stay. Can't be negated."},
              {"name": "Stay", "type": "creature", "png": "Creatures/Stay.png", "ability": ""},
              {"name": "Mirror Knight", "type": "creature", "png": "Creatures/Mirror_Knight.png", "ability": "(OD) Summon another Mirror Knight."},
              {"name": "Totem", "type": "item", "subtype": "active", "png": "Items/Totem.png", "hp": 2, "def": 0, "ability": ""}]
@@ -721,6 +723,7 @@ def test_tts_details_for_the_save(bs):
     assert got["cards"]["Items/Totem.png"]["s"] == "HP 2 DEF 0"
     assert got["cards"]["Creatures/Mirror_Knight.png"]["m"] == ["Creatures/Mirror_Knight.png"]   # a card naming itself spawns itself (owner 10-30)
     assert got["cards"]["Field/Gate.png"]["m"] == ["Aux/Dark_Tentacle.png"]   # as text.js links: a lowercase minion after its verb
+    assert got["cards"]["Field/Gate.png"]["r"] == ["field-cards", "negation"]   # [field] has no meaning: its chapter by hand
     assert got["cards"]["Creatures/Hot_Guy.png"] == {
         "n": "Hot Guy", "k": "Creature", "st": 3, "s": "HP 5 DEF 1 ATK 2 SPD 3",
         "a": "(1cd) Inflict 2T burning. (3CD) fire again. (OD) Burning! Starts with 2 Dark Tentacles and a Secret. Deals 2 CDMG; negates.",
