@@ -424,6 +424,18 @@ out([r([90, 50, 310, 160]), r([90, 76, 310, 160]), r([90, 76, 310, 136])]);""")
     assert none == [0, [100, 80, 300, 134], 3, True]
 
 
+@needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "recordBlock"), reason="no recordBlock in mockup.js")
+def test_record_block_when_not_found(tmp_path):
+    """Text not found: the record's box split into one band per old line at its size (wrapped at the frame, blank
+    lines not counted); left when the box sits at the frame's left, else centred."""
+    out = node(tmp_path, """
+const measure = (s, z) => s.length * z * 0.5, own = [100, 200, 300, 260];
+const r = (t, wrap, frame) => { const f = m.recordBlock(own, m.tokenize(t), measure, 20, wrap, frame); return [f.lines.map(l => [l[1], l[3]]), f.align, f.size]; };
+out([r("abcd efgh ijkl", 0, null), r("abcd efgh ijkl", 100, [95, 0, 400, 0]), r("abcd\\n\\nefgh", 100, [0, 0, 400, 0])]);""")
+    assert out == [[[[200, 260]], "center", 20], [[[200, 230], [230, 260]], "left", 20], [[[200, 230], [230, 260]], "center", 20]]
+
+
 # ---- the build's web fonts (build_site.py)
 @pytest.fixture(scope="module")
 def bs():
