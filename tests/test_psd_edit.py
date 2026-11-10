@@ -1744,6 +1744,21 @@ def test_a_typed_badge_takes_the_alternates_under_an_overlay(clone, parser, char
 
 
 @text_edit
+def test_a_badge_edited_in_place_keeps_its_size(clone, parser, chart):
+    """A digit changed in a badge keeps its size and middle, as Photoshop's own edit does, unless the guards' rule
+    (badge_wants) resizes it: Pandamonium's 55 pt (1GCD) was set at 59.15 pt."""
+    rel = "Items/Active/4 Stars/Pandamonium.psd"
+    path = _card(clone, rel)[0]
+    psd = PSDImage.open(path)
+    layer = pe.ability_layer(psd)
+    before = [(r.style.font_size, r.style.baseline_shift) for p in layer.typesetting for r in p.runs]
+    text = pe.normalize_ability(pe.parse_card(parser, path, rel)["card"]["ability"])
+    pe.set_text_layer(psd, "ability", text.replace("(1GCD)", "(2GCD)", 1), str(clone / pe.FONTS_DIR), chart, parser=parser)
+    assert "(2GCD)" in layer.text and [(r.style.font_size, r.style.baseline_shift) for p in layer.typesetting
+                                       for r in p.runs] == before
+
+
+@text_edit
 def test_typed_icons_that_print_wrong_are_flagged(clone, parser, chart):
     """Baked and told (owner 2026-10-24): a colour icon typed under the Ability's colour or gradient overlay (Cat; a badge
     or sticker takes the one-colour alternates there, owner 2026-10-25), a [type] token on a card whose type icons are image layers in the ability's gaps
