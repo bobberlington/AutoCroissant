@@ -1141,6 +1141,44 @@ def test_a_drawn_duplicate_is_its_psds_picture(cards, clone, tmp_path):
     assert not [i for i in snack["issues"] if i["code"] == "R12"], snack["issues"]
 
 
+def test_a_persons_drawn_duplicate_is_kept_as_pushed(cards, clone, tmp_path):
+    """The 11-10 skeptic's repro: Stubborn King (tagged; picture 2 is Stubborn_Queen.png, dup_of) pushed by a person with
+    hp 2 -> 3, Stubborn_King.png and a hand-edited Stubborn_Queen.png: the Queen is kept as pushed (as a pushed
+    NameN.png is: recompressed at most), never drawn over; no Stubborn_King2.png."""
+    from psd_tools import PSDImage
+    root, base, alice, bot = cards
+    folder = "Creatures/Other/2 Stars"
+    rel, png, dup = f"{folder}/Stubborn_King.psd", f"{folder}/Stubborn_King.png", f"{folder}/Stubborn_Queen.png"
+    (root / folder).mkdir(parents=True)
+    for path in (png, dup):
+        shutil.copy(clone / path, root / path)
+    psd = PSDImage.open(str(clone / rel))
+    tags = {3454: "Layer 5 #2", 422: "Name #1", 3455: "Name #2"}
+    for layer in psd.descendants():
+        if layer.layer_id in tags:
+            layer.name = tags[layer.layer_id]
+    psd.save(str(root / rel))
+    (root / "site").mkdir()
+    (root / "site/Card Edits.json").write_text(json.dumps({"cards": {"Stubborn Queen": {"dup_of": "Stubborn King"}}}))
+    start = _commit(root, "Stubborn King tagged")
+    for layer in psd.descendants():             # hp 2 -> 3: both pictures' hp cell
+        if layer.layer_id in (479, 480):
+            layer.visible = layer.layer_id == 480
+    psd.save(str(root / rel))
+    Image.open(clone / png).save(root / png)
+    queen = Image.open(clone / dup).convert("RGB")
+    ImageDraw.Draw(queen).rectangle((600, 1210, 654, 1259), fill=(255, 0, 255))     # the person's own pixels
+    queen.save(root / dup)
+    pushed = _commit(root, "Stubborn King hp 3", author="Alice")
+    out = tmp_path / "out"
+    cg.check(str(root), pushed, start, mode="on", out=str(out), workers=1)
+    (king,) = [c for c in json.loads((out / "plan.json").read_text())["cards"] if c["card"] == "Stubborn King"]
+    assert [w for w in king["writes"] if w["path"] == dup and w["kind"] != "recompress"] == [], king["writes"]
+    assert not [w for w in king["writes"] if "Stubborn_King2" in w["path"]], king["writes"]
+    assert king["case"] == "pair" and king["pushed"] == [dup] and king["dups"] == {}, king
+    assert king["expect"][dup] == cg.Source(str(root)).tree(pushed)[dup][1]
+
+
 # ========================
 # The real push of 2026-10-22 15:18 (the clone, read-only)
 # ========================

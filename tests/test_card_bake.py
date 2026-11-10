@@ -1066,11 +1066,9 @@ def test_a_tagged_psd_bakes_each_picture_it_shows_in(github, clone, tmp_path):
     assert {k: layer.visible for k, layer in new.items()} == {k: layer.visible for k, layer in saved.items()}
 
 
-@fork_text
-def test_a_drawn_duplicate_bakes_as_its_picture(github, clone, tmp_path):
-    """Owner 11-09: picture 2 kept under a duplicate's own name (Breakfast.png, dup_of A Snack: as Gust_of_Trees.png) is
-    picture 2: the shared Ability writes it as such, no A_Snack2.png made; its entry stays. A name edit beside it waits
-    (pictures 2 and 3 print their own titles), then bakes alone into A_Snack.png only."""
+def _drawn_snack(github, clone, tmp_path, edit: dict) -> tuple:
+    """Tagged A Snack whose picture 2 is Breakfast.png (dup_of A Snack: as Gust_of_Trees.png), with edit on the
+    website: (PSD path, its stem, the duplicate's path)."""
     import sys
     from psd_tools import PSDImage
     sys.path.insert(0, str(Path(__file__).parent / "fixtures" / "parts"))
@@ -1089,11 +1087,20 @@ def test_a_drawn_duplicate_bakes_as_its_picture(github, clone, tmp_path):
     files.update({rel: (tmp_path / "A_Snack.psd").read_bytes(), pe.STATUS_CHART: (clone / pe.STATUS_CHART).read_bytes(),
                   stem + ".png": (clone / (stem + ".png")).read_bytes(), dup: (clone / (stem + "2.png")).read_bytes(),
                   stem + "3.png": (clone / (stem + "3.png")).read_bytes()})
+    files[cb.EDITS_PATH] = _edits({"Breakfast": {"dup_of": "A Snack"}, "A Snack": {**edit, "_by": "web", "_at": AT}})
+    github.commit(files, "web", "Website edit: A Snack")
+    return rel, stem, dup
+
+
+@fork_text
+def test_a_drawn_duplicate_bakes_as_its_picture(github, clone, tmp_path):
+    """Owner 11-09: picture 2 kept under a duplicate's own name (Breakfast.png, dup_of A Snack: as Gust_of_Trees.png) is
+    picture 2: the shared Ability writes it as such, no A_Snack2.png made; its entry stays. A name edit beside it waits
+    (pictures 2 and 3 print their own titles), then bakes alone into A_Snack.png only."""
     ability = json.loads((Path(__file__).parent / "fixtures" / "parts" / "card_edits.parts.json").read_text("utf-8")) \
         ["cards"]["A Snack"]["parts"]["320"]
-    files[cb.EDITS_PATH] = _edits({"Breakfast": {"dup_of": "A Snack"}, "A Snack": {
-        "ability": ability["text"], "parts": {"320": ability}, "name": "A Snacks", "_by": "web", "_at": AT}})
-    github.commit(files, "web", "Website edit: A Snack")
+    rel, stem, dup = _drawn_snack(github, clone, tmp_path,
+                                  {"ability": ability["text"], "parts": {"320": ability}, "name": "A Snacks"})
     for changed, left in (([dup, stem + "3.png"], {"name": "A Snacks"}), ([], {})):
         before = github.files_at(github.head)
         text, commits = cb.run()
@@ -1104,6 +1111,22 @@ def test_a_drawn_duplicate_bakes_as_its_picture(github, clone, tmp_path):
         assert {k: v for k, v in cards.pop("A Snack", {}).items() if not k.startswith("_")} == left, text
         assert cards == {"Breakfast": {"dup_of": "A Snack"}} and stem + "2.png" not in after
         assert cb.pending() == (["A Snack"] if left else [])    # the name's wait is never final
+
+
+@fork_text
+def test_a_waiting_name_bakes_alone_once_the_rest_is_refused(github, clone, tmp_path):
+    """The name set aside (OWN_TITLE) beside a field the bake refuses (hp: an item has no bar rows) bakes alone in the
+    same run; the hp refusal is final on its own: nothing stays pending for ever."""
+    rel, stem, _ = _drawn_snack(github, clone, tmp_path, {"name": "A Snacks", "hp": 3})
+    before = github.files_at(github.head)
+    text, commits = cb.run()
+    assert len(commits) == 1, text
+    after = github.files_at(github.head)
+    assert sorted(p for p in after if after[p] != before.get(p)) == sorted([rel, cb.EDITS_PATH, stem + ".png"]), text
+    assert {k: v for k, v in _edits_at(github)["cards"]["A Snack"].items() if not k.startswith("_")} == {"hp": 3}, text
+    verdict = _verdict("A Snack")
+    assert verdict["state"] == "refused" and verdict["for"] == {"hp": 3} and "own title" not in verdict["reason"], verdict
+    assert cb.pending() == []
 
 
 def test_a_stars_edit_moves_a_card_starred_by_its_folder(github):
