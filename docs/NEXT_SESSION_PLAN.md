@@ -44,20 +44,11 @@ cards, the proposal forum); earlier `session-2026-11-06/`.
       when the PSD has no stored image (parity floor only).
 - [ ] The 11-08 Single-line batches and some 11-08 card fixes (TC 66efec76, 2ae8384c, 12bc1331, ac57d748, 380b856e)
       have no `Card-sweep` trailer: check whether Card sync posted them as New art (Discord changelog), nothing to undo.
-- [ ] **Card fixes the research rounds proposed (not applied; one rewrite per card, `Card-sweep:` trailer, Photoshop open
-      test):** Clot Gold: delete the 20 spare hidden HP layers (hp children 0-19, copies shown on Clot Blood/Black) and
-      prune its unused link record 'Clot_Black - 0.webp' (8 -> 7); the round's built copy and
-      recipe went with the lane's scratch; an earlier recipe is `~/Documents/Tools/wt/scratch/layouts/bars/tools/clot_fix.py`
-      (delete `Stats Bars/Bars/hp` children 0-19, prune the unused link record): rebuild from the current blob. It fixes E2's symptom (a website HP edit at
-      HP <= 2 lights the spares); E2 itself (psd_edit._roles: a series hidden in every cell counts as lit) is bake ground.
-      Typos (website ability edits are enough): Duel Flag "the the opposing slot"; Z!!!!! "imediately"; Flip
-      "subracting"; Ancient Fuelweaver and Crock Pot "::" before a list. Optional: Water Totem's Name has a U+0010
-      (only if Photoshop draws it the same without); Wigfrid's watermark reads "Wigfrig" (fold into a planned rewrite);
-      Bulborb Larva has no minion role icon (card maker; optional hand flag); Man-Serpent's Shield website name vs its
-      text title (sheet first). Grey Prince Zote's and The Last Cabbage Merchant's hand flags say the card doesn't print
-      its name, but both print it mid-card (Overlay Text / Group 2): the flag text is wrong, the data is right.
-- [ ] **psd round 15's TC card change (r15-3, the r6-0 strikes sweep):** lists in
-      `~/Documents/Tools/wt/scratch/s1107/fork/r15-3/` and `r15-3-adv/`, waiting for one rewrite per card.
+- [x] **Card fixes and psd round 15's strikes sweep** (11-10, TC 11e932ec + b3273ec9, one rewrite per card, Photoshop
+      opened all 126): typos (Duel Flag, Z!!!!!, Flip, Ancient Fuelweaver, Crock Pot, Wigfrid's watermark), Clot Gold's
+      20 spare HP layers and unused link record (`Card-sweep: clean`), Bulborb Larva's hand flag on, Zote's and The Last
+      Cabbage Merchant's off (owner), stale strikes on 119 PSDs (`Card-sweep: strikes`). Left: Water Totem's U+0010 (Photoshop
+      spaces it differently without), Man-Serpent's Shield name vs title (sheet first).
 - [x] Card data ship's dispatches (owner 11-10): Card sync re-read the abilities (data 45e8268b, "4 reparse"); the 17-card
       Card checks re-read was re-dispatched as run 42833874576 after the first one hit the wheel bug: check it is green.
 
@@ -174,9 +165,7 @@ cards, the proposal forum); earlier `session-2026-11-06/`.
       swap helps (Jost 89%, League Spartan 90%, macOS's 69% off; MDW's fits). Keep MDW's file (recommended); should
       card makers on Macs install MDW's Futura-Bold, as this Mac now does? Rockwell Bold (8.3% wider) and Lucida Grande
       Bold differ from macOS's too. Files: `~/Documents/Tools/wt/scratch/futura-research/`.
-- [ ] **Mantis Lords** (R14): its 'mantis lord' (a plain noun) is still told on a push of it; snas.'s 'smeckeldorfed'
-      no longer is (5ae271f: a card written in lowercase on purpose; Kyle/hdckighfkvhvgmk is not one). Fix the PSD's
-      case or leave it.
+- [x] **Mantis Lords** (R14): case fixed on 11-05 (TC 6383bbca); R14 finds nothing.
 - [ ] **Old-font note for refused re-lays** (round 4 cm-a1-offpixels): tell OLD_FONT when an earlier font explains a
       refused re-lay. The tightened rule (every glyph old to the current font must be drawn by an earlier one) is in
       `opt-round4/skeptic-cm-a1-tools/proposed2.py`: 15 of 16 told, Koro-Sensei silent. Not voted on; a guards change.
@@ -276,8 +265,7 @@ From `~/Documents/Tools/wt/scratch/opt-round3/plan.json`, `opt-round4/plan.json`
 - [ ] Types: in an edit that removes and adds at once, the added icons keep today's free spot instead of going through
       the closing loop.
 - [ ] Stat bars: Clot Gold's spare hidden HP layers still shown at low values (E2 in
-      `~/Documents/Tools/wt/scratch/layouts/bars/DESIGN.md`). Card fix ready (11-09, from blob 864952b3): the 20 spare
-      layers deleted, picture and parse identical (`~/Documents/Tools/wt/scratch/s1109/cardsdata-r5-dq/clot/fixed/`).
+      `~/Documents/Tools/wt/scratch/layouts/bars/DESIGN.md`). Card fix landed (TC 5b066112, 11-10).
       The bake rule (a series hidden in every cell is never shown) stays open.
 - [x] Corruption and Dumplings, left out of the 10-26 font sweep: done by later passes (checked 11-09). Both Abilities
       set their icons in stoogedings, no stale Txt2 story, PNGs current.
