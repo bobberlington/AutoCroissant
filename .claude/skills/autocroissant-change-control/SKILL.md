@@ -98,6 +98,7 @@ and 2026-10-23 (the font and card-data lines shifted the rest again):
 | `config.py` | 36 | Secret tokens (TOKEN, GIT_TOKEN...). Per-machine. A leaked token means rotation, not deletion — git history is forever |
 | `.ssh/` | 37 | Credentials, same reasoning |
 | `/reminder.json`, `reminder.json.tmp` | 92-93 (2026-10-26) | Volatile per-host scheduling state (see above). Production's copy is committed to `backup/reminder.json` by the bot (commands/backup.py, from a separate clone; run-and-operate §9), so pull before pushing main |
+| `/forum_votes.json`, `forum_votes.json.tmp` | 95-96 (2026-11-09) | The proposal forum's per-host settings and steps done (commands/forum_votes.py); edit by hand only with the bot stopped |
 | `repo_history.json`, `.tmp` | 45-46 (added 2026-10-20) | Per-machine map of repo path -> commit that last changed it, rebuilt from the history clone by commands/repo_history.py |
 | `type_emojis.json`, `.tmp` | 48-49 (added 2026-10-20) | Per-machine map of bot application id -> {type emoji name -> icon blob it was made from} (commands/type_emojis.py); if deleted, startup adopts the existing emojis as current (an icon edited meanwhile then needs `/sync_emojis refresh:True`) |
 | `card_data/` | (2026-10-22) | The bot's copy of the Card sync data (the data branch's `db/`; commands/card_sync.py) |
@@ -339,3 +340,5 @@ main.py, update_bot.py, help.py, psd_parser.py and card_models.py citation re-po
 2026-10-25 (grid): `card_grid` named among the uncompiled modules in step 5.
 
 2026-10-25 (wrap-up): the class (a) row's `PARSER_VERSION` citation re-pointed (:24, version 4).
+
+2026-11-09 (forum votes): `forum_votes.json` and its temp file in the never-commit table (.gitignore 95-96).

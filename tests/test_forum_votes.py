@@ -1,0 +1,475 @@
+"""forum_votes (owner 2026-11-09): the proposal forum's steps against a fake forum, its posts and a clock."""
+import asyncio
+import json
+from datetime import datetime, timedelta, timezone
+from itertools import count
+from os.path import exists
+from types import SimpleNamespace
+
+import pytest
+from discord import ChannelType, Forbidden, HTTPException, NotFound
+
+import commands.forum_votes as fv
+import commands.utils as utils
+from global_config import FORUM_JSON
+
+T0 = datetime(2026, 11, 1, 12, tzinfo=timezone.utc)
+BOT, PERSON = 99, 7
+FORUM, ROLE, RESULTS, OTHER = 1569539619471499324, 546427268751294475, 1087579710428565526, 1087579710428565999
+DAY6, DAY7 = T0 + timedelta(days=6, minutes=1), T0 + timedelta(days=7, minutes=1)
+_ids = count(1000)
+
+
+def _error(kind, status, code, text):
+    return kind(SimpleNamespace(status=status, reason=text), {"code": code, "message": text})
+
+
+# ========================
+# Fakes
+# ========================
+class Tag:
+    def __init__(self, id, name):
+        self.id, self.name = id, name
+
+
+class Emoji:
+    def __init__(self, id, name):
+        self.id, self.name = id, name
+
+    def __str__(self):
+        return f"<:{self.name}:{self.id}>"
+
+
+class Reaction:
+    def __init__(self, emoji, count, me=False):
+        self.emoji, self.count, self.me = emoji, count, me
+
+
+class Message:
+    def __init__(self, channel, content, author=BOT, **extra):
+        self.id, self.channel, self.content, self.author = next(_ids), channel, content, SimpleNamespace(id=author)
+        self.__dict__.update(extra)
+
+
+class Starter:
+    """A post's first message: its reactions, adding one, forwarding it."""
+    def __init__(self, thread, content):
+        self.thread, self.id, self.content, self.reactions = thread, thread.id, content, []
+
+    async def add_reaction(self, emoji):
+        if self.thread.archived:
+            raise _error(HTTPException, 400, 50083, "Thread is archived")
+        found = next((r for r in self.reactions if str(r.emoji) == str(emoji)), None)
+        if found is None:
+            self.reactions.append(Reaction(emoji, 1, True))
+        elif not found.me:
+            found.count, found.me = found.count + 1, True
+
+    def vote(self, emoji, n):
+        found = next((r for r in self.reactions if str(r.emoji) == str(emoji)), None)
+        if found is None:
+            self.reactions.append(Reaction(emoji, n))
+        else:
+            found.count += n
+
+    async def forward(self, channel):
+        return await channel.send(content=None, forwarded=self.thread.id)
+
+
+class Thread:
+    def __init__(self, forum, created, tags=(), name="Bigger hands", archived=False, locked=False):
+        self.id, self.parent_id, self.forum, self.guild = next(_ids), forum.id, forum, forum.guild
+        self.created_at, self.name, self.archived, self.locked = created, name, archived, locked
+        self.applied_tags = [forum.tag(n) for n in tags]
+        self.jump_url = f"https://discord.com/channels/1/{self.id}"
+        self.starter, self.messages, self.edits = Starter(self, "Please change this."), [], []
+        self.deleted, self.refuse = False, set()
+        (forum.archived if archived else forum.threads).append(self)
+
+    @property
+    def tags(self):
+        return [t.name for t in self.applied_tags]
+
+    async def edit(self, **kw):
+        if self.deleted:
+            raise _error(NotFound, 404, 10003, "Unknown Channel")
+        if "edit" in self.refuse or ("locked" in kw and "lock" in self.refuse):
+            raise _error(Forbidden, 403, 50013, "Missing Permissions")
+        if self.archived and kw.get("archived") is not False:
+            raise _error(HTTPException, 400, 50083, "Thread is archived")
+        if "applied_tags" in kw:
+            assert len(kw["applied_tags"]) <= 5
+            self.applied_tags = [self.forum.get_tag(t.id) for t in kw["applied_tags"]]
+        self.locked = kw.get("locked", self.locked)
+        self._archive(kw.get("archived", self.archived))
+        self.edits.append(kw)
+        return self
+
+    def _archive(self, archived):
+        if archived != self.archived:
+            (self.forum.archived if self.archived else self.forum.threads).remove(self)
+            (self.forum.archived if archived else self.forum.threads).append(self)
+            self.archived = archived
+
+    async def send(self, content, allowed_mentions=None):
+        if self.deleted:
+            raise _error(NotFound, 404, 10003, "Unknown Channel")
+        if "send" in self.refuse or self.locked:
+            raise _error(Forbidden, 403, 50013, "Missing Permissions")
+        self._archive(False)                            # sending opens an archived post
+        self.messages.append(Message(self, content, allowed_mentions=allowed_mentions))
+        return self.messages[len(self.messages) - 1]
+
+    async def history(self, limit=100):
+        for message in list(reversed(self.messages))[:limit]:
+            yield message
+
+    def get_partial_message(self, message_id):
+        assert message_id == self.id
+        return self.starter
+
+    async def fetch_message(self, message_id):
+        return self.get_partial_message(message_id)
+
+
+class Forum:
+    type = ChannelType.forum
+
+    def __init__(self, names=("Open", "Closing Soon", "Closed", "Idea", "Cards", "Rules"), emojis=(Emoji(77, "abstain"),)):
+        self.id, self.available_tags = FORUM, [Tag(i + 1, n) for i, n in enumerate(names)]
+        self.guild = SimpleNamespace(id=1, emojis=list(emojis), fetch_emojis=self._emojis)
+        self.threads, self.archived = [], []
+        self.flags = SimpleNamespace(require_tag=False)
+
+    async def _emojis(self):
+        return list(self.guild.emojis)
+
+    def tag(self, name):
+        return next(t for t in self.available_tags if t.name == name)
+
+    def get_tag(self, tag_id):
+        return next((t for t in self.available_tags if t.id == tag_id), None)
+
+    async def archived_threads(self, limit=None):
+        for thread in list(self.archived):
+            yield thread
+
+    async def create_thread(self, name, content, applied_tags=(), allowed_mentions=None):
+        thread = Thread(self, T0, name=name)
+        thread.applied_tags, thread.starter.content = list(applied_tags), content
+        return SimpleNamespace(thread=thread, message=thread.starter)
+
+
+class Channel:
+    type = ChannelType.text
+
+    def __init__(self, channel_id=RESULTS):
+        self.id, self.sent = channel_id, []
+
+    async def send(self, content=None, allowed_mentions=None, **extra):
+        self.sent.append(Message(self, content, allowed_mentions=allowed_mentions, **extra))
+        return self.sent[len(self.sent) - 1]
+
+
+class Client:
+    def __init__(self, forum, app_emojis=()):
+        self.user, self.forum, self.results, self.app_emojis = SimpleNamespace(id=BOT), forum, Channel(), list(app_emojis)
+        self.guilds = [SimpleNamespace(get_role=lambda role_id: object() if role_id == ROLE else None)]
+        self.fetched = []
+
+    def get_channel(self, channel_id):              # the gateway's cache: active posts only
+        known = {self.forum.id: self.forum, RESULTS: self.results, OTHER: Channel(OTHER)}
+        known.update({t.id: t for t in self.forum.threads if not t.deleted})
+        return known.get(channel_id)
+
+    async def fetch_channel(self, channel_id):
+        self.fetched.append(channel_id)
+        found = self.get_channel(channel_id) or next((t for t in self.forum.archived if t.id == channel_id), None)
+        if found is None or getattr(found, "deleted", False):
+            raise _error(NotFound, 404, 10003, "Unknown Channel")
+        return found
+
+    async def fetch_application_emojis(self):
+        return list(self.app_emojis)
+
+
+# ========================
+# Fixtures and helpers
+# ========================
+@pytest.fixture(autouse=True)
+def clock(monkeypatch):
+    """A fresh module (no file, nothing logged) and a clock the test moves."""
+    restart(monkeypatch)
+    for name in ("_settings", "_posts", "_logged", "_abstain"):
+        monkeypatch.setattr(fv, name, type(getattr(fv, name))())
+    monkeypatch.setattr(fv, "STARTER_WAIT", 0)
+    now = [T0]
+    monkeypatch.setattr(fv, "_now", lambda: now[0])
+    return now
+
+
+def restart(monkeypatch):
+    """What a bot restart forgets (the file stays)."""
+    for name, value in (("_loaded", False), ("_load_error", None), ("_scanned", None), ("_settings", {}),
+                        ("_posts", {}), ("_logged", set())):
+        monkeypatch.setattr(fv, name, value)
+    for name in ("_lock", "_load_lock", "_save_lock"):
+        monkeypatch.setattr(fv, name, asyncio.Lock())
+
+
+def saved() -> dict:
+    with open(FORUM_JSON, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def contents(thread) -> list:
+    return [m.content for m in thread.messages]
+
+
+def passes(client, *times, now=None):
+    """One pass at each time."""
+    async def go():
+        for when in times:
+            now[0] = when
+            await fv.run_pass(client)
+    asyncio.run(go())
+
+
+# ========================
+# Tests
+# ========================
+def test_new_post_opened_other_forum_and_off_ignored(clock):
+    forum = Forum()
+    client = Client(forum)
+    post, elsewhere = Thread(forum, T0), Thread(forum, T0)
+    elsewhere.parent_id = 5
+
+    async def go():
+        await fv.post_created(client, post)
+        await fv.post_created(client, elsewhere)
+        fv._settings["enabled"] = False
+        late = Thread(forum, T0)
+        await fv.post_created(client, late)
+        await fv.run_pass(client)
+        return late
+    late = asyncio.run(go())
+    assert post.tags == ["Open"] and [str(r.emoji) for r in post.starter.reactions] == ["👍", "👎", "<:abstain:77>"]
+    assert all(r.me and r.count == 1 for r in post.starter.reactions)
+    assert elsewhere.tags == late.tags == [] and not elsewhere.starter.reactions and not late.starter.reactions
+    assert saved()["posts"][str(post.id)]["done"] == ["open tag", "reactions"] and set(saved()["posts"]) == {str(post.id)}
+
+
+@pytest.mark.parametrize("votes, text, forward", [
+    ([("👍", 6, True), ("👎", 2, True), (Emoji(77, "abstain"), 9, True)], "Most votes: 👍 (5).", True),
+    ([("👍", 1, True), ("👎", 1, True), (Emoji(77, "Abstain"), 4, True)], "No votes.", False),
+    ([("👍", 3, True), ("👎", 5, True)], "Most votes: 👎 (4).", False),
+    ([("👍", 3, True), ("👎", 3, True), ("🎉", 1, False)], "Most votes: 👍 and 👎, tied (2 each).", False),
+    ([("👍", 3, True), (Emoji(5, "yes"), 2, False), ("👎", 1, True)],
+     "Most votes: 👍 and <:yes:5>, tied (2 each).", True),
+    ([("👍", 2, True), ("👎🏽", 4, False)], "Most votes: 👎🏽 (4).", False),
+    ([("👍", 1, True), (Emoji(5, "yes"), 3, False)], "Most votes: <:yes:5> (3).", True),
+])
+def test_tally_any_emoji_minus_the_bots_abstain_ignored(votes, text, forward):
+    assert fv.outcome(*fv.tally([Reaction(e, n, me) for e, n, me in votes])) == {"text": text, "forward": forward}
+
+
+def test_day6_pings_once_and_tags_across_restarts(clock, monkeypatch):
+    forum = Forum()
+    client = Client(forum)
+    post = Thread(forum, T0)
+    passes(client, T0, DAY6, DAY6 + timedelta(minutes=5), now=clock)
+    ping = post.messages[0]
+    assert contents(post) == [f"<@&{ROLE}> please vote on this change. Voting closes in 24 hours."]
+    mentions = ping.allowed_mentions
+    assert [r.id for r in mentions.roles] == [ROLE] and mentions.users is False and mentions.everyone is False
+    assert post.tags == ["Open", "Closing Soon"]
+    restart(monkeypatch)                                    # the record says pinged
+    passes(client, DAY6 + timedelta(minutes=10), now=clock)
+    restart(monkeypatch)
+    entry = saved()
+    del entry["posts"][str(post.id)]                        # the record lost: the post itself says pinged
+    with open(FORUM_JSON, "w", encoding="utf-8") as f:
+        json.dump(entry, f)
+    passes(client, DAY6 + timedelta(minutes=15), now=clock)
+    assert len(post.messages) == 1 and post.tags == ["Open", "Closing Soon"]
+
+
+@pytest.mark.parametrize("votes, note, forwarded", [
+    ([("👍", 4), (Emoji(77, "abstain"), 6)], "Voting is closed. Most votes: 👍 (4).", True),
+    ([("👎", 4), ("👍", 3)], "Voting is closed. Most votes: 👎 (4).", False),
+    ([("👎", 2), ("👍", 2)], "Voting is closed. Most votes: 👍 and 👎, tied (2 each).", False),
+    ([(Emoji(77, "abstain"), 3)], "Voting is closed. No votes.", False),
+    ([(Emoji(5, "yes"), 2), ("👍", 2)], "Voting is closed. Most votes: 👍 and <:yes:5>, tied (2 each).", True),
+])
+def test_day7_notes_forwards_a_winner_swaps_tags_locks(clock, votes, note, forwarded):
+    forum = Forum()
+    client = Client(forum)
+    post = Thread(forum, T0, tags=("Idea",))
+    passes(client, T0, DAY6, now=clock)
+    for emoji, n in votes:
+        post.starter.vote(emoji, n)
+    passes(client, DAY7, DAY7 + timedelta(minutes=5), DAY7 + timedelta(days=3), now=clock)
+    assert contents(post) == [contents(post)[0], note]
+    assert post.tags == ["Idea", "Closed"] and post.locked and post.archived
+    results = client.results.sent
+    if forwarded:
+        top = note.split("Most votes: ")[1]
+        assert [m.forwarded for m in results[:1]] == [post.id] and len(results) == 2
+        assert results[1].content == f"**Bigger hands**: Most votes: {top} {post.jump_url}"
+        assert results[1].allowed_mentions.roles is False
+    else:
+        assert results == []
+    assert saved()["posts"][str(post.id)]["end"] == "closed"
+
+
+def test_existing_posts_on_enable_overdue_steps_in_order(clock):
+    forum = Forum()
+    client = Client(forum)
+    old = Thread(forum, T0 - timedelta(days=8))
+    old.starter.vote("👍", 2)
+    sleeping = Thread(forum, T0 - timedelta(days=1), tags=("Cards", "Open"), archived=True)   # reactions: unarchived
+    locked = Thread(forum, T0 - timedelta(days=2), archived=True, locked=True)
+    closed = Thread(forum, T0 - timedelta(days=2), tags=("Closed",), archived=True)
+    held = Thread(forum, T0 - timedelta(days=3), locked=True)
+    inter = SimpleNamespace(channel_id=5)
+
+    async def go():
+        fv._settings["enabled"] = False
+        await fv.run_pass(client)                        # off: nothing
+        assert not old.messages and old.tags == []
+        await fv.forum_votes(inter, client, enabled=True)
+        (args, kwargs), func = utils.command_queue.popleft()
+        await func(*args, **kwargs)
+    asyncio.run(go())
+    assert contents(old) == [f"<@&{ROLE}> please vote on this change. Voting closes now.",
+                             "Voting is closed. Most votes: 👍 (2)."]
+    assert old.locked and old.tags == ["Closed"] and len(client.results.sent) == 2
+    assert sleeping.tags == ["Cards", "Open"] and not sleeping.archived and len(sleeping.starter.reactions) == 3
+    assert not any(t.edits or t.starter.reactions or t.messages for t in (locked, closed, held))
+    assert set(saved()["posts"]) == {str(old.id), str(sleeping.id)} and saved()["settings"] == {"enabled": True}
+
+
+def test_missing_tags_and_the_five_tag_limit(clock, capsys):
+    forum = Forum(names=("Open", "Closed", "A", "B", "C", "D"), emojis=())
+    client = Client(forum)                              # no :abstain: anywhere: 👍 👎 only
+    full = Thread(forum, T0, tags=("Open", "A", "B", "C", "D"))
+    other = Thread(forum, T0)
+    passes(client, T0, DAY6, DAY6 + timedelta(minutes=5), now=clock)
+    assert full.tags == ["Open", "A", "B", "C", "D"] and other.tags == ["Open"] and len(other.messages) == 1
+    assert [str(r.emoji) for r in other.starter.reactions] == ["👍", "👎"]
+    passes(client, DAY7, now=clock)
+    assert full.tags == ["A", "B", "C", "D", "Closed"] and other.tags == ["Closed"] and full.locked
+    out = capsys.readouterr().out
+    assert out.count('has no tag "Closing Soon"') == 1 and out.count("no :abstain: emoji") == 1
+
+
+def test_abstain_from_the_bots_own_emojis(clock):
+    forum = Forum(emojis=(Emoji(3, "party"),))
+    client = Client(forum, app_emojis=(Emoji(88, "abstain"),))
+    post = Thread(forum, T0)
+    passes(client, T0, now=clock)
+    assert [str(r.emoji) for r in post.starter.reactions] == ["👍", "👎", "<:abstain:88>"]
+
+
+def test_five_tags_skip_closing_soon_then_make_room_for_closed(clock, capsys):
+    forum = Forum(names=("Open", "Closing Soon", "Closed", "Idea", "Cards", "Rules", "Other"))
+    client = Client(forum)
+    post = Thread(forum, T0, tags=("Open", "Idea", "Cards", "Rules", "Other"))
+    passes(client, T0, DAY6, DAY6 + timedelta(minutes=5), now=clock)
+    assert post.tags == ["Open", "Idea", "Cards", "Rules", "Other"] and len(post.messages) == 1
+    assert capsys.readouterr().out.count('no room for the tag "Closing Soon"') == 1
+    passes(client, DAY7, now=clock)
+    assert post.tags == ["Idea", "Cards", "Rules", "Other", "Closed"] and post.locked
+
+
+def test_deleted_locked_or_closed_by_hand_dropped(clock, capsys):
+    forum = Forum()
+    client = Client(forum)
+    gone, locked, closed = Thread(forum, T0), Thread(forum, T0), Thread(forum, T0)
+    passes(client, T0, now=clock)
+    gone.deleted = True
+    forum.threads.remove(gone)
+    locked.locked = True
+    closed.applied_tags = [forum.tag("Closed")]
+    passes(client, DAY6, DAY7, now=clock)
+    assert not locked.messages and not closed.messages and closed.tags == ["Closed"] and not closed.locked
+    posts = saved()["posts"]
+    assert str(gone.id) not in posts and posts[str(locked.id)]["end"] == "locked by hand"
+    assert posts[str(closed.id)]["end"] == "closed by hand"
+
+
+def test_missing_permissions_logged_once_no_retry_loop(clock, capsys):
+    forum = Forum()
+    client = Client(forum)
+    post = Thread(forum, T0)
+    post.refuse = {"edit"}
+    passes(client, T0, T0 + timedelta(minutes=5), DAY6, DAY7, DAY7 + timedelta(minutes=5), now=clock)
+    out = capsys.readouterr().out
+    assert post.tags == [] and len(post.starter.reactions) == 3 and len(post.messages) == 2 and not post.locked
+    for part in ("open tag", "closing tag", "closed tags", "lock"):
+        assert out.count(f"post {post.id}: {part} failed: Forbidden") == 1, part
+    assert saved()["posts"][str(post.id)]["end"] == "closed"
+
+
+def test_failed_forward_logged_once_and_the_close_goes_on(clock, capsys):
+    forum = Forum()
+    client = Client(forum)
+    post = Thread(forum, T0)
+    passes(client, T0, DAY6, now=clock)
+    post.starter.vote("👍", 2)
+
+    async def fail(**kwargs):
+        raise _error(HTTPException, 500, 0, "Server Error")
+    client.results.send = fail
+    passes(client, DAY7, DAY7 + timedelta(minutes=5), now=clock)
+    out = capsys.readouterr().out
+    assert out.count(f"post {post.id}: forward failed") == 1 and out.count(f"post {post.id}: winner failed") == 1
+    assert post.tags == ["Closed"] and post.locked and post.archived and len(post.messages) == 2
+
+
+def test_settings_persisted_and_checked(clock, monkeypatch):
+    forum = Forum()
+    client = Client(forum)
+    inter = SimpleNamespace(channel_id=5)
+
+    async def go(**options):
+        utils.dispatch_queue.clear()
+        await fv.forum_votes(inter, client, **options)
+        return [kw for _, kw in utils.dispatch_queue]
+    sent = asyncio.run(go(enabled=False, role=f"<@&{ROLE}>", results=f"<#{OTHER}>"))
+    assert sent[0]["allowed_mentions"].roles is False and "**off**" in sent[0]["content"]
+    assert f"Results channel: <#{OTHER}>" in sent[0]["content"]
+    restart(monkeypatch)
+    assert asyncio.run(fv._ready()) and fv.setting("results") == OTHER and fv.setting("role") == ROLE
+    assert fv.setting("enabled") is False and fv.setting("forum") == FORUM
+    refused = asyncio.run(go(forum=str(OTHER), role="123456789012345678", results="nope"))
+    assert len(refused) == 1 and refused[0]["content"].count("✗") == 3 and fv.setting("results") == OTHER
+    assert saved()["settings"] == {"enabled": False, "role": str(ROLE), "results": str(OTHER)}
+    with open(FORUM_JSON, "w", encoding="utf-8") as f:
+        f.write("{broken")
+    restart(monkeypatch)
+    assert asyncio.run(go())[0]["content"].startswith("✗ Forum votes are off")
+    asyncio.run(fv.run_pass(client))
+    assert open(FORUM_JSON, encoding="utf-8").read() == "{broken"   # never overwritten
+
+
+def test_live_test_cli_flow(clock, monkeypatch, capsys):
+    forum = Forum()
+    client = Client(forum)
+
+    async def wait(seconds):                             # people vote while the test waits
+        assert seconds == 120
+        thread = forum.threads[0]
+        thread.starter.vote("👍", 3)
+        thread.starter.vote(Emoji(77, "abstain"), 5)
+    monkeypatch.setattr(fv, "sleep", wait)
+    post = asyncio.run(fv.live_test(client, 2))
+    thread = post.thread
+    assert thread.name == fv.TEST_TITLE and thread.starter.content.endswith("closes in 2 minutes.")
+    assert contents(thread) == ["Voting is closed. Most votes: 👍 (3)."] and thread.tags == ["Closed"] and thread.locked
+    winner = f"**Test: proposals bot**: Most votes: 👍 (3). {thread.jump_url}"
+    assert [m.content for m in client.results.sent] == [None, winner]
+    assert not any("<@&" in (m.content or "") for m in thread.messages + client.results.sent)
+    out = capsys.readouterr().out
+    assert f"Test post {thread.id}" in out and "Outcome: Most votes: 👍 (3). Forwarded: yes" in out
+    assert not exists(FORUM_JSON)

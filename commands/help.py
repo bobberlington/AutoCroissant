@@ -17,6 +17,8 @@ general_commands = {
     "/list_guild_channels <guild_id>":       "Lists a server's channels (admin).",
     "/get_channel_messages <guild_id> <channel_id> [limit]": "Lists a channel's recent messages (admin).",
     "/react <reactions> [message_id]":       "Adds reactions to a message (default: the latest).",
+    "/forum_votes [enabled] [forum] [role] [results]": "Shows or sets the proposal forum's votes: on/off, the forum, the "
+                                             "role asked to vote, the results channel (admin).",
 }
 
 text_commands = {

@@ -35,7 +35,7 @@ they exist; these three surfaces are the ones with a maintenance contract.
 
 ## 2. help.py anatomy
 
-`commands/help.py` (207 lines as of 2026-10-23) is five module-level dicts, a
+`commands/help.py` (99 lines as of 2026-11-09) is five module-level dicts, a
 router function, and `__all__`. Note help.py is itself a cythonized module
 (`setup.py` INCLUDE_FILES), so the style rules in section 5 apply to it too.
 
@@ -44,15 +44,15 @@ router function, and `__all__`. Note help.py is itself a cythonized module
 The cutover's override dict (`card_sync_commands`, `_with_card_sync`) went with `CARD_SYNC` on 2026-10-25: its texts are
 the five dicts' own now.
 
-| Dict | help.py line | Entries (2026-10-21) | /help category |
+| Dict | help.py line | Entries (2026-11-09) | /help category |
 |---|---|---|---|
-| `general_commands` | 7 | 13 (`/list_guild_channels`, `/get_channel_messages` added 2026-10-20) | `general` (also the fallback) |
-| `text_commands` | 30 | 3 (rewritten 2026-10-19 for the new reminder system; 2026-10-24 `/reminders` replaced `/list_reminders`) | `text` (reminders) |
-| `card_commands` | 43 | 9 keys = 8 commands (incl. `/sync_emojis` and `/website`) + 1 `"Query Syntax:"` pseudo-entry | `card` |
-| `stats_commands` | 86 | 6 (`/update_metadata`, `/mass_replace`, `/update_tts_save`, `/bake_cards` retired 2026-10-25) | `stats` |
-| `music_commands` | 121 | 17 | `music` |
+| `general_commands` | 7 | 13 (`/list_guild_channels`, `/get_channel_messages` added 2026-10-20; `/forum_votes` 2026-11-09) | `general` (also the fallback) |
+| `text_commands` | 24 | 3 (rewritten 2026-10-19 for the new reminder system; 2026-10-24 `/reminders` replaced `/list_reminders`) | `text` (reminders) |
+| `card_commands` | 30 | 9 keys = 8 commands (incl. `/sync_emojis` and `/website`) + 1 `"Query Syntax:"` pseudo-entry | `card` |
+| `stats_commands` | 46 | 6 (`/update_metadata`, `/mass_replace`, `/update_tts_save`, `/bake_cards` retired 2026-10-25) | `stats` |
+| `music_commands` | 56 | 17 | `music` |
 
-Total: 48 keys, 47 real commands documented (all of them, 2026-10-25: the five Discord commands that pushed to the card repo, `/alias` among them, retired to branch `archive/discord-edits`). The `"Query syntax"` key is a sanctioned pseudo-entry — a non-command key used to document the `/query_ability` DSL.
+Total: 48 keys, 47 real commands documented (2026-11-09, with `/forum_votes`; 46 before it) (all of them, 2026-10-25: the five Discord commands that pushed to the card repo, `/alias` among them, retired to branch `archive/discord-edits`). The `"Query syntax"` key is a sanctioned pseudo-entry — a non-command key used to document the `/query_ability` DSL.
 
 ### 2.2 Entry format
 
@@ -105,7 +105,7 @@ add-a-slash-command procedure (sync, registration pattern, gates) is owned by
 
 ## 3. Known drift (audited 2026-07-11, re-audited and fixed 2026-10-20)
 
-### 3.1 Coverage drift: none (0 of 47 missing, 2026-10-25)
+### 3.1 Coverage drift: none (0 of 47 missing, 2026-11-09)
 
 The four missing entries (`/view_old_metadata`, `/list_guild_channels`, `/get_channel_messages`, and
 `/list_guild_members`, which was removed instead: C6) were fixed 2026-10-20; `tests/test_robustness.py`
@@ -508,3 +508,6 @@ its ownership row in §7.3. Refresh the date stamps whenever you touch this file
 2026-10-25 (step 10, work/pickles): help.py has no override dict (no `CARD_SYNC`); 10 compiled modules; /push removed.
 
 2026-11-05 (ring badges): §7.3's ttscardmaker-companion row owns font rollouts (card_sweep, the batch pushes: its §1.10).
+
+2026-11-09 (forum votes): `/forum_votes` in general_commands and main.py (admin marker in both); 47 commands; §2.1's dict
+lines re-pointed (help.py 99 lines).

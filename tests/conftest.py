@@ -17,14 +17,14 @@ import pytest
 # ========================
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
-from global_config import LOCAL_DIR_LOC, REMIND_JSON  # noqa: E402
+from global_config import FORUM_JSON, LOCAL_DIR_LOC, REMIND_JSON  # noqa: E402
 
 CLONE = Path(expanduser(LOCAL_DIR_LOC))                  # the card repo checkout: its objects (and its site code)
 CARDS_REV = "a4d137bf06cd372649090a32644023abee8719ea"   # the card repo commit real-card tests read (re-pin: tests/make_goldens.py)
 HISTORY = Path(expanduser("~/Documents/Tools/wt/scratch/tc-history.git"))   # full history (no blobs) for revs the clone lacks
 PINNED = Path(expanduser("~/.cache/autocroissant-tests"))                   # the pinned trees, one per CARDS_REV
 PINNED_BASE = ("Types", "MDW/Fonts", "MDW/Croissant's Special Folder/Satus Effect Colors.psd", "site/Card Edits.json")
-LIVE = (REMIND_JSON,)                                    # the checkout's reminder store, never written by a test
+LIVE = (REMIND_JSON, FORUM_JSON)                         # the checkout's live stores, never written by a test
 GIT_CONFIG = {"core.hooksPath": "/dev/null",              # no machine hooks in fixture repos
               "core.looseCompression": "0"}               # fixture repos of real PSDs: no zlib on every add
 POOLED = ("commands.card_check", "commands.font_check", "commands.card_guards")   # process pools capped per worker
@@ -332,7 +332,7 @@ def live_files_untouched():
     """Fails the run if any test changed the checkout's reminder store."""
     before = _digests()
     yield
-    assert _digests() == before, "a test wrote a live reminder store"
+    assert _digests() == before, "a test wrote a live store"
 
 
 @pytest.fixture(autouse=True)

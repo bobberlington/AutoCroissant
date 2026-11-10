@@ -35,3 +35,10 @@ CREATED_PATH    = "site/Card Creation Dates.json"   # when each card was made (p
 RATINGS_PATH    = "site/Card Ratings.json"     # card ratings 1-10 (python -m commands.tts_ratings; the website adds entries); the bot never reads it
 MAILMAP_PATH    = ".mailmap"                   # git's: one person's several git names as one (%aN)
 RULES_PATH      = "TTS/decks.json"             # deck rules for the TTS save
+
+# The proposal forum's votes (commands/forum_votes.py): defaults; /forum_votes saves changes in FORUM_JSON
+FORUM_JSON      = "forum_votes.json"           # its settings and the steps done per post (gitignored, per machine)
+FORUM_VOTES_ON  = True
+FORUM_ID        = 1569539619471499324          # the forum of proposed changes
+FORUM_ROLE_ID   = 546427268751294475           # asked to vote on day 6
+FORUM_RESULTS_ID = 1087579710428565526         # won posts are forwarded here

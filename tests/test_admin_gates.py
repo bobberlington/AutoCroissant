@@ -18,6 +18,7 @@ GATED = {
     "set_repo": ("set_repository", ("a/b",), "/set_repo new_repo:a/b"),
     "delete_song": ("delete_song", ("x",), "/delete_song song_name:x"),
     "delete_all_music": ("delete_all_music", (), "/delete_all_music"),
+    "forum_votes": ("forum_votes", (), "/forum_votes"),
 }
 
 

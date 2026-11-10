@@ -237,6 +237,21 @@ Untested against live Discord as of 2026-10-19 (docs/BUGS_AND_IMPROVEMENTS.md V1
 | Emojis work on one host but not another | Which bot identity is logged in (config.py comment lines only - never print values) | Application emojis belong to the identity; each identity syncs its own set at its first startup | Let the other identity start once, or run `/sync_emojis` there |
 | A renamed icon left an old emoji behind | Report line "No longer in Types/ (kept, ...)" | /update_stats deletes only emojis listed in this bot's `type_emojis.json` entry, and never when the tree has no `Types/` icons; /sync_emojis without prune never deletes | `/sync_emojis prune:True` (and see **ttscardmaker-companion** §1.7 before renaming icons) |
 
+## 11. The proposal forum (/forum_votes, added 2026-11-09)
+
+Operations: **autocroissant-run-and-operate** §13. Every problem prints one `Forum votes: ...` line, once per post and
+part (`journalctl -u autocroissant | grep "Forum votes"` on the jetson).
+
+| Symptom | First check | Likely cause | Fix / pointer |
+|---|---|---|---|
+| New posts get no tag or reactions | `/forum_votes`: on? the right forum? | Off, another forum, or the forum is not visible ("the forum N can't be read") | `/forum_votes enabled:True forum:<#id>` |
+| "post N: open tag failed: Forbidden" (or closing tag, closed tags, lock) | The bot's role in the forum | No Manage Threads there (tags on others' posts, lock, archive) | Grant it; parts refused before stay skipped (recorded done) |
+| "the forum N has no tag \"Closing Soon\"" | The forum's tags (any case) | The tag is missing; never made by the bot | Add the tag in the forum's settings |
+| No :abstain: reaction, "no :abstain: emoji ..." | The server's emojis and the bot's application emojis | No emoji named abstain | Add one; the next post gets it |
+| The ping showed but nobody was notified, "the role N can't be pinged" | The role's "Allow anyone to @mention" | Role not mentionable and the bot lacks Mention All Roles | Either setting |
+| A post was never closed | `forum_votes.json`: its `end` | Locked or given Closed by a person before day 7 (dropped), or deleted | By design |
+| "✗ Forum votes are off: forum_votes.json can't be read" | The file | A hand edit broke it; left untouched on purpose | Fix it or move it aside, restart |
+
 ---
 
 ## Verify the diff, not the commit message
@@ -362,3 +377,5 @@ card_models.py and repo_traverser.py citation re-pointed at 2ada357.
 2026-10-25 (retire): 47 registered commands (/update_metadata, /mass_replace, /alias, /bake_cards, /update_tts_save retired: branch archive/discord-edits).
 
 2026-10-25 (step 10, work/pickles): section 1 rewritten for the card data (sync, data commits, gates, restore); the startup-unpickling and /update_stats-hung rows, section 8's /push rows and the re-verify lines follow; the pickle-era revert procedure lives in autocroissant-failure-archaeology Entry 3.
+
+2026-11-09 (forum votes): §11 the proposal forum's symptoms.

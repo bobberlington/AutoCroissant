@@ -120,6 +120,7 @@ drift — re-derive with `grep -n "lacks_admin" main.py`):
 | `/sync_emojis` (added 2026-10-19) | 682 |
 | `/list_guild_channels` | 698 |
 | `/get_channel_messages` | 718 |
+| `/forum_votes` (added 2026-11-09; its view mode too) | `grep -n "slash_forum_votes" -A3 main.py` |
 
 The 2026-10-22 gates are whole, view modes included (`/set_repo` with no arguments). `/update_metadata`, `/mass_replace`,
 `/alias`, `/bake_cards` and `/update_tts_save` (all admin only) were retired 2026-10-25 (branch `archive/discord-edits`).
@@ -176,6 +177,8 @@ went with the pickle seed on 2026-10-25. Modules also read a few environment var
 | `LOCAL_DIR_LOC` | `"~/Desktop/TTSCardMaker"`, env `AUTOCROISSANT_LOCAL_DIR` | the card repo checkout. `/update_stats` no longer reads it (local mode was archived 2026-10-20); commands/tts_save.py reads `TTS/decks.json` and `site/Card Edits.json` under it in standalone runs (the Action sets it to `$GITHUB_WORKSPACE`); the diagnostics scripts (parse_one.py, gap_trace.py) and the archived traversal on branch `archive/local-update-stats` expand it with `expanduser`. This path convention is load-bearing across the toolchain |
 | `SITE_URL` (2026-10-20) | `"https://michaeljsr.github.io/TTSCardMaker"` | the card browser: `/website`, `/query` Card page buttons, search links, the site's `data/cards.json` (main.py, query_card.py) |
 | `REMIND_JSON` (2026-10-24) | `"reminder.json"` | the reminder store (GITIGNORED, per machine; schema_version 2) |
+| `FORUM_JSON` (2026-11-09) | `"forum_votes.json"` | the proposal forum's settings (what /forum_votes set) and the parts done per post (GITIGNORED, per machine; not backed up). Unreadable: the votes are off that session and the file is left untouched |
+| `FORUM_VOTES_ON`, `FORUM_ID`, `FORUM_ROLE_ID`, `FORUM_RESULTS_ID` (2026-11-09) | `True`, `1569539619471499324`, `546427268751294475`, `1087579710428565526` | the defaults of commands/forum_votes.py: on, the forum of proposals, the role asked to vote on day 6, the results channel won posts are forwarded to; `/forum_votes` overrides each, saved in `FORUM_JSON` |
 | `HISTORY_JSON` (2026-10-20) | `"repo_history.json"` | repo path -> (blob, commit that last changed it), written by commands/repo_history.py; gitignored, rebuilt from the clone |
 | `FONT_DIRS_ENV` (2026-10-21) | `"PSD_TOOLS_FONT_DIRS"` | the name of the environment variable whose first entry overrides the fonts dir (card_bake, font_check) |
 | `CREATED_PATH` (2026-10-22, 6fe7a90) | `"site/Card Creation Dates.json"` | when each card was made (written by `python -m commands.card_dates created`); read on every /update_stats (`CardDates`) |
@@ -435,6 +438,17 @@ store turns reminders off; OJWikibot exits), `CHANNEL_RETRY` and `is_admin`.
 None of these is a config.py field; changing them is a code change. Reminder behavior in practice:
 autocroissant-run-and-operate §9.
 
+### commands/forum_votes.py (2026-11-09; not compiled; the proposal forum)
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `PASS_MINUTES` | `5` | main's `process_forum_votes` loop: due steps run at most this late |
+| `PING_AFTER`, `CLOSE_AFTER` | 6 days, 7 days (from the post's creation) | the role is asked to vote and Closing Soon added; the close |
+| `OPEN`, `SOON`, `CLOSED` | `"Open"`, `"Closing Soon"`, `"Closed"` | forum tags, matched by name in any case; a missing one is logged once, never made |
+| `UP`, `DOWN`, `ABSTAIN` | 👍, 👎, `"abstain"` | the reactions; :abstain: is found by name in the server's emojis, else the bot's application emojis; it never counts |
+| `MAX_TAGS` | `5` | Discord's tags per post: removals first, then the add or a logged skip |
+| `HISTORY` | `50` | recent messages searched for the bot's own ping or note before posting one |
+
 ### commands/card_sync.py (2026-10-22; not compiled; the bot's card data)
 
 | Constant | Value | Meaning |
@@ -613,6 +627,9 @@ Each `/set_*` command called with no argument is the read path: it replies with 
 value without changing anything — the cheapest way to inspect live
 state.
 
+`/forum_votes` (2026-11-09) is the exception that persists: its settings are saved in `forum_votes.json` (per machine)
+and survive restarts; with no options it shows them.
+
 The `/set_repo` handler is `slash_set_repo` (it shared the name `slash_set_ratio` until 2026-10-20, C5).
 Since 2026-10-20 `/set_repo` switches only once the new tree loads; a failed fetch keeps the old repository and card list and says so.
 
@@ -783,3 +800,4 @@ marker), the `card-guards-quiet` environment among the repo settings, `png_expor
 2026-10-25 (wrap-up review): `ADD_ABILITY_LIVE` and env `PSD_DIRTY_VERIFY` in the psd_edit table.
 2026-10-26 (stars lane): `STAR_CORE_ALPHA` 129/255.
 2026-11-05 (ring badges): the badge widths and old-font constants (card_guards `EARLIER_FONTS`, `OLD_FONT`; card_standards `OLD_GLYPH_BAD`, `EARLIER_FIT`, `EARLIER_GAIN`, `DRAWN_ODD`, `LAID_OFF`, `RAZOR`, `EDGE_NEAR`) and card_sweep's `WORKERS`, `EARLIER_KINDS` in the push guards table (card_sweep.py in its heading), at AutoCroissant 3641756; `POOL_MIN`'s runner threshold of 2 (efc7808); the fork pin is `cards-20261104` (1258fcbd).
+2026-11-09 (forum votes): `FORUM_JSON` and the four `FORUM_*` defaults in global_config's table; commands/forum_votes.py's constants; `/forum_votes` in the ADMINS table and the one setter that persists.

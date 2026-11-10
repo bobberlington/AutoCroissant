@@ -19,6 +19,7 @@ from commands.analytics import (
     set_reminder,
 )
 from commands.card_sync import fonts_text, on_use as card_data_used, update as update_stats
+from commands.forum_votes import PASS_MINUTES as FORUM_PASS_MINUTES, forum_votes, post_created, run_pass as forum_pass
 from commands.frankenstein import frankenstein
 from commands.github_api import print_token_status
 from commands.help import print_help
@@ -164,6 +165,12 @@ async def on_interaction(interaction: Interaction):
                for o in data.get("options") or []]
     print(f"Command /{data.get('name')} by {getattr(interaction.user, 'id', '?')} in {interaction.channel_id}"
           f"{': ' + ', '.join(options) if options else ''}")
+
+
+@client.event
+async def on_thread_create(thread):
+    """A new post in the proposal forum gets its tag and reactions (commands/forum_votes.py)."""
+    await post_created(client, thread)
 
 
 async def card_names(interaction: Interaction, current: str) -> list:
@@ -691,6 +698,25 @@ async def slash_get_channel_messages(interaction: Interaction,
     await get_channel_messages(interaction, guild_id, channel_id, limit)
 
 
+forum_votes = to_thread(forum_votes)
+@tree.command(name="forum_votes", description="Shows or sets the proposal forum's votes: on/off, forum, role, results (admin only).")
+@app_commands.describe(
+    enabled="Turn the votes on or off. Default = unchanged.",
+    forum="The forum of proposals: its ID or #mention. Default = unchanged.",
+    role="The role asked to vote on day 6: its ID or @mention. Default = unchanged.",
+    results="Where won posts are forwarded: a channel ID or #mention. Default = unchanged.",
+)
+async def slash_forum_votes(interaction: Interaction,
+                            enabled: Optional[bool] = None,
+                            forum: Optional[str] = "",
+                            role: Optional[str] = "",
+                            results: Optional[str] = ""):
+    if lacks_admin(interaction):
+        await interaction.response.send_message("You do not have permission.")
+        return
+    await forum_votes(interaction, client, enabled, forum, role, results)
+
+
 @tree.command(name="react", description="Add reactions to a message by ID or the last message in the channel.")
 @app_commands.describe(
     reactions="Space-separated emojis (e.g. 👍 👎 or <:custom:1234567890>)",
@@ -806,6 +832,12 @@ async def process_reminders():
     queue_command(check_reminder)
 
 
+# --- PROPOSAL FORUM (its due steps; a new post also comes through on_thread_create) ---
+@tasks.loop(minutes=FORUM_PASS_MINUTES)
+async def process_forum_votes():
+    await forum_pass(client)
+
+
 # --- COMMAND QUEUE ---
 def _drain_commands() -> None:
     while command_queue:
@@ -886,12 +918,12 @@ async def process_edit_queue():
 
 
 def _loops() -> tuple:
-    """The four loops on_ready starts."""
-    return (process_reminders, process_command_queue, process_dispatch_queue, process_edit_queue)
+    """The five loops on_ready starts."""
+    return (process_reminders, process_command_queue, process_dispatch_queue, process_edit_queue, process_forum_votes)
 
 
 def _stop_loops() -> None:
-    """Stop the four loops; waking the drains ends their waits at once."""
+    """Stop the five loops; waking the drains ends their waits at once."""
     for loop in _loops():
         loop.stop()
     for wake in (command_wake, dispatch_wake, edit_wake):

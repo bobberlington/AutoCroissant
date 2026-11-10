@@ -41,7 +41,9 @@ their output to three module-level deques in `commands/utils.py` (`command_queue
 `process_dispatch_queue` main.py:848, `process_edit_queue` main.py:885) drain those deques **on the event loop** the
 moment something is queued (2026-10-25: each `queue_*` wakes its loop, below; every 0.1 s from 2026-10-21, once a
 second before) and perform the actual Discord I/O, with a built-in fallback chain; a fourth loop,
-`process_reminders` (main.py:806-808), keeps the reminder heartbeat at 1 s. That is the whole model: loop owns
+`process_reminders` (main.py:806-808), keeps the reminder heartbeat at 1 s, and a fifth (2026-11-09),
+`process_forum_votes`, runs the proposal forum's due steps every 5 minutes (commands/forum_votes.py, an async worker;
+new posts also come through `on_thread_create`). That is the whole model: loop owns
 Discord, threads own work, deques are the only bridge.
 
 ## The queue trio (this skill owns this detail)
@@ -85,7 +87,9 @@ Mechanics you must know:
   functions** in `commands/*.py`.
 - **Sanctioned async workers** (they run ON the event loop because `to_thread` passes them through):
   `commands/update_bot.py` (invariant 3), parts of `management.py`, and since 2026-10-19
-  `commands/type_emojis.py`. `sync_type_emojis` awaits Discord's application-emoji API directly
+  `commands/type_emojis.py`; since 2026-11-09 `commands/forum_votes.py` (the proposal forum: tags, reactions, the
+  day-6 ping and the day-7 close awaited in order on the loop, its JSON written with `asyncio.to_thread`; one pass at a
+  time under an asyncio Lock). `sync_type_emojis` awaits Discord's application-emoji API directly
   (`client.fetch_application_emojis`, `create_application_emoji`, `emoji.delete`) and pushes its
   blocking work — the GitHub listing and every image download/resize — into threads with
   `asyncio.to_thread`. Its user-facing report still goes through `queue_message`. Copy that split if
@@ -302,6 +306,9 @@ main.py  (registration + queue loops; imports every commands module)
  |- commands.card_grid     -> PIL, requests ONLY: grid images of many cards, the card_images/ cache (query_card LAZILY)
  |                            [2026-10-25; NOT compiled; no discord]
  |- commands.frankenstein  -> utils, query_card (card_repo)
+ |- commands.forum_votes   -> utils, global_config: the proposal forum's votes (/forum_votes, on_thread_create, the
+ |                            5-minute loop; `python -m commands.forum_votes test` logs in over REST only)
+ |                            [2026-11-09; NOT compiled; async worker; forum_votes.json beside reminder.json]
  '- commands.update_bot    -> repo_history (batch_overrides);
                               GitPython LAZILY inside its functions  (no utils: bypasses queues on purpose, invariant 3)
 
@@ -420,7 +427,8 @@ optimization pass.
 - **New slash command**: a plain sync function in the topical `commands/*.py` module; every output via
   `queue_*`; then in main.py the `func = to_thread(func)` rebind + `@tree.command` wrapper (invariant
   4). Full checklist with gates: **autocroissant-change-control**.
-- **New recurring/background work**: do NOT add a fourth `tasks.loop`. One-shot deferred work →
+- **New recurring/background work**: do NOT add another `tasks.loop` (the fifth, the proposal forum's, was the owner's
+  spec, 2026-11-09). One-shot deferred work →
   `queue_command(fn, ...)` (runs at once in a thread). Recurring work on a schedule → prefer a
   reminder that runs a slash command (`/set_reminder ... frequency:1d command:/update_stats` is the
   usual example); only if that can't work, follow the `check_reminder` pattern: cheap per-tick
@@ -550,3 +558,5 @@ weak point 10 and the re-verify rows updated; main.py and utils.py citations re-
 
 2026-10-25 (grid): weak point 10: /query_ability answers two or more cards with grid images (commands/card_grid.py in the module map; the wrapper defers).
 2026-10-25 (cardlist, work/cardlist): WHY #4: four queued inits; `init_psd` loads the card list from `card_tree.json` (query_card `load_saved`) and runs `init_query` after its sync.
+2026-11-09 (work/forum-votes): the proposal forum's votes: a fifth loop `process_forum_votes` in `_loops()` (started, stopped
+and revived with the others), `on_thread_create`, commands/forum_votes.py in the module map and the sanctioned async workers.

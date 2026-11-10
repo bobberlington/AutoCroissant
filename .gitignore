@@ -91,3 +91,6 @@ Thumbs.db
 # reminders, per machine: the store and its temp file (never committed)
 /reminder.json
 reminder.json.tmp
+# the proposal forum's votes, per machine: settings and steps done (commands/forum_votes.py)
+/forum_votes.json
+forum_votes.json.tmp

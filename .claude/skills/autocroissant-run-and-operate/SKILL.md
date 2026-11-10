@@ -1,6 +1,6 @@
 ---
 name: autocroissant-run-and-operate
-description: Day-to-day runbook for the AutoCroissant bot. Use for start, stop, restart, healthy startup output, command sync, /pull and /update, machine handoff, running /update_stats and card sync (card_data/, the data branch), reminders (/reminders, /set_reminder, reminder.json), /sync_emojis, the TTS save, card guards and stale PNGs, /fonts, where files land. Jetson deploys use jetson-deploy.
+description: Day-to-day runbook for the AutoCroissant bot. Use for start, stop, restart, healthy startup output, command sync, /pull and /update, machine handoff, running /update_stats and card sync (card_data/, the data branch), reminders (/reminders, /set_reminder, reminder.json), /sync_emojis, the proposal forum (/forum_votes), the TTS save, card guards and stale PNGs, /fonts, where files land. Jetson deploys use jetson-deploy.
 ---
 
 # AutoCroissant: Run and Operate
@@ -542,6 +542,7 @@ All paths relative to the CWD the bot was started from (= repo root, always).
 |---|---|---|---|
 | `reminder.json` | /set_reminder, /reminders, every firing (schema_version 2, `ReminderStore` in analytics.py) | repo root | NO (gitignored) — per-machine; production's copy is committed to `backup/reminder.json` (§9). Edit by hand only with the bot stopped |
 | `reminder.json.tmp` | every reminder save (written, fsynced, then renamed over reminder.json) | repo root, normally gone within milliseconds | NO (gitignored). If a hard kill leaves one behind, delete it |
+| `forum_votes.json` (+ `.tmp`) | /forum_votes and every step of the proposal forum (commands/forum_votes.py) | repo root | NO (gitignored) — per-machine, not backed up; a lost one costs no repeat ping or note (the bot looks for its own message in the post first) |
 | `repo_history.json` | startup and every /update_stats (commands/repo_history.py; a failed refresh retries on the next one) | repo root; its bare clone at `~/Documents/TTSCardMaker-history.git` | NO (gitignored) — per-machine, rebuilt from the clone if deleted |
 | `stats.csv` / `stats.txt` | /export_cards (`as_csv` picks which) | repo root | NO (gitignored via `*.csv`/`*.txt`) |
 | `rules.txt` | /export_rulebook | repo root | NO (gitignored) |
@@ -739,6 +740,27 @@ on top of /update_stats; raw downloads on a new commit are not API calls;
 every /update_stats that replies adds two status requests (the run list, a compare; a reminder's adds none); a followed
 run about two requests per look.
 
+## 13. The proposal forum (/forum_votes, 2026-11-09)
+
+commands/forum_votes.py (uncompiled), owner's spec 2026-11-09. In the watched forum (default 1569539619471499324):
+
+| When | What the bot does |
+|---|---|
+| a post is made (`on_thread_create`), or found open at a start / when turned on / another forum set (active posts, and archived ones not locked and without Closed) | the tag Open if missing; 👍 👎 :abstain: on the first message |
+| 6 days after the post was made | "<@&role> please vote on this change. Voting closes in 24 hours." (the hours left; "now" when overdue; that role only may ping); tag Closing Soon |
+| 7 days | "Voting is closed. Most votes: 👍 (5)." (any emoji, the bot's own vote and :abstain: not counted; ties all named; "No votes."); a winner that is not 👎 (and does not tie with 👎) is forwarded to the results channel (default 1087579710428565526) with "**title**: Most votes: ... link"; Open and Closing Soon off, Closed on; locked and archived |
+
+Steps already due run at once, in order (an old post found open is pinged, then closed). A post deleted, locked, or given
+Closed by a person is dropped. Each part is recorded in `forum_votes.json` when done, so a restart repeats nothing; a
+refused part (Missing Permissions) is logged once (`Forum votes: post N: lock failed: Forbidden ...`) and not retried;
+any other failure is retried next pass (5 minutes). A failed forward is logged and the close goes on.
+
+- `/forum_votes` (admin): no options show the state; `enabled`, `forum`, `role`, `results` (IDs or mentions) change it.
+- Live test (the jetson, in the bot's checkout and venv; REST only, so it never clashes with the running bot; no role
+  ping; nothing recorded): `cd ~/Documents/AutoCroissant && ~/venvs/autocroissant/bin/python -m commands.forum_votes test --minutes 5`. It posts
+  "Test: proposals bot", opens it, waits, closes it with the bot's own functions and prints the thread, message ids and
+  the outcome. The running bot opens the post too (harmless) and drops it once locked.
+
 ## When NOT to use this skill
 
 - Building or fixing the Python environment, ffmpeg/opus, Cython builds, requirements split ->
@@ -880,3 +902,5 @@ rendered anyway; no cited line moved.
 
 2026-11-05 (ring badges): the fork tag today (`cards-20261104` = 1258fcbd, on the jetson since 3641756; the re-verify
 row checked there by `pip freeze`), `--repo` in the guards' local check, the bake's below-the-box overflow note.
+
+2026-11-09 (forum votes): §13 the proposal forum (/forum_votes, the live test CLI); `forum_votes.json` in §8.
