@@ -210,8 +210,7 @@ From `~/Documents/Tools/wt/scratch/opt-round3/plan.json`, `opt-round4/plan.json`
 - [ ] Idea 14's orphaned-FX validator was never built; the bake already deletes such layers when it edits a card.
 - [ ] Stars still refused: Thunder Thighs 3, Consolation Prize, Bubble, Forsaken City and The Core (option B, shrinking
       every star to fit the banner, is the larger fix); Forgotten Crossroads 3-6 and Spiky Ball Trap 5-6 wrongly act as
-      the stars' backdrop; Paint Warrior 4-6 and Paint Bomb 7-10 miss the texture clipped onto their group (a smart
-      object: only plain pixel textures follow the stars, Yin Yarn's since 11-09).
+      the stars' backdrop.
 - [ ] Types: in an edit that removes and adds at once, the added icons keep today's free spot instead of going through
       the closing loop.
 - [ ] Stat bars: Clot Gold's spare hidden HP layers still shown at low values (E2 in
