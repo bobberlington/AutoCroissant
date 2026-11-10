@@ -51,7 +51,7 @@ from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_
                                  shown_in, title_text, token_variant, variant_view, variants_of)
 from commands.psd_parser import AUX_ITEM_TYPES, in_header, star_leaf, star_pieces, star_sets
 from commands import psd_parts
-from commands.psd_links import corners_of, decode, draw, file_type, link_pixels
+from commands.psd_links import corners_of, decode, draw, file_type, link_pixels, warped
 from commands.psd_parts import lyid_index, raw_sha
 from commands.text_align import (BREAKS as TEXT_BREAKS, blocks as text_blocks, moves as text_moves,
                                  opcodes as text_opcodes, segments as text_segments)
@@ -305,6 +305,8 @@ class IconPlan:
     pulled: list = field(default_factory=list)   # plan_types(): icons pulled back onto the card (_close_row, S3)
     row: list = field(default_factory=list)      # plan_types(): the row's icons that show, kept or shown (clear of made ones)
     textures: list = field(default_factory=list) # plan_stars(): textures clipped onto the stars' group that follow them
+    scaled: list = field(default_factory=list)   # plan_stars(): (layer, s, centre, to): a star shrunk to fit its banner
+    #                                              (option B, _scale), before the copies and moves
 
 
 @dataclass
@@ -353,6 +355,8 @@ class Edit:
     added_stories: list = field(default_factory=list)  # its Txt2 story's TextIndex in the new card (gate_stories)
     bar: list = field(default_factory=list)     # a stat on the card maker's own bar: (record index, _bar_spec()) per layer
     comps: list = field(default_factory=list)   # record indices of the layer-comp bars it set (set_comp)
+    scaled: dict = field(default_factory=dict)  # old record index -> new rect (top, left, bottom, right): a shrunk star's
+    #   layer (IconPlan.scaled), with its copies and moves in shifted and copied
 
 
 @dataclass
@@ -6733,9 +6737,10 @@ def _line(units: list, size: tuple, right_first: bool) -> Optional[tuple]:
     return first, step
 
 
-def _place(units: list, spots: list, size: tuple) -> tuple:
+def _place(units: list, spots: list, size: tuple, snap: bool = False) -> tuple:
     """
-    Units onto spots: one already on a spot (within the tolerance) stays, the others move to the free spots in order.
+    Units onto spots: one already on a spot (within the tolerance) stays (snap: moves onto it, a shrunk row kept even),
+    the others move to the free spots in order.
 
     Returns:
         ([(unit, dx, dy)] moves, free spots left over)
@@ -6747,6 +6752,8 @@ def _place(units: list, spots: list, size: tuple) -> tuple:
             taken.append(unit)
         else:
             free.remove(spot)
+            if snap and (round(spot[0] - unit.centre[0]) or round(spot[1] - unit.centre[1])):
+                moves.append((unit, round(spot[0] - unit.centre[0]), round(spot[1] - unit.centre[1])))
     for unit in taken:
         if not free:
             break
@@ -6782,6 +6789,23 @@ def _ink_overlap(a: tuple, b: tuple) -> int:
     if x1 <= x0 or y1 <= y0:
         return 0
     return int((ink_a[y0 - ay0:y1 - ay0, x0 - ax0:x1 - ax0] & ink_b[y0 - by0:y1 - by0, x0 - bx0:x1 - bx0]).sum())
+
+
+def _grown(ink: tuple, px: int) -> tuple:
+    """An ink ((bbox, solid alpha), _ink) grown by px on every side: a square dilation."""
+    (x0, y0, x1, y1), out = ink
+    out = np.pad(out, px)
+    for axis in (0, 1):                         # a sliding window's sum along each axis
+        sums = np.cumsum(np.pad(out, [(px + 1, px) if k == axis else (0, 0) for k in (0, 1)]), axis=axis, dtype=np.int32)
+        n = sums.shape[axis] - 2 * px - 1
+        out = (np.take(sums, range(2 * px + 1, n + 2 * px + 1), axis=axis) - np.take(sums, range(n), axis=axis)) > 0
+    return (x0 - px, y0 - px, x1 + px, y1 + px), out
+
+
+def _ink_off(ink: tuple, inks: list) -> float:
+    """The share of inks' pixels ((bbox, solid alpha) each, _ink) off another ink."""
+    total = sum(int(mine[1].sum()) for mine in inks)
+    return 1 - sum(_ink_overlap(mine, ink) for mine in inks) / total if total else 0.0
 
 
 def _blocked(psd: PSDImage, inks: list, core: tuple, others: list) -> Optional[str]:
@@ -6973,6 +6997,62 @@ def _shift(layer, dx: int, dy: int, filters: bool = False) -> None:
         leaf._psd.mark_updated()
 
 
+def _scalable(layer) -> Optional[str]:
+    """Why a star's layer (a group: every layer in it) cannot shrink (_scale); None when it can: its drawn layers pixel
+    layers or unwarped smart objects with no mask, effects or smart filters (an adjustment clipped to it has none)."""
+    for leaf in [layer, *(layer.descendants() if layer.is_group() else ())]:
+        if leaf.is_group():
+            continue
+        if leaf.kind in ("type", "shape") or leaf.has_pixels() and leaf.kind not in ("pixel", "smartobject"):
+            return f"{leaf.name!r} is a {leaf.kind} layer"
+        if leaf.has_mask() or leaf.has_vector_mask() or _enabled_effects(leaf) or _filtered(leaf) \
+                or leaf.kind == "smartobject" and warped(leaf):
+            return f"{leaf.name!r} has a mask, effects, smart filters or a warp"
+    return None
+
+
+def _scale(layer, s: float, centre: tuple, to: tuple) -> list:
+    """
+    Shrink a star's layer (a group: every layer in it) by s about centre, which lands on `to` (option B): its pixels
+    drawn again on their box so shrunk (psd_links.draw: nearest for pixel art, else bicubic, Photoshop's), a smart
+    object's transform and every fxrp point mapped the same way. Returns [(leaf, its bbox before, after)].
+    """
+    from psd_tools.api.layers import TypeLayer      # the fork's raster writer: channels and rect, the record kept
+    (cx, cy), (ox, oy) = centre, to
+    at = lambda x, y: (ox + s * (float(x) - cx), oy + s * (float(y) - cy))
+    out = []
+    for leaf in [layer, *(layer.descendants() if layer.is_group() else ())]:
+        if leaf.is_group() or not leaf.has_pixels():
+            continue
+        before = tuple(leaf.bbox)
+        rgba = leaf.numpy()
+        if rgba is None or rgba.ndim != 3 or rgba.shape[2] < 4:
+            continue
+        u8 = np.round(np.clip(rgba[..., :4], 0.0, 1.0) * 255).astype(np.uint8)
+        x0, y0, x1, y1 = before
+        corners = [v for x, y in ((x0, y0), (x1, y0), (x1, y1), (x0, y1)) for v in at(x, y)]
+        pixels, box = draw(u8, corners, Image.NEAREST if hard_edged(u8) else Image.BICUBIC)
+        TypeLayer._store_raster(leaf, pixels if pixels is not None else np.zeros((0, 0, 4), np.float32), box)
+        leaf._invalidate_bbox()
+        for key in PLACED[:2]:
+            data = leaf.tagged_blocks.get_data(key) if key in leaf.tagged_blocks else None
+            for name in (b"Trnf", b"nonAffineTransform"):
+                values = data.data.get(name, ()) if data is not None else ()
+                for i in range(0, len(values) - 1, 2):
+                    values[i].value, values[i + 1].value = at(values[i].value, values[i + 1].value)
+        for key in PLACED[2:]:
+            data = leaf.tagged_blocks.get_data(key) if key in leaf.tagged_blocks else None
+            if data is not None:
+                data.transform = tuple(v for i in range(0, len(data.transform) - 1, 2)
+                                       for v in at(data.transform[i], data.transform[i + 1]))
+        point = leaf.tagged_blocks.get_data(Tag.REFERENCE_POINT) if Tag.REFERENCE_POINT in leaf.tagged_blocks else None
+        if point is not None:
+            leaf.tagged_blocks.set_data(Tag.REFERENCE_POINT, list(at(point[0], point[1])))
+        leaf._psd.mark_updated()
+        out.append((leaf, before, tuple(leaf.bbox)))
+    return out
+
+
 def _clip_chain(layer) -> list:
     """The layers clipped to this one (directly above it, clipping set): its Curves or Levels, which go where it goes."""
     parent, out = layer.parent, []
@@ -7049,19 +7129,28 @@ def _star_layouts(order: list, size: tuple, count: int) -> list:
 
 
 def _stars_blocked(psd: PSDImage, moves: list, clear: list, below: bool = False, textures: bool = True,
-                   follow: tuple = ()) -> Optional[str]:
-    """Why stars cannot move or be copied by [(unit, dx, dy)]: a layer that cannot move or is clipped, _blocked, or a
-    spot below the midline (no count reads it; below: a second creature's star over it); textures: off a texture
-    clipped onto its group too, but one in follow (_followed: it is copied over them)."""
+                   follow: tuple = (), gap: int = 0, grown: Optional[dict] = None) -> Optional[str]:
+    """Why stars cannot move or be copied by [(unit, dx, dy)]: a layer that cannot move or is clipped, _blocked (gap: a
+    moved star's ink this many px clear of clear's too; grown: its inks so grown, kept per star), or a spot below the
+    midline (no count reads it; below: a second creature's star over it); textures: off a texture clipped onto its
+    group too, but one in follow (_followed: it is copied over them)."""
     for unit, dx, dy in moves:
         why = next((w for w in (_shiftable(layer) for layer in unit.layers) if w), None)
         if why:
             return f"{why}: it cannot move"
         if any(layer.clipping for layer in unit.layers):
             return f"{unit.layers[0].name!r} is clipped to the layer under it"
-        blocked = _blocked(psd, _moved_inks(unit, dx, dy), _moved_box(unit.core, dx, dy), clear)
+        if gap and (dx or dy):
+            grown = {} if grown is None else grown
+            if grown.get(id(unit), (None,))[0] is not unit:
+                grown[id(unit)] = unit, [_grown(ink, gap) for ink in _moved_inks(unit, 0, 0)]
+            inks = [(_moved_box(box, dx, dy), solid) for box, solid in grown[id(unit)][1]]
+        else:
+            inks = _moved_inks(unit, dx, dy)
+        blocked = _blocked(psd, inks, _moved_box(unit.core, dx, dy), clear)
         if blocked:
-            return f"a star at {tuple(int(v) for v in _moved_box(unit.core, dx, dy))} {blocked}"
+            return f"a star at {tuple(int(v) for v in _moved_box(unit.core, dx, dy))} {blocked}" + \
+                (f" (or comes within {gap} px)" if gap and (dx or dy) else "")
         if in_header(_moved_box(unit.core, dx, dy), psd.height) == below:     # the count reads no star there
             return f"a star at {tuple(int(v) for v in _moved_box(unit.core, dx, dy))} would sit " + \
                 ("above" if below else "below") + " the card's middle"
@@ -7257,6 +7346,10 @@ BANNER_FULL = 0.9           # a banner's column counts where it inks this share 
 BANNER_TEXT_GAP = 8         # px at least between the text and the row (else the stars' own gap)
 BANNER_PITCH_MIN = 1 - OVERLAP   # star widths: a row on its banner tightens down to this pitch
 FUNNEL_DROP = 0.1           # star heights a V's point drops as it becomes a pair
+SHRINK_STEP = 0.05          # stars with no room for the added ones on their banner all shrink this much at a time
+SHRINK_MIN = 0.5            # (owner 11-10, option B) down to this size; else off the banner as before
+SHRUNK_INK_OFF = 0.005      # a shrunk layout's moved or new star: at most this share of its ink off the banner (the
+#                             cards' own: none)
 DICE_FACES = {1: ("middle",), 2: ("top right", "bottom left"), 3: ("top right", "middle", "bottom left")}  # kept
 
 
@@ -7741,13 +7834,15 @@ def _plain_banner(layer, shown: list) -> bool:
     return float((np.abs(rgb - median).max(axis=1) <= PLAIN_LEVELS).mean()) >= PLAIN_SHARE
 
 
-def _off_backdrop(back: Optional[tuple], moves: list, copies: list) -> Optional[str]:
-    """Why a moved or copied star leaves the stars' backdrop (_backdrop): under BACKDROP_KEEP of its core on it; None."""
+def _off_backdrop(back: Optional[tuple], moves: list, copies: list, shrunk: bool = False) -> Optional[str]:
+    """Why a moved or copied star leaves the stars' backdrop (_backdrop): under BACKDROP_KEEP of its core on it (shrunk:
+    under BACKDROP_SHARE, as the card's own, or over SHRUNK_INK_OFF of its ink off it); None."""
     if back is None:
         return None
     for unit, dx, dy, *_ in moves + copies:
         box = _moved_box(unit.core, dx, dy)
-        if (dx or dy) and _ink_share(back[1], box) < BACKDROP_KEEP:
+        if (dx or dy) and (_ink_share(back[1], box) < (BACKDROP_SHARE if shrunk else BACKDROP_KEEP)
+                           or shrunk and _ink_off(back[1], _moved_inks(unit, dx, dy)) > SHRUNK_INK_OFF):
             return f"a star at {tuple(int(v) for v in box)} would leave {back[0].name!r} under the stars"
     return None
 
@@ -7872,6 +7967,13 @@ def _banner_row(order: list, size: tuple, count: int, psd: PSDImage, back: Optio
     return [(RELAID[2], [(x - i * pitch, y) for i in range(count)])]
 
 
+class _Shrink(Exception):
+    """A stars plan's added stars fit nowhere on their banner, full size: _shrunk tries them all smaller (option B)."""
+    def __init__(self, shown: list, hidden: list, banner: tuple):
+        super().__init__("stars: shrink to fit the banner")
+        self.shown, self.hidden, self.banner = shown, hidden, banner
+
+
 def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDParser] = None, moving: bool = False,
                split: bool = False) -> IconPlan:
     """
@@ -7889,9 +7991,11 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
       the canvas, off the text and type icons, and add exactly one to what the parser counts; it should stay under a
       texture clipped onto its group (but one that follows them: _followed, copied by set_icons), on its backdrop and
       out from under art. When no layout fits, the first that fits stepped down (_drops: its new stars, else all it
-      moves and adds), then both off the banner they sit on (_backdrop); else the first that fits on the canvas off the
-      text and icons alone, at its spot or stepped down (owner 11-08: a developer fixes its look; all told); a refusal
-      gives the reason of the layout that came closest.
+      moves and adds); then every star shrunk evenly on the banner they sit on (_backdrop) until one fits there at its
+      spots, as fully on it as the card's own and a banner row's gap clear of the text (owner 11-10, option B:
+      _shrunk); then both off the banner; else the first that fits on the canvas off the text and
+      icons alone, at its spot or stepped down (owner 11-08: a developer fixes its look; all told); a refusal gives the
+      reason of the layout that came closest.
     - star-icon layers outside the group (Nosk's 'Hk star') are stars of the layout (R2); a star drawn twice on one
       spot is one star (R3: Tainted Eden, Living Bread); one layer drawing several is split into masked copies first
       (R4: split_stars; Grimora, Dimension D); a second creature's stars upside down below the midline (Tainted
@@ -7907,6 +8011,20 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
 
     Returns:
         IconPlan; raises Refused("unsupported-card", field="stars") when the layout is not one of those
+    """
+    try:
+        return _plan_stars(psd, parsed, value, parser, moving, split)
+    except _Shrink as wanted:                   # option B, else off the banner as before (told)
+        return _shrunk(psd, parsed, value, parser, moving, wanted) or \
+            _plan_stars(psd, parsed, value, parser, moving, split, 0.0)
+
+
+def _plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDParser] = None, moving: bool = False,
+                split: bool = False, shrink: Optional[float] = None) -> IconPlan:
+    """
+    plan_stars' work. shrink: None, a layout that fits nowhere on the stars' banner raises _Shrink before going off it;
+    a factor, the stars were shrunk by it (_shrunk's copy): at a layout's spots on their banner, as fully as the
+    card's own and a banner row's gap clear of the text, or refused; 0, off it as before.
     """
     def refuse(why: str):
         raise Refused("unsupported-card", f"stars: {why}", "stars")
@@ -7988,6 +8106,8 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         if why:
             refuse(f"{many.layers[0].name!r} draws {many.count} in one {'group' if many.layers[0].is_group() else 'layer'}"
                    f" ({why})")
+        if shrink:
+            refuse(f"{many.layers[0].name!r} draws {many.count} in one layer")
         if not split:                           # psd stays as it is: the plan is made on a copy
             return plan_stars(_reopened(psd), parsed, value, parser, moving, True)
         done = split_stars(psd, many.layers[0])
@@ -8018,19 +8138,22 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
         its stars' median size).
         """
         size = _median_size(shown)
+        given = (list(shown), list(hidden))     # what _Shrink shrinks
         counted = (lambda show_: PSDParser.stars_below(psd, types, stars, show_)) if below else total_of
 
         def failed(moves: list, soft: bool = True) -> tuple:
             """(why, how far its checks got: 0 not placed, 1 under art), else (None, 2): the deciding reason's rank.
             soft False: where it fits alone (on the canvas, off the text and icons), art and textures aside."""
-            why = _stars_blocked(psd, _as_drawn(moves), clear, below, soft, follow)
+            why = _stars_blocked(psd, _as_drawn(moves), clear, below, soft, follow,
+                                 BANNER_GAP + BANNER_TEXT_GAP if shrink else 0, grown)  # shrunk: a banner row's gap
             if why:
                 return why, 0
             why = _covered(psd, _as_drawn(moves), mine, inks) if soft else None     # not under the art (MMC's moss)
             return (why, 1) if why else (None, 2)
         blocked = lambda moves: failed(moves)[0]
+        grown: dict = {}                        # failed's grown inks per star (shrunk)
         backdrop = lambda units: _backdrop(psd, [_drawn_as(unit) for unit in units])
-        off_back = lambda back, moves, copies: _off_backdrop(back, _as_drawn(moves), _as_drawn(copies))
+        off_back = lambda back, moves, copies: _off_backdrop(back, _as_drawn(moves), _as_drawn(copies), bool(shrink))
 
         def shaded(kept: list, moves: list) -> list:
             flagged = {id(unit) for unit, _, _ in _shaded(psd, [_drawn_as(unit) for unit in kept], _as_drawn(moves))}
@@ -8136,17 +8259,26 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
                     _star_layouts(order, size, count) + more
             else:
                 layouts = _star_layouts(order, size, count) + more
-            backs = (back, None) if back is not None and len(order) == 1 else (back,)   # a lone star's, while a layout keeps it
-            banner, stages = back, list(product(("spot", "lower"), backs))
-            if back is not None and len(order) > 1:     # owner 11-08: else off its banner, told
-                stages += [("spot", None), ("lower", None)]
-            stages.append(("fit", banner))              # else where they fit alone, art aside (owner 11-08), told
+            banner = back
+            if shrink:                                  # shrunk (_shrunk): on the banner or refused
+                stages = [("spot", back)] if back is not None else []
+            elif shrink is None and back is not None and not below and second is None and not named and not outside:
+                # owner 11-10: all shrink until they fit (option B), else off it (shrink 0, told)
+                stages = [("spot", back), ("lower", back), ("shrink", back)]
+            else:
+                backs = (back, None) if back is not None and len(order) == 1 else (back,)   # a lone star's, while a layout keeps it
+                stages = list(product(("spot", "lower"), backs))
+                if back is not None and len(order) > 1:     # owner 11-08: else off its banner, told
+                    stages += [("spot", None), ("lower", None)]
+                stages.append(("fit", banner))              # else where they fit alone, art aside (owner 11-08), told
             places: dict = {}
             every = lambda moves, copies: moves + [(unit, dx, dy) for unit, dx, dy, _ in copies]
             for (mode, back), j in product(stages, range(len(layouts))):
+                if mode == "shrink":
+                    raise _Shrink(*given, back)
                 name, spots = layouts[j]
                 if j not in places:
-                    moves, free = _place(order, spots, size)
+                    moves, free = _place(order, spots, size, bool(shrink))
                     under = [move for move in shaded(order, moves) if move[0] is not source]
                     moves = [move for move in moves if move not in under]   # under a shadow: hidden, a copy (on top)
                     free += [(unit.centre[0] + dx, unit.centre[1] + dy) for unit, dx, dy in under]
@@ -8175,8 +8307,8 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
                         plan.notes.append(f"stars: {what} placed {drop} px lower to fit: check it")
                     if art:
                         plan.notes.append(f"stars: placed where they fit, though {art}: check it")
-                    if back is None and banner is not None and len(order) > 1:
-                        plan.notes.append(f"stars: placed off {banner[0].name!r} under them: check it")
+                    if back is None and banner is not None and (len(order) > 1 or shrink == 0):   # a lone star's too
+                        plan.notes.append(f"stars: placed off {banner[0].name!r} under them: check it")    # once B failed
                     shown = [unit for unit in shown if not any(unit is one for one, _, _ in under)]
                     break
                 if mode == "spot" and (first is None or far > first[0]):   # the deciding reason: the layout whose
@@ -8233,6 +8365,60 @@ def plan_stars(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDPars
     plan.copies = out
     plan.textures = follow
     return plan
+
+
+def _shrunk(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDParser], moving: bool,
+            wanted: _Shrink) -> Optional[IconPlan]:
+    """
+    Option B (owner 11-10): stars whose added ones fit nowhere on their banner all shrink evenly, SHRINK_STEP at a time
+    down to SHRINK_MIN, until a layout fits there at its spots (none stepped down: no staircases): each star (shown or
+    spare, with the layers clipped to it) by s about its core's centre, the centres drawn s times closer to the shown
+    stars' top-right corner (their right edge, the top row's middle height). Each try is planned on a copy of the card
+    shrunk so (_scale), then told onto psd's layers: plan.scaled shrinks them the same way first (set_icons). None when
+    no size fits, or a star cannot shrink (_scalable: a split star's mask too; an 8-bit RGB card only), or a texture
+    is clipped onto the stars' group (_textures: Yin Yarn's; none needs B today).
+    """
+    from psd_tools.api.layers import TypeLayer
+    units = wanted.shown + wanted.hidden
+    if psd.color_mode != ColorMode.RGB or psd.depth != 8 or not hasattr(TypeLayer, "_store_raster") \
+            or any(_scalable(layer) for unit in units for layer in _with_chains(unit.layers)) \
+            or any(_textures(_drawn_as(unit)) for unit in units):
+        return None
+    mine = list(psd.descendants())
+    at = {id(layer): i for i, layer in enumerate(mine)}
+    buf = BytesIO()
+    psd.save(buf, update_preview=False)
+    raw = buf.getvalue()
+    top = _rows(wanted.shown, _median_size(wanted.shown)[1], True)[0]
+    ax, ay = max(unit.core[2] for unit in wanted.shown), sum(unit.centre[1] for unit in top) / len(top)
+    sizes = [round(1 - k * SHRINK_STEP, 6) for k in range(1, round((1 - SHRINK_MIN) / SHRINK_STEP) + 1)]
+    for s in sizes:
+        work = PSDImage.open(BytesIO(raw))
+        theirs = list(work.descendants())
+        scaled = []
+        for unit in units:
+            (cx, cy) = unit.centre
+            to = (ax + s * (cx - ax), ay + s * (cy - ay))
+            for layer in _with_chains(unit.layers):
+                _scale(theirs[at[id(layer)]], s, (cx, cy), to)
+                scaled.append((mine[at[id(layer)]], s, (cx, cy), to))
+        try:
+            plan = _plan_stars(work, parsed, value, parser, moving, True, s)
+        except Refused:
+            continue
+        if plan.done:                           # nothing is split in a shrunk copy
+            return None
+        back = {id(layer): one for layer, one in zip(theirs, mine)}
+        plan.show, plan.hide = [back[id(layer)] for layer in plan.show], [back[id(layer)] for layer in plan.hide]
+        plan.moves = [(back[id(layer)], dx, dy) for layer, dx, dy in plan.moves]
+        plan.copies = [(replace(unit, layers=[back[id(layer)] for layer in unit.layers]), dx, dy, name)
+                       for unit, dx, dy, name in plan.copies]
+        plan.textures = [back[id(layer)] for layer in plan.textures]
+        plan.scaled = scaled
+        plan.how = f"{plan.how}, every star at {round(100 * s)}%"
+        plan.notes.append(f"stars: every star shrunk to {round(100 * s)}% to fit {wanted.banner[0].name!r}")   # told
+        return plan
+    return None
 
 
 def canonical_type(parser: Optional[PSDParser], name: str) -> str:
@@ -8811,10 +8997,10 @@ def record_map(psd: PSDImage) -> dict:
 
 def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None, rel: str = "") -> Edit:
     """
-    Apply a plan_stars() or plan_types() plan to the open card (the same file it was planned on): hide, show, move,
-    copy and make layers (a made type icon links its Types/ file from rel, the card's repo path: _make_icon; a texture
-    that follows the stars copied over those it left: _texture_copies). Record indices come later (index_icons), once
-    every edit is in.
+    Apply a plan_stars() or plan_types() plan to the open card (the same file it was planned on): shrink (option B),
+    hide, show, move, copy and make layers (a made type icon links its Types/ file from rel, the card's repo path:
+    _make_icon; a texture that follows the stars copied over those it left: _texture_copies). Record indices come
+    later (index_icons), once every edit is in.
 
     Returns:
         Edit over the layers it touched, its region their old and new boxes padded by their effects; raises Refused
@@ -8823,6 +9009,10 @@ def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None, re
     """
     boxes = [(_extent(layer), layer) for layer in plan.hide + plan.show]
     boxes += [(_extent(layer), layer) for layer, _, _ in plan.moves]
+    for layer, s, centre, to in plan.scaled:   # shrunk first (option B): copied and moved from there
+        for leaf, was, now in _scale(layer, s, centre, to):
+            plan.done.append(("scaled", leaf, now))
+            boxes += [(was, leaf), (now, leaf)]
     for unit, dx, dy, name in plan.copies:     # copies first: from where the star is now, with its clipped layers
         parent = unit.layers[0].parent
         index = _copy_index(unit, parent)
@@ -8912,6 +9102,11 @@ def index_icons(edit: Edit, before: dict, after: dict) -> None:
     edit.copied += [(after[id(done[2]._record)], before[id(done[1]._record)], done[3], done[4]) for done in plan.done
                     if done[0] == "masked copy"]          # a texture's copy masked to a star (_texture_copies)
     edit.made = [(after[id(done[1]._record)], done[2]) for done in plan.done if done[0] == "made"]
+    edit.scaled = {before[id(done[1]._record)]: (done[2][1], done[2][0], done[2][3], done[2][2])
+                   for done in plan.done if done[0] == "scaled"}     # a shrunk star's rect: its moves and copies from it
+    shifted = {old for _, old, _, _ in edit.shifted}
+    edit.shifted += [(after[id(done[1]._record)], before[id(done[1]._record)], 0, 0) for done in plan.done
+                     if done[0] == "scaled" and before[id(done[1]._record)] not in shifted]
     edit.masked = sorted({after[id(done[2 if done[0] == "split" else 1]._record)] for done in plan.done
                           if done[0] in ("split", "masked")}
                          | {after[id(done[2]._record)] for done in plan.done if done[0] == "copy"
@@ -9886,15 +10081,20 @@ def _moved_mask(box, dx: int, dy: int):
 
 
 def _record_moved(a: dict, b: dict, dx: int, dy: int, keys: set, flags: bool = False, renamed: bool = False,
-                  masked: bool = False) -> Optional[str]:
+                  masked: bool = False, scaled: Optional[tuple] = None) -> Optional[str]:
     """
     Why record b is not record a moved by (dx, dy) (a layer _shift moved, or a copy of it); None when it is: the rect
     and mask moved, the channels, blending and other blocks the same, only `keys` blocks changed; flags: one flag
     byte may differ (the layer was shown or hidden too); renamed: the name may differ (a copy's); masked: b gained a
-    pixel mask a had none of (split_stars), its one more channel the mask's.
+    pixel mask a had none of (split_stars), its one more channel the mask's; scaled: a shrunk star's rect (option B),
+    moved from there, its channels drawn again (the same ones) and no mask.
     """
-    if b["rect"] != _moved_rect(a["rect"], dx, dy):
+    if b["rect"] != _moved_rect(a["rect"] if scaled is None else scaled, dx, dy):
         return f"rect {a['rect']} -> {b['rect']}"
+    if scaled is not None:
+        if a["mask"] or b["mask"] or sorted(c[0] for c in a["channels"]) != sorted(c[0] for c in b["channels"]):
+            return "channels or mask"
+        a = {**a, "channels": b["channels"]}
     channels = b["channels"]
     if masked:
         if a["mask"] or not b["mask"] or [c[0] for c in channels].count(-2) != 1:
@@ -9991,6 +10191,7 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
     toggles = {index for edit in edits for index in edit.toggled}
     allowed.update({index: ("toggle", ALLOWED_RECORD_FIELDS["toggle"]) for index in toggles})
     moved = {index: (source, dx, dy) for edit in edits for index, source, dx, dy in edit.shifted}
+    scaled = {index: rect for edit in edits for index, rect in edit.scaled.items()}     # old index -> its shrunk rect
     masked = {index for edit in edits for index in edit.masked}
     inserted = {index: ("copy", source, dx, dy) for edit in edits for index, source, dx, dy in edit.copied}
     inserted.update({index: ("made", blocks) for edit in edits for index, blocks in edit.made})
@@ -10026,7 +10227,8 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
                     raise Refused("bytes", f"type icon {b['name']!r} is not the declared pixel layer", owner.get(j))
                 block_bytes += sum(len(data) for data in spec[1].values())
             else:
-                why = _record_moved(old[spec[1]], b, spec[2], spec[3], COPY_BLOCKS, j in toggles, True, j in masked)
+                why = _record_moved(old[spec[1]], b, spec[2], spec[3], COPY_BLOCKS, j in toggles, True, j in masked,
+                                    scaled.get(spec[1]))
                 if why:
                     raise Refused("bytes", f"layer {j} {b['name']!r} is no copy of {old[spec[1]]['name']!r} moved: {why}",
                                   owner.get(j))
@@ -10056,7 +10258,7 @@ def gate_bytes(old_path, new_path, edits: list) -> tuple:
         elif j in moved:                        # a star or type icon moved: its rect, mask, transform and anchor
             source, dx, dy = moved[j]
             why = f"paired with old layer {i}" if source != i else _record_moved(a, b, dx, dy, MOVE_BLOCKS, j in toggles,
-                                                                                    masked=j in masked)
+                                                                                    masked=j in masked, scaled=scaled.get(i))
             if why:
                 raise Refused("bytes", f"moved layer {j} {a['name']!r}: {why}", owner.get(j))
             flag_bytes += sum(1 for x, y in zip(a["flags"], b["flags"]) if x != y)

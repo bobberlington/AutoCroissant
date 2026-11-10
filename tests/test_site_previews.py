@@ -367,6 +367,21 @@ out([spot, m.typePlan(null, [], ["fire"], spot), m.typePlan(null, [], ["fire", "
 
 
 @needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "st.scale"), reason="no shrunk stars in mockup.js")
+def test_stars_shrunk_to_fit_their_banner(tmp_path):
+    """A count whose stars all shrink on their banner (the header's scale, the bake's option B): every star erased and
+    drawn that much smaller at the plan's centres; another count keeps its stars that stay."""
+    out = node(tmp_path, """
+const stars = { units: [{ core: [100, 0, 200, 100], box: [95, 0, 205, 105] }, { core: [0, 0, 100, 100], box: [0, 0, 105, 105] }],
+  at: { 3: [[160, 50], [100, 50], [40, 50]], 4: [[150, 50], [50, 50], [150, 150], [50, 150]] }, refused: {}, scale: { 3: 0.6 } };
+out([m.starPlan(stars, 2, 3), m.starPlan(stars, 2, 4)]);""")
+    shrunk, kept = out
+    assert shrunk == {"erase": [[95, 0, 205, 105], [0, 0, 105, 105]], "draw": [[130, 20, 190, 80], [70, 20, 130, 80],
+                                                                           [10, 20, 70, 80]], "refused": None, "boxed": False}
+    assert kept["erase"] == [] and kept["draw"] == [[100, 100, 200, 200], [0, 100, 100, 200]]
+
+
+@needs_js
 @pytest.mark.skipif(not has(MOCKUP_JS, "fitLook"), reason="no icon looks in mockup.js")
 def test_type_icons_in_the_cards_colours(tmp_path):
     """A shown type row recoloured by a Gradient Map or Curves (the look the bake copies onto a new icon) gives the map

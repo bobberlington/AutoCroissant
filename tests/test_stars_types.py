@@ -518,10 +518,10 @@ def test_star_counter_on_real_cards(clone, parser, tmp_path):
 
 def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
     """A dice 5 at 4 loses its middle (Nightmare, Kyle's 2 over 3); a moved star under a shadow is copied on top
-    instead (Flower of Decay); with no room on the banner the stars sit on, a new star goes off it, told (Thunder
-    Thighs; owner 11-08); the website's header lays out the stars outside the group as the bake does (Massive Moss
-    Charger), whose fifth steps down clear of the moss (owner 11-08); Tyler's six, laid out again off the canvas, step
-    down together."""
+    instead (Flower of Decay); with no room on the banner the stars sit on, every star shrinks until the new one fits
+    there (Thunder Thighs; owner 11-10, option B); the website's header lays out the stars outside the group as the bake
+    does (Massive Moss Charger), whose fifth steps down clear of the moss (owner 11-08); Tyler's six, laid out again off
+    the canvas, step down together."""
     import commands.psd_details as pd
     for rel, gone in (("Creatures/Kirby/5 Stars/Nightmare.psd", "Warpstar copy 4"), ("Creatures/Other/5 Stars/Kyle.psd", "middle")):
         plan = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 4, parser, moving=True)
@@ -530,10 +530,11 @@ def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
     plan = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 4, parser, moving=True)
     assert plan.how == "rows of two" and [layer.name for layer in plan.hide] == ["star"] and not plan.moves
     assert len(plan.copies) == 2
-    rel = "Items/Heal/2 Stars/Thunder_Thighs.psd"            # no room on its banner either (Remote Detonator's: below)
+    rel = "Items/Heal/2 Stars/Thunder_Thighs.psd"            # no room on its banner full size (Remote Detonator's: below)
     thighs = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 3, parser, moving=True)
-    assert thighs.how == "rows of two" and len(thighs.copies) == 1 and thighs.notes == [
-        "stars: placed off 'Layer 13' under them: check it"]
+    assert thighs.how == "a row on its banner, every star at 95%" and len(thighs.copies) == 1
+    assert [s for _, s, _, _ in thighs.scaled] == [0.95, 0.95] and "stars: every star shrunk to 95% to fit 'Layer 13'" in \
+        thighs.notes and not any("placed off" in note for note in thighs.notes)
     rel = "Auxiliary/Minions/Massive_Moss_Charger.psd"
     psd = PSDImage.open(_clone_card(clone, rel, tmp_path)[0])
     header = pd._star_header(psd, rel, tuple(parser.all_types), parser)
@@ -611,7 +612,7 @@ def test_star_cases_of_10_26(clone, parser, tmp_path):
     assert spiky.how == "rows of two, laid out again" and len(spiky.notes) == 1          # no step down, no banner note
     prize = pe.plan_stars(*_open(parser, clone, "Items/Support/1 Stars/Consolation_Prize.psd", tmp_path), 2, parser,
                           moving=True)
-    assert prize.how == "a column"                                      # a lone star's banner binds last
+    assert prize.how == "a row on its banner, every star at 95%"        # a lone star's banner too (option B)
     psd, parsed = _open(parser, clone, "N.M.E/Remote_Detonator.psd", tmp_path)
     row = pe.plan_stars(psd, parsed, 3, parser)
     assert row.how == "a row on its banner" and len(row.copies) == 1 and "does not go on to 3" in row.notes[0]   # told
@@ -621,6 +622,37 @@ def test_star_cases_of_10_26(clone, parser, tmp_path):
     assert magolor.how == "a V's point as a pair" and [(dx, dy) for _, dx, dy in magolor.moves] == [(55, 12)]
     assert len(magolor.copies) == 1 and _centres(magolor)[4:] == [(252, 326), (142, 326)]
     assert magolor.notes == ["stars: a V's point as a pair (the card's own layout does not go on to 6)"]
+
+
+def test_stars_shrink_to_fit_their_banner(clone, parser, tmp_path):
+    """Option B (owner 11-10): Bubble's lone star on its ribbon, a smart object, at 2: both drawn at 60% (the
+    transform too) in a row on the ribbon, baked through every gate, told so, no off-banner note; the website's header
+    says so. Shrunk stars sit on the banner as fully as the card's own and a banner row's gap clear of the text
+    (Consolation Prize's 3: a row at 65%, not its column at 70% over the paper's end and by PRIZE); none steps down
+    (Remote Detonator's 7: no size fits at its spots, so off the banner as before, told; a lone star too: the Prize's 5)."""
+    import commands.psd_details as pd
+    rel = "N.M.E/Bubble.psd"
+    paths = _clone_card(clone, rel, tmp_path)
+    parsed = pe.parse_card(parser, paths[0], rel)
+    out = tmp_path / "new"
+    out.mkdir(exist_ok=True)
+    baked = pe.apply_jobs(*paths, rel, {"stars": 2}, parsed, parser, str(out), str(tmp_path / "no-fonts"))
+    assert baked.reparse["card"]["stars"] == 2 and baked.icons["stars"] == "a row on its banner, every star at 60%"
+    assert "stars: every star shrunk to 60% to fit 'Layer 4'" in baked.fx_notes
+    assert not any("placed off" in note for note in baked.fx_notes)
+    old, new = PSDImage.open(paths[0]), PSDImage.open(baked.psd_path)
+    star = lambda psd: [layer for layer in psd.descendants() if layer.name.startswith("starfish14")]
+    (was,), now = star(old), star(new)
+    width = lambda layer: pe.corners_of(layer)[2] - pe.corners_of(layer)[0]
+    assert len(now) == 2 and all(abs(width(layer) - 0.6 * width(was)) < 1e-6 for layer in now)
+    assert all(abs(layer.width - 0.6 * was.width) <= 2 for layer in now)
+    header = pd._star_header(old, rel, tuple(parser.all_types), parser)
+    assert header["scale"]["2"] == 0.6 and len(header["at"]["2"]) == 2
+    psd, parsed = _open(parser, clone, "Items/Support/1 Stars/Consolation_Prize.psd", tmp_path)
+    assert pe.plan_stars(psd, parsed, 3, parser, moving=True).how == "a row on its banner, every star at 65%"
+    assert pe.plan_stars(psd, parsed, 5, parser, moving=True).notes == ["stars: placed off 'Layer 13' under them: check it"]
+    bomb = pe.plan_stars(*_open(parser, clone, "N.M.E/Remote_Detonator.psd", tmp_path), 7, parser, moving=True)
+    assert not bomb.scaled and bomb.notes == ["stars: placed off 'Layer 13' under them: check it"]
 
 
 def test_a_texture_on_the_stars_follows_them(clone, parser, tmp_path):

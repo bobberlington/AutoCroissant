@@ -116,8 +116,14 @@ since 2026-10-20.
   plain round the stars (`_plain_banner`: Bolts and Screws' gear is art, its column bakes); a row on its banner is
   centred there and tightened down to 0.85 of a star's width, tried last (`_banner_row`: Remote Detonator 3, How To Jump
   2, Computer Virus 4; told); a die's five keeps the die's faces at 1-3 (`DICE_FACES`: the middle, a diagonal, the
-  diagonal through the middle); a V's point becomes a touching pair at one more (`_funnel`: Crowned Magolor 6; told); a
-  refusal gives the reason of the layout that came closest.
+  diagonal through the middle); a V's point becomes a touching pair at one more (`_funnel`: Crowned Magolor 6; told).
+  Since 2026-11-10 (owner, option B) added stars with no room on their banner, at their spots or stepped down, shrink
+  with every star there, 5% at a time down to half size, until a layout fits on it at its spots: every moved or new
+  star as fully on the banner as the card's own (its core 0.9 on it, at most 0.5% of its ink off) and a banner row's
+  14 px clear of the text; none steps down (`_shrunk`, `_scale`: Thunder Thighs 3 at 95%, Consolation Prize 3 at 65%,
+  Bubble 2 at 60%, Forsaken City 3 at 70%, The Core 3 at 65%; the details header's `scale`, which the mock-up draws;
+  told "every star shrunk to N%"); else they go off it as before, told (a lone star too). Split stars (masked) and
+  stars under a texture never shrink. A refusal gives the reason of the layout that came closest.
 - **Fallback:** with no such group, visible layers whose name has the word "star" ("Patrick Star", "Emerald_Star",
   not "starfish") are counted the same way.
 - **Zero stars** gives the persisted problem `NO STARS FOUND (put the star layers in a group named "Stars")`. On
