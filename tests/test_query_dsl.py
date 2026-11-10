@@ -20,6 +20,8 @@ CARDS = [
     dict(name="Panda Shield", type="item", subtype="equip", stars=1, aliases=["buckler"], ability="+1 defense."),
     dict(name="Bloon", type="minion", hp=2, defense=1, atk=1, spd=3, ability="(2U)(OYT) Pop: heal 2 health."),
     dict(name="Burning", type="debuff", stars=1, ability="Burning: 3 DMG, can't affect [fire]."),
+    dict(name="Power Ring", type="item", ability="+1 ATK to every friendly minion."),
+    dict(name="Enfeebled", type="debuff", ability="-1 ATK."),
 ]
 ERROR = "error"                                          # the bot answers with an error
 
@@ -29,7 +31,7 @@ QUERIES = [                                              # query, the cards foun
     ("defense", {"Panda Shield", "Mettaton EX"}),
     ("health", {"Bloon"}), ("speed", {"sans."}),
     ('"damage"', {"Meta Knight", "Fire Bomb"}), ('"(2u)"', {"Bloon"}),
-    ("!type==creature", {"Mettaton EX", "Fire Bomb", "Panda Shield", "Bloon", "Burning"}),
+    ("!type==creature", {"Mettaton EX", "Fire Bomb", "Panda Shield", "Bloon", "Burning", "Power Ring", "Enfeebled"}),
     ("type==creature", {"Kirby", "Meta Knight", "sans.", "King Dedede"}),
     ("type~creature", {"Kirby", "Meta Knight", "sans.", "King Dedede", "Mettaton EX"}),
     ("hp>5", {"Meta Knight", "Mettaton EX"}), ("hp > 5", {"Meta Knight", "Mettaton EX"}),
@@ -39,6 +41,7 @@ QUERIES = [                                              # query, the cards foun
     ("sans.", {"sans."}), ("name~knight", {"Meta Knight"}), ("types~wind", {"Kirby"}),
     ("buckler", {"Panda Shield"}), ("alias~mk", {"Meta Knight"}), ("aliases==buckler", {"Panda Shield"}),
     ("display_name~sans", {"sans."}),  # any column of the bot's
+    ("+1 atk", {"Power Ring"}), ("+1 atk to every friendly minon.", {"Power Ring"}),   # near text only when none has it
     ("die & series==kirby", {"Meta Knight"}), ("fire | hp>6", {"Fire Bomb", "Burning", "Meta Knight"}),
     ("!die", {c["name"] for c in CARDS} - {"Meta Knight"}),
     ("series==kirby & !hp>5", {"Kirby", "King Dedede"}), ("subtype==equip", {"Panda Shield"}),

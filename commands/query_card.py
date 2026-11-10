@@ -500,12 +500,10 @@ class CardRepository:
             pattern = edge(term[:1]) + escape(term) + edge(term[-1:])
             return self.cards_dff[hay.str.contains(pattern, na=False).values]
         exact_matches = self.cards_dff[hay.str.contains(self._text_pattern(ability), na=False).values]
-
-        # Fuzzy matches: near-whole ability texts
-        fuzzy_matches = self.cards_dff.loc[self._fuzzy_labels(ability)]
-
-        combined = concat([exact_matches, fuzzy_matches])
-        return combined[~combined.index.duplicated(keep='first')]
+        if len(exact_matches):
+            return exact_matches
+        # nothing has the text: near-whole abilities (a pasted ability with a typo)
+        return self.cards_dff.loc[self._fuzzy_labels(ability)]
 
     def _fuzzy_labels(self, ability: str) -> Index:
         """Cards whose SequenceMatcher ratio with the query beats match_ratio, in frame order."""
