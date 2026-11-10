@@ -412,7 +412,8 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    Pizza's 32 pt, not its odd 18.66 pt first badge, owner 2026-10-24); a card with none sets it in `ICON_FONT` (added to the layer's and Txt2's FontSets,
    `Edit.fonts`) at the text's own style, the most common card style (measured on main: 358 of 659 icon-font runs share
    every key with the text beside them, 442 its size; the templates have none). An old badge or token edited in place
-   (a digit changed inside it: the new one holding most of its kept characters) keeps its own style; one typed right
+   (a digit changed inside it: the new one holding most of its kept characters) keeps its own style, its size too
+   unless the guards' rule resizes it (`badge_wants`: more than `BADGE_RESIZE` off), as Photoshop's own edit; one typed right
    after a badge, which the engine gives that badge's style, takes the card's (owner 2026-10-24: Pizza's (2U) typed
    after its 18.66 pt (1GCD) stayed 18.66 pt; 57 cards on main have badges in two sizes). A typed `:sticker` or
    `:tint` (drawn in the text's colour) takes the colour of its kind on the card (`variant_fill`, owner 2026-10-24):
