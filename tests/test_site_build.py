@@ -775,7 +775,7 @@ def test_site_workflow_sets_up_in_the_background(tmp_path):
     start, images, wait = (steps[names.index(n)]["run"] for n in ("Setup start", "Images start", "Setup wait"))
     bin_ = tmp_path / "bin"
     bin_.mkdir()
-    call = 'echo "$0 $*" >> "$RUNNER_TEMP/calls"; /bin/sleep "${DELAY:-0}"; '
+    call = 'echo "$0 $*" >> "$RUNNER_TEMP/calls"; [ -z "$DELAY" ] || /bin/sleep "$DELAY"; '
     curl = ('echo "$0 $*" >> "$RUNNER_TEMP/calls"\ncase "$*" in *releases.astral.sh*) [ -z "$ASTRAL_CODE" ] || exit "$ASTRAL_CODE";; esac\n'
             'while [ $# -gt 1 ]; do [ "$1" != -o ] || out=$2; shift; done\ncp "$TARBALL" "$out"')
     for name, body in {"npm": call + 'echo "npm said"; exit "${NPM_CODE:-0}"', "curl": curl,
@@ -813,7 +813,8 @@ def test_site_workflow_sets_up_in_the_background(tmp_path):
         done = shell(start, env)
         assert done.returncode == 0 and not (n == 0 and list((temp / "setup").glob("*.code"))), done.stderr   # not waited for
         assert n == 1 or shell(images, env).returncode == 0         # 1: not an early build
-        for _ in range(1000 if n == 0 else 0):                       # 0: Setup wait once it runs (else never started)
+        end = time.monotonic() + 120                                 # a loaded machine: slow, never stuck
+        while n == 0 and time.monotonic() < end:                     # 0: Setup wait once it runs (else never started)
             if (temp / "calls").exists() and "--images" in (temp / "calls").read_text():
                 break
             time.sleep(0.01)
@@ -836,8 +837,8 @@ def test_site_workflow_sets_up_in_the_background(tmp_path):
         assert sum(f"build_site.py --images 0123abcd {temp}/setup/images.stop" in c for c in calls) == (n == 0)
         assert sum("/git clone -q --depth 1 --no-tags --single-branch --branch data https://x/o/r carddata" in c for c in calls) == 1
         assert ((temp / "out").read_text() == "data=true\n") == (n != 2) and ("::warning::the data clone failed" in out) == (n == 2)
-        code = temp / "setup" / "versions.code"
-        for _ in range(1000):                                        # 1: every call fails, 60 tries
+        code, end = temp / "setup" / "versions.code", time.monotonic() + 120
+        while time.monotonic() < end:                                # 1: every call fails, 60 tries
             if code.exists() and code.read_text().strip():
                 break
             time.sleep(0.01)
@@ -877,8 +878,8 @@ def test_site_deploy_under_a_version_of_its_own(tmp_path):
     token (masked), polling its status. 2 min syncing files while a newer main build waits (never an early build):
     cancelled and handed on (green: no retry); a failed cancel polls on. A failed deploy: red, no cancel; 6 minutes or 15
     unread statuses: cancelled. The retry, on the deflated artifact: the first commit's deploy still syncing files at
-    the end (stuck), the same script under the second; else deploy-pages under GITHUB_SHA (a version never fails a
-    deploy)."""
+    the end (stuck), the same script under the second; else, or that failing too, deploy-pages under GITHUB_SHA (a
+    version never fails a deploy)."""
     yaml = pytest.importorskip("yaml")
     path = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "site.yml"
     if not path.is_file() or not shutil.which("jq"):
@@ -898,9 +899,12 @@ def test_site_deploy_under_a_version_of_its_own(tmp_path):
                                           "TRY": "1"}
     assert retry["run"] == 'exec bash "$RUNNER_TEMP/deploy.sh"' and retry["env"]["TRY"] == "2"
     assert retry["env"]["ARTIFACT"] == "${{ steps.artifact-z.outputs.artifact-id }}"
-    pages = steps["pages"]
+    pages, order = steps["pages"], [s.get("id") or s.get("if") for s in jobs["build"]["steps"]]
     assert retry["if"] == "steps.deployment.outcome == 'failure' && steps.deployment.outputs.stuck == 'true'"
-    assert pages["if"] == "steps.deployment.outcome == 'failure' && steps.deployment.outputs.stuck != 'true'"
+    assert retry["continue-on-error"] is True and order.index("retry") + 2 == order.index("pages")
+    assert order[order.index("retry") + 1] == "steps.retry.outcome == 'failure'"           # the cancel settles
+    assert pages["if"] == ("steps.deployment.outcome == 'failure' && (steps.deployment.outputs.stuck != 'true' "
+                           "|| steps.retry.outcome == 'failure')")
     assert pages["uses"].startswith("actions/deploy-pages@") and pages["with"]["artifact_name"] == "github-pages-z"
     assert steps["artifact-z"]["if"] == "steps.deployment.outcome == 'failure'"
     bin_ = tmp_path / "bin"

@@ -2277,13 +2277,15 @@ def test_site_build_starts_with_the_data_job(clone, tmp_path):
 def test_site_data_wait(clone, tmp_path):
     """site.yml's Data wait: 3 s looks until the named Card sync job's Commit data is done or the job ended (never another
     job's step), then main's head again; a PSD changed since: the PSD sizes again (the older kept when unread). The data's
-    head beside it (Setup start's clone): none when the clone failed (checked out later); 3 failed fetches: checked out
-    later too."""
+    head beside it (Setup start's clone): none when the clone failed (checked out later); 3 failed fetches (the step's
+    timeout leaves room for them): checked out later too."""
     yaml = pytest.importorskip("yaml")
     if not shutil.which("jq") or not shutil.which("git"):
         pytest.skip("no jq or git")
     site = yaml.safe_load((_workflow(clone).parent / "site.yml").read_text(encoding="utf-8"))
     wait = next(s for s in site["jobs"]["build"]["steps"] if s.get("name") == "Data wait")
+    try_ = int(re.search(r"timeout (\d+) git -C carddata fetch", wait["run"]).group(1))
+    assert wait["timeout-minutes"] * 60 >= 1200 + 15 + 3 * try_ + 10 + 15 + 60       # the last look, 3 tries, 1 min spare
     origin, work, temp, naps = tmp_path / "origin", tmp_path / "work", tmp_path / "temp", tmp_path / "sleeps.txt"
     git = lambda *a: subprocess.run(["git", "-C", str(origin), "-c", "user.name=A", "-c", "user.email=a@x", *a],
                                     check=True, capture_output=True, text=True)
