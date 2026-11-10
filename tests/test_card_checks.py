@@ -70,6 +70,27 @@ def test_split_row():
     assert cc.read_row(fade)["could"] is None and cc.split_row(fade) is None
 
 
+def cell_row(*colours) -> np.ndarray:
+    """An 813x84 template bar, a colour a cell."""
+    row = np.zeros((84, 813, 3), np.uint8)
+    for n, colour in enumerate(colours):
+        row[:, cc.TEMPLATE_CELLS[n]:cc.TEMPLATE_CELLS[n + 1]] = colour
+    return row
+
+
+def test_busy_rows():
+    """Cells are read on their middles: a light gap between cells 5 and 6 (Nailsage Sly's) stays out. A busy row left
+    unsplit reads full or empty by the card's stepped rows (Claw's ATK); a mixed one stays open."""
+    gap = cell_row(110, 75, 110, 75, 40, 30, 40, 30, 40, 30)
+    gap[:, cc.TEMPLATE_CELLS[5] - 14:cc.TEMPLATE_CELLS[5] + 14] = 230
+    assert cc.read_row(gap)["could"] is None and cc.split_row(gap) == {"best": 4, "could": [4, 14]}
+    rows = [(row, cc.read_row(row)) for row in (bar(4), cell_row(*[LIT, (90, 230, 100)] * 5),
+                                                cell_row(*[EMPTY, (40, 100, 45)] * 5), cell_row(*[LIT, EMPTY] * 5))]
+    assert [read["could"] for _, read in rows[1:]] == [None] * 3
+    cc._tell_busy(rows)
+    assert [read["could"] for _, read in rows] == [[4], [10, 20], [0], None]
+
+
 def test_mismatches():
     """The note names the bar; a value the bar could show says nothing; a custom card speaks only when every bar reads;
     a website-only value differs on purpose; creatures by bar."""

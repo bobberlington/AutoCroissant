@@ -81,6 +81,7 @@ STEP_NEAR = 0.6                             # an edge this close to the stronges
 HALF_ROW = 0.4                              # a step in the bottom half alone: the top half shows under this share of it
 LIT_GAP = 10.0                              # lit and empty cells this far apart (L) tell a flat row's state
 SPLIT_MIN = 10.0                            # L a busy template row's lit cells all beat its dark ones by (split_row)
+CELL_TRIM = 0.2                             # a busy row's cell is read on its middle: this share off each side
 PIXEL_MOVED = 24                            # a pixel counts as changed past this many levels (the census's)
 # the edits
 MAX_STARS = 7                               # the census's: a star added up to here
@@ -161,13 +162,19 @@ def read_row(row: np.ndarray) -> dict:
     return {"best": best, "could": near} if best is not None else {"best": None, "could": None}
 
 
-def _lightness(row: np.ndarray, first: int = 0, last: int = 10) -> float:
-    """The mean L of a row's cells first..last-1, its middle band."""
+def _lightness(row: np.ndarray, first: int = 0, last: int = 10, trim: float = 0.0) -> float:
+    """The mean L of a row's cells first..last-1, its middle band; trim: this share of their width off each side."""
     height, width = row.shape[:2]
     scale = width / TEMPLATE_CELLS[-1]
-    part = row[int(height * TOP_BAND[0]):int(height * BOTTOM_BAND[1]),
-               int(TEMPLATE_CELLS[first] * scale):int(TEMPLATE_CELLS[last] * scale)]
+    left, right = TEMPLATE_CELLS[first] * scale, TEMPLATE_CELLS[last] * scale
+    cut = (right - left) * trim
+    part = row[int(height * TOP_BAND[0]):int(height * BOTTOM_BAND[1]), int(left + cut):int(right - cut)]
     return float(_lab(part.reshape(-1, 3).mean(0))[0])
+
+
+def _middles(row: np.ndarray) -> list:
+    """Each cell's L on its middle: clear of borders, the bar's middle gap and its rounded end."""
+    return [_lightness(row, n, n + 1, CELL_TRIM) for n in range(10)]
 
 
 def _tell_flats(rows: list) -> None:
@@ -190,11 +197,32 @@ def split_row(row: np.ndarray) -> Optional[dict]:
     A busy row (textured cells: Kyle, Michael, Gandhi) by its cells' lightness: the count whose lit cells all beat the
     rest by SPLIT_MIN, STEP_CLEAR times any other count's (could: 10 more too, as read_row's); else None (fading paint).
     """
-    cells = [_lightness(row, n, n + 1) for n in range(10)]
+    cells = _middles(row)
     (top, best), (second, _) = sorted(((min(cells[:k]) - max(cells[k:]), k) for k in range(1, 10)), reverse=True)[:2]
     if top < SPLIT_MIN or top < STEP_CLEAR * second:
         return None
     return {"best": best, "could": [best, 10 + best]}
+
+
+def _tell_busy(rows: list) -> None:
+    """
+    A busy row split_row left open is full when every cell's middle is nearer the card's lit cells than its empty ones
+    and its darkest beats empty by SPLIT_MIN (patterned art: Claw's ATK); mirrored, empty. Lit, empty: the stepped rows'.
+    """
+    stepped = [(_middles(row), read["best"]) for row, read in rows if read["best"] and read["best"] < 10]
+    if not stepped:
+        return
+    lit = float(np.median([np.mean(cells[:best]) for cells, best in stepped]))
+    empty = float(np.median([np.mean(cells[best:]) for cells, best in stepped]))
+    if lit - empty < SPLIT_MIN:
+        return
+    for row, read in rows:
+        if read["could"] is None:
+            cells = _middles(row)
+            if min(cells) - empty >= SPLIT_MIN and all(abs(c - lit) < abs(c - empty) for c in cells):
+                read.update(best=10, could=[10, 20])
+            elif lit - max(cells) >= SPLIT_MIN and all(abs(c - empty) < abs(c - lit) for c in cells):
+                read.update(best=0, could=[0])
 
 
 def bar_boxes(psd: PSDImage) -> dict:
@@ -239,7 +267,7 @@ def _cut(pixels: np.ndarray, box: tuple, width: int) -> Optional[np.ndarray]:
 def read_picture(psd: PSDImage, image: Image.Image, cells: bool = False) -> dict:
     """
     {stat: [{"best", "could"} of each bar, top to bottom]} off the card's picture; a bar past the canvas has no say.
-    cells: the template's bars, a busy row read by its cells (split_row).
+    cells: the template's bars, a busy row read by its cells (split_row, then _tell_busy).
     """
     pixels = np.asarray(image.convert("RGB"))
     out, rows = {}, []
@@ -253,9 +281,11 @@ def read_picture(psd: PSDImage, image: Image.Image, cells: bool = False) -> dict
             out[stat].append(read_row(row))
             rows.append((row, out[stat][-1]))
     _tell_flats(rows)
-    for row, read in rows if cells else ():
-        if read["could"] is None:
-            read.update(split_row(row) or {})
+    if cells:
+        for row, read in rows:
+            if read["could"] is None:
+                read.update(split_row(row) or {})
+        _tell_busy(rows)
     return out
 
 
