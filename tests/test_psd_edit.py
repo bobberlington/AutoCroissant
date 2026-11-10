@@ -2189,6 +2189,27 @@ def test_story_style_drift_compares_kerning(clone):
 
 
 @text_edit
+def test_text_typed_before_a_paragraph_is_kerned(clone, parser, chart):
+    """Pot Full of Spiders!' first letter is unkerned in TySh; its story run leaves kerning to its sheet, whose parent
+    Normal kerns. follow_kerning turns it on (no drift either way), so text typed before it is kerned as Photoshop
+    draws it (Gulka's insert wrapped onto a 4th line)."""
+    def kerned(layer):
+        style = layer.engine_dict["StyleRun"]
+        return [v is None or bool(getattr(v, "value", v)) for n, run in zip(style["RunLengthArray"], style["RunArray"])
+                for v in [run["StyleSheet"]["StyleSheetData"].get("AutoKerning")] * int(n)]
+    rel = "Creatures/Crypt/2 Stars/Pot_Full_of_Spiders!.psd"
+    psd = PSDImage.open(_card(clone, rel)[0])
+    layer = pe.ability_layer(psd)
+    assert not kerned(layer)[0] and pe.story_style_drift(psd) == []
+    assert pe.follow_kerning(psd, layer) and kerned(layer)[0] and pe.story_style_drift(psd) == []
+    psd = PSDImage.open(_card(clone, rel)[0])
+    old = pe.normalize_ability(pe.ability_layer(psd).text)
+    pe.set_text_layer(psd, "ability", "Draw a card. " + old, str(clone / pe.FONTS_DIR), chart, parser=parser)
+    layer = pe.ability_layer(psd)
+    assert layer.text.startswith("Draw a card. ") and all(kerned(layer)[:13])
+
+
+@text_edit
 def test_a_two_site_edit_bakes_its_runs_into_the_story(clone, parser, chart, tmp_path):
     """Through apply_jobs and every gate: the saved PSD's TySh and Txt2 story agree run by run (story_style_drift) and
     keep the badge between the edits."""
