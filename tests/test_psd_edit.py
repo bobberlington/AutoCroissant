@@ -414,6 +414,13 @@ def test_alt_template_bars(clone, parser, tmp_path):
         {stat: box for stat, (_, box) in ALT_PHOTOSHOP.items()}
     with pytest.raises(pe.Refused, match="stat>10"):
         pe.set_stat(new, card, "hp", 11)
+    twice = []                                  # each picture's bake of a tagged card makes these layers (Stubborn King)
+    for n in range(2):
+        again = PSDImage.open(str(path))
+        pe.set_stat(again, parsed, "hp", 3)
+        again.save(str(tmp_path / f"again{n}.psd"), update_preview=False)
+        twice.append(pe.layer_records(str(tmp_path / f"again{n}.psd")))
+    assert twice[0] == twice[1]
     plan = pe.classify(card, {"hp": 9, "def": 11}, new)          # up to the bar's top comp; past it website only
     assert plan.jobs == {"hp": 9} and plan.site == {"def": "def 11: the bar's layer comps show up to 10"}
 
