@@ -687,8 +687,8 @@ def test_tts_details_for_the_save(bs):
     """data/tts.json (owner 10-30, the TTS hover strip and details): types' meanings from the chapters (an icon heading's
     section to the page break, a "[token]:" line, a line ending in tokens; secret text, "(See: ...)" and non-icons left
     out), tags as text.js reads them, the statuses an ability names, cards by PNG path, hidden cards left out, only the stats
-    a card has (an active item: HP and DEF); a [field] card's Field Cards first in r; the name's and ability's colours as
-    the card page paints them (nc, ac)."""
+    a card has (an active item: HP and DEF); a [field] card's Field Cards first in r; aliases not part of the name (al); the
+    name's and ability's colours as the card page paints them (nc, ac)."""
     chapters = [{"id": "creature-types", "num": "20", "title": "Creature Types", "source":
                  "# Creature Types\n## FIRE {icon=fire}\nImmune to [[Burning]] (See: [“X”](#/rules/x))\n## WIND {icon=wind}\nSwap.\n"},
                 {"id": "item-types", "num": "14", "title": "Item Types", "source":
@@ -707,7 +707,8 @@ def test_tts_details_for_the_save(bs):
              {"name": "Dark Tentacle", "type": "minion", "png": "Aux/Dark_Tentacle.png", "ability": ""},
              {"name": "Gate", "type": "field", "types": ["field"], "png": "Field/Gate.png", "ability": "(3CD) summon a dark tentacle, then stay. Can't be negated."},
              {"name": "Stay", "type": "creature", "png": "Creatures/Stay.png", "ability": ""},
-             {"name": "Mirror Knight", "type": "creature", "png": "Creatures/Mirror_Knight.png", "ability": "(OD) Summon another Mirror Knight."},
+             {"name": "Mirror Knight", "type": "creature", "png": "Creatures/Mirror_Knight.png", "ability": "(OD) Summon another Mirror Knight.",
+              "aliases": ["MK", "Knight"], "webAliases": ["mk"]},
              {"name": "Totem", "type": "item", "subtype": "active", "png": "Items/Totem.png", "hp": 2, "def": 0, "ability": ""}]
     got = bs.tts_details(cards, chapters, icons, bs.tag_meanings(chapters))
     assert got["types"] == {"fire": {"n": "Fire", "x": "Immune to Burning", "c": "creature-types"},
@@ -722,6 +723,7 @@ def test_tts_details_for_the_save(bs):
                                  "Creatures/Mirror_Knight.png", "Items/Totem.png"}
     assert got["cards"]["Items/Totem.png"]["s"] == "HP 2 DEF 0"
     assert got["cards"]["Creatures/Mirror_Knight.png"]["m"] == ["Creatures/Mirror_Knight.png"]   # a card naming itself spawns itself (owner 10-30)
+    assert got["cards"]["Creatures/Mirror_Knight.png"]["al"] == ["mk"]   # "Knight" is in the name
     assert got["cards"]["Field/Gate.png"]["m"] == ["Aux/Dark_Tentacle.png"]   # as text.js links: a lowercase minion after its verb
     assert got["cards"]["Field/Gate.png"]["r"] == ["field-cards", "negation"]   # [field] has no meaning: its chapter by hand
     assert got["cards"]["Creatures/Hot_Guy.png"] == {
