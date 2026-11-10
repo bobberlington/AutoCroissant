@@ -637,6 +637,26 @@ def test_early_images_are_the_builds(bs, repo, tmp_path, monkeypatch, capsys):
     assert "images: 3 cards, 0 new files" in capsys.readouterr().out
 
 
+def test_small_image_from_the_720(bs, tmp_path, monkeypatch):
+    """The 96 px image (SMALL_SIZES: table rows, 64 px lists) of a cached blob is made from its 720 px AVIF, no PNG
+    download; its name follows the 720's settings too."""
+    from PIL import Image
+    monkeypatch.setattr(bs, "CACHE", str(tmp_path))
+    (tmp_path / "img").mkdir()
+    sha, known = "ab" * 20, [720, 1008, "#c8285a"]
+    names = bs.image_names(sha)
+    Image.new("RGB", (240, 336), (200, 40, 90)).save(tmp_path / "img" / names[720], "AVIF")
+    for w in (240, 360, "og"):
+        (tmp_path / "img" / names[w]).write_bytes(b"x")
+    monkeypatch.setattr(bs, "image_bytes", lambda *a: pytest.fail("PNG downloaded"))
+    assert bs.make_images("Creatures/A.png", sha, known) == (sha[:16], *known)
+    with Image.open(tmp_path / "img" / names[96]) as im:
+        assert im.size == (96, 134)
+    tag = bs.thumb_tag(96)
+    monkeypatch.setitem(bs.IMAGE_SIZES, 720, 49)
+    assert bs.thumb_tag(96) != tag
+
+
 def test_guards_name_rule_matches_the_site(bs):
     """AutoCroissant's R14 (card_standards.miscased_names) and build_site.name_links share text.js's rule of which words
     name a card: on the same text, R14's names are the links typed in another case."""
