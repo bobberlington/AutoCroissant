@@ -16,6 +16,19 @@
         "creator_name": "_mjs",
         "v": 3,
         "problem": null
+      },
+      {
+        "id": "d96a9f2a",
+        "channel_id": "1569541320660492452",
+        "msg": "<@&546427268751294475> poll is closing soon",
+        "when": "2026-11-22T18:00:00-08:00",
+        "frequency": null,
+        "command": null,
+        "enabled": true,
+        "creator_id": "247149441734279169",
+        "creator_name": "_mjs",
+        "v": 3,
+        "problem": null
       }
     ],
     "682405589648801939": [
