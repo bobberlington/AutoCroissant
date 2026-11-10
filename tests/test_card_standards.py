@@ -448,6 +448,12 @@ def test_badges_fitted_to_their_text(clone, tmp_path, monkeypatch):
 RESAVE = "8a913cc4"             # main with the cards the 10-25 sweeps left to a Photoshop re-save
 
 
+def _kerns_as_story() -> bool:
+    """The fork lays text out kerned as the Txt2 story says (psd-tools r7-1), not by TySh's AutoKerning."""
+    from psd_tools.api import text_edit
+    return hasattr(text_edit, "kerning_methods")
+
+
 @pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
 def test_badges_drawn_kerned_as_the_story(clone, tmp_path, monkeypatch):
     """B12: Soul Sanctum's story turns kerning off where its TySh has it on; followed, the splice takes it (unfollowed,
@@ -458,9 +464,14 @@ def test_badges_drawn_kerned_as_the_story(clone, tmp_path, monkeypatch):
     assert fixed.redrawn == {"badges": ["Ability"]} and fixed.pixel_left == []
     (tmp_path / "fit.psd").write_bytes(fixed.data)
     assert cs.badge_plan(PSDImage.open(str(tmp_path / "fit.psd")), fonts) == []
+    followed = psd_edit.ability_layer(PSDImage.open(BytesIO(fixed.data))).topil()
     monkeypatch.setattr(psd_edit, "follow_kerning", lambda psd, layer: False)
     fixed = cs.fix(data, rel, [], str(tmp_path / "work"), None, fonts, only="badges")
-    assert not fixed.redrawn and "not redrawn by glyph" in fixed.pixel_left[0][1]
+    if not _kerns_as_story():
+        assert not fixed.redrawn and "not redrawn by glyph" in fixed.pixel_left[0][1]
+        return
+    assert fixed.redrawn == {"badges": ["Ability"]}     # the fork kerns as the story itself: the same ink
+    assert psd_edit.ability_layer(PSDImage.open(BytesIO(fixed.data))).topil().tobytes() == followed.tobytes()
 
 
 @pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
@@ -489,9 +500,14 @@ def test_old_glyph_redrawn_kerned_as_the_story(clone, tmp_path, monkeypatch):
     assert cs.old_glyphs(psd_edit.ability_layer(new), found) == []
     story = psd_edit.story_index(psd_edit.ability_layer(new))
     assert psd_edit.gate_stories(PSDImage.open(str(old)), new, [story]) == [story]
+    followed = psd_edit.ability_layer(new).topil()
     monkeypatch.setattr(psd_edit, "follow_kerning", lambda psd, layer: False)
     fixed = cs.fix(old.read_bytes(), rel, [], str(tmp_path / "work"), None, fonts, only="old glyphs")
-    assert not fixed.redrawn and "not redrawn by glyph" in fixed.pixel_left[0][1]
+    if not _kerns_as_story():
+        assert not fixed.redrawn and "not redrawn by glyph" in fixed.pixel_left[0][1]
+        return
+    assert fixed.redrawn == {"old glyphs": ["Ability"]}     # the fork kerns as the story itself: the same ink
+    assert psd_edit.ability_layer(PSDImage.open(BytesIO(fixed.data))).topil().tobytes() == followed.tobytes()
 
 
 @pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")

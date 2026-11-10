@@ -582,7 +582,7 @@ Re-pin:
    wheels, one cache key; `test_every_action_runs_python_314` every workflow's Python).
 4. The jetson's venv and the dev Mac's: `pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"`
    (a plain `pip install -r` keeps the old commit while the fork's version is unchanged: 1.25.0 up to `cards-20261023d`,
-   1.26.0+cards since `cards-20261024`, also at `cards-20261024b`, `cards-20261025`, `cards-20261025b`, `cards-20261026` and `cards-20261104`; autocroissant-run-and-operate, "When the psd-tools fork tag moves"; autocroissant-build-and-env).
+   1.26.0+cards since `cards-20261024`, also at `cards-20261024b`, `cards-20261025`, `cards-20261025b`, `cards-20261026`, `cards-20261104`, `cards-20261107` and `cards-20261110`; autocroissant-run-and-operate, "When the psd-tools fork tag moves"; autocroissant-build-and-env).
 
 A card-sync run whose builder (`builder_ref`, `CARD_DATA_BUILDER_REF`) is an AutoCroissant commit from before
 2026-10-23's requirements-cards.txt fails at its "Python environment" step: that commit has no such file.
@@ -802,3 +802,4 @@ marker), the `card-guards-quiet` environment among the repo settings, `png_expor
 2026-10-26 (stars lane): `STAR_CORE_ALPHA` 129/255.
 2026-11-05 (ring badges): the badge widths and old-font constants (card_guards `EARLIER_FONTS`, `OLD_FONT`; card_standards `OLD_GLYPH_BAD`, `EARLIER_FIT`, `EARLIER_GAIN`, `DRAWN_ODD`, `LAID_OFF`, `RAZOR`, `EDGE_NEAR`) and card_sweep's `WORKERS`, `EARLIER_KINDS` in the push guards table (card_sweep.py in its heading), at AutoCroissant 3641756; `POOL_MIN`'s runner threshold of 2 (efc7808); the fork pin is `cards-20261104` (1258fcbd).
 2026-11-09 (forum votes): `FORUM_JSON` and the four `FORUM_*` defaults in global_config's table; commands/forum_votes.py's constants; `/forum_votes` in the ADMINS table and the one setter that persists.
+2026-11-10 (fork release): the fork's version list runs to `cards-20261110`.

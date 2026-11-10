@@ -23,11 +23,14 @@ pytestmark = pytest.mark.skipif(not (text_engine() and story_sync()), reason="ne
 
 
 def _outside_txt2(path) -> tuple:
-    """The file's bytes before and after its Txt2 block (padding included)."""
+    """The file's bytes before and after its Txt2 block (padding included), but the layer and mask section's length:
+    it grows with the story (the fork pins each story paragraph's composer)."""
     data = Path(path).read_bytes()
     at = data.rfind(b"8BIMTxt2")
     length = struct.unpack(">I", data[at + 8:at + 12])[0]
-    return data[:at + 8], data[at + 12 + (length + 3) // 4 * 4:]
+    resources = 30 + struct.unpack(">I", data[26:30])[0]
+    section = resources + 4 + struct.unpack(">I", data[resources:resources + 4])[0]
+    return data[:section] + data[section + 4:at + 8], data[at + 12 + (length + 3) // 4 * 4:]
 
 
 def _sha(path) -> str:
