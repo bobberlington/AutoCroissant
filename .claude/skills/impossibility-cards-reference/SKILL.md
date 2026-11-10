@@ -761,9 +761,11 @@ gotcha-4 unknown-field error; `series==mario & subseries~door` is the website's 
    Until 2026-10-24 these fell through to a text search and found 0 cards.
 5. `type==creature` misses the 7 plural-"creatures" cards (section 2); use `type~creature`.
 6. Numeric compares drop NaN rows, i.e. only cards that HAVE the stat participate.
-7. Bare-text search also runs a fuzzy pass: `SequenceMatcher(None, query, whole_ability).ratio() >
-   match_ratio` (`_fuzzy_labels`, query_card.py:409-424). It compares against the ENTIRE ability, so it only adds
-   near-whole-text matches; short queries effectively rely on the substring pass.
+7. Bare-text search runs a fuzzy pass only when no card has the text (since 2026-11-09):
+   `SequenceMatcher(None, query, whole_ability).ratio() > match_ratio` (`_fuzzy_labels`, query_card.py:508), for an
+   ability pasted with a typo. It compares against the ENTIRE ability, but 129 abilities are 40 characters or less, so
+   when it always ran it padded short queries too (`+1 atk` also found Enfeebled's `-1 atk`; 164 of 518 common
+   phrases got cards without the text). Now the results are the website's on 515 of those 518.
 8. `"quoted"` matches whole words: `\b` at an end that is a letter, digit or `_`, none at punctuation, so `"(2u)"`
    finds `(2U)(OYT)` and `"[fire]"` finds `[fire]` (2026-11-04; the old `(?:^|\s|$|\b)` ends missed tags written together).
 9. The rulebook is NEVER returned by `/query_ability`; use `/query_rulebook` (case-insensitive words with any
@@ -872,3 +874,5 @@ change, sections 4-5 are stale until rewritten.
 2026-10-26 (stars lane): §2 a star core is over half opaque (129/255); the bake's 10-26 star cases (shadows, textures, plain banners, banner rows, die faces, V funnel, the closest refusal).
 
 2026-11-01 (chapters): §4.1's old tags, §7.2's `rulebook_dff`, and the Photoshop pages' move to `MDW/Old Rules/`, against TTSCardMaker c6b1e144.
+
+2026-11-09 (site rounds): §7.2 gotcha 7: the fuzzy pass runs only when no card has the text.
