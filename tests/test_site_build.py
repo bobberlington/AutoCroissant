@@ -17,10 +17,11 @@ import subprocess
 import sys
 import tarfile
 import time
+import zipfile
 from collections import defaultdict
 from datetime import datetime
 from html import unescape as html_unescape
-from os import environ, killpg
+from os import environ
 from os.path import expanduser
 from pathlib import Path
 
@@ -750,9 +751,10 @@ def test_badge_font_preloaded_where_badges_show(bs):
 
 
 def test_site_workflow_sets_up_in_the_background(tmp_path):
-    """site.yml's Setup start returns at once, uv, npm, the PSD sizes and the data clone running on (their output not held);
-    Setup wait prints each one's log and fails on uv or npm, only warns on the sizes (3 tries); a failed data clone: the
-    data checked out between it and the build. uv is fetched there
+    """site.yml's Setup start returns at once, uv, npm, the PSD sizes, the data clone and the deploy's versions (the version
+    job's artifact, not waited for) running on (their output not held); Setup wait prints each one's log and fails on uv
+    or npm, only warns on the sizes (3 tries); a failed data clone: the data checked out between it and the build. uv is
+    fetched there
     (no setup-uv), else from the GitHub release, else pip installs. An early build's Images start runs once uv is in;
     Setup wait stops it, prints its log, only warns on a failure (none started: no wait)."""
     yaml = pytest.importorskip("yaml")
@@ -777,7 +779,8 @@ def test_site_workflow_sets_up_in_the_background(tmp_path):
     curl = ('echo "$0 $*" >> "$RUNNER_TEMP/calls"\ncase "$*" in *releases.astral.sh*) [ -z "$ASTRAL_CODE" ] || exit "$ASTRAL_CODE";; esac\n'
             'while [ $# -gt 1 ]; do [ "$1" != -o ] || out=$2; shift; done\ncp "$TARBALL" "$out"')
     for name, body in {"npm": call + 'echo "npm said"; exit "${NPM_CODE:-0}"', "curl": curl,
-                       "gh": call + 'echo \'{"tree": []}\'; exit "${GH_CODE:-0}"', "timeout": 'shift; exec "$@"',
+                       "gh": call + 'case "$*" in *runs/5/artifacts\\?name=pages-versions-3*) echo 77;; *artifacts/77/zip) cat "$ZIP";; '
+                              '*) echo \'{"tree": []}\';; esac; exit "${GH_CODE:-0}"', "timeout": 'shift; exec "$@"',
                        "git": 'case "$1" in clone) ' + call + '[ "$GIT_CONFIG_KEY_0" = http.extraheader ] || exit 9; '
                               'exit "${CLONE_CODE:-0}";; esac\necho 0123abcd',
                        "python": call + 'until [ -e "$4" ]; do /bin/sleep 0.01; done; echo "python said"',     # till stopped
@@ -790,6 +793,9 @@ def test_site_workflow_sets_up_in_the_background(tmp_path):
         info = tarfile.TarInfo("uv-x86_64-unknown-linux-gnu/uv")
         info.size, info.mode = len(uv), 0o755
         tar.addfile(info, io.BytesIO(uv))
+    versions = f"{'c1' * 20}\n{'c2' * 20}\n"
+    with zipfile.ZipFile(tmp_path / "versions.zip", "w") as zf:        # the version job's artifact
+        zf.writestr("versions.txt", versions)
     shell = lambda run, env: subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", run], env=env,
                                             capture_output=True, text=True, timeout=30)
     # 1: a wrong checksum from both: pip. 2: the mirror down: the GitHub release
@@ -800,7 +806,8 @@ def test_site_workflow_sets_up_in_the_background(tmp_path):
         (temp / "out").write_text("")
         env = {"PATH": f"{bin_}:/usr/bin:/bin", "HOME": str(tmp_path), "RUNNER_TEMP": str(temp), "GITHUB_REPOSITORY": "o/r",
                "GITHUB_SERVER_URL": "https://x", "GITHUB_OUTPUT": str(temp / "out"), "TARBALL": str(tmp_path / "uv.tar.gz"),
-               "UV_PYTHON": str(bin_ / "pip-python"), **codes}
+               "UV_PYTHON": str(bin_ / "pip-python"), "GITHUB_RUN_ID": "5", "GITHUB_RUN_ATTEMPT": "3",
+               "ZIP": str(tmp_path / "versions.zip"), **codes}
         done = shell(start, env)
         assert done.returncode == 0 and not (n == 0 and list((temp / "setup").glob("*.code"))), done.stderr   # not waited for
         assert n == 1 or shell(images, env).returncode == 0         # 1: not an early build
@@ -827,6 +834,13 @@ def test_site_workflow_sets_up_in_the_background(tmp_path):
         assert sum(f"build_site.py --images 0123abcd {temp}/setup/images.stop" in c for c in calls) == (n == 0)
         assert sum("/git clone -q --depth 1 --no-tags --single-branch --branch data https://x/o/r carddata" in c for c in calls) == 1
         assert ((temp / "out").read_text() == "data=true\n") == (n != 2) and ("::warning::the data clone failed" in out) == (n == 2)
+        code = temp / "setup" / "versions.code"
+        for _ in range(1000):                                        # 1: every call fails, 60 tries
+            if code.exists() and code.read_text().strip():
+                break
+            time.sleep(0.01)
+        assert code.read_text().strip() == ("1" if n == 1 else "0")
+        assert ((temp / "versions.txt").read_text() if n != 1 else versions) == versions
 
 
 def test_site_workflow_python_from_the_tool_cache(tmp_path):
@@ -852,58 +866,104 @@ def test_site_workflow_python_from_the_tool_cache(tmp_path):
                                                 dict.fromkeys(files, "")), (done.stderr, got)
 
 
-def test_site_watch_ends_a_cancelled_deploy(tmp_path):
-    """site.yml's watch: a deploy syncing files while a newer main build waits is cancelled and deploy-pages' node ended
-    by its PID (another action's node, an earlier PID, left), so cut hands on (newer: no retry). A failed cancel: none."""
+def test_site_deploy_under_a_version_of_its_own(tmp_path):
+    """site.yml's deployment: the version job (the one that writes) makes two commits, the run's commit their parent and
+    its tree theirs (3 tries a call); each try deploys under its own (TRY; none handed over: GITHUB_SHA) with the OIDC
+    token (masked), polling its status. 2 min syncing files while a newer main build waits (never an early build):
+    cancelled and handed on (green: no retry); a failed cancel polls on. A failed deploy: red, no cancel; 6 minutes or 15
+    unread statuses: cancelled. The retry: the same script on the deflated artifact, under the second commit."""
     yaml = pytest.importorskip("yaml")
     path = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "site.yml"
-    pgrep, setsid = shutil.which("pgrep"), shutil.which("setsid")          # no setsid on macOS: a stand-in
-    if not path.is_file() or not pgrep:
-        pytest.skip(f"no {path} or pgrep")
-    steps = {s.get("id"): s for s in yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["build"]["steps"]}
-    assert "-ge 120 ]" in steps["watch"]["run"]
-    watch, cut = steps["watch"]["run"].replace("-ge 120 ]", "-ge 0 ]"), steps["cut"]["run"]      # 2 min syncing: at once
+    if not path.is_file() or not shutil.which("jq"):
+        pytest.skip(f"no {path} or jq")
+    jobs = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]
+    steps = {s.get("id"): s for s in jobs["build"]["steps"]}
+    if "watch" in steps:
+        pytest.skip("site.yml still deploys with deploy-pages")
+    assert jobs["build"]["permissions"]["contents"] == "read" and jobs["version"]["permissions"] == {"contents": "write"}
+    made, upload = jobs["version"]["steps"]
+    assert upload["uses"].startswith("actions/upload-artifact@") and upload["with"]["name"] == "pages-versions-${{ github.run_attempt }}"
+    run, retry = steps["deployment"]["run"], steps["retry"]
+    assert "-ge 120 ]" in run and "-lt 360 ]" in run and steps["deployment"]["continue-on-error"] is True
+    assert steps["deployment"]["env"] == {"GH_TOKEN": "${{ github.token }}", "ARTIFACT": "${{ steps.artifact.outputs.artifact-id }}",
+                                          "TRY": "1"}
+    assert retry["run"] == 'exec bash "$RUNNER_TEMP/deploy.sh"' and retry["env"]["TRY"] == "2"
+    assert retry["env"]["ARTIFACT"] == "${{ steps.artifact-z.outputs.artifact-id }}"
     bin_ = tmp_path / "bin"
     bin_.mkdir()
-    for name, body in {"gh": 'case "$*" in *cancel*) exit "$CANCEL";; *runs*) echo 7;; *) echo syncing_files;; esac',
-                       "sleep": "exec /bin/sleep 0.02",
-                       "pgrep": f'{pgrep} "$@" | grep -Fx -f "$MINE"',            # this test's processes only
-                       "setsid": f'exec {setsid} "$@"' if setsid else
-                       f"exec {sys.executable} -c 'import os, sys; os.setsid(); os.execvp(sys.argv[1], sys.argv[1:])' \"$@\""}.items():
+    gh = r"""echo "$*" >> "$RUNNER_TEMP/calls"
+case "$*" in
+  *git/commits/*) [ ! -e "$RUNNER_TEMP/fail" ] || { rm "$RUNNER_TEMP/fail"; echo '{"message":"Server Error"}'; exit 1; }; echo tree1;;
+  *"POST repos/o/r/git/commits "*) [ ! -e "$RUNNER_TEMP/failpost" ] || { rm "$RUNNER_TEMP/failpost"; echo '{"message":"Bad"}'; exit 1; }
+    n=$(( $(cat "$RUNNER_TEMP/made" 2> /dev/null || echo 0) + 1 )); echo "$n" > "$RUNNER_TEMP/made"; printf "c$n%.0s" $(seq 20); echo;;
+  *"pages/deployments --input -") cat > "$RUNNER_TEMP/body"; v=$(jq -r .pages_build_version "$RUNNER_TEMP/body")
+    echo "{\"id\": \"$v\", \"status_url\": \"https://x/$v\", \"page_url\": \"https://o.github.io/r/\"}";;
+  *cancel*) [ "$CANCEL" = 0 ] || echo '{"message":"Conflict"}'; exit "$CANCEL";;
+  *runs*) while [ $# -gt 1 ]; do [ "$1" != --jq ] || f=$2; shift; done; jq -r "$f" "$RUNS";;
+  *pages/deployments/*) s=$(head -1 "$STATUSES"); [ "$(wc -l < "$STATUSES")" -le 1 ] || sed -i.bak 1d "$STATUSES"
+    [ "$s" != ERR ] || { echo '{"message":"Bad Gateway"}'; exit 1; }; echo "$s";;
+esac"""
+    for name, body in {"gh": gh, "curl": """echo '{"value": "tok3n"}'""", "sleep": "exec /bin/sleep 0.01",
+                       "timeout": 'shift; exec "$@"'}.items():
         (bin_ / name).write_text(f"#!/bin/sh\n{body}\n")
         (bin_ / name).chmod(0o755)
-    node = lambda action: subprocess.Popen(["sh", "-c", 'trap "exit 1" TERM; while :; do /bin/sleep 0.02; done',   # exits 1
-                                            str(tmp_path / "_actions" / "actions" / action / "dist" / "index.js")])  # as the runner's
-    shell = lambda run, env: subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", run], env=env,
-                                            capture_output=True, text=True, timeout=30)
-    for n, cancel in enumerate(("0", "22")):
+    v1, v2, sha = "c1" * 20, "c2" * 20, "ab" * 20
+    temp = tmp_path / "version"
+    temp.mkdir()
+    (temp / "fail").touch()                                          # the tree's first read fails, and the first commit
+    (temp / "failpost").touch()
+    env = {"PATH": f"{bin_}:/usr/bin:/bin", "RUNNER_TEMP": str(temp), "GITHUB_REPOSITORY": "o/r", "GITHUB_RUN_ID": "5",
+           "GITHUB_SHA": sha}
+    done = subprocess.run(["bash", "-e", "-c", made["run"]], env=env, capture_output=True, text=True, timeout=30)
+    assert done.returncode == 0 and (temp / "versions.txt").read_text() == f"{v1}\n{v2}\n", (done.stdout, done.stderr)
+    assert (temp / "calls").read_text().splitlines() == [f"api repos/o/r/git/commits/{sha} --jq .tree.sha"] * 2 + [
+        f"api -X POST repos/o/r/git/commits -f message=Pages deploy: run 5, try {n} -f tree=tree1 -f parents[]={sha} --jq .sha"
+        for n in (1, 1, 2)]
+    runs = tmp_path / "runs.json"            # 7: the newest waiting main build (4 older, 8 done, 9 an early build)
+    runs.write_text(json.dumps({"workflow_runs": [{"id": 4, "status": "queued", "display_title": "Card browser"},
+                                                  {"id": 9, "status": "queued", "display_title": "Card browser (after 3 data)"},
+                                                  {"id": 7, "status": "queued", "display_title": "Card browser"},
+                                                  {"id": 8, "status": "completed", "display_title": "Card browser"}]}))
+    fast = {"-ge 120 ]": "-ge 0 ]"}
+    for n, (statuses, cancel, swap, code, said, cancels) in enumerate((
+            (["deployment_queued", "syncing_files", "succeed"], "0", {}, 0, "Deployed in", 0),
+            (["syncing_files"], "0", fast, 0, "Run 7 waits: deploy handed to it", 1),
+            (["syncing_files"] * 3 + ["succeed"], "22", fast, 0, "Run 7 waits: cancel failed", 1),
+            (["deployment_queued", "deployment_failed"], "0", {}, 1, "::error::deployment_failed", 0),
+            (["deployment_queued"], "0", {"-lt 360 ]": "-lt 0 ]"}, 1, "::error::not deployed in 6 minutes", 1),
+            (["ERR"], "0", {}, 1, "::error::15 status reads failed", 1))):
         temp = tmp_path / f"t{n}"
-        temp.mkdir()
-        other, deploy = node("upload-artifact/v7"), node("deploy-pages/v5")
-        try:
-            (temp / "mine").write_text(f"{other.pid}\n{deploy.pid}\n")
-            env = {"PATH": f"{bin_}:/usr/bin:/bin", "RUNNER_TEMP": str(temp), "GITHUB_REPOSITORY": "o/r", "GITHUB_SHA": "abc",
-                   "GITHUB_RUN_ID": "5", "MINE": str(temp / "mine"), "CANCEL": cancel}
-            assert shell(watch, env).returncode == 0
-            for _ in range(500):
-                if "waits:" in ((temp / "watch.log").read_text() if (temp / "watch.log").exists() else ""):
-                    break
-                time.sleep(0.02)
-            try:
-                deploy.wait(timeout=10 if n == 0 else 0.5)
-            except subprocess.TimeoutExpired:
-                pass
-            assert deploy.returncode == (1 if n == 0 else None) and other.poll() is None, (temp / "watch.log").read_text()
-            done = shell(cut, {**env, "FAILED": str(n == 0).lower(), "GITHUB_OUTPUT": str(temp / "out"),
-                               "GITHUB_STEP_SUMMARY": str(temp / "summary")})
-            out = (temp / "out").read_text() if (temp / "out").exists() else ""
-            assert done.returncode == 0 and ("newer=true" in out) == (n == 0), done.stdout
-            assert ("deploy cancelled" if n == 0 else "cancel failed") in done.stdout
-        finally:
-            for p in (other, deploy):
-                p.kill()
-                p.wait()
-            try:                                                                  # a watch still looping
-                killpg(int((temp / "watch.pid").read_text()), 9)
-            except (OSError, ValueError):
-                pass
+        (temp / "setup").mkdir(parents=True)
+        (temp / "setup" / "versions.code").write_text("0\n")          # the hand-over
+        (temp / "versions.txt").write_text(f"{v1}\n{v2}\n")
+        (temp / "statuses").write_text("\n".join(statuses) + "\n")
+        env = {"PATH": f"{bin_}:/usr/bin:/bin", "RUNNER_TEMP": str(temp), "GITHUB_REPOSITORY": "o/r", "GITHUB_RUN_ID": "5",
+               "GITHUB_SHA": sha, "GITHUB_OUTPUT": str(temp / "out"), "GITHUB_STEP_SUMMARY": str(temp / "summary"),
+               "ARTIFACT": "42", "TRY": "1", "ACTIONS_ID_TOKEN_REQUEST_URL": "https://t/?x=1",
+               "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "rt", "CANCEL": cancel, "STATUSES": str(temp / "statuses"), "RUNS": str(runs)}
+        step = run
+        for a, b in swap.items():
+            step = step.replace(a, b)
+        done = subprocess.run(["bash", "-e", "-c", step], env=env, capture_output=True, text=True, timeout=30)
+        calls = (temp / "calls").read_text().splitlines()
+        out = done.stdout
+        assert done.returncode == code and said in out and "::warning::" not in out, (n, out, done.stderr)
+        assert not [c for c in calls if "git/commits" in c]
+        assert json.loads((temp / "body").read_text()) == {"artifact_id": 42, "pages_build_version": v1, "oidc_token": "tok3n"}
+        assert [line for line in out.splitlines() if "tok3n" in line] == ["::add-mask::tok3n"]
+        assert (temp / "out").read_text() == "page_url=https://o.github.io/r/\n"
+        assert sum(c == f"api -X POST repos/o/r/pages/deployments/{v1}/cancel" for c in calls) == cancels
+        assert ((temp / "summary").exists() and "Run 7 waits" in (temp / "summary").read_text()) == (n == 1)
+        assert f"Deployment {v1}: version {v1}" in out and "  ".join(calls).count(f"pages/deployments/{v1} --jq") >= len(statuses) - 1
+    (temp / "statuses").write_text("succeed\n")                      # the retry, after 15 unread statuses
+    done = subprocess.run(["bash", "-e", "-c", retry["run"]], env={**env, "ARTIFACT": "43", "TRY": "2"}, capture_output=True,
+                          text=True, timeout=30)
+    assert done.returncode == 0 and f"Deployment {v2}: version {v2}" in done.stdout, done.stdout
+    assert json.loads((temp / "body").read_text()) == {"artifact_id": 43, "pages_build_version": v2, "oidc_token": "tok3n"}
+    (temp / "setup" / "versions.code").write_text("1\n")              # none handed over: the run's commit
+    (temp / "versions.txt").unlink()
+    (temp / "statuses").write_text("succeed\n")
+    done = subprocess.run(["bash", "-e", "-c", retry["run"]], env={**env, "ARTIFACT": "43"}, capture_output=True, text=True,
+                          timeout=30)
+    assert done.returncode == 0 and f"::warning::no version commit handed over: {sha}, as deploy-pages" in done.stdout
+    assert json.loads((temp / "body").read_text())["pages_build_version"] == sha
