@@ -5866,6 +5866,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         homes = Counter(k for k, (a, b) in enumerate(drawn) for i in range(a0, b0) if a <= moved[i] < b)
         if homes:
             edited.add(drawn[homes.most_common(1)[0][0]])
+    stay = {span for span in typed if span in edited and all(now[i] for i in range(*span))}     # its size stays
     for a, b in typed:  # in the icon font at the card's badge or token style (the commonest size: owner 2026-10-24, not
         whole = all(now[i] for i in range(a, b))    # the style of the badge beside it the engine gives it)
         look = looks[text[a] == "("]
@@ -5883,10 +5884,10 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         if fill is not None:                    # a :sticker or :tint the colour of its kind on the card (owner 2026-10-24)
             layer.set_span_style(a, b, fill=fill)
     unstretch(layer, typed)
-    try:                # typed badges at the computed size and middle, typed icons shifted when off (owner 2026-10-25)
-        for fit in badge_fits(layer, fonts, typed) if typed else ():
-            keys = ({"FontSize": fit["fit_size"], "BaselineShift": fit["fit_shift"]} if fit["kind"] == "badge"
-                    else badge_wants(fit))
+    try:                # typed badges at the computed size and middle, typed icons shifted when off (owner 2026-10-25);
+        for fit in badge_fits(layer, fonts, typed) if typed else ():    # a kept one as the guards keep it
+            keys = ({"FontSize": fit["fit_size"], "BaselineShift": fit["fit_shift"]}
+                    if fit["kind"] == "badge" and (fit["start"], fit["end"]) not in stay else badge_wants(fit))
             if keys:
                 layer.set_span_style(fit["start"], fit["end"], **keys)
     except MissingFontError as error:
