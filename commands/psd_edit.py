@@ -296,7 +296,8 @@ class IconPlan:
     moves: list = field(default_factory=list)    # (layer, dx, dy): moved (a group with everything in it)
     copies: list = field(default_factory=list)   # (source, dx, dy, name): a star copied above itself, then moved
     icons: list = field(default_factory=list)    # (Types/ stem, canvas box, reference layer): a type icon made in the box
-    done: list = field(default_factory=list)     # set_icons(): ("copy", source, copy, dx, dy) and ("made", layer, blocks)
+    done: list = field(default_factory=list)     # set_icons(): ("copy", source, copy, dx, dy), ("made", layer,
+    #                                              blocks), ("masked copy", texture, copy, dx, dy): _texture_copies
     first: str = ""                              # plan_types(): the template whose spot a card's first type icon takes
     centres: list = field(default_factory=list)  # plan_stars(): the header stars' centres once applied, reading order
     notes: list = field(default_factory=list)    # told with the bake: the card's layout changed (stars laid out again)
@@ -7002,12 +7003,16 @@ def _textures(unit: _Unit) -> list:
 
 
 def _followed(shown: list) -> list:
-    """The textures clipped onto the stars' group that follow them (owner 11-09: Yin Yarn's yarn): a plain pixel layer
-    (no effects or mask, full fill) inking TEXTURE_KEEP of every shown star's core in the group it clips onto."""
+    """The textures clipped onto the stars' group that follow them (owner 11-09: Yin Yarn's yarn, Paint Bomb's paint):
+    a plain pixel layer or Normal smart object (no effects, filters or mask, full fill) inking TEXTURE_KEEP of every
+    shown star's core in the group it clips onto."""
     out: list = []
     for unit in shown:
         for texture in _textures(_drawn_as(unit)):
-            if any(texture is one for one in out) or texture.kind != "pixel" or texture.fill_opacity != 255 \
+            if any(texture is one for one in out) or texture.kind not in ("pixel", "smartobject") \
+                    or texture.kind == "smartobject" and (texture.blend_mode != BlendMode.NORMAL
+                                                          or _filtered(texture)) \
+                    or texture.fill_opacity != 255 \
                     or texture.has_mask() or texture.has_vector_mask() or _enabled_effects(texture):
                 continue
             base, ink = _clip_base(texture), _ink(texture)
@@ -7023,9 +7028,11 @@ def _texture_copies(psd: PSDImage, plan: IconPlan) -> list:
     Each texture plan_stars found following the stars (plan.textures) copied over the stars set_icons copied, moved or
     showed that it no longer covers (TEXTURE_KEEP of their ink): a pixel layer clipped above it (adjustments over it
     stay over), its opacity and blending, the texture as it lies on the nearest star it covers (one of that size
-    first), the same place relative to the star; never where the texture or an earlier copy draws. Returns them.
+    first), the same place relative to the star; never where the texture or an earlier copy draws. A smart object's
+    paint varies across it (Paint Bomb's): each of those stars instead gets the group as drawn under it, opaque, and a
+    copy of the smart object moved as from the nearest star it covers to it, masked to the star (_paint_cover), so
+    Photoshop draws its paint as on that star. Returns [(set_icons' done entry, its box)].
     """
-    from psd_tools.api.layers import PixelLayer
     moved = [done[2] for done in plan.done if done[0] == "copy"] + [layer for layer, _, _ in plan.moves] + plan.show
     leaves = lambda layers: list({id(leaf): leaf for layer in layers for leaf in [layer, *(layer.descendants()
                                   if layer.is_group() else ())] if not leaf.is_group() and not leaf.clipping
@@ -7038,6 +7045,27 @@ def _texture_copies(psd: PSDImage, plan: IconPlan) -> list:
         under = lambda leaf: (lambda mine: mine is not None and mine[1].any()
                               and _ink_overlap(mine, ink) >= TEXTURE_KEEP * mine[1].sum())(_ink(leaf))
         mine = [leaf for leaf in leaves(moved) if any(base is up for up in _ancestors(leaf))]
+        if texture.kind == "smartobject":       # the paint as a star that stays shows it, over each one
+            stay = [leaf for leaf in leaves([base]) if under(leaf) and not any(leaf is one for one in mine)]
+            for leaf in mine:
+                cover = _paint_cover(texture, base, leaf, stay, psd)
+                if cover is None:
+                    continue
+                (dx, dy), box, shows, drawn = cover
+                pixels = np.zeros((*shows.shape, 4), np.uint8)
+                pixels[shows, :3], pixels[shows, 3] = drawn[shows, :3], 255
+                layer = _clipped_copy(psd, texture, pixels, box[0], box[1], BlendMode.NORMAL, 255, made,
+                                      f"{texture.name} base")
+                made.append((texture, layer, ("made", layer, {}), box))
+                index = texture.parent.index(layer) + 1
+                copy = texture.duplicate(texture.parent, index=index, name=_copy_name(_Unit([texture], box),
+                                                                                     texture.parent, set()))
+                same_placed(texture, copy, f"paint {leaf.name}|{dx},{dy}")
+                _shift(copy, dx, dy, True)
+                copy.create_mask(Image.fromarray(np.where(shows, 255, 0).astype(np.uint8), "L"), top=box[1],
+                                 left=box[0])
+                made.append((texture, copy, ("masked copy", texture, copy, dx, dy), box))
+            continue
         bare = [leaf for leaf in mine if not under(leaf)]
         refs = [leaf for leaf in leaves([base]) if under(leaf)]
         if not bare or not refs:
@@ -7066,16 +7094,60 @@ def _texture_copies(psd: PSDImage, plan: IconPlan) -> list:
             if not patch[..., 3].any():
                 continue
             taken[y0:y1, x0:x1] |= patch[..., 3] > 0
-            name = f"{texture.name} copy" + (f" {len(made) + 1}" if made else "")
-            layer = PixelLayer.fromarray(patch, psd, name=name, top=y0, left=x0)
-            layer.name = name
-            layer.blend_mode, layer.opacity = texture.blend_mode, texture.opacity
-            _issue_id(psd, layer)
-            parent = texture.parent
-            layer.move_to(parent, index=parent.index(texture) + 1 + sum(1 for one in made if one[0] is texture))
-            layer.clipping = True
-            made.append((texture, layer))
-    return [layer for _, layer in made]
+            layer = _clipped_copy(psd, texture, patch, x0, y0, texture.blend_mode, texture.opacity, made)
+            made.append((texture, layer, ("made", layer, {}), tuple(layer.bbox)))
+    return [(done, box) for _, _, done, box in made]
+
+
+def _clipped_copy(psd: PSDImage, texture, pixels: np.ndarray, left: int, top: int, blend, opacity: int, made: list,
+                  name: str = ""):
+    """A pixel layer of pixels named as texture's copy, clipped right above it and the copies of it made so far."""
+    from psd_tools.api.layers import PixelLayer
+    name = name or f"{texture.name} copy" + (f" {len(made) + 1}" if made else "")
+    layer = PixelLayer.fromarray(pixels, psd, name=name, top=top, left=left)
+    layer.name = name
+    layer.blend_mode, layer.opacity = blend, opacity
+    _issue_id(psd, layer)
+    parent = texture.parent
+    layer.move_to(parent, index=parent.index(texture) + 1 + sum(1 for one in made if one[0] is texture))
+    layer.clipping = True
+    return layer
+
+
+def _paint_cover(texture, base, leaf, refs: list, psd: PSDImage) -> Optional[tuple]:
+    """
+    ((dx, dy) from the nearest star of refs (one of its size first) to leaf, leaf's box, where leaf shows in it (no
+    star over it), the group drawn there under texture (RGBA)); None without a star in refs or a shown pixel.
+    """
+    same = [ref for ref in refs if (ref.width, ref.height) == (leaf.width, leaf.height)] or refs
+    if not same:
+        return None
+    ref = min(same, key=lambda one: hypot(one.left + one.width / 2 - leaf.left - leaf.width / 2,
+                                          one.top + one.height / 2 - leaf.top - leaf.height / 2))
+    x0, y0, x1, y1 = _pad(tuple(leaf.bbox), _reach(leaf), psd)
+    if x1 <= x0 or y1 <= y0:
+        return None
+    stars = [one for one in base.descendants() if not one.is_group() and not one.clipping and one.is_visible()]
+    shows = np.zeros((y1 - y0, x1 - x0), bool)
+    for one in stars[next(i for i, one in enumerate(stars) if one is leaf):]:
+        a = _alpha(one)
+        ax0, ay0 = max(one.left, x0), max(one.top, y0)
+        if a is None or min(one.left + a.shape[1], x1) <= ax0 or min(one.top + a.shape[0], y1) <= ay0:
+            continue
+        ax1, ay1 = min(one.left + a.shape[1], x1), min(one.top + a.shape[0], y1)
+        part = a[ay0 - one.top:ay1 - one.top, ax0 - one.left:ax1 - one.left] > 0
+        if one is leaf:
+            shows[ay0 - y0:ay1 - y0, ax0 - x0:ax1 - x0] |= part
+        else:                                   # a star over it keeps its own look
+            shows[ay0 - y0:ay1 - y0, ax0 - x0:ax1 - x0] &= ~part
+    if not shows.any():
+        return None
+    chain = _clip_chain(base)
+    later = chain[chain.index(texture):]
+    drawn = base.composite(viewport=(x0, y0, x1, y1), apply_icc=False,
+                           layer_filter=lambda layer: not any(layer is one for one in later))
+    drawn = np.asarray(drawn.convert("RGBA"))
+    return (leaf.left - ref.left, leaf.top - ref.top), (x0, y0, x1, y1), shows, drawn
 
 
 RELAID = ("rows of two, laid out again", "a V's point as a pair", "a row on its banner")  # _more_layouts': told
@@ -8642,9 +8714,9 @@ def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None, re
     for layer, dx, dy in plan.moves:
         _shift(layer, dx, dy, True)
         boxes.append((_extent(layer), layer))
-    for layer in _texture_copies(psd, plan):    # a texture on the stars' group follows them (owner 11-09)
-        plan.done.append(("made", layer, {}))
-        boxes.append((tuple(layer.bbox), layer))
+    for done, box in _texture_copies(psd, plan):    # a texture on the stars' group follows them (owner 11-09)
+        plan.done.append(done)
+        boxes.append((box, done[2] if done[0] == "masked copy" else done[1]))
     stars, texts = badge_layers(psd)[0], _texts(psd)
     touching, made = [], []
     for stem, box, reference in plan.icons:
@@ -8682,8 +8754,8 @@ def set_icons(psd: PSDImage, plan: IconPlan, types_dir: Optional[str] = None, re
         if getattr(reference, "_psd", psd) is psd:      # a template's chain stays in the template
             _copy_chain(reference, layer, plan.done)
     region = union_box([_pad(box, _reach(layer), psd) for box, layer in boxes if box[2] > box[0] and box[3] > box[1]])
-    layers = plan.hide + plan.show + [layer for layer, _, _ in plan.moves] + [done[2] if done[0] == "copy" else done[1]
-                                                                             for done in plan.done]
+    layers = plan.hide + plan.show + [layer for layer, _, _ in plan.moves] + [
+        done[2] if done[0] in ("copy", "masked copy") else done[1] for done in plan.done]
     notes = list(plan.notes) + ([f"types: the first type icon is placed at {plan.first}'s spot: check it"] if plan.first else [])
     notes += touching
     return Edit(plan.field, plan.old, plan.new, layers, [], region, icons=plan, notes=notes)
@@ -8708,12 +8780,15 @@ def index_icons(edit: Edit, before: dict, after: dict) -> None:
                                                                  zip(_subtree_records(done[1]), _subtree_records(done[2]))]]
     edit.copied += [(after[id(done[2]._record)], before[id(done[1]._record)], *moved.get(id(done[2]), (0, 0)))
                     for done in plan.done if done[0] == "split"]
+    edit.copied += [(after[id(done[2]._record)], before[id(done[1]._record)], done[3], done[4]) for done in plan.done
+                    if done[0] == "masked copy"]          # a texture's copy masked to a star (_texture_copies)
     edit.made = [(after[id(done[1]._record)], done[2]) for done in plan.done if done[0] == "made"]
     edit.masked = sorted({after[id(done[2 if done[0] == "split" else 1]._record)] for done in plan.done
                           if done[0] in ("split", "masked")}
                          | {after[id(done[2]._record)] for done in plan.done if done[0] == "copy"
                             and (id(done[1]._record) in origin or any(one[0] == "masked" and one[1] is done[1]
-                                                                     for one in plan.done))})
+                                                                     for one in plan.done))}
+                         | {after[id(done[2]._record)] for done in plan.done if done[0] == "masked copy"})
     leaves = lambda layer: [one for one in [layer, *(layer.descendants() if layer.is_group() else ())]
                             if not one.is_group() and one.kind == "smartobject" and _filtered(one)]
     edit.filters = [(leaf.smart_object.placed_id, leaf.smart_object.placed_id, dx, dy) for layer, dx, dy in plan.moves

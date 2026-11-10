@@ -594,9 +594,9 @@ def _centres(plan) -> list:
 def test_star_cases_of_10_26(clone, parser, tmp_path):
     """Leshy's half-opaque shadows are no stars (5, not 3); its 4 hides the bottom-left drop (the middle one would bare
     its neighbour's shadow) and its 1 keeps it (the top-right's shadow would show). Yin Yarn's yarn clipped onto its
-    group follows its 6 (owner 11-09: no note); Paint Warrior's new two step down onto its paint. A die's five keeps its
-    faces (Yin Yarn, Nightmare: 1 the middle, 2 and 3 a diagonal). Bolts and Screws' gear is no banner: a column. Remote
-    Detonator's row is centred and tightened on its banner; Crowned Magolor's V point becomes a pair."""
+    group follows its 6 (owner 11-09: no note); Paint Warrior's paint follows its 4 too (rows of two). A die's five
+    keeps its faces (Yin Yarn, Nightmare: 1 the middle, 2 and 3 a diagonal). Bolts and Screws' gear is no banner: a
+    column. Remote Detonator's row is centred and tightened on its banner; Crowned Magolor's V point becomes a pair."""
     leshy = "Creatures/Other/5 Stars/Leshy.psd"
     psd, parsed = _renamed(parser, clone, leshy, tmp_path)
     assert parser._count_stars(psd) == 5
@@ -608,8 +608,8 @@ def test_star_cases_of_10_26(clone, parser, tmp_path):
     assert [t.name for t in six.textures] == ["Layer 6"] and not any("Layer 6" in note for note in six.notes)
     assert _centres(pe.plan_stars(psd, parsed, 2, parser, moving=True)) == [(1137, 108), (1024, 205)]   # a diagonal
     paint = "Auxiliary/Minions/Paint_Warrior.psd"
-    assert pe.plan_stars(*_open(parser, clone, paint, tmp_path), 4, parser).notes == [
-        "stars: the new stars placed 80 px lower to fit: check it"]
+    four = pe.plan_stars(*_open(parser, clone, paint, tmp_path), 4, parser)
+    assert four.how == "rows of two" and not four.notes and len(four.textures) == 2
     psd, parsed = _open(parser, clone, "Creatures/Kirby/5 Stars/Nightmare.psd", tmp_path)
     assert _centres(pe.plan_stars(psd, parsed, 1, parser, moving=True)) == [(1048, 118)]             # the middle
     assert _centres(pe.plan_stars(psd, parsed, 3, parser, moving=True)) == [(1104, 70), (1048, 118), (992, 174)]
@@ -651,6 +651,32 @@ def test_a_texture_on_the_stars_follows_them(clone, parser, tmp_path):
         h, w = core.shape
         diff = np.abs(shown[a.top:a.top + h, a.left:a.left + w] - shown[b.top:b.top + h, b.left:b.left + w]).max(-1)
         assert diff[core].mean() < 1
+
+
+@icons
+def test_a_smart_object_paint_on_the_stars_follows_them(clone, parser, tmp_path):
+    """Paint Warrior's 4 (owner 11-09): its paint, a smart object clipped onto each Stars group, is drawn on each new
+    star as on the original beside it: the group under it opaque, then the paint copied, moved and masked to the star,
+    right above the paint."""
+    psd, parsed = _open(parser, clone, "Auxiliary/Minions/Paint_Warrior.psd", tmp_path)
+    plan = pe.plan_stars(psd, parsed, 4, parser)
+    pe.set_icons(psd, plan)
+    pairs = [(a[1], b) for a, b in zip(plan.done, plan.done[1:]) if a[0] == "made" and b[0] == "masked copy"]
+    assert len(pairs) == 2
+    for base, (_, paint, copy, dx, dy) in pairs:
+        chain = list(paint.parent)
+        assert chain.index(paint) < chain.index(base) == chain.index(copy) - 1 and copy.has_mask()
+        assert base.clipping and copy.clipping and copy.opacity == paint.opacity and (dx, dy) != (0, 0)
+    shown = pe.render_all(psd).astype(int)
+    for group in [layer for layer in psd if layer.is_group() and layer.name == "Stars"]:
+        stars = [layer for layer in group if not layer.clipping]
+        old, new = stars[0], stars[1:]
+        for star in new:
+            core = np.asarray(star.topil().convert("RGBA"))[..., 3] == 255
+            h, w = core.shape
+            diff = np.abs(shown[star.top:star.top + h, star.left:star.left + w]
+                          - shown[old.top:old.top + h, old.left:old.left + w]).max(-1)
+            assert diff[core].mean() < 1
 
 
 def _open(parser, clone, rel, tmp_path) -> tuple:
@@ -927,8 +953,8 @@ def test_a_closed_row_makes_room(clone, parser, tmp_path):
 @icons
 def test_a_blocked_new_icon_steps_down(parser, tmp_path):
     """Owner 11-08: a new star or type icon whose spot is blocked steps down a tenth of its height at a time until it
-    fits, its centre above the card's middle and its core above the Ability text (_drops; MMC's, Paint Warrior's and
-    Nasus's above). Fire and Water ink over each other; Ice made in Fire's spot would cover Water: it goes under it."""
+    fits, its centre above the card's middle and its core above the Ability text (_drops; MMC's and Nasus's
+    above). Fire and Water ink over each other; Ice made in Fire's spot would cover Water: it goes under it."""
     assert list(pe._drops(SimpleNamespace(height=2400, descendants=lambda: []), (0, 1000, 100, 1100))) == \
         list(range(10, 151, 10))
     paths = _fixture(tmp_path, types=(("Fire", (30, 30)), ("Water", (100, 30))))
