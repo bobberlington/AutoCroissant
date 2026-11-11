@@ -68,6 +68,7 @@ def test_publish_adds_keeps_and_drops(tmp_path, monkeypatch):
     a, b, c = (git("-C", str(work), "rev-parse", f"HEAD:{n}") for n in ("A.psd", "B.psd", "C.png"))
     files = lambda: sorted(git("-C", str(origin), "ls-tree", "--name-only", cp.BRANCH).split())
     plate = {"v": 1, "crops": []}
+    assert cp.publish({}, str(work))["commit"] == "" and not git("-C", str(origin), "branch", "--list", cp.BRANCH)
     done = cp.publish({a: plate, b: plate, c: plate, "f" * 40: plate}, str(work))
     assert (done["added"], done["dropped"]) == (2, 0) and files() == sorted([f"{a}.json", f"{b}.json"])
     git("-C", str(seed), "rm", "-q", "B.psd")

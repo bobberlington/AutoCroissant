@@ -291,7 +291,7 @@ def publish(found: dict, where: str, head: str = "HEAD", remote: str = "origin")
             old = _files(where, parent)
             files = {**{name: sha for name, sha in old.items() if name[:-5] in keep}, **new}
             added, dropped = sum(1 for n, s in new.items() if old.get(n) != s), len(set(old) - set(files))
-            if parent and files == old:
+            if files == old:                    # no branch yet and no plates: none made
                 return {"commit": "", "added": 0, "dropped": 0, "kept": len(files)}
             tree = _git(where, "mktree", "--missing", stdin="".join(f"100644 blob {s}\t{n}\n" for n, s in sorted(files.items())).encode()).strip()
             commit = _git(where, "commit-tree", tree, *(["-p", parent] if parent else []), "-m",
