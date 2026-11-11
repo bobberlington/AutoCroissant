@@ -218,6 +218,26 @@ def test_a_drawn_duplicate_is_no_flag(clone, monkeypatch):
         assert (cc.DUP_NOTE.format(name="Breakfast.png") in record["notes"]) is flagged, record["notes"]
 
 
+def test_lost_bars_read_at_the_earlier_boxes(clone, monkeypatch):
+    """11-11 push bfdc80ef took Hive Knight's bar layers off, its picture kept them: the note reads them at the earlier
+    PSD's boxes; a parse with its stats fetches nothing earlier."""
+    from hashlib import sha1
+    from commands.card_bake import Snapshot
+    from commands.psd_edit import _bare_parser
+    from conftest import at_rev
+    rel = "Creatures/Hollow Knight/3 Stars/Hive_Knight.psd"
+    before, after, png = (at_rev(clone, rev, path) for rev, path in (("b293ca6f", rel), ("bfdc80ef", rel),
+                                                                      ("bfdc80ef", rel[:-4] + ".png")))
+    monkeypatch.setattr(cc, "edit_notes", lambda *args: [])
+    sha = lambda data: sha1(b"blob %d\0" % len(data) + data).hexdigest()
+    for psd, notes in ((after, [cc.LOST_NOTE.format(stats="HP, DEF, ATK and SPD", layers="Stats Bars/Darks",
+                                                     shown="HP 5, DEF 5, ATK 6, SPD 7")]), (before, [])):
+        snapshot = Snapshot("", "", {}, {rel: ("100644", sha(psd)), rel[:-4] + ".png": ("100644", sha(png))})
+        snapshot.fetch = {sha(blob): blob for blob in (psd, png, *([before] if psd is after else []))}.__getitem__
+        earlier = {rel: [sha(before), "0" * 40]}      # the second never fetched
+        assert cc.check_card(cc.Context(snapshot, _bare_parser(), "", earlier=earlier), rel)["notes"] == notes
+
+
 def test_sweeps_keep_flags(tmp_path):
     """A person's flag stays through sweeps (db/changelog's "sweep") and an unknown chain; a person's push clears it."""
     rel, mark = "Creatures/A.psd", "11111111"

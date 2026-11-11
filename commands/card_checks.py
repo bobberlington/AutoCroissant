@@ -1,12 +1,13 @@
 """
 Automatic card flags (owner 2026-11-07): what a card needs from a developer, read off its PSD and its picture, kept by PSD
 blob in the card data's db/card_checks.json (TTSCardMaker's card-checks.yml, off Card sync's path; the website shows them).
-hand: the picture says other than the data, old-style bars, a website edit that cannot bake, a linked picture the repo
-lacks, one that looks the same as another file, or one Card sync could not draw again (db/links.json, worded at each
-save). bars: special bars that do not read like the template. name: the website's name and the printed title disagree
-(exact), or the title's file form and the file name (owner 2026-11-11: card_models.file_stem, small words' case aside);
-none once a person marked the names intended (Card Edits names_ok) until one changes; second pictures left out; worded
-at each save (owner 2026-11-10). A note is one short sentence a developer can act on. Nothing here blocks or tells anyone.
+hand: the picture says other than the data, old-style bars, bar layers gone that the picture still shows (read at an
+earlier PSD's boxes, db/changelog's), a website edit that cannot bake, a linked picture the repo lacks, one that looks the
+same as another file, or one Card sync could not draw again (db/links.json, worded at each save). bars: special bars that
+do not read like the template. name: the website's name and the printed title disagree (exact), or the title's file
+form and the file name (owner 2026-11-11: card_models.file_stem, small words' case aside); none once a person marked
+the names intended (Card Edits names_ok) until one changes; second pictures left out; worded at each save (owner
+2026-11-10). A note is one short sentence a developer can act on. Nothing here blocks or tells anyone.
 
     python -m commands.card_checks list --clone <checkout> --db <db dir> [--head <sha>] [--all] [--shard i/n]
     python -m commands.card_checks run  --clone <checkout> --db <db dir> --out <file> [--head <sha>] [--all] [--shard i/n]
@@ -53,7 +54,7 @@ from commands.card_models import RAID_STARS, card_name, file_stem, small_case
 from commands.card_preview import outcome, resolve
 from commands.card_standards import _bar_art
 from commands.github_api import token_from_env
-from commands.psd_parser import EFFECT_LAYER_TAG, picture_numbers, variant_view, variants_of
+from commands.psd_parser import EFFECT_LAYER_TAG, STAT_KINDS, picture_numbers, variant_view, variants_of
 from commands.psd_regions import STATS, bar_box, comp_bars, linked_items, placed_data, stat_rows
 from global_config import CARD_REPO, EDITS_PATH, ICON_MANIFEST_PATH
 
@@ -104,6 +105,9 @@ LINK_MISSING = "Links {name}, which is not in the repo: push that file."
 LINK_ALIKE = "Links {name}, which looks the same as {kept}: link {kept} instead."
 LINK_STUCK = "{layer} links {name}, changed since: Card sync could not draw it again ({why}); update it in Photoshop."
 FX_NOTE = "Photoshop 2023 cannot read the effects of {layers} and drops them on opening: set them again in Photoshop."
+LOST_NOTE = ("Its {stats} bar layers are gone ({layers}) and the data with them, but the picture still shows bars ({shown}): "
+             "put the template's bars back in Photoshop.")
+LOOK_BACK = 3                               # earlier PSDs (db/changelog's) a creature's lost bars are looked for in
 CUSTOM_NOTES = {"icons": "Its stat bars are separate icons with gaps, not the template's cells.",
                 "pictures": "Its stat bars are pictures, not the template's cells.",
                 "shape": "Its stat bars have their own shape, not the template's cells.",
@@ -248,12 +252,18 @@ def _tell_busy(rows: list) -> None:
                 read.update(best=0, could=[0])
 
 
-def bar_boxes(psd: PSDImage) -> dict:
-    """{stat: [each bar's box, top to bottom]}: the layer-comp bars, else the digit rows."""
-    found = {stat: [tuple(box) for _, _, box in bars] for stat, bars in comp_bars(psd).items()}
+def bar_layers(psd: PSDImage) -> dict:
+    """{stat: [(layer, box) of each bar]}: the layer-comp bars, else the digit rows (their groups)."""
+    found = {stat: [(layer, tuple(box)) for layer, _, box in bars] for stat, bars in comp_bars(psd).items()}
     if not any(found.values()):
-        found = {stat: [bar_box(psd, stat, box) for _, _, box in rows if box] for stat, rows in stat_rows(psd).items()}
-    return {stat: sorted(boxes, key=lambda box: box[1]) for stat, boxes in found.items()}
+        found = {stat: [(group, bar_box(psd, stat, box)) for group, _, box in rows if box]
+                 for stat, rows in stat_rows(psd).items()}
+    return found
+
+
+def bar_boxes(psd: PSDImage) -> dict:
+    """{stat: [each bar's box, top to bottom]}: bar_layers'."""
+    return {stat: sorted((box for _, box in bars), key=lambda box: box[1]) for stat, bars in bar_layers(psd).items()}
 
 
 def by_label(psd: PSDImage, boxes: dict) -> dict:
@@ -358,6 +368,64 @@ def mismatches(record: dict, data: dict, site=()) -> list:
     return out
 
 
+def _has(value) -> bool:
+    """A stat the parse read."""
+    return isinstance(value, int) and value >= 0
+
+
+def _path(layer) -> str:
+    """A layer's group path: "Stats Bars/Darks/Hp Dark"."""
+    names = []
+    while layer is not None and not isinstance(layer, PSDImage):
+        names.append(layer.name.strip())
+        layer = layer.parent
+    return "/".join(reversed(names))
+
+
+def lost_bars(before: PSDImage, psd: PSDImage, card: dict, image: Image.Image) -> Optional[list]:
+    """
+    Stats psd's parse (card) lacks whose bars an earlier PSD (before) had and psd's layers lost, read off psd's picture at
+    before's boxes: [LOST_NOTE] when one still reads (Hive Knight, omori 11-11), [] when none does, None when before
+    lacked those bars too.
+    """
+    boxes, old = bar_boxes(psd), bar_layers(before)
+    gone = [stat for stat in STAT_ORDER if not _has(card.get(stat)) and not boxes.get(stat) and old.get(stat)]
+    if not gone:
+        return None
+    with variant_view(before, 1):
+        reads = read_picture(before, image, cells=True)
+    shown = [f"{STAT_NAMES[stat]} {rows[0]['best']}" for stat in gone
+             if len(rows := reads.get(stat) or []) == 1 and rows[0]["best"] is not None]
+    if not shown:
+        return []
+    have = {_path(layer) for layer in psd.descendants()}
+    layers = []
+    for stat in gone:                           # each bar's outermost group psd lacks
+        for layer, _ in old[stat]:
+            chain = [layer]
+            while chain[-1].parent is not None and not isinstance(chain[-1].parent, PSDImage):
+                chain.append(chain[-1].parent)
+            missing = [one for one in chain if _path(one) not in have]
+            layers.append(_path(missing[-1] if missing else layer))
+    names = [STAT_NAMES[stat] for stat in gone]
+    stats = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+    return [LOST_NOTE.format(stats=stats, layers=", ".join(dict.fromkeys(layers)), shown=", ".join(shown))]
+
+
+def earlier_bars(ctx: "Context", rel: str, psd: PSDImage, card: dict, image: Optional[Image.Image]) -> list:
+    """lost_bars against a creature's or minion's earlier PSDs (ctx.earlier, newest first, LOOK_BACK at most) when its
+    parse lacks a stat; the first that had those bars says."""
+    if image is None or card.get("type") not in STAT_KINDS or card.get("creatures") \
+            or all(_has(card.get(stat)) for stat in STAT_ORDER):
+        return []
+    now = ctx.snapshot.sha(rel)
+    for blob in [blob for blob in ctx.earlier.get(rel, ()) if blob != now][:LOOK_BACK]:
+        found = lost_bars(PSDImage.open(BytesIO(ctx.snapshot.fetch(blob))), psd, card, image)
+        if found is not None:
+            return found
+    return []
+
+
 # ========================
 # The bars' style
 # ========================
@@ -406,6 +474,7 @@ class Context:
     parser: object
     fonts: str
     colors: list = field(default_factory=list)
+    earlier: dict = field(default_factory=dict)     # {PSD path: its earlier blobs, newest first}: earlier_blobs
 
     def chart(self) -> Optional[dict]:
         """status_fills() of the status chart, once."""
@@ -416,10 +485,10 @@ class Context:
         return self.colors[0]
 
 
-def context(repository: str, clone: str, head: str = "") -> Context:
+def context(repository: str, clone: str, head: str = "", earlier: Optional[dict] = None) -> Context:
     """A Context on a checkout (blobless is enough)."""
     snapshot = local_snapshot(repository, clone, head)
-    return Context(snapshot, vocabulary(snapshot), card_bake._fonts_dir(snapshot))
+    return Context(snapshot, vocabulary(snapshot), card_bake._fonts_dir(snapshot), earlier=earlier or {})
 
 
 def _why(reason: str) -> str:
@@ -629,6 +698,7 @@ def check_card(ctx: Context, rel: str) -> dict:
     with variant_view(psd, 1):                  # a tagged PSD: Name.png is picture 1
         reads = read_picture(psd, image, cells=style in ("new", "few")) \
             if style and image is not None and not counted else {}
+    notes += earlier_bars(ctx, rel, psd, parsed["card"], image)
     notes += edit_notes(ctx, rel, psd, parsed, style, image)
     dups = snapshot.dup_pictures().get(rel, []) if image is not None else []
     drawn = picture_numbers(psd, [*snapshot.png_for(rel)[1], *dups]) if dups else {}    # a picture: drawn (owner 11-09)
@@ -760,6 +830,11 @@ def psd_steps(db: str) -> dict:
     return steps
 
 
+def earlier_blobs(steps: dict) -> dict:
+    """{PSD path: its earlier blobs, newest first} of psd_steps'."""
+    return {path: list(dict.fromkeys(old for old, _, _ in reversed(found))) for path, found in steps.items()}
+
+
 def by_person(steps: list, mark: str) -> bool:
     """A change no sweep made since the PSD blob mark (psd_steps' for its path): after the last step onto the mark, else
     from the first off it; none known: False (unknown never clears)."""
@@ -860,9 +935,9 @@ def refresh(checks: dict, snapshot: Snapshot, stats: dict, edits: CardEdits, lin
 _worker: list = []
 
 
-def _start(repository: str, clone: str, head: str) -> None:
+def _start(repository: str, clone: str, head: str, earlier: dict) -> None:
     token_from_env()                            # a blob the clone lacks comes by REST
-    _worker[:] = [context(repository, clone, head)]
+    _worker[:] = [context(repository, clone, head, earlier)]
 
 
 def _one(rel: str) -> tuple:
@@ -874,11 +949,14 @@ def _one(rel: str) -> tuple:
         return rel, f"{type(error).__name__}: {error}", perf_counter() - started
 
 
-def run(rels: list, repository: str, clone: str, head: str, workers: int, minutes: float, out: str) -> dict:
-    """check_card over rels in worker processes, for at most this long; {blob: record}, written to out as it grows."""
+def run(rels: list, repository: str, clone: str, head: str, workers: int, minutes: float, out: str,
+        earlier: Optional[dict] = None) -> dict:
+    """check_card over rels in worker processes, for at most this long; {blob: record}, written to out as it grows
+    (earlier: Context's)."""
     snapshot = local_snapshot(repository, clone, head)
     found, started = {}, perf_counter()
-    with ProcessPoolExecutor(workers, initializer=_start, initargs=(repository, clone, head)) as pool:
+    earlier = {rel: earlier[rel] for rel in rels if rel in earlier} if earlier else {}
+    with ProcessPoolExecutor(workers, initializer=_start, initargs=(repository, clone, head, earlier)) as pool:
         jobs = [pool.submit(_one, rel) for rel in rels]
         for n, job in enumerate(as_completed(jobs), 1):
             rel, record, seconds = job.result()
@@ -941,7 +1019,8 @@ def main(args: Optional[list] = None) -> int:
     if options.action == "list":
         print("\n".join(blobs_of(snapshot, rels, stats_of(options.db))))
     else:
-        run(rels, options.repo, options.clone, options.head, options.workers, options.minutes, options.out)
+        run(rels, options.repo, options.clone, options.head, options.workers, options.minutes, options.out,
+            earlier_blobs(psd_steps(options.db)))
     return 0
 
 
@@ -955,15 +1034,19 @@ if __name__ == "__main__":
 __all__ = [
     'SPARSE_FILES',
     'VERSION',
+    'bar_layers',
     'blobs_of',
     'by_person',
     'check_card',
     'context',
+    'earlier_bars',
+    'earlier_blobs',
     'edit_notes',
     'flags',
     'link_notes',
     'load',
     'look_alikes',
+    'lost_bars',
     'main',
     'mismatches',
     'name_note',
