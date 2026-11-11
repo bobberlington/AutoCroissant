@@ -252,9 +252,9 @@ class RemotePSD:
         size: Its size from the tree, checked when given
 
     Raises:
-        ImportError: psd-tools has no lazy reads (psd_tools.range_reader); RangeError: no range reply (a 404: the commit
-        is not on GitHub), another size, or a range other than asked; RequestException, or what psd-tools raises on the
-        records. A read that fails after the open sets failed (the caller may have caught it)
+        RangeError: no range reply (a 404: the commit is not on GitHub), another size, or a range other than asked;
+        RequestException, or what psd-tools raises on the records. A read that fails after the open sets failed (the
+        caller may have caught it)
     """
     def __init__(self, repository: str, ref: str, path: str, size=None, timeout: int = 60):
         from psd_tools import PSDImage
