@@ -914,9 +914,10 @@ def blobs_of(snapshot: Snapshot, rels: list, stats: dict) -> list:
 
 def refresh(checks: dict, snapshot: Snapshot, stats: dict, edits: CardEdits, links: Optional[dict] = None,
             steps: Optional[dict] = None) -> None:
-    """Every record's "hand", "bars" and "name" against the data and the links (db/links.json: a pushed file clears its
-    note), the records of PSDs gone from the tree out, and the people's flags that went: set on another PSD than the
-    card's, changed since by more than sweeps (steps: psd_steps), whose checks are clean (build_site leaves them out)."""
+    """Every record's "hand", "bars", "name" and "card" against the data, the tree and the links (db/links.json: a pushed
+    file clears its note), the records of PSDs gone from the tree out, and the people's flags that went: set on another
+    PSD than the card's, changed since by more than sweeps (steps: psd_steps), whose checks are clean (build_site leaves
+    them out)."""
     cards = {card.get("blob_sha"): card for card in stats.values() if card.get("blob_sha")}
     by_path = {card.get("path"): card for card in stats.values() if not card.get("duplicate_of") and not card.get("variant_of")}
     blobs = {snapshot.sha(rel): key for key, rel in snapshot.psds.items()}
@@ -927,7 +928,8 @@ def refresh(checks: dict, snapshot: Snapshot, stats: dict, edits: CardEdits, lin
     for blob, record in checks["cards"].items():
         rel, site = snapshot.psds[blobs[blob]], edits.cards.get(blobs[blob]) or {}
         linked = link_notes(rel, blob, links, sha, alike, record) if links else []
-        record.update(flags(record, cards.get(blob), site, linked, name_note(by_path.get(rel), site, rel)))
+        record.update(flags(record, cards.get(blob), site, linked, name_note(by_path.get(rel), site, rel)),
+                      card=card_name(rel))       # a renamed file's record follows it
     was, cleared = checks.get("cleared") or {}, {}
     for key, entry in edits.cards.items():
         mark, rel = (entry.get("flags") or {}).get("psd"), snapshot.psds.get(key)

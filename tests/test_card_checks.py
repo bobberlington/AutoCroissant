@@ -154,6 +154,7 @@ def test_name_note():
              "Wall2": {"path": "C/Blockade.psd", "display_name": "Wall", "duplicate_of": "Blockade", "variant_of": "Blockade"}}
     cc.refresh(checks, snapshot, stats, CardEdits.parse("{}"))
     assert checks["cards"]["a" * 40]["name"] == cc.NAME_FILE.format(printed="The Wall By Ech", file="Blockade.psd")
+    assert checks["cards"]["a" * 40]["card"] == "Blockade"                            # its file's, after a rename too
     cc.refresh(checks, snapshot, stats, CardEdits.parse(json.dumps({"cards": {"Blockade": {"name": "Wall", "_site": ["name"]}}})))
     assert checks["cards"]["a" * 40]["name"].endswith('but the website shows "Wall" and its file is Blockade.psd.')
     marked = {"cards": {"Blockade": {"names_ok": ["The Wall By Ech", "The Wall By Ech", "Blockade"]}}}
