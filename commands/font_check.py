@@ -34,6 +34,7 @@ from struct import error as StructError, pack_into, unpack_from
 from subprocess import run
 from typing import Optional
 
+import freetype  # noqa: F401  before uharfbuzz (fontTools loads it): else macOS binds FreeType's HarfBuzz to it, segfaults
 from fontTools.ttLib import TTCollection, TTFont
 from psd_tools import PSDImage
 from requests import HTTPError

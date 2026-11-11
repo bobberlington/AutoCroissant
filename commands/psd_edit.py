@@ -33,6 +33,7 @@ from typing import Optional
 from uuid import NAMESPACE_URL, uuid5
 from weakref import WeakKeyDictionary
 
+import freetype  # noqa: F401  before uharfbuzz: as font_check
 import numpy as np
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
