@@ -7201,15 +7201,14 @@ def _textures(unit: _Unit) -> list:
 
 
 def _followed(shown: list) -> list:
-    """The textures clipped onto the stars' group that follow them (owner 11-09: Yin Yarn's yarn, Paint Bomb's paint):
-    a plain pixel layer or Normal smart object (no effects, filters or mask, full fill) inking TEXTURE_KEEP of every
-    shown star's core in the group it clips onto."""
+    """The textures clipped onto the stars' group that follow them (owner 11-09: Yin Yarn's yarn, Paint Bomb's paint,
+    Paint Warrior's Multiply paint): a plain pixel layer or smart object (no effects, filters or mask, full fill)
+    inking TEXTURE_KEEP of every shown star's core in the group it clips onto."""
     out: list = []
     for unit in shown:
         for texture in _textures(_drawn_as(unit)):
             if any(texture is one for one in out) or texture.kind not in ("pixel", "smartobject") \
-                    or texture.kind == "smartobject" and (texture.blend_mode != BlendMode.NORMAL
-                                                          or _filtered(texture)) \
+                    or texture.kind == "smartobject" and _filtered(texture) \
                     or texture.fill_opacity != 255 \
                     or texture.has_mask() or texture.has_vector_mask() or _enabled_effects(texture):
                 continue
