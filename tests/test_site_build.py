@@ -978,6 +978,7 @@ esac"""
                                                   {"id": 7, "status": "queued", "display_title": "Card browser"},
                                                   {"id": 8, "status": "completed", "display_title": "Card browser"}]}))
     fast = {"-ge 120 ]": "-ge 0 ]"}
+    stuck = {"-lt 360 ]": '-lt 360 ] && [ "$last" != syncing_files ]'}     # times out after a status read, not at a clock tick
     for n, (statuses, cancel, swap, code, said, cancels) in enumerate((
             (["deployment_queued", "syncing_files", "succeed"], "0", {}, 0, "Deployed in", 0),
             (["syncing_files"], "0", fast, 0, "Run 7 waits: deploy handed to it", 1),
@@ -985,7 +986,7 @@ esac"""
             (["deployment_queued", "deployment_failed"], "0", {}, 1, "::error::deployment_failed", 0),
             (["deployment_queued"], "0", {"-lt 360 ]": "-lt 0 ]"}, 1, "::error::not deployed in 6 minutes", 1),
             (["ERR"], "0", {}, 1, "::error::15 status reads failed", 1),
-            (["syncing_files"], "0", {"-lt 360 ]": "-lt 1 ]"}, 1, "::error::not deployed in 6 minutes", 1))):   # stuck
+            (["syncing_files"], "0", stuck, 1, "::error::not deployed in 6 minutes", 1))):   # stuck
         temp = tmp_path / f"t{n}"
         (temp / "setup").mkdir(parents=True)
         (temp / "setup" / "versions.code").write_text("0\n")          # the hand-over
@@ -1024,6 +1025,7 @@ esac"""
     (temp / "out").write_text("")                                     # under GITHUB_SHA: never stuck, never to a run at it
     (temp / "statuses").write_text("syncing_files\n")
     runs.write_text(json.dumps({"workflow_runs": [{"id": 7, "status": "queued", "display_title": "Card browser", "head_sha": sha}]}))
-    done = subprocess.run(["bash", "-e", "-c", run.replace("-ge 120 ]", "-ge 0 ]").replace("-lt 360 ]", "-lt 1 ]")],
+    done = subprocess.run(["bash", "-e", "-c", run.replace("-ge 120 ]", "-ge 0 ]").replace("-lt 360 ]", stuck["-lt 360 ]"])],
                           env={**env, "ARTIFACT": "43"}, capture_output=True, text=True, timeout=30)
     assert done.returncode == 1 and "stuck" not in (temp / "out").read_text() and "Run 7" not in done.stdout, done.stdout
+    assert sum("actions/workflows/site.yml/runs" in c for c in (temp / "calls").read_text().splitlines()) == 1
