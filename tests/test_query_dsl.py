@@ -11,7 +11,7 @@ CARDS = [
     dict(name="Kirby", type="creature", series="kirby", hp=5, defense=3, atk=4, spd=6, stars=3, types=["wind"],
          ability="Deal 2 DMG to the enemy."),
     dict(name="Meta Knight", type="creature", series="kirby", hp=7, defense=5, atk=7, spd=8, stars=4, aliases=["mk"],
-         ability="Deals double damage. Die at the end of the turn."),
+         ability="Deals double damage.\nDie at the end of the turn."),
     dict(name="sans.", file="Sans", type="creature", series="undertale", hp=1, defense=1, atk=1, spd=9, stars=5,
          ability="Dodge every attack. +1 SPD."),
     dict(name="King Dedede", type="creature", series="kirby", hp=4, defense=4, atk=4, spd=2, stars=4, ability="Hammer time."),
@@ -85,6 +85,13 @@ def test_bot(repo):
                 repo.ability_search_engine(query)
             continue
         assert _shown(repo, repo.ability_search_engine(query).index) == bot, query
+
+
+def test_space_finds_line_break(repo, monkeypatch):
+    """Text typed on one line finds an ability across its line break by the text, not the near-text fallback."""
+    monkeypatch.setattr(qc.CardRepository, "_fuzzy_labels", lambda self, ability: pytest.fail(ability))
+    assert list(repo.ability_search_engine("double damage.  die at").index) == ["Meta Knight"]
+    assert list(repo.ability_search_engine('"damage. die"').index) == ["Meta Knight"]
 
 
 def test_rulebook_lines(monkeypatch):

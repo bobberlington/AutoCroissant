@@ -408,7 +408,8 @@ class CardRepository:
         return df[column] if column in df else None
 
     def _haystack(self) -> Series:
-        """What a text term searches, lowercased (as the website): name, printed title, website names and aliases, ability."""
+        """What a text term searches, lowercased (as the website): name, printed title, website names and aliases, ability
+        (its line breaks and space runs as one space)."""
         df, sha = self.cards_dff, self._edit_names[0]
         if self._hay[0] is not df or self._hay[1] != sha:
             names = self._edit_names[1]
@@ -416,7 +417,7 @@ class CardRepository:
             rows = []
             for label, title, ability in zip(df.index, titles, df["ability"]):
                 parts = [str(label)] + ([title] if isinstance(title, str) else []) + list(names.get(CardAuthors.key(str(label)), []))
-                rows.append("\n".join(parts + [ability if isinstance(ability, str) else ""]).lower())
+                rows.append("\n".join(parts + [" ".join(ability.split()) if isinstance(ability, str) else ""]).lower())
             self._hay = (df, sha, Series(rows, index=df.index, dtype=object))
         return self._hay[2]
 
@@ -467,7 +468,7 @@ class CardRepository:
         Returns:
             DataFrame of matching cards
         """
-        ability = typed(ability, quotes=True).strip()
+        ability = " ".join(typed(ability, quotes=True).split())     # a space finds a line break
 
         # Handle OR queries
         queries = self._split_unquoted(ability, "|")
