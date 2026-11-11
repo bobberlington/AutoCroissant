@@ -1,6 +1,6 @@
 ---
 name: autocroissant-change-control
-description: "How AutoCroissant changes are classified, gated and shipped. Use before: committing, pushing, merging or reverting; adding, renaming or removing a slash command; editing requirements files, .gitignore or setup.py INCLUDE_FILES; moving CardInfo/CardStats or a commands/*.py module; touching the card data or the /pull and /update self-update; \"cleaning up\" odd code (x[len(x)-1], func = to_thread(func))."
+description: "How AutoCroissant changes are classified, gated and shipped. Use before: committing, pushing, merging or reverting; adding, renaming or removing a slash command; editing requirements files (requirements-bot.txt: the jetson's pins) or .gitignore; an import in a module the bot loads (the card toolchain stays out); moving CardInfo/CardStats or a commands/*.py module; touching the card data or the /pull and /update self-update; \"cleaning up\" odd code (x[len(x)-1], func = to_thread(func))."
 ---
 
 # AutoCroissant change control
@@ -34,7 +34,7 @@ Facts and line numbers verified 2026-07-11 (repo at commit 284d13c, 192 commits)
 
 | Class | Examples | Ships how | Gate before shipping |
 |---|---|---|---|
-| (a) Code | any `.py`, `setup.py`, skills | `git push` from a dev machine → on the Jetson: the `jetson-deploy` skill (pull, psd-tools pin, incremental `build_ext --inplace`, restart, journal check; since 2026-10-24). Discord `/pull` + `/restart_bot` or `/update` skip the Cython rebuild, so changed compiled modules stay stale — and since the 2026-10-20 split a stale `.so` can stop the bot at startup (analytics.so still imports `perms_check`), so after a code deploy always rebuild. **Deploy rule (2026-10-22/23 incidents):** push main and deploy the jetson in one sitting, or a /pull or /update brings the new `.py` files next to stale `.so` files and the next restart fails at import (the old 05:00-05:40 window was for the scheduled /update_stats and /push of the pickle era). A psd-tools fork tag change is one line in `requirements-cards.txt` (the one pin; the four card Actions install that file from main), then reinstalling the fork in the jetson venv with `--force-reinstall` (autocroissant-build-and-env §4) | The offline suite passes before every push: `~/.venvs/ac-py314-fork/bin/python -m pytest -n auto -q tests` (933 tests on 2026-11-10, about 2 minutes; autocroissant-validation-and-qa row 1c). A change to the parser or any card module also needs the ~812-PSD old-vs-new parse gate (validation-and-qa §4.1 method A: 0 differences, or every difference intended and written down first). A parser change that must reach the stored cards bumps `PARSER_VERSION` (psd_parser.py:25; 7 since 2026-11-09): the next Card sync re-parses every card once (~812 PSDs over budgeted runs, approved through gate G4; validation-and-qa §4). Checklist below if it adds a command; non-negotiables table always |
+| (a) Code | any `.py`, requirements files, skills | `git push` from a dev machine → on the Jetson: the `jetson-deploy` skill (pull, `requirements-bot.txt` wheels, leftover build files removed, restart (always), journal check). Nothing is compiled since 2026-11-11, so Discord `/pull` + `/restart_bot` or `/update` also bring the new code, but they install nothing: a `requirements-bot.txt` change needs the deploy. **Deploy rule:** push main and deploy the jetson in one sitting (2026-10-22/23: a pull next to stale `.so` files failed at import; the jetson's leftovers went 2026-11-11). A psd-tools fork tag change is one line in `requirements-cards.txt` (the one pin; the card Actions install that file from main): nothing on the jetson, which has no fork since 2026-11-11 | The offline suite passes before every push: `~/.venvs/ac-py314-fork/bin/python -m pytest -n auto -q tests` (933 tests on 2026-11-10, about 2 minutes; autocroissant-validation-and-qa row 1c). A change to the parser or any card module also needs the ~812-PSD old-vs-new parse gate (validation-and-qa §4.1 method A: 0 differences, or every difference intended and written down first). A parser change that must reach the stored cards bumps `PARSER_VERSION` (psd_parser.py:25; 7 since 2026-11-09): the next Card sync re-parses every card once (~812 PSDs over budgeted runs, approved through gate G4; validation-and-qa §4). Checklist below if it adds a command; non-negotiables table always |
 | (b) Data (the card data) | db/ on TTSCardMaker's `data` branch | Written ONLY by the Card sync Action (stage `build`, `python -m commands.card_data`; at most one data commit per run, never forced; gates G1-G6); people change it through its inputs: the PSDs, PNGs and `site/` files on TTSCardMaker main (class (d)). A data rollback is a `restore=<good data commit>` dispatch (DATA_BUILD_ACTION.md §13). Until 2026-10-25 the pickles here, written by `/update_stats` and committed by `/push` | **The data commit's review** (its per-card lines and the job summary; `diff_stats.py` between two data commits, below) |
 | (c) Config | config.py values (TOKEN, ADMINS, GIT_TOKEN, browser_cookies, ...) | Edited by hand per machine. NEVER committed (gitignored, `.gitignore:36` as of 2026-10-19). Values are secret — never print or quote them | New config *fields* route through autocroissant-config-and-flags |
 | (d) Card content | a card's art, ability text, stats, folder; Types/ icons, the stoogedings font and its manifest | Edit in TTSCardMaker (or on the website) and push THERE; Card sync re-parses and commits the data, the bot syncs it (and re-syncs emojis via `/sync_emojis`) | TTSCardMaker's own process; then the data gate applies to the re-parse. Renaming or deleting a Types/ PNG is a cross-repo change — ttscardmaker-companion §1.7 |
@@ -105,8 +105,8 @@ and 2026-10-23 (the font and card-data lines shifted the rest again):
 | `card_tree.json`, `.tmp` | (2026-10-25) | The card repo's last tree and its ETag, the card list at startup (commands/query_card.py) |
 | `.claude/settings.local.json` | 63 (added 2026-10-19) | Personal Claude Code settings; the shared `.claude/skills/` library IS committed |
 | `music/` | 59 | yt-dlp downloads; bulky, regenerable (dir kept by the tracked `music/.gitignore` stub — no `.gitkeep` exists despite the `!music/.gitkeep` exception) |
-| `*.log`, `logs/`, `*.csv`, `*.txt` | 78-81 (`requirements-dev.txt` and `requirements-cards.txt` re-included at 82-83) | Logs and the /export_cards //export_rulebook exports (`stats.csv`, `stats.txt`, `rules.txt`) land in the repo root; the globs keep them out |
-| `*.so`, `*.c`, `*.cpp`, `*.pyd`, `*.dll`, `build/` | 7, 14-15, 19-22, 28 | Cython build artifacts; see autocroissant-build-and-env for the stale-.so trap |
+| `*.log`, `logs/`, `*.csv`, `*.txt` | 70-73 (`requirements-dev.txt`, `requirements-cards.txt` and `requirements-bot.txt` re-included at 74-76) | Logs and the /export_cards //export_rulebook exports (`stats.csv`, `stats.txt`, `rules.txt`) land in the repo root; the globs keep them out |
+| `*.so`, `*.c`, `*.cpp`, `*.pyd`, `*.dll`, `build/` | 13-14, 18-21, 27 | Cython's build artifacts (nothing compiled since 2026-11-11; deploy.sh removes the jetson's leftovers); the stale-.so trap: autocroissant-build-and-env §5 |
 
 **Trap inside that table:** `*.txt` is gitignored, yet `requirements.txt` is
 tracked — only because already-tracked files ignore .gitignore. Any NEW `.txt` (or
@@ -156,12 +156,14 @@ Worked example to imitate: the `/update_stats` block in main.py (its options are
    `stats_commands`:86, `music_commands`:121), key format
    `"/my_command <required> [optional]:"`, value = description string.
    `print_help` dispatches on the category word.
-5. **Decide Cython placement** if you created a NEW module: `setup.py` compiles only
-   the 10 modules listed in `INCLUDE_FILES` (setup.py:21-33); new files are uncompiled
-   by default (`type_emojis`, `repo_history`, `github_api`, `tts_save`, `git_commit`, `font_check`, `card_check`, `psd_details`, the edit pipeline's `psd_edit`, `psd_regions` and `card_bake`, the card data build's `card_data`, `card_history`, `card_db` and `changelog`, the cutover's `card_sync`, the creation dates' `card_dates` (`discord_edits` until 2026-10-25), the push guards' `card_guards`, `png_export`, `card_standards` and `psd_diff`, `txt2_repair`, and `card_grid` (/query_ability's grids, 2026-10-25; 2026-10-22/23: the jetson runs the same pure Python as the Action; tests/test_card_data.py and test_card_guards.py check they stay out) are deliberately left out; the four
-   modules split out of psd_analyzer on 2026-10-20 were added so the moved code keeps its compiled semantics). TTSCardMaker's Actions
-   sparse-check out bot modules by path (card-guards.yml: its list is `card_guards.SPARSE_FILES`, 25 entries on 2026-11-10 including `psd_edit`,
-   `card_bake`, `txt2_repair`, `png_export`, `psd_diff` and the card and font checks it runs since 2026-10-25; card-sync.yml, the live bake, build and save since the cutover
+5. **Mind the import closures** if you created a NEW module or a new import. The bot's (main.py's, lazy imports
+   included) must never reach the card toolchain (psd_tools, scipy, fontTools, uharfbuzz, freetype, aggdraw):
+   `tests/test_bot_env.py` walks it and fails, and every third-party package it imports needs a pin in
+   `requirements-bot.txt` (the jetson installs that file alone since 2026-11-11). Card-side code a bot module would
+   otherwise carry gets its own module (2026-11-11: `RemotePSD` left github_api for `psd_remote`; /fonts reads the data
+   build's report instead of psd_details). TTSCardMaker's Actions
+   sparse-check out bot modules by path (card-guards.yml: its list is `card_guards.SPARSE_FILES`, 27 entries on 2026-11-11 including `psd_edit`,
+   `card_bake`, `txt2_repair`, `png_export`, `psd_diff`, `psd_remote` and the card and font checks it runs since 2026-10-25; card-sync.yml, the live bake, build and save since the cutover
    2026-10-24, checks out `card_data.SPARSE_FILES`, whose test runs `--help` on the build, the bake and the save with
    exactly that list), so renaming or moving one of those files, or adding an import to one, breaks an Action; the lists
    have a test that copies exactly it and runs `--help` (tests/test_card_bake.py, test_card_guards.py, which also runs the
@@ -171,13 +173,10 @@ Worked example to imitate: the `/update_stats` block in main.py (its options are
    TC card-guards.yml's `BOT_FILES` (the same order); card_guards imports such modules at the top (`status_font`,
    `psd_details`, `# noqa: F401`) so `test_action_shaped_copy` enforces it. 2026-11-09: `psd_details.py` was missing, and
    `standard_folders` counts every exception as a refusal, so the folders fix never ran on GitHub (AC 7735f28d, TC
-   4fa6f6a4). If you add yours to INCLUDE_FILES, both bounds checks and wraparound
-   are on since 2026-10-23 (setup.py:38-39), but still write `x[len(x)-1]` there (rule 1); the Cython 3.3 rules still
-   apply: it rejects re-annotating a variable that is already declared (declare it once; the management.py incident,
-   autocroissant-failure-archaeology Entry 10.5), and type hints coerce (see "looks safe but isn't"). Compile-check rules: autocroissant-build-and-env §5. Do not add modules that use `execv`/dynamic
-   registration (that is why update_bot.py and utils.py are never compiled: the comment above INCLUDE_FILES).
+   4fa6f6a4). A new file in a list lands in TTSCardMaker first (a path that does not exist yet checks out nothing),
+   then here. Nothing is compiled (Cython went 2026-11-11, autocroissant-build-and-env §5).
 6. **Ship and sync.** Push from the dev machine, then deploy on the Jetson as in class (a)
-   (`/update` or `/pull` + `/restart_bot` only if no compiled module changed). Commands register with Discord at startup:
+   (`/update` or `/pull` + `/restart_bot` work too, but install no `requirements-bot.txt` change). Commands register with Discord at startup:
    `on_ready` (main.py:115-144) records every command in `slash_registry` (which is
    also what lets reminders invoke commands) and syncs per guild
    (`sync_guild_commands`, main.py:102-110). If the command does not appear after
@@ -194,7 +193,7 @@ ignored — read the story before you decide the rule doesn't apply to you.
 
 | # | Rule | Rationale + incident |
 |---|---|---|
-| 1 | **Keep `x[len(x)-1]` in cythonized modules** (anything in setup.py INCLUDE_FILES); negative indexing is safe since 2026-10-23 (`wraparound=True`, `boundscheck=True`), but don't churn the idiom. | Cythonization (f7c915c, 2025-12-02) set `wraparound=False`, making `x[-1]` undefined behavior in compiled code. dd800bc (2026-01-30) is a one-line commit converting `bboxes[-1]` → `bboxes[len(bboxes)-1]`. The same mechanical negative-index purge in f7c915c also introduced the `removeprefix` local-path bug, live until 2026-10-19 — full story in **autocroissant-failure-archaeology** Entry 1 |
+| 1 | **Don't churn `x[len(x)-1]`, and never sweep code mechanically.** Nothing is compiled since 2026-11-11, so `x[-1]` is fine in new code; the old idiom stays where it is. | Cythonization (f7c915c, 2025-12-02) set `wraparound=False`, making `x[-1]` undefined behavior in compiled code. dd800bc (2026-01-30) is a one-line commit converting `bboxes[-1]` → `bboxes[len(bboxes)-1]`. The same mechanical negative-index purge in f7c915c also introduced the `removeprefix` local-path bug, live until 2026-10-19 — full story in **autocroissant-failure-archaeology** Entry 1 |
 | 2 | **Never collapse runs of whitespace in ability text.** | Gaps of 3+ spaces are where type icons sit; they are the injection signal for `_inject_type_names`. The 2026-02-08 whitespace saga (8 commits in one day — 7 parser commits plus a mid-saga PICKLE — 1c26747 through 3bbaa2b/4bcee6b; chronology in autocroissant-failure-archaeology Entry 2) added `\s{2,}` collapsing to fix two cards, broke others, and ended with 3bbaa2b "Fix the issue of collapsing spaces" deleting the collapsing entirely. Whitespace is load-bearing |
 | 3 | **All Discord sends from worker code go through `queue_*`.** No direct awaits of Discord from workers. | Single event loop + deferred dispatch with a fallback chain that survives the 15-minute interaction-token expiry. Detail owned by **autocroissant-architecture-contract** |
 | 4 | **No AI on main.** Since 2026-10-20 the AI generation code lives only on branch `archive/ai-generation`; main must run with requirements.txt alone and gets no torch-family imports. | The diffusion capability is an experiment by owner doctrine; the bot must run perfectly without it. Verified 2026-07-11: clean venv with requirements.txt only → `import main` succeeds, torch absent. Detail owned by **autocroissant-ai-boundary** (branch `archive/ai-generation`) |
@@ -207,16 +206,9 @@ ignored — read the story before you decide the rule doesn't apply to you.
   attribute names (`card_db.record`), read by the bot, the build and TTSCardMaker's site build (`CARD_FIELDS`): a rename
   needs a data migration and the site's field lists in lockstep (precedent: the "Big massive refactor", 366c8d9,
   2025-10-20, rebuilt the pickles in the same commit).
-- **"Cleaning up" `x[len(x)-1]` to `x[-1]`** in any INCLUDE_FILES module. That idiom
-  is deliberate (non-negotiable #1; dd800bc). Same for adding `.removeprefix()`-style
-  "modernizations" without checking what the original expression did — that exact
-  move created the local-path bug that lived from 2025-12-02 to 2026-10-19.
-- **Adding or "fixing" a type hint in an INCLUDE_FILES module.** Cython enforces builtin annotations: `x: list`
-  rejects a tuple, `x: dict` rejects a defaultdict (old_stats is one), `x: str` rejects None unless the default is None,
-  `x: float` turns 1 into 1.0, `x: bool` turns None into False, `-> dict` rejects a defaultdict return. Measured with
-  Cython 3.3 on 2026-10-20 (code-health audit §3.1); live example: compiled `analytics.parse_interval(None)` raises
-  where the .py returns None. Only ABCs, unions, `Optional[...]` with a None default and dataclass fields are inert.
-  Gate any hint change with a compiled run (autocroissant-build-and-env §5).
+- **A sweep "cleaning up" `x[len(x)-1]` to `x[-1]`** (harmless since nothing is compiled, 2026-11-11, but churn:
+  non-negotiable #1), or `.removeprefix()`-style "modernizations" without checking what the original expression did —
+  that exact move created the local-path bug that lived from 2025-12-02 to 2026-10-19.
 - **Deleting or merging a slash handler block in main.py, or changing its `name=`.** Each
   `@tree.command` registers its function at def time and `slash_registry` keys on `cmd.name`, so the
   Python def name is decorative: the two duplicate names (C5) were renamed on 2026-10-20 to
@@ -236,8 +228,8 @@ ignored — read the story before you decide the rule doesn't apply to you.
   writer; gate G6 refuses a run whose data tip moved under it.
 - **Importing card classes from the split modules in code outside the card modules.** Code outside the card modules
   (commands/card_*.py, psd_parser, psd_analyzer, query_card) imports card classes from the `commands.psd_analyzer`
-  facade. The old reason (a stale monolithic psd_analyzer `.so` giving two `stats_db` objects) is gone: every deploy
-  rebuilds every `.so`, and query_card itself takes `stats_db` from card_models since 2026-10-21
+  facade. The old reason (a stale monolithic psd_analyzer `.so` giving two `stats_db` objects) is gone: nothing is
+  compiled since 2026-11-11, and query_card itself takes `stats_db` from card_models since 2026-10-21
   (autocroissant-architecture-contract, lazy-import cycle breaks).
 - **Letting a test or script write the live reminder store.** `tests/conftest.py`'s `live_files_untouched` fixture
   hashes reminder.json around the run and fails it on any change; tests run in a temp cwd.
@@ -272,7 +264,7 @@ ignored — read the story before you decide the rule doesn't apply to you.
 - diff_stats.py and the other scripts' usage/outputs → **autocroissant-diagnostics-and-tooling**.
 - Evidence standards and the parser-change acceptance procedure → **autocroissant-validation-and-qa**.
 - Adding/altering config fields or flags → **autocroissant-config-and-flags**.
-- Cython build mechanics, environments, dependency installs → **autocroissant-build-and-env**.
+- Environments, requirements files, dependency installs → **autocroissant-build-and-env**.
 - Anything AI/diffusion-side → **autocroissant-ai-boundary** (branch `archive/ai-generation`).
 - Command-description and help-text wording → **autocroissant-docs-and-style**.
 - Card semantics (folders, layers, injection) → **impossibility-cards-reference**.
@@ -296,7 +288,7 @@ and update this file.
 | Gitignore coverage (config.py, .ssh, reminder.json, music, txt/csv/log) | `git check-ignore -v config.py reminder.json music/x a.txt a.csv a.log` |
 | Grandfathered requirements.txt | `git ls-files '*.txt'` |
 | Incident hashes and their diffs | `git show --stat cca0aaf eb9aa84 366c8d9 f7c915c` ; `git show dd800bc` ; `git show 3bbaa2b 4bcee6b` |
-| Cython include list; boundscheck and wraparound on (2026-10-23) | `grep -n "wraparound\|boundscheck\|INCLUDE_FILES" setup.py` |
+| Nothing compiled; the bot's closure free of the card toolchain (2026-11-11) | `ls setup.py` (none); `python -m pytest -q tests/test_bot_env.py` |
 | to_thread passes coroutines through; queue_* helpers | `grep -n "def to_thread\|def queue_" commands/utils.py` |
 | /update_stats is remote-only; local mode archived (since 2026-10-20) | `grep -rn "use_local" main.py commands/` (finds nothing since 2026-10-25); `git cat-file -e archive/local-update-stats:archive/local_update_stats.py && echo archived` |
 | Rule 6 history: local-path fix lives on in the archive branch | `git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py` (:115); `git grep -c "removeprefix(" archive/local-update-stats -- archive/local_update_stats.py` (no output: the word only appears in the header's history note) |
@@ -310,7 +302,7 @@ and update this file.
 | diff_stats.py gate exists and documents its exit codes | `head -20 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py` |
 | Commit count / current head (date-stamp anchor) | `git rev-list --count HEAD` ; `git log --oneline -1` |
 | Atomic writes of the card data copy | `grep -n "^def write_text\|^def write_bytes" commands/card_db.py` |
-| The guards' sparse list (25 entries on 2026-11-10) and its top-level imports of lazy modules | `grep -n -A6 "^SPARSE_FILES" commands/card_guards.py`; `grep -n "noqa: F401" commands/card_guards.py` (status_font, psd_details) |
+| The guards' sparse list (27 entries on 2026-11-11) and its top-level imports of lazy modules | `grep -n -A6 "^SPARSE_FILES" commands/card_guards.py`; `grep -n "noqa: F401" commands/card_guards.py` (status_font, psd_details) |
 
 2026-10-21: atomic locked pickle saves (B10) added to class (b) and the pickle discipline; `*.pkl.tmp` row; line numbers re-pointed.
 
@@ -350,3 +342,7 @@ main.py, update_bot.py, help.py, psd_parser.py and card_models.py citation re-po
 2026-11-10 (sparse list): step 5 counts 25 entries and adds the lazy-import rule (psd_details, AC 7735f28d); a provenance row for it.
 
 2026-11-11 (docs check): no README claim dropped (one since 2026-10-20); nothing reads the pickles (`card_db.ALLOWED` gone); `PARSER_VERSION` 7 (:25); /update stops five loops; the data gate's fetch has no --depth (the Mac's clone has full history since 2026-11-10).
+
+2026-11-11 (nocython): class (a) ships without a build or a fork step (requirements-bot.txt; fork releases re-pin
+requirements-cards.txt only); step 5 is the import closures (tests/test_bot_env.py, psd_remote, sparse lists TC first);
+rule 1 no longer about compiled modules; the type-hint bullet (Cython's enforcement) deleted; .gitignore lines re-pointed.

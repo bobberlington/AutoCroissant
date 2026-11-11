@@ -31,9 +31,9 @@ Prerequisites (see autocroissant-build-and-env for building the environment):
       reminders.
 - [ ] `config.py` exists in the repo root with a valid `TOKEN`. It is SECRET (never print or commit it).
       main.py:13 does `from config import TOKEN` — a missing/invalid config.py kills the process at import.
-- [ ] No stale compiled artifacts: if `*.so` files exist from an old Cython build they shadow the `.py`
-      files you just pulled. `python3 setup.py clean` first (none on the Mac as of 2026-10-19; the jetson
-      rebuilds them on every deploy, section 3; details in autocroissant-build-and-env).
+- [ ] No leftover compiled artifacts: nothing is compiled since 2026-11-11, but an old checkout's `*.so` would shadow
+      the `.py` files you just pulled (`find . -name "*.so" -not -path "./.git/*"` must be empty; the jetson's deploy
+      removes them; autocroissant-build-and-env §5).
 
 Start it:
 
@@ -114,36 +114,31 @@ interpreter on main.py. The process is REPLACED, so silence after "Restarting bo
 
 **Production (the jetson, 2026-10-20):** systemd `autocroissant.service`; no startup.sh, so /restart_bot
 re-execs main.py. Deploy (2026-10-25): the `jetson-deploy` skill (~/.claude/skills/jetson-deploy, outside the repo) sends its
-`deploy.sh` to the jetson over ssh, at any time of day (its 05:00-05:40 window was dropped 2026-10-25): `git pull --ff-only`, reinstalls the psd-tools fork only when `requirements-cards.txt`'s URL and tag differ from
-the venv's (pip's `direct_url.json`), `~/venvs/autocroissant/bin/python setup.py build_ext --inplace` (incremental: only
-modules whose source changed, seconds when none did; a full rebuild was ~6 min 44 s), `sudo systemctl restart
-autocroissant`, then waits up to 90 s for `Registered N slash commands` (46) and `Bot initialization complete` in the
-new process's journal (`_PID=` its MainPID; a Traceback from it, or a changed MainPID, fails early) and prints OK, else the last 30 journal lines and FAILED (exit 1; a failed pull or build stops before the
-restart). `--bot ojwikibot` does the same for ~/Documents/OJWikibot (no psd-tools step; its own setup.py still rebuilds
-everything). Later lines, not checked: `Repo history: ...` and `Type emojis: ... ready`.
-The rebuild is NOT optional since the 2026-10-20 split: stale `.so` next to new `.py` fails at import
-(`cannot import name perms_check` from analytics.so) and systemd restarts into the same error. Standing rules
-(2026-10-22/23 incidents; memory jetson-server):
+`deploy.sh` to the jetson over ssh, at any time of day (its 05:00-05:40 window was dropped 2026-10-25): `git pull --ff-only`,
+`~/venvs/autocroissant/bin/python -m pip install --only-binary :all: -r requirements-bot.txt` (the bot's pins; a no-op
+when nothing moved), then, since there is no `setup.py` (2026-11-11), the removal of untracked build files (every
+`*.so`, a `*.c` beside its `.py`/`.pyx`, `build/`; it fails if any remain), `sudo systemctl restart autocroissant` (always:
+no skip gate, owner 2026-11-11), then waits up to 90 s for `Registered N slash commands` (47) and `Bot initialization
+complete` in the new process's journal (`_PID=` its MainPID; a Traceback from it, or a changed MainPID, fails early) and
+prints OK, else the last 30 journal lines and FAILED (exit 1; a failed pull or install stops before the restart).
+`--bot ojwikibot` does the same for ~/Documents/OJWikibot, with its own `setup.py build_ext --inplace` while that
+repo has a `setup.py` (its session deletes it). Later lines, not checked: `Repo history: ...` and `Type emojis:
+... ready`. Standing rules (memory jetson-server):
 
-- **Push main and deploy in one sitting**: a /pull or /update pulls the new `.py` files in next to stale `.so` files and
-  the next restart fails at import. (The 05:00-05:40 rule was for the scheduled /update_stats and /push of the pickle era;
-  dropped with them on 2026-10-25.)
-- **When the psd-tools fork tag moves** (its one pin: `requirements-cards.txt`, which `requirements.txt` includes),
-  reinstall it in the venv after the pull (the jetson-deploy skill does this):
-  `~/venvs/autocroissant/bin/pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"`
-  (gcc compiles the fork's 6 Cython modules, about 170 s), then `~/venvs/autocroissant/bin/pip check`. A plain `pip install -r requirements.txt`
-  keeps the old commit while the fork's version is unchanged (1.25.0 at every tag up to `cards-20261023d`): pip calls
-  it satisfied (checked 2026-10-23). `pip freeze | grep psd` shows the commit. Today: tag `cards-20261111` = da069245
-  (2026-11-11; on glibc it keeps freed canvases in malloc's heap, up to ~150 MB more held between renders:
-  `PSD_TOOLS_MALLOC=0` in the service environment turns that off). The Actions install the same file (autocroissant-change-control,
-  class (a)).
+- **Push main and deploy in one sitting.** /pull or /update bring the new code too since nothing is compiled, but install
+  nothing: a `requirements-bot.txt` change needs the deploy. (2026-10-22/23: a pull beside stale `.so` files failed at
+  import; the 05:00-05:40 rule was for the pickle era's schedules, dropped 2026-10-25.)
+- **No card toolchain on the jetson** (2026-11-11, owner): its venv `~/venvs/autocroissant` -> `autocroissant-bot-3.14.10`
+  is `requirements-bot.txt` alone (no psd-tools fork, scipy, fontTools, uharfbuzz, Cython). A psd-tools fork release
+  only re-pins `requirements-cards.txt` (the Mac and the Actions install it): no jetson action. The card tools (guards,
+  bakes, PSD renders) run on the Mac and in TTSCardMaker's Actions only.
 Hand-run scripts need `SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt`; push from the box with
 `SSH_AUTH_SOCK=/run/autocroissant/ssh-agent.sock git push`. Memory: jetson-server.
 
 **startup.sh is a deploy-machine artifact, NOT in the repo** (verified absent 2026-07-11; the repo has
 no startup.sh and .gitignore would not exclude it — it simply was never committed). Operators may
-create one per machine, e.g. a build-then-run script (`python3 setup.py build_ext --inplace &&
-exec python3 main.py`), but its contents are per-machine and UNVERIFIED (the jetson has none). Two traps:
+create one per machine (e.g. `exec python3 main.py` with an environment), but its contents are per-machine and
+UNVERIFIED (the jetson has none). Two traps:
 
 - Only `FileNotFoundError` triggers the fallback. A startup.sh that exists but is not executable
   raises `PermissionError`, which is NOT caught: the restart fails, the process stays alive with all
@@ -196,7 +191,7 @@ Normally a fast-forward: nothing in the bot's clone commits (the reminder backup
 
 Sequence: stop all four loops -> "Doing a complete update of the bot!" -> "Pulling latest changes from remote!" ->
 git_pull -> "Restarting bot!" -> `restart_bot()` (process replaced; per-guild sync runs on the way back up). The jetson's
-deploy is the jetson-deploy skill (pull, psd-tools pin, Cython build, restart): /update does no Cython build.
+deploy is the jetson-deploy skill (pull, requirements-bot.txt, restart): /update installs no package.
 
 `force_reset:True` replaces the pull with `git fetch` + `git reset --hard origin/main`
 ("Force reset mode: Local changes will be discarded!" / "Hard reset complete" / "Warning: All local
@@ -217,15 +212,15 @@ resolve); autocroissant-change-control owns the gate.
 
 No card state moves with the bot: every host syncs the card data from TTSCardMaker's `data` branch (section 12).
 Per-machine and NOT synced (verified in .gitignore): `config.py`, `.ssh/`, `reminder.json`, `card_data/`, `music/`, all
-`*.csv`/`*.txt` exports, compiled `*.so`, venvs. Both machines need their own config.py (with `ACTIONS_TOKEN` for
+`*.csv`/`*.txt` exports, venvs. Both machines need their own config.py (with `ACTIONS_TOKEN` for
 force_update/cards) and deploy key already in place.
 
 Moving hosting from machine A (currently running) to machine B:
 
 1. **Stop A**: `/stop_bot` in Discord (or Ctrl-C on A's terminal). Do not run two hosts at once — both would answer
    every command.
-2. **On B, refresh the clone BEFORE starting**: `git pull` from B's repo root, then the Cython build
-   (autocroissant-build-and-env).
+2. **On B, refresh the clone BEFORE starting**: `git pull` from B's repo root (and `pip install -r requirements-bot.txt`
+   in its venv when that file moved; autocroissant-build-and-env).
 3. **Start on B**: `python3 main.py` from B's repo root; check the startup output against section 1 ("Card data loaded"
    or, on a first start, the sync's "Card data loaded: built …").
 4. **Recreate reminders.** `reminder.json` is gitignored — reminders DO NOT follow the bot across
@@ -237,8 +232,8 @@ Moving hosting from machine A (currently running) to machine B:
 ## 7. Operating /update_stats
 
 `/update_stats` syncs the bot's copy of the card data and says what changed (section 12); card commands do the same
-on use. The card data is built by TTSCardMaker's Card sync Action with this repo's builder (`commands/card_data.py`,
-uncompiled; what it re-parses, its gates, budget and history rules: docs/Campaigns/DATA_BUILD_ACTION.md §6, §7, §13,
+on use. The card data is built by TTSCardMaker's Card sync Action with this repo's builder (`commands/card_data.py`;
+what it re-parses, its gates, budget and history rules: docs/Campaigns/DATA_BUILD_ACTION.md §6, §7, §13,
 §15). Until 2026-10-25 `/update_stats` parsed changed PSDs on the jetson and saved the pickles (the "legacy mode", its
 commits-API lookups and the one-time history cleanup, `card_data.update`); that path is gone (autocroissant-failure-archaeology).
 `site/Card Ratings.json`: card ratings (`python -m commands.tts_ratings`); never read by the bot.
@@ -288,8 +283,7 @@ Description, GMNotes, Memo, Tags and scripts are the team's: never changed (role
 
 ### Font check (/fonts, added 2026-10-21; the automatic path is a step of TTSCardMaker's card-guards.yml check job since 2026-10-25, font-check.yml before)
 
-commands/font_check.py (uncompiled; stock psd-tools + fontTools, no Discord or config imports; fontTools is in requirements.txt since
-2026-10-21 and main.py imports the module lazily inside /fonts, so the bot starts without it) lists the PostScript names
+commands/font_check.py (card side: psd-tools + fontTools, no Discord or config imports; the bot never imports it since 2026-11-11) lists the PostScript names
 a card's visible type layers ask for and which of them `MDW/Fonts` in the card repo does not supply. Hidden layers are
 ignored; a font counts as present only when a face has exactly its PostScript name (no aliases or loose matches since
 2026-10-23, owner). It reports and never rejects: a missing font is a message to a person, not a revert.
@@ -304,8 +298,10 @@ ignored; a font counts as present only when a face has exactly its PostScript na
   546427268751294475 once (the only role ping of any check's post, owner 2026-10-23), then one line per author and font: "<name> has pushed a card without
   adding the <font> font to MDW/Fonts, bite this user." with the cards and layers below. A dispatch with `all` scans every
   card PSD by blob (~813 downloads).
-- **By hand: `/fonts`** (anyone) reads the card data's `psd_details.json` (`card_sync.fonts_text`, section 12): no PSD or
-  font is downloaded. Reply: `**font**: card (layers)` per missing font, errors. (Until 2026-10-25 a legacy path read every
+- **By hand: `/fonts`** (anyone) reads the fonts report in the card data's manifest (`fonts`: written by the data build
+  from psd_details.json, `font_check.fonts_report`; `card_sync.fonts_text`, section 12; since 2026-11-11, so the bot needs
+  no psd-tools or fontTools): no PSD or font is downloaded. Reply: `**font**: card (layers)` per missing font, errors;
+  "The card data has no fonts report yet: the next Card sync run writes it." until a build with the report has run. (Until 2026-10-25 a legacy path read every
   PSD through the API with a per-blob cache, `font_names.json`; the jetson may still hold that file: delete it.)
 - **Standalone:** `python -m commands.font_check --fonts <dir> --all <checkout>` (9.8 s wall over the 813 PSDs on 2026-10-21 in a
   process pool of half the cores from 8 PSDs up; 98 s sequential before, same JSON byte for byte: the six faces of
@@ -315,7 +311,7 @@ ignored; a font counts as present only when a face has exactly its PostScript na
 
 ### Card check (added 2026-10-21; CLI only, no slash command; the automatic path is a step of TTSCardMaker's card-guards.yml check job since 2026-10-25, card-check.yml before)
 
-commands/card_check.py (uncompiled; imports psd_parser, card_models, card_edits, font_check, github_api and global_config, nothing with
+commands/card_check.py (imports psd_parser, card_models, card_edits, font_check, github_api and global_config, nothing with
 Discord or config; the guards' `card_guards.SPARSE_FILES` holds that closure) tells what the bot's parser and validator note about a card
 PSD: the lines /update_stats prints for it (`NO STARS FOUND`, `MISSPELT TYPE`, `NO STATS FOUND`, `HP/DEF/ATK/SPD NOT
 FOUND`, `STATS TOO HIGH`, `ABILITY TEXT NOT FOUND`, `UNKNOWN TYPE`; the parser's own, the first three and `NO ABILITY LAYER`, are also the website's Parser
@@ -348,7 +344,7 @@ network, a truncated tree) is one error line.
 
 ### PSD details (psd_details.json, added 2026-10-21; the data behind the website's card Details dropdown, plan item 23)
 
-commands/psd_details.py (uncompiled; stock psd-tools; no Discord or config imports, like font_check) gathers one record per card PSD:
+commands/psd_details.py (stock psd-tools; no Discord or config imports, like font_check) gathers one record per card PSD:
 fonts of the visible type layers with their layers and a `supplied` flag (MDW/Fonts has the face; null when no index was at hand),
 every type layer's text (200 chars), font, size, colour and visibility, effects per layer (`(off)` when disabled), smart objects,
 canvas (size, mode, depth, ICC description), type-icon style (images / tokens / mixed / none), the stat-row encoding per stat
@@ -471,7 +467,7 @@ The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes 
 
 ### Card guards (added 2026-10-22; TTSCardMaker's card-guards.yml Action; landed 2026-10-23 on AutoCroissant main 2ada357 and TTSCardMaker a7d1fe56, off while `CARD_GUARDS` is unset)
 
-The push guards (`commands/card_guards.py` with `png_export.py` and `card_standards.py`, all uncompiled; design and
+The push guards (`commands/card_guards.py` with `png_export.py` and `card_standards.py`; design and
 failure table: docs/Campaigns/PUSH_GUARDS.md sections 8 and 10). On a push changing a card PSD or PNG: a PSD pushed
 without its PNG gets the PNG the bake would make (owner's ruling 2026-10-22: the fork pinned at `cards-20261023`
 renders the changed layers in the card's ICC export mode and the old PNG takes the change; the PSD's stored composite is
@@ -670,7 +666,7 @@ The first is stored as `/update_stats`. The second is a weekly full emoji sync, 
 
 ## 11. Type emojis (/sync_emojis)
 
-Added 2026-10-19 (`commands/type_emojis.py`, uncompiled). The bot turns `[fire]`-style tokens in its
+Added 2026-10-19 (`commands/type_emojis.py`). The bot turns `[fire]`-style tokens in its
 replies into emoji icons. As of 2026-10-19 only `/query_rulebook` uses this; it now sends plain escaped
 text instead of a code block, because code blocks don't render emojis.
 
@@ -720,7 +716,7 @@ pickle fallback and `/push` removed; the jetson's root pickles are deleted by th
 now posts "is not a bot command": `/remove_reminder reminder_id:054b5933`. The 30-minute `/update_stats` reminder (be1b0bcd) is not needed for
 fresh data (card commands refresh on use, below); it still posts new builds' problem cards to its channel.
 
-**What each command does** (commands/card_sync.py, uncompiled):
+**What each command does** (commands/card_sync.py):
 
 | Command | What it does |
 |---|---|
@@ -735,7 +731,7 @@ fresh data (card commands refresh on use, below); it still posts new builds' pro
 | no `ACTIONS_TOKEN` | the reply links the Action and gives `gh workflow run card-sync.yml -R MichaelJSr/TTSCardMaker -f full=true -f dry_run=false` (or `-f cards="…"`), then syncs. A refused token (401, 403, 404, at the run list before the dispatch too) is said the same way, a rate limit as one, and a dispatch with no answer as "the run may have started: look on <Action> before asking again"; the token is never printed |
 | `/update` | pull, then restart (section 5) |
 | `/pull` | a conflict takes the remote's file for every path ("AUTO-RESOLVE: Merge conflict resolved (accepted remote)"). Normally a fast-forward: the bot's clone commits nothing (its backups go from a separate clone, §9) |
-| `/fonts` | from `card_data/psd_details.json`: each current card PSD's fonts with `supplied: false` (the build judged them against MDW/Fonts); a PSD without a record, or with fonts not judged, is an error line. First line "From the card data (built …): N card PSDs." |
+| `/fonts` | from `card_data/manifest.json`'s fonts report (since 2026-11-11; the build judged each current card PSD's fonts against MDW/Fonts in psd_details.json): `**font**: card (layers)` per font with `supplied: false`; a PSD without a record, or with fonts not judged, is an error line (10 shown). First line "From the card data (built …): N card PSDs." |
 | `/update_metadata`, `/mass_replace`, `/alias`, `/bake_cards`, `/update_tts_save` | retired 2026-10-25 (branch `archive/discord-edits`): cards are edited on the website (its Rename everywhere replaces /mass_replace); Card sync bakes and updates the TTS save. A reminder running one posts "`/<name>` is not a bot command" (the "was retired" shim was removed 2026-10-25) |
 | `/website` | "**Card browser:** <site>/ Editors fix card data there; the card sync brings it to the bot within minutes and to the card pictures a few minutes later." |
 
@@ -746,7 +742,7 @@ run about two requests per look.
 
 ## 13. The proposal forum (/forum_votes, 2026-11-09)
 
-commands/forum_votes.py (uncompiled), owner's spec 2026-11-09. In the watched forum (default 1569539619471499324):
+commands/forum_votes.py, owner's spec 2026-11-09. In the watched forum (default 1569539619471499324):
 
 | When | What the bot does |
 |---|---|
@@ -781,7 +777,7 @@ last 50 messages). A failed listing of the forum's archived posts at a start is 
 
 ## When NOT to use this skill
 
-- Building or fixing the Python environment, ffmpeg/opus, Cython builds, requirements split ->
+- Building or fixing the Python environment, ffmpeg/opus, the requirements files ->
   **autocroissant-build-and-env**.
 - Something is BROKEN (won't start, commands missing, silent bot, stats look wrong, music
   failures) -> **autocroissant-debugging-playbook** (this skill only tells you what healthy looks like).
@@ -811,7 +807,7 @@ re-find volatile facts with these before trusting them:
 | Volatile fact | Re-verify with |
 |---|---|
 | on_ready order / loop starts / startup prints | `grep -n "queue_command(\|_start(loop)\|Bot initialization complete\|Reconnected" main.py` (133-137 queued, 125/140 starts, 126, 142) |
-| Fork tag in the jetson venv | on the jetson: `~/venvs/autocroissant/bin/pip freeze \| grep psd` (`@da069245...` = `cards-20261111` after the 2026-11-11 re-pin's deploy; `@170a3fce...` = `cards-20261110` since 2026-11-10) |
+| No card toolchain in the jetson venv (2026-11-11) | on the jetson: `readlink ~/venvs/autocroissant` (`autocroissant-bot-3.14.10`); `~/venvs/autocroissant/bin/pip freeze \| grep -ciE "psd-tools\|scipy\|fonttools\|cython"` (0) |
 | Shadow state | `gh run list -R MichaelJSr/TTSCardMaker --workflow card-sync.yml --limit 5`; `gh api repos/MichaelJSr/TTSCardMaker/branches/data` (404 until the first live run) |
 | Slash-command count (46 on 2026-10-25: five Discord edit commands retired, then /push; 52 on 2026-10-21) | `grep -c "@tree.command" main.py` |
 | Members intent off, so no /list_guild_members (removed 2026-10-20, C6) | `grep -n "Intents\|list_guild_members" main.py` (Intents lines only) |
@@ -831,7 +827,7 @@ re-find volatile facts with these before trusting them:
 | TTS save wiring (none in the bot since 2026-10-25) | `grep -c "tts_save" main.py` (0) |
 | Type emoji sync wiring | `grep -n "init_type_emojis\|sync_emojis" main.py`; `grep -n "^EMOJI_SIZE\|^MAX_NAME_LEN\|^NO_SUFFIX" commands/type_emojis.py` |
 | Font check wiring (/fonts from the card data; the Action is a step of TTSCardMaker's card-guards.yml) | `grep -n "fonts_text\|name=\"fonts\"" main.py`; `grep -n "^ROLE_ID\|^BITE" commands/font_check.py` |
-| Card check (CLI only; no main.py or help.py wiring; the Action is a step of TTSCardMaker's card-guards.yml) | `grep -c "card_check" main.py commands/help.py setup.py` (0, 0, 0); `grep -n "^LINE\|^CLOSING" commands/card_check.py` |
+| Card check (CLI only; no main.py or help.py wiring; the Action is a step of TTSCardMaker's card-guards.yml) | `grep -c "card_check" main.py commands/help.py` (0, 0); `grep -n "^LINE\|^CLOSING" commands/card_check.py` |
 | Card bake wiring (none in the bot since 2026-10-25) | `grep -c "bake_cards" main.py` (0); `ls commands/card_runner.py` (absent) |
 | Data branch, card_data/ / timezone | `cat global_config.py` |
 | Per-machine files | `cat .gitignore` |
@@ -926,3 +922,7 @@ row checked there by `pip freeze`), `--repo` in the guards' local check, the bak
 2026-11-10 (fork release): the fork tag today is `cards-20261110` = 170a3fce.
 
 2026-11-11 (fork release): the fork tag today is `cards-20261111` = da069245.
+
+2026-11-11 (nocython): the deploy paragraph (requirements-bot.txt, leftover build files removed, always restarts, 47
+commands; OJWikibot builds while it has a setup.py), the no-toolchain rule (fork releases: no jetson
+action), /fonts from the manifest's fonts report, the handoff and /update without a build, the jetson-venv re-verify row.

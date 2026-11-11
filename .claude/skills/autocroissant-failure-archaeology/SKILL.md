@@ -25,7 +25,7 @@ Read-only git commands (`git log`, `git show`, `git diff`) are always safe here.
 | 3 | The reverted PICKLE & duplicate archiving | fixed in e7befd5 (+4e03190) |
 | 4 | TYPE/WHITESPACE MISMATCH check | removed in 081b1fd; smarter revival = campaign candidate |
 | 5 | The Big Massive Refactor | settled (366c8d9) |
-| 6 | The cythonization wave | settled; caused Entry 1 (now fixed) |
+| 6 | The cythonization wave | **REVERSED** 2026-11-11 (no gain measured; plain Python everywhere); caused Entry 1 (fixed) |
 | 7 | Dead ends & deleted artifacts | each closed, see table |
 | 8 | Smaller settled battles | each fixed, see subsections |
 | 9 | Lore corrections (wrong attributions refuted by diffs) | reference |
@@ -260,7 +260,7 @@ Related same-evening hardening (2026-01-30/31): **34be7e5** consolidated the gap
 
 ---
 
-## Entry 6 — The cythonization wave (Dec 2025) and its long tail
+## Entry 6 — The cythonization wave (Dec 2025), its long tail, and its reversal (2026-11-11)
 
 - **f7c915c** (2025-12-02 20:18, "cythonized the code"): `setup.py` born (181 lines) — compiles command modules with `wraparound=False`, `boundscheck=False`, `cdivision=True` (setup.py:36-48 on 2026-10-20; bounds checks and wraparound on since 2026-10-23, setup.py:25-26); `cython` added to requirements.txt; `.gitignore` +73/−14 (87 changed lines) of build-artifact patterns; and a mechanical sweep converting every `x[-1]` to `x[len(x) - 1]` across frankenstein/psd_analyzer/query_card (negative indexing is banned under `wraparound=False`). **Cost of the sweep**: the removeprefix bug (Entry 1, fixed 2026-10-19) and the `dirname` classify bug (fixed fb47b5d) — both born in this one commit.
 - **45de566** (same evening, 21:25, "cythonized more files"): moved `management.py`, `music_player.py`, `diffusion.py` from the exclude list INTO `INCLUDE_FILES` — their original wary comments ("Complex async operations with discord.py", "ThreadPoolExecutor with Process/Queue-like issues", "PyTorch callbacks and dynamic function registration") survive as ironic annotations on the INCLUDE list (setup.py:31-32 on main; the diffusion line left with the AI code, Entry 10.16). Also converted music_player's remaining `[-1]`s.
@@ -269,7 +269,21 @@ Related same-evening hardening (2026-01-30/31): **34be7e5** consolidated the gap
 - **bf9478e** (2026-01-26 17:02, "lazily import torch and diffusers"): closed the era — `import torch` at module top replaced by `get_torch()` / `torch_available()`, so the compiled+core bot runs with zero AI overhead. Doctrine and mechanics owned by autocroissant-ai-boundary (branch `archive/ai-generation`).
 - **Today (2026-10-19)**: no `.so`/`.c` artifacts exist in the working tree. The stale-`.so`-shadows-your-`.py` trap and build/clean procedure are owned by autocroissant-build-and-env.
 - **Cython 3.3 tail (2026-10-19)**: management.py had silently stopped compiling under Cython 3.3 — Entry 10.5.
-- **Status**: settled discipline; its one long-lived casualty (Entry 1) was fixed 2026-10-19. The meta-lesson: mechanical rule-enforcement sweeps need per-line semantic review — `split(x)[-1] ≠ removeprefix(x)`.
+- **Status until 2026-11-11**: settled discipline; its one long-lived casualty (Entry 1) was fixed 2026-10-19. The meta-lesson: mechanical rule-enforcement sweeps need per-line semantic review — `split(x)[-1] ≠ removeprefix(x)`.
+- **REVERSED 2026-11-11 (owner, from the Fable design panel's design 3 and its two judges)**: Cython is off for
+  AutoCroissant. `setup.py`, `tests/test_setup_build.py`, Cython and setuptools are gone; the jetson runs the `.py`
+  files the suite tests. The measurement that decided it, on the jetson (11-10, the live checkout's `.so` against the
+  same `.py`, two runs each): the 58 distinct real `/query` strings from 15 days of the journal took **22.6-23.3 ms
+  compiled, 21.9-22.0 ms plain**; `ability 'draw'`, `lookup guess`, `rulebook 'swap'` and `prep_dataframes` within
+  noise. Re-checked before the switch (11-11): the 70 real queries (68 distinct) replayed through the live compiled code
+  in the old venv and through the plain branch in the new bot-only venv gave identical replies, warm pass 262.5 ms
+  compiled against 257.3 ms plain. What it cost meanwhile: 126-166 s of gcc per deploy (208 s full), production
+  running code the suite never ran (C division, enforced annotations), `/update` leaving stale `.so` (it pulled without
+  a build), Entries 1 and 10.5. What it retires: the `x[len(x)-1]` idiom's reason (existing code is left as written; no
+  sweep), the 10-23 bounds-check setting (9919a14), Cython 3.3's redeclare rule, the stale-.so and SEGV playbook rows
+  (deploy.sh now removes leftover `.so`/`.c`/`build/`). Do not re-propose compiling the bot without a query-latency
+  measurement that beats this one: the queries spend their time in pandas and string work. OJWikibot's own Cython is
+  its session's (it compiled 24 modules with `boundscheck=False`, 578 s a deploy).
 
 ---
 
@@ -965,7 +979,7 @@ Written 2026-07-11 against HEAD = 284d13c ("PICKLE", 2026-06-20). Extended 2026-
 | Archive guard | `git show e7befd5`; current: `grep -n '^def record_versions' commands/card_history.py` (483 on 2026-10-25: a version only when the card's data changed) |
 | Save gate ("am forehead") | `git show 4e03190 \| grep 'num_new > 0'`; `git show fb47b5d \| grep 'num_updated > 0'` |
 | Deleted artifacts list | `git log --diff-filter=D --name-only --format='DELETED-IN %h %ad %s' --date=short \| head -40` |
-| Cython include/exclude + directives | `sed -n '8,36p' setup.py`; straggler check: `grep -rn '\[-1\]' commands/*.py` (expect empty) |
+| Cython include/exclude + directives (until 2026-11-11) | `git show "$(git log --diff-filter=D -1 --format=%h -- setup.py)^:setup.py" \| sed -n '8,36p'`; nothing compiled since: `ls setup.py` (none) |
 | Line numbers cited (drift-prone) | since the 2026-10-20 split: repo_traverser.py's `update_stats` (59 from 2026-10-22) went with the file on 2026-10-25; `grep -n '_gap_pattern = \|MISSPELT_CARD_TYPES = \|ABILITY_EXCLUSIONS: ' commands/psd_parser.py` → 420 / 26 / 1271 on 2026-10-25 (1827 / 686 / 50 / 1262 in psd_analyzer.py before the split) (`relpath(full_path` and `expanduser(LOCAL_DIR_LOC)` left with local mode; the 2026-07-11 values quoted in Entries 1-8 were relpath-line 1002 / 1173 / expanduser 1207 / 348 / 42 / 649) |
 | Commit dates quoted | `git log --format='%h %ad %s' --date=format:'%Y-%m-%d %H:%M' --no-walk <hash>...` |
 | Entries 10.29-10.30 present | 10.29's `save_pickle` and locks went with the pickles (8f433f4, 2026-10-25: `git show 8f433f4^:commands/card_models.py \| grep -n '^def save_pickle'`); `RESULTS_PER_MESSAGE` gone since 2026-10-23; `grep -n "tasks.loop" main.py` (806 at 1 s; 823, 847, 884 at seconds=0, paced by the wake-up wait) |
@@ -996,3 +1010,7 @@ Written 2026-07-11 against HEAD = 284d13c ("PICKLE", 2026-06-20). Extended 2026-
 
 2026-11-05 (ring badges): Entry 10.35 (the ring rollout's lessons and design reversals), against AutoCroissant 3641756, TTSCardMaker 0ade8c3d to e43b7f3c and the scratch folders it names; the push times
 from `ring-sweep-final/go/b1/`-`b3/`.
+
+2026-11-11 (nocython): Entry 6 records the reversal of the cythonization with the jetson measurement (22.6-23.3 ms
+compiled, 21.9-22.0 ms plain for 58 real queries; 70 replayed queries identical); index row 6 and the setup.py
+re-verify row reads setup.py from before its deletion.

@@ -1,12 +1,12 @@
 ---
 name: autocroissant-build-and-env
-description: Installing and building the AutoCroissant environment. Use for install, setup, venv, pip, requirements.txt and requirements-cards.txt (the psd-tools fork pin), a new machine, ffmpeg/opus, which Python to use, "python3 has no psd_tools", ImportError after install, the Cython build (setup.py build_ext, stale .so, my edits don't take effect, Cython 3.3 CompileError), AttributeError fetch_application_emojis. Jetson deploys use jetson-deploy.
+description: Installing the AutoCroissant environment. Use for install, setup, venv, pip, requirements.txt, requirements-bot.txt (the jetson's pinned bot packages) and requirements-cards.txt (the psd-tools fork pin), a new machine, ffmpeg/opus, which Python to use, "python3 has no psd_tools", ImportError after install, leftover Cython .so files (no build since 2026-11-11: stale .so, my edits don't take effect), AttributeError fetch_application_emojis. Jetson deploys use jetson-deploy.
 ---
 
 # AutoCroissant: Build and Environment
 
-Recreating the bot's environment from scratch (the owner's Mac or the production jetson),
-the Cython build, and the known traps. All facts verified against the repo on 2026-07-11
+Recreating the bot's environment from scratch (the owner's Mac or the production jetson)
+and the known traps. Plain Python everywhere since 2026-11-11 (nothing compiled; the jetson a bot-only venv). All facts verified against the repo on 2026-07-11
 unless marked otherwise; sections 1, 2, 3 and 5 re-verified 2026-10-19; AI removal, module
 counts, cookies and line numbers re-verified 2026-10-20 (main 9fb3093); requirements, PIL imports, the fork venvs,
 directives, module counts and the suite size re-verified 2026-10-23 (main 2ada357). All commands assume
@@ -14,20 +14,20 @@ directives, module counts and the suite size re-verified 2026-10-23 (main 2ada35
 
 Quick orientation:
 
-- Three layered requirements files on main (2026-10-23): `requirements-cards.txt` (the card stack, the psd-tools
-  fork's one pin), `requirements.txt` (`-r` it, then the bot), `requirements-dev.txt` (`-r requirements.txt`, then the
-  tests). AI generation and its `requirements2.txt` live only on branch `archive/ai-generation` (section 2).
-- Cython compilation is optional on dev: the Mac's working tree has no `.so` files and runs
-  plain `python3 main.py`. Production (the jetson) compiles the 10 modules on every deploy (section 5).
+- Four requirements files on main (2026-11-11): `requirements-cards.txt` (the card stack, the psd-tools fork's one
+  pin), `requirements-bot.txt` (the bot's packages pinned from the jetson's freeze: all the jetson installs),
+  `requirements.txt` (`-r` both: the Mac), `requirements-dev.txt` (`-r requirements.txt`, then the tests). AI
+  generation and its `requirements2.txt` live only on branch `archive/ai-generation` (section 2).
+- Nothing is compiled since 2026-11-11 (setup.py deleted, section 5): every machine runs the `.py` files the suite tests.
 - `config.py` is secret, gitignored, and must be created by hand on every machine.
 
 ## 1. Prerequisites
 
 | Prereq | Detail | Verified how (2026-07-11) |
 |---|---|---|
-| Python 3.10+ | On 2026-07-11, 3.10.20 at `/usr/local/bin/python3` was the verified-working interpreter on the Mac. **On 2026-10-19 that is gone:** `/usr/local/bin/python3` is a symlink to Homebrew `python3.14` (3.14.8; 3.14.10 since 2026-11-11) with discord.py 2.7.1, Pillow 12.3.0 and Cython 3.3.0 but **no psd-tools** (and no setuptools), so it cannot import the bot. The Mac venv with every dependency is `~/.venvs/ac-py314-fork` (3.14.10 since 2026-11-11, rebuilt with the same packages; the psd-tools fork at the pin: `cards-20261111` = da069245 since 2026-11-11, first `cards-20261023` = ecc4b773; the jetson's package versions since 2026-11-10; `requirements-dev.txt` adds pytest, pytest-xdist and pyyaml): the suite, card_guards and bakes. The stock psd-tools 1.25.0 venv `~/.venvs/ac-py314-psd125` was retired on 2026-11-10 (owner): the suite needs the fork and stops without it. Production (the jetson) runs Python 3.14.10 (PGO+LTO, OpenSSL 3.6.5) since 2026-11-10: `~/venvs/autocroissant` is a symlink to `autocroissant-3.14.10`; 3.14.8 (from 2026-10-20, when its 3.10 was removed) is kept as `autocroissant-3.14.8`, and `~/build/python/rollback-3.14.8.sh start` goes back; its psd-tools is the fork since 2026-10-22, tag `cards-20261023` since 2026-10-23 10:36 (section 4). Keep code 3.10-compatible. Mac Python upgrades: Homebrew `python@3.14` is `brew pin`ned and the venvs link through `/opt/homebrew/opt/python@3.14`, which the upgrade moves at once: first point each venv's `bin/python3.14` and pyvenv.cfg `home` at the versioned Cellar (`/opt/homebrew/Cellar/python@3.14/<old>/bin`), then `brew unpin python@3.14`, `HOMEBREW_NO_INSTALL_CLEANUP=1 brew upgrade python@3.14`, `brew pin python@3.14`; each venv is rebuilt beside the old one from its `pip freeze` (the fork from requirements-cards.txt's line with `--force-reinstall --no-deps`), swapped in by rename between suites, and the old one deleted once the suite and the TTS checks pass. No `brew cleanup` while a running process or a kept venv uses the old Cellar. | `python3 --version; python3 -c "import psd_tools"` |
+| Python 3.10+ | On 2026-07-11, 3.10.20 at `/usr/local/bin/python3` was the verified-working interpreter on the Mac. **On 2026-10-19 that is gone:** `/usr/local/bin/python3` is a symlink to Homebrew `python3.14` (3.14.8; 3.14.10 since 2026-11-11) with discord.py 2.7.1, Pillow 12.3.0 and Cython 3.3.0 but **no psd-tools** (and no setuptools), so it cannot import the bot. The Mac venv with every dependency is `~/.venvs/ac-py314-fork` (3.14.10 since 2026-11-11, rebuilt with the same packages; the psd-tools fork at the pin: `cards-20261111` = da069245 since 2026-11-11, first `cards-20261023` = ecc4b773; the jetson's package versions since 2026-11-10; `requirements-dev.txt` adds pytest, pytest-xdist and pyyaml): the suite, card_guards and bakes. The stock psd-tools 1.25.0 venv `~/.venvs/ac-py314-psd125` was retired on 2026-11-10 (owner): the suite needs the fork and stops without it. Production (the jetson) runs the hand-built Python 3.14.10 (PGO+LTO, OpenSSL 3.6.5) since 2026-11-10 (3.14.8 from 2026-10-20; its venvs were deleted 2026-11-11): `~/venvs/autocroissant` is a symlink to `autocroissant-bot-3.14.10` since 2026-11-11, built from `requirements-bot.txt` alone (379 MB; no psd-tools fork, scipy, fontTools, uharfbuzz or Cython); `autocroissant-3.14.10` before it held the whole card stack (611 MB; the fork from 2026-10-22) and was deleted once the switch was proven (section 4). Keep code 3.10-compatible. Mac Python upgrades: Homebrew `python@3.14` is `brew pin`ned and the venvs link through `/opt/homebrew/opt/python@3.14`, which the upgrade moves at once: first point each venv's `bin/python3.14` and pyvenv.cfg `home` at the versioned Cellar (`/opt/homebrew/Cellar/python@3.14/<old>/bin`), then `brew unpin python@3.14`, `HOMEBREW_NO_INSTALL_CLEANUP=1 brew upgrade python@3.14`, `brew pin python@3.14`; each venv is rebuilt beside the old one from its `pip freeze` (the fork from requirements-cards.txt's line with `--force-reinstall --no-deps`), swapped in by rename between suites, and the old one deleted once the suite and the TTS checks pass. No `brew cleanup` while a running process or a kept venv uses the old Cellar. | `python3 --version; python3 -c "import psd_tools"` |
 | git | Needed to clone; also the bot's self-update commands drive git via GitPython, imported lazily inside update_bot's functions (`_git`/`_repo`, update_bot.py:19, 27; since 778c2ce, 2026-10-21: startup never loads GitPython). | `git --version` |
-| C compiler | For the Cython build (section 5), and on the jetson for installing the psd-tools fork, whose `_distance` extension compiles at install (gcc). Xcode CLT on Mac, gcc on Linux. | `cc --version` |
+| C compiler | Only where the psd-tools fork installs (the Mac, the Actions): its Cython modules compile at install. Xcode CLT on the Mac. The bot needs none: the jetson installs wheels only (`--only-binary :all:`). | `cc --version` |
 | ffmpeg on PATH | Required for music playback: the player streams through `FFmpegOpusAudio` (`commands/music_player.py:4`), which spawns the `ffmpeg` binary. The `POSTPROCESS` config flag adds an ffmpeg mp3 extraction step too (music_player.py:62-68). Mac has 8.1.1 via Homebrew (`/opt/homebrew/bin/ffmpeg`). | `which ffmpeg` |
 | PyNaCl | Required for Discord voice encryption. Declared in requirements.txt since 2026-10-20 (before that it arrived only through PyGithub: section 3). | `python3 -m pip show PyNaCl` |
 | opus library | Standard discord.py voice requirement. This bot's `FFmpegOpusAudio` path delegates opus encoding to ffmpeg, so libopus is only strictly needed if anything switches to PCM audio (the volume-control path suggests exactly that, music_player.py:327). Cheap insurance: `brew install opus` / `apt install libopus0`. Labeled guidance. | `brew list opus` |
@@ -41,12 +41,13 @@ Three layered files since 2026-10-23 (owner: "three layered files, one pin"):
 | File | Holds | Installed by |
 |---|---|---|
 | `requirements-cards.txt` | The card code's packages: `psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@<tag>` (the fork: THE one pin; the tag is only in the file), fonttools, requests (`pyoxipng` behind a marker from 2026-10-24 until 2026-10-25: the Actions run the oxipng CLI since) | `requirements.txt`; the card Actions on Python 3.14 (card-guards' jobs, card-sync's one venv, card-preview), offline from one wheel cache entry keyed on the file (the re-pin procedure: autocroissant-config-and-flags) |
-| `requirements.txt` | `-r requirements-cards.txt`, then the bot's own (the table below) | the jetson, a dev machine |
+| `requirements-bot.txt` | The bot's packages and their dependencies, pinned `==` from the jetson's `pip freeze` of 2026-11-11 without the card toolchain (the fork, scipy, fontTools, uharfbuzz, freetype-py, aggdraw) and Cython, setuptools, wheel (29 lines; davey 0.1.7: 0.2 breaks voice). `tests/test_bot_env.py` walks main.py's import closure, lazy imports included, and fails if it reaches the toolchain or imports a package with no pin here | the jetson (`pip install --only-binary :all: -r requirements-bot.txt`, every deploy); the Mac through requirements.txt |
+| `requirements.txt` | `-r requirements-cards.txt`, `-r requirements-bot.txt` | a dev machine |
 | `requirements-dev.txt` | `-r requirements.txt`, then pytest and pyyaml (the workflow-shape tests' yaml half skips without it); `pyobjc-framework-Vision` went with `commands/discord_match.py` on 2026-10-25 | a dev machine |
 
 uharfbuzz and freetype-py come with psd-tools' `[text]` extra, scipy and aggdraw with `[composite]`. `.gitignore`
-ignores `*.txt` and re-includes `requirements-dev.txt` and `requirements-cards.txt`; `requirements.txt` is tracked from
-before that rule. Proven 2026-10-23: `pip install --dry-run -r requirements-dev.txt` in a fresh 3.14 venv on the Mac
+ignores `*.txt` and re-includes `requirements-dev.txt`, `requirements-cards.txt` and `requirements-bot.txt`;
+`requirements.txt` is tracked from before that rule. Proven 2026-10-23: `pip install --dry-run -r requirements-dev.txt` in a fresh 3.14 venv on the Mac
 resolves (53 packages, all wheels but the fork; pyoxipng skipped by its marker), and `uv pip compile --only-binary :all:
 --no-binary psd-tools` resolves requirements-cards.txt for Linux x86_64 3.12 (the Actions then; pyoxipng in), Linux x86_64
 3.14 (the Actions since 2026-10-24; pyoxipng built from its sdist) and Linux aarch64 3.14 (the jetson; pyoxipng out), and
@@ -61,26 +62,26 @@ doctrine in **autocroissant-ai-boundary** there. The `discord.py>=2.5` floor is 
 
 ### requirements.txt — core bot (always install)
 
-`pip install -r requirements.txt` — the card stack (marked "cards") plus 12 packages (2026-10-23):
+`pip install -r requirements.txt` — the card stack (marked "cards") plus requirements-bot.txt's pins (2026-11-11; the
+top-level ones below, their dependencies pinned beside them):
 
 | Package | Why it is in core |
 |---|---|
-| Cython | Build tooling for the optional `setup.py` compile (section 5). Harmless if you never compile. |
-| setuptools | `setup.py` imports it first (on 3.12+ `distutils` is setuptools' copy); the compile only. |
-| davey | Optional Discord "DAVE" voice end-to-end-encryption lib (0.1.6 as of 2026-07-11). discord.py imports it inside `try/except ImportError` (verified in installed discord 2.7.1, `gateway.py`), so the bot runs without it — the Mac's current env does not even have it installed. |
+| Cython, setuptools | Removed 2026-11-11 with setup.py (section 5). |
+| davey | Pinned 0.1.7 (0.2's transition API breaks discord.py voice). Optional Discord "DAVE" voice end-to-end-encryption lib. discord.py imports it inside `try/except ImportError` (verified in installed discord 2.7.1, `gateway.py`), so the bot runs without it — the Mac's current env does not even have it installed. |
 | discord.py (`>=2.5` since 2026-10-19) | The Discord API library (2.7.1 on the Mac). Its only hard dependency is aiohttp. The floor exists because `commands/type_emojis.py` uses `Client.fetch_application_emojis` / `create_application_emoji`, both `versionadded:: 2.5`; on an older install the emoji sync fails with "Emoji sync failed: ... has no attribute ..." while everything else works. Upgrade with `pip install -U "discord.py>=2.5"` |
-| fonttools (cards) | Font files: `commands/font_check.py:43` (`/fonts`, the missing-fonts audit), reached by `psd_details` and the bake; imported lazily (main.py imports font_check inside `/fonts`, card_data imports psd_details inside its functions), so startup never loads it (2026-10-21). |
+| fonttools (cards) | Font files: `commands/font_check.py` (the guards' missing-fonts check, the data build's fonts report), reached by `psd_details` and the bake. The bot never imports it since 2026-11-11: `/fonts` reads the report the data build writes (the manifest's `fonts`). |
 | GitPython | The bot's self-update commands (`/pull`, `/update`; `/push` until 2026-10-25), imported lazily inside update_bot's functions (update_bot.py:19, 27; startup never loads GitPython). |
 | numpy | Image array plumbing in `commands/utils.py:7` and `commands/frankenstein.py:2`. |
 | opencv-python | Image encode/decode/resize, imported lazily inside the functions that need it (2026-10-20; only /frankenstein): `commands/utils.py:109, 117` (`url_to_cv2image`, `cv2discordfile`), `commands/frankenstein.py:65`. |
 | pandas | The card query engine's DataFrames: `commands/query_card.py:13`, `commands/psd_analyzer.py:13`. |
 | Pillow | Images: top level in `commands/type_emojis.py:12` (emoji images, loaded at startup), `png_export.py:32`, `card_bake.py:47`, `psd_edit.py:23`, `card_grid.py` (/query_ability's grids; `ImageFont.load_default(size)` wants Pillow >= 10.1 with FreeType, else the small bitmap font); lazily in `psd_details.py:130` (ImageCms). Declared since 2026-10-20 (section 3). |
-| psd-tools (cards) | The PSD parser (`commands/psd_parser.py:11`), the fork at the one pin: its text engine serves the bake, the push guards and range reads (section 4). Its version does not follow the tag (1.25.0 up to `cards-20261023d`, 1.26.0+cards since `cards-20261024`, also `cards-20261025`, `cards-20261025b`, `cards-20261026`, `cards-20261104`, `cards-20261107`, `cards-20261110` and `cards-20261111`), and pip calls an install of the same version satisfied, so a re-pin needs `--force-reinstall` (section 4). |
+| psd-tools (cards) | The PSD parser (`commands/psd_parser.py:11`), the fork at the one pin: its text engine serves the bake, the push guards and range reads (`commands/psd_remote.py`, section 4). Not on the jetson since 2026-11-11. Its version does not follow the tag (1.25.0 up to `cards-20261023d`, 1.26.0+cards since `cards-20261024`, also `cards-20261025`, `cards-20261025b`, `cards-20261026`, `cards-20261104`, `cards-20261107`, `cards-20261110` and `cards-20261111`), and pip calls an install of the same version satisfied, so a re-pin needs `--force-reinstall` (section 4). |
 | oxipng CLI (cards; not a pip package since 2026-10-25, docs/Finished/session-2026-10-25/SMALLER_PNG_PUSHES.md) | png_export's lossless PNG recompression (`png_export.optimize`: the guards' PNGs and the bake's): the `oxipng` binary on PATH, 10.2.1 in the Actions (cards-python keeps the release, its pinned sha256 checked, in the cached venv's `.oxipng/`, on PATH only in the jobs that write PNGs: the guards' check and post, Card sync's Bake and save); on the Mac `brew install oxipng` (10.2.1, as the Actions). Without it no recompression (the pyoxipng fallback was dropped on 2026-11-10); everything runs without it. The oxipng tests skip without it (`png_export.tool()`; `pytest -rs` lists them); the jetson needs none. |
 | PyGithub | Removed 2026-10-25 (step 10): its only importers, card_data's legacy `_committed_since_update` and `_repo`, went with the pickles. PyNaCl stays declared on its own. |
 | PyNaCl | discord.py voice encryption (music is silent without it). Declared since 2026-10-20 (section 3). |
 | requests (cards) | HTTP fetches/downloads: `commands/utils.py:10`, `commands/query_card.py:9`, `commands/github_api.py:7`, `commands/tts_save.py:35`, `commands/git_commit.py:19`. |
-| yt-dlp | Music downloading (`commands/music_player.py:73`). Deliberately unpinned — updating it (`pip install -U yt-dlp`) is the first move when downloads break (autocroissant-debugging-playbook §6). |
+| yt-dlp | Music downloading (`commands/music_player.py:73`). Pinned in requirements-bot.txt since 2026-11-11: when downloads break, bump its pin there and deploy (deploy.sh installs the file; autocroissant-debugging-playbook §6). |
 
 ## 3. Transitive-dependency history (Pillow, PyNaCl)
 
@@ -102,94 +103,45 @@ synced by `/push` until 2026-10-25 — see **autocroissant-run-and-operate**). W
 
 | Axis | Mac (dev) | Jetson (production) |
 |---|---|---|
-| Python / run | venv (section 1), plain `python3 main.py` | Python 3.14 venv `~/venvs/autocroissant`, systemd `autocroissant.service` (ExecStart = the venv's python), compiled `.so` (section 5) |
+| Python / run | venv (section 1), plain `python3 main.py` | Python 3.14 venv `~/venvs/autocroissant` (requirements-bot.txt), systemd `autocroissant.service` (ExecStart = the venv's python), plain Python since 2026-11-11 |
 | yt-dlp cookies | `browser_cookies = True` in config.py → `cookiesfrombrowser = ('safari', ...)` (`music_player.py:37`, used at :55). | Unset → no browser cookies |
-| psd-tools | `~/.venvs/ac-py314-fork`: the fork at the pin (`cards-20261111` = da069245 since 2026-11-11, per `pip freeze`; with pytest-xdist and setuptools: the full suite, card_guards, bakes; the one Mac venv since 2026-11-10, when the stock 1.25.0 `ac-py314-psd125` was retired) | The fork at the pin (`cards-20261111` = da069245, 2026-11-11: research rounds 1-4 of 11-10/11, 8-bit gradients and adjustments in whole levels, Photoshop 2023's 8-bit Brightness/Contrast, glibc keeps freed canvases (`PSD_TOOLS_MALLOC=0` turns it off; up to ~150 MB more held between renders); `cards-20261110` = 170a3fce before it, 2026-11-10: research rounds 1-15, clipped pass-through groups drawn as Photoshop, effects blocks kept at version 0; six compiled modules; `cards-20261107` = d8882e5f before it: links; `cards-20261104` = 1258fcbd, 2026-11-04: tracking scales with the run's horizontal scale, as Photoshop; `cards-20261026` = e156be36, 2026-10-26: smart-filter star layers (lane 3); `cards-20261025b` = c17e0734 before it, Stylistic Alternates, the one-colour badges; `cards-20261025` = 9edbc1fa before it, tab stops; `cards-20261024b` = a651cd08 before it, glow halos; check `pip freeze`: `psd-tools @ git+...@da069245...`). Move it to the pin with `~/venvs/autocroissant/bin/pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"` (gcc compiles `_distance`; a plain `pip install -r` keeps the old commit), then `pip check`. The Actions (card-edits, card-guards, card-sync, card-preview) install the same file |
+| psd-tools | `~/.venvs/ac-py314-fork`: the fork at the pin (`cards-20261111` = da069245 since 2026-11-11, per `pip freeze`; with pytest-xdist and setuptools: the full suite, card_guards, bakes; the one Mac venv since 2026-11-10, when the stock 1.25.0 `ac-py314-psd125` was retired) | None since 2026-11-11 (the bot-only venv). Until then the fork at the pin, re-pinned by every deploy (gcc, about 170 s per tag); now a fork release only re-pins requirements-cards.txt: nothing on the jetson. The Actions (card-edits, card-guards, card-sync, card-preview) install that file |
 
 The torch/CUDA/MPS differences went with the AI to branch `archive/ai-generation`.
 Config field semantics: **autocroissant-config-and-flags**.
 
-## 5. The Cython build (optional)
+## 5. No Cython build (since 2026-11-11)
 
-### Commands
+From 2025-12-02 (f7c915c, "cythonized the code") until 2026-11-11, `setup.py` compiled 10 `commands/` modules (analytics,
+frankenstein, help, psd_analyzer, card_models, card_edits, psd_parser, query_card, management, music_player) to `.so`
+on the jetson at every deploy; the Mac and the suite ran the `.py` files. The owner turned it off (Fable design panel,
+design 3): on the jetson 58 real `/query` strings took 22.6-23.3 ms compiled and 21.9-22.0 ms plain, and the same 70
+real queries (68 distinct) replayed through both on 11-11 gave identical replies (warm pass 262.5 ms compiled, 257.3 ms plain).
+`setup.py`, `tests/test_setup_build.py`, Cython and setuptools went; the story is autocroissant-failure-archaeology
+Entry 6.
 
-```bash
-python3 setup.py build_ext --inplace   # rebuild the stale INCLUDE_FILES to .so next to the .py
-python3 setup.py clean                 # remove *.c *.cpp *.so *.pyd *.pyc *.html, __pycache__/, build/
-```
+What that retires (no sweep needed: existing code stays as written):
 
-Notes verified from `setup.py` (2026-07-11; the build is incremental since 2026-10-24):
+- The compiled-module rules: the `x[len(x)-1]` idiom, annotation enforcement (compiled `x: list` rejected a tuple),
+  Cython 3.3's "declare an annotated variable once", and `cdivision` (C division for negatives). `x[-1]` is plain
+  Python now. The 10-23 bounds-check setting (`boundscheck=True`, `wraparound=True`, 9919a14) is moot.
+- The build on the jetson (126-166 s incremental, 208 s full, per deploy) and `/update`'s stale `.so`: it pulled without a build, so compiled
+  modules kept running old code; now a pull is the whole update.
 
-- **Incremental build (2026-10-24).** `build_ext --inplace` rebuilds only the modules whose `.so` is missing or whose
-  fingerprint changed: sha256 of the `.py` source, its `.pxd` if any and setup.py itself (any setup.py edit rebuilds
-  everything), plus the directives, the `-O3` flag, the Cython and Python versions and the ABI suffix, kept in
-  `build/ext-stamps.json`. Each fingerprint is taken before compiling and stored only for modules that built, so a `.py`
-  saved mid-build rebuilds next time. A bare `touch` does not rebuild; a content change does. Stale modules build 4 at a time (cythonize `nthreads=4`, build_ext `parallel=4`). Safety
-  kept: a stale `.so` is deleted BEFORE its rebuild (a failed build leaves the new `.py` running, exit code 1, never an
-  old `.so` next to a new `.py`), and every `.so`/`.pyd` that is not a current INCLUDE_FILES build (other Python ABI,
-  dropped module) is deleted, and since 2026-10-25 a dropped module's `.c` source in `commands/`, its `build/lib.*` and
-  `build/temp.*` objects and its stamp too (`remove_orphans`). No stamps file (first run, after `clean`, after deleting `build/`) means a full rebuild.
-  Mac timings 2026-10-24 (M-series, 24 cores, Cython 3.3.0, Python 3.14.8): old from-clean build 75-88 s; new full
-  rebuild 16-23 s; nothing changed 0.2 s; one small module edited (help) 1.7 s; psd_parser 11-18 s. Jetson before:
-  6 min 44 s every deploy. Only `setup.py clean` deletes `*.html` (rglob) now; the build no longer does.
-- `setup.py` without `--inplace` refuses (the stamps describe the in-place `.so` files).
-- Compiled modules (`INCLUDE_FILES`, setup.py) — 10 `commands/` modules since 2026-10-25 (repo_traverser.py was
-  deleted; `build_ext` removes its `.so` as an orphan): analytics, frankenstein, help, psd_analyzer and the three modules its
-  code was split into on 2026-10-20 (card_models, card_edits, psd_parser: same directives, so the moved code keeps its
-  compiled semantics), query_card, management, music_player.
-- **Not compiled because they are not listed:** every module not in INCLUDE_FILES (43 of the 53 `commands/*.py` on
-  2026-11-10; 25 of 38 on 2026-10-23). In order of arrival: `commands/type_emojis.py` (added 2026-10-19),
-  `commands/repo_history.py`, `commands/tts_save.py` and `commands/github_api.py` (2026-10-20), `commands/psd_edit.py`, `psd_regions.py`,
-  `card_bake.py`, `font_check.py` and `git_commit.py` (2026-10-21: the Actions check them out alone, so their import closure stays plain Python), the card data build's `card_data.py`, `card_history.py`, `card_db.py` and `changelog.py` (2026-10-22: `card_data` holds the traverser's code, so /update_stats on the jetson runs the same pure Python as the Action; the compiled `repo_traverser` wrapper was deleted 2026-10-25), and since 2026-10-22/23 `card_sync`, `card_dates`, `card_check`, `card_guards`, `png_export`, `card_standards`, `psd_diff`, `txt2_repair` and `psd_details`.
-  New modules are uncompiled by default; all were deliberately left out. Note that compiled
-  `query_card` imports it at module level, which is fine (compiled code can import plain modules).
-- Never compiled (the comment above `INCLUDE_FILES`; the `EXCLUDE_FILES` set that only listed them went on 2026-10-25):
-  `main.py` (entry point — keep as Python), `commands/update_bot.py` (`execl` for restart), `commands/utils.py` (core
-  utilities, decorators, dynamic behavior), `config.py`/`global_config.py` (configuration).
+### The stale-.so trap (old checkouts only)
 
-### Compiler directives and their consequences (setup.py:36-49)
-
-This is where the coding-discipline rules for compiled modules come from. Rules
-without their incident get ignored, so each one carries its story:
-
-| Directive | Consequence in the 10 compiled modules |
-|---|---|
-| `wraparound` / `boundscheck` | Since 2026-10-23 setup.py builds with `boundscheck=True` and `wraparound=True` (owner): a bad or negative index behaves as in plain Python instead of crashing; the `x[len(x)-1]` idiom stays (don't churn it). Before that (`wraparound=False`, `boundscheck=False`): **NEGATIVE INDEXING WAS BANNED.** Compiled code skips Python's negative-index handling; `x[-1]` can read garbage or crash instead of meaning "last element". House idiom: `x[len(x)-1]` — see commit dd800bc (2026-01-30), which changed `bboxes[-1][1].y` to `bboxes[len(bboxes)-1][1].y`, and the live idiom at `music_player.py:132` (`prev_music[len(prev_music)-1]`). The ban has already drawn blood once: the cythonization commit f7c915c mechanically purged a `split("TTSCardMaker")[-1]` and replaced it with a `removeprefix()` that no-ops on absolute paths — the local-mode stats-corruption bug (local mode archived 2026-10-20). Full story: **autocroissant-failure-archaeology**. |
-| (history) `boundscheck=False` until 2026-10-23 | Out-of-range indexes were undefined behavior (crash or garbage), not a clean `IndexError`: a blank star folder read out of bounds in compiled code (fixed in ba27fb7, 2026-10-23). Since 9919a14 (setup.py:38-39) they raise `IndexError` with a traceback. |
-| `cdivision=True` | C division semantics for negatives: quotient truncates toward zero and `%` takes the dividend's sign. In Python `-7 // 2 == -4` and `-7 % 2 == 1`; in compiled code they become `-3` and `-1`. Any div/mod on possibly-negative ints must be reasoned about. |
-| `embedsignature=True` | Function signatures survive into docstrings — `help()` still works on compiled functions. |
-| (Cython 3.3 itself, not a directive) | **Declare an annotated variable once.** Cython 3.3 rejects re-annotating a name already declared in the same function (`'target_message' redeclared`), which plain Python allows. `cythonize()` then raises `CompileError` before `setup()` runs, and because `clean_artifacts()` already deleted the old artifacts, the host ended up with NO compiled modules and ran plain Python without any obvious sign (since 2026-10-24 the build exits 1 and only the stale modules lose their `.so`; deploy.sh stops before the restart). This hit `commands/management.py` (`add_reactions`) until 2026-10-19: autocroissant-failure-archaeology Entry 10.5. Since the fix, all INCLUDE_FILES modules compile with Cython 3.3.0 and setup.py's directives (7 on 2026-10-19; all 11 in a scratch build after the 2026-10-20 split). |
-| (Cython itself: annotations) | **Type hints are enforced and coerce** in compiled modules (measured with Cython 3.3, 2026-10-20): `x: list` rejects a tuple, `x: dict` rejects a defaultdict, `x: str`/`int` reject None unless the default is None, `x: float` turns 1 into 1.0, `x: bool` turns None into False, `-> dict` rejects a defaultdict return. Untouched: ABCs, non-builtin classes, unions, `Optional[...]` with a None default, dataclass fields, `-> int`. So a hint change in an INCLUDE_FILES module is a behaviour change: gate it with a compiled run (the 2026-10-20 split kept the moved code compiled for exactly this reason). Known case: compiled `analytics.parse_interval(None)` raises TypeError; the .py returns None. |
-| Also set | `language_level='3'`, `initializedcheck=False`, `infer_types=True`, `overflowcheck=False`, `profile=False`, `linetrace=False`. |
-
-### Compilation is optional — and the stale-.so trap
-
-- The Mac's working tree has **no** `.so`/`.c` artifacts (2026-10-20) and runs plain Python.
-- Production (the jetson, no startup.sh) builds on every deploy: the `jetson-deploy` skill (~/.claude/skills; pull, psd-tools pin,
-  `~/venvs/autocroissant/bin/python setup.py build_ext --inplace`, restart; **autocroissant-run-and-operate**). It runs the 11 `.so` files, so the stale-.so trap below
-  is live there: rebuild after every pull.
-- **The trap**: an import like `from commands import psd_analyzer` picks a compiled
-  `commands/psd_analyzer.*.so` OVER `commands/psd_analyzer.py`. A stale `.so` from an
-  old build silently shadows your edited `.py`. Symptom: your edits do not take
-  effect, no error anywhere. Fix: `python3 setup.py clean`. This is the first check in
-  any "my change does nothing" debugging session on a machine that has ever compiled.
-
-Check for artifacts (also useful before trusting any test result):
+An import like `from commands import psd_analyzer` picks a compiled `commands/psd_analyzer.*.so` OVER the `.py`. A
+leftover `.so` from an old build silently shadows your edited `.py`: your edits do not take effect, no error anywhere.
+The jetson-deploy skill's deploy.sh, in a repo with no `setup.py` at its root (it compiles nothing), removes the files
+git does not track: every `*.so`, a `*.c` beside a same-named `.py`/`.pyx` and `build/`; tracked files are never
+touched, and it fails if any remain. A repo that still has `setup.py` builds as before. Anywhere else:
 
 ```bash
-find . -name "*.so" -not -path "./.git/*"
+find . -name "*.so" -not -path "./.git/*"           # empty = nothing shadows a .py
 ```
 
-- Artifacts are gitignored (`*.so`, `*.c`, `*.cpp`, `*.pyd`, `*.dll`, `build/`, `__pycache__/`).
-  History of one quirk (verified 2026-07-11 at `.gitignore` lines 18-20, before the fix): the entries
-  `*.so      # Linux/Mac`, `*.pyd     # Windows`, `*.dll     # Windows (rare)` carry
-  trailing text — gitignore has no trailing comments, so those three patterns are
-  literal and match nothing. `*.so` is safely covered by the bare `*.so` on line 7,
-  but `*.pyd`/`*.dll` are covered by nothing: if a Windows machine ever compiles
-  (setup.py has win32 branches), `.pyd` files would have shown up as untracked and could have been
-  committed by a careless `git add .`. **Fixed 2026-10-19** (53db8ee): the comments moved to
-  their own lines, so `*.so`, `*.pyd` and `*.dll` (lines 19-22) all match now
-  (`git check-ignore -v a.pyd a.dll`).
+Artifacts stay gitignored (`*.so`, `*.c`, `*.cpp`, `*.pyd`, `*.dll`, `build/`, `__pycache__/`; the trailing-comment
+quirk that left `*.pyd`/`*.dll` unmatched was fixed 2026-10-19, 53db8ee).
 
 ## 6. Directory conventions
 
@@ -245,8 +197,8 @@ Then:
    (autocroissant-run-and-operate §7).
 5. Deploy key: place the bot's SSH key pair in `.ssh/` if this machine will push by hand (the bot itself pushes
    nothing since 2026-10-25; see **autocroissant-run-and-operate** for the self-update flow).
-6. Cython build: `python3 setup.py build_ext --inplace` (section 5). Optional, but production
-   (the jetson) compiles with `~/venvs/autocroissant/bin/python` and runs under systemd `autocroissant.service`.
+6. Nothing to build (section 5). Production (the jetson) runs `~/venvs/autocroissant/bin/python` (requirements-bot.txt)
+   under systemd `autocroissant.service`.
 7. Smoke test (section c).
 
 ### (c) Verifying an environment
@@ -270,7 +222,7 @@ Additional probes:
 ```bash
 which ffmpeg                                          # music prerequisite
 python3 -m pip show PyNaCl | head -2                  # voice encryption present
-find . -name "*.so" -not -path "./.git/*"             # empty = no stale compiled artifacts
+find . -name "*.so" -not -path "./.git/*"             # empty = no leftover compiled artifacts
 ```
 
 ## When NOT to use this skill
@@ -299,19 +251,16 @@ Line numbers drift; re-verify volatile facts with:
 
 | Fact | Re-verify with |
 |---|---|
-| Package lists (the card stack + 12 core, 2026-10-23) | `cat requirements-cards.txt requirements.txt requirements-dev.txt` |
-| Pillow and PyNaCl declared (they once arrived via psd-tools and PyGithub) | `grep -n "Pillow\|PyNaCl" requirements.txt` (8, 4) |
+| Package lists (the card stack; the bot's 29 pins, 2026-11-11) | `cat requirements-cards.txt requirements-bot.txt requirements.txt requirements-dev.txt` |
+| Nothing compiled; the bot's closure free of the toolchain | `ls setup.py` (none); `python -m pytest -q tests/test_bot_env.py` |
+| The jetson's venv | `ssh -q jetson 'readlink ~/venvs/autocroissant; ~/venvs/autocroissant/bin/pip freeze \| grep -ciE "psd-tools\|scipy\|fonttools\|cython"'` (`autocroissant-bot-3.14.10`, 0) |
+| Pillow and PyNaCl declared (they once arrived via psd-tools and PyGithub) | `grep -in "pillow\|PyNaCl" requirements-bot.txt` |
 | discord.py needs only aiohttp | `python3 -m pip show discord.py \| grep Requires` |
 | PIL imports | `grep -n "from PIL" commands/*.py` (top level: card_bake:47, png_export:32, psd_edit:23-24, type_emojis:12; lazy: psd_details, psd_edit) |
 | discord.py floor and why | `grep -n "discord" requirements.txt` (`discord.py>=2.5`); `grep -n "versionadded:: 2.5" $(python3 -c 'import discord,os;print(os.path.dirname(discord.__file__))')/client.py` |
 | Which interpreter has the bot's deps | `ls -l /usr/local/bin/python3; python3 -c "import psd_tools"` (fails on 2026-10-19; use ~/.venvs/ac-py314-fork/bin/python on the Mac) |
-| Cython 3.3 compiles all 10 | in a scratch copy with setuptools available: `python3 setup.py build_ext --inplace` (never in the live checkout on a running host); quick single-file check: cythonize `commands/management.py` with setup.py's directives and expect no "redeclared" error |
-| Uncompiled by omission | `grep -c "type_emojis\|repo_history\|tts_save\|github_api\|card_data\|card_sync" setup.py` (0) |
 | davey optional (try/except in discord.py) | `grep -rn -A2 "import davey" $(python3 -c 'import discord,os;print(os.path.dirname(discord.__file__))')/gateway.py` |
-| Never-compiled note | `grep -n "Files that CAN be compiled" setup.py` |
-| Include list (10 files of 41 command modules) | `grep -n "INCLUDE_FILES = " -A14 setup.py`; `ls commands/*.py \| grep -v __init__ \| wc -l` (41) |
-| Compiler directives (bounds checks and wraparound on) | `grep -n "COMPILER_DIRECTIVES" -A14 setup.py` (`'boundscheck': True`, `'wraparound': True` at :38-39) |
-| The fork in each venv | `~/.venvs/ac-py314-fork/bin/pip freeze \| grep psd` (`@da069245...` = `cards-20261111`); on the jetson `~/venvs/autocroissant/bin/pip freeze \| grep psd` (the same after the re-pin's deploy) |
+| The fork in the Mac venv | `~/.venvs/ac-py314-fork/bin/pip freeze \| grep psd` (`@da069245...` = `cards-20261111`); the jetson has none since 2026-11-11 |
 | Offline suite size | `python -m pytest --collect-only -q tests \| tail -1` (the count lives in autocroissant-validation-and-qa row 1c) |
 | No compiled artifacts in tree | `find . -name "*.so" -not -path "./.git/*"` |
 | Negative-index idiom commit | `git show dd800bc \| grep -E "^[-+].*bboxes"` |
@@ -376,3 +325,8 @@ left png_export and the fork venv (the oxipng CLI: brew on the Mac); the fork ve
 python-dateutil 4.0.0, tzdata 2026.6, fonttools 4.68.0, uharfbuzz 0.57.0, Cython 3.3.1).
 
 2026-11-11 (docs check): no `EXCLUDE_FILES` (43 of 53 modules unlisted); the Mac's TTSCardMaker clone has full history since 2026-11-10.
+
+2026-11-11 (nocython, owner): setup.py and Cython gone (section 5 rewritten: the measurement, what it retires, the
+stale-.so trap for old checkouts); requirements-bot.txt (the jetson's pinned bot packages, tests/test_bot_env.py) and
+requirements.txt = cards + bot; the jetson's venv `autocroissant-bot-3.14.10` without the card toolchain; davey and
+yt-dlp pinned; the setup.py re-verify rows replaced.

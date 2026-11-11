@@ -9,7 +9,7 @@ description: How AutoCroissant works as a system, plus the start-here map of all
 
 - Run / stop / deploy / machine handoff / run update_stats → autocroissant-run-and-operate
 - Something is broken RIGHT NOW → autocroissant-debugging-playbook
-- Install / env / Cython build → autocroissant-build-and-env ; every config axis → autocroissant-config-and-flags
+- Install / env / requirements (nothing is compiled) → autocroissant-build-and-env ; every config axis → autocroissant-config-and-flags
 - BEFORE any commit, push, or card-data touch → autocroissant-change-control ; is it safe/finished → autocroissant-validation-and-qa
 - What cards/PSDs/queries mean → impossibility-cards-reference ; measuring tools → autocroissant-diagnostics-and-tooling
 - How the game is played (timing tags, damage, status effects) → impossibility-simulator-rules
@@ -94,7 +94,7 @@ Mechanics you must know:
   blocking work — the GitHub listing and every image download/resize — into threads with
   `asyncio.to_thread`. Its user-facing report still goes through `queue_message`. Copy that split if
   you write another async worker: await only cheap Discord calls on the loop, thread everything else.
-- **The /reminders panel answers directly** (2026-10-24, `commands/reminder_panel.py`, not compiled): a View, a
+- **The /reminders panel answers directly** (2026-10-24, `commands/reminder_panel.py`): a View, a
   modal and `edit_message` need the live interaction, so its callbacks call `interaction.response.*` themselves
   (3 s to answer) and run every read or change of the reminders in a thread (`to_thread(snapshot | set_enabled |
   delete | reschedule | create)`: `_lock` may be held by a scheduler pass). Rights are checked in analytics.py under
@@ -142,7 +142,8 @@ Mechanics you must know:
 | 7 | **`check_reminder` is re-queued every second — reminder-path work must stay cheap, and stay single-flight.** `process_reminders` (main.py:806-808, a 1 s `tasks.loop` started and stopped with the drains) does `queue_command(check_reminder)`; the woken command loop starts it at once, so it runs ~once/second in a pool thread (analytics.py:819). Since 2026-10-19 it takes `_check_lock` with a non-blocking acquire (a pass that finds another still running just returns) and does all work under `_lock` (an RLock shared with the slash shortcuts and the /reminders panel, which run in their own threads). Commands of due reminders are queued onward (`queue_command(_run_reminder_command, ...)`), never run inline; reminder.json is saved only when something changed, atomically. | Anything slow in `check_reminder` costs a pool thread every second and holds `_lock`, stalling `/set_reminder`, `/reminders` and `/remove_reminder`. Remove the single-flight lock and two overlapping passes can fire the same reminder twice. Run a reminder's command inline and one slow command blocks every other reminder. |
 | 8 | **`lacks_admin` (named `perms_check` until 2026-10-20) returns True when the user is NOT an admin:** `return interaction.user.id not in ADMINS` (utils.py). Callers write `if lacks_admin(i): deny-and-return` (e.g. main.py:180-182). | Flip the polarity and you either lock the admins out or open an admin command to everyone. When adding an admin-gated command, copy an existing gate verbatim. |
 | 9 | **Admin gates live in the registered slash callback, and reminders fire as their creator** (2026-10-19). A firing reminder's FakeInteraction carries `_ReminderUser(creator_id)` (analytics.py:95, set in `_reminder_interaction`), so the callback's own `lacks_admin` re-checks ADMINS at fire time. A reminder without a creator (saved before 2026-10-19) runs as an unknown non-admin user (2026-10-26). | Put an admin check anywhere other than the callback stored in `slash_registry` (e.g. only in a worker, or in a pre-dispatch hook) and scheduled runs either skip it or check the wrong user. Make the FakeInteraction default to the bot again and every reminder passes admin checks (the bot's id is in ADMINS on the dev Mac — archaeology Entry 10.8). |
-| 10 | **The bot reads card data and never writes it: one sync at a time (`card_sync._sync_lock`), the database swapped whole.** No bot module imports card_bake, psd_edit or card_data's build (2026-10-25: the legacy /update_stats parse, its `bake_lock` and the pickles are gone). | Write card data from the bot and there are two writers (Card sync is the one, gate G6). Import card_bake at module level and the bot fails to start wherever the fork's psd-tools is absent (the Mac's stock venv). |
+| 10 | **The bot reads card data and never writes it: one sync at a time (`card_sync._sync_lock`), the database swapped whole.** No bot module imports card_bake, psd_edit or card_data's build (2026-10-25: the legacy /update_stats parse, its `bake_lock` and the pickles are gone). | Write card data from the bot and there are two writers (Card sync is the one, gate G6). |
+| 11 | **The bot never imports the card toolchain** (psd_tools, scipy, fontTools, uharfbuzz, freetype, aggdraw), not even lazily (2026-11-11). The jetson's venv is `requirements-bot.txt` alone; `/fonts` reads the fonts report the data build writes into the manifest; `RemotePSD` lives in the card-side `psd_remote`. `tests/test_bot_env.py` walks main.py's AST import closure, lazy imports and `import_module("...")` included, and fails when it reaches the toolchain or a package with no pin. | A toolchain import in a bot module (even inside a function) is an ImportError on the jetson the first time that path runs: a command that works on the Mac fails in production. Card-side helpers go in card-side modules. |
 
 ## Data-flow diagrams
 
@@ -197,7 +198,7 @@ traversal inside `/update_stats` and saved the pickles (`card_data.update`, repo
 ```
 /update_stats  (wrapper: with force_update or cards, admins only; then defers)
       v
-WORKER THREAD: card_sync.update()   (uncompiled)
+WORKER THREAD: card_sync.update()
       |  force_update / cards: POST actions/workflows/card-sync.yml/dispatches (ACTIONS_TOKEN), then GET the run every
       |    15 s (state edited into the reply, queue_edit), 30 min at most; a cancelled run: dispatched once more or said
       v
@@ -273,61 +274,64 @@ main.py  (registration + queue loops; imports every commands module)
  |- commands.analytics     -> utils, global_config
  |- commands.music_player  -> utils, config
  |- commands.github_api    -> global_config, config (optional): GIT_TOKEN, fetch_tree/fetch_blob, get_with_retry
- |                            [2026-10-20; NOT compiled; the one home for GitHub access]
+ |                            [2026-10-20; the one home for GitHub access; no psd-tools: RemotePSD is psd_remote's, 2026-11-11]
  |- commands.query_card    -> utils, global_config, github_api, type_emojis (module level, 2026-10-19), repo_history,
  |                            card_models (stats_db), card_edits, card_history (start);
  |                            psd_analyzer LAZILY (the facade-only names)
  |- commands.type_emojis   -> utils, global_config, github_api, repo_history; query_card.card_repo LAZILY inside _list_type_icons
- |                            [2026-10-19; NOT in setup.py INCLUDE_FILES, so never compiled]
- |- commands.repo_history  -> global_config ONLY  [2026-10-20; commit-pinned image links; NOT compiled]
+ |                            [2026-10-19]
+ |- commands.repo_history  -> global_config ONLY  [2026-10-20; commit-pinned image links]
  |- commands.git_commit    -> github_api, repo_history, global_config: one commit on the card repo (Git Data API; git objects in the
  |                            history clone pushed over SSH when the token can't write), shared by the edit pipeline's card_bake
- |                            and card_guards (Actions) [2026-10-21; NOT compiled; no discord or config]
+ |                            and card_guards (Actions) [2026-10-21; no discord or config]
  |- commands.tts_save      -> git_commit, repo_history, card_models, card_edits, global_config: `python -m commands.tts_save
  |                            <save.json>`, no bot module imports it (TTSCardMaker's
  |                            card-sync.yml's TTS save step does (tts-save.yml until 2026-10-24), with the AUTOCROISSANT_LOCAL_DIR / AUTOCROISSANT_HISTORY_CLONE env
- |                            overrides global_config reads) [2026-10-20; /update_tts_save retired 2026-10-25; NOT compiled]
+ |                            overrides global_config reads) [2026-10-20; /update_tts_save retired 2026-10-25]
  |- commands.card_models   -> global_config ONLY: CardType, CardStats, CardInfo, StatsDatabase, stats_db,
- |                            card_name  [2026-10-20 split; compiled]
- |- commands.card_edits    -> card_models: CardAuthors, CardEdits  [compiled]
+ |                            card_name  [2026-10-20 split]
+ |- commands.card_edits    -> card_models: CardAuthors, CardEdits
  |- commands.psd_parser    -> card_models, global_config, psd_tools: PSDParser, CardClassifier, CardValidator,
- |                            IconVocabulary  [compiled; no Discord, network or pandas]
+ |                            IconVocabulary  [no Discord, network or pandas; card side: the bot never imports it]
  |- commands.psd_details   -> font_check, psd_regions, psd_parser, card_models, github_api, global_config, psd_tools (Pillow's ImageCms
- |                            optional): gather, load/save/prune, the clone CLI  [2026-10-21; NOT compiled; no discord or config;
- |                            card_data imports it LAZILY inside its functions so fontTools stays off the startup path]
- |- commands.card_data     -> card_models, card_edits, psd_parser, github_api, global_config; psd_details, card_history, card_db,
+ |                            optional): gather, load/save/prune, the clone CLI  [2026-10-21; no discord or config; card side:
+ |                            card_data imports it LAZILY inside its functions; the bot never does since 2026-11-11]
+ |- commands.card_data     -> card_models, card_edits, psd_parser, psd_remote, github_api, global_config; psd_details, card_history, card_db,
  |                            changelog LAZILY: CardBuild (the parse and REST blobs), GitBuild (the clone), build (the Card sync
- |                            Action's db/ JSON)  [2026-10-22; NOT compiled; no discord, pandas, config or utils: card-sync.yml
- |                            checks out card_data.SPARSE_FILES alone]
+ |                            Action's db/ JSON, its manifest's fonts report: font_check.fonts_report)  [2026-10-22; no discord,
+ |                            pandas, config or utils: card-sync.yml checks out card_data.SPARSE_FILES alone]
+ |- commands.psd_remote    -> github_api; psd_tools LAZILY: RemotePSD (a PSD at a commit by range requests) for card_data,
+ |                            card_check, history_reread  [2026-11-11, out of github_api: the bot's closure stays toolchain-free]
  |- commands.card_sync     -> card_db, github_api, psd_analyzer (stats_db, the facade's), utils, global_config, config (optional);
- |                            query_card, type_emojis, repo_history, analytics, psd_details, font_check LAZILY: the bot's card
- |                            data (sync, /update_stats, admins' Card sync runs, /fonts from data). main imports it; psd_analyzer
- |                            LAZILY (init_psd) [2026-10-22; NOT compiled]
+ |                            query_card, type_emojis, repo_history, analytics LAZILY: the bot's card data (sync, /update_stats,
+ |                            admins' Card sync runs, /fonts from the manifest's fonts report: no psd_details or font_check since
+ |                            2026-11-11). main imports it; psd_analyzer LAZILY (init_psd) [2026-10-22]
  |- commands.psd_analyzer  -> the three above, query_card, github_api, utils, pandas: the FACADE. Re-exports every card name, holds the
  |                            metadata/export commands and init_psd. Code outside imports card classes from HERE only.
  |- commands.card_grid     -> PIL, requests ONLY: grid images of many cards, the card_images/ cache (query_card LAZILY)
- |                            [2026-10-25; NOT compiled; no discord]
+ |                            [2026-10-25; no discord]
  |- commands.frankenstein  -> utils, query_card (card_repo)
  |- commands.forum_votes   -> utils, global_config: the proposal forum's votes (/forum_votes, on_thread_create and
  |                            on_raw_thread_delete, the /reminders panel's read-only entries, the
  |                            5-minute loop; `python -m commands.forum_votes test` logs in over REST only)
- |                            [2026-11-09; NOT compiled; async worker; forum_votes.json beside reminder.json]
+ |                            [2026-11-09; async worker; forum_votes.json beside reminder.json]
  '- commands.update_bot    -> repo_history (batch_overrides);
                               GitPython LAZILY inside its functions  (no utils: bypasses queues on purpose, invariant 3)
 
-Outside the bot's import graph (CLIs and TTSCardMaker Actions only; no bot module imports them): card_check,
+Outside the bot's import graph (CLIs and TTSCardMaker Actions only; no bot module imports them, even lazily: invariant 11):
+psd_parser, psd_details, psd_edit, font_check, psd_remote, card_data's build, card_check,
 card_guards, card_standards, png_export, psd_diff, txt2_repair, tts_save and card_dates
 (since 2026-10-25 only `created`, the creation-dates CLI; /update_metadata, /mass_replace and /alias are on branch
 archive/discord-edits). card_db, card_history and changelog are in it, reached from card_data, card_sync and query_card.
 
-(not in main) branch archive/local-update-stats: archive/local_update_stats.py  (2026-10-20; NOT compiled)
+(not in main) branch archive/local-update-stats: archive/local_update_stats.py  (2026-10-20)
      -> commands.psd_analyzer, commands.query_card, global_config   [the archived local /update_stats mode]
 ```
 
 **The deliberate lazy-import cycle breaks (two of them).** The facade `psd_analyzer` imports
 `card_repo` from `query_card` at module level because it uses the repo object throughout. `query_card` takes
 `stats_db` from `card_models` at module level (query_card.py:20, since 5835139, 2026-10-21):
-card_models imports nothing of the facade, so that is no cycle, and every deploy rebuilds every `.so`, so the old
+card_models imports nothing of the facade, so that is no cycle, and nothing is compiled since 2026-11-11, so the old
 "two `stats_db` objects" risk of a stale compiled facade is gone. The names only the facade holds
 (`get_stats_as_dict`, `CardEdits` through it, `_format_metadata`) it imports **inside the function**
 (query_card.py:441, 510, 598, 606, 733, 762: `_populate_edit_names`, `prep_dataframes`, the card lookups). The same shape repeats since 2026-10-19: `query_card` imports `render_type_tokens` from
@@ -384,7 +388,7 @@ optimization pass.
    old_stats.pkl (docs/BUGS_AND_IMPROVEMENTS.md B6). The default became remote on 2026-10-20 and the same day local
    mode was archived: `/update_stats` and `update_stats()` no longer take `use_local_repo` /
    `use_local_timestamp`, the traversal lives on branch `archive/local-update-stats` (not in main, so the bot
-   can't import it; not compiled), and stored reminders naming them fail binding (the dropping shim was removed 2026-10-25). Revive it only
+   can't import it), and stored reminders naming them fail binding (the dropping shim was removed 2026-10-25). Revive it only
    after fixing the change signal.
 6. **(Gone 2026-10-25) Pickles-as-database implications** — see the section above; the card data's gates live in the
    build (DATA_BUILD_ACTION.md §13) and its review in **autocroissant-change-control**.
@@ -417,7 +421,7 @@ optimization pass.
    50 ms mean / 95 ms p95 before, 0.4-1.0 ms / 1-3 ms after; the four loops' idle CPU 1.67 → 0.54 ms/s. /query_ability
    listed name and image link 10 per message from 2026-10-21 until the owner reverted it on 2026-10-23
    (Discord previews only a few images per message): it sent one message per card again, the image URL alone.
-   Since 2026-10-25 (branch work/grid) two or more cards come as grid images (commands/card_grid.py, uncompiled: 20
+   Since 2026-10-25 (branch work/grid) two or more cards come as grid images (commands/card_grid.py: 20
    numbered cards per JPEG, each with its list of names linking to /c/<slug>/, one message per grid; one card is still
    its image link): 'damage' 188 sends → 10. The pictures are downloaded once per PNG blob into `card_images/`
    (gitignored; only from a commit-pinned link, a branch link's CDN can lag: fetched uncached), 4 at a time, in the query's worker thread (archaeology 10.30; `docs/Finished/optimization-pass-2026-10-20/profile.md` items 1-2).
@@ -464,7 +468,7 @@ optimization pass.
   gets you from symptom to cause.
 - **Card-domain semantics** (folder classification, PSD layer rules, type injection, query DSL,
   exclusion lists) → **impossibility-cards-reference**.
-- **Building the environment, Cython** → **autocroissant-build-and-env**.
+- **Building the environment, requirements files** → **autocroissant-build-and-env**.
 - **Making a change** (checklists, the data gate, what may never be committed) →
   **autocroissant-change-control**.
 - **Incident history and the removeprefix bug's full story** → **autocroissant-failure-archaeology**.
@@ -505,7 +509,7 @@ Re-find before citing:
 | Module-level cycles + lazy breaks | `grep -n "from commands.query_card import card_repo" commands/psd_analyzer.py commands/type_emojis.py` (module level in the first; inside a function in type_emojis); `grep -n "from commands.psd_analyzer import" commands/query_card.py` (all inside functions: 442, 511, 599, 607, 734, 763); `grep -n "^from commands" commands/query_card.py` (18-24: card_edits, card_history, card_models, github_api, repo_history, type_emojis, utils) |
 | Singletons | `grep -n "stats_db = StatsDatabase()" commands/card_models.py` (409); `grep -n "card_repo = CardRepository()" commands/query_card.py` (999); `grep -n "state = MusicState()" commands/music_player.py`; `grep -n "^reminders = \|^type_emojis:" commands/analytics.py commands/type_emojis.py` |
 | config import chain | `grep -ln "^import config" commands/*.py` (music_player, utils); `grep -n "import config" commands/github_api.py` (try/except) |
-| type_emojis uncompiled | `grep -c "type_emojis" setup.py` (0) |
+| Invariant 11: the bot's closure free of the card toolchain | `python -m pytest -q tests/test_bot_env.py`; `ls setup.py` (none: nothing compiled) |
 | update_bot bypasses queues | `grep -n "followup.send" commands/update_bot.py`; `grep -n "from commands" commands/update_bot.py` (6: repo_history at module level; 38: card_models inside `_rescue_merged_cards`); `grep -n "from git" commands/update_bot.py` (19, 27: inside `_git`/`_repo`) |
 | History step before the traversal (data flow b) | `grep -n "line = cleaned\|history_index()\|again = cleaned\|db.save()" commands/card_data.py` (1137-1138, 1153, 1159) |
 
@@ -567,3 +571,7 @@ and revived with the others), `on_thread_create`, commands/forum_votes.py in the
 open posts on the loop (read-only).
 
 2026-11-11 (docs check): invariant 6 and the JSON paragraph: nothing reads the pickles since 2026-10-25; `_stop_loops()` stops five loops (main.py:937).
+
+2026-11-11 (nocython): invariant 11 (the bot never imports the card toolchain, even lazily; tests/test_bot_env.py);
+invariant 10's fork remark dropped; the module map loses its compiled/NOT compiled tags (nothing is compiled), gains
+psd_remote and card_sync's /fonts from the manifest; the outside-the-bot list names the card-side modules.

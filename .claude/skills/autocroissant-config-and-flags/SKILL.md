@@ -207,7 +207,7 @@ Catalog per module, verified 2026-07-11; re-verified 2026-10-20:
 
 ### card modules: commands/card_data.py, psd_parser.py, psd_analyzer.py (psd_analyzer split 2026-10-20; the build in card_data.py since 2026-10-22)
 
-The first rows and `UPDATE_RATE`/`EXCLUDE_FOLDERS` live in commands/card_data.py (uncompiled; run by the Card sync
+The first rows and `UPDATE_RATE`/`EXCLUDE_FOLDERS` live in commands/card_data.py (run by the Card sync
 Action). repo_traverser.py (the legacy /update_stats, with `_tree_etags`/`_file_cache`, `LOOKUP_WORKERS` and
 `COMMITS_PAGE`) was removed 2026-10-25.
 
@@ -309,7 +309,7 @@ Both seed fields of the `CardRepository` dataclass whose singleton is `card_repo
 | `POSSIBLE_SCHEDULERS` | `["dpm++ sde", "dpm++ sde karras", "euler a"]` | whitelist enforced by `/set_scheduler` only (diffusion.py:427) |
 | `SD15_RGB_FACTORS`, `SDXL_RGB_FACTORS(+_BIAS)`, `FLUX_RGB_FACTORS(+_BIAS)` | matrices, diffusion.py:36-119 | latent→RGB preview math cribbed from ComfyUI's latent_formats.py — not tunables, leave alone |
 
-### commands/github_api.py (lines 12-18, added 2026-10-20; not compiled)
+### commands/github_api.py (lines 12-18, added 2026-10-20)
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -321,7 +321,7 @@ Both seed fields of the `CardRepository` dataclass whose singleton is `card_repo
 Also new 2026-10-20: `NET_TIMEOUT = 120` (commands/update_bot.py, seconds per git fetch or pull) and
 `MAX_CONTENT = 2000` (main.py:831, Discord's message limit; longer content is split before sending).
 
-### commands/type_emojis.py (lines 18-29, added 2026-10-19; not compiled)
+### commands/type_emojis.py (lines 18-29, added 2026-10-19)
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -337,7 +337,7 @@ Name rules (lowercase; dots and apostrophes dropped; other non-alphanumeric runs
 in `emoji_name`. They must stay compatible with the parser's canonical token names — see
 ttscardmaker-companion §1.6.
 
-### commands/tts_save.py (Configuration block, added 2026-10-20; not compiled)
+### commands/tts_save.py (Configuration block, added 2026-10-20)
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -347,7 +347,7 @@ ttscardmaker-companion §1.6.
 The bot's own run (`update_repo_save`, /update_tts_save, committing through git_commit) was retired 2026-10-25; tts_save is
 the card-sync.yml CLI only.
 
-### commands/git_commit.py (Configuration block, added 2026-10-21; not compiled; shared by card_bake and card_guards)
+### commands/git_commit.py (Configuration block, added 2026-10-21; shared by card_bake and card_guards)
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -363,7 +363,7 @@ the card-sync.yml CLI only.
 Removed 2026-10-20 with the post-/update_stats run (TTSCardMaker's Action owns the automatic path: tts-save.yml, card-sync.yml since 2026-10-24):
 `IMAGES`, `_retry`, `_watched`, `save_affected`, `update_after_stats`.
 
-### commands/font_check.py (Configuration block, added 2026-10-21; not compiled)
+### commands/font_check.py (Configuration block, added 2026-10-21)
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -380,7 +380,7 @@ Removed 2026-10-20 with the post-/update_stats run (TTSCardMaker's Action owns t
 
 The Actions' token: `GITHUB_TOKEN` from the environment when config.py supplied none (`github_api.token_from_env()`, called by font_check's and card_bake's entry points since 2026-10-21).
 
-### commands/card_check.py (Configuration block, added 2026-10-21; not compiled; CLI only)
+### commands/card_check.py (Configuration block, added 2026-10-21; CLI only)
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -393,7 +393,7 @@ through `github_api.token_from_env()`. Repo paths from global_config: `TYPES_DIR
 It runs from card-guards.yml's check job since 2026-10-25 (card-check.yml before; its `SPARSE_FILES` went: the guards'
 `card_guards.SPARSE_FILES` holds its closure).
 
-### commands/psd_details.py (Configuration block, added 2026-10-21; not compiled)
+### commands/psd_details.py (Configuration block, added 2026-10-21)
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -438,7 +438,7 @@ store turns reminders off; OJWikibot exits), `CHANNEL_RETRY` and `is_admin`.
 None of these is a config.py field; changing them is a code change. Reminder behavior in practice:
 autocroissant-run-and-operate §9.
 
-### commands/forum_votes.py (2026-11-09; not compiled; the proposal forum)
+### commands/forum_votes.py (2026-11-09; the proposal forum)
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -450,7 +450,7 @@ autocroissant-run-and-operate §9.
 | `HISTORY` | `50` | recent messages searched for a bot's ping or note in the post, and its winner message in the results channel (this one's or another identity's), before sending one |
 | `TEST_TITLE`, `TEST_STOPPED` | `"Test post"`, `"The test stopped early."` | the live test's post title (the bot's own post by that title is never pinged and is closed without a winner message) and its note when stopped early |
 
-### commands/card_sync.py (2026-10-22; not compiled; the bot's card data)
+### commands/card_sync.py (2026-10-22; the bot's card data)
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -464,6 +464,7 @@ autocroissant-run-and-operate §9.
 | `EDIT_MINUTES` | `14` | progress edits stop here (Discord's interaction lasts 15 minutes) |
 | `REFRESH_SECONDS` (2026-10-25) | `120` | on use: a card command or autocomplete looks at the data branch at most this often (any sync counts) |
 | `READERS` (2026-10-25) | 12 slash command names | the commands that read card data, so look on use (autocomplete always does) |
+| `ERRORS_SHOWN` (2026-11-11, from font_check) | `10` | error lines in the /fonts reply, from the manifest's fonts report (`fonts`: `checked`, `missing` {font: {path: [layers]}}, `errors`; written by the data build, font_check.fonts_report) |
 
 No clock in the bot since 2026-10-24: card-sync.yml starts itself on a card push (its `push` trigger). Since 2026-10-25
 (owner: only main's writes wait; branch work/split) its data lane (job `data`, the data branch, posts, site) runs at once
@@ -471,7 +472,7 @@ and its main lane (job `main`: the bake and the TTS save on main) goes at once t
 timer; before, the environment `card-sync-quiet`'s wait timer held it 30 minutes after the first card push of a burst). /update_stats only syncs, and since
 2026-10-25 card commands sync on use (run-and-operate section 12), so no reminder is needed.
 
-### the push guards: commands/card_guards.py, card_standards.py, png_export.py, card_sweep.py (2026-10-22/23; card_sweep 2026-11-04; not compiled; card-guards.yml only, card_sweep by hand)
+### the push guards: commands/card_guards.py, card_standards.py, png_export.py, card_sweep.py (2026-10-22/23; card_sweep 2026-11-04; card-guards.yml only, card_sweep by hand)
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -499,7 +500,7 @@ timer; before, the environment `card-sync-quiet`'s wait timer held it 30 minutes
 | `png_export.BESIDE_CUT` | `8` | a new PSD pushed beside its PNG counts as current within this many levels (owner, 2026-10-23) |
 | `png_export.KEPT_PX` | `300` | a PNG beside a new PSD with no stored composite is kept, nothing told, up to this many px past BESIDE_CUT of the render, else redrawn (owner 2026-11-07: soft notes are no issue) |
 
-### commands/card_preview.py (2026-10-23; not compiled; TTSCardMaker's card-preview.yml only; design section 16)
+### commands/card_preview.py (2026-10-23; TTSCardMaker's card-preview.yml only; design section 16)
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -509,7 +510,7 @@ timer; before, the environment `card-sync-quiet`'s wait timer held it 30 minutes
 | `RETRY` | card_bake's `TRANSIENT` + `blob` | refusal codes reported as `error`, `transient` (try again) |
 | `PNG_LEVEL` | 1 | preview.png's zlib level, set on `psd_edit.PNG_LEVEL` (6, the commit's) for the bake: never published, same pixels |
 
-### commands/card_preview_branch.py (2026-10-23; not compiled; standard library only; the publish job of card-preview.yml)
+### commands/card_preview_branch.py (2026-10-23; standard library only; the publish job of card-preview.yml)
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -526,7 +527,7 @@ The workflow needs **no secret and no variable**: `GITHUB_TOKEN` reads the card'
 (`permissions: contents: read`, the workflow's) and pushes `previews` in the publish job (`contents: write`, that job
 only); its pip install is the other card workflows' (card-sync.yml's, card-edits.yml's until 2026-10-24), fork pin and all. Nothing in config.py.
 
-### commands/card_plates.py (2026-11-11; not compiled; card-checks.yml's Plates steps; the website's mock-up)
+### commands/card_plates.py (2026-11-11; card-checks.yml's Plates steps; the website's mock-up)
 
 | Constant | Value | Meaning |
 |---|---|---|
@@ -570,8 +571,9 @@ Discord. Its branch `previews` is data, not a setting: it is rewritten by the wo
 
 The fork's tag is in one place: AutoCroissant `requirements-cards.txt`, the card code's packages
 (`psd-tools[composite,text] @ git+https://github.com/MichaelJSr/psd-tools@<tag>`: read the tag there, no doc copies it;
-fonttools, requests; pyoxipng left it on 2026-10-25: the Actions run the oxipng CLI, 10.2.1 by sha256, from the shared setup). `requirements.txt` (the bot)
-starts with `-r requirements-cards.txt`, `requirements-dev.txt` with `-r requirements.txt`. The five card workflows on
+fonttools, requests; pyoxipng left it on 2026-10-25: the Actions run the oxipng CLI, 10.2.1 by sha256, from the shared setup). `requirements.txt` (the Mac)
+is `-r requirements-cards.txt` and `-r requirements-bot.txt`, `requirements-dev.txt` starts with `-r requirements.txt`. The
+jetson installs `requirements-bot.txt` alone since 2026-11-11: no fork there. The five card workflows on
 Python 3.14 (six until card-edits.yml was deleted at the cutover, 2026-10-24), card-guards.yml (its check and post jobs), card-sync.yml (one venv for every stage),
 card-preview.yml (without the oxipng CLI: its PNG is never published), and until 2026-10-25 card-check.yml and font-check.yml
 (now card-guards.yml's check job), check the file out of AutoCroissant and install it offline from wheels in the Actions cache (path
@@ -595,23 +597,21 @@ Re-pin:
    with `tests/test_card_guards.py tests/test_card_preview.py -k workflow` and `tests/test_card_bake.py -k "fork or 314"`
    (`test_card_bake.fork_install` checks each of the six workflows' install: no pin of its own, Python 3.14, the file's
    wheels, one cache key; `test_every_action_runs_python_314` every workflow's Python).
-4. The jetson's venv and the dev Mac's: `pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"`
+4. The dev Mac's venv (the jetson has no fork since 2026-11-11: nothing to do there): `pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"`
    (a plain `pip install -r` keeps the old commit while the fork's version is unchanged: 1.25.0 up to `cards-20261023d`,
    1.26.0+cards since `cards-20261024`, also at `cards-20261024b`, `cards-20261025`, `cards-20261025b`, `cards-20261026`, `cards-20261104`, `cards-20261107`, `cards-20261110` and `cards-20261111`; autocroissant-run-and-operate, "When the psd-tools fork tag moves"; autocroissant-build-and-env).
 
 A card-sync run whose builder (`builder_ref`, `CARD_DATA_BUILDER_REF`) is an AutoCroissant commit from before
 2026-10-23's requirements-cards.txt fails at its "Python environment" step: that commit has no such file.
 
-### setup.py (lines 8-35) — Cython build configuration
+### requirements-bot.txt (2026-11-11) — the jetson's packages
 
-| Constant | Meaning |
-|---|---|
-| (never compiled) | `EXCLUDE_FILES` was removed 2026-10-25; the comment above `INCLUDE_FILES` names what must stay Python (main.py, the configs, update_bot.py's restart, utils.py's decorators) |
-| `INCLUDE_FILES` | the 10 command modules that DO get compiled (diffusion.py left with the AI code on 2026-10-20; type_emojis.py and the other unlisted modules are never compiled) |
-| `COMPILER_DIRECTIVES` | `boundscheck: True`, `wraparound: True` (since 9919a14, 2026-10-23, owner: a bad or negative index behaves as in Python; the `x[len(x)-1]` idiom stays), `cdivision: True`, etc. |
-
-Why these are set this way, the build/clean commands, and the stale-`.so`-shadows-your-`.py`
-trap: **autocroissant-build-and-env**.
+The bot's packages with their dependencies, `==` pins from the jetson's `pip freeze` of 2026-11-11 without the card
+toolchain (29 lines). The jetson-deploy skill's deploy.sh installs it (`--only-binary :all:`) on every deploy; nothing
+else is installed there. `davey==0.1.7` stays until discord.py supports 0.2's transition API (voice breaks).
+To move a pin (yt-dlp first when downloads break): edit the line, run `tests/test_bot_env.py` (every package the
+bot's import closure reaches has a pin, none of the toolchain, davey at 0.1.7), push, deploy. setup.py and its
+`INCLUDE_FILES`/`COMPILER_DIRECTIVES` went that day: nothing is compiled (autocroissant-build-and-env §5).
 
 ## Runtime-settable vs restart-required
 
@@ -661,7 +661,7 @@ Since 2026-10-20 `/set_repo` switches only once the new tree loads; a failed fet
    which made local mode compare file mtimes with stored GitHub commit dates and re-archive every card
    (docs/BUGS_AND_IMPROVEMENTS.md B6). On 2026-10-20 local mode was archived: both options are gone from the
    slash command and from `update_stats()`, the traversal lives on branch `archive/local-update-stats`
-   (not in main, not compiled), and stored reminders naming them fail binding (the dropping shim was removed 2026-10-25).
+   (not in main), and stored reminders naming them fail binding (the dropping shim was removed 2026-10-25).
    (`force_update` now dispatches a full Card sync re-parse: an admin's decision, not a config probe.)
 3. **`vram_usage` is branch-only:** main reads it nowhere since 2026-10-26 (the browser_cookies fallback went);
    on branch `archive/ai-generation` it is the diffusion memory mode (default `"low"`).
@@ -696,7 +696,7 @@ when missing takes the bot down on the OTHER machine at its next startup.
 
 ## When NOT to use this skill
 
-- Setting up an environment from scratch, installing requirements, Cython build/clean mechanics
+- Setting up an environment from scratch, installing requirements
   → **autocroissant-build-and-env**.
 - What a flag's SUBSYSTEM actually does beyond the flag (diffusion pipeline internals →
   **autocroissant-ai-boundary** (branch `archive/ai-generation`); card parsing/validation semantics →
@@ -748,7 +748,7 @@ table with its command before quoting it in the future.
 | Reminder constants | `sed -n '28,81p' commands/analytics.py` |
 | Bot identity (names only) | `grep -n "^#" config.py` shows which identity's TOKEN line is active (comments only — never print values) |
 | global_config constants | `cat global_config.py` (45 lines) |
-| setup.py build config | `sed -n '8,49p' setup.py` |
+| The jetson's pins | `cat requirements-bot.txt`; `python -m pytest -q tests/test_bot_env.py` |
 | Gitignore coverage (config.py, reminder.json, music/, *.csv, *.txt) | `grep -n "config.py\|reminder\|music/\|csv\|txt" .gitignore` |
 
 When any command's output disagrees with this file, the repo wins: update the table, re-date the
@@ -821,3 +821,6 @@ marker), the `card-guards-quiet` environment among the repo settings, `png_expor
 2026-11-11 (fork release): the fork's version list runs to `cards-20261111`.
 
 2026-11-11 (docs check): `ADD_ABILITY_LIVE` True; `PARSER_VERSION` 7 and its card_data.py citations; setup.py table without `EXCLUDE_FILES` (10 compiled modules).
+
+2026-11-11 (nocython): the setup.py section became requirements-bot.txt's; card_sync's `ERRORS_SHOWN` (the /fonts
+reply reads the manifest's fonts report); the re-pin's step 4 is the Mac's alone; section headers lose "not compiled".

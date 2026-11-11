@@ -83,11 +83,10 @@ What these tools do NOT answer: whether a measured value is *acceptable*
   pass absolute or `~/` PSD paths — to every script. Verified 2026-07-11:
   `parse_one.py Auxiliary/Minions/Mini_Doomer.psd` →
   `ERROR: file not found: /Users/michaelsrouji/Desktop/AutoCroissant/Auxiliary/...`.
-- Stale-`.so` trap: `parse_one.py` and `gap_trace.py` import `commands.card_check`, `card_models` and `psd_parser`
-  (the last two are compiled modules). If a compiled
-  Cython `.so` exists it shadows the `.py`, so your parser edits silently won't be what these tools exercise
-  (`inspect_card_data.py` and `diff_stats.py` import only uncompiled card_db/card_history and card_models). None
-  exist on the Mac as of 2026-10-23; if in doubt run `python3 setup.py clean` (see autocroissant-build-and-env).
+- Stale-`.so` trap (old checkouts only: nothing is compiled since 2026-11-11): `parse_one.py` and `gap_trace.py` import
+  `commands.card_check`, `card_models` and `psd_parser`; a leftover Cython `.so` beside one of them would shadow the
+  `.py`, so your parser edits silently won't be what these tools exercise. `find . -name "*.so" -not -path "./.git/*"`
+  must be empty (autocroissant-build-and-env §5).
 
 ---
 
@@ -815,3 +814,5 @@ row and Workflow 1; the gate snapshots go to `~/Documents/Tools/wt/scratch/head/
 2026-11-11 (docs check): the data-branch fetches have no --depth (full-history clone since 2026-11-10); diff_stats reads no pickles; the stale-`.so` bullet names card_check, card_models and psd_parser.
 
 2026-11-11 (fork release): the fork venv's pin is `cards-20261111` (da069245).
+
+2026-11-11 (nocython): the stale-.so note for old checkouts only (no setup.py clean).

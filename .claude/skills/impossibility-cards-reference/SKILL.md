@@ -81,7 +81,7 @@ Status Effects. On 2026-10-30 the Photoshop rule pages moved to `MDW/Old Rules/`
 
 i.e. the integer prefix of the LEAF folder name ("3 Stars" → 3). Consequence: for Field, Items,
 Creatures, and Debuffs, the leaf folder MUST start with an integer or `classify` raises
-`ValueError`. (The `x[len(x)-1]` instead of `x[-1]` is the repo's Cython negative-indexing ban —
+`ValueError`. (The `x[len(x)-1]` instead of `x[-1]` is the repo's old Cython negative-indexing ban (nothing compiled since 2026-11-11) —
 see `autocroissant-build-and-env`; do not "clean it up".)
 
 **Stars from the PSD instead**: for `Auxiliary/Items`, `Auxiliary/Minions`, and `N.M.E` (exactly

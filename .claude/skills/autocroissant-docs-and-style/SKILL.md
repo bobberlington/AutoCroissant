@@ -36,8 +36,7 @@ they exist; these three surfaces are the ones with a maintenance contract.
 ## 2. help.py anatomy
 
 `commands/help.py` (99 lines as of 2026-11-09) is five module-level dicts, a
-router function, and `__all__`. Note help.py is itself a cythonized module
-(`setup.py` INCLUDE_FILES), so the style rules in section 5 apply to it too.
+router function, and `__all__`. The style rules in section 5 apply to it too.
 
 ### 2.1 The five dicts
 
@@ -201,7 +200,7 @@ Section banner format everywhere else, exactly 24 `=`:
 `from x import y` named imports are the house rule: 207 from-import lines vs 7
 plain `import` lines repo-wide (2026-10-20 census, after the code-health pass; the 7 are `import config` ×2 —
 music_player and utils; github_api reads it in a try/except — `import pandas as pd`, `import logging`,
-tts_save's `import commands.repo_history as repo_history`, and setup.py's `shutil`/`sys`).
+tts_save's `import commands.repo_history as repo_history`, and setup.py's `shutil`/`sys` (setup.py went 2026-11-11)).
 Even pickle is imported as `from pickle import load, dump` (card_models.py:10;
 query_card.py:6 imports only `load`). The deliberate exception: `import config` as a module, so
 optional secret fields can be read with `getattr(config, "X", default)`. Follow
@@ -216,23 +215,21 @@ Args/Returns sections for anything with non-obvious parameters — real shapes:
 has an `Args:` block (update_bot.py:143-145). No Sphinx/Google tooling
 enforces this; match the neighbors.
 
-### 5.4 The `x[len(x) - 1]` idiom (house style in cythonized modules)
+### 5.4 The `x[len(x) - 1]` idiom (from the cythonized modules; nothing is compiled since 2026-11-11)
 
-Since 2026-10-23 setup.py builds with `boundscheck=True` and `wraparound=True` (owner): a bad or negative index behaves as in plain Python instead of crashing; the `x[len(x)-1]` idiom stays (don't churn it). The history below explains why the idiom exists.
+Nothing is compiled since 2026-11-11 (autocroissant-build-and-env §5), so `x[-1]` is fine in new code; the existing
+`x[len(x)-1]` stays where it is (no sweep either way). The history below explains why the idiom exists.
 
-Don't write `x[-1]` (or any negative index) in the 10 modules setup.py
-compiles: analytics, card_edits, card_models, frankenstein, help, management, music_player,
-psd_analyzer, psd_parser, query_card (setup.py; repo_traverser until 2026-10-25). Until 2026-10-23 they built with
+It was the rule in the 10 modules setup.py compiled: analytics, card_edits, card_models, frankenstein, help, management,
+music_player, psd_analyzer, psd_parser, query_card (repo_traverser until 2026-10-25). Until 2026-10-23 they built with
 `wraparound=False`, where negative indexing was undefined behavior, and a past `bboxes[-1]` was
 mechanically purged for exactly this reason (commit dd800bc; the mechanical
 purge's semantic slip became the removeprefix local-path bug, fixed 2026-10-19). Current
 census (2026-10-20): 21 `x[len(x) - 1]` occurrences, **zero** negative indexes in
 commands/ or main.py (the 2026-10-19 icon-font code uses `piece[1:len(piece) - 1]` and
 `name[:MAX_NAME_LEN - len(NO_SUFFIX)]`, staying inside the rule). A second compiled-module
-rule arrived with Cython 3.3: declare an annotated variable once, never re-annotate it
-(autocroissant-build-and-env §5). Why the directive is set and the stale-.so trap it interacts with:
-`autocroissant-build-and-env`. Why you must not "clean up" the idiom:
-`autocroissant-change-control` non-negotiables.
+rule (Cython 3.3: declare an annotated variable once) went with the build. Why the idiom is not swept away either:
+`autocroissant-change-control` non-negotiable 1.
 
 ### 5.5 f-strings
 
@@ -315,8 +312,8 @@ Configuration block and the helpers.)
 
 Remember: a new module is not live until main.py imports it, wraps the
 function (`my_command = to_thread(my_command)`), registers `@tree.command`,
-and — if it should be compiled — setup.py INCLUDE_FILES gains a line (then the
-len-1 ban applies). Gates for all of that: `autocroissant-change-control`.
+and keeps the card toolchain out of the bot's import closure (`tests/test_bot_env.py`). Gates for all of that:
+`autocroissant-change-control`.
 
 ### 6.3 SKILL.md skeleton
 
@@ -382,7 +379,7 @@ neighboring fact, check this map and link instead.
 | autocroissant-architecture-contract | Queue trio + to_thread model, module graph, singletons, registration pattern, invariants, known-weak points |
 | impossibility-cards-reference | Card domain: folder classification, PSD layer semantics, type injection, parser side of stoogedings icon tokens (§4.1), validation, pickle schemas, query DSL |
 | autocroissant-config-and-flags | Every config axis: config.py field names, constants, runtime-settable vs restart-required |
-| autocroissant-build-and-env | Env setup, requirements.txt, Cython build/clean, negative-indexing ban rationale, stale-.so trap |
+| autocroissant-build-and-env | Env setup, the requirements files (requirements-bot.txt: the jetson's), why nothing is compiled, stale-.so trap |
 | autocroissant-run-and-operate | Start/stop/deploy, command sync, self-update flow ops, multi-machine handoff, /update_stats operating rule, reminders and type-emoji operations, artifact locations, TTS-save operations (card-sync.yml's TTS save step; tts-save.yml until 2026-10-24, /update_tts_save until 2026-10-25) |
 | autocroissant-diagnostics-and-tooling | The 5 read-only scripts + golden outputs |
 | autocroissant-validation-and-qa | Evidence standards, golden-card inventory, parser-change acceptance procedure, pickle-push gate |
@@ -423,7 +420,7 @@ that disagrees with itself trains readers to ignore all of it.
 | Understanding the queue/threading rules the style encodes, or where new code goes architecturally | autocroissant-architecture-contract |
 | A live symptom (bot won't start, command missing, message not sending) | autocroissant-debugging-playbook |
 | What a flag/constant does or its current default | autocroissant-config-and-flags |
-| Cython build mechanics, why wraparound=False exists | autocroissant-build-and-env |
+| Why nothing is compiled (and why wraparound=False once existed) | autocroissant-build-and-env §5 |
 | Card-domain semantics referenced by command descriptions | impossibility-cards-reference |
 
 ## Provenance and maintenance
@@ -467,15 +464,15 @@ grep -n 'stats_db = StatsDatabase()\|card_repo = CardRepository()\|state = Music
 grep -L '__all__' commands/*.py                              # only commands/utils.py
 
 # Import-style census (from-imports should dwarf plain imports)
-grep -hE '^(from|import) ' main.py global_config.py setup.py commands/*.py | grep -cE '^from '    # 207
-grep -hE '^(from|import) ' main.py global_config.py setup.py commands/*.py | grep -cE '^import '  # 7
+grep -hE '^(from|import) ' main.py global_config.py commands/*.py | grep -cE '^from '    # 207 on 2026-10-20 (with setup.py)
+grep -hE '^(from|import) ' main.py global_config.py commands/*.py | grep -cE '^import '  # 7 on 2026-10-20 (with setup.py)
 
 # len-1 idiom census; negative-index ban holds
 grep -rnE '\[len\([a-z_]+\) - 1\]' commands/ main.py | wc -l # 21
 grep -rnE '\[-1\]|\[-2\]' commands/*.py main.py | wc -l      # 0
 
-# Cythonized module list (len-1 ban scope)
-grep -n -A8 'INCLUDE_FILES = \[' setup.py                    # 11 modules incl. help.py
+# Nothing compiled (the len-1 idiom's reason gone, 2026-11-11)
+ls setup.py                                                  # No such file
 
 # queue_* wrappers
 grep -n 'def queue_' commands/utils.py                       # defs at 36,41,47,53,58,63: queue_any/message/file/edit/command/long_message
@@ -515,3 +512,6 @@ lines re-pointed (help.py 99 lines).
 2026-11-10 (status cards): §7.3's ttscardmaker-companion row owns the status effect cards' standard (its §1.12).
 
 2026-11-11 (docs check): the intro says there is a short README (since 2026-10-20).
+
+2026-11-11 (nocython): 5.4 says nothing is compiled (x[-1] fine in new code, no sweep); help.py no longer called
+cythonized; the new-module reminder names the bot's import closure; the setup.py census lines.

@@ -119,7 +119,8 @@ too: it is the number every fancier approach must beat.
 
 ### Fence
 
-**No LLM or embedding dependency may ever enter `requirements.txt` (core).** As of 2026-07-11
+**No LLM or embedding dependency may ever enter `requirements.txt` or `requirements-bot.txt` (core; the jetson installs
+the latter alone since 2026-11-11, with the toolchain kept out by tests/test_bot_env.py).** As of 2026-07-11
 it holds exactly 11 packages (cython, davey, discord.py, GitPython, numpy, opencv-python,
 pandas, psd-tools, PyGithub, requests, yt-dlp) after that day's reorg (committed in a7a4bb3;
 still 11 on 2026-10-20, with `discord.py>=2.5`).
