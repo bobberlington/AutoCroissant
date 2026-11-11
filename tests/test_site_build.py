@@ -4,7 +4,7 @@ db/ (CARD_DATA_DIR, load_card_data; no CARD_DATA_DIR, or no readable stats.json,
 from its start (since), a duplicate's history, dates by committer time, an archived card's moved_to, tag,
 author and created, image revisions (the person pages), Pacific contribution months, the person stats, index.html's
 pre-written first screen (checked against grid.js in node), the Font filter's data (cardfonts.json), a profile's
-subseries, PSD sizes. Loads
+subseries, PSD sizes, the Changes tabs' own files. Loads
 build_site.py from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without it or before load_card_data.
 """
 import copy
@@ -424,6 +424,20 @@ def test_contributions_json_has_person_stats(bs, repo, tmp_path, monkeypatch):
     assert not {"path", "commit", "ratings"} & set(maker["archived"][0])
     assert maker["power"]["n"] >= 1 and "z" in out["contributions.json"]["site"]
 
+
+def test_each_changes_tab_has_its_own_file(bs, repo, tmp_path, monkeypatch):
+    """11-11: changelog.json has every event (no archived rows or batches), archive.json the archived rows, edits.json
+    the edited and authors events and the batches."""
+    if not hasattr(bs, "changelog_files"):
+        pytest.skip("the site has one changelog file")
+    log = repo["db"] / "changelog" / "2026-10.jsonl"
+    edit = {"seq": 2, "at": time.time(), "kind": "edited", "card": "Alpha", "title": "Alpha"}
+    log.write_text(log.read_text(encoding="utf-8") + json.dumps(edit) + "\n", encoding="utf-8")
+    out = _build(bs, monkeypatch, repo, tmp_path / "a")
+    kinds = lambda name: [e["kind"] for e in out[name]["events"]]
+    assert kinds("changelog.json") == ["archived", "edited"] and kinds("edits.json") == ["edited"]
+    assert not {"archived", "edits"} & set(out["changelog.json"]) and "batches" in out["edits.json"]["edits"]
+    assert [r["card"] for r in out["archive.json"]["archived"]] == ["White Palace"]
 
 def test_index_carries_the_first_screen(bs, repo, tmp_path, monkeypatch):
     """index.html's pre-written grid: the cards in Name order as links to their pages, checked against grid.js in node;
