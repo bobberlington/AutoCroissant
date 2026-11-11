@@ -498,9 +498,53 @@ def test_action_shaped_copy(tmp_path):
     workflow = SITE_SRC / ".github/workflows/card-checks.yml"
     if workflow.is_file():
         yaml = pytest.importorskip("yaml")
-        steps = yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"]["check"]["steps"]
-        checkout = next(s for s in steps if s.get("with", {}).get("repository"))
-        assert checkout["with"]["sparse-checkout"].split() == ["/" + f for f in cc.SPARSE_FILES]
+        doc = yaml.safe_load(workflow.read_text(encoding="utf-8"))
+        checkout = next(s for s in doc["jobs"]["check"]["steps"] if s.get("with", {}).get("repository"))
+        assert checkout["with"]["sparse-checkout"] == "${{ env.BOT_FILES }}"     # and Clones start's
+        assert doc["env"]["BOT_FILES"].split() == ["/" + f for f in cc.SPARSE_FILES]
+
+
+def test_workflow_sets_up_as_card_datas_job(tmp_path):
+    """card-checks.yml sets up as card-sync.yml's data job (its Clones start, Cards start, Venv key, venv restore, Cards
+    and Bot and data, run in tests/test_card_data.py), each checkout only when its clone failed; the venv is only
+    checked, and the check job's --help runs beside the fonts restore: a failed one ends the job at Help join."""
+    yaml = pytest.importorskip("yaml")
+    flows = SITE_SRC / ".github/workflows"
+    if not (flows / "card-checks.yml").is_file() or not (flows / "card-sync.yml").is_file():
+        pytest.skip("no card-checks.yml or card-sync.yml")
+    doc = yaml.safe_load((flows / "card-checks.yml").read_text(encoding="utf-8"))
+    sync = {s.get("name") or s.get("id"): s for s in yaml.safe_load((flows / "card-sync.yml").read_text(encoding="utf-8"))["jobs"]["data"]["steps"]}
+    key = lambda s: s.get("name") or s.get("id") or s["with"].get("path") or s["with"]["ref"]           # noqa: E731
+    setup = ["Clones start", "Cards start", "Venv key", "venv-cache", "Cards", "main", "Bot and data", "bot", "carddata",
+             "Python environment"]
+    for job in ("check", "save"):
+        names = [key(s) for s in doc["jobs"][job]["steps"]]
+        step = dict(zip(names, doc["jobs"][job]["steps"]))
+        assert [n for n in names if n in setup] == setup and names.index("bot") == names.index("Bot and data") + 1
+        assert all(step[n] == sync[n] for n in setup[:5] + ["Bot and data"] if n != "Cards start")
+        assert step["Cards start"]["run"] == sync["Cards start"]["run"] and step["Cards start"]["env"]["GIT_NO_LAZY_FETCH"] == "0"
+        assert step["main"]["with"]["sparse-checkout"] == step["Cards start"]["env"]["CARD_FILES"]
+        assert [step[n]["if"] for n in ("main", "bot", "carddata")] == ["steps.cards.outputs.ok != 'true'", "steps.clones.outputs.bot != 'true'",
+                                                                       "steps.clones.outputs.carddata != 'true'"]
+        assert step["Python environment"]["with"] == {"venv": "${{ runner.temp }}/venv", "oxipng": "false", "restored": "${{ env.VENV_RESTORED }}",
+                                                      "help": "${{ github.job == 'save' && 'card_checks' || '' }}"}    # check: Help start
+    names = [key(s) for s in doc["jobs"]["check"]["steps"]]
+    step = dict(zip(names, doc["jobs"]["check"]["steps"]))
+    assert names.index("Python environment") + 1 == names.index("Help start") < names.index("fonts-first-cache") < names.index("Help join") \
+        == names.index("Data wait") - 1
+    bot, temp = tmp_path / "bot", tmp_path / "temp"
+    (temp / "venv" / "bin").mkdir(parents=True)
+    bot.mkdir()
+    (temp / "venv" / "bin" / "python").write_text('#!/bin/sh\nsleep 0.3\n[ -z "$BROKEN" ] || { echo "ImportError: x" >&2; exit 1; }\n')
+    (temp / "venv" / "bin" / "python").chmod(0o755)
+    for broken in ("", "1"):
+        (temp / "help.code").unlink(missing_ok=True)
+        env = {"PATH": environ["PATH"], "RUNNER_TEMP": str(temp), "BROKEN": broken}
+        sh = lambda name: subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", step[name]["run"]],   # noqa: E731
+                                         cwd=bot if name == "Help start" else tmp_path, env=env, capture_output=True, text=True, timeout=30)
+        assert sh("Help start").returncode == 0 and not (temp / "help.code").exists()                 # in the background
+        done = sh("Help join")
+        assert (done.returncode == 0) == (not broken) and ("ImportError: x" in done.stdout) == bool(broken), done.stdout
 
 
 def test_link_notes_word_the_links_against_the_tree():

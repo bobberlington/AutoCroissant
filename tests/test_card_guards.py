@@ -2701,7 +2701,7 @@ def test_checks_data_wait(clone, tmp_path):
     site = yaml.safe_load((workflows / "site.yml").read_text(encoding="utf-8"))["jobs"]["build"]["steps"]
     names = [s.get("name") or s.get("id") or s.get("uses") for s in job["steps"]]
     step = {n: s for n, s in zip(names, job["steps"])}
-    assert names.index("Python environment") + 4 == names.index("Data wait") == names.index("To check") - 1
+    assert names.index("Python environment") + 6 == names.index("Data wait") == names.index("To check") - 1    # Help start, join
     assert step["fonts-first-cache"]["uses"].startswith("actions/cache/restore@") and step["font-cache"]["if"].endswith("&& !inputs.after")
     loop = lambda run: run.split("if [ \"$SECONDS\" -ge")[0]                 # noqa: E731
     assert loop(step["Data wait"]["run"]) == loop(next(s for s in site if s.get("name") == "Data wait")["run"])
