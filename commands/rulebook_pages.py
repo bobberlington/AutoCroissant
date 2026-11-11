@@ -457,7 +457,7 @@ def heads(checkout: str, urls) -> dict:
 
 def wait_for_site(site: str, checkout: str, mine: dict, wait: float) -> Optional[dict]:
     """The website's build (site_inputs()) once it shows mine and is settled (site_settled()), else None after wait
-    seconds (polled every SITE_POLL)."""
+    seconds (polled every SITE_POLL; one look when wait <= 0)."""
     until = monotonic() + wait
     while True:
         seen = site_inputs(site)
@@ -495,12 +495,10 @@ def update_pages(checkout: str, site: str = SITE_URL, exe: str = "", wait: float
     known = old.get("key", "") if has_pdf else ""
     until = monotonic() + wait
     while True:
-        seen = site_inputs(site)                        # before the draw: the website drawn is that build or a later one
-        if not (seen and _chapters(seen["rules"]) == mine and site_settled(site, checkout, seen)):
-            seen = wait_for_site(site, checkout, mine, until - monotonic()) if wait else None
-            if not seen:
-                return (f"Rulebook PDF: {LAGS}'s chapters, pictures, web fonts, icons or code"
-                        f"{f' after {wait / 60:.0f} minutes' if wait >= 90 else f' after {wait:.0f} seconds' if wait else ''}; left as it is.")
+        seen = wait_for_site(site, checkout, mine, until - monotonic())   # before the draw: that build or a later one
+        if not seen:
+            return (f"Rulebook PDF: {LAGS}'s chapters, pictures, web fonts, icons or code"
+                    f"{f' after {wait / 60:.0f} minutes' if wait >= 90 else f' after {wait:.0f} seconds' if wait else ''}; left as it is.")
         pre = pre_key(seen, trees, fonts, exe)
         held = has_pdf and pre == old.get("pre")
         if held and PRE_SKIP and not full:
