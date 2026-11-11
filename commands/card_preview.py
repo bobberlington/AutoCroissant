@@ -319,7 +319,7 @@ def _before(snapshot: Snapshot, png_rel: str, path: str):
 
 def _beside(made: dict):
     """psd_edit.ON_MERGED for a preview: the merged PNG's save and its SMALL (at path + ".small") in two threads beside
-    the gates, made[path] = (webp, png) futures; a retry's waits for the earlier pair first."""
+    the gates, made[path] = (small, png) futures; a retry's waits for the earlier pair first."""
     def hook(merged: Image.Image, path: str, like: Image.Image):
         wait(made.get(path, ()))
         merged.load()                           # both threads only read it
@@ -330,12 +330,12 @@ def _beside(made: dict):
     return hook
 
 
-def write_images(png_path: str, out: str, before: str = "", early=None, webp=None) -> dict:
+def write_images(png_path: str, out: str, before: str = "", early=None, small=None) -> dict:
     """
     preview.png (losslessly recompressed when that is smaller: png_export.recompress, the same pixels and chunks),
     SMALL (SMALL_WIDTH wide as SMALL_AS: the card view's) and, from the official PNG `before`,
     BEFORE made the same way (the site's Diff: one codec on both sides, so unchanged pixels match); `early` is
-    _before()'s and `webp` _beside()'s, taken when they made one.
+    _before()'s and `small` _beside()'s, taken when they made one.
 
     Returns:
         result.json's files, size and webp_size
@@ -347,15 +347,15 @@ def write_images(png_path: str, out: str, before: str = "", early=None, webp=Non
         fh.write(smaller or data)
     with Image.open(BytesIO(data)) as image:
         size = list(image.size)
-    files, sizes = {"png": PNG, "webp": SMALL}, {"png": len(smaller or data)}
+    files, sizes = {"png": PNG, "webp": SMALL}, {"png": len(smaller or data)}   # "webp": the site's key for SMALL
     try:
-        webp_size = webp.result() if webp is not None else None
+        small_size = small.result() if small is not None else None
     except Exception:                           # noqa: BLE001 - made here instead
-        webp_size = None
-    if webp_size:
+        small_size = None
+    if small_size:
         move(png_path + ".small", join(out, SMALL))
     else:
-        webp_size = _small(data, join(out, SMALL))
+        small_size = _small(data, join(out, SMALL))
     sizes["webp"] = getsize(join(out, SMALL))
     if before and isfile(before):
         try:
@@ -368,7 +368,7 @@ def write_images(png_path: str, out: str, before: str = "", early=None, webp=Non
             with open(before, "rb") as fh:
                 _small(fh.read(), join(out, BEFORE))
         files["before"], sizes["before"] = BEFORE, getsize(join(out, BEFORE))
-    return {"files": files, "size": size, "webp_size": webp_size, "bytes": sizes, "recompressed": smaller is not None}
+    return {"files": files, "size": size, "webp_size": small_size, "bytes": sizes, "recompressed": smaller is not None}
 
 
 def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_REPO, clone: str = "", request: str = "",
