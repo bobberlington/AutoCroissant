@@ -141,8 +141,8 @@ def _seen(**cards):
 
 def test_pre_key_and_the_skip(tmp_path, monkeypatch):
     """The pre-key follows what the print view reads (code, chapters, the named cards' pictures, every card's name), not
-    the data stamp or other cards' pictures; kept beside the key, it skips Chrome when PRE_SKIP (shadow: Chrome looks and
-    a key change warns; --full looks in any case)."""
+    the data stamp or other cards' pictures; kept beside the key, it skips Chrome when PRE_SKIP (on; off, the shadow:
+    Chrome looks and a key change warns; --full looks in any case)."""
     pre = lambda seen: rulebook_pages.pre_key(seen, ["t"], [], "/no/chrome")
     base = pre(_seen())
     same = _seen(kirby={"img": "k2", "hp": 4}, panda={"img": "p2"})            # a picture only linked, another card
@@ -170,7 +170,8 @@ def test_pre_key_and_the_skip(tmp_path, monkeypatch):
     run = lambda **kw: rulebook_pages.update_pages(str(tmp_path), exe="/no/chrome", **kw)
     mine = rulebook_pages.pre_key(_seen(), rulebook_pages._trees(str(tmp_path)), [], "/no/chrome")
     assert "pre-key held" not in run() and rulebook_pages.read_pages(str(tmp_path))["pre"] == mine            # stored with the key
-    assert "pre-key held" in run() and drawn["n"] == 2                                                         # shadow: Chrome looks
+    monkeypatch.setattr(rulebook_pages, "PRE_SKIP", False)
+    assert "pre-key held" in run() and drawn["n"] == 2                                                        # shadow: Chrome looks
     monkeypatch.setattr(rulebook_pages, "PRE_SKIP", True)
     assert "Chrome not started" in run() and drawn["n"] == 2
     assert "pre-key held" in run(full=True) and drawn["n"] == 3

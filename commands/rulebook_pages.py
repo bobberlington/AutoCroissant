@@ -100,7 +100,7 @@ PLAIN_JS = r"""Promise.all([...new Set([...document.querySelectorAll("style")].f
 SITE_POLL = 20                                 # seconds between looks at its data/rules.json (and draws)
 CALL_SECONDS = 60                              # one DevTools call
 # the pre-key (pre_key()): what the print view reads, fetched without Chrome; pages.json's "pre", kept with the key
-PRE_SKIP = False                               # shadow (2026-11-09): Chrome looks anyway; a pre-key that held while the key changed warns
+PRE_SKIP = True                                # held: no Chrome (shadow 11-09 to 11-11: no misses); --full looks and warns on a miss
 PAGE_STAMP = regex(r'<meta name="page" content="([^"]*)"')   # build_site: index.html's stamp (build.txt's 2nd line)
 ASSET_URL = regex(r"assets/[\w.-]+(?:\?v=\w+)?")              # the page's code: bundle, chunks, style sheet (stamped URLs)
 INLINE_CSS = regex(r"<style\b[^>]*>(.*?)</style>", DOTALL)     # style.css, inlined
