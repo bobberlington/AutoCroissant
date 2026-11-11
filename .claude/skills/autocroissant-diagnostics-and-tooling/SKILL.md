@@ -53,7 +53,7 @@ before assuming a regression.
 | Why is a `[type]` injected in the wrong place / missing? | `gap_trace.py` | psd path |
 | What would the card data build extract for one card? | `parse_one.py` (add `--with-db` to match a real run) | psd path |
 | What did a Card sync run change? (the data gate) | `diff_stats.py origin/data~1 origin/data --git ~/Desktop/TTSCardMaker` | Workflow 1 |
-| What changed between two runs / two snapshots? | `diff_stats.py` old vs new | two db/ folders, data commits or historical pickles |
+| What changed between two runs / two snapshots? | `diff_stats.py` old vs new | two db/ folders, `stats.json` files or data commits |
 | What does the data build hold for card X? | `inspect_card_data.py --db <db/ or data commit> [--git DIR] "Card Name"` | as above |
 | Did old_stats balloon? | `diff_stats.py --history` between two data commits (`versions added`) | — |
 
@@ -83,7 +83,8 @@ What these tools do NOT answer: whether a measured value is *acceptable*
   pass absolute or `~/` PSD paths — to every script. Verified 2026-07-11:
   `parse_one.py Auxiliary/Minions/Mini_Doomer.psd` →
   `ERROR: file not found: /Users/michaelsrouji/Desktop/AutoCroissant/Auxiliary/...`.
-- Stale-`.so` trap: `parse_one.py` and `gap_trace.py` import `commands/psd_analyzer.py`. If a compiled
+- Stale-`.so` trap: `parse_one.py` and `gap_trace.py` import `commands.card_check`, `card_models` and `psd_parser`
+  (the last two are compiled modules). If a compiled
   Cython `.so` exists it shadows the `.py`, so your parser edits silently won't be what these tools exercise
   (`inspect_card_data.py` and `diff_stats.py` import only uncompiled card_db/card_history and card_models). None
   exist on the Mac as of 2026-10-23; if in doubt run `python3 setup.py clean` (see autocroissant-build-and-env).
@@ -467,7 +468,7 @@ exits 2 with `ERROR loading the card data: <arg>: no such file or folder, nor a 
 **Invocation A — the data gate** (a Card sync data commit vs the one before):
 
 ```bash
-git -C ~/Desktop/TTSCardMaker fetch -q --depth 2 origin +data:refs/remotes/origin/data
+GIT_NO_LAZY_FETCH=1 git -C ~/Desktop/TTSCardMaker fetch -q origin +data:refs/remotes/origin/data   # no --depth: full history since 2026-11-10
 python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py origin/data~1 origin/data \
     --git ~/Desktop/TTSCardMaker
 echo $?
@@ -529,7 +530,7 @@ Did a parser change touch cards it shouldn't have?
 ### Workflow 1 — reviewing a Card sync data commit (the data gate)
 
 ```bash
-git -C ~/Desktop/TTSCardMaker fetch -q --depth 2 origin +data:refs/remotes/origin/data
+GIT_NO_LAZY_FETCH=1 git -C ~/Desktop/TTSCardMaker fetch -q origin +data:refs/remotes/origin/data   # no --depth: full history since 2026-11-10
 python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py origin/data~1 origin/data \
     --git ~/Desktop/TTSCardMaker
 echo $?
@@ -597,7 +598,7 @@ During the shadow (DATA_BUILD_ACTION.md §14 step 7), once a day after the jetso
 
 ```bash
 # from this repo's root, at AutoCroissant main with the jetson's last PICKLE
-git -C ~/Desktop/TTSCardMaker fetch -q --depth 1 origin +data:refs/remotes/origin/data   # a single-branch clone: name the ref
+GIT_NO_LAZY_FETCH=1 git -C ~/Desktop/TTSCardMaker fetch -q origin +data:refs/remotes/origin/data   # a single-branch clone: name the ref
 python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py stats.pkl origin/data \
     --git ~/Desktop/TTSCardMaker
 echo $?
@@ -810,3 +811,5 @@ row and Workflow 1; the gate snapshots go to `~/Documents/Tools/wt/scratch/head/
 2026-11-10 (fork release): the fork venv's pin is `cards-20261110` (170a3fce).
 
 2026-11-10 (housekeeping, owner): inspect_pickle.py renamed inspect_card_data.py (it reads the card data, db/ JSON).
+
+2026-11-11 (docs check): the data-branch fetches have no --depth (full-history clone since 2026-11-10); diff_stats reads no pickles; the stale-`.so` bullet names card_check, card_models and psd_parser.
