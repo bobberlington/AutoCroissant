@@ -89,9 +89,9 @@ SITE_PATHS = (*(f":(glob,icase)site/rulebook/img/*.{x}" for x in PICTURES), "sit
               ":(glob,icase)Types/Stars/*.png", "MDW/Fonts/stoogedings-src/stoogedings.json", "site/assets/")
 LAGS = "the website lags main's rulebook"     # in the report of a look that waited in vain: exit 3
 # Chrome's copies of the fonts and pictures the page's CSS loads by plain URL (no stamp: the CDN's, up to 10 minutes
-# old): {url: git blob id, null when missing}
+# old; force-cache: those the page drew with): {url: git blob id, null when missing}
 PLAIN_JS = r"""Promise.all([...new Set([...document.querySelectorAll("style")].flatMap(s => [...s.textContent.matchAll(/url\(\s*["']?(rulebook\/[^"')?#\s]+)/g)].map(m => m[1])))]
-  .map(async u => { const r = await fetch(u, { cache: "no-store" }).catch(() => null);
+  .map(async u => { const r = await fetch(u, { cache: "force-cache" }).catch(() => null);
     if (!r || !r.ok) return [u, null];
     const b = new Uint8Array(await r.arrayBuffer()), h = new TextEncoder().encode(`blob ${b.length}\0`), all = new Uint8Array(h.length + b.length);
     all.set(h); all.set(b, h.length);
