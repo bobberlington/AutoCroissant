@@ -21,7 +21,7 @@ paths). `dump_psd_layers.py` has no repo-root logic
 at all and runs from anywhere — it needs only psd-tools and an absolute/`~` PSD path.
 
 **Which Python (2026-10-23).** `diff_stats.py` and `inspect_card_data.py` run on the Mac's plain `python3` (Homebrew
-3.14.8). `parse_one.py`, `gap_trace.py` and `dump_psd_layers.py` need psd-tools and pandas, which that `python3` lacks
+3.14.10 since 2026-11-11). `parse_one.py`, `gap_trace.py` and `dump_psd_layers.py` need psd-tools and pandas, which that `python3` lacks
 ("No module named pandas" / "psd_tools"): use the production-equivalent venv `~/.venvs/ac-py314-fork` (the psd-tools fork at
 the pin, `cards-20261110` = 170a3fce since 2026-11-10, as on the jetson). Below, `$P` means `~/.venvs/ac-py314-fork/bin/python` for those three.
 
