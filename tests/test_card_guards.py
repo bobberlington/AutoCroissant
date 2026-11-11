@@ -854,16 +854,20 @@ def test_land_refuses_a_tampered_file(tmp_path, monkeypatch):
 
 
 def test_land_by_git_past_the_bytes(tmp_path, monkeypatch):
-    """Past GIT_LAND_BYTES one git push, else the API; a broken git falls back to the API."""
+    """Past GIT_LAND_BYTES, or with the old blobs in the history clone (a delta push), one git push, else the API; a
+    broken git falls back to the API."""
     plan = _plan(tmp_path, [("A", "X/A.png", b"aaaa", {"X/A.psd": "s1"})])
-    hub = FakeHub({"X/A.psd": ("100644", "s1")})
+    hub = FakeHub({"X/A.psd": ("100644", "s1"), "X/A.png": ("100644", "p0")})
     hub.install(monkeypatch)
-    pushed = []
+    pushed, asked, here = [], [], [False]
     monkeypatch.setattr(cg, "git_commit", lambda repo, head, files, text: pushed.append(sorted(files)) or "g" * 40)
+    monkeypatch.setattr(cg, "has_blobs", lambda shas: asked.append(shas) or here[0])
     monkeypatch.setattr(cg, "GIT_LAND_BYTES", 3)
     assert cg.land(plan)["sha"] == "g" * 40 and pushed == [["X/A.png"]] and not hub.commits
     monkeypatch.setattr(cg, "GIT_LAND_BYTES", 4)
-    assert cg.land(plan)["sha"] == "c" * 40 and len(pushed) == 1
+    assert cg.land(plan)["sha"] == "c" * 40 and len(pushed) == 1 and asked == [["p0"]]     # the PNG it replaces
+    here[0] = True
+    assert cg.land(plan)["sha"] == "g" * 40 and len(pushed) == 2
 
     def broken(*args):
         raise gc.Transient("git push failed")
@@ -1487,7 +1491,8 @@ def test_workflow_shape(clone):
     names = [s.get("name") for s in job["steps"]]
     assert names.index("Start") < names.index("No push run in its window") < names.index("Check") \
         < names.index("Plan for the post job") < names.index("Fixes to land") < names.index("Decided") \
-        < names.index("Types for the conversion") < names.index("Normalise") < names.index("Land") < names.index("Landed") \
+        < names.index("History clone start") < names.index("Types for the conversion") < names.index("Normalise") \
+        < names.index("Land") < names.index("Landed") \
         < names.index("Comment on the commit")
     assert names.index("Start Card sync") == names.index("Fixes to land") + 1               # Card sync sets up while the guards land
     types, normalise = steps_by_name["Types for the conversion"], steps_by_name["Normalise"]     # after Decided: Card sync waits for neither
@@ -1905,7 +1910,8 @@ exit "${FAKE_LAND_STATUS:-0}"
 def test_workflow_land_and_a_rerun_after_a_landing(clone, tmp_path):
     """Land (the check job's) runs only with something to tell in report mode, as its writes are told, never made; on
     mode for a write too: the check job's plan says land=true. A re-run or a dispatch passes --rerun (an unread branch tells no write as not made), and the
-    step hands on the sha and the count already on the branch. Follow up starts the card sync after a
+    step hands on the sha and the count already on the branch; with fixes History clone start makes the history clone,
+    reading the checkout's objects (git_commit's delta push), and Land waits for it. Follow up starts the card sync after a
     commit, and again on a re-run that finds the writes landed (the first attempt's may not have started), not in report
     mode and not on a first attempt; with fixes (a push in on mode with writes: its Card sync main lane waits for them)
     always, landed or not."""
@@ -1923,6 +1929,10 @@ def test_workflow_land_and_a_rerun_after_a_landing(clone, tmp_path):
            "GITHUB_STEP_SUMMARY": str(tmp_path / "summary.md"), "FAKE_PYTHON_ARGS": str(args),
            "GITHUB_OUTPUT": str(tmp_path / "land.output"), "FAKE_STATE": str(state), "TOLD": jenv["TOLD"]}
     landed = json.dumps({"sha": "", "already": [["Snack", "X/Snack.png"]], "landed": []})
+    subprocess.run(["git", "init", "-q", "--bare", str(tmp_path / "o" / "cards.git")], check=True)
+    hist = tmp_path / "TTSCardMaker-history.git"
+    clones = {"RUNNER_TEMP": str(tmp_path), "GITHUB_SERVER_URL": f"file://{tmp_path}", "GITHUB_WORKSPACE": str(tmp_path)}
+    assert steps["History clone start"]["if"] == "${{ !cancelled() && steps.plan.outputs.fixes == 'true' }}"
     for mode, told, writes, attempt, event, ran, rerun in (("report", 0, 2, "1", "push", False, False),
                                                            ("report", 1, 2, "1", "push", True, False),
                                                            ("on", 0, 2, "1", "push", True, False),
@@ -1935,10 +1945,14 @@ def test_workflow_land_and_a_rerun_after_a_landing(clone, tmp_path):
         assert planned.returncode == 0 and (plan_out.get("land") == "true") is ran, (mode, told, writes, plan_out)
         fixes = mode == "on" and event == "push" and writes > 0       # Card sync's push run leaves its main lane to Follow up
         assert (plan_out.get("fixes") == "true") is fixes, (mode, event, writes, plan_out)
+        if fixes and not hist.exists():
+            assert _shell(steps["History clone start"], {**env, **clones})[0].returncode == 0
         if ran:
             done, outputs = _shell(steps["Land"], {**env, "MODE": mode, "GITHUB_RUN_ATTEMPT": attempt, "EVENT": event,
-                                                   "FAKE_LANDED": landed}, cwd=tmp_path / "bot")
-            assert done.returncode == 0, done.stderr
+                                                   "FAKE_LANDED": landed, "AUTOCROISSANT_HISTORY_CLONE": str(hist)},
+                                   cwd=tmp_path / "bot")
+            assert done.returncode == 0 and "::warning::" not in done.stdout, done.stderr
+            assert hist.is_dir() is (mode == "on"), (mode, event)     # waited for: made by then
         else:
             outputs = {}
         called = args.read_text()
@@ -1946,6 +1960,7 @@ def test_workflow_land_and_a_rerun_after_a_landing(clone, tmp_path):
         assert ("--rerun" in called) is rerun and ("--dry-run" in called) is (mode == "report" and ran), called
         if ran:
             assert outputs["sha"] == "" and outputs["already"] == "1"
+    assert (hist / "objects" / "info" / "alternates").read_text() == f"{tmp_path}/.git/objects\n"
     (out / "report-landed.md").write_text("## Card guards\n\nNothing new to land.\n")
     for mode, attempt, sha, already, fixes, started in (("on", "2", "", "1", "", True), ("on", "1", "", "1", "", False),
                                                         ("report", "2", "", "1", "", False), ("on", "2", "", "0", "", False),

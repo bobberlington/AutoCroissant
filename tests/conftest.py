@@ -283,8 +283,9 @@ def offline(monkeypatch, tmp_path):
     monkeypatch.setattr(socket.socket, "connect", refuse)
     monkeypatch.setattr(socket, "getaddrinfo", refuse)
     monkeypatch.chdir(tmp_path)
-    if "commands.repo_history" in sys.modules:                           # /query as_of's images
-        monkeypatch.setattr(sys.modules["commands.repo_history"], "HISTORY_CLONE", str(tmp_path / "no-history-clone"))
+    for name in ("commands.repo_history", "commands.git_commit"):        # /query as_of's images, land's has_blobs
+        if name in sys.modules:
+            monkeypatch.setattr(sys.modules[name], "HISTORY_CLONE", str(tmp_path / "no-history-clone"))
     import commands.github_api as ga                                     # get_with_retry's waits
     monkeypatch.setattr(ga, "sleep", lambda seconds: None)
     if "commands.card_preview_branch" in sys.modules:                    # the publisher's backoff

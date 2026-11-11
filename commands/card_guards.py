@@ -90,8 +90,8 @@ from commands.card_check import vocabulary
 from commands.card_edits import CardAuthors, dup_pictures
 from commands.card_models import NOT_IN_FILE_NAMES, file_stem
 from commands.font_check import face_names, is_card_psd, shared_tables, split_tables, tree_fonts
-from commands.git_commit import (AUTHOR, COMMIT_TRIES, NO_LAZY, Transient, api, commit_files, git, git_commit, local_commit,
-                                 plural, ref_head, token)
+from commands.git_commit import (AUTHOR, COMMIT_TRIES, NO_LAZY, Transient, api, commit_files, git, git_commit, has_blobs,
+                                 local_commit, plural, ref_head, token)
 from commands.github_api import blob_sha, token_from_env
 from commands.png_changes import changed_area
 from commands.psd_edit import Refused
@@ -164,7 +164,8 @@ ART_ROOTS = ("MDW/Templates/", "MDW/Unfinished/", "MDW/Assets/", "MDW/Croissant'
                                                 # the PSDs whose shown pictures make a card's hidden copy go (clean)
 ART_READS = 3                                   # those PSDs read a card at most (clean's Hidden.elsewhere)
 GIT_LAND = 40                                   # files past which land commits by git (git_commit: no blob upload each)
-GIT_LAND_BYTES = 32 << 20                       # or bytes: one push beats base64 POSTs (6 PSDs, 115 MB: 23 s by REST)
+GIT_LAND_BYTES = 32 << 20                       # or bytes: one push beats base64 POSTs (6 PSDs, 115 MB: 23 s by REST);
+                                                # or the history clone holds the old blobs (a delta push: any size)
 _worker: dict = {}
 _early: dict = {}                               # pushed PNG blob sha -> its recompression's Future (_overlap)
 _waiting: list = []                             # _recompress's entries left to _collect
@@ -2771,7 +2772,8 @@ def land(plan_path: str, repository: str = "", dry_run: bool = False, local: str
                 report["sha"] = local_commit(local, tip.head, payload, text)
                 break
             modes = {path: tip.tree[path][0] for path in payload if path in tip.tree}
-            by_git = len(payload) > GIT_LAND or sum(len(data) for data in payload.values() if data) > GIT_LAND_BYTES
+            by_git = (len(payload) > GIT_LAND or sum(len(data) for data in payload.values() if data) > GIT_LAND_BYTES
+                      or has_blobs([tip.tree[path][1] for path, data in payload.items() if data and path in tip.tree]))
             if by_git:
                 try:
                     sha = git_commit(repository, tip.head, payload, text)        # no upload cap

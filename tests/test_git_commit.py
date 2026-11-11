@@ -1,8 +1,9 @@
 """
 git_commit, the commit path card_bake and card_guards share: upload_blob's NO_WRITE / rate-limit split, commit_files'
-API-then-git order (a blob too large for the API too), push_target against the card_bake fake GitHub, and git_commit's push outcomes with git faked (no clone, no network).
+API-then-git order (a blob too large for the API too), push_target against the card_bake fake GitHub, and git_commit's push outcomes with git faked (no clone, no network) and its delta push.
 """
-from subprocess import CalledProcessError, CompletedProcess, TimeoutExpired
+from io import StringIO
+from subprocess import CalledProcessError, CompletedProcess, TimeoutExpired, run as run_process
 
 import pytest
 
@@ -146,3 +147,47 @@ def test_git_commit_push_outcomes(monkeypatch):
     with pytest.raises(gc.Transient, match="git push failed: .* timed out after 300 seconds"):
         gc.git_commit(gc.CARD_REPO, "h", {"x": b"x"}, "m")
 
+
+def test_git_commit_deltas_against_old_blobs_it_holds(monkeypatch, tmp_path):
+    """Head's blobs at the written paths all in the clone (its alternates' too: the guards' checkout): a delta push with
+    no lazy fetch, then on a failure other than a rejection the push as before; one missing: only the push as before.
+    Real git, the push faked."""
+    clone, other = tmp_path / "clone.git", tmp_path / "other.git"
+    for repo in (clone, other):
+        run_process(["git", "init", "-q", "--bare", str(repo)], check=True)
+    old = gc.git(str(other), "hash-object", "-w", "--stdin", stdin=b"old").decode().strip()      # only in other
+    sub = gc.git(str(clone), "mktree", "--missing", stdin=f"100644 blob {old}\tx.psd\n".encode()).decode().strip()
+    tree = gc.git(str(clone), "mktree", stdin=f"040000 tree {sub}\tdir\n".encode()).decode().strip()
+    head = gc.git(str(clone), "commit-tree", tree, "-m", "base", env=gc.git_env()).decode().strip()
+    monkeypatch.setattr(gc, "HISTORY_CLONE", str(clone))
+    monkeypatch.setattr(gc, "refresh", lambda: True)
+    pushes, replies = [], []
+
+    def fake_run(cmd, **kwargs):
+        if "push" not in cmd:
+            return run_process(cmd, **kwargs)
+        delta = "--no-thin" not in cmd
+        pushes.append(("delta", kwargs["env"].get("GIT_NO_LAZY_FETCH")) if delta else ("plain", None))
+        return CompletedProcess(cmd, *replies.pop(0))
+    monkeypatch.setattr(gc, "run_process", fake_run)
+    monkeypatch.setattr(gc, "stderr", err := StringIO())
+    files = {"dir/x.psd": b"new", "dir/y.png": b"y"}
+    replies[:] = [(0, b"", b"")]
+    assert gc.git_commit(gc.CARD_REPO, head, files, "m") and pushes == [("plain", None)]   # the old blob missing
+    assert not gc.has_blobs([]) and not gc.has_blobs([old], str(tmp_path / "none"))
+    (clone / "objects" / "info" / "alternates").write_text(f"{other / 'objects'}\n")
+    monkeypatch.setattr(gc, "_no_lazy", None)
+    assert gc.has_blobs([old]) and not gc.has_blobs([old, "1" * 40])
+    monkeypatch.setattr(gc, "_no_lazy", False)              # git before 2.44 (the jetson's 2.25): it would fetch them
+    assert not gc.has_blobs([old])
+    monkeypatch.setattr(gc, "_no_lazy", True)
+    pushes.clear()
+    replies[:] = [(0, b"", b"")]
+    assert gc.git_commit(gc.CARD_REPO, head, files, "m") and pushes == [("delta", "1")]
+    pushes.clear()
+    replies[:] = [(1, b"", b"fatal: could not fetch 8aa81b20 from promisor remote\n"), (0, b"", b"")]
+    assert gc.git_commit(gc.CARD_REPO, head, files, "m") and pushes == [("delta", "1"), ("plain", None)]
+    assert "git delta push failed, again without: fatal: could not fetch 8aa81b20" in err.getvalue()
+    pushes.clear()
+    replies[:] = [(1, b"!\trefs/heads/main:refs/heads/main\t[rejected] (fetch first)\n", b"")]
+    assert gc.git_commit(gc.CARD_REPO, head, files, "m") is None and pushes == [("delta", "1")]   # the branch moved
