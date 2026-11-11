@@ -8,15 +8,13 @@ node, or a site before history.js.
 import json
 import shutil
 from os import environ
-from os.path import expanduser
-from pathlib import Path
 from subprocess import run as run_process
 
 import pytest
 
-from conftest import CLONE
+from conftest import SITE_SRC
 
-ASSETS = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site" / "assets"
+ASSETS = SITE_SRC / "site" / "assets"
 HISTORY_JS = ASSETS / "history.js"
 pytestmark = pytest.mark.skipif(not (HISTORY_JS.is_file() and shutil.which("node")),
                                 reason=f"no history.js at {ASSETS}, or no node")

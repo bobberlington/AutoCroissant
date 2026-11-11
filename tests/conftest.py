@@ -42,6 +42,13 @@ def _git_config():
 _git_config()
 environ["PSD_DIRTY_VERIFY"] = "1"                         # gate_dirty renders whole too: raises on any difference
 
+TC_PATHS = ("AC_SITE_SRC", "CARD_GUARDS_YML", "ESBUILD")   # TTSCardMaker paths from the environment
+for _key in TC_PATHS:                                     # '~' expanded for build_site and subprocesses too
+    if environ.get(_key):
+        environ[_key] = expanduser(environ[_key])
+SITE_SRC = Path(environ.get("AC_SITE_SRC") or CLONE)     # a TTSCardMaker checkout (code, not cards), else the clone
+GUARDS_YML = Path(environ["CARD_GUARDS_YML"]) if environ.get("CARD_GUARDS_YML") else None
+
 
 # ========================
 # psd-tools fork
@@ -79,6 +86,9 @@ except ImportError:
 def pytest_configure(config):
     if FORK_WHY:
         raise pytest.UsageError(FORK_WHY)
+    missing = [f"{key}={environ[key]}: no such path" for key in TC_PATHS if environ.get(key) and not Path(environ[key]).exists()]
+    if missing:                                           # set but wrong: stop, not skip
+        raise pytest.UsageError("\n".join(missing))
     config.addinivalue_line("filterwarnings", "ignore::DeprecationWarning:discord")
     config.addinivalue_line("markers", "oxipng: runs the real oxipng (no_oxipng's stub off)")
 

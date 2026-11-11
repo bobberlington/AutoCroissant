@@ -6,16 +6,13 @@ $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without node or myfil
 """
 import json
 import shutil
-from os import environ
-from os.path import expanduser
-from pathlib import Path
 from subprocess import run as run_process
 
 import pytest
 
-from conftest import CLONE
+from conftest import SITE_SRC
 
-CF_JS = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site" / "assets" / "myfilters.js"
+CF_JS = SITE_SRC / "site" / "assets" / "myfilters.js"
 pytestmark = pytest.mark.skipif(not (CF_JS.is_file() and shutil.which("node")), reason=f"no {CF_JS}, or no node")
 
 

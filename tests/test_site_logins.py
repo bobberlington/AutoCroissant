@@ -10,16 +10,13 @@ import base64
 import importlib.util
 import json
 import shutil
-from os import environ
-from os.path import expanduser
-from pathlib import Path
 from subprocess import run as run_process
 
 import pytest
 
-from conftest import CLONE
+from conftest import SITE_SRC
 
-SITE = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site"
+SITE = SITE_SRC / "site"
 BUILD = SITE / "build" / "build_site.py"
 LOGIN_JS = SITE / "assets" / "login.js"
 B64 = lambda n, fill=b"\x01": base64.b64encode(fill * n).decode()   # noqa: E731

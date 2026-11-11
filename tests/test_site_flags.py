@@ -6,17 +6,14 @@ $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without node or a fla
 import importlib.util
 import json
 import shutil
-from os import environ
-from os.path import expanduser
-from pathlib import Path
 from subprocess import run as run_process
 
 import pytest
 
 from commands.card_edits import FLAG_MAX, FLAGS, ORDER, CardEdits, dump_edits
-from conftest import CLONE
+from conftest import SITE_SRC
 
-SITE = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site"
+SITE = SITE_SRC / "site"
 ASSETS = SITE / "assets"
 pytestmark = pytest.mark.skipif(not ((ASSETS / "flags.js").is_file() and shutil.which("node")), reason=f"no flags.js in {ASSETS}, or no node")
 

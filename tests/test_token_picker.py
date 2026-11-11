@@ -9,16 +9,14 @@ import importlib.util
 import json
 import re
 import shutil
-from os import environ
-from os.path import expanduser
 from pathlib import Path
 from subprocess import run as run_process
 
 import pytest
 
-from conftest import CLONE
+from conftest import SITE_SRC
 
-SITE = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site"
+SITE = SITE_SRC / "site"
 TOKENS_JS = SITE / "assets" / "tokens.js"
 TEXT_JS = SITE / "assets" / "text.js"
 INLINE_JS = SITE / "assets" / "inline.js"

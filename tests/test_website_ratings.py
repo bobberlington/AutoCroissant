@@ -9,8 +9,6 @@ import importlib.util
 import json
 import shutil
 import subprocess
-from os import environ
-from os.path import expanduser
 from pathlib import Path
 
 import pytest
@@ -18,10 +16,10 @@ import pytest
 import commands.card_sync as card_sync
 import commands.tts_ratings as tr
 from commands.card_edits import CardEdits, CardRatings, dump_ratings
-from conftest import CLONE
+from conftest import SITE_SRC
 from global_config import RATINGS_PATH
 
-SITE = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE)))
+SITE = SITE_SRC
 BUILD_SITE = SITE / "site" / "build" / "build_site.py"
 EDIT_JS = SITE / "site" / "assets" / "edit.js"
 RATINGS_JS = SITE / "site" / "assets" / "ratings.js"

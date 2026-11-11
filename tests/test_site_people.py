@@ -8,16 +8,13 @@ $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without person_extras
 import importlib.util
 import json
 import shutil
-from os import environ
-from os.path import expanduser
-from pathlib import Path
 from subprocess import run as run_process
 
 import pytest
 
-from conftest import CLONE
+from conftest import SITE_SRC
 
-SITE = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site"
+SITE = SITE_SRC / "site"
 BUILD_SITE = SITE / "build" / "build_site.py"
 PROFILE_JS = SITE / "assets" / "profile.js"
 T = 1_780_000_000

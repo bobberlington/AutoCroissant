@@ -5,16 +5,13 @@ $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips without node or a gri
 """
 import json
 import shutil
-from os import environ
-from os.path import expanduser
-from pathlib import Path
 from subprocess import run as run_process
 
 import pytest
 
-from conftest import CLONE
+from conftest import SITE_SRC
 
-GRID_JS = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site" / "assets" / "grid.js"
+GRID_JS = SITE_SRC / "site" / "assets" / "grid.js"
 pytestmark = pytest.mark.skipif(not (GRID_JS.is_file() and shutil.which("node")), reason=f"no {GRID_JS}, or no node")
 
 

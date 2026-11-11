@@ -7,13 +7,12 @@ import shutil
 import subprocess
 import types
 from io import BytesIO
-from pathlib import Path
 
 import pytest
 from PIL import Image
 
 from commands import rulebook, rulebook_pages, tts_save
-from conftest import CLONE
+from conftest import SITE_SRC
 
 CHAPTER = """# Stats {.x}
 
@@ -250,7 +249,7 @@ def test_card_sync_marks_a_look_that_waited_in_vain(tmp_path):
     marked lane, so a rulebook picture's commit since the lane before it is card input (GO); unmarked, nothing to do; the
     lane before it marked too (a lag that lasts, skeptic 6): not passed over, nothing to do."""
     yaml = pytest.importorskip("yaml")
-    path = Path(os.path.expanduser(os.environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "card-sync.yml"
+    path = SITE_SRC / ".github" / "workflows" / "card-sync.yml"
     if not path.is_file():
         pytest.skip(f"no {path}")
     main = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["main"]

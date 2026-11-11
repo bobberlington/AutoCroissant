@@ -7,7 +7,6 @@ import json
 import shutil
 import subprocess
 from os import environ
-from os.path import expanduser
 from pathlib import Path
 from sys import executable
 from types import SimpleNamespace
@@ -19,7 +18,7 @@ pytest.importorskip("requests", reason="card_bake imports requests (absent from 
 import commands.card_checks as cc  # noqa: E402
 from commands.card_edits import CardEdits  # noqa: E402
 from commands.psd_edit import SOFT_NOTE, real_notes  # noqa: E402
-from conftest import CLONE  # noqa: E402
+from conftest import SITE_SRC  # noqa: E402
 
 REPO = Path(__file__).resolve().parent.parent
 LIT, EMPTY = (47, 191, 58), (16, 63, 19)
@@ -339,7 +338,7 @@ def test_workflow_checks_cards_as_their_blobs_land(tmp_path):
     the background); one shard's Check starts with CARD_BLOBS_PENDING, `all` and long lists wait for the whole fetch;
     Fetched counts, and stops the fetches Check outlived."""
     yaml = pytest.importorskip("yaml")
-    workflow = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github/workflows/card-checks.yml"
+    workflow = SITE_SRC / ".github/workflows/card-checks.yml"
     if not workflow.is_file() or not shutil.which("timeout"):
         pytest.skip("no card-checks.yml or no timeout (coreutils)")
     steps = {s.get("name"): s["run"] for s in yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"]["check"]["steps"]
@@ -392,7 +391,7 @@ def test_workflow_site_build_on_shown_flags(tmp_path):
     """card-checks.yml's Commit: any change is pushed to data; site=true only when what build_site.py shows changed (hand
     and bars by card, cleared), not for new records without a flag, fields it never reads or a pushed card's same flags."""
     yaml = pytest.importorskip("yaml")
-    workflow = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github/workflows/card-checks.yml"
+    workflow = SITE_SRC / ".github/workflows/card-checks.yml"
     if not workflow.is_file() or not shutil.which("jq"):
         pytest.skip("no card-checks.yml or no jq")
     steps = yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"]["check"]["steps"]
@@ -480,7 +479,7 @@ def test_action_shaped_copy(tmp_path):
     bad, closure = done.stdout.splitlines()
     assert bad == "[]"
     assert {m.replace(".", "/") + ".py" for m in json.loads(closure.replace("'", '"'))} == {f for f in cc.SPARSE_FILES if f.endswith(".py")}
-    workflow = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github/workflows/card-checks.yml"
+    workflow = SITE_SRC / ".github/workflows/card-checks.yml"
     if workflow.is_file():
         yaml = pytest.importorskip("yaml")
         steps = yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"]["check"]["steps"]

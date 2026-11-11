@@ -1,7 +1,8 @@
 """
 Token variants (2026-10-23): the variants the stoogedings font draws ([fire:glow], [fire:darkglow]...) are the parser's
 ICON_VARIANTS, and the parser reads all but :no as the plain icon; every name and alias with the longest variant is one
-token to the parser, the bake, the emojis and the site. Reads the card repo clone; skips without it.
+token to the parser, the bake, the emojis and the site. Reads the clone's fonts and the site from $AC_SITE_SRC or the
+clone; skips without them.
 """
 import json
 import re
@@ -10,13 +11,13 @@ from subprocess import run as run_process
 
 import pytest
 
-from conftest import CLONE
+from conftest import CLONE, SITE_SRC
 
 BUILD = CLONE / "MDW" / "Fonts" / "stoogedings-src" / "build_stoogedings.py"
 FONT = CLONE / "MDW" / "Fonts" / "stoogedings.ttf"
-TEXT_JS = CLONE / "site" / "assets" / "text.js"
+TEXT_JS = SITE_SRC / "site" / "assets" / "text.js"
 
-pytestmark = pytest.mark.skipif(not (BUILD.is_file() and TEXT_JS.is_file()), reason=f"no card repo clone at {CLONE}")
+pytestmark = pytest.mark.skipif(not (BUILD.is_file() and TEXT_JS.is_file()), reason=f"no {BUILD} or {TEXT_JS}")
 
 
 def shaper(order: list):
@@ -96,7 +97,7 @@ def test_token_limit_fits_every_icon():
 # ========================
 # (review 2026-11-04) the font (build_stoogedings), the website (text.js, style.css) and the mock-up (mockup.js) each
 # draw a badge: their colours, rings and Roboto Black metrics agree.
-SITE = CLONE / "site" / "assets"
+SITE = SITE_SRC / "site" / "assets"
 LABEL_FONT = CLONE / "MDW" / "Fonts" / "Roboto Black.ttf"
 RING_SAMPLE = ["1CD", "2CD", "3GCD", "8CD", "-1/1CD", "-1/2GCD", "-5/2CD", "1/2CD", "2/2CD", "12CD", "4/12CD", "-3/12GCD",
                "-9/12CD", "XCD", "XGCD", "X/XCD", "X/2CD", "1/XCD", "-1/XCD", "-3/XGCD", "20GCD", "11CD", "1/12CD",

@@ -21,7 +21,6 @@ from ast import parse as ast_parse
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 from os import environ
-from os.path import expanduser
 from pathlib import Path
 from subprocess import run as run_process
 from sys import executable
@@ -36,7 +35,7 @@ import commands.card_preview_branch as br  # noqa: E402
 import commands.card_preview_reads as early  # noqa: E402
 import commands.github_api as github_api  # noqa: E402
 import commands.psd_edit as pe  # noqa: E402
-from conftest import CLONE, REPO, blob_sha_bytes as _sha  # noqa: E402
+from conftest import REPO, SITE_SRC, blob_sha_bytes as _sha  # noqa: E402
 from golden_cards import VOCAB  # noqa: E402
 from helpers import FORK_VENV_KEY, bot_files, fork_install  # noqa: E402
 
@@ -44,7 +43,7 @@ DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"
 DOOMER_PNG = "Auxiliary/Minions/Mini_Doomer.png"
 SNACK = "Items/Heal/2 Stars/A_Snack.psd"
 MDW_DOOMER = "MDW/Mini_Doomer.psd"
-WORKFLOWS = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows"
+WORKFLOWS = SITE_SRC / ".github" / "workflows"
 REQUEST = "0f8e7d6c-5b4a-4321-9876-0123456789ab"       # a crypto.randomUUID()
 
 

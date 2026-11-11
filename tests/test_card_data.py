@@ -3,7 +3,6 @@ on a temporary git repo of golden PSDs (new, changed, moved, archived, an unread
 import json
 from collections import defaultdict
 import os
-from pathlib import Path
 import re
 import shutil
 import subprocess
@@ -18,7 +17,7 @@ import commands.card_data as cd
 import commands.card_db as cdb
 import commands.card_models as cm
 import commands.changelog as cl
-from conftest import CLONE, REPO, blob_sha_bytes
+from conftest import REPO, SITE_SRC, blob_sha_bytes
 from golden_cards import golden_file
 from helpers import (DOOMER, FREEZER, OTHER, _build, _read, bot_files, cards, cards_template, commit, git, git_bytes,  # noqa: F401
                      put)
@@ -69,7 +68,7 @@ def test_sparse_copy_prints_help_and_holds_its_imports(tmp_path):
 
 def _sync_doc():
     yaml = pytest.importorskip("yaml")
-    path = Path(os.path.expanduser(os.environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "card-sync.yml"
+    path = SITE_SRC / ".github" / "workflows" / "card-sync.yml"
     if not path.is_file() or not shutil.which("timeout"):
         pytest.skip(f"no {path} or no timeout")
     return yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -234,7 +233,7 @@ def test_venv_key_is_one_formula(tmp_path):
     requirements-cards.txt, else the bot clone's), card-preview.yml's venv step (the same two) and cards-venv's key
     step (the clone's) give one key for one file, comments aside."""
     yaml = pytest.importorskip("yaml")
-    root = Path(os.path.expanduser(os.environ.get("AC_SITE_SRC") or str(CLONE))) / ".github"
+    root = SITE_SRC / ".github"
     if not (root / "actions" / "cards-venv" / "action.yml").is_file():
         pytest.skip(f"no {root}")
     load = lambda rel: yaml.safe_load((root / rel).read_text(encoding="utf-8"))   # noqa: E731

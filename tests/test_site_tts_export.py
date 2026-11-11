@@ -7,16 +7,13 @@ without node (2026-11-10).
 import json
 import shutil
 from collections import Counter
-from os import environ
-from os.path import expanduser
-from pathlib import Path
 from subprocess import run as run_process
 
 import pytest
 
-from conftest import CLONE
+from conftest import SITE_SRC
 
-ROOT = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE)))
+ROOT = SITE_SRC
 DECK_JS = ROOT / "site" / "assets" / "deck.js"
 SAVE = ROOT / "TTS" / "Impossibility Simulator.json"
 pytestmark = pytest.mark.skipif(not (DECK_JS.is_file() and shutil.which("node")), reason=f"no {DECK_JS}, or no node")

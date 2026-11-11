@@ -7,16 +7,13 @@ TTSCardMaker checkout) or the clone; skips without node or a site before them (T
 import json
 import re
 import shutil
-from os import environ
-from os.path import expanduser
-from pathlib import Path
 from subprocess import run as run_process
 
 import pytest
 
-from conftest import CLONE
+from conftest import SITE_SRC
 
-ASSETS = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site" / "assets"
+ASSETS = SITE_SRC / "site" / "assets"
 MODULES = ("tip", "drafts", "live", "stars", "palette")
 pytestmark = pytest.mark.skipif(not (shutil.which("node") and all((ASSETS / f"{m}.js").is_file() for m in MODULES)),
                                 reason=f"no node, or no {', '.join(m + '.js' for m in MODULES)} in {ASSETS}")

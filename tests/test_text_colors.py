@@ -7,8 +7,6 @@ site's own word colours (owner 2026-11-11): textcolor.js wordColors and build_si
 import importlib.util
 import json
 import shutil
-from os import environ
-from os.path import expanduser
 from pathlib import Path
 from subprocess import run as run_process
 from types import SimpleNamespace
@@ -20,10 +18,10 @@ from psd_tools import PSDImage
 import commands.psd_edit as pe
 from commands.card_bake import psd_fields, rewrite_entry
 from commands.card_edits import ORDER, CardEdits, color_text, dump_edits
-from conftest import CLONE
+from conftest import CLONE, SITE_SRC
 from helpers import _card
 
-SITE = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site"
+SITE = SITE_SRC / "site"
 ASSETS = SITE / "assets"
 site = pytest.mark.skipif(not ((ASSETS / "textcolor.js").is_file() and shutil.which("node")), reason=f"no textcolor.js in {ASSETS}, or no node")
 FREEZER = "Field/1 Stars/The_Freezer.psd"

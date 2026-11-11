@@ -27,7 +27,7 @@ import commands.font_check as fc
 import commands.git_commit as gc
 import commands.png_export as pe
 from commands.github_api import blob_sha
-from conftest import CLONE
+from conftest import GUARDS_YML, SITE_SRC
 from helpers import art, bot_files, build_font, card, fixture_psd, photoshop_png, sharing
 
 
@@ -36,7 +36,6 @@ from helpers import art, bot_files, build_font, card, fixture_psd, photoshop_png
 # ========================
 REPO = Path(__file__).resolve().parents[1]
 FOLDER = "Items/Heal/2 Stars"
-WORKFLOW = Path(os.environ.get("CARD_GUARDS_YML", "")) if os.environ.get("CARD_GUARDS_YML") else None
 
 
 # ========================
@@ -1391,8 +1390,7 @@ def test_action_shaped_copy(tmp_path):
 
 
 def _workflow(clone) -> Path:
-    site = Path(os.path.expanduser(os.environ.get("AC_SITE_SRC") or str(CLONE)))       # a TTSCardMaker checkout (code, not cards)
-    path = WORKFLOW or (site / ".github" / "workflows" / "card-guards.yml")
+    path = GUARDS_YML or (SITE_SRC / ".github" / "workflows" / "card-guards.yml")
     if not path.exists():
         pytest.skip(f"no {path} (set CARD_GUARDS_YML to a TTSCardMaker checkout's file, or AC_SITE_SRC to the checkout)")
     return path

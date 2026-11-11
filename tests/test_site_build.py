@@ -22,16 +22,15 @@ from collections import defaultdict
 from datetime import datetime
 from html import unescape as html_unescape
 from os import environ
-from os.path import expanduser
 from pathlib import Path
 
 import pytest
 
 import commands.card_db as cdb
 import commands.card_models as cm
-from conftest import CLONE
+from conftest import SITE_SRC
 
-BUILD_SITE = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site" / "build" / "build_site.py"
+BUILD_SITE = SITE_SRC / "site" / "build" / "build_site.py"
 EDIT_JS = BUILD_SITE.parents[1] / "assets" / "edit.js"
 DAY = 86400
 REBASED = 20 * DAY                            # committer time after author time (a rebase: Patch 1.9's commits)
@@ -868,7 +867,7 @@ def test_site_workflow_sets_up_in_the_background(tmp_path):
     (no setup-uv), else from the GitHub release, else pip installs. An early build's Images start runs once uv is in;
     Setup wait stops it, prints its log, only warns on a failure (none started: no wait)."""
     yaml = pytest.importorskip("yaml")
-    path = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "site.yml"
+    path = SITE_SRC / ".github" / "workflows" / "site.yml"
     if not path.is_file():
         pytest.skip(f"no {path}")
     steps = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["build"]["steps"]
@@ -962,7 +961,7 @@ def test_site_workflow_sets_up_in_the_background(tmp_path):
 def test_site_workflow_python_from_the_tool_cache(tmp_path):
     """site.yml's py step puts the image's newest 3.14.x on PATH with its lib, as setup-python does; none: nothing (setup-python)."""
     yaml = pytest.importorskip("yaml")
-    path = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "site.yml"
+    path = SITE_SRC / ".github" / "workflows" / "site.yml"
     if not path.is_file():
         pytest.skip(f"no {path}")
     run = next(s for s in yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["build"]["steps"] if s.get("id") == "py")["run"]
@@ -991,7 +990,7 @@ def test_site_deploy_under_a_version_of_its_own(tmp_path):
     the end (stuck), the same script under the second; else, or that failing too, deploy-pages under GITHUB_SHA (a
     version never fails a deploy)."""
     yaml = pytest.importorskip("yaml")
-    path = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "site.yml"
+    path = SITE_SRC / ".github" / "workflows" / "site.yml"
     if not path.is_file() or not shutil.which("jq"):
         pytest.skip(f"no {path} or jq")
     jobs = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]

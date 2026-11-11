@@ -7,16 +7,14 @@ Loads the site from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone; skips w
 """
 import json
 import shutil
-from os import environ
-from os.path import expanduser
 from pathlib import Path
 from subprocess import run as run_process
 
 import pytest
 
-from conftest import CLONE
+from conftest import SITE_SRC
 
-SITE = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site"
+SITE = SITE_SRC / "site"
 ASSETS = SITE / "assets"
 EDIT_JS = ASSETS / "edit.js"
 INLINE_JS = ASSETS / "inline.js"

@@ -19,7 +19,6 @@ from concurrent.futures.process import BrokenProcessPool
 from datetime import timedelta
 from io import BytesIO, StringIO
 from os import environ
-from os.path import expanduser
 from pathlib import Path
 from subprocess import run as run_process
 from types import SimpleNamespace
@@ -30,7 +29,7 @@ pytest.importorskip("requests", reason="card_bake imports requests (absent from 
 import commands.card_bake as cb  # noqa: E402
 import commands.git_commit as gc  # noqa: E402
 import commands.psd_edit as pe  # noqa: E402
-from conftest import CLONE, blob_sha_bytes as _sha  # noqa: E402
+from conftest import CLONE, SITE_SRC, blob_sha_bytes as _sha  # noqa: E402
 from helpers import ABOUT, AT, DOOMER, EDITS, FREEZER, SNACK, _card_files, _edits, files, github  # noqa: E402,F401 (fixtures)
 
 
@@ -39,7 +38,7 @@ OFF_CANVAS_MAGE = "45cf8746^"   # Green Mage before its bars moved onto the card
 PURE_VESSEL = "Creatures/Hollow Knight/5 Stars/Pure_Vessel.psd"     # its stat masks reach past the canvas
 LIVE_EDITS = CLONE / "site" / "Card Edits.json"
 EDIT_JS = CLONE / "site" / "assets" / "edit.js"
-WORKFLOW = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "card-sync.yml"
+WORKFLOW = SITE_SRC / ".github" / "workflows" / "card-sync.yml"
 
 
 # ========================

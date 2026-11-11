@@ -8,16 +8,13 @@ with cardsHref (2026-10-25).
 import importlib.util
 import json
 import shutil
-from os import environ
-from os.path import expanduser
-from pathlib import Path
 from subprocess import run as run_process
 
 import pytest
 
-from conftest import CLONE
+from conftest import SITE_SRC
 
-SITE = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / "site"
+SITE = SITE_SRC / "site"
 ASSETS = SITE / "assets"
 STATS_JS = ASSETS / "stats.js"
 pytestmark = pytest.mark.skipif(not (STATS_JS.is_file() and shutil.which("node")), reason=f"no {STATS_JS}, or no node")
