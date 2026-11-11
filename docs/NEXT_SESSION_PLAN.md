@@ -257,9 +257,12 @@ From `~/Documents/Tools/wt/scratch/opt-round3/plan.json`, `opt-round4/plan.json`
 - [x] `psd_parser` ABILITY_EXCLUSIONS gone (11-09, 21 -> 0): no live card has a hidden Ability layer left, so the
       guards' R3 waiver had nothing to waive.
 - [ ] Idea 14's orphaned-FX validator was never built; the bake already deletes such layers when it edits a card.
-- [ ] Stars still refused: Thunder Thighs 3, Consolation Prize, Bubble, Forsaken City and The Core (option B, shrinking
-      every star to fit the banner, is the larger fix); Forgotten Crossroads 3-6 and Spiky Ball Trap 5-6 wrongly act as
-      the stars' backdrop.
+- [ ] Stars that did not fit their banner: option B (owner 11-10): every star shrinks evenly, down to 50%, until the
+      added ones fit, told (Thunder Thighs 3 at 95%, Consolation Prize 3 at 65%, Bubble 2 at 60%, Forsaken City 3 at
+      70%, The Core 3 at 65%; 66 star counts on 23 cards); the mock-up draws the same. Forgotten Crossroads and Spiky
+      Ball Trap's backdrop fixed (AC 4d148771). Owner to decide: the 50% floor (78 counts, mostly 5+ stars, still off
+      the banner, told; a 20% floor fits 72 of them at 20-45%) and the two-wide columns at 50-70% (Blood Bomb 8, steam
+      sale 8, Holy Mantle 8, Bucket Of Lard 6 and 8, Charm Of The Vampire 6).
 - [ ] Types: in an edit that removes and adds at once, the added icons keep today's free spot instead of going through
       the closing loop.
 - [ ] Stat bars: Clot Gold's spare hidden HP layers still shown at low values (E2 in
