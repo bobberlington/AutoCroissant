@@ -10,8 +10,9 @@ Card sync's Ubuntu), so their lines break as on the website.
 
 The website must show the checkout's chapters (the page lists the chapters it was cut from), pictures, web fonts,
 icons and code (site_settled; Chrome's copies of what its CSS loads by plain URL: HEAD's): the command line waits up to
-SITE_WAIT for that (polled without Chrome), else nothing changes and it exits 3 (card-sync.yml marks the lane: the
-schedule's next lane draws again; so does an exit 1). Headless Chrome ($CHROME, else the first of CHROMES on PATH) over its DevTools pipe, the page past the
+SITE_WAIT for that (polled without Chrome; a deploy or an old CDN copy met by the draw: waited for and drawn again in
+that time), else nothing changes and it exits 3 (card-sync.yml marks the lane: the schedule's next lane draws again; so
+does an exit 1). Headless Chrome ($CHROME, else the first of CHROMES on PATH) over its DevTools pipe, the page past the
 CDN's copy; no package beyond Pillow. Each page is screenshot and hashed: the PDF is printed again only when a hash
 changed (a PDF's bytes carry its print time), so an unchanged rulebook keeps its file and its pinned link. pages.json's key skips the
 screenshots when nothing they draw changed; its pre-key (pre_key: what the page reads, fetched without Chrome) skips
@@ -80,10 +81,12 @@ BOOK_FONTS = ("Consolas", "Century")
 FONT_JS = """for (const [b64, family, weight, style] of %s)
   document.fonts.add(new FontFace(family, Uint8Array.from(atob(b64), c => c.charCodeAt(0)), { weight, style }));"""
 SITE_WAIT = 10 * 60                            # for the website's build of HEAD's rulebook (Card sync goes at once; its step's limit is 12)
-# what the website draws the print view from besides cards: a change always deploys (the site's build lists and stamps
-# them; every module in site/assets is in the bundle, its map holds their text)
-SITE_PATHS = (":(glob)site/rulebook/*.md", "site/rulebook/img/", "site/rulebook/fonts/", ":(glob,icase)Types/*.png",
-              ":(glob,icase)Types/Stars/*.png", "site/assets/")
+# what the website draws the print view from besides cards and chapters (compared by content), each a change that deploys:
+# the pictures (build_site: those it opens), web fonts (all), icons (and their aliases, tints), code. A change that does
+# not (a module nothing imports) waits in vain: card-sync.yml's mark lasts one extra lane
+PICTURES = ("webp", "png", "jpg", "jpeg", "gif", "avif")
+SITE_PATHS = (*(f":(glob,icase)site/rulebook/img/*.{x}" for x in PICTURES), "site/rulebook/fonts/", ":(glob,icase)Types/*.png",
+              ":(glob,icase)Types/Stars/*.png", "MDW/Fonts/stoogedings-src/stoogedings.json", "site/assets/")
 LAGS = "the website lags main's rulebook"     # in the report of a look that waited in vain: exit 3
 # Chrome's copies of the fonts and pictures the page's CSS loads by plain URL (no stamp: the CDN's, up to 10 minutes
 # old): {url: git blob id, null when missing}
@@ -94,7 +97,7 @@ PLAIN_JS = r"""Promise.all([...new Set([...document.querySelectorAll("style")].f
     all.set(h); all.set(b, h.length);
     return [u, [...new Uint8Array(await crypto.subtle.digest("SHA-1", all))].map(x => x.toString(16).padStart(2, "0")).join("")]; }))
   .then(Object.fromEntries)"""
-SITE_POLL = 20                                 # seconds between looks at its data/rules.json
+SITE_POLL = 20                                 # seconds between looks at its data/rules.json (and draws)
 CALL_SECONDS = 60                              # one DevTools call
 # the pre-key (pre_key()): what the print view reads, fetched without Chrome; pages.json's "pre", kept with the key
 PRE_SKIP = False                               # shadow (2026-11-09): Chrome looks anyway; a pre-key that held while the key changed warns
@@ -428,17 +431,16 @@ def _git(checkout: str, *args, codes=(0,)) -> tuple:
 
 
 def site_settled(site: str, checkout: str, seen: Optional[dict] = None) -> bool:
-    """Whether the website (seen: site_inputs()'s, else fetched) was built from main with HEAD's SITE_PATHS: one commit
-    of its build's date (cards.json's source; a batch shares one) has them, or none in HEAD's history has that date (a
-    later main). False when unreadable or another branch's."""
+    """Whether the website (seen: site_inputs()'s, else fetched) was built from main with HEAD's SITE_PATHS: the commit
+    of its build's date (cards.json's source; of a batch sharing one, the newest) has them, or none in HEAD's history has
+    that date (a later main). False when unreadable or another branch's."""
     try:
         seen = seen or site_inputs(site)
         if not seen or seen["cards"].get("branch") != "main":
             return False
         at = int(datetime.fromisoformat(seen["cards"]["source"]).timestamp())
-        builds = _git(checkout, "rev-list", f"--since-as-filter=@{at}", f"--min-age={at}", "HEAD")[1].split()   # all history (--max-age stops at an older-dated commit)
-        same = lambda rev: _git(checkout, "diff-tree", "--quiet", "-r", rev, "HEAD", "--", *SITE_PATHS, codes=(0, 1))[0] == 0
-        return not builds or any(same(rev) for rev in builds)
+        builds = _git(checkout, "rev-list", "--topo-order", f"--since-as-filter=@{at}", f"--min-age={at}", "HEAD")[1].split()   # all history (--max-age stops at an older-dated commit)
+        return not builds or _git(checkout, "diff-tree", "--quiet", "-r", builds[0], "HEAD", "--", *SITE_PATHS, codes=(0, 1))[0] == 0
     except (OSError, ValueError, KeyError, TypeError, AttributeError, TimeoutExpired):
         return False
 
@@ -471,10 +473,10 @@ def wait_for_site(site: str, checkout: str, mine: dict, wait: float) -> Optional
 # ========================
 def update_pages(checkout: str, site: str = SITE_URL, exe: str = "", wait: float = 0, full: bool = False) -> str:
     """
-    The TTS pages brought to the website's rulebook, once it shows the checkout's chapters and is settled (site_settled();
-    waiting up to wait seconds for both) and Chrome drew that build with HEAD's plain-URL fonts and pictures; else
-    nothing changes and the report says LAGS. Chrome is not started when pages.json's pre is the website's pre_key()
-    and the PDF is there (PRE_SKIP; full: Chrome looks in any case).
+    The TTS pages brought to the website's rulebook, once it shows the checkout's chapters and is settled (site_settled())
+    and Chrome drew that build with HEAD's plain-URL fonts and pictures (else, in wait seconds, waited for and drawn
+    again); else nothing changes and the report says LAGS. Chrome is not started when pages.json's pre is the website's
+    pre_key() and the PDF is there (PRE_SKIP; full: Chrome looks in any case).
 
     Returns:
         The report (one line; then a ::warning:: line when the pre-key held but the key changed)
@@ -488,32 +490,39 @@ def update_pages(checkout: str, site: str = SITE_URL, exe: str = "", wait: float
     mine = chapter_sources(checkout)
     if not mine:
         return f"Rulebook pages: no chapters in {RULEBOOK_SRC}; pages left as they are."
-    seen = site_inputs(site)                            # before the draw: the website drawn is that build or a later one
-    if not (seen and _chapters(seen["rules"]) == mine and site_settled(site, checkout, seen)):
-        seen = wait_for_site(site, checkout, mine, wait) if wait else None
-        if not seen:
-            return (f"Rulebook PDF: {LAGS}'s chapters, pictures, web fonts, icons or code"
-                    f"{f' after {wait / 60:.0f} minutes' if wait >= 90 else f' after {wait:.0f} seconds' if wait else ''}; left as it is.")
     folder, old, fonts, trees = join(checkout, RULEBOOK_PAGES), read_pages(checkout), book_fonts(checkout), _trees(checkout)
     has_pdf = isfile(join(folder, PDF_FILE))
     known = old.get("key", "") if has_pdf else ""
-    pre = pre_key(seen, trees, fonts, exe)
-    held = has_pdf and pre == old.get("pre")
-    if held and PRE_SKIP and not full:
-        return f"Rulebook PDF: {len(old['pages'])} pages, as they were (nothing they read changed: Chrome not started)."
-    theirs, shots, printer, drawn, page, plain = draw(site, exe, lambda text: key(text, checkout, trees), known, fonts)
-    try:
-        if theirs != mine or page != seen["page"] or plain != heads(checkout, plain):   # a deploy mid-look; the CDN's old copy
+    until = monotonic() + wait
+    while True:
+        seen = site_inputs(site)                        # before the draw: the website drawn is that build or a later one
+        if not (seen and _chapters(seen["rules"]) == mine and site_settled(site, checkout, seen)):
+            seen = wait_for_site(site, checkout, mine, until - monotonic()) if wait else None
+            if not seen:
+                return (f"Rulebook PDF: {LAGS}'s chapters, pictures, web fonts, icons or code"
+                        f"{f' after {wait / 60:.0f} minutes' if wait >= 90 else f' after {wait:.0f} seconds' if wait else ''}; left as it is.")
+        pre = pre_key(seen, trees, fonts, exe)
+        held = has_pdf and pre == old.get("pre")
+        if held and PRE_SKIP and not full:
+            return f"Rulebook PDF: {len(old['pages'])} pages, as they were (nothing they read changed: Chrome not started)."
+        theirs, shots, printer, drawn, page, plain = draw(site, exe, lambda text: key(text, checkout, trees), known, fonts)
+        try:
+            lags = theirs != mine or page != seen["page"] or plain != heads(checkout, plain)   # a deploy mid-look; the CDN's old copy
+            if not lags:
+                warn = ("\n::warning::Rulebook PDF: the pre-key held but the pages' key changed: pre_key misses an input."
+                        if held and drawn != known else "")
+                if shots is None:
+                    if pre != old.get("pre"):
+                        _put_listing(join(folder, PAGES_JSON), {**old, "pre": pre})
+                    return f"Rulebook PDF: {len(old['pages'])} pages, as they were (nothing they draw changed{'; pre-key held' if held else ''})."
+                done = write_pages(folder, shots, printer.pdf, drawn, pre)
+        finally:
+            printer.close()
+        if not lags:
+            break
+        if monotonic() + SITE_POLL >= until:
             return f"Rulebook PDF: {LAGS} (Chrome drew another build, or an older copy of a web font or picture); left as it is."
-        warn = ("\n::warning::Rulebook PDF: the pre-key held but the pages' key changed: pre_key misses an input."
-                if held and drawn != known else "")
-        if shots is None:
-            if pre != old.get("pre"):
-                _put_listing(join(folder, PAGES_JSON), {**old, "pre": pre})
-            return f"Rulebook PDF: {len(old['pages'])} pages, as they were (nothing they draw changed{'; pre-key held' if held else ''})."
-        done = write_pages(folder, shots, printer.pdf, drawn, pre)
-    finally:
-        printer.close()
+        sleep(SITE_POLL)                                # that build, or the CDN's new copy: drawn again
     if not done["printed"]:
         return f"Rulebook PDF: {done['pages']} pages, as they were (key {drawn[:8]} kept).{warn}"
     size = getsize(join(folder, PDF_FILE))

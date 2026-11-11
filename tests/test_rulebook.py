@@ -91,10 +91,11 @@ def _commit(repo, when, files):
 
 
 def test_site_settled_by_its_build(tmp_path):
-    """Settled: the website's build (the main commit dated cards.json's source; a batch shares a date) has HEAD's
-    chapters, rulebook pictures and web fonts, Types/ icons (41ab8074's table map, [buff]) and site code; later cards,
-    book fonts or other files don't hold it back; no commit of that date in HEAD's history: a later main (the whole
-    history looked at: a commit dated before its parent, as 1912f245, hides no build)."""
+    """Settled: the website's build (the main commit dated cards.json's source; of a batch sharing a date, the newest) has
+    HEAD's rulebook pictures and web fonts, Types/ icons and their aliases (41ab8074's table map, [buff]) and site code;
+    later cards, book fonts, chapters (compared by content) or files no deploy takes (skeptic 6: a README, a non-picture)
+    don't hold it back; no commit of that date in HEAD's history: a later main (the whole history looked at: a commit
+    dated before its parent, as 1912f245, hides no build)."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     _commit(tmp_path, "2026-11-10T20:00:00+00:00", {"site/rulebook/01-a.md": b"# A", "site/rulebook/img/table-map.webp": b"1", "Items/a.png": b"a"})
     _commit(tmp_path, "2026-11-10T20:16:39+00:00", {"site/rulebook/img/table-map.webp": b"2"})
@@ -115,6 +116,16 @@ def test_site_settled_by_its_build(tmp_path):
     _commit(tmp_path, "2026-11-10T21:15:00+00:00", {"Items/e.png": b"e"})                        # dated before its parent
     _commit(tmp_path, "2026-11-10T21:25:00+00:00", {"site/rulebook/img/table-map.webp": b"3"})
     assert not settled("2026-11-10T21:20:00+00:00") and settled("2026-11-10T21:25:00+00:00")
+    _commit(tmp_path, "2026-11-10T21:30:00+00:00", {"site/rulebook/README.md": b"n", "site/rulebook/25-New Chapter.md": b"# B",
+                                                    "site/rulebook/01-a.md": b"# A\r\n", "site/rulebook/img/source.psd": b"8BPS",
+                                                    "site/rulebook/img/old/x.webp": b"x"})
+    assert settled("2026-11-10T21:25:00+00:00")
+    _commit(tmp_path, "2026-11-10T21:35:00+00:00", {"MDW/Fonts/stoogedings-src/stoogedings.json": b"{}"})
+    assert not settled("2026-11-10T21:30:00+00:00") and settled("2026-11-10T21:35:00+00:00")
+    for files in ({"Items/f.png": b"f"}, {"site/rulebook/img/table-map.webp": b"4"}):
+        _commit(tmp_path, "2026-11-10T21:40:00+00:00", files)                 # the website: the batch's newest
+    _commit(tmp_path, "2026-11-10T21:45:00+00:00", {"site/rulebook/img/table-map.webp": b"3"})   # as the batch's first
+    assert not settled("2026-11-10T21:40:00+00:00")
 
 
 def _seen(**cards):
@@ -170,8 +181,9 @@ def test_pre_key_and_the_skip(tmp_path, monkeypatch):
 
 def test_the_look_waits_for_the_site(tmp_path, monkeypatch, capsys):
     """11-10 (41ab8074): the look waits (up to wait, polled, no Chrome) until the website shows HEAD's chapters and is
-    settled, then draws once; else, or when Chrome drew another build or an older copy of a plain-URL font or picture
-    than HEAD's (the CDN's), nothing changes and the command line exits 3 (card-sync.yml marks the lane)."""
+    settled, then draws; Chrome drew another build or an older copy of a plain-URL font or picture than HEAD's (the
+    CDN's): drawn again in that time (skeptic 6). Else nothing changes and the command line exits 3 (card-sync.yml marks
+    the lane)."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     _commit(tmp_path, "2026-11-10T20:00:00+00:00", {"site/rulebook/01-a.md": b"# A\n", "site/rulebook/fonts/a b.woff2": b"f2"})
     font = rulebook_pages.heads(str(tmp_path), ["rulebook/fonts/a%20b.woff2", "rulebook/img/gone.webp"])
@@ -185,28 +197,32 @@ def test_the_look_waits_for_the_site(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(rulebook_pages, "sleep", lambda s: None)
     clock = iter(range(0, 10000, 20))
     monkeypatch.setattr(rulebook_pages, "monotonic", lambda: next(clock))
-    drawn = {"page": "pg", "plain": dict(font, **{"rulebook/img/gone.webp": None}), "n": 0}
+    good = ("pg", dict(font, **{"rulebook/img/gone.webp": None}))
+    drawn = {"n": 0, "lag": []}                            # what the next draws meet: (page, plain), then good
 
     def draw(site, exe, key_of, known, fonts):
         drawn["n"] += 1
-        return {"01-a.md": "# A\n"}, shots, rulebook_pages.Printer(lambda: b"%PDF", lambda: None), "k1", drawn["page"], drawn["plain"]
+        page, plain = drawn["lag"].pop(0) if drawn["lag"] else good
+        return {"01-a.md": "# A\n"}, shots, rulebook_pages.Printer(lambda: b"%PDF", lambda: None), "k1", page, plain
     monkeypatch.setattr(rulebook_pages, "draw", draw)
     run = lambda: (rulebook_pages.main([str(tmp_path), "--wait", "600"]), capsys.readouterr().out)
     looks = iter([False, False, True])                     # the deploy lands at the third look
     monkeypatch.setattr(rulebook_pages, "site_settled", lambda site, checkout, seen=None: next(looks))
     assert run() == (0, "Rulebook PDF: 1 pages, as they were (key k1 kept).\n") and drawn["n"] == 1 and next(looks, None) is None
+    rulebook_pages.write_pages(str(folder), shots, lambda: b"%PDF", "k0")
     monkeypatch.setattr(rulebook_pages, "site_settled", lambda site, checkout, seen=None: False)   # not in 10 minutes
     code, out = run()
     assert code == 3 and rulebook_pages.LAGS in out and drawn["n"] == 1
     monkeypatch.setattr(rulebook_pages, "site_settled", lambda site, checkout, seen=None: True)
-    for change in ({"page": "pg-old"}, {"plain": dict(drawn["plain"], **{"rulebook/fonts/a%20b.woff2": "0" * 40})},
-                   {"plain": dict(drawn["plain"], **{"rulebook/fonts/a%20b.woff2": None})}):
-        before = {k: drawn[k] for k in change}
-        drawn.update(change)
+    for lag in (("pg-old", good[1]), ("pg", dict(good[1], **{"rulebook/fonts/a%20b.woff2": "0" * 40})),
+                ("pg", dict(good[1], **{"rulebook/fonts/a%20b.woff2": None}))):
+        drawn["lag"], n = [lag] * 1000, drawn["n"]          # past the wait
         code, out = run()
-        assert code == 3 and rulebook_pages.LAGS in out and rulebook_pages.read_pages(str(tmp_path))["key"] == "k1", change
-        drawn.update(before)
-    assert run()[0] == 0 and drawn["n"] == 5
+        assert code == 3 and rulebook_pages.LAGS in out and rulebook_pages.read_pages(str(tmp_path))["key"] == "k0", lag
+        assert 1 < drawn["n"] - n <= 600 / rulebook_pages.SITE_POLL, lag
+        drawn["lag"], n = [lag] * 2, drawn["n"]             # a deploy mid-look, the CDN's copy renewed: drawn again
+        assert run() == (0, "Rulebook PDF: 1 pages, as they were (key k1 kept).\n") and drawn["n"] - n == 3, lag
+        rulebook_pages.write_pages(str(folder), shots, lambda: b"%PDF", "k0")
 
 
 def _gh_bash(script, cwd, env, timeout=60):
@@ -219,7 +235,8 @@ def _gh_bash(script, cwd, env, timeout=60):
 def test_card_sync_marks_a_look_that_waited_in_vain(tmp_path):
     """card-sync.yml as written: Rulebook PDF's exit 3 (the website lagged past the wait) sets lag and the step after it
     marks the lane, as it does a failed step (exit 1, its time run out); the Gate of the schedule's next run passes over a
-    marked lane, so a rulebook picture's commit since the lane before it is card input (GO); unmarked, nothing to do."""
+    marked lane, so a rulebook picture's commit since the lane before it is card input (GO); unmarked, nothing to do; the
+    lane before it marked too (a lag that lasts, skeptic 6): not passed over, nothing to do."""
     yaml = pytest.importorskip("yaml")
     path = Path(os.path.expanduser(os.environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "card-sync.yml"
     if not path.is_file():
@@ -266,8 +283,12 @@ def test_card_sync_marks_a_look_that_waited_in_vain(tmp_path):
         {"name": "Gate", "conclusion": "success"}, {"name": "Rulebook PDF", "conclusion": "success"},
         {"name": mark["name"], "conclusion": "success" if marked else "skipped"}]}]}
     (fix / "2.json").write_text(json.dumps(job(False)))
-    for marked, go in ((True, "true"), (False, "false")):
-        (fix / "3.json").write_text(json.dumps(job(marked)))
+    for marked, go in ((True, "true"), (False, "false"), ((True, True), "false")):
+        if marked == (True, True):                       # 4, a schedule run's lane at head, marked too
+            (fix / "run.json").write_text(json.dumps([{"databaseId": 4, "headSha": head, "displayTitle": "Card sync"},
+                                                      *json.loads((fix / "run.json").read_text())]))
+            (fix / "4.json").write_text(json.dumps(job(True)))
+        (fix / "3.json").write_text(json.dumps(job(bool(marked))))
         envs = tmp_path / "env"
         envs.write_text("")
         done = _gh_bash(gate["run"], repo, {**env, "FIX": str(fix), "GITHUB_EVENT_NAME": "schedule", "GITHUB_REPOSITORY": "o/r",
