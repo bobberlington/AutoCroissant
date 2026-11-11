@@ -1,7 +1,8 @@
 """
-Text colours (Card Edits.json `colors`, owner 2026-11-07): the field's rules and file handling, the website's menu logic
-(TTSCardMaker site/assets/textcolor.js, from $AC_SITE_SRC or the clone), and a bake on a real card copy: the runs and the
-stored raster recoloured in place, a phrase not there refused alone, the note's never baked.
+Text colours (Card Edits.json `colors`, owner 2026-11-07; the card image's alone since 2026-11-11): the field's rules and
+file handling, the website's menu logic (TTSCardMaker site/assets/textcolor.js, from $AC_SITE_SRC or the clone), and a
+bake on a real card copy: the runs and the stored raster recoloured in place, a phrase not there refused alone. The
+site's own word colours (owner 2026-11-11): textcolor.js wordColors and build_site word_colors (TTS's) agree.
 """
 import importlib.util
 import json
@@ -30,16 +31,17 @@ BURNING = {"field": "ability", "phrase": "Burning", "color": "#ff7a1a"}
 
 
 def test_field_rules_and_file():
-    """Valid lists only; the note's colours are never baked; a bake takes out what it printed and keeps the rest."""
-    good = [BURNING, {"field": "name", "color": "#ffffff"}, {"field": "note", "phrase": "ice#2", "color": "#00bfff"}]
+    """Valid lists only, on the name and the ability (the note's option went, owner 2026-11-11); a bake takes out what
+    it printed and keeps the rest."""
+    good = [BURNING, {"field": "name", "color": "#ffffff"}, {"field": "ability", "phrase": "ice#2", "color": "#00bfff"}]
+    note = [{"field": "note", "phrase": "ice#2", "color": "#00bfff"}]
     assert CardEdits.valid("colors", good) and ORDER.index("colors") == ORDER.index("parts") + 1
     for bad in ([], [{**BURNING, "color": "#FF7A1A"}], [{**BURNING, "phrase": " Burning"}], [BURNING, dict(BURNING)],
-                [{"field": "series", "color": "#ffffff"}], [{**BURNING, "x": 1}]):
+                [{"field": "series", "color": "#ffffff"}], [{**BURNING, "x": 1}], note):
         assert not CardEdits.valid("colors", bad), bad
     edits = CardEdits.parse(json.dumps({"cards": {"A": {"colors": good, "_site": ["colors"]}, "B": {"colors": "red"}}}))
     assert edits.cards["a"]["colors"] == good and edits.site("a") == ["colors"] and "colors" not in edits.cards["b"]
-    assert psd_fields({"colors": good}) == {"colors": good[:2]} and psd_fields({"colors": good[2:]}) == {}
-    assert psd_fields({"colors": good}, ["colors"]) == {}
+    assert psd_fields({"colors": good}) == {"colors": good} and psd_fields({"colors": good}, ["colors"]) == {}
     entry = rewrite_entry({"colors": good, "hp": 3, "_by": "web"}, ["hp"], colors_done=good[:2])
     assert entry == {"colors": good[2:], "_by": "web"} and rewrite_entry({"colors": good[:1]}, colors_done=good[:1]) is None
     assert color_text(BURNING) == "Ability: 'Burning' coloured #ff7a1a" and color_text(good[1]) == "Name coloured #ffffff"
@@ -47,7 +49,8 @@ def test_field_rules_and_file():
     if spec and Path(spec.origin).is_file() and "def valid_colors" in Path(spec.origin).read_text(encoding="utf-8"):   # TC landed
         bs = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(bs)
-        assert all(bs.valid_colors(v) == CardEdits.valid("colors", v) for v in (good, [], [dict(BURNING), dict(BURNING)]))
+        lists = (good, [], [dict(BURNING), dict(BURNING)], *([note] if "note" not in bs.COLOR_FIELDS else []))   # the note's: TC since 11-11
+        assert all(bs.valid_colors(v) == CardEdits.valid("colors", v) for v in lists)
         assert "colors" in bs.PSD_FIELDS and "colors" in bs.SITE_FIELDS
         aco = CLONE / bs.SWATCHES[0]
         if aco.is_file():
@@ -76,7 +79,6 @@ const out = {{
   words: T.colorsChange([{{ field: "name", color: "#ffffff" }}], list),
   file: E.editsFile(JSON.stringify({{ cards: {{}} }}), [{{ key: "X", set: {{ note: "n", colors: list }}, unset: [] }}], "T", "web"),
   lines: E.describeItems({{ set: {{ colors: list }}, unset: [] }}, {{}}).map(x => [x.text, x.psd]),
-  note: E.describeItems({{ set: {{ colors: [{{ field: "note", color: "#000000" }}] }}, unset: [] }}, {{}}).map(x => x.psd),
   status: T.statusSpans("Inflict 2T Burning. burning prose.", ["Burning"]),
   kept: T.colorRanges("Inflict 2T Burning. burning prose.", [{{ field: "ability", color: "#ffd21f" }}], "ability", ["Burning"]),
   parts: T.layerColors ? (() => {{                 // a field over several layers: "word#n" counted across them
@@ -122,7 +124,7 @@ process.stdout.write(JSON.stringify(out));
     assert out["words"] == ["Ability: 'Burning' (2nd) coloured #ff7a1a", "Name back to its own colour"]
     entry = json.loads(out["file"])["cards"]["X"]
     assert list(entry) == ["colors", "note", "_by", "_at"] and out["file"] == dump_edits(json.loads(out["file"]))
-    assert out["lines"] == [["Ability: 'Burning' (2nd) coloured #ff7a1a", True]] and out["note"] == [False]
+    assert out["lines"] == [["Ability: 'Burning' (2nd) coloured #ff7a1a", True]]
     assert out["status"] == [[11, 18]]                  # psd_edit.status_letters' (test_status_words_keep_the_chart)
     assert not any(r["start"] < 18 and 11 < r["end"] for r in out["kept"]) and any(r["start"] <= 20 < r["end"] for r in out["kept"])
     if out["parts"] is not None:                       # as color_spans counts; unchanged layers the colours reach redrawn
@@ -144,6 +146,46 @@ process.stdout.write(JSON.stringify(out));
                                "part": [{"start": 5 if three else 6, "end": 9, "color": "#00ff00"}]}
     if out["chart"] is not None:                        # as psd_edit's status words; lowercase stays the field's
         assert out["chart"] == [["Inflict", "#ffffff"], ["Burning", "#ff7a1a"], [".", "#ffffff"], ["burning", "#ffffff"], ["foes.", "#ffffff"]]
+
+
+PALETTE = {"stats": {"hp": "#2fbf3a", "def": "#3d63ff", "atk": "#ff3b3b", "spd": "#ffd21f"},
+           "counters": {"points": "#00ffae", "bricks": "#a0522d", "sp": "#ffff00"},
+           "statuses": {"Burning": "#db923d", "Frozen In Time": "#07cccd", "Hardened": "#8a8a8a"}}
+WORDS = ["Inflict 2T Burning. burning foes take +1 DEF, -1 SPD, \u22121 HP and 0.5 ATK; x2 ATK, 50% SPD, max HP.",
+         "Gain 2 points (2 points), 3 SP, 1 star point, 2 star points, BRICKS, 1 brick. +2 Attack; attack twice. At any point. 1 point.",
+         "[fire] HP [Burning] (1CD) Frozen  In Time 3T2 Hardened. 3.5 HP, 1.5SPD, X HP, x HP, 2HP, ATK/DEF, +1/+1 ATK.",
+         "Speed 3, 3 speed, 4 Health, 2 Defense, 1 Defence, (0.5 SP) (3 souls) Deal 2(x counters) DMG. HPs ATKS 3.HP a2 HP"]
+
+
+@site
+def test_site_words_agree_with_tts(tmp_path):
+    """The site's word colours (owner 2026-11-11): textcolor.js wordColors (the website's card text) and build_site
+    word_colors (tts.json's) paint the same letters in the same colours from one palette: status words, stats with their
+    numbers (long forms only after one), counters; icons and badges never; build_site's palette is the one cards.json
+    and tts.json carry."""
+    spec = importlib.util.spec_from_file_location("site_build_words", SITE / "build" / "build_site.py")
+    if not (spec and Path(spec.origin).is_file() and "def word_colors" in Path(spec.origin).read_text(encoding="utf-8")):
+        pytest.skip("a site before its word colours")
+    bs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(bs)
+    script = tmp_path / "words.mjs"
+    script.write_text(f"""const T = await import({json.dumps((ASSETS / 'textcolor.js').as_uri())});
+const P = {json.dumps(PALETTE)};
+process.stdout.write(JSON.stringify({json.dumps(WORDS)}.map(t => T.wordColors(t, P).map(r => [r.start, r.end, r.color]))));
+""", encoding="utf-8")
+    done = run_process(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert done.returncode == 0, done.stderr
+    site = json.loads(done.stdout)
+    assert site == [[list(r) for r in bs.word_colors(t, PALETTE)] for t in WORDS]
+    words = [[t[a:b] for a, b, _ in runs] for t, runs in zip(WORDS, site)]
+    assert words[0] == ["Burning", "+1 DEF", "-1 SPD", "\u22121 HP", "0.5 ATK", "x2 ATK", "50% SPD", "HP"]
+    assert words[1] == ["2 points", "3 SP", "1 star point", "2 star points", "BRICKS", "1 brick", "+2 Attack", "1 point"]
+    assert words[2] == ["HP", "Frozen  In Time", "Hardened", "3.5 HP", "1.5SPD", "X HP", "x HP", "2HP", "ATK", "DEF", "+1 ATK"]
+    assert words[3] == ["3 speed", "4 Health", "2 Defense", "1 Defence", "HP"] and site[0][0][2] == "#db923d"
+    cards = [{"name": "Burning", "type": "debuff"}, {"name": "Despair", "type": "debuff"}, {"name": "Hardened", "type": "buff"}, {"name": "Ant", "type": "item"}]
+    palette = bs.text_palette(cards, {"burning": "#db923d", "Despair": "#000000", "Ant": "#123456"}, [{"name": "Hardened", "color": "#8a8a8a"}])
+    assert palette["statuses"] == {"Burning": "#db923d", "Despair": "#000000", "Hardened": "#8a8a8a"}   # the chart's, else the swatch
+    assert {k: palette[k] for k in ("stats", "counters")} == {k: PALETTE[k] for k in ("stats", "counters")}
 
 
 def test_colour_bake_on_a_real_card(clone, tmp_path):

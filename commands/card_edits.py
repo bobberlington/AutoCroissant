@@ -34,9 +34,9 @@ ART_FIELDS = ("art", "ability_art")             # artwork sources: art a list (o
 ART_MAX = 500                                   # characters a source (art.js ART_MAX, build_site ART_MAX)
 FLAGS = ("hand", "bars", "name")                # what a card needs from a developer, each with a reason or "" (flags.js CARD_FLAGS, build_site FLAGS)
 FLAG_MAX = 300                                  # characters a reason (flags.js, build_site)
-# text colours: [{"field", "phrase"?, "color"}], a phrase as the effect layers' ("word#n"; none: the whole field)
-COLOR_FIELDS = ("name", "ability", "note")      # textcolor.js FIELDS, build_site COLOR_FIELDS; the note's never bake
-COLOR_PRINTED = ("name", "ability")             # the card image's
+# text colours: [{"field", "phrase"?, "color"}], a phrase as the effect layers' ("word#n"; none: the whole field); the
+# card image's alone (owner 2026-11-11: the website's text and TTS's details draw the site's palette instead)
+COLOR_FIELDS = COLOR_PRINTED = ("name", "ability")   # textcolor.js FIELDS, build_site COLOR_FIELDS
 COLOR = re_compile(r"^#[0-9a-f]{6}\Z")
 COLORS_MAX, PHRASE_MAX = 64, 200
 
