@@ -559,9 +559,11 @@ not land.**
   logged or written to a file. A failed call is a `::warning::`, and the comment still goes up.
 
 **7.4 Artifacts.**
-- For every card: the planned PNGs and fixed PSDs, and the crops of D (before, after, diff).
+- For every card: the crops of D (before, after, diff).
 - `plan.json`, `report.md`, `discord.json` (its content, no URL); after Land `landed.json`, `report-landed.md`,
   `discord-final.json`.
+- The planned PNGs and fixed PSDs (`files/`): since 2026-11-11 not in `card-guards` (Land reads them from disk), but
+  in `card-guards-files` (14 days) only when they did not reach main (report, dry, Land skipped or failed).
 
 **7.5 What changed inside the PSD** (`commands/psd_diff.py`, 2026-10-23; NEXT_IDEAS_2026-10-22 section 5, idea 5).
 - **For** every card PSD pushed over an older version (cases stale, pair, psd-only): both PSDs are open for the guards

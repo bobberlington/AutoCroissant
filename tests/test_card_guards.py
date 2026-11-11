@@ -1504,6 +1504,9 @@ def test_workflow_shape(clone):
     assert job["steps"][names.index("Decided")]["if"] == "always()"             # Card sync's wait ends on it, whatever the check did
     hand = job["steps"][names.index("Comment on the commit") + 1]
     assert hand["uses"].startswith("actions/upload-artifact") and hand["with"]["name"] == "card-guards" and hand["if"] == "always() && env.MODE != 'off'"
+    assert hand["with"]["path"].splitlines() == ["${{ runner.temp }}/guards", "!${{ runner.temp }}/guards/files"]   # Land read files/ from disk
+    kept = job["steps"][names.index("Comment on the commit") + 2]
+    assert kept["with"]["name"] == "card-guards-files" and "steps.land.outcome != 'success'" in kept["if"]
     assert job["steps"][names.index("Landed")]["if"] == "always()"             # a follow-up's wait ends on it, landed or not
     post_names = [s.get("name") for s in post["steps"]]
     take = post["steps"][1]
@@ -1560,7 +1563,7 @@ def test_workflow_shape(clone):
     assert follow["env"]["TOLD_BEFORE"] == "${{ steps.told.outputs.told }}"
     # a re-run uploads again: the earlier attempt's artifact of the same name is replaced, not a 409
     uploads = [s for s in job["steps"] + post["steps"] + finish["steps"] if s.get("uses", "").startswith("actions/upload-artifact")]
-    assert len(uploads) == 4 and all(s["with"]["overwrite"] is True for s in uploads)
+    assert len(uploads) == 5 and all(s["with"]["overwrite"] is True for s in uploads)
     landed = job["steps"].index(steps["Landed"])                               # a follow-up's wait reads both before it
     events = next(s for s in job["steps"] if s.get("with", {}).get("name") == "guard-events")       # Card sync reads it
     assert job["steps"].index(steps["Land"]) < job["steps"].index(events) < landed and events["if"] == "always() && steps.land.outputs.sha != ''"
