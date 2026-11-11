@@ -264,7 +264,7 @@ and its TTS PDF draw the same badge since TC 0ade8c3d (2026-11-04; the website a
 **The tag vocabulary is defined in three places that must change together**, plus the batch copies below. All three
 carry the same set: 341 since 2026-10-22 (TTSCardMaker f6ce500), 1139 since 2026-11-03 (n 1-20 or X, a/b with a from -9 up to b; the 341 first, in glyph order); `tests/test_badge_parity.py` checks them, the walk part only where it exists,
 and every case of every tag: all 2^letters combinations, 2530 spellings (the font by HarfBuzz: `uharfbuzz` where importable,
-e.g. `~/.venvs/ac-py314-fork`, else the `hb-shape` tool, so it runs in `ac-py314-psd125` too; the walk
+e.g. `~/.venvs/ac-py314-fork`, else the `hb-shape` tool; the walk
 test skips "still exact-case" until the patch is applied, and "clone behind" for an any-case walk with an older font):
 - `badge_tags()`/`BADGE_GROUPS` in build_stoogedings.py
 - `FIXED`/`tagInfo()` in `site/assets/text.js`, plus the `.badge.<group>` colors (`--bt`/`--bb`/`--be`) and `.badge` styles in `site/assets/style.css`.

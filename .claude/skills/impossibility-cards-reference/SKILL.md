@@ -553,7 +553,7 @@ CardInfo fields → pickle/dataframe keys (`to_dict`, commands/card_models.py; t
 | `art` / `ability_art` | same | artwork sources, database-only, from Card Edits.json (each entry its own, duplicates too; 2026-10-25); `/query` shows them as masked links; omitted when falsy |
 | `creatures` | `creatures` | list of short-key stat dicts, one per creature (multi-creature cards); omitted when falsy |
 
-`problems_ok`, `allow_high_stats`, `parsed_values`, `alt_names`, `blob_sha`, `variant` / `variant_of` / `variants` (a tagged
+`problems_ok`, `allow_high_stats`, `parsed_values`, `blob_sha`, `variant` / `variant_of` / `variants` (a tagged
 PSD's pictures, 2026-10-25), `parser_version` (the `PARSER_VERSION`
 that parsed the card, 2026-10-21, 4 since 2026-10-25; None in older pickles, which makes `/update_stats` re-parse them once) and `archived`
 (2026-10-22, set only on an archived card's record in old_stats.pkl, below) live only in the pickle (stats.pkl stores
@@ -712,7 +712,7 @@ icon collisions).
 `<alias>.png` pointing at the target's path, so aliases work everywhere names do. Everything is lowercased on load.
 Examples: `abyss_watchers -> the_abyss_watchers.png`, `red_bloon -> pod01red_bloon.png`. The migration
 (2026-10-22) wrote the 60 into Card Edits.json's `aliases`, with the Discord-only series values the parity re-parse found
-(596) and the top-level `aliases_moved` key; since then aliases.pkl counts nowhere (query_card `_populate_aliases`,
+(596) and the top-level `aliases_moved` key (dropped 2026-11-10: nothing read it); since then aliases.pkl counts nowhere (query_card `_populate_aliases`,
 card_data's duplicate names) and aliases are edited on the website (`/alias` and the migration CLI were retired
 2026-10-25, branch `archive/discord-edits`).
 

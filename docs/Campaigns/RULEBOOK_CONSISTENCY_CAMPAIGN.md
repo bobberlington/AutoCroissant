@@ -28,7 +28,7 @@ rules.json, stats.pkl or the pickles (the pipeline republishes them). `MDW/Old R
 | Card-data counts (tags §4, status effects §3) | `reference/data-facts.md` | baseline numbers |
 | `scripts/tags.py <cards.json>` | tag occurrences per card kind, other parenthesised words | P1 seed |
 | `scripts/mentions.py <cards.json>` | how many other cards name each status effect | unused status effects |
-| `scripts/layers.py <dir> <page.psd>...`, `alllayers.py <psd>` (psd-tools venv `~/.venvs/ac-py314-psd125`) | hidden and off-canvas text layers | H class |
+| `scripts/layers.py <dir> <page.psd>...`, `alllayers.py <psd>` (psd-tools venv `~/.venvs/ac-py314-fork`) | hidden and off-canvas text layers | H class |
 | Plan section "Rulebook data issues" | `docs/Finished/session-2026-10-22/PLAN_AS_OF_2026-10-22.md` | the first list of issues |
 | Badge tag list the website renders | TTSCardMaker `MDW/Fonts/stoogedings-src/build_stoogedings.py` `badge_tags()`/`BADGE_GROUPS`; `site/assets/text.js` `tagInfo()` | tags the site knows (16 patterns, same as 02_Abbreviations) |
 
@@ -208,7 +208,7 @@ until its baseline is clean.
 |---|---|
 | 604 / 35 / 351; 7 undefined tags, 59 occurrences, 44 cards | `python3 -I .claude/skills/impossibility-simulator-rules/scripts/tags.py ~/Desktop/TTSCardMaker/site/dist/data/cards.json` (+ a regex pass over (02_Abbreviations) with digits mapped to X) |
 | status mentions, 10 unused | `python3 -I .claude/skills/impossibility-simulator-rules/scripts/mentions.py <cards.json>` |
-| 6 hidden text layers on 4 pages | `~/.venvs/ac-py314-psd125/bin/python -I .claude/skills/impossibility-simulator-rules/scripts/layers.py ~/Desktop/TTSCardMaker/Auxiliary/Rulebook/ $(ls ~/Desktop/TTSCardMaker/Auxiliary/Rulebook/ \| grep '\.psd$')` |
+| 6 hidden text layers on 4 pages | `~/.venvs/ac-py314-fork/bin/python -I .claude/skills/impossibility-simulator-rules/scripts/layers.py ~/Desktop/TTSCardMaker/Auxiliary/Rulebook/ $(ls ~/Desktop/TTSCardMaker/Auxiliary/Rulebook/ \| grep '\.psd$')` |
 | V1 layer, opacity, bbox | `... alllayers.py ~/Desktop/TTSCardMaker/Auxiliary/Rulebook/16_The_Field.psd` |
 | V1 visible on the page | Pillow crop of `Auxiliary/Rulebook/16_The_Field.png` at (600,1560,1080,1720), viewed |
 | 08 star icons are smart objects | psd-tools walk of `08_Global_Turn.psd`: `Text/L1-L3/Top` and `Bottom`, kind smartobject, visible |

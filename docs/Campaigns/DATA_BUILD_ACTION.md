@@ -1134,7 +1134,7 @@ the save then waits too. Without a bake, the save still commits on the last good
 **By hand on the Mac** (an Actions outage, or a free full re-parse):
 ```
 git clone -q --bare --filter=blob:none https://github.com/MichaelJSr/TTSCardMaker /tmp/tc.git      # 1.1 MB, 2 s
-~/.venvs/ac-py314-psd125/bin/python -m commands.card_data --repo MichaelJSr/TTSCardMaker --checkout /tmp/tc.git \
+~/.venvs/ac-py314-fork/bin/python -m commands.card_data --repo MichaelJSr/TTSCardMaker --checkout /tmp/tc.git \
   --blobs ~/Desktop/TTSCardMaker --db /tmp/carddata/db [--full] --summary /tmp/card-data.md
 ```
 - `--checkout` gives the tree and the index, and must not be shallow: the builder refuses a shallow clone, as build_site does.

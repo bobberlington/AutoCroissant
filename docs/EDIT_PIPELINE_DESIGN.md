@@ -469,7 +469,7 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    replaced (ability compared after the parser's own whitespace rule on both sides, and since 2026-10-23 its tokens as
    the parser reads them in the icon font on both sides, `canonical_tokens`: a typed "[Fire]" reads back "[fire]";
    `classify` calls such an edit redundant; a colon with no variant, "[fire:]", which the font prints as letters and
-   the parser reads as [fire], stays as typed since review 2026-10-24, so the gate no longer shares that rule); `alt_names` unchanged;
+   the parser reads as [fire], stays as typed since review 2026-10-24, so the gate no longer shares that rule);
    `CardValidator.validate` (`commands/psd_parser.py:948`, imported from there) is a subset of the old problems minus
    `FIXED_BY[field]`; no `EFFECT LAYER *` (the validator's coverage >= 0.95 is the FX layers' gate); `STATS TOO HIGH` only when
    every stat above 10 sits on Top + Bottom rows (idea 13; a raise from <= 10 adds it there and is not a new problem, fixed

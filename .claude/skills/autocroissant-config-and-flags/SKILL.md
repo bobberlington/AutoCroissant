@@ -217,7 +217,7 @@ Action). repo_traverser.py (the legacy /update_stats, with `_tree_etags`/`_file_
 | `AHEAD` (2026-10-23) | `8` | PSDs read and not yet kept by the main thread, at most |
 | `RANGE_READS` (2026-10-23, github_api.py) | `True` | read a PSD by range requests at the tree's commit when psd-tools can (lazy open, fork feat/lazy-records), in the build and `card_check --after`; whole download otherwise and on any failure |
 | `RANGE_REFUSALS` (2026-10-23) | `3` | PSDs whose range read gets a 4xx, a 5xx or no connection before the run downloads the rest whole (one odd PSD leaves range reads on) |
-| `TITLE_REGION_RATIO` (2026-10-20) | `0.12` | the title region: text layers above this share of the card height are title candidates (`title_layers`); hidden ones name nothing since 2026-10-25 (`alt_names` no longer set) |
+| `TITLE_REGION_RATIO` (2026-10-20) | `0.12` | the title region: text layers above this share of the card height are title candidates (`title_layers`); hidden ones name nothing since 2026-10-25 (the `alt_names` field dropped on 2026-11-10) |
 | `UPDATE_RATE` | `25` | progress cadence of the build: a line every 25 processed cards (`num_updated % UPDATE_RATE == 0`) |
 | `TYPE_REGION_RATIO` | `0.5` | fraction of card height splitting "creature type icons" (above midline) from "inject-into-ability icons" (below). Semantics: impossibility-cards-reference |
 | `EXCLUDE_FOLDERS` | `["Markers", "MDW"]` | top-level TTSCardMaker folders skipped during stats traversal |

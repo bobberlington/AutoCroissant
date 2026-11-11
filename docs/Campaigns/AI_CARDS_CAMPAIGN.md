@@ -218,7 +218,7 @@ Phase 0 and 1 need nothing from Task 3 and can run now on the Mac. Phase 2 no lo
 ## 7. Re-verify
 
 - Stat envelope: `python3 -I -c "import json,statistics as s;c=[x for x in json.load(open('$HOME/Desktop/TTSCardMaker/site/dist/data/cards.json'))['cards'] if x['type']=='creature' and not x.get('dup') and x.get('hp') is not None];[print(k,len(r:=[x for x in c if x['stars']==k]),*(f'{m} {s.mean(v:=[x[m] for x in r]):.1f}±{s.pstdev(v):.1f}' for m in ('hp','def','atk','spd'))) for k in (2,3,4,5)]"`
-- Template layers and parse: `~/.venvs/ac-py314-psd125/bin/python .claude/skills/autocroissant-diagnostics-and-tooling/scripts/dump_psd_layers.py ~/Desktop/TTSCardMaker/MDW/Templates/Creature_Template.psd` and `.../parse_one.py` on the same file.
+- Template layers and parse: `~/.venvs/ac-py314-fork/bin/python .claude/skills/autocroissant-diagnostics-and-tooling/scripts/dump_psd_layers.py ~/Desktop/TTSCardMaker/MDW/Templates/Creature_Template.psd` and `.../parse_one.py` on the same file.
 - Manifest kinds: `python3 -I -c "import json,collections as c;print(c.Counter(v['kind'] for v in json.load(open('$HOME/Desktop/TTSCardMaker/MDW/Fonts/stoogedings-src/stoogedings.json'))['icons'].values()))"` (type 35, star 56).
 - Archive branch: `git ls-tree -r --name-only archive/ai-generation | grep -E 'diffusion|requirements2'`; `git log --all --oneline --diff-filter=AD -- commands/convert_nf4_flux.py`.
 - Skip lists: `grep -n EXCLUDE_FOLDERS commands/repo_traverser.py`; `grep -n 'CARD_FOLDERS =\|SKIP_PARTS =' ~/Desktop/TTSCardMaker/site/build/build_site.py`.

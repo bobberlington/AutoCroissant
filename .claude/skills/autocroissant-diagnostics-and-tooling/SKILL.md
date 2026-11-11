@@ -23,8 +23,7 @@ at all and runs from anywhere — it needs only psd-tools and an absolute/`~` PS
 **Which Python (2026-10-23).** `diff_stats.py` and `inspect_card_data.py` run on the Mac's plain `python3` (Homebrew
 3.14.8). `parse_one.py`, `gap_trace.py` and `dump_psd_layers.py` need psd-tools and pandas, which that `python3` lacks
 ("No module named pandas" / "psd_tools"): use the production-equivalent venv `~/.venvs/ac-py314-fork` (the psd-tools fork at
-the pin, `cards-20261110` = 170a3fce since 2026-11-10, as on the jetson), or `~/.venvs/ac-py314-psd125` (stock psd-tools
-1.25.0). Below, `$P` means `~/.venvs/ac-py314-fork/bin/python` for those three.
+the pin, `cards-20261110` = 170a3fce since 2026-11-10, as on the jetson). Below, `$P` means `~/.venvs/ac-py314-fork/bin/python` for those three.
 
 **The card data in any form (2026-10-23).** `diff_stats.py` and `inspect_card_data.py` read it through
 `commands.card_db.read_cards`: a `db/` folder (or a folder holding `db/`: `card_data/`, an Actions artifact), a
@@ -679,7 +678,7 @@ Not part of the five, and not read-only in the same sense (most need a sandbox c
 `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/optimization/` (moved byte-identical from `~/Documents/ac-optimization/`
 on 2026-10-20); the invocations below are relative to that folder. ROOT is a sandbox copy of the repo (`git archive HEAD` plus
 config.py and a `card_data/` copy, under /tmp); "live" means read-only GitHub GETs with the real token. parse_all_ns.py, the `_ns`
-scripts and search_ab.py import the bot (psd_tools, discord): run them with `~/.venvs/ac-py314-psd125/bin/python`, not the
+scripts and search_ab.py import the bot (psd_tools, discord): run them with `~/.venvs/ac-py314-fork/bin/python`, not the
 system `python3`; compare.py and the line-ref tools are stdlib.
 
 | Script | Invocation | What it does |
