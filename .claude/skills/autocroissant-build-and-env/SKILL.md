@@ -137,8 +137,8 @@ Notes verified from `setup.py` (2026-07-11; the build is incremental since 2026-
   deleted; `build_ext` removes its `.so` as an orphan): analytics, frankenstein, help, psd_analyzer and the three modules its
   code was split into on 2026-10-20 (card_models, card_edits, psd_parser: same directives, so the moved code keeps its
   compiled semantics), query_card, management, music_player.
-- **Not compiled because they are in neither list:** every module not in INCLUDE_FILES or EXCLUDE_FILES (25 of the
-  38 on 2026-10-23). In order of arrival: `commands/type_emojis.py` (added 2026-10-19),
+- **Not compiled because they are not listed:** every module not in INCLUDE_FILES (43 of the 53 `commands/*.py` on
+  2026-11-10; 25 of 38 on 2026-10-23). In order of arrival: `commands/type_emojis.py` (added 2026-10-19),
   `commands/repo_history.py`, `commands/tts_save.py` and `commands/github_api.py` (2026-10-20), `commands/psd_edit.py`, `psd_regions.py`,
   `card_bake.py`, `font_check.py` and `git_commit.py` (2026-10-21: the Actions check them out alone, so their import closure stays plain Python), the card data build's `card_data.py`, `card_history.py`, `card_db.py` and `changelog.py` (2026-10-22: `card_data` holds the traverser's code, so /update_stats on the jetson runs the same pure Python as the Action; the compiled `repo_traverser` wrapper was deleted 2026-10-25), and since 2026-10-22/23 `card_sync`, `card_dates`, `card_check`, `card_guards`, `png_export`, `card_standards`, `psd_diff`, `txt2_repair` and `psd_details`.
   New modules are uncompiled by default; all were deliberately left out. Note that compiled
@@ -238,8 +238,9 @@ Then:
    (path is `LOCAL_DIR_LOC`, global_config.py:5). The bot works without it: `/update_stats`
    reads GitHub only since local mode was archived on 2026-10-20
    (**autocroissant-run-and-operate** §7). The repo's history is about 25 GB of PSDs; the dev Mac's clone
-   is blobless (`--filter=blob:none`) and shallow (depth 1) as of 2026-10-19, so local `git log`
-   there has no history (ttscardmaker-companion). Local checkouts also give every PSD a fresh
+   is blobless (`--filter=blob:none`) with full history since 2026-11-10 (shallow, depth 1, before), so `git log`
+   works there; run git in it with `GIT_NO_LAZY_FETCH=1` and fetch any blobs you need in one batched call
+   (ttscardmaker-companion). Local checkouts also give every PSD a fresh
    mtime, which is why local-timestamp updates misfired and local mode was archived
    (autocroissant-run-and-operate §7).
 5. Deploy key: place the bot's SSH key pair in `.ssh/` if this machine will push by hand (the bot itself pushes
@@ -371,3 +372,5 @@ Actions); the Mac's cold-install numbers.
 2026-11-10 (housekeeping, owner): `~/.venvs/ac-py314-psd125` retired (conftest stops a run without the fork); pyoxipng
 left png_export and the fork venv (the oxipng CLI: brew on the Mac); the fork venv at the jetson's versions (pandas 3.1.1,
 python-dateutil 4.0.0, tzdata 2026.6, fonttools 4.68.0, uharfbuzz 0.57.0, Cython 3.3.1).
+
+2026-11-11 (docs check): no `EXCLUDE_FILES` (43 of 53 modules unlisted); the Mac's TTSCardMaker clone has full history since 2026-11-10.
