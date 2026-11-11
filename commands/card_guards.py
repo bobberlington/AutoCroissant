@@ -1132,7 +1132,12 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
         if measured.get("ok") is None:
             result.notes.append((f"{basename(job.png)} could not be checked against the PSD ({measured.get('why')})", False))
         if "render" in kept and job.case != "whole":
-            _went_back(source, job, result, png, kept["render"], out, shown, old, new, faces)
+            checked = dict(result.r10)
+            try:
+                _went_back(source, job, result, png, kept["render"], out, shown, old, new, faces)
+            except Exception:                   # best effort: R10 stands as checked
+                print(format_exc(), file=stderr)
+                result.r10 = checked
         if job.case == "pair" and old is not None and job.base_png and "back" not in result.r10:
             _skipped(source, job, result, png, old, new, out, shown, faces)
     if job.case == "pair" and old is not None and job.base_png:
@@ -1255,8 +1260,13 @@ def _went_back(source: Source, job: Job, result: Result, png, render, out: str, 
     if area is None:
         return
     px, name = int(area.sum()), basename(job.png)
-    older = next((sha for sha in source.older_pngs(job.png, job.before)
-                  if _shows_older(png, area, png_export.open_png(source.blob(sha)))), "")
+
+    def shows(sha: str) -> bool:
+        try:
+            return _shows_older(png, area, png_export.open_png(source.blob(sha)))
+        except Exception:                       # not fetched or not a PNG: skipped
+            return False
+    older = next((sha for sha in source.older_pngs(job.png, job.before) if shows(sha)), "")
     result.r10.update(ok=False, back={"px": px, "box": list(png_export._bbox(area)), "older": older})
     if not older:
         result.r10["line"] = f"{name} differs from the PSD where the PNG before it showed the PSD ({px:,} px): kept as pushed"
@@ -1294,10 +1304,10 @@ def _skipped(source: Source, job: Job, result: Result, png, old, new, out: str, 
     nowhere else (SKIP_REACH px past the export's change) and the export missing no bar (Export.misses), it is made
     again as the export, silent; else, or no export made, it stays as pushed (the comment says it).
     """
-    prev = png_export.open_png(source.blob(job.base_png))
-    if png.mode not in ("RGB", "RGBA") or prev.size != png.size:
-        return
     try:
+        prev = png_export.open_png(source.blob(job.base_png))
+        if png.mode not in ("RGB", "RGBA") or prev.size != png.size:
+            return
         found = png_export.export(old, new, prev, None, "", faces)
     except Exception:                           # best effort: R10 stands as checked
         print(format_exc(), file=stderr)

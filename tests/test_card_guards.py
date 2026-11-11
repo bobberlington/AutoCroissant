@@ -393,6 +393,27 @@ def test_a_png_that_skips_its_psds_change_is_made_again(cards, tmp_path, monkeyp
     assert not [w for w in entry["writes"] if w["kind"] == "png"] and entry["told"] == []
 
 
+def test_a_png_over_a_broken_one_is_checked(cards, tmp_path, monkeypatch):
+    """R10's reads of the PNG before are best effort: a good PNG pushed over a broken one (a git-lfs pointer), alone with
+    no stored image or with its PSD, passes, nothing told."""
+    root, base, alice, bot = cards
+    (root / FOLDER / "Bread.png").write_text("version https://git-lfs.github.com/spec/v1\n")
+    broken = _commit(root, "broken PNG", author="Alice")
+    (root / FOLDER / "Bread.png").write_bytes(photoshop_png(card(colour=(0, 255, 0))))
+    fix = _commit(root, "PNG fixed", author="Alice")
+    _psd(root, tmp_path / "psds", f"{FOLDER}/Bread.psd", card(colour=(0, 128, 128)))
+    (root / FOLDER / "Bread.png").write_bytes(photoshop_png(card(colour=(0, 128, 128))))
+    pair = _commit(root, "square recoloured", author="Alice")
+    for after, case, stored in ((fix, "png-only", False), (pair, "pair", True)):
+        if not stored:
+            monkeypatch.setattr(cg.png_export, "composite", lambda psd: None)
+        data = cg.check(str(root), after, broken, mode="on", out=str(tmp_path / case), workers=1)
+        monkeypatch.undo()
+        (entry,) = data["cards"]
+        assert entry["case"] == case and not entry["error"] and entry["r10"]["ok"]
+        assert entry["told"] == [] and data["discord"] == {}
+
+
 def test_a_burst_without_a_stored_image_is_made_against_the_anchor(cards, tmp_path, monkeypatch):
     """G2 has no G5 to refuse, so over push 1's PSD run 2 drew push 2's square alone and called the PNG current: push
     1's Base was left out (review of 2026-10-24, Niko). A G2 export takes the burst anchor: both changes drawn."""
