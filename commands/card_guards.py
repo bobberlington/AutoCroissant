@@ -1312,7 +1312,7 @@ def _skipped(source: Source, job: Job, result: Result, png, old, new, out: str, 
         prev = png_export.open_png(source.blob(job.base_png))
         if png.mode not in ("RGB", "RGBA") or prev.size != png.size:
             return
-        found = png_export.export(old, new, prev, None, "", faces)
+        found = png_export.export(old, new, prev, None, "", faces, data=False)   # encoded only when made again
     except Exception:                           # best effort: R10 stands as checked
         print(format_exc(), file=stderr)
         return
@@ -1338,7 +1338,8 @@ def _skipped(source: Source, job: Job, result: Result, png, old, new, out: str, 
                               f"bar itself: kept as pushed")
         return
     result.r10["line"] = f"{name} does not show the PSD's change ({px:,} px): made again"
-    _made_again(out, job, result, found.data, f"made again: it did not show the PSD's change ({px:,} px)"
+    _made_again(out, job, result, png_export.encode(found.image, prev),
+                f"made again: it did not show the PSD's change ({px:,} px)"
                 + "".join(f"; {note}" for note in png_export.miss_notes(found)), "skipped")
     _crops(out, job.png, png, found.image, found.box)
     shown[job.png] = found.image

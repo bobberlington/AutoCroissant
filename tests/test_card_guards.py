@@ -347,10 +347,12 @@ def test_a_png_that_skips_its_psds_change_is_made_again(cards, tmp_path, monkeyp
     """R10, a PSD pushed with a PNG that skips its change (11-10: under the parity floor, as Pizza's colour fix):
     Bread's square recoloured, its PNG pushed as the PNG before in another blob. Guard 1's export onto the PNG before
     lands, silent; the PNG that shows the change passes; one changed elsewhere too stays as pushed (a stored image: no
-    went-back), the comment saying it. Photoshop's PNG passes where the fork draws a corner otherwise; the PNG before
-    stays as pushed then (the export misses the stored image)."""
+    went-back), the comment saying it. The export's file is encoded only when made again. Photoshop's PNG passes where
+    the fork draws a corner otherwise; the PNG before stays as pushed then (the export misses the stored image)."""
     root, base, alice, bot = cards
     monkeypatch.setattr(cg.png_export, "composite", lambda psd: None)        # saved without Maximize Compatibility
+    encoded = []
+    monkeypatch.setattr(pe, "encode", lambda *a, _f=pe.encode: encoded.append(1) or _f(*a))
     teal = card(colour=(0, 128, 128))
     _psd(root, tmp_path / "psds", f"{FOLDER}/Bread.psd", teal)
     green = Image.open(root / FOLDER / "Bread.png")
@@ -362,7 +364,7 @@ def test_a_png_that_skips_its_psds_change_is_made_again(cards, tmp_path, monkeyp
     (write,) = [w for w in entry["writes"] if w["kind"] == "png"]
     assert entry["case"] == "pair" and write["skipped"] and entry["r10"]["skipped"]["px"] == 21 * 21
     assert entry["told"] == [] and data["discord"] == {} and "made again" in entry["r10"]["line"]
-    assert int(pe._diff(Image.open(out / write["file"]), teal).max()) == 0
+    assert int(pe._diff(Image.open(out / write["file"]), teal).max()) == 0 and len(encoded) == 1
     elsewhere = card(colour=(0, 255, 0))
     ImageDraw.Draw(elsewhere).rectangle((40, 60, 55, 85), fill=(0, 0, 0))
     for png, kept in ((teal, False), (elsewhere, True)):
@@ -373,6 +375,7 @@ def test_a_png_that_skips_its_psds_change_is_made_again(cards, tmp_path, monkeyp
         (entry,) = cg.check(str(root), after, bot, mode="on", out=str(tmp_path / f"o{kept}"), workers=1)["cards"]
         assert not [w for w in entry["writes"] if w["kind"] == "png"] and entry["told"] == []
         assert ("skipped" in entry["r10"]) is kept and ("kept as pushed" in entry["r10"]["line"]) is kept
+        assert kept or len(encoded) == 1                                     # shows the change: no file encoded
     shop, real = teal.copy(), pe.composite      # Photoshop drew an 8x8 corner of the square apart from the fork
     shop.paste((0, 255, 0), (23, 23, 31, 31))
 

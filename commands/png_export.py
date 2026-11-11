@@ -668,7 +668,7 @@ def _composite_moved(old: PSDImage, new: PSDImage, before: Optional[Image.Image]
 # Public API Functions
 # ========================
 def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbered: Optional[dict] = None,
-           main: str = "", fonts: Optional[Callable] = None, kept=()) -> Export:
+           main: str = "", fonts: Optional[Callable] = None, kept=(), data: bool = True) -> Export:
     """
     _export, and on a PSD with variant tags (PARTS_EDITOR.md §7) each tagged picture's own PNG made as the bake makes
     it (render_picture: drawn as that picture, the bake's gates; the stored image shows the saved picture only; a
@@ -677,6 +677,7 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
     G8's delta transfer. Export.numbered: path -> (bytes, "") written, (None, "") unchanged, (b"", why) refused.
     fonts: gives MDW/Fonts for faces (card_guards.Source.fonts_for): _restyled lays out the restyled text in them.
     kept: picture PNG paths a push brought (kept as pushed): no PNG made for their tags.
+    data: False leaves Export.data empty (the caller encodes the image only when it keeps it).
     """
     tags = set(psd_edit.variants_of(new))
     tagged = picture_numbers(new, [*(numbered or {}), *kept])   # a drawn duplicate's own name too (owner 11-09)
@@ -689,6 +690,8 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
         found = _as_picture(old, new, old_png, rest, 1, fonts)
     else:
         found = _export(old, new, old_png, rest, fonts)
+    if data and found.outcome == "re-exported":
+        found.data = encode(found.image, old_png)
     for path, n in sorted(tagged.items()):
         found.numbered[path] = render_picture(old, new, numbered[path], n, fonts)
     if main and len(tags) > 1:
@@ -713,7 +716,7 @@ def render_picture(old: Optional[PSDImage], new: PSDImage, png: Image.Image, n: 
         (bytes, "") made, (None, "") unchanged, (b"", why) refused"""
     found = _as_picture(old, new, png, None, n, fonts)
     if found.outcome == "re-exported":
-        return found.data, ""
+        return encode(found.image, png), ""
     return (None, "") if found.outcome == "current" else (b"", found.why)
 
 
@@ -847,7 +850,7 @@ def _export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, number
         if not _drawn(result, "cross"):
             why = G6 if result.writer == "photoshop" else G6_STALE
             return _refuse(result, why.format(bad=result.numbers["cross"]["bad_pct"]), "G6")
-    result.outcome, result.image, result.data = "re-exported", merged, encode(merged, old_png)
+    result.outcome, result.image = "re-exported", merged
     # G8: numbered duplicates take F's pixels when F stays clear of their toggled titles
     for path, image in sorted((numbered or {}).items()):
         result.numbered[path] = delta_transfer(old_png, merged, image, moved, path)
@@ -882,7 +885,7 @@ def _beside(new: PSDImage, old_png: Image.Image, composed: Image.Image, result: 
         return _refuse(result, G6.format(bad=result.numbers["cross"]["bad_pct"]), "G6")
     if not _boxes_drawn(result, new, merged, render, truth, icc):
         return result
-    result.outcome, result.image, result.data = "re-exported", merged, encode(merged, old_png)
+    result.outcome, result.image = "re-exported", merged
     for path, image in sorted((numbered or {}).items()):
         result.numbered[path] = delta_transfer(old_png, merged, image, moved, path)
     return result
@@ -1052,7 +1055,7 @@ def _unchecked(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, num
         psd_edit.gate_region(old_png, merged, region)
     except Refused:
         return _refuse(result, G7, "G7")
-    result.outcome, result.image, result.data = "re-exported", merged, encode(merged, old_png)
+    result.outcome, result.image = "re-exported", merged
     for path, image in sorted((numbered or {}).items()):
         result.numbered[path] = delta_transfer(old_png, merged, image, moved, path)
     return result
@@ -1130,7 +1133,7 @@ def _beside_unchecked(new: PSDImage, old_png: Image.Image, result: Export, numbe
     result.changed_px, result.box = int(moved.sum()), _bbox(moved)
     if not _texts_drawn(result, new, render, icc):
         return result
-    result.outcome, result.image, result.data = "re-exported", merged, encode(merged, old_png)
+    result.outcome, result.image = "re-exported", merged
     for path, image in sorted((numbered or {}).items()):
         result.numbered[path] = delta_transfer(old_png, merged, image, moved, path)
     return result
