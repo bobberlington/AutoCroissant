@@ -1290,8 +1290,9 @@ def _skipped(source: Source, job: Job, result: Result, png, old, new, out: str, 
     """
     R10, a PSD pushed with a PNG that skips its change (11-10, stored image or not): guard 1's export of the PSD's
     change onto the PNG before shows where the change moves it (png_changes' rule); a pushed PNG that did not change
-    there and is past the bar of the export there skipped it. Changed nowhere else (SKIP_REACH px past the export's
-    change), it is made again as the export, silent; else, or no export made, it stays as pushed (the comment says it).
+    there and is past the bar of the export there (and of the PSD's stored image, when it has one) skipped it. Changed
+    nowhere else (SKIP_REACH px past the export's change) and the export missing no bar (Export.misses), it is made
+    again as the export, silent; else, or no export made, it stays as pushed (the comment says it).
     """
     prev = png_export.open_png(source.blob(job.base_png))
     if png.mode not in ("RGB", "RGBA") or prev.size != png.size:
@@ -1308,10 +1309,19 @@ def _skipped(source: Source, job: Job, result: Result, png, old, new, out: str, 
     area = changed_area(made, before) & ~changed
     if not area.any() or psd_edit._within_bar(png_export._stats(png_export._diff(png, found.image)[area])):
         return
+    truth = png_export.composite(new)           # Photoshop's image: never skipped on the fork's word alone
+    if truth is not None:
+        truth = png_export.like_mode(png_export.convert(new, truth, psd_edit.export_icc(new, png)), png.mode)
+        if truth.size != png.size or psd_edit._within_bar(png_export._stats(png_export._diff(png, truth)[area])):
+            return
     px, name = int(area.sum()), basename(job.png)
     result.r10.update(ok=False, skipped={"px": px, "box": list(png_export._bbox(area))})
     if (changed & ~png_export.dilate(png_export._diff(found.image, prev) > png_export.TOL, SKIP_REACH)).any():
         result.r10["line"] = f"{name} does not show the PSD's change ({px:,} px) and changed elsewhere: kept as pushed"
+        return
+    if found.misses:                            # the export itself missed the bar
+        result.r10["line"] = (f"{name} differs from the bot's drawing of the PSD's change ({px:,} px), which misses the "
+                              f"bar itself: kept as pushed")
         return
     result.r10["line"] = f"{name} does not show the PSD's change ({px:,} px): made again"
     _made_again(out, job, result, found.data, f"made again: it did not show the PSD's change ({px:,} px)"

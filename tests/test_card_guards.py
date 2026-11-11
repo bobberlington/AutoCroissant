@@ -347,7 +347,8 @@ def test_a_png_that_skips_its_psds_change_is_made_again(cards, tmp_path, monkeyp
     """R10, a PSD pushed with a PNG that skips its change (11-10: under the parity floor, as Pizza's colour fix):
     Bread's square recoloured, its PNG pushed as the PNG before in another blob. Guard 1's export onto the PNG before
     lands, silent; the PNG that shows the change passes; one changed elsewhere too stays as pushed (a stored image: no
-    went-back), the comment saying it."""
+    went-back), the comment saying it. Photoshop's PNG passes where the fork draws a corner otherwise; the PNG before
+    stays as pushed then (the export misses the stored image)."""
     root, base, alice, bot = cards
     monkeypatch.setattr(cg.png_export, "composite", lambda psd: None)        # saved without Maximize Compatibility
     teal = card(colour=(0, 128, 128))
@@ -372,6 +373,24 @@ def test_a_png_that_skips_its_psds_change_is_made_again(cards, tmp_path, monkeyp
         (entry,) = cg.check(str(root), after, bot, mode="on", out=str(tmp_path / f"o{kept}"), workers=1)["cards"]
         assert not [w for w in entry["writes"] if w["kind"] == "png"] and entry["told"] == []
         assert ("skipped" in entry["r10"]) is kept and ("kept as pushed" in entry["r10"]["line"]) is kept
+    shop, real = teal.copy(), pe.composite      # Photoshop drew an 8x8 corner of the square apart from the fork
+    shop.paste((0, 255, 0), (23, 23, 31, 31))
+
+    def composite(psd):
+        image = real(psd)
+        new = image is not None and image.convert("RGB").getpixel((15, 15)) == (0, 128, 128)
+        return shop.convert(image.mode) if new else image
+    monkeypatch.setattr(cg.png_export, "composite", composite)
+    (root / FOLDER / "Bread.png").write_bytes(photoshop_png(shop))
+    after = _commit(root, "Photoshop's PNG", author="Alice")
+    (entry,) = cg.check(str(root), after, bot, mode="on", out=str(tmp_path / "shop"), workers=1)["cards"]
+    assert entry["r10"]["ok"] and "skipped" not in entry["r10"]
+    assert not [w for w in entry["writes"] if w["kind"] == "png"] and entry["told"] == []
+    green.save(root / FOLDER / "Bread.png", compress_level=1)   # skipped, but the export misses Photoshop's: kept
+    after = _commit(root, "PNG before again", author="Alice")
+    (entry,) = cg.check(str(root), after, bot, mode="on", out=str(tmp_path / "miss"), workers=1)["cards"]
+    assert "skipped" in entry["r10"] and "misses the bar itself: kept as pushed" in entry["r10"]["line"]
+    assert not [w for w in entry["writes"] if w["kind"] == "png"] and entry["told"] == []
 
 
 def test_a_burst_without_a_stored_image_is_made_against_the_anchor(cards, tmp_path, monkeypatch):
