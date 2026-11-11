@@ -109,8 +109,8 @@ since 2026-10-20.
   than 5% more of its ink hidden than now): Massive Moss Charger's fifth, under the moss, is refused; Acrophobia's
   fifth goes beside the second row, not onto the cliff. Since 2026-10-26 (the star cases): a hide may not bare a kept
   star's shadow strip (`_bares`: Leshy's 4 and 1); a moved or new star keeps 90% of its core under a texture clipped
-  onto its group (`_textures`), but since 2026-11-09 a plain pixel texture or Normal smart object over every star
-  follows them instead (`_followed`, `_texture_copies`): Yin Yarn's yarn copied over each new or moved star it leaves;
+  onto its group (`_textures`), but since 2026-11-09 a plain pixel texture or smart object (any blend: Paint
+  Warrior's Multiply, 11-11) over every star follows them instead (`_followed`, `_texture_copies`): Yin Yarn's yarn copied over each new or moved star it leaves;
   Paint Bomb's and Paint Warrior's paint drawn on each new or moved star as on the original beside it (the group opaque
   under it, the smart object copied, moved and masked to the star: `_paint_cover`); a backdrop is a banner only when
   plain round the stars (`_plain_banner`: Bolts and Screws' gear is art, its column bakes); a row on its banner is
