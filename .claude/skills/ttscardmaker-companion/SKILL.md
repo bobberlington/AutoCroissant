@@ -902,7 +902,7 @@ bot ran the updater itself after `/update_stats`; this Action replaced that.
   3888392 and 39da9ed). Drift fails on any change to an existing card's Description, GMNotes, Memo, Tags or scripts and
   on the global Lua outside resizeTargets. Any Python with `requests` and `Pillow`; the
   Lua checks need `lupa`. The names checks follow the live website, so between a data commit and the next run they fail
-  (`contents_names`, `final_spot`, `updater_idempotent`; 24 of 24 at c6b1e144, 2026-11-01).
+  (`contents_names`, `updater_idempotent`; 24 of 24 at c6b1e144, 2026-11-01).
   `AUTOCROISSANT` defaults to `~/Desktop/AutoCroissant`; `updater_report_decks.py` needs that checkout to have the
   updater as on main since 2026-10-22 (pull first, or point `AUTOCROISSANT` at a clone that has it).
 
