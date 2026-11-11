@@ -2194,7 +2194,7 @@ def _font_blob(source: Source, sha: str, own: bool = True) -> bytes:
 
 def _alike(older: dict, newer: dict, names: dict) -> bool:
     """Whether newer has every glyph of older that names (the current font's) has, laid out and drawn alike."""
-    return all(newer.get(name) == advance for name, advance in older.items() if name in names)
+    return all(newer.get(name) == glyph for name, glyph in older.items() if name in names)
 
 
 def earlier_fonts(source: Source, commit: str, tree: dict, folder: str) -> list:
