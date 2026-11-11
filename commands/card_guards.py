@@ -1305,8 +1305,9 @@ def _skipped(source: Source, job: Job, result: Result, png, old, new, out: str, 
     R10, a PSD pushed with a PNG that skips its change (11-10, stored image or not): guard 1's export of the PSD's
     change onto the PNG before shows where the change moves it (png_changes' rule); a pushed PNG that did not change
     there and is past the bar of the export there (and of the PSD's stored image, when it has one) skipped it. Changed
-    nowhere else (SKIP_REACH px past the export's change) and the export missing no bar (Export.misses), it is made
-    again as the export, silent; else, or no export made, it stays as pushed (the comment says it).
+    nowhere else (SKIP_REACH px past the export's change), the export missing no bar (Export.misses) and the PNG's own
+    change not past PARITY_FLOOR of the export (11-11, Tomato: a PNG showing another picture there), it is made again
+    as the export, silent; else, or no export made, it stays as pushed (the comment says it).
     """
     try:
         prev = png_export.open_png(source.blob(job.base_png))
@@ -1321,7 +1322,10 @@ def _skipped(source: Source, job: Job, result: Result, png, old, new, out: str, 
     made, pushed, before = _rgba(found.image), _rgba(png), _rgba(prev)
     changed = changed_area(pushed, before)
     area = changed_area(made, before) & ~changed
-    if not area.any() or psd_edit._within_bar(png_export._stats(png_export._diff(png, found.image)[area])):
+    if not area.any():
+        return
+    diff = png_export._diff(png, found.image)
+    if psd_edit._within_bar(png_export._stats(diff[area])):
         return
     truth = png_export.composite(new)           # Photoshop's image: never skipped on the fork's word alone
     if truth is not None:
@@ -1336,6 +1340,9 @@ def _skipped(source: Source, job: Job, result: Result, png, old, new, out: str, 
     if found.misses:                            # the export itself missed the bar
         result.r10["line"] = (f"{name} differs from the bot's drawing of the PSD's change ({px:,} px), which misses the "
                               f"bar itself: kept as pushed")
+        return
+    if psd_edit._past_floor(png_export._stats(diff[changed])):     # the PNG's own change contradicts the PSD
+        result.r10["line"] = f"{name}'s own change does not match the PSD ({int(changed.sum()):,} px): kept as pushed"
         return
     result.r10["line"] = f"{name} does not show the PSD's change ({px:,} px): made again"
     _made_again(out, job, result, png_export.encode(found.image, prev),

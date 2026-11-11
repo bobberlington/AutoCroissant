@@ -396,6 +396,24 @@ def test_a_png_that_skips_its_psds_change_is_made_again(cards, tmp_path, monkeyp
     assert not [w for w in entry["writes"] if w["kind"] == "png"] and entry["told"] == []
 
 
+def test_a_png_whose_own_change_contradicts_its_psd_is_kept(cards, tmp_path, monkeypatch):
+    """R10's skip (11-11, Tomato: the PSD showed an old layer over the new art its PNG showed): Bread's square recoloured,
+    its PNG pushed with half the square painted black instead. Past PARITY_FLOOR of the export inside the PNG's own
+    change: kept as pushed, the comment saying it, nothing told."""
+    root, base, alice, bot = cards
+    monkeypatch.setattr(cg.png_export, "composite", lambda psd: None)
+    _psd(root, tmp_path / "psds", f"{FOLDER}/Bread.psd", card(colour=(0, 128, 128)))
+    painted = card(colour=(0, 255, 0))
+    painted.paste((0, 0, 0), (10, 10, 20, 31))
+    _png(root, f"{FOLDER}/Bread.png", painted)
+    after = _commit(root, "square recoloured, PNG painted", author="Alice")
+    data = cg.check(str(root), after, bot, mode="on", out=str(tmp_path / "out"), workers=1)
+    (entry,) = data["cards"]
+    assert entry["case"] == "pair" and "skipped" in entry["r10"]
+    assert entry["r10"]["line"] == "Bread.png's own change does not match the PSD (210 px): kept as pushed"
+    assert not [w for w in entry["writes"] if w["kind"] == "png"] and entry["told"] == [] and data["discord"] == {}
+
+
 def test_a_png_over_a_broken_one_is_checked(cards, tmp_path, monkeypatch):
     """R10's reads of the PNG before are best effort: a good PNG pushed over a broken one (a git-lfs pointer), alone with
     no stored image or with its PSD, passes, nothing told."""
