@@ -34,7 +34,6 @@ ABIGAIL = "Auxiliary/Minions/Abigail.psd"               # a row of two icons run
 NASUS = "Creatures/Other/4 Stars/Nasus.psd"             # Fire, Light and a wide Undead (the row closes up)
 
 
-
 # ========================
 # Fixture cards
 # ========================

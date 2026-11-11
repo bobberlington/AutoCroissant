@@ -107,8 +107,6 @@ def _record(name, flags=b"\x08", channels=((-1, 10), (0, 10), (1, 10), (2, 10)),
             "blocks": tuple(blocks)}
 
 
-
-
 # ========================
 # Fixtures
 # ========================

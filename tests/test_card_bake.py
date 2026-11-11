@@ -793,8 +793,6 @@ def test_a_bake_opens_each_psd_once(github, clone, monkeypatch):
     assert set(copies) == {sha1(files[DOOMER]).hexdigest()}, text
 
 
-
-
 def test_a_card_refused_after_its_stars_names_both_refusals(github, monkeypatch):
     """Stars refused, then the card's last field (types, then hp) too: the card's verdict names both, the stars once."""
     def outside(before, psd, edit):
