@@ -502,7 +502,7 @@ def _workflow(reads: bool = True, clone: bool = False) -> tuple:
 def test_workflow_shape():
     """Dispatch only, three required inputs, the request in the run name and the concurrency group. Two jobs: the
     preview (the workflow's contents: read; its bot checkout card_preview.SPARSE_FILES; the card workflows' install of
-    requirements-cards.txt, but not pyoxipng, and its cache entry) hands its out dir to the publish job (contents: write,
+    requirements-cards.txt and its cache entry, no oxipng) hands its out dir to the publish job (contents: write,
     actions: read; card_preview_branch.SPARSE_FILES; Python 3.14 without site-packages, no pip; no --png), which starts
     beside it and waits for the hand-over (Take over and Publish only then), 15 minutes at most;
     no secret but GITHUB_TOKEN (the preview's REST reads), no Discord, and no input expanded inside a shell script

@@ -914,7 +914,7 @@ def _pngs(job: Job) -> list:
 @contextmanager
 def _overlap(source: Source, jobs) -> Iterator[None]:
     """The jobs' pushed PNGs recompressed in one process of their own (_pngs), started now: oxipng runs beside the rest
-    of the check (a thread gains nothing: pyoxipng holds the GIL). The same writes in the same order; a start that fails
+    of the check. The same writes in the same order; a start that fails
     leaves them inline."""
     shas, pool = list(dict.fromkeys(sha for job in jobs for sha in _pngs(job))), None
     try:

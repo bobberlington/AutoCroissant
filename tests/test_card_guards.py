@@ -1023,7 +1023,7 @@ def test_land_local_commits_in_the_clone(cards, tmp_path):
 # Lossless recompression (owner, 2026-10-23)
 # ========================
 @pytest.mark.oxipng
-@pytest.mark.skipif(pe.tool() is None, reason="needs the oxipng CLI (as card-guards.yml installs) or pyoxipng")
+@pytest.mark.skipif(pe.tool() is None, reason="needs the oxipng CLI (as card-guards.yml installs)")
 def test_pushed_pngs_are_recompressed_in_the_bot_commit(cards, tmp_path):
     """A PNG the push brought (a pair's; a numbered one pushed alone) that a lossless recompression makes more than 10%
     smaller is rewritten in the one bot commit, the same image, never told on Discord; an already small one is left;
@@ -1063,7 +1063,7 @@ def test_pushed_pngs_are_recompressed_in_the_bot_commit(cards, tmp_path):
 
 
 @pytest.mark.oxipng
-@pytest.mark.skipif(pe.tool() is None, reason="needs the oxipng CLI (as card-guards.yml installs) or pyoxipng")
+@pytest.mark.skipif(pe.tool() is None, reason="needs the oxipng CLI (as card-guards.yml installs)")
 def test_recompressions_beside_the_check_write_the_same(cards, tmp_path, monkeypatch):
     """The pushed PNGs recompressed in a process of their own (_overlap) beside the rest of the check: the same writes,
     in the same order, as one by one (workers=1)."""
@@ -1248,7 +1248,7 @@ def test_a_persons_drawn_duplicate_is_kept_as_pushed(cards, clone, tmp_path):
 # ========================
 def test_replay_of_the_stale_png_push(clone, tmp_path):
     if pe.tool() is None:
-        pytest.skip("the 16 recompressions need the oxipng CLI (as the Action installs) or pyoxipng")
+        pytest.skip("the 16 recompressions need the oxipng CLI (as the Action installs)")
     source = cg.Source(str(clone))
     if not (source.commit("38c55bd3") and source.commit("07589cc7")):
         pytest.skip("the clone lacks the push")

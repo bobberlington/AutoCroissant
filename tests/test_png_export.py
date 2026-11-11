@@ -458,7 +458,7 @@ def test_png_check(tmp_path):
 # ========================
 # Lossless recompression (owner, 2026-10-23)
 # ========================
-oxipng = pytest.mark.skipif(pe.tool() is None, reason="needs the oxipng CLI (as the card Actions install) or pyoxipng")
+oxipng = pytest.mark.skipif(pe.tool() is None, reason="needs the oxipng CLI (as the card Actions install)")
 
 
 @pytest.mark.oxipng
@@ -516,8 +516,7 @@ def test_recompress_leaves_16_bit_and_runs_without_oxipng(monkeypatch):
     buf = io.BytesIO()
     Image.fromarray(np.arange(64 * 64, dtype=np.uint16).reshape(64, 64) * 16).save(buf, "PNG", compress_level=0)
     assert buf.getvalue()[24] == 16 and pe.recompress(buf.getvalue()) is None    # same_png reads 8 bits: not tried
-    monkeypatch.setattr(pe, "_oxipng", lambda: None)
-    monkeypatch.setattr(pe, "which", lambda name: None)                   # no CLI either
+    monkeypatch.setattr(pe, "which", lambda name: None)                   # no CLI
     data = photoshop_png(art())
     assert pe.recompress(data) is None
     image, like = art(), pe.open_png(data)

@@ -44,7 +44,6 @@ from re import search
 from shutil import which
 from struct import unpack
 from subprocess import DEVNULL, SubprocessError, run as run_process
-from sys import stderr
 from tempfile import TemporaryDirectory
 from time import process_time
 from typing import Callable, Optional
@@ -91,7 +90,7 @@ RECOMPRESS_MIN = 0.10                           # a pushed PNG is recompressed w
 RECOMPRESS_BYTES = 65536                        # and at least this many bytes smaller: a tiny saving is not worth a commit
 OXIPNG_LEVEL = 2                                # oxipng's default preset (4.8x on Photoshop's exports; level 4 adds 1%)
 OXIPNG_TIMEOUT = 120                            # seconds per PNG: oxipng keeps its best so far
-OXIPNG = "oxipng"                               # the CLI (10.2.1 in the Actions: cards-python); pyoxipng where it is missing
+OXIPNG = "oxipng"                               # the CLI (10.2.1: the Actions' cards-python, brew on the Mac)
 TEXT_CHUNKS = (b"iTXt", b"tEXt", b"zTXt")       # stripped: Photoshop's XMP (owner 2026-10-24); colour chunks kept
 OXIPNG_FLAGS = ("-q", "--force", "-o", str(OXIPNG_LEVEL), "--nb", "--np", "--ng", "--timeout", str(OXIPNG_TIMEOUT))
 SIGNATURE = b"\x89PNG\r\n\x1a\n"
@@ -298,18 +297,6 @@ def encode(image: Image.Image, like: Optional[Image.Image]) -> bytes:
 # ========================
 # Lossless recompression (owner, 2026-10-23)
 # ========================
-def _oxipng():
-    """pyoxipng, or None (imported here: only where the CLI is missing)."""
-    try:
-        import oxipng
-    except ImportError:
-        return None
-    return oxipng
-
-
-_warned: list = []
-
-
 def _strip(data: bytes) -> list:
     """The chunks stripped: TEXT_CHUNKS, and sRGB when the file has none (oxipng would turn an sRGB iCCP into one)."""
     try:
@@ -337,30 +324,9 @@ def _cli(data: bytes, keep_colour: bool) -> Optional[bytes]:
             return None
 
 
-def _py(data: bytes, keep_colour: bool) -> Optional[bytes]:
-    """pyoxipng's file with the CLI's options (the Mac without the CLI), None when it fails or is missing."""
-    oxipng = _oxipng()
-    if oxipng is None:
-        return None
-    if not _warned:
-        _warned.append(1)
-        print("png_export: no oxipng CLI on PATH, pyoxipng used (brew install oxipng)", file=stderr)
-    try:
-        return oxipng.optimize_from_memory(data, level=OXIPNG_LEVEL, bit_depth_reduction=False,
-                                           color_type_reduction=not keep_colour, palette_reduction=False,
-                                           grayscale_reduction=False, strip=oxipng.StripChunks.strip(_strip(data)),
-                                           timeout=OXIPNG_TIMEOUT)
-    except Exception:                           # PngError, or anything else oxipng raises: no recompression
-        return None
-    except BaseException as error:              # a Rust panic: pyo3's PanicException is no Exception
-        if type(error).__name__ == "PanicException":
-            return None
-        raise
-
-
 def tool() -> Optional[str]:
-    """What optimize runs: "cli", "pyoxipng" or None."""
-    return "cli" if which(OXIPNG) else "pyoxipng" if _oxipng() is not None else None
+    """What optimize runs: "cli", or None without the oxipng CLI."""
+    return "cli" if which(OXIPNG) else None
 
 
 def _chunks(data: bytes) -> list:
@@ -436,7 +402,7 @@ def same_png(a: bytes, b: bytes) -> bool:
 
 def optimize(data: bytes) -> Optional[bytes]:
     """
-    oxipng's lossless recompression of an 8-bit PNG (the CLI, else pyoxipng): text chunks stripped, the bit depth kept,
+    oxipng's lossless recompression of an 8-bit PNG (the CLI): text chunks stripped, the bit depth kept,
     an opaque RGBA made RGB (any other colour type change: the file with the colour type kept). Unchecked: recompress
     checks it.
 
@@ -445,11 +411,12 @@ def optimize(data: bytes) -> Optional[bytes]:
     """
     if not data.startswith(SIGNATURE) or data[12:16] != b"IHDR" or len(data) < 33 or data[24] != 8:
         return None                             # 16-bit: PIL reads 8 bits of it, so same_png could not tell (cards: 8)
-    run = _cli if which(OXIPNG) else _py
-    out = run(data, False)
+    if not which(OXIPNG):
+        return None
+    out = _cli(data, False)
     if out is not None and len(out) >= 33 and out[24] == 8 and (out[25] in (2, 6) or out[25] == data[25]):
         return out
-    return run(data, True)
+    return _cli(data, True)
 
 
 def worth(before: int, after: int, minimum: float = RECOMPRESS_MIN, floor: int = RECOMPRESS_BYTES) -> bool:
