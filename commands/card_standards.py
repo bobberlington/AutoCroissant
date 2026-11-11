@@ -2054,8 +2054,6 @@ def _glyph_fit(layer, base, places) -> tuple:
     Returns:
         (the shared width, {(face key, gid): ratio}), or (1.0, {})
     """
-    import numpy as np
-    from collections import Counter
     from math import hypot
     from psd_tools.composite.text.layout import layout
     from psd_tools.composite.text.model import TextModel
