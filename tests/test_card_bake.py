@@ -1199,3 +1199,26 @@ def test_a_rename_bake_moves_the_files_and_everything_keyed_by_them(github, loca
     assert verdict["renamed"] == "Mini Destroyer" and verdict["psd"] == tree[f"{new}.psd"][:8] and _verdict("Mini Doomer") is None
     index = GitIndex.from_git(str(local.clone), b)
     assert index.renamed_from[f"{new}.psd"] == DOOMER and index.origin(f"{new}.png") == png
+
+
+def test_a_batch_rename_takes_a_tagged_picture_along():
+    """follow_renames (a batch's or the guards' rename, owner 11-11) of a card with a tagged second picture
+    (All_Purpose_Medical_Kit2.png): both entries, authors lines, dates, ratings and decks paths take the new names, the
+    old name the card's alias only, and the picture's dup_of follows its card."""
+    old, new, kit = "Items/All_Purpose_Medical_Kit", "Items/All-Purpose_Medical_Kit", "All Purpose Medical Kit"
+    relocated = {f"{old}{n}.{ext}": f"{new}{n}.{ext}" for n, ext in (("", "psd"), ("", "png"), ("2", "png"))}
+    rating = [{"date": "2023-04-28", "scale": "power", "value": 5, "by": "group", "source": "TTS session"}]
+    texts = {cb.EDITS_PATH: _edits({kit: {"series": "S", "_by": "web", "_at": AT},
+                                    kit + "2": {"dup_of": kit, "_by": "web", "_at": AT}}).decode(),
+             cb.AUTHORS_PATH: f"[cards]\n{kit} = Chestnut\n{kit}2 = Chestnut\n",
+             cb.CREATED_PATH: _edits({kit: {"date": "2020-07-22", "from": "discord"}}).decode(),
+             cb.RATINGS_PATH: _edits({kit + "2": rating}).decode(),
+             cb.RULES_PATH: json.dumps({"decks": {"d": {"card_list": [f"{old}.png", f"{old}2.png"]}}})}
+    sides = cb.follow_renames(texts, relocated)
+    assert json.loads(sides[cb.EDITS_PATH])["cards"] == {
+        "All-Purpose Medical Kit": {"series": "S", "aliases": [kit], "_bot": ["aliases"], "_by": "web", "_at": AT},
+        "All-Purpose Medical Kit2": {"dup_of": "All-Purpose Medical Kit", "_by": "web", "_at": AT}}
+    assert sides[cb.AUTHORS_PATH] == "[cards]\nAll-Purpose Medical Kit = Chestnut\nAll-Purpose Medical Kit2 = Chestnut\n"
+    assert list(json.loads(sides[cb.CREATED_PATH])["cards"]) == ["All-Purpose Medical Kit"]
+    assert json.loads(sides[cb.RATINGS_PATH])["cards"] == {"All-Purpose Medical Kit2": rating}
+    assert json.loads(sides[cb.RULES_PATH])["decks"]["d"]["card_list"] == [f"{new}.png", f"{new}2.png"]

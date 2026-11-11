@@ -802,7 +802,7 @@ def rename_entries(text: str, own: set, pairs: list) -> Optional[str]:
     """
     Card Edits.json with renamed cards' entries (and their pictures') under the new names: a card's own (own: its
     CardAuthors.key) without `_rename`, the old name an alias unless only its letter case changed (so /query and the
-    site's search still find it; the bot's field under another's _by: _bot).
+    site's search still find it; the bot's field under another's _by: _bot); a dup_of naming one takes its new name.
 
     Returns:
         The new text, or None when unchanged
@@ -833,6 +833,11 @@ def rename_entries(text: str, own: set, pairs: list) -> Optional[str]:
         entry = rewrite_entry(entry)
         if entry is not None:
             cards[new] = entry
+    follow = {CardAuthors.key(old): new for old, new in pairs}
+    for k, entry in cards.items():              # a dup_of naming a renamed card follows it
+        target = entry.get("dup_of") if isinstance(entry, dict) else None
+        if isinstance(target, str) and follow.get(CardAuthors.key(target), target) != target:
+            cards[k] = {**entry, "dup_of": follow[CardAuthors.key(target)]}
     out = dump_edits(data)
     return out if out != before else None
 
