@@ -98,6 +98,24 @@ def variants_of(psd) -> list:
     return sorted(found)
 
 
+def hidden_tags(psd) -> dict:
+    """{n: [(layer, group)]}: a node tagged n that picture n can't show, an untagged hidden group above it (Gust of
+    Wind 11-11: 'Gust of wind #1' in a hidden 'Gust of Wind'). No PNG of picture n is drawn."""
+    out: dict = {}
+    for layer in psd.descendants():
+        for n in sorted(layer_tag(layer.name)[1] or ()):
+            group = layer.parent
+            while group is not None and getattr(group, "kind", "psdimage") != "psdimage":
+                tags = layer_tag(group.name)[1]
+                if tags is None and not group.visible:
+                    out.setdefault(n, []).append((layer, group))
+                    break
+                if tags is not None and n not in tags:
+                    break
+                group = group.parent
+    return out
+
+
 @contextmanager
 def variant_view(psd, n: Optional[int]):
     """Within: every tagged node's eye says whether it shows in variant n (is_visible() is shown_in(., n)); restored
@@ -1700,7 +1718,9 @@ class CardValidator:
 def picture_numbers(psd: PSDImage, paths) -> dict:
     """
     {PNG path: n}: the tagged PSD's picture each PNG is (§9). NameN.png: N. A picture-only duplicate (Gust_of_Trees.png,
-    owner 11-09): the tag no NameN.png has whose printed title is its card name, one to one. {} untagged.
+    owner 11-09): the tag no NameN.png has whose printed title is its card name, one to one; a picture whose title is
+    no text layer (a smart object: Gust of Wind 11-11), by a layer tagged it alone named after the card ('Gust of Trees
+    #2'), one to one. {} untagged.
     """
     tags = variants_of(psd)
     if len(tags) < 2:
@@ -1728,6 +1748,16 @@ def picture_numbers(psd: PSDImage, paths) -> dict:
         matched = [path for path, key in keys.items() if key == titles[n]]
         if len(matched) == 1:
             out[matched[0]] = n
+    named = {}                                  # no title text: the layers tagged n alone, by name
+    for n in free:
+        if not titles[n] and n not in out.values():
+            found = {name_key(layer_tag(layer.name)[0]) for layer in psd.descendants()
+                     if layer_tag(layer.name)[1] == frozenset((n,))}
+            named[n] = [path for path, key in keys.items() if path not in out and key in found]
+    picks = [paths[0] for paths in named.values() if len(paths) == 1]
+    for n, paths in named.items():
+        if len(paths) == 1 and picks.count(paths[0]) == 1:
+            out[paths[0]] = n
     return out
 
 
@@ -1750,6 +1780,7 @@ __all__ = [
     'StatTrackers',
     'TAG',
     'base_name',
+    'hidden_tags',
     'layer_tag',
     'named_after_text',
     'picture_numbers',

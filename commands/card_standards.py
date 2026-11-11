@@ -71,8 +71,8 @@ from commands.card_edits import CardAuthors
 from commands.card_models import APOSTROPHE, straight
 from commands.font_check import _get, _value, layer_fonts
 from commands.psd_edit import BADGE_KEYS, BADGE_TAGS, ICON_FONT, Refused, badge_spans, badge_tags
-from commands.psd_parser import (EFFECT_LAYER_TAG, ICON_FONT_PREFIX, TAG, CardValidator, PSDParser, base_name, layer_tag,
-                                 picture_numbers, shown_in, star_icon_name, variant_view, variants_of)
+from commands.psd_parser import (EFFECT_LAYER_TAG, ICON_FONT_PREFIX, TAG, CardValidator, PSDParser, base_name, hidden_tags,
+                                 layer_tag, picture_numbers, shown_in, star_icon_name, variant_view, variants_of)
 from commands.psd_regions import (STATS as STAT_PATTERNS, bar_box, clip, comp_bars, comp_stat, comp_value, overlay_words,
                                   stat_rows, union_box)
 
@@ -595,7 +595,8 @@ def rename_titles(path: str, out_path: str, card: str) -> list:
 def rule_variants(psd: PSDImage, rel: str, pngs: Optional[frozenset]) -> list:
     """
     R12, variant tags (' #2', ' #2,3': PARTS_EDITOR.md §9): a #0, an FX layer's (ignored), a tag past the pictures, a
-    picture without its PNG, a saved eye that is not variant 1's. pngs None: the PNG checks are skipped.
+    picture without its PNG, a saved eye that is not variant 1's, a tagged layer an untagged hidden group hides in its
+    own picture (psd_parser.hidden_tags: that PNG is never drawn). pngs None: the PNG checks are skipped.
     """
     out = []
     fx = _unique(layer.name for layer in psd.descendants() if EFFECT_LAYER_TAG in layer.name and TAG.match(layer.name))
@@ -611,6 +612,14 @@ def rule_variants(psd: PSDImage, rel: str, pngs: Optional[frozenset]) -> list:
     eyes = _unique(layer.name for layer, tags in tagged if bool(layer.visible) != (1 in tags))
     if eyes:
         out.append(Issue("R12", f"saved showing another picture than variant 1: {_list(eyes, quote=True)}", eyes))
+    hidden = [pair for pairs in hidden_tags(psd).values() for pair in pairs]
+    if hidden:
+        names, groups = _unique(layer.name for layer, _ in hidden), _unique(group.name for _, group in hidden)
+        out.append(Issue("R12", f"{_list(names, quote=True)} never {'shows' if len(names) == 1 else 'show'} in "
+                                f"{'its' if len(names) == 1 else 'their'} own picture: the hidden "
+                                f"{'group' if len(groups) == 1 else 'groups'} {_list(groups, quote=True)} "
+                                f"{'has' if len(groups) == 1 else 'have'} no tag (tag or show it; the bot draws no PNG "
+                                f"of that picture)", names))
     if pngs is not None:
         stem = rel[:len(rel) - 4]
         have = [n for n in variants_of(psd) if f"{stem}{'' if n == 1 else n}.png".lower() in pngs]

@@ -13,10 +13,12 @@ import numpy as np
 import pytest
 from PIL import Image, ImageDraw
 from psd_tools import PSDImage
-from psd_tools.api.layers import PixelLayer
+from psd_tools.api.layers import Group, PixelLayer
 
 import commands.png_export as pe
 import commands.psd_edit as psd_edit
+from commands.card_standards import rule_variants
+from commands.psd_parser import hidden_tags, picture_numbers
 from helpers import BALLOON_BOY, _rows_off, art, card, fixture_psd, normalised, photoshop_png
 
 # ========================
@@ -453,6 +455,59 @@ def test_png_check(tmp_path):
     drawn = pe.png_check(psd, card())
     assert drawn["ok"] is True and drawn["rendered"] and drawn["bad_pct"] == 0
     assert pe.png_check(psd, card(colour=(255, 255, 255), box=(0, 0, 59, 60)))["ok"] is False
+
+
+GUST, TREES = "Items/Support/2 Stars/Gust_of_Wind.psd", "Items/Support/2 Stars/Gust_of_Trees.png"
+
+
+def _gust(tmp_path, tagged: bool) -> PSDImage:
+    """Gust of Wind in small (11-11): picture 1's art in group Gust of Wind, picture 2's in Gust of Trees, names no text
+    layer; saved showing picture 2. Untagged: as Croissant pushed it, Gust of Wind hidden, 'Gust of wind #1' in it."""
+    psd = PSDImage.new("RGB", (60, 90))
+    psd.append(PixelLayer.frompil(Image.new("RGB", (60, 90), (200, 30, 30)), psd, "Base"))
+    for group, art, colour, n in (("Gust of Trees", "Trees", (0, 160, 0), 2), ("Gust of Wind", "Gust of wind #1", (0, 0, 255), 1)):
+        group = Group.new(psd, f"{group} #{n}" if tagged else group)
+        art = PixelLayer.frompil(Image.new("RGB", (60, 60), colour), psd, art, top=20)
+        group.append(art)
+        group.visible, art.visible = n == 2, n == 2 or not tagged
+    for n in (1, 2):
+        title = PixelLayer.frompil(Image.new("RGB", (40, 8), (255, 255, 255 * (n - 1))), psd, f"Name #{n}", top=2, left=10)
+        psd.append(title)
+        title.visible = n == 2
+    psd.save(str(tmp_path / f"gust{int(tagged)}.psd"))
+    return PSDImage.open(str(tmp_path / f"gust{int(tagged)}.psd"))
+
+
+def _picture(n: int) -> Image.Image:
+    image = card(box=(0, 20, 59, 79), colour=(0, 0, 255) if n == 1 else (0, 160, 0))
+    ImageDraw.Draw(image).rectangle((10, 2, 49, 9), fill=(255, 255, 255 * (n - 1)))
+    return image
+
+
+def test_a_picture_hiding_its_tagged_layer_is_told_and_never_drawn(tmp_path):
+    """Gust of Wind 11-11: 'Gust of wind #1' in an untagged hidden group shows in no picture: R12 tells it, no PNG of
+    picture 1 is drawn (guard 1, a picture's own render, R10 unchecked); picture 2 still is."""
+    psd = _gust(tmp_path, False)
+    assert [(n, [(layer.name, group.name) for layer, group in pairs]) for n, pairs in hidden_tags(psd).items()] == [
+        (1, [("Gust of wind #1", "Gust of Wind")])]
+    assert [i.items for i in rule_variants(psd, GUST, None) if "never shows" in i.text] == [("Gust of wind #1",)]
+    hidden = "picture 1 can't show 'Gust of wind #1': the hidden group 'Gust of Wind' has no tag"
+    why = f"PNG not made: {hidden}; {pe.EXPORT}"
+    found = pe.export(None, psd, _picture(1), {}, GUST[:-4] + ".png")
+    assert (found.outcome, found.gate, found.why) == ("refused", "R12", why)
+    assert pe.render_picture(None, psd, _picture(1), 1) == (b"", why)
+    assert pe.png_check(psd, _picture(1)) == {"ok": None, "why": hidden}
+    assert found.numbered[GUST[:-4] + "2.png"][0]           # picture 2 has no hidden tag: drawn (no PNG mapped)
+
+
+def test_a_tagged_layer_names_the_duplicate_and_r10_draws_picture_1(tmp_path):
+    """Tagged as the 11-11 rewrite: no hidden tag; Gust_of_Trees.png is picture 2 by 'Gust of Trees #2' (no title
+    text); R10 draws picture 1, not the picture 2 the PSD was saved showing (its stored image)."""
+    psd = _gust(tmp_path, True)
+    assert hidden_tags(psd) == {} and psd_edit.saved_view(psd) == 2
+    assert picture_numbers(psd, [TREES]) == {TREES: 2} and picture_numbers(psd, [TREES.replace("Trees", "Leaves")]) == {}
+    one, two = pe.png_check(psd, _picture(1)), pe.png_check(psd, _picture(2))
+    assert one["ok"] is True and one["rendered"] and one["bad_pct"] == 0 and two["ok"] is False
 
 
 # ========================

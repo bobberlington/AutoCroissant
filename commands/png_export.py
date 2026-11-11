@@ -56,7 +56,7 @@ from psd_tools.constants import ColorMode, Resource, Tag
 
 import commands.psd_edit as psd_edit
 from commands.psd_edit import Refused
-from commands.psd_parser import TITLE_REGION_RATIO, layer_tag, picture_numbers
+from commands.psd_parser import TITLE_REGION_RATIO, hidden_tags, layer_tag, picture_numbers
 from commands.psd_regions import fx_pad, stat_rows
 
 # ========================
@@ -85,6 +85,7 @@ G6_BOX = "PNG not made: the bot's drawing of {what} does not match the PSD's own
 G6_BLANK = "PNG not made: the bot draws nothing for {what}, which the PSD's own image shows; " + EXPORT
 G7 = "PNG not made: the card changed size; " + EXPORT
 G8 = "{name} not updated: re-export it in Photoshop"
+HIDDEN = "picture {n} can't show {layers}: the hidden {groups} no tag"   # R12 (psd_parser.hidden_tags)
 MISSED = {"baseline": "the old PSD drawn against the old PNG", "cross": "against the PSD's own image"}   # miss_notes' boxes
 RECOMPRESS_MIN = 0.10                           # a pushed PNG is recompressed when this much smaller (ours: the owner set none)
 RECOMPRESS_BYTES = 65536                        # and at least this many bytes smaller: a tiny saving is not worth a commit
@@ -681,7 +682,10 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
     tagged = picture_numbers(new, [*(numbered or {}), *kept])   # a drawn duplicate's own name too (owner 11-09)
     held = {tagged.pop(path) for path in kept if path in tagged}
     rest = {p: i for p, i in (numbered or {}).items() if p not in tagged}
-    if len(tags) > 1 and not _saved_as_one(old, new):   # Name.png is picture 1, whatever the PSD was saved showing
+    hidden = _hidden(new, 1)
+    if hidden:                                  # R12: picture 1 can't show a layer tagged for it
+        found = Export("refused", f"PNG not made: {hidden}; {EXPORT}", "R12")
+    elif len(tags) > 1 and not _saved_as_one(old, new):   # Name.png is picture 1, whatever the PSD was saved showing
         found = _as_picture(old, new, old_png, rest, 1, fonts)
     else:
         found = _export(old, new, old_png, rest, fonts)
@@ -727,6 +731,9 @@ def _as_picture(old: Optional[PSDImage], new: PSDImage, png: Image.Image, number
     refused = _no_composite(new)
     if refused is not None:
         return refused
+    hidden = _hidden(new, n)
+    if hidden:
+        return Export("refused", f"PNG not made: {hidden}; {EXPORT}", "R12")
     saved = psd_edit.saved_view(new)
     with psd_edit.variant(new, n), (psd_edit.variant(old, n) if old is not None else nullcontext()):
         found = _unchecked(old, new, png, numbered, fonts)
@@ -736,6 +743,9 @@ def _as_picture(old: Optional[PSDImage], new: PSDImage, png: Image.Image, number
 
 def new_picture(new: PSDImage, n: int) -> tuple:
     """A tagged picture with no PNG yet: the whole card drawn as picture n, every text drawn (export_new unchecked)."""
+    hidden = _hidden(new, n)
+    if hidden:
+        return b"", f"PNG not made: {hidden}; {EXPORT}"
     with psd_edit.variant(new, n):
         out = _render(new, (0, 0, new.width, new.height), True, {})
         result = Export("current", unchecked=True)
@@ -1132,6 +1142,17 @@ def _refuse(result: Export, why: str, gate: str) -> Export:
     return result
 
 
+def _hidden(psd: PSDImage, n: int) -> str:
+    """HIDDEN for picture n when hidden_tags has it (its PNG is never drawn), else ""."""
+    pairs = hidden_tags(psd).get(n)
+    if not pairs:
+        return ""
+    layers = ", ".join(f"'{name}'" for name in dict.fromkeys(layer.name for layer, _ in pairs))
+    groups = [f"'{name}'" for name in dict.fromkeys(group.name for _, group in pairs)]
+    return HIDDEN.format(n=n, layers=layers, groups=f"group {groups[0]} has" if len(groups) == 1
+                         else f"groups {', '.join(groups)} have")
+
+
 def miss_notes(found: Export) -> list:
     """The note per measure that missed the bar under the floor: "made with a pixel
     difference (the old PSD drawn against the old PNG): bad 1.35%, mean 1.00, max 79" (Defcon Panda)."""
@@ -1237,21 +1258,26 @@ def export_new(new: PSDImage) -> Export:
 def png_check(psd: PSDImage, png: Image.Image, keep: Optional[dict] = None) -> dict:
     """
     R10: the PNG against its PSD's composite, converted as voted (icc_vote over this pair), within the bar. A PSD with no
-    stored image (Maximize Compatibility off): the fork's render of the whole card (its render record's blends and vote,
-    else voted over the renders: _render_voted), not past the parity floor ("rendered": True); keep["render"] gets it.
+    stored image (Maximize Compatibility off), or a tagged one saved showing another picture: the fork's render of the
+    whole card as picture 1 (its render record's blends and vote, else voted over the renders: _render_voted), not past
+    the parity floor ("rendered": True); keep["render"] gets it. Picture 1 hiding a layer tagged for it (R12): unchecked.
 
     Returns:
-        {"ok": bool or None (another size, not 8-bit RGB), "icc", "bad_pct", "mean", "max", "px"}
+        {"ok": bool or None (another size, not 8-bit RGB, R12's hidden tag), "icc", "bad_pct", "mean", "max", "px"}
     """
     if png.size != (psd.width, psd.height):
         return {"ok": None, "why": "another size"}
-    composed = composite(psd)
+    hidden = _hidden(psd, 1)
+    if hidden:
+        return {"ok": None, "why": hidden}
+    composed = composite(psd) if psd_edit.saved_view(psd) == 1 else None   # untagged: 1
     if composed is None:
         if _no_composite(psd) is not None:
             return {"ok": None, "why": "not 8-bit RGB"}
         scratch = Export("current")
-        icc, render = _render_voted(psd, (0, 0, psd.width, psd.height), psd_edit.export_icc(psd, png),
-                                    psd_edit.icc_vote(psd, png), png, scratch, png)
+        with psd_edit.variant(psd, 1):          # Name.png is picture 1 (untagged: as saved)
+            icc, render = _render_voted(psd, (0, 0, psd.width, psd.height), psd_edit.export_icc(psd, png),
+                                        psd_edit.icc_vote(psd, png), png, scratch, png)
         render = like_mode(render, png.mode)
         if keep is not None:
             keep["render"] = render
