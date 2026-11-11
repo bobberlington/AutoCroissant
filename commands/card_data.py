@@ -240,6 +240,7 @@ class CardBuild:
 
         self._populate_types_from_response(resp)
         self.parser = PSDParser(self.db.all_types, self.db, self._icons_from_response(resp, repository))
+        self.parser.linked = self._file_bytes           # a placed title's file (Gust of Wind's blurred names)
 
         self.edits = self._edits_from_response(resp, repository)
         self.dup_pngs = self._dup_pngs()                # before the parse's workers fork

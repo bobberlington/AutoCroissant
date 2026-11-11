@@ -623,7 +623,9 @@ def vocabulary(snapshot: Snapshot):
     manifest = None
     if ICON_MANIFEST_PATH in snapshot.tree:
         manifest = loads(snapshot.fetch(snapshot.sha(ICON_MANIFEST_PATH)).decode("utf-8"))
-    return psd_edit.offline_parser(all_types, stars, manifest)
+    parser = psd_edit.offline_parser(all_types, stars, manifest)
+    parser.linked = lambda path: snapshot.fetch(snapshot.sha(path)) if path in snapshot.tree else None  # placed titles
+    return parser
 
 
 def types_icons(snapshot: Snapshot, work: str, parser, names: list, printed: Optional[list] = None) -> str:
@@ -1052,7 +1054,8 @@ def bake_pictures(card: Card, psd, parsed: dict, parser, folder: str, fonts_dir:
     for n in numbers:
         with psd_edit.variant(psd, n):
             parses[n] = psd_edit.parse_card(parser, old_psd, card.rel, psd)
-            titles[n] = psd_edit.read_name(psd, psd_edit._card_name(parses[n])) if "name" in jobs else None
+            titles[n] = psd_edit.read_name(psd, psd_edit._card_name(parses[n]), getattr(parser, "linked", None),
+                                           card.rel) if "name" in jobs else None
     for name in jobs:
         if name in psd_edit.ICON_FIELDS + psd_edit.STAT_FIELDS and len({repr(parses[n]["card"].get(name)) for n in numbers}) > 1:
             raise Refused("unsupported-card", f"{name}: its layers differ by picture: edit it in Photoshop", name)
@@ -1508,6 +1511,9 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
                 for n, baked in card.views.items():
                     card.files[card.pictures[n]] = _smaller(baked.png_path)
                 old_png = join(folder, "old", basename(card.pictures[next(iter(card.views))]))
+            for path, data in (getattr(card.baked, "files", None) or {}).items():     # a placed title's file
+                card.files[path] = data
+                card.expect[path] = snapshot.sha(path)
             if not lean:
                 _follow_dups(snapshot, card, folder)
                 crops = psd_edit.artifacts(Image.open(old_png), Image.open(card.baked.png_path), card.baked.region)

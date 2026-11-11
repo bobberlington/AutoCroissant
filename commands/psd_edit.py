@@ -52,6 +52,7 @@ from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_
                                  shown_in, title_text, token_variant, variant_view, variants_of)
 from commands.psd_parser import AUX_ITEM_TYPES, FRAME_SHARE, in_header, star_leaf, star_pieces, star_sets
 from commands import psd_parts
+from commands import psd_links
 from commands.psd_links import corners_of, decode, draw, file_type, link_pixels, warped
 from commands.psd_parts import lyid_index, raw_sha
 from commands.text_align import (BREAKS as TEXT_BREAKS, blocks as text_blocks, moves as text_moves,
@@ -357,6 +358,9 @@ class Edit:
     comps: list = field(default_factory=list)   # record indices of the layer-comp bars it set (set_comp)
     scaled: dict = field(default_factory=dict)  # old record index -> new rect (top, left, bottom, right): a shrunk star's
     #   layer (IconPlan.scaled), with its copies and moves in shifted and copied
+    files: dict = field(default_factory=dict)   # repo path -> bytes: a placed title's file set again (set_placed_title)
+    sources: list = field(default_factory=list)  # placed IDs whose FEid source it drew again (gate_filters)
+    relinked: list = field(default_factory=list)  # uuids of the links it rewrote, size and contentID (gate_stories)
 
 
 @dataclass
@@ -380,6 +384,7 @@ class Baked:
     rerender: dict = field(default_factory=dict)    # field -> gate_idempotence()'s measurement of its region
     icons: dict = field(default_factory=dict)       # stars / types -> the layout their edit followed (IconPlan.how)
     whole: dict = field(default_factory=dict)       # field -> whole_redraw()'s measurement (Edit.whole)
+    files: dict = field(default_factory=dict)       # repo path -> bytes: other files the edits set (Edit.files)
 
 
 # ========================
@@ -741,12 +746,138 @@ def title_in_picture(psd: PSDImage, card: str = "") -> bool:
                    and base_name(layer).strip().lower() != "ability" for layer in scope)
 
 
-def read_name(psd: PSDImage, card: str = "") -> Optional[str]:
-    """The printed title, whitespace collapsed; None when name_layer refuses."""
+def read_name(psd: PSDImage, card: str = "", read=None, rel: str = "") -> Optional[str]:
+    """The printed title, whitespace collapsed; a placed title's (placed_title; read and rel its); None when name_layer
+    refuses."""
     try:
         return collapse(name_layer(psd, card).text)
     except Refused:
+        found = placed_title(psd, card, read, rel)
+        return collapse(found[4].text) if found else None
+
+
+def placed_title(psd: PSDImage, card: str = "", read=None, rel: str = "") -> Optional[tuple]:
+    """
+    The card's title as a smart object the bake can set (PSDParser.placed_titles, read: a repo path -> its bytes): the
+    one there, linked, upright, its smart filters none or one psd_links.redraw draws (a lone Gaussian or Motion Blur:
+    Gust of Wind's names, owner 2026-11-11). Its tuple, or None.
+    """
+    if PSDParser.title_layers(psd, [layer for layer in psd.descendants() if _is_text_layer(layer)], card):
         return None
+    found = PSDParser.placed_titles(psd, rel, read)
+    if len(found) != 1 or not found[0][1]:
+        return None
+    layer = found[0][0]
+    return found[0] if psd_links.why_not_redrawn(layer) is None and psd_links.upright(corners_of(layer)) else None
+
+
+def set_placed_title(psd: PSDImage, found: tuple, text: str, fonts_dir: str, rel: str, parser=None) -> Edit:
+    """
+    A name edit on a placed title (placed_title): its file's type layer set to the text keeping its runs, Photoshop's
+    raster kept on the glyphs the edit leaves (capture), the file's canvas cropped to the new raster as Photoshop's
+    Convert to Smart Object makes it, so the text keeps its place on the card; the placed layer drawn again from the file
+    (psd_links.redraw: its Motion Blur and FEid source too) and its link rewritten (size, contentID, pixels, corners).
+    Off the canvas or onto the stars or type icons is told (overflow), never refused.
+
+    Returns:
+        Edit, the file's new bytes in Edit.files
+    """
+    from psd_tools.composite.text import MissingFontError, capture
+    layer, path, _, inner, title = found
+    old_text, old_box = title.text, tuple(layer.bbox)
+    text = keep_ends(old_text, straight(text).replace("\r\n", "\n").rstrip("\n").replace("\n", "\r"))
+    fonts = font_map(fonts_dir)
+    try:
+        before = capture(title, fonts)
+        title.set_text(text, keep="runs")
+        title.rasterize(fonts=fonts, keep=before, unit=SPLICE_UNIT)
+    except MissingFontError as error:
+        raise Refused("font", str(error))
+    box = tuple(title.bbox)
+    if box[2] <= box[0] or box[3] <= box[1]:
+        raise Refused("unsupported-card", "name: the new title draws nothing")
+    h = psd_links.homography(inner.width, inner.height, corners_of(layer))
+    corners = [float(c) for u, v in ((box[0], box[1]), (box[2], box[1]), (box[2], box[3]), (box[0], box[3]))
+               for c in psd_links._apply(h, u, v)]
+    data = _cropped(inner, title, box)
+    region = psd_links.redraw(layer, psd_links.picture(psd, data, psd_links.file_type(data, path)), corners, Image.BICUBIC)
+    so = layer.smart_object
+    so.relink(size=len(data), blob=psd_links.git_blob(data), psd_path=rel, pixels=(box[2] - box[0], box[3] - box[1]),
+              corners=corners)
+    _warp_bounds(layer, corners)
+    notes = []
+    if clip(tuple(layer.bbox), psd.width, psd.height) != tuple(layer.bbox):
+        notes.append("overflow: name runs off the canvas")
+    stars, icons, _ = badge_layers(psd, getattr(parser, "all_types", ()))
+    if any(_touches(layer, badge) for badge in stars + icons):
+        notes.append("overflow: name reaches the stars or type icons")
+    return Edit("name", old_text, text, [layer], [_record_index(layer)],
+                union_box([_pad(one, fx_pad(layer), psd) for one in (old_box, region)]), notes=notes,
+                files={path: data}, sources=[so.placed_id] if so.filter_item is not None else [],
+                relinked=[str(so.unique_id).strip("\x00")])
+
+
+def _cropped(inner: PSDImage, title, box: tuple) -> bytes:
+    """The placed title's file cropped to box (its type layer's raster, file px) and saved: the layer moved by box's
+    corner (nudge), the canvas and its full-canvas slices box's size, the merged image white again (strip_merged)."""
+    width, height = inner.width, inner.height
+    nudge(title, -box[0], -box[1])
+    header = inner._record.header
+    header.width, header.height = box[2] - box[0], box[3] - box[1]
+    slices = inner.image_resources.get_data(Resource.SLICES)
+    found = getattr(slices, "data", None)
+    if found is not None:
+        _slice_bounds(found, width, height, header.width, header.height)
+    inner.strip_merged()
+    out = BytesIO()
+    save_psd(inner, out)
+    return out.getvalue()
+
+
+def _slice_bounds(node, width: int, height: int, new_w: int, new_h: int) -> None:
+    """Every whole-canvas bounds in a Slices resource (its bbox, its slices', their descriptors') made the new size."""
+    if isinstance(getattr(node, "bbox", None), list) and len(node.bbox) == 4:
+        if list(node.bbox) == [0, 0, height, width]:
+            node.bbox[2], node.bbox[3] = new_h, new_w
+        elif list(node.bbox) == [0, 0, width, height]:
+            node.bbox[2], node.bbox[3] = new_w, new_h
+    for item in getattr(node, "items", None) or []:
+        _slice_bounds(item, width, height, new_w, new_h)
+    data = getattr(node, "data", None)
+    stack = [data] if hasattr(data, "items") else []
+    while stack:
+        desc = stack.pop()
+        for key, value in desc.items():
+            if key == b"bounds" and hasattr(value, "get") and [_number(value.get(k)) for k in
+                                                               (b"Top ", b"Left", b"Btom", b"Rght")] == [0, 0, height, width]:
+                _set_number(value, b"Btom", new_h)
+                _set_number(value, b"Rght", new_w)
+            elif hasattr(value, "items"):
+                stack.append(value)
+            elif isinstance(value, (list, ListElement)):
+                stack.extend(one for one in value if hasattr(one, "items"))
+
+
+def _number(value) -> Optional[float]:
+    value = getattr(value, "value", value)
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+def _set_number(desc, key: bytes, value: float) -> None:
+    old = desc.get(key)
+    if hasattr(old, "value"):
+        old.value = type(old.value)(value)
+    else:
+        desc[key] = type(old)(value) if old is not None else value
+
+
+def _warp_bounds(layer, corners: list) -> None:
+    """The placed layer's warp bounds (an unwarped one's: its quad's box), as Photoshop writes them, set to corners'."""
+    bounds = ((placed_data(layer) or {}).get(b"warp") or {}).get(b"bounds")
+    if hasattr(bounds, "get"):
+        xs, ys = corners[0::2], corners[1::2]
+        for key, value in ((b"Top ", min(ys)), (b"Left", min(xs)), (b"Btom", max(ys)), (b"Rght", max(xs))):
+            _set_number(bounds, key, value)
 
 
 def own_text_title(layer, card: str = "") -> bool:
@@ -2267,6 +2398,8 @@ def classify(parsed: dict, edits: dict, psd: Optional[PSDImage] = None, parser: 
                 out.redundant.append(name)
             elif psd is None:
                 out.refusals.append(Refusal("unsupported-card", "no PSD to find the title layer in"))
+            elif placed_title(psd, _card_name(parsed), getattr(parser, "linked", None), _card_path(parsed)):
+                out.jobs[name] = value          # a smart object's title: its file's text set (set_placed_title)
             elif title_in_picture(psd, _card_name(parsed)):
                 out.site[name] = PICTURE_TITLE
             else:
@@ -10412,7 +10545,8 @@ def gate_filters(old: PSDImage, new: PSDImage, edits: list) -> None:
     a, b = _filter_block(old), _filter_block(new)
     if not declared:
         before, after = _document_blocks(old), _document_blocks(new)
-        if any(before.get(key) != after.get(key) for key in FILTER_KEYS):
+        if any(before.get(key) != after.get(key) for key in FILTER_KEYS) and \
+                not _sources_only(a, b, {uid for edit in edits for uid in edit.sources}):
             raise Refused("bytes", "the FEid block changed: no smart-filtered layer moved or copied")
         return
     if a is None or b is None or a.version != b.version:
@@ -10442,6 +10576,23 @@ def gate_filters(old: PSDImage, new: PSDImage, edits: list) -> None:
         raise Refused("bytes", "FEid items out of their layers' file order")
 
 
+def _sources_only(a, b, uids: set) -> bool:
+    """FEid blocks a and b alike but the planes of the items uids (a placed layer drawn again: set_placed_title's)."""
+    import attr
+    if not uids or a is None or b is None or a.version != b.version or len(a) != len(b):
+        return False
+    for x, y in zip(a, b):
+        uid = (x.uuid or "").strip("\x00")
+        if uid != (y.uuid or "").strip("\x00"):
+            return False
+        if uid not in uids:
+            if _item_bytes(x) != _item_bytes(y):
+                return False
+        elif any(getattr(x, one.name) != getattr(y, one.name) for one in attr.fields(type(x)) if one.name != "channels"):
+            return False
+    return True
+
+
 def _links_added(old: PSDImage, new: PSDImage, uuids) -> bool:
     """new's lnkE items are old's, byte for byte, then exactly the items uuids."""
     def items(psd):
@@ -10450,6 +10601,28 @@ def _links_added(old: PSDImage, new: PSDImage, uuids) -> bool:
     was, now = items(old), items(new)
     return bool(uuids) and [item.tobytes() for item in was] == [item.tobytes() for item in now[:len(was)]] and \
         [str(item.uuid).strip("\x00") for item in now[len(was):]] == list(uuids)
+
+
+def _links_relinked(old: PSDImage, new: PSDImage, uuids) -> bool:
+    """new's lnkE items are old's, byte for byte, but the items uuids, which differ only in size and contentID."""
+    import attr
+    def items(psd):
+        blocks = psd._record.layer_and_mask_information.tagged_blocks
+        return list(blocks.get_data(Tag.LINKED_LAYER_EXTERNAL) or []) if Tag.LINKED_LAYER_EXTERNAL in blocks else []
+    was, now, uuids = items(old), items(new), set(uuids)
+    if not uuids or len(was) != len(now):
+        return False
+    for a, b in zip(was, now):
+        uuid = str(a.uuid).strip("\x00")
+        if uuid != str(b.uuid).strip("\x00"):
+            return False
+        if uuid not in uuids:
+            if a.tobytes() != b.tobytes():
+                return False
+        elif any(getattr(a, one.name) != getattr(b, one.name) for one in attr.fields(type(a))
+                 if one.name not in ("filesize", "content_descriptor")):
+            return False
+    return True
 
 
 def _document_blocks(psd: PSDImage) -> dict:
@@ -10483,7 +10656,7 @@ def _story_font_name(entry, spelling: int) -> str:
 
 
 def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), added=(), filters: bool = False,
-                 links=(), also: frozenset = frozenset(), frames=()) -> list:
+                 links=(), also: frozenset = frozenset(), frames=(), relinked=()) -> list:
     """
     Photoshop reads a type layer's text from its Txt2 story and rebuilds the layer's TySh from it on save, so an edit
     to TySh alone is undone the first time the card is opened (2026-10-22: B.F.B. went back to B.F.B). Every type
@@ -10504,6 +10677,8 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), add
         links: uuids of the links the edits added (made type icons): lnkE is the old items and those, appended
         also: Other document blocks (keys) that may change: the link step's (card_standards.normalise)
         frames: TextIndex of each edited layer whose box was resized (set_text_box): its own Txt2 frames may change
+        relinked: uuids of the links the edits rewrote (Edit.relinked): lnkE the old items, those changed only in
+            their file's size and contentID
 
     Returns:
         The changed stories' indices (the new card's), sorted; raises Refused("bytes")
@@ -10513,7 +10688,7 @@ def gate_stories(old: PSDImage, new: PSDImage, edited, fonts=(), removed=(), add
     moved = sorted(key.decode("latin-1") for key in set(before) | set(after)
                    if (key != txt2 or (key in before) != (key in after)) and before.get(key) != after.get(key)
                    and not (filters and key in FILTER_KEYS) and key not in also
-                   and not (key == lnke and _links_added(old, new, links)))
+                   and not (key == lnke and (_links_added(old, new, links) or _links_relinked(old, new, relinked))))
     if moved:
         raise Refused("bytes", f"document blocks changed: {', '.join(moved)}")
     stale = stale_stories(new)
@@ -10683,7 +10858,7 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
         notes.append("validator: new problems: " + "; ".join(added))
     if any(p.startswith("EFFECT LAYER") for p in new["validator"]):
         raise Refused("reparse", "effect layer problems remain")
-    title = read_name(psd, _card_name(parsed)) if "name" in jobs else None
+    title = read_name(psd, _card_name(parsed), getattr(parser, "linked", None), rel) if "name" in jobs else None
     if "name" in jobs and straight(title) != straight(collapse(jobs["name"])):
         raise Refused("reparse", f"the title reads {title!r}")
     return new
@@ -11253,17 +11428,31 @@ def apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict,
     """
     hold = ExitStack()
     try:
-        return _apply_jobs(psd_path, png_path, rel, jobs, parsed, parser, out_dir, fonts_dir, chart, types_dir, psd,
-                           view, hold, template, ability_from, title_anchor)
+        with _files_seen(parser) as shown:
+            return _apply_jobs(psd_path, png_path, rel, jobs, parsed, parser, out_dir, fonts_dir, chart, types_dir, psd,
+                               view, hold, template, ability_from, title_anchor, shown)
     finally:
         hold.close()
+
+
+@contextmanager
+def _files_seen(parser):
+    """The parser reads the files the edits set (Edit.files, filled in) while the bake gates them; its own reader after."""
+    was, shown = getattr(parser, "linked", None), {}
+    if parser is not None:
+        parser.linked = lambda path: shown[path] if path in shown else (was(path) if was is not None else None)
+    try:
+        yield shown
+    finally:
+        if parser is not None:
+            parser.linked = was
 
 
 def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict, parser: PSDParser, out_dir: str,
                 fonts_dir: str, chart: Optional[dict] = None, types_dir: Optional[str] = None,
                 psd: Optional[PSDImage] = None, view: Optional[int] = None, hold: Optional[ExitStack] = None,
                 template: Optional[tuple] = None,
-                ability_from: Optional[tuple] = None, title_anchor: int = 0) -> Baked:
+                ability_from: Optional[tuple] = None, title_anchor: int = 0, shown: Optional[dict] = None) -> Baked:
     """
     Apply a card's jobs, render the changed region, delta-merge the PNG, save (stripped: save_psd) and run every gate.
 
@@ -11281,6 +11470,7 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
         psd: psd_path already open (card_bake's parse and classify share it), never changed: the edit goes on a copy
             (edit_copy: opened again from psd_path's bytes); None: opened here. Each PSD file is opened once per bake,
             the saved one too (tests/test_card_bake.py)
+        shown: Filled with the files the edits set (Edit.files), which the parser reads meanwhile (_files_seen)
 
     Returns:
         Baked; raises Refused (any other exception is the driver's "error"); a refusal of a stars or types edit's own
@@ -11320,6 +11510,8 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     cache, first = render_cache(shared=True), None
     lone = len(jobs) == 1 and next(iter(jobs)) in ICON_FIELDS
     before, edits = record_map(new), []
+    placed = placed_title(new, _card_name(parsed), getattr(parser, "linked", None), _card_path(parsed) or rel) \
+        if "name" in jobs else None
     for name, value in sorted(jobs.items(), key=lambda job: (job[0] == "colors", job[0] not in ICON_FIELDS,
                                                              job[0] in (*STAT_FIELDS, "creatures"), job[0] == "name")):
         if name in ICON_FIELDS:
@@ -11355,6 +11547,8 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
                 raise Refused("unsupported-card", f"{len(found)} ability layers: edit each box on the website")
             edits += set_parts(new, {str(found[0]["id"]): {"text": value}}, record, fonts_dir, chart, _card_name(parsed),
                                parser, old)
+        elif name == "name" and placed:         # a smart object's title (Gust of Wind's, its Motion Blur kept)
+            edits.append(set_placed_title(new, placed, value, fonts_dir, rel, parser))
         elif name in TEXT_FIELDS:
             edits.append(set_text_layer(new, name, value, fonts_dir, chart, _card_name(parsed), parser,
                                         old, anchor=title_anchor if name == "name" else 0))
@@ -11366,6 +11560,8 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
             edits.append(set_colors(new, value, fonts_dir, _card_name(parsed), chart))
         else:
             raise Refused("unsupported-card", f"{name}: not yet")
+    for edit in edits:
+        (shown if shown is not None else {}).update(edit.files)
     others = [edit for edit in edits if edit.field not in ICON_FIELDS and (edit.layers or edit.removed)]
     start = perf_counter()
     dirty = bool(others) and not any(edit.field in ICON_FIELDS for edit in edits)   # renders the dirty box only
@@ -11427,6 +11623,9 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
     start = perf_counter()
     hold.close()                                # the saved card keeps its own eye flags
     save_psd(new, new_psd)
+    for path, data in (shown or {}).items():    # a placed title's file beside them (set_placed_title)
+        with open(join(out_dir, basename(path)), "wb") as fh:
+            fh.write(data)
     timings["save"] = perf_counter() - start
     if saving is None:
         save_png(merged, new_png, png)
@@ -11443,13 +11642,14 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
                  [index for edit in edits for index in edit.removed_stories],
                  [index for edit in edits for index in edit.added_stories], filters=True,
                  links=[done[1].smart_object.unique_id for edit in edits if edit.icons is not None
-                        for done in edit.icons.done if done[0] == "made" and done[1].kind == "smartobject"])
+                        for done in edit.icons.done if done[0] == "made" and done[1].kind == "smartobject"],
+                 relinked=[uuid for edit in edits for uuid in edit.relinked])
     gate_filters(old, reopened, edits)
     reparse = gate_reparse(parser, parsed, new_psd, rel, jobs, reopened, edits, flags)
     if "parts" in jobs:
         flags += gate_parts(parser, parsed, rel, jobs["parts"], old, reopened, fonts_dir)
     titles = (name_layer(reopened, _card_name(parsed)),
-              name_layer(old, _card_name(parsed))) if "name" in jobs else None
+              name_layer(old, _card_name(parsed))) if "name" in jobs and not placed else None
     flags += gate_fx(reopened, edits, fonts_dir, chart, old, parser.icons, titles)
     timings["reparse"] = perf_counter() - start
     start = perf_counter()
@@ -11463,7 +11663,8 @@ def _apply_jobs(psd_path: str, png_path: str, rel: str, jobs: dict, parsed: dict
                  block_bytes, [name for edit in edits for name in edit.fx_names
                                if name in {n for n, _ in edit.fx} | {n for _, _, n in edit.rebuilt}],
                  list(dict.fromkeys([note for edit in edits for note in edit.notes] + flags)), icc, rerender,
-                 {edit.field: edit.icons.how for edit in edits if edit.icons is not None}, whole)
+                 {edit.field: edit.icons.how for edit in edits if edit.icons is not None}, whole,
+                 {path: data for edit in edits for path, data in edit.files.items()})
 
 
 # ========================

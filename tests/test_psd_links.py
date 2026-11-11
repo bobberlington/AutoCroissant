@@ -345,6 +345,34 @@ def test_gaussian_blur_redrawn(clone):
     assert where == (0, 3, 27, 37) and out[17, 0, 3] == 1 and out[0, 0, 3] < 0.01
 
 
+GUST = "Items/Support/2 Stars/Gust_of_Wind.psd"     # Croissant's names, stars and type icon under Motion Blurs (11-11)
+GUST_REV = "aa8a491f5b1fdb78249f71c4cc95f7f7609425b9"
+
+
+def test_motion_blur_redrawn(clone):
+    """A lone Motion Blur at angle 0 of a proven distance (6 px) is drawn as Photoshop 2023 stores it: Gust of Wind's names
+    from their FEid sources land on Photoshop's pixels exactly; a 17 px one (its stars) is not proven: not redrawn."""
+    from psd_tools.compression import decompress
+    from conftest import at_rev
+    psd = PSDImage.open(BytesIO(at_rev(clone, GUST_REV, GUST)))
+    layers = {layer.name: layer for layer in psd.descendants() if layer.kind == "smartobject"}
+    assert pl.motion_distance(layers["star"]) is None and pl.why_not_redrawn(layers["star"]) == "smart filters"
+    for name in ("Name #1", "Name #2"):
+        layer = layers[name]
+        assert pl.motion_distance(layer) == 6 and pl.blur_radius(layer) is None and pl.why_not_redrawn(layer) is None
+        item = layer.smart_object.filter_item
+        top, left, bottom, right = item.rectangle
+        source = np.dstack([np.frombuffer(decompress(item.channels[k].data, item.channels[k].compression, right - left,
+                                                     bottom - top, 8, 2), np.uint8).reshape(bottom - top, right - left)
+                            for k in (0, 1, 2, -1)])
+        ys, xs = np.nonzero(source[..., 3])
+        box = (left + int(xs.min()), top + int(ys.min()), left + int(xs.max()) + 1, top + int(ys.max()) + 1)
+        part = source[box[1] - top:box[3] - top, box[0] - left:box[2] - left].astype(np.float32) / 255
+        out, where = pl.motion_blurred(part, box, 6)
+        assert where == tuple(layer.bbox)
+        assert np.array_equal((out * 255 + 0.5).astype(np.uint8), np.round(layer.numpy() * 255).astype(np.uint8))
+
+
 def test_normalise_links_through_its_link_step(clone, tmp_path):
     """card_standards.normalise's link step (needs, link) on Delta through a LinkContext, as the guards and the sweep pass
     it: text normal, pictures linked, new files beside it, no merged image; a second normalise writes nothing."""

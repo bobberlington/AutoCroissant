@@ -12,7 +12,7 @@ from os import PathLike
 import numpy as np
 from psd_tools import PSDImage
 from re import IGNORECASE, compile as re_compile, fullmatch, sub
-from typing import Any, Optional, Union
+from typing import Any, Callable, Optional, Union
 
 from commands.card_models import RAID_STARS, CardInfo, CardStats, CardType, StatsDatabase, card_name
 from commands.psd_regions import comp_creature, comp_stat, comp_value, digit_span, reaches_over
@@ -617,6 +617,8 @@ class CardClassifier:
 
 class PSDParser:
     """Parses PSD files to extract card information."""
+    linked: Optional[Callable[[str], Optional[bytes]]] = None   # a repo path -> the file's bytes: placed titles' files
+
     def __init__(self, all_types: list[str], db: StatsDatabase, icons: Optional[IconVocabulary] = None):
         self.all_types = all_types
         self.db = db
@@ -719,6 +721,10 @@ class PSDParser:
         card.display_name = self._printed_title(psd, text_layers, card.name)
         if card.display_name is None and (variant or 1) > 1 and any(title_text(layer.text) for layer in titles):
             card.display_name = card.name       # picture N is the card NameN (card_data): printing Name is a title
+        placed = self.placed_titles(psd, relative_path, self.linked) if not titles else []
+        if len(placed) == 1:                    # a smart object's one type layer (Gust of Wind's blurred title)
+            title = title_text(placed[0][4].text)
+            card.display_name = title if title and title != card.name else None
         if card.card_type == CardType.AUX_ITEM.value:
             card.subtype = self._aux_item_type(header)
 
@@ -781,6 +787,34 @@ class PSDParser:
         if named:                                       # a split title edited: every piece, as printed
             return " ".join(title_text(layer.text) for layer in self.reading(found + named))
         return title
+
+    @staticmethod
+    def placed_titles(psd: PSDImage, rel: str = "", read: Optional[Callable[[str], Optional[bytes]]] = None) -> list:
+        """
+        A title drawn by a smart object (Croissant's Gust of Wind, under a Motion Blur): the visible smart objects in the
+        Text group named Name (a picture tag aside) whose file, embedded or linked (read: a repo path -> its bytes), is a
+        PSD or PSB of one layer, a type layer. Only for a card with no title text layer (title_layers).
+
+        Returns:
+            [(layer, its file's repo path or "", the file's bytes, the file opened, its type layer)]
+        """
+        from io import BytesIO
+        group = PSDParser.text_group(psd)
+        out = []
+        for layer in group if group is not None else ():
+            if layer.kind != "smartobject" or not layer.is_visible() or base_name(layer).strip() != "Name":
+                continue
+            try:
+                so = layer.smart_object
+                path = so.link_target(rel or None) or "" if so.kind == "external" else ""
+                data = (read(path) if read is not None and path else None) if so.kind == "external" else so.data
+                inner = PSDImage.open(BytesIO(data)) if data and data[:4] == b"8BPS" else None
+            except Exception:                   # unreadable or placed nowhere: no title
+                continue
+            leaves = list(inner.descendants()) if inner is not None else []
+            if len(leaves) == 1 and leaves[0].kind == "type":
+                out.append((layer, path, data, inner, leaves[0]))
+        return out
 
     @staticmethod
     def title_layers(psd: PSDImage, text_layers: list, name: str) -> list:

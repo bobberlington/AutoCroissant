@@ -2611,6 +2611,45 @@ SWAPPED_FONTS = {"Items/Equip/3 Stars/Shiny_Knife.psd": "OMORI_GAME2",    # its 
                  "Auxiliary/Minions/Dark_Tentacle.psd": "OMORI_GAME"}
 
 
+GUST = "Items/Support/2 Stars/Gust_of_Wind.psd"     # its names: smart objects linking a PSB, under a 6 px Motion Blur
+GUST_REV = "aa8a491f5b1fdb78249f71c4cc95f7f7609425b9"
+GUST_NAME = "MDW/Linked/Gust_of_Wind - Name #1.psb"
+
+
+def test_placed_title_bakes_under_its_blur(clone, parser, tmp_path, monkeypatch):
+    """A title drawn by a smart object (Gust of Wind's, Croissant's Motion Blur; owner 2026-11-11) bakes with the blur
+    kept: its PSB's text set and the canvas cropped to it, the text keeping its anchor on the card, the layer drawn
+    again under the blur and relinked to the new file, which the parser reads back. Without a reader: website only."""
+    import commands.psd_links as pl
+    files = {rel: at_rev(clone, GUST_REV, rel) for rel in (GUST, GUST[:-4] + ".png", GUST_NAME)}
+    psd_path, png_path = tmp_path / Path(GUST).name, tmp_path / (Path(GUST).stem + ".png")
+    psd_path.write_bytes(files[GUST])
+    png_path.write_bytes(files[GUST[:-4] + ".png"])
+    psd = PSDImage.open(psd_path)
+    parsed = pe.parse_card(parser, str(psd_path), GUST, psd)
+    assert pe.classify(parsed, {"name": "Gust of Winds"}, psd, parser).site == {"name": pe.PICTURE_TITLE}
+    monkeypatch.setattr(parser, "linked", files.get, raising=False)
+    parsed = pe.parse_card(parser, str(psd_path), GUST, psd)
+    out = pe.classify(parsed, {"name": "Gust of Winds"}, psd, parser)
+    assert out.jobs == {"name": "Gust of Winds"} and not out.site and not out.refusals
+    old = next(layer for layer in psd.descendants() if layer.name == "Name #1")
+    anchor = pl.corners_of(old)[0] + PSDImage.open(BytesIO(files[GUST_NAME]))[0].transform[4]
+    (tmp_path / "out").mkdir()
+    baked = pe.apply_jobs(str(psd_path), str(png_path), GUST, out.jobs, parsed, parser, str(tmp_path / "out"),
+                          str(clone / pe.FONTS_DIR), view=1)
+    assert parser.linked == files.get and baked.reparse["card"]["display_name"] == "Gust of Winds"
+    data = baked.files[GUST_NAME]
+    inner = PSDImage.open(BytesIO(data))
+    assert [layer.text for layer in inner.descendants()] == ["Gust of Winds"] and tuple(inner[0].bbox) == (0, 0, *inner.size)
+    new = PSDImage.open(baked.psd_path)
+    layer = next(layer for layer in new.descendants() if layer.name == "Name #1")
+    corners = pl.corners_of(layer)
+    assert corners[0] + inner[0].transform[4] == pytest.approx(anchor) and layer.smart_object.filesize == len(data)
+    assert pl.motion_distance(layer) == 6 and pl._size_of(layer) == inner.size
+    want, box = pl.motion_blurred(*pl.draw(pl.picture(new, data, "psb"), corners, Image.BICUBIC), 6)
+    assert tuple(layer.bbox) == box and np.abs(layer.numpy() - want).max() <= 1 / 255
+
+
 def test_picture_titles_and_titles_off_the_card(clone, parser, chart):
     """A title that is part of the picture (no title layer, no text in the title region) takes a new name on the website
     only (classify's site; owner 2026-10-26), a title layer with another name bakes (rule P finds it); a new title
