@@ -1525,7 +1525,8 @@ def test_oxipng_cli_rides_in_the_venv(clone, tmp_path):
 def test_venv_first_is_cards_pythons_hit(clone, tmp_path):
     """cards-venv: cards-python's venv key (setup-python's pick, the image's newest 3.14.x), path and check; a hit puts
     it on PATH as cards-python does (the CLI when asked), with setup-python's LD_LIBRARY_PATH, and runs help; anything
-    else (no 3.14, a miss, a failed check, no CLI) runs cards-python with the same inputs."""
+    else (no 3.14, a miss, a failed check, no CLI) runs cards-python with the same inputs. A job's own restore of that
+    key (restored) is only checked; of another key, removed."""
     from helpers import FORK_ACTION, FORK_VENV_KEY, VENV_ACTION
     yaml = pytest.importorskip("yaml")
     root = _workflow(clone).parents[2]
@@ -1535,7 +1536,9 @@ def test_venv_first_is_cards_pythons_hit(clone, tmp_path):
     full = yaml.safe_load((root / FORK_ACTION).read_text(encoding="utf-8"))
     steps, own = ({s["id"]: s for s in a["runs"]["steps"] if "id" in s} for a in (first, full))
     defaults = [{k: v["default"] for k, v in a["inputs"].items()} for a in (first, full)]
-    assert list(steps) == ["key", "env", "hit", "full"] and defaults[0] == defaults[1]
+    assert list(steps) == ["key", "env", "hit", "full"] and defaults[0] == {**defaults[1], "restored": ""}
+    assert steps["env"]["if"] == "steps.key.outputs.key != '' && steps.key.outputs.restored != 'true'"
+    assert steps["hit"]["if"] == "steps.env.outputs.cache-hit == 'true' || steps.key.outputs.restored == 'true'"
     assert steps["full"] == {"id": "full", "if": "steps.hit.outputs.ok != 'true'", "uses": "./" + FORK_ACTION.rsplit("/", 1)[0],
                              "with": {k: f"${{{{ inputs.{k} }}}}" for k in full["inputs"]}}
     assert first["outputs"]["wheels"]["value"] == "${{ steps.full.outputs.wheels }}" and set(first["outputs"]) == set(full["outputs"])
@@ -1565,6 +1568,9 @@ def test_venv_first_is_cards_pythons_hit(clone, tmp_path):
     key = FORK_VENV_KEY.replace("${{ steps.reqs.outputs.sha }}", sha).replace("${{ runner.os }}", "Linux").replace("${{ runner.arch }}", "X64")
     assert out == {"venv": str(venv), "key": key.replace("${{ steps.python.outputs.python-version }}", "3.14.10"),
                    "lib": f"{cache}/Python/3.14.10/x64/lib"}
+    venv.mkdir()
+    assert bash(steps["key"]["run"], VENV=str(venv), RESTORED=out["key"])[0] == {**out, "restored": "true"} and venv.is_dir()
+    assert bash(steps["key"]["run"], VENV=str(venv), RESTORED="card-venv-other")[0] == out and not venv.exists()
     (venv / "bin").mkdir(parents=True)
     (venv / "bin" / "python").write_text('#!/bin/sh\n[ "$LD_LIBRARY_PATH" = /lib314:/old ] || exit 9\necho "$*" >> "$CALLS"\n'
                                          '[ "$1" != -c ] || exit "$CHECK"\n')
@@ -2317,7 +2323,7 @@ def test_card_syncs_follow_up_waits_for_land(clone, tmp_path):
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc = yaml.safe_load((_workflow(clone).parent / "card-sync.yml").read_text(encoding="utf-8"))
-    for job, at, fonts, history in (("data", 8, [], ["History wait"]),        # data: Site build start, History start, join
+    for job, at, fonts, history in (("data", 13, [], ["History wait"]),       # data: its card fetch, venv and records first
                                     ("main", 5, ["Fonts first", None, "Fonts first (cache miss)"], [])):
         names = [s.get("name") for s in doc["jobs"][job]["steps"]]
         want = ["Python environment", *fonts, "Guards' fixes", *history, "Newest"]
