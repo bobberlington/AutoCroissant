@@ -314,11 +314,12 @@ def offline(monkeypatch, tmp_path):
 
 @pytest.fixture(autouse=True)
 def no_oxipng(request, monkeypatch):
-    """png_export.optimize gives None (the no-oxipng path: PNGs kept as exported) unless the test is marked oxipng:
-    about 0.7 s a PNG. Child processes still run the real one."""
+    """png_export.optimize and band give None (PNGs kept as exported) unless the test is marked oxipng: about 0.7 s and
+    3 s a card PNG. Child processes still run the real ones."""
     png_export = sys.modules.get("commands.png_export")
     if png_export and not request.node.get_closest_marker("oxipng"):
         monkeypatch.setattr(png_export, "optimize", lambda data: None)
+        monkeypatch.setattr(png_export, "band", lambda data: None)
 
 
 @pytest.fixture(scope="session")

@@ -8,6 +8,7 @@ pixel, a bot bake drawn, and the refusals: a script save under a stale composite
 the change is, Defcon Panda's drop shadow the fork draws differently, 20 Creature Types' image changed where no layer did.
 """
 import subprocess
+import zlib
 
 import numpy as np
 import pytest
@@ -566,18 +567,48 @@ def test_same_png_tells_a_changed_pixel_or_chunk():
 
 
 @pytest.mark.oxipng
-def test_recompress_leaves_16_bit_and_runs_without_oxipng(monkeypatch):
+def test_recompress_leaves_16_bit_and_bands_without_oxipng(monkeypatch):
+    """No oxipng (the jetson): a committed PNG is still banded; a preview's is left; the bot's own whatever its size."""
     import io
     buf = io.BytesIO()
     Image.fromarray(np.arange(64 * 64, dtype=np.uint16).reshape(64, 64) * 16).save(buf, "PNG", compress_level=0)
     assert buf.getvalue()[24] == 16 and pe.recompress(buf.getvalue()) is None    # same_png reads 8 bits: not tried
     monkeypatch.setattr(pe, "which", lambda name: None)                   # no CLI
     data = photoshop_png(art())
-    assert pe.recompress(data) is None
-    image, like = art(), pe.open_png(data)
-    plain = io.BytesIO()
-    psd_edit.save_png(image, plain, like)
-    assert pe.encode(image, like) == plain.getvalue()                       # the bot's own PNG, as before
+    assert pe.recompress(data, committed=False) is None
+    out, made = pe.recompress(data), pe.encode(art(), pe.open_png(data))
+    assert pe.banded(out) and pe.banded(made) and pe.same_png(data, out) and pe.same_png(data, made)
+    padded = lambda d, _b=pe.band: _b(d)[:-12] + pe._chunk(b"tEXt", b"pad\0" + bytes(len(d))) + _b(d)[-12:]
+    monkeypatch.setattr(pe, "band", padded)                               # bigger than PIL's file
+    assert pe.recompress(data) is None and pe.banded(pe.encode(art(), pe.open_png(data)))   # the bot's own: banded
+
+
+@pytest.mark.oxipng
+def test_a_small_change_leaves_the_other_bands_as_they_were(tmp_path):
+    """band(): each BAND rows deflated after a full flush, so a one-pixel change leaves every other band's bytes as they
+    were (the last: the stream's checksum) and git stores the new version as a small delta. Banded is told by the flush
+    points: the same stream cut into as many IDATs is not, and a banded file is done."""
+    y, x = np.mgrid[:600, :400]                 # deflate codes it (noise alone is stored: any file deltas)
+    image = Image.fromarray((np.stack([x * 255 // 400, y * 255 // 600, (x + y) % 256], 2)
+                             + np.random.default_rng(7).integers(0, 8, (600, 400, 3))).astype(np.uint8))
+    first = pe.recompress(photoshop_png(image))
+    image.putpixel((10, 300), (0, 0, 0))
+    second = pe.recompress(photoshop_png(image))
+    assert pe.same_png(photoshop_png(image), second) and pe.recompress(second) is None
+    a, b = ([raw for kind, _, raw in pe._all(data) if kind == b"IDAT"] for data in (first, second))
+    assert len(a) == len(b) == 10 and [n for n in range(10) if a[n] != b[n]] == [300 // pe.BAND, 9]
+    stream = zlib.compress(zlib.decompress(b"".join(payload for kind, payload, _ in pe._all(first) if kind == b"IDAT")), 9)
+    cuts = [len(stream) * n // 10 for n in range(11)]
+    cut = [raw for kind, _, raw in pe._all(first) if kind not in (b"IDAT", b"IEND")] + [
+        pe._chunk(b"IDAT", stream[cuts[n]:cuts[n + 1]]) for n in range(10)] + [pe._chunk(b"IEND", b"")]
+    fake = pe.SIGNATURE + b"".join(cut)
+    assert pe.same_png(first, fake) and pe.banded(first) and not pe.banded(fake) and not pe.banded(photoshop_png(image))
+    run = lambda *args, data: subprocess.run(["git", "-C", str(tmp_path), *args], input=data, capture_output=True,
+                                             check=True).stdout
+    run("init", "-q", data=b"")
+    ids = b"".join(run("hash-object", "-w", "--stdin", data=data) for data in (first, second))
+    pack = run("pack-objects", "-q", "--stdout", "--window=10", "--depth=50", data=ids)
+    assert len(pack) < len(first) + len(second) // 5                    # one stream: the second costs it whole
 
 
 # ========================

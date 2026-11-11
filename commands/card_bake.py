@@ -1330,12 +1330,13 @@ def _rename_printed(snapshot: Snapshot, card: Card, folder: str, duplicates: lis
     _relocate(card, folder)
 
 
-def _smaller(path: str) -> bytes:
+def _smaller(path: str, committed: bool = True) -> bytes:
     """A baked PNG file's bytes, recompressed losslessly (png_export.recompress: XMP stripped, an opaque card as RGB;
-    docs/Finished/session-2026-10-25/SMALLER_PNG_PUSHES.md) and written back, so the artifacts show what is committed."""
+    docs/Finished/session-2026-10-25/SMALLER_PNG_PUSHES.md) and written back, so the artifacts show what is committed.
+    A committed one banded whatever its size; a preview's (committed False) by oxipng, when smaller."""
     with open(path, "rb") as fh:
         data = fh.read()
-    smaller = png_export.recompress(data)
+    smaller = png_export.recompress(data, None if committed else 0.0, committed=committed)
     if smaller is None:
         return data
     with open(path, "wb") as fh:
@@ -1505,11 +1506,11 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
             with open(card.baked.psd_path, "rb") as fh:
                 psd_bytes = fh.read()
             card.new_psd_sha = blob_sha(psd_bytes)
-            card.files = {card.rel: psd_bytes, card.png: _smaller(card.baked.png_path)}
+            card.files = {card.rel: psd_bytes, card.png: _smaller(card.baked.png_path, not lean)}
             if card.views:                      # each picture the edit shows in: its own PNG
                 card.files = {card.rel: psd_bytes}
                 for n, baked in card.views.items():
-                    card.files[card.pictures[n]] = _smaller(baked.png_path)
+                    card.files[card.pictures[n]] = _smaller(baked.png_path, not lean)
                 old_png = join(folder, "old", basename(card.pictures[next(iter(card.views))]))
             for path, data in (getattr(card.baked, "files", None) or {}).items():     # a placed title's file
                 card.files[path] = data

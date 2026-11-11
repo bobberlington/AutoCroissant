@@ -1115,7 +1115,7 @@ def test_a_card_file_name_a_file_cant_hold_is_renamed_silently(cards, tmp_path):
 @pytest.mark.oxipng
 @pytest.mark.skipif(pe.tool() is None, reason="needs the oxipng CLI (as card-guards.yml installs)")
 def test_pushed_pngs_are_recompressed_in_the_bot_commit(cards, tmp_path):
-    """A PNG the push brought (a pair's; a numbered one pushed alone) that a lossless recompression makes more than 10%
+    """A PNG the push brought (a pair's; a numbered one pushed alone) that a lossless recompression makes more than 3%
     smaller is rewritten in the one bot commit, the same image, never told on Discord; an already small one is left;
     the bot's commit is never guarded (no loop)."""
     root, base, alice, bot = cards

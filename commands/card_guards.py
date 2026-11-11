@@ -18,7 +18,7 @@ One report per push: the job summary and commit comment (report.md), one Discord
 the check. Each card pushed over an older PSD carries what changed inside it (psd_diff: "added Ability FX: Blazing",
 "Name text: 'a' -> 'b'").
 Every card PNG the push brought is recompressed losslessly in that commit (owner, 2026-10-23; png_export.recompress,
-the same pixels) when that saves more than 10% and 64 KiB (our thresholds), and so is every PNG the bot writes; a
+the same pixels, banded) when that saves more than 3% and 64 KiB (our thresholds), and so is every PNG the bot writes; a
 pushed one in a process of its own, beside the rest of the check (_overlap).
 
     python -m commands.card_guards check --clone <dir> --after <sha> [--before <sha>] [--repo <owner/name>] [--author <login>]

@@ -342,7 +342,7 @@ def write_images(png_path: str, out: str, before: str = "", early=None, small=No
     """
     with open(png_path, "rb") as fh:
         data = fh.read()
-    smaller = png_export.recompress(data)
+    smaller = png_export.recompress(data, committed=False)
     with open(join(out, PNG), "wb") as fh:
         fh.write(smaller or data)
     with Image.open(BytesIO(data)) as image:

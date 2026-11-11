@@ -24,12 +24,14 @@ draw those.
     png_check(psd, png) -> dict                              R10: a PNG against its PSD (its stored image, else the render)
     changed_layers(old, new) -> (box, n)                     the layer records that really changed
     photoshop_saved(old, new) -> bool                        a new xmpMM:InstanceID and a later xmp:MetadataDate
-    recompress(data, minimum, floor) -> bytes or None        the PNG losslessly smaller (oxipng, checked), or None
+    recompress(data, minimum, floor) -> bytes or None        the PNG banded (a preview's: oxipng), checked, or None
+    band(data) -> bytes or None                              the PNG deflated in BAND-row bands (git deltas a change)
     same_png(a, b) -> bool                                   the same image: size, RGBA pixels and every chunk but text
 
 Every PNG the guards and the bake write is recompressed losslessly (owner, 2026-10-23; Photoshop's exports measured 4.8x
 too big): text chunks (Photoshop's XMP) stripped, a fully opaque card saved as RGB (owner, 2026-10-24;
-docs/Finished/session-2026-10-25/SMALLER_PNG_PUSHES.md).
+docs/Finished/session-2026-10-25/SMALLER_PNG_PUSHES.md), deflated in BAND-row bands so an unchanged band is the same
+bytes in the next version and git stores a small change small (owner, 2026-11-11). No oxipng needed; previews: oxipng's.
 
 No Discord, network or config.
 """
@@ -42,7 +44,7 @@ from contextlib import nullcontext
 from io import BytesIO
 from re import search
 from shutil import which
-from struct import unpack
+from struct import pack, unpack
 from subprocess import DEVNULL, SubprocessError, run as run_process
 from tempfile import TemporaryDirectory
 from time import process_time
@@ -87,7 +89,7 @@ G7 = "PNG not made: the card changed size; " + EXPORT
 G8 = "{name} not updated: re-export it in Photoshop"
 HIDDEN = "picture {n} can't show {layers}: the hidden {groups} no tag"   # R12 (psd_parser.hidden_tags)
 MISSED = {"baseline": "the old PSD drawn against the old PNG", "cross": "against the PSD's own image"}   # miss_notes' boxes
-RECOMPRESS_MIN = 0.10                           # a pushed PNG is recompressed when this much smaller (ours: the owner set none)
+RECOMPRESS_MIN = 0.03                           # a pushed PNG is banded when this much smaller (ours; 10% kept 30 of oxipng's 45)
 RECOMPRESS_BYTES = 65536                        # and at least this many bytes smaller: a tiny saving is not worth a commit
 OXIPNG_LEVEL = 2                                # oxipng's default preset (4.8x on Photoshop's exports; level 4 adds 1%)
 OXIPNG_TIMEOUT = 120                            # seconds per PNG: oxipng keeps its best so far
@@ -95,6 +97,10 @@ OXIPNG = "oxipng"                               # the CLI (10.2.1: the Actions' 
 TEXT_CHUNKS = (b"iTXt", b"tEXt", b"zTXt")       # stripped: Photoshop's XMP (owner 2026-10-24); colour chunks kept
 OXIPNG_FLAGS = ("-q", "--force", "-o", str(OXIPNG_LEVEL), "--nb", "--np", "--ng", "--timeout", str(OXIPNG_TIMEOUT))
 SIGNATURE = b"\x89PNG\r\n\x1a\n"
+BAND = 64                                       # rows a band: its own IDAT, ending in a full flush (owner 2026-11-11)
+BAND_LEVEL = 9                                  # band()'s zlib level (memLevel 9)
+FLUSH = b"\x00\x00\xff\xff"                     # the empty stored block a full flush ends with
+PIXEL_BYTES = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}    # a pixel's bytes at bit depth 8, by colour type
 
 
 # ========================
@@ -281,13 +287,13 @@ def _bbox(mask: np.ndarray) -> Optional[tuple]:
 
 
 def encode(image: Image.Image, like: Optional[Image.Image]) -> bytes:
-    """The PNG file: like's colour chunks kept (psd_edit.save_png), recompressed losslessly when that is smaller."""
+    """The PNG file: like's colour chunks kept (psd_edit.save_png), banded (recompress, whatever its size)."""
     buf = BytesIO()
     if like is not None:
         psd_edit.save_png(image, buf, like)
     else:
         image.save(buf, "PNG")
-    return recompress(buf.getvalue()) or buf.getvalue()
+    return recompress(buf.getvalue(), None) or buf.getvalue()
 
 
 # ========================
@@ -325,8 +331,8 @@ def tool() -> Optional[str]:
     return "cli" if which(OXIPNG) else None
 
 
-def _chunks(data: bytes) -> list:
-    """[(type, payload)] of a PNG file but its image data (IDAT); raises ValueError when it is not one."""
+def _all(data: bytes) -> list:
+    """[(type, payload, the chunk's bytes)] of a PNG file; raises ValueError when it is not one."""
     if not data.startswith(SIGNATURE):
         raise ValueError("not a PNG")
     out, i = [], len(SIGNATURE)
@@ -334,12 +340,16 @@ def _chunks(data: bytes) -> list:
         size, kind = unpack(">I4s", data[i:i + 8])
         if i + 12 + size > len(data):
             raise ValueError("truncated chunk")
-        if kind != b"IDAT":
-            out.append((kind, data[i + 8:i + 8 + size]))
+        out.append((kind, data[i + 8:i + 8 + size], data[i:i + 12 + size]))
         i += 12 + size
         if kind == b"IEND":
             break
     return out
+
+
+def _chunks(data: bytes) -> list:
+    """[(type, payload)] of a PNG file but its image data (IDAT); raises ValueError when it is not one."""
+    return [(kind, payload) for kind, payload, _ in _all(data) if kind != b"IDAT"]
 
 
 def _meaning(kind: bytes, payload: bytes):
@@ -415,26 +425,122 @@ def optimize(data: bytes) -> Optional[bytes]:
     return _cli(data, True)
 
 
+def _chunk(kind: bytes, payload: bytes) -> bytes:
+    return pack(">I", len(payload)) + kind + payload + pack(">I", zlib.crc32(kind + payload))
+
+
+def _filtered(rows: np.ndarray, above: np.ndarray, step: int) -> bytes:
+    """
+    rows (uint8, a row of bytes each) filtered as PNG stores them (above: the row before them), each row by the filter
+    type giving the fewest distinct byte pairs (oxipng's Bigrams; the smallest of three rules on the 776 card PNGs,
+    2026-11-11): chosen from that row and the one above alone, so an unchanged band filters the same in the next
+    version. Integers only: the same on every machine. Never change the rule (every card's next version would differ).
+    """
+    row = rows.astype(np.int16)
+    up = np.vstack([above[None], rows[:-1]]).astype(np.int16)
+    left, corner = np.zeros_like(row), np.zeros_like(row)
+    left[:, step:], corner[:, step:] = row[:, :-step], up[:, :-step]
+    guess = left + up - corner
+    a, b, c = np.abs(guess - left), np.abs(guess - up), np.abs(guess - corner)
+    paeth = np.where((a <= b) & (a <= c), left, np.where(b <= c, up, corner))
+    each = (np.stack([row, row - left, row - up, row - ((left + up) >> 1), row - paeth]) & 255).astype(np.uint16)
+    pairs = each[:, :, :-1] << 8 | each[:, :, 1:]
+    pairs.sort(axis=2)
+    kind = (np.diff(pairs, axis=2) != 0).sum(axis=2, dtype=np.int64).argmin(axis=0)
+    out = np.empty((len(row), row.shape[1] + 1), np.uint8)
+    out[:, 0], out[:, 1:] = kind, each[kind, np.arange(len(row))]
+    return out.tobytes()
+
+
+def band(data: bytes) -> Optional[bytes]:
+    """
+    An 8-bit PNG deflated in BAND-row bands, each its own IDAT ending in a full flush (_filtered's rows, zlib at
+    BAND_LEVEL): an unchanged band is the same bytes in the next version, so git deltas a small change (owner,
+    2026-11-11). Text chunks stripped, a fully opaque RGBA made RGB, every other chunk kept in place. Unchecked:
+    recompress checks it.
+
+    Returns:
+        The new file (maybe not smaller); None for a PNG not 8-bit or one that cannot be read
+    """
+    try:
+        width, height, depth, kind = _header(data)
+        chunks = _all(data)
+        if depth != 8 or kind not in PIXEL_BYTES:
+            return None
+        image = Image.open(BytesIO(data))
+        image.load()
+        pixels = np.asarray(image)
+    except (ValueError, OSError, SyntaxError, zlib.error):
+        return None
+    if kind == 6 and pixels.ndim == 3 and pixels.shape[2] == 4 and all(k != b"sBIT" for k, _, _ in chunks) \
+            and (pixels[:, :, 3] == 255).all():
+        pixels, kind = pixels[:, :, :3], 2
+    step = PIXEL_BYTES[kind]
+    if pixels.size != height * width * step:
+        return None
+    rows = np.ascontiguousarray(pixels, np.uint8).reshape(height, width * step)
+    deflate, idat, above = zlib.compressobj(BAND_LEVEL, zlib.DEFLATED, 15, 9), [], np.zeros(width * step, np.uint8)
+    for top in range(0, height, BAND):
+        part = deflate.compress(_filtered(rows[top:top + BAND], above, step))
+        idat.append(_chunk(b"IDAT", part + deflate.flush(zlib.Z_FULL_FLUSH if top + BAND < height else zlib.Z_FINISH)))
+        above = rows[min(top + BAND, height) - 1]
+    out = [SIGNATURE]
+    for name, _, whole in chunks:
+        if name == b"IHDR":
+            out.append(_chunk(name, pack(">IIBBBBB", width, height, 8, kind, 0, 0, 0)))
+        elif name == b"IDAT":
+            out, idat = out + idat, []
+        elif name not in TEXT_CHUNKS:
+            out.append(whole)
+    return b"".join(out)
+
+
+def banded(data: bytes) -> bool:
+    """Whether a PNG is band()'s: by its flush points, an IDAT for each BAND rows ending in a full flush (the last: the
+    stream's end). Photoshop's and PIL's files split their image data at byte counts, never so."""
+    try:
+        width, height, depth, kind = _header(data)
+        parts = [payload for name, payload, _ in _all(data) if name == b"IDAT"]
+    except ValueError:
+        return False
+    if depth != 8 or kind not in PIXEL_BYTES or data[28] or len(parts) != -(-height // BAND) \
+            or not all(part.endswith(FLUSH) for part in parts[:-1]):
+        return False
+    inflate, stride = zlib.decompressobj(), 1 + width * PIXEL_BYTES[kind]
+    try:
+        if any(len(inflate.decompress(part)) != stride * min(BAND, height - n * BAND) for n, part in enumerate(parts)):
+            return False
+    except zlib.error:
+        return False
+    return inflate.eof
+
+
 def worth(before: int, after: int, minimum: float = RECOMPRESS_MIN, floor: int = RECOMPRESS_BYTES) -> bool:
     """Whether a file of before bytes recompressed to after is worth writing: more than minimum of it saved, and floor."""
     saved = before - after
     return saved > 0 and saved > minimum * before and saved >= floor
 
 
-def recompress(data: bytes, minimum: float = 0.0, floor: int = 0) -> Optional[bytes]:
+def recompress(data: bytes, minimum: Optional[float] = 0.0, floor: int = 0, committed: bool = True) -> Optional[bytes]:
     """
-    The PNG losslessly smaller (optimize), the result checked by same_png.
+    The PNG losslessly smaller, the result checked by same_png: a committed file banded (band), a preview by oxipng
+    (optimize). A banded file is done: None.
 
     Args:
         data: A PNG file
-        minimum: The fraction of its size it must shrink by, more than (RECOMPRESS_MIN for a pushed PNG)
+        minimum: The fraction of its size it must shrink by, more than (RECOMPRESS_MIN for a pushed PNG); None: any
+            size (the bot's own file: banded even when PIL's was smaller)
         floor: The bytes it must shrink by, at least (RECOMPRESS_BYTES)
+        committed: False for a file never committed (card_preview's)
 
     Returns:
-        The smaller file; None when optimize gives none, it saves too little, or it is not the same image
+        The new file; None when it gives none, it saves too little, or it is not the same image
     """
-    out = optimize(data)
-    if out is None or not worth(len(data), len(out), minimum, floor) or not same_png(data, out):
+    if committed and banded(data):
+        return None
+    out = band(data) if committed else optimize(data)
+    if out is None or minimum is not None and not worth(len(data), len(out), minimum, floor) \
+            or not same_png(data, out):
         return None
     return out
 
@@ -1309,6 +1415,7 @@ def open_psd(data: bytes, rel: str = "") -> PSDImage:
 # Module Exports
 # ========================
 __all__ = [
+    'BAND',
     'DILATE',
     'Export',
     'KEPT_PX',
@@ -1340,6 +1447,8 @@ __all__ = [
     'MISSED',
     'RECOMPRESS_BYTES',
     'RECOMPRESS_MIN',
+    'band',
+    'banded',
     'export',
     'export_new',
     'miss_notes',
