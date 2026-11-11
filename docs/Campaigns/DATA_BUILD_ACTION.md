@@ -479,7 +479,7 @@ github_api reads it inside a try/except and takes the token from the environment
    - exact renames: a `D` of A and an `A` of B with the same blob in one commit. This is build_site's `image_versions` rule and
      needs no git rename machinery.
    `--no-renames` and no `-M`: inexact rename detection reads blobs.
-4. **The changed set.** The traverser's rules, unchanged: new, moved, an older `parser_version`, a different blob. Add the
+4. **The changed set.** The traverser's rules: new, moved, an older `parser_version`, a different blob, a details record of another `psd_details.VERSION`. Add the
    names in `cards`, or everything with `full`. Archived names whose PSD is back are restored (`StatsDatabase.restore()`).
 5. **Downloads.**
    - Changed PSD blobs by sha (`github_api.fetch_blob`) over 4 streams, after the local object store.
@@ -785,7 +785,7 @@ github_api reads it inside a try/except and takes the token from the environment
 {"schema": 1, "built_at": "2026-10-22T18:04:11Z", "run": "https://github.com/MichaelJSr/TTSCardMaker/actions/runs/<id>",
  "card_repo": "MichaelJSr/TTSCardMaker", "card_commit": "<main sha built: M, or main's head>", "card_commit_at": 1792700000,
  "main_commit": "<M, or null when the run made no main commit>",
- "builder": {"repo": "bobberlington/AutoCroissant", "ref": "main", "commit": "<sha>", "parser_version": 2, "psd_tools": "1.25.0", "python": "3.14"},
+ "builder": {"repo": "bobberlington/AutoCroissant", "ref": "main", "commit": "<sha>", "parser_version": 2, "details_version": 6, "psd_tools": "1.25.0", "python": "3.14"},
  "seed": {"repo": "bobberlington/AutoCroissant", "commit": "<PICKLE sha>"},
  "inputs": {"edits_blob": "…", "authors_blob": "…", "created_blob": "…", "manifest_blob": "…", "decks_blob": "…", "types_tree": "…", "fonts_tree": "…"},
  "counts": {"cards": 819, "versions": 461, "archived": 1, "details": 813, "changed": 3, "new": 1, "failed": 0, "baked": 0},
