@@ -542,7 +542,7 @@ class CardClassifier:
 
         top_folder = folders[0]
         if top_folder in ("Items", "Creatures") and len(folders) < 2:     # needs <subtype|series>/<N Stars>/
-            return {"type": CardType.UNKNOWN.value}   # (indexed below; compiled code would read out of bounds)
+            return {"type": CardType.UNKNOWN.value}   # (indexed below)
 
         # Classification logic
         classifiers = {
@@ -572,7 +572,7 @@ class CardClassifier:
     def _stars(folder: str) -> int:
         """The star count a folder name starts with ("2 Stars" -> 2)."""
         words = folder.split()
-        if not words:           # a blank folder: words[0] would read out of bounds when compiled
+        if not words:           # a blank folder: no words[0]
             raise ValueError(f"no star count in folder {folder!r}")
         return int(words[0])
 

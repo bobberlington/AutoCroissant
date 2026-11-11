@@ -278,7 +278,7 @@ class CardRepository:
                 return self._tree, etag, 200, ""
             if response.status_code != 200:
                 return None, "", response.status_code, f"HTTP {response.status_code}"
-            body = response.json()                          # untyped: tree is a dict under Cython
+            body = response.json()
         except (RequestException, ValueError) as e:         # ValueError: a body that isn't JSON
             return None, "", 0, f"{type(e).__name__}: {e}"
         if not isinstance(body, dict):
@@ -536,7 +536,7 @@ class CardRepository:
         for name, card in cards:
             title = getattr(card, "display_name", None) or name
             got = _pairs(title)
-            score = 2.0 * len(wanted & got) / (len(wanted) + len(got))   # 2.0: compiled, ints divide as C ints
+            score = 2.0 * len(wanted & got) / (len(wanted) + len(got))
             if score > 0.35 and not getattr(card, "hidden", False):     # ties: the website's order (plain duplicates last)
                 last = bool(getattr(card, "duplicate_of", None) and not getattr(card, "variant_of", None))
                 found.append((-score, last, name.lower(), name, title))

@@ -272,17 +272,18 @@ def _requirements(name: str) -> list:
 
 def test_requirements_layers_and_pin():
     """requirements-cards.txt: the card stack (CARD_PACKAGES) with the fork's one pin (oxipng is a CLI: cards-python);
-    requirements.txt and requirements-dev.txt layer on it; none of the three gitignored (*.txt)."""
+    requirements.txt is it and requirements-bot.txt (the jetson's: test_bot_env), requirements-dev.txt layers on that;
+    none of the four gitignored (*.txt)."""
     from helpers import CARD_PACKAGES, card_pin
     requirement = pytest.importorskip("packaging.requirements").Requirement
     cards = [requirement(x) for x in _requirements("requirements-cards.txt")]
     assert [r.name for r in cards] == list(CARD_PACKAGES)
     assert cards[0].url == f"git+https://github.com/MichaelJSr/psd-tools@{card_pin()}" and cards[0].extras == {"composite", "text"}
     assert [str(r) for r in cards[1:]] == ["fonttools", "requests"]
-    assert _requirements("requirements.txt")[0] == "-r requirements-cards.txt"
+    assert _requirements("requirements.txt") == ["-r requirements-cards.txt", "-r requirements-bot.txt"]
     assert _requirements("requirements-dev.txt")[0] == "-r requirements.txt"
     assert not (REPO / "requirements-card-data.txt").exists()
-    for name in ("requirements-cards.txt", "requirements.txt", "requirements-dev.txt"):
+    for name in ("requirements-cards.txt", "requirements.txt", "requirements-dev.txt", "requirements-bot.txt"):
         status = subprocess.run(["git", "-C", str(REPO), "status", "--porcelain", "--ignored", name], capture_output=True, text=True).stdout
         assert not status.startswith("!!"), f"{name} is gitignored (*.txt): .gitignore needs its ! line"
 
@@ -340,6 +341,11 @@ def test_first_build_then_nothing_to_do(cards):
     times = {p.name: p.stat().st_mtime_ns for p in cards.db.iterdir() if p.is_file()}
     assert _build(cards)[0] == cd.EXIT_OK
     assert {p.name: p.stat().st_mtime_ns for p in cards.db.iterdir() if p.is_file()} == times      # nothing to do: no write
+    fonts = manifest["fonts"]                                 # the bot's /fonts (card_sync.fonts_text)
+    assert fonts["checked"] == 2 and set(fonts) == {"checked", "missing", "errors"}
+    path = cards.db / cdb.MANIFEST_JSON
+    path.write_text(json.dumps({k: v for k, v in manifest.items() if k != "fonts"}))   # an older builder's data
+    assert _build(cards)[0] == cd.EXIT_OK and json.loads(path.read_text())["fonts"] == fonts
 
 
 def test_changed_moved_archived(cards):

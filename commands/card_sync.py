@@ -8,8 +8,7 @@ The Card sync Action in the card repo builds the card data and commits it to the
 - /update_stats: that sync and one reply; Card sync starts itself (a card push: the data, the bake and the TTS save at
   once; a 30-minute timer until 2026-11-03); with force_update or cards (admins), a run dispatched
   (ACTIONS_TOKEN) and its Card data job followed until it ends (not the bake), then the sync;
-- /fonts: from the data's psd_details.json, whose fonts the build marked supplied or not.
-Uncompiled (not in setup.py), like card_data.
+- /fonts: the fonts report the build writes into the data's manifest (font_check.fonts_report); no psd-tools here.
 """
 from datetime import datetime, timezone
 from os.path import isfile, join
@@ -52,6 +51,7 @@ FONTS_PREFIX = "MDW/Fonts/"                           # its top-level files only
 LINKED_PREFIX = "MDW/Linked/"                         # the cards' linked pictures, every extension (a redraw, 11-07)
 CARD_FILES = {ICON_MANIFEST_PATH, RULES_PATH, AUTHORS_PATH, EDITS_PATH, CREATED_PATH}
 REFRESH_SECONDS = 120                                # on use: the data branch looked at most this often
+ERRORS_SHOWN = 10                                    # error lines in the /fonts reply
 READERS = frozenset({                                # the slash commands that read card data (on_use); autocomplete too
     "export_cards", "export_rulebook", "fonts", "frankenstein", "list_orphans", "query", "query_ability",
     "query_rulebook", "view_old_metadata"})
@@ -662,14 +662,24 @@ def update(interaction=None, output_problematic: bool = True, force_update: bool
 
 
 def fonts_text(folder: str = CARD_DATA_DIR) -> str:
-    """/fonts: the card data's psd_details.json (no PSD or font downloaded)."""
-    from commands import psd_details                 # lazy: fontTools
-    from commands.font_check import details_report, discord_text
-    if not isfile(join(folder, card_db.DETAILS_JSON)):
-        return "No card data yet: run /update_stats."
-    report_ = details_report(psd_details.load(join(folder, card_db.DETAILS_JSON)), stats_db.stats)
+    """/fonts: the manifest's fonts report (the build judged each card PSD's fonts against MDW/Fonts)."""
     manifest = card_db.read_json(join(folder, card_db.MANIFEST_JSON))
-    return discord_text(report_, head=f"From the card data ({built_line(manifest)}): {report_.checked} card PSDs.")
+    if not manifest:
+        return "No card data yet: run /update_stats."
+    fonts = manifest.get("fonts")
+    if not isinstance(fonts, dict):
+        return "The card data has no fonts report yet: the next Card sync run writes it."
+    out = [f"From the card data ({built_line(manifest)}): {fonts.get('checked', 0)} card PSDs."]
+    missing = fonts.get("missing") or {}
+    for font, cards in missing.items():
+        out.append(f"**{font}**: " + "; ".join(f"{card_name(p)} ({', '.join(layers)})" for p, layers in cards.items()))
+    if not missing:
+        out.append("Every font the cards ask for is in MDW/Fonts.")
+    errors = fonts.get("errors") or []
+    if errors:
+        more = len(errors) - ERRORS_SHOWN
+        out.append("Errors: " + "; ".join(errors[:ERRORS_SHOWN]) + (f"; and {more} more" if more > 0 else ""))
+    return "\n".join(out)
 
 
 # ========================
@@ -677,6 +687,7 @@ def fonts_text(folder: str = CARD_DATA_DIR) -> str:
 # ========================
 __all__ = [
     'ACTIONS_TOKEN',
+    'ERRORS_SHOWN',
     'READERS',
     'REFRESH_SECONDS',
     'WORKFLOW',

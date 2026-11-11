@@ -16,6 +16,7 @@ from requests import HTTPError
 import commands.card_check as cc
 import commands.card_data as cd
 import commands.github_api as ga
+import commands.psd_remote as pr
 from global_config import RAW_BASE
 from golden_cards import golden_file
 import helpers
@@ -178,7 +179,7 @@ def test_a_wrong_range_after_the_open_marks_the_psd_failed(psds, monkeypatch, an
         return reply
 
     monkeypatch.setattr(ga, "get", get)
-    remote = ga.RemotePSD("o/r", COMMIT, DOOMER, len(data))
+    remote = pr.RemotePSD("o/r", COMMIT, DOOMER, len(data))
     opened.append(True)
     assert not remote.failed
     remote.reader.seek(len(data) - 100)                            # pixels: not fetched by the open

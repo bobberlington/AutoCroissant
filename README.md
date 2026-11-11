@@ -9,9 +9,9 @@ reads: TTSCardMaker's Card sync Action runs this repo's builder (`commands/card_
 ## Run
 
 `python main.py` with a `config.py` beside it (token, admins, GitHub token, ...; fields in
-`.claude/skills/autocroissant-config-and-flags/SKILL.md`). Never commit `config.py`. Install: `pip install -r requirements.txt`,
-then `python setup.py build_ext --inplace` (10 Cython modules; rebuild after every pull: it rebuilds only the modules whose source changed, `python setup.py clean` removes everything):
-`.claude/skills/autocroissant-build-and-env/SKILL.md`.
+`.claude/skills/autocroissant-config-and-flags/SKILL.md`). Never commit `config.py`. Install: `pip install -r requirements.txt`
+(the bot's pinned packages and the card toolchain; the jetson installs `requirements-bot.txt` only). Plain Python: nothing
+is compiled: `.claude/skills/autocroissant-build-and-env/SKILL.md`.
 
 ## Test
 
@@ -19,8 +19,9 @@ then `python setup.py build_ext --inplace` (10 Cython modules; rebuild after eve
 
 ## Deploy
 
-Production is the jetson (`ssh jetson`, systemd unit `autocroissant`): the `jetson-deploy` skill (~/.claude/skills, outside the repo) on the jetson (pull, psd-tools
-pin, build, restart, journal check; prints OK or FAILED; `--bot ojwikibot` for the other bot; any time of day).
+Production is the jetson (`ssh jetson`, systemd unit `autocroissant`): the `jetson-deploy` skill (~/.claude/skills, outside the repo) on the jetson (pull,
+`requirements-bot.txt`, restart, journal check; prints OK or FAILED; `--bot ojwikibot` for the other bot; any time of day). No
+card toolchain there: the card tools run on the Mac and in TTSCardMaker's Actions.
 Runbook: `.claude/skills/autocroissant-run-and-operate/SKILL.md`.
 
 ## Docs

@@ -1390,13 +1390,6 @@ def test_action_shaped_copy(tmp_path):
         assert done.returncode == 0 and done.stdout.strip() == "[]", done.stderr
 
 
-def test_guard_modules_stay_uncompiled():
-    """Not in setup.py's INCLUDE_FILES: the Action runs them as pure Python (the change-control skill's step 5)."""
-    setup = (REPO / "setup.py").read_text(encoding="utf-8")
-    for module in ("card_guards", "png_export", "card_standards", "psd_diff"):
-        assert f"commands/{module}.py" not in setup
-
-
 def _workflow(clone) -> Path:
     site = Path(os.path.expanduser(os.environ.get("AC_SITE_SRC") or str(CLONE)))       # a TTSCardMaker checkout (code, not cards)
     path = WORKFLOW or (site / ".github" / "workflows" / "card-guards.yml")

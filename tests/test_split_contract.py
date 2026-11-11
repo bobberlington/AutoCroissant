@@ -9,7 +9,7 @@ import commands.repo_history as rh
 def test_classify_shallow_paths_are_unknown():
     unknown = {"type": "unknown"}
     assert pp.CardClassifier.classify("Card.psd") == unknown
-    assert pp.CardClassifier.classify("Items/Card.psd") == unknown            # read out of bounds when compiled
+    assert pp.CardClassifier.classify("Items/Card.psd") == unknown            # no subtype folder
     assert pp.CardClassifier.classify("Creatures/Card.psd") == unknown
     assert pp.CardClassifier.classify("Items/Heal/2 Stars/B.psd") == {"type": "item", "subtype": "heal", "stars": 2}
     assert pp.CardClassifier.classify("N.M.E/Star_Jar.psd") == {"type": "nme"}

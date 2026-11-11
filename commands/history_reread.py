@@ -169,7 +169,8 @@ def bars(psd, image, creatures, variant: Optional[int]) -> dict:
 def read_one(job: dict, repository: str, vocab) -> dict:
     """One PSD at its commit: today's parse; the PNG's bars only when a stored version's stats differ from it."""
     from PIL import Image
-    from commands.github_api import RemotePSD, get_with_retry, raw_url
+    from commands.github_api import get_with_retry, raw_url
+    from commands.psd_remote import RemotePSD
     from commands.psd_parser import variants_of
     if not hasattr(_local, "parser"):
         _local.parser = vocab.parser()

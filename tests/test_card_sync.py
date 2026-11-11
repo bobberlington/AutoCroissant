@@ -457,6 +457,10 @@ def test_fonts_from_the_card_data(github, tmp_path):
              "C": _card("C"), "M": _card("M", path="MDW/Template.psd")}
     github.publish(cards, defaultdict(list), tmp_path, details=json.dumps(details))
     cs.sync(ME)
+    assert cs.fonts_text() == "The card data has no fonts report yet: the next Card sync run writes it."
+    from commands.font_check import fonts_report            # the build's (card_data.build: the manifest's "fonts")
+    github.publish(cards, defaultdict(list), tmp_path, details=json.dumps(details), fonts=fonts_report(details["cards"], cards))
+    cs.sync(ME)
     lines = cs.fonts_text().splitlines()
     assert lines[0].startswith("From the card data (built ") and lines[0].endswith("): 2 card PSDs.")
     assert lines[1] == "**Comic-Bold**: A (Ability, Ability 2)"

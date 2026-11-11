@@ -37,8 +37,9 @@ from commands.card_edits import CardEdits
 from commands.card_models import StatsDatabase, card_name
 from commands.font_check import API_TIMEOUT, DISCORD_LIMIT, EXCLUDE_FOLDERS, NOBODY, POOL_CHUNK, POOL_MIN, is_card_psd, \
     pushed_files, tree_blobs
-from commands.github_api import RemotePSD, blob_text, fetch_verified, range_reads, token_from_env
+from commands.github_api import blob_text, fetch_verified, range_reads, token_from_env
 from commands.psd_parser import CardValidator, IconVocabulary, PSDParser, variants_of
+from commands.psd_remote import RemotePSD
 from global_config import EDITS_PATH, ICON_MANIFEST_PATH, STARS_DIR, TYPES_DIR
 
 # ========================

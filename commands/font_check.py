@@ -2,8 +2,8 @@
 Font check for the card PSDs: the PostScript names a card's visible type layers ask for, and which of them MDW/Fonts in
 the card repo does not supply. TTSCardMaker's card-guards.yml runs it in its check job on every push to main that touches a
 PSD or MDW/Fonts (font-check.yml until 2026-10-25): job summary, commit comment and a Discord message in the standards
-channel pinging the card makers' role, at once; the bot's /fonts reads the card data's
-psd_details.json instead (card_sync.fonts_text, details_report here).
+channel pinging the card makers' role, at once; the bot's /fonts reads the report the card data build writes from
+psd_details.json into its manifest (fonts_report here, card_sync.fonts_text).
 
     python -m commands.font_check --fonts <dir> [--psd <path>...] [--all <checkout root>]
                                   [--repo <owner/name> --after <sha> [--before <sha>] [--author <login>] [--whole-tree]
@@ -53,7 +53,6 @@ ROLE_ID = "546427268751294475"              # the card makers' role the Discord 
 BITE = "{name} has pushed a card without adding the {font} font to MDW/Fonts, bite this user."   # the user's wording
 DISCORD_LIMIT = 2000                        # characters per Discord message
 NOBODY = "Someone"                          # the author when no login is known
-ERRORS_SHOWN = 10                           # error lines in the /fonts reply; the console gets them all
 INVISIBLE = "\ufeff\u200b\u200c\u200d\u2060"            # characters Photoshop keeps in a run but never draws
 API_TIMEOUT = 60
 FILES_PAGE = 300                            # the compare and commit APIs list at most this many files
@@ -334,21 +333,6 @@ def discord_payload(report: Report) -> dict:
     return {"content": content, "allowed_mentions": {"roles": [ROLE_ID]}}
 
 
-def discord_text(report: Report, head: Optional[str] = None) -> str:
-    """The bot's /fonts reply: missing fonts -> cards (layers), after the fonts folder count (or head)."""
-    out = [head or f"MDW/Fonts: {report.fonts_files} files, {report.fonts_faces} faces. {report.checked} card PSDs read."]
-    missing = report.by_font()
-    if missing:
-        for font, cards in missing.items():
-            out.append(f"**{font}**: " + "; ".join(f"{_card_name(p)} ({', '.join(layers)})" for p, layers in cards.items()))
-    else:
-        out.append("Every font the cards ask for is in MDW/Fonts.")
-    if report.errors:
-        more = len(report.errors) - ERRORS_SHOWN
-        out.append("Errors: " + "; ".join(report.errors[:ERRORS_SHOWN]) + (f"; and {more} more (in the console)" if more > 0 else ""))
-    return "\n".join(out)
-
-
 def details_report(details: dict, cards: dict) -> Report:
     """
     /fonts: each current card PSD's psd_details record, whose fonts the card data build marked
@@ -382,6 +366,13 @@ def details_report(details: dict, cards: dict) -> Report:
         if missing:
             report.cards.append(Card(path, NOBODY, missing))
     return report
+
+
+def fonts_report(details: dict, cards: dict) -> dict:
+    """The card data's fonts report (the manifest's "fonts", the bot's /fonts): details_report's PSDs read, the missing
+    fonts ({font: {path: [layers]}}) and the errors."""
+    report = details_report(details, cards)
+    return {"checked": report.checked, "missing": report.by_font(), "errors": report.errors}
 
 
 # ========================
@@ -707,7 +698,6 @@ __all__ = [
     'BITE',
     'COMMITS_PAGE',
     'Card',
-    'ERRORS_SHOWN',
     'EXCLUDE_FOLDERS',
     'FILES_PAGE',
     'FONTS_DIR',
@@ -724,8 +714,8 @@ __all__ = [
     'details_report',
     'dir_fonts',
     'discord_payload',
-    'discord_text',
     'face_names',
+    'fonts_report',
     'is_card_psd',
     'layer_fonts',
     'load_names',

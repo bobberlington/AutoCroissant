@@ -36,8 +36,9 @@ from global_config import (AUTHORS_PATH, CARD_BRANCH, CREATED_PATH, EDITS_PATH, 
 from commands.card_edits import CardAuthors, CardDates, CardEdits, dup_pictures
 from commands import github_api, png_changes, rulebook
 from commands.card_models import CardInfo, StatsDatabase, card_name, duplicate_png, straight, straighten_card
-from commands.github_api import HEADERS, RangeError, RemotePSD, api_url, blob_text, fetch_blob, get_with_retry, range_reads
+from commands.github_api import HEADERS, api_url, blob_text, fetch_blob, get_with_retry, range_reads
 from commands.psd_parser import PARSER_VERSION, CardValidator, IconVocabulary, PSDParser, picture_numbers, variants_of
+from commands.psd_remote import RangeError, RemotePSD
 
 # ========================
 # Configuration
@@ -1245,6 +1246,7 @@ SPARSE_FILES = ("commands/card_data.py", "commands/card_history.py", "commands/c
                 "commands/png_changes.py",
                 "commands/card_models.py", "commands/card_edits.py", "commands/psd_parser.py", "commands/psd_details.py",
                 "commands/psd_parts.py", "commands/text_align.py", "commands/psd_regions.py", "commands/font_check.py", "commands/github_api.py", "global_config.py",
+                "commands/psd_remote.py",
                 "requirements-cards.txt",
                 "commands/card_bake.py", "commands/psd_edit.py", "commands/png_export.py", "commands/git_commit.py",
                 "commands/repo_history.py", "commands/tts_save.py",
@@ -1675,6 +1677,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     """
     from commands import changelog, psd_details
     from commands.card_db import check_db, read_db, round_trip_problems, write_db
+    from commands.font_check import fonts_report
     from commands.card_history import (Refined, allows_high, close_archived, date_archive, kept_values, out_of_range,
                                        record_versions, unchecked, unknown_values)
     out = Outcome()
@@ -1832,7 +1835,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         "counts": out.counts,
         "pending": {"stale": stale, "failed": failed, "full": still, "repin": []},
         "problems": out.problems, "gates": {g: f"lifted by {why}" for g, why in out.lifted.items()},
-        "restored_from": restore or None}
+        "restored_from": restore or None, "fonts": fonts_report(details, db.stats)}       # the bot's /fonts
     if restored_manifest:                                 # its card commit and inputs: the next run re-reads what changed
         for key in ("card_commit", "card_commit_at", "inputs"):
             out.manifest[key] = restored_manifest.get(key, out.manifest[key])
@@ -1866,7 +1869,7 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
                  and links_text(links) == links_text(read_links(db_dir))
                  and all(records_text(r) == _text(db_dir, n) for n, r in zip(RECORDS, (render, spot)))
                  and png_changes.record_text(pictures) == _text(db_dir, png_changes.RECORD) and colors == colors_before
-                 and book in (None, _text(db_dir, "rulebook.json")))
+                 and book in (None, _text(db_dir, "rulebook.json")) and manifest_before.get("fonts") == out.manifest["fonts"])
     if unchanged:
         return out
     write_db(db_dir, db.stats, db.old_stats, psd_details.text_of(details), out.manifest, book)

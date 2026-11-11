@@ -1,7 +1,7 @@
 """
 The rulebook's chapters (the card repo's site/rulebook/NN-slug.md, written on the website; their syntax is its
 site/assets/rulebook.js) as plain text: db/rulebook.json, which the card data build writes and /query_rulebook and
-/export_rulebook read. No network, no Discord. Uncompiled, like card_data.
+/export_rulebook read. No network, no Discord.
 """
 from json import dumps, loads
 from re import IGNORECASE, compile as regex, sub

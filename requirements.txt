@@ -1,12 +1,2 @@
 -r requirements-cards.txt
-discord.py>=2.5
-davey
-PyNaCl
-yt-dlp
-numpy
-pandas
-Pillow
-opencv-python
-GitPython
-Cython
-setuptools
+-r requirements-bot.txt

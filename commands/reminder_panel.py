@@ -1,7 +1,7 @@
 """
 The /reminders panel: one reminder per card (only the invoker sees it), soonest first, with Previous/Next, a jump
 select and Reschedule, Turn off/on, Delete and New. The logic and the rights live in commands/analytics.py; this module
-is the Discord UI (not compiled: discord.ui subclasses). The proposal forum's next steps (commands/forum_votes.py) show
+is the Discord UI. The proposal forum's next steps (commands/forum_votes.py) show
 among them, read-only: the forum module runs them on its own.
 
 It answers each interaction directly (not through the queues): a View, a modal and edit_message need the live
