@@ -153,7 +153,7 @@ marker. Neither reaches `stats.pkl` (verified: 0 MDW-typed entries). The `MDW` c
 therefore dead in normal traversal; it only matters if `classify` is called on such a path directly
 (e.g. by `parse_one.py`).
 
-Distribution in `stats.pkl` (2026-07-11, from `inspect_pickle.py`): creature 297, item 182,
+Distribution in `stats.pkl` (2026-07-11, from `inspect_card_data.py`): creature 297, item 182,
 minion 91, debuff 52, field 50, aux item 48, rulebook 48, nme 26, buff 12, creatures 7 — total 813.
 
 ## 3. PSD anatomy — what the parser actually reads
@@ -792,7 +792,7 @@ gotcha-4 unknown-field error; `series==mario & subseries~door` is the website's 
 - Diagnosing or FIXING a mis-parsed card, shrinking the exclusion lists, changing injection
   heuristics → **autocroissant-psd-extraction-campaign** (executable plan) with
   **autocroissant-validation-and-qa** as the acceptance gate.
-- How to invoke `parse_one.py` / `gap_trace.py` / `dump_psd_layers.py` / `inspect_pickle.py` /
+- How to invoke `parse_one.py` / `gap_trace.py` / `dump_psd_layers.py` / `inspect_card_data.py` /
   `diff_stats.py` and read their output → **autocroissant-diagnostics-and-tooling**.
 - Constants as CONFIG (defaults, what is runtime-settable) → **autocroissant-config-and-flags**.
 - Committing pickles or any schema/code change discipline → **autocroissant-change-control**.
@@ -822,7 +822,7 @@ Line numbers drift — re-find facts with these before relying on cited lines:
 | Slash surface + update_stats defaults | `grep -n 'tree.command(name="query\|name="alias\|name="update_stats' main.py` and `sed -n '359,365p' main.py` |
 | Folder tree | `ls ~/Desktop/TTSCardMaker ~/Desktop/TTSCardMaker/Auxiliary ~/Desktop/TTSCardMaker/Items` |
 | PSD/PNG counts + 813 reconciliation | `find ~/Desktop/TTSCardMaker -name "*.psd" \| wc -l` and same with `! -path "*/MDW/*" ! -path "*/Markers/*"` |
-| Pickle counts, distribution, problem cards, newest card | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py` |
+| Pickle counts, distribution, problem cards, newest card | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_card_data.py` |
 | Alias count | `python3 -c "import pickle;print(len(pickle.load(open('aliases.pkl','rb'))))"` |
 | The 7 "creatures" cards | `ls ~/Desktop/TTSCardMaker/Auxiliary/Creatures/*.psd` |
 | Golden parses (Mini Doomer / Freezer / Lich King) | `parse_one.py` / `gap_trace.py` with the paths used in sections 3-4 (absolute paths into the clone; outputs include ignorable "Git token found" lines) |
@@ -833,7 +833,7 @@ Line numbers drift — re-find facts with these before relying on cited lines:
 | Emoji count (126) and `_no` rule | `grep -n "NO_SUFFIX\|ICON_FOLDERS" commands/type_emojis.py`; count = Types PNGs × 2 + Stars PNGs |
 | README citation | `head -3 ~/Desktop/TTSCardMaker/README.md` |
 
-Maintenance: after any parser or repo change, re-run `inspect_pickle.py` and the three golden
+Maintenance: after any parser or repo change, re-run `inspect_card_data.py` and the three golden
 parses and update the numbers here (counts, distribution, exclusion-list sizes, duplicated
 basenames) plus the date stamps. If `TYPE_REGION_RATIO`, the gap regex, or the exclusion lists
 change, sections 4-5 are stale until rewritten.

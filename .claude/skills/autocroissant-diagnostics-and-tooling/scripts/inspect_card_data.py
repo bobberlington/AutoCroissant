@@ -3,12 +3,12 @@
 commands.card_db.read_cards reads (a db/ folder, a stats.json or a data commit).
 
 Usage (run from anywhere; repo root derived from this file's location):
-    python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py            # summary
-    python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py --problems # cards with recorded problems
-    python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py "Card Name"  # one card, full detail + history
+    python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_card_data.py            # summary
+    python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_card_data.py --problems # cards with recorded problems
+    python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_card_data.py "Card Name"  # one card, full detail + history
 
     # the same on the data build's db/: a folder, or a data commit of --git's repo (origin/data in a TTSCardMaker clone):
-    python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py --db origin/data \
+    python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_card_data.py --db origin/data \
         --git ~/Desktop/TTSCardMaker "Card Name"
 
 No config.py needed. Never writes anything.

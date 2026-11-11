@@ -35,7 +35,7 @@ Jargon used once and defined here:
 | The acceptance PROCEDURE: sandbox setup, golden certification/nomination, diff_stats gate before a pickle push | autocroissant-validation-and-qa |
 | Full incident write-ups (removeprefix bug story, balloon post-mortem, dead-end catalog) | autocroissant-failure-archaeology |
 | Commit/push/revert gates, the PICKLE commit convention, never-commit list | autocroissant-change-control |
-| How to run/interpret parse_one, gap_trace, diff_stats, inspect_pickle, dump_psd_layers | autocroissant-diagnostics-and-tooling |
+| How to run/interpret parse_one, gap_trace, diff_stats, inspect_card_data, dump_psd_layers | autocroissant-diagnostics-and-tooling |
 | Step-by-step analysis recipes (layer dump → bbox → gap map, etc.) | autocroissant-analysis-toolkit |
 | WHAT to research next (the two long-horizon ambitions) | autocroissant-research-frontier |
 
@@ -56,7 +56,7 @@ Observations were listed before any mechanism was argued:
 |---|---|---|
 | O1 | `commands/psd_analyzer.py:1002` computes `relative_path = full_path.removeprefix("TTSCardMaker").strip('/')`, but `walk()` yields absolute paths (`/Users/.../Desktop/TTSCardMaker/...`), so `removeprefix` is a no-op and `classify()` sees top folder "Users" → every card UNKNOWN type, wrong stored path | code read |
 | O2 | The line was introduced by f7c915c "cythonized the code" (2025-12-02) — the bug has existed for over seven months | git |
-| O3 | **NEGATIVE:** stats.pkl today is healthy — 813 cards, **0** non-repo-relative paths, exactly 1 problem card (`inspect_pickle.py`, 2026-07-11) | measurement |
+| O3 | **NEGATIVE:** stats.pkl today is healthy — 813 cards, **0** non-repo-relative paths, exactly 1 problem card (`inspect_card_data.py`, 2026-07-11) | measurement |
 | O4 | The slash-command default is `use_local_repo=True` — the buggy path is the DEFAULT path (true on 2026-07-11; the default became False on 2026-10-20) | code read |
 
 Candidate mechanisms, tested against the whole table:
@@ -317,7 +317,7 @@ numbers drift; each volatile fact below carries its re-verification one-liner (r
 | dirname bug fixed by fb47b5d; save gate added there as `num_updated > 0` | `git show fb47b5d -- commands/psd_analyzer.py` — the `split('/')` hunk and the final gate hunk |
 | Gate fixed to `num_new` 20 min later by 4e03190 "am forehead" (17:23:37 → 17:43:29) | `git show -s --format='%h %ci %s' fb47b5d 4e03190` |
 | `num_updated` incremented for EVERY traversed PSD (fb47b5d era; since 2026-10-20 it counts only re-parsed PSDs); save gate now `num_changed > 0 or gone or backfilled or build.changed ...` (card_data.py since 2026-10-22; counter renamed from num_new) | `grep -n -e 'num_updated += 1' -e 'num_changed > 0' commands/card_data.py` |
-| stats.pkl healthy: 813 cards, 0 suspicious paths, 1 problem card, newest 2026-06-18 | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py` |
+| stats.pkl healthy: 813 cards, 0 suspicious paths, 1 problem card, newest 2026-06-18 | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_card_data.py` |
 | Timestamp clustering confirms remote-mode attribution | the Counter one-liner and its expected numbers live in autocroissant-analysis-toolkit Recipe 2 |
 | Balloon 1: cca0aaf old_stats 3196→12041; reverted same day by eb9aa84 | `git show --stat cca0aaf` then `git show -s --format='%ci %s' eb9aa84` |
 | Balloon 2: 637698b old_stats 3196→12039 (2025-11-25), NEVER reverted | `git show --stat 637698b` then `git log --format='%h %ad %s' --date=short -- old_stats.pkl` (no revert after 637698b) |

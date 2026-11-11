@@ -90,7 +90,7 @@ The removeprefix bug produces the identical symptom but **only in local mode**, 
 ### Evidence that production data stayed healthy (measured 2026-07-11)
 
 - All 813 `stats.pkl` paths are repo-relative (no `Users/` prefix), and the newest timestamp (Anubisath Guardian @ 2026-06-18) equals TTSCardMaker's latest commit date — i.e. timestamps came from the GitHub API, so real updates have been running **remote mode** (`use_local_repo:False`).
-- Re-check anytime: `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py` (read-only) → expect `813 cards`, `creature 297 ... creatures 7`, `1 problem card`, newest 2026-06-18 (counts drift as TTSCardMaker grows).
+- Re-check anytime: `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_card_data.py` (read-only) → expect `813 cards`, `creature 297 ... creatures 7`, `1 problem card`, newest 2026-06-18 (counts drift as TTSCardMaker grows).
 
 ### The fix (2026-10-19)
 
@@ -828,7 +828,7 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   `card_history.record_edits`/`dedupe`/`commits_of`, the `CardInfo.__module__` pin. Kept (read-only, historical):
   card_db's allow-list unpickler (`load_pickle`, `read_pickles`, `read_cards`), the build's `--seed` from an
   AutoCroissant commit (with the PICKLE-commit recovery, `card_history.bot_pickles`), `card_history refine` (now
-  read-only), changelog's `history --pickles`, inspect_pickle.py and diff_stats.py. TTSCardMaker work/pickles: site.yml
+  read-only), changelog's `history --pickles`, inspect_card_data.py and diff_stats.py. TTSCardMaker work/pickles: site.yml
   always checks out `data` (no `CARD_DATA` switch) and build_site.py lost its pickle loader and `aliases.pkl`.
 - **Status**: built 2026-10-25 on work/pickles in both repos; 46 slash commands. The pickles stay in git history.
 
@@ -941,7 +941,7 @@ Written 2026-07-11 against HEAD = 284d13c ("PICKLE", 2026-06-20). Extended 2026-
 | Exact token spellings (Entry 10.11) | `grep -n -A8 "def spellings" commands/psd_parser.py` |
 | Entry 10 fixes present | `grep -n "self._release(source)\|startswith('.')\|force_update: bool = False" commands/card_data.py` (508, 208, 152 on 2026-10-25; repo_traverser.py deleted 2026-10-25); `grep -n '^RUN_AS_CREATOR\|^def next_run' commands/analytics.py`; `grep -n 'target_message: Optional\[Message\]' commands/management.py` (one hit, before the `try`) |
 | B6 hazard (only relevant if local mode is revived from the archive) | unpickle stats.pkl with stub classes and compare each `card.timestamp` with `os.path.getmtime(~/Desktop/TTSCardMaker/<card.path>)`: 813/813 newer on 2026-10-19 |
-| Data still healthy / counts | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py` (813 cards, 218/223 old, newest 2026-06-18 — all drift with TTSCardMaker) |
+| Data still healthy / counts | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_card_data.py` (813 cards, 218/223 old, newest 2026-06-18 — all drift with TTSCardMaker) |
 | old_stats byte trace | `for c in 793abf1 e380cee cca0aaf eb9aa84 637698b 76baa15 e5f5393 532b34f d31b948 8753489 284d13c; do echo "$c $(git cat-file -s $c:old_stats.pkl)"; done` |
 | Whitespace-saga diffs | `git show 1c26747 3bbaa2b 4bcee6b -- commands/psd_analyzer.py`; surviving cleanup line: `grep -Fn "ability_text = sub" commands/psd_parser.py` (:1160-1161 on 2026-10-25: line padding, then punctuation) |
 | MISMATCH lifecycle | `git show fed8a83 \| grep -A8 MISMATCH`; `git show 081b1fd \| grep -B3 MISMATCH`; leftover-append: `grep -n 'Append remaining types' commands/psd_parser.py` (:1259 on 2026-10-25) |

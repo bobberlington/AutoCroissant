@@ -787,7 +787,7 @@ last 50 messages). A failed listing of the forum's archived posts at a start is 
 - How reminders and type emojis fit the queue architecture (flow, invariants) -> **autocroissant-architecture-contract**.
 - Judging whether an update's output is GOOD (golden cards, diff review, problem-count gates) ->
   **autocroissant-validation-and-qa**.
-- Script usage details for inspect_pickle/diff_stats/parse_one (the card data, historical pickles) -> **autocroissant-diagnostics-and-tooling**.
+- Script usage details for inspect_card_data/diff_stats/parse_one (the card data, historical pickles) -> **autocroissant-diagnostics-and-tooling**.
 - What a config field or module constant means -> **autocroissant-config-and-flags**.
 
 ## Provenance and maintenance
@@ -831,7 +831,7 @@ re-find volatile facts with these before trusting them:
 | Per-machine files | `cat .gitignore` |
 | Music/export paths | `grep -n "MUSIC_BASE_DIR\|outtmpl" commands/music_player.py; grep -n "EXPORTED_" commands/psd_analyzer.py` |
 | No switch any more (step 10) | `grep -rn "CARD_SYNC" global_config.py main.py commands/ \| grep -v changelog` (nothing) |
-| Card/rulebook counts, newest card timestamp | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py` (reads card_data/) |
+| Card/rulebook counts, newest card timestamp | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_card_data.py` (reads card_data/) |
 
 Maintenance: update the date stamps and counts above whenever the card data moves a lot or commands
 are added. If local mode is ever revived from branch `archive/local-update-stats`, it must first stop comparing

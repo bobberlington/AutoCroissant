@@ -50,7 +50,7 @@ read-only and safe; `config.py` holds secrets — never print or commit it.
 | 1b | **Old-vs-new parser equality over EVERY PSD** (added 2026-10-19) | section 4.1 method A: import the git-HEAD `psd_analyzer` and the working-tree one side by side, parse all card PSDs with both, compare every field | 2026-10-19: 813 PSDs, **0 differences** (the icon-font change); 2026-10-21: 813 PSDs, **159 differences, every one intended** (157 `display_name` from the printed title, `STATS TOO HIGH` on Sonic and Royal Eradicator Main Cannon); 2026-10-23 (title-own-text): 812 PSDs, **2 differences, both intended** (`display_name` of Papyrus and Sans); 2026-11-06 (layer-comp bars): 768 card PSDs, **0 differences** (only the Alt template has such bars, and MDW/ is outside the run) | The parser change is behavior-neutral on today's corpus, with no pickles, no network, no API budget. Stronger than a sweep diff for "did my code change anything", because it isolates the code from upstream PSD edits |
 | 1c | **Offline pytest suite** (added 2026-10-20; cut and run with pytest-xdist 2026-10-25) | `~/.venvs/ac-py314-fork/bin/python -m pytest -q -n auto tests` (`-n auto` is capped at 6 workers in conftest.py, `AC_TEST_WORKERS=N` raises it on a quiet Mac; `-n 0` runs one test serially; no network, no config.py needed, never writes the reminder store; the fork venv runs the bake tests, which skip elsewhere) | 2026-11-06: 694 collected, 693 passed, 1 skipped (111 s; the Alt template's test). 2026-11-05: 689 collected (AutoCroissant 3641756). 2026-10-25 evening: 594 passed with the card pin (112 s). After the cut: **553 collected**, 553 passed, 0 skipped, 66 s wall at load ~25 (1,563 collected and 348 s before the cut); 1346 collected on 2026-10-23 | 10 parser goldens in `tests/goldens/` (the 3 certified ones and 6 parser paths, plus Anubisath Guardian for the card data build; the two rule-page goldens removed 2026-11-04 with the rule-page parsing; since 2026-10-25 every real-card test reads the card repo at one commit, `conftest.CARDS_REV`, from a pinned repo on the clone's objects (`~/.cache/autocroissant-tests/`), so card pushes never move a test; to move the pin change CARDS_REV, then `tests/make_goldens.py`, only after an accepted parser change or a reviewed upstream edit), the card data build's gates G1-G6 and history, the bake, guard and export gates, one happy path per command, the dispatch/edit loops and help coverage (`test_robustness.py`), and the website's tests (`tests/test_site_*.py`; 15 smoke tests, one per site piece, on 2026-10-25). The icon font's tests read TTSCardMaker at `conftest.RING` (0ade8c3d since 2026-11-04, the ring font; re-pin there when the badges change: `test_card_standards`, `test_card_sweep`), and `tests/test_badge_parity.py` keeps the font's, text.js's and mockup.js's badges in step (ttscardmaker-companion §1.2). Run it before every push (autocroissant-change-control class (a)). **Not a parser gate on its own:** 10 goldens cover part of the parser, so any change to the parser or a card module (`psd_parser.py`, `psd_analyzer.py`, `card_models.py`, `card_edits.py`, `card_data.py`, `card_history.py`) still needs 1b (until Irithyll, 16_The_Field and Termination_Shock were added, `row_threshold` 40->60 and `STAR_CORE_ALPHA` 0.5->0.2 changed 16 of 813 cards and passed the suite) |
 | 2 | **diff_stats deltas on a full build** | scratch full build, then `diff_stats.py <the data before> <scratch db>` (history included: old_stats.json beside each) | the pickles' HEAD vs working on 2026-10-23: `818/818, added 0 removed 0 modified 0, exit 0` | Whole-database impact. Every added/removed/modified line must have an explanation; "removed" rows you didn't intend and mass path/type changes are corruption signatures |
-| 3 | **Validator problem-card count** (must not increase) | stored surface: `inspect_pickle.py --problems` (card_data/, or `--db`); full surface: re-validation one-liner (section 2) | 2026-10-23: pickled **0**; full validation **exactly 1** (Computer Virus, listed in section 2). 2026-07-11: 1 and 5 | Extraction quality did not regress anywhere the validator can see |
+| 3 | **Validator problem-card count** (must not increase) | stored surface: `inspect_card_data.py --problems` (card_data/, or `--db`); full surface: re-validation one-liner (section 2) | 2026-10-23: pickled **0**; full validation **exactly 1** (Computer Virus, listed in section 2). 2026-07-11: 1 and 5 | Extraction quality did not regress anywhere the validator can see |
 | 4 | **Exclusion-list size** | count the per-card lists in code (`ABILITY_EXCLUSIONS` was deleted on 2026-11-09, `EXCESSIVE_STAT_EXCLUSIONS` on 2026-10-21: a stat above 20 (10 until 2026-11-06) is `STATS TOO HIGH` unless the card's Card Edits.json entry sets `allow_high_stats`, as Sonic's and Royal Eradicator Main Cannon's do) | **0**: ABILITY_EXCLUSIONS went on 2026-11-09 (21 names; 18 until e4e0a58 added the three WoW minions on 2026-10-21), no stat list | Shrinking them is progress toward "perfect extraction" (owner doctrine); growing them is new registered debt |
 | 5 | **Eyeballing Discord output** | run a command, look at the message | none | Weakest. Catches only gross breakage; never sufficient alone. Acceptable as a final smoke check AFTER 1–4 pass, never as a substitute |
 
@@ -96,7 +96,7 @@ kinds are appended to it (line numbers as of 2026-10-19):
 
 The build writes each CardInfo's `problems` into `db/stats.json` (`card_db.record`; the pickles held the objects
 themselves until 2026-10-25), so these problems persist and surface as the `"problem"` key in `to_dict()`.
-`inspect_pickle.py --problems` counts exactly this channel.
+`inspect_card_data.py --problems` counts exactly this channel.
 
 **Channel B — computed validation problems, OUTPUT-ONLY, never stored.**
 `CardValidator.validate(card)` (psd_parser.py:1081-1117 on 2026-10-23) builds a fresh local list from
@@ -124,7 +124,7 @@ Certified baselines (re-measured 2026-10-23 at PICKLE a7c310e; 2026-07-11 values
 - **Channel A (pickled): 0 problem cards** [1: 20 Creature Types, `MISSPELT TYPE: tornado`; the PSD was fixed upstream
   on 2026-10-22, TTSCardMaker 100511d3: its `tornado` layer is now `wind`].
   ```bash
-  python3 $SCRIPTS/inspect_pickle.py --problems
+  python3 $SCRIPTS/inspect_card_data.py --problems
   # (prints nothing)
   ```
 - **Full validation (A+B over the whole DB): exactly 1 problem card** [5]. Read-only; no
@@ -184,7 +184,7 @@ python3 $SCRIPTS/gap_trace.py ~/Desktop/TTSCardMaker/"Creatures/World Of Warcraf
 those two fields come from traversal metadata (git commit dates / DB preservation,
 psd_parser.py:355-361, which also keeps `series` and `subseries`; card_data.py:501-506), not from the PSD. So:
 
-- *Golden vs the stored card* (`inspect_pickle.py "Name"`, the card data): all fields must match EXCEPT `timestamp` and `author`; ability
+- *Golden vs the stored card* (`inspect_card_data.py "Name"`, the card data): all fields must match EXCEPT `timestamp` and `author`; ability
   text is compared byte-for-byte.
 - *Golden before-vs-after a change*: save both `parse_one` outputs to files and `diff`
   them — must be empty (both are fresh parses, so timestamp/author cancel out). This is
@@ -198,7 +198,7 @@ psd_parser.py:355-361, which also keeps `series` and `subseries`; card_data.py:5
 2. **Record it.** Run `parse_one.py` (and `gap_trace.py` if injection is involved) and
    save the full outputs with today's date and the repo-relative PSD path.
 3. **Certify it.** Cross-check the parse against the current stored entry
-   (`python3 $SCRIPTS/inspect_pickle.py "Card Name"`); confirm ability byte-equality and
+   (`python3 $SCRIPTS/inspect_card_data.py "Card Name"`); confirm ability byte-equality and
    note any known deviations. If the card is currently mis-parsed, it is a CANDIDATE
    golden — record the current (wrong) output AND the intended output, clearly labeled;
    it graduates to certified when the fix lands.
@@ -286,7 +286,7 @@ family).
 
 ```bash
 cd /tmp/ac_sandbox
-python3 $S/inspect_pickle.py --db $W/data/db --problems      # Channel A: baseline 0 (2026-10-23; 1 on 2026-07-11)
+python3 $S/inspect_card_data.py --db $W/data/db --problems      # Channel A: baseline 0 (2026-10-23; 1 on 2026-07-11)
 # Channel A+B: run the full-validation one-liner from section 2 — baseline exactly 1 (Computer Virus)
 ```
 
@@ -474,11 +474,11 @@ re-verification below disagrees with this file, the repo wins; update this file
 | validate() gated on output_problematic (card_data.py:669 on 2026-10-23; the archive has its own) | `grep -n "if output_problematic" commands/card_data.py` |
 | Pickled problems key in to_dict (113) (2026-10-20) | `grep -n '"problem"' commands/card_models.py` |
 | Local-path fix present (method B precondition) (2026-10-20: moved to branch `archive/local-update-stats`) | `git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py` (:115) |
-| Channel-A baseline (0 on 2026-10-23) | `python3 $SCRIPTS/inspect_pickle.py --problems` |
+| Channel-A baseline (0 on 2026-10-23) | `python3 $SCRIPTS/inspect_card_data.py --problems` |
 | Full-validation baseline (exactly 1) | one-liner in section 2 |
-| DB shape (818 cards; 354/446 old_stats; 2 archived; newest Clot White @ 2026-10-22, at a7c310e) | `python3 $SCRIPTS/inspect_pickle.py` |
+| DB shape (818 cards; 354/446 old_stats; 2 archived; newest Clot White @ 2026-10-22, at a7c310e) | `python3 $SCRIPTS/inspect_card_data.py` |
 | Golden expected values | the three `parse_one.py` + one `gap_trace.py` commands in section 3 |
-| Freezer byte-equality vs stats.pkl | compare `parse_one` ability block to `python3 $SCRIPTS/inspect_pickle.py "The Freezer"` |
+| Freezer byte-equality vs stats.pkl | compare `parse_one` ability block to `python3 $SCRIPTS/inspect_card_data.py "The Freezer"` |
 | The last data commit's diff (the data gate) | `python3 $SCRIPTS/diff_stats.py origin/data~1 origin/data --git ~/Desktop/TTSCardMaker` (after a depth-2 fetch of origin/data) |
 | Slash-command force_update default (main.py:383) (2026-10-20) | `grep -n "force_update" main.py` |
 | MISMATCH check history | `git show -s --oneline fed8a83 081b1fd` and `git show fed8a83 -- commands/psd_analyzer.py` |

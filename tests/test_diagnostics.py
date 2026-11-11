@@ -1,4 +1,4 @@
-"""The diagnostics skill's diff_stats.py and inspect_pickle.py read the data build's db/ JSON: a db/ folder, a
+"""The diagnostics skill's diff_stats.py and inspect_card_data.py read the data build's db/ JSON: a db/ folder, a
 stats.json, a data commit (the shadow's daily check against origin/data)."""
 import subprocess
 import sys

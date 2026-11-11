@@ -12,7 +12,7 @@ discriminating experiment to separate look-alike causes before touching anything
 Ground rules while debugging:
 
 - The diagnostic scripts in `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/`
-  (`inspect_pickle.py`, `diff_stats.py`, `parse_one.py`, `gap_trace.py`, `dump_psd_layers.py`) are
+  (`inspect_card_data.py`, `diff_stats.py`, `parse_one.py`, `gap_trace.py`, `dump_psd_layers.py`) are
   read-only and safe to run any time. Usage and golden outputs: **autocroissant-diagnostics-and-tooling**.
 - Never debug by dispatching Card sync runs or publishing card data "to see what happens" - the card data is the
   `data` branch's `db/`, written only by the Card sync Action. Any fix that touches it routes through
@@ -42,7 +42,7 @@ was this repo's pickles, written by the jetson's `/update_stats` and moved by `/
 | The bot shows old data | `/update_stats`: "already current: built … from TTSCardMaker@…" or a sync failure line | The data branch has not moved (Card sync not run yet, its window, a failed run) or the bot's sync failed | `gh run list -R MichaelJSr/TTSCardMaker --workflow card-sync.yml --limit 5`; the reply's notes ("card changes not in the data yet", "The last card sync failed: <run>") | Wait for the run or dispatch one (`/update_stats cards:<name>`, admins); a failed sync keeps the last good data and says why (**autocroissant-run-and-operate** §12) |
 | The bot shows no cards at all after a start | console: "Card data sync failed (...)" and no "Card data loaded from card_data" line | No `card_data/` yet (a new host, the folder deleted) and GitHub unreachable | `ls card_data/` | `/update_stats` once GitHub answers; nothing else to fix |
 | Many cards changed, removed or "unknown" in one data commit | `diff_stats.py origin/data~1 origin/data --git ~/Desktop/TTSCardMaker` (autocroissant-diagnostics-and-tooling Workflow 1) | A builder regression on main (the Action runs main's builder unless `CARD_DATA_BUILDER_REF` pins one) or a bad input | Field counts dominated by one field; the run's job summary and the data commit's per-card lines | Pin `CARD_DATA_BUILDER_REF` (or `gh workflow disable card-sync.yml -R MichaelJSr/TTSCardMaker`), then dispatch `restore=<good data commit>` (DATA_BUILD_ACTION.md §13); fix and re-enable |
-| One card's stats/ability wrong | `inspect_pickle.py "Card Name"` (the bot's `card_data/`) - is the stored record itself wrong? | Parser issue (gaps/type injection) vs query-layer issue | Record correct but `/query` output wrong -> query layer (alias shadowing, fuzzy match at match_ratio 0.6, stale dataframes). Record wrong -> parser, or a stale read (`/update_stats cards:<name>`) | Parser root-causing recipes: **autocroissant-analysis-toolkit**; improving the parser: **autocroissant-psd-extraction-campaign** |
+| One card's stats/ability wrong | `inspect_card_data.py "Card Name"` (the bot's `card_data/`) - is the stored record itself wrong? | Parser issue (gaps/type injection) vs query-layer issue | Record correct but `/query` output wrong -> query layer (alias shadowing, fuzzy match at match_ratio 0.6, stale dataframes). Record wrong -> parser, or a stale read (`/update_stats cards:<name>`) | Parser root-causing recipes: **autocroissant-analysis-toolkit**; improving the parser: **autocroissant-psd-extraction-campaign** |
 | old_stats grew a lot in one data commit | `diff_stats.py --history` between the two data commits (`versions added`) | Duplicate archiving regression (the build archives a version only when a card's data changes, `card_history.same_data`) | Versions added vs the run's changed/edited events | As above: pin, restore, fix |
 | Card sync refused (red run, "Gate refusals" in its summary) | the run's summary and artifact (the would-be db/) | A gate (G1 floor, G2 archive ceiling, G4 same-blob re-parses, G5 quality, G3 round trip, G6 another writer) caught a change | `diff_stats.py origin/data <artifact>/db` | Review, then dispatch with the gate's input (`allow_archive`, `full`, `cards`) or fix the cause (DATA_BUILD_ACTION.md §13) |
 | Query results stale right after a sync | Did `populate_files`/`prep_dataframes` run? A sync queues them (`card_sync._follow_ups`) | Command queue stopped before the refresh ran | `/query` a card you know changed; restart fixes it | Restart the bot; see section 2 for why queues stop |
@@ -302,7 +302,7 @@ grep -n "^def gates\|^def can_prune" commands/card_data.py              # the bu
 grep -n "def prune_clean_cards" commands/card_models.py                  # deletion handling
 grep -n "def startup\|def sync\|Card data sync failed" commands/card_sync.py   # the bot's load and sync
 git log --format='%h %ad %s' --date=short -1 eb9aa84                     # pickle-era revert precedent 2025-11-10
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py | tail -6   # the bot's card_data/
+python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_card_data.py | tail -6   # the bot's card_data/
 
 # Section 2 - dispatch/edit chains
 grep -n "except (HTTPException, AttributeError)" main.py                 # both fallbacks (_dispatch, _edit)

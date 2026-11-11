@@ -213,7 +213,7 @@ stat -f '%Sm' -t '%Y-%m-%dT%H:%M:%S%z' ~/Desktop/TTSCardMaker/Auxiliary/Minions/
 Two independent fingerprints, both pointing the same way: all 813 paths repo-relative (zero
 `Users/`-style), and the newest stored timestamps equal TTSCardMaker COMMIT times to the second
 while the local mtime is a different day entirely. **Remote mode produced the current data; the
-local-mode bug has not touched it.** (`inspect_pickle.py` packages the path check as its
+local-mode bug has not touched it.** (`inspect_card_data.py` packages the path check as its
 `entries with suspicious (non repo-relative) paths: 0` line.)
 
 A third corroborating measurement (2026-07-11): the 813 stored timestamps collapse to only
@@ -443,7 +443,7 @@ Aggregate with one-liners (Counter over `c.path.split('/')[0]`, max over `c.time
 `c.problems` — e.g. on 2026-10-23 no card has a *stored/pickled* problem (0; on 2026-07-11 it was `('20 Creature
 Types', ['MISSPELT TYPE: tornado'])`), and full validation (`CardValidator.validate` over stats.pkl) computes 1:
 Computer Virus, `HP/DEF/ATK/SPD NOT FOUND` (one parse-time `NO STATS FOUND` since 2026-10-26, stored at its next re-parse; 5 on 2026-07-11, before the three WoW minions joined ABILITY_EXCLUSIONS in
-e4e0a58 and tornado became wind) — surface distinction in autocroissant-validation-and-qa §2). For the packaged summary use `inspect_pickle.py`; for two-snapshot diffs use
+e4e0a58 and tornado became wind) — surface distinction in autocroissant-validation-and-qa §2). For the packaged summary use `inspect_card_data.py`; for two-snapshot diffs use
 `diff_stats.py` (both documented with golden outputs in autocroissant-diagnostics-and-tooling).
 
 **Compare snapshots across git history** — the pickles were committed (and the data branch's commits are the card
@@ -534,7 +534,7 @@ line numbers (HEAD 9fb3093), and again after that day's optimization pass; the w
 | Nebulous Precipice golden trace ([1]-[6] numbers); The Lich King's token case | rerun the `gap_trace.py` command in Recipe 1 (with `~/.venvs/ac-py314-fork/bin/python`) |
 | Gap regex `\s{3,}` :348; punctuation cleanup :947; leftover-append :1045; NO ABILITY LAYER :449; ABILITY TEXT NOT FOUND :1104 (2026-10-23) | `grep -n '_gap_pattern = \|\[:;,\|Append remaining types\|NO ABILITY LAYER\|ABILITY TEXT NOT FOUND' commands/psd_parser.py` |
 | removeprefix no-op line — FIXED 2026-10-19 | `grep -c 'relpath\|removeprefix' commands/psd_analyzer.py` (0; local mode archived 2026-10-20); story in autocroissant-failure-archaeology Entry 1 |
-| stats.pkl = 813 entries, 0 `Users/` paths, newest 2026-06-18 | first two one-liners in Recipe 2, or `inspect_pickle.py` |
+| stats.pkl = 813 entries, 0 `Users/` paths, newest 2026-06-18 | first two one-liners in Recipe 2, or `inspect_card_data.py` |
 | Timestamp clustering (103 distinct; 769 shared; max cluster 64 @ 2026-02-08 04:11:26Z) | the Counter one-liner in Recipe 2 (drifts with every sweep — recompute, don't reuse) |
 | Newest-card commit-time match | the `git -C ~/Desktop/TTSCardMaker log -1` + `stat -f '%Sm'` pair in Recipe 2 (mtime changes on every pull — only the COMMIT time is stable) |
 | `-S` results (f7c915c; fed8a83/081b1fd) and commit dates | rerun the two `git log -S` commands in Recipe 3; `git log -1 --format='%h %ad %s' --date=short <hash>` |

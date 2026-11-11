@@ -1,6 +1,6 @@
 ---
 name: autocroissant-diagnostics-and-tooling
-description: "Usage and golden outputs for the five read-only diagnostic scripts in this skill's scripts/ folder. Use for: dump_psd_layers.py (what is in a PSD), parse_one.py (parse one card), gap_trace.py (why a [type] landed there), inspect_pickle.py (DB health, one card's record), diff_stats.py (diff two data snapshots, review a Card sync data commit), adding a diagnostic script."
+description: "Usage and golden outputs for the five read-only diagnostic scripts in this skill's scripts/ folder. Use for: dump_psd_layers.py (what is in a PSD), parse_one.py (parse one card), gap_trace.py (why a [type] landed there), inspect_card_data.py (DB health, one card's record), diff_stats.py (diff two data snapshots, review a Card sync data commit), adding a diagnostic script."
 ---
 
 # AutoCroissant diagnostics and tooling
@@ -14,19 +14,19 @@ network, never run the bot.
 
 All commands below assume cwd = repo root `/Users/michaelsrouji/Desktop/AutoCroissant`.
 Two of the five (`parse_one.py`, `gap_trace.py`) also work from anywhere —
-they derive the repo root from their own location and `chdir` there at import. `inspect_pickle.py`
+they derive the repo root from their own location and `chdir` there at import. `inspect_card_data.py`
 reads the repo root's `card_data/` from anywhere without a chdir (2026-10-25). `diff_stats.py`
 does NOT chdir: relative arguments resolve against your SHELL's cwd (pass data commits with `--git`, or absolute
 paths). `dump_psd_layers.py` has no repo-root logic
 at all and runs from anywhere — it needs only psd-tools and an absolute/`~` PSD path.
 
-**Which Python (2026-10-23).** `diff_stats.py` and `inspect_pickle.py` run on the Mac's plain `python3` (Homebrew
+**Which Python (2026-10-23).** `diff_stats.py` and `inspect_card_data.py` run on the Mac's plain `python3` (Homebrew
 3.14.8). `parse_one.py`, `gap_trace.py` and `dump_psd_layers.py` need psd-tools and pandas, which that `python3` lacks
 ("No module named pandas" / "psd_tools"): use the production-equivalent venv `~/.venvs/ac-py314-fork` (the psd-tools fork at
 the pin, `cards-20261110` = 170a3fce since 2026-11-10, as on the jetson), or `~/.venvs/ac-py314-psd125` (stock psd-tools
 1.25.0). Below, `$P` means `~/.venvs/ac-py314-fork/bin/python` for those three.
 
-**The card data in any form (2026-10-23).** `diff_stats.py` and `inspect_pickle.py` read it through
+**The card data in any form (2026-10-23).** `diff_stats.py` and `inspect_card_data.py` read it through
 `commands.card_db.read_cards`: a `db/` folder (or a folder holding `db/`: `card_data/`, an Actions artifact), a
 `stats.json` (the old_stats file beside it is the history), a data commit of `--git`'s repo (`origin/data` in a
 TTSCardMaker clone). Neither needs `config.py`. Historical pickles (`stats.pkl`, until 2026-10-25) are no longer read:
@@ -46,16 +46,16 @@ before assuming a regression.
 
 | Question | Tool | Invocation shape |
 |---|---|---|
-| Is the DB healthy right now? | `inspect_pickle.py` summary (the bot's `card_data/`) | no args |
-| Which cards have recorded parse problems? | `inspect_pickle.py --problems` | one flag |
-| What is stored for card X, and its history? | `inspect_pickle.py "Card Name"` | name (case-insensitive) |
+| Is the DB healthy right now? | `inspect_card_data.py` summary (the bot's `card_data/`) | no args |
+| Which cards have recorded parse problems? | `inspect_card_data.py --problems` | one flag |
+| What is stored for card X, and its history? | `inspect_card_data.py "Card Name"` | name (case-insensitive) |
 | Why did THIS card parse wrong? | `dump_psd_layers.py` → `gap_trace.py` → `parse_one.py`, in that order | see the pipeline workflow |
 | What does the parser physically see in this PSD? | `dump_psd_layers.py` (`--text` for raw text) | psd path |
 | Why is a `[type]` injected in the wrong place / missing? | `gap_trace.py` | psd path |
 | What would the card data build extract for one card? | `parse_one.py` (add `--with-db` to match a real run) | psd path |
 | What did a Card sync run change? (the data gate) | `diff_stats.py origin/data~1 origin/data --git ~/Desktop/TTSCardMaker` | Workflow 1 |
 | What changed between two runs / two snapshots? | `diff_stats.py` old vs new | two db/ folders, data commits or historical pickles |
-| What does the data build hold for card X? | `inspect_pickle.py --db <db/ or data commit> [--git DIR] "Card Name"` | as above |
+| What does the data build hold for card X? | `inspect_card_data.py --db <db/ or data commit> [--git DIR] "Card Name"` | as above |
 | Did old_stats balloon? | `diff_stats.py --history` between two data commits (`versions added`) | — |
 
 What these tools do NOT answer: whether a measured value is *acceptable*
@@ -68,13 +68,13 @@ What these tools do NOT answer: whether a measured value is *acceptable*
 - Scripts live in `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/`. Repo-root
   handling differs per script (re-verified 2026-10-23): `parse_one.py` and `gap_trace.py` compute
   `REPO_ROOT = Path(__file__).resolve().parents[4]`, insert it on `sys.path`, and `os.chdir(REPO_ROOT)`
-  at import (`card_data/` is repo-relative). `inspect_pickle.py` and `diff_stats.py`
+  at import (`card_data/` is repo-relative). `inspect_card_data.py` and `diff_stats.py`
   only put REPO_ROOT on `sys.path` and import `commands.card_db` (and card_models / card_history); neither chdirs.
-  inspect_pickle reads the repo root's `card_data/` by default; diff_stats's relative arguments resolve against the
+  inspect_card_data reads the repo root's `card_data/` by default; diff_stats's relative arguments resolve against the
   shell's cwd.
   `dump_psd_layers.py` imports only `sys` + psd-tools: no repo-root logic, no `config.py` needed.
 - No script needs `config.py`: `parse_one.py` and `gap_trace.py` import `commands.card_check`, `card_models` and
-  `psd_parser` (no config in that chain) since 2026-11-09, `diff_stats.py` and `inspect_pickle.py` only
+  `psd_parser` (no config in that chain) since 2026-11-09, `diff_stats.py` and `inspect_card_data.py` only
   `commands.card_db` and `card_models` since 2026-10-23. parse_one and gap_trace need psd-tools (the fork venv).
 - `parse_one.py` and `gap_trace.py` additionally need the TTSCardMaker clone at
   `~/Desktop/TTSCardMaker` (`LOCAL_DIR_LOC`, global_config.py:5) — both for the PSD itself and
@@ -86,7 +86,7 @@ What these tools do NOT answer: whether a measured value is *acceptable*
   `ERROR: file not found: /Users/michaelsrouji/Desktop/AutoCroissant/Auxiliary/...`.
 - Stale-`.so` trap: `parse_one.py` and `gap_trace.py` import `commands/psd_analyzer.py`. If a compiled
   Cython `.so` exists it shadows the `.py`, so your parser edits silently won't be what these tools exercise
-  (`inspect_pickle.py` and `diff_stats.py` import only uncompiled card_db/card_history and card_models). None
+  (`inspect_card_data.py` and `diff_stats.py` import only uncompiled card_db/card_history and card_models). None
   exist on the Mac as of 2026-10-23; if in doubt run `python3 setup.py clean` (see autocroissant-build-and-env).
 
 ---
@@ -313,7 +313,7 @@ creature 2's header icon), `[5]` 0 vs 0 (match); before, `[5]` was a MISMATCH an
 | [3] | The `<GAP:n>` markers are the injection slots, per line. Whitespace is load-bearing: never "clean up" multiple spaces in card text (incident 3bbaa2b). |
 | [4] | The prune step. An icon dropped here (listed under `dropped:`) was judged too high; an icon kept that shouldn't be usually means the PSD has a stray icon layer below midline. Then the span step: an icon outside every Ability layer's span (80 px margin) is dropped too. |
 | [5] | The count comparison. `(match)` is what you want. On MISMATCH the script prints an explicit warning that leftovers append to the last line. |
-| [6] | Byte-exact final text — compare against the stored entry (`inspect_pickle.py "Name"`). |
+| [6] | Byte-exact final text — compare against the stored entry (`inspect_card_data.py "Name"`). |
 
 **MAINTENANCE NOTE** (from the script's docstring — keep it true): the extraction loop mirrors
 `PSDParser._extract_from_layers` (commands/psd_parser.py:404 as of 2026-10-23): effect layers
@@ -332,7 +332,7 @@ counts (mismatch)?
 
 ---
 
-## 4. inspect_pickle.py — DB health and single-card lookup
+## 4. inspect_card_data.py — DB health and single-card lookup
 
 **Purpose**: read-only view of the card data — the bot's `card_data/` by default, or with `--db` any `db/` folder,
 `stats.json` or data commit: a health summary, the list of cards with recorded problems, or one card in full detail
@@ -341,12 +341,12 @@ with its archived history.
 **Invocations**:
 
 ```bash
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py              # summary
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py --problems   # problem cards
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py "the lich king"  # one card
+python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_card_data.py              # summary
+python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_card_data.py --problems   # problem cards
+python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_card_data.py "the lich king"  # one card
 # the data build: a db/ folder, or a data commit of a TTSCardMaker clone (fetch it first, as in Workflow 4)
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py --db ~/Documents/Tools/wt/scratch/carddata/db
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py --db origin/data --git ~/Desktop/TTSCardMaker "Metal General"
+python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_card_data.py --db ~/Documents/Tools/wt/scratch/carddata/db
+python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_card_data.py --db origin/data --git ~/Desktop/TTSCardMaker "Metal General"
 ```
 
 The summary's first two lines read `stats     : N cards` and `old_stats : N cards with history, N archived
@@ -558,7 +558,7 @@ Run in this order; each step tells you whether to continue:
 ```bash
 P=~/.venvs/ac-py314-fork/bin/python; C="$HOME/Desktop/TTSCardMaker/Field/3 Stars/Nebulous_Precipice.psd"
 # 0. What is stored now, and its history? (optional but cheap)
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py "Nebulous Precipice"
+python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_card_data.py "Nebulous Precipice"
 
 # 1. What is physically in the file? (layer names, visibility, bbox vs midline, raw text)
 $P .claude/skills/autocroissant-diagnostics-and-tooling/scripts/dump_psd_layers.py "$C" --text
@@ -579,7 +579,7 @@ step 0 and the update mode used.
 
 ### Workflow 3 — DB health check cadence
 
-Run `inspect_pickle.py` (summary) then `inspect_pickle.py --problems` (the bot's `card_data/`, or `--db origin/data
+Run `inspect_card_data.py` (summary) then `inspect_card_data.py --problems` (the bot's `card_data/`, or `--db origin/data
 --git ~/Desktop/TTSCardMaker`):
 - after a Card sync run that changed many cards (a full re-parse),
 - alongside Workflow 1 when a data commit looks odd,
@@ -634,7 +634,7 @@ starts moved: 71   archive tags changed: 2   kept versions with other data: 52  
   duplicates' copies of their original's `version`.
 
 Anything else (a removed card, a mass `path` or `type` change, a field the jetson and the build read differently)
-stops the shadow until it is explained. `inspect_pickle.py --db origin/data --git ~/Desktop/TTSCardMaker "Name"` shows
+stops the shadow until it is explained. `inspect_card_data.py --db origin/data --git ~/Desktop/TTSCardMaker "Name"` shows
 one card's record and versions on the data side.
 
 ---
@@ -646,7 +646,7 @@ Conventions (match the existing five — read one before writing):
 1. `#!/usr/bin/env python3` and a module docstring that states usage, what it prints, and the
    read-only guarantee. Scripts print `__doc__` on missing args.
 2. If it imports bot code that reads repo-relative paths (the pattern parse_one/gap_trace follow; a script that only
-   reads the card data should import `commands.card_db.read_cards` with no chdir, like inspect_pickle and diff_stats):
+   reads the card data should import `commands.card_db.read_cards` with no chdir, like inspect_card_data and diff_stats):
    ```python
    REPO_ROOT = Path(__file__).resolve().parents[4]   # scripts/ is 4 levels below repo root
    sys.path.insert(0, str(REPO_ROOT))
@@ -726,7 +726,7 @@ local-path fix and the new red-flag row; 2026-10-20: the scripts' icon-vocabular
 (autocroissant-build-and-env §1). On 2026-10-20 parse_one.py and gap_trace.py gained the icon
 vocabulary and parse_one.py's note on the removeprefix bug was rewritten; diff_stats.py's docstring
 (line 21) still names "the removeprefix local-path bug" as the meaning of mass path changes, which
-reads as history. After that day's psd_analyzer split, parse_one.py, gap_trace.py and inspect_pickle.py were
+reads as history. After that day's psd_analyzer split, parse_one.py, gap_trace.py and inspect_card_data.py were
 re-run on Mini Doomer and the live pickles (imports through the `commands.psd_analyzer` facade): same output.
 
 Re-verification one-liners (from repo root):
@@ -734,11 +734,11 @@ Re-verification one-liners (from repo root):
 ```bash
 S=.claude/skills/autocroissant-diagnostics-and-tooling/scripts
 ls .claude/skills/autocroissant-diagnostics-and-tooling/scripts/
-# expect: diff_stats.py dump_psd_layers.py gap_trace.py inspect_pickle.py parse_one.py (plus optimization/, 2026-10-20)
+# expect: diff_stats.py dump_psd_layers.py gap_trace.py inspect_card_data.py parse_one.py (plus optimization/, 2026-10-20)
 
-P=~/.venvs/ac-py314-fork/bin/python                 # psd-tools + pandas; plain python3 runs inspect_pickle and diff_stats
+P=~/.venvs/ac-py314-fork/bin/python                 # psd-tools + pandas; plain python3 runs inspect_card_data and diff_stats
 # golden: DB summary (2026-10-23 at a7c310e: 818 cards, 354/446 old_stats, 2 archived, 0 problems, 0 orphans, 0 suspicious)
-python3 $S/inspect_pickle.py
+python3 $S/inspect_card_data.py
 
 # golden: Mini Doomer (minion, stars 2, ['wind','defensive_minion','light'], 5/2/5/5, problems NONE)
 $P $S/parse_one.py ~/Desktop/TTSCardMaker/Auxiliary/Minions/Mini_Doomer.psd
@@ -777,7 +777,7 @@ grep -n "def to_dict" commands/card_models.py                      # field-omiss
 ```
 
 If `_extract_from_layers` changes shape, update gap_trace.py (its docstring says so). If
-TTSCardMaker grows a new top-level folder, update inspect_pickle.py's known-top-folders tuple.
+TTSCardMaker grows a new top-level folder, update inspect_card_data.py's known-top-folders tuple.
 If a script is added, this document must gain a routing row, a section, and a provenance line.
 
 2026-10-20 (later): the optimization-pass scripts and their JSON moved from `~/Documents/ac-optimization/` into
@@ -785,14 +785,14 @@ If a script is added, this document must gain a routing row, a section, and a pr
 
 2026-10-22 (data build): RepositoryTraverser's body moved to commands/card_data.py (`CardBuild`); the `*_from_local` helpers the scripts call are there, unchanged.
 
-2026-10-23 (work/shadow-prep): `diff_stats.py` and `inspect_pickle.py` read the data build's `db/` JSON and data
+2026-10-23 (work/shadow-prep): `diff_stats.py` and `inspect_card_data.py` read the data build's `db/` JSON and data
 commits (`card_db.read_cards`, `--git`), need no `config.py`, and diff_stats matches versions the seed pass dated
 (also a legacy version given a blob and re-dated, by its data);
 Workflow 4 (the shadow's daily check) and its numbers were measured on a Mac rebuild from seed 077337a9;
 `tests/test_diagnostics.py` runs both scripts on pickles, a db/ folder, a stats.json and a data commit.
 
 2026-10-23 (docs drift): which interpreter each script needs (`$P` = the fork venv for the three PSD readers); only
-parse_one and gap_trace chdir (inspect_pickle and diff_stats import card_db, no chdir, no psd_analyzer); diff_stats's
+parse_one and gap_trace chdir (inspect_card_data and diff_stats import card_db, no chdir, no psd_analyzer); diff_stats's
 load error quoted as it reads now; the Lich King examples re-measured (token `[undead]`, the Undead icon hidden since
 TTSCardMaker 1c24dd48) and the gap walk-through moved to Nebulous Precipice; gap_trace.py's mirror gained the
 effect-layer skip, `RULEBOOK_DIR` and `stars_from_psd()` (outputs unchanged on Nebulous Precipice, The Lich King,
@@ -800,12 +800,14 @@ Gasoline, Miracle Matter, Dark Daroach and PoD02Black Bloon), its docstring name
 2026-10-23 baseline (818 / 354 / 446 / 2 archived / 0 problems / Clot White); the one-time recovery growth in the red-flag
 row and Workflow 1; the gate snapshots go to `~/Documents/Tools/wt/scratch/head/` like the script's docstring.
 
-2026-10-25 (step 10, work/pickles): the pickles left the repo: inspect_pickle.py reads `card_data/` by default, parse_one.py's `--with-db` loads it, diff_stats.py's examples are data commits (the last PICKLE by git show); Workflow 1 is the data commit's review, Workflow 4 is history; commits_ns, e2e_update_ns, etag_handoff_ns and race_ns deleted with the legacy /update_stats.
+2026-10-25 (step 10, work/pickles): the pickles left the repo: inspect_card_data.py reads `card_data/` by default, parse_one.py's `--with-db` loads it, diff_stats.py's examples are data commits (the last PICKLE by git show); Workflow 1 is the data commit's review, Workflow 4 is history; commits_ns, e2e_update_ns, etag_handoff_ns and race_ns deleted with the legacy /update_stats.
 
-2026-10-25 (clean, work/clean): diff_stats.py and inspect_pickle.py read db/ JSON only (the pickle sides and card_db's unpickler removed); the line-ref rewriters deleted; tests/test_diagnostics.py runs both scripts on db/ JSON.
+2026-10-25 (clean, work/clean): diff_stats.py and inspect_card_data.py read db/ JSON only (the pickle sides and card_db's unpickler removed); the line-ref rewriters deleted; tests/test_diagnostics.py runs both scripts on db/ JSON.
 
 2026-11-05 (ring badges): the fork venv's pin is `cards-20261104` (1258fcbd).
 
 2026-11-09 (cardsdata r1-3): parse_one.py, gap_trace.py and parse_all_ns.py build the vocabulary with `card_check.clone_vocabulary` (they crashed on the `_icons_from_local` that 3bf99d74 deleted on 11-06) and need no config.py; gap_trace prints the Ability span step.
 
 2026-11-10 (fork release): the fork venv's pin is `cards-20261110` (170a3fce).
+
+2026-11-10 (housekeeping, owner): inspect_pickle.py renamed inspect_card_data.py (it reads the card data, db/ JSON).

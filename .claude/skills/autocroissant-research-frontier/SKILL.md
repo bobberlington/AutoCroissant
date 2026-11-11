@@ -353,7 +353,7 @@ commands. Line numbers drift — re-find with the greps below before trusting th
 
 | Volatile fact | Re-verify with (cwd = repo root) |
 |---|---|
-| Card count / type distribution (rule pages left the data on 2026-10-30) | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py --db origin/data --git ~/Desktop/TTSCardMaker` |
+| Card count / type distribution (rule pages left the data on 2026-10-30) | `python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_card_data.py --db origin/data --git ~/Desktop/TTSCardMaker` |
 | Rulebook search is substring | `grep -n "str.contains" commands/query_card.py` (inside `rulebook_search_engine`; def: `grep -n "def rulebook_search_engine" commands/query_card.py`) |
 | Ability DSL location | `grep -n "def ability_search_engine" commands/query_card.py` |
 | Export functions / filenames | `grep -n "def export_" commands/psd_analyzer.py; grep -n "EXPORTED_" commands/psd_analyzer.py` |

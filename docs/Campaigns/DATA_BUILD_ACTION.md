@@ -874,7 +874,7 @@ github_api reads it inside a try/except and takes the token from the environment
   - `conftest.real_stats` keeps reading the root stats.pkl until step 10, then reads `db/stats.json` from the Mac clone's
     `origin/data`.
 - **Diagnostics:**
-  - `diff_stats.py` and `inspect_pickle.py` (`.claude/skills/autocroissant-diagnostics-and-tooling/scripts/`) also read
+  - `diff_stats.py` and `inspect_card_data.py` (`.claude/skills/autocroissant-diagnostics-and-tooling/scripts/`) also read
     a `db/` folder, a `stats.json` or a data commit (`--git`, e.g. `origin/data` in a TTSCardMaker clone) through
     `card_db.read_cards`, with no config.py (built 2026-10-23; the diagnostics skill's Workflow 4 is the shadow's daily
     check). So the pre-push gate becomes a review of the data commit. The job summary already holds the same diff.
@@ -1167,7 +1167,7 @@ Each step lands on main on its own, keeps the full suite green, and is recorded 
    - *Undo:* revert the commit and redeploy.
 2. **Merge `work/archive-deleted` into main. Done** (dfdf953, 2026-10-22, deployed).
    - *Still to check,* on the jetson's next /update_stats: "Archived 1 card deleted before this update: ZOEY!!!!!" and nothing
-     else archived; before that /push, diff_stats shows 0 cards removed from stats and inspect_pickle counts 1 archived.
+     else archived; before that /push, diff_stats shows 0 cards removed from stats and inspect_card_data counts 1 archived.
    - *Undo:* revert the merge. Revert the PICKLE it produced, a pickle-only revert, which is the change-control exception, after
      diff_stats.
 3. **Ship value from today's data** (independent; any order).
@@ -1398,7 +1398,7 @@ except 6, which is one day, not 14:
     `github_api.py`, `psd_parser.py`, `psd_details.py`, `psd_analyzer.py`, `query_card.py`, `update_bot.py`, `font_check.py`;
   - `global_config.py`, `main.py`, `setup.py`;
   - `tests/conftest.py`, `tests/test_update_stats.py`, `tests/test_card_bake.py`;
-  - `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py` and `inspect_pickle.py`;
+  - `.claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py` and `inspect_card_data.py`;
   - new: `commands/card_data.py`, `card_history.py`, `card_db.py`, `changelog.py`, `requirements-card-data.txt` (now
     `requirements-cards.txt`); at step 8
     `commands/card_sync.py` (the bot's side) and `tests/test_card_sync.py`.

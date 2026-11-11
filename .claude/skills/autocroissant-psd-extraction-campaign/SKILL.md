@@ -198,7 +198,7 @@ Record results as a new scoreboard row.
 ### Gate 1a — Pickle summary
 
 ```bash
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py 2>&1 | grep -v "Git token\|Trying to open\|Loaded existing"
+python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_card_data.py 2>&1 | grep -v "Git token\|Trying to open\|Loaded existing"
 ```
 
 **EXPECTED (2026-10-23, PICKLE a7c310e):** 818 cards; old_stats 354 names / 446 archived versions, 2 archived cards
@@ -219,7 +219,7 @@ versions / 670 names once (the history recovery: autocroissant-run-and-operate �
 ### Gate 1b — Stored problems
 
 ```bash
-python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_pickle.py --problems 2>&1 | grep -v "Git token\|Trying to open\|Loaded existing"
+python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/inspect_card_data.py --problems 2>&1 | grep -v "Git token\|Trying to open\|Loaded existing"
 ```
 
 **EXPECTED (2026-10-23):** no lines (0 stored problems). On 2026-07-11 exactly one:
