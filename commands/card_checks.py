@@ -45,7 +45,6 @@ from PIL import Image
 from psd_tools import PSDImage
 
 import commands.card_bake as card_bake
-import commands.card_plates as card_plates
 import commands.png_export as png_export
 import commands.psd_edit as psd_edit
 from commands.card_bake import Card, Snapshot, local_snapshot, psd_fields, vocabulary
@@ -690,6 +689,7 @@ def check_card(ctx: Context, rel: str) -> dict:
     plate = None
     if image is not None:
         try:
+            import commands.card_plates as card_plates   # here: an older card-checks.yml's checkout lacks it
             plate = card_plates.plates(psd, image, psd_edit.card_parts(psd, rel, psd_edit._card_name(parsed), ctx.parser),
                                        ctx.fonts)
         except Exception as error:              # noqa: BLE001 - the mock-up's old way then, never a failed check

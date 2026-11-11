@@ -466,7 +466,7 @@ def test_action_shaped_copy(tmp_path):
         shutil.copy(REPO / rel, bot / rel)
     done = subprocess.run([executable, "-m", "commands.card_checks", "--help"], cwd=bot, capture_output=True, text=True, timeout=120)
     assert done.returncode == 0, done.stderr
-    code = ("import sys, commands.card_checks, commands.txt2_repair, commands.ability_place; "
+    code = ("import sys, commands.card_checks, commands.txt2_repair, commands.ability_place, commands.card_plates; "
             "print(sorted(m for m in ('config', 'discord', 'pandas') if m in sys.modules)); "
             "print(sorted(m for m in sys.modules if m.startswith('commands.') or m == 'global_config'))")
     done = subprocess.run([executable, "-c", code], cwd=bot, capture_output=True, text=True, timeout=120)
