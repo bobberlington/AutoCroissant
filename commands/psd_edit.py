@@ -8410,9 +8410,8 @@ def _shrunk(psd: PSDImage, parsed: dict, value: int, parser: Optional[PSDParser]
     no size fits, or a star cannot shrink (_scalable: a split star's mask too; an 8-bit RGB card only), or a texture
     is clipped onto the stars' group (_textures: Yin Yarn's; none needs B today).
     """
-    from psd_tools.api.layers import TypeLayer
     units = wanted.shown + wanted.hidden
-    if psd.color_mode != ColorMode.RGB or psd.depth != 8 or not hasattr(TypeLayer, "_store_raster") \
+    if psd.color_mode != ColorMode.RGB or psd.depth != 8 \
             or any(_scalable(layer) for unit in units for layer in _with_chains(unit.layers)) \
             or any(_textures(_drawn_as(unit)) for unit in units):
         return None
