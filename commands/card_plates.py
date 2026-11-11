@@ -4,7 +4,8 @@ and PAD past it), per title and ability layer of its parts (psd_parts). The mock
 instead of guessing the backdrop from the PNG. One file per PSD blob, crops at the site's card view scale (VIEW_W
 wide) in one AVIF; a crop whose backdrop differs from the PNG off the layer's ink is left out (the mock-up's old way).
 Card checks makes them (check_card's "plate") and publishes them on the `plates` branch as <PSD blob>.json, those of
-PSDs gone from main dropped; the website fetches the open card's in edit mode.
+PSDs gone from main dropped; the website fetches the open card's in edit mode. With the fonts, a layer's crop also
+carries the fork's layout of it (its lines and letters, layout()) when that is the stored pixels'.
 
     python -m commands.card_plates publish --git <checkout> [--head <sha>] [--remote origin] <run results.json> ...
 """
@@ -41,6 +42,8 @@ SEAM_SHARE = 0.002                          # of a crop's off-ink pixels: more, 
 GAP = 8                                     # px between crops in the sheet (AVIF blocks stay apart)
 QUALITY = 60
 KINDS = ("title", "ability", "blocks")
+LAYOUT_OFF = 0.05                           # card_standards._ink_off past this: the layout isn't the card's, none kept
+TILT = 0.002                                # a layer turned past this (xy, yx over xx): no layout
 BRANCH = "plates"
 LOCAL_REF = "refs/card-plates/head"         # where publish fetches the branch head (no remote-tracking ref moved)
 TRIES = 5
@@ -111,17 +114,70 @@ def crop(psd: PSDImage, layer, png: np.ndarray, icc: bool, step: int, extra=()) 
     return box, like_mode(plate, "RGB"), seam, (box[0] + int(xs.min()), box[1] + int(ys.min()), box[0] + int(xs.max()) + 1, box[1] + int(ys.max()) + 1)
 
 
-def plates(psd: PSDImage, png: Image.Image, parts: dict) -> Optional[dict]:
+def layout(layer, fonts_dir: str) -> Optional[dict]:
+    """
+    The fork's layout of a type layer in canvas px, when it draws the stored pixels (card_standards._ink_off within
+    LAYOUT_OFF) and is not turned (TILT): {"text": the engine's text (\\r paragraphs, \\x03 breaks), "lines": [[start,
+    end, baseline, left, right, top, bottom, justification]], "glyphs": [[char index, pen x, ink left, ink right]],
+    "frame": [left, right] or None (point text)}, else None. start/end index text (end: the break excluded); baseline:
+    its letters' (BaselineShift in); left/right: the pen's ends; top/bottom: the ink's, underlines too; a blank glyph
+    has no ink ends.
+    """
+    from statistics import median
+    from psd_tools.composite.text.geometry import text_geometry
+    from psd_tools.composite.text.layout import frame, layout as lay_out
+    from psd_tools.composite.text.model import TextModel
+    from commands.card_standards import _ink_off
+    faces = psd_edit.font_map(fonts_dir, layer)
+    model = TextModel.from_layer(layer)
+    xx, xy, yx, yy, tx, ty = model.transform
+    if xx <= 0 or yy <= 0 or max(abs(xy), abs(yx)) > TILT * xx or _ink_off(layer, faces) > LAYOUT_OFF:
+        return None
+    geo, lay = text_geometry(layer, faces), lay_out(model, faces)
+    if (geo["missing_fonts"] or not geo["lines"] or not all(line["drawn"] for line in geo["lines"])
+            or [g["i"] for g in geo["glyphs"]] != [g.cluster for g in lay.glyphs]):
+        return None
+    r = lambda v: round(v, 1)
+    ys, ink = {}, {}
+    for g, at in zip(geo["glyphs"], lay.glyphs):    # text_geometry's line baseline leaves out BaselineShift
+        ys.setdefault(g["line"], []).append(xy * at.x + yy * at.y + ty)
+        if g["ink"]:
+            top, bottom = ink.get(g["line"], (g["ink"][1], g["ink"][3]))
+            ink[g["line"]] = (min(top, g["ink"][1]), max(bottom, g["ink"][3]))
+    pen = [(line["baseline"][1] + line["baseline"][3]) / 2 for line in geo["lines"]]
+    shift = median([median(ys[n]) - y for n, y in enumerate(pen) if n in ys] or [0])
+    base = [median(ys[n]) if n in ys else y + shift for n, y in enumerate(pen)]     # a blank line: as the others
+    for rule in lay.rules:                          # underlines and strikes
+        y0, y1 = (yy * (rule.y + d) + ty for d in (-rule.thickness, rule.thickness))
+        n = min(range(len(base)), key=lambda k: abs(base[k] - (y0 + y1) / 2))
+        top, bottom = ink.get(n, (y0, y1))
+        ink[n] = (min(top, y0), max(bottom, y1))
+    lines = []
+    for n, line in enumerate(geo["lines"]):
+        just = next((p.justification for p in model.paragraphs if p.start <= line["start"] < max(p.end, p.start + 1)),
+                    0)
+        top, bottom = ink.get(n, (base[n], base[n]))
+        lines.append([line["start"], line["end"], r(base[n]), r(line["baseline"][0]), r(line["baseline"][2]), r(top),
+                      r(bottom), just])
+    box = frame(model)
+    return {"text": geo["text"], "lines": lines,
+            "glyphs": [[g["i"], r(g["cell"][0]), *(r(g["ink"][k]) for k in (0, 2) if g["ink"])] for g in geo["glyphs"]],
+            "frame": [r(xx * box[0] + tx), r(xx * (box[0] + box[2]) + tx)] if box else None}
+
+
+def plates(psd: PSDImage, png: Image.Image, parts: dict, fonts_dir: Optional[str] = None) -> Optional[dict]:
     """
     The plates file of a card: {"v", "w", "crops": [{"id", "box", "ink", "at"}], "img"}, or None when no layer gave one.
     box: the crop, ink: where the layer drew in it (canvas px); at: [x, y, w, h] of the crop in img (a data URL). A
     layer with FX layers on it has a second crop without them too, its "fx" their status words (the mock-up's when
-    one leaves the text: the bake moves FX layers with their words).
+    one leaves the text: the bake moves FX layers with their words). With fonts_dir, a layer's first crop also has
+    its layout() keys ("text", "lines", "glyphs", "frame").
 
     Args:
         psd: The card
         png: Its PNG (picture 1)
         parts: Its details record's parts (psd_parts.card_parts)
+        fonts_dir: MDW/Fonts (the layouts'); None: none
     """
     if psd.width <= 0 or png.size != psd.size:
         return None
@@ -141,7 +197,12 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict) -> Optional[dict]:
             copies = [by_id[f["id"]] for f in follow if lid in (f.get("of") or []) and f.get("id") in by_id]
             got = crop(psd, layer, truth, icc, step, copies)
             if got:
-                found.append(({"id": lid}, *got))
+                try:
+                    lay = layout(layer, fonts_dir) if fonts_dir else None
+                except Exception as error:      # noqa: BLE001 - no layout: the mock-up finds the lines
+                    print(f"{layer.name}: no layout: {type(error).__name__}: {error}", file=stderr)
+                    lay = None
+                found.append(({"id": lid, **(lay or {})}, *got))
             fx = [x for x in psd_edit.fx_layers(psd, layer) if _meets(layer, x)]
             got = crop(psd, layer, truth, icc, step, [*copies, *fx]) if fx else None
             if got:
@@ -274,6 +335,7 @@ __all__ = [
     'collected',
     'crop',
     'layer_ids',
+    'layout',
     'main',
     'plates',
     'psd_blobs',

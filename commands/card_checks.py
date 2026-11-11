@@ -689,7 +689,8 @@ def check_card(ctx: Context, rel: str) -> dict:
     plate = None
     if image is not None:
         try:
-            plate = card_plates.plates(psd, image, psd_edit.card_parts(psd, rel, psd_edit._card_name(parsed), ctx.parser))
+            plate = card_plates.plates(psd, image, psd_edit.card_parts(psd, rel, psd_edit._card_name(parsed), ctx.parser),
+                                       ctx.fonts)
         except Exception as error:              # noqa: BLE001 - the mock-up's old way then, never a failed check
             print(f"{rel}: no plate: {type(error).__name__}: {error}", flush=True)
     creatures = parsed["card"].get("creatures")
