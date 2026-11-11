@@ -904,6 +904,23 @@ c4caaf9, 10.26 in df01761; 10.20-10.25, 10.27 and 10.28 are the 2026-10-20 optim
   with `PSD_TOOLS_FONT_DIRS` = MDW/Fonts, so they need no installed fonts; Photoshop fixes on this Mac need MDW's faces
   installed (Koro-Sensei). Procedure: ttscardmaker-companion §1.10.
 
+### 10.36 macOS segfault: FreeType's HarfBuzz bound to uharfbuzz's (2026-11-10)
+
+- **Symptom**: a guards run on fewer than 8 cards (unpooled) died with rc 139 in libfreetype's
+  `hb_collect_glyphs_context_t::recurse` (the autohinter's coverage pass, the fork's light hinting, on stoogedings'
+  chained-context lookups).
+- **Root cause**: freetype-py's libfreetype (FreeType 2.13.2 with its own older HarfBuzz) and uharfbuzz's
+  `_harfbuzz.abi3.so` export five weak C++ symbols of the same name (`*::dispatch_recurse_func<...>`,
+  `hb_buffer_t::_cluster_group_func`). dyld binds weak symbols to the first unhidden image that defines them:
+  uharfbuzz, an extension (global), loaded first (fontTools' first `name`/`glyf` read imports it through otBase)
+  takes FreeType's calls. ctypes loads libfreetype RTLD_LOCAL (hidden), so FreeType first keeps both to their own.
+- **Evidence**: `DYLD_PRINT_BINDINGS` (libfreetype binds to `_harfbuzz.abi3.so` only when uharfbuzz loads first);
+  a scratch proof run on the fork: macos-latest rc 139, ubuntu x64 and arm64 rc 0 in every order (`LD_DEBUG`: each
+  library binds to itself); the jetson the same. macOS only.
+- **Status**: fixed: `import freetype` first in font_check.py and psd_edit.py (every font reader imports one;
+  `tests/test_font_check.py::test_freetype_loads_before_harfbuzz`). Not taken: skipping the autohinter (changes every
+  raster), `sys.setdlopenflags(RTLD_LOCAL)` around uharfbuzz (process-wide flags, same first-import problem).
+
 ## How to add an entry
 
 Use this template (the evidence bar — one mechanism must explain ALL observations including negatives, numbers predicted before measured — is owned by autocroissant-research-methodology; retired ideas from the idea lifecycle land here too):
