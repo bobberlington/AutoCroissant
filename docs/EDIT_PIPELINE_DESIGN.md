@@ -267,7 +267,7 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    `set_span_style(start, end, fill=(r/255, g/255, b/255))` per occurrence (`fill` takes 0..1, `layers.py:3113-3128`; the chart
    swatch is 8-bit; since 2026-10-21 every occurrence in the text, edited or not: the chart is the authority, question 6;
    the fill only: an FX layer keeps its own style, q6 2026-10-23 below);
-   `rasterize(fonts=FontMap(dirs=[MDW/Fonts]))`; on a fork with the line splice (`psd_edit.splices()`), `rasterize(keep=capture(...))`
+   `rasterize(fonts=FontMap(dirs=[MDW/Fonts]))`; with the line splice, `rasterize(keep=capture(...))`
    redraws only the changed glyphs (`SPLICE_UNIT`) and keeps Photoshop's raster elsewhere (`Edit.band`). Then the FX layers
    (idea 14, 2026-10-21; BUG 2, 2026-10-23): the bake does what `Effect Layers.jsx`'s Update all does. The model, from the
    JSX: an FX layer is a pixel layer `<base> FX: <phrase>[ | <phrase>...]` ("#n" after a phrase: only its nth occurrence)

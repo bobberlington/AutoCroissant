@@ -766,12 +766,6 @@ def glow_tokens(text: str) -> list:
     return [m.group(0) for m in TOKEN.finditer(text) if m.group(0)[1:-1].partition(":")[2].strip().lower() in GLOWS]
 
 
-def splices() -> bool:
-    """Does the fork's rasterize keep Photoshop's raster of the unchanged lines (rasterize(keep=))."""
-    from psd_tools.api.layers import TypeLayer
-    return "keep" in signature(TypeLayer.rasterize).parameters
-
-
 def _txt2(psd: PSDImage):
     blocks = psd._record.layer_and_mask_information.tagged_blocks
     return blocks.get_data(Tag.TEXT_ENGINE_DATA) if blocks is not None and Tag.TEXT_ENGINE_DATA in blocks else None
@@ -5726,9 +5720,9 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                    area: Optional[tuple] = None, anchor: int = 0, up: int = 0) -> Edit:
     """
     Replace the name or the ability text, keeping the runs, and rasterize it with the text engine: only the changed
-    glyphs when the fork splices (splices(), SPLICE_UNIT), Photoshop's raster staying on the rest. A title layer found
-    by its own text alone (own_text_title: Sans's 'snas.') takes the new title as its name, as Photoshop renames a layer
-    it named, so the parser still reads it (gate_bytes allows that name).
+    glyphs (SPLICE_UNIT), Photoshop's raster staying on the rest. A title layer found by its own text alone
+    (own_text_title: Sans's 'snas.') takes the new title as its name, as Photoshop renames a layer it named, so the
+    parser still reads it (gate_bytes allows that name).
 
     Args:
         psd: The open card (edited in place)
@@ -5922,13 +5916,11 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
                      f"{', '.join(shown)})")
     elif alien:
         flag("font", f"{which}: {alien}")
-    before = None
-    if splices():                               # Photoshop's raster stays on the lines the edit leaves alone
-        from psd_tools.composite.text import capture
-        try:
-            before = capture(layer, fonts)
-        except MissingFontError as error:
-            raise Refused("font", str(error))
+    from psd_tools.composite.text import capture  # Photoshop's raster stays on the lines the edit leaves alone
+    try:
+        before = capture(layer, fonts)
+    except MissingFontError as error:
+        raise Refused("font", str(error))
     if which == "name":                         # the title stays on its lines (review 2026-10-24: Basic Shield's box
         from psd_tools.composite.text.geometry import text_geometry     # wrapped a typed [fire] onto the art)
         try:
@@ -12269,7 +12261,6 @@ __all__ = [
     'render_cache',
     'shown_name',
     'splice_text',
-    'splices',
     'spot_entries',
     'spot_key',
     'spot_record',
