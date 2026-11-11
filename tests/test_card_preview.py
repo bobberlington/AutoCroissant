@@ -151,7 +151,7 @@ def test_a_stat_edit_bakes_the_bakes_pixels(cards, tmp_path, monkeypatch):
                               "png_blob": _sha(cards.files[DOOMER_PNG])}
     assert result["edit"] == {"hp": 8, "note": "checked"} and result["changes"] == [{"field": "hp", "old": 5, "new": 8}]
     assert result["image"] == "baked" and result["files"] == {"png": cp.PNG, "webp": cp.WEBP, "before": cp.BEFORE} and result["parity"]["hp"]["bad_pct"] < 1
-    assert len(result["region"]) == 4 and result["runner"]["text_engine"] is True and result["at"].endswith("Z")
+    assert len(result["region"]) == 4 and result["runner"]["psd_tools"] and result["at"].endswith("Z")
     webp = Image.open(out / cp.WEBP)
     assert webp.format == "WEBP" and webp.width == cp.WEBP_WIDTH and list(webp.size) == result["webp_size"]
     cp._small((out / cp.PNG).read_bytes(), str(tmp_path / "again.webp"))   # as made from preview.png

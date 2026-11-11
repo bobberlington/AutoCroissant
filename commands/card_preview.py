@@ -414,8 +414,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
         result.update(card=card_name(png_rel) if one.view is not None and png_rel else one.name, path=one.rel, png=png_rel)
         result["base"].update(psd_blob=one.psd_sha, png_blob=snapshot.sha(png_rel) if png_rel else "")
         fonts = card_bake._fonts_dir(snapshot)  # the bake's: PSD_TOOLS_FONT_DIRS, else the checkout's MDW/Fonts
-        result["runner"] = {"psd_tools": card_bake.PSD_TOOLS_VERSION, "text_engine": psd_edit.text_engine(),
-                            "story_sync": psd_edit.story_sync()}
+        result["runner"] = {"psd_tools": card_bake.PSD_TOOLS_VERSION}
         parser = vocabulary(snapshot)
         colors: list = []
 

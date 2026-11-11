@@ -1383,16 +1383,6 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         if bake:
             if psd.has_preview():               # its look before the save strips the stored image (the render record)
                 card.records = psd_edit.records_of(psd, None, card.rel, png=Image.open(old_png))
-            texty = psd_edit.TEXT_FIELDS + ("parts", "colors")
-            if any(f in texty for f in card.jobs) and not psd_edit.text_engine():
-                raise Transient("this runner has no text engine (psd-tools[text])")
-            if any(f in texty for f in card.jobs) and not psd_edit.story_sync():
-                raise Transient("this runner's psd-tools fork predates Txt2 story sync: Photoshop would undo the text")
-            if any(psd_edit.glow_tokens(str(card.jobs[f])) for f in texty if f in card.jobs) \
-                    and not psd_edit.glow_halos():
-                raise Transient("this runner's psd-tools predates the pin's glow halos: reinstall it")
-            if any(f in psd_edit.ICON_FIELDS for f in card.jobs) and not psd_edit.icon_engine():
-                raise Transient("this runner's psd-tools cannot copy or make layers (the fork's duplicate and fromarray)")
             colors = chart() if {"ability", "parts", "colors"} & set(bake) else None
             if {"ability", "parts", "colors"} & set(bake) and colors is None:
                 raise Transient(f"no status chart ({psd_edit.STATUS_CHART}) in the tree")
@@ -1492,7 +1482,7 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
         card.refusal, card.transient = Refusal("error", str(error)), True
     except Exception as error:                  # noqa: BLE001 - one bad card never blocks another
         card.refusal = Refusal("error", f"{type(error).__name__}: {error}")
-        card.transient = isinstance(error, (RequestException, ImportError))   # a 5xx, or the runner lacks scipy / the text extra
+        card.transient = isinstance(error, (RequestException, ImportError))   # a 5xx, or a package the runner lacks
         card.traceback = format_exc()
     finally:
         card.seconds = perf_counter() - started
@@ -1984,9 +1974,7 @@ def run_report(repository: str = CARD_REPO, head: str = "", dry_run: bool = Fals
                 report.note = f"No entry with a PSD field for {card!r}."
             if cards:
                 fonts = _fonts_dir(snapshot)
-                engine = ("no text engine" if not psd_edit.text_engine()
-                          else "text engine" if psd_edit.story_sync() else "text engine without Txt2 story sync")
-                report.lines.append(f"- Runner: psd-tools {PSD_TOOLS_VERSION} ({engine}); fonts `{fonts}`"
+                report.lines.append(f"- Runner: psd-tools {PSD_TOOLS_VERSION}; fonts `{fonts}`"
                                     + ("" if isdir(fonts) else " (missing)"))
                 parser = vocabulary(snapshot)
                 chart = status_chart(snapshot, work)

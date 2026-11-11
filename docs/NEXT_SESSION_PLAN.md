@@ -267,9 +267,9 @@ From `~/Documents/Tools/wt/scratch/opt-round3/plan.json`, `opt-round4/plan.json`
       The bake rule (a series hidden in every cell is never shown) stays open.
 - [x] Corruption and Dumplings, left out of the 10-26 font sweep: done by later passes (checked 11-09). Both Abilities
       set their icons in stoogedings, no stale Txt2 story, PNGs current.
-- [x] Housekeeping (owner 11-10): `ac-py314-psd125` retired with the tests' older-fork skips; the pyoxipng fallback
-      dropped (brew oxipng on the Mac); `alt_names` and Card Edits.json's `aliases_moved` dropped; `inspect_pickle.py`
-      is `inspect_card_data.py`.
+- [x] Housekeeping (owner 11-10): `ac-py314-psd125` retired with the older-fork checks (the tests' skips, the
+      code's fork probes); the pyoxipng fallback dropped (brew oxipng on the Mac); `alt_names` and Card Edits.json's
+      `aliases_moved` dropped; `inspect_pickle.py` is `inspect_card_data.py`.
 - [ ] Fork, low priority: a tracking change breaks kerning (Quick Slash, Ominous Red Circle), tracked badge ligatures,
       Photoshop's underline box (Golden Metronome: round 6's underline placement is in `cards-20261110`; re-check). The fork scales tracking with the horizontal scale since `cards-20261104`.
 - [ ] OJWikibot: `ojwiki_helpers.py:263-268` optional mwparserfromhell fallback; the backup search misses `Backup:

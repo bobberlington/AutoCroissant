@@ -432,10 +432,9 @@ The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes 
   icon but the font prints as letters ("[fire:]"), a typed character its font has no glyph for, a timing badge typed in a title (printed as plain words, as the website shows it). An edit
   keeps the card's own icon spellings ("[dark:sticker]" where
   the website shows "[dark]"). Typed `:glow`/`:darkglow` tokens bake on the `cards-20261024b` pin (its halo as
-  Photoshop draws it; on a stale install of an older fork the edit is a runner error, no verdict, retried once the
-  fork is reinstalled). Also told: a title or Ability whose saved pixels are in another font than the layer names
+  Photoshop draws it). Also told: a title or Ability whose saved pixels are in another font than the layer names
   (`drawn_in_font`: Dull Knife, Shiny Knife, Dark Tentacle and Snow Angel's Omori titles). A text layer with tabs
-  bakes (the fork lays Photoshop's 36 pt default stops; on a stale fork it is a runner error, retried). A
+  bakes (the fork lays Photoshop's 36 pt default stops). A
   deleted line or word is cut whole, so the text after it keeps its own colours and badge size; an Ability's new line
   printed past the old text onto the design below it bakes all the same (`ink_beyond`, 18 of 503 cards given a line).
 - **Content flags (owner 2026-10-24 ~18:30, same branch; the soft ones told nowhere since 2026-11-07, `psd_edit.SOFT_NOTE`):**

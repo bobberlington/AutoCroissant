@@ -373,7 +373,7 @@ mechanism, state lives in git. Refusals are data with a code, never exceptions; 
    top-level group (`Text`; the layer itself at the root), where the JSX's Add puts it. A hand-made overlay word layer over
    the ability is hidden when it names a styled chart status, else the card refuses `unsupported-card`. The report tells
    every FX layer deleted, renamed or cut again for a leak (`Edit.notes`, `Baked.fx_notes`). `styled-word`
-   remains for a psd-tools without the engine pieces (`psd_edit._fx_engine`) and for FX words with no pixels.
+   remains for FX words with no pixels.
 5. **Render + merge** (section 6). Gate `region`: pixels differing between old and new PNG lie inside the padded region and
    outside it the new PNG is byte-equal to the old. Gate `shape`: PNG size and mode unchanged.
 6. **Save.** Preview current (an honest flattened image in the committed PSD: Photoshop's preview with the merge's pixels via
@@ -856,8 +856,7 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   `test_a_bake_cuts_its_region_renders_from_the_whole_ones`, the untinted case in
   `test_a_see_through_icon_under_a_badge_layer_refuses`; each fails with its change taken out (`bug2-p5/mut.py`).
   **Glow tokens (2026-10-24, pin `cards-20261024b`, venv `~/.venvs/ac-py314-fork`; `scratch/bug2-p6/`):** the fork draws
-  a `:glow`/`:darkglow` halo as Photoshop does, so typed ones bake under the same gates (a fork without the halos,
-  `glow_halos`, a stale install: an ImportError and card_bake's `Transient`, no verdict; it was a lasting `font` one). A stroked Text group strokes the halo into a black disc,
+  a `:glow`/`:darkglow` halo as Photoshop does, so typed ones bake under the same gates. A stroked Text group strokes the halo into a black disc,
   Photoshop's look: Photoshop's own Nebulous Precipice with `[darkmatter:glow]` (`~/std-work-1022/glow/run`) against
   the fork's re-render, 0.47% of the token window past 24 levels (max 75); moved by an edit, 0.52% of the disc. Two
   gates changed for them: off the canvas counts ink past `INK_ALPHA` only (`_ink_off_canvas`; Red Knife's halo tail
@@ -890,12 +889,10 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   colour off its paragraph 553 -> 4 (rewrites), 520 -> 33 (a line added), 513 -> 28 (one deleted), 271 -> 0 (two
   swapped); the previews branch's 142 previews (91 bake): 86 the same, Pot Full of Spiders!'s 3 fixed, 2 differ in
   blanks only. Tests: `test_text_align.py`, `test_a_rewritten_paragraph_keeps_its_own_colour`.
-  A text layer with tabs bakes (owner 2026-10-24): the fork lays them to Photoshop's 36 pt default stops (`tab_stops`;
-  before, Michael's Blessing's arrows collapsed) and `keep_breaks` makes the website's spaces the layer's tabs again;
-  a fork without them is an ImportError, card_bake's `Transient`.
-  A typed glow on a fork without the halos is an ImportError and card_bake's `Transient`, so no lasting `font` verdict.
+  A text layer with tabs bakes (owner 2026-10-24): the fork lays them to Photoshop's 36 pt default stops (before,
+  Michael's Blessing's arrows collapsed) and `keep_breaks` makes the website's spaces the layer's tabs again.
   Tests: `test_a_deletion_cuts_whole_lines_or_words`, `test_deleting_a_line_keeps_the_next_lines_own_style`,
-  `test_a_new_line_on_the_design_below_is_told`, `test_tab_stops_bake`, `test_tab_stops_refuse_on_an_older_fork`, `test_glow_edit_on_an_older_fork_is_transient`.
+  `test_a_new_line_on_the_design_below_is_told`, `test_tab_stops_bake`.
   **Review fixes 5 (2026-10-24, `scratch/bug2-p7/`):** a stroked title's glow disc ran under a star or type icon
   above it, every gate passing (Confusion, Krabby Patty, Unbreakable Strength): the halo's changed ink now counts on
   the stars and type icons and under the layers above (`covered_ink`); in the effect scope's group, where the composite
@@ -996,11 +993,11 @@ does that.
 rest are refused `capped` (try-again: no verdict, pending, the next tick takes them). A title bake took 29-31 s in run
 39761732714, so without it about 110 edits ran past the job's 60 minutes, which cancelled the job before the one commit,
 every 30 minutes; the cap also bounds what one unattended commit reprints. `main` exits 1 when the commit failed although
-cards had shares, or a card has an `error` (transient ones too: no text engine, no chart, a missing module, a 5xx); the
+cards had shares, or a card has an `error` (transient ones too: no chart, a missing module, a 5xx); the
 upload and the site/TTS dispatch still run (`always()` / `!cancelled()`), and a scheduled run that failed posts its link to
 `DISCORD_CHANGELOG_WEBHOOK`, once per streak: the step skips the message when the last finished scheduled run (cancelled
 and skipped ones not counted) failed too, so a persistent failure (a transient error writes no verdict and keeps the gate
-open: no chart, no text engine, a missing module) is one message, not 48 a day, and the next streak after a success is
+open: no chart, a missing module) is one message, not 48 a day, and the next streak after a success is
 told again. Steps time out before the job does (pip and the gate 10 min, the bake 50): a step timeout is a failure, and a
 job cancelled at its 60 minutes counts too (`cancelled()`); concurrency only cancels pending runs, which start no step.
 Nothing is committed on a timeout (the ref update comes last). Not guarded: a large batch of new website edits bakes
@@ -1085,8 +1082,7 @@ layer phrase the ability lacks; the badge-layer notes went with the badge layers
 for (`ability: '☃' has no glyph in its font (drawn as a box)`), `unsupported-card` also an icon-font glyph whose colours a tinted Ability
 now changes, not drawn in one colour on purpose (`ability: (1cd): under the ability's look (its Pin Light blending), which changes their colours`; the look names the first overlay, inner glow/shadow, satin, blend, opacity or clipped layer it finds),
 `stat>10` says whether the value is above 20, needs a second row, or needs a Bottom `10` marker, `parity` on a
-styled digit means the render missed the bar (since 2026-10-23: past the floor), no longer that the digit is styled, and `styled-word` means only that this
-psd-tools cannot cut glyph pixels or make or refill a pixel layer (the fork's text engine is missing), or that an FX layer's
+styled digit means the render missed the bar (since 2026-10-23: past the floor), no longer that the digit is styled, and `styled-word` means only that an FX layer's
 words have no pixels: a styled word gets its FX layer.
 Since 2026-10-24 (owner, phase 6 in section 7) the content codes no longer refuse what an edit's text, badges, styled
 words or fonts look like: `overflow`, `font` (but no stand-in at all), `styled-word` (but no glyph cutting) and the

@@ -764,7 +764,7 @@ def build_context(source: Source, tree: dict, errors: Optional[list] = None) -> 
             chart = psd_edit.status_fills(png_export.open_psd(source.blob(tree[psd_edit.STATUS_CHART][1])))
         except Exception as error:              # R5 reports every overlay without the chart
             errors.append(f"{psd_edit.STATUS_CHART}: {error}")
-    context = standards.Context(frozenset(vocab.all_types), chart, psd_edit.story_sync(),
+    context = standards.Context(frozenset(vocab.all_types), chart,
                                 frozenset(path.lower() for path in tree if path.lower().endswith(".png")),   # R12's pictures
                                 shown_cards(source, errors), art_holders(links_index(source), tree))
     return context, vocab

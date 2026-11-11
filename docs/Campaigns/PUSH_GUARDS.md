@@ -472,8 +472,8 @@ four PoD minions); `txt2_repair --check` over all 904 PSDs at `b2168617`: 0 stal
   - `gate_size` within 1%.
 - **Repo size:** the fork keeps every untouched byte, so git packs the fixed blob as a delta of a few KB against the pushed
   one.
-- **R9 needs the fork tag with `sync_story`** (`cards-20261023`, pinned). Without it R9 is report-only, as the bake's
-  `story_sync()` check does.
+- **R9 needs the fork tag with `sync_story`** (`cards-20261023`, pinned; every install is the pin since 2026-11-10,
+  so the guards' and the bake's `story_sync()` probes are gone).
 - **Plainly, for the owner:** "fix the easy issues" means R9 (Txt2 sync) only. Everything else is told, R11 included
   (0 cases in the tree today).
 - **Report mode tells the fixable issues and the PNGs the bot would make** (nothing is made or fixed there: "PNG not

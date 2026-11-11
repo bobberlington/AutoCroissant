@@ -779,12 +779,9 @@ class CardBuild:
 
     def _make_repo_tree(self) -> None:
         """_repo_tree, made once before workers share it."""
-        try:
-            if self._repo_tree is None:
-                from psd_tools.api.links import RepoTree
-                self._repo_tree = RepoTree(self.sizes)
-        except ImportError:                             # _linked records it, PSD by PSD
-            pass
+        if self._repo_tree is None:
+            from psd_tools.api.links import RepoTree
+            self._repo_tree = RepoTree(self.sizes)
 
     def _fetch_read(self, path: str, name: str, sha: str) -> Optional["Read"]:
         """A download worker's PSD: fetched, read (_read) and closed; None when not fetched."""

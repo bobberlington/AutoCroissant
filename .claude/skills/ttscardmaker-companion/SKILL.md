@@ -466,8 +466,7 @@ tests/test_badge_parity.py):
 - **Bakes set glow tokens** since the fork's `cards-20261024b` (2026-10-24; before, it drew the halo as a solid block and
   the bake refused). A stroked Text group strokes the halo into a black disc, as Photoshop does. Under a tint a glow
   is told as any recoloured icon, and a halo onto the stars or a layer is told too (owner
-  2026-10-24: content problems bake, told); on a fork without the halos (`psd_edit.glow_halos`) it is a runner error
-  (no verdict; retried once the fork is reinstalled).
+  2026-10-24: content problems bake, told).
 
 ### 1.9 One-colour badges and stickers under overlays (owner 2026-10-25; landed, AC ce89e95)
 

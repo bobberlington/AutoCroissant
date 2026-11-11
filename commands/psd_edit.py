@@ -7,11 +7,11 @@ hide, move or copy star layers and type icons for a stars or types edit (a refus
 card's), render only the changed region, delta-merge it onto the official PNG and gate the result. Pure functions
 over an open PSDImage; a refusal is a Refused exception carrying one of CODES, which the per-card driver turns into
 data. A content problem never refuses (owner 2026-10-24): it bakes best-effort, told in the notes as "<code>: <why>". No Discord, network or config; the text extra (psd_tools.composite.text) is imported only where text is
-rendered, so the module loads under stock psd-tools.
+rendered.
 """
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, wait
-from contextlib import ExitStack, contextmanager, nullcontext
+from contextlib import ExitStack, contextmanager
 from contextvars import Context
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
@@ -101,7 +101,7 @@ OK_FONTS = ("exact", "system")                  # how a font may resolve; loose 
 TOKEN = re_compile(r"\[[^\[\]\r\n\x03]{1,52}\]")   # an icon token in ability text ([fire]); psd_parser.ICON_SCAN_PATTERN
 WEB_NORM = re_compile(r"[\s_\-.'\u2019]+")          # what the website's norm() drops from a token's base (site/assets/text.js)
 TEXT_COLOURED = ("sticker", "tint")    # token variants drawn in the text's colour: the :sticker outline, the :tint silhouette
-GLOWS = ("glow", "darkglow")  # token variants drawn with an image halo (glow_halos)
+GLOWS = ("glow", "darkglow")  # token variants drawn with an image halo
 LAYERED = ("sticker", "no") + GLOWS    # variants drawn as overlapping glyphs in one cluster: tracking splits them
 LETTER = re_compile(r"[A-Za-z]")                   # status_spans' word boundary
 SAME_RUN = 3                # edit_parts: characters an edit keeps this many in a row are not restyled
@@ -499,15 +499,6 @@ def _past_floor(measured: dict) -> bool:
     return measured["bad_pct"] > PARITY_FLOOR
 
 
-def text_engine() -> bool:
-    """Is the fork's text engine (psd-tools[text]) importable: the renders and text edits need it."""
-    try:
-        import psd_tools.composite.text  # noqa: F401
-    except ImportError:
-        return False
-    return True
-
-
 def _record_index(layer) -> int:
     records = layer._psd._record.layer_and_mask_information.layer_info.layer_records
     return next(i for i, record in enumerate(records) if record is layer._record)
@@ -737,27 +728,8 @@ def _card_name(parsed: dict) -> str:
     return info.name if info is not None else parsed["card"].get("name") or ""
 
 
-def story_sync() -> bool:
-    """Does the fork's set_text also write the layer's Txt2 story (TypeLayer.sync_story): the text Photoshop reads."""
-    from psd_tools.api.layers import TypeLayer
-    return hasattr(TypeLayer, "sync_story")
-
-
-def glow_halos() -> bool:
-    """Does the fork draw a :glow/:darkglow halo as Photoshop does (cards-20261024b; before, a solid block)."""
-    from dataclasses import fields
-    from psd_tools.composite.text.svg import Picture
-    return "box" in {field.name for field in fields(Picture)}
-
-
-def tab_stops() -> bool:
-    """Does the fork lay tabs out to Photoshop's tab stops (before, each a space: the columns collapsed)."""
-    from psd_tools.composite.text import constants
-    return hasattr(constants, "TAB_WIDTH")
-
-
 def glow_tokens(text: str) -> list:
-    """The :glow and :darkglow tokens in a text (drawn with a halo: glow_halos)."""
+    """The :glow and :darkglow tokens in a text (drawn with a halo)."""
     return [m.group(0) for m in TOKEN.finditer(text) if m.group(0)[1:-1].partition(":")[2].strip().lower() in GLOWS]
 
 
@@ -1209,8 +1181,6 @@ def alternate_spans(text: str, drawn: list, icons: Optional[list] = None) -> lis
 def stylistic_alternates(layer) -> Optional[tuple]:
     """[(start, end)] of the layer's text in Stylistic Alternates (the Txt2 story's flag); None without a story in step."""
     from psd_tools.api import text_edit
-    if not hasattr(text_edit, "stylistic_alternates"):     # a stale install: the runner's, retried (card_bake)
-        raise ImportError("Stylistic Alternates: this psd-tools predates cards-20261025b; install requirements-cards.txt")
     return text_edit.stylistic_alternates(layer)
 
 
@@ -1219,9 +1189,8 @@ def set_alternates(layer, spans: list, changed: list) -> None:
     Stylistic Alternates on the spans (alternate_spans, typed or kept), written to the Txt2 story alone as Photoshop
     writes them, and off on any other character the edit typed (it takes them from the badge before it).
     """
-    from psd_tools.api import text_edit
-    if not spans and (not changed or not hasattr(text_edit, "stylistic_alternates")):
-        return                                  # an older fork wrote none
+    if not spans and not changed:
+        return
     on = stylistic_alternates(layer)
     if on is None:
         if spans:
@@ -2699,16 +2668,12 @@ def follow_fx(plan: FxPlan, text: str, kept: list, spans: list = ()) -> list:
 
 
 def _fx_engine() -> tuple:
-    """The fork's text engine pieces that cut glyph pixels and make or refill pixel layers; Refused("styled-word") without them."""
-    try:
-        from psd_tools.api.layers import PixelLayer, TypeLayer
-        from psd_tools.composite.text.layout import layout
-        from psd_tools.composite.text.model import TextModel
-        from psd_tools.composite.text.raster import GlyphCache, Options, rasterize
-        PixelLayer.fromarray
-        store = TypeLayer._store_raster     # a type layer's raster writer: channels and rect, the record kept
-    except (ImportError, AttributeError) as error:
-        raise Refused("styled-word", f"this psd-tools cannot cut glyph pixels into an FX layer: {error}") from error
+    """The fork's text engine pieces that cut glyph pixels and make or refill pixel layers."""
+    from psd_tools.api.layers import PixelLayer, TypeLayer
+    from psd_tools.composite.text.layout import layout
+    from psd_tools.composite.text.model import TextModel
+    from psd_tools.composite.text.raster import GlyphCache, Options, rasterize
+    store = TypeLayer._store_raster         # a type layer's raster writer: channels and rect, the record kept
     return TextModel, layout, rasterize, Options, GlyphCache, PixelLayer, store
 
 
@@ -5765,9 +5730,7 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
         typed_icon_fit), font stand-ins, boxes and saved pixels in another font (drawn_in_font); an FX layer whose style
         can't follow its words is deleted, its words printing plain (styled words given the chart's layer by new_fx).
         Raises Refused for what it cannot edit: unsupported-card (FX layers that are no pixel layers, two FX layers one
-        name, status word layers without a chart), styled-word (no glyph cutting in this psd-tools); ImportError when
-        the fork edits TySh alone (no story_sync: Photoshop would show the story's old text), draws no glow halos
-        (glow_halos) or lays no tab stops (tab_stops)
+        name, status word layers without a chart), styled-word (FX words with no pixels to cut)
 
     The text is set one changed part at a time (splice_text), a deletion cutting whole lines or words (deletion_start),
     so what the edit keeps keeps its runs; an Ability's new ink past its old text on the design below it is told in
@@ -5803,12 +5766,9 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     deleting: "(GCD)"), a typed character its font has no glyph for (no_glyph: a box), a timing badge typed in a title
     (plain words, as the website shows it). Typed badges and tokens are unstretched (unstretch). An icon character
     typed ("★") is set in the icon font as a token. An FX layer in no chart status's style (Fire Staff's Smoldering
-    stroke) is rebuilt in it since 2026-10-23 (owner). styled-word now means only that this psd-tools cannot cut glyph
-    pixels or make a pixel layer, or that an FX layer's words have no pixels.
+    stroke) is rebuilt in it since 2026-10-23 (owner). styled-word now means only that an FX layer's words have no pixels.
     """
     from psd_tools.composite.text import MissingFontError
-    if not story_sync():
-        raise ImportError("this psd-tools fork's set_text leaves the Txt2 story stale (no TypeLayer.sync_story)")
     text, projected = straight(text), None      # the bake writes ' (owner, 2026-10-25): the layer's kept ones too
     if layer is None and which == "ability":
         layer = ability_layer(psd)
@@ -5828,8 +5788,6 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     text = projected if projected is not None else keep_ends(old_text, keep_breaks(old_text, text, which))
     if which == "ability":                      # "[dark]" on the website, "[dark:sticker]" on the card
         text = keep_tokens(layer, text, getattr(parser, "icons", None))
-    if "\t" in text and not tab_stops():         # a stale install: the runner's, retried (card_bake)
-        raise ImportError(f"{which}: tab stops: this psd-tools is older than the pin; reinstall it")
     start, end = changed_range(old_text, text)
     end = min(end, len(text))
     start = min(start, end)                     # identical text: the engine's range sits past the end
@@ -5848,8 +5806,6 @@ def set_text_layer(psd: PSDImage, which: str, text: str, fonts_dir: str, chart: 
     glows = []
     if icons_too:
         glows = glow_tokens(text)
-        if glows and not glow_halos():          # a stale install of an older pin: the runner's, retried (card_bake)
-            raise ImportError(f"{', '.join(glows)}: this psd-tools is older than the pin (no glow halos); reinstall it")
         odd = Counter(unlettered_icons(text, parser)) - Counter(unlettered_icons(old_text, parser)) \
             if which == "ability" else None     # the website shows a title's "[fire:]" as its letters, as the card does
         if odd:                                 # typed, or "[fire:no]" made "[fire:]" by deleting letters
@@ -6458,8 +6414,6 @@ def set_colors(psd: PSDImage, value: list, fonts_dir: str, card: str = "", chart
         layer keeps. Raises Refused(field "colors") for a colour no longer found (the other fields still bake)
     """
     from psd_tools.composite.text import MissingFontError
-    if not story_sync():
-        raise ImportError("this psd-tools fork's set_text leaves the Txt2 story stale (no TypeLayer.sync_story)")
     jobs, notes, hidden = {}, [], []
     for one in color_order(value):
         spans, why = color_spans(color_layers(psd, one["field"], card), one)
@@ -6906,12 +6860,6 @@ def _copy_name(unit: _Unit, container, taken: set) -> str:
     return name
 
 
-def filter_items() -> bool:
-    """Does this psd-tools copy find a smart object's FEid item by its placed ID (the fork's SmartObject.filter_item)."""
-    from psd_tools.api.smart_object import SmartObject
-    return hasattr(SmartObject, "filter_item")
-
-
 def _filtered(leaf) -> bool:
     """A smart object carrying smart filters (filterFX)."""
     placed = next((leaf.tagged_blocks.get_data(key) for key in PLACED[:2] if key in leaf.tagged_blocks), None)
@@ -6926,8 +6874,7 @@ def _shiftable(layer) -> Optional[str]:
             continue
         if leaf.kind in ("type", "shape") or leaf.has_vector_mask() or Tag.VECTOR_ORIGINATION_DATA in leaf.tagged_blocks:
             return f"{leaf.name!r} is {'text' if leaf.kind == 'type' else 'a vector shape'}"
-        if _filtered(leaf) and not (filter_items() and leaf.kind == "smartobject"
-                                    and leaf.smart_object.filter_item is not None):
+        if _filtered(leaf) and not (leaf.kind == "smartobject" and leaf.smart_object.filter_item is not None):
             return f"{leaf.name!r} has smart filters"
     return None
 
@@ -6938,7 +6885,7 @@ def _shift_filters(leaf, dx: int, dy: int) -> None:
     moves (its planes stay), the filter mask's too when linked to the layer, and its filters are marked as not valid
     at the new place (validAtPosition false). Nothing for another layer.
     """
-    if leaf.is_group() or leaf.kind != "smartobject" or not _filtered(leaf) or not filter_items():
+    if leaf.is_group() or leaf.kind != "smartobject" or not _filtered(leaf):
         return
     so = leaf.smart_object
     item = so.filter_item
@@ -6968,8 +6915,6 @@ def _copy_filters(source, copy) -> None:
     after the copy's placed ID, right after the source's (copy and source are next to each other in file order); a
     later _shift moves it with the copy. Call after same_placed().
     """
-    if not filter_items():
-        return
     for old, new in zip([source, *(source.descendants() if source.is_group() else ())],
                         [copy, *(copy.descendants() if copy.is_group() else ())]):
         if old.is_group() or old.kind != "smartobject" or not _filtered(old):
@@ -6987,7 +6932,7 @@ def _copy_filters(source, copy) -> None:
 def _order_filters(psd: PSDImage) -> None:
     """The FEid items in file order of their layers (Photoshop's order), when every item names one filtered layer."""
     items = _filter_block(psd)
-    if not items or not filter_items():
+    if not items:
         return
     at = {}
     for i, layer in enumerate(psd.descendants()):
@@ -8718,12 +8663,6 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
     return plan
 
 
-def icon_engine() -> bool:
-    """Does this psd-tools copy, move and make layers (the fork's duplicate, copy_effects_from, fromarray)."""
-    from psd_tools.api.layers import Layer, PixelLayer
-    return all(hasattr(Layer, name) for name in ("duplicate", "copy_effects_from")) and hasattr(PixelLayer, "fromarray")
-
-
 def _icon_png(types_dir: str, stem: str) -> str:
     """The Types/ PNG of a stem (any case)."""
     from os import listdir
@@ -9052,13 +8991,10 @@ def same_places(a: list, b: list, tol: float) -> bool:
 def render_cache(shared: bool = False):
     """
     One bake's psd-tools RenderCache (the fork's psd_tools.composite.rcache: the card's renders before and after its
-    edits share every layer the edits leave alone; keys hash what a layer is, never id()), else a no-op context.
+    edits share every layer the edits leave alone; keys hash what a layer is, never id()).
     shared: this thread's open one when there is one (card_checks' two stat bakes of a card).
     """
-    try:
-        from psd_tools.composite import rcache
-    except ImportError:
-        return nullcontext()
+    from psd_tools.composite import rcache
     return (shared and rcache.active()) or rcache.RenderCache()
 
 
@@ -9266,7 +9202,7 @@ def dirty_box(old: PSDImage, new: PSDImage, lines: Optional[dict] = None) -> Opt
     Every pixel where new (an edited copy of old) can render unlike old, from the layer records: layers matched by id
     per group, an unchanged subtree skipped, a changed one's fork change box (_change_bbox) plus its clip layers', a
     group's effect reach. The whole canvas on a reorder, a document-level change (but links added: _links_grown), an
-    external link, or when the walk fails (an older fork; raised under PSD_DIRTY_VERIFY). lines: {layer id: Edit.lines}
+    external link, or when the walk fails (raised under PSD_DIRTY_VERIFY). lines: {layer id: Edit.lines}
     (_lines): such a type layer, its look the same (_same_look), counts as its lines and its effects' reach.
 
     Returns:
@@ -9282,7 +9218,7 @@ def dirty_box(old: PSDImage, new: PSDImage, lines: Optional[dict] = None) -> Opt
     except Exception:
         if environ.get(DIRTY_VERIFY) == "1":
             raise
-        return (0, 0, w, h)             # an older fork, or a layout the walk trips on: the gate as before
+        return (0, 0, w, h)             # a layout the walk trips on: the gate as before
     if box == FULL:
         return (0, 0, w, h)
     return box and clip_to(box, (0, 0, w, h))
@@ -9369,12 +9305,8 @@ def _verify_dirty(old: PSDImage, new: PSDImage, box: Optional[tuple], shown: np.
                   after: Optional[np.ndarray], pins: dict) -> None:
     """PSD_DIRTY_VERIFY: the whole renders (no cache; new with gate_dirty's pins) equal gate_dirty's inside the box and
     each other outside it."""
-    try:
-        from psd_tools.composite.rcache import RenderCache
-        uncached = RenderCache(max_bytes=0)     # stores nothing: every pass rendered again
-    except ImportError:
-        uncached = nullcontext()
-    with uncached:
+    from psd_tools.composite.rcache import RenderCache
+    with RenderCache(max_bytes=0):              # stores nothing: every pass rendered again
         before = render_all(old)
         whole = np.asarray(new.composite(viewport=(0, 0, new.width, new.height), ignore_preview=True, apply_icc=False,
                                          **pins).convert("RGBA"))
@@ -9559,13 +9491,10 @@ def merge_records(render: dict, spot: dict, docs: list, paths=()) -> tuple:
 
 def _text_reference(psd: PSDImage) -> Optional[np.ndarray]:
     """The fork's read of psd's stored preview for text blends (kept with psd until the preview changes); None without
-    the fork, a stored 8-bit RGB preview or a read."""
+    a stored 8-bit RGB preview or a read."""
     if psd.color_mode != ColorMode.RGB or psd.depth != 8 or not psd.has_preview():
         return None
-    try:
-        from psd_tools.composite.composite import _text_reference as read
-    except ImportError:
-        return None
+    from psd_tools.composite.composite import _text_reference as read
     return read(psd)
 
 
@@ -12063,7 +11992,6 @@ __all__ = [
     'edited_ids',
     'icc_vote',
     'preview_image',
-    'icon_engine',
     'icon_font',
     'icon_style',
     'variant_fill',
@@ -12135,7 +12063,6 @@ __all__ = [
     'stale_stories',
     'stat_value',
     'text_blends',
-    'text_engine',
     'text_kwargs',
     'set_text_layer',
     'one_colour',
@@ -12148,8 +12075,6 @@ __all__ = [
     'stories',
     'story_index',
     'story_style_drift',
-    'story_sync',
-    'tab_stops',
     'template_rows',
     'type_row',
     'unlettered_icons',

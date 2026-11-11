@@ -563,7 +563,6 @@ def test_font_verdict_is_retried_when_the_fonts_change(github, monkeypatch):
     files[cb.EDITS_PATH] = _edits({"Mini Doomer": {"hp": 8, "_by": "web", "_at": AT}})
     github.commit(files, "web", "Website edit: Mini Doomer")
     monkeypatch.setattr(pe, "apply_jobs", lambda *args, **kwargs: (_ for _ in ()).throw(pe.Refused("font", "no Some Face")))
-    monkeypatch.setattr(pe, "text_engine", lambda: True)
     text, commits = cb.run()
     verdict = _verdict("Mini Doomer")
     key = cb.snapshot_at(cb.CARD_REPO, github.head).fonts_key()
@@ -624,7 +623,6 @@ def test_fx_notes_reach_the_commit_and_the_verdict(github, clone, monkeypatch, t
                                rerender={"ability": ok}, flag_bytes=0, changed_pixels=1)
     monkeypatch.setattr(pe, "apply_jobs", apply_jobs)
     monkeypatch.setattr(pe, "artifacts", lambda *args: {})
-    monkeypatch.setattr(pe, "text_engine", lambda: True)
     text, commits = cb.run()
     assert commits, text
     assert f"- Mini Doomer: ability; {note}\n" in github.commits[commits[0]]["message"] + "\n"

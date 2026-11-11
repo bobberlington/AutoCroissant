@@ -128,7 +128,6 @@ class Context:
     """What the rules need beside the PSD."""
     types: frozenset = frozenset()              # Types/ stems, lowercased (card_check.Vocabulary.all_types)
     chart: Optional[dict] = None                # psd_edit.status_fills of the status chart (R5 reports every overlay without)
-    story_sync: bool = False                    # the fork can sync Txt2 stories (R9 is a fix, else a report)
     pngs: Optional[frozenset] = None            # the tree's PNG paths, lowercased (R12's pictures); None: not checked
     cards: Optional[tuple] = None               # ((title, key, kind), ...) of the shown cards (R14); None: not checked
     art: Optional[dict] = None                  # {linked file, lowercased: ((PSD path, blob), ...)} of the PSDs linking it
@@ -524,14 +523,14 @@ def rule_stars(psd: PSDImage) -> Optional[Issue]:
     return Issue("R6", "the stars are not in a group named Stars", ("no stars group",))
 
 
-def rule_stories(psd: PSDImage, story_sync: bool) -> Optional[Issue]:
+def rule_stories(psd: PSDImage) -> Optional[Issue]:
     """R9: every type layer's Txt2 story holds its text (Photoshop shows the story's)."""
     stale = psd_edit.stale_stories(psd)
     if not stale:
         return None
     names = _unique(name for name, _, _ in stale)
     return Issue("R9", f"Photoshop would show old text in {_list(names)} (Txt2 story out of date)", names,
-                 fix=story_sync and "R9" in AUTO_FIX)
+                 fix="R9" in AUTO_FIX)
 
 
 def inexact_names(psd: PSDImage) -> list:
@@ -825,7 +824,7 @@ def check(psd: PSDImage, rel: str, context: Context, old: Optional[PSDImage] = N
     run("R5", rule_overlays, psd, context.chart)
     if kind in STARS_KINDS:
         run("R6", rule_stars, psd)
-    run("R9", rule_stories, psd, context.story_sync)
+    run("R9", rule_stories, psd)
     if kind in SCOPE:
         run("R11", rule_names, psd)
         run("R11", rule_part_names, psd, card)

@@ -223,15 +223,8 @@ def blob_text(repository: str, sha: str, timeout: int = 30) -> str:
 
 
 def range_reads() -> bool:
-    """Whether range reads are on: RANGE_READS, and a psd-tools that opens a PSD lazily over a RangeReader (the fork's
-    feat/lazy-records)."""
-    if not RANGE_READS:
-        return False
-    try:
-        from psd_tools.range_reader import RangeReader  # noqa: F401
-    except ImportError:
-        return False
-    return True
+    """Whether range reads are on (RANGE_READS): the fork opens a PSD lazily over a RangeReader."""
+    return RANGE_READS
 
 
 def raw_url(repository: str, ref: str, path: str) -> str:

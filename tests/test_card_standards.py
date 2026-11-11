@@ -42,7 +42,7 @@ CASES = (   # card, rules told to the author, rules waived (the 6e50c3ee whole-t
 @pytest.fixture(scope="module")
 def context(clone):
     chart = psd_edit.status_fills(PSDImage.open(str(clone / psd_edit.STATUS_CHART)))
-    return cs.Context(frozenset(clone_vocabulary(str(clone)).all_types), chart, psd_edit.story_sync())
+    return cs.Context(frozenset(clone_vocabulary(str(clone)).all_types), chart)
 
 
 def _open(clone, rel):
