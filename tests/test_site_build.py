@@ -283,6 +283,25 @@ def test_a_version_commit_follows_renames_and_refuses_doubt(bs):
     assert [a.version_commit(x, None, lin) for x in (v(40, None), v(5, "x"), None)] == [None] * 3
 
 
+def test_balance_follows_renames_and_folds_a_rename_alone(bs):
+    """analytics.renames_followed: an old name's versions go on under the name it became; a rename alone (the same PSD
+    bytes) starts no version (the new reading takes the old one's start, date and path), a redraw does."""
+    a = bs.analytics
+    if not hasattr(a, "renames_followed"):
+        pytest.skip("the site's Balance follows no renames yet")
+    v = lambda ts, blob, path, **kw: bs.stand_in(bs.CardInfo, {"timestamp": float(ts), "blob_sha": blob, "path": path,
+                                                               "version": {"from": float(ts)}, **kw})
+    first, last, current = v(10, "x", "Old.psd"), v(20, "y", "Old.psd", archived={"renamed_to": "New"}), v(30, "y", "New.psd")
+    old_stats = {"Old": [first, last], "Other": [v(5, "q", "Other.psd")]}
+    old, stats = a.renames_followed(old_stats, {"New": current}, {"New": ["Old"]})
+    assert set(old) == {"New", "Other"} and old["New"] == [first] and current.timestamp == 30.0
+    assert (stats["New"].timestamp, stats["New"].path, stats["New"].version) == (20.0, "Old.psd", {"from": 20.0})
+    assert a.chain_of("New", stats, old) == [first, stats["New"]]
+    redrawn = v(30, "z", "New.psd")
+    old, stats = a.renames_followed(old_stats, {"New": redrawn}, {"New": ["Old"]})
+    assert old["New"] == [first, last] and stats["New"] is redrawn
+
+
 def test_types_before_parser_2_are_no_change(bs):
     """Parser 1 missed and mistook type icons (Dumplings' tomato read as panda): a type swap from such a reading is no
     change row (analytics.change) and no real change (real_change); the shown card (no parser_version) is parsed."""
@@ -296,9 +315,9 @@ def test_types_before_parser_2_are_no_change(bs):
 
 
 def test_a_renamed_card_goes_on_and_its_old_page_redirects(bs, repo, tmp_path, monkeypatch):
-    """The bake renames and redraws Alpha as New Alpha in one commit (its Renamed trailers): the card's image versions
-    and text history go on as one card, and c/alpha/ sends its links on to c/new-alpha/; a profile's pick, a published
-    hand and the app's old id (cards.json "moved") follow it."""
+    """The bake renames and redraws Alpha as New Alpha in one commit (its Renamed trailers): the card's image versions,
+    text history and Balance changes go on as one card, and c/alpha/ sends its links on to c/new-alpha/; a profile's
+    pick, a published hand and the app's old id (cards.json "moved") follow it."""
     root, t3 = repo["root"], repo["t"][2]
     new = "Creatures/Other/2 Stars/New_Alpha"
     (root / f"{ALPHA}.psd").rename(root / f"{new}.psd")
@@ -331,6 +350,9 @@ def test_a_renamed_card_goes_on_and_its_old_page_redirects(bs, repo, tmp_path, m
     assert alpha["was"] == ["Alpha"]                                              # its old name finds it
     assert out["history.json"][alpha["id"]] == [{"ts": repo["t"][0], "ability": "Old text."}]
     assert len(out["versions.json"]["cards"][alpha["id"]]) == 4                      # c1, c2, c3 and the rename
+    if hasattr(bs.analytics, "renames_followed"):                                 # TC 11-11
+        (row,) = out["analytics.json"]["cards"][alpha["id"]]["changes"]               # Old text. -> New text.
+        assert row["ts"] == repo["t"][1] and "text" in row
     assert out["cards.json"]["moved"] == {"alpha": alpha["id"]} == {"alpha": "new-alpha"}
     assert out["users.json"]["users"][0]["favourite"] == out["decks.json"]["decks"][0]["cards"][0] == "new-alpha"
 
