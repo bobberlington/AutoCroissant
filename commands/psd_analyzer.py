@@ -14,6 +14,7 @@ import pandas as pd
 
 from global_config import AUTHORS_PATH, EDITS_PATH, ICON_MANIFEST_PATH
 from commands.card_edits import CardAuthors, CardEdits
+from commands.card_history import UNKNOWN_IF, unknown
 from commands.card_models import CardInfo, CardStats, CardType, StatsDatabase, card_name, get_stats_as_dict, stats_db
 from commands.github_api import GIT_TOKEN
 from commands.query_card import archived_text, card_repo, history_match, init_query
@@ -31,6 +32,7 @@ COLUMN_ORDER = [
     'types', 'path', 'timestamp', 'created', 'author', 'stars',
     'problem', 'series', 'subseries', 'subtype'
 ]
+BEFORE_PARSER_2 = "read before parser 2, 2026-10-21"     # card_history.unknown: its types
 
 
 # ========================
@@ -69,11 +71,19 @@ def get_card_aliases(name: Optional[str] = None) -> dict[str, list[str]] | list[
 
 
 def _format_metadata(card: CardInfo, name: str) -> str:
-    """A card's fields one per line: aliases first, COLUMN_ORDER, then any other keys."""
+    """A stored version's fields one per line: aliases first, COLUMN_ORDER, then any other keys. A field its reading could
+    not know (card_history.unknown) says unknown, but a stored ability text (the website's history lists it)."""
     metadata = card.to_dict()
     aliases = get_card_aliases(name)
     if aliases:
         metadata['aliases'] = ', '.join(aliases)
+    for key in unknown(card) & {"types", "stars", "ability"}:
+        if key == "ability" and card.ability:
+            continue
+        why = next(prefix.lower() for prefix, field in UNKNOWN_IF if field == key)
+        if key == "types" and getattr(card, "parser_version", None) is None:
+            why = BEFORE_PARSER_2
+        metadata[key] = f"unknown ({why})"
     lines = [f"{key}: {metadata[key]}" for key in COLUMN_ORDER if key in metadata]
     lines += [f"{key}: {value}" for key, value in metadata.items() if key not in COLUMN_ORDER]
     return '\n'.join(lines)
