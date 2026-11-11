@@ -9798,12 +9798,6 @@ def export_icc(psd: PSDImage, png: Image.Image) -> bool:
     return vote is None or vote[1] < ICC_MIN_PX or vote[0] < ICC_RAW_VOTE
 
 
-def text_blends(psd: PSDImage) -> list:
-    """The TEXT_BLENDS keys the fork's psd.composite() takes, in order ("preview", its default, always)."""
-    parameters = signature(psd.composite).parameters
-    return [text for text, kwargs in TEXT_BLENDS.items() if all(name in parameters for name in kwargs)]
-
-
 def text_kwargs(psd: PSDImage, text: str, edited: tuple = ()) -> dict:
     """
     psd.composite()'s keywords for a TEXT_BLENDS key. "preview" blends as the stored preview shows, or with none as the
@@ -9819,10 +9813,9 @@ def text_kwargs(psd: PSDImage, text: str, edited: tuple = ()) -> dict:
         The keywords
     """
     kwargs = dict(TEXT_BLENDS[text], **(look_kwargs(psd) if text == "preview" else {}))
-    parameters = signature(psd.composite).parameters
-    if text != "gamma" and edited and "layer_text_gamma" in parameters:
+    if text != "gamma" and edited:
         kwargs["layer_text_gamma"] = {**kwargs.get("layer_text_gamma", {}),
-                                      **dict.fromkeys(edited, parameters["text_gamma"].default)}
+                                      **dict.fromkeys(edited, signature(psd.composite).parameters["text_gamma"].default)}
     return kwargs
 
 
@@ -9873,12 +9866,12 @@ def baseline(psd: PSDImage, png: Image.Image, region: tuple, icc: bool = True,
         full: render_all() of psd: the "preview" render is cut from it (crop_pair); None renders the region
 
     Returns:
-        (render, measurement); the measurement's "text" is the first text_blends() key whose render is within the
+        (render, measurement); the measurement's "text" is the first TEXT_BLENDS key whose render is within the
         bar, else the preview blend's (a miss of the bar bakes; apply_jobs refuses a miss whose edit
         renders no change). Raises Refused("parity") past PARITY_FLOOR only.
     """
     first = None
-    for text in text_blends(psd):
+    for text in TEXT_BLENDS:
         cut = crop_pair(psd, full, region, icc) if text == "preview" else None
         render = cut[0] if cut else render_region(psd, region, icc, text)
         measured = _measure(render, png.crop(region))
@@ -12289,7 +12282,6 @@ __all__ = [
     'set_stat',
     'stale_stories',
     'stat_value',
-    'text_blends',
     'text_kwargs',
     'set_text_layer',
     'one_colour',
