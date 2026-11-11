@@ -32,7 +32,7 @@ RENAME = "_rename"                              # true: the bake renames the car
 SITE = "_site"                                  # an entry's website-only fields: their values differ from the card image on purpose
 ART_FIELDS = ("art", "ability_art")             # artwork sources: art a list (one string in older entries), ability_art retired (10-31)
 ART_MAX = 500                                   # characters a source (art.js ART_MAX, build_site ART_MAX)
-FLAGS = ("hand", "bars")                        # what a card needs from a developer, each with a reason or "" (flags.js CARD_FLAGS, build_site FLAGS)
+FLAGS = ("hand", "bars", "name")                # what a card needs from a developer, each with a reason or "" (flags.js CARD_FLAGS, build_site FLAGS)
 FLAG_MAX = 300                                  # characters a reason (flags.js, build_site)
 # text colours: [{"field", "phrase"?, "color"}], a phrase as the effect layers' ("word#n"; none: the whole field)
 COLOR_FIELDS = ("name", "ability", "note")      # textcolor.js FIELDS, build_site COLOR_FIELDS; the note's never bake

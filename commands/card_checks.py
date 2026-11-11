@@ -3,8 +3,9 @@ Automatic card flags (owner 2026-11-07): what a card needs from a developer, rea
 blob in the card data's db/card_checks.json (TTSCardMaker's card-checks.yml, off Card sync's path; the website shows them).
 hand: the picture says other than the data, old-style bars, a website edit that cannot bake, a linked picture the repo
 lacks, one that looks the same as another file, or one Card sync could not draw again (db/links.json, worded at each
-save). bars: special bars that do not read like the template. A note is one short sentence a developer can act on.
-Nothing here blocks or tells anyone.
+save). bars: special bars that do not read like the template. name: the website's name, the printed title and the file
+name disagree (exact text, underscores as spaces; second pictures left out; worded at each save, owner 2026-11-10). A
+note is one short sentence a developer can act on. Nothing here blocks or tells anyone.
 
     python -m commands.card_checks list --clone <checkout> --db <db dir> [--head <sha>] [--all] [--shard i/n]
     python -m commands.card_checks run  --clone <checkout> --db <db dir> --out <file> [--head <sha>] [--all] [--shard i/n]
@@ -106,6 +107,9 @@ CUSTOM_NOTES = {"icons": "Its stat bars are separate icons with gaps, not the te
                 "pictures": "Its stat bars are pictures, not the template's cells.",
                 "shape": "Its stat bars have their own shape, not the template's cells.",
                 "creatures": "Its stat bars hold several creatures, not the template's four rows."}
+NAME_FILE = 'The card prints "{printed}" but its file is {file}.'
+NAME_SITE = 'The website shows "{site}" but the card prints "{printed}".'
+NAME_BOTH = 'The card prints "{printed}" but the website shows "{site}" and its file is {file}.'
 
 
 # ========================
@@ -697,10 +701,32 @@ def link_notes(rel: str, blob: str, links: dict, sha: Callable[[str], str], alik
     return list(dict.fromkeys(out))
 
 
-def flags(record: dict, data: Optional[dict], site=(), linked=()) -> dict:
-    """{"hand": note or None, "bars": note or None} of a record against the card's data (linked: link_notes)."""
+def name_note(card: Optional[dict], site: dict, rel: str) -> Optional[str]:
+    """
+    The name flag's note: the website's name against the printed title, that against the file name (card_name: exact
+    text, underscores as spaces); None when they agree, for a second picture or without the card's data.
+
+    Args:
+        card: The card in stats.json (parsed_values: the PSD's title under a website one)
+        site: Its Card Edits entry (a name there is the website's)
+        rel: Its PSD's repo path
+    """
+    if not card or card.get("duplicate_of") or card.get("variant_of"):
+        return None
+    file, parsed = card_name(rel), card.get("parsed_values") or {}
+    printed = (parsed["name"] if "name" in parsed else card.get("display_name")) or file
+    shown = site["name"] if isinstance(site.get("name"), str) and site["name"].strip() else printed
+    if shown == printed:
+        return NAME_FILE.format(printed=printed, file=basename(rel)) if printed != file else None
+    if printed == file:
+        return NAME_SITE.format(site=shown, printed=printed)
+    return NAME_BOTH.format(printed=printed, site=shown, file=basename(rel))
+
+
+def flags(record: dict, data: Optional[dict], site=(), linked=(), name: Optional[str] = None) -> dict:
+    """{"hand", "bars", "name": note or None} of a record against the card's data (linked: link_notes; name: name_note)."""
     hand = (mismatches(record, data, site) if data else []) + list(record.get("notes") or []) + list(linked)
-    return {"hand": " ".join(hand) or None, "bars": record.get("bars")}
+    return {"hand": " ".join(hand) or None, "bars": record.get("bars"), "name": name}
 
 
 # ========================
@@ -795,25 +821,28 @@ def blobs_of(snapshot: Snapshot, rels: list, stats: dict) -> list:
 
 def refresh(checks: dict, snapshot: Snapshot, stats: dict, edits: CardEdits, links: Optional[dict] = None,
             steps: Optional[dict] = None) -> None:
-    """Every record's "hand" and "bars" against the data and the links (db/links.json: a pushed file clears its note),
-    the records of PSDs gone from the tree out, and the people's flags that went: set on another PSD than the card's,
-    changed since by more than sweeps (steps: psd_steps), whose checks are clean (build_site leaves them out)."""
+    """Every record's "hand", "bars" and "name" against the data and the links (db/links.json: a pushed file clears its
+    note), the records of PSDs gone from the tree out, and the people's flags that went: set on another PSD than the
+    card's, changed since by more than sweeps (steps: psd_steps), whose checks are clean (build_site leaves them out)."""
     cards = {card.get("blob_sha"): card for card in stats.values() if card.get("blob_sha")}
+    by_path = {card.get("path"): card for card in stats.values() if not card.get("duplicate_of") and not card.get("variant_of")}
     blobs = {snapshot.sha(rel): key for key, rel in snapshot.psds.items()}
     checks["cards"] = {sha: record for sha, record in checks["cards"].items() if sha in blobs}
     def sha(path: str) -> str:
         return snapshot.sha(path) if path in snapshot.tree else ""
     alike = look_alikes(links, sha, snapshot.tree) if links else {}
     for blob, record in checks["cards"].items():
-        linked = link_notes(snapshot.psds[blobs[blob]], blob, links, sha, alike, record) if links else []
-        record.update(flags(record, cards.get(blob), edits.cards.get(blobs[blob]) or {}, linked))
+        rel, site = snapshot.psds[blobs[blob]], edits.cards.get(blobs[blob]) or {}
+        linked = link_notes(rel, blob, links, sha, alike, record) if links else []
+        record.update(flags(record, cards.get(blob), site, linked, name_note(by_path.get(rel), site, rel)))
     was, cleared = checks.get("cleared") or {}, {}
     for key, entry in edits.cards.items():
         mark, rel = (entry.get("flags") or {}).get("psd"), snapshot.psds.get(key)
         if not mark or not rel:
             continue
         record = checks["cards"].get(snapshot.sha(rel))
-        clean = (record is not None and not record["hand"] and not record["bars"] and not snapshot.sha(rel).startswith(mark)
+        clean = (record is not None and not record["hand"] and not record["bars"] and not record.get("name")
+                 and not snapshot.sha(rel).startswith(mark)
                  and by_person((steps or {}).get(rel, []), mark))
         if clean or was.get(rel) == mark:
             cleared[rel] = mark                 # gone stays gone though the checks speak again; a new flag starts over
@@ -900,7 +929,8 @@ def main(args: Optional[list] = None) -> int:
         with open(path, "w", encoding="utf-8") as fh:
             fh.write(text_of(checks))
         print(f"{len(checks['cards'])} records, {sum(1 for r in checks['cards'].values() if r.get('hand'))} hand, "
-              f"{sum(1 for r in checks['cards'].values() if r.get('bars'))} bars")
+              f"{sum(1 for r in checks['cards'].values() if r.get('bars'))} bars, "
+              f"{sum(1 for r in checks['cards'].values() if r.get('name'))} name")
         return 0
     rels = to_check(snapshot, checks, options.all, only, shard)
     if options.action == "list":
@@ -931,6 +961,7 @@ __all__ = [
     'look_alikes',
     'main',
     'mismatches',
+    'name_note',
     'png_key',
     'psd_steps',
     'read_picture',

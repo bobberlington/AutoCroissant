@@ -68,6 +68,9 @@ def test_build_merges_automatic_flags(tmp_path):
     card = {"psd": "A.psd", "flags": {"bars": "", "psd": "11111111"}}
     bs.merge_flags(card, None, cleared)
     assert card == {"psd": "A.psd", "flags": {"bars": "", "psd": "11111111"}}
+    card = {"psd": "B.psd"}
+    bs.merge_flags(card, {"hand": None, "bars": "B.", "name": "N."}, cleared, True)       # a second picture: no name flag
+    assert card == {"psd": "B.psd", "checks": {"bars": "B."}}
     assert bs.load_checks(str(tmp_path / "none")) == ({}, {})
     checks = {"old": {"card": "A B", "hand": "note"}, "c1": {"card": "C"}, "c2": {"card": "C"}}
     at = (("new", "X/A_B.psd"), ("new", "X/A_C.psd"), ("new", "X/C.psd"), ("c1", "X/C.psd"))  # pushed, renamed, a shared name, its own
@@ -78,19 +81,19 @@ def test_search_lines_and_file(tmp_path):
     """flag: searches; the reason's rules; the batch's lines; a set flag sits in ORDER, the last one cleared unsets it; a
     form draft's tick and reason read back from the card."""
     out = node(tmp_path, r"""
-const cards = [{ name: "A", flags: { hand: "why" } }, { name: "B", flags: { bars: "" } }, { name: "C", flags: { hand: "", bars: "x" } }, { name: "D" }, { name: "E", checks: { hand: "note" } }];
+const cards = [{ name: "A", flags: { hand: "why" } }, { name: "B", flags: { bars: "" } }, { name: "C", flags: { hand: "", bars: "x" } }, { name: "D" }, { name: "E", checks: { hand: "note" } }, { name: "F", checks: { name: "note" } }];
 const hits = q => cards.filter(S.compile(q)).map(c => c.name).join("");
 const set = { flags: F.withFlag({ hand: "why" }, "bars", "  two   words ") };
 const file = E.editsFile(JSON.stringify({ cards: { X: { creatures: null, note: "n", _by: "a", _at: "b" } } }), [{ key: "X", set, unset: [] }], "T", "web");
 const lines = op => E.describeItems(op, { flags: { hand: "why", bars: "" }, edited: ["flags"] }).map(x => x.text);
-process.stdout.write(JSON.stringify({ hits: ["flag:hand", "flag:bars", "flag:any", "!flag:any", "FLAG:HAND & flag:bars"].map(hits),
+process.stdout.write(JSON.stringify({ hits: ["flag:hand", "flag:bars", "flag:any", "!flag:any", "FLAG:HAND & flag:bars", "flag:name"].map(hits),
   clean: [F.cleanFlags({ bars: "", hand: 1, other: "x" }), F.cleanFlags({}), F.withFlag({ hand: "" }, "hand", null), F.withFlag({ hand: "", psd: "0" }, "bars", "", "1a2b3c4d"), F.withFlag({ hand: "", psd: "0" }, "hand", null, "1a2b3c4d")],
   note: F.flagsHtml(cards[4]), own: [F.hasFlag(cards[4], "hand"), F.ownFlag(cards[4], "hand")], error: [F.flagError({ hand: "x".repeat(300) }), F.flagError({ bars: "x".repeat(301) }), F.flagError({ hand: "" }), F.flagError({ bars: "" })],
   file, unset: E.editsFile(file, [{ key: "X", set: {}, unset: ["flags"] }], "T", "web"), nulled: E.editsFile(file, [{ key: "X", set: { flags: null }, unset: [] }], "T", "web"),
   lines: [lines({ set: { flags: { hand: "new" } }, unset: [] }), lines({ set: {}, unset: ["flags"] })],
   raw: [D.rawOf(cards[1], "flag-bars"), D.rawOf(cards[0], "flag:hand"), D.rawOf(cards[3], "flag-hand"), D.rawOf(cards[3], "flag:bars")], names: D.fieldNames({ "flag:bars": "x", "flag-bars": true }) }));
 """)
-    assert out["hits"] == ["ACE", "BC", "ABCE", "D", "C"]
+    assert out["hits"] == ["ACE", "BC", "ABCEF", "D", "C", "F"]
     assert out["clean"] == [{"bars": ""}, None, None, {"hand": "", "bars": "", "psd": "1a2b3c4d"}, None]
     assert '<span class="flag-note">note</span>' in out["note"] and "data-flag" not in out["note"] and out["own"] == [True, False]
     assert out["error"] == ["", "Special stat bars: at most 300 characters", "Needs doing by hand: say what the issue is", ""]

@@ -112,7 +112,34 @@ def test_mismatches():
     assert cc.mismatches({**record, "style": "custom"}, data) == []
     many = {"style": "custom", "reads": {"hp": [read(5), read(6)]}}
     assert cc.mismatches(many, {"creatures": [{"hp": 5}, {"hp": 4}]}) == ["Creature 2's HP bar shows 6 but the data says 4."]
-    assert cc.flags({"notes": ["N."], "bars": "B."}, None) == {"hand": "N.", "bars": "B."}
+    assert cc.flags({"notes": ["N."], "bars": "B."}, None) == {"hand": "N.", "bars": "B.", "name": None}
+
+
+def test_name_note():
+    """Owner 11-10: the website's name against the printed title, that against the file name, exact (underscores as
+    spaces); a second picture never; refresh words it from the data and a website name, no PSD read."""
+    rel = "Creatures/X/Avatar_Of_Wrath.psd"
+    card = {"path": rel, "display_name": "Avatar of Wrath"}
+    assert cc.name_note(card, {}, rel) == 'The card prints "Avatar of Wrath" but its file is Avatar_Of_Wrath.psd.'
+    assert cc.name_note({"path": rel}, {}, rel) is None
+    assert cc.name_note({**card, "variant_of": "A"}, {}, rel) is None and cc.name_note({**card, "duplicate_of": "A"}, {}, rel) is None
+    shield = "Items/Man_Serpent_Shield.psd"
+    edited = {"path": shield, "display_name": "Man-Serpent's Shield", "parsed_values": {"name": None}}
+    assert cc.name_note(edited, {"name": "Man-Serpent's Shield"}, shield) == \
+        'The website shows "Man-Serpent\'s Shield" but the card prints "Man Serpent Shield".'
+    caps = {"path": "C/Delta.psd", "display_name": "Delta", "parsed_values": {"name": "DELTA"}}
+    assert cc.name_note(caps, {"name": "Delta"}, "C/Delta.psd") == \
+        'The card prints "DELTA" but the website shows "Delta" and its file is Delta.psd.'
+    snapshot = SimpleNamespace(psds={"avatar of wrath": rel}, sha=lambda path: "a" * 40)
+    checks = {"cards": {"a" * 40: {"notes": [], "bars": None}}, "cleared": {}}
+    stats = {"Avatar Of Wrath": {**card, "blob_sha": "a" * 40},
+             "Wrath2": {"path": rel, "display_name": "Wrath", "duplicate_of": "Avatar Of Wrath", "variant_of": "Avatar Of Wrath"}}
+    cc.refresh(checks, snapshot, stats, CardEdits.parse("{}"))
+    assert checks["cards"]["a" * 40]["name"] == cc.NAME_FILE.format(printed="Avatar of Wrath", file="Avatar_Of_Wrath.psd")
+    cc.refresh(checks, snapshot, stats, CardEdits.parse(json.dumps({"cards": {"Avatar_Of_Wrath": {"name": "Wrath", "_site": ["name"]}}})))
+    assert checks["cards"]["a" * 40]["name"].endswith('but the website shows "Wrath" and its file is Avatar_Of_Wrath.psd.')
+    cc.refresh(checks, snapshot, {"Avatar Of Wrath": {"path": rel, "blob_sha": "a" * 40}}, CardEdits.parse("{}"))
+    assert checks["cards"]["a" * 40]["name"] is None
 
 
 def test_refresh_clears():
@@ -364,6 +391,7 @@ def test_workflow_site_build_on_shown_flags(tmp_path):
     assert commit(lambda c: c["cards"].update({"c" * 40: c["cards"].pop("a" * 40)})) == []         # A pushed, same flags
     assert commit(lambda c: c["cards"].update({"d" * 40: {**c["cards"].pop("c" * 40), "bars": None}})) == ["site=true"]
     assert commit(lambda c: c["cleared"].update({"B.psd": "1234abcd"})) == ["site=true"]
+    assert commit(lambda c: c["cards"]["b" * 40].update(name='The card prints "b" but its file is B.psd.')) == ["site=true"]
     head = git("-C", str(data), "rev-parse", "HEAD")
     assert commit(lambda c: None) == [] and git("-C", str(data), "rev-parse", "HEAD") == head    # nothing to commit
 
