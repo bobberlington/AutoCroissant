@@ -444,15 +444,8 @@ def test_badges_fitted_to_their_text(clone, tmp_path, monkeypatch):
 RESAVE = "8a913cc4"             # main with the cards the 10-25 sweeps left to a Photoshop re-save
 
 
-def _kerns_as_story() -> bool:
-    """The fork lays text out kerned as the Txt2 story says (psd-tools r7-1), not by TySh's AutoKerning."""
-    from psd_tools.api import text_edit
-    return hasattr(text_edit, "kerning_methods")
-
-
 def test_badges_drawn_kerned_as_the_story(clone, tmp_path, monkeypatch):
-    """B12: Soul Sanctum's story turns kerning off where its TySh has it on; followed, the splice takes it (unfollowed,
-    Photoshop's ink sits off the fork's layout and it refused)."""
+    """B12: Soul Sanctum's story turns kerning off where its TySh has it on; the splice takes it, followed or not."""
     fonts, rel = _fonts(clone), "Field/2 Stars/Soul_Sanctum.psd"
     data = at_rev(clone, RESAVE, rel)
     fixed = cs.fix(data, rel, [], str(tmp_path / "work"), None, fonts, only="badges")
@@ -462,16 +455,13 @@ def test_badges_drawn_kerned_as_the_story(clone, tmp_path, monkeypatch):
     followed = psd_edit.ability_layer(PSDImage.open(BytesIO(fixed.data))).topil()
     monkeypatch.setattr(psd_edit, "follow_kerning", lambda psd, layer: False)
     fixed = cs.fix(data, rel, [], str(tmp_path / "work"), None, fonts, only="badges")
-    if not _kerns_as_story():
-        assert not fixed.redrawn and "not redrawn by glyph" in fixed.pixel_left[0][1]
-        return
     assert fixed.redrawn == {"badges": ["Ability"]}     # the fork kerns as the story itself: the same ink
     assert psd_edit.ability_layer(PSDImage.open(BytesIO(fixed.data))).topil().tobytes() == followed.tobytes()
 
 
 def test_old_glyph_redrawn_kerned_as_the_story(clone, tmp_path, monkeypatch):
     """B12 in the guards' old-glyph fix: Soul Sanctum (story kerning off, TySh on) with an old badge painted in is
-    spliced, that glyph alone, its story and document blocks kept; unfollowed it refused."""
+    spliced, that glyph alone, its story and document blocks kept; unfollowed, the same ink."""
     from psd_tools.composite.text import capture
     from psd_tools.composite.text.splice import _glyph_box
     fonts, rel = _fonts(clone), "Field/2 Stars/Soul_Sanctum.psd"
@@ -497,9 +487,6 @@ def test_old_glyph_redrawn_kerned_as_the_story(clone, tmp_path, monkeypatch):
     followed = psd_edit.ability_layer(new).topil()
     monkeypatch.setattr(psd_edit, "follow_kerning", lambda psd, layer: False)
     fixed = cs.fix(old.read_bytes(), rel, [], str(tmp_path / "work"), None, fonts, only="old glyphs")
-    if not _kerns_as_story():
-        assert not fixed.redrawn and "not redrawn by glyph" in fixed.pixel_left[0][1]
-        return
     assert fixed.redrawn == {"old glyphs": ["Ability"]}     # the fork kerns as the story itself: the same ink
     assert psd_edit.ability_layer(PSDImage.open(BytesIO(fixed.data))).topil().tobytes() == followed.tobytes()
 
