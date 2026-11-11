@@ -1197,7 +1197,7 @@ contract below (also in TTSCardMaker `site/NOTES.md` section 19 and the ttscardm
 **What runs.** TTSCardMaker `.github/workflows/card-preview.yml` (workflow_dispatch only; inputs `card`, `edit`,
 `request`; one concurrency group per request) has two jobs. The **preview** job (`contents: read`, 11 minutes) runs
 AutoCroissant `commands/card_preview.py` (uncompiled; import closure `card_preview.SPARSE_FILES`, the job's BOT_FILES:
-cloned in the background beside the card repo since 2026-11-08, checked out if that fails; card-edits.yml's pip install, fork pin and all) and hands result.json, preview.webp and before.webp over as an artifact (one
+cloned in the background beside the card repo since 2026-11-08, checked out if that fails; card-edits.yml's pip install, fork pin and all) and hands result.json, preview.avif and before.avif over as an artifact (one
 day; the full-size PNG ends with the runner). Its Reads step first starts `commands/card_preview_reads.py` in the background (the runner's
 python3, stdlib only): the data's render and spot records, and the card's manifest, PSD, PNG and status chart into the
 checkout's object store, while the setup runs. Start then runs card_preview in the background while the fonts restore: it waits in `ready()` for the reads (`reads.done`, or Go's file) and bakes up to its first font, which waits for Go's file, touched once the fonts are in and the reads done (20 s at most, then it reads what they lack itself); Preview joins it (its summary and exit code). The **publish** job (`contents: write`, 3 minutes; it runs when the
@@ -1247,9 +1247,12 @@ result on the branch; the site says so before an editor's first press.
 commit, saved at zlib level 1 (`card_preview.PNG_LEVEL`) and losslessly recompressed by `png_export.recompress` where
 oxipng is installed; the workflow leaves the oxipng CLI out (~4 s a preview for nothing) and does not publish the PNG,
 `--png` publishes it; the preview's bake skips the duplicate PNGs and artifact crops only a commit uses)
-and `preview.webp` (720 px wide, WebP quality 75, method 4) when an image was rendered, with `before.webp`: the card's
-official PNG made the same way, for the site's Diff (one codec on both sides, so unchanged pixels match; the site's
-thumbs are AVIF since 2026-10-24).
+and `preview.avif` (720 px wide, the card view's AVIF: quality 50, 4:4:4, speed 6, no ICC profile, 8x4 tiles; an
+opaque alpha dropped) when an image was rendered, with `before.avif`: the card's official PNG made the same way, for the
+site's Diff (one codec on both sides, so unchanged pixels match). WebP q75 until 2026-11-10 (4:2:0 shifted coloured
+words' colours); still `.webp` (q75, method 4) from a Pillow without AVIF. On 16 real previews: word colour error
+20.0 -> 6.6 levels, 49.7 kB vs 67.3, the Diff's flags beyond 64 px of a change 3010 -> 1394 px (the tiles and the
+dropped alpha: without them 2.4x WebP's).
 result.json (`v` 1):
 
 | Key | Meaning |
@@ -1264,12 +1267,12 @@ result.json (`v` 1):
 | `changes` | `[{field, old, new}]` of a bake |
 | `notes` | the bake's notes but the soft ones (`psd_edit.real_notes`): FX notes, icon layouts, validator problems of the new card, stars/types not baked, fields already on the card |
 | `parity`, `region` | `{field: {bad_pct, mean, max}}`; the edited box `[x0, y0, x1, y1]` on the full-size card |
-| `image`, `files`, `size`, `webp_size`, `bytes`, `recompressed` | `baked` / `refused` / null; `{webp, before}` on the branch (`{png, webp, before}` in the out dir); pixel sizes; file sizes |
+| `image`, `files`, `size`, `webp_size`, `bytes`, `recompressed` | `baked` / `refused` / null; `{webp, before}` on the branch (`{png, webp, before}` in the out dir; the keys kept, the files AVIF); pixel sizes; file sizes |
 | `runner`, `run`, `took_s`, `at` | psd-tools version, text engine, story sync, fonts present; the Actions run URL; seconds; UTC time |
 
 Exit 0 for a verdict (baked, redundant, refused), 2 for an input error, 1 for any other error (all write result.json).
 
-**The previews branch.** An orphan branch `previews`: `previews/<request>/{result.json, preview.webp, before.webp}`, `index.json`
+**The previews branch.** An orphan branch `previews`: `previews/<request>/{result.json, preview.avif, before.avif}` (`.webp` before 2026-11-10), `index.json`
 (`{"v": 1, "previews": {request: {at, card, path, state, psd_blob, png_blob}}}`) and a README. `card_preview_branch` (a
 missing or foreign result.json is published as `error`, `transient`: the preview never finished) makes one commit per
 run on the branch head, from the publish job's blobless depth-1 checkout and its credentials:
