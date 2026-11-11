@@ -71,6 +71,7 @@ SPARSE_FILES = ("commands/card_checks.py", "commands/card_bake.py", "commands/ca
                 "requirements-cards.txt",
                 "commands/psd_links.py", "commands/card_plates.py")         # card-checks.yml's bot checkout
 VERSION = 1                                 # the file's "version"
+SAVE_EVERY = 30                             # s between run()'s writes of its whole out file
 STAT_ORDER = tuple(STATS)                   # hp, def, atk, spd: the template's rows, top to bottom
 STAT_NAMES = {"hp": "HP", "def": "DEF", "atk": "ATK", "spd": "SPD"}
 DATA_STATS = {"hp": "hp", "def": "defense", "atk": "attack", "spd": "speed"}    # stats.json's names
@@ -961,24 +962,36 @@ def _one(rel: str) -> tuple:
 def run(rels: list, repository: str, clone: str, head: str, workers: int, minutes: float, out: str,
         earlier: Optional[dict] = None) -> dict:
     """check_card over rels in worker processes, for at most this long; {blob: record}, written to out as it grows
-    (earlier: Context's)."""
+    (every SAVE_EVERY s and at the end: a record's plate is ~18 KB) (earlier: Context's)."""
     snapshot = local_snapshot(repository, clone, head)
-    found, started = {}, perf_counter()
+    found, started, saved = {}, perf_counter(), perf_counter()
     earlier = {rel: earlier[rel] for rel in rels if rel in earlier} if earlier else {}
-    with ProcessPoolExecutor(workers, initializer=_start, initargs=(repository, clone, head, earlier)) as pool:
-        jobs = [pool.submit(_one, rel) for rel in rels]
-        for n, job in enumerate(as_completed(jobs), 1):
-            rel, record, seconds = job.result()
-            print(f"{n}/{len(rels)} {rel}: {record if isinstance(record, str) else 'done'} ({seconds:.1f} s)", flush=True)
-            if isinstance(record, dict):
-                found[snapshot.sha(rel)] = {**record, "seconds": round(seconds, 1)}
-                with open(out, "w", encoding="utf-8") as fh:
-                    fh.write(dumps(found, ensure_ascii=False))
-            if perf_counter() - started > minutes * 60:
-                print(f"out of time: {len(rels) - n} cards wait for the next run", flush=True)
-                for left in jobs:
-                    left.cancel()
-                break
+
+    def save() -> None:
+        nonlocal saved
+        if found:
+            with open(out, "w", encoding="utf-8") as fh:
+                fh.write(dumps(found, ensure_ascii=False))
+        saved = perf_counter()
+
+    try:
+        with ProcessPoolExecutor(workers, initializer=_start, initargs=(repository, clone, head, earlier)) as pool:
+            jobs = [pool.submit(_one, rel) for rel in rels]
+            for n, job in enumerate(as_completed(jobs), 1):
+                rel, record, seconds = job.result()
+                print(f"{n}/{len(rels)} {rel}: {record if isinstance(record, str) else 'done'} ({seconds:.1f} s)", flush=True)
+                if isinstance(record, dict):
+                    found[snapshot.sha(rel)] = {**record, "seconds": round(seconds, 1)}
+                    if perf_counter() - saved >= SAVE_EVERY:
+                        save()
+                if perf_counter() - started > minutes * 60:
+                    print(f"out of time: {len(rels) - n} cards wait for the next run", flush=True)
+                    save()                      # before the pool waits for the cards still running
+                    for left in jobs:
+                        left.cancel()
+                    break
+    finally:
+        save()
     return found
 
 
