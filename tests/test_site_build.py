@@ -1014,12 +1014,13 @@ esac"""
                           text=True, timeout=30)
     assert done.returncode == 0 and f"Deployment {v2}: version {v2}" in done.stdout, done.stdout
     assert json.loads((temp / "body").read_text()) == {"artifact_id": 43, "pages_build_version": v2, "oidc_token": "tok3n"}
-    (temp / "setup" / "versions.code").write_text("1\n")              # none handed over: the run's commit
+    (temp / "setup" / "versions.code").write_text("1\n")              # none handed over: the run's commit, and why
+    (temp / "setup" / "versions.log").write_text("the version job did not run in attempt 2\n")
     (temp / "versions.txt").unlink()
     (temp / "statuses").write_text("succeed\n")
     done = subprocess.run(["bash", "-e", "-c", retry["run"]], env={**env, "ARTIFACT": "43"}, capture_output=True, text=True,
                           timeout=30)
-    assert done.returncode == 0 and f"::warning::no version commit handed over: {sha}, as deploy-pages" in done.stdout
+    assert done.returncode == 0 and f"::warning::no version commit handed over: {sha}, as deploy-pages\nthe version job" in done.stdout
     assert json.loads((temp / "body").read_text())["pages_build_version"] == sha
     (temp / "out").write_text("")                                     # under GITHUB_SHA: never stuck, never to a run at it
     (temp / "statuses").write_text("syncing_files\n")
