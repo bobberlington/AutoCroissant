@@ -74,6 +74,15 @@ discards = pytest.mark.skipif(not has(PREVIEW_JS, "export function discard"), re
 
 
 @needs_js
+@pytest.mark.skipif(not has(PREVIEW_JS, "png|avif"), reason="preview.js reads no AVIF previews")
+def test_a_result_keeps_its_avif_pictures(tmp_path):
+    """card_preview's AVIF files (and older WebP ones) are kept; any other name is dropped."""
+    out = node(tmp_path, """const f = files => p.readResult({ state: "baked", files }).files;
+out([f({ webp: "preview.avif", before: "before.avif", png: "preview.png" }), f({ webp: "preview.webp", before: "x.svg" })]);""")
+    assert out == [{"webp": "preview.avif", "before": "before.avif", "png": "preview.png"}, {"webp": "preview.webp"}]
+
+
+@needs_js
 @discards
 def test_a_preview_can_be_discarded(tmp_path):
     """Discard (owner 2026-10-30, a trash icon): the preview shown goes from this browser's list, a card with none left goes

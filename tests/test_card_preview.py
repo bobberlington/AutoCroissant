@@ -127,9 +127,9 @@ def _preview(cards, tmp_path, edit, card="Mini Doomer", request=REQUEST, name="o
 # The preview
 # ========================
 def test_a_stat_edit_bakes_the_bakes_pixels(cards, tmp_path, monkeypatch):
-    """hp 5 -> 8: baked, the PNG the bake's dry run makes (the same pixels), recompressed losslessly, a 720 px WebP; the
+    """hp 5 -> 8: baked, the PNG the bake's dry run makes (the same pixels), recompressed losslessly, a 720 px AVIF; the
     base is the commit and the blobs it read; the card repo is untouched and nothing is left in the runner's temp. The
-    preview skips what only a commit uses (duplicates, artifact crops) and makes before.webp beside the bake."""
+    preview skips what only a commit uses (duplicates, artifact crops) and makes before.avif beside the bake."""
     from PIL import Image
     seen = []
     monkeypatch.setattr(cb, "_follow_dups", lambda *a, _f=cb._follow_dups: seen.append("dups") or _f(*a))
@@ -140,26 +140,26 @@ def test_a_stat_edit_bakes_the_bakes_pixels(cards, tmp_path, monkeypatch):
     before = _state(cards.repo)
     code, result, out = _preview(cards, tmp_path, {"hp": 8, "note": "checked", "_by": "web"})
     assert code == 0 and _state(cards.repo) == before
-    made = {Path(p).name: Path(p).parent for p in seen}                     # the WebPs alone: no duplicates or crops
+    made = {Path(p).name: Path(p).parent for p in seen}                     # the small copies alone: no duplicates or crops
     assert len(seen) == 2 and made[cp.BEFORE].parent == tmp_path / "runner" and (pe.PNG_LEVEL, pe.ON_MERGED) == (6, None)
     assert len(olds) == 1 and olds[0].startswith("old") and not pe.OLD_BESIDE
-    assert Path(DOOMER_PNG).name + ".webp" in made                          # preview.webp from the merge, beside the gates
+    assert Path(DOOMER_PNG).name + ".small" in made                         # preview.avif from the merge, beside the gates
     assert list((tmp_path / "runner").iterdir()) == []                         # the work dir is removed
     assert (result["state"], result["reason"], result["fields"], result["transient"]) == ("baked", "hp 5 -> 8", {"hp": "baked"}, False)
     assert result["request"] == REQUEST and result["card"] == "Mini Doomer" and result["path"] == DOOMER and result["png"] == DOOMER_PNG
     assert result["base"] == {"repo": cb.CARD_REPO, "commit": cards.head, "psd_blob": _sha(cards.files[DOOMER]),
                               "png_blob": _sha(cards.files[DOOMER_PNG])}
     assert result["edit"] == {"hp": 8, "note": "checked"} and result["changes"] == [{"field": "hp", "old": 5, "new": 8}]
-    assert result["image"] == "baked" and result["files"] == {"png": cp.PNG, "webp": cp.WEBP, "before": cp.BEFORE} and result["parity"]["hp"]["bad_pct"] < 1
+    assert result["image"] == "baked" and result["files"] == {"png": cp.PNG, "webp": cp.SMALL, "before": cp.BEFORE} and result["parity"]["hp"]["bad_pct"] < 1
     assert len(result["region"]) == 4 and result["runner"]["psd_tools"] and result["at"].endswith("Z")
-    webp = Image.open(out / cp.WEBP)
-    assert webp.format == "WEBP" and webp.width == cp.WEBP_WIDTH and list(webp.size) == result["webp_size"]
-    cp._small((out / cp.PNG).read_bytes(), str(tmp_path / "again.webp"))   # as made from preview.png
-    assert (tmp_path / "again.webp").read_bytes() == (out / cp.WEBP).read_bytes()
+    webp = Image.open(out / cp.SMALL)
+    assert webp.format == "AVIF" and webp.width == cp.SMALL_WIDTH and list(webp.size) == result["webp_size"]
+    cp._small((out / cp.PNG).read_bytes(), str(tmp_path / "again.avif"))   # as made from preview.png
+    assert (tmp_path / "again.avif").read_bytes() == (out / cp.SMALL).read_bytes()
     with Image.open(out / cp.BEFORE) as before:                                # the official PNG, made the same way (the Diff's)
-        assert before.format == "WEBP" and before.size == webp.size and result["bytes"]["before"] == (out / cp.BEFORE).stat().st_size
-        cp._small(cards.files[DOOMER_PNG], str(tmp_path / "official.webp"))
-        assert (tmp_path / "official.webp").read_bytes() == (out / cp.BEFORE).read_bytes()
+        assert before.format == "AVIF" and before.size == webp.size and result["bytes"]["before"] == (out / cp.BEFORE).stat().st_size
+        cp._small(cards.files[DOOMER_PNG], str(tmp_path / "official.avif"))
+        assert (tmp_path / "official.avif").read_bytes() == (out / cp.BEFORE).read_bytes()
 
     # the bake's own dry run of the same edit: the same merged pixels
     (cards.repo / cb.EDITS_PATH).parent.mkdir(parents=True, exist_ok=True)
@@ -181,7 +181,7 @@ def test_a_refused_edit_writes_its_reason_and_no_image(cards, tmp_path):
     assert code == 0 and (result["state"], result["reason"]) == ("refused", "unsupported-card: hp 25: its bars show up to 10")
     assert result["edit"] == {"hp": 25, "def": None}
     assert result["fields"] == {"hp": "refused"} and result["image"] is None and result["files"] == {}
-    assert not (out / cp.PNG).exists() and not (out / cp.WEBP).exists() and not (out / cp.BEFORE).exists()
+    assert not (out / cp.PNG).exists() and not (out / cp.SMALL).exists() and not (out / cp.BEFORE).exists()
     assert result["base"]["psd_blob"] == _sha(cards.files[DOOMER])
 
 
@@ -339,7 +339,7 @@ def test_fonts_and_records_after_the_wait(cards, clone, tmp_path, monkeypatch):
     assert pe.FONTS_WAIT is None
     same = ("state", "reason", "fields", "notes", "changes", "parity", "region", "image", "files", "size")
     assert {k: result.get(k) for k in same} == {k: now.get(k) for k in same} and now["state"] == "baked"
-    for name in (cp.PNG, cp.WEBP, cp.BEFORE):
+    for name in (cp.PNG, cp.SMALL, cp.BEFORE):
         assert (late_out / name).read_bytes() == (out / name).read_bytes(), name
 
 
@@ -369,9 +369,9 @@ def _out(tmp_path, request, state="baked", at=None, image=True, card="Mini Doome
     out.mkdir(parents=True)
     result = {**br.blank(request, card), "card": card, "state": state, "path": DOOMER, "at": at or br.stamp(), "reason": "hp 5 -> 8"}
     if image:
-        result["files"] = {"png": br.PNG, "webp": br.WEBP, "before": br.BEFORE}
+        result["files"] = {"png": br.PNG, "webp": br.SMALL, "before": br.BEFORE}
         (out / br.PNG).write_bytes(b"png of " + request.encode())
-        (out / br.WEBP).write_bytes(b"webp of " + request.encode())
+        (out / br.SMALL).write_bytes(b"webp of " + request.encode())
         (out / br.BEFORE).write_bytes(b"before of " + request.encode())
     (out / br.RESULT).write_text(json.dumps(result))
     return out
@@ -395,12 +395,12 @@ def test_publish_one_commit_per_preview(remote, tmp_path):
     first = br.publish(str(_out(tmp_path, a)), a, str(remote.work), png=True)
     assert first["parent"] is None and not first["rewritten"]
     files = _branch(remote.bare)
-    assert sorted(files) == [br.README, br.INDEX, f"previews/{a}/{br.BEFORE}", f"previews/{a}/{br.PNG}", f"previews/{a}/{br.WEBP}", f"previews/{a}/{br.RESULT}"]
-    assert json.loads(files[f"previews/{a}/{br.RESULT}"])["request"] == a and files[f"previews/{a}/{br.WEBP}"] == b"webp of " + a.encode()
+    assert sorted(files) == sorted([br.README, br.INDEX] + [f"previews/{a}/{f}" for f in (br.BEFORE, br.PNG, br.SMALL, br.RESULT)])
+    assert json.loads(files[f"previews/{a}/{br.RESULT}"])["request"] == a and files[f"previews/{a}/{br.SMALL}"] == b"webp of " + a.encode()
     second = br.publish(str(_out(tmp_path, b, state="refused", image=False)), b, str(remote.work))
     assert second["parent"] == first["commit"] and _git(remote.bare, "rev-parse", "previews").strip() == second["commit"]
     assert sorted(_index(remote.bare)) == [a, b] and _index(remote.bare)[b]["state"] == "refused"
-    assert f"previews/{b}/{br.WEBP}" not in _branch(remote.bare)
+    assert f"previews/{b}/{br.SMALL}" not in _branch(remote.bare)
     assert _git(remote.bare, "log", "-1", "--format=%an|%s", "previews").strip() == f"AutoCroissant|Preview {b}: Mini Doomer (refused)"
     assert _git(remote.bare, "rev-parse", "main").strip() == _git(remote.work, "rev-parse", "HEAD").strip()   # main untouched
     assert _git(remote.work, "status", "--porcelain") == ""                                                  # nor the checkout
@@ -410,7 +410,7 @@ def test_publish_one_commit_per_preview(remote, tmp_path):
     (rerun / br.RESULT).write_text(json.dumps({**result, "request": a, "state": "error"}))
     br.publish(str(rerun), a, str(remote.work), png=True)
     files = _branch(remote.bare)
-    assert json.loads(files[f"previews/{a}/{br.RESULT}"])["state"] == "error" and f"previews/{a}/{br.WEBP}" not in files
+    assert json.loads(files[f"previews/{a}/{br.RESULT}"])["state"] == "error" and f"previews/{a}/{br.SMALL}" not in files
 
 
 def test_publish_rewrites_old_and_many_previews(remote, tmp_path, monkeypatch):
@@ -572,7 +572,7 @@ def test_workflow_shape():
     assert "preview.code" in start["run"] and "preview.code" in shown["run"] and 'tee -a "$GITHUB_STEP_SUMMARY"' in shown["run"]
     hand = step(preview, "Hand over")
     assert hand["if"] == "${{ !cancelled() && steps.validate.outcome == 'success' }}" and hand["uses"].startswith("actions/upload-artifact@")
-    assert hand["with"]["path"].strip().splitlines() == ["${{ runner.temp }}/preview/" + f for f in (br.RESULT, br.WEBP, br.BEFORE)]   # not the PNG
+    assert hand["with"]["path"].strip().splitlines() == ["${{ runner.temp }}/preview/" + f for f in (br.RESULT, *sum(br.SMALLS.values(), ()))]   # not the PNG
     assert hand["with"]["if-no-files-found"] == "ignore"
     take = step(publish, "Take over")
     assert take["uses"].startswith("actions/download-artifact@") and take["continue-on-error"] is True
@@ -818,9 +818,9 @@ def test_the_jobs_steps_run_here(cards, remote, clone, tmp_path):
     files = _branch(remote.bare)
     result = json.loads(files[f"previews/{REQUEST}/{br.RESULT}"])
     assert (result["state"], result["reason"], result["base"]["commit"]) == ("baked", "hp 5 -> 8", main)
-    assert files[f"previews/{REQUEST}/{br.WEBP}"][:4] == b"RIFF" and f"previews/{REQUEST}/{br.PNG}" not in files
-    assert files[f"previews/{REQUEST}/{br.BEFORE}"][:4] == b"RIFF"
-    assert result["files"] == {"webp": br.WEBP, "before": br.BEFORE} and result["runner"]["fonts"] is True
+    assert files[f"previews/{REQUEST}/{br.SMALL}"][4:12] == b"ftypavif" and f"previews/{REQUEST}/{br.PNG}" not in files
+    assert files[f"previews/{REQUEST}/{br.BEFORE}"][4:12] == b"ftypavif"
+    assert result["files"] == {"webp": br.SMALL, "before": br.BEFORE} and result["runner"]["fonts"] is True
     assert "**Baked**: hp 5 -> 8" in (tmp_path / "run1" / "preview" / "summary.md").read_text()
     assert "Published `previews/" in (tmp_path / "run1" / "publish" / "summary.md").read_text()
 

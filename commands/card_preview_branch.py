@@ -37,8 +37,9 @@ from commands.repo_history import batch_env
 SPARSE_FILES = ("commands/card_preview_branch.py", "commands/repo_history.py", "global_config.py")
 REQUEST = re_compile(r"[A-Za-z0-9-]{8,64}")     # the client's id: a path on the branch (card-preview.yml checks it too)
 MAX_CARD = 200                                  # characters of a card input (longer: an input error, kept clipped)
-RESULT, PNG, WEBP = "result.json", "preview.png", "preview.webp"
-BEFORE = "before.webp"                         # the card's PNG before the edit, made as preview.webp: the site's Diff
+RESULT, PNG = "result.json", "preview.png"
+SMALLS = {"AVIF": ("preview.avif", "before.avif"), "WEBP": ("preview.webp", "before.webp")}   # by card_preview's codec
+SMALL, BEFORE = SMALLS["AVIF"]                  # 720 px; before: the card's PNG before the edit, made as SMALL (the Diff's)
 STATES = ("baked", "redundant", "refused", "error")
 VERSION = 1                                     # result.json's and index.json's "v"
 BRANCH = "previews"
@@ -54,8 +55,8 @@ IDENTITY = {"GIT_AUTHOR_NAME": "AutoCroissant", "GIT_AUTHOR_EMAIL": "autocroissa
             "GIT_COMMITTER_NAME": "AutoCroissant", "GIT_COMMITTER_EMAIL": "autocroissant@gmail.com"}  # git_commit's
 BREAKS = ("Cc", "Zl", "Zp")                     # control characters and line or paragraph separators
 BRANCH_README = ("# Card previews\n\nMade by TTSCardMaker's `.github/workflows/card-preview.yml` (AutoCroissant "
-                 "`commands/card_preview.py`): `previews/<request>/` holds `result.json`, `preview.webp` and "
-                 "`before.webp` (the card before the edit, for the Diff); "
+                 "`commands/card_preview.py`): `previews/<request>/` holds `result.json`, `preview.avif` and "
+                 "`before.avif` (the card before the edit, for the Diff; `.webp` from a Pillow without AVIF); "
                  "`index.json` lists them. One commit per preview; rewritten as one fresh commit when it holds more "
                  f"than {KEEP} previews or one older than {DAYS.days} days. Never merged into main.\n")
 
@@ -224,7 +225,7 @@ def publish(out: str, request: str, where: str = ".", remote: str = "origin", pn
         where: A checkout of the card repo (its git and credentials; blobless is enough); nothing in it moves but LOCAL_REF
             (warm() moves WARM_REF)
         remote: Its remote name or a URL
-        png: Publish preview.png too (the workflow does not: the site shows the WebP)
+        png: Publish preview.png too (the workflow does not: the site shows SMALL)
 
     Returns:
         {"commit", "parent" (None for an orphan), "rewritten", "kept", "dropped", "result"}; raises Unpublished when no
@@ -234,7 +235,7 @@ def publish(out: str, request: str, where: str = ".", remote: str = "origin", pn
         raise ValueError("the request must be 8-64 of A-Z a-z 0-9 -")
     result = _result_of(out, request)
     files = {}
-    for name in (WEBP, BEFORE, PNG) if png else (WEBP, BEFORE):
+    for name in [n for pair in SMALLS.values() for n in pair] + ([PNG] if png else []):
         if name in (result.get("files") or {}).values() and isfile(join(out, name)):
             with open(join(out, name), "rb") as fh:
                 files[name] = fh.read()

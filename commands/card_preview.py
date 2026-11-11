@@ -8,9 +8,10 @@ result on TTSCardMaker's orphan branch `previews` (card-preview.yml's second job
                                     [--request <id>] [--repo <owner/name>] [--head <sha>]
 
 It writes <out>/result.json always (a bad input, a refusal and a runner error too), and with an image preview.png (the
-pixels the bake would commit, saved at PNG_LEVEL and recompressed losslessly where oxipng is installed), preview.webp
-(WEBP_WIDTH wide, the card view's width) and before.webp (the card's official PNG made the same way, beside the bake:
-the site's Diff compares like with like). The bake is lean: no duplicate PNGs or artifact crops.
+pixels the bake would commit, saved at PNG_LEVEL and recompressed losslessly where oxipng is installed), preview.avif
+(SMALL_WIDTH wide, the card view's width and codec; .webp from a Pillow without AVIF) and before.avif (the card's
+official PNG made the same way, beside the bake: the site's Diff compares like with like). The bake is lean: no
+duplicate PNGs or artifact crops.
 The edit is the card's Card Edits.json entry as it would be published (any of its fields; the PSD-kind ones are baked,
 `_`-keys are ignored); result.json's `edit` is it exactly as sent, without
 the `_`-keys. Exit 0, 2 for a bad input, 1 for any other error (result.json's `transient`: try again). Every dispatched
@@ -34,7 +35,7 @@ from time import perf_counter, sleep
 from traceback import format_exc
 from typing import Optional
 
-from PIL import Image
+from PIL import Image, features
 from psd_tools import PSDImage
 from requests import RequestException
 
@@ -44,7 +45,7 @@ import commands.psd_edit as psd_edit
 from commands.card_bake import Card, Snapshot, Transient, local_snapshot, psd_fields, snapshot_at, vocabulary
 from commands.card_edits import CardAuthors, CardEdits, color_text
 from commands.card_models import card_name
-from commands.card_preview_branch import BEFORE, MAX_CARD, PNG, REQUEST, RESULT, WEBP, blank, clean, stamp
+from commands.card_preview_branch import MAX_CARD, PNG, REQUEST, RESULT, SMALLS, blank, clean, stamp
 from commands.git_commit import ref_head
 from commands.github_api import token_from_env
 from global_config import CARD_REPO, ICON_MANIFEST_PATH
@@ -58,7 +59,10 @@ SPARSE_FILES = ("commands/card_preview.py", "commands/card_preview_branch.py", "
                 "commands/repo_history.py", "global_config.py", "requirements-cards.txt",
                 "commands/psd_links.py", "commands/card_preview_reads.py")    # the last: the Reads step's (stdlib)
 MAX_EDIT = 16384                                # bytes of edit JSON (an ability is a few hundred)
-WEBP_WIDTH, WEBP_QUALITY = 720, 75              # the card view's width; WebP (the previews contract), the site's thumbs are AVIF
+SMALL_WIDTH = 720                               # the card view's width, its codec (site NOTES §28: 4:4:4 keeps red text red)
+SMALL_AS = (("AVIF", {"quality": 50, "subsampling": "4:4:4", "speed": 6, "icc_profile": None, "tile_rows": 3, "tile_cols": 2})
+            if features.check("avif") else ("WEBP", {"quality": 75, "method": 4}))   # 8x4 tiles: an edit's codec noise stays near it
+SMALL, BEFORE = SMALLS[SMALL_AS[0]]
 RETRY = card_bake.TRANSIENT + ("blob",)         # try again: the bake's own, and a blob that failed its hash (a download's)
 RESULT_V = 2                                    # result.json's "v": 2 adds variant and parts (PARTS_EDITOR.md §5, I4)
 PNG_LEVEL = 1                                   # preview.png's zlib level: never published, the same pixels, a fast save
@@ -281,22 +285,24 @@ def notes_of(card: Card) -> list:
 
 
 def _small(data: bytes, path: str) -> list:
-    """A PNG's bytes as a WEBP_WIDTH wide WebP at WEBP_QUALITY; returns its size."""
+    """A PNG's bytes SMALL_WIDTH wide as SMALL_AS; returns its size."""
     image = Image.open(BytesIO(data))
     image.load()
     return _small_of(image, path)
 
 
 def _small_of(image: Image.Image, path: str) -> list:
-    """_small's WebP of an image in memory; returns its size."""
+    """_small of an image in memory; returns its size."""
     small = image.convert("RGBA" if image.mode in ("RGBA", "LA", "P") else "RGB")
-    small.thumbnail((WEBP_WIDTH, WEBP_WIDTH * 3), Image.LANCZOS)
-    small.save(path, "WEBP", quality=WEBP_QUALITY, method=4)
+    small.thumbnail((SMALL_WIDTH, SMALL_WIDTH * 3), Image.LANCZOS)
+    if small.mode == "RGBA" and small.getchannel("A").getextrema() == (255, 255):
+        small = small.convert("RGB")            # as the merge: AVIF codes an opaque alpha's colours otherwise (Diff noise)
+    small.save(path, SMALL_AS[0], **SMALL_AS[1])
     return list(small.size)
 
 
 def _before(snapshot: Snapshot, png_rel: str, path: str):
-    """before.webp at path from the official PNG's prefetched blob, in its own thread beside the bake: a Future of path,
+    """BEFORE at path from the official PNG's prefetched blob, in its own thread beside the bake: a Future of path,
     or None when the blob is not prefetched."""
     ahead = snapshot.ahead(png_rel) if png_rel else None
     if ahead is None:
@@ -312,13 +318,13 @@ def _before(snapshot: Snapshot, png_rel: str, path: str):
 
 
 def _beside(made: dict):
-    """psd_edit.ON_MERGED for a preview: the merged PNG's save and its WebP (at path + ".webp") in two threads beside
+    """psd_edit.ON_MERGED for a preview: the merged PNG's save and its SMALL (at path + ".small") in two threads beside
     the gates, made[path] = (webp, png) futures; a retry's waits for the earlier pair first."""
     def hook(merged: Image.Image, path: str, like: Image.Image):
         wait(made.get(path, ()))
         merged.load()                           # both threads only read it
         pool = ThreadPoolExecutor(2, thread_name_prefix="merged")
-        made[path] = pool.submit(_small_of, merged, path + ".webp"), pool.submit(psd_edit.save_png, merged, path, like)
+        made[path] = pool.submit(_small_of, merged, path + ".small"), pool.submit(psd_edit.save_png, merged, path, like)
         pool.shutdown(wait=False)
         return made[path][1]
     return hook
@@ -327,8 +333,8 @@ def _beside(made: dict):
 def write_images(png_path: str, out: str, before: str = "", early=None, webp=None) -> dict:
     """
     preview.png (losslessly recompressed when that is smaller: png_export.recompress, the same pixels and chunks),
-    preview.webp (WEBP_WIDTH wide at WEBP_QUALITY: the card view's width) and, from the official PNG `before`,
-    before.webp made the same way (the site's Diff: one codec on both sides, so unchanged pixels match); `early` is
+    SMALL (SMALL_WIDTH wide as SMALL_AS: the card view's) and, from the official PNG `before`,
+    BEFORE made the same way (the site's Diff: one codec on both sides, so unchanged pixels match); `early` is
     _before()'s and `webp` _beside()'s, taken when they made one.
 
     Returns:
@@ -341,16 +347,16 @@ def write_images(png_path: str, out: str, before: str = "", early=None, webp=Non
         fh.write(smaller or data)
     with Image.open(BytesIO(data)) as image:
         size = list(image.size)
-    files, sizes = {"png": PNG, "webp": WEBP}, {"png": len(smaller or data)}
+    files, sizes = {"png": PNG, "webp": SMALL}, {"png": len(smaller or data)}
     try:
         webp_size = webp.result() if webp is not None else None
     except Exception:                           # noqa: BLE001 - made here instead
         webp_size = None
     if webp_size:
-        move(png_path + ".webp", join(out, WEBP))
+        move(png_path + ".small", join(out, SMALL))
     else:
-        webp_size = _small(data, join(out, WEBP))
-    sizes["webp"] = getsize(join(out, WEBP))
+        webp_size = _small(data, join(out, SMALL))
+    sizes["webp"] = getsize(join(out, SMALL))
     if before and isfile(before):
         try:
             made = early.result() if early is not None else ""
@@ -386,7 +392,7 @@ def preview(card: str, edit: Optional[bytes], out: str, repository: str = CARD_R
     started = perf_counter()
     out, clone = expanduser(out), abspath(expanduser(clone)) if clone else ""
     makedirs(out, exist_ok=True)
-    for name in (RESULT, PNG, WEBP, BEFORE):
+    for name in (RESULT, PNG, *sum(SMALLS.values(), ())):
         if exists(join(out, name)):
             remove(join(out, name))
     result = blank(request, card)
@@ -491,7 +497,7 @@ def render(result: dict) -> str:
     lines += [f"- {clean(note)}" for note in result.get("notes", [])]
     if result.get("image"):
         sizes = result.get("size") or ["?", "?"]
-        lines.append(f"- Image ({result['image']}): `{PNG}` {sizes[0]}x{sizes[1]}, `{WEBP}` {WEBP_WIDTH} px wide"
+        lines.append(f"- Image ({result['image']}): `{PNG}` {sizes[0]}x{sizes[1]}, `{SMALL}` {SMALL_WIDTH} px wide"
                      + (f", `{BEFORE}`" if (result.get("files") or {}).get("before") else ""))
     lines += ["", f"Took {result.get('took_s', 0):.0f} s."]
     return "\n".join(lines) + "\n"
@@ -505,7 +511,7 @@ def main(args: Optional[list] = None) -> int:
     args = list(argv[1:] if args is None else args)
     parser = ArgumentParser(prog="python -m commands.card_preview",
                             description="Bake one card's website edit as the bake would, on a temp copy, and write "
-                                        f"{RESULT}, {PNG}, {WEBP} and {BEFORE} (docs/EDIT_PIPELINE_DESIGN.md section 16).")
+                                        f"{RESULT}, {PNG}, {SMALL} and {BEFORE} (docs/EDIT_PIPELINE_DESIGN.md section 16).")
     parser.add_argument("--card", required=True, help="the card's key (Card Edits.json's: the file name) or its PSD path")
     parser.add_argument("--edit", required=True, help="a file with the edit's JSON (Card Edits.json fields)")
     parser.add_argument("--out", required=True, help="where the result and images go")
