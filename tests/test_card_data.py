@@ -94,11 +94,20 @@ def test_card_sync_clones_the_builder_and_the_data(tmp_path):
     assert (steps["bot"]["if"], steps["carddata"]["if"]) == ("steps.clones.outputs.bot != 'true'", "steps.clones.outputs.carddata != 'true'")
     for job, order in (("data", ["Clones start", "Cards start", "History start", "Venv key", "Cards", "actions/checkout@v7", "History join",
                                  "Bot and data", "Records start", "Python environment", "Earlier bake records", "Gate"]),
-                       ("main", ["Clones start", "actions/checkout@v7", "Bot and data", "Python environment", "Gate", "Earlier bake records"])):
+                       ("main", ["Clones start", "Cards start", "History start", "Venv key", "Cards", "actions/checkout@v7", "History join",
+                                 "Bot and data", "Python environment", "Fonts first", "Guards' fixes", "History wait", "Newest", "Gate",
+                                 "Earlier bake records"])):
         at = [s.get("name") or s.get("with", {}).get("path") or s.get("uses") for s in jobs[job]["steps"]]
         assert [at.index(x) for x in order] == sorted(at.index(x) for x in order) and at.index("Bot and data") == at.index("bot") - 1
-    checkout = next(s for s in jobs["data"]["steps"] if s.get("uses", "").startswith("actions/checkout") and "path" not in s["with"])
-    assert checkout["if"] == "steps.cards.outputs.ok != 'true'" and checkout["with"]["sparse-checkout"] == steps["Cards start"]["env"]["CARD_FILES"]
+        named = {s.get("name"): s for s in jobs[job]["steps"]}
+        checkout = next(s for s in jobs[job]["steps"] if s.get("uses", "").startswith("actions/checkout") and "path" not in s["with"])
+        assert checkout["if"] == "steps.cards.outputs.ok != 'true'" and checkout["with"]["fetch-depth"] == 1
+        assert checkout["with"]["sparse-checkout"] == named["Cards start"]["env"]["CARD_FILES"]
+        # main: the data job's steps, its files plus TTS/ (the save, the rulebook PDF)
+        assert all(named[n] == steps[n] for n in ("History start", "Venv key", "Cards", "History join", "History wait"))
+        assert named["Cards start"]["run"] == steps["Cards start"]["run"]
+    main_files = next(s for s in jobs["main"]["steps"] if s.get("name") == "Cards start")["env"]["CARD_FILES"].split("\n")
+    assert [f for f in main_files if f != "/TTS/"] == steps["Cards start"]["env"]["CARD_FILES"].split("\n") != main_files
     server, seed = tmp_path / "github", tmp_path / "seed"
     for rel in cd.SPARSE_FILES + ("config.py",):
         (seed / rel).parent.mkdir(parents=True, exist_ok=True)

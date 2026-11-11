@@ -2505,13 +2505,14 @@ def test_card_syncs_wait_ends_at_decided(clone, tmp_path):
 
 def test_card_syncs_follow_up_waits_for_land(clone, tmp_path):
     """A follow-up (input guards, started by the guards' check job before Land): both lanes set up, then "Guards' fixes"
-    waits until that run's check job reaches Landed or ends (never another job's step), holds nothing, then Newest."""
+    waits until that run's check job reaches Landed or ends (never another job's step), holds nothing, then History wait
+    and Newest."""
     yaml = pytest.importorskip("yaml")
     if not shutil.which("jq"):
         pytest.skip("no jq")
     doc = yaml.safe_load((_workflow(clone).parent / "card-sync.yml").read_text(encoding="utf-8"))
     for job, at, fonts, history in (("data", 13, [], ["History wait"]),       # data: its card fetch, venv and records first
-                                    ("main", 5, ["Fonts first", None, "Fonts first (cache miss)"], [])):
+                                    ("main", 11, ["Fonts first", None, "Fonts first (cache miss)"], ["History wait"])):
         names = [s.get("name") for s in doc["jobs"][job]["steps"]]
         want = ["Python environment", *fonts, "Guards' fixes", *history, "Newest"]
         assert names[at:at + len(want)] == want, (job, names)
@@ -2767,8 +2768,8 @@ def test_card_syncs_lane_sets_up_before_its_guards(clone, tmp_path):
     main = doc["jobs"]["main"]
     assert "quiet" not in doc["jobs"] and main["needs"] == "timer"
     steps = {s.get("name"): s for s in main["steps"]}
-    assert [s.get("name") for s in main["steps"]][5:12] == ["Python environment", "Fonts first", None, "Fonts first (cache miss)",
-                                                           "Guards' fixes", "Newest", "Gate"]
+    assert [s.get("name") for s in main["steps"]][11:19] == ["Python environment", "Fonts first", None, "Fonts first (cache miss)",
+                                                            "Guards' fixes", "History wait", "Newest", "Gate"]
     assert steps["Gate"]["if"] == "${{ !steps.guards.outputs.run }}" and "steps.gate.outcome == 'success'" in steps["Leftover edits"]["if"]
     bin_dir = _fake_tools(tmp_path)
     state, posts = tmp_path / "gh.json", tmp_path / "posts.jsonl"
