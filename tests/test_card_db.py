@@ -21,7 +21,7 @@ def _card(name="A Card", **kw):
 def _full():
     card = _card(creatures=[cm.CardStats(1, 2, 3, 4), cm.CardStats(5, 6, 7, -1)], display_name="Shown", note="n",
                  parsed_values={"series": "X", "subseries": None, "problems": ["HP NOT FOUND"]}, problems=["SEVERAL CREATURES: 2"],
-                 alt_names=["B", "C"], archived={"at": 1.5, "path": "p.psd", "blob": None, "commit": "c" * 40})
+                 archived={"at": 1.5, "path": "p.psd", "blob": None, "commit": "c" * 40})
     card.version = {"from": 1.0, "from_commit": "f" * 40, "to": None, "to_commit": None, "cause": "psd", "png_commit": None,
                     "legacy": False}
     return card

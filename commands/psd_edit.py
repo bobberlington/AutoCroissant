@@ -595,7 +595,7 @@ def offline_parser(all_types: list, stars: list, manifest: Optional[dict]) -> PS
 
 def parse_card(parser: PSDParser, path: str, rel: str, psd: Optional[PSDImage] = None) -> dict:
     """
-    Everything a gate compares: to_dict(), the hidden titles, the validator's problems and the CardInfo itself.
+    Everything a gate compares: to_dict(), the validator's problems and the CardInfo itself.
 
     Args:
         parser: offline_parser()
@@ -604,10 +604,10 @@ def parse_card(parser: PSDParser, path: str, rel: str, psd: Optional[PSDImage] =
         psd: path already open (one open per PSD per bake); None: path is opened
 
     Returns:
-        {"card", "alt_names", "validator", "info"}
+        {"card", "validator", "info"}
     """
     card = parser.parse(psd if psd is not None else path, rel)
-    return {"card": card.to_dict(), "alt_names": card.alt_names, "validator": CardValidator.validate(card), "info": card}
+    return {"card": card.to_dict(), "validator": CardValidator.validate(card), "info": card}
 
 
 # ========================
@@ -10523,8 +10523,6 @@ def gate_reparse(parser: PSDParser, parsed: dict, new_path: str, rel: str, jobs:
         raise Refused("reparse", "fields differ from the expected parse: " + ", ".join(
             f"{key} {got.get(key)!r} (not {expected.get(key)!r})" if key in ICON_FIELDS else key for key in different),
             different[0] if set(different) <= set(ICON_FIELDS) else None)
-    if new["alt_names"] != parsed["alt_names"]:
-        raise Refused("reparse", "hidden titles changed")
     # STATS TOO HIGH is by design on two-row cards (a raise from <= 10 adds it), a problem anywhere else
     two_rows = all(_two_rows(got, psd, stat) for stat in STAT_FIELDS if (got.get(stat) or 0) > STAT_MAX
                    and (stat in jobs or got.get(stat) != parsed["card"].get(stat)))   # Sonic's SPD 20 was there before

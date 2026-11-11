@@ -13,7 +13,7 @@ CERTIFIED = ("Auxiliary/Minions/Mini_Doomer.psd",                       # valida
 CARDS = CERTIFIED + (
     "Creatures/Kirby/3 Stars/Pix.psd",                                  # 3 creatures
     "Creatures/FTL/5 Stars/Royal_Eradicator_Main_Cannon.psd",           # atk 10 + 2; title in 3 layers
-    "Items/Heal/2 Stars/A_Snack.psd",                                   # hidden titles of 2 duplicates: no alt_names
+    "Items/Heal/2 Stars/A_Snack.psd",                                   # hidden titles of 2 duplicates
     "Auxiliary/Minions/Anubisath_Guardian.psd",                         # empty ability; card_data's edited Mini Doomer
     "Auxiliary/Minions/God_Tamer.psd",                                  # 5 stars in a Stars group (none until 2026-10-22), empty ability
     "Auxiliary/Status Effects/Debuffs/1 Stars/Poison.psd",              # status-effect folder
@@ -39,9 +39,9 @@ def parser():
 
 
 def parse(psd_parser, clone: Path, rel: str) -> dict:
-    """Everything the golden pins: to_dict(), the hidden titles and the validator's problems."""
+    """Everything the golden pins: to_dict() and the validator's problems."""
     from commands.psd_parser import CardValidator
     card = psd_parser.parse(str(clone / rel), rel)
-    out = {"card": card.to_dict(), "alt_names": card.alt_names}
+    out = {"card": card.to_dict()}
     out["validator"] = CardValidator.validate(card)
     return out

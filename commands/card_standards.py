@@ -1031,7 +1031,7 @@ def _gated(base: str, path: str, rel: str, parser: Optional[PSDParser], reads: O
         before, after = psd_edit.parse_card(parser, base, rel), psd_edit.parse_card(parser, path, rel)
         if reads is not None:
             before = reads(before)
-        if (before["card"], before["alt_names"], before["validator"]) != (after["card"], after["alt_names"], after["validator"]):
+        if (before["card"], before["validator"]) != (after["card"], after["validator"]):
             raise Refused("reparse", "the bot reads the fixed PSD differently")
     with open(path, "rb") as fh:
         return fh.read()
@@ -1119,7 +1119,7 @@ def _straightened(value):
 
 def straight_parse(parsed: dict) -> dict:
     """What straighten() makes the parser read: the parse straightened, a title now the card's name no display_name."""
-    out = {key: _straightened(parsed[key]) for key in ("card", "alt_names", "validator")}
+    out = {key: _straightened(parsed[key]) for key in ("card", "validator")}
     title, name = out["card"].get("display_name"), getattr(parsed.get("info"), "name", None) or ""
     if title is not None and (title == name or sorted(title.lower().split()) == sorted(name.lower().split())):
         out["card"].pop("display_name")         # _printed_title's rules (the second for a title of several layers)
@@ -4117,7 +4117,7 @@ def folder_reads(psd: PSDImage, rel: str, parser: PSDParser) -> dict:
             drawn = psd.composite(ignore_preview=True, apply_icc=False, text_preview=False)
             renders.append(np.asarray(drawn.convert("RGBA"), np.int16))
         card = parser.parse(psd, rel, variant=n)
-        parses.append({"card": card.to_dict(), "alt": card.alt_names, "problems": CardValidator.validate(card)})
+        parses.append({"card": card.to_dict(), "problems": CardValidator.validate(card)})
     stem, paths = basename(rel), (psd_details.layer_path, psd_parts.layer_path)
     psd_details.layer_path = psd_parts.layer_path = lambda layer: f"#{layer.layer_id}"     # a folder moves no id
     try:
@@ -4383,7 +4383,7 @@ def art_icons(psd: PSDImage, rel: str, parser: PSDParser) -> frozenset:
 
     def read(card) -> tuple:
         found = parser.parse(card, rel)
-        return found.to_dict(), found.alt_names, CardValidator.validate(found)
+        return found.to_dict(), CardValidator.validate(found)
     was, out = read(PSDImage.open(BytesIO(data))), set()
     for unit in stars:
         trial = PSDImage.open(BytesIO(data))

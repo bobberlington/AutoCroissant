@@ -19,7 +19,6 @@ def test_golden(psd_parser, clone, rel):
     assert blob_sha(clone / rel) == expected["blob"], "goldens not made at CARDS_REV: python tests/make_goldens.py"
     got = parse(psd_parser, clone, rel)
     assert got["card"] == expected["card"]
-    assert got["alt_names"] == expected["alt_names"]
     assert got["validator"] == expected["validator"]
 
 

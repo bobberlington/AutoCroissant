@@ -360,7 +360,7 @@ class CardBuild:
         for name, original in found.items():
             src = self.db.stats[original]
             card = deepcopy(src)
-            card.name, card.duplicate_of, card.parsed_values, card.problems, card.alt_names = name, original, None, [], None
+            card.name, card.duplicate_of, card.parsed_values, card.problems = name, original, None, []
             card.art = card.ability_art = None          # its own art: its own sources (its entry), never the original's
             own = (self.edits.cards.get(CardAuthors.key(name), {}).get("aliases") or []) if self.edits is not None else []
             card.display_name = self._duplicate_name(own)
