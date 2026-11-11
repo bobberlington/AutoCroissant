@@ -2114,8 +2114,9 @@ def _astray(places) -> int:
 
 def _glyphs_of(layer, base, places) -> Optional[tuple]:
     """
-    Some glyphs of base's text faces at their own widths (_glyph_fit, refined from each try FONT_TRIES times) that explain the layer's pixels (_explains, at their places): FONT_MIN glyphs at least sit off
-    (_astray) at base's, FONT_NEARER times fewer at theirs. places: _places' at base.
+    Some glyphs of base's text faces at their own widths (_glyph_fit, refined from each try FONT_TRIES times) that
+    explain the layer's pixels (_explains, at their places): FONT_MIN glyphs at least sit off (_astray) at base's,
+    FONT_NEARER times fewer at theirs. places: _places' at base.
 
     Returns:
         (the glyphs that move the text most, as told; its FontMap), or None
