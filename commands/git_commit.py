@@ -37,6 +37,7 @@ GIT_TIMEOUT = 300
 NO_LAZY = {"GIT_NO_LAZY_FETCH": "1"}            # a blobless clone fails on a missing blob instead of fetching it
 API_TIMEOUT = 300                               # a PSD blob is up to 85 MB (113 MB as base64)
 TOO_LARGE = "too large"                         # POST git/blobs' 422 past its size limit (a 73 MB PSD, 2026-10-31)
+RAW_LOOSE = {"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "core.loosecompression", "GIT_CONFIG_VALUE_0": "0"}  # git_commit's blobs: the push zlibs them once
 
 # ========================
 # Global State
@@ -238,10 +239,10 @@ def git_commit(repository: str, head: str, files: dict, message: str) -> Optiona
         raise Transient(f"the history clone mirrors {CARD_REPO}, not {repository}")
     refresh()                                   # the clone exists and knows head
     clone, env = expanduser(HISTORY_CLONE), git_env()
-    commit = _write_commit(clone, head, files, message, env, "the history clone")
+    commit = _write_commit(clone, head, files, message, env, "the history clone", {**env, **RAW_LOOSE})
     url, auth = push_target(repository)
-    try:                                        # no delta search: over HTTPS the pack is thin anyway and would want the old blobs
-        push = run_process(["git", "-C", clone, "-c", "pack.window=0", "push", "--porcelain", "--no-thin", url,
+    try:                                        # no delta search (over HTTPS the pack is thin anyway and would want the old blobs); zlib 1
+        push = run_process(["git", "-C", clone, "-c", "pack.window=0", "-c", "pack.compression=1", "push", "--porcelain", "--no-thin", url,
                             f"{commit}:refs/heads/{CARD_BRANCH}"], capture_output=True, timeout=GIT_TIMEOUT, env={**env, **auth})
     except (TimeoutExpired, OSError) as error:
         raise Transient(f"git push failed: {error}") from error
@@ -256,8 +257,10 @@ def git_commit(repository: str, head: str, files: dict, message: str) -> Optiona
     return commit
 
 
-def _write_commit(clone: str, head: str, files: dict, message: str, env: dict, where: str) -> str:
-    """The files' blobs, the tree on head's and the commit on head, written into clone; raises Transient."""
+def _write_commit(clone: str, head: str, files: dict, message: str, env: dict, where: str,
+                  blob_env: Optional[dict] = None) -> str:
+    """The files' blobs (hash-object with blob_env, else env), the tree on head's and the commit on head, written into
+    clone; raises Transient."""
     try:
         changes: dict = {}
         for path, data in files.items():
@@ -266,7 +269,7 @@ def _write_commit(clone: str, head: str, files: dict, message: str, env: dict, w
             for folder in folders:
                 node = node.setdefault(folder, {})
             node[name] = None if data is None else \
-                git(clone, "hash-object", "-w", "--stdin", stdin=data, env=env).decode().strip()
+                git(clone, "hash-object", "-w", "--stdin", stdin=data, env=blob_env or env).decode().strip()
         tree = git_tree(clone, git(clone, "rev-parse", f"{head}^{{tree}}", env=env).decode().strip(), changes, env)
         return git(clone, "commit-tree", tree, "-p", head, "-m", message, env=env).decode().strip()
     except CalledProcessError as error:

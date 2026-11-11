@@ -99,16 +99,20 @@ def test_git_commit_push_outcomes(monkeypatch):
 
     def git(where, *args, stdin=None, env=None):
         calls.append(args[0])
+        if args[0] == "hash-object":            # stored: the push zlibs the blob once
+            assert (env["GIT_CONFIG_KEY_0"], env["GIT_CONFIG_VALUE_0"]) == ("core.loosecompression", "0")
         return {"hash-object": b"b1\n", "rev-parse": b"t0\n", "ls-tree": b"", "mktree": b"t1\n", "commit-tree": b"c1\n"}[args[0]]
     refreshed = []
     monkeypatch.setattr(gc, "git", git)
     monkeypatch.setattr(gc, "refresh", lambda: refreshed.append(1) or True)
     done = {}
-    monkeypatch.setattr(gc, "run_process", lambda cmd, **kw: CompletedProcess(cmd, **done))
+    pushes = []
+    monkeypatch.setattr(gc, "run_process", lambda cmd, **kw: pushes.append(cmd) or CompletedProcess(cmd, **done))
     monkeypatch.delenv("SSH_AUTH_SOCK", raising=False)
     done.update(returncode=1, stdout=b"! refs/heads/main:refs/heads/main [rejected] (fetch first)\n", stderr=b"")
     assert gc.git_commit(gc.CARD_REPO, "h", {"dir/x.psd": b"x"}, "m") is None       # not a fast forward: the caller retries
     assert calls == ["hash-object", "rev-parse", "ls-tree", "mktree", "mktree", "commit-tree"] and refreshed == [1]
+    assert pushes[0][3:9] == ["-c", "pack.window=0", "-c", "pack.compression=1", "push", "--porcelain"]
     done.update(returncode=128, stdout=b"", stderr=b"git@github.com: Permission denied (publickey).\nfatal: Could not read from remote repository.\n")
     with pytest.raises(gc.Transient) as error:
         gc.git_commit(gc.CARD_REPO, "h", {"x": b"x"}, "m")
