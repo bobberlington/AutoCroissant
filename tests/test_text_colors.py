@@ -154,34 +154,48 @@ PALETTE = {"stats": {"hp": "#2fbf3a", "def": "#3d63ff", "atk": "#ff3b3b", "spd":
 WORDS = ["Inflict 2T Burning. burning foes take +1 DEF, -1 SPD, \u22121 HP and 0.5 ATK; x2 ATK, 50% SPD, max HP.",
          "Gain 2 points (2 points), 3 SP, 1 star point, 2 star points, BRICKS, 1 brick. +2 Attack; attack twice. At any point. 1 point.",
          "[fire] HP [Burning] (1CD) Frozen  In Time 3T2 Hardened. 3.5 HP, 1.5SPD, X HP, x HP, 2HP, ATK/DEF, +1/+1 ATK.",
-         "Speed 3, 3 speed, 4 Health, 2 Defense, 1 Defence, (0.5 SP) (3 souls) Deal 2(x counters) DMG. HPs ATKS 3.HP a2 HP"]
+         "Speed 3, 3 speed, 4 Health, 2 Defense, 1 Defence, (0.5 SP) (3 souls) Deal 2(x counters) DMG. HPs ATKS 3.HP a2 HP",
+         "Negate 1 attack, 3 Attack, -1 attack, (2 x DEF + 4), (3 x Health), \U0001f550 3 SP"]
+LINKED = "Deploy a Burning Ring. Inflict 2T Burning."   # a status word in another card's name stays plain
+LINK_CARDS = [{"id": "burning", "name": "Burning", "type": "debuff"}, {"id": "burning-ring", "name": "Burning Ring", "type": "item"}]
+REAL = json.loads((Path(__file__).resolve().parent / "fixtures" / "palette_texts.json").read_text(encoding="utf-8"))
 
 
 @site
 def test_site_words_agree_with_tts(tmp_path):
     """The site's word colours (owner 2026-11-11): textcolor.js wordColors (the website's card text) and build_site
-    word_colors (tts.json's) paint the same letters in the same colours from one palette: status words, stats with their
-    numbers (long forms only after one), counters; icons and badges never; build_site's palette is the one cards.json
-    and tts.json carry."""
+    word_colors (tts.json's) paint the same letters in the same colours from one palette, on these and 50 real
+    abilities: status words, stats with their numbers (Health & co. only after one, Attack after a signed one; a lone
+    "x" a times sign), counters; icons and badges never; a word in another card's name plain on both (text.js render,
+    build_site unlinked); build_site's palette is the one cards.json and tts.json carry."""
     spec = importlib.util.spec_from_file_location("site_build_words", SITE / "build" / "build_site.py")
-    if not (spec and Path(spec.origin).is_file() and "def word_colors" in Path(spec.origin).read_text(encoding="utf-8")):
-        pytest.skip("a site before its word colours")
+    if not (spec and Path(spec.origin).is_file() and "def unlinked" in Path(spec.origin).read_text(encoding="utf-8")):
+        pytest.skip("a site before its 11-11 palette rules")
     bs = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(bs)
     script = tmp_path / "words.mjs"
+    cases = [[t, PALETTE] for t in WORDS] + [[t, REAL["palette"]] for t in REAL["texts"]]
     script.write_text(f"""const T = await import({json.dumps((ASSETS / 'textcolor.js').as_uri())});
-const P = {json.dumps(PALETTE)};
-process.stdout.write(JSON.stringify({json.dumps(WORDS)}.map(t => T.wordColors(t, P).map(r => [r.start, r.end, r.color]))));
+const X = await import({json.dumps((ASSETS / 'text.js').as_uri())});
+const cp = (t, i) => [...t.slice(0, i)].length;   // code points, as Python counts
+const runs = {json.dumps(cases)}.map(([t, p]) => T.wordColors(t, p).map(r => [cp(t, r.start), cp(t, r.end), r.color]));
+const linked = X.makeRenderer({{ cards: {json.dumps(LINK_CARDS)}, icons: {{}} }}).render({json.dumps(LINKED)}, {{ colors: T.wordColors({json.dumps(LINKED)}, {json.dumps(PALETTE)}) }});
+process.stdout.write(JSON.stringify({{ runs, linked }}));
 """, encoding="utf-8")
     done = run_process(["node", str(script)], capture_output=True, text=True, encoding="utf-8", timeout=60)
     assert done.returncode == 0, done.stderr
-    site = json.loads(done.stdout)
-    assert site == [[list(r) for r in bs.word_colors(t, PALETTE)] for t in WORDS]
+    out = json.loads(done.stdout)
+    site = out["runs"]
+    assert site == [[list(r) for r in bs.word_colors(t, p)] for t, p in cases] and len(site) == len(WORDS) + 50
     words = [[t[a:b] for a, b, _ in runs] for t, runs in zip(WORDS, site)]
     assert words[0] == ["Burning", "+1 DEF", "-1 SPD", "\u22121 HP", "0.5 ATK", "x2 ATK", "50% SPD", "HP"]
     assert words[1] == ["2 points", "3 SP", "1 star point", "2 star points", "BRICKS", "1 brick", "+2 Attack", "1 point"]
-    assert words[2] == ["HP", "Frozen  In Time", "Hardened", "3.5 HP", "1.5SPD", "X HP", "x HP", "2HP", "ATK", "DEF", "+1 ATK"]
+    assert words[2] == ["HP", "Frozen  In Time", "Hardened", "3.5 HP", "1.5SPD", "X HP", "HP", "2HP", "ATK", "DEF", "+1 ATK"]
     assert words[3] == ["3 speed", "4 Health", "2 Defense", "1 Defence", "HP"] and site[0][0][2] == "#db923d"
+    assert words[4] == ["-1 attack", "DEF", "3 SP"]
+    assert out["linked"] == ('Deploy a <a class="card-ref" href="c/burning-ring/" data-card="burning-ring">Burning Ring</a>. Inflict 2T '
+                             '<a class="card-ref" href="c/burning/" data-card="burning"><span class="tc lo-l" style="color:#db923d">Burning</span></a>.')
+    assert bs.tts_words(LINKED, PALETTE, {}, None, bs.name_links(LINK_CARDS, {}, {})) == [["Burning", "#db923d", 2]]
     cards = [{"name": "Burning", "type": "debuff"}, {"name": "Despair", "type": "debuff"}, {"name": "Hardened", "type": "buff"}, {"name": "Ant", "type": "item"}]
     palette = bs.text_palette(cards, {"burning": "#db923d", "Despair": "#000000", "Ant": "#123456"}, [{"name": "Hardened", "color": "#8a8a8a"}])
     assert palette["statuses"] == {"Burning": "#db923d", "Despair": "#000000", "Hardened": "#8a8a8a"}   # the chart's, else the swatch
@@ -190,15 +204,14 @@ process.stdout.write(JSON.stringify({json.dumps(WORDS)}.map(t => T.wordColors(t,
 
 def test_colour_bake_on_a_real_card(clone, tmp_path):
     """The Freezer: two words recoloured through every gate, in the runs and the raster, the letters where Photoshop drew
-    them; nothing left to bake after; a phrase not on the card refused alone; the note's colour no job."""
+    them; nothing left to bake after; a phrase not on the card refused alone."""
     from commands.psd_edit import offline_parser
     vocab = json.loads((Path(__file__).resolve().parent / "goldens" / "_vocab.json").read_text(encoding="utf-8"))
     parser = offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
     psd_path, png = _card(clone, FREEZER)
     psd = PSDImage.open(psd_path)
     parsed = pe.parse_card(parser, psd_path, FREEZER, psd)
-    edits = {"colors": [{"field": "ability", "phrase": "Turns into", "color": "#00bfff"}, BURNING,
-                        {"field": "note", "color": "#000000"}]}
+    edits = {"colors": [{"field": "ability", "phrase": "Turns into", "color": "#00bfff"}, BURNING]}
     got = pe.classify(parsed, edits, psd, parser)
     assert got.jobs == {"colors": edits["colors"][:1]} and [r.field for r in got.refusals] == ["colors"]
     assert "'Burning' is not in the ability" in got.refusals[0].why
