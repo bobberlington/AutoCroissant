@@ -293,10 +293,10 @@ dont overwrite stats with empty stats", 2026-01-15 17:23). The diff says otherwi
   like a junk commit. The diff is the actual fix: every `return ..., num_updated` becomes
   `num_new`, and the gate becomes `if (num_new > 0):` — `num_new` only increments for new or
   content-changed cards, so the gate finally does its job. (Since the 2026-10-20 code-health pass the counter is
-  `num_changed`; in `card_data.update`, commands/card_data.py since 2026-10-22, the prune is gated by `can_prune(build)`
-  (card_data.py:968: whole tree seen, no 304, not truncated, no failed new-name PSD; called at :1146) and the save
-  (:1158) by `num_changed > 0 or gone or backfilled or build.changed or line or again or db.stale_archives()`.
-  `_process_files_from_response` still returns `num_changed + num_moved`, :692.)
+  `num_changed`; `card_data.update` (the bot's legacy sweep, 2026-10-22 to 2026-10-25) gated the prune by
+  `can_prune(build)` and the save by `num_changed > 0 or ...`; it went at step 10. Today `can_prune` (card_data.py:1221)
+  is called by the Card sync build (`build`, :1721), and `_process_files_from_response` still returns
+  `num_changed + num_moved` (:649).)
 - `git show 2ff52b2` ("Update psd_analyzer.py", 18:55) — despite the plausible message, it's ONLY
   type annotations and parenthesization. Attributing the gate to it would be wrong.
 - Bonus name-lie inside the same loop (renamed 2026-10-20): until then `num_new` ALSO counted re-parsed existing
@@ -433,7 +433,7 @@ whether a snapshot is damaged — answered with standalone reads, never by runni
 **Mechanics.** The pickles left the working tree on 2026-10-25: take them from history (`git show <PICKLE
 commit>:stats.pkl`; the last one is the deletion commit's parent). `stats.pkl` values are `CardInfo` dataclass instances
 pickled as `commands.psd_analyzer.CardInfo` (the `__module__` pin was dropped with the pickle writers; card_db's
-allow-list maps both paths). The card data's JSON reads the same way through `commands.card_db.read_cards` (a `db/`
+allow-list mapped both paths until 2026-10-25). The card data's JSON reads the same way through `commands.card_db.read_cards` (a `db/`
 folder or a data commit). From 2026-10-22 to 2026-10-25 the forensics pattern was `commands.card_db.load_pickle` (its
 `SeedUnpickler` allow-list); it went with the rest of the pickle-era code on 2026-10-25 (owner), so a historical pickle now
 loads only through the raw `pickle.load` path, which imports the `commands.psd_analyzer` chain (discord, pandas, psd-tools,
@@ -456,6 +456,9 @@ python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.
 # added: 0   removed: 0   modified: 0     (exit 0 — verified 2026-07-11)
 ```
 
+(2026-07-11 run; since 2026-10-25 `diff_stats.py` and `inspect_card_data.py` read only the JSON card data: `db/`
+folders, `stats.json`, data commits. A pickle goes through the raw `pickle.load` one-liners.)
+
 **The motivating case — old_stats.pkl's size history** (bytes measured 2026-07-11 with
 `git cat-file -s $(git rev-parse <hash>:old_stats.pkl)`; the four anchor commits only — the full
 annotated trace, from the 66-byte first archive through 82,881 on 2026-07-11, is owned by
@@ -473,10 +476,9 @@ and about 1,155 versions are expected after the next run's history recovery):
 autocroissant-failure-archaeology. The archival guard `should_update and not is_new` landed
 e7befd5/fb47b5d; since 2026-10-20 a card is archived only when its PSD blob changed or it moved
 (`_history`, card_data.py), so `cards:`/`force_update` re-parses of unchanged PSDs add nothing; since 2026-10-22 only
-when its data changed too (`_record_history`, `card_history.same_data`). Since 2026-10-23 an applied Card Edits or
-Discord edit that changes data also keeps a version (`card_history.record_edits`, cause `edit`), and every
-/update_stats runs `card_data.clean_history` (dedupe, normalize, recover from the bot's PICKLE commits, misreads,
-unknown values, archive tags dated from git): the history rules are impossibility-cards-reference §6.
+when its data changed too. Today the Card sync build's `card_history.record_versions` keeps a version only when a
+card's data changed (an applied edit or authors change is an `edit` / `authors` version) and `date_archive` dates
+the archive tags from git: the history rules are impossibility-cards-reference §6.
 The save gate story is Recipe 3.)
 
 **Worked example, actually run 2026-07-11 — quantify balloon #1.** Extract and load the ballooned
@@ -539,7 +541,7 @@ line numbers (HEAD 9fb3093), and again after that day's optimization pass; the w
 | Newest-card commit-time match | the `git -C ~/Desktop/TTSCardMaker log -1` + `stat -f '%Sm'` pair in Recipe 2 (mtime changes on every pull — only the COMMIT time is stable) |
 | `-S` results (f7c915c; fed8a83/081b1fd) and commit dates | rerun the two `git log -S` commands in Recipe 3; `git log -1 --format='%h %ad %s' --date=short <hash>` |
 | fb47b5d gate ineffective / 4e03190 real fix / 2ff52b2 cosmetic | `git show fb47b5d`, `git show 4e03190`, `git show 2ff52b2` (read increments, not names) |
-| `num_changed` gates at HEAD | `grep -n 'can_prune(build)\|def can_prune\|db.save()' commands/card_data.py` (968, 1146, 1159) |
+| `num_changed` gates at HEAD | `grep -n 'can_prune(\|num_changed + num_moved' commands/card_data.py` (649, 1221, 1721) |
 | Range reads and the branch-head request | `grep -n '^RANGE_READS' commands/github_api.py` (27); `grep -n 'def _tree_commit\|def _fetch_psd' commands/card_data.py` (702, 716) |
 | PSD counts 904 / 91 excluded / 813 processed | the three `find` commands in Recipe 4 (drift EXPECTED as cards are added — recompute, don't reuse) |
 | get_commits only for re-parsed cards; rate-limit warning | `grep -n '_get_remote_timestamp\|get_commits' commands/card_data.py; grep -n 'requests/hour' commands/github_api.py` (card_data.py since 2026-10-22, github_api.py since the 2026-10-20 split) |
@@ -584,3 +586,5 @@ baselines 0 stored / 1 full (Computer Virus), old_stats 193,937 B at a7c310e, an
 2026-10-25 (B-1, work/instant): Recipe 5 re-derived for the wake-on-enqueue drains (milliseconds per hop, 1 s fallback); simulation numbers added.
 
 2026-10-25 (grid): Recipe 5: /query_ability grids.
+
+2026-11-11 (docs check): Recipe 3's gates now live in the Card sync build (`card_data.update` went at step 10); Recipe 6: `record_versions` / `date_archive`, diff_stats and inspect_card_data read JSON only.
