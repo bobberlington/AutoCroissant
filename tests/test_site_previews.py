@@ -344,6 +344,19 @@ out([t(long, 1, at(400, 600)), t(long, 1, at(420, 580, 2)), t(long + " that runs
 
 
 @needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "recordRows"), reason="no recordRows in mockup.js")
+def test_title_rows_from_the_record(tmp_path):
+    """A one-line title's found rows (its descenders left out) take the record's ink box; a two-line title, a box off
+    the line's ends or over twice its height: as found."""
+    out = node(tmp_path, """
+const b = { lines: [[100, 20, 300, 40]], box: [100, 20, 300, 40] }, two = { lines: [[100, 20, 300, 40], [100, 50, 300, 70]], box: [100, 20, 300, 70] };
+const r = (own, bb = b) => m.recordRows(bb, own, "Pandora's Gym", 1000);
+out([r([102, 19, 298, 47]), r([102, 19, 298, 47], two), r([140, 19, 298, 47]), r([102, 19, 298, 70])]);""")
+    assert out[0] == {"lines": [[100, 19, 300, 47]], "box": [100, 19, 300, 47]}
+    assert out[1:] == [{"lines": [[100, 20, 300, 40], [100, 50, 300, 70]], "box": [100, 20, 300, 70]}] + [{"lines": [[100, 20, 300, 40]], "box": [100, 20, 300, 40]}] * 2
+
+
+@needs_js
 @pytest.mark.skipif(not has(ASSETS / "edit.js", "capsError"), reason="no stat caps in edit.js")
 def test_stat_caps_refused_as_typed(tmp_path):
     """A card's own display (owner 2026-11-08): a value past it is told as typed (edit.js capsError, cards.json statCaps),
