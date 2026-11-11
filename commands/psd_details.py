@@ -531,7 +531,7 @@ def _type_header(psd: PSDImage, name: str, vocab, rel: str = "") -> Optional[dic
         return None
     units, names, fixed = [], {}, []
     for name, layer in images:
-        why = _icon_reason(psd, layer)
+        why = _icon_reason(layer)
         if why:
             fixed.append([name, f"{layer.name!r} is {why}"])
         else:

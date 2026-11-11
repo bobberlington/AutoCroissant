@@ -50,7 +50,7 @@ from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_
                                  MutableValue, PSDParser,
                                  StatTracker, base_name, layer_tag, name_key, named_after_text, stars_from_psd,
                                  shown_in, title_text, token_variant, variant_view, variants_of)
-from commands.psd_parser import AUX_ITEM_TYPES, in_header, star_leaf, star_pieces, star_sets
+from commands.psd_parser import AUX_ITEM_TYPES, FRAME_SHARE, in_header, star_leaf, star_pieces, star_sets
 from commands import psd_parts
 from commands.psd_links import corners_of, decode, draw, file_type, link_pixels, warped
 from commands.psd_parts import lyid_index, raw_sha
@@ -168,7 +168,6 @@ COMPOSER_KEY = "29"      # a numbered story paragraph's EveryLineComposer: Photo
 STAR_FOLDER = r"\s*(\d+)\s*stars?\s*"           # a count's own folder in a Stars group: "5 stars", "1 star" (the templates)
 LAYOUT_TOL = 0.12           # a star or icon sits on a layout's spot within this share of its size
 LAYOUT_TOL_MIN = 6          # px, at least
-ICON_FRAME = 0.1            # ink over more of the canvas is a frame or a fill, not an icon or a star
 ICON_GAP = 22               # px between an icon and the one under it on a 1200-wide card (Item_Template: Attack, NME)
 LOWER_STEP = 0.1            # a blocked added star or icon steps down this share of its height at a time (_drops)
 LOWER_MIN = 4               # px, at least
@@ -6843,7 +6842,7 @@ def _blocked(psd: PSDImage, inks: list, core: tuple, others: list) -> Optional[s
         if reach is None or b[2] <= reach[0] or b[0] >= reach[2] or b[3] <= reach[1] or b[1] >= reach[3]:
             continue                            # no ink of its can meet mine: not read
         theirs = _ink(other)
-        if theirs is None or (other.kind != "type" and theirs[1].sum() > ICON_FRAME * psd.width * psd.height):
+        if theirs is None or (other.kind != "type" and theirs[1].sum() > FRAME_SHARE * psd.width * psd.height):
             continue                            # a fill or art filed with the stars (Kyle's) is neither
         if any(_inks_touch(mine, theirs) for mine in inks):
             return f"would touch {other.name!r}"
@@ -8460,8 +8459,9 @@ def type_row(psd: PSDImage, parser: PSDParser, card: str = "") -> tuple:
     The header type icons the parser reads: (image layers [(canonical name, layer)], icon-font text layers).
 
     An image layer counts as PSDParser._process_layer counts it: named after a Types/ icon, visible, with pixels, its
-    top above the midline, and not under a stat row's group. A text layer too, but the title's (title_layers: the
-    parser reads its icons as the name; review 2026-10-24: a baked "Po [fire]" refused every types edit after it).
+    top above the midline, not under a stat row's group, and no frame (PSDParser.is_frame). A text layer too, but the
+    title's (title_layers: the parser reads its icons as the name; review 2026-10-24: a baked "Po [fire]" refused every
+    types edit after it).
 
     Args:
         psd: The open card
@@ -8481,21 +8481,18 @@ def type_row(psd: PSDImage, parser: PSDParser, card: str = "") -> tuple:
                     and PSDParser._icon_font_spans(layer, layer.engine_dict["Editor"]["Text"].value)):
                 tokens.append(layer)
         elif (not parser._is_stat_layer(layer) and layer.name.lower() in parser.all_types and layer.is_visible()
-              and layer.has_pixels() and layer.bbox[1] < mid):
+              and layer.has_pixels() and layer.bbox[1] < mid and not PSDParser.is_frame(layer, psd)):
             images.append((canonical_type(parser, layer.name), layer))
     return images, tokens
 
 
-def _icon_reason(psd: PSDImage, layer) -> Optional[str]:
-    """Why a header type layer is no icon the bake moves or hides (a group, a frame round the card, text); None. By
-    ink: a card-sized smart object can hold a small icon (Godskin Apostle's)."""
+def _icon_reason(layer) -> Optional[str]:
+    """Why a header type layer is no icon the bake moves or hides (a group, text); None. A frame is in no row
+    (type_row)."""
     if layer.is_group():
         return "a group"
     if layer.kind not in ("pixel", "smartobject"):
         return f"a {layer.kind} layer"
-    x0, y0, x1, y1 = _core(layer) or layer.bbox
-    if (x1 - x0) * (y1 - y0) > ICON_FRAME * psd.width * psd.height:
-        return "a frame round the card"
     return None
 
 
@@ -8710,7 +8707,7 @@ def plan_types(psd: PSDImage, parsed: dict, value: list, parser: Optional[PSDPar
     if tokens:
         refuse(f"printed as icon tokens in {tokens[0].name!r}: edit them in Photoshop")
     plan = IconPlan("types", [name for name, _ in images], value)
-    reasons = [_icon_reason(psd, layer) for _, layer in images]
+    reasons = [_icon_reason(layer) for _, layer in images]
     left = Counter(want)
     for (name, layer), reason in zip(images, reasons):
         if reason and not left[name]:

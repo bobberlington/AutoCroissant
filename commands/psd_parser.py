@@ -47,6 +47,7 @@ STAR_TWIN = 0.15                  # stars this close (share of the larger side) 
 STAR_SPLIT_MIN = 0.25             # one layer's opaque shapes this share of its largest are stars of their own...
 STAR_SPLIT_SAME = 0.4             # ...when they are this alike in size (Grimora's row drawn as one layer)
 STAR_ICON_SHARE = 1 / 36.0        # a star-icon layer outside the Stars groups: up to this share of the card (.0: cdivision)
+FRAME_SHARE = 0.1                 # ink over more of the card is a frame or a fill round it: no icon or star
 TITLE_STACK = 0.6                 # rule P: a title line under another, within this share of its height
 # folders whose stars are counted on the card (elsewhere the folder says them); Auxiliary/Creatures print 2-5 too
 STARS_FROM_PSD = ("Auxiliary/Items", "Auxiliary/Minions", "Auxiliary/Creatures", "N.M.E")
@@ -708,7 +709,7 @@ class PSDParser:
             self._process_layer(
                 layer, card, num_stars,
                 stat_trackers, type_bboxes, abilities,
-                get_stars_from_psd, card_mid_y, titles, header)
+                get_stars_from_psd, card_mid_y, titles, header, psd)
         for layer in hidden_abilities:
             self._process_text_layer(layer, card, num_stars, abilities, get_stars_from_psd, card_mid_y,
                                      self._relaid(layer, text_layers))
@@ -1027,8 +1028,10 @@ class PSDParser:
     def _process_layer(self, layer, card: CardInfo,
                        num_stars: MutableValue, stat_trackers: StatTrackers,
                        type_bboxes: list, abilities: list,
-                       get_stars_from_psd: bool, card_mid_y: int, titles=(), header: Optional[list] = None) -> None:
-        """Process a single PSD layer (titles: title_layers(), whose icons are no header's; header: its type icons)."""
+                       get_stars_from_psd: bool, card_mid_y: int, titles=(), header: Optional[list] = None,
+                       psd=None) -> None:
+        """Process a single PSD layer (titles: title_layers(), whose icons are no header's; header: its type icons;
+        psd: the card, whose frames are no type icons: is_frame)."""
         # Text layers
         if layer.kind == "type":
             self._process_text_layer(layer, card, num_stars, abilities, get_stars_from_psd, card_mid_y,
@@ -1039,7 +1042,8 @@ class PSDParser:
             self._process_stat_layer(layer, stat_trackers)
 
         # Type layers
-        elif (base_name(layer).lower() in self.all_types and layer.is_visible() and layer.has_pixels()):
+        elif (base_name(layer).lower() in self.all_types and layer.is_visible() and layer.has_pixels()
+              and not (psd is not None and self.is_frame(layer, psd))):
             bbox = BoundingBox.from_tuple(layer.bbox[:2])
             if bbox.y < card_mid_y:
                 card.types.append(base_name(layer).lower())
@@ -1479,6 +1483,13 @@ class PSDParser:
     def _core_box(layer) -> tuple:
         """Bounding box of the layer's mostly opaque pixels, its pixel mask applied (its whole box if they can't be read)."""
         return _core_of(_read_alpha(layer), tuple(layer.bbox))
+
+    @staticmethod
+    def is_frame(layer, psd) -> bool:
+        """Whether the layer's ink covers more than FRAME_SHARE of the card: a picture round it, no icon though named
+        after one (11-11: Tomato's 'Food'); a card-sized box can hold a small icon (Godskin Apostle's)."""
+        limit = FRAME_SHARE * psd.width * psd.height
+        return _area(layer.bbox) > limit and _area(PSDParser._core_box(layer)) > limit
 
     def _is_star_layer(self, layer) -> bool:
         """Check if layer is a star layer."""

@@ -443,6 +443,16 @@ def test_types_refuse_per_field(parser, tmp_path, monkeypatch):
         _plan(parser, paths[0], REL, "types", ["fire"])
 
 
+def test_a_type_named_frame_is_no_icon(parser, tmp_path):
+    """11-11 (Tomato's 'Food'): a card-wide picture named after a type is no icon: one Fire read, kept by ["fire"],
+    the real icon hidden by []."""
+    path = _fixture(tmp_path, types=(("Fire", (0, 100), (1200, 1500)), ("Fire", (30, 30))))[0]
+    assert pe.parse_card(parser, path, REL)["card"]["types"] == ["fire"]
+    same = _plan(parser, path, REL, "types", ["fire"])
+    assert not (same.hide or same.moves or same.icons or same.show)
+    assert [tuple(layer.bbox) for layer in _plan(parser, path, REL, "types", []).hide] == [(30, 30, 150, 170)]
+
+
 # ========================
 # Real cards (copies from the clone)
 # ========================
