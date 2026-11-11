@@ -512,6 +512,29 @@ out([m.badgeLooks("(2U) (1CD) Deal 2.\\n(2CD) Draw.\\n(4 points) Heal.", old, B)
     assert out[3:] == [20.9, 25.9, 28.6]            # + 500/1000 of the fitted pill's em; 1.3 em, + 100/1000 of it
 
 
+@needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "keptLines"), reason="no kept lines in mockup.js")
+def test_an_edit_keeps_the_lines_it_leaves(tmp_path):
+    """A one-word edit: the Ability's other lines are the card's own pixels again (rows half-way to their neighbours,
+    across the old block), only the edited line is drawn. None kept: redrawn lines over 5 px off the old ones, a colour
+    edit, or an old layout with more or fewer lines than the card shows."""
+    out = node(tmp_path, """
+const W = 720, H = 80, card = new Uint8ClampedArray(W * H * 4).map((_, i) => 1 + (i % 251)), data = new Uint8ClampedArray(W * H * 4);
+const ctx = { canvas: { height: H }, measureText: () => ({ actualBoundingBoxAscent: 7 }), createImageData: (w, h) => ({ width: w, data: new Uint8ClampedArray(w * h * 4) }),
+  putImageData(im, dx, dy, x, y, w, h) { for (let r = y; r < y + h; r++) data.set(im.data.subarray((r * im.width + x) * 4, (r * im.width + x + w) * 4), ((dy + r) * W + dx + x) * 4); } };
+const measure = (s, z) => s.length * z * 0.5, found = { box: [20, 10, 50, 62], lines: [10, 25, 40, 55].map(y => [20, y, 50, y + 7]) };
+const kept = (text, o = {}) => m.keptLines(ctx, { old: "aaa bbb ccc ddd", icons: {}, lines: m.layout(m.tokenize(text), 20, 10, measure), found, maxW: 20, size: 10, measure, fam: "x", base: 17, pitch: 15, colors: null, W, ...o });
+const one = kept("aaa bbx ccc ddd"); m.keepLines(ctx, card, one, found, 10, W);
+const card_ = (y0, y1) => { for (let y = y0; y < y1; y++) for (let x = 0; x < W; x++) if (data[(y * W + x) * 4] !== (x >= 10 && x < 60 ? card[(y * W + x) * 4] : 0)) return false; return true; };
+const blank = (y0, y1) => data.subarray(y0 * W * 4, y1 * W * 4).every(v => v === 0);
+out([one.sort(), card_(5, 21), blank(21, 36), card_(36, 67), blank(0, 5) && blank(67, H), kept("aaa bbb ccc"),
+  kept("aaa bbx ccc ddd", { base: 21 }), kept("aaa bbx ccc ddd", { base: 23 }), kept("aaa bbx ccc ddd", { colors: [{ field: "ability" }] }),
+  kept("aaa bbx ccc ddd", { old: "aaa bbb ccc" }), kept("aaa bbb ccc ddd eee")]);""")
+    one, first, edited, last, outside, dropped, near, off, colour, count, added = out
+    assert one == [0, 2, 3] and first and edited and last and outside   # the edited line's rows stay erased for its redraw
+    assert dropped == [0, 1, 2] and near == [0, 3, 2] and off == colour == count == added == []
+
+
 # ---- the build's web fonts (build_site.py)
 @pytest.fixture(scope="module")
 def bs():
