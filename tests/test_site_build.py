@@ -817,8 +817,9 @@ def test_tts_details_for_the_save(bs):
     assert got["cards"]["Creatures/Hot_Guy.png"]["ac"] == [["Burning", "#db923d"]] and "nc" not in got["cards"]["Creatures/Hot_Guy.png"]
     assert got["statuses"]["Burning"]["c"] == "#db923d"                       # its STATUS EFFECTS line's colour
     words = bs.tts_words("Pay (2 points): +2 ATK, 3 SP, [fire] HPs HP (1CD) Burning, Dark; HP and HP.", {**palette, "statuses": {"Burning": "#db923d", "Dark": "#101010"}}, icons)
+    dark = [["Dark", "#646464"]] if hasattr(bs, "tts_seen") else []   # too dark: a lighter shade (TC 11-11), plain before
     assert words == [["2 points", "#00ffae"], ["+2 ATK", "#ff3b3b"], ["3 SP", "#ffff00"], ["HP", "#2fbf3a", 2], ["Burning", "#db923d"],
-                     ["HP", "#2fbf3a"], ["HP", "#2fbf3a"]]          # a cost's words too (no badge in TTS), not a tag; too dark: plain; HPs first
+                     *dark, ["HP", "#2fbf3a"], ["HP", "#2fbf3a"]]   # a cost's words too (no badge in TTS), not a tag; HPs first
 
 
 def test_badge_font_preloaded_where_badges_show(bs):
