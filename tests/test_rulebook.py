@@ -2,13 +2,18 @@
 printed again only when a page's pixels change, and the save's Rulebooks bag holding the PDF."""
 import json
 import os
+import re
+import shutil
 import subprocess
 import types
 from io import BytesIO
+from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from commands import rulebook, rulebook_pages, tts_save
+from conftest import CLONE
 
 CHAPTER = """# Stats {.x}
 
@@ -71,33 +76,45 @@ def test_pdf_printed_only_when_a_page_changes(tmp_path):
     assert book["pages"][1]["t"] == "STATS HP DEF" and "t" not in book["pages"][0]                   # each page's text: the save's search
     rulebook_pages.write_pages(str(folder), shots, pdf, "k1")                       # draw's key, for the next run's skip
     assert rulebook_pages.read_pages(str(tmp_path))["key"] == "k1" and len(printed) == 3
-    assert not rulebook_pages.write_pages(str(folder), shots, pdf, "k2")["printed"]  # a new key, the same pixels, the website behind: the print's key stays
-    assert rulebook_pages.read_pages(str(tmp_path))["key"] == "k1" and len(printed) == 3
-    assert not rulebook_pages.write_pages(str(folder), shots, pdf, "k2", settled=True)["printed"]   # the website caught up: the new key
+    assert not rulebook_pages.write_pages(str(folder), shots, pdf, "k2")["printed"]  # a new key, the same pixels: kept
     assert rulebook_pages.read_pages(str(tmp_path))["key"] == "k2" and len(printed) == 3
     assert rulebook_pages.key("<sheets>", str(tmp_path)) == rulebook_pages.key("<sheets>", str(tmp_path)) != rulebook_pages.key("<sheet>", str(tmp_path))
 
 
-def test_site_settled_by_its_build(tmp_path, monkeypatch):
-    """The key is kept without a print only when the website's build (the main commit dated cards.json's source) has
-    HEAD's rulebook pictures and fonts and MDW/Fonts; a later commit elsewhere doesn't hold it back."""
-    def commit(when, rel):
-        (tmp_path / rel).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / rel).write_text(when)
-        env = {**os.environ, "GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when}
-        for args in (["add", "-A"], ["-c", "core.hooksPath=/dev/null", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", rel]):
-            subprocess.run(["git", "-C", str(tmp_path), *args], check=True, capture_output=True, env=env)
+def _commit(repo, when, files):
+    for rel, data in files.items():
+        (repo / rel).parent.mkdir(parents=True, exist_ok=True)
+        (repo / rel).write_bytes(data)
+    env = {**os.environ, "GIT_AUTHOR_DATE": when, "GIT_COMMITTER_DATE": when}
+    for args in (["add", "-A"], ["-c", "core.hooksPath=/dev/null", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", when]):
+        subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True, env=env)
+
+
+def test_site_settled_by_its_build(tmp_path):
+    """Settled: the website's build (the main commit dated cards.json's source; a batch shares a date) has HEAD's
+    chapters, rulebook pictures and web fonts, Types/ icons (41ab8074's table map, [buff]) and site code; later cards,
+    book fonts or other files don't hold it back; no commit of that date in HEAD's history: a later main (the whole
+    history looked at: a commit dated before its parent, as 1912f245, hides no build)."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
-    commit("2026-11-08T05:00:00+00:00", "Items/a.png")
-    commit("2026-11-08T05:41:00+00:00", "MDW/Fonts/a.ttf")
-    commit("2026-11-08T07:00:00+00:00", "Items/b.png")
-    built = {}
-    monkeypatch.setattr(rulebook_pages, "urlopen", lambda request, timeout: BytesIO(json.dumps(built).encode()))
-    for source, branch, settled in (("2026-11-07T21:41:00-08:00", "main", True), ("2026-11-08T07:00:00+00:00", "main", True),
-                                    ("2026-11-08T05:00:00+00:00", "main", False), ("2026-11-08T06:00:00+00:00", "main", False),
-                                    ("2026-11-08T07:00:00+00:00", "work", False), ("", "main", False)):
-        built.update(source=source, branch=branch)
-        assert rulebook_pages.site_settled("https://site", str(tmp_path)) is settled, source
+    _commit(tmp_path, "2026-11-10T20:00:00+00:00", {"site/rulebook/01-a.md": b"# A", "site/rulebook/img/table-map.webp": b"1", "Items/a.png": b"a"})
+    _commit(tmp_path, "2026-11-10T20:16:39+00:00", {"site/rulebook/img/table-map.webp": b"2"})
+    settled = lambda source, branch="main": rulebook_pages.site_settled("https://site", str(tmp_path), {"cards": {"source": source, "branch": branch}})
+    assert not settled("2026-11-10T20:00:00+00:00") and settled("2026-11-10T20:16:39+00:00")       # 41ab8074
+    _commit(tmp_path, "2026-11-10T20:30:00+00:00", {"Types/Buff.PNG": b"b"})
+    for files in ({"Items/b.png": b"b", "MDW/Fonts/a.ttf": b"f"}, {"Types/Stars/S.png": b"s", "site/rulebook/notes.txt": b"n"}):
+        _commit(tmp_path, "2026-11-10T21:00:00+00:00", files)                 # a batch: one date
+    _commit(tmp_path, "2026-11-10T21:05:00+00:00", {"Items/c.png": b"c", "Types/readme.webp": b"r"})
+    for source in ("2026-11-10T21:00:00+00:00", "2026-11-10T21:05:00+00:00", "2026-11-10T22:00:00+00:00"):
+        assert settled(source), source
+    for source in ("2026-11-10T12:16:39-08:00", "2026-11-10T20:00:00+00:00", "2026-11-10T20:30:00+00:00", ""):
+        assert not settled(source), source
+    assert not settled("2026-11-10T21:00:00+00:00", "work")
+    _commit(tmp_path, "2026-11-10T21:10:00+00:00", {"site/assets/rulebook.js": b"j"})
+    assert not settled("2026-11-10T21:05:00+00:00") and settled("2026-11-10T21:10:00+00:00")
+    _commit(tmp_path, "2026-11-10T21:20:00+00:00", {"Items/d.png": b"d"})                        # the build
+    _commit(tmp_path, "2026-11-10T21:15:00+00:00", {"Items/e.png": b"e"})                        # dated before its parent
+    _commit(tmp_path, "2026-11-10T21:25:00+00:00", {"site/rulebook/img/table-map.webp": b"3"})
+    assert not settled("2026-11-10T21:20:00+00:00") and settled("2026-11-10T21:25:00+00:00")
 
 
 def _seen(**cards):
@@ -130,14 +147,14 @@ def test_pre_key_and_the_skip(tmp_path, monkeypatch):
     shots = [({"name": "Cover", "num": ""}, _png("white"))]
     rulebook_pages.write_pages(str(folder), shots, lambda: b"%PDF", "k1")
     monkeypatch.setattr(rulebook_pages, "site_inputs", lambda site: _seen())
-    monkeypatch.setattr(rulebook_pages, "site_settled", lambda site, checkout, built=None: True)
+    monkeypatch.setattr(rulebook_pages, "site_settled", lambda site, checkout, seen=None: True)
     drawn = {"key": "k1", "n": 0}
 
     def draw(site, exe, key_of, known, fonts):
         drawn["n"] += 1
         new = drawn["key"] != known
         return ({"01-a.md": "# A\n![[Mushroom]] and [[Panda|the panda]]\n"}, shots if new else None,
-                rulebook_pages.Printer(lambda: b"%PDF", lambda: None), drawn["key"], "pg")
+                rulebook_pages.Printer(lambda: b"%PDF", lambda: None), drawn["key"], "pg", {})
     monkeypatch.setattr(rulebook_pages, "draw", draw)
     run = lambda **kw: rulebook_pages.update_pages(str(tmp_path), exe="/no/chrome", **kw)
     mine = rulebook_pages.pre_key(_seen(), rulebook_pages._trees(str(tmp_path)), [], "/no/chrome")
@@ -149,6 +166,115 @@ def test_pre_key_and_the_skip(tmp_path, monkeypatch):
     monkeypatch.setattr(rulebook_pages, "PRE_SKIP", False)
     drawn["key"] = "k2"                                                                                           # an input pre misses
     assert "::warning::" in run() and rulebook_pages.read_pages(str(tmp_path))["key"] == "k2"
+
+
+def test_the_look_waits_for_the_site(tmp_path, monkeypatch, capsys):
+    """11-10 (41ab8074): the look waits (up to wait, polled, no Chrome) until the website shows HEAD's chapters and is
+    settled, then draws once; else, or when Chrome drew another build or an older copy of a plain-URL font or picture
+    than HEAD's (the CDN's), nothing changes and the command line exits 3 (card-sync.yml marks the lane)."""
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    _commit(tmp_path, "2026-11-10T20:00:00+00:00", {"site/rulebook/01-a.md": b"# A\n", "site/rulebook/fonts/a b.woff2": b"f2"})
+    font = rulebook_pages.heads(str(tmp_path), ["rulebook/fonts/a%20b.woff2", "rulebook/img/gone.webp"])
+    assert font["rulebook/img/gone.webp"] is None and len(font["rulebook/fonts/a%20b.woff2"]) == 40
+    folder = tmp_path / "TTS" / "Rulebook"
+    folder.mkdir(parents=True)
+    shots = [({"name": "Cover", "num": ""}, _png("white"))]
+    rulebook_pages.write_pages(str(folder), shots, lambda: b"%PDF", "k0")
+    monkeypatch.setattr(rulebook_pages, "site_inputs", lambda site: dict(_seen(), rules=json.dumps({"chapters": [{"file": "01-a.md", "source": "# A\n"}]}).encode()))
+    monkeypatch.setattr(rulebook_pages, "find_chrome", lambda: "/no/chrome")
+    monkeypatch.setattr(rulebook_pages, "sleep", lambda s: None)
+    clock = iter(range(0, 10000, 20))
+    monkeypatch.setattr(rulebook_pages, "monotonic", lambda: next(clock))
+    drawn = {"page": "pg", "plain": dict(font, **{"rulebook/img/gone.webp": None}), "n": 0}
+
+    def draw(site, exe, key_of, known, fonts):
+        drawn["n"] += 1
+        return {"01-a.md": "# A\n"}, shots, rulebook_pages.Printer(lambda: b"%PDF", lambda: None), "k1", drawn["page"], drawn["plain"]
+    monkeypatch.setattr(rulebook_pages, "draw", draw)
+    run = lambda: (rulebook_pages.main([str(tmp_path), "--wait", "600"]), capsys.readouterr().out)
+    looks = iter([False, False, True])                     # the deploy lands at the third look
+    monkeypatch.setattr(rulebook_pages, "site_settled", lambda site, checkout, seen=None: next(looks))
+    assert run() == (0, "Rulebook PDF: 1 pages, as they were (key k1 kept).\n") and drawn["n"] == 1 and next(looks, None) is None
+    monkeypatch.setattr(rulebook_pages, "site_settled", lambda site, checkout, seen=None: False)   # not in 10 minutes
+    code, out = run()
+    assert code == 3 and rulebook_pages.LAGS in out and drawn["n"] == 1
+    monkeypatch.setattr(rulebook_pages, "site_settled", lambda site, checkout, seen=None: True)
+    for change in ({"page": "pg-old"}, {"plain": dict(drawn["plain"], **{"rulebook/fonts/a%20b.woff2": "0" * 40})},
+                   {"plain": dict(drawn["plain"], **{"rulebook/fonts/a%20b.woff2": None})}):
+        before = {k: drawn[k] for k in change}
+        drawn.update(change)
+        code, out = run()
+        assert code == 3 and rulebook_pages.LAGS in out and rulebook_pages.read_pages(str(tmp_path))["key"] == "k1", change
+        drawn.update(before)
+    assert run()[0] == 0 and drawn["n"] == 5
+
+
+def _gh_bash(script, cwd, env, timeout=60):
+    """A workflow step's script as GitHub's shell: bash runs it (expressions dropped)."""
+    script = re.sub(r"\$\{\{.*?\}\}", "", script)
+    return subprocess.run(["bash", "--noprofile", "--norc", "-eo", "pipefail", "-c", script], cwd=cwd, env=env,
+                          capture_output=True, text=True, timeout=timeout)
+
+
+def test_card_sync_marks_a_look_that_waited_in_vain(tmp_path):
+    """card-sync.yml as written: Rulebook PDF's exit 3 (the website lagged past the wait) sets lag and the step after it
+    marks the lane, as it does a failed step (exit 1, its time run out); the Gate of the schedule's next run passes over a
+    marked lane, so a rulebook picture's commit since the lane before it is card input (GO); unmarked, nothing to do."""
+    yaml = pytest.importorskip("yaml")
+    path = Path(os.path.expanduser(os.environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "card-sync.yml"
+    if not path.is_file():
+        pytest.skip(f"no {path}")
+    main = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["main"]
+    assert main["defaults"]["run"]["shell"] == "bash"
+    steps = {s.get("name"): s for s in main["steps"]}
+    names = [s.get("name") for s in main["steps"]]
+    pages, gate = steps["Rulebook PDF"], steps["Gate"]
+    mark = steps[gate["env"]["UNDRAWN"]]
+    assert names.index(mark["name"]) == names.index("Rulebook PDF") + 1
+    assert all(c in mark["if"] for c in ("steps.pages.outputs.lag == 'true' || steps.pages.outcome == 'failure'", "env.DRY_RUN != 'true'"))
+    assert pages["continue-on-error"] is True and pages["timeout-minutes"] * 60 >= rulebook_pages.SITE_WAIT + 120
+    repo, bin_ = tmp_path / "ws", tmp_path / "bin"
+    (repo / "bot").mkdir(parents=True)
+    bin_.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    _commit(repo, "2026-11-10T20:00:00+00:00", {"TTS/Rulebook/pages.json": b"{}", "site/rulebook/01-a.md": b"# A"})
+    old = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+    _commit(repo, "2026-11-10T20:16:39+00:00", {"site/rulebook/img/table-map.webp": b"2"})
+    head = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+    venv = tmp_path / "temp" / "venv" / "bin"
+    venv.mkdir(parents=True)
+    for name, body in {"fc-list": "echo 'Noto Color Emoji'", "python": 'echo "Rulebook PDF: a look"; exit "$CODE"',
+                       "gh": 'f=$1; [ "$1" = api ] && f=$(basename "$(dirname "$2")"); jq -r "${@: -1}" "$FIX/$f.json"'}.items():
+        for where in (bin_, venv) if name == "python" else (bin_,):
+            (where / name).write_text(f"#!/bin/bash\n{body}\n")
+            (where / name).chmod(0o755)
+    if not shutil.which("jq"):
+        pytest.skip("no jq (gh's --jq)")
+    env = {"PATH": f"{bin_}:{os.path.dirname(shutil.which('jq'))}:/usr/bin:/bin", "RUNNER_TEMP": str(tmp_path / "temp"), "GITHUB_WORKSPACE": str(repo),
+           "SITE_URL": "https://site", "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"), "HOME": str(tmp_path)}
+    for code, ok, lag in (("0", True, "false"), ("3", True, "true"), ("1", False, None)):
+        out = tmp_path / f"out{code}"
+        out.write_text("")
+        done = _gh_bash(pages["run"], repo / "bot", {**env, "CODE": code, "GITHUB_OUTPUT": str(out)})
+        assert (done.returncode == 0) is ok, (code, done.stdout, done.stderr)
+        assert (f"lag={lag}" in out.read_text().split()) if lag else "lag=" not in out.read_text(), (code, out.read_text())
+    fix = tmp_path / "fix"
+    fix.mkdir()
+    (fix / "run.json").write_text(json.dumps([{"databaseId": 3, "headSha": head, "displayTitle": "Card sync"},
+                                              {"databaseId": 2, "headSha": old, "displayTitle": "Card sync"}]))
+    job = lambda marked: {"jobs": [{"name": gate["env"]["LANE"], "conclusion": "success", "steps": [
+        {"name": "Gate", "conclusion": "success"}, {"name": "Rulebook PDF", "conclusion": "success"},
+        {"name": mark["name"], "conclusion": "success" if marked else "skipped"}]}]}
+    (fix / "2.json").write_text(json.dumps(job(False)))
+    for marked, go in ((True, "true"), (False, "false")):
+        (fix / "3.json").write_text(json.dumps(job(marked)))
+        envs = tmp_path / "env"
+        envs.write_text("")
+        done = _gh_bash(gate["run"], repo, {**env, "FIX": str(fix), "GITHUB_EVENT_NAME": "schedule", "GITHUB_REPOSITORY": "o/r",
+                                            "GITHUB_OUTPUT": str(tmp_path / "gate-out"), "GITHUB_ENV": str(envs), "DRY_RUN": "false",
+                                            "LANE": gate["env"]["LANE"], "UNDRAWN": gate["env"]["UNDRAWN"], "RETRY": "", "CHAIN": "",
+                                            "GIT_NO_LAZY_FETCH": "1"})
+        assert done.returncode == 0 and f"GO={go}" in envs.read_text().split(), (marked, done.stdout, done.stderr)
 
 
 def _card(guid, path, nick, deck_id):
