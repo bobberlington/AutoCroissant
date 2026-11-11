@@ -6,7 +6,7 @@ description: "How AutoCroissant changes are classified, gated and shipped. Use b
 # AutoCroissant change control
 
 How changes get classified, gated, and shipped in this repo. AutoCroissant is a
-personal Discord bot with **no CI, no README** and only an offline pytest suite (`tests/`) — the rules below are the
+personal Discord bot with **no CI** (a short `README.md` since 2026-10-20) and only an offline pytest suite (`tests/`) — the rules below are the
 real safety system, and every one of them exists because something broke.
 Facts and line numbers verified 2026-07-11 (repo at commit 284d13c, 192 commits); re-verified 2026-10-20
 (HEAD 9fb3093, 207 commits), after that day's optimization pass (working tree on 167f30a), and on 2026-10-23
@@ -19,8 +19,8 @@ Facts and line numbers verified 2026-07-11 (repo at commit 284d13c, 192 commits)
   `commands/card_data.py`); the bot syncs a gitignored copy into `card_data/`. Its history is the data branch's commits.
 - **The pickles** (history): `stats.pkl`, `old_stats.pkl`, `aliases.pkl` and `psd_details.json` were this repo's committed
   database until 2026-10-25 (DATA_BUILD_ACTION.md step 10 deleted them, with `/push` and the `CARD_SYNC` switch). Their
-  **PICKLE commits** (message literally `PICKLE`, made by the bot's `/push`) stay in git history; the build's seed and the
-  diagnostics still read them from there.
+  **PICKLE commits** (message literally `PICKLE`, made by the bot's `/push`) stay in git history; nothing reads them since 2026-10-25 (the seed and the
+  allow-list unpickler went at step 10).
 - **Dev machine**: where a human edits code and runs `git push`.
 - **Running host**: whichever machine currently runs the bot. Production is the Jetson
   (systemd `autocroissant.service`, Python 3.14 venv `~/venvs/autocroissant` since 2026-10-20); the owner's Mac at other times. It
@@ -34,7 +34,7 @@ Facts and line numbers verified 2026-07-11 (repo at commit 284d13c, 192 commits)
 
 | Class | Examples | Ships how | Gate before shipping |
 |---|---|---|---|
-| (a) Code | any `.py`, `setup.py`, skills | `git push` from a dev machine → on the Jetson: the `jetson-deploy` skill (pull, psd-tools pin, incremental `build_ext --inplace`, restart, journal check; since 2026-10-24). Discord `/pull` + `/restart_bot` or `/update` skip the Cython rebuild, so changed compiled modules stay stale — and since the 2026-10-20 split a stale `.so` can stop the bot at startup (analytics.so still imports `perms_check`), so after a code deploy always rebuild. **Deploy rule (2026-10-22/23 incidents):** push main and deploy the jetson in one sitting, or a /pull or /update brings the new `.py` files next to stale `.so` files and the next restart fails at import (the old 05:00-05:40 window was for the scheduled /update_stats and /push of the pickle era). A psd-tools fork tag change is one line in `requirements-cards.txt` (the one pin; the four card Actions install that file from main), then reinstalling the fork in the jetson venv with `--force-reinstall` (autocroissant-build-and-env §4) | The offline suite passes before every push: `~/.venvs/ac-py314-fork/bin/python -m pytest -n auto -q tests` (933 tests on 2026-11-10, about 2 minutes; autocroissant-validation-and-qa row 1c). A change to the parser or any card module also needs the ~812-PSD old-vs-new parse gate (validation-and-qa §4.1 method A: 0 differences, or every difference intended and written down first). A parser change that must reach the stored cards bumps `PARSER_VERSION` (psd_parser.py:24; 4 since 2026-10-25): the next Card sync re-parses every card once (~812 PSDs over budgeted runs, approved through gate G4; validation-and-qa §4). Checklist below if it adds a command; non-negotiables table always |
+| (a) Code | any `.py`, `setup.py`, skills | `git push` from a dev machine → on the Jetson: the `jetson-deploy` skill (pull, psd-tools pin, incremental `build_ext --inplace`, restart, journal check; since 2026-10-24). Discord `/pull` + `/restart_bot` or `/update` skip the Cython rebuild, so changed compiled modules stay stale — and since the 2026-10-20 split a stale `.so` can stop the bot at startup (analytics.so still imports `perms_check`), so after a code deploy always rebuild. **Deploy rule (2026-10-22/23 incidents):** push main and deploy the jetson in one sitting, or a /pull or /update brings the new `.py` files next to stale `.so` files and the next restart fails at import (the old 05:00-05:40 window was for the scheduled /update_stats and /push of the pickle era). A psd-tools fork tag change is one line in `requirements-cards.txt` (the one pin; the four card Actions install that file from main), then reinstalling the fork in the jetson venv with `--force-reinstall` (autocroissant-build-and-env §4) | The offline suite passes before every push: `~/.venvs/ac-py314-fork/bin/python -m pytest -n auto -q tests` (933 tests on 2026-11-10, about 2 minutes; autocroissant-validation-and-qa row 1c). A change to the parser or any card module also needs the ~812-PSD old-vs-new parse gate (validation-and-qa §4.1 method A: 0 differences, or every difference intended and written down first). A parser change that must reach the stored cards bumps `PARSER_VERSION` (psd_parser.py:25; 7 since 2026-11-09): the next Card sync re-parses every card once (~812 PSDs over budgeted runs, approved through gate G4; validation-and-qa §4). Checklist below if it adds a command; non-negotiables table always |
 | (b) Data (the card data) | db/ on TTSCardMaker's `data` branch | Written ONLY by the Card sync Action (stage `build`, `python -m commands.card_data`; at most one data commit per run, never forced; gates G1-G6); people change it through its inputs: the PSDs, PNGs and `site/` files on TTSCardMaker main (class (d)). A data rollback is a `restore=<good data commit>` dispatch (DATA_BUILD_ACTION.md §13). Until 2026-10-25 the pickles here, written by `/update_stats` and committed by `/push` | **The data commit's review** (its per-card lines and the job summary; `diff_stats.py` between two data commits, below) |
 | (c) Config | config.py values (TOKEN, ADMINS, GIT_TOKEN, browser_cookies, ...) | Edited by hand per machine. NEVER committed (gitignored, `.gitignore:36` as of 2026-10-19). Values are secret — never print or quote them | New config *fields* route through autocroissant-config-and-flags |
 | (d) Card content | a card's art, ability text, stats, folder; Types/ icons, the stoogedings font and its manifest | Edit in TTSCardMaker (or on the website) and push THERE; Card sync re-parses and commits the data, the bot syncs it (and re-syncs emojis via `/sync_emojis`) | TTSCardMaker's own process; then the data gate applies to the re-parse. Renaming or deleting a Types/ PNG is a cross-repo change — ttscardmaker-companion §1.7 |
@@ -52,7 +52,7 @@ rebase fallback, and the restart mechanics — lives in autocroissant-run-and-op
 - **/pull** → `git_pull()`: fetch + merge, never a reset. On merge **CONFLICT** every file takes the remote side
   (`checkout --theirs`), committed as `AUTO-RESOLVE: Merge conflict resolved (accepted remote)`. The bot's clone commits
   nothing else (the reminder backup pushes from a separate clone), so a /pull is normally a fast-forward.
-- **/update** → `update_bot()`: stops the four loops first, then `/pull` + restart. With `force_reset:True` it instead
+- **/update** → `update_bot()`: stops the five loops first, then `/pull` + restart. With `force_reset:True` it instead
   runs `git reset --hard origin/main` (`git_reset_hard`) and restarts: it discards local code changes only (the card
   data is gitignored in `card_data/` and on GitHub).
 - **/push** was removed on 2026-10-25 (step 10). Until then it committed the pickles as `PICKLE`, rebased onto new code
@@ -68,7 +68,7 @@ DATA_BUILD_ACTION.md §13): a refusal commits nothing and uploads the would-be d
 data commit's per-card lines and the run's job summary; to measure it, diff two data commits:
 
 ```
-git -C ~/Desktop/TTSCardMaker fetch -q --depth 2 origin +data:refs/remotes/origin/data
+GIT_NO_LAZY_FETCH=1 git -C ~/Desktop/TTSCardMaker fetch -q origin +data:refs/remotes/origin/data   # no --depth: full history since 2026-11-10
 python3 .claude/skills/autocroissant-diagnostics-and-tooling/scripts/diff_stats.py origin/data~1 origin/data \
     --git ~/Desktop/TTSCardMaker
 ```
@@ -206,8 +206,7 @@ ignored — read the story before you decide the rule doesn't apply to you.
 - **Renaming a `CardInfo`/`CardStats` field (commands/card_models.py).** The card data's records are CardInfo's
   attribute names (`card_db.record`), read by the bot, the build and TTSCardMaker's site build (`CARD_FIELDS`): a rename
   needs a data migration and the site's field lists in lockstep (precedent: the "Big massive refactor", 366c8d9,
-  2025-10-20, rebuilt the pickles in the same commit). The historical pickles' allow-list (`card_db.ALLOWED`) names both
-  module paths, `commands.psd_analyzer` and `commands.card_models`: keep them for the seed and the diagnostics.
+  2025-10-20, rebuilt the pickles in the same commit).
 - **"Cleaning up" `x[len(x)-1]` to `x[-1]`** in any INCLUDE_FILES module. That idiom
   is deliberate (non-negotiable #1; dd800bc). Same for adding `.removeprefix()`-style
   "modernizations" without checking what the original expression did — that exact
@@ -349,3 +348,5 @@ main.py, update_bot.py, help.py, psd_parser.py and card_models.py citation re-po
 2026-11-09 (forum votes): `forum_votes.json` and its temp file in the never-commit table (.gitignore 95-96).
 
 2026-11-10 (sparse list): step 5 counts 25 entries and adds the lazy-import rule (psd_details, AC 7735f28d); a provenance row for it.
+
+2026-11-11 (docs check): no README claim dropped (one since 2026-10-20); nothing reads the pickles (`card_db.ALLOWED` gone); `PARSER_VERSION` 7 (:25); /update stops five loops; the data gate's fetch has no --depth (the Mac's clone has full history since 2026-11-10).
