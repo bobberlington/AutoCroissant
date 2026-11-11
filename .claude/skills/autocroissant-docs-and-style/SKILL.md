@@ -6,11 +6,11 @@ description: AutoCroissant's docs of record and house code style. Use for /help 
 # AutoCroissant docs and style
 
 House style and docs-of-record maintenance for a personal Discord bot with **no
-CI, no README** (only an offline pytest suite in `tests/`). Because there is no README, the documentation users
-actually see is generated from code: the `/help` command reads dictionaries in
+CI** and only a short `README.md` (since 2026-10-20: run, test, deploy, where the docs are) and an offline pytest
+suite in `tests/`. The documentation users actually see is generated from code: the `/help` command reads dictionaries in
 `commands/help.py`, and Discord's slash-command UI shows the
 `@app_commands.describe` strings from `main.py`. Those two surfaces plus this
-skill library are the only docs this project has — keeping them truthful is the
+skill library are the docs of record (the README and `docs/` point into them) — keeping them truthful is the
 whole job. Facts and line numbers verified 2026-07-11 (repo at commit 284d13c);
 sections 2-5 and 7 re-verified 2026-10-20 (HEAD 9fb3093; AI generation now lives
 only on branch `archive/ai-generation`). Re-verify with the commands in
@@ -513,3 +513,5 @@ its ownership row in §7.3. Refresh the date stamps whenever you touch this file
 lines re-pointed (help.py 99 lines).
 
 2026-11-10 (status cards): §7.3's ttscardmaker-companion row owns the status effect cards' standard (its §1.12).
+
+2026-11-11 (docs check): the intro says there is a short README (since 2026-10-20).
