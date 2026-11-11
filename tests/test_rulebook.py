@@ -99,7 +99,7 @@ def test_site_settled_by_its_build(tmp_path):
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     _commit(tmp_path, "2026-11-10T20:00:00+00:00", {"site/rulebook/01-a.md": b"# A", "site/rulebook/img/table-map.webp": b"1", "Items/a.png": b"a"})
     _commit(tmp_path, "2026-11-10T20:16:39+00:00", {"site/rulebook/img/table-map.webp": b"2"})
-    settled = lambda source, branch="main": rulebook_pages.site_settled("https://site", str(tmp_path), {"cards": {"source": source, "branch": branch}})
+    settled = lambda source, branch="main": rulebook_pages.site_settled(str(tmp_path), {"cards": {"source": source, "branch": branch}})
     assert not settled("2026-11-10T20:00:00+00:00") and settled("2026-11-10T20:16:39+00:00")       # 41ab8074
     _commit(tmp_path, "2026-11-10T20:30:00+00:00", {"Types/Buff.PNG": b"b"})
     for files in ({"Items/b.png": b"b", "MDW/Fonts/a.ttf": b"f"}, {"Types/Stars/S.png": b"s", "site/rulebook/notes.txt": b"n"}):
@@ -158,7 +158,7 @@ def test_pre_key_and_the_skip(tmp_path, monkeypatch):
     shots = [({"name": "Cover", "num": ""}, _png("white"))]
     rulebook_pages.write_pages(str(folder), shots, lambda: b"%PDF", "k1")
     monkeypatch.setattr(rulebook_pages, "site_inputs", lambda site: _seen())
-    monkeypatch.setattr(rulebook_pages, "site_settled", lambda site, checkout, seen=None: True)
+    monkeypatch.setattr(rulebook_pages, "site_settled", lambda checkout, seen: True)
     drawn = {"key": "k1", "n": 0}
 
     def draw(site, exe, key_of, known, fonts):
@@ -207,13 +207,13 @@ def test_the_look_waits_for_the_site(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(rulebook_pages, "draw", draw)
     run = lambda: (rulebook_pages.main([str(tmp_path), "--wait", "600"]), capsys.readouterr().out)
     looks = iter([False, False, True])                     # the deploy lands at the third look
-    monkeypatch.setattr(rulebook_pages, "site_settled", lambda site, checkout, seen=None: next(looks))
+    monkeypatch.setattr(rulebook_pages, "site_settled", lambda checkout, seen: next(looks))
     assert run() == (0, "Rulebook PDF: 1 pages, as they were (key k1 kept).\n") and drawn["n"] == 1 and next(looks, None) is None
     rulebook_pages.write_pages(str(folder), shots, lambda: b"%PDF", "k0")
-    monkeypatch.setattr(rulebook_pages, "site_settled", lambda site, checkout, seen=None: False)   # not in 10 minutes
+    monkeypatch.setattr(rulebook_pages, "site_settled", lambda checkout, seen: False)   # not in 10 minutes
     code, out = run()
     assert code == 3 and rulebook_pages.LAGS in out and drawn["n"] == 1
-    monkeypatch.setattr(rulebook_pages, "site_settled", lambda site, checkout, seen=None: True)
+    monkeypatch.setattr(rulebook_pages, "site_settled", lambda checkout, seen: True)
     for lag in (("pg-old", good[1]), ("pg", dict(good[1], **{"rulebook/fonts/a%20b.woff2": "0" * 40})),
                 ("pg", dict(good[1], **{"rulebook/fonts/a%20b.woff2": None}))):
         drawn["lag"], n = [lag] * 1000, drawn["n"]          # past the wait

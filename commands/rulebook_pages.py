@@ -430,12 +430,11 @@ def _git(checkout: str, *args, codes=(0,)) -> tuple:
     return got.returncode, got.stdout.decode()
 
 
-def site_settled(site: str, checkout: str, seen: Optional[dict] = None) -> bool:
-    """Whether the website (seen: site_inputs()'s, else fetched) was built from main with HEAD's SITE_PATHS: the commit
-    of its build's date (cards.json's source; of a batch sharing one, the newest) has them, or none in HEAD's history has
-    that date (a later main). False when unreadable or another branch's."""
+def site_settled(checkout: str, seen: dict) -> bool:
+    """Whether the website (seen: site_inputs()'s) was built from main with HEAD's SITE_PATHS: the commit of its build's
+    date (cards.json's source; of a batch sharing one, the newest) has them, or none in HEAD's history has that date (a
+    later main). False when unreadable or another branch's."""
     try:
-        seen = seen or site_inputs(site)
         if not seen or seen["cards"].get("branch") != "main":
             return False
         at = int(datetime.fromisoformat(seen["cards"]["source"]).timestamp())
@@ -461,7 +460,7 @@ def wait_for_site(site: str, checkout: str, mine: dict, wait: float) -> Optional
     until = monotonic() + wait
     while True:
         seen = site_inputs(site)
-        if seen and _chapters(seen["rules"]) == mine and site_settled(site, checkout, seen):
+        if seen and _chapters(seen["rules"]) == mine and site_settled(checkout, seen):
             return seen
         if monotonic() + SITE_POLL > until:
             return None
