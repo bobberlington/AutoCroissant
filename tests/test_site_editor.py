@@ -1,10 +1,11 @@
 """
 The website editor's helpers (TTSCardMaker site/assets, in node): the tooltip's hide rules (tip.js: the stuck "Click to
 edit" of 2026-10-23), drafts of unsaved edits (drafts.js), the Edit dialog's live preview (live.js), the stars slider
-(stars.js) and the type palette (palette.js). Loads them from $AC_SITE_SRC (a TTSCardMaker checkout) or the clone;
-skips without node or a site before them (TTSCardMaker work/site2-editor).
+(stars.js), the type palette (palette.js) and the dialogs' focus (app.js). Loads them from $AC_SITE_SRC (a
+TTSCardMaker checkout) or the clone; skips without node or a site before them (TTSCardMaker work/site2-editor).
 """
 import json
+import re
 import shutil
 from os import environ
 from os.path import expanduser
@@ -125,3 +126,39 @@ process.stdout.write(JSON.stringify({ vocab, all: q(""), fi: q("fi"), flame: q("
     assert out["fi"] == ["field", "fire"] and out["flame"] == ["fire"] and out["f"] == ["field", "fire"]
     assert out["e"] == [] and out["et"] == ["wetland", "water"] and out["min"] == ["defensive_minion"] and out["none"] == []
 
+
+
+# ---- app.js dialogs
+def test_the_page_under_a_dialog_takes_no_focus(tmp_path):
+    """app.js: under an open dialog the skip link, header and #view are inert (a card page's from the start), set once
+    focus is in the dialog (the opener known) and lifted in closeModal itself, so focus goes back to the opener."""
+    app = (ASSETS / "app.js").read_text(encoding="utf-8")
+    close = re.search(r"^function closeModal\(\) \{\n.*?^\}\n", app, re.S | re.M)[0]
+    code = close + app[app.index("let opener = null;"):app.index("function showDialog(")]
+    out = node(tmp_path, r"""
+let cb, queued = false, hid = false, dialog;
+const notify = () => { if (!queued) { queued = true; queueMicrotask(() => { queued = false; cb(); }); } }, tick = () => new Promise(r => setTimeout(r));
+class N { constructor(name, parent) { this.name = name; this.parent = parent; this.on = false; this.dataset = {}; this.isConnected = true; }
+  get inert() { return this.on; } set inert(v) { this.on = v; if (v && this.contains(document.activeElement)) document.activeElement = body; }   // focus inside drops
+  contains(e) { for (; e; e = e.parent) if (e === this) return true; return false; }
+  focus() { for (let e = this; e; e = e.parent) if (e.on) return; const was = document.activeElement; document.activeElement = this;
+    if (modal.contains(this) && !modal.contains(was)) modal.focusin({ relatedTarget: was === body ? null : was }); }
+  hasAttribute() { return false; } matches() { return false; } addEventListener(t, h) { this[t] = h; } }
+const body = new N("body"), skip = new N("skip", body), header = new N("header", body), view = new N("view", body), tile = new N("tile", view);
+const modal = new N("modal", body), toast = new N("toast", body), document = { activeElement: body, title: "", body: Object.assign(body, { style: {} }) };
+Object.defineProperty(modal, "hidden", { get: () => hid, set: v => { hid = v; notify(); } });
+Object.defineProperty(modal, "innerHTML", { set: v => { if (modal.contains(document.activeElement)) document.activeElement = body; dialog = v ? new N("dialog", modal) : null; notify(); } });
+dialog = new N("dialog", modal);                                      // a card page: its dialog already up
+const $ = sel => ({ ".skip": skip, "header.top": header, ".dialog": dialog })[sel] ?? null, nearby = { disconnect() {} };
+globalThis.MutationObserver = class { constructor(f) { cb = f; } observe() {} };
+const inert = () => [skip, header, view, toast].map(e => e.inert), r = {};
+""" + code + r"""
+r.page = inert(); closeModal(); r.closed = inert(); await tick();
+tile.focus(); modal.innerHTML = "x"; modal.hidden = false; await tick();
+r.open = inert(); r.at = document.activeElement.name; tile.focus(); r.tab = document.activeElement.name;
+closeModal(); r.shut = inert(); await tick(); r.back = document.activeElement.name;
+process.stdout.write(JSON.stringify(r));
+""")
+    assert out["page"] == out["open"] == [True, True, True, False]          # #toast (its Undo) stays reachable
+    assert out["closed"] == out["shut"] == [False] * 4                      # at once: a focus() right after a close works
+    assert (out["at"], out["tab"], out["back"]) == ("dialog", "dialog", "tile")
