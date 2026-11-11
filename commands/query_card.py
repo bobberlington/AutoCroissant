@@ -60,6 +60,7 @@ REGISTRY = ("git_files", "card_keys", "blobs", "ambiguous_names", "_spaced", "_e
 NOT_CARDS = ("MDW/", "Types/")                           # icons, old pages, linked files: found by exact name only
 TREE_VERSION = 1                                         # CARD_TREE_JSON's layout
 WEB_NORM = compile(r"[\s_\-.'\u2019]+")                    # what the website's norm() drops (site/assets/text.js)
+NAME_NORM = compile(r"[\s_\-.'\u2019!?,:\u2122\u00ae\u00a9]+")  # autocomplete: WEB_NORM and ! ? , : TM (R) (C)
 
 
 def typed(text: str, quotes: bool = False) -> str:
@@ -333,6 +334,12 @@ class CardRepository:
         key = png_filename.replace(" ", "_")
         if " " in png_filename and key not in self.git_files:   # a file named with spaces: underscore lookups find it
             self.git_files[key] = self._spaced[key] = path
+
+    def other_cards(self, key: str) -> list:
+        """An ambiguous name's cards (folder-prefixed keys) when one is not key's file: icons and MDW/ files left out."""
+        path = self.git_files.get(key)
+        cards = [k for k in self.ambiguous_names.get(key, ()) if not self.git_files.get(k, "").startswith(NOT_CARDS)]
+        return cards if any(self.git_files.get(k) != path for k in cards) else []
 
     @staticmethod
     def _get_prefixed_name(path: str, filename: str) -> str:
@@ -658,29 +665,64 @@ class CardRepository:
                 add(alias, alias if alias.lower() == shown.lower() else f"{alias} ({shown})")
         for _, old, now in self._renamed.values():
             add(old, f"{old} (now {now})")
-        self.choices = tuple(sorted((shown.lower(), shown, value) for shown, value in found.values()))
+        rows = []
+        for shown, value in found.values():                     # card: one per PNG for the near matches
+            key = self._normalize_card_name(value)
+            card = self.git_files.get(key) or self.git_files.get(self._renamed.get(key, ("",))[0]) or key
+            low = shown.lower()
+            rows.append((low, shown, value, NAME_NORM.sub("", low), frozenset(_pairs(value)), card, False))
+        for c in stats_db.rulebook:                              # /query only
+            title, value = c["title"], chapter_label(c)
+            rows.append((title.lower(), f"{value} (rulebook chapter)", value, NAME_NORM.sub("", title.lower()),
+                         frozenset(_pairs(title)), "#" + c["id"], True))
+        self.choices = tuple(sorted(rows, key=lambda r: r[:3]))
 
-    def name_choices(self, current: str) -> list:
+    def name_choices(self, current: str, chapters: bool = False) -> list:
         """
         Autocomplete for a card-name option (on the event loop: reads the choices tuples only).
 
         Args:
             current: What is typed so far
+            chapters: The rulebook chapters too (/query)
 
         Returns:
-            Up to 25 (shown, value): names starting with it, then with a word that does, then holding it
+            Up to 25 (shown, value): names starting with it, then with a word that does, then holding it (a chapter
+            titled so: first); then names holding it without spaces and punctuation; none: up to 5 near spellings (3+
+            letters; one per card)
         """
         text = " ".join(typed(current).lower().replace("_", " ").split())
         choices = self.choices                                   # one read: a rebuild swaps it whole
         if not text:
-            return [(c[1], c[2]) for c in choices[:25]]
+            return [(c[1], c[2]) for c in choices if not c[6]][:25]
         ranked = []
-        for low, shown, value in choices:
-            at = low.find(text)
-            if at >= 0:
-                ranked.append((0 if at == 0 else 1 if low[at - 1] in " (-." else 2, len(low), low, shown, value))
+        for c in choices:
+            at = c[0].find(text)
+            if at < 0 or c[6] and not chapters:
+                continue
+            if c[6]:                                             # a chapter: after the cards, unless it is the text
+                rank = 0 if c[0] == text else 3
+            else:
+                rank = 0 if at == 0 else 1 if c[0][at - 1] in " (-." else 2
+            ranked.append((rank, len(c[0]), c[6], c[:3]))
         ranked.sort()
-        return [(r[3], r[4]) for r in ranked[:25]]
+        found = [(r[3][1], r[3][2]) for r in ranked[:25]]
+        squeezed = NAME_NORM.sub("", text)
+        if len(found) < 25 and squeezed:                         # Moms Knife, WX 78
+            have = {value for _, value in found}
+            more = sorted((not c[3].startswith(squeezed), len(c[3]), c[:3]) for c in choices
+                          if squeezed in c[3] and c[2] not in have and (chapters or not c[6]))
+            found += [(m[2][1], m[2][2]) for m in more[:25 - len(found)]]
+        if not found and len(squeezed) >= 3:                     # search.js suggest(): Dice over letter pairs
+            want, near, cards = _pairs(text), [], set()
+            for c in choices:
+                score = 2.0 * len(want & c[4]) / (len(want) + len(c[4]))
+                if score > 0.35 and (chapters or not c[6]):
+                    near.append((-score, c[:3], c[5]))
+            for _, c, card in sorted(near):
+                if card not in cards and len(found) < 5:
+                    cards.add(card)
+                    found.append((c[1], c[2]))
+        return found
 
     def _populate_site_ids(self) -> None:
         """Website card ids, for "Card page" links."""
@@ -834,7 +876,8 @@ def query_name(interaction: Interaction, query: str, as_of: Optional[str] = None
         return
 
     closest, how, old = card_repo.lookup(query)
-    chapter = _chapter(query) if how not in ("exact", "renamed") else None
+    card = how in ("exact", "renamed") and not card_repo.git_files.get(closest, "").startswith(NOT_CARDS)
+    chapter = None if card else _chapter(query)      # a chapter before a type icon (Negation)
     if chapter:                                         # a chapter's title, not a card's: the chapter, not a guess
         print(f"Search chapter: /query {query!r} -> {chapter_label(chapter)}")
         queue_message(interaction, f"**{chapter_label(chapter)}** is a rulebook chapter: {SITE_URL}/#/rules/{chapter['id']}")
@@ -853,9 +896,11 @@ def query_name(interaction: Interaction, query: str, as_of: Optional[str] = None
 
 
 def _chapter(query: str) -> Optional[dict]:
-    """The rulebook chapter titled query (case and spaces ignored), or None."""
-    text = "".join(query.lower().split())
-    return next((c for c in stats_db.rulebook if "".join(c["title"].lower().split()) == text), None) if text else None
+    """The rulebook chapter titled or labelled query ("15. Minions", the autocomplete's; case, spaces aside), or None."""
+    squeeze = lambda name: "".join(name.lower().split())
+    text = squeeze(query)
+    found = (c for c in stats_db.rulebook if text in (squeeze(c["title"]), squeeze(chapter_label(c))))
+    return next(found, None) if text else None
 
 
 def _label(key: str) -> str:
@@ -915,9 +960,9 @@ def _post_card(interaction: Interaction, closest: str, url: Optional[str] = None
         queue_message(interaction, f"{note}\n{url}" if note else url, links=links)
 
     # Notify if name is ambiguous
-    if closest in card_repo.ambiguous_names:
-        ambiguous_options = "\n".join(card_repo.ambiguous_names[closest])
-        queue_message(interaction, f"Ambiguous name found. If this wasn't the card you wanted, try:\n{ambiguous_options}")
+    options = card_repo.other_cards(closest)
+    if options:
+        queue_message(interaction, "Ambiguous name found. If this wasn't the card you wanted, try:\n" + "\n".join(options))
 
 
 # ========================

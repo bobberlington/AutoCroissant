@@ -135,8 +135,8 @@ def frankenstein(
         images.append(image)
 
         # Check for ambiguous names
-        if closest in card_repo.ambiguous_names:
-            options = "\n".join(card_repo.ambiguous_names[closest])
+        options = "\n".join(card_repo.other_cards(closest))
+        if options:
             ambiguous_warnings.append(f"Ambiguous name for '{card_name}'. If this wasn't the card you wanted, try:\n{options}")
 
     # Merge images

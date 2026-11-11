@@ -707,15 +707,20 @@ a plain key before its folder-prefixed twins), then difflib `get_close_matches` 
 autocroissant-config-and-flags). `/query as_of` guesses the same way over card and archived names, and says so.
 A text with no exact or renamed hit that is a rulebook chapter's title (case and spaces ignored) gets that chapter's
 link instead of a guess ("**15. Minions** is a rulebook chapter: SITE_URL/#/rules/minions"; logs `Search chapter:`).
-Card-name options autocomplete from `name_choices`: `choices` (cards, titles, aliases, old names).
+Card-name options autocomplete from `name_choices`: `choices` (cards, titles, aliases, old names; their squeezed
+text and letter pairs precomputed): today's substring ranking, then names holding the text without spaces and
+`_ - . ' ’ ! ? , : ™ ® ©` ("Moms Knife", "WX 78"), and when nothing matches (3+ letters) up to 5 near spellings
+(suggest()'s Dice > 0.35, one per card). /query alone also lists the rulebook chapters ("15. Minions (rulebook
+chapter)", after the cards unless the text is the title); a chapter's title or label answers before an MDW/ or
+Types/ file of that name (Negation).
 main.py's `on_interaction` logs one console line per slash command (option values only for searches).
 
 **Duplicate filenames**: when two repo paths share a basename, both also get prefixed keys
 `<top_folder>/<name>.png` (lowercased), and `ambiguous_names` records the options
 (`_add_file_to_registry` :208). The bare name STILL resolves — to the first-seen path — and `/query` appends a "try
-these instead" list when the hit is ambiguous. Duplicated basenames in the repo today: active.png,
-cardback.png, equip.png, field.png, fragile equip.png, nme.png, panda.png (mostly card-vs-Types
-icon collisions).
+these instead" list of the CARDS (`other_cards`: MDW/ and Types/ files left out) when another card shares the name.
+Duplicated basenames in the repo today: active.png, cardback.png, equip.png, field.png, fragile equip.png, nme.png,
+panda.png (MDW-vs-Types files, and Panda vs its Types icon: none gets the note).
 
 **Aliases** (`aliases.pkl`, 60 today): At `populate_files` time each alias key is inserted into `git_files` as
 `<alias>.png` pointing at the target's path, so aliases work everywhere names do. Everything is lowercased on load.

@@ -138,7 +138,7 @@ def test_lookup(repo, capsys):
             continue
         url, text, embed = f"https://img/{key}", sent[0]["content"] or "", sent[0].get("embed")     # a printed title: an embed
         assert [kw["content"].startswith("Ambiguous name found") for kw in sent[1:]] == (
-            [True] if key in repo.ambiguous_names else []), query
+            [True] if repo.other_cards(key) else []), query
         assert embed.image.url == url if embed else text.endswith(url), query
         text = text if embed else text[:len(text) - len(url)].rstrip("\n")
         label = qc._label(key)
@@ -155,6 +155,9 @@ def test_autocomplete(repo):
     assert repo.name_choices("black") == [("Black Clot", "Black Clot"), ("Clot Black (Black Clot)", "Clot Black")]
     assert ("snas. (Sans)", "snas.") in repo.name_choices("sna")
     assert len(repo.name_choices("")) == 25 and len(repo.name_choices("o")) == 25
+    # then without spaces and punctuation; nothing: near spellings, one per card
+    assert names("wx 78") == ["WX-78", "Wx78 (now WX-78)"] and names("pot full of spiders") == ["Pot Full of Spiders!"]
+    assert names("magolr") == ["Magolor"] and names("mettatn") == ["Mettaton EX", "Mettaton NEO"]
 
 
 def test_curly_apostrophes(repo):
@@ -166,13 +169,25 @@ def test_curly_apostrophes(repo):
 
 
 def test_guesses_cards_only(repo, monkeypatch):
-    """Guesses pick cards, not linked art or old pages (exact names still find them); a chapter's title, its chapter."""
-    monkeypatch.setattr(cm.stats_db, "rulebook", [{"id": "minions", "num": "15", "title": "Minions", "text": ""}])
+    """Guesses pick cards, not linked art or old pages (exact names still find them); a chapter's title or label, its
+    chapter (before a Types/ icon); the autocomplete lists chapters for /query only."""
+    monkeypatch.setattr(cm.stats_db, "rulebook", [{"id": "minions", "num": "15", "title": "Minions", "text": ""},
+                                                  {"id": "light", "num": "22", "title": "Light", "text": ""}])
     assert repo.lookup("NebulaStar")[0:2] == ("nebula_star.png", GUESS)       # not the linked art's "_-_nebulastar"
     assert qc.history_match("NebulaStar") == ("nebula_star.png", "Nebula Star")
     assert repo.lookup("13 minions")[0:2] == ("13_minions.png", EXACT)
-    for query in ("minions", " MINIONS "):
+    assert repo.other_cards("panda.png") == []                                # Types/Panda.png: no note
+    repo._populate_renames()                                                  # /query lists chapters, after cards
+    assert repo.name_choices("minions", chapters=True) == [("15. Minions (rulebook chapter)", "15. Minions")]
+    assert repo.name_choices("mini", chapters=True)[-1][1] == "15. Minions" and repo.name_choices("minions") == [
+        ("Mini Doomer", "Mini Doomer")]
+    for query in ("minions", " MINIONS ", "15. Minions"):
         utils.dispatch_queue.clear()
         qc.query_name(utils.make_simple_fake_interaction(1), query)
         assert [kw["content"] for _, kw in utils.dispatch_queue] == [
             f"**15. Minions** is a rulebook chapter: {qc.SITE_URL}/#/rules/minions"], query
+    utils.dispatch_queue.clear()
+    qc.query_name(utils.make_simple_fake_interaction(1), "light")                # Types/Light.png: the chapter
+    assert [kw["content"] for _, kw in utils.dispatch_queue] == [
+        f"**22. Light** is a rulebook chapter: {qc.SITE_URL}/#/rules/light"]
+

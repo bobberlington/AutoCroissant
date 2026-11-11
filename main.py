@@ -190,6 +190,11 @@ async def card_names(interaction: Interaction, current: str) -> list:
     return [Choice(name=shown, value=value) for shown, value in card_repo.name_choices(current)]
 
 
+async def query_names(interaction: Interaction, current: str) -> list:
+    """Autocomplete for /query: card names, then the rulebook chapters too."""
+    return [Choice(name=shown, value=value) for shown, value in card_repo.name_choices(current, chapters=True)]
+
+
 async def card_list_names(interaction: Interaction, current: str) -> list:
     """Autocomplete for a comma-separated list: the last name typed."""
     head, comma, last = current.rpartition(",")
@@ -310,7 +315,7 @@ query_name = to_thread(query_name)
     query='Card name, printed title, alias, or a renamed card\'s old name (suggested as you type).',
     as_of='YYYY-MM-DD (Pacific time): the card as it was that day, archived cards too. Default = now.',
 )
-@app_commands.autocomplete(query=card_names)
+@app_commands.autocomplete(query=query_names)
 async def slash_query_name(interaction: Interaction,
                            query: str,
                            as_of: Optional[str] = None):
