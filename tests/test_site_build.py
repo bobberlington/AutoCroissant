@@ -755,6 +755,24 @@ def test_a_web_chapter_is_not_printed(bs, tmp_path):
     assert json.loads(done.stdout) == ["stats"]
 
 
+def test_rulebook_pictures_sized_before_they_load(tmp_path):
+    """rulebook.js: a mascot (rules.json's size) and a card picture (tw/th) carry width/height, so nothing above a contents
+    link's chapter grows while the jump runs; a picture of unknown size none."""
+    book_js = BUILD_SITE.parents[1] / "assets" / "rulebook.js"
+    if shutil.which("node") is None or "rb-mascot" not in book_js.read_text(encoding="utf-8"):
+        pytest.skip("no node or a rulebook without mascots")
+    probe = tmp_path / "probe.mjs"
+    probe.write_text(f"const rb = await import({json.dumps(book_js.as_uri())});\n"
+                     "const ctx = { size: f => (f === 'kirby' ? [120, 96] : null), card: n => (n === 'Alpha' ? { id: 'a1', name: 'Alpha', tw: 360, th: 504 } : null),\n"
+                     "  cardImg: () => 't.avif', imgUrl: f => f + '.webp' };\n"
+                     "const html = rb.chapterHtml({ id: 'x', source: '# X\\n\\n> [!kirby] Hi.\\n\\n![[Alpha]]\\n\\n> [!sonic] Who?\\n' }, ctx);\n"
+                     "process.stdout.write(JSON.stringify([...html.matchAll(/<img [^>]*>/g)].map(m => [m[0].match(/width=\"(\\d+)\" height=\"(\\d+)\"/)?.slice(1)])));\n",
+                     encoding="utf-8")
+    done = subprocess.run(["node", str(probe)], capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr
+    assert json.loads(done.stdout) == [[["120", "96"]], [["360", "504"]], [None]]
+
+
 def test_a_heavy_commit_links_the_cards_history(tmp_path):
     """text.js commitLink: a heavy commit (cards.json heavy) links GitHub's history of the card's PNG from it, its path
     encoded, and nothing without a path; any other commit its commit page."""
