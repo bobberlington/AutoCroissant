@@ -45,6 +45,7 @@ from PIL import Image
 from psd_tools import PSDImage
 
 import commands.card_bake as card_bake
+import commands.card_plates as card_plates
 import commands.png_export as png_export
 import commands.psd_edit as psd_edit
 from commands.card_bake import Card, Snapshot, local_snapshot, psd_fields, vocabulary
@@ -68,7 +69,7 @@ SPARSE_FILES = ("commands/card_checks.py", "commands/card_bake.py", "commands/ca
                 "commands/psd_regions.py", "commands/repo_history.py", "commands/rulebook.py", "commands/text_align.py",
                 "commands/txt2_repair.py", "commands/ability_place.py", "commands/ability_index.json", "global_config.py",
                 "requirements-cards.txt",
-                "commands/psd_links.py")         # card-checks.yml's bot checkout
+                "commands/psd_links.py", "commands/card_plates.py")         # card-checks.yml's bot checkout
 VERSION = 1                                 # the file's "version"
 STAT_ORDER = tuple(STATS)                   # hp, def, atk, spd: the template's rows, top to bottom
 STAT_NAMES = {"hp": "HP", "def": "DEF", "atk": "ATK", "spd": "SPD"}
@@ -671,7 +672,8 @@ def edit_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str, 
 # ========================
 def check_card(ctx: Context, rel: str) -> dict:
     """
-    A card PSD's record: {"card", "png", "style", "reads", "notes", "bars"}; mismatches() and flags() word it.
+    A card PSD's record: {"card", "png", "style", "reads", "notes", "bars", "unredrawable", "plate"}; mismatches() and
+    flags() word it. plate: the mock-up's (card_plates, published apart: save leaves it out of db/).
 
     Args:
         ctx: context()
@@ -684,6 +686,12 @@ def check_card(ctx: Context, rel: str) -> dict:
     if image is not None:
         image.load()
     parsed = psd_edit.parse_card(ctx.parser, rel, rel, psd)
+    plate = None
+    if image is not None:
+        try:
+            plate = card_plates.plates(psd, image, psd_edit.card_parts(psd, rel, psd_edit._card_name(parsed), ctx.parser))
+        except Exception as error:              # noqa: BLE001 - the mock-up's old way then, never a failed check
+            print(f"{rel}: no plate: {type(error).__name__}: {error}", flush=True)
     creatures = parsed["card"].get("creatures")
     style, why = bar_style(psd, creatures)
     notes = [OLD_NOTE] if style == "old" else []
@@ -707,7 +715,7 @@ def check_card(ctx: Context, rel: str) -> dict:
             notes.append(DUP_NOTE.format(name=basename(path)))
     return {"card": card_name(rel), "png": png_key(snapshot, rel), "style": style, "reads": reads,
             "notes": notes, "bars": CUSTOM_NOTES[why] if style == "custom" else None,
-            "unredrawable": unredrawable(psd, rel, snapshot.tree)}
+            "unredrawable": unredrawable(psd, rel, snapshot.tree), "plate": plate}
 
 
 def unredrawable(psd: PSDImage, rel: str, tree) -> dict:
@@ -1000,7 +1008,7 @@ def main(args: Optional[list] = None) -> int:
     if options.action == "save":
         for result in options.results:
             with open(result, encoding="utf-8") as fh:
-                checks["cards"].update({sha: {k: v for k, v in record.items() if k != "seconds"}
+                checks["cards"].update({sha: {k: v for k, v in record.items() if k not in ("seconds", "plate")}
                                         for sha, record in loads(fh.read()).items()})
         stats = stats_of(options.db)
         text = snapshot.fetch(snapshot.sha(EDITS_PATH)).decode("utf-8") if EDITS_PATH in snapshot.tree else "{}"
