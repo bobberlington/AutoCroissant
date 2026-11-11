@@ -133,8 +133,9 @@ The rebuild is NOT optional since the 2026-10-20 split: stale `.so` next to new 
   `~/venvs/autocroissant/bin/pip install --force-reinstall --no-deps "$(grep '^psd-tools' requirements-cards.txt)"`
   (gcc compiles the fork's 6 Cython modules, about 170 s), then `~/venvs/autocroissant/bin/pip check`. A plain `pip install -r requirements.txt`
   keeps the old commit while the fork's version is unchanged (1.25.0 at every tag up to `cards-20261023d`): pip calls
-  it satisfied (checked 2026-10-23). `pip freeze | grep psd` shows the commit. Today: tag `cards-20261110` = 170a3fce
-  (2026-11-10). The Actions install the same file (autocroissant-change-control,
+  it satisfied (checked 2026-10-23). `pip freeze | grep psd` shows the commit. Today: tag `cards-20261111` = da069245
+  (2026-11-11; on glibc it keeps freed canvases in malloc's heap, up to ~150 MB more held between renders:
+  `PSD_TOOLS_MALLOC=0` in the service environment turns that off). The Actions install the same file (autocroissant-change-control,
   class (a)).
 Hand-run scripts need `SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt`; push from the box with
 `SSH_AUTH_SOCK=/run/autocroissant/ssh-agent.sock git push`. Memory: jetson-server.
@@ -810,7 +811,7 @@ re-find volatile facts with these before trusting them:
 | Volatile fact | Re-verify with |
 |---|---|
 | on_ready order / loop starts / startup prints | `grep -n "queue_command(\|_start(loop)\|Bot initialization complete\|Reconnected" main.py` (133-137 queued, 125/140 starts, 126, 142) |
-| Fork tag in the jetson venv | on the jetson: `~/venvs/autocroissant/bin/pip freeze \| grep psd` (`@170a3fce...` = `cards-20261110` since 2026-11-10; `@1258fcbd...` on 2026-11-05) |
+| Fork tag in the jetson venv | on the jetson: `~/venvs/autocroissant/bin/pip freeze \| grep psd` (`@da069245...` = `cards-20261111` after the 2026-11-11 re-pin's deploy; `@170a3fce...` = `cards-20261110` since 2026-11-10) |
 | Shadow state | `gh run list -R MichaelJSr/TTSCardMaker --workflow card-sync.yml --limit 5`; `gh api repos/MichaelJSr/TTSCardMaker/branches/data` (404 until the first live run) |
 | Slash-command count (46 on 2026-10-25: five Discord edit commands retired, then /push; 52 on 2026-10-21) | `grep -c "@tree.command" main.py` |
 | Members intent off, so no /list_guild_members (removed 2026-10-20, C6) | `grep -n "Intents\|list_guild_members" main.py` (Intents lines only) |
@@ -923,3 +924,5 @@ row checked there by `pip freeze`), `--repo` in the guards' local check, the bak
 2026-11-09 (forum votes): §13 the proposal forum (/forum_votes, the live test CLI); `forum_votes.json` in §8.
 
 2026-11-10 (fork release): the fork tag today is `cards-20261110` = 170a3fce.
+
+2026-11-11 (fork release): the fork tag today is `cards-20261111` = da069245.
