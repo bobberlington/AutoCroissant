@@ -577,6 +577,28 @@ out([fit(crop(), "Heal 12 HP.\\nInflict 2 Burn."), fit(crop([0, 105]), "Heal 12 
     assert {k: out[2][k] for k in ("splice", "keep", "gone", "after", "paras")} == {"splice": None, "keep": [0, 1], "gone": [], "after": [], "paras": [2, 3]}
 
 
+@needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "only = false"), reason="no title splices in mockup.js")
+def test_title_splice_or_nothing(tmp_path):
+    """A title on its plate (geoDraw only): the changed letters drawn at the line's own pen and baseline, the rest the
+    card's pixels; "" (titleLayout's drawing) when the splice would run off the card or the edit is no splice."""
+    out = node(tmp_path, """
+const W = 100, H = 80, card = new Uint8ClampedArray(W * H * 4).fill(7), data = new Uint8ClampedArray(W * H * 4), calls = [];
+const text = "Zero Two", c = { text, lines: [[0, 8, 50, 10, 90, 30, 55, 0]], glyphs: [...text].map((ch, i) => (ch === " " ? [i, 10 + i * 10] : [i, 10 + i * 10, 11 + i * 10, 19 + i * 10])) };
+let at = null;
+const ctx = { canvas: { height: H }, save() {}, restore() {}, scale() {}, translate(x, y) { at = [x, y]; }, fillText(t) { calls.push([t, ...at]); },
+  getImageData: (x, y, w, h) => ({ data: data.slice(y * W * 4, (y + h) * W * 4) }), putImageData(im, x, y) { data.set(im.data, y * W * 4); calls.push("put"); } };
+const measure = t => [...t].length * 10; measure.hx = 1;
+const R = m.recordLayout(c, text, 1), go = now => m.geoDraw(ctx, { R, plan: m.geoPlan(R, now), card, box: [5, 25, 95, 60], fx: [], measure, z: 20, grow: true, only: true,
+  icons: {}, paras: m.tokenize(now), text: now, look: { fam: "x", fill: [255, 255, 255] }, pitch: 24, W });
+const n = go("Zero two"), drawn = [...calls], kept = data[(40 * W + 15) * 4];
+calls.length = 0;
+out([n, drawn, kept, go("Zero Twooooo"), go("Zero\\nTwo"), calls]);""")
+    spliced, drawn, kept, off, lines, none = out
+    assert spliced == "splice" and drawn == ["put", ["t", 60, 50]] and kept == 7   # 't' at T's pen; 'Zero ' is the card's
+    assert off == lines == "" and none == []
+
+
 # ---- the build's web fonts (build_site.py)
 @pytest.fixture(scope="module")
 def bs():
