@@ -8,8 +8,6 @@ pixel, a bot bake drawn, and the refusals: a script save under a stale composite
 the change is, Defcon Panda's drop shadow the fork draws differently, 20 Creature Types' image changed where no layer did.
 """
 import subprocess
-from importlib.util import find_spec
-from inspect import signature
 
 import numpy as np
 import pytest
@@ -19,7 +17,6 @@ from psd_tools.api.layers import PixelLayer
 
 import commands.png_export as pe
 import commands.psd_edit as psd_edit
-from conftest import fork_reason, text_engine
 from helpers import BALLOON_BOY, _rows_off, art, card, fixture_psd, normalised, photoshop_png
 
 # ========================
@@ -47,8 +44,6 @@ FREEZER = "8505c4f00a5eda92a48a6966749b214989657caa"    # Field/1 Stars/The_Free
 SABRE = "becff9f709b1403a8c5ec2d5aa4b7855ec4c5320"      # Auxiliary/Minions/Sabre.psd (3a268cad): an empty Ability layer
 # The real cards are drawn as the bake draws them: upstream psd-tools renders type layers and effects otherwise. Measured
 # at the Action's pin cards-20261022b (90508839); misses re-measured at cards-20261023 (ecc4b773).
-fork = pytest.mark.skipif(not text_engine(), reason="guard 1 renders with the fork, as the bake does: " + fork_reason())
-gradients = pytest.mark.skipif(find_spec("scipy") is None, reason="gradient fills need psd-tools[composite] (scipy), as the Action installs")
 
 
 # ========================
@@ -338,7 +333,6 @@ def _hidden(monkeypatch, name: str) -> None:
     monkeypatch.setattr(psd_edit, "render_region", blank)
 
 
-@fork
 def test_a_new_card_drawn_blank_in_a_text_box_is_refused(clone, monkeypatch):
     """Review (2026-10-23): over the whole card a blank text box stays under the floor (Shield of the Guilty's Ability
     drawn blank: 2.3% of the card), so each text and stat box is held to it too, and a missed box whose layer the fork
@@ -364,7 +358,6 @@ def test_a_new_card_drawn_blank_in_a_text_box_is_refused(clone, monkeypatch):
     assert found.numbers["cross"]["bad_pct"] < psd_edit.PARITY_FLOOR < found.numbers["boxes"]["the Ability text"]["bad_pct"]
 
 
-@fork
 def test_a_new_card_with_an_empty_text_layer_is_made(clone):
     """Sabre's Ability layer holds no text (bbox 0 x 0): no box, so hiding it (it moves nothing) is no blank drawing; its
     stat labels' small misses (bad 0%, mean about 2.3) are told. The sweep of 2026-10-23 refused it before this rule."""
@@ -390,8 +383,6 @@ def test_g6_a_composite_that_lies(tmp_path):
     new = PSDImage.new("RGB", (60, 90))
     new.append(PixelLayer.frompil(card(), new, "Art"))          # the layers still show the blue square
     path = tmp_path / "liar.psd"
-    if "preview" not in signature(PSDImage.save).parameters:
-        pytest.skip("this psd-tools has no save(preview=)")
     new.save(str(path), preview=card(colour=(0, 255, 0)))
     found = pe.export(old, PSDImage.open(str(path)), card())
     assert (found.outcome, found.gate, found.why) == ("refused", "G6", pe.G6_UNSEEN)
@@ -440,7 +431,6 @@ def test_a_link_rewritten_is_no_layer_change(clone, tmp_path):
     assert pe.changed_layers(old, PSDImage.open(str(out))) == (None, 0)
 
 
-@fork
 def test_a_renamed_title_moves_no_pixel(clone):
     """A rename draws nothing: no changed layer, the title not pinned to the gamma (its record says straight), the PNG
     kept (99594156's guards re-exported Corruption, 10a1de86)."""
@@ -545,7 +535,6 @@ def _near_the_authors_export(found, truth) -> np.ndarray:
     return diff
 
 
-@fork
 def test_dirty_bed_is_drawn_within_the_bar_of_the_authors_export(clone):
     old, new, old_png, truth = pair(clone, DIRTY_BED)
     assert pe.photoshop_saved(old, new) and not pe.photoshop_saved(new, new)
@@ -560,7 +549,6 @@ def test_dirty_bed_is_drawn_within_the_bar_of_the_authors_export(clone):
     assert int(diff[outside].max()) == 0                 # outside the changed layers the PNG is the old one, untouched
 
 
-@fork
 def test_a_script_save_under_a_stale_composite_is_refused(clone, tmp_path):
     """Mini Doomer's title hidden by the fork, saved without a new preview: the render drops the title, the composite
     still shows it, so the cross-check refuses."""
@@ -576,7 +564,6 @@ def test_a_script_save_under_a_stale_composite_is_refused(clone, tmp_path):
     assert (found.outcome, found.gate, found.why) == ("refused", "G6", pe.G6_STALE)
 
 
-@fork
 def test_the_refusals_of_the_replay(clone):
     """One of the 9 refusals of the 34 replayed commits (PUSH_GUARDS.md 16, rulings): Restrained's old PNG did not show
     its old PSD where the author changed it ("(BOT) -1 Action" in the PSD, "-1 Action" in the PNG)."""
@@ -586,7 +573,6 @@ def test_the_refusals_of_the_replay(clone):
     assert found.why.startswith("PNG not made: the PSD and its old PNG already disagreed where you changed it"), found.why
 
 
-@fork
 def test_g2_refuses_a_changed_colour_profile(clone, tmp_path):
     """Abigail with its 'Display' profile removed: no layer record shows it, so G2 called the
     PNG current, or merged a patch drawn without the profile into a PNG exported with it (review of 2026-10-24). The

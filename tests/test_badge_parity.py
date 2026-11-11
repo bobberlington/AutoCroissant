@@ -20,31 +20,17 @@ pytestmark = pytest.mark.skipif(not (BUILD.is_file() and TEXT_JS.is_file()), rea
 
 
 def shaper(order: list):
-    """texts -> {text: [glyph name]}: uharfbuzz, else the hb-shape tool, else skip."""
-    try:
-        import uharfbuzz as hb
-    except ImportError:
-        hb = None
-    if hb:
-        font = hb.Font(hb.Face(hb.Blob.from_file_path(str(FONT))))
+    """texts -> {text: [glyph name]} (uharfbuzz)."""
+    import uharfbuzz as hb
+    font = hb.Font(hb.Face(hb.Blob.from_file_path(str(FONT))))
 
-        def one(text: str) -> list:
-            buf = hb.Buffer()
-            buf.add_str(text)
-            buf.guess_segment_properties()
-            hb.shape(font, buf, {})
-            return [order[i.codepoint] for i in buf.glyph_infos]
-        return lambda texts: {t: one(t) for t in texts}
-    if not shutil.which("hb-shape"):
-        pytest.skip("needs uharfbuzz or hb-shape")
-
-    def tool(texts: list) -> dict:
-        lines = run_process(["hb-shape", "--no-glyph-names", "--no-positions", "--no-clusters", "--text-file=/dev/stdin",
-                             str(FONT)], input="\n".join(texts) + "\n", capture_output=True, text=True,
-                            check=True).stdout.splitlines()
-        assert len(lines) == len(texts)
-        return {t: [order[int(g)] for g in ln.strip("[]").split("|")] for t, ln in zip(texts, lines)}
-    return tool
+    def one(text: str) -> list:
+        buf = hb.Buffer()
+        buf.add_str(text)
+        buf.guess_segment_properties()
+        hb.shape(font, buf, {})
+        return [order[i.codepoint] for i in buf.glyph_infos]
+    return lambda texts: {t: one(t) for t in texts}
 
 
 # ========================

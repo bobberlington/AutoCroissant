@@ -4,9 +4,8 @@ against a fake GitHub (tree, blobs, refs, commits: the test_update_stats pattern
 sections 5 and 11: duplicate, blob, classify, edit-changed, head-moved (409 and 422), one commit per run with a
 moved card left out, the schedule gate (pending), the SSH fallback for a token that can't write, --dry-run, --card; the
 verdicts on the data branch (CARD_SYNC_VERDICTS.md: the data_branch fixture merges each run's records as Card sync does). A
-real bake (a stat, and an ability with an FX layer) needs the fork's renderer; those tests skip under stock psd-tools.
-card-sync.yml's Pending edits line runs as written (card_bake.pending). Fork as conftest.find_fork finds it; a Python without
-requests skips this file:
+real bake (a stat, and an ability with an FX layer) renders with the fork. card-sync.yml's Pending edits line runs as
+written (card_bake.pending):
     ~/.venvs/ac-py314-fork/bin/python -m pytest -q -n auto tests/test_psd_edit.py tests/test_card_bake.py
 """
 import contextlib
@@ -31,8 +30,7 @@ pytest.importorskip("requests", reason="card_bake imports requests (absent from 
 import commands.card_bake as cb  # noqa: E402
 import commands.git_commit as gc  # noqa: E402
 import commands.psd_edit as pe  # noqa: E402
-from conftest import (CLONE, blob_sha_bytes as _sha, fork_reason, story_sync as _story_sync,
-                      text_engine as _text_engine)  # noqa: E402
+from conftest import CLONE, blob_sha_bytes as _sha  # noqa: E402
 from helpers import ABOUT, AT, DOOMER, EDITS, FREEZER, SNACK, _card_files, _edits, files, github  # noqa: E402,F401 (fixtures)
 
 
@@ -42,9 +40,6 @@ PURE_VESSEL = "Creatures/Hollow Knight/5 Stars/Pure_Vessel.psd"     # its stat m
 LIVE_EDITS = CLONE / "site" / "Card Edits.json"
 EDIT_JS = CLONE / "site" / "assets" / "edit.js"
 WORKFLOW = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "card-sync.yml"
-fork = pytest.mark.skipif(not _text_engine(), reason="a bake needs the fork's renderer: " + fork_reason())
-fork_text = pytest.mark.skipif(not (_text_engine() and _story_sync()),
-                               reason="a text bake needs the fork's Txt2 story sync: " + fork_reason())
 
 
 # ========================
@@ -729,7 +724,6 @@ def test_select_and_snapshot(github):
     assert [c.name for c in cb.select(edits, snapshot, "a_snack")] == ["A Snack"]
 
 
-@fork
 @pytest.mark.oxipng
 def test_bake_hp_lands_psd_png_and_file(github, tmp_path, monkeypatch):
     """One stat bake end to end: PSD + PNG + the file in one commit, the verdict beside the fields that stay; the PNG
@@ -764,7 +758,6 @@ def test_bake_hp_lands_psd_png_and_file(github, tmp_path, monkeypatch):
     assert commits == [] and "0 with PSD fields" in text
 
 
-@fork_text
 def test_a_bake_opens_each_psd_once(github, clone, monkeypatch):
     """One PSDImage.open per PSD file per bake (tests/test_open_once.py's count): the old card's is shared by the parse,
     classify and apply_jobs, the saved card's by gate_bytes, the re-parse and the FX gates; the status chart's once.
@@ -802,10 +795,8 @@ def test_a_bake_opens_each_psd_once(github, clone, monkeypatch):
     assert set(copies) == {sha1(files[DOOMER]).hexdigest()}, text
 
 
-icons = pytest.mark.skipif(not pe.icon_engine(), reason="a stars or types bake needs the fork's layer copy API")
 
 
-@icons
 def test_a_card_refused_after_its_stars_names_both_refusals(github, monkeypatch):
     """Stars refused, then the card's last field (types, then hp) too: the card's verdict names both, the stars once."""
     def outside(before, psd, edit):
@@ -933,7 +924,6 @@ def test_local_head_the_clone_lacks_is_a_failed_run(github, local, monkeypatch):
     assert _git(local.clone, "rev-parse", "HEAD").strip() == local.head
 
 
-@fork
 def test_local_bake_lands_psd_png_and_file_in_b(github, local):
     """A real bake with --local: B holds the PSD, the PNG and the file; the verdict names B's PSD blob."""
     data = json.loads((local.clone / cb.EDITS_PATH).read_bytes())
@@ -976,7 +966,6 @@ def test_workflow_pending_edits_line_calls_pending(github, capsys, monkeypatch):
 MIRACLE = "Creatures/Kirby/3 Stars/Miracle_Matter.psd"            # five Ability layers, padded ('\r    \r    Earth: ...')
 
 
-@fork_text
 def test_parts_bake_deletes_skips_and_keeps_photoshop_work(github, clone):
     """Miracle Matter: 1368 edited (only its record, its indent kept), 417 deleted (its record and story gone, the later
     TextIndex values one lower), 1366 changed in Photoshop since (wrong sha: skipped, kept in _psd.skipped), 1367 done in
@@ -1021,7 +1010,6 @@ def test_parts_bake_deletes_skips_and_keeps_photoshop_work(github, clone):
     assert "flag bytes" in report
 
 
-@fork_text
 def test_a_tagged_psd_bakes_each_picture_it_shows_in(github, clone, tmp_path):
     """§11 case 7 on A Snack tagged as §9 (the fixture script's tags, saved on a copy): the shared Ability writes all
     three PNGs; a 'Name #2' edit writes only A_Snack2.png, the others byte for byte; the pictures' entries lose their
@@ -1092,7 +1080,6 @@ def _drawn_snack(github, clone, tmp_path, edit: dict) -> tuple:
     return rel, stem, dup
 
 
-@fork_text
 def test_a_drawn_duplicate_bakes_as_its_picture(github, clone, tmp_path):
     """Owner 11-09: picture 2 kept under a duplicate's own name (Breakfast.png, dup_of A Snack: as Gust_of_Trees.png) is
     picture 2: the shared Ability writes it as such, no A_Snack2.png made; its entry stays. A name edit beside it waits
@@ -1113,7 +1100,6 @@ def test_a_drawn_duplicate_bakes_as_its_picture(github, clone, tmp_path):
         assert cb.pending() == (["A Snack"] if left else [])    # the name's wait is never final
 
 
-@fork_text
 def test_a_waiting_name_bakes_alone_once_the_rest_is_refused(github, clone, tmp_path):
     """The name set aside (OWN_TITLE) beside a field the bake refuses (hp: an item has no bar rows) bakes alone in the
     same run; the hp refusal is final on its own: nothing stays pending for ever."""
@@ -1152,8 +1138,6 @@ def test_a_stars_edit_moves_a_card_starred_by_its_folder(github):
     assert verdict["moved"] == "Field/3 Stars" and verdict["psd"] == _sha(after[moved[FREEZER]])[:8]
 
 
-@fork_text
-@fork_text
 def test_real_workers_share_the_work_dir_and_keep_one_name_one_card(github, local, clone, monkeypatch):
     """A runner's pool in real processes on a full clone: an added ability and a first type icon fetch the template, the
     chart and Types/ side by side. A Ghost's rename is refused, so Mini Doomer takes the name and The Freezer can't."""

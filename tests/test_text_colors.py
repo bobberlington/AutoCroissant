@@ -144,7 +144,6 @@ process.stdout.write(JSON.stringify(out));
         assert out["chart"] == [["Inflict", "#ffffff"], ["Burning", "#ff7a1a"], [".", "#ffffff"], ["burning", "#ffffff"], ["foes.", "#ffffff"]]
 
 
-@pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")
 def test_colour_bake_on_a_real_card(clone, tmp_path):
     """The Freezer: two words recoloured through every gate, in the runs and the raster, the letters where Photoshop drew
     them; nothing left to bake after; a phrase not on the card refused alone; the note's colour no job."""
@@ -175,7 +174,6 @@ def test_colour_bake_on_a_real_card(clone, tmp_path):
     assert again.jobs == {} and again.redundant == ["colors"]
 
 
-@pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")
 def test_colour_on_a_raster_off_the_card(clone, tmp_path):
     """PoD05 Lead Bloon's Ability raster starts left of the card: a word's colour bakes, the letters unmoved."""
     from commands.psd_edit import offline_parser
@@ -198,7 +196,6 @@ def test_colour_on_a_raster_off_the_card(clone, tmp_path):
     assert red.sum() > 100
 
 
-@pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")
 def test_status_words_keep_the_chart(clone, tmp_path):
     """Capitalised chart status words keep the chart's colour (the guards' rule, owner 2026-11-07): a whole-field colour
     leaves them, a phrase of them alone is refused; prose ("burning") is no status word."""
@@ -243,7 +240,6 @@ def test_status_colours_record(clone, tmp_path):
         assert bs.status_colors(str(tmp_path)) == colors and bs.status_colors(str(tmp_path / "none")) == {}
 
 
-@pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")
 def test_title_overlay_goes_off(clone, tmp_path):
     """A whole title's colour turns the title's own Gradient Overlay off and bakes (white too, its fill's); its phrase
     after it bakes; a phrase alone stays refused."""
@@ -272,7 +268,6 @@ def test_title_overlay_goes_off(clone, tmp_path):
     assert pe._painted_over(layer) is None and {pe._hex(f) for *_, f in pe.run_fills(layer)} >= {"#ff2200", "#00bfff"}
 
 
-@pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")
 def test_split_title_part_overlay_goes_off(clone, tmp_path):
     """Crowned Magolor's title on two layers, each with its Gradient Overlay: a colour on all of one turns only that one's
     off and bakes; the other keeps its gradient; part of a word stays refused."""
@@ -294,7 +289,6 @@ def test_split_title_part_overlay_goes_off(clone, tmp_path):
     assert pe._painted_over(crowned) == "its Gradient Overlay"
 
 
-@pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")
 def test_clipped_title_layer_hidden(clone, tmp_path):
     """Cake Mix's cake clipped onto its title: a phrase alone refused with the reason; a whole title's colour hides the
     cake and bakes, its phrase after it too."""
@@ -318,7 +312,6 @@ def test_clipped_title_layer_hidden(clone, tmp_path):
     assert {pe._hex(f) for *_, f in pe.run_fills(layer)} >= {"#ff2200", "#00bfff"}
 
 
-@pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")
 def test_ability_overlay_goes_off(clone, tmp_path):
     """Cat's phrase under its lone Color Overlay: the overlay off, the rest in its colour; Mini Doomer's whole Ability
     turns its Gradient off, its one-colour badges coloured too; a phrase under that Gradient stays refused."""
@@ -345,7 +338,6 @@ def test_ability_overlay_goes_off(clone, tmp_path):
 
 
 @site
-@pytest.mark.skipif(not pe.text_engine(), reason="no psd-tools text engine (the fork)")
 def test_mockup_refuses_as_the_bake(clone, tmp_path):
     """mockup.js paintedOver, on the cards' details records, names what plan_colors refuses as painted over, in its words:
     a phrase under the title's or Ability's Gradient; not a whole field's, a phrase after one, one under a lone Color

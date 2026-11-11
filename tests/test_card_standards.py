@@ -15,7 +15,7 @@ from psd_tools import PSDImage
 import commands.card_standards as cs
 import commands.psd_edit as psd_edit
 from commands.card_check import clone_vocabulary
-from conftest import RING, at_rev, story_sync
+from conftest import RING, at_rev
 from helpers import BALLOON_BOY, _card, normalised
 
 # ========================
@@ -225,7 +225,6 @@ def test_r11_gate_refuses_any_other_change(clone, tmp_path, monkeypatch):
         cs.rename(str(pushed), str(tmp_path / "out.psd"))
 
 
-@pytest.mark.skipif(not story_sync(), reason="needs the fork's Txt2 story sync (fix/txt2-sync)")
 def test_r9_story_sync_on_clot_white(clone, context, tmp_path):
     """The pushed blob, not the working tree: main's Txt2 repair (7b48db05) synced the live file, so the stale story is
     read from the commit before it."""
@@ -353,7 +352,6 @@ def _fonts(clone):
     return lambda names: str(fonts)
 
 
-@pytest.mark.skipif(not story_sync(), reason="needs the fork's Txt2 story sync (fix/txt2-sync)")
 def test_apostrophes_straightened(clone, tmp_path):
     """A title: every U+2019 set as ' in the layer and its story, the glyphs redrawn, the parse the same but for the
     apostrophes."""
@@ -372,7 +370,6 @@ def test_apostrophes_straightened(clone, tmp_path):
     assert fixed.redrawn == {} and "not redrawn by glyph" in fixed.pixel_left[0][1]
 
 
-@pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
 def test_old_icon_glyph_redrawn_alone(clone, tmp_path):
     """A badge whose stored pixels are not the current font's (an older font's, painted here) is found and drawn again,
     that glyph alone: the rest of the layer keeps Photoshop's pixels."""
@@ -406,7 +403,6 @@ def test_old_icon_glyph_redrawn_alone(clone, tmp_path):
 WOLFGANG = "Creatures/DST/4 Stars/Wolfgang.psd"     # one (BOT) badge in Belisaplumillamanual, subscript like its text
 
 
-@pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
 def test_badges_fitted_to_their_text(clone, tmp_path, monkeypatch):
     """Owner 2026-10-25: a badge 20% small and 3 pt low is set back to the computed size (the pill 1.35 times the text's
     capital height) and middle (the capitals' middle), its glyphs redrawn, never told; the check finds nothing left.
@@ -454,7 +450,6 @@ def _kerns_as_story() -> bool:
     return hasattr(text_edit, "kerning_methods")
 
 
-@pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
 def test_badges_drawn_kerned_as_the_story(clone, tmp_path, monkeypatch):
     """B12: Soul Sanctum's story turns kerning off where its TySh has it on; followed, the splice takes it (unfollowed,
     Photoshop's ink sits off the fork's layout and it refused)."""
@@ -474,7 +469,6 @@ def test_badges_drawn_kerned_as_the_story(clone, tmp_path, monkeypatch):
     assert psd_edit.ability_layer(PSDImage.open(BytesIO(fixed.data))).topil().tobytes() == followed.tobytes()
 
 
-@pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
 def test_old_glyph_redrawn_kerned_as_the_story(clone, tmp_path, monkeypatch):
     """B12 in the guards' old-glyph fix: Soul Sanctum (story kerning off, TySh on) with an old badge painted in is
     spliced, that glyph alone, its story and document blocks kept; unfollowed it refused."""
@@ -510,7 +504,6 @@ def test_old_glyph_redrawn_kerned_as_the_story(clone, tmp_path, monkeypatch):
     assert psd_edit.ability_layer(PSDImage.open(BytesIO(fixed.data))).topil().tobytes() == followed.tobytes()
 
 
-@pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
 def test_badges_whole_only_where_drawn_as_stored(clone, tmp_path, monkeypatch):
     """A sweep's whole: Restrained (the splice misses its pill's 1 px edge) is redrawn whole, its lines kept; drawn off
     its pixels, it refuses. The guards never redraw whole. Wendy, which the fork laid out off Photoshop's pixels until it
@@ -537,7 +530,6 @@ def test_badges_whole_only_where_drawn_as_stored(clone, tmp_path, monkeypatch):
 BUTTERFLY = ("2e4c9dd1", "Creatures/Kirby/5 Stars/Butterfly.psd")   # badges in Section layers under a Gradient Overlay
 
 
-@pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
 def test_badges_under_an_overlay_set_one_colour(clone, tmp_path):
     """Owner 2026-10-30: Butterfly's (OFS) and (OD), re-saved in Photoshop without the icon font's Stylistic Alternates,
     printed as blobs under their layers' Gradient Overlay: set in the alternates (the story alone), those glyphs redrawn,
@@ -642,7 +634,6 @@ def _ability(data: bytes):
                 if layer.kind == "type" and layer.name.strip() == "Ability")
 
 
-@pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
 def test_badge_widths_relaid_from_photoshops_layout(clone, tmp_path, ring_fonts, monkeypatch):
     """The guards' case: Dark Daroach's (1/2CD) and (2CD), drawn at the old widths (Photoshop's view says them), laid out
     again at the ring font's, by glyph; its text and stories untouched; afterwards nothing is left, so it never fires
@@ -664,7 +655,6 @@ def test_badge_widths_relaid_from_photoshops_layout(clone, tmp_path, ring_fonts,
     assert cs.fix(fixed.data, DAROACH, [], str(tmp_path / "work"), None, fonts, only="badge widths").redrawn == {}
 
 
-@pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
 def test_badge_widths_from_an_earlier_font(clone, tmp_path, ring_fonts):
     """A raster the fork drew: Waxwell's view is older than its pixels, so alone it refuses; with the earlier icon font
     (fonts.earlier, the guards' and a sweep's) its (1CD) is re-laid. Michael's Blessing's seven badges at their new
@@ -764,7 +754,6 @@ def test_old_glyphs_told_only_from_another_build(monkeypatch):
     assert not cs._another_build(None, None, (), drawn, True)
 
 
-@pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
 def test_old_glyphs_refuse_a_moved_advance(clone, tmp_path, ring_fonts):
     """The safety net: Dark Daroach's badges drawn at the old widths are old glyphs to the ring font, their advances
     moved (Photoshop's view): old glyphs refuses them before any splice (badge widths' to re-lay)."""
@@ -788,7 +777,6 @@ def _typed_curly(data: bytes, fonts, path, earlier=()) -> bytes:
     return path.read_bytes()
 
 
-@pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
 def test_guards_fixes_compose_with_the_ring_font(clone, tmp_path, ring_fonts):
     """The guards' fixes over a push with the ring font (and the earlier icon font, as the guards read it): Martlet's
     plain (2CD) under its overlay (before the badges) set as a badge in the new font and one colour; Taranza's one-colour
@@ -863,7 +851,6 @@ def test_a_widened_box_passes_the_gates(clone, tmp_path):
     assert "Ability" in done and not done.left and round(TextModel.from_layer(layer).box[2], 3) == 394.0
 
 
-@pytest.mark.skipif(not story_sync(), reason="needs the fork's text engine")
 def test_status_words_in_the_chart_colours(clone, context, tmp_path):
     """Owner 2026-11-07: a capitalised status word off the chart takes its colour and its FX layers the chart's style
     (Standstill's two Frozen In Time, cut again), and a styled one with no FX layer gets the chart's (Credit Card's

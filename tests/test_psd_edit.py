@@ -1,16 +1,13 @@
 """
 psd_edit and psd_regions: the edit pipeline's stat toggle, text edits, delta merge and gates (EDIT_PIPELINE_DESIGN
 sections 5, 6, 10; steps S2 and S3). The fixture is the real card repo (MDW/Templates/Creature_Template.psd is 30 MB,
-too big to ship): tests that need a PSD read it from the clone and skip without it; tests that render or edit text
-skip without the fork's text engine (psd_tools.composite.text), so the suite stays green under stock psd-tools.
-conftest.find_fork picks the fork ($AC_PSD_TOOLS_SRC, else an installed fork, else ~/Documents/Tools/psd-tools/src or
-/tmp/wt-cards/src when they have its API); the fork venv has psd-tools[text]:
+too big to ship): tests that need a PSD read it from the clone and skip without it. Renders and text edits use the
+fork's text engine (conftest.use_fork: $AC_PSD_TOOLS_SRC, else the installed fork):
     ~/.venvs/ac-py314-fork/bin/python -m pytest -q -n auto tests/test_psd_edit.py
 """
 import json
 from collections import Counter
 from dataclasses import replace
-from importlib.util import find_spec
 from io import BytesIO
 from os import environ
 from pathlib import Path
@@ -29,8 +26,7 @@ import commands.psd_edit as pe
 from commands import ability_place
 from commands.card_models import card_name
 from commands.psd_regions import PAINT_ORDER, badge_layers, clip, comp_bars, comp_row, fx_pad, regions, stat_rows
-from conftest import (BADGED, PLAIN_DOOMER, at_rev, no_lazy, colour_glyphs, fork_reason, painted,
-                      story_sync as _story_sync, text_engine as _text_engine)
+from conftest import BADGED, PLAIN_DOOMER, at_rev, no_lazy, painted
 from helpers import MINI_DOOMER, _card, _typo_fix, stale_copy
 
 PRE_SWEEP = "1c717c8b"     # TTSCardMaker main before the badge sweep re-made some test cards
@@ -111,12 +107,6 @@ def _record(name, flags=b"\x08", channels=((-1, 10), (0, 10), (1, 10), (2, 10)),
             "blocks": tuple(blocks)}
 
 
-text_engine = pytest.mark.skipif(not _text_engine(), reason=fork_reason())
-# a text edit: the fork's set_text also writes the layer's Txt2 story (Photoshop reads that one)
-text_edit = pytest.mark.skipif(not (_text_engine() and _story_sync()),
-                               reason=fork_reason() if not _text_engine() else "the fork's text edits leave the Txt2 story stale")
-# the copy check composites the card: gradient fills need scipy (psd-tools[composite])
-composites = pytest.mark.skipif(find_spec("scipy") is None, reason="gradient fills need psd-tools[composite] (scipy)")
 
 
 # ========================
@@ -193,7 +183,6 @@ def test_below_box(monkeypatch):
     """A new last line with letters below the box is found (Photoshop hides it: Croissant); an empty or undrawn one never
     (Sumo Panda), nor one the old layout had below already; an added Ability's placeholder lines count as none; point
     text has no box."""
-    pytest.importorskip("psd_tools.composite.text.layout")
     line = lambda text, y: SimpleNamespace(text=text, y=y, drawn=True)
     monkeypatch.setattr("psd_tools.composite.text.layout.frame", lambda model: (0, 0, 100, 50))
     keep = SimpleNamespace(model=None, layout=SimpleNamespace(lines=[line("Attack.", 40)]))
@@ -390,7 +379,6 @@ ALT_PHOTOSHOP = {"hp": (3, (605, 1200, 1173, 1284)), "def": (7, (928, 1326, 1173
                  "atk": (10, (0, 0, 0, 0)), "spd": (0, (360, 1578, 1173, 1662))}            # these comps: each dark's box
 
 
-@text_engine
 def test_alt_template_bars(clone, parser, tmp_path):
     """The Alt template's bars (one smart object per stat, its layer comp the value) parse, are "template" bars to the
     details, and bake: each comp set, its dark drawn where Photoshop draws it, nothing else changed; past 10 refuses."""
@@ -428,7 +416,6 @@ def test_alt_template_bars(clone, parser, tmp_path):
 TWO_CREATURES = "03aa189be7367cf39388ba3a1a7bad2c812261d6"    # MDW/Templates/2_Creature_Template.psd's blob: all at "5"
 
 
-@text_engine
 def test_creature_bars(clone, parser, tmp_path):
     """The 2 creature template: a bar per creature reads exactly, the `creatures` field bakes every creature, the shared
     HP bar moves both; what the bars can't print is website only."""
@@ -464,7 +451,6 @@ def test_creature_bars(clone, parser, tmp_path):
     assert "bar per creature" in site({}, {}, {})
 
 
-@text_engine
 def test_creature_rows(clone, parser, tmp_path):
     """Digit rows per creature (Pix): creatures 2 and 3 bake on their own rows, a change on the shared HP mask moves all
     three; an empty row of creature 2's beside creature 1's is a full bar (Twin Emperors' DEF, 4 before 2026-11-08)."""
@@ -492,7 +478,6 @@ def test_creature_rows(clone, parser, tmp_path):
     assert [group.name for group, _, _ in pe.bar_rows(psd, "def", 2)[0]] == ["2"] and _creature_bars(psd)["shared"] == ["hp"]
 
 
-@text_engine
 def test_alt_template_converts_a_card(clone, parser, tmp_path):
     """The sweep kind alt template: a card's exposure digit rows become the template's layer-comp bars on its own rows,
     its stats read as before, the rest unchanged but what the gate allows, a styled dark digit's effects on its bar, and
@@ -533,7 +518,6 @@ def test_hard_edged(tmp_path):
     assert len(np.unique(np.asarray(image).reshape(-1, 4), axis=0)) == 1
 
 
-@text_engine
 def test_resized_bar_mode(clone, tmp_path):
     """A resized bar draws nearest (no in-between alpha, as Photoshop redraws it), unless its stored pixels show bicubic;
     pixels stored for another box tell nothing."""
@@ -927,7 +911,6 @@ def test_split_cells_borrow_the_dark_look(clone, parser, tmp_path):
     assert parsed["card"]["def"] == 10 and not {g.name: g for g, _, _ in stat_rows(psd)["def"]}["Empty"].visible
 
 
-@text_engine
 def test_layout_bar_bakes_and_the_guards_export_it(clone, parser, chart, tmp_path):
     """Tainted Isaac's hp through apply_jobs and every gate (gate_bytes takes the redrawn mask and the rename), and the push
     guards' PNG check (png_export) draws the same PNG from the saved PSD: an exposure's change is where its mask is."""
@@ -1165,7 +1148,6 @@ def test_gate_bytes_allows_only_the_declared_rename(monkeypatch):
         pe.gate_bytes("old", "new", [pe.Edit("name", "snas.", "sans.", [], [1], None, renamed="sans")])
 
 
-@composites
 def test_a_title_or_ability_printed_twice_refuses(clone):
     """Another visible text layer printing the same words refuses (Tainted Eden's glitch copies of its title, SOMETHING's
     two offset copies of its ability): a bake would change one and leave the copies (a plain ability edit there goes
@@ -1379,7 +1361,6 @@ def test_export_icc_follows_the_png(clone, tmp_path):
     assert pe.export_icc(plain, Image.new("RGB", (4, 4)))
 
 
-@text_engine
 def test_mini_doomer_hp_5_to_8(clone, parser, tmp_path):
     """S2's gate: 2 flag bytes, the parser reads 8, 0 pixels differ outside the row mask, a rerun does nothing. The PSD
     is saved with no merged image (owner 2026-11-07)."""
@@ -1407,7 +1388,6 @@ def test_mini_doomer_hp_5_to_8(clone, parser, tmp_path):
 # ========================
 # Text (the fork: text engine)
 # ========================
-@text_edit
 @pytest.mark.parametrize("rel", NAMED)
 def test_name_edit_passes_every_gate(clone, parser, chart, rel, tmp_path):
     psd_path = _card(clone, rel)[0]
@@ -1425,7 +1405,6 @@ def test_name_edit_passes_every_gate(clone, parser, chart, rel, tmp_path):
     assert pe.classify(baked.reparse, {"name": title}, saved).jobs == {"name": title}
 
 
-@text_edit
 @pytest.mark.parametrize("rel", [PAPYRUS])
 def test_name_edit_on_a_title_named_after_its_text(clone, parser, chart, rel, tmp_path):
     """Papyrus's and Sans's titles bake through every gate; the layer takes the new title as its name, as Photoshop
@@ -1442,7 +1421,6 @@ def test_name_edit_on_a_title_named_after_its_text(clone, parser, chart, rel, tm
     assert pe.classify(baked.reparse, {"name": new}, saved).redundant == ["name"]
 
 
-@text_edit
 def test_a_bake_runs_the_untouched_gate(clone, parser, chart, tmp_path, monkeypatch):
     """apply_jobs runs the untouched gate (gate_dirty): Claw's new FX layer put directly above its Text group, as before round 5, takes
     MagentaSmorg and Exposure 1 off the title; the bake refuses region (review 2026-10-24)."""
@@ -1463,7 +1441,6 @@ def test_a_bake_runs_the_untouched_gate(clone, parser, chart, tmp_path, monkeypa
     assert refused.value.code == "region"
 
 
-@text_edit
 def test_long_title_is_flagged(clone, chart):
     """Point text has no box: a title that runs off the canvas (moved back on when it fits) or onto a star badge bakes,
     flagged overflow (owner 2026-10-24: the editor previewed it)."""
@@ -1482,7 +1459,6 @@ def test_long_title_is_flagged(clone, chart):
     assert edit.notes == [] and tuple(pe.name_layer(psd).bbox)[2] < 936
 
 
-@text_edit
 def test_ability_edit_colours_a_status_word(clone, parser, chart, tmp_path):
     paths = _plain(clone, tmp_path)
     old = pe.parse_card(parser, paths[0], MINI_DOOMER)["card"]["ability"]
@@ -1579,7 +1555,6 @@ def test_follow_fx_refuses_what_would_move_an_anchored_layer(chart):
         pe.follow_fx(plan, new, pe.kept_chars(old, new), pe.status_spans(new, chart, []))
 
 
-@text_edit
 def test_ambiguous_fx_layers(clone, chart):
     """On Morpho Knight and Mini Doomer altered in memory: an FX layer whose words now fall in a badge (an own layer
     named "CD", the letters of its "(1CD)": the JSX would cut every badge into it) goes, told; two FX layers that would
@@ -1609,7 +1584,6 @@ def test_ambiguous_fx_layers(clone, chart):
         pe.set_text_layer(psd, "ability", pe.normalize_ability(layer.text) + " Die.", fonts, chart)
 
 
-@text_edit
 def test_own_style_fx_layers_are_made_again_in_their_style(clone, parser, chart, tmp_path):
     """Owner 2026-10-23: FX layers in no chart status's style are rebuilt in their own style, as the others (the 2026-10-21
     refusal went). Morpho Knight's Burning, +2/4/6 ATK and Smoldering strokes bake an appended sentence through every
@@ -1649,7 +1623,6 @@ def _noop(clone, parser, chart, rel, tmp_path, paths=None):
                                              str(clone / pe.FONTS_DIR), chart)
 
 
-@text_edit
 def test_noop_ability_bake_drops_an_old_badge_layer(clone, parser, chart, tmp_path):
     """A no-op ability bake on Mini Doomer before its badge layer went (a Gradient Overlay on Text) deletes 'Ability FX:
     (BOT)' (its words fall in a badge), told, and sets Stylistic Alternates on its "(BOT)", in the Txt2 story only (TySh has no
@@ -1676,7 +1649,6 @@ def _style(path: str, name: str) -> tuple:
     return record["blend"], record["flags"], record["blocks"]
 
 
-@text_edit
 def test_fx_gates_refuse_a_wrong_cut(clone, parser, chart, tmp_path):
     """BUG 2 review: the gates on a rebuilt FX layer refuse a wrong one. Snow Bunny's Frozen moved by an edit, then its
     FX layer shifted, cut short, or not the Ability's pixels: gate_fx refuses (reparse), and for a faint stripe away
@@ -1728,7 +1700,6 @@ def test_fx_gates_refuse_a_wrong_cut(clone, parser, chart, tmp_path):
         assert refused.value.code == "bytes"
 
 
-@text_edit
 def test_a_stale_fx_layer_is_cut_again(clone, parser, chart, tmp_path):
     """Owner 2026-11-08: Marx's 'Ability FX: Glued' kept an older raster's edges after its Ability was re-laid (3550 of
     Glued's 3602 px). An edit that leaves Glued alone cuts it again from the Ability's own pixels and bakes."""
@@ -1756,7 +1727,6 @@ def test_a_stale_fx_layer_is_cut_again(clone, parser, chart, tmp_path):
     assert "Ability FX: Glued" in [name for _, name, _ in baked.records] and not baked.fx_notes
 
 
-@text_edit
 def test_a_typed_badge_takes_the_alternates_under_an_overlay(clone, parser, chart, tmp_path):
     """Owner 2026-10-23: a timing tag typed anywhere is set in the stoogedings badge font, at the card's own badge style,
     sized and shifted to its text (owner 2026-10-25: the pill 1.35 times the capital height, its middle on theirs; Mini
@@ -1779,7 +1749,6 @@ def test_a_typed_badge_takes_the_alternates_under_an_overlay(clone, parser, char
     assert not any("Stylistic" in note for note in baked.fx_notes)
 
 
-@text_edit
 def test_a_badge_edited_in_place_keeps_its_size(clone, parser, chart):
     """A digit changed in a badge keeps its size and middle, as Photoshop's own edit does, unless the guards' rule
     (badge_wants) resizes it: Pandamonium's 55 pt (1GCD) was set at 59.15 pt."""
@@ -1794,7 +1763,6 @@ def test_a_badge_edited_in_place_keeps_its_size(clone, parser, chart):
                                        for r in p.runs] == before
 
 
-@text_edit
 def test_typed_icons_that_print_wrong_are_flagged(clone, parser, chart):
     """Baked and told (owner 2026-10-24): a colour icon typed under the Ability's colour or gradient overlay (Cat; a badge
     or sticker takes the one-colour alternates there, owner 2026-10-25), a [type] token on a card whose type icons are image layers in the ability's gaps
@@ -1822,7 +1790,6 @@ TURTLE = "Auxiliary/Minions/Turtle.psd"               # '(1GCD)' under a Color O
 BLOOD_BOMB = "Items/Attack/3 Stars/Blood_Bomb.psd"       # Pin Light: its [machine] token bare, no badge FX layer
 
 
-@text_edit
 def test_typed_icons_under_any_tint(clone, parser, chart, tmp_path):
     """Review 2026-10-23: the tint counted only an opaque Normal overlay. Soul of Eden's Pin Light blend printed a typed
     (2CD) white on cyan, Ice Staff's two 69% gradients a pale blue one and Holy Mantle's Pin Light a washed [fire], The
@@ -1854,7 +1821,6 @@ def test_typed_icons_under_any_tint(clone, parser, chart, tmp_path):
                         r"typed badge's colours$")
 
 
-@text_edit
 def test_a_badge_edited_by_deleting_letters_takes_the_alternates(clone, parser, chart, tmp_path):
     """Review 2026-10-23: Turtle's "(1GCD)" made "(1CD)" keeps every character, so it does not count as typed; under
     the Ability's Color Overlay it takes Stylistic Alternates all the same (every badge does), and the old badge layer
@@ -1870,7 +1836,6 @@ def test_a_badge_edited_by_deleting_letters_takes_the_alternates(clone, parser, 
     assert [layer.text[a:b] for a, b in pe.stylistic_alternates(layer)] == ["(1CD)"]
 
 
-@text_engine
 def test_alternates_go_on_badges_and_stickers_only(clone):
     """set_alternates (owner 2026-10-25): Stylistic Alternates on the badges and stickers, off on a typed character that
     took them from the badge before it; a kept one keeps its flag. alternate_spans picks badges and :stickers only."""
@@ -1887,7 +1852,6 @@ def test_alternates_go_on_badges_and_stickers_only(clone):
     assert pe.stylistic_alternates(layer) == ((at, at + 5),)
 
 
-@text_engine
 def test_gate_fx_tells_a_bare_badge_under_a_tinted_ability(clone, tmp_path):
     """bare_icons, independent of the rebuild: Turtle's badge under its Color Overlay is in the overlay's colour until
     it takes Stylistic Alternates (owner 2026-10-25: one colour on purpose); gate_fx tells a new one, even for an edit
@@ -1913,7 +1877,6 @@ def test_gate_fx_tells_a_bare_badge_under_a_tinted_ability(clone, tmp_path):
     flagged(pe.gate_fx(bomb, [edit], fonts_dir), r"^unsupported-card: ability: \[machine\]: under")
 
 
-@text_edit
 def test_letters_a_deletion_leaves_in_the_icon_font_are_flagged(clone, parser, chart, tmp_path):
     """"(1GCD)" made "(GCD)" (Turtle) left "(GCD)" in the icon font, drawn as plain letters: the check looked only at
     typed characters. Any letter the icon font now draws plainly is told, unless it did before the edit. A "★" typed
@@ -1929,7 +1892,6 @@ def test_letters_a_deletion_leaves_in_the_icon_font_are_flagged(clone, parser, c
     flagged(edit.notes, r"^unsupported-card: ability: ★: the Ability's look \(its Color Overlay\) changes the typed icon's")
 
 
-@text_engine
 def test_gate_fx_tells_letters_in_the_icon_font(clone):
     """lettered_icons, independent of icon_text: "[fire:]" typed right after The Hive's (1GCD) (no overlay), in the badge's
     icon font, shapes as seven letters, no ligature: gate_fx tells it. The card as it is draws none, and its badge and
@@ -1948,7 +1910,6 @@ def test_gate_fx_tells_letters_in_the_icon_font(clone):
         "unsupported-card: ability: ':[]efir': the icon font draws them as letters, no badge or icon"]
 
 
-@text_edit
 def test_gate_fx_tells_a_token_not_shaped_as_one_icon(clone, parser):
     """unshaped_icons, the layout's check of icon_text: each badge or token it reads is one icon-font cluster. A "[fire]"
     typed in The Hive's body font (an edit's style there) is six letters: gate_fx tells it; its badge and token as they
@@ -1969,7 +1930,6 @@ def test_gate_fx_tells_a_token_not_shaped_as_one_icon(clone, parser):
         "unsupported-card: ability: [fire]: not drawn as one badge or icon"]
 
 
-@text_edit
 def test_new_text_under_a_layer_above_it_or_over_a_bar_is_flagged(clone, parser, chart):
     """Review 2026-10-24: text set where a layer above the Ability hides it, or over the stat bars, baked with every gate
     passing: Papyrus' spaghetti 'Layer 10' sits in the gap after "Spaghetti" ("Die." printed under it), Paint Warrior's
@@ -2033,7 +1993,6 @@ BENCH = "Field/1 Stars/Bench.psd"           # its title 'Bench', no effects, roo
 NEO = "Auxiliary/Creatures/Mettaton_NEO.psd"   # its title under a gradient overlay
 
 
-@text_edit
 def test_gate_fx_checks_a_title_edits_icons(clone, parser):
     """A title edit's icons take the Ability's icon checks (owner 2026-10-24, gate_fx's titles): "[fire]" typed in
     Bench's title in its own font is six letters (unshaped_icons), "[fire:]" in the icon font seven (lettered_icons),
@@ -2067,7 +2026,6 @@ LESHY = "Creatures/Other/5 Stars/Leshy.psd"                     # its title unde
 DOOPLISS = "Creatures/Mario/4 Stars/DooPliss.psd"               # its title under its art ('p')
 
 
-@text_edit
 def test_a_glow_disc_on_a_stat_bar_is_flagged(clone, parser, chart, monkeypatch):
     """A typed glow's group effects (a stroked group's disc, Photoshop's look) count on the stat bars: covered_ink takes
     their changed ink with the text's (1ed822c). One pixel of it in a Mini Doomer bar the old text missed is told, the
@@ -2147,7 +2105,6 @@ def test_the_render_record_draws_as_the_stored_image(clone):
         == pe.export_icc(psd, Image.open(png))
 
 
-@text_engine
 def test_a_straight_bake_draws_its_edited_text_in_the_gamma():
     """Photoshop draws a type layer it redraws in the text gamma on a card exported straight too (Wooden_Spikes'
     title: 577 px off its export): "straight" pins the edited layers as "preview" does; "gamma" draws all in it."""
@@ -2195,7 +2152,6 @@ def _at(clone, tmp_path, rev: str, rel: str) -> tuple:
     return tuple(paths)
 
 
-@text_edit
 def test_typed_text_keeps_the_layers_characters_and_takes_the_body_colour(clone, parser, chart):
     """Bake bugs (owner 2026-10-25): text typed at a line's end in a line of several colours takes the body fill, not
     the coloured word beside it (Binge Eater's ", 1T" after its olive "SPD"), typed inside a run that run's; a whole
@@ -2224,7 +2180,6 @@ def test_story_style_drift_compares_kerning(clone):
     assert pe.follow_kerning(psd, health) and pe.story_style_drift(psd) == [] and not pe.follow_kerning(psd, health)
 
 
-@text_edit
 def test_text_typed_before_a_paragraph_is_kerned(clone, parser, chart):
     """Pot Full of Spiders!' first letter is unkerned in TySh; its story run leaves kerning to its sheet, whose parent
     Normal kerns. follow_kerning turns it on (no drift either way), so text typed before it is kerned as Photoshop
@@ -2245,7 +2200,6 @@ def test_text_typed_before_a_paragraph_is_kerned(clone, parser, chart):
     assert layer.text.startswith("Draw a card. ") and all(kerned(layer)[:13])
 
 
-@text_edit
 def test_a_two_site_edit_bakes_its_runs_into_the_story(clone, parser, chart, tmp_path):
     """Through apply_jobs and every gate: the saved PSD's TySh and Txt2 story agree run by run (story_style_drift) and
     keep the badge between the edits."""
@@ -2260,7 +2214,6 @@ def test_a_two_site_edit_bakes_its_runs_into_the_story(clone, parser, chart, tmp
     assert badges == ["(1GCD)", "(1CD)", "(1GCD)"]
 
 
-@text_edit
 def test_new_text_past_its_design_is_told(clone, parser, chart):
     """Review 2026-10-24: an Ability's added line printed over what lies below its old text (Deep Focus' flourish, Holy
     Card's torn panel border, Autopsy Report off its box) with no note; inks_over passed them, the old ink touching
@@ -2289,7 +2242,6 @@ def test_new_text_past_its_design_is_told(clone, parser, chart):
         flagged(edit.notes, "^overflow: name: the new text .*" + why)
 
 
-@text_edit
 def test_ink_checks_look_at_the_text_alone(clone, parser, chart, monkeypatch):
     """11-08: ink_beyond and inks_over build their masks on _ink_box, not the whole canvas: every verdict and px count
     as the whole canvas's (Deep Focus' lines past its old text, then pushed past each edge of the canvas)."""
@@ -2316,7 +2268,6 @@ def test_ink_checks_look_at_the_text_alone(clone, parser, chart, monkeypatch):
     assert len(seen) >= 7 and all(search(r"\(\d+ px", got) for got in seen)
 
 
-@text_edit
 def test_an_ability_off_the_card_moves_up(clone, parser, chart, tmp_path):
     """11-08: an added line no size fits (fit_below) ran off the card's bottom, unseen (46 cards). The Ability moves up
     until its last line ends where the old one did, TySh and raster together, through every gate."""
@@ -2333,8 +2284,6 @@ def test_an_ability_off_the_card_moves_up(clone, parser, chart, tmp_path):
     assert pe.normalize_ability(baked.reparse["card"]["ability"]) == pe.normalize_ability(text)
 
 
-@text_edit
-@pytest.mark.skipif(not (_text_engine() and pe.tab_stops()), reason="the fork lays no tab stops")
 def test_tab_stops_bake(clone, parser, chart, tmp_path):
     """Owner 2026-10-24 ("tab stops should be supported"): the fork lays tabs to Photoshop's stops. The website shows
     Michael's Blessing's tabs as spaces: they stay tabs, and an edited tabbed line keeps its '->' column (it collapsed,
@@ -2353,7 +2302,6 @@ def test_tab_stops_bake(clone, parser, chart, tmp_path):
     assert len(xs) and xs.min() > 760 and 1140 < ys.min() <= ys.max() < 1250     # the OYT row's badge only (fitted)
 
 
-@text_edit
 def test_styled_status_word_gets_an_fx_layer(clone, chart, tmp_path):
     """Idea 14 in memory on Mini_Doomer: Blazing is styled on the chart, so the edit cuts "Ability FX: Blazing" from the new
     raster (the ability's own pixels under the word), directly above Text, carrying the chart layer's lfx2/lrFX bytes and a
@@ -2397,7 +2345,6 @@ def test_styled_status_word_gets_an_fx_layer(clone, chart, tmp_path):
 PALACE = "Field/4 Stars/Palace_of_Shadow.psd"   # 'Ability FX: +2 DEF': a Stroke alone over its words' own blue
 
 
-@text_edit
 def test_gate_fx_refuses_an_own_style_layer_over_a_new_colour(clone, chart):
     """gate_fx_colours, independent of set_text_layer's fills: Palace of Shadow's stroke-only '+2 DEF' layer over its
     words in the body's grey (what a typed copy got) refuses reparse, from gate_fx too; the card as it is passes."""
@@ -2426,7 +2373,6 @@ def test_the_bakes_vocabulary_knows_only_the_fonts_icons():
     assert [text[a:b] for a, b in pe.icon_text(text, bare.icons)] == ["[fire]", "[newtype]"]
 
 
-@text_edit
 def test_ability_bake_regenerates_fx_layers_through_every_gate(clone, parser, chart, tmp_path):
     """Idea 14 through apply_jobs on Mini_Doomer: adding Blazing and Frozen cuts two FX layers (2 x 5916 block bytes landed),
     within the parity bar, the validator clean, nothing outside the region."""
@@ -2455,7 +2401,6 @@ def test_ability_bake_regenerates_fx_layers_through_every_gate(clone, parser, ch
     assert pe.classify(baked.reparse, {"ability": old + " Inflict Blazing and Frozen."}, saved).redundant == ["ability"]
 
 
-@text_edit
 def test_missing_and_loose_fonts(clone, parser, tmp_path, monkeypatch):
     """A face no file holds is drawn in the fork's stand-in (owner 2026-10-24: fonts flagged, not refused), whatever this
     machine has installed: Anubisath's title face found only loosely bakes, told; Termination Shock's OCR A Extended made
@@ -2484,7 +2429,6 @@ def _painted(clone, tmp_path, rows: float, box: tuple = HP_ROW) -> tuple:
     return str(out / Path(psd).name), str(out / Path(png).name)
 
 
-@text_engine
 def test_a_broken_render_is_refused_past_the_floor(clone, parser, tmp_path):
     """The safety floor (owner, 2026-10-23): more than 25% of the edited box's pixels past 24 is a broken render, refused
     `parity` before anything is written; a box a tenth broken bakes, told; the re-render is held to the same floor."""
@@ -2524,7 +2468,6 @@ def _no_ability(monkeypatch):
         monkeypatch.setattr(pe, name, blank)
 
 
-@text_edit
 def test_a_blank_render_under_the_floor_is_refused(clone, parser, tmp_path, monkeypatch):
     """The fork drawing no ability text misses only 10.7% of Shield of the Guilty's box, under the floor, and its merge
     replaces no pixel: the PSD would carry the new ability, the PNG the old. Refused `parity` before anything is written
@@ -2540,7 +2483,6 @@ def test_a_blank_render_under_the_floor_is_refused(clone, parser, tmp_path, monk
     assert not list(tmp_path.iterdir())
 
 
-@text_edit
 def test_a_text_edit_is_drawn_once(clone, parser, tmp_path, monkeypatch):
     """The merge and the re-render cut their regions from gate_dirty's render (no render_region): the same bytes and
     measurements as drawing each region."""
@@ -2561,7 +2503,6 @@ def test_a_text_edit_is_drawn_once(clone, parser, tmp_path, monkeypatch):
     assert cut.parity == whole.parity and cut.rerender == whole.rerender
 
 
-@text_engine
 def test_baseline_falls_back_when_the_png_disagrees_with_the_preview(clone, tmp_path):
     """Shell_Shock's Ability before its re-save (MISMATCHED_SHOCK): its preview shows the edge straight, its PNG (another
     session's) in the text gamma. The preview's blend misses the bar and baseline() takes the gamma's instead. The live card
@@ -2581,7 +2522,6 @@ def test_baseline_falls_back_when_the_png_disagrees_with_the_preview(clone, tmp_
 # ========================
 # Txt2 stories (the copy of the text Photoshop reads)
 # ========================
-@text_edit
 @pytest.mark.parametrize("rel", NAMED)
 def test_story_reader_agrees_with_the_fork(clone, rel):
     """psd_edit reads Txt2 itself (the gates check the fork): its story per layer is the fork's story_text."""
@@ -2592,7 +2532,6 @@ def test_story_reader_agrees_with_the_fork(clone, rel):
     assert pe.stale_stories(psd) == []
 
 
-@text_edit
 def test_gate_stories_refuses_a_tysh_only_edit(clone, tmp_path):
     """The 2026-10-22 flaw: the title changed in TySh, its story did not; Photoshop would show the old title."""
     title = pe.read_name(PSDImage.open(_card(clone, MINI_DOOMER)[0]))
@@ -2604,7 +2543,6 @@ def test_gate_stories_refuses_a_tysh_only_edit(clone, tmp_path):
     assert refused.value.code == "bytes"
 
 
-@text_edit
 def test_gate_stories_refuses_changes_beyond_the_edit(clone):
     """Another layer's story, Txt2 outside the stories, or another document block: refused."""
     path = _card(clone, MINI_DOOMER)[0]
@@ -2631,23 +2569,17 @@ def test_gate_stories_refuses_changes_beyond_the_edit(clone):
         pe.gate_stories(old, new, set())
 
 
-@text_edit
 def test_icon_font_tokens_and_colour_glyphs(clone, chart):
     """The_Hive is set in stoogedings: a typed [fire] takes the icon font in TySh and the story. Its glyphs are SVG colour
-    glyphs and no overlay covers the ability (Mini Doomer's gradient covers its badges): a fork that draws them in colour
-    takes the edit, one that draws them in one colour (they would come out white) refuses it."""
+    glyphs and no overlay covers the ability (Mini Doomer's gradient covers its badges): the fork draws them in colour,
+    so the edit is taken."""
     psd = PSDImage.open(_card(clone, HIVE)[0])
     layer = pe.ability_layer(psd)
     assert pe.uses_icon_font(layer) and pe.icon_font(layer) == "stoogedings-Regular"
     assert not pe.uses_icon_font(pe.name_layer(psd)) and not pe._overlaid(layer)
     assert pe._overlaid(pe.ability_layer(PSDImage.open(_card(clone, MINI_DOOMER)[0])))
     text = pe.normalize_ability(layer.text) + " Deal 1 [fire] damage."
-    if colour_glyphs():
-        assert pe.set_text_layer(psd, "ability", text, str(clone / pe.FONTS_DIR), chart).layers == [layer]
-    else:
-        with pytest.raises(pe.Refused, match="colour glyphs") as refused:
-            pe.set_text_layer(psd, "ability", text, str(clone / pe.FONTS_DIR), chart)
-        assert refused.value.code == "font"
+    assert pe.set_text_layer(psd, "ability", text, str(clone / pe.FONTS_DIR), chart).layers == [layer]
     start = layer.text.index("[fire]")
     fonts = [str(font["Name"].value) for font in layer.resource_dict["FontSet"]]
     style, unit = layer.engine_dict["StyleRun"], 0
@@ -2667,7 +2599,6 @@ SWAPPED_FONTS = {"Items/Equip/3 Stars/Shiny_Knife.psd": "OMORI_GAME2",    # its 
                  "Auxiliary/Minions/Dark_Tentacle.psd": "OMORI_GAME"}
 
 
-@text_edit
 def test_picture_titles_and_titles_off_the_card(clone, parser, chart):
     """A title that is part of the picture (no title layer, no text in the title region) takes a new name on the website
     only (classify's site; owner 2026-10-26), a title layer with another name bakes (rule P finds it); a new title
@@ -2693,7 +2624,6 @@ def test_picture_titles_and_titles_off_the_card(clone, parser, chart):
     assert layer._data.transform[4] == tx - moved
 
 
-@text_edit
 def test_a_title_drawn_in_another_font_is_set_in_that_face(clone, parser, chart, tmp_path):
     """Shiny Knife's title names OMORI_GAME2, Dark Tentacle's OMORI_GAME, but Photoshop drew each in the other (review
     2026-10-24): an edit sets the title in the face its pixels show and the PSD names it from then on (R3, owner
@@ -2719,7 +2649,6 @@ def test_a_title_drawn_in_another_font_is_set_in_that_face(clone, parser, chart,
     assert {run.style.font for run in TextModel.from_layer(title).runs} == {"OMORI_GAME"}
 
 
-@text_engine
 def test_font_map_shared_while_the_fonts_stand(clone, tmp_path, monkeypatch):
     """One FontMap per fonts dir while its files stand; a font added makes a new one. With FONT_DIRS_ENV starting with
     the dir it is walked once, the index the same."""
@@ -2740,7 +2669,6 @@ def test_font_map_shared_while_the_fonts_stand(clone, tmp_path, monkeypatch):
     assert once.dirs == (str(fonts),) and once._user_index().exact == FontMap(dirs=[str(fonts)])._user_index().exact
 
 
-@text_edit
 def test_bake_repairs_a_stale_story(clone, parser, tmp_path):
     """A pre-fix bake's PSD has its stale Txt2 stories synced (commands.txt2_repair.sync_stories), told, whatever the
     job; gate_stories lets the repaired stories change."""
@@ -2778,7 +2706,6 @@ def test_project_fills_an_empty_box_in_order():
 WATCHER = "Auxiliary/Minions/Abyss_Watcher.psd"                  # no ability part (a hidden empty Ability)
 
 
-@text_edit
 def test_plus_ability_adds_the_templates_layer(clone, parser, chart, tmp_path, monkeypatch):
     """§10 step 6: "+ability" waits while ADD_ABILITY_LIVE is off; on, Creature_Template's Ability comes in at the top
     of the Text group, named Ability with a fresh id and its own story, reads the box's text and is flagged."""
@@ -2836,7 +2763,6 @@ def _frame(psd, layer) -> tuple:
 ADRENALINE = "Items/Equip/3 Stars/Adrenaline.psd"                  # an Isaac-style item: a paper panel under its art
 
 
-@text_edit
 def test_plus_ability_on_an_item_starts_at_its_panels_top(clone, parser, chart):
     """+ability on an item without its ability: the text starts at the top of the empty paper panel, flows down inside
     it, in the card's own font (its title's on these cards: ability_place)."""
@@ -2855,7 +2781,6 @@ def test_plus_ability_on_an_item_starts_at_its_panels_top(clone, parser, chart):
     assert ability_place.layer_font(added)[0] == ability_place.title_font(psd, ADRENALINE, parser)[0]
 
 
-@text_edit
 def test_plus_ability_skips_art_and_other_text(clone, parser):
     """Review 2026-10-25: Humphrey's art beside its stats is no text panel (its text went into a 22 px band above the
     free space), and Autopsy Report's second Name and "Type: ..." layers are no place for the text."""
@@ -2879,7 +2804,6 @@ DRUID = "Creatures/World Of Warcraft/4 Stars/Warcraftian_Druid.psd"   # its titl
 PARTS = Path(__file__).resolve().parent / "fixtures" / "parts"
 
 
-@text_edit
 def test_parts_title_enter_and_legacy_edits(clone, parser, chart, tmp_path):
     """PARTS_EDITOR.md §11 cases 6 and 9: an Enter in Warcraftian Druid's second title box makes its layer two lines
     (one record, renamed as named after its text) and the name reads one line; a plain ability edit bakes on a card

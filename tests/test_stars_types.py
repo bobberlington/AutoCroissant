@@ -33,7 +33,6 @@ MAGNUM = "Auxiliary/Items/Magnum_Opus.psd"              # its field type: a smal
 ABIGAIL = "Auxiliary/Minions/Abigail.psd"               # a row of two icons running into the title: a third goes under
 NASUS = "Creatures/Other/4 Stars/Nasus.psd"             # Fire, Light and a wide Undead (the row closes up)
 
-icons = pytest.mark.skipif(not pe.icon_engine(), reason="the fork's layer copy API (Layer.duplicate, PixelLayer.fromarray)")
 
 
 # ========================
@@ -267,7 +266,6 @@ def test_classify_icon_fields_per_field():
 # ========================
 # Fixture cards (the fork)
 # ========================
-@icons
 def test_stars_pair_to_three_copies_centred_below(parser, tmp_path):
     """Two stars in a row: the third is the last one copied, centred under the pair (the templates' '3 star')."""
     paths = _fixture(tmp_path)
@@ -287,7 +285,6 @@ def test_stars_pair_to_three_copies_centred_below(parser, tmp_path):
     assert (old[outside] == png[outside]).all()
 
 
-@icons
 def test_stars_fewer_hide_the_last_and_more_show_hidden_first(parser, tmp_path):
     paths = _fixture(tmp_path, stars=((1080, 20), (970, 20), (1025, 125)), hidden=((1080, 230),))
     plan = _plan(parser, paths[0], REL, "stars", 2)
@@ -304,7 +301,6 @@ def test_stars_fewer_hide_the_last_and_more_show_hidden_first(parser, tmp_path):
     assert hidden == [(1080, 20, 1180, 120)]                           # the pair's right one stays
 
 
-@icons
 def test_stars_copy_a_shown_star_and_a_folder_card_reads_back_its_drawn_stars(parser, tmp_path):
     """A hidden star shown, then one copied: the copy's source is a star shown now (a hidden one's copy stays hidden).
     A folder card's reparse reads its folder, so the gate counts the stars drawn."""
@@ -318,7 +314,6 @@ def test_stars_copy_a_shown_star_and_a_folder_card_reads_back_its_drawn_stars(pa
         pe.gate_reparse(parser, parsed, paths[0], moved, {"stars": 3}, PSDImage.open(paths[0]))
 
 
-@icons
 def test_stars_refuse_per_field(parser, tmp_path):
     paths = _fixture(tmp_path, stars=((1080, 20), (970, 20), (1080, 300)))      # an L: its short row grows (layout support)
     plan = _plan(parser, paths[0], REL, "stars", 4)
@@ -358,7 +353,6 @@ def test_texts_take_every_picture():
     assert pe._texts(SimpleNamespace(descendants=lambda: [one, two])) == [one, two] and not two.visible
 
 
-@icons
 def test_gate_outside_refuses_a_change_beyond_the_region(tmp_path):
     paths = _fixture(tmp_path)
     old, new = PSDImage.open(paths[0]), PSDImage.open(paths[0])
@@ -374,7 +368,6 @@ def test_gate_outside_refuses_a_change_beyond_the_region(tmp_path):
     assert (after != before).any() and (after == pe.render_all(new)).all()
 
 
-@icons
 def test_a_new_icon_goes_above_the_clip_chain_and_takes_it(parser, clone, tmp_path):
     """Mini Doomer's Wind has a Curves clipped to it: a Fire beside it goes above that Curves (else Wind would lose it
     to Fire, outside Fire's box: gate_outside's catch) and gets a copy clipped to itself."""
@@ -388,7 +381,6 @@ def test_a_new_icon_goes_above_the_clip_chain_and_takes_it(parser, clone, tmp_pa
     assert sorted(fields for _, _, fields in baked.records) == [["added"], ["added"]]
 
 
-@icons
 def test_a_made_icon_takes_the_cards_profile(clone, tmp_path):
     """As Photoshop places one: stored converted into Abigail's 'Display' profile (the export gives Types/' colours back),
     as it is on an sRGB card, and from a PNG's own profile (field.png's Adobe RGB)."""
@@ -412,7 +404,6 @@ def test_a_made_icon_takes_the_cards_profile(clone, tmp_path):
             assert max(abs(a - b) for a, b in zip(shown.getpixel(centre), colour)) <= 1, (stem, shown.getpixel(centre), colour)
 
 
-@icons
 def test_types_add_from_types_png_and_close_up(parser, tmp_path):
     """Add Water under a lone Fire (made from Types/, fitted to Fire's box, a smart object linking it: Q4); drop the
     first of two and the row closes up."""
@@ -440,7 +431,6 @@ def test_types_add_from_types_png_and_close_up(parser, tmp_path):
         ("Water", 0, -170)]
 
 
-@icons
 def test_types_refuse_per_field(parser, tmp_path, monkeypatch):
     paths = _fixture(tmp_path)
     with pytest.raises(pe.Refused, match="'lava' is no type icon") as refused:
@@ -457,7 +447,6 @@ def test_types_refuse_per_field(parser, tmp_path, monkeypatch):
 # ========================
 # Real cards (copies from the clone)
 # ========================
-@icons
 def test_real_star_layouts(clone, parser, tmp_path):
     """Krabby Patty shows its own hidden third star; Love's centred third moves aside for a fourth, The Claw's top one
     too; Mettaton's zigzag takes a fifth; Springtrap's two over three hides one and takes a sixth as rows of two; a field
@@ -489,7 +478,6 @@ LAYOUT_STARS = [   # LAYOUT_SUPPORT.md's star rules, one card each: (card, stars
 ]
 
 
-@icons
 @pytest.mark.parametrize("rel, value, how, notes", LAYOUT_STARS)
 def test_layout_star_rules(clone, parser, tmp_path, rel, value, how, notes):
     plan = _plan(parser, _clone_card(clone, rel, tmp_path)[0], rel, "stars", value)
@@ -510,7 +498,6 @@ STAR_COUNTS = [   # the star counter (psd_parser.star_sets) on real cards: (card
 ]
 
 
-@icons
 def test_star_counter_on_real_cards(clone, parser, tmp_path):
     """The parser and the bake count one way: N on each card; plan_stars at N-1 and N+1 plans (one layer drawing
     several split, stacked copies one star, stars outside the group laid out with it, a second creature's turned)."""
@@ -529,7 +516,6 @@ def test_star_counter_on_real_cards(clone, parser, tmp_path):
     assert _plan(parser, _clone_card(clone, staff, tmp_path)[0], staff, "stars", 5).how == "its rows carried on"
 
 
-@icons
 def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
     """A dice 5 at 4 loses its middle (Nightmare, Kyle's 2 over 3); a moved star under a shadow is copied on top
     instead (Flower of Decay); with no room on the banner the stars sit on, a new star goes off it, told (Thunder
@@ -559,7 +545,6 @@ def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
         "stars: the stars placed 20 px lower to fit: check it"]
 
 
-@icons
 def test_star_beside_an_empty_stars_group_and_an_aux_items_icon(clone, parser, tmp_path):
     """Double Pain's star icon loose beside an empty Stars group (TC 11-09): the bake copies it as the parser counts
     it. Poorly Drawn Cabbage's Attack icon is its item type (72b4876): taken off, the reparse expects none; the types
@@ -594,7 +579,6 @@ def _centres(plan) -> list:
     return [(round(x), round(y)) for x, y in plan.centres]
 
 
-@icons
 def test_star_cases_of_10_26(clone, parser, tmp_path):
     """Leshy's half-opaque shadows are no stars (5, not 3); its 4 hides the bottom-left drop (the middle one would bare
     its neighbour's shadow) and its 1 keeps it (the top-right's shadow would show). Yin Yarn's yarn clipped onto its
@@ -639,7 +623,6 @@ def test_star_cases_of_10_26(clone, parser, tmp_path):
     assert magolor.notes == ["stars: a V's point as a pair (the card's own layout does not go on to 6)"]
 
 
-@icons
 def test_a_texture_on_the_stars_follows_them(clone, parser, tmp_path):
     """Yin Yarn's 6 (owner 11-09): its yarn 'Layer 6', clipped onto Stars, copied over the moved and the new star where
     it no longer lies, clipped right above it under Color Balance 2; they print as the originals beside them."""
@@ -662,7 +645,6 @@ def test_a_texture_on_the_stars_follows_them(clone, parser, tmp_path):
         assert diff[core].mean() < 1
 
 
-@icons
 def test_a_smart_object_paint_on_the_stars_follows_them(clone, parser, tmp_path):
     """Paint Warrior's 4 (owner 11-09): its paint, a smart object clipped onto each Stars group, is drawn on each new
     star as on the original beside it: the group under it opaque, then the paint copied, moved and masked to the star,
@@ -694,7 +676,6 @@ def _open(parser, clone, rel, tmp_path) -> tuple:
     return psd, pe.parse_card(parser, path, rel, psd)
 
 
-@icons
 def test_star_pieces_split_and_read_masks():
     """One layer drawing two stars is two pieces; a mask hiding one leaves one, and the core box is the shown star's."""
     psd = PSDImage.new("RGB", (1200, 1800))
@@ -710,7 +691,6 @@ def test_star_pieces_split_and_read_masks():
     assert len(pe.star_pieces(layer)) == 1 and pe.PSDParser._core_box(layer)[2] <= 1015
 
 
-@icons
 def test_type_icons_in_stars_are_no_stars(clone, parser, tmp_path):
     """Toy Freddy's stars group holds its Machine icon beside 3 stars: a move redraws them (a fourth copied); Pike Beam's
     Offensive_Minion icon in Stars reads 2 stars, not 3, and taking it off moves Machine into its spot (it blocked
@@ -729,7 +709,6 @@ def test_type_icons_in_stars_are_no_stars(clone, parser, tmp_path):
     assert [layer.name for layer, _, _ in plan.moves] == ["darkmatter"] and [layer.name for layer in plan.hide] == ["electric"]
 
 
-@icons
 def test_copied_smart_stars_bake_alike(clone, parser, tmp_path):
     """Mini Doomer's Warpstars are smart objects: two bakes of a third copy one with the same placed ID (bake_pictures
     compares each picture's layers), one the card doesn't hold yet."""
@@ -747,7 +726,6 @@ def test_copied_smart_stars_bake_alike(clone, parser, tmp_path):
     assert records[0] == records[1]
 
 
-@icons
 def test_a_first_type_icon_on_the_title_bakes_flagged(clone, parser, tmp_path):
     """John Ward has no type icon; Creature_Template's spot touches its Name: the icon is made there, told."""
     rel = "Creatures/Other/3 Stars/John_Ward.psd"
@@ -760,7 +738,6 @@ def test_a_first_type_icon_on_the_title_bakes_flagged(clone, parser, tmp_path):
     assert any("at Creature_Template's spot touches 'Name'" in note for note in edit.notes), edit.notes
 
 
-@icons
 def test_a_redrawn_icon_keeps_its_spots(clone, parser, tmp_path, monkeypatch):
     """Owner 11-07: the pass redraws Mari's Light from a Types file with a fainter edge (its ink core smaller): with
     its spot record entry a new icon goes where it went before; a bake adding a type leaves the entry valid."""
@@ -793,7 +770,6 @@ def test_a_redrawn_icon_keeps_its_spots(clone, parser, tmp_path, monkeypatch):
     assert {k: v for k, v in entries[str(light.layer_id)].items() if k != "core"} == pe.spot_key(light, rel)
 
 
-@icons
 def test_real_type_rows(clone, parser, tmp_path, monkeypatch):
     morpho = _plan(parser, _clone_card(clone, MORPHO, tmp_path)[0], MORPHO, "types", ["undead"])
     assert [layer.name for layer in morpho.hide] == ["Fire"] and [layer.name for layer, _, _ in morpho.moves] == ["Undead", "Gradient Map 2"]
@@ -825,7 +801,6 @@ def test_an_auxiliary_items_type_is_its_first_item_type_icon(clone, parser):
     assert {rel: parser.parse(str(clone / rel), rel).subtype for rel in want} == want
 
 
-@icons
 def test_an_auxiliary_items_type_follows_a_type_edit(parser, tmp_path):
     """Refused after the bake until 11-09 (reparse: subtype): swapping the item-type icon bakes and the item type
     follows it; dropping it leaves none."""
@@ -839,7 +814,6 @@ def test_an_auxiliary_items_type_follows_a_type_edit(parser, tmp_path):
 
 
 
-@icons
 def test_icons_and_stars_go_by_ink(clone, parser, tmp_path):
     """Refused until 11-07: fills (Cloud Soiree, Kyle), a row of overlapping icons (Kyle), text in the picture (Return To
     Sender), a column (Masked Dedede), a lone star's backdrop (Bubble)."""
@@ -852,7 +826,6 @@ def test_icons_and_stars_go_by_ink(clone, parser, tmp_path):
     pe.plan_stars(psd, parsed, 2, parser, moving=True)
 
 
-@icons
 def test_lane3_star_layouts(clone, parser, tmp_path):
     """Grimora's one layer drawing three is split into masked copies and its centred row stays centred (a bake: the
     split's records pass gate_bytes); Tainted Lazarus's dead form takes the new count too, turned half round;
@@ -880,12 +853,10 @@ def test_lane3_star_layouts(clone, parser, tmp_path):
     assert plan.how == "rows of two, laid out again"
 
 
-@icons
 def test_smart_filtered_stars_move_as_photoshop_does(clone, parser, tmp_path):
     """Magnet-shroom's star carries smart filters: its copy gets its own FEid item (the source's planes, its rectangle
     moved with the copy, named after the copy's placed ID, in file order) and is marked not valid at its new place, as
     Photoshop writes one; gate_filters refuses an FEid change no edit declares."""
-    assert pe.filter_items(), "the fork lacks SmartObject.filter_item (cards-20261026)"
     rel = "N.M.E/Magnet-shroom.psd"
     paths = _clone_card(clone, rel, tmp_path)
     parsed, baked = _bake(parser, paths, {"stars": 2}, tmp_path, rel)
@@ -913,7 +884,6 @@ def _touching(plan) -> list:
             if (moved_a or moved_b) and pe._inks_touch(ink_a, ink_b)]
 
 
-@icons
 def test_type_rows_carried_on_and_pulled_back(clone, parser, tmp_path):
     """Masher's 2 over 1 takes a fourth icon as a grid (owner 10-26): 'dark' under the shell, the new one under the
     gears; without Types/ to check the made icon, or where the grid touches (Mosling's Wind, Electric Dart's new icon),
@@ -946,7 +916,6 @@ def test_type_rows_carried_on_and_pulled_back(clone, parser, tmp_path):
     assert pe.set_icons(psd, plan, types).notes == ["types: the 'water' icon placed 100 px lower to fit: check it"]
 
 
-@icons
 def test_a_closed_row_makes_room(clone, parser, tmp_path):
     """Owner 10-26: after a removal the last icon still fills the hole, and the icons after it slide just clear: Nasus
     without Fire is skull, Light; without Light the skull slides up to Fire; Masher without the shell is 'dark', then
@@ -966,7 +935,6 @@ def test_a_closed_row_makes_room(clone, parser, tmp_path):
     assert not _touching(plan)
 
 
-@icons
 def test_a_blocked_new_icon_steps_down(parser, tmp_path):
     """Owner 11-08: a new star or type icon whose spot is blocked steps down a tenth of its height at a time until it
     fits, its centre above the card's middle and its core above the Ability text (_drops; MMC's and Nasus's
@@ -981,7 +949,6 @@ def test_a_blocked_new_icon_steps_down(parser, tmp_path):
     assert edit.notes == ["types: the 'ice' icon placed 72 px lower to fit: check it"]
 
 
-@icons
 def test_a_closed_row_slides_only_to_make_room(parser, tmp_path):
     """Wide Ice fills Fire's hole over Water, and a star stops Water sliding clear: refused at plan time. Narrow Ice
     clear of Water, which grazed a star already: Water stays."""

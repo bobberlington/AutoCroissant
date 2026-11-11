@@ -36,7 +36,7 @@ import commands.card_preview_branch as br  # noqa: E402
 import commands.card_preview_reads as early  # noqa: E402
 import commands.github_api as github_api  # noqa: E402
 import commands.psd_edit as pe  # noqa: E402
-from conftest import CLONE, REPO, blob_sha_bytes as _sha, fork_reason, text_engine as _text_engine  # noqa: E402
+from conftest import CLONE, REPO, blob_sha_bytes as _sha  # noqa: E402
 from golden_cards import VOCAB  # noqa: E402
 from helpers import FORK_VENV_KEY, bot_files, fork_install  # noqa: E402
 
@@ -47,7 +47,6 @@ MDW_DOOMER = "MDW/Mini_Doomer.psd"
 WORKFLOWS = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows"
 REQUEST = "0f8e7d6c-5b4a-4321-9876-0123456789ab"       # a crypto.randomUUID()
 
-fork = pytest.mark.skipif(not _text_engine(), reason="a bake needs the fork's renderer: " + fork_reason())
 
 
 # ========================
@@ -127,7 +126,6 @@ def _preview(cards, tmp_path, edit, card="Mini Doomer", request=REQUEST, name="o
 # ========================
 # The preview
 # ========================
-@fork
 def test_a_stat_edit_bakes_the_bakes_pixels(cards, tmp_path, monkeypatch):
     """hp 5 -> 8: baked, the PNG the bake's dry run makes (the same pixels), recompressed losslessly, a 720 px WebP; the
     base is the commit and the blobs it read; the card repo is untouched and nothing is left in the runner's temp. The
@@ -308,7 +306,6 @@ def test_the_early_reads_are_the_previews(cards, tmp_path, monkeypatch):
         assert cb._local_blob(str(blobless), _sha(cards.files[path])) == cards.files[path]
 
 
-@fork
 def test_fonts_and_records_after_the_wait(cards, clone, tmp_path, monkeypatch):
     """card-preview.yml starts the preview while the fonts restore and the reads run: nothing before ready()'s wait
     (READS_ENV's file) reads the records, nor before the first font's (WAIT_ENV's) the fonts, so ones that appear only
@@ -795,7 +792,6 @@ def _run_jobs(text: str, inputs: dict, workspaces: dict, bots: dict, tmp_path: P
     return codes
 
 
-@fork
 def test_the_jobs_steps_run_here(cards, remote, clone, tmp_path):
     """card-preview.yml's own shell against a stand-in GitHub: each job's workspace a sparse clone of the card repo (the
     preview's with MDW/Fonts as the font cache restores it), the bots Action-shaped copies. A stat edit is published on

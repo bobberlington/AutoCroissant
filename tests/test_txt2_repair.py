@@ -1,7 +1,7 @@
 """
 txt2_repair: a stale Txt2 story (a pre-fix bake's PSD, made here: the title set in TySh alone) is rewritten to its
 layer's text and nothing else changes, byte for byte outside the Txt2 block; an in-sync PSD writes nothing.
-Reads the card clone and needs the fork's story sync (fix/txt2-sync); skips without either. The six titles baked on
+Reads the card clone (skips without it). The six titles baked on
 2026-10-22 are repaired into tmp from their bake commits (main holds them in sync since 7b48db05 and 5a9e0fcf).
 """
 import hashlib
@@ -13,13 +13,11 @@ from psd_tools import PSDImage
 
 import commands.psd_edit as pe
 import commands.txt2_repair as tr
-from conftest import fork_reason, story_sync, text_engine
 from helpers import MINI_DOOMER, _card, _typo_fix, stale_copy
 
 # ========================
 # Configuration
 # ========================
-pytestmark = pytest.mark.skipif(not (text_engine() and story_sync()), reason="needs the fork's Txt2 story sync: " + fork_reason())
 
 
 def _outside_txt2(path) -> tuple:

@@ -420,9 +420,7 @@ def test_icon_glyphs_redrawn_after_a_font_commit(clone, tmp_path, monkeypatch):
     from commands.font_check import layer_fonts
     from commands.psd_details import layer_path
     from commands.psd_edit import Refused, save_psd
-    from conftest import CARDS_REV, at_rev, story_sync
-    if not story_sync():
-        pytest.skip("needs the fork's text engine")
+    from conftest import CARDS_REV, at_rev
     rel, png, font = BLAZING + ".psd", BLAZING + ".png", psd_glyphs.FONT_FILE
     repo, fonts = tmp_path / "cards", tmp_path / "fonts"
     git = lambda *a, who="t": subprocess.run(["git", "-C", str(repo), "-c", f"user.name={who}", "-c", "user.email=t@t", *a],

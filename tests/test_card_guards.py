@@ -1247,9 +1247,6 @@ def test_a_persons_drawn_duplicate_is_kept_as_pushed(cards, clone, tmp_path):
 # The real push of 2026-10-22 15:18 (the clone, read-only)
 # ========================
 def test_replay_of_the_stale_png_push(clone, tmp_path):
-    from importlib.util import find_spec
-    if find_spec("scipy") is None:
-        pytest.skip("God Tamer's gradient fills need psd-tools[composite] (scipy), as the Action installs")
     if pe.tool() is None:
         pytest.skip("the 16 recompressions need the oxipng CLI (as the Action installs) or pyoxipng")
     source = cg.Source(str(clone))

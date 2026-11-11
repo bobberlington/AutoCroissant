@@ -21,7 +21,6 @@ from golden_cards import golden_file
 import helpers
 from helpers import DOOMER, FREEZER, OTHER, cards, cards_template  # noqa: F401 (fixtures)
 COMMIT = "c" * 40
-needs_ranges = pytest.mark.skipif(not ga.range_reads(), reason="psd-tools without lazy reads (the fork's feat/lazy-records)")
 
 
 def _sha(data: bytes) -> str:
@@ -112,7 +111,6 @@ def _ranges(github) -> set:
 # ========================
 # card_check --repo
 # ========================
-@needs_ranges
 def test_card_check_reads_ranges_at_the_push(github):
     pushed = {DOOMER: (_sha(github.files[DOOMER]), "bob"), FREEZER: (_sha(github.files[FREEZER]), "ann")}
     parser = cc.Vocabulary().parser()
@@ -165,7 +163,6 @@ def _grown(data: bytes, start: int, end: int):
     return reply
 
 
-@needs_ranges
 @pytest.mark.parametrize("answer", [_short, _cut, _grown])
 def test_a_wrong_range_after_the_open_marks_the_psd_failed(psds, monkeypatch, answer):
     """psd_details catches what a section raises: failed is what makes the caller read the PSD whole."""
@@ -257,7 +254,6 @@ def test_forked_workers_read_as_threads_do(cards, monkeypatch, capsys):
     assert capsys.readouterr().out.count("Forked reads stopped (TimeoutError()); the rest in threads") == 1
 
 
-@needs_ranges
 def test_forked_range_reads_take_RANGED_WORKERS_whole_downloads_DOWNLOAD_WORKERS(cards, monkeypatch):
     sizes = []
 
@@ -304,7 +300,6 @@ def _hide(monkeypatch, shas: set) -> None:
     monkeypatch.setattr(cd.GitBuild, "_store", lambda self, sha: "" if sha in shas else real(self, sha))
 
 
-@needs_ranges
 def test_the_build_reads_blobs_its_clone_lacks_by_ranges_at_head(cards, monkeypatch):
     _hide(monkeypatch, {_sha(data) for data in cards.psds.values()})
     served: list = []
@@ -317,7 +312,6 @@ def test_the_build_reads_blobs_its_clone_lacks_by_ranges_at_head(cards, monkeypa
     assert {path for _, path in served} == {DOOMER, FREEZER} and {ref for ref, _ in served} == {cards.first}
 
 
-@needs_ranges
 def test_a_baked_build_reads_ranges_at_the_bake_commits_parent(cards, monkeypatch):
     helpers._build(cards, "--empty")
     helpers.put(cards.repo, DOOMER, cards.psds[OTHER])
@@ -330,7 +324,6 @@ def test_a_baked_build_reads_ranges_at_the_bake_commits_parent(cards, monkeypatc
     assert _strip(helpers._read(cards)[0]["The Freezer"].to_dict()) == _strip(_golden(FREEZER))
 
 
-@needs_ranges
 def test_other_psds_links_read_in_the_workers_as_one_at_a_time(cards, clone, monkeypatch):
     """gather_links reads MDW PSDs and .psb files by ranges in the download workers: links.json as one worker gives."""
     rel = "Auxiliary/Creatures/Militron_(No_Armor).psd"
