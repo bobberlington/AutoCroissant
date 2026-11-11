@@ -79,11 +79,13 @@ def test_build_merges_automatic_flags(tmp_path):
 
 def test_search_lines_and_file(tmp_path):
     """flag: searches; the reason's rules; the batch's lines; a set flag sits in ORDER, the last one cleared unsets it; a
-    form draft's tick and reason read back from the card."""
+    form draft's tick and reason read back from the card; flags as labels alone (owner 11-11: no notes); names_ok holds
+    while the names are as marked."""
     out = node(tmp_path, r"""
 const cards = [{ name: "A", flags: { hand: "why" } }, { name: "B", flags: { bars: "" } }, { name: "C", flags: { hand: "", bars: "x" } }, { name: "D" }, { name: "E", checks: { hand: "note" } }, { name: "F", checks: { name: "note" } }];
 const hits = q => cards.filter(S.compile(q)).map(c => c.name).join("");
-const set = { flags: F.withFlag({ hand: "why" }, "bars", "  two   words ") };
+const set = { flags: F.withFlag({ hand: "why" }, "bars", "  two   words "), names_ok: ["Wall", "The Wall By Ech", "Blockade"] };
+const wall = { name: "Wall", edited: ["name"], orig: { name: "The Wall By Ech" }, psd: "X/Blockade.psd", names_ok: set.names_ok };
 const file = E.editsFile(JSON.stringify({ cards: { X: { creatures: null, note: "n", _by: "a", _at: "b" } } }), [{ key: "X", set, unset: [] }], "T", "web");
 const lines = op => E.describeItems(op, { flags: { hand: "why", bars: "" }, edited: ["flags"] }).map(x => x.text);
 process.stdout.write(JSON.stringify({ hits: ["flag:hand", "flag:bars", "flag:any", "!flag:any", "FLAG:HAND & flag:bars", "flag:name"].map(hits),
@@ -91,15 +93,17 @@ process.stdout.write(JSON.stringify({ hits: ["flag:hand", "flag:bars", "flag:any
   note: F.flagsHtml(cards[4]), own: [F.hasFlag(cards[4], "hand"), F.ownFlag(cards[4], "hand")], error: [F.flagError({ hand: "x".repeat(300) }), F.flagError({ bars: "x".repeat(301) }), F.flagError({ hand: "" }), F.flagError({ bars: "" })],
   file, unset: E.editsFile(file, [{ key: "X", set: {}, unset: ["flags"] }], "T", "web"), nulled: E.editsFile(file, [{ key: "X", set: { flags: null }, unset: [] }], "T", "web"),
   lines: [lines({ set: { flags: { hand: "new" } }, unset: [] }), lines({ set: {}, unset: ["flags"] })],
-  raw: [D.rawOf(cards[1], "flag-bars"), D.rawOf(cards[0], "flag:hand"), D.rawOf(cards[3], "flag-hand"), D.rawOf(cards[3], "flag:bars")], names: D.fieldNames({ "flag:bars": "x", "flag-bars": true }) }));
+  raw: [D.rawOf(cards[1], "flag-bars"), D.rawOf(cards[0], "flag:hand"), D.rawOf(cards[3], "flag-hand"), D.rawOf(cards[3], "flag:bars")], names: D.fieldNames({ "flag:bars": "x", "flag-bars": true }),
+  ok: [F.namesOk(wall), F.namesOk({ ...wall, name: "Walls" }), F.namesOk({ ...wall, psd: "X/Wall.psd" }), D.rawOf(wall, "names_ok"), F.namesNow(wall, wall, "W")] }));
 """)
     assert out["hits"] == ["ACE", "BC", "ABCEF", "D", "C", "F"]
     assert out["clean"] == [{"bars": ""}, None, None, {"hand": "", "bars": "", "psd": "1a2b3c4d"}, None]
-    assert '<span class="flag-note">note</span>' in out["note"] and "data-flag" not in out["note"] and out["own"] == [True, False]
+    assert out["note"] == '<div class="card-flags"><div class="card-flag"><b>Needs doing by hand</b></div></div>' and out["own"] == [True, False]
     assert out["error"] == ["", "Special stat bars: at most 300 characters", "Needs doing by hand: say what the issue is", ""]
     assert out["file"] == dump_edits(json.loads(out["file"]))
     entry = json.loads(out["file"])["cards"]["X"]
-    assert list(entry) == ["note", "creatures", "flags", "_by", "_at"] and entry["flags"] == {"hand": "why", "bars": "two words"}
+    assert list(entry) == ["note", "creatures", "flags", "names_ok", "_by", "_at"] and entry["flags"] == {"hand": "why", "bars": "two words"}
     assert "flags" not in json.loads(out["unset"])["cards"]["X"] and "flags" not in json.loads(out["nulled"])["cards"]["X"]
     assert out["lines"] == [["Flags: Needs doing by hand: new; Special stat bars cleared"], ["Flags: Needs doing by hand cleared; Special stat bars cleared"]]
     assert out["raw"] == [True, "why", False, ""] and out["names"] == "Special stat bars"
+    assert out["ok"] == [True, False, False, True, ["W", "The Wall By Ech", "Blockade"]]

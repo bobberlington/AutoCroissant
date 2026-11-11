@@ -1059,6 +1059,32 @@ def test_land_local_commits_in_the_clone(cards, tmp_path):
     assert again["cards"] == []                                                             # the bot's commit is never guarded
 
 
+def test_a_card_file_name_a_file_cant_hold_is_renamed_silently(cards, tmp_path):
+    """Owner 11-11: a pushed card PSD whose file name holds . : [ ] ? * " < > | / \\ (Foo.Bar.psd) takes its name's
+    file form in the guards' commit with its PNG (the one the guards make too), the files keyed by the card following
+    and a Renamed trailer each; nothing told. An MDW file of such a name is no card: never."""
+    root, base, alice, bot = cards
+    psd = (root / FOLDER / "Bread.psd").read_bytes()
+    keyed = {"site/Card Authors.txt": b"[cards]\nFoo.Bar = Alice\n", "TTS/decks.json": f'{{"d": ["{FOLDER}/Foo.Bar.png"]}}'.encode()}
+    first = _plumb(root, keyed, "keyed by the card")
+    push = _plumb(root, {f"{FOLDER}/Foo.Bar.psd": psd, "MDW/Old.Stuff.psd": psd}, "a card")
+    data = cg.check(str(root), push, first, mode="on", out=str(tmp_path / "out"), workers=1)
+    new = f"{FOLDER}/FooBar"
+    assert data["renames"] == {f"{FOLDER}/Foo.Bar.psd": f"{new}.psd", f"{FOLDER}/Foo.Bar.png": f"{new}.png"}
+    assert data["discord"] == {} or not any("renamed" in str(v) for v in data["discord"].values())
+    report = cg.land(str(tmp_path / "out" / "plan.json"), local=str(root))
+    tree = set(_git(root, "ls-tree", "-r", "--name-only", report["sha"]).splitlines())
+    assert {f"{new}.psd", f"{new}.png", "MDW/Old.Stuff.psd"} <= tree and not {f"{FOLDER}/Foo.Bar.psd", f"{FOLDER}/Foo.Bar.png"} & tree
+    message = _git(root, "log", "-1", "--format=%B", report["sha"])
+    assert f"Renamed: {FOLDER}/Foo.Bar.psd -> {new}.psd" in message and "2 files renamed" in message.splitlines()[0]
+    assert _git(root, "rev-parse", f"{report['sha']}:{new}.psd") == _git(root, "rev-parse", f"{push}:{FOLDER}/Foo.Bar.psd")
+    assert "FooBar = Alice" in _git(root, "show", f"{report['sha']}:site/Card Authors.txt")
+    assert f"{new}.png" in _git(root, "show", f"{report['sha']}:TTS/decks.json")
+    assert all(e["path"] != f"{FOLDER}/Foo.Bar.png" for e in report["events"])
+    again = cg.land(str(tmp_path / "out" / "plan.json"), local=str(root))
+    assert again["renamed"] == {}                                                       # a rerun: made already
+
+
 # ========================
 # Lossless recompression (owner, 2026-10-23)
 # ========================

@@ -713,9 +713,9 @@ def test_pictures_measured_beside_the_psd_reads(cards, monkeypatch):
 
 
 def test_sweep_events_are_silent_in_any_push(tmp_path):
-    """A Card-sweep trailer silences its commit's own art and text changes only: not the other commits of its push (one
-    listed push, the fallback, or a later build holding its card), not a card it adds, not a card an earlier commit
-    changed too; the trailer named only in a subject silences nothing."""
+    """A Card-sweep trailer silences its commit's own art and text changes and renames (owner 11-11) only: not the other
+    commits of its push (one listed push, the fallback, or a later build holding its card), not a card it adds, not a
+    card an earlier commit changed too; the trailer named only in a subject silences nothing."""
     repo = tmp_path / "swept"
     repo.mkdir()
     git(repo, "init", "-q", "-b", "main")
@@ -742,16 +742,18 @@ def test_sweep_events_are_silent_in_any_push(tmp_path):
                 {"kind": "changed", "card": "B", "path": "B.psd", "commit": x, "blob": [blob(base, "B.psd"), blob(x, "B.psd")]},
                 {"kind": "art", "card": "C", "path": "C.psd", "commit": p, "blob": [blob(base, "C.psd"), blob(p, "C.psd")]},
                 {"kind": "new", "card": "D", "path": "D.psd", "commit": s},
-                {"kind": "changed", "card": "E", "path": "E.psd", "commit": s, "blob": [blob(base, "E.psd"), blob(s, "E.psd")]}]
+                {"kind": "changed", "card": "E", "path": "E.psd", "commit": s, "blob": [blob(base, "E.psd"), blob(s, "E.psd")]},
+                {"kind": "renamed", "card": "F", "path": "F.psd", "commit": s, "renamed_to": "G"},
+                {"kind": "renamed", "card": "H", "path": "H.psd", "commit": x, "renamed_to": "I"}]
     commits = [(sha, float(at), who) for at, (sha, (_, who, _)) in enumerate(zip(shas, steps)) if sha != base]
     listed = [{"after": z, "before": base, "by": "bob", "at": 5.0, "commits": [x, s, p, z]}]
-    want = {"A": True, "B": False, "C": False, "D": False, "E": False}
+    want = {"A": True, "B": False, "C": False, "D": False, "E": False, "F": True, "H": False}
     for pushes, span, since in ((listed, commits, base), ([], commits, base), ([], commits[3:], p)):
         events = made()
         cd.mark_sweeps(str(repo), events)
         pushed = cl.assign_pushes(events, pushes, span, since, set(), set())
         assert {e["card"]: cl.silent(e) for e in pushed} == want, (pushes, since)
-    assert made()[0].get("sweep") is None and [e.get("sweep") for e in events] == ["badges", None, None, None, None]
+    assert made()[0].get("sweep") is None and [e.get("sweep") for e in events] == ["badges", None, None, None, None, "badges", None]
 
 
 def _one_email(tmp_path):

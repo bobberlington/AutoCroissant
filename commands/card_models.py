@@ -270,16 +270,26 @@ def card_name(path: str) -> str:
 # a card's files renamed (the editor's "Also rename the card's files", owner 2026-10-25): the bake commit's trailer per
 # file, "Renamed: <old path> -> <new path>"; the data build, the TTS save and the website follow it
 RENAMED = "Renamed"
-NOT_IN_FILE_NAMES = '<>:"/\\|?*'              # what a Windows or macOS file name can't hold
+NOT_IN_FILE_NAMES = '.:[]?*"<>|/\\'           # what a card's file name never holds (owner 2026-11-11)
+SMALL_WORDS = frozenset("a an and as at by for in of on or the to vs".split())    # lowercase in a file name unless first or last
 RESERVED_STEMS = frozenset(["con", "prn", "aux", "nul"] + [f"{p}{n}" for p in ("com", "lpt") for n in range(1, 10)])
 
 
 def file_stem(name: str) -> str:
-    """A card name as a file stem, the repo's convention ("Mini Destroyer's Bow" -> "Mini_Destroyer's_Bow"): spaces as
-    underscores, other punctuation kept; characters no file name can hold dropped; "" when nothing usable is left."""
+    """A card name as a file stem, the repo's convention (owner 2026-11-11: "Cave of The Past" -> "Cave_of_the_Past"):
+    NOT_IN_FILE_NAMES and control characters dropped, spaces as underscores, SMALL_WORDS lowercase but the first and
+    the last ("PANDA_Mk_A"), other punctuation kept; "" when nothing usable is left."""
     text = "".join(c for c in straight(name) if c not in NOT_IN_FILE_NAMES and ord(c) >= 32 and ord(c) != 127)
-    stem = "_".join(text.split()).strip(". _")
-    return "" if stem.split(".")[0].lower() in RESERVED_STEMS else stem
+    words = text.replace("_", " ").split()
+    stem = "_".join(w.lower() if 0 < i < len(words) - 1 and w.lower() in SMALL_WORDS else w for i, w in enumerate(words))
+    return "" if stem.lower() in RESERVED_STEMS else stem
+
+
+def small_case(stem: str) -> str:
+    """A file stem with spaces as underscores and its SMALL_WORDS lowercase but the first: two names differing only there
+    compare alike."""
+    words = stem.replace("_", " ").split()
+    return "_".join(w.lower() if i and w.lower() in SMALL_WORDS else w for i, w in enumerate(words))
 
 
 def rename_trailer(value: str):
@@ -342,6 +352,7 @@ __all__ = [
     'file_stem',
     'get_stats_as_dict',
     'rename_trailer',
+    'small_case',
     'stats_db',
     'straight',
     'straighten_card',

@@ -116,13 +116,24 @@ def test_mismatches():
 
 
 def test_name_note():
-    """Owner 11-10: the website's name against the printed title, that against the file name, exact (underscores as
-    spaces); a second picture never; refresh words it from the data and a website name, no PSD read."""
+    """Owner 11-10/11-11: the website's name against the printed title (exact), the title's file form against the file
+    name (no . : [ ] ? * " < > | / \\, spaces as underscores, small words' case aside); a second picture never; names a
+    person marked intended (names_ok) stay clear until one changes; refresh words it from the data, no PSD read."""
+    from commands.card_models import file_stem
+    assert [file_stem(t) for t in ("Cave of The Past", "P.A.N.D.A. Mk A", "[Thunderfury: Blessed Blade of the Windseeker]",
+                                   "Dr. Robotnik\u2019s Roboticizer", "Foo.Bar", "...", "con")] == \
+        ["Cave_of_the_Past", "PANDA_Mk_A", "Thunderfury_Blessed_Blade_of_the_Windseeker", "Dr_Robotnik's_Roboticizer", "FooBar", "", ""]
     rel = "Creatures/X/Avatar_Of_Wrath.psd"
     card = {"path": rel, "display_name": "Avatar of Wrath"}
-    assert cc.name_note(card, {}, rel) == 'The card prints "Avatar of Wrath" but its file is Avatar_Of_Wrath.psd.'
-    assert cc.name_note({"path": rel}, {}, rel) is None
-    assert cc.name_note({**card, "variant_of": "A"}, {}, rel) is None and cc.name_note({**card, "duplicate_of": "A"}, {}, rel) is None
+    assert cc.name_note(card, {}, rel) is None                                          # small words' case alone
+    assert cc.name_note({**card, "display_name": "Dr. Avatar: of Wrath"}, {}, "C/Dr_Avatar_of_Wrath.psd") is None
+    assert cc.name_note({**card, "display_name": "Avatar of Wrath"}, {}, "C/Avatar_of_Wrath.psd") is None
+    assert cc.name_note({"path": "C/E._Gadd.psd"}, {}, "C/E._Gadd.psd") == 'The card prints "E. Gadd" but its file is E._Gadd.psd.'
+    assert cc.name_note({"path": "C/E_Gadd.psd"}, {}, "C/E_Gadd.psd") is None
+    assert cc.name_note({"path": "C/Marked For Death.psd"}, {}, "C/Marked For Death.psd") is None          # spaces as underscores
+    blockade = {"path": "C/Blockade.psd", "display_name": "The Wall By Ech"}
+    assert cc.name_note(blockade, {}, "C/Blockade.psd") == 'The card prints "The Wall By Ech" but its file is Blockade.psd.'
+    assert cc.name_note({**blockade, "variant_of": "A"}, {}, rel) is None and cc.name_note({**blockade, "duplicate_of": "A"}, {}, rel) is None
     shield = "Items/Man_Serpent_Shield.psd"
     edited = {"path": shield, "display_name": "Man-Serpent's Shield", "parsed_values": {"name": None}}
     assert cc.name_note(edited, {"name": "Man-Serpent's Shield"}, shield) == \
@@ -130,16 +141,20 @@ def test_name_note():
     caps = {"path": "C/Delta.psd", "display_name": "Delta", "parsed_values": {"name": "DELTA"}}
     assert cc.name_note(caps, {"name": "Delta"}, "C/Delta.psd") == \
         'The card prints "DELTA" but the website shows "Delta" and its file is Delta.psd.'
-    snapshot = SimpleNamespace(psds={"avatar of wrath": rel}, sha=lambda path: "a" * 40)
+    assert cc.name_note(caps, {"name": "Delta", "names_ok": ["Delta", "DELTA", "Delta"]}, "C/Delta.psd") is None
+    assert cc.name_note(caps, {"name": "Delta", "names_ok": ["Delta", "DELTA", "Delta"]}, "C/Delta2.psd") is not None   # a name changed
+    snapshot = SimpleNamespace(psds={"blockade": "C/Blockade.psd"}, sha=lambda path: "a" * 40)
     checks = {"cards": {"a" * 40: {"notes": [], "bars": None}}, "cleared": {}}
-    stats = {"Avatar Of Wrath": {**card, "blob_sha": "a" * 40},
-             "Wrath2": {"path": rel, "display_name": "Wrath", "duplicate_of": "Avatar Of Wrath", "variant_of": "Avatar Of Wrath"}}
+    stats = {"Blockade": {**blockade, "blob_sha": "a" * 40},
+             "Wall2": {"path": "C/Blockade.psd", "display_name": "Wall", "duplicate_of": "Blockade", "variant_of": "Blockade"}}
     cc.refresh(checks, snapshot, stats, CardEdits.parse("{}"))
-    assert checks["cards"]["a" * 40]["name"] == cc.NAME_FILE.format(printed="Avatar of Wrath", file="Avatar_Of_Wrath.psd")
-    cc.refresh(checks, snapshot, stats, CardEdits.parse(json.dumps({"cards": {"Avatar_Of_Wrath": {"name": "Wrath", "_site": ["name"]}}})))
-    assert checks["cards"]["a" * 40]["name"].endswith('but the website shows "Wrath" and its file is Avatar_Of_Wrath.psd.')
-    cc.refresh(checks, snapshot, {"Avatar Of Wrath": {"path": rel, "blob_sha": "a" * 40}}, CardEdits.parse("{}"))
+    assert checks["cards"]["a" * 40]["name"] == cc.NAME_FILE.format(printed="The Wall By Ech", file="Blockade.psd")
+    cc.refresh(checks, snapshot, stats, CardEdits.parse(json.dumps({"cards": {"Blockade": {"name": "Wall", "_site": ["name"]}}})))
+    assert checks["cards"]["a" * 40]["name"].endswith('but the website shows "Wall" and its file is Blockade.psd.')
+    marked = {"cards": {"Blockade": {"names_ok": ["The Wall By Ech", "The Wall By Ech", "Blockade"]}}}
+    cc.refresh(checks, snapshot, stats, CardEdits.parse(json.dumps(marked)))
     assert checks["cards"]["a" * 40]["name"] is None
+    assert not CardEdits.valid("names_ok", ["a", "b"]) and not CardEdits.valid("names_ok", ["a", "", "c"])
 
 
 def test_refresh_clears():

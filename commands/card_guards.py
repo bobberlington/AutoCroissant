@@ -34,7 +34,9 @@ renamed PSD whose folder depth changed has its links repaired (G4); MDW/Linked f
 db/links.json on the data branch), a pushed one with another's bytes merged into it (G3), a link to a deleted one put
 back (G4); one landing (git past GIT_LAND files or GIT_LAND_BYTES). A font pushed to MDW/Fonts whose tables share
 data (Photoshop 2023 sets no type in it) lands with every table its own copy, the same bytes (font_check.split_tables;
-silent).
+silent). A pushed card PSD or PNG whose file name holds . : [ ] ? * " < > | / \\ takes the file form of its name
+(card_models.file_stem) in that commit, its card's other files with it and the files keyed by the card following
+(card_bake.follow_renames, Renamed trailers; unsafe_renames, owner 2026-11-11, silent).
 
 A landed commit's changelog events (guard-png: a PNG re-made or recompressed; guard-fix: a fix the guards landed; the
 Single-line Composer none) go to guard-events.json beside the plan, which card-guards.yml uploads and Card sync's data
@@ -61,7 +63,7 @@ from io import BytesIO
 from json import dump, load, loads
 from os import cpu_count, environ, getpid, listdir, makedirs, pathsep, replace
 from os.path import basename, dirname, exists, isdir, join, splitext
-from re import fullmatch, sub
+from re import IGNORECASE, escape, fullmatch, sub
 from struct import unpack
 from subprocess import CalledProcessError, TimeoutExpired
 from sys import stderr
@@ -82,9 +84,11 @@ import commands.psd_details  # noqa: F401  standards' folders gate (imported whe
 import commands.png_export as png_export
 import commands.psd_diff as psd_diff
 import commands.psd_edit as psd_edit
-from commands.card_bake import PREFETCH_WORKERS, Snapshot, fetch_verified, local_snapshot, snapshot_at
+from commands.card_bake import (PREFETCH_WORKERS, RENAME_SIDES, Snapshot, fetch_verified, follow_renames, local_snapshot,
+                                rename_trailers, snapshot_at)
 from commands.card_check import vocabulary
 from commands.card_edits import CardAuthors, dup_pictures
+from commands.card_models import NOT_IN_FILE_NAMES, file_stem
 from commands.font_check import face_names, is_card_psd, shared_tables, split_tables, tree_fonts
 from commands.git_commit import (AUTHOR, COMMIT_TRIES, NO_LAZY, Transient, api, commit_files, git, git_commit, local_commit,
                                  plural, ref_head, token)
@@ -1925,6 +1929,55 @@ def convert_plan(data: dict, source: Source, out: str, minutes: float = CONVERT_
 
 
 # ========================
+# Card file names a file name can't hold (owner 2026-11-11): renamed silently on push
+# ========================
+def _unsafe(path: str) -> bool:
+    return any(c in NOT_IN_FILE_NAMES for c in splitext(basename(path))[0])
+
+
+def unsafe_renames(tree: dict, pushed: list, writes=()) -> dict:
+    """
+    {old path: new path} of the card files a push renames: every card PSD or PNG it brought whose file name holds a
+    character of card_models.NOT_IN_FILE_NAMES, with its card's other files (its PSD, PNG and numbered PNGs, and the PNGs
+    this run writes: writes), each the stem's file form (file_stem; the numbers kept). A card none is left of, or whose
+    new name another file has (any case), keeps its names. MDW/, Markers/ and Types/ files never (no card there).
+    """
+    snapshot = Snapshot("", "", {}, tree)
+    lower = {path.lower(): path for path in tree}
+    cards: dict = {}                            # the card's PSD (or a lone PNG) -> its files
+    for path in pushed:
+        if not _unsafe(path) or not ((is_card_psd(path) and path.startswith(CARD_ROOTS)) or card_png(path)):
+            continue
+        psd = path
+        if _is_png(path):
+            stem = path[:len(path) - 4]
+            psd = lower.get(stem.lower() + ".psd") or lower.get(stem.rstrip("0123456789").lower() + ".psd") or path
+        if psd in cards or (psd != path and psd not in tree):
+            continue
+        png, numbered = snapshot.png_for(psd) if psd.lower().endswith(".psd") else ("", [])
+        stem = basename(psd)[:len(basename(psd)) - 4]
+        made = [w for w in writes if _is_png(w) and dirname(w) == dirname(psd)
+                and fullmatch(f"{escape(stem)}\\d*", basename(w)[:len(basename(w)) - 4], IGNORECASE)]
+        cards[psd] = list(dict.fromkeys(p for p in [psd, png, *numbered, *made] if p))
+    out, taken = {}, set()
+    for psd, files in cards.items():
+        stem = basename(psd)[:len(basename(psd)) - 4]
+        new_stem = file_stem(stem)
+        if not new_stem:
+            continue
+        moves = {}
+        for old in files:
+            name = basename(old)[:len(basename(old)) - 4]
+            moves[old] = f"{dirname(old)}/{new_stem}{name[len(stem):]}{old[len(old) - 4:]}"
+        mine = {old.lower() for old in files}
+        if any(new.lower() in taken or (new.lower() in lower and new.lower() not in mine) for new in moves.values()):
+            continue
+        taken.update(new.lower() for new in moves.values())
+        out.update(moves)
+    return out
+
+
+# ========================
 # Reports
 # ========================
 def _expect(job: Job) -> dict:
@@ -2316,6 +2369,10 @@ def check(clone: str, after: str, before: str = "", repository: str = "", author
         changed = [] if whole_tree else source.diff(base, head)
         pushed = [c for c in changed if c.status in "AM"]
         data["pushed_paths"] = [c.path for c in pushed]
+        if not whole_tree:                      # names a file name can't hold (owner 2026-11-11), silent
+            data["renames"] = {old: new for old, new in unsafe_renames(tree, data["pushed_paths"], [
+                w["path"] for e in data["cards"] for w in e["writes"]]).items()
+                if not cards or CardAuthors.key(card_name(old)) in cards}
         data["deleted_linked"] = {c.path: c.old for c in changed if c.status == "D" and _restorable(c.path)}   # G4b
         data["fonts"] = font_fixes(source, [] if cards else [c for c in pushed if c.path not in skipped], author, head, out)
         if whole_tree or convert == "off":
@@ -2383,7 +2440,7 @@ def summary(data: dict, errors: list) -> dict:
     return {"after": data["after"], "cards": len(cards), "told": sum(1 for c in cards if c["told"]),
             "comment": sum(1 for c in cards if _for_comment(c)),
             "writes": sum(len(c["writes"]) for c in cards) + pending
-            + sum(len((data.get(key) or {}).get("writes", [])) for key in ("linked", "fonts")),
+            + sum(len((data.get(key) or {}).get("writes", [])) for key in ("linked", "fonts")) + len(data.get("renames") or {}),
             "normalise": pending, "errors": len(errors), "card_errors": sum(1 for c in cards if c["error"])}
 
 
@@ -2396,9 +2453,11 @@ def landed_markdown(data: dict, landed: dict) -> str:
     return markdown(data, report.get("notes", []), report.get("skipped", []), report.get("errors", []), landed)
 
 
-def message(landed: list, after: str) -> str:
+def message(landed: list, after: str, renamed: Optional[dict] = None) -> str:
     """The bot commit's message: subject with the counts, one line per file, then the trailers: one Recompressed per PNG
-    only recompressed, the Guarded-push. The one place a composer fix is said (owner, 2026-10-25)."""
+    only recompressed, a Renamed per renamed file (renamed: old path -> new), the Guarded-push. The one place a composer
+    fix is said (owner, 2026-10-25)."""
+    renamed = renamed or {}
     pngs = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "png")
     psds = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "psd" and not w.get("silent"))
     composer = sum(1 for entry in landed for w in entry["writes"] if w["kind"] == "psd" and w.get("composer"))
@@ -2418,10 +2477,14 @@ def message(landed: list, after: str) -> str:
                                          plural(smaller, "PNG") + " recompressed" if smaller else "",
                                          plural(added, "linked file") + " added" if added else "",
                                          plural(deleted, "linked file") + " deleted" if deleted else "",
-                                         plural(fonts, "font") + " repaired" if fonts else "") if part)
-    lines = [f"{w['path']}: {w['line']} ({entry['login']}, {(entry['commit'] or after)[:8]})"
+                                         plural(fonts, "font") + " repaired" if fonts else "",
+                                         plural(len(renamed), "file") + " renamed" if renamed else "") if part)
+    lines = [f"{renamed.get(w['path'], w['path'])}: {w['line']} ({entry['login']}, {(entry['commit'] or after)[:8]})"
              for entry in landed for w in entry["writes"]]
-    trailers = sorted(f"{RECOMPRESSED}: {w['path']}" for entry in landed for w in entry["writes"] if w["kind"] == "recompress")
+    lines += [f"{old}: renamed to {basename(new)} (no {' '.join(NOT_IN_FILE_NAMES)} in a file name)" for old, new in sorted(renamed.items())]
+    trailers = sorted(f"{RECOMPRESSED}: {renamed.get(w['path'], w['path'])}" for entry in landed for w in entry["writes"]
+                      if w["kind"] == "recompress")
+    trailers += rename_trailers(renamed)
     trailers.append(f"{TRAILER}: {after}")
     return f"{SUBJECT}: {counts} (push {after[:8]})\n\n" + "\n".join(lines) + "\n\n" + "\n".join(trailers) + "\n"
 
@@ -2605,6 +2668,32 @@ def events_of(entry: dict, write: dict, drawn: list) -> list:
     return [{"kind": "guard-fix", **base, "line": "; ".join(said)}] if said else []
 
 
+def _renames_at(renames: dict, tip: Snapshot, payload: dict) -> dict:
+    """The planned renames still to make at the head: the old file there (or written by this commit), the new name free
+    (any case). A rerun after a landing finds the new names taken: none."""
+    lower = {path.lower() for path in tip.tree}
+    return {old: new for old, new in renames.items()
+            if (old in tip.tree or payload.get(old) is not None) and new.lower() not in lower}
+
+
+def _renamed(payload: dict, renames: dict, tip: Snapshot, uploaded: set) -> dict:
+    """payload with the renames made (each file's bytes, this commit's write or the head's, under its new name; the old
+    path deleted) and the files keyed by the cards following them (card_bake.follow_renames, as at the head)."""
+    out = dict(payload)
+    for old, new in renames.items():
+        data = out.pop(old, None)
+        if data is None:
+            data = tip.fetch(tip.tree[old][1])
+            uploaded.add(tip.tree[old][1])      # the head has the blob: no upload
+        out[new] = data
+        if old in tip.tree:
+            out[old] = None
+    texts = {path: (out[path] if out.get(path) is not None else tip.fetch(tip.tree[path][1])).decode("utf-8")
+             for path in RENAME_SIDES if path in tip.tree}
+    out.update({path: text.encode("utf-8") for path, text in follow_renames(texts, renames).items()})
+    return out
+
+
 def land(plan_path: str, repository: str = "", dry_run: bool = False, local: str = "", rerun: bool = False) -> dict:
     """
     Commit a plan's writes once (G9) and settle what the one Discord post says (after_window). A write is left out when
@@ -2620,7 +2709,7 @@ def land(plan_path: str, repository: str = "", dry_run: bool = False, local: str
         {"sha": the commit or "", "landed": [card], "included": [[card, path]] committed, "dropped": [[card, why, path]],
          "already": [[card, path]], "events": the included writes' changelog events (events_of),
          "error": why nothing was committed, "told": {psd: [Discord lines]}, "after": {psd: [comment notes]}, "dry": dry_run,
-         "unread": a rerun that could not read the branch}
+         "unread": a rerun that could not read the branch, "renamed": {old path: new} the commit renames}
     """
     out_dir = dirname(plan_path)
     with open(plan_path, encoding="utf-8") as fh:
@@ -2629,8 +2718,8 @@ def land(plan_path: str, repository: str = "", dry_run: bool = False, local: str
     entries = [entry for entry in data["cards"] + [data.get("linked") or {}, data.get("fonts") or {}]
                if entry.get("writes")]  # + G2-G4's, the fonts'
     report = {"sha": "", "landed": [], "included": [], "dropped": [], "already": [], "error": "", "told": {}, "after": {},
-              "dry": dry_run, "unread": False, "events": []}
-    if not entries and not any(entry.get("told") for entry in data["cards"]):
+              "dry": dry_run, "unread": False, "events": [], "renamed": {}}
+    if not entries and not any(entry.get("told") for entry in data["cards"]) and not data.get("renames"):
         return report
     tip, bot_moved = None, frozenset()
     try:
@@ -2658,12 +2747,18 @@ def land(plan_path: str, repository: str = "", dry_run: bool = False, local: str
             cards = list(dict.fromkeys(entry["card"] for entry, _ in included))
             report["landed"] = [card for card in cards if card]                # the linked files' entry is no card
             report["included"] = [[entry["card"], write["path"]] for entry, write in included]
-            report["events"] = told
-            if not included or dry_run:
-                break
             payload = {write["path"]: files[write["file"]] if write.get("file") else None for _, write in included}
+            renames = _renames_at(data.get("renames") or {}, tip, payload)
+            names = {card_name(old): card_name(new) for old, new in renames.items()}
+            report["events"] = [{**e, "path": renames.get(e["path"], e["path"]), "card": names.get(e["card"], e["card"])}
+                                for e in told]
+            report["renamed"] = renames
+            if not (included or renames) or dry_run:
+                break
+            if renames:
+                payload = _renamed(payload, renames, tip, uploaded)
             text = message([{**entry, "writes": [w for e, w in included if e is entry]} for entry in entries
-                            if entry["card"] in cards], data["after"])
+                            if entry["card"] in cards], data["after"], renames)
             if local:
                 report["sha"] = local_commit(local, tip.head, payload, text)
                 break
@@ -2686,7 +2781,8 @@ def land(plan_path: str, repository: str = "", dry_run: bool = False, local: str
         if not isinstance(error, (Transient, Refused)):
             print(format_exc(), file=stderr)
         why = str(error) if isinstance(error, (Transient, Refused)) else f"{type(error).__name__}: {error}"
-        report.update(sha="", landed=[], included=[], events=[], error=why or type(error).__name__, unread=rerun and tip is None)
+        report.update(sha="", landed=[], included=[], events=[], renamed={}, error=why or type(error).__name__,
+                      unread=rerun and tip is None)
     if tip is not None:
         here = Head(tip)
         bot_moved = frozenset(entry["psd"] for entry in data["cards"]

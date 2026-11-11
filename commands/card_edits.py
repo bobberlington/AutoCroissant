@@ -20,7 +20,7 @@ from commands.card_models import CardInfo, CardStats, card_name
 # edit.js FIELDS, in order: how an entry lists its fields
 ORDER = ("name", "type", "subtype", "series", "subseries", "stars", "types", "hp", "def", "atk", "spd", "ability",
          "parts", "colors", "note", "art", "ability_art", "aliases", "dup_of", "hidden", "problems_ok", "allow_high_stats", "creatures",
-         "flags")
+         "flags", "names_ok")
 # what localeCompare(…, {sensitivity: "base"}) puts before digits and letters, in CLDR root order
 PUNCTUATION = "_-,;:!?.'\"()[]{}@*/\\&#%`^+<=>|~$"
 # per-layer text edits (docs/Finished/session-2026-10-26/PARTS_EDITOR.md §3): build_site.valid_parts' rules
@@ -34,6 +34,9 @@ ART_FIELDS = ("art", "ability_art")             # artwork sources: art a list (o
 ART_MAX = 500                                   # characters a source (art.js ART_MAX, build_site ART_MAX)
 FLAGS = ("hand", "bars", "name")                # what a card needs from a developer, each with a reason or "" (flags.js CARD_FLAGS, build_site FLAGS)
 FLAG_MAX = 300                                  # characters a reason (flags.js, build_site)
+# the name flag's "intended" (owner 2026-11-11): [website name, printed title, file stem] as a person marked them; the flag
+# stays off until one of them changes (card_checks.name_note; edit.js, build_site NAMES_OK)
+NAMES_OK = "names_ok"
 # text colours: [{"field", "phrase"?, "color"}], a phrase as the effect layers' ("word#n"; none: the whole field); the
 # card image's alone (owner 2026-11-11: the website's text and TTS's details draw the site's palette instead)
 COLOR_FIELDS = COLOR_PRINTED = ("name", "ability")   # textcolor.js FIELDS, build_site COLOR_FIELDS
@@ -142,7 +145,7 @@ class CardEdits:
     TYPES = {"name": str, "type": str, "subtype": str, "series": str, "subseries": str, "stars": int, "types": list,
              "hp": int, "def": int, "atk": int, "spd": int, "ability": str, "note": str, "art": list, "ability_art": str,
              "aliases": list, "dup_of": str, "hidden": bool, "problems_ok": bool, "allow_high_stats": bool, "creatures": list,
-             "parts": dict, "flags": dict, "colors": list}
+             "parts": dict, "flags": dict, "colors": list, NAMES_OK: list}
     NULLABLE = {"subtype", "series", "subseries", "stars", "hp", "def", "atk", "spd", "art", "ability_art"}
     ATTRS = {"name": "display_name", "type": "card_type", "subtype": "subtype", "series": "series", "subseries": "subseries",
              "stars": "stars", "types": "types", "ability": "ability", "note": "note", "art": "art", "ability_art": "ability_art",
@@ -158,7 +161,7 @@ class CardEdits:
             "parts": "psd", "type": "folder", "subtype": "folder", "series": "folder",
             "subseries": "database", "note": "database", "art": "database", "ability_art": "database", "aliases": "database",
             "dup_of": "database", "hidden": "database", "problems_ok": "database", "allow_high_stats": "database",
-            "creatures": "psd", "flags": "database", "colors": "psd"}     # creatures: printed on a bar per creature; else website only (psd_edit.classify)
+            "creatures": "psd", "flags": "database", "colors": "psd", NAMES_OK: "database"}     # creatures: printed on a bar per creature; else website only (psd_edit.classify)
     SITE_FIELDS = ("name", "stars", "types", "hp", "def", "atk", "spd", "ability", "creatures", "colors")    # what `_site` may name (edit.js SITE)
 
     @classmethod
@@ -184,6 +187,8 @@ class CardEdits:
             return all(isinstance(x, str) and len(x) <= ART_MAX for x in (value if name == "art" and isinstance(value, list) else [value]))
         if name == "colors":
             return valid_colors(value)
+        if name == NAMES_OK:
+            return isinstance(value, list) and len(value) == 3 and all(isinstance(x, str) and 0 < len(x) <= FLAG_MAX for x in value)
         if kind is list:
             return isinstance(value, list) and all(isinstance(x, str) for x in value)
         if name == "flags":                     # {"hand": "reason", "bars": "", "psd": the PSD blob it was set on}
@@ -547,6 +552,7 @@ __all__ = [
     'COLOR_PRINTED',
     'FLAGS',
     'FLAG_MAX',
+    'NAMES_OK',
     'art_list',
     'color_text',
     'fold_art',

@@ -1892,20 +1892,25 @@ def mark_sweeps(checkout: str, new_events: list) -> None:
     """
     Gives "sweep" (the trailer's value) to each art or changed event (changelog.SWEPT) whose own commit carries a
     Card-sweep trailer (card_sweep's passes, committed by hand; owner: the guards' fixes are silent) and is the card's
-    only change since its stored blob (the blob before that commit is the event's old one). Any push, any build: a card
-    held for a later run still finds its commit; new, archived, renamed and moved cards always post.
+    only change since its stored blob (the blob before that commit is the event's old one), and to each renamed event
+    of such a commit (owner 2026-11-11: a rename batch). Any push, any build: a card held for a later run still finds its
+    commit; new, archived and moved cards always post.
     """
     from commands.changelog import SWEEP_TRAILER, SWEPT
     candidates = [e for e in new_events if e["kind"] in SWEPT and e.get("commit") and e.get("path")
                   and len(e.get("blob") or ()) == 2 and all(e["blob"])]
-    if not candidates:
+    renames = [e for e in new_events if e["kind"] == "renamed" and e.get("commit")]
+    if not candidates and not renames:
         return
     try:
         log = _git(checkout, "log", "--no-walk=unsorted", f"--format=%H%x09%(trailers:key={SWEEP_TRAILER},valueonly,separator=%x2C)",
-                   *sorted({e["commit"] for e in candidates}))
+                   *sorted({e["commit"] for e in candidates + renames}))
     except CalledProcessError:
         return
     kinds = {sha: value.strip() for sha, _, value in (line.partition("\t") for line in log.splitlines()) if value.strip()}
+    for event in renames:
+        if event["commit"] in kinds:
+            event["sweep"] = kinds[event["commit"]]
     for sha in sorted({e["commit"] for e in candidates if e["commit"] in kinds}):
         mine = [e for e in candidates if e["commit"] == sha]
         try:                                              # the parent's tree entries: no blob is read

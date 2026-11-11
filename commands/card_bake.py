@@ -758,10 +758,16 @@ def _moved_to(card: Card, old: str) -> str:
     return folder + card.renames.get(old, path[len(folder):])
 
 
-def _renamed_names(card: Card) -> list:
-    """[(old card name, new card name)] of a rename: the card's, then its pictures' (A Snack2 -> Snack Attack2)."""
-    pairs = {card_name(old): card_name(new) for old, new in card.relocated.items() if card.renames}
+def renamed_pairs(relocated: dict) -> list:
+    """[(old card name, new card name)] of files renamed (old path -> new path): a card's, then its pictures' (A Snack2 ->
+    Snack Attack2)."""
+    pairs = {card_name(old): card_name(new) for old, new in relocated.items()}
     return [(old, new) for old, new in pairs.items() if old != new]
+
+
+def _renamed_names(card: Card) -> list:
+    """renamed_pairs of a rename bake's files."""
+    return renamed_pairs(card.relocated) if card.renames else []
 
 
 def _keyed(names: dict, key: str) -> Optional[str]:
@@ -771,9 +777,32 @@ def _keyed(names: dict, key: str) -> Optional[str]:
 
 def rename_edits(text: str, card: Card) -> Optional[str]:
     """
-    Card Edits.json after a card's files were renamed: its entry (and its pictures') under the new name, `_rename` gone,
-    the old name an alias (so /query and the site's search still find it; the bot's field under another's _by: _bot).
-    No rename (the files had the name already): only `_rename` goes, once the name left the entry.
+    Card Edits.json after a card's files were renamed (rename_entries), `_rename` gone. No rename (the files had the name
+    already): only `_rename` goes, once the name left the entry.
+
+    Returns:
+        The new text, or None when unchanged
+    """
+    pairs = _renamed_names(card)
+    if pairs:
+        return rename_entries(text, {card.key}, pairs)
+    data = loads(text)
+    cards = data.get("cards")
+    if not isinstance(cards, dict):
+        return None
+    before = dump_edits(data)
+    k = _keyed(cards, card.key)
+    if k is not None and isinstance(cards[k], dict) and "name" not in cards[k]:
+        cards[k] = {f: v for f, v in cards[k].items() if f != RENAME}
+    out = dump_edits(data)
+    return out if out != before else None
+
+
+def rename_entries(text: str, own: set, pairs: list) -> Optional[str]:
+    """
+    Card Edits.json with renamed cards' entries (and their pictures') under the new names: a card's own (own: its
+    CardAuthors.key) without `_rename`, the old name an alias unless only its letter case changed (so /query and the
+    site's search still find it; the bot's field under another's _by: _bot).
 
     Returns:
         The new text, or None when unchanged
@@ -783,17 +812,10 @@ def rename_edits(text: str, card: Card) -> Optional[str]:
     if not isinstance(cards, dict):
         return None
     before = dump_edits(data)
-    pairs = _renamed_names(card)
-    if not pairs:
-        k = _keyed(cards, card.key)
-        if k is not None and isinstance(cards[k], dict) and "name" not in cards[k]:
-            cards[k] = {f: v for f, v in cards[k].items() if f != RENAME}
-        out = dump_edits(data)
-        return out if out != before else None
     for old, new in pairs:
         k = _keyed(cards, CardAuthors.key(old))
         entry = dict(cards.pop(k)) if k is not None and isinstance(cards[k], dict) else None
-        if CardAuthors.key(old) == card.key:
+        if CardAuthors.key(old) in own:
             entry = entry if entry is not None else {}
             entry.pop(RENAME, None)
             aliases = list(entry.get("aliases") or [])
@@ -863,6 +885,38 @@ def rename_paths(text: str, paths: dict) -> Optional[str]:
     for old, new in paths.items():
         out = out.replace(dumps(old, ensure_ascii=False), dumps(new, ensure_ascii=False))
     return out if out != text else None
+
+
+RENAME_SIDES = (EDITS_PATH, AUTHORS_PATH, CREATED_PATH, RATINGS_PATH, RULES_PATH)     # follow_renames' files
+
+
+def follow_renames(texts: dict, relocated: dict) -> dict:
+    """
+    The files keyed by card files renamed outside the bake (the guards', a batch's: old path -> new path), as the
+    bake's rename leaves them: Card Edits.json's entries (rename_entries: each PSD's card the own one), Card Authors.txt,
+    Card Creation Dates.json, Card Ratings.json, TTS/decks.json. texts: {path: text} of those (RENAME_SIDES) at the
+    commit's parent. The TTS save and the data follow the commit's Renamed trailers (rename_trailers).
+
+    Returns:
+        {path: new text} of those that changed
+    """
+    pairs = renamed_pairs(relocated)
+    own = {CardAuthors.key(card_name(old)) for old in relocated if old.lower().endswith(".psd")}
+    sides = {EDITS_PATH: lambda text: rename_entries(text, own, pairs), AUTHORS_PATH: lambda text: rename_authors(text, pairs),
+             CREATED_PATH: lambda text: _rename_keys(text, pairs, _earlier),
+             RATINGS_PATH: lambda text: _rename_keys(text, pairs, lambda a, b: CardRatings.order(list(a) + list(b))),
+             RULES_PATH: lambda text: rename_paths(text, relocated)}
+    out = {}
+    for path, text in texts.items():
+        new = sides[path](text) if pairs and path in sides else None
+        if new is not None and new != text:
+            out[path] = new
+    return out
+
+
+def rename_trailers(relocated: dict) -> list:
+    """The commit's "Renamed: <old path> -> <new path>" trailers, one per file (card_models.RENAMED)."""
+    return [f"{RENAMED}: {old} -> {new}" for old, new in sorted(relocated.items())]
 
 
 def _rename_share(card: Card, share: Share) -> Share:
@@ -2078,6 +2132,7 @@ __all__ = [
     'failure',
     'fetch_verified',
     'final',
+    'follow_renames',
     'land',
     'land_cards',
     'load_verdicts',
@@ -2088,6 +2143,7 @@ __all__ = [
     'psd_fields',
     'records',
     'refusal_verdict',
+    'rename_trailers',
     'render',
     'rewrite_edits',
     'rewrite_entry',

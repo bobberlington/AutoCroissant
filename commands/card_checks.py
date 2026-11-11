@@ -3,9 +3,10 @@ Automatic card flags (owner 2026-11-07): what a card needs from a developer, rea
 blob in the card data's db/card_checks.json (TTSCardMaker's card-checks.yml, off Card sync's path; the website shows them).
 hand: the picture says other than the data, old-style bars, a website edit that cannot bake, a linked picture the repo
 lacks, one that looks the same as another file, or one Card sync could not draw again (db/links.json, worded at each
-save). bars: special bars that do not read like the template. name: the website's name, the printed title and the file
-name disagree (exact text, underscores as spaces; second pictures left out; worded at each save, owner 2026-11-10). A
-note is one short sentence a developer can act on. Nothing here blocks or tells anyone.
+save). bars: special bars that do not read like the template. name: the website's name and the printed title disagree
+(exact), or the title's file form and the file name (owner 2026-11-11: card_models.file_stem, small words' case aside);
+none once a person marked the names intended (Card Edits names_ok) until one changes; second pictures left out; worded
+at each save (owner 2026-11-10). A note is one short sentence a developer can act on. Nothing here blocks or tells anyone.
 
     python -m commands.card_checks list --clone <checkout> --db <db dir> [--head <sha>] [--all] [--shard i/n]
     python -m commands.card_checks run  --clone <checkout> --db <db dir> --out <file> [--head <sha>] [--all] [--shard i/n]
@@ -30,7 +31,7 @@ from glob import glob
 from io import BytesIO
 from json import dumps, load as json_load, loads
 from os import environ
-from os.path import basename, exists, join
+from os.path import basename, exists, join, splitext
 from re import IGNORECASE, finditer, fullmatch, search, sub
 from shutil import rmtree
 from sys import argv
@@ -47,8 +48,8 @@ import commands.png_export as png_export
 import commands.psd_edit as psd_edit
 from commands.card_bake import Card, Snapshot, local_snapshot, psd_fields, vocabulary
 from commands.card_db import CHECKS_JSON, STATS_JSON
-from commands.card_edits import CardAuthors, CardEdits
-from commands.card_models import RAID_STARS, card_name
+from commands.card_edits import NAMES_OK, CardAuthors, CardEdits
+from commands.card_models import RAID_STARS, card_name, file_stem, small_case
 from commands.card_preview import outcome, resolve
 from commands.card_standards import _bar_art
 from commands.github_api import token_from_env
@@ -703,8 +704,10 @@ def link_notes(rel: str, blob: str, links: dict, sha: Callable[[str], str], alik
 
 def name_note(card: Optional[dict], site: dict, rel: str) -> Optional[str]:
     """
-    The name flag's note: the website's name against the printed title, that against the file name (card_name: exact
-    text, underscores as spaces); None when they agree, for a second picture or without the card's data.
+    The name flag's note: the website's name against the printed title (exact), the title's file form against the file
+    name (file_stem, small words' case aside: owner 2026-11-11); None when they agree, when they are the names a person
+    marked intended (site's names_ok), for a second picture or without the card's data. The data keeps no title equal
+    to the file's name (none read either): the file's name stands for it, so a file name holding . : [ ] ... still differs.
 
     Args:
         card: The card in stats.json (parsed_values: the PSD's title under a website one)
@@ -713,14 +716,16 @@ def name_note(card: Optional[dict], site: dict, rel: str) -> Optional[str]:
     """
     if not card or card.get("duplicate_of") or card.get("variant_of"):
         return None
-    file, parsed = card_name(rel), card.get("parsed_values") or {}
-    printed = (parsed["name"] if "name" in parsed else card.get("display_name")) or file
+    parsed, stem = card.get("parsed_values") or {}, splitext(basename(rel))[0]
+    title = parsed["name"] if "name" in parsed else card.get("display_name")
+    printed = title or card_name(rel)
     shown = site["name"] if isinstance(site.get("name"), str) and site["name"].strip() else printed
+    if site.get(NAMES_OK) == [shown, printed, stem]:
+        return None
+    off = small_case(file_stem(printed)) != small_case(stem)
     if shown == printed:
-        return NAME_FILE.format(printed=printed, file=basename(rel)) if printed != file else None
-    if printed == file:
-        return NAME_SITE.format(site=shown, printed=printed)
-    return NAME_BOTH.format(printed=printed, site=shown, file=basename(rel))
+        return NAME_FILE.format(printed=printed, file=basename(rel)) if off else None
+    return NAME_BOTH.format(printed=printed, site=shown, file=basename(rel)) if off else NAME_SITE.format(site=shown, printed=printed)
 
 
 def flags(record: dict, data: Optional[dict], site=(), linked=(), name: Optional[str] = None) -> dict:
