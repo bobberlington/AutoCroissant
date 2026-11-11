@@ -202,11 +202,17 @@ class CardBuild:
     # The traversal
     # ------------------------
     def _psd_changed(self, name: str, path: str, sha: Optional[str]) -> bool:
-        """Changed = new, moved, an older parser, a different blob or none stored."""
+        """Changed = new, moved, an older parser, a different blob, none stored or a details record of another VERSION."""
         card = self.db.stats.get(name)
         if card is None or card.path != path or getattr(card, "parser_version", None) != PARSER_VERSION:
             return True                           # an older parser's card is read again once (no history: same blob)
-        return getattr(card, "blob_sha", None) != sha
+        if getattr(card, "blob_sha", None) != sha:
+            return True
+        record = self.details.get(sha)
+        if not isinstance(record, dict):
+            return False
+        from commands.psd_details import VERSION  # lazy: traverse_remote loaded it
+        return record.get("version") != VERSION   # gathered before a VERSION bump: read again once, like a parser bump
 
     def traverse_remote(self,
                         repository: str,
@@ -1817,7 +1823,8 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         "built_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "run": run_url or None,
         "card_repo": repository, "card_commit": run_build.head, "card_commit_at": run_build.at, "main_commit": None,
         "builder": {"repo": BOT_REPO, "ref": builder_ref or None, "commit": _builder_commit(), "parser_version": PARSER_VERSION,
-                    "psd_tools": _version("psd-tools"), "python": ".".join(map(str, version_info[:2]))},
+                    "details_version": psd_details.VERSION, "psd_tools": _version("psd-tools"),
+                    "python": ".".join(map(str, version_info[:2]))},
         "inputs": {key: run_build.shas.get(path) for key, path in (("edits_blob", EDITS_PATH), ("authors_blob", AUTHORS_PATH),
                                                                    ("created_blob", CREATED_PATH),
                                                                    ("manifest_blob", ICON_MANIFEST_PATH), ("decks_blob", RULES_PATH),

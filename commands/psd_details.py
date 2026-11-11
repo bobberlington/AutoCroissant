@@ -5,7 +5,7 @@ would put them: the website mock-up's, psd_edit's geometry), a compact layer tre
 VERSION 2), each type layer's colour runs (VERSION 3), the most a card's own stat display shows (stat_caps, VERSION
 4: the website refuses more) and how each type layer is set (frame, px, hx, track: VERSION 5; lf, badges, just: VERSION
 6). One record per card PSD, keyed by its git blob sha, in the card data's db/psd_details.json (the Card sync Action's
-build).
+build); its "version" is the VERSION it was gathered under (an older one: the build reads that card again).
 
 gather(psd, rel, name, index, vocab) -> the record: pure, never raises for a card (a failed section is a short
 "error: ..." string). load, text_of (the file's text), prune(cards, shas) to the tree. The build
@@ -602,7 +602,8 @@ def gather(psd, rel: str, name: str, index: Optional[FontIndex] = None, vocab=()
 
 def _gather(psd: PSDImage, rel: str, name: str, index: Optional[FontIndex], vocab, parser=None, card=None,
             templates=None) -> dict:
-    record = {"path": rel, "name": name, "at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "parser": PARSER_VERSION}
+    record = {"path": rel, "name": name, "at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "parser": PARSER_VERSION,
+              "version": VERSION}
     try:
         layers = list(psd.descendants())
     except Exception as e:                      # a layer tree psd-tools can't walk: every section says so

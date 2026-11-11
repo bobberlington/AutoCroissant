@@ -327,7 +327,8 @@ Minutes 4 and 34 avoid the top of the hour, when GitHub delays scheduled runs mo
   - (b) `manifest.pending.stale` is not empty: a budgeted re-parse is still continuing;
   - (c) `PARSER_VERSION` at the builder ref differs from `manifest.builder.parser_version`. That version is one line of
     `commands/psd_parser.py`, read raw from AutoCroissant at no API cost, so a parser change shows up within one interval (gate
-    G4 stops it until it is approved);
+    G4 stops it until it is approved). The same for `psd_details.VERSION` against `manifest.builder.details_version`: each
+    details record keeps the VERSION it was gathered under, and a record of another one is read again like a parser bump;
   - (d) `manifest.pending.repin` is not empty: images baked by the last run still need their save links (§6.3, stage 4);
   - (e) events are unposted: the last event's `seq` is past `posted.seq` (a post failed);
   - (f) a dispatch with `force`, `cards`, `full`, `restore` or `seed`.

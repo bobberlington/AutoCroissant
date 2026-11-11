@@ -560,8 +560,10 @@ def test_full_reparse_continues_past_the_budget(cards, monkeypatch):
     assert {p.name: p.stat().st_mtime_ns for p in cards.db.iterdir() if p.is_file()} == times
 
 
-def test_parser_bump_approval_carries_over(cards, monkeypatch):
-    """A PARSER_VERSION bump: G4 refuses until `full`; the continuation runs keep that approval."""
+@pytest.mark.parametrize("bump", ["parser", "details"])
+def test_version_bump_approval_carries_over(cards, monkeypatch, bump):
+    """A PARSER_VERSION or psd_details VERSION bump: G4 refuses until `full`; the continuation runs keep that approval."""
+    import commands.psd_details as pd
     import commands.psd_parser as pp
     _build(cards, "--empty")
     put(cards.repo, OTHER, cards.psds[OTHER])
@@ -569,16 +571,20 @@ def test_parser_bump_approval_carries_over(cards, monkeypatch):
     _build(cards)
     _rest_psds(cards, monkeypatch)
     monkeypatch.setattr(cd, "REPARSE_MAX", 0)
-    monkeypatch.setattr(cd, "PARSER_VERSION", pp.PARSER_VERSION + 1)
-    monkeypatch.setattr(pp, "PARSER_VERSION", pp.PARSER_VERSION + 1)
+    if bump == "parser":
+        monkeypatch.setattr(cd, "PARSER_VERSION", pp.PARSER_VERSION + 1)
+        monkeypatch.setattr(pp, "PARSER_VERSION", pp.PARSER_VERSION + 1)
+    else:
+        monkeypatch.setattr(pd, "VERSION", pd.VERSION + 1)
     assert _build(cards, "--budget", "5")[0] == cd.EXIT_GATE                     # unapproved
     assert _build(cards, "--full", "--budget", "2", "--run", "https://x/runs/7")[0] == cd.EXIT_OK
     assert len(_read(cards)[3]["pending"]["stale"]) == 1
     assert _build(cards, "--budget", "2")[0] == cd.EXIT_OK                       # 1 same-blob re-parse, approved before
-    stats, _, _, manifest, _ = _read(cards)
+    stats, _, details, manifest, _ = _read(cards)
     assert manifest["gates"] == {"G4": "lifted by full (approved by https://x/runs/7)"}
     assert manifest["pending"]["stale"] == [] and manifest["pending"]["full"] is None
     assert {c.parser_version for c in stats.values()} == {pp.PARSER_VERSION}
+    assert {r["version"] for r in details.values()} == {pd.VERSION} == {manifest["builder"]["details_version"]}
 
 
 def test_download_failure_fails_red_and_retries(cards, monkeypatch):

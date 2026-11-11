@@ -22,7 +22,7 @@ LICH_KING = "Creatures/World Of Warcraft/5 Stars/The_Lich_King.psd"     # stars 
 FREEZER = "Field/1 Stars/The_Freezer.psd"                              # no Stars group; one type icon, a column of spots
 FROSTMOURNE = "Auxiliary/Items/Frostmourne.psd"                        # four stars in a shown "N stars" folder
 MAGNUM = "Auxiliary/Items/Magnum_Opus.psd"                             # its 'field' icon is a frame: fixed
-KEYS = ("path", "name", "at", "parser", "canvas", "fonts", "text", "effects", "smart_objects", "icons", "stats", "fx",
+KEYS = ("path", "name", "at", "parser", "version", "canvas", "fonts", "text", "effects", "smart_objects", "icons", "stats", "fx",
         "overlays", "template", "header", "tree", "parts")
 
 
@@ -59,7 +59,7 @@ def records(clone, index):
 def test_record_shape_and_size(records, clone):
     for rel, record in records.items():
         assert tuple(k for k in record if k not in ("creature_bars", "stat_caps")) == KEYS and record["path"] == rel \
-            and record["name"] == _name(rel) and record["parser"] == pd.PARSER_VERSION
+            and record["name"] == _name(rel) and (record["parser"], record["version"]) == (pd.PARSER_VERSION, pd.VERSION)
         assert record.get("creature_bars") == ({"count": 2, "shared": []} if rel == LAZARUS else None)   # a row per creature
         assert not any(isinstance(v, str) and v.startswith("error") for v in record.values())
         assert record["canvas"] == {"w": 1200, "h": 2400, "mode": "RGB", "depth": 8, "icc": "Display"}
