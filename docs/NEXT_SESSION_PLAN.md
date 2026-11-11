@@ -206,9 +206,7 @@ cards, the proposal forum); earlier `session-2026-11-06/`.
       Getting Started's Kirby; Make space between list items and lines.
 - [ ] Try the website editor's drags (anchor grid, Make space, blank space, snapping, undo) and report what feels off.
 - [ ] Photoshop: Computer Virus' stat bars (added 11-06 by netverk, but beside the 1200 px canvas, x 1245-1982: no
-      stat edit can show; several creatures, on the manual list); Ze'mer's full-width flower layers;
-      Terry Hintz and Joel Miller's "Stars" groups and typed tags (prepared in `~/std-work-1026/stargroups/`; Photoshop
-      2023 can't re-save their EarthboundZero text, nor Elmadan's); Papyrus' typed tag.
+      stat edit can show; several creatures, on the manual list); Ze'mer's full-width flower layers.
 - [ ] Big PSDs: GitHub warns past 50 MB (Quote.psd 69.4 MB on batch 2's push; The Panda Future 54,114,387 bytes).
 - [ ] Open in Photoshop once: a smart-filter star move (lane 3, S1) and a title moved back onto the card (lane 2); both
       were checked only in psd-tools renders.
