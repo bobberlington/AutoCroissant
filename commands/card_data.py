@@ -985,6 +985,21 @@ def records_text(record: dict) -> str:
     return json_dumps(record, indent=0, sort_keys=True) + "\n"
 
 
+def record_moves(index, psds: set) -> dict:
+    """{a PSD path gone from psds: the one an exact (or told) rename chain took it to} (GitIndex.renames)."""
+    moved = {}
+    for old in index.renames:
+        if old in psds or not old.lower().endswith(".psd"):
+            continue
+        new, seen = old, set()
+        while new not in psds and new in index.renames and new not in seen:
+            seen.add(new)
+            new = index.renames[new][0]
+        if new in psds:
+            moved[old] = new
+    return moved
+
+
 def status_colors(run_build, before: dict) -> dict:
     """db/status_colors.json at the build's head: {"blob": the status chart's, "colors": psd_edit.status_inks}; the
     chart read again only when its blob changed, before kept when it can't be read."""
@@ -1725,6 +1740,11 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
     edits = authors = None
     book = None                                               # rulebook.json's text (None: a restore keeps db/'s)
     if not restore:
+        psds = {t["path"] for t in ls_tree(checkout, run_build.head)["tree"] if t["path"].lower().endswith(".psd")}
+        had = set(spot)
+        render, spot = merge_records(render, spot, [], psds, record_moves(index, psds))   # renamed PSDs keep theirs
+        set_records(render, spot)                             # before the parse
+        run_build.again |= set(spot) - had                    # spot entries moved in: their details read again
         run_build.traverse_remote(repository, True, full)
         found = {p: run_build._repo_text(p) for p in run_build.shas if p.startswith(RULEBOOK_SRC + "/") and p.endswith(".md")}
         book = rulebook.rulebook_text(rulebook.chapters({p: t for p, t in found.items() if t is not None}))
@@ -1749,7 +1769,6 @@ def build(repository: str, checkout: str, db_dir: str, head: str = "HEAD", blobs
         keep = set(run_build.shas.values()) | {c.archived["blob"] for c in db.archived().values() if c.archived.get("blob")}
         keep |= {c.blob_sha for c in db.stats.values() if getattr(c, "blob_sha", None)}
         psd_details.prune(details, keep)
-        render, spot = merge_records(render, spot, [], {p for p in run_build.shas if p.lower().endswith(".psd")})
     else:
         gone, impossible = [], []
     if run_build.lost:                                    # a 5xx or rate limit: red, nothing written, the next run retries
@@ -2281,6 +2300,7 @@ __all__ = [
     'pixel_hash',
     'read_links',
     'read_records',
+    'record_moves',
     'records_text',
     'pushes',
     'rewrite_commit',

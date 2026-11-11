@@ -1007,3 +1007,12 @@ def test_records_seed_merge_and_follow_a_move(cards, monkeypatch, tmp_path):
     monkeypatch.setattr(cd, "ARCHIVE_MIN", 0)
     assert _build(cards)[0] == cd.EXIT_OK
     assert set(cd.read_records(str(cards.db))[0]) == {"Field/2 Stars/The_Freezer.psd"}
+    git(cards.repo, "mv", "Field/2 Stars/The_Freezer.psd", "Field/2 Stars/Freezer.psd")     # a word rename (11-11)
+    commit(cards.repo, "erin", 3000)
+    (cards.db / "spot_record.json").write_text(json.dumps({"Auxiliary/Minions/mini_doomer.psd": spot[DOOMER]}))   # lost
+    found = cards.db / "psd_details.json"
+    doomer = git(cards.repo, "rev-parse", f"HEAD:{DOOMER}").strip()
+    found.write_text(found.read_text().replace(json.loads(found.read_text())["cards"][doomer]["at"], "then"))
+    assert _build(cards)[0] == cd.EXIT_OK
+    assert cd.read_records(str(cards.db)) == ({"Field/2 Stars/Freezer.psd": render[FREEZER]}, spot)
+    assert json.loads(found.read_text())["cards"][doomer]["at"] != "then"        # its spot entries came: read again

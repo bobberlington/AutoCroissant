@@ -9928,10 +9928,17 @@ def records_of(before: PSDImage, after: Optional[PSDImage], rel: str, parser: Op
     return out
 
 
-def merge_records(render: dict, spot: dict, docs: list, paths=()) -> tuple:
+def _alike(path: str) -> tuple:
+    """(folder, file name casefolded, letters and digits only): Bob-ulk.psd and Bob-Ulk.psd alike."""
+    return dirname(path), "".join(c for c in basename(path).casefold() if c.isalnum())
+
+
+def merge_records(render: dict, spot: dict, docs: list, paths=(), moved=None) -> tuple:
     """(render, spot) with each doc's records on top, in order (records_of's form): a later card's facts and entries win
-    key by key, a text fact or an entry no later doc names is kept. A path gone from paths (the tree's PSDs) moves to
-    the one PSD there with its file name and no record (a stars edit's move); none: kept as it is."""
+    key by key, a text fact or an entry no later doc names is kept. Then an entry follows moved ({old path: new path},
+    git's renames) onto a path with none; a path still gone from paths (the tree's PSDs) moves to the one PSD there
+    with its file name (a stars edit's move), else to the one in its folder named alike (_alike), when that has none;
+    none: kept as it is."""
     render, spot = {k: dict(v) for k, v in render.items()}, {k: dict(v) for k, v in spot.items()}
     for doc in docs:
         for rel, facts in (doc.get("render") or {}).items():
@@ -9939,12 +9946,18 @@ def merge_records(render: dict, spot: dict, docs: list, paths=()) -> tuple:
             render[rel] = {**old, **facts, **({"text": {**old.get("text", {}), **facts["text"]}} if "text" in facts else {})}
         for rel, entries in (doc.get("spot") or {}).items():
             spot[rel] = {**spot.get(rel, {}), **entries}
+    for record in (render, spot):
+        for old, new in (moved or {}).items():
+            if old in record and new not in record:
+                record[new] = record.pop(old)
     if paths:
-        names = Counter(basename(path) for path in paths)
+        names, alike = Counter(map(basename, paths)), Counter(map(_alike, paths))
+        by_name, by_alike = {basename(p): p for p in paths}, {_alike(p): p for p in paths}
         for record in (render, spot):
             for rel in [rel for rel in record if rel not in paths]:
-                to = next((path for path in paths if basename(path) == basename(rel)), "")
-                if to and names[basename(rel)] == 1 and to not in record:
+                to = by_name[basename(rel)] if names[basename(rel)] == 1 else \
+                    by_alike[_alike(rel)] if alike[_alike(rel)] == 1 else ""
+                if to and to not in record:
                     record[to] = record.pop(rel)
     return render, spot
 

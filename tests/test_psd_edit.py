@@ -2137,6 +2137,23 @@ def test_a_first_strip_passes_the_size_gate(clone, tmp_path):
         pe.gate_size(str(stripped), str(cut))
 
 
+def test_merge_records_follows_renames():
+    """A renamed PSD keeps its records (11-11: 25 renames lost theirs): git's renames first, then a stars edit's move,
+    else the one PSD in its folder named alike (case, punctuation); never onto a path with an entry, never a guess."""
+    render = {"A/Sir_Grodus.psd": {"icc": [1]}, "A/Bob-ulk.psd": {"icc": [2]}, "A/P.A.N.D.A.psd": {"icc": [3]},
+              "A/Moved.psd": {"icc": [4]}, "A/Old.psd": {"icc": [5]}, "A/Taken.psd": {"icc": [6]}, "A/taken!.psd": {"icc": [7]},
+              "A/Twin.psd": {"icc": [8]}}
+    spot = {"A/hr-h.psd": {"7": {"core": [1, 2, 3, 4]}}}
+    paths = {"A/Grodus.psd", "A/Bob-Ulk.psd", "A/PANDA.psd", "B/Moved.psd", "B/Old_one.psd", "A/taken!.psd", "A/TWIN.psd",
+             "A/twin.psd", "A/HR-H.psd"}
+    out_r, out_s = pe.merge_records(render, spot, [], paths, {"A/Sir_Grodus.psd": "A/Grodus.psd", "A/Taken.psd": "A/taken!.psd"})
+    assert out_r == {"A/Grodus.psd": {"icc": [1]}, "A/Bob-Ulk.psd": {"icc": [2]}, "A/PANDA.psd": {"icc": [3]},
+                     "B/Moved.psd": {"icc": [4]}, "A/Old.psd": {"icc": [5]}, "A/Taken.psd": {"icc": [6]},
+                     "A/taken!.psd": {"icc": [7]}, "A/Twin.psd": {"icc": [8]}}
+    assert out_s == {"A/HR-H.psd": {"7": {"core": [1, 2, 3, 4]}}}
+    assert "A/Sir_Grodus.psd" in pe.merge_records(render, spot, [], paths)[0]      # a word rename: git's only
+
+
 KEL = "Creatures/Omori/3 Stars/Kel.psd"   # its stat labels drawn straight in its stored image
 
 
