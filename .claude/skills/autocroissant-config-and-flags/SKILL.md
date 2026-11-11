@@ -234,7 +234,7 @@ Action). repo_traverser.py (the legacy /update_stats, with `_tree_etags`/`_file_
 | `STAR_CORE_ALPHA` (2026-10-20) | `129 / 255.0` (0.5 until 2026-10-26) | opacity at or above which a star layer's pixels count as its core (`_core_of`, `star_pieces`): over half, so a painted 128 shadow is not (Leshy) |
 | `EFFECT_LAYER_TAG` (2026-10-20) | `" FX: "` | marks an effect layer (`Ability FX: Blazing`, made by TTSCardMaker `MDW/Scripts/Effect Layers.jsx`). Such layers are skipped by the walk and checked afterwards. Semantics: impossibility-cards-reference §4.2 |
 | `EFFECT_COVERAGE_MIN` (2026-10-20) | `0.95` | minimum share of an effect layer's opaque pixels that must sit on its text layer's pixels; below it the card gets `EFFECT LAYER OUT OF DATE` (fresh layers score 1.0, a stale test scored 0.268) |
-| `PARSER_VERSION` (2026-10-21) | `4` (psd_parser.py:24; 3 and 4 on 2026-10-25: a PSD's pictures, then the census fixes) | stamped on every parsed card (`CardInfo.parser_version`); the Card sync build re-parses a card whose stamp differs, once (card_data.py:144), and retries a PSD that failed under another version (:909). Bump it when a parser change must reach the stored cards: the next run reads every PSD (~812) |
+| `PARSER_VERSION` (2026-10-21) | `7` (psd_parser.py:25; 3 and 4 on 2026-10-25: a PSD's pictures, then the census fixes; 7 since 2026-11-09, 8a1787e3) | stamped on every parsed card (`CardInfo.parser_version`); the Card sync build re-parses a card whose stamp differs, once (card_data.py:207), and retries a PSD that failed under another version (:1346). Bump it when a parser change must reach the stored cards: the next run reads every PSD (~812) |
 
 ### the card data build: commands/card_data.py (2026-10-22; docs/Campaigns/DATA_BUILD_ACTION.md)
 
@@ -534,7 +534,7 @@ only); its pip install is the other card workflows' (card-sync.yml's, card-edits
 | `PARITY_BAD_MAX` | `0.5` % | bad pixels a box may show against the official PNG; past it the miss is told (report, commit note), not refused |
 | `PARITY_FLOOR` | `25.0` % | the only pixel refusal: a box past this is a broken render (owner, 2026-10-23) |
 | `PARITY_MEAN_MAX` | `2.0` | mean difference over a box (owner, 2026-10-22); a reported measure since 2026-10-23 |
-| `ADD_ABILITY_LIVE` | `False` | `+ability` (a first ability layer from the card kind's template) bakes only when True; off, the edit waits (f92fb5e; on once the owner approves the test PSDs) |
+| `ADD_ABILITY_LIVE` | `True` (since 2026-10-26, d7a6641e: the owner approved plus_ability_2 in Photoshop) | `+ability` (a first ability layer from the card kind's template) bakes only when True; off, the edit waits (f92fb5e) |
 | env `PSD_DIRTY_VERIFY` | unset | `"1"`: the dirty-box gate also renders whole and raises on any difference (K-1; on in tests/conftest.py) |
 | `card_bake.MAX_BAKES` | `40` | PSD edits per run; the rest wait for the next |
 | `card_bake.RECENT` | removed 2026-11-04 (0 since 2026-11-03; 30 min before) | a PSD or PNG pushed more recently was its author's: the bake and the guards didn't race them |
@@ -591,12 +591,12 @@ Re-pin:
 A card-sync run whose builder (`builder_ref`, `CARD_DATA_BUILDER_REF`) is an AutoCroissant commit from before
 2026-10-23's requirements-cards.txt fails at its "Python environment" step: that commit has no such file.
 
-### setup.py (lines 8-49) — Cython build configuration
+### setup.py (lines 8-35) — Cython build configuration
 
 | Constant | Meaning |
 |---|---|
-| `EXCLUDE_FILES` | 8 entries never compiled, each with an in-file reason comment (config files, main.py entry point, update_bot.py's execv/execl, utils.py dynamic behavior, `__init__`s) |
-| `INCLUDE_FILES` | the 11 command modules that DO get compiled (diffusion.py left with the AI code on 2026-10-20; type_emojis.py and the other modules in neither list are never compiled) |
+| (never compiled) | `EXCLUDE_FILES` was removed 2026-10-25; the comment above `INCLUDE_FILES` names what must stay Python (main.py, the configs, update_bot.py's restart, utils.py's decorators) |
+| `INCLUDE_FILES` | the 10 command modules that DO get compiled (diffusion.py left with the AI code on 2026-10-20; type_emojis.py and the other unlisted modules are never compiled) |
 | `COMPILER_DIRECTIVES` | `boundscheck: True`, `wraparound: True` (since 9919a14, 2026-10-23, owner: a bad or negative index behaves as in Python; the `x[len(x)-1]` idiom stays), `cdivision: True`, etc. |
 
 Why these are set this way, the build/clean commands, and the stale-`.so`-shadows-your-`.py`
@@ -807,3 +807,5 @@ marker), the `card-guards-quiet` environment among the repo settings, `png_expor
 2026-11-05 (ring badges): the badge widths and old-font constants (card_guards `EARLIER_FONTS`, `OLD_FONT`; card_standards `OLD_GLYPH_BAD`, `EARLIER_FIT`, `EARLIER_GAIN`, `DRAWN_ODD`, `LAID_OFF`, `RAZOR`, `EDGE_NEAR`) and card_sweep's `WORKERS`, `EARLIER_KINDS` in the push guards table (card_sweep.py in its heading), at AutoCroissant 3641756; `POOL_MIN`'s runner threshold of 2 (efc7808); the fork pin is `cards-20261104` (1258fcbd).
 2026-11-09 (forum votes): `FORUM_JSON` and the four `FORUM_*` defaults in global_config's table; commands/forum_votes.py's constants; `/forum_votes` in the ADMINS table and the one setter that persists.
 2026-11-10 (fork release): the fork's version list runs to `cards-20261110`.
+
+2026-11-11 (docs check): `ADD_ABILITY_LIVE` True; `PARSER_VERSION` 7 and its card_data.py citations; setup.py table without `EXCLUDE_FILES` (10 compiled modules).
