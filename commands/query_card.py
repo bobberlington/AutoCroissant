@@ -475,7 +475,9 @@ class CardRepository:
         if len(queries) > 1:
             results = [self.ability_search_engine(q.strip()) for q in queries]
             combined = concat(results)
-            return combined[~combined.index.duplicated(keep='first')]
+            combined = combined[~combined.index.duplicated(keep='first')]
+            combined.attrs = {}                         # near: one text term only
+            return combined
 
         # Handle AND queries
         queries = self._split_unquoted(ability, "&")
@@ -483,6 +485,7 @@ class CardRepository:
             result = self.ability_search_engine(queries[0].strip())
             for q in queries[1:]:
                 result = result[result.index.isin(self.ability_search_engine(q.strip()).index)]
+            result.attrs = {}
             return result
 
         # NOT: any term, conditions too (!type==creature)
@@ -505,14 +508,18 @@ class CardRepository:
         exact_matches = self.cards_dff[hay.str.contains(self._text_pattern(ability), na=False).values]
         if len(exact_matches):
             return exact_matches
-        # nothing has the text: near-whole abilities (a pasted ability with a typo)
-        return self.cards_dff.loc[self._fuzzy_labels(ability)]
+        # nothing has the text: near-whole abilities (a pasted ability with a typo), closest first
+        near = self._fuzzy_labels(ability).sort_values(ascending=False, kind="stable")
+        results = self.cards_dff.loc[near.index]
+        if len(results):
+            results.attrs = {"near": True}
+        return results
 
-    def _fuzzy_labels(self, ability: str) -> Index:
-        """Cards whose SequenceMatcher ratio with the query beats match_ratio, in frame order."""
+    def _fuzzy_labels(self, ability: str) -> Series:
+        """Cards whose SequenceMatcher ratio with the query beats match_ratio: their ratios, in frame order."""
         frame = self.cards_dff
         la, cut = len(ability), self.match_ratio
-        keep = []
+        keep, ratios = [], []
         with self._fuzzy_lock:
             if self._lowered[0] is not frame:                   # one matcher per card (its ability as b), per frame
                 self._lowered = (frame, [(label, len(text), SequenceMatcher(None, "", text))
@@ -521,9 +528,12 @@ class CardRepository:
                 if la + lb and 2.0 * min(la, lb) / (la + lb) <= cut:   # ratio()'s upper bound: can't match
                     continue
                 matcher.set_seq1(ability)
-                if matcher.quick_ratio() > cut and matcher.ratio() > cut:   # quick_ratio bounds ratio
-                    keep.append(label)
-        return Index(keep, dtype=frame.index.dtype)
+                if matcher.quick_ratio() > cut:                 # quick_ratio bounds ratio
+                    ratio = matcher.ratio()
+                    if ratio > cut:
+                        keep.append(label)
+                        ratios.append(ratio)
+        return Series(ratios, index=Index(keep, dtype=frame.index.dtype), dtype=float)
 
     def suggest(self, query: str, n: int = 5) -> list:
         """The website's "did you mean" (search.js suggest): up to n (name, title) of its cards (duplicates too, not
@@ -1147,6 +1157,9 @@ def query_ability(interaction: Interaction,
         return
 
     found = f"Found {total_results} results for '{ability}'!"
+    if results.attrs.get("near"):                         # no card has the text: the closest abilities
+        found = f"No card has the text '{ability}'; " + (f"{total_results} cards have a similar ability, closest first:"
+                                                           if total_results > 1 else "1 card has a similar ability:")
     rows = _site_order(results, ability)[:results_to_show]
     shown = [name for name, _ in rows]
     done = f"Displayed {results_to_show} of {total_results} results for '{ability}'."
@@ -1162,7 +1175,7 @@ def query_ability(interaction: Interaction,
 
 def _site_order(results: DataFrame, query: str) -> list:
     """(name, printed title) per result, in the website's order: a card whose title, name or website name/alias is the
-    query first (search.js exactFirst), then A-Z by title (grid.js nameKey)."""
+    query first (search.js exactFirst), then A-Z by title (grid.js nameKey). Near matches keep their order (closest first)."""
     norm = lambda text: WEB_NORM.sub("", text.lower())
     query = typed(query, quotes=True).strip()
     query = norm(query[1:-1] if len(query) > 1 and query[0] == query[-1] == '"' else query)
@@ -1173,7 +1186,8 @@ def _site_order(results: DataFrame, query: str) -> list:
         title = title if isinstance(title, str) and title else name
         spellings = (title, name, *edits.get(CardAuthors.key(name), ()))      # Card Edits names and aliases
         rows.append((not (query and query in map(norm, spellings)), title.lower(), title, name))
-    rows.sort()
+    if not results.attrs.get("near"):
+        rows.sort()
     return [(name, title) for _, _, title, name in rows]
 
 
@@ -1225,8 +1239,13 @@ def query_ability_num_occur(interaction: Interaction, ability: str) -> None:
         return
 
     results = _search(interaction, ability)
-    if results is not None:
-        queue_message(interaction, f"Found {len(results)} cards matching '{ability}'.")
+    if results is None:
+        return
+    n = len(results)
+    if results.attrs.get("near"):
+        queue_message(interaction, f"No card has '{ability}'; {n} card{'s have' if n > 1 else ' has'} a similar ability.")
+    else:
+        queue_message(interaction, f"Found {n} cards matching '{ability}'.")
 
 
 def _search(interaction: Interaction, ability: str) -> Optional[DataFrame]:

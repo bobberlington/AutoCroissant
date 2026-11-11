@@ -768,10 +768,13 @@ gotcha-4 unknown-field error; `series==mario & subseries~door` is the website's 
 5. `type==creature` misses the 7 plural-"creatures" cards (section 2); use `type~creature`.
 6. Numeric compares drop NaN rows, i.e. only cards that HAVE the stat participate.
 7. Bare-text search runs a fuzzy pass only when no card has the text (since 2026-11-09):
-   `SequenceMatcher(None, query, whole_ability).ratio() > match_ratio` (`_fuzzy_labels`, query_card.py:510), for an
+   `SequenceMatcher(None, query, whole_ability).ratio() > match_ratio` (`_fuzzy_labels`, query_card.py:518), for an
    ability pasted with a typo. It compares against the ENTIRE ability, but 129 abilities are 40 characters or less, so
    when it always ran it padded short queries too (`+1 atk` also found Enfeebled's `-1 atk`; 164 of 518 common
    phrases got cards without the text). Now the results are the website's on 515 of those 518.
+   Since 2026-11-11 such a reply says so ("No card has the text 'X'; N cards have a similar ability, closest first:",
+   howmany "No card has 'X'; N cards have a similar ability.") and lists the cards by ratio, best first (attrs['near'],
+   one text term only; OR/AND results stay "Found", A-Z).
 8. `"quoted"` matches whole words: `\b` at an end that is a letter, digit or `_`, none at punctuation, so `"(2u)"`
    finds `(2U)(OYT)` and `"[fire]"` finds `[fire]` (2026-11-04; the old `(?:^|\s|$|\b)` ends missed tags written together).
 9. The rulebook is NEVER returned by `/query_ability`; use `/query_rulebook` (case-insensitive words with any

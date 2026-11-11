@@ -54,15 +54,15 @@ def test_fuzzy_prefilter_matches_scoring_every_card():
     for ratio in (0.0, 0.6, 0.9, 1.0):
         repo.match_ratio = ratio
         for q in queries:
-            assert list(repo._fuzzy_labels(q)) == _brute_fuzzy(repo.cards_dff, q, ratio), (ratio, q)
+            assert list(repo._fuzzy_labels(q).index) == _brute_fuzzy(repo.cards_dff, q, ratio), (ratio, q)
 
 
 def test_fuzzy_cache_follows_new_dataframes():
     repo = qc.CardRepository()
     repo.cards_dff = DataFrame({"ability": ["deal 2 damage"]}, index=["A"])
-    assert list(repo._fuzzy_labels("deal 2 damage")) == ["A"]
+    assert list(repo._fuzzy_labels("deal 2 damage").index) == ["A"]
     repo.cards_dff = DataFrame({"ability": ["draw a card"]}, index=["B"])        # prep_dataframes replaced it
-    assert list(repo._fuzzy_labels("draw a card")) == ["B"]
+    assert list(repo._fuzzy_labels("draw a card").index) == ["B"]
 
 
 # ========================

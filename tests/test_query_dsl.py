@@ -94,6 +94,23 @@ def test_space_finds_line_break(repo, monkeypatch):
     assert list(repo.ability_search_engine('"damage. die"').index) == ["Meta Knight"]
 
 
+def test_near_matches_say_so(repo, monkeypatch):
+    """No card has the text: the near abilities, closest first, called near (reply and howmany)."""
+    import commands.card_grid as cg
+    import commands.utils as utils
+    monkeypatch.setattr(qc, "card_repo", repo)
+    monkeypatch.setattr(cg, "grids", lambda cards: [b"jpg"])
+    utils.dispatch_queue.clear()
+    query = "Deal 3 damage to the enemy."                 # A-Z would be Fire Bomb, Kirby, Meta Knight
+    qc.query_ability(utils.make_simple_fake_interaction(1), query)
+    qc.query_ability_num_occur(utils.make_simple_fake_interaction(1), query)
+    out = [kw["content"] for _, kw in utils.dispatch_queue]
+    utils.dispatch_queue.clear()
+    assert out[0].split("\n")[:4] == [f"No card has the text '{query}'; 3 cards have a similar ability, closest first:",
+                                      "**1.** Kirby", "**2.** Fire Bomb", "**3.** Meta Knight"]
+    assert out[-1] == f"No card has '{query}'; 3 cards have a similar ability."
+
+
 def test_rulebook_lines(monkeypatch):
     """/query_rulebook: the matching lines under their page names (word starts, then most matches), whole pages per message."""
     import commands.utils as utils

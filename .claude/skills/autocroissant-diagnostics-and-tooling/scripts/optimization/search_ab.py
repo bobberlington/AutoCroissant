@@ -8,7 +8,7 @@ df = card_repo.cards_dff
 def old_fuzzy(q):
     s = df["ability"].apply(lambda x: SequenceMatcher(None, q, x.lower()).ratio()); return list(s[s > card_repo.match_ratio].index)
 def new_fuzzy(q):
-    return list(card_repo._fuzzy_labels(q))
+    return list(card_repo._fuzzy_labels(q).index)
 def old_name(q):
     m = get_close_matches(card_repo._normalize_card_name(q), list(card_repo.git_files), n=1, cutoff=card_repo.match_ratio); return m[0] if m else None
 def best(f, q, reps=5):
