@@ -7028,9 +7028,12 @@ def _shift(layer, dx: int, dy: int, filters: bool = False) -> None:
 
 def _scalable(layer) -> Optional[str]:
     """Why a star's layer (a group: every layer in it) cannot shrink (_scale); None when it can: its drawn layers pixel
-    layers or unwarped smart objects with no mask, effects or smart filters (an adjustment clipped to it has none)."""
+    layers or unwarped smart objects with no mask, effects or smart filters (an adjustment clipped to it has none), its
+    groups no mask or effects (_scale leaves them as they were)."""
     for leaf in [layer, *(layer.descendants() if layer.is_group() else ())]:
         if leaf.is_group():
+            if leaf.has_mask() or leaf.has_vector_mask() or _enabled_effects(leaf):
+                return f"{leaf.name!r} has a mask or effects"
             continue
         if leaf.kind in ("type", "shape") or leaf.has_pixels() and leaf.kind not in ("pixel", "smartobject"):
             return f"{leaf.name!r} is a {leaf.kind} layer"

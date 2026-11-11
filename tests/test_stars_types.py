@@ -655,6 +655,18 @@ def test_stars_shrink_to_fit_their_banner(clone, parser, tmp_path):
     assert not bomb.scaled and bomb.notes == ["stars: placed off 'Layer 13' under them: check it"]
 
 
+def test_a_star_group_with_a_mask_does_not_shrink():
+    """Option B shrinks a star group's layers, not its own mask or effects: a group with one cannot shrink."""
+    from psd_tools.api.layers import Group
+    psd = PSDImage.new("RGB", (40, 40))
+    star = PixelLayer.frompil(Image.new("RGB", (10, 10), (255, 0, 0)), psd, "star", 5, 5)
+    psd.append(star)
+    group = Group.group_layers(psd, [star], name="star one")
+    assert pe._scalable(group) is None
+    group.create_mask(Image.new("L", (10, 10), 255), top=5, left=5)
+    assert pe._scalable(group) == "'star one' has a mask or effects"
+
+
 def test_a_texture_on_the_stars_follows_them(clone, parser, tmp_path):
     """Yin Yarn's 6 (owner 11-09): its yarn 'Layer 6', clipped onto Stars, copied over the moved and the new star where
     it no longer lies, clipped right above it under Color Balance 2; they print as the originals beside them."""
