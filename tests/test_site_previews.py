@@ -548,15 +548,17 @@ out([one.sort(), card_(5, 21), blank(21, 36), card_(36, 67), blank(0, 5) && blan
 @pytest.mark.skipif(not has(MOCKUP_JS, "plateCuts"), reason="no plates in mockup.js")
 def test_plate_cuts(tmp_path):
     """The card's plate (card_plates) under a layer: cut to the image at its scale; none for a layer without one or one
-    off the card's pixels (another picture); the crop without the FX layers when their word leaves the text."""
+    off the card's pixels (another picture); the crop without the FX layers when their word leaves the text; none over
+    another wiped layer's ink, or beside one without a crop."""
     out = node(tmp_path, """
 const W = 60, H = 40, data = new Uint8ClampedArray(W * H * 4).fill(100), k = 0.5;
 const crop = (id, more = {}) => ({ id, box: [20, 20, 80, 60], ink: [40, 30, 60, 50], at: [0, 0, 30, 20], ...more });
-const plate = { crops: [crop(7), crop(7, { fx: ["Blazing"], at: [0, 28, 30, 20] })] };
+const plate = { crops: [crop(7), crop(7, { fx: ["Blazing"], at: [0, 28, 30, 20] }), crop(9, { ink: [70, 30, 90, 50] }), crop(10, { ink: [90, 70, 99, 79] })] };
 const read = v => (c, w, h) => new Uint8ClampedArray(w * h * 4).fill(c.fx ? v + 1 : v);
-const cut = (ids, v = 103, old = "", text = "") => { const c = m.plateCuts(data, W, H, k, plate, read(v), ids, old, text); return c && c.map(([x, y, w, h, p]) => [x, y, w, h, p[0]]); };
-out([cut([7]), cut([7], 103, "Inflict Blazing.", "Inflict Blazing twice."), cut([7], 103, "Inflict Blazing.", "Inflict it."), cut([7, 8]), cut([7], 160)]);""")
-    assert out == [[[10, 10, 30, 20, 103]], [[10, 10, 30, 20, 103]], [[10, 10, 30, 20, 104]], None, None]
+const cut = (ids, v = 103, old = "", text = "", near) => { const c = m.plateCuts(data, W, H, k, plate, read(v), ids, old, text, near); return c && c.map(([x, y, w, h, p]) => [x, y, w, h, p[0]]); };
+out([cut([7]), cut([7], 103, "Inflict Blazing.", "Inflict Blazing twice."), cut([7], 103, "Inflict Blazing.", "Inflict it."), cut([7, 8]), cut([7], 160),
+     cut([7], 103, "", "", [7, 9]), cut([7], 103, "", "", [7, 10]), cut([7], 103, "", "", [7, 11])]);""")
+    assert out == [[[10, 10, 30, 20, 103]], [[10, 10, 30, 20, 103]], [[10, 10, 30, 20, 104]], None, None, None, [[10, 10, 30, 20, 103]], None]
 
 
 # ---- the build's web fonts (build_site.py)
