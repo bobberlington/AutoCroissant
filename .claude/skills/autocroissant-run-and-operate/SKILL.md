@@ -476,7 +476,9 @@ nothing when the PNG already shows the PSD, pushed before it, a new card's too),
 card standards (fonts, R7, until 2026-10-24: since then the font check's alone, branch work/py314) (the owner's easy fixes, R9's Txt2 sync and, since 2026-10-25, R8's Single-line Composer, always set and never told: no comment, no post, only the bot commit's message "Single-line Composer on N cards"; box text that rewraps is redrawn and its PNG re-exported, as unsaid; R11's exact-name rename is built but told
 until the owner says yes, `card_standards.AUTO_FIX`; R3 and R4 keep only the real issues, several visible Ability layers, a hidden one
 with words the parser reads nowhere and a hidden or rasterized Name layer (kept unattended, for the owner to confirm): their
-template layout was dropped by the owner on 2026-10-23), one commit comment, one Discord post to the standards channel
+template layout was dropped by the owner on 2026-10-23); R16 (owner 2026-11-11) tells a creature's or minion's stats
+that read before the push and no longer read, "HP, DEF, ATK and SPD no longer read" and nothing more
+(`card_guards.lost_stats`), one commit comment, one Discord post to the standards channel
 (`DISCORD_STANDARDS_WEBHOOK`, no ping; the card check posts there too at once, no ping, and the font check, with its role ping: both steps of the same check job since 2026-10-25) and at most one bot commit,
 both right after the check since 2026-11-03 (owner: no wait; the post job takes no environment; `RECENT`, `QUIET_MARGIN` and `--quiet-from` removed 2026-11-04); until then after a 30-minute quiet window from the push (since 2026-10-24; from the push, not the check's end, since 2026-10-25, P-1:
 the post job waits in the TTSCardMaker environment `card-guards-quiet`'s 25-minute timer, counted from the check's end, and

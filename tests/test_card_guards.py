@@ -197,6 +197,26 @@ def test_png_pairs_with_the_psd_of_its_exact_case(cards):
     assert jobs == [] and notes == [f"`{FOLDER}/DARK_MATTER.png` matches 2 PSDs that differ only in letter case: not checked"]
 
 
+def test_a_card_renamed_with_changes_keeps_its_before(cards, monkeypatch):
+    """R16's before for a card renamed with changes: the same name in another folder (a star more), else its PNG
+    renamed unchanged (card_history's rule); lost_stats reads it there."""
+    root, base, alice, bot = cards
+    old, snack = "Creatures/Other/3 Stars/New_Name.psd", f"{FOLDER}/Snack"
+    tree = cg.Source(str(root)).tree(bot)
+    _git(root, "rm", "-q", "--cached", old, f"{snack}.psd", f"{snack}.png")
+    head = _plumb(root, {"Creatures/Other/4 Stars/New_Name.psd": (root / old).read_bytes() + b"\0",
+                         f"{FOLDER}/Snacky.psd": (root / f"{snack}.psd").read_bytes() + b"\0",
+                         f"{FOLDER}/Snacky.png": (root / f"{snack}.png").read_bytes()}, "renamed and changed")
+    source = cg.Source(str(root))
+    jobs = cg.plan_jobs(source, bot, head, "actor")[0]
+    assert {j.psd: j.was for j in jobs if j.was} == {"Creatures/Other/4 Stars/New_Name.psd": (old, tree[old][1]),
+                                                     f"{FOLDER}/Snacky.psd": (f"{snack}.psd", tree[f"{snack}.psd"][1])}
+    seen = []
+    monkeypatch.setattr(cg.standards, "rule_lost_stats", lambda psd, rel, was, was_rel, parser: seen.append((rel, was_rel)))
+    cg.lost_stats(source, next(j for j in jobs if j.was and j.psd.startswith("Creatures/")), None, None, None)
+    assert seen == [("Creatures/Other/4 Stars/New_Name.psd", old)]      # the old PSD opened from its blob
+
+
 # ========================
 # check, end to end
 # ========================
