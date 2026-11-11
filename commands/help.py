@@ -23,7 +23,8 @@ general_commands = {
 
 text_commands = {
     "/set_reminder [msg] [when] [offset] [frequency] [command]": "Posts a message or runs a command here at a time, Pacific, optionally repeating (admin).",
-    "/reminders":                            "Your panel of reminders: reschedule, turn off/on, delete, new.",
+    "/reminders":                            "Your panel of reminders, soonest first: reschedule, turn off/on, delete, "
+                                             "new; also the proposal forum's next steps (read-only).",
     "/remove_reminder <reminder_id>":        "Removes a reminder by its ID from /reminders (admins or its creator).",
 }
 

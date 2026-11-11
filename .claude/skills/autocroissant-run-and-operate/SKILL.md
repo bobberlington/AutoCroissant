@@ -566,7 +566,7 @@ store shape; its own adapter block at the top of its analytics.py; no drift chec
 
 ### /reminders (the panel, anyone)
 
-An ephemeral panel (only the invoker sees and uses it) on the first reminder in this channel: an embed card (message,
+An ephemeral panel (only the invoker sees and uses it), soonest first, on the first reminder in this channel: an embed card (message,
 command, next run in Pacific time, repeat, channel, creator, On/Off/⚠ problem), `◀ ↻ ▶`, a jump list (over 25
 reminders: 23 per page plus earlier/later), and Reschedule (a form: when, repeat; `when` also takes a delay like
 `30m`), Turn off/on, Delete (with a confirm) and New (a form: message, command, when, offset, repeat; created in this
@@ -575,6 +575,10 @@ New needs an admin. An off reminder keeps its schedule and never fires; on again
 missed and a one-shot whose time passed must be rescheduled first. Every click re-reads the list ("That reminder is
 gone." when it fired or was deleted elsewhere). It closes after 10 idle minutes; after a restart open panels fail
 ("This interaction failed"): run `/reminders` again. A failed conversion shows in its footer.
+Since 2026-11-10 the proposal forum's open posts show among them (§13), read-only: "Proposal forum · <title>", the
+post's link, its vote ping (until done) and close times; Reschedule, Turn off and Delete are disabled (settings stay in
+`/forum_votes`). None while the votes are off, or in another server. A post a person closed (as last seen) and the
+bot's own test post are left out here and in `/forum_votes`' "Open posts" count.
 
 ### /set_reminder (admin only, main.py:238; the gate at :252; the panel's New does the same)
 
@@ -749,8 +753,10 @@ commands/forum_votes.py (uncompiled), owner's spec 2026-11-09. In the watched fo
 | 6 days after the post was made | "<@&role> please vote on this change. Voting closes in 24 hours." (the hours left; "now" when overdue; that role only may ping); tag Closing Soon |
 | 7 days | "Voting is closed. Most votes: 👍 (5)." (any emoji, the bot's own vote and :abstain: not counted; ties all named; "No votes."); a winner that is not 👎 (and does not tie with 👎) gets one message in the results channel (default 1087579710428565526): "Most votes: 👍 (5). <post link>" and the proposal's first message quoted below it (cut to 2,000 characters; no forward since owner 11-09: the link shows the title); Open and Closing Soon off, Closed on; locked and archived |
 
-Steps already due run at once, in order (an old post found open is pinged, then closed). A post deleted, or given Closed
-or locked and archived by a person, is dropped; a post a person only locks waits (no step runs) until it is unlocked,
+Steps already due run at once, in order (an old post found open is pinged, then closed). A deleted post leaves
+`forum_votes.json` at once (`on_raw_thread_delete`), else at the next start or within the hour (the open posts the
+gateway does not list are read: only Discord's Unknown Channel drops one; any other error keeps it, logged once). A
+post given Closed or locked and archived by a person is dropped; a post a person only locks waits (no step runs) until it is unlocked,
 then its overdue steps run. Each part is recorded in `forum_votes.json` when done, so a restart repeats nothing; a
 part Discord refuses for good (Missing Permissions, or another 4xx such as the 20-reactions limit) is logged once
 (`Forum votes: post N: lock failed: Forbidden ...`) and skipped, so the later steps still run; a server error, rate

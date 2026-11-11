@@ -8,8 +8,11 @@ from types import SimpleNamespace
 
 import pytest
 from discord import ChannelType, Forbidden, HTTPException, NotFound
+from discord.ui import Button
 
+import commands.analytics as rem
 import commands.forum_votes as fv
+import commands.reminder_panel as panel
 import commands.utils as utils
 from global_config import FORUM_JSON
 
@@ -212,8 +215,8 @@ def clock(monkeypatch):
 
 def restart(monkeypatch):
     """What a bot restart forgets (the file stays)."""
-    for name, value in (("_loaded", False), ("_load_error", None), ("_scanned", None), ("_settings", {}),
-                        ("_posts", {}), ("_logged", set())):
+    for name, value in (("_loaded", False), ("_load_error", None), ("_scanned", None), ("_checked", None),
+                        ("_settings", {}), ("_posts", {}), ("_logged", set()), ("_gone", set()), ("_known", {})):
         monkeypatch.setattr(fv, name, value)
     for name in ("_lock", "_load_lock", "_save_lock"):
         monkeypatch.setattr(fv, name, asyncio.Lock())
@@ -418,6 +421,135 @@ def test_deleted_or_closed_by_hand_dropped_a_lock_waits(clock, capsys):
     passes(client, DAY7 + timedelta(minutes=5), now=clock)                 # unlocked: overdue steps in order
     assert contents(paused) == [f"<@&{ROLE}> please vote on this change. Voting closes now.",
                                 "Voting is closed. No votes."] and paused.locked and paused.tags == ["Closed"]
+
+
+def test_a_deleted_post_leaves_at_once_never_on_another_error(clock, monkeypatch, capsys):
+    forum = Forum()
+    client = Client(forum)
+    told, away, flaky, later = Thread(forum, T0), Thread(forum, T0), Thread(forum, T0), Thread(forum, T0)
+    passes(client, T0, now=clock)
+    told.deleted = True                                 # the delete event (the cache still lists it)
+    asyncio.run(fv.post_deleted(told.id))
+    passes(client, T0 + timedelta(minutes=5), now=clock)
+    assert str(told.id) not in saved()["posts"]
+    restart(monkeypatch)                                # deleted while the bot was away: the start's check
+    forum.threads.remove(told)
+    away.deleted = True
+    forum.threads.remove(away)
+    forum.threads.remove(flaky)                         # unseen by the gateway, and Discord fails to answer
+    fetch = client.fetch_channel
+
+    async def fails(channel_id):
+        if channel_id == flaky.id:
+            raise _error(HTTPException, 503, 0, "Service Unavailable")
+        return await fetch(channel_id)
+    client.fetch_channel = fails
+    passes(client, T0 + timedelta(hours=1), now=clock)
+    assert set(saved()["posts"]) == {str(flaky.id), str(later.id)}
+    later.deleted = True                                # no event: the next hourly check
+    forum.threads.remove(later)
+    passes(client, T0 + timedelta(hours=1, minutes=55), now=clock)
+    assert str(later.id) in saved()["posts"]
+    passes(client, T0 + timedelta(hours=2), now=clock)
+    assert set(saved()["posts"]) == {str(flaky.id)}
+    out = capsys.readouterr().out
+    assert all(out.count(f"post {t.id} was deleted: dropped") == 1 for t in (told, away, later))
+    assert out.count(f"post {flaky.id} can't be checked (kept)") == 1
+
+
+def test_reminders_list_open_posts_read_only(clock, monkeypatch):
+    forum = Forum()
+    client = Client(forum)
+    pinged, fresh, old, shut = (Thread(forum, T0 - timedelta(days=n)) for n in (6.5, 2, 3, 8))   # shut: closed
+    passes(client, T0, now=clock)
+    fresh.name = "Smaller hands"                        # Discord's name first, then the record's, then the link
+    old._archive(True)
+    del fv._posts[str(old.id)]["title"]
+    del fv._known[str(old.id)]                          # an archived post not seen this session
+    when = datetime(2026, 11, 4, 18, tzinfo=timezone.utc).astimezone(rem.TIMEZONE)
+    reminder = {"id": "a1b2c3d4", "channel_id": 5, "msg": "Game night", "when": when, "frequency": None,
+                "command": None, "enabled": True, "creator_id": PERSON, "problem": None}
+    monkeypatch.setattr(rem, "snapshot", lambda guild_id: [dict(reminder)])
+    monkeypatch.setattr(rem, "is_admin", lambda interaction: True)
+    monkeypatch.setattr(panel, "_now", lambda: T0.astimezone(rem.TIMEZONE))
+    asked = SimpleNamespace(guild_id=1, channel_id=fresh.id, user=SimpleNamespace(id=PERSON), client=client)
+
+    async def look():
+        snap = await panel._listing(1, client)
+        view = panel.ReminderPanel(asked)
+        view.start(snap, asked.channel_id)
+        shown = view.render(snap)
+        options = {o.value: (o.label, o.description) for o in view.children[3].options}
+        buttons = {b.custom_id: b.disabled for b in view.children if isinstance(b, Button)}
+        return snap, shown["embed"], options, buttons
+    snap, embed, options, buttons = asyncio.run(look())
+    assert [r["id"] for r in snap] == [f"forum-{pinged.id}", f"forum-{old.id}", "a1b2c3d4", f"forum-{fresh.id}"]
+    assert options[f"forum-{pinged.id}"] == ("Proposal forum · Bigger hands", "closes Nov 01 16:00")
+    assert options[f"forum-{old.id}"] == (f"Proposal forum · post {old.id}",
+                                          "vote ping Nov 04 04:00 · closes Nov 05 04:00")
+    assert options[f"forum-{fresh.id}"] == ("Proposal forum · Smaller hands",
+                                            "vote ping Nov 05 04:00 · closes Nov 06 04:00")
+    assert embed.title == "Proposal forum · Smaller hands"
+    assert embed.url == f"https://discord.com/channels/1/{fresh.id}"
+    assert [(f.name, f.value.split(" (")[0]) for f in embed.fields] == [
+        ("Post", f"<#{fresh.id}>"), ("Vote ping", "2026-11-05 04:00 PST"), ("Closes", "2026-11-06 04:00 PST")]
+    assert embed.description == panel.FORUM_NOTE and "6 days" in embed.description
+    assert buttons == {"rem:prev": False, "rem:refresh": False, "rem:next": False, "rem:resched": True,
+                       "rem:off": True, "rem:delete": True, "rem:new": False}
+    fresh.deleted = True
+    forum.threads.remove(fresh)
+    asyncio.run(fv.post_deleted(fresh.id))
+    steps = fv.upcoming()                               # no client (a dry call): the records' titles
+    assert [(s["post"], s["title"], s["ping"]) for s in steps] == [
+        (pinged.id, "Bigger hands", None), (old.id, None, datetime(2026, 11, 4, 12, tzinfo=timezone.utc))]
+    assert asyncio.run(panel._listing(1, client))[1]["id"] == f"forum-{old.id}"
+    assert fv.upcoming(client, guild_id=2) == []        # another server
+    fv._settings["enabled"] = False
+    assert [r["id"] for r in asyncio.run(panel._listing(1, client))] == ["a1b2c3d4"]
+
+
+def test_listings_leave_out_posts_closed_by_hand_and_the_test_post(clock, monkeypatch, capsys):
+    forum = Forum()
+    client = Client(forum)
+    tagged, shut, paused, kept, away = (Thread(forum, T0) for _ in range(5))
+    Thread(forum, T0, name=fv.TEST_TITLE, owner=BOT)    # the CLI's test post: never a proposal
+    passes(client, T0, now=clock)
+    tagged.applied_tags = [forum.tag("Closed")]         # day 1: closed by people, the steps learn it on day 6
+    shut.locked = True
+    shut._archive(True)
+    paused.locked = True                                # only locked: its steps wait, still listed
+    passes(client, T0 + timedelta(days=1), now=clock)
+    assert {s["post"]: s["locked"] for s in fv.upcoming(client, 1)} == {paused.id: True, kept.id: False,
+                                                                         away.id: False}
+    restart(monkeypatch)                                # closed while the bot was away: the start's check reads it
+    away.locked = True
+    away._archive(True)
+    passes(client, T0 + timedelta(days=1, hours=1), now=clock)
+    assert {s["post"] for s in fv.upcoming(client, 1)} == {paused.id, kept.id}
+    assert "Open posts: 2" in fv.status_text(client)
+    kept.locked = True                                  # closed after the start: as last seen, no pass needed
+    kept._archive(True)
+    assert {s["post"] for s in fv.upcoming(client, 1)} == {paused.id}
+    assert not any(entry["end"] for entry in saved()["posts"].values())   # the steps unchanged
+    step = next(s for s in fv.upcoming(client, 1) if s["post"] == paused.id)
+    card = panel._forum_card(step, DAY6 + timedelta(hours=1))
+    assert [(name, value.split(" (")[0]) for name, value in card["fields"]] == [
+        ("Post", f"<#{paused.id}>"), ("Vote ping", "Due now"), ("Closes", "2026-11-08 04:00 PST"),
+        ("Status", "Locked: waits until unlocked")]
+    assert panel._forum_option(step)[1].endswith(" · locked")
+    monkeypatch.setattr(rem, "snapshot", lambda guild_id: [])
+    monkeypatch.setattr(rem, "is_admin", lambda interaction: True)
+    view = panel.ReminderPanel(SimpleNamespace(guild_id=1, user=SimpleNamespace(id=PERSON), client=client))
+    view.confirming = True                              # a Delete confirm never lands on a forum step
+    view.render(asyncio.run(panel._listing(1, client)))
+    assert not view.confirming and "rem:confirm" not in {getattr(b, "custom_id", "") for b in view.children}
+
+    def broken(*args):
+        raise KeyError("forum")
+    monkeypatch.setattr(fv, "upcoming", broken)
+    monkeypatch.setattr(panel, "_forum_failed", False)
+    assert asyncio.run(panel._listing(1, client)) == asyncio.run(panel._listing(1, client)) == []
+    assert capsys.readouterr().out.count("the proposal forum's steps left out") == 1   # reminders still show
 
 
 def test_missing_permissions_logged_once_no_retry_loop(clock, capsys):

@@ -19,7 +19,13 @@ from commands.analytics import (
     set_reminder,
 )
 from commands.card_sync import fonts_text, on_use as card_data_used, update as update_stats
-from commands.forum_votes import PASS_MINUTES as FORUM_PASS_MINUTES, forum_votes, post_created, run_pass as forum_pass
+from commands.forum_votes import (
+    PASS_MINUTES as FORUM_PASS_MINUTES,
+    forum_votes,
+    post_created,
+    post_deleted,
+    run_pass as forum_pass,
+)
 from commands.frankenstein import frankenstein
 from commands.github_api import print_token_status
 from commands.help import print_help
@@ -171,6 +177,12 @@ async def on_interaction(interaction: Interaction):
 async def on_thread_create(thread):
     """A new post in the proposal forum gets its tag and reactions (commands/forum_votes.py)."""
     await post_created(client, thread)
+
+
+@client.event
+async def on_raw_thread_delete(payload):
+    """A deleted proposal post leaves forum_votes.json at once (cached or not)."""
+    await post_deleted(payload.thread_id)
 
 
 async def card_names(interaction: Interaction, current: str) -> list:

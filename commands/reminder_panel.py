@@ -1,7 +1,8 @@
 """
-The /reminders panel: one reminder per card (only the invoker sees it), with Previous/Next, a jump select and
-Reschedule, Turn off/on, Delete and New. The logic and the rights live in commands/analytics.py; this module is the
-Discord UI (not compiled: discord.ui subclasses).
+The /reminders panel: one reminder per card (only the invoker sees it), soonest first, with Previous/Next, a jump
+select and Reschedule, Turn off/on, Delete and New. The logic and the rights live in commands/analytics.py; this module
+is the Discord UI (not compiled: discord.ui subclasses). The proposal forum's next steps (commands/forum_votes.py) show
+among them, read-only: the forum module runs them on its own.
 
 It answers each interaction directly (not through the queues): a View, a modal and edit_message need the live
 interaction. Every click re-reads the list by reminder id, so a reminder that fired or was deleted elsewhere shows
@@ -15,13 +16,25 @@ from discord import AllowedMentions, ButtonStyle, Color, Embed, HTTPException, I
 from discord.ui import Button, Modal, Select, TextInput, View
 
 import commands.analytics as rem
+import commands.forum_votes as forum
 
 # ========================
 # Configuration
 # ========================
-COLORS = {"on": Color.green(), "off": Color.light_grey(), "problem": Color.red()}
+COLORS = {"on": Color.green(), "off": Color.light_grey(), "problem": Color.red(), "forum": Color.blurple()}
 PAGE_PREV, PAGE_NEXT = "page:-1", "page:+1"
 CLOSED = "Closed. Run /reminders again."
+FORUM_NOTE = (f"Read-only: the proposal forum runs these on its own (vote ping {forum.PING_AFTER.days} days after the "
+              f"post, close at {forum.CLOSE_AFTER.days}). Settings: /forum_votes.")
+_forum_failed = False                           # forum.upcoming raised once (logged): its steps left out
+
+
+def _now():
+    return datetime.now(rem.TIMEZONE)
+
+
+def _clip(text, limit):
+    return text if len(text) <= limit else text[:limit - 1] + "…"
 
 
 def _upper(text):
@@ -40,6 +53,57 @@ def _act(guild_id, action, args):
     return result, rem.snapshot(guild_id)
 
 
+def _merged(snap, guild_id, client):
+    """The server's reminders and the proposal forum's next steps, soonest first. On the event loop (the forum's
+    records are the loop's)."""
+    global _forum_failed
+    try:
+        steps = [{"id": f"forum-{step['post']}", "channel_id": step["post"], "forum": step,
+                  "when": step["when"].astimezone(rem.TIMEZONE)} for step in forum.upcoming(client, guild_id)]
+    except Exception:                           # the reminders still show
+        if not _forum_failed:
+            _forum_failed = True
+            print(f"ERROR: /reminders: the proposal forum's steps left out:\n{format_exc()}")
+        steps = []
+    return sorted(snap + steps, key=_soonest)
+
+
+def _soonest(reminder):
+    """Sort key: the next time; an unreadable one last."""
+    when = reminder.get("when")
+    return (0, when) if isinstance(when, datetime) else (1, 0)
+
+
+async def _listing(guild_id, client):
+    """The reminders read in a thread, merged here."""
+    return _merged(await to_thread(rem.snapshot, guild_id), guild_id, client)
+
+
+def _name(step):
+    return step["title"] or f"post {step['post']}"
+
+
+def _forum_card(step, now):
+    """The card of a forum post's next steps (the card() shape, plus its link)."""
+    fields = [("Post", f"<#{step['post']}>")]
+    for name, when in (("Vote ping", step["ping"]), ("Closes", step["close"])):
+        if when:
+            text = rem.format_when(when.astimezone(rem.TIMEZONE))
+            fields.append((name, f"Due now ({text})" if when <= now else text))
+    if step["locked"]:
+        fields.append(("Status", "Locked: waits until unlocked"))
+    url = f"https://discord.com/channels/{step['guild']}/{step['post']}" if step["guild"] else None
+    return {"title": _clip(f"Proposal forum · {_name(step)}", 256), "description": FORUM_NOTE, "fields": fields,
+            "state": "forum", "url": url}
+
+
+def _forum_option(step):
+    """(label, description) in the jump select."""
+    times = ([f"vote ping {step['ping'].astimezone(rem.TIMEZONE):%b %d %H:%M}"] if step["ping"] else []) \
+        + [f"closes {step['close'].astimezone(rem.TIMEZONE):%b %d %H:%M}"] + (["locked"] if step["locked"] else [])
+    return _clip(f"Proposal forum · {_name(step)}", 100), _clip(" · ".join(times), 100)
+
+
 # ========================
 # Panel
 # ========================
@@ -50,6 +114,7 @@ class ReminderPanel(View):
         super().__init__(timeout=rem.PANEL_TIMEOUT)
         self.guild_id = interaction.guild_id
         self.owner_id = interaction.user.id
+        self.client = getattr(interaction, "client", None)
         self.admin = rem.is_admin(interaction)
         self.current_id = None
         self.index = 0
@@ -76,6 +141,8 @@ class ReminderPanel(View):
         self.index = rem.locate(ids, self.current_id, self.index)
         self.shown = snap[self.index] if snap else None
         self.current_id = self.shown["id"] if self.shown else None
+        if self.shown and self.shown.get("forum"):
+            self.confirming = False             # never "Delete" on a forum step (a neighbour after a change)
         self.clear_items()
         if self.shown is None:
             self.confirming = False
@@ -83,8 +150,11 @@ class ReminderPanel(View):
             footer = rem.ZONE_LABEL
             self._button("New", ButtonStyle.success, "rem:new", self.on_new, 0, not self.admin)
         else:
-            texts = rem.card(self.shown, datetime.now(rem.TIMEZONE))
-            embed = Embed(title=texts["title"], description=texts["description"], color=COLORS[texts["state"]])
+            step = self.shown.get("forum")
+            now = _now()
+            texts = _forum_card(step, now) if step else rem.card(self.shown, now)
+            embed = Embed(title=texts["title"], description=texts["description"], color=COLORS[texts["state"]],
+                          url=texts.get("url"))
             for name, value in texts["fields"]:
                 embed.add_field(name=name, value=value, inline=True)
             footer = f"{self.index + 1} of {len(snap)} · {rem.ZONE_LABEL}"
@@ -110,7 +180,8 @@ class ReminderPanel(View):
         if has_prev:
             options.append(SelectOption(label="◀ earlier", value=PAGE_PREV))
         for reminder in snap[start:stop]:
-            label, description = rem.option_texts(reminder)
+            step = reminder.get("forum")
+            label, description = _forum_option(step) if step else rem.option_texts(reminder)
             options.append(SelectOption(label=label, value=reminder["id"], description=description,
                                         default=reminder["id"] == self.current_id))
         if has_next:
@@ -125,7 +196,7 @@ class ReminderPanel(View):
             self._button(f"Delete {self.current_id}", ButtonStyle.danger, "rem:confirm", self.on_confirm, 2)
             self._button("Cancel", ButtonStyle.secondary, "rem:cancel", self.on_cancel, 2)
             return
-        editable = rem.can_edit(self.shown, self.owner_id, self.admin)
+        editable = not self.shown.get("forum") and rem.can_edit(self.shown, self.owner_id, self.admin)
         self._button("Reschedule", ButtonStyle.primary, "rem:resched", self.on_reschedule, 2, not editable)
         if self.shown.get("enabled", True):
             self._button("Turn off", ButtonStyle.secondary, "rem:off", self.on_off, 2, not editable)
@@ -156,7 +227,7 @@ class ReminderPanel(View):
 
     async def refresh(self, interaction, notice=""):
         try:
-            snap = await to_thread(rem.snapshot, self.guild_id)
+            snap = await _listing(self.guild_id, self.client)
         except rem.ReminderOff as e:
             return await self.off(interaction, e)
         await self.show(interaction, snap, notice)
@@ -167,6 +238,7 @@ class ReminderPanel(View):
             result, snap = await to_thread(_act, self.guild_id, action, args)
         except rem.ReminderOff as e:
             return await self.off(interaction, e)
+        snap = _merged(snap, self.guild_id, self.client)
         if isinstance(result, rem.ReminderError):
             notice = failed + (_upper(result) if failed == "✗ " else str(result))
         else:
@@ -198,7 +270,7 @@ class ReminderPanel(View):
 
     async def move(self, interaction, delta):
         try:
-            snap = await to_thread(rem.snapshot, self.guild_id)
+            snap = await _listing(self.guild_id, self.client)
         except rem.ReminderOff as e:
             return await self.off(interaction, e)
         ids = [r["id"] for r in snap]
@@ -214,7 +286,7 @@ class ReminderPanel(View):
     async def on_jump(self, interaction):
         value = (interaction.data or {}).get("values", [""])[0]
         try:
-            snap = await to_thread(rem.snapshot, self.guild_id)
+            snap = await _listing(self.guild_id, self.client)
         except rem.ReminderOff as e:
             return await self.off(interaction, e)
         if value in (PAGE_PREV, PAGE_NEXT):
@@ -224,7 +296,12 @@ class ReminderPanel(View):
             self.current_id, self.anchor = value, None
         await self.show(interaction, snap)
 
+    def _forum_shown(self):
+        return str(self.current_id).startswith("forum-")
+
     async def on_reschedule(self, interaction):
+        if self._forum_shown():
+            return await self.refresh(interaction, f"✗ {FORUM_NOTE}")
         if self.shown is None or not rem.can_edit(self.shown, self.owner_id, self.admin):
             return await self.refresh(interaction, "✗ Only an admin or the reminder's creator can change it.")
         await interaction.response.send_modal(RescheduleModal(self, self.shown))
@@ -237,10 +314,14 @@ class ReminderPanel(View):
 
     async def toggle(self, interaction, enabled):
         # the state the button showed, not a flip: a stale panel never undoes itself
+        if self._forum_shown():
+            return await self.refresh(interaction, f"✗ {FORUM_NOTE}")
         await self.change(interaction, rem.set_enabled, (interaction, self.current_id, enabled),
                           lambda result: f"✓ {result[1]}")
 
     async def on_delete(self, interaction):
+        if self._forum_shown():
+            return await self.refresh(interaction, f"✗ {FORUM_NOTE}")
         self.confirming = True
         await self.refresh(interaction)
 
@@ -250,6 +331,8 @@ class ReminderPanel(View):
 
     async def on_confirm(self, interaction):
         self.confirming = False
+        if self._forum_shown():
+            return await self.refresh(interaction, f"✗ {FORUM_NOTE}")
         await self.change(interaction, rem.delete, (interaction, self.current_id),
                           lambda result: f"✓ Deleted `{result['id']}`.")
 
@@ -327,7 +410,7 @@ async def open_panel(interaction: Interaction):
         await interaction.response.send_message("Reminders work in servers only.", ephemeral=True)
         return
     try:
-        snap = await to_thread(rem.snapshot, interaction.guild_id)
+        snap = await _listing(interaction.guild_id, getattr(interaction, "client", None))
     except rem.ReminderOff as e:
         await interaction.response.send_message(str(e), ephemeral=True)
         return

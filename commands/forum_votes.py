@@ -6,10 +6,12 @@ outcome, link and proposal text (its first message, quoted) to the results chann
 nobody voted), swaps the tags for Closed, then locks and archives the post.
 
 An async worker like type_emojis: Discord is awaited on the event loop, the JSON written in a thread. main runs
-run_pass every PASS_MINUTES and post_created on on_thread_create; /forum_votes shows or sets the settings. FORUM_JSON
+run_pass every PASS_MINUTES, post_created on on_thread_create and post_deleted on on_raw_thread_delete; /forum_votes
+shows or sets the settings; /reminders lists the open posts' next steps (upcoming, read-only). FORUM_JSON
 (gitignored, per machine) holds the settings and the parts done per post, so a restart never repeats one; the ping and
 the note also look for a bot's message in the post first, the winner message in the results channel (a
-lost file, a restart mid-close). A post a person locks waits until unlocked.
+lost file, a restart mid-close). A post a person locks waits until unlocked. A deleted post is dropped at once (the
+delete event), else by the check of the open posts at the start and every RECHECK (only Discord's Unknown Channel).
 
     python -m commands.forum_votes test --minutes N    a test post, closed N minutes later (REST only, no ping)
 
@@ -47,6 +49,7 @@ LIMIT = 1900                                # characters: under Discord's 2,000 
 STARTER_WAIT = 2                            # s: a new post's first message can lag its thread
 UNKNOWN_CHANNEL = 10003                     # Discord's error code: the post was deleted
 ARCHIVED = 50083                            # Discord's error code: the post is archived (the next pass opens it)
+RECHECK = timedelta(hours=1)                # open posts checked for deletion (and at the start): missed delete events
 PING_WORDS = "please vote on this change"
 NOTE_WORDS = "Voting is closed."
 TEST_TITLE = "Test post"
@@ -64,13 +67,16 @@ STEPS = {"open": ("open tag", "reactions"),                     # a step's parts
 # Global State
 # ========================
 _settings: dict = {}            # what /forum_votes set (else DEFAULTS)
-_posts: dict = {}               # thread id (str) -> {"forum", "created", "done": [parts], "outcome", "end"}
+_posts: dict = {}               # thread id (str) -> {"forum", "created", "title", "done": [parts], "outcome", "end"}
 _loaded = False
 _load_error = None              # FORUM_JSON can't be read: votes off this session, the file left untouched
 _lock = Lock()                  # one pass at a time (the loop, a new post, a settings change)
 _load_lock = Lock()
 _save_lock = Lock()             # saves land in order
 _scanned = None                 # the forum whose open posts were included since the start (or the last change)
+_checked = None                 # when the open posts were last checked for deletion (None: not since the start)
+_gone: set = set()              # posts dropped as deleted (str ids): never included again
+_known: dict = {}               # post id (str) -> its thread as last seen (for the listings only)
 _logged: set = set()            # what was logged once
 _abstain: dict = {}             # guild id -> its :abstain: emoji
 
@@ -118,7 +124,8 @@ def _created(thread) -> datetime:
 
 
 def _record(thread, forum) -> dict:
-    return {"forum": str(forum.id), "created": _created(thread).isoformat(), "done": [], "outcome": None, "end": None}
+    return {"forum": str(forum.id), "created": _created(thread).isoformat(), "title": getattr(thread, "name", None),
+            "done": [], "outcome": None, "end": None}
 
 
 def _tag_ids(thread) -> list:
@@ -145,6 +152,11 @@ def _passing(e: Exception) -> bool:
     if isinstance(e, HTTPException):
         return e.status >= 500 or e.status in (401, 408, 429) or e.code == ARCHIVED
     return isinstance(e, (OSError, ClientError))
+
+
+def _unknown(e: Exception) -> bool:
+    """Discord's Unknown Channel: the post was deleted (the only error that drops one)."""
+    return isinstance(e, NotFound) and e.code == UNKNOWN_CHANNEL
 
 
 def _custom_name(emoji) -> str:
@@ -179,9 +191,14 @@ def _outcome(post: Post) -> dict:
     return {"text": found["text"], "announce": found.get("announce", found.get("forward", False))}   # forward: before 11-09
 
 
-def _is_test(post: Post) -> bool:
+def _own_test(client, thread) -> bool:
     """The live test's post: the bot's own, by its title."""
-    return post.thread.name == TEST_TITLE and getattr(post.thread, "owner_id", None) == post.client.user.id
+    me = getattr(getattr(client, "user", None), "id", None)
+    return me is not None and thread.name == TEST_TITLE and getattr(thread, "owner_id", None) == me
+
+
+def _is_test(post: Post) -> bool:
+    return _own_test(post.client, post.thread)
 
 
 def _due(entry: dict, now: datetime) -> list:
@@ -289,6 +306,18 @@ async def _save() -> None:
             _log_once(("save", str(e)), f"{FORUM_JSON} not saved: {e}")
 
 
+async def _drop(keys) -> None:
+    """Deleted posts out of the record: each logged once, one save."""
+    _gone.update(keys)
+    dropped = [key for key in keys if _posts.pop(key, None) is not None]
+    for key in keys:
+        _known.pop(key, None)
+    for key in dropped:
+        print(f"Forum votes: post {key} was deleted: dropped")
+    if dropped:
+        await _save()
+
+
 async def _no_save() -> None:
     """The test's posts are never recorded (the bot's file is the running bot's)."""
 
@@ -307,7 +336,7 @@ async def _part(post: Post, name: str, action, final: bool = False) -> None:
     try:
         await action()
     except Exception as e:
-        if isinstance(e, NotFound) and e.code == UNKNOWN_CHANNEL and not final:
+        if _unknown(e) and not final:
             raise Gone() from e
         _log_once((post.thread.id, name), f"post {post.thread.id}: {name} failed: {type(e).__name__}: {e}")
         if not final and _passing(e):
@@ -509,8 +538,8 @@ async def close_post(post: Post, results_id: int, announce: bool = True) -> None
 def _include(forum, thread) -> bool:
     """Record a post not seen yet if it is open (no Closed; archived and locked is closed). True if recorded."""
     key = str(thread.id)
-    if key in _posts or getattr(thread, "parent_id", None) != forum.id or (thread.locked and thread.archived) \
-            or _has(forum, thread, CLOSED):
+    if key in _posts or key in _gone or getattr(thread, "parent_id", None) != forum.id \
+            or (thread.locked and thread.archived) or _has(forum, thread, CLOSED):
         return False
     _posts[key] = _record(thread, forum)
     return True
@@ -536,6 +565,7 @@ async def _advance(client, forum, key: str, entry: dict, thread=None) -> None:
     try:
         if thread is None:
             thread = await _channel(client, int(key))
+        _known[key] = thread
         held = _held(forum, thread, entry)
         if held == "wait":
             _log_once((thread.id, "held"), f"post {thread.id} is locked: its steps wait until it is unlocked")
@@ -553,14 +583,15 @@ async def _advance(client, forum, key: str, entry: dict, thread=None) -> None:
             await close_post(post, setting("results"), announce=not _is_test(post))
             entry["end"] = "closed"
             await _save()
-    except (Gone, NotFound):
-        _posts.pop(key, None)
-        print(f"Forum votes: post {key} was deleted: dropped")
-        await _save()
+    except Gone:
+        await _drop([key])
     except Retry:
         pass
     except HTTPException as e:
-        _log_once((int(key), "read"), f"post {key} can't be read: {e}")
+        if _unknown(e):
+            await _drop([key])
+        else:
+            _log_once((int(key), "read"), f"post {key} can't be read: {e}")
 
 
 async def _open_posts(forum) -> tuple:
@@ -575,6 +606,28 @@ async def _open_posts(forum) -> tuple:
         _log_once(("archived", forum.id), f"the forum {forum.id}'s archived posts can't be read (again next pass): {e}")
         whole = False
     return list({t.id: t for t in found}.values()), whole
+
+
+async def _recheck(client, forum, seen) -> None:
+    """
+    Drop the open posts deleted while the bot was away (or a delete event missed): a post the gateway lists (seen) is
+    there; any other is read, and only Unknown Channel drops it (any other error keeps it, logged once).
+    """
+    global _checked
+    _checked = _now()
+    there = {str(t.id) for t in seen}
+    gone = []
+    for key, entry in list(_posts.items()):
+        if entry["forum"] != str(forum.id) or entry.get("end") or key in there:
+            continue
+        try:
+            _known[key] = await _channel(client, int(key))
+        except Exception as e:
+            if _unknown(e):
+                gone.append(key)
+            else:
+                _log_once((int(key), "check"), f"post {key} can't be checked (kept): {type(e).__name__}: {e}")
+    await _drop(gone)
 
 
 async def _pass(client) -> None:
@@ -592,6 +645,9 @@ async def _pass(client) -> None:
     threads = {str(t.id): t for t in sorted(found, key=_created) if _include(forum, t)}
     if threads:
         await _save()
+    _known.update({str(t.id): t for t in found if str(t.id) in _posts})
+    if _checked is None or _now() - _checked >= RECHECK:
+        await _recheck(client, forum, found)
     for key, entry in sorted(_posts.items(), key=lambda item: item[1]["created"]):
         if entry["forum"] == str(forum.id) and not entry.get("end"):
             await _advance(client, forum, key, entry, threads.get(key))
@@ -625,10 +681,63 @@ async def post_created(client, thread) -> None:
         _log_once(("new post", repr(e)), f"a new post failed:\n{format_exc()}")
 
 
-def status_text() -> str:
+async def post_deleted(thread_id: int) -> None:
+    """on_raw_thread_delete: a deleted post leaves the record at once (a closed one too)."""
+    key = str(thread_id)
+    try:
+        if not await _ready() or key not in _posts:
+            return
+        async with _lock:
+            await _drop([key])
+    except Exception as e:
+        _log_once(("deleted post", repr(e)), f"a deleted post failed:\n{format_exc()}")
+
+
+def _listed(client) -> list:
+    """
+    (key, record, thread or None, locked by a person) of the open posts the listings show: not ended, nor (as last
+    seen) closed by hand or the bot's test post (the steps learn a hand close only when one falls due). Display only.
+    """
+    forum_id = setting("forum")
+    forum = client.get_channel(forum_id) if client is not None else None
+    found = []
+    for key, entry in _posts.items():
+        if entry["forum"] != str(forum_id) or entry.get("end"):
+            continue
+        thread = (client.get_channel(int(key)) if client is not None else None) or _known.get(key)
+        held = _held(forum, thread, entry) if thread is not None and forum is not None else ""
+        if held not in ("", "wait") or (thread is not None and _own_test(client, thread)):
+            continue
+        found.append((key, entry, thread, held == "wait"))
+    return found
+
+
+def upcoming(client=None, guild_id: Optional[int] = None) -> list:
+    """
+    The open posts' next steps for /reminders (read-only), soonest first: {"post", "title", "guild", "ping" (None once
+    pinged), "close", "when", "locked"} (UTC); none while the votes are off or unread, or for another server. Call it
+    on the event loop: it reads the loop's records, never the file. Titles: Discord's, else the record's (else None).
+    """
+    if not _loaded or _load_error or not setting("enabled"):
+        return []
+    forum = client.get_channel(setting("forum")) if client is not None else None
+    guild = getattr(getattr(forum, "guild", None), "id", None)
+    if guild_id is not None and guild != guild_id:
+        return []
+    found = []
+    for key, entry, thread, locked in _listed(client):
+        created = datetime.fromisoformat(entry["created"])
+        ping = None if "ping" in entry["done"] else created + PING_AFTER
+        found.append({"post": int(key), "title": getattr(thread, "name", None) or entry.get("title"), "guild": guild,
+                      "ping": ping, "close": created + CLOSE_AFTER, "when": ping or created + CLOSE_AFTER,
+                      "locked": locked})
+    return sorted(found, key=lambda step: step["when"])
+
+
+def status_text(client=None) -> str:
     """The settings and the open posts (/forum_votes)."""
     forum = setting("forum")
-    open_posts = [e for e in _posts.values() if e["forum"] == str(forum) and not e.get("end")]
+    open_posts = [entry for _, entry, _, _ in _listed(client)]
     lines = [f"Proposal votes: **{'on' if setting('enabled') else 'off'}**",
              f"Forum: <#{forum}>",
              f"Role asked to vote on day 6: <@&{setting('role')}>",
@@ -651,7 +760,7 @@ async def forum_votes(interaction: Interaction, client, enabled: Optional[bool] 
         enabled: on or off (None: unchanged)
         forum, role, results: an ID or a mention ("": unchanged)
     """
-    global _scanned
+    global _scanned, _checked
     if not await _ready():
         queue_message(interaction, f"✗ Forum votes are off: {_load_error}.")
         return
@@ -685,9 +794,9 @@ async def forum_votes(interaction: Interaction, client, enabled: Optional[bool] 
         _settings.update(changes)
         await _save()
         if rescan and setting("enabled"):
-            _scanned = None
+            _scanned = _checked = None
             queue_command(run_pass, client)
-    queue_message(interaction, status_text(), allowed_mentions=NO_MENTIONS)
+    queue_message(interaction, status_text(client), allowed_mentions=NO_MENTIONS)
 
 
 async def _stopped(post: Post) -> None:
@@ -786,8 +895,10 @@ __all__ = [
     'outcome',
     'ping_post',
     'post_created',
+    'post_deleted',
     'run_pass',
     'status_text',
     'tally',
+    'upcoming',
     'main',
 ]

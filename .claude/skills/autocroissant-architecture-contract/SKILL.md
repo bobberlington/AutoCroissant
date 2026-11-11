@@ -43,7 +43,7 @@ moment something is queued (2026-10-25: each `queue_*` wakes its loop, below; ev
 second before) and perform the actual Discord I/O, with a built-in fallback chain; a fourth loop,
 `process_reminders` (main.py:806-808), keeps the reminder heartbeat at 1 s, and a fifth (2026-11-09),
 `process_forum_votes`, runs the proposal forum's due steps every 5 minutes (commands/forum_votes.py, an async worker;
-new posts also come through `on_thread_create`). That is the whole model: loop owns
+new posts also come through `on_thread_create`, deleted ones through `on_raw_thread_delete`). That is the whole model: loop owns
 Discord, threads own work, deques are the only bridge.
 
 ## The queue trio (this skill owns this detail)
@@ -62,7 +62,7 @@ Mechanics you must know:
   Each loop is `@tasks.loop(seconds=0)`: drain, then `await wake.wait()`, which returns on the wake or after `FALLBACK`
   (1 s, utils.py:32) and clears the event before the next drain, so an item queued during a drain wakes the next wait.
   A missed wake-up is only slower (the 1 s poll), never lost. Code that appends to a deque directly must call its
-  wake too (`_edit` queues its extra chunks with `queue_any`). `_stop_loops()` (main.py:925) stops the five loops and
+  wake too (`_edit` queues its extra chunks with `queue_any`). `_stop_loops()` (main.py:937) stops the five loops and
   sets the three wakes, so a waiting drain ends at once (as with the old tick, a drain already between iterations runs once more). The `Wake` binds to the loop of its
   first `wait()` (a new loop, as in each test's `asyncio.run`, gets a new Event); before that, `set()` does nothing.
   Order within a queue and rate-limit handling are unchanged. Tests drain by calling `_drain_*` directly.
@@ -98,7 +98,9 @@ Mechanics you must know:
   modal and `edit_message` need the live interaction, so its callbacks call `interaction.response.*` themselves
   (3 s to answer) and run every read or change of the reminders in a thread (`to_thread(snapshot | set_enabled |
   delete | reschedule | create)`: `_lock` may be held by a scheduler pass). Rights are checked in analytics.py under
-  the lock, not only by the disabled buttons. Views are built on the loop, never in a worker thread.
+  the lock, not only by the disabled buttons. Views are built on the loop, never in a worker thread. The proposal
+  forum's open posts are merged in ON THE LOOP (`forum_votes.upcoming`: its records are the loop's; never the file),
+  read-only, soonest first with the reminders (2026-11-10).
 
 ### WHY this design (the load-bearing reasons)
 
@@ -306,7 +308,8 @@ main.py  (registration + queue loops; imports every commands module)
  |- commands.card_grid     -> PIL, requests ONLY: grid images of many cards, the card_images/ cache (query_card LAZILY)
  |                            [2026-10-25; NOT compiled; no discord]
  |- commands.frankenstein  -> utils, query_card (card_repo)
- |- commands.forum_votes   -> utils, global_config: the proposal forum's votes (/forum_votes, on_thread_create, the
+ |- commands.forum_votes   -> utils, global_config: the proposal forum's votes (/forum_votes, on_thread_create and
+ |                            on_raw_thread_delete, the /reminders panel's read-only entries, the
  |                            5-minute loop; `python -m commands.forum_votes test` logs in over REST only)
  |                            [2026-11-09; NOT compiled; async worker; forum_votes.json beside reminder.json]
  '- commands.update_bot    -> repo_history (batch_overrides);
@@ -560,5 +563,7 @@ weak point 10 and the re-verify rows updated; main.py and utils.py citations re-
 2026-10-25 (cardlist, work/cardlist): WHY #4: four queued inits; `init_psd` loads the card list from `card_tree.json` (query_card `load_saved`) and runs `init_query` after its sync.
 2026-11-09 (work/forum-votes): the proposal forum's votes: a fifth loop `process_forum_votes` in `_loops()` (started, stopped
 and revived with the others), `on_thread_create`, commands/forum_votes.py in the module map and the sanctioned async workers.
+2026-11-10 (work/forum-rem-1110): `on_raw_thread_delete` drops a deleted post; the /reminders panel merges the forum's
+open posts on the loop (read-only).
 
-2026-11-11 (docs check): invariant 6 and the JSON paragraph: nothing reads the pickles since 2026-10-25; `_stop_loops()` stops five loops (main.py:925).
+2026-11-11 (docs check): invariant 6 and the JSON paragraph: nothing reads the pickles since 2026-10-25; `_stop_loops()` stops five loops (main.py:937).
