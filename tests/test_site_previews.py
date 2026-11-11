@@ -561,6 +561,24 @@ out([cut([7]), cut([7], 103, "Inflict Blazing.", "Inflict Blazing twice."), cut(
     assert out == [[[10, 10, 30, 20, 103]], [[10, 10, 30, 20, 103]], [[10, 10, 30, 20, 104]], None, None, None, [[10, 10, 30, 20, 103]], None]
 
 
+@needs_js
+@pytest.mark.skipif(not has(MOCKUP_JS, "spliceFit"), reason="no card layouts in mockup.js")
+def test_card_layout_splice(tmp_path):
+    """An edit against the card's own lines (card_plates.layout on its plate): one number in one line is spliced, the
+    line after it moved by the width change and cut between the letters' ink; refused past the frame; a new paragraph
+    keeps every line; a trailing space changes nothing."""
+    out = node(tmp_path, """
+const text = "Heal 3 HP.\\rInflict 2 Burn.\\r", g = [...text].map((ch, i) => (ch === " " || ch === "\\r" ? [i, 10 + i * 10] : [i, 10 + i * 10, 11 + i * 10, 19 + i * 10]));
+const crop = (frame = [0, 300]) => ({ text, lines: [[0, 10, 100, 10, 110, 80, 105, 0], [11, 26, 140, 120, 270, 120, 145, 0]], glyphs: g.filter(x => text[x[0]] !== "\\r"), frame });
+const measure = t => [...t].length * 10; measure.hx = 1;
+const fit = (c, now) => { const R = m.recordLayout(c, "Heal 3 HP.\\nInflict 2 Burn.", 1), p = m.geoPlan(R, now); return [p && p.splice, p && p.splice && m.spliceFit(R, p.splice, { measure, z: 20 })]; };
+const R = m.recordLayout(crop(), "Heal 3 HP.\\nInflict 2 Burn.", 1);
+out([fit(crop(), "Heal 12 HP.\\nInflict 2 Burn."), fit(crop([0, 105]), "Heal 12 HP.\\nInflict 2 Burn."), m.geoPlan(R, "Heal 3 HP.\\nInflict 2 Burn.\\nDraw 1."), m.geoPlan(R, "Heal 3 HP. \\nInflict 2 Burn.")]);""")
+    assert out[0] == [{"i": 0, "a": 5, "b": 6, "at": 5, "run": "12"}, {"xa": 60, "xb": 70, "cutA": 55, "cutB": 75, "dp": 0, "ds": 10, "w": 20, "hx": 1, "z": 20}]
+    assert out[1][1] is None and out[3] is None
+    assert {k: out[2][k] for k in ("splice", "keep", "gone", "after", "paras")} == {"splice": None, "keep": [0, 1], "gone": [], "after": [], "paras": [2, 3]}
+
+
 # ---- the build's web fonts (build_site.py)
 @pytest.fixture(scope="module")
 def bs():

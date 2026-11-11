@@ -1,6 +1,7 @@
 """
 The mock-up's plates (commands/card_plates.py): a real card drawn without its text layers, each crop the PNG's backdrop
-off the layer's ink (an FX layer's word in a second crop), and the plates branch: added, kept, dropped with the PSDs.
+off the layer's ink (an FX layer's word in a second crop) with the layer's own lines and letters, and the plates branch:
+added, kept, dropped with the PSDs.
 """
 import base64
 import io
@@ -20,7 +21,7 @@ DEDEDE = "Creatures/Kirby/5 Stars/Masked_Dedede.psd"   # Name, Ability and "Abil
 def test_plates_of_a_card(clone):
     psd, png = PSDImage.open(clone / DEDEDE), Image.open(clone / DEDEDE.replace(".psd", ".png"))
     parts = card_parts(psd, DEDEDE, "Masked Dedede", _bare_parser())
-    found = cp.plates(psd, png, parts)
+    found = cp.plates(psd, png, parts, str(clone / "MDW" / "Fonts"))
     ids = [p["id"] for k in ("title", "ability") for p in parts[k]]
     assert [c["id"] for c in found["crops"] if "fx" not in c] == ids
     assert [c["fx"] for c in found["crops"] if "fx" in c] == [["Blazing"]]
@@ -38,6 +39,13 @@ def test_plates_of_a_card(clone):
         rim[[0, -1], :] = rim[:, [0, -1]] = True
         assert np.abs(crop - small[y0:y1, x0:x1]).max(-1)[rim & off].mean() < 4   # no seam from the sheet's gaps
         assert np.abs(crop - small[y0:y1, x0:x1]).max(-1)[~off].mean() > 20  # no letters
+    for c in (c for c in found["crops"] if "fx" not in c):     # the layer's layout: its own text, line by line
+        layer = next(x for x in psd.descendants() if x.layer_id == c["id"])
+        assert c["text"].replace("\x03", "\r").strip() == layer.text.replace("\x03", "\r").strip()
+        for start, end, base, left, right, top, bottom, _ in c["lines"]:
+            xs = [x for i, x, *_ in c["glyphs"] if start <= i < end]
+            assert c["ink"][1] - 2 <= top < base <= bottom + 2 <= c["ink"][3] + 4 and xs == sorted(xs) and left - 1 <= xs[0] < right
+    assert all("lines" in c for c in found["crops"] if "fx" not in c) and not any("lines" in c for c in found["crops"] if "fx" in c)
 
 
 def test_publish_adds_keeps_and_drops(tmp_path, monkeypatch):
