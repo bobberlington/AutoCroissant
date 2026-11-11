@@ -526,6 +526,17 @@ The workflow needs **no secret and no variable**: `GITHUB_TOKEN` reads the card'
 (`permissions: contents: read`, the workflow's) and pushes `previews` in the publish job (`contents: write`, that job
 only); its pip install is the other card workflows' (card-sync.yml's, card-edits.yml's until 2026-10-24), fork pin and all. Nothing in config.py.
 
+### commands/card_plates.py (2026-11-11; not compiled; card-checks.yml's Plates steps; the website's mock-up)
+
+| Constant | Value | Meaning |
+|---|---|---|
+| `BRANCH` | `plates` | TTSCardMaker branch of `<PSD blob>.json` plates (the card drawn without its text layers, plus each layer's layout); one commit per Card checks run that made plates, a PSD gone from main dropped |
+| `VIEW_W`, `QUALITY` | 720, AVIF q60 | the crops: the card view's width |
+| `TRIES` | 5 | publish pushes, each from the branch head |
+
+The `plates` branch is data like `previews`: never merged, never deleted (a deleted one comes back, but only with the PSDs
+read since; a Card checks dispatch with `all` makes every plate again). No plate: the mock-up erases the old text itself.
+
 ### psd_edit parity and card_bake limits (the bake and the guards)
 
 | Constant | Value | Meaning |
