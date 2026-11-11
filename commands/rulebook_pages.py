@@ -10,10 +10,11 @@ Card sync's Ubuntu), so their lines break as on the website.
 
 The website must show the checkout's chapters (the page lists the chapters it was cut from), pictures, web fonts,
 icons and code (site_settled; Chrome's copies of what its CSS loads by plain URL: HEAD's): the command line waits up to
-SITE_WAIT for that (polled without Chrome; a deploy or an old CDN copy met by the draw: waited for and drawn again in
-that time), else nothing changes and it exits 3 (card-sync.yml marks the lane: the schedule's next lane draws again; so
-does an exit 1). Headless Chrome ($CHROME, else the first of CHROMES on PATH) over its DevTools pipe, the page past the
-CDN's copy; no package beyond Pillow. Each page is screenshot and hashed: the PDF is printed again only when a hash
+SITE_WAIT for that (polled without Chrome, build.txt every SITE_POLL_FIRST seconds at first; a deploy met by the draw:
+looked at again at once; an old CDN copy: drawn again after SITE_POLL; in that time), else nothing changes and it exits
+3 (card-sync.yml marks the lane: the schedule's next lane draws again; so does an exit 1). Headless Chrome ($CHROME,
+else the first of CHROMES on PATH) over its DevTools pipe, the page past the CDN's copy; no package beyond Pillow.
+Each page is screenshot and hashed: the PDF is printed again only when a hash
 changed (a PDF's bytes carry its print time), so an unchanged rulebook keeps its file and its pinned link. pages.json's key skips the
 screenshots when nothing they draw changed; its pre-key (pre_key: what the page reads, fetched without Chrome) skips
 Chrome too when the website, the fonts and Chrome are as at the last kept key (PRE_SKIP; --full: Chrome looks in any case).
@@ -97,7 +98,8 @@ PLAIN_JS = r"""Promise.all([...new Set([...document.querySelectorAll("style")].f
     all.set(h); all.set(b, h.length);
     return [u, [...new Uint8Array(await crypto.subtle.digest("SHA-1", all))].map(x => x.toString(16).padStart(2, "0")).join("")]; }))
   .then(Object.fromEntries)"""
-SITE_POLL = 20                                 # seconds between looks at its data/rules.json (and draws)
+SITE_POLL = 20                                 # seconds between looks at the website (and draws after an old CDN copy)
+SITE_POLL_FIRST, SITE_FAST = 2, 120            # a wait's first SITE_FAST s: build.txt read every SITE_POLL_FIRST s
 CALL_SECONDS = 60                              # one DevTools call
 # the pre-key (pre_key()): what the print view reads, fetched without Chrome; pages.json's "pre", kept with the key
 PRE_SKIP = True                                # held: no Chrome (shadow 11-09 to 11-11: no misses); --full looks and warns on a miss
@@ -408,18 +410,27 @@ def _chapters(raw: bytes) -> dict:
 
 def site_inputs(site: str) -> Optional[dict]:
     """What pre_key() reads, of one build: {"page": index.html's stamp, "index": its text, "rules": data/rules.json's
-    bytes, "cards": data/cards.json}; None when unreadable or a deploy came between (build.txt's stamp after them)."""
+    bytes, "cards": data/cards.json, "build": build.txt's text}; None when unreadable or a deploy came between (build.txt's
+    stamp after them)."""
     try:
         index = _get(site, "index.html").decode("utf-8")
         rules, cards = _get(site, "data/rules.json"), loads(_get(site, "data/cards.json"))
         _chapters(rules)
-        after = _get(site, "build.txt").decode("utf-8").split()
+        build = _get(site, "build.txt").decode("utf-8")
     except (OSError, ValueError, AttributeError, HTTPException):
         return None
     page = PAGE_STAMP.search(index)
-    if not page or not isinstance(cards, dict) or after[1:2] != [page.group(1)]:
+    if not page or not isinstance(cards, dict) or build.split()[1:2] != [page.group(1)]:
         return None
-    return {"page": page.group(1), "index": index, "rules": rules, "cards": cards}
+    return {"page": page.group(1), "index": index, "rules": rules, "cards": cards, "build": build}
+
+
+def _build(site: str) -> Optional[str]:
+    """build.txt's text (a deploy's digest and page stamp), None when unreadable."""
+    try:
+        return _get(site, "build.txt").decode("utf-8")
+    except (OSError, ValueError, HTTPException):
+        return None
 
 
 def _git(checkout: str, *args, codes=(0,)) -> tuple:
@@ -456,15 +467,20 @@ def heads(checkout: str, urls) -> dict:
 
 def wait_for_site(site: str, checkout: str, mine: dict, wait: float) -> Optional[dict]:
     """The website's build (site_inputs()) once it shows mine and is settled (site_settled()), else None after wait
-    seconds (polled every SITE_POLL; one look when wait <= 0)."""
-    until = monotonic() + wait
+    seconds (one look when wait <= 0). Looked at every SITE_POLL, and in the first SITE_FAST seconds when build.txt (read
+    every SITE_POLL_FIRST) changed: a deploy."""
+    start = monotonic()
+    until, looked, build = start + wait, None, None
     while True:
-        seen = site_inputs(site)
-        if seen and _chapters(seen["rules"]) == mine and site_settled(checkout, seen):
-            return seen
-        if monotonic() + SITE_POLL > until:
+        if looked is None or monotonic() - looked >= SITE_POLL or _build(site) not in (None, build):
+            seen, looked = site_inputs(site), monotonic()
+            if seen and _chapters(seen["rules"]) == mine and site_settled(checkout, seen):
+                return seen
+            build = seen["build"] if seen else None
+        pause = SITE_POLL_FIRST if monotonic() < start + SITE_FAST else SITE_POLL
+        if monotonic() + pause > until:
             return None
-        sleep(SITE_POLL)
+        sleep(pause)
 
 
 # ========================
@@ -504,7 +520,8 @@ def update_pages(checkout: str, site: str = SITE_URL, exe: str = "", wait: float
             return f"Rulebook PDF: {len(old['pages'])} pages, as they were (nothing they read changed: Chrome not started)."
         theirs, shots, printer, drawn, page, plain = draw(site, exe, lambda text: key(text, checkout, trees), known, fonts)
         try:
-            lags = theirs != mine or page != seen["page"] or plain != heads(checkout, plain)   # a deploy mid-look; the CDN's old copy
+            met = page != seen["page"]                                   # a deploy mid-look: the new build is live
+            lags = met or theirs != mine or plain != heads(checkout, plain)   # the CDN's old copy (same page: its data's)
             if not lags:
                 warn = ("\n::warning::Rulebook PDF: the pre-key held but the pages' key changed: pre_key misses an input."
                         if held and drawn != known else "")
@@ -517,9 +534,10 @@ def update_pages(checkout: str, site: str = SITE_URL, exe: str = "", wait: float
             printer.close()
         if not lags:
             break
-        if monotonic() + SITE_POLL >= until:
+        if monotonic() + (0 if met else SITE_POLL) >= until:
             return f"Rulebook PDF: {LAGS} (Chrome drew another build, or an older copy of a web font or picture); left as it is."
-        sleep(SITE_POLL)                                # that build, or the CDN's new copy: drawn again
+        if not met:
+            sleep(SITE_POLL)                            # the CDN's new copy: drawn again (that build: looked at at once)
     if not done["printed"]:
         return f"Rulebook PDF: {done['pages']} pages, as they were (key {drawn[:8]} kept).{warn}"
     size = getsize(join(folder, PDF_FILE))

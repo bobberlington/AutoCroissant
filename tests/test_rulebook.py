@@ -136,7 +136,7 @@ def _seen(**cards):
     for name, fields in cards.items():
         next(c for c in data["cards"] if c["id"] == name).update(fields)
     return {"page": "pg", "index": '<link href="assets/app.js?v=a1"><style>.rb{}</style><meta name="build" content="d1">',
-            "rules": json.dumps(rules).encode(), "cards": data}
+            "rules": json.dumps(rules).encode(), "cards": data, "build": "d1 pg\n"}
 
 
 def test_pre_key_and_the_skip(tmp_path, monkeypatch):
@@ -181,10 +181,11 @@ def test_pre_key_and_the_skip(tmp_path, monkeypatch):
 
 
 def test_the_look_waits_for_the_site(tmp_path, monkeypatch, capsys):
-    """11-10 (41ab8074): the look waits (up to wait, polled, no Chrome) until the website shows HEAD's chapters and is
-    settled, then draws; Chrome drew another build or an older copy of a plain-URL font or picture than HEAD's (the
-    CDN's): drawn again in that time (skeptic 6). Else nothing changes and the command line exits 3 (card-sync.yml marks
-    the lane)."""
+    """11-10 (41ab8074): the look waits (up to wait, no Chrome; looked at every SITE_POLL, and at first when build.txt,
+    read every SITE_POLL_FIRST, changed) until the website shows HEAD's chapters and is settled, then draws; Chrome drew
+    another build: looked at again at once; an older copy of a plain-URL font or picture than HEAD's (the CDN's): drawn
+    again after SITE_POLL, in that time (skeptic 6). Else nothing changes and the command line exits 3 (card-sync.yml
+    marks the lane)."""
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     _commit(tmp_path, "2026-11-10T20:00:00+00:00", {"site/rulebook/01-a.md": b"# A\n", "site/rulebook/fonts/a b.woff2": b"f2"})
     font = rulebook_pages.heads(str(tmp_path), ["rulebook/fonts/a%20b.woff2", "rulebook/img/gone.webp"])
@@ -195,34 +196,44 @@ def test_the_look_waits_for_the_site(tmp_path, monkeypatch, capsys):
     rulebook_pages.write_pages(str(folder), shots, lambda: b"%PDF", "k0")
     monkeypatch.setattr(rulebook_pages, "site_inputs", lambda site: dict(_seen(), rules=json.dumps({"chapters": [{"file": "01-a.md", "source": "# A\n"}]}).encode()))
     monkeypatch.setattr(rulebook_pages, "find_chrome", lambda: "/no/chrome")
-    monkeypatch.setattr(rulebook_pages, "sleep", lambda s: None)
-    clock = iter(range(0, 10000, 20))
-    monkeypatch.setattr(rulebook_pages, "monotonic", lambda: next(clock))
+    fast, poll, draw_s = rulebook_pages.SITE_POLL_FIRST, rulebook_pages.SITE_POLL, 12
+    clock = {"t": 0, "sleeps": []}                         # time passes in sleeps and draws
+
+    def nap(s):
+        clock["sleeps"].append(s)
+        clock["t"] += s
+    monkeypatch.setattr(rulebook_pages, "sleep", nap)
+    monkeypatch.setattr(rulebook_pages, "monotonic", lambda: clock["t"])
+    monkeypatch.setattr(rulebook_pages, "_build", lambda site: "d1 pg\n" if clock["t"] < 30 else "d2 pg\n")   # a deploy at 30 s
     good = ("pg", dict(font, **{"rulebook/img/gone.webp": None}))
     drawn = {"n": 0, "lag": []}                            # what the next draws meet: (page, plain), then good
 
     def draw(site, exe, key_of, known, fonts):
         drawn["n"] += 1
+        clock["t"] += draw_s
         page, plain = drawn["lag"].pop(0) if drawn["lag"] else good
         return {"01-a.md": "# A\n"}, shots, rulebook_pages.Printer(lambda: b"%PDF", lambda: None), "k1", page, plain
     monkeypatch.setattr(rulebook_pages, "draw", draw)
-    run = lambda: (rulebook_pages.main([str(tmp_path), "--wait", "600"]), capsys.readouterr().out)
-    looks = iter([False, False, True])                     # the deploy lands at the third look
+    run = lambda: (clock["sleeps"].clear(), rulebook_pages.main([str(tmp_path), "--wait", "600"]), capsys.readouterr().out)[1:]
+    looks = iter([False, False, True])                     # looked at 0 s, SITE_POLL, the deploy (settled)
     monkeypatch.setattr(rulebook_pages, "site_settled", lambda checkout, seen: next(looks))
     assert run() == (0, "Rulebook PDF: 1 pages, as they were (key k1 kept).\n") and drawn["n"] == 1 and next(looks, None) is None
+    assert clock["t"] == 30 + draw_s and clock["sleeps"] == [fast] * 15
     rulebook_pages.write_pages(str(folder), shots, lambda: b"%PDF", "k0")
     monkeypatch.setattr(rulebook_pages, "site_settled", lambda checkout, seen: False)   # not in 10 minutes
     code, out = run()
     assert code == 3 and rulebook_pages.LAGS in out and drawn["n"] == 1
+    assert clock["sleeps"] == [fast] * (rulebook_pages.SITE_FAST // fast) + [poll] * ((600 - rulebook_pages.SITE_FAST) // poll)
     monkeypatch.setattr(rulebook_pages, "site_settled", lambda checkout, seen: True)
     for lag in (("pg-old", good[1]), ("pg", dict(good[1], **{"rulebook/fonts/a%20b.woff2": "0" * 40})),
                 ("pg", dict(good[1], **{"rulebook/fonts/a%20b.woff2": None}))):
         drawn["lag"], n = [lag] * 1000, drawn["n"]          # past the wait
         code, out = run()
         assert code == 3 and rulebook_pages.LAGS in out and rulebook_pages.read_pages(str(tmp_path))["key"] == "k0", lag
-        assert 1 < drawn["n"] - n <= 600 / rulebook_pages.SITE_POLL, lag
+        assert 1 < drawn["n"] - n <= 600 / (draw_s if lag[0] == "pg-old" else poll), lag
         drawn["lag"], n = [lag] * 2, drawn["n"]             # a deploy mid-look, the CDN's copy renewed: drawn again
         assert run() == (0, "Rulebook PDF: 1 pages, as they were (key k1 kept).\n") and drawn["n"] - n == 3, lag
+        assert clock["sleeps"] == ([] if lag[0] == "pg-old" else [poll] * 2), lag     # another build: no sleep
         rulebook_pages.write_pages(str(folder), shots, lambda: b"%PDF", "k0")
 
 
