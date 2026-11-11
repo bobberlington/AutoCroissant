@@ -173,8 +173,9 @@ Worked example to imitate: the `/update_stats` block in main.py (its options are
    TC card-guards.yml's `BOT_FILES` (the same order); card_guards imports such modules at the top (`status_font`,
    `psd_details`, `# noqa: F401`) so `test_action_shaped_copy` enforces it. 2026-11-09: `psd_details.py` was missing, and
    `standard_folders` counts every exception as a refusal, so the folders fix never ran on GitHub (AC 7735f28d, TC
-   4fa6f6a4). A new file in a list lands in TTSCardMaker first (a path that does not exist yet checks out nothing),
-   then here. Nothing is compiled (Cython went 2026-11-11, autocroissant-build-and-env §5).
+   4fa6f6a4). png-changes.yml's list (png_changes and card_data's top-level imports) has its test too since 2026-11-11
+   (tests/test_png_changes.py runs both CLIs' `--help` from it). A new file in a list lands in TTSCardMaker first (a path
+   that does not exist yet checks out nothing), then here. Nothing is compiled (Cython went 2026-11-11, autocroissant-build-and-env §5).
 6. **Ship and sync.** Push from the dev machine, then deploy on the Jetson as in class (a)
    (`/update` or `/pull` + `/restart_bot` work too, but install no `requirements-bot.txt` change). Commands register with Discord at startup:
    `on_ready` (main.py:115-144) records every command in `slash_registry` (which is

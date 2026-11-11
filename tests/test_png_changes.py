@@ -3,15 +3,21 @@ PNG change pairs git gives (the website's), the record Card sync and the backfil
 visible), and card_data's minor art and text events."""
 import io
 import json
+import shutil
 import subprocess
 from os import environ
+from os.path import expanduser
+from pathlib import Path
+from sys import executable
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 from PIL import Image
 
 import commands.png_changes as pc
 from commands.card_data import mark_minor, picture_pairs
+from conftest import CLONE, REPO
 
 
 def _png(pixels) -> bytes:
@@ -167,3 +173,21 @@ def test_past_events_marked_at_their_build(tmp_path):
     assert (db / "changelog/2026-11.jsonl").read_text().splitlines()[2:] == lines[2:]
     assert (db / "changelog/posted.json").read_text() == '{"seq": 4, "push": null}\n'
     assert sorted(v[0] for v in pc.read_record(str(db))["pairs"].values()) == [0.04, 1.0]     # A: the same blob
+
+
+def test_the_workflow_checks_out_what_its_clis_import(tmp_path):
+    """png-changes.yml's bot checkout: png_changes and card_data (its venv's --help, the backfill's events) run from
+    exactly its sparse list (psd_remote joined it on 2026-11-11)."""
+    yaml = pytest.importorskip("yaml")
+    path = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "png-changes.yml"
+    if not path.is_file():
+        pytest.skip(f"no {path}")
+    steps = [s for job in yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"].values() for s in job["steps"]]
+    files = next(s["with"]["sparse-checkout"] for s in steps if s.get("with", {}).get("path") == "bot").split()
+    for rel in files:
+        (tmp_path / "bot" / rel.lstrip("/")).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(REPO / rel.lstrip("/"), tmp_path / "bot" / rel.lstrip("/"))
+    for cli in ("png_changes", "card_data"):
+        done = subprocess.run([executable, "-m", f"commands.{cli}", "--help"], cwd=tmp_path / "bot", capture_output=True,
+                              text=True, timeout=120)
+        assert done.returncode == 0, done.stderr
