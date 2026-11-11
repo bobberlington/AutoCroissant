@@ -676,12 +676,13 @@ class PSDParser:
         # Parse PSD layers
         psd = PSDImage.open(file_path) if isinstance(file_path, (str, bytes, PathLike)) else file_path
         with variant_view(psd, variant):
-            self._extract_from_layers(psd, card, relative_path)
+            self._extract_from_layers(psd, card, relative_path, variant)
 
         return card
 
-    def _extract_from_layers(self, psd: PSDImage, card: CardInfo, relative_path: str) -> None:
-        """Extract information from PSD layers."""
+    def _extract_from_layers(self, psd: PSDImage, card: CardInfo, relative_path: str,
+                             variant: Optional[int] = None) -> None:
+        """Extract information from PSD layers (variant: the picture read)."""
         num_stars = MutableValue(0)
         stat_trackers = StatTrackers()
         type_bboxes: list[tuple[str, BoundingBox]] = []
@@ -716,6 +717,8 @@ class PSDParser:
         for layer in effect_layers:
             self._check_effect_layer(layer, text_layers, card)
         card.display_name = self._printed_title(psd, text_layers, card.name)
+        if card.display_name is None and (variant or 1) > 1 and any(title_text(layer.text) for layer in titles):
+            card.display_name = card.name       # picture N is the card NameN (card_data): printing Name is a title
         if card.card_type == CardType.AUX_ITEM.value:
             card.subtype = self._aux_item_type(header)
 
