@@ -646,7 +646,7 @@ def test_small_image_from_the_720(bs, tmp_path, monkeypatch):
     sha, known = "ab" * 20, [720, 1008, "#c8285a"]
     names = bs.image_names(sha)
     Image.new("RGB", (240, 336), (200, 40, 90)).save(tmp_path / "img" / names[720], "AVIF")
-    for w in (240, 360, "og"):
+    for w in (240, 360):
         (tmp_path / "img" / names[w]).write_bytes(b"x")
     monkeypatch.setattr(bs, "image_bytes", lambda *a: pytest.fail("PNG downloaded"))
     assert bs.make_images("Creatures/A.png", sha, known) == (sha[:16], *known)
@@ -655,6 +655,23 @@ def test_small_image_from_the_720(bs, tmp_path, monkeypatch):
     tag = bs.thumb_tag(96)
     monkeypatch.setitem(bs.IMAGE_SIZES, 720, 49)
     assert bs.thumb_tag(96) != tag
+
+
+def test_card_page_preview_is_the_pinned_png(bs, repo, tmp_path, monkeypatch):
+    """A card page's og:image: its PNG on raw GitHub at the commit that last changed it (no -og.jpg made); without
+    history, at the build's commit (card_raw)."""
+    monkeypatch.setattr(bs, "SITE_URL", "https://site")
+    og = lambda d, i: re.search(r'og:image" content="([^"]+)"', (d / "dist" / "c" / i / "index.html").read_text(encoding="utf-8"))[1]
+    _build(bs, monkeypatch, repo, tmp_path / "a")
+    c1, _, c3 = repo["commits"]
+    raw = f"https://raw.githubusercontent.com/{bs.CARD_REPO}/"
+    assert og(tmp_path / "a", "alpha") == f"{raw}{c3}/{ALPHA.replace(' ', '%20')}.png"
+    assert og(tmp_path / "a", "watermelon") == f"{raw}{c1}/{MELON.replace(' ', '%20')}.png"
+    assert not list((tmp_path / "a" / "dist" / "thumbs").glob("*.jpg"))
+    monkeypatch.setattr(bs, "git_history", lambda *a: None)
+    monkeypatch.setattr(bs, "_card_raw", f"{raw}{'f' * 40}/")
+    _build(bs, monkeypatch, repo, tmp_path / "b")
+    assert og(tmp_path / "b", "alpha") == f"{raw}{'f' * 40}/{ALPHA.replace(' ', '%20')}.png"
 
 
 def test_guards_name_rule_matches_the_site(bs):
