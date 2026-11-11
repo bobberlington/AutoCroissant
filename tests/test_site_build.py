@@ -912,7 +912,7 @@ def test_site_deploy_under_a_version_of_its_own(tmp_path):
     its tree theirs (3 tries a call); each try deploys under its own (TRY; none handed over: GITHUB_SHA) with the OIDC
     token (masked), polling its status. 2 min syncing files while a newer main build waits (never an early build):
     cancelled and handed on (green: no retry); a failed cancel polls on. A failed deploy: red, no cancel; 6 minutes or 15
-    unread statuses: cancelled. The retry, on the deflated artifact: the first commit's deploy still syncing files at
+    unread statuses: cancelled. The retry, on the same artifact: the first commit's deploy still syncing files at
     the end (stuck), the same script under the second; else, or that failing too, deploy-pages under GITHUB_SHA (a
     version never fails a deploy)."""
     yaml = pytest.importorskip("yaml")
@@ -933,15 +933,14 @@ def test_site_deploy_under_a_version_of_its_own(tmp_path):
     assert steps["deployment"]["env"] == {"GH_TOKEN": "${{ github.token }}", "ARTIFACT": "${{ steps.artifact.outputs.artifact-id }}",
                                           "TRY": "1"}
     assert retry["run"] == 'exec bash "$RUNNER_TEMP/deploy.sh"' and retry["env"]["TRY"] == "2"
-    assert retry["env"]["ARTIFACT"] == "${{ steps.artifact-z.outputs.artifact-id }}"
+    assert retry["env"]["ARTIFACT"] == steps["deployment"]["env"]["ARTIFACT"]
     pages, order = steps["pages"], [s.get("id") or s.get("if") for s in jobs["build"]["steps"]]
     assert retry["if"] == "steps.deployment.outcome == 'failure' && steps.deployment.outputs.stuck == 'true'"
     assert retry["continue-on-error"] is True and order.index("retry") + 2 == order.index("pages")
     assert order[order.index("retry") + 1] == "steps.retry.outcome == 'failure'"           # the cancel settles
     assert pages["if"] == ("steps.deployment.outcome == 'failure' && (steps.deployment.outputs.stuck != 'true' "
                            "|| steps.retry.outcome == 'failure')")
-    assert pages["uses"].startswith("actions/deploy-pages@") and pages["with"]["artifact_name"] == "github-pages-z"
-    assert steps["artifact-z"]["if"] == "steps.deployment.outcome == 'failure'"
+    assert pages["uses"].startswith("actions/deploy-pages@") and "artifact_name" not in pages["with"]      # github-pages
     bin_ = tmp_path / "bin"
     bin_.mkdir()
     gh = r"""echo "$*" >> "$RUNNER_TEMP/calls"
