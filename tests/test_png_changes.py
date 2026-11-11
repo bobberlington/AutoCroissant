@@ -6,8 +6,6 @@ import json
 import shutil
 import subprocess
 from os import environ
-from os.path import expanduser
-from pathlib import Path
 from sys import executable
 from types import SimpleNamespace
 
@@ -17,7 +15,7 @@ from PIL import Image
 
 import commands.png_changes as pc
 from commands.card_data import mark_minor, picture_pairs
-from conftest import CLONE, REPO
+from conftest import REPO, SITE_SRC
 
 
 def _png(pixels) -> bytes:
@@ -179,7 +177,7 @@ def test_the_workflow_checks_out_what_its_clis_import(tmp_path):
     """png-changes.yml's bot checkout: png_changes and card_data (its venv's --help, the backfill's events) run from
     exactly its sparse list (psd_remote joined it on 2026-11-11)."""
     yaml = pytest.importorskip("yaml")
-    path = Path(expanduser(environ.get("AC_SITE_SRC") or str(CLONE))) / ".github" / "workflows" / "png-changes.yml"
+    path = SITE_SRC / ".github" / "workflows" / "png-changes.yml"
     if not path.is_file():
         pytest.skip(f"no {path}")
     steps = [s for job in yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"].values() for s in job["steps"]]
