@@ -4,7 +4,9 @@ for --repo mode, one real card PSD when the clone is there (the guards' checkout
 """
 import json
 import shutil
+import subprocess
 from io import BytesIO
+from sys import executable
 from types import SimpleNamespace
 
 import pytest
@@ -12,7 +14,7 @@ from requests import HTTPError
 
 import commands.font_check as fc
 import commands.github_api as ga
-from conftest import Reply, at_rev, blob_sha_bytes as _sha, smallest
+from conftest import REPO, Reply, at_rev, blob_sha_bytes as _sha, smallest
 
 fontBuilder = pytest.importorskip("fontTools.fontBuilder")
 from fontTools.ttLib import TTCollection, TTFont  # noqa: E402
@@ -357,3 +359,13 @@ def test_check_checkout_pool_matches_sequential(clone, tmp_path, monkeypatch):
     assert pooled.as_dict() == sequential.as_dict() and pooled.checked + len(pooled.errors) - len(index.errors) == n
 
 
+@pytest.mark.parametrize("module", ["commands.font_check", "commands.psd_edit"])
+def test_freetype_loads_before_harfbuzz(clone, module):
+    """uharfbuzz loaded after the module (fontTools' table reads, the guards' icon fonts), then FreeType's autohinter on
+    stoogedings: no segfault (macOS bound FreeType's own HarfBuzz to an earlier uharfbuzz: rc 139, 11-10)."""
+    probe = (f"import sys, {module}; first = 'freetype' in sys.modules; import uharfbuzz, freetype; "
+             "face = freetype.Face(sys.argv[1]); face.set_char_size(48 * 64); "
+             "face.load_glyph(1, freetype.FT_LOAD_TARGET_LIGHT | freetype.FT_LOAD_NO_BITMAP); print(first)")
+    font = clone / "MDW" / "Fonts" / "stoogedings.ttf"
+    done = subprocess.run([executable, "-c", probe, str(font)], cwd=REPO, capture_output=True, text=True, timeout=120)
+    assert (done.returncode, done.stdout.strip()) == (0, "True"), done.stderr[-2000:]
