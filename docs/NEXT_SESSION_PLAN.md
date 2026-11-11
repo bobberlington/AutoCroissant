@@ -130,8 +130,8 @@ cards, the proposal forum); earlier `session-2026-11-06/`.
 
 - [ ] **Ubuntu Pro / ESM:** 20.04's standard support is over; ~357 security updates wait (openssl, libc, systemd...).
       Needs the owner's own token: `sudo pro attach` in a planned window (dpkg snapshot, install, power-cycle).
-- [ ] **Python 3.14.10** is out (the jetson runs 3.14.8): a PGO+LTO build takes hours on the Xavier NX; its own session
-      (`~/build/python/build314.sh`, then restart both bots).
+- [x] **Python 3.14.10** (11-10): PGO+LTO, both bots on it (`~/venvs/<bot>` -> `<bot>-3.14.10`; 3.14.8 kept as
+      `<bot>-3.14.8`). Back: `ssh -q jetson 'bash ~/build/python/rollback-3.14.8.sh start'`.
 - [x] **Bot packages** (11-05, tested on the Mac first: both suites and 376 badge cards' renders identical): Cython
       3.3.1 (full rebuild in both venvs), pandas 3.1.1, fonttools 4.68.0, uharfbuzz 0.57.0, python-dateutil 4.0.0 (+
       tzdata). Undo: `~/maint-20261105/held-upgrades.txt`.
