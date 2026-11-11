@@ -921,8 +921,6 @@ def test_site_deploy_under_a_version_of_its_own(tmp_path):
         pytest.skip(f"no {path} or jq")
     jobs = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]
     steps = {s.get("id"): s for s in jobs["build"]["steps"]}
-    if "watch" in steps:
-        pytest.skip("site.yml still deploys with deploy-pages")
     assert jobs["build"]["permissions"]["contents"] == "read" and jobs["version"]["permissions"] == {"contents": "write"}
     assert jobs["version"]["continue-on-error"] is True
     made, upload = jobs["version"]["steps"]
