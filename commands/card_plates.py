@@ -151,14 +151,14 @@ def plates(psd: PSDImage, png: Image.Image, parts: dict) -> Optional[dict]:
         return None
     small = [(key, box, ink, image.resize((max(1, round((box[2] - box[0]) * scale)), max(1, round((box[3] - box[1]) * scale))),
                                           Image.LANCZOS)) for key, box, image, _, ink in found]
-    sheet = Image.new("RGB", (max(im.width for *_, im in small), sum(im.height + GAP for *_, im in small) - GAP))
-    crops, y = [], 0
-    for key, box, ink, im in small:
-        sheet.paste(im, (0, y))
-        crops.append({**key, "box": list(box), "ink": list(ink), "at": [0, y, im.width, im.height]})
-        y += im.height + GAP
+    width, last, crops, parts, y = max(im.width for *_, im in small), len(small) - 1, [], [], 0
+    for n, (key, box, ink, im) in enumerate(small):     # gaps and the right side: edge pixels, no seam bleeds in
+        top, bottom = (GAP // 2 if n else 0), (GAP - GAP // 2 if n < last else 0)
+        parts.append(np.pad(np.asarray(im), ((top, bottom), (0, width - im.width), (0, 0)), mode="edge"))
+        crops.append({**key, "box": list(box), "ink": list(ink), "at": [0, y + top, im.width, im.height]})
+        y += top + im.height + bottom
     buf = BytesIO()
-    sheet.save(buf, "AVIF", quality=QUALITY)
+    Image.fromarray(np.concatenate(parts)).save(buf, "AVIF", quality=QUALITY)
     return {"v": VERSION, "w": psd.width, "crops": crops, "img": "data:image/avif;base64," + b64encode(buf.getvalue()).decode()}
 
 

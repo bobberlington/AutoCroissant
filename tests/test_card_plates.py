@@ -34,6 +34,9 @@ def test_plates_of_a_card(clone):
         ix0, iy0, ix1, iy1 = (round(v * cp.VIEW_W / psd.width) for v in c["ink"])
         off[max(0, iy0 - y0 - 1):iy1 - y0 + 1, max(0, ix0 - x0 - 1):ix1 - x0 + 1] = False
         assert np.abs(crop - small[y0:y1, x0:x1]).max(-1)[off].mean() < 8   # the card's own backdrop
+        rim = np.zeros(off.shape, bool)
+        rim[[0, -1], :] = rim[:, [0, -1]] = True
+        assert np.abs(crop - small[y0:y1, x0:x1]).max(-1)[rim & off].mean() < 4   # no seam from the sheet's gaps
         assert np.abs(crop - small[y0:y1, x0:x1]).max(-1)[~off].mean() > 20  # no letters
 
 
