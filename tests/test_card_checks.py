@@ -117,8 +117,9 @@ def test_mismatches():
 
 def test_name_note():
     """Owner 11-10/11-11: the website's name against the printed title (exact), the title's file form against the file
-    name (no . : [ ] ? * " < > | / \\, spaces as underscores, small words' case aside); a second picture never; names a
-    person marked intended (names_ok) stay clear until one changes; refresh words it from the data, no PSD read."""
+    name (no . : [ ] ? * " < > | / \\, spaces as underscores, small words' case and TM (R) (C) aside); a second picture
+    never; names a person marked intended (names_ok) stay clear until one changes; refresh words it from the data, no
+    PSD read."""
     from commands.card_models import file_stem
     assert [file_stem(t) for t in ("Cave of The Past", "P.A.N.D.A. Mk A", "[Thunderfury: Blessed Blade of the Windseeker]",
                                    "Dr. Robotnik\u2019s Roboticizer", "Foo.Bar", "...", "con")] == \
@@ -131,6 +132,10 @@ def test_name_note():
     assert cc.name_note({"path": "C/E._Gadd.psd"}, {}, "C/E._Gadd.psd") == 'The card prints "E. Gadd" but its file is E._Gadd.psd.'
     assert cc.name_note({"path": "C/E_Gadd.psd"}, {}, "C/E_Gadd.psd") is None
     assert cc.name_note({"path": "C/Marked For Death.psd"}, {}, "C/Marked For Death.psd") is None          # spaces as underscores
+    stock = {"path": "N/NME_Stock.psd", "display_name": "NME Stock\u2122"}                   # TM (R) (C) never count
+    assert cc.name_note(stock, {}, "N/NME_Stock.psd") is None and cc.name_note(stock, {}, "N/NME_Stock\u00ae.psd") is None
+    assert cc.name_note({**stock, "display_name": "\u00a9 NME Stock"}, {}, "N/NME_Stock.psd") is None
+    assert cc.name_note(stock, {}, "N/NME_Stocks.psd") == 'The card prints "NME Stock\u2122" but its file is NME_Stocks.psd.'
     blockade = {"path": "C/Blockade.psd", "display_name": "The Wall By Ech"}
     assert cc.name_note(blockade, {}, "C/Blockade.psd") == 'The card prints "The Wall By Ech" but its file is Blockade.psd.'
     assert cc.name_note({**blockade, "variant_of": "A"}, {}, rel) is None and cc.name_note({**blockade, "duplicate_of": "A"}, {}, rel) is None

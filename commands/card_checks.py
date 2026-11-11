@@ -5,9 +5,9 @@ hand: the picture says other than the data, old-style bars, bar layers gone that
 earlier PSD's boxes, db/changelog's), a website edit that cannot bake, a linked picture the repo lacks, one that looks the
 same as another file, or one Card sync could not draw again (db/links.json, worded at each save). bars: special bars that
 do not read like the template. name: the website's name and the printed title disagree (exact), or the title's file
-form and the file name (owner 2026-11-11: card_models.file_stem, small words' case aside); none once a person marked
-the names intended (Card Edits names_ok) until one changes; second pictures left out; worded at each save (owner
-2026-11-10). A note is one short sentence a developer can act on. Nothing here blocks or tells anyone.
+form and the file name (owner 2026-11-11: card_models.file_stem, small words' case and TM (R) (C) aside); none once a
+person marked the names intended (Card Edits names_ok) until one changes; second pictures left out; worded at each save
+(owner 2026-11-10). A note is one short sentence a developer can act on. Nothing here blocks or tells anyone.
 
     python -m commands.card_checks list --clone <checkout> --db <db dir> [--head <sha>] [--all] [--shard i/n]
     python -m commands.card_checks run  --clone <checkout> --db <db dir> --out <file> [--head <sha>] [--all] [--shard i/n]
@@ -116,6 +116,7 @@ CUSTOM_NOTES = {"icons": "Its stat bars are separate icons with gaps, not the te
 NAME_FILE = 'The card prints "{printed}" but its file is {file}.'
 NAME_SITE = 'The website shows "{site}" but the card prints "{printed}".'
 NAME_BOTH = 'The card prints "{printed}" but the website shows "{site}" and its file is {file}.'
+MARKS = "\u2122\u00ae\u00a9"                 # TM (R) (C): never count in the file-name check (owner 2026-11-11)
 
 
 # ========================
@@ -785,9 +786,10 @@ def link_notes(rel: str, blob: str, links: dict, sha: Callable[[str], str], alik
 def name_note(card: Optional[dict], site: dict, rel: str) -> Optional[str]:
     """
     The name flag's note: the website's name against the printed title (exact), the title's file form against the file
-    name (file_stem, small words' case aside: owner 2026-11-11); None when they agree, when they are the names a person
-    marked intended (site's names_ok), for a second picture or without the card's data. The data keeps no title equal
-    to the file's name (none read either): the file's name stands for it, so a file name holding . : [ ] ... still differs.
+    name (file_stem, small words' case aside, MARKS on neither side: owner 2026-11-11); None when they agree, when they
+    are the names a person marked intended (site's names_ok), for a second picture or without the card's data. The data
+    keeps no title equal to the file's name (none read either): the file's name stands for it, so a file name holding
+    . : [ ] ... still differs.
 
     Args:
         card: The card in stats.json (parsed_values: the PSD's title under a website one)
@@ -802,7 +804,8 @@ def name_note(card: Optional[dict], site: dict, rel: str) -> Optional[str]:
     shown = site["name"] if isinstance(site.get("name"), str) and site["name"].strip() else printed
     if site.get(NAMES_OK) == [shown, printed, stem]:
         return None
-    off = small_case(file_stem(printed)) != small_case(stem)
+    unmarked = lambda text: "".join(c for c in text if c not in MARKS)
+    off = small_case(file_stem(unmarked(printed))) != small_case(unmarked(stem))
     if shown == printed:
         return NAME_FILE.format(printed=printed, file=basename(rel)) if off else None
     return NAME_BOTH.format(printed=printed, site=shown, file=basename(rel)) if off else NAME_SITE.format(site=shown, printed=printed)
