@@ -179,6 +179,26 @@ def test_g2_still_refuses_a_16_bit_or_cmyk_psd(tmp_path, mode, depth):
         assert (found.outcome, found.gate, found.why) == ("refused", "G2", pe.G2_MODE)
 
 
+def test_g2_draws_no_knockout_the_fork_cannot(tmp_path, monkeypatch):
+    """kofix 11-11: a card whose own layers hold a knockout the installed fork cannot draw (psd_links.fork_draws_knockout,
+    a probe against Photoshop 2023's pixels: False up to cards-20261111) is never drawn: guard 1 and a new card refused
+    (G2), R10 unchecked and kept as pushed, the bake's renders refused; once the fork draws it, drawn again."""
+    from psd_tools.constants import Tag
+    import commands.psd_links as pl
+    old = fixture_psd(tmp_path, card(), "old")
+    new = fixture_psd(tmp_path, card(colour=(0, 255, 0)), "new")
+    group = Group.group_layers(new, [next(layer for layer in new if layer.name == "Square")], name="Knock")
+    group.tagged_blocks.set_data(Tag.KNOCKOUT_SETTING, 1)
+    monkeypatch.setattr(pl, "fork_draws_knockout", lambda: False)
+    for found in (pe.export(old, new, card()), pe.export_new(new)):
+        assert (found.outcome, found.gate, found.why) == ("refused", "G2", pe.G2_DRAW.format(what="'Knock'"))
+    assert pe.png_check(new, card()) == {"ok": None, "why": pe.UNDRAWN.format(what="'Knock'"), "kept": True}
+    with pytest.raises(psd_edit.Refused):
+        psd_edit.render_region(new, (0, 0, 60, 90))
+    monkeypatch.setattr(pl, "fork_draws_knockout", lambda: True)
+    assert pe.export(old, new, card()).gate != "G2" and pe.png_check(new, card())["ok"] is not None
+
+
 def test_g2_shape_and_region_gates_refuse(tmp_path, monkeypatch):
     """With no stored image the bake's shape and region gates (G7) still stand on the merged PNG."""
     old = fixture_psd(tmp_path, card(), "old")

@@ -75,6 +75,8 @@ EXPORT = "export it in Photoshop"               # every refusal ends so (owner, 
 G2_PROFILE = "PNG not made: the PSD's colour profile changed, and it has no stored image to check the bot's drawing; " + EXPORT
 G2_BLANK = "PNG not made: the bot draws nothing for {what} (and the PSD has no stored image to check it against); " + EXPORT
 G2_MODE = "PNG not made: the PSD is not 8-bit RGB, so the bot cannot check its drawing; " + EXPORT
+G2_DRAW = "PNG not made: the bot cannot draw {what}'s knockout or Transparency Shapes Layer as Photoshop does; " + EXPORT
+UNDRAWN = "the bot cannot draw {what}'s knockout or Transparency Shapes Layer as Photoshop does"   # png_check's (kept)
 G5 = "PNG not made: the PSD and its old PNG already disagreed outside your change ({bad:.1f}% of pixels); " + EXPORT
 G5_IN = "PNG not made: the PSD and its old PNG already disagreed where you changed it ({bad:.1f}% of pixels); " + EXPORT
 G6_BASE = ("PNG not made: the bot cannot draw this part of the card as its old PNG shows it ({bad:.1f}% of pixels "
@@ -785,6 +787,9 @@ def export(old: Optional[PSDImage], new: PSDImage, old_png: Image.Image, numbere
     kept: picture PNG paths a push brought (kept as pushed): no PNG made for their tags.
     data: False leaves Export.data empty (the caller encodes the image only when it keeps it).
     """
+    what = _undrawn(old, new)
+    if what:
+        return Export("refused", G2_DRAW.format(what=what), "G2")
     tags = set(psd_edit.variants_of(new))
     tagged = picture_numbers(new, [*(numbered or {}), *kept])   # a drawn duplicate's own name too (owner 11-09)
     held = {tagged.pop(path) for path in kept if path in tagged}
@@ -820,6 +825,9 @@ def render_picture(old: Optional[PSDImage], new: PSDImage, png: Image.Image, n: 
 
     Returns:
         (bytes, "") made, (None, "") unchanged, (b"", why) refused"""
+    what = _undrawn(old, new)
+    if what:
+        return b"", G2_DRAW.format(what=what)
     found = _as_picture(old, new, png, None, n, fonts)
     if found.outcome == "re-exported":
         return encode(found.image, png), ""
@@ -995,6 +1003,12 @@ def _beside(new: PSDImage, old_png: Image.Image, composed: Image.Image, result: 
     for path, image in sorted((numbered or {}).items()):
         result.numbered[path] = delta_transfer(old_png, merged, image, moved, path)
     return result
+
+
+def _undrawn(*psds: Optional[PSDImage]) -> str:
+    """The first layer of the PSDs the fork cannot draw as Photoshop does (psd_edit.undrawable), quoted; "" when none.
+    G2: nothing is drawn, so nothing is made or judged from such a PSD (kofix 11-11)."""
+    return next((repr(name) for psd in psds if psd is not None for name in psd_edit.undrawable(psd)), "")
 
 
 def _no_composite(psd: PSDImage) -> Optional[Export]:
@@ -1192,6 +1206,8 @@ def shows(png: Image.Image, psd: PSDImage, other: PSDImage) -> bool:
     are drawn in the text gamma unless both have a stored image or render record facts (the floor holds the PNG to
     them, not the blends).
     """
+    if _undrawn(psd, other):
+        return False
     with psd_edit.variant(psd, 1), psd_edit.variant(other, 1):     # the PNG is picture 1 (untagged: no change)
         return _shows(png, psd, other)
 
@@ -1339,6 +1355,9 @@ def export_new(new: PSDImage) -> Export:
     Returns:
         Export
     """
+    what = _undrawn(new)
+    if what:
+        return Export("refused", G2_DRAW.format(what=what), "G2")
     composed = composite(new)
     refused = _no_composite(new) if composed is None else None
     if refused:
@@ -1370,12 +1389,17 @@ def png_check(psd: PSDImage, png: Image.Image, keep: Optional[dict] = None) -> d
     stored image (Maximize Compatibility off), or a tagged one saved showing another picture: the fork's render of the
     whole card as picture 1 (its render record's blends and vote, else voted over the renders: _render_voted), not past
     the parity floor ("rendered": True); keep["render"] gets it. Picture 1 hiding a layer tagged for it (R12): unchecked.
+    A layer the fork cannot draw (_undrawn): unchecked, "kept" (the pushed PNG stays).
 
     Returns:
-        {"ok": bool or None (another size, not 8-bit RGB, R12's hidden tag), "icc", "bad_pct", "mean", "max", "px"}
+        {"ok": bool or None (another size, not 8-bit RGB, R12's hidden tag, undrawn), "icc", "bad_pct", "mean", "max",
+        "px"}
     """
     if png.size != (psd.width, psd.height):
         return {"ok": None, "why": "another size"}
+    what = _undrawn(psd)
+    if what:
+        return {"ok": None, "why": UNDRAWN.format(what=what), "kept": True}
     hidden = _hidden(psd, 1)
     if hidden:
         return {"ok": None, "why": hidden}
@@ -1432,6 +1456,7 @@ __all__ = [
     'encode',
     'EXPORT',
     'G2_BLANK',
+    'G2_DRAW',
     'G2_MODE',
     'G5',
     'G5_IN',

@@ -373,6 +373,25 @@ def test_motion_blur_redrawn(clone):
         assert np.array_equal((out * 255 + 0.5).astype(np.uint8), np.round(layer.numpy() * 255).astype(np.uint8))
 
 
+SALTBAKER = "Creatures/Cuphead/5 Stars/Chef_Saltbaker.psd"   # Croissant's bars: knockout groups in smart objects (11-11)
+SALTBAKER_REV = "b3931ee781490fcffcb41cb45462398c96416a59"
+
+
+def test_a_smart_objects_knockout_is_drawn_from_its_pixels(clone, monkeypatch):
+    """kofix 11-11: Chef Saltbaker's bars are knockout groups (Transparency Shapes Layer off) inside smart objects; the
+    card draws their stored pixels (the guards' PNG of cf0b0bd0 is Photoshop 2023's within 3 levels), so its own tree
+    has nothing undrawable, while each bar's document has until the fork draws knockout (decode: None, not drawn)."""
+    from conftest import at_rev
+    monkeypatch.setattr(pl, "fork_draws_knockout", lambda: False)
+    psd = PSDImage.open(BytesIO(at_rev(clone, SALTBAKER_REV, SALTBAKER)))
+    assert pl.undrawable(psd) == []
+    bars = [layer for layer in psd.descendants() if layer.kind == "smartobject" and layer.smart_object.kind == "data"]
+    assert sorted(layer.name for layer in bars) == ["Attack", "Defense", "Health", "Speed"]
+    for layer in bars:
+        assert pl.undrawable(PSDImage.open(BytesIO(layer.smart_object.data))) == ["Group 1"]
+        assert pl.decode(layer.smart_object.data, "psb") is None
+
+
 def test_normalise_links_through_its_link_step(clone, tmp_path):
     """card_standards.normalise's link step (needs, link) on Delta through a LinkContext, as the guards and the sweep pass
     it: text normal, pictures linked, new files beside it, no merged image; a second normalise writes nothing."""

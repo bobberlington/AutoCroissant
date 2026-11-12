@@ -40,6 +40,7 @@ No Discord, network or config.
 """
 from argparse import ArgumentParser
 from dataclasses import dataclass, field
+from functools import cache
 from hashlib import sha1
 from base64 import b64decode, b64encode
 from io import BytesIO
@@ -59,9 +60,9 @@ import numpy as np
 from PIL import Image
 from psd_tools import PSDImage
 from psd_tools.api.effects import GradientOverlay, Stroke
-from psd_tools.api.layers import AdjustmentLayer, FillLayer
+from psd_tools.api.layers import AdjustmentLayer, FillLayer, Group, PixelLayer
 from psd_tools.api.links import FILETYPES, LINK_DATE, comp_info, content_descriptor, link_content_id, linked_file, place
-from psd_tools.constants import LinkedLayerType, StrokeFillType, Tag
+from psd_tools.constants import BlendMode, LinkedLayerType, StrokeFillType, Tag
 from psd_tools.psd.descriptor import Descriptor, DescriptorBlock, Double, Enumerated, Integer, List, String, UnitFloat
 from psd_tools.psd.linked_layer import LinkedLayer, LinkedLayers
 from psd_tools.psd.tagged_blocks import SmartObjectLayerData, TaggedBlock
@@ -98,6 +99,9 @@ LOOK_SAME = 8.0                 # mean level apart: a Types icon at another size
 LOOK_APART = 0.6                # ...and this share of the next Types file's (Lord Crump's sparkle: 1.8 vs 6.3)
 LOOK_NAMED = 16.0               # named like a Types file: this close (an old Equip.png 12.8; other art 18.5 and up)
 MOTION = {6: 2}                 # Motion Blur at angle 0 proven on Photoshop 2023's pixels: distance px -> c in (S + c) // taps
+# Photoshop 2023's draw of fork_draws_knockout's probe (kofix 11-11): tsly -> (left, right) pixel; None: alpha 0
+KNOCKOUT_PROBE = {None: ((127, 0, 128, 255), (255, 0, 0, 255)), 0: ((0, 0, 255, 128), None)}
+KNOCKOUT_TOL = 2                # levels off Photoshop's probe pixels
 
 
 # ========================
@@ -125,14 +129,60 @@ def _text(value) -> str:
 
 
 def decode(data: bytes, kind: str) -> Optional[np.ndarray]:
-    """A file's pixels as straight RGBA uint8 (psd and psb through the fork's composite), None when unreadable."""
+    """A file's pixels as straight RGBA uint8 (psd and psb through the fork's composite), None when unreadable or when
+    the fork cannot draw it (undrawable)."""
     try:
         if kind in ("psd", "psb"):
-            return np.asarray(PSDImage.open(BytesIO(data)).composite(ignore_preview=True).convert("RGBA"))
+            doc = PSDImage.open(BytesIO(data))
+            return None if undrawable(doc) else np.asarray(doc.composite(ignore_preview=True).convert("RGBA"))
         with Image.open(BytesIO(data)) as image:
             return np.asarray(image.convert("RGBA"))
     except Exception:
         return None
+
+
+@cache
+def fork_draws_knockout() -> bool:
+    """
+    Whether the installed fork draws a knockout pass-through group as Photoshop 2023 does: a red canvas under such a
+    group holding half-alpha blue on its left half, Transparency Shapes Layer on and off, against Photoshop's pixels
+    (KNOCKOUT_PROBE). False up to cards-20261111 (fork #707: united with the canvas, tsly unread; custombars 11-11).
+    """
+    try:
+        for tsly, (left, right) in KNOCKOUT_PROBE.items():
+            psd = PSDImage.new("RGBA", (8, 4))
+            PixelLayer.frompil(Image.new("RGBA", (8, 4), (255, 0, 0, 255)), psd, "under")
+            half = Image.new("RGBA", (8, 4))
+            half.paste((0, 0, 255, 128), (0, 0, 4, 4))
+            group = Group.group_layers(psd, [PixelLayer.frompil(half, psd, "over")], name="knockout")
+            group.blend_mode = BlendMode.PASS_THROUGH
+            group.tagged_blocks.set_data(Tag.KNOCKOUT_SETTING, 1)
+            if tsly is not None:
+                group.tagged_blocks.set_data(Tag.TRANSPARENCY_SHAPES_LAYER, tsly)
+            drawn = np.asarray(psd.composite(ignore_preview=True).convert("RGBA"), np.int16)
+            off = drawn[2, 6, 3] if right is None else np.abs(drawn[2, 6] - right).max()
+            if max(np.abs(drawn[2, 1] - left).max(), off) > KNOCKOUT_TOL:
+                return False
+        return True
+    except Exception:                           # a fork that cannot even build the probe draws none
+        return False
+
+
+def undrawable(psd: PSDImage) -> list:
+    """
+    The names of psd's shown layers the fork cannot draw as Photoshop does (its own tree: a smart object's stored
+    pixels are drawn, never its document): a knockout until fork_draws_knockout(), Transparency Shapes Layer off on a
+    layer with effects (no fork spreads them over its masks). The bot draws no PSD that has one (kofix 11-11).
+    """
+    out = []
+    for layer in psd.descendants():
+        blocks = layer.tagged_blocks
+        if blocks is None:
+            continue
+        if ((blocks.get_data(Tag.KNOCKOUT_SETTING, 0) and not fork_draws_knockout())
+                or (not blocks.get_data(Tag.TRANSPARENCY_SHAPES_LAYER, 1) and layer.has_effects())) and layer.is_visible():
+            out.append(layer.name)
+    return out
 
 
 def ink_box(rgba: np.ndarray, alpha: int = 1) -> Optional[tuple]:

@@ -1138,7 +1138,9 @@ def _run(source: Source, job: Job, context, parser, out: str, result: Result, ea
         if measured.get("ok"):
             shown[job.png] = png
         if measured.get("ok") is None:
-            result.notes.append((f"{basename(job.png)} could not be checked against the PSD ({measured.get('why')})", False))
+            kept = ": kept as pushed" if measured.get("kept") else ""      # the fork cannot draw it (kofix 11-11)
+            result.notes.append((f"{basename(job.png)} could not be checked against the PSD ({measured.get('why')}){kept}",
+                                 False))
         if "render" in kept and job.case != "whole":
             checked = dict(result.r10)
             try:

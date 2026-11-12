@@ -53,7 +53,7 @@ from commands.psd_parser import (DRAWN_LAYER_KINDS, EFFECT_LAYER_TAG, ICON_FONT_
 from commands.psd_parser import AUX_ITEM_TYPES, FRAME_SHARE, in_header, star_leaf, star_pieces, star_sets
 from commands import psd_parts
 from commands import psd_links
-from commands.psd_links import corners_of, decode, draw, file_type, link_pixels, warped
+from commands.psd_links import corners_of, decode, draw, file_type, link_pixels, undrawable, warped
 from commands.psd_parts import lyid_index, raw_sha
 from commands.text_align import (BREAKS as TEXT_BREAKS, blocks as text_blocks, moves as text_moves,
                                  opcodes as text_opcodes, segments as text_segments)
@@ -3802,7 +3802,9 @@ def comp_render(layer, value: int, mode: Optional[int] = None) -> tuple:
         now, then = states[want], states[last]
         if not now.get(b"enab", True):
             continue
-        if inner.is_group() or inner.kind not in ("shape", "pixel") or inner.blend_mode != BlendMode.NORMAL or inner.has_effects():
+        knockout = inner.tagged_blocks is not None and inner.tagged_blocks.get_data(Tag.KNOCKOUT_SETTING, 0)
+        if inner.is_group() or inner.kind not in ("shape", "pixel") or inner.blend_mode != BlendMode.NORMAL or inner.has_effects() \
+                or knockout:
             refuse(f"its bar holds a {inner.kind} layer {inner.name!r} the bake cannot draw")
         if _offset(now, b"vectorMask") != _offset(then, b"vectorMask"):
             refuse("a comp moves its vector mask")
@@ -9273,8 +9275,18 @@ def index_icons(edit: Edit, before: dict, after: dict) -> None:
                      if done[0] == "copy" for source, copy in zip(leaves(done[1]), leaves(done[2]))]
 
 
+def drawable(psd: PSDImage) -> None:
+    """Refused("unsupported-card") for a PSD with a layer the fork cannot draw as Photoshop does (undrawable)."""
+    names = undrawable(psd)
+    if names:
+        raise Refused("unsupported-card", f"the bot cannot draw {names[0]!r}'s knockout or Transparency Shapes Layer as "
+                                          f"Photoshop does: set it in Photoshop")
+
+
 def render_all(psd: PSDImage) -> np.ndarray:
-    """The whole card rendered from its layers (no ICC, no preview), uint8 RGBA: gate_outside's before and after."""
+    """The whole card rendered from its layers (no ICC, no preview), uint8 RGBA: gate_outside's before and after;
+    refused when the fork cannot draw it (drawable)."""
+    drawable(psd)
     return np.asarray(psd.composite(viewport=(0, 0, psd.width, psd.height), ignore_preview=True,
                                     apply_icc=False, **look_kwargs(psd)).convert("RGBA"))
 
@@ -9961,8 +9973,9 @@ def render_region(psd: PSDImage, region: tuple, icc: bool = True, text: str = "p
         edited: text_kwargs()'s
 
     Returns:
-        The render, region-sized
+        The render, region-sized; refused when the fork cannot draw the card (drawable)
     """
+    drawable(psd)
     return psd.composite(viewport=region, ignore_preview=True, apply_icc=icc, **text_kwargs(psd, text, edited))
 
 
@@ -12396,6 +12409,7 @@ __all__ = [
     'gate_outside',
     'gate_untouched',
     'dirty_box',
+    'drawable',
     'gate_region',
     'gate_reparse',
     'gate_shape',
