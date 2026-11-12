@@ -343,7 +343,8 @@ def _pairs(rows: list, values: list) -> list:
 def mismatches(record: dict, data: dict, site=()) -> list:
     """
     What a card's picture says against its data, a line per bar: the card's own bars speak bar by bar, custom ones only
-    when every bar reads (a picture that merely looks like cells must stay silent).
+    when every bar reads by a step (a picture that merely looks like cells must stay silent; a flat row's lightness
+    misses one small lit icon: Tainted Lost's HP 1 read 0).
 
     Args:
         record: check_card()'s
@@ -351,7 +352,7 @@ def mismatches(record: dict, data: dict, site=()) -> list:
         site: Its Card Edits fields: a website-only value differs from the picture on purpose, a pending one until it bakes
     """
     reads = record.get("reads") or {}
-    if record.get("style") == "custom" and any(row["best"] is None for rows in reads.values() for row in rows):
+    if record.get("style") == "custom" and any(row["best"] is None or row.get("flat") for rows in reads.values() for row in rows):
         return []
     if (data.get("stars") or 0) >= RAID_STARS:  # its bars run to 40 in rows of their own
         return []

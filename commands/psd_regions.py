@@ -98,6 +98,15 @@ def digit_span(layer) -> Optional[tuple]:
     return (layer.bbox[1], layer.bbox[3]) if layer.bbox[3] > layer.bbox[1] else None
 
 
+def drawn_box(layer) -> Optional[tuple]:
+    """The box a layer changes: its pixels' inside its mask's (one that hides what lies outside it, as png_export), an
+    adjustment's mask's; None for none."""
+    mask = layer.mask if layer.has_mask() and not layer.mask.disabled and layer.mask.background_color < 128 else None
+    boxes = [tuple(b) for b in (layer.bbox, mask.bbox if mask else None) if b and b[2] > b[0] and b[3] > b[1]]
+    box = (max(b[0] for b in boxes), max(b[1] for b in boxes), min(b[2] for b in boxes), min(b[3] for b in boxes)) if boxes else None
+    return box if box and box[2] > box[0] and box[3] > box[1] else None
+
+
 def reaches_over(spans: list, bands: list) -> bool:
     """Whether creature 1's shown digits (spans, (y0, y1) each) cover the middle of each of another creature's empty rows
     (bands; None: no place, covered): one tall mask over them all (Pix's HP), not a row of its own showing none (Twin
@@ -474,6 +483,7 @@ __all__ = [
     'comp_stat',
     'comp_value',
     'digit_span',
+    'drawn_box',
     'fx_pad',
     'linked_items',
     'placed_data',

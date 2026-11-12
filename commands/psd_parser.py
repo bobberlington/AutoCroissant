@@ -15,7 +15,7 @@ from re import IGNORECASE, compile as re_compile, fullmatch, sub
 from typing import Any, Callable, Optional, Union
 
 from commands.card_models import RAID_STARS, CardInfo, CardStats, CardType, StatsDatabase, card_name
-from commands.psd_regions import comp_creature, comp_stat, comp_value, digit_span, reaches_over
+from commands.psd_regions import comp_creature, comp_stat, comp_value, digit_span, drawn_box, reaches_over, union_box
 
 getLogger("psd_tools").setLevel(CRITICAL)
 
@@ -29,6 +29,7 @@ MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']
 STAT_KINDS = (CardType.CREATURE.value, CardType.MINION.value, "creatures")  # with stat bars ("creatures": Auxiliary/Creatures)
 NO_STATS = "NO STATS FOUND"       # a stored problem (the website's Parser notes): no bar read (card_edits.FIXED_BY_ALL)
 DRAWN_LAYER_KINDS = ("pixel", "smartobject", "group", "type", "shape")   # every other kind is an adjustment layer
+BAR_HIDES = 0.8                   # a bar drawn over this share of another block's bar hides it
 
 # stoogedings is the icon font (TTSCardMaker MDW/Fonts). A token such as [fire] set in it renders as the icon,
 # so the text itself says which icon sits where. Cards with image-layer icons keep using gap injection.
@@ -340,6 +341,16 @@ class BarRow:
     items: list = field(default_factory=list)    # visible (digit, layer kind)
     band: list = field(default_factory=list)     # [y0, y1] its digits act on (psd_regions.digit_span)
     spans: list = field(default_factory=list)    # (y0, y1) of each visible digit
+    box: Optional[tuple] = None                  # where its visible drawn digits paint (drawn_box)
+    place: Optional[tuple] = None                # where its visible digits sit (drawn_box, else their pixels')
+
+    def show(self, digit: int, layer) -> None:
+        """A visible digit layer."""
+        self.items.append((digit, layer.kind))
+        drawn = drawn_box(layer)
+        if layer.kind in DRAWN_LAYER_KINDS:
+            self.box = union_box([self.box, drawn])
+        self.place = union_box([self.place, drawn or (tuple(layer.bbox) if layer.bbox[2] > layer.bbox[0] else None)])
 
 
 @dataclass
@@ -369,13 +380,22 @@ class StatTracker:
             return (lit if lit else max(0, 10 - len(items))), True
         return sum(digits), False
 
+    def shown(self) -> list:
+        """
+        Its rows less those another block's bar hides: drawn above, over BAR_HIDES of it (adjustments hide nothing;
+        Tainted Lost's and Tainted Forgotten's new bars over their old ones, 11-11: one creature, not two).
+        """
+        rows = list(self.rows.values())         # paint order: bottom first
+        hides = lambda top, row: top.group != row.group and top.box and _overlap(top.box, row.place) >= BAR_HIDES * _area(row.place)
+        return [row for n, row in enumerate(rows) if not (row.place and any(hides(top, row) for top in rows[n + 1:]))]
+
     def total(self, rows: Optional[list] = None) -> Optional[int]:
         """
         The stat's value: rows add up (Royal Eradicator Main Cannon's attack is 10 + 2). Rows of cells drawn twice
-        in one block (Tainted Lazarus's "Light" and "Hp Dark" hearts) count once. Empty rows are skipped.
+        in one block (Tainted Lazarus's "Light" and "Hp Dark" hearts) count once. Empty and hidden rows are skipped.
         """
         groups: dict = {}
-        for row in self.rows.values() if rows is None else rows:
+        for row in self.shown() if rows is None else rows:
             if row.items:
                 groups.setdefault(row.group, []).append(self._row_value(row.items))
         if not groups:
@@ -390,13 +410,13 @@ class StatTracker:
 
     def by_creature(self) -> dict:
         """Rows per creature (0 = shared): rows named "1", "2", ... (Pix), or a stat block repeated (Tainted Lazarus)."""
-        outers: dict = {}
-        for row in self.rows.values():
+        rows, outers = self.shown(), {}
+        for row in rows:
             if row.items and row.outer not in outers.setdefault(row.block.lower(), []):
                 outers[row.block.lower()].append(row.outer)
         repeated = any(len(o) > 1 for o in outers.values())
         out: dict = {}
-        for row in self.rows.values():
+        for row in rows:
             if row.name.strip().isdigit():
                 index = int(row.name)
             elif repeated and row.outer in outers.get(row.block.lower(), []):
@@ -1342,7 +1362,7 @@ class PSDParser:
                                                                 getattr(parent, "name", "") or "",
                                                                 id(getattr(parent, "parent", None))))
                 if layer.is_visible():          # hidden: no dark drawn, a full bar
-                    row.items.append((value, layer.kind))
+                    row.show(value, layer)
             return
         digits = base_name(layer)
         if not digits.isdigit():
@@ -1381,7 +1401,7 @@ class PSDParser:
                 if span is not None:
                     row.band = [min(row.band[0], span[0]), max(row.band[1], span[1])] if row.band else list(span)
                 if layer.is_visible():
-                    row.items.append((int(digits), layer.kind))
+                    row.show(int(digits), layer)
                     if span is not None:
                         row.spans.append(span)
                 break

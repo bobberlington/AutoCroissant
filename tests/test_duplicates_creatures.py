@@ -176,3 +176,39 @@ def test_auxiliary_creature_without_bars(clone):
     card = parser().parse(psd, rel)
     note = f"{pp.NO_STATS}: no HP, DEF, ATK or SPD bars read on this creature"
     assert card.card_type == "creatures" and card.problems == [note] and pp.CardValidator.validate(card) == [note]
+
+
+def _restacked(lower: tuple, upper: tuple, down: int = 0):
+    """Tainted Lost's 11-11 layout: its old bars (a lit bar as wide as the value, 'Stats Bars'/'Bars'/'SPD'/'5') under a
+    new 'Stats Bars' of whole bars on the same rows (down: px lower)."""
+    from PIL import Image
+    from psd_tools import PSDImage
+    from psd_tools.api.layers import PixelLayer
+    psd = PSDImage.new("RGB", (1200, 2400))
+    for values, whole, shift in ((lower, False, 0), (upper, True, down)):
+        bars = psd.create_group(name="Stats Bars").create_group(name="Bars")
+        for row, (stat, value) in enumerate(zip(("HP", "DEF", "ATK", "SPD"), values)):
+            width = 819 if whole else 81 * (value or 10)
+            bar = PixelLayer.frompil(Image.new("RGB", (width, 72), (0, 160, 255)), psd, str(value), top=1207 + 126 * row + shift, left=363)
+            bars.create_group([bar], name=stat)
+    return psd
+
+
+def test_bars_drawn_over_old_ones_hide_them():
+    """Bars of another block drawn over a row hide it (Tainted Lost, Tainted Forgotten 11-11): one creature, the top bars'
+    values; the same bars elsewhere are a second creature's (Tainted Lazarus). A drawn layer's box is inside its mask."""
+    from types import SimpleNamespace
+    from commands.psd_regions import drawn_box
+    rel = "Creatures/Isaac/2 Stars/Tainted_Lost.psd"
+    def read(psd):
+        card = parser().parse(psd, rel)
+        return tuple(card.stats.to_dict().values()), [tuple(c.to_dict().values()) for c in card.creatures or []]
+    assert read(_restacked((1, 0, 5, 5), (1, 0, 5, 5))) == ((1, 0, 5, 5), [])
+    assert read(_restacked((1, 0, 5, 5), (2, 3, 4, 6))) == ((2, 3, 4, 6), [])
+    assert read(_restacked((1, 0, 5, 5), (2, 3, 4, 6), down=600))[1] == [(1, 0, 5, 5), (2, 3, 4, 6)]
+    layer = lambda bbox, mask, outside=0: SimpleNamespace(bbox=bbox, has_mask=lambda: bool(mask), mask=SimpleNamespace(
+        bbox=mask, disabled=False, background_color=outside))
+    assert drawn_box(layer((363, 1458, 1170, 1530), (0, 1445, 766, 1542))) == (363, 1458, 766, 1530)    # Tainted Lost's ATK 5
+    assert drawn_box(layer((0, 0, 0, 0), (0, 1445, 766, 1542))) == (0, 1445, 766, 1542)                 # an exposure
+    assert drawn_box(layer((363, 1332, 1170, 1404), (0, 1320, 300, 1417))) is None                       # its DEF 0
+    assert drawn_box(layer((363, 1332, 1170, 1404), (0, 1320, 300, 1417), 255)) == (363, 1332, 1170, 1404)   # shows outside

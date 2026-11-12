@@ -101,8 +101,8 @@ def test_colour_row():
 
 
 def test_mismatches():
-    """The note names the bar; a value the bar could show says nothing; a custom card speaks only when every bar reads;
-    a website-only value differs on purpose; creatures by bar."""
+    """The note names the bar; a value the bar could show says nothing; a custom card speaks only when every bar reads
+    by a step; a website-only value differs on purpose; creatures by bar."""
     read = lambda best, could=None: {"best": best, "could": could if could is not None else [best]}
     record = {"style": "new", "reads": {"hp": [read(5)], "def": [read(3)], "atk": [read(None, None) | {"could": None}], "spd": [read(4, [4, 7])]}}
     data = {"stats": {"hp": 5, "defense": 1, "attack": 2, "speed": 7}}
@@ -111,6 +111,8 @@ def test_mismatches():
     assert cc.mismatches({**record, "style": "custom"}, data) == []
     many = {"style": "custom", "reads": {"hp": [read(5), read(6)]}}
     assert cc.mismatches(many, {"creatures": [{"hp": 5}, {"hp": 4}]}) == ["Creature 2's HP bar shows 6 but the data says 4."]
+    flat = {"style": "custom", "reads": {"hp": [{"best": 0, "could": [0], "flat": True}], "atk": [read(5)]}}
+    assert cc.mismatches(flat, {"stats": {"hp": 1, "attack": 5}}) == []          # a flat custom row: no step read
     assert cc.flags({"notes": ["N."], "bars": "B."}, None) == {"hand": "N.", "bars": "B.", "name": None}
 
 

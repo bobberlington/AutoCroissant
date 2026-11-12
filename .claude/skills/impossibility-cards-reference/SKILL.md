@@ -279,6 +279,9 @@ The VISIBLE digit layers are grouped by bar row (their parent group) and each ro
   every creature bakes (the `creatures` field, `psd_edit.set_creatures`; a shared bar moves
   every creature); the details call them "creatures" and record `creature_bars`.
 
+A row another block's bar hides (drawn above it over 80% of its drawn box, `BAR_HIDES`; adjustments hide nothing) is
+left out (`StatTracker.shown`, 2026-11-11): Tainted Lost and Tainted Forgotten keep their old bars under a new
+`Stats Bars` of layer-comp bars on the same rows, one creature (they read as two identical ones before).
 Rows add up, so stats can pass 10 (Royal Eradicator Main Cannon's attack is 10 + 2). Multi-creature
 cards (rows named "1", "2", … or a repeated stat block: Pix, Twin Emperors, Tainted Lazarus, Computer Virus) get
 `card.creatures` (CardStats each; `stats` = creature 1); the note "SEVERAL CREATURES" went 2026-11-08 (every creature
