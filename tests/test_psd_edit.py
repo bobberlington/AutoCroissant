@@ -550,10 +550,11 @@ def test_resized_bar_mode(clone, tmp_path):
 ISAAC_BARS = "77733fc93579d5fd30513b3e2df9d5540cddfa2f"     # Croissant's Isaac bars (cc68ac36, 647aa0d1), guards' pass
 
 
-def test_isaac_bars_draw_as_photoshop(clone, parser, tmp_path):
+def test_isaac_bars_draw_as_photoshop(clone, parser, tmp_path, monkeypatch):
     """Croissant's Isaac bars (a knockout group's moved mask, Transparency Shapes Layer off, nested smart objects) draw
     as Photoshop stored them: Tainted Isaac's HP at 6 from a document saved at 10, Clot Black's with no last applied
-    comp, Tainted Magdalene's deep knockout with the shapes layer on; a set_comp edit gates and reads."""
+    comp, Tainted Magdalene's deep knockout with the shapes layer on; a set_comp edit gates and reads; a bar drawn
+    otherwise than stored is refused; capped at 10 even when its art fills the box (Uumuu's)."""
     def placed(rgba, where, box):
         out = np.zeros((box[3] - box[1], box[2] - box[0], 4), np.float32)
         out[where[1] - box[1]:where[3] - box[1], where[0] - box[0]:where[2] - box[0]] = rgba
@@ -568,6 +569,14 @@ def test_isaac_bars_draw_as_photoshop(clone, parser, tmp_path):
     rel = "Creatures/Isaac/3 Stars/Tainted_Isaac.psd"
     path = str(tmp_path / Path(rel).name)
     psd = PSDImage.open(path)
+    from psd_tools.api.layers import TypeLayer
+    monkeypatch.setattr(pe, "art_fill", lambda psd, box: 0.977)
+    assert pe.stat_caps(psd) == {stat: [10] for stat in pe.STAT_FIELDS}
+    layer, value, _ = comp_bars(PSDImage.open(path))["hp"][0]
+    rgba, where = pe.comp_render(layer, value)
+    TypeLayer._store_raster(layer, rgba * np.float32([0.9, 1, 1, 1]), where)     # stored otherwise (an effect)
+    with pytest.raises(pe.Refused, match="otherwise than Photoshop"):
+        pe.comp_render(layer, 4)
     edit = pe.set_comp(psd, pe.parse_card(parser, path, rel, psd), "hp", 4)
     saved = str(tmp_path / "new.psd")
     psd.save(saved, update_preview=False)

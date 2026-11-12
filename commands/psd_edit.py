@@ -3352,13 +3352,15 @@ def art_fill(psd: PSDImage, box: tuple) -> Optional[float]:
 def stat_caps(psd: PSDImage) -> Optional[dict]:
     """
     {stat: [the most each creature's display shows]} on a card whose stats are not on the template's layer-comp bars
-    (separate icons, pictures, own shapes, digit rows): 10, less where a counted row has room for fewer, 20 on Top and
-    Bottom rows (owner 2026-11-08: more is refused when typed); None on the template's bars, an item's rows or no bars.
+    (separate icons, pictures, own shapes, digit rows, comp bars of their own such as the Isaac bars: comp_custom): 10,
+    less where a counted row has room for fewer, 20 on Top and Bottom rows (owner 2026-11-08: more is refused when
+    typed); None on the template's bars, an item's rows or no bars.
     """
     comps = comp_bars(psd)
     if any(comps.values()):
-        fills = [art_fill(psd, tuple(box)) for bars in comps.values() for _, _, box in bars]
-        if not any(fill is not None and fill < ART_FILL for fill in fills):
+        fills = (art_fill(psd, tuple(box)) for bars in comps.values() for _, _, box in bars)
+        if not any(comp_custom(layer) for bars in comps.values() for layer, _, _ in bars) \
+                and not any(fill is not None and fill < ART_FILL for fill in fills):
             return None
         count = max((comp_creature(bar[0]) for bars in comps.values() for bar in bars), default=0) or 1
         return {stat: [STAT_MAX] * count for stat in STAT_FIELDS}
@@ -3713,7 +3715,7 @@ def stored_mode(layer) -> Optional[int]:
     value, stored = comp_value(layer), layer.numpy()
     if value is None or stored is None:
         return None
-    drawn = {mode: comp_render(layer, value, mode) for mode in (Image.NEAREST, Image.BICUBIC)}
+    drawn = {mode: comp_render(layer, value, mode, False) for mode in (Image.NEAREST, Image.BICUBIC)}
     if any(rgba is None for rgba, _ in drawn.values()):
         return None
     box = tuple(layer.bbox)
@@ -3761,14 +3763,15 @@ def image_mode(layer, image: np.ndarray, drawn: Optional[np.ndarray] = None) -> 
     return Image.NEAREST if hard_edged(image) else Image.BICUBIC
 
 
-def comp_render(layer, value: int, mode: Optional[int] = None) -> tuple:
+def comp_render(layer, value: int, mode: Optional[int] = None, check: bool = True) -> tuple:
     """
     A layer-comp stat bar drawn at comp `value` as Photoshop draws it (equal to its stored renders at
     every comp, 0-20, 2026-11-06): each embedded layer that comp shows, bottom to top in normal blending, a shape as its
     vector mask in its fill colour, a pixel layer as its pixels, each through its pixel mask moved to that comp's offset;
     placed on its transform's rectangle. Resized: by mode, else as its stored pixels show (stored_mode), else nearest if
     hard_edged, else bicubic. The card stores no mode; Photoshop's redraw on a copy equals nearest (2026-11-07).
-    Any other embedded document (groups, effects, knockout: the Isaac bars) is drawn by comp_document.
+    Any other embedded document (groups, effects, knockout: the Isaac bars) is drawn by comp_document, refused unless
+    it draws the comp the bar shows as Photoshop stored it (check; COMP_SEEN).
 
     Returns:
         (straight RGBA float32, canvas bbox), or (None, (0, 0, 0, 0)) when nothing shows; Refused("unsupported-card")
@@ -3798,10 +3801,11 @@ def comp_render(layer, value: int, mode: Optional[int] = None) -> tuple:
     x0, y0, x1, y1 = corners[0], corners[1], corners[2], corners[5]
     width, height = doc.width, doc.height
     rgb, alpha = np.zeros((height, width, 3), np.float32), np.zeros((height, width), np.float32)
-    flat = last in names and all(not inner.is_group() and inner.kind in ("shape", "pixel") and not inner.has_effects()
-                                 and inner.blend_mode == BlendMode.NORMAL for inner in doc
+    flat = last in names and all(_flat_layer(inner) for inner in doc
                                  if _comp_states(inner, [want])[want].get(b"enab", True))
     if not flat:
+        if check and _comp_off(layer, mode) > COMP_SEEN:
+            refuse("its bar draws otherwise than Photoshop stored it")
         rgb, alpha = comp_document(layer, doc, comps, want, last if last in names else None)
     for inner in doc if flat else ():
         states = _comp_states(inner, [want, last])
@@ -3866,8 +3870,44 @@ def comp_render(layer, value: int, mode: Optional[int] = None) -> tuple:
     return rgba, (left + c0, top + r0, left + c1, top + r1)
 
 
+def _flat_layer(inner) -> bool:
+    """A bar document's layer comp_render's own path draws (the template's): a shape or pixel layer, Normal, no
+    effects."""
+    return not inner.is_group() and inner.kind in ("shape", "pixel") and not inner.has_effects() \
+        and inner.blend_mode == BlendMode.NORMAL
+
+
+def comp_custom(layer) -> bool:
+    """A layer-comp bar of a card's own (groups, effects, knockout: the Isaac bars, drawn by comp_document), not the
+    template's."""
+    return not all(_flat_layer(inner) for inner in PSDImage.open(BytesIO(layer.smart_object.data)))
+
+
 COMP_SHOWN, COMP_PLACED, COMP_LOOK = 1, 2, 4      # a layer comp's capturedInfo: visibility, position, appearance
 COMP_LOOKS = (b"Lefx", b"blendOptions", b"FXRefPoint", b"layerSpecific")   # cmls keys COMP_LOOK applies
+COMP_SEEN = 8               # levels comp_document's bar at its shown comp may be off the stored pixels (Tainted Lost 4)
+
+
+def _comp_off(layer, mode: Optional[int]) -> float:
+    """The most a bar drawn at the comp it shows is off Photoshop's stored pixels, premultiplied 0-255."""
+    value, stored = comp_value(layer), layer.numpy()
+    if value is None:
+        return float("inf")
+    rgba, where = comp_render(layer, value, mode, False)
+    box = tuple(layer.bbox)
+    area = union_box([box if stored is not None else None, where if rgba is not None else None])
+    if area is None:
+        return 0.0
+
+    def plane(pixels, at):
+        out = np.zeros((area[3] - area[1], area[2] - area[0], 4), np.float32)
+        if pixels is not None:
+            pixels = np.asarray(pixels, np.float32)
+            alpha = pixels[..., 3:4] if pixels.shape[2] > 3 else np.ones_like(pixels[..., :1])
+            out[at[1] - area[1]:at[3] - area[1], at[0] - area[0]:at[2] - area[0]] = np.concatenate(
+                [pixels[..., :3] * alpha, alpha], axis=2)
+        return out
+    return float(np.abs(plane(rgba, where) - plane(stored, box)).max()) * 255
 
 
 def comp_document(layer, doc: PSDImage, comps: dict, want: int, last: Optional[int]) -> tuple:
@@ -12439,6 +12479,7 @@ __all__ = [
     'changed_region',
     'classify',
     'comp_top',
+    'comp_custom',
     'count_room',
     'art_fill',
     'cap_why',
