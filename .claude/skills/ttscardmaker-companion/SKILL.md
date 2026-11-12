@@ -706,9 +706,10 @@ them). Until 2026-10-25 the build unpickled AutoCroissant's pickles through an a
   2026-10-20), `/Types/` and the font manifest.
 - **Steps:**
   - `setup-python@v7` (3.12, pip cache; 3.14 since 2026-10-24, branch work/py314) → `pip install -r site/build/requirements.txt` (pillow) → `configure-pages@v6`
-  - a cache-key step hashing `git ls-tree -r HEAD | grep -i '\.png$'`, then `actions/cache@v6` on `site/.cache` with key
-    `card-images-v2-<hashFiles(build_site.py)>-<png list hash>` and restore-key `card-images-v2-`. The cache is
-    re-saved only when card images or the image settings change.
+  - a cache-key step hashing the PNG and MDW/Fonts blobs, then `actions/cache/restore@v6` on `site/.cache` with key
+    `card-images-v2-<hashFiles(build scripts)>-<png list hash>` and restore-key `card-images-v2-`. The job's last steps
+    save it (key + `-<run id>-<attempt>`, the newest entry) whenever the build changed its file names or JSON indexes,
+    after a failure too (since 2026-11-11; before, only on a key miss).
   - `build_site.py` with `SITE_URL` from configure-pages → `upload-pages-artifact@v5` → deploy job
     `deploy-pages@v5`. `error_count: 10` in its log is just that action's default input.
 - **Settings:** `concurrency: pages` with `cancel-in-progress: false` (GitHub's recommendation: never cut a deployment

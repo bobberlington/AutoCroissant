@@ -981,6 +981,39 @@ def test_site_workflow_python_from_the_tool_cache(tmp_path):
                                                 dict.fromkeys(files, "")), (done.stderr, got)
 
 
+def test_site_image_cache_saved_whenever_the_build_changed_it(tmp_path):
+    """site.yml's card images: restored only; saved last (a passed build too) when their names or JSON indexes changed,
+    under the run id (the newest entry, restore-keys' pick); the job's saved (caches.yml prunes) only after a save."""
+    yaml = pytest.importorskip("yaml")
+    if not shutil.which("sha256sum"):
+        pytest.skip("no sha256sum")
+    path = SITE_SRC / ".github" / "workflows" / "site.yml"
+    if not path.is_file():
+        pytest.skip(f"no {path}")
+    job = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["build"]
+    step = {s["id"]: s for s in job["steps"] if "id" in s}
+    restore, before, after, save = (step[n] for n in ("cache", "cache-before", "cache-after", "cache-save"))
+    assert restore["uses"].startswith("actions/cache/restore@") and restore["with"]["restore-keys"] == "card-images-v2-"
+    assert job["steps"][-2:] == [after, save] and before["run"] == after["run"] and after["if"].startswith("always() && ")
+    assert save["if"] == "always() && steps.cache-after.outputs.names != '' && steps.cache-after.outputs.names != steps.cache-before.outputs.names"
+    assert save["with"] == {"path": "site/.cache", "key": restore["with"]["key"] + "-${{ github.run_id }}-${{ github.run_attempt }}"}
+    assert job["outputs"]["saved"] == "${{ steps.og-save.outcome == 'success' || steps.cache-save.outcome == 'success' }}"
+    cache = tmp_path / "site" / ".cache"
+    (cache / "img").mkdir(parents=True)
+    out = tmp_path / "out"
+    def names(*change):
+        for f, text in change:
+            (cache / f).write_text(text)
+        out.unlink(missing_ok=True)
+        subprocess.run(["bash", "-e", "-c", after["run"]], cwd=tmp_path, env={**environ, "GITHUB_OUTPUT": str(out)}, check=True)
+        return out.read_text()
+    seen = [names(("images.json", "{}"))]
+    assert names() == seen[0]
+    for change in (("img/a.avif", "x"), ("fonts.json", '{"f": 1}'), ("fonts.json", '{"f": 2}')):    # a file, an index
+        seen.append(names(change))
+    assert len(set(seen)) == 4
+
+
 def test_site_deploy_under_a_version_of_its_own(tmp_path):
     """site.yml's deployment: the version job (the one that writes) makes two commits, the run's commit their parent and
     its tree theirs (3 tries a call); each try deploys under its own (TRY; none handed over: GITHUB_SHA) with the OIDC
