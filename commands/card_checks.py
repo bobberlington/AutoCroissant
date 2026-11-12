@@ -649,7 +649,7 @@ def edit_notes(ctx: Context, rel: str, psd: PSDImage, parsed: dict, style: str, 
                                              "its pictures bake different layers", reason)))
         elif plan(what, {"stars": value}):
             try:
-                psd_edit.plan_stars(psd, parsed, value, ctx.parser, moving=True)
+                psd_edit.plan_stars(psd, parsed, value, ctx.parser)
             except psd_edit.Refused as refusal:     # in a star folder it moves, its printed stars kept: by hand too
                 refused(what, refusal.refusal)
     try:

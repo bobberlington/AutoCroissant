@@ -398,9 +398,8 @@ The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes 
   IDs are derived, so star edits on a PSD with several pictures bake; a type icon touching the title at the template's
   first spot bakes, flagged; an edited split title keeps its pieces (`PSDParser._named_pieces`); a hidden star layer
   of another size (Toy Freddy's 'star test') is no star of the row.
-- **`+ability` (2026-10-25, f92fb5e; built, off):** an ability added on the website to a card with no Ability layer
-  makes one from the card kind's template (`psd_edit.insert_ability`/`add_ability`), flagged. Off while
-  `psd_edit.ADD_ABILITY_LIVE` is False: the edit waits. Live at the next Card sync run after the flip.
+- **`+ability` (2026-10-25, f92fb5e; live since 2026-10-26, d7a6641e):** an ability added on the website to a card with
+  no Ability layer makes one from the card kind's template (`psd_edit.insert_ability`/`add_ability`), flagged.
 - **Ability FX layers (BUG 2, work/fx-rebuild, landed 2026-10-24):** an ability bake makes the card's `Ability FX: ...`
   layers again as Effect Layers.jsx's Update all does (badge layers apart: retired 2026-10-25, deleted, told): each cut in place over
   its words' new places, its own style and place kept (q6); a status layer stays on its status's own words (a numbered
@@ -436,12 +435,9 @@ The edit pipeline (`commands/card_bake.py`, docs/EDIT_PIPELINE_DESIGN.md) bakes 
 - **Content flags (owner 2026-10-24 ~18:30, same branch; the soft ones told nowhere since 2026-11-07, `psd_edit.SOFT_NOTE`):**
   "In general I do not want to refuse bakes": the editor
   previewed the edit, so a content problem bakes best-effort and is told as `<code>: <field>: <why>` in the bake report,
-  the commit line and the baked verdict's reason (the preview's notes too): text that won't fit (`overflow`: a last line
-  below its box, where Photoshop hides it (`psd_edit.below_box`, 2026-11-04), off the canvas, onto the stars or icons,
-  more title lines, under a layer above or over a stat bar, past the design below or a texture clipped to it:
-  `ink_beyond`, `ink_past_clip`), typed badges and tokens, FX layers that can't follow (deleted, told), overlay word layers the chart has no style for (hidden, told), font stand-ins (`font`: a face no
-  file holds is drawn in the fork's stand-in, `font_map`), new validator problems (`validator: new problems: ...`), and
-  a stale Txt2 story (synced by `txt2_repair.sync_stories`, told). Still refused: the waits (`head-moved`,
+  the commit line and the baked verdict's reason (the preview's notes too): text that won't fit (`overflow`: off the canvas,
+  more title lines, past the design below: `ink_beyond`), typed badges and tokens, FX layers that can't follow (deleted, told), overlay word layers the chart has no style for (hidden, told), font stand-ins (`font`: a face no
+  file holds is drawn in the fork's stand-in, `font_map`), and new validator problems (`validator: new problems: ...`). Still refused: the waits (`head-moved`,
   `edit-changed`, `blob`, `capped`; `recent` removed 2026-11-04), impossible cases (no PSD, a numbered PNG copy, a creatures list setting the
   stats, a stat above 20), the bake's own checks (`bytes`, `region`, `size`, `shape`, `reparse` but new problems,
   `idempotence`, `parity` past the 25% floor) and what the bake can't edit yet (`unsupported-card`: split or several

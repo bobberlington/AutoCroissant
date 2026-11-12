@@ -66,7 +66,7 @@ from requests import RequestException
 import commands.github_api as github_api
 import commands.png_export as png_export
 import commands.psd_edit as psd_edit
-from commands.card_edits import (COLOR_PRINTED, ORDER, RENAME, SITE, CardAuthors, CardDates, CardEdits, CardRatings,
+from commands.card_edits import (ORDER, RENAME, SITE, CardAuthors, CardDates, CardEdits, CardRatings,
                                  color_text, dump_edits, dup_pictures)
 from commands.card_models import RENAMED, card_name, file_stem
 from commands.git_commit import (API_TIMEOUT, AUTHOR, COMMIT_TRIES, GIT_TIMEOUT, NO_LAZY, Transient, api, checkout_head, commit_files,
@@ -492,12 +492,8 @@ def rewrite_edits(text: str, name: str, drop=(), psd: Optional[dict] = None, kee
 
 def psd_fields(fields: dict, site=()) -> dict:
     """The PSD-kind fields of an entry with a value (the job key, section 5), but its website-only ones (`_site`, and
-    their part edits; a website-only stat on every creature; the note's colours): never baked."""
+    their part edits; a website-only stat on every creature): never baked."""
     out = {k: v for k, v in fields.items() if KIND.get(k) == "psd" and v is not None and k not in site}
-    if isinstance(out.get("colors"), list):
-        out["colors"] = [one for one in out["colors"] if isinstance(one, dict) and one.get("field") in COLOR_PRINTED]
-        if not out["colors"]:
-            del out["colors"]
     if site and out.get("creatures"):
         out["creatures"] = [{k: v for k, v in one.items() if k not in site} for one in out["creatures"]]
     if site and isinstance(out.get("parts"), dict):
@@ -710,7 +706,7 @@ def plan_move(snapshot: Snapshot, card: Card, parsed: dict, psd, parser) -> dict
     if folder == target and not any(path.lower().startswith(low) for path in snapshot.tree):
         card.move_notes.append(f"created the folder {folder!r}")
     try:
-        psd_edit.plan_stars(psd, parsed, jobs["stars"], parser, moving=True)
+        psd_edit.plan_stars(psd, parsed, jobs["stars"], parser)
     except Refused as refused:                  # the move stands; the printed stars stay as they are, told
         card.move_notes.append(f"the printed stars are not redrawn: {refused.why.removeprefix('stars: ')}")
         del jobs["stars"]
@@ -1420,8 +1416,6 @@ def bake_card(snapshot: Snapshot, card: Card, parser, fonts_dir: str, chart: Cal
             card.partial = []
             raise Refused(first.code, "; ".join([first.why] + [f"{r.code}: {r.why}" for r in rest]))
         if not card.jobs and not card.redundant and not settled:
-            if card.parts is not None and "waiting" in card.parts.outcome.values():
-                raise Refused("unsupported-card", f"ability: {psd_edit.ADDED_LATER}")
             return                              # (a website-only field alone: share_of marks it)
 
         card.expect = {card.rel: card.psd_sha, card.png: card.png_sha,

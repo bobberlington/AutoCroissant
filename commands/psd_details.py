@@ -417,20 +417,17 @@ def _plan_centres(plan, container, types, size) -> list:
     outside the group, drawn twice, split or turned)."""
     if plan.centres:
         return [_ints(centre) for centre in plan.centres]
-    if plan.how.startswith("folder"):
-        units = _star_units(plan.show[0] if plan.show else container, types)[0]
-    else:
-        shown, hidden = _star_units(container, types)
-        hide, show = {id(layer) for layer in plan.hide}, {id(layer) for layer in plan.show}
-        moved = {id(layer): (dx, dy) for layer, dx, dy in plan.moves}
-        units = []
-        for unit in shown + hidden:
-            ids = [id(layer) for layer in unit.layers]
-            if any(i in hide for i in ids) or (unit in hidden and not any(i in show for i in ids)):
-                continue
-            dx, dy = next((moved[i] for i in ids if i in moved), (0, 0))
-            units.append(_Unit([], _moved_box(unit.core, dx, dy)))
-        units += [_Unit([], _moved_box(unit.core, dx, dy)) for unit, dx, dy, _ in plan.copies]
+    shown, hidden = _star_units(container, types)
+    hide, show = {id(layer) for layer in plan.hide}, {id(layer) for layer in plan.show}
+    moved = {id(layer): (dx, dy) for layer, dx, dy in plan.moves}
+    units = []
+    for unit in shown + hidden:
+        ids = [id(layer) for layer in unit.layers]
+        if any(i in hide for i in ids) or (unit in hidden and not any(i in show for i in ids)):
+            continue
+        dx, dy = next((moved[i] for i in ids if i in moved), (0, 0))
+        units.append(_Unit([], _moved_box(unit.core, dx, dy)))
+    units += [_Unit([], _moved_box(unit.core, dx, dy)) for unit, dx, dy, _ in plan.copies]
     return [_ints(unit.centre) for unit in _reading(units, size[1], True)]
 
 
@@ -448,14 +445,14 @@ def _copied(order: list, container) -> Optional[str]:
 
 def _kept_stars(psd: PSDImage, rel: str, parser: PSDParser) -> dict:
     """A header without one Stars group drawing them: the stars the bake lays out loose (plan_stars' _loose_units:
-    layers named star, several groups; R2, R3), each count's centres (its plan's, moving) and the counts it refuses."""
+    layers named star, several groups; R2, R3), each count's centres (its plan's) and the counts it refuses."""
     types, stars = parser.all_types, parser.star_names()
     total = _stars_total(psd, types=types, stars=stars)
     parsed = {"card": {"stars": total, "path": rel, "type": ""}, "info": None}
     at, refused, scale = {}, {}, {}
     for n in range(1, HEADER_STARS + 1):
         try:
-            plan = plan_stars(psd, parsed, n, parser, moving=True)
+            plan = plan_stars(psd, parsed, n, parser)
             at[str(n)] = [_ints(centre) for centre in plan.centres]
             if plan.scaled:
                 scale[str(n)] = plan.scaled[0][1]
@@ -500,7 +497,7 @@ def _star_header(psd: PSDImage, rel: str, vocab, parser: Optional[PSDParser] = N
     at, refused, scale = {}, {}, {}
     for n in range(1, HEADER_STARS + 1):
         try:
-            plan = plan_stars(psd, parsed, n, parser, moving=True)
+            plan = plan_stars(psd, parsed, n, parser)
             at[str(n)] = _plan_centres(plan, container, types, size)
             if plan.scaled:                     # every star shrunk to fit the banner (option B)
                 scale[str(n)] = plan.scaled[0][1]

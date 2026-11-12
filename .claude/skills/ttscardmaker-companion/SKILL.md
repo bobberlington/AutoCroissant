@@ -250,8 +250,6 @@ from a Photoshop save: it redraws on every change).
 Old-font note (A1, owner 2026-11-04; the one pixel-fix refusal that is told): a layer drawn with another build of the
 icon font that the PSD keeps so (refused, a splice that fell back, or a PNG that couldn't follow:
 `card_guards.stale_left`) gets `card_guards.OLD_FONT` in the post: "old stoogedings font: pull, reinstall MDW/Fonts/stoogedings.ttf, restart Photoshop, Type > Update All Text Layers, save and push".
-A bake whose new text puts a last line below its box bakes, told (`overflow: ...: its last line falls below its text
-box, where Photoshop hides it`; `psd_edit.below_box`, never refused).
 
 Shape (owner 2026-11-04): a pill 0.95 em tall, label capitals 540/950 in Roboto Black (`LABEL_FONT`;
 `LABEL_METRICS` re-spaces its 1, / and X and its word space), tracking between letters only. A cooldown's left end

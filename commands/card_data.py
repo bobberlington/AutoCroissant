@@ -967,14 +967,11 @@ def links_text(data: dict) -> str:
 
 
 def read_records(db_dir: str) -> tuple:
-    """(render record, spot record) of db/; one db/ lacks: psd_edit's seed copy (none since 11-08), else {}."""
-    from commands import psd_edit
+    """(render record, spot record) of db/; one db/ lacks: {}."""
     out = []
     for name in RECORDS:
-        found = path_join(db_dir, name)
-        path = found if isfile(found) else path_join(psd_edit.RECORDS_SEED, name)
         try:
-            with open(path, encoding="utf-8") as fh:
+            with open(path_join(db_dir, name), encoding="utf-8") as fh:
                 out.append(json_loads(fh.read()))
         except FileNotFoundError:
             out.append({})

@@ -989,17 +989,14 @@ def test_links_gather_every_psd_and_the_linked_files(cards, clone, monkeypatch):
     assert cd.read_links(str(cards.db))["files"]["Types/new.png"] == {blob_sha_bytes(b"new"): 3}
 
 
-def test_records_seed_merge_and_follow_a_move(cards, monkeypatch, tmp_path):
-    """The render and spot records live in db/ (owner 11-07): seeded from AC's copies, the guards', the bake's and the
-    redraw's records merged in order (a later fact wins, an earlier text fact stays), a moved card's following its name."""
+def test_records_merge_and_follow_a_move(cards, monkeypatch, tmp_path):
+    """The render and spot records live in db/ (owner 11-07): the guards', the bake's and the redraw's records merged in
+    order (a later fact wins, an earlier text fact stays), a moved card's following its name."""
     import commands.psd_edit as pe
-    seed = tmp_path / "seed"
-    seed.mkdir()
-    (seed / "render_record.json").write_text(json.dumps({FREEZER: {"icc": [0.9, 40], "text": {"1": ["a", "gamma"]}}}))
-    monkeypatch.setattr(pe, "RECORDS_SEED", str(seed))
     monkeypatch.setattr(pe, "_RECORDS", {})
     docs = tmp_path / "records.json"
-    docs.write_text(json.dumps([{"render": {FREEZER: {"text": {"2": ["b", "straight"]}}}, "spot": {DOOMER: {"7": {"core": [1, 2, 3, 4]}}}},
+    docs.write_text(json.dumps([{"render": {FREEZER: {"icc": [0.9, 40], "text": {"1": ["a", "gamma"]}}}},
+                                {"render": {FREEZER: {"text": {"2": ["b", "straight"]}}}, "spot": {DOOMER: {"7": {"core": [1, 2, 3, 4]}}}},
                                 {"render": {FREEZER: {"icc": [0.1, 50]}}}]))
     assert _build(cards, "--empty", "--records", str(docs))[0] == cd.EXIT_OK
     render, spot = cd.read_records(str(cards.db))

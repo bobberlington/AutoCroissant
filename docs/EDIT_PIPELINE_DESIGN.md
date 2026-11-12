@@ -132,8 +132,7 @@ is a normal PSD edit again.
 **Stars and types (2026-10-23, owner: "teach the bake instead of blocking the card").** `psd_edit.plan_stars` /
 `plan_types` work an edit out on the open card; a layout they don't know refuses that field only (`Refusal.field`), and
 `card_bake` bakes the card's other fields, leaving the refused one in the file with a refused verdict on the PSD the
-commit leaves (final, so not pending). Stars, in the one `Stars` group that draws them: a count's own folder (`3 stars`
-beside `5 stars`, the templates' 1-5 layouts) shows and the shown one hides; else, where the stars sit one by one, fewer
+commit leaves (final, so not pending). Stars, in the one `Stars` group that draws them, where the stars sit one by one: fewer
 hide the last in reading order (rows top to bottom, each right to left), more show the card's own hidden stars first and
 then copy the last star layer (`Layer.duplicate`, smart-object transform, `fxrp` and the layers clipped to it moved with
 it) at the layout's spacing, the first that stays clear: rows of two with an odd one centred under them
@@ -773,7 +772,7 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   cards 0.15-0.28 s, filtered ones 2.1-3.0 s (stat 4.57 -> 1.91 s). `gate_untouched` leaves out every edit's region, the
   stats' too (a stat with the name or ability always refused `region`), and runs on stat-only bakes. `covered_ink`:
   new text under a visible Normal layer above it (Papyrus' spaghetti) or over a stat bar row the old text did not
-  reach (Paint Warrior's blank box) refuses `overflow`. Tests: `test_a_see_through_icon_under_a_badge_layer_refuses`,
+  reach (Paint Warrior's blank box) refuses `overflow` (deleted 2026-11-12: its notes were soft, told nowhere). Tests: `test_a_see_through_icon_under_a_badge_layer_refuses`,
   `test_the_edit_copy_keeps_smart_filters`, `test_a_stat_and_the_ability_bake_together`, `test_a_bake_runs_the_untouched_gate`,
   `test_new_text_under_a_layer_above_it_or_over_a_bar_refuses`; `test_a_bake_opens_each_psd_once` asserts the bake
   landed; the plain-card test moved to Koro-Sensei (on Papyrus the token now runs under the spaghetti).
@@ -805,7 +804,7 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   Words typed after a title's token take the title's run style (`title_styles`; "Bench [fire] II" refused). A title's
   "[fire:]" stays letters in its own font. `covered_ink`: layers already over the old text are the design, and
   together may cover as much of the new as of the old (Leshy "Leshys", DooPliss "Dooplisss" bake; "Lesh" refuses, 512
-  px more under the art; Papyrus still refuses). `apply_jobs` renders the card whole only once an edit is made, in one
+  px more under the art; Papyrus still refuses) (deleted 2026-11-12: its notes were soft, told nowhere). `apply_jobs` renders the card whole only once an edit is made, in one
   fork `RenderCache`; the copy's smart-object pairings are checked without a render (`gate_pairs`), and `gate_copy`
   renders a fresh copy, uncached, only on a card with smart filters (80 of 813), after the edits. Measured under load average
   ~30: Pure Vessel hp 9.3 s -> 5.9 s (3 full renders -> 2), its refused long ability 5.7 s -> 0.6 s (no render), Mini
@@ -835,10 +834,10 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   vocabulary (Fool Eater's and The Krusty Krab's root type icons; also `plan_stars` and `plan_types`, which change no
   plan on main's 172 star cards), and `inks_over` refuses `overflow` where the title's new ink covers a visible layer
   below it that the old title's ink did not touch (Spice's star in 'images', Nosk's 'Hk star', Flame Trap's, Bag of
-  Evil's, Energy Ritual's, Bubble's banner). A title that would take more lines (Basic Shield's box, the Cursed Idol), or
+  Evil's, Energy Ritual's, Bubble's banner; the title's check deleted 2026-11-12, a soft note). A title that would take more lines (Basic Shield's box, the Cursed Idol), or
   a line below the old title, refuses `overflow`. `typed_icon_fit` checks each typed badge or token on the engine's
   render: past `ICON_OVERLAP` (16) px over the layer's other glyphs it refuses `overflow` (Machine Gun, Bag of Good,
-  Niiue, Kel, Mettaton EX); one set at the text's own size (no badge or token on the card, or a title) whose smallest
+  Niiue, Kel, Mettaton EX; deleted 2026-11-12, a soft note); one set at the text's own size (no badge or token on the card, or a title) whose smallest
   glyph is outside `ICON_HEIGHT` (0.6 to 2.2) of the tallest letter on its line refuses `unsupported-card` (Holy Blade
   0.20, the pixel font of Machine Gun, Quote, Springtrap... 2.28; the rest 0.86 to 2.15). Census of every card
   (`census.py`, in memory): the typo title fix bakes on the same 715 as before; new refusals: 10 abilities (" Gain
@@ -862,7 +861,7 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   gates changed for them: off the canvas counts ink past `INK_ALPHA` only (`_ink_off_canvas`; Red Knife's halo tail
   at alpha 0.03, Salt's title at 0.16 refused), and for glow edits `inks_over` and the stat-bar check count the
   changed ink of the layer's outermost group with effects (`_effect_ink`): Salt's title disc covers 'Layer 19'
-  (MISS), which the title's own ink missed. Under a badge FX layer a glow refuses `see_through_icons`, under a tint
+  (MISS), which the title's own ink missed (both deleted 2026-11-12: soft notes). Under a badge FX layer a glow refuses `see_through_icons`, under a tint
   as any typed icon. Census of every card (in memory): " Gain [fire:glow]." sets on 516 of 791 Abilities (" Gain
   [fire]." 536: 20 more run off the canvas, the wider glyph wrapping onto another line), " [ice:darkglow]" on 120 of
   812 titles (" [fire]" 200: 31 more reach the stars or type icons, 49 more cover a layer below, the disc); the other
@@ -897,7 +896,8 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   above it, every gate passing (Confusion, Krabby Patty, Unbreakable Strength): the halo's changed ink now counts on
   the stars and type icons and under the layers above (`covered_ink`); in the effect scope's group, where the composite
   hides the halo under a layer, the halo's edge beside it and a badge's box count (`_scoped`, `_meets`); a clipped
-  icon counts only where its base inks (`_halo_meets`: Elemental World's ice texture past its icon). Census of the
+  icon counts only where its base inks (`_halo_meets`: Elemental World's ice texture past its icon). All deleted
+  2026-11-12 (soft notes, told nowhere since 2026-11-07). Census of the
   review's 2,415 glow edits (`census_halo.py` on the fix): 3 bakes now refuse, the 3 found; no other verdict changed. Where the
   splice falls back (about 2% of ability typos: Wendy, WX-78...), the engine redraws every line: the old text so
   redrawn is measured against the PNG (`whole_redraw`; Wendy 15.5% bad), a miss told in the notes ("ability redrawn
@@ -908,15 +908,13 @@ other pixel. Never `force=True`, never `layer.composite()`. Duplicate PNGs would
   **Phase 6, content flags (owner ruling 2026-10-24 ~18:30, `scratch/bug2-p8/`):** "In general I do not want to
   refuse bakes": the editor previewed the edit, so a content problem bakes best-effort and is told in `Edit.notes` as
   `<code>: <field>: <why>` (bake report, commit line, baked verdict's reason, preview notes): overflow (off the canvas,
-  onto the stars or icons, more title lines or lower, under a layer above or over a bar, past the design below for a
-  title too: `ink_beyond`, past a texture clipped to it: `ink_past_clip`), typed badges and tokens (tints, letters,
-  image-icon cards, fit and height, see-through, unshaped, bare: `gate_fx` returns notes), font stand-ins
+  more title lines or lower, past the design below: `ink_beyond`), typed badges and tokens (tints, letters,
+  image-icon cards, height, see-through, unshaped, a title's bare ones: `gate_fx` returns notes), font stand-ins
   (`font_map`: FontMap policy "substitute"; a whole redraw in a stand-in still hits the 25% floor), saved pixels in
   another font, new validator problems. An FX layer whose style can't follow (follow_fx's refusals, a phrase the ability
   lacks, words now in a badge) is deleted, told, its words plain (styled status words get the chart's layer from
   `new_fx`, which skips, told, a word it can't name); an overlay word layer the chart has no style for is hidden, told;
-  a typed copy in a phrase of several colours takes the first; a badge typed in a title prints as plain words. A stale
-  Txt2 story is synced (`txt2_repair.sync_stories`) and the stories allowed in `gate_stories`, told. Typed badges and
+  a typed copy in a phrase of several colours takes the first; a badge typed in a title prints as plain words. Typed badges and
   tokens are unstretched (`unstretch`: HorizontalScale so the aspect factor is 1; Monster Meat's [fire] 2.13 -> 0.81,
   the designers' 0.81). Still refused: waits, impossible cases, the bake's integrity gates, and what it can't edit yet
   (split/several titles, non-template rows, stars/types layouts, FX layers that are no pixel layers, two FX

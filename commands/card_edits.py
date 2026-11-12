@@ -39,7 +39,7 @@ FLAG_MAX = 300                                  # characters a reason (flags.js,
 NAMES_OK = "names_ok"
 # text colours: [{"field", "phrase"?, "color"}], a phrase as the effect layers' ("word#n"; none: the whole field); the
 # card image's alone (owner 2026-11-11: the website's text and TTS's details draw the site's palette instead)
-COLOR_FIELDS = COLOR_PRINTED = ("name", "ability")   # textcolor.js FIELDS, build_site COLOR_FIELDS
+COLOR_FIELDS = ("name", "ability")      # textcolor.js FIELDS, build_site COLOR_FIELDS
 COLOR = re_compile(r"^#[0-9a-f]{6}\Z")
 COLORS_MAX, PHRASE_MAX = 64, 200
 
@@ -549,7 +549,6 @@ __all__ = [
     'ART_FIELDS',
     'ART_MAX',
     'COLOR_FIELDS',
-    'COLOR_PRINTED',
     'FLAGS',
     'FLAG_MAX',
     'NAMES_OK',

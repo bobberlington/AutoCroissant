@@ -1,6 +1,6 @@
 """
 psd_edit's stars and types bakes (owner, 2026-10-23: teach the bake instead of refusing the card): the layouts the
-planners know (a count's own folder, hidden stars, rows of two, a line; a type row that closes up, icons from the card's
+planners know (hidden stars, rows of two, a line; a type row that closes up, icons from the card's
 own hidden layers or Types/), their per-field refusals, and the gates (records, read-back, nothing changed outside).
 Fixture cards are built here with psd-tools (no clone needed); the real-card tests copy cards from the clone and skip
 without it. Bakes need the fork's layer copy API (Layer.duplicate, PixelLayer.fromarray):
@@ -69,12 +69,11 @@ def _types_dir(tmp_path) -> str:
     return str(folder)
 
 
-def _fixture(tmp_path, stars=((1080, 20), (970, 20)), hidden=(), folders=None, types=(("Fire", (30, 30)),),
+def _fixture(tmp_path, stars=((1080, 20), (970, 20)), hidden=(), types=(("Fire", (30, 30)),),
              library=(), name="Fixture") -> tuple:
     """
-    A 1200x1800 card: a gradient art layer, a Stars group (stars at the given top-lefts, hidden ones, or folders
-    {"N stars": [top-lefts]} with the first shown), a Types group of icons ((name, top-left[, size])) and hidden
-    library icons.
+    A 1200x1800 card: a gradient art layer, a Stars group (stars at the given top-lefts, hidden ones), a Types group
+    of icons ((name, top-left[, size])) and hidden library icons.
 
     Returns:
         (PSD path, PNG path): the PNG is the PSD's own render (the official export)
@@ -86,12 +85,6 @@ def _fixture(tmp_path, stars=((1080, 20), (970, 20)), hidden=(), folders=None, t
     art[..., 2] = 90
     psd.append(PixelLayer.fromarray(art, psd, name="Art"))
     group = psd.create_group(name="Stars")
-    if folders:
-        for k, (folder, spots) in enumerate(folders.items()):
-            inner = group.create_group(name=folder)
-            for x, y in spots:
-                inner.append(PixelLayer.fromarray(np.asarray(_star()), psd, name="Star", top=y, left=x))
-            inner.visible = k == 0
     for x, y in stars:
         group.append(PixelLayer.fromarray(np.asarray(_star()), psd, name="Star", top=y, left=x))
     for x, y in hidden:
@@ -312,7 +305,7 @@ def test_stars_copy_a_shown_star_and_a_folder_card_reads_back_its_drawn_stars(pa
     rel, moved = "Items/Heal/2 Stars/Fixture.psd", "Items/Heal/3 Stars/Fixture.psd"
     parsed = pe.parse_card(parser, paths[0], rel)
     with pytest.raises(pe.Refused, match="stars: the card draws 2, not 3"):     # moved, not redrawn
-        pe.gate_reparse(parser, parsed, paths[0], moved, {"stars": 3}, PSDImage.open(paths[0]))
+        pe.gate_reparse(parser, parsed, paths[0], moved, {"stars": 3}, PSDImage.open(paths[0]), [], [])
 
 
 def test_stars_refuse_per_field(parser, tmp_path):
@@ -324,8 +317,6 @@ def test_stars_refuse_per_field(parser, tmp_path):
         _plan(parser, paths[0], REL, "stars", 0)
     with pytest.raises(pe.Refused, match=r"the parser counts 5, the Stars group draws 3$"):    # no header text blamed
         pe.plan_stars(PSDImage.open(paths[0]), {"card": {"stars": 5, "path": REL}, "info": None}, 4, parser)
-    with pytest.raises(pe.Refused, match="the '1 Stars' folder sets them"):
-        _plan(parser, paths[0], "Items/Equip/1 Stars/Fixture.psd", "stars", 2)
     assert pe.star_target("Auxiliary/Status Effects/Debuffs/2 Stars/Afraid.psd", 3) == "Auxiliary/Status Effects/Debuffs/3 Stars"
     assert pe.star_folder(REL) is None and pe.star_folder("Auxiliary/Status Effects/Buffs/Fixture.psd") is None
     with pytest.raises(pe.Refused, match="the parser reads no stars on a buff card"):
@@ -460,8 +451,7 @@ def test_a_type_named_frame_is_no_icon(parser, tmp_path):
 # ========================
 def test_real_star_layouts(clone, parser, tmp_path):
     """Krabby Patty shows its own hidden third star; Love's centred third moves aside for a fourth, The Claw's top one
-    too; Mettaton's zigzag takes a fifth; Springtrap's two over three hides one and takes a sixth as rows of two; a field
-    card's folder sets its stars."""
+    too; Mettaton's zigzag takes a fifth; Springtrap's two over three hides one and takes a sixth as rows of two."""
     krabby = _plan(parser, _clone_card(clone, KRABBY, tmp_path)[0], KRABBY, "stars", 3)
     assert [layer.name for layer in krabby.show] == ["Patrick Star copy 2"] and not krabby.copies
     love = _plan(parser, _clone_card(clone, LOVE, tmp_path)[0], LOVE, "stars", 4)
@@ -476,8 +466,6 @@ def test_real_star_layouts(clone, parser, tmp_path):
     assert len(_plan(parser, springtrap, SPRINGTRAP, "stars", 4).hide) == 1
     six = _plan(parser, springtrap, SPRINGTRAP, "stars", 6)        # no room to grow its top row: laid out again, told
     assert six.how == "rows of two, laid out again" and len(six.copies) == 1 and "does not go on to 6" in six.notes[0]
-    with pytest.raises(pe.Refused, match="the '1 Stars' folder sets them"):
-        _plan(parser, _clone_card(clone, FREEZER, tmp_path)[0], FREEZER, "stars", 2)
 
 
 LAYOUT_STARS = [   # LAYOUT_SUPPORT.md's star rules, one card each: (card, stars, how, notes)
@@ -519,10 +507,10 @@ def test_star_counter_on_real_cards(clone, parser, tmp_path):
         assert parser._count_stars(psd) == stars == pe._stars_total(psd, types=parser.all_types, stars=parser.star_names()), rel
         for value in (stars - 1, stars + 1):
             if refused is None:
-                assert pe.plan_stars(psd, parsed, value, parser, moving=True).how, (rel, value)
+                assert pe.plan_stars(psd, parsed, value, parser).how, (rel, value)
             else:
                 with pytest.raises(pe.Refused, match=refused):
-                    pe.plan_stars(psd, parsed, value, parser, moving=True)
+                    pe.plan_stars(psd, parsed, value, parser)
     staff = "N.M.E/Staff_of_Purity.psd"          # a column of 5 would cross the middle, where no count reads a star
     assert _plan(parser, _clone_card(clone, staff, tmp_path)[0], staff, "stars", 5).how == "its rows carried on"
 
@@ -535,14 +523,14 @@ def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
     the canvas, step down together."""
     import commands.psd_details as pd
     for rel, gone in (("Creatures/Kirby/5 Stars/Nightmare.psd", "Warpstar copy 4"), ("Creatures/Other/5 Stars/Kyle.psd", "middle")):
-        plan = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 4, parser, moving=True)
+        plan = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 4, parser)
         assert [layer.name for layer in plan.hide] == [gone] and not plan.moves, rel
     rel = "Items/Infliction/3 Stars/Flower_Of_Decay.psd"
-    plan = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 4, parser, moving=True)
+    plan = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 4, parser)
     assert plan.how == "rows of two" and [layer.name for layer in plan.hide] == ["star"] and not plan.moves
     assert len(plan.copies) == 2
     rel = "Items/Heal/2 Stars/Thunder_Thighs.psd"            # no room on its banner full size (Remote Detonator's: below)
-    thighs = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 3, parser, moving=True)
+    thighs = pe.plan_stars(*_open(parser, clone, rel, tmp_path), 3, parser)
     assert thighs.how == "a row on its banner, every star at 95%" and len(thighs.copies) == 1
     assert [s for _, s, _, _ in thighs.scaled] == [0.95, 0.95] and "stars: every star shrunk to 95% to fit 'Layer 13'" in \
         thighs.notes and not any("placed off" in note for note in thighs.notes)
@@ -553,7 +541,7 @@ def test_star_layout_fixes_on_real_cards(clone, parser, tmp_path):
     #   outside are stars of the column
     assert "5" not in header["refused"] and header["at"]["5"][4][1] == 1054      # 539 px under its spot, past the moss
     tyler = "Creatures/Other/5 Stars/Tyler.psd"             # its six laid out again run off the top: all go down
-    assert pe.plan_stars(*_open(parser, clone, tyler, tmp_path), 6, parser, moving=True).notes[1:] == [
+    assert pe.plan_stars(*_open(parser, clone, tyler, tmp_path), 6, parser).notes[1:] == [
         "stars: the stars placed 20 px lower to fit: check it"]
 
 
@@ -573,9 +561,9 @@ def test_star_beside_an_empty_stars_group_and_an_aux_items_icon(clone, parser, t
     next(layer for layer in psd.descendants() if layer.name == "Attack").visible = False
     path = str(tmp_path / "untyped.psd")
     psd.save(path)
-    assert not pe.gate_reparse(parser, parsed, path, rel, {"types": []}, PSDImage.open(path))["card"].get("subtype")
+    assert not pe.gate_reparse(parser, parsed, path, rel, {"types": []}, PSDImage.open(path), [], [])["card"].get("subtype")
     with pytest.raises(pe.Refused, match="subtype"):
-        pe.gate_reparse(parser, parsed, path, rel, {"types": ["Food"]}, PSDImage.open(path))
+        pe.gate_reparse(parser, parsed, path, rel, {"types": ["Food"]}, PSDImage.open(path), [], [])
 
 
 def _renamed(parser, clone, rel, tmp_path) -> tuple:
@@ -601,31 +589,27 @@ def test_star_cases_of_10_26(clone, parser, tmp_path):
     leshy = "Creatures/Other/5 Stars/Leshy.psd"
     psd, parsed = _renamed(parser, clone, leshy, tmp_path)
     assert parser._count_stars(psd) == 5
-    assert [layer.name for layer in pe.plan_stars(psd, parsed, 4, parser, moving=True).hide] == ["Layer 9 copy 2"]
-    assert _centres(pe.plan_stars(psd, parsed, 1, parser, moving=True)) == [(912, 209)]
+    assert [layer.name for layer in pe.plan_stars(psd, parsed, 4, parser).hide] == ["Layer 9 copy 2"]
+    assert _centres(pe.plan_stars(psd, parsed, 1, parser)) == [(912, 209)]
     yarn = "Creatures/Kirby/5 Stars/Yin_Yarn.psd"
     psd, parsed = _renamed(parser, clone, yarn, tmp_path)
-    six = pe.plan_stars(psd, parsed, 6, parser, moving=True)
+    six = pe.plan_stars(psd, parsed, 6, parser)
     assert [t.name for t in six.textures] == ["Layer 6"] and not any("Layer 6" in note for note in six.notes)
-    assert _centres(pe.plan_stars(psd, parsed, 2, parser, moving=True)) == [(1137, 108), (1024, 205)]   # a diagonal
+    assert _centres(pe.plan_stars(psd, parsed, 2, parser)) == [(1137, 108), (1024, 205)]   # a diagonal
     psd, parsed = _open(parser, clone, "Creatures/Kirby/5 Stars/Nightmare.psd", tmp_path)
-    assert _centres(pe.plan_stars(psd, parsed, 1, parser, moving=True)) == [(1048, 118)]             # the middle
-    assert _centres(pe.plan_stars(psd, parsed, 3, parser, moving=True)) == [(1104, 70), (1048, 118), (992, 174)]
-    bolts = pe.plan_stars(*_open(parser, clone, "Items/Heal/1 Stars/Bolts_and_Screws.psd", tmp_path), 2, parser,
-                          moving=True)
+    assert _centres(pe.plan_stars(psd, parsed, 1, parser)) == [(1048, 118)]             # the middle
+    assert _centres(pe.plan_stars(psd, parsed, 3, parser)) == [(1104, 70), (1048, 118), (992, 174)]
+    bolts = pe.plan_stars(*_open(parser, clone, "Items/Heal/1 Stars/Bolts_and_Screws.psd", tmp_path), 2, parser)
     assert bolts.how == "a column" and [(dx, dy) for _, dx, dy, _ in bolts.copies] == [(0, 130)]
-    spiky = pe.plan_stars(*_open(parser, clone, "Items/Counter/3 Stars/Spiky_Ball_Trap.psd", tmp_path), 5, parser,
-                          moving=True)
+    spiky = pe.plan_stars(*_open(parser, clone, "Items/Counter/3 Stars/Spiky_Ball_Trap.psd", tmp_path), 5, parser)
     assert spiky.how == "rows of two, laid out again" and len(spiky.notes) == 1          # no step down, no banner note
-    prize = pe.plan_stars(*_open(parser, clone, "Items/Support/1 Stars/Consolation_Prize.psd", tmp_path), 2, parser,
-                          moving=True)
+    prize = pe.plan_stars(*_open(parser, clone, "Items/Support/1 Stars/Consolation_Prize.psd", tmp_path), 2, parser)
     assert prize.how == "a row on its banner, every star at 95%"        # a lone star's banner too (option B)
     psd, parsed = _open(parser, clone, "N.M.E/Remote_Detonator.psd", tmp_path)
     row = pe.plan_stars(psd, parsed, 3, parser)
     assert row.how == "a row on its banner" and len(row.copies) == 1 and "does not go on to 3" in row.notes[0]   # told
     assert _centres(row) == [(1127, 98), (1063, 98), (999, 98)]         # tightened from its pitch of 74 to fit
-    magolor = pe.plan_stars(*_open(parser, clone, "Creatures/Kirby/5 Stars/Crowned_Magolor.psd", tmp_path), 6, parser,
-                            moving=True)
+    magolor = pe.plan_stars(*_open(parser, clone, "Creatures/Kirby/5 Stars/Crowned_Magolor.psd", tmp_path), 6, parser)
     assert magolor.how == "a V's point as a pair" and [(dx, dy) for _, dx, dy in magolor.moves] == [(55, 12)]
     assert len(magolor.copies) == 1 and _centres(magolor)[4:] == [(252, 326), (142, 326)]
     assert magolor.notes == ["stars: a V's point as a pair (the card's own layout does not go on to 6)"]
@@ -656,9 +640,9 @@ def test_stars_shrink_to_fit_their_banner(clone, parser, tmp_path):
     header = pd._star_header(old, rel, tuple(parser.all_types), parser)
     assert header["scale"]["2"] == 0.6 and len(header["at"]["2"]) == 2
     psd, parsed = _open(parser, clone, "Items/Support/1 Stars/Consolation_Prize.psd", tmp_path)
-    assert pe.plan_stars(psd, parsed, 3, parser, moving=True).how == "a row on its banner, every star at 65%"
-    assert pe.plan_stars(psd, parsed, 5, parser, moving=True).notes == ["stars: placed off 'Layer 13' under them: check it"]
-    bomb = pe.plan_stars(*_open(parser, clone, "N.M.E/Remote_Detonator.psd", tmp_path), 7, parser, moving=True)
+    assert pe.plan_stars(psd, parsed, 3, parser).how == "a row on its banner, every star at 65%"
+    assert pe.plan_stars(psd, parsed, 5, parser).notes == ["stars: placed off 'Layer 13' under them: check it"]
+    bomb = pe.plan_stars(*_open(parser, clone, "N.M.E/Remote_Detonator.psd", tmp_path), 7, parser)
     assert not bomb.scaled and bomb.notes == ["stars: placed off 'Layer 13' under them: check it"]
 
 
@@ -678,7 +662,7 @@ def test_a_texture_on_the_stars_follows_them(clone, parser, tmp_path):
     """Yin Yarn's 6 (owner 11-09): its yarn 'Layer 6', clipped onto Stars, copied over the moved and the new star where
     it no longer lies, clipped right above it under Color Balance 2; they print as the originals beside them."""
     psd, parsed = _renamed(parser, clone, "Creatures/Kirby/5 Stars/Yin_Yarn.psd", tmp_path)
-    plan = pe.plan_stars(psd, parsed, 6, parser, moving=True, split=True)
+    plan = pe.plan_stars(psd, parsed, 6, parser, split=True)
     edit = pe.set_icons(psd, plan)
     made = [done[1] for done in plan.done if done[0] == "made"]
     top = list(psd)
@@ -759,7 +743,7 @@ def test_type_icons_in_stars_are_no_stars(clone, parser, tmp_path):
     that as a star), the stars unchanged; Dark Matter's two icons in Stars likewise."""
     freddy = "Creatures/Fnaf/3 Stars/Toy_Freddy.psd"
     path = _clone_card(clone, freddy, tmp_path)[0]
-    plan = pe.plan_stars(PSDImage.open(path), pe.parse_card(parser, path, freddy), 4, parser, moving=True)
+    plan = pe.plan_stars(PSDImage.open(path), pe.parse_card(parser, path, freddy), 4, parser)
     assert len(plan.copies) == 1 and not plan.hide
     pike = "Auxiliary/Minions/Pike_Beam.psd"
     paths = _clone_card(clone, pike, tmp_path)
@@ -885,7 +869,7 @@ def test_icons_and_stars_go_by_ink(clone, parser, tmp_path):
         psd, parsed = _open(parser, clone, rel, tmp_path)
         pe.set_icons(psd, pe.plan_types(psd, parsed, parsed["card"]["types"] + ["fire"], parser, types_dir=types), types)
     psd, parsed = _open(parser, clone, "N.M.E/Bubble.psd", tmp_path)
-    pe.plan_stars(psd, parsed, 2, parser, moving=True)
+    pe.plan_stars(psd, parsed, 2, parser)
 
 
 def test_lane3_star_layouts(clone, parser, tmp_path):
@@ -907,7 +891,7 @@ def test_lane3_star_layouts(clone, parser, tmp_path):
     assert abs((shown[0][0] + shown[1][2]) / 2 - saved.width / 2) <= 2
     rel = "Creatures/Isaac/3 Stars/Tainted_Lazarus.psd"
     psd, parsed = _open(parser, clone, rel, tmp_path)
-    plan = pe.plan_stars(psd, parsed, 4, parser, moving=True)
+    plan = pe.plan_stars(psd, parsed, 4, parser)
     assert plan.how == "rows of two; below, turned: rows of two" and len(plan.copies) == 2
     rel = "Auxiliary/Minions/Polevaulter_Zombie.psd"
     assert pe._skewed_pairs([(980, 68), (1094, 57), (1051, 151), (937, 151)], 99, 13)

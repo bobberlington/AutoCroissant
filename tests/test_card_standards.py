@@ -1105,7 +1105,7 @@ def test_folders_file_linked_stars(clone, tmp_path, monkeypatch):
     stars = next(group for group in out if group.name == "Stars")
     assert done.level == "template" and not done.left
     assert [layer.name for layer in stars] == ["top right", "top right copy", "top right copy 2"]
-    assert psd_edit.plan_stars(out, psd_edit.parse_card(parser, rel, rel, out), 4, parser, moving=True).copies
+    assert psd_edit.plan_stars(out, psd_edit.parse_card(parser, rel, rel, out), 4, parser).copies
 
 
 def test_folders_refusals_read_once(clone, tmp_path, monkeypatch):
