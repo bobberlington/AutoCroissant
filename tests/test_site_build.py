@@ -1017,8 +1017,6 @@ def test_site_image_cache_saved_whenever_the_build_changed_it(tmp_path):
     """site.yml's card images: restored only; saved last (a passed build too) when their names or JSON indexes changed,
     under the run id (the newest entry, restore-keys' pick); the job's saved (caches.yml prunes) only after a save."""
     yaml = pytest.importorskip("yaml")
-    if not shutil.which("sha256sum"):
-        pytest.skip("no sha256sum")
     path = SITE_SRC / ".github" / "workflows" / "site.yml"
     if not path.is_file():
         pytest.skip(f"no {path}")

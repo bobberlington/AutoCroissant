@@ -32,7 +32,8 @@ GIT_CONFIG = {"core.hooksPath": "/dev/null",              # no machine hooks in 
               "core.looseCompression": "0"}               # fixture repos of real PSDs: no zlib on every add
 POOLED = ("commands.card_check", "commands.font_check", "commands.card_guards")   # process pools capped per worker
 QUEUES = ("dispatch_queue", "edit_queue", "command_queue")                         # utils' deques, empty per test
-TOOLS = {"node": "node", "jq": "jq", "timeout": "coreutils", "git": "git", "oxipng": "oxipng"}   # CLIs the tests run: brew formula
+TOOLS = {"node": "node", "jq": "jq", "timeout": "coreutils", "sha256sum": "coreutils", "git": "git",   # CLIs the tests run:
+         "oxipng": "oxipng"}                                                                           # brew formula
 FETCH = ("GIT_NO_LAZY_FETCH=1 git -C {clone} -c fetch.negotiationAlgorithm=noop fetch --no-tags --no-write-fetch-head"
          " --filter=blob:none --stdin origin")           # blob ids on stdin, one a line
 

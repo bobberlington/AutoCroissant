@@ -2,7 +2,6 @@
 Card guards (the marker comment on the push's head commit), the failed steps named, no preview card (flags 4)."""
 import json
 import os
-import shutil
 import subprocess
 
 import pytest
@@ -44,8 +43,8 @@ FAKE_CURL = '#!/bin/sh\njq -c . >> "$FAKE_POSTS"\n'
 def test_a_broken_push_tells_the_standards_channel_once(tmp_path):
     yaml = pytest.importorskip("yaml")
     path = SITE_SRC / ".github" / "workflows" / "card-sync.yml"
-    if not path.is_file() or not shutil.which("jq"):
-        pytest.skip(f"no {path} or no jq")
+    if not path.is_file():
+        pytest.skip(f"no {path}")
     jobs = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]
     tell = {j: next(s for s in jobs[j]["steps"] if s.get("name") == "Tell Discord") for j in ("data", "main", "after")}
     assert len({t["run"] for t in tell.values()}) == 1 and "DISCORD_CHANGELOG_WEBHOOK" not in json.dumps(tell)
