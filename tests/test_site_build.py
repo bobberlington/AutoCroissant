@@ -256,6 +256,16 @@ def test_a_commit_of_many_card_psds_is_heavy(bs, repo, tmp_path, monkeypatch):
     assert _build(bs, monkeypatch, repo, tmp_path / "a")["cards.json"]["heavy"] == [repo["commits"][0][:12]]
 
 
+def test_editor_fields_load_with_the_editor(bs, repo, tmp_path, monkeypatch):
+    """cards.json leaves the fields only edit mode reads (EDITOR_FIELDS: blob, ink, ratings...) to editing.json by id."""
+    if not hasattr(bs, "EDITOR_FIELDS"):
+        pytest.skip("before TC's editing.json")
+    out = _build(bs, monkeypatch, repo, tmp_path / "a")
+    assert not set(bs.EDITOR_FIELDS) & {k for c in out["cards.json"]["cards"] for k in c}
+    alpha = out["editing.json"][_by_name(out["cards.json"]["cards"])["Alpha"]["id"]]
+    assert len(alpha["blob"]) == 8 and [r["value"] for r in alpha["ratings"]] == [6]
+
+
 def test_a_version_commit_follows_renames_and_refuses_doubt(bs):
     """version_commit on parse_history rows: the commit that made the bytes the PSD held at the version's start, pure
     renames followed back (also a later one: a record's path is its newest); none for an edit, the previous version's
