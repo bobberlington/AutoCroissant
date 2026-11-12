@@ -59,7 +59,7 @@ link buttons; `_edit` :818-834), drained the moment it is queued (1 s fallback p
 worker thread --queue_message/queue_file--> dispatch_queue --loop-->
   0. content over 2,000 chars: split (split_long_message) and requeued at the front, files on the last chunk
   1. interaction.response.send_message(...)      if response not yet done
-  2. else interaction.followup.send(...)         (attachments converted to files)
+  2. else interaction.followup.send(...)
   3. on HTTPException/AttributeError: _fallback_send
        drop the 'ephemeral' flag, rewind files
        client.get_channel(interaction.channel_id).send(...)   <- plain channel message

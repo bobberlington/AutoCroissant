@@ -140,8 +140,8 @@ touched, and it fails if any remain. A repo that still has `setup.py` builds as 
 find . -name "*.so" -not -path "./.git/*"           # empty = nothing shadows a .py
 ```
 
-Artifacts stay gitignored (`*.so`, `*.c`, `*.cpp`, `*.pyd`, `*.dll`, `build/`, `__pycache__/`; the trailing-comment
-quirk that left `*.pyd`/`*.dll` unmatched was fixed 2026-10-19, 53db8ee).
+Only Python's caches stay gitignored (`__pycache__/`, `*.py[cod]`; the Cython patterns went 2026-11-12); deploy.sh
+removes untracked `.so`, `.c` and `build/` whatever `.gitignore` says.
 
 ## 6. Directory conventions
 

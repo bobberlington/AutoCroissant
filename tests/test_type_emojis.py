@@ -46,9 +46,9 @@ def state(monkeypatch, tmp_path):
     return te
 
 
-def _sync(client, shas, failed):
+def _sync(client, shas):
     assert te._client is client
-    asyncio.run(te.sync_changed_emojis(None, "owner/repo", shas, failed.append))
+    asyncio.run(te.sync_changed_emojis(None, "owner/repo", shas))
 
 
 def test_sync_changed_emojis(state, monkeypatch, capsys):
@@ -56,9 +56,7 @@ def test_sync_changed_emojis(state, monkeypatch, capsys):
     monkeypatch.setattr(te, "_client", client)
     te._blobs.update({"fire": "old", "fire_no": "old", "gone": "g", "gone_no": "g"})
     te.type_emojis.update({e.name: str(e) for e in client.emojis})
-    failed = []
-    _sync(client, {"Types/Fire.png": "new", "Types/Water.png": "w1", "Items/x.png": "i"}, failed)
-    assert failed == []
+    _sync(client, {"Types/Fire.png": "new", "Types/Water.png": "w1", "Items/x.png": "i"})
     assert sorted(client.created) == ["fire", "fire_no", "water", "water_no"]
     assert sorted(client.deleted) == ["fire", "fire_no", "gone", "gone_no"]
     assert te._blobs == {"fire": "new", "fire_no": "new", "water": "w1", "water_no": "w1"}
@@ -67,16 +65,15 @@ def test_sync_changed_emojis(state, monkeypatch, capsys):
     assert "water" in open(te.EMOJI_JSON).read()
 
     fetches = client.fetches
-    _sync(client, {"Types/Fire.png": "new", "Types/Water.png": "w1"}, failed)
-    assert client.fetches == fetches and failed == []                  # nothing changed: no Discord call
+    _sync(client, {"Types/Fire.png": "new", "Types/Water.png": "w1"})
+    assert client.fetches == fetches                                   # nothing changed: no Discord call
 
 
 def test_sync_fetch_failure(state, monkeypatch, capsys):
     client = Client(fail_fetch=True)
     monkeypatch.setattr(te, "_client", client)
-    failed = []
-    _sync(client, {"Types/Fire.png": "f"}, failed)
-    assert failed == ["owner/repo"] and client.created == []
+    _sync(client, {"Types/Fire.png": "f"})
+    assert client.created == []
     assert "Type emoji sync failed: 503 Service Unavailable" in capsys.readouterr().out
 
 

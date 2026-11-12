@@ -7,28 +7,6 @@ __pycache__/
 .Python
 
 # ===================================
-# Build artefacts (nothing is compiled since 2026-11-11; an old checkout may still hold Cython's)
-# ===================================
-# C/C++ sources Cython generated
-*.c
-*.cpp
-
-# Compiled extension modules (comments can't share a line with a pattern in .gitignore)
-# Linux/Mac
-*.so
-# Windows
-*.pyd
-*.dll
-
-# HTML annotation files (if linetrace=True)
-*.html
-
-# Build directories
-build/
-dist/
-*.egg-info/
-
-# ===================================
 # Discord Bot Specific
 # ===================================
 # Configuration with tokens/secrets

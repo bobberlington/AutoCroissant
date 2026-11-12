@@ -188,7 +188,7 @@ def outcome(top: list, votes: int) -> dict:
 
 def _outcome(post: Post) -> dict:
     found = post.entry.get("outcome") or {"text": "The votes could not be read.", "announce": False}
-    return {"text": found["text"], "announce": found.get("announce", found.get("forward", False))}   # forward: before 11-09
+    return {"text": found["text"], "announce": found.get("announce", False)}
 
 
 def _own_test(client, thread) -> bool:

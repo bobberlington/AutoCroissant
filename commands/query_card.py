@@ -14,7 +14,6 @@ from threading import Lock
 from requests import get
 from requests.exceptions import RequestException
 from typing import Optional
-from warnings import filterwarnings
 from numpy import array, flatnonzero, int32, maximum, minimum, where, zeros
 from pandas import DataFrame, Index, Series, concat, to_numeric
 from re import compile, escape, IGNORECASE
@@ -30,8 +29,6 @@ from commands.repo_history import commit_before, pinned_ref, raw_url, raw_url_at
 from commands.rulebook import label as chapter_label
 from commands.type_emojis import render_type_tokens
 from commands.utils import BREAK_LEN, queue_file, queue_message
-
-filterwarnings('ignore')
 
 # ========================
 # Configuration

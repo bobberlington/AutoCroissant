@@ -258,10 +258,7 @@ def draw(site: str, exe: str, key_of=None, known: str = "", fonts: Optional[list
             run(TO_JPEG % JPEG_QUALITY)
             params = {"printBackground": True, "preferCSSPageSize": True, "marginTop": 0, "marginBottom": 0, "marginLeft": 0,
                       "marginRight": 0, "generateDocumentOutline": True, "generateTaggedPDF": True}
-            try:
-                got = chrome.call("Page.printToPDF", params, session, seconds=240)
-            except RuntimeError:                       # an older Chrome without the outline: plain
-                got = chrome.call("Page.printToPDF", {k: v for k, v in params.items() if not k.startswith("generate")}, session, seconds=240)
+            got = chrome.call("Page.printToPDF", params, session, seconds=240)
             return b64decode(got["data"])
         return dict(listed["chapters"]), shots, Printer(pdf, chrome.close), key, page, plain
     except BaseException:

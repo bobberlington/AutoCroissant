@@ -165,7 +165,7 @@ async def get_channel_messages(interaction: Interaction,
         # Fetch messages
         messages = []
         async for msg in channel.history(limit=limit):
-            author = f"{msg.author.name}#{msg.author.discriminator}"
+            author = msg.author.name
             timestamp = msg.created_at.strftime("%Y-%m-%d %H:%M:%S")
             content = msg.content or "[No text content]"
 

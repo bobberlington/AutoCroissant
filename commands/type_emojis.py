@@ -5,7 +5,7 @@ from json import dump, load
 from os import remove, replace
 from os.path import exists
 from re import compile, sub
-from typing import Callable, Optional
+from typing import Optional
 
 from discord import Client, Interaction
 from discord.utils import escape_markdown
@@ -349,8 +349,7 @@ async def sync_type_emojis(interaction: Optional[Interaction], client: Client,
     queue_long_message(interaction, report)
 
 
-async def sync_changed_emojis(interaction: Optional[Interaction], repository: str, shas: dict,
-                              on_fail: Optional[Callable[[str], None]] = None) -> None:
+async def sync_changed_emojis(interaction: Optional[Interaction], repository: str, shas: dict) -> None:
     """
     Queued by /update_stats after it fetched a changed, complete tree of the card repo: upload or replace the
     emojis whose icon blob is new or changed, and delete the ones whose icon is gone. Says one line when
@@ -360,12 +359,9 @@ async def sync_changed_emojis(interaction: Optional[Interaction], repository: st
         interaction: Discord interaction to report to, or None
         repository: GitHub repository (USER/REPO) the tree is from
         shas: {repo path: blob sha} of the tree
-        on_fail: Called with repository when something failed, so the next /update_stats retries
     """
     client = _client
     if client is None:                          # startup sync not run yet
-        if on_fail:
-            on_fail(repository)
         return
     async with _lock:
         if not _blobs_loaded:
@@ -381,7 +377,6 @@ async def sync_changed_emojis(interaction: Optional[Interaction], repository: st
             existing = {emoji.name: emoji for emoji in await client.fetch_application_emojis()}
         except Exception as e:
             report = f"Type emoji sync failed: {e} (next /update_stats retries)"
-            failed = [str(e)]
         else:
             _adopt(icons, existing)
             names = [name for name, (_, sha, _) in icons.items() if _blobs.get(name) != sha or name not in existing]
@@ -398,8 +393,6 @@ async def sync_changed_emojis(interaction: Optional[Interaction], repository: st
             parts += [f"{len(removed)} removed"] if removed else []
             parts += [f"{len(failed)} failed: {', '.join(failed)} (next /update_stats retries)"] if failed else []
             report = "Type emojis: " + ", ".join(parts)
-        if failed and on_fail:
-            on_fail(repository)
 
     if interaction is None:
         print(report)

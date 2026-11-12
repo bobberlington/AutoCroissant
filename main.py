@@ -750,7 +750,7 @@ async def slash_react(interaction: Interaction,
 # Queue Handling Loops #
 ########################
 MAX_CONTENT = 2000                                      # Discord's message length limit
-LAST_ONLY = ("file", "files", "attachments", "embed", "embeds", "view", "links")   # a split message's last chunk only
+LAST_ONLY = ("file", "files", "embed", "embeds", "view", "links")   # a split message's last chunk only
 _running: set = set()                                   # queued commands in flight
 
 
@@ -779,19 +779,9 @@ def _split_content(queue, interaction, kwargs: dict) -> bool:
     return True
 
 
-def _attachments_to_files(kwargs: dict) -> None:
-    """A new message takes files, not edit-style attachments."""
-    if "attachments" in kwargs:
-        if "files" not in kwargs:
-            kwargs["files"] = kwargs.pop("attachments")
-        else:
-            kwargs["files"].extend(kwargs.pop("attachments"))
-
-
 async def _fallback_send(interaction, kwargs: dict) -> bool:
     """Send as a plain channel message (the interaction failed or expired). False if the channel is gone."""
     kwargs.pop("ephemeral", None)
-    _attachments_to_files(kwargs)
     for f in [kwargs.get("file")] + list(kwargs.get("files") or []):
         if isinstance(f, File):
             f.reset()                                   # the failed send read it to the end
@@ -814,7 +804,6 @@ async def _dispatch(interaction, send_kwargs: dict) -> None:
         if not interaction.response.is_done():
             await interaction.response.send_message(**send_kwargs)
         else:
-            _attachments_to_files(send_kwargs)
             await interaction.followup.send(**send_kwargs)
     except (HTTPException, AttributeError):
         await _fallback_send(interaction, send_kwargs)  # fallback to sending as a new message

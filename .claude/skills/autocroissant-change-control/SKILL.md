@@ -36,7 +36,7 @@ Facts and line numbers verified 2026-07-11 (repo at commit 284d13c, 192 commits)
 |---|---|---|---|
 | (a) Code | any `.py`, requirements files, skills | `git push` from a dev machine → on the Jetson: the `jetson-deploy` skill (pull, `requirements-bot.txt` wheels, leftover build files removed, restart (always), journal check). Nothing is compiled since 2026-11-11, so Discord `/pull` + `/restart_bot` or `/update` also bring the new code, but they install nothing: a `requirements-bot.txt` change needs the deploy. **Deploy rule:** push main and deploy the jetson in one sitting (2026-10-22/23: a pull next to stale `.so` files failed at import; the jetson's leftovers went 2026-11-11). A psd-tools fork tag change is one line in `requirements-cards.txt` (the one pin; the card Actions install that file from main): nothing on the jetson, which has no fork since 2026-11-11 | The offline suite passes before every push: `~/.venvs/ac-py314-fork/bin/python -m pytest -n auto -q tests` (933 tests on 2026-11-10, about 2 minutes; autocroissant-validation-and-qa row 1c). A change to the parser or any card module also needs the ~812-PSD old-vs-new parse gate (validation-and-qa §4.1 method A: 0 differences, or every difference intended and written down first). A parser change that must reach the stored cards bumps `PARSER_VERSION` (psd_parser.py:25; 7 since 2026-11-09): the next Card sync re-parses every card once (~812 PSDs over budgeted runs, approved through gate G4; validation-and-qa §4). Checklist below if it adds a command; non-negotiables table always |
 | (b) Data (the card data) | db/ on TTSCardMaker's `data` branch | Written ONLY by the Card sync Action (stage `build`, `python -m commands.card_data`; at most one data commit per run, never forced; gates G1-G6); people change it through its inputs: the PSDs, PNGs and `site/` files on TTSCardMaker main (class (d)). A data rollback is a `restore=<good data commit>` dispatch (DATA_BUILD_ACTION.md §13). Until 2026-10-25 the pickles here, written by `/update_stats` and committed by `/push` | **The data commit's review** (its per-card lines and the job summary; `diff_stats.py` between two data commits, below) |
-| (c) Config | config.py values (TOKEN, ADMINS, GIT_TOKEN, browser_cookies, ...) | Edited by hand per machine. NEVER committed (gitignored, `.gitignore:36` as of 2026-10-19). Values are secret — never print or quote them | New config *fields* route through autocroissant-config-and-flags |
+| (c) Config | config.py values (TOKEN, ADMINS, GIT_TOKEN, browser_cookies, ...) | Edited by hand per machine. NEVER committed (gitignored, `.gitignore:13` as of 2026-11-12). Values are secret — never print or quote them | New config *fields* route through autocroissant-config-and-flags |
 | (d) Card content | a card's art, ability text, stats, folder; Types/ icons, the stoogedings font and its manifest | Edit in TTSCardMaker (or on the website) and push THERE; Card sync re-parses and commits the data, the bot syncs it (and re-syncs emojis via `/sync_emojis`) | TTSCardMaker's own process; then the data gate applies to the re-parse. Renaming or deleting a Types/ PNG is a cross-repo change — ttscardmaker-companion §1.7 |
 
 If your change mixes classes, split it. The card data is never committed by hand: a hand build is published only as the
@@ -91,22 +91,21 @@ replace), as card_db's writes are.
 Verified against `.gitignore` and `git ls-files`, 2026-07-11; line numbers re-read 2026-10-20 (53db8ee
 added `reminder.pkl.tmp` and `.claude/settings.local.json` and fixed the `*.pyd`/`*.dll` patterns;
 05c643e dropped the `models/` lines with the AI code; repo_history.json and type_emojis.json lines added 2026-10-20 shifted the rest by 6)
-and 2026-10-23 (the font and card-data lines shifted the rest again):
+and 2026-10-23 (the font and card-data lines shifted the rest again) and 2026-11-12 (the build-artefact block deleted):
 
 | Path | .gitignore line | Why |
 |---|---|---|
-| `config.py` | 36 | Secret tokens (TOKEN, GIT_TOKEN...). Per-machine. A leaked token means rotation, not deletion — git history is forever |
-| `.ssh/` | 37 | Credentials, same reasoning |
-| `/reminder.json`, `reminder.json.tmp` | 92-93 (2026-10-26) | Volatile per-host scheduling state (see above). Production's copy is committed to `backup/reminder.json` by the bot (commands/backup.py, from a separate clone; run-and-operate §9), so pull before pushing main |
-| `/forum_votes.json`, `forum_votes.json.tmp` | 95-96 (2026-11-09) | The proposal forum's per-host settings and steps done (commands/forum_votes.py); edit by hand only with the bot stopped |
-| `repo_history.json`, `.tmp` | 45-46 (added 2026-10-20) | Per-machine map of repo path -> commit that last changed it, rebuilt from the history clone by commands/repo_history.py |
-| `type_emojis.json`, `.tmp` | 48-49 (added 2026-10-20) | Per-machine map of bot application id -> {type emoji name -> icon blob it was made from} (commands/type_emojis.py); if deleted, startup adopts the existing emojis as current (an icon edited meanwhile then needs `/sync_emojis refresh:True`) |
-| `card_data/` | (2026-10-22) | The bot's copy of the Card sync data (the data branch's `db/`; commands/card_sync.py) |
-| `card_tree.json`, `.tmp` | (2026-10-25) | The card repo's last tree and its ETag, the card list at startup (commands/query_card.py) |
-| `.claude/settings.local.json` | 63 (added 2026-10-19) | Personal Claude Code settings; the shared `.claude/skills/` library IS committed |
-| `music/` | 59 | yt-dlp downloads; bulky, regenerable (dir kept by the tracked `music/.gitignore` stub — no `.gitkeep` exists despite the `!music/.gitkeep` exception) |
-| `*.log`, `logs/`, `*.csv`, `*.txt` | 70-73 (`requirements-dev.txt`, `requirements-cards.txt` and `requirements-bot.txt` re-included at 74-76) | Logs and the /export_cards //export_rulebook exports (`stats.csv`, `stats.txt`, `rules.txt`) land in the repo root; the globs keep them out |
-| `*.so`, `*.c`, `*.cpp`, `*.pyd`, `*.dll`, `build/` | 13-14, 18-21, 27 | Cython's build artifacts (nothing compiled since 2026-11-11; deploy.sh removes the jetson's leftovers); the stale-.so trap: autocroissant-build-and-env §5 |
+| `config.py` | 13 | Secret tokens (TOKEN, GIT_TOKEN...). Per-machine. A leaked token means rotation, not deletion — git history is forever |
+| `.ssh/` | 14 | Credentials, same reasoning |
+| `/reminder.json`, `reminder.json.tmp` | 71-72 (2026-10-26) | Volatile per-host scheduling state (see above). Production's copy is committed to `backup/reminder.json` by the bot (commands/backup.py, from a separate clone; run-and-operate §9), so pull before pushing main |
+| `/forum_votes.json`, `forum_votes.json.tmp` | 74-75 (2026-11-09) | The proposal forum's per-host settings and steps done (commands/forum_votes.py); edit by hand only with the bot stopped |
+| `repo_history.json`, `.tmp` | 17-18 (added 2026-10-20) | Per-machine map of repo path -> commit that last changed it, rebuilt from the history clone by commands/repo_history.py |
+| `type_emojis.json`, `.tmp` | 20-21 (added 2026-10-20) | Per-machine map of bot application id -> {type emoji name -> icon blob it was made from} (commands/type_emojis.py); if deleted, startup adopts the existing emojis as current (an icon edited meanwhile then needs `/sync_emojis refresh:True`) |
+| `card_data/` | 23 (2026-10-22) | The bot's copy of the Card sync data (the data branch's `db/`; commands/card_sync.py) |
+| `card_tree.json`, `.tmp` | 27-28 (2026-10-25) | The card repo's last tree and its ETag, the card list at startup (commands/query_card.py) |
+| `.claude/settings.local.json` | 34 (added 2026-10-19) | Personal Claude Code settings; the shared `.claude/skills/` library IS committed |
+| `music/` | 31 | yt-dlp downloads; bulky, regenerable (dir kept by the tracked `music/.gitignore` stub — no `.gitkeep` exists despite the `!music/.gitkeep` exception) |
+| `*.log`, `logs/`, `*.csv`, `*.txt` | 48-51 (`requirements-dev.txt`, `requirements-cards.txt` and `requirements-bot.txt` re-included at 52-54) | Logs and the /export_cards //export_rulebook exports (`stats.csv`, `stats.txt`, `rules.txt`) land in the repo root; the globs keep them out |
 
 **Trap inside that table:** `*.txt` is gitignored, yet `requirements.txt` is
 tracked — only because already-tracked files ignore .gitignore. Any NEW `.txt` (or
@@ -224,7 +223,7 @@ ignored — read the story before you decide the rule doesn't apply to you.
   first *invoked*, not at startup — so it survives a smoke test and dies in
   production. Keep rebind-then-decorator, one block per command.
 - **Adding a new `.txt`/`.csv`/`.log` file and assuming git tracks it.** The
-  gitignore globs (lines 78-81 as of 2026-10-23) silently exclude it (see the trap note above).
+  gitignore globs (lines 48-51 as of 2026-11-12) silently exclude it (see the trap note above).
 - **Adding torch/diffusers or other AI deps to `requirements.txt`.** That breaks
   non-negotiable #4 (AI lives only on `archive/ai-generation`).
 - **Pushing a hand build to `data`** outside the Card sync fallback (DATA_BUILD_ACTION.md §13): Card sync is the one
@@ -344,3 +343,5 @@ main.py, update_bot.py, help.py, psd_parser.py and card_models.py citation re-po
 2026-11-11 (nocython): class (a) ships without a build or a fork step (requirements-bot.txt; fork releases re-pin
 requirements-cards.txt only); step 5 is the import closures (tests/test_bot_env.py, psd_remote, sparse lists TC first);
 rule 1 no longer about compiled modules; the type-hint bullet (Cython's enforcement) deleted; .gitignore lines re-pointed.
+
+2026-11-12 (dead code): the never-commit table's Cython build-artifact row dropped with its .gitignore block (nothing compiles; deploy.sh's cleanup ignores .gitignore); .gitignore lines re-pointed.
