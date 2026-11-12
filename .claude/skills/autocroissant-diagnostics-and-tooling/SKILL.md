@@ -23,7 +23,7 @@ at all and runs from anywhere — it needs only psd-tools and an absolute/`~` PS
 **Which Python (2026-10-23).** `diff_stats.py` and `inspect_card_data.py` run on the Mac's plain `python3` (Homebrew
 3.14.10 since 2026-11-11). `parse_one.py`, `gap_trace.py` and `dump_psd_layers.py` need psd-tools and pandas, which that `python3` lacks
 ("No module named pandas" / "psd_tools"): use the production-equivalent venv `~/.venvs/ac-py314-fork` (the psd-tools fork at
-the pin, `cards-20261111` = da069245 since 2026-11-11, as on the jetson). Below, `$P` means `~/.venvs/ac-py314-fork/bin/python` for those three.
+the pin, `cards-20261112` = aa6e38ee since 2026-11-11, as on the jetson). Below, `$P` means `~/.venvs/ac-py314-fork/bin/python` for those three.
 
 **The card data in any form (2026-10-23).** `diff_stats.py` and `inspect_card_data.py` read it through
 `commands.card_db.read_cards`: a `db/` folder (or a folder holding `db/`: `card_data/`, an Actions artifact), a
@@ -814,5 +814,7 @@ row and Workflow 1; the gate snapshots go to `~/Documents/Tools/wt/scratch/head/
 2026-11-11 (docs check): the data-branch fetches have no --depth (full-history clone since 2026-11-10); diff_stats reads no pickles; the stale-`.so` bullet names card_check, card_models and psd_parser.
 
 2026-11-11 (fork release): the fork venv's pin is `cards-20261111` (da069245).
+
+2026-11-11 (fork release): the fork venv's pin is `cards-20261112` (aa6e38ee).
 
 2026-11-11 (nocython): the stale-.so note for old checkouts only (no setup.py clean).
