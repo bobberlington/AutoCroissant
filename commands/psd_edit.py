@@ -3222,7 +3222,7 @@ def several_rows(psd: PSDImage) -> bool:
     return _still_creatures(psd, None)
 
 
-ART_FILL = 0.9              # bar art filling less of its box is separate icons (the template's fills 0.977)
+ART_FILL = 0.8              # bar art filling less of its box is separate icons (template 0.977, Croissant's 0.86)
 
 
 def art_fill(psd: PSDImage, box: tuple) -> Optional[float]:

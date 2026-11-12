@@ -258,6 +258,14 @@ def test_still_and_swapped(monkeypatch):
     assert cc.swapped(psd) == ["def", "atk"]
 
 
+def test_bar_style_by_art_fill(monkeypatch):
+    """Croissant's continuous bars (0.86 of their box: Zigg, Uumuu) are the template's; Monkey D Letion's icons (0.68) not."""
+    monkeypatch.setattr(cc, "comp_bars", lambda psd: {"hp": [(None, 5, (0, 0, 1, 1))]})
+    for fill, style in ((0.86, ("new", "")), (0.68, ("custom", "icons"))):
+        monkeypatch.setattr(cc.psd_edit, "art_fill", lambda psd, box: fill)
+        assert cc.bar_style(None, None) == style
+
+
 def test_art_over_darks(monkeypatch):
     """Only Lines may lie over the new bars' Darks group: else a stat edit bakes for real (Sans, The Thin Man)."""
     layer = lambda name, shown=True: SimpleNamespace(name=name, is_visible=lambda: shown)
