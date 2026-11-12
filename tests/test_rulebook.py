@@ -320,8 +320,8 @@ def test_card_sync_keeps_the_look_in_the_background(tmp_path):
     icon), as after a failure; after a lag, once (--wait 0). Rulebook PDF stop ends a look."""
     yaml = pytest.importorskip("yaml")
     path = SITE_SRC / ".github" / "workflows" / "card-sync.yml"
-    if not path.is_file() or not shutil.which("timeout"):
-        pytest.skip(f"no {path} or timeout")
+    if not path.is_file():
+        pytest.skip(f"no {path}")
     steps = {s.get("name"): s for s in yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["main"]["steps"]}
     start, pages, stop = steps["Rulebook PDF start"], steps["Rulebook PDF"], steps["Rulebook PDF stop"]
     assert pages["env"]["STARTED"] == "${{ steps.pdf-start.outcome }}" and "steps.pdf-start.outcome == 'success'" in stop["if"]
@@ -388,8 +388,8 @@ def test_card_sync_saves_right_after_the_gate(tmp_path):
     file back and starts both again on B, whose count of 1 lets the redraw run."""
     yaml = pytest.importorskip("yaml")
     path = SITE_SRC / ".github" / "workflows" / "card-sync.yml"
-    if not path.is_file() or not shutil.which("timeout") or not shutil.which("jq"):
-        pytest.skip(f"no {path}, timeout or jq")
+    if not path.is_file():
+        pytest.skip(f"no {path}")
     main = yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"]["main"]
     names = [s.get("name") for s in main["steps"]]
     steps = {s.get("name"): s for s in main["steps"]}

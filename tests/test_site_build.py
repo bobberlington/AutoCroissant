@@ -1173,8 +1173,8 @@ def test_site_push_with_card_data_left_to_the_early_build(tmp_path):
     no such build in 30 s: it builds."""
     yaml = pytest.importorskip("yaml")
     workflows = SITE_SRC / ".github" / "workflows"
-    if not (workflows / "site.yml").is_file() or not shutil.which("jq"):
-        pytest.skip(f"no {workflows / 'site.yml'} or jq")
+    if not (workflows / "site.yml").is_file():
+        pytest.skip(f"no {workflows / 'site.yml'}")
     steps = yaml.safe_load((workflows / "site.yml").read_text(encoding="utf-8"))["jobs"]["build"]["steps"]
     names = [s.get("name") or s.get("id") or s.get("uses") for s in steps]
     early, guard = steps[0], "steps.early.outputs.run == ''"
