@@ -495,9 +495,14 @@ def _git(where: str, *args: str, stdin: Optional[bytes] = None) -> str:
         return run_process(["git", "-C", where, *args], input=stdin, capture_output=True, check=True, timeout=GIT_TIMEOUT,
                            env={**batch_env(where), **IDENTITY}).stdout.decode("utf-8")
     except CalledProcessError as error:
-        raise Unpublished(f"git {args[0]} failed: {(error.stderr or b'').decode('utf-8', 'replace').strip()}") from error
+        raise Unpublished(f"git {_verb(args)} failed: {(error.stderr or b'').decode('utf-8', 'replace').strip()}") from error
     except (TimeoutExpired, OSError) as error:
-        raise Unpublished(f"git {args[0]} failed: {error}") from error
+        raise Unpublished(f"git {_verb(args)} failed: {error}") from error
+
+
+def _verb(args: tuple) -> str:
+    """The git command past any -c option."""
+    return args[2] if args[0] == "-c" else args[0]
 
 
 def _files(where: str, head: str) -> dict:
@@ -529,7 +534,7 @@ def publish(found: dict, where: str, head: str = "HEAD", remote: str = "origin")
     none when nothing changed. Built on the branch head, TRIES times from a moved one.
 
     Args:
-        where: A checkout of the card repo (its git and credentials; blobless is enough: --no-thin pushes)
+        where: A checkout of the card repo (its git and credentials; blobless is enough: pushes without delta search)
         head: The commit whose PSDs keep their plates
 
     Returns:
@@ -556,7 +561,8 @@ def publish(found: dict, where: str, head: str = "HEAD", remote: str = "origin")
             tree = _git(where, "mktree", "--missing", stdin="".join(f"100644 blob {s}\t{n}\n" for n, s in sorted(files.items())).encode()).strip()
             commit = _git(where, "commit-tree", tree, *(["-p", parent] if parent else []), "-m",
                           f"Card plates: {added} added, {dropped} dropped").strip()
-            _git(where, "push", "-q", "--no-thin", remote, f"{commit}:refs/heads/{BRANCH}")
+            _git(where, "-c", "pack.window=0", "push", "-q", "--no-thin", remote,   # no delta search: it would want
+                 f"{commit}:refs/heads/{BRANCH}")                              # replaced plates' blobs (HTTPS is thin)
         except Unpublished as error:            # most often a push refused: the branch moved since the fetch
             why = str(error)
             print(f"card_plates: attempt {attempt + 1} of {TRIES}: {why}", file=stderr)

@@ -129,3 +129,12 @@ def test_publish_adds_keeps_and_drops(tmp_path, monkeypatch):
     assert (done["added"], done["dropped"], done["kept"]) == (0, 1, 1) and files() == [f"{a}.json"]
     assert json.loads(git("-C", str(origin), "show", f"{cp.BRANCH}:{a}.json")) == plate
     assert cp.publish({a: plate}, str(later))["commit"] == ""                                   # nothing changed
+    fresh = tmp_path / "fresh"                                                  # a plate replaced, its old blob not here
+    monkeypatch.delenv("GIT_NO_LAZY_FETCH")
+    git("clone", "-q", "--filter=blob:none", f"file://{origin}", str(fresh))
+    monkeypatch.setenv("GIT_NO_LAZY_FETCH", "1")
+    run = cp.run_process                                                        # HTTPS pushes thin whatever --no-thin says
+    monkeypatch.setattr(cp, "run_process", lambda cmd, **kw: run(["--thin" if a == "--no-thin" else a for a in cmd], **kw))
+    newer = {"v": 1, "crops": [[n, n, 9, 9] for n in range(99)]}
+    assert cp.publish({a: newer}, str(fresh))["added"] == 1
+    assert json.loads(git("-C", str(origin), "show", f"{cp.BRANCH}:{a}.json")) == newer
