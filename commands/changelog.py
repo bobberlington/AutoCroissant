@@ -24,10 +24,10 @@ from typing import Optional
 from urllib.parse import quote
 
 from global_config import RULEBOOK_DIR, SITE_URL, TIMEZONE
-from commands.card_db import write_text
+from commands.card_db import parse_stats, write_text
 from commands.card_edits import art_list, as_parsed
-from commands.card_history import same_series, unknown
-from commands.card_models import CardInfo
+from commands.card_history import STAT_KINDS, STAT_MAX, same_series, unknown
+from commands.card_models import RAID_STARS, CardInfo
 
 # ========================
 # Configuration
@@ -414,6 +414,34 @@ def rewrite_events(db: str, fix) -> None:
             write_text(path, new)
 
 
+def drop_misread(db: str) -> int:
+    """
+    Past changed events' stat lines and verdict where a side was misread, as field_changes leaves them out now (a kind
+    with bars: a stat none, or above STAT_MAX without the card's allow_high_stats or 6+ stars); an event left with no
+    field is art. Every seq and the posted cursor kept (png_changes backfill --events). Returns the events changed.
+    """
+    with open(join(db, "stats.json"), encoding="utf-8") as fh:
+        stats = parse_stats(fh.read())
+    keys, done = {key for key, _, _ in STATS}, []
+
+    def fix(event: dict) -> dict:
+        fields = event.get("fields")
+        if event.get("kind") != "changed" or not isinstance(fields, dict) or event.get("card_type") not in STAT_KINDS:
+            return event
+        high = getattr(stats.get(event.get("card")), "allow_high_stats", False) or (event.get("stars") or 0) >= RAID_STARS
+        sides = [[fields[key][i] for key in keys & set(fields)] for i in (0, 1)]
+        if not any(None in side or (not high and any(isinstance(v, int) and v > STAT_MAX for v in side)) for side in sides):
+            return event
+        done.append(event.get("seq"))
+        kept = {key: value for key, value in fields.items() if key not in keys | {"creatures"}}
+        out = {key: value for key, value in event.items() if key not in ("fields", "verdict", "buffs", "nerfs")}
+        if not kept:
+            return {**out, "kind": "art"}
+        return {**out, "fields": kept, **{key: value for key, value in classify(kept).items() if value is not None}}
+    rewrite_events(db, fix)
+    return len(done)
+
+
 def read_posted(db: str) -> dict:
     path = join(db, CHANGELOG_DIR, POSTED_JSON)
     if not isfile(path):
@@ -754,6 +782,7 @@ __all__ = [
     'assign_pushes',
     'card_link',
     'classify',
+    'drop_misread',
     'edit_credit',
     'events',
     'field_changes',
