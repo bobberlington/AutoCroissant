@@ -135,8 +135,6 @@ def test_card_notes_apply_the_edits_then_validate(fake_cards, tmp_path):
     assert cc.card_notes(parser, cc.CardEdits.parse(edits({"A": {"allow_high_stats": True}})), str(psd), rel) == []
     fake_cards[b"a"] = lambda r: creature(r, 7, 4, -1, -1, types=["active"], ability=None)
     assert cc.card_notes(parser, None, str(psd), rel) == []                                 # cards need no ability (10-25)
-    fake_cards[b"a"] = lambda r: creature(r, 7, 4, 5, 6, problems=["NO ABILITY LAYER"], ability=None, card_type="minion")
-    assert cc.card_notes(parser, None, str(psd), rel) == []                                 # older data's note: dropped
     fake_cards[b"a"] = lambda r: creature(r, problems=[NO_STATS])          # no bar read: one note, not four
     assert cc.card_notes(parser, None, str(psd), rel) == [NO_STATS]
     assert cc.card_notes(parser, cc.CardEdits.parse(edits({"A": {"hp": 5}})), str(psd), rel) == [NO_STATS]   # as the website

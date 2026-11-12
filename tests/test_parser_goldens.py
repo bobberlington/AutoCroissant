@@ -59,7 +59,8 @@ class _Layer:
 
 
 def _fx_problems(fx_name, text, visible=True):
-    from commands.psd_analyzer import CardInfo, StatsDatabase
+    from commands.card_models import StatsDatabase
+    from commands.psd_analyzer import CardInfo
     from commands.psd_parser import PSDParser
     card = CardInfo(name="Card", card_type="item")
     PSDParser([], StatsDatabase())._check_effect_layer(_Layer(fx_name, visible=visible), [_Layer("Ability", text)], card)
@@ -81,20 +82,20 @@ def test_orphaned_effect_layer():
 def test_unfilled_line_gaps_are_padding():
     """A line's leading gap that no type fills is layout padding (a body a row below its label, Warcraftian Druid's
     "Bear:" line): gone. A gap a type fills, and one inside a line, stay as before."""
-    from commands.psd_analyzer import StatsDatabase
+    from commands.card_models import StatsDatabase
     from commands.psd_parser import BoundingBox, PSDParser
     p = PSDParser(["fire"], StatsDatabase())
     texts = [("Vek'nilash:\n", BoundingBox(18, 1951)), ("            Immune.\n(2CD) Hit.\n", BoundingBox(250, 2000)),
              ("Turtle        Cat\n", BoundingBox(20, 2100))]
     assert p._process_abilities(texts, [], 1200) == "Vek'nilash:\nImmune.\n(2CD) Hit.\nTurtle        Cat"
-    assert p._process_abilities([("    Burn.\n    Then.\n", BoundingBox(20, 2000))], [("fire", BoundingBox(30, 2010))], 1200) \
+    assert p._process_abilities([("    Burn.\n    Then.\n", BoundingBox(20, 2000, 2100))], [("fire", BoundingBox(30, 2010))], 1200) \
         == "[fire] Burn.\nThen."
 
 
 def test_one_line_label_beside_a_part():
     """A one-line part with another in its row labels that one's first line (Twin Emperors' "Vek'nilash:" at y 1951,
     its body at 1958, 11-09); a label a row above stays on its own line."""
-    from commands.psd_analyzer import StatsDatabase
+    from commands.card_models import StatsDatabase
     from commands.psd_parser import BoundingBox, PSDParser
     p = PSDParser([], StatsDatabase())
     texts = [("Vek'nilash:\n", BoundingBox(18, 1951)), ("            Immune.\n(2CD) Hit.\n", BoundingBox(231, 1958)),
@@ -107,7 +108,7 @@ def test_one_line_label_beside_a_part():
 def test_leftover_icon_only_in_ability_span():
     """A type icon with no gap left is appended only within a line of an Ability layer's box: Tainted Lazarus's
     creature 2 header icon (y 2242, its Ability boxes end at 1382) is no ability's (11-09)."""
-    from commands.psd_analyzer import StatsDatabase
+    from commands.card_models import StatsDatabase
     from commands.psd_parser import BoundingBox, PSDParser
     p = PSDParser(["undead"], StatsDatabase())
     texts = [("Attacks inflict 1T Afraid.\n", BoundingBox(12, 1255, 1382))]
@@ -118,7 +119,7 @@ def test_leftover_icon_only_in_ability_span():
 def test_lowercase_part_continues_the_line():
     """Parts laying one text out line by line (Apex Predator, 11-09): a lowercase start continues the line before it,
     each part without its padding. With none, the old join (Miracle Matter's lines of blanks go: padding)."""
-    from commands.psd_analyzer import StatsDatabase
+    from commands.card_models import StatsDatabase
     from commands.psd_parser import BoundingBox, PSDParser
     p = PSDParser(["fire"], StatsDatabase())
     texts = [("Cannot attack.\n", BoundingBox(357, 1780)), ("\n\n \n \n\nWhen next to it, this counts as", BoundingBox(52, 2248)),
@@ -133,7 +134,8 @@ def test_text_keeps_its_quotes():
     """The parse reads the text itself, not its repr: no \\' (the old rule page 03 Setting Up's "they're") and a quote
     opening or closing the ability stays (Flip's "Invert", 11-09)."""
     from psd_tools.psd.engine_data import String
-    from commands.psd_analyzer import CardInfo, StatsDatabase
+    from commands.card_models import StatsDatabase
+    from commands.psd_analyzer import CardInfo
     from commands.psd_parser import MutableValue, PSDParser
     layer = types.SimpleNamespace(name="Ability", engine_dict={"Editor": {"Text": String('They\'re "in" now\r')}}, resource_dict={},
                                   bbox=(0, 2000, 100, 2100), is_visible=lambda: True)
@@ -150,7 +152,8 @@ def test_header_font_icons_give_an_aux_items_type():
     """Icons typed in the stoogedings font in the header are header icons too (_process_text_layer's header): of two
     item-type icons in one text layer the first typed is the item type."""
     from psd_tools.psd.engine_data import String
-    from commands.psd_analyzer import CardInfo, StatsDatabase
+    from commands.card_models import StatsDatabase
+    from commands.psd_analyzer import CardInfo
     from commands.psd_parser import MutableValue, PSDParser
     p = PSDParser([], StatsDatabase())
     p._icon_font_spans, p._flag_misplaced_tokens = (lambda layer, text: [(0, 1)]), (lambda *a: None)

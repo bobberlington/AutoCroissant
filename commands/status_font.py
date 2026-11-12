@@ -103,13 +103,13 @@ def _strokes(data) -> bool:
     return any(_on(i) for key in (b"FrFX", b"frameFXMulti") if key in data for i in _items(data[key]))
 
 
-def _effects(layer, status, chart_stroke: bool = False):
+def _effects(layer, status):
     """The title's effect blocks as the chart makes them: (lfx2, lrFX or None, [types taken], whole), or None when the
     chart has no lfx2 or enables nothing to take. A title with no style drawn (no lfx2, its master switch off) takes the
     chart's blocks whole, as its status words do (whole). Else each type the chart's layer enables replaces the title's
-    own of that type (in the title's key order; one it lacks added before numModifyingFX); the title's own Stroke stays
-    unless chart_stroke; a glow or shadow cast from the glyphs grows by the title's stroke past the chart's (grown), so
-    it shows past it as on the chart. lrFX: the chart's enabled entries (sized as lfx2's)."""
+    own of that type (in the title's key order; one it lacks added before numModifyingFX); the title's own Stroke
+    stays; a glow or shadow cast from the glyphs grows by the title's stroke past the chart's (grown), so it shows past
+    it as on the chart. lrFX: the chart's enabled entries (sized as lfx2's)."""
     mine, theirs = layer.tagged_blocks.get(LFX2), status.blocks.get(LFX2)
     if theirs is None:
         return None
@@ -121,7 +121,7 @@ def _effects(layer, status, chart_stroke: bool = False):
         legacy = status.blocks.get(LRFX)
         legacy = deepcopy(legacy) if legacy is not None else None
         return deepcopy(theirs), legacy, sorted(k.decode() for k in take), True
-    if not chart_stroke and _strokes(mine.data):
+    if _strokes(mine.data):
         take.pop(b"FrFX", None)
     if not take:
         return None
@@ -170,10 +170,10 @@ def _effects(layer, status, chart_stroke: bool = False):
     return block, legacy, sorted(k.decode() for k in take), False
 
 
-def _effects_off(layer, status, chart_stroke: bool = False):
+def _effects_off(layer, status):
     """_effects when the layer's enabled lfx2 effects draw otherwise (psd_edit._style_key), else None. lrFX is not
     compared: Photoshop writes it again from lfx2 on every save (Hexed's glow colour 2 -> 0 of 65535)."""
-    made = _effects(layer, status, chart_stroke)
+    made = _effects(layer, status)
     if made is None:
         return None
     now = psd_edit._style_key({LFX2: layer.tagged_blocks.get(LFX2)})
@@ -407,7 +407,7 @@ def _rgb(fill) -> tuple:
     return tuple(round(float(v) * 255) for v in tuple(fill)[-3:])
 
 
-def _wants(layer, title: bool, status, chart_stroke: bool = False) -> tuple:
+def _wants(layer, title: bool, status) -> tuple:
     """(body runs, font off, fill off, effects off) of a visible text layer: what restyle changes on it."""
     from commands.card_standards import run_fonts
     _, runs = run_fonts(layer)
@@ -419,7 +419,7 @@ def _wants(layer, title: bool, status, chart_stroke: bool = False) -> tuple:
     titled = title and status is not None
     fill = titled and any(c is not None and _rgb(c) != _rgb(status.fill)
                           for a, b, c in psd_edit.run_fills(layer) if any(a < y and x < b for x, y in body))
-    effects = _effects_off(layer, status, chart_stroke) if titled and status.styled else None
+    effects = _effects_off(layer, status) if titled and status.styled else None
     return body, font, fill, effects
 
 
@@ -434,7 +434,7 @@ def _start(psd, rel: str, chart: dict) -> tuple:
     return titles, status
 
 
-def plan(psd, rel: str, chart: Optional[dict], chart_stroke: bool = False) -> list:
+def plan(psd, rel: str, chart: Optional[dict]) -> list:
     """The visible text layers restyle would change (nothing drawn, nothing edited): [] out of scope or unreadable."""
     if not chart or not rel or not in_scope(rel):
         return []
@@ -445,13 +445,13 @@ def plan(psd, rel: str, chart: Optional[dict], chart_stroke: bool = False) -> li
     out = []
     for layer in psd.descendants():
         if layer.kind == "type" and layer.is_visible():
-            body, font, fill, effects = _wants(layer, any(layer is t for t in titles), status, chart_stroke)
+            body, font, fill, effects = _wants(layer, any(layer is t for t in titles), status)
             if font or fill or effects:
                 out.append(layer)
     return out
 
 
-def restyle(psd, rel: str, chart: dict, fonts_dir: str, chart_stroke: bool = False) -> list:
+def restyle(psd, rel: str, chart: dict, fonts_dir: str) -> list:
     """The card's visible text in Krabby Patty, its title in its status's look (module doc); in place. Returns what it
     did, one line per layer changed; raises Refused."""
     from psd_tools.composite.text import capture
@@ -463,7 +463,7 @@ def restyle(psd, rel: str, chart: dict, fonts_dir: str, chart_stroke: bool = Fal
     done = []
     for layer in [layer for layer in psd.descendants() if layer.kind == "type" and layer.is_visible()]:
         title = any(layer is t for t in titles)
-        body, font, fill, effects = _wants(layer, title, status, chart_stroke)
+        body, font, fill, effects = _wants(layer, title, status)
         if not (font or fill or effects):
             continue
         what = []

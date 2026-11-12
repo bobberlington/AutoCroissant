@@ -12,7 +12,6 @@ pixels kept). Report only: nothing here gates a push.
 
     changes(old, new, codepoints) -> [str]      one phrase per change, the most telling first
     line(phrases, limit) -> str                  the phrases joined, cut to limit ("and N more")
-    python -m commands.psd_diff OLD.psd NEW.psd  prints the phrases
 
 No Discord, network or config.
 """
@@ -21,7 +20,6 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from hashlib import blake2b
 from re import finditer, sub
-from sys import argv
 from typing import Optional
 from unicodedata import category
 
@@ -780,21 +778,6 @@ def line(phrases: list, limit: int = 0) -> str:
     return _clip(phrases[0], limit)
 
 
-def main(args: Optional[list] = None) -> int:
-    """python -m commands.psd_diff OLD.psd NEW.psd: one phrase per line (nothing when only a re-save changed)."""
-    args = argv[1:] if args is None else args
-    if len(args) != 2:
-        print("python -m commands.psd_diff OLD.psd NEW.psd")
-        return 2
-    for phrase in changes(PSDImage.open(args[0]), PSDImage.open(args[1])):
-        print(phrase)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
-
-
 # ========================
 # Module Exports
 # ========================
@@ -804,7 +787,6 @@ __all__ = [
     'changes',
     'facts_of',
     'line',
-    'main',
     'plain',
     'text_change',
 ]

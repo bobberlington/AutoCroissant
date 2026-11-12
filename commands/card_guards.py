@@ -1504,10 +1504,10 @@ def _pooled(item: tuple) -> Result:
 @dataclass
 class LinkContext:
     """
-    What the normalise fix's link step reads (fonts.links: psd_links.link_card's entries, read and first): the tree at
+    What the normalise fix's link step reads (fonts.links: psd_links.link_card's entries and read): the tree at
     after, the parent's catalogue (psd_links.assign over every PSD the run converts, so a new file shared by two of them
     gets one name, its first user's), the run's new files and the repo's by blob. Every user writes the new files it
-    links (first: None), so none lands linking a file whose first user did not convert or land (one write each).
+    links, so none lands linking a file whose first user did not convert or land (one write each).
     """
     tree: dict                                  # {repo path: blob} at after
     catalogue: dict                             # psd_links.assign's {"psds": {rel: rows}, "files": {new path: info}}
@@ -1518,9 +1518,6 @@ class LinkContext:
 
     def entries(self, rel: str) -> list:
         return self.catalogue.get("psds", {}).get(rel, [])
-
-    def first(self, rel: str) -> None:
-        return None                             # link_card: every new file it uses
 
     def read(self, path: str) -> Optional[bytes]:
         if path in self.files:

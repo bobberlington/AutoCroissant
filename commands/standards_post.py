@@ -20,7 +20,7 @@ from typing import Optional
 LINE = "{login} pushed {card}: {notes}. [{short}]({url})"       # what to do, as short as it goes (owner 2026-11-06)
 SHORT = (                                   # a card check note's start -> what to do (owner 2026-11-06)
     ("NO STATS FOUND", "no stat bars"), ("NO STARS FOUND", 'no stars (group them in "Stars")'),
-    ("NO ABILITY LAYER", "no Ability layer"), ("ABILITY TEXT NOT FOUND", "no ability text"),
+    ("ABILITY TEXT NOT FOUND", "no ability text"),
     ("UNKNOWN TYPE", "unknown card kind (check its folder)"), ("STATS TOO HIGH", "a stat over 20"),
     ("HP NOT FOUND", "no HP bar"), ("DEF NOT FOUND", "no DEF bar"), ("ATK NOT FOUND", "no ATK bar"),
     ("SPD NOT FOUND", "no SPD bar"), ("MISSPELT TYPE: ", "misspelt type "), ("UNKNOWN ICON TOKEN: ", "unknown icon "),

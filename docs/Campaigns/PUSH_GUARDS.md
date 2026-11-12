@@ -597,7 +597,6 @@ not land.**
   comment and the post still go up only when something else is told (the owner's rule, 7.2 and 7.3): a card with changes
   and nothing else is in the job summary (and in the comment when the push has one), not on Discord. Telling every
   push's changes would be a new owner decision.
-- `python -m commands.psd_diff OLD.psd NEW.psd` prints the phrases.
 
 ## 8. Dry run and switches
 

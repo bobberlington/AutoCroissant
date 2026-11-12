@@ -28,8 +28,8 @@ SmartObject.link_target), never from the filesystem.
 
     python -m commands.psd_links catalogue --clone DIR --ref SHA --out FILE [--held LIST --held-ref REF --held-base SHA]
                                            [--recheck catalogue.json] [--history CLONE]
-    python -m commands.psd_links redraw --checkout DIR --links FILE [--head SHA] [--cards N] [--bytes N] [--until SECONDS]
-                                        [--out DIR]   (card-sync.yml: --local, --db, --deadline)
+    python -m commands.psd_links redraw --local DIR --db DIR [--head SHA] [--cards N] [--bytes N] [--deadline SECONDS]
+                                        [--out DIR] [--dry-run]           (card-sync.yml's)
     python -m commands.psd_links due --clone DIR --db DIR [--head SHA]       prints how many PSDs are due
 
 Classes (assign): 1 the bytes of a Types file; 2 its ink pixels (raster kept, placed by place_trim); 3 that file drawn
@@ -88,7 +88,6 @@ QUAD_TOL = 0.01                 # px: corners this close make an upright rectang
 PPI_TOL = 0.01                  # a stored Rslt this close to its file's ppi is right
 NOT_IN_REPO = "Links {name}, which is not in the repo: push that file."
 NOT_REDRAWN = "{layer} links {name}, changed since: Card sync could not draw it again ({why}); update it in Photoshop."
-REDRAW_SUBJECT = "Card sync: linked pictures redrawn"
 SWEEP_TRAILER = "Card-sweep: linked"
 GLYPHS_TRAILER = "Card-sweep: glyphs"           # psd_glyphs: icon glyphs drawn again in the same commit
 EDITED_KEYS = (b"SoCo", b"GdFl", b"PtFl", b"brit", b"levl", b"curv", b"expA", b"vibA", b"hue ", b"hue2",  # fill and
@@ -758,11 +757,11 @@ def _placed_block(uuid: str, placed: str, corners: list, size: tuple, resolution
                                    cls=b"ClMg", block=False)})
 
 
-def link_pixels(layer, rel: str, path: str, data: bytes, corners: list, salt: str = ""):
+def link_pixels(layer, rel: str, path: str, data: bytes, corners: list):
     """
     A pixel layer made a smart object linking path (a Types/ file of these bytes) placed on corners, its pixels, mask,
     effects and blending kept (the bake's type icons, Q4; a header star or icon the same ink as a Types file). The uuid
-    and placed ID come from rel, path, the layer id and salt, so the same edit makes the same bytes.
+    and placed ID come from rel, path and the layer id, so the same edit makes the same bytes.
 
     Returns:
         The SmartObjectLayer that took the layer's place in its group
@@ -772,7 +771,7 @@ def link_pixels(layer, rel: str, path: str, data: bytes, corners: list, salt: st
     rgba = decode(data, file_type(data, path))
     if rgba is None:
         raise ValueError(f"{path}: not a picture")
-    seed = f"{rel}|{path}|{layer.layer_id}|{salt}"
+    seed = f"{rel}|{path}|{layer.layer_id}|"
     uuid, placed = str(uuid5(NAMESPACE_URL, "item|" + seed)), str(uuid5(NAMESPACE_URL, "placed|" + seed))
     record = layer._record
     record.tagged_blocks[Tag.SMART_OBJECT_LAYER_DATA2] = TaggedBlock(
@@ -1032,7 +1031,7 @@ class Linked:
     """link_card's result for one PSD."""
     linked: list = field(default_factory=list)      # (uuid or pixel layer id, class, repo path)
     redrawn: list = field(default_factory=list)     # layer names whose pixels were drawn again (class 3): PNG follows
-    files: dict = field(default_factory=dict)       # {MDW/Linked path: bytes} this PSD is the first user of
+    files: dict = field(default_factory=dict)       # {MDW/Linked path: bytes}: the new files it links
     copies: list = field(default_factory=list)      # uuids taken as an exact copy instead (class 5 fallback)
     repaired: list = field(default_factory=list)    # existing links rewritten canonical
     notes: list = field(default_factory=list)       # hand notes, plain words
@@ -1086,9 +1085,8 @@ def _fit_corners(layer, old: Optional[np.ndarray], rgba: Optional[np.ndarray]) -
     return min(quads, key=miss)
 
 
-def link_card(psd: PSDImage, rel: str, entries: list, read: Callable[[str], Optional[bytes]],
-              first: Optional[set] = None, copies: frozenset = frozenset(), tree: Optional[set] = None,
-              ppis: Optional[Callable[[str], Optional[float]]] = None) -> Linked:
+def link_card(psd: PSDImage, rel: str, entries: list, read: Callable[[str], Optional[bytes]], tree: set,
+              ppis: Callable[[str], Optional[float]], copies: frozenset = frozenset()) -> Linked:
     """
     One PSD's pictures linked in place by its catalogue entries (assign), its stat bars left embedded:
     classes 1, 4 and 5 keep the raster; 2 takes place_trim's quad and keeps it; 3 is drawn again from the Types file
@@ -1101,10 +1099,9 @@ def link_card(psd: PSDImage, rel: str, entries: list, read: Callable[[str], Opti
         rel: Its repo path
         entries: Its catalogue rows
         read: repo path -> the file's bytes (Types/, MDW/Linked/, the batch's new files), None when missing
-        first: The new files this PSD is the first user of (it writes them); None: every new file it uses
+        tree: Repo paths at the base (links_of, for existing links)
+        ppis: repo path -> its file's ppi (repair's Rslt)
         copies: uuids to take as exact copies (5.2 step 9's redo)
-        tree: Repo paths at the base (links_of, for existing links); None: placed by read()
-        ppis: repo path -> its file's ppi (repair's Rslt); None: ppis_of(read)
 
     Returns:
         Linked
@@ -1176,25 +1173,11 @@ def link_card(psd: PSDImage, rel: str, entries: list, read: Callable[[str], Opti
         else:
             quads = pixels = None
         if cls in (LINKED, NEW) and path.startswith(LINKED_DIR + "/") and read(path) is None:
-            if first is None or path in first or uid in out.copies:
-                out.files[path] = target
+            out.files[path] = target            # every user writes the new files it links
         link_item(psd, uid, rel, path, target, quads, pixels)
         out.linked.append((uid, cls, path))
-    known = set(tree) if tree is not None else _tree_of(read, psd, rel)
-    out.repaired, notes = repair(psd, rel, known | {path for _, _, path in out.linked}, ppis or ppis_of(read))
+    out.repaired, notes = repair(psd, rel, set(tree) | {path for _, _, path in out.linked}, ppis)
     out.notes += notes
-    return out
-
-
-def _tree_of(read: Callable[[str], Optional[bytes]], psd: PSDImage, rel: str) -> set:
-    """The repo paths a PSD's existing links name (placed with no tree: the first repo path each names), those read()
-    has."""
-    out = set()
-    for _, item in _items_of(psd).values():
-        if item.kind == LinkedLayerType.EXTERNAL:
-            path = place(item.linked_file, rel)
-            if path is not None and read(path) is not None:
-                out.add(path)
     return out
 
 
@@ -1207,16 +1190,12 @@ class Link:
     size: int                           # the size it records
     content: str                        # its contentID ("" when Photoshop made it)
     canonical: bool                     # LINK_DATE, its file's name and the fork's strings (canonical())
-    layers: list = field(default_factory=list)
 
 
 def links_of(psd: PSDImage, rel: str, tree) -> list:
     """A PSD's links as repo paths (the fork's links.place: relPath from rel's folder, then the absolute forms cut at
     /TTSCardMaker/, case-blind against tree), every lnkE item a layer uses."""
-    used = {}
-    for layer in psd.descendants():
-        if layer.kind == "smartobject":
-            used.setdefault(_uid(layer), []).append(layer.name)
+    used = {_uid(layer) for layer in psd.descendants() if layer.kind == "smartobject"}
     out = []
     for uid, (_, item) in _items_of(psd).items():
         if item.kind != LinkedLayerType.EXTERNAL or uid not in used:
@@ -1226,7 +1205,7 @@ def links_of(psd: PSDImage, rel: str, tree) -> list:
         good = path is not None and tuple(item.timestamp or ()) == LINK_DATE and _text(item.filename) == basename(path) \
             and all(strings.get(k) == v for k, v in canonical(rel, path).items())
         content = _text((item.content_descriptor or {}).get(b"contentID", ""))
-        out.append(Link(uid, path, _text(item.filename), int(item.filesize), content, good, used[uid]))
+        out.append(Link(uid, path, _text(item.filename), int(item.filesize), content, good))
     return out
 
 
@@ -1392,8 +1371,7 @@ def link(psd: PSDImage, rel: str, fonts) -> Step:
         return out
     entries = ctx.entries(rel)
     copies = frozenset() if ctx.redraw else frozenset(e["uuid"] for e in entries if e.get("class") == REDRAW)
-    done = link_card(psd, rel, entries, ctx.read, ctx.first(rel), copies, set(ctx.tree),
-                     ppis_of(ctx.read, getattr(ctx, "ppis", None)))
+    done = link_card(psd, rel, entries, ctx.read, set(ctx.tree), ppis_of(ctx.read, getattr(ctx, "ppis", None)), copies)
     named = {}
     for layer in psd.descendants():
         named.setdefault(_uid(layer) if layer.kind == "smartobject" else None, []).append(layer.name)
@@ -1408,10 +1386,8 @@ def link(psd: PSDImage, rel: str, fonts) -> Step:
 # Housekeeping (PLAN G2-G4)
 # ========================
 def records_of(links: dict) -> tuple:
-    """db/links.json as ({PSD path: record}, files): {"psds": ..., "files": ...}, or PSD paths beside "files"."""
+    """db/links.json (PSD paths beside "files") as ({PSD path: record}, files)."""
     files = links.get("files") or {}
-    if isinstance(links.get("psds"), dict):
-        return links["psds"], files
     return {rel: record for rel, record in links.items() if rel != "files"}, files
 
 
@@ -1498,7 +1474,7 @@ def due_links(links: dict, tree: dict, sizes: dict) -> dict:
     C1: {PSD path: [(link record, current blob)]} whose file changed, read off main's tree (no diff range: a capped run
     loses nothing): a size off the file's, or a drawn-from blob older than the file's of the same size. A link to a
     missing file is G4's; a link Photoshop made (no `drawn`) of the same size is never due (R21). A PSD whose record is
-    not at its blob is skipped (the caller reads a pushed one directly).
+    not at its blob is skipped.
     """
     out = {}
     for rel, record in sorted(links.items()):
@@ -1679,24 +1655,15 @@ def due_count(clone: str, links: dict, head: str = "HEAD", details: Optional[dic
     due = set(due_links(records, tree, sizes))
     due |= {rel for rel, record in records.items() if not record.get("error") and tree.get(rel) == record.get("blob")
             and any(link.get("path") in sizes and sizes[link["path"]] is None for link in record.get("links") or [])}
-    psd_glyphs = _glyph_module() if details else None
-    if psd_glyphs:
+    if details:
+        from commands import psd_glyphs
         edits = _git_bytes(clone, [tree[EDITS_PATH]]).get(tree[EDITS_PATH]) if EDITS_PATH in tree else None
         due |= set(psd_glyphs.due(clone, head, tree, details, edits))
     return len(due)
 
 
-def _glyph_module():
-    """commands.psd_glyphs, or None in a checkout without it (card-sync.yml's builder list before 2026-11-08)."""
-    try:
-        from commands import psd_glyphs
-    except ImportError:
-        return None
-    return psd_glyphs
-
-
 def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARDS_CAP, budget: int = 1 << 30,
-                  until: float = 0.0, pushed=(), fetch: bool = True, details: Optional[dict] = None,
+                  until: float = 0.0, fetch: bool = True, details: Optional[dict] = None,
                   fonts_dir: str = "", cleared: Optional[dict] = None) -> Redrawn:
     """
     Card sync's Linked redraw (C1-C6): the PSDs whose linked files changed, drawn again at head (C4: redraw_psd), their
@@ -1709,7 +1676,6 @@ def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARD
     Args:
         clone: The card repo's checkout (blobless is enough)
         links: db/links.json ({PSD path: record}, "files": {repo path: {blob: size}})
-        pushed: PSD paths pushed in this range: read directly when their record is not at their blob
         details: db/psd_details.json (psd_glyphs.due's texts)
         fonts_dir: The fonts the glyphs are drawn in (its stoogedings.ttf the tree's, else no glyph is drawn)
         cleared: db/card_checks.json's "cleared" (people's flags that went: psd_glyphs.flag)
@@ -1737,9 +1703,6 @@ def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARD
     sizes.update({p: len(got[tree[p]]) for p, size in sizes.items() if size is None and tree[p] in got})
     seen = {**seen, **{p: {**(seen.get(p) or {}), tree[p]: size} for p, size in sizes.items() if size is not None}}
     due = due_links(records, tree, sizes)
-    for rel in pushed:
-        if rel in tree and (records.get(rel) or {}).get("blob") != tree[rel]:
-            due.setdefault(rel, [])
     out, written = Redrawn(), 0
     glyphs, olds = _glyphs_due(clone, head, tree, details, fonts_dir, edits, fetch, out)
     order = sorted(set(due) | set(glyphs))
@@ -1763,7 +1726,7 @@ def redraw_linked(clone: str, links: dict, head: str = "HEAD", cards: int = CARD
             continue
 
         def read_blob(blob: str) -> Optional[bytes]:
-            if blob not in blobs:                   # a pushed PSD's own links (its record is stale)
+            if blob not in blobs:                   # one not fetched above
                 if fetch:
                     fetch_blobs(clone, [blob])
                 blobs.update(_git_bytes(clone, [blob]))
@@ -1845,10 +1808,10 @@ def _glyphs_due(clone: str, head: str, tree: dict, details: Optional[dict], font
                 fetch: bool, out: Redrawn) -> tuple:
     """redraw_linked's psd_glyphs.due ({} without details or fonts_dir, or when fonts_dir's icon font is not the tree's)
     and {font blob: a file of it} for the fonts the due PSDs were drawn with."""
-    psd_glyphs = _glyph_module() if details is not None and fonts_dir else None
-    if psd_glyphs is None:
+    if details is None or not fonts_dir:
         return {}, {}
     from tempfile import mkdtemp
+    from commands import psd_glyphs
     here = path_join(fonts_dir, basename(psd_glyphs.FONT_FILE))
     if psd_glyphs.FONT_FILE not in tree or not isfile(here) or git_blob(open(here, "rb").read()) != tree[psd_glyphs.FONT_FILE]:
         out.lines.append(f"- icon glyphs: {here} is not the tree's icon font, none drawn")
@@ -1976,17 +1939,14 @@ def main(args: Optional[list] = None) -> int:
     cat.add_argument("--workers", type=int, default=4)
     red = sub_.add_parser("redraw", help="Card sync: PSDs whose linked files changed drawn again (C1-C6)")
     red.add_argument("--checkout", "--local", required=True, help="the card repo's checkout (blobless is enough)")
-    red.add_argument("--links", default="", help="db/links.json")
-    red.add_argument("--db", default="", help="the data's db folder (its links.json), for --links")
+    red.add_argument("--db", default="", help="the data's db folder (its links.json)")
     red.add_argument("--repo", default="", help="the card repo (card-sync.yml's; blobs come from the checkout's origin)")
     red.add_argument("--head", default="HEAD", help="the commit to read the PSDs at and commit R on")
     red.add_argument("--cards", type=int, default=CARDS_CAP, help="PSDs at most")
     red.add_argument("--bytes", type=int, default=1 << 30, help="bytes written at most")
     red.add_argument("--until", "--deadline", type=float, default=0.0, help="epoch seconds: no PSD started past it")
     red.add_argument("--out", default="", help="a folder for redraw.json (due: the PSDs still due)")
-    red.add_argument("--pushed", default="", help="a file of PSD paths pushed in this range")
     red.add_argument("--dry-run", action="store_true", help="commit nothing")
-    red.add_argument("--output", default="", help="append redraw_due= and redrawn= here (GITHUB_OUTPUT)")
     due = sub_.add_parser("due", help="Card sync's Linked due: prints how many PSDs a redraw would draw again")
     due.add_argument("--clone", required=True, help="the card repo's checkout (its trees; nothing fetched)")
     due.add_argument("--db", required=True, help="the data's db folder (its links.json)")
@@ -2022,9 +1982,9 @@ def main(args: Optional[list] = None) -> int:
             dump(out, fh, indent=0, sort_keys=True)
         print(dumps({"psds": len(out["psds"]), "files": len(out["files"]), "errors": len(out["errors"]), **_counts(out)}))
         return 1 if out["errors"] else 0
-    if opts.command == "redraw" and not (opts.links or opts.db):
-        parser.error("redraw needs --links or --db")
-    with open(getattr(opts, "links", "") or posixpath_join(opts.db, "links.json"), encoding="utf-8") as fh:
+    if opts.command == "redraw" and not opts.db:
+        parser.error("redraw needs --db")
+    with open(posixpath_join(opts.db, "links.json"), encoding="utf-8") as fh:
         links = load(fh)
     details, cleared = None, {}                 # psd_glyphs' texts (the data's psd_details.json), people's flags that went
     if opts.db and isfile(posixpath_join(opts.db, "psd_details.json")):
@@ -2036,13 +1996,9 @@ def main(args: Optional[list] = None) -> int:
     if opts.command == "due":
         print(due_count(opts.clone, links, opts.head, details))
         return 0
-    pushed = ()
-    if opts.pushed:
-        with open(opts.pushed, encoding="utf-8") as fh:
-            pushed = fh.read().splitlines()
     fonts_dir = (environ.get("PSD_TOOLS_FONT_DIRS") or "").split(":")[0] or path_join(opts.checkout, "MDW", "Fonts")
-    found = redraw_linked(opts.checkout, links, opts.head, opts.cards, opts.bytes, opts.until,
-                          [p for p in pushed if p.strip()], details=details, fonts_dir=fonts_dir, cleared=cleared)
+    found = redraw_linked(opts.checkout, links, opts.head, opts.cards, opts.bytes, opts.until, details=details,
+                          fonts_dir=fonts_dir, cleared=cleared)
     commit = ""
     if found.files and not opts.dry_run:
         from commands.git_commit import local_commit
@@ -2056,9 +2012,6 @@ def main(args: Optional[list] = None) -> int:
     for rel, notes in sorted(found.notes.items()):
         for note in notes:
             print(f"- {rel}: {note}")
-    if opts.output:
-        with open(opts.output, "a", encoding="utf-8") as fh:
-            fh.write(f"redraw_due={'true' if found.due else 'false'}\nredrawn={dumps(found.cards)}\n")
     if opts.out:
         makedirs(opts.out, exist_ok=True)
         with open(posixpath_join(opts.out, "redraw.json"), "w", encoding="utf-8") as fh:

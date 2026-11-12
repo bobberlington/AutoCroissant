@@ -3020,19 +3020,15 @@ class Normalised(list):
 
 def _links():
     """commands.psd_links, the link step (big pass A4): needs(psd) -> [what to link or repair]; link(psd, rel, fonts)
-    -> Normalised, linking in place. None until it is in the tree: normalise sets text normal and strips alone."""
-    try:
-        from commands import psd_links
-    except ImportError:
-        return None
-    return psd_links if hasattr(psd_links, "needs") and hasattr(psd_links, "link") else None
+    -> Normalised, linking in place."""
+    from commands import psd_links
+    return psd_links
 
 
 def needs_normalise(psd: PSDImage) -> list:
     """What normalise() would change: the sub and superscript type layers, the PSD itself for its merged image, and
     the link step's finds (an embedded picture, a link needing repair, a linked stat bar)."""
-    links = _links()
-    return [*script_layers(psd), *([psd] if psd.has_preview() else []), *(links.needs(psd) if links else [])]
+    return [*script_layers(psd), *([psd] if psd.has_preview() else []), *_links().needs(psd)]
 
 
 def _layout_fonts(fonts, layer):
@@ -3078,14 +3074,12 @@ def normalise(path: str, out_path: str, fonts, rel: str = "") -> Normalised:
     bars = held(psd, rel) if held is not None else []
     done += bars
     done.notes += getattr(bars, "notes", [])
-    links, linked = _links(), Normalised()
-    if links is not None:
-        linked = links.link(psd, rel, fonts)
-        done += linked
-        done.files.update(linked.files)
-        done.redraws += linked.redraws
-        done.left += linked.left
-        done.notes += linked.notes
+    linked = _links().link(psd, rel, fonts)
+    done += linked
+    done.files.update(linked.files)
+    done.redraws += linked.redraws
+    done.left += linked.left
+    done.notes += linked.notes
     if psd.has_preview():
         done.append("merged image")
     if not done:
@@ -3766,7 +3760,7 @@ def pixel_kinds(psd, kinds: tuple = (), rel: str = "", chart: Optional[dict] = N
         psd = PSDImage.open(BytesIO(psd)) if isinstance(psd, bytes) else psd
         if rel:
             psd.repo_path = rel
-        if links is not None and hasattr(_links(), "ppis_of"):
+        if links is not None:
             psd.link_ppi = _links().ppis_of(links.read, getattr(links, "ppis", None))
         psd.status_chart, psd.clean_hidden = chart, hidden
         default = tuple(kind for kind in PIXEL_FIXES if kind not in SWEEP_ONLY)
@@ -4522,11 +4516,10 @@ def _sorted_lists(value):
 
 def folder_reads(psd: PSDImage, rel: str, parser: PSDParser) -> dict:
     """What folders_gate compares: every picture's render (the fork's) and parse and the details record
-    (psd_details.gather, its time and tree aside, each layer path read as its layer's id); the regions (unpadded) as
-    a note alone (owner 2026-11-09: the website's regions may change where nothing else does)."""
+    (psd_details.gather, its time and tree aside, each layer path read as its layer's id); the website's regions are
+    not compared (owner 2026-11-09: they may change where nothing else does)."""
     import commands.psd_details as psd_details
     import commands.psd_parts as psd_parts
-    from commands.psd_regions import regions
     tags = variants_of(psd)
     renders, parses = [], []
     for n in tags if len(tags) > 1 else [None]:
@@ -4542,8 +4535,7 @@ def folder_reads(psd: PSDImage, rel: str, parser: PSDParser) -> dict:
     finally:
         psd_details.layer_path, psd_parts.layer_path = paths
     record = {k: v for k, v in record.items() if k not in ("at", "tree")}
-    return {"renders": renders, "parses": parses, "regions": _sorted_lists(regions(psd, parser.all_types, pad=False)),
-            "details": _sorted_lists(record)}
+    return {"renders": renders, "parses": parses, "details": _sorted_lists(record)}
 
 
 def _by_id(psd: PSDImage) -> dict:

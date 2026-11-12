@@ -306,8 +306,9 @@ main.py  (registration + queue loops; imports every commands module)
  |                            query_card, type_emojis, repo_history, analytics LAZILY: the bot's card data (sync, /update_stats,
  |                            admins' Card sync runs, /fonts from the manifest's fonts report: no psd_details or font_check since
  |                            2026-11-11). main imports it; psd_analyzer LAZILY (init_psd) [2026-10-22]
- |- commands.psd_analyzer  -> the three above, query_card, github_api, utils, pandas: the FACADE. Re-exports every card name, holds the
- |                            metadata/export commands and init_psd. Code outside imports card classes from HERE only.
+ |- commands.psd_analyzer  -> the three above, query_card, utils, pandas: the FACADE. Re-exports what the bot takes (CardInfo,
+ |                            CardEdits, card_name, get_stats_as_dict, stats_db, EDITS_PATH), holds the metadata/export
+ |                            commands and init_psd; other card classes come from card_models.
  |- commands.card_grid     -> PIL, requests ONLY: grid images of many cards, the card_images/ cache (query_card LAZILY)
  |                            [2026-10-25; no discord]
  |- commands.frankenstein  -> utils, query_card (card_repo)

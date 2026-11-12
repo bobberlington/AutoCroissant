@@ -82,7 +82,6 @@ Problems travel through two distinct channels, and they have different baselines
 **Channel A — parse-time problems, PERSISTED in the card data.**
 `CardInfo.problems` is a dataclass field (card_models.py:94). During parsing these problem
 kinds are appended to it (line numbers as of 2026-10-19):
-- `NO ABILITY LAYER` (psd_parser.py:414), when no ability text layer exists.
 - `MISSPELT TYPE: <name>` (psd_parser.py:549), for visible pixel layers named in
   `MISSPELT_CARD_TYPES = ['undread', 'tornado', 'error']` (psd_parser.py:24).
 - Since 2026-10-19, four icon-font problems, added once each through `_add_problem`
@@ -110,14 +109,6 @@ own copy of this flow). Since 2026-10-21 the same `validate()` runs in a second 
 (card_data.py:506-510), into a report, a commit comment and a Discord line; `tests/test_card_check.py` pins the clone's
 cards to the sweep's output, so a validator change shows there first (autocroissant-run-and-operate §7).
 So a sweep's printed problem list = Channel A + Channel B; the pickle stores only Channel A.
-
-**One side effect to know:** `validate()` MUTATES `card.problems` — it removes
-`NO ABILITY LAYER` (older data's; cards need no ability since 2026-10-25).
-And `validate()` only runs during a sweep when `output_problematic=True`
-(card_data.py:669-670). Consequence: a sweep run with `output_problematic=False`
-would leave older records' `NO ABILITY LAYER` in the stored problems,
-inflating the Channel-A count with zero real regression. **Always sweep with
-`output_problematic=True` (the default) when measuring.**
 
 Certified baselines (re-measured 2026-10-23 at PICKLE a7c310e; 2026-07-11 values in brackets):
 
@@ -470,7 +461,6 @@ re-verification below disagrees with this file, the repo wins; update this file
 | `PARSER_VERSION` (4) and its stamp, re-parse (psd_parser.py:24, :452; card_data.py:144) (2026-10-25) | `grep -n "PARSER_VERSION" commands/psd_parser.py commands/card_data.py commands/card_models.py` |
 | Printed title read into `display_name` (psd_parser.py:409, `_printed_title` :422) (2026-10-21) | `grep -n "_printed_title\|^def title_text" commands/psd_parser.py` |
 | Parse-time problem sites (404, 486; icon problems 593-625) (2026-10-20) | `grep -n "card.problems.append\|_add_problem(card" commands/psd_parser.py` |
-| validate() mutation of card.problems (947-949) (2026-10-20) | `grep -n "NO ABILITY LAYER" commands/psd_parser.py` |
 | validate() gated on output_problematic (card_data.py:669 on 2026-10-23; the archive has its own) | `grep -n "if output_problematic" commands/card_data.py` |
 | Pickled problems key in to_dict (113) (2026-10-20) | `grep -n '"problem"' commands/card_models.py` |
 | Local-path fix present (method B precondition) (2026-10-20: moved to branch `archive/local-update-stats`) | `git grep -n "relpath(full_path" archive/local-update-stats -- archive/local_update_stats.py` (:115) |

@@ -106,7 +106,7 @@ class FontIndex:
                     self.errors.append(f"{basename(path)}: {e}")
 
     def add(self, faces: list) -> None:
-        """Index one file's faces (face_names' output, also what the bot's cache holds)."""
+        """Index one file's faces (face_names' output)."""
         self.files += 1
         self.faces += len(faces)
         self.names.update(ps for ps in faces if ps)
@@ -656,13 +656,13 @@ def load_names(path: str) -> tuple:
     return index, dict(data["files"])
 
 
-def local_fonts() -> tuple:
-    """(dir, "env") from PSD_TOOLS_FONT_DIRS, else (the checkout's MDW/Fonts, "checkout") when it exists, else ("", "")."""
+def local_fonts() -> str:
+    """The fonts dir: PSD_TOOLS_FONT_DIRS' first, else the checkout's MDW/Fonts when it exists, else ""."""
     dirs = environ.get(FONT_DIRS_ENV, "")
     if dirs:
-        return dirs.split(pathsep)[0], "env"
+        return dirs.split(pathsep)[0]
     checkout = join(expanduser(LOCAL_DIR_LOC), FONTS_DIR)
-    return (checkout, "checkout") if isdir(checkout) else ("", "")
+    return checkout if isdir(checkout) else ""
 
 
 # ========================

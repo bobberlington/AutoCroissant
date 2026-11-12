@@ -24,7 +24,7 @@ from psd_tools.psd import engine_data
 import commands.psd_edit as pe
 from commands import ability_place
 from commands.card_models import card_name
-from commands.psd_regions import PAINT_ORDER, badge_layers, clip, comp_bars, comp_row, fx_pad, regions, stat_rows
+from commands.psd_regions import badge_layers, clip, comp_bars, comp_row, fx_pad, regions, stat_rows
 from conftest import BADGED, PLAIN_DOOMER, at_rev, card_blob, painted
 from helpers import MINI_DOOMER, _card, _typo_fix, stale_copy
 
@@ -190,8 +190,8 @@ def test_below_box(monkeypatch):
     assert not pe.below_box(keep, [line("Attack", 40), line("now.", 60)])
 
 
-def test_paint_order_and_clip():
-    assert PAINT_ORDER[-1] == "ability_fx" and clip((-5, -5, 2000, 10), 1200, 2400) == (0, 0, 1200, 10)
+def test_clip():
+    assert clip((-5, -5, 2000, 10), 1200, 2400) == (0, 0, 1200, 10)
 
 
 def test_normalize_ability_matches_the_parser():
@@ -639,7 +639,6 @@ def test_regions_and_rows_on_mini_doomer(clone, parser):
         pe.set_stat(psd, parsed, "hp", -1)
     assert found["stat_hp"] == [(359, 1199, 1174, 1285)] and found["stat_spd"] == [(359, 1577, 1174, 1663)]
     assert found["name"] == [(300, 23, 899, 114)] and found["ability"] == [(27, 1802, 1157, 2343)]   # 2343 since 19db3675's "Destroy"
-    assert found["frame"][0] == (0, 1708, 1200, 1748) and found["ability_bg"] == [(0, 1748, 1200, 2400)]
     assert len(found["types"]) == 3 and len(found["stars"]) == 2
     assert {k: [d for _, d, _ in rows] for k, rows in stat_rows(psd).items()} == {"hp": [[5]], "def": [[2]], "atk": [[5]], "spd": [[5]]}
     row, = pe.template_rows(psd, "hp")

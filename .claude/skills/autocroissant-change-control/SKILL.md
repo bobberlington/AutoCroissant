@@ -229,11 +229,6 @@ ignored — read the story before you decide the rule doesn't apply to you.
   non-negotiable #4 (AI lives only on `archive/ai-generation`).
 - **Pushing a hand build to `data`** outside the Card sync fallback (DATA_BUILD_ACTION.md §13): Card sync is the one
   writer; gate G6 refuses a run whose data tip moved under it.
-- **Importing card classes from the split modules in code outside the card modules.** Code outside the card modules
-  (commands/card_*.py, psd_parser, psd_analyzer, query_card) imports card classes from the `commands.psd_analyzer`
-  facade. The old reason (a stale monolithic psd_analyzer `.so` giving two `stats_db` objects) is gone: nothing is
-  compiled since 2026-11-11, and query_card itself takes `stats_db` from card_models since 2026-10-21
-  (autocroissant-architecture-contract, lazy-import cycle breaks).
 - **Letting a test or script write the live reminder store.** `tests/conftest.py`'s `live_files_untouched` fixture
   hashes reminder.json around the run and fails it on any change; tests run in a temp cwd.
 - **Editing card text or stats in this repo.** Ability text and stats live in

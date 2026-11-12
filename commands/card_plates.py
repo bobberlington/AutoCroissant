@@ -45,7 +45,7 @@ SEAM = 24                                   # |plate - PNG| past this off the in
 SEAM_SHARE = 0.002                          # of a crop's off-ink pixels: more, and the crop is left out
 GAP = 8                                     # px between crops in the sheet (AVIF blocks stay apart)
 QUALITY = 60
-KINDS = ("title", "ability", "blocks")
+KINDS = ("title", "ability")
 LAYOUT_OFF = 0.05                           # card_standards._ink_off past this: the layout isn't the card's, none kept
 TILT = 0.002                                # a layer turned past this (xy, yx over xx): no layout
 BRANCH = "plates"
@@ -71,7 +71,7 @@ def _rgb(image: Image.Image) -> np.ndarray:
 
 
 def layer_ids(parts: dict) -> list:
-    """The title, ability and block layers of a details record's parts, in order."""
+    """The title and ability layers of a details record's parts, in order."""
     return [p["id"] for k in KINDS for p in (parts or {}).get(k) or [] if isinstance(p, dict) and p.get("id") is not None]
 
 

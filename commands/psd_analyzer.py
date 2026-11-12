@@ -2,9 +2,10 @@
 The card database's commands, and its one import point.
 
 The code lives in commands.card_models (CardType, CardStats, CardInfo, StatsDatabase, stats_db), commands.card_edits
-(CardAuthors, CardEdits) and commands.psd_parser (PSDParser, CardClassifier, CardValidator, IconVocabulary). The first two
-are re-exported here (main.py and query_card import from this module); the parser is not, so the bot never loads
-psd_tools: tests and the diagnostics scripts import it from commands.psd_parser.
+(CardAuthors, CardEdits) and commands.psd_parser (PSDParser, CardClassifier, CardValidator, IconVocabulary). What the bot
+takes from here is re-exported (CardInfo, CardEdits, card_name, get_stats_as_dict, stats_db, EDITS_PATH: main.py,
+query_card and card_sync import from this module); the parser is not, so the bot never loads psd_tools: tests and the
+diagnostics scripts import it from commands.psd_parser, the other card classes from commands.card_models.
 """
 from discord import Interaction, File
 from os.path import basename, splitext
@@ -12,11 +13,10 @@ from re import compile as re_compile
 from typing import Optional
 import pandas as pd
 
-from global_config import AUTHORS_PATH, EDITS_PATH, ICON_MANIFEST_PATH
-from commands.card_edits import CardAuthors, CardEdits
+from global_config import EDITS_PATH
+from commands.card_edits import CardEdits
 from commands.card_history import UNKNOWN_IF, unknown
-from commands.card_models import CardInfo, CardStats, CardType, StatsDatabase, card_name, get_stats_as_dict, stats_db
-from commands.github_api import GIT_TOKEN
+from commands.card_models import CardInfo, card_name, get_stats_as_dict, stats_db
 from commands.query_card import BAN_LIST, archived_text, ban_list_text, card_repo, history_match, init_query
 from commands.rulebook import label as chapter_label
 from commands.utils import queue_message, queue_file, queue_long_message

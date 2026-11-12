@@ -35,7 +35,7 @@ def golden_file(rel: str) -> Path:
 
 def parser():
     """A PSDParser on an empty database with the frozen vocabulary (fresh parse: no author or series preservation)."""
-    from commands.psd_analyzer import StatsDatabase
+    from commands.card_models import StatsDatabase
     from commands.psd_parser import IconVocabulary, PSDParser
     vocab = json.loads(VOCAB.read_text(encoding="utf-8"))
     db = StatsDatabase()

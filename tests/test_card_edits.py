@@ -4,7 +4,8 @@ from copy import deepcopy
 
 
 from commands.card_edits import CardAuthors
-from commands.psd_analyzer import CardEdits, CardInfo, CardStats
+from commands.card_models import CardStats
+from commands.psd_analyzer import CardEdits, CardInfo
 from commands.psd_parser import CardValidator
 
 
@@ -72,10 +73,10 @@ def test_apply_then_restore():
 
 
 def test_apply_clears_answered_problems():
-    card = _card(problems=["MISSPELT TYPE: tornado", "HP NOT FOUND", "NO ABILITY LAYER"])
+    card = _card(problems=["MISSPELT TYPE: tornado", "HP NOT FOUND", "NO STARS FOUND"])
     _edits({"Foo Bar": {"types": ["wind"]}}).apply("Foo Bar", card)
-    assert card.types == ["wind"] and card.problems == ["HP NOT FOUND", "NO ABILITY LAYER"]
-    _edits({"Foo Bar": {"types": ["wind"], "ability": "A."}}).apply("Foo Bar", card)
+    assert card.types == ["wind"] and card.problems == ["HP NOT FOUND", "NO STARS FOUND"]
+    _edits({"Foo Bar": {"types": ["wind"], "stars": 3}}).apply("Foo Bar", card)
     assert card.types == ["wind"] and card.problems == ["HP NOT FOUND"]
     assert card.parsed_values["types"] == ["fire"]           # still the PSD's, not the first edit's
 

@@ -4,6 +4,7 @@ import pytest
 
 import commands.card_data as cd
 import commands.psd_analyzer as pa
+from commands.card_models import StatsDatabase
 from golden_cards import parser
 
 
@@ -17,7 +18,7 @@ class Tree:
 
 
 def _traverser(cards: dict) -> cd.CardBuild:
-    db = pa.StatsDatabase()
+    db = StatsDatabase()
     db.stats = cards
     return cd.CardBuild(db)
 

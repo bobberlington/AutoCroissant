@@ -19,11 +19,11 @@ import commands.card_data as cd
 import commands.github_api as ga
 import commands.help as help_module
 import commands.music_player as mp
-import commands.psd_analyzer as pa
 import commands.query_card as qc
 import commands.type_emojis as te
 import commands.update_bot as ub
 import commands.utils as utils
+from commands.card_models import StatsDatabase
 
 
 # ========================
@@ -402,7 +402,7 @@ def test_failed_emoji_listing_still_publishes_existing_emojis(github, monkeypatc
 # ========================
 def test_partial_download_is_removed(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-    traverser = cd.CardBuild(pa.StatsDatabase())
+    traverser = cd.CardBuild(StatsDatabase())
 
     class Stream:
         def __enter__(self):

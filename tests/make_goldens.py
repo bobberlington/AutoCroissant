@@ -23,7 +23,8 @@ CLONE = pinned_clone()                    # the card repo at CARDS_REV
 
 def freeze_vocab() -> None:
     from commands.card_data import CardBuild
-    from commands.psd_analyzer import ICON_MANIFEST_PATH, StatsDatabase
+    from global_config import ICON_MANIFEST_PATH
+    from commands.card_models import StatsDatabase
     db = StatsDatabase()
     tr = CardBuild(db)
     tr._populate_types_from_local(str(CLONE))

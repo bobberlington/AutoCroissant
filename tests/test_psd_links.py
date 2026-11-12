@@ -113,7 +113,7 @@ def test_trim_map_on_star_of_beth(clone):
     pl.fallback_names(catalogue, {})
     rows = catalogue["psds"][rel]
     assert sorted(pl.CLASSES[r["class"]] for r in rows) == ["bytes", "ink", "ink", "ink", "linked", "new", "new"]
-    done = pl.link_card(psd, rel, rows, lambda path: files.get(path))
+    done = pl.link_card(psd, rel, rows, files.get, set(files), pl.ppis_of(files.get))
     assert sorted(done.files) == ["MDW/Linked/Delta - Delta_sprite.psb", "MDW/Linked/Delta - The_Queen_bg.png"]
     assert not done.left and not done.redrawn and not done.notes
     saved = BytesIO()

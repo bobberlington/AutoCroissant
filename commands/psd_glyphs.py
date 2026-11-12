@@ -57,7 +57,6 @@ class Due:
     """A PSD due: the glyph names to draw again and the font blob it was drawn with."""
     glyphs: frozenset
     was: str
-    commit: str = ""
 
 
 # ========================
@@ -127,7 +126,7 @@ def _drawings(data: bytes) -> dict:
     pictures = {}
     if "SVG " in font:
         for doc in font["SVG "].docList:
-            text, lo, hi = (doc.data, doc.startGlyphID, doc.endGlyphID) if hasattr(doc, "data") else doc
+            text, lo, hi = doc.data, doc.startGlyphID, doc.endGlyphID
             for gid in range(lo, hi + 1):
                 pictures[gid] = sub(r'id="glyph\d+"', 'id="glyph"', text)
     return {name: (hmtx[name], glyf[name].compile(glyf), pictures.get(gid)) for gid, name in enumerate(order)}
@@ -235,7 +234,7 @@ def due(clone: str, head: str, tree: dict, details: Optional[dict], edits: Optio
         record = records.get(tree[rel]) or (records.get(max(by_path[rel])[1]) if rel in by_path else None)
         texts = _icon_texts(record) if isinstance(record, dict) else []
         if texts and uses(texts, since[4], since[2], now) and not flagged(cards, rel, tree[rel]):
-            out[rel] = Due(since[4], since[1], since[0])
+            out[rel] = Due(since[4], since[1])
     return out
 
 
@@ -312,12 +311,6 @@ def note(error: Exception) -> str:
     return NOTE.format(why=why if len(why) <= WHY_MAX else why[:WHY_MAX - 3] + "...")
 
 
-def icons(glyphs) -> str:
-    """The tokens of icon glyph names, for a note: "[fire], [ice]"."""
-    keys = sorted({g.split(".", 1)[0][5:] for g in glyphs if g.startswith("icon_")})
-    return ", ".join(f"[{key}]" for key in keys[:4]) + (" ..." if len(keys) > 4 else "")
-
-
 def flag(text: str, rel: str, blob: str, note: str, cleared: Optional[dict] = None) -> str:
     """
     Card Edits.json with the card's hand flag at its PSD blob: note first (flagged reads it), then a person's reason
@@ -359,7 +352,6 @@ __all__ = [
     'flag',
     'flagged',
     'font_commits',
-    'icons',
     'note',
     'redraw',
     'uses',

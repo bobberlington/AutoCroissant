@@ -163,8 +163,8 @@ Classification is value-aware: PSD-kind only when the value differs from a fresh
 `tests/golden_cards.py:62-76`: `PSDParser` on an empty `StatsDatabase` + `IconVocabulary.build` from the committing tree's
 `Types/`, stars and manifest), so it runs after the blob is fetched (section 5 step 2). Import from `commands.psd_parser`
 (`IconVocabulary` :174, `PSDParser` :318, `CardValidator` :948) and `commands.card_models` (`StatsDatabase` :154), not from
-`commands.psd_analyzer` as the goldens do: that module imports `discord` (:9), `pandas` (:13), `GIT_TOKEN` (:18),
-`repo_traverser` (:40), `query_card` (:49) and `utils` (:50), none of which the runner has. An equal value is **redundant**:
+`commands.psd_analyzer`: that module imports `discord` (:9), `pandas` (:13), `repo_traverser` (:40), `query_card`
+(:49) and `utils` (:50), none of which the runner has. An equal value is **redundant**:
 dropped from the file with no pixels.
 
 ## 4. Architecture

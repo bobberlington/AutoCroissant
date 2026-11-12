@@ -508,7 +508,7 @@ one card has one: rulebook page "20 Creature Types" with `MISSPELT TYPE: tornado
 | `HP NOT FOUND` / `DEF NOT FOUND` | creature, minion or "creatures" card (`STAT_KINDS`) with that stat still −1 | :1338-1341 |
 | `ATK NOT FOUND` / `SPD NOT FOUND` | same, UNLESS `"active"` is in `card.types` (active creatures have no atk/spd) | :1344-1350 |
 | `STATS TOO HIGH` | any found stat > 10 and not `allow_high_stats` (Card Edits.json; the stat exclusion list went 2026-10-21) | psd_parser.py:1353-1354 |
-| `NO ABILITY LAYER` | not recorded since 2026-11-04 (a rule page with no text at parse time); validate() drops older data's | `validate` |
+| `NO ABILITY LAYER` | not recorded since 2026-11-04 (a rule page with no text at parse time) | — |
 | `MISSPELT TYPE: <t>` | visible layer named undread/tornado/error | :756-757 |
 
 **The exclusion list is the "perfect extraction" debt register** — per-card allowances the owner
@@ -828,7 +828,7 @@ Line numbers drift — re-find facts with these before relying on cited lines:
 | Classification table | `sed -n '/class CardClassifier/,/class PSDParser/p' commands/psd_parser.py` |
 | Exclusion list (21 names) | `sed -n '/class CardValidator/,/def validate/p' commands/psd_parser.py` |
 | Injection / prune / sort internals | `grep -n "_inject_type_names\|_prune_type_bboxes\|_sort_by_position\|row_threshold" commands/psd_parser.py` |
-| Stat summing + hidden→10 default | `grep -n "tracker.value\|else 10" commands/psd_parser.py` |
+| Stat summing + hidden→10 default | `grep -n "else 10" commands/psd_parser.py` |
 | Stars-from-PSD folder list | `grep -n "Auxiliary/Items" commands/psd_parser.py` |
 | CardInfo/CardStats mapping | `sed -n '/^class CardStats/,/^class StatsDatabase/p' commands/card_models.py` (approx; or grep `def to_dict`) |
 | DSL internals | `grep -n 'FIELD_PATTERN\|_FIELDS = \|SYNONYMS = \|ability_search_engine\|SequenceMatcher\|duplicated' commands/query_card.py` |

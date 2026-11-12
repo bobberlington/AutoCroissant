@@ -1,5 +1,5 @@
 """
-Where things sit on a card PSD: the stat rows, name, ability, stars, type icons, art and frame as canvas bboxes
+Where things sit on a card PSD: the stat rows, name, ability, stars and type icons as canvas bboxes
 (x0, y0, x1, y1; x1/y1 exclusive). Port of psd-research score/regions.py (its owner masks stayed there); the edit
 pipeline uses stat_rows, badge_layers, fx_pad and union_box to find the pixels an edit can reach. No Discord, network
 or config.
@@ -25,9 +25,6 @@ BAR_MASK_MAX = 130           # px at 1200 wide: a taller row box is a digit mask
 STAR_CORNER = (0.6, 0.2)     # loose stars: drawn in the top-right corner (x0 >= 60% W, y1 <= 20% H)
 OVERLAY_INSIDE = 0.8         # an overlay word layer has 80% of its bbox inside the ability box
 OVERLAY_MAX_CHARS = 40       # and is a short text (the longest status name is 17)
-# regions() keys, back to front (the research masks' paint order)
-PAINT_ORDER = ["art", "ability_bg", "frame", "stat_labels", "stat_hp", "stat_def", "stat_atk", "stat_spd",
-               "stars", "types", "inline_icons", "name", "ability", "ability_fx"]
 
 
 # ========================
@@ -269,7 +266,7 @@ def linked_items(psd: PSDImage, psd_path: str, tree=None) -> list:
     The files the PSD's layers link (the 11-07 pass), one entry per linked item in use, read off the records (the
     document's lnkE alone: a lazy open never reads its embedded documents), never the files: {"uuid", "path" (its repo
     path, psd_tools.api.links.place; None when it places nowhere), "name" (the file name), "size" (the record's:
-    Photoshop's change test, with the date), "content" (contentID, "" without one), "layers" (their names)}.
+    Photoshop's change test, with the date), "content" (contentID, "" without one)}.
 
     Args:
         psd_path: The PSD's repo path
@@ -291,8 +288,7 @@ def linked_items(psd: PSDImage, psd_path: str, tree=None) -> list:
             content = item.content_descriptor.get(b"contentID") if item.content_descriptor is not None else None
             found[key] = {"uuid": key, "path": place(item.linked_file, psd_path, tree),
                           "name": str(item.filename or "").strip("\x00"), "size": int(item.filesize or 0),
-                          "content": str(getattr(content, "value", content) or "").strip("\x00"), "layers": []}
-        found[key]["layers"].append(layer.name)
+                          "content": str(getattr(content, "value", content) or "").strip("\x00")}
     return list(found.values())
 
 
@@ -351,13 +347,13 @@ def regions(psd: PSDImage, vocab=(), pad: bool = True) -> dict:
     Args:
         psd: An open card
         vocab: Type icon names (lowercase Types/ stems); a drawn layer so named is an icon
-        pad: Pad boxes by their effects' reach (False: the layers' own boxes; the art never is)
+        pad: Pad boxes by their effects' reach (False: the layers' own boxes)
 
     Returns:
-        {region key: [bbox, ...]} over PAINT_ORDER's keys
+        {region key: [bbox, ...]}: name, ability, stat_labels, stat_<hp/def/atk/spd>, stars, types
     """
     width, height = psd.width, psd.height
-    found = {key: [] for key in PAINT_ORDER}
+    found = {key: [] for key in ("name", "ability", "stat_labels", *("stat_" + k for k in STATS), "stars", "types")}
     texts = [layer for layer in psd.descendants() if layer.kind == "type" and layer.is_visible()]
 
     # name: visible layer(s) named "Name" near the top, else top text layers that aren't labels or the ability
@@ -372,12 +368,6 @@ def regions(psd: PSDImage, vocab=(), pad: bool = True) -> dict:
         abilities = [layer for layer in texts if layer.bbox[1] >= TYPE_REGION_RATIO * height
                      and layer.name.strip().lower() not in STAT_LABELS | {"name"}]
     found["ability"] += [_box(layer, width, height, pad) for layer in abilities]
-    # ability FX: pixel cuts "<text layer> FX: <words>", and short overlay text layers on the ability box
-    for layer in psd.descendants():
-        if " FX: " in layer.name and not layer.is_group() and layer.is_visible():
-            found["ability_fx"].append(_box(layer, width, height, pad))
-    for layer in overlay_words(psd, abilities, texts):
-        found["ability_fx"].append(_box(layer, width, height, pad))
     found["stat_labels"] += [_box(layer, width, height, pad) for layer in texts
                              if layer.name.strip().lower() in STAT_LABELS]
 
@@ -407,29 +397,9 @@ def regions(psd: PSDImage, vocab=(), pad: bool = True) -> dict:
                     boxes.append((BAR_X[0], centre - BAR_HALF_HEIGHT, BAR_X[1], centre + BAR_HALF_HEIGHT))
         found["stat_" + key] += [b for b in boxes if b]
 
-    stars, icons, inline = badge_layers(psd, vocab)
+    stars, icons, _ = badge_layers(psd, vocab)
     found["stars"] += [_box(layer, width, height, pad) for layer in stars]
     found["types"] += [_box(layer, width, height, pad) for layer in icons]
-    found["inline_icons"] += [_box(layer, width, height, pad) for layer in inline]
-
-    # art / frame: the LINE separator splits the art (above) from the ability panel (below) on 1200x2400 cards
-    images = [layer for layer in psd if layer.is_group() and layer.name.strip().lower() == "images" and layer.is_visible()]
-    line = next((layer for group in images for layer in _leaves(group) if layer.name.strip().lower() == "line"), None)
-    art = union_box([_box(layer, width, height, pad=False) for group in images for layer in _leaves(group)
-                  if layer is not line])
-    if line is not None:
-        y0, y1 = max(0, line.bbox[1]), min(height, line.bbox[3])
-        found["frame"].append((0, y0, width, y1))
-        if art:
-            found["art"].append((art[0], art[1], art[2], min(art[3], y0)))
-        found["ability_bg"].append((0, y1, width, height))
-    elif art:
-        found["art"].append(art)
-    else:
-        found["art"].append((0, 0, width, height))
-    for group in psd.descendants():
-        if group.is_group() and group.name.strip().lower() == "lines" and group.is_visible():
-            found["frame"] += [_box(layer, width, height, pad) for layer in _leaves(group)]
     return {key: [b for b in boxes if b] for key, boxes in found.items()}
 
 
@@ -517,7 +487,6 @@ def overlay_words(psd: PSDImage, abilities=None, texts=None) -> list:
 # Module Exports
 # ========================
 __all__ = [
-    'PAINT_ORDER',
     'STATS',
     'badge_layers',
     'clip',

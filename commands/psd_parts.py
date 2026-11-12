@@ -163,8 +163,7 @@ def _select(psd, name: str, parser: PSDParser) -> tuple:
     return titles, abilities, follow
 
 
-def card_parts(psd, rel: str, name: str, parser: PSDParser, variant: Optional[int] = None, card=None,
-               templates: Optional[Templates] = None) -> dict:
+def card_parts(psd, rel: str, name: str, parser: PSDParser, card=None, templates: Optional[Templates] = None) -> dict:
     """
     The details record's "parts" (PARTS_EDITOR.md §2.3).
 
@@ -173,17 +172,16 @@ def card_parts(psd, rel: str, name: str, parser: PSDParser, variant: Optional[in
         rel: Its repo path
         name: Its card name (the file stem)
         parser: The build's PSDParser (its icon vocabulary reads the tokens)
-        variant: None: every picture, each part's "variants" the pictures it shows in (null: all); N: only N's parts
         card: The parsed card (its kind and types decide the template); None: parsed here
         templates: Templates for a card with no ability part or type icon; None: "template" stays null
 
     Returns:
-        {"title", "ability", "blocks", "follow", "variants", "template"}; "blocks" (the old rule pages' text) stays [],
-        as the stored records have it
+        {"title", "ability", "follow", "variants", "template"}; each part's "variants": the pictures it shows in
+        (null: all)
     """
     pictures = variants_of(psd)
     tagged = len(pictures) > 1
-    out = {"title": [], "ability": [], "blocks": [], "follow": [], "variants": None, "template": None}
+    out = {"title": [], "ability": [], "follow": [], "variants": None, "template": None}
     seen, shown, follows = {}, {}, {}
     for n in (pictures if tagged else [None]):
         with variant_view(psd, n):
@@ -220,9 +218,6 @@ def card_parts(psd, rel: str, name: str, parser: PSDParser, variant: Optional[in
                 out["template"] = {"kind": card.card_type, "file": facts["file"],
                                    "ability": facts["ability"] if not out["ability"] else None,
                                    "types": facts["types"] if not card.types else None}
-    if variant is not None and tagged:
-        return {**out, **{key: [e for e in out[key] if e["variants"] is None or variant in e["variants"]]
-                          for key in ("title", "ability", "follow")}}
     return out
 
 

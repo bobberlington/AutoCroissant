@@ -8,7 +8,7 @@ VERSION 2), each type layer's colour runs (VERSION 3), the most a card's own sta
 build); its "version" is the VERSION it was gathered under (an older one: the build reads that card again).
 
 gather(psd, rel, name, index, vocab) -> the record: pure, never raises for a card (a failed section is a short
-"error: ..." string). load, text_of (the file's text), prune(cards, shas) to the tree. The build
+"error: ..." string). text_of (the file's text), prune(cards, shas) to the tree. The build
 gathers every re-parsed card's record, its "supplied" flags from font_index() (the data job's font names file, else
 font_check.local_fonts: PSD_TOOLS_FONT_DIRS, else the checkout's MDW/Fonts), then refills every record's flags from that index
 (records gathered without one, or before MDW/Fonts changed). No Discord or config imports; stock psd-tools. Pillow's ImageCms
@@ -17,7 +17,7 @@ names the ICC profile when it is built in.
 from collections import Counter
 from datetime import datetime, timezone
 from io import BytesIO
-from json import dumps, load as json_load
+from json import dumps
 from math import hypot
 from os import PathLike, environ
 from os.path import isdir
@@ -49,7 +49,6 @@ MORE = ["…", "more", True]             # the tree's cut marker
 DRAWN = ("pixel", "smartobject", "shape")   # digit layers of these kinds are drawn bar cells
 HEADER_STARS = 10                           # star counts the header section lays out (1..10)
 HEADER_ICONS = 8                            # type icons it keeps spots for
-_indexes: dict = {}                         # (fonts dir, its files) -> FontIndex: built once per MDW/Fonts change
 _parsers: dict = {}                         # vocab -> offline_parser: the header's type rule
 _inks = local()                             # .cache: {id(layer): (layer, ink)} during one gather in this thread, else None
 
@@ -629,7 +628,7 @@ def _gather(psd: PSDImage, rel: str, name: str, index: Optional[FontIndex], voca
     record["template"] = _guard(_template, psd, texts, name, record["stats"], record["icons"], record["overlays"])
     record["header"] = _guard(_header, psd, rel, name, vocab, parser)
     record["tree"] = _guard(_tree, psd)
-    record["parts"] = _guard(card_parts, psd, rel, name, parser or _icon_parser(vocab), None, card, templates)
+    record["parts"] = _guard(card_parts, psd, rel, name, parser or _icon_parser(vocab), card, templates)
     return record
 
 
@@ -676,7 +675,7 @@ def font_index(tree: Optional[dict] = None) -> Optional[FontIndex]:
             print(f"Fonts for the details: {names} is not the branch's MDW/Fonts; supplied stays null")
             return None
         return index if index.files else None
-    directory = local_fonts()[0]
+    directory = local_fonts()
     try:
         if not directory or not isdir(directory):
             print("Fonts for the details: no PSD_TOOLS_FONT_DIRS or MDW/Fonts checkout; supplied stays null")
@@ -687,40 +686,8 @@ def font_index(tree: Optional[dict] = None) -> Optional[FontIndex]:
     except OSError as e:                        # never fails a build
         print(f"Fonts for the details: {e}")
         return None
-    key = (directory, tuple(sorted(files.items()))) if files else None
-    if key in _indexes:
-        return _indexes[key]
     index = FontIndex(directory)
-    index = index if index.files else None
-    if key is not None and index is not None:
-        _indexes.clear()
-        _indexes[key] = index
-    return index
-
-
-def load(path: str) -> dict:
-    """
-    The file's records.
-
-    Args:
-        path: The details file
-
-    Returns:
-        {blob sha: record}; {} when the file is missing or not a details file (one console line then)
-    """
-    try:
-        with open(path, encoding="utf-8") as fh:
-            data = json_load(fh)
-    except FileNotFoundError:
-        return {}
-    except (OSError, ValueError) as e:
-        print(f"{path}: unreadable ({e}); starting empty")
-        return {}
-    cards = data.get("cards") if isinstance(data, dict) else None
-    if not isinstance(cards, dict):
-        print(f"{path}: not a details file; starting empty")
-        return {}
-    return cards
+    return index if index.files else None
 
 
 def text_of(cards: dict) -> str:
@@ -752,7 +719,6 @@ __all__ = [
     'font_index',
     'gather',
     'layer_path',
-    'load',
     'mark_supplied',
     'prune',
     'refill',

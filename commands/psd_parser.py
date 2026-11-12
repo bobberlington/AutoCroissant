@@ -284,10 +284,7 @@ def star_pieces(layer) -> list:
     core = _core_of(alpha, bbox)
     if alpha is None:
         return [core]
-    try:
-        from scipy import ndimage         # psd-tools[composite]'s; lazy: only the star count needs it
-    except ImportError:
-        return [core]
+    from scipy import ndimage             # psd-tools[composite]'s; lazy: only the star count needs it
     solid = alpha >= STAR_CORE_ALPHA
     labels, count = ndimage.label(ndimage.binary_dilation(solid, iterations=2), structure=np.ones((3, 3)))
     if count < 2:
@@ -357,7 +354,6 @@ class BarRow:
 class StatTracker:
     """Tracks whether a stat was found and its visible digit layers, per bar row (the layers' parent group)."""
     found: bool = False
-    value: Optional[int] = None
     rows: dict = field(default_factory=dict)     # id(row group) -> BarRow
 
     @staticmethod
@@ -1172,7 +1168,7 @@ class PSDParser:
     # ------------------------
     # The parts: what the website edits, one box per layer (docs/Finished/session-2026-10-26/PARTS_EDITOR.md §2.2)
     # ------------------------
-    def layer_text(self, layer, card: Optional[CardInfo] = None) -> str:
+    def layer_text(self, layer) -> str:
         """
         One text layer's reading: icon-font runs as canonical tokens, breaks as \\n, tabs as spaces, no byte-order mark,
         blank ends and line-leading padding (3+ blanks) gone; image icons' tokens are not in it.
@@ -1180,7 +1176,7 @@ class PSDParser:
         text = layer.engine_dict["Editor"]["Text"].value
         spans = self._icon_font_spans(layer, text)
         if spans:
-            text = self._read_icon_tokens(text, spans, card if card is not None else CardInfo(name="", card_type="unknown"))[0]
+            text = self._read_icon_tokens(text, spans, CardInfo(name="", card_type="unknown"))[0]
         text = text.replace("\r", "\n").replace("\x03", "\n").replace("\t", " ").replace("\ufeff", "").strip(" \n")
         return LINE_PAD.sub("", text)
 
@@ -1666,9 +1662,9 @@ class PSDParser:
     def _in_span(bboxes: list[tuple[str, BoundingBox]], boxes: list[BoundingBox]) -> list[tuple[str, BoundingBox]]:
         """
         Type icons within a line (ICON_SPAN_PAD) of an Ability layer's span: an icon elsewhere is no ability's (Tainted
-        Lazarus's creature 2 header icon). Every icon when a box has no bottom (given by its top only).
+        Lazarus's creature 2 header icon).
         """
-        if not boxes or any(box.bottom is None for box in boxes):
+        if not boxes:
             return bboxes
         return [(name, bbox) for name, bbox in bboxes
                 if any(box.y - ICON_SPAN_PAD <= bbox.y <= box.bottom + ICON_SPAN_PAD for box in boxes)]
@@ -1747,8 +1743,6 @@ class CardValidator:
 
         # Add any problems found during parsing
         if card.problems:
-            if "NO ABILITY LAYER" in card.problems:
-                card.problems.remove("NO ABILITY LAYER")     # older data's: no problem now
             problems.extend(card.problems)
 
         return problems

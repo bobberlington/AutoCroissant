@@ -233,23 +233,11 @@ def test_tree_is_cut_at_the_caps():
 # ========================
 # The file
 # ========================
-def test_text_load_prune_round_trip(tmp_path):
-    path = tmp_path / "d.json"
+def test_text_prune_round_trip():
     cards = {"b" * 40: {"path": "Items/B.psd", "name": "B", "x": "é"}, "a" * 40: {"path": "Items/A.psd", "name": "A"}}
     text = pd.text_of(cards)
-    path.write_text(text, encoding="utf-8")
     lines = text.splitlines()
     assert lines[0] == '{"version": %d, "cards": {' % pd.VERSION and lines[1].startswith('"' + "a" * 40 + '": {"path":"Items/A.psd"') and lines[2].endswith("}")
     assert lines[3] == "}}" and "é" in text and json.loads(text)["cards"] == cards
-    assert pd.load(str(path)) == cards
     assert pd.prune(cards, {"a" * 40}) == 1 and set(cards) == {"a" * 40} and pd.prune(cards, {"a" * 40}) == 0
     assert json.loads(pd.text_of({})) == {"version": pd.VERSION, "cards": {}}
-
-
-def test_load_tolerates_a_missing_or_odd_file(tmp_path, capsys):
-    assert pd.load(str(tmp_path / "none.json")) == {}
-    (tmp_path / "bad.json").write_text("{not json", encoding="utf-8")
-    (tmp_path / "list.json").write_text("[1, 2]", encoding="utf-8")
-    assert pd.load(str(tmp_path / "bad.json")) == {} and pd.load(str(tmp_path / "list.json")) == {}
-    out = capsys.readouterr().out
-    assert "bad.json: unreadable" in out and "list.json: not a details file" in out

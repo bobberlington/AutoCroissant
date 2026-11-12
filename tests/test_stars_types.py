@@ -801,7 +801,7 @@ def test_a_redrawn_icon_keeps_its_spots(clone, parser, tmp_path, monkeypatch):
     files = {"Types/light.png": out.getvalue()}
     rows = pl.assign([(rel, pl.items(before, pl.TypesIndex(files).vocab()))], pl.TypesIndex(files), {})["psds"][rel]
     after = PSDImage.open(_clone_card(clone, rel, tmp_path)[0])
-    assert pl.link_card(after, rel, rows, files.get).redrawn == ["Light"]
+    assert pl.link_card(after, rel, rows, files.get, set(files), pl.ppis_of(files.get)).redrawn == ["Light"]
     saved = BytesIO()
     after.save(saved)
     after = PSDImage.open(BytesIO(saved.getvalue()))

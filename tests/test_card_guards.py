@@ -631,6 +631,10 @@ def _links_module(monkeypatch, unused=(), duplicates=None, links=None) -> list:
     fake.duplicates = lambda tree, pushed=(): dict(duplicates or {})
     fake.restore = lambda size, history: None
     fake.relink = lambda psd, uuid, rel, path, size, blob: relinked.append((rel, path))
+    fake.needs = lambda psd: []
+    fake.link = lambda psd, rel, fonts: cg.standards.Normalised()
+    fake.ppis_of = lambda read, seen=None: (lambda path: None)
+    fake.ink_key = lambda rgba: None
     monkeypatch.setitem(sys.modules, "commands.psd_links", fake)
     monkeypatch.setattr(sys.modules["commands"], "psd_links", fake, raising=False)   # `from commands import psd_links`
     return relinked

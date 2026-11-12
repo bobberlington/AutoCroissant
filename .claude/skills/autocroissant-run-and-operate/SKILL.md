@@ -313,7 +313,7 @@ ignored; a font counts as present only when a face has exactly its PostScript na
 commands/card_check.py (imports psd_parser, card_models, card_edits, font_check, github_api and global_config, nothing with
 Discord or config; the guards' `card_guards.SPARSE_FILES` holds that closure) tells what the bot's parser and validator note about a card
 PSD: the lines /update_stats prints for it (`NO STARS FOUND`, `MISSPELT TYPE`, `NO STATS FOUND`, `HP/DEF/ATK/SPD NOT
-FOUND`, `STATS TOO HIGH`, `ABILITY TEXT NOT FOUND`, `UNKNOWN TYPE`; the parser's own, the first three and `NO ABILITY LAYER`, are also the website's Parser
+FOUND`, `STATS TOO HIGH`, `ABILITY TEXT NOT FOUND`, `UNKNOWN TYPE`; the parser's own, the first three, are also the website's Parser
 notes, the validator's are printed only), after the card's `site/Card Edits.json` entry (`problems_ok`, `allow_high_stats`, `creatures` ...).
 The second push-guard rule (docs/Campaigns/CARD_STANDARDIZATION_CAMPAIGN.md section 5). It reports and never
 rejects: exit 0 always; an unreadable PSD, a PSD under `MDW/` or `Markers/` (no card) or a failed API call (a 5xx after the retries, no
