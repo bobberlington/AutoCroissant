@@ -2502,7 +2502,8 @@ def test_card_syncs_wait_ends_at_decided(clone, tmp_path):
 def test_card_syncs_follow_up_waits_for_land(clone, tmp_path):
     """A follow-up (input guards, started by the guards' check job before Land): both lanes set up, then "Guards' fixes"
     waits until that run's check job reaches Landed or ends (never another job's step), holds nothing, then History wait
-    and Newest."""
+    and Newest. A first attempt's push: main by git every 0.5 s, the API every 4th; its landing there: Bake and save goes
+    at once, Card data asks the API at every look."""
     yaml = pytest.importorskip("yaml")
     doc = yaml.safe_load((_workflow(clone).parent / "card-sync.yml").read_text(encoding="utf-8"))
     for job, at, fonts, history in (("data", 13, [], ["History wait"]),       # data: its card fetch, venv and records first
@@ -2519,8 +2520,8 @@ def test_card_syncs_follow_up_waits_for_land(clone, tmp_path):
            "LANDED": guards["env"]["LANDED"]}
     assert "LANDED" in guards["run"] and "POST" not in guards["env"]
 
-    def jobs(*pairs, name="check", status="in_progress"):
-        return json.dumps({"jobs": [{"name": name, "status": status, "steps": [{"name": n, "status": st} for n, st in pairs]}]})
+    def jobs(*pairs, name="check", status="in_progress", **run):
+        return json.dumps({"jobs": [{"name": name, "status": status, "steps": [{"name": n, "status": st} for n, st in pairs], **run}]})
 
     land, landed = ("Land", "completed"), ("Landed", "in_progress")
     for answer, later, looks in ((jobs(land, landed), None, 0),
@@ -2532,6 +2533,26 @@ def test_card_syncs_follow_up_waits_for_land(clone, tmp_path):
         done, outputs = _shell(guards, {**env, "FAKE_JOBS": answer, **({"FAKE_JOBS_LATER": later, "FAKE_LOOKS": str(looks)} if later else {})})
         assert done.returncode == 0 and "run" not in outputs and naps.read_text().split() == ["3"] * looks, (answer, done.stderr)
         assert not any("card-guards.yml/runs" in line for line in json.loads((tmp_path / "gh.json").read_text())["log"])
+    origin, temp = tmp_path / "o" / "cards", tmp_path / "temp"
+    temp.mkdir()
+    git = lambda *a: subprocess.run(["git", "-C", str(origin), "-c", "user.name=A", "-c", "user.email=a@x", *a],  # noqa: E731
+                                    check=True, capture_output=True, text=True).stdout.strip()
+    subprocess.run(["git", "init", "-q", "-b", "main", str(origin)], check=True)
+    git("config", "uploadpack.allowFilter", "true")
+    git("commit", "-q", "--allow-empty", "-m", "push")
+    push = git("rev-parse", "HEAD")
+    env = {**env, "RUNNER_TEMP": str(temp), "GITHUB_SERVER_URL": f"file://{tmp_path}", "FAKE_LOOKS": "1"}
+    for lane, named, attempt, sleeps in (("main", push, 1, []), ("data", push, 1, ["0.5"]),
+                                         ("main", "b" * 40, 1, ["0.5"] * 4), ("main", push, 2, ["3"])):   # another's; a re-run
+        git("reset", "-q", "--hard", push)
+        git("commit", "-q", "--allow-empty", "-m", f"Card guards: 1 PNG re-exported\n\nGuarded-push: {named}")
+        (tmp_path / "gh.json").unlink(missing_ok=True)
+        naps.write_text("")
+        run = {"head_sha": push, "run_attempt": attempt}
+        done, _ = _shell(guards, {**env, "GITHUB_JOB": lane, "FAKE_JOBS": jobs(("Land", "in_progress"), ("Landed", "queued"), **run),
+                                  "FAKE_JOBS_LATER": jobs(land, landed, **run)})
+        assert done.returncode == 0 and naps.read_text().split() == sleeps, (lane, named, attempt, done.stderr)
+        assert (f"landed {git('rev-parse', '--short=8', 'HEAD')} on main" in done.stdout) is (sleeps == []), done.stdout
 
 
 def test_site_build_starts_with_the_data_job(clone, tmp_path):
