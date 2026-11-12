@@ -1,5 +1,5 @@
 """The diagnostics skill's diff_stats.py and inspect_card_data.py read the data build's db/ JSON: a db/ folder, a
-stats.json, a data commit (the shadow's daily check against origin/data)."""
+stats.json, a data commit."""
 import subprocess
 import sys
 from collections import defaultdict
@@ -18,9 +18,9 @@ def _card(name, **kw):
     return cm.CardInfo(**base)
 
 
-def _run(script, *args, cwd=None):
+def _run(script, *args):
     done = subprocess.run([sys.executable, str(SCRIPTS / script), *map(str, args)], capture_output=True, text=True,
-                          cwd=cwd or REPO)
+                          cwd=REPO)
     return done.returncode, done.stdout + done.stderr
 
 
@@ -58,14 +58,12 @@ def test_diff_stats_reads_db_folders_and_data_commits(tmp_path):
 
 
 def test_diff_stats_matches_re_dated_versions(tmp_path):
-    """A version given its commit's blob, or re-dated to its blob's intro, is the same version: no version added or
-    dropped; the re-dated one's start moved, a normalized one's data changed."""
+    """A version re-dated to its blob's intro is the same version: no version added or dropped; the re-dated one's start
+    moved, a normalized one's data changed."""
     stats = {"Kirby": _card("Kirby")}
-    jetson = defaultdict(list, {"Kirby": [_card("Kirby", ability="A.", timestamp=1.0, blob_sha=None),
-                                          _card("Kirby", ability="B.", timestamp=2.0, blob_sha="b" * 40),
+    jetson = defaultdict(list, {"Kirby": [_card("Kirby", ability="B.", timestamp=2.0, blob_sha="b" * 40),
                                           _card("Kirby", ability="C.", timestamp=3.0, blob_sha="c" * 40, series=None)]})
-    built = defaultdict(list, {"Kirby": [_card("Kirby", ability="A.", timestamp=1.0, blob_sha="a" * 40),
-                                         _card("Kirby", ability="B.", timestamp=1.5, blob_sha="b" * 40),
+    built = defaultdict(list, {"Kirby": [_card("Kirby", ability="B.", timestamp=1.5, blob_sha="b" * 40),
                                          _card("Kirby", ability="C.", timestamp=3.0, blob_sha="c" * 40, series="Kirby")]})
     _db(tmp_path / "pk", stats, jetson)
     _db(tmp_path / "db", stats, built)

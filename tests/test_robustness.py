@@ -84,13 +84,9 @@ class Channel:
 def channels(monkeypatch):
     found = {}
     monkeypatch.setattr(main.client, "get_channel", lambda cid: found.get(cid))
-    for q in (utils.dispatch_queue, utils.edit_queue, utils.command_queue):
-        q.clear()
     main._lanes.clear()
     main._lane_tasks.clear()
-    yield found
-    for q in (utils.dispatch_queue, utils.edit_queue, utils.command_queue):
-        q.clear()
+    return found
 
 
 def _drain():
@@ -188,17 +184,16 @@ class Sent:
         self.flags = SimpleNamespace(ephemeral=ephemeral)
 
 
-@pytest.mark.parametrize("ephemeral", [True])
-def test_long_edit_keeps_ephemeral(channels, ephemeral):
+def test_long_edit_keeps_ephemeral(channels):
     inter = Inter()
     async def edit(**kw):
         inter.log.append(("edit", kw))
-        return Sent(ephemeral)
+        return Sent(True)
     inter.edit_original_response = edit
     am = Object(1)
     utils.queue_edit(inter, content="x" * 4500, allowed_mentions=am)
     asyncio.run(main._drain_edits())
-    assert [kw.get("ephemeral", False) for _, kw in utils.dispatch_queue] == [ephemeral, ephemeral]
+    assert [kw.get("ephemeral", False) for _, kw in utils.dispatch_queue] == [True, True]
     assert all(kw["allowed_mentions"] is am for _, kw in utils.dispatch_queue)
 
 
@@ -448,7 +443,6 @@ def test_git_fetch_times_out(monkeypatch, tmp_path):
     stall = tmp_path / "stall.sh"
     stall.write_text(f"#!/bin/sh\necho $$ >> {tmp_path}/stalls\nexec sleep 10\n")   # a stalled connection
     stall.chmod(0o755)
-    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("GIT_SSH_COMMAND", str(stall))
     monkeypatch.setattr(ub, "NET_TIMEOUT", 1)
     sent = []

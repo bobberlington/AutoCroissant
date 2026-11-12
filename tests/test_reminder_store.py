@@ -16,16 +16,11 @@ GUILD, CHANNEL, ADMIN, OTHER = 11, 22, 1, 2
 
 @pytest.fixture(autouse=True)
 def fresh(monkeypatch):
-    """Nothing loaded yet; ADMINS = [ADMIN]; the queues empty (cwd is the test's temp dir)."""
+    """Nothing loaded yet; ADMINS = [ADMIN] (cwd is the test's temp dir)."""
     monkeypatch.setattr(utils, "ADMINS", [ADMIN])
     for name, value in (("reminders", defaultdict(list)), ("_loaded", False), ("_load_error", None),
                         ("_client", None)):
         monkeypatch.setattr(an, name, value)
-    utils.dispatch_queue.clear()
-    utils.command_queue.clear()
-    yield
-    utils.dispatch_queue.clear()
-    utils.command_queue.clear()
 
 
 def _reload(monkeypatch):

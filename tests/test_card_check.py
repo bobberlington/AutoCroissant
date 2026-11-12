@@ -335,7 +335,6 @@ def test_repo_mode_push(fake_cards, monkeypatch, tmp_path, capsys):
 
 def test_repo_mode_api_failure_is_one_line_and_exit_0(monkeypatch, tmp_path, capsys):
     """A 5xx after the retries: one GitHub API error line, {} to Discord, exit 0 (never a red push)."""
-    monkeypatch.setattr(ga, "sleep", lambda s: None)                              # get_with_retry's 1 s and 2 s waits
     monkeypatch.setattr(ga, "get", lambda url, **kw: Reply(503))
     out, disc, expected = tmp_path / "r.json", tmp_path / "d.json", "GitHub API: 503"
     assert cc.main(["--repo", "o/r", "--before", "b" * 40, "--after", "c2", "--json", str(out), "--discord", str(disc)]) == 0

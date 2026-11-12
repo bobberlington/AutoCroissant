@@ -74,15 +74,13 @@ def summary() -> int:
         print(f"  {t:12s} {n}")
     n_problems = sum(1 for c in s.values() if c.problems)
     n_no_author = sum(1 for c in s.values() if not c.author)
-    n_rulebook = sum(1 for c in s.values() if "Rulebook" in c.path)
     newest = max(s.values(), key=lambda c: c.timestamp)
     print(f"\ncards with recorded parse problems: {n_problems}")
     print(f"cards without author (orphans)    : {n_no_author}")
-    print(f"rulebook entries                  : {n_rulebook}")
     print(f"newest timestamp: {newest.name} @ {datetime.fromtimestamp(newest.timestamp)}")
     bad_paths = [c.name for c in s.values()
                  if c.path and c.path.split('/')[0] not in
-                 ("Creatures", "Items", "Field", "Auxiliary", "N.M.E", "MDW", "Rulebook", "Types")]
+                 ("Creatures", "Items", "Field", "Auxiliary", "N.M.E", "MDW", "Types")]
     print(f"entries with suspicious (non repo-relative) paths: {len(bad_paths)}"
           + (f" e.g. {bad_paths[:3]}" if bad_paths else ""))
     return 0

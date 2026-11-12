@@ -4,7 +4,6 @@ layer's text and nothing else changes, byte for byte outside the Txt2 block; an 
 Reads the card clone (skips without it). The six titles baked on 2026-10-22 are repaired into tmp from their bake
 commits (main holds them in sync since 7b48db05 and 5a9e0fcf).
 """
-import hashlib
 import struct
 from pathlib import Path
 
@@ -25,10 +24,6 @@ def _outside_txt2(path) -> tuple:
     resources = 30 + struct.unpack(">I", data[26:30])[0]
     section = resources + 4 + struct.unpack(">I", data[resources:resources + 4])[0]
     return data[:section] + data[section + 4:at + 8], data[at + 12 + (length + 3) // 4 * 4:]
-
-
-def _sha(path) -> str:
-    return hashlib.sha1(Path(path).read_bytes()).hexdigest()
 
 
 # ========================

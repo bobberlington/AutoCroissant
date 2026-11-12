@@ -362,10 +362,10 @@ def remote(tmp_path):
     return type("Remote", (), {"bare": bare, "work": work})
 
 
-def _out(tmp_path, request, state="baked", at=None, image=True, card="Mini Doomer") -> Path:
+def _out(tmp_path, request, state="baked", at=None, image=True) -> Path:
     out = tmp_path / "outs" / request
     out.mkdir(parents=True)
-    result = {**br.blank(request, card), "card": card, "state": state, "path": DOOMER, "at": at or br.stamp(), "reason": "hp 5 -> 8"}
+    result = {**br.blank(request, "Mini Doomer"), "card": "Mini Doomer", "state": state, "path": DOOMER, "at": at or br.stamp(), "reason": "hp 5 -> 8"}
     if image:
         result["files"] = {"png": br.PNG, "webp": br.SMALL, "before": br.BEFORE}
         (out / br.PNG).write_bytes(b"png of " + request.encode())

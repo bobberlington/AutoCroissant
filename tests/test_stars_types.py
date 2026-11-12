@@ -40,7 +40,8 @@ NASUS = "Creatures/Other/4 Stars/Nasus.psd"             # Fire, Light and a wide
 # ========================
 # Fixture cards
 # ========================
-def _star(size: int = 100) -> Image.Image:
+def _star() -> Image.Image:
+    size = 100
     image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     points = [(size / 2 + size / 2 * (1 if k % 2 == 0 else 0.45) * cos(-pi / 2 + k * pi / 5),
                size / 2 + size / 2 * (1 if k % 2 == 0 else 0.45) * sin(-pi / 2 + k * pi / 5)) for k in range(10)]
@@ -64,11 +65,10 @@ def _types_dir(tmp_path) -> str:
     return str(folder)
 
 
-def _fixture(tmp_path, stars=((1080, 20), (970, 20)), hidden=(), types=(("Fire", (30, 30)),),
-             library=(), name="Fixture") -> tuple:
+def _fixture(tmp_path, stars=((1080, 20), (970, 20)), hidden=(), types=(("Fire", (30, 30)),), name="Fixture") -> tuple:
     """
-    A 1200x1800 card: a gradient art layer, a Stars group (stars at the given top-lefts, hidden ones), a Types group
-    of icons ((name, top-left[, size])) and hidden library icons.
+    A 1200x1800 card: a gradient art layer, a Stars group (stars at the given top-lefts, hidden ones) and a Types group
+    of icons ((name, top-left[, size])).
 
     Returns:
         (PSD path, PNG path): the PNG is the PSD's own render (the official export)
@@ -90,10 +90,6 @@ def _fixture(tmp_path, stars=((1080, 20), (970, 20)), hidden=(), types=(("Fire",
     for icon, (x, y), *size in types:
         row.append(PixelLayer.fromarray(np.asarray(_icon((200, 40 + 30 * len(icon), 60), *size)), psd, name=icon, top=y,
                                         left=x))
-    for icon, (x, y) in library:
-        layer = PixelLayer.fromarray(np.asarray(_icon((40, 200, 200))), psd, name=icon, top=y, left=x)
-        row.append(layer)
-        layer.visible = False
     path = tmp_path / "old" / f"{name}.psd"
     path.parent.mkdir(exist_ok=True)
     psd.save(str(path))
@@ -129,8 +125,8 @@ def _clone_card(clone, rel, tmp_path) -> tuple:
 # ========================
 # Pure functions
 # ========================
-def _unit(x, y, size=100):
-    return pe._Unit([], (x, y, x + size, y + size))
+def _unit(x, y):
+    return pe._Unit([], (x, y, x + 100, y + 100))
 
 
 def test_layouts_rows_of_two_and_lines():
@@ -208,9 +204,9 @@ def test_record_moved_checks_rect_mask_and_blocks():
 def test_gate_bytes_takes_declared_copies_moves_toggles_and_icons(monkeypatch):
     """A star copied (its record a moved copy of the source's), one moved, one hidden, a type icon made from Types/;
     anything undeclared refuses, with the field it belongs to."""
-    def record(name, rect=(0, 0, 10, 10), flags=b"\x08", blocks=((b"lyid", b"1"),), channels=((-1, 9), (0, 9), (1, 9), (2, 9))):
-        return {"name": name, "flags": flags, "rect": rect, "channels": channels, "mask": b"", "blend": (0, 255, 0),
-                "blocks": blocks}
+    def record(name, rect=(0, 0, 10, 10), flags=b"\x08", blocks=((b"lyid", b"1"),)):
+        return {"name": name, "flags": flags, "rect": rect, "channels": ((-1, 9), (0, 9), (1, 9), (2, 9)), "mask": b"",
+                "blend": (0, 255, 0), "blocks": blocks}
     old = [record("Art"), record("Star", (10, 900, 110, 1000)), record("Star", (10, 1000, 110, 1100)), record("Fire")]
     new = [record("Art"), record("Star", (10, 900, 110, 1000), flags=b"\x0a"),
            record("Star", (10, 1000, 110, 1100)), record("Star copy", (120, 950, 220, 1050), blocks=((b"lyid", b"9"),)),

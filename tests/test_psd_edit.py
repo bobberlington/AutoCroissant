@@ -2400,13 +2400,13 @@ def test_missing_and_loose_fonts(clone, parser, tmp_path, monkeypatch):
     assert refused.value.code == "parity" and "past the 25% floor" in refused.value.why
 
 
-def _painted(clone, tmp_path, rows: float, box: tuple = HP_ROW) -> tuple:
+def _painted(clone, tmp_path, rows: float) -> tuple:
     """Mini Doomer's PSD, and its PNG with the top share of a box (the hp row) inverted (a render broken there), in
     tmp_path/card."""
     psd, png = _card(clone, MINI_DOOMER)
     out = tmp_path / "card"
     out.mkdir()
-    (out / Path(png).name).write_bytes(painted(Path(png).read_bytes(), box, rows))
+    (out / Path(png).name).write_bytes(painted(Path(png).read_bytes(), HP_ROW, rows))
     (out / Path(psd).name).write_bytes(Path(psd).read_bytes())
     return str(out / Path(psd).name), str(out / Path(png).name)
 
@@ -2439,15 +2439,14 @@ def _no_ability(monkeypatch):
     """The fork drawing no ability text: every render hides the visible Text/Ability layer (the baseline's too: no cut
     from the whole render, crop_pair)."""
     monkeypatch.setattr(pe, "crop_pair", lambda *args, **kwargs: None)
-    for name in ("render_region",):
-        def blank(psd, region, icc=True, text="preview", edited=(), real=getattr(pe, name)):
-            layer = pe.ability_layer(psd)
-            layer.visible = False
-            try:
-                return real(psd, region, icc, text, edited)
-            finally:
-                layer.visible = True
-        monkeypatch.setattr(pe, name, blank)
+    def blank(psd, region, icc=True, text="preview", edited=(), real=pe.render_region):
+        layer = pe.ability_layer(psd)
+        layer.visible = False
+        try:
+            return real(psd, region, icc, text, edited)
+        finally:
+            layer.visible = True
+    monkeypatch.setattr(pe, "render_region", blank)
 
 
 def test_a_blank_render_under_the_floor_is_refused(clone, parser, tmp_path, monkeypatch):

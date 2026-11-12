@@ -183,8 +183,8 @@ def test_start_of_causes(history):
     assert (legacy["cause"], legacy["from"], legacy["from_commit"]) == ("legacy", 42.0, None)
 
 
-def _index_with(intros: dict, deletions: dict = None, pngs: dict = None) -> ch.GitIndex:
-    """An index by hand: blob -> (sha, at); path -> (sha, at) deleted; png path -> [(sha, at)] newest first."""
+def _index_with(intros: dict, deletions: dict = None) -> ch.GitIndex:
+    """An index by hand: blob -> (sha, at); path -> (sha, at) deleted."""
     index, order = ch.GitIndex(), 0
     for blob_sha, (sha, at) in intros.items():
         commit = index.by_sha.setdefault(sha, ch.Commit(order, sha, at, "someone"))
@@ -192,8 +192,6 @@ def _index_with(intros: dict, deletions: dict = None, pngs: dict = None) -> ch.G
         order += 1
     for path, (sha, at) in (deletions or {}).items():
         index.deleted[path] = index.by_sha.setdefault(sha, ch.Commit(order, sha, at, "remover"))
-    for path, items in (pngs or {}).items():
-        index.pngs[path] = [index.by_sha.setdefault(sha, ch.Commit(100 - at, sha, at, "x")) for sha, at in items]
     index.commits = sorted(index.by_sha.values(), key=lambda c: -c.at)
     for i, c in enumerate(index.commits):
         c.order = i

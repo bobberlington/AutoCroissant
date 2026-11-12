@@ -27,7 +27,7 @@ GATED = {
 # ========================
 @pytest.fixture(autouse=True)
 def setup(monkeypatch):
-    """ADMINS = [ADMIN], every worker recorded, slash_registry filled as on_ready does, queues empty."""
+    """ADMINS = [ADMIN], every worker recorded, slash_registry filled as on_ready does."""
     monkeypatch.setattr(utils, "ADMINS", [ADMIN])
     monkeypatch.setattr(main, "client", SimpleNamespace(user=SimpleNamespace(id=99)))
     monkeypatch.setattr(cs, "on_use", lambda command=None: False)   # no look for new card data
@@ -38,12 +38,7 @@ def setup(monkeypatch):
         monkeypatch.setattr(main, worker, record)
     for cmd in main.tree.get_commands():
         monkeypatch.setitem(utils.slash_registry, cmd.name, cmd.callback)
-    queues = (utils.dispatch_queue, utils.edit_queue, utils.command_queue)
-    for q in queues:
-        q.clear()
-    yield ran
-    for q in queues:
-        q.clear()
+    return ran
 
 
 def _interaction(user_id):

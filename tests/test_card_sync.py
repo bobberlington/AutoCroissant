@@ -121,9 +121,9 @@ def _card(name, ability="Deal 2 damage.", path=None, **kw):
     return card
 
 
-def _run(run_id, status="completed", conclusion="success", event="workflow_dispatch", login="MichaelJSr", title=cs.RUN_NAME):
+def _run(run_id, status="completed", conclusion="success", event="workflow_dispatch", login="MichaelJSr"):
     return {"id": run_id, "status": status, "conclusion": conclusion if status == "completed" else None, "event": event,
-            "display_title": title, "html_url": f"https://github.com/{REPO}/actions/runs/{run_id}",
+            "display_title": cs.RUN_NAME, "html_url": f"https://github.com/{REPO}/actions/runs/{run_id}",
             "actor": {"login": login}}
 
 
@@ -137,12 +137,10 @@ def _job(name, state=None, status="completed", conclusion="success"):
 
 
 @pytest.fixture
-def github(monkeypatch, tmp_path):
-    """cwd a temp folder (card_data/ there), GitHub faked, stats_db and the queues emptied."""
+def github(monkeypatch):
+    """GitHub faked, stats_db emptied."""
     fake = FakeGitHub()
-    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(ga, "get", fake.get)
-    monkeypatch.setattr(ga, "sleep", lambda s: None)
     monkeypatch.setattr(cs, "session", lambda: SimpleNamespace(post=fake.post))
     monkeypatch.setattr(cs, "sleep", lambda s: None)
     monkeypatch.setattr(cs, "ACTIONS_TOKEN", TOKEN)
@@ -151,12 +149,7 @@ def github(monkeypatch, tmp_path):
     monkeypatch.setitem(cs._loaded, "commit", None)
     monkeypatch.setitem(cs._checked, "at", None)
     monkeypatch.setattr(cs, "_unreported", {})
-    queues = (utils.dispatch_queue, utils.edit_queue, utils.command_queue)
-    for q in queues:
-        q.clear()
-    yield fake
-    for q in queues:
-        q.clear()
+    return fake
 
 
 def _said() -> list:

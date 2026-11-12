@@ -5,7 +5,6 @@ dozens of layer records around a one-word edit.
 """
 from io import BytesIO
 
-import pytest
 from PIL import Image
 from psd_tools import PSDImage
 from psd_tools.api.layers import Group, PixelLayer
@@ -20,7 +19,6 @@ from helpers import BALLOON_BOY, normalised
 # ========================
 TEMPLE = "Auxiliary/Items/The_Temple_of_Ahn'Qiraj.psd"
 GLAIVE = "Creatures/FTL/4 Stars/Glaive_Main_Cannon.psd"
-LAZARUS = "Creatures/Isaac/3 Stars/Tainted_Lazarus.psd"
 COOLDOWNS = ("9f0c9ece", "11dc6114")            # Zomoroko's push of 2026-10-22 05:54 (cooldown tags, 50 PSDs)
 
 
@@ -94,14 +92,13 @@ def test_a_name_edit(clone):
         "Name text: 'White CLot' -> 'White Clot'"]
 
 
-@pytest.mark.parametrize("rel, expected", [(TEMPLE, "Ability text: '(-1/1CD)' -> '(-1/1GCD)(OYT)'")])
-def test_photoshop_resave_noise_is_left_out(clone, rel, expected):
-    old, new = _pair(clone, *COOLDOWNS, rel)
+def test_photoshop_resave_noise_is_left_out(clone):
+    old, new = _pair(clone, *COOLDOWNS, TEMPLE)
     rewritten = sum(1 for a, b in zip(old._record.layer_and_mask_information.layer_info.layer_records,
                                       new._record.layer_and_mask_information.layer_info.layer_records)
                     if a.tagged_blocks.tobytes() != b.tagged_blocks.tobytes())
     assert rewritten >= 10                      # the save touched far more than the edit
-    assert pdf.changes(old, new) == [expected]
+    assert pdf.changes(old, new) == ["Ability text: '(-1/1CD)' -> '(-1/1GCD)(OYT)'"]
 
 
 def test_a_mask_switched_off(clone):

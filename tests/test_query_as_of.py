@@ -57,9 +57,6 @@ def db(monkeypatch):
     monkeypatch.setattr(cm.stats_db, "stats", {"Tainted Bethany": current, "Bethany Copy": copy})
     monkeypatch.setattr(cm.stats_db, "old_stats", defaultdict(list, {"Tainted Bethany": old,
                                                                      "ZOEY!!!!!": _zoey(commit="35adb383" + "0" * 32)}))
-    utils.dispatch_queue.clear()
-    yield
-    utils.dispatch_queue.clear()
 
 
 def _ask(query, as_of):

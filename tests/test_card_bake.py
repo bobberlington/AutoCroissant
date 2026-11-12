@@ -32,9 +32,6 @@ from conftest import CLONE, SITE_SRC, blob_sha_bytes as _sha
 from helpers import ABOUT, AT, DOOMER, EDITS, FREEZER, SNACK, _card_files, _edits, files, github  # noqa: F401 (fixtures)
 
 
-GREEN_MAGE = "Creatures/Everhood/4 Stars/Green_Mage.psd"   # fixed 2026-10-23: its stat bars on the canvas
-OFF_CANVAS_MAGE = "45cf8746^"   # Green Mage before its bars moved onto the card (they lay below the canvas)
-PURE_VESSEL = "Creatures/Hollow Knight/5 Stars/Pure_Vessel.psd"     # its stat masks reach past the canvas
 LIVE_EDITS = CLONE / "site" / "Card Edits.json"
 EDIT_JS = CLONE / "site" / "assets" / "edit.js"
 WORKFLOW = SITE_SRC / ".github" / "workflows" / "card-sync.yml"
@@ -325,9 +322,8 @@ def test_blob_gate(github):
     assert commits == [] and _verdict("Mini Doomer")["reason"].startswith("blob: ")
 
 
-@pytest.mark.parametrize("status", [422])
-def test_head_moved_after_three_conflicts(github, status):
-    github.conflicts, github.conflict_status = 3, status
+def test_head_moved_after_three_conflicts(github):
+    github.conflicts, github.conflict_status = 3, 422
     text, commits = cb.run(card="Mini Doomer")
     assert commits == [] and "head-moved: main kept moving: not committed after 3 tries" in text
     assert _edits_at(github)["cards"]["Mini Doomer"]["hp"] == 5

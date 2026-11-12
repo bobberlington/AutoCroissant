@@ -270,7 +270,6 @@ def test_repo_mode_push(fonts_dir, fake_psds, monkeypatch, tmp_path, capsys):
 
 def test_repo_mode_api_failure_is_one_line_and_exit_0(fonts_dir, monkeypatch, tmp_path, capsys):
     """A 5xx after the retries, no network or a truncated tree: one GitHub API error line, {} to Discord, exit 0 (never a red push)."""
-    monkeypatch.setattr(ga, "sleep", lambda s: None)                              # get_with_retry's waits
     replies = {"503": lambda url: Reply(503), "truncated": lambda url: Reply(body={"truncated": True, "tree": []})}
 
     def connection_error(url):

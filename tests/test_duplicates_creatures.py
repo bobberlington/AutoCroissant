@@ -1,7 +1,5 @@
 """Duplicates (a dup_of PNG -> duplicate_of) and the multi-creature split, on the real cards."""
 
-import pytest
-
 import commands.card_data as cd
 import commands.psd_analyzer as pa
 from commands.card_models import StatsDatabase
@@ -61,9 +59,8 @@ def test_a_png_only_card_with_dup_of_is_a_duplicate():
     assert tr.db.stats["Stubborn Queen"].display_name is None                  # its own name is its title
 
 
-@pytest.mark.parametrize("failure", ["5xx"])
-def test_unread_card_edits_keep_the_dup_of_cards(monkeypatch, failure):
-    """Card Edits.json in the tree but not read (a 5xx: lost; malformed JSON): its dup_of entries can't be read, so
+def test_unread_card_edits_keep_the_dup_of_cards(monkeypatch):
+    """Card Edits.json in the tree but not read (a 5xx: lost): its dup_of entries can't be read, so
     Stubborn Queen (PNG and original still there) stays a card, never archived; gone PNG: archived as before."""
     from requests.exceptions import RequestException
     from commands.card_edits import CardEdits
@@ -78,9 +75,7 @@ def test_unread_card_edits_keep_the_dup_of_cards(monkeypatch, failure):
     assert "Stubborn Queen" in tr.db.stats
 
     def unreadable(path):
-        if failure == "5xx":
-            raise RequestException("502")
-        return "{not json"
+        raise RequestException("502")
     monkeypatch.setattr(tr, "_repo_text", unreadable)
     for tree, kept in ((paths, True), (paths[:2] + paths[3:], False)):
         tr.db.seen_cards.clear()

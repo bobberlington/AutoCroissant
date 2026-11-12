@@ -4,6 +4,7 @@ the four fixture PSDs (tests/fixtures/parts/, each read at its own blob) with th
 fields their joins, and a tagged A Snack parsed and drawn per picture.
 """
 import json
+import sys
 from io import BytesIO
 from pathlib import Path
 
@@ -18,13 +19,8 @@ from conftest import card_blob
 from golden_cards import psd_parser  # noqa: F401 (fixture)
 
 FIXTURES = Path(__file__).parent / "fixtures" / "parts"
-CARDS = {      # fixture: (path, card name, {lyid: name} tags applied in memory: §9's for A Snack)
-    "mini_doomer": ("Auxiliary/Minions/Mini_Doomer.psd", "Mini Doomer", {}),
-    "miracle_matter": ("Creatures/Kirby/3 Stars/Miracle_Matter.psd", "Miracle Matter", {}),
-    "warcraftian_druid": ("Creatures/World Of Warcraft/4 Stars/Warcraftian_Druid.psd", "Warcraftian Druid", {}),
-    "a_snack_tagged": ("Items/Heal/2 Stars/A_Snack.psd", "A Snack",
-                       {1015: "A Snack #1", 327: "Name #1", 1022: "Breakfast #2", 1023: "Name #2", 1024: "Supper #3", 1025: "Name #3"}),
-}
+sys.path.insert(0, str(FIXTURES))
+from make_fixtures import CARDS  # noqa: E402 (fixture: (path, card name, {lyid: name} tags applied in memory))
 
 
 def _fixture_psd(clone, fixture: str):

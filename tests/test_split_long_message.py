@@ -1,6 +1,4 @@
 """split_long_message: Discord-sized chunks that keep code fences balanced."""
-import pytest
-
 from commands.utils import BREAK_LEN, split_long_message
 
 FENCE = "```"
@@ -27,8 +25,8 @@ def test_code_block_reopened_and_closed():
     assert inner == ["Problems:"] + body.split("\n") + ["after"]
 
 
-@pytest.mark.parametrize("text,size", [("word " * 30, 20)])
-def test_no_newline_falls_back_to_spaces_then_hard_cut(text, size):
+def test_no_newline_falls_back_to_spaces_then_hard_cut():
+    text, size = "word " * 30, 20
     chunks = split_long_message(text, size)
     assert all(len(c) <= size for c in chunks)
     assert "".join(chunks).replace(" ", "") == text.replace(" ", "")

@@ -28,17 +28,8 @@ from helpers import BALLOON_BOY, _rows_off, art, card, fixture_psd, normalised, 
 # ========================
 DIRTY_BED = ("cbcd441af0856e1c4750337224def2e2f87051c3", "65d95c60cd60e597bfe84d8833e3f71b450c1dc6",
              "5be89c3efdbb5c835f135d0297e5cae6be3d6a3d", "45c2a2f0c419cdd8f5dc90c7d3085d85f15efd77")   # Zomoroko 7cb4c867
-SPRINGTRAP = ("532cbe005c7a93c98fdc0fd97f24325d83947f92", "d62bea1c719842de02d0d3e5012edd1866e4d66a",
-              "65324a959f373b14892e54b6a86028176630bee7", "b224575a3d0a97a3dba11a0be778ff18fb5fddc1")  # the bake c6dc6d08
 RESTRAINED = ("68ff57d57b6238f8075e790aa4cc1a9fc6800a7d", "bab7f20bb143c50e13786ec212edd25ee35a0a96",
               "709c9739ad353b96d5a05dd6906b8637fd65b20a")                                                # 5c8cb87b
-GREEN_MAGE = ("d17ddacd178eb7353dab252651855da1e2d995f7", "cf9e880710d77ad3b10dfa6690a2a285b5d1b9da",
-              "09e2dce6f6ed70454f1e52604015cc41678763ff", "41c2439d09d0eb532995338d2646ed7556b52eac")   # 45cf8746: ATK 6, bars only
-SANS = ("97b51c821e8057f1c1a00991172484ee3b30887b", "da0f33d4551435e71a7bd3a64a6f3f5fefa5fa15",
-        "6df87ab1668293459015269541c448e4dd3235d9")                                                     # 1b4f36a0: stale push
-BLOCK_HOPPER = ("923fdc6d0d874beac87904c5fc68f76737ebaf74", "23f5cd1787d1d8d924738b159acfa523f68e5963")  # 0262b237: raw
-CLOT_WHITE = ("09dbfff123941024fe7632dc0109d583f655de24", "497eda88775b84cc2ff53e88699a402f7a71b67c",
-              "16c15a759a0a361dcbbe3849218b6f35662703d7", "044b16a8a185ee7c402eb864c33233df21157f41")   # d8163103
 ABIGAIL = ("2b68e6a182b67d38e9b7720c035cbdc4f3ab42db", "f7fe63fa4cef78833d18c5e321d40644e7c22a35")    # 'Display' profile
 CORRUPTION = ("0a25307b51c751e800405b79a6c311b6e5701187", "20912da57554852a51e8a436599da05fba38d323",
               "47b02882ed2f48a1b3f1e596392064f1014cf2cb")   # 99594156: its title layer renamed only
@@ -155,12 +146,12 @@ def test_g2_refuses_a_change_the_render_does_not_show(tmp_path, monkeypatch):
     assert (broken.outcome, broken.gate) == ("refused", "G6") and broken.why.startswith("PNG not made: the bot cannot draw")
 
 
-@pytest.mark.parametrize("mode, depth", [("RGB", 16)])
-def test_g2_still_refuses_a_16_bit_or_cmyk_psd(tmp_path, mode, depth):
+def test_g2_still_refuses_a_16_bit_or_cmyk_psd(tmp_path):
     """Not 8-bit RGB with no stored image: the fork's render is no export of it, refused as before on every path (with
     an old PSD, beside its PNG, a new card); an 8-bit RGB PSD with no stored image is rendered (None: no refusal)."""
     from types import SimpleNamespace
     from psd_tools.constants import ColorMode
+    mode, depth = "RGB", 16
     assert pe._no_composite(SimpleNamespace(color_mode=ColorMode.RGB, depth=8)) is None
     psd = PSDImage.new(mode, (60, 90), depth=depth)
     psd.save(str(tmp_path / "odd.psd"))
@@ -232,14 +223,11 @@ def test_the_png_is_the_forks_render_merged_into_the_old_png(tmp_path, monkeypat
     assert shifted.numbers["cross"]["mean"] == 2
 
 
-@pytest.mark.parametrize("photoshop", [False])
-def test_a_png_pushed_before_its_psd_is_current(tmp_path, monkeypatch, photoshop):
+def test_a_png_pushed_before_its_psd_is_current(tmp_path):
     """The author pushed the PNG first and the PSD minutes later in its own push: the PNG in the tree already shows the
     pushed PSD, so nothing is made (a Photoshop save was re-exported over the author's export, a tool save refused at the
     referee's baseline). A PNG still showing the old PSD is re-exported, a change under the parity threshold included
     (24 levels: here 15)."""
-    if photoshop:
-        monkeypatch.setattr(pe, "photoshop_saved", lambda old, new: True)
     old = fixture_psd(tmp_path, card(), "old")
     for colour in ((0, 255, 0), (0, 0, 240)):
         new = fixture_psd(tmp_path, card(colour=colour), f"new{colour[1]}")

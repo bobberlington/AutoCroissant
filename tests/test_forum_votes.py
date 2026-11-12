@@ -615,10 +615,9 @@ def test_a_restart_mid_close_never_sends_twice(clock, monkeypatch):
         if next(sends) <= 1:
             raise asyncio.CancelledError
     client.results.send = restarts_after
-    for when in (DAY7,):
-        with pytest.raises(asyncio.CancelledError):
-            passes(client, when, now=clock)
-        restart(monkeypatch)
+    with pytest.raises(asyncio.CancelledError):
+        passes(client, DAY7, now=clock)
+    restart(monkeypatch)
     passes(client, DAY7 + timedelta(minutes=10), now=clock)
     assert [m.content for m in client.results.sent] == [f"Most votes: 👍 (3). {post.jump_url}\n> Please change this."]
     assert contents(post)[1:] == ["Voting is closed. Most votes: 👍 (3)."] and post.locked and post.tags == ["Closed"]

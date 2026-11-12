@@ -501,18 +501,14 @@ def test_a_g2_burst_keeps_the_anchors_refusal(cards, tmp_path, monkeypatch):
     assert not [w for w in entry["writes"] if w["kind"] == "png"] and pe.G7 in entry["told"]
 
 
-@pytest.mark.parametrize("dot", [False])
-def test_a_png_pushed_before_its_psd_keeps_g2_off_the_anchor(cards, tmp_path, monkeypatch, dot):
+def test_a_png_pushed_before_its_psd_keeps_g2_off_the_anchor(cards, tmp_path, monkeypatch):
     """Push A the PNG of v2 alone, B the PSD v2, C the PSD v3 (no stored image), within the burst window: the anchor is
     v1 (the PSD at A) but the PNG shows v2, so G2 draws v3 over v2 as the checked path does. Over the anchor it refused
-    G6 (the square recoloured) or called a 4-px dot current, nothing told (review of 2026-10-24)."""
+    G6 (the square recoloured), nothing told (review of 2026-10-24)."""
     root, base, alice, bot = cards
     work = tmp_path / "burst"
     work.mkdir()
     v2, v3 = card(base=(30, 200, 30)), card(base=(30, 200, 30), colour=(0, 255, 0))
-    if dot:
-        v3 = card(base=(30, 200, 30))
-        ImageDraw.Draw(v3).rectangle((12, 12, 13, 13), fill=(255, 255, 0))
     _png(root, f"{FOLDER}/Bread.png", v2)
     env = {**os.environ, "GIT_AUTHOR_DATE": "2026-10-22T10:00:00Z", "GIT_COMMITTER_DATE": "2026-10-22T10:00:00Z"}
     subprocess.run(["git", "-C", str(root), "commit", "-q", "-am", "PNG first"], check=True, env=env)
@@ -526,7 +522,7 @@ def test_a_png_pushed_before_its_psd_keeps_g2_off_the_anchor(cards, tmp_path, mo
     data = cg.check(str(root), two, one, mode="on", out=str(out), workers=1)
     (entry,) = data["cards"]
     assert not entry["error"], entry["error"]
-    assert entry["export"]["outcome"] == "re-exported" and entry["export"]["changed_px"] == (4 if dot else 441)
+    assert entry["export"]["outcome"] == "re-exported" and entry["export"]["changed_px"] == 441
     assert not any("an earlier push changed the PSD" in note for note in entry["notes"]), entry["notes"]
     assert not any(line.startswith("PNG not made") for line in entry["told"])
     (write,) = entry["writes"]
@@ -925,11 +921,11 @@ def test_land_by_git_past_the_bytes(tmp_path, monkeypatch):
     assert cg.land(plan)["sha"] == "c" * 40 and len(hub.commits) == 2
 
 
-def _entry(name, psd_blob="s1", png_blob="p1", **extra):
+def _entry(name, **extra):
     """A plan card with every key markdown reads (no writes)."""
     entry = {"card": name, "psd": f"X/{name}.psd", "case": "stale", "png": f"X/{name}.png", "login": "Alice",
              "commit": "a" * 40, "export": {}, "r10": {}, "issues": [], "fixed": [], "fix_refused": [], "notes": [],
-             "told": [], "error": "", "writes": [], "expect": {f"X/{name}.psd": psd_blob, f"X/{name}.png": png_blob}}
+             "told": [], "error": "", "writes": [], "expect": {f"X/{name}.psd": "s1", f"X/{name}.png": "p1"}}
     entry.update(extra)
     return entry
 

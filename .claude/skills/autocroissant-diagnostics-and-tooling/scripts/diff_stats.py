@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Diff two card databases (stats and their history): the data build's db/ JSON.
-Run it on Card sync data commits (the data gate) and for the shadow's daily check of the data branch.
+Run it on Card sync data commits (the data gate).
 
 Committing corrupted card data is the most damaging failure class in this project (see
 autocroissant-failure-archaeology). This tool turns "the data looks fine" into numbers.
@@ -37,7 +37,6 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO_ROOT))
 from commands.card_db import parse_old_stats, read_cards  # noqa: E402
-from commands.card_history import data_of  # noqa: E402
 
 BOOKKEEPING = ("blob_sha", "parser_version")       # not in to_dict(); a version's start is read from `version`
 
@@ -69,8 +68,7 @@ def key(card):
 def pair(a, b):
     """
     Two lists of one name's stored versions matched up: one version when the same timestamp and blob; else the same
-    blob (re-dated from git); else, where one side has no blob (a legacy version), the same timestamp, or the same
-    data in today's forms.
+    blob (re-dated from git).
 
     Returns:
         ([(a's version, b's version)], a's unmatched, b's unmatched)
@@ -78,9 +76,7 @@ def pair(a, b):
     def blob(card):
         return getattr(card, "blob_sha", None)
     rules = (lambda x, y: key(x) == key(y),
-             lambda x, y: bool(blob(x)) and blob(x) == blob(y),
-             lambda x, y: getattr(x, "timestamp", None) == getattr(y, "timestamp", None) and not (blob(x) and blob(y)),
-             lambda x, y: not (blob(x) and blob(y)) and same_data(x, y))
+             lambda x, y: bool(blob(x)) and blob(x) == blob(y))
     left, right, pairs = list(range(len(a))), list(range(len(b))), []
     for rule in rules:
         for i in list(left):
@@ -90,11 +86,6 @@ def pair(a, b):
                 left.remove(i)
                 right.remove(j)
     return (pairs, [a[i] for i in left], [b[j] for j in right])
-
-
-def same_data(a, b):
-    """Two versions hold the same data in today's forms (card_history.data_of: no timestamp, path or blob)."""
-    return data_of(a) == data_of(b)
 
 
 def data(card):

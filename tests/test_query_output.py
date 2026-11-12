@@ -19,15 +19,13 @@ def repo(monkeypatch):
     repo.cards_dff = DataFrame({"ability": ["fire"]}, index=["Items/Any"])          # not empty: the search runs
     repo.get_card_url = lambda name: f"https://img/{name.replace(' ', '_')}.png"
     monkeypatch.setattr(qc, "card_repo", repo)
-    utils.dispatch_queue.clear()
-    yield repo
-    utils.dispatch_queue.clear()
+    return repo
 
 
-def _search(repo, n, limit=-1):
+def _search(repo, n):
     names = [f"Items/Card {i}" for i in range(n)]
     repo.ability_search_engine = lambda ability: DataFrame({"ability": ["fire"] * n}, index=names)
-    qc.query_ability(utils.make_simple_fake_interaction(1), "Fire", limit)
+    qc.query_ability(utils.make_simple_fake_interaction(1), "Fire", -1)
     return [kw["content"] for _, kw in utils.dispatch_queue], [kw for _, kw in utils.dispatch_queue]
 
 

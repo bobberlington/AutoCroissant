@@ -423,7 +423,7 @@ see when a card's stored text last changed.
 
 **The "suspicious paths" heuristic** (read the code before trusting it blindly): it flags any
 entry whose path's top folder is not in
-`("Creatures", "Items", "Field", "Auxiliary", "N.M.E", "MDW", "Rulebook", "Types")`.
+`("Creatures", "Items", "Field", "Auxiliary", "N.M.E", "MDW", "Types")`.
 It exists to catch exactly the removeprefix corruption signature (paths starting `Users/...`; that
 bug was fixed 2026-10-19, but keep the check: it is cheap and catches any future path regression).
 Two caveats: (a) a legitimately NEW top-level folder in TTSCardMaker would false-positive —
@@ -453,10 +453,9 @@ Measured 2026-10-23 on the post-deploy rehearsal (main's cleanup vs work/history
 
 Both sides take any form of the card data (`card_db.read_cards`): a `stats.json`, a `db/` folder, or a data commit of
 `--git DIR`'s repo. The history matches one name's versions up before counting: the same
-timestamp and blob; else the same blob (re-dated from git); else, where one side has no blob (a legacy version; the
-2026-10-24 seed pass gave some their commit's blob and re-dated them), the same timestamp, or the same data in
-today's forms (`card_history.data_of`). So the data build's bookkeeping shows as `starts moved` and `kept versions
-with other data`, not as versions added and dropped; a kept version's data is compared without its timestamp.
+timestamp and blob; else the same blob (re-dated from git). So the data build's bookkeeping shows as `starts moved`
+and `kept versions with other data`, not as versions added and dropped; a kept version's data is compared without its
+timestamp.
 
 **Exit codes** (all verified 2026-07-11): `0` = no changes; `1` = changes found; `2` = usage or
 load error. Do not pipe through grep/head when you consume the exit code.

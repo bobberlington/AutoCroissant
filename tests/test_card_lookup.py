@@ -79,9 +79,7 @@ def repo(monkeypatch):
     repo.populate_files()
     repo.get_card_url = lambda key: f"https://img/{key}"
     monkeypatch.setattr(qc, "card_repo", repo)
-    utils.dispatch_queue.clear()
-    yield repo
-    utils.dispatch_queue.clear()
+    return repo
 
 
 # ========================
