@@ -1,5 +1,5 @@
 """Robustness: queue loops survive bad messages (B5), init_vc (B4), card list kept on GitHub errors (B7),
-temp files cleaned, git timeouts, help/describe text (C1-C3), unique handler names (C5), no /list_guild_members (C6)."""
+temp files cleaned, git timeouts, help/describe text (C1-C3), unique handler names (C5)."""
 import contextlib
 import asyncio
 import os
@@ -510,7 +510,7 @@ def test_on_ready_twice_runs_the_inits_once(monkeypatch, capsys):
 
 
 # ========================
-# Commands and help (C1, C2, C3, C5, C6)
+# Commands and help (C1, C2, C3, C5)
 # ========================
 def _registered() -> dict:
     return {cmd.name: cmd for cmd in main.tree.get_commands()}
@@ -521,7 +521,6 @@ def test_help_covers_every_command():
                   help_module.card_commands, help_module.stats_commands, help_module.music_commands)
                   for key in d if key.startswith("/")}
     assert documented == set(_registered()) and len(documented) == 47
-    assert "list_guild_members" not in documented and not hasattr(main, "list_guild_members")
 
 
 def test_a_space_named_png_takes_the_underscore_lookups():

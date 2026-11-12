@@ -24,7 +24,7 @@ FAKE = {
 
 @pytest.fixture
 def repo(monkeypatch):
-    """A CardRepository whose dataframe comes from FAKE instead of stats.pkl."""
+    """A CardRepository whose dataframe comes from FAKE instead of the card data."""
     def make(cards):
         monkeypatch.setattr(cm.stats_db, "stats", cards)
         r = qc.CardRepository()
@@ -34,13 +34,11 @@ def repo(monkeypatch):
 
 
 # ========================
-# CardInfo and the pickle
+# Re-parse
 # ========================
 def test_reparse_keeps_a_hand_set_subseries(clone):
     """A re-parse (PSD blob changed) keeps author, series and subseries from the stored card; a fresh parse has none."""
     rel = "Creatures/Mario/3 Stars/Sniffle_Thwomp.psd"
-    if not (clone / rel).exists():
-        pytest.skip(f"no {rel}")
     psd_parser = parser()
     name = cm.card_name(rel)
     assert psd_parser.parse(str(clone / rel), rel).subseries is None          # never parsed
@@ -49,8 +47,6 @@ def test_reparse_keeps_a_hand_set_subseries(clone):
     psd_parser.db.stats[name] = stored
     card = psd_parser.parse(str(clone / rel), rel)
     assert (card.author, card.series, card.subseries) == ("Someone", "Paper Mario", "Paper Mario: The Thousand-Year Door")
-    del stored.__dict__["subseries"]                                           # stored by an older bot
-    assert psd_parser.parse(str(clone / rel), rel).subseries is None
 
 
 # ========================

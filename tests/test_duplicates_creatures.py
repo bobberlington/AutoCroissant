@@ -29,14 +29,13 @@ def _traverser(cards: dict) -> cd.CardBuild:
 # ========================
 def test_duplicate_rules():
     cards = {n: pa.CardInfo(name=n, card_type="item", path=p) for n, p in (
-        ("X", "Items/Heal/2 Stars/X.psd"), ("X2", "Items/Heal/2 Stars/X2.psd"), ("R", "Auxiliary/Rulebook/R.psd"),
-        ("Z", "MDW/Z.psd"), ("Q", "Items/Q.psd"))}
+        ("X", "Items/Heal/2 Stars/X.psd"), ("X2", "Items/Heal/2 Stars/X2.psd"), ("Z", "MDW/Z.psd"), ("Q", "Items/Q.psd"))}
     cards["Old2"] = pa.CardInfo(name="Old2", card_type="item", duplicate_of="Q")              # gone: the prune's
     tr = _traverser(cards)
     paths = ["Items/Heal/2 Stars/X.psd", "Items/Heal/2 Stars/X2.psd", "Items/Heal/2 Stars/X3.png",
              "Items/Heal/2 Stars/x2.png",                      # has its own PSD: not a duplicate
              "Items/Heal/Y3.png",                              # no Y.psd
-             "Auxiliary/Rulebook/R.psd", "Auxiliary/Rulebook/R2.png", "MDW/Z.psd", "MDW/Z2.png", "Items/Q.psd"]
+             "MDW/Z.psd", "MDW/Z2.png", "Items/Q.psd"]
     assert _sync(tr, paths) == 0                  # numbered PNGs are variant pictures: no duplicates
     assert {n for n, c in tr.db.stats.items() if c.duplicate_of} == {"Old2"} and tr.db.seen_cards == []   # Old2: the prune's
 
@@ -159,8 +158,6 @@ def test_auxiliary_creatures_count_their_printed_stars(clone):
     found, notes = {}, {}
     for stem, stars in AUX_CREATURES.items():
         rel = f"Auxiliary/Creatures/{stem}.psd"
-        if not (clone / rel).exists():
-            pytest.skip(f"{rel} not in the clone")
         card = parser().parse(str(clone / rel), rel)
         found[stem] = card.stars
         notes[stem] = pp.CardValidator.validate(card)
@@ -172,8 +169,6 @@ def test_auxiliary_creature_without_bars(clone):
     from psd_tools import PSDImage
     import commands.psd_parser as pp
     rel = "Auxiliary/Creatures/Morpho_Knight.psd"
-    if not (clone / rel).exists():
-        pytest.skip(f"{rel} not in the clone")
     psd = PSDImage.open(clone / rel)
     psd.remove(next(layer for layer in psd if layer.name == "Stats Bars"))
     card = parser().parse(psd, rel)

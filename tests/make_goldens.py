@@ -37,10 +37,9 @@ def _changed(rel: str) -> bool:
 def make_corpus(rev: str, expected: bool) -> None:
     """Record what a lazy parse reads of every card PSD at rev; with expected, write CORPUS from the same parses."""
     from commands.card_data import EXCLUDE_FOLDERS
-    from global_config import RULEBOOK_DIR
     tree = subprocess.run(["git", "-C", str(CLONE), "ls-tree", "-r", "-z", rev], capture_output=True, check=True,
                           env=no_lazy()).stdout.decode().split("\0")
-    skip = set(EXCLUDE_FOLDERS) | {RULEBOOK_DIR}
+    skip = set(EXCLUDE_FOLDERS)
     psds = {path: line.split()[2] for line, path in (entry.split("\t", 1) for entry in filter(None, tree))
             if path.endswith(".psd") and not skip & set(path.split("/"))}
     have = subprocess.run(["git", "-C", str(CLONE), "cat-file", "--batch-check"], capture_output=True, check=True,

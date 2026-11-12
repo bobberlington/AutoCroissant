@@ -1,8 +1,6 @@
 """Range reads: a card PSD opened by HTTP range requests (psd-tools' lazy open) parses as the whole file does; a broken
 range read marks the PSD failed, so the caller reads it whole. card_check reads ranges at the push, the build at its head
 (or a bake commit's parent). Also the parse from an open PSD and the download workers' parse (AHEAD)."""
-import hashlib
-import json
 import os
 import threading
 import time
@@ -11,62 +9,21 @@ from types import SimpleNamespace
 from urllib.parse import unquote
 
 import pytest
-from requests import HTTPError
 
 import commands.card_check as cc
 import commands.card_data as cd
 import commands.github_api as ga
 import commands.psd_remote as pr
+from conftest import Reply, blob_sha_bytes as _sha
 from global_config import RAW_BASE
-from golden_cards import golden_file
 import helpers
-from helpers import DOOMER, FREEZER, OTHER, cards, cards_template  # noqa: F401 (fixtures)
+from helpers import DOOMER, FREEZER, OTHER, _golden, _strip, cards, cards_template  # noqa: F401 (fixtures)
 COMMIT = "c" * 40
-
-
-def _sha(data: bytes) -> str:
-    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
-
-
-def _golden(rel):
-    return json.loads(golden_file(rel).read_text(encoding="utf-8"))["card"]
-
-
-def _strip(d):
-    return {k: v for k, v in d.items() if k not in ("timestamp", "author", "note")}
-
-
-class Reply:
-    def __init__(self, status=200, data=b""):
-        self.status_code, self.content, self.headers, self.encoding = status, data, {}, None
-
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            raise HTTPError(f"{self.status_code} Server Error")
-
-    def iter_content(self, size):
-        for i in range(0, len(self.content), size):
-            yield self.content[i:i + size]
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-    def close(self):
-        pass
 
 
 @pytest.fixture
 def psds(clone):
-    out = {}
-    for rel in (DOOMER, FREEZER, OTHER):
-        data = (clone / rel).read_bytes()
-        if _sha(data) != json.loads(golden_file(rel).read_text(encoding="utf-8"))["blob"]:
-            pytest.skip(f"{rel} changed upstream since the goldens were made")
-        out[rel] = data
-    return out
+    return {rel: (clone / rel).read_bytes() for rel in (DOOMER, FREEZER, OTHER)}
 
 
 @pytest.fixture

@@ -9,7 +9,6 @@ import subprocess
 from io import BytesIO
 
 import numpy as np
-import pytest
 from PIL import Image, ImageDraw
 from psd_tools import PSDImage
 from psd_tools.api.layers import PixelLayer
@@ -97,8 +96,6 @@ def test_trim_map_on_star_of_beth(clone):
     """Croissant's trim (the same ink, the margins cut): each of Delta's Star of beth items links the trimmed file, its
     raster kept, its quad moved so the file's ink draws where the old one did; the rest by bytes or as new files."""
     rel = DELTA
-    if not (clone / rel).exists():
-        pytest.skip(f"{rel} not in the clone")
     with Image.open(clone / "Types/Stars/Star of beth.png") as image:
         full = image.convert("RGBA")
     trimmed = _png(full.crop(full.getbbox()))
@@ -306,8 +303,6 @@ def test_gaussian_blur_redrawn(clone):
     without the blur), its FEid source is the new picture unblurred; a painted filter mask refuses. blurred(): no halo
     on a side at the canvas's edge."""
     from psd_tools.compression import compress, decompress
-    if not (clone / COPPER).exists():
-        pytest.skip(f"{COPPER} not in the clone")
     psd = PSDImage.open(clone / COPPER)
     layer = next(layer for layer in psd.descendants() if layer.kind == "smartobject" and pl._filtered(layer))
     assert pl.blur_radius(layer) == 6.6 and pl.why_not_redrawn(layer) is None
@@ -399,8 +394,6 @@ def test_normalise_links_through_its_link_step(clone, tmp_path):
     from types import SimpleNamespace
     from commands.card_guards import LinkContext
     rel = DELTA
-    if not (clone / rel).exists():
-        pytest.skip(f"{rel} not in the clone")
     files = {str(p.relative_to(clone)): p.read_bytes() for p in (clone / "Types").rglob("*.png")}
     tree = {path: pl.git_blob(data) for path, data in files.items()}
     by_blob = {pl.git_blob(data): data for data in files.values()}
@@ -426,8 +419,6 @@ def test_normalise_links_through_its_link_step(clone, tmp_path):
 def test_fills_stay_embedded(clone):
     """A smart object holding a fill, an adjustment or a gradient effect stays embedded (owner 11-08): no item, no need;
     the card's other pictures still link."""
-    if not (clone / FREEZER).exists():
-        pytest.skip(f"{FREEZER} not in the clone")
     psd = PSDImage.open(clone / FREEZER)
     psd.repo_path = FREEZER
     found = pl.needs(psd)

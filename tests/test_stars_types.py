@@ -2,8 +2,8 @@
 psd_edit's stars and types bakes (owner, 2026-10-23: teach the bake instead of refusing the card): the layouts the
 planners know (hidden stars, rows of two, a line; a type row that closes up, icons from the card's
 own hidden layers or Types/), their per-field refusals, and the gates (records, read-back, nothing changed outside).
-Fixture cards are built here with psd-tools (no clone needed); the real-card tests copy cards from the clone and skip
-without it. Bakes need the fork's layer copy API (Layer.duplicate, PixelLayer.fromarray):
+Fixture cards are built here with psd-tools (no clone needed); the real-card tests copy cards from the clone. Bakes
+need the fork's layer copy API (Layer.duplicate, PixelLayer.fromarray):
     ~/.venvs/ac-py314-fork/bin/python -m pytest -q tests/test_stars_types.py
 """
 import json
@@ -21,6 +21,7 @@ from psd_tools.constants import BlendMode
 
 import commands.psd_edit as pe
 from conftest import at_rev
+from helpers import parser  # noqa: F401 (fixture)
 
 VOCAB = Path(__file__).resolve().parent / "goldens" / "_vocab.json"
 REL = "Auxiliary/Items/Fixture.psd"                     # an aux item: the parser counts its stars from the PSD
@@ -39,12 +40,6 @@ NASUS = "Creatures/Other/4 Stars/Nasus.psd"             # Fire, Light and a wide
 # ========================
 # Fixture cards
 # ========================
-@pytest.fixture(scope="module")
-def parser():
-    vocab = json.loads(VOCAB.read_text(encoding="utf-8"))
-    return pe.offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
-
-
 def _star(size: int = 100) -> Image.Image:
     image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     points = [(size / 2 + size / 2 * (1 if k % 2 == 0 else 0.45) * cos(-pi / 2 + k * pi / 5),
@@ -125,8 +120,6 @@ def _plan(parser, path, rel, field, value):
 
 def _clone_card(clone, rel, tmp_path) -> tuple:
     source, png = clone / rel, clone / (rel[:-4] + ".png")
-    if not source.exists() or not png.exists():
-        pytest.skip(f"{rel} not in the clone")
     (tmp_path / "old").mkdir(exist_ok=True)
     copy(source, tmp_path / "old" / source.name)
     copy(png, tmp_path / "old" / png.name)

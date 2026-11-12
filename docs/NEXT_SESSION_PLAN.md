@@ -102,7 +102,7 @@ cards, the proposal forum); earlier `session-2026-11-06/`.
   lines or environments. While the owner plays: lower load (memory `resource-limits`, 11-09 note).
 - Workflows: never resume a multi-lane workflow with edited caps (memory `workflow-resume-multilane`). Multi-step shell:
   a `set -euo pipefail` bash script, not a zsh one-liner (zsh: no word splitting; `$C:r` eats `:refs`).
-- AC tests that read TC's workflows or site from a stale checkout: point `AC_SITE_SRC` and `CARD_GUARDS_YML` at a shallow
+- AC tests that read TC's workflows or site from a stale checkout: point `AC_SITE_SRC` at a shallow
   sparse clone of TC main (`.github`, `site`, `TTS/Global.lua`, `Global.xml`, `decks.json`).
 
 ## State (2026-11-10 ~05:00, all pushed)

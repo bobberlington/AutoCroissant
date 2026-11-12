@@ -7,13 +7,7 @@ from psd_tools import PSDImage
 
 from commands.psd_edit import remove_layer
 from commands.psd_parser import CardValidator
-from golden_cards import golden_file, parser
-
-
-
-@pytest.fixture(scope="module")
-def psd_parser(clone):
-    return parser()
+from golden_cards import golden_file, psd_parser  # noqa: F401 (psd_parser: a fixture)
 
 
 def _parse(psd_parser, monkeypatch, psd, rel):

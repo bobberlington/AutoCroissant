@@ -38,7 +38,7 @@ def test_earlier_icon_fonts(clone, tmp_path):
     folder never indexes them; a second walk reads only the fonts it writes."""
     from psd_tools.composite.text.fonts import font_files
     source = Source(str(clone))
-    commit = source.commit(RING) or pytest.skip(f"the clone lacks {RING}")
+    commit = source.commit(RING)
     tree = source.tree(commit)
     files = earlier_fonts(source, commit, tree, str(tmp_path))
     shas = [blob_sha(path) for path in files]
@@ -95,7 +95,7 @@ def test_earlier_eras_past_more_font_changes(clone, tmp_path, monkeypatch):
         return subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@t", *args], input=data,
                               capture_output=True, check=True, env=no_lazy()).stdout.decode().strip()
     source = Source(str(repo))
-    head = source.commit(RING) or pytest.skip(f"the clone lacks {RING}")
+    head = source.commit(RING)
     ring = source.blob(_font_at(source, RING))
     real, laid = card_guards.font_glyphs, card_guards.font_glyphs(ring)
     moved = next(name for name, (advance, _) in laid.items() if advance)

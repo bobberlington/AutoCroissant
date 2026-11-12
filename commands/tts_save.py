@@ -353,8 +353,8 @@ def db_names(stats_path: str, tree: dict) -> dict:
     """
     cards.json's png -> name from a card data build's stats.json, by build_site's rule: a card's printed title (the
     parser's, under any Card Edits.json name) else its name (a variant picture N: NameN.png), a duplicate PNG its
-    display name, then a PSD or PNG the data lacks its file stem; rule pages are left out (build_site lists them
-    apart). Card Edits.json names are applied by _Names, as for cards.json.
+    display name, then a PSD or PNG the data lacks its file stem. Card Edits.json names are applied by _Names, as for
+    cards.json.
     """
     from commands.card_db import parse_stats
     with open(stats_path, encoding="utf-8") as fh:
@@ -379,13 +379,11 @@ def db_names(stats_path: str, tree: dict) -> dict:
         png = png_for(path, name, getattr(card, "variant", None))
         parsed = getattr(card, "parsed_values", None) or {}
         title = parsed["name"] if "name" in parsed else getattr(card, "display_name", None)
-        rule = getattr(card, "card_type", "") == "rulebook" or "/Rulebook/" in path
-        shown = (title if not rule else None) or name
+        shown = title or name
         known |= {_norm(shown), _norm(name)}
         if png:
             seen.add(png)
-            if not rule:                                    # rule pages: rules.json, not cards.json
-                out[png] = shown
+            out[png] = shown
     for path in in_cards:                                   # duplicates: numbered PNGs named by the data
         found = dup_names.get(basename(path).lower())
         if found and path.lower().endswith(".png") and path not in seen:
@@ -397,7 +395,7 @@ def db_names(stats_path: str, tree: dict) -> dict:
         if not (low.endswith(".psd") or (low.endswith(".png") and path not in seen)):
             continue
         name = splitext(basename(path))[0].replace("_", " ")
-        if _norm(name) in known or "/Rulebook/" in path:
+        if _norm(name) in known:
             continue
         known.add(_norm(name))
         png = png_for(path, name) if low.endswith(".psd") else path

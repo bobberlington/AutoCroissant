@@ -28,7 +28,7 @@ import commands.font_check as fc
 import commands.git_commit as gc
 import commands.png_export as pe
 from commands.github_api import blob_sha
-from conftest import GUARDS_YML, SITE_SRC
+from conftest import SITE_SRC
 from helpers import art, bot_files, build_font, card, fixture_psd, photoshop_png, sharing
 
 
@@ -1439,9 +1439,9 @@ def test_action_shaped_copy(tmp_path):
 
 
 def _workflow(clone) -> Path:
-    path = GUARDS_YML or (SITE_SRC / ".github" / "workflows" / "card-guards.yml")
+    path = SITE_SRC / ".github" / "workflows" / "card-guards.yml"
     if not path.exists():
-        pytest.skip(f"no {path} (set CARD_GUARDS_YML to a TTSCardMaker checkout's file, or AC_SITE_SRC to the checkout)")
+        pytest.skip(f"no {path} (set AC_SITE_SRC to a TTSCardMaker checkout)")
     return path
 
 

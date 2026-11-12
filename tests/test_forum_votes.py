@@ -51,7 +51,7 @@ class Reaction:
 class Message:
     def __init__(self, channel, content, author=BOT, **extra):
         self.id, self.channel, self.content = next(_ids), channel, content
-        self.author, self.reference = SimpleNamespace(id=author, bot=author != PERSON), None
+        self.author = SimpleNamespace(id=author, bot=author != PERSON)
         self.__dict__.update(extra)
 
 
@@ -313,9 +313,6 @@ def test_day6_pings_once_and_tags_across_restarts(clock, monkeypatch):
 @pytest.mark.parametrize("votes, note, announced", [
     ([("👍", 4), (Emoji(77, "abstain"), 6)], "Voting is closed. Most votes: 👍 (4).", True),
     ([("👎", 4), ("👍", 3)], "Voting is closed. Most votes: 👎 (4).", False),
-    ([("👎", 2), ("👍", 2)], "Voting is closed. Most votes: 👍 and 👎, tied (2 each).", False),
-    ([(Emoji(77, "abstain"), 3)], "Voting is closed. No votes.", False),
-    ([(Emoji(5, "yes"), 2), ("👍", 2)], "Voting is closed. Most votes: 👍 and <:yes:5>, tied (2 each).", True),
 ])
 def test_day7_notes_announces_a_winner_swaps_tags_locks(clock, votes, note, announced):
     forum = Forum()

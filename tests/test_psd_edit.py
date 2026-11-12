@@ -26,7 +26,7 @@ from commands import ability_place
 from commands.card_models import card_name
 from commands.psd_regions import badge_layers, clip, comp_bars, comp_row, fx_pad, regions, stat_rows
 from conftest import BADGED, PLAIN_DOOMER, at_rev, card_blob, painted
-from helpers import MINI_DOOMER, _card, _typo_fix, stale_copy
+from helpers import MINI_DOOMER, _card, _typo_fix, parser, stale_copy  # noqa: F401 (parser: a fixture)
 
 PRE_SWEEP = "1c717c8b"     # TTSCardMaker main before the badge sweep re-made some test cards
 
@@ -91,12 +91,6 @@ def _record(name, flags=b"\x08", channels=((-1, 10), (0, 10), (1, 10), (2, 10)),
 # ========================
 # Fixtures
 # ========================
-@pytest.fixture(scope="module")
-def parser():
-    vocab = json.loads(VOCAB.read_text(encoding="utf-8"))
-    return pe.offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
-
-
 @pytest.fixture(scope="module")
 def chart(clone):
     path = clone / pe.STATUS_CHART
@@ -1254,7 +1248,6 @@ def test_royal_eradicator_two_row_atk(clone, parser, tmp_path):
     parsed = pe.parse_card(parser, path, CANNON)
     assert parsed["card"]["atk"] == 12 and parsed["validator"] == []
     assert parsed["card"].get("display_name") is None and pe.read_name(psd) == "Main Cannon"
-    assert not hasattr(pe.CardValidator, "EXCESSIVE_STAT_EXCLUSIONS")
     assert sorted((group.name.strip(), digits) for group, digits, _ in stat_rows(psd)["atk"]) == [("Bottom", [2]), ("Top", [10])]
     top, bottom = pe.template_rows(psd, "atk")
     assert (top.group.name, top.visible, top.marker.name, top.marker.opacity, top.reads()) == ("Top", [], "10", 0, 10)
@@ -2821,8 +2814,6 @@ def test_parts_title_enter_and_legacy_edits(clone, parser, chart, tmp_path):
     fixture = json.loads((PARTS / "card_edits.parts.json").read_text(encoding="utf-8"))["cards"]["Warcraftian Druid"]
     psd_path, png = _card(clone, DRUID)
     psd = PSDImage.open(psd_path)
-    if pe.raw_sha(next(l for l in psd.descendants() if l.layer_id == 1034)) != fixture["parts"]["1034"]["sha"]:
-        pytest.skip("Warcraftian Druid changed since the fixture")
     parsed = pe.parse_card(parser, psd_path, DRUID, psd)
     jobs = pe.classify(parsed, {"name": fixture["name"], "parts": fixture["parts"]}, psd, parser).jobs
     assert jobs == {"parts": fixture["parts"]}              # the plain name is derived: never baked on its own

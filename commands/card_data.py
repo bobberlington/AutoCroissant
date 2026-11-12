@@ -440,15 +440,14 @@ class CardBuild:
         return changed
 
     def _card_psds(self) -> list:
-        """The tree's card PSDs (excluded folders and rule pages left out: the rulebook is site/rulebook's chapters since
-        2026-10-29), one per card name: of two PSDs with one name the stored
-        card's path stays (else the first in tree order) and the other is ignored, one line each (a clash would
-        otherwise flip the card between them and add a version at every run)."""
+        """The tree's card PSDs (excluded folders left out; the old rule pages there only keep their credits), one per
+        card name: of two PSDs with one name the stored card's path stays (else the first in tree order) and the other
+        is ignored, one line each (a clash would otherwise flip the card between them and add a version at every run)."""
         items, by_name = [], {}
         for item in self._tree_items():
             path = item.get("path", "")
             parts = path.split('/')
-            if path.endswith('.psd') and not any(folder in EXCLUDE_FOLDERS or folder == RULEBOOK_DIR for folder in parts):
+            if path.endswith('.psd') and not any(folder in EXCLUDE_FOLDERS for folder in parts):
                 by_name.setdefault(card_name(path), []).append(item)
                 items.append(item)
             elif path.endswith('.psd') and RULEBOOK_DIR in parts:
@@ -1055,7 +1054,7 @@ def gather_links(build: "GitBuild", before: dict) -> dict:
         blobs = files.setdefault(path, {})
         blobs[build.shas[path]] = sizes.get(path, blobs.get(build.shas[path]))
     cards = {path for path in build.tree_blobs if path.endswith(".psd")
-             and not any(folder in EXCLUDE_FOLDERS or folder == RULEBOOK_DIR for folder in path.split("/"))}
+             and not any(folder in EXCLUDE_FOLDERS for folder in path.split("/"))}
     psds, unread = {}, []
     for path in sorted(p for p in build.tree_blobs if p.lower().endswith(LINK_HOLDERS)):
         sha = build.shas[path]
@@ -1135,7 +1134,7 @@ def duplicate_pngs(paths: list, stats: dict, edits: Optional[CardEdits]) -> dict
     found = {}
     for path in paths:
         if (not path.lower().endswith(".png") or any(folder in EXCLUDE_FOLDERS for folder in path.split("/"))
-                or RULEBOOK_DIR in path or (splitext(path)[0] + ".psd").lower() in lower):
+                or (splitext(path)[0] + ".psd").lower() in lower):
             continue
         if "/" not in path or path.split("/")[0] in (TYPES_DIR, "site", "TTS"):
             continue                                    # no card folder

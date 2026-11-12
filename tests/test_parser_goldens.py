@@ -5,12 +5,7 @@ import types
 import pytest
 
 from conftest import blob_sha
-from golden_cards import CARDS, CERTIFIED, golden_file, parse, parser
-
-
-@pytest.fixture(scope="module")
-def psd_parser(clone):
-    return parser()
+from golden_cards import CARDS, CERTIFIED, golden_file, parse, psd_parser  # noqa: F401 (psd_parser: a fixture)
 
 
 @pytest.mark.parametrize("rel", CARDS)

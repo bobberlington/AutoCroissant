@@ -5,6 +5,8 @@ import zlib
 from bisect import bisect_right
 from pathlib import Path
 
+import pytest
+
 # ========================
 # Configuration
 # ========================
@@ -41,6 +43,11 @@ def parser():
     db = StatsDatabase()
     db.all_types = list(vocab["all_types"])
     return PSDParser(db.all_types, db, IconVocabulary.build(db.all_types, vocab["stars"], vocab["manifest"]))
+
+
+@pytest.fixture(scope="module")
+def psd_parser(clone):
+    return parser()
 
 
 def parse(psd_parser, clone: Path, rel: str, variant=None) -> dict:

@@ -1,5 +1,5 @@
 """The bot's card data: card_db.sync, card_sync's /update_stats (sync, report, Card sync runs through ACTIONS_TOKEN),
-/fonts from the card data, and /update, /pull, /help and the slash texts without the pickles."""
+/fonts from the card data, and /update, /pull, /help and the slash texts."""
 import asyncio
 import json
 from collections import defaultdict
@@ -541,15 +541,14 @@ def test_help_says_the_card_sync(monkeypatch):
     for kind in ("general", "card", "stats"):
         help_module.print_help(None, kind)
     text = "".join(sent)
-    assert "Loads the card data Card sync built" in text and "/push" not in text and "pickle" not in text
+    assert "Loads the card data Card sync built" in text
     assert "from the card data" in text and "force_update or cards" in text
 
 
 def test_slash_texts_fit():
-    """main.py's command and option descriptions: within Discord's 100 characters; no /push."""
+    """main.py's command and option descriptions: within Discord's 100 characters."""
     import main
     commands = {c.name: [c.description] + [p.description for p in c.parameters] for c in main.tree.get_commands()}
-    assert "push" not in commands
     for name, descriptions in commands.items():
         assert all(len(d) <= 100 for d in descriptions), name
     assert commands["update_stats"][0] == "Loads the card data the Card sync Action built."
@@ -579,8 +578,3 @@ def test_update_stats_options_are_admin_only(monkeypatch, options, allowed):
         admin = SimpleNamespace(user=SimpleNamespace(id=1), response=SimpleNamespace(send_message=send_message, defer=defer))
         asyncio.run(callback(admin, **options))
         assert ran
-
-
-# ========================
-# Loads that read psd_details.json by its hash only
-# ========================

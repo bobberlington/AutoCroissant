@@ -394,14 +394,13 @@ def test_update_leaves_team_fields(save, repo, tmp_path, monkeypatch):
 # --names: a card data build's stats.json
 # ========================
 def test_db_names_follow_build_site(tmp_path):
-    """cards.json's rule from stats.json: the printed title (under an edited name), no rule page, a duplicate
-    PNG's display name, an unparsed PSD's file stem; a PNG beside no data and no PSD keeps its stem too."""
+    """cards.json's rule from stats.json: the printed title (under an edited name), a duplicate PNG's display name,
+    an unparsed PSD's file stem; a PNG beside no data and no PSD keeps its stem too."""
     import commands.card_db as cdb
     import commands.card_models as cm
     stats = {
         "Mini Doomer": cm.CardInfo(name="Mini Doomer", card_type="minion", path="Auxiliary/Minions/Mini_Doomer.psd",
                                    display_name="Mini Doomer!", parsed_values={"name": "Mini Doomer?"}, parser_version=2),
-        "Page 1": cm.CardInfo(name="Page 1", card_type="rulebook", path="Auxiliary/Rulebook/Page_1.psd", display_name="Rules"),
         "A Snack": cm.CardInfo(name="A Snack", card_type="item", path="Items/Food/A_Snack.psd", display_name="A Snack"),
         "A Snack2": cm.CardInfo(name="A Snack2", card_type="item", path="Items/Food/A_Snack.psd", display_name="Breakfast",
                                 duplicate_of="A Snack"),
@@ -409,10 +408,9 @@ def test_db_names_follow_build_site(tmp_path):
     }
     (tmp_path / "stats.json").write_text(cdb.stats_text(stats), encoding="utf-8")
     tree = {p: "0" * 40 for p in ("Auxiliary/Minions/Mini_Doomer.psd", "Auxiliary/Minions/Mini_Doomer.png",
-                                  "Auxiliary/Rulebook/Page_1.psd", "Auxiliary/Rulebook/Page_1.png", "Items/Food/A_Snack.psd",
-                                  "Items/Food/A_Snack.png", "Items/Food/A_Snack2.png", "Items/New/New_Card.psd",
-                                  "Items/New/New_Card.png", "Items/Loose/Loose_One.png", "Items/Moved/Elsewhere.png",
-                                  "MDW/cardback.png")}
+                                  "Items/Food/A_Snack.psd", "Items/Food/A_Snack.png", "Items/Food/A_Snack2.png",
+                                  "Items/New/New_Card.psd", "Items/New/New_Card.png", "Items/Loose/Loose_One.png",
+                                  "Items/Moved/Elsewhere.png", "MDW/cardback.png")}
     assert tts.db_names(str(tmp_path / "stats.json"), tree) == {
         "Auxiliary/Minions/Mini_Doomer.png": "Mini Doomer?",
         "Items/Food/A_Snack.png": "A Snack", "Items/Food/A_Snack2.png": "Breakfast", "Items/New/New_Card.png": "New Card",

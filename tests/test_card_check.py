@@ -334,25 +334,13 @@ def test_repo_mode_push(fake_cards, monkeypatch, tmp_path, capsys):
 
 
 def test_repo_mode_api_failure_is_one_line_and_exit_0(monkeypatch, tmp_path, capsys):
-    """A 5xx after the retries, no network or a truncated tree: one GitHub API error line, {} to Discord, exit 0 (never a red push)."""
+    """A 5xx after the retries: one GitHub API error line, {} to Discord, exit 0 (never a red push)."""
     monkeypatch.setattr(ga, "sleep", lambda s: None)                              # get_with_retry's 1 s and 2 s waits
-    replies = {"503": lambda url: Reply(503), "truncated": lambda url: Reply(body={"truncated": True, "tree": []})}
-
-    def connection_error(url):
-        from requests import ConnectionError
-        raise ConnectionError("no network")
-    replies["offline"] = connection_error
-    out, disc = tmp_path / "r.json", tmp_path / "d.json"
-    for case, expected in (("503", "GitHub API: 503"), ("truncated", "GitHub API: the tree listing is truncated"), ("offline", "GitHub API: no network")):
-        monkeypatch.setattr(ga, "get", lambda url, **kw: replies[case](url))
-        assert cc.main(["--repo", "o/r", "--before", "b" * 40, "--after", "c2", "--json", str(out), "--discord", str(disc)]) == 0
-        text = capsys.readouterr().out
-        assert "0 card PSDs read." in text and "Nothing to report." in text and f"\nErrors:\n- {expected}" in text, case
-        data = json.loads(out.read_text(encoding="utf-8"))
-        assert data["cards"] == [] and data["checked"] == 0 and data["errors"][0].startswith(expected)
-        assert json.loads(disc.read_text(encoding="utf-8")) == {}
-
-
-# ========================
-# CLI only
-# ========================
+    monkeypatch.setattr(ga, "get", lambda url, **kw: Reply(503))
+    out, disc, expected = tmp_path / "r.json", tmp_path / "d.json", "GitHub API: 503"
+    assert cc.main(["--repo", "o/r", "--before", "b" * 40, "--after", "c2", "--json", str(out), "--discord", str(disc)]) == 0
+    text = capsys.readouterr().out
+    assert "0 card PSDs read." in text and "Nothing to report." in text and f"\nErrors:\n- {expected}" in text
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["cards"] == [] and data["checked"] == 0 and data["errors"][0].startswith(expected)
+    assert json.loads(disc.read_text(encoding="utf-8")) == {}

@@ -11,7 +11,6 @@ import commands.card_models as cm
 import commands.card_dates as de
 import commands.query_card as qc
 from commands.card_edits import CardDates
-from helpers import cards, cards_template  # noqa: F401 (fixtures)
 
 FILE = "site/Card Creation Dates.json"
 

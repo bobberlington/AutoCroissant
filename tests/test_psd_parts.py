@@ -15,7 +15,7 @@ from psd_tools import PSDImage
 from commands import psd_parts
 from commands.psd_parser import layer_tag, shown_in, title_text, variant_view, variants_of
 from conftest import card_blob
-from golden_cards import parser
+from golden_cards import psd_parser  # noqa: F401 (fixture)
 
 FIXTURES = Path(__file__).parent / "fixtures" / "parts"
 CARDS = {      # fixture: (path, card name, {lyid: name} tags applied in memory: §9's for A Snack)
@@ -25,11 +25,6 @@ CARDS = {      # fixture: (path, card name, {lyid: name} tags applied in memory:
     "a_snack_tagged": ("Items/Heal/2 Stars/A_Snack.psd", "A Snack",
                        {1015: "A Snack #1", 327: "Name #1", 1022: "Breakfast #2", 1023: "Name #2", 1024: "Supper #3", 1025: "Name #3"}),
 }
-
-
-@pytest.fixture(scope="module")
-def psd_parser(clone):
-    return parser()
 
 
 def _fixture_psd(clone, fixture: str):
@@ -86,8 +81,6 @@ def test_a_snack_tagged_per_picture(clone, psd_parser):
     titles = {}
     for n in (1, 2, 3):
         png = clone / rel.replace(".psd", f"{'' if n == 1 else n}.png")
-        if not png.exists():
-            pytest.skip(f"{png.name} not in the clone")
         card = psd_parser.parse(psd, rel, variant=n)
         titles[n] = card.display_name
         assert card.ability == "Heal 3 HP.\nInflict 2T2 Regen and 2T1 Stuffed." and card.types == ["food"] and card.stars == 2

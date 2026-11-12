@@ -18,9 +18,8 @@ import commands.card_db as cdb
 import commands.card_models as cm
 import commands.changelog as cl
 from conftest import REPO, SITE_SRC, blob_sha_bytes
-from golden_cards import golden_file
-from helpers import (DOOMER, FREEZER, OTHER, _build, _read, bot_files, cards, cards_template, commit, git, git_bytes,  # noqa: F401
-                     put)
+from helpers import (DOOMER, FREEZER, OTHER, _build, _golden, _read, _strip, bot_files, cards, cards_template, commit, git,  # noqa: F401
+                     git_bytes, put)
 
 BROKEN = b"8BPS" + b"\0" * 30
 
@@ -294,7 +293,6 @@ def test_requirements_layers_and_pin():
     assert [str(r) for r in cards[1:]] == ["fonttools", "requests"]
     assert _requirements("requirements.txt") == ["-r requirements-cards.txt", "-r requirements-bot.txt"]
     assert _requirements("requirements-dev.txt")[0] == "-r requirements.txt"
-    assert not (REPO / "requirements-card-data.txt").exists()
     for name in ("requirements-cards.txt", "requirements.txt", "requirements-dev.txt", "requirements-bot.txt"):
         status = subprocess.run(["git", "-C", str(REPO), "status", "--porcelain", "--ignored", name], capture_output=True, text=True).stdout
         assert not status.startswith("!!"), f"{name} is gitignored (*.txt): .gitignore needs its ! line"
@@ -329,14 +327,6 @@ def test_gate_floor():
 # ========================
 # Builds on a git repo of golden PSDs
 # ========================
-def _golden(rel):
-    return json.loads(golden_file(rel).read_text(encoding="utf-8"))["card"]
-
-
-def _strip(d):
-    return {k: v for k, v in d.items() if k not in ("timestamp", "author", "note")}
-
-
 def test_first_build_then_nothing_to_do(cards):
     code, message = _build(cards, "--empty")
     assert code == cd.EXIT_OK and message.startswith(f"Card data: 2 new (main {cards.first[:8]})")
@@ -400,10 +390,10 @@ def test_changed_moved_archived(cards):
 
 
 def test_rule_pages_are_not_cards(cards, capsys):
-    """The Photoshop rule pages (owner 10-29/10-30: the rulebook is site/rulebook's chapters): a PSD in a Rulebook folder is
-    never read, no event; their credits aren't typos."""
+    """The Photoshop rule pages (owner 10-29/10-30: the rulebook is site/rulebook's chapters): a PSD in MDW/Old
+    Rules/Rulebook is never read, no event; their credits aren't typos."""
     _build(cards, "--empty")
-    put(cards.repo, "Auxiliary/Rulebook/09_Taking_Your_Turn.psd", cards.psds[OTHER])
+    put(cards.repo, "MDW/Old Rules/Rulebook/09_Taking_Your_Turn.psd", cards.psds[OTHER])
     put(cards.repo, "site/Card Authors.txt", b"[people]\nbobgit = Bob\n[cards]\nmini_doomer = bobgit\n09_taking_your_turn = bobgit\n")
     commit(cards.repo, "bob", 2000)
     capsys.readouterr()

@@ -62,7 +62,6 @@ class FakeGitHub:
         self.conflicts = 0                  # PATCH ref answers conflict_status this many times, someone else's push landing first
         self.stuck = False                  # PATCH ref answers 422 with the branch unmoved (a ruleset)
         self.conflict_status = 422          # ... 409 or 422 (both mean "not a fast forward")
-        self.conflict_on = ""               # ... only for commits whose message starts so ("" = any)
         self.broken: dict = {}              # blob sha -> the bytes served instead
         self.down: set = set()              # blob shas answering 503
         self.rate_limited = False           # POST git/blobs answers a rate-limit 403
@@ -146,7 +145,7 @@ class FakeGitHub:
             commit = self.commits.get(json["sha"])
             if self.stuck:
                 return Reply(422, body={"message": "Repository rule violations found"})
-            if self.conflicts and (commit or {}).get("message", "").startswith(self.conflict_on):
+            if self.conflicts:
                 self.conflicts -= 1
                 self.commit({**self.files_at(self.head), "elsewhere.txt": b"%d" % self.conflicts}, "web", "Website edit: elsewhere")
                 return Reply(self.conflict_status, body={"message": "Update is not a fast forward"})
@@ -571,6 +570,14 @@ def git_bytes(repo, *args):
     return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, check=True).stdout
 
 
+def _golden(rel):
+    return json.loads(golden_file(rel).read_text(encoding="utf-8"))["card"]
+
+
+def _strip(d):
+    return {k: v for k, v in d.items() if k not in ("timestamp", "author", "note")}
+
+
 # ========================
 # From test_type_emojis
 # ========================
@@ -611,6 +618,12 @@ class Client:
 # From test_psd_edit
 # ========================
 MINI_DOOMER = "Auxiliary/Minions/Mini_Doomer.psd"                 # template rows, no digit effects (certified golden)
+
+
+@pytest.fixture(scope="module")
+def parser():
+    vocab = json.loads(VOCAB.read_text(encoding="utf-8"))
+    return pe.offline_parser(vocab["all_types"], vocab["stars"], vocab["manifest"])
 
 
 def _typo_fix(title: str) -> str:
